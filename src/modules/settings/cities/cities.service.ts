@@ -13,23 +13,23 @@ export class CitiesService {
 
   private async resolveCountryId(requested?: number) {
     if (requested && Number.isFinite(requested)) {
-      // if requested actually has states, keep it
+ // if requested actually has states, keep it
       const cnt = await this.prisma.dvi_states.count({
         where: { country_id: requested, deleted: 0 },
       });
       if (cnt > 0) return requested;
     }
 
-    // Try lookup by country name "India" (safe across DBs)
+ // Try lookup by country name "India" (safe across DBs)
     const india = await this.prisma.dvi_countries.findFirst({
       where: { deleted: 0, name: { equals: "India" } },
       select: { id: true },
     });
 
-    return india?.id ?? 1; // schema default
+ return india?.id 1; // schema default
   }
 
-  // Mirrors __JSONcities.php behavior but without hardcoded India id.
+ // Mirrors __JSONcities.php behavior but without hardcoded India id.
   async list(countryId = 101) {
   const cid = await this.resolveCountryId(countryId);
 
@@ -193,13 +193,13 @@ export class CitiesService {
     return { exists: !!found };
   }
 
-  // Mirrors PHP delete modal “used count” check (BUG replicated: hotel_category = cityId)
+ // Mirrors PHP delete modal used count check (BUG replicated: hotel_category = cityId)
   async getDeleteUsageCount(cityId: number) {
     const count = await this.prisma.dvi_hotel.count({
       where: {
         status: 1,
-        hotel_category: cityId, // intentionally matching PHP
-        // IMPORTANT: your legacy schema usually stores deleted as 0/1, not boolean
+ hotel_category: cityId, // intentionally matching PHP
+ // IMPORTANT: your legacy schema usually stores deleted as 0/1, not boolean
         deleted: 0 as any,
       },
     });
@@ -207,7 +207,7 @@ export class CitiesService {
     return { totalUsedCount: count, canDelete: count === 0 };
   }
 
-  // Helpful for dropdowns (replaces getSTATELIST(India))
+ // Helpful for dropdowns (replaces getSTATELIST(India))
   async listStates(countryId = 101) {
     const cid = await this.resolveCountryId(countryId);
 
@@ -225,7 +225,7 @@ export class CitiesService {
       })),
     };
   }
-  // add inside CitiesService class
+ // add inside CitiesService class
 async getCitiesByIds(cityIds: number[]) {
   const cities = await this.prisma.dvi_cities.findMany({
     where: { id: { in: cityIds }, deleted: 0 },
@@ -276,7 +276,7 @@ async debug(countryId = 101) {
     joinCount: Number(joinCount?.[0]?.join_count ?? 0),
   };
 }
-  // ✅ NEW: list cities by state_id
+ // NEW: list cities by state_id
   async listByState(stateId: number) {
   const st = await this.prisma.dvi_states.findUnique({
     where: { id: stateId },
@@ -289,7 +289,7 @@ async debug(countryId = 101) {
 
   const cities = await this.prisma.dvi_cities.findMany({
     where: { deleted: 0, state_id: stateId },
-    orderBy: { id: "desc" }, // PHP style (latest first)
+ orderBy: { id: "desc" }, // PHP style (latest first)
     select: { id: true, name: true, state_id: true, status: true, deleted: true },
   });
 
@@ -307,7 +307,7 @@ async debug(countryId = 101) {
     })),
   };
 }
-  // ✅ NEW: list cities by countryId with pagination and search
+ // NEW: list cities by countryId with pagination and search
   async listByCountry(
   countryId = 101,
   q?: { page?: number; pageSize?: number; search?: string }
@@ -318,7 +318,7 @@ async debug(countryId = 101) {
   const pageSize = Math.min(2000, Math.max(1, Number(q?.pageSize ?? 500)));
   const search = (q?.search ?? "").trim();
 
-  // 1) Fetch states for the country (this is your "JOIN base")
+ // 1) Fetch states for the country (this is your "JOIN base")
   const states = await this.prisma.dvi_states.findMany({
     where: { country_id: cid, deleted: 0 },
     select: { id: true, name: true },
@@ -331,7 +331,7 @@ async debug(countryId = 101) {
 
   const stateMap = new Map(states.map((s) => [s.id, s.name]));
 
-  // If user searches by STATE name, we must include cities under those matched states too
+ // If user searches by STATE name, we must include cities under those matched states too
   const matchedStateIdsByName =
     search.length > 0
       ? states
@@ -339,16 +339,16 @@ async debug(countryId = 101) {
           .map((s) => s.id)
       : [];
 
-  // 2) Build Prisma where for cities
+ // 2) Build Prisma where for cities
   const where: Prisma.dvi_citiesWhereInput = {
     deleted: 0,
     state_id: { in: stateIds },
     ...(search
       ? {
           OR: [
-            // search city name
+ // search city name
             { name: { contains: search } },
-            // search state name (translated to state_id IN matched list)
+ // search state name (translated to state_id IN matched list)
             ...(matchedStateIdsByName.length
               ? [{ state_id: { in: matchedStateIdsByName } }]
               : []),
@@ -357,10 +357,10 @@ async debug(countryId = 101) {
       : {}),
   };
 
-  // total count
+ // total count
   const total = await this.prisma.dvi_cities.count({ where });
 
-  // paginated rows
+ // paginated rows
   const rows = await this.prisma.dvi_cities.findMany({
     where,
     orderBy: { id: "desc" },

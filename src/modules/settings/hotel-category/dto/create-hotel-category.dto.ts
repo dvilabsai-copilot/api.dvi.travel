@@ -5,7 +5,7 @@ import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 export class CreateHotelCategoryDto {
   @IsString()
   @IsNotEmpty()
-  @MaxLength(65535) // TEXT max (practically you'll keep it small)
+ @MaxLength(65535) // TEXT max (practically you'll keep it small)
   title!: string;
 
   @IsString()
@@ -13,7 +13,7 @@ export class CreateHotelCategoryDto {
   @MaxLength(100)
   code!: string;
 
-  // Optional: allow client to pass initial status (defaults to 1 in service)
+ // Optional: allow client to pass initial status (defaults to 1 in service)
   @IsOptional()
   status?: number;
 }

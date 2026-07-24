@@ -3,22 +3,22 @@ import { IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, Length, Matches, Min 
 
 export class CreateStaffDto {
   @IsInt() @Min(0)
-  agentId!: number;             // required → definite assignment
+ agentId!: number; // required definite assignment
 
   @IsString() @IsNotEmpty()
-  staffName!: string;           // required
+ staffName!: string; // required
 
   @IsString()
   @Matches(/^\d{10}$/, { message: 'staffMobile must be a 10 digit number' })
-  staffMobile!: string;         // required
+ staffMobile!: string; // required
 
   @IsEmail()
-  staffEmail!: string;          // required
+ staffEmail!: string; // required
 
   @IsInt() @Min(0)
-  roleId!: number;              // required
+ roleId!: number; // required
 
-  // Optional login creation fields
+ // Optional login creation fields
   @IsOptional()
   @IsEmail()
   loginEmail?: string;
@@ -29,5 +29,5 @@ export class CreateStaffDto {
 
   @IsOptional()
   @IsInt()
-  status?: number;              // default handled in service
+ status?: number; // default handled in service
 }

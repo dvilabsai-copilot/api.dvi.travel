@@ -7,7 +7,7 @@ import { Role } from 'src/auth/roles.decorator';
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // TODO: Wire to a real User model once you add it to prisma.schema
+ // TODO: Wire to a real User model once you add it to prisma.schema
   async findAll() {
     return [];
   }
@@ -17,7 +17,7 @@ export class UsersService {
   }
 
   async updateRole(id: number, role: Role) {
-    // Implement once you have a User model
+ // Implement once you have a User model
     return null;
   }
 }

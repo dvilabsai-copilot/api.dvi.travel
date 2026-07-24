@@ -40,14 +40,14 @@ function parseDdMmYyyyPair(
 export class AccountsLedgerService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
+ /**
    * Main entry – mirrors PHP ledger split:
    *   agent / guide / activity / hotel / hotspot / vehicle / all
    *
    * Returns *raw* DB rows so you have EVERY column:
    *   - AGENT: header rows from dvi_accounts_itinerary_details
    *   - others: { header, details, transactions[] }
-   */
+ */
   async getLedger(query: AccountsLedgerQueryDto): Promise<any[]> {
     switch (query.componentType) {
       case AccountsLedgerComponentType.AGENT:
@@ -69,13 +69,13 @@ export class AccountsLedgerService {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // Common header (dvi_accounts_itinerary_details) filter
-  // ─────────────────────────────────────────────
+ //
+ // Common header (dvi_accounts_itinerary_details) filter
+ //
   private buildHeaderWhere(query: AccountsLedgerQueryDto): any {
     const where: any = { deleted: 0 };
 
-    // Quote filter: overrides date range
+ // Quote filter: overrides date range
     if (query.quoteId && query.quoteId.trim() !== '') {
       where.itinerary_quote_ID = { contains: query.quoteId.trim() };
       if (query.agentId && query.agentId > 0) {
@@ -84,7 +84,7 @@ export class AccountsLedgerService {
       return where;
     }
 
-    // Date range
+ // Date range
     if (query.fromDate && query.toDate) {
       const { from, toExclusive } = parseDdMmYyyyPair(
         query.fromDate,
@@ -105,9 +105,9 @@ export class AccountsLedgerService {
     return where;
   }
 
-  // ─────────────────────────────────────────────
-  //  AGENT LEDGER
-  // ─────────────────────────────────────────────
+ //
+ // AGENT LEDGER
+ //
   private async getAgentLedger(
     query: AccountsLedgerQueryDto,
   ): Promise<any[]> {
@@ -119,9 +119,9 @@ export class AccountsLedgerService {
     });
   }
 
-  // ─────────────────────────────────────────────
-  //  GUIDE LEDGER
-  // ─────────────────────────────────────────────
+ //
+ // GUIDE LEDGER
+ //
   private async getGuideLedger(
     query: AccountsLedgerQueryDto,
   ): Promise<any[]> {
@@ -185,9 +185,9 @@ export class AccountsLedgerService {
     }));
   }
 
-  // ─────────────────────────────────────────────
-  //  ACTIVITY LEDGER
-  // ─────────────────────────────────────────────
+ //
+ // ACTIVITY LEDGER
+ //
   private async getActivityLedger(
     query: AccountsLedgerQueryDto,
   ): Promise<any[]> {
@@ -254,9 +254,9 @@ export class AccountsLedgerService {
     }));
   }
 
-  // ─────────────────────────────────────────────
-  //  HOTEL LEDGER
-  // ─────────────────────────────────────────────
+ //
+ // HOTEL LEDGER
+ //
   private async getHotelLedger(
     query: AccountsLedgerQueryDto,
   ): Promise<any[]> {
@@ -322,9 +322,9 @@ export class AccountsLedgerService {
     }));
   }
 
-  // ─────────────────────────────────────────────
-  //  HOTSPOT LEDGER
-  // ─────────────────────────────────────────────
+ //
+ // HOTSPOT LEDGER
+ //
   private async getHotspotLedger(
     query: AccountsLedgerQueryDto,
   ): Promise<any[]> {
@@ -391,9 +391,9 @@ export class AccountsLedgerService {
     }));
   }
 
-  // ─────────────────────────────────────────────
-  //  VEHICLE LEDGER
-  // ─────────────────────────────────────────────
+ //
+ // VEHICLE LEDGER
+ //
   private async getVehicleLedger(
     query: AccountsLedgerQueryDto,
   ): Promise<any[]> {
@@ -413,7 +413,7 @@ export class AccountsLedgerService {
       accounts_itinerary_details_ID: { in: headerIds },
     };
 
-    // vendor filter
+ // vendor filter
     if (query.vendorId && query.vendorId > 0) {
       detailsWhere.vendor_id = query.vendorId;
     }
@@ -462,9 +462,9 @@ export class AccountsLedgerService {
     }));
   }
 
-  // ─────────────────────────────────────────────
-  //  ALL LEDGER
-  // ─────────────────────────────────────────────
+ //
+ // ALL LEDGER
+ //
   private async getAllLedger(
     query: AccountsLedgerQueryDto,
   ): Promise<any[]> {
@@ -506,9 +506,9 @@ export class AccountsLedgerService {
     ];
   }
 
-  // ─────────────────────────────────────────────
-  //  DROPDOWN OPTIONS – dynamic, PHP-style
-  // ─────────────────────────────────────────────
+ //
+ // DROPDOWN OPTIONS dynamic, PHP-style
+ //
   async getFilterOptions(
     _query: AccountsLedgerQueryDto,
   ): Promise<AccountsLedgerOptionsDto> {
@@ -522,7 +522,7 @@ export class AccountsLedgerService {
       hotelRows,
       vehicleRows,
     ] = await Promise.all([
-      // Agents
+ // Agents
       this.prisma.dvi_agent.findMany({
         where: { deleted: 0 },
         select: {
@@ -536,7 +536,7 @@ export class AccountsLedgerService {
         ],
       }),
 
-      // Vehicle branches (branch dropdown)
+ // Vehicle branches (branch dropdown)
       this.prisma.dvi_vendor_branches.findMany({
         where: { deleted: 0 },
         select: {
@@ -547,7 +547,7 @@ export class AccountsLedgerService {
         },
       }),
 
-      // Vehicle vendors – dvi_vendor_details.vendor_name
+ // Vehicle vendors dvi_vendor_details.vendor_name
       this.prisma.dvi_vendor_details.findMany({
         where: { deleted: 0 },
         select: {
@@ -558,7 +558,7 @@ export class AccountsLedgerService {
         },
       }),
 
-      // Guides – dvi_guide_details.guide_name
+ // Guides dvi_guide_details.guide_name
       this.prisma.dvi_guide_details.findMany({
         where: { deleted: 0 },
         select: {
@@ -569,7 +569,7 @@ export class AccountsLedgerService {
         },
       }),
 
-      // Hotspots – dvi_hotspot_place.hotspot_name
+ // Hotspots dvi_hotspot_place.hotspot_name
       this.prisma.dvi_hotspot_place.findMany({
         where: { deleted: 0 },
         select: {
@@ -580,7 +580,7 @@ export class AccountsLedgerService {
         },
       }),
 
-      // Activities – dvi_activity.activity_title
+ // Activities dvi_activity.activity_title
       this.prisma.dvi_activity.findMany({
         where: { deleted: 0 },
         select: {
@@ -591,7 +591,7 @@ export class AccountsLedgerService {
         },
       }),
 
-      // Hotels – deleted is boolean in Prisma
+ // Hotels deleted is boolean in Prisma
       this.prisma.dvi_hotel.findMany({
         where: {
           deleted: false,
@@ -604,7 +604,7 @@ export class AccountsLedgerService {
         },
       }),
 
-      // Vehicles – only to get used vehicle_type_id values
+ // Vehicles only to get used vehicle_type_id values
       this.prisma.dvi_vehicle.findMany({
         where: { deleted: 0 },
         select: {
@@ -613,7 +613,7 @@ export class AccountsLedgerService {
       }),
     ]);
 
-    // Resolve vehicle_type_id → vehicle_type_title
+ // Resolve vehicle_type_id vehicle_type_title
     const usedTypeIds = Array.from(
       new Set(
         vehicleRows
@@ -630,7 +630,7 @@ export class AccountsLedgerService {
       vehicleTypeRows =
         await this.prisma.dvi_vehicle_type.findMany({
           where: {
-            // assuming PK is vehicle_type_ID
+ // assuming PK is vehicle_type_ID
             vehicle_type_id: { in: usedTypeIds },
           },
           select: {

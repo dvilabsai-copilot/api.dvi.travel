@@ -23,9 +23,9 @@ export class VehicleAvailabilityService {
     return resolveCityRecordByName(this.prisma, labelRaw);
   }
 
-  // ===========================================================================
-  // DATE HELPERS
-  // ===========================================================================
+ // ===========================================================================
+ // DATE HELPERS
+ // ===========================================================================
   private pad(n: number): string {
     return n.toString().padStart(2, '0');
   }
@@ -95,9 +95,9 @@ export class VehicleAvailabilityService {
     }).format(date);
   }
 
-  // ===========================================================================
-  // CORE AVAILABILITY
-  // ===========================================================================
+ // ===========================================================================
+ // CORE AVAILABILITY
+ // ===========================================================================
   async getVehicleAvailabilityChart(query: VehicleAvailabilityQueryDto): Promise<VehicleAvailabilityResponseDto> {
     const vendorIds = this.normalizeNumberArray(query.vendorIds);
     const vehicleTypeIds = this.normalizeNumberArray(query.vehicleTypeIds);
@@ -124,7 +124,7 @@ export class VehicleAvailabilityService {
     const { from: rangeFrom, to: rangeTo } = this.toDateRange(dateFrom, dateTo);
     const todayYmd = this.toYmd(new Date());
 
-    // ITINERARIES
+ // ITINERARIES
     const itineraries = await this.prisma.dvi_confirmed_itinerary_plan_details.findMany({
       where: {
         status: 1,
@@ -144,7 +144,7 @@ export class VehicleAvailabilityService {
     for (const it of itineraries as any[]) itineraryById.set(it.itinerary_plan_ID, it);
     let filteredItineraryIds = Array.from(itineraryById.keys());
 
-    // ROUTE DETAILS
+ // ROUTE DETAILS
     const routes = await this.prisma.dvi_confirmed_itinerary_route_details.findMany({
       where: { itinerary_plan_ID: { in: filteredItineraryIds }, status: 1, deleted: 0 },
     });
@@ -159,7 +159,7 @@ export class VehicleAvailabilityService {
       routesByItineraryAndDate.get(key)!.push(r);
     }
 
-    // Optional location filter parity (PHP uses route location_name/next_visiting_location)
+ // Optional location filter parity (PHP uses route location_name/next_visiting_location)
     if (locationLabels.length > 0) {
       const needles = new Set(locationLabels.map((label) => label.trim().toLowerCase()));
       const matched = new Set<number>();
@@ -315,7 +315,7 @@ export class VehicleAvailabilityService {
 
     const expandedVehicleTypeFilterIds = expandVehicleTypeFilterIds(activeVehicleTypeIds);
 
-    // VEHICLES
+ // VEHICLES
     const vehicles = await this.prisma.dvi_vehicle.findMany({
       where: {
         status: 1,
@@ -327,7 +327,7 @@ export class VehicleAvailabilityService {
     });
     if (vehicles.length === 0) return { dates, rows: [] };
 
-    // Primary PHP source: vouchers
+ // Primary PHP source: vouchers
     const voucherLinksRaw = await this.prisma.dvi_confirmed_itinerary_plan_vehicle_voucher_details.findMany({
       where: {
         status: 1,
@@ -344,8 +344,8 @@ export class VehicleAvailabilityService {
       },
     });
 
-    // Fallback for parity when vouchers table is empty in local DBs.
-    // Derive itinerary/vendor/vendor-vehicle-type from confirmed vendor vehicle details.
+ // Fallback for parity when vouchers table is empty in local DBs.
+ // Derive itinerary/vendor/vendor-vehicle-type from confirmed vendor vehicle details.
     let itineraryVendorTypeLinks: ItineraryVendorTypeLink[] = (voucherLinksRaw as any[]).map((v) => ({
       itinerary_plan_id: Number(v.itinerary_plan_id),
       vendor_id: Number(v.vendor_id),
@@ -370,7 +370,7 @@ export class VehicleAvailabilityService {
 
       itineraryVendorTypeLinks = (fallbackRows as any[])
         .map((r) => {
-          // Status/assignment keys are based on vendor_vehicle_type_id in PHP + assignment tables.
+ // Status/assignment keys are based on vendor_vehicle_type_id in PHP + assignment tables.
           const vendorVehicleTypeId = Number(r.vendor_vehicle_type_id ?? 0);
           const fallbackVehicleTypeId = Number(r.vehicle_type_id ?? 0);
           return {
@@ -388,7 +388,7 @@ export class VehicleAvailabilityService {
 
     if (itineraryVendorTypeLinks.length === 0) return { dates, rows: [] };
 
-    // VEHICLE ASSIGNMENTS
+ // VEHICLE ASSIGNMENTS
     const vehicleAssignments = await this.prisma.dvi_confirmed_itinerary_vendor_vehicle_assigned.findMany({
       where: { itinerary_plan_id: { in: filteredItineraryIds }, status: 1, deleted: 0 },
     });
@@ -406,7 +406,7 @@ export class VehicleAvailabilityService {
       assignmentByItineraryAndVehicle.set(keyVehicle, a);
     }
 
-    // DRIVER ASSIGNMENTS
+ // DRIVER ASSIGNMENTS
     const driverAssignments = await this.prisma.dvi_confirmed_itinerary_vendor_driver_assigned.findMany({
       where: { itinerary_plan_id: { in: filteredItineraryIds }, status: 1, deleted: 0 },
     });
@@ -417,7 +417,7 @@ export class VehicleAvailabilityService {
       driverByItineraryAndVehicle.set(`${itId}-${vehicleId}`, d);
     }
 
-    // GROUP itineraries per (vendor, vendor_vehicle_type_ID)
+ // GROUP itineraries per (vendor, vendor_vehicle_type_ID)
     const itineraryIdsByVendorType = new Map<string, number[]>();
     for (const link of itineraryVendorTypeLinks) {
       if (!itineraryById.has(link.itinerary_plan_id)) continue;
@@ -439,7 +439,7 @@ export class VehicleAvailabilityService {
       itineraryIdsByVendorType.set(key, uniqueIds);
     }
 
-    // LABELS
+ // LABELS
     const vendorIdsForLabels = Array.from(new Set(vehicles.map((v: any) => v.vendor_id as number)));
 
     const [vendorRows, vehicleTypeRows] = await Promise.all([
@@ -476,11 +476,11 @@ export class VehicleAvailabilityService {
       );
     }
 
-    // FINAL ROWS
+ // FINAL ROWS
     const rows: VehicleAvailabilityRowDto[] = [];
     for (const vehicle of vehicles as any[]) {
       const vendorIdKey: number = vehicle.vendor_id;
-      const vehicleTypeIdKey: number = vehicle.vehicle_type_id; // vendor_vehicle_type_ID
+ const vehicleTypeIdKey: number = vehicle.vehicle_type_id; // vendor_vehicle_type_ID
       const vehicleIdKey: number = vehicle.vehicle_id;
 
       const vendorTypeKey = `${vendorIdKey}-${vehicleTypeIdKey}`;
@@ -611,9 +611,9 @@ routeSegments: [],
     return { dates, rows };
   }
 
-  // ===========================================================================
-  // DROPDOWNS for MODALS (mirror PHP)
-  // ===========================================================================
+ // ===========================================================================
+ // DROPDOWNS for MODALS (mirror PHP)
+ // ===========================================================================
   async listVendors() {
     const vendors = await this.prisma.dvi_vendor_details.findMany({
       where: { deleted: { in: [0, 1] } },
@@ -750,8 +750,8 @@ routeSegments: [],
       }
     }
 
-    // Availability filter: hide overlapping drivers when possible.
-    // If this would empty the list, fall back to the base list to keep assign UX usable.
+ // Availability filter: hide overlapping drivers when possible.
+ // If this would empty the list, fall back to the base list to keep assign UX usable.
     if (itineraryPlanId && vendorId) {
       const baseRows = [...rows];
       const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
@@ -787,11 +787,11 @@ routeSegments: [],
       .filter((x: any) => x.id);
   }
 
-  /**
+ /**
    * Vehicle Origin autocomplete:
    * Read distinct labels from itinerary plans (arrival_location & departure_location).
    * Uses DB collation for case-insensitive `contains`, dedupes in JS, returns top 50.
-   */
+ */
   async listLocations(q?: string): Promise<Array<{ id: number; label: string }>> {
     const needle = (q ?? '').trim();
 
@@ -818,9 +818,9 @@ routeSegments: [],
     return Array.from(dedupe.values()).slice(0, 50);
   }
 
-  // ===========================================================================
-  // LOOKUPS NEEDED BY CONTROLLER (fixes TS2339 on controller)
-  // ===========================================================================
+ // ===========================================================================
+ // LOOKUPS NEEDED BY CONTROLLER (fixes TS2339 on controller)
+ // ===========================================================================
   async listVehicleTypes() {
     const rows = await this.prisma.dvi_vehicle_type.findMany({
       where: { status: 1, deleted: { in: [0, 1] } },
@@ -901,11 +901,11 @@ routeSegments: [],
     return agents.map((a: any) => ({ id: a.agent_ID, label: buildAgentLabel(a) }));
   }
 
-  /**
+ /**
    * PHP getSTATE_CITY_COUNTRY() mirror used by `/vehicle-availability/location-meta?label=...`
    * Resolves a free-text city label to { location_id, city_id, state_id, country_id }.
    * In this schema we treat location_id === dvi_cities.id
-   */
+ */
   async getLocationMeta(labelRaw: string) {
     const label = (labelRaw ?? '').trim();
     const empty = { label, location_id: null, city_id: null, state_id: null, country_id: null };
@@ -923,17 +923,17 @@ routeSegments: [],
 
     return {
       label: city.name,
-      location_id: city.id, // used as vehicle_location_id
+ location_id: city.id, // used as vehicle_location_id
       city_id: city.id,
       state_id: state?.id ?? null,
       country_id: state?.country_id ?? null,
     };
   }
 
-  // ===========================================================================
-  // MODAL ACTIONS (mirror PHP handlers)
-  // ===========================================================================
-  // REPLACE the whole createVehicle() with this version
+ // ===========================================================================
+ // MODAL ACTIONS (mirror PHP handlers)
+ // ===========================================================================
+ // REPLACE the whole createVehicle() with this version
 async createVehicle(dto: any) {
   const vendor_id = this.toInt(dto.vendor_id ?? dto.vendorId ?? dto.vendor_name);
   const vehicle_type_id = this.toInt(dto.vehicle_type_id ?? dto.vehicleTypeId ?? dto.vehicle_type);
@@ -948,7 +948,7 @@ async createVehicle(dto: any) {
   const insurance_start_date = this.parseDateYmd(dto.insurance_start_date);
   const insurance_end_date = this.parseDateYmd(dto.insurance_end_date);
 
-  // ⚠️ REQUIRED in your Prisma model; ensure we always send a string (not the String constructor)
+ // REQUIRED in your Prisma model; ensure we always send a string (not the String constructor)
   const owner_pincode: string =
     (dto.owner_pincode ?? dto.ownerPincode ?? '').toString().trim();
 
@@ -967,12 +967,12 @@ async createVehicle(dto: any) {
     throw new BadRequestException(`Vehicle already exists: ${existing.registration_number}`);
   }
 
-  // derive active status
+ // derive active status
   const now = new Date();
   const statusOk = (vehicle_fc_expiry_date ?? now) >= now && (insurance_end_date ?? now) >= now;
   const status = statusOk ? 1 : 0;
 
-  // optional resolve origin → id (city)
+ // optional resolve origin id (city)
   let vehicle_location_id: number | null = null;
   try {
     const city = await this.resolveCityByLabel(vehicle_origin);
@@ -986,12 +986,12 @@ async createVehicle(dto: any) {
     vehicle_type_id,
     vendor_branch_id,
     registration_number,
-    // if your column disallows null, remove the key when null:
+ // if your column disallows null, remove the key when null:
     ...(vehicle_location_id != null ? { vehicle_location_id } : {}),
     vehicle_fc_expiry_date,
     insurance_start_date,
     insurance_end_date,
-    // ✅ send a real string for required Prisma field
+ // send a real string for required Prisma field
     owner_pincode: owner_pincode ?? '',
     status,
     deleted: 0,
@@ -1042,7 +1042,7 @@ async createVehicle(dto: any) {
   if (!driver_name) throw new BadRequestException('driver_name is required');
   if (!driver_primary_mobile_number) throw new BadRequestException('driver_primary_mobile_number is required');
 
-  // ---------- existence check (retry without `id` in select if schema doesn’t have it) ----------
+ // ---------- existence check (retry without `id` in select if schema doesnt have it) ----------
   const findExisting = async () => {
     try {
       return await driverClient.findFirst({
@@ -1050,7 +1050,7 @@ async createVehicle(dto: any) {
         select: { driver_id: true, id: true },
       });
     } catch {
-      // Fallback for models that don't have `id`
+ // Fallback for models that don't have `id`
       return await driverClient.findFirst({
         where: { vendor_id, driver_primary_mobile_number, deleted: { in: [0, 1] } },
         select: { driver_id: true },
@@ -1063,7 +1063,7 @@ async createVehicle(dto: any) {
     throw new BadRequestException('Driver already exists for this vendor with the same mobile number');
   }
 
-  // ---------- create payloads ----------
+ // ---------- create payloads ----------
   const baseData = this.cleanUndefined({
     vendor_id,
     vehicle_type_id,
@@ -1075,7 +1075,7 @@ async createVehicle(dto: any) {
 
   const withVendorVehicleType = this.cleanUndefined({
     ...baseData,
-    // Some schemas use this; we try first and fallback if Prisma rejects the field
+ // Some schemas use this; we try first and fallback if Prisma rejects the field
     vendor_vehicle_type_id: vehicle_type_id,
   });
 
@@ -1092,14 +1092,14 @@ async createVehicle(dto: any) {
         (msg.includes('Unknown arg') && msg.includes('vendor_vehicle_type_id'));
 
       if (unknownVendorVehicleType) {
-        // Retry without vendor_vehicle_type_id
+ // Retry without vendor_vehicle_type_id
         try {
           return await driverClient.create({
             data: baseData,
             select: { driver_id: true, id: true },
           });
         } catch {
-          // Retry again with minimal select for models that don't have `id`
+ // Retry again with minimal select for models that don't have `id`
           return await driverClient.create({
             data: baseData,
             select: { driver_id: true },
@@ -1107,7 +1107,7 @@ async createVehicle(dto: any) {
         }
       }
 
-      // If error is due to `id` not existing in select
+ // If error is due to `id` not existing in select
       if (msg.includes('Unknown field `id`')) {
         return await driverClient.create({
           data,
@@ -1275,9 +1275,9 @@ async createVehicle(dto: any) {
     return { customerName: row?.customer_name ?? null };
   }
 
-  // ===========================================================================
-  // SMALL HELPERS
-  // ===========================================================================
+ // ===========================================================================
+ // SMALL HELPERS
+ // ===========================================================================
   private safeLabel(v: any): string {
     const s = (v ?? '').toString().trim();
     return s.length ? s : '';

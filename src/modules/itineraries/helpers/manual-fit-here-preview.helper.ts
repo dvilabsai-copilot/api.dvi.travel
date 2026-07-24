@@ -555,7 +555,7 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
         finalizedTimeline = rebuiltFinalizedTimeline;
       }
     } catch (error) {
-      console.warn('[FitHere][preview_envelope_rebuild_failed]', {
+ console.warn('[FitHere][preview_envelope_rebuild_failed]', {
         planId: Number(params.planId),
         routeId: Number(params.routeId),
         selectedHotspotId: selectedHotspotIdNum,
@@ -650,7 +650,7 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
       }
     }
   } catch (error) {
-    console.warn('[FitHere][preview_removed_diff_inference_failed]', {
+ console.warn('[FitHere][preview_removed_diff_inference_failed]', {
       planId: Number(params.planId),
       routeId: Number(params.routeId),
       selectedHotspotId: selectedHotspotIdNum,

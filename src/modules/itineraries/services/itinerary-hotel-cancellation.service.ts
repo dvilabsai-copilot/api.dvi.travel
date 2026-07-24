@@ -124,7 +124,7 @@ export class ItineraryHotelCancellationService {
           },
         });
       } catch (error) {
-        console.log('Hotel cancellation table not found, skipping audit record');
+ console.log('Hotel cancellation table not found, skipping audit record');
       }
 
       const hotelDetails = await tx.dvi_confirmed_itinerary_plan_hotel_details.findFirst({

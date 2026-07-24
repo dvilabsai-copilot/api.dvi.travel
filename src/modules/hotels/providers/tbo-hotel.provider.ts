@@ -22,28 +22,28 @@ import { resolveCityRecordByName } from '../../itineraries/utils/city-normalizat
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
-  // TBO API Constraints - Certification Required
+ // TBO API Constraints - Certification Required
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
 
-  // Production API Endpoints from Postman Collection
-  private readonly SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
-  private readonly BOOKING_API_URL = process.env.TBO_BOOKING_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10';
+ // Production API Endpoints from Postman Collection
+ private readonly SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
+ private readonly BOOKING_API_URL = process.env.TBO_BOOKING_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10';
   private readonly SHARED_API_URL =
     process.env.TBO_SHARED_API_URL ||
     process.env.TBO_AUTH_BASE_URL ||
-    'https://api.travelboutiqueonline.com/SharedAPI';
-  private readonly TBO_STATIC_API_URL = process.env.TBO_STATIC_API_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
+ 'https://api.travelboutiqueonline.com/SharedAPI';
+ private readonly TBO_STATIC_API_URL = process.env.TBO_STATIC_API_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
   private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
   private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
   private readonly SEARCH_USERNAME = process.env.TBO_SEARCH_USERNAME || process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
   private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
-  
-  // Real Production Credentials (From Postman - Verified Working)
+
+ // Real Production Credentials (From Postman - Verified Working)
   private readonly USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
   private readonly PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
-  
+
   private logger = new Logger(TBOHotelProvider.name);
   private readonly verboseHotelLookupLogs =
     (process.env.TBO_VERBOSE_HOTEL_LOOKUP_LOGS || 'false').toLowerCase() === 'true';
@@ -56,15 +56,15 @@ export class TBOHotelProvider implements IHotelProvider {
     private readonly supplementNormalizer: SupplementNormalizerService,
   ) {
     if (!prisma) {
-      this.logger.error('🔴 PrismaService is NULL/UNDEFINED!');
+ this.logger.error(' PrismaService is NULL/UNDEFINED!');
     }
-    this.logger.log('🔐 TBO Hotel Provider initialized with production endpoints');
-    this.logger.log(`Using credentials: ${this.USERNAME}`);
+ this.logger.log(' TBO Hotel Provider initialized with production endpoints');
+ this.logger.log(`Using credentials: ${this.USERNAME}`);
     if (
       (process.env.TBO_SEARCH_USERNAME && this.SEARCH_USERNAME !== this.USERNAME) ||
       (process.env.TBO_SEARCH_PASSWORD && this.SEARCH_PASSWORD !== this.PASSWORD)
     ) {
-      this.logger.warn(
+ this.logger.warn(
         '⚠️ TBO_SEARCH_* credentials differ from TBO_API/TBO credentials. Search and booking may use different accounts.',
       );
     }
@@ -74,21 +74,21 @@ export class TBOHotelProvider implements IHotelProvider {
     return 'TBO';
   }
 
-  /**
+ /**
    * Authenticate and get TokenId from TBO API
    * Required for all hotel operations
-   */
+ */
   private async authenticate(): Promise<string> {
     try {
-      // Check if token is still valid
+ // Check if token is still valid
       if (this.tokenId && this.tokenExpiry && new Date() < this.tokenExpiry) {
-        this.logger.debug('   🔑 Using cached TBO TokenId');
+ this.logger.debug(' Using cached TBO TokenId');
         return this.tokenId;
       }
 
-      this.logger.log(`   🔐 TBO Authentication Request:`);
-      this.logger.log(`      - Endpoint: POST ${this.SHARED_API_URL}/SharedData.svc/rest/Authenticate`);
-      this.logger.log(`      - Username: ${this.USERNAME}`);
+ this.logger.log(` TBO Authentication Request:`);
+ this.logger.log(` - Endpoint: POST ${this.SHARED_API_URL}/SharedData.svc/rest/Authenticate`);
+ this.logger.log(` - Username: ${this.USERNAME}`);
 
       const authRequest = {
         ClientId: process.env.TBO_CLIENT_ID || 'tboprod',
@@ -110,10 +110,10 @@ export class TBOHotelProvider implements IHotelProvider {
       );
 
       const authTime = Date.now() - authStartTime;
-      this.logger.log(`   ⏱️  TBO Auth Response Time: ${authTime}ms`);
-      this.logger.debug(`   📋 TBO Auth Status: ${response.data?.Status ?? 'unknown'}`);
+ this.logger.log(` TBO Auth Response Time: ${authTime}ms`);
+ this.logger.debug(` TBO Auth Status: ${response.data?.Status 'unknown'}`);
 
-      // TBO API returns Status: 1 for success, not Status.Code
+ // TBO API returns Status: 1 for success, not Status.Code
       const status = response.data?.Status;
       if (status !== 1) {
         const errorMsg = response.data?.Error?.ErrorMessage || `Status ${status}`;
@@ -125,14 +125,14 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
       this.tokenId = response.data.TokenId;
-      // Token valid for 24 hours, but we'll refresh every 12 hours
+ // Token valid for 24 hours, but we'll refresh every 12 hours
       this.tokenExpiry = new Date(Date.now() + 12 * 60 * 60 * 1000);
 
-      this.logger.log(`   ✅ TBO Authentication successful - TokenId: ${this.tokenId.substring(0, 8)}...`);
+ this.logger.log(` TBO Authentication successful - TokenId: ${this.tokenId.substring(0, 8)}...`);
       return this.tokenId;
     } catch (error) {
-      this.logger.error(`   ❌ TBO Authentication Error: ${error.message}`);
-      this.logger.error(`   📋 Error Details: ${JSON.stringify(error.response?.data || error)}`);
+ this.logger.error(` TBO Authentication Error: ${error.message}`);
+ this.logger.error(` Error Details: ${JSON.stringify(error.response?.data || error)}`);
       throw new InternalServerErrorException(
         `TBO Authentication failed: ${error.message || 'Unknown error'}`
       );
@@ -145,14 +145,14 @@ export class TBOHotelProvider implements IHotelProvider {
   ): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
     if (!this.prisma) {
-      this.logger.error('🔴 this.prisma is NULL/UNDEFINED in search method!');
+ this.logger.error(' this.prisma is NULL/UNDEFINED in search method!');
       throw new Error('PrismaService not injected');
     }
     try {
-      this.logger.log(`\n   📡 TBO PROVIDER: Starting hotel search for city: ${criteria.cityCode}`);
+ this.logger.log(`\n TBO PROVIDER: Starting hotel search for city: ${criteria.cityCode}`);
 
-      // Step 1: Resolve TBO city code from existing schema fields.
-      // Supports: direct TBO city code, dvi_cities.id, and fallback via dvi_hotel.tbo_city_code.
+ // Step 1: Resolve TBO city code from existing schema fields.
+ // Supports: direct TBO city code, dvi_cities.id, and fallback via dvi_hotel.tbo_city_code.
       const resolvedCity = await this.resolveTboCityCode(criteria.cityCode);
       if (!resolvedCity?.tboCityCode) {
         throw new Error(
@@ -162,62 +162,62 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
       const resolvedTboCityCode = resolvedCity.tboCityCode;
-      this.logger.log(
+ this.logger.log(
         `   🗺️  City Mapping: input ${criteria.cityCode} → TBO ${resolvedTboCityCode}` +
         `${resolvedCity.source ? ` (source: ${resolvedCity.source})` : ''}`
       );
 
-      // Ensure DB has city/hotel master data for this TBO city before searching.
+ // Ensure DB has city/hotel master data for this TBO city before searching.
       await this.ensureCityAndHotelsInDb(criteria.cityCode, resolvedTboCityCode);
 
-      // Step 2: Get hotel codes from TBO SharedData API or master database
-      // Instead of hardcoding, fetch from TBO's master hotel list
+ // Step 2: Get hotel codes from TBO SharedData API or master database
+ // Instead of hardcoding, fetch from TBO's master hotel list
       let hotelCodes: string | undefined;
       let isUsingDatabaseCodes = false;
-      
+
       if (criteria.hotelCodes) {
-        // If explicitly provided (for testing), use it
+ // If explicitly provided (for testing), use it
         hotelCodes = criteria.hotelCodes;
-        this.logger.log(`   📋 Using provided hotel codes: ${hotelCodes}`);
+ this.logger.log(` Using provided hotel codes: ${hotelCodes}`);
       } else {
-        // Query database for hotel codes from tbo_hotel_master table
-        // This table is synced daily from TBO's GetHotels API via cron/scheduler
+ // Query database for hotel codes from tbo_hotel_master table
+ // This table is synced daily from TBO's GetHotels API via cron/scheduler
         hotelCodes = await this.getHotelCodesForCityFromDb(resolvedTboCityCode);
         if (!hotelCodes) {
-          this.logger.warn(`   ⚠️  No hotel codes in database for city ${resolvedTboCityCode} - trying static TBOHotelCodeList fallback`);
+ this.logger.warn(` No hotel codes in database for city ${resolvedTboCityCode} - trying static TBOHotelCodeList fallback`);
           hotelCodes = await this.fetchHotelCodesFromStaticApi(resolvedTboCityCode);
 
           if (!hotelCodes) {
-            this.logger.error(
+ this.logger.error(
               `   ❌ No hotel codes available for city ${resolvedTboCityCode} from DB or static API. ` +
               `Skipping Search call because TBO requires HotelCodes.`
             );
             return [];
           }
 
-          this.logger.log(`   ✅ Fallback fetched ${hotelCodes.split(',').length} hotel codes from static API`);
+ this.logger.log(` Fallback fetched ${hotelCodes.split(',').length} hotel codes from static API`);
         } else {
           isUsingDatabaseCodes = true;
-          this.logger.log(`   📋 Fetched ${hotelCodes.split(',').length} hotel codes from database`);
+ this.logger.log(` Fetched ${hotelCodes.split(',').length} hotel codes from database`);
         }
       }
 
-      // CRITICAL FIX: If using database codes, verify they look like valid TBO codes
-      // Real TBO codes are 7 digits starting with 10 (e.g., 1014829, 1089687, 1138045)
-      // Note: All hotel codes in database are synced from TBO API, so they're already valid
+ // CRITICAL FIX: If using database codes, verify they look like valid TBO codes
+ // Real TBO codes are 7 digits starting with 10 (e.g., 1014829, 1089687, 1138045)
+ // Note: All hotel codes in database are synced from TBO API, so they're already valid
       if (isUsingDatabaseCodes && hotelCodes) {
-        this.logger.log(`   ✅ Using ${hotelCodes.split(',').length} hotel codes from database`);
+ this.logger.log(` Using ${hotelCodes.split(',').length} hotel codes from database`);
       }
 
-      // Step 3: Chunk hotel codes (TBO recommends 100 codes per request)
-      // Per TBO API docs: "send parallel searches for 100 hotel codes chunks"
+ // Step 3: Chunk hotel codes (TBO recommends 100 codes per request)
+ // Per TBO API docs: "send parallel searches for 100 hotel codes chunks"
       const hotelCodeChunks = this.chunkHotelCodes(hotelCodes, 100);
-      
+
       if (hotelCodeChunks.length > 0) {
-        this.logger.log(`   📊 Split ${hotelCodes?.split(',').length || 0} hotels into ${hotelCodeChunks.length} chunk(s) of max 100 codes`);
+ this.logger.log(` Split ${hotelCodes?.split(',').length || 0} hotels into ${hotelCodeChunks.length} chunk(s) of max 100 codes`);
       }
 
-      // If no hotel codes, search by city only (one request)
+ // If no hotel codes, search by city only (one request)
       const requestChunks = hotelCodeChunks.length > 0 ? hotelCodeChunks : [''];
       const paxRooms = this.buildSearchPaxRooms(criteria);
       const guestNationality = this.normalizeNationality(criteria.guestNationality);
@@ -232,14 +232,14 @@ export class TBOHotelProvider implements IHotelProvider {
       ).sort((a, b) => a - b);
       const tboStarRatingFilter = selectedStarRatings.length === 1 ? selectedStarRatings[0] : 0;
       if (selectedStarRatings.length > 0) {
-        this.logger.log(
+ this.logger.log(
           `   ⭐ Star filter requested: [${selectedStarRatings.join(', ')}] (TBO request StarRating=${tboStarRatingFilter})`,
         );
       }
-      // Certification flow expects NoOfRooms=0 in search to fetch all available room options.
+ // Certification flow expects NoOfRooms=0 in search to fetch all available room options.
       const noOfRooms = 0;
 
-      // Step 4: Make parallel searches for each chunk
+ // Step 4: Make parallel searches for each chunk
       const basicAuth = Buffer.from(`${this.SEARCH_USERNAME}:${this.SEARCH_PASSWORD}`).toString('base64');
       const chunkPromises = requestChunks.map((chunk) =>
         this.executeTBOSearch(
@@ -270,26 +270,26 @@ export class TBOHotelProvider implements IHotelProvider {
       const allHotels = chunkResponses.flat();
 
       if (allHotels.length === 0) {
-        this.logger.warn(`   📭 No hotels found for city: ${criteria.cityCode}`);
+ this.logger.warn(` No hotels found for city: ${criteria.cityCode}`);
         return [];
       }
 
       const hotels = allHotels;
-      this.logger.log(`   ✅ TBO API returned ${hotels.length} hotels across ${requestChunks.length} request(s)`);
+ this.logger.log(` TBO API returned ${hotels.length} hotels across ${requestChunks.length} request(s)`);
 
       if (hotels.length === 0) {
-        this.logger.warn(`   📭 No hotels found for city: ${criteria.cityCode}`);
+ this.logger.warn(` No hotels found for city: ${criteria.cityCode}`);
         return [];
       }
 
-      // Step 7: Transform to standard format
-      // TBO returns rooms within hotels, we need to flatten and deduplicate
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min validity
+ // Step 7: Transform to standard format
+ // TBO returns rooms within hotels, we need to flatten and deduplicate
+ const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min validity
 
       const results: HotelSearchResult[] = [];
 
       for (const hotel of hotels) {
-        // Fetch actual hotel name from database (synced from TBO GetHotels API)
+ // Fetch actual hotel name from database (synced from TBO GetHotels API)
         const hotelMasterData = await this.getHotelMasterDataFromDb(hotel.HotelCode, resolvedTboCityCode);
         const hotelRating = Number(hotelMasterData?.star_rating || 0);
         if (selectedStarRatings.length > 0 && !selectedStarRatings.includes(hotelRating)) {
@@ -297,8 +297,8 @@ export class TBOHotelProvider implements IHotelProvider {
         }
         const hotelDisplayName = hotelMasterData?.hotel_name ?? `Hotel ${hotel.HotelCode}`;
 
-        // Process each room as a separate offering with the SAME real hotel name
-        // (One HotelCode = One real hotel, not fake variants)
+ // Process each room as a separate offering with the SAME real hotel name
+ // (One HotelCode = One real hotel, not fake variants)
         for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           const room = hotel.Rooms[idx];
           const inferredMealPlanCode = inferCanonicalHotelRatePlanCodeFromMealText(room.Inclusion);
@@ -325,18 +325,18 @@ export class TBOHotelProvider implements IHotelProvider {
           const amenities = Array.isArray(room.Amenities)
             ? room.Amenities.map((item: any) => String(item).trim()).filter(Boolean)
             : [];
-          
-          // Use REAL BookingCode from TBO Search API response (not generated)
+
+ // Use REAL BookingCode from TBO Search API response (not generated)
           const realBookingCode = room.BookingCode || `${hotel.HotelCode}_${room.TBORoomID}`;
 
-          // ✅ Extract and normalize supplements from search response
+ // Extract and normalize supplements from search response
           const rawSupplements = room.Supplements || [];
           const supplementSummary = this.supplementNormalizer.createSupplementSummary(
             rawSupplements,
             'search',
           );
 
-          // Build room type with supplement details
+ // Build room type with supplement details
           const roomTypeObj: RoomType = {
             roomCode: realBookingCode,
             roomName: roomName,
@@ -344,11 +344,11 @@ export class TBOHotelProvider implements IHotelProvider {
             capacity: 2,
             price: formattedNetAmount,
             cancellationPolicy: room.CancelPolicies?.[0]?.ChargeType || 'Non-refundable',
-            // ✅ Add supplements to room type
+ // Add supplements to room type
             supplements: rawSupplements.length > 0 ? rawSupplements : undefined,
           };
 
-          this.logger.log(
+ this.logger.log(
             `   TBO search price formatting: hotel=${hotel.HotelCode} room="${roomName}" bookingCode=${realBookingCode} rawNetAmount=${room.NetAmount ?? 'null'} rawTotalFare=${room.TotalFare ?? 'null'} rawBasePrice=${room.DayRates?.[0]?.[0]?.BasePrice ?? 'null'} formattedPrice=${formattedNetAmount} formattedNetAmount=${formattedNetAmount} formattedTotalFare=${formattedTotalFare}`,
           );
 
@@ -356,7 +356,7 @@ export class TBOHotelProvider implements IHotelProvider {
             provider: 'tbo',
             providerDisplayName: 'VSR',
             hotelCode: hotel.HotelCode,
-            hotelName: hotelDisplayName, // Real hotel name from database
+ hotelName: hotelDisplayName, // Real hotel name from database
             cityCode: criteria.cityCode,
             address: hotelMasterData?.hotel_address ?? '',
             latitude:
@@ -376,13 +376,13 @@ export class TBOHotelProvider implements IHotelProvider {
             netAmount: formattedNetAmount,
             totalFare: formattedTotalFare,
             currency: hotel.Currency || 'INR',
-            roomType: roomName, // Room type name for display
+ roomType: roomName, // Room type name for display
             mealPlan: getNormalizedMealPlanLabelFromMealText(room.Inclusion),
             roomTypes: [roomTypeObj],
-            // Use REAL BookingCode from TBO as searchReference
+ // Use REAL BookingCode from TBO as searchReference
             searchReference: realBookingCode,
             expiresAt: expiresAt,
-            // ✅ Add hotel-level supplement summary
+ // Add hotel-level supplement summary
             supplementSummary: {
               hasSupplements: supplementSummary.rawSupplements.length > 0,
               supplementCount: supplementSummary.normalizedSupplements.length,
@@ -395,16 +395,16 @@ export class TBOHotelProvider implements IHotelProvider {
         }
       }
 
-      this.logger.log(`✅ Successfully transformed ${results.length} hotels`);
-      this.logger.debug(`📊 Hotel search output size: ${results.length}`);
-      
+ this.logger.log(` Successfully transformed ${results.length} hotels`);
+ this.logger.debug(` Hotel search output size: ${results.length}`);
+
       return results;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`❌ Hotel Search Error: ${errorMsg}`);
-      this.logger.error(`   📋 Stack: ${error?.stack?.substring(0, 200)}`);
-      
-      // CRITICAL: Throw so service can distinguish provider/system failure from genuine empty result
+ this.logger.error(` Hotel Search Error: ${errorMsg}`);
+ this.logger.error(` Stack: ${error?.stack?.substring(0, 200)}`);
+
+ // CRITICAL: Throw so service can distinguish provider/system failure from genuine empty result
       const { ServiceUnavailableException } = require('@nestjs/common');
       throw new ServiceUnavailableException(`VSR provider failed: ${errorMsg}`);
     }
@@ -445,7 +445,7 @@ export class TBOHotelProvider implements IHotelProvider {
       }
     }
 
-    // 1) Input is already a TBO city code present in dvi_cities.
+ // 1) Input is already a TBO city code present in dvi_cities.
     const directCity = await this.prisma.dvi_cities.findFirst({
       where: { tbo_city_code: normalized },
       select: { tbo_city_code: true },
@@ -454,7 +454,7 @@ export class TBOHotelProvider implements IHotelProvider {
       return { tboCityCode: directCity.tbo_city_code, source: 'dvi_cities.tbo_city_code' };
     }
 
-    // 2) Input might be dvi_cities.id.
+ // 2) Input might be dvi_cities.id.
     const parsedId = Number(normalized);
     if (!Number.isNaN(parsedId) && Number.isInteger(parsedId)) {
       const byId = await this.prisma.dvi_cities.findFirst({
@@ -465,7 +465,7 @@ export class TBOHotelProvider implements IHotelProvider {
         return { tboCityCode: byId.tbo_city_code, source: 'dvi_cities.id' };
       }
 
-      // ID exists but has no tbo_city_code: try static CityList using city name.
+ // ID exists but has no tbo_city_code: try static CityList using city name.
       if (byId?.name) {
         const fromStaticByIdName = await this.fetchTboCityCodeFromStaticCityList(byId.name);
         if (fromStaticByIdName) {
@@ -474,7 +474,7 @@ export class TBOHotelProvider implements IHotelProvider {
       }
     }
 
-    // 3) Input might be city name in dvi_cities (case-insensitive where supported).
+ // 3) Input might be city name in dvi_cities (case-insensitive where supported).
     const byName = await this.prisma.dvi_cities.findFirst({
       where: {
         name: {
@@ -487,14 +487,14 @@ export class TBOHotelProvider implements IHotelProvider {
       return { tboCityCode: byName.tbo_city_code, source: 'dvi_cities.name' };
     }
 
-    // 3b) Resolve by static CityList (Postman certification flow).
+ // 3b) Resolve by static CityList (Postman certification flow).
     const fromStaticByName = await this.fetchTboCityCodeFromStaticCityList(normalized);
     if (fromStaticByName) {
       return { tboCityCode: fromStaticByName, source: 'static-citylist-by-name' };
     }
 
-    // 4) Fallback to existing dvi_hotel.tbo_city_code usage (no schema changes).
-    // If the incoming value itself appears as tbo_city_code in dvi_hotel, accept it.
+ // 4) Fallback to existing dvi_hotel.tbo_city_code usage (no schema changes).
+ // If the incoming value itself appears as tbo_city_code in dvi_hotel, accept it.
     const hotelByDirectCode = await this.prisma.dvi_hotel.findFirst({
       where: {
         tbo_city_code: normalized,
@@ -506,7 +506,7 @@ export class TBOHotelProvider implements IHotelProvider {
       return { tboCityCode: hotelByDirectCode.tbo_city_code, source: 'dvi_hotel.tbo_city_code-direct' };
     }
 
-    // 5) If input is city name used in dvi_hotel.hotel_city, derive mapped tbo_city_code.
+ // 5) If input is city name used in dvi_hotel.hotel_city, derive mapped tbo_city_code.
     const hotelByCityName = await this.prisma.dvi_hotel.findFirst({
       where: {
         hotel_city: {
@@ -522,7 +522,7 @@ export class TBOHotelProvider implements IHotelProvider {
       return { tboCityCode: hotelByCityName.tbo_city_code, source: 'dvi_hotel.hotel_city' };
     }
 
-    // 6) Last resort: treat numeric input as direct TBO code when no mapping exists locally.
+ // 6) Last resort: treat numeric input as direct TBO code when no mapping exists locally.
     if (!Number.isNaN(parsedId) && Number.isInteger(parsedId)) {
       return { tboCityCode: normalized, source: 'input-assumed-tbo-code' };
     }
@@ -554,7 +554,7 @@ export class TBOHotelProvider implements IHotelProvider {
       const target = cityName.trim().toLowerCase();
       const extractName = (city: any) => {
         const raw = String(city?.CityName || city?.Name || '').trim().toLowerCase();
-        // Static API names are often "City,   State".
+ // Static API names are often "City, State".
         return raw.split(',')[0].trim();
       };
       const extractCode = (city: any) => String(city?.CityCode || city?.Code || '').trim();
@@ -573,7 +573,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       return null;
     } catch (error: any) {
-      this.logger.warn(`   ⚠️  Static CityList lookup failed for ${cityName}: ${error?.message || error}`);
+ this.logger.warn(` Static CityList lookup failed for ${cityName}: ${error?.message || error}`);
       return null;
     }
   }
@@ -607,7 +607,7 @@ export class TBOHotelProvider implements IHotelProvider {
       const cityName = String(found?.CityName || found?.Name || '').trim();
       return cityName || null;
     } catch (error: any) {
-      this.logger.warn(`   ⚠️  Static CityList(by code) lookup failed for ${tboCityCode}: ${error?.message || error}`);
+ this.logger.warn(` Static CityList(by code) lookup failed for ${tboCityCode}: ${error?.message || error}`);
       return null;
     }
   }
@@ -674,7 +674,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       return [];
     } catch (error: any) {
-      this.logger.warn(`   ⚠️  Static TBOHotelCodeList failed for city ${tboCityCode}: ${error?.message || error}`);
+ this.logger.warn(` Static TBOHotelCodeList failed for city ${tboCityCode}: ${error?.message || error}`);
       return [];
     }
   }
@@ -697,7 +697,7 @@ export class TBOHotelProvider implements IHotelProvider {
       ]);
 
       if (!existingCity) {
-        // dvi_cities requires state_id; we only backfill mapping if city row already exists by name/id.
+ // dvi_cities requires state_id; we only backfill mapping if city row already exists by name/id.
         await this.tryBackfillCityCodeMapping(cityInput, tboCityCode);
       }
 
@@ -706,9 +706,9 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
       const synced = await this.syncHotelsFromStaticApiToDb(tboCityCode);
-      this.logger.log(`   🔄 DB backfill from TBOHotelCodeList completed for city ${tboCityCode}: ${synced} hotel(s)`);
+ this.logger.log(` DB backfill from TBOHotelCodeList completed for city ${tboCityCode}: ${synced} hotel(s)`);
     } catch (error: any) {
-      this.logger.warn(`   ⚠️  ensureCityAndHotelsInDb failed for ${tboCityCode}: ${error?.message || error}`);
+ this.logger.warn(` ensureCityAndHotelsInDb failed for ${tboCityCode}: ${error?.message || error}`);
     }
   }
 
@@ -727,7 +727,7 @@ export class TBOHotelProvider implements IHotelProvider {
             where: { id: cityById.id },
             data: { tbo_city_code: tboCityCode },
           });
-          this.logger.log(`   ✅ Backfilled dvi_cities.id=${cityById.id} with TBO city code ${tboCityCode}`);
+ this.logger.log(` Backfilled dvi_cities.id=${cityById.id} with TBO city code ${tboCityCode}`);
           return;
         }
       }
@@ -740,7 +740,7 @@ export class TBOHotelProvider implements IHotelProvider {
           where: { id: cityByName.id },
           data: { tbo_city_code: tboCityCode },
         });
-        this.logger.log(`   ✅ Backfilled dvi_cities.name=${normalized} with TBO city code ${tboCityCode}`);
+ this.logger.log(` Backfilled dvi_cities.name=${normalized} with TBO city code ${tboCityCode}`);
         return;
       }
 
@@ -757,10 +757,10 @@ export class TBOHotelProvider implements IHotelProvider {
           where: { id: dbCityByStaticName.id },
           data: { tbo_city_code: tboCityCode },
         });
-        this.logger.log(`   ✅ Backfilled dvi_cities.name=${staticCityName} with TBO city code ${tboCityCode}`);
+ this.logger.log(` Backfilled dvi_cities.name=${staticCityName} with TBO city code ${tboCityCode}`);
       }
     } catch (error: any) {
-      this.logger.warn(`   ⚠️  City backfill skipped for ${tboCityCode}: ${error?.message || error}`);
+ this.logger.warn(` City backfill skipped for ${tboCityCode}: ${error?.message || error}`);
     }
   }
 
@@ -872,21 +872,21 @@ export class TBOHotelProvider implements IHotelProvider {
     bookingDetails: HotelConfirmationDTO,
   ): Promise<HotelConfirmationResult> {
     try {
-      this.logger.log(
+ this.logger.log(
         `📋 Confirming booking for hotel: ${bookingDetails.hotelCode}`
       );
 
-      // Step 1: Authenticate and get TokenId
+ // Step 1: Authenticate and get TokenId
       const tokenId = await this.authenticate();
 
-      // Step 2: Validate search reference
+ // Step 2: Validate search reference
       const searchRef = bookingDetails.searchReference;
       if (!searchRef) {
         throw new Error('Search reference is required for confirmation');
       }
 
-      // Step 3: Build TBO PreBook request (from Postman collection)
-      // PreBook is required before booking to lock the room
+ // Step 3: Build TBO PreBook request (from Postman collection)
+ // PreBook is required before booking to lock the room
       const prebookRequest = {
         CheckInDate: this.formatDateToISO(bookingDetails.checkInDate),
         CheckOutDate: this.formatDateToISO(bookingDetails.checkOutDate),
@@ -896,9 +896,9 @@ export class TBOHotelProvider implements IHotelProvider {
         TokenId: tokenId,
       };
 
-      this.logger.debug(`📤 PreBook request: ${JSON.stringify(prebookRequest)}`);
+ this.logger.debug(` PreBook request: ${JSON.stringify(prebookRequest)}`);
 
-      // Step 4: Call PreBook API
+ // Step 4: Call PreBook API
       const prebookResponse = await this.http
         .post(`${this.SEARCH_API_URL}/PreBook`, prebookRequest, {
           timeout: 30000,
@@ -909,16 +909,16 @@ export class TBOHotelProvider implements IHotelProvider {
 
       let prebookRefId = prebookResponse.data?.PreBookRefId;
       if (!prebookRefId) {
-        this.logger.warn(
+ this.logger.warn(
           `⚠️ PreBook status: ${prebookResponse.data?.Status?.Code}`
         );
-        // If PreBook fails, continue with booking using original search reference
+ // If PreBook fails, continue with booking using original search reference
         prebookRefId = searchRef;
       } else {
-        this.logger.log(`✅ PreBook successful: ${prebookRefId}`);
+ this.logger.log(` PreBook successful: ${prebookRefId}`);
       }
 
-      // Step 5: Build TBO Book request (from Postman collection)
+ // Step 5: Build TBO Book request (from Postman collection)
       const bookRequest = {
         PreBookRefId: prebookRefId,
         HotelCode: bookingDetails.hotelCode,
@@ -942,9 +942,9 @@ export class TBOHotelProvider implements IHotelProvider {
         TokenId: tokenId,
       };
 
-      this.logger.debug(`📤 Book request: ${JSON.stringify(bookRequest)}`);
+ this.logger.debug(` Book request: ${JSON.stringify(bookRequest)}`);
 
-      // Step 6: Call Book API
+ // Step 6: Call Book API
       const bookResponse = await this.http
         .post(`${this.BOOKING_API_URL}/HotelService.svc/rest/Book`, bookRequest, {
           timeout: 30000,
@@ -953,7 +953,7 @@ export class TBOHotelProvider implements IHotelProvider {
           },
         });
 
-      // Check response status
+ // Check response status
       const bookingStatus = bookResponse.data?.Status;
       if (!bookingStatus || bookingStatus.Code !== 200) {
         throw new Error(
@@ -962,19 +962,19 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
       const bookingRefId = bookResponse.data?.BookingRefId;
-      this.logger.log(`✅ Booking confirmed with ref: ${bookingRefId}`);
+ this.logger.log(` Booking confirmed with ref: ${bookingRefId}`);
 
-      // Step 7: Return confirmation
+ // Step 7: Return confirmation
       return {
         provider: 'tbo',
         providerDisplayName: 'VSR',
         confirmationReference: bookingRefId,
         hotelCode: bookingDetails.hotelCode,
-        hotelName: bookingDetails.hotelCode, // Would come from API response
+ hotelName: bookingDetails.hotelCode, // Would come from API response
         checkIn: bookingDetails.checkInDate,
         checkOut: bookingDetails.checkOutDate,
         roomCount: bookingDetails.roomCount,
-        totalPrice: 0, // Would come from PreBook/Book response
+ totalPrice: 0, // Would come from PreBook/Book response
         priceBreadown: {
           roomCharges: 0,
           taxes: 0,
@@ -985,7 +985,7 @@ export class TBOHotelProvider implements IHotelProvider {
         bookingDeadline: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error(
+ this.logger.error(
         `❌ Booking Confirmation Error: ${error.message}`,
         error.stack
       );
@@ -999,20 +999,20 @@ export class TBOHotelProvider implements IHotelProvider {
     confirmationRef: string,
   ): Promise<HotelConfirmationDetails> {
     try {
-      this.logger.log(`📋 Getting confirmation status for: ${confirmationRef}`);
+ this.logger.log(` Getting confirmation status for: ${confirmationRef}`);
 
-      // Step 1: Authenticate and get TokenId
+ // Step 1: Authenticate and get TokenId
       const tokenId = await this.authenticate();
 
-      // Step 2: Build GetBookingDetail request (from Postman collection)
+ // Step 2: Build GetBookingDetail request (from Postman collection)
       const request = {
         BookingRefId: confirmationRef,
         TokenId: tokenId,
       };
 
-      this.logger.debug(`📤 GetBookingDetail request: ${JSON.stringify(request)}`);
+ this.logger.debug(` GetBookingDetail request: ${JSON.stringify(request)}`);
 
-      // Step 3: Call GetBookingDetail API
+ // Step 3: Call GetBookingDetail API
       const response = await this.http
         .post(
           `${this.BOOKING_API_URL}/HotelService.svc/rest/Getbookingdetail`,
@@ -1032,7 +1032,7 @@ export class TBOHotelProvider implements IHotelProvider {
         );
       }
 
-      this.logger.log(`✅ Booking details retrieved`);
+ this.logger.log(` Booking details retrieved`);
 
       return {
         confirmationRef: confirmationRef,
@@ -1045,7 +1045,7 @@ export class TBOHotelProvider implements IHotelProvider {
         cancellationPolicy: response.data.CancellationPolicy || 'As per VSR',
       };
     } catch (error) {
-      this.logger.error(
+ this.logger.error(
         `❌ Get Confirmation Error: ${error.message}`,
         error.stack
       );
@@ -1058,26 +1058,26 @@ export class TBOHotelProvider implements IHotelProvider {
     reason: string,
   ): Promise<CancellationResult> {
     try {
-      this.logger.log(
+ this.logger.log(
         `❌ Cancelling booking: ${confirmationRef}, Reason: ${reason}`
       );
 
-      // Step 1: Authenticate and get TokenId
+ // Step 1: Authenticate and get TokenId
       const tokenId = await this.authenticate();
 
-      // Step 2: Build SendChangeRequest with RequestType=4 (TBO Official Format)
+ // Step 2: Build SendChangeRequest with RequestType=4 (TBO Official Format)
       const request = {
         BookingMode: 5,
-        RequestType: 4, // 4 = HotelCancel
+ RequestType: 4, // 4 = HotelCancel
         Remarks: reason,
-        BookingId: parseInt(confirmationRef), // Must be Integer from Book Response
+ BookingId: parseInt(confirmationRef), // Must be Integer from Book Response
         EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
         TokenId: tokenId,
       };
 
-      this.logger.debug(`📤 Cancellation request: ${JSON.stringify(request)}`);
+ this.logger.debug(` Cancellation request: ${JSON.stringify(request)}`);
 
-      // Step 3: Call SendChangeRequest API
+ // Step 3: Call SendChangeRequest API
       const response = await this.http
         .post(
           `${this.BOOKING_API_URL}/HotelService.svc/rest/SendChangeRequest`,
@@ -1090,11 +1090,11 @@ export class TBOHotelProvider implements IHotelProvider {
           }
         );
 
-      this.logger.debug(`📥 TBO Cancel Response: ${JSON.stringify(response.data)}`);
+ this.logger.debug(` TBO Cancel Response: ${JSON.stringify(response.data)}`);
 
       const result = response.data?.HotelChangeRequestResult;
       if (!result || result.ResponseStatus !== 1) {
-        this.logger.error(`❌ TBO Cancel Error Details: ${JSON.stringify(result)}`);
+ this.logger.error(` TBO Cancel Error Details: ${JSON.stringify(result)}`);
         const recovered = await this.tryRecoverCancellationStatus(confirmationRef, result);
         if (recovered) {
           return recovered;
@@ -1104,19 +1104,19 @@ export class TBOHotelProvider implements IHotelProvider {
         );
       }
 
-      this.logger.log(`✅ Booking cancelled successfully - ChangeRequestId: ${result.ChangeRequestId}`);
+ this.logger.log(` Booking cancelled successfully - ChangeRequestId: ${result.ChangeRequestId}`);
 
       return {
         cancellationRef: result.ChangeRequestId?.toString() || confirmationRef,
-        refundAmount: 0, // TBO doesn't return refund in this response
+ refundAmount: 0, // TBO doesn't return refund in this response
         charges: 0,
         refundDays: 0,
       };
     } catch (error) {
-      // Log detailed error response from TBO
+ // Log detailed error response from TBO
       if (error.response) {
-        this.logger.error(`❌ TBO API Error Response Status: ${error.response.status}`);
-        this.logger.error(`❌ TBO API Error Response Body: ${JSON.stringify(error.response.data)}`);
+ this.logger.error(` TBO API Error Response Status: ${error.response.status}`);
+ this.logger.error(` TBO API Error Response Body: ${JSON.stringify(error.response.data)}`);
       }
 
       const recovered = await this.tryRecoverCancellationStatus(confirmationRef, error);
@@ -1124,7 +1124,7 @@ export class TBOHotelProvider implements IHotelProvider {
         return recovered;
       }
 
-      this.logger.error(
+ this.logger.error(
         `❌ Cancel Booking Error: ${error.message}`,
         error.stack
       );
@@ -1137,7 +1137,7 @@ export class TBOHotelProvider implements IHotelProvider {
     context: any,
   ): Promise<CancellationResult | null> {
     try {
-      this.logger.warn(
+ this.logger.warn(
         `⚠️ Cancel request did not return success for booking ${confirmationRef}. Verifying final status via GetBookingDetail...`,
       );
 
@@ -1149,7 +1149,7 @@ export class TBOHotelProvider implements IHotelProvider {
         status.includes('refunded');
 
       if (!isCancelled) {
-        this.logger.warn(
+ this.logger.warn(
           `⚠️ Recovery check completed but booking is not cancelled. status=${detail?.status || 'unknown'}`,
         );
         return null;
@@ -1158,7 +1158,7 @@ export class TBOHotelProvider implements IHotelProvider {
       const fallbackRef =
         String(context?.ChangeRequestId || context?.data?.HotelChangeRequestResult?.ChangeRequestId || confirmationRef);
 
-      this.logger.warn(
+ this.logger.warn(
         `✅ Cancellation recovered via BookingDetail for booking ${confirmationRef}. status=${detail.status}`,
       );
 
@@ -1169,7 +1169,7 @@ export class TBOHotelProvider implements IHotelProvider {
         refundDays: 0,
       };
     } catch (recoveryError: any) {
-      this.logger.error(
+ this.logger.error(
         `❌ Cancellation recovery check failed for booking ${confirmationRef}: ${recoveryError.message}`,
       );
       return null;
@@ -1229,7 +1229,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
     const fallback = (process.env.TBO_DEFAULT_GUEST_NATIONALITY || '').trim().toUpperCase();
     if (fallback) {
-      this.logger.warn(
+ this.logger.warn(
         `⚠️ GuestNationality missing in request. Falling back to configured default ${fallback}.`,
       );
       return fallback;
@@ -1245,7 +1245,7 @@ export class TBOHotelProvider implements IHotelProvider {
     Children: number;
     ChildrenAges: number[];
   }> {
-    // DEFENSIVE VALIDATION: Ensure occupancies exist and comply with TBO limits
+ // DEFENSIVE VALIDATION: Ensure occupancies exist and comply with TBO limits
     if (!criteria.occupancies || criteria.occupancies.length === 0) {
       throw new InternalServerErrorException(
         'Occupancies must be defined before building PaxRooms. This indicates a bug in the service layer.',
@@ -1258,7 +1258,7 @@ export class TBOHotelProvider implements IHotelProvider {
       );
     }
 
-    // Validate each occupancy before building PaxRooms payload
+ // Validate each occupancy before building PaxRooms payload
     for (let i = 0; i < criteria.occupancies.length; i++) {
       const occ = criteria.occupancies[i];
 
@@ -1277,7 +1277,7 @@ export class TBOHotelProvider implements IHotelProvider {
       }
     }
 
-    // Build PaxRooms with validated occupancies
+ // Build PaxRooms with validated occupancies
     return criteria.occupancies.map((occ) => ({
       Adults: Math.max(occ.adults || 1, 1),
       Children: Math.max(occ.children || 0, 0),
@@ -1285,29 +1285,29 @@ export class TBOHotelProvider implements IHotelProvider {
     }));
   }
 
-  /**
+ /**
    * Fetch hotel codes dynamically from TBO GetHotels API
    * Falls back to database if API fails
-   * 
+   *
    * NEVER uses hardcoded values
-   */
+ */
   private async fetchHotelsFromTBOApi(tboCityCode: string): Promise<string> {
     try {
-      this.logger.log(`📡 TBO API: Fetching hotels from GetHotels API for city: ${tboCityCode}`);
+ this.logger.log(` TBO API: Fetching hotels from GetHotels API for city: ${tboCityCode}`);
 
-      // Get token for authentication
+ // Get token for authentication
       const tokenId = await this.authenticate();
 
-      // Build GetHotels request
+ // Build GetHotels request
       const getHotelsRequest = {
         CityCode: tboCityCode,
         TokenId: tokenId,
-        StarRating: 0, // 0 = all ratings
+ StarRating: 0, // 0 = all ratings
       };
 
-      this.logger.debug(`📤 GetHotels request: ${JSON.stringify(getHotelsRequest)}`);
+ this.logger.debug(` GetHotels request: ${JSON.stringify(getHotelsRequest)}`);
 
-      // Call TBO GetHotels API
+ // Call TBO GetHotels API
       const response = await this.http.post(
         `${this.SHARED_API_URL}/SharedData.svc/rest/GetHotels`,
         getHotelsRequest,
@@ -1319,75 +1319,75 @@ export class TBOHotelProvider implements IHotelProvider {
 
       const status = response.data?.Status;
       if (status !== 1) {
-        this.logger.warn(`⚠️  TBO API GetHotels returned status: ${status}. Falling back to database.`);
+ this.logger.warn(` TBO API GetHotels returned status: ${status}. Falling back to database.`);
         return await this.getHotelCodesFromDbFallback(tboCityCode);
       }
 
       const hotels = response.data?.Hotels || [];
-      this.logger.log(`✅ TBO GetHotels returned ${hotels.length} hotels for city ${tboCityCode}`);
+ this.logger.log(` TBO GetHotels returned ${hotels.length} hotels for city ${tboCityCode}`);
 
       if (hotels.length === 0) {
-        this.logger.warn(`⚠️  TBO API returned 0 hotels for city ${tboCityCode}. Falling back to database.`);
+ this.logger.warn(` TBO API returned 0 hotels for city ${tboCityCode}. Falling back to database.`);
         return await this.getHotelCodesFromDbFallback(tboCityCode);
       }
 
-      // Extract and return hotel codes
+ // Extract and return hotel codes
       const hotelCodes: string[] = [];
       for (const hotel of hotels) {
         hotelCodes.push(hotel.HotelCode);
       }
 
-      this.logger.log(`✅ Extracted ${hotelCodes.length} hotel codes from TBO GetHotels response`);
+ this.logger.log(` Extracted ${hotelCodes.length} hotel codes from TBO GetHotels response`);
       return hotelCodes.join(',');
     } catch (error) {
       const err = error as Error;
-      this.logger.error(`❌ TBO API GetHotels failed: ${err.message}. Falling back to database.`);
+ this.logger.error(` TBO API GetHotels failed: ${err.message}. Falling back to database.`);
       return await this.getHotelCodesFromDbFallback(tboCityCode);
     }
   }
 
-  /**
+ /**
    * Fallback hotel codes when TBO API is unavailable
    * Returns hardcoded popular hotels per city
-   */
+ */
   private parseStarRating(categoryString: string): number {
-    // Extract star rating from category string like "5-Star", "4-Star", etc.
+ // Extract star rating from category string like "5-Star", "4-Star", etc.
     if (!categoryString) return 0;
     const match = categoryString.match(/(\d+)-Star/);
     return match ? parseInt(match[1], 10) : 0;
   }
 
-  /**
+ /**
    * Fetch hotel codes from database (tbo_hotel_master table)
    * This is the PRIMARY method - no hardcoding allowed
-   * 
+   *
    * Error Handling:
    * 1. If DB has hotels → Return them
    * 2. If DB empty → Log error & return empty string (forces error handling upstream)
    * 3. If DB query fails → Log error & return empty string
-   */
+ */
   private async getHotelCodesFromDbFallback(tboCityCode: string): Promise<string> {
     try {
-      this.logger.warn(`⚠️  Fallback: Fetching hotel codes from tbo_hotel_master for city ${tboCityCode}`);
+ this.logger.warn(` Fallback: Fetching hotel codes from tbo_hotel_master for city ${tboCityCode}`);
 
       if (!this.prisma) {
-        this.logger.error(`🔴 CRITICAL: PrismaService is NULL/UNDEFINED - Cannot query database`);
+ this.logger.error(` CRITICAL: PrismaService is NULL/UNDEFINED - Cannot query database`);
         return '';
       }
 
       const hotels = await this.prisma.tbo_hotel_master.findMany({
         where: {
           tbo_city_code: tboCityCode,
-          status: 1, // Active hotels only
+ status: 1, // Active hotels only
         },
         select: {
           tbo_hotel_code: true,
         },
-        take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
+ take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
       });
 
       if (!hotels || hotels.length === 0) {
-        this.logger.error(
+ this.logger.error(
           `❌ DATABASE ERROR: No hotels found in tbo_hotel_master for city ${tboCityCode}. ` +
           `Make sure to run hotel sync: POST /hotels/sync/all`
         );
@@ -1399,57 +1399,57 @@ export class TBOHotelProvider implements IHotelProvider {
         .filter((code) => code && code.trim() !== '')
         .join(',');
 
-      this.logger.warn(`⚠️  Fallback Query SUCCESS: Found ${hotels.length} hotels in database`);
-      this.logger.log(`📋 Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
+ this.logger.warn(` Fallback Query SUCCESS: Found ${hotels.length} hotels in database`);
+ this.logger.log(` Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
 
       return hotelCodes;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(
+ this.logger.error(
         `🔴 DATABASE QUERY ERROR: Failed to fetch hotels from tbo_hotel_master: ${errorMsg}`
       );
       return '';
     }
   }
 
-  /**
+ /**
    * Fetch hotel codes for a city from database
    * Queries tbo_hotel_master table (synced from TBO GetHotels API)
-   * 
+   *
    * PRIMARY FLOW:
    * 1. Try database first (tbo_hotel_master)
    * 2. If DB empty, return empty string (error handling)
    * 3. No hardcoding - database must be synced via POST /hotels/sync/all
-   */
+ */
   private async getHotelCodesForCityFromDb(tboCityCode: string): Promise<string> {
     try {
-      this.logger.log(`📊 PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
+ this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
 
       if (!this.prisma) {
-        this.logger.error(`🔴 CRITICAL: PrismaService is NULL/UNDEFINED`);
+ this.logger.error(` CRITICAL: PrismaService is NULL/UNDEFINED`);
         throw new Error('PrismaService not available');
       }
 
-      // Query tbo_hotel_master table (synced from TBO GetHotels API)
+ // Query tbo_hotel_master table (synced from TBO GetHotels API)
       const hotels = await this.prisma.tbo_hotel_master.findMany({
         where: {
           tbo_city_code: tboCityCode,
-          status: 1, // Active hotels only
+ status: 1, // Active hotels only
         },
         select: {
           tbo_hotel_code: true,
         },
-    //    take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
+ // take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
       });
 
       if (!hotels || hotels.length === 0) {
-        this.logger.warn(
+ this.logger.warn(
           `⚠️ PRIMARY: No hotels in tbo_hotel_master for city ${tboCityCode}. ` +
           `Will try dvi_hotel fallback. If this city should be in master, sync city: POST /api/v1/hotels/sync/city/${tboCityCode}`
         );
 
-        // Try fallback query from dvi_hotel table
-        this.logger.log(`🔄 FALLBACK: Trying dvi_hotel table for city ${tboCityCode}`);
+ // Try fallback query from dvi_hotel table
+ this.logger.log(` FALLBACK: Trying dvi_hotel table for city ${tboCityCode}`);
         const dviHotels = await this.prisma.dvi_hotel.findMany({
           where: {
             tbo_city_code: tboCityCode,
@@ -1458,7 +1458,7 @@ export class TBOHotelProvider implements IHotelProvider {
           select: {
             tbo_hotel_code: true,
           },
-          take: 500, // Allow up to 500 hotels
+ take: 500, // Allow up to 500 hotels
         });
 
         if (dviHotels && dviHotels.length > 0) {
@@ -1467,12 +1467,12 @@ export class TBOHotelProvider implements IHotelProvider {
             .filter((code) => code && code.trim() !== '')
             .join(',');
 
-          this.logger.log(`✅ FALLBACK: Found ${dviHotels.length} hotels in dvi_hotel`);
-          this.logger.log(`📋 Hotel codes: ${codes.substring(0, 100)}...`);
+ this.logger.log(` FALLBACK: Found ${dviHotels.length} hotels in dvi_hotel`);
+ this.logger.log(` Hotel codes: ${codes.substring(0, 100)}...`);
           return codes;
         }
 
-        this.logger.warn(
+ this.logger.warn(
           `⚠️ FALLBACK FAILED: No hotels in dvi_hotel either for city ${tboCityCode}. ` +
           `Returning empty string so caller can continue to static API fallback.`
         );
@@ -1484,33 +1484,33 @@ export class TBOHotelProvider implements IHotelProvider {
         .filter((code) => code && code.trim() !== '')
         .join(',');
 
-      this.logger.log(`✅ PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master`);
-      this.logger.log(`📋 Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
+ this.logger.log(` PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master`);
+ this.logger.log(` Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
 
       return hotelCodes;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(
+ this.logger.error(
         `🔴 DATABASE QUERY ERROR: ${errorMsg}`
       );
       return '';
     }
   }
 
-  /**
+ /**
    * Get hotel master data from database
    * Queries dvi_hotel table for specific hotel
    * Matches PHP structure from cron_tbo_hotel_details_core_data.php
    * Returns: hotel_name, hotel_address, hotel_category (star rating)
-   */
+ */
   private async getHotelMasterDataFromDb(hotelCode: string, cityCode?: string) {
     try {
-      // Database stores tbo_hotel_code as base code (e.g., "1035259")
-      // Search by tbo_hotel_code and optionally by tbo_city_code for city-aware lookup
-      
+ // Database stores tbo_hotel_code as base code (e.g., "1035259")
+ // Search by tbo_hotel_code and optionally by tbo_city_code for city-aware lookup
+
       let hotel: any = null;
 
-      // Strategy 1: If city code provided, search for this city's hotel first in dvi_hotel
+ // Strategy 1: If city code provided, search for this city's hotel first in dvi_hotel
       if (cityCode) {
         hotel = await this.prisma.dvi_hotel.findFirst({
           where: {
@@ -1522,7 +1522,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
         if (hotel) {
           if (this.verboseHotelLookupLogs) {
-            this.logger.log(`✅ Found hotel by code+city: ${hotelCode} (City: ${cityCode}) -> ${hotel.hotel_name}`);
+ this.logger.log(` Found hotel by code+city: ${hotelCode} (City: ${cityCode}) -> ${hotel.hotel_name}`);
           }
           return {
             hotel_name: hotel.hotel_name,
@@ -1534,11 +1534,11 @@ export class TBOHotelProvider implements IHotelProvider {
         }
 
         if (this.verboseHotelLookupLogs) {
-          this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel for city ${cityCode}, searching globally...`);
+ this.logger.log(` Hotel ${hotelCode} not found in dvi_hotel for city ${cityCode}, searching globally...`);
         }
       }
 
-      // Strategy 2: Search by hotel code only in dvi_hotel (global search)
+ // Strategy 2: Search by hotel code only in dvi_hotel (global search)
       hotel = await this.prisma.dvi_hotel.findFirst({
         where: {
           tbo_hotel_code: hotelCode,
@@ -1548,7 +1548,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       if (hotel) {
         if (this.verboseHotelLookupLogs) {
-          this.logger.log(`✅ Found hotel by code in dvi_hotel: ${hotelCode} -> ${hotel.hotel_name}`);
+ this.logger.log(` Found hotel by code in dvi_hotel: ${hotelCode} -> ${hotel.hotel_name}`);
         }
         return {
           hotel_name: hotel.hotel_name,
@@ -1559,11 +1559,11 @@ export class TBOHotelProvider implements IHotelProvider {
         };
       }
 
-      // Strategy 3: Fallback to tbo_hotel_master table (synced from TBO GetHotels API)
+ // Strategy 3: Fallback to tbo_hotel_master table (synced from TBO GetHotels API)
       if (this.verboseHotelLookupLogs) {
-        this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel, checking tbo_hotel_master...`);
+ this.logger.log(` Hotel ${hotelCode} not found in dvi_hotel, checking tbo_hotel_master...`);
       }
-      
+
       const tboHotel: any = await this.prisma.tbo_hotel_master.findFirst({
         where: {
           tbo_hotel_code: hotelCode,
@@ -1574,7 +1574,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       if (tboHotel) {
         if (this.verboseHotelLookupLogs) {
-          this.logger.log(`✅ Found hotel in tbo_hotel_master: ${hotelCode} -> ${tboHotel.hotel_name}`);
+ this.logger.log(` Found hotel in tbo_hotel_master: ${hotelCode} -> ${tboHotel.hotel_name}`);
         }
         return {
           hotel_name: tboHotel.hotel_name || `Hotel ${hotelCode}`,
@@ -1585,11 +1585,11 @@ export class TBOHotelProvider implements IHotelProvider {
         };
       }
 
-      this.logger.warn(`⚠️  Hotel ${hotelCode} not found in any database table`);
+ this.logger.warn(` Hotel ${hotelCode} not found in any database table`);
       return null;
     } catch (error) {
       const err = error as Error;
-      this.logger.error(`❌ Error querying hotel from database: ${err.message}`);
+ this.logger.error(` Error querying hotel from database: ${err.message}`);
       return null;
     }
   }
@@ -1599,7 +1599,7 @@ export class TBOHotelProvider implements IHotelProvider {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`; // YYYY-MM-DD (ISO format)
+ return `${year}-${month}-${day}`; // YYYY-MM-DD (ISO format)
   }
 
   private formatDate(dateStr: string): string {
@@ -1607,7 +1607,7 @@ export class TBOHotelProvider implements IHotelProvider {
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
-    return `${day}/${month}/${year}`; // DD/MM/YYYY (for legacy support)
+ return `${day}/${month}/${year}`; // DD/MM/YYYY (for legacy support)
   }
 
 
@@ -1616,10 +1616,10 @@ export class TBOHotelProvider implements IHotelProvider {
     return `hotel_search_${criteria.cityCode}_${criteria.checkInDate}_${criteria.checkOutDate}_${criteria.roomCount}`;
   }
 
-  /**
+ /**
    * Split hotel codes into chunks of max size
    * Per TBO API documentation: send parallel searches for 100 hotel codes chunks
-   */
+ */
   private chunkHotelCodes(hotelCodes: string | undefined, chunkSize: number = 100): string[] {
     if (!hotelCodes || hotelCodes.trim() === '') {
       return [];
@@ -1635,9 +1635,9 @@ export class TBOHotelProvider implements IHotelProvider {
     return chunks;
   }
 
-  /**
+ /**
    * Execute a single TBO Search API request for a chunk of hotel codes
-   */
+ */
   private async executeTBOSearch(
     searchRequest: any,
     basicAuth: string,
@@ -1645,22 +1645,22 @@ export class TBOHotelProvider implements IHotelProvider {
   ): Promise<any[]> {
     try {
       const logFullPayload = (process.env.TBO_LOG_FULL_PAYLOAD || 'true').toLowerCase() === 'true';
-     console.log(logFullPayload,'logFullPayload');
-     
-      this.logger.log(`   📤 TBO Search Request ${description}:`);
-      this.logger.log(`      - Check-in: ${searchRequest.CheckIn}`);
-      this.logger.log(`      - Check-out: ${searchRequest.CheckOut}`);
-      this.logger.log(`      - City Code: ${searchRequest.CityCode}`);
-      this.logger.log(`      - Hotel Codes: ${searchRequest.HotelCodes || '(All available hotels for city)'}`);
-      this.logger.log(`      - Guests: ${searchRequest.PaxRooms[0].Adults} adults`);
-      this.logger.log(`      - GuestNationality: ${searchRequest.GuestNationality}`);
-      this.logger.log(`      - NoOfRooms(Filter): ${searchRequest.Filters?.NoOfRooms}`);
+ console.log(logFullPayload,'logFullPayload');
+
+ this.logger.log(` TBO Search Request ${description}:`);
+ this.logger.log(` - Check-in: ${searchRequest.CheckIn}`);
+ this.logger.log(` - Check-out: ${searchRequest.CheckOut}`);
+ this.logger.log(` - City Code: ${searchRequest.CityCode}`);
+ this.logger.log(` - Hotel Codes: ${searchRequest.HotelCodes || '(All available hotels for city)'}`);
+ this.logger.log(` - Guests: ${searchRequest.PaxRooms[0].Adults} adults`);
+ this.logger.log(` - GuestNationality: ${searchRequest.GuestNationality}`);
+ this.logger.log(` - NoOfRooms(Filter): ${searchRequest.Filters?.NoOfRooms}`);
       if (logFullPayload) {
-        this.logger.log(`   📦 TBO Search Request JSON: ${JSON.stringify(searchRequest)}`);
+ this.logger.log(` TBO Search Request JSON: ${JSON.stringify(searchRequest)}`);
       }
 
-      // Log search request
-      const hotelCodeList = searchRequest.HotelCodes 
+ // Log search request
+      const hotelCodeList = searchRequest.HotelCodes
         ? searchRequest.HotelCodes.split(',').map((c:string) => c.trim())
         : [];
 
@@ -1674,33 +1674,33 @@ export class TBOHotelProvider implements IHotelProvider {
       });
 
       const responseTime = Date.now() - startTime;
-      this.logger.log(`   ⏱️  TBO API Response Time ${description}: ${responseTime}ms`);
+ this.logger.log(` TBO API Response Time ${description}: ${responseTime}ms`);
       if (logFullPayload && false) {
-        this.logger.log(`   📦 TBO API Response JSON: ${JSON.stringify(response.data)}`);
+ this.logger.log(` TBO API Response JSON: ${JSON.stringify(response.data)}`);
       } else {
         const statusObj = response.data?.Status;
         const statusCode = typeof statusObj === 'object' ? statusObj?.Code : statusObj;
-        this.logger.debug(`   📥 TBO API response summary: status=${statusCode ?? 'unknown'}, hotels=${(response.data?.HotelResult || []).length}`);
+ this.logger.debug(` TBO API response summary: status=${statusCode 'unknown'}, hotels=${(response.data?.HotelResult || []).length}`);
       }
 
-      // Check response status
+ // Check response status
       const statusObj = response.data?.Status;
       const statusCode = typeof statusObj === 'object' ? statusObj?.Code : statusObj;
 
       if (statusCode !== 200) {
         const statusDescription = typeof statusObj === 'object' ? statusObj?.Description : 'Unknown error';
-        this.logger.warn(`   ⚠️  TBO Search returned status: ${statusCode} - ${statusDescription}`);
+ this.logger.warn(` TBO Search returned status: ${statusCode} - ${statusDescription}`);
         return [];
       }
 
       const hotels = response.data.HotelResult || [];
-      this.logger.log(`   ✅ This request returned ${hotels.length} hotels`);
-      
+ this.logger.log(` This request returned ${hotels.length} hotels`);
+
       return hotels;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`   ❌ TBO Search Error ${description}: ${errorMsg}`);
-      
+ this.logger.error(` TBO Search Error ${description}: ${errorMsg}`);
+
       return [];
     }
   }

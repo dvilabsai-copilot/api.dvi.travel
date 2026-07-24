@@ -21,7 +21,7 @@ function toBoolStatus(v: any): boolean {
   return false;
 }
 
-/** ✅ Convert dto.status (boolean/0|1/"true"/"false") into DB 0|1 */
+/** Convert dto.status (boolean/0|1/"true"/"false") into DB 0|1 */
 function toDb01(v: any): 0 | 1 | undefined {
   if (v === undefined || v === null) return undefined;
 
@@ -33,7 +33,7 @@ function toDb01(v: any): 0 | 1 | undefined {
     const s = v.trim().toLowerCase();
     if (s === '1' || s === 'true') return 1;
     if (s === '0' || s === 'false') return 0;
-    // fallback: try number
+ // fallback: try number
     const n = Number(s);
     if (Number.isFinite(n)) return n === 1 ? 1 : 0;
   }
@@ -93,12 +93,12 @@ export class GstSettingsService {
     return { data: this.mapRow(row) };
   }
 
-  /**
+ /**
    * PHP parity:
    * - inserts into dvi_gst_setting
    * - stores gst/cgst/sgst/igst as strings
    * - sets status = 1 always
-   */
+ */
   async create(dto: CreateGstSettingDto, loggedUserId = 0): Promise<{ data: GstSettingDto }> {
     const gstTitle = (dto.gstTitle ?? '').trim();
     if (!gstTitle) throw new BadRequestException('gstTitle required');
@@ -111,7 +111,7 @@ export class GstSettingsService {
         sgst_value: String(dto.sgst ?? 0),
         igst_value: String(dto.igst ?? 0),
         createdby: loggedUserId || 0,
-        status: 1, // PHP forces active on create
+ status: 1, // PHP forces active on create
         deleted: 0,
       },
       select: {
@@ -128,12 +128,12 @@ export class GstSettingsService {
     return { data: this.mapRow(created) };
   }
 
-  /**
+ /**
    * ✅ FIXED UPDATE:
    * - DO NOT force status=1
    * - If dto.status provided, persist it
    * - Otherwise keep existing status unchanged
-   */
+ */
   async update(
     id: number,
     dto: UpdateGstSettingDto,
@@ -147,7 +147,7 @@ export class GstSettingsService {
 
     const data: any = {
       createdby: loggedUserId || 0,
-      // ✅ status is NOT forced anymore
+ // status is NOT forced anymore
     };
 
     if (dto.gstTitle !== undefined) data.gst_title = dto.gstTitle.trim();
@@ -156,7 +156,7 @@ export class GstSettingsService {
     if (dto.sgst !== undefined) data.sgst_value = String(dto.sgst);
     if (dto.igst !== undefined) data.igst_value = String(dto.igst);
 
-    // ✅ apply status only if provided
+ // apply status only if provided
     const nextStatus = toDb01((dto as any).status);
     if (nextStatus !== undefined) {
       data.status = nextStatus;
@@ -179,11 +179,11 @@ export class GstSettingsService {
     return { data: this.mapRow(updated) };
   }
 
-  /**
+ /**
    * PHP parity delete protection:
    * Block delete if any dvi_hotel_rooms row has gst_percentage == "<GST_ID>" and deleted=0
    * Note: gst_percentage is String? in your schema, so compare as String(id).
-   */
+ */
   private async assertCanDeleteOrThrow(id: number) {
     const usedCount = await this.prisma.dvi_hotel_rooms.count({
       where: { deleted: 0, gst_percentage: String(id) },
@@ -194,10 +194,10 @@ export class GstSettingsService {
     }
   }
 
-  /**
+ /**
    * PHP parity soft delete:
    * deleted=1 and updatedon=NOW()
-   */
+ */
   async remove(id: number): Promise<void> {
     const existing = await this.prisma.dvi_gst_setting.findFirst({
       where: { gst_setting_id: id, deleted: 0 },
@@ -213,10 +213,10 @@ export class GstSettingsService {
     });
   }
 
-  /**
+ /**
    * Optional helper endpoint (not required by your frontend service):
    * toggle status 0/1
-   */
+ */
   async toggleStatus(id: number): Promise<{ data: GstSettingDto }> {
     const row = await this.prisma.dvi_gst_setting.findFirst({
       where: { gst_setting_id: id, deleted: 0 },

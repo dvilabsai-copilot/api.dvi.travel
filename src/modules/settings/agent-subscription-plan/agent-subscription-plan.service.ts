@@ -11,10 +11,10 @@ import {
 export class AgentSubscriptionPlanService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Helpers to map Free/Paid <-> legacy numeric subscription_type */
+ /** Helpers to map Free/Paid <-> legacy numeric subscription_type */
   private subscriptionTypeToInt(type: SubscriptionTypeEnum): number {
-    // ⚠️ Adjust mapping if your legacy uses different codes.
-    // Here: 0 = Free, 1 = Paid.
+ // Adjust mapping if your legacy uses different codes.
+ // Here: 0 = Free, 1 = Paid.
     return type === SubscriptionTypeEnum.Paid ? 1 : 0;
   }
 
@@ -123,7 +123,7 @@ export class AgentSubscriptionPlanService {
         additional_charge_for_per_staff: payload.additionalChargePerStaff,
         subscription_notes: payload.notes ?? '',
         updatedon: now,
-        // keep createdby/createdon as-is
+ // keep createdby/createdon as-is
       },
     });
 
@@ -141,7 +141,7 @@ export class AgentSubscriptionPlanService {
       throw new NotFoundException('Agent subscription plan not found');
     }
 
-    // Soft delete to mirror legacy: deleted = 1, status = 0
+ // Soft delete to mirror legacy: deleted = 1, status = 0
     await this.prisma.dvi_agent_subscription_plan.update({
       where: { agent_subscription_plan_ID: id },
       data: {
@@ -187,7 +187,7 @@ export class AgentSubscriptionPlanService {
       throw new NotFoundException('Agent subscription plan not found');
     }
 
-    // Simple toggle: do NOT reset other plans here (matches flexible PHP behaviour).
+ // Simple toggle: do NOT reset other plans here (matches flexible PHP behaviour).
     await this.prisma.dvi_agent_subscription_plan.update({
       where: { agent_subscription_plan_ID: id },
       data: {

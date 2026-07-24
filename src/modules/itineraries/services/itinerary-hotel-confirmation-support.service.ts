@@ -59,7 +59,7 @@ export class ItineraryHotelConfirmationSupportService {
     groupType: number;
     skippedExternalStayCount: number;
   }> {
-    console.debug(
+ console.debug(
       `[CONFIRM_HOTELS] incoming hotel_bookings count=${dto.hotel_bookings?.length || 0}`,
     );
     const incomingHotelBookings = this.pruneHotelBookingsCoveredByMultiNight(
@@ -73,15 +73,15 @@ export class ItineraryHotelConfirmationSupportService {
       return provider === 'offline' || hotel?.requiresHotelApproval === true || bookingMode === 'MANUAL_APPROVAL';
     });
     const groupType = this.getConfirmHotelGroupType(dto);
-    console.debug(
+ console.debug(
       `[CONFIRM_HOTELS] normalized hotel_bookings count=${incomingHotelBookings.length}`,
     );
 
     this.assertConsistentMultiNightHotelSelection(providerHotelBookings);
 
-    // Confirmation must use the same backend-selected rate snapshot as the
-    // draft preview. Monetary values sent by the browser are deliberately not
-    // trusted for persistence or wallet calculations.
+ // Confirmation must use the same backend-selected rate snapshot as the
+ // draft preview. Monetary values sent by the browser are deliberately not
+ // trusted for persistence or wallet calculations.
     const authoritativePreview = providerHotelBookings.length > 0
       ? await this.itineraryDetails.previewHotelSelectionCost({
           planId: dto.itinerary_plan_ID,
@@ -101,7 +101,7 @@ export class ItineraryHotelConfirmationSupportService {
     );
 
     if (manualMismatchOverrideRows.length > 0) {
-      console.warn('[CONFIRM_QUOTATION_MANUAL_ROOM_MEAL_MISMATCH_OVERRIDE]', {
+ console.warn('[CONFIRM_QUOTATION_MANUAL_ROOM_MEAL_MISMATCH_OVERRIDE]', {
         planId: dto.itinerary_plan_ID,
         count: manualMismatchOverrideRows.length,
         rows: manualMismatchOverrideRows.map((booking: any) => ({
@@ -310,7 +310,7 @@ export class ItineraryHotelConfirmationSupportService {
           });
         }
 
-        console.log('[CONFIRM_HOTEL_STALE_ROWS_DEACTIVATED]', {
+ console.log('[CONFIRM_HOTEL_STALE_ROWS_DEACTIVATED]', {
           planId: dto.itinerary_plan_ID,
           groupType,
           selectedRouteIds,
@@ -603,7 +603,7 @@ export class ItineraryHotelConfirmationSupportService {
         } as any,
       });
 
-      console.log('[CONFIRM_SELECTED_HOTEL_DRAFT_SYNCED]', {
+ console.log('[CONFIRM_SELECTED_HOTEL_DRAFT_SYNCED]', {
         planId: dto.itinerary_plan_ID,
         routeId,
         provider: normalizedProvider,
@@ -802,10 +802,10 @@ export class ItineraryHotelConfirmationSupportService {
       });
     }
 
-    // Build a set that includes both provider::route and provider::route::bookingCode keys
+ // Build a set that includes both provider::route and provider::route::bookingCode keys
     const successKeySet = new Set<string>(Array.from(alreadySuccessKeys));
 
-    // AxisRooms
+ // AxisRooms
     const axisRows = await (this.prisma as any).axisrooms_hotel_booking_confirmation.findMany({
       where: {
         itinerary_plan_ID: itineraryPlanId,
@@ -833,7 +833,7 @@ export class ItineraryHotelConfirmationSupportService {
       });
     }
 
-    // STAAH
+ // STAAH
     const staahRows = await (this.prisma as any).staah_hotel_booking_confirmation.findMany({
       where: {
         itinerary_plan_ID: itineraryPlanId,

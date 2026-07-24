@@ -22,7 +22,7 @@ export class RolePermissionService {
   constructor(private readonly prisma: PrismaService) {}
 
   private getCreatedByUserId(): number {
-    // TODO: replace with real auth integration (req.user.id)
+ // TODO: replace with real auth integration (req.user.id)
     return 1;
   }
 
@@ -30,9 +30,9 @@ export class RolePermissionService {
     return status === 1 && deleted === 0;
   }
 
-  /**
+ /**
    * Ensure role name is unique (like __ajax_check_rolename.php)
-   */
+ */
   private async assertUniqueRoleName(roleName: string, ignoreId?: number) {
     const existing = await this.prisma.dvi_rolemenu.findFirst({
       where: {
@@ -53,12 +53,12 @@ export class RolePermissionService {
     }
   }
 
-  /**
+ /**
    * GET /role-permissions
    * Returns: RolePermissionListItem[]
    * [{ id, roleName, status }]
    * Mirrors __JSONrolemenu.php
-   */
+ */
   async listRoles() {
     const rows = await this.prisma.dvi_rolemenu.findMany({
       where: {
@@ -76,12 +76,12 @@ export class RolePermissionService {
     }));
   }
 
-  /**
+ /**
    * GET /role-permissions/:id
    * Returns: RolePermissionDetails
    * { id, roleName, status, pages: [...] }
    * Mirrors rolepermission.php edit form + getROLEACCESS_DETAILS().
-   */
+ */
   async getRoleDetails(id: number) {
     const [role, pages, accessRows] = await this.prisma.$transaction([
       this.prisma.dvi_rolemenu.findFirst({
@@ -136,12 +136,12 @@ export class RolePermissionService {
     };
   }
 
-  /**
+ /**
    * POST /role-permissions
    * Body: RolePermissionPayload
    * Returns: { id: string }
    * Mirrors __ajax_manage_rolemenu.php?type=add (INSERT path).
-   */
+ */
   async createRole(dto: CreateRolePermissionDto) {
     const roleName = dto.roleName.trim();
     if (!roleName) {
@@ -169,12 +169,12 @@ export class RolePermissionService {
     return { id: String(role.role_ID) };
   }
 
-  /**
+ /**
    * PUT /role-permissions/:id
    * Body: RolePermissionPayload
    * Returns: { ok: true }
    * Mirrors __ajax_manage_rolemenu.php?type=add (UPDATE path).
-   */
+ */
   async updateRole(id: number, dto: UpdateRolePermissionDto) {
     const role = await this.prisma.dvi_rolemenu.findFirst({
       where: {
@@ -210,11 +210,11 @@ export class RolePermissionService {
     return { ok: true as const };
   }
 
-  /**
+ /**
    * DELETE /role-permissions/:id
    * Returns: { ok: true }
    * Mirrors type=confirmdelete (soft delete) on dvi_rolemenu + dvi_role_access.
-   */
+ */
   async deleteRole(id: number) {
     const role = await this.prisma.dvi_rolemenu.findFirst({
       where: {
@@ -249,12 +249,12 @@ export class RolePermissionService {
     return { ok: true as const };
   }
 
-  /**
+ /**
    * PATCH /role-permissions/:id/status
    * Body: { status: boolean }
    * Returns: { ok: true }
    * Mirrors type=updatestatus on dvi_rolemenu.
-   */
+ */
   async updateRoleStatus(id: number, dto: UpdateRolePermissionStatusDto) {
     const role = await this.prisma.dvi_rolemenu.findFirst({
       where: {
@@ -281,12 +281,12 @@ export class RolePermissionService {
     return { ok: true as const };
   }
 
-  /**
+ /**
    * GET /role-permissions/pages
    * Returns list of pages from dvi_pagemenu
    * [{ pageKey, pageName, read, write, modify, full }]
    * This is the dynamic replacement for your FALLBACK_PAGES.
-   */
+ */
   async listPages() {
     const pages = await this.prisma.dvi_pagemenu.findMany({
       where: {
@@ -308,7 +308,7 @@ export class RolePermissionService {
     }));
   }
 
-  /**
+ /**
    * Internal helper – mirrors PHP behaviour of inserting/updating dvi_role_access
    * based on posted page permissions.
    *
@@ -318,7 +318,7 @@ export class RolePermissionService {
    *  - Else -> INSERT
    *
    * It does NOT delete missing pages (same as PHP).
-   */
+ */
 private async syncRoleAccess(
     roleId: number,
     roleName: string,
@@ -328,7 +328,7 @@ private async syncRoleAccess(
   ) {
     if (!pages || pages.length === 0) return;
 
-    // Load all pages from master
+ // Load all pages from master
     const pageMenuRows = await this.prisma.dvi_pagemenu.findMany({
       where: {
         deleted: 0,
@@ -343,7 +343,7 @@ private async syncRoleAccess(
       }
     }
 
-    // Existing role access rows
+ // Existing role access rows
     const existingRows = await this.prisma.dvi_role_access.findMany({
       where: {
         role_ID: roleId,
@@ -356,13 +356,13 @@ private async syncRoleAccess(
       existingByPageId.set(row.page_menu_id, row);
     }
 
-    // 👇 KEY FIX: type is Prisma.PrismaPromise<any>[]
+ // KEY FIX: type is Prisma.PrismaPromise<any>[]
     const ops: Prisma.PrismaPromise<any>[] = [];
 
     for (const page of pages) {
       const masterPage = pageByKey.get(page.pageKey);
 
-      // If the pageKey doesn't exist in master, skip silently.
+ // If the pageKey doesn't exist in master, skip silently.
       if (!masterPage) {
         continue;
       }

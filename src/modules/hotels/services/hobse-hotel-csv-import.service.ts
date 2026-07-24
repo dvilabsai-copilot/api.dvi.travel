@@ -328,7 +328,7 @@ export class HobseHotelCsvImportService {
         }
       } catch (error: any) {
         summary.failed += 1;
-        this.logger.error(`Failed to import hotel ${hotelName} (${hotelCode}): ${error?.message || error}`);
+ this.logger.error(`Failed to import hotel ${hotelName} (${hotelCode}): ${error?.message || error}`);
       }
     }
 

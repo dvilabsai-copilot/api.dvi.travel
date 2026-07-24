@@ -34,12 +34,12 @@ export interface ItineraryHotelRowDto {
   totalHotelCost: number;
   totalHotelTaxAmount: number;
   noOfRooms?: number;
-  // TBO Booking Code - for API interactions
+ // TBO Booking Code - for API interactions
   searchReference?: string;
   bookingCode?: string;
   roomId?: string;
   rateId?: string;
-  // Provider source (tbo, resavenue, hobse)
+ // Provider source (tbo, resavenue, hobse)
   provider?: string;
   providerDisplayName?: string;
   providerHotelCode?: string;
@@ -66,7 +66,7 @@ export interface ItineraryHotelRowDto {
   availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE';
   availabilityMessage?: string | null;
   availableAgainFrom?: string | null;
-  // Voucher cancellation status
+ // Voucher cancellation status
   voucherCancelled?: boolean;
   itineraryPlanHotelDetailsId?: number;
   date?: string;
@@ -78,7 +78,7 @@ export interface ItineraryHotelRowDto {
   earlyCheckInPaymentStatus?: string | null;
   hotelierEarlyCheckInNote?: string | null;
   previousDayBillingSynthetic?: boolean;
-  // Distance from route location to hotel (in kilometers) - calculated using Haversine formula
+ // Distance from route location to hotel (in kilometers) - calculated using Haversine formula
   hotelDistance?: string | null;
   facilities?: string[];
   amenities?: string[];
@@ -97,7 +97,7 @@ export interface ItineraryHotelRowDto {
 export interface HotelPaginationMeta {
   page: number;
   pageSize: number;
-  /** total rows in this group stored in DB cache */
+ /** total rows in this group stored in DB cache */
   total: number;
   hasMore: boolean;
 }
@@ -120,9 +120,9 @@ export interface ItineraryHotelDetailsResponseDto {
   restrictedHotels?: ItineraryHotelRowDto[];
   totalRoomCount: number;
   hotelAvailability?: HotelAvailabilityMetaDto;
-  /** Present when ?page param is used; one entry per groupType requested */
+ /** Present when ?page param is used; one entry per groupType requested */
   pagination?: Record<number, HotelPaginationMeta>;
-  /** Per-route/day pagination metadata keyed by `${groupType}-${routeId}` */
+ /** Per-route/day pagination metadata keyed by `${groupType}-${routeId}` */
   routePagination?: Record<string, HotelRoutePaginationMeta>;
 }
 
@@ -198,11 +198,11 @@ export interface ItineraryHotelRoomDto {
   approvalStatus?: 'NOT_REQUESTED' | 'NOT_REQUIRED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
   manualConfirmationStatus?: 'NOT_STARTED' | 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'FAILED' | 'CANCELLED';
 
-  // Pricing & tax
+ // Pricing & tax
   gstType: string | null;
   gstPercentage: number;
 
-  // Occupancy / extras – these are totals per (route,hotel,roomType,room)
+ // Occupancy / extras these are totals per (route,hotel,roomType,room)
   totalExtraBed: number;
   totalChildWithBed: number;
   totalChildWithoutBed: number;
@@ -227,38 +227,38 @@ export class ItineraryHotelDetailsService {
     return String(process.env.SHOW_HOTEL_MARGINS ?? '').trim().toLowerCase() === 'true';
   }
 
-  /**
+ /**
    * Public endpoint-style method: used by /itineraries/hotel_details/:quoteId
-   */
+ */
   async getHotelDetailsByQuoteId(
     quoteId: string,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
-    this.logger.log(`\n🔍 HOTEL DETAILS SERVICE: Looking up quote ID: ${quoteId}`);
+ this.logger.log(`\n HOTEL DETAILS SERVICE: Looking up quote ID: ${quoteId}`);
 
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
     });
 
     if (!plan) {
-      this.logger.warn(`⚠️  Quote ID not found: ${quoteId}`);
+ this.logger.warn(` Quote ID not found: ${quoteId}`);
       throw new NotFoundException('Itinerary not found');
     }
 
-    this.logger.log(`✅ Found itinerary plan - ID: ${plan.itinerary_plan_ID}, Quote: ${plan.itinerary_quote_ID}`);
-    
+ this.logger.log(` Found itinerary plan - ID: ${plan.itinerary_plan_ID}, Quote: ${plan.itinerary_quote_ID}`);
+
     const result = await this.getHotelDetailsForPlan(plan);
-    
-    this.logger.log(`📊 Hotel details retrieved - Tabs: ${result.hotelTabs?.length || 0}, Rows: ${result.hotels?.length || 0}`);
-    this.logger.log(`⏱️  Service Processing Time: ${Date.now() - startTime}ms`);
+
+ this.logger.log(` Hotel details retrieved - Tabs: ${result.hotelTabs?.length || 0}, Rows: ${result.hotels?.length || 0}`);
+ this.logger.log(` Service Processing Time: ${Date.now() - startTime}ms`);
 
     return result;
   }
 
-  /**
+ /**
    * Helper: Get available room types for a hotel based on route date
    * Mimics PHP getHOTEL_ROOM_TYPE_DETAIL('select_itineary_hotel')
-   */
+ */
   private async getAvailableRoomTypesForHotel(
     hotelId: number,
     routeDate: Date,
@@ -267,20 +267,20 @@ export class ItineraryHotelDetailsService {
     const month = routeDate.toLocaleString('en-US', { month: 'long' });
     const year = routeDate.getFullYear();
 
-    // Query inspired by PHP: dvi_hotel_rooms + dvi_hotel_room_price_book + dvi_hotel_roomtype
-    // Use Prisma.raw() for dynamic column names to avoid SQL injection and parameter issues
+ // Query inspired by PHP: dvi_hotel_rooms + dvi_hotel_room_price_book + dvi_hotel_roomtype
+ // Use Prisma.raw() for dynamic column names to avoid SQL injection and parameter issues
     const roomTypesRaw = await this.prisma.$queryRaw<any[]>`
-      SELECT DISTINCT 
-        PRICEBOOK.room_type_id, 
+      SELECT DISTINCT
+        PRICEBOOK.room_type_id,
         ROOMTYPE.room_type_title
       FROM dvi_hotel_rooms ROOMS
-      LEFT JOIN dvi_hotel_room_price_book PRICEBOOK 
-        ON PRICEBOOK.hotel_id = ROOMS.hotel_id 
+      LEFT JOIN dvi_hotel_room_price_book PRICEBOOK
+        ON PRICEBOOK.hotel_id = ROOMS.hotel_id
         AND ROOMS.room_type_id = PRICEBOOK.room_type_id
-      LEFT JOIN dvi_hotel_roomtype ROOMTYPE 
+      LEFT JOIN dvi_hotel_roomtype ROOMTYPE
         ON ROOMTYPE.room_type_id = ROOMS.room_type_id
-      WHERE ROOMS.deleted = 0 
-        AND ROOMS.status = 1 
+      WHERE ROOMS.deleted = 0
+        AND ROOMS.status = 1
         AND ROOMS.hotel_id = ${hotelId}
         AND PRICEBOOK.${Prisma.raw(day)} IS NOT NULL
         AND PRICEBOOK.month = ${month}
@@ -316,7 +316,7 @@ async getHotelRoomDetailsByQuoteId(
 
   const planId = plan.itinerary_plan_ID;
 
-  // 1) Get hotels from dvi_itinerary_plan_hotel_details (these are from TBO API)
+ // 1) Get hotels from dvi_itinerary_plan_hotel_details (these are from TBO API)
   const hotelRowsRaw = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
     where: { itinerary_plan_id: planId, deleted: 0 },
     orderBy: [
@@ -324,7 +324,7 @@ async getHotelRoomDetailsByQuoteId(
       { itinerary_route_id: 'asc' },
     ],
   });
-  
+
   if (!hotelRowsRaw || hotelRowsRaw.length === 0) {
     return {
       quoteId: plan.itinerary_quote_ID ?? '',
@@ -333,7 +333,7 @@ async getHotelRoomDetailsByQuoteId(
     };
   }
 
-  // 2) Get routes for mapping
+ // 2) Get routes for mapping
   const routes = await this.prisma.dvi_itinerary_route_details.findMany({
     where: { itinerary_plan_ID: planId, deleted: 0 },
   });
@@ -342,7 +342,7 @@ async getHotelRoomDetailsByQuoteId(
     routes.map((r: any) => [Number(r.itinerary_route_ID), r]),
   );
 
-  // 3) Get hotel master data to map hotel_id -> hotel_name
+ // 3) Get hotel master data to map hotel_id -> hotel_name
   const hotelIds = Array.from(
     new Set(
       hotelRowsRaw
@@ -361,12 +361,12 @@ async getHotelRoomDetailsByQuoteId(
     hotelMasters.map((h) => [Number((h as any).hotel_id), h]),
   );
 
-  // 4) Build room details from hotel rows - RETURN UNIQUE HOTELS ONLY
-  // Group by hotel_id and route_id to avoid duplicates per room type
+ // 4) Build room details from hotel rows - RETURN UNIQUE HOTELS ONLY
+ // Group by hotel_id and route_id to avoid duplicates per room type
   const roomDetailsList: ItineraryHotelRoomDto[] = [];
   let roomDetailsId = 1;
 
-  // Create a map to track unique hotels per route
+ // Create a map to track unique hotels per route
   const hotelsByRoute = new Map<string, any[]>();
 
   hotelRowsRaw.forEach((hotelRow: any) => {
@@ -381,9 +381,9 @@ async getHotelRoomDetailsByQuoteId(
     hotelsByRoute.get(key)!.push(hotelRow);
   });
 
-  // For each route/category group, create room entries for ALL unique hotels
+ // For each route/category group, create room entries for ALL unique hotels
   hotelsByRoute.forEach((hotelRowsForGroup, _key) => {
-    // Get unique hotel IDs within this route/category group
+ // Get unique hotel IDs within this route/category group
     const uniqueHotels = new Map<number, any>();
     hotelRowsForGroup.forEach(row => {
       const hotelId = Number(row.hotel_id ?? 0);
@@ -392,17 +392,17 @@ async getHotelRoomDetailsByQuoteId(
       }
     });
 
-    // Create ONE room entry per UNIQUE hotel in this route/category
+ // Create ONE room entry per UNIQUE hotel in this route/category
     uniqueHotels.forEach((hotelRow, hotelId) => {
       const routeId = Number(hotelRow.itinerary_route_id ?? 0);
       const groupType = Number(hotelRow.group_type ?? 0);
-      
-      // Get hotel master data for actual hotel name
+
+ // Get hotel master data for actual hotel name
       const hotelMaster = hotelMap.get(hotelId) || null;
       const hotelName = hotelMaster ? ((hotelMaster as any).hotel_name ?? 'Hotel') : 'Hotel';
       const hotelCategory = hotelMaster ? Number((hotelMaster as any).hotel_category ?? 2) : 2;
-      
-      // Create 1 room entry per unique hotel per category
+
+ // Create 1 room entry per unique hotel per category
       roomDetailsList.push({
         itineraryPlanId: planId,
         itineraryRouteId: routeId,
@@ -441,27 +441,27 @@ async getHotelRoomDetailsByQuoteId(
 }
 
 
-  /**
+ /**
    * Internal reusable method: used by ItineraryDetailsService when building the full details payload.
-   */
+ */
   async getHotelDetailsForPlan(
     plan: dvi_itinerary_plan_details,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const planId = plan.itinerary_plan_ID;
 
-    // 1) Visibility flag from plan (hotel_rates_visibility)
+ // 1) Visibility flag from plan (hotel_rates_visibility)
     const hotelRatesVisible: boolean =
       (plan as any).hotel_rates_visibility === 1 ||
       (plan as any).hotel_rates_visibility === true;
 
-    // 2) Raw hotel rows from dvi_itinerary_plan_hotel_details
+ // 2) Raw hotel rows from dvi_itinerary_plan_hotel_details
     const hotelRowsRaw =
       await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
         where: { itinerary_plan_id: planId, deleted: 0 },
         orderBy: [
           { group_type: 'asc' as const },
           { itinerary_route_date: 'asc' as const },
-          { updatedon: 'desc' as const }, // ✅ Order by updatedon to get latest first
+ { updatedon: 'desc' as const }, // Order by updatedon to get latest first
         ],
       });
 
@@ -545,7 +545,7 @@ async getHotelRoomDetailsByQuoteId(
       return Number(a.itinerary_route_id ?? 0) - Number(b.itinerary_route_id ?? 0);
     });
 
-    // 3) Distinct hotels for name/category
+ // 3) Distinct hotels for name/category
     const hotelIds = Array.from(
       new Set(
         hotelRowsExpanded
@@ -581,11 +581,11 @@ async getHotelRoomDetailsByQuoteId(
       }))
       .sort((a, b) => a.groupType - b.groupType);
 
-    // 5) Per-row hotel list (with group_type & per-row cost)
-    // Also check voucher cancellation status
+ // 5) Per-row hotel list (with group_type & per-row cost)
+ // Also check voucher cancellation status
     const hotelDetailsIds = hotelRowsExpanded.map(h => (h as any).itinerary_plan_hotel_details_ID).filter(id => id);
-    
-    // Fetch voucher cancellation statuses
+
+ // Fetch voucher cancellation statuses
     const voucherStatuses = hotelDetailsIds.length > 0
       ? await this.prisma.dvi_confirmed_itinerary_plan_hotel_voucher_details.findMany({
           where: {
@@ -607,7 +607,7 @@ async getHotelRoomDetailsByQuoteId(
       ])
     );
 
-    // Fetch route location IDs to get location coordinates for distance calculation
+ // Fetch route location IDs to get location coordinates for distance calculation
     const routeIds = Array.from(
       new Set(
         hotelRowsExpanded
@@ -616,7 +616,7 @@ async getHotelRoomDetailsByQuoteId(
       ),
     );
 
-    // Fetch route details to get location ID for each route
+ // Fetch route details to get location ID for each route
     const routeDetails = routeIds.length
       ? await this.prisma.dvi_itinerary_route_details.findMany({
           where: { itinerary_route_ID: { in: routeIds }, deleted: 0 },
@@ -637,7 +637,7 @@ async getHotelRoomDetailsByQuoteId(
       ]),
     );
 
-    // Fetch stored location coordinates for destination locations
+ // Fetch stored location coordinates for destination locations
     const locationIds = Array.from(
       new Set(routeDetails.map((r) => Number((r as any).location_id)).filter((id) => id > 0)),
     );
@@ -672,10 +672,10 @@ async getHotelRoomDetailsByQuoteId(
       const routeDayNumber = routeDayNumberMap.get(routeId) || 0;
       const isSyntheticPreviousDayBilling = Boolean((h as any).__previousDayBillingSynthetic);
       const storedEarlyCheckIn = Number((h as any).early_checkin ?? 0) === 1;
-      // The marker row represents the extra night; it must not hide the
-      // structured metadata stored on the real selected hotel row. The
-      // details page needs both rows to explain the billing date and the
-      // guest's actual arrival/check-in date.
+ // The marker row represents the extra night; it must not hide the
+ // structured metadata stored on the real selected hotel row. The
+ // details page needs both rows to explain the billing date and the
+ // guest's actual arrival/check-in date.
       const showEarlyCheckInDetails =
         isSyntheticPreviousDayBilling ||
         storedEarlyCheckIn;
@@ -728,20 +728,20 @@ async getHotelRoomDetailsByQuoteId(
           'Guest has opted for early morning check-in with extra payment. Room to be blocked from the previous night, with actual guest arrival/check-in on the next day early morning.'
         : null;
 
-      // Calculate distance from route location to hotel using Haversine formula
+ // Calculate distance from route location to hotel using Haversine formula
       let hotelDistance: string | null = null;
-      
-      // Get hotel coordinates
-      const hotelLat = master && (master as any).hotel_latitude ? 
+
+ // Get hotel coordinates
+      const hotelLat = master && (master as any).hotel_latitude ?
         Number((master as any).hotel_latitude) : null;
-      const hotelLon = master && (master as any).hotel_longitude ? 
+      const hotelLon = master && (master as any).hotel_longitude ?
         Number((master as any).hotel_longitude) : null;
 
-      // Get route location coordinates
+ // Get route location coordinates
       const locationId = routeLocationMap.get(routeId);
       const routeCoords = locationId ? locationCoordinatesMap.get(locationId) : null;
-      
-      // Calculate distance if both hotel and route coordinates are available
+
+ // Calculate distance if both hotel and route coordinates are available
       if (
         hotelLat &&
         hotelLon &&
@@ -762,7 +762,7 @@ async getHotelRoomDetailsByQuoteId(
             hotelDistance = `${distanceKm.toFixed(2)} KM`;
           }
         } catch (err) {
-          // If calculation fails, leave as null
+ // If calculation fails, leave as null
           hotelDistance = null;
         }
       }
@@ -777,7 +777,7 @@ async getHotelRoomDetailsByQuoteId(
         hotelId: Number((h as any).hotel_id ?? 0) || 0,
         hotelName: master ? ((master as any).hotel_name ?? '') : '',
         category: master ? ((master as any).hotel_category ?? 0) : 0,
-        roomType: '', // room/meal details can be wired later
+ roomType: '', // room/meal details can be wired later
         mealPlan: '',
         totalHotelCost: Number((h as any).total_hotel_cost ?? 0) * earlyCheckInBillingMultiplier,
         totalHotelTaxAmount: Number((h as any).total_hotel_tax_amount ?? 0) * earlyCheckInBillingMultiplier,
@@ -796,7 +796,7 @@ async getHotelRoomDetailsByQuoteId(
       };
     });
 
-    // 6) Total room count (fallback)
+ // 6) Total room count (fallback)
     const totalRoomCount = hotelRowsRaw.reduce(
       (sum, h) => sum + ((h as any).total_no_of_rooms ?? 0),
       0,

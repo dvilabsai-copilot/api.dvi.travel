@@ -15,10 +15,10 @@ import { AccountsManagerRowComponentType } from "./accounts-manager-row.dto";
  * Returned by GET /accounts-manager/summary
  */
 export class AccountsManagerSummaryDto {
-  totalPayable!: number; // sum of total_payable across all visible rows
-  totalPaid!: number; // sum of total_paid across all visible rows
-  totalBalance!: number; // sum of total_balance across all visible rows
-  rowCount!: number; // number of component rows included in totals
+ totalPayable!: number; // sum of total_payable across all visible rows
+ totalPaid!: number; // sum of total_paid across all visible rows
+ totalBalance!: number; // sum of total_balance across all visible rows
+ rowCount!: number; // number of component rows included in totals
 }
 
 /**
@@ -96,10 +96,10 @@ export class AccountsManagerPayDto {
   @IsString()
   processedBy?: string;
 
-  /**
+ /**
    * Optional storage for the uploaded payment screenshot path / filename.
    * Frontend is not required to send this yet, so it won't break anything.
-   */
+ */
   @IsOptional()
   @IsString()
   paymentScreenshotPath?: string;

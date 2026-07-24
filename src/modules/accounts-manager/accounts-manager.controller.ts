@@ -51,10 +51,10 @@ export class AccountsManagerController {
     private readonly service: AccountsManagerService,
   ) {}
 
-  /**
+ /**
    * Main list endpoint.
    * GET /accounts-manager
-   */
+ */
   @UseGuards(JwtAuthGuard)
   @Get()
   @ApiOperation({
@@ -68,23 +68,23 @@ export class AccountsManagerController {
     @Query() query: AccountsManagerQueryDto,
   ): Promise<AccountsManagerRowDto[]> {
     const user = req.user;
-    // Role 4 is Agent
+ // Role 4 is Agent
     if (user.role === 4) {
       query.agentId = Number(user.agentId);
     } else if (user.role === 6) {
-      // Accounts role - see everything
+ // Accounts role - see everything
     } else if (user.role === 3 || user.role === 8 || (user.staffId && user.staffId > 0)) {
-      // Travel Expert logic
+ // Travel Expert logic
       (query as any).travelExpertId = Number(user.staffId);
     }
     return this.service.list(query);
   }
 
-  /**
+ /**
    * Summary cards (payable / paid / balance) based on same filters
    * as the list endpoint.
    * GET /accounts-manager/summary
-   */
+ */
   @UseGuards(JwtAuthGuard)
   @Get("summary")
   @ApiOperation({
@@ -98,21 +98,21 @@ export class AccountsManagerController {
     @Query() query: AccountsManagerQueryDto,
   ): Promise<AccountsManagerSummaryDto> {
     const user = req.user;
-    // Role 4 is Agent
+ // Role 4 is Agent
     if (user.role === 4) {
       query.agentId = Number(user.agentId);
     } else if (user.role === 6) {
-      // Accounts role - see everything
+ // Accounts role - see everything
     } else if (user.role === 3 || user.role === 8 || (user.staffId && user.staffId > 0)) {
       (query as any).travelExpertId = Number(user.staffId);
     }
     return this.service.getSummary(query);
   }
 
-  /**
+ /**
    * Quote ID autocomplete – distinct itinerary_quote_ID values.
    * GET /accounts-manager/quotes?q=ABC
-   */
+ */
   @Get("quotes")
   @ApiOperation({
     summary: "Search quote IDs",
@@ -126,10 +126,10 @@ export class AccountsManagerController {
     return this.service.searchQuotes(phrase ?? "");
   }
 
-  /**
+ /**
    * Agent dropdown for the filter.
    * GET /accounts-manager/agents
-   */
+ */
   @Get("agents")
   @ApiOperation({
     summary: "List agents for filter dropdown",
@@ -139,10 +139,10 @@ export class AccountsManagerController {
     return this.service.listAgents();
   }
 
-  /**
+ /**
    * Mode of payment list for Pay Now modal.
    * GET /accounts-manager/payment-modes
-   */
+ */
   @Get("payment-modes")
   @ApiOperation({
     summary: "List modes of payment",
@@ -154,17 +154,17 @@ export class AccountsManagerController {
     return this.service.listPaymentModes();
   }
 
-  /**
+ /**
    * Pay Now – updates total_paid and total_balance for a component row.
    * POST /accounts-manager/pay
-   */
+ */
   @Post("pay")
   @ApiOperation({
     summary: "Record a payment against a component row",
     description:
       "Updates the per-component totals (total_paid and total_balance) for the specified hotel/vehicle/guide/hotspot/activity row.",
   })
-  @ApiBearerAuth() // optional (redundant but explicit for this route)
+ @ApiBearerAuth() // optional (redundant but explicit for this route)
   @ApiBody({ type: AccountsManagerPayDto })
   @ApiOkResponse({ description: "Payment recorded" })
   @UseInterceptors(

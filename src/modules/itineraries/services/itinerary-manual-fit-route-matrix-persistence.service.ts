@@ -79,7 +79,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
         select: { hotspot_ID: true },
       });
       if (existingById) {
-        console.log('[HotspotPlaceEnsure] existing_found', { hotspotId: requestedHotspotId, mode: 'id' });
+ console.log('[HotspotPlaceEnsure] existing_found', { hotspotId: requestedHotspotId, mode: 'id' });
         return Number(existingById.hotspot_ID);
       }
     }
@@ -113,7 +113,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
       const matched = exact || candidates[0];
       const matchedId = Number(matched?.hotspot_ID || 0);
       if (matchedId > 0) {
-        console.log('[HotspotPlaceEnsure] existing_found', { hotspotId: matchedId, mode: 'name_location' });
+ console.log('[HotspotPlaceEnsure] existing_found', { hotspotId: matchedId, mode: 'name_location' });
         return matchedId;
       }
     }
@@ -136,7 +136,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
 
     const insertedId = Number(inserted?.hotspot_ID || 0);
     if (insertedId > 0) {
-      console.log('[HotspotPlaceEnsure] inserted_new', { hotspotId: insertedId });
+ console.log('[HotspotPlaceEnsure] inserted_new', { hotspotId: insertedId });
       return insertedId;
     }
 
@@ -153,7 +153,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
     const toId = Number(toHotspotId || 0);
     const betweenId = Number(betweenHotspotId || 0);
     if (!fromId || !toId || !betweenId) {
-      console.log('[RouteBetweenMapEnsure] skipped_no_hotspot_id', {
+ console.log('[RouteBetweenMapEnsure] skipped_no_hotspot_id', {
         fromHotspotId: fromId,
         toHotspotId: toId,
         betweenHotspotId: betweenId,
@@ -194,7 +194,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
     );
 
     if (Array.isArray(existingRows) && existingRows.length > 0) {
-      console.log('[RouteBetweenMapEnsure] existing_found', {
+ console.log('[RouteBetweenMapEnsure] existing_found', {
         fromHotspotId: fromId,
         toHotspotId: toId,
         betweenHotspotId: betweenId,
@@ -234,7 +234,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
       || !Number.isFinite(toLat) || !Number.isFinite(toLng)
       || !Number.isFinite(betweenLat) || !Number.isFinite(betweenLng)
     ) {
-      console.warn('[RouteBetweenMapEnsure] invalid_coordinates', {
+ console.warn('[RouteBetweenMapEnsure] invalid_coordinates', {
         fromHotspotId: fromId,
         toHotspotId: toId,
         betweenHotspotId: betweenId,
@@ -244,7 +244,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
 
     const directRoute = await this.getOsrmRouteGeometry(fromLat, fromLng, toLat, toLng);
     if (!directRoute || directRoute.coordinates.length < 2) {
-      console.warn('[RouteBetweenMapEnsure] osrm_failed', {
+ console.warn('[RouteBetweenMapEnsure] osrm_failed', {
         fromHotspotId: fromId,
         toHotspotId: toId,
         betweenHotspotId: betweenId,
@@ -256,7 +256,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
     const acKm = await this.getOsrmDistanceKm(fromLat, fromLng, betweenLat, betweenLng);
     const cbKm = await this.getOsrmDistanceKm(betweenLat, betweenLng, toLat, toLng);
     if (!Number.isFinite(directKm) || !Number.isFinite(acKm) || !Number.isFinite(cbKm)) {
-      console.warn('[RouteBetweenMapEnsure] osrm_failed', {
+ console.warn('[RouteBetweenMapEnsure] osrm_failed', {
         fromHotspotId: fromId,
         toHotspotId: toId,
         betweenHotspotId: betweenId,
@@ -291,7 +291,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
           : 'Candidate causes major OSRM detour.';
 
     if (routeFitType === 'MAJOR_DETOUR') {
-      console.log('[RouteBetweenMapEnsure] rejected_major_detour', {
+ console.log('[RouteBetweenMapEnsure] rejected_major_detour', {
         fromHotspotId: fromId,
         toHotspotId: toId,
         betweenHotspotId: betweenId,
@@ -403,7 +403,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
     );
 
     const insertedRow = Array.isArray(insertedRows) && insertedRows.length > 0 ? insertedRows[0] : null;
-    console.log('[RouteBetweenMapEnsure] inserted_new', {
+ console.log('[RouteBetweenMapEnsure] inserted_new', {
       fromHotspotId: fromId,
       toHotspotId: toId,
       betweenHotspotId: betweenId,
@@ -533,7 +533,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
           hotspot_order: Number(rr?.hotspot_order || 0),
         };
       });
-      console.log('[OSRMSourceRoute][AnchorSelectionDebug] active_route_hotspots_loaded', {
+ console.log('[OSRMSourceRoute][AnchorSelectionDebug] active_route_hotspots_loaded', {
         routeId,
         hotspots: routeDebugRows,
       });
@@ -548,7 +548,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
       });
 
     if (orderedExisting.length < 2) {
-      console.warn('[ManualMatrixEnsure] invalid_coordinates', { routeId, reason: 'No valid route endpoint coordinates.' });
+ console.warn('[ManualMatrixEnsure] invalid_coordinates', { routeId, reason: 'No valid route endpoint coordinates.' });
       return null;
     }
 
@@ -561,7 +561,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
 
     const routeGeometry = await this.getOsrmRouteGeometry(startLat, startLng, endLat, endLng);
     if (!routeGeometry || routeGeometry.coordinates.length < 2) {
-      console.warn('[ManualMatrixEnsure] osrm_failed', { routeId, fromHotspotId: start.id, toHotspotId: end.id });
+ console.warn('[ManualMatrixEnsure] osrm_failed', { routeId, fromHotspotId: start.id, toHotspotId: end.id });
       return {
         sourceAnchorHotspotId: start.id,
         sourceAnchorName: String(start.row?.hotspot_name || `Hotspot #${start.id}`),
@@ -576,7 +576,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
     }
 
     if (debug) {
-      console.log('[OSRMSourceRoute][AnchorSelectionDebug] osrm_route_geometry_result', {
+ console.log('[OSRMSourceRoute][AnchorSelectionDebug] osrm_route_geometry_result', {
         routeId,
         sourceCoordinates: { lat: startLat, lng: startLng },
         destinationCoordinates: { lat: endLat, lng: endLng },
@@ -584,7 +584,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
       });
     }
 
-    console.log('[OSRMSourceRoute] route_geometry_loaded', {
+ console.log('[OSRMSourceRoute] route_geometry_loaded', {
       routeId,
       sourceCityKey,
       destinationCityKey,
@@ -598,7 +598,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
       ? this.distancePointToRouteMeters({ lat: candidateLat, lng: candidateLng }, routeGeometry.coordinates)
       : null;
 
-    console.log('[OSRMSourceRoute] candidate_distance_checked', {
+ console.log('[OSRMSourceRoute] candidate_distance_checked', {
       routeId,
       candidateHotspotId,
       candidateDistanceFromRouteMeters,
@@ -652,7 +652,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
 
     if (debug) {
       for (const evalRow of candidateEvaluation) {
-        console.log('[OSRMSourceRoute][AnchorSelectionDebug] candidate_evaluation', {
+ console.log('[OSRMSourceRoute][AnchorSelectionDebug] candidate_evaluation', {
           routeId,
           hotspot_ID: Number(evalRow.hotspot_ID),
           hotspot_name: String(evalRow.hotspot_name),
@@ -692,7 +692,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
     ].join(' ');
 
     if (debug) {
-      console.log('[OSRMSourceRoute][AnchorSelectionDebug] final_selected_anchor', {
+ console.log('[OSRMSourceRoute][AnchorSelectionDebug] final_selected_anchor', {
         routeId,
         selectedHotspotId: Number(selected.hotspotId),
         selectedHotspotName: String(selected.hotspotName),
@@ -701,7 +701,7 @@ export class ItineraryManualFitRouteMatrixPersistenceService {
       });
     }
 
-    console.log('[OSRMSourceRoute] source_anchor_selected', {
+ console.log('[OSRMSourceRoute] source_anchor_selected', {
       routeId,
       sourceAnchorHotspotId: Number(selected.hotspotId),
       sourceAnchorName: String(selected.hotspotName),

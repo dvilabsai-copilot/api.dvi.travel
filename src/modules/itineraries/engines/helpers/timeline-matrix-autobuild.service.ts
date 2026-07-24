@@ -43,14 +43,14 @@ export class TimelineMatrixAutobuildService {
             const matrixEnabled = String(process.env.HOTSPOT_MATRIX_AUTOBUILD || 'false').toLowerCase() === 'true';
             if (matrixEnabled) {
               input.logTimeline('[MATRIX_AUTOBUILD_ENABLED] routeId', route.itinerary_route_ID);
-    
-              // Load route's active attraction hotspots to derive slot pairs
+
+ // Load route's active attraction hotspots to derive slot pairs
               const routeAttractions: any[] = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
                 where: { itinerary_route_ID: Number(route.itinerary_route_ID), item_type: 4, deleted: 0, status: 1 },
                 orderBy: { hotspot_order: 'asc' },
                 select: { hotspot_ID: true },
               });
-    
+
               const routeHotspotIds = (routeAttractions || []).map((r: any) => Number(r.hotspot_ID || 0)).filter((id: number) => id > 0);
               const slotPairs: Array<{ fromId: number; toId: number }> = [];
               for (let i = 0; i < routeHotspotIds.length - 1; i++) {
@@ -58,24 +58,24 @@ export class TimelineMatrixAutobuildService {
                 const b = routeHotspotIds[i + 1];
                 if (a && b && a !== b) slotPairs.push({ fromId: a, toId: b });
               }
-    
+
               if (slotPairs.length > 0) {
                 const matrixMap = await input.getBetweenCandidatesForRouteSlots(tx, slotPairs);
-    
+
                 for (const slot of slotPairs) {
                   const key = `${slot.fromId}_${slot.toId}`;
                   const rows = matrixMap.get(key) || [];
                   if (!rows.length) continue;
-    
+
                   for (const r of rows) {
                     input.logTimeline('[MATRIX] MATRIX_CANDIDATE_FOUND', { routeId: route.itinerary_route_ID, slotFrom: slot.fromId, slotTo: slot.toId, between: r.between_hotspot_id });
-    
+
                     const fitType = String(r.route_fit_type || '').toUpperCase();
                     if (!['ON_ROUTE', 'MINOR_DETOUR'].includes(fitType)) {
                       input.logTimeline('[MATRIX] MATRIX_CANDIDATE_REJECTED_ROUTE_FIT', { routeId: route.itinerary_route_ID, between: r.between_hotspot_id, fitType });
                       continue;
                     }
-    
+
                     const candidateId = Number(r.between_hotspot_id || 0);
                     if (!candidateId) continue;
                     const candidateMaster = (hotspotMap.get(candidateId) || {}) as any;
@@ -135,30 +135,30 @@ export class TimelineMatrixAutobuildService {
                         insertedBy: 'hotspot_route_between_map',
                       });
                     }
-    
-                    // Respect route-level excluded_hotspot_ids if present on route
+
+ // Respect route-level excluded_hotspot_ids if present on route
                     const localExcluded = new Set<number>(Array.isArray((route as any)?.excluded_hotspot_ids) ? ((route as any).excluded_hotspot_ids || []).map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0) : []);
                     if (localExcluded.has(candidateId)) {
                       input.logTimeline('[MATRIX] MATRIX_CANDIDATE_SKIPPED_DUPLICATE', { reason: 'excluded', candidateId });
                       continue;
                     }
-    
+
                     if (input.isHotspotAlreadyPlanned(candidateId)) {
                       input.logTimeline('[MATRIX] MATRIX_CANDIDATE_SKIPPED_DUPLICATE', { reason: 'already_added', candidateId });
                       continue;
                     }
-    
+
                     const exists = selectedHotspots.some((s: any) => Number(s.hotspot_ID || 0) === candidateId);
                     if (exists) {
                       input.logTimeline('[MATRIX] MATRIX_CANDIDATE_SKIPPED_DUPLICATE', { reason: 'present_in_candidates', candidateId });
                       continue;
                     }
-    
-                    // Build candidate object (do not override priority/explicit buckets)
+
+ // Build candidate object (do not override priority/explicit buckets)
                     const matrixMatchDirection = (Number(r.from_hotspot_id || 0) === slot.fromId && Number(r.to_hotspot_id || 0) === slot.toId)
                       ? 'EXACT_DIRECTION'
                       : 'REVERSE_CANONICAL_MATCH';
-    
+
                     const candidate: any = {
                       hotspot_ID: candidateId,
                       display_order: 0,
@@ -173,9 +173,9 @@ export class TimelineMatrixAutobuildService {
                         matrixMatchDirection,
                       },
                     };
-    
-                    // Compute a simple matrix score: prefer ON_ROUTE strongly, MINOR_DETOUR moderately,
-                    // penalize by detour ratio and distance-from-route.
+
+ // Compute a simple matrix score: prefer ON_ROUTE strongly, MINOR_DETOUR moderately,
+ // penalize by detour ratio and distance-from-route.
                     try {
                       let score = 0;
                       if (fitType === 'ON_ROUTE') score += 100;
@@ -188,8 +188,8 @@ export class TimelineMatrixAutobuildService {
                     } catch (e) {
                       candidate.matrix_score = 0;
                     }
-    
-                    // Timing & route feasibility checks before merging candidate
+
+ // Timing & route feasibility checks before merging candidate
                     try {
                       const hotspotData = (hotspotMap.get(candidateId) || {}) as any;
                       const hotspotDuration = String(hotspotData?.hotspot_duration || '01:00:00');
@@ -197,14 +197,14 @@ export class TimelineMatrixAutobuildService {
                       const nowSecs = Math.max(routeStartSeconds, timeToSeconds(currentTime));
                       const visitStartSecs = nowSecs;
                       const visitEndSecs = visitStartSecs + Math.max(60, durationSecs);
-    
-                      // Reject if visit would exceed route end deadline
+
+ // Reject if visit would exceed route end deadline
                       if (visitEndSecs > routeEndSeconds) {
                         input.logTimeline('[MATRIX] MATRIX_CANDIDATE_REJECTED_ROUTE_END', { routeId: route.itinerary_route_ID, candidateId, visitEndSecs, routeEndSeconds });
                         continue;
                       }
-    
-                      // If route date is available, compute php-style day-of-week and consult timingMap
+
+ // If route date is available, compute php-style day-of-week and consult timingMap
                       const routeDateForMatrix = route.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
                       const localPhpDow = routeDateForMatrix ? ((routeDateForMatrix.getDay() + 6) % 7) : undefined;
                       if (typeof localPhpDow === 'number') {
@@ -214,8 +214,8 @@ export class TimelineMatrixAutobuildService {
                           continue;
                         }
                       }
-    
-                      // Passed checks â€” merge (append) as optional candidate
+
+ // Passed checks merge (append) as optional candidate
                       selectedHotspots.push(candidate);
                       input.logTimeline('[MATRIX] MATRIX_CANDIDATE_MERGED', { routeId: route.itinerary_route_ID, candidateId, matrixMatchDirection, matrix_score: candidate.matrix_score });
                     } catch (e) {
@@ -227,7 +227,7 @@ export class TimelineMatrixAutobuildService {
               }
             }
           } catch (err) {
-            console.error('[MATRIX] autobuild merge error:', err);
+ console.error('[MATRIX] autobuild merge error:', err);
           }
     return selectedHotspots;
   }

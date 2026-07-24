@@ -9,10 +9,10 @@ type Tx = Prisma.TransactionClient;
 export class ReturnSegmentBuilder {
   private readonly travelBuilder = new TravelSegmentBuilder();
 
-  /**
+ /**
    * item_type = 7 → return to departure location.
    * Uses plan.departure_location as destination.
-   */
+ */
   async buildReturnToDeparture(
     tx: Tx,
     opts: {
@@ -24,14 +24,14 @@ export class ReturnSegmentBuilder {
       userId: number;
       currentLocationName: string;
       transportMode?: 'road' | 'train' | 'flight';
-      fromHotspotId?: number; // For cache-first
+ fromHotspotId?: number; // For cache-first
       sourceCoords?: { lat: number; lon: number };
       destCoords?: { lat: number; lon: number };
     },
   ): Promise<{ row: HotspotDetailRow; nextTime: string }> {
-    // 1) Determine destination name. 
-    // If destCityName is provided (e.g. from route.next_visiting_place), use it.
-    // Otherwise fallback to plan.departure_location.
+ // 1) Determine destination name.
+ // If destCityName is provided (e.g. from route.next_visiting_place), use it.
+ // Otherwise fallback to plan.departure_location.
     let destinationLocationName = (opts as any).destCityName;
 
     if (!destinationLocationName) {

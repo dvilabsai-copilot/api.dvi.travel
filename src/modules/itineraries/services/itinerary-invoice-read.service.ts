@@ -85,7 +85,7 @@ export class ItineraryInvoiceReadService {
 
       return this.buildPluckCardData(plan, customer, settings);
     }
-  
+
     async getPluckCardDataByConfirmedId(confirmedPlanId: number) {
       const [plan, customer, settings] = await Promise.all([
         this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({
@@ -105,12 +105,12 @@ export class ItineraryInvoiceReadService {
 
       return this.buildPluckCardData(plan, customer, settings);
     }
-  
+
     async getInvoiceData(itineraryPlanId: number) {
       const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
         where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
       });
-  
+
       if (!plan) {
         throw new NotFoundException('Confirmed itinerary plan not found');
       }
@@ -304,7 +304,7 @@ export class ItineraryInvoiceReadService {
             hsnSac: String(settings?.hotel_hsn || ''),
             amount: hotelBaseAmount,
             notes: hotels.map((row: any) => ({
-              label: `${row.itinerary_route_date ? new Date(row.itinerary_route_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''} - ${String(row.itinerary_route_location || '').trim()} - ${hotelNameById.get(Number(row.hotel_id || 0)) || 'Hotel'}`.replace(/^\s*-\s*/, ''),
+ label: `${row.itinerary_route_date ? new Date(row.itinerary_route_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''} - ${String(row.itinerary_route_location || '').trim()} - ${hotelNameById.get(Number(row.hotel_id || 0)) || 'Hotel'}`.replace(/^\s*-\s*/, ''),
             })),
           },
           {

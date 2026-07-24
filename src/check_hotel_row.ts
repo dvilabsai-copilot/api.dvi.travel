@@ -23,12 +23,12 @@ async function check() {
   });
 
   if (row) {
-    console.log("Hotel row found:");
+ console.log("Hotel row found:");
     for (const [key, value] of Object.entries(row)) {
-      console.log(`  ${key}: ${value}`);
+ console.log(` ${key}: ${value}`);
     }
   } else {
-    console.log("No hotel row found");
+ console.log("No hotel row found");
   }
 
   await prisma.$disconnect();

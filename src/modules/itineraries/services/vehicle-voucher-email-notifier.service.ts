@@ -59,7 +59,7 @@ export class VehicleVoucherEmailNotifierService {
   private getTransporter(): Transporter | null {
     if (!this.isEnabled()) {
       if (!this.warnedDisabled) {
-        this.logger.warn('Vehicle voucher email notifier disabled via VEHICLE_VOUCHER_MAIL_ENABLED');
+ this.logger.warn('Vehicle voucher email notifier disabled via VEHICLE_VOUCHER_MAIL_ENABLED');
         this.warnedDisabled = true;
       }
       return null;
@@ -75,7 +75,7 @@ export class VehicleVoucherEmailNotifierService {
 
     if (!host || !user || !pass) {
       if (!this.warnedConfig) {
-        this.logger.warn('Vehicle voucher mail config incomplete (VEHICLE_VOUCHER_MAIL_HOST/USER/PASS)');
+ this.logger.warn('Vehicle voucher mail config incomplete (VEHICLE_VOUCHER_MAIL_HOST/USER/PASS)');
         this.warnedConfig = true;
       }
       return null;
@@ -259,7 +259,7 @@ export class VehicleVoucherEmailNotifierService {
 
       const context = await this.buildContext(itineraryPlanId, vendorEligibleId);
       if (!context) {
-        this.logger.warn(
+ this.logger.warn(
           `Vehicle voucher email context not found for itinerary ${itineraryPlanId}, vendorEligible ${vendorEligibleId}`,
         );
         return;
@@ -317,7 +317,7 @@ export class VehicleVoucherEmailNotifierService {
         });
       }
     } catch (error: any) {
-      this.logger.error(`Vehicle voucher confirmation email send failed: ${error?.message || error}`);
+ this.logger.error(`Vehicle voucher confirmation email send failed: ${error?.message || error}`);
     }
   }
 }

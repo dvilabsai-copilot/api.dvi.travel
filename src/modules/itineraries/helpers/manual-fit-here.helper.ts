@@ -187,9 +187,9 @@ export async function resolveManualFitHereAnchorImpl(
 
   if (anchorIntent === 'AFTER_START') {
     anchorIndex = 0;
-    // Treat "after start" as the concrete gap before the first attraction.
-    // This keeps the exact anchor pinned to the route's first hotspot instead
-    // of letting downstream slot matching drift toward hotel/destination gaps.
+ // Treat "after start" as the concrete gap before the first attraction.
+ // This keeps the exact anchor pinned to the route's first hotspot instead
+ // of letting downstream slot matching drift toward hotel/destination gaps.
     resolvedBeforeRow = rows[0] || null;
 
     if (
@@ -230,7 +230,7 @@ export async function resolveManualFitHereAnchorImpl(
 
     anchorIndex = Number(resolvedAfterRow.index);
     if (!afterRow) {
-      console.warn('[FitHere][anchor_fallback_to_live_route_gap]', {
+ console.warn('[FitHere][anchor_fallback_to_live_route_gap]', {
         routeId: Number(routeId),
         selectedHotspotId: Number(selectedHotspotId || 0),
         anchorIntent,
@@ -593,7 +593,7 @@ export async function previewManualHotspotFitHereImpl(
     allowP1P2Removal: data.allowP1P2Removal === true,
   };
   const matrixPreferredSlot = this.extractManualFitPreferredSlot(previewResult);
-  console.log('[FitHere][preview_anchor_cache]', {
+ console.log('[FitHere][preview_anchor_cache]', {
     attemptId,
     anchorIntent: resolvedAnchor.anchorIntent,
     anchorFrom: resolvedAnchor.anchorFrom,
@@ -913,13 +913,13 @@ export async function previewManualHotspotAutoFitHereImpl(
     removedCount: number;
   }> = [];
   const startedAtMs = Date.now();
-  // Each anchor preview uses a transaction that rebuilds/resequences the same
-  // route rows. Running those transactions in parallel causes MySQL 1213
-  // deadlocks, so keep the route scan serialized. This still evaluates every
-  // anchor; it only controls the order in which the shared route is inspected.
+ // Each anchor preview uses a transaction that rebuilds/resequences the same
+ // route rows. Running those transactions in parallel causes MySQL 1213
+ // deadlocks, so keep the route scan serialized. This still evaluates every
+ // anchor; it only controls the order in which the shared route is inspected.
   const autoPreviewConcurrency = 1;
 
-  console.log('[AutoFitHere][start]', {
+ console.log('[AutoFitHere][start]', {
     planId: Number(planId),
     routeId: Number(data.routeId),
     selectedHotspotId: Number(data.selectedHotspotId),
@@ -952,7 +952,7 @@ export async function previewManualHotspotAutoFitHereImpl(
           : `After ${String(anchor?.anchorFrom || 'selected attraction')}`),
       ).trim();
 
-      console.log('[AutoFitHere][anchor_start]', {
+ console.log('[AutoFitHere][anchor_start]', {
         index: index + 1,
         totalPositions: normalizedAnchors.length,
         anchorKey,
@@ -994,7 +994,7 @@ export async function previewManualHotspotAutoFitHereImpl(
           removedCount,
         });
 
-        console.log('[AutoFitHere][anchor_done]', {
+ console.log('[AutoFitHere][anchor_done]', {
           index: index + 1,
           totalPositions: normalizedAnchors.length,
           anchorKey,
@@ -1027,7 +1027,7 @@ export async function previewManualHotspotAutoFitHereImpl(
           removedCount: 0,
         });
 
-        console.log('[AutoFitHere][anchor_failed]', {
+ console.log('[AutoFitHere][anchor_failed]', {
           index: index + 1,
           totalPositions: normalizedAnchors.length,
           anchorKey,
@@ -1067,7 +1067,7 @@ export async function previewManualHotspotAutoFitHereImpl(
     : 0;
   const slowestAnchor = [...anchorPerformance].sort((a, b) => Number(b.elapsedMs || 0) - Number(a.elapsedMs || 0))[0] || null;
 
-  console.log('[AutoFitHere][summary]', {
+ console.log('[AutoFitHere][summary]', {
     planId: Number(planId),
     routeId: Number(data.routeId),
     selectedHotspotId: Number(data.selectedHotspotId),
@@ -1308,7 +1308,7 @@ export async function confirmManualHotspotFitHereImpl(
         end: parsedAttemptedTimes.end,
       };
     } else {
-      console.warn('[FitHere][force_conflict_missing_attempted_time]', {
+ console.warn('[FitHere][force_conflict_missing_attempted_time]', {
         attemptId: entry.attemptId,
         selectedHotspotId: entry.selectedHotspotId,
         attemptedVisitTime,
@@ -1402,7 +1402,7 @@ export async function confirmManualHotspotFitHereImpl(
     sourceFingerprintChanged,
   });
   if (sourceFingerprintChanged) {
-    console.warn('[FitHere][confirm_source_fingerprint_changed]', {
+ console.warn('[FitHere][confirm_source_fingerprint_changed]', {
       attemptId: entry.attemptId,
       planId: Number(planId),
       routeId: Number(entry.routeId),
@@ -1432,7 +1432,7 @@ export async function confirmManualHotspotFitHereImpl(
   let rollbackReason = 'CONFIRM_FAILED';
   const confirmStartedAt = Date.now();
   const maxConfirmAttempts = 3;
-  console.log('[FitHere][confirm_start]', {
+ console.log('[FitHere][confirm_start]', {
     attemptId: entry.attemptId,
     planId,
     routeId: entry.routeId,
@@ -1463,7 +1463,7 @@ export async function confirmManualHotspotFitHereImpl(
           sourceFingerprintChanged,
           enforceTrustedPreviewConfirmation: trustedPreviewState.enforceTrustedPreviewConfirmation === true,
         });
-        console.log('[FitHere][confirm_apply_result]', {
+ console.log('[FitHere][confirm_apply_result]', {
           attemptId: entry.attemptId,
           durationMs: Date.now() - confirmStartedAt,
           success: applyResult?.success,
@@ -1493,7 +1493,7 @@ export async function confirmManualHotspotFitHereImpl(
           !applyAlreadyExists &&
           persistedFingerprint !== entry.proposedTimelineFingerprint
         ) {
-          console.warn('[FitHere][confirm_fingerprint_mismatch]', {
+ console.warn('[FitHere][confirm_fingerprint_mismatch]', {
             attemptId: entry.attemptId,
             expected: entry.proposedTimelineFingerprint,
             actual: persistedFingerprint,
@@ -1515,7 +1515,7 @@ export async function confirmManualHotspotFitHereImpl(
         throw error;
       }
 
-      console.warn('[FitHere][confirm_tx_retry]', {
+ console.warn('[FitHere][confirm_tx_retry]', {
         attemptId: entry.attemptId,
         planId: Number(planId),
         routeId: Number(entry.routeId),

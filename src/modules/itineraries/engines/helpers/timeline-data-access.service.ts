@@ -160,7 +160,7 @@ export class TimelineDataAccessService {
         result.get(reverseKey)!.push(rowCopy);
       }
     } catch (err) {
-      console.error('[getBetweenCandidatesForRouteSlots] query error:', err);
+ console.error('[getBetweenCandidatesForRouteSlots] query error:', err);
     }
 
     return result;

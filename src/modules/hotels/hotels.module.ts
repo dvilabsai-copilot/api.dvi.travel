@@ -52,9 +52,9 @@ import { HotelPricingService } from '../itineraries/hotels/hotel-pricing.service
     TboHotelMasterSyncService,
     TboSoapSyncService,
     TboApiSyncService,
-    HobseHotelMasterSyncService, // ✅ NEW
+ HobseHotelMasterSyncService, // NEW
     HobseHotelCsvImportService,
-    SupplementNormalizerService, // ✅ NEW: For supplement normalization
+ SupplementNormalizerService, // NEW: For supplement normalization
     HotelPricingService,
     OfflineHotelCatalogService,
   ],
@@ -67,7 +67,7 @@ import { HotelPricingService } from '../itineraries/hotels/hotel-pricing.service
     HobseHotelProvider,
     TboSoapSyncService,
     TboApiSyncService,
-    HobseHotelMasterSyncService, // optional export
+ HobseHotelMasterSyncService, // optional export
     HobseHotelCsvImportService,
     SupplementNormalizerService,
   ],

@@ -34,10 +34,10 @@ export interface VehicleCostBreakdownItemDto {
   amount: number;
 }
 
-/** Convert "HH:MM:SS" or Prisma TIME buffer → "X Hours Y Min" label */
+/** Convert "HH:MM:SS" or Prisma TIME buffer "X Hours Y Min" label */
 function formatHmsDuration(raw: string | null | undefined): string {
   if (!raw) return '0 Hours 0 Min';
-  // Prisma TIME fields come back as Buffer bytes or as e.g. "02:49:00"
+ // Prisma TIME fields come back as Buffer bytes or as e.g. "02:49:00"
   const str = String(raw).trim();
   const match = str.match(/^(\d{1,3}):(\d{2})(?::\d{2})?$/);
   if (match) {
@@ -99,9 +99,9 @@ function toSortableDateTime(value: unknown): number {
 }
 
 export interface VehicleDayWisePricingDto {
-  date: string; // "2025-12-26"
-  dayLabel: string; // "Day 1 | 26 Dec 2025"
-  route: string; // "Chennai → Mahabalipuram"
+ date: string; // "2025-12-26"
+ dayLabel: string; // "Day 1 | 26 Dec 2025"
+ route: string; // "Chennai Mahabalipuram"
   travelType?: 'Local' | 'Outstation' | 'Mixed';
   timeLimitId?: number;
   chargeableTimeLimitId?: number;
@@ -116,13 +116,13 @@ export interface VehicleDayWisePricingDto {
   packageKmLimit?: number;
   pickupKms: number;
   pickupDurationMinutes?: number;
-  travelKms: number; // Running KM per day
+ travelKms: number; // Running KM per day
   travelDurationMinutes?: number;
-  sightseeingKms: number; // Sightseeing KM per day
+ sightseeingKms: number; // Sightseeing KM per day
   sightseeingDurationMinutes?: number;
   dropDurationMinutes?: number;
   totalDurationMinutes?: number;
-  totalKms: number; // Total KMS per day (pickup + travel + sightseeing + drop)
+ totalKms: number; // Total KMS per day (pickup + travel + sightseeing + drop)
   rentalCharges: number;
   tollCharges: number;
   tollBreakupText?: string[];
@@ -141,29 +141,29 @@ export interface VehicleDayWisePricingDto {
 
 /**
  * THREE KMS COLUMNS EXPLANATION:
- * 
+ *
  * col1Distance (Travel KM / Running KM):
  *   - Distance between city-to-city travel
  *   - Example: Chennai to Mahabalipuram = 55.60 KM
  *   - Source: total_running_km
- * 
+ *
  * col2Distance (Sightseeing KM):
  *   - Local distance within a city for attractions/hotspots
  *   - Example: Local sightseeing in Mahabalipuram = 24.03 KM
  *   - Source: total_siteseeing_km
- * 
+ *
  * col3Distance (Total KM):
  *   - Sum of Travel KM + Sightseeing KM
  *   - Example: 55.60 + 24.03 = 79.63 KM
  *   - Source: total_travelled_km
  *   - Used for: Extra KM charges, pricing calculations
- * 
+ *
  * DAY-WISE KMS BREAKDOWN (in expanded row):
  *   - travelKms: total_running_km for that specific day
- *   - sightseeingKms: total_siteseeing_km for that specific day  
+ *   - sightseeingKms: total_siteseeing_km for that specific day
  *   - totalKms: pickup + travel + sightseeing + drop for that specific day
  *   - Shows per-day breakdown, matching legacy PHP structure
- * 
+ *
  * Example:
  *   Day 1: Travel 55.60 KM + Sightseeing 24.03 KM = Total 79.63 KM per day
  */
@@ -174,7 +174,7 @@ export interface ItineraryVehicleRowDto {
   totalQty: string;
   totalAmount: string;
 
-  // IDs needed for vendor selection
+ // IDs needed for vendor selection
   vehicleId?: number | null;
   vehicleIds?: number[];
   vehicleNumber?: string | null;
@@ -199,7 +199,7 @@ export interface ItineraryVehicleRowDto {
   }>;
   localTrip?: boolean;
 
-  // Optional detailed charges – can be filled from vendor-eligible table later
+ // Optional detailed charges can be filled from vendor-eligible table later
   rentalCharges?: number;
   tollCharges?: number;
   parkingCharges?: number;
@@ -210,11 +210,11 @@ export interface ItineraryVehicleRowDto {
   after8pmDriver?: number;
   after8pmVendor?: number;
   breakdown?: VehicleCostBreakdownItemDto[];
-  
-  // Day-wise pricing breakdown for expandable row
+
+ // Day-wise pricing breakdown for expandable row
   dayWisePricing?: VehicleDayWisePricingDto[];
 
-  // Summary totals for the PHP-style expanded panel
+ // Summary totals for the PHP-style expanded panel
   totalDays?: number;
   totalCostOfVehicle?: number;
   totalPickupKm?: number;
@@ -255,7 +255,7 @@ export interface ItineraryVehicleRowDto {
   vendorMarginGstAmount?: number;
   grandTotal?: number;
 
-  // Optional UI helper fields for the vehicle card
+ // Optional UI helper fields for the vehicle card
   dayLabel?: string;
   fromLabel?: string;
   toLabel?: string;
@@ -270,7 +270,7 @@ export interface ItineraryVehicleRowDto {
 }
 
 export interface CostBreakdownDto {
-  // Hotel costs
+ // Hotel costs
   totalRoomCost?: number;
   roomCostPerPerson?: number;
   hotelPaxCount?: number;
@@ -302,13 +302,13 @@ export interface CostBreakdownDto {
   hotelMealPlanGstCost?: number;
   hotelMealPlanAllocatedCost?: number;
   totalHotelAmount?: number;
-  
-  // Vehicle costs
+
+ // Vehicle costs
   totalVehicleCost: number;
   totalVehicleAmount: number;
   totalVehicleQty?: number;
-  
-  // Activity/Guide costs
+
+ // Activity/Guide costs
   totalGuideCost?: number;
   totalHotspotCost?: number;
   entryTicketBreakdown?: EntryTicketBreakdownDto[];
@@ -325,8 +325,8 @@ export interface CostBreakdownDto {
   localExtraKmCharge?: number;
   outstationExtraKms?: number;
   outstationExtraKmCharge?: number;
-  
-  // Final calculations
+
+ // Final calculations
   additionalMargin: number;
   totalAmount: number;
   couponDiscount: number;
@@ -336,7 +336,7 @@ export interface CostBreakdownDto {
   companyName: string;
 }
 
-// NOTE: Hotel fields removed – hotels come from a separate endpoint now.
+// NOTE: Hotel fields removed hotels come from a separate endpoint now.
 export interface ItineraryDetailsResponseDto {
   quoteId: string;
   planId: number;
@@ -368,7 +368,7 @@ export interface ItineraryDetailsResponseDto {
   hotel_facilities?: string[] | string | null;
   hotelFacilities?: string[] | string | null;
   isConfirmed?: boolean;
-  confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
+ confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
   special_instructions?: string | null;
   specialInstructions?: string | null;
   special_instruction?: string | null;
@@ -417,7 +417,7 @@ days: {
   segments: any[];
 }[]; // already shaped for FE (Start/Travel/Attraction/Return)
 
-  // VEHICLES
+ // VEHICLES
   vehicles: ItineraryVehicleRowDto[];
   vehicleRateAvailability?: Array<{
     vehicleTypeId: number;
@@ -425,7 +425,7 @@ days: {
     message: string;
   }>;
 
-  // PACKAGE NOTES + COSTING
+ // PACKAGE NOTES + COSTING
   packageIncludes: {
     description: string;
     houseBoatNote: string;
@@ -599,7 +599,7 @@ export class ItineraryDetailsService {
     };
   }
 
-  /** Calculate temporary totals from the backend-selected hotel-rate snapshot only. */
+ /** Calculate temporary totals from the backend-selected hotel-rate snapshot only. */
   async previewHotelSelectionCost(params: {
     planId: number;
     selections: Record<string, any> | any[];
@@ -758,7 +758,7 @@ export class ItineraryDetailsService {
     quoteId?: string | null;
   }): number {
     const now = Date.now();
-    console.log('[ITINERARY_API_TIMING]', {
+ console.log('[ITINERARY_API_TIMING]', {
       api: params.api,
       planId: params.planId ?? null,
       quoteId: params.quoteId ?? null,
@@ -769,9 +769,9 @@ export class ItineraryDetailsService {
     return now;
   }
 
-  // TODO: remove after validation
+ // TODO: remove after validation
   private logBookingRule(payload: Record<string, unknown>): void {
-    console.log('[BOOKING_RULE]', payload);
+ console.log('[BOOKING_RULE]', payload);
   }
 
   private normalizePlaceLabel(value: any): string {
@@ -793,9 +793,9 @@ export class ItineraryDetailsService {
     return !!na && !!nb && na === nb;
   }
 
-  // ---------------------------------------------------------------------------
-  // Low-level helpers
-  // ---------------------------------------------------------------------------
+ // ---------------------------------------------------------------------------
+ // Low-level helpers
+ // ---------------------------------------------------------------------------
 
 private formatKm(value: number): string {
 return `${value.toFixed(2)} KM`;
@@ -833,7 +833,7 @@ private async getOsrmRouteDistanceKm(
   }
 
   try {
-    const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim();
+ const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim();
     const url = `${osrmBaseUrl}/${fromLng},${fromLat};${toLng},${toLat}?overview=false&alternatives=false&steps=false`;
     const response = await fetch(url, { method: 'GET' });
     if (!response.ok) return null;
@@ -966,7 +966,7 @@ const foodTypeMap: Record<string, string> = {
     const str = String(value).trim();
     if (!str) return null;
 
-    // "DD/MM/YYYY"
+ // "DD/MM/YYYY"
     if (str.includes('/') && !str.includes('T')) {
       const [dStr, mStr, yStr] = str.split('/');
       const d = parseInt(dStr ?? '0', 10);
@@ -1014,7 +1014,7 @@ const foodTypeMap: Record<string, string> = {
             .join(',');
         }
       } catch {
-        // ignore
+ // ignore
       }
     }
 
@@ -1025,7 +1025,7 @@ const foodTypeMap: Record<string, string> = {
     return String(n).padStart(2, '0');
   }
 
-  /**
+ /**
    * YYYY-MM-DD from MySQL DATETIME without server timezone conversion.
    *
    * IMPORTANT:
@@ -1033,11 +1033,11 @@ const foodTypeMap: Record<string, string> = {
    * - Prisma returns it as a JS Date like 2026-07-08T20:00:00.000Z.
    * - Do NOT use getFullYear/getMonth/getDate because that depends on server timezone.
    * - Use UTC getters so local and production both show the DB date consistently.
-   */
+ */
   private formatDbDateOnly(value?: Date | string | null): string {
     if (!value) return '';
 
-    // If DB/date value ever comes as string, preserve the YYYY-MM-DD part directly.
+ // If DB/date value ever comes as string, preserve the YYYY-MM-DD part directly.
     if (typeof value === 'string') {
       const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
       if (match) return `${match[1]}-${match[2]}-${match[3]}`;
@@ -1065,15 +1065,15 @@ const foodTypeMap: Record<string, string> = {
     return `${weekday}, ${month} ${this.pad2(dt.getDate())}, ${dt.getFullYear()}`;
   }
 
-  /**
+ /**
    * Extract TIME from DATETIME field and format as "hh:mm AM/PM".
-   * 
+   *
    * IMPORTANT:
    * - MySQL DATETIME stores wall-clock time without timezone (e.g., "2025-12-24 12:00:00").
    * - Prisma reads this as UTC, so "2025-12-24 12:00:00" becomes a JS Date with UTC time.
    * - We extract the time portion using UTC getters to get the original wall-clock time.
    * - This prevents timezone conversion (12:00 stays 12:00, not shifted to 17:30 IST).
-   */
+ */
   private formatTripDateTime(d?: Date | string | null) {
     if (!d) return null;
     const dt = d instanceof Date ? d : new Date(d);
@@ -1090,7 +1090,7 @@ const foodTypeMap: Record<string, string> = {
   }
 
 
-  /**
+ /**
    * FORMAT MySQL TIME (stored as IST wall-clock in DB) → "hh:mm AM/PM".
    *
    * IMPORTANT:
@@ -1098,13 +1098,13 @@ const foodTypeMap: Record<string, string> = {
    * - Prisma maps TIME to a JS Date (1970-01-01T12:00:00.000Z) in UTC.
    * - We must use UTC getters to read the time value without timezone conversion.
    * - Using local getters on an IST server would add +5:30 (12:00 → 17:30).
-   */
+ */
   public formatTime(d?: Date | string | null): string | null {
     if (!d) return null;
     const dt = d instanceof Date ? d : new Date(d);
     if (isNaN(dt.getTime())) return null;
 
-    let hh = dt.getUTCHours();           // ✅ Read UTC time value
+ let hh = dt.getUTCHours(); // Read UTC time value
     const mm = this.pad2(dt.getUTCMinutes());
 
     const ampm = hh >= 12 ? 'PM' : 'AM';
@@ -1114,7 +1114,7 @@ const foodTypeMap: Record<string, string> = {
     return `${this.pad2(hh)}:${mm} ${ampm}`;
   }
 
-  /** Convert a TIME duration (stored as Date) to "X Hours" / "Y Min" */
+ /** Convert a TIME duration (stored as Date) to "X Hours" / "Y Min" */
   private formatDuration(d?: Date | string | null): string | null {
     if (!d) return null;
     let totalMinutes: number | null = null;
@@ -1147,7 +1147,7 @@ const foodTypeMap: Record<string, string> = {
     return `${m} Min`;
   }
 
-  /** Convert a TIME duration value to total minutes. */
+ /** Convert a TIME duration value to total minutes. */
   private durationToMinutes(d?: Date | string | null): number | null {
     if (!d) return null;
 
@@ -1175,20 +1175,20 @@ const foodTypeMap: Record<string, string> = {
     return null;
   }
 
-  /** Convert time string "HH:MM AM/PM" to minutes since midnight */
+ /** Convert time string "HH:MM AM/PM" to minutes since midnight */
   private timeToMinutes(timeStr: string | null): number {
     if (!timeStr) return 0;
-    
+
     const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
     if (!match) return 0;
-    
+
     let hours = parseInt(match[1]);
     const minutes = parseInt(match[2]);
     const ampm = match[3].toUpperCase();
-    
+
     if (ampm === 'PM' && hours !== 12) hours += 12;
     if (ampm === 'AM' && hours === 12) hours = 0;
-    
+
     return hours * 60 + minutes;
   }
 
@@ -1255,7 +1255,7 @@ const foodTypeMap: Record<string, string> = {
       return normalized;
     }
 
-    // When DB stores equal/blank end time for travel rows, derive the end from duration.
+ // When DB stores equal/blank end time for travel rows, derive the end from duration.
     if (endMinutes === null || endMinutes === startMinutes) {
       const computedEnd = this.minutesToDisplayTime(startMinutes + durationMinutes);
       return this.orderedTimeRange(startTimeText, computedEnd);
@@ -1317,10 +1317,10 @@ const foodTypeMap: Record<string, string> = {
   let previousEnd: number | null = null;
 
   for (const seg of segments) {
-    /**
+ /**
      * Check-in rows have only `time`, not `timeRange` / `visitTime`.
      * Keep the old behavior for check-in, but do not let it affect attraction DB times.
-     */
+ */
     if (seg?.type === 'checkin' && typeof seg.time === 'string') {
       const checkinTime = this.parseDisplayTimeMinutesStrict(String(seg.time).trim());
 
@@ -1343,17 +1343,17 @@ const foodTypeMap: Record<string, string> = {
     let start = parsed.start;
     let end = parsed.end;
 
-    /**
+ /**
      * Do NOT swap start/end blindly.
      * If end < start, treat it as an overnight segment.
      * Example:
      * 11:30 PM - 12:35 AM
-     */
+ */
     if (end < start) {
       end += 24 * 60;
     }
 
-    /**
+ /**
      * VERY IMPORTANT FIX:
      *
      * Attraction visitTime comes from:
@@ -1368,13 +1368,13 @@ const foodTypeMap: Record<string, string> = {
      * Mullakkal was correctly stored as 05:00 PM - 06:00 PM,
      * but normalizeSegmentChronology shifted it to 10:30 PM - 11:30 PM
      * because a previous travel/break segment ended later.
-     */
+ */
     if (seg?.type === 'attraction') {
       previousEnd = end;
       continue;
     }
 
-    /**
+ /**
      * For break rows:
      * If a break overlaps a previous segment, adjust only the break start.
      * Do NOT preserve the original break duration and push the break forward,
@@ -1389,7 +1389,7 @@ const foodTypeMap: Record<string, string> = {
      *
      * Wrong old behavior:
      * 02:13 PM - 06:22 PM
-     */
+ */
     if (seg?.type === 'break') {
       if (previousEnd !== null && start < previousEnd) {
         start = previousEnd;
@@ -1404,11 +1404,11 @@ const foodTypeMap: Record<string, string> = {
       continue;
     }
 
-    /**
+ /**
      * For travel/start/return rows:
      * Keep chronology normalization, because these rows are display helper rows.
      * If they overlap a previous segment, preserve their duration and move forward.
-     */
+ */
     if (previousEnd !== null && start < previousEnd) {
       const duration = Math.max(0, end - start);
       start = previousEnd;
@@ -1531,8 +1531,8 @@ const foodTypeMap: Record<string, string> = {
         resolvedTo = persistedTo || cleanName(fallbackHotelName) || 'Hotel';
       }
 
-      // Guard: non-final travel should not keep destination as route/city/hotel label
-      // when the immediate next visible stop is an attraction.
+ // Guard: non-final travel should not keep destination as route/city/hotel label
+ // when the immediate next visible stop is an attraction.
       if (
         nextStop?.type === 'attraction'
         && nextName
@@ -1541,8 +1541,8 @@ const foodTypeMap: Record<string, string> = {
         resolvedTo = nextName;
       }
 
-      // First-leg guard: if the persisted origin is only the city label (for example "Munnar")
-      // but the route hotel is more specific (for example "Munnar Queen"), prefer hotel label.
+ // First-leg guard: if the persisted origin is only the city label (for example "Munnar")
+ // but the route hotel is more specific (for example "Munnar Queen"), prefer hotel label.
       if (
         nextStop?.type === 'attraction'
         && cleanName(fallbackHotelName)
@@ -1567,13 +1567,13 @@ const foodTypeMap: Record<string, string> = {
     return rows;
   }
 
-  // ---------------------------------------------------------------------------
-  // Itinerary DETAILS (parity-ish with PHP, WITHOUT hotels)
-  // ---------------------------------------------------------------------------
-  
-  /**
+ // ---------------------------------------------------------------------------
+ // Itinerary DETAILS (parity-ish with PHP, WITHOUT hotels)
+ // ---------------------------------------------------------------------------
+
+ /**
    * Helper method to get planId from quoteId
-   */
+ */
   async getPlanIdFromQuoteId(quoteId: string): Promise<number | null> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
@@ -1592,7 +1592,7 @@ const foodTypeMap: Record<string, string> = {
     const apiStartedAt = Date.now();
     let stepStartedAt = apiStartedAt;
 
-    // ------------------------------ PLAN ------------------------------
+ // ------------------------------ PLAN ------------------------------
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
       orderBy: { itinerary_plan_ID: 'desc' },
@@ -1622,7 +1622,7 @@ const foodTypeMap: Record<string, string> = {
       stepStartedAt,
     });
 
-    // ------------------------- ROUTES + HOTSPOTS ----------------------
+ // ------------------------- ROUTES + HOTSPOTS ----------------------
    const routes = await this.prisma.dvi_itinerary_route_details.findMany({
   where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
   orderBy: { itinerary_route_ID: 'asc' },
@@ -1662,13 +1662,13 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
       entryTicketRowsByRouteHotspotId.set(routeHotspotId, rows);
     }
 
-    // ------------------------- HOTELS FOR TIMELINE ----------------------
+ // ------------------------- HOTELS FOR TIMELINE ----------------------
     let timelineHotelRows: any[] = [];
-    
+
     if (confirmedPlan) {
-      // If confirmed, fetch from confirmed hotels table
+ // If confirmed, fetch from confirmed hotels table
       const confirmedHotelWhere: any = { itinerary_plan_id: planId, deleted: 0 };
-      
+
       timelineHotelRows = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
         where: confirmedHotelWhere,
         select: {
@@ -1678,15 +1678,15 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           group_type: true,
         }
       });
-      
-      console.log(`[Timeline Hotels] Fetched ${timelineHotelRows.length} hotels from CONFIRMED table`);
+
+ console.log(`[Timeline Hotels] Fetched ${timelineHotelRows.length} hotels from CONFIRMED table`);
     } else {
-      // If draft, fetch from draft hotels table
+ // If draft, fetch from draft hotels table
       const timelineHotelWhere: any = { itinerary_plan_id: planId, deleted: 0 };
       if (groupType !== undefined) {
         timelineHotelWhere.group_type = groupType;
       } else {
-        timelineHotelWhere.group_type = 1; // Default to first recommendation
+ timelineHotelWhere.group_type = 1; // Default to first recommendation
       }
 
       timelineHotelRows = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
@@ -1698,17 +1698,17 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           group_type: true,
         }
       });
-      
-      console.log(`[Timeline Hotels] Fetched ${timelineHotelRows.length} hotels from DRAFT table with group_type=${timelineHotelWhere.group_type}`);
+
+ console.log(`[Timeline Hotels] Fetched ${timelineHotelRows.length} hotels from DRAFT table with group_type=${timelineHotelWhere.group_type}`);
     }
 
-    // Build route -> hotel map
-    // For TBO/ResAvenue hotels, we'll get names from the live search API later
+ // Build route -> hotel map
+ // For TBO/ResAvenue hotels, we'll get names from the live search API later
     const routeHotelRowMap = new Map(
       timelineHotelRows.map((h) => [h.itinerary_route_id, h]),
     );
-    
-    // Try to get hotel names from dvi_hotel master (for local hotels)
+
+ // Try to get hotel names from dvi_hotel master (for local hotels)
     const hotelIds = Array.from(
       new Set(
         timelineHotelRows
@@ -1722,10 +1722,10 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           select: { hotel_id: true, hotel_name: true, hotel_address: true },
         })
       : [];
-    
+
     const hotelMasterMap = new Map(hotelMasters.map(h => [h.hotel_id, h]));
 
-    // For TBO hotels, also try to look up from tbo_hotel_booking_confirmation
+ // For TBO hotels, also try to look up from tbo_hotel_booking_confirmation
     const tboConfirmationRows = await this.prisma.tbo_hotel_booking_confirmation.findMany({
       where: {
         itinerary_plan_ID: planId,
@@ -1771,16 +1771,16 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
       number,
       { hotel_name: string; hotel_address: string | null; hotel_code: string | null; price: number }
     >();
-    
-    // Build final map with hotel info
-    // If hotel not in master, we'll fetch from TBO/ResAvenue search results
+
+ // Build final map with hotel info
+ // If hotel not in master, we'll fetch from TBO/ResAvenue search results
     const routeHotelMap = new Map();
     for (const [routeId, hotelRow] of routeHotelRowMap.entries()) {
       const hotelIdNum = Number((hotelRow as any)?.hotel_id ?? 0);
       const masterInfo = hotelMasterMap.get(hotelIdNum);
-      
+
       let hotelCode = String((hotelRow as any)?.hotel_code ?? '').trim();
-      // Fallback: check if there's a TBO confirmation for this route
+ // Fallback: check if there's a TBO confirmation for this route
       if (!hotelCode && tboConfirmationMap.has(routeId)) {
         hotelCode = String(tboConfirmationMap.get(routeId) ?? '').trim();
       }
@@ -1789,7 +1789,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
       if (!hotelCode && liveFallback?.hotel_code) {
         hotelCode = String(liveFallback.hotel_code).trim();
       }
-      
+
       const tboInfo = hotelCode.length ? tboHotelMasterMap.get(hotelCode) : null;
 
       routeHotelMap.set(routeId, {
@@ -1800,7 +1800,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
       });
     }
 
-    // Some quotes have no persisted hotel rows in plan tables; use live fallback by route.
+ // Some quotes have no persisted hotel rows in plan tables; use live fallback by route.
     for (const route of routes) {
       const routeIdNum = Number((route as any)?.itinerary_route_ID ?? 0);
       if (!routeIdNum || routeHotelMap.has(routeIdNum)) continue;
@@ -1843,7 +1843,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
     for (let index = 0; index < routes.length; index++) {
       const route = routes[index];
 
-      // from/to locations (dvi_stored_locations)
+ // from/to locations (dvi_stored_locations)
       const location =
         route.location_id && route.location_id !== BigInt(0)
           ? await this.prisma.dvi_stored_locations.findFirst({
@@ -1854,10 +1854,10 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             })
           : null;
 
-      // route-hotspot rows
+ // route-hotspot rows
       const routeHotspots =
         await this.prisma.$queryRawUnsafe(`
-          SELECT 
+          SELECT
             route_hotspot_ID,
             itinerary_plan_ID,
             itinerary_route_ID,
@@ -1895,9 +1895,9 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           ORDER BY hotspot_order ASC
         `) as any[];
 
-      // Build response segments in actual chronological order.
-      // hotspot_order is a persistence grouping key, not a reliable presentation order,
-      // because travel rows are often stored after their attraction rows.
+ // Build response segments in actual chronological order.
+ // hotspot_order is a persistence grouping key, not a reliable presentation order,
+ // because travel rows are often stored after their attraction rows.
       routeHotspots.sort((a: any, b: any) => {
         const aStart = this.formatTime((a as any).hotspot_start_time ?? null);
         const bStart = this.formatTime((b as any).hotspot_start_time ?? null);
@@ -1953,7 +1953,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         }
       }
 
-      // Fetch hotspot timing data for opening hours
+ // Fetch hotspot timing data for opening hours
       const hotspotTimings = hotspotIds.length
         ? await this.prisma.dvi_hotspot_timing.findMany({
             where: {
@@ -1972,7 +1972,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         hotspotTimingMap.get(t.hotspot_ID)!.push(t);
       }
 
-      // Bulk fetch hotspot gallery images
+ // Bulk fetch hotspot gallery images
       const hotspotGalleryRows = hotspotIds.length
         ? await this.prisma.dvi_hotspot_gallery_details.findMany({
             where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
@@ -1992,8 +1992,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
       const segments: any[] = [];
       let travelAnchorIndex = 0;
 
-      // Push CTA immediately before the upcoming travel segment so it renders:
-      //   Attraction → CTA → Travel → Attraction → CTA → Travel …
+ // Push CTA immediately before the upcoming travel segment so it renders:
+ // Attraction CTA Travel Attraction CTA Travel
       const pushHotspotAnchorPlaceholder = (payload: {
         from: string;
         to: string;
@@ -2018,7 +2018,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         plan.arrival_location ??
         "";
 
-      // If starting from "Hotel", use the hotel name from the previous day's stay
+ // If starting from "Hotel", use the hotel name from the previous day's stay
       if (previousStopName === "Hotel" && index > 0) {
         const prevHotelInfo = routeHotelMap.get(
           routes[index - 1].itinerary_route_ID,
@@ -2031,8 +2031,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
       let totalDistanceKm = 0;
       let seenAttraction = false;
       let emittedTravelBeforeFirstAttraction = false;
-      
-      // FIX #3: Track hotel arrival time for checkin anchoring
+
+ // FIX #3: Track hotel arrival time for checkin anchoring
       let hotelArrivalTime: string | null = null;
       let emittedTerminalSegment = false;
       const suppressedLastRouteOrders = new Set<number>();
@@ -2082,7 +2082,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           }
 
           if (nextItemType === 5 || nextItemType === 6) {
-            // Skip hotel-related rows; continue looking for next activity destination
+ // Skip hotel-related rows; continue looking for next activity destination
             continue;
           }
 
@@ -2145,22 +2145,22 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         return null;
       };
 
-      // Find item_type 1 (START/BREAK) to get actual start time
+ // Find item_type 1 (START/BREAK) to get actual start time
       const startHotspot = routeHotspots.find(
         (rh) => Number((rh as any).item_type ?? 0) === 1,
       );
 
-      // ====== SEMANTIC RECONSTRUCTION ALGORITHM ======
-      // Reconstruct true origin/destination for each travel row by analyzing:
-      // 1. The hotspot_ID in the travel row (destination)
-      // 2. The sequence of visits and their times
-      // 3. Looking back for the actual "from" location
-      //
-      // Key insight: item_type=3 rows appear in DB after their corresponding  
-      // item_type=4 attractions (due to hotspot_order sorting), but chronologically
-      // they represent TRAVEL TO those attractions. The "from" is the previous
-      // different location we visited.
-      
+ // ====== SEMANTIC RECONSTRUCTION ALGORITHM ======
+ // Reconstruct true origin/destination for each travel row by analyzing:
+ // 1. The hotspot_ID in the travel row (destination)
+ // 2. The sequence of visits and their times
+ // 3. Looking back for the actual "from" location
+ //
+ // Key insight: item_type=3 rows appear in DB after their corresponding
+ // item_type=4 attractions (due to hotspot_order sorting), but chronologically
+ // they represent TRAVEL TO those attractions. The "from" is the previous
+ // different location we visited.
+
       const buildTravelSegmentSemantics = (): Map<number, {
         from: string;
         to: string;
@@ -2173,8 +2173,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           fromHotspotId: number | null;
           toHotspotId: number | null;
         }>();
-        
-        // First pass: collect all attractions and their visit order
+
+ // First pass: collect all attractions and their visit order
         const visitSequence: Array<{hotspotId: number; hotspotName: string}> = [];
         let routeStartLoc =
           location?.source_location ??
@@ -2182,9 +2182,9 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           plan.arrival_location ??
           '';
 
-        // If this day starts from "Hotel" (previous-night stay), resolve the
-        // actual hotel name so the first travel segment reads
-        // "From PLA Residency, Thanjavur" instead of the bare city name.
+ // If this day starts from "Hotel" (previous-night stay), resolve the
+ // actual hotel name so the first travel segment reads
+ // "From PLA Residency, Thanjavur" instead of the bare city name.
         if (index > 0) {
           const prevRouteHotelInfo = routeHotelMap.get(
             routes[index - 1].itinerary_route_ID,
@@ -2193,8 +2193,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             routeStartLoc = prevRouteHotelInfo.hotel_name;
           }
         }
-        
-        // Track the last unique location we're at
+
+ // Track the last unique location we're at
         let lastUniqueLocation = routeStartLoc;
 
         const getHotelCheckinTimeMinutes = (row: any): number | null => {
@@ -2216,12 +2216,12 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             return checkInMins !== null && checkInMins <= travelStartMins;
           });
         };
-        
-        // Build visit sequence by collecting all attractions
+
+ // Build visit sequence by collecting all attractions
         for (const row of routeHotspots) {
           const itemType = Number((row as any).item_type ?? 0);
           const hotspotId = Number(row.hotspot_ID ?? 0);
-          
+
           if (itemType === 4 && hotspotId > 0) {
             if (isForcedManualConflictAttractionRow(row)) {
               continue;
@@ -2233,36 +2233,36 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             }
           }
         }
-        
-        // Second pass: determine origin for each travel row
+
+ // Second pass: determine origin for each travel row
         for (const row of routeHotspots) {
           const itemType = Number((row as any).item_type ?? 0);
           const hotspotId = Number(row.hotspot_ID ?? 0);
-          
+
           if (itemType === 3 && hotspotId > 0) {
-            // This is a travel row - determine its origin and destination
+ // This is a travel row - determine its origin and destination
             const destMaster = hotspotMap.get(hotspotId);
             const destination = destMaster?.hotspot_name ?? lastUniqueLocation;
-            
-            // Find the origin by looking at what comes before this destination in visit sequence
-            let origin = routeStartLoc;  // Safe fallback
-            
-            // Find this hotspotId in the visit sequence
+
+ // Find the origin by looking at what comes before this destination in visit sequence
+ let origin = routeStartLoc; // Safe fallback
+
+ // Find this hotspotId in the visit sequence
             const destIndex = visitSequence.findIndex(v => v.hotspotId === hotspotId);
-            
+
             if (destIndex > 0) {
-              // There's a previous visit - that's where we came from
+ // There's a previous visit - that's where we came from
               origin = visitSequence[destIndex - 1].hotspotName;
             } else if (destIndex === 0 && visitSequence.length > 0) {
-              // First destination: in hotel-first flows, first sightseeing starts from hotel.
+ // First destination: in hotel-first flows, first sightseeing starts from hotel.
               origin = hasPriorHotelCheckinBeforeTravel(row)
                 ? getRouteHotelName()
                 : routeStartLoc;
             } else {
-              // Destination not found in visits (shouldn't happen, but safe)
+ // Destination not found in visits (shouldn't happen, but safe)
               origin = routeStartLoc;
             }
-            
+
             travelSemantics.set(row.route_hotspot_ID, {
               from: origin,
               to: destination,
@@ -2271,15 +2271,15 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             });
           }
         }
-        
+
         return travelSemantics;
       };
-      
-      // Build the semantic map once, before main loop
+
+ // Build the semantic map once, before main loop
       const travelSegmentSemantics = buildTravelSegmentSemantics();
 
-      // Only add START segment if item_type 1 exists (match PHP behavior)
-      // Exception: suppress START on late-arrival Day 1 that has no attractions
+ // Only add START segment if item_type 1 exists (match PHP behavior)
+ // Exception: suppress START on late-arrival Day 1 that has no attractions
       const hasAttractions = routeHotspots.some(
         (rh) => Number((rh as any).item_type ?? 0) === 4,
       );
@@ -2298,7 +2298,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           const h = planStartTime.getUTCHours();
           return h >= 17 || h === 0;
         }
-        // Fallback to route start time for this route
+ // Fallback to route start time for this route
         const routeStart = typeof route.route_start_time === 'string'
           ? route.route_start_time
           : route.route_start_time && typeof route.route_start_time === 'object'
@@ -2321,8 +2321,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           const firstTimelineStartText = this.formatTime((routeHotspots[0] as any)?.hotspot_start_time ?? null);
 
           if (routeStartText && isTerminalDepartureDay && !hasAttractions) {
-            // Transfer-only departure days should show the exact transfer start,
-            // not a borrowed start from stale or unrelated timeline rows.
+ // Transfer-only departure days should show the exact transfer start,
+ // not a borrowed start from stale or unrelated timeline rows.
             startTimeRange = routeStartText;
           } else if (routeStartText && firstTimelineStartText) {
             const orderedStartRange = this.orderedTimeRange(routeStartText, firstTimelineStartText);
@@ -2344,15 +2344,15 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
       }
 
       for (const rh of routeHotspots) {
-        // ✅ NEW FILTER: Skip hotel rows marked as appearing before route start
-        // These are previous-day checkout rows incorrectly attached to current day
+ // NEW FILTER: Skip hotel rows marked as appearing before route start
+ // These are previous-day checkout rows incorrectly attached to current day
         const isConflictMarked = (rh as any).is_conflict === 1 || (rh as any).isConflict === true;
         const conflictReason = String((rh as any).conflict_reason || (rh as any).conflictReason || '');
-        
+
         if (isConflictMarked && conflictReason.includes('HOTEL_ROW_BEFORE_ROUTE_START')) {
-          // Log the suppression for proof
+ // Log the suppression for proof
           if (proofQuoteEnabled) {
-            console.log('[HotelDayBoundaryAPI][PROOF] Suppressing hotel row before route start', {
+ console.log('[HotelDayBoundaryAPI][PROOF] Suppressing hotel row before route start', {
               quoteId,
               routeId: route.itinerary_route_ID,
               routeHotspotId: rh.route_hotspot_ID,
@@ -2364,7 +2364,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               action: 'SKIPPED_FROM_RESPONSE',
             });
           }
-          continue;  // Skip this row, don't add segment to response
+ continue; // Skip this row, don't add segment to response
         }
 
         const master = rh.hotspot_ID
@@ -2384,19 +2384,19 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           (rh as any).hotspot_end_time ?? null,
         );
 
-        // ---------------- ITEM TYPE HANDLING (match PHP) ----------------
+ // ---------------- ITEM TYPE HANDLING (match PHP) ----------------
         if (itemType === 1) {
-          // PHP doesn't actually show a separate row here; we already pushed
-          // the generic "Start your Journey" above, so just update previousStop.
-          const newPreviousStopName = 
+ // PHP doesn't actually show a separate row here; we already pushed
+ // the generic "Start your Journey" above, so just update previousStop.
+          const newPreviousStopName =
             location?.source_location ??
             route.location_name ??
             plan.arrival_location ??
             '';
-          
-          // [PROOF] Log START processing
+
+ // [PROOF] Log START processing
           if (proofQuoteEnabled) {
-            console.log('[ItemType1Start][PROOF]', {
+ console.log('[ItemType1Start][PROOF]', {
               quoteId,
               routeId: route.itinerary_route_ID,
               routeHotspotId: rh.route_hotspot_ID,
@@ -2409,13 +2409,13 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               previousStopNameBefore: previousStopName,
             });
           }
-          
+
           previousStopName = newPreviousStopName;
           continue;
         }
 
         if (itemType === 2) {
-          // TRAVEL row (from source to next location)
+ // TRAVEL row (from source to next location)
           let toName =
             route.next_visiting_location ??
             location?.destination_location ??
@@ -2429,9 +2429,9 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             }
           }
 
-          // Skip travel segment if from and to locations are the same
+ // Skip travel segment if from and to locations are the same
           if (previousStopName.trim() === toName.trim()) {
-            // Still update previousStopName to maintain consistency
+ // Still update previousStopName to maintain consistency
             previousStopName = toName;
             continue;
           }
@@ -2478,14 +2478,14 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         }
 
         if (itemType === 3) {
-          // Item type 3 can be: break hours, via route, or lunch break
+ // Item type 3 can be: break hours, via route, or lunch break
           const allowBreakHours = (rh as any).allow_break_hours ?? 0;
           const allowViaRoute = (rh as any).allow_via_route ?? 0;
           const viaLocationName = (rh as any).via_location_name?.trim();
 
-          // [PROOF] Log item_type=3 entry state
+ // [PROOF] Log item_type=3 entry state
           if (proofQuoteEnabled) {
-            console.log('[ItemType3Entry][PROOF]', {
+ console.log('[ItemType3Entry][PROOF]', {
               quoteId,
               routeId: route.itinerary_route_ID,
               routeHotspotId: rh.route_hotspot_ID,
@@ -2504,10 +2504,10 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           }
 
           if (allowBreakHours === 1) {
-            // BREAK HOURS (Lunch break, waiting time, etc.)
+ // BREAK HOURS (Lunch break, waiting time, etc.)
             const toName = master?.hotspot_name ?? viaLocationName ?? previousStopName;
             const breakRange = this.orderedTimeRange(startTimeText, endTimeText);
-            
+
             segments.push({
               type: 'break' as const,
               location: toName,
@@ -2515,7 +2515,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               timeRange: breakRange,
             });
           } else if (allowViaRoute === 1 && viaLocationName) {
-            // VIA ROUTE (Travel via a location)
+ // VIA ROUTE (Travel via a location)
             const toName = viaLocationName;
             const resolvedDistanceKm = await this.resolveTravelDistanceKm({
               row: rh,
@@ -2559,17 +2559,17 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               continue;
             }
 
-            // Regular travel to hotspot - use precomputed semantic mapping
+ // Regular travel to hotspot - use precomputed semantic mapping
             const semanticMapping = travelSegmentSemantics.get(rh.route_hotspot_ID);
-            let fromName = semanticMapping?.from ?? previousStopName;  // Fallback only if not in map
-            let toName = semanticMapping?.to ?? 
+ let fromName = semanticMapping?.from previousStopName; // Fallback only if not in map
+            let toName = semanticMapping?.to ??
               master?.hotspot_name ??
               viaLocationName ??
               (rh.hotspot_ID === 0 ? route.next_visiting_location : null) ??
               previousStopName;
 
-            // In force-conflict mode, keep the manually inserted conflict hotspot in sequence:
-            // Hotel -> [manual conflict hotspot] -> next scheduled attraction.
+ // In force-conflict mode, keep the manually inserted conflict hotspot in sequence:
+ // Hotel -> [manual conflict hotspot] -> next scheduled attraction.
             if (pendingForcedManualConflictRows.length > 0) {
               for (const forcedRow of pendingForcedManualConflictRows) {
                 const forcedHotspotId = Number((forcedRow as any)?.hotspot_ID ?? 0);
@@ -2673,7 +2673,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             let usedNextSemanticDestination = false;
 
             if (proofQuoteEnabled) {
-              console.log('[Item3RegularTravelBeforeLookahead][PROOF]', {
+ console.log('[Item3RegularTravelBeforeLookahead][PROOF]', {
                 quoteId,
                 routeId: route.itinerary_route_ID,
                 routeHotspotId: rh.route_hotspot_ID,
@@ -2704,7 +2704,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             }
 
             if (proofQuoteEnabled) {
-              console.log('[Item3LookaheadResult][PROOF]', {
+ console.log('[Item3LookaheadResult][PROOF]', {
                 quoteId,
                 routeId: route.itinerary_route_ID,
                 routeHotspotId: rh.route_hotspot_ID,
@@ -2731,8 +2731,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               location?.destination_location ??
               null;
 
-            // When this is the terminal city-level travel right before hotel rows,
-            // prefer the resolved hotel name so travel + checkin are consistent.
+ // When this is the terminal city-level travel right before hotel rows,
+ // prefer the resolved hotel name so travel + checkin are consistent.
             if (
               hasUpcomingHotelSegment &&
               Number(rh.hotspot_ID ?? 0) === 0 &&
@@ -2746,7 +2746,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             }
 
             if (proofQuoteEnabled) {
-              console.log('[TravelSegment][PROOF]', {
+ console.log('[TravelSegment][PROOF]', {
                 quoteId,
                 routeId: route.itinerary_route_ID,
                 routeHotspotId: rh.route_hotspot_ID,
@@ -2787,7 +2787,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             }
 
             if (proofQuoteEnabled) {
-              console.log('[Item3SegmentEmitted][PROOF]', {
+ console.log('[Item3SegmentEmitted][PROOF]', {
                 quoteId,
                 routeId: route.itinerary_route_ID,
                 routeHotspotId: rh.route_hotspot_ID,
@@ -2829,7 +2829,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         }
 
         if (itemType === 4) {
-          // ATTRACTION / HOTSPOT visit
+ // ATTRACTION / HOTSPOT visit
           if (!master || !master.hotspot_name?.trim()) {
             continue;
           }
@@ -2908,11 +2908,11 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           const hotspotAmount = (rh as any).hotspot_amout ?? 0;
           const hotspotPlanOwnWay = (rh as any).hotspot_plan_own_way ?? 0;
           const hotspotVideoUrl = master.hotspot_video_url ?? null;
-          
+
           const rawP = (master as any).hotspot_priority ?? (master as any).priority ?? 0;
           const priority = Number(rawP) === 0 ? 9999 : Number(rawP);
 
-          // Check if master catalog has activities for this hotspot
+ // Check if master catalog has activities for this hotspot
           const catalogActivityCount = rh.hotspot_ID
             ? await this.prisma.dvi_activity.count({
                 where: { hotspot_id: rh.hotspot_ID as number, deleted: 0, status: 1 },
@@ -2920,7 +2920,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             : 0;
           const hasAvailableActivities = catalogActivityCount > 0;
 
-          // Fetch activities for this hotspot
+ // Fetch activities for this hotspot
           const activities = await this.prisma.dvi_itinerary_route_activity_details.findMany({
             where: {
               itinerary_plan_ID: planId,
@@ -2933,7 +2933,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             orderBy: { activity_order: 'asc' },
           });
 
-          // Fetch activity masters for details
+ // Fetch activity masters for details
           const activityIds = activities.map(a => a.activity_ID).filter(id => id > 0);
           const activityMasters = activityIds.length
             ? await this.prisma.dvi_activity.findMany({
@@ -2946,7 +2946,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
 
           const activityMap = new Map(activityMasters.map(a => [a.activity_id, a]));
 
-          // Bulk fetch activity gallery images for this hotspot's activities
+ // Bulk fetch activity gallery images for this hotspot's activities
           const activityGalleryRows = activityIds.length
             ? await this.prisma.dvi_activity_image_gallery_details.findMany({
                 where: { activity_id: { in: activityIds }, deleted: 0 },
@@ -2981,7 +2981,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             };
           });
 
-          // Check if there's wait time due to opening hours
+ // Check if there's wait time due to opening hours
           const orderedVisitRange = this.orderedTimeRange(startTimeText, endTimeText);
           let visitTimeDisplay = orderedVisitRange;
 
@@ -2992,7 +2992,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           if (visitTimeDisplay && rh.hotspot_ID && route.itinerary_route_date) {
             timingValidationExecuted = true;
             const timings = hotspotTimingMap.get(rh.hotspot_ID as number) || [];
-            const dayOfWeek = (route.itinerary_route_date.getDay() + 6) % 7; // Mon=0 style
+ const dayOfWeek = (route.itinerary_route_date.getDay() + 6) % 7; // Mon=0 style
 
             const dayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek);
             const todayTimings = dayTimings.filter(t => t.hotspot_closed !== 1);
@@ -3005,7 +3005,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
 
             if (todayTimings.length > 0) {
               const isOpenAllTime = todayTimings.some(t => t.hotspot_open_all_time === 1);
-              
+
               if (!isOpenAllTime) {
                 const visitStartText = orderedVisitRange
                   ? String(orderedVisitRange).split(' - ')[0]?.trim()
@@ -3016,8 +3016,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
 
                 const arrivalMins = this.timeToMinutes(visitStartText);
                 const departureMins = this.timeToMinutes(visitEndText);
-                
-                // Check if visit fits in ANY window
+
+ // Check if visit fits in ANY window
                 const fitsInAnyWindow = todayTimings.some(t => {
                   const opStart = this.timeToMinutes(this.formatTime(t.hotspot_start_time as any));
                   const opEnd = this.timeToMinutes(this.formatTime(t.hotspot_end_time as any));
@@ -3025,7 +3025,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
                 });
 
                 if (!fitsInAnyWindow) {
-                  // Find the next opening time after arrival
+ // Find the next opening time after arrival
                   const nextOpening = todayTimings
                     .map(t => this.formatTime(t.hotspot_start_time as any))
                     .filter(ot => this.timeToMinutes(ot) > arrivalMins)
@@ -3053,12 +3053,12 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           }
 
           if (isForcedManualConflictAttraction) {
-            // These rows are rendered via the synthetic sequence injected before regular travel.
-            // Skipping raw rows here prevents duplicate conflict attractions in timeline output.
+ // These rows are rendered via the synthetic sequence injected before regular travel.
+ // Skipping raw rows here prevents duplicate conflict attractions in timeline output.
             continue;
           }
 
-          // Format operating hours (timings)
+ // Format operating hours (timings)
           let operatingHours = '';
           const timings = rh.hotspot_ID ? hotspotTimingMap.get(rh.hotspot_ID as number) || [] : [];
           const dayOfWeek = route.itinerary_route_date ? (route.itinerary_route_date.getDay() + 6) % 7 : 0;
@@ -3117,9 +3117,9 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             isDeleted: (rh as any).deleted === 1,
           });
 
-          // [PROOF] Log attraction processing
+ // [PROOF] Log attraction processing
           if (proofQuoteEnabled) {
-            console.log('[AttractionProcessing][PROOF]', {
+ console.log('[AttractionProcessing][PROOF]', {
               quoteId,
               routeId: route.itinerary_route_ID,
               routeHotspotId: rh.route_hotspot_ID,
@@ -3140,11 +3140,11 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         }
 
         if (itemType === 5) {
-          // TRAVEL TO HOTEL segment
-          // Derive origin by chronology (latest attraction that ended at/before this travel start).
-          // Do NOT rely on row order; route rows are grouped by hotspot_order/item_type and can
-          // place future attractions before this travel-to-hotel row in the array.
-          
+ // TRAVEL TO HOTEL segment
+ // Derive origin by chronology (latest attraction that ended at/before this travel start).
+ // Do NOT rely on row order; route rows are grouped by hotspot_order/item_type and can
+ // place future attractions before this travel-to-hotel row in the array.
+
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
           const toName =
             isVehicleOnly
@@ -3171,8 +3171,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
 
           const travelStartMins = startTimeText ? this.timeToMinutes(startTimeText) : null;
 
-          // Find the chronologically last attraction that actually happened before this row.
-          // Fallback: use previous day's hotel name (if any), otherwise city name.
+ // Find the chronologically last attraction that actually happened before this row.
+ // Fallback: use previous day's hotel name (if any), otherwise city name.
           const prevDayHotelForItem5 = index > 0
             ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)?.hotel_name ?? null
             : null;
@@ -3182,7 +3182,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             location?.source_location ??
             route.location_name ??
             plan.arrival_location ??
-            ""; // Safe fallback
+ ""; // Safe fallback
 
           if (travelStartMins !== null) {
             let bestAttractionName: string | null = null;
@@ -3210,8 +3210,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             }
           }
 
-          // Only suppress same-city hotel travel when the segment collapses into a redundant
-          // city-to-same-city label because the hotel could not be resolved beyond the city name.
+ // Only suppress same-city hotel travel when the segment collapses into a redundant
+ // city-to-same-city label because the hotel could not be resolved beyond the city name.
           if (
             isSameCityRoute &&
             isCityFallbackDestination &&
@@ -3222,7 +3222,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
           }
 
           if (proofQuoteEnabled) {
-            console.log('[ItemType5TravelToHotel][PROOF]', {
+ console.log('[ItemType5TravelToHotel][PROOF]', {
               quoteId,
               routeId: route.itinerary_route_ID,
               routeHotspotId: rh.route_hotspot_ID,
@@ -3239,19 +3239,19 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             totalDistanceKm += distanceNum;
           }
 
-          // Handle reversed times in DB  for item_type=5
+ // Handle reversed times in DB for item_type=5
           let travelToHotelTimeRange: string | null = null;
           if (startTimeText && endTimeText) {
             const startMins = this.timeToMinutes(startTimeText);
             const endMins = this.timeToMinutes(endTimeText);
             if (startMins > endMins) {
               travelToHotelTimeRange = `${endTimeText} - ${startTimeText}`;
-              
-              // FIX #3: Store the actual ARRIVAL time (which is after reversal)
+
+ // FIX #3: Store the actual ARRIVAL time (which is after reversal)
               hotelArrivalTime = startTimeText;
-              
+
               if (proofQuoteEnabled) {
-                console.log('[Item5TimeReversal][PROOF]', {
+ console.log('[Item5TimeReversal][PROOF]', {
                   quoteId,
                   routeId: route.itinerary_route_ID,
                   routeHotspotId: rh.route_hotspot_ID,
@@ -3262,8 +3262,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
                   storedHotelArrivalTime: hotelArrivalTime,
                 });
               }
-              
-              console.log('[TravelMapping][PROOF] item_type=5 reversed time range normalised', {
+
+ console.log('[TravelMapping][PROOF] item_type=5 reversed time range normalised', {
                 quoteId,
                 routeHotspotId: rh.route_hotspot_ID,
                 from: fromName,
@@ -3273,8 +3273,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               });
             } else {
               travelToHotelTimeRange = `${startTimeText} - ${endTimeText}`;
-              
-              // FIX #3: Store the actual ARRIVAL time
+
+ // FIX #3: Store the actual ARRIVAL time
               hotelArrivalTime = endTimeText;
             }
 
@@ -3310,7 +3310,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         }
 
         if (itemType === 6) {
-          // HOTEL CHECK-IN / RETURN segment
+ // HOTEL CHECK-IN / RETURN segment
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
           const hotelName =
             isVehicleOnly
@@ -3324,8 +3324,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               );
           const hotelAddress = hotelInfo?.hotel_address ?? "";
 
-          // FIX #3: Use hotel arrival time (from travel-to-hotel) if available
-          // Otherwise fallback to endTimeText from this checkin row, then startTimeText, then route end time
+ // FIX #3: Use hotel arrival time (from travel-to-hotel) if available
+ // Otherwise fallback to endTimeText from this checkin row, then startTimeText, then route end time
           const checkInTime =
             hotelArrivalTime ??
             endTimeText ??
@@ -3333,9 +3333,9 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             this.formatTime(route.route_end_time as any) ??
             null;
 
-          // [PROOF] Log checkin derivation
+ // [PROOF] Log checkin derivation
           if (proofQuoteEnabled) {
-            console.log('[ItemType6CheckinEntry][PROOF]', {
+ console.log('[ItemType6CheckinEntry][PROOF]', {
               quoteId,
               routeId: route.itinerary_route_ID,
               routeHotspotId: rh.route_hotspot_ID,
@@ -3369,20 +3369,20 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         }
 
         if (itemType === 7) {
-          // DROP OFF - final travel to airport/departure point
+ // DROP OFF - final travel to airport/departure point
           const toName = route.next_visiting_location ?? plan.departure_location ?? 'Departure Point';
 
           if (!Number.isNaN(distanceNum)) {
             totalDistanceKm += distanceNum;
           }
 
-          // FIX #2: Validate that DROP_OFF doesn't exceed route end time
+ // FIX #2: Validate that DROP_OFF doesn't exceed route end time
           const dropOffEndMins = endTimeText ? this.timeToMinutes(endTimeText) : 0;
-          
+
           if (dropOffEndMins > routeEndMins) {
-            // DROP_OFF row exceeds route end time - suppress it from normal segments
+ // DROP_OFF row exceeds route end time - suppress it from normal segments
             if (proofQuoteEnabled) {
-              console.log('[RouteEndValidation][DROPOFF_SUPPRESSED][PROOF]', {
+ console.log('[RouteEndValidation][DROPOFF_SUPPRESSED][PROOF]', {
                 quoteId,
                 routeId: route.itinerary_route_ID,
                 routeHotspotId: rh.route_hotspot_ID,
@@ -3393,7 +3393,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
                 reason: 'DROP_OFF exceeds route end time - segment suppressed',
               });
             }
-            // Skip this segment - do not emit
+ // Skip this segment - do not emit
             continue;
           }
 
@@ -3415,7 +3415,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         }
       }
 
-      // RETURN block at the end of the day (only if no item_type 6 or 7 exists)
+ // RETURN block at the end of the day (only if no item_type 6 or 7 exists)
       const hasReturnOrDropOff = emittedTerminalSegment;
       const dayStartTimeText = this.formatTime(route.route_start_time as any);
       const dayEndTimeText = this.formatTime(route.route_end_time as any);
@@ -3513,7 +3513,7 @@ for (let i = 0; i < cleanedRouteChain.length - 1; i++) {
   const from = cleanedRouteChain[i];
   const to = cleanedRouteChain[i + 1];
 
-  // Try exact match first
+ // Try exact match first
   let storedRoute = await this.prisma.dvi_stored_locations.findFirst({
     where: {
       deleted: 0,
@@ -3522,7 +3522,7 @@ for (let i = 0; i < cleanedRouteChain.length - 1; i++) {
     } as any,
   });
 
-  // Try reverse match
+ // Try reverse match
   if (!storedRoute) {
     storedRoute = await this.prisma.dvi_stored_locations.findFirst({
       where: {
@@ -3597,15 +3597,15 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
 
 
 
-      // FIX #1: Sort segments chronologically.
-      // Strategy:
-      //   1. Lift out all anchor CTAs (type=hotspot) along with the index of the segment they
-      //      were inserted after (their preceding non-CTA neighbour index in the unsorted list).
-      //   2. Sort only the non-CTA segments by time.
-      //   3. Re-insert each CTA immediately after the sorted position of its preceding neighbour.
-      // This guarantees: Travel → Attraction → CTA → Travel → Attraction → CTA → …
+ // FIX #1: Sort segments chronologically.
+ // Strategy:
+ // 1. Lift out all anchor CTAs (type=hotspot) along with the index of the segment they
+ // were inserted after (their preceding non-CTA neighbour index in the unsorted list).
+ // 2. Sort only the non-CTA segments by time.
+ // 3. Re-insert each CTA immediately after the sorted position of its preceding neighbour.
+ // This guarantees: Travel Attraction CTA Travel Attraction CTA
 
-      // Step 1: extract CTAs and remember which non-CTA segment each followed.
+ // Step 1: extract CTAs and remember which non-CTA segment each followed.
       type CtaEntry = { cta: any; afterSegmentRef: any | null };
       const ctaEntries: CtaEntry[] = [];
       const nonCtaSegments: any[] = [];
@@ -3613,7 +3613,7 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
       for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
         if (seg?.type === 'hotspot' && seg?.anchorType === 'after_travel') {
-          // Find the most recent non-CTA segment before this one.
+ // Find the most recent non-CTA segment before this one.
           let afterRef: any | null = null;
           for (let j = i - 1; j >= 0; j--) {
             if (!(segments[j]?.type === 'hotspot' && segments[j]?.anchorType === 'after_travel')) {
@@ -3627,7 +3627,7 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
         }
       }
 
-      // Step 2: sort the non-CTA segments by time.
+ // Step 2: sort the non-CTA segments by time.
       const typeOrder: Record<string, number> = {
         'start': 0,
         'travel': 1,
@@ -3683,9 +3683,9 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
         const endDiff = aEnd - bEnd;
         if (endDiff !== 0) return endDiff;
 
-        // Same-minute tie-break for dirty overlap data:
-        // if travel starts from an attraction location at the exact same minute,
-        // show the attraction first, then departure travel.
+ // Same-minute tie-break for dirty overlap data:
+ // if travel starts from an attraction location at the exact same minute,
+ // show the attraction first, then departure travel.
         if (a?.type === 'travel' && b?.type === 'attraction') {
           const aFrom = normalizeName(a?.from);
           const aTo = normalizeName(a?.to);
@@ -3715,11 +3715,11 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
         return (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99);
       });
 
-      // Step 3: splice each CTA back in right after its reference segment.
-      // Process in reverse anchorIndex order so earlier insertions don't shift later positions.
+ // Step 3: splice each CTA back in right after its reference segment.
+ // Process in reverse anchorIndex order so earlier insertions don't shift later positions.
       const sortedCtaEntries = [...ctaEntries].reverse();
       for (const { cta, afterSegmentRef } of sortedCtaEntries) {
-        let insertAt = nonCtaSegments.length; // default: append
+ let insertAt = nonCtaSegments.length; // default: append
         if (afterSegmentRef !== null) {
           const refIdx = nonCtaSegments.indexOf(afterSegmentRef);
           if (refIdx !== -1) {
@@ -3729,12 +3729,12 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
         nonCtaSegments.splice(insertAt, 0, cta);
       }
 
-      // Replace segments in-place with the correctly ordered result.
+ // Replace segments in-place with the correctly ordered result.
       segments.length = 0;
       segments.push(...nonCtaSegments);
 
-      // In hotel-first flows, place start before check-in
-      // so the sequence reads: travel to hotel -> Start your Journey -> checkin.
+ // In hotel-first flows, place start before check-in
+ // so the sequence reads: travel to hotel -> Start your Journey -> checkin.
       const getSegmentStartMinutes = (seg: any): number | null => {
         if (!seg) return null;
 
@@ -3768,7 +3768,7 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
       const routeHotelNameForDay = getRouteHotelName();
       const routeHotelNameNormalized = normalizeName(routeHotelNameForDay);
 
-      // Final response-level sanitizer: prevent excluded hotspots and no-op travels from leaking.
+ // Final response-level sanitizer: prevent excluded hotspots and no-op travels from leaking.
       const excludedIds = new Set<number>(
         Array.isArray((route as any)?.excluded_hotspot_ids)
           ? (route as any).excluded_hotspot_ids
@@ -3846,7 +3846,7 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
         const refreshedCheckinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
 
         if (refreshedCheckinIndex >= 0) {
-          // Insert START before CHECKIN
+ // Insert START before CHECKIN
           segments.splice(refreshedCheckinIndex, 0, startSegment);
         } else {
           segments.unshift(startSegment);
@@ -3859,11 +3859,11 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
       );
       segments.splice(0, segments.length, ...sanitizeSegments(segments));
 
-      // Ensure timeline never moves backward when source rows contain overlaps/reversed ranges.
+ // Ensure timeline never moves backward when source rows contain overlaps/reversed ranges.
       this.normalizeSegmentChronology(segments);
 
       if (proofQuoteEnabled) {
-        console.log('[SegmentChronology][SORT_APPLIED][PROOF]', {
+ console.log('[SegmentChronology][SORT_APPLIED][PROOF]', {
           quoteId,
           routeId: route.itinerary_route_ID,
           dayNumber: index + 1,
@@ -3893,7 +3893,7 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
     '',
   distance: dayDistance,
 intercityDistance,
-sightseeingDistance,       // local sightseeing separately
+sightseeingDistance, // local sightseeing separately
       startTime: dayStartTimeText,
   endTime: dayEndTimeText,
   departureTime: this.formatTime(plan.trip_end_date_and_time as any),
@@ -3914,9 +3914,9 @@ sightseeingDistance,       // local sightseeing separately
 
     const shouldIncludeVehicles = itineraryPreference === 2 || itineraryPreference === 3;
 
-    // ------------------------------ VEHICLES ------------------------------
-    // PHP displays vehicles directly from dvi_itinerary_plan_vendor_eligible_list
-    // Each row in eligible list is already aggregated per vendor/branch/type/origin
+ // ------------------------------ VEHICLES ------------------------------
+ // PHP displays vehicles directly from dvi_itinerary_plan_vendor_eligible_list
+ // Each row in eligible list is already aggregated per vendor/branch/type/origin
     const rawEligibleRows = shouldIncludeVehicles
       ? await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
           where: { itinerary_plan_id: planId, status: 1, deleted: 0 },
@@ -3984,7 +3984,7 @@ sightseeingDistance,       // local sightseeing separately
       process.env.DEBUG_DVI20260594_INSERT === 'true' ||
       process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
     if (debugVehicleTrace) {
-      console.log('[DETAILS_VEHICLE_ELIGIBLE_ROWS]', {
+ console.log('[DETAILS_VEHICLE_ELIGIBLE_ROWS]', {
         planId,
         rawCount: rawEligibleRows.length,
         dedupedCount: dedupedEligibleCount,
@@ -4002,32 +4002,32 @@ sightseeingDistance,       // local sightseeing separately
     }
     let kmLimitWarning: string | undefined;
 
-    // Fetch all vehicle type names to map vehicleTypeId -> vehicleTypeName
+ // Fetch all vehicle type names to map vehicleTypeId -> vehicleTypeName
     const vehicleTypeIds = Array.from(
       new Set(activeEligibleRows.map(r => (r as any).vehicle_type_id).filter(Boolean))
     );
     const vehicleTypes = vehicleTypeIds.length > 0
       ? await (this.prisma as any).dvi_vehicle_type.findMany({
-          where: { 
+          where: {
             vehicle_type_id: { in: vehicleTypeIds },
-            deleted: 0 
+            deleted: 0
           },
           select: { vehicle_type_id: true, vehicle_type_title: true }
         })
       : [];
-    
+
     const vehicleTypeNameMap = new Map<number, string>(
       vehicleTypes.map((vt: any) => [vt.vehicle_type_id, vt.vehicle_type_title || 'Unknown Vehicle Type'])
     );
 
-    // Fetch vehicle details for ALL eligibles so every vendor shows day-wise breakdown on expand
+ // Fetch vehicle details for ALL eligibles so every vendor shows day-wise breakdown on expand
     const allEligibleIds = eligibleRows
   .map((e) => Number((e as any).itinerary_plan_vendor_eligible_ID))
   .filter((id) => id > 0);
 
     const rawVehicleDetailsRows = allEligibleIds.length
   ? await this.prisma.$queryRawUnsafe(`
-      SELECT 
+      SELECT
         itinerary_plan_vendor_vehicle_details_ID,
         itinerary_plan_vendor_eligible_ID,
         itinerary_plan_id,
@@ -4104,7 +4104,7 @@ sightseeingDistance,       // local sightseeing separately
       );
     });
 
-    // Group vehicle details by eligible ID to sum KMs
+ // Group vehicle details by eligible ID to sum KMs
     const vehicleDetailsByEligible = new Map<number, any[]>();
     for (const vd of vehicleDetailsRows) {
       const eligibleId = (vd as any).itinerary_plan_vendor_eligible_ID;
@@ -4123,7 +4123,7 @@ sightseeingDistance,       // local sightseeing separately
         const duplicateKeys = Array.from(dupMap.entries())
           .filter(([, c]) => c > 1)
           .map(([k, c]) => ({ key: k, rowCount: c }));
-        console.log('[DETAILS_VEHICLE_DETAIL_ROWS]', {
+ console.log('[DETAILS_VEHICLE_DETAIL_ROWS]', {
           planId,
           eligibleId,
           rawRowCount: rawVehicleDetailsRows.filter(
@@ -4290,7 +4290,7 @@ sightseeingDistance,       // local sightseeing separately
       ]),
     );
 
-    // 3) Load vendor branches (for names & origin location)
+ // 3) Load vendor branches (for names & origin location)
     const branchIds = Array.from(
       new Set(
         eligibleRows
@@ -4590,7 +4590,7 @@ sightseeingDistance,       // local sightseeing separately
       }
     }
 
-    // Build vehicles array directly from eligible list (like PHP does)
+ // Build vehicles array directly from eligible list (like PHP does)
     const allVehicles: ItineraryVehicleRowDto[] = activeEligibleRows.map((eligible) => {
       const branchId = (eligible as any).vendor_branch_id ?? 0;
       const branch = branchMap.get(branchId) || null;
@@ -4605,11 +4605,11 @@ sightseeingDistance,       // local sightseeing separately
         ? registrationNumber.substring(0, 2).toUpperCase()
         : null;
       const origin = ((eligible as any).vehicle_orign ?? '').toString().trim();
-      
+
       const qty = (eligible as any).total_vehicle_qty ?? 0;
       const totalAmount = (eligible as any).vehicle_grand_total ?? 0;
 
-      // Get all charge breakdowns
+ // Get all charge breakdowns
       let rentalCharges = Number((eligible as any).total_rental_charges ?? 0);
       let tollCharges = Number((eligible as any).total_toll_charges ?? 0);
       let parkingCharges = Number((eligible as any).total_parking_charges ?? 0);
@@ -4621,7 +4621,7 @@ sightseeingDistance,       // local sightseeing separately
       const after8pmVendor = (eligible as any).total_after_8_pm_charges_for_vehicle ?? 0;
       let extraHourCharge = 0;
 
-      // Calculate aggregated KMs from day-wise vehicle details
+ // Calculate aggregated KMs from day-wise vehicle details
       const eligibleId = eligible.itinerary_plan_vendor_eligible_ID;
       const groupedVehicleMeta = eligibleGroupMetaByRepresentativeId.get(
         Number(eligibleId || 0),
@@ -4683,9 +4683,9 @@ sightseeingDistance,       // local sightseeing separately
         : localTrip
           ? 'Local'
           : (outstationPackageKm > 0 ? `Outstation - ${outstationPackageKm} KM Package` : 'Outstation');
-      // Build day-wise pricing breakdown from vehicle details
-      // Build day-wise pricing breakdown from vehicle details
-      // KMS per day: pickup, running, siteseeing, drop, and computed total.
+ // Build day-wise pricing breakdown from vehicle details
+ // Build day-wise pricing breakdown from vehicle details
+ // KMS per day: pickup, running, siteseeing, drop, and computed total.
       const dayWisePricing: VehicleDayWisePricingDto[] = [];
       const dayWiseMap = new Map<string, any>();
 
@@ -4698,7 +4698,7 @@ sightseeingDistance,       // local sightseeing separately
       for (const vd of dayWiseDetails) {
         const dateStr = (vd as any).itinerary_route_date?.toISOString?.()?.split('T')[0] || '';
         if (!dateStr) continue;
-        
+
         if (!dayWiseMap.has(dateStr)) {
           dayWiseMap.set(dateStr, {
             date: dateStr,
@@ -4730,17 +4730,17 @@ sightseeingDistance,       // local sightseeing separately
             pickupDurationMinutes: 0,
             dropKms: 0,
             dropDurationMinutes: 0,
-            travelKms: 0, // running_km per day
+ travelKms: 0, // running_km per day
             travelDurationMinutes: 0,
-            sightseeingKms: 0, // siteseeing_km per day
+ sightseeingKms: 0, // siteseeing_km per day
             sightseeingDurationMinutes: 0,
             totalDurationMinutes: 0,
             tollBreakupText: [],
             parkingBreakupText: [],
-            totalKms: 0 // pickup + running + sightseeing + drop per day
+ totalKms: 0 // pickup + running + sightseeing + drop per day
           });
         }
-        
+
         const dayData = dayWiseMap.get(dateStr);
         const rowRouteId = Number((vd as any).itinerary_route_id || 0);
         const fromLocation = String((vd as any).itinerary_route_location_from || '').trim();
@@ -4787,7 +4787,7 @@ sightseeingDistance,       // local sightseeing separately
         const dayBefore6Vehicle = parseFloat(String((vd as any).before_6_am_charges_for_vehicle || 0)) || 0;
         const dayAfter8Driver = parseFloat(String((vd as any).after_8_pm_charges_for_driver || 0)) || 0;
         const dayAfter8Vehicle = parseFloat(String((vd as any).after_8_pm_charges_for_vehicle || 0)) || 0;
-        // Keep day-wise totals in sync with persisted route-level billing components.
+ // Keep day-wise totals in sync with persisted route-level billing components.
         dayData.driver += dayBefore6Driver + dayBefore6Vehicle + dayAfter8Driver + dayAfter8Vehicle;
         dayData.toll += parseFloat((vd as any).vehicle_toll_charges || 0);
         const tollBreakupText = tollBreakupByRouteId.get(`${Number((vd as any).itinerary_route_id || 0)}_${Number((vd as any).vehicle_type_id || 0)}`) || [];
@@ -4831,14 +4831,14 @@ sightseeingDistance,       // local sightseeing separately
         const rowTimeLimitId = Number((vd as any).time_limit_id || 0);
         const rowKmsLimitId = Number((vd as any).kms_limit_id || 0);
 
-        /**
+ /**
          * Backend display rule:
          * Outstation day should show outstation KM package/limit in SLAB column,
          * not local hour-based slab.
          *
          * Example:
          * SLAB: 250 KM (Outstation)
-         */
+ */
         if (rowTravelType === 'Outstation') {
           const outstationKmLimit = outstationKmPerDay;
 
@@ -4904,7 +4904,7 @@ sightseeingDistance,       // local sightseeing separately
             }
           }
         }
-        // Total KM in UI is defined as pickup + travel + sightseeing + drop.
+ // Total KM in UI is defined as pickup + travel + sightseeing + drop.
         const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
         const runningDurationMinutes = parseDurationToMinutes((vd as any).total_running_time);
         const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
@@ -4930,7 +4930,7 @@ sightseeingDistance,       // local sightseeing separately
         dayData.totalKms += expectedTotalKm;
       }
 
-      // Convert map to array and format with day labels
+ // Convert map to array and format with day labels
       const sortedDayWiseEntries = Array.from(dayWiseMap.entries()).sort(([dateA], [dateB]) => {
         return toSortableDateTime(dateA) - toSortableDateTime(dateB);
       });
@@ -4944,7 +4944,7 @@ sightseeingDistance,       // local sightseeing separately
         const route: string = routeSequence.length > 0
           ? routeSequence.join(' → ')
           : (uniqueLocations.length > 1 ? `${uniqueLocations[0]} → ${uniqueLocations[uniqueLocations.length - 1]}` : (uniqueLocations[0] || ''));
-        
+
         dayWisePricing.push({
           date: dateStr,
           dayLabel: `Day ${dayCounter} | ${dayName}`,
@@ -5013,10 +5013,10 @@ sightseeingDistance,       // local sightseeing separately
       if (dayWiseParkingTotal > 0) {
         parkingCharges = dayWiseParkingTotal;
       }
-      // day-wise driverCharges includes the before-6AM/after-8PM driver and
-      // vehicle surcharges for display. The vehicle-level driver component
-      // must contain only the base vehicle_driver_charges value; the timing
-      // surcharge fields are added separately below, matching PHP.
+ // day-wise driverCharges includes the before-6AM/after-8PM driver and
+ // vehicle surcharges for display. The vehicle-level driver component
+ // must contain only the base vehicle_driver_charges value; the timing
+ // surcharge fields are added separately below, matching PHP.
       if (dayWiseDetails.length > 0) {
         driverCharges = dayWiseDetails.reduce(
           (sum: number, vd: any) => sum + Number(vd.vehicle_driver_charges || 0),
@@ -5028,7 +5028,7 @@ sightseeingDistance,       // local sightseeing separately
       }
       const eligAny = eligible as any;
 
-      // Build a breakdown list only for >0 amounts (for UI card)
+ // Build a breakdown list only for >0 amounts (for UI card)
       const tmp: VehicleCostBreakdownItemDto[] = [];
       const pushItem = (label: string, amount: number) => {
         if (amount > 0) {
@@ -5104,7 +5104,7 @@ sightseeingDistance,       // local sightseeing separately
         .map(([, item]) => item)
         .filter((item) => item.allowedKm > 0 || item.days > 0);
 
-      // Summary fields from eligible_list
+ // Summary fields from eligible_list
       const noOfDays = dayWiseDetails.length || 1;
       const persistedTotalUsedKm =
         parseFloat(String((eligAny as any).total_kms || 0)) || 0;
@@ -5167,8 +5167,8 @@ sightseeingDistance,       // local sightseeing separately
       );
       const configuredVendorMarginGstPercentage =
         parseFloat(String(eligAny.vendor_margin_gst_percentage || 0)) || 0;
-      // PHP uses the vendor-branch GST percentage when the vendor-specific
-      // margin GST percentage is missing/zero.
+ // PHP uses the vendor-branch GST percentage when the vendor-specific
+ // margin GST percentage is missing/zero.
       const vendorBranchGstPercentage =
         parseFloat(String((branch as any)?.vendor_branch_gst || 0)) || 0;
       const vendorMarginGstPercentage =
@@ -5185,7 +5185,7 @@ sightseeingDistance,       // local sightseeing separately
       );
 
       if (process.env.DEBUG_VEHICLE_KM_SUMMARY === 'true') {
-        console.log('[VEHICLE_DISTANCE_SUMMARY_SOURCE]', {
+ console.log('[VEHICLE_DISTANCE_SUMMARY_SOURCE]', {
           quoteId,
           planId,
           vendorEligibleId: eligible.itinerary_plan_vendor_eligible_ID,
@@ -5231,7 +5231,7 @@ sightseeingDistance,       // local sightseeing separately
         totalQty: String(qty),
         totalAmount: totalAmount.toFixed(2),
 
-        // IDs needed for vendor selection
+ // IDs needed for vendor selection
         vehicleId: eligibleVehicleId,
         vehicleIds: groupedVehicleIds,
         vehicleNumber: registrationNumber || null,
@@ -5270,7 +5270,7 @@ sightseeingDistance,       // local sightseeing separately
         breakdown,
         packageLabel,
 
-        // PHP summary panel fields
+ // PHP summary panel fields
         totalDays: noOfDays,
         totalCostOfVehicle,
         totalPickupKm,
@@ -5308,7 +5308,7 @@ sightseeingDistance,       // local sightseeing separately
         vendorMarginGstAmount,
         grandTotal,
 
-        // KM columns for the UI card
+ // KM columns for the UI card
         col1Distance: totalTravelKm > 0 ? `${totalTravelKm.toFixed(2)} KM` : '0.00 KM',
         col2Distance: totalSightseeingKm > 0 ? `${totalSightseeingKm.toFixed(2)} KM` : '0.00 KM',
         col3Distance: totalTravelledKm > 0 ? `${totalTravelledKm.toFixed(2)} KM` : '0.00 KM',
@@ -5317,7 +5317,7 @@ sightseeingDistance,       // local sightseeing separately
         col3Duration: '0 Min',
       };
       if (debugVehicleTrace) {
-        console.log('[DETAILS_VEHICLE_RESPONSE_ROW]', {
+ console.log('[DETAILS_VEHICLE_RESPONSE_ROW]', {
           vehicleId: Number((vehicleResponseRow as any).vehicleId || 0) || null,
           vehicleNumber: String((vehicleResponseRow as any).vehicleNumber || ''),
           vehicleRegistrationStateCode: String((vehicleResponseRow as any).vehicleRegistrationStateCode || ''),
@@ -5361,13 +5361,13 @@ sightseeingDistance,       // local sightseeing separately
       });
     }
 
-    // Only rate-valid vendors are eligible for display and selection. Keep the
-    // no-rate information above so the UI can show a useful empty-state message.
+ // Only rate-valid vendors are eligible for display and selection. Keep the
+ // no-rate information above so the UI can show a useful empty-state message.
     const vehicles: ItineraryVehicleRowDto[] = allVehicles.filter(
       (vehicle) => vehicle.rateAvailable !== false,
     );
 
-    console.log('[DETAILS_VEHICLE_ROWS]', {
+ console.log('[DETAILS_VEHICLE_ROWS]', {
       quoteId,
       planId,
       rawEligibleCount: rawEligibleRows.length,
@@ -5400,8 +5400,8 @@ sightseeingDistance,       // local sightseeing separately
       stepStartedAt,
     });
 
-    // Normalize assignment in the API response so each vehicle type marks the
-    // lowest displayed amount as selected, even if the DB carries an older choice.
+ // Normalize assignment in the API response so each vehicle type marks the
+ // lowest displayed amount as selected, even if the DB carries an older choice.
     const vehiclesByTypeForSelection = new Map<number, any[]>();
     for (const vehicle of vehicles as any[]) {
       const vehicleTypeId = Number(vehicle?.vehicleTypeId || 0);
@@ -5436,8 +5436,8 @@ sightseeingDistance,       // local sightseeing separately
       }
     }
 
-    // 5) Total vehicle amount for footer: sum only ASSIGNED vehicles (itineary_plan_assigned_status = 1)
-    // This matches PHP behavior which filters by assigned status
+ // 5) Total vehicle amount for footer: sum only ASSIGNED vehicles (itineary_plan_assigned_status = 1)
+ // This matches PHP behavior which filters by assigned status
     const totalVehicleAmountFromEligible = vehicles.reduce(
       (sum: number, vehicle: any) =>
         sum + (vehicle?.isAssigned ? Number(vehicle?.grandTotal || vehicle?.totalAmount || 0) : 0),
@@ -5461,13 +5461,13 @@ sightseeingDistance,       // local sightseeing separately
       selectedVehicleRows.length === vehiclesByTypeForSelection.size
     );
 
-    /**
+ /**
      * KM warning should not sum every eligible vendor row.
      * It should use only the selected/assigned rows that are used for final pricing.
      *
      * If multiple selected vehicle types exist, do not multiply the same itinerary KM
      * into a fake large warning number. Use the worst selected row for warning display.
-     */
+ */
     const kmWarningRowsSource = selectedVehicleRows.length > 0 ? selectedVehicleRows : (vehicles as any[]);
     const kmWarningRows = Array.from(
       kmWarningRowsSource.reduce((map, vehicle: any) => {
@@ -5573,10 +5573,10 @@ sightseeingDistance,       // local sightseeing separately
       totalExtraKm: totalExtraKmFromAssigned,
     });
 
-    // ------------------------------ COST BREAKDOWN (calculate from database) ------------------------------
-    
-    // 1. Calculate Hotel Costs with detailed breakdown
-    // Filter by group_type if provided (for hotel recommendation tabs)
+ // ------------------------------ COST BREAKDOWN (calculate from database) ------------------------------
+
+ // 1. Calculate Hotel Costs with detailed breakdown
+ // Filter by group_type if provided (for hotel recommendation tabs)
     const hotelWhere: any = { itinerary_plan_id: planId, deleted: 0 };
     if (groupType !== undefined) {
       hotelWhere.group_type = groupType;
@@ -5585,12 +5585,12 @@ sightseeingDistance,       // local sightseeing separately
       where: hotelWhere,
     });
 
-    // Exclude marker/placeholder rows from cost math.
+ // Exclude marker/placeholder rows from cost math.
     let costHotelRows = hotelRows.filter(
       (h) => Number((h as any).hotel_required || 0) !== 2,
     );
 
-    // Total room cost (excluding meals initially)
+ // Total room cost (excluding meals initially)
     let totalRoomCost = 0;
     let totalAmenitiesCost = 0;
     let extraBedCost = 0;
@@ -5606,9 +5606,9 @@ sightseeingDistance,       // local sightseeing separately
     let hotelMealPlanGstCost = 0;
 
     costHotelRows.forEach(h => {
-      // An early-morning hotel check-in blocks the room from the previous
-      // night. The stored hotel amount is the normal stay amount, so the
-      // extra-payment flow must bill one additional room night.
+ // An early-morning hotel check-in blocks the room from the previous
+ // night. The stored hotel amount is the normal stay amount, so the
+ // extra-payment flow must bill one additional room night.
       const earlyCheckInBillingMultiplier =
         Number((h as any).early_checkin || 0) === 1 &&
         Number((h as any).early_checkin_extra_payment_applicable || 0) === 1
@@ -5631,7 +5631,7 @@ sightseeingDistance,       // local sightseeing separately
       hotelMarginGstCost += Number(h.hotel_margin_rate_tax_amt || 0) * rowMultiplier;
       hotelMealPlanCost += Number(h.total_hotel_meal_plan_cost || 0) * rowMultiplier;
       hotelMealPlanGstCost += Number(h.total_hotel_meal_plan_cost_gst_amount || 0) * rowMultiplier;
-      // TBO/cache rows often populate only total_hotel_cost; fallback keeps room totals non-zero.
+ // TBO/cache rows often populate only total_hotel_cost; fallback keeps room totals non-zero.
       totalRoomCost += (detailedRoomCost > 0 ? detailedRoomCost : fallbackRoomCost) * rowMultiplier;
       totalAmenitiesCost += Number(h.total_amenities_cost || 0) * rowMultiplier;
       extraBedCost += Number(h.total_extra_bed_cost || 0) * rowMultiplier;
@@ -5640,9 +5640,9 @@ sightseeingDistance,       // local sightseeing separately
       totalMealCost += Number(h.total_hotel_meal_plan_cost || 0) * rowMultiplier;
     });
 
-    // For selected recommendation tabs, derive room total from live group-specific hotel details
-    // and override stale duplicated DB costs when they differ.
-    // Disabled for details API latency: this endpoint should read saved values only.
+ // For selected recommendation tabs, derive room total from live group-specific hotel details
+ // and override stale duplicated DB costs when they differ.
+ // Disabled for details API latency: this endpoint should read saved values only.
     const getLiveSelectedGroupRoomCost = async (): Promise<number> => {
       return 0;
     };
@@ -5669,38 +5669,38 @@ sightseeingDistance,       // local sightseeing separately
       totalMealCost = 0;
     }
 
-    // Calculate per-person room cost (PHP logic)
+ // Calculate per-person room cost (PHP logic)
     const totalAdults = plan.total_adult || 0;
     const totalChildren = plan.total_children || 0;
     const totalExtraBed = plan.total_extra_bed || 0;
     const hotelPaxCount = totalAdults - totalExtraBed;
-    
-    const paxMealCost = (totalAdults + totalChildren) > 0 
+
+    const paxMealCost = (totalAdults + totalChildren) > 0
       ? totalMealCost / (totalAdults + totalChildren)
       : 0;
     const hotelMealPlanAllocatedCost = hotelPaxCount * paxMealCost;
 
     const totalRoomCostUpdated = totalRoomCost + hotelMealPlanAllocatedCost;
-    const roomCostPerPerson = hotelPaxCount > 0 
+    const roomCostPerPerson = hotelPaxCount > 0
       ? totalRoomCostUpdated / hotelPaxCount
       : 0;
 
-    // Update costs with meal portions
+ // Update costs with meal portions
     const updatedExtraBedCost = extraBedCost + (paxMealCost * totalExtraBed);
     const updatedChildWithBedCost = childWithBedCost + (paxMealCost * (plan.total_child_with_bed || 0));
     const updatedChildWithoutBedCost = childWithoutBedCost + (paxMealCost * (plan.total_child_without_bed || 0));
 
     const totalHotelAmount = totalRoomCostUpdated + totalAmenitiesCost + updatedExtraBedCost + updatedChildWithBedCost + updatedChildWithoutBedCost;
 
-    // 2. Vehicle costs already calculated
+ // 2. Vehicle costs already calculated
     const totalVehicleCost = totalVehicleAmount;
     const totalVehicleQty = selectedVehicleRows.reduce(
       (sum: number, vehicle: any) => sum + Number(vehicle?.totalQty || 0),
       0,
     );
 
-    // 3. Calculate Guide, Hotspot, and Activity costs
-    // For now set to 0, can be calculated from route activities/guides if needed
+ // 3. Calculate Guide, Hotspot, and Activity costs
+ // For now set to 0, can be calculated from route activities/guides if needed
     const [guideAgg, hotspotAgg, activityAgg] = await Promise.all([
       this.prisma.dvi_itinerary_route_guide_details.aggregate({
         where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
@@ -5744,11 +5744,11 @@ sightseeingDistance,       // local sightseeing separately
       totalActivityCost,
     });
 
-    // 4. Calculate additional margin (10% for trips <= configured day limit)
+ // 4. Calculate additional margin (10% for trips <= configured day limit)
     const itineraryNoDays = plan.no_of_days || 0;
-    const additionalMarginPercentage = 10; // Could come from global settings
-    const additionalMarginDayLimit = 3; // Could come from global settings
-    
+ const additionalMarginPercentage = 10; // Could come from global settings
+ const additionalMarginDayLimit = 3; // Could come from global settings
+
     const shouldIncludeHotels = itineraryPreference === 1 || itineraryPreference === 3;
     const effectiveHotelAmount = shouldIncludeHotels ? totalHotelAmount : 0;
 
@@ -5758,27 +5758,27 @@ sightseeingDistance,       // local sightseeing separately
       totalGuideCost +
       totalHotspotCost +
       totalActivityCost;
-    const additionalMargin = itineraryNoDays <= additionalMarginDayLimit 
+    const additionalMargin = itineraryNoDays <= additionalMarginDayLimit
       ? (subtotal * additionalMarginPercentage) / 100
       : 0;
 
-    // 4. Calculate total amount before discounts
+ // 4. Calculate total amount before discounts
     const totalAmount = subtotal + additionalMargin;
 
-    // 5. Get coupon discount and agent margin from plan
-    const couponDiscount = 0; // Not currently stored in plan table
+ // 5. Get coupon discount and agent margin from plan
+ const couponDiscount = 0; // Not currently stored in plan table
     const agentMargin = hasRequiredVehicleSelection ? Number(plan.agent_margin || 0) : 0;
 
-    // 6. Calculate round off
+ // 6. Calculate round off
     const netBeforeRoundOff = totalAmount - couponDiscount + agentMargin;
     const roundedNet = Math.round(netBeforeRoundOff);
     const totalRoundOff = roundedNet - netBeforeRoundOff;
 
-    // 7. Final net payable
+ // 7. Final net payable
     const netPayable = roundedNet;
 
     const costBreakdown: CostBreakdownDto = {
-      // Hotel costs
+ // Hotel costs
       totalRoomCost: shouldIncludeHotels && totalRoomCostUpdated > 0 ? totalRoomCostUpdated : undefined,
       roomCostPerPerson: shouldIncludeHotels && roomCostPerPerson > 0 ? roomCostPerPerson : undefined,
       hotelPaxCount: shouldIncludeHotels && hotelPaxCount > 0 ? hotelPaxCount : undefined,
@@ -5803,14 +5803,14 @@ sightseeingDistance,       // local sightseeing separately
       hotelMealPlanGstCost: shouldIncludeHotels && hotelMealPlanGstCost > 0 ? Number(hotelMealPlanGstCost.toFixed(2)) : undefined,
       hotelMealPlanAllocatedCost: shouldIncludeHotels && hotelMealPlanAllocatedCost > 0 ? Number(hotelMealPlanAllocatedCost.toFixed(2)) : undefined,
       totalHotelAmount: shouldIncludeHotels && effectiveHotelAmount > 0 ? effectiveHotelAmount : undefined,
-      
-      // Vehicle costs
+
+ // Vehicle costs
       totalVehicleCost: shouldIncludeVehicles ? totalVehicleCost : 0,
       totalVehicleAmount: shouldIncludeVehicles ? totalVehicleCost : 0,
       totalVehicleQty:
         shouldIncludeVehicles && totalVehicleQty > 0 ? totalVehicleQty : undefined,
-      
-      // Activity/Guide costs
+
+ // Activity/Guide costs
       totalGuideCost: totalGuideCost > 0 ? totalGuideCost : undefined,
       totalHotspotCost: totalHotspotCost > 0 ? totalHotspotCost : undefined,
       entryTicketBreakdown: entryTicketBreakdown.length > 0 ? entryTicketBreakdown : undefined,
@@ -5856,8 +5856,8 @@ sightseeingDistance,       // local sightseeing separately
         kmWarningBaseRow?.outstationExtraKmCharge && kmWarningBaseRow.outstationExtraKmCharge > 0
           ? Number(kmWarningBaseRow.outstationExtraKmCharge.toFixed(2))
           : undefined,
-      
-      // Final calculations
+
+ // Final calculations
       additionalMargin: additionalMargin,
       totalAmount: totalAmount,
       couponDiscount: couponDiscount,
@@ -5866,14 +5866,14 @@ sightseeingDistance,       // local sightseeing separately
       netPayable: netPayable,
       companyName: 'Doview Holidays India Pvt ltd',
     };
-    // ------------------------------ TOP SUMMARY ------------------------------
+ // ------------------------------ TOP SUMMARY ------------------------------
     const tripStartDate = this.formatDbDateOnly(plan.trip_start_date_and_time);
     const tripEndDate = this.formatDbDateOnly(plan.trip_end_date_and_time);
 
     const dateRange =
       tripStartDate && tripEndDate ? `${tripStartDate} to ${tripEndDate}` : '';
-   
-    
+
+
  // Room count belongs to the plan header and should remain available even for vehicle-only itineraries.
 const roomCount = Number(plan.preferred_room_count ?? 0);
 
@@ -5949,7 +5949,7 @@ const response: ItineraryDetailsResponseDto = {
       adults: plan.total_adult ?? 0,
       children: plan.total_children ?? 0,
       infants: plan.total_infants ?? 0,
-    overallCost: netPayable.toFixed(2), // Use calculated net payable
+ overallCost: netPayable.toFixed(2), // Use calculated net payable
 meal_plan_code: (plan as any).meal_plan_code ?? null,
 
 // Guest food preference for frontend day-wise header
@@ -5985,10 +5985,10 @@ guestFoodPreferenceName: guestFoodPreference,
     return response;
   }
 
-  
-    // ---------------------------------------------------------------------------
-  // Latest Itineraries DataTable (unchanged logic, just using helpers)
-  // ---------------------------------------------------------------------------
+
+ // ---------------------------------------------------------------------------
+ // Latest Itineraries DataTable (unchanged logic, just using helpers)
+ // ---------------------------------------------------------------------------
   async getLatestItinerariesDataTable(
     q: LatestItineraryQueryDto,
     req: any,
@@ -6356,7 +6356,7 @@ guestFoodPreferenceName: guestFoodPreference,
       startedAt: apiStartedAt,
       stepStartedAt,
     });
-    
+
     const quoteId = plan.itinerary_quote_ID;
     if (!quoteId) throw new NotFoundException('Quote ID not found for this plan');
     return this.getItineraryDetails(quoteId, groupType, viewerRole);
@@ -6372,12 +6372,12 @@ guestFoodPreferenceName: guestFoodPreference,
       where: { itinerary_plan_ID: id, deleted: 0 },
     });
 
-    // Fetch via routes for all routes in this plan
+ // Fetch via routes for all routes in this plan
     const viaRoutesRaw = await this.prisma.dvi_itinerary_via_route_details.findMany({
       where: { itinerary_plan_ID: id, deleted: 0 },
     });
 
-    // Group via routes by route ID
+ // Group via routes by route ID
     const viaRoutesByRouteId = new Map<number, any[]>();
     for (const vr of viaRoutesRaw) {
       const routeId = Number(vr.itinerary_route_ID);
@@ -6390,7 +6390,7 @@ guestFoodPreferenceName: guestFoodPreference,
       });
     }
 
-    // Add via_routes array to each route
+ // Add via_routes array to each route
     const routesWithVia = routes.map(r => ({
       ...r,
       via_routes: viaRoutesByRouteId.get(Number(r.itinerary_route_ID)) || [],

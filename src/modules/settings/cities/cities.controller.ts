@@ -23,20 +23,20 @@ import { CheckCityDuplicateDto } from "./dto/check-city.dto";
 export class CitiesController {
   constructor(private readonly service: CitiesService) {}
 
-  // GET /cities/states?countryId=101
+ // GET /cities/states?countryId=101
   @Get("states")
   listStates(@Query() q: ListCitiesQueryDto) {
     return this.service.listStates(q.countryId ?? 101);
   }
 
-  // ✅ NEW: GET /cities/by-state/:stateId
-  // Fetch cities only for a specific state_id
+ // NEW: GET /cities/by-state/:stateId
+ // Fetch cities only for a specific state_id
   @Get("by-state/:stateId")
   listByState(@Param("stateId", ParseIntPipe) stateId: number) {
     return this.service.listByState(stateId);
   }
 
-  // (Keep your existing endpoints)
+ // (Keep your existing endpoints)
   @Get()
   list(@Query() q: ListCitiesQueryDto) {
     return this.service.list(q.countryId ?? 101);

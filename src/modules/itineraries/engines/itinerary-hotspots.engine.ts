@@ -1,4 +1,4 @@
-﻿// REPLACE-WHOLE-FILE
+// REPLACE-WHOLE-FILE
 // FILE: src/modules/itineraries/engines/itinerary-hotspots.engine.ts
 
 import {
@@ -59,9 +59,9 @@ const TRANSFER_CHECKIN_BUFFER_MINUTES = 25;
 function parseDurationToSeconds(duration: any): number | null {
   if (duration == null) return null;
 
-  // If duration is already numeric (some rows might store minutes)
+ // If duration is already numeric (some rows might store minutes)
   if (typeof duration === "number" && Number.isFinite(duration)) {
-    // interpret as minutes (legacy behavior)
+ // interpret as minutes (legacy behavior)
     return Math.max(0, Math.floor(duration)) * 60;
   }
 
@@ -81,7 +81,7 @@ function parseDurationToSeconds(duration: any): number | null {
   if (mMatch) mins = Number(mMatch[1] || 0);
 
   if (!dMatch && !hMatch && !mMatch) {
-    // Last resort: if it's a plain number string, treat as minutes
+ // Last resort: if it's a plain number string, treat as minutes
     const n = Number(s);
     if (Number.isFinite(n)) return Math.max(0, Math.floor(n)) * 60;
     return null;
@@ -94,8 +94,8 @@ function parseDurationToSeconds(duration: any): number | null {
  * Convert JS day-of-week (Sun=0..Sat=6) to hotspot_timing_day (Mon=0..Sun=6).
  */
 function toHotspotTimingDay(dateOnly: Date): number {
-  const js = dateOnly.getDay(); // Sun=0..Sat=6
-  return (js + 6) % 7; // Mon=0..Sun=6
+ const js = dateOnly.getDay(); // Sun=0..Sat=6
+ return (js + 6) % 7; // Mon=0..Sun=6
 }
 
 /**
@@ -142,7 +142,7 @@ export class ItineraryHotspotsEngine {
       const res = await this.prisma.$transaction(async (tx) => {
         await this.deleteRouteHotspotData(tx, planId, route.itinerary_route_ID);
 
-        // REFRESH ROW (always first)
+ // REFRESH ROW (always first)
         await tx.dvi_itinerary_route_hotspot_details.create({
           data: {
             itinerary_plan_ID: planId,
@@ -180,24 +180,24 @@ export class ItineraryHotspotsEngine {
           "20:00:00",
         );
 
-        // ✅ Check-in cutoff: 10 PM on destination for transfer legs
+ // Check-in cutoff: 10 PM on destination for transfer legs
         const checkinCutoff = buildCutoffOnDate(
           dayDate,
           DESTINATION_HOTEL_CHECKIN_CUTOFF_TIME,
         );
 
-        // -------------------- Transfer depart cutoff --------------------
-        // latestDepart = checkinCutoff - (travelSeconds + smallCheckinBufferSeconds)
-        //
-        // travelSeconds comes from dvi_stored_locations.duration (string)
-        // smallCheckinBufferSeconds is TRANSFER_CHECKIN_BUFFER_MINUTES (25 mins by default)
+ // -------------------- Transfer depart cutoff --------------------
+ // latestDepart = checkinCutoff - (travelSeconds + smallCheckinBufferSeconds)
+ //
+ // travelSeconds comes from dvi_stored_locations.duration (string)
+ // smallCheckinBufferSeconds is TRANSFER_CHECKIN_BUFFER_MINUTES (25 mins by default)
         let transferDayLatestDepart: Date | null = null;
 
         const routeSource = String(route.location_name ?? "").trim();
         const routeDest = String(route.next_visiting_location ?? "").trim();
 
-        // (Optional) We still read GS for future parity/debugging, but we DO NOT use 1h+1h here.
-        // Using GS common_buf+road_buf would force too-early departures (your exact issue).
+ // (Optional) We still read GS for future parity/debugging, but we DO NOT use 1h+1h here.
+ // Using GS common_buf+road_buf would force too-early departures (your exact issue).
         await (tx as any).dvi_global_settings?.findFirst?.({
           where: { deleted: 0, status: 1 },
           orderBy: { global_settings_ID: "desc" },
@@ -210,7 +210,7 @@ export class ItineraryHotspotsEngine {
         });
 
         if (routeSource && routeDest) {
-          // Exact match first (your DB has exact: 'Madurai Airport' -> 'Rameswaram')
+ // Exact match first (your DB has exact: 'Madurai Airport' -> 'Rameswaram')
           let storedLocation = await tx.dvi_stored_locations.findFirst({
             where: {
               deleted: 0,
@@ -221,7 +221,7 @@ export class ItineraryHotspotsEngine {
             orderBy: { location_ID: "desc" },
           });
 
-          // Safe fallback: contains (helps when strings differ slightly)
+ // Safe fallback: contains (helps when strings differ slightly)
           if (!storedLocation) {
             storedLocation = await tx.dvi_stored_locations.findFirst({
               where: {
@@ -248,8 +248,8 @@ export class ItineraryHotspotsEngine {
           }
         }
 
-        // -------------------- Assigned hotel coords (optional) --------------------
-        // NOTE: not required for your “city transfer check-in cutoff” rule, kept for future.
+ // -------------------- Assigned hotel coords (optional) --------------------
+ // NOTE: not required for your city transfer check-in cutoff rule, kept for future.
         let hotelLat: number | null = null;
         let hotelLng: number | null = null;
 
@@ -275,7 +275,7 @@ export class ItineraryHotspotsEngine {
           hotelLng = toFloat((hotel as any)?.hotel_longitude);
         }
 
-        // -------------------- Location tokens for hotspot filtering --------------------
+ // -------------------- Location tokens for hotspot filtering --------------------
         const viaRows = await tx.dvi_itinerary_via_route_details.findMany({
           where: {
             itinerary_plan_ID: planId,
@@ -291,7 +291,7 @@ export class ItineraryHotspotsEngine {
           ...viaRows.map((v) => v.itinerary_via_location_name ?? ""),
         ]);
 
-        // -------------------- Timings + candidate hotspots for this day --------------------
+ // -------------------- Timings + candidate hotspots for this day --------------------
         const timingDay = toHotspotTimingDay(dayDate);
 
         const timings = await tx.dvi_hotspot_timing.findMany({
@@ -325,7 +325,7 @@ export class ItineraryHotspotsEngine {
             })
           : [];
 
-        // Cursor = where we are currently in time + place
+ // Cursor = where we are currently in time + place
         let cursor = {
           time: dayStart,
           lat: null as number | null,
@@ -333,18 +333,18 @@ export class ItineraryHotspotsEngine {
           locationText: String(route.location_name ?? ""),
         };
 
-        let order = 1; // refresh used 1
+ let order = 1; // refresh used 1
         let insertedVisits = 0;
 
         for (const h of hotspots) {
-          // Hard cap: max 3 VISIT rows/day
+ // Hard cap: max 3 VISIT rows/day
           if (insertedVisits >= 3) break;
 
           const hLat = toFloat(h.hotspot_latitude);
           const hLng = toFloat(h.hotspot_longitude);
           if (hLat == null || hLng == null) continue;
 
-          // Already inserted?
+ // Already inserted?
           const exists = await tx.dvi_itinerary_route_hotspot_details.findFirst({
             where: {
               itinerary_plan_ID: planId,
@@ -384,16 +384,16 @@ export class ItineraryHotspotsEngine {
           );
           if (visitEnd > dayEnd) continue;
 
-          // ✅ Your constraint:
-          // hotspots must end by transferDayLatestDepart so that after leaving,
-          // travel+buffer reaches destination by 10 PM.
+ // Your constraint:
+ // hotspots must end by transferDayLatestDepart so that after leaving,
+ // travel+buffer reaches destination by 10 PM.
           if (transferDayLatestDepart && visitEnd > transferDayLatestDepart) {
             const isPriority = Number(h.hotspot_priority ?? 0) > 0;
             if (isPriority) break;
             continue;
           }
 
-          // Optional extra conservative guard (kept)
+ // Optional extra conservative guard (kept)
           if (hotelLat != null && hotelLng != null) {
             const returnToHotel = computeTravelParity({
               prevLat: hLat,
@@ -415,7 +415,7 @@ export class ItineraryHotspotsEngine {
             }
           }
 
-          // LEAVE-LATE: travel should start as late as possible to arrive at visitStart
+ // LEAVE-LATE: travel should start as late as possible to arrive at visitStart
           const latestDepartForAnchor = new Date(
             visitStart.getTime() - travelToAnchor.travelSeconds * 1000,
           );
@@ -424,7 +424,7 @@ export class ItineraryHotspotsEngine {
 
           let fillerInserted = false;
 
-          // Need capacity for (filler + anchor)
+ // Need capacity for (filler + anchor)
           if (gapSeconds > 300 && insertedVisits + 2 <= 3) {
             const filler = await this.tryFindFillerHotspotLeaveLate({
               tx,
@@ -783,7 +783,7 @@ export class ItineraryHotspotsEngine {
 
       if (fillerVisitEnd > dayEnd) continue;
 
-      // ✅ Respect transfer cutoff for filler end
+ // Respect transfer cutoff for filler end
       if (transferDayLatestDepart && fillerVisitEnd > transferDayLatestDepart)
         continue;
 

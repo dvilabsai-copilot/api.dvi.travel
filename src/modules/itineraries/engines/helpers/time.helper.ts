@@ -24,7 +24,7 @@ export function timeToSeconds(value: TimeLike): number {
   const str = String(value).trim();
   if (!str) return 0;
 
-  // Format "HH:MM:SS" or "HH:MM"
+ // Format "HH:MM:SS" or "HH:MM"
   const parts = str.split(":").map((p) => parseInt(p, 10) || 0);
   const [h, m, s] =
     parts.length === 3 ? parts : parts.length === 2 ? [parts[0], parts[1], 0] : [0, 0, 0];
@@ -38,7 +38,7 @@ export function timeToSeconds(value: TimeLike): number {
  */
 export function secondsToTime(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds)) totalSeconds = 0;
-  const secs = Math.max(0, Math.floor(totalSeconds)) % 86400; // wrap 24h
+ const secs = Math.max(0, Math.floor(totalSeconds)) % 86400; // wrap 24h
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
   const s = secs % 60;
@@ -52,12 +52,12 @@ export function secondsToTime(totalSeconds: number): string {
  */
 export function secondsToDurationTime(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds)) totalSeconds = 0;
-  const secs = Math.max(0, Math.floor(totalSeconds)); // no wrap
+ const secs = Math.max(0, Math.floor(totalSeconds)); // no wrap
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
   const s = secs % 60;
   const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  // NOTE: hours can exceed 24 here (intended)
+ // NOTE: hours can exceed 24 here (intended)
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
@@ -108,7 +108,7 @@ export function wrapToDay(seconds: number): number {
 /**
  * Checks if a time range spans midnight (end < start in same-day seconds).
  * Returns { isOvernight: true/false, absoluteEndSeconds: adjusted end }
- * 
+ *
  * Example:
  * - start=82800 (23:00), end=3600 (01:00) -> isOvernight=true, absoluteEndSeconds=90000
  * - start=36000 (10:00), end=72000 (20:00) -> isOvernight=false, absoluteEndSeconds=72000
@@ -118,7 +118,7 @@ export function normalizeTimeRange(
   endSeconds: number,
 ): { isOvernight: boolean; absoluteEndSeconds: number } {
   if (endSeconds < startSeconds) {
-    // Spans midnight: add 24 hours to end
+ // Spans midnight: add 24 hours to end
     return { isOvernight: true, absoluteEndSeconds: endSeconds + 86400 };
   }
   return { isOvernight: false, absoluteEndSeconds: endSeconds };

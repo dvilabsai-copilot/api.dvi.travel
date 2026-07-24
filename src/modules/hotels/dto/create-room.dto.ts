@@ -21,7 +21,7 @@ export class UiRoomItemDto {
   hotel_id!: number;
 
   @IsOptional()
-  room_type?: number | string; // can be id or label; we'll resolve
+ room_type?: number | string; // can be id or label; we'll resolve
 
   @IsOptional()
   @IsString()
@@ -31,7 +31,7 @@ export class UiRoomItemDto {
   @IsString()
   room_title?: string;
 
-  // "1,2" or ["1","2"] or [1,2]
+ // "1,2" or ["1","2"] or [1,2]
   @IsOptional()
   preferred_for?: string | string[] | number[];
 
@@ -39,7 +39,7 @@ export class UiRoomItemDto {
   @IsInt()
   no_of_rooms?: number;
 
-  // 1/0
+ // 1/0
   @IsOptional()
   @IsInt()
   @IsIn([0, 1])
@@ -60,7 +60,7 @@ export class UiRoomItemDto {
   @Min(0)
   max_children?: number;
 
-  // "12:00 PM" or "12:00"
+ // "12:00 PM" or "12:00"
   @IsOptional()
   @IsString()
   check_in_time?: string;
@@ -69,25 +69,25 @@ export class UiRoomItemDto {
   @IsString()
   check_out_time?: string;
 
-  // 1=Included, 2=Excluded
+ // 1=Included, 2=Excluded
   @IsOptional()
   @IsInt()
   @IsIn([1, 2])
   gst_type?: number;
 
-  // NOTE: UI may send number; DB column is String → we'll stringify
+ // NOTE: UI may send number; DB column is String we'll stringify
   @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
   gst_percentage?: number;
 
-  // amenity ids
+ // amenity ids
   @IsOptional()
   @IsArray()
   amenities?: Array<number | string>;
 
-  // booleans in UI → 1/0 in DB
+ // booleans in UI 1/0 in DB
   @IsOptional()
   @IsBoolean()
   food_breakfast?: boolean;
@@ -113,20 +113,20 @@ export type DbRoomRow = {
   hotel_id: number;
   room_type_id: number | null;
   room_title: string | null;
-  preferred_for: string | null;          // "1,2"
-  no_of_rooms_available: number;         // from no_of_rooms
-  air_conditioner_availability: number;  // 1/0
-  status: number;                        // 1/0
+ preferred_for: string | null; // "1,2"
+ no_of_rooms_available: number; // from no_of_rooms
+ air_conditioner_availability: number; // 1/0
+ status: number; // 1/0
   total_max_adults: number;
   total_max_childrens: number;
-  check_in_time: string | null;          // "HH:MM:SS"
-  check_out_time: string | null;         // "HH:MM:SS"
-  gst_type: number;                      // 1/2
-  gst_percentage: string | null;         // ← STRING
-  inbuilt_amenities: string | null;      // "1,2,3"
-  breakfast_included: number;            // 1/0
-  lunch_included: number;                // 1/0
-  dinner_included: number;               // 1/0
+ check_in_time: string | null; // "HH:MM:SS"
+ check_out_time: string | null; // "HH:MM:SS"
+ gst_type: number; // 1/2
+ gst_percentage: string | null; // STRING
+ inbuilt_amenities: string | null; // "1,2,3"
+ breakfast_included: number; // 1/0
+ lunch_included: number; // 1/0
+ dinner_included: number; // 1/0
 };
 
 /* ============================ Helpers ============================ */
@@ -137,12 +137,12 @@ const toGstNum = (v: any): 1 | 2 => {
   return 1;
 };
 
-// "12:00 PM" | "12:00" → "HH:MM:SS"
+// "12:00 PM" | "12:00" "HH:MM:SS"
 export const toTimeHHMMSS = (val?: string | null): string | null => {
   if (!val) return null;
   const s = String(val).trim();
 
-  // "hh:mm AM/PM"
+ // "hh:mm AM/PM"
   const ampm = s.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
   if (ampm) {
     let h = parseInt(ampm[1], 10);
@@ -153,7 +153,7 @@ export const toTimeHHMMSS = (val?: string | null): string | null => {
     return `${String(h).padStart(2, '0')}:${m}:00`;
   }
 
-  // "HH:MM"
+ // "HH:MM"
   const hm = s.match(/^(\d{1,2}):(\d{2})$/);
   if (hm) {
     const h = parseInt(hm[1], 10);
@@ -161,7 +161,7 @@ export const toTimeHHMMSS = (val?: string | null): string | null => {
     return `${String(h).padStart(2, '0')}:${m}:00`;
   }
 
-  // Already "HH:MM:SS"?
+ // Already "HH:MM:SS"?
   if (/^\d{1,2}:\d{2}:\d{2}$/.test(s)) return s;
 
   return null;
@@ -219,7 +219,7 @@ export function mapUiRoomToDbRow(
     check_out_time,
     gst_type: toGstNum(ui.gst_type ?? 1),
     gst_percentage:
-      ui.gst_percentage != null ? String(ui.gst_percentage) : null, // ← STRING
+ ui.gst_percentage != null ? String(ui.gst_percentage) : null, // STRING
     inbuilt_amenities,
     breakfast_included: ui.food_breakfast ? 1 : 0,
     lunch_included: ui.food_lunch ? 1 : 0,

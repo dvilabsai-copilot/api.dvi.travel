@@ -19,12 +19,12 @@ import {
 export class ItineraryDropdownsController {
   constructor(private readonly svc: ItineraryDropdownsService) {}
 
-  /**
+ /**
    * GET /itinerary-dropdowns/locations
    *
    * - Source locations (default):  ?type=source
    * - Destination locations:       ?type=destination&source=Chennai
-   */
+ */
     @Get('locations')
   @ApiOperation({
     summary: 'List source / destination locations',
@@ -153,9 +153,9 @@ export class ItineraryDropdownsController {
     return this.svc.getHotelFacilities();
   }
 
-  // ---------------------------------------------------------------------------
-  // VIA ROUTES  (single clean style: source + destination)
-  // ---------------------------------------------------------------------------
+ // ---------------------------------------------------------------------------
+ // VIA ROUTES (single clean style: source + destination)
+ // ---------------------------------------------------------------------------
   @Get('via-routes')
   @ApiOperation({
     summary: 'List via routes between source and destination',

@@ -9,7 +9,7 @@ import { Prisma, dvi_guide_details } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import * as bcrypt from 'bcrypt';
 
-// ───────────────────────────────── helpers ──────────────────────────────────
+// helpers
 const DEFAULT_PAGE = 1;
 const DEFAULT_SIZE = 5000;
 
@@ -97,20 +97,20 @@ const SLOT_TYPES = [
   { id: 4, label: '6 PM to 9 PM' },
 ];
 
-// ───────────────────────────── local DTO shapes ─────────────────────────────
+// local DTO shapes
 export type GuideListQueryDto = {
   page?: number;
   size?: number;
   q?: string;
-  status?: number; // 0/1
+ status?: number; // 0/1
 };
 
 export type GuideBasicDto = {
   id?: number;
   guide_name: string;
-  guide_dob?: string; // yyyy-mm-dd
+ guide_dob?: string; // yyyy-mm-dd
   guide_bloodgroup?: string;
-  guide_gender?: number; // 1/2/3
+ guide_gender?: number; // 1/2/3
   guide_primary_mobile_number: string;
   guide_alternative_mobile_number?: string;
   guide_email?: string;
@@ -122,27 +122,27 @@ export type GuideBasicDto = {
   guide_state?: number;
   guide_city?: number;
 
-  gst_type?: number; // 1=Included, 2=Excluded, 3=NA
-  guide_gst?: number; // e.g. 18
-  guide_available_slot?: number[]; // [1,2,3]
+ gst_type?: number; // 1=Included, 2=Excluded, 3=NA
+ guide_gst?: number; // e.g. 18
+ guide_available_slot?: number[]; // [1,2,3]
 
-  // Bank
+ // Bank
   guide_bank_name?: string;
   guide_bank_branch_name?: string;
   guide_ifsc_code?: string;
   guide_account_number?: string;
   guide_confirm_account_number?: string;
 
-  // Preferred For (CSV "hotspot,activity,itinerary" parity)
+ // Preferred For (CSV "hotspot,activity,itinerary" parity)
   guide_preffered_for?: Array<string | number> | string | number;
   applicable_hotspot_places?: string;
   applicable_activity_places?: string;
 
-  // PHP form field aliases
+ // PHP form field aliases
   guide_select_role?: string | number;
   guide_password?: string;
 
-  // React camelCase aliases
+ // React camelCase aliases
   name?: string;
   dateOfBirth?: string;
   bloodGroup?: string;
@@ -177,24 +177,24 @@ export type GuideBasicDto = {
   role?: string | number;
   password?: string;
 
-  status?: number; // 0/1
-  deleted?: number; // 0/1
+ status?: number; // 0/1
+ deleted?: number; // 0/1
 };
 
 export type GuidePricebookSaveDto = {
   guide_id: number;
-  start_date: string; // yyyy-mm-dd
-  end_date: string; // yyyy-mm-dd
+ start_date: string; // yyyy-mm-dd
+ end_date: string; // yyyy-mm-dd
   pax_prices: Array<{
-    pax_id: number; // 1,2,3
-    slot_id: number; // 1,2,3
+ pax_id: number; // 1,2,3
+ slot_id: number; // 1,2,3
     price: number | string;
   }>;
 };
 
 export type GuideReviewSaveDto = {
   guide_id: number;
-  rating: number; // 1..5
+ rating: number; // 1..5
   description: string;
 };
 
@@ -203,8 +203,8 @@ export class GuidesService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async hashGuidePassword(password: string): Promise<string> {
-    // New guide passwords are stored as bcrypt. Legacy PHP hashes are
-    // upgraded by AuthService after a successful login.
+ // New guide passwords are stored as bcrypt. Legacy PHP hashes are
+ // upgraded by AuthService after a successful login.
     return bcrypt.hash(password, 10);
   }
 
@@ -360,7 +360,7 @@ export class GuidesService {
     };
   }
 
-  // ─────────────────────────────── List (DataTable) ──────────────────────────
+ // List (DataTable)
   async list(q: GuideListQueryDto) {
     const page = q.page ?? DEFAULT_PAGE;
     const size = q.size ?? DEFAULT_SIZE;
@@ -409,7 +409,7 @@ export class GuidesService {
     return { data };
   }
 
-  // ────────────────────── Dynamic dropdowns for Add/Edit ─────────────────────
+ // Dynamic dropdowns for Add/Edit
   async formOptions() {
     const languagesRaw = await this.prisma.dvi_language.findMany({
       where: { deleted: false, status: 1 as any },
@@ -450,7 +450,7 @@ export class GuidesService {
     };
   }
 
-  // ─────────────────────────────── Get form (edit) ───────────────────────────
+ // Get form (edit)
   async getForm(id: number) {
     id = ensureId(id);
 
@@ -514,7 +514,7 @@ export class GuidesService {
     };
   }
 
-  // ───────────────────────────── Save Step 1 (basic) ─────────────────────────
+ // Save Step 1 (basic)
   async saveBasic(input: GuideBasicDto) {
     input = this.normalizeGuideBasicInput(input);
 
@@ -613,7 +613,7 @@ export class GuidesService {
     return { id: saved.guide_id };
   }
 
-  // ───────────────────────────── Save Step 2 (pricebook) ─────────────────────
+ // Save Step 2 (pricebook)
   async savePricebook(input: GuidePricebookSaveDto) {
     const guideId = ensureId(input.guide_id);
     const sd = startOfDayUTC(input.start_date);
@@ -638,7 +638,7 @@ export class GuidesService {
         const slot = clamp(Number(row.slot_id), 1, 4);
         const rawPrice = String((row as any)?.price ?? '').trim();
 
-        // PHP parity: only skip empty string, allow explicit 0 values.
+ // PHP parity: only skip empty string, allow explicit 0 values.
         if (rawPrice === '') continue;
         const price = toNum(rawPrice);
 
@@ -697,7 +697,7 @@ export class GuidesService {
     return { ok: true, guide_id: guideId };
   }
 
-  // ───────────────────────────── Get pricebook rows by date range ─────────────
+ // Get pricebook rows by date range
   async getPricebookByDateRange(guideId: number, startDate: string, endDate: string) {
     guideId = ensureId(guideId);
     const sd = startOfDayUTC(startDate);
@@ -724,7 +724,7 @@ export class GuidesService {
     return rows;
   }
 
-  // ───────────────────────────── Save Step 3 (reviews) ───────────────────────
+ // Save Step 3 (reviews)
   async addReview(input: GuideReviewSaveDto) {
     const guideId = ensureId(input.guide_id);
     const ratingRaw = Number(input.rating ?? 0);
@@ -784,11 +784,11 @@ export class GuidesService {
     return { ok: true };
   }
 
-  // ───────────────────────────── Step 4 (preview) ────────────────────────────
-  /**
+ // Step 4 (preview)
+ /**
    * Returns raw row + humanized `view` (PHP-parity labels).
    * Adds: city_name & country_name so React shows names instead of IDs.
-   */
+ */
   async getPreview(guideId: number) {
     guideId = ensureId(guideId);
 
@@ -797,7 +797,7 @@ export class GuidesService {
     });
     if (!g || g.deleted === 1) throw new NotFoundException('Guide not found');
 
-    // Lookups needed for labels
+ // Lookups needed for labels
     const languageIds = String(g.guide_language_proficiency ?? '')
       .split(',')
       .map((v) => Number(String(v).trim()))
@@ -863,7 +863,7 @@ export class GuidesService {
     const gender_label =
       GENDERS.find((x) => x.id === Number(g.guide_gender ?? 0))?.label ?? '';
 
-    const bgIndex = Number(g.guide_bloodgroup ?? 0) - 1; // DB stores "1".."8"
+ const bgIndex = Number(g.guide_bloodgroup 0) - 1; // DB stores "1".."8"
     const blood_group_label = BLOOD_GROUPS[bgIndex] ?? (g.guide_bloodgroup ?? '');
 
     const language_label = langRows
@@ -961,7 +961,7 @@ export class GuidesService {
         blood_group_label,
         language_label,
         state_name,
-        city_name,          // ✅ NEW
+ city_name, // NEW
         country_name,
         gst_percent_text,
         preferred_for_label,
@@ -990,7 +990,7 @@ export class GuidesService {
     };
   }
 
-  // ───────────────────────────── status / delete ─────────────────────────────
+ // status / delete
   async toggleStatus(id: number, status: number) {
     id = ensureId(id);
     await this.prisma.dvi_guide_details.update({
@@ -1026,7 +1026,7 @@ export class GuidesService {
     return { ok: true };
   }
 
-  // ─────────────────────── convenience (add/edit orchestration) ─────────────
+ // convenience (add/edit orchestration)
   async saveFormStep1(input: GuideBasicDto) {
     return this.saveBasic(this.normalizeGuideBasicInput(input));
   }
@@ -1128,9 +1128,9 @@ export class GuidesService {
     return this.getPreview(pricing.guide_id);
   }
 
-  // ───────────────────────────── Dropdown Data (Service) ─────────────────────────────
+ // Dropdown Data (Service)
 
-/** Role dropdown → dvi_rolemenu.role_name */
+/** Role dropdown dvi_rolemenu.role_name */
 async getRolesDropdown() {
   const rows = await this.prisma.dvi_rolemenu.findMany({
     where: { deleted: 0, status: 1 },
@@ -1146,7 +1146,7 @@ async getRolesDropdown() {
   }));
 }
 
-/** Language Proficiency dropdown → dvi_language.language */
+/** Language Proficiency dropdown dvi_language.language */
 async getLanguagesDropdown() {
   const rows = await this.prisma.dvi_language.findMany({
     where: { status: 1 },
@@ -1162,7 +1162,7 @@ async getLanguagesDropdown() {
   }));
 }
 
-/** Country dropdown → dvi_country (assuming column name `country`) */
+/** Country dropdown dvi_country (assuming column name `country`) */
 async getCountriesDropdown() {
   const rows = await this.prisma.dvi_countries.findMany({
     where: { deleted: 0, status: 1 },
@@ -1178,7 +1178,7 @@ async getCountriesDropdown() {
   }));
 }
 
-/** State dropdown (dependent) → dvi_state.state filtered by country_id */
+/** State dropdown (dependent) dvi_state.state filtered by country_id */
 async getStatesDropdown(countryId: number) {
   if (!countryId || countryId <= 0) {
     throw new BadRequestException('countryId is required');
@@ -1198,7 +1198,7 @@ async getStatesDropdown(countryId: number) {
   }));
 }
 
-/** City dropdown (dependent) → dvi_city.city filtered by state_id */
+/** City dropdown (dependent) dvi_city.city filtered by state_id */
 async getCitiesDropdown(stateId: number) {
   if (!stateId || stateId <= 0) {
     throw new BadRequestException('stateId is required');
@@ -1218,7 +1218,7 @@ async getCitiesDropdown(stateId: number) {
   }));
 }
 
-/** GST Type dropdown → static mapping: Included=1, Excluded=2  */
+/** GST Type dropdown static mapping: Included=1, Excluded=2 */
 async getGstTypesDropdown() {
   return [
     { value: 1, label: 'Included' },
@@ -1226,14 +1226,14 @@ async getGstTypesDropdown() {
   ];
 }
 
-/** GST% dropdown → dvi_gst_setting.gst_title */
+/** GST% dropdown dvi_gst_setting.gst_title */
 async getGstPercentagesDropdown() {
   const rows = await this.prisma.dvi_gst_setting.findMany({
     where: { deleted: 0, status: 1 },
     select: { gst_setting_id: true, gst_title: true },
     orderBy: { gst_title: 'asc' },
   });
-  // Expect gst_title like "5%", "12%", etc.
+ // Expect gst_title like "5%", "12%", etc.
   return rows.map((r) => ({
     id: r.gst_setting_id,
     name: r.gst_title,
@@ -1243,7 +1243,7 @@ async getGstPercentagesDropdown() {
   }));
 }
 
-/** Hotspot Place dropdown → dvi_hotspot_place.hotspot_name */
+/** Hotspot Place dropdown dvi_hotspot_place.hotspot_name */
 async getHotspotPlacesDropdown() {
   const rows = await this.prisma.dvi_hotspot_place.findMany({
     where: { deleted: 0, status: 1 },
@@ -1259,7 +1259,7 @@ async getHotspotPlacesDropdown() {
   }));
 }
 
-/** Activity dropdown → dvi_activity.activity_title */
+/** Activity dropdown dvi_activity.activity_title */
 async getActivitiesDropdown() {
   const rows = await this.prisma.dvi_activity.findMany({
     where: { deleted: 0, status: 1 },

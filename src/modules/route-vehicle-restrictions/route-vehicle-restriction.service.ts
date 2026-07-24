@@ -362,7 +362,7 @@ export class RouteVehicleRestrictionService {
     const fromLat = Number(route.source_location_lattitude);
     const fromLng = Number(route.source_location_longitude);
     if (!Number.isFinite(fromLat) || !Number.isFinite(fromLng)) return null;
-    const baseUrl = String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim();
+ const baseUrl = String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim();
     const url = `${baseUrl}/${fromLng},${fromLat};${boundary.longitude},${boundary.latitude}?overview=false&alternatives=false&steps=false`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -469,9 +469,9 @@ export class RouteVehicleRestrictionService {
       const boundary = this.boundaryForRule(rule, matchedRoute);
       const boundaryTiming = boundary ? await this.routeDurationToBoundary(matchedRoute, boundary, db) : null;
       const exitTiming = boundary?.exit ? await this.routeDurationToBoundary(matchedRoute, { ...boundary.exit, detectionRadiusMetres: boundary.detectionRadiusMetres }, db) : null;
-      // The stored via-route distances are not guaranteed to be monotonic for
-      // both configured geofences. Once the route-specific entry geofence is
-      // reached, the restriction must be evaluated for this route direction.
+ // The stored via-route distances are not guaranteed to be monotonic for
+ // both configured geofences. Once the route-specific entry geofence is
+ // reached, the restriction must be evaluated for this route direction.
       const crossesConfiguredGeofence = !boundary?.exit || boundaryTiming?.durationMinutes != null;
       if (!crossesConfiguredGeofence) continue;
       const ghatEntryMinutes = boundaryTiming?.durationMinutes != null ? start + boundaryTiming.durationMinutes : null;

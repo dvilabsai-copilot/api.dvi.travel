@@ -6,6 +6,6 @@ export class CacheCreateDto {
   correctionFactor: number = 1.5;
   distanceKm!: number;
   speedKmph!: number;
-  travelTime!: string; // HH:MM:SS
+ travelTime!: string; // HH:MM:SS
   method?: string = 'HAVERSINE';
 }

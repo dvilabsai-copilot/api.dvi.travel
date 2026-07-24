@@ -10,10 +10,10 @@ import { StateConfigResultDto, StateConfigUpdateDto } from "./dto/state-config.d
 export class GlobalSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
+ /**
    * Mirrors global_settings.php:
    * Fetch the single active row from dvi_global_settings (deleted = 0).
-   */
+ */
   async getGlobalSettings() {
     const row = await this.prisma.dvi_global_settings.findFirst({
       where: { deleted: 0 },
@@ -27,7 +27,7 @@ export class GlobalSettingsService {
     return row;
   }
 
-  /**
+ /**
    * Mirrors __ajax_manage_global_setting.php:
    * type = global_settings_update
    *
@@ -35,7 +35,7 @@ export class GlobalSettingsService {
    *
    * NOTE: we intentionally use updateMany(with deleted=0) instead of id=1
    * to be robust if the id is not exactly 1.
-   */
+ */
   async updateGlobalSettings(dto: UpdateGlobalSettingsDto, userId?: number) {
     const data: Prisma.dvi_global_settingsUpdateManyMutationInput = {
       ...(dto as any),
@@ -43,7 +43,7 @@ export class GlobalSettingsService {
       ...(typeof userId === "number" ? { createdby: userId } : {}),
     };
 
-    // If there is no row yet, create one first.
+ // If there is no row yet, create one first.
     const existing = await this.prisma.dvi_global_settings.findFirst({
       where: { deleted: 0 },
     });
@@ -71,10 +71,10 @@ export class GlobalSettingsService {
     return this.getGlobalSettings();
   }
 
-  /**
+ /**
    * Mirrors __ajax_fetch_state_config.php:
    * Given a state id, return its on-ground and escalation numbers.
-   */
+ */
   async getStateConfig(stateId: number): Promise<StateConfigResultDto> {
     const state = await this.prisma.dvi_states.findFirst({
       where: { id: stateId, deleted: 0 },
@@ -100,12 +100,12 @@ export class GlobalSettingsService {
     };
   }
 
-  /**
+ /**
    * Mirrors __ajax_manage_global_setting.php:
    * type = state_config_update
    *
    * Update the two vehicle support numbers for a state.
-   */
+ */
   async updateStateConfig(dto: StateConfigUpdateDto): Promise<StateConfigResultDto> {
     const existing = await this.prisma.dvi_states.findFirst({
       where: { id: dto.stateId, deleted: 0 },
@@ -140,7 +140,7 @@ export class GlobalSettingsService {
     };
   }
 
-  /**
+ /**
    * Helper for the Global Settings screen:
    * List states (optionally by country) for the dropdown.
    * Mirrors the old PHP helper that filled the "State" select.
@@ -148,10 +148,10 @@ export class GlobalSettingsService {
    * IMPORTANT:
    * - If countryId is not provided, we default to India (country_id = 101),
    *   which matches the legacy PHP behavior for Global Settings.
-   */
+ */
   async listStatesByCountry(countryId?: number) {
     const effectiveCountryId =
-      typeof countryId === "number" && !Number.isNaN(countryId) ? countryId : 101; // 101 = India
+ typeof countryId === "number" && !Number.isNaN(countryId) ? countryId : 101; // 101 = India
 
     return this.prisma.dvi_states.findMany({
       where: {
@@ -178,7 +178,7 @@ export class GlobalSettingsService {
       select: {
         id: true,
         name: true,
-        shortname: true, // e.g. "IN", "AE", "US"
+ shortname: true, // e.g. "IN", "AE", "US"
         phonecode: true,
       },
     });

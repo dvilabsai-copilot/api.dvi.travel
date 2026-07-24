@@ -293,7 +293,7 @@ export class ItineraryActivityImpactService {
     }
   }
 
-  /**
+ /**
    * Helper: Convert TIME to minutes since midnight
-   */
+ */
 }

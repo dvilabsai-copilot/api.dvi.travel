@@ -51,14 +51,14 @@ export class ItineraryHotspotWorkflowService {
   }
 
   async getAvailableHotspots(routeId: number) {
-    // 1) Route
+ // 1) Route
     const route = await (this.prisma as any).dvi_itinerary_route_details.findFirst({
       where: { itinerary_route_ID: routeId, deleted: 0 },
     });
 
     if (!route || !route.location_id) return [];
 
-    // 2) Location master
+ // 2) Location master
     const location = await (this.prisma as any).dvi_stored_locations.findFirst({
       where: { location_ID: Number(route.location_id), deleted: 0 },
     });
@@ -70,9 +70,9 @@ export class ItineraryHotspotWorkflowService {
 
     const directDestination = Number(route.direct_to_next_visiting_place || 0) === 1;
 
-    // 3) Already-added hotspots across the WHOLE PLAN (all routes) so we never
-    //    offer a hotspot that is already scheduled on another day.
-    //    We also track which ones are on THIS route specifically (for visitAgain).
+ // 3) Already-added hotspots across the WHOLE PLAN (all routes) so we never
+ // offer a hotspot that is already scheduled on another day.
+ // We also track which ones are on THIS route specifically (for visitAgain).
     const planId = Number(route.itinerary_plan_ID);
     const allPlanAddedRowsRaw = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
@@ -89,8 +89,8 @@ export class ItineraryHotspotWorkflowService {
       },
     });
 
-    // Guard against stale/orphan rows from replaced routes during rebuilds.
-    // Availability should only consider hotspots tied to currently active routes.
+ // Guard against stale/orphan rows from replaced routes during rebuilds.
+ // Availability should only consider hotspots tied to currently active routes.
     const activePlanRoutes = await (this.prisma as any).dvi_itinerary_route_details.findMany({
       where: {
         itinerary_plan_ID: planId,
@@ -108,7 +108,7 @@ export class ItineraryHotspotWorkflowService {
       activeRouteIds.has(Number(r.itinerary_route_ID || 0)),
     );
 
-    // Hotspots already on THIS route → mark as visitAgain instead of hiding
+ // Hotspots already on THIS route mark as visitAgain instead of hiding
     const thisRouteAddedIds = new Set<number>(
       (allPlanAddedRows || [])
         .filter((r: any) => Number(r.itinerary_route_ID) === Number(routeId))
@@ -132,7 +132,7 @@ export class ItineraryHotspotWorkflowService {
       });
     }
 
-    // Hotspots on OTHER routes of the same plan
+ // Hotspots on OTHER routes of the same plan
     const otherRouteAddedIds = new Set<number>(
       (allPlanAddedRows || [])
         .filter((r: any) => Number(r.itinerary_route_ID) !== Number(routeId))
@@ -140,12 +140,12 @@ export class ItineraryHotspotWorkflowService {
         .filter((n: number) => Number.isFinite(n) && n > 0),
     );
 
-    // 3.5) Get excluded hotspot IDs (deleted by user)
+ // 3.5) Get excluded hotspot IDs (deleted by user)
     const excludedIds = new Set<number>(
       (route.excluded_hotspot_ids as number[]) || []
     );
 
-    // 4) Pool fetcher (priority DESC + stable tie-break)
+ // 4) Pool fetcher (priority DESC + stable tie-break)
     const fetchPool = async (cityName: string | null) => {
       if (!cityName) return [];
       return await (this.prisma as any).dvi_hotspot_place.findMany({
@@ -172,7 +172,7 @@ export class ItineraryHotspotWorkflowService {
     const sourcePool = await fetchPool(sourceName);
     const destPool = await fetchPool(destName);
 
-    // 5) Build final ordered list
+ // 5) Build final ordered list
     const seen = new Set<number>();
     const ordered: any[] = [];
     const DEBUG_HOTSPOT_ID = 219;
@@ -183,7 +183,7 @@ export class ItineraryHotspotWorkflowService {
       reason: 'duplicate_in_final_de_dup';
       source?: string;
     }) => {
-      console.log('[HOTSPOT_POOL_SUPPRESSION]', JSON.stringify({
+ console.log('[HOTSPOT_POOL_SUPPRESSION]', JSON.stringify({
         routeId,
         hotspotId: payload.hotspotId,
         hotspotName: payload.hotspotName ?? null,
@@ -204,17 +204,17 @@ export class ItineraryHotspotWorkflowService {
         });
         return;
       }
-      // Keep excluded hotspots visible so users can re-add items deleted by mistake.
-      // Excluded badge and behavior are handled in the UI / apply flow.
+ // Keep excluded hotspots visible so users can re-add items deleted by mistake.
+ // Excluded badge and behavior are handled in the UI / apply flow.
       seen.add(id);
       ordered.push(h);
     };
 
     if (directDestination) {
-      // direct = true => destination only
+ // direct = true => destination only
       for (const h of destPool) pushUnique(h);
     } else {
-      // direct = false => interleave 3-by-3 source/dest
+ // direct = false => interleave 3-by-3 source/dest
       const CHUNK = 3;
       let i = 0;
       let j = 0;
@@ -245,7 +245,7 @@ export class ItineraryHotspotWorkflowService {
       hotspotGalleryMap.set(hotspotId, urls);
     }
 
-    // 7) Timings
+ // 7) Timings
     const routeDate = route?.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
     const routeDayOfWeek = routeDate && Number.isFinite(routeDate.getTime())
       ? (routeDate.getDay() + 6) % 7
@@ -275,7 +275,7 @@ export class ItineraryHotspotWorkflowService {
       return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${ampm}`;
     };
 
-    // Collect all distinct open windows per hotspot (ordered by start time)
+ // Collect all distinct open windows per hotspot (ordered by start time)
     const timingWindowsMap = new Map<number, Set<string>>();
     const timingRowsByHotspot = new Map<number, any[]>();
     const routeDayTimingCountMap = new Map<number, number>();
@@ -311,7 +311,7 @@ export class ItineraryHotspotWorkflowService {
     }
 
     for (const [hotspotId, windowSet] of timingWindowsMap.entries()) {
-      // "Open 24 Hours" takes precedence over specific windows
+ // "Open 24 Hours" takes precedence over specific windows
       if (windowSet.has("Open 24 Hours")) {
         timingMap.set(hotspotId, "Open 24 Hours");
       } else {
@@ -319,8 +319,8 @@ export class ItineraryHotspotWorkflowService {
       }
     }
 
-    // 8) Response (+ visitAgain)
-    // Treat priority 0 as "unset" (lowest) so it sorts after real P1-P18
+ // 8) Response (+ visitAgain)
+ // Treat priority 0 as "unset" (lowest) so it sorts after real P1-P18
     const normPriority = (raw: any) => {
       const n = Number(raw ?? 0);
       return n > 0 ? n : 9999;
@@ -417,12 +417,12 @@ export class ItineraryHotspotWorkflowService {
         finalActionDisabled: (response.find((row: any) => Number(row?.id || 0) === DEBUG_HOTSPOT_ID) as any)?.actionDisabled ?? null,
       },
     };
-    console.log('[AVAILABLE_HOTSPOTS_DEBUG]', JSON.stringify(debugPayload));
+ console.log('[AVAILABLE_HOTSPOTS_DEBUG]', JSON.stringify(debugPayload));
 
     return response;
   }
 
-  // Backward-compatible wrapper: anchor payload is accepted for older callers.
+ // Backward-compatible wrapper: anchor payload is accepted for older callers.
   async getAvailableHotspotsForAnchor(data: {
     planId: number;
     routeId: number;
@@ -650,7 +650,7 @@ export class ItineraryHotspotWorkflowService {
         ? anchorOrder < destinationReachedOrder
         : anchorInsideSourcePortion;
 
-      console.log('[AddHotspotFilter] route_context', {
+ console.log('[AddHotspotFilter] route_context', {
         planId: Number(route?.itinerary_plan_ID || data?.planId || 0),
         routeId,
         directToggleOff,
@@ -664,16 +664,16 @@ export class ItineraryHotspotWorkflowService {
         anchorBeforeDestination,
       });
 
-      console.log('[AddHotspotFilter] destination_after_3pm', {
+ console.log('[AddHotspotFilter] destination_after_3pm', {
         destinationReachedTime,
         destinationReachedAfter3Pm,
         destinationReachedOrder,
       });
 
-      // Manual hotspot insertion is now relaxed:
-      // destination-city hotspots must remain visible even if the destination is reached after 3 PM.
-      // Users can continue the itinerary and reach the hotel by 11 PM.
-      // Keep route-movement filtering below, but do not hide destination-city hotspots here.
+ // Manual hotspot insertion is now relaxed:
+ // destination-city hotspots must remain visible even if the destination is reached after 3 PM.
+ // Users can continue the itinerary and reach the hotel by 11 PM.
+ // Keep route-movement filtering below, but do not hide destination-city hotspots here.
       const shouldHideDestinationHotspots = false;
 
       const splitLocationTokens = (value: unknown): string[] => {
@@ -796,7 +796,7 @@ export class ItineraryHotspotWorkflowService {
 
         if (!isHotspotAllowedForCurrentAnchor(row)) {
           routeMovementHotspotsHidden += 1;
-          console.log('[AddHotspotFilter] hiding_route_movement_hotspot_wrong_anchor', {
+ console.log('[AddHotspotFilter] hiding_route_movement_hotspot_wrong_anchor', {
             hotspotId: Number(row?.id || row?.hotspot_ID || 0),
             hotspotName: name,
             hotspotLocation: fromRaw,
@@ -810,9 +810,9 @@ export class ItineraryHotspotWorkflowService {
           return false;
         }
 
-        // Destination-city hotspots are no longer hidden for manual insertion.
-        // This allows the destination-city tab and destination hotspots to be shown.
-        // Route-movement hotspots are still filtered above when the anchor is wrong.
+ // Destination-city hotspots are no longer hidden for manual insertion.
+ // This allows the destination-city tab and destination hotspots to be shown.
+ // Route-movement hotspots are still filtered above when the anchor is wrong.
         return true;
       });
 
@@ -833,7 +833,7 @@ export class ItineraryHotspotWorkflowService {
         filterFallbackUsed: false,
       };
 
-      console.log('[AddHotspotFilter] result_counts', {
+ console.log('[AddHotspotFilter] result_counts', {
         beforeCount: safeBaseHotspots.length,
         afterCount: hotspots.length,
         destinationCityHotspotsHidden: 0,
@@ -850,7 +850,7 @@ export class ItineraryHotspotWorkflowService {
         hotspotFilterMeta,
       };
     } catch (error: any) {
-      console.error('[AddHotspotFilter] fallback_due_to_error', {
+ console.error('[AddHotspotFilter] fallback_due_to_error', {
         routeId,
         planId: Number(data?.planId || 0),
         anchorType: data?.anchorType || null,
@@ -870,21 +870,21 @@ export class ItineraryHotspotWorkflowService {
   }
 
 
-  /**
+ /**
    * Add a hotspot to an itinerary route
-   */
+ */
   async addHotspot(data: { planId: number; routeId: number; hotspotId: number }) {
     const userId = 1;
 
-    // 1) Insert the manual hotspot record first
-    // We mark it with hotspot_plan_own_way = 1 so the engine preserves it
+ // 1) Insert the manual hotspot record first
+ // We mark it with hotspot_plan_own_way = 1 so the engine preserves it
     await (this.prisma as any).dvi_itinerary_route_hotspot_details.create({
       data: {
         itinerary_plan_ID: data.planId,
         itinerary_route_ID: data.routeId,
         hotspot_ID: data.hotspotId,
-        item_type: 4, // Hotspot/Attraction type
-        hotspot_plan_own_way: 1, // MARK AS MANUAL
+ item_type: 4, // Hotspot/Attraction type
+ hotspot_plan_own_way: 1, // MARK AS MANUAL
         createdby: userId,
         createdon: new Date(),
         status: 1,
@@ -892,7 +892,7 @@ export class ItineraryHotspotWorkflowService {
       },
     });
 
-    // 1.5) Remove from excluded list if it was previously deleted
+ // 1.5) Remove from excluded list if it was previously deleted
     const route = await (this.prisma as any).dvi_itinerary_route_details.findUnique({
       where: { itinerary_route_ID: data.routeId },
     });
@@ -905,8 +905,8 @@ export class ItineraryHotspotWorkflowService {
       data: { excluded_hotspot_ids: filteredExcluded },
     });
 
-    // 2) Trigger a full rebuild of the hotspots for this plan
-    // The engine will now see the manual hotspot, keep it, and calculate all travel times/hotel shifts
+ // 2) Trigger a full rebuild of the hotspots for this plan
+ // The engine will now see the manual hotspot, keep it, and calculate all travel times/hotel shifts
     const result = await this.prisma.$transaction(async (tx) => {
       return await this.hotspotEngine.rebuildRouteHotspots(tx, data.planId);
     }, { timeout: 60000 });
@@ -921,14 +921,14 @@ export class ItineraryHotspotWorkflowService {
     };
   }
 
-  /**
+ /**
    * Preview adding a hotspot to an itinerary route
-   */
+ */
   async previewAddHotspot(data: { planId: number; routeId: number; hotspotId: number }) {
     return this.previewManualHotspot(data.planId, data.routeId, data.hotspotId);
   }
 
-  /**
+ /**
    * Get available hotels for a route (within 20km radius)
-   */
+ */
 }

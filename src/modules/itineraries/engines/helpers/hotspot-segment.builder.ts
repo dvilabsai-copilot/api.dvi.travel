@@ -8,10 +8,10 @@ import { TimeConverter } from "./time-converter";
 type Tx = Prisma.TransactionClient;
 
 export class HotspotSegmentBuilder {
-  /**
+ /**
    * Builds item_type = 4 row using hotspot master.
    * Also supports entry ticket cost fields if your table has them.
-   */
+ */
   async build(
     tx: Tx,
     opts: {
@@ -19,13 +19,13 @@ export class HotspotSegmentBuilder {
       routeId: number;
       order: number;
       hotspotId: number;
-      startTime: string; // HH:MM:SS
+ startTime: string; // HH:MM:SS
       userId: number;
       totalAdult: number;
       totalChildren: number;
       totalInfants: number;
-      nationality: number; // from plan header
-      itineraryPreference: number; // from plan header
+ nationality: number; // from plan header
+ itineraryPreference: number; // from plan header
       hotspotPlanOwnWay?: number;
       isConflict?: boolean;
       conflictReason?: string;
@@ -50,22 +50,22 @@ export class HotspotSegmentBuilder {
       isManual = false,
     } = opts;
 
-    // TODO: adjust model & field names to match your hotspot master + pricebook.
+ // TODO: adjust model & field names to match your hotspot master + pricebook.
     const hotspot = await (tx as any).dvi_hotspot_place.findFirst({
       where: { hotspot_ID: hotspotId, deleted: 0, status: 1 },
     });
 
-    // Stay time: from hotspot_duration field (TIME type, stored as Date)
-    // PHP uses hotspot_duration directly (sql_functions.php line 15117)
-    let stayTime = "01:00:00"; // Default 1 hour
+ // Stay time: from hotspot_duration field (TIME type, stored as Date)
+ // PHP uses hotspot_duration directly (sql_functions.php line 15117)
+ let stayTime = "01:00:00"; // Default 1 hour
     if (hotspot?.hotspot_duration) {
-      // hotspot_duration is a Date object (TIME field)
-      // Use TimeConverter to extract it as HH:MM:SS string
+ // hotspot_duration is a Date object (TIME field)
+ // Use TimeConverter to extract it as HH:MM:SS string
       stayTime = TimeConverter.toTimeString(hotspot.hotspot_duration);
     }
     const endTime = addTimes(startTime, stayTime);
 
-    // Ticket prices – if you have pricebook table; else keep zero.
+ // Ticket prices if you have pricebook table; else keep zero.
     let adultCost = 0;
     let childCost = 0;
     let infantCost = 0;
@@ -73,7 +73,7 @@ export class HotspotSegmentBuilder {
     let fChildCost = 0;
     let fInfantCost = 0;
 
-    // Example pricebook usage, adjust to your schema:
+ // Example pricebook usage, adjust to your schema:
     const pricebook = await (tx as any).dvi_hotspot_entry_pricebook?.findFirst({
       where: {
         hotspot_ID: hotspotId,

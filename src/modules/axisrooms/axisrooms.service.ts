@@ -233,7 +233,7 @@ export class AxisRoomsService {
       ? details?.occupancy.filter((item) => !!String(item || '').trim())
       : [];
 
-    // Resolve hotel_id and room_id (integer) from propertyId and roomId (string)
+ // Resolve hotel_id and room_id (integer) from propertyId and roomId (string)
     const hotelRow = await this.prisma.dvi_hotel.findFirst({
       where: { axisrooms_property_id: propertyId, deleted: { not: true } },
       select: { hotel_id: true },
@@ -280,9 +280,9 @@ export class AxisRoomsService {
     });
   }
 
-  /**
+ /**
    * Validates if a propertyId is mapped and enabled in dvi_hotel
-   */
+ */
   private async validatePropertyMapping(propertyId: string): Promise<boolean> {
     const hotel = await this.prisma.dvi_hotel.findFirst({
       where: {
@@ -294,9 +294,9 @@ export class AxisRoomsService {
     return !!hotel;
   }
 
-  /**
+ /**
    * Logs inbound request
-   */
+ */
   private async logInbound(
     type: string,
     propertyId?: string,
@@ -315,14 +315,14 @@ export class AxisRoomsService {
         },
       });
     } catch (error) {
-      this.logger.error(`Failed to log inbound request: ${error.message}`);
+ this.logger.error(`Failed to log inbound request: ${error.message}`);
     }
   }
 
-  /**
+ /**
    * GET productInfo - Returns list of rooms for a property
    * Now queries from dvi_hotel_rooms + dvi_hotel_roomtype tables
-   */
+ */
   async getProductInfo(
     dto: ProductInfoRequestDto,
   ): Promise<ProductInfoResponseDto> {
@@ -330,7 +330,7 @@ export class AxisRoomsService {
 
     await this.logInbound('productInfo', propertyId, null, null, dto);
 
-    // Resolve all mapped hotels for this property and pick deterministically.
+ // Resolve all mapped hotels for this property and pick deterministically.
     const mappedHotels = await this.prisma.dvi_hotel.findMany({
       where: {
         axisrooms_property_id: propertyId,
@@ -359,12 +359,12 @@ export class AxisRoomsService {
 
     if (mappedHotels.length > 1) {
       const allHotelIds = mappedHotels.map((h) => Number(h.hotel_id)).join(',');
-      this.logger.warn(
+ this.logger.warn(
         `AxisRooms productInfo duplicate property mapping for ${propertyId} (hotel_ids=${allHotelIds}). Selected hotel_id=${selectedHotelId}`,
       );
     }
 
-    // Get rooms for this hotel
+ // Get rooms for this hotel
     const rooms = await this.prisma.dvi_hotel_rooms.findMany({
       where: {
         hotel_id: selectedHotelId,
@@ -379,8 +379,8 @@ export class AxisRoomsService {
       },
     });
 
-    // Fallback mapping: some legacy hotels have missing room_ref_code but
-    // dvi_hotel_room_rate_plan still carries the external AxisRooms room id.
+ // Fallback mapping: some legacy hotels have missing room_ref_code but
+ // dvi_hotel_room_rate_plan still carries the external AxisRooms room id.
     const roomRatePlanRows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
       where: {
         hotel_id: selectedHotelId,
@@ -412,10 +412,10 @@ export class AxisRoomsService {
       };
     }
 
-    // Get unique room type IDs
+ // Get unique room type IDs
     const roomTypeIds = [...new Set(rooms.map(r => r.room_type_id))];
 
-    // Get room types
+ // Get room types
     const roomTypes = await this.prisma.dvi_hotel_roomtype.findMany({
       where: {
         room_type_id: { in: roomTypeIds },
@@ -428,21 +428,21 @@ export class AxisRoomsService {
       },
     });
 
-    // Create a map for quick lookup
+ // Create a map for quick lookup
     const roomTypeMap = new Map(
       roomTypes.map(rt => [rt.room_type_id, rt.room_type_title]),
     );
 
-    // Build response data
+ // Build response data
     const data: ProductInfoDataDto[] = rooms.map((room) => {
-      // Prefer explicit room_ref_code, then mapped AxisRooms room id, and
-      // finally numeric room_ID as the last fallback.
+ // Prefer explicit room_ref_code, then mapped AxisRooms room id, and
+ // finally numeric room_ID as the last fallback.
       const id =
         String(room.room_ref_code || '').trim() ||
         axisroomsRoomIdByRoomId.get(Number(room.room_ID)) ||
         String(room.room_ID);
-      
-      // Prefer room_type_title, fallback to room_title, final fallback "Room"
+
+ // Prefer room_type_title, fallback to room_title, final fallback "Room"
       const roomTypeName = roomTypeMap.get(room.room_type_id);
       const name = roomTypeName || room.room_title || 'Room';
 
@@ -456,9 +456,9 @@ export class AxisRoomsService {
     };
   }
 
-  /**
+ /**
    * GET ratePlanInfo - Returns list of rate plans for a room
-   */
+ */
   async getRatePlanInfo(
     dto: RatePlanInfoRequestDto,
   ): Promise<RatePlanInfoResponseDto> {
@@ -476,7 +476,7 @@ export class AxisRoomsService {
       };
     }
 
-    // Resolve hotel_id and room_id (integer) from propertyId and roomId (string)
+ // Resolve hotel_id and room_id (integer) from propertyId and roomId (string)
     const hotelForInfo = await this.prisma.dvi_hotel.findFirst({
       where: { axisrooms_property_id: propertyId, deleted: { not: true } },
       select: { hotel_id: true },
@@ -596,10 +596,10 @@ export class AxisRoomsService {
     };
   }
 
-  /**
+ /**
    * POST inventoryUpdate - Stores or updates inventory
    * Dual-writes: axisrooms_inventory (audit log) + dvi_hotel_room_availability (native table)
-   */
+ */
   async updateInventory(
     dto: InventoryUpdateRequestDto,
   ): Promise<InventoryUpdateResponseDto> {
@@ -618,7 +618,7 @@ export class AxisRoomsService {
     }
 
     try {
-      // --- Write 1: axisrooms_inventory (audit log — unchanged) ---
+ // --- Write 1: axisrooms_inventory (audit log unchanged) ---
       for (const inv of inventory) {
         await this.prisma.axisrooms_inventory.upsert({
           where: {
@@ -643,8 +643,8 @@ export class AxisRoomsService {
         });
       }
 
-      // --- Write 2: dvi_hotel_room_availability (universal native table) ---
-      // Resolve string IDs → integer IDs (same pattern as ensureRatePlanExists)
+ // --- Write 2: dvi_hotel_room_availability (universal native table) ---
+ // Resolve string IDs integer IDs (same pattern as ensureRatePlanExists)
       const hotelRow = await this.prisma.dvi_hotel.findFirst({
         where: { axisrooms_property_id: propertyId, deleted: { not: true } },
         select: { hotel_id: true, hotel_name: true },
@@ -681,10 +681,10 @@ export class AxisRoomsService {
             });
           }
         } else {
-          this.logger.warn(`AxisRooms inventoryUpdate: room_ref_code "${roomId}" not found for hotel_id ${hid} — skipping native write`);
+ this.logger.warn(`AxisRooms inventoryUpdate: room_ref_code "${roomId}" not found for hotel_id ${hid} skipping native write`);
         }
       } else {
-        this.logger.warn(`AxisRooms inventoryUpdate: propertyId "${propertyId}" not mapped to any hotel — skipping native write`);
+ this.logger.warn(`AxisRooms inventoryUpdate: propertyId "${propertyId}" not mapped to any hotel skipping native write`);
       }
 
       return {
@@ -692,7 +692,7 @@ export class AxisRoomsService {
         status: 'success',
       };
     } catch (error) {
-      this.logger.error(`Inventory update error: ${error.message}`);
+ this.logger.error(`Inventory update error: ${error.message}`);
       return {
         message: `${AXISROOMS_MESSAGES.INVENTORY_UPDATE_FAILED} ${error.message}`,
         status: 'failure',
@@ -700,10 +700,10 @@ export class AxisRoomsService {
     }
   }
 
-  /**
+ /**
    * POST rateUpdate - Accepts payload but intentionally does not write to DB.
    * Rates are managed from Admin dashboard flows.
-   */
+ */
   async updateRate(
     dto: RateUpdateRequestDto,
   ): Promise<RateUpdateResponseDto> {
@@ -729,7 +729,7 @@ export class AxisRoomsService {
     }
 
     try {
-      this.logger.log(
+ this.logger.log(
         `AxisRooms rateUpdate ignored for DB writes (propertyId=${propertyId}, roomId=${roomId}, rateplanId=${rateplanId}, rows=${Array.isArray(rate) ? rate.length : 0})`,
       );
 
@@ -738,7 +738,7 @@ export class AxisRoomsService {
         status: 'success',
       };
     } catch (error) {
-      this.logger.error(`Rate update error: ${error.message}`);
+ this.logger.error(`Rate update error: ${error.message}`);
       return {
         message: `${AXISROOMS_MESSAGES.RATE_UPDATE_FAILED} ${error.message}`,
         status: 'failure',
@@ -746,9 +746,9 @@ export class AxisRoomsService {
     }
   }
 
-  /**
+ /**
    * POST restrictionUpdate - Stores restrictions (flattened by periods)
-   */
+ */
   async updateRestriction(
     dto: RestrictionUpdateRequestDto,
   ): Promise<RestrictionUpdateResponseDto> {
@@ -798,7 +798,7 @@ export class AxisRoomsService {
               ratePlanName: canonicalRatePlanDefinition?.code || undefined,
             });
 
-            // Insert one row per period
+ // Insert one row per period
             for (const period of periods) {
               await this.prisma.axisrooms_restriction.create({
                 data: {
@@ -823,7 +823,7 @@ export class AxisRoomsService {
         status: 'success',
       };
     } catch (error) {
-      this.logger.error(`Restriction update error: ${error.message}`);
+ this.logger.error(`Restriction update error: ${error.message}`);
       return {
         message: `${AXISROOMS_MESSAGES.RESTRICTION_UPDATE_FAILED} ${error.message}`,
         status: 'failure',

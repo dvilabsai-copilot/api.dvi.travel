@@ -9,16 +9,16 @@ async function check() {
 
   if (gs) {
     const buff = gs.itinerary_common_buffer_time;
-    console.log("Raw buffer:", buff);
-    console.log("Type:", typeof buff);
+ console.log("Raw buffer:", buff);
+ console.log("Type:", typeof buff);
     if (buff instanceof Date) {
-      console.log("As Date:", buff.toString());
-      console.log("getHours:", buff.getHours());
-      console.log("getUTCHours:", buff.getUTCHours());
-      console.log("getMinutes:", buff.getMinutes());
-      console.log("getUTCMinutes:", buff.getUTCMinutes());
-      console.log("getSeconds:", buff.getSeconds());
-      console.log("getUTCSeconds:", buff.getUTCSeconds());
+ console.log("As Date:", buff.toString());
+ console.log("getHours:", buff.getHours());
+ console.log("getUTCHours:", buff.getUTCHours());
+ console.log("getMinutes:", buff.getMinutes());
+ console.log("getUTCMinutes:", buff.getUTCMinutes());
+ console.log("getSeconds:", buff.getSeconds());
+ console.log("getUTCSeconds:", buff.getUTCSeconds());
     }
   }
 

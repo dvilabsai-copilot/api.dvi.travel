@@ -28,9 +28,9 @@ export interface RouteResponse {
 export class RouteSuggestionsV2Service {
   constructor(private prisma: PrismaService) {}
 
-  /**
+ /**
    * Get location_id from source and destination locations
-   */
+ */
   async getLocationIdFromSourceDestination(
     source: string,
     destination: string,
@@ -48,13 +48,13 @@ export class RouteSuggestionsV2Service {
       },
     });
 
-    // Convert BigInt to number
+ // Convert BigInt to number
     return location?.location_ID ? Number(location.location_ID) : null;
   }
 
-  /**
+ /**
    * Get stored routes matching location_id and no_of_nights
-   */
+ */
   async getStoredRoutes(
     locationId: number,
     noOfNights: number,
@@ -73,9 +73,9 @@ export class RouteSuggestionsV2Service {
     });
   }
 
-  /**
+ /**
    * Get route location details for a specific route
-   */
+ */
   async getRouteLocationDetails(
     storedRouteId: number,
     limit: number,
@@ -94,9 +94,9 @@ export class RouteSuggestionsV2Service {
     });
   }
 
-  /**
+ /**
    * Check available routes with different night counts for the location
-   */
+ */
   async checkAvailableRoutes(
     locationId: number,
     requestedNights: number,
@@ -106,7 +106,7 @@ export class RouteSuggestionsV2Service {
     minNights: number | null;
     availableNights: number[];
   }> {
-    // Check exact routes
+ // Check exact routes
     const exactResult = await (
       this.prisma as any
     ).dvi_stored_routes.aggregate({
@@ -123,7 +123,7 @@ export class RouteSuggestionsV2Service {
 
     const exactCount = exactResult._count.stored_route_ID;
 
-    // Check greater routes - use findMany instead of aggregateRaw
+ // Check greater routes - use findMany instead of aggregateRaw
     const greaterRoutes = await (
       this.prisma as any
     ).dvi_stored_routes.findMany({
@@ -142,7 +142,7 @@ export class RouteSuggestionsV2Service {
         ? Math.min(...greaterRoutes.map((r) => r.no_of_nights))
         : null;
 
-    // Check shorter routes
+ // Check shorter routes
     const shorterRoutes = await (
       this.prisma as any
     ).dvi_stored_routes.findMany({
@@ -167,17 +167,17 @@ export class RouteSuggestionsV2Service {
     };
   }
 
-  /**
+ /**
    * Parse and format date - convert d-m-Y to d/m/Y for display
-   */
+ */
   private parseAndFormatDate(dateStr: string): string {
     return dateStr.replace(/-/g, '/');
   }
 
-  /**
+ /**
    * Main method: Get default route suggestions
    * Returns: Clean JSON data with routes
-   */
+ */
   async getDefaultRouteSuggestions(
     noOfRouteDays: number,
     arrivalLocation: string,
@@ -186,19 +186,19 @@ export class RouteSuggestionsV2Service {
     formattedEndDate: string,
   ): Promise<RouteResponse> {
     try {
-      console.log(
+ console.log(
         `[getDefaultRouteSuggestions] Called with: ${arrivalLocation} → ${departureLocation}, ${noOfRouteDays} days`,
       );
 
       const adjustedDays = noOfRouteDays - 1;
 
-      // Get location ID
+ // Get location ID
       const locationId = await this.getLocationIdFromSourceDestination(
         arrivalLocation,
         departureLocation,
       );
 
-      console.log(`[getDefaultRouteSuggestions] locationId=${locationId}`);
+ console.log(`[getDefaultRouteSuggestions] locationId=${locationId}`);
 
       if (!locationId) {
         return {
@@ -209,15 +209,15 @@ export class RouteSuggestionsV2Service {
         };
       }
 
-      // Get stored routes
+ // Get stored routes
       const storedRoutes = await this.getStoredRoutes(locationId, adjustedDays);
 
-      console.log(
+ console.log(
         `[getDefaultRouteSuggestions] Found ${storedRoutes.length} stored routes`,
       );
 
       if (storedRoutes.length === 0) {
-        // Check available alternatives
+ // Check available alternatives
         const availabilityInfo = await this.checkAvailableRoutes(
           locationId,
           adjustedDays,
@@ -240,7 +240,7 @@ export class RouteSuggestionsV2Service {
         };
       }
 
-      // Process routes - limit to 5
+ // Process routes - limit to 5
       const selectedRoutes = storedRoutes;
       const routes: RouteData[] = [];
 
@@ -250,31 +250,31 @@ export class RouteSuggestionsV2Service {
           adjustedDays,
         );
 
-        // Build day details
+ // Build day details
         const days: DayDetail[] = [];
-        
-        // Parse DD/MM/YYYY format date
+
+ // Parse DD/MM/YYYY format date
         const dateParts = formattedStartDate.split('/');
         const day = parseInt(dateParts[0], 10);
         const month = parseInt(dateParts[1], 10);
         const year = parseInt(dateParts[2], 10);
-        
-        console.log(`[getDefaultRouteSuggestions] Parsing date: ${formattedStartDate} -> D:${day}, M:${month}, Y:${year}`);
-        
-        const startDate = new Date(year, month - 1, day);
-        console.log(`[getDefaultRouteSuggestions] Calculated startDate: ${startDate.toString()}`);
 
-        // Stored route rows are saved by night/stay count, but the create-itinerary
-        // form renders travel segments by day. For a 4N/5D round-trip we therefore
-        // need 5 rows: airport -> stop1 ... last stop -> departure.
+ console.log(`[getDefaultRouteSuggestions] Parsing date: ${formattedStartDate} -> D:${day}, M:${month}, Y:${year}`);
+
+        const startDate = new Date(year, month - 1, day);
+ console.log(`[getDefaultRouteSuggestions] Calculated startDate: ${startDate.toString()}`);
+
+ // Stored route rows are saved by night/stay count, but the create-itinerary
+ // form renders travel segments by day. For a 4N/5D round-trip we therefore
+ // need 5 rows: airport -> stop1 ... last stop -> departure.
         for (let i = 0; i < noOfRouteDays; i++) {
           const currentDate = new Date(startDate);
           currentDate.setDate(currentDate.getDate() + i);
 
-          // Format as DD/MM/YYYY (with slashes, matching Customize mode)
+ // Format as DD/MM/YYYY (with slashes, matching Customize mode)
           const dateStr = `${String(currentDate.getDate()).padStart(2, '0')}/${String(currentDate.getMonth() + 1).padStart(2, '0')}/${currentDate.getFullYear()}`;
-          
-          console.log(`[getDefaultRouteSuggestions] Day ${i + 1}: ${dateStr}`);
+
+ console.log(`[getDefaultRouteSuggestions] Day ${i + 1}: ${dateStr}`);
 
           const sourceLocation =
             i === 0
@@ -309,7 +309,7 @@ export class RouteSuggestionsV2Service {
         routes,
       };
     } catch (error) {
-      console.error('[getDefaultRouteSuggestions] Error:', error);
+ console.error('[getDefaultRouteSuggestions] Error:', error);
       return {
         success: false,
         no_routes_found: true,

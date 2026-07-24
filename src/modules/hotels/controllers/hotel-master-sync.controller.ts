@@ -33,14 +33,14 @@ export class HotelMasterSyncController {
     private readonly hobseHotelCsvImportService: HobseHotelCsvImportService,
   ) {}
 
-  /**
+ /**
    * Sync all cities and hotels from TBO
    * POST /api/v1/hotels/sync/all
-   */
+ */
   @Post('all')
   async syncAllCitiesAndHotels() {
     try {
-      this.logger.log('🔄 Starting full sync of cities and hotels from TBO SOAP API...');
+ this.logger.log(' Starting full sync of cities and hotels from TBO SOAP API...');
       const results = await this.tboSoapService.syncAllCities();
 
       const summary = Array.from(results.entries()).map(([city, count]) => ({
@@ -55,7 +55,7 @@ export class HotelMasterSyncController {
         totalHotels: Array.from(results.values()).reduce((a, b) => a + b, 0),
       };
     } catch (error) {
-      this.logger.error(`❌ Sync failed: ${error.message}`);
+ this.logger.error(` Sync failed: ${error.message}`);
       return {
         success: false,
         message: `Sync failed: ${error.message}`,
@@ -63,14 +63,14 @@ export class HotelMasterSyncController {
     }
   }
 
-  /**
+ /**
    * Sync all India cities from CityList API + GetHotels into tbo_hotel_master
    * POST /api/v1/hotels/sync/all-india
-   */
+ */
   @Post('all-india')
   async syncAllIndiaCitiesAndHotels() {
     try {
-      this.logger.log('🔄 Starting full India sync using CityList API (CountryCode=IN)...');
+ this.logger.log(' Starting full India sync using CityList API (CountryCode=IN)...');
       const results = await this.tboHotelMasterSyncService.syncAllCities();
 
       const summary = Array.from(results.entries()).map(([cityKey, count]) => {
@@ -90,7 +90,7 @@ export class HotelMasterSyncController {
         summary,
       };
     } catch (error: any) {
-      this.logger.error(`❌ India CityList sync failed: ${error.message}`);
+ this.logger.error(` India CityList sync failed: ${error.message}`);
       return {
         success: false,
         message: `India CityList sync failed: ${error.message}`,
@@ -98,10 +98,10 @@ export class HotelMasterSyncController {
     }
   }
 
-  /**
+ /**
    * Preview all India city codes from CityList API
    * GET /api/v1/hotels/sync/all-india/cities
-   */
+ */
   @Get('all-india/cities')
   async getAllIndiaCitiesFromApi() {
     const cities = await this.tboHotelMasterSyncService.fetchIndiaCitiesFromCityListApi();
@@ -112,14 +112,14 @@ export class HotelMasterSyncController {
     };
   }
 
-  /**
+ /**
    * Test one city sync through all-india service path
    * POST /api/v1/hotels/sync/all-india/city/:cityCode
-   */
+ */
   @Post('all-india/city/:cityCode')
   async syncSingleIndiaCity(@Param('cityCode') cityCode: string) {
     try {
-      this.logger.log(`🔄 Starting single-city India sync for cityCode=${cityCode}`);
+ this.logger.log(` Starting single-city India sync for cityCode=${cityCode}`);
       const inserted = await this.tboHotelMasterSyncService.syncHotelsForCity(cityCode);
       const coordinateSample = await this.tboHotelMasterSyncService.getHotelCoordinateSampleByCity(cityCode, 5);
       return {
@@ -130,7 +130,7 @@ export class HotelMasterSyncController {
         message: `Single-city sync completed for ${cityCode}`,
       };
     } catch (error: any) {
-      this.logger.error(`❌ Single-city India sync failed for ${cityCode}: ${error.message}`);
+ this.logger.error(` Single-city India sync failed for ${cityCode}: ${error.message}`);
       return {
         success: false,
         cityCode,
@@ -139,14 +139,14 @@ export class HotelMasterSyncController {
     }
   }
 
-  /**
+ /**
    * Sync hotels for a specific city
    * POST /api/v1/hotels/sync/city/:cityCode
-   */
+ */
   @Post('city/:cityCode')
   async syncCity(@Param('cityCode') cityCode: string) {
     try {
-      this.logger.log(`🔄 Starting sync for city: ${cityCode}`);
+ this.logger.log(` Starting sync for city: ${cityCode}`);
       const count = await this.tboSoapService.syncHotelsForCity(cityCode);
       return {
         success: true,
@@ -154,7 +154,7 @@ export class HotelMasterSyncController {
         hotelCount: count,
       };
     } catch (error) {
-      this.logger.error(`❌ Sync failed: ${error.message}`);
+ this.logger.error(` Sync failed: ${error.message}`);
       return {
         success: false,
         message: `Sync failed: ${error.message}`,
@@ -162,10 +162,10 @@ export class HotelMasterSyncController {
     }
   }
 
-  /**
+ /**
    * Get current hotel master data count
    * GET /api/v1/hotels/sync/master-data/count
-   */
+ */
   @Get('master-data/count')
   async getHotelCount() {
     const count = await this.tboSoapService.getHotelCount();
@@ -175,16 +175,16 @@ export class HotelMasterSyncController {
     };
   }
 
-  // -------------------- HOBSE --------------------
+ // -------------------- HOBSE --------------------
 
-  /**
+ /**
    * Sync all hotels from HOBSE into dvi_hotel
    * POST /api/v1/hotels/sync/hobse/all
-   */
+ */
   @Post('hobse/all')
   async syncHobseAllHotels() {
     try {
-      this.logger.log('🔄 Starting HOBSE hotel sync into dvi_hotel...');
+ this.logger.log(' Starting HOBSE hotel sync into dvi_hotel...');
       const result = await this.hobseHotelMasterSyncService.syncAllHotelsToDviHotel();
       return {
         success: true,
@@ -192,7 +192,7 @@ export class HotelMasterSyncController {
         ...result,
       };
     } catch (error) {
-      this.logger.error(`❌ HOBSE sync failed: ${error.message}`);
+ this.logger.error(` HOBSE sync failed: ${error.message}`);
       return {
         success: false,
         message: `HOBSE sync failed: ${error.message}`,
@@ -200,11 +200,11 @@ export class HotelMasterSyncController {
     }
   }
 
-  /**
+ /**
    * Import HOBSE/Justa hotels from uploaded CSV/XLS/XLSX into dvi_hotel + dvi_cities mapping
    * POST /api/v1/hotels/sync/hobse/import/csv?createMissingCities=true
    * multipart/form-data with file field: "file"
-   */
+ */
   @Post('hobse/import/csv')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -226,7 +226,7 @@ export class HotelMasterSyncController {
     }
 
     const allowCreateMissingCities = String(createMissingCities).toLowerCase() === 'true';
-    this.logger.log(
+ this.logger.log(
       `🔄 Starting CSV import for ${file.originalname} | createMissingCities=${allowCreateMissingCities}`,
     );
 

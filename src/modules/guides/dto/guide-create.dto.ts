@@ -26,9 +26,9 @@ export class GuideBankDto {
 
 export class GuidePricebookRowDto {
   @IsString() pax_label!: '1-5' | '6-14' | '15-40';
-  @IsOptional() @IsNumber() slot1_price?: number; // 9–1
-  @IsOptional() @IsNumber() slot2_price?: number; // 9–4
-  @IsOptional() @IsNumber() slot3_price?: number; // 6–9
+ @IsOptional() @IsNumber() slot1_price?: number; // 91
+ @IsOptional() @IsNumber() slot2_price?: number; // 94
+ @IsOptional() @IsNumber() slot3_price?: number; // 69
 }
 
 export class GuidePricebookDto {
@@ -40,56 +40,56 @@ export class GuidePricebookDto {
 }
 
 export class GuideReviewCreateDto {
-  @IsInt() @Min(1) rating!: number; // 1..5
+ @IsInt() @Min(1) rating!: number; // 1..5
   @IsString() @IsNotEmpty() feedback!: string;
 }
 
 export class GuideCreateDto {
-  // Basic
+ // Basic
   @IsString() @IsNotEmpty() guide_name!: string;
   @IsDateString() dob!: string;
   @IsString() @IsNotEmpty() blood_group!: string;
   @IsString() @IsIn(['Male', 'Female', 'Other']) gender!: string;
 
-  // Contacts
+ // Contacts
   @IsString() @IsNotEmpty() mobile_primary!: string;
   @IsOptional() @IsString() mobile_alt?: string;
   @IsEmail() email!: string;
   @IsOptional() @IsString() emergency_mobile?: string;
 
-  // Auth / Role
+ // Auth / Role
   @IsString() @IsNotEmpty() password!: string;
-  @IsString() @IsNotEmpty() role!: string; // map to role id or keep string
+ @IsString() @IsNotEmpty() role!: string; // map to role id or keep string
 
-  // KYC & meta
+ // KYC & meta
   @IsOptional() @IsString() aadhar_no?: string;
   @IsOptional() @IsInt() @Min(0) experience_years?: number;
-  @IsArray() @IsString({ each: true }) languages!: string[]; // list of language names or ids
+ @IsArray() @IsString({ each: true }) languages!: string[]; // list of language names or ids
 
-  // Geo + Tax
+ // Geo + Tax
   @IsInt() country_id!: number;
   @IsInt() state_id!: number;
   @IsInt() city_id!: number;
-  @IsString() @IsNotEmpty() gst_type!: string; // Included/Excluded/N.A.
-  @IsNumber() gst_percent!: number; // 18, 5, etc.
+ @IsString() @IsNotEmpty() gst_type!: string; // Included/Excluded/N.A.
+ @IsNumber() gst_percent!: number; // 18, 5, etc.
 
-  // Availability Slots (Slot 1/2/3 as per PHP)
+ // Availability Slots (Slot 1/2/3 as per PHP)
   @IsArray() @IsInt({ each: true }) slot_ids!: number[];
 
-  // Preferred For
+ // Preferred For
   @IsBoolean() @Type(() => Boolean) preferred_hotspot!: boolean;
   @IsBoolean() @Type(() => Boolean) preferred_activity!: boolean;
   @IsBoolean() @Type(() => Boolean) preferred_itinerary!: boolean;
 
-  // Bank
+ // Bank
   @ValidateNested() @Type(() => GuideBankDto)
   bank!: GuideBankDto;
 
-  // Pricebook (Step 2)
+ // Pricebook (Step 2)
   @IsOptional() @ValidateNested() @Type(() => GuidePricebookDto)
   pricebook?: GuidePricebookDto;
 
-  // Reviews (Step 3) – optional initial seed
+ // Reviews (Step 3) optional initial seed
   @IsOptional() @ValidateNested({ each: true }) @Type(() => GuideReviewCreateDto)
   reviews?: GuideReviewCreateDto[];
 }

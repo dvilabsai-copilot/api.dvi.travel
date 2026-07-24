@@ -3,15 +3,15 @@ import { Type } from 'class-transformer';
 
 class DefaultSlotDto {
   @IsString() @IsNotEmpty()
-  start_time!: string; // "HH:MM[:SS]"
+ start_time!: string; // "HH:MM[:SS]"
 
   @IsString() @IsNotEmpty()
-  end_time!: string;   // "HH:MM[:SS]"
+ end_time!: string; // "HH:MM[:SS]"
 }
 
 class SpecialSlotDto {
   @IsString() @IsNotEmpty()
-  date!: string;       // "YYYY-MM-DD"
+ date!: string; // "YYYY-MM-DD"
 
   @IsString() @IsNotEmpty()
   start_time!: string;

@@ -96,7 +96,7 @@ export class StaahApiKeyGuard implements CanActivate {
     const requestKey = body?.auth?.key || body?.apikey;
 
     if (!apiKey) {
-      this.logger.error('STAAH_API_KEY not configured in environment');
+ this.logger.error('STAAH_API_KEY not configured in environment');
       throw new UnauthorizedException({
         status: 'fail',
         error_desc: STAAH_MESSAGES.UNAUTHORIZED,
@@ -126,14 +126,14 @@ export class StaahApiKeyGuard implements CanActivate {
 
     const ipDebug = this.getClientIpDebugData(request);
 
-    this.logger.log(
+ this.logger.log(
       `STAAH IP debug resolved=${ipDebug.resolvedClientIp || 'n/a'} request.ip=${ipDebug.requestIp || 'n/a'} request.ips=${ipDebug.requestIps.join('|') || 'n/a'} x-forwarded-for=${ipDebug.forwardedFor.join('|') || 'n/a'} x-real-ip=${ipDebug.realIp || 'n/a'} remoteAddress=${ipDebug.remoteAddress || 'n/a'}`,
     );
 
     const normalizedIp = ipDebug.resolvedClientIp;
 
     if (!allowedIps.includes(normalizedIp)) {
-      this.logger.warn(`Blocked STAAH request from non-whitelisted IP: ${normalizedIp}`);
+ this.logger.warn(`Blocked STAAH request from non-whitelisted IP: ${normalizedIp}`);
       throw new UnauthorizedException({
         status: 'fail',
         error_desc: STAAH_MESSAGES.UNAUTHORIZED,

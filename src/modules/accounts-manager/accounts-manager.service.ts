@@ -23,16 +23,16 @@ import {
 export class AccountsManagerService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 🔹 MAIN LIST – now also exposes headerId, routeDate, vendorId, vehicleId
+ // MAIN LIST now also exposes headerId, routeDate, vendorId, vehicleId
   async list(query: AccountsManagerQueryDto): Promise<AccountsManagerRowDto[]> {
     const status: AccountsManagerStatus = query.status || "all";
     const componentType: AccountsManagerComponentType =
       query.componentType || "all";
 
     const fromDate = parseDDMMYYYY(query.fromDate);
-    const toDate = parseDDMMYYYY(query.toDate, true); // end of day
+ const toDate = parseDDMMYYYY(query.toDate, true); // end of day
 
-    // 1️⃣ Base filter on accounts header
+ // 1 Base filter on accounts header
     const detailsWhere: any = {
       deleted: 0,
     };
@@ -90,7 +90,7 @@ export class AccountsManagerService {
     }
 
     const planIds = Array.from(new Set(headers.map(h => h.itinerary_plan_ID).filter(id => id > 0)));
-    const plans = planIds.length 
+    const plans = planIds.length
       ? await this.prisma.dvi_itinerary_plan_details.findMany({
           where: { itinerary_plan_ID: { in: planIds } },
           select: {
@@ -103,13 +103,13 @@ export class AccountsManagerService {
           }
         })
       : [];
-    
+
     const planMap = new Map<number, any>();
     for (const p of plans) {
       planMap.set(p.itinerary_plan_ID, p);
     }
 
-    // 2️⃣ Agents map (for agent name filter + display)
+ // 2 Agents map (for agent name filter + display)
     const agentIds = Array.from(
       new Set(headers.map((h) => h.agent_id).filter((x) => x && x > 0)),
     );
@@ -131,7 +131,7 @@ export class AccountsManagerService {
       agentMap.set(a.agent_ID, a.agent_name || "");
     }
 
-    // If agent name filter is provided, restrict headers here
+ // If agent name filter is provided, restrict headers here
     let filteredHeaderIds = headerIds;
     if (query.agent) {
       const needle = query.agent.toLowerCase();
@@ -155,7 +155,7 @@ export class AccountsManagerService {
 
     const rows: AccountsManagerRowDto[] = [];
 
-    // 🔹 Shared helper to build base row from header
+ // Shared helper to build base row from header
     const buildBaseRow = (
       detailHeaderId: number,
       vendorName: string,
@@ -173,7 +173,7 @@ export class AccountsManagerService {
       const quoteId = header.itinerary_quote_ID || "";
       const agentName = agentMap.get(header.agent_id) || "";
 
-      // search filter (quote + vendor name)
+ // search filter (quote + vendor name)
       if (query.search) {
         const s = query.search.toLowerCase();
         if (
@@ -188,12 +188,12 @@ export class AccountsManagerService {
 
       const startDate = formatToDDMMYYYY(header.trip_start_date_and_time);
       const endDate = formatToDDMMYYYY(header.trip_end_date_and_time);
-      // In PHP this is itinerary_route_date; here we default to trip start date
+ // In PHP this is itinerary_route_date; here we default to trip start date
       const routeDate = startDate;
 
       return {
-        headerId: detailHeaderId, // header row ID (accounts_itinerary_details_ID)
-        id: detailHeaderId, // will be overwritten per component with detail row id
+ headerId: detailHeaderId, // header row ID (accounts_itinerary_details_ID)
+ id: detailHeaderId, // will be overwritten per component with detail row id
         quoteId,
         hotelName: vendorName,
         amount,
@@ -205,7 +205,7 @@ export class AccountsManagerService {
         startDate,
         endDate,
         routeDate,
-        // per-component enrichments will fill these:
+ // per-component enrichments will fill these:
         vendorId: undefined,
         vehicleId: undefined,
         arrivalLocation: plan?.arrival_location || "",
@@ -215,7 +215,7 @@ export class AccountsManagerService {
       };
     };
 
-    // 3️⃣ HOTEL component
+ // 3 HOTEL component
     if (componentType === "all" || componentType === "hotel") {
       const hotelDetails =
         await this.prisma.dvi_accounts_itinerary_hotel_details.findMany({
@@ -264,9 +264,9 @@ export class AccountsManagerService {
         );
         if (!base) continue;
         base.id = hd.accounts_itinerary_hotel_details_ID;
-        // 🔹 match PHP: hotel_id as vendorId
+ // match PHP: hotel_id as vendorId
         base.vendorId = hd.hotel_id || undefined;
-        
+
         base.receivableFromAgentAmount = (hd.total_hotel_cost || 0) + (hd.total_hotel_tax_amount || 0);
         base.marginAmount = (hd.total_hotel_cost || 0) - (hd.total_purchase_cost || 0);
         base.tax = hd.total_hotel_tax_amount || 0;
@@ -275,7 +275,7 @@ export class AccountsManagerService {
       }
     }
 
-    // 4️⃣ GUIDE component
+ // 4 GUIDE component
     if (componentType === "all" || componentType === "guide") {
       const guideDetails =
         await this.prisma.dvi_accounts_itinerary_guide_details.findMany({
@@ -324,13 +324,13 @@ export class AccountsManagerService {
         );
         if (!base) continue;
         base.id = gd.accounts_itinerary_guide_details_ID;
-        // 🔹 PHP semantics: guide_id as vendorId
+ // PHP semantics: guide_id as vendorId
         base.vendorId = gd.guide_id || undefined;
         rows.push(base);
       }
     }
 
-    // 5️⃣ HOTSPOT component
+ // 5 HOTSPOT component
     if (componentType === "all" || componentType === "hotspot") {
       const hotspotDetails =
         await this.prisma.dvi_accounts_itinerary_hotspot_details.findMany({
@@ -380,13 +380,13 @@ export class AccountsManagerService {
         );
         if (!base) continue;
         base.id = hd.accounts_itinerary_hotspot_details_ID;
-        // 🔹 PHP semantics: hotspot_ID as vendorId
+ // PHP semantics: hotspot_ID as vendorId
         base.vendorId = hd.hotspot_ID || undefined;
         rows.push(base);
       }
     }
 
-    // 6️⃣ ACTIVITY component
+ // 6 ACTIVITY component
     if (componentType === "all" || componentType === "activity") {
       const activityDetails =
         await this.prisma.dvi_accounts_itinerary_activity_details.findMany({
@@ -436,13 +436,13 @@ export class AccountsManagerService {
         );
         if (!base) continue;
         base.id = ad.accounts_itinerary_activity_details_ID;
-        // 🔹 PHP semantics: activity_ID as vendorId
+ // PHP semantics: activity_ID as vendorId
         base.vendorId = ad.activity_ID || undefined;
         rows.push(base);
       }
     }
 
-    // 7️⃣ VEHICLE component
+ // 7 VEHICLE component
     if (componentType === "all" || componentType === "vehicle") {
       const vehicleDetails =
         await this.prisma.dvi_accounts_itinerary_vehicle_details.findMany({
@@ -501,9 +501,9 @@ export class AccountsManagerService {
         );
         if (!base) continue;
         base.id = vd.accounts_itinerary_vehicle_details_ID;
-        // 🔹 expose both vehicleId (for detail popup) and vendorId if needed
+ // expose both vehicleId (for detail popup) and vendorId if needed
         base.vehicleId = vd.vehicle_id || undefined;
-        // vendorId can also point to the same, like PHP often uses vendor/vehicle lookup
+ // vendorId can also point to the same, like PHP often uses vendor/vehicle lookup
         base.vendorId = vd.vehicle_id || undefined;
 
         base.receivableFromAgentAmount = (vd.vehicle_grand_total || 0);
@@ -514,7 +514,7 @@ export class AccountsManagerService {
       }
     }
 
-    // 8️⃣ Sort by start date desc + quoteId as fallback
+ // 8 Sort by start date desc + quoteId as fallback
     rows.sort((a, b) => {
       const da = toComparable(a.startDate);
       const db = toComparable(b.startDate);
@@ -527,11 +527,11 @@ export class AccountsManagerService {
     return rows;
   }
 
-  /**
+ /**
    * 🔹 Internal helper used by summary/query endpoints.
    * Rebuilds the same header filtering logic used in list(),
    * but only returns the header IDs + normalized status/componentType.
-   */
+ */
   private async getFilteredHeaderIds(
     query: AccountsManagerQueryDto,
   ): Promise<{
@@ -592,7 +592,7 @@ export class AccountsManagerService {
       (h) => h.accounts_itinerary_details_ID,
     );
 
-    // Agent filter (same behaviour as list)
+ // Agent filter (same behaviour as list)
     if (query.agent) {
       const agentIds = Array.from(
         new Set(headers.map((h) => h.agent_id).filter((x) => x && x > 0)),
@@ -633,11 +633,11 @@ export class AccountsManagerService {
     return { headerIds, status, componentType };
   }
 
-  /**
+ /**
    * 🔹 GET /accounts-manager/summary
    * Aggregates total_payable / total_paid / total_balance across
    * all visible component rows based on filters.
-   */
+ */
   async getSummary(
     query: AccountsManagerQueryDto,
   ): Promise<AccountsManagerSummaryDto> {
@@ -676,7 +676,7 @@ export class AccountsManagerService {
     let totalBalance = 0;
     let rowCount = 0;
 
-    // HOTEL
+ // HOTEL
     if (includeTypes.includes("hotel")) {
       const rows =
         await this.prisma.dvi_accounts_itinerary_hotel_details.findMany(
@@ -701,7 +701,7 @@ export class AccountsManagerService {
       rowCount += filtered.length;
     }
 
-    // VEHICLE
+ // VEHICLE
     if (includeTypes.includes("vehicle")) {
       const rows =
         await this.prisma.dvi_accounts_itinerary_vehicle_details.findMany(
@@ -726,7 +726,7 @@ export class AccountsManagerService {
       rowCount += filtered.length;
     }
 
-    // GUIDE
+ // GUIDE
     if (includeTypes.includes("guide")) {
       const rows =
         await this.prisma.dvi_accounts_itinerary_guide_details.findMany(
@@ -751,7 +751,7 @@ export class AccountsManagerService {
       rowCount += filtered.length;
     }
 
-    // HOTSPOT
+ // HOTSPOT
     if (includeTypes.includes("hotspot")) {
       const rows =
         await this.prisma.dvi_accounts_itinerary_hotspot_details.findMany(
@@ -776,7 +776,7 @@ export class AccountsManagerService {
       rowCount += filtered.length;
     }
 
-    // ACTIVITY
+ // ACTIVITY
     if (includeTypes.includes("activity")) {
       const rows =
         await this.prisma.dvi_accounts_itinerary_activity_details.findMany(
@@ -809,10 +809,10 @@ export class AccountsManagerService {
     };
   }
 
-  /**
+ /**
    * 🔹 GET /accounts-manager/quotes?q=...
    * Quote autocomplete – distinct itinerary_quote_ID values.
-   */
+ */
   async searchQuotes(
     phrase: string,
   ): Promise<AccountsManagerQuoteDto[]> {
@@ -843,10 +843,10 @@ export class AccountsManagerService {
       .map((q) => ({ quoteId: q }));
   }
 
-  /**
+ /**
    * 🔹 GET /accounts-manager/agents
    * Agent dropdown – simple list of all agents.
-   */
+ */
   async listAgents(): Promise<AccountsManagerAgentDto[]> {
     const agents = await this.prisma.dvi_agent.findMany({
       select: {
@@ -858,7 +858,7 @@ export class AccountsManagerService {
       },
     });
 
-    console.log("Fetched agents:", agents.length);
+ console.log("Fetched agents:", agents.length);
 
     return agents.map((a) => ({
       id: a.agent_ID,
@@ -866,10 +866,10 @@ export class AccountsManagerService {
     }));
   }
 
-  /**
+ /**
    * 🔹 GET /accounts-manager/payment-modes
    * Returns static payment modes (aligned with PHP: 1=Cash, 2=UPI, 3=Net Banking).
-   */
+ */
   async listPaymentModes(): Promise<AccountsManagerPaymentModeDto[]> {
     return [
       { id: 1, label: "Cash" },
@@ -878,16 +878,16 @@ export class AccountsManagerService {
     ];
   }
 
-  /**
+ /**
    * 🔹 POST /accounts-manager/pay
    * Updates total_paid & total_balance for a single component row
    * AND inserts a row into the corresponding *_transaction_history table.
-   */
+ */
   async recordPayment(body: AccountsManagerPayDto): Promise<void> {
     const {
       componentType,
       componentDetailId,
-      // accountsItineraryDetailsId, // ignored for now to avoid strict mismatch
+ // accountsItineraryDetailsId, // ignored for now to avoid strict mismatch
       amount,
     } = body;
 
@@ -989,7 +989,7 @@ export class AccountsManagerService {
       throw new BadRequestException("Component row not found or deleted");
     }
 
-    // Use the header ID from detail row to avoid strict mismatch errors
+ // Use the header ID from detail row to avoid strict mismatch errors
     const headerId = Number(detail.accounts_itinerary_details_ID);
 
     const currentPaid = Number(detail.total_paid ?? 0);
@@ -1004,24 +1004,24 @@ export class AccountsManagerService {
     const newPaid = currentPaid + amount;
     const newBalance = currentBalance - amount;
 
-    // 1️⃣ Update running totals on the *_details row
+ // 1 Update running totals on the *_details row
     await updateFn({
       total_paid: newPaid,
       total_balance: newBalance,
     });
 
-    // 2️⃣ Insert into the appropriate *_transaction_history table
+ // 2 Insert into the appropriate *_transaction_history table
     await this.createTransactionHistory(body, amount, headerId);
   }
 
-  /**
+ /**
    * Inserts a row into the legacy transaction history tables:
    * - dvi_accounts_itinerary_hotel_transaction_history
    * - dvi_accounts_itinerary_vehicle_transaction_history
    * - dvi_accounts_itinerary_hotspot_transaction_history
    * - dvi_accounts_itinerary_activity_transaction_history
    * - dvi_accounts_itinerary_guide_transaction_history
-   */
+ */
   private async createTransactionHistory(
     body: AccountsManagerPayDto,
     amount: number,
@@ -1040,13 +1040,13 @@ export class AccountsManagerService {
     const transactionDate =
       routeDate ? parseDDMMYYYY(routeDate) ?? new Date() : new Date();
 
-    // `any` avoids Prisma union type mismatch between different *_transaction_history tables
+ // `any` avoids Prisma union type mismatch between different *_transaction_history tables
     const common: any = {
       accounts_itinerary_details_ID: headerId,
       transaction_amount: amount,
       transaction_date: transactionDate,
       transaction_done_by: processedBy ?? null,
-      mode_of_pay: modeOfPaymentId ?? null, // 1: Cash, 2: UPI, 3: Net Banking
+ mode_of_pay: modeOfPaymentId null, // 1: Cash, 2: UPI, 3: Net Banking
       transaction_utr_no: utrNumber ?? null,
       transaction_attachment: paymentScreenshotPath ?? "",
       deleted: 0,

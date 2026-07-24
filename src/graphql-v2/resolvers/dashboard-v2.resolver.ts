@@ -15,7 +15,7 @@ export class DashboardV2Resolver {
     const user = context?.req?.user;
     let raw: any;
 
-    // Keep role-based behavior aligned with the existing REST dashboard endpoint.
+ // Keep role-based behavior aligned with the existing REST dashboard endpoint.
     if (user?.role === 4) {
       raw = await this.dashboardService.getAgentDashboardStats(Number(user.agentId));
     } else if (user?.role === 6) {

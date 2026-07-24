@@ -9,7 +9,7 @@ type DayCol =
   | "day_31";
 
 function dayCol(d: Date): DayCol {
-  // Use getDate (calendar day) like PHP/MySQL
+ // Use getDate (calendar day) like PHP/MySQL
   return `day_${d.getDate()}` as DayCol;
 }
 
@@ -24,7 +24,7 @@ function N(v: any) {
 
 @Injectable()
 export class HotelPricingService {
-  // Removed Logger for performance
+ // Removed Logger for performance
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -56,7 +56,7 @@ export class HotelPricingService {
     return hotels.filter((hotel) => validHotelIds.has(Number(hotel.hotel_id)));
   }
 
-  /** Simple money round (2 decimals) */
+ /** Simple money round (2 decimals) */
   money(v: any) {
     const n = Number(v ?? 0);
     if (!Number.isFinite(n)) return 0;
@@ -92,11 +92,11 @@ export class HotelPricingService {
     return this.money(amountWithMargin);
   }
 
-  /**
+ /**
    * PHP GST split logic:
    * gstType: 1 = inclusive, 2 = exclusive
    * Returns { amount (before GST), tax }
-   */
+ */
   splitGST(
     gross: number,
     gstPct: number,
@@ -110,33 +110,33 @@ export class HotelPricingService {
     }
 
     if (gstType === 1) {
-      // Inclusive: gross already includes GST
+ // Inclusive: gross already includes GST
       const base = g / (1 + pct / 100);
       const baseRounded = this.money(base);
       const tax = this.money(g - baseRounded);
       return { amount: baseRounded, tax };
     }
 
-    // Exclusive: GST on top of gross
+ // Exclusive: GST on top of gross
     const tax = this.money((g * pct) / 100);
     return { amount: g, tax };
   }
 
-  /**
+ /**
    * Check if a hotel has at least one non-zero room rate for the given date.
    * PHP filters hotels this way to ensure valid pricing exists.
-   */
+ */
   async hasValidRates(hotel_id: number, onDate: Date): Promise<boolean> {
     const dc = dayCol(onDate);
     const y = String(onDate.getFullYear());
     const m = monthName(onDate);
 
     const rows: any[] = await this.prisma.dvi_hotel_room_price_book.findMany({
-      where: { 
-        hotel_id, 
-        year: y, 
+      where: {
+        hotel_id,
+        year: y,
         month: m,
-        [dc]: { gt: 0 } // Only get rows where day_X > 0
+ [dc]: { gt: 0 } // Only get rows where day_X > 0
       },
       select: { room_id: true },
       take: 1,
@@ -145,13 +145,13 @@ export class HotelPricingService {
     return rows.length > 0;
   }
 
-  /**
+ /**
    * Hotel picker:
    * - Filters by category
    * - Tries exact city match (case insensitive) if provided
    * - Falls back to any hotel in that category
    * - NOW: Only picks hotels with valid (non-zero) rates for the date
-   */
+ */
   async pickHotelByCategory(hotel_category: number, city?: string | null, onDate?: Date) {
     const hotelCategory = Number(hotel_category) || 0;
     const cityTrim = (city ?? "").trim();
@@ -160,7 +160,7 @@ export class HotelPricingService {
     let targetStateId: string | null = null;
 
     if (cityTrim) {
-      // 1. Try to resolve city name to ID
+ // 1. Try to resolve city name to ID
       const { candidates, stateId } = await this.resolveCityCandidates(cityTrim);
       targetStateId = stateId;
 
@@ -193,7 +193,7 @@ export class HotelPricingService {
       }
     }
 
-    // 2. Fallback: Try hotels in the same STATE (if city search failed but we have a state)
+ // 2. Fallback: Try hotels in the same STATE (if city search failed but we have a state)
     if (targetStateId) {
       const stateHotels = await this.prisma.dvi_hotel.findMany({
         where: { ...whereBase, hotel_state: targetStateId },
@@ -220,7 +220,7 @@ export class HotelPricingService {
       }
     }
 
-    // 3. Final Fallback: Any hotel in category (only if city and state search failed)
+ // 3. Final Fallback: Any hotel in category (only if city and state search failed)
     const fallbacks = await this.prisma.dvi_hotel.findMany({
       where: whereBase,
       select: {
@@ -243,7 +243,7 @@ export class HotelPricingService {
 
       if (onDate) return null;
 
-      // No date filtering
+ // No date filtering
       const selected = fallbacks[Math.floor(Math.random() * fallbacks.length)];
       return selected;
     }
@@ -251,13 +251,13 @@ export class HotelPricingService {
     return null;
   }
 
-  /**
+ /**
    * Get MULTIPLE hotels by category (for user selection)
    * - Filters by category
    * - Returns all hotels matching the city (or state fallback)
    * - Sorted by lowest price first
    * - Max 10 results
-   */
+ */
   async getHotelsByCategory(hotel_category: number, city?: string | null, onDate?: Date, limit: number = 10) {
     const hotelCategory = Number(hotel_category) || 0;
     const cityTrim = (city ?? "").trim();
@@ -267,7 +267,7 @@ export class HotelPricingService {
     let allHotels: any[] = [];
 
     if (cityTrim) {
-      // 1. Try to resolve city name to ID
+ // 1. Try to resolve city name to ID
       const { candidates, stateId } = await this.resolveCityCandidates(cityTrim);
       targetStateId = stateId;
 
@@ -292,8 +292,8 @@ export class HotelPricingService {
       }
     }
 
-    // 2. If no city match, try state fallback
-    // 1b. If no hotels found with preferred category in city, try ANY category in city
+ // 2. If no city match, try state fallback
+ // 1b. If no hotels found with preferred category in city, try ANY category in city
     if (allHotels.length === 0 && cityTrim) {
       const { candidates: candidatesAny } = await this.resolveCityCandidates(cityTrim);
       const whereAny: any = { deleted: false, status: 1 };
@@ -317,7 +317,7 @@ export class HotelPricingService {
       }
     }
 
-    // 2. If no city match, try state fallback
+ // 2. If no city match, try state fallback
     if (allHotels.length === 0 && targetStateId) {
       const stateHotels = await this.prisma.dvi_hotel.findMany({
         where: { ...whereBase, hotel_state: targetStateId },
@@ -335,7 +335,7 @@ export class HotelPricingService {
       allHotels = stateHotels;
     }
 
-    // 3. Final fallback: any hotel in category
+ // 3. Final fallback: any hotel in category
     if (allHotels.length === 0) {
       allHotels = await this.prisma.dvi_hotel.findMany({
         where: whereBase,
@@ -357,11 +357,11 @@ export class HotelPricingService {
     return allHotels.slice(0, limit);
   }
 
-  /**
+ /**
    * Room prices for that date from dvi_hotel_room_price_book.
    * We return ALL room rows, PHP will typically pick the first non-zero rate.
    * GST for rooms is stored elsewhere → gstPct=0, gstType=2 (exclusive) for now.
-   */
+ */
   async getRoomPrices(hotel_id: number, onDate: Date) {
     const dc = dayCol(onDate);
     const y = String(onDate.getFullYear());
@@ -380,7 +380,7 @@ export class HotelPricingService {
       gstType: 2,
     }));
 
-    // Debug log removed for performance
+ // Debug log removed for performance
     return mapped;
   }
 
@@ -391,10 +391,10 @@ export class HotelPricingService {
 
     const cityTrim = cityStr.trim();
 
-    // 1. Try exact match or split by comma, parenthesis, or hyphen
+ // 1. Try exact match or split by comma, parenthesis, or hyphen
     const cityName = cityTrim.split(/[,\(\-]/)[0].trim();
 
-    // 2. Clean up common suffixes
+ // 2. Clean up common suffixes
     let cleanCity = cityName
       .replace(/International Airport/gi, "")
       .replace(/Domestic Airport/gi, "")
@@ -402,7 +402,7 @@ export class HotelPricingService {
       .replace(/Railway Station/gi, "")
       .trim();
 
-    // 2b. Handle common aliases
+ // 2b. Handle common aliases
     const aliases: Record<string, string> = {
       'Trichy': 'Thiruchirapalli',
       'Tiruchirappalli': 'Thiruchirapalli',
@@ -424,7 +424,7 @@ export class HotelPricingService {
       cleanCity = aliases[cleanCity];
     }
 
-    // 3. Search in dvi_cities
+ // 3. Search in dvi_cities
     const cityRecords = await this.prisma.dvi_cities.findMany({
       where: {
         OR: [
@@ -438,7 +438,7 @@ export class HotelPricingService {
     });
 
     if (cityRecords.length > 0) {
-      // Sort by exact match first
+ // Sort by exact match first
       cityRecords.sort((a, b) => {
         const aName = a.name.toLowerCase();
         const bName = b.name.toLowerCase();
@@ -456,7 +456,7 @@ export class HotelPricingService {
       stateId = String(cityRecords[0].state_id);
     }
 
-    // Always include the strings as fallback
+ // Always include the strings as fallback
     candidates.push(cityTrim);
     candidates.push(cityName);
     if (cleanCity !== cityName) candidates.push(cleanCity);
@@ -464,11 +464,11 @@ export class HotelPricingService {
     return { candidates: [...new Set(candidates)], stateId };
   }
 
-  /**
+ /**
    * Meal prices for that date from dvi_hotel_meal_price_book.
    * Schema only has a single price per day, no GST columns → gstPct=0.
    * We use it as BREAKFAST price (matching your sample rows where only breakfast is non-zero).
-   */
+ */
   async getMealPrice(hotel_id: number, onDate: Date) {
     const dc = dayCol(onDate);
     const y = String(onDate.getFullYear());
@@ -481,9 +481,9 @@ export class HotelPricingService {
 
     const price = this.money(row?.[dc]);
 
-    // Debug log removed for performance
+ // Debug log removed for performance
 
-    // Only breakfast used in your sample (lunch/dinner kept 0)
+ // Only breakfast used in your sample (lunch/dinner kept 0)
     return {
       breakfast: { price, gstPct: 0, gstType: 2 },
       lunch: { price: 0, gstPct: 0, gstType: 2 },

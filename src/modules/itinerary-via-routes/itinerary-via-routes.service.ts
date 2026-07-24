@@ -35,26 +35,26 @@ type AddViaRouteResponse =
 export class ItineraryViaRoutesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // -------------------------------------------------------------------------
-  // Helpers
-  // -------------------------------------------------------------------------
+ // -------------------------------------------------------------------------
+ // Helpers
+ // -------------------------------------------------------------------------
 
   private toRad(value: number): number {
     return (value * Math.PI) / 180;
   }
 
-  /**
+ /**
    * Haversine distance between two lat/long pairs in KM.
-   */
+ */
   private haversineDistance(
     lat1: number,
     lon1: number,
     lat2: number,
     lon2: number,
   ): number {
-    const R = 6371; // Earth radius in km
+ const R = 6371; // Earth radius in km
     const dLat = this.toRad(lat2 - lat1);
-    // FIX: use lon2 - lon1 (bug was lat2 - lon1)
+ // FIX: use lon2 - lon1 (bug was lat2 - lon1)
     const dLon = this.toRad(lon2 - lon1);
 
     const a =
@@ -116,9 +116,9 @@ private toCoords(latValue: any, lonValue: any) {
     return Number(row.itinerary_distance_limit);
   }
 
-  // -------------------------------------------------------------------------
-  // 1) check_distance_limit
-  // -------------------------------------------------------------------------
+ // -------------------------------------------------------------------------
+ // 1) check_distance_limit
+ // -------------------------------------------------------------------------
 
   async checkDistanceLimit(
     dto: CheckDistanceLimitDto,
@@ -224,7 +224,7 @@ private toCoords(latValue: any, lonValue: any) {
 
     let cumulative = 0;
 
-    // 1) Source -> first via
+ // 1) Source -> first via
     if (viaCoords.length > 0) {
       const first = viaCoords[0]!;
       cumulative += this.haversineDistance(
@@ -235,7 +235,7 @@ private toCoords(latValue: any, lonValue: any) {
       );
     }
 
-    // 2) Via[i] -> Via[i+1]
+ // 2) Via[i] -> Via[i+1]
     for (let i = 0; i < viaCoords.length - 1; i++) {
       const curr = viaCoords[i]!;
       const next = viaCoords[i + 1]!;
@@ -247,7 +247,7 @@ private toCoords(latValue: any, lonValue: any) {
       );
     }
 
-    // 3) Last via -> destination
+ // 3) Last via -> destination
     if (viaCoords.length > 0) {
       const last = viaCoords[viaCoords.length - 1]!;
       cumulative += this.haversineDistance(
@@ -269,7 +269,7 @@ private toCoords(latValue: any, lonValue: any) {
     };
 
     if (limit == null) {
-      // If no limit is configured, consider it a success.
+ // If no limit is configured, consider it a success.
       return { success: true, data: { ...data, within_limit: true } };
     }
 
@@ -293,12 +293,12 @@ private toCoords(latValue: any, lonValue: any) {
     return { success: true, data: { ...data, within_limit: true } };
   }
 
-  // -------------------------------------------------------------------------
-  // 2) add_via_route
-  // -------------------------------------------------------------------------
+ // -------------------------------------------------------------------------
+ // 2) add_via_route
+ // -------------------------------------------------------------------------
 
   private parseRouteDate(input: string): Date | null {
-    // expects dd/mm/yyyy
+ // expects dd/mm/yyyy
     if (!input) return null;
     const parts = input.split('/');
     if (parts.length !== 3) return null;
@@ -314,7 +314,7 @@ private toCoords(latValue: any, lonValue: any) {
 async addViaRoute(dto: AddViaRouteDto): Promise<AddViaRouteResponse> {
   const routeDate = this.parseRouteDate(dto.hidden_route_date);
 
-  // These are Int in Prisma model, so use number (NOT BigInt)
+ // These are Int in Prisma model, so use number (NOT BigInt)
   const itineraryRouteId =
     dto.itinerary_route_ID != null && dto.itinerary_route_ID !== ''
       ? Number(dto.itinerary_route_ID)
@@ -324,7 +324,7 @@ async addViaRoute(dto: AddViaRouteDto): Promise<AddViaRouteResponse> {
       ? Number(dto.itinerary_plan_ID)
       : null;
 
-  // 1) Build a "segment" filter for this leg (plan+route OR session+source+dest)
+ // 1) Build a "segment" filter for this leg (plan+route OR session+source+dest)
   const segmentWhere: any = {
     deleted: 0,
     status: 1,
@@ -337,7 +337,7 @@ async addViaRoute(dto: AddViaRouteDto): Promise<AddViaRouteResponse> {
     segmentWhere.itinerary_route_ID = itineraryRouteId;
   }
 
-  // New / unsaved itinerary – we only have session + locations
+ // New / unsaved itinerary we only have session + locations
   if (itineraryPlanId == null && itineraryRouteId == null) {
     if (dto.itinerary_session_id) {
       segmentWhere.itinerary_session_id = dto.itinerary_session_id;
@@ -355,8 +355,8 @@ async addViaRoute(dto: AddViaRouteDto): Promise<AddViaRouteResponse> {
       (k) => k !== 'deleted' && k !== 'status',
     ).length > 0;
 
-  // 2) Soft-delete ALL existing via routes for this leg
-  //    This makes the API behave like "replace the set" (same as PHP UI).
+ // 2) Soft-delete ALL existing via routes for this leg
+ // This makes the API behave like "replace the set" (same as PHP UI).
   if (hasSegmentKey) {
     await this.prisma.dvi_itinerary_via_route_details.updateMany({
       where: segmentWhere,
@@ -364,7 +364,7 @@ async addViaRoute(dto: AddViaRouteDto): Promise<AddViaRouteResponse> {
     });
   }
 
-  // 3) If user cleared all via routes, we're done after delete.
+ // 3) If user cleared all via routes, we're done after delete.
   if (!dto.via_route_location || dto.via_route_location.length === 0) {
     return {
       success: true,
@@ -373,21 +373,21 @@ async addViaRoute(dto: AddViaRouteDto): Promise<AddViaRouteResponse> {
 
   let anyInsert = false;
 
-  // 4) Insert the current selection as fresh rows
+ // 4) Insert the current selection as fresh rows
   for (let index = 0; index < dto.via_route_location.length; index++) {
     const viaLocationIdRaw = dto.via_route_location[index];
 
-    // For dvi_itinerary_via_route_details (Int)
+ // For dvi_itinerary_via_route_details (Int)
     const viaLocationId = Number(viaLocationIdRaw);
 
-    // For dvi_stored_location_via_routes (BigInt)
+ // For dvi_stored_location_via_routes (BigInt)
     const viaLocationIdBigInt = BigInt(viaLocationIdRaw);
 
-    // Look up human-readable location name from via-routes table
+ // Look up human-readable location name from via-routes table
     const viaRow =
       await this.prisma.dvi_stored_location_via_routes.findUnique({
         where: {
-          // this model's PK is BigInt, so we use the BigInt version
+ // this model's PK is BigInt, so we use the BigInt version
           via_route_location_ID: viaLocationIdBigInt,
         },
         select: {
@@ -401,13 +401,13 @@ async addViaRoute(dto: AddViaRouteDto): Promise<AddViaRouteResponse> {
       itinerary_route_date: routeDate,
       source_location: dto.hidden_source_location,
       destination_location: dto.hidden_destination_location,
-      // Int field – use number
+ // Int field use number
       itinerary_via_location_ID: viaLocationId,
       itinerary_via_location_name: viaLocationName,
       itinerary_session_id: dto.itinerary_session_id ?? null,
       createdby:
         dto.createdby != null && dto.createdby !== ''
-          ? Number(dto.createdby) // Int in model
+ ? Number(dto.createdby) // Int in model
           : null,
       status: 1,
       deleted: 0,
@@ -432,11 +432,11 @@ async addViaRoute(dto: AddViaRouteDto): Promise<AddViaRouteResponse> {
   };
 }
 
-  // -------------------------------------------------------------------------
-  // 3) FORM DATA (equivalent of ajax_latest_itineary_via_route_form.php?type=show_form)
-  // -------------------------------------------------------------------------
+ // -------------------------------------------------------------------------
+ // 3) FORM DATA (equivalent of ajax_latest_itineary_via_route_form.php?type=show_form)
+ // -------------------------------------------------------------------------
 
-  /**
+ /**
    * Returns the data required for the React ViaRouteDialog:
    *  - dropdown options (via routes **for this source/destination pair**)
    *  - existing via routes for this segment (if any)
@@ -444,7 +444,7 @@ async addViaRoute(dto: AddViaRouteDto): Promise<AddViaRouteResponse> {
    * This mimics PHP getSTOREDLOCATION_VIAROUTE_DROPDOWN by:
    *   1) finding `location_ID` in dvi_stored_locations
    *   2) filtering dvi_stored_location_via_routes by that `location_id`
-   */
+ */
 // -------------------------------------------------------------------------
 // 3) FORM DATA (equivalent of ajax_latest_itineary_via_route_form.php?type=show_form)
 // -------------------------------------------------------------------------
@@ -456,7 +456,7 @@ async getForm(query: any) {
     ''
   ).trim();
 
-  // "0" should behave as "no id" (same as PHP)
+ // "0" should behave as "no id" (same as PHP)
   const itinerary_plan_ID =
     query.itinerary_plan_ID && query.itinerary_plan_ID !== '0'
       ? Number(query.itinerary_plan_ID)
@@ -467,14 +467,14 @@ async getForm(query: any) {
       ? Number(query.itinerary_route_ID)
       : null;
 
-  // React-side session id (react_xxx), same as PHP session_id()
+ // React-side session id (react_xxx), same as PHP session_id()
   const itinerary_session_id =
     typeof query.itinerary_session_id === 'string' &&
     query.itinerary_session_id.trim() !== ''
       ? query.itinerary_session_id.trim()
       : null;
 
-  // DD/MM/YYYY coming from React (or PHP-style param)
+ // DD/MM/YYYY coming from React (or PHP-style param)
   const routeDateStr = (
     query.itinerary_route_date ||
     query.date ||
@@ -482,7 +482,7 @@ async getForm(query: any) {
   ).toString().trim();
   const routeDate = routeDateStr ? this.parseRouteDate(routeDateStr) : null;
 
-  console.log('VIA ROUTE FORM REQUEST:', {
+ console.log('VIA ROUTE FORM REQUEST:', {
     source,
     destination,
     itinerary_plan_ID,
@@ -491,8 +491,8 @@ async getForm(query: any) {
     routeDateStr,
   });
 
-  // -------- 3.1 Find base location row in dvi_stored_locations ----------
-  // CRITICAL: This must match EXACTLY how PHP does it
+ // -------- 3.1 Find base location row in dvi_stored_locations ----------
+ // CRITICAL: This must match EXACTLY how PHP does it
   let locationId: bigint | null = null;
 
   if (source && destination) {
@@ -508,16 +508,16 @@ async getForm(query: any) {
       },
     });
 
-    console.log('FOUND BASE LOCATION:', baseLocation);
+ console.log('FOUND BASE LOCATION:', baseLocation);
 
     if (baseLocation && baseLocation.location_ID != null) {
       locationId = baseLocation.location_ID;
     } else {
-      console.log('NO LOCATION FOUND FOR:', { source, destination });
+ console.log('NO LOCATION FOUND FOR:', { source, destination });
     }
   }
 
-  // -------- 3.2 Existing via-route rows for this itinerary -------------
+ // -------- 3.2 Existing via-route rows for this itinerary -------------
   let viaRowsForSegment:
     | {
         itinerary_via_route_ID: number;
@@ -526,7 +526,7 @@ async getForm(query: any) {
       }[] = [];
 
   if (itinerary_plan_ID && itinerary_route_ID) {
-    // EDIT mode – saved itinerary (same as PHP plan+route filter)
+ // EDIT mode saved itinerary (same as PHP plan+route filter)
     viaRowsForSegment =
       await this.prisma.dvi_itinerary_via_route_details.findMany({
         where: {
@@ -543,8 +543,8 @@ async getForm(query: any) {
         },
       });
   } else if (itinerary_session_id) {
-    // NEW itinerary – React session (PHP: date + session).
-    // To avoid DATE vs DateTime issues we rely on session + source + destination.
+ // NEW itinerary React session (PHP: date + session).
+ // To avoid DATE vs DateTime issues we rely on session + source + destination.
     const where: any = {
       deleted: 0,
       status: 1,
@@ -558,9 +558,9 @@ async getForm(query: any) {
       where.destination_location = destination;
     }
 
-    // routeDate is NOT used in the filter – that is the key change.
-    // It avoids mismatches caused by timezone / DateTime vs DATE.
-    console.log('WHERE for via routes fetch (session mode):', where);
+ // routeDate is NOT used in the filter that is the key change.
+ // It avoids mismatches caused by timezone / DateTime vs DATE.
+ console.log('WHERE for via routes fetch (session mode):', where);
 
     viaRowsForSegment =
       await this.prisma.dvi_itinerary_via_route_details.findMany({
@@ -580,15 +580,15 @@ async getForm(query: any) {
     viaLocationName: row.itinerary_via_location_name ?? '',
   }));
 
-  // -------- 3.3 Options for dropdown: dvi_stored_location_via_routes ----
-      // -------- 3.3 Options for dropdown: via routes + matched route details ----
+ // -------- 3.3 Options for dropdown: dvi_stored_location_via_routes ----
+ // -------- 3.3 Options for dropdown: via routes + matched route details ----
   let optionsRows: {
     via_route_location_ID: bigint;
     via_route_location: string | null;
   }[] = [];
 
   if (locationId != null) {
-    console.log('FETCHING VIA ROUTES FOR location_id:', locationId);
+ console.log('FETCHING VIA ROUTES FOR location_id:', locationId);
 
     const baseViaRows =
       await this.prisma.dvi_stored_location_via_routes.findMany({
@@ -606,7 +606,7 @@ async getForm(query: any) {
         },
       });
 
-    console.log('BASE VIA ROUTE OPTIONS FOUND:', baseViaRows.length);
+ console.log('BASE VIA ROUTE OPTIONS FOUND:', baseViaRows.length);
 
     const suggestedDetailRows = await this.prisma.$queryRawUnsafe<
       Array<{ route_location_name: string | null }>
@@ -625,7 +625,7 @@ async getForm(query: any) {
       Number(locationId),
     );
 
-    console.log(
+ console.log(
       'SUGGESTED ROUTE DETAIL ROWS FOUND:',
       suggestedDetailRows.length,
     );
@@ -664,9 +664,9 @@ async getForm(query: any) {
 
     optionsRows = mergedRows;
 
-    console.log('FINAL VIA ROUTE OPTIONS AFTER MERGE:', optionsRows.length);
+ console.log('FINAL VIA ROUTE OPTIONS AFTER MERGE:', optionsRows.length);
   } else {
-    console.log('CANNOT FETCH VIA ROUTES - locationId is null');
+ console.log('CANNOT FETCH VIA ROUTES - locationId is null');
   }
 
   const options = optionsRows
@@ -676,7 +676,7 @@ async getForm(query: any) {
       label: r.via_route_location as string,
     }));
 
-  console.log('FINAL RESPONSE:', {
+ console.log('FINAL RESPONSE:', {
     existingCount: existing.length,
     optionsCount: options.length,
   });

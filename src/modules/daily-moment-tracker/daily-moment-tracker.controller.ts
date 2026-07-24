@@ -72,14 +72,14 @@ import {
 export class DailyMomentTrackerController {
   constructor(private readonly service: DailyMomentTrackerService) {}
 
-  // List of Daily Moment (main grid)
+ // List of Daily Moment (main grid)
   @Get()
   @ApiOperation({ summary: 'List daily moments (main grid)' })
   async getDailyMoments(@Query() query: ListDailyMomentQueryDto) {
     return this.service.listDailyMoments(query);
   }
 
-   // ─── Day View ────────────────────────────────────────────────────────────────
+ // Day View
 @Get('driver-assignment/:driverAssignmentId')
 @Public()
 @ApiOperation({
@@ -99,7 +99,7 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
   return this.service.getDayView(planId);
 }
 
-  // ─── Charges ─────────────────────────────────────────────────────────────────
+ // Charges
   @Get('charges')
   @ApiOperation({ summary: 'List extra charges for a day' })
   @ApiQuery({ name: 'itineraryPlanId', required: true, type: Number })
@@ -126,7 +126,7 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
     return { success: true };
   }
 
-  // ─── Driver Ratings ───────────────────────────────────────────────────────────
+ // Driver Ratings
   @Get('driver-ratings')
   @ApiOperation({ summary: 'List driver ratings for itinerary' })
   @ApiQuery({ name: 'itineraryPlanId', required: true, type: Number })
@@ -150,7 +150,7 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
     return { success: true };
   }
 
-  // ─── Guide Ratings ────────────────────────────────────────────────────────────
+ // Guide Ratings
   @Get('guide-ratings')
   @ApiOperation({ summary: 'List guide ratings for itinerary' })
   @ApiQuery({ name: 'itineraryPlanId', required: true, type: Number })
@@ -174,7 +174,7 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
     return { success: true };
   }
 
-  // ─── Route Hotspots ───────────────────────────────────────────────────────────
+ // Route Hotspots
   @Get('route-hotspots')
   @ApiOperation({ summary: 'List hotspots for a route (Visited / Not Visited)' })
   @ApiQuery({ name: 'itineraryPlanId', required: true, type: Number })
@@ -188,7 +188,7 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
     return this.service.listRouteHotspots(itineraryPlanId, itineraryRouteId);
   }
 
-  // ─── Status Updates ───────────────────────────────────────────────────────────
+ // Status Updates
   @Patch('hotspot-status')
   @ApiOperation({ summary: 'Update driver hotspot visit status' })
   async updateHotspotStatus(@Body() dto: UpdateHotspotStatusDto) {
@@ -259,7 +259,7 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
     return { success: true };
   }
 
-  // ─── Day Images ──────────────────────────────────────────────────────────────
+ // Day Images
   @Post('day-images')
   @ApiOperation({ summary: 'Upload driver day images for a route' })
   @UseInterceptors(
@@ -270,8 +270,8 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
       }),
       limits: { fileSize: 10 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const ok = /^image\//.test(file.mimetype);
-        cb(ok ? null : new Error('Only image/* files are allowed'), ok);
+ const ok = /^image\//.test(file.mimetype);
+ cb(ok ? null : new Error('Only image/* files are allowed'), ok);
       },
     }),
   )
@@ -299,8 +299,8 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
       }),
       limits: { fileSize: 10 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const ok = /^image\//.test(file.mimetype);
-        cb(ok ? null : new Error('Only image/* files are allowed'), ok);
+ const ok = /^image\//.test(file.mimetype);
+ cb(ok ? null : new Error('Only image/* files are allowed'), ok);
       },
     }),
   )
@@ -326,8 +326,8 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
       }),
       limits: { fileSize: 10 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const ok = /^image\//.test(file.mimetype);
-        cb(ok ? null : new Error('Only image/* files are allowed'), ok);
+ const ok = /^image\//.test(file.mimetype);
+ cb(ok ? null : new Error('Only image/* files are allowed'), ok);
       },
     }),
   )
@@ -343,7 +343,7 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
     );
   }
 
-  // ─── Kilometer ───────────────────────────────────────────────────────────────
+ // Kilometer
   @Post('kilometer/opening')
   @ApiOperation({ summary: 'Save opening (starting) kilometer for a route' })
   async saveOpeningKm(@Body() dto: SaveOpeningKmDto) {

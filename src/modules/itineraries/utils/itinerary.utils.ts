@@ -23,7 +23,7 @@ export function normalizeToDateOnlyUTC(d: Date): Date {
   const y = d.getFullYear();
   const m = d.getMonth();
   const day = d.getDate();
-  // Local midnight (server timezone, e.g. IST)
+ // Local midnight (server timezone, e.g. IST)
   return new Date(y, m, day, 0, 0, 0, 0);
 }
 
@@ -60,7 +60,7 @@ export function dateTimeToPrismaTime(dt: Date): Date {
 // PHP: date('N') is 1(Mon)..7(Sun) => -1 => 0..6
 // Use *local* weekday so the day doesn't shift by timezone.
 export function phpDayOfWeekNumericFromDateOnly(dateOnly: Date): number {
-  const d = dateOnly.getDay(); // 0 Sun..6 Sat (local)
+ const d = dateOnly.getDay(); // 0 Sun..6 Sat (local)
   return d === 0 ? 6 : d - 1;
 }
 
@@ -82,7 +82,7 @@ export function combineDateOnlyAndTime(
   const mm = t.getUTCMinutes();
   const ss = t.getUTCSeconds();
 
-  // local datetime (e.g. IST)
+ // local datetime (e.g. IST)
   return new Date(y, m, d, hh, mm, ss, 0);
 }
 
@@ -235,7 +235,7 @@ export function computeTravelParity(args: {
 
 export function timeToSeconds(timeOnly?: Date | null): number | null {
   if (!timeOnly) return null;
-  // time-only is stored as UTC 1970-01-01 HH:MM:SS
+ // time-only is stored as UTC 1970-01-01 HH:MM:SS
   return (
     timeOnly.getUTCHours() * 3600 +
     timeOnly.getUTCMinutes() * 60 +

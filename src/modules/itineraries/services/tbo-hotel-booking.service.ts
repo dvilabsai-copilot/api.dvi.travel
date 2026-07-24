@@ -42,7 +42,7 @@ interface TboHotelPassenger {
   middleName?: string;
   lastName: string;
   email?: string;
-  paxType: number; // 1 = Adult, 2 = Child
+ paxType: number; // 1 = Adult, 2 = Child
   leadPassenger: boolean;
   age: number;
   passportNo?: string;
@@ -154,9 +154,9 @@ export class TboHotelBookingService {
   private readonly TBO_USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
   private readonly TBO_PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
   private readonly TBO_CLIENT_ID = process.env.TBO_CLIENT_ID || 'tboprod';
-  private readonly AUTH_URL = process.env.TBO_AUTH_URL || 'https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate';
-  private readonly PREBOOK_URL = process.env.TBO_PREBOOK_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook';
-  private readonly BOOK_URL = process.env.TBO_BOOK_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book';
+ private readonly AUTH_URL = process.env.TBO_AUTH_URL || 'https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate';
+ private readonly PREBOOK_URL = process.env.TBO_PREBOOK_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook';
+ private readonly BOOK_URL = process.env.TBO_BOOK_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book';
   private readonly USE_MOCK_TBO = process.env.TBO_USE_MOCK === 'true' || false;
 
   constructor(
@@ -165,9 +165,9 @@ export class TboHotelBookingService {
     private readonly tboProvider: TBOHotelProvider,
     private readonly supplementNormalizer: SupplementNormalizerService,
   ) {
-    // Create axios client with explicit Authorization header (not auth object)
+ // Create axios client with explicit Authorization header (not auth object)
     const credentials = Buffer.from(`${this.TBO_USERNAME}:${this.TBO_PASSWORD}`).toString('base64');
-    
+
     this.client = axios.create({
       headers: {
         'Content-Type': 'application/json',
@@ -176,27 +176,27 @@ export class TboHotelBookingService {
     });
 
     if (this.USE_MOCK_TBO) {
-      this.logger.warn('⚠️  TBO_USE_MOCK is enabled - Using mock TBO responses');
+ this.logger.warn(' TBO_USE_MOCK is enabled - Using mock TBO responses');
     }
   }
 
-  /**
+ /**
    * Execute PreBook API call for TBO hotel
    * This confirms the room availability and locks the price
-   */
+ */
   async preBookHotel(
     selection: TboHotelSelection,
   ): Promise<PreBookResponse> {
     try {
       this.validateSelection(selection, true);
-      this.logger.log(
+ this.logger.log(
         `🏨 PreBook: Hotel ${selection.hotelCode}, Booking Code: ${selection.bookingCode}`,
       );
-      this.logger.log(
+ this.logger.log(
         `📤 PreBook Payload: BookingCode=${selection.bookingCode}, PaymentMode=Limit`,
       );
 
-      // Check if using mock mode for development
+ // Check if using mock mode for development
       if (this.USE_MOCK_TBO) {
         return this.generateMockPreBookResponse(selection);
       }
@@ -206,7 +206,7 @@ export class TboHotelBookingService {
         PaymentMode: 'Limit',
       };
 
-      this.logger.log(`📤 Full PreBook Payload (JSON): ${JSON.stringify(payload)}`);
+ this.logger.log(` Full PreBook Payload (JSON): ${JSON.stringify(payload)}`);
 
       const response = await this.client.post<PreBookResponse>(
         this.PREBOOK_URL,
@@ -219,7 +219,7 @@ export class TboHotelBookingService {
       );
 
       if (!response.data) {
-        this.logger.error('❌ PreBook response.data is undefined');
+ this.logger.error(' PreBook response.data is undefined');
         throw new BadRequestException('PreBook response is empty or undefined');
       }
 
@@ -235,21 +235,21 @@ export class TboHotelBookingService {
         cancelPoliciesCount: prebookCancelPolicies.length,
         sampleCancelPolicy: prebookCancelPolicies[0] || null,
       };
-      this.logger.log(`📥 PreBook API snapshot: ${JSON.stringify(prebookSnapshot)}`);
-      this.logger.log(`📥 PreBook API raw response: ${JSON.stringify(response.data)}`);
+ this.logger.log(` PreBook API snapshot: ${JSON.stringify(prebookSnapshot)}`);
+ this.logger.log(` PreBook API raw response: ${JSON.stringify(response.data)}`);
 
       (response.data as any).__requestPayload = payload;
 
-      // Handle TBO status response - it can be a number or object with Code/Description
+ // Handle TBO status response - it can be a number or object with Code/Description
       const statusCode = typeof response.data.Status === 'object' && response.data.Status
-        ? (response.data.Status as any).Code 
+        ? (response.data.Status as any).Code
         : response.data.Status;
-      
+
       const statusMessage = typeof response.data.Status === 'object' && response.data.Status
         ? (response.data.Status as any).Description || response.data.Message
         : response.data.Message;
 
-      // TBO PreBook uses Status.Code = 200 for success, other endpoints use Status.Code = 1
+ // TBO PreBook uses Status.Code = 200 for success, other endpoints use Status.Code = 1
       if (statusCode !== 1 && statusCode !== 200) {
         const message = statusMessage || 'Unknown TBO error';
         const maybeSessionExpired = this.isSessionExpiredError(
@@ -260,22 +260,22 @@ export class TboHotelBookingService {
             'This hotel session has expired or rates changed. Please refresh hotel selection and run prebook again.',
           );
         }
-        this.logger.error(`❌ PreBook Status Code=${statusCode}: ${JSON.stringify(response.data)}`);
+ this.logger.error(` PreBook Status Code=${statusCode}: ${JSON.stringify(response.data)}`);
         throw new BadRequestException(
           `PreBook failed: ${message}`,
         );
       }
 
-      this.logger.log(`✅ PreBook successful: ${JSON.stringify(response.data)}`);
+ this.logger.log(` PreBook successful: ${JSON.stringify(response.data)}`);
       return response.data;
     } catch (error: any) {
-      // Extract meaningful error message
+ // Extract meaningful error message
       let errorMsg = 'Unknown error';
-      
+
       if (error instanceof BadRequestException) {
-        throw error; // Re-throw our own exceptions
+ throw error; // Re-throw our own exceptions
       }
-      
+
       if (error?.response?.data?.Message) {
         errorMsg = error.response.data.Message;
       } else if (error?.response?.data) {
@@ -285,12 +285,12 @@ export class TboHotelBookingService {
       } else if (typeof error === 'string') {
         errorMsg = error;
       }
-      
+
       const statusCode = error?.response?.status;
-      
-      this.logger.error(`❌ PreBook error: ${errorMsg}`);
+
+ this.logger.error(` PreBook error: ${errorMsg}`);
       if (statusCode) {
-        this.logger.error(`   HTTP Status: ${statusCode}`);
+ this.logger.error(` HTTP Status: ${statusCode}`);
       }
 
       if (this.isSessionExpiredError(errorMsg)) {
@@ -298,16 +298,16 @@ export class TboHotelBookingService {
           'This hotel session has expired or rates changed. Please refresh hotel selection and run prebook again.',
         );
       }
-      
+
       throw new BadRequestException(
         `PreBook failed for hotel ${selection.hotelCode}: ${errorMsg}`,
       );
     }
   }
 
-  /**
+ /**
    * Execute Book API call to confirm hotel booking with guest details
-   */
+ */
   async bookHotel(
     preBookResponse: PreBookResponse,
     selection: TboHotelSelection,
@@ -316,12 +316,12 @@ export class TboHotelBookingService {
     try {
       this.validateSelection(selection);
 
-      // Check if using mock mode for development
+ // Check if using mock mode for development
       if (this.USE_MOCK_TBO) {
         return this.generateMockBookResponse(preBookResponse, selection);
       }
 
-      // Map passengers to TBO format
+ // Map passengers to TBO format
       const hotelRoomsDetails = this.mapPassengersToRooms(
         selection.passengers,
         selection.numberOfRooms,
@@ -353,7 +353,7 @@ export class TboHotelBookingService {
         HotelRoomsDetails: hotelRoomsDetails,
       };
 
-      this.logger.log(
+ this.logger.log(
         `📝 Booking: Hotel ${selection.hotelCode}, Payload: ${JSON.stringify(bookingPayload)}`,
       );
 
@@ -368,15 +368,15 @@ export class TboHotelBookingService {
         requestPayload: bookingPayload,
       };
 
-      // Log full response for debugging
-      this.logger.log(`📥 Book API Response: ${JSON.stringify(response.data)}`);
+ // Log full response for debugging
+ this.logger.log(` Book API Response: ${JSON.stringify(response.data)}`);
 
-      // Handle TBO status response - Book API returns BookResult.Status (1 for success)
+ // Handle TBO status response - Book API returns BookResult.Status (1 for success)
       const bookResult = response.data.BookResult;
       const statusCode = bookResult.Status;
       const responseStatus = bookResult.ResponseStatus;
 
-      // Check ResponseStatus (1 = success, 2 = error) or Status field
+ // Check ResponseStatus (1 = success, 2 = error) or Status field
       if ((responseStatus && responseStatus !== 1) || (statusCode !== 1 && statusCode !== 200)) {
         const errorMessage = bookResult.Error?.ErrorMessage || 'Unknown error';
         const maybeSessionExpired = this.isSessionExpiredError(
@@ -387,13 +387,13 @@ export class TboHotelBookingService {
             'This hotel session has expired or rates changed. Please refresh hotel selection and run prebook again.',
           );
         }
-        this.logger.error(`❌ Book Status Code=${statusCode}, ResponseStatus=${responseStatus}: ${JSON.stringify(response.data)}`);
+ this.logger.error(` Book Status Code=${statusCode}, ResponseStatus=${responseStatus}: ${JSON.stringify(response.data)}`);
         throw new BadRequestException(
           `Booking failed: ${errorMessage}`,
         );
       }
 
-      this.logger.log(`✅ Booking successful: ${JSON.stringify(response.data)}`);
+ this.logger.log(` Booking successful: ${JSON.stringify(response.data)}`);
       return response.data;
     } catch (error: any) {
       const timeoutError = error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '');
@@ -404,9 +404,9 @@ export class TboHotelBookingService {
         }
       }
 
-      this.logger.error(`❌ Booking error: ${error.message}`);
+ this.logger.error(` Booking error: ${error.message}`);
       if (error.response) {
-        this.logger.error(`❌ Book API Error Response: ${JSON.stringify(error.response.data)}`);
+ this.logger.error(` Book API Error Response: ${JSON.stringify(error.response.data)}`);
       }
 
       const errorText = String(
@@ -428,13 +428,13 @@ export class TboHotelBookingService {
     }
   }
 
-  /**
+ /**
    * Map passengers to TBO hotel rooms format
    * Each room contains the passengers assigned to it
-   * 
+   *
    * IMPORTANT: TBO requires passenger count to match what was searched
    * If user searched for 2 adults but only provides 1 passenger, duplicate it
-   */
+ */
   private mapPassengersToRooms(
     passengers: TboHotelPassenger[],
     numberOfRooms: number,
@@ -455,8 +455,8 @@ export class TboHotelBookingService {
         return picked;
       };
 
-      // Build each room to exactly match searched occupancies (adults/children per room).
-      // This avoids TBO HotelPassenger count mismatch errors caused by raw sequential slicing.
+ // Build each room to exactly match searched occupancies (adults/children per room).
+ // This avoids TBO HotelPassenger count mismatch errors caused by raw sequential slicing.
       for (let i = 0; i < occupancies.length; i++) {
         const occ = occupancies[i];
         const adultsNeeded = Math.max(Number(occ.adults || 0), 0);
@@ -468,8 +468,8 @@ export class TboHotelBookingService {
         const roomAdults = takeFromPool(adultsPool, adultsNeeded);
         const roomChildren: TboHotelPassenger[] = [];
 
-        // Match child passengers by expected room-wise ages from confirm occupancies
-        // so Book payload mirrors what user entered in popup for each room.
+ // Match child passengers by expected room-wise ages from confirm occupancies
+ // so Book payload mirrors what user entered in popup for each room.
         for (let j = 0; j < childrenNeeded; j++) {
           const expectedAge = expectedChildAges[j];
           let matchedIndex = -1;
@@ -491,7 +491,7 @@ export class TboHotelBookingService {
 
         const roomPassengers: TboHotelPassenger[] = [...roomAdults, ...roomChildren];
 
-        // Keep room passenger count aligned even if upstream sent less data than occupancy.
+ // Keep room passenger count aligned even if upstream sent less data than occupancy.
         while (roomPassengers.length < adultsNeeded + childrenNeeded) {
           const fallback = adultsPool[0] || childrenPool[0] || infantsPool[0] || workingPassengers[0];
           if (!fallback) break;
@@ -512,7 +512,7 @@ export class TboHotelBookingService {
       const endIdx = Math.min(startIdx + roomsPerSize, workingPassengers.length);
       const roomPassengers = workingPassengers.slice(startIdx, endIdx);
 
-      // Mark first passenger in room as lead
+ // Mark first passenger in room as lead
       const mappedPassengers = roomPassengers.map((p, idx) => this.mapPassenger(p, idx));
 
       rooms.push({
@@ -547,9 +547,9 @@ export class TboHotelBookingService {
     };
   }
 
-  /**
+ /**
    * Save TBO booking confirmation to database
-   */
+ */
   async saveTboBookingConfirmation(
     confirmedPlanId: number,
     itineraryPlanId: number,
@@ -610,7 +610,7 @@ export class TboHotelBookingService {
               amenities: preBookMeta?.amenities || null,
               roomPromotions: preBookMeta?.roomPromotions || null,
               mandatorySupplements: preBookMeta?.mandatorySupplements || null,
-              // ✅ NEW: normalized supplements for display/booking
+ // NEW: normalized supplements for display/booking
               normalizedSupplements: preBookMeta?.normalizedSupplements || null,
               supplements: preBookMeta?.supplements || null,
               panDetails: selection.passengers.map((p) => p.pan).filter(Boolean),
@@ -627,21 +627,21 @@ export class TboHotelBookingService {
         },
       });
 
-      this.logger.log(
+ this.logger.log(
         `💾 Saved TBO booking confirmation: ID ${saved.tbo_hotel_booking_confirmation_ID}`,
       );
       return saved;
     } catch (error) {
-      this.logger.error(`❌ Error saving booking confirmation: ${error.message}`);
+ this.logger.error(` Error saving booking confirmation: ${error.message}`);
       throw new BadRequestException(
         `Failed to save booking confirmation: ${error.message}`,
       );
     }
   }
 
-  /**
+ /**
    * Confirm multiple hotel bookings for an itinerary
-   */
+ */
   async confirmItineraryHotels(
     confirmedPlanId: number,
     itineraryPlanId: number,
@@ -651,11 +651,11 @@ export class TboHotelBookingService {
     }>,
     endUserIp: string,
     userId: number,
-    groupType: number = 1, // Hotel group type (not used here - draft records already saved)
+ groupType: number = 1, // Hotel group type (not used here - draft records already saved)
   ) {
     const results = [];
     const lockedGuestNationality = await this.resolveBookingNationalityFromPlan(itineraryPlanId);
-    this.logger.log(
+ this.logger.log(
       `🔐 TBO booking nationality locked to itinerary plan ${itineraryPlanId}: ${lockedGuestNationality}`,
     );
     const processedBookingMap = new Map<
@@ -704,7 +704,7 @@ export class TboHotelBookingService {
             normalizedSupplements: this.normalizeToArray(selection.prebookContext.normalizedSupplements),
             rawStatus: selection.prebookContext.rawStatus,
           };
-          this.logger.log(
+ this.logger.log(
             `↪ Using confirm-popup prebook context for hotel ${selection.hotelCode}; skipping duplicate provider prebook`,
           );
         } else {
@@ -749,12 +749,12 @@ export class TboHotelBookingService {
         let bookResponse: BookResponse;
 
         if (alreadyProcessed) {
-          this.logger.warn(
+ this.logger.warn(
             `↻ Reusing existing booking for duplicate BookingCode/TraceId on route ${routeId} (hotel ${selection.hotelCode})`,
           );
           bookResponse = alreadyProcessed.bookResponse;
         } else {
-          // Step 2: Book the hotel with guest details
+ // Step 2: Book the hotel with guest details
           bookResponse = await this.bookHotel(
             preBookResponse,
             bookingSelection,
@@ -769,7 +769,7 @@ export class TboHotelBookingService {
           });
         }
 
-        // Step 3: Save confirmation to database
+ // Step 3: Save confirmation to database
         const savedConfirmation = await this.saveTboBookingConfirmation(
           confirmedPlanId,
           itineraryPlanId,
@@ -795,17 +795,17 @@ export class TboHotelBookingService {
               ? 'Price/cancellation policy changed during prebook. Reconfirmation required.'
               : null,
           mandatorySupplements: preBookMeta?.mandatorySupplements || [],
-          // ✅ NEW: normalized supplements for display
+ // NEW: normalized supplements for display
           normalizedSupplements: preBookMeta?.normalizedSupplements || [],
           supplements: preBookMeta?.supplements || [],
           confirmation: savedConfirmation,
         });
 
-        this.logger.log(
+ this.logger.log(
           `✅ Hotel booking completed for route ${routeId}: ${bookResponse.BookResult.BookingId}`,
         );
       } catch (error) {
-        this.logger.error(
+ this.logger.error(
           `❌ Failed to book hotel for route ${routeId}: ${error.message}`,
         );
         results.push({
@@ -820,9 +820,9 @@ export class TboHotelBookingService {
     return results;
   }
 
-  /**
+ /**
    * Generate mock PreBook response for development/testing
-   */
+ */
   private generateMockPreBookResponse(
     selection: TboHotelSelection,
   ): PreBookResponse {
@@ -836,7 +836,7 @@ export class TboHotelBookingService {
       HotelRoomsDetails: [],
     };
 
-    this.logger.log(
+ this.logger.log(
       `✅ [MOCK] PreBook successful: ${JSON.stringify(mockResponse)}`,
     );
     return mockResponse;
@@ -850,7 +850,7 @@ export class TboHotelBookingService {
 
     const fallback = (process.env.TBO_DEFAULT_GUEST_NATIONALITY || '').trim().toUpperCase();
     if (fallback) {
-      this.logger.warn(
+ this.logger.warn(
         `⚠️ GuestNationality missing in itinerary booking payload. Falling back to configured default ${fallback}.`,
       );
       return fallback;
@@ -884,7 +884,7 @@ export class TboHotelBookingService {
       }
     }
 
-    this.logger.warn(
+ this.logger.warn(
       `⚠️ Could not resolve plan nationality for itinerary_plan_ID=${itineraryPlanId}; using configured/default fallback for TBO booking payload.`,
     );
     return this.normalizeNationality();
@@ -1082,30 +1082,30 @@ export class TboHotelBookingService {
 
   private extractPreBookMeta(preBookResponse: PreBookResponse, selection: TboHotelSelection) {
     const rawRoomDetails = this.collectPreBookRooms(preBookResponse);
-    
-    // Extract raw mandatory supplements from MandatorySupplements/MandatorySupplement fields
+
+ // Extract raw mandatory supplements from MandatorySupplements/MandatorySupplement fields
     const rawMandatorySupplements = rawRoomDetails
       .flatMap((room: any) => this.normalizeToArray(room?.MandatorySupplements ?? room?.MandatorySupplement))
       .filter(Boolean);
-    
-    // ✅ ALSO extract any Supplements fields if present in prebook response
+
+ // ALSO extract any Supplements fields if present in prebook response
     const rawSupplements = rawRoomDetails
       .flatMap((room: any) => this.normalizeToArray(room?.Supplements))
       .filter(Boolean);
 
-    // ✅ Normalize supplements using suppl ement normalizer service
-    // Mandatory supplements come from prebook and are authoritative
+ // Normalize supplements using suppl ement normalizer service
+ // Mandatory supplements come from prebook and are authoritative
     const normalizedMandatorySupplements = this.supplementNormalizer.normalizeSupplements(
       rawMandatorySupplements,
       'prebook',
     );
-    
+
     const normalizedSupplements = this.supplementNormalizer.normalizeSupplements(
       rawSupplements,
       'prebook',
     );
 
-    // Merge both sources: normalized mandatory + any additional supplements
+ // Merge both sources: normalized mandatory + any additional supplements
     const allNormalizedSupplements = [
       ...normalizedMandatorySupplements,
       ...normalizedSupplements,
@@ -1195,10 +1195,10 @@ export class TboHotelBookingService {
       inclusions,
       amenities,
       mealType,
-      // ✅ Return both raw and normalized supplements
-      mandatorySupplements: rawMandatorySupplements, // Raw mandatory supplements (kept for backward compat)
-      supplements: rawSupplements, // Raw supplements (if present)
-      normalizedSupplements: allNormalizedSupplements, // ✅ NEW: normalized supplements with metadata
+ // Return both raw and normalized supplements
+ mandatorySupplements: rawMandatorySupplements, // Raw mandatory supplements (kept for backward compat)
+ supplements: rawSupplements, // Raw supplements (if present)
+ normalizedSupplements: allNormalizedSupplements, // NEW: normalized supplements with metadata
       rawStatus: preBookResponse?.Status,
     };
   }
@@ -1241,7 +1241,7 @@ export class TboHotelBookingService {
         error?.response?.data?.Message ||
         error?.message ||
         'Unknown error';
-      this.logger.error(`❌ TBO authentication failed: ${message}`);
+ this.logger.error(` TBO authentication failed: ${message}`);
       throw new InternalServerErrorException('Failed to authenticate with VSR before booking.');
     }
   }
@@ -1254,7 +1254,7 @@ export class TboHotelBookingService {
       null;
 
     if (!bookingRef) {
-      this.logger.warn('⚠️ Booking timeout recovery skipped: no booking reference returned by upstream');
+ this.logger.warn(' Booking timeout recovery skipped: no booking reference returned by upstream');
       return null;
     }
 
@@ -1270,7 +1270,7 @@ export class TboHotelBookingService {
         return null;
       }
 
-      this.logger.warn(
+ this.logger.warn(
         `⚠️ Booking timeout recovered via GetBookingDetail. BookingRef=${bookingRef}, status=${detail.status}`,
       );
 
@@ -1298,16 +1298,16 @@ export class TboHotelBookingService {
         },
       };
     } catch (recoveryError: any) {
-      this.logger.error(
+ this.logger.error(
         `❌ Booking timeout recovery failed for reference ${bookingRef}: ${recoveryError.message}`,
       );
       return null;
     }
   }
 
-  /**
+ /**
    * Generate mock Book response for development/testing
-   */
+ */
   private generateMockBookResponse(
     preBookResponse: PreBookResponse,
     selection: TboHotelSelection,
@@ -1332,16 +1332,16 @@ export class TboHotelBookingService {
       },
     };
 
-    this.logger.log(
+ this.logger.log(
       `✅ [MOCK] Book successful: ${JSON.stringify(mockResponse)}`,
     );
     return mockResponse;
   }
 
-  /**
+ /**
    * Cancel TBO hotel bookings for an itinerary
    * Calls TBO API to cancel and updates database status
-   */
+ */
   async cancelItineraryHotels(
     itineraryPlanId: number,
     reason: string = 'Itinerary cancelled by user',
@@ -1350,30 +1350,30 @@ export class TboHotelBookingService {
       const bookings = await this.fetchActiveCancellationBookings(itineraryPlanId);
 
       if (bookings.length === 0) {
-        this.logger.log(`No active TBO bookings found for itinerary ${itineraryPlanId}`);
+ this.logger.log(`No active TBO bookings found for itinerary ${itineraryPlanId}`);
         return [];
       }
 
-      this.logger.log(`Found ${bookings.length} TBO booking(s) to cancel`);
+ this.logger.log(`Found ${bookings.length} TBO booking(s) to cancel`);
 
       const results = [];
 
       for (const booking of bookings) {
         try {
-          // Call TBO provider to cancel the booking
-          // IMPORTANT: Pass tbo_booking_id (the numeric ID from TBO) not the reference
+ // Call TBO provider to cancel the booking
+ // IMPORTANT: Pass tbo_booking_id (the numeric ID from TBO) not the reference
           const cancellationResult = await this.tboProvider.cancelBooking(
             booking.tbo_booking_id,
             reason,
           );
 
-          // Update booking status in database
+ // Update booking status in database
           await this.prisma.tbo_hotel_booking_confirmation.update({
             where: {
               tbo_hotel_booking_confirmation_ID: booking.tbo_hotel_booking_confirmation_ID,
             },
             data: {
-              status: 0, // Mark as cancelled
+ status: 0, // Mark as cancelled
               updatedon: new Date(),
               api_response: {
                 ...(booking.api_response as Record<string, any>),
@@ -1396,12 +1396,12 @@ export class TboHotelBookingService {
             charges: cancellationResult.charges,
           });
 
-          this.logger.log(
+ this.logger.log(
             `✅ Cancelled TBO booking ${booking.tbo_booking_reference_number}: ` +
             `Refund: ${cancellationResult.refundAmount}, Charges: ${cancellationResult.charges}`,
           );
         } catch (error) {
-          this.logger.error(
+ this.logger.error(
             `❌ Failed to cancel TBO booking ${booking.tbo_booking_reference_number}: ${error.message}`,
           );
 
@@ -1416,16 +1416,16 @@ export class TboHotelBookingService {
 
       return results;
     } catch (error) {
-      this.logger.error(`❌ Error cancelling itinerary hotels: ${error.message}`);
+ this.logger.error(` Error cancelling itinerary hotels: ${error.message}`);
       throw new BadRequestException(
         `Failed to cancel VSR hotels: ${error.message}`,
       );
     }
   }
 
-  /**
+ /**
    * Cancel TBO hotel bookings for specific routes only
-   */
+ */
   async cancelItineraryHotelsByRoutes(
     itineraryPlanId: number,
     routeIds: number[],
@@ -1433,20 +1433,20 @@ export class TboHotelBookingService {
   ) {
     try {
       if (!routeIds || routeIds.length === 0) {
-        this.logger.log(`No route IDs provided for cancellation`);
+ this.logger.log(`No route IDs provided for cancellation`);
         return [];
       }
 
       const bookings = await this.fetchActiveCancellationBookings(itineraryPlanId, routeIds);
 
       if (bookings.length === 0) {
-        this.logger.log(
+ this.logger.log(
           `No active TBO bookings found for itinerary ${itineraryPlanId} and routes [${routeIds.join(',')}]`,
         );
         return [];
       }
 
-      this.logger.log(
+ this.logger.log(
         `Found ${bookings.length} TBO booking(s) to cancel for routes [${routeIds.join(',')}]`,
       );
 
@@ -1454,20 +1454,20 @@ export class TboHotelBookingService {
 
       for (const booking of bookings) {
         try {
-          // Call TBO provider to cancel the booking
-          // IMPORTANT: Pass tbo_booking_id (the numeric ID from TBO) not the reference
+ // Call TBO provider to cancel the booking
+ // IMPORTANT: Pass tbo_booking_id (the numeric ID from TBO) not the reference
           const cancellationResult = await this.tboProvider.cancelBooking(
             booking.tbo_booking_id,
             reason,
           );
 
-          // Update booking status in database
+ // Update booking status in database
           await this.prisma.tbo_hotel_booking_confirmation.update({
             where: {
               tbo_hotel_booking_confirmation_ID: booking.tbo_hotel_booking_confirmation_ID,
             },
             data: {
-              status: 0, // Mark as cancelled
+ status: 0, // Mark as cancelled
               updatedon: new Date(),
               api_response: {
                 ...(booking.api_response as Record<string, any>),
@@ -1491,12 +1491,12 @@ export class TboHotelBookingService {
             charges: cancellationResult.charges,
           });
 
-          this.logger.log(
+ this.logger.log(
             `✅ Cancelled TBO booking ${booking.tbo_booking_reference_number} (Route ${booking.itinerary_route_ID}): ` +
             `Refund: ${cancellationResult.refundAmount}, Charges: ${cancellationResult.charges}`,
           );
         } catch (error) {
-          this.logger.error(
+ this.logger.error(
             `❌ Failed to cancel TBO booking ${booking.tbo_booking_reference_number} (Route ${booking.itinerary_route_ID}): ${error.message}`,
           );
 
@@ -1512,7 +1512,7 @@ export class TboHotelBookingService {
 
       return results;
     } catch (error) {
-      this.logger.error(`❌ Error cancelling TBO hotel routes: ${error.message}`);
+ this.logger.error(` Error cancelling TBO hotel routes: ${error.message}`);
       throw new BadRequestException(
         `Failed to cancel VSR hotel routes: ${error.message}`,
       );

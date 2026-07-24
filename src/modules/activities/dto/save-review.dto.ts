@@ -5,10 +5,10 @@ export class SaveReviewDto {
   reviewId?: number;
 
   @IsString() @IsNotEmpty()
-  activity_rating!: string; // keep as string to mirror PHP; validate UI-side 1..5
+ activity_rating!: string; // keep as string to mirror PHP; validate UI-side 1..5
 
   @IsString() @IsOptional()
-  @MaxLength(20) // schema limit: VarChar(20)
+ @MaxLength(20) // schema limit: VarChar(20)
   activity_description?: string;
 
   @IsInt() @IsOptional()

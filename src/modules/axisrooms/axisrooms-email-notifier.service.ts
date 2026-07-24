@@ -33,7 +33,7 @@ export class AxisroomsEmailNotifierService {
   private getTransporter(): Transporter | null {
     if (!this.isEnabled()) {
       if (!this.warnedDisabled) {
-        this.logger.warn('AxisRooms email notifier disabled via AXISROOMS_MAIL_ENABLED');
+ this.logger.warn('AxisRooms email notifier disabled via AXISROOMS_MAIL_ENABLED');
         this.warnedDisabled = true;
       }
       return null;
@@ -48,7 +48,7 @@ export class AxisroomsEmailNotifierService {
     const pass = String(process.env.AXISROOMS_MAIL_PASS || '').trim();
 
     if (!host || !user || !pass) {
-      this.logger.warn('AxisRooms mail config incomplete (AXISROOMS_MAIL_HOST/USER/PASS)');
+ this.logger.warn('AxisRooms mail config incomplete (AXISROOMS_MAIL_HOST/USER/PASS)');
       return null;
     }
 
@@ -72,7 +72,7 @@ export class AxisroomsEmailNotifierService {
       const bcc = this.parseEmails(process.env.AXISROOMS_MAIL_BCC);
 
       if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
-        this.logger.warn('AxisRooms mail recipients are empty (AXISROOMS_MAIL_TO/CC/BCC)');
+ this.logger.warn('AxisRooms mail recipients are empty (AXISROOMS_MAIL_TO/CC/BCC)');
         return;
       }
 
@@ -108,7 +108,7 @@ export class AxisroomsEmailNotifierService {
         html: `<pre style="font-family:Arial,sans-serif">${bodyLines.join('\n')}</pre>`,
       });
     } catch (error: any) {
-      this.logger.error(`AxisRooms email send failed: ${error?.message || error}`);
+ this.logger.error(`AxisRooms email send failed: ${error?.message || error}`);
     }
   }
 }

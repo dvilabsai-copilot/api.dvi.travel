@@ -22,7 +22,7 @@ function toNum(v: any) {
 }
 
 function monthName(d: Date) {
-  return d.toLocaleString("en-US", { month: "long" }); // PHP date('F')
+ return d.toLocaleString("en-US", { month: "long" }); // PHP date('F')
 }
 
 function safeDate(v: any): Date | null {
@@ -42,7 +42,7 @@ function hhmmFromMs(ms: number) {
   const total = Math.max(0, ms);
   const hh = Math.floor(total / 3600000);
   const mm = Math.floor((total % 3600000) / 60000);
-  return `${hh}.${String(mm).padStart(2, "0")}`; // PHP-like "H.i"
+ return `${hh}.${String(mm).padStart(2, "0")}`; // PHP-like "H.i"
 }
 
 function normalizeCityToken(value: string): string {
@@ -70,7 +70,7 @@ function normalizeCityToken(value: string): string {
 // ---------------------------------------------------------------------------
 async function getPhpTotalVehicleQty(tx: any, whereBase: any): Promise<number> {
   const runOnce = async () => {
-    // Use sequential calls on the same tx client for connection stability.
+ // Use sequential calls on the same tx client for connection stability.
     const sumAgg = await tx.dvi_itinerary_plan_vendor_eligible_list.aggregate({
       where: whereBase,
       _sum: { total_vehicle_qty: true },
@@ -115,9 +115,9 @@ async function getPhpTotalVehicleQty(tx: any, whereBase: any): Promise<number> {
 export class ItineraryVehiclesEngine {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ---------------------------------------------------------------------------
-  // LOGGING
-  // ---------------------------------------------------------------------------
+ // ---------------------------------------------------------------------------
+ // LOGGING
+ // ---------------------------------------------------------------------------
   private writeLog(_line: string) {}
 
   private escapeString(value: string): string {
@@ -145,7 +145,7 @@ export class ItineraryVehiclesEngine {
     return "(" + values.map((v) => this.sqlLiteral(v)).join(", ") + ")";
   }
 
-  // build WHERE clause from Prisma-like where object
+ // build WHERE clause from Prisma-like where object
   private buildWhereClause(where: any): string {
     if (!where || Object.keys(where).length === 0) return "1=1";
 
@@ -191,7 +191,7 @@ export class ItineraryVehiclesEngine {
           } else if (value.equals !== undefined) {
             parts.push(`\`${key}\` = ${this.sqlLiteral(value.equals)}`);
           } else {
-            parts.push(`/* ${key} = ${JSON.stringify(value)} */ 1=1`);
+ parts.push(`/* ${key} = ${JSON.stringify(value)} */ 1=1`);
           }
         } else {
           parts.push(`\`${key}\` = ${this.sqlLiteral(value)}`);
@@ -222,14 +222,14 @@ export class ItineraryVehiclesEngine {
       if (data[key] === undefined) continue;
       setParts.push(`\`${key}\` = ${this.sqlLiteral(data[key])}`);
     }
-    const setClause = setParts.length ? setParts.join(", ") : "/* no fields */ 1=1";
+ const setClause = setParts.length ? setParts.join(", ") : "/* no fields */ 1=1";
     const whereClause = this.buildWhereClause(where);
     return `UPDATE \`${table}\` SET ${setClause} WHERE ${whereClause};`;
   }
 
   private buildInsertSql(table: string, data: any): string {
     const keys = Object.keys(data || {});
-    if (!keys.length) return `/* EMPTY INSERT for ${table} */`;
+ if (!keys.length) return `/* EMPTY INSERT for ${table} */`;
     const cols = keys.map((k) => `\`${k}\``).join(", ");
     const vals = keys.map((k) => this.sqlLiteral(data[k])).join(", ");
     return `INSERT INTO \`${table}\` (${cols}) VALUES (${vals});`;
@@ -307,9 +307,9 @@ export class ItineraryVehiclesEngine {
       );
   }
 
-  // ---------------------------------------------------------------------------
-  // ROUTE KM SUMMARY (PHP-style helper; uses route.no_of_km ONLY)
-  // ---------------------------------------------------------------------------
+ // ---------------------------------------------------------------------------
+ // ROUTE KM SUMMARY (PHP-style helper; uses route.no_of_km ONLY)
+ // ---------------------------------------------------------------------------
   private async buildRouteKmMap(
     tx: any,
     planId: number,
@@ -329,7 +329,7 @@ export class ItineraryVehiclesEngine {
     return routeKmMap;
   }
 
-  /**
+ /**
    * Rebuilds:
    *   1) dvi_itinerary_plan_vendor_eligible_list
    *   2) dvi_itinerary_plan_vendor_vehicle_details
@@ -338,7 +338,7 @@ export class ItineraryVehiclesEngine {
    * - Build vendor eligibles
    * - Mark cheapest per vehicle type as assigned
    * - Build vendor_vehicle_details for ALL eligibles (not just assigned)
-   */
+ */
   async rebuildEligibleVendorList(args: {
     planId: number;
     createdBy: number;
@@ -361,7 +361,7 @@ export class ItineraryVehiclesEngine {
     const pendingEligibleCreates: any[] = [];
     const pendingVehicleDetailCreates: any[] = [];
     if (debugVehicleTrace) {
-      console.log('[VEHICLE_REBUILD_START]', {
+ console.log('[VEHICLE_REBUILD_START]', {
         planId,
         timestamp: new Date().toISOString(),
       });
@@ -412,7 +412,7 @@ export class ItineraryVehiclesEngine {
       const value = await getStoredLocationCity(tx, locationName, buildCache);
       storedLocationCityCache.set(key, value);
       routeTransitionResolveCount += 1;
-      console.log('[VEHICLE_REBUILD_TIMING]', {
+ console.log('[VEHICLE_REBUILD_TIMING]', {
         planId,
         stage: 'route_transition_resolution',
         durationMs: Date.now() - lookupStartedAt,
@@ -449,7 +449,7 @@ export class ItineraryVehiclesEngine {
       );
       vehicleLocationDetailsCache.set(key, value);
       vehicleStateResolveCount += 1;
-      console.log('[VEHICLE_REBUILD_TIMING]', {
+ console.log('[VEHICLE_REBUILD_TIMING]', {
         planId,
         stage: 'vehicle_state_resolution',
         durationMs: Date.now() - lookupStartedAt,
@@ -467,7 +467,7 @@ export class ItineraryVehiclesEngine {
       counts: Record<string, number> = {},
     ): number => {
       const now = Date.now();
-      console.log('[VEHICLE_REBUILD_TIMING]', {
+ console.log('[VEHICLE_REBUILD_TIMING]', {
         planId,
         stage,
         durationMs: now - startedAt,
@@ -490,7 +490,7 @@ export class ItineraryVehiclesEngine {
       return { planId, inserted: 0, reason: "Invalid planId" };
     }
 
-    // use plain client (no $transaction) for now
+ // use plain client (no $transaction) for now
     const tx: any = this.prisma;
     const tAny: any = this.prisma as any;
     const normalizeVehicleDedupText = (value: unknown): string =>
@@ -605,9 +605,9 @@ export class ItineraryVehiclesEngine {
 
     const today = startOfDay(new Date());
 
-    // ---------------------------------------------------------------------
-    // 0) Plan
-    // ---------------------------------------------------------------------
+ // ---------------------------------------------------------------------
+ // 0) Plan
+ // ---------------------------------------------------------------------
     const planWhere = { itinerary_plan_ID: planId };
     this.logSql(
       "PLAN_FIND_UNIQUE",
@@ -629,9 +629,9 @@ export class ItineraryVehiclesEngine {
 
     if (!plan) return { planId, inserted: 0, reason: "Plan not found" };
 
-    // ---------------------------------------------------------------------
-    // 1) Routes summary
-    // ---------------------------------------------------------------------
+ // ---------------------------------------------------------------------
+ // 1) Routes summary
+ // ---------------------------------------------------------------------
     const routesWhere = { itinerary_plan_ID: planId, status: 1, deleted: 0 };
     this.logSql(
       "ROUTES_FIND_MANY",
@@ -679,12 +679,12 @@ export class ItineraryVehiclesEngine {
     const overallStartCityToken = normalizeCityToken(overallStartCityRaw);
     const overallEndCityToken = normalizeCityToken(overallEndCityRaw);
 
-    // ---------------------------------------------------------------------
-    // 1.1) Build eligible cities from dvi_stored_locations (PHP UNION parity)
-    // ---------------------------------------------------------------------
+ // ---------------------------------------------------------------------
+ // 1.1) Build eligible cities from dvi_stored_locations (PHP UNION parity)
+ // ---------------------------------------------------------------------
     let eligibleCities: string[] = [];
     if (locationTokens.length) {
-      // 1️⃣ source_location side
+ // 1 source_location side
       const storedSrcWhere = {
         deleted: 0,
         status: 1,
@@ -706,7 +706,7 @@ export class ItineraryVehiclesEngine {
         },
       });
 
-      // 2️⃣ destination_location side
+ // 2 destination_location side
       const storedDestWhere = {
         deleted: 0,
         status: 1,
@@ -771,7 +771,7 @@ export class ItineraryVehiclesEngine {
       locationTokens: locationTokens.length,
     });
 
-    // PHP: total km is sum of route.no_of_km ONLY
+ // PHP: total km is sum of route.no_of_km ONLY
     const totalKmsNum = routes.reduce(
       (sum: number, r: { no_of_km: string | null }) => sum + toNum(r.no_of_km),
       0,
@@ -798,9 +798,9 @@ export class ItineraryVehiclesEngine {
     const totalNoOfPlanRouteDetails = Math.max(0, routes.length);
     stageStartedAt = logStageTiming('plan_and_route_context', stageStartedAt);
 
-    // ---------------------------------------------------------------------
-    // 2) Required vehicle entries from plan
-    // ---------------------------------------------------------------------
+ // ---------------------------------------------------------------------
+ // 2) Required vehicle entries from plan
+ // ---------------------------------------------------------------------
     const reqWhere = { itinerary_plan_id: planId, status: 1, deleted: 0 };
     this.logSql(
       "PLAN_VEHICLE_DETAILS_FIND_MANY",
@@ -813,7 +813,7 @@ export class ItineraryVehiclesEngine {
       select: { vehicle_type_id: true, vehicle_count: true },
     });
     if (debugVehicleTrace) {
-      console.log('[REQUESTED_VEHICLE_ROWS]', {
+ console.log('[REQUESTED_VEHICLE_ROWS]', {
         planId,
         rows: reqRows.map((r: any) => ({
           vehicle_type_id: Number(r.vehicle_type_id ?? 0),
@@ -844,9 +844,9 @@ export class ItineraryVehiclesEngine {
       requestedRows: reqRows.length,
     });
 
-    // ---------------------------------------------------------------------
-    // 3) Clear existing eligible rows for this plan
-    // ---------------------------------------------------------------------
+ // ---------------------------------------------------------------------
+ // 3) Clear existing eligible rows for this plan
+ // ---------------------------------------------------------------------
     const delEligibleWhere = { itinerary_plan_id: planId };
     this.logSql(
       "ELIGIBLE_DELETE_MANY",
@@ -892,9 +892,9 @@ export class ItineraryVehiclesEngine {
     };
     const vendorLookupStartedAt = Date.now();
 
-    // ---------------------------------------------------------------------
-    // MAIN ELIGIBLE-LIST BUILD (PHP-style vendor loop)
-    // ---------------------------------------------------------------------
+ // ---------------------------------------------------------------------
+ // MAIN ELIGIBLE-LIST BUILD (PHP-style vendor loop)
+ // ---------------------------------------------------------------------
     for (const [planVehicleTypeId, requiredCount] of requiredCountByType.entries()) {
       if (!planVehicleTypeId || requiredCount <= 0) continue;
 
@@ -1097,7 +1097,7 @@ export class ItineraryVehiclesEngine {
         const masterVehicleTypeId = Number(map.vehicle_type_id ?? 0);
         if (!vendorVehicleTypeId || !vendorId) continue;
 
-        // Fetch vendor details for margin calculation (PHP parity)
+ // Fetch vendor details for margin calculation (PHP parity)
         const vendorDetailsWhere = {
           vendor_id: vendorId,
           status: 1,
@@ -1205,7 +1205,7 @@ export class ItineraryVehiclesEngine {
           ]),
         );
 
-        // PHP parity: Store vendor_branch_gst_type and vendor_branch_gst by branch_id
+ // PHP parity: Store vendor_branch_gst_type and vendor_branch_gst by branch_id
         const branchGstById = new Map<number, { type: number; percentage: number }>(
           allowedBranches.map((b) => [
             Number(b.vendor_branch_id),
@@ -1225,7 +1225,7 @@ export class ItineraryVehiclesEngine {
           const vehicleLocationId = Number(vehicle.vehicle_location_id ?? 0);
           if (!vehicleId || !vendorBranchId) continue;
 
-          // PHP parity: Fetch vehicle_origin from dvi_stored_locations.source_location
+ // PHP parity: Fetch vehicle_origin from dvi_stored_locations.source_location
           let vehicleOrigin = "";
           if (vehicleLocationId) {
             const storedLocation = await tx.dvi_stored_locations.findUnique({
@@ -1234,8 +1234,8 @@ export class ItineraryVehiclesEngine {
             });
             vehicleOrigin = String(storedLocation?.source_location ?? "").trim();
           }
-          // Fallback order for old vehicles without vehicle_location_id:
-          // branch city name -> branch location -> branch name
+ // Fallback order for old vehicles without vehicle_location_id:
+ // branch city name -> branch location -> branch name
           if (!vehicleOrigin) {
             vehicleOrigin =
               branchCityNameById.get(vendorBranchId) ||
@@ -1325,37 +1325,37 @@ export class ItineraryVehiclesEngine {
           }
 
           const allowedKmPerDayNum = kms.allowedKmPerDayNum;
-          
-          // PHP parity: Count only OUTSTATION days (travel_type = 2) for allowed KMs calculation
-          // This happens AFTER vehicle_details records are created, so we need to count them
-          // For now during initial creation, we'll count based on route data when vehicle_details exists
-          // Since we don't have vehicle_details yet, we'll use a placeholder and update later
-          // PHP: SELECT COUNT(*) WHERE travel_type = '2'
+
+ // PHP parity: Count only OUTSTATION days (travel_type = 2) for allowed KMs calculation
+ // This happens AFTER vehicle_details records are created, so we need to count them
+ // For now during initial creation, we'll count based on route data when vehicle_details exists
+ // Since we don't have vehicle_details yet, we'll use a placeholder and update later
+ // PHP: SELECT COUNT(*) WHERE travel_type = '2'
           let outstationDaysCount = 0;
-          
-          // Try to get outstation days from existing vehicle_details for this vendor
+
+ // Try to get outstation days from existing vehicle_details for this vendor
           const existingDetailsWhere = {
             itinerary_plan_id: planId,
             vendor_id: vendorId,
             vendor_vehicle_type_id: vendorVehicleTypeId,
             vendor_branch_id: vendorBranchId,
-            travel_type: 2, // outstation
+ travel_type: 2, // outstation
             status: 1,
             deleted: 0,
           };
-          
+
           if (tAny?.dvi_itinerary_plan_vendor_vehicle_details) {
             outstationDaysCount = await tAny.dvi_itinerary_plan_vendor_vehicle_details.count({
               where: existingDetailsWhere,
             });
           }
-          
-          // If no existing details yet, assume all days are outstation (will be updated later)
-          // This is a temporary value that will be corrected in the update phase
+
+ // If no existing details yet, assume all days are outstation (will be updated later)
+ // This is a temporary value that will be corrected in the update phase
           if (outstationDaysCount === 0) {
             outstationDaysCount = noOfDays;
           }
-          
+
           const totalAllowedKmsNum =
             allowedKmPerDayNum > 0 ? allowedKmPerDayNum * outstationDaysCount : 0;
 
@@ -1442,8 +1442,8 @@ export class ItineraryVehiclesEngine {
           }
 
           const totalRentalNum = rentalPerDayNum * noOfDays;
-          
-          // Aggregate parking charges from hotspot parking charge table
+
+ // Aggregate parking charges from hotspot parking charge table
           const parkingAgg = await (tx as any).dvi_itinerary_route_hotspot_parking_charge.aggregate({
             where: {
               itinerary_plan_ID: planId,
@@ -1456,30 +1456,30 @@ export class ItineraryVehiclesEngine {
             },
           });
           const totalParkingCharges = Number(parkingAgg._sum?.parking_charges_amt || 0);
-          
-          // NOTE: toll/permit charges set to 0 initially because vehicle_details doesn't exist yet
-          // They will be aggregated and updated AFTER vehicle_details records are created
+
+ // NOTE: toll/permit charges set to 0 initially because vehicle_details doesn't exist yet
+ // They will be aggregated and updated AFTER vehicle_details records are created
           const totalTollCharges = 0;
           const totalPermitCharges = 0;
-          
+
           const totalDriverCharges = 0;
 
-          const vehicleBaseTotal = totalRentalNum + totalExtraKmsChargeNum + 
-                                   totalTollCharges + totalParkingCharges + 
+          const vehicleBaseTotal = totalRentalNum + totalExtraKmsChargeNum +
+                                   totalTollCharges + totalParkingCharges +
                                    totalDriverCharges + totalPermitCharges;
 
-          // GST calculation - use vendor_branch GST settings (PHP parity)
+ // GST calculation - use vendor_branch GST settings (PHP parity)
           const branchGst = branchGstById.get(vendorBranchId) || { type: 2, percentage: 5 };
           const vehicleGstType = branchGst.type;
           const vehicleGstPercentage = branchGst.percentage;
           const vehicleGstAmount = vehicleGstType === 2
             ? roundMoney((vehicleBaseTotal * vehicleGstPercentage) / 100)
             : 0;
-          
+
           const vehicleTotalAmount = vehicleBaseTotal;
 
-          // Vendor margin calculation - use values from vendor_details table (PHP parity)
-          // Values fetched earlier in the loop from dvi_vendor_details
+ // Vendor margin calculation - use values from vendor_details table (PHP parity)
+ // Values fetched earlier in the loop from dvi_vendor_details
           const vendorMarginBase = vehicleTotalAmount + vehicleGstAmount;
           const vendorMarginAmount = roundMoney((vendorMarginBase * vendorMarginPercentage) / 100);
           const vendorMarginGstAmount = vendorMarginGstType === 2 ?
@@ -1590,7 +1590,7 @@ export class ItineraryVehiclesEngine {
       buildEligiblePersistenceKey,
     );
     if (pendingEligibleCreates.length !== dedupedEligibleCreates.length) {
-      console.log('[VEHICLE_ELIGIBLE_BUFFER_DEDUPE]', {
+ console.log('[VEHICLE_ELIGIBLE_BUFFER_DEDUPE]', {
         planId,
         bufferedRows: pendingEligibleCreates.length,
         dedupedRows: dedupedEligibleCreates.length,
@@ -1603,7 +1603,7 @@ export class ItineraryVehiclesEngine {
       });
       inserted += dedupedEligibleCreates.length;
       if (debugVehicleTrace) {
-        console.log('[ELIGIBLE_CREATE_MANY_DONE]', {
+ console.log('[ELIGIBLE_CREATE_MANY_DONE]', {
           planId,
           createdRows: dedupedEligibleCreates.length,
           resultCount: Number((createManyResult as any)?.count ?? dedupedEligibleCreates.length),
@@ -1615,7 +1615,7 @@ export class ItineraryVehiclesEngine {
     });
     const duplicateEligibleRowsDeleted = await cleanupDuplicateEligibleRows();
     if (duplicateEligibleRowsDeleted > 0) {
-      console.log('[VEHICLE_ELIGIBLE_PERSISTED_DEDUPE]', {
+ console.log('[VEHICLE_ELIGIBLE_PERSISTED_DEDUPE]', {
         planId,
         deletedRows: duplicateEligibleRowsDeleted,
       });
@@ -1767,17 +1767,17 @@ export class ItineraryVehiclesEngine {
     }
     stageStartedAt = logStageTiming('before_vehicle_details_callback', stageStartedAt);
 
-    // ---------------------------------------------------------------------
-    // BUILD dvi_itinerary_plan_vendor_vehicle_details
-    // FOR ALL ELIGIBLES (PHP parity - creates for both assigned and non-assigned)
-    // ---------------------------------------------------------------------
+ // ---------------------------------------------------------------------
+ // BUILD dvi_itinerary_plan_vendor_vehicle_details
+ // FOR ALL ELIGIBLES (PHP parity - creates for both assigned and non-assigned)
+ // ---------------------------------------------------------------------
     if (tAny?.dvi_itinerary_plan_vendor_vehicle_details && totalNoOfPlanRouteDetails > 0) {
       const delDetailsWhere2: any = { itinerary_plan_id: planId };
       if (debugVehicleTrace) {
         const existingCount = await tAny.dvi_itinerary_plan_vendor_vehicle_details.count({
           where: { itinerary_plan_id: planId },
         });
-        console.log('[VEHICLE_DETAILS_DELETE_BEFORE]', { planId, existingCount });
+ console.log('[VEHICLE_DETAILS_DELETE_BEFORE]', { planId, existingCount });
       }
       this.logSql(
         "VENDOR_VEHICLE_DETAILS_DELETE_MANY_2",
@@ -1792,15 +1792,15 @@ export class ItineraryVehiclesEngine {
         const remainingCount = await tAny.dvi_itinerary_plan_vendor_vehicle_details.count({
           where: { itinerary_plan_id: planId },
         });
-        console.log('[VEHICLE_DETAILS_DELETE_AFTER]', { planId, remainingCount, deleteResult: delDetRes2 });
+ console.log('[VEHICLE_DETAILS_DELETE_AFTER]', { planId, remainingCount, deleteResult: delDetRes2 });
       }
       stageStartedAt = logStageTiming('vehicle_detail_delete_old_rows', stageStartedAt, {
         deletedRows: Number((delDetRes2 as any)?.count ?? 0),
       });
       const eligiblesWhere = {
         itinerary_plan_id: planId,
-        // REMOVED: itineary_plan_assigned_status: 1,
-        // PHP creates vehicle_details for ALL vendors (assigned and non-assigned)
+ // REMOVED: itineary_plan_assigned_status: 1,
+ // PHP creates vehicle_details for ALL vendors (assigned and non-assigned)
         status: 1,
         deleted: 0,
       };
@@ -1819,7 +1819,7 @@ export class ItineraryVehiclesEngine {
       );
       const { rows: eligibles } = await filterActiveVendorCandidateRows<any>(this.prisma, rawEligibles);
       if (debugVehicleTrace) {
-        console.log('[VEHICLE_ELIGIBLE_ROWS_FOR_BUILD]', {
+ console.log('[VEHICLE_ELIGIBLE_ROWS_FOR_BUILD]', {
           planId,
           rawCount: rawEligibles.length,
           count: eligibles.length,
@@ -1856,12 +1856,12 @@ export class ItineraryVehiclesEngine {
         eligibleCount: eligibles.length,
       });
 
-      const travelType = Number(plan.itinerary_type ?? 0) || 2; // 1=local, 2=outstation
+ const travelType = Number(plan.itinerary_type 0) || 2; // 1=local, 2=outstation
 
-      // keep helper call for logging / debugging (no hotspot override)
+ // keep helper call for logging / debugging (no hotspot override)
       const routeKmMap = await this.buildRouteKmMap(tx, planId, routes);
 
-      // Overall trip local rule: if itinerary starts and ends in same normalized city, force LOCAL usage.
+ // Overall trip local rule: if itinerary starts and ends in same normalized city, force LOCAL usage.
       const firstRoute = routes[0];
       const lastRoute = routes[routes.length - 1];
       const overallStartCityRaw = firstRoute
@@ -1885,7 +1885,7 @@ export class ItineraryVehiclesEngine {
         const vendorBranchId = Number(e.vendor_branch_id ?? 0);
         const qty = Number(e.total_vehicle_qty ?? 1) || 1;
         if (debugVehicleTrace) {
-          console.log('[VEHICLE_ELIGIBLE_BUILD_START]', {
+ console.log('[VEHICLE_ELIGIBLE_BUILD_START]', {
             planId,
             eligibleId,
             vehicleTypeId,
@@ -1896,8 +1896,8 @@ export class ItineraryVehiclesEngine {
           });
         }
 
-        // Get vehicle details from dvi_vehicle table (PHP joins dvi_vehicle + dvi_vendor_vehicle_types)
-        // In dvi_vehicle, vehicle_type_id actually stores vendor_vehicle_type_ID
+ // Get vehicle details from dvi_vehicle table (PHP joins dvi_vehicle + dvi_vendor_vehicle_types)
+ // In dvi_vehicle, vehicle_type_id actually stores vendor_vehicle_type_ID
         const vehicle = await tx.dvi_vehicle.findUnique({
           where: { vehicle_id: vehicleId },
           select: {
@@ -1908,15 +1908,15 @@ export class ItineraryVehiclesEngine {
             evening_charges: true,
             vendor_id: true,
             vendor_branch_id: true,
-            vehicle_type_id: true  // This is actually vendor_vehicle_type_ID
+ vehicle_type_id: true // This is actually vendor_vehicle_type_ID
           }
         });
 
         if (!vehicle) continue;
 
-        // Support both legacy and modern storage:
-        // - legacy dvi_vehicle.vehicle_type_id = vendor_vehicle_type_ID
-        // - modern dvi_vehicle.vehicle_type_id = master vehicle_type_id
+ // Support both legacy and modern storage:
+ // - legacy dvi_vehicle.vehicle_type_id = vendor_vehicle_type_ID
+ // - modern dvi_vehicle.vehicle_type_id = master vehicle_type_id
         let vendorVehicleType = await tx.dvi_vendor_vehicle_types.findUnique({
           where: { vendor_vehicle_type_ID: vvtId || 0 },
           select: {
@@ -1962,7 +1962,7 @@ export class ItineraryVehiclesEngine {
 
         if (!vendorVehicleType) continue;
 
-        // Get vehicle origin details from dvi_stored_locations
+ // Get vehicle origin details from dvi_stored_locations
         const vehicleLocationId = vehicle.vehicle_location_id || 0;
         const vehicleLocationDetails = await getVehicleLocationDetailsCached(
           vehicleLocationId,
@@ -1970,7 +1970,7 @@ export class ItineraryVehiclesEngine {
           String((e as any).vehicle_orign || '').trim(),
         );
 
-        // Build calculation context
+ // Build calculation context
         const eligibleCompositeKey = `${vendorId}:${vendorBranchId}:${vvtId}:${vehicleId}`;
         const selectedTimeLimitId =
           Number(selectedTimeLimitByEligible[String(eligibleId)] ?? 0) ||
@@ -1979,7 +1979,7 @@ export class ItineraryVehiclesEngine {
 
         const calcCtx: VehicleCalculationContext = {
           prisma: tx,
-          
+
           itinerary_plan_ID: planId,
           vehicle_type_id: vehicleTypeId,
           vendor_id: vendorId,
@@ -1990,20 +1990,20 @@ export class ItineraryVehiclesEngine {
           vehicle_origin_city: vehicleLocationDetails.city,
           vehicle_origin_latitude: vehicleLocationDetails.latitude,
           vehicle_origin_longitude: vehicleLocationDetails.longitude,
-          extra_km_charge: toNum(vehicle.extra_km_charge),  // From dvi_vehicle
+ extra_km_charge: toNum(vehicle.extra_km_charge), // From dvi_vehicle
           extra_hour_charge: toNum(vehicle.extra_hour_charge),
           selected_time_limit_id: selectedTimeLimitId || undefined,
           force_local_trip: forceLocalTrip,
           buildCache,
-          get_kms_limit: 250,  // Default outstation KM limit
+ get_kms_limit: 250, // Default outstation KM limit
           driver_batta: toNum(vendorVehicleType.driver_batta),
           food_cost: toNum(vendorVehicleType.food_cost),
           accomodation_cost: toNum(vendorVehicleType.accomodation_cost),
           extra_cost: toNum(vendorVehicleType.extra_cost),
           driver_early_morning_charges: toNum(vendorVehicleType.driver_early_morning_charges),
           driver_evening_charges: toNum(vendorVehicleType.driver_evening_charges),
-          early_morning_charges: toNum(vehicle.early_morning_charges),  // From dvi_vehicle
-          evening_charges: toNum(vehicle.evening_charges)  // From dvi_vehicle
+ early_morning_charges: toNum(vehicle.early_morning_charges), // From dvi_vehicle
+ evening_charges: toNum(vehicle.evening_charges) // From dvi_vehicle
         };
 
         let previous_destination_city = '';
@@ -2017,7 +2017,7 @@ export class ItineraryVehiclesEngine {
 
           const routeDate = safeDate(r.itinerary_route_date) || routeDateBase;
           if (debugVehicleTrace) {
-            console.log('[VEHICLE_ROUTE_LOOP_START]', {
+ console.log('[VEHICLE_ROUTE_LOOP_START]', {
               planId,
               eligibleId,
               routeId,
@@ -2040,7 +2040,7 @@ export class ItineraryVehiclesEngine {
           const fromLoc = (r.location_name ?? null) as any;
           const toLoc = (r.next_visiting_location ?? null) as any;
 
-          // Build route data for calculation
+ // Build route data for calculation
           const routeData: RouteData = {
             itinerary_route_ID: routeId,
             itinerary_route_date: routeDate,
@@ -2070,7 +2070,7 @@ export class ItineraryVehiclesEngine {
             });
           }
           if (debugVehicleTrace) {
-            console.log('[VEHICLE_CALC_CALL]', {
+ console.log('[VEHICLE_CALC_CALL]', {
               planId,
               eligibleId,
               routeId,
@@ -2099,7 +2099,7 @@ export class ItineraryVehiclesEngine {
             });
           }
 
-          // Calculate all route details using PHP-parity logic
+ // Calculate all route details using PHP-parity logic
           calculateRouteVehicleDetailsCallCount += 1;
           const result = await calculateRouteVehicleDetails(
             calcCtx,
@@ -2112,7 +2112,7 @@ export class ItineraryVehiclesEngine {
           );
           permitLookupCount += 1;
           if (debugVehicleTrace) {
-            console.log('[VEHICLE_CALC_RETURN]', {
+ console.log('[VEHICLE_CALC_RETURN]', {
               planId,
               eligibleId,
               routeId,
@@ -2140,7 +2140,7 @@ export class ItineraryVehiclesEngine {
             });
           }
 
-          // Debug: log calculation result for each route
+ // Debug: log calculation result for each route
           this.log('VEHICLE_DETAIL_CALC', {
             routeId,
             vendorId,
@@ -2164,9 +2164,9 @@ export class ItineraryVehiclesEngine {
             (route_count === 1 || route_count === total_routes) &&
             hasRealTravelForDisplay;
 
-          // Preserve all outstation day rows, including hotel-stay days with 0 km.
-          // PHP keeps these rows in the itinerary timeline, and dropping them
-          // causes vendor day counts to shrink incorrectly on transportation + hotel trips.
+ // Preserve all outstation day rows, including hotel-stay days with 0 km.
+ // PHP keeps these rows in the itinerary timeline, and dropping them
+ // causes vendor day counts to shrink incorrectly on transportation + hotel trips.
           const isOutstationRowWithoutRate =
             Number(result.travel_type || 0) === 2;
 
@@ -2180,12 +2180,12 @@ export class ItineraryVehiclesEngine {
           const shouldPreserveZeroCostRoute =
             isEdgeLocalTransferRoute || isOutstationRowWithoutRate || isLocalHotelStayRoute;
 
-          // Preserve visible travel rows even when rate setup is missing.
-          // We want the UI to show "Rates not available", not silently remove the day.
+ // Preserve visible travel rows even when rate setup is missing.
+ // We want the UI to show "Rates not available", not silently remove the day.
           if (result.vehicle_cost_for_the_day === 0 && !shouldPreserveZeroCostRoute) {
             this.log('SKIP_ZERO_COST', { routeId, vendorId, vvtId, vehicleId });
             if (debugVehicleTrace) {
-              console.log('[SKIP_ZERO_COST]', {
+ console.log('[SKIP_ZERO_COST]', {
                 planId,
                 eligibleId,
                 routeId,
@@ -2200,7 +2200,7 @@ export class ItineraryVehiclesEngine {
             continue;
           }
           if (result.vehicle_cost_for_the_day === 0 && shouldPreserveZeroCostRoute) {
-            console.log('[PRESERVE_ZERO_COST_ROUTE_FOR_UNAVAILABLE_RATE]', {
+ console.log('[PRESERVE_ZERO_COST_ROUTE_FOR_UNAVAILABLE_RATE]', {
               planId,
               eligibleId,
               routeId,
@@ -2214,7 +2214,7 @@ export class ItineraryVehiclesEngine {
             });
           }
 
-          // Helper: convert "HH:MM:SS" to Date object for DateTime fields
+ // Helper: convert "HH:MM:SS" to Date object for DateTime fields
           function toTimeDate(val: any): Date | null {
             if (!val) return null;
             if (val instanceof Date) return val;
@@ -2223,7 +2223,7 @@ export class ItineraryVehiclesEngine {
             }
             return null;
           }
-          // Helper: ensure string or null for varchar fields
+ // Helper: ensure string or null for varchar fields
           function toTimeString(val: any): string | null {
             if (!val) return null;
             if (typeof val === 'string') return val;
@@ -2250,7 +2250,7 @@ export class ItineraryVehiclesEngine {
             itinerary_route_location_from: fromLoc,
             itinerary_route_location_to: toLoc,
 
-            // Distance fields (strings from calculation)
+ // Distance fields (strings from calculation)
             total_running_km: result.TOTAL_RUNNING_KM,
             total_running_time: toTimeDate(result.TOTAL_TRAVELLING_TIME),
             total_siteseeing_km: result.SIGHT_SEEING_TRAVELLING_KM,
@@ -2265,7 +2265,7 @@ export class ItineraryVehiclesEngine {
             total_travelled_km: result.TOTAL_KM,
             total_travelled_time: toTimeString(result.TOTAL_TIME),
 
-            // Money fields (numbers from calculation)
+ // Money fields (numbers from calculation)
             vehicle_rental_charges: result.vehicle_cost_for_the_day,
             vehicle_toll_charges: result.VEHICLE_TOLL_CHARGE,
             vehicle_parking_charges: result.VEHICLE_PARKING_CHARGE,
@@ -2312,10 +2312,10 @@ export class ItineraryVehiclesEngine {
             matchedStoredLocationDistance: pickupDebug?.matchedStoredLocationDistance ?? null,
             calculationSource: pickupDebug?.calculationSource ?? 'unknown',
           };
-          console.log('[VEHICLE_DETAIL_INSERT_DEBUG]', insertDebugPayload);
+ console.log('[VEHICLE_DETAIL_INSERT_DEBUG]', insertDebugPayload);
           const pickupKmNumeric = Number(result.TOTAL_PICKUP_KM || 0);
           if (pickupKmNumeric > 1000) {
-            console.error('[VEHICLE_PICKUP_KM_SUSPICIOUS]', insertDebugPayload);
+ console.error('[VEHICLE_PICKUP_KM_SUSPICIOUS]', insertDebugPayload);
             const strictVehicleKmValidation =
               String(process.env.STRICT_VEHICLE_KM_VALIDATION || '').trim() === '1';
             const reliableFallbackExists = ['stored_location', 'haversine', 'existing_db'].includes(
@@ -2333,7 +2333,7 @@ export class ItineraryVehiclesEngine {
           }
           const dropKmNumeric = Number(result.TOTAL_DROP_KM || 0);
           if (route_count !== total_routes && dropKmNumeric > 0) {
-            console.error('[VEHICLE_DROP_KM_NON_FINAL_ROUTE]', {
+ console.error('[VEHICLE_DROP_KM_NON_FINAL_ROUTE]', {
               ...insertDebugPayload,
               route_count,
               total_routes,
@@ -2366,7 +2366,7 @@ export class ItineraryVehiclesEngine {
 
           insertAttemptCount++;
           if (debugVehicleTrace) {
-            console.log('[VEHICLE_DETAIL_INSERT_ATTEMPT]', {
+ console.log('[VEHICLE_DETAIL_INSERT_ATTEMPT]', {
               planId,
               eligibleId,
               routeId,
@@ -2398,7 +2398,7 @@ export class ItineraryVehiclesEngine {
           }
           pendingVehicleDetailCreates.push(detailsData);
 
-          // Update previous destination city for next iteration
+ // Update previous destination city for next iteration
           previous_destination_city = await getStoredLocationCityCached(String(toLoc || ''));
         }
       }
@@ -2411,7 +2411,7 @@ export class ItineraryVehiclesEngine {
       buildVehicleDetailPersistenceKey,
     );
     if (pendingVehicleDetailCreates.length !== dedupedVehicleDetailCreates.length) {
-      console.log('[VEHICLE_DETAIL_BUFFER_DEDUPE]', {
+ console.log('[VEHICLE_DETAIL_BUFFER_DEDUPE]', {
         planId,
         bufferedRows: pendingVehicleDetailCreates.length,
         dedupedRows: dedupedVehicleDetailCreates.length,
@@ -2422,7 +2422,7 @@ export class ItineraryVehiclesEngine {
     });
     if (dedupedVehicleDetailCreates.length > 0 && tAny?.dvi_itinerary_plan_vendor_vehicle_details) {
       const chunkSize = Math.max(1, Number(process.env.VEHICLE_DETAIL_INSERT_CHUNK_SIZE || 500) || 500);
-      console.log('[VEHICLE_DETAIL_INSERT_BATCH_SIZE]', {
+ console.log('[VEHICLE_DETAIL_INSERT_BATCH_SIZE]', {
         planId,
         pendingRows: dedupedVehicleDetailCreates.length,
         chunkSize,
@@ -2435,7 +2435,7 @@ export class ItineraryVehiclesEngine {
           data: chunk,
         });
         insertSuccessCount += chunk.length;
-        console.log('[VEHICLE_DETAIL_INSERT_CHUNK_TIMING]', {
+ console.log('[VEHICLE_DETAIL_INSERT_CHUNK_TIMING]', {
           planId,
           chunkIndex: Math.floor(index / chunkSize) + 1,
           chunkSize: chunk.length,
@@ -2447,7 +2447,7 @@ export class ItineraryVehiclesEngine {
           },
         });
         if (debugVehicleTrace) {
-          console.log('[VEHICLE_DETAIL_CREATE_MANY_DONE]', {
+ console.log('[VEHICLE_DETAIL_CREATE_MANY_DONE]', {
             planId,
             createdRows: chunk.length,
             resultCount: Number((detailCreateResult as any)?.count ?? chunk.length),
@@ -2460,14 +2460,14 @@ export class ItineraryVehiclesEngine {
     });
     const duplicateVehicleDetailRowsDeleted = await cleanupDuplicateVehicleDetailRows();
     if (duplicateVehicleDetailRowsDeleted > 0) {
-      console.log('[VEHICLE_DETAIL_PERSISTED_DEDUPE]', {
+ console.log('[VEHICLE_DETAIL_PERSISTED_DEDUPE]', {
         planId,
         deletedRows: duplicateVehicleDetailRowsDeleted,
       });
     }
 
-    // NOW update eligible_list with toll/permit charges from vehicle_details
-    // (this runs AFTER all vehicle_details records have been created above)
+ // NOW update eligible_list with toll/permit charges from vehicle_details
+ // (this runs AFTER all vehicle_details records have been created above)
     this.writeLog(`[vehiclesEngine] Starting eligible_list update for plan ${planId}`);
     const rawEligibleRecords = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
       where: {
@@ -2620,7 +2620,7 @@ export class ItineraryVehiclesEngine {
         allowedKmPerDayFromKmsLimit <= 0 &&
         allowedKmPerDay > 0
       ) {
-        console.warn('[VEHICLE_ELIGIBLE_OUTSTATION_DEFAULT_FALLBACK]', {
+ console.warn('[VEHICLE_ELIGIBLE_OUTSTATION_DEFAULT_FALLBACK]', {
           planId,
           vendorEligibleId: eligible.itinerary_plan_vendor_eligible_ID,
           outstationKmsLimitId,
@@ -2665,7 +2665,7 @@ export class ItineraryVehiclesEngine {
       this.writeLog(`[vehiclesEngine] Total kms: ${totalKms}, Local kms: ${totalLocalKms}, Local extra: ${totalExtraLocalKms}, Local extra charge: ${totalExtraLocalKmsCharge}, records count: ${vehicleDetailsRecords.length}`);
       this.writeLog(`[vehiclesEngine] Outstation extra kms: ${totalExtraOutstationKms}, Outstation extra charge: ${totalExtraOutstationKmsCharge}`);
       if (process.env.DEBUG_VEHICLE_KM_SUMMARY === 'true') {
-        console.log('[VEHICLE_ELIGIBLE_OUTSTATION_TOTALS_BEFORE_SAVE]', {
+ console.log('[VEHICLE_ELIGIBLE_OUTSTATION_TOTALS_BEFORE_SAVE]', {
           planId,
           vendorId: (eligible as any).vendor_id,
           vendorEligibleId: eligible.itinerary_plan_vendor_eligible_ID,
@@ -2686,13 +2686,13 @@ export class ItineraryVehiclesEngine {
           persistedAllowedKmPerDay,
         });
       }
-      
-      // Convert HH:MM:SS format to decimal hours and sum
+
+ // Convert HH:MM:SS format to decimal hours and sum
       const totalTime = vehicleDetailsRecords.reduce((sum: number, record: any) => {
         const timeStr = record.total_travelled_time || '0';
-        // Handle both HH:MM:SS format and decimal format
+ // Handle both HH:MM:SS format and decimal format
         if (timeStr.includes(':')) {
-          // Parse HH:MM:SS
+ // Parse HH:MM:SS
           const parts = timeStr.split(':');
           const hours = Number(parts[0] || 0);
           const minutes = Number(parts[1] || 0);
@@ -2700,12 +2700,12 @@ export class ItineraryVehiclesEngine {
           const decimalHours = hours + (minutes / 60) + (seconds / 3600);
           return sum + decimalHours;
         } else {
-          // Already in decimal format
+ // Already in decimal format
           return sum + Number(timeStr);
         }
       }, 0);
 
-      // Aggregate driver + 6AM/8PM charges from vehicle_details (PHP parity)
+ // Aggregate driver + 6AM/8PM charges from vehicle_details (PHP parity)
       const totalDriverCharges = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.vehicle_driver_charges || 0), 0);
       const totalBefore6amDriver = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.before_6_am_charges_for_driver || 0), 0);
       const totalBefore6amVehicle = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.before_6_am_charges_for_vehicle || 0), 0);
@@ -2741,7 +2741,7 @@ export class ItineraryVehiclesEngine {
         vehicleTotalAmount + vehicleGstAmount + vendorMarginAmount + vendorMarginGstAmount,
       );
 
-      // Update eligible_list record with correct toll/permit charges and recalculated totals
+ // Update eligible_list record with correct toll/permit charges and recalculated totals
       await tx.dvi_itinerary_plan_vendor_eligible_list.update({
         where: {
           itinerary_plan_vendor_eligible_ID: eligible.itinerary_plan_vendor_eligible_ID,
@@ -2780,8 +2780,8 @@ export class ItineraryVehiclesEngine {
     }
     stageStartedAt = logStageTiming('vehicle_detail_recalculate_eligible_totals', stageStartedAt);
 
-    // Re-assign cheapest vendors AFTER final totals update.
-    // Earlier assignment can be based on provisional totals before toll/permit recalculation.
+ // Re-assign cheapest vendors AFTER final totals update.
+ // Earlier assignment can be based on provisional totals before toll/permit recalculation.
     for (const [planVehicleTypeId, requiredCount] of requiredCountByType.entries()) {
       await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
         where: {
@@ -2827,7 +2827,7 @@ export class ItineraryVehiclesEngine {
     stageStartedAt = logStageTiming('final_assignment', stageStartedAt);
 
     if (debugVehicleTrace) {
-      console.log('[VEHICLE_REBUILD_DONE]', {
+ console.log('[VEHICLE_REBUILD_DONE]', {
         planId,
         insertAttemptCount,
         insertSuccessCount,
@@ -2835,7 +2835,7 @@ export class ItineraryVehiclesEngine {
       });
     }
     if (inserted === 0) {
-      console.warn("[VEHICLE_BUILD_ZERO_ELIGIBLE_ROWS]", {
+ console.warn("[VEHICLE_BUILD_ZERO_ELIGIBLE_ROWS]", {
         planId,
         routeLocations: routes.map((route: any) => ({
           itinerary_route_ID: Number(route.itinerary_route_ID ?? 0),

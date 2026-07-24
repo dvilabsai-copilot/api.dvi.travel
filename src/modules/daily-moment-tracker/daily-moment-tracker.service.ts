@@ -30,7 +30,7 @@ export class DailyMomentTrackerService {
 
    constructor(private readonly prisma: PrismaService) {}
 
-  // ========= PUBLIC API METHODS =========
+ // ========= PUBLIC API METHODS =========
 
   async getDriverAssignmentShareDetails(driverAssignmentId: number) {
     if (!driverAssignmentId) {
@@ -76,7 +76,7 @@ export class DailyMomentTrackerService {
       throw new BadRequestException('fromDate cannot be after toDate');
     }
 
-    // 1) Base rows: confirmed plan + confirmed route (status=1, deleted=0, date range)
+ // 1) Base rows: confirmed plan + confirmed route (status=1, deleted=0, date range)
     const routes =
       await this.prisma.dvi_confirmed_itinerary_route_details.findMany({
         where: {
@@ -119,7 +119,7 @@ export class DailyMomentTrackerService {
     const planByPlanId = new Map<number, (typeof plans)[number]>();
     plans.forEach((p) => planByPlanId.set(p.itinerary_plan_ID, p));
 
-    // Filter routes to ones whose plan passes agent/plan filters
+ // Filter routes to ones whose plan passes agent/plan filters
     const filteredRoutes = routes.filter((r) =>
       planByPlanId.has(r.itinerary_plan_ID),
     );
@@ -127,14 +127,14 @@ export class DailyMomentTrackerService {
       return [];
     }
 
-    // 2) Prefetch related tables in batches to avoid N+1
+ // 2) Prefetch related tables in batches to avoid N+1
 
     const effectivePlanIds = Array.from(planByPlanId.keys());
     const routeIds = Array.from(
       new Set(filteredRoutes.map((r) => r.itinerary_route_ID)),
     );
 
-    // 2.1 Primary customer per plan
+ // 2.1 Primary customer per plan
     const customers =
       await this.prisma.dvi_confirmed_itinerary_customer_details.findMany({
         where: {
@@ -152,7 +152,7 @@ export class DailyMomentTrackerService {
       primaryCustomerByPlan.set(c.itinerary_plan_ID, c),
     );
 
-    // 2.2 Hotel + meal flags per plan+route from confirmed hotel room details
+ // 2.2 Hotel + meal flags per plan+route from confirmed hotel room details
     const hotelRoomDetails =
       await this.prisma.dvi_confirmed_itinerary_plan_hotel_room_details.findMany(
         {
@@ -165,7 +165,7 @@ export class DailyMomentTrackerService {
         },
       );
 
-    type HotelKey = string; // `${planId}:${routeId}`
+ type HotelKey = string; // `${planId}:${routeId}`
     const hotelRoomByPlanRoute = new Map<
       HotelKey,
       (typeof hotelRoomDetails)[number][]
@@ -194,14 +194,14 @@ export class DailyMomentTrackerService {
           select: {
             hotel_id: true,
             hotel_name: true,
-            // IMPORTANT: we do NOT select `updatedon` (or any other datetime)
+ // IMPORTANT: we do NOT select `updatedon` (or any other datetime)
           },
         })
       : [];
     const hotelById = new Map<number, (typeof hotels)[number]>();
     hotels.forEach((h) => hotelById.set(h.hotel_id, h));
 
-    // 2.3 Vendor + vehicle per plan+route
+ // 2.3 Vendor + vehicle per plan+route
     const planVendorVehicle =
       await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findMany(
         {
@@ -218,7 +218,7 @@ export class DailyMomentTrackerService {
             vendor_id: true,
             vehicle_id: true,
             vendor_branch_id: true,
-            // NOTE: we intentionally do NOT select total_*_time or *_duration
+ // NOTE: we intentionally do NOT select total_*_time or *_duration
           },
         },
       );
@@ -227,7 +227,7 @@ export class DailyMomentTrackerService {
     const vehicleTypeIds = new Set<number>();
     const vehicleIds = new Set<number>();
 
-    type VendorVehKey = string; // `${planId}:${routeId}`
+ type VendorVehKey = string; // `${planId}:${routeId}`
     const vendorVehByPlanRoute = new Map<
       VendorVehKey,
       (typeof planVendorVehicle)[number]
@@ -238,7 +238,7 @@ export class DailyMomentTrackerService {
         pv.itinerary_plan_id,
         pv.itinerary_route_id,
       );
-      // If multiple rows exist, we keep the first one (similar to PHP helpers)
+ // If multiple rows exist, we keep the first one (similar to PHP helpers)
       if (!vendorVehByPlanRoute.has(key)) {
         vendorVehByPlanRoute.set(key, pv);
       }
@@ -285,7 +285,7 @@ export class DailyMomentTrackerService {
     const vehicleById = new Map<number, (typeof vehicles)[number]>();
     vehicles.forEach((ve) => vehicleById.set(ve.vehicle_id, ve));
 
-    // 2.4 Driver assignment per plan
+ // 2.4 Driver assignment per plan
     const driverAssignments =
       await this.prisma.dvi_confirmed_itinerary_vendor_driver_assigned.findMany(
         {
@@ -325,7 +325,7 @@ export class DailyMomentTrackerService {
     const driverById = new Map<number, (typeof drivers)[number]>();
     drivers.forEach((d) => driverById.set(d.driver_id, d));
 
-    // 2.5 Activities (for special_remarks)
+ // 2.5 Activities (for special_remarks)
     const routeActivities =
       await this.prisma.dvi_confirmed_itinerary_route_activity_details.findMany(
         {
@@ -342,7 +342,7 @@ export class DailyMomentTrackerService {
       );
 
     const activityIds = new Set<number>();
-    type ActivityKey = string; // `${planId}:${routeId}`
+ type ActivityKey = string; // `${planId}:${routeId}`
     const activityByPlanRoute = new Map<
       ActivityKey,
       (typeof routeActivities)[number]
@@ -354,7 +354,7 @@ export class DailyMomentTrackerService {
         ra.itinerary_route_ID,
       );
       if (!activityByPlanRoute.has(key)) {
-        activityByPlanRoute.set(key, ra); // first ordered activity only, like PHP helper
+ activityByPlanRoute.set(key, ra); // first ordered activity only, like PHP helper
       }
       if (ra.activity_ID) activityIds.add(ra.activity_ID);
     });
@@ -371,7 +371,7 @@ export class DailyMomentTrackerService {
     const activityById = new Map<number, (typeof activities)[number]>();
     activities.forEach((a) => activityById.set(a.activity_id, a));
 
-    // 2.6 Agent + Travel Expert (for TRAVEL EXPERT column)
+ // 2.6 Agent + Travel Expert (for TRAVEL EXPERT column)
 
     const agentIds = new Set<number>();
     plans.forEach((p) => {
@@ -425,7 +425,7 @@ export class DailyMomentTrackerService {
       travelExpertById.set(te.staff_id, te),
     );
 
-    // 3) Build final rows like PHP
+ // 3) Build final rows like PHP
     let counter = 0;
     const rows: DailyMomentRowDto[] = [];
 
@@ -441,7 +441,7 @@ export class DailyMomentTrackerService {
       const location_name = route.location_name ?? '';
       const next_visiting_location = route.next_visiting_location ?? '';
 
-      // Guest + flights
+ // Guest + flights
       const customer = primaryCustomerByPlan.get(itinerary_plan_ID);
       const guest_name = customer?.customer_name ?? '';
 
@@ -454,7 +454,7 @@ export class DailyMomentTrackerService {
       const departure_flight_details =
         customer?.departure_flight_details ?? '';
 
-      // Activity label + special instructions
+ // Activity label + special instructions
       const actKey = this.mkPlanRouteKey(
         itinerary_plan_ID,
         itinerary_route_ID,
@@ -484,7 +484,7 @@ export class DailyMomentTrackerService {
         special_remarks_final = special_instructions;
       }
 
-      // Hotel name + meal plan
+ // Hotel name + meal plan
       const hotelKey = this.mkPlanRouteKey(
         itinerary_plan_ID,
         itinerary_route_ID,
@@ -500,7 +500,7 @@ export class DailyMomentTrackerService {
         if (hr0.hotel_id && hotelById.has(hr0.hotel_id)) {
           hotel_name = hotelById.get(hr0.hotel_id)!.hotel_name ?? '';
         }
-        // If any room for that route has meal flags, switch from '-' to B/L/D
+ // If any room for that route has meal flags, switch from '-' to B/L/D
         if (hotelRooms.some((h) => h.breakfast_required === 1))
           meal_breakfast_plan = 'B';
         if (hotelRooms.some((h) => h.lunch_required === 1))
@@ -509,7 +509,7 @@ export class DailyMomentTrackerService {
           meal_dinner_plan = 'D';
       }
 
-      // Vendor, vehicle type, vehicle no
+ // Vendor, vehicle type, vehicle no
       const vv = vendorVehByPlanRoute.get(hotelKey);
       let vendor_name = '';
       let vehicle_type_title = '';
@@ -530,7 +530,7 @@ export class DailyMomentTrackerService {
         }
       }
 
-      // Driver
+ // Driver
       const driverAssignment =
         driverAssignmentByPlan.get(itinerary_plan_ID);
       let driver_name = '';
@@ -546,7 +546,7 @@ export class DailyMomentTrackerService {
         driver_mobile = drv.driver_primary_mobile_number ?? '';
       }
 
-      // Agent + travel expert
+ // Agent + travel expert
       let agent_name = '';
       let travel_expert_name = '';
       let travel_expert_mobile = '';
@@ -567,7 +567,7 @@ export class DailyMomentTrackerService {
         }
       }
 
-      // Trip type
+ // Trip type
       const tripStartDate = plan.trip_start_date_and_time
         ? this.formatDateYYYYMMDD(plan.trip_start_date_and_time)
         : '';
@@ -586,7 +586,7 @@ export class DailyMomentTrackerService {
         trip_type = 'Ongoing';
       }
 
-      // Format route date as dd-mm-YYYY like PHP
+ // Format route date as dd-mm-YYYY like PHP
       const route_date =
         this.formatDateDDMMYYYY(itinerary_route_date);
 
@@ -627,9 +627,9 @@ export class DailyMomentTrackerService {
     return rows;
   }
 
-  /**
+ /**
    * List extra charges for a given plan+route (car icon popup).
-   */
+ */
   async listCharges(
     itineraryPlanId: number,
     itineraryRouteId: number,
@@ -664,9 +664,9 @@ export class DailyMomentTrackerService {
     }));
   }
 
-  /**
+ /**
    * Create / update an extra charge row (form behind car icon).
-   */
+ */
   async upsertCharge(
     dto: UpsertDailyMomentChargeDto,
   ): Promise<DailyMomentChargeRowDto> {
@@ -730,9 +730,9 @@ export class DailyMomentTrackerService {
     };
   }
 
-  /**
+ /**
    * Driver rating list (uses dvi_confirmed_itinerary_driver_feedback)
-   */
+ */
   async listDriverRatings(
     itineraryPlanId: number,
   ): Promise<DriverRatingRowDto[]> {
@@ -793,9 +793,9 @@ export class DailyMomentTrackerService {
     return rows;
   }
 
-  /**
+ /**
    * Guide rating list (route_guide_details + latest guide_review_details)
-   */
+ */
   async listGuideRatings(
     itineraryPlanId: number,
   ): Promise<GuideRatingRowDto[]> {
@@ -896,14 +896,14 @@ export class DailyMomentTrackerService {
     return rows;
   }
 
-  /**
+ /**
    * Day-wise hotspot cards for a given plan + route.
    * Powers the pink cards with place name, time and Visited / Not-Visited buttons.
    *
    * Tables used:
    * - dvi_confirmed_itinerary_route_hotspot_details  (per-stop details, statuses, times)
    * - dvi_hotspot_place                               (master hotspot name/location)
-   */
+ */
   async listRouteHotspots(
     itineraryPlanId: number,
     itineraryRouteId: number,
@@ -914,7 +914,7 @@ export class DailyMomentTrackerService {
       );
     }
 
-    // 1) All hotspots for this plan + route
+ // 1) All hotspots for this plan + route
     const hotspotRows =
       await this.prisma.dvi_confirmed_itinerary_route_hotspot_details.findMany(
         {
@@ -934,7 +934,7 @@ export class DailyMomentTrackerService {
       return [];
     }
 
-    // 2) Load hotspot master records (name / location)
+ // 2) Load hotspot master records (name / location)
     const hotspotIds = Array.from(
       new Set(
         hotspotRows
@@ -959,7 +959,7 @@ export class DailyMomentTrackerService {
     >();
     hotspotMasters.forEach((h) => hotspotMasterById.set(h.hotspot_ID, h));
 
-    // 3) Build DTO rows
+ // 3) Build DTO rows
     const rows: DailyMomentHotspotRowDto[] = [];
 
     hotspotRows.forEach((row, index) => {
@@ -999,12 +999,12 @@ export class DailyMomentTrackerService {
     return rows;
   }
 
-  // ========= HELPER METHODS =========
+ // ========= HELPER METHODS =========
 
   private parseDate(input: string): Date {
     const trimmed = input.trim();
 
-    // Support DD-MM-YYYY (from old PHP UI)
+ // Support DD-MM-YYYY (from old PHP UI)
     const ddmmyyyy = /^(\d{2})-(\d{2})-(\d{4})$/;
     const m = trimmed.match(ddmmyyyy);
     if (m) {
@@ -1012,7 +1012,7 @@ export class DailyMomentTrackerService {
       return new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
     }
 
-    // Fallback: let JS parse ISO-like inputs
+ // Fallback: let JS parse ISO-like inputs
     const d = new Date(trimmed);
     if (isNaN(d.getTime())) {
       throw new BadRequestException(`Invalid date: ${input}`);
@@ -1093,12 +1093,12 @@ export class DailyMomentTrackerService {
     return plain === '' ? '--' : value;
   }
 
-  // ========= DAY VIEW =========
+ // ========= DAY VIEW =========
 
-  /**
+ /**
    * Full multi-day view for a given itinerary plan.
    * Returns plan header + per-day data (routes, hotspots, guide, KM).
-   */
+ */
   async getDayView(planId: number): Promise<DayViewPlanDto> {
     if (!planId) throw new BadRequestException('planId is required');
 
@@ -1120,7 +1120,7 @@ export class DailyMomentTrackerService {
 
     if (!plan) throw new BadRequestException('Plan not found');
 
-    // Guest (primary customer)
+ // Guest (primary customer)
     const guest =
       await this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
         where: {
@@ -1131,7 +1131,7 @@ export class DailyMomentTrackerService {
         },
       });
 
-    // Travel expert
+ // Travel expert
     let travelExpertName = '';
     let travelExpertMobile = '';
     let travelExpertEmail = '';
@@ -1140,7 +1140,7 @@ export class DailyMomentTrackerService {
         where: { staff_id: plan.staff_id, deleted: 0 },
       });
       if (!staff) {
-        // Staff not yet in dvi_main — try fetching directly from legacy DB
+ // Staff not yet in dvi_main try fetching directly from legacy DB
         const legacyDb = this.legacyPhpDbName.replace(/`/g, '');
         const legacyRows = await this.prisma.$queryRawUnsafe<
           Array<{ staff_id: number; staff_name: string; staff_email: string; staff_mobile_number: string }>
@@ -1151,7 +1151,7 @@ export class DailyMomentTrackerService {
         if (legacyRows.length) {
           staff = legacyRows[0] as any;
         } else {
-          // Try dvi_staff_details (the table used for travel experts in the legacy system)
+ // Try dvi_staff_details (the table used for travel experts in the legacy system)
           const detailRows = await this.prisma.$queryRawUnsafe<
             Array<{ staff_id: number; staff_name: string; staff_mobile: string; staff_email: string }>
           >(
@@ -1169,8 +1169,8 @@ export class DailyMomentTrackerService {
       travelExpertEmail = staff?.staff_email ?? '';
     }
 
-    // PHP parity fallback: derive travel expert from agent.travel_expert_id
-    // when plan.staff_id is not populated.
+ // PHP parity fallback: derive travel expert from agent.travel_expert_id
+ // when plan.staff_id is not populated.
     if (!travelExpertName && plan.agent_id) {
       const agent = await this.prisma.dvi_agent.findFirst({
         where: { agent_ID: plan.agent_id, deleted: 0, status: 1 },
@@ -1197,7 +1197,7 @@ export class DailyMomentTrackerService {
       }
     }
 
-    // All routes for this plan
+ // All routes for this plan
     const routes =
       await this.prisma.dvi_confirmed_itinerary_route_details.findMany({
         where: { itinerary_plan_ID: effectivePlanId, deleted: 0, status: 1 },
@@ -1206,7 +1206,7 @@ export class DailyMomentTrackerService {
 
     const routeIds = routes.map((r) => r.confirmed_itinerary_route_ID);
 
-    // KM data per route
+ // KM data per route
     const vehicleRows =
       routeIds.length
         ? await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findMany(
@@ -1221,7 +1221,7 @@ export class DailyMomentTrackerService {
             },
           )
         : [];
-    // keyed by itinerary_route_id (first row wins)
+ // keyed by itinerary_route_id (first row wins)
     const kmByRouteId = new Map<number, (typeof vehicleRows)[0]>();
     vehicleRows.forEach((v) => {
       if (!kmByRouteId.has(v.itinerary_route_id)) {
@@ -1229,7 +1229,7 @@ export class DailyMomentTrackerService {
       }
     });
 
-    // Hotspots per route
+ // Hotspots per route
     const hotspotRows =
       routeIds.length
         ? await this.prisma.dvi_confirmed_itinerary_route_hotspot_details.findMany(
@@ -1254,7 +1254,7 @@ export class DailyMomentTrackerService {
     const hotspotMasterById = new Map<number, (typeof hotspotMasters)[0]>();
     hotspotMasters.forEach((h) => hotspotMasterById.set(h.hotspot_ID, h));
 
-    // Guides per route
+ // Guides per route
     const guideRows =
       routeIds.length
         ? await this.prisma.dvi_confirmed_itinerary_route_guide_details.findMany(
@@ -1278,7 +1278,7 @@ export class DailyMomentTrackerService {
     const guideById = new Map<number, (typeof guideDetails)[0]>();
     guideDetails.forEach((g) => guideById.set(g.guide_id, g));
 
-    // Activities per route+hotspot
+ // Activities per route+hotspot
     const routeActivityRows = routeIds.length
       ? await this.prisma.dvi_confirmed_itinerary_route_activity_details.findMany({
           where: {
@@ -1314,7 +1314,7 @@ export class DailyMomentTrackerService {
       }
     });
 
-    // Hotel + meal info
+ // Hotel + meal info
     const hotelRoomRows = routeIds.length
       ? await this.prisma.dvi_confirmed_itinerary_plan_hotel_room_details.findMany({
           where: {
@@ -1341,7 +1341,7 @@ export class DailyMomentTrackerService {
       hotelRoomsByRoute.set(h.itinerary_route_id, arr);
     });
 
-    // Vendor + vehicle + driver info
+ // Vendor + vehicle + driver info
     const vendorVehicleRows = routeIds.length
       ? await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findMany({
           where: {
@@ -1408,7 +1408,7 @@ export class DailyMomentTrackerService {
         })
       : null;
 
-    // Assemble days
+ // Assemble days
     const days: DayViewDayDto[] = routes.map((route, idx) => {
       const routeId = route.itinerary_route_ID;
       const km = kmByRouteId.get(routeId);
@@ -1576,10 +1576,10 @@ export class DailyMomentTrackerService {
     } as DayViewPlanDto;
   }
 
-  /**
+ /**
    * Import a missing itinerary from legacy PHP DB (default db: dvi_travels)
    * into current Nest DB (dvi_main). Returns resolved itinerary_plan_ID.
-   */
+ */
   private async tryImportLegacyPhpPlan(
     requestedPlanId: number,
   ): Promise<number | null> {
@@ -1618,7 +1618,7 @@ export class DailyMomentTrackerService {
 
       if (alreadyExists) return sourceItineraryPlanId;
 
-      this.logger.warn(
+ this.logger.warn(
         `Plan ${requestedPlanId} missing in dvi_main; importing itinerary_plan_ID=${sourceItineraryPlanId} from ${legacyDb}`,
       );
 
@@ -1686,7 +1686,7 @@ export class DailyMomentTrackerService {
         try {
           await this.prisma.$executeRawUnsafe(sql, sourceItineraryPlanId);
         } catch (e) {
-          this.logger.warn(
+ this.logger.warn(
             `Legacy import: skipped ${label} for plan ${sourceItineraryPlanId} (${e instanceof Error ? e.message : String(e)})`,
           );
         }
@@ -1762,7 +1762,7 @@ export class DailyMomentTrackerService {
 
       return sourceItineraryPlanId;
     } catch (error) {
-      this.logger.error(
+ this.logger.error(
         `Legacy PHP import failed for plan ${requestedPlanId}`,
         error instanceof Error ? error.stack : String(error),
       );
@@ -1770,7 +1770,7 @@ export class DailyMomentTrackerService {
     }
   }
 
-  // ========= STATUS UPDATES =========
+ // ========= STATUS UPDATES =========
 
   async updateHotspotStatus(dto: {
     confirmedRouteHotspotId: number;
@@ -1852,7 +1852,7 @@ export class DailyMomentTrackerService {
     });
   }
 
-  // ========= DELETE CHARGE =========
+ // ========= DELETE CHARGE =========
 
   async deleteCharge(driverChargeId: number): Promise<void> {
     if (!driverChargeId) throw new BadRequestException('id is required');
@@ -1862,7 +1862,7 @@ export class DailyMomentTrackerService {
     });
   }
 
-  // ========= DRIVER RATING CRUD =========
+ // ========= DRIVER RATING CRUD =========
 
   async upsertDriverRating(dto: UpsertDriverRatingDto): Promise<{ driver_feedback_ID: number }> {
     if (dto.driverFeedbackId) {
@@ -1966,7 +1966,7 @@ export class DailyMomentTrackerService {
     });
   }
 
-  // ========= KILOMETER =========
+ // ========= KILOMETER =========
 
   async saveOpeningKm(dto: SaveOpeningKmDto): Promise<void> {
     const { itineraryPlanId, itineraryRouteId, startingKilometer } = dto;
@@ -1974,7 +1974,7 @@ export class DailyMomentTrackerService {
       throw new BadRequestException('startingKilometer is required');
     }
 
-    // Update first matching vendor vehicle row for plan+route
+ // Update first matching vendor vehicle row for plan+route
     const row =
       await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findFirst(
         {
@@ -2039,7 +2039,7 @@ export class DailyMomentTrackerService {
       },
     );
 
-    // Mark route as completed
+ // Mark route as completed
     const route =
       await this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
         where: {

@@ -17,9 +17,9 @@ export class ItineraryCancellationService {
   ) {}
 
   async cancelItinerary(dto: CancelItineraryDto) {
-    const userId = 1; // TODO: Get from authenticated user
+ const userId = 1; // TODO: Get from authenticated user
 
-    // Validation
+ // Validation
     if (!dto.itinerary_plan_ID) {
       throw new BadRequestException('Itinerary Plan ID is required');
     }
@@ -28,7 +28,7 @@ export class ItineraryCancellationService {
       throw new BadRequestException('Cancellation reason is required');
     }
 
-    // Check if itinerary exists
+ // Check if itinerary exists
     const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
       where: { itinerary_plan_ID: dto.itinerary_plan_ID, deleted: 0 },
     });
@@ -37,9 +37,9 @@ export class ItineraryCancellationService {
       throw new NotFoundException(`Confirmed itinerary not found for Plan ID: ${dto.itinerary_plan_ID}`);
     }
 
-    // Check if already cancelled
+ // Check if already cancelled
     const existingCancellation = await this.prisma.dvi_cancelled_itineraries.findFirst({
-      where: { 
+      where: {
         itinerary_plan_id: dto.itinerary_plan_ID,
         deleted: 0,
       },
@@ -49,7 +49,7 @@ export class ItineraryCancellationService {
       throw new ConflictException(`Itinerary already cancelled. Cancellation ID: ${existingCancellation.cancelled_itinerary_ID}`);
     }
 
-    // Determine cancellation options (backward compatibility)
+ // Determine cancellation options (backward compatibility)
     const cancellationOptions = dto.cancellation_options || {
       modify_hotspot: dto.cancel_hotspot ?? true,
       modify_hotel: dto.cancel_hotel ?? true,
@@ -58,19 +58,19 @@ export class ItineraryCancellationService {
       modify_activity: dto.cancel_activity ?? true,
     };
 
-    // Calculate amounts
+ // Calculate amounts
     const totalAmount = confirmedPlan.itinerary_total_net_payable_amount || 0;
     const percentage = Number(dto.cancellation_percentage) || 10;
     const cancellationCharge = Math.round((totalAmount * percentage) / 100);
     const refundAmount = Math.max(0, totalAmount - cancellationCharge);
 
-    // Generate cancellation reference
+ // Generate cancellation reference
     const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
     const cancellationReference = `CANCEL_${timestamp}_${dto.itinerary_plan_ID}`;
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // 1. Create cancellation record with selective options
+ // 1. Create cancellation record with selective options
         const cancellation = await tx.dvi_cancelled_itineraries.create({
           data: {
             itinerary_plan_id: Number(dto.itinerary_plan_ID),
@@ -103,45 +103,45 @@ export class ItineraryCancellationService {
           activities_cancelled: 0,
         };
 
-        // 2. Process selective cancellations
-        // Cancel hotspots
+ // 2. Process selective cancellations
+ // Cancel hotspots
         if (cancellationOptions.modify_hotspot) {
           const hotspotCount = await this.cancelHotspots(tx, dto.itinerary_plan_ID, cancellation.cancelled_itinerary_ID, userId);
           cancellationDetails.hotspots_cancelled = hotspotCount;
         }
 
-        // Cancel hotels
+ // Cancel hotels
         if (cancellationOptions.modify_hotel) {
           const hotelCount = await this.cancelHotels(tx, dto.itinerary_plan_ID, cancellation.cancelled_itinerary_ID, userId);
           cancellationDetails.hotels_cancelled = hotelCount;
         }
 
-        // Cancel vehicles
+ // Cancel vehicles
         if (cancellationOptions.modify_vehicle) {
           const vehicleCount = await this.cancelVehicles(tx, dto.itinerary_plan_ID, cancellation.cancelled_itinerary_ID, userId);
           cancellationDetails.vehicles_cancelled = vehicleCount;
         }
 
-        // Cancel guides
+ // Cancel guides
         if (cancellationOptions.modify_guide) {
           const guideCount = await this.cancelGuides(tx, dto.itinerary_plan_ID, cancellation.cancelled_itinerary_ID, userId);
           cancellationDetails.guides_cancelled = guideCount;
         }
 
-        // Cancel activities
+ // Cancel activities
         if (cancellationOptions.modify_activity) {
           const activityCount = await this.cancelActivities(tx, dto.itinerary_plan_ID, cancellation.cancelled_itinerary_ID, userId);
           cancellationDetails.activities_cancelled = activityCount;
         }
 
-        // 3. Refund to wallet
+ // 3. Refund to wallet
         if (refundAmount > 0) {
           await tx.dvi_cash_wallet.create({
             data: {
               agent_id: confirmedPlan.agent_id,
               transaction_date: new Date(),
               transaction_amount: Math.round(refundAmount),
-              transaction_type: 1, // Credit
+ transaction_type: 1, // Credit
               remarks: `Refund for Cancelled Itinerary: ${confirmedPlan.itinerary_quote_ID} - ${cancellationReference}`,
               transaction_id: confirmedPlan.itinerary_quote_ID,
               createdby: userId,
@@ -151,7 +151,7 @@ export class ItineraryCancellationService {
             },
           });
 
-          // Log refund processing
+ // Log refund processing
           await this.logCancellationAction(
             tx,
             cancellation.cancelled_itinerary_ID,
@@ -162,18 +162,18 @@ export class ItineraryCancellationService {
           );
         }
 
-        // 4. Update plan statuses
-        const isFullCancellation = 
+ // 4. Update plan statuses
+        const isFullCancellation =
           cancellationOptions.modify_hotspot &&
           cancellationOptions.modify_hotel &&
           cancellationOptions.modify_vehicle;
 
         if (isFullCancellation) {
-          // Full cancellation - update status to cancelled
+ // Full cancellation - update status to cancelled
           await tx.dvi_itinerary_plan_details.update({
             where: { itinerary_plan_ID: dto.itinerary_plan_ID },
             data: {
-              quotation_status: 2, // Cancelled
+ quotation_status: 2, // Cancelled
               updatedon: new Date(),
             },
           });
@@ -186,17 +186,17 @@ export class ItineraryCancellationService {
             },
           });
         } else {
-          // Partial cancellation - mark as partially cancelled
+ // Partial cancellation - mark as partially cancelled
           await tx.dvi_confirmed_itinerary_plan_details.update({
             where: { confirmed_itinerary_plan_ID: confirmedPlan.confirmed_itinerary_plan_ID },
             data: {
-              itinerary_cancellation_status: 2, // Partially cancelled
+ itinerary_cancellation_status: 2, // Partially cancelled
               updatedon: new Date(),
             },
           });
         }
 
-        // 5. Update cancellation status to completed
+ // 5. Update cancellation status to completed
         await tx.dvi_cancelled_itineraries.update({
           where: { cancelled_itinerary_ID: cancellation.cancelled_itinerary_ID },
           data: {
@@ -205,7 +205,7 @@ export class ItineraryCancellationService {
           },
         });
 
-        // 6. Log completion
+ // 6. Log completion
         await this.logCancellationAction(
           tx,
           cancellation.cancelled_itinerary_ID,
@@ -215,7 +215,7 @@ export class ItineraryCancellationService {
           userId,
         );
 
-        // 7. Send notifications (async, don't wait)
+ // 7. Send notifications (async, don't wait)
         this.sendCancellationNotifications(
           confirmedPlan,
           cancellationReference,
@@ -223,13 +223,13 @@ export class ItineraryCancellationService {
           refundAmount,
           cancellationOptions,
         ).catch(err => {
-          console.error('Error sending cancellation notifications:', err);
+ console.error('Error sending cancellation notifications:', err);
         });
 
         return {
           success: true,
-          message: isFullCancellation 
-            ? 'Itinerary cancelled successfully' 
+          message: isFullCancellation
+            ? 'Itinerary cancelled successfully'
             : 'Selected itinerary components cancelled successfully',
           data: {
             cancellation_id: cancellation.cancelled_itinerary_ID,
@@ -246,21 +246,21 @@ export class ItineraryCancellationService {
         timeout: 120000,
       });
     } catch (error) {
-      if (error instanceof BadRequestException || 
-          error instanceof NotFoundException || 
+      if (error instanceof BadRequestException ||
+          error instanceof NotFoundException ||
           error instanceof ConflictException) {
         throw error;
       }
-      console.error('Cancellation processing error:', error);
+ console.error('Cancellation processing error:', error);
       throw new Error(`Cancellation processing failed: ${error.message}`);
     }
   }
 
-  // Helper methods for selective cancellation
+ // Helper methods for selective cancellation
   private async cancelHotspots(tx: any, itineraryPlanId: number, cancellationId: number, userId: number): Promise<number> {
     try {
       const hotspots = await tx.dvi_itinerary_route_hotspot_details.findMany({
-        where: { 
+        where: {
           itinerary_plan_ID: itineraryPlanId,
           deleted: 0,
         },
@@ -268,12 +268,12 @@ export class ItineraryCancellationService {
 
       if (hotspots.length > 0) {
         await tx.dvi_itinerary_route_hotspot_details.updateMany({
-          where: { 
+          where: {
             itinerary_plan_ID: itineraryPlanId,
             deleted: 0,
           },
           data: {
-            status: 0, // Cancelled
+ status: 0, // Cancelled
             updatedon: new Date(),
           },
         });
@@ -307,51 +307,51 @@ export class ItineraryCancellationService {
   private async cancelHotels(tx: any, itineraryPlanId: number, cancellationId: number, userId: number): Promise<number> {
     try {
       const hotels = await tx.dvi_itinerary_plan_hotel_details.findMany({
-        where: { 
+        where: {
           itinerary_plan_id: itineraryPlanId,
           deleted: 0,
         },
       });
 
       if (hotels.length > 0) {
-        // Cancel TBO bookings via API BEFORE updating database
+ // Cancel TBO bookings via API BEFORE updating database
         try {
           const tboCancellationResults = await this.tboHotelBooking.cancelItineraryHotels(
             itineraryPlanId,
             'Itinerary cancelled by user',
           );
 
-          console.log(`[TBO Cancellation] Results:`, tboCancellationResults);
+ console.log(`[TBO Cancellation] Results:`, tboCancellationResults);
         } catch (error) {
-          console.error(`[TBO Cancellation] Failed but continuing with DB updates:`, error.message);
-          // Continue with database updates even if TBO cancellation fails
+ console.error(`[TBO Cancellation] Failed but continuing with DB updates:`, error.message);
+ // Continue with database updates even if TBO cancellation fails
         }
 
-        // Cancel ResAvenue bookings via API
+ // Cancel ResAvenue bookings via API
         try {
           const resavenueCancellationResults = await this.resavenueHotelBooking.cancelItineraryHotels(
             itineraryPlanId,
             'Itinerary cancelled by user',
           );
 
-          console.log(`[ResAvenue Cancellation] Results:`, resavenueCancellationResults);
+ console.log(`[ResAvenue Cancellation] Results:`, resavenueCancellationResults);
         } catch (error) {
-          console.error(`[ResAvenue Cancellation] Failed but continuing with DB updates:`, error.message);
-          // Continue with database updates even if ResAvenue cancellation fails
+ console.error(`[ResAvenue Cancellation] Failed but continuing with DB updates:`, error.message);
+ // Continue with database updates even if ResAvenue cancellation fails
         }
 
-        // Cancel HOBSE bookings via API
+ // Cancel HOBSE bookings via API
         try {
           await this.hobseHotelBooking.cancelItineraryHotels(itineraryPlanId);
-          console.log(`[HOBSE Cancellation] Successfully processed`);
+ console.log(`[HOBSE Cancellation] Successfully processed`);
         } catch (error) {
-          console.error(`[HOBSE Cancellation] Failed but continuing with DB updates:`, error.message);
-          // Continue with database updates even if HOBSE cancellation fails
+ console.error(`[HOBSE Cancellation] Failed but continuing with DB updates:`, error.message);
+ // Continue with database updates even if HOBSE cancellation fails
         }
 
-        // Mark hotels as cancelled
+ // Mark hotels as cancelled
         await tx.dvi_itinerary_plan_hotel_details.updateMany({
-          where: { 
+          where: {
             itinerary_plan_id: itineraryPlanId,
             deleted: 0,
           },
@@ -361,7 +361,7 @@ export class ItineraryCancellationService {
           },
         });
 
-        // Copy to cancelled hotel details table if exists
+ // Copy to cancelled hotel details table if exists
         for (const hotel of hotels) {
           try {
             await tx.dvi_cancelled_itinerary_plan_hotel_details.create({
@@ -378,7 +378,7 @@ export class ItineraryCancellationService {
               },
             });
           } catch (err) {
-            console.error('Error creating cancelled hotel record:', err);
+ console.error('Error creating cancelled hotel record:', err);
           }
         }
 
@@ -411,7 +411,7 @@ export class ItineraryCancellationService {
   private async cancelVehicles(tx: any, itineraryPlanId: number, cancellationId: number, userId: number): Promise<number> {
     try {
       const vehicles = await tx.dvi_itinerary_plan_vehicle_details.findMany({
-        where: { 
+        where: {
           itinerary_plan_id: itineraryPlanId,
           deleted: 0,
         },
@@ -419,12 +419,12 @@ export class ItineraryCancellationService {
 
       if (vehicles.length > 0) {
         await tx.dvi_itinerary_plan_vehicle_details.updateMany({
-          where: { 
+          where: {
             itinerary_plan_id: itineraryPlanId,
             deleted: 0,
           },
           data: {
-            status: 0, // Cancelled
+ status: 0, // Cancelled
             updatedon: new Date(),
           },
         });
@@ -458,7 +458,7 @@ export class ItineraryCancellationService {
   private async cancelGuides(tx: any, itineraryPlanId: number, cancellationId: number, userId: number): Promise<number> {
     try {
       const guides = await tx.dvi_itinerary_route_guide_details.findMany({
-        where: { 
+        where: {
           itinerary_plan_ID: itineraryPlanId,
           deleted: 0,
         },
@@ -466,12 +466,12 @@ export class ItineraryCancellationService {
 
       if (guides.length > 0) {
         await tx.dvi_itinerary_route_guide_details.updateMany({
-          where: { 
+          where: {
             itinerary_plan_ID: itineraryPlanId,
             deleted: 0,
           },
           data: {
-            status: 0, // Cancelled
+ status: 0, // Cancelled
             updatedon: new Date(),
           },
         });
@@ -505,7 +505,7 @@ export class ItineraryCancellationService {
   private async cancelActivities(tx: any, itineraryPlanId: number, cancellationId: number, userId: number): Promise<number> {
     try {
       const activities = await tx.dvi_itinerary_route_activity_details.findMany({
-        where: { 
+        where: {
           itinerary_plan_ID: itineraryPlanId,
           deleted: 0,
         },
@@ -513,12 +513,12 @@ export class ItineraryCancellationService {
 
       if (activities.length > 0) {
         await tx.dvi_itinerary_route_activity_details.updateMany({
-          where: { 
+          where: {
             itinerary_plan_ID: itineraryPlanId,
             deleted: 0,
           },
           data: {
-            status: 0, // Cancelled
+ status: 0, // Cancelled
             updatedon: new Date(),
           },
         });
@@ -580,9 +580,9 @@ export class ItineraryCancellationService {
     refundAmount: number,
     cancellationOptions: any,
   ): Promise<void> {
-    // TODO: Implement notification logic
-    // This could send emails, SMS, push notifications, etc.
-    console.log('Sending cancellation notifications:', {
+ // TODO: Implement notification logic
+ // This could send emails, SMS, push notifications, etc.
+ console.log('Sending cancellation notifications:', {
       itineraryId: confirmedPlan.itinerary_plan_ID,
       agentId: confirmedPlan.agent_id,
       cancellationReference,
@@ -590,13 +590,13 @@ export class ItineraryCancellationService {
       refundAmount,
       cancellationOptions,
     });
-    
-    // Example: Send email notification
-    // await this.emailService.sendCancellationEmail({
-    //   to: confirmedPlan.customer_email,
-    //   subject: `Itinerary Cancellation - ${cancellationReference}`,
-    //   body: `Your itinerary has been cancelled. Refund amount: ${refundAmount}`,
-    // });
+
+ // Example: Send email notification
+ // await this.emailService.sendCancellationEmail({
+ // to: confirmedPlan.customer_email,
+ // subject: `Itinerary Cancellation - ${cancellationReference}`,
+ // body: `Your itinerary has been cancelled. Refund amount: ${refundAmount}`,
+ // });
   }
 
 }

@@ -35,7 +35,7 @@ export class ItineraryActivityAvailabilityService {
       },
       orderBy: { activity_title: 'asc' },
     });
-  
+
     const activitiesWithSlots = await Promise.all(
       activities.map(async (a: any) => {
         const [timeSlots, pricing] = await Promise.all([
@@ -61,14 +61,14 @@ export class ItineraryActivityAvailabilityService {
             hotspotId,
           }),
         ]);
-  
+
         return {
           id: a.activity_id,
           title: a.activity_title || '',
           description: a.activity_description || '',
           duration: a.activity_duration || null,
           maxPersons: a.max_allowed_person_count || 0,
-  
+
           pricingUnitType: pricing.pricingUnitType,
           priceUnitLabel: pricing.priceUnitLabel,
           nationalityType: pricing.nationalityType,
@@ -80,7 +80,7 @@ export class ItineraryActivityAvailabilityService {
           totalAmount: pricing.totalAmount,
           totalPrice: pricing.totalAmount,
           priceDate: pricing.priceDate,
-  
+
           timeSlots: timeSlots.map((ts: any) => ({
             id: ts.activity_time_slot_ID,
             type: ts.time_slot_type,
@@ -91,9 +91,9 @@ export class ItineraryActivityAvailabilityService {
         };
       }),
     );
-  
+
     return activitiesWithSlots;
   }
-  
+
 
 }

@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 function resolveBackendRoot(): string {
-  // Works for both src/main.ts (dev) and dist/main.js (prod).
+ // Works for both src/main.ts (dev) and dist/main.js (prod).
   const candidate = path.resolve(__dirname, '..');
   return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : process.cwd();
 }
@@ -25,26 +25,26 @@ function resolveBackendRoot(): string {
   return this.toString();
 };
 try {
-  // Optional: stringify Prisma Decimal everywhere
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+ // Optional: stringify Prisma Decimal everywhere
+ // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { Prisma } = require('@prisma/client');
   (Prisma.Decimal.prototype as any).toJSON = function () {
     return this.toString();
   };
 } catch {
-  /* ignore if Prisma isn't ready at build time */
+ /* ignore if Prisma isn't ready at build time */
 }
 // ---------------------------------------------------------------
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
 
-  // Allow large STAAH ARI inventory/rate/restriction payloads.
-  // Default Express JSON limit is too small for multi-date ARI pushes.
+ // Allow large STAAH ARI inventory/rate/restriction payloads.
+ // Default Express JSON limit is too small for multi-date ARI pushes.
   app.use(express.json({ limit: '25mb' }));
   app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
-  // Trust reverse proxy when explicitly configured (required for accurate client IP behind Nginx/LB).
+ // Trust reverse proxy when explicitly configured (required for accurate client IP behind Nginx/LB).
   const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
   if (trustProxyRaw) {
     const trustProxyValue =
@@ -62,21 +62,21 @@ async function bootstrap() {
     }
   }
 
-  // Serve publicly accessible files from <appRoot>/public/uploads at /uploads/*
+ // Serve publicly accessible files from <appRoot>/public/uploads at /uploads/*
   const uploadsRoot = path.join(resolveBackendRoot(), 'public', 'uploads');
   try {
     fs.mkdirSync(uploadsRoot, { recursive: true });
   } catch {
-    // no-op
+ // no-op
   }
   app.use('/uploads', express.static(uploadsRoot));
 
-  // Keep existing REST prefix while allowing GraphQL v2 to live at /api/v2/graphql.
+ // Keep existing REST prefix while allowing GraphQL v2 to live at /api/v2/graphql.
   app.setGlobalPrefix('api/v1', {
     exclude: [{ path: 'api/v2/graphql', method: RequestMethod.ALL }],
   });
 
-  // ✅ Enable DTO validation + numeric transform for query/params/body
+ // Enable DTO validation + numeric transform for query/params/body
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
@@ -86,10 +86,10 @@ async function bootstrap() {
     }),
   );
 
-  // Serialize BigInt & Decimal in ALL responses
+ // Serialize BigInt & Decimal in ALL responses
   app.useGlobalInterceptors(new BigIntSerializerInterceptor());
 
-  // Swagger
+ // Swagger
   const config = new DocumentBuilder()
     .setTitle('DVI Backend APIs')
     .setDescription('Hotels & Itineraries APIs with RBAC (admin/agent/vendor)')
@@ -100,7 +100,7 @@ async function bootstrap() {
       bearerFormat: 'JWT',
       description:
         'Paste the JWT access token from /api/v1/auth/login here (without "Bearer " prefix).',
-    }) // <-- default name = 'bearer'
+ }) // <-- default name = 'bearer'
     .build();
 
   const doc = ensureUniqueOpenApiOperationIds(SwaggerModule.createDocument(app, config));
@@ -113,14 +113,14 @@ async function bootstrap() {
   });
 
 
-  // Prisma graceful shutdown
+ // Prisma graceful shutdown
   const prisma = app.get(PrismaService);
   await prisma.enableShutdownHooks(app);
 
   const port = Number(process.env.PORT) || 4006;
   await app.listen(port,'0.0.0.0');
-  console.log(`Server running on http://localhost:${port}`);
-  console.log(`Swagger docs at http://localhost:${port}/api/v1/docs`);
-  
+ console.log(`Server running on http://localhost:${port}`);
+ console.log(`Swagger docs at http://localhost:${port}/api/v1/docs`);
+
 }
 bootstrap();

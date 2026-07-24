@@ -49,11 +49,11 @@ export class InbuiltAmenitiesService {
     return this.toRow(row);
   }
 
-  /**
+ /**
    * PHP parity:
    * - Always inserts status=1
    * - Writes createdby = logged_user_id
-   */
+ */
   async create(dto: CreateInbuiltAmenityDto, userId = 0): Promise<AmenityRow> {
     const title = String(dto.title ?? "").trim();
     if (!title) throw new BadRequestException("title is required");
@@ -62,7 +62,7 @@ export class InbuiltAmenitiesService {
       data: {
         inbuilt_amenity_title: title,
         createdby: Number(userId) || 0,
-        status: 1, // PHP hardcodes "1"
+ status: 1, // PHP hardcodes "1"
         deleted: 0,
       },
       select: {
@@ -75,13 +75,13 @@ export class InbuiltAmenitiesService {
     return this.toRow(created);
   }
 
-  /**
+ /**
    * ✅ FIXED update behavior for modern API:
    * - If dto.status is provided, it is treated as the FINAL status (0|1) to store.
    *   (NOT "current status to flip")
    * - If dto.title is provided, update title and (PHP parity) force status=1.
    * - Supports title-only, status-only, and title+status (title wins parity logic).
-   */
+ */
   async update(id: number, dto: UpdateInbuiltAmenityDto, userId = 0): Promise<AmenityRow> {
     const existing = await this.prisma.dvi_inbuilt_amenities.findFirst({
       where: { inbuilt_amenity_type_id: id, deleted: 0 },
@@ -92,7 +92,7 @@ export class InbuiltAmenitiesService {
 
     if (!existing) throw new NotFoundException("Inbuilt amenity not found");
 
-    // CASE 1: Title update (keep PHP parity: set status=1 and overwrite createdby)
+ // CASE 1: Title update (keep PHP parity: set status=1 and overwrite createdby)
     if (dto.title !== undefined) {
       const title = String(dto.title ?? "").trim();
       if (!title) throw new BadRequestException("title is required");
@@ -102,7 +102,7 @@ export class InbuiltAmenitiesService {
         data: {
           inbuilt_amenity_title: title,
           createdby: Number(userId) || 0,
-          status: 1, // PHP parity on edit/add
+ status: 1, // PHP parity on edit/add
         },
         select: {
           inbuilt_amenity_type_id: true,
@@ -114,7 +114,7 @@ export class InbuiltAmenitiesService {
       return this.toRow(updated);
     }
 
-    // CASE 2: Status update (store FINAL status directly)
+ // CASE 2: Status update (store FINAL status directly)
     if (dto.status !== undefined) {
       const nextStatus = (Number(dto.status) === 1 ? 1 : 0) as 0 | 1;
 
@@ -134,10 +134,10 @@ export class InbuiltAmenitiesService {
     throw new BadRequestException("Nothing to update");
   }
 
-  /**
+ /**
    * PHP parity:
    * confirmdelete => deleted=1, updatedon=NOW() WHERE id
-   */
+ */
   async remove(id: number): Promise<{ result: true }> {
     const existing = await this.prisma.dvi_inbuilt_amenities.findFirst({
       where: { inbuilt_amenity_type_id: id, deleted: 0 },

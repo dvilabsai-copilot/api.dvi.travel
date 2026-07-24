@@ -27,9 +27,9 @@ function formatTimeFromDate(dateOrNull: any): string {
 export class HotspotDistanceCacheService {
   constructor(private prisma: PrismaService) {}
 
-  /**
+ /**
    * List cache entries with search and filtering
-   */
+ */
   async list(query: CacheListQueryDto): Promise<CacheListResponseDto> {
     const page = Math.max(1, query.page || DEFAULT_PAGE);
     const size = Math.min(query.size || DEFAULT_SIZE, MAX_SIZE);
@@ -37,11 +37,11 @@ export class HotspotDistanceCacheService {
 
     const searchStr = (query.search || '').trim().toLowerCase();
 
-    // Build where clause
+ // Build where clause
     const where: any = {};
 
     if (searchStr) {
-      // Search by hotspot names (OR condition)
+ // Search by hotspot names (OR condition)
       where.OR = [
         { fromHotspotName: { contains: searchStr, mode: 'insensitive' } },
         { toHotspotName: { contains: searchStr, mode: 'insensitive' } },
@@ -60,16 +60,16 @@ export class HotspotDistanceCacheService {
       where.travelLocationType = query.travelLocationType;
     }
 
-    // Determine sort
+ // Determine sort
     const sortBy = query.sortBy || 'createdAt';
     const sortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
     const orderBy: any = {};
     orderBy[sortBy] = sortOrder;
 
-    // Fetch total count
+ // Fetch total count
     const total = await this.prisma.hotspotDistanceCache.count({ where });
 
-    // Fetch rows
+ // Fetch rows
     const rows = await this.prisma.hotspotDistanceCache.findMany({
       where,
       select: {
@@ -121,9 +121,9 @@ export class HotspotDistanceCacheService {
     };
   }
 
-  /**
+ /**
    * Get single cache entry
-   */
+ */
   async getOne(id: number) {
     const row = await this.prisma.hotspotDistanceCache.findUnique({
       where: { id },
@@ -159,15 +159,15 @@ export class HotspotDistanceCacheService {
     };
   }
 
-  /**
+ /**
    * Create new cache entry
-   */
+ */
   async create(dto: CacheCreateDto) {
     if (!dto.fromHotspotId || !dto.toHotspotId) {
       throw new BadRequestException('fromHotspotId and toHotspotId are required');
     }
 
-    // Check if hotspots exist
+ // Check if hotspots exist
     const [fromHotspot, toHotspot] = await Promise.all([
       this.prisma.dvi_hotspot_place.findUnique({
         where: { hotspot_ID: dto.fromHotspotId },
@@ -183,7 +183,7 @@ export class HotspotDistanceCacheService {
       throw new BadRequestException('One or both hotspots do not exist');
     }
 
-    // Check if entry already exists
+ // Check if entry already exists
     const existing = await this.prisma.hotspotDistanceCache.findUnique({
       where: {
         fromHotspotId_toHotspotId_travelLocationType: {
@@ -228,15 +228,15 @@ export class HotspotDistanceCacheService {
     };
   }
 
-  /**
+ /**
    * Update cache entry
-   */
+ */
   async update(dto: CacheUpdateDto) {
     if (!dto.id) {
       throw new BadRequestException('id is required');
     }
 
-    // Verify entry exists
+ // Verify entry exists
     const existing = await this.prisma.hotspotDistanceCache.findUnique({
       where: { id: dto.id },
     });
@@ -273,9 +273,9 @@ export class HotspotDistanceCacheService {
     };
   }
 
-  /**
+ /**
    * Delete cache entry
-   */
+ */
   async delete(id: number) {
     const existing = await this.prisma.hotspotDistanceCache.findUnique({
       where: { id },
@@ -292,9 +292,9 @@ export class HotspotDistanceCacheService {
     return { ok: true, message: 'Cache entry deleted successfully' };
   }
 
-  /**
+ /**
    * Get data for Excel export
-   */
+ */
   async getForExport(query: CacheListQueryDto) {
     const searchStr = (query.search || '').trim().toLowerCase();
 
@@ -338,7 +338,7 @@ export class HotspotDistanceCacheService {
         updatedAt: true,
       },
       orderBy: { createdAt: 'desc' },
-      take: 50000, // Limit to prevent memory issues
+ take: 50000, // Limit to prevent memory issues
     });
 
     return rows.map((row) => ({
@@ -359,9 +359,9 @@ export class HotspotDistanceCacheService {
     }));
   }
 
-  /**
+ /**
    * Get form options (hotspots dropdown)
-   */
+ */
   async getFormOptions() {
     const hotspots = await this.prisma.dvi_hotspot_place.findMany({
       where: { deleted: 0, status: 1 },
@@ -381,9 +381,9 @@ export class HotspotDistanceCacheService {
     };
   }
 
-  /**
+ /**
    * Bulk delete cache entries
-   */
+ */
   async bulkDelete(ids: number[]) {
     if (!Array.isArray(ids) || ids.length === 0) {
       throw new BadRequestException('Invalid ids array');

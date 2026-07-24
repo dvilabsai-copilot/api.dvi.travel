@@ -19,11 +19,11 @@ type Tx = Prisma.TransactionClient;
 
 @Injectable()
 export class PlanEngineService {
-  /* ------------------------------------------------------------------
+ /* ------------------------------------------------------------------
    * Helpers
-   * ------------------------------------------------------------------ */
+ * ------------------------------------------------------------------ */
 
-  /**
+ /**
    * Parse an IST datetime string coming from the UI and convert it to a JS Date
    * such that MySQL finally stores the SAME wall-clock time.
    *
@@ -34,14 +34,14 @@ export class PlanEngineService {
    *   Prisma -> MySQL : '2025-12-10 11:00:00'
    *
    * So phpMyAdmin shows 11:00 — PHP parity.
-   */
+ */
   private parseDate(value: string | undefined | null): Date {
     if (!value) return new Date();
 
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return new Date();
 
-    // Try to detect an explicit timezone offset at the end, like +05:30 or -04:00
+ // Try to detect an explicit timezone offset at the end, like +05:30 or -04:00
     const m = value.match(/([+-])(\d{2}):?(\d{2})$/);
     if (m) {
       const sign = m[1] === "-" ? -1 : 1;
@@ -49,15 +49,15 @@ export class PlanEngineService {
       const minutes = parseInt(m[3], 10);
       const offsetMs = sign * (hours * 60 + minutes) * 60 * 1000;
 
-      // Shift by the offset so that stored UTC time == local IST wall time.
+ // Shift by the offset so that stored UTC time == local IST wall time.
       return new Date(d.getTime() + offsetMs);
     }
 
-    // If no offset present, just use as-is.
+ // If no offset present, just use as-is.
     return d;
   }
 
-  /** preferred_room_count = max room_id (min 1) */
+ /** preferred_room_count = max room_id (min 1) */
   private getPreferredRoomCount(travellers: CreateTravellerDto[]): number {
     let maxRoom = 0;
     for (const t of travellers || []) {
@@ -68,11 +68,11 @@ export class PlanEngineService {
     return maxRoom || 1;
   }
 
-  /**
+ /**
    * PHP parity:
    * - child_bed_type: 1 => without bed, 2 => with bed
    * - total_extra_bed: +1 per room where adult count is greater than 2
-   */
+ */
   private getBedAndChildTotals(travellers: CreateTravellerDto[]): {
     totalExtraBed: number;
     totalChildWithBed: number;
@@ -188,9 +188,9 @@ export class PlanEngineService {
       .join(",");
   }
 
-  /**
+ /**
    * Resolve location_id from arrival + departure locations (PHP parity).
-   */
+ */
   private async resolveLocationId(
     tx: Tx,
     arrivalLocation: string,
@@ -203,7 +203,7 @@ export class PlanEngineService {
       return 0;
     }
 
-    // Primary: exact source + destination match
+ // Primary: exact source + destination match
     const row = await (tx as any).dvi_stored_locations.findFirst({
       where: {
         source_location: a,
@@ -220,7 +220,7 @@ export class PlanEngineService {
       return Number((row as any).location_ID ?? 0);
     }
 
-    // Fallback: try any row with this arrival as source OR this departure as destination
+ // Fallback: try any row with this arrival as source OR this departure as destination
     const fallback = await (tx as any).dvi_stored_locations.findFirst({
       where: {
         OR: [{ source_location: a }, { destination_location: d }],
@@ -239,19 +239,19 @@ export class PlanEngineService {
     return 0;
   }
 
-  /**
+ /**
    * PHP-parity quote ID generator.
-   */
+ */
   private async buildQuoteId(
     tx: Tx,
     now: Date,
     excludePlanId?: number,
   ): Promise<string> {
     const year = now.getFullYear();
-    const monthIndex = now.getMonth(); // 0–11
-    const mm = String(monthIndex + 1).padStart(2, "0"); // PHP date('m')
+ const monthIndex = now.getMonth(); // 011
+ const mm = String(monthIndex + 1).padStart(2, "0"); // PHP date('m')
 
-    const prefix = `DVI${year}${mm}`; // "DVIyyyymm"
+ const prefix = `DVI${year}${mm}`; // "DVIyyyymm"
 
     const monthStart = new Date(year, monthIndex, 1, 0, 0, 0, 0);
     const monthEnd = new Date(year, monthIndex + 1, 1, 0, 0, 0, 0);
@@ -462,9 +462,9 @@ export class PlanEngineService {
     }));
   }
 
-  /* ------------------------------------------------------------------
+ /* ------------------------------------------------------------------
    * Public API – used from ItinerariesService
-   * ------------------------------------------------------------------ */
+ * ------------------------------------------------------------------ */
 
   async upsertPlanHeader(
     plan: CreatePlanDto,
@@ -474,7 +474,7 @@ export class PlanEngineService {
   ): Promise<number> {
     const now = new Date();
 
-    // 🔵 Incoming from UI (ISO with +05:30)
+ // Incoming from UI (ISO with +05:30)
     const tripStart = this.parseDate(plan.trip_start_date);
     const tripEnd = this.parseDate(plan.trip_end_date);
     const pickup = this.parseDate(plan.pick_up_date_and_time);
@@ -525,21 +525,21 @@ export class PlanEngineService {
     );
 
     const baseData: any = {
-      // Identity / foreign keys
+ // Identity / foreign keys
       agent_id: Number(plan.agent_id ?? 0),
       staff_id: Number(plan.staff_id ?? 0),
 
-      // Location & summary
+ // Location & summary
       location_id: locationId,
       arrival_location: plan.arrival_point ?? "",
       departure_location: plan.departure_point ?? "",
 
-      // Trip times (JS Date → Prisma → MySQL DATETIME)
+ // Trip times (JS Date Prisma MySQL DATETIME)
       trip_start_date_and_time: tripStart,
       trip_end_date_and_time: tripEnd,
       pick_up_date_and_time: pickup,
 
-      // Types and flags
+ // Types and flags
       arrival_type: Number(plan.arrival_type ?? 0),
       departure_type: Number(plan.departure_type ?? 0),
       expecting_budget: Number((plan as any).budget ?? 0),
@@ -547,33 +547,33 @@ export class PlanEngineService {
       entry_ticket_required: Number(plan.entry_ticket_required ?? 0),
       itinerary_preference: Number(plan.itinerary_preference ?? 0),
 
-      // Nights / days
+ // Nights / days
       no_of_nights: Number(plan.no_of_nights ?? 0),
       no_of_days: Number(plan.no_of_days ?? 0),
 
-      // Totals
+ // Totals
       total_adult: totalAdult,
       total_children: totalChildren,
       total_infants: totalInfants,
       nationality: Number((plan as any).nationality ?? 0),
 
-      // Meal plan flags
+ // Meal plan flags
       meal_plan_code,
       meal_plan_breakfast,
       meal_plan_lunch,
       meal_plan_dinner,
 
-      // Room / bed totals
+ // Room / bed totals
       preferred_room_count: preferredRoomCount,
       total_extra_bed: totalExtraBed,
       total_child_with_bed: totalChildWithBed,
       total_child_without_bed: totalChildWithoutBed,
 
-      // Guide / food
+ // Guide / food
       guide_for_itinerary: Number(plan.guide_for_itinerary ?? 0),
       food_type: Number((plan as any).food_type ?? 0),
 
-      // Misc
+ // Misc
       special_instructions: plan.special_instructions ?? "",
       transport_early_arrival_option: plan.transport_early_arrival_option ?? null,
       transport_early_arrival_hotel_name:
@@ -589,14 +589,14 @@ export class PlanEngineService {
           )
         : null,
 
-      // Hotel extra fields
+ // Hotel extra fields
       hotel_rates_visibility,
       quotation_status,
       agent_margin,
       preferred_hotel_category,
       hotel_facilities,
 
-      // Always active rows in this engine
+ // Always active rows in this engine
       status: 1,
       deleted: 0,
     };
@@ -634,7 +634,7 @@ export class PlanEngineService {
           if (!shouldKeepCurrentQuote) {
             safeQuoteId = await this.buildSafeQuoteId(tx, now, existingId);
           }
-          console.warn('[ITINERARY_QUOTE_DUPLICATE_GUARD]', {
+ console.warn('[ITINERARY_QUOTE_DUPLICATE_GUARD]', {
             existingId,
             currentQuoteId,
             keptCurrentQuote: shouldKeepCurrentQuote,
@@ -717,9 +717,9 @@ export class PlanEngineService {
     return Number(createdRow.itinerary_plan_ID);
   }
 
-  /**
+ /**
    * After routes are rebuilt, sync no_of_routes to actual count.
-   */
+ */
   async updateNoOfRoutes(planId: number, tx: Tx): Promise<void> {
     const count = await (tx as any).dvi_itinerary_route_details.count({
       where: { itinerary_plan_ID: planId },

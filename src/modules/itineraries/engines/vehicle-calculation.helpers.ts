@@ -296,7 +296,7 @@ export interface VehicleCalculationContext {
   extra_km_charge: number;
   extra_hour_charge: number;
   selected_time_limit_id?: number;
-  get_kms_limit: number; // outstation_allowed_km_per_day
+ get_kms_limit: number; // outstation_allowed_km_per_day
   driver_batta: number;
   food_cost: number;
   accomodation_cost: number;
@@ -357,7 +357,7 @@ export interface RouteData {
 }
 
 export interface RouteCalculationResult {
-  travel_type: number; // 1=LOCAL, 2=OUTSTATION
+ travel_type: number; // 1=LOCAL, 2=OUTSTATION
   time_limit_id: number;
   kms_limit_id: number;
   chargeable_time_limit_id?: number;
@@ -440,7 +440,7 @@ export function calculateDistance(
   lat2: number,
   lon2: number
 ): number {
-  const R = 6371; // Earth's radius in km
+ const R = 6371; // Earth's radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
@@ -468,7 +468,7 @@ export function calculateDistanceAndDuration(
   const durationHours = distanceKm / speed;
   const hours = Math.floor(durationHours);
   const minutes = Math.floor((durationHours - hours) * 60);
-  
+
   return {
     distance: distanceKm.toFixed(2),
     duration: `${hours} hour ${minutes} mins`
@@ -533,7 +533,7 @@ async function resolveCityIdByLabel(prisma: any, value: string): Promise<number>
     const city = await resolveCityRecordByName(prisma, value);
     return Number(city?.id || 0);
   } catch (error) {
-    console.error('[resolveCityIdByLabel] Error:', error);
+ console.error('[resolveCityIdByLabel] Error:', error);
     return 0;
   }
 }
@@ -542,7 +542,7 @@ async function resolveCityNameById(prisma: any, cityId: number): Promise<string>
   try {
     return await resolveCityNameByIdCached(prisma, cityId);
   } catch (error) {
-    console.error('[resolveCityNameById] Error:', error);
+ console.error('[resolveCityNameById] Error:', error);
     return '';
   }
 }
@@ -606,7 +606,7 @@ async function getExactStoredLocationId(
 
     return Number(row?.location_ID || 0);
   } catch (error) {
-    console.error('[getExactStoredLocationId] Error:', error);
+ console.error('[getExactStoredLocationId] Error:', error);
     return 0;
   }
 }
@@ -667,7 +667,7 @@ export async function getLegDistanceAndDuration(
       }
     }
   } catch (error) {
-    console.error('[getLegDistanceAndDuration] Stored lookup error:', error);
+ console.error('[getLegDistanceAndDuration] Stored lookup error:', error);
   }
 
   const fallback = calculateDistanceAndDuration(
@@ -775,7 +775,7 @@ async function getRouteHotspotMetrics(
     cache?.routeHotspotMetrics.set(Number(itinerary_route_ID || 0), result);
     return result;
   } catch (error) {
-    console.error('[getRouteHotspotMetrics] Error:', error);
+ console.error('[getRouteHotspotMetrics] Error:', error);
     return {
       runningKm: 0,
       runningSeconds: 0,
@@ -895,7 +895,7 @@ export async function getLocationIdFromSourceDest(
     cache?.routeLocationId.set(cacheKey, locationId);
     return locationId;
   } catch (error) {
-    console.error('[getLocationIdFromSourceDest] Error:', error);
+ console.error('[getLocationIdFromSourceDest] Error:', error);
     return 0;
   }
 }
@@ -910,7 +910,7 @@ export async function calculateVehicleTollCharges(
   location_id: bigint
 ): Promise<number> {
   if (!location_id) return 0;
-  
+
   try {
     const row = await prisma.dvi_vehicle_toll_charges.findFirst({
       where: {
@@ -925,7 +925,7 @@ export async function calculateVehicleTollCharges(
 
     return Number(row?.toll_charge ?? 0);
   } catch (error) {
-    console.error('[calculateVehicleTollCharges] Error:', error);
+ console.error('[calculateVehicleTollCharges] Error:', error);
     return 0;
   }
 }
@@ -966,7 +966,7 @@ export async function calculateRouteTollCharges(
           label = `${sourceLabel} → ${destinationLabel}`;
         }
       } catch (error) {
-        console.error('[calculateRouteTollCharges] Label lookup error:', error);
+ console.error('[calculateRouteTollCharges] Label lookup error:', error);
       }
     }
 
@@ -988,7 +988,7 @@ export async function calculateRouteTollCharges(
       }
     }
   } catch (error) {
-    console.error('[calculateRouteTollCharges] Error:', error);
+ console.error('[calculateRouteTollCharges] Error:', error);
   }
 
   return { total: totalToll, breakup };
@@ -1020,7 +1020,7 @@ async function getViaRouteNames(
     cache?.viaRouteNames.set(Number(itinerary_route_ID || 0), values);
     return values;
   } catch (error) {
-    console.error('[getViaRouteNames] Error:', error);
+ console.error('[getViaRouteNames] Error:', error);
     return [];
   }
 }
@@ -1050,7 +1050,7 @@ export async function calculateHotspotParkingCharges(
     const derived = Number(result[0]?.total_parking ?? 0);
     if (derived > 0) return derived;
 
-    // Fallback parity path: compute from route hotspot IDs + master parking table.
+ // Fallback parity path: compute from route hotspot IDs + master parking table.
     const fallback = await prisma.$queryRaw<any[]>`
       SELECT COALESCE(SUM(hvpc.parking_charge), 0) AS total_parking
       FROM dvi_itinerary_route_hotspot_details rh
@@ -1068,7 +1068,7 @@ export async function calculateHotspotParkingCharges(
 
     return Number(fallback[0]?.total_parking ?? 0);
   } catch (error) {
-    console.error('[calculateHotspotParkingCharges] Error:', error);
+ console.error('[calculateHotspotParkingCharges] Error:', error);
     return 0;
   }
 }
@@ -1088,7 +1088,7 @@ export async function getStoredLocationName(
     });
     return result?.source_location ?? '';
   } catch (error) {
-    console.error('[getStoredLocationName] Error:', error);
+ console.error('[getStoredLocationName] Error:', error);
     return '';
   }
 }
@@ -1115,7 +1115,7 @@ export async function getStoredLocationCity(
     }
 
     const exactSource = await prisma.dvi_stored_locations.findFirst({
-      where: { 
+      where: {
         source_location: location_name,
         deleted: 0,
         status: 1
@@ -1204,7 +1204,7 @@ export async function getStoredLocationCity(
 
     return '';
   } catch (error) {
-    console.error('[getStoredLocationCity] Error:', error);
+ console.error('[getStoredLocationCity] Error:', error);
     return '';
   }
 }
@@ -1330,7 +1330,7 @@ export async function getLocationCoordinates(
     cache?.locationCoordinates.set(cacheKey, null);
     return null;
   } catch (error) {
-    console.error('[getLocationCoordinates] Error:', error);
+ console.error('[getLocationCoordinates] Error:', error);
     return null;
   }
 }
@@ -1422,7 +1422,7 @@ export async function getVehicleLocationDetails(
     cache?.vehicleLocationDetails.set(cacheKey, value);
     return value;
   } catch (error) {
-    console.error('[getVehicleLocationDetails] Error:', error);
+ console.error('[getVehicleLocationDetails] Error:', error);
     return {
       origin: normalizedFallbackOrigin,
       city: normalizedFallbackCity,
@@ -1469,7 +1469,7 @@ export async function calculatePermitCharges(
       AND deleted = 0
     `;
     const permitCharge = Number(result[0]?.total_permit ?? 0);
-    console.log('[PERMIT_CHARGE_CALCULATED]', {
+ console.log('[PERMIT_CHARGE_CALCULATED]', {
       planId: itinerary_plan_ID,
       routeId: itinerary_route_ID,
       vendorId: vendor_id,
@@ -1481,7 +1481,7 @@ export async function calculatePermitCharges(
     cache?.permitCharges.set(cacheKey, permitCharge);
     return permitCharge;
   } catch (error) {
-    console.error('[calculatePermitCharges] Error:', error);
+ console.error('[calculatePermitCharges] Error:', error);
     return 0;
   }
 }
@@ -1514,7 +1514,7 @@ export function determineTravelType(
       isSameCityRoute &&
       sourceNorm === originNorm;
 
-    /**
+ /**
      * Correct rule:
      * A same-city day is LOCAL only when that city is the vehicle origin city.
      *
@@ -1524,9 +1524,9 @@ export function determineTravelType(
      *
      * Vehicle origin = Chennai
      * Chennai → Chennai = LOCAL
-     */
+ */
     if (force_local_trip && isVehicleOriginCityRoute) {
-      return 1; // LOCAL
+ return 1; // LOCAL
     }
 
     if (isVehicleOriginCityRoute) {
@@ -1537,13 +1537,13 @@ export function determineTravelType(
         prevNorm !== '' && prevNorm === sourceNorm;
 
       if (isOriginCityFirstOrLast || isOriginCityContinuationDay) {
-        return 1; // LOCAL
+ return 1; // LOCAL
       }
     }
 
-    return 2; // OUTSTATION
+ return 2; // OUTSTATION
   }
-  
+
 
   function sameCityViaRoutesRemainLocal(
     sourceCity: string,
@@ -1612,7 +1612,7 @@ export async function getKmsLimitId(
   vendor_vehicle_type_ID: number
 ): Promise<number> {
   try {
-    // Try to find existing vehicle details record for this vendor/vehicle type
+ // Try to find existing vehicle details record for this vendor/vehicle type
     const existingVehicleDetails = await prisma.dvi_itinerary_plan_vendor_vehicle_details.findFirst({
       where: {
         vendor_id,
@@ -1624,7 +1624,7 @@ export async function getKmsLimitId(
         kms_limit_id: true,
       },
       orderBy: {
-        createdby: 'desc', // Get most recent
+ createdby: 'desc', // Get most recent
       },
     });
 
@@ -1632,7 +1632,7 @@ export async function getKmsLimitId(
       return existingVehicleDetails.kms_limit_id;
     }
 
-    // If no existing record, try to find from outstation pricebook
+ // If no existing record, try to find from outstation pricebook
     const pricebook = await prisma.dvi_vehicle_outstation_price_book.findFirst({
       where: {
         vendor_id,
@@ -1644,7 +1644,7 @@ export async function getKmsLimitId(
         kms_limit_id: true,
       },
       orderBy: {
-        kms_limit_id: 'asc', // Use lowest available
+ kms_limit_id: 'asc', // Use lowest available
       },
     });
 
@@ -1652,10 +1652,10 @@ export async function getKmsLimitId(
       return pricebook.kms_limit_id;
     }
 
-    console.log(`[getKmsLimitId] No kms_limit_id found for vendor=${vendor_id}, vehicle_type=${vendor_vehicle_type_ID}, using default 1`);
-    return 1; // Default fallback
+ console.log(`[getKmsLimitId] No kms_limit_id found for vendor=${vendor_id}, vehicle_type=${vendor_vehicle_type_ID}, using default 1`);
+ return 1; // Default fallback
   } catch (error) {
-    console.error('[getKmsLimitId] Error:', error);
+ console.error('[getKmsLimitId] Error:', error);
     return 1;
   }
 }
@@ -1716,7 +1716,7 @@ export async function getTimeLimitId(
       }
     }
 
-    // Fallback: find from local pricebook when time_limit table rows are unavailable.
+ // Fallback: find from local pricebook when time_limit table rows are unavailable.
     const pricebook = await prisma.dvi_vehicle_local_pricebook.findFirst({
       where: {
         vendor_id,
@@ -1728,7 +1728,7 @@ export async function getTimeLimitId(
         time_limit_id: true,
       },
       orderBy: {
-        time_limit_id: 'asc', // Use lowest available
+ time_limit_id: 'asc', // Use lowest available
       },
     });
 
@@ -1736,10 +1736,10 @@ export async function getTimeLimitId(
       return pricebook.time_limit_id;
     }
 
-    console.log(`[getTimeLimitId] No time_limit_id found for vendor=${vendor_id}, vehicle_type=${vendor_vehicle_type_ID}, using default 1`);
-    return 1; // Default fallback
+ console.log(`[getTimeLimitId] No time_limit_id found for vendor=${vendor_id}, vehicle_type=${vendor_vehicle_type_ID}, using default 1`);
+ return 1; // Default fallback
   } catch (error) {
-    console.error('[getTimeLimitId] Error:', error);
+ console.error('[getTimeLimitId] Error:', error);
     return 1;
   }
 }
@@ -1814,7 +1814,7 @@ export async function getLocalVehiclePricingByDate(
           })
         : null;
       if (debugVehicleTrace) {
-        console.log('[MUV_PRICEBOOK_LOOKUP]', {
+ console.log('[MUV_PRICEBOOK_LOOKUP]', {
           vendor_id,
           vendor_branch_id,
           vehicle_type_id_used_in_query: vendor_vehicle_type_ID,
@@ -1829,7 +1829,7 @@ export async function getLocalVehiclePricingByDate(
         });
       }
       if (!fallbackPricing) {
-        console.log(`[getLocalVehiclePricingByDate] No pricing found for vendor=${vendor_id}, branch=${vendor_branch_id}, vehicle_type=${vendor_vehicle_type_ID}, time_limit=${time_limit_id}, ${month} ${year}`);
+ console.log(`[getLocalVehiclePricingByDate] No pricing found for vendor=${vendor_id}, branch=${vendor_branch_id}, vehicle_type=${vendor_vehicle_type_ID}, time_limit=${time_limit_id}, ${month} ${year}`);
         return 0;
       }
       return toNum(fallbackPricing[dayColumn as keyof typeof fallbackPricing]);
@@ -1837,7 +1837,7 @@ export async function getLocalVehiclePricingByDate(
 
     const price = pricing[dayColumn as keyof typeof pricing];
     if (debugVehicleTrace && Number(master_vehicle_type_id || 0) === 23) {
-      console.log('[MUV_PRICEBOOK_LOOKUP]', {
+ console.log('[MUV_PRICEBOOK_LOOKUP]', {
         vendor_id,
         vendor_branch_id,
         vehicle_type_id_used_in_query: vendor_vehicle_type_ID,
@@ -1851,10 +1851,10 @@ export async function getLocalVehiclePricingByDate(
         priceFound: toNum(price) > 0,
       });
     }
-    
+
     return toNum(price);
   } catch (error) {
-    console.error('[getLocalVehiclePricingByDate] Error:', error);
+ console.error('[getLocalVehiclePricingByDate] Error:', error);
     return 0;
   }
 }
@@ -2112,7 +2112,7 @@ export async function getPricedLocalTimeLimitId(
       originalSlabTitle: selection.selected?.title,
     };
   } catch (error) {
-    console.error('[getPricedLocalTimeLimitId] Error:', error);
+ console.error('[getPricedLocalTimeLimitId] Error:', error);
     return {
       timeLimitId: 0,
       price: 0,
@@ -2154,17 +2154,17 @@ export async function getOutstationVehiclePricingByDate(
     });
 
     if (!pricing) {
-      console.log(`[getOutstationVehiclePricingByDate] No pricing found for vendor=${vendor_id}, branch=${vendor_branch_id}, vehicle_type=${vendor_vehicle_type_ID}, kms_limit=${kms_limit_id}, ${month} ${year}`);
+ console.log(`[getOutstationVehiclePricingByDate] No pricing found for vendor=${vendor_id}, branch=${vendor_branch_id}, vehicle_type=${vendor_vehicle_type_ID}, kms_limit=${kms_limit_id}, ${month} ${year}`);
       return 0;
     }
 
-    // Get price from day column (day_1 through day_31)
+ // Get price from day column (day_1 through day_31)
     const dayColumn = `day_${day}`;
     const price = pricing[dayColumn as keyof typeof pricing];
-    
+
     return toNum(price);
   } catch (error) {
-    console.error('[getOutstationVehiclePricingByDate] Error:', error);
+ console.error('[getOutstationVehiclePricingByDate] Error:', error);
     return 0;
   }
 }
@@ -2203,7 +2203,7 @@ export async function getLocalVehiclePricing(
       extra_km_charge: toNum(pricing?.extra_km_charges)
     };
   } catch (error) {
-    console.error('[getLocalVehiclePricing] Error:', error);
+ console.error('[getLocalVehiclePricing] Error:', error);
     return { vehicle_cost: 0, allowed_km: 0, extra_km_charge: 0 };
   }
 }
@@ -2231,11 +2231,11 @@ export async function getOutstationVehiclePricing(
     const allowedKm = toNum(vehicleType.outstation_allowed_km_per_day);
     const ratePerDay = toNum(vehicleType.outstation_vehicle_rate_per_day);
 
-    // PHP logic: rental based on allowed KM per day
-    // If total KM exceeds allowed, still charges base rate
+ // PHP logic: rental based on allowed KM per day
+ // If total KM exceeds allowed, still charges base rate
     return ratePerDay;
   } catch (error) {
-    console.error('[getOutstationVehiclePricing] Error:', error);
+ console.error('[getOutstationVehiclePricing] Error:', error);
     return 0;
   }
 }
@@ -2251,9 +2251,9 @@ export async function calculateSightseeingKm(
   itinerary_route_ID: number
 ): Promise<{ km: string; time: string | null }> {
   try {
-    // PHP parity: sightseeing includes item_type 1,3,4
+ // PHP parity: sightseeing includes item_type 1,3,4
     const result = await prisma.$queryRaw<any[]>`
-      SELECT 
+      SELECT
         COALESCE(SUM(CAST(hotspot_travelling_distance AS DECIMAL(10,2))), 0) as total_sightseeing_km,
         SEC_TO_TIME(COALESCE(SUM(TIME_TO_SEC(hotspot_traveling_time)), 0)) as total_sightseeing_time
       FROM dvi_itinerary_route_hotspot_details
@@ -2272,7 +2272,7 @@ export async function calculateSightseeingKm(
       time: totalTime || null
     };
   } catch (error) {
-    console.error('[calculateSightseeingKm] Error:', error);
+ console.error('[calculateSightseeingKm] Error:', error);
     return { km: '0', time: null };
   }
 }
@@ -2287,7 +2287,7 @@ export function calculatePickupDistance(
   route_source_latitude: number,
   route_source_longitude: number
 ): number {
-  if (!vehicle_origin_latitude || !vehicle_origin_longitude || 
+  if (!vehicle_origin_latitude || !vehicle_origin_longitude ||
       !route_source_latitude || !route_source_longitude) {
     return 0;
   }
@@ -2349,7 +2349,7 @@ export async function calculateRouteVehicleDetails(
   const LOCAL_TRAFFIC_DISTANCE_FACTOR = Number(process.env.LOCAL_TRAFFIC_DISTANCE_FACTOR || 1.25);
   const LOCAL_TRAFFIC_AVG_SPEED_KMPH = Number(process.env.LOCAL_TRAFFIC_AVG_SPEED_KMPH || 22);
 
-  // Get route location details
+ // Get route location details
   const sourceLocationId = await getLocationIdFromSourceDest(
     prisma,
     route.location_name,
@@ -2357,25 +2357,25 @@ export async function calculateRouteVehicleDetails(
     { planId: itinerary_plan_ID, routeId: route.itinerary_route_ID },
     cache,
   );
-  
-  // Get city names for travel type determination
+
+ // Get city names for travel type determination
   const sourceCity = await getStoredLocationCity(prisma, route.location_name, cache);
   const destCity = await getStoredLocationCity(prisma, route.next_visiting_location, cache);
 
-  // Get coordinates for distance calculations
+ // Get coordinates for distance calculations
   const sourceCoords = await getLocationCoordinates(prisma, route.location_name, cache);
   const destCoords = await getLocationCoordinates(prisma, route.next_visiting_location, cache);
   const viaRouteNames = await getViaRouteNames(prisma, itinerary_plan_ID, route.itinerary_route_ID, cache);
 
-  // Same-city routes remain LOCAL only when all via stops stay in the same city.
-  // Example: Bangalore -> Mysore -> Bangalore must be OUTSTATION for that day.
+ // Same-city routes remain LOCAL only when all via stops stay in the same city.
+ // Example: Bangalore -> Mysore -> Bangalore must be OUTSTATION for that day.
   const check_local_via_route_city = sameCityViaRoutesRemainLocal(
     sourceCity,
     destCity,
     viaRouteNames,
   );
 
-  // Determine travel type (LOCAL=1 or OUTSTATION=2)
+ // Determine travel type (LOCAL=1 or OUTSTATION=2)
   const travel_type = determineTravelType(
     route_count,
     total_routes,
@@ -2387,7 +2387,7 @@ export async function calculateRouteVehicleDetails(
     Boolean((ctx as any).force_local_trip)
   );
   if (debugVehicleTrace && isMuvTrace) {
-    console.log('[MUV_TRAVEL_TYPE_DECISION]', {
+ console.log('[MUV_TRAVEL_TYPE_DECISION]', {
       routeId: route.itinerary_route_ID,
       route_count,
       total_routes,
@@ -2401,7 +2401,7 @@ export async function calculateRouteVehicleDetails(
     });
   }
 
-  // Initialize variables
+ // Initialize variables
   let TOTAL_RUNNING_KM = '0';
   let TOTAL_TRAVELLING_TIME: string | null = null;
   let SIGHT_SEEING_TRAVELLING_KM = '0';
@@ -2468,7 +2468,7 @@ export async function calculateRouteVehicleDetails(
   let excludedDepartureTransferKm = 0;
 
   if (travel_type === 1 && !isItineraryEdgeTransferRoute) {
-    // For local mid-itinerary segments, treat hotspot movement as sightseeing/local usage.
+ // For local mid-itinerary segments, treat hotspot movement as sightseeing/local usage.
     effectiveSightseeingKm += effectiveRunningKm;
     effectiveSightseeingTimeSeconds += effectiveRunningTimeSeconds;
     effectiveRunningKm = 0;
@@ -2509,7 +2509,7 @@ export async function calculateRouteVehicleDetails(
       : !!destCoords && isFinalItineraryRoute;
 
   if (travel_type === 1 && isLastRouteOfDay && !isFinalItineraryRoute) {
-    console.warn('[VEHICLE_DROP_SUPPRESSED_NON_FINAL_LOCAL_ROUTE]', {
+ console.warn('[VEHICLE_DROP_SUPPRESSED_NON_FINAL_LOCAL_ROUTE]', {
       planId: itinerary_plan_ID,
       routeId: route.itinerary_route_ID,
       routeCount: route_count,
@@ -2560,7 +2560,7 @@ export async function calculateRouteVehicleDetails(
     calculationSource: 'unknown',
   };
 
-  // Operational rule: pickup applies per route rules; local routes can include a daily shed return drop.
+ // Operational rule: pickup applies per route rules; local routes can include a daily shed return drop.
   if (applyPickupForThisRoute) {
     if (travel_type === 1 && route_count > 1) {
       const localPoint = await resolveLocalHotelOrCityPoint(prisma, itinerary_plan_ID, route, cache);
@@ -2585,13 +2585,13 @@ export async function calculateRouteVehicleDetails(
           calculationSource: 'haversine',
         };
         if (debugLocalFix) {
-          console.log('[LOCAL_PICKUP_DROP_FIX_INPUT]', {
+ console.log('[LOCAL_PICKUP_DROP_FIX_INPUT]', {
             planId: itinerary_plan_ID, routeId: route.itinerary_route_ID, route_count, total_routes, travel_type,
             routeLocation: route.location_name, nextVisiting: route.next_visiting_location,
             vehicleOriginName: ctx.vehicle_origin, vehicleOriginLatLng: [ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude],
             hotelPointName: localPoint.name, hotelPointLatLng: [localPoint.lat, localPoint.lng], hotelPointSource: localPoint.source,
           });
-          console.log('[LOCAL_PICKUP_DROP_FIX_DISTANCE]', {
+ console.log('[LOCAL_PICKUP_DROP_FIX_DISTANCE]', {
             legType: 'pickup',
             fromName: ctx.vehicle_origin, toName: localPoint.name,
             fromLatLng: [ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude], toLatLng: [localPoint.lat, localPoint.lng],
@@ -2643,7 +2643,7 @@ export async function calculateRouteVehicleDetails(
           calculationSource: 'stored_location',
         };
         if (debugInsert) {
-          console.log('[PICKUP_DECISION]', {
+ console.log('[PICKUP_DECISION]', {
             branch_name: 'local_self_pickup',
             source_query_used: 'dvi_stored_locations source=route.location_name destination=route.location_name',
             source_location: route.location_name,
@@ -2756,7 +2756,7 @@ export async function calculateRouteVehicleDetails(
         TOTAL_DROP_KM = String(billableKm.toFixed(2));
         TOTAL_DROP_DURATION = formatMinutesToDbDuration(durationMinutes);
         if (debugLocalFix) {
-          console.log('[LOCAL_PICKUP_DROP_FIX_DISTANCE]', {
+ console.log('[LOCAL_PICKUP_DROP_FIX_DISTANCE]', {
             legType: 'drop',
             fromName: localPoint.name, toName: ctx.vehicle_origin,
             fromLatLng: [localPoint.lat, localPoint.lng], toLatLng: [ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude],
@@ -2801,7 +2801,7 @@ export async function calculateRouteVehicleDetails(
         TOTAL_DROP_KM = String(dropKm.toFixed(2));
         TOTAL_DROP_DURATION = secondsToHms(Math.max(storedSeconds, minSecondsBySpeed));
         if (debugInsert) {
-          console.log('[DROP_DECISION]', {
+ console.log('[DROP_DECISION]', {
             branch_name: 'local_self_drop',
             source_query_used: 'dvi_stored_locations source=route.next_visiting_location destination=route.next_visiting_location',
             source_location: route.next_visiting_location,
@@ -2849,7 +2849,7 @@ export async function calculateRouteVehicleDetails(
     isItineraryEdgeTransferRoute &&
     effectiveRunningKm <= 0;
 
-  // Arrival/departure transfer legs should bill against planned route KM, not stitched hotspot-tour distance.
+ // Arrival/departure transfer legs should bill against planned route KM, not stitched hotspot-tour distance.
   if (shouldUsePlannedKmForAirportLocalRoute) {
     const plannedSeconds = localSpeed > 0
       ? Math.round((plannedRouteKm / localSpeed) * 3600)
@@ -2857,8 +2857,8 @@ export async function calculateRouteVehicleDetails(
 
     effectiveRunningKm = plannedRouteKm;
     effectiveRunningTimeSeconds = plannedSeconds > 0 ? plannedSeconds : effectiveRunningTimeSeconds;
-    // Only zero sightseeing when this is a pure transfer (no real hotspot sightseeing for the day).
-    // Preserve sightseeing if there are actual hotspot movements on the route.
+ // Only zero sightseeing when this is a pure transfer (no real hotspot sightseeing for the day).
+ // Preserve sightseeing if there are actual hotspot movements on the route.
     const hasSightseeingHotspots = baseSightseeingKm > 0 || baseRunningKm > plannedRouteKm;
     if (!hasSightseeingHotspots) {
       effectiveSightseeingKm = 0;
@@ -2872,9 +2872,9 @@ export async function calculateRouteVehicleDetails(
         sightseeingTimeSeconds + Math.round(baseRunningTimeSeconds * runningRatio);
     }
 
-    // Debug logging (enable by setting DEBUG_VEHICLE_CALC=true)
+ // Debug logging (enable by setting DEBUG_VEHICLE_CALC=true)
     if ((process.env.DEBUG_VEHICLE_CALC || '').toLowerCase() === 'true') {
-      console.log('[calculateRouteVehicleDetails][DEBUG]', {
+ console.log('[calculateRouteVehicleDetails][DEBUG]', {
         planId: itinerary_plan_ID,
         routeId: route.itinerary_route_ID,
         routeCount: route_count,
@@ -2913,7 +2913,7 @@ export async function calculateRouteVehicleDetails(
     isItineraryEdgeTransferRoute &&
     toNum(SIGHT_SEEING_TRAVELLING_KM) > 0;
 
-  // Total KM includes pickup + running + sightseeing + drop.
+ // Total KM includes pickup + running + sightseeing + drop.
   const totalKmNum =
     toNum(TOTAL_PICKUP_KM) +
     toNum(TOTAL_RUNNING_KM) +
@@ -2921,7 +2921,7 @@ export async function calculateRouteVehicleDetails(
     toNum(TOTAL_DROP_KM);
   const TOTAL_KM = totalKmNum.toFixed(2);
   if (debugInsert) {
-    console.log('[CALC_RESULT]', {
+ console.log('[CALC_RESULT]', {
       TOTAL_PICKUP_KM,
       TOTAL_RUNNING_KM,
       SIGHT_SEEING_TRAVELLING_KM,
@@ -2964,7 +2964,7 @@ export async function calculateRouteVehicleDetails(
     }
   }
   if (debugLocalFix) {
-    console.log('[LOCAL_KM_FIX_INPUT]', {
+ console.log('[LOCAL_KM_FIX_INPUT]', {
       planId: itinerary_plan_ID,
       routeId: route.itinerary_route_ID,
       route_count,
@@ -2977,7 +2977,7 @@ export async function calculateRouteVehicleDetails(
       baseSightseeingKm,
       plannedRouteKm,
     });
-    console.log('[LOCAL_TRAVEL_RESULT]', {
+ console.log('[LOCAL_TRAVEL_RESULT]', {
       routeId: route.itinerary_route_ID,
       TOTAL_RUNNING_KM,
       excludedArrivalTransferKm,
@@ -2991,21 +2991,21 @@ export async function calculateRouteVehicleDetails(
               ? 'departure_day_transfer'
               : 'middle_day_zero',
     });
-    console.log('[LOCAL_SIGHTSEEING_RESULT]', {
+ console.log('[LOCAL_SIGHTSEEING_RESULT]', {
       routeId: route.itinerary_route_ID,
       baseSightseeingKm,
       excludedArrivalTransferKm,
       excludedDepartureTransferKm,
       finalSightseeingKm: SIGHT_SEEING_TRAVELLING_KM,
     });
-    console.log('[LOCAL_PICKUP_DROP_FIX_RESULT]', {
+ console.log('[LOCAL_PICKUP_DROP_FIX_RESULT]', {
       routeId: route.itinerary_route_ID,
       TOTAL_PICKUP_KM,
       TOTAL_PICKUP_DURATION,
       TOTAL_DROP_KM,
       TOTAL_DROP_DURATION,
     });
-    console.log('[LOCAL_CALC_FINAL]', {
+ console.log('[LOCAL_CALC_FINAL]', {
       routeId: route.itinerary_route_ID,
       TOTAL_PICKUP_KM,
       TOTAL_RUNNING_KM,
@@ -3025,7 +3025,7 @@ export async function calculateRouteVehicleDetails(
   const totalRouteSeconds = totalMovementSeconds + effectiveSightseeingTimeSeconds;
   const TOTAL_TIME = secondsToHms(totalRouteSeconds);
 
-  // Duty time should use pickup + timed route/hotspot usage + drop.
+ // Duty time should use pickup + timed route/hotspot usage + drop.
   let routeServiceHours = totalRouteSeconds / 3600;
   if (travel_type !== 1 && route.route_start_time && route.route_end_time) {
     const parseTimeToSeconds = (value: any): number | null => {
@@ -3057,7 +3057,7 @@ export async function calculateRouteVehicleDetails(
     }
   }
 
-  // Calculate toll charges
+ // Calculate toll charges
   let tollChargesResult = await calculateRouteTollCharges(
     prisma,
     vehicle_type_id,
@@ -3070,7 +3070,7 @@ export async function calculateRouteVehicleDetails(
 
   const VEHICLE_TOLL_CHARGE = tollCharges;
 
-  // Calculate parking charges
+ // Calculate parking charges
   const parkingCharges = await calculateHotspotParkingCharges(
     prisma,
     vehicle_type_id,
@@ -3079,7 +3079,7 @@ export async function calculateRouteVehicleDetails(
   );
   const VEHICLE_PARKING_CHARGE = parkingCharges;
 
-  // Calculate permit charges
+ // Calculate permit charges
   const permitCharges = await calculatePermitCharges(
     prisma,
     itinerary_plan_ID,
@@ -3091,18 +3091,18 @@ export async function calculateRouteVehicleDetails(
   );
   const permit_charges = permitCharges;
 
-  // Extract day, month, year from route date
+ // Extract day, month, year from route date
   const routeDate = new Date(route.itinerary_route_date);
-  const day = routeDate.getDate(); // 1-31
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+ const day = routeDate.getDate(); // 1-31
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                      'July', 'August', 'September', 'October', 'November', 'December'];
   const month = monthNames[routeDate.getMonth()];
   const year = routeDate.getFullYear().toString();
 
-  // Get kms_limit_id for outstation pricing
+ // Get kms_limit_id for outstation pricing
   kms_limit_id = await getKmsLimitId(prisma, vendor_id, vendor_vehicle_type_ID);
 
-  // Calculate vehicle rental based on travel type
+ // Calculate vehicle rental based on travel type
   const isFirstLocalArrivalLeg =
     travel_type === 1 && route_count === 1;
 
@@ -3172,13 +3172,13 @@ export async function calculateRouteVehicleDetails(
       const selectedSlabKm = getEffectiveTimeLimitKm(selectedSlab || null);
       const looksLikeTransferSlab = selectedSlabHours > 0 && selectedSlabHours <= 4 && selectedSlabKm > 0 && selectedSlabKm <= 40;
 
-      // For edge routes with real sightseeing, do hour-based slab auto-selection.
-      // We still compute transfer-style detection for diagnostics, but we always clear
-      // selectedLocalTimeLimitId here so getTimeLimitId can choose by routeServiceHours.
+ // For edge routes with real sightseeing, do hour-based slab auto-selection.
+ // We still compute transfer-style detection for diagnostics, but we always clear
+ // selectedLocalTimeLimitId here so getTimeLimitId can choose by routeServiceHours.
       selectedLocalTimeLimitId = 0;
 
       if ((process.env.DEBUG_VEHICLE_CALC || '').toLowerCase() === 'true') {
-        console.log('[SLAB_DEBUG_PRE_GET_TIME_LIMIT]', {
+ console.log('[SLAB_DEBUG_PRE_GET_TIME_LIMIT]', {
           itinerary_plan_ID,
           itinerary_route_ID: route.itinerary_route_ID,
           route_count,
@@ -3197,7 +3197,7 @@ export async function calculateRouteVehicleDetails(
     }
 
     if ((process.env.DEBUG_VEHICLE_CALC || '').toLowerCase() === 'true') {
-      console.log('[LOCAL_SLAB_SELECTION_INPUT]', {
+ console.log('[LOCAL_SLAB_SELECTION_INPUT]', {
         itinerary_plan_ID,
         itinerary_route_ID: route.itinerary_route_ID,
         route_count,
@@ -3213,7 +3213,7 @@ export async function calculateRouteVehicleDetails(
       });
     }
 
-    // LOCAL - get time limit ID
+ // LOCAL - get time limit ID
     time_limit_id = await getTimeLimitId(
       prisma,
       vendor_id,
@@ -3223,7 +3223,7 @@ export async function calculateRouteVehicleDetails(
       selectedLocalTimeLimitId || undefined,
     );
     if (debugVehicleTrace && isMuvTrace) {
-      console.log('[MUV_TIME_LIMIT_SELECTION]', {
+ console.log('[MUV_TIME_LIMIT_SELECTION]', {
         vendor_id,
         vendor_branch_id,
         vehicle_type_id,
@@ -3251,7 +3251,7 @@ export async function calculateRouteVehicleDetails(
       time_limit_id = pricedLocalSlab.timeLimitId;
     }
     if ((process.env.DEBUG_VEHICLE_CALC || '').toLowerCase() === 'true') {
-      console.log('[SLAB_DEBUG_POST_GET_TIME_LIMIT]', {
+ console.log('[SLAB_DEBUG_POST_GET_TIME_LIMIT]', {
         itinerary_plan_ID,
         itinerary_route_ID: route.itinerary_route_ID,
         route_count,
@@ -3289,7 +3289,7 @@ export async function calculateRouteVehicleDetails(
           month,
         );
         const dayPrice = Number(pbRows?.[0]?.day_price ?? 0);
-        console.log('[MUV_PRICEBOOK_LOOKUP]', {
+ console.log('[MUV_PRICEBOOK_LOOKUP]', {
           vendor_id,
           vendor_branch_id,
           vehicle_type_id_used_in_query: vendor_vehicle_type_ID,
@@ -3315,11 +3315,11 @@ export async function calculateRouteVehicleDetails(
       );
     }
     if (vehicle_cost_for_the_day <= 0) {
-      console.warn(
+ console.warn(
         `[calculateRouteVehicleDetails] No active local priced slab found for vendor=${vendor_id}, branch=${vendor_branch_id}, vehicle_type=${vendor_vehicle_type_ID}, date=${year}-${month}-${day}, route=${route.itinerary_route_ID}`
       );
     }
-    
+
     if (time_limit_id > 0) {
       const timeLimit = await prisma.dvi_time_limit.findUnique({
         where: { time_limit_id },
@@ -3333,7 +3333,7 @@ export async function calculateRouteVehicleDetails(
       chargeable_slab_hours_limit = chargeable_slab_hours_limit || Number(timeLimit?.hours_limit ?? 0);
       chargeable_slab_km_limit = chargeable_slab_km_limit || getEffectiveTimeLimitKm(timeLimit);
       if ((process.env.DEBUG_VEHICLE_CALC || '').toLowerCase() === 'true') {
-        console.log('[SLAB_DEBUG_ALLOWANCE_COST]', {
+ console.log('[SLAB_DEBUG_ALLOWANCE_COST]', {
           itinerary_plan_ID,
           itinerary_route_ID: route.itinerary_route_ID,
           route_count,
@@ -3356,7 +3356,7 @@ export async function calculateRouteVehicleDetails(
       }
     }
 
-    // Calculate extra KM charges for LOCAL
+ // Calculate extra KM charges for LOCAL
     if (pricedLocalSlab.noHigherSlabAvailable && totalKmNum > TOTAL_ALLOWED_LOCAL_KM) {
       TOTAL_LOCAL_EXTRA_KM = Math.max(0, Math.ceil(totalKmNum - TOTAL_ALLOWED_LOCAL_KM));
       TOTAL_LOCAL_EXTRA_KM_CHARGES = TOTAL_LOCAL_EXTRA_KM * ctx.extra_km_charge;
@@ -3364,7 +3364,7 @@ export async function calculateRouteVehicleDetails(
 
     vehicle_cost_for_the_day += TOTAL_LOCAL_EXTRA_HOUR_CHARGES;
   } else {
-    // OUTSTATION - use day-based pricebook
+ // OUTSTATION - use day-based pricebook
     time_limit_id = 0;
     TOTAL_LOCAL_EXTRA_HOURS = 0;
     TOTAL_LOCAL_EXTRA_HOUR_CHARGES = 0;
@@ -3384,7 +3384,7 @@ export async function calculateRouteVehicleDetails(
       : null;
     TOTAL_ALLOWED_OUTSTATION_KM = Number(kmsLimitRow?.kms_limit ?? ctx.get_kms_limit ?? 0);
 
-    // Get OUTSTATION pricing from day-based pricebook
+ // Get OUTSTATION pricing from day-based pricebook
     vehicle_cost_for_the_day = await getOutstationVehiclePricingByDate(
       prisma,
       day,
@@ -3395,25 +3395,25 @@ export async function calculateRouteVehicleDetails(
       vendor_vehicle_type_ID,
       kms_limit_id
     );
-    
-    // Outstation extra KM is charged once at the eligible/trip summary level.
-    // Keep the per-route detail row at zero so it does not get summed day-wise.
+
+ // Outstation extra KM is charged once at the eligible/trip summary level.
+ // Keep the per-route detail row at zero so it does not get summed day-wise.
     TOTAL_LOCAL_EXTRA_KM = 0;
     TOTAL_LOCAL_EXTRA_KM_CHARGES = 0;
   }
 
-  // Calculate driver charges (simplified - PHP has complex batta logic)
+ // Calculate driver charges (simplified - PHP has complex batta logic)
   const TOTAL_DRIVER_CHARGES =
     ctx.driver_batta +
     ctx.food_cost +
     ctx.accomodation_cost +
     ctx.extra_cost;
 
-  // Time-based extra charges (before 6am, after 8pm) — PHP parity
+ // Time-based extra charges (before 6am, after 8pm) PHP parity
   let morning_extra_time_hours = 0;
   let evening_extra_time_hours = 0;
   if (route.route_start_time || route.route_end_time) {
-    // Helper to ensure we have a valid time string (HH:MM:SS format)
+ // Helper to ensure we have a valid time string (HH:MM:SS format)
     const ensureTimeString = (val: any): string | null => {
       if (!val) return null;
       if (val instanceof Date) {
@@ -3423,7 +3423,7 @@ export async function calculateRouteVehicleDetails(
         return `${hh}:${mm}:${ss}`;
       }
       const str = String(val).trim();
-      // Match HH:MM:SS or HH:MM pattern
+ // Match HH:MM:SS or HH:MM pattern
       if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(str)) return str;
       return null;
     };
@@ -3448,7 +3448,7 @@ export async function calculateRouteVehicleDetails(
     const startSec = startTimeStr ? parseTimeToSeconds(startTimeStr) : SIX_AM_SEC;
     const endSec = endTimeStr ? parseTimeToSeconds(endTimeStr) : EIGHT_PM_SEC;
 
-    // Use full service window: pickup can start the duty earlier and drop can extend it.
+ // Use full service window: pickup can start the duty earlier and drop can extend it.
     const pickupDurationSec = parseDurationSeconds(TOTAL_PICKUP_DURATION);
     const dropDurationSec = parseDurationSeconds(TOTAL_DROP_DURATION);
     const effectiveStartSec = normalizeSecondsOfDay(startSec - pickupDurationSec);
@@ -3461,7 +3461,7 @@ export async function calculateRouteVehicleDetails(
       evening_extra_time_hours = (effectiveEndSec - EIGHT_PM_SEC) / 3600;
     }
   }
-  // Billing policy: round time-based extras to nearest 30 minutes.
+ // Billing policy: round time-based extras to nearest 30 minutes.
   const roundToNearestHalfHour = (hours: number): number => {
     if (!Number.isFinite(hours) || hours <= 0) return 0;
     return Math.round(hours * 2) / 2;
@@ -3477,7 +3477,7 @@ export async function calculateRouteVehicleDetails(
   const DRIVER_EVEINING_CHARGES = ctx.driver_evening_charges * roundedEveningExtraTimeHours;
   const VENDOR_VEHICLE_EVENING_CHARGES = ctx.evening_charges * roundedEveningExtraTimeHours;
 
-  // Calculate total vehicle amount for the route
+ // Calculate total vehicle amount for the route
   const TOTAL_VEHICLE_AMOUNT =
     vehicle_cost_for_the_day +
     VEHICLE_TOLL_CHARGE +
@@ -3490,7 +3490,7 @@ export async function calculateRouteVehicleDetails(
     VENDOR_VEHICLE_EVENING_CHARGES +
     TOTAL_LOCAL_EXTRA_KM_CHARGES;
   if (debugVehicleTrace && isMuvTrace) {
-    console.log('[MUV_CALC_FINAL]', {
+ console.log('[MUV_CALC_FINAL]', {
       routeId: route.itinerary_route_ID,
       travel_type,
       time_limit_id,

@@ -20,6 +20,6 @@ export class CreateGstSettingDto {
   @Min(0)
   igst!: number;
 
-  // frontend may send status, but PHP ignores on create (always sets status=1)
+ // frontend may send status, but PHP ignores on create (always sets status=1)
   status?: boolean;
 }

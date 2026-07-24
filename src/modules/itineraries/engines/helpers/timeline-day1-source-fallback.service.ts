@@ -117,7 +117,7 @@ export class TimelineDay1SourceFallbackService {
         matched_bucket: 'source_fallback',
       }));
     } catch (err) {
-      console.error('[fetchDay1TopPrioritySourceHotspots] Error:', err);
+ console.error('[fetchDay1TopPrioritySourceHotspots] Error:', err);
       return [];
     }
   }

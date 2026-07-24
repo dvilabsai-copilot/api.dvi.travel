@@ -369,7 +369,7 @@ export class ItineraryMatrixRescheduledPreviewService {
 
     const fromHotspotId = Number(bestSlot?.fromHotspotId || 0);
     const toHotspotId = Number(bestSlot?.toHotspotId || 0);
-    console.log('[ManualTimelineBuild] selected_slot', {
+ console.log('[ManualTimelineBuild] selected_slot', {
       selectedHotspotId: selectedIdNum,
       fromHotspotId,
       toHotspotId,
@@ -642,7 +642,7 @@ export class ItineraryMatrixRescheduledPreviewService {
       || String(bestSlot?.source || '').toUpperCase() === 'FINAL_TRAVEL_TO_HOTEL_SPLIT'
       || String(bestSlot?.source || '').toUpperCase() === 'DESTINATION_CITY_AFTER_REACHED';
 
-    // Find key matrix indices
+ // Find key matrix indices
     const fromRowIndex = baseMerged.findIndex(
       (row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === fromHotspotId
         && isAttractionRow(row),
@@ -659,7 +659,7 @@ export class ItineraryMatrixRescheduledPreviewService {
     }
 
     if (fromRowIndex < 0 || toRowIndex < 0 || fromRowIndex >= toRowIndex) {
-      console.warn('[ManualTimelineBuild] cannot_reschedule_matrix_slot', {
+ console.warn('[ManualTimelineBuild] cannot_reschedule_matrix_slot', {
         selectedHotspotId: selectedIdNum,
         fromHotspotId,
         toHotspotId,
@@ -677,7 +677,7 @@ export class ItineraryMatrixRescheduledPreviewService {
     );
     if (insertedRowIndex < 0) return baseMerged;
 
-    // Find A_TO_C and C_TO_B split travel rows
+ // Find A_TO_C and C_TO_B split travel rows
     const aToCRowIndex = baseMerged.findIndex(
       (row: any) => row?.isMatrixSplitTravel === true && row?.matrixTravelLeg === 'A_TO_C',
     );
@@ -687,7 +687,7 @@ export class ItineraryMatrixRescheduledPreviewService {
 
     if (aToCRowIndex < 0 || cToBRowIndex < 0) return baseMerged;
 
-    console.log('[ManualTimelineBuild] replacing_travel_row', {
+ console.log('[ManualTimelineBuild] replacing_travel_row', {
       fromHotspotId,
       toHotspotId,
       fromRowIndex,
@@ -697,7 +697,7 @@ export class ItineraryMatrixRescheduledPreviewService {
       selectedRowIndex: insertedRowIndex,
     });
 
-    // Fetch or estimate durations
+ // Fetch or estimate durations
     const normalizePositiveMinutes = (value: any): number | null => {
       const num = Number(value);
       return Number.isFinite(num) && num > 0 ? Math.max(1, Math.round(num)) : null;
@@ -753,10 +753,10 @@ export class ItineraryMatrixRescheduledPreviewService {
     const fromEndMinutes = this.callbacks.parseSegmentEndMinutes(fromRow);
     if (fromEndMinutes === null) return baseMerged;
 
-    // 1) Keep all rows through A unchanged.
+ // 1) Keep all rows through A unchanged.
     const prefix = baseMerged.slice(0, fromRowIndex + 1).map((row: any) => ({ ...row }));
 
-    // 2) Build the mandatory matrix split block with single forward cursor.
+ // 2) Build the mandatory matrix split block with single forward cursor.
     let cursor = fromEndMinutes;
     const acStartMin = cursor;
     const acEndMin = cursor + acDurationMin;
@@ -807,7 +807,7 @@ export class ItineraryMatrixRescheduledPreviewService {
       hotspot_start_time: null,
       hotspot_end_time: null,
     };
-    console.log('[ManualTimelineBuild] split_A_TO_C', {
+ console.log('[ManualTimelineBuild] split_A_TO_C', {
       fromName: aToCRow.fromName,
       toName: aToCRow.toName,
       text: aToCRow.text,
@@ -846,7 +846,7 @@ export class ItineraryMatrixRescheduledPreviewService {
       hotspot_end_time: null,
     };
 
-    console.log('[ManualTimelineBuild] inserted_C_attraction', {
+ console.log('[ManualTimelineBuild] inserted_C_attraction', {
       selectedHotspotId: selectedIdNum,
       fromHotspotId,
       toHotspotId,
@@ -882,7 +882,7 @@ export class ItineraryMatrixRescheduledPreviewService {
       hotspot_start_time: null,
       hotspot_end_time: null,
     };
-    console.log('[ManualTimelineBuild] split_C_TO_B', {
+ console.log('[ManualTimelineBuild] split_C_TO_B', {
       fromName: cToBRow.fromName,
       toName: cToBRow.toName,
       text: cToBRow.text,
@@ -891,7 +891,7 @@ export class ItineraryMatrixRescheduledPreviewService {
       timeRange: cToBRow.timeRange,
     });
 
-    // 3) Continue with remaining rows in logical baseline order, skipping replaced originals.
+ // 3) Continue with remaining rows in logical baseline order, skipping replaced originals.
     const tailSource = baseMerged.slice(toRowIndex);
     const tailRows: any[] = [];
 
@@ -900,7 +900,7 @@ export class ItineraryMatrixRescheduledPreviewService {
       if (Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === selectedIdNum) continue;
       if (row?.isMatrixSplitTravel === true) continue;
 
-      // Remove original A->B travel if matrix C_TO_B split is present.
+ // Remove original A->B travel if matrix C_TO_B split is present.
       if (isTravelRow(row)) {
         const rowTarget = String(row?.toName || row?.text || row?.name || '').trim().toLowerCase();
         const bTarget = String(bestSlot?.toName || '').trim().toLowerCase();
@@ -912,14 +912,14 @@ export class ItineraryMatrixRescheduledPreviewService {
       tailRows.push({ ...row });
     }
 
-    // ── RESET cursor before scheduling loop ──
-    // The cursor was advanced during aToCRow/insertedRow/cToBRow construction for pre-calculation.
-    // The actual scheduling must start from fromEndMinutes so travel A→C begins immediately after A ends.
+ // RESET cursor before scheduling loop
+ // The cursor was advanced during aToCRow/insertedRow/cToBRow construction for pre-calculation.
+ // The actual scheduling must start from fromEndMinutes so travel AC begins immediately after A ends.
     cursor = fromEndMinutes;
 
     const bodyRows = [aToCRow, insertedRow, cToBRow, ...tailRows];
 
-    // 4) Reschedule body rows with one forward cursor.
+ // 4) Reschedule body rows with one forward cursor.
     const rescheduledBody: any[] = [];
     const pendingHotelTravelRows: any[] = [];
     const pendingHotelRows: any[] = [];
@@ -950,7 +950,7 @@ export class ItineraryMatrixRescheduledPreviewService {
           hotspot_start_time: null,
           hotspot_end_time: null,
         });
-        console.log('[ManualTimelineBuild] recalculated_downstream_row', {
+ console.log('[ManualTimelineBuild] recalculated_downstream_row', {
           type: 'travel',
           text: String(row?.text || row?.name || ''),
           timeRange: this.callbacks.minutesRangeToTimeString(start, end),
@@ -969,7 +969,7 @@ export class ItineraryMatrixRescheduledPreviewService {
           hotspot_start_time: null,
           hotspot_end_time: null,
         });
-        console.log('[ManualTimelineBuild] recalculated_downstream_row', {
+ console.log('[ManualTimelineBuild] recalculated_downstream_row', {
           type: 'attraction',
           text: String(row?.text || row?.name || ''),
           timeRange: this.callbacks.minutesRangeToTimeString(start, end),
@@ -977,7 +977,7 @@ export class ItineraryMatrixRescheduledPreviewService {
         continue;
       }
 
-      // Preserve other segment types while advancing cursor if they carry duration.
+ // Preserve other segment types while advancing cursor if they carry duration.
       const fallbackDuration = Math.max(0, Math.round(Number(this.callbacks.getPreviewRowDurationMinutes(row) || 0)));
       const start = cursor;
       const end = cursor + fallbackDuration;
@@ -988,7 +988,7 @@ export class ItineraryMatrixRescheduledPreviewService {
         hotspot_start_time: null,
         hotspot_end_time: null,
       });
-      console.log('[ManualTimelineBuild] recalculated_downstream_row', {
+ console.log('[ManualTimelineBuild] recalculated_downstream_row', {
         type: String(row?.type || 'other').toLowerCase(),
         text: String(row?.text || row?.name || ''),
         timeRange: fallbackDuration > 0 ? this.callbacks.minutesRangeToTimeString(start, end) : row?.timeRange,
@@ -1039,7 +1039,7 @@ export class ItineraryMatrixRescheduledPreviewService {
       });
     }
 
-    // 5) Deduplicate consecutive travel rows targeting same destination, preferring split rows.
+ // 5) Deduplicate consecutive travel rows targeting same destination, preferring split rows.
     const dedupedBody: any[] = [];
     for (const row of rescheduledBody) {
       if (!row) continue;
@@ -1083,7 +1083,7 @@ export class ItineraryMatrixRescheduledPreviewService {
 
     const withOrder = this.callbacks.finalizeMatrixPreviewTimeline(rescheduled);
 
-    console.log('[ManualTimelineBuild] final_order', withOrder.map((row: any, index: number) => ({
+ console.log('[ManualTimelineBuild] final_order', withOrder.map((row: any, index: number) => ({
       index,
       type: String(row?.type || '').toLowerCase(),
       text: String(row?.text || row?.name || ''),

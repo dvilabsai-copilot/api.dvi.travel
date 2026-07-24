@@ -4,6 +4,6 @@ export class CacheUpdateDto {
   correctionFactor?: number;
   distanceKm?: number;
   speedKmph?: number;
-  travelTime?: string; // HH:MM:SS
+ travelTime?: string; // HH:MM:SS
   method?: string;
 }

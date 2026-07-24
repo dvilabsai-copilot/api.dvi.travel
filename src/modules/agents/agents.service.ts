@@ -11,10 +11,10 @@ import {
 export class AgentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
+ /**
    * List agents (for dropdown), optionally filtered by travel expert.
    * Legacy: getAGENT_details(..., 'select')
-   */
+ */
   async listAgents(travelExpertId?: number): Promise<AgentListItemDto[]> {
     const rows = await (travelExpertId
       ? this.prisma.$queryRaw<
@@ -53,10 +53,10 @@ SELECT MIN(a.agent_ID) AS agent_ID, TRIM(a.agent_name) AS agent_name
   .filter((row) => row.id > 0 && row.name);
   }
 
-  /**
+ /**
    * List agents with company info.
    * Legacy: getAGENT_details(..., 'agent_with_company')
-   */
+ */
   async listAgentsWithCompany(
     travelExpertId?: number,
   ): Promise<AgentWithCompanyDto[]> {
@@ -109,10 +109,10 @@ SELECT MIN(a.agent_ID) AS agent_ID, TRIM(a.agent_name) AS agent_name
     });
   }
 
-  /**
+ /**
    * Full label "agent_name agent_lastname" or '--'.
    * Legacy: getAGENT_details(..., 'label')
-   */
+ */
   async getAgentLabel(agentId: number): Promise<string> {
     const agent = await this.prisma.dvi_agent.findFirst({
       where: {

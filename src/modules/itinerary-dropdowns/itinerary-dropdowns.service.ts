@@ -20,7 +20,7 @@ export type SimpleOption = {
 };
 
 export type LocationOption = {
-  id: string; // same as PHP: <option value="LOCATION_NAME">
+ id: string; // same as PHP: <option value="LOCATION_NAME">
   name: string;
 };
 
@@ -72,7 +72,7 @@ function sortWithIndiaPinnedAndRetained(
 export class ItineraryDropdownsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
+ /**
    * Extract seating capacity from vehicle type title
    * Fallback parsing if occupancy field is not available
    * Examples:
@@ -80,17 +80,17 @@ export class ItineraryDropdownsService {
    * "Tempo Traveller 10 Seater" → 10
    * "LEYLAND - 36 SEATER" → 36
    * "Sedan" → 4
-   */
+ */
   private extractSeatCapacity(title: string): number {
     if (!title) return 0;
 
-    // Try to find "X SEATER" pattern
+ // Try to find "X SEATER" pattern
     const seaterMatch = title.match(/(\d+)\s*(?:seater|seater)/i);
     if (seaterMatch) {
       return parseInt(seaterMatch[1], 10);
     }
 
-    // Try to find "X+Y" pattern (e.g., "7+1" = 8)
+ // Try to find "X+Y" pattern (e.g., "7+1" = 8)
     const plusMatch = title.match(/(\d+)\+(\d+)/);
     if (plusMatch) {
       const first = parseInt(plusMatch[1], 10);
@@ -98,11 +98,11 @@ export class ItineraryDropdownsService {
       return first + second;
     }
 
-    // Special cases
+ // Special cases
     if (title.toLowerCase().includes('sedan')) return 4;
     if (title.toLowerCase().includes('suv')) return 5;
 
-    return 0; // default if cannot parse
+ return 0; // default if cannot parse
   }
 
   private normalizeLocationKey(value: string): string {
@@ -413,17 +413,17 @@ export class ItineraryDropdownsService {
     };
   }
 
-  /**
+ /**
    * Get eligible vehicle types for given locations
    * Matches PHP behavior: filters by cities, sorts by seating capacity
-   */
+ */
   async getEligibleVehicleTypes(
     dto: EligibleVehicleTypesDto,
   ): Promise<EligibleVehicleTypesResponseDto> {
     try {
-      console.log('[getEligibleVehicleTypes] Raw DTO:', JSON.stringify(dto));
-      
-      // 1. Merge and unique locations
+ console.log('[getEligibleVehicleTypes] Raw DTO:', JSON.stringify(dto));
+
+ // 1. Merge and unique locations
       const allLocations = [
         ...(dto.sourceLocation || []),
         ...(dto.nextVisitingLocation || []),
@@ -433,17 +433,17 @@ export class ItineraryDropdownsService {
         .map((loc) => loc.trim())
         .filter(isNonEmptyString);
 
-      console.log('[getEligibleVehicleTypes] Input locations:', uniqueLocations);
+ console.log('[getEligibleVehicleTypes] Input locations:', uniqueLocations);
 
       if (uniqueLocations.length === 0) {
-        console.log('[getEligibleVehicleTypes] No locations provided, returning empty');
+ console.log('[getEligibleVehicleTypes] No locations provided, returning empty');
         return {
           vehicleTypes: [],
           selectedVehicleIds: [],
         };
       }
 
-      // 2. Convert locations to eligible cities
+ // 2. Convert locations to eligible cities
       const eligibleCities = await this.convertLocationsToEligibleCities(
         uniqueLocations,
       );
@@ -459,11 +459,11 @@ export class ItineraryDropdownsService {
         ),
       );
 
-      console.log('[getEligibleVehicleTypes] Eligible cities:', eligibleCities);
-      console.log('[getEligibleVehicleTypes] Resolved city IDs:', resolvedCityIds);
+ console.log('[getEligibleVehicleTypes] Eligible cities:', eligibleCities);
+ console.log('[getEligibleVehicleTypes] Resolved city IDs:', resolvedCityIds);
 
       if (eligibleCities.length === 0) {
-        console.warn(
+ console.warn(
           '[getEligibleVehicleTypes] No eligible cities found',
           JSON.stringify({
             sourceLocation: dto.sourceLocation || [],
@@ -476,19 +476,19 @@ export class ItineraryDropdownsService {
         };
       }
 
-      // 3. Query distinct vehicle types that have vehicles in eligible cities
-      // Matches PHP logic: uses vendor_vehicle_types and vendor_details tables
-      // SQL equivalent from PHP:
-      // SELECT DISTINCT VENDOR_VEHICLE_TYPES.vehicle_type_id, VEHICLE_TYPES.vehicle_type_title
-      // FROM dvi_vehicle VEHICLE
-      // LEFT JOIN dvi_vendor_vehicle_types VENDOR_VEHICLE_TYPES ON ...
-      // LEFT JOIN dvi_vendor_details VENDOR_DETAILS ON ...
-      // LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS ON ...
-      // LEFT JOIN dvi_vehicle_type VEHICLE_TYPES ON ...
-      // WHERE VEHICLE.status = 1 AND VEHICLE.deleted = 0
-      //   AND VENDOR_DETAILS.status = 1 AND VENDOR_DETAILS.deleted = 0
-      //   AND VENDOR_BRANCH_DETAILS.status = 1 AND VENDOR_BRANCH_DETAILS.deleted = 0
-      //   AND VEHICLE.owner_city IN (eligibleCities)
+ // 3. Query distinct vehicle types that have vehicles in eligible cities
+ // Matches PHP logic: uses vendor_vehicle_types and vendor_details tables
+ // SQL equivalent from PHP:
+ // SELECT DISTINCT VENDOR_VEHICLE_TYPES.vehicle_type_id, VEHICLE_TYPES.vehicle_type_title
+ // FROM dvi_vehicle VEHICLE
+ // LEFT JOIN dvi_vendor_vehicle_types VENDOR_VEHICLE_TYPES ON ...
+ // LEFT JOIN dvi_vendor_details VENDOR_DETAILS ON ...
+ // LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS ON ...
+ // LEFT JOIN dvi_vehicle_type VEHICLE_TYPES ON ...
+ // WHERE VEHICLE.status = 1 AND VEHICLE.deleted = 0
+ // AND VENDOR_DETAILS.status = 1 AND VENDOR_DETAILS.deleted = 0
+ // AND VENDOR_BRANCH_DETAILS.status = 1 AND VENDOR_BRANCH_DETAILS.deleted = 0
+ // AND VEHICLE.owner_city IN (eligibleCities)
       const cityNameClause = eligibleCities.length
         ? `VEHICLE.owner_city IN (${eligibleCities.map(() => `?`).join(',')})`
         : '1 = 0';
@@ -504,7 +504,7 @@ export class ItineraryDropdownsService {
         ...resolvedCityIds,
       ];
 
-      console.log(
+ console.log(
         '[getEligibleVehicleTypes] Executing SQL query with cities:',
         JSON.stringify({
           eligibleCities,
@@ -514,7 +514,7 @@ export class ItineraryDropdownsService {
 
       const distinctVehicleTypes = await (this.prisma as any).$queryRawUnsafe(
         `
-        SELECT DISTINCT 
+        SELECT DISTINCT
           VEHICLE_TYPES.vehicle_type_id,
           VEHICLE_TYPES.vehicle_type_title,
           VEHICLE_TYPES.occupancy
@@ -529,22 +529,22 @@ export class ItineraryDropdownsService {
           AND MODERN_VENDOR_VEHICLE_TYPES.vehicle_type_id = VEHICLE.vehicle_type_id
           AND MODERN_VENDOR_VEHICLE_TYPES.status = 1
           AND MODERN_VENDOR_VEHICLE_TYPES.deleted = 0
-        LEFT JOIN dvi_vendor_details VENDOR_DETAILS 
+        LEFT JOIN dvi_vendor_details VENDOR_DETAILS
           ON VENDOR_DETAILS.vendor_id = VEHICLE.vendor_id
-        LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS 
+        LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS
           ON VENDOR_BRANCH_DETAILS.vendor_branch_id = VEHICLE.vendor_branch_id
-        LEFT JOIN dvi_vehicle_type VEHICLE_TYPES 
+        LEFT JOIN dvi_vehicle_type VEHICLE_TYPES
           ON VEHICLE_TYPES.vehicle_type_id = COALESCE(
             MODERN_VENDOR_VEHICLE_TYPES.vehicle_type_id,
             LEGACY_VENDOR_VEHICLE_TYPES.vehicle_type_id
           )
           AND VEHICLE_TYPES.status = 1
           AND VEHICLE_TYPES.deleted = 0
-        WHERE VEHICLE.status = 1 
-          AND VEHICLE.deleted = 0 
-          AND VENDOR_DETAILS.status = 1 
-          AND VENDOR_DETAILS.deleted = 0 
-          AND VENDOR_BRANCH_DETAILS.status = 1 
+        WHERE VEHICLE.status = 1
+          AND VEHICLE.deleted = 0
+          AND VENDOR_DETAILS.status = 1
+          AND VENDOR_DETAILS.deleted = 0
+          AND VENDOR_BRANCH_DETAILS.status = 1
           AND VENDOR_BRANCH_DETAILS.deleted = 0
           AND (${cityNameClause} OR ${cityIdClause} OR ${branchCityClause})
           AND COALESCE(
@@ -556,9 +556,9 @@ export class ItineraryDropdownsService {
         ...queryParams,
       );
 
-      console.log('[getEligibleVehicleTypes] Query returned:', distinctVehicleTypes.length, 'vehicle types');
+ console.log('[getEligibleVehicleTypes] Query returned:', distinctVehicleTypes.length, 'vehicle types');
 
-      // 4. Map to response format
+ // 4. Map to response format
       const vehicleTypes = (
         distinctVehicleTypes as Array<{
           vehicle_type_id: number;
@@ -571,19 +571,19 @@ export class ItineraryDropdownsService {
           return {
             id: String(vt.vehicle_type_id),
             label: vt.vehicle_type_title || '',
-            capacity, // for sorting reference
+ capacity, // for sorting reference
           };
         })
-        // Sort by capacity ascending (primary), then by label
+ // Sort by capacity ascending (primary), then by label
         .sort((a, b) => {
           if (a.capacity !== b.capacity) {
             return a.capacity - b.capacity;
           }
           return a.label.localeCompare(b.label);
         })
-        .map(({ id, label }) => ({ id, label })); // remove capacity from response
+ .map(({ id, label }) => ({ id, label })); // remove capacity from response
 
-      console.log('[getEligibleVehicleTypes] Returning vehicleTypes:', vehicleTypes.length, 'items');
+ console.log('[getEligibleVehicleTypes] Returning vehicleTypes:', vehicleTypes.length, 'items');
 
       if (vehicleTypes.length === 0) {
         const vehicleCounts = await this.getVehicleCountsByCity(eligibleCities);
@@ -604,7 +604,7 @@ export class ItineraryDropdownsService {
               ),
           );
 
-        console.warn(
+ console.warn(
           '[getEligibleVehicleTypes] Empty vehicle type result',
           JSON.stringify({
             sourceLocation: dto.sourceLocation || [],
@@ -624,7 +624,7 @@ export class ItineraryDropdownsService {
         );
       }
 
-      // 5. Load selectedVehicleIds if itineraryPlanId provided
+ // 5. Load selectedVehicleIds if itineraryPlanId provided
       let selectedVehicleIds: string[] = [];
 
       if (dto.itineraryPlanId) {
@@ -647,7 +647,7 @@ export class ItineraryDropdownsService {
             .map((v) => String(v.vehicle_type_id))
             .filter(isNonEmptyString);
 
-          console.log('[getEligibleVehicleTypes] Selected vehicle IDs:', selectedVehicleIds);
+ console.log('[getEligibleVehicleTypes] Selected vehicle IDs:', selectedVehicleIds);
         }
       }
 
@@ -656,14 +656,14 @@ export class ItineraryDropdownsService {
         selectedVehicleIds,
       };
     } catch (error) {
-      console.error('[getEligibleVehicleTypes] ERROR:', error.message, error);
+ console.error('[getEligibleVehicleTypes] ERROR:', error.message, error);
       throw error;
     }
   }
 
-    // ---------------------------------------------------------------------------
-  // LOCATIONS (source / destination) from dvi_stored_locations like old PHP
-  // ---------------------------------------------------------------------------
+ // ---------------------------------------------------------------------------
+ // LOCATIONS (source / destination) from dvi_stored_locations like old PHP
+ // ---------------------------------------------------------------------------
   private async getItineraryDistanceLimit(): Promise<number | null> {
     const row = await this.prisma.dvi_global_settings.findFirst({
       where: {
@@ -771,8 +771,8 @@ export class ItineraryDropdownsService {
       .filter(isNonEmptyString)
       .map((s) => s.trim());
 
-    // Filter locations to only those that have hotels (overnight stay requirement)
-    // 1. Get all city IDs that have active hotels
+ // Filter locations to only those that have hotels (overnight stay requirement)
+ // 1. Get all city IDs that have active hotels
     const hotels = await this.prisma.dvi_hotel.findMany({
       where: { status: 1, deleted: false },
       select: { hotel_city: true },
@@ -786,23 +786,23 @@ export class ItineraryDropdownsService {
       .filter((id) => Number.isFinite(id));
 
     if (!cityIdsWithHotels.length) {
-      // no hotel cities found; return whatever stored_locations gave
+ // no hotel cities found; return whatever stored_locations gave
       return locations.map((loc) => ({ id: loc, name: loc }));
     }
 
-    // 2. Get names of these cities
+ // 2. Get names of these cities
     const cities = await (this.prisma as any).dvi_cities.findMany({
       where: { id: { in: cityIdsWithHotels }, deleted: 0 },
       select: { name: true },
     });
 
-    // ✅ FIX TS2345: name can be null -> guard before toLowerCase()
+ // FIX TS2345: name can be null -> guard before toLowerCase()
     const cityNamesWithHotels: string[] = (cities as Array<{ name: string | null }>)
 
       .map((c) => (isNonEmptyString(c?.name) ? c.name.trim().toLowerCase() : ''))
       .filter(isNonEmptyString);
 
-    // Add common aliases to the list of valid city names
+ // Add common aliases to the list of valid city names
     const CITY_ALIASES: Record<string, string[]> = {
       alappuzha: ['alleppey', 'alleppe'],
       kochi: ['cochin'],
@@ -814,13 +814,13 @@ export class ItineraryDropdownsService {
 
     const allValidNames: string[] = [...cityNamesWithHotels];
 
-    // ✅ FIX TS7006: type the param
+ // FIX TS7006: type the param
     cityNamesWithHotels.forEach((name: string) => {
       const aliases = CITY_ALIASES[name];
       if (aliases?.length) allValidNames.push(...aliases);
     });
 
-    // 3. Prefer locations that match a city having active hotels, but do NOT drop
+ // 3. Prefer locations that match a city having active hotels, but do NOT drop
 // newly added stored locations that may not yet map to an active hotel city.
 // This keeps the old itinerary ordering for the matched set while still showing
 // everything currently stored in dvi_stored_locations.
@@ -948,7 +948,7 @@ return mergedLocations.map((loc) => ({
       return mapped;
     }
 
-    // Fallback to the canonical backend definitions when master data is not seeded.
+ // Fallback to the canonical backend definitions when master data is not seeded.
     return CANONICAL_HOTEL_RATE_PLANS.map((plan) => ({
       id: plan.code,
       code: plan.code,
@@ -1016,24 +1016,24 @@ return mergedLocations.map((loc) => ({
     ];
   }
 
-  // ---------------------------------------------------------------------------
-  // VIA ROUTES – match old PHP behaviour (use DB: dvi_stored_locations +
-  // dvi_stored_location_via_routes)
-  // ---------------------------------------------------------------------------
+ // ---------------------------------------------------------------------------
+ // VIA ROUTES match old PHP behaviour (use DB: dvi_stored_locations +
+ // dvi_stored_location_via_routes)
+ // ---------------------------------------------------------------------------
   async getViaRoutes(
     source?: string,
     destination?: string,
-    q?: string, // optional typed text from frontend
+ q?: string, // optional typed text from frontend
   ): Promise<SimpleOption[]> {
     const src = (source || '').trim();
     const dest = (destination || '').trim();
 
     if (!src || !dest) {
-      console.warn('[ViaRoutes] Missing source or destination', 'source=', src, 'destination=', dest);
+ console.warn('[ViaRoutes] Missing source or destination', 'source=', src, 'destination=', dest);
       return [];
     }
 
-    // 1) Find location_ID from dvi_stored_locations (same as PHP)
+ // 1) Find location_ID from dvi_stored_locations (same as PHP)
     const location = await this.prisma.dvi_stored_locations.findFirst({
       where: {
         deleted: 0,
@@ -1047,7 +1047,7 @@ return mergedLocations.map((loc) => ({
     } as any);
 
     if (!location) {
-      console.warn(
+ console.warn(
         '[ViaRoutes] No location_ID found for source/destination',
         'source=',
         src,
@@ -1057,7 +1057,7 @@ return mergedLocations.map((loc) => ({
       return [];
     }
 
-    // 2) Fetch via routes for that location_id
+ // 2) Fetch via routes for that location_id
     const viaRoutes = await this.prisma.dvi_stored_location_via_routes.findMany({
       where: {
         deleted: 0,
@@ -1083,7 +1083,7 @@ return mergedLocations.map((loc) => ({
 
     if (!viaRoutes.length) return [];
 
-    // 3) Map to SimpleOption[] (id = via_route_location_ID, label = name)
+ // 3) Map to SimpleOption[] (id = via_route_location_ID, label = name)
     return viaRoutes.map((r) => ({
       id: String(r.via_route_location_ID),
       label: r.via_route_location ?? '',

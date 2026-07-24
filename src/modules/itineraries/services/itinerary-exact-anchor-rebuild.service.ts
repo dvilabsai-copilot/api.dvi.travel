@@ -278,7 +278,7 @@ export class ItineraryExactAnchorRebuildService {
         .filter((id: number) => Number.isFinite(id) && id > 0),
     ));
 
-    console.log('[FitHere][APJ_PIVOT_ARRAY_SOURCE]', {
+ console.log('[FitHere][APJ_PIVOT_ARRAY_SOURCE]', {
       routeId: Number(params.routeId),
       selectedHotspotId: Number(params.targetHotspotId || 0),
       source: 'VISIBLE_TIMELINE_ONLY',
@@ -333,7 +333,7 @@ export class ItineraryExactAnchorRebuildService {
         };
 
         originalAttractions = [selectedAttractionRow, ...originalAttractions];
-        console.log('[FitHere][APJ_PIVOT_SYNTHESIZED_SELECTED]', {
+ console.log('[FitHere][APJ_PIVOT_SYNTHESIZED_SELECTED]', {
           routeId: Number(params.routeId),
           selectedHotspotId: Number(params.targetHotspotId || 0),
           selectedHotspotName: selectedAttractionRow.name,
@@ -341,19 +341,19 @@ export class ItineraryExactAnchorRebuildService {
       }
     }
 
-    // The exact-anchor rebuild schedules rows before the final display-timeline
-    // enrichment pass. Load the complete same-day operating-window summary now
-    // so split shifts (for example 05:00-08:00, 16:00-19:00) are available to
-    // adjustManualFitVisitStartToOperatingWindow. Without this, a manual
-    // hotspot arriving between shifts is incorrectly marked as closed instead
-    // of waiting for the next valid window.
+ // The exact-anchor rebuild schedules rows before the final display-timeline
+ // enrichment pass. Load the complete same-day operating-window summary now
+ // so split shifts (for example 05:00-08:00, 16:00-19:00) are available to
+ // adjustManualFitVisitStartToOperatingWindow. Without this, a manual
+ // hotspot arriving between shifts is incorrectly marked as closed instead
+ // of waiting for the next valid window.
     originalAttractions = await this.enrichManualFitPreviewTimelineWithOperatingHours(
       Number(params.planId),
       Number(params.routeId),
       originalAttractions,
     );
-    // The enrichment returns cloned row objects; refresh the selected-row
-    // reference so the scheduler receives the enriched split-window fields.
+ // The enrichment returns cloned row objects; refresh the selected-row
+ // reference so the scheduler receives the enriched split-window fields.
     selectedAttractionRow =
       originalAttractions.find((row: any) => getHotspotId(row) === Number(params.targetHotspotId || 0))
       || selectedAttractionRow;
@@ -493,7 +493,7 @@ export class ItineraryExactAnchorRebuildService {
 
         if (shouldBypassClickedAnchorForClosing || (rowContext === selectedCityContext && hasLaterOppositeSideRow)) {
           deferredRows.push(row);
-          console.log('[FitHere][APJ_PIVOT_PREFIX_REORDER]', {
+ console.log('[FitHere][APJ_PIVOT_PREFIX_REORDER]', {
             routeId: Number(params.routeId),
             selectedHotspotId: Number(params.targetHotspotId || 0),
             hotspotId,
@@ -520,7 +520,7 @@ export class ItineraryExactAnchorRebuildService {
 
     const scheduledAttractions = (() => {
       if (!selectedAttractionRow) {
-        console.warn('[FitHere][APJ_PIVOT_ARRAY_ABORT_NO_SELECTED]', {
+ console.warn('[FitHere][APJ_PIVOT_ARRAY_ABORT_NO_SELECTED]', {
           routeId: Number(params.routeId),
           selectedHotspotId: Number(params.targetHotspotId || 0),
           survivingIds: survivingAttractions.map((row: any) => getHotspotId(row)),
@@ -563,7 +563,7 @@ export class ItineraryExactAnchorRebuildService {
       return [selectedAttractionRow, ...pruneDirectionalBacktrackingAfterPivot(survivingAttractions)];
     })();
 
-    console.log('[FitHere][APJ_PIVOT_ARRAY_ORDER]', {
+ console.log('[FitHere][APJ_PIVOT_ARRAY_ORDER]', {
       routeId: Number(params.routeId),
       selectedHotspotId: Number(params.targetHotspotId || 0),
       anchorIntent,
@@ -677,7 +677,7 @@ export class ItineraryExactAnchorRebuildService {
             || 'Route Start',
           ).trim();
 
-          console.log('[FitHere][MAIN_TIMELINE_TRAVEL_REPLICA]', {
+ console.log('[FitHere][MAIN_TIMELINE_TRAVEL_REPLICA]', {
             routeId: Number(params.routeId),
             fromHotspotId: null,
             toHotspotId: toId,
@@ -802,7 +802,7 @@ export class ItineraryExactAnchorRebuildService {
           pairDistanceKm,
         );
 
-        console.log('[FitHere][MAIN_TIMELINE_TRAVEL_REPLICA]', {
+ console.log('[FitHere][MAIN_TIMELINE_TRAVEL_REPLICA]', {
           routeId: Number(params.routeId),
           fromHotspotId: fromId,
           toHotspotId: toId,
@@ -856,7 +856,7 @@ export class ItineraryExactAnchorRebuildService {
       );
 
       if (!operatingAdjustment.valid && getHotspotId(currentAttraction) !== Number(params.targetHotspotId || 0)) {
-        console.warn('[FitHere][APJ_PIVOT_DECISION]', {
+ console.warn('[FitHere][APJ_PIVOT_DECISION]', {
           routeId: Number(params.routeId),
           hotspotId: getHotspotId(currentAttraction),
           name: getName(currentAttraction),
@@ -893,7 +893,7 @@ export class ItineraryExactAnchorRebuildService {
     if (previousAttraction && hotelRows.length > 0) {
       const hotelRow = hotelRows[0];
       const fromLabel = getName(previousAttraction);
-      const hotelName = getName(hotelRow).replace(/^Check-?in at\s*/i, '') || 'Hotel';
+ const hotelName = getName(hotelRow).replace(/^Check-?in at\s*/i, '') || 'Hotel';
       const fallbackHotelTravel = ordered.find((row: any) => {
         const text = String(row?.text || row?.name || '').toLowerCase();
         return isTravelRow(row) && text.includes('travel to hotel');
@@ -958,7 +958,7 @@ export class ItineraryExactAnchorRebuildService {
 
     const normalized = this.normalizeTravelLabelsToNextStop(enriched);
     this.rememberExactAnchorSequentialTimeline(cacheKey, normalized);
-    console.log('[FitHere][APJ_PIVOT_REBUILT_TIMELINE]', {
+ console.log('[FitHere][APJ_PIVOT_REBUILT_TIMELINE]', {
       routeId: Number(params.routeId),
       selectedHotspotId: Number(params.targetHotspotId || 0),
       attractionIds: normalized

@@ -18,7 +18,7 @@ export class UpdateStaffDto {
   @IsOptional() @IsInt() @Min(0)
   roleId?: number;
 
-  // Optional login updates
+ // Optional login updates
   @IsOptional() @IsEmail()
   loginEmail?: string;
 
@@ -26,5 +26,5 @@ export class UpdateStaffDto {
   password?: string;
 
   @IsOptional() @IsInt()
-  status?: number; // 0/1
+ status?: number; // 0/1
 }

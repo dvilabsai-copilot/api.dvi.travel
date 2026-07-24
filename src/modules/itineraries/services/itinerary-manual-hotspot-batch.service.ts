@@ -76,9 +76,9 @@ export class ItineraryManualHotspotBatchService {
       throw new NotFoundException('Route not found for this itinerary plan');
     }
 
-    // This check must happen before any route-row rewrite. A stale UI or a
-    // direct API caller must not be able to insert a hotspot that is closed
-    // for the route's actual calendar day.
+ // This check must happen before any route-row rewrite. A stale UI or a
+ // direct API caller must not be able to insert a hotspot that is closed
+ // for the route's actual calendar day.
     for (const requestedHotspotId of requestedHotspotIds) {
       const operatingStatus = await getRouteHotspotOperatingStatus(
         tx,
@@ -176,7 +176,7 @@ export class ItineraryManualHotspotBatchService {
       ? Number(options?.anchorIndex)
       : undefined;
 
-    console.log('[ManualHotspotApply] requested anchor', {
+ console.log('[ManualHotspotApply] requested anchor', {
       planId: Number(planId),
       routeId: Number(routeId),
       requestedHotspotIds,
@@ -199,8 +199,8 @@ export class ItineraryManualHotspotBatchService {
       }
     }
 
-    // Fast path: when the caller already confirmed force-conflict insertion,
-    // skip the slow adaptive search entirely and persist each hotspot as a conflict row.
+ // Fast path: when the caller already confirmed force-conflict insertion,
+ // skip the slow adaptive search entirely and persist each hotspot as a conflict row.
     if (options?.forceConflictInsertion === true && options?.previewOnly !== true) {
       for (const hotspotId of requestedHotspotIds) {
         await this.callbacks.forceInsertManualHotspotConflictRow(
@@ -225,7 +225,7 @@ export class ItineraryManualHotspotBatchService {
         : [];
 
       if (refreshedSelectedRows.length === 0) {
-        console.warn('[FitHere][force_conflict_refreshed_timeline_missing_selected_hotspot]', {
+ console.warn('[FitHere][force_conflict_refreshed_timeline_missing_selected_hotspot]', {
           planId: Number(planId),
           routeId: Number(routeId),
           requestedHotspotIds,
@@ -292,7 +292,7 @@ export class ItineraryManualHotspotBatchService {
       };
     }
 
-    // â”€â”€ Build manualInsertionFit before any apply mutation â”€â”€
+ // Build manualInsertionFit before any apply mutation
     const baselineTimelineForMatrix = await this.callbacks.getRouteTimelineForScoring(tx, Number(planId), Number(routeId));
     const preFocusHotspotId = this.callbacks.resolveManualHotspotFocusId(requestedHotspotIds, routeManualHotspotIds, options?.focusHotspotId);
     const preFocusCandidate = hotspotMasters.find((m: any) => Number(m.hotspot_ID) === Number(preFocusHotspotId));
@@ -363,7 +363,7 @@ export class ItineraryManualHotspotBatchService {
     );
 
     if (destinationSlotNotFound && options?.previewOnly === true) {
-      console.warn('[ManualDestinationInsert] destination_slot_not_found_continuing_preview_rescue', {
+ console.warn('[ManualDestinationInsert] destination_slot_not_found_continuing_preview_rescue', {
         planId: Number(planId),
         routeId: Number(routeId),
         selectedHotspotId: Number(preFocusHotspotId),
@@ -630,7 +630,7 @@ export class ItineraryManualHotspotBatchService {
       preparedByHotspotId.set(hotspotId, prepared);
     }
 
-    // If frontend sends BEST_FIT slot hints, keep them only when they match backend-computed best slot.
+ // If frontend sends BEST_FIT slot hints, keep them only when they match backend-computed best slot.
     const payloadMatrixPreferredSlot = options?.matrixPreferredSlot || null;
     if (payloadMatrixPreferredSlot?.source === 'BEST_FIT' && manualInsertionFit?.bestSlot) {
       const payloadFrom = Number(payloadMatrixPreferredSlot?.fromHotspotId || 0);
@@ -638,7 +638,7 @@ export class ItineraryManualHotspotBatchService {
       const bestFrom = Number(manualInsertionFit?.bestSlot?.fromHotspotId || 0);
       const bestTo = Number(manualInsertionFit?.bestSlot?.toHotspotId || 0);
       if (payloadFrom !== bestFrom || payloadTo !== bestTo) {
-        console.warn('[ManualHotspotApply] matrixPreferredSlot mismatch with computed best slot', {
+ console.warn('[ManualHotspotApply] matrixPreferredSlot mismatch with computed best slot', {
           payloadFrom,
           payloadTo,
           bestFrom,
@@ -653,7 +653,7 @@ export class ItineraryManualHotspotBatchService {
       manualInsertionFit,
     });
 
-    console.log('[ManualHotspotApply] matrix best slot', {
+ console.log('[ManualHotspotApply] matrix best slot', {
       selectedHotspotId: Number(preFocusHotspotId),
       chosenSlotSource: manualInsertionFit?.chosenSlotSource || null,
       bestSlot: manualInsertionFit?.bestSlot || null,
@@ -665,7 +665,7 @@ export class ItineraryManualHotspotBatchService {
       resolvedAnchorIndex = Number(matrixGapResolution.gapIndex);
     }
 
-    console.log('[ManualHotspotApply] resolved gap index', {
+ console.log('[ManualHotspotApply] resolved gap index', {
       resolvedAnchorType: resolvedAnchorType || null,
       resolvedAnchorIndex: Number.isInteger(Number(resolvedAnchorIndex)) ? Number(resolvedAnchorIndex) : null,
       reason: matrixGapResolution.reason,
@@ -753,7 +753,7 @@ export class ItineraryManualHotspotBatchService {
       },
     );
 
-    console.log('[ManualTimelineBuild] api_test_start', {
+ console.log('[ManualTimelineBuild] api_test_start', {
       planId: Number(planId),
       routeId: Number(routeId),
       selectedHotspotId: Number(focusHotspotId || 0),
@@ -770,9 +770,9 @@ export class ItineraryManualHotspotBatchService {
       adaptive,
     });
 
-    // â”€â”€ Apply matrix-fit positioning to preview timeline â”€â”€
-    // Keep the full baseline route and merge the matrix-selected hotspot into the best slot.
-    // With timing recalculation and forward time-shifting.
+ // Apply matrix-fit positioning to preview timeline
+ // Keep the full baseline route and merge the matrix-selected hotspot into the best slot.
+ // With timing recalculation and forward time-shifting.
     const routeEndMinutesPreview = manualTimingPolicy?.endTime
       ? Math.floor(this.callbacks.hmsToSeconds(TimeConverter.toTimeString(manualTimingPolicy.endTime)) / 60)
       : 23 * 60;
@@ -910,7 +910,7 @@ export class ItineraryManualHotspotBatchService {
       removedPreviewHotspots,
     );
 
-    // Final deterministic overlay: ensure selected row is between matrix slot boundaries and stale times are not shown.
+ // Final deterministic overlay: ensure selected row is between matrix slot boundaries and stale times are not shown.
     adjustedPreviewTimeline = this.callbacks.applyManualInsertionFitToPreviewTimeline(
       adjustedPreviewTimeline,
       timelineInsertionFit,
@@ -997,7 +997,7 @@ export class ItineraryManualHotspotBatchService {
       });
 
       if (this.callbacks.isManualPreviewTimelineWrapped(destinationBaselineRebuilt)) {
-        console.warn('[FitHere][destination_side_rebuild_rejected_wrapped_timeline]', {
+ console.warn('[FitHere][destination_side_rebuild_rejected_wrapped_timeline]', {
           routeId: Number(routeId),
           selectedHotspotId: Number(focusHotspotId),
           rebuiltLength: Array.isArray(destinationBaselineRebuilt) ? destinationBaselineRebuilt.length : 0,
@@ -1041,7 +1041,7 @@ export class ItineraryManualHotspotBatchService {
         destinationBaselineRebuilt.length > adjustedPreviewTimeline.length &&
         (destinationRebuildPreservesRequestedAnchor || destinationRebuildKeepsSelectedBeforeBeforeRow)
       ) {
-        console.warn('[FitHere][destination_side_preview_baseline_rebuild]', {
+ console.warn('[FitHere][destination_side_preview_baseline_rebuild]', {
           routeId,
           selectedHotspotId: Number(focusHotspotId),
           beforeLength: adjustedPreviewTimeline.length,
@@ -1049,7 +1049,7 @@ export class ItineraryManualHotspotBatchService {
         });
         adjustedPreviewTimeline = destinationBaselineRebuilt;
       } else {
-        console.warn('[FitHere][destination_side_preview_baseline_rebuild_skipped]', {
+ console.warn('[FitHere][destination_side_preview_baseline_rebuild_skipped]', {
           routeId,
           selectedHotspotId: Number(focusHotspotId),
           currentLength: adjustedPreviewTimeline.length,
@@ -1074,7 +1074,7 @@ export class ItineraryManualHotspotBatchService {
         allowBoundaryRescuePlacement: true,
       }) !== true
     ) {
-      console.warn('[FitHere][exact_anchor_drift]', {
+ console.warn('[FitHere][exact_anchor_drift]', {
         routeId,
         selectedHotspotId: focusHotspotId,
         anchorIntent: options?.anchorIntent,
@@ -1195,7 +1195,7 @@ export class ItineraryManualHotspotBatchService {
         manualInsertionFit.removedLowPriorityHotspots = resolvedExactAnchorRemovals;
         manualInsertionFit.rescheduleApplied = true;
         manualInsertionFit.dayOverflowMinutes = 0;
-        console.warn('[FitHere][exact_anchor_boundary_rescue_applied]', {
+ console.warn('[FitHere][exact_anchor_boundary_rescue_applied]', {
           routeId: Number(routeId),
           selectedHotspotId: Number(focusHotspotId),
           removedHotspotIds: resolvedExactAnchorRemovals
@@ -1272,7 +1272,7 @@ export class ItineraryManualHotspotBatchService {
             ? 'Selected manual hotspot was rescued by exhausting same-route non-manual hotspot removals.'
             : 'Selected manual hotspot was rescued only after exhausting same-route non-manual hotspot removals, so the clicked anchor moved.',
         };
-        console.warn('[FitHere][exact_anchor_exhaustive_same_route_rescue_applied]', {
+ console.warn('[FitHere][exact_anchor_exhaustive_same_route_rescue_applied]', {
           routeId: Number(routeId),
           selectedHotspotId: Number(focusHotspotId),
           removedHotspotIds: exhaustiveExactAnchorRemovalIds,
@@ -1305,7 +1305,7 @@ export class ItineraryManualHotspotBatchService {
       ));
 
       if (!selectedHotspotStillPresent) {
-        console.warn('[ManualTimelineBuild] exact_anchor_drift_selected_hotspot_missing', {
+ console.warn('[ManualTimelineBuild] exact_anchor_drift_selected_hotspot_missing', {
           routeId: Number(routeId),
           selectedHotspotId: Number(focusHotspotId),
           exactAnchorExhaustedMessage,
@@ -1325,7 +1325,7 @@ export class ItineraryManualHotspotBatchService {
     }
 
     if (manualInsertionFit?.destinationInsertionMode === true) {
-      console.log('[ManualDestinationInsert] timeline_built',
+ console.log('[ManualDestinationInsert] timeline_built',
         (Array.isArray(adjustedPreviewTimeline) ? adjustedPreviewTimeline : []).map((row: any, index: number) => ({
           index,
           type: String(row?.type || row?.item_type || ''),
@@ -1336,9 +1336,9 @@ export class ItineraryManualHotspotBatchService {
       );
     }
 
-    // â”€â”€ Fix confirmation logic: don't mark requiresConfirmation for feasible matrix slots â”€â”€
-    // If the matrix bestSlot is feasible (ON_ROUTE/MINOR_DETOUR) and no hotspots are actually removed,
-    // there is no reason to ask for confirmation. The anchor boundary hotspots are not "removed".
+ // Fix confirmation logic: don't mark requiresConfirmation for feasible matrix slots
+ // If the matrix bestSlot is feasible (ON_ROUTE/MINOR_DETOUR) and no hotspots are actually removed,
+ // there is no reason to ask for confirmation. The anchor boundary hotspots are not "removed".
     const matrixFeasible =
       timelineInsertionFit?.bestSlot?.routeFitType === 'ON_ROUTE' ||
       timelineInsertionFit?.bestSlot?.routeFitType === 'MINOR_DETOUR';
@@ -1353,7 +1353,7 @@ export class ItineraryManualHotspotBatchService {
       ? adaptive.removedTopPriorityHotspots
       : [];
 
-    // Treat as truly removed only when the hotspot no longer exists in adjusted preview timeline.
+ // Treat as truly removed only when the hotspot no longer exists in adjusted preview timeline.
     const actuallyRemovedTopPriorityRows = removedTopPriorityCandidates.filter((row: any) => {
       const id = Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0);
       return id > 0 && !adjustedTimelineAttractionIds.has(id);
@@ -1365,7 +1365,7 @@ export class ItineraryManualHotspotBatchService {
     let finalRemovedTopPriority = actuallyRemovedTopPriorityRows;
 
     if (matrixFeasible && !actuallyRemovedTopPriority) {
-      // Matrix found a good fit and no hotspots are actually removed, so no confirmation needed
+ // Matrix found a good fit and no hotspots are actually removed, so no confirmation needed
       finalRequiresConfirmation = false;
       finalTopPriorityAffected = [];
       finalRemovedTopPriority = [];
@@ -1444,7 +1444,7 @@ export class ItineraryManualHotspotBatchService {
       }
     }
 
-    // Priority confirmation should only remain when there are actual removed top-priority rows.
+ // Priority confirmation should only remain when there are actual removed top-priority rows.
     if (!Array.isArray(finalRemovedTopPriority) || finalRemovedTopPriority.length === 0) {
       finalRequiresConfirmation = false;
       finalTopPriorityAffected = [];
@@ -1541,7 +1541,7 @@ export class ItineraryManualHotspotBatchService {
           ? sameRouteDayEndResolvedRemovals
           : ((lowPriorityRemovalPlanPreview.removedHotspots || []).filter((row: any) => this.callbacks.getManualFitRemovalHotspotId(row) > 0));
       if (sameRouteDayEndResolvedRemovals.length !== (lowPriorityRemovalPlanPreview.removedHotspots || []).length) {
-        console.warn('[FitHere][cross_route_removal_candidate_blocked]', {
+ console.warn('[FitHere][cross_route_removal_candidate_blocked]', {
           planId: Number(planId),
           routeId: Number(routeId),
           originalRemovalIds: (lowPriorityRemovalPlanPreview.removedHotspots || []).map((row: any) => row?.id),
@@ -1585,7 +1585,7 @@ export class ItineraryManualHotspotBatchService {
               message: invariantMessage,
             });
           }
-          console.error(invariantMessage);
+ console.error(invariantMessage);
         }
 
         manualInsertionFit.exceedsDayEnd = false;
@@ -1659,7 +1659,7 @@ export class ItineraryManualHotspotBatchService {
       });
 
       if (this.callbacks.isManualPreviewTimelineWrapped(destinationBaselineRebuilt)) {
-        console.warn('[FitHere][destination_side_rebuild_rejected_wrapped_timeline]', {
+ console.warn('[FitHere][destination_side_rebuild_rejected_wrapped_timeline]', {
           routeId: Number(routeId),
           selectedHotspotId: Number(focusHotspotId),
           rebuiltLength: Array.isArray(destinationBaselineRebuilt) ? destinationBaselineRebuilt.length : 0,
@@ -1702,7 +1702,7 @@ export class ItineraryManualHotspotBatchService {
         const repairedKeepsSelected = timelineKeepsSelected(repairedTimeline);
         const rebuiltKeepsSelected = timelineKeepsSelected(destinationBaselineRebuilt);
 
-        console.warn('[FitHere][destination_side_preview_pre_closing_repair]', {
+ console.warn('[FitHere][destination_side_preview_pre_closing_repair]', {
           routeId,
           selectedHotspotId: Number(focusHotspotId),
           beforeLength: adjustedPreviewTimeline.length,
@@ -1715,7 +1715,7 @@ export class ItineraryManualHotspotBatchService {
         if (repairedKeepsSelected) {
           adjustedPreviewTimeline = repairedTimeline;
         } else if (rebuiltKeepsSelected) {
-          console.warn('[FitHere][destination_side_preview_repair_guard_kept_rebuild]', {
+ console.warn('[FitHere][destination_side_preview_repair_guard_kept_rebuild]', {
             routeId,
             selectedHotspotId: Number(focusHotspotId),
             droppedRepairLength: repairedTimeline.length,
@@ -1723,7 +1723,7 @@ export class ItineraryManualHotspotBatchService {
           });
           adjustedPreviewTimeline = destinationBaselineRebuilt;
         } else if (currentKeepsSelected) {
-          console.warn('[FitHere][destination_side_preview_repair_guard_kept_current]', {
+ console.warn('[FitHere][destination_side_preview_repair_guard_kept_current]', {
             routeId,
             selectedHotspotId: Number(focusHotspotId),
             droppedRepairLength: repairedTimeline.length,
@@ -1845,7 +1845,7 @@ export class ItineraryManualHotspotBatchService {
       const selectedAttractionIndex = attractionRows.findIndex((row: any) => (
         Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0) === Number(focusHotspotId)
       ));
-      console.log('[FitHere][DIRECT_CLOSING_RESCUE_PRECHECK]', {
+ console.log('[FitHere][DIRECT_CLOSING_RESCUE_PRECHECK]', {
         routeId: Number(routeId),
         selectedHotspotId: Number(focusHotspotId),
         selectedAttractionIndex,
@@ -1906,7 +1906,7 @@ export class ItineraryManualHotspotBatchService {
         .filter((entry: any) => entry.priority !== null);
 
       const orderedBeforeSelected = [...beforeSelectedRows].reverse();
-      console.log('[FitHere][DIRECT_CLOSING_RESCUE_INPUT]', {
+ console.log('[FitHere][DIRECT_CLOSING_RESCUE_INPUT]', {
         routeId: Number(routeId),
         selectedHotspotId: Number(focusHotspotId),
         directClickedAnchorRescueHotspotId,
@@ -1940,7 +1940,7 @@ export class ItineraryManualHotspotBatchService {
       for (let size = 2; size <= orderedBeforeSelected.length; size += 1) {
         rescuePlans.push(orderedBeforeSelected.slice(0, size).map((entry: any) => Number(entry.hotspotId)));
       }
-      console.log('[FitHere][DIRECT_CLOSING_RESCUE_PLANS]', {
+ console.log('[FitHere][DIRECT_CLOSING_RESCUE_PLANS]', {
         routeId: Number(routeId),
         selectedHotspotId: Number(focusHotspotId),
         rescuePlans,
@@ -1952,7 +1952,7 @@ export class ItineraryManualHotspotBatchService {
         || 'the selected manual hotspot',
       ).trim();
       for (const removedHotspotIds of rescuePlans) {
-        console.log('[FitHere][DIRECT_CLOSING_RESCUE_TRY]', {
+ console.log('[FitHere][DIRECT_CLOSING_RESCUE_TRY]', {
           routeId: Number(routeId),
           selectedHotspotId: Number(focusHotspotId),
           removedHotspotIds,
@@ -1969,7 +1969,7 @@ export class ItineraryManualHotspotBatchService {
         });
 
         if (!Array.isArray(directRescueTimeline) || directRescueTimeline.length === 0) {
-          console.log('[FitHere][DIRECT_CLOSING_RESCUE_EMPTY_TIMELINE]', {
+ console.log('[FitHere][DIRECT_CLOSING_RESCUE_EMPTY_TIMELINE]', {
             routeId: Number(routeId),
             selectedHotspotId: Number(focusHotspotId),
             removedHotspotIds,
@@ -2006,7 +2006,7 @@ export class ItineraryManualHotspotBatchService {
           selectedOperatingAfterDirectRescue.selectedOpeningConflict ||
           directRescueOverflowMinutes > 0
         ) {
-          console.log('[FitHere][DIRECT_CLOSING_RESCUE_REJECTED]', {
+ console.log('[FitHere][DIRECT_CLOSING_RESCUE_REJECTED]', {
             routeId: Number(routeId),
             selectedHotspotId: Number(focusHotspotId),
             removedHotspotIds,
@@ -2134,7 +2134,7 @@ export class ItineraryManualHotspotBatchService {
           reason: `${directRescueRemovals.map((row: any) => row.name).join(', ')} removed so the selected manual hotspot can fit before closing time.`,
         };
 
-        console.log('[FitHere][DIRECT_CLICKED_ANCHOR_CLOSING_RESCUE_PROMOTED]', {
+ console.log('[FitHere][DIRECT_CLICKED_ANCHOR_CLOSING_RESCUE_PROMOTED]', {
           routeId: Number(routeId),
           selectedHotspotId: Number(focusHotspotId),
           removedHotspotIds,
@@ -2156,7 +2156,7 @@ export class ItineraryManualHotspotBatchService {
         (!!fallbackSelectedOpeningConflict && fallbackOverflowMinutes > 0)
       ) &&
       selectedLatestAllowedEndMinutesForResolver > 0;
-    console.log('[FitHere][DIRECT_CLOSING_RESCUE_GATE]', {
+ console.log('[FitHere][DIRECT_CLOSING_RESCUE_GATE]', {
       routeId: Number(routeId),
       selectedHotspotId: Number(focusHotspotId),
       exactAnchorMode: options?.exactAnchorMode === true,
@@ -2238,7 +2238,7 @@ export class ItineraryManualHotspotBatchService {
           ? sameRouteResolvedRemovals
           : ((openingHoursRemovalPlan.removedHotspots || []).filter((row: any) => this.callbacks.getManualFitRemovalHotspotId(row) > 0));
       if (sameRouteResolvedRemovals.length !== (openingHoursRemovalPlan.removedHotspots || []).length) {
-        console.warn('[FitHere][cross_route_removal_candidate_blocked]', {
+ console.warn('[FitHere][cross_route_removal_candidate_blocked]', {
           planId: Number(planId),
           routeId: Number(routeId),
           originalRemovalIds: (openingHoursRemovalPlan.removedHotspots || []).map((row: any) => row?.id),
@@ -2293,7 +2293,7 @@ export class ItineraryManualHotspotBatchService {
         );
 
         if (selectedClosingResolverAccepted && selectedAfterRescue.hasClosingOverflow === true) {
-          console.warn('[FitHere][SELECTED_CLOSING_RESCUE_ACCEPTED_WITH_STALE_OVERFLOW]', {
+ console.warn('[FitHere][SELECTED_CLOSING_RESCUE_ACCEPTED_WITH_STALE_OVERFLOW]', {
             routeId: Number(routeId),
             selectedHotspotId: Number(focusHotspotId),
             selectedAfterRescue,
@@ -2352,7 +2352,7 @@ export class ItineraryManualHotspotBatchService {
             ...newResolvedOpeningHourRemovals,
           ];
 
-          console.log('[FitHere][SELECTED_CLOSING_RESCUE_PROMOTED]', {
+ console.log('[FitHere][SELECTED_CLOSING_RESCUE_PROMOTED]', {
             routeId: Number(routeId),
             selectedHotspotId: Number(focusHotspotId),
             removedHotspotIds: resolvedOpeningHourRemovals.map((row: any) => Number(row?.id || 0)),
@@ -2457,7 +2457,7 @@ export class ItineraryManualHotspotBatchService {
         manualInsertionFit.fullTimelineIsResolvedRemovalPlan = true;
         manualInsertionFit.timelineSource = 'SELECTED_CLOSING_RESCUE_LATE_PROMOTION';
 
-        console.warn('[FitHere][SELECTED_CLOSING_RESCUE_LATE_PROMOTION]', {
+ console.warn('[FitHere][SELECTED_CLOSING_RESCUE_LATE_PROMOTION]', {
           routeId: Number(routeId),
           selectedHotspotId: Number(focusHotspotId),
           removedHotspotIds: plannedRemovals.map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0)),
@@ -2628,7 +2628,7 @@ export class ItineraryManualHotspotBatchService {
       || manualInsertionFit?.rescheduleApplied === true,
     );
 
-    console.log('[FitHere][APJ_PIVOT_VALIDATION]', {
+ console.log('[FitHere][APJ_PIVOT_VALIDATION]', {
       routeId: Number(routeId),
       selectedHotspotIds: requestedHotspotIds,
       selectedManualPresentInPreview,
@@ -2760,7 +2760,7 @@ export class ItineraryManualHotspotBatchService {
       && options?.exactAnchorMode === true
       && manualInsertionFit?.destinationInsertionMode === true
     ) {
-      console.log('[FitPreview][final_response_timeline]', {
+ console.log('[FitPreview][final_response_timeline]', {
         routeId: Number(routeId),
         selectedHotspotIds: requestedHotspotIds,
         timelineLength: Array.isArray(adjustedPreviewTimeline) ? adjustedPreviewTimeline.length : 0,
@@ -2970,7 +2970,7 @@ export class ItineraryManualHotspotBatchService {
           : [],
       };
 
-      console.log('[ManualHotspotApply] inserted row ids', {
+ console.log('[ManualHotspotApply] inserted row ids', {
         planId: Number(planId),
         routeId: Number(routeId),
         routeHotspotId: focusRouteHotspotId,
@@ -2982,7 +2982,7 @@ export class ItineraryManualHotspotBatchService {
       });
     }
 
-    console.log('[ManualHotspotApply] validation result', {
+ console.log('[ManualHotspotApply] validation result', {
       planId: Number(planId),
       routeId: Number(routeId),
       success,

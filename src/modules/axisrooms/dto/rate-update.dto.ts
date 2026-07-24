@@ -89,7 +89,7 @@ export class RateEntryDto {
   @IsNumber()
   CHILD_WITHOUT_BED?: number;
 
-  [key: string]: any; // Dynamic occupancy keys (SINGLE, DOUBLE, TRIPLE, EXTRABED, etc.)
+ [key: string]: any; // Dynamic occupancy keys (SINGLE, DOUBLE, TRIPLE, EXTRABED, etc.)
 }
 
 export class RateDataDto {

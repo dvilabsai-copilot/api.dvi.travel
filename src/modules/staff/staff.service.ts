@@ -27,9 +27,9 @@ export interface StaffView {
   createdOn: Date | null;
   updatedOn: Date | null;
   login: StaffLogin | null;
-  /** Enriched from dvi_rolemenu.role_name */
+ /** Enriched from dvi_rolemenu.role_name */
   roleName?: string;
-  /** Enriched from dvi_agent.agent_name + agent_lastname */
+ /** Enriched from dvi_agent.agent_name + agent_lastname */
   agentName?: string;
 }
 
@@ -37,7 +37,7 @@ export interface StaffView {
 export class StaffService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Map DB row → API shape (supports optional roleName/agentName passthrough) */
+ /** Map DB row API shape (supports optional roleName/agentName passthrough) */
   private mapStaff(row: any): StaffView {
     if (!row) {
       return {
@@ -83,7 +83,7 @@ export class StaffService {
     };
   }
 
-  /** Batch: roleId[] -> Map(roleId -> role_name) */
+ /** Batch: roleId[] -> Map(roleId -> role_name) */
   private async getRoleMap(roleIds: number[]): Promise<Map<number, string>> {
     const ids = Array.from(
       new Set(roleIds.filter((x) => typeof x === 'number' && !Number.isNaN(x))),
@@ -98,7 +98,7 @@ export class StaffService {
     return new Map<number, string>(roles.map((r) => [Number(r.role_ID), String(r.role_name)]));
   }
 
-  /** Single: roleId -> role_name */
+ /** Single: roleId -> role_name */
   private async getRoleName(roleId?: number): Promise<string | undefined> {
     if (typeof roleId !== 'number' || Number.isNaN(roleId)) return undefined;
     const role = await this.prisma.dvi_rolemenu.findFirst({
@@ -108,7 +108,7 @@ export class StaffService {
     return role?.role_name ?? undefined;
   }
 
-  /** Batch: agentIds -> Map(agentId -> "First Last") using dvi_agent */
+ /** Batch: agentIds -> Map(agentId -> "First Last") using dvi_agent */
   private async getAgentMap(agentIds: number[]): Promise<Map<number, string>> {
     const ids = Array.from(new Set(agentIds.filter((x) => typeof x === 'number' && !Number.isNaN(x))));
     if (!ids.length) return new Map<number, string>();
@@ -126,7 +126,7 @@ export class StaffService {
     return m;
   }
 
-  /** Single: agentId -> "First Last" */
+ /** Single: agentId -> "First Last" */
   private async getAgentFullName(agentId?: number): Promise<string | undefined> {
     if (typeof agentId !== 'number' || Number.isNaN(agentId)) return undefined;
     const a = await this.prisma.dvi_agent.findFirst({
@@ -182,7 +182,7 @@ export class StaffService {
       }),
     ]);
 
-    // Attach one login record per staff (if present)
+ // Attach one login record per staff (if present)
     const staffIds = rows.map((r) => Number(r.staff_id));
     const logins = staffIds.length
       ? await this.prisma.dvi_users.findMany({
@@ -197,7 +197,7 @@ export class StaffService {
       if (!loginByStaffId.has(sid)) loginByStaffId.set(sid, l);
     });
 
-    // Batch fetch role names & agent names for all rows
+ // Batch fetch role names & agent names for all rows
     const roleIds = rows.map((r) => Number(r.roleID)).filter((x) => !Number.isNaN(x));
     const roleMap = await this.getRoleMap(roleIds);
 
@@ -241,9 +241,9 @@ export class StaffService {
   }> {
     const staff: StaffView = await this.getOne(staffId);
 
-    // Extend with more stats once branches/vehicles tables are added
+ // Extend with more stats once branches/vehicles tables are added
     const otherStats = {
-      // example: branchCount: await this.prisma.dvi_staff_branches.count({ where: { staff_id: staffId, deleted: 0 } })
+ // example: branchCount: await this.prisma.dvi_staff_branches.count({ where: { staff_id: staffId, deleted: 0 } })
     };
 
     return {
@@ -327,7 +327,7 @@ export class StaffService {
   const now = new Date();
 
   const { staff, login } = await this.prisma.$transaction(async (tx: Tx) => {
-    // ⬇️ Do NOT set updatedon here (omit the field) so it becomes NULL
+ // Do NOT set updatedon here (omit the field) so it becomes NULL
     const staff = await tx.dvi_staff_details.create({
       data: {
         agent_id: agentId,
@@ -339,14 +339,14 @@ export class StaffService {
         deleted: 0,
         createdby: createdBy || 1,
         createdon: now as any,
-        // updatedon: null ← removed to satisfy TS and let DB store NULL
+ // updatedon: null removed to satisfy TS and let DB store NULL
       },
     });
 
     let login: any = null;
     if (loginEmail && password) {
       const hash = await bcrypt.hash(password, 10);
-      // ⬇️ Same: omit updatedon on create so it’s NULL
+ // Same: omit updatedon on create so its NULL
       login = await tx.dvi_users.create({
         data: {
           staff_id: staff.staff_id,
@@ -358,7 +358,7 @@ export class StaffService {
           deleted: 0,
           createdby: BigInt(createdBy || 1),
           createdon: now as any,
-          // updatedon: null ← removed
+ // updatedon: null removed
         },
       });
     }
@@ -409,11 +409,11 @@ export class StaffService {
         staff_email: staffEmail,
         roleID: input.roleId ?? existing.roleID,
         status: typeof input.status === 'number' ? input.status : existing.status,
-        updatedon: now as any, // ✅ stamp on edit
+ updatedon: now as any, // stamp on edit
       },
     });
 
-    // upsert-like behavior for login if loginEmail/password provided
+ // upsert-like behavior for login if loginEmail/password provided
     let login = await this.prisma.dvi_users.findFirst({
       where: { deleted: 0, staff_id: staffId },
       select: { userID: true, useremail: true },
@@ -421,7 +421,7 @@ export class StaffService {
 
     if (input.loginEmail || input.password) {
       if (!login) {
-        // creating a new login on update
+ // creating a new login on update
         if (!input.loginEmail || !input.password) {
           throw new BadRequestException('Both loginEmail and password are required to create a login');
         }
@@ -438,11 +438,11 @@ export class StaffService {
             deleted: 0,
             createdby: BigInt(input.updatedBy ?? 1),
             createdon: now as any,
-            updatedon: now as any, // ✅ stamp on creation during update
+ updatedon: now as any, // stamp on creation during update
           },
         });
       } else {
-        // update existing login
+ // update existing login
         if (input.loginEmail) {
           await this.assertUniqueLoginEmail(input.loginEmail, login.userID as unknown as bigint);
         }
@@ -452,7 +452,7 @@ export class StaffService {
           data: {
             useremail: input.loginEmail ?? login.useremail ?? undefined,
             ...(hash ? { password: hash } : {}),
-            updatedon: now as any, // ✅ stamp on edit
+ updatedon: now as any, // stamp on edit
           },
         });
       }
@@ -492,10 +492,10 @@ export class StaffService {
     return { success: true };
   }
 
-  /** For dynamic Role dropdown */
+ /** For dynamic Role dropdown */
   async listRoleOptions(): Promise<Array<{ id: number; label: string }>> {
     const rows = await this.prisma.dvi_rolemenu.findMany({
-      where: { deleted: 0 }, // relax/remove if you don't have this column
+ where: { deleted: 0 }, // relax/remove if you don't have this column
       select: { role_ID: true, role_name: true },
       orderBy: { role_name: 'asc' },
     });

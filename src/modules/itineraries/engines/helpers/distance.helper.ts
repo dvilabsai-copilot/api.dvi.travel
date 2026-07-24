@@ -14,9 +14,9 @@ export function clearDistanceCache(): void {
 }
 
 export interface DistanceResult {
-  distanceKm: number; // e.g. 8.42
-  travelTime: string; // HH:MM:SS
-  bufferTime: string; // HH:MM:SS
+ distanceKm: number; // e.g. 8.42
+ travelTime: string; // HH:MM:SS
+ bufferTime: string; // HH:MM:SS
 }
 
 /**
@@ -30,7 +30,7 @@ export interface DistanceResult {
  * - "1 day 2 hours 15 mins"
  * Also supports numeric durations (treated as minutes).
  */
-/** Minimum travel time in minutes — accounts for vehicle loading/unloading */
+/** Minimum travel time in minutes accounts for vehicle loading/unloading */
 const MIN_TRAVEL_MINUTES = 5;
 
 function parseDurationToMinutes(duration: any): number | null {
@@ -75,16 +75,16 @@ function normalizeDistanceName(value: string): string {
 export class DistanceHelper {
   private globalSettings: any = null;
 
-  /**
+ /**
    * Set global settings to avoid redundant DB queries.
-   */
+ */
   setGlobalSettings(gs: any) {
     this.globalSettings = gs;
   }
 
-  /**
+ /**
    * Pre-populate the distance cache with provided locations.
-   */
+ */
   prePopulateCache(locations: any[]) {
     for (const loc of locations) {
       const key = `${loc.source_location}|${loc.destination_location}`;
@@ -94,9 +94,9 @@ export class DistanceHelper {
     }
   }
 
-  /**
+ /**
    * Standalone Haversine calculation for simple distance checks.
-   */
+ */
   calculateHaversine(
     startLat: number,
     startLon: number,
@@ -118,7 +118,7 @@ export class DistanceHelper {
       Math.cos(startLatRad) * Math.cos(endLatRad) * Math.pow(Math.sin(lonDiff / 2), 2);
 
     const distance = 2 * earthRadius * Math.asin(Math.sqrt(a));
-    return distance * 1.5; // Apply same 1.5x correction factor as fromCoordinates
+ return distance * 1.5; // Apply same 1.5x correction factor as fromCoordinates
   }
 
   async fromCoordinates(
@@ -157,9 +157,9 @@ export class DistanceHelper {
         ? Number(gs?.itinerary_local_speed_limit ?? 40)
         : Number(gs?.itinerary_outstation_speed_limit ?? 60);
 
-// ⚡ PERFORMANCE/LOGIC: If distance is significant (> 10km),
-    // don't use the very slow local speed (often 15km/h in DB).
-    // This handles cases where hotspots are in the same "city" but far apart.
+// PERFORMANCE/LOGIC: If distance is significant (> 10km),
+ // don't use the very slow local speed (often 15km/h in DB).
+ // This handles cases where hotspots are in the same "city" but far apart.
     if (travelLocationType === 1 && correctedDistance > 10 && avgSpeedKmPerHr < 40) {
       avgSpeedKmPerHr = 40;
     }
@@ -170,7 +170,7 @@ export class DistanceHelper {
     const wholeHours = Math.floor(clampedMinutes / 60);
     const minutes = clampedMinutes % 60;
 
-    // This is a computed travel time (not from DB). It should never exceed 24h normally.
+ // This is a computed travel time (not from DB). It should never exceed 24h normally.
     const travelTime = `${String(wholeHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
 
     const bufferTime = await this.getBufferTime(tx, travelLocationType);
@@ -189,10 +189,10 @@ export class DistanceHelper {
 
     const distance = Number(loc.distance ?? 0);
 
-    // ✅ duration in DB is string like "3 hours 5 mins" / "1 day 1 hour"
+ // duration in DB is string like "3 hours 5 mins" / "1 day 1 hour"
     const totalMinutes = parseDurationToMinutes(loc.duration);
 
-    // Guard against obviously corrupted stored rows like "0.10 KM / 5h15m".
+ // Guard against obviously corrupted stored rows like "0.10 KM / 5h15m".
     if (
       Number.isFinite(distance) &&
       distance > 0 &&
@@ -200,7 +200,7 @@ export class DistanceHelper {
       Number.isFinite(Number(totalMinutes)) &&
       Number(totalMinutes) > 30
     ) {
-      console.warn('[DistanceHelper][SUSPICIOUS_STORED_ROUTE_DURATION]', {
+ console.warn('[DistanceHelper][SUSPICIOUS_STORED_ROUTE_DURATION]', {
         locationId,
         distanceKm: distance,
         durationMinutes: totalMinutes,
@@ -215,7 +215,7 @@ export class DistanceHelper {
       };
     }
 
-    // ✅ IMPORTANT: use *duration* formatter (NO wrap)
+ // IMPORTANT: use *duration* formatter (NO wrap)
     const travelTime = minutesToDurationTime(Math.max(totalMinutes ?? 0, MIN_TRAVEL_MINUTES));
 
     const bufferTime = await this.getBufferTime(tx, travelLocationType);
@@ -234,9 +234,9 @@ export class DistanceHelper {
     const trimmedSource = String(sourceLocation ?? "").trim();
     const trimmedDest = String(destinationLocation ?? "").trim();
 
-    // ✅ PHP PARITY: For hotspots (which provide coordinates), PHP ALWAYS uses
-    // Haversine formula instead of looking up in dvi_stored_locations.
-    // This prevents using city-to-city distances for specific hotspots.
+ // PHP PARITY: For hotspots (which provide coordinates), PHP ALWAYS uses
+ // Haversine formula instead of looking up in dvi_stored_locations.
+ // This prevents using city-to-city distances for specific hotspots.
     const hasSourceCoords =
       sourceCoords &&
       Number.isFinite(Number(sourceCoords.lat)) &&
@@ -258,9 +258,9 @@ export class DistanceHelper {
       Math.abs(Number(sourceCoords.lat) - Number(destCoords.lat)) < 0.000001 &&
       Math.abs(Number(sourceCoords.lon) - Number(destCoords.lon)) < 0.000001;
 
-    // Use coordinates only when they are trustworthy.
-    // If names are different but coordinates are identical, it usually means caller
-    // accidentally copied destination hotspot coords into source coords.
+ // Use coordinates only when they are trustworthy.
+ // If names are different but coordinates are identical, it usually means caller
+ // accidentally copied destination hotspot coords into source coords.
     if (hasSourceCoords && hasDestCoords && (!coordsAreSame || sourceDestNamesSame)) {
       const coordinateResult = await this.fromCoordinates(
         tx,
@@ -272,7 +272,7 @@ export class DistanceHelper {
       );
 
       if (!sourceDestNamesSame && coordinateResult.distanceKm <= 0.01) {
-        console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
+ console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
           source: trimmedSource,
           destination: trimmedDest,
           reason: "Coordinate distance was near-zero for different source/destination names",
@@ -290,12 +290,12 @@ export class DistanceHelper {
 
     const logMsg = `[DistanceHelper] Looking up: "${trimmedSource}" → "${trimmedDest}"\n`;
 
-    // Check cache first
+ // Check cache first
     const cacheKey = `${trimmedSource}|${trimmedDest}`;
     let loc = distanceCache.get(cacheKey);
 
     if (!loc) {
-      // 1) Try exact match
+ // 1) Try exact match
       loc = await (tx as any).dvi_stored_locations.findFirst({
         where: {
           deleted: 0,
@@ -305,7 +305,7 @@ export class DistanceHelper {
         orderBy: { location_ID: "desc" },
       });
 
-      // 2) Fallback: Try splitting by pipe | (common in hotspot_location)
+ // 2) Fallback: Try splitting by pipe | (common in hotspot_location)
       if (!loc && (trimmedSource.includes('|') || trimmedDest.includes('|'))) {
         const s = trimmedSource.split('|')[0].trim();
         const d = trimmedDest.split('|')[0].trim();
@@ -336,7 +336,7 @@ export class DistanceHelper {
         Number.isFinite(Number(storedTotalMinutes)) &&
         Number(storedTotalMinutes) > 30
       ) {
-        console.warn('[DistanceHelper][SUSPICIOUS_STORED_ROUTE_DURATION]', {
+ console.warn('[DistanceHelper][SUSPICIOUS_STORED_ROUTE_DURATION]', {
           source: trimmedSource,
           destination: trimmedDest,
           distanceKm: distance,
@@ -369,7 +369,7 @@ export class DistanceHelper {
       }
 
       if (!sourceDestNamesSame && (!Number.isFinite(distance) || distance <= 0)) {
-        console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
+ console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
           source: trimmedSource,
           destination: trimmedDest,
           reason: "Stored distance was zero/blank for different source/destination names",
@@ -387,9 +387,9 @@ export class DistanceHelper {
       return { distanceKm: distance, travelTime, bufferTime };
     }
 
-    // 3) Fallback: If we have at least one set of coords, try to find the other and use Haversine
+ // 3) Fallback: If we have at least one set of coords, try to find the other and use Haversine
     if (destCoords && (destCoords.lat !== 0 || destCoords.lon !== 0)) {
-      // Try to find coords for source city
+ // Try to find coords for source city
       const s = trimmedSource.split('|')[0].trim();
       const sourceLoc = await (tx as any).dvi_stored_locations.findFirst({
         where: { source_location: s, deleted: 0 },
@@ -407,7 +407,7 @@ export class DistanceHelper {
     }
 
     if (!sourceDestNamesSame) {
-      console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
+ console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
         source: trimmedSource,
         destination: trimmedDest,
         reason: "Different source/destination names but no reliable distance was found",
@@ -430,21 +430,21 @@ export class DistanceHelper {
 
     if (!gs) return "00:00:00";
 
-    /**
+ /**
      * ✅ FIX-1 (your issue):
      * For LOCAL sightseeing hops (travelLocationType === 1),
      * do NOT add the global road/common buffer.
      *
      * Otherwise travel rows become:
      *   travelTime + 1:00 buffer  => looks like 2 hours vs Google’s < 1 hour
-     */
+ */
     if (travelLocationType === 1) {
       return "00:00:00";
     }
 
-    // OUTSTATION / inter-city legs: keep your existing logic
-    // PHP PARITY: Use itinerary_travel_by_road_buffer_time for road travel
-    // If not available, fallback to itinerary_common_buffer_time
+ // OUTSTATION / inter-city legs: keep your existing logic
+ // PHP PARITY: Use itinerary_travel_by_road_buffer_time for road travel
+ // If not available, fallback to itinerary_common_buffer_time
     const bufferTimeField =
       gs.itinerary_travel_by_road_buffer_time || gs.itinerary_common_buffer_time;
 

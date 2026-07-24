@@ -12,10 +12,10 @@ export class CreateLanguageDto {
   @MaxLength(100)
   language!: string;
 
-  /**
+ /**
    * Frontend sends boolean (true/false).
    * DB stores Int (1/0).
-   */
+ */
   @IsOptional()
   @IsBoolean()
   status?: boolean;

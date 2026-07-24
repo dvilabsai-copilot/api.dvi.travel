@@ -43,17 +43,17 @@ export class ResAvenueTestController {
   ) {}
 
   @Post('test-booking')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Test ResAvenue booking confirmation',
     description: 'Directly calls ResAvenue provider confirmBooking method for testing'
   })
   @ApiResponse({ status: 200, description: 'Booking confirmed successfully' })
   @ApiResponse({ status: 400, description: 'Booking failed' })
   async testBooking(@Body() bookingData: TestBookingDto) {
-    this.logger.log('🧪 Testing ResAvenue booking confirmation');
-    
+ this.logger.log(' Testing ResAvenue booking confirmation');
+
     try {
-      // Call ResAvenue provider directly
+ // Call ResAvenue provider directly
       const result = await this.resavenueProvider.confirmBooking({
         hotelCode: bookingData.hotelCode,
         checkInDate: bookingData.checkInDate,
@@ -79,7 +79,7 @@ export class ResAvenueTestController {
         })),
       });
 
-      this.logger.log(`✅ Test booking successful: ${result.confirmationReference}`);
+ this.logger.log(` Test booking successful: ${result.confirmationReference}`);
 
       return {
         success: true,
@@ -97,29 +97,29 @@ export class ResAvenueTestController {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error(`❌ Test booking failed: ${error.message}`);
+ this.logger.error(` Test booking failed: ${error.message}`);
       throw error;
     }
   }
 
   @Post('test-cancellation')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Test ResAvenue booking cancellation',
     description: 'Directly calls ResAvenue provider cancelBooking method for testing'
   })
   @ApiResponse({ status: 200, description: 'Cancellation successful' })
   @ApiResponse({ status: 400, description: 'Cancellation failed' })
   async testCancellation(@Body() cancellationData: TestCancellationDto) {
-    this.logger.log('🧪 Testing ResAvenue booking cancellation');
-    
+ this.logger.log(' Testing ResAvenue booking cancellation');
+
     try {
-      // Call ResAvenue provider directly
+ // Call ResAvenue provider directly
       const result = await this.resavenueProvider.cancelBooking(
         cancellationData.bookingReference,
         cancellationData.reason,
       );
 
-      this.logger.log(`✅ Test cancellation successful: ${result.cancellationRef}`);
+ this.logger.log(` Test cancellation successful: ${result.cancellationRef}`);
 
       return {
         success: true,
@@ -133,28 +133,28 @@ export class ResAvenueTestController {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error(`❌ Test cancellation failed: ${error.message}`);
+ this.logger.error(` Test cancellation failed: ${error.message}`);
       throw error;
     }
   }
 
   @Post('test-confirmation-details')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Test ResAvenue get confirmation details',
     description: 'Retrieves booking details from ResAvenue'
   })
   @ApiResponse({ status: 200, description: 'Details retrieved successfully' })
   @ApiResponse({ status: 400, description: 'Retrieval failed' })
   async testGetConfirmation(@Body() confirmationData: TestConfirmationDto) {
-    this.logger.log('🧪 Testing ResAvenue get confirmation details');
-    
+ this.logger.log(' Testing ResAvenue get confirmation details');
+
     try {
-      // Call ResAvenue provider directly
+ // Call ResAvenue provider directly
       const result = await this.resavenueProvider.getConfirmation(
         confirmationData.bookingReference,
       );
 
-      this.logger.log(`✅ Test confirmation retrieval successful`);
+ this.logger.log(` Test confirmation retrieval successful`);
 
       return {
         success: true,
@@ -163,21 +163,21 @@ export class ResAvenueTestController {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error(`❌ Test confirmation retrieval failed: ${error.message}`);
+ this.logger.error(` Test confirmation retrieval failed: ${error.message}`);
       throw error;
     }
   }
 
   @Post('test-booking-service')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Test ResAvenue booking service confirm',
     description: 'Tests the ResAvenueHotelBookingService confirmBooking method'
   })
   @ApiResponse({ status: 200, description: 'Service booking test successful' })
   @ApiResponse({ status: 400, description: 'Service booking test failed' })
   async testBookingService(@Body() bookingData: TestBookingDto) {
-    this.logger.log('🧪 Testing ResAvenue booking service');
-    
+ this.logger.log(' Testing ResAvenue booking service');
+
     try {
       const selection = {
         hotelCode: bookingData.hotelCode,
@@ -202,7 +202,7 @@ export class ResAvenueTestController {
         bookingData.rateCode,
       );
 
-      this.logger.log(`✅ Test booking service successful`);
+ this.logger.log(` Test booking service successful`);
 
       return {
         success: true,
@@ -211,25 +211,25 @@ export class ResAvenueTestController {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error(`❌ Test booking service failed: ${error.message}`);
+ this.logger.error(` Test booking service failed: ${error.message}`);
       throw error;
     }
   }
 
   @Post('health-check')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Health check for ResAvenue provider',
     description: 'Verifies ResAvenue provider is properly configured'
   })
   @ApiResponse({ status: 200, description: 'Health check passed' })
   async healthCheck() {
-    this.logger.log('🧪 ResAvenue provider health check');
-    
+ this.logger.log(' ResAvenue provider health check');
+
     return {
       success: true,
       message: 'ResAvenue provider is configured',
       config: {
-        baseUrl: process.env.RESAVENUE_BASE_URL || 'http://203.109.97.241:8080/ChannelController',
+ baseUrl: process.env.RESAVENUE_BASE_URL || 'http://203.109.97.241:8080/ChannelController',
         username: process.env.RESAVENUE_USERNAME ? '✅ Set' : '❌ Not set',
         password: process.env.RESAVENUE_PASSWORD ? '✅ Set' : '❌ Not set',
         idContext: process.env.RESAVENUE_ID_CONTEXT || 'REV',

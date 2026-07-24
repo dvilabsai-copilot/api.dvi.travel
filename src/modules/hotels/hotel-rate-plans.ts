@@ -121,7 +121,7 @@ export function inferCanonicalHotelRatePlanCodeFromMealText(
   const raw = String(value || '').trim().toUpperCase();
   if (!raw || raw === '-' || raw === 'ROOM ONLY') return 'EP';
 
-  // Explicit supplier keywords should win over generic breakfast mentions.
+ // Explicit supplier keywords should win over generic breakfast mentions.
   if (raw.includes('ALL MEALS') || raw.includes('FULL BOARD') || raw.includes('FULLBOARD')) return 'AP';
   if (raw.includes('HALF BOARD') || raw.includes('HALFBOARD')) return 'MAP';
 
@@ -156,11 +156,11 @@ export function getNormalizedMealPlanLabelFromMealText(value?: string | null): s
 
   const upper = raw.toUpperCase();
 
-  // Canonical or known plan identifiers map directly to CP/EP/MAP/AP labels.
+ // Canonical or known plan identifiers map directly to CP/EP/MAP/AP labels.
   const directPlanCode = inferCanonicalHotelRatePlanCode(upper);
   if (directPlanCode) return directPlanCode;
 
-  // Supplier meal keywords in inclusion text.
+ // Supplier meal keywords in inclusion text.
   if (upper.includes('ALL MEALS') || upper.includes('FULL BOARD') || upper.includes('FULLBOARD')) return 'AP';
   if (upper.includes('HALF BOARD') || upper.includes('HALFBOARD')) return 'MAP';
 
@@ -172,6 +172,6 @@ export function getNormalizedMealPlanLabelFromMealText(value?: string | null): s
   if ((hasBreakfast && hasLunch) || (hasBreakfast && hasDinner) || (hasLunch && hasDinner)) return 'MAP';
   if (hasBreakfast) return 'CP';
 
-  // For noisy/non-meal inclusions (e.g. parking/wifi), use a clean fallback.
+ // For noisy/non-meal inclusions (e.g. parking/wifi), use a clean fallback.
   return 'Room Only';
 }

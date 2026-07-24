@@ -18,7 +18,7 @@ import { HotspotsService } from './hotspots.service';
 import { HotspotListQueryDto } from './dto/hotspot-list.query.dto';
 import { HotspotListResponseDto } from './dto/hotspot-list.response.dto';
 
-// ✅ Create/Update DTOs
+// Create/Update DTOs
 import { HotspotCreateDto } from './dto/hotspot-create.dto';
 import { HotspotUpdateDto } from './dto/hotspot-update.dto';
 
@@ -31,7 +31,7 @@ import * as os from 'os';
 
 // -------------------- storage helpers --------------------
 function resolveBackendRoot(): string {
-  // Works for both src/* (ts-node) and dist/* (compiled) execution.
+ // Works for both src/* (ts-node) and dist/* (compiled) execution.
   const candidate = path.resolve(__dirname, '..', '..', '..', '..');
   return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : process.cwd();
 }
@@ -61,7 +61,7 @@ function galleryStorage() {
 // CSV temporary storage (Parking Charge import)
 // Ensures the folder exists to avoid ENOENT on Windows/Unix.
 function csvTempStorage() {
-  // Allow override via env, else default to <appRoot>/tmp/uploads
+ // Allow override via env, else default to <appRoot>/tmp/uploads
   const dest =
     (process.env.TMP_UPLOAD_DIR && process.env.TMP_UPLOAD_DIR.trim()) ||
     path.join(resolveBackendRoot(), 'tmp', 'uploads');
@@ -71,8 +71,8 @@ function csvTempStorage() {
       fs.mkdirSync(dest, { recursive: true });
     }
   } catch (e) {
-    // Fallback to OS temp dir if custom path can't be created
-    console.warn('Could not create tmp/uploads folder, falling back to OS tmp:', e);
+ // Fallback to OS temp dir if custom path can't be created
+ console.warn('Could not create tmp/uploads folder, falling back to OS tmp:', e);
     return diskStorage({
       destination: (_req, _file, cb) => cb(null, os.tmpdir()),
       filename: (_req, file, cb) => {
@@ -99,57 +99,57 @@ function csvTempStorage() {
 export class HotspotsController {
   constructor(private readonly svc: HotspotsService) {}
 
-  // -------------------- LIST & FORM --------------------
-  // List JSON (DataTable)
+ // -------------------- LIST & FORM --------------------
+ // List JSON (DataTable)
   @Get()
   list(@Query() q: HotspotListQueryDto): Promise<HotspotListResponseDto> {
     return this.svc.list(q);
   }
 
-  // Dynamic dropdowns for form
+ // Dynamic dropdowns for form
   @Get('form-options')
   formOptions() {
     return this.svc.formOptions();
   }
 
-  // Full form payload for edit (master + children) + options
+ // Full form payload for edit (master + children) + options
   @Get(':id/form')
   getForm(@Param('id') id: string) {
     return this.svc.getForm(Number(id));
   }
 
-  // Save form (create or update) — accepts either DTO
+ // Save form (create or update) accepts either DTO
   @Post('form')
   saveForm(@Body() payload: HotspotCreateDto | HotspotUpdateDto) {
     return this.svc.saveForm(payload as any);
   }
 
-  // Inline priority update
+ // Inline priority update
   @Patch(':id/priority')
   updatePriority(@Param('id') id: string, @Body() body: { priority: number }) {
     const priority = Number(body?.priority);
     return this.svc.updatePriority(Number(id), priority);
   }
 
-  // Soft delete
+ // Soft delete
   @Delete(':id')
   softDelete(@Param('id') id: string) {
     return this.svc.softDelete(Number(id));
   }
 
-  // Simple fetch
+ // Simple fetch
   @Get(':id')
   getOne(@Param('id') id: string) {
     return this.svc.getOne(Number(id));
   }
 
-  // -------------------- GALLERY --------------------
-  // Gallery upload endpoint (multipart/form-data; field name: file)
+ // -------------------- GALLERY --------------------
+ // Gallery upload endpoint (multipart/form-data; field name: file)
   @Post(':id/gallery/upload')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: galleryStorage(),
-      limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+ limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
     }),
   )
   async uploadGallery(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
@@ -163,14 +163,14 @@ export class HotspotsController {
     };
   }
 
-  // -------------------- PARKING CHARGE CSV FLOW --------------------
-  // 1) Upload CSV -> stage each line into dvi_tempcsv with csvtype=4 (PHP parity)
-  // POST /hotspots/parking-charge/upload  (multipart/form-data, field: file)
+ // -------------------- PARKING CHARGE CSV FLOW --------------------
+ // 1) Upload CSV -> stage each line into dvi_tempcsv with csvtype=4 (PHP parity)
+ // POST /hotspots/parking-charge/upload (multipart/form-data, field: file)
   @Post('parking-charge/upload')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: csvTempStorage(),
-      limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+ limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
     }),
   )
   async uploadParkingCsv(@UploadedFile() file: Express.Multer.File) {
@@ -178,16 +178,16 @@ export class HotspotsController {
     return this.svc.importParkingCsv(file.path);
   }
 
-  // 2) Read staged rows (status=1) for a given sessionId
-  // GET /hotspots/parking-charge/templist?sessionId=...
+ // 2) Read staged rows (status=1) for a given sessionId
+ // GET /hotspots/parking-charge/templist?sessionId=...
   @Get('parking-charge/templist')
   getParkingTemplist(@Query('sessionId') sessionId: string) {
     if (!sessionId) throw new BadRequestException('sessionId is required');
     return this.svc.getParkingTemplist(sessionId);
   }
 
-  // 3) Confirm import -> upsert into dvi_hotspot_vehicle_parking_charges and mark temp rows status=2
-  // POST /hotspots/parking-charge/confirm  { sessionId: string, tempIds?: number[] }
+ // 3) Confirm import -> upsert into dvi_hotspot_vehicle_parking_charges and mark temp rows status=2
+ // POST /hotspots/parking-charge/confirm { sessionId: string, tempIds?: number[] }
   @Post('parking-charge/confirm')
   confirmParkingImport(@Body() body: { sessionId: string; tempIds?: number[] }) {
     const { sessionId, tempIds } = body || {};

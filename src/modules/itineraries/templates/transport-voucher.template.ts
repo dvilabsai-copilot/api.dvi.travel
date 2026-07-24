@@ -89,7 +89,7 @@ export function renderTransportVoucherHtml(
   const companyEmail = data.company.email || 'partner.support@dviholidays.com';
   const companyWebsite = data.company.website || 'www.dviholidays.com';
   const vehicleType = truncateWithEllipsis(data.vehicle.type || 'Vehicle', 44);
-  const compactTravelRegion = shortLocationName(data.trip.travelRegion).replace(/\s*-\s*/g, ' - ');
+ const compactTravelRegion = shortLocationName(data.trip.travelRegion).replace(/\s*-\s*/g, ' - ');
   const vehicles = Array.isArray(data.vehicles) && data.vehicles.length
     ? data.vehicles
     : [data.vehicle].filter(Boolean);

@@ -73,7 +73,7 @@ export class OfflineHotelCatalogService {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const stayBlocks = this.buildStayBlocks(routes, noOfNights);
 
-    this.logger.log(
+ this.logger.log(
       `Offline hotel catalog processing ${stayBlocks.length} stay block(s) ` +
         `for roomCount=${roomCount}, adults=${adultCount}, children=${childCount}, nationality=${guestNationality || 'n/a'}`,
     );

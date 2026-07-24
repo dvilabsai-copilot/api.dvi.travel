@@ -8,7 +8,7 @@ export class LatestItineraryQueryDto {
   @IsString()
   search?: string;
 
-  // Alias retained for existing clients that used the old helper name.
+ // Alias retained for existing clients that used the old helper name.
   @IsOptional()
   @IsString()
   search_value?: string;
@@ -32,11 +32,11 @@ export class LatestItineraryQueryDto {
 
   @IsOptional()
   @IsString()
-  start_date?: string; // DD/MM/YYYY
+ start_date?: string; // DD/MM/YYYY
 
   @IsOptional()
   @IsString()
-  end_date?: string; // DD/MM/YYYY
+ end_date?: string; // DD/MM/YYYY
 
   @IsOptional()
   @IsString()

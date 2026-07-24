@@ -734,7 +734,7 @@ export class ItineraryVoucherReadService {
     const flightDeparture = this.parseTransportFlightDetails(customer?.departure_flight_details, customer?.departure_date_and_time || plan.trip_end_date_and_time);
 
     if (process.env.DEBUG_TRANSPORT_VOUCHER_VEHICLES === '1') {
-      console.log('[TRANSPORT_VOUCHER_VEHICLES]', {
+ console.log('[TRANSPORT_VOUCHER_VEHICLES]', {
         itineraryPlanId,
         vehicleVoucherCount: vehicleVouchers.length,
         eligibleRowsCount: eligibleRows.length,

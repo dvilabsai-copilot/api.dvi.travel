@@ -259,7 +259,7 @@ export class ItineraryMatrixPreviewTimelinePolicyService {
     }
 
     if (errors.length > 0) {
-      console.warn('[MatrixPreviewInvariant]', { errors });
+ console.warn('[MatrixPreviewInvariant]', { errors });
       if (debugMode) {
         throw new Error(`Matrix preview invariant failed: ${errors.join('; ')}`);
       }

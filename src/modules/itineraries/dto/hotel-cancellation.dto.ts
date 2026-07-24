@@ -26,7 +26,7 @@ export class GetEntireDayCancellationChargesDto {
   @ApiProperty({ example: 'dvi' })
   @IsString()
   @IsOptional()
-  defect_type?: string; // 'dvi' or 'guest'
+ defect_type?: string; // 'dvi' or 'guest'
 }
 
 // Cancel entire day - execute cancellation
@@ -49,7 +49,7 @@ export class CancelEntireDayDto {
 
   @ApiProperty({ example: 'dvi' })
   @IsString()
-  defect_type!: string; // 'dvi' or 'guest'
+ defect_type!: string; // 'dvi' or 'guest'
 }
 
 // Cancel individual room item
@@ -66,7 +66,7 @@ export class CancelRoomItemDto {
   @IsString()
   date!: string;
 
-  @ApiProperty({ example: 'extra_bed' }) // 'extra_bed', 'child_with_bed', 'child_without_bed'
+ @ApiProperty({ example: 'extra_bed' }) // 'extra_bed', 'child_with_bed', 'child_without_bed'
   @IsString()
   item_type!: string;
 
@@ -80,7 +80,7 @@ export class CancelRoomItemDto {
 
   @ApiProperty({ example: 'dvi' })
   @IsString()
-  defect_type!: string; // 'dvi' or 'guest'
+ defect_type!: string; // 'dvi' or 'guest'
 }
 
 // Confirm cancellation (final)

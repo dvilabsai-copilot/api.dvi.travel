@@ -24,7 +24,7 @@ export class HotelConfirmController {
   @Post('confirm')
   @HttpCode(HttpStatus.CREATED)
   async confirmHotelBooking(@Body() dto: HotelConfirmationDTO) {
-    this.logger.log(
+ this.logger.log(
       `Hotel confirmation request for itinerary: ${dto.itineraryPlanId}`,
     );
 
@@ -32,7 +32,7 @@ export class HotelConfirmController {
       const result = await this.hotelConfirmService.confirmHotelBooking(dto);
       return result;
     } catch (error) {
-      this.logger.error(`Hotel confirmation error: ${(error as any).message}`, (error as any).stack);
+ this.logger.error(`Hotel confirmation error: ${(error as any).message}`, (error as any).stack);
       throw error;
     }
   }
@@ -40,7 +40,7 @@ export class HotelConfirmController {
   @Post('payment/initiate')
   @HttpCode(HttpStatus.OK)
   async initiatePayment(@Body() dto: HotelPaymentDTO) {
-    this.logger.log(`Payment initiation for confirmation: ${dto.confirmationReference}`);
+ this.logger.log(`Payment initiation for confirmation: ${dto.confirmationReference}`);
 
     try {
       const result = await this.hotelConfirmService.initiatePayment(
@@ -48,7 +48,7 @@ export class HotelConfirmController {
       );
       return result;
     } catch (error) {
-      this.logger.error(`Payment initiation error: ${(error as any).message}`, (error as any).stack);
+ this.logger.error(`Payment initiation error: ${(error as any).message}`, (error as any).stack);
       throw error;
     }
   }
@@ -59,7 +59,7 @@ export class HotelConfirmController {
     @Param('ref') confirmationReference: string,
     @Body() dto: { razorpayPaymentId: string },
   ) {
-    this.logger.log(`Payment finalization for confirmation: ${confirmationReference}`);
+ this.logger.log(`Payment finalization for confirmation: ${confirmationReference}`);
 
     try {
       const result = await this.hotelConfirmService.finalizePayment(
@@ -68,7 +68,7 @@ export class HotelConfirmController {
       );
       return result;
     } catch (error) {
-      this.logger.error(`Payment finalization error: ${(error as any).message}`, (error as any).stack);
+ this.logger.error(`Payment finalization error: ${(error as any).message}`, (error as any).stack);
       throw error;
     }
   }
@@ -76,7 +76,7 @@ export class HotelConfirmController {
   @Get('confirmation/:ref')
   @HttpCode(HttpStatus.OK)
   async getConfirmation(@Param('ref') confirmationReference: string) {
-    this.logger.log(`Fetching confirmation: ${confirmationReference}`);
+ this.logger.log(`Fetching confirmation: ${confirmationReference}`);
 
     try {
       const result = await this.hotelConfirmService.getConfirmation(
@@ -84,7 +84,7 @@ export class HotelConfirmController {
       );
       return result;
     } catch (error) {
-      this.logger.error(`Get confirmation error: ${(error as any).message}`, (error as any).stack);
+ this.logger.error(`Get confirmation error: ${(error as any).message}`, (error as any).stack);
       throw error;
     }
   }
@@ -95,7 +95,7 @@ export class HotelConfirmController {
     @Param('ref') confirmationReference: string,
     @Body() dto: CancellationDTO,
   ) {
-    this.logger.log(
+ this.logger.log(
       `Cancellation request for confirmation: ${confirmationReference}`,
     );
 
@@ -106,7 +106,7 @@ export class HotelConfirmController {
       );
       return result;
     } catch (error) {
-      this.logger.error(`Cancellation error: ${(error as any).message}`, (error as any).stack);
+ this.logger.error(`Cancellation error: ${(error as any).message}`, (error as any).stack);
       throw error;
     }
   }

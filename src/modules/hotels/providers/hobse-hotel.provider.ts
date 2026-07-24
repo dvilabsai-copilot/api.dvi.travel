@@ -52,7 +52,7 @@ export class HobseHotelProvider implements IHotelProvider {
   private readonly logFile = path.join(process.cwd(), 'hobse-hotel-provider.log');
 
   private readonly BASE_URL =
-    (process.env.HOBSE_BASE_URL || 'https://api.hobse.com/v1')
+ (process.env.HOBSE_BASE_URL || 'https://api.hobse.com/v1')
       .replace(/\/htl\/?$/, '')
       .replace(/\/+$/, '');
 
@@ -74,7 +74,7 @@ export class HobseHotelProvider implements IHotelProvider {
     try {
       fs.appendFileSync(this.logFile, `[${timestamp}] ${message}\n`);
     } catch {
-      // Ignore file write failures; console logging still works.
+ // Ignore file write failures; console logging still works.
     }
   }
 
@@ -103,9 +103,9 @@ export class HobseHotelProvider implements IHotelProvider {
     };
   }
 
-  /**
+ /**
    * Send application/x-www-form-urlencoded with key "params"
-   */
+ */
   private async postForm<T = any>(method: string, data: any): Promise<HobseEnvelope<T>> {
     try {
       const endpointMethod = method.startsWith('htl/') ? method.slice(4) : method;
@@ -115,42 +115,42 @@ export class HobseHotelProvider implements IHotelProvider {
       const form = new URLSearchParams();
       form.append('params', JSON.stringify(paramsEnvelope));
 
-      this.logger.debug(`📤 HOBSE POST ${url}`);
+ this.logger.debug(` HOBSE POST ${url}`);
       this.fileLog(`HOBSE_POST ${url} | params=${JSON.stringify(paramsEnvelope)}`);
-      this.logger.log(`🔍 HOBSE ${method} - Full Params JSON:`);
-      this.logger.log(JSON.stringify(paramsEnvelope, null, 2));
+ this.logger.log(` HOBSE ${method} - Full Params JSON:`);
+ this.logger.log(JSON.stringify(paramsEnvelope, null, 2));
 
       const resp = await this.http.post<HobseEnvelope<T>>(url, form.toString(), {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         timeout: 45000,
-        validateStatus: () => true, // Accept any status code, handle manually
+ validateStatus: () => true, // Accept any status code, handle manually
       });
 
-      // Log the status code
+ // Log the status code
       if (resp.status !== 200) {
-        this.logger.warn(`⚠️  HOBSE ${method} HTTP Status: ${resp.status}`);
+ this.logger.warn(` HOBSE ${method} HTTP Status: ${resp.status}`);
         this.fileLog(`HOBSE_WARN ${method} HTTP_STATUS=${resp.status}`);
       }
 
-      // Try to extract error info from response body
+ // Try to extract error info from response body
       const responseData = resp.data;
       const ok = responseData?.hobse?.response?.status?.success === 'true';
-      
+
       if (!ok) {
         const errorMessage = responseData?.hobse?.response?.status?.message ||
           responseData?.hobse?.response?.errors?.[0]?.message ||
           `HOBSE API error (HTTP ${resp.status})`;
-        
-        this.logger.warn(`⚠️  HOBSE ${method} Response: ${errorMessage}`);
-        this.logger.warn(`   Status: ${JSON.stringify(responseData?.hobse?.response?.status)}`);
-        this.logger.warn(`   Errors: ${JSON.stringify(responseData?.hobse?.response?.errors)}`);
+
+ this.logger.warn(` HOBSE ${method} Response: ${errorMessage}`);
+ this.logger.warn(` Status: ${JSON.stringify(responseData?.hobse?.response?.status)}`);
+ this.logger.warn(` Errors: ${JSON.stringify(responseData?.hobse?.response?.errors)}`);
         this.fileLog(
           `HOBSE_WARN ${method} RESPONSE_ERROR status=${JSON.stringify(responseData?.hobse?.response?.status)} errors=${JSON.stringify(responseData?.hobse?.response?.errors)}`,
         );
-        
-        // Write full response to file for debugging
+
+ // Write full response to file for debugging
         const fs = require('fs');
         const path = require('path');
         const debugDir = path.join(process.cwd(), 'tmp');
@@ -159,27 +159,27 @@ export class HobseHotelProvider implements IHotelProvider {
         }
         const debugPath = path.join(debugDir, `hobse_${method}_response_${Date.now()}.json`);
         fs.writeFileSync(debugPath, JSON.stringify(responseData, null, 2));
-        this.logger.warn(`   Full Response saved to ${debugPath}`);
+ this.logger.warn(` Full Response saved to ${debugPath}`);
         this.fileLog(`HOBSE_DEBUG_SAVED ${method} path=${debugPath}`);
-        
+
         throw new Error(errorMessage);
       }
 
       this.fileLog(`HOBSE_OK ${method} status=${resp.status}`);
       return responseData;
     } catch (e: any) {
-      this.logger.error(`❌ HOBSE API failed: ${e?.message}`);
+ this.logger.error(` HOBSE API failed: ${e?.message}`);
       this.fileLog(`HOBSE_ERROR ${method} message=${e?.message || e}`);
       throw new InternalServerErrorException(`HOBSE API failed: ${e?.message}`);
     }
   }
 
-  /**
+ /**
    * Pick cheapest room option from GetAvailableRoomTariff response
-   */
+ */
   private pickCheapestRoomOption(roomOptions: any[] = []) {
     if (!roomOptions || roomOptions.length === 0) {
-      this.logger.warn(`⚠️  HOBSE: roomOptions array is empty`);
+ this.logger.warn(` HOBSE: roomOptions array is empty`);
       return null;
     }
 
@@ -187,11 +187,11 @@ export class HobseHotelProvider implements IHotelProvider {
     let bestPrice = Number.POSITIVE_INFINITY;
 
     for (const opt of roomOptions) {
-      // Handle ratesData array
+ // Handle ratesData array
       const rates = Array.isArray(opt?.ratesData) ? opt.ratesData : [];
-      
+
       if (rates.length === 0) {
-        // Try to use direct price fields if ratesData is not available
+ // Try to use direct price fields if ratesData is not available
         const directPrice = Number(opt?.roomCost || opt?.price || opt?.totalCost || 0);
         if (directPrice > 0 && directPrice < bestPrice) {
           bestPrice = directPrice;
@@ -210,9 +210,9 @@ export class HobseHotelProvider implements IHotelProvider {
       }
 
       for (const r of rates) {
-        // Use roomCost as primary price source (totalCostWithTax may be 0 in booking response)
+ // Use roomCost as primary price source (totalCostWithTax may be 0 in booking response)
         const price = Number(r?.roomCost || r?.totalCostWithTax || r?.totalCost || r?.cost || 0);
-        
+
         if (price > 0 && price < bestPrice) {
           bestPrice = price;
           best = {
@@ -230,32 +230,32 @@ export class HobseHotelProvider implements IHotelProvider {
     }
 
     if (best) {
-      this.logger.log(`✅ HOBSE: Selected room ${best.roomCode} at ₹${bestPrice}`);
+ this.logger.log(` HOBSE: Selected room ${best.roomCode} at ${bestPrice}`);
     } else {
-      this.logger.warn(`⚠️  HOBSE: No suitable room found in ${roomOptions.length} options after checking ${roomOptions.reduce((sum, opt) => sum + (opt.ratesData?.length || 0), 0)} rates`);
+ this.logger.warn(` HOBSE: No suitable room found in ${roomOptions.length} options after checking ${roomOptions.reduce((sum, opt) => sum + (opt.ratesData?.length || 0), 0)} rates`);
     }
 
     return best;
   }
 
-  /**
+ /**
    * SEARCH
    * criteria.cityCode here is your itinerary flow code (usually TBO city code).
    * We map it to dvi_cities.hobse_city_code + city name (for filtering GetHotelList by cityName).
-   */
+ */
   async search(criteria: HotelSearchCriteria, _preferences?: HotelPreferences): Promise<HotelSearchResult[]> {
     try {
-      this.logger.log(`\n   📡 HOBSE SEARCH: cityCode=${criteria.cityCode}, ${criteria.checkInDate}→${criteria.checkOutDate}`);
+ this.logger.log(`\n HOBSE SEARCH: cityCode=${criteria.cityCode}, ${criteria.checkInDate}${criteria.checkOutDate}`);
       this.fileLog(`SEARCH_START cityCode=${criteria.cityCode} checkIn=${criteria.checkInDate} checkOut=${criteria.checkOutDate}`);
 
-      // Convert cityCode to string for database lookup (Prisma expects string)
+ // Convert cityCode to string for database lookup (Prisma expects string)
       const cityCodeAsString = String(criteria.cityCode);
 
-      // Build where conditions with proper string values
+ // Build where conditions with proper string values
       const orConditions: any[] = [
         { tbo_city_code: cityCodeAsString },
         { hobse_city_code: cityCodeAsString },
-        { name: cityCodeAsString }, // Also support lookup by city name directly
+ { name: cityCodeAsString }, // Also support lookup by city name directly
       ];
 
       const cityRow = await this.prisma.dvi_cities.findFirst({
@@ -266,28 +266,28 @@ export class HobseHotelProvider implements IHotelProvider {
       });
 
         if (!cityRow?.hobse_city_code || !cityRow?.name) {
-          this.logger.warn(`   ⚠️  No HOBSE mapping for cityCode: ${criteria.cityCode}`);
+ this.logger.warn(` No HOBSE mapping for cityCode: ${criteria.cityCode}`);
           this.fileLog(`SEARCH_NO_MAPPING cityCode=${criteria.cityCode}`);
           return [];
         }
 
-      // Get full hotel list (empty parameters - API returns all hotels)
+ // Get full hotel list (empty parameters - API returns all hotels)
       const listResp = await this.postForm('GetHotelList', {});
       const allHotels: any[] = Array.isArray(listResp?.hobse?.response?.data) ? listResp.hobse.response.data : [];
 
-      // Filter by city name
+ // Filter by city name
       const cityNameLower = cityRow.name.toLowerCase();
       const cityHotels = allHotels.filter((h) => (h?.cityName || '').toLowerCase() === cityNameLower);
 
       if (cityHotels.length === 0) {
-        this.logger.warn(`   📭 No HOBSE hotels found for city: ${cityRow.name}`);
+ this.logger.warn(` No HOBSE hotels found for city: ${cityRow.name}`);
         this.fileLog(`SEARCH_NO_HOTELS city=${cityRow.name}`);
         return [];
       }
 
       const results: HotelSearchResult[] = [];
 
-      // limited concurrency
+ // limited concurrency
       const concurrency = 5;
       for (let i = 0; i < cityHotels.length; i += concurrency) {
         const slice = cityHotels.slice(i, i + concurrency);
@@ -302,7 +302,7 @@ export class HobseHotelProvider implements IHotelProvider {
               address: h.address,
               criteria,
             }).catch((e) => {
-              this.logger.error(`   ❌ Tariff failed for hotel ${h?.hotelId}: ${e?.message || e}`);
+ this.logger.error(` Tariff failed for hotel ${h?.hotelId}: ${e?.message || e}`);
               return null;
             }),
           ),
@@ -311,11 +311,11 @@ export class HobseHotelProvider implements IHotelProvider {
         chunk.filter(Boolean).forEach((x) => results.push(x as HotelSearchResult));
       }
 
-      this.logger.log(`   ✅ HOBSE: returning ${results.length}/${cityHotels.length} hotels with tariffs`);
+ this.logger.log(` HOBSE: returning ${results.length}/${cityHotels.length} hotels with tariffs`);
       this.fileLog(`SEARCH_DONE city=${cityRow.name} results=${results.length}/${cityHotels.length}`);
       return results;
     } catch (error: any) {
-      this.logger.error(`   ❌ HOBSE search error: ${error?.message || error}`);
+ this.logger.error(` HOBSE search error: ${error?.message || error}`);
       this.fileLog(`SEARCH_ERROR message=${error?.message || error}`);
       return [];
     }
@@ -424,7 +424,7 @@ export class HobseHotelProvider implements IHotelProvider {
     };
   }
 
-  // Not needed for hotel listing endpoint right now
+ // Not needed for hotel listing endpoint right now
   async getConfirmation(_confirmationRef: string): Promise<HotelConfirmationDetails> {
     throw new InternalServerErrorException('HOBSE confirmation not implemented');
   }
@@ -441,29 +441,29 @@ export class HobseHotelProvider implements IHotelProvider {
     hotelId?: string,
   ): Promise<CancellationResult> {
     try {
-      this.logger.log(
+ this.logger.log(
         `❌ Cancelling HOBSE booking: ${confirmationRef}, Hotel: ${hotelId}, Reason: ${reason}`
       );
 
-      // HOBSE API format as per documentation:
-      // - hobseBookingId (not bookingId)
-      // - hotelId (required)
-      // - bookingStatus: "1" = cancelled (numeric string, not 'cancelled')
+ // HOBSE API format as per documentation:
+ // - hobseBookingId (not bookingId)
+ // - hotelId (required)
+ // - bookingStatus: "1" = cancelled (numeric string, not 'cancelled')
       const cancellationRequest = {
         hobseBookingId: confirmationRef,
         hotelId: hotelId || '',
-        bookingStatus: '1', // 1 = cancelled
+ bookingStatus: '1', // 1 = cancelled
       };
 
-      this.logger.debug(`📤 HOBSE Cancellation Request Payload: ${JSON.stringify(cancellationRequest)}`);
-      this.logger.log(`📡 HOBSE SetBookingStatus API Call - Booking: ${confirmationRef}`);
+ this.logger.debug(` HOBSE Cancellation Request Payload: ${JSON.stringify(cancellationRequest)}`);
+ this.logger.log(` HOBSE SetBookingStatus API Call - Booking: ${confirmationRef}`);
 
-      // Call HOBSE SetBookingStatus API
+ // Call HOBSE SetBookingStatus API
       const response = await this.postForm<any>('SetBookingStatus', cancellationRequest);
 
-      this.logger.debug(`📥 HOBSE Cancel API Response: ${JSON.stringify(response)}`);
+ this.logger.debug(` HOBSE Cancel API Response: ${JSON.stringify(response)}`);
 
-      // Check response status
+ // Check response status
       const responseStatus = response?.hobse?.response?.status;
       if (
         !responseStatus ||
@@ -475,12 +475,12 @@ export class HobseHotelProvider implements IHotelProvider {
           response?.hobse?.response?.errors?.[0]?.message ||
           'Unknown error';
 
-        this.logger.error(
+ this.logger.error(
           `❌ HOBSE Cancel Error: ${errorMsg} (Code: ${responseStatus?.code})`
         );
-        this.logger.error(`❌ HOBSE Cancel Failed Response: ${JSON.stringify(response)}`);
+ this.logger.error(` HOBSE Cancel Failed Response: ${JSON.stringify(response)}`);
 
-        // Log full response for debugging
+ // Log full response for debugging
         const timestamp = Date.now();
         const dumpPath = `tmp/hobse_SetBookingStatus_response_${timestamp}.json`;
         try {
@@ -492,28 +492,28 @@ export class HobseHotelProvider implements IHotelProvider {
             fs.mkdirSync(dir, { recursive: true });
           }
           fs.writeFileSync(fullPath, JSON.stringify(response, null, 2));
-          this.logger.debug(`📄 Response dumped to: ${dumpPath}`);
+ this.logger.debug(` Response dumped to: ${dumpPath}`);
         } catch (e) {
-          this.logger.debug(`⚠️  Could not dump response: ${(e as Error).message}`);
+ this.logger.debug(` Could not dump response: ${(e as Error).message}`);
         }
 
         throw new Error(`Cancellation failed: ${errorMsg}`);
       }
 
-      this.logger.log(
+ this.logger.log(
         `✅ HOBSE Booking cancelled successfully: ${confirmationRef}`
       );
-      this.logger.log(`✅ HOBSE Cancel API Response Status: ${responseStatus.code} - ${responseStatus.message}`);
+ this.logger.log(` HOBSE Cancel API Response Status: ${responseStatus.code} - ${responseStatus.message}`);
 
       return {
         cancellationRef: confirmationRef,
-        refundAmount: 0, // HOBSE doesn't return refund details in cancellation
+ refundAmount: 0, // HOBSE doesn't return refund details in cancellation
         charges: 0,
         refundDays: 0,
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(
+ this.logger.error(
         `❌ HOBSE Cancel Error: ${errorMsg}`,
         error instanceof Error ? error.stack : ''
       );
@@ -523,18 +523,18 @@ export class HobseHotelProvider implements IHotelProvider {
     }
   }
 
-  /**
+ /**
    * MAIN BOOKING METHOD - Used by HobseHotelBookingService
    * Flow:
    * 1) GetAvailableRoomTariff
    * 2) CalculateReservationCost
    * 3) CreateBooking
-   */
+ */
   async createBookingFromItinerary(input: {
     hotelId: string;
-    cityId: string; // hobse city id
-    checkInDate: string; // YYYY-MM-DD
-    checkOutDate: string; // YYYY-MM-DD
+ cityId: string; // hobse city id
+ checkInDate: string; // YYYY-MM-DD
+ checkOutDate: string; // YYYY-MM-DD
     adultCount: number;
     childCount: number;
     infantCount: number;
@@ -557,15 +557,15 @@ export class HobseHotelProvider implements IHotelProvider {
     channelBookingId: string;
     bookingDesc?: string;
   }) {
-    // 1) GetAvailableRoomTariff
+ // 1) GetAvailableRoomTariff
     const sessionId = `DVI-${Date.now()}`;
 
-    this.logger.log(`\n🔄 HOBSE BOOKING REQUEST STARTING:`);
-    this.logger.log(`   Hotel ID: ${input.hotelId}`);
-    this.logger.log(`   City ID: ${input.cityId}`);
-    this.logger.log(`   Check-in: ${input.checkInDate}`);
-    this.logger.log(`   Check-out: ${input.checkOutDate}`);
-    this.logger.log(`   Adults: ${input.adultCount}, Children: ${input.childCount}, Infants: ${input.infantCount}`);
+ this.logger.log(`\n HOBSE BOOKING REQUEST STARTING:`);
+ this.logger.log(` Hotel ID: ${input.hotelId}`);
+ this.logger.log(` City ID: ${input.cityId}`);
+ this.logger.log(` Check-in: ${input.checkInDate}`);
+ this.logger.log(` Check-out: ${input.checkOutDate}`);
+ this.logger.log(` Adults: ${input.adultCount}, Children: ${input.childCount}, Infants: ${input.infantCount}`);
 
     const tariffResp = await this.postForm<any>('GetAvailableRoomTariff', {
       sessionId,
@@ -586,68 +586,68 @@ export class HobseHotelProvider implements IHotelProvider {
       hotelFilter: [{ hotelId: input.hotelId }],
     });
 
-    this.logger.log(`\n✅ HOBSE GetAvailableRoomTariff RESPONSE RECEIVED:`);
-    this.logger.log(`📥 Full tariff response: ${JSON.stringify(tariffResp, null, 2)}`);
+ this.logger.log(`\n HOBSE GetAvailableRoomTariff RESPONSE RECEIVED:`);
+ this.logger.log(` Full tariff response: ${JSON.stringify(tariffResp, null, 2)}`);
 
-    // Save response to file for debugging
+ // Save response to file for debugging
     const debugFile = require('path').join(process.cwd(), 'tmp', `hobse_tariff_response_${Date.now()}.json`);
     try {
       require('fs').writeFileSync(debugFile, JSON.stringify(tariffResp, null, 2));
-      this.logger.log(`✅ Tariff response saved to ${debugFile}`);
+ this.logger.log(` Tariff response saved to ${debugFile}`);
     } catch (e) {
-      this.logger.log(`⚠️  Could not save tariff response: ${(e as Error).message}`);
+ this.logger.log(` Could not save tariff response: ${(e as Error).message}`);
     }
 
     const data = tariffResp?.hobse?.response?.data;
-    
-    this.logger.log(`\n📦 HOBSE TARIFF RESPONSE:`);
-    this.logger.log(`   Response has data field: ${data !== undefined}`);
-    this.logger.log(`   Data is array: ${Array.isArray(data)}`);
-    this.logger.log(`   Response keys: ${Object.keys(tariffResp?.hobse?.response || {}).join(', ')}`);
-    this.logger.log(`   Full Response: ${JSON.stringify(tariffResp).substring(0, 500)}`);
-    
+
+ this.logger.log(`\n HOBSE TARIFF RESPONSE:`);
+ this.logger.log(` Response has data field: ${data !== undefined}`);
+ this.logger.log(` Data is array: ${Array.isArray(data)}`);
+ this.logger.log(` Response keys: ${Object.keys(tariffResp?.hobse?.response || {}).join(', ')}`);
+ this.logger.log(` Full Response: ${JSON.stringify(tariffResp).substring(0, 500)}`);
+
     if (Array.isArray(data)) {
-      this.logger.log(`   Array length: ${data.length}`);
+ this.logger.log(` Array length: ${data.length}`);
       if (data.length > 0) {
         const hotel = data[0];
-        this.logger.log(`   Hotel object keys: ${Object.keys(hotel).join(', ')}`);
-        this.logger.log(`   Hotel has roomOptions: ${!!hotel?.roomOptions}`);
+ this.logger.log(` Hotel object keys: ${Object.keys(hotel).join(', ')}`);
+ this.logger.log(` Hotel has roomOptions: ${!!hotel?.roomOptions}`);
         if (hotel?.roomOptions) {
-          this.logger.log(`   Room options count: ${hotel.roomOptions.length}`);
+ this.logger.log(` Room options count: ${hotel.roomOptions.length}`);
         }
       }
     } else {
-      this.logger.log(`   Data type: ${typeof data}`);
+ this.logger.log(` Data type: ${typeof data}`);
       if (data !== undefined && !Array.isArray(data)) {
-        this.logger.log(`   Data object: ${JSON.stringify(data).substring(0, 300)}`);
+ this.logger.log(` Data object: ${JSON.stringify(data).substring(0, 300)}`);
       }
     }
 
     const hotelRow = Array.isArray(data) ? data[0] : null;
-    
+
     if (!hotelRow) {
-      this.logger.error(`❌ No hotel row in HOBSE response`);
+ this.logger.error(` No hotel row in HOBSE response`);
       throw new Error('No hotel data returned from HOBSE GetAvailableRoomTariff');
     }
-    
+
     if (!hotelRow?.roomOptions?.length) {
-      this.logger.error(`❌ No roomOptions in hotel row`);
+ this.logger.error(` No roomOptions in hotel row`);
       throw new Error('No roomOptions returned from HOBSE GetAvailableRoomTariff');
     }
 
-    this.logger.log(`📋 Found ${hotelRow.roomOptions.length} room options, selecting cheapest...`);
+ this.logger.log(` Found ${hotelRow.roomOptions.length} room options, selecting cheapest...`);
     const best = this.pickCheapestRoomOption(hotelRow.roomOptions);
     if (!best) {
-      this.logger.error(`❌ Unable to pick best room`);
+ this.logger.error(` Unable to pick best room`);
       throw new Error('Unable to select cheapest room option from HOBSE response');
     }
 
-    // 2) CalculateReservationCost - REQUIRED by HOBSE API
-    this.logger.log(`\n💰 CALLING HOBSE CALCULATE RESERVATION COST:`);
-    this.logger.log(`   Room Code: ${best.roomCode}`);
-    this.logger.log(`   Occupancy: ${best.occupancyTypeCode}`);
-    this.logger.log(`   Rate Plan: ${best.ratePlanCode}`);
-    this.logger.log(`   Selected Tariff: ₹${best.tariff}, Tax: ₹${best.tax}`);
+ // 2) CalculateReservationCost - REQUIRED by HOBSE API
+ this.logger.log(`\n CALLING HOBSE CALCULATE RESERVATION COST:`);
+ this.logger.log(` Room Code: ${best.roomCode}`);
+ this.logger.log(` Occupancy: ${best.occupancyTypeCode}`);
+ this.logger.log(` Rate Plan: ${best.ratePlanCode}`);
+ this.logger.log(` Selected Tariff: ${best.tariff}, Tax: ${best.tax}`);
 
     try {
       const costResp = await this.postForm<any>('CalculateReservationCost', {
@@ -671,39 +671,39 @@ export class HobseHotelProvider implements IHotelProvider {
         ],
       });
 
-      this.logger.log(`✅ HOBSE CALCULATE RESERVATION COST SUCCESSFUL`);
-      
+ this.logger.log(` HOBSE CALCULATE RESERVATION COST SUCCESSFUL`);
+
       const costData = Array.isArray(costResp?.hobse?.response?.data)
         ? costResp.hobse.response.data[0]
         : null;
 
       if (!costData) {
-        this.logger.warn(`⚠️  No cost data from CalculateReservationCost, using GetAvailableRoomTariff rates`);
-        // Fallback to tariff rates from GetAvailableRoomTariff
+ this.logger.warn(` No cost data from CalculateReservationCost, using GetAvailableRoomTariff rates`);
+ // Fallback to tariff rates from GetAvailableRoomTariff
         const totalTariff = best.tariff;
         const totalTax = best.tax;
         const totalReservationCost = String(Number(totalTariff) + Number(totalTax));
-        
-        this.logger.log(`💰 USING FALLBACK RATES FROM GETAVAILABLEROOMTARIFF:`);
-        this.logger.log(`   Total: ₹${totalReservationCost}`);
+
+ this.logger.log(` USING FALLBACK RATES FROM GETAVAILABLEROOMTARIFF:`);
+ this.logger.log(` Total: ${totalReservationCost}`);
 
         return this.executeCreateBooking(input, best, totalTariff, totalTax, totalReservationCost, hotelRow, '');
       }
 
-      this.logger.log(`💰 COST DATA RETURNED FROM HOBSE:`);
-      this.logger.log(JSON.stringify(costData, null, 2));
+ this.logger.log(` COST DATA RETURNED FROM HOBSE:`);
+ this.logger.log(JSON.stringify(costData, null, 2));
 
-      // Check if CalculateReservationCost returned 0.00 (meaning the room is not available for this partner)
+ // Check if CalculateReservationCost returned 0.00 (meaning the room is not available for this partner)
       const calcTotalReservationCost = Number(costData.totalReservationCost || 0);
-      
+
       if (calcTotalReservationCost === 0) {
-        this.logger.warn(`⚠️  CalculateReservationCost returned 0.00 - room not available for this partner, using GetAvailableRoomTariff rates`);
+ this.logger.warn(` CalculateReservationCost returned 0.00 - room not available for this partner, using GetAvailableRoomTariff rates`);
         const totalTariff = best.tariff;
         const totalTax = best.tax;
         const totalReservationCost = String(Number(totalTariff) + Number(totalTax));
-        
-        this.logger.log(`💰 USING FALLBACK RATES FROM GETAVAILABLEROOMTARIFF:`);
-        this.logger.log(`   Tariff: ₹${totalTariff}, Tax: ₹${totalTax}, Total: ₹${totalReservationCost}`);
+
+ this.logger.log(` USING FALLBACK RATES FROM GETAVAILABLEROOMTARIFF:`);
+ this.logger.log(` Tariff: ${totalTariff}, Tax: ${totalTax}, Total: ${totalReservationCost}`);
 
         return this.executeCreateBooking(input, best, totalTariff, totalTax, totalReservationCost, hotelRow, '');
       }
@@ -713,18 +713,18 @@ export class HobseHotelProvider implements IHotelProvider {
       const totalReservationCost = String(costData.totalReservationCost || Number(totalTariff) + Number(totalTax));
       const tariffReferenceCode = String(costData.tariffReferenceCode || '');
 
-      this.logger.log(`   totalTariff: ${totalTariff}, totalTax: ${totalTax}, totalReservationCost: ${totalReservationCost}`);
-      this.logger.log(`   tariffReferenceCode: ${tariffReferenceCode}`);
+ this.logger.log(` totalTariff: ${totalTariff}, totalTax: ${totalTax}, totalReservationCost: ${totalReservationCost}`);
+ this.logger.log(` tariffReferenceCode: ${tariffReferenceCode}`);
 
       return this.executeCreateBooking(input, best, totalTariff, totalTax, totalReservationCost, hotelRow, tariffReferenceCode);
     } catch (error) {
-      this.logger.warn(`⚠️  CalculateReservationCost failed: ${error instanceof Error ? error.message : String(error)}`);
-      this.logger.log(`📋 Falling back to GetAvailableRoomTariff rates...`);
-      
+ this.logger.warn(` CalculateReservationCost failed: ${error instanceof Error ? error.message : String(error)}`);
+ this.logger.log(` Falling back to GetAvailableRoomTariff rates...`);
+
       const totalTariff = best.tariff;
       const totalTax = best.tax;
       const totalReservationCost = String(Number(totalTariff) + Number(totalTax));
-      
+
       return this.executeCreateBooking(input, best, totalTariff, totalTax, totalReservationCost, hotelRow, '');
     }
   }
@@ -739,8 +739,8 @@ export class HobseHotelProvider implements IHotelProvider {
     tariffReferenceCode: string,
   ) {
 
-    // 3) CreateBooking
-    // Use calculated costs from HOBSE instead of room tariff/tax
+ // 3) CreateBooking
+ // Use calculated costs from HOBSE instead of room tariff/tax
     const finalAddress = (input.guest.address && input.guest.address.trim()) ? input.guest.address : `${input.guest.city || 'India'}, India`;
     const finalState = (input.guest.state && input.guest.state.trim()) ? input.guest.state : 'India';
     const finalCompanyName = (input.guest.billToCompanyName && input.guest.billToCompanyName.trim()) ? input.guest.billToCompanyName : `${input.guest.firstName} ${input.guest.lastName}`;
@@ -808,17 +808,17 @@ export class HobseHotelProvider implements IHotelProvider {
       },
     };
 
-    this.logger.log(`\n📋 CALLING HOBSE CREATE BOOKING:`);
-    this.logger.log(`   Booking Amount: ${totalReservationCost} (from CalculateReservationCost)`);
-    this.logger.log(`   netRate: ${totalTariff}, taxAmount: ${totalTax}`);
-    this.logger.log(`   paidAmount: ${totalTariff}, amountToBeCollected: ${totalTariff}`);
-    this.logger.log(`   Guest: ${input.guest.firstName} ${input.guest.lastName}`);
-    this.logger.log(`   Email: ${(input.guest.email && input.guest.email.trim()) ? input.guest.email : `${input.guest.firstName.toLowerCase()}.${input.guest.lastName.toLowerCase()}@dvi-travels.in`}`);
-    this.logger.log(`   Mobile: ${input.guest.mobileNumber}`);
-    this.logger.log(`   Address: ${finalAddress}`);
-    this.logger.log(`   Company: ${finalCompanyName}`);
-    
-    // Write payload to file for debugging
+ this.logger.log(`\n CALLING HOBSE CREATE BOOKING:`);
+ this.logger.log(` Booking Amount: ${totalReservationCost} (from CalculateReservationCost)`);
+ this.logger.log(` netRate: ${totalTariff}, taxAmount: ${totalTax}`);
+ this.logger.log(` paidAmount: ${totalTariff}, amountToBeCollected: ${totalTariff}`);
+ this.logger.log(` Guest: ${input.guest.firstName} ${input.guest.lastName}`);
+ this.logger.log(` Email: ${(input.guest.email && input.guest.email.trim()) ? input.guest.email : `${input.guest.firstName.toLowerCase()}.${input.guest.lastName.toLowerCase()}@dvi-travels.in`}`);
+ this.logger.log(` Mobile: ${input.guest.mobileNumber}`);
+ this.logger.log(` Address: ${finalAddress}`);
+ this.logger.log(` Company: ${finalCompanyName}`);
+
+ // Write payload to file for debugging
     const fs = require('fs');
     const path = require('path');
     const payloadDir = path.join(process.cwd(), 'tmp');
@@ -828,33 +828,33 @@ export class HobseHotelProvider implements IHotelProvider {
     const payloadPath = path.join(payloadDir, 'hobse_create_booking_payload.json');
     const payloadJson = JSON.stringify(createPayload, null, 2);
     fs.writeFileSync(payloadPath, payloadJson);
-    this.logger.log(`✅ Payload written to ${payloadPath}`);
+ this.logger.log(` Payload written to ${payloadPath}`);
 
     const createResp = await this.postForm<any>('CreateBooking', createPayload);
 
-    this.logger.log('\n🎉 HOBSE CreateBooking RESPONSE RECEIVED:');
-    this.logger.log(`📥 Full response: ${JSON.stringify(createResp, null, 2)}`);
-    
-    // Check response structure
+ this.logger.log('\n HOBSE CreateBooking RESPONSE RECEIVED:');
+ this.logger.log(` Full response: ${JSON.stringify(createResp, null, 2)}`);
+
+ // Check response structure
     const responseStatus = createResp?.hobse?.response?.status;
     const responseData = createResp?.hobse?.response?.data;
-    
-    this.logger.log(`\n📊 HOBSE CreateBooking Response Analysis:`);
-    this.logger.log(`   Status Success: ${responseStatus?.success}`);
-    this.logger.log(`   Status Code: ${responseStatus?.code}`);
-    this.logger.log(`   Status Message: ${responseStatus?.message}`);
-    this.logger.log(`   Has Response Data: ${!!responseData}`);
-    
+
+ this.logger.log(`\n HOBSE CreateBooking Response Analysis:`);
+ this.logger.log(` Status Success: ${responseStatus?.success}`);
+ this.logger.log(` Status Code: ${responseStatus?.code}`);
+ this.logger.log(` Status Message: ${responseStatus?.message}`);
+ this.logger.log(` Has Response Data: ${!!responseData}`);
+
     if (responseData) {
-      this.logger.log(`   Response Data: ${JSON.stringify(responseData, null, 2)}`);
+ this.logger.log(` Response Data: ${JSON.stringify(responseData, null, 2)}`);
     }
-    
+
     if (responseStatus?.success === 'false' || responseStatus?.code !== '200') {
       const errors = createResp?.hobse?.response?.errors;
-      this.logger.error(`❌ HOBSE CreateBooking FAILED!`);
-      this.logger.error(`   Errors: ${JSON.stringify(errors, null, 2)}`);
+ this.logger.error(` HOBSE CreateBooking FAILED!`);
+ this.logger.error(` Errors: ${JSON.stringify(errors, null, 2)}`);
     } else {
-      this.logger.log(`✅ HOBSE CreateBooking SUCCESS!`);
+ this.logger.log(` HOBSE CreateBooking SUCCESS!`);
     }
 
     return {

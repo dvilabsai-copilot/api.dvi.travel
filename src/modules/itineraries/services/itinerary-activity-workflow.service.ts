@@ -48,9 +48,9 @@ export class ItineraryActivityWorkflowService {
     return this.policy.checkActivityTimingConflicts(...args);
   }
 
-  /**
+ /**
    * Add an activity to a hotspot in the itinerary
-   */
+ */
   async addActivity(data: {
     planId: number;
     routeId: number;
@@ -75,7 +75,7 @@ export class ItineraryActivityWorkflowService {
     return this.prisma.$transaction(async (tx) => {
       const userId = 1;
 
-      // Get activity details
+ // Get activity details
       const activity = await (tx as any).dvi_activity.findUnique({
         where: { activity_id: data.activityId },
         select: {
@@ -87,7 +87,7 @@ export class ItineraryActivityWorkflowService {
         throw new NotFoundException('Activity not found');
       }
 
-      // Get current hotspot timing
+ // Get current hotspot timing
       const routeHotspot = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
         where: {
           route_hotspot_ID: data.routeHotspotId,
@@ -106,8 +106,8 @@ export class ItineraryActivityWorkflowService {
         throw new NotFoundException('Route hotspot not found');
       }
 
-      // Enforce uniqueness per specific hotspot window (route_hotspot_ID),
-      // not globally by hotspot_ID across all windows.
+ // Enforce uniqueness per specific hotspot window (route_hotspot_ID),
+ // not globally by hotspot_ID across all windows.
       const duplicate = await (tx as any).dvi_itinerary_route_activity_details.findFirst({
         where: {
           itinerary_plan_ID: data.planId,
@@ -147,7 +147,7 @@ const computedActivityAmount =
           route_hotspot_ID: data.routeHotspotId,
           deleted: 0,
         },
-        select: { 
+        select: {
           activity_order: true,
           activity_end_time: true,
         },
@@ -155,25 +155,25 @@ const computedActivityAmount =
         take: 1,
       });
 
-      const nextOrder = existingActivities.length > 0 
-        ? existingActivities[0].activity_order + 1 
+      const nextOrder = existingActivities.length > 0
+        ? existingActivities[0].activity_order + 1
         : 1;
 
-      // Calculate activity start time
+ // Calculate activity start time
       let activityStartTime = routeHotspot.hotspot_start_time;
-      
+
       if (existingActivities.length > 0 && existingActivities[0].activity_end_time) {
         activityStartTime = existingActivities[0].activity_end_time;
       }
 
-      // Calculate end time based on duration
-      const durationMinutes = activity.activity_duration 
-        ? this.timeToMinutes(activity.activity_duration) 
-        : 30; // Default 30 mins
-      
+ // Calculate end time based on duration
+      const durationMinutes = activity.activity_duration
+        ? this.timeToMinutes(activity.activity_duration)
+ : 30; // Default 30 mins
+
       const activityEndTime = this.addMinutesToTime(activityStartTime, durationMinutes);
 
-      // Insert the activity
+ // Insert the activity
       const result = await (tx as any).dvi_itinerary_route_activity_details.create({
         data: {
           itinerary_plan_ID: data.planId,
@@ -193,8 +193,8 @@ activity_traveling_time: activity.activity_duration,
         },
       });
 
-      // If activity extends beyond hotspot end time, shift downstream timeline
-      // segments to keep persisted schedule consistent.
+ // If activity extends beyond hotspot end time, shift downstream timeline
+ // segments to keep persisted schedule consistent.
       if (activityEndTime > routeHotspot.hotspot_end_time) {
         const extensionMinutes = Math.round(
           (activityEndTime.getTime() - routeHotspot.hotspot_end_time.getTime()) / 60000,
@@ -251,8 +251,8 @@ activity_traveling_time: activity.activity_duration,
         }
       }
 
-      // Step 6: When simulation indicates optional hotspots must be removed,
-      // prune them from the current route to preserve priority feasibility.
+ // Step 6: When simulation indicates optional hotspots must be removed,
+ // prune them from the current route to preserve priority feasibility.
       if (activityImpact.optionalHotspotRouteIdsToRemove.length > 0) {
         await (tx as any).dvi_itinerary_route_activity_details.deleteMany({
           where: {
@@ -304,9 +304,9 @@ pricing: {
     }, { timeout: 30000 });
   }
 
-  /**
+ /**
    * Preview activity addition to check for timing conflicts
-   */
+ */
   async previewActivityAddition(data: {
     planId: number;
     routeId: number;
@@ -314,7 +314,7 @@ pricing: {
     hotspotId: number;
     activityId: number;
   }) {
-    // 1. Get activity details including duration
+ // 1. Get activity details including duration
     const activity = await (this.prisma as any).dvi_activity.findUnique({
       where: { activity_id: data.activityId },
       select: {
@@ -328,7 +328,7 @@ pricing: {
       throw new NotFoundException('Activity not found');
     }
 
-    // 2. Get activity time slots
+ // 2. Get activity time slots
     const timeSlots = await (this.prisma as any).dvi_activity_time_slot_details.findMany({
       where: {
         activity_id: data.activityId,
@@ -337,7 +337,7 @@ pricing: {
       },
     });
 
-    // 3. Get current hotspot timing + order in the itinerary
+ // 3. Get current hotspot timing + order in the itinerary
     const routeHotspot = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findFirst({
       where: {
         route_hotspot_ID: data.routeHotspotId,
@@ -357,7 +357,7 @@ pricing: {
       throw new NotFoundException('Route hotspot not found');
     }
 
-    // 4. Compute where the activity will be inserted in this hotspot
+ // 4. Compute where the activity will be inserted in this hotspot
     const existingActivities = await (this.prisma as any).dvi_itinerary_route_activity_details.findMany({
       where: {
         itinerary_plan_ID: data.planId,
@@ -388,7 +388,7 @@ pricing: {
 
     const proposedEndTime = this.addMinutesToTime(proposedStartTime, durationMinutes);
 
-    // 5. Check for timing conflicts against the proposed inserted slot
+ // 5. Check for timing conflicts against the proposed inserted slot
     const conflicts = this.checkActivityTimingConflicts(
       activity,
       timeSlots,
@@ -396,7 +396,7 @@ pricing: {
       proposedEndTime
     );
 
-    // 6. Compute day cascade — how many minutes does the hotspot extend?
+ // 6. Compute day cascade how many minutes does the hotspot extend?
     const hotspotExtensionMinutes =
       proposedEndTime > routeHotspot.hotspot_end_time
         ? this.timeToMinutes(proposedEndTime) - this.timeToMinutes(routeHotspot.hotspot_end_time)
@@ -422,7 +422,7 @@ pricing: {
     };
 
     if (hotspotExtensionMinutes > 0) {
-      // Fetch all subsequent route hotspot rows (ordered by hotspot_order)
+ // Fetch all subsequent route hotspot rows (ordered by hotspot_order)
       const subsequentRows = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
         where: {
           itinerary_plan_ID: data.planId,
@@ -445,7 +445,7 @@ pricing: {
         orderBy: { hotspot_order: 'asc' },
       });
 
-      // Collect all hotspot_IDs to batch-fetch names
+ // Collect all hotspot_IDs to batch-fetch names
       const hotspotIds = subsequentRows
         .map((r: any) => r.hotspot_ID)
         .filter((id: any) => id && id > 0);
@@ -461,7 +461,7 @@ pricing: {
         masterHotspots.map((h: any) => [h.hotspot_ID, h.hotspot_name])
       );
 
-      // Determine original day end time (last segment's end time)
+ // Determine original day end time (last segment's end time)
       const lastRow = subsequentRows[subsequentRows.length - 1];
       cascade.originalDayEndTime = lastRow?.hotspot_end_time ?? routeHotspot.hotspot_end_time;
       cascade.newDayEndTime = cascade.originalDayEndTime
@@ -502,7 +502,7 @@ pricing: {
           segType = 'return';
           segName = 'Return';
         } else {
-          continue; // Skip item_type 1 (already handled as current hotspot)
+ continue; // Skip item_type 1 (already handled as current hotspot)
         }
 
         cascade.affectedSegments.push({ type: segType, name: segName, oldStartTime: oldStart, oldEndTime: oldEnd, newStartTime: newStart, newEndTime: newEnd });
@@ -531,9 +531,9 @@ pricing: {
     };
   }
 
-  /**
+ /**
    * Delete an activity from an itinerary route
-   */
+ */
   async deleteActivity(planId: number, routeId: number, activityId: number) {
     const userId = 1;
 
@@ -550,7 +550,7 @@ pricing: {
         throw new BadRequestException('Activity not found');
       }
 
-      // Update route details timestamp
+ // Update route details timestamp
       await (tx as any).dvi_itinerary_route_details.updateMany({
         where: {
           itinerary_plan_ID: planId,
@@ -562,7 +562,7 @@ pricing: {
         },
       });
 
-      // Recalculate timeline after activity deletion to keep route/day schedule consistent.
+ // Recalculate timeline after activity deletion to keep route/day schedule consistent.
       await this.hotspotEngine.rebuildRouteHotspots(tx, planId);
     }, { timeout: 60000 });
 
@@ -572,9 +572,9 @@ pricing: {
     };
   }
 
-  /**
+ /**
    * Preview activity addition for ALL hotspots on a route (for day view)
-   */
+ */
   async previewActivityForAllHotspots(data: {
     planId: number;
     routeId: number;
@@ -616,7 +616,7 @@ pricing: {
         itinerary_route_ID: data.routeId,
         deleted: 0,
         status: 1,
-        item_type: 4, // Only attraction hotspots
+ item_type: 4, // Only attraction hotspots
       },
       select: {
         route_hotspot_ID: true,

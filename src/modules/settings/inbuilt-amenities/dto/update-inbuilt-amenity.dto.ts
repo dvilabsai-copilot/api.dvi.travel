@@ -8,11 +8,11 @@ export class UpdateInbuiltAmenityDto {
   @IsNotEmpty()
   title?: string;
 
-  /**
+ /**
    * IMPORTANT:
    * Your PHP updatestatus handler receives the CURRENT status and flips it.
    * Your frontend toggleStatus(id, status) likely passes current status.
-   */
+ */
   @IsOptional()
   @IsInt()
   @IsIn([0, 1])

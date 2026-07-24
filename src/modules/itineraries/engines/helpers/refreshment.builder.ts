@@ -14,7 +14,7 @@ export class RefreshmentBuilder {
     routeId: number,
     order: number,
     routeStartTime: string,
-    breakDuration: string, // HH:MM:SS (e.g. "01:00:00")
+ breakDuration: string, // HH:MM:SS (e.g. "01:00:00")
     userId: number,
   ): { row: HotspotDetailRow; nextTime: string } {
     const startTime = routeStartTime;

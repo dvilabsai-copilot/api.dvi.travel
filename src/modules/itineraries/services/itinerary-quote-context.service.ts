@@ -8,7 +8,7 @@ export class ItineraryQuoteContextService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getPlanForEdit(planId: number) {
-    // Fetch the plan
+ // Fetch the plan
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: planId },
     });
@@ -29,13 +29,13 @@ export class ItineraryQuoteContextService {
       }
     }
 
-    // Fetch routes
+ // Fetch routes
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
       where: { itinerary_plan_ID: planId, deleted: 0 },
       orderBy: { no_of_days: 'asc' },
     });
 
-    // Fetch via routes for each route
+ // Fetch via routes for each route
     const routesWithVia = await Promise.all(
       routes.map(async (route) => {
         const viaRoutes = await this.prisma.dvi_itinerary_via_route_details.findMany({
@@ -57,13 +57,13 @@ export class ItineraryQuoteContextService {
       })
     );
 
-    // Fetch vehicles - note: this table uses lowercase itinerary_plan_id
+ // Fetch vehicles - note: this table uses lowercase itinerary_plan_id
     const vehicles = await this.prisma.dvi_itinerary_plan_vehicle_details.findMany({
       where: { itinerary_plan_id: planId, deleted: 0 },
       orderBy: { vehicle_details_ID: 'asc' },
     });
 
-    // Fetch travellers so room-wise pax and child ages can be prefilled on edit.
+ // Fetch travellers so room-wise pax and child ages can be prefilled on edit.
     const travellers = await (this.prisma as any).dvi_itinerary_traveller_details.findMany({
       where: { itinerary_plan_ID: planId, deleted: 0 },
       orderBy: { traveller_details_ID: 'asc' },
@@ -78,7 +78,7 @@ export class ItineraryQuoteContextService {
   }
 
   async getCustomerInfoForm(planId: number) {
-    // Get plan details
+ // Get plan details
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: planId },
       select: {
@@ -91,7 +91,7 @@ export class ItineraryQuoteContextService {
       throw new BadRequestException('Itinerary plan not found');
     }
 
-    // Get agent details plus company/city labels used by the dropdown.
+ // Get agent details plus company/city labels used by the dropdown.
     const [agent, agentConfig] = await Promise.all([
       this.prisma.dvi_agent.findUnique({
         where: { agent_ID: plan.agent_id },

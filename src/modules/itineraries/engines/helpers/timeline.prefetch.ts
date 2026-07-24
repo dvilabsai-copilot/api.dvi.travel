@@ -111,7 +111,7 @@ export class TimelinePrefetcher {
 
     const commonBufferTime = toTimeString(gs?.itinerary_common_buffer_time, "01:00:00");
 
-    // Stored Locations
+ // Stored Locations
     const locationIds = routes
       .map((r) => r.location_id)
       .filter((id): id is number => id !== null && id !== undefined);
@@ -130,7 +130,7 @@ export class TimelinePrefetcher {
     const storedLocationMap = new Map<number, any>();
     for (const sl of storedLocations) storedLocationMap.set(Number(sl.location_ID), sl);
 
-    // Via Routes
+ // Via Routes
     const viaRoutesAll = await (tx as any).dvi_itinerary_via_route_details.findMany({
       where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
     });
@@ -142,7 +142,7 @@ export class TimelinePrefetcher {
       viaRouteMap.get(rid)!.push(vr);
     }
 
-    // City IDs
+ // City IDs
     const allCities = await (tx as any).dvi_cities.findMany({
       where: { deleted: 0 },
       select: { id: true, name: true },
@@ -151,7 +151,7 @@ export class TimelinePrefetcher {
     const cityIdMap = new Map<string, number>();
     for (const c of allCities) cityIdMap.set(normalizeCityName(c.name), c.id);
 
-    // Hotspots
+ // Hotspots
     const allHotspots = await (tx as any).dvi_hotspot_place.findMany({
       where: { deleted: 0, status: 1 },
       select: {
@@ -185,7 +185,7 @@ export class TimelinePrefetcher {
       });
     }
 
-    // Timings
+ // Timings
     const allTimings = await (tx as any).dvi_hotspot_timing.findMany({
       where: { deleted: 0, status: 1 },
     });
@@ -202,7 +202,7 @@ export class TimelinePrefetcher {
       dayMap.get(day)!.push(t);
     }
 
-    // Sort each day's timing rows by start time so checker is stable
+ // Sort each day's timing rows by start time so checker is stable
     for (const [, dayMap] of timingMap) {
       for (const [day, arr] of dayMap) {
         arr.sort((a: any, b: any) => {
@@ -216,7 +216,7 @@ export class TimelinePrefetcher {
       }
     }
 
-    // City Distances (used by DistanceHelper)
+ // City Distances (used by DistanceHelper)
     const cities = new Set<string>();
     routes.forEach((r) => {
       if (r.location_name) cities.add(r.location_name.split("|")[0].trim());

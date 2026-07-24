@@ -16,13 +16,13 @@ export class CreateReviewDto {
   @IsInt()
   hotel_id!: number;
 
-  /** Normalized rating (string in legacy table) */
+ /** Normalized rating (string in legacy table) */
   @IsOptional()
   @IsString()
   @Transform(({ value, obj }) => value ?? obj?.hotel_rating ?? obj?.rating)
   rating?: string;
 
-  /** Normalized review description */
+ /** Normalized review description */
   @IsOptional()
   @IsString()
   @Transform(
@@ -39,19 +39,19 @@ export class CreateReviewDto {
   @IsInt()
   status?: number;
 
-  /* --------- Legacy aliases (kept optional so existing callers don't break) --------- */
+ /* --------- Legacy aliases (kept optional so existing callers don't break) --------- */
 
-  /** Alias: hotel_rating */
+ /** Alias: hotel_rating */
   @IsOptional()
   @IsString()
   hotel_rating?: string;
 
-  /** Alias: hotel_description */
+ /** Alias: hotel_description */
   @IsOptional()
   @IsString()
   hotel_description?: string;
 
-  /** Alias: hotel_review_description */
+ /** Alias: hotel_review_description */
   @IsOptional()
   @IsString()
   hotel_review_description?: string;

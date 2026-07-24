@@ -33,10 +33,10 @@ export class ContactInfoDto {
 }
 
 export class ProductInfoResponseDto {
-  /**
+ /**
    * Adapter-defined response body based on current implementation.
    * The fully official STAAH response schema is not yet proven from docs.
-   */
+ */
   currency: string;
   propertyname: string;
   checkintime: string;

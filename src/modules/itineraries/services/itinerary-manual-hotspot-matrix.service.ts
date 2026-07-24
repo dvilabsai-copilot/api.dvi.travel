@@ -66,8 +66,8 @@ export class ItineraryManualHotspotMatrixService {
         successCount: 0,
         failedCount: 0,
         rows: [],
-        osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
-        publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
+ osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
+ publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
         hasAnyMatrixData: false,
         hasFeasibleMatrixSlot: false,
         allSlotsAreOffRouteOrBacktrack: false,
@@ -125,8 +125,8 @@ export class ItineraryManualHotspotMatrixService {
           successCount: 0,
           failedCount: 0,
           rows: [],
-          osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
-          publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
+ osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
+ publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
           hasAnyMatrixData: true,
           hasFeasibleMatrixSlot: true,
           allSlotsAreOffRouteOrBacktrack: false,
@@ -143,7 +143,7 @@ export class ItineraryManualHotspotMatrixService {
           userId,
         },
         options: {
-          osrmBaseUrl: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
+ osrmBaseUrl: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
           osrmDelayMs: Number(process.env.OSRM_DELAY_MS || 800),
           osrmTimeoutMs: Number(process.env.OSRM_TIMEOUT_MS || 20000),
           logger: console,
@@ -172,8 +172,8 @@ export class ItineraryManualHotspotMatrixService {
         successCount: 0,
         failedCount: 0,
         rows: [],
-        osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
-        publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
+ osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
+ publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
         hasAnyMatrixData: false,
         hasFeasibleMatrixSlot: false,
         allSlotsAreOffRouteOrBacktrack: false,
@@ -184,7 +184,7 @@ export class ItineraryManualHotspotMatrixService {
     }
   }
 
-  /**
+ /**
    * Add a manual hotspot to a route and rebuild the timeline.
-   */
+ */
 }

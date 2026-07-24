@@ -10,11 +10,11 @@ import { UpdateHotelCategoryDto } from './dto/update-hotel-category.dto';
 export class HotelCategoryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
+ /**
    * PHP parity of __JSONhotelcategory.php:
    * - only rows where deleted = 0
    * - ordered by hotel_category_id DESC
-   */
+ */
   async findAll(): Promise<dvi_hotel_category[]> {
     return this.prisma.dvi_hotel_category.findMany({
       where: { deleted: 0 },
@@ -34,9 +34,9 @@ export class HotelCategoryService {
     return category;
   }
 
-  /**
+ /**
    * Create new category (PHP: INSERT branch of __ajax_manage_hotelcategory.php?type=add)
-   */
+ */
   async create(dto: CreateHotelCategoryDto, userId: number): Promise<dvi_hotel_category> {
     const title = dto.title?.trim();
     const code = dto.code?.trim();
@@ -48,19 +48,19 @@ export class HotelCategoryService {
       hotel_category_title: title,
       hotel_category_code: code,
       createdby: userId ?? 0,
-      status: dto.status ?? 1, // PHP always sets status = 1 on insert
-      // createdon / updatedon are left to DB defaults or remain null,
-      // just like PHP did via sqlACTIONS().
+ status: dto.status 1, // PHP always sets status = 1 on insert
+ // createdon / updatedon are left to DB defaults or remain null,
+ // just like PHP did via sqlACTIONS().
     };
 
     return this.prisma.dvi_hotel_category.create({ data });
   }
 
-  /**
+ /**
    * Update existing category (PHP: UPDATE branch of __ajax_manage_hotelcategory.php?type=add)
-   */
+ */
   async update(id: number, dto: UpdateHotelCategoryDto): Promise<dvi_hotel_category> {
-    const existing = await this.findOne(id); // ensures NotFound if missing
+ const existing = await this.findOne(id); // ensures NotFound if missing
 
     const data: Prisma.dvi_hotel_categoryUpdateInput = {};
 
@@ -80,8 +80,8 @@ export class HotelCategoryService {
       data.status = dto.status;
     }
 
-    // PHP did not explicitly update updatedon for normal updates,
-    // so we keep parity and don't touch that here.
+ // PHP did not explicitly update updatedon for normal updates,
+ // so we keep parity and don't touch that here.
 
     return this.prisma.dvi_hotel_category.update({
       where: { hotel_category_id: existing.hotel_category_id },
@@ -89,11 +89,11 @@ export class HotelCategoryService {
     });
   }
 
-  /**
+ /**
    * Toggle status (PHP: __ajax_manage_hotelcategory.php?type=updatestatus)
    * - If status = 0 → 1
    * - Else → 0
-   */
+ */
   async toggleStatus(id: number): Promise<dvi_hotel_category> {
     const existing = await this.findOne(id);
 
@@ -105,24 +105,24 @@ export class HotelCategoryService {
     });
   }
 
-  /**
+ /**
    * Soft delete with dependency check (PHP: __ajax_manage_hotelcategory.php?type=delete)
    *
    * [Inference] Assumes:
    * - you have a Prisma model `dvi_hotel`
    * - with fields: hotel_category_id, status, deleted
    * Adjust these names if your schema differs.
-   */
+ */
 async softDelete(id: number): Promise<void> {
   const existing = await this.findOne(id);
 
-  // 1. check dependency in dvi_hotel
+ // 1. check dependency in dvi_hotel
   const usageCount = await this.prisma.dvi_hotel.count({
     where: {
-      // keep these names exactly as in your dvi_hotel model
+ // keep these names exactly as in your dvi_hotel model
       hotel_category: existing.hotel_category_id,
-      status: 1,      // if status is also boolean in your model, change to: status: true
-      deleted: false, // ✅ FIX: Prisma expects boolean here, not number 0
+ status: 1, // if status is also boolean in your model, change to: status: true
+ deleted: false, // FIX: Prisma expects boolean here, not number 0
     },
   });
 
@@ -132,20 +132,20 @@ async softDelete(id: number): Promise<void> {
     );
   }
 
-  // 2. soft delete the category (deleted = 1, updatedon = NOW)
+ // 2. soft delete the category (deleted = 1, updatedon = NOW)
   await this.prisma.dvi_hotel_category.update({
     where: { hotel_category_id: existing.hotel_category_id },
     data: {
-      deleted: 1,      // Int in dvi_hotel_category model, so 1 is fine here
+ deleted: 1, // Int in dvi_hotel_category model, so 1 is fine here
       updatedon: new Date(),
     },
   });
 }
 
-  /**
+ /**
    * Code uniqueness check
    * - Equivalent to __ajax_check_hotelcategory_code.php
-   */
+ */
   async ensureCodeUnique(code: string, excludeId?: number): Promise<void> {
     if (!code) return;
 
@@ -166,10 +166,10 @@ async softDelete(id: number): Promise<void> {
     }
   }
 
-  /**
+ /**
    * Title uniqueness check
    * - Equivalent to __ajax_check_hotelcategory_title.php
-   */
+ */
   async ensureTitleUnique(title: string, excludeId?: number): Promise<void> {
     if (!title) return;
 
@@ -190,10 +190,10 @@ async softDelete(id: number): Promise<void> {
     }
   }
 
-  /**
+ /**
    * Convenience methods for the /check-code and /check-title endpoints,
    * returning boolean instead of throwing.
-   */
+ */
   async isCodeUnique(code: string, excludeId?: number): Promise<{ unique: boolean }> {
     const existing = await this.prisma.dvi_hotel_category.findFirst({
       where: {

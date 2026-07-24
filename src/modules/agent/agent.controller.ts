@@ -30,56 +30,56 @@ export class AgentController {
   @Get('profile')
   getProfile(@Req() req: any) {
     const user = req.user;
-    // Role 4 is Agent
+ // Role 4 is Agent
     if (user.role === 4) {
       return this.service.getById(Number(user.agentId));
     }
     throw new UnauthorizedException('Only agents can access this profile');
   }
 
-  /**
+ /**
    * Lightweight list: [{ id, name }]
    * Useful for dropdowns or quick client-side enrichment.
    * Path order matters—keep this ABOVE ':id'.
-   */
+ */
   @Get('names')
   listNames() {
     return this.service.listNames();
   }
-  /** Full list with all fields (existing) */
+ /** Full list with all fields (existing) */
   @Get('full')
   fullList(@Query() query: ListAgentQueryDto) {
     return this.service.listFull(query);
   }
 
-  /** Paginated/DT list with rich fields (existing) */
+ /** Paginated/DT list with rich fields (existing) */
   @UseGuards(JwtAuthGuard)
   @Get()
   async list(@Req() req: any, @Query() query: ListAgentQueryDto) {
     const user = req.user;
-    // Role 3 or 8 is Travel Expert / Staff
+ // Role 3 or 8 is Travel Expert / Staff
     if ((user.role === 3 || user.role === 8 || (user.staffId && user.staffId > 0)) && user.role !== 4 && user.role !== 6) {
       query.travelExpertId = Number(user.staffId);
     }
     return this.service.list(query);
   }
 
-  /** Preview / read one */
+ /** Preview / read one */
   @Get(':id')
   preview(@Param('id', ParseIntPipe) id: number) {
     return this.service.getById(id);
   }
 
-  /** Edit prefill (same as preview for now) */
+ /** Edit prefill (same as preview for now) */
   @Get(':id/edit')
   prefill(@Param('id', ParseIntPipe) id: number) {
     return this.service.getEditPrefill(id);
   }
 
-  /**
+ /**
    * Subscription history for an agent.
    * Reads rows from dvi_agent_subscribed_plans (or synthesizes “Free / 365 Days”).
-   */
+ */
   @Get(':id/subscriptions')
   subscriptions(@Param('id', ParseIntPipe) id: number) {
     return this.service.getSubscriptions(id);
@@ -127,13 +127,13 @@ create(@Body() body: CreateAgentDto) {
   return this.service.create(body);
 }
 
-  /** Update */
+ /** Update */
   @Put(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateAgentDto) {
     return this.service.update(id, body);
   }
 
-  /** Soft delete */
+ /** Soft delete */
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.softDelete(id);

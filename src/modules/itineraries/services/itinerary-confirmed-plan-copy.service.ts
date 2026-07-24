@@ -15,7 +15,7 @@ export class ItineraryConfirmedPlanCopyService {
       selectedHotelRouteIds?: number[];
     } = {},
   ) {
-    // 2. Vehicles
+ // 2. Vehicles
     const vehicles = await tx.dvi_itinerary_plan_vehicle_details.findMany({
       where: { itinerary_plan_id: draftPlanId, deleted: 0 },
     });
@@ -34,7 +34,7 @@ export class ItineraryConfirmedPlanCopyService {
       });
     }
 
-    // 3. Routes
+ // 3. Routes
     const routes = await tx.dvi_itinerary_route_details.findMany({
       where: { itinerary_plan_ID: draftPlanId, deleted: 0 },
     });
@@ -60,7 +60,7 @@ export class ItineraryConfirmedPlanCopyService {
       });
     }
 
-    // 4. Via Routes
+ // 4. Via Routes
     const viaRoutes = await tx.dvi_itinerary_via_route_details.findMany({
       where: { itinerary_plan_ID: draftPlanId, deleted: 0 },
     });
@@ -85,7 +85,7 @@ export class ItineraryConfirmedPlanCopyService {
     }
 
     if (options.copyHotels !== false) {
-      // 5. Hotels
+ // 5. Hotels
       const hotelWhere: any = {
         itinerary_plan_id: draftPlanId,
         hotel_required: { not: 2 },
@@ -187,7 +187,7 @@ export class ItineraryConfirmedPlanCopyService {
         );
       }
 
-      // 5a. Hotel Room Details
+ // 5a. Hotel Room Details
       const selectedConfirmedHotelRouteIds = Array.from(
         new Set(hotels.map((h) => Number(h.itinerary_route_id || 0)).filter((id) => id > 0)),
       );
@@ -249,7 +249,7 @@ export class ItineraryConfirmedPlanCopyService {
         });
       }
 
-      // 5b. Hotel Room Amenities
+ // 5b. Hotel Room Amenities
       const hotelAmenities = selectedConfirmedHotelRouteIds.length > 0
         ? await tx.dvi_itinerary_plan_hotel_room_amenities.findMany({
             where: {
@@ -290,7 +290,7 @@ export class ItineraryConfirmedPlanCopyService {
       }
     }
 
-    // 6. Hotspots
+ // 6. Hotspots
     const hotspots = await tx.dvi_itinerary_route_hotspot_details.findMany({
       where: { itinerary_plan_ID: draftPlanId, deleted: 0 },
     });
@@ -325,7 +325,7 @@ export class ItineraryConfirmedPlanCopyService {
       });
     }
 
-    // 7. Activities
+ // 7. Activities
     const activities = await tx.dvi_itinerary_route_activity_details.findMany({
       where: { itinerary_plan_ID: draftPlanId, deleted: 0 },
     });
@@ -355,7 +355,7 @@ export class ItineraryConfirmedPlanCopyService {
       });
     }
 
-    // 8. Guides
+ // 8. Guides
     const guides = await tx.dvi_itinerary_route_guide_details.findMany({
       where: { itinerary_plan_ID: draftPlanId, deleted: 0 },
     });
@@ -399,7 +399,7 @@ export class ItineraryConfirmedPlanCopyService {
       });
     }
 
-    // 9. Vendor Eligible List
+ // 9. Vendor Eligible List
     const vendorEligible = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
       where: { itinerary_plan_id: draftPlanId, deleted: 0 },
     });
@@ -455,7 +455,7 @@ export class ItineraryConfirmedPlanCopyService {
       });
     }
 
-    // 10. Vendor Vehicle Details
+ // 10. Vendor Vehicle Details
     const vendorVehicleDetails = await tx.dvi_itinerary_plan_vendor_vehicle_details.findMany({
       where: { itinerary_plan_id: draftPlanId, deleted: 0 },
     });
@@ -508,14 +508,14 @@ export class ItineraryConfirmedPlanCopyService {
       });
     }
 
-    // 11. Route Permit Charges
+ // 11. Route Permit Charges
     const permitCharges = await tx.dvi_itinerary_plan_route_permit_charge.findMany({
       where: { itinerary_plan_ID: draftPlanId, status: 1, deleted: 0 },
     });
     for (const pc of permitCharges) {
       await tx.dvi_confirmed_itinerary_plan_route_permit_charge.create({
         data: {
-          // cnf_itinerary_route_permit_charge_ID is auto-increment, don't set it manually
+ // cnf_itinerary_route_permit_charge_ID is auto-increment, don't set it manually
           route_permit_charge_ID: pc.route_permit_charge_ID,
           itinerary_plan_ID: draftPlanId,
           itinerary_route_ID: pc.itinerary_route_ID,

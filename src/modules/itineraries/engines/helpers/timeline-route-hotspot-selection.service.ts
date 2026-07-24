@@ -36,7 +36,7 @@ export class TimelineRouteHotspotSelectionService {
   ): Promise<any[]> {
     const fetchStart = Date.now();
     try {
-      // 1) Load route context (dates + locations)
+ // 1) Load route context (dates + locations)
       let opStart = Date.now();
       const route = (await (tx as any).dvi_itinerary_route_details?.findFirst({
         where: {
@@ -52,10 +52,10 @@ export class TimelineRouteHotspotSelectionService {
         return [];
       }
 
-      // Route fields are the source of truth for hotspot candidate matching.
-      // Do not classify hotspots using dvi_stored_locations source/destination,
-      // because location_id can point to stale/reused rows and contaminate routes.
-      // stored_locations should only support coordinates later.
+ // Route fields are the source of truth for hotspot candidate matching.
+ // Do not classify hotspots using dvi_stored_locations source/destination,
+ // because location_id can point to stale/reused rows and contaminate routes.
+ // stored_locations should only support coordinates later.
       opStart = Date.now();
 
       let targetLocation = String((route as any).location_name || '')
@@ -90,7 +90,7 @@ export class TimelineRouteHotspotSelectionService {
             storedDestinationKey &&
             (routeSourceKey !== storedSourceKey || routeDestinationKey !== storedDestinationKey)
           ) {
-            console.warn('[ROUTE_LOCATION_ID_MISMATCH]', {
+ console.warn('[ROUTE_LOCATION_ID_MISMATCH]', {
               planId,
               routeId,
               locationId: Number((route as any).location_id || 0),
@@ -118,7 +118,7 @@ export class TimelineRouteHotspotSelectionService {
       }
 
       if (!targetLocation || !nextLocation) {
-        console.warn('[HOTSPOT_SELECTION_ROUTE_CONTEXT_MISSING]', {
+ console.warn('[HOTSPOT_SELECTION_ROUTE_CONTEXT_MISSING]', {
           planId,
           routeId,
           locationId: Number((route as any).location_id || 0),
@@ -141,16 +141,16 @@ export class TimelineRouteHotspotSelectionService {
         },
       );
 
-      // PHP uses day-of-week filtering via dvi_hotspot_timing (date('N')-1 => Monday=0)
+ // PHP uses day-of-week filtering via dvi_hotspot_timing (date('N')-1 => Monday=0)
       const routeDate = route.itinerary_route_date
         ? new Date(route.itinerary_route_date)
         : null;
       const phpDow = routeDate
-        ? ((routeDate.getDay() + 6) % 7) // JS: Sunday=0; PHP: Monday=0, Sunday=6
+ ? ((routeDate.getDay() + 6) % 7) // JS: Sunday=0; PHP: Monday=0, Sunday=6
         : undefined;
 
-      // 2) Preload hotspot timings for this day (if available)
-      // PHP uses LEFT JOIN without filtering hotspot_closed - includes all hotspots with timing records
+ // 2) Preload hotspot timings for this day (if available)
+ // PHP uses LEFT JOIN without filtering hotspot_closed - includes all hotspots with timing records
       opStart = Date.now();
       let allowedHotspotIds: Set<number> | null = null;
       if (phpDow !== undefined) {
@@ -161,8 +161,8 @@ export class TimelineRouteHotspotSelectionService {
             status: 1,
           },
         });
-        // Keep timing rows for downstream checks, but avoid hard candidate prefilter.
-        // Missing weekday timing should remain eligible and be handled later.
+ // Keep timing rows for downstream checks, but avoid hard candidate prefilter.
+ // Missing weekday timing should remain eligible and be handled later.
         if ((timingRows || []).length > 0) {
           allowedHotspotIds = null;
         }
@@ -174,21 +174,21 @@ export class TimelineRouteHotspotSelectionService {
           ? routeExcluded.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
           : [],
       );
-      
+
       if (excludedHotspotIds.size > 0) {
-        console.log(`[Timeline] Route ${routeId} has excluded_hotspot_ids:`, Array.from(excludedHotspotIds));
+ console.log(`[Timeline] Route ${routeId} has excluded_hotspot_ids:`, Array.from(excludedHotspotIds));
       }
-      
+
       this.callbacks.logTimeline('[TIMELINE] fetchSelectedHotspotsForRoute - fetch timings:', Date.now() - opStart, 'ms');
 
-      
 
-      // 3) Use pre-fetched hotspots array (passed as parameter for performance)
-      // Note: allHotspots is now passed from buildTimelineForPlan to avoid redundant queries
 
-      // 3b) Fetch operating hours for all hotspots to enable time-aware sorting
-      // PHP behavior: sortHotspots() re-orders to prioritize time-critical hotspots
-      // Include all timing records (even closed) - checkHotspotOperatingHours will filter later
+ // 3) Use pre-fetched hotspots array (passed as parameter for performance)
+ // Note: allHotspots is now passed from buildTimelineForPlan to avoid redundant queries
+
+ // 3b) Fetch operating hours for all hotspots to enable time-aware sorting
+ // PHP behavior: sortHotspots() re-orders to prioritize time-critical hotspots
+ // Include all timing records (even closed) - checkHotspotOperatingHours will filter later
       const hotspotTimings = phpDow !== undefined
         ? await (tx as any).dvi_hotspot_timing?.findMany({
             where: {
@@ -199,13 +199,13 @@ export class TimelineRouteHotspotSelectionService {
           }) || []
         : [];
 
-      // Map hotspot_ID -> earliest closing time for quick lookup
+ // Map hotspot_ID -> earliest closing time for quick lookup
       const closingTimeMap = new Map<number, string>();
       for (const timing of hotspotTimings) {
         const hotspotId = Number(timing.hotspot_ID ?? 0);
         const endTime = timing.hotspot_end_time || '23:59:59';
-        
-        // Keep earliest closing time if multiple slots exist
+
+ // Keep earliest closing time if multiple slots exist
         if (!closingTimeMap.has(hotspotId) || endTime < closingTimeMap.get(hotspotId)!) {
           closingTimeMap.set(hotspotId, endTime);
         }
@@ -285,20 +285,20 @@ export class TimelineRouteHotspotSelectionService {
         return coords || undefined;
       };
 
-      // Get starting location coordinates from stored_locations (already fetched above)
-      // PHP line 1108-1109: Uses source coordinates for starting point
+ // Get starting location coordinates from stored_locations (already fetched above)
+ // PHP line 1108-1109: Uses source coordinates for starting point
       let startLat = 0;
       let startLon = 0;
-      
+
       if (storedLoc) {
-        // Use source coordinates (PHP uses source for starting point)
+ // Use source coordinates (PHP uses source for starting point)
         startLat = Number(storedLoc.source_location_lattitude ?? 0);
         startLon = Number(storedLoc.source_location_longitude ?? 0);
       }
-      
-      // Fallback: If location_id is missing/0 and no coordinates, try by location_name
+
+ // Fallback: If location_id is missing/0 and no coordinates, try by location_name
       if (!startLat && !startLon && targetLocation) {
-        // Try exact match first
+ // Try exact match first
         let foundLoc = await (tx as any).dvi_stored_locations?.findFirst({
           where: {
             source_location: targetLocation,
@@ -306,8 +306,8 @@ export class TimelineRouteHotspotSelectionService {
             status: 1,
           },
         });
-        
-        // Fuzzy match if exact didn't work
+
+ // Fuzzy match if exact didn't work
         if (!foundLoc && route.location_name) {
           foundLoc = await (tx as any).dvi_stored_locations?.findFirst({
             where: {
@@ -317,30 +317,30 @@ export class TimelineRouteHotspotSelectionService {
             },
           });
         }
-        
+
         if (foundLoc) {
           startLat = Number(foundLoc.source_location_lattitude ?? 0);
           startLon = Number(foundLoc.source_location_longitude ?? 0);
         }
       }
 
-      // PHP LINE 1003-1011: Filter includes source location when direct_to_next_visiting_place != 1
-      // Categorize hotspots like PHP does (lines 1197-1210)
+ // PHP LINE 1003-1011: Filter includes source location when direct_to_next_visiting_place != 1
+ // Categorize hotspots like PHP does (lines 1197-1210)
       let sourceLocationHotspots: any[] = [];
       let destinationHotspots: any[] = [];
       const viaRouteHotspots: any[] = [];
       const enRouteHotspots: any[] = [];
 
-      // Helper function to match location with normalization
-      // PHP parity: containsLocation() uses strict lowercase+trim exact matching
-      // between target location and pipe-delimited hotspot_location tokens.
+ // Helper function to match location with normalization
+ // PHP parity: containsLocation() uses strict lowercase+trim exact matching
+ // between target location and pipe-delimited hotspot_location tokens.
       const containsLocation = (hotspotLocation: string | null, targetLocation: string | null): boolean => {
         return this.callbacks.hotspotLocationMatchesCity(hotspotLocation, targetLocation);
       };
 
       for (const h of allHotspots) {
         const debugHotspotId = Number(h.hotspot_ID ?? 0);
-        // Check if timing allows this hotspot on this day
+ // Check if timing allows this hotspot on this day
         if (allowedHotspotIds && !allowedHotspotIds.has(Number(h.hotspot_ID ?? 0))) {
           this.callbacks.logHotspotCandidateEvaluation({
             routeId,
@@ -360,8 +360,8 @@ export class TimelineRouteHotspotSelectionService {
           continue;
         }
 
-        // âš¡ PERF FIX 2: city-match BEFORE the expensive distance call.
-        // With 774 hotspots in DB, ~750 are in different cities and can be skipped immediately.
+ // PERF FIX 2: city-match BEFORE the expensive distance call.
+ // With 774 hotspots in DB, ~750 are in different cities and can be skipped immediately.
         const hotspotFromLocation = String(h.hotspot_location || '').trim();
         const hotspotToLocation = String(h.hotspot_to_location || h.hotspot_location || '').trim();
 
@@ -385,7 +385,7 @@ export class TimelineRouteHotspotSelectionService {
 
         if (isRouteSpecificHotspot) {
           if (!routeChainMatch.matches) {
-            console.log('[HOTSPOT ROUTE SKIP]', {
+ console.log('[HOTSPOT ROUTE SKIP]', {
               routeId,
               hotspot_ID: h.hotspot_ID,
               hotspot_name: h.hotspot_name,
@@ -402,7 +402,7 @@ export class TimelineRouteHotspotSelectionService {
           }
         }
 
-        // PHP parity: use travel-distance engine for ordering, not haversine approximation.
+ // PHP parity: use travel-distance engine for ordering, not haversine approximation.
         const hsLat = Number(h.hotspot_latitude ?? 0);
         const hsLon = Number(h.hotspot_longitude ?? 0);
         let distance = Number.POSITIVE_INFINITY;
@@ -448,7 +448,7 @@ export class TimelineRouteHotspotSelectionService {
 
         if (excludedHotspotIds.has(Number(h.hotspot_ID ?? 0))) {
           const hotspotId = Number(h.hotspot_ID ?? 0);
-          console.log(`[Timeline] Hotspot ${hotspotId} (${h.hotspot_name}) REJECTED for route ${routeId} - it's in excluded list`);
+ console.log(`[Timeline] Hotspot ${hotspotId} (${h.hotspot_name}) REJECTED for route ${routeId} - it's in excluded list`);
           this.callbacks.logHotspotCandidateEvaluation({
             routeId,
             hotspotId: hotspotId,
@@ -467,17 +467,17 @@ export class TimelineRouteHotspotSelectionService {
           continue;
         }
 
-        
-        // PHP PARITY: Lines showing categorization:
-        // if ($source_match) :
-        //     $source_location_hotspots[] = $hotspot_details;
-        // endif;
-        // if ($destination_match) :
-        //     $destination_hotspots[] = $hotspot_details;
-        // endif;
-        
-        // CRITICAL: Hotspot can be in BOTH buckets (e.g., hotspot_location = "Chennai|Pondicherry")
-        // Deduplication happens AFTER bucket selection based on direct flag
+
+ // PHP PARITY: Lines showing categorization:
+ // if ($source_match) :
+ // $source_location_hotspots[] = $hotspot_details;
+ // endif;
+ // if ($destination_match) :
+ // $destination_hotspots[] = $hotspot_details;
+ // endif;
+
+ // CRITICAL: Hotspot can be in BOTH buckets (e.g., hotspot_location = "Chennai|Pondicherry")
+ // Deduplication happens AFTER bucket selection based on direct flag
         if (isRouteSpecificHotspot) {
           enRouteHotspots.push({
             ...hotspotWithDistance,
@@ -493,7 +493,7 @@ export class TimelineRouteHotspotSelectionService {
             __bucket_reason: 'route_specific_hotspot_matches_route_chain',
           });
           if (debugBucketIds.has(debugHotspotId)) {
-            console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
+ console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
               routeId,
               sourceCity: targetLocation,
               destinationCity: nextLocation,
@@ -514,7 +514,7 @@ export class TimelineRouteHotspotSelectionService {
           if (matchesSource && !shouldSuppressSourceHotspotsForMovementTransfer) {
             sourceLocationHotspots.push({ ...hotspotWithDistance, __bucket: 'source' });
             if (debugBucketIds.has(debugHotspotId)) {
-              console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
+ console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
                 routeId,
                 sourceCity: targetLocation,
                 destinationCity: nextLocation,
@@ -535,7 +535,7 @@ export class TimelineRouteHotspotSelectionService {
           if (matchesDestination) {
             destinationHotspots.push({ ...hotspotWithDistance, __bucket: 'destination' });
             if (debugBucketIds.has(debugHotspotId)) {
-              console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
+ console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
                 routeId,
                 sourceCity: targetLocation,
                 destinationCity: nextLocation,
@@ -554,7 +554,7 @@ export class TimelineRouteHotspotSelectionService {
           }
         }
       }
-      
+
       for (const viaRoute of viaRoutes) {
         const viaLocationName = String(
           (viaRoute as any)?.itinerary_via_location_name ??
@@ -657,7 +657,7 @@ export class TimelineRouteHotspotSelectionService {
         }
       }
 
-      // PHP parity: keep bucket ordering simple (priority then distance), no greedy re-scoring.
+ // PHP parity: keep bucket ordering simple (priority then distance), no greedy re-scoring.
       const sortHotspots = (hotspots: any[]) => {
         hotspots.sort((a: any, b: any) => {
           const ap = Number(a.hotspot_priority ?? 0);
@@ -681,26 +681,26 @@ export class TimelineRouteHotspotSelectionService {
         });
       };
 
-      // PHP BEHAVIOR: Sort individual location buckets, NOT the final combined list
+ // PHP BEHAVIOR: Sort individual location buckets, NOT the final combined list
       sortHotspots(sourceLocationHotspots);
       sortHotspots(enRouteHotspots);
       sortHotspots(destinationHotspots);
       sortHotspots(viaRouteHotspots);
-      
-      // Apply max source hotspots limit if specified (for Day 1 arrival city)
+
+ // Apply max source hotspots limit if specified (for Day 1 arrival city)
       if (maxSourceHotspots && maxSourceHotspots > 0 && sourceLocationHotspots.length > maxSourceHotspots) {
-        // Limit to top priority hotspots only
+ // Limit to top priority hotspots only
         sourceLocationHotspots = sourceLocationHotspots.slice(0, maxSourceHotspots);
       }
-      
-      // PHP does NOT filter priority=0, it just sorts them to the END
-      // Time constraints and route_end_time will naturally prevent low-priority hotspots
-      // from being added if there's not enough time
 
-      // PHP PARITY: Process hotspots based on direct_to_next_visiting_place
-      // Concatenate buckets in the order PHP processes them
+ // PHP does NOT filter priority=0, it just sorts them to the END
+ // Time constraints and route_end_time will naturally prevent low-priority hotspots
+ // from being added if there's not enough time
+
+ // PHP PARITY: Process hotspots based on direct_to_next_visiting_place
+ // Concatenate buckets in the order PHP processes them
       let matchingHotspots: any[] = [];
-      
+
       const sameSourceAndDestination =
         String(targetLocation || '').trim().toLowerCase() ===
         String(nextLocation || '').trim().toLowerCase();
@@ -797,9 +797,9 @@ export class TimelineRouteHotspotSelectionService {
           : [...sourceCandidatesForRoute, ...enRouteHotspots, ...viaRouteHotspots, ...destinationHotspots];
       }
 
-      // PHP parity: keep bucket-level candidates distinct.
-      // The same hotspot can be tested in source and later in destination loops.
-      // De-dup only exact (hotspot_ID + bucket) duplicates.
+ // PHP parity: keep bucket-level candidates distinct.
+ // The same hotspot can be tested in source and later in destination loops.
+ // De-dup only exact (hotspot_ID + bucket) duplicates.
       const seen = new Set<string>();
       const uniqueHotspots: any[] = [];
       for (const h of matchingHotspots) {
@@ -876,7 +876,7 @@ export class TimelineRouteHotspotSelectionService {
         process.env.DEBUG_HOTSPOT_WRITER === '1' ||
         process.env.NODE_ENV !== 'production'
       ) {
-        console.log('[HOTSPOT_RCA] hotspot candidates', {
+ console.log('[HOTSPOT_RCA] hotspot candidates', {
           planId,
           routeId,
           sourceName: String(targetLocation || ''),
@@ -912,12 +912,12 @@ export class TimelineRouteHotspotSelectionService {
         __bucket_reason: String(h.__bucket_reason || ''),
       } as any));
     } catch (err) {
-      console.error("[fetchSelectedHotspots] Error:", err);
+ console.error("[fetchSelectedHotspots] Error:", err);
       return [];
     }
   }
 
-  /**
+ /**
    * Get the "location name" (city) of a hotspot.
    *
    * In PHP, this is whatever you used in getSTOREDLOCATION_ID_FROM_SOURCE_AND_DESTINATION
@@ -928,5 +928,5 @@ export class TimelineRouteHotspotSelectionService {
    *   - hotspot_city
    *   - city
    *   - etc. depending on your dvi_hotspot_place schema.
-   */
+ */
 }

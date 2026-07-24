@@ -98,7 +98,7 @@ export class PaymentsService {
       const message =
         String(error?.error?.description || error?.message || 'Unable to create Razorpay order');
 
-      this.logger.error(
+ this.logger.error(
         `Razorpay create order failed flow=${input.flow} status=${status} message=${message}`,
       );
 
@@ -129,7 +129,7 @@ export class PaymentsService {
       },
     });
 
-    this.logger.log(
+ this.logger.log(
       `Payment transition create_order flow=${input.flow} order=${order.id} amountPaise=${input.amountPaise}`,
     );
 
@@ -217,7 +217,7 @@ subscription_status: 1,
     return createdSubscription;
   });
 
-  this.logger.log(
+ this.logger.log(
     `Free subscription renewed agentId=${agentId} planId=${plan.agent_subscription_plan_ID}`,
   );
 
@@ -384,7 +384,7 @@ return this.createGatewayOrder({
 
       const gatewayExtraPaise = paymentAmountPaise - expectedAmountPaise;
       if (gatewayExtraPaise > 0) {
-        this.logger.warn(
+ this.logger.warn(
           `Payment transition gateway_extra_amount flow=${validationContext.flow} order=${orderId} payment=${paymentId} extraPaise=${gatewayExtraPaise}`,
         );
       }
@@ -404,10 +404,10 @@ return this.createGatewayOrder({
       return { order, payment };
     } catch (error: any) {
       const message = String(error?.message || 'Payment gateway validation failed');
-      this.logger.error(
+ this.logger.error(
         `Payment transition validation_failed flow=${validationContext.flow} order=${orderId} payment=${paymentId} reason=${message}`,
       );
-      this.logger.error(`Payment transition validation_context ${JSON.stringify(validationContext)}`);
+ this.logger.error(`Payment transition validation_context ${JSON.stringify(validationContext)}`);
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -701,7 +701,7 @@ return this.createGatewayOrder({
     dto: ConfirmRazorpayPaymentDto,
     checkSignature: boolean,
   ): Promise<NormalizedPaymentResult> {
-    this.logger.log(
+ this.logger.log(
       `Payment transition confirm_requested flow=${flow} order=${dto.razorpay_order_id} payment=${dto.razorpay_payment_id}`,
     );
     const txn = await this.getPendingTransaction(dto.razorpay_order_id, flow);
@@ -715,7 +715,7 @@ return this.createGatewayOrder({
       });
 
       if (!signatureValid) {
-        this.logger.warn(
+ this.logger.warn(
           `Payment transition signature_invalid flow=${flow} order=${dto.razorpay_order_id} payment=${dto.razorpay_payment_id}`,
         );
         await this.updateTransactionFailed(txn.payment_transaction_ID, 'Invalid signature');
@@ -738,7 +738,7 @@ return this.createGatewayOrder({
     const outcome = resolveConfirmOutcome({ alreadyProcessed: txn.processed === 1 });
     if (outcome.shouldApply) {
       await this.applyBusinessUpdates(flow, txn, dto.razorpay_payment_id);
-      this.logger.log(
+ this.logger.log(
         `Payment transition confirmed flow=${flow} order=${dto.razorpay_order_id} payment=${dto.razorpay_payment_id}`,
       );
       return {
@@ -751,7 +751,7 @@ return this.createGatewayOrder({
       };
     }
 
-    this.logger.log(
+ this.logger.log(
       `Payment transition duplicate_confirm flow=${flow} order=${dto.razorpay_order_id} payment=${dto.razorpay_payment_id}`,
     );
     return {
@@ -835,7 +835,7 @@ return this.createGatewayOrder({
 
     if (eventName === 'payment.failed') {
       await this.updateTransactionFailed(txn.payment_transaction_ID, 'Razorpay webhook payment.failed');
-      this.logger.warn(`Payment transition webhook_failed flow=${txn.flow_type} order=${orderId}`);
+ this.logger.warn(`Payment transition webhook_failed flow=${txn.flow_type} order=${orderId}`);
       return { success: true, event: eventName, status: 'marked_failed' };
     }
 

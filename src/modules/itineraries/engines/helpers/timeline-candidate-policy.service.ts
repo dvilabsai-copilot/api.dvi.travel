@@ -93,7 +93,7 @@ export class TimelineCandidatePolicyService {
 
     if (route.itinerary_route_date) {
       const jsDay = new Date(route.itinerary_route_date).getDay();
-      visitDays.add((jsDay + 6) % 7); // PHP convention: Monday=0
+ visitDays.add((jsDay + 6) % 7); // PHP convention: Monday=0
     }
 
     if (!previousRoute?.itinerary_route_date) {
@@ -298,7 +298,7 @@ export class TimelineCandidatePolicyService {
     });
 
     if (this.callbacks.isVerboseTimelineProofLogs()) {
-      console.log('[HOTSPOT_CANDIDATE_EVAL]', evalPayload);
+ console.log('[HOTSPOT_CANDIDATE_EVAL]', evalPayload);
       this.callbacks.appendProofTrace(`[HOTSPOT_CANDIDATE_EVAL] ${evalPayload}`);
     }
   }
@@ -334,21 +334,21 @@ export class TimelineCandidatePolicyService {
     this.rejectionPolicyService.recordHotspotCandidateEvaluation(payload);
   }
 
-  /**
+ /**
    * Normalize city names for comparison (single source of truth)
    * Removes airport, railway, station, etc. and normalizes to lowercase
-   */
+ */
   public normalizeCityName(name: string): string {
     return this.routePolicyService.normalizeCityName(name);
   }
 
-  /**
+ /**
    * Canonical city key used for branch decisions.
    * Examples:
    * - "Hyderabad, Telangana, India" -> "hyderabad"
    * - "Hyderabad, Rajiv Gandhi International Airport" -> "hyderabad"
    * - "Chennai International Airport" -> "chennai"
-   */
+ */
   public canonicalCityKey(name: string): string {
     return this.routePolicyService.canonicalCityKey(name);
   }
@@ -369,9 +369,9 @@ export class TimelineCandidatePolicyService {
     return this.routePolicyService.buildReservedSameCityHotspotIdsByRoute(routes, existingHotspots);
   }
 
-  // Match a hotspot location token to a route city using normalized city keys.
-  // This is intentionally broader than strict token equality so entries like
-  // "Chennai Egmore Station" can match route city "Chennai" globally.
+ // Match a hotspot location token to a route city using normalized city keys.
+ // This is intentionally broader than strict token equality so entries like
+ // "Chennai Egmore Station" can match route city "Chennai" globally.
   public hotspotLocationMatchesCity(
     hotspotLocation: string | null | undefined,
     targetCity: string | null | undefined,
@@ -417,33 +417,33 @@ export class TimelineCandidatePolicyService {
     return this.routePolicyService.isCarryForwardHotspotCompatibleWithRoute(hotspot, routeContext);
   }
 
-  // Estimate how many hotspots a route can realistically absorb based on the
-  // available route window. Used for reservation feasibility checks.
+ // Estimate how many hotspots a route can realistically absorb based on the
+ // available route window. Used for reservation feasibility checks.
   public estimateRouteHotspotCapacity(route: RouteRow | null | undefined): number {
     return this.routePolicyService.estimateRouteHotspotCapacity(route);
   }
 
-  /**
+ /**
    * Check if hotspot operating hours allow visit during the specified time window.
    * PHP: checkHOTSPOTOPERATINGHOURS() in sql_functions.php line 10388-10429
-   * 
+   *
    * ⚠️ CRITICAL FIX (2026-04-12):
    * Uses ABSOLUTE seconds for all validation logic, not wrapped display times.
    * Handles overnight windows correctly by normalizing time ranges.
-   * 
+   *
    * PHP Logic (line 10419-10423):
    * if (($start_timestamp >= $operating_start_timestamp) && ($end_timestamp <= $operating_end_timestamp))
-   * 
+   *
    * Returns object with:
    * - canVisitNow: true if BOTH start AND end time fall within THE SAME operating hours window
    * - nextWindowStart: start time of next available window (if canVisitNow is false)
-   * 
+   *
    * @param timingMap - Pre-fetched timing data map for all hotspots (performance optimization)
    * @param hotspotId - Hotspot ID
    * @param dayOfWeek - Day of week (0=Monday, 6=Sunday)
    * @param visitStartSeconds - ABSOLUTE visit start time in seconds (not wrapped)
    * @param visitEndSeconds - ABSOLUTE visit end time in seconds (may exceed 86400 if overnight)
-   */
+ */
   public checkHotspotOperatingHoursFromMap(
     timingMap: Map<number, Map<number, any[]>>,
     hotspotId: number,
@@ -460,9 +460,9 @@ export class TimelineCandidatePolicyService {
     );
   }
 
-  /**
+ /**
    * Main orchestrator for one plan.
    * Returns in-memory arrays that hotspot-engine.service.ts will insert.
-   */
+ */
 }
 

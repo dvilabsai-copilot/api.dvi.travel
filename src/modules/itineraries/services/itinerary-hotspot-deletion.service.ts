@@ -29,7 +29,7 @@ export class ItineraryHotspotDeletionService {
     const normalizedHotspotParam = Number(hotspotId || 0);
 
     const rebuildResult = await this.prisma.$transaction(async (tx) => {
-      // Accept either route_hotspot_ID or hotspot_ID from caller and resolve to master hotspot_ID.
+ // Accept either route_hotspot_ID or hotspot_ID from caller and resolve to master hotspot_ID.
       let hotspotRecord = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
         where: {
           itinerary_plan_ID: normalizedPlanId,
@@ -58,7 +58,7 @@ export class ItineraryHotspotDeletionService {
 
       const actualHotspotId = Number(hotspotRecord.hotspot_ID || 0);
 
-      // Delete all timeline rows tied to this hotspot in the route so it cannot survive via pair rows.
+ // Delete all timeline rows tied to this hotspot in the route so it cannot survive via pair rows.
       const routeRowsForHotspot = actualHotspotId > 0
         ? await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
             where: {
@@ -104,7 +104,7 @@ export class ItineraryHotspotDeletionService {
       }
 
       if (actualHotspotId > 0) {
-        console.log(`[deleteHotspot] Excluding hotspotId ${actualHotspotId} only for route ${normalizedRouteId}`);
+ console.log(`[deleteHotspot] Excluding hotspotId ${actualHotspotId} only for route ${normalizedRouteId}`);
 
         const targetRoute = await (tx as any).dvi_itinerary_route_details.findFirst({
           where: {
@@ -139,15 +139,15 @@ export class ItineraryHotspotDeletionService {
         }
       }
 
-      // Trigger a full rebuild of the hotspots for this plan
-      // This ensures travel times and hotel arrival are recalculated after deletion
+ // Trigger a full rebuild of the hotspots for this plan
+ // This ensures travel times and hotel arrival are recalculated after deletion
       return await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
     }, { timeout: 60000 });
 
-        // Rebuild parking charges after deletion
+ // Rebuild parking charges after deletion
     await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, userId);
 
-    // Force full vehicle pricing rebuild from current rebuilt hotspot timeline.
+ // Force full vehicle pricing rebuild from current rebuilt hotspot timeline.
     await this.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId);
 
     return {
@@ -160,8 +160,8 @@ export class ItineraryHotspotDeletionService {
     };
   }
 
-  /**
+ /**
    * Get available activities for a hotspot location
-   */
+ */
 }
 

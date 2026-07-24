@@ -7,9 +7,9 @@ export class CheckDistanceLimitDto {
   @IsString()
   destination!: string;
 
-  /**
+ /**
    * Array of via route location IDs (dvi_stored_location_via_routes.via_route_location_ID)
-   */
+ */
   @IsArray()
   @ArrayNotEmpty()
   via_routes!: (number | string)[];

@@ -34,38 +34,38 @@ async getDashboardStats(@Req() req: any) {
   const guideId = Number(
     user?.guideId ?? user?.guide_id ?? 0,
   );
-  // Role 4 is Agent
+ // Role 4 is Agent
   if (role === 4) {
     return this.dashboardService.getAgentDashboardStats(agentId);
   }
 
-  // Role 6 is Accounts
+ // Role 6 is Accounts
   if (role === 6) {
     return this.dashboardService.getAccountsDashboardStats();
   }
 
-  // Role 2 is Vendor
+ // Role 2 is Vendor
   if (role === 2 || vendorId > 0) {
     return this.dashboardService.getVendorDashboardStats(vendorId);
   }
 
-  // Role 5 is Guide
+ // Role 5 is Guide
   if (role === 5 || guideId > 0) {
     return this.dashboardService.getGuideDashboardStats(guideId);
   }
 
-  // Role 3 is Staff.
-  // Staff must receive the same complete dashboard response as Admin.
+ // Role 3 is Staff.
+ // Staff must receive the same complete dashboard response as Admin.
   if (role === 3) {
     return this.dashboardService.getDashboardStats();
   }
 
-  // Role 8 retains the limited Travel Expert dashboard.
+ // Role 8 retains the limited Travel Expert dashboard.
   if (role === 8) {
     return this.dashboardService.getTravelExpertDashboardStats(staffId);
   }
 
-  // Admin and other permitted internal users use the full dashboard.
+ // Admin and other permitted internal users use the full dashboard.
   return this.dashboardService.getDashboardStats();
 }
   @UseGuards(JwtAuthGuard)

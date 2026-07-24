@@ -23,13 +23,13 @@ class NationBlockDto {
 
 export class SavePriceBookDto {
   @IsInt()
-  hotspot_id!: number; // schema is BigInt -> we cast safely
+ hotspot_id!: number; // schema is BigInt -> we cast safely
 
   @IsString() @IsNotEmpty()
-  start_date!: string; // YYYY-MM-DD
+ start_date!: string; // YYYY-MM-DD
 
   @IsString() @IsNotEmpty()
-  end_date!: string;   // YYYY-MM-DD
+ end_date!: string; // YYYY-MM-DD
 
   @IsString()
   @IsOptional()

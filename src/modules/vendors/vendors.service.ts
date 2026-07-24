@@ -936,12 +936,12 @@ export class VendorsService {
     };
   }
 
-  /**
+ /**
    * Returns all vendors (non-deleted) with computed branch count.
    * Mirrors the behaviour of engine/json/__JSONvendor.php.
-   */
+ */
   async listVendors(): Promise<VendorListItemDto[]> {
-    // 1) Base vendor rows
+ // 1) Base vendor rows
     const vendors = await this.prisma.dvi_vendor_details.findMany({
       where: {
         deleted: 0,
@@ -951,7 +951,7 @@ export class VendorsService {
       },
     });
 
-    // 2) Branch counts per vendor
+ // 2) Branch counts per vendor
     const branchCounts = await this.prisma.dvi_vendor_branches.groupBy({
       by: ['vendor_id'],
       where: {
@@ -965,13 +965,13 @@ export class VendorsService {
     const branchCountMap = new Map<number, number>();
     for (const row of branchCounts) {
       branchCountMap.set(
-        // Prisma type for vendor_id is numeric in our schema
+ // Prisma type for vendor_id is numeric in our schema
         row.vendor_id as unknown as number,
         row._count.vendor_id,
       );
     }
 
-    // 3) Map to DTO
+ // 3) Map to DTO
     const result: VendorListItemDto[] = vendors.map((v) => ({
       id: v.vendor_id as unknown as number,
       vendorName: v.vendor_name ?? '',
@@ -985,11 +985,11 @@ export class VendorsService {
     return result;
   }
 
-  /**
+ /**
    * Fetch full vendor info for the edit form (basic info + all branches).
    * This is the equivalent of what the PHP newvendor.php + __ajax_add_vendor_newform.php
    * do when loading the edit wizard.
-   */
+ */
   async getVendorDetail(vendorId: number): Promise<any> {
     const vendor = await this.prisma.dvi_vendor_details.findFirst({
       where: {
@@ -1034,14 +1034,14 @@ export class VendorsService {
     };
   }
 
-  /**
+ /**
    * Create a new vendor basic record.
    *
    * Expectation:
    *  - `data` already uses column-style keys compatible with dvi_vendor_details,
    *    e.g. vendor_name, vendor_code, vendor_primary_mobile_number, vendor_email, etc.
    *  - The frontend should send the same fields the PHP form was posting.
-   */
+ */
 async createVendorBasicInfo(data: any): Promise<any> {
   const mapped = this.mapVendorBasicPayload(data);
 
@@ -1075,9 +1075,9 @@ async createVendorBasicInfo(data: any): Promise<any> {
     return this.getVendorDetail(vendorId);
   }
 
-  /**
+ /**
    * Update an existing vendor basic record (edit form save).
-   */
+ */
   async updateVendorBasicInfo(vendorId: number, data: any): Promise<any> {
     const existing = await this.prisma.dvi_vendor_details.findFirst({
       where: {
@@ -1163,10 +1163,10 @@ async createVendorBasicInfo(data: any): Promise<any> {
     return this.getVendorDetail(vendorId);
   }
 
-  /**
+ /**
    * List all non-deleted branches for a vendor.
    * Used for the "Branch Info" step.
-   */
+ */
   async listBranches(vendorId: number): Promise<any[]> {
     return this.prisma.dvi_vendor_branches.findMany({
       where: {
@@ -1176,13 +1176,13 @@ async createVendorBasicInfo(data: any): Promise<any> {
     });
   }
 
-  /**
+ /**
    * Create a new branch for a vendor.
    * The payload structure should mirror the PHP vendor branch form and
    * the dvi_vendor_branches schema (branch name, contacts, address, etc.).
-   */
+ */
   async createBranch(vendorId: number, data: any): Promise<any> {
-    // Make sure the vendor exists
+ // Make sure the vendor exists
     await this.getVendorDetail(vendorId);
 
     const mapped = this.mapVendorBranchPayload(data);
@@ -1199,9 +1199,9 @@ async createVendorBasicInfo(data: any): Promise<any> {
     return created;
   }
 
-  /**
+ /**
    * Update an existing vendor branch.
-   */
+ */
   async updateBranch(branchId: number, data: any): Promise<any> {
     const existing = await this.prisma.dvi_vendor_branches.findFirst({
       where: {
@@ -1224,9 +1224,9 @@ async createVendorBasicInfo(data: any): Promise<any> {
     });
   }
 
-  /**
+ /**
    * Soft-delete a vendor branch (sets deleted = 1), mirroring the PHP behaviour.
-   */
+ */
   async softDeleteBranch(branchId: number): Promise<void> {
     const existing = await this.prisma.dvi_vendor_branches.findFirst({
       where: {
@@ -1236,7 +1236,7 @@ async createVendorBasicInfo(data: any): Promise<any> {
     });
 
     if (!existing) {
-      // Idempotent delete
+ // Idempotent delete
       return;
     }
 
@@ -1250,9 +1250,9 @@ async createVendorBasicInfo(data: any): Promise<any> {
     });
   }
 
-  /**
+ /**
    * Mirrors legacy PHP confirmdelete behaviour (mixed soft/hard delete cascade).
-   */
+ */
   async softDeleteVendor(vendorId: number): Promise<void> {
     const existing = await this.prisma.dvi_vendor_details.findFirst({
       where: {
@@ -1261,7 +1261,7 @@ async createVendorBasicInfo(data: any): Promise<any> {
       },
     });
 
-    // If vendor doesn't exist or already deleted, make it idempotent
+ // If vendor doesn't exist or already deleted, make it idempotent
     if (!existing) {
       return;
     }
@@ -1275,7 +1275,7 @@ async createVendorBasicInfo(data: any): Promise<any> {
         .map((v) => v.vehicle_id)
         .filter((id): id is number => Number.isInteger(id));
 
-      // Soft deletes in PHP
+ // Soft deletes in PHP
       await tx.dvi_vendor_details.update({
         where: { vendor_id: vendorId },
         data: {
@@ -1302,7 +1302,7 @@ async createVendorBasicInfo(data: any): Promise<any> {
         });
       }
 
-      // Hard deletes in PHP
+ // Hard deletes in PHP
       await tx.dvi_vehicle_outstation_price_book.deleteMany({
         where: { vendor_id: vendorId },
       });
@@ -1347,23 +1347,23 @@ async createVendorBasicInfo(data: any): Promise<any> {
     return nextStatus;
   }
 
-  // =====================================================================================
-  // NEW: Dropdowns for Vendor Form
-  //   - Roles: dvi_rolemenu
-  //   - Countries / States / Cities: dvi_countries / dvi_states / dvi_cities
-  //   - GST Types / Percentages: dvi_gst_setting
-  // =====================================================================================
+ // =====================================================================================
+ // NEW: Dropdowns for Vendor Form
+ // - Roles: dvi_rolemenu
+ // - Countries / States / Cities: dvi_countries / dvi_states / dvi_cities
+ // - GST Types / Percentages: dvi_gst_setting
+ // =====================================================================================
 
-  /**
+ /**
    * Roles dropdown.
    * Source: dvi_rolemenu
    *
    * NOTE: We do NOT filter on deleted/status here because those columns
    * are not present in the Prisma model (earlier error "Argument `deleted` is missing").
-   */
+ */
   async getRoleOptions(): Promise<{ items: DropdownItem[] }> {
-  // Fetch all active roles (status = 1). We don't filter on `deleted`
-  // to avoid Prisma schema mismatches; the table already uses 0 for active.
+ // Fetch all active roles (status = 1). We don't filter on `deleted`
+ // to avoid Prisma schema mismatches; the table already uses 0 for active.
   const rows = await this.prisma.dvi_rolemenu.findMany({
     where: {
       status: 1 as any,
@@ -1375,7 +1375,7 @@ async createVendorBasicInfo(data: any): Promise<any> {
 
   const items: DropdownItem[] = (rows as any[])
     .map((row) => {
-      // Handle different possible field names safely
+ // Handle different possible field names safely
       const id =
         row.role_ID ??
         row.role_id ??
@@ -1399,13 +1399,13 @@ async createVendorBasicInfo(data: any): Promise<any> {
   return { items };
 }
 
-  /**
+ /**
    * Country dropdown.
    * Source: dvi_countries
    *
    * Mirrors HotelsService.countries() but mapped to DropdownItem.
    * No deleted/status filter because those fields are not in Prisma model.
-   */
+ */
   async getCountryOptions(): Promise<{ items: DropdownItem[] }> {
     const rows = await this.prisma.dvi_countries.findMany({
       select: { id: true, name: true },
@@ -1425,12 +1425,12 @@ async createVendorBasicInfo(data: any): Promise<any> {
     return { items };
   }
 
-  /**
+ /**
    * State dropdown, filtered by country.
    * Source: dvi_states
    *
    * Mirrors HotelsService.states(), but wraps in DropdownItem.
-   */
+ */
   async getStateOptions(
     countryId: number | string,
   ): Promise<{ items: DropdownItem[] }> {
@@ -1458,12 +1458,12 @@ async createVendorBasicInfo(data: any): Promise<any> {
     return { items };
   }
 
-  /**
+ /**
    * City dropdown, filtered by state.
    * Source: dvi_cities
    *
    * Mirrors HotelsService.cities(), but wraps in DropdownItem.
-   */
+ */
   async getCityOptions(
     stateId: number | string,
   ): Promise<{ items: DropdownItem[] }> {
@@ -1491,13 +1491,13 @@ async createVendorBasicInfo(data: any): Promise<any> {
     return { items };
   }
 
-  /**
+ /**
    * Vendor Margin GST Type dropdown.
    *
    * For now we keep this static because:
    *  - Your React form already uses "included"/"excluded" from gstTypeOptions.
    *  - dvi_gst_setting Prisma model fields for type/category are not guaranteed.
-   */
+ */
   async getGstTypeOptions(): Promise<{ items: DropdownItem[] }> {
     return {
       items: [
@@ -1507,13 +1507,13 @@ async createVendorBasicInfo(data: any): Promise<any> {
     };
   }
 
-  /**
+ /**
    * Vendor Margin GST Percentage dropdown.
    * Source: dvi_gst_setting
    *
    * Mirrors HotelsService.gstPercentages() logic, but mapped to DropdownItem.
    * No deleted/status filter (those columns are not in Prisma model).
-   */
+ */
   async getGstPercentOptions(): Promise<{ items: DropdownItem[] }> {
     const rows = await this.prisma.dvi_gst_setting.findMany({
       select: { gst_setting_id: true, gst_value: true },
@@ -1531,11 +1531,11 @@ async createVendorBasicInfo(data: any): Promise<any> {
 
       items.push({
         id: String(v),
-        label: String(v), // "0", "5", "12", "18", etc.
+ label: String(v), // "0", "5", "12", "18", etc.
       });
     }
 
-    // Fallback if table is empty / not configured
+ // Fallback if table is empty / not configured
     if (!items.length) {
       [0, 5, 12, 18].forEach((v) => {
         items.push({
@@ -1548,11 +1548,11 @@ async createVendorBasicInfo(data: any): Promise<any> {
     return { items };
   }
 
-  // =====================================================================================
-  // NEW: Vendor Wizard Steps 3-6
-  // =====================================================================================
+ // =====================================================================================
+ // NEW: Vendor Wizard Steps 3-6
+ // =====================================================================================
 
-  // --- Step 3: Driver Costs (dvi_vendor_vehicle_types) ---
+ // --- Step 3: Driver Costs (dvi_vendor_vehicle_types) ---
 
   async getVendorVehicleTypes(vendorId: number): Promise<any[]> {
     const rows = await this.prisma.dvi_vendor_vehicle_types.findMany({
@@ -1594,7 +1594,7 @@ async createVendorBasicInfo(data: any): Promise<any> {
         this.toNumberOrNull(data.evening_charges ?? data.driver_evening_charges) ?? 0,
     };
 
-    // Check if exists
+ // Check if exists
     const existing = await this.prisma.dvi_vendor_vehicle_types.findFirst({
       where: { vendor_id: vendorId, vehicle_type_id: vehicleTypeId, deleted: 0 },
     });
@@ -1680,8 +1680,8 @@ async createVendorBasicInfo(data: any): Promise<any> {
     if (!existing) return;
 
     await this.prisma.$transaction(async (tx) => {
-      // Rate and limit rows are permanently removed before hiding the vendor
-      // vehicle type so no stale pricebook rows remain for a deleted mapping.
+ // Rate and limit rows are permanently removed before hiding the vendor
+ // vehicle type so no stale pricebook rows remain for a deleted mapping.
       await tx.dvi_vehicle_local_pricebook.deleteMany({
         where: {
           vendor_id: vendorId,
@@ -1730,16 +1730,16 @@ async createVendorBasicInfo(data: any): Promise<any> {
     });
   }
 
-  // --- Step 4: Vehicle Info (dvi_vehicle) ---
+ // --- Step 4: Vehicle Info (dvi_vehicle) ---
 
   async getVendorVehicles(vendorId: number): Promise<any[]> {
     const vehicles = await this.prisma.dvi_vehicle.findMany({
       where: { vendor_id: vendorId, deleted: 0 },
     });
 
-    // dvi_vehicle.vehicle_type_id contains both master IDs and legacy
-    // vendor_vehicle_type_ID values. Normalize the list response to the
-    // master ID expected by the vehicle-type dropdown.
+ // dvi_vehicle.vehicle_type_id contains both master IDs and legacy
+ // vendor_vehicle_type_ID values. Normalize the list response to the
+ // master ID expected by the vehicle-type dropdown.
     const storedVehicleTypeIds = Array.from(
       new Set(
         vehicles
@@ -1929,10 +1929,10 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
 const createData: any = {
   ...mapped,
 
-  // Save exact manually entered text.
+ // Save exact manually entered text.
   vehicle_origin: requestedVehicleOrigin,
 
-  // Keep resolved FK when a matching stored location exists.
+ // Keep resolved FK when a matching stored location exists.
   vehicle_location_id: resolution.vehicleLocationId || 0,
 
   vendor_id: vendorId,
@@ -1942,7 +1942,7 @@ const createData: any = {
 };
 
   if (!resolution.vehicleLocationId) {
-    console.warn('[VEHICLE_LOCATION_ID_UNRESOLVED]', resolution.diagnostics);
+ console.warn('[VEHICLE_LOCATION_ID_UNRESOLVED]', resolution.diagnostics);
   }
 
   try {
@@ -2018,17 +2018,17 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
   const updateData: any = {
   ...mapped,
 
-  // Save exactly what the user entered.
+ // Save exactly what the user entered.
   vehicle_origin: requestedVehicleOrigin,
 
-  // Matching stored location is optional.
+ // Matching stored location is optional.
   vehicle_location_id: resolution.vehicleLocationId || 0,
 
   updatedon: new Date(),
 };
 
   if (!resolution.vehicleLocationId) {
-    console.warn('[VEHICLE_LOCATION_ID_UNRESOLVED]', resolution.diagnostics);
+ console.warn('[VEHICLE_LOCATION_ID_UNRESOLVED]', resolution.diagnostics);
   }
 
   try {
@@ -2157,8 +2157,8 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
       const storedTypeId = this.toNumberOrNull(v.vehicle_type_id);
       if (!storedTypeId) continue;
 
-      // PHP stores dvi_vehicle.vehicle_type_id as vendor_vehicle_type_ID.
-      // Keep compatibility with older rows that still contain the master ID.
+ // PHP stores dvi_vehicle.vehicle_type_id as vendor_vehicle_type_ID.
+ // Keep compatibility with older rows that still contain the master ID.
       const vendorType = activeVendorTypeByVendorId.get(storedTypeId);
       const baseTypeId = vendorType?.baseTypeId ??
         (activeBaseTypeIds.has(storedTypeId) ? storedTypeId : null);
@@ -2244,8 +2244,8 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
       const vendorBranchId = this.toNumberOrNull(branchIds[i]);
       if (!vehicleTypeId || !vendorBranchId) continue;
 
-      // The UI sends the master ID, while storage follows the PHP vendor-ID
-      // convention. Accept either form and update both legacy forms safely.
+ // The UI sends the master ID, while storage follows the PHP vendor-ID
+ // convention. Accept either form and update both legacy forms safely.
       const vendorVehicleTypeId = vendorTypeById.has(vehicleTypeId)
         ? vehicleTypeId
         : vendorTypeByBaseId.get(vehicleTypeId);
@@ -2273,7 +2273,7 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
     return { success: true, processed };
   }
 
-  // --- Step 5: Pricebook (dvi_vehicle_local_pricebook, dvi_vehicle_outstation_price_book) ---
+ // --- Step 5: Pricebook (dvi_vehicle_local_pricebook, dvi_vehicle_outstation_price_book) ---
 
   async getVendorLocalPricebook(vendorId: number): Promise<any[]> {
     const rows = await this.prisma.dvi_vehicle_local_pricebook.findMany({
@@ -2658,7 +2658,7 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
     const raw = String(value).trim();
     if (!raw) return null;
 
-    // Supports dd-mm-yyyy used by PHP and yyyy-mm-dd from date inputs.
+ // Supports dd-mm-yyyy used by PHP and yyyy-mm-dd from date inputs.
     if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) {
       const [dd, mm, yyyy] = raw.split('-').map(Number);
       const d = new Date(yyyy, mm - 1, dd);
@@ -3136,7 +3136,7 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
     }
   }
 
-  // --- Step 6: Permit Cost (dvi_permit_cost) ---
+ // --- Step 6: Permit Cost (dvi_permit_cost) ---
 
   async getVendorPermitCosts(vendorId: number): Promise<any[]> {
     const rows = await this.prisma.dvi_permit_cost.findMany({
@@ -3567,7 +3567,7 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
     });
   }
 
-  // --- Dropdowns for Steps 3-6 ---
+ // --- Dropdowns for Steps 3-6 ---
 
   async getVehicleTypeOptions(): Promise<{ items: DropdownItem[] }> {
     const rows = await this.prisma.dvi_vehicle_type.findMany({

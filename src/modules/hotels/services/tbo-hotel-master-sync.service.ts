@@ -4,10 +4,10 @@ import { PrismaService } from '../../../prisma.service';
 
 /**
  * TBO Hotel Master Data Sync Service
- * 
+ *
  * Fetches hotel master data from TBO's GetHotels API and syncs to tbo_hotel_master table
  * This ensures we always have real hotel names instead of generic "Hotel {code}" fallbacks
- * 
+ *
  * Data flow:
  * 1. Call TBO's GetHotels API for a city
  * 2. Extract hotel details (name, address, rating, etc.)
@@ -17,9 +17,9 @@ import { PrismaService } from '../../../prisma.service';
 @Injectable()
 export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy {
   private logger = new Logger(TboHotelMasterSyncService.name);
-  private readonly SHARED_API_URL = process.env.TBO_SHARED_API_URL || 'https://api.travelboutiqueonline.com/SharedAPI';
-  private readonly TBO_MASTER_API_BASE = process.env.TBO_STATIC_API_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
-  private readonly CITY_LIST_API_URL = process.env.TBO_CITY_LIST_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/CityList';
+ private readonly SHARED_API_URL = process.env.TBO_SHARED_API_URL || 'https://api.travelboutiqueonline.com/SharedAPI';
+ private readonly TBO_MASTER_API_BASE = process.env.TBO_STATIC_API_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
+ private readonly CITY_LIST_API_URL = process.env.TBO_CITY_LIST_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/CityList';
   private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'IXMD112';
   private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || 'api-11#M$new';
   private readonly USERNAME = process.env.TBO_USERNAME || 'IXMD112';
@@ -34,7 +34,7 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
   onModuleInit() {
     const enabled = String(process.env.TBO_STATIC_SYNC_ENABLED || 'true').toLowerCase() === 'true';
     if (!enabled) {
-      this.logger.log('ℹ️ TBO static sync scheduler is disabled by TBO_STATIC_SYNC_ENABLED=false');
+ this.logger.log(' TBO static sync scheduler is disabled by TBO_STATIC_SYNC_ENABLED=false');
       return;
     }
 
@@ -43,11 +43,11 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
 
     this.syncTimer = setInterval(() => {
       this.runScheduledSync().catch((error) => {
-        this.logger.error(`❌ Scheduled TBO static sync failed: ${error.message}`);
+ this.logger.error(` Scheduled TBO static sync failed: ${error.message}`);
       });
     }, intervalMs);
 
-    this.logger.log(`🕒 TBO static sync scheduler started (every ${Math.max(intervalDays, 1)} day(s))`);
+ this.logger.log(` TBO static sync scheduler started (every ${Math.max(intervalDays, 1)} day(s))`);
 
     if (this.syncTimer.unref) {
       this.syncTimer.unref();
@@ -56,7 +56,7 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
     const runOnStart = String(process.env.TBO_STATIC_SYNC_RUN_ON_START || 'false').toLowerCase() === 'true';
     if (runOnStart) {
       this.runScheduledSync().catch((error) => {
-        this.logger.error(`❌ Startup TBO static sync failed: ${error.message}`);
+ this.logger.error(` Startup TBO static sync failed: ${error.message}`);
       });
     }
   }
@@ -70,7 +70,7 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
 
   private async runScheduledSync(): Promise<void> {
     if (this.isSyncRunning) {
-      this.logger.warn('⚠️ Skipping scheduled TBO static sync because previous run is still in progress');
+ this.logger.warn(' Skipping scheduled TBO static sync because previous run is still in progress');
       return;
     }
 
@@ -78,10 +78,10 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
     const startedAt = Date.now();
 
     try {
-      this.logger.log('🔄 Starting scheduled TBO static sync');
+ this.logger.log(' Starting scheduled TBO static sync');
       const results = await this.syncAllCities();
       const totalSynced = Array.from(results.values()).reduce((sum, value) => sum + Number(value || 0), 0);
-      this.logger.log(
+ this.logger.log(
         `✅ Scheduled TBO static sync completed. Cities=${results.size}, HotelsSynced=${totalSynced}, DurationMs=${Date.now() - startedAt}`,
       );
     } finally {
@@ -89,9 +89,9 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
     }
   }
 
-  /**
+ /**
    * Authenticate with TBO to get TokenId for GetHotels API
-   */
+ */
   private async authenticate(): Promise<string> {
     if (this.tokenId) {
       return this.tokenId;
@@ -119,32 +119,32 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
       }
 
       this.tokenId = response.data.TokenId;
-      this.logger.log('✅ TBO Authentication successful for hotel sync');
+ this.logger.log(' TBO Authentication successful for hotel sync');
       return this.tokenId;
     } catch (error) {
-      this.logger.error(`❌ TBO Auth failed: ${error.message}`);
+ this.logger.error(` TBO Auth failed: ${error.message}`);
       throw error;
     }
   }
 
-  /**
+ /**
    * Fetch hotel master data from TBO GetHotels API
    * @param tboCityCode - TBO city code (e.g., "127343" for Chennai)
-   */
+ */
   async syncHotelsForCity(tboCityCode: string): Promise<number> {
     try {
-      this.logger.log(`📋 Starting hotel master sync for TBO city code: ${tboCityCode}`);
+ this.logger.log(` Starting hotel master sync for TBO city code: ${tboCityCode}`);
 
-      // Step 1: Call TBOHotelCodeList API (same source used in proven manual Ooty sync)
+ // Step 1: Call TBOHotelCodeList API (same source used in proven manual Ooty sync)
       const hotels = await this.fetchHotelsFromTboHotelCodeList(tboCityCode);
-      this.logger.log(`📦 Fetched ${hotels.length} hotels from TBO for city ${tboCityCode}`);
+ this.logger.log(` Fetched ${hotels.length} hotels from TBO for city ${tboCityCode}`);
 
       if (hotels.length === 0) {
-        this.logger.warn(`⚠️  No hotels returned for city ${tboCityCode}`);
+ this.logger.warn(` No hotels returned for city ${tboCityCode}`);
         return 0;
       }
 
-      // Step 2: Upsert hotels into database
+ // Step 2: Upsert hotels into database
       let upsertedCount = 0;
       for (const hotel of hotels) {
         try {
@@ -192,18 +192,18 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
           });
           upsertedCount++;
         } catch (upsertError) {
-          this.logger.warn(
+ this.logger.warn(
             `⚠️  Failed to upsert hotel ${hotel.HotelCode || hotel.hotelCode}: ${upsertError.message}`
           );
         }
       }
 
-      this.logger.log(
+ this.logger.log(
         `✅ Successfully synced ${upsertedCount}/${hotels.length} hotels for city ${tboCityCode}`
       );
       return upsertedCount;
     } catch (error) {
-      this.logger.error(`❌ Hotel sync failed: ${error.message}`);
+ this.logger.error(` Hotel sync failed: ${error.message}`);
       throw error;
     }
   }
@@ -238,23 +238,23 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
 
       return [];
     } catch (error: any) {
-      this.logger.error(`❌ TBOHotelCodeList failed for city ${tboCityCode}: ${error?.message || error}`);
+ this.logger.error(` TBOHotelCodeList failed for city ${tboCityCode}: ${error?.message || error}`);
       return [];
     }
   }
 
-  /**
+ /**
    * Sync all major cities
    * Call this periodically (e.g., daily) via a cron job
-   */
+ */
   async syncAllCities(): Promise<Map<string, number>> {
     const allIndiaCities = await this.fetchIndiaCitiesFromCityListApi();
     if (allIndiaCities.length === 0) {
-      this.logger.warn('⚠️ No cities returned from CityList API for country IN');
+ this.logger.warn(' No cities returned from CityList API for country IN');
       return new Map<string, number>();
     }
 
-    this.logger.log(`🌍 Starting full India hotel master sync for ${allIndiaCities.length} city codes`);
+ this.logger.log(` Starting full India hotel master sync for ${allIndiaCities.length} city codes`);
 
     const results = new Map<string, number>();
     const delayMs = Number(process.env.TBO_STATIC_SYNC_CITY_DELAY_MS || 400);
@@ -263,12 +263,12 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
       try {
         const count = await this.syncHotelsForCity(city.code);
         results.set(`${city.code}|${city.name}`, count);
-        // Add delay to avoid rate limiting
+ // Add delay to avoid rate limiting
         if (delayMs > 0) {
           await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
       } catch (error) {
-        this.logger.error(`❌ Failed to sync ${city.name} (${city.code}): ${error.message}`);
+ this.logger.error(` Failed to sync ${city.name} (${city.code}): ${error.message}`);
         results.set(`${city.code}|${city.name}`, 0);
       }
     }
@@ -276,10 +276,10 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
     return results;
   }
 
-  /**
+ /**
    * Fetch India city list from external TBO CityList API.
    * Endpoint provided by certification flow.
-   */
+ */
   async fetchIndiaCitiesFromCityListApi(): Promise<Array<{ code: string; name: string }>> {
     try {
       const staticBasicAuth = Buffer.from(`${this.TBO_STATIC_USERNAME}:${this.TBO_STATIC_PASSWORD}`).toString('base64');
@@ -297,7 +297,7 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
 
       const statusCode = response.data?.Status?.Code;
       if (statusCode !== 200) {
-        this.logger.warn(
+ this.logger.warn(
           `⚠️ CityList API returned non-success status: ${statusCode} (${response.data?.Status?.Description || 'Unknown'})`,
         );
         return [];
@@ -313,17 +313,17 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
         }))
         .filter((city) => !!city.code);
 
-      this.logger.log(`📍 CityList API returned ${normalized.length} India cities`);
+ this.logger.log(` CityList API returned ${normalized.length} India cities`);
       return normalized;
     } catch (error: any) {
-      this.logger.error(`❌ Failed to fetch India cities from CityList API: ${error?.message || error}`);
+ this.logger.error(` Failed to fetch India cities from CityList API: ${error?.message || error}`);
       return [];
     }
   }
 
-  /**
+ /**
    * Get hotel count in master database
-   */
+ */
   async getHotelCount(): Promise<number> {
     return await this.prisma.tbo_hotel_master.count();
   }
@@ -352,10 +352,10 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
     }));
   }
 
-  /**
+ /**
    * Parse star rating from TBO's hotel category string
    * Examples: "FiveStar", "FourStar", "5-Star", "4", etc.
-   */
+ */
   private parseStarRating(category: unknown): number {
     if (category === null || category === undefined) return 0;
     const categoryStr = String(category).toLowerCase().trim();
@@ -381,7 +381,7 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
       };
     }
 
-    // Static TBO payload often returns coordinates as "lat|lng" in Map.
+ // Static TBO payload often returns coordinates as "lat|lng" in Map.
     const mapValue = String(hotel?.Map || hotel?.map || '').trim();
     if (!mapValue) {
       return { latitude: '', longitude: '' };

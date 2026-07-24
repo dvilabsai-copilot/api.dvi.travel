@@ -66,12 +66,12 @@ type ManualFitAttemptCacheEntry = any;
 export class ItineraryManualHotspotPreviewService {
   private readonly exactAnchorSequentialTimelineCache = new Map<string, any[]>();
   private readonly manualFitAttemptCache = new Map<string, any>();
-  /**
+ /**
    * Preview transactions temporarily rewrite the same route and then restore
    * its snapshot. Keep previews for one route serialized across requests too;
    * serializing anchors inside a single request is not enough when the UI
    * submits a duplicate preview before the first one has finished restoring.
-   */
+ */
   private readonly routePreviewLocks = new Map<string, Promise<void>>();
   private callbacks: ManualHotspotPreviewCallbacks = {};
 
@@ -312,7 +312,7 @@ export class ItineraryManualHotspotPreviewService {
         }
 
         lastError = error;
-        console.warn('[ManualFit][preview_tx_retry]', {
+ console.warn('[ManualFit][preview_tx_retry]', {
           planId: Number(planId),
           routeId: Number(routeId),
           hotspotIds: this.normalizeManualHotspotIds(hotspotIds),
@@ -415,7 +415,7 @@ export class ItineraryManualHotspotPreviewService {
 
       return true;
     } catch (error: any) {
-      console.error('[ManualHotspotPreview] failed to restore preview snapshot state', {
+ console.error('[ManualHotspotPreview] failed to restore preview snapshot state', {
         planId: Number(snapshot?.planId || 0),
         routeId: Number(snapshot?.routeId || 0),
         message: String(error?.message || error || 'unknown restore error'),

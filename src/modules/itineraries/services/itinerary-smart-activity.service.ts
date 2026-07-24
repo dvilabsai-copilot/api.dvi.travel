@@ -762,7 +762,7 @@ export class ItinerarySmartActivityService {
         })
       : null;
 
-    // Rebuild preview from attraction nodes only; persisted travel rows can be stale after reorder.
+ // Rebuild preview from attraction nodes only; persisted travel rows can be stale after reorder.
     const rows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
         itinerary_plan_ID: Number(planId),
@@ -867,7 +867,7 @@ export class ItinerarySmartActivityService {
       const fromName = String(fromNameRaw || '').trim();
       const toName = String(toNameRaw || '').trim();
 
-      // Guard: never emit self-travel or empty endpoints.
+ // Guard: never emit self-travel or empty endpoints.
       if (!fromName || !toName || fromName.toLowerCase() === toName.toLowerCase()) {
         return;
       }
@@ -1338,15 +1338,15 @@ export class ItinerarySmartActivityService {
     }, { timeout: 180000 });
   }
 
-  /**
+ /**
    * Get available hotspots for a route
-   */
-  /**
+ */
+ /**
    * Get available hotspots for a route
    *
    * NEW RULES:
    * - direct_to_next_visiting_place === 1  => destination pool only, priority DESC
    * - direct_to_next_visiting_place === 0  => interleave source/destination in chunks of 3
   * - already added hotspots => exclude from addable list for this route/day
-   */
+ */
 }

@@ -32,8 +32,8 @@ export function subHMS(base: string, sub: string) {
 }
 
 export function toISTDateTime(dateStr: string, timeStr: string): string {
-  // dateStr: "10/12/2025"
-  // timeStr: "11:00 AM"
+ // dateStr: "10/12/2025"
+ // timeStr: "11:00 AM"
 
   const [dd, mm, yyyy] = dateStr.split("/").map(Number);
 

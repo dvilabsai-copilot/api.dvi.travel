@@ -50,7 +50,7 @@ export class TimelineRouteHotspotPlanningService {
       if (forceNoSightseeingOnThisRoute) {
         selectedHotspots = [];
       }
-      
+
       const day1SourceCompare = this.callbacks.canonicalCityKey(String(sourceCity || ''));
       const day1DestinationCompare = this.callbacks.canonicalCityKey(String(destinationCity || ''));
       const nextRoute = routeIndex < routes.length ? routes[routeIndex] : null;
@@ -215,7 +215,7 @@ export class TimelineRouteHotspotPlanningService {
           enabled: true,
         });
       }
-      
+
       if (!forceNoSightseeingOnThisRoute) {
         if (isDay1DifferentCities) {
         const directToNext = Number((route as any).direct_to_next_visiting_place || 0);
@@ -228,9 +228,9 @@ export class TimelineRouteHotspotPlanningService {
             filteredHotspots,
           );
         } else {
-          // PHP parity: for Day-1 different-cities non-direct routes, do not suppress
-          // destination hotspots. Example: "Chennai International Airport -> Chennai"
-          // should still allow Chennai destination hotspots on Day 1.
+ // PHP parity: for Day-1 different-cities non-direct routes, do not suppress
+ // destination hotspots. Example: "Chennai International Airport -> Chennai"
+ // should still allow Chennai destination hotspots on Day 1.
           selectedHotspots = await this.callbacks.fetchSelectedHotspots(
             tx,
             planId,
@@ -240,7 +240,7 @@ export class TimelineRouteHotspotPlanningService {
             false,
           );
 
-          // Fallback to strict source-priority fetch if route matching returns nothing.
+ // Fallback to strict source-priority fetch if route matching returns nothing.
           if (!selectedHotspots.length) {
             selectedHotspots = await this.callbacks.fetchDay1TopPrioritySourceHotspots(
               tx,
@@ -251,8 +251,8 @@ export class TimelineRouteHotspotPlanningService {
             );
           }
 
-          // PHP parity tuning for Day-1 non-direct airport/city routes:
-          // keep tie-order deterministic for zero-priority carry spots.
+ // PHP parity tuning for Day-1 non-direct airport/city routes:
+ // keep tie-order deterministic for zero-priority carry spots.
           selectedHotspots.sort((a, b) => {
             const ap = Number((a as any).hotspot_priority ?? 0);
             const bp = Number((b as any).hotspot_priority ?? 0);
@@ -271,20 +271,20 @@ export class TimelineRouteHotspotPlanningService {
           });
         }
       } else if (isFirstRoute && shouldDeferDay1Sightseeing) {
-        // Check if current route is STAYING in arrival city (not just passing through)
-        // Only skip if both location_name AND next_visiting_location are in arrival city
+ // Check if current route is STAYING in arrival city (not just passing through)
+ // Only skip if both location_name AND next_visiting_location are in arrival city
         const currentCity = this.callbacks.canonicalCityKey(currentLocationName);
         const nextCity = this.callbacks.canonicalCityKey(route.next_visiting_location || '');
         const arrivalCity = this.callbacks.canonicalCityKey(arrivalPoint);
-        
-        // CRITICAL FIX: Only skip if STAYING in arrival city, not just starting from there
-        // Example: "Madurai Airport → Alleppey" should NOT skip (traveling away)
-        // Example: "Madurai Airport → Madurai" SHOULD skip (staying in same city)
+
+ // CRITICAL FIX: Only skip if STAYING in arrival city, not just starting from there
+ // Example: "Madurai Airport Alleppey" should NOT skip (traveling away)
+ // Example: "Madurai Airport Madurai" SHOULD skip (staying in same city)
         const isStayingInArrivalCity = (currentCity === arrivalCity) && (nextCity === arrivalCity);
-        
+
         if (isStayingInArrivalCity) {
-          // Same-city Day 1 should not depend on source label (city vs airport/station).
-          // Keep sightseeing enabled consistently for both cases.
+ // Same-city Day 1 should not depend on source label (city vs airport/station).
+ // Keep sightseeing enabled consistently for both cases.
           selectedHotspots = await this.callbacks.fetchSelectedHotspots(
             tx,
             planId,
@@ -294,69 +294,69 @@ export class TimelineRouteHotspotPlanningService {
             false,
           );
         } else {
-          // Traveling away from arrival city on Day 1 - apply same direct/non-direct logic
+ // Traveling away from arrival city on Day 1 - apply same direct/non-direct logic
           const directToNext = (route as any).direct_to_next_visiting_place || 0;
-          
+
           if (directToNext === 1) {
-            // Direct travel: Skip arrival city hotspots
-            
+ // Direct travel: Skip arrival city hotspots
+
             selectedHotspots = await this.callbacks.fetchSelectedHotspots(
               tx,
               planId,
               route.itinerary_route_ID,
               filteredHotspots,
-              undefined, // No source limit for direct travel
+ undefined, // No source limit for direct travel
             );
           } else {
-            // Non-direct travel: Visit all available arrival city hotspots
-            
+ // Non-direct travel: Visit all available arrival city hotspots
+
             selectedHotspots = await this.callbacks.fetchSelectedHotspots(
               tx,
               planId,
               route.itinerary_route_ID,
               filteredHotspots,
-              undefined, // No limit - schedule all top priority hotspots
-              true, // Skip destination hotspots - they'll be added on Day 2
+ undefined, // No limit - schedule all top priority hotspots
+ true, // Skip destination hotspots - they'll be added on Day 2
             );
           }
         }
       } else if (isFirstRoute && !shouldDeferDay1Sightseeing) {
-        // Day 1 traveling to different city - check direct flag
+ // Day 1 traveling to different city - check direct flag
         const directToNext = (route as any).direct_to_next_visiting_place || 0;
-        
+
         if (directToNext === 1) {
-          // Direct travel: Skip arrival city hotspots, go straight to destination
-          // Fetch destination city hotspots only (fetchSelectedHotspotsForRoute handles direct flag internally)
-          
+ // Direct travel: Skip arrival city hotspots, go straight to destination
+ // Fetch destination city hotspots only (fetchSelectedHotspotsForRoute handles direct flag internally)
+
           selectedHotspots = await this.callbacks.fetchSelectedHotspots(
             tx,
             planId,
             route.itinerary_route_ID,
             filteredHotspots,
-            undefined, // No source limit for direct travel (will skip source anyway)
+ undefined, // No source limit for direct travel (will skip source anyway)
           );
         } else {
-          // Non-direct travel: Visit all available arrival city hotspots
-          
-          // Fetch all available hotspots, skip destination (will be on Day 2)
+ // Non-direct travel: Visit all available arrival city hotspots
+
+ // Fetch all available hotspots, skip destination (will be on Day 2)
           selectedHotspots = await this.callbacks.fetchSelectedHotspots(
             tx,
             planId,
             route.itinerary_route_ID,
             filteredHotspots,
-            undefined, // No limit - schedule all top priority hotspots
-            true, // Skip destination hotspots - they'll be added on Day 2
+ undefined, // No limit - schedule all top priority hotspots
+ true, // Skip destination hotspots - they'll be added on Day 2
           );
         }
       } else if (isLastRoute && shouldDeferDay1Sightseeing) {
-        // Last day in departure city - fetch hotspots for departure city sightseeing
+ // Last day in departure city - fetch hotspots for departure city sightseeing
         const currentCity = this.callbacks.canonicalCityKey(currentLocationName);
         const departureCity = this.callbacks.canonicalCityKey(departurePoint);
-        
+
         if (currentCity === departureCity) {
-          // Do local sightseeing on last day
-          
-          // Fetch hotspots for this city (will get popular spots)
+ // Do local sightseeing on last day
+
+ // Fetch hotspots for this city (will get popular spots)
           selectedHotspots = await this.callbacks.fetchSelectedHotspots(
             tx,
             planId,
@@ -364,7 +364,7 @@ export class TimelineRouteHotspotPlanningService {
             filteredHotspots,
           );
         } else {
-          // Normal last route
+ // Normal last route
           selectedHotspots = await this.callbacks.fetchSelectedHotspots(
             tx,
             planId,
@@ -373,7 +373,7 @@ export class TimelineRouteHotspotPlanningService {
           );
         }
       } else {
-        // Normal route - fetch hotspots
+ // Normal route - fetch hotspots
         selectedHotspots = await this.callbacks.fetchSelectedHotspots(
           tx,
           planId,

@@ -9,19 +9,19 @@ export class TimelineLogger {
     const timestamp = new Date().toISOString();
     const formattedMessage = `[${timestamp}] ${message} ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}\n`;
 
-    // Always log to console for visibility in terminal
-    console.log(message, ...args);
+ // Always log to console for visibility in terminal
+ console.log(message, ...args);
 
     if (this.enabled) {
       try {
-        // Ensure tmp directory exists
+ // Ensure tmp directory exists
         const dir = path.dirname(this.logPath);
         if (!fs.existsSync(dir)) {
           fs.mkdirSync(dir, { recursive: true });
         }
         fs.appendFileSync(this.logPath, formattedMessage);
       } catch (err) {
-        console.error('Failed to write to log file:', err);
+ console.error('Failed to write to log file:', err);
       }
     }
   }
@@ -31,7 +31,7 @@ export class TimelineLogger {
       try {
         fs.writeFileSync(this.logPath, '');
       } catch (err) {
-        console.error('Failed to clear log file:', err);
+ console.error('Failed to clear log file:', err);
       }
     }
   }

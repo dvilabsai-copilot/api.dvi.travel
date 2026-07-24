@@ -237,7 +237,7 @@ export class ItineraryRouteLegCacheService {
 
   public estimateDurationFromDistance(distanceKm: number | null): number | null {
     if (distanceKm == null || !Number.isFinite(Number(distanceKm)) || distanceKm <= 0) return null;
-    // Conservative hill-road speed: ~25 km/h for Munnar region
+ // Conservative hill-road speed: ~25 km/h for Munnar region
     const speedKmPerHour = 25;
     const durationMin = Math.max(5, Math.round((Number(distanceKm) / speedKmPerHour) * 60));
     return Number.isFinite(durationMin) ? durationMin : null;

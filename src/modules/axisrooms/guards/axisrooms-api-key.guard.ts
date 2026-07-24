@@ -13,13 +13,13 @@ export class AxisRoomsApiKeyGuard implements CanActivate {
     const body = request.body;
 
     const apiKey = process.env.AXISROOMS_API_KEY;
-    
-    // Debug logging
-    this.logger.debug(`Expected API Key from env: ${apiKey ? 'SET' : 'NOT SET'}`);
-    this.logger.debug(`Received API Key: ${body?.auth?.key ? 'PROVIDED' : 'MISSING'}`);
-    
+
+ // Debug logging
+ this.logger.debug(`Expected API Key from env: ${apiKey ? 'SET' : 'NOT SET'}`);
+ this.logger.debug(`Received API Key: ${body?.auth?.key ? 'PROVIDED' : 'MISSING'}`);
+
     if (!apiKey) {
-      this.logger.error('AXISROOMS_API_KEY not configured in environment');
+ this.logger.error('AXISROOMS_API_KEY not configured in environment');
       throw new UnauthorizedException({
         message: AXISROOMS_MESSAGES.UNAUTHORIZED,
         status: 'failure',
@@ -27,16 +27,16 @@ export class AxisRoomsApiKeyGuard implements CanActivate {
     }
 
     const requestKey = body?.auth?.key;
-    
+
     if (!requestKey || requestKey !== apiKey) {
-      this.logger.warn(`Auth failed - Expected: ${apiKey}, Got: ${requestKey}`);
+ this.logger.warn(`Auth failed - Expected: ${apiKey}, Got: ${requestKey}`);
       throw new UnauthorizedException({
         message: AXISROOMS_MESSAGES.UNAUTHORIZED,
         status: 'failure',
       });
     }
 
-    this.logger.debug('Authentication successful');
+ this.logger.debug('Authentication successful');
     return true;
   }
 }

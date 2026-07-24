@@ -15,13 +15,13 @@ import { Type } from 'class-transformer';
 // ---- Nested DTOs kept minimal ----
 export class OperatingSlotDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
-  id?: number; // hotspot_timing_ID
+ id?: number; // hotspot_timing_ID
 
   @IsString()
-  start!: string; // "HH:mm"
+ start!: string; // "HH:mm"
 
   @IsString()
-  end!: string;   // "HH:mm"
+ end!: string; // "HH:mm"
 }
 
 export class OperatingDayDto {
@@ -37,7 +37,7 @@ export class OperatingDayDto {
 
 export class ParkingChargeDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
-  id?: number; // vehicle_parking_charge_ID
+ id?: number; // vehicle_parking_charge_ID
 
   @Type(() => Number) @IsInt() @Min(1)
   vehicleTypeId!: number;
@@ -48,10 +48,10 @@ export class ParkingChargeDto {
 
 export class GalleryItemDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
-  id?: number; // hotspot_gallery_details_id
+ id?: number; // hotspot_gallery_details_id
 
   @IsString()
-  name!: string; // stored filename
+ name!: string; // stored filename
 
   @IsOptional() @IsBoolean()
   delete?: boolean;
@@ -59,7 +59,7 @@ export class GalleryItemDto {
 
 // ---- Create payload covering the whole form ----
 export class HotspotCreateDto {
-  // Master
+ // Master
   @IsString()
   hotspot_name!: string;
 
@@ -94,12 +94,12 @@ export class HotspotCreateDto {
   hotspot_duration?: string | null;
 
   @IsOptional() @Type(() => Number) @IsInt()
-  status?: number | null;   // default 1
+ status?: number | null; // default 1
 
   @IsOptional() @Type(() => Number) @IsInt()
-  deleted?: number | null;  // default 0
+ deleted?: number | null; // default 0
 
-  // Entry costs
+ // Entry costs
   @IsOptional() @Type(() => Number) @IsNumber()
   hotspot_adult_entry_cost?: number | null;
 
@@ -118,7 +118,7 @@ export class HotspotCreateDto {
   @IsOptional() @Type(() => Number) @IsNumber()
   hotspot_foreign_infant_entry_cost?: number | null;
 
-  // Locations (multi-select) -> pipe-joined in service
+ // Locations (multi-select) -> pipe-joined in service
 @IsOptional() @IsArray() @IsString({ each: true })
 hotspot_location_list?: string[];
 
@@ -126,11 +126,11 @@ hotspot_location_list?: string[];
 @IsOptional() @IsArray() @IsString({ each: true })
 hotspot_to_location_list?: string[];
 
-  // Children
+ // Children
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ParkingChargeDto)
   parkingCharges?: ParkingChargeDto[];
 
-  /** Keys like "mon","tue" or "Monday" → { open24hrs, closed24hrs, slots[] } */
+ /** Keys like "mon","tue" or "Monday" { open24hrs, closed24hrs, slots[] } */
   @IsOptional()
   operatingHours?: Record<string, OperatingDayDto>;
 

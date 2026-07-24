@@ -9,9 +9,9 @@ type Tx = Prisma.TransactionClient;
 export class HotelTravelBuilder {
   private readonly travelBuilder = new TravelSegmentBuilder();
 
-  /**
+ /**
    * item_type = 5 → traveling to hotel location
-   */
+ */
   async buildToHotel(
     tx: Tx,
     opts: {
@@ -21,12 +21,12 @@ export class HotelTravelBuilder {
       startTime: string;
       travelLocationType: 1 | 2;
       userId: number;
-      // You must pass either locationId or source/dest names.
+ // You must pass either locationId or source/dest names.
       locationId?: number;
       sourceLocationName?: string;
       destinationLocationName?: string;
       transportMode?: 'road' | 'train' | 'flight';
-      fromHotspotId?: number; // For cache-first
+ fromHotspotId?: number; // For cache-first
       sourceCoords?: { lat: number; lon: number };
       destCoords?: { lat: number; lon: number };
     },
@@ -48,9 +48,9 @@ export class HotelTravelBuilder {
     });
   }
 
-  /**
+ /**
    * item_type = 6 → return to hotel (often zero-distance just to close the day)
-   */
+ */
   async buildReturnToHotel(
     tx: Tx,
     opts: {
@@ -61,7 +61,7 @@ export class HotelTravelBuilder {
       userId: number;
     },
   ): Promise<{ row: HotspotDetailRow; nextTime: string }> {
-    // default 0 distance / 0 time
+ // default 0 distance / 0 time
     return this.travelBuilder.buildTravelSegment(tx, {
       planId: opts.planId,
       routeId: opts.routeId,

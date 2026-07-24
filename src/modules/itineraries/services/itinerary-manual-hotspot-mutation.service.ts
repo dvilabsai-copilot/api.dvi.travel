@@ -204,7 +204,7 @@ export class ItineraryManualHotspotMutationService {
             },
           );
 
-          // Non-success apply responses should not persist any intermediate rebuild/removal state.
+ // Non-success apply responses should not persist any intermediate rebuild/removal state.
           if (applyResult?.success !== true || applyResult?.inserted !== true) {
             throw applyRollbackError;
           }
@@ -220,7 +220,7 @@ export class ItineraryManualHotspotMutationService {
           throw error;
         }
 
-        console.warn('[ManualFit][apply_tx_retry]', {
+ console.warn('[ManualFit][apply_tx_retry]', {
           planId: Number(planId),
           routeId: Number(routeId),
           hotspotIds: normalizedApplyHotspotIds,

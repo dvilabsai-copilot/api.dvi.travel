@@ -27,10 +27,10 @@ interface RouteTab {
 export class RouteSuggestionsService {
   constructor(private prisma: PrismaService) {}
 
-  /**
+ /**
    * Get location_id from source and destination locations
    * Maps to PHP: getSTOREDLOCATION_ID_FROM_SOURCE_AND_DESTINATION
-   */
+ */
   async getLocationIdFromSourceDestination(
     source: string,
     destination: string,
@@ -48,18 +48,18 @@ export class RouteSuggestionsService {
       },
     });
 
-    // Convert BigInt to number
+ // Convert BigInt to number
     return location?.location_ID ? Number(location.location_ID) : null;
   }
 
-  /**
+ /**
    * Get stored routes matching location_id and no_of_nights
-   */
+ */
   async getStoredRoutes(
     locationId: number,
     noOfNights: number,
   ): Promise<any[]> {
-    console.log(
+ console.log(
       `[getStoredRoutes] Searching for routes: locationId=${locationId}, noOfNights=${noOfNights}`,
     );
     return (this.prisma as any).dvi_stored_routes.findMany({
@@ -76,9 +76,9 @@ export class RouteSuggestionsService {
     });
   }
 
-  /**
+ /**
    * Get route location details for a specific route
-   */
+ */
   async getRouteLocationDetails(
     storedRouteId: number,
     limit: number,
@@ -97,9 +97,9 @@ export class RouteSuggestionsService {
     });
   }
 
-  /**
+ /**
    * Check available routes with different night counts for the location
-   */
+ */
   async checkAvailableRoutes(
     locationId: number,
     requestedNights: number,
@@ -109,7 +109,7 @@ export class RouteSuggestionsService {
     minNights: number | null;
     availableNights: number[];
   }> {
-    // Check exact routes
+ // Check exact routes
     const exactResult = await (
       this.prisma as any
     ).dvi_stored_routes.aggregate({
@@ -126,7 +126,7 @@ export class RouteSuggestionsService {
 
     const exactCount = exactResult._count.stored_route_ID;
 
-    // Check greater routes - use findMany instead of aggregateRaw
+ // Check greater routes - use findMany instead of aggregateRaw
     const greaterRoutes = await (
       this.prisma as any
     ).dvi_stored_routes.findMany({
@@ -145,7 +145,7 @@ export class RouteSuggestionsService {
         ? Math.min(...greaterRoutes.map((r) => r.no_of_nights))
         : null;
 
-    // Check shorter routes
+ // Check shorter routes
     const shorterRoutes = await (
       this.prisma as any
     ).dvi_stored_routes.findMany({
@@ -170,9 +170,9 @@ export class RouteSuggestionsService {
     };
   }
 
-  /**
+ /**
    * Build the response with tabs and table content
-   */
+ */
   private buildTabsAndContent(
     routeTabs: RouteTab[],
   ): { tabs: string; tabContents: string } {
@@ -184,14 +184,14 @@ export class RouteSuggestionsService {
       const isActive = index === 0 ? 'active' : '';
       const activeClass = isActive ? 'show active' : '';
 
-      // Build tab header
+ // Build tab header
       tabs += `<li class="nav-item">
         <a class="nav-link ${isActive}" id="route-tab-${tabIndex}" data-bs-toggle="tab" href="#route-${tabIndex}" role="tab" aria-controls="route-${tabIndex}" aria-selected="${isActive ? 'true' : 'false'}">
             Route ${tabIndex}
         </a>
     </li>`;
 
-      // Build tab content
+ // Build tab content
       let tabContent = `<div class="tab-pane fade ${activeClass}" id="route-${tabIndex}" role="tabpanel" aria-labelledby="route-tab-${tabIndex}">`;
 
       tabContent += `<table id="custom_route_details_LIST_${tabIndex}" class="table table-borderless" style="width:100%">
@@ -208,7 +208,7 @@ export class RouteSuggestionsService {
         </thead>
         <tbody id="custom_route_details_tbody_${tabIndex}">`;
 
-      // Add route detail rows
+ // Add route detail rows
       let routeDate = this.parseAndFormatDate(routeTab.startDate);
       let sourceLocation = routeTab.startLocation;
       let nextVisitingLocation = '';
@@ -245,12 +245,12 @@ export class RouteSuggestionsService {
             <td></td>
         </tr>`;
 
-        // Update date and source for next day
+ // Update date and source for next day
         routeDate = this.addDaysToDate(routeDate, 1);
         sourceLocation = nextVisitingLocation;
       });
 
-      // Add last day row
+ // Add last day row
       const lastDayCounter = routeTab.routeDetails.length + 1;
       tabContent += `<tr id="route_details_${tabIndex}_last" class="route_details" data-itinerary_route_ID="" data-day-no="${lastDayCounter}">
             <td class="day text-start" width="8%">DAY ${lastDayCounter}</td>
@@ -282,7 +282,7 @@ export class RouteSuggestionsService {
 
       tabContent += `</tbody></table>`;
 
-      // Add "Add Day" button
+ // Add "Add Day" button
       tabContent += `<div class="text-start">
         <button type="button" id="route_add_days_btn_${tabIndex}" class="btn btn-outline-dribbble btn-sm addNextDayPlan" onclick="addDayToRoute(${tabIndex})" data-tab-index="${tabIndex}">
             <i class="ti ti-plus ti-tada-hover"></i>Add Day
@@ -296,9 +296,9 @@ export class RouteSuggestionsService {
     return { tabs, tabContents };
   }
 
-  /**
+ /**
    * Get default route suggestions
-   */
+ */
   async getDefaultRouteSuggestions(
     noOfRouteDays: number,
     arrivalLocation: string,
@@ -307,20 +307,20 @@ export class RouteSuggestionsService {
     formattedEndDate: string,
   ): Promise<RouteResponse> {
     try {
-      console.log(
+ console.log(
         `[getDefaultRouteSuggestions] Called with: ${arrivalLocation} → ${departureLocation}, ${noOfRouteDays} days`,
       );
 
       const response: RouteResponse = {};
       const adjustedDays = noOfRouteDays - 1;
 
-      // Get location ID
+ // Get location ID
       const locationId = await this.getLocationIdFromSourceDestination(
         arrivalLocation,
         departureLocation,
       );
 
-      console.log(`[getDefaultRouteSuggestions] locationId=${locationId}`);
+ console.log(`[getDefaultRouteSuggestions] locationId=${locationId}`);
 
       if (!locationId) {
         response.no_routes_found = true;
@@ -329,13 +329,13 @@ export class RouteSuggestionsService {
         return response;
       }
 
-    // Get stored routes
+ // Get stored routes
     const storedRoutes = await this.getStoredRoutes(locationId, adjustedDays);
 
     if (storedRoutes.length === 0) {
       response.no_routes_found = true;
 
-      // Check available alternatives
+ // Check available alternatives
       const availabilityInfo = await this.checkAvailableRoutes(
         locationId,
         adjustedDays,
@@ -355,7 +355,7 @@ export class RouteSuggestionsService {
       return response;
     }
 
-    // Process routes - limit to 5
+ // Process routes - limit to 5
     response.no_routes_found = false;
     const selectedRoutes = storedRoutes.slice(0, 5);
     const routeTabs: RouteTab[] = [];
@@ -387,7 +387,7 @@ export class RouteSuggestionsService {
 
     return response;
     } catch (error) {
-      console.error('[getDefaultRouteSuggestions] Error:', error);
+ console.error('[getDefaultRouteSuggestions] Error:', error);
       return {
         no_routes_found: true,
         no_routes_message: 'An error occurred while fetching route suggestions.',
@@ -395,19 +395,19 @@ export class RouteSuggestionsService {
     }
   }
 
-  /**
+ /**
    * Helper: Format date string from d-m-Y to d/m/Y
-   */
+ */
   private parseAndFormatDate(dateStr: string): string {
-    // Input: "06-01-2026" -> Output: "06/01/2026"
+ // Input: "06-01-2026" -> Output: "06/01/2026"
     return dateStr.replace(/-/g, '/');
   }
 
-  /**
+ /**
    * Helper: Add days to date string
-   */
+ */
   private addDaysToDate(dateStr: string, days: number): string {
-    // Input: "06/01/2026" -> Add 1 day -> "07/01/2026"
+ // Input: "06/01/2026" -> Add 1 day -> "07/01/2026"
     const parts = dateStr.split('/');
     if (parts.length !== 3) return dateStr;
 
@@ -425,9 +425,9 @@ export class RouteSuggestionsService {
     return `${day}/${month}/${year}`;
   }
 
-  /**
+ /**
    * Helper: Escape HTML special characters
-   */
+ */
   private htmlspecialchars(str: string): string {
     const entityMap: { [key: string]: string } = {
       '&': '&amp;',

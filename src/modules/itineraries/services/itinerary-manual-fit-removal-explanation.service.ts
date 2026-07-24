@@ -83,7 +83,7 @@ export class ItineraryManualFitRemovalExplanationService {
     const raw = String(value || '').trim();
     if (!raw) return { start: null, end: null };
 
-    const parts = raw.split(/\s*-\s*/);
+ const parts = raw.split(/\s*-\s*/);
     return {
       start: parts[0]?.trim() || null,
       end: parts[1]?.trim() || null,
@@ -220,7 +220,7 @@ export class ItineraryManualFitRemovalExplanationService {
     return {
       ...params.candidate,
 
-      // Never use travel-time rows as attraction visit attempts.
+ // Never use travel-time rows as attraction visit attempts.
       attemptedVisitTime,
       attemptedArrivalTime:
         attemptedAttractionRow?.arrivalTime ||

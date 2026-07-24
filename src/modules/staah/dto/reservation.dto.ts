@@ -83,9 +83,9 @@ export class ReservationRequestDto {
 }
 
 export class ReservationAckDto {
-  /**
+ /**
    * Booking-level acknowledgement entry included in ReservationResponseDto.bookings.
-   */
+ */
   bookingId: string;
   status: 'success' | 'fail';
   error_desc: string;

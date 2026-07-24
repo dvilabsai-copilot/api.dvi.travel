@@ -9,7 +9,7 @@ export class AxisRoomsBookingPushService {
   private readonly logger = new Logger(AxisRoomsBookingPushService.name);
   private readonly pushUrl =
     process.env.AXISROOMS_PUSH_BOOKING_URL ||
-    'https://interstellar.axisrooms.com/v1/bookingNotification/accept/axisrooms';
+ 'https://interstellar.axisrooms.com/v1/bookingNotification/accept/axisrooms';
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -62,7 +62,7 @@ export class AxisRoomsBookingPushService {
       return raw;
     }
 
-    // AxisRooms expects client-system hotel id. Prefer local numeric hotel_id.
+ // AxisRooms expects client-system hotel id. Prefer local numeric hotel_id.
     return String(row.hotel_id || raw).trim();
   }
 
@@ -71,7 +71,7 @@ export class AxisRoomsBookingPushService {
     const headerToken = String(process.env.AXISROOMS_PUSH_TOKEN || accessKey).trim();
     if (!accessKey) {
       const msg = 'AXISROOMS_PUSH_API_KEY is not configured';
-      this.logger.error(msg);
+ this.logger.error(msg);
       return { success: false, message: msg, error: msg };
     }
 
@@ -113,7 +113,7 @@ export class AxisRoomsBookingPushService {
         error?.response?.data?.error ||
         error?.message ||
         'AxisRooms push booking request failed';
-      this.logger.error(`AxisRooms push booking failed: ${errorMessage}`);
+ this.logger.error(`AxisRooms push booking failed: ${errorMessage}`);
       return { success: false, message: 'AxisRooms push failed', error: String(errorMessage) };
     }
   }
@@ -195,7 +195,7 @@ export class AxisRoomsBookingPushService {
     };
 
     const result = await this.pushBookingNotification(payload);
-    // Persist confirmation for successful confirms
+ // Persist confirmation for successful confirms
     try {
       if (input.bookingStatus === 'confirmed' && result.success) {
         const booking = input.hotel || {};
@@ -236,7 +236,7 @@ export class AxisRoomsBookingPushService {
         }
       }
     } catch (e) {
-      this.logger.error('Failed to persist AxisRooms confirmation: ' + String(e?.message || e));
+ this.logger.error('Failed to persist AxisRooms confirmation: ' + String(e?.message || e));
     }
 
     return {
@@ -260,7 +260,7 @@ export class AxisRoomsBookingPushService {
     });
 
     for (const row of rows) {
-      // eslint-disable-next-line no-await-in-loop
+ // eslint-disable-next-line no-await-in-loop
       await this.cancelAxisroomsBookingRow(row as any);
     }
   }
@@ -278,7 +278,7 @@ export class AxisRoomsBookingPushService {
     });
 
     for (const row of rows) {
-      // eslint-disable-next-line no-await-in-loop
+ // eslint-disable-next-line no-await-in-loop
       await this.cancelAxisroomsBookingRow(row as any);
     }
   }

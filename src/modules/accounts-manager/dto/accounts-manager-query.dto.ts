@@ -8,7 +8,7 @@ export type AccountsManagerComponentType =
   | "activity"
   | "hotel"
   | "vehicle"
-  | "flight"; // flight will just return empty for now
+ | "flight"; // flight will just return empty for now
 
 export class AccountsManagerQueryDto {
   @IsOptional()
@@ -23,7 +23,7 @@ export class AccountsManagerQueryDto {
   @IsString()
   quoteId?: string;
 
-  // DD/MM/YYYY coming from UI
+ // DD/MM/YYYY coming from UI
   @IsOptional()
   @IsString()
   fromDate?: string;
@@ -32,7 +32,7 @@ export class AccountsManagerQueryDto {
   @IsString()
   toDate?: string;
 
-  // Agent name substring (we match on dvi_agent.agent_name)
+ // Agent name substring (we match on dvi_agent.agent_name)
   @IsOptional()
   @IsString()
   agent?: string;
@@ -40,7 +40,7 @@ export class AccountsManagerQueryDto {
   @IsOptional()
   agentId?: number;
 
-  // Free text search on quoteId + hotel/vendor name
+ // Free text search on quoteId + hotel/vendor name
   @IsOptional()
   @IsString()
   search?: string;

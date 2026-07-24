@@ -171,9 +171,9 @@ export class TimelineArrivalHotelDecisionService {
         evaluatedArrivalPolicy.goToHotelImmediately === true ||
         evaluatedArrivalPolicy.deferHotelToEndOfDay !== true;
 
-      // Only true early-arrival deferred-hotel flows should force the legacy
-      // 08:00 AM -> 09:00 AM Day 1 buffer. Later arrivals (for example 10 AM)
-      // still may defer hotel check-in, but they must retain the saved route start.
+ // Only true early-arrival deferred-hotel flows should force the legacy
+ // 08:00 AM -> 09:00 AM Day 1 buffer. Later arrivals (for example 10 AM)
+ // still may defer hotel check-in, but they must retain the saved route start.
       const enforceStrictDay1EarlyArrivalDeferredFlow =
         isFirstRoute &&
         (
@@ -191,7 +191,7 @@ export class TimelineArrivalHotelDecisionService {
         evaluatedArrivalPolicy.hotelSearchMode === HotelSearchMode.PREVIOUS_DAY;
 
       if (enforceStrictDay1EarlyArrivalDeferredFlow) {
-        // Hard policy rule: Day-1 deferred hotel flow must begin with 08:00-09:00 buffer.
+ // Hard policy rule: Day-1 deferred hotel flow must begin with 08:00-09:00 buffer.
         effectiveRouteStartTime = '08:00:00';
         currentTime = effectiveRouteStartTime;
         routeStartSeconds = timeToSeconds(effectiveRouteStartTime);

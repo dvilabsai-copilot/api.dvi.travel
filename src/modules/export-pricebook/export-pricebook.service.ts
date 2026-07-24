@@ -21,7 +21,7 @@ type AnyRow = Record<string, any>;
 export class ExportPricebookService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // --------------------- shared helpers ---------------------
+ // --------------------- shared helpers ---------------------
 
   private nowStamp() {
     const d = new Date();
@@ -76,12 +76,12 @@ export class ExportPricebookService {
   }
 
   private monthLong(date: Date) {
-    return date.toLocaleString('en-US', { month: 'long' }); // must match legacy DB month strings
+ return date.toLocaleString('en-US', { month: 'long' }); // must match legacy DB month strings
   }
 
   private dateHeaderLabel(date: Date) {
-    const weekday = date.toLocaleString('en-US', { weekday: 'short' }); // Mon
-    const month = date.toLocaleString('en-US', { month: 'short' }); // Dec
+ const weekday = date.toLocaleString('en-US', { weekday: 'short' }); // Mon
+ const month = date.toLocaleString('en-US', { month: 'short' }); // Dec
     const day = String(date.getDate()).padStart(2, '0');
     const year = date.getFullYear();
     return `${weekday} - ${day} ${month}, ${year}`;
@@ -98,18 +98,18 @@ export class ExportPricebookService {
     return out;
   }
 
-  // NOTE:
-  // legacy helpers like getNATIONALITY / getSLOTTYPE / getPAXCOUNTDETAILS were in jackus.php.
-  // We do safe fallbacks here (you can adjust mapping later).
+ // NOTE:
+ // legacy helpers like getNATIONALITY / getSLOTTYPE / getPAXCOUNTDETAILS were in jackus.php.
+ // We do safe fallbacks here (you can adjust mapping later).
   private nationalityLabel(n: number) {
-    // [Unverified] common mapping
+ // [Unverified] common mapping
     if (n === 1) return 'Indian';
     if (n === 2) return 'Foreign';
     return String(n ?? '');
   }
 
   private mealPlanTypeLabel(mealType: number) {
-    // matches your PHP: getMealPlanTypeLabel()
+ // matches your PHP: getMealPlanTypeLabel()
     if (mealType === 1) return 'Breakfast';
     if (mealType === 2) return 'Lunch';
     if (mealType === 3) return 'Dinner';
@@ -117,7 +117,7 @@ export class ExportPricebookService {
   }
 
   private hotelRoomPriceTypeLabel(priceType: number) {
-    // matches your PHP: getPriceTypeLabel()
+ // matches your PHP: getPriceTypeLabel()
     switch (priceType) {
       case 0:
         return 'Room Rate';
@@ -139,7 +139,7 @@ export class ExportPricebookService {
     return BigInt(0);
   }
 
-  /** BigInt -> number (safe) */
+ /** BigInt -> number (safe) */
   private toNumberSafeBigInt(v: bigint, fieldName: string): number {
     if (v > BigInt(Number.MAX_SAFE_INTEGER)) {
       throw new BadRequestException(`${fieldName} ${v.toString()} exceeds JS safe integer range`);
@@ -147,7 +147,7 @@ export class ExportPricebookService {
     return Number(v);
   }
 
-  // --------------------- VEHICLE (Local + Outstation) ---------------------
+ // --------------------- VEHICLE (Local + Outstation) ---------------------
 
   async getVehiclePricebook(q: VehiclePricebookQueryDto) {
     const whereLocal: AnyRow = {};
@@ -170,7 +170,7 @@ export class ExportPricebookService {
       whereOut.year = q.year;
     }
 
-    // Legacy PHP export does NOT filter by status/deleted for vehicle
+ // Legacy PHP export does NOT filter by status/deleted for vehicle
     const [local, outstation] = await Promise.all([
       this.prisma.dvi_vehicle_local_pricebook.findMany({
         where: { ...whereLocal },
@@ -188,7 +188,7 @@ export class ExportPricebookService {
     const filteredLocal = local.filter((row) => activeLocalTimeLimitIds.has(row.time_limit_id));
     const filteredOutstation = outstation.filter((row) => activeOutstationKmsLimitIds.has(row.kms_limit_id));
 
-    // Lookup maps
+ // Lookup maps
     const vendorIds = new Set<number>();
     const branchIds = new Set<number>();
     const vendorVehicleTypeIds = new Set<number>();
@@ -327,7 +327,7 @@ export class ExportPricebookService {
     return this.writeExcel(res, wb, filename);
   }
 
-  // --------------------- HOTEL ROOM (DATE RANGE, with MEAL rows appended) ---------------------
+ // --------------------- HOTEL ROOM (DATE RANGE, with MEAL rows appended) ---------------------
 
   async exportHotelRoomPricebookExcel(q: HotelRoomExportQueryDto, res: Response) {
     const start = new Date(q.startDate);
@@ -337,21 +337,21 @@ export class ExportPricebookService {
       throw new BadRequestException('Invalid date range. startDate must be <= endDate.');
     }
 
-    // Hotels in state/city
+ // Hotels in state/city
     const hotels = await this.prisma.dvi_hotel.findMany({
       where: {
-        // hotel_state/hotel_city in your schema are STRING (VarChar) in many legacy tables.
-        // If yours are numeric, keep as-is. Otherwise, cast q.stateId/q.cityId to string before calling this API.
+ // hotel_state/hotel_city in your schema are STRING (VarChar) in many legacy tables.
+ // If yours are numeric, keep as-is. Otherwise, cast q.stateId/q.cityId to string before calling this API.
         hotel_state: (q as any).stateId,
         hotel_city: (q as any).cityId,
-        // legacy PHP didn’t filter status/deleted here; keeping minimal constraints:
+ // legacy PHP didnt filter status/deleted here; keeping minimal constraints:
       },
       select: { hotel_id: true, hotel_name: true, hotel_city: true },
     });
 
     const hotelIds = hotels.map((h) => h.hotel_id);
     if (!hotelIds.length) {
-      // still generate an empty sheet (like legacy exports)
+ // still generate an empty sheet (like legacy exports)
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Hotel Room Pricebook');
       ws.addRow([
@@ -367,14 +367,14 @@ export class ExportPricebookService {
       return this.writeExcel(res, wb, `hotel_room_price_book_${this.nowStamp()}.xlsx`);
     }
 
-    // City name (single city)
+ // City name (single city)
     const city = await this.prisma.dvi_cities.findFirst({
       where: { id: (q as any).cityId },
       select: { name: true },
     });
     const cityName = city?.name ?? '';
 
-    // Distinct room combos from room pricebook (state/city is via hotel filter above)
+ // Distinct room combos from room pricebook (state/city is via hotel filter above)
     const roomCombos = await this.prisma.dvi_hotel_room_price_book.groupBy({
       by: ['hotel_id', 'room_id', 'room_type_id', 'price_type'],
       where: { hotel_id: { in: hotelIds } },
@@ -406,7 +406,7 @@ export class ExportPricebookService {
 
     const roomTypeMap = new Map(roomTypes.map((rt) => [rt.room_type_id, rt.room_type_title ?? '']));
 
-    // Preload all pricebook rows for months involved in date range (OPTIMIZED vs legacy per-cell queries)
+ // Preload all pricebook rows for months involved in date range (OPTIMIZED vs legacy per-cell queries)
     const monthYearPairs = new Map<string, { month: string; year: string }>();
     for (const d of dates) {
       const month = this.monthLong(d);
@@ -430,7 +430,7 @@ export class ExportPricebookService {
       );
     }
 
-    // Meal combos (distinct hotel_id + meal_type)
+ // Meal combos (distinct hotel_id + meal_type)
     const mealCombos = await this.prisma.dvi_hotel_meal_price_book.groupBy({
       by: ['hotel_id', 'meal_type'],
       where: { hotel_id: { in: hotelIds } },
@@ -449,7 +449,7 @@ export class ExportPricebookService {
       mealPriceMap.set(`${r.hotel_id}::${r.meal_type}::${r.year ?? ''}::${r.month ?? ''}`, r as AnyRow);
     }
 
-    // Excel build
+ // Excel build
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Hotel Room Pricebook');
 
@@ -467,7 +467,7 @@ export class ExportPricebookService {
 
     let counter = 0;
 
-    // Rooms first (like PHP)
+ // Rooms first (like PHP)
     for (const combo of roomCombos) {
       counter++;
       const hotelName = hotels.find((h) => h.hotel_id === combo.hotel_id)?.hotel_name ?? '';
@@ -490,7 +490,7 @@ export class ExportPricebookService {
       ws.addRow(row);
     }
 
-    // Meal rows appended (same sheet, D/E blank, F is meal label) like your PHP
+ // Meal rows appended (same sheet, D/E blank, F is meal label) like your PHP
     for (const m of mealCombos) {
       counter++;
       const hotelName = hotels.find((h) => h.hotel_id === m.hotel_id)?.hotel_name ?? '';
@@ -515,7 +515,7 @@ export class ExportPricebookService {
     return this.writeExcel(res, wb, filename);
   }
 
-  // --------------------- HOTEL AMENITIES ---------------------
+ // --------------------- HOTEL AMENITIES ---------------------
 
   async exportHotelAmenitiesPricebookExcel(q: HotelAmenityExportQueryDto, res: Response) {
     const hotels = await this.prisma.dvi_hotel.findMany({
@@ -595,7 +595,7 @@ export class ExportPricebookService {
     return this.writeExcel(res, wb, filename);
   }
 
-  // --------------------- GUIDE ---------------------
+ // --------------------- GUIDE ---------------------
 
   async exportGuidePricebookExcel(q: GuideExportQueryDto, res: Response) {
     const rows = await this.prisma.dvi_guide_pricebook.findMany({
@@ -635,8 +635,8 @@ export class ExportPricebookService {
         guideMap.get(r.guide_id) ?? '',
         r.year ?? '',
         r.month ?? '',
-        r.pax_count ?? 0, // legacy label in jackus.php; kept as numeric
-        r.slot_type ?? 0, // legacy label in jackus.php; kept as numeric
+ r.pax_count 0, // legacy label in jackus.php; kept as numeric
+ r.slot_type 0, // legacy label in jackus.php; kept as numeric
         ...dayKeys.map((k) => (r as AnyRow)[k] ?? 0),
       ]);
     }
@@ -645,7 +645,7 @@ export class ExportPricebookService {
     return this.writeExcel(res, wb, filename);
   }
 
-  // --------------------- HOTSPOT ---------------------
+ // --------------------- HOTSPOT ---------------------
 
   async exportHotspotPricebookExcel(q: HotspotExportQueryDto, res: Response) {
     const rows = await this.prisma.dvi_hotspot_place.findMany({
@@ -690,7 +690,7 @@ export class ExportPricebookService {
     return this.writeExcel(res, wb, filename);
   }
 
-  // --------------------- ACTIVITY (JSON + Excel) ---------------------
+ // --------------------- ACTIVITY (JSON + Excel) ---------------------
 
   async getActivityPricebook(q: ActivityQueryDto) {
     const rows = await this.prisma.dvi_activity_pricebook.findMany({
@@ -700,7 +700,7 @@ export class ExportPricebookService {
 
     const activityIds = [...new Set(rows.map((r) => r.activity_id))];
 
-    // hotspot_id is BigInt in dvi_activity_pricebook, but hotspot_ID is Int in dvi_hotspot_place
+ // hotspot_id is BigInt in dvi_activity_pricebook, but hotspot_ID is Int in dvi_hotspot_place
     const hotspotIdsNum = [
       ...new Set(
         rows
@@ -730,7 +730,7 @@ export class ExportPricebookService {
       const hotspotIdNum = this.toNumberSafeBigInt(r.hotspot_id, 'hotspot_id');
 
       return {
-        // keep stable JSON: BigInt must NOT be returned as BigInt
+ // keep stable JSON: BigInt must NOT be returned as BigInt
         activityPriceBookId: String(r.activity_price_book_id),
         activityId: r.activity_id,
         activityName: activityMap.get(r.activity_id) ?? '',
@@ -771,7 +771,7 @@ export class ExportPricebookService {
         i + 1,
         r.activityName,
         r.hotspotName,
-        r.nationalityLabel, // legacy displayed label
+ r.nationalityLabel, // legacy displayed label
         r.month,
         r.year,
         ...r.days,
@@ -782,7 +782,7 @@ export class ExportPricebookService {
     return this.writeExcel(res, wb, filename);
   }
 
-  // --------------------- TOLL (JSON + Excel) ---------------------
+ // --------------------- TOLL (JSON + Excel) ---------------------
 
   async getTollPricebook(q: TollQueryDto) {
     const tollRows = await this.prisma.dvi_vehicle_toll_charges.findMany({
@@ -842,7 +842,7 @@ export class ExportPricebookService {
     return this.writeExcel(res, wb, filename);
   }
 
-  // --------------------- PARKING (JSON + Excel) ---------------------
+ // --------------------- PARKING (JSON + Excel) ---------------------
 
   async getParkingPricebook(q: ParkingQueryDto) {
     const where: AnyRow = { status: 1, deleted: 0 };
@@ -853,8 +853,8 @@ export class ExportPricebookService {
       orderBy: [{ vehicle_parking_charge_ID: 'asc' }],
     });
 
-    // dvi_hotspot_vehicle_parking_charges.hotspot_id is likely BigInt (legacy)
-    // but dvi_hotspot_place.hotspot_ID is Int
+ // dvi_hotspot_vehicle_parking_charges.hotspot_id is likely BigInt (legacy)
+ // but dvi_hotspot_place.hotspot_ID is Int
     const hotspotIdsNum = [
       ...new Set(
         rows
@@ -888,7 +888,7 @@ export class ExportPricebookService {
 
         return {
           id: String(r.vehicle_parking_charge_ID),
-          hotspotId: this.toBigIntSafe(r.hotspot_id).toString(), // safe JSON
+ hotspotId: this.toBigIntSafe(r.hotspot_id).toString(), // safe JSON
           hotspotName: h?.hotspot_name ?? '',
           hotspotLocation: h?.hotspot_location ?? '',
           vehicleTypeId: r.vehicle_type_id,

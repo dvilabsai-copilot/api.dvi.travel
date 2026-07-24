@@ -17,19 +17,19 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 
 @Module({
   imports: [
-    // Multer for /activities/:id/images/upload endpoint
+ // Multer for /activities/:id/images/upload endpoint
     MulterModule.register({
       storage: diskStorage({
         destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
         filename: (_req, file, cb) => {
-          // keep original extension; unique name
+ // keep original extension; unique name
           const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
           cb(null, `${unique}${extname(file.originalname)}`);
         },
       }),
       limits: {
-        fileSize: 8 * 1024 * 1024, // 8MB per file
-        files: 12,                 // up to 12 images
+ fileSize: 8 * 1024 * 1024, // 8MB per file
+ files: 12, // up to 12 images
       },
     }),
   ],

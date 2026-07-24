@@ -5,7 +5,7 @@ export class CreateVehicleTypeDto {
   @IsString()
   title?: string;
 
-  // PHP name
+ // PHP name
   @IsOptional()
   @IsString()
   vehicle_type_title?: string;
@@ -15,13 +15,13 @@ export class CreateVehicleTypeDto {
   @Min(0)
   occupancy?: number;
 
-  // alternate name seen in legacy UIs
+ // alternate name seen in legacy UIs
   @IsOptional()
   @IsInt()
   @Min(0)
   no_of_seats?: number;
 
-  // frontend may send boolean; some screens send 0/1
+ // frontend may send boolean; some screens send 0/1
   @IsOptional()
   status?: any;
 }
