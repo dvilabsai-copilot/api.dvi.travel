@@ -1737,6 +1737,55 @@ async createVendorBasicInfo(data: any): Promise<any> {
       where: { vendor_id: vendorId, deleted: 0 },
     });
 
+    // dvi_vehicle.vehicle_type_id contains both master IDs and legacy
+    // vendor_vehicle_type_ID values. Normalize the list response to the
+    // master ID expected by the vehicle-type dropdown.
+    const storedVehicleTypeIds = Array.from(
+      new Set(
+        vehicles
+          .map((vehicle: any) => Number(vehicle.vehicle_type_id ?? 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+
+    const vendorVehicleTypes = storedVehicleTypeIds.length
+      ? await this.prisma.dvi_vendor_vehicle_types.findMany({
+          where: {
+            vendor_id: vendorId,
+            vendor_vehicle_type_ID: { in: storedVehicleTypeIds },
+          },
+          select: {
+            vendor_vehicle_type_ID: true,
+            vehicle_type_id: true,
+          },
+        })
+      : [];
+
+    const vendorVehicleTypeById = new Map(
+      vendorVehicleTypes.map((row) => [row.vendor_vehicle_type_ID, row]),
+    );
+    const masterVehicleTypeIds = Array.from(
+      new Set([
+        ...storedVehicleTypeIds,
+        ...vendorVehicleTypes.map((row) => row.vehicle_type_id),
+      ]),
+    );
+    const masterVehicleTypes = masterVehicleTypeIds.length
+      ? await this.prisma.dvi_vehicle_type.findMany({
+          where: { vehicle_type_id: { in: masterVehicleTypeIds } },
+          select: {
+            vehicle_type_id: true,
+            vehicle_type_title: true,
+          },
+        })
+      : [];
+    const masterVehicleTypeTitleById = new Map(
+      masterVehicleTypes.map((row) => [
+        row.vehicle_type_id,
+        row.vehicle_type_title ?? '',
+      ]),
+    );
+
     const locationIds = Array.from(
       new Set(
         vehicles
@@ -1766,8 +1815,19 @@ async createVendorBasicInfo(data: any): Promise<any> {
       ]),
     );
 
- return vehicles.map((vehicle: any) => ({
+ return vehicles.map((vehicle: any) => {
+  const storedVehicleTypeId = Number(vehicle.vehicle_type_id ?? 0);
+  const vendorVehicleType = vendorVehicleTypeById.get(storedVehicleTypeId);
+  const masterVehicleTypeId =
+    vendorVehicleType?.vehicle_type_id ?? vehicle.vehicle_type_id;
+
+  return {
   ...vehicle,
+  vehicle_type_id: masterVehicleTypeId,
+  vendor_vehicle_type_id:
+    vendorVehicleType?.vendor_vehicle_type_ID ?? null,
+  vehicle_type_title:
+    masterVehicleTypeTitleById.get(Number(masterVehicleTypeId ?? 0)) ?? '',
 
   vehicle_origin:
     String(vehicle.vehicle_origin ?? '').trim() ||
@@ -1775,7 +1835,8 @@ async createVendorBasicInfo(data: any): Promise<any> {
       Number(vehicle.vehicle_location_id ?? 0),
     ) ||
     '',
-}));
+  };
+ });
   }
 
  private mapVendorVehiclePayload(data: any): Record<string, any> {
@@ -2067,9 +2128,23 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
     ]);
 
     const activeVendorTypeByBaseType = new Map<number, number>();
+    const activeVendorTypeByVendorId = new Map<number, {
+      vendorVehicleTypeId: number;
+      baseTypeId: number;
+    }>();
     for (const row of vendorTypes) {
-      if (!activeVendorTypeByBaseType.has(row.vehicle_type_id)) {
-        activeVendorTypeByBaseType.set(row.vehicle_type_id, row.vendor_vehicle_type_ID);
+      const baseTypeId = this.toNumberOrNull(row.vehicle_type_id);
+      const vendorVehicleTypeId = this.toNumberOrNull(row.vendor_vehicle_type_ID);
+      if (!baseTypeId || !vendorVehicleTypeId) continue;
+
+      if (!activeVendorTypeByBaseType.has(baseTypeId)) {
+        activeVendorTypeByBaseType.set(baseTypeId, vendorVehicleTypeId);
+      }
+      if (!activeVendorTypeByVendorId.has(vendorVehicleTypeId)) {
+        activeVendorTypeByVendorId.set(vendorVehicleTypeId, {
+          vendorVehicleTypeId,
+          baseTypeId,
+        });
       }
     }
 
@@ -2079,15 +2154,25 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
 
     const grouped = new Map<string, any>();
     for (const v of vehicles) {
-      const typeId = this.toNumberOrNull(v.vehicle_type_id);
-      if (!typeId) continue;
-      if (!activeBaseTypeIds.has(typeId)) continue;
-      const key = `${v.vendor_branch_id}:${typeId}`;
+      const storedTypeId = this.toNumberOrNull(v.vehicle_type_id);
+      if (!storedTypeId) continue;
+
+      // PHP stores dvi_vehicle.vehicle_type_id as vendor_vehicle_type_ID.
+      // Keep compatibility with older rows that still contain the master ID.
+      const vendorType = activeVendorTypeByVendorId.get(storedTypeId);
+      const baseTypeId = vendorType?.baseTypeId ??
+        (activeBaseTypeIds.has(storedTypeId) ? storedTypeId : null);
+      if (!baseTypeId) continue;
+
+      const vendorVehicleTypeId = vendorType?.vendorVehicleTypeId ??
+        activeVendorTypeByBaseType.get(baseTypeId) ?? null;
+      const key = `${v.vendor_branch_id}:${baseTypeId}`;
       if (!grouped.has(key)) {
         grouped.set(key, {
           vendor_id: vendorId,
           vendor_branch_id: v.vendor_branch_id,
-          vehicle_type_id: typeId,
+          vehicle_type_id: baseTypeId,
+          vendor_vehicle_type_id: vendorVehicleTypeId,
           extra_km_charge: v.extra_km_charge ?? 0,
           extra_hour_charge: v.extra_hour_charge ?? 0,
           early_morning_charges: v.early_morning_charges ?? 0,
@@ -2131,6 +2216,22 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
     const earlyMorningCharges = toArray(data.early_morning_charges);
     const eveningCharges = toArray(data.evening_charges);
 
+    const vendorTypes = await this.prisma.dvi_vendor_vehicle_types.findMany({
+      where: { vendor_id: vendorId, deleted: 0, status: 1 },
+      select: { vendor_vehicle_type_ID: true, vehicle_type_id: true },
+    });
+    const vendorTypeById = new Map<number, number>();
+    const vendorTypeByBaseId = new Map<number, number>();
+    for (const row of vendorTypes) {
+      const vendorVehicleTypeId = this.toNumberOrNull(row.vendor_vehicle_type_ID);
+      const baseTypeId = this.toNumberOrNull(row.vehicle_type_id);
+      if (!vendorVehicleTypeId || !baseTypeId) continue;
+      vendorTypeById.set(vendorVehicleTypeId, baseTypeId);
+      if (!vendorTypeByBaseId.has(baseTypeId)) {
+        vendorTypeByBaseId.set(baseTypeId, vendorVehicleTypeId);
+      }
+    }
+
     const branchRaw = data.vendor_branch_id;
     const branchIds = Array.isArray(branchRaw)
       ? branchRaw
@@ -2143,11 +2244,19 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
       const vendorBranchId = this.toNumberOrNull(branchIds[i]);
       if (!vehicleTypeId || !vendorBranchId) continue;
 
-      await this.prisma.dvi_vehicle.updateMany({
+      // The UI sends the master ID, while storage follows the PHP vendor-ID
+      // convention. Accept either form and update both legacy forms safely.
+      const vendorVehicleTypeId = vendorTypeById.has(vehicleTypeId)
+        ? vehicleTypeId
+        : vendorTypeByBaseId.get(vehicleTypeId);
+      if (!vendorVehicleTypeId) continue;
+      const storedTypeIds = [...new Set([vehicleTypeId, vendorVehicleTypeId])];
+
+      const result = await this.prisma.dvi_vehicle.updateMany({
         where: {
           vendor_id: vendorId,
           vendor_branch_id: vendorBranchId,
-          vehicle_type_id: vehicleTypeId,
+          OR: storedTypeIds.map((storedTypeId) => ({ vehicle_type_id: storedTypeId })),
           deleted: 0,
         },
         data: {
@@ -2158,7 +2267,7 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
           updatedon: new Date(),
         },
       });
-      processed += 1;
+      processed += result.count;
     }
 
     return { success: true, processed };
