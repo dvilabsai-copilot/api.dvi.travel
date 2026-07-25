@@ -12,6 +12,8 @@ import {
   UseGuards,
   Req,
   UnauthorizedException,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AgentService } from './agent.service';
@@ -137,5 +139,16 @@ create(@Body() body: CreateAgentDto) {
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.softDelete(id);
+  }
+
+  /** Toggle agent account login (enable/disable) */
+  @Put(':id/login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Enable or disable agent account login' })
+  async toggleLogin(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { enable: boolean },
+  ) {
+    return this.service.toggleLogin(id, body.enable);
   }
 }
