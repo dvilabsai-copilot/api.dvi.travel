@@ -502,7 +502,14 @@ export class ItineraryClipboardService {
     </table>
   `;
 
-  for (const day of days || []) {
+  const safeDays = Array.isArray(days) ? days : [];
+
+  for (
+    let dayIndex = 0;
+    dayIndex < safeDays.length;
+    dayIndex += 1
+  ) {
+    const day = safeDays[dayIndex];
     const dayTitle =
       `Day ${this.escapeHtml(day.dayNumber)} - ` +
       `${this.escapeHtml(
@@ -531,9 +538,47 @@ export class ItineraryClipboardService {
 
     const lines: string[] = [];
 
-    const segments = Array.isArray(day.segments)
+      const segments = Array.isArray(day.segments)
       ? day.segments
       : [];
+
+    const isLastDay =
+      dayIndex === safeDays.length - 1;
+
+    const hasHotspots = segments.some(
+      (segment: any) =>
+        segment?.type === 'attraction',
+    );
+
+    const finalDestination = String(
+      day.arrival || '',
+    ).trim();
+
+   const shouldAddCheckoutDeparture =
+  isLastDay &&
+  !hasHotspots &&
+  Boolean(finalDestination);
+
+    let checkoutDepartureAdded = false;
+
+    const addCheckoutDepartureLine = () => {
+      if (
+        !shouldAddCheckoutDeparture ||
+        checkoutDepartureAdded
+      ) {
+        return;
+      }
+
+      lines.push(
+        buildLine(
+          `After check out proceed to ${this.escapeHtml(
+            finalDestination,
+          )}`,
+        ),
+      );
+
+      checkoutDepartureAdded = true;
+    };
 
     for (const segment of segments) {
       /*
@@ -565,13 +610,15 @@ export class ItineraryClipboardService {
           segment.timeRange || '',
         );
 
-        lines.push(
+              lines.push(
           buildLine(
             `${this.escapeHtml(startLabel)}${
               range ? ` ${range}` : ''
             }`,
           ),
         );
+
+        addCheckoutDepartureLine();
 
         continue;
       }
@@ -702,7 +749,9 @@ export class ItineraryClipboardService {
         continue;
       }
 
-      if (segment.type === 'return') {
+          if (segment.type === 'return') {
+        addCheckoutDepartureLine();
+
         lines.push(
           buildLine(
             `Return: ${this.escapeHtml(
@@ -712,6 +761,12 @@ export class ItineraryClipboardService {
         );
       }
     }
+
+    /*
+     * Fallback for a last day that does not contain
+     * a start or return segment.
+     */
+    addCheckoutDepartureLine();
 
     if (!lines.length) {
       continue;
