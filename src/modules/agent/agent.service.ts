@@ -1056,6 +1056,7 @@ private async addWallet(
       data: {
         userapproved: enable ? 1 : 0,
         userbanned: enable ? 0 : 1,
+        status: enable ? 1 : 0,
         updatedon: new Date(),
       },
     });
