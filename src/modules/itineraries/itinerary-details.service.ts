@@ -286,8 +286,15 @@ export interface CostBreakdownDto {
     provider: string;
     hotelCode: string;
     hotelName: string;
+    bookingCode?: string;
+    searchReference?: string;
+    roomId?: string;
+    rateId?: string;
+    groupType?: number;
     roomType?: string;
     mealPlan?: string;
+    checkInDate?: string;
+    checkOutDate?: string;
     baseAmount: number;
     roomGstAmount: number;
     marginAmount: number;
@@ -465,6 +472,14 @@ export class ItineraryDetailsService {
     return String(value ?? '').trim().toLowerCase();
   }
 
+  private normalizeHotelName(value: unknown): string {
+    return String(value ?? '')
+      .replace(/&amp;/gi, '&')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
   private async buildSelectedHotelCostOverride(params: {
     planId: number;
     quoteId: string;
@@ -498,15 +513,37 @@ export class ItineraryDetailsService {
         const rateId = this.normalizeIdentity(selection.rateId);
         const roomType = this.normalizeIdentity(selection.roomType);
         const mealPlan = this.normalizeIdentity(selection.mealPlan);
-        const candidates = availableRows
+        const routeCandidates = availableRows
           .filter((row: any) => Number(row.itineraryRouteId || 0) === routeId)
           .filter((row: any) => !params.groupType || Number(row.groupType || 0) === Number(params.groupType))
-          .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider)
+          .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider);
+        const exactCodeCandidates = routeCandidates
           .filter((row: any) => {
             if (!hotelCode) return true;
             const rowCodes = [row.hotelCode, row.hotelId].map((value) => this.normalizeIdentity(value));
             return rowCodes.includes(hotelCode);
-          })
+          });
+        const candidates = (exactCodeCandidates.length > 0
+          ? exactCodeCandidates
+          : (() => {
+            const sameHotelCandidates = routeCandidates.filter((row: any) => (
+              this.normalizeHotelName(row.hotelName) !== '' &&
+              this.normalizeHotelName(row.hotelName) === this.normalizeHotelName(selection.hotelName)
+            ));
+            if (sameHotelCandidates.length > 0) return sameHotelCandidates;
+
+            // If the selected property disappeared from the fresh snapshot,
+            // continue with the cheapest valid rate from the same provider.
+            return routeCandidates
+              .filter((row: any) => row.isSelectable !== false && row.isBookable !== false)
+              .filter((row: any) => !['NOT_BOOKABLE', 'NO_SUPPLIER_AVAILABILITY'].includes(
+                this.normalizeIdentity(row.availabilityStatus).toUpperCase(),
+              ))
+              .sort((a: any, b: any) => (
+                Number(a.totalHotelCost ?? a.pricePerNight ?? 0) -
+                Number(b.totalHotelCost ?? b.pricePerNight ?? 0)
+              ));
+          })())
           .map((row: any) => {
             const rowBookingCode = this.normalizeIdentity(row.bookingCode);
             const rowSearchReference = this.normalizeIdentity(row.searchReference);
@@ -528,7 +565,7 @@ export class ItineraryDetailsService {
         const match = candidates[0]?.row;
         if (!match) {
           throw new BadRequestException({
-            message: 'Selected hotel rate is stale or does not belong to this itinerary route',
+            message: 'No current hotel availability for this stay',
             routeId,
             provider: selection.provider,
             hotelCode: selection.hotelCode,
@@ -576,8 +613,15 @@ export class ItineraryDetailsService {
           provider: String(match.provider || selection.provider || '').trim().toLowerCase(),
           hotelCode: String(match.hotelCode || match.hotelId || selection.hotelCode || '').trim(),
           hotelName: String(match.hotelName || selection.hotelName || '').trim(),
+          bookingCode: String(match.bookingCode || selection.bookingCode || '').trim() || undefined,
+          searchReference: String(match.searchReference || selection.searchReference || '').trim() || undefined,
+          roomId: String(match.roomId || selection.roomId || '').trim() || undefined,
+          rateId: String(match.rateId || selection.rateId || '').trim() || undefined,
+          groupType: Number(match.groupType || selection.groupType || params.groupType || 0),
           roomType: String(match.roomType || selection.roomType || '').trim() || undefined,
           mealPlan: String(match.mealPlan || selection.mealPlan || '').trim() || undefined,
+          checkInDate: String(match.checkInDate || match.date || selection.checkInDate || '').trim() || undefined,
+          checkOutDate: String(match.checkOutDate || selection.checkOutDate || '').trim() || undefined,
           baseAmount,
           roomGstAmount,
           marginAmount,
