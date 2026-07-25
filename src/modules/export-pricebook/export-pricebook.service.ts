@@ -635,8 +635,8 @@ export class ExportPricebookService {
         guideMap.get(r.guide_id) ?? '',
         r.year ?? '',
         r.month ?? '',
- r.pax_count 0, // legacy label in jackus.php; kept as numeric
- r.slot_type 0, // legacy label in jackus.php; kept as numeric
+        r.pax_count ?? 0, // legacy label in jackus.php; kept as numeric
+        r.slot_type ?? 0, // legacy label in jackus.php; kept as numeric
         ...dayKeys.map((k) => (r as AnyRow)[k] ?? 0),
       ]);
     }

@@ -863,7 +863,7 @@ export class GuidesService {
     const gender_label =
       GENDERS.find((x) => x.id === Number(g.guide_gender ?? 0))?.label ?? '';
 
- const bgIndex = Number(g.guide_bloodgroup 0) - 1; // DB stores "1".."8"
+    const bgIndex = Number(g.guide_bloodgroup ?? 0) - 1; // DB stores "1".."8"
     const blood_group_label = BLOOD_GROUPS[bgIndex] ?? (g.guide_bloodgroup ?? '');
 
     const language_label = langRows

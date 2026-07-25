@@ -939,7 +939,7 @@ export class HotspotsService {
         hotspot_name: r.field1 ?? '',
         hotspot_location: r.field2 ?? '',
         vehicle_type_title: r.field3 ?? '',
- parking_charge: Number(r.field4 0), // convert to number for UI
+        parking_charge: Number(r.field4 ?? 0), // convert to number for UI
         reason: r.field5 ?? '',
       })),
     };

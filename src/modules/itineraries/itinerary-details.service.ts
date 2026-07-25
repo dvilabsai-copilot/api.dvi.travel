@@ -2561,7 +2561,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
 
  // Regular travel to hotspot - use precomputed semantic mapping
             const semanticMapping = travelSegmentSemantics.get(rh.route_hotspot_ID);
- let fromName = semanticMapping?.from previousStopName; // Fallback only if not in map
+            let fromName = semanticMapping?.from ?? previousStopName; // Fallback only if not in map
             let toName = semanticMapping?.to ??
               master?.hotspot_name ??
               viaLocationName ??

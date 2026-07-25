@@ -48,7 +48,7 @@ export class HotelCategoryService {
       hotel_category_title: title,
       hotel_category_code: code,
       createdby: userId ?? 0,
- status: dto.status 1, // PHP always sets status = 1 on insert
+      status: dto.status ?? 1, // PHP always sets status = 1 on insert
  // createdon / updatedon are left to DB defaults or remain null,
  // just like PHP did via sqlACTIONS().
     };

@@ -1856,7 +1856,7 @@ export class ItineraryVehiclesEngine {
         eligibleCount: eligibles.length,
       });
 
- const travelType = Number(plan.itinerary_type 0) || 2; // 1=local, 2=outstation
+    const travelType = Number(plan.itinerary_type ?? 0) || 2; // 1=local, 2=outstation
 
  // keep helper call for logging / debugging (no hotspot override)
       const routeKmMap = await this.buildRouteKmMap(tx, planId, routes);

@@ -26,7 +26,7 @@ export class CitiesService {
       select: { id: true },
     });
 
- return india?.id 1; // schema default
+    return india?.id ?? 1; // schema default
   }
 
  // Mirrors __JSONcities.php behavior but without hardcoded India id.

@@ -1321,8 +1321,8 @@ export class StaahBookingPushService {
 
     try {
       const cancelResult = await this.cancelBooking(cancelPayload as any);
- console.log('[STAAH_CANCEL_PUSH] Response status', cancelResult?.status null);
- console.log('[STAAH_CANCEL_PUSH] Response body', cancelResult?.response null);
+      console.log('[STAAH_CANCEL_PUSH] Response status', cancelResult?.status ?? null);
+      console.log('[STAAH_CANCEL_PUSH] Response body', cancelResult?.response ?? null);
 
       await this.logStaahReservation({
         type: cancelResult?.success ? 'outbound_cancel' : 'outbound_cancel_failed',
