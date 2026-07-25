@@ -1031,4 +1031,35 @@ private async addWallet(
     });
     return { agent_ID: id, deleted: true };
   }
+
+  /** Toggle agent account login (enable/disable) */
+  async toggleLogin(agentId: number, enable: boolean) {
+    const agent = await this.prisma.dvi_agent.findFirst({
+      where: { agent_ID: agentId, deleted: 0 },
+      select: { agent_ID: true },
+    });
+    if (!agent) throw new NotFoundException('Agent not found');
+
+    const user = await this.prisma.dvi_users.findFirst({
+      where: { deleted: 0, agent_id: agentId },
+      orderBy: { userID: 'desc' },
+    });
+    if (!user) throw new NotFoundException('Agent user not found');
+
+    const currentEnabled = user.userapproved === 1 && user.userbanned === 0;
+    if (currentEnabled === enable) {
+      return { agent_ID: agentId, login_enabled: enable, changed: false };
+    }
+
+    await this.prisma.dvi_users.update({
+      where: { userID: user.userID },
+      data: {
+        userapproved: enable ? 1 : 0,
+        userbanned: enable ? 0 : 1,
+        updatedon: new Date(),
+      },
+    });
+
+    return { agent_ID: agentId, login_enabled: enable, changed: true };
+  }
 }
