@@ -508,7 +508,7 @@ export class ItineraryProgressivePriorityRemovalService {
       .filter((row: any) => row.hotspotId > 0);
 
     if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
-      console.log('[FitHere][APJ_SELECTED_CLOSING_RESCUE_CANDIDATES]', {
+ console.log('[FitHere][APJ_SELECTED_CLOSING_RESCUE_CANDIDATES]', {
         routeId: Number(params.routeId),
         selectedHotspotId,
         targetHotspotId,
@@ -997,7 +997,7 @@ export class ItineraryProgressivePriorityRemovalService {
         }
       }
 
-      console.log('[FitHere][APJ_SELECTED_CLOSING_EXPLICIT_RESCUE_ARRAYS]', {
+ console.log('[FitHere][APJ_SELECTED_CLOSING_EXPLICIT_RESCUE_ARRAYS]', {
         routeId: Number(params.routeId),
         selectedHotspotId: targetHotspotId,
         clickedAnchorHotspotId: clickedAnchorHotspotId || null,
@@ -1234,7 +1234,7 @@ export class ItineraryProgressivePriorityRemovalService {
           && Number(evaluation.selectedClosingOverflowMinutes || 0) <= 0
         );
 
-        console.log('[FitHere][SELECTED_CLOSING_RESCUE_PLAN_EVAL]', {
+ console.log('[FitHere][SELECTED_CLOSING_RESCUE_PLAN_EVAL]', {
           routeId: Number(params.routeId),
           selectedHotspotId: targetHotspotId,
           rescueLabel: String(plan?.label || '').trim() || null,

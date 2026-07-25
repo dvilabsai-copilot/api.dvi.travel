@@ -9,7 +9,7 @@ export class CheckHotelCategoryCodeDto {
   @MaxLength(100)
   code!: string;
 
-  // When editing, exclude current record from uniqueness check
+ // When editing, exclude current record from uniqueness check
   @IsOptional()
   @Type(() => Number)
   @IsInt()

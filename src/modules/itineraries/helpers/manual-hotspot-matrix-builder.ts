@@ -385,7 +385,7 @@ async function fetchRouteCityEndpoints(params: {
     },
   });
   if (shouldLogVerboseTiming()) {
-    console.log('[StoredLocations][timing]', {
+ console.log('[StoredLocations][timing]', {
       caller: 'manual-hotspot-matrix-builder.resolveRouteCityEndpoints',
       planId: Number(params.planId),
       routeId: Number(routeId),
@@ -458,7 +458,7 @@ async function fetchHotspotMeta(prisma: PrismaService, ids: number[]): Promise<M
     },
   });
   if (shouldLogVerboseTiming()) {
-    console.log('[HotspotPlace][timing]', {
+ console.log('[HotspotPlace][timing]', {
       caller: 'manual-hotspot-matrix-builder.fetchHotspotMeta',
       hotspotIdCount: uniqueIds.length,
       elapsedMs: Date.now() - startedAt,
@@ -497,7 +497,7 @@ async function fetchOsrmRoute(params: {
   const coordinates = `${from.lng},${from.lat};${to.lng},${to.lat}`;
   const url = `${osrmBaseUrl}/${coordinates}?overview=full&geometries=geojson&steps=false`;
 
-  logger.log(`[OSRM] ${from.id}->${to.id} ${url}`);
+ logger.log(`[OSRM] ${from.id}->${to.id} ${url}`);
 
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
@@ -1385,8 +1385,8 @@ export async function buildMissingManualHotspotMatrix(params: {
     throw new Error('No consecutive hotspot slot pairs found on route.');
   }
 
-  logger.log(`[MATRIX_BUILD_START] planId=${planId} routeId=${routeId} candidateHotspotId=${candidateHotspotId} (${candidate.name})`);
-  logger.log(`[MATRIX_BUILD_START] slotPairs=${pairs.length} osrm=${osrmBaseUrl}`);
+ logger.log(`[MATRIX_BUILD_START] planId=${planId} routeId=${routeId} candidateHotspotId=${candidateHotspotId} (${candidate.name})`);
+ logger.log(`[MATRIX_BUILD_START] slotPairs=${pairs.length} osrm=${osrmBaseUrl}`);
 
   let successCount = 0;
   let failedCount = 0;
@@ -1449,7 +1449,7 @@ export async function buildMissingManualHotspotMatrix(params: {
         roadDetourKm: Number(roadDetourKm.toFixed(3)),
       });
 
-      logger.log(
+ logger.log(
         `[MATRIX_BUILD_OK] ${pair.from.name} -> ${pair.to.name} | fit=${routeFitType} | AB=${ab.distanceKm.toFixed(2)}km AC=${ac.distanceKm.toFixed(2)}km CB=${cb.distanceKm.toFixed(2)}km detour=${roadDetourKm.toFixed(2)}km`,
       );
     } catch (error: any) {
@@ -1462,11 +1462,11 @@ export async function buildMissingManualHotspotMatrix(params: {
         toName: pair.to.name,
         error: errorMsg,
       });
-      logger.error(`[MATRIX_BUILD_FAIL] ${pair.from.name} -> ${pair.to.name}: ${errorMsg}`);
+ logger.error(`[MATRIX_BUILD_FAIL] ${pair.from.name} -> ${pair.to.name}: ${errorMsg}`);
     }
   }
 
-  logger.log(`[MATRIX_BUILD_DONE] success=${successCount} failed=${failedCount} total=${pairs.length}`);
+ logger.log(`[MATRIX_BUILD_DONE] success=${successCount} failed=${failedCount} total=${pairs.length}`);
 
   const hasFeasibleMatrixSlot = rows.some((row) =>
     ['ON_ROUTE', 'MINOR_DETOUR'].includes(String(row.routeFitType || '').toUpperCase())

@@ -8,15 +8,15 @@ import { DistanceHelper } from "./distance.helper";
 type Tx = Prisma.TransactionClient;
 
 export type CutoffPolicy = {
-  latestAllowedEnd: number; // seconds since 00:00
-  hotelCutoff: number; // seconds since 00:00
+ latestAllowedEnd: number; // seconds since 00:00
+ hotelCutoff: number; // seconds since 00:00
   isAtDestination: boolean;
 
-  // NOTE: builder mutates these as it schedules hotspots
+ // NOTE: builder mutates these as it schedules hotspots
   currentLocation: string;
   currentCoords: { lat: number; lon: number } | undefined;
 
-  // destination city coords (used for hotel/final travel)
+ // destination city coords (used for hotel/final travel)
   destCityCoords: { lat: number; lon: number } | undefined;
 };
 
@@ -27,7 +27,7 @@ function normalizeCity(name: any): string {
 function toTimeString(v: any, fallback: string): string {
   if (!v) return fallback;
 
-  // Prisma TIME may come back as Date
+ // Prisma TIME may come back as Date
   if (v instanceof Date) {
     const hh = String(v.getUTCHours()).padStart(2, "0");
     const mm = String(v.getUTCMinutes()).padStart(2, "0");
@@ -57,7 +57,7 @@ async function getCityCoords(
   const c = normalizeCity(city);
   if (!c) return undefined;
 
-  // Try as source_location
+ // Try as source_location
   const asSource = await (tx as any).dvi_stored_locations.findFirst({
     where: { source_location: c, deleted: 0 },
   });
@@ -71,7 +71,7 @@ async function getCityCoords(
     if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
   }
 
-  // Try as destination_location
+ // Try as destination_location
   const asDest = await (tx as any).dvi_stored_locations.findFirst({
     where: { destination_location: c, deleted: 0 },
   });
@@ -85,7 +85,7 @@ async function getCityCoords(
     if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
   }
 
-  // Try as hotspot name (e.g. "Madurai Airport" is a hotspot)
+ // Try as hotspot name (e.g. "Madurai Airport" is a hotspot)
   const asHotspot = await (tx as any).dvi_hotspot_place.findFirst({
     where: { hotspot_name: c, deleted: 0 },
   });
@@ -110,8 +110,8 @@ async function getCityCoords(
 export async function computeCutoffPolicy(
   tx: Tx,
   route: any,
-  // kept for signature parity (unused currently)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+ // kept for signature parity (unused currently)
+ // eslint-disable-next-line @typescript-eslint/no-unused-vars
   plan: any,
   currentTime: string,
   distanceHelper: DistanceHelper,
@@ -126,13 +126,13 @@ export async function computeCutoffPolicy(
     destCity.toLowerCase() !== "" &&
     sourceCity.toLowerCase() === destCity.toLowerCase();
 
-  // User-configurable end time (route_end_time can be Date or string)
+ // User-configurable end time (route_end_time can be Date or string)
   const routeEndTime = toTimeString(route?.route_end_time, "20:00:00");
   let hotelCutoff = timeToSeconds(routeEndTime);
 
-  // PHP parity extension rule:
-  // Extend to 10 PM only if user hasn't explicitly chosen a custom cutoff.
-  // (i.e., only when it's default-ish 18:00 or 20:00)
+ // PHP parity extension rule:
+ // Extend to 10 PM only if user hasn't explicitly chosen a custom cutoff.
+ // (i.e., only when it's default-ish 18:00 or 20:00)
   if (
     hasManualOrBoundary &&
     (routeEndTime === "20:00:00" || routeEndTime === "18:00:00")
@@ -140,18 +140,18 @@ export async function computeCutoffPolicy(
     hotelCutoff = timeToSeconds("22:00:00");
   }
 
-  // Coords
+ // Coords
   const currentCoords = await getCityCoords(tx, sourceCity);
   const destCityCoords = await getCityCoords(tx, destCity);
 
-  // Deadline logic
+ // Deadline logic
   let latestAllowedEnd = hotelCutoff;
 
-  // Guard: compute city-to-city travel when both cities exist
-  // ✅ PHP Parity: On the last day, we MUST reserve time to reach the departure point (airport/railway).
+ // Guard: compute city-to-city travel when both cities exist
+ // PHP Parity: On the last day, we MUST reserve time to reach the departure point (airport/railway).
   if (!isAtDestination && sourceCity && destCity) {
-    // For now we compute travel time using city-to-city baseline.
-    // Builder may later compute from currentCoords to destCityCoords dynamically.
+ // For now we compute travel time using city-to-city baseline.
+ // Builder may later compute from currentCoords to destCityCoords dynamically.
     const travel = await distanceHelper.fromSourceAndDestination(
       tx,
       sourceCity,
@@ -166,11 +166,11 @@ export async function computeCutoffPolicy(
     latestAllowedEnd = hotelCutoff - travelSec;
   }
 
-  // Clamp deadline to never be "before now"
+ // Clamp deadline to never be "before now"
   const nowSec = timeToSeconds(toTimeString(currentTime, "00:00:00"));
   if (latestAllowedEnd < nowSec) latestAllowedEnd = nowSec;
 
-  // Also clamp to valid range
+ // Also clamp to valid range
   if (latestAllowedEnd < 0) latestAllowedEnd = 0;
   if (hotelCutoff < 0) hotelCutoff = 0;
 

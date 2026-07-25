@@ -13,12 +13,12 @@ import { Type } from 'class-transformer';
 export class RolePermissionPageDto {
   @IsString()
   @IsNotEmpty()
-  pageKey!: string; // maps to dvi_pagemenu.page_name
+ pageKey!: string; // maps to dvi_pagemenu.page_name
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
-  pageName!: string; // dvi_pagemenu.page_title or label
+ pageName!: string; // dvi_pagemenu.page_title or label
 
   @IsBoolean()
   read!: boolean;

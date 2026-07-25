@@ -602,7 +602,7 @@ export class ItineraryMatrixSafeInsertionService {
     );
     if (overflowMinutes > 0) {
       if (canTrustStablePreviewForDayEnd) {
-        console.warn('[FitHere][confirm_trusted_preview_day_end_bypass]', {
+ console.warn('[FitHere][confirm_trusted_preview_day_end_bypass]', {
           planId: Number(planId),
           routeId: Number(routeId),
           selectedHotspotId,
@@ -906,7 +906,7 @@ export class ItineraryMatrixSafeInsertionService {
       });
     }
 
-    // Route-local travel persistence in timeline order (without global rebuild).
+ // Route-local travel persistence in timeline order (without global rebuild).
     const travelRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
         itinerary_plan_ID: planId,
@@ -1307,9 +1307,9 @@ export class ItineraryMatrixSafeInsertionService {
     };
   }
 
-  /**
+ /**
    * Apply manualInsertionFit to the preview timeline to adjust row positions and timings.
    * This removes the selected hotspot from its old location and reinserts it in the correct slot,
    * with calculated time range based on available gap between anchor hotspots.
-   */
+ */
 }

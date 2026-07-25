@@ -24,7 +24,7 @@ import {
 export class ExportPricebookController {
   constructor(private readonly svc: ExportPricebookService) {}
 
-  // ---------------- VEHICLE ----------------
+ // ---------------- VEHICLE ----------------
 
   @Get('vehicle')
   async listVehicle(@Query() q: VehiclePricebookQueryDto) {
@@ -36,35 +36,35 @@ export class ExportPricebookController {
     return this.svc.exportVehiclePricebookExcel(q, res);
   }
 
-  // ---------------- HOTEL ROOMS (DATE RANGE) ----------------
+ // ---------------- HOTEL ROOMS (DATE RANGE) ----------------
 
   @Get('hotel-room/excel')
   async exportHotelRoomExcel(@Query() q: HotelRoomExportQueryDto, @Res() res: Response) {
     return this.svc.exportHotelRoomPricebookExcel(q, res);
   }
 
-  // ---------------- HOTEL AMENITIES ----------------
+ // ---------------- HOTEL AMENITIES ----------------
 
   @Get('hotel-amenities/excel')
   async exportHotelAmenitiesExcel(@Query() q: HotelAmenityExportQueryDto, @Res() res: Response) {
     return this.svc.exportHotelAmenitiesPricebookExcel(q, res);
   }
 
-  // ---------------- GUIDE ----------------
+ // ---------------- GUIDE ----------------
 
   @Get('guide/excel')
   async exportGuideExcel(@Query() q: GuideExportQueryDto, @Res() res: Response) {
     return this.svc.exportGuidePricebookExcel(q, res);
   }
 
-  // ---------------- HOTSPOT ----------------
+ // ---------------- HOTSPOT ----------------
 
   @Get('hotspot/excel')
   async exportHotspotExcel(@Query() q: HotspotExportQueryDto, @Res() res: Response) {
     return this.svc.exportHotspotPricebookExcel(q, res);
   }
 
-  // ---------------- ACTIVITY ----------------
+ // ---------------- ACTIVITY ----------------
 
   @Get('activity')
   async listActivity(@Query() q: ActivityQueryDto) {
@@ -76,7 +76,7 @@ export class ExportPricebookController {
     return this.svc.exportActivityPricebookExcel(q, res);
   }
 
-  // ---------------- TOLL ----------------
+ // ---------------- TOLL ----------------
 
   @Get('toll')
   async listToll(@Query() q: TollQueryDto) {
@@ -88,7 +88,7 @@ export class ExportPricebookController {
     return this.svc.exportTollPricebookExcel(q, res);
   }
 
-  // ---------------- PARKING ----------------
+ // ---------------- PARKING ----------------
 
   @Get('parking')
   async listParking(@Query() q: ParkingQueryDto) {

@@ -29,7 +29,7 @@ export class AriRequestDto {
   @IsOptional()
   currency?: string;
 
-  // The final single ARI endpoint accepts read-style pull actions as well.
+ // The final single ARI endpoint accepts read-style pull actions as well.
   @IsString()
   @IsOptional()
   @IsIn(['ARR_info', 'year_info_ARR'])

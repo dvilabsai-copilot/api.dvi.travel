@@ -81,12 +81,12 @@ export class ItineraryVehicleBuildService {
     const scheduleCount = this.statusService.incrementScheduleCount(planId);
     if (debugVehicleTrace) {
       const shortStack = (new Error().stack || '').split('\n').slice(1, 5).join(' | ');
-      console.log('[SYNC_VEHICLE_BUILD_CALL]', { planId, timestamp: new Date().toISOString(), shortStack });
-      console.log('[SCHEDULE_VEHICLE_BUILD_COUNT]', { planId, count: scheduleCount });
+ console.log('[SYNC_VEHICLE_BUILD_CALL]', { planId, timestamp: new Date().toISOString(), shortStack });
+ console.log('[SCHEDULE_VEHICLE_BUILD_COUNT]', { planId, count: scheduleCount });
     }
     this.statusService.setStatus(planId, 'PROCESSING', null, buildRunId);
     if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
-      console.log('[VEHICLE_BUILD_START]', {
+ console.log('[VEHICLE_BUILD_START]', {
         planId,
         vehiclePayload: vehicles,
         routeCount: null,
@@ -100,7 +100,7 @@ export class ItineraryVehicleBuildService {
       const startedAtIso = new Date(jobStart).toISOString();
       const timings: VehicleBuildStageTiming[] = [];
       if (debugVehicleTrace) {
-        console.log('[SYNC_VEHICLE_BUILD_START]', { planId, timestamp: new Date().toISOString() });
+ console.log('[SYNC_VEHICLE_BUILD_START]', { planId, timestamp: new Date().toISOString() });
       }
 
       const runStage = async <T>(
@@ -108,7 +108,7 @@ export class ItineraryVehicleBuildService {
         timeoutMs: number,
         work: () => Promise<T>,
       ): Promise<T> => {
-        console.log('[VEHICLE_BUILD_STAGE_START]', { planId, stage, buildRunId });
+ console.log('[VEHICLE_BUILD_STAGE_START]', { planId, stage, buildRunId });
         const startedAt = Date.now();
         const result = await this.runStageWithTimeout(planId, stage, work, timeoutMs);
         timings.push({ stage, durationMs: Date.now() - startedAt });
@@ -176,9 +176,9 @@ export class ItineraryVehicleBuildService {
 
       await this.finishRecord(planId, buildRunId, 'READY', null);
       if (debugVehicleTrace) {
-        console.log('[SYNC_VEHICLE_BUILD_DONE]', { planId, durationMs: Date.now() - jobStart });
+ console.log('[SYNC_VEHICLE_BUILD_DONE]', { planId, durationMs: Date.now() - jobStart });
       }
-      console.log('[PERF] syncVehicleBuild total:', Date.now() - jobStart, 'ms', 'planId=', planId);
+ console.log('[PERF] syncVehicleBuild total:', Date.now() - jobStart, 'ms', 'planId=', planId);
       return {
         status: await this.getStatus(planId),
         buildRunId,
@@ -191,9 +191,9 @@ export class ItineraryVehicleBuildService {
       const message = String(error?.message || error || 'Vehicle build failed');
       await this.finishRecord(planId, buildRunId, 'FAILED', message);
       if (debugVehicleTrace) {
-        console.log('[SYNC_VEHICLE_BUILD_FAILED]', { planId, error: message });
+ console.log('[SYNC_VEHICLE_BUILD_FAILED]', { planId, error: message });
       }
-      console.error('[ItinerariesService] Sync vehicle build failed:', {
+ console.error('[ItinerariesService] Sync vehicle build failed:', {
         planId,
         message,
         buildRunId,
@@ -242,7 +242,7 @@ export class ItineraryVehicleBuildService {
       });
 
       const result = await Promise.race([work(), timeoutPromise]);
-      console.log('[VEHICLE_BUILD_STAGE_DONE]', {
+ console.log('[VEHICLE_BUILD_STAGE_DONE]', {
         planId,
         stage,
         durationMs: Date.now() - startedAt,
@@ -331,7 +331,7 @@ export class ItineraryVehicleBuildService {
         });
       }
     } catch (autoAssignErr) {
-      console.error('[ItinerariesService] Auto-select lowest vendor failed:', autoAssignErr);
+ console.error('[ItinerariesService] Auto-select lowest vendor failed:', autoAssignErr);
     }
   }
 
@@ -413,7 +413,7 @@ export class ItineraryVehicleBuildService {
       });
     } catch (error: any) {
       if (!this.isTransientVehicleBuildFailure(error)) throw error;
-      console.warn('[ItinerariesService] Retrying sync vehicle build after transient failure', {
+ console.warn('[ItinerariesService] Retrying sync vehicle build after transient failure', {
         planId: normalizedPlanId,
         buildRunId,
         message: String(error?.message || error || 'Vehicle build failed'),
@@ -461,7 +461,7 @@ export class ItineraryVehicleBuildService {
     await this.startRecord(normalizedPlanId, buildRunId, userId);
 
     void this.buildVehiclesSynchronously(normalizedPlanId, vehicles, userId, quoteId, { buildRunId }).catch((error) => {
-      console.error('[ItinerariesService] triggerVehicleBuild failed:', {
+ console.error('[ItinerariesService] triggerVehicleBuild failed:', {
         planId: normalizedPlanId,
         message: String(error?.message || error || 'Vehicle build failed'),
         buildRunId,

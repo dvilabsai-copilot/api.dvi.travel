@@ -61,16 +61,16 @@ export class TimelineDestinationReservationService {
               if (input.isHotspotAlreadyPlanned(hotspotId)) continue;
               nextLoopbackAvailableCount++;
             }
-    
+
             const nextRouteCapacity = input.estimateRouteHotspotCapacity(nextRoute as any);
             nextLoopbackMinimumRequired = Math.max(
               1,
               Math.min(input.minimumReservationCount, nextRouteCapacity),
             );
-    
+
             shouldReserveDestinationHotspotsForNextLoopbackDay =
               nextLoopbackAvailableCount >= nextLoopbackMinimumRequired;
-    
+
             input.logBookingRule({
               rule: 'DESTINATION_RESERVATION_FEASIBILITY_CHECK',
               quoteId:
@@ -91,29 +91,29 @@ export class TimelineDestinationReservationService {
                 'Reserve destination hotspots for next loopback day only when destination has enough candidates for estimated route capacity.',
             });
           }
-    
+
           if (shouldReserveDestinationHotspotsForNextLoopbackDay) {
             const beforeReservationCandidates = [...selectedHotspots];
             const beforeCount = selectedHotspots.length;
-    
+
             const destinationBucketCountBeforeReservation = beforeReservationCandidates.filter((h: any) => {
               const bucket = String((h as any).matched_bucket || '').toLowerCase();
               return bucket === 'destination' || bucket === 'dest';
             }).length;
-    
-            // Reserve destination-city candidates for the next same-city/local day,
-            // but do not blindly destroy the current route's candidate pool.
+
+ // Reserve destination-city candidates for the next same-city/local day,
+ // but do not blindly destroy the current route's candidate pool.
             selectedHotspots = selectedHotspots.filter((h: any) => {
               if ((h as any).isManualSelection) return true;
-    
+
               const hotspotId = Number((h as any).hotspot_ID || 0);
               if (!hotspotId) return false;
               if (input.isHotspotAlreadyPlanned(hotspotId)) return false;
-    
+
               const bucket = String((h as any).matched_bucket || '').toLowerCase();
               return bucket !== 'destination' && bucket !== 'dest';
             });
-    
+
             let sourceFallbackRows: any[] = [];
             if (!isIntercityMovementFirstTransfer) {
               const sourceFallback = await input.fetchDay1TopPrioritySourceHotspots(
@@ -126,7 +126,7 @@ export class TimelineDestinationReservationService {
                 Math.max(6, Math.min(20, input.estimateRouteHotspotCapacity(route as any) * 2)),
                 true,
               );
-    
+
               if (sourceFallback.length > 0) {
                 sourceFallbackRows = sourceFallback
                   .map((h: any) => {
@@ -150,14 +150,14 @@ export class TimelineDestinationReservationService {
                     const hotspotId = Number((h as any).hotspot_ID || 0);
                     if (!hotspotId) return false;
                     if (input.isHotspotAlreadyPlanned(hotspotId)) return false;
-    
+
                     const hotspotLocation = String((h as any).hotspot_location || '');
                     const hotspotToLocation = String((h as any).hotspot_to_location || hotspotLocation || '');
-    
+
                     const sourceMatch =
                       input.hotspotLocationMatchesCity(hotspotLocation, sourceCity) ||
                       input.hotspotLocationMatchesCity(hotspotToLocation, sourceCity);
-    
+
                     if (!sourceMatch) {
                       input.logBookingRule({
                         rule: 'SOURCE_FALLBACK_REJECTED_SOURCE_MISMATCH',
@@ -175,10 +175,10 @@ export class TimelineDestinationReservationService {
                       });
                       return false;
                     }
-    
+
                     return true;
                   });
-    
+
                 if (sourceFallbackRows.length > 0) {
                   selectedHotspots = [
                     ...sourceFallbackRows,
@@ -203,12 +203,12 @@ export class TimelineDestinationReservationService {
                 reason: 'Explicit via or direct destination route exists; source-city sightseeing must not be reintroduced before route movement.',
               });
             }
-    
-            // Safety net:
-            // Destination reservation must not make the current route empty when source-city
-            // candidates exist. This is the regression-case-07 Day 6 pattern:
-            // Alleppey -> Kumarakom has exhausted Kumarakom destination inventory, but
-            // still has unused Alleppey source inventory.
+
+ // Safety net:
+ // Destination reservation must not make the current route empty when source-city
+ // candidates exist. This is the regression-case-07 Day 6 pattern:
+ // Alleppey -> Kumarakom has exhausted Kumarakom destination inventory, but
+ // still has unused Alleppey source inventory.
             if (
               !isIntercityMovementFirstTransfer &&
               selectedHotspots.length === 0 &&
@@ -217,7 +217,7 @@ export class TimelineDestinationReservationService {
               const rescuedSourceLikeCandidates = beforeReservationCandidates
                 .filter((h: any) => {
                   if ((h as any).isManualSelection) return true;
-    
+
                   const hotspotId = Number((h as any).hotspot_ID || 0);
                   if (!hotspotId) return false;
                   if (input.isHotspotAlreadyPlanned(hotspotId)) return false;
@@ -232,7 +232,7 @@ export class TimelineDestinationReservationService {
                   ) {
                     return false;
                   }
-    
+
                   const master = hotspotMap.get(hotspotId) as any;
                   const hotspotLocation = String((h as any).hotspot_location || master?.hotspot_location || '');
                   const hotspotToLocation = String(
@@ -241,20 +241,20 @@ export class TimelineDestinationReservationService {
                       master?.hotspot_location ||
                       '',
                   );
-    
-                  // For source-like rescue, current source match is enough.
+
+ // For source-like rescue, current source match is enough.
                   return (
                     input.hotspotLocationMatchesCity(hotspotLocation, sourceCity) ||
                     input.hotspotLocationMatchesCity(hotspotToLocation, sourceCity)
                   );
                 })
                 .slice(0, Math.max(1, input.estimateRouteHotspotCapacity(route as any)));
-    
+
               if (rescuedSourceLikeCandidates.length > 0) {
                 selectedHotspots = rescuedSourceLikeCandidates.map((h: any) => {
                   const hotspotId = Number((h as any).hotspot_ID || 0);
                   const master = hotspotMap.get(hotspotId) as any;
-    
+
                   return {
                     ...h,
                     hotspot_ID: hotspotId,
@@ -269,7 +269,7 @@ export class TimelineDestinationReservationService {
                     matched_bucket: String((h as any).matched_bucket || (h as any).__bucket || 'source_fallback'),
                   };
                 });
-    
+
                 input.logBookingRule({
                   rule: 'DESTINATION_RESERVATION_SOURCE_RESCUE_TO_AVOID_EMPTY_ROUTE',
                   quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
@@ -284,7 +284,7 @@ export class TimelineDestinationReservationService {
                 });
               }
             }
-    
+
             input.logBookingRule({
               rule: 'DESTINATION_HOTSPOTS_RESERVED_FOR_NEXT_LOOPBACK_DAY',
               quoteId:
@@ -311,7 +311,7 @@ export class TimelineDestinationReservationService {
                 'Intercity route before destination loopback day: reserve destination-city hotspots for next day, but preserve current source-city candidates.',
             });
           }
-    
+
     return selectedHotspots;
   }
 }

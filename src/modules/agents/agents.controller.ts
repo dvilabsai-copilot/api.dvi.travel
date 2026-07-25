@@ -19,10 +19,10 @@ import {
 export class AgentsController {
   constructor(private readonly service: AgentsService) {}
 
-  /**
+ /**
    * GET /agents?travelExpertId=123
    * Simple agent dropdown.
-   */
+ */
   @Get()
   @ApiOperation({
     summary: "List agents for dropdown",
@@ -38,10 +38,10 @@ export class AgentsController {
     );
   }
 
-  /**
+ /**
    * GET /agents/with-company?travelExpertId=123
    * Agent + company label.
-   */
+ */
   @Get("with-company")
   @ApiOperation({
     summary: "List agents with company info",
@@ -57,10 +57,10 @@ export class AgentsController {
     );
   }
 
-  /**
+ /**
    * GET /agents/label?agentId=123
    * Returns "First Last" or '--'.
-   */
+ */
   @Get("label")
   @ApiOperation({
     summary: "Get full agent label",

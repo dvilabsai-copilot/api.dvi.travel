@@ -26,10 +26,10 @@ export class UpdateGstSettingDto {
   @Min(0)
   igst?: number;
 
-  /**
+ /**
    * ✅ Allow UI to toggle status.
    * Handles: true/false, 1/0, "true"/"false", "1"/"0"
-   */
+ */
   @IsOptional()
   @Transform(({ value }) => {
     if (value === undefined || value === null) return undefined;

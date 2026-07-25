@@ -13,7 +13,7 @@ export class ShowViaRouteFormDto {
   @IsString()
   selected_next_visiting_location!: string;
 
-  // dd/mm/yyyy
+ // dd/mm/yyyy
   @IsString()
   itinerary_route_date!: string;
 
@@ -25,7 +25,7 @@ export class ShowViaRouteFormDto {
   @IsString()
   itinerary_plan_ID?: string;
 
-  // React-side “session id” (equivalent to PHP session_id())
+ // React-side session id (equivalent to PHP session_id())
   @IsOptional()
   @IsString()
   itinerary_session_id?: string;

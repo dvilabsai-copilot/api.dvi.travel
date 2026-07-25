@@ -24,7 +24,7 @@ import { ToggleStatusDto } from './dto/toggle-status.dto';
 import { ActivityStorefrontQueryDto } from './dto/activity-storefront-query.dto';
 import { CreateActivityBookingDto } from './dto/create-activity-booking.dto';
 
-// ⬇️ NEW: Multer imports (non-breaking)
+// NEW: Multer imports (non-breaking)
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
@@ -32,7 +32,7 @@ import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 
 function resolveBackendRoot(): string {
-  // Walk up from __dirname until we find package.json at the api root
+ // Walk up from __dirname until we find package.json at the api root
   let dir = __dirname;
   while (dir !== join(dir, '..')) {
     if (fs.existsSync(join(dir, 'package.json'))) return dir;
@@ -61,19 +61,19 @@ function randomName(original: string) {
 export class ActivitiesController {
   constructor(private readonly service: ActivitiesService) {}
 
-  // === LIST (DataTables style shape, but clean JSON) ===
+ // === LIST (DataTables style shape, but clean JSON) ===
   @Get()
   async list(@Query('q') q?: string, @Query('status') status?: '0' | '1') {
     return this.service.list({ q, status: status as any });
   }
 
-  // === HOTSPOTS (for dropdown) ===
+ // === HOTSPOTS (for dropdown) ===
   @Get('hotspots')
   async hotspots(@Query('q') q?: string) {
     return this.service.hotspots(q);
   }
 
-  // Keep static storefront routes above dynamic :id routes.
+ // Keep static storefront routes above dynamic :id routes.
   @Get('storefront/categories')
   async storefrontCategories() {
     return this.service.getStorefrontCategories();
@@ -134,31 +134,31 @@ export class ActivitiesController {
     return this.service.createStorefrontBooking(dto);
   }
 
-  // === BASIC INFO (Create) ===
+ // === BASIC INFO (Create) ===
   @Post()
   async create(@Body() dto: CreateActivityDto) {
     return this.service.createActivity(dto);
   }
 
-  // === BASIC INFO (Update) ===
+ // === BASIC INFO (Update) ===
   @Put(':id')
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateActivityDto) {
     return this.service.updateActivity(id, dto);
   }
 
-  // === STATUS TOGGLE ===
+ // === STATUS TOGGLE ===
   @Patch(':id/status')
   async toggleStatus(@Param('id', ParseIntPipe) id: number, @Body() dto: ToggleStatusDto) {
     return this.service.toggleStatus(id, dto.status);
   }
 
-  // === DELETE (soft) ===
+ // === DELETE (soft) ===
   @Delete(':id')
   async softDelete(@Param('id', ParseIntPipe) id: number) {
     return this.service.softDelete(id);
   }
 
-  // === GALLERY (existing JSON-based insert; kept as-is) ===
+ // === GALLERY (existing JSON-based insert; kept as-is) ===
   @Post(':id/images')
   async addImages(
     @Param('id', ParseIntPipe) id: number,
@@ -167,8 +167,8 @@ export class ActivitiesController {
     return this.service.addImages(id, body.imageNames ?? [], body.createdby ?? 0);
   }
 
-  // ⬇️ NEW: GALLERY (multipart upload to /uploads + DB save of filenames)
-  // Route name chosen to avoid breaking existing /:id/images JSON endpoint
+ // NEW: GALLERY (multipart upload to /uploads + DB save of filenames)
+ // Route name chosen to avoid breaking existing /:id/images JSON endpoint
   @Post(':id/images/upload')
   @UseInterceptors(
     FilesInterceptor('images', 12, {
@@ -176,10 +176,10 @@ export class ActivitiesController {
         destination: (_req, _file, cb) => cb(null, activityGalleryDir()),
         filename: (_req, file, cb) => cb(null, randomName(file.originalname)),
       }),
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+ limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
       fileFilter: (_req, file, cb) => {
-        const ok = /^image\//.test(file.mimetype);
-        cb(ok ? null : new Error('Only image/* files are allowed'), ok);
+ const ok = /^image\//.test(file.mimetype);
+ cb(ok ? null : new Error('Only image/* files are allowed'), ok);
       },
     }),
   )
@@ -189,7 +189,7 @@ export class ActivitiesController {
     @Body('createdby') createdby?: string,
   ) {
     const creator = Number(createdby ?? 0);
-    // Persist filenames in dvi_activity_image_gallery_details
+ // Persist filenames in dvi_activity_image_gallery_details
     return this.service.saveUploadedImages(id, files, creator);
   }
 
@@ -201,13 +201,13 @@ export class ActivitiesController {
     return this.service.deleteImage(id, imageId);
   }
 
-  // === TIME SLOTS (default + special) ===
+ // === TIME SLOTS (default + special) ===
   @Post(':id/time-slots')
   async saveTimeSlots(@Param('id', ParseIntPipe) id: number, @Body() dto: SaveTimeSlotsDto) {
     return this.service.saveTimeSlots(id, dto);
   }
 
-  // === PRICE BOOK (month rows with day_1..day_31) ===
+ // === PRICE BOOK (month rows with day_1..day_31) ===
   @Get(':id/pricebook')
   async getPriceBook(@Param('id', ParseIntPipe) id: number) {
     return this.service.getPriceBook(id);
@@ -218,7 +218,7 @@ export class ActivitiesController {
     return this.service.savePriceBook(id, dto);
   }
 
-  // === REVIEWS ===
+ // === REVIEWS ===
   @Post(':id/reviews')
   async addReview(@Param('id', ParseIntPipe) id: number, @Body() dto: SaveReviewDto) {
     return this.service.addOrUpdateReview(id, dto);
@@ -241,13 +241,13 @@ export class ActivitiesController {
     return this.service.deleteReview(id, reviewId);
   }
 
-  // === PREVIEW (aggregate read) ===
+ // === PREVIEW (aggregate read) ===
   @Get(':id/preview')
   async preview(@Param('id', ParseIntPipe) id: number) {
     return this.service.preview(id);
   }
 
-  // === DETAILS (basic info + gallery + latest slots) ===
+ // === DETAILS (basic info + gallery + latest slots) ===
   @Get(':id')
   async details(@Param('id', ParseIntPipe) id: number) {
     return this.service.details(id);

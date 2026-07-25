@@ -78,7 +78,7 @@ export class StaahService {
         },
       });
     } catch (error) {
-      this.logger.error(`Failed to log inbound request: ${error.message}`);
+ this.logger.error(`Failed to log inbound request: ${error.message}`);
     }
   }
 
@@ -110,7 +110,7 @@ export class StaahService {
       return raw;
     }
 
-    // STAAH certification feedback: underscore characters are not supported in mapping IDs.
+ // STAAH certification feedback: underscore characters are not supported in mapping IDs.
     return raw.replace(/_/g, '');
   }
 
@@ -944,7 +944,7 @@ export class StaahService {
         .toISOString()
         .slice(0, 10)}|${row.type}`;
 
-      // Rows are fetched newest-first for the same identity, so first match wins.
+ // Rows are fetched newest-first for the same identity, so first match wins.
       if (seen.has(key)) {
         continue;
       }
@@ -1217,7 +1217,7 @@ export class StaahService {
         error_desc: '',
       };
     } catch (error) {
-      this.logger.error(`Inventory update error: ${error.message}`);
+ this.logger.error(`Inventory update error: ${error.message}`);
       return {
         status: 'fail',
         error_desc: `${STAAH_MESSAGES.INVENTORY_UPDATE_FAILED} ${error.message}`,
@@ -1295,7 +1295,7 @@ export class StaahService {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      this.logger.error(`Rate update error: ${error.message}`);
+ this.logger.error(`Rate update error: ${error.message}`);
       return {
         status: 'fail',
         error_desc: `${STAAH_MESSAGES.RATE_UPDATE_FAILED} ${error.message}`,
@@ -1303,10 +1303,10 @@ export class StaahService {
     }
   }
 
-  /**
+ /**
    * The final certification route is a single ARI endpoint, so dispatch read vs write
    * semantics here without removing the older adapter-specific routes.
-   */
+ */
   async handleUnifiedAri(
     dto: AriRequestDto,
   ): Promise<AriResponseDto | ArrInfoResponseDto | YearInfoArrResponseDto> {
@@ -1325,7 +1325,7 @@ export class StaahService {
     const startedAt = Date.now();
     const rowCount = Array.isArray(dto.data) ? dto.data.length : 0;
 
-    this.logger.log(
+ this.logger.log(
       `STAAH ARI received property=${dto.propertyid} room=${dto.room_id} rate=${dto.rate_id} rows=${rowCount}`,
     );
 
@@ -1389,7 +1389,7 @@ export class StaahService {
     const rateRowCount = rows.filter((row) => row.hasRate).length;
     const restrictionRowCount = rows.filter((row) => row.hasRestrictions).length;
 
-    this.logger.log(
+ this.logger.log(
       `STAAH ARI prepared property=${dto.propertyid} room=${dto.room_id} rate=${dto.rate_id} writableRows=${rows.length} inventoryRows=${inventoryRowCount} rateRows=${rateRowCount} restrictionRows=${restrictionRowCount}`,
     );
 
@@ -1482,7 +1482,7 @@ export class StaahService {
         },
       );
 
-      this.logger.log(
+ this.logger.log(
         `STAAH ARI processed property=${dto.propertyid} room=${dto.room_id} rate=${dto.rate_id} rows=${rowCount} writableRows=${rows.length} durationMs=${Date.now() - startedAt}`,
       );
 
@@ -1495,8 +1495,8 @@ export class StaahService {
         throw error;
       }
 
-      this.logger.error(`ARI update error: ${error.message}`);
-      this.logger.error(
+ this.logger.error(`ARI update error: ${error.message}`);
+ this.logger.error(
         `STAAH ARI failed property=${dto.propertyid} room=${dto.room_id} rate=${dto.rate_id} rows=${rowCount} durationMs=${Date.now() - startedAt} error=${error.message}`,
         error.stack,
       );
@@ -1564,7 +1564,7 @@ export class StaahService {
         error_desc: '',
       };
     } catch (error) {
-      this.logger.error(`Restriction update error: ${error.message}`);
+ this.logger.error(`Restriction update error: ${error.message}`);
       return {
         status: 'fail',
         error_desc: `${STAAH_MESSAGES.RESTRICTION_UPDATE_FAILED} ${error.message}`,
@@ -1635,7 +1635,7 @@ export class StaahService {
         bookings: responses,
       };
     } catch (error) {
-      this.logger.error(`Reservation receive error: ${error.message}`);
+ this.logger.error(`Reservation receive error: ${error.message}`);
       return {
         status: 'fail',
         trackingId,
@@ -1678,7 +1678,7 @@ export class StaahService {
         error_desc: '',
       };
     } catch (error) {
-      this.logger.error(`Reservation modify error: ${error.message}`);
+ this.logger.error(`Reservation modify error: ${error.message}`);
       return {
         status: 'fail',
         error_desc: `${STAAH_MESSAGES.RESERVATION_MODIFY_FAILED} ${error.message}`,
@@ -1714,7 +1714,7 @@ export class StaahService {
         error_desc: '',
       };
     } catch (error) {
-      this.logger.error(`Reservation cancel error: ${error.message}`);
+ this.logger.error(`Reservation cancel error: ${error.message}`);
       return {
         status: 'fail',
         error_desc: `${STAAH_MESSAGES.RESERVATION_CANCEL_FAILED} ${error.message}`,
@@ -1722,11 +1722,11 @@ export class StaahService {
     }
   }
 
-  /**
+ /**
    * ARR_info adapter endpoint.
    * Request body matches the verified STAAH v2 pull wrapper.
    * Response body is adapter-defined from local stored ARI records.
-   */
+ */
   async getArrInfo(dto: ArrInfoRequestDto): Promise<ArrInfoResponseDto> {
     const trackingId = this.createTrackingId();
     await this.logInbound('arrInfo', dto.propertyid, dto.room_id, dto.rate_id, dto);
@@ -1824,11 +1824,11 @@ export class StaahService {
     };
   }
 
-  /**
+ /**
    * year_info_ARR adapter endpoint.
    * Request body matches the verified STAAH v2 full-year pull wrapper.
    * Response body is adapter-defined from local stored ARI records.
-   */
+ */
   async getYearInfoArr(dto: YearInfoArrRequestDto): Promise<YearInfoArrResponseDto> {
     const trackingId = this.createTrackingId();
     await this.logInbound('yearInfoArr', dto.propertyid, dto.room_id, dto.rate_id, dto);

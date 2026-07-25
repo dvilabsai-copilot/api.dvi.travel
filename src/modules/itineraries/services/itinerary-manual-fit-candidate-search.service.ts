@@ -143,7 +143,7 @@ export class ItineraryManualFitCandidateSearchService {
         previewOnly: options?.previewOnly === true,
       });
     }
-    console.log('[ManualInsertionOptimizer]', {
+ console.log('[ManualInsertionOptimizer]', {
       candidateIndex: best.candidateIndex,
       positionLabel: selectedPosition?.positionLabel || 'unknown',
       waitingMinutes: best.waitingMinutes,

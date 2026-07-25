@@ -127,7 +127,7 @@ export class ItineraryHotelPrebookService {
         roomPromotion: null,
         rateConditions: [],
         mandatorySupplements: [],
-        normalizedSupplements: [], // ✅ NEW
+ normalizedSupplements: [], // NEW
       };
     }
 
@@ -180,7 +180,7 @@ export class ItineraryHotelPrebookService {
       const prebookCancelPoliciesDebug = rawRoomDetails
         .flatMap((room: any) => this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy))
         .filter(Boolean);
-      console.log(
+ console.log(
         '[ItinerariesService] 📥 PreBook API room snapshot:',
         JSON.stringify({
           routeId: hotel.routeId,
@@ -192,22 +192,22 @@ export class ItineraryHotelPrebookService {
           sampleCancelPolicy: prebookCancelPoliciesDebug[0] || null,
         }),
       );
-      console.log(
+ console.log(
         '[ItinerariesService] 📥 Full PreBook API response:',
         JSON.stringify(prebookResponse),
       );
-      
-      // Extract raw mandatory supplements
+
+ // Extract raw mandatory supplements
       const mandatorySupplements = rawRoomDetails
         .flatMap((room: any) => this.normalizeToArray(room?.MandatorySupplements ?? room?.MandatorySupplement))
         .filter(Boolean);
-      
-      // ✅ Extract raw supplements if present
+
+ // Extract raw supplements if present
       const rawSupplements = rawRoomDetails
         .flatMap((room: any) => this.normalizeToArray(room?.Supplements))
         .filter(Boolean);
 
-      // ✅ Normalize all supplements for display
+ // Normalize all supplements for display
       const normalizedMandatorySupplements = this.supplementNormalizer.normalizeSupplements(
         mandatorySupplements,
         'prebook',
@@ -338,7 +338,7 @@ export class ItineraryHotelPrebookService {
         mealType,
         mealPlan: mealType,
         mandatorySupplements,
-        // ✅ NEW: include normalized supplements
+ // NEW: include normalized supplements
         normalizedSupplements: allNormalizedSupplements,
         supplements: rawSupplements,
         isPriceChanged: Boolean(prebookResponse?.IsPriceChanged),
@@ -385,7 +385,7 @@ export class ItineraryHotelPrebookService {
     const inclusionsAll = prebookResults.flatMap((item) => item.inclusions || []);
     const amenitiesAll = prebookResults.flatMap((item) => item.amenities || []);
     const mandatorySupplementsAll = prebookResults.flatMap((item) => item.mandatorySupplements || []);
-    // ✅ NEW: Extract normalized supplements from prebook results
+ // NEW: Extract normalized supplements from prebook results
     const normalizedSupplementsAll = prebookResults.flatMap((item) => item.normalizedSupplements || []);
 
     return {
@@ -408,7 +408,7 @@ export class ItineraryHotelPrebookService {
       inclusions: this.normalizeToUniqueStrings(inclusionsAll),
       amenities: this.normalizeToUniqueStrings(amenitiesAll),
       mandatorySupplements: mandatorySupplementsAll,
-      // ✅ NEW: include normalized supplements for frontend display
+ // NEW: include normalized supplements for frontend display
       normalizedSupplements: normalizedSupplementsAll,
     };
   }
@@ -439,7 +439,7 @@ export class ItineraryHotelPrebookService {
       );
     }
 
-    // Force a fresh room search to avoid stale cached booking codes.
+ // Force a fresh room search to avoid stale cached booking codes.
     this.hotelDetailsTboService.clearCacheForQuote(quoteId);
     const roomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(
       quoteId,
@@ -492,9 +492,9 @@ export class ItineraryHotelPrebookService {
     return selectedBookingCode;
   }
 
-  /**
+ /**
    * After transaction completes, handle hotel bookings for all providers
    * This is done outside transaction to avoid locking issues with external API calls
-   */
+ */
 }
 

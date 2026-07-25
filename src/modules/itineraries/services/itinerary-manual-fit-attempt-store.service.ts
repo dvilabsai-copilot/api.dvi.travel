@@ -110,7 +110,7 @@ export class ItineraryManualFitAttemptStoreService {
       this.cache.set(normalizedAttemptId, parsed);
       return parsed;
     } catch (error) {
-      console.warn('[FitHere][attempt_store_parse_failed]', {
+ console.warn('[FitHere][attempt_store_parse_failed]', {
         attemptId: normalizedAttemptId,
         error: error instanceof Error ? error.message : String(error),
       });

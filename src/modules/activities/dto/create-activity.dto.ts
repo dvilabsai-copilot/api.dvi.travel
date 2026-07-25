@@ -3,15 +3,15 @@ import { Type } from 'class-transformer';
 
 class DefaultSlotDto {
   @IsString() @IsNotEmpty()
-  start_time!: string; // "HH:MM[:SS]"
+ start_time!: string; // "HH:MM[:SS]"
 
   @IsString() @IsNotEmpty()
-  end_time!: string;   // "HH:MM[:SS]"
+ end_time!: string; // "HH:MM[:SS]"
 }
 
 class SpecialSlotDto {
   @IsString() @IsNotEmpty()
-  date!: string;       // "YYYY-MM-DD"
+ date!: string; // "YYYY-MM-DD"
 
   @IsString() @IsNotEmpty()
   start_time!: string;
@@ -31,7 +31,7 @@ export class CreateActivityDto {
   max_allowed_person_count!: number;
 
   @IsString() @IsOptional()
-  activity_duration?: string; // "HH:MM[:SS]"
+ activity_duration?: string; // "HH:MM[:SS]"
 
   @IsString() @IsOptional()
   @MaxLength(65535)

@@ -72,7 +72,7 @@ export class AgentService {
     return map;
   }
 
-  /** ---------- Helpers: user & geo label maps ---------- */
+ /** ---------- Helpers: user & geo label maps ---------- */
    private async getUsersMapByAgentIds(agentIds: number[]) {
     if (agentIds.length === 0) return new Map<number, any>();
     const users = await this.prisma.dvi_users.findMany({
@@ -155,7 +155,7 @@ export class AgentService {
     return { countryMap, stateMap, cityMap };
   }
 
-  /** Latest subscription title for a single agent (used in preview) */
+ /** Latest subscription title for a single agent (used in preview) */
   private async getLatestSubscriptionTitle(agentId: number): Promise<string | null> {
     const row = await this.prisma.dvi_agent_subscribed_plans.findFirst({
       where: { agent_ID: agentId, deleted: 0 },
@@ -166,12 +166,12 @@ export class AgentService {
     return title && title.length > 0 ? title : null;
   }
 
-  /** Batch: latest subscription title per agent (fast) */
+ /** Batch: latest subscription title per agent (fast) */
   private async getLatestSubscriptionTitleMap(agentIds: number[]): Promise<Map<number, string>> {
     const out = new Map<number, string>();
     if (!agentIds.length) return out;
 
-    // Newest-first per agent; first seen wins
+ // Newest-first per agent; first seen wins
     const rows = await this.prisma.dvi_agent_subscribed_plans.findMany({
       where: { deleted: 0, agent_ID: { in: agentIds } },
       orderBy: [{ agent_ID: 'asc' }, { createdon: 'desc' }, { agent_subscribed_plan_ID: 'desc' }],
@@ -188,7 +188,7 @@ export class AgentService {
     return out;
   }
 
-  /** ---------- LIST (legacy -> keeps your old table mapper) ---------- */
+ /** ---------- LIST (legacy -> keeps your old table mapper) ---------- */
   async list(query: ListAgentQueryDto) {
     const isDT = typeof query.start === 'number' && typeof query.length === 'number';
     const take = isDT ? query.length! : query.limit!;
@@ -238,7 +238,7 @@ export class AgentService {
       cityIds,
     });
 
-      // legacy list uses your mapper, but agent dropdown/table name should show name with city
+ // legacy list uses your mapper, but agent dropdown/table name should show name with city
     const data = rows.map((a, idx) => {
            const cityLabel = a.agent_city ? cityMap.get(a.agent_city) ?? null : null;
       const companyName = companyNameMap.get(a.agent_ID) ?? null;
@@ -291,7 +291,7 @@ export class AgentService {
     };
   }
 
-  /** ---------- LIST FULL (detailed preview-style rows for every agent) ---------- */
+ /** ---------- LIST FULL (detailed preview-style rows for every agent) ---------- */
   async listFull(query: ListAgentQueryDto) {
     const isDT = typeof query.start === 'number' && typeof query.length === 'number';
     const take = isDT ? query.length! : query.limit!;
@@ -325,7 +325,7 @@ export class AgentService {
 
     const agentIds = rows.map((r) => r.agent_ID);
 
-    // Batch helpers
+ // Batch helpers
       const [usersMap, geoMaps, subsMap, companyNameMap] = await Promise.all([
       this.getUsersMapByAgentIds(agentIds),
       this.getGeoNameMaps({
@@ -339,7 +339,7 @@ export class AgentService {
 
     const { countryMap, stateMap, cityMap } = geoMaps;
 
-    // Build the EXACT object you requested per agent
+ // Build the EXACT object you requested per agent
     const data = rows.map((a) => {
       const user = usersMap.get(a.agent_ID) ?? null;
       const login_enabled = !!(user && user.userapproved === 1 && user.userbanned === 0);
@@ -374,9 +374,9 @@ export class AgentService {
         state_label: a.agent_state ? stateMap.get(a.agent_state) ?? null : null,
         city_label: cityLabel,
 
-        // Latest title, fallback "Free" to mirror your single-agent preview
+ // Latest title, fallback "Free" to mirror your single-agent preview
         subscription_title: subsMap.get(a.agent_ID) ?? 'Free',
-        // Until you wire experts table, keep null (matches your preview response)
+ // Until you wire experts table, keep null (matches your preview response)
         travel_expert_label: null,
       };
 
@@ -401,7 +401,7 @@ export class AgentService {
     };
   }
 
-  /** ---------- PREVIEW / EDIT PREFILL (single) ---------- */
+ /** ---------- PREVIEW / EDIT PREFILL (single) ---------- */
   async getById(id: number): Promise<AgentPreviewDto> {
     const a = await this.prisma.dvi_agent.findFirst({
       where: { agent_ID: id, deleted: 0 },
@@ -544,7 +544,7 @@ export class AgentService {
     return this.getById(id);
   }
 
-  /** ---------- Subscriptions table for preview ---------- */
+ /** ---------- Subscriptions table for preview ---------- */
   async getSubscriptions(agentId: number) {
     const agent = await this.prisma.dvi_agent.findFirst({
       where: { agent_ID: agentId, deleted: 0 },
@@ -947,7 +947,7 @@ private async addWallet(
 }
 
 
-  /** ---------- LIGHTWEIGHT NAMES LIST ---------- */
+ /** ---------- LIGHTWEIGHT NAMES LIST ---------- */
   async listNames() {
     const agents = await this.prisma.dvi_agent.findMany({
       where: { deleted: 0, status: 1 },
@@ -987,7 +987,7 @@ private async addWallet(
     });
   }
 
-  /** ---------- MUTATIONS ---------- */
+ /** ---------- MUTATIONS ---------- */
   async create(payload: CreateAgentDto) {
     const created = await this.prisma.dvi_agent.create({
       data: {

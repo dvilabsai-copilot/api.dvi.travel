@@ -137,7 +137,7 @@ private resolveLogoPath(raw?: string | null): string | null {
 
   let requestedPath = normalized;
 
-  if (/^https?:\/\//i.test(requestedPath)) {
+ if (/^https?:\/\//i.test(requestedPath)) {
     try {
       requestedPath = new URL(requestedPath).pathname;
     } catch {
@@ -147,11 +147,11 @@ private resolveLogoPath(raw?: string | null): string | null {
 
   requestedPath = requestedPath
     .replace(/\\/g, '/')
-    .replace(/^\/?api\/v1\//i, '/');
+ .replace(/^\/?api\/v1\//i, '/');
 
   const relativePath = requestedPath
     .replace(/^\/+/, '')
-    .replace(/^public\//i, '');
+ .replace(/^public\//i, '');
 
   const backendRoot = this.resolveBackendRoot();
   const fileName = path.basename(relativePath);
@@ -249,7 +249,7 @@ private resolveLogoPath(raw?: string | null): string | null {
       try {
         doc.image(logoPath, 42, 42, { fit: [92, 50] });
       } catch {
-        // Ignore image rendering failures and keep PDF generation successful.
+ // Ignore image rendering failures and keep PDF generation successful.
       }
     }
 
@@ -329,7 +329,7 @@ private async resolvePluckCardLogoPath(
     }
   }
 
-  console.warn('[PLUCK_CARD_LOGO_NOT_FOUND]', {
+ console.warn('[PLUCK_CARD_LOGO_NOT_FOUND]', {
     companyLogoUrl,
     configuredLogo,
     backendRoot: this.resolveBackendRoot(),
@@ -400,7 +400,7 @@ doc.image(logoPath, 42.52, 42.52, {
   fit: [127.56, 113.39],
 });
 
-  // Large centred WELCOME heading.
+ // Large centred WELCOME heading.
 doc
   .fillColor('#000000')
   .font('Helvetica-Bold')
@@ -1199,7 +1199,7 @@ doc
       try {
         doc.image(logoPath, margin + 14, y + 16, { fit: [86, 54], align: 'center', valign: 'center' });
       } catch {
-        // Keep generation successful if the image is unreadable.
+ // Keep generation successful if the image is unreadable.
       }
     } else {
       doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(20).text('DVi', margin + 18, y + 22);

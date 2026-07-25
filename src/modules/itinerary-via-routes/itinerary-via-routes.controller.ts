@@ -24,7 +24,7 @@ export class ItineraryViaRoutesController {
 
   @Get('form')
   async getForm(@Query() query: ShowViaRouteFormDto) {
-    // PHP: ajax_latest_itineary_via_route_form.php?type=show_form&...
+ // PHP: ajax_latest_itineary_via_route_form.php?type=show_form&...
     return this.itineraryViaRoutesService.getForm(query);
   }
 

@@ -41,7 +41,7 @@ export class ItineraryRouteTimingService {
     changeType?: 'ROUTE_START' | 'ROUTE_END' | 'FINAL_DAY_DEPARTURE',
     userId: number = 1,
   ) {
-    console.log(`[updateRouteTimes] planId=${planId}, routeId=${routeId}, startTime=${startTime}, endTime=${endTime}, changeType=${changeType}`);
+ console.log(`[updateRouteTimes] planId=${planId}, routeId=${routeId}, startTime=${startTime}, endTime=${endTime}, changeType=${changeType}`);
 
     const normalizedPlanId = Number(planId || 0);
     const normalizedRouteId = Number(routeId || 0);
@@ -94,7 +94,7 @@ export class ItineraryRouteTimingService {
       const [h, m, s] = normalizedStartTime.split(':').map((v) => Number(v || 0));
       return (h * 3600) + (m * 60) + s;
     })();
-    const isEarlyArrivalWindow = startTimeSeconds >= 3600 && startTimeSeconds < 28800; // 01:00:00–07:59:59
+ const isEarlyArrivalWindow = startTimeSeconds >= 3600 && startTimeSeconds < 28800; // 01:00:0007:59:59
 
     const transportCutoffMinutes = wallClockMinutes(
       getTransportEarlyArrivalSetting('TRANSPORT_EARLY_ARRIVAL_CUTOFF', DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF),
@@ -102,7 +102,7 @@ export class ItineraryRouteTimingService {
     const isTransportEarlyArrival = startTimeSeconds < transportCutoffMinutes * 60;
 
     const transactionResult = await this.prisma.$transaction(async (tx) => {
-      // 1) Verify target route belongs to this plan
+ // 1) Verify target route belongs to this plan
       const targetRoute = await (tx as any).dvi_itinerary_route_details.findFirst({
         where: {
           itinerary_route_ID: normalizedRouteId,
@@ -177,9 +177,9 @@ export class ItineraryRouteTimingService {
 
       const departureType = Number(plan.departure_type || 0);
 
-      // Earlier route-time updates could incorrectly copy the buffered last-route
-      // end into trip_end_date_and_time. Treat that known flight/train state as
-      // equivalent to the untouched default so existing affected plans self-heal.
+ // Earlier route-time updates could incorrectly copy the buffered last-route
+ // end into trip_end_date_and_time. Treat that known flight/train state as
+ // equivalent to the untouched default so existing affected plans self-heal.
       const hasLegacyBufferedDepartureCorruption =
         (departureType === 1 || departureType === 2) &&
         currentPlanDepartureTime !== '' &&
@@ -193,8 +193,8 @@ export class ItineraryRouteTimingService {
           hasLegacyBufferedDepartureCorruption
         );
 
-      // The actual departure and the route scheduling cutoff are different values.
-      // A final-day start edit expands an untouched/default departure to 23:00.
+ // The actual departure and the route scheduling cutoff are different values.
+ // A final-day start edit expands an untouched/default departure to 23:00.
       let effectiveEndTime = normalizedEndTime;
       let departureTimeForPlan: string | null = null;
       let autoExpandedFinalDayDeparture = false;
@@ -207,9 +207,9 @@ export class ItineraryRouteTimingService {
 
         const bufferSeconds = (() => {
           switch (departureType) {
-            case 1: return 2 * 3600; // flight
-            case 2: return 1 * 3600; // train
-            default: return 0;        // road
+ case 1: return 2 * 3600; // flight
+ case 2: return 1 * 3600; // train
+ default: return 0; // road
           }
         })();
 
@@ -231,7 +231,7 @@ export class ItineraryRouteTimingService {
           String(newS).padStart(2, '0');
       }
 
-      // 2) Persist requested route start/end times
+ // 2) Persist requested route start/end times
       await (tx as any).dvi_itinerary_route_details.update({
         where: { itinerary_route_ID: normalizedRouteId },
         data: {
@@ -241,8 +241,8 @@ export class ItineraryRouteTimingService {
         },
       });
 
-      // 3) Recompute itinerary-level trip boundaries from route rows.
-      //    If Day-1 route time changed, itinerary start/pickup must follow route day-1 start.
+ // 3) Recompute itinerary-level trip boundaries from route rows.
+ // If Day-1 route time changed, itinerary start/pickup must follow route day-1 start.
       const commonRouteWhere = {
         itinerary_plan_ID: normalizedPlanId,
         deleted: 0,
@@ -307,7 +307,7 @@ export class ItineraryRouteTimingService {
 
       const isDay1RouteUpdated = Number(firstRoute.itinerary_route_ID) === normalizedRouteId;
 
-      // Persist previous-day billing decision as marker rows for hotel-details rendering.
+ // Persist previous-day billing decision as marker rows for hotel-details rendering.
       if (isDay1RouteUpdated) {
         const existingMarkerRows = await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
           where: {
@@ -517,7 +517,7 @@ export class ItineraryRouteTimingService {
         data: planUpdateData,
       });
 
-      // 4) Rebuild itinerary timeline rows (same core build as createPlan hotspot stage)
+ // 4) Rebuild itinerary timeline rows (same core build as createPlan hotspot stage)
       const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
       await this.routeVehicleRestrictions.assertPersistedPlan(
         normalizedPlanId,
@@ -562,9 +562,9 @@ export class ItineraryRouteTimingService {
       };
     }, { timeout: 180000, maxWait: 20000 });
 
-    // Route time changes can change active hotspot segments, sightseeing KM,
-    // travel KM, running time, extra KM, and vehicle pricing.
-    // Therefore vehicle pricing must be rebuilt after the timeline rebuild.
+ // Route time changes can change active hotspot segments, sightseeing KM,
+ // travel KM, running time, extra KM, and vehicle pricing.
+ // Therefore vehicle pricing must be rebuilt after the timeline rebuild.
     await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
 
     await this.callbacks.forceRebuildVehiclePricingAfterHotspotChange(
@@ -580,8 +580,8 @@ export class ItineraryRouteTimingService {
     };
   }
 
-  /**
+ /**
    * Get confirmed itinerary data with hotels for cancellation page
-   */
+ */
 }
 

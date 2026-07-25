@@ -24,7 +24,7 @@ export class InbuiltAmenitiesController {
   constructor(private readonly service: InbuiltAmenitiesService) {}
 
   private getUserId(req: Request): number {
-    // If your project attaches req.user, we use it. Otherwise default 0 (safe).
+ // If your project attaches req.user, we use it. Otherwise default 0 (safe).
     const anyReq = req as any;
     return Number(anyReq?.user?.id ?? anyReq?.user?.userId ?? 0) || 0;
   }
@@ -58,7 +58,7 @@ export class InbuiltAmenitiesController {
   @Delete(":id")
   async remove(@Param("id", ParseIntPipe) id: number) {
     await this.service.remove(id);
-    // Your frontend delete() expects void, so return nothing.
+ // Your frontend delete() expects void, so return nothing.
     return;
   }
 }

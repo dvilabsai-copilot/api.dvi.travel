@@ -20,7 +20,7 @@ export class GuideListQueryDto {
   @Min(1)
   size?: number;
 
-  // Optional filters (mirror PHP search if needed)
+ // Optional filters (mirror PHP search if needed)
   @IsOptional()
   @IsString()
   city?: string;
@@ -33,7 +33,7 @@ export class GuideListQueryDto {
   @IsString()
   country?: string;
 
-  // status filter (1/0)
+ // status filter (1/0)
   @IsOptional()
   @Type(() => Number)
   @IsInt()

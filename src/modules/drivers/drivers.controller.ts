@@ -57,7 +57,7 @@ function driverGalleryStorage() {
       try {
         fs.mkdirSync(dir, { recursive: true });
       } catch {
-        // ignored
+ // ignored
       }
       cb(null, dir);
     },
@@ -171,12 +171,12 @@ async findOne(@Param('id') id: string) {
     return this.driversService.update(Number(id), body);
   }
 
-  /**
+ /**
    * GET /drivers
    * - Returns list of drivers for listing page
    * - If req.user.vendor_id exists, it will filter by that vendor
    * - Otherwise optional ?vendorId= can be used
-   */
+ */
   @Get()
   async findAll(@Req() req: any, @Query('vendorId') vendorId?: string) {
     const userVendorId =
@@ -196,10 +196,10 @@ async findOne(@Param('id') id: string) {
     return this.driversService.findAll(resolvedVendorId);
   }
 
-  /**
+ /**
    * PATCH /drivers/:id/status
    * - Toggle active/inactive from the UI switch
-   */
+ */
   @Patch(':id/status')
   async updateStatus(
     @Param('id') id: string,
@@ -209,10 +209,10 @@ async findOne(@Param('id') id: string) {
     return { success: true };
   }
 
-  /**
+ /**
    * DELETE /drivers/:id
    * - Delete driver (used by trash icon)
-   */
+ */
   @Delete(':id')
   async remove(@Param('id') id: string) {
     await this.driversService.remove(Number(id));

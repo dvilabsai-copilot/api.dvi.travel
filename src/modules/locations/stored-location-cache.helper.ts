@@ -42,7 +42,7 @@ function buildStoredLocationLogPayload(context: StoredLocationLookupContext) {
 export function clearStoredLocationCache(reason: string): void {
   const clearedEntries = storedLocationPairCache.size;
   storedLocationPairCache.clear();
-  console.log('[DVI_STORED_LOCATION_CACHE_CLEAR]', {
+ console.log('[DVI_STORED_LOCATION_CACHE_CLEAR]', {
     reason,
     clearedEntries,
     cacheSizeAfterClear: storedLocationPairCache.size,
@@ -67,7 +67,7 @@ export async function getCachedStoredLocationPair<T>(
 
   if (storedLocationPairCache.has(forwardKey)) {
     if (shouldDebugStoredLocationCache()) {
-      console.log('[DVI_STORED_LOCATION_CACHE_HIT]', {
+ console.log('[DVI_STORED_LOCATION_CACHE_HIT]', {
         ...logContext,
         cacheKey: forwardKey,
         cacheDirection: 'forward',
@@ -78,7 +78,7 @@ export async function getCachedStoredLocationPair<T>(
 
   if (storedLocationPairCache.has(reverseKey)) {
     if (shouldDebugStoredLocationCache()) {
-      console.log('[DVI_STORED_LOCATION_CACHE_HIT]', {
+ console.log('[DVI_STORED_LOCATION_CACHE_HIT]', {
         ...logContext,
         cacheKey: reverseKey,
         cacheDirection: 'reverse',
@@ -88,7 +88,7 @@ export async function getCachedStoredLocationPair<T>(
   }
 
   if (shouldDebugStoredLocationCache()) {
-    console.log('[DVI_STORED_LOCATION_CACHE_MISS]', {
+ console.log('[DVI_STORED_LOCATION_CACHE_MISS]', {
       ...logContext,
       cacheKey: forwardKey,
     });
@@ -99,7 +99,7 @@ export async function getCachedStoredLocationPair<T>(
   const dbLookupDurationMs = Date.now() - lookupStartedAt;
 
   if (shouldDebugStoredLocationCache()) {
-    console.log('[DVI_STORED_LOCATION_DB_LOOKUP]', {
+ console.log('[DVI_STORED_LOCATION_DB_LOOKUP]', {
       ...logContext,
       cacheKey: forwardKey,
       dbLookupDurationMs,
@@ -111,7 +111,7 @@ export async function getCachedStoredLocationPair<T>(
   storedLocationPairCache.set(reverseKey, value);
 
   if (shouldDebugStoredLocationCache()) {
-    console.log('[DVI_STORED_LOCATION_CACHE_STORE]', {
+ console.log('[DVI_STORED_LOCATION_CACHE_STORE]', {
       ...logContext,
       cacheKey: forwardKey,
       cacheKeysStored: forwardKey === reverseKey ? 1 : 2,

@@ -265,7 +265,7 @@ export class ArrivalHotelPolicyService {
       previousDayBillingConfirmed: context.previousDayBillingConfirmed,
     });
 
-    this.logger.log(
+ this.logger.log(
       JSON.stringify({
         rawArrivalDateTime: context.rawArrivalDateTime,
         normalizedArrivalCity: context.normalizedArrivalCity,
@@ -359,10 +359,10 @@ export class ArrivalHotelPolicyService {
       routeDate,
     );
 
-    // Compare the calendar dates supplied by the itinerary request, rather than
-    // the server-local date of the parsed instant. An ISO value such as
-    // 2026-07-29T02:00:00+05:30 is 2026-07-28 in UTC, but it is still an
-    // arrival on 2026-07-29 for the itinerary.
+ // Compare the calendar dates supplied by the itinerary request, rather than
+ // the server-local date of the parsed instant. An ISO value such as
+ // 2026-07-29T02:00:00+05:30 is 2026-07-28 in UTC, but it is still an
+ // arrival on 2026-07-29 for the itinerary.
     const routeDateOnly = toCalendarDateOnly(
       request.routeDate,
       route?.itinerary_route_date,
@@ -455,7 +455,7 @@ function getArrivalMinutes(
     const text = String(value).trim();
     if (!text) continue;
 
-    // Keep the intended wall-clock time from payload/DB string regardless of server timezone.
+ // Keep the intended wall-clock time from payload/DB string regardless of server timezone.
     const isoMatch = text.match(/T(\d{2}):(\d{2})(?::\d{2})?/);
     if (isoMatch) {
       const hh = Number(isoMatch[1]);

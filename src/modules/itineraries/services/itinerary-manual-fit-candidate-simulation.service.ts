@@ -160,7 +160,7 @@ export class ItineraryManualFitCandidateSimulationService {
         })
       : null);
 
-    console.log('[ManualInsertionOptimizer]', {
+ console.log('[ManualInsertionOptimizer]', {
       candidateIndex: position.candidateIndex,
       positionLabel: position.positionLabel,
       waitingMinutes,

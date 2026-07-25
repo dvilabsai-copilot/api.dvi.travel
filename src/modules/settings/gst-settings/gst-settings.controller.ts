@@ -52,7 +52,7 @@ export class GstSettingsController {
     return { ok: true };
   }
 
-  // Optional: your UI can use this for status toggle without editing fields
+ // Optional: your UI can use this for status toggle without editing fields
   @Post(':id/toggle-status')
   toggle(@Param('id', ParseIntPipe) id: number) {
     return this.service.toggleStatus(id);

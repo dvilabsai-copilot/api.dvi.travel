@@ -51,24 +51,24 @@ export class ItineraryManualFitTimelinePolicyService {
       return type === 'hotel' || type === 'checkin' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel') || text.includes('check-in at ');
     };
 
-    // Debug: Log what we're checking
+ // Debug: Log what we're checking
     const timelineHotspotIds = rows
       .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0))
       .filter((id: number) => id > 0);
     const planDuplicates = timelineHotspotIds.filter((id: number) => removedIds.has(id));
-    
+
     if (planDuplicates.length > 0) {
-      console.error('[validateResolvedLowPriorityTimeline] FAIL: Removed hotspot IDs still in timeline:', {
+ console.error('[validateResolvedLowPriorityTimeline] FAIL: Removed hotspot IDs still in timeline:', {
         removedIds: Array.from(removedIds),
         duplicateIds: planDuplicates,
         timelineHotspotIds,
         timelineLength: rows.length,
       });
-      console.error('[validateResolvedLowPriorityTimeline] Matching rows:');
+ console.error('[validateResolvedLowPriorityTimeline] Matching rows:');
       for (const row of rows) {
         const rowId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
         if (rowId > 0 && removedIds.has(rowId)) {
-          console.error(`  - Row type=${row?.type} id=${rowId} text="${row?.text}" toName="${row?.toName}"`);
+ console.error(` - Row type=${row?.type} id=${rowId} text="${row?.text}" toName="${row?.toName}"`);
         }
       }
     }

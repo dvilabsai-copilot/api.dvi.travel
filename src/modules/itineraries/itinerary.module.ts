@@ -22,7 +22,7 @@ import { HotelPricingService } from './hotels/hotel-pricing.service';
 import { ItineraryHotspotsEngine } from './engines/itinerary-hotspots.engine';
 import { ItineraryVehiclesEngine } from './engines/itinerary-vehicles.engine';
 
-// ✅ New engines + helpers
+// New engines + helpers
 import { PlanEngineService } from './engines/plan-engine.service';
 import { RouteEngineService } from './engines/route-engine.service';
 import { HotspotEngineService } from './engines/hotspot-engine.service';
@@ -118,7 +118,7 @@ import { TransportEarlyArrivalValidationService } from './validation/transport-e
   imports: [HotelsModule, RouteVehicleRestrictionsModule],
   controllers: [ItinerariesController, ItineraryHotelApprovalController, ResAvenueTestController, ItineraryScenarioSourceController],
   providers: [
-    // core services
+ // core services
     ItinerariesService,
     ItineraryDetailsService,
     ItineraryHotelDetailsService,
@@ -204,13 +204,13 @@ import { TransportEarlyArrivalValidationService } from './validation/transport-e
     ItineraryHotelApprovalService,
     TransportEarlyArrivalValidationService,
 
-    // existing engines you already had
+ // existing engines you already had
     HotelEngineService,
     HotelPricingService,
     ItineraryHotspotsEngine,
     ItineraryVehiclesEngine,
 
-    // new quote + engines (PHP-parity + no-hardcoding)
+ // new quote + engines (PHP-parity + no-hardcoding)
     PlanEngineService,
     RouteEngineService,
     HotspotEngineService,

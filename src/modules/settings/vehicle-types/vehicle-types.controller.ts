@@ -16,7 +16,7 @@ import { CreateVehicleTypeDto } from "./dto/create-vehicle-type.dto";
 import { UpdateVehicleTypeDto } from "./dto/update-vehicle-type.dto";
 
 function resolveUserId(req: any): number {
-  // supports different auth payload shapes
+ // supports different auth payload shapes
   return Number(req?.user?.user_id ?? req?.user?.id ?? req?.user?.ID ?? 0) || 0;
 }
 

@@ -20,7 +20,7 @@ export class ItinerarySelectionWorkflowService {
   ) {}
 
   async getAvailableHotels(routeId: number) {
-    // Get route details
+ // Get route details
     const route = await (this.prisma as any).dvi_itinerary_route_details.findFirst({
       where: { itinerary_route_ID: routeId },
     });
@@ -29,7 +29,7 @@ export class ItinerarySelectionWorkflowService {
       return [];
     }
 
-    // Get location coordinates separately
+ // Get location coordinates separately
     const location = await (this.prisma as any).dvi_stored_locations.findFirst({
       where: { location_ID: Number(route.location_id) },
       select: {
@@ -45,9 +45,9 @@ export class ItinerarySelectionWorkflowService {
     const destLat = Number(location.destination_location_lattitude);
     const destLng = Number(location.destination_location_longitude);
 
-    // Fetch hotels with Haversine distance calculation
+ // Fetch hotels with Haversine distance calculation
     const hotels = await this.prisma.$queryRaw`
-      SELECT 
+      SELECT
         h.hotel_id,
         h.hotel_name,
         h.hotel_address,
@@ -55,14 +55,14 @@ export class ItinerarySelectionWorkflowService {
         h.hotel_longitude,
         h.hotel_category,
         (6371 * acos(
-          cos(radians(${destLat})) * 
-          cos(radians(h.hotel_latitude)) * 
-          cos(radians(h.hotel_longitude) - radians(${destLng})) + 
-          sin(radians(${destLat})) * 
+          cos(radians(${destLat})) *
+          cos(radians(h.hotel_latitude)) *
+          cos(radians(h.hotel_longitude) - radians(${destLng})) +
+          sin(radians(${destLat})) *
           sin(radians(h.hotel_latitude))
         )) AS distance_in_km
       FROM dvi_hotel h
-      WHERE h.status = 1 
+      WHERE h.status = 1
         AND h.deleted = 0
         AND h.hotel_latitude IS NOT NULL
         AND h.hotel_longitude IS NOT NULL
@@ -80,15 +80,15 @@ export class ItinerarySelectionWorkflowService {
     }));
   }
 
-  /**
+ /**
    * Select/update hotel for a route
-   */
-  async selectHotel(data: { 
-    planId: number; 
-    routeId: number; 
-    hotelId: number; 
+ */
+  async selectHotel(data: {
+    planId: number;
+    routeId: number;
+    hotelId: number;
     roomTypeId: number;
-    groupType?: number;  // âœ… ADD groupType parameter
+ groupType?: number; // ADD groupType parameter
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean; };
     canonicalHotelId?: number;
     rateOptionId?: string;
@@ -102,7 +102,7 @@ export class ItinerarySelectionWorkflowService {
     const userId = 1;
     const liveRateMetadata = this.getLiveRateMetadata(data.provider);
 
-    // Get the quote ID and Day 1 early-check-in metadata.
+ // Get the quote ID and Day 1 early-check-in metadata.
     const [plan, route, previousDayMarker] = await Promise.all([
       this.prisma.dvi_itinerary_plan_details.findUnique({
         where: { itinerary_plan_ID: data.planId },
@@ -175,7 +175,7 @@ export class ItinerarySelectionWorkflowService {
           early_checkin_note: null,
         };
 
-    // Check if hotel assignment already exists in hotel_details
+ // Check if hotel assignment already exists in hotel_details
     const existingHotelDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findFirst({
       where: {
         itinerary_plan_id: data.planId,
@@ -194,15 +194,15 @@ export class ItinerarySelectionWorkflowService {
     let hotelDetailsId: number;
 
     if (existingHotelDetails) {
-      // Update existing hotel assignment
-      console.log(`ðŸ“ Updating existing hotel - Old ID: ${existingHotelDetails.hotel_id}, New ID: ${data.hotelId}, GroupType: ${data.groupType}`);
+ // Update existing hotel assignment
+ console.log(` Updating existing hotel - Old ID: ${existingHotelDetails.hotel_id}, New ID: ${data.hotelId}, GroupType: ${data.groupType}`);
       await (this.prisma as any).dvi_itinerary_plan_hotel_details.update({
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
         data: {
           hotel_id: data.hotelId,
           hotel_required: 1,
           ...earlyCheckInData,
-          group_type: data.groupType || 1,  // âœ… Save groupType
+ group_type: data.groupType || 1, // Save groupType
           updatedon: new Date(),
           ...liveRateMetadata,
         },
@@ -210,11 +210,11 @@ export class ItinerarySelectionWorkflowService {
       const updated = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findUnique({
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
       });
-      console.log(`âœ… Updated. New values - hotel_id: ${(updated as any).hotel_id}, group_type: ${(updated as any).group_type}`);
+ console.log(` Updated. New values - hotel_id: ${(updated as any).hotel_id}, group_type: ${(updated as any).group_type}`);
       hotelDetailsId = existingHotelDetails.itinerary_plan_hotel_details_ID;
     } else {
-      // Create new hotel assignment
-      console.log(`âœ¨ Creating new hotel - ID: ${data.hotelId}, GroupType: ${data.groupType}`);
+ // Create new hotel assignment
+ console.log(` Creating new hotel - ID: ${data.hotelId}, GroupType: ${data.groupType}`);
       const created = await (this.prisma as any).dvi_itinerary_plan_hotel_details.create({
         data: {
           itinerary_plan_id: data.planId,
@@ -225,18 +225,18 @@ export class ItinerarySelectionWorkflowService {
           hotel_id: data.hotelId,
           hotel_required: 1,
           ...earlyCheckInData,
-          group_type: data.groupType || 1,  // âœ… Save groupType
+ group_type: data.groupType || 1, // Save groupType
           createdby: userId,
           createdon: new Date(),
           status: 1,
           deleted: 0,
         },
       });
-      console.log(`âœ… Created. Values - hotel_id: ${(created as any).hotel_id}, group_type: ${(created as any).group_type}`);
+ console.log(` Created. Values - hotel_id: ${(created as any).hotel_id}, group_type: ${(created as any).group_type}`);
       hotelDetailsId = created.itinerary_plan_hotel_details_ID;
     }
 
-    // Check if room details already exist
+ // Check if room details already exist
     const existingRoomDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findFirst({
       where: {
         itinerary_plan_id: data.planId,
@@ -247,7 +247,7 @@ export class ItinerarySelectionWorkflowService {
     });
 
     if (existingRoomDetails) {
-      // Update existing room details
+ // Update existing room details
       await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.update({
         where: { itinerary_plan_hotel_room_details_ID: existingRoomDetails.itinerary_plan_hotel_room_details_ID },
         data: {
@@ -259,7 +259,7 @@ export class ItinerarySelectionWorkflowService {
         },
       });
     } else {
-      // Create new room details
+ // Create new room details
       await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.create({
         data: {
           itinerary_plan_hotel_details_id: hotelDetailsId,
@@ -278,7 +278,7 @@ export class ItinerarySelectionWorkflowService {
       });
     }
 
-    // âœ… Clear cache for this quote so next request gets fresh data
+ // Clear cache for this quote so next request gets fresh data
     if (quoteId) {
       this.hotelDetailsTboService.clearCacheForQuote(quoteId);
     }
@@ -470,19 +470,19 @@ export class ItinerarySelectionWorkflowService {
     };
   }
 
-  /**
+ /**
    * Bulk save hotel selections - used before confirming itinerary
-   */
+ */
   async bulkSaveHotels(planId: number, hotels: any[]) {
     const userId = 1;
 
-    // Get the quote ID to clear the cache
+ // Get the quote ID to clear the cache
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: planId },
     });
     const quoteId = (plan as any)?.itinerary_quote_ID || '';
 
-    console.log(`ðŸ“¦ Bulk saving ${hotels.length} hotel(s) for plan ${planId}`);
+ console.log(` Bulk saving ${hotels.length} hotel(s) for plan ${planId}`);
 
     for (const hotel of hotels) {
       await this.selectHotel({
@@ -495,7 +495,7 @@ export class ItinerarySelectionWorkflowService {
       });
     }
 
-    // Clear cache once at the end
+ // Clear cache once at the end
     if (quoteId) {
       this.hotelDetailsTboService.clearCacheForQuote(quoteId);
     }
@@ -561,7 +561,7 @@ export class ItinerarySelectionWorkflowService {
       );
     }
 
-    // First, reset all vendors for this vehicle type to unassigned (0)
+ // First, reset all vendors for this vehicle type to unassigned (0)
     await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.updateMany({
       where: {
         itinerary_plan_id: data.planId,
@@ -574,7 +574,7 @@ export class ItinerarySelectionWorkflowService {
       },
     });
 
-    // Then, set the selected vendor to assigned (1)
+ // Then, set the selected vendor to assigned (1)
     await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.update({
       where: {
         itinerary_plan_vendor_eligible_ID: data.vendorEligibleId,
@@ -636,7 +636,7 @@ export class ItinerarySelectionWorkflowService {
     }
   }
 
-  // Backward-compatible wrapper for legacy select-slab endpoint.
+ // Backward-compatible wrapper for legacy select-slab endpoint.
   async selectVehicleSlab(data: {
     planId: number;
     vehicleTypeId: number;
@@ -701,7 +701,7 @@ export class ItinerarySelectionWorkflowService {
     };
   }
 
-  // Backward-compatible wrapper for legacy auto-select endpoint.
+ // Backward-compatible wrapper for legacy auto-select endpoint.
   async autoSelectVehicleSlabs(data: {
     planId: number;
     vehicleTypeId?: number;
@@ -805,7 +805,7 @@ export class ItinerarySelectionWorkflowService {
     ));
 
     if (skippedInactiveAssignedBefore.length > 0) {
-      console.warn('[HOTSPOT_CHANGE_VEHICLE_REBUILD_SKIP_INACTIVE_ASSIGNED_VENDOR]', {
+ console.warn('[HOTSPOT_CHANGE_VEHICLE_REBUILD_SKIP_INACTIVE_ASSIGNED_VENDOR]', {
         planId: normalizedPlanId,
         routeId: routeId || null,
         skipped: skippedInactiveAssignedBefore.map((row: any) => ({
@@ -832,7 +832,7 @@ export class ItinerarySelectionWorkflowService {
     });
     const beforeKm = vehicleRowsBefore.reduce((sum: number, r: any) => sum + Number(r?.total_travelled_km || 0), 0);
     const beforeAmount = vehicleRowsBefore.reduce((sum: number, r: any) => sum + Number(r?.total_vehicle_amount || 0), 0);
-    console.log('[HOTSPOT_CHANGE_VEHICLE_REBUILD_BEFORE]', {
+ console.log('[HOTSPOT_CHANGE_VEHICLE_REBUILD_BEFORE]', {
       planId: normalizedPlanId,
       routeId: routeId || null,
       totalKms: Number(beforeKm.toFixed(2)),

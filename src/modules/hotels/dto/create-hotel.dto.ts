@@ -26,7 +26,7 @@ export class CreateHotelDto {
   @IsOptional() @IsString() hotel_latitude?: string;
   @IsOptional() @IsString() hotel_longitude?: string;
 
-  // >>> NEW: category (FK id). Use Type(() => Number) so "3" becomes 3.
+ // >>> NEW: category (FK id). Use Type(() => Number) so "3" becomes 3.
   @IsOptional() @Type(() => Number) @IsInt()
   hotel_category?: number;
 
@@ -58,5 +58,5 @@ export class CreateHotelDto {
   createdby?: number;
 
   @IsOptional() @Type(() => Number) @IsInt()
-  deleted?: number;  // TinyInt
+ deleted?: number; // TinyInt
 }

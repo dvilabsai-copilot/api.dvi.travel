@@ -894,7 +894,7 @@ export class SameCityCrossDayOptimizerService {
       return resultPayload;
     }, { timeout: 120000 });
 
-    this.logger.log(
+ this.logger.log(
       `[SameCityCrossDayOptimizer] planId=${analysis.planId} enabled=${analysis.enabled} dryRun=${options?.dryRun ?? this.isDryRunDefault()} proposedMoves=${analysis.proposedMoves.length} applied=${analysis.applied}`,
     );
 

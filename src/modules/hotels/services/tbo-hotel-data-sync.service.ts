@@ -19,8 +19,8 @@ export class TboHotelDataSyncService {
   private readonly logger = new Logger(TboHotelDataSyncService.name);
   private http: AxiosInstance = axios;
 
-  // From PHP config: dvi_project_api/config/config.php
-  private readonly TBO_MASTER_API = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
+ // From PHP config: dvi_project_api/config/config.php
+ private readonly TBO_MASTER_API = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
   private readonly TBO_API_AUTH_UN = process.env.TBO_STATIC_USERNAME || 'IXMD112';
   private readonly TBO_API_AUTH_PWD = process.env.TBO_STATIC_PASSWORD || 'api-11#M$new';
 
@@ -34,51 +34,51 @@ export class TboHotelDataSyncService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
+ /**
    * Main sync method - calls TBO API and populates hotel database
-   */
+ */
   async syncAllCities(): Promise<void> {
-    this.logger.log('🔄 Starting TBO Hotel Data Sync for all cities...\n');
+ this.logger.log(' Starting TBO Hotel Data Sync for all cities...\n');
 
     for (const city of this.CITIES_TO_SYNC) {
       try {
         await this.syncCityHotels(city.code, city.name);
       } catch (error) {
-        this.logger.error(`❌ Failed to sync ${city.name}: ${error.message}`);
+ this.logger.error(` Failed to sync ${city.name}: ${error.message}`);
       }
     }
 
-    this.logger.log('\n✅ Hotel sync complete!');
+ this.logger.log('\n Hotel sync complete!');
   }
 
-  /**
+ /**
    * Sync hotels for a specific city
-   */
+ */
   private async syncCityHotels(cityCode: string, cityName: string): Promise<void> {
-    this.logger.log(`\n📍 Syncing ${cityName} (TBO Code: ${cityCode})...`);
+ this.logger.log(`\n Syncing ${cityName} (TBO Code: ${cityCode})...`);
 
     try {
-      // Call TBO /TBOHotelCodeList endpoint
+ // Call TBO /TBOHotelCodeList endpoint
       const hotels = await this.fetchHotelsFromTBO(cityCode);
 
       if (!hotels || hotels.length === 0) {
-        this.logger.warn(`⚠️  No hotels returned for ${cityName}`);
+ this.logger.warn(` No hotels returned for ${cityName}`);
         return;
       }
 
-      this.logger.log(`📡 TBO returned ${hotels.length} hotels for ${cityName}`);
+ this.logger.log(` TBO returned ${hotels.length} hotels for ${cityName}`);
 
-      // Get city ID from database
+ // Get city ID from database
       const city = await this.prisma.dvi_cities.findFirst({
         where: { tbo_city_code: cityCode, deleted: 0 },
       });
 
       if (!city) {
-        this.logger.error(`❌ City ${cityName} (${cityCode}) not found in database`);
+ this.logger.error(` City ${cityName} (${cityCode}) not found in database`);
         return;
       }
 
-      // Insert/update hotels in database
+ // Insert/update hotels in database
       let inserted = 0;
       let merged = 0;
 
@@ -91,25 +91,25 @@ export class TboHotelDataSyncService {
             merged++;
           }
         } catch (error) {
-          this.logger.warn(
+ this.logger.warn(
             `⚠️  Failed to save hotel ${hotel.HotelCode}: ${error.message}`
           );
         }
       }
 
-      this.logger.log(
+ this.logger.log(
         `✅ ${cityName}: ${inserted} inserted, ${merged} merged, Total: ${inserted + merged}`
       );
     } catch (error) {
-      this.logger.error(`❌ Error syncing ${cityName}: ${error.message}`);
+ this.logger.error(` Error syncing ${cityName}: ${error.message}`);
       throw error;
     }
   }
 
-  /**
+ /**
    * Call TBO /TBOHotelCodeList endpoint to fetch hotel data
    * Same endpoint and credentials as PHP cron
-   */
+ */
   private async fetchHotelsFromTBO(cityCode: string): Promise<any[]> {
     try {
       const postData = {
@@ -117,7 +117,7 @@ export class TboHotelDataSyncService {
         IsDetailedResponse: 'true',
       };
 
-      this.logger.debug(`📤 Calling TBO /TBOHotelCodeList for city ${cityCode}`);
+ this.logger.debug(` Calling TBO /TBOHotelCodeList for city ${cityCode}`);
 
       const response = await this.http.post(
         `${this.TBO_MASTER_API}/TBOHotelCodeList`,
@@ -135,22 +135,22 @@ export class TboHotelDataSyncService {
       );
 
       const hotels = response.data?.Hotels || [];
-      this.logger.log(`✅ TBO /TBOHotelCodeList returned ${hotels.length} hotels`);
+ this.logger.log(` TBO /TBOHotelCodeList returned ${hotels.length} hotels`);
 
       if (hotels.length > 0) {
-        this.logger.debug(`📋 Sample hotel: ${JSON.stringify(hotels[0]).substring(0, 150)}...`);
+ this.logger.debug(` Sample hotel: ${JSON.stringify(hotels[0]).substring(0, 150)}...`);
       }
 
       return hotels;
     } catch (error) {
-      this.logger.error(`❌ TBO API call failed: ${error.message}`);
+ this.logger.error(` TBO API call failed: ${error.message}`);
       throw error;
     }
   }
 
-  /**
+ /**
    * Insert or merge hotel into database
-   */
+ */
   private async upsertHotel(
     hotelData: any,
     city: any
@@ -159,7 +159,7 @@ export class TboHotelDataSyncService {
     const hotelName = hotelData.HotelName || `Hotel ${hotelCode}`;
     const address = hotelData.Address || city.name;
 
-    // Parse star rating
+ // Parse star rating
     const ratingMap: Record<string, number> = {
       'OneStar': 1,
       'TwoStar': 2,
@@ -169,7 +169,7 @@ export class TboHotelDataSyncService {
     };
     const starRating = ratingMap[hotelData.HotelRating] || 0;
 
-    // Parse coordinates
+ // Parse coordinates
     let latitude = 0;
     let longitude = 0;
     if (hotelData.Map) {
@@ -178,7 +178,7 @@ export class TboHotelDataSyncService {
       longitude = parseFloat(parts[1]) || 0;
     }
 
-    // Check if hotel exists by code + city
+ // Check if hotel exists by code + city
     const existing = await this.prisma.tbo_hotel_master.findFirst({
       where: {
         tbo_hotel_code: hotelCode,
@@ -187,7 +187,7 @@ export class TboHotelDataSyncService {
     });
 
     if (existing) {
-      // Update existing record
+ // Update existing record
       await this.prisma.tbo_hotel_master.update({
         where: { id: existing.id },
         data: {
@@ -200,7 +200,7 @@ export class TboHotelDataSyncService {
       return 'skipped';
     }
 
-    // Insert new record
+ // Insert new record
     await this.prisma.tbo_hotel_master.create({
       data: {
         tbo_hotel_code: hotelCode,

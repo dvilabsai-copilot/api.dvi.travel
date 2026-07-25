@@ -22,7 +22,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 export class StaffController {
   constructor(private readonly staffService: StaffService) {}
 
-  // LIST (kept first)
+ // LIST (kept first)
   @UseGuards(JwtAuthGuard)
   @Get()
   async list(
@@ -37,18 +37,18 @@ export class StaffController {
     let finalAgentId = agentId ? Number(agentId) : undefined;
     let agentIds: number[] | undefined = undefined;
 
-    // Role 4 is Agent
+ // Role 4 is Agent
     if (user.role === 4) {
       finalAgentId = Number(user.agentId);
     } else if (user.role === 6) {
-      // Accounts role - see everything
+ // Accounts role - see everything
     } else if (user.role === 3 || user.role === 8 || (user.staffId && user.staffId > 0)) {
-      // Travel Expert logic: get agents managed by this staff
+ // Travel Expert logic: get agents managed by this staff
       const managedAgents = await this.staffService.getManagedAgentIds(Number(user.staffId));
       if (managedAgents.length > 0) {
         agentIds = managedAgents;
       } else {
-        agentIds = [-1]; 
+        agentIds = [-1];
       }
     }
 
@@ -62,32 +62,32 @@ export class StaffController {
     });
   }
 
-  // ✅ STATIC ROUTE MUST COME BEFORE :id
+ // STATIC ROUTE MUST COME BEFORE :id
   @Get('roles')
   async listRoleOptions() {
     return this.staffService.listRoleOptions();
   }
 
-  // GET ONE
+ // GET ONE
   @Get(':id')
   async getOne(@Param('id', new ParseIntPipe()) id: number) {
     return this.staffService.getOne(id);
   }
 
-  // PREVIEW (if you have it; still after :id static “roles”)
+ // PREVIEW (if you have it; still after :id static roles)
   @Get(':id/preview')
   async preview(@Param('id', new ParseIntPipe()) id: number) {
     return this.staffService.preview(id);
   }
 
-  // CREATE
+ // CREATE
   @UseGuards(JwtAuthGuard)
   @Post()
   async create(@Req() req: any, @Body() body: any) {
     const user = req.user;
     let finalAgentId = Number(body.agentId ?? 0);
 
-    // Role 4 is Agent
+ // Role 4 is Agent
     if (user.role === 4) {
       finalAgentId = Number(user.agentId);
     }
@@ -105,7 +105,7 @@ export class StaffController {
     });
   }
 
-  // UPDATE
+ // UPDATE
   @UseGuards(JwtAuthGuard)
   @Put(':id')
   async update(@Req() req: any, @Param('id', new ParseIntPipe()) id: number, @Body() body: any) {
@@ -129,7 +129,7 @@ export class StaffController {
     });
   }
 
-  // DELETE (soft)
+ // DELETE (soft)
   @Delete(':id')
   async softDelete(@Param('id', new ParseIntPipe()) id: number) {
     return this.staffService.softDelete(id);

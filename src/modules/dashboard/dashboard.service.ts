@@ -6,7 +6,7 @@ export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
   async getDashboardStats() {
-    // Get counts in parallel for better performance
+ // Get counts in parallel for better performance
     const [
       totalAgents,
       totalDrivers,
@@ -20,76 +20,76 @@ export class DashboardService {
       totalHotelRooms,
       totalAmenities,
     ] = await Promise.all([
-      // Total Agents
+ // Total Agents
       this.prisma.dvi_agent.count({
         where: { deleted: 0 },
       }),
 
-      // Total Drivers
+ // Total Drivers
       this.prisma.dvi_driver_details.count({
         where: { deleted: 0 },
       }),
 
-      // Total Guides
+ // Total Guides
       this.prisma.dvi_guide_details.count({
         where: { deleted: 0 },
       }),
 
-      // Total Itineraries
+ // Total Itineraries
       this.prisma.dvi_itinerary_plan_details.count({
         where: { deleted: 0 },
       }),
 
-      // Confirmed Bookings
+ // Confirmed Bookings
       this.prisma.dvi_itinerary_plan_details.count({
         where: { deleted: 0, quotation_status: 1 },
       }),
 
-      // Cancelled Bookings (assuming there's a cancelled status)
+ // Cancelled Bookings (assuming there's a cancelled status)
       this.prisma.dvi_itinerary_plan_details.count({
         where: { deleted: 1 },
       }),
 
-      // Total Vehicles
+ // Total Vehicles
       this.prisma.dvi_vehicle_type.count({
         where: { deleted: 0 },
       }),
 
-      // Total Vendors
+ // Total Vendors
       this.prisma.dvi_vendor_details.count({
         where: { deleted: 0 },
       }),
 
-      // Total Hotels
+ // Total Hotels
       this.prisma.dvi_hotel.count({
         where: { deleted: false },
       }),
 
-      // Total Hotel Rooms
+ // Total Hotel Rooms
       this.prisma.dvi_hotel_roomtype.count({
         where: { deleted: 0 },
       }),
 
-      // Total Amenities
+ // Total Amenities
       this.prisma.dvi_hotel_amenities.count({
         where: { deleted: 0 },
       }),
     ]);
 
-    // Get vendor branches count
+ // Get vendor branches count
     const vendorBranches: any = await this.prisma.$queryRaw`
-      SELECT COUNT(DISTINCT vendor_branch_id) as count 
-      FROM dvi_vendor_branches 
+      SELECT COUNT(DISTINCT vendor_branch_id) as count
+      FROM dvi_vendor_branches
       WHERE deleted = 0
     `;
     const totalVendorBranches = Number(vendorBranches[0]?.count || 0);
 
-    // Get inactive vendors
+ // Get inactive vendors
     const inactiveVendors = await this.prisma.dvi_vendor_details.count({
       where: { deleted: 0, status: 0 },
     });
 
-    // Get driver stats
+ // Get driver stats
     const activeDrivers = await this.prisma.dvi_driver_details.count({
       where: { deleted: 0, status: 1 },
     });
@@ -98,13 +98,13 @@ export class DashboardService {
       where: { deleted: 0, status: 0 },
     });
 
-    // Get revenue data (this is a placeholder - adjust based on your actual revenue tracking)
+ // Get revenue data (this is a placeholder - adjust based on your actual revenue tracking)
     const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
     const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
     const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
 
-    // Calculate total revenue from confirmed itineraries
+ // Calculate total revenue from confirmed itineraries
     const totalRevenueData: any = await this.prisma.$queryRaw`
       SELECT COALESCE(SUM(expecting_budget), 0) as total
       FROM dvi_itinerary_plan_details
@@ -112,21 +112,21 @@ export class DashboardService {
     `;
     const totalRevenue = Number(totalRevenueData[0]?.total || 0);
 
-    // Get current month profit
+ // Get current month profit
     const currentMonthProfit: any = await this.prisma.$queryRaw`
       SELECT COALESCE(SUM(expecting_budget), 0) as total
       FROM dvi_itinerary_plan_details
-      WHERE deleted = 0 
+      WHERE deleted = 0
         AND quotation_status = 1
         AND MONTH(trip_start_date_and_time) = ${currentMonth}
         AND YEAR(trip_start_date_and_time) = ${currentYear}
     `;
 
-    // Get last month profit
+ // Get last month profit
     const lastMonthProfit: any = await this.prisma.$queryRaw`
       SELECT COALESCE(SUM(expecting_budget), 0) as total
       FROM dvi_itinerary_plan_details
-      WHERE deleted = 0 
+      WHERE deleted = 0
         AND quotation_status = 1
         AND MONTH(trip_start_date_and_time) = ${lastMonth}
         AND YEAR(trip_start_date_and_time) = ${lastMonthYear}
@@ -135,13 +135,13 @@ export class DashboardService {
     const currentProfit = Number(currentMonthProfit[0]?.total || 0);
     const lastProfit = Number(lastMonthProfit[0]?.total || 0);
 
-    // Calculate percentage change
+ // Calculate percentage change
     let profitChange = 0;
     if (lastProfit > 0) {
       profitChange = ((currentProfit - lastProfit) / lastProfit) * 100;
     }
 
-    // Get daily moment data (today's itineraries)
+ // Get daily moment data (today's itineraries)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -162,7 +162,7 @@ export class DashboardService {
       take: 5,
     });
 
-    // Get top agent (placeholder - adjust based on your rating/performance logic)
+ // Get top agent (placeholder - adjust based on your rating/performance logic)
     const topAgent = await this.prisma.dvi_agent.findFirst({
       where: { deleted: 0 },
       select: {
@@ -189,7 +189,7 @@ export class DashboardService {
       },
       vehicles: {
         total: totalVehicles,
-        onRoute: 0, // Placeholder - implement based on your vehicle tracking
+ onRoute: 0, // Placeholder - implement based on your vehicle tracking
         available: totalVehicles,
         upcoming: 0,
       },
@@ -202,7 +202,7 @@ export class DashboardService {
         total: totalDrivers,
         active: activeDrivers,
         inactive: inactiveDrivers,
-        onRoute: 0, // Placeholder
+ onRoute: 0, // Placeholder
         available: activeDrivers,
       },
       hotels: {
@@ -219,7 +219,7 @@ export class DashboardService {
         ? {
             name: topAgent.agent_name,
             phone: topAgent.agent_primary_mobile_number,
-            performance: 60, // Placeholder
+ performance: 60, // Placeholder
           }
         : null,
     };
@@ -237,23 +237,23 @@ export class DashboardService {
       lastMonthProfit,
       agentDetails,
     ] = await Promise.all([
-      // Total Customers
+ // Total Customers
       this.prisma.dvi_itinerary_plan_details.count({
         where: { agent_id: agentId, deleted: 0 },
       }),
 
-      // Paid Invoices
+ // Paid Invoices
       this.prisma.dvi_itinerary_plan_details.count({
         where: { agent_id: agentId, quotation_status: 1, deleted: 0 },
       }),
 
-      // Validity Ends
+ // Validity Ends
       this.prisma.dvi_agent_subscribed_plans.findFirst({
         where: { agent_ID: agentId, status: 1, deleted: 0 },
         orderBy: { validity_end: 'desc' },
       }),
 
-      // Last Month Profit
+ // Last Month Profit
       this.prisma.dvi_itinerary_plan_details.aggregate({
         _sum: { agent_margin: true },
         where: {
@@ -266,7 +266,7 @@ export class DashboardService {
         },
       }),
 
-      // Agent Details for Wallet
+ // Agent Details for Wallet
       this.prisma.dvi_agent.findUnique({
         where: { agent_ID: agentId },
         select: { total_cash_wallet: true },
@@ -285,7 +285,7 @@ export class DashboardService {
   }
 
   async getTravelExpertDashboardStats(staffId: number) {
-    // Travel Expert manages a set of agents
+ // Travel Expert manages a set of agents
     const agents = await this.prisma.dvi_agent.findMany({
       where: { travel_expert_id: staffId, deleted: 0 },
       select: { agent_ID: true },
@@ -360,7 +360,7 @@ export class DashboardService {
         },
         where: { deleted: 0 },
       }),
-      // Count pending payouts across components (simplified for dashboard)
+ // Count pending payouts across components (simplified for dashboard)
       this.prisma.dvi_accounts_itinerary_details.count({
         where: {
           total_receivable_amount: { gt: 0 },

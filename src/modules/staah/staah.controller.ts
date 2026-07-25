@@ -117,10 +117,10 @@ export class StaahController {
     return this.staahService.receiveReservation(dto);
   }
 
-  /**
+ /**
    * CUSTOM ADAPTER ENDPOINT (canonical)
    * NOT a confirmed official STAAH v2 public contract operation.
-   */
+ */
   @Post('custom/modifyReservation')
   @HttpCode(HttpStatus.OK)
   async modifyReservationCustom(
@@ -129,10 +129,10 @@ export class StaahController {
     return this.staahService.modifyReservation(dto);
   }
 
-  /**
+ /**
    * CUSTOM ADAPTER ENDPOINT (canonical)
    * NOT a confirmed official STAAH v2 public contract operation.
-   */
+ */
   @Post('custom/cancelReservation')
   @HttpCode(HttpStatus.OK)
   async cancelReservationCustom(
@@ -141,10 +141,10 @@ export class StaahController {
     return this.staahService.cancelReservation(dto);
   }
 
-  /**
+ /**
    * BACKWARD-COMPATIBILITY ALIAS (deprecated)
    * Retained to avoid breaking existing consumers still calling /staah/modifyReservation.
-   */
+ */
   @Post('modifyReservation')
   @HttpCode(HttpStatus.OK)
   async modifyReservation(
@@ -153,10 +153,10 @@ export class StaahController {
     return this.modifyReservationCustom(dto);
   }
 
-  /**
+ /**
    * BACKWARD-COMPATIBILITY ALIAS (deprecated)
    * Retained to avoid breaking existing consumers still calling /staah/cancelReservation.
-   */
+ */
   @Post('cancelReservation')
   @HttpCode(HttpStatus.OK)
   async cancelReservation(
@@ -165,11 +165,11 @@ export class StaahController {
     return this.cancelReservationCustom(dto);
   }
 
-    /**
+ /**
      * ADAPTER ENDPOINT — exposes STAAH v2 doc-native ARR_info pull contract.
      * Route path is our internal adapter name; request body matches STAAH v2 doc exactly.
      * Response format is adapter-defined (from our stored DB records).
-     */
+ */
     @Post('arrInfo')
     @HttpCode(HttpStatus.OK)
     async arrInfo(
@@ -178,11 +178,11 @@ export class StaahController {
       return this.staahService.getArrInfo(dto);
     }
 
-    /**
+ /**
      * ADAPTER ENDPOINT — exposes STAAH v2 doc-native year_info_ARR full-year pull contract.
      * Route path is our internal adapter name; request body matches STAAH v2 doc exactly.
      * Response format is adapter-defined (from our stored DB records).
-     */
+ */
     @Post('yearInfoArr')
     @HttpCode(HttpStatus.OK)
     async yearInfoArr(

@@ -41,21 +41,21 @@ export class CreatePriceBookDto {
   @IsInt()
   room_type_id?: number;
 
-  /** Optional label like "Peak", "Off", etc. */
+ /** Optional label like "Peak", "Off", etc. */
   @IsOptional()
   @IsString()
   season?: string;
 
-  /** If your schema is month-granular, include these (strings to match DB). */
+ /** If your schema is month-granular, include these (strings to match DB). */
   @IsOptional()
   @IsString()
-  year?: string; // e.g. "2025"
+ year?: string; // e.g. "2025"
 
   @IsOptional()
   @IsString()
-  month?: string; // e.g. "11" or "NOV" depending on your table
+ month?: string; // e.g. "11" or "NOV" depending on your table
 
-  /** Simple one-shot price (if you don’t want to send per-day fields). */
+ /** Simple one-shot price (if you dont want to send per-day fields). */
   @ValidateIf((o) =>
     [o.day_1, o.day_2, o.day_3, o.day_4, o.day_5, o.day_6, o.day_7, o.day_8, o.day_9, o.day_10,
      o.day_11, o.day_12, o.day_13, o.day_14, o.day_15, o.day_16, o.day_17, o.day_18, o.day_19, o.day_20,
@@ -67,7 +67,7 @@ export class CreatePriceBookDto {
   @IsNumber()
   price?: number;
 
-  /** Optional granular fields often used by your UI for room pricebook */
+ /** Optional granular fields often used by your UI for room pricebook */
   @IsOptional()
   @Transform(({ value }) => toFloat(value))
   @IsNumber()
@@ -88,7 +88,7 @@ export class CreatePriceBookDto {
   @IsNumber()
   childWithoutBed?: number;
 
-  /** Per-day prices (month view). Send any subset you need. */
+ /** Per-day prices (month view). Send any subset you need. */
   @IsOptional() @Transform(({ value }) => toFloat(value)) @IsNumber() day_1?: number;
   @IsOptional() @Transform(({ value }) => toFloat(value)) @IsNumber() day_2?: number;
   @IsOptional() @Transform(({ value }) => toFloat(value)) @IsNumber() day_3?: number;
@@ -121,11 +121,11 @@ export class CreatePriceBookDto {
   @IsOptional() @Transform(({ value }) => toFloat(value)) @IsNumber() day_30?: number;
   @IsOptional() @Transform(({ value }) => toFloat(value)) @IsNumber() day_31?: number;
 
-  /** Auditing / flags */
+ /** Auditing / flags */
   @IsOptional()
   @Transform(({ value }) => toInt(value))
   @IsInt()
-  createdby: number = 1; // default to 1 as requested
+ createdby: number = 1; // default to 1 as requested
 
   @IsOptional()
   @Transform(({ value }) => toInt(value))

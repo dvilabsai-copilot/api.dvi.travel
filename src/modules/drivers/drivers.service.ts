@@ -56,7 +56,7 @@ export class DriversService {
       process.env.BASE_URL ||
       process.env.BACKEND_URL ||
       process.env.API_BASE_URL ||
-      `http://localhost:${process.env.PORT || 4006}`;
+ `http://localhost:${process.env.PORT || 4006}`;
     return String(raw).replace(/\/+$/, '');
   }
 
@@ -444,7 +444,7 @@ async deleteReview(reviewId: number) {
   return { success: true };
 }
 
-async update(id: number, dto: UpdateDriverDto) { 
+async update(id: number, dto: UpdateDriverDto) {
     const existing = await this.findOne(id);
     const b = dto.basic;
     return this.prisma.dvi_driver_details.update({
@@ -471,10 +471,10 @@ async update(id: number, dto: UpdateDriverDto) {
     });
   }
 
-  /**
+ /**
    * List drivers (equivalent of __JSONdriver.php)
    * - Optional vendor filter (like $logged_vendor_id)
-   */
+ */
   async findAll(vendorId?: number): Promise<DriverListItemDto[]> {
     const drivers = await this.prisma.dvi_driver_details.findMany({
       where: vendorId ? { vendor_id: vendorId, deleted: 0 } : { deleted: 0 },

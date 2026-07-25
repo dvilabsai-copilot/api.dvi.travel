@@ -59,7 +59,7 @@ export class GuidesController {
     return null;
   }
 
-  // ───────────────────────── PHP AJAX compatibility routes ─────────────────────────
+ // PHP AJAX compatibility routes
   @Get('ajax/list')
   async listAjaxCompat(@Query('page') page?: string, @Query('size') size?: string) {
     const dto: GuideListQueryDto = {
@@ -249,7 +249,7 @@ export class GuidesController {
     }
   }
 
-  // ───────────────────────────── List (DataTable) ─────────────────────────────
+ // List (DataTable)
   @Get()
   async list(
     @Query('page') page?: string,
@@ -269,32 +269,32 @@ export class GuidesController {
     return this.guides.list(dto);
   }
 
-  // ───────────────────── Dynamic dropdowns / form options ────────────────────
+ // Dynamic dropdowns / form options
   @Get('options')
   async formOptions() {
     return this.guides.formOptions();
   }
 
-  // Alias used by current React service
+ // Alias used by current React service
   @Get(':id')
   async getOne(@Param('id', ParseIntPipe) id: number) {
     return this.guides.getById(id);
   }
 
-  // ───────────────────────────── Get form (edit) ─────────────────────────────
+ // Get form (edit)
   @Get(':id/form')
   async getForm(@Param('id', ParseIntPipe) id: number) {
     return this.guides.getForm(id);
   }
 
-  // ───────────────────────────── Save Step 1 (basic) ─────────────────────────
-  // Create (no id in payload) or Update (with id) — mirrors PHP behavior
+ // Save Step 1 (basic)
+ // Create (no id in payload) or Update (with id) mirrors PHP behavior
   @Post()
   async saveFormStep1(@Body() body: GuideBasicDto) {
     return this.guides.saveFormStep1(body);
   }
 
-  // Optional convenience route for explicit update by :id; merges :id into body
+ // Optional convenience route for explicit update by :id; merges :id into body
   @Put(':id')
   async updateBasic(
     @Param('id', ParseIntPipe) id: number,
@@ -303,7 +303,7 @@ export class GuidesController {
     return this.guides.saveFormStep1({ ...body, id });
   }
 
-  // ───────────────────────────── Save Step 2 (pricebook) ─────────────────────
+ // Save Step 2 (pricebook)
   @Get(':id/pricebook')
   async getPricebook(
     @Param('id', ParseIntPipe) id: number,
@@ -328,7 +328,7 @@ export class GuidesController {
     return this.guides.savePricebook(payload);
   }
 
-  // Alias for clients using PATCH
+ // Alias for clients using PATCH
   @Patch(':id/pricebook')
   async patchPricebook(
     @Param('id', ParseIntPipe) id: number,
@@ -343,7 +343,7 @@ export class GuidesController {
     return this.guides.savePricebook(payload);
   }
 
-  // Composite helper to save pricebook then return preview (to enable Next)
+ // Composite helper to save pricebook then return preview (to enable Next)
   @Put(':id/pricebook-and-preview')
   async savePricebookAndPreview(
     @Param('id', ParseIntPipe) id: number,
@@ -358,7 +358,7 @@ export class GuidesController {
     return this.guides.saveFormStep2AndPreview(payload);
   }
 
-  // ───────────────────────────── Step 3 (reviews) ────────────────────────────
+ // Step 3 (reviews)
   @Post(':id/reviews')
   async addReview(
     @Param('id', ParseIntPipe) id: number,
@@ -396,7 +396,7 @@ export class GuidesController {
     return this.guides.deleteReview(reviewId);
   }
 
-  // Alias for clients using nested resource path
+ // Alias for clients using nested resource path
   @Delete(':id/reviews/:reviewId')
   async deleteReviewByGuide(
     @Param('reviewId', ParseIntPipe) reviewId: number,
@@ -404,20 +404,20 @@ export class GuidesController {
     return this.guides.deleteReview(reviewId);
   }
 
-  // ───────────────────────────── Step 4 (preview) ────────────────────────────
+ // Step 4 (preview)
   @Get(':id/preview')
   async getPreview(@Param('id', ParseIntPipe) id: number) {
     return this.guides.getPreview(id);
   }
 
-  /**
+ /**
    * NEW: One-shot payload for the React Preview page (mirrors PHP overall preview flow).
    * Returns:
    * {
    *   preview: { basic, reviews, slots[], preferredFor[] },
    *   options: { states[], genders[], bloodGroups[], guideSlots[], languages[], gst[] }
    * }
-   */
+ */
   @Get(':id/preview-page')
   async getPreviewPage(@Param('id', ParseIntPipe) id: number) {
     const [preview, options] = await Promise.all([
@@ -427,10 +427,10 @@ export class GuidesController {
     return { preview, options };
   }
 
-  /**
+ /**
    * NEW alias using PHP-ish naming so you can hit /guides/:id/overallpreview
    * if your old client code expects that route. Same response as /preview-page.
-   */
+ */
   @Get(':id/overallpreview')
   async getOverallPreview(@Param('id', ParseIntPipe) id: number) {
     const [preview, options] = await Promise.all([
@@ -440,7 +440,7 @@ export class GuidesController {
     return { preview, options };
   }
 
-  // ───────────────────────────── status / delete ─────────────────────────────
+ // status / delete
   @Patch(':id/status')
   async toggleStatus(
     @Param('id', ParseIntPipe) id: number,
@@ -454,7 +454,7 @@ export class GuidesController {
     return this.guides.softDelete(id);
   }
 
-  // ───────────────────────────── Dropdown Data (Controller) ─────────────────────────────
+ // Dropdown Data (Controller)
 
 @Get('dropdowns/roles')
 async getRolesDropdown() {

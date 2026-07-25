@@ -30,20 +30,20 @@ export class ResAvenueHotelBookingService {
     private readonly resavenueProvider: ResAvenueHotelProvider,
   ) {}
 
-  /**
+ /**
    * Confirm ResAvenue hotel booking
-   */
+ */
   async confirmBooking(
     selection: ResAvenueHotelSelection,
     invCode: number,
     rateCode: number,
   ): Promise<any> {
     try {
-      this.logger.log(
+ this.logger.log(
         `🏨 Booking ResAvenue Hotel ${selection.hotelCode}`,
       );
 
-      // Call ResAvenue provider to book
+ // Call ResAvenue provider to book
       const bookingResult = await this.resavenueProvider.confirmBooking({
         hotelCode: selection.hotelCode,
         checkInDate: selection.checkInDate,
@@ -56,7 +56,7 @@ export class ResAvenueHotelBookingService {
           email: g.email || '',
           phone: g.phone || '',
         })),
-        // Build rooms array required by provider
+ // Build rooms array required by provider
         rooms: [
           {
             roomCode: `${invCode}-${rateCode}`,
@@ -64,27 +64,27 @@ export class ResAvenueHotelBookingService {
             guestCount: selection.guests.length,
           },
         ],
-        // Required fields for DTO
-        itineraryPlanId: 0, // Will be set by service
+ // Required fields for DTO
+ itineraryPlanId: 0, // Will be set by service
         searchReference: selection.bookingCode || '',
         contactName: selection.guests[0]?.firstName + ' ' + selection.guests[0]?.lastName || '',
         contactEmail: selection.guests[0]?.email || '',
         contactPhone: selection.guests[0]?.phone || '',
       });
 
-      this.logger.log(`✅ ResAvenue booking confirmed: ${bookingResult.confirmationReference}`);
+ this.logger.log(` ResAvenue booking confirmed: ${bookingResult.confirmationReference}`);
       return bookingResult;
     } catch (error) {
-      this.logger.error(`❌ ResAvenue booking error: ${error.message}`);
+ this.logger.error(` ResAvenue booking error: ${error.message}`);
       throw new BadRequestException(
         `ResAvenue booking failed for hotel ${selection.hotelCode}: ${error.message}`,
       );
     }
   }
 
-  /**
+ /**
    * Save ResAvenue booking confirmation to database
-   */
+ */
   async saveResAvenueBookingConfirmation(
     confirmedPlanId: number,
     itineraryPlanId: number,
@@ -117,21 +117,21 @@ export class ResAvenueHotelBookingService {
         },
       });
 
-      this.logger.log(
+ this.logger.log(
         `💾 Saved ResAvenue booking confirmation: ID ${saved.resavenue_hotel_booking_confirmation_ID}`,
       );
       return saved;
     } catch (error) {
-      this.logger.error(`❌ Error saving ResAvenue booking confirmation: ${error.message}`);
+ this.logger.error(` Error saving ResAvenue booking confirmation: ${error.message}`);
       throw new BadRequestException(
         `Failed to save ResAvenue booking confirmation: ${error.message}`,
       );
     }
   }
 
-  /**
+ /**
    * Confirm multiple ResAvenue hotel bookings for an itinerary
-   */
+ */
   async confirmItineraryHotels(
     confirmedPlanId: number,
     itineraryPlanId: number,
@@ -147,14 +147,14 @@ export class ResAvenueHotelBookingService {
 
     for (const { routeId, selection, invCode, rateCode } of selections) {
       try {
-        // Book the hotel
+ // Book the hotel
         const bookResponse = await this.confirmBooking(
           selection,
           invCode,
           rateCode,
         );
 
-        // Save confirmation to database
+ // Save confirmation to database
         const savedConfirmation = await this.saveResAvenueBookingConfirmation(
           confirmedPlanId,
           itineraryPlanId,
@@ -173,11 +173,11 @@ export class ResAvenueHotelBookingService {
           confirmation: savedConfirmation,
         });
 
-        this.logger.log(
+ this.logger.log(
           `✅ ResAvenue hotel booking completed for route ${routeId}: ${bookResponse.confirmationReference}`,
         );
       } catch (error) {
-        this.logger.error(
+ this.logger.error(
           `❌ Failed to book ResAvenue hotel for route ${routeId}: ${error.message}`,
         );
         results.push({
@@ -192,16 +192,16 @@ export class ResAvenueHotelBookingService {
     return results;
   }
 
-  /**
+ /**
    * Cancel ResAvenue hotel bookings for an itinerary
    * Calls ResAvenue API to cancel and updates database status
-   */
+ */
   async cancelItineraryHotels(
     itineraryPlanId: number,
     reason: string = 'Itinerary cancelled by user',
   ) {
     try {
-      // Find all active ResAvenue bookings for this itinerary
+ // Find all active ResAvenue bookings for this itinerary
       const bookings = await this.prisma.resavenue_hotel_booking_confirmation.findMany({
         where: {
           itinerary_plan_ID: itineraryPlanId,
@@ -211,29 +211,29 @@ export class ResAvenueHotelBookingService {
       });
 
       if (bookings.length === 0) {
-        this.logger.log(`No active ResAvenue bookings found for itinerary ${itineraryPlanId}`);
+ this.logger.log(`No active ResAvenue bookings found for itinerary ${itineraryPlanId}`);
         return [];
       }
 
-      this.logger.log(`Found ${bookings.length} ResAvenue booking(s) to cancel`);
+ this.logger.log(`Found ${bookings.length} ResAvenue booking(s) to cancel`);
 
       const results = [];
 
       for (const booking of bookings) {
         try {
-          // Call ResAvenue provider to cancel the booking
+ // Call ResAvenue provider to cancel the booking
           const cancellationResult = await this.resavenueProvider.cancelBooking(
             booking.resavenue_booking_reference,
             reason,
           );
 
-          // Update booking status in database
+ // Update booking status in database
           await this.prisma.resavenue_hotel_booking_confirmation.update({
             where: {
               resavenue_hotel_booking_confirmation_ID: booking.resavenue_hotel_booking_confirmation_ID,
             },
             data: {
-              status: 0, // Mark as cancelled
+ status: 0, // Mark as cancelled
               updatedon: new Date(),
               api_response: {
                 ...(booking.api_response as Record<string, any>),
@@ -253,12 +253,12 @@ export class ResAvenueHotelBookingService {
             charges: cancellationResult.charges,
           });
 
-          this.logger.log(
+ this.logger.log(
             `✅ Cancelled ResAvenue booking ${booking.resavenue_booking_reference}: ` +
             `Refund: ${cancellationResult.refundAmount}, Charges: ${cancellationResult.charges}`,
           );
         } catch (error) {
-          this.logger.error(
+ this.logger.error(
             `❌ Failed to cancel ResAvenue booking ${booking.resavenue_booking_reference}: ${error.message}`,
           );
 
@@ -273,16 +273,16 @@ export class ResAvenueHotelBookingService {
 
       return results;
     } catch (error) {
-      this.logger.error(`❌ Error cancelling ResAvenue itinerary hotels: ${error.message}`);
+ this.logger.error(` Error cancelling ResAvenue itinerary hotels: ${error.message}`);
       throw new BadRequestException(
         `Failed to cancel ResAvenue hotels: ${error.message}`,
       );
     }
   }
 
-  /**
+ /**
    * Cancel ResAvenue hotel bookings for specific routes only
-   */
+ */
   async cancelItineraryHotelsByRoutes(
     itineraryPlanId: number,
     routeIds: number[],
@@ -290,11 +290,11 @@ export class ResAvenueHotelBookingService {
   ) {
     try {
       if (!routeIds || routeIds.length === 0) {
-        this.logger.log(`No route IDs provided for cancellation`);
+ this.logger.log(`No route IDs provided for cancellation`);
         return [];
       }
 
-      // Find ResAvenue bookings for specified routes
+ // Find ResAvenue bookings for specified routes
       const bookings = await this.prisma.resavenue_hotel_booking_confirmation.findMany({
         where: {
           itinerary_plan_ID: itineraryPlanId,
@@ -305,13 +305,13 @@ export class ResAvenueHotelBookingService {
       });
 
       if (bookings.length === 0) {
-        this.logger.log(
+ this.logger.log(
           `No active ResAvenue bookings found for itinerary ${itineraryPlanId} and routes [${routeIds.join(',')}]`,
         );
         return [];
       }
 
-      this.logger.log(
+ this.logger.log(
         `Found ${bookings.length} ResAvenue booking(s) to cancel for routes [${routeIds.join(',')}]`,
       );
 
@@ -319,19 +319,19 @@ export class ResAvenueHotelBookingService {
 
       for (const booking of bookings) {
         try {
-          // Call ResAvenue provider to cancel the booking
+ // Call ResAvenue provider to cancel the booking
           const cancellationResult = await this.resavenueProvider.cancelBooking(
             booking.resavenue_booking_reference,
             reason,
           );
 
-          // Update booking status in database
+ // Update booking status in database
           await this.prisma.resavenue_hotel_booking_confirmation.update({
             where: {
               resavenue_hotel_booking_confirmation_ID: booking.resavenue_hotel_booking_confirmation_ID,
             },
             data: {
-              status: 0, // Mark as cancelled
+ status: 0, // Mark as cancelled
               updatedon: new Date(),
               api_response: {
                 ...(booking.api_response as Record<string, any>),
@@ -352,12 +352,12 @@ export class ResAvenueHotelBookingService {
             charges: cancellationResult.charges,
           });
 
-          this.logger.log(
+ this.logger.log(
             `✅ Cancelled ResAvenue booking ${booking.resavenue_booking_reference} (Route ${booking.itinerary_route_ID}): ` +
             `Refund: ${cancellationResult.refundAmount}, Charges: ${cancellationResult.charges}`,
           );
         } catch (error) {
-          this.logger.error(
+ this.logger.error(
             `❌ Failed to cancel ResAvenue booking ${booking.resavenue_booking_reference} (Route ${booking.itinerary_route_ID}): ${error.message}`,
           );
 
@@ -373,7 +373,7 @@ export class ResAvenueHotelBookingService {
 
       return results;
     } catch (error) {
-      this.logger.error(`❌ Error cancelling ResAvenue hotel routes: ${error.message}`);
+ this.logger.error(` Error cancelling ResAvenue hotel routes: ${error.message}`);
       throw new BadRequestException(
         `Failed to cancel ResAvenue hotel routes: ${error.message}`,
       );

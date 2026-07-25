@@ -20,7 +20,7 @@ export class HobseHotelMasterSyncService {
   private http: AxiosInstance;
 
   private readonly HOBSE_BASE_URL =
-    (process.env.HOBSE_BASE_URL || 'https://api.hobse.com/v1')
+ (process.env.HOBSE_BASE_URL || 'https://api.hobse.com/v1')
       .replace(/\/htl\/?$/, '')
       .replace(/\/+$/, '');
 
@@ -36,7 +36,7 @@ export class HobseHotelMasterSyncService {
   }
 
   private buildParams(method: string, data: Record<string, any>) {
-    // Matches Postman wrapper pattern: form-data key "params" with JSON string
+ // Matches Postman wrapper pattern: form-data key "params" with JSON string
     return {
       hobse: {
         version: '1.0',
@@ -84,7 +84,7 @@ export class HobseHotelMasterSyncService {
     const form = new FormData();
     form.append('params', JSON.stringify(payload));
 
-    this.logger.log(`📡 HOBSE: POST ${this.HOBSE_BASE_URL}/htl/GetHotelList`);
+ this.logger.log(` HOBSE: POST ${this.HOBSE_BASE_URL}/htl/GetHotelList`);
 
     const res = await this.http.post('/htl/GetHotelList', form, {
       headers: {
@@ -100,17 +100,17 @@ export class HobseHotelMasterSyncService {
     }
 
     const data = (res?.data?.hobse?.response?.data ?? []) as HobseHotelRow[];
-    this.logger.log(`✅ HOBSE: received ${data.length} hotels`);
+ this.logger.log(` HOBSE: received ${data.length} hotels`);
     return data;
   }
 
-  /**
+ /**
    * Sync Hobse hotel master list into dvi_hotel
    * Rule:
    * - Find existing by hotel_name + hotel_city AND (deleted=false OR deleted is null)
    * - Update: hotel_code = hobse.hotelId (also update address/state/country/category if present)
    * - Insert if not found
-   */
+ */
   async syncAllHotelsToDviHotel(): Promise<{
     totalFromHobse: number;
     inserted: number;
@@ -155,7 +155,7 @@ export class HobseHotelMasterSyncService {
         await this.prisma.dvi_hotel.update({
           where: { hotel_id: existing.hotel_id },
           data: {
-            hotel_code: hotelId, // ✅ store Hobse code here
+ hotel_code: hotelId, // store Hobse code here
             hotel_address: h.address?.trim() || null,
             hotel_state: h.stateName?.trim() || null,
             hotel_country: h.countryName?.trim() || null,
@@ -175,7 +175,7 @@ export class HobseHotelMasterSyncService {
             hotel_address: h.address?.trim() || null,
             hotel_category: category,
 
-            // ✅ Hobse code stored here
+ // Hobse code stored here
             hotel_code: hotelId,
 
             status: 1,
@@ -188,7 +188,7 @@ export class HobseHotelMasterSyncService {
       }
     }
 
-    this.logger.log(
+ this.logger.log(
       `✅ HOBSE Sync done. total=${hotels.length}, inserted=${inserted}, updated=${updated}, skipped=${skipped}`,
     );
 

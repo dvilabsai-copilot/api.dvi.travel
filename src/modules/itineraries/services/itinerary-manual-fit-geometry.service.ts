@@ -116,7 +116,7 @@ export class ItineraryManualFitGeometryService {
       return null;
     }
 
-    const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'http://localhost:5000/route/v1/driving').trim();
+ const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'http://localhost:5000/route/v1/driving').trim();
     const url = `${osrmBaseUrl}/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
     try {
       const response = await fetch(url);
@@ -183,7 +183,7 @@ export class ItineraryManualFitGeometryService {
     const directPick = pickWithValidCoords(rows);
     if (directPick) return directPick;
 
-    // Fallback 1: same mapping table with relaxed status, because some routes hold valid hotel_id with non-1 status flags.
+ // Fallback 1: same mapping table with relaxed status, because some routes hold valid hotel_id with non-1 status flags.
     const relaxedRows: any[] = await (tx as any).$queryRawUnsafe(
       `
       SELECT
@@ -209,7 +209,7 @@ export class ItineraryManualFitGeometryService {
     const relaxedPick = pickWithValidCoords(relaxedRows);
     if (relaxedPick) return relaxedPick;
 
-    // Fallback 2: pick any active mapped hotel for the plan when route-specific mapping is missing.
+ // Fallback 2: pick any active mapped hotel for the plan when route-specific mapping is missing.
     const planWideRows: any[] = await (tx as any).$queryRawUnsafe(
       `
       SELECT
@@ -235,11 +235,11 @@ export class ItineraryManualFitGeometryService {
     const planWidePick = pickWithValidCoords(planWideRows);
     if (planWidePick) return planWidePick;
 
-    // Fallback 3 intentionally does not call quote-level hotel details/TBO.
-    // Manual Fit Here only needs an endpoint for timing/distance preview, so avoid
-    // expensive live hotel package rebuilds from the hotspot insertion path.
+ // Fallback 3 intentionally does not call quote-level hotel details/TBO.
+ // Manual Fit Here only needs an endpoint for timing/distance preview, so avoid
+ // expensive live hotel package rebuilds from the hotspot insertion path.
 
-    // Fallback 4: derive hotel name from item_type=6 route segment hotspot master row and map to dvi_hotel.
+ // Fallback 4: derive hotel name from item_type=6 route segment hotspot master row and map to dvi_hotel.
     const routeHotelNameRows: any[] = await (tx as any).$queryRawUnsafe(
       `
       SELECT hp.hotspot_name

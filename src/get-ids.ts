@@ -10,7 +10,7 @@ async function main() {
   const city = await prisma.dvi_cities.findFirst({ where: { deleted: 0 } });
   const vehicleType = await prisma.dvi_vehicle_type.findFirst({ where: { deleted: 0 } });
 
-  console.log('IDs:', {
+ console.log('IDs:', {
     agent_id: agent?.agent_ID,
     hotel_category_id: hotelCat?.hotel_category_id,
     state_id: state?.id,
@@ -20,5 +20,5 @@ async function main() {
 }
 
 main()
-  .catch(e => console.error(e))
+ .catch(e => console.error(e))
   .finally(async () => await prisma.$disconnect());

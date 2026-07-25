@@ -31,7 +31,7 @@ type DropdownItem = {
 export class VendorsController {
   constructor(private readonly vendorsService: VendorsService) {}
 
-  /**
+ /**
    * List vendors for the main Vendors grid.
    *
    * This is equivalent to the old engine/json/__JSONvendor.php,
@@ -39,7 +39,7 @@ export class VendorsController {
    *
    * NOTE: Marked as @Public() so it can be used before auth is fully wired.
    * You can remove @Public() later if needed.
-   */
+ */
   @Public()
   @Get()
   @ApiOperation({
@@ -52,10 +52,10 @@ export class VendorsController {
     return this.vendorsService.listVendors();
   }
 
-  /**
+ /**
    * Get full vendor details (basic info + branches) for the edit form.
    * This is what the React "Edit Vendor" form should call for pre-fill.
-   */
+ */
   @Public()
   @Get(':id')
   @ApiOperation({
@@ -69,14 +69,14 @@ export class VendorsController {
     return this.vendorsService.getVendorDetail(id);
   }
 
-  /**
+ /**
    * Create a new vendor (basic info step).
    *
    * The payload should mirror what the old PHP form was posting to
    * __ajax_manage_vendor.php?type=vendor_basic_info, i.e. use column-style
    * keys such as vendor_name, vendor_code, vendor_primary_mobile_number,
    * vendor_email, vendor_margin, vendor_margin_gst_type, etc.
-   */
+ */
   @Post()
   @ApiOperation({
     summary: 'Create vendor basic info',
@@ -89,10 +89,10 @@ export class VendorsController {
     return this.vendorsService.createVendorBasicInfo(body);
   }
 
-  /**
+ /**
    * Update vendor basic info for an existing vendor.
    * Called when saving the Basic Info step in the edit form.
-   */
+ */
   @Put(':id')
   @ApiOperation({
     summary: 'Update vendor basic info',
@@ -144,7 +144,7 @@ export class VendorsController {
     return { success: true };
   }
 
-  // --- Step 3: Driver Costs ---
+ // --- Step 3: Driver Costs ---
 
   @Public()
   @Get(':id/vehicle-types')
@@ -202,7 +202,7 @@ async deleteVehicleTypeCost(
   return { success: true };
 }
 
-  // --- Step 4: Vehicle Info ---
+ // --- Step 4: Vehicle Info ---
 
   @Public()
   @Get(':id/vehicles')
@@ -250,7 +250,7 @@ async deleteVehicleTypeCost(
     return this.vendorsService.softDeleteVehicle(vehicleId);
   }
 
-  // --- Step 5: Pricebook ---
+ // --- Step 5: Pricebook ---
 
   @Public()
   @Get(':id/pricebook/local')
@@ -356,7 +356,7 @@ async deleteVehicleTypeCost(
     return this.vendorsService.updateVendorOutstationPricebook(id, body);
   }
 
-  // --- Step 6: Permit Cost ---
+ // --- Step 6: Permit Cost ---
 
   @Get(':id/permit-costs')
   @ApiOperation({ summary: 'Get vendor permit costs' })
@@ -456,10 +456,10 @@ async deleteVehicleTypeCost(
     return this.vendorsService.deleteOutstationKmLimit(id, kmsLimitId);
   }
 
-  /**
+ /**
    * List all branches for a vendor.
    * Can be used to hydrate a separate Branches tab if needed.
-   */
+ */
   @Public()
   @Get(':id/branches')
   @ApiOperation({
@@ -473,10 +473,10 @@ async deleteVehicleTypeCost(
     return this.vendorsService.listBranches(id);
   }
 
-  /**
+ /**
    * Create a new branch for a vendor.
    * Equivalent to __ajax_manage_vendor.php?type=vendor_branch (insert).
-   */
+ */
   @Post(':id/branches')
   @ApiOperation({
     summary: 'Create vendor branch',
@@ -490,10 +490,10 @@ async deleteVehicleTypeCost(
     return this.vendorsService.createBranch(id, body);
   }
 
-  /**
+ /**
    * Update an existing vendor branch.
    * Equivalent to __ajax_manage_vendor.php?type=vendor_branch (update).
-   */
+ */
   @Put('branches/:branchId')
   @ApiOperation({
     summary: 'Update vendor branch',
@@ -507,10 +507,10 @@ async deleteVehicleTypeCost(
     return this.vendorsService.updateBranch(branchId, body);
   }
 
-  /**
+ /**
    * Soft-delete a vendor branch (marks deleted = 1).
    * Mirrors __ajax_manage_vendor.php?type=confirm_branch_delete.
-   */
+ */
   @Delete('branches/:branchId')
   @ApiOperation({
     summary: 'Delete vendor branch',
@@ -524,11 +524,11 @@ async deleteVehicleTypeCost(
     return { success: true };
   }
 
-  
-  // ===========================================================================
-  // EXISTING: Vendor-scoped dropdown endpoints (keep as-is for compatibility)
-  // These stay under /vendors/dropdowns/*
-  // ===========================================================================
+
+ // ===========================================================================
+ // EXISTING: Vendor-scoped dropdown endpoints (keep as-is for compatibility)
+ // These stay under /vendors/dropdowns/*
+ // ===========================================================================
 
   @Public()
   @Get('dropdowns/roles')

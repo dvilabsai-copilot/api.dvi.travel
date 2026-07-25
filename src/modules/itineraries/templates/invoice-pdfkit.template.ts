@@ -201,7 +201,7 @@ export function renderInvoicePdfKit(
     try {
       doc.image(logo, pageWidth - 135, 30, { fit: [88, 52], align: 'right', valign: 'center' });
     } catch {
-      // Keep generation successful even if logo data is invalid.
+ // Keep generation successful even if logo data is invalid.
     }
   }
 

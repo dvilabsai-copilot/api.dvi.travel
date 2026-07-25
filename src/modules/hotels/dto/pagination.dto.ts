@@ -16,7 +16,7 @@ export class PaginationQueryDto {
   @IsString()
   search?: string;
 
-  // In schema, state/city are strings on dvi_hotel
+ // In schema, state/city are strings on dvi_hotel
   @IsOptional()
   @IsString()
   hotel_state?: string;
@@ -25,7 +25,7 @@ export class PaginationQueryDto {
   @IsString()
   hotel_city?: string;
 
-  // status is TinyInt (number) in schema
+ // status is TinyInt (number) in schema
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -33,7 +33,7 @@ export class PaginationQueryDto {
 
   @IsOptional()
   @IsString()
-  sortBy?: string; // e.g., 'hotel_name' | 'hotel_code' | 'createdon'
+ sortBy?: string; // e.g., 'hotel_name' | 'hotel_code' | 'createdon'
 
   @IsOptional()
   @IsIn(['asc', 'desc'])

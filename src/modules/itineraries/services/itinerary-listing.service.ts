@@ -64,7 +64,7 @@ export class ItineraryListingService {
   }
 
   async getLocationsForFilter() {
-    // Get unique arrival and departure locations from confirmed itineraries
+ // Get unique arrival and departure locations from confirmed itineraries
     const plans = await this.prisma.dvi_itinerary_plan_details.findMany({
       where: {
         quotation_status: 1,
@@ -77,7 +77,7 @@ export class ItineraryListingService {
     });
 
     const locationsSet = new Set<string>();
-    
+
     plans.forEach((plan) => {
       if (plan.arrival_location) locationsSet.add(plan.arrival_location);
       if (plan.departure_location) locationsSet.add(plan.departure_location);
@@ -89,9 +89,9 @@ export class ItineraryListingService {
       .map(loc => ({ value: loc, label: loc }));
   }
 
-  /**
+ /**
    * Get unique locations for latest itineraries filter (from all non-deleted plans)
-   */
+ */
   async getLocationsForLatestFilter(): Promise<{ value: string; label: string }[]> {
     const plans = await this.prisma.dvi_itinerary_plan_details.findMany({
       where: {
@@ -104,7 +104,7 @@ export class ItineraryListingService {
     });
 
     const locationsSet = new Set<string>();
-    
+
     plans.forEach((plan) => {
       if (plan.arrival_location) locationsSet.add(plan.arrival_location);
       if (plan.departure_location) locationsSet.add(plan.departure_location);
@@ -149,7 +149,7 @@ export class ItineraryListingService {
     if (input_agent_id > 0) {
       where.agent_id = input_agent_id;
     } else if (input_guide_id > 0) {
-      // Guide logic: find itineraries where this guide is assigned
+ // Guide logic: find itineraries where this guide is assigned
       const guideAssignments = await this.prisma.dvi_confirmed_itinerary_route_guide_details.findMany({
         where: { guide_id: input_guide_id, deleted: 0 },
         select: { itinerary_plan_ID: true },
@@ -157,7 +157,7 @@ export class ItineraryListingService {
       const assignedPlanIds = [...new Set(guideAssignments.map(a => a.itinerary_plan_ID))];
       where.itinerary_plan_ID = { in: assignedPlanIds };
     } else if (input_staff_id > 0 && logged_user_level !== 6) {
-      // Travel Expert logic
+ // Travel Expert logic
       const teAgents = await this.prisma.dvi_agent.findMany({
         where: { travel_expert_id: input_staff_id } as any,
         select: { agent_ID: true },
@@ -243,8 +243,8 @@ export class ItineraryListingService {
       constrainToPlanIds([...new Set(cancelledRows.map((row) => Number(row.itinerary_plan_id))) ]);
     }
 
-    // Keep the total count on the same access and regular filters, but before
-    // applying the global search. This makes pagination accurate.
+ // Keep the total count on the same access and regular filters, but before
+ // applying the global search. This makes pagination accurate.
     const unsearchedWhere = { ...where };
 
     if (search) {
@@ -316,7 +316,7 @@ export class ItineraryListingService {
       }
     }
 
-    // Fetch primary customer details for confirmed itineraries
+ // Fetch primary customer details for confirmed itineraries
     const itineraryPlanIds = data
       .map((p) => Number(p.itinerary_plan_ID || 0))
       .filter((id) => id > 0);
@@ -390,7 +390,7 @@ export class ItineraryListingService {
       return name || 'N/A';
     };
 
-    // Fetch agents manually since no relations in Prisma schema
+ // Fetch agents manually since no relations in Prisma schema
     const agentIds = [...new Set(data.map((p) => p.agent_id))];
     const agents = await this.prisma.dvi_agent.findMany({
       where: { agent_ID: { in: agentIds } },
@@ -471,7 +471,7 @@ export class ItineraryListingService {
         select: { agent_ID: true },
       });
       const teAgentIds = teAgents.map((a) => Number(a.agent_ID)).filter((n) => n > 0);
-      
+
       const tePlans = await this.prisma.dvi_itinerary_plan_details.findMany({
         where: {
           OR: [
@@ -503,7 +503,7 @@ export class ItineraryListingService {
       }),
     ]);
 
-    // Fetch plan details and agents manually
+ // Fetch plan details and agents manually
     const planIds = data.map((p) => p.itinerary_plan_id);
     const plans = await this.prisma.dvi_itinerary_plan_details.findMany({
       where: { itinerary_plan_ID: { in: planIds } },
@@ -530,7 +530,7 @@ export class ItineraryListingService {
           booking_quote_id: plan?.itinerary_quote_ID || 'N/A',
           agent_name: agentMap.get(plan?.agent_id || 0) || 'N/A',
           cancelled_date: p.createdon,
-          cancelled_reason: 'N/A', // Reason not in this table
+ cancelled_reason: 'N/A', // Reason not in this table
           refund_amount: p.total_refund_amount,
           refund_status: p.itinerary_cancellation_status,
         };
@@ -583,7 +583,7 @@ export class ItineraryListingService {
       }),
     ]);
 
-    // Fetch agents manually
+ // Fetch agents manually
     const agentIds = [...new Set(data.map((p) => p.agent_id))];
     const agents = await this.prisma.dvi_agent.findMany({
       where: { agent_ID: { in: agentIds } },

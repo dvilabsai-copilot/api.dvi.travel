@@ -89,7 +89,7 @@ export class ItineraryTransportFormattingService {
     try {
       const parsed = JSON.parse(text);
       if (parsed && typeof parsed === 'object') return this.parseTransportFlightDetails(parsed, fallbackDateTime);
-    } catch { /* preserve raw text */ }
+ } catch { /* preserve raw text */ }
     return { ...emptyFlight, rawText: this.decodeTransportHtml(text) };
   }
 

@@ -444,14 +444,14 @@ export class ItineraryClipboardService {
   const otherDayStartLabel =
     labels?.otherDayStartLabel?.trim() || 'Start Your Day';
 
-  /**
+ /**
    * Recommended mode:
    * Each hotspot/travel/description item becomes a separate table row,
    * matching the B2B Copy to Recommended output.
    *
    * Highlights and Para:
    * Continue using the existing paragraph-based output.
-   */
+ */
   const buildLine = (content: string): string => {
     if (mode === 'recommended') {
       return `
@@ -536,9 +536,9 @@ export class ItineraryClipboardService {
       : [];
 
     for (const segment of segments) {
-      /*
+ /*
        * Keep Copy to Highlights unchanged.
-       */
+ */
       if (mode === 'highlights') {
         if (segment.type === 'attraction') {
           lines.push(
@@ -653,10 +653,10 @@ export class ItineraryClipboardService {
           segment.duration || '',
         );
 
-        /*
+ /*
          * First recommended table row:
          * hotspot timing, duration and hotspot name.
-         */
+ */
         lines.push(
           buildLine(
             `${range ? `${range} - ` : ''}` +
@@ -667,10 +667,10 @@ export class ItineraryClipboardService {
           ),
         );
 
-        /*
+ /*
          * Second recommended table row:
          * hotspot description.
-         */
+ */
         if (segment.description) {
           lines.push(
             buildLine(
@@ -682,9 +682,9 @@ export class ItineraryClipboardService {
         continue;
       }
 
-      /*
+ /*
        * Keep Copy to Para check-in logic unchanged.
-       */
+ */
       if (
         segment.type === 'checkin' &&
         mode === 'para'
@@ -717,12 +717,12 @@ export class ItineraryClipboardService {
       continue;
     }
 
-    /*
+ /*
      * Recommended mode receives a light-grey day heading,
      * matching the B2B copied table appearance.
      *
      * Highlights and Para retain the existing day heading.
-     */
+ */
     const dayHeaderStyle =
       mode === 'recommended'
         ? `
@@ -735,13 +735,13 @@ export class ItineraryClipboardService {
           border:1px solid #b1b1b1;
         `;
 
-    /*
+ /*
      * Recommended:
      * lines already contain individual <tr><td> rows.
      *
      * Highlights and Para:
      * keep all paragraph lines inside the existing single table cell.
-     */
+ */
     const dayBody =
       mode === 'recommended'
         ? lines.join('')

@@ -22,59 +22,59 @@ export class AccountsLedgerQueryDto {
   componentType: AccountsLedgerComponentType =
     AccountsLedgerComponentType.AGENT;
 
-  /** DD/MM/YYYY */
+ /** DD/MM/YYYY */
   @IsOptional()
   @IsString()
   fromDate?: string;
 
-  /** DD/MM/YYYY */
+ /** DD/MM/YYYY */
   @IsOptional()
   @IsString()
   toDate?: string;
 
-  // GUIDE
+ // GUIDE
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   guideId?: number;
 
-  // HOTEL
+ // HOTEL
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   hotelId?: number;
 
-  // ACTIVITY
+ // ACTIVITY
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   activityId?: number;
 
-  // HOTSPOT
+ // HOTSPOT
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   hotspotId?: number;
 
-  // VEHICLE (start with vendor; extended with branch/type)
+ // VEHICLE (start with vendor; extended with branch/type)
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   vendorId?: number;
 
-  // VEHICLE BRANCH (dvi_vendor_branches)
+ // VEHICLE BRANCH (dvi_vendor_branches)
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   vendorBranchId?: number;
 
-  // VEHICLE TYPE (dvi_vehicle_type)
+ // VEHICLE TYPE (dvi_vehicle_type)
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   vehicleTypeId?: number;
 
-  // AGENT
+ // AGENT
   @IsOptional()
   @Type(() => Number)
   @IsInt()

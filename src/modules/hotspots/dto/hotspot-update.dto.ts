@@ -8,5 +8,5 @@ import { Type } from 'class-transformer';
 // Update = partial create + optional id (since your save uses body.id)
 export class HotspotUpdateDto extends PartialType(HotspotCreateDto) {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
-  id?: number; // hotspot_ID
+ id?: number; // hotspot_ID
 }

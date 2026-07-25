@@ -516,7 +516,7 @@ export class ItineraryExportService {
     if (value === null || value === undefined) return '';
     return String(value).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   }
-  
+
   private hasValue(value: any): boolean {
     return value !== null && value !== undefined && String(value).trim() !== '';
   }

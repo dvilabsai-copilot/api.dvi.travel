@@ -488,7 +488,7 @@ export class ItinerariesService {
     quoteId?: string | null;
   }): number {
     const now = Date.now();
-    console.log('[ITINERARY_API_TIMING]', {
+ console.log('[ITINERARY_API_TIMING]', {
       api: params.api,
       planId: params.planId ?? null,
       quoteId: params.quoteId ?? null,
@@ -537,7 +537,7 @@ export class ItinerariesService {
       maxMoves: 10,
     });
 
-    console.log('[ItinerariesService][SameCityCrossDayOptimizerAfterSave]', {
+ console.log('[ItinerariesService][SameCityCrossDayOptimizerAfterSave]', {
       planId,
       quoteId: quoteId || null,
       enabled: result.enabled,
@@ -1376,10 +1376,10 @@ private getGuideSlotLabel(slotId: number): string {
     return this.vehicleBuildService.triggerVehicleBuild(planId, req);
   }
 
-  /**
+ /**
    * Normalize field values to arrays safely.
    * Handles string, array, object, null, undefined without spreading strings into characters.
-   */
+ */
   private normalizeToArray(value: any): any[] {
     if (!value) return [];
     if (Array.isArray(value)) return value;
@@ -1458,10 +1458,10 @@ private getGuideSlotLabel(slotId: number): string {
   }
 
 
-  /**
+ /**
    * Delete a hotspot from an itinerary route
    * Hard deletes the hotspot from timeline and adds to excluded_hotspot_ids
-   */
+ */
   async deleteHotspot(planId: number, routeId: number, hotspotId: number) {
     return this.hotspotDeletionService.deleteHotspot(planId, routeId, hotspotId);
   }
@@ -1530,17 +1530,17 @@ private getGuideSlotLabel(slotId: number): string {
 
 
 
-  /**
+ /**
    * Get available hotspots for a route
-   */
-  /**
+ */
+ /**
    * Get available hotspots for a route
    *
    * NEW RULES:
    * - direct_to_next_visiting_place === 1  => destination pool only, priority DESC
    * - direct_to_next_visiting_place === 0  => interleave source/destination in chunks of 3
   * - already added hotspots => exclude from addable list for this route/day
-   */
+ */
   async getAvailableHotspots(routeId: number) {
     return this.hotspotWorkflowService.getAvailableHotspots(routeId);
   }
@@ -1572,9 +1572,9 @@ private getGuideSlotLabel(slotId: number): string {
     return this.selectionWorkflowService.selectHotel(data);
   }
 
-  /**
+ /**
    * Bulk save hotel selections - used before confirming itinerary
-   */
+ */
   async bulkSaveHotels(planId: number, hotels: any[]) {
     return this.selectionWorkflowService.bulkSaveHotels(planId, hotels);
   }
@@ -1778,9 +1778,9 @@ private getGuideSlotLabel(slotId: number): string {
   async getInvoiceData(itineraryPlanId: number) {
     return this.invoiceReadService.getInvoiceData(itineraryPlanId);
   }
-  /**
+ /**
    * Preview manual hotspot addition.
-   */
+ */
   async previewManualHotspot(
     planId: number,
     routeId: number,
@@ -2205,8 +2205,8 @@ private getGuideSlotLabel(slotId: number): string {
         continue;
       }
 
-      // matrixDurationMin is advisory metadata. A valid, positive parsed timeRange
-      // is sufficient for strict apply in confirm-phase persistence.
+ // matrixDurationMin is advisory metadata. A valid, positive parsed timeRange
+ // is sufficient for strict apply in confirm-phase persistence.
     }
 
     if (issues.length > 0) {
@@ -2277,11 +2277,11 @@ private getGuideSlotLabel(slotId: number): string {
     return haversineKm(fromCoords.lat, fromCoords.lng, toCoords.lat, toCoords.lng);
   }
 
-  /**
+ /**
    * Check if a hotspot is geographically feasible between two others.
    * Uses bearing/cross-product to validate if mid-point lies on or near the path.
    * Returns true if the hotspot is reasonably on the route; false if it's clearly off-route.
-   */
+ */
   private isHotspotGeographicallyFeasible(
     masterMap: Map<number, any>,
     fromId: number,
@@ -2294,27 +2294,27 @@ private getGuideSlotLabel(slotId: number): string {
       const toCoords = this.getHotspotCoords(masterMap.get(toId));
 
       if (!fromCoords || !midCoords || !toCoords) {
-        return true; // Assume feasible if we can't validate
+ return true; // Assume feasible if we can't validate
       }
 
-      // Calculate distances
+ // Calculate distances
       const d_from_mid = haversineKm(fromCoords.lat, fromCoords.lng, midCoords.lat, midCoords.lng);
       const d_mid_to = haversineKm(midCoords.lat, midCoords.lng, toCoords.lat, toCoords.lng);
       const d_from_to = haversineKm(fromCoords.lat, fromCoords.lng, toCoords.lat, toCoords.lng);
 
-      // If direct distance ≈ sum of detour distances, it's roughly on the path (triangle inequality near equality)
-      const tolerance = 0.15; // 15% tolerance for deviation
+ // If direct distance sum of detour distances, it's roughly on the path (triangle inequality near equality)
+ const tolerance = 0.15; // 15% tolerance for deviation
       const sum = d_from_mid + d_mid_to;
       const deviation = (sum - d_from_to) / d_from_to;
 
-      // If deviation is too small (< tolerance), it might be on path
-      // If deviation is large, the hotspot is definitely off-route
+ // If deviation is too small (< tolerance), it might be on path
+ // If deviation is large, the hotspot is definitely off-route
       if (deviation < tolerance) {
-        return true; // Likely on the path or reasonably close
+ return true; // Likely on the path or reasonably close
       }
 
-      // Additional check: cross-product test to see if mid is on the correct "side" of the route
-      // Using the cross product of vectors (from→to) and (from→mid)
+ // Additional check: cross-product test to see if mid is on the correct "side" of the route
+ // Using the cross product of vectors (fromto) and (frommid)
       const v1_lat = toCoords.lat - fromCoords.lat;
       const v1_lng = toCoords.lng - fromCoords.lng;
       const v2_lat = midCoords.lat - fromCoords.lat;
@@ -2322,19 +2322,19 @@ private getGuideSlotLabel(slotId: number): string {
 
       const cross = v1_lat * v2_lng - v1_lng * v2_lat;
 
-      // If cross product is very large relative to distances, mid is far off the path
+ // If cross product is very large relative to distances, mid is far off the path
       const crossMagnitude = Math.abs(cross);
       const pathMagnitude = Math.sqrt(v1_lat * v1_lat + v1_lng * v1_lng) * Math.sqrt(v2_lat * v2_lat + v2_lng * v2_lng);
 
-      // Normalize: if cross magnitude > 20% of path magnitude squared, it's off-route
+ // Normalize: if cross magnitude > 20% of path magnitude squared, it's off-route
       if (pathMagnitude > 0 && crossMagnitude > 0.2 * pathMagnitude) {
-        return false; // Hotspot is off the path
+ return false; // Hotspot is off the path
       }
 
-      return true; // Assume feasible
+ return true; // Assume feasible
     } catch (error) {
-      console.warn('[isHotspotGeographicallyFeasible] Error:', error);
-      return true; // Assume feasible on error
+ console.warn('[isHotspotGeographicallyFeasible] Error:', error);
+ return true; // Assume feasible on error
     }
   }
 
@@ -2728,7 +2728,7 @@ private getGuideSlotLabel(slotId: number): string {
         Number(routeId),
       );
     } catch (error) {
-      console.warn('[FitHere][force_conflict_timeline_refresh_failed]', {
+ console.warn('[FitHere][force_conflict_timeline_refresh_failed]', {
         planId,
         routeId,
         error: error instanceof Error ? error.message : String(error),
@@ -2810,7 +2810,7 @@ private getGuideSlotLabel(slotId: number): string {
     };
   }
 
-  // ─── Route-intelligence: hotspot_route_between_map integration ──────────────
+ // Route-intelligence: hotspot_route_between_map integration
   private routeFitTypeRank(...args: any[]): number {
     return (this.manualFitRoutePolicyService.routeFitTypeRank as any)(...args);
   }
@@ -3046,14 +3046,14 @@ private getGuideSlotLabel(slotId: number): string {
 
     const routeData = await this.getDoneMatrixRouteCoordinatesEitherDirection(tx, fromHotspotId, toHotspotId);
     if (routeData?.osrmFallbackUsed) {
-      console.log('[SourceCityExitAnchor] osrm_fallback_used', {
+ console.log('[SourceCityExitAnchor] osrm_fallback_used', {
         fromHotspotId,
         toHotspotId,
       });
     }
     if (!routeData || routeData.osrmFailed || routeData.routeCoordinates.length < 2) {
       if (routeData?.osrmFallbackUsed) {
-        console.warn('[SourceCityExitAnchor] osrm_failed', {
+ console.warn('[SourceCityExitAnchor] osrm_failed', {
           fromHotspotId,
           toHotspotId,
         });
@@ -3121,11 +3121,11 @@ private getGuideSlotLabel(slotId: number): string {
     return (this.manualFitValidationService.resolveSelectedManualPriority as any)(params);
   }
 
-  /**
+ /**
    * Build the manualInsertionFit block by querying hotspot_route_between_map
    * for every existing hotspot-to-hotspot slot in the route.
-   */
-  // ─────────────────────────────────────────────────────────────────────────────
+ */
+ //
 
   private buildManualSlotInsights(...args: any[]): any[] {
     return (this.manualFitValidationService.buildManualSlotInsights as any)(...args);
@@ -3368,7 +3368,7 @@ private getGuideSlotLabel(slotId: number): string {
         replacedHotspotId?: number;
       }>;
       preferredHotspotOrder?: number[];
-      /** When true, restricts delete+rebuild to this route only and skips parking. */
+ /** When true, restricts delete+rebuild to this route only and skips parking. */
       previewOnly?: boolean;
     },
   ) {
@@ -3658,15 +3658,15 @@ private getGuideSlotLabel(slotId: number): string {
     exactAnchorMode?: boolean;
     masterMap: Map<number, any>;
   }): ManualCandidateOrder[] {
-    // See docs/manual-hotspot-reorder-and-removal-rules.md before changing exact-anchor Fit Here logic.
+ // See docs/manual-hotspot-reorder-and-removal-rules.md before changing exact-anchor Fit Here logic.
     const cluster = this.buildManualHotspotDestinationCluster({
       hotspots: params.hotspots,
       manualHotspotIds: params.manualHotspotIds,
     });
     const manualId = Number(cluster.manualPoint?.hotspotId || params.manualHotspotIds?.[0] || 0);
     const currentCluster = cluster.clusterHotspots
-      // Preserve every already-active manual hotspot in the cluster.
-      // The only hotspot we may need to re-position here is the selected manual hotspot itself.
+ // Preserve every already-active manual hotspot in the cluster.
+ // The only hotspot we may need to re-position here is the selected manual hotspot itself.
       .filter((row) => Number(row.hotspotId) !== manualId)
       .sort((a, b) => Number(a.hotspotOrder) - Number(b.hotspotOrder));
     const clusterWithManual = [...currentCluster];
@@ -4210,9 +4210,9 @@ private getGuideSlotLabel(slotId: number): string {
     );
   }
 
-  /**
+ /**
    * Remove a manual hotspot and rebuild the timeline.
-   */
+ */
   async removeManualHotspot(planId: number, hotspotId: number, userId: number = 1) {
     const normalizedPlanId = Number(planId);
     const normalizedHotspotId = Number(hotspotId);
@@ -4280,22 +4280,22 @@ private getGuideSlotLabel(slotId: number): string {
     };
   }
 
-  /**
+ /**
    * Rebuild a route: Clear excluded hotspots and rebuild fresh
    * This lets user get new auto-selected hotspots to replace deleted ones
-   */
+ */
   async rebuildRoute(planId: number, routeId: number) {
     return this.rebuildRouteHotspotsForDay(planId, routeId, 1);
   }
 
-  /**
+ /**
    * Reset one route/day hotspot state (manual adds + exclusions) and rebuild timeline.
-   */
+ */
   async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number) {
     return this.routeHotspotRebuildService.rebuildRouteHotspotsForDay(planId, routeId, userId);
   }
 
-  /** Compatibility facade for route timing persistence and rebuild. */
+ /** Compatibility facade for route timing persistence and rebuild. */
   async updateRouteTimes(
     planId: number,
     routeId: number,
@@ -4328,9 +4328,9 @@ private getGuideSlotLabel(slotId: number): string {
     return this.hotelCancellationService.getConfirmedItineraryForCancellation(confirmedPlanId);
   }
 
-  /**
+ /**
    * Get cancellation charges for entire day
-   */
+ */
   async getEntireDayCancellationCharges(
     confirmedPlanId: number,
     hotelId: number,
@@ -4342,9 +4342,9 @@ private getGuideSlotLabel(slotId: number): string {
     );
   }
 
-  /**
+ /**
    * Execute hotel cancellation (entire day or room)
-   */
+ */
   async cancelHotel(
     confirmedPlanId: number,
     hotelId: number,
@@ -4363,7 +4363,7 @@ private getGuideSlotLabel(slotId: number): string {
     );
   }
 
-  /** Compatibility facade for confirmed itinerary hotel projection. */
+ /** Compatibility facade for confirmed itinerary hotel projection. */
   async getConfirmedItineraryDetails(confirmedPlanId: number) {
     return this.confirmedItineraryDetailsService.getConfirmedItineraryDetails(confirmedPlanId);
   }
@@ -4378,19 +4378,19 @@ private getGuideSlotLabel(slotId: number): string {
     return categoryMap[groupType] || 'Budget';
   }
 
-  /**
+ /**
    * Map hotel category (from dvi_hotel.hotel_category) to star rating
    * The hotel_category field is an integer, typically 1-5 or similar
-   */
+ */
   private mapHotelCategoryToStars(category: number): number {
-    // Map category ID to star rating
-    // Assuming: 1=1star, 2=2star, 3=3star, 4=4star, 5=5star
-    return Math.min(Math.max(category, 1), 5); // Clamp between 1-5
+ // Map category ID to star rating
+ // Assuming: 1=1star, 2=2star, 3=3star, 4=4star, 5=5star
+ return Math.min(Math.max(category, 1), 5); // Clamp between 1-5
   }
 
-  /**
+ /**
    * Map hotel category to friendly name
-   */
+ */
   private mapHotelCategoryToName(category: number): string {
     const categoryNames = {
       1: '1-Star',
@@ -4402,10 +4402,10 @@ private getGuideSlotLabel(slotId: number): string {
     return categoryNames[category] || 'Standard';
   }
 
-  /**
+ /**
    * Get hotel room categories for selection modal
    * Fetches room types from TBO API instead of local database
-   */
+ */
   async getHotelRoomCategories(params: {
     itinerary_plan_hotel_details_ID: number;
     itinerary_plan_id: number;
@@ -4435,13 +4435,13 @@ private getGuideSlotLabel(slotId: number): string {
 
 
 
-  /**
+ /**
    * 🚀 ROUTE OPTIMIZATION: Reorder routes using TSP algorithm
     * - For small candidate sets (<=8 movable stops): Exhaustive search
     * - For larger sets: Nearest Neighbor + Simulated Annealing
-   * 
+   *
    * This finds the optimal or near-optimal route that minimizes total travel distance/time
-   */
+ */
   private async optimizeRouteOrder(routes: any[]): Promise<any[]> {
     return this.routeOptimizationService.optimizeRouteOrder(routes);
   }
@@ -4451,7 +4451,7 @@ private getGuideSlotLabel(slotId: number): string {
 
     const debugOptimization = process.env.DEBUG_ROUTE_OPTIMIZER === 'true';
     const exhaustiveSafeLimit = 10;
-    const log = (msg: string) => console.log(msg);
+ const log = (msg: string) => console.log(msg);
     const logDebug = (msg: string) => {
       if (debugOptimization) {
         log(msg);
@@ -4470,8 +4470,8 @@ private getGuideSlotLabel(slotId: number): string {
       return routes;
     }
 
-    // Preserve a valid route whose only removable nodes are repeated terminal anchors.
-    // Duplicate movable stops are still normalized even when only one unique stop remains.
+ // Preserve a valid route whose only removable nodes are repeated terminal anchors.
+ // Duplicate movable stops are still normalized even when only one unique stop remains.
     if (
       context.movableStops.length <= 1 &&
       context.removedDuplicates.length === 0 &&
@@ -4491,7 +4491,7 @@ private getGuideSlotLabel(slotId: number): string {
 
     let bestRouteLocations: string[] = [];
 
-    // PHP parity: switch by total route count.
+ // PHP parity: switch by total route count.
     if (routes.length <= exhaustiveSafeLimit) {
       log(`[RouteOptimization] Using exhaustive permutation (PHP parity). candidateCount=${middleLocations.length}`);
       bestRouteLocations = await this.optimizeWith_ExhaustivePermutation(
@@ -4651,10 +4651,10 @@ private getGuideSlotLabel(slotId: number): string {
     return cleaned;
   }
 
-  /**
+ /**
     * PHP-EXACT: small candidate sets only - EXHAUSTIVE PERMUTATION
    * Tries all permutations of middleLocations and finds the one with minimum total distance
-   */
+ */
   private async optimizeWith_ExhaustivePermutation(
     start: string,
     end: string,
@@ -4663,11 +4663,11 @@ private getGuideSlotLabel(slotId: number): string {
     logDebug: (msg: string) => void
   ): Promise<string[]> {
     const perms = this.generatePermutations_PHP([...middleLocations]);
-    
-    let bestPerm: string[] = middleLocations; // Default to original order
+
+ let bestPerm: string[] = middleLocations; // Default to original order
     let bestDistance = Infinity;
     let bestChain = '';
-    
+
     log(`[ExhaustivePermutation] Testing ${perms.length} permutations...`);
 
     let tested = 0;
@@ -4676,20 +4676,20 @@ private getGuideSlotLabel(slotId: number): string {
       let current = start;
       let totalDistance = 0;
       const chain: string[] = [current];
-      
-      // Evaluate cost: start -> perm[0] -> perm[1] -> ... -> perm[n-1] -> end
+
+ // Evaluate cost: start -> perm[0] -> perm[1] -> ... -> perm[n-1] -> end
       for (const loc of perm) {
         const distance = await this.getDistance_PHP(current, loc);
         if (distance === Infinity) {
           totalDistance = Infinity;
-          break; // Missing distance = invalid permutation
+ break; // Missing distance = invalid permutation
         }
         totalDistance += distance;
         current = loc;
         chain.push(current);
       }
-      
-      // Add final segment: last middle location -> end
+
+ // Add final segment: last middle location -> end
       if (totalDistance !== Infinity) {
         const finalDist = await this.getDistance_PHP(current, end);
         if (finalDist === Infinity) {
@@ -4711,53 +4711,53 @@ private getGuideSlotLabel(slotId: number): string {
         logDebug(`[ExhaustivePermutation][DEBUG] progress=${tested}/${perms.length} best=${bestDistance === Infinity ? 'INVALID' : bestDistance.toFixed(1) + ' km'}`);
       }
     }
-    
+
     log(`[ExhaustivePermutation] ✅ Best permutation: [${bestPerm.join(',')}] = ${bestDistance.toFixed(1)} km`);
     log(`[ExhaustivePermutation] Best chain: ${bestChain}`);
-    
-    // Return final route locations: [start, ...bestPerm, end]
+
+ // Return final route locations: [start, ...bestPerm, end]
     return [start, ...bestPerm, end];
   }
 
-  /**
+ /**
    * PHP-EXACT: >10 routes - NEAREST NEIGHBOR + SIMULATED ANNEALING
-   */
+ */
   private async optimizeWith_NearestNeighborAndAnnealing(
     start: string,
     end: string,
     middleLocations: string[],
     log: (msg: string) => void
   ): Promise<string[]> {
-    // Build remainingLocationsCounts (like PHP's array_count_values for duplicates)
+ // Build remainingLocationsCounts (like PHP's array_count_values for duplicates)
     const remainingLocationsCounts = this.buildLocationCounts_PHP(middleLocations);
     log(`[NearestNeighbor] Location counts: ${JSON.stringify(remainingLocationsCounts)}`);
-    
-    // Greedy nearest neighbor
+
+ // Greedy nearest neighbor
     const greedyRoute = await this.nearestNeighbor_PHP(start, remainingLocationsCounts, log);
     log(`[NearestNeighbor] Greedy route: [${greedyRoute.join(', ')}]`);
-    
-    // Build initial route: [start, ...greedy, end]
+
+ // Build initial route: [start, ...greedy, end]
     let initialRoute = [start, ...greedyRoute, end];
     let initialDistance = await this.calculateChainDistance_PHP(initialRoute, log);
     log(`[SimulatedAnnealing] Initial route distance: ${initialDistance.toFixed(1)} km`);
-    
-    // Simulated annealing
+
+ // Simulated annealing
     const finalRoute = await this.simulatedAnnealing_PHP(
       initialRoute,
-      1000,      // initialTemp
-      0.003,     // coolingRate
+ 1000, // initialTemp
+ 0.003, // coolingRate
       log
     );
-    
+
     let finalDistance = await this.calculateChainDistance_PHP(finalRoute, log);
     log(`[SimulatedAnnealing] Final route distance: ${finalDistance.toFixed(1)} km`);
-    
+
     return finalRoute;
   }
 
-  /**
+ /**
    * PHP-EXACT: Build location counts like array_count_values
-   */
+ */
   private buildLocationCounts_PHP(locations: string[]): { [location: string]: number } {
     const counts: { [location: string]: number } = {};
     for (const loc of locations) {
@@ -4766,10 +4766,10 @@ private getGuideSlotLabel(slotId: number): string {
     return counts;
   }
 
-  /**
+ /**
    * PHP-EXACT: Nearest neighbor greedy algorithm
    * Returns ordered list of middle locations (not including start/end)
-   */
+ */
   private async nearestNeighbor_PHP(
     start: string,
     remainingLocationsCounts: { [location: string]: number },
@@ -4777,17 +4777,17 @@ private getGuideSlotLabel(slotId: number): string {
   ): Promise<string[]> {
     const route: string[] = [];
     let current = start;
-    
-    // Total locations to visit
+
+ // Total locations to visit
     const totalLocations = Object.values(remainingLocationsCounts).reduce((a, b) => a + b, 0);
-    
+
     log(`[NearestNeighbor] Total middle locations to visit: ${totalLocations}`);
-    
+
     for (let step = 0; step < totalLocations; step++) {
       let nearestLocation: string | null = null;
       let minDistance = Infinity;
-      
-      // Find nearest unvisited location
+
+ // Find nearest unvisited location
       for (const [location, count] of Object.entries(remainingLocationsCounts)) {
         if (count > 0) {
           const distance = await this.getDistance_PHP(current, location);
@@ -4797,22 +4797,22 @@ private getGuideSlotLabel(slotId: number): string {
           }
         }
       }
-      
+
       if (nearestLocation === null) break;
-      
+
       route.push(nearestLocation);
       remainingLocationsCounts[nearestLocation]--;
       current = nearestLocation;
-      
+
       log(`[NearestNeighbor] Step ${step + 1}: Selected ${nearestLocation} (distance: ${minDistance.toFixed(1)} km)`);
     }
-    
+
     return route;
   }
 
-  /**
+ /**
    * PHP-EXACT: Simulated annealing optimization
-   */
+ */
   private async simulatedAnnealing_PHP(
     initialRoute: string[],
     initialTemp: number,
@@ -4823,63 +4823,63 @@ private getGuideSlotLabel(slotId: number): string {
     let currentDistance = await this.calculateChainDistance_PHP(currentRoute, log);
     let bestRoute = [...currentRoute];
     let bestDistance = currentDistance;
-    
+
     let temperature = initialTemp;
     const minTemp = 0.001;
     let iteration = 0;
-    
+
     log(`[SimulatedAnnealing] Starting with temp=${temperature.toFixed(2)}, coolingRate=${coolingRate}`);
-    
+
     while (temperature > minTemp) {
       iteration++;
-      
-      // Random swap of two middle indices (NOT first or last)
+
+ // Random swap of two middle indices (NOT first or last)
       const middleStart = 1;
-      const middleEnd = currentRoute.length - 2; // Exclude end
-      
-      if (middleEnd <= middleStart) break; // Not enough locations to swap
-      
+ const middleEnd = currentRoute.length - 2; // Exclude end
+
+ if (middleEnd <= middleStart) break; // Not enough locations to swap
+
       const i = middleStart + Math.floor(Math.random() * (middleEnd - middleStart + 1));
       const j = middleStart + Math.floor(Math.random() * (middleEnd - middleStart + 1));
-      
+
       if (i === j) {
         temperature *= (1 - coolingRate);
         continue;
       }
-      
-      // Create neighbor solution
+
+ // Create neighbor solution
       const newRoute = [...currentRoute];
       [newRoute[i], newRoute[j]] = [newRoute[j], newRoute[i]];
-      
+
       const newDistance = await this.calculateChainDistance_PHP(newRoute, log);
       const delta = newDistance - currentDistance;
-      
-      // Acceptance rule: accept if better OR accept with probability based on temperature
+
+ // Acceptance rule: accept if better OR accept with probability based on temperature
       if (delta < 0 || Math.random() < Math.exp(-delta / temperature)) {
         currentRoute = newRoute;
         currentDistance = newDistance;
-        
+
         if (currentDistance < bestDistance) {
           bestRoute = [...currentRoute];
           bestDistance = currentDistance;
           log(`[SimulatedAnnealing] Iteration ${iteration}: New best distance = ${bestDistance.toFixed(1)} km (temp=${temperature.toFixed(4)})`);
         }
       }
-      
+
       temperature *= (1 - coolingRate);
-      
+
       if (iteration % 100 === 0) {
         log(`[SimulatedAnnealing] Iteration ${iteration}: current=${currentDistance.toFixed(1)} km, best=${bestDistance.toFixed(1)} km, temp=${temperature.toFixed(4)}`);
       }
     }
-    
+
     log(`[SimulatedAnnealing] Completed ${iteration} iterations`);
     return bestRoute;
   }
 
-  /**
+ /**
    * PHP-EXACT: Calculate total distance for a route chain
-   */
+ */
   private async calculateChainDistance_PHP(chain: string[], log?: (msg: string) => void): Promise<number> {
     let totalDistance = 0;
     for (let i = 0; i < chain.length - 1; i++) {
@@ -4890,23 +4890,23 @@ private getGuideSlotLabel(slotId: number): string {
     return totalDistance;
   }
 
-  /**
+ /**
    * Calculate distance matrix between locations
    * In a real scenario, this would call Google Maps or similar API
    * For now, using a simplified distance calculation or mock data
-   */
+ */
 
 
 
 
-  /**
+ /**
    * PHP-EXACT: Get distance between two locations from database
    * Returns Infinity if distance not found (matching PHP's PHP_INT_MAX behavior)
    * NO reverse fallback, NO default 100, ONLY exact match
-   */
+ */
   private async getDistance_PHP(sourceLocation: string, destinationLocation: string): Promise<number> {
     if (sourceLocation === destinationLocation) return 0;
-    
+
     try {
       const record = await this.prisma.dvi_stored_locations.findFirst({
         where: {
@@ -4919,35 +4919,35 @@ private getGuideSlotLabel(slotId: number): string {
       });
 
       if (record && record.distance) {
-        const dist = typeof record.distance === 'string' 
-          ? parseFloat(record.distance) 
+        const dist = typeof record.distance === 'string'
+          ? parseFloat(record.distance)
           : record.distance;
         return isNaN(dist) ? Infinity : dist;
       }
-      return Infinity; // Missing distance = Infinity (marks permutation as invalid)
+ return Infinity; // Missing distance = Infinity (marks permutation as invalid)
     } catch (error) {
-      return Infinity; // Error = Infinity (marks permutation as invalid)
+ return Infinity; // Error = Infinity (marks permutation as invalid)
     }
   }
 
-  /**
+ /**
    * PHP-EXACT: Generate all permutations of a location array (preserves duplicates)
    * Used for exhaustive search on ≤10 routes
-   */
+ */
   private generatePermutations_PHP(arr: string[]): string[][] {
     if (arr.length <= 1) return [arr];
-    
+
     const result: string[][] = [];
     for (let i = 0; i < arr.length; i++) {
       const current = arr[i];
       const remaining = arr.slice(0, i).concat(arr.slice(i + 1));
       const perms = this.generatePermutations_PHP(remaining);
-      
+
       for (const perm of perms) {
         result.push([current, ...perm]);
       }
     }
-    
+
     return result;
   }
 
@@ -4958,9 +4958,9 @@ private getGuideSlotLabel(slotId: number): string {
     return this.activityTimingPolicyService.timeToMinutes(time);
   }
 
-  /**
+ /**
    * Helper: Format time for display
-   */
+ */
   private formatTime(time: Date | null): string {
     return this.activityTimingPolicyService.formatTime(time);
   }
@@ -5001,9 +5001,9 @@ private getGuideSlotLabel(slotId: number): string {
     return this.activityTimingPolicyService.addMinutesToTime(time, minutes);
   }
 
-  /**
+ /**
    * Check if proposed activity insertion timing conflicts with activity time slots.
-   */
+ */
   private checkActivityTimingConflicts(
     activity: any,
     timeSlots: any[],

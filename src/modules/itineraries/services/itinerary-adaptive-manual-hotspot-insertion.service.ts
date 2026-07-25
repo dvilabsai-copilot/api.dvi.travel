@@ -83,7 +83,7 @@ export class ItineraryAdaptiveManualHotspotInsertionService {
       };
     };
   }> {
-    // See docs/manual-hotspot-reorder-and-removal-rules.md before changing exact-anchor Fit Here logic.
+ // See docs/manual-hotspot-reorder-and-removal-rules.md before changing exact-anchor Fit Here logic.
     const normalizedManualHotspotIds = this.callbacks.normalizeManualHotspotIds(manualHotspotIds);
     const allowP3Removal = options?.allowP3Removal === true;
     const allowProtectedPriorityRemoval =
@@ -129,9 +129,9 @@ export class ItineraryAdaptiveManualHotspotInsertionService {
     };
 
     if (options?.exactAnchorMode === true) {
-      // The first optimizer run already tries to preserve the clicked anchor literally.
-      // After that fails, rescue is selected-hotspot-first: non-manual anchor/before rows
-      // may be removed or repositioned by the normal manual/protected/priority policy.
+ // The first optimizer run already tries to preserve the clicked anchor literally.
+ // After that fails, rescue is selected-hotspot-first: non-manual anchor/before rows
+ // may be removed or repositioned by the normal manual/protected/priority policy.
       protectedAnchorHotspotIds.clear();
     }
 

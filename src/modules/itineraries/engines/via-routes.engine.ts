@@ -5,11 +5,11 @@ import { CreateRouteDto } from '../dto/create-itinerary.dto';
 
 @Injectable()
 export class ViaRoutesEngine {
-  /**
+ /**
    * Rebuild via routes for a plan:
    * 1. Delete all existing via routes for this plan
    * 2. Insert new via routes from routes[].via_routes arrays
-   */
+ */
   async rebuildViaRoutes(
     tx: any,
     planId: number,
@@ -17,7 +17,7 @@ export class ViaRoutesEngine {
     routeIds: number[],
     userId: number,
   ): Promise<void> {
-    // 1. Delete all existing via routes for this plan
+ // 1. Delete all existing via routes for this plan
     const deletedCount = await tx.dvi_itinerary_via_route_details.updateMany({
       where: {
         itinerary_plan_ID: planId,
@@ -27,14 +27,14 @@ export class ViaRoutesEngine {
       },
     });
 
-    // 2. Insert new via routes
+ // 2. Insert new via routes
     let insertedCount = 0;
 
     for (let i = 0; i < routes.length; i++) {
       const route = routes[i];
       const routeId = routeIds[i];
 
-      // Skip if no via routes for this route segment
+ // Skip if no via routes for this route segment
       if (!route.via_routes || route.via_routes.length === 0) {
         continue;
       }

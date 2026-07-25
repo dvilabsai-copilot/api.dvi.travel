@@ -27,16 +27,16 @@ export class HotelSearchController {
   @HttpCode(HttpStatus.OK)
   async searchHotels(@Body() dto: HotelSearchDTO) {
     const startTime = Date.now();
-    this.logger.log('\n════════════════════════════════════════════════════════════════════════════════════════');
-    this.logger.log('🏨 INCOMING HOTEL SEARCH REQUEST');
-    this.logger.log(`📍 Request Timestamp: ${new Date().toISOString()}`);
-    this.logger.log(`📋 Request Body:`);
-    this.logger.log(`   - City Code: ${dto.cityCode}`);
-    this.logger.log(`   - Check-in: ${dto.checkInDate}`);
-    this.logger.log(`   - Check-out: ${dto.checkOutDate}`);
-    this.logger.log(`   - Rooms: ${dto.roomCount}`);
-    this.logger.log(`   - Guests: ${dto.guestCount}`);
-    this.logger.log('────────────────────────────────────────────────────────────────────────────────────────');
+ this.logger.log('\n');
+ this.logger.log(' INCOMING HOTEL SEARCH REQUEST');
+ this.logger.log(` Request Timestamp: ${new Date().toISOString()}`);
+ this.logger.log(` Request Body:`);
+ this.logger.log(` - City Code: ${dto.cityCode}`);
+ this.logger.log(` - Check-in: ${dto.checkInDate}`);
+ this.logger.log(` - Check-out: ${dto.checkOutDate}`);
+ this.logger.log(` - Rooms: ${dto.roomCount}`);
+ this.logger.log(` - Guests: ${dto.guestCount}`);
+ this.logger.log('');
 
     try {
       const results = await this.hotelSearchService.searchHotels(dto);
@@ -57,22 +57,22 @@ export class HotelSearchController {
         },
       };
 
-      this.logger.log('\n✅ HOTEL SEARCH SUCCESS');
-      this.logger.log(`📊 Results: ${results.length} hotels found`);
-      this.logger.log(`⏱️  Total Duration: ${duration}ms`);
-      this.logger.log(`📤 Response Summary: success=true, totalResults=${results.length}`);
-      this.logger.log('════════════════════════════════════════════════════════════════════════════════════════\n');
+ this.logger.log('\n HOTEL SEARCH SUCCESS');
+ this.logger.log(` Results: ${results.length} hotels found`);
+ this.logger.log(` Total Duration: ${duration}ms`);
+ this.logger.log(` Response Summary: success=true, totalResults=${results.length}`);
+ this.logger.log('\n');
 
       return response;
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : 'No stack trace';
-      this.logger.error('\n❌ HOTEL SEARCH FAILED');
-      this.logger.error(`🚨 Error Message: ${errorMessage}`);
-      this.logger.error(`⏱️  Duration: ${duration}ms`);
-      this.logger.error(`📋 Error Stack: ${errorStack}`);
-      this.logger.log('════════════════════════════════════════════════════════════════════════════════════════\n');
+ this.logger.error('\n HOTEL SEARCH FAILED');
+ this.logger.error(` Error Message: ${errorMessage}`);
+ this.logger.error(` Duration: ${duration}ms`);
+ this.logger.error(` Error Stack: ${errorStack}`);
+ this.logger.log('\n');
       throw error;
     }
   }

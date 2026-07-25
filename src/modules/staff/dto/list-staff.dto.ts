@@ -7,10 +7,10 @@ export class ListStaffDto {
   agentId?: number;
 
   @IsOptional() @IsString()
-  search?: string; // matches name/email/mobile
+ search?: string; // matches name/email/mobile
 
   @IsOptional() @Type(() => Number) @IsInt()
-  status?: number; // 0/1
+ status?: number; // 0/1
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
   page?: number = 1;

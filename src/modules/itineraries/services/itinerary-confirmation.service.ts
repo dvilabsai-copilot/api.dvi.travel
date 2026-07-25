@@ -47,9 +47,9 @@ export class ItineraryConfirmationService {
   private copyDraftToConfirmed(...args: any[]) { return this.call('copyDraftToConfirmed', ...args); }
 
   async confirmQuotation(dto: ConfirmQuotationDto) {
-    const userId = 1; // TODO: Get from authenticated user
+ const userId = 1; // TODO: Get from authenticated user
 
-    // 1. Get plan details and cost breakdown
+ // 1. Get plan details and cost breakdown
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: dto.itinerary_plan_ID },
     });
@@ -115,7 +115,7 @@ export class ItineraryConfirmationService {
       groupType,
       skippedExternalStayCount,
     } = hotelSelectionState;
-    console.log('[CONFIRM_QUOTATION_HOTEL_SELECTION_SYNCED]', {
+ console.log('[CONFIRM_QUOTATION_HOTEL_SELECTION_SYNCED]', {
       planId: dto.itinerary_plan_ID,
       shouldConfirmHotels,
       groupType,
@@ -124,7 +124,7 @@ export class ItineraryConfirmationService {
       externalRouteIds,
       skippedExternalStayCount,
     });
-    console.log('[CONFIRM_QUOTATION_HOTELS_RECEIVED]', providerHotelBookings.map((h: any) => ({
+ console.log('[CONFIRM_QUOTATION_HOTELS_RECEIVED]', providerHotelBookings.map((h: any) => ({
       routeId: h.routeId,
       provider: h.provider,
       hotelCode: h.hotelCode,
@@ -187,7 +187,7 @@ export class ItineraryConfirmationService {
       }
     }
 
-    // Cost must be calculated only after stale hotel rows are deactivated.
+ // Cost must be calculated only after stale hotel rows are deactivated.
     const details = await this.itineraryDetails.getItineraryDetails(quoteId);
     const requiresVehicleSelection = [2, 3].includes(Number(plan.itinerary_preference || 0));
     const selectedVehicleCount = Array.isArray((details as any)?.vehicles)
@@ -206,20 +206,20 @@ export class ItineraryConfirmationService {
     }
     const cost = details.costBreakdown;
 
-    // 2. Check wallet balance
+ // 2. Check wallet balance
     const walletInfo = await this.getAgentWalletBalance(dto.agent);
     if (walletInfo.balance < cost.netPayable) {
       throw new BadRequestException(`Insufficient wallet balance. Required: ${cost.netPayable}, Available: ${walletInfo.balance}`);
     }
 
-    // Parse arrival and departure dates
+ // Parse arrival and departure dates
     const parseDateTime = (dateTimeStr: string) => {
       const raw = String(dateTimeStr || '').trim();
       if (!raw) {
         throw new BadRequestException('Arrival/Departure datetime is required');
       }
 
-      // Support existing format: "12-12-2025 9:00 AM"
+ // Support existing format: "12-12-2025 9:00 AM"
       const match = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
       if (match) {
         const day = Number(match[1]);
@@ -239,7 +239,7 @@ export class ItineraryConfirmationService {
         return parsed;
       }
 
-      // Fallback for ISO-like inputs
+ // Fallback for ISO-like inputs
       const fallback = new Date(raw);
       if (Number.isNaN(fallback.getTime())) {
         throw new BadRequestException(`Invalid datetime format: ${raw}`);
@@ -252,10 +252,10 @@ export class ItineraryConfirmationService {
 
     const hasHotelBookings = shouldConfirmHotels && providerHotelBookings.length > 0;
 
-    // 3. Start Transaction
+ // 3. Start Transaction
     return await this.prisma.$transaction(async (tx) => {
-      // A. Deduct wallet only when there are no provider bookings to run.
-      // For hotel-booking flow this is deferred until all providers succeed.
+ // A. Deduct wallet only when there are no provider bookings to run.
+ // For hotel-booking flow this is deferred until all providers succeed.
       if (!hasHotelBookings) {
         const currentAgentWallet = await tx.dvi_agent.findUnique({
           where: { agent_ID: dto.agent },
@@ -272,7 +272,7 @@ export class ItineraryConfirmationService {
             agent_id: dto.agent,
             transaction_date: new Date(),
             transaction_amount: cost.netPayable,
-            transaction_type: 2, // Debit
+ transaction_type: 2, // Debit
             remarks: `Confirmed Itinerary: ${quoteId}`,
             transaction_id: quoteId,
             createdby: userId,
@@ -290,7 +290,7 @@ export class ItineraryConfirmationService {
         });
       }
 
-      // B. Insert into dvi_confirmed_itinerary_plan_details
+ // B. Insert into dvi_confirmed_itinerary_plan_details
       const confirmedPlan = await tx.dvi_confirmed_itinerary_plan_details.create({
         data: {
           itinerary_plan_ID: plan.itinerary_plan_ID,
@@ -332,8 +332,8 @@ export class ItineraryConfirmationService {
           hotel_terms_condition: (plan as any).hotel_terms_condition,
           vehicle_terms_condition: (plan as any).vehicle_terms_condition,
           hotel_rates_visibility: plan.hotel_rates_visibility || 0,
-          
-          // Costs from breakdown
+
+ // Costs from breakdown
           total_hotspot_charges: cost.totalHotspotCost || 0,
           total_activity_charges: cost.totalActivityCost || 0,
           total_hotel_charges: cost.totalHotelAmount || 0,
@@ -346,10 +346,10 @@ export class ItineraryConfirmationService {
           itinerary_total_net_payable_amount: cost.netPayable,
           itinerary_total_paid_amount: cost.netPayable,
           itinerary_total_balance_amount: 0,
-          
+
           createdby: userId,
           createdon: new Date(),
-          // Keep provisional (status=0) until all provider bookings are successful.
+ // Keep provisional (status=0) until all provider bookings are successful.
           status: hasHotelBookings ? 0 : 1,
           deleted: 0,
         },
@@ -357,7 +357,7 @@ export class ItineraryConfirmationService {
 
       const confirmedPlanId = confirmedPlan.confirmed_itinerary_plan_ID;
 
-      // C. Insert Primary Guest
+ // C. Insert Primary Guest
       const primaryCustomerSalutation =
         normalizePassengerTitle(dto.primary_guest_salutation) || dto.primary_guest_salutation || '';
       const additionalAdultPassengerTitles =
@@ -371,7 +371,7 @@ export class ItineraryConfirmationService {
           itinerary_plan_ID: dto.itinerary_plan_ID,
           agent_id: dto.agent,
           primary_customer: 1,
-          customer_type: 1, // Adult
+ customer_type: 1, // Adult
           customer_salutation: primaryCustomerSalutation,
           customer_name: dto.primary_guest_name,
           customer_age: parseInt(dto.primary_guest_age) || 0,
@@ -391,7 +391,7 @@ export class ItineraryConfirmationService {
         },
       });
 
-      // D. Insert Additional Adults
+ // D. Insert Additional Adults
       if (dto.adult_name && dto.adult_name.length > 0) {
         for (let i = 0; i < dto.adult_name.length; i++) {
           if (dto.adult_name[i]) {
@@ -401,7 +401,7 @@ export class ItineraryConfirmationService {
                 itinerary_plan_ID: dto.itinerary_plan_ID,
                 agent_id: dto.agent,
                 primary_customer: 0,
-                customer_type: 1, // Adult
+ customer_type: 1, // Adult
                 customer_salutation: additionalAdultPassengerTitles[i] || '',
                 customer_name: dto.adult_name[i],
                 customer_age: parseInt(dto.adult_age?.[i] || '0') || 0,
@@ -415,7 +415,7 @@ export class ItineraryConfirmationService {
         }
       }
 
-      // E. Insert Children
+ // E. Insert Children
       if (dto.child_name && dto.child_name.length > 0) {
         for (let i = 0; i < dto.child_name.length; i++) {
           if (dto.child_name[i]) {
@@ -425,7 +425,7 @@ export class ItineraryConfirmationService {
                 itinerary_plan_ID: dto.itinerary_plan_ID,
                 agent_id: dto.agent,
                 primary_customer: 0,
-                customer_type: 2, // Child
+ customer_type: 2, // Child
                 customer_name: dto.child_name[i],
                 customer_age: parseInt(dto.child_age?.[i] || '0') || 0,
                 createdby: userId,
@@ -438,7 +438,7 @@ export class ItineraryConfirmationService {
         }
       }
 
-      // F. Insert Infants
+ // F. Insert Infants
       if (dto.infant_name && dto.infant_name.length > 0) {
         for (let i = 0; i < dto.infant_name.length; i++) {
           if (dto.infant_name[i]) {
@@ -448,7 +448,7 @@ export class ItineraryConfirmationService {
                 itinerary_plan_ID: dto.itinerary_plan_ID,
                 agent_id: dto.agent,
                 primary_customer: 0,
-                customer_type: 3, // Infant
+ customer_type: 3, // Infant
                 customer_name: dto.infant_name[i],
                 customer_age: parseInt(dto.infant_age?.[i] || '0') || 0,
                 createdby: userId,
@@ -461,14 +461,14 @@ export class ItineraryConfirmationService {
         }
       }
 
-      // G. Copy related tables (Travellers, Vehicles, Routes, Via Routes, Hotels, Hotspots, Activities)
+ // G. Copy related tables (Travellers, Vehicles, Routes, Via Routes, Hotels, Hotspots, Activities)
       await this.copyDraftToConfirmed(tx, dto.itinerary_plan_ID, confirmedPlanId, userId, {
         copyHotels: shouldConfirmHotels,
         hotelGroupType: shouldConfirmHotels ? groupType : undefined,
         selectedHotelRouteIds: shouldConfirmHotels ? selectedRouteIds : [],
       });
 
-      // H. Insert accounts row only when no provider bookings are pending.
+ // H. Insert accounts row only when no provider bookings are pending.
       if (!hasHotelBookings) {
         await tx.dvi_accounts_itinerary_details.create({
           data: {
@@ -492,8 +492,8 @@ export class ItineraryConfirmationService {
         });
       }
 
-      // I. Keep quotation unconfirmed when hotel bookings are present.
-      // Final confirmation happens only after all provider bookings succeed.
+ // I. Keep quotation unconfirmed when hotel bookings are present.
+ // Final confirmation happens only after all provider bookings succeed.
       await tx.dvi_itinerary_plan_details.update({
         where: { itinerary_plan_ID: dto.itinerary_plan_ID },
         data: {
@@ -510,7 +510,7 @@ export class ItineraryConfirmationService {
             : 'Quotation confirmed successfully. External/self-arranged hotel rows were not sent to supplier booking.',
         itinerary_plan_ID: dto.itinerary_plan_ID,
         confirmed_itinerary_plan_ID: confirmedPlanId,
-        bookingResults: null, // Will be set after transaction
+ bookingResults: null, // Will be set after transaction
       };
     });
   }
@@ -724,7 +724,7 @@ export class ItineraryConfirmationService {
       });
     }
 
-    console.log('[SUPPLIER_HOTEL_BOOKINGS_MERGED_FOR_MULTI_NIGHT]', {
+ console.log('[SUPPLIER_HOTEL_BOOKINGS_MERGED_FOR_MULTI_NIGHT]', {
       before: bookings?.length || 0,
       after: merged.length,
       merged: merged
@@ -869,7 +869,7 @@ export class ItineraryConfirmationService {
     });
 
     if (deduped.length !== rows.length) {
-      console.warn('[SUPPLIER_HOTEL_BOOKINGS_PRUNED_MULTI_NIGHT_CHILD_ROWS]', {
+ console.warn('[SUPPLIER_HOTEL_BOOKINGS_PRUNED_MULTI_NIGHT_CHILD_ROWS]', {
         before: rows.length,
         after: deduped.length,
         removed: (rows as any[])
@@ -912,13 +912,13 @@ export class ItineraryConfirmationService {
   }
 
   assertConsistentMultiNightHotelSelection(providerHotelBookings: any[]): void {
-    /**
+ /**
      * Business rule:
      * - Manual single-day selection may intentionally use a different room/meal plan.
      * - True continuous stay booking must use the same supplier room/rate/meal across all nights.
      *
      * So this guard only applies to rows explicitly marked as multiNightBooking.
-     */
+ */
     const multiNightBookings = (providerHotelBookings || []).filter((booking: any) =>
       Boolean(booking?.multiNightBooking) &&
       Array.isArray(booking?.routeIds) &&

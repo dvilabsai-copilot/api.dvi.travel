@@ -73,7 +73,7 @@ export class ItineraryManualInsertionFitService {
     let destinationSlotReason = 'DESTINATION_SLOT_NOT_FOUND';
     let destinationMinCandidateIndex: number | null = null;
 
-    // 1. Fetch route's current active attraction hotspots ordered by hotspot_order
+ // 1. Fetch route's current active attraction hotspots ordered by hotspot_order
     const rawRouteAttractions: any[] = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
         itinerary_route_ID: Number(routeId),
@@ -89,7 +89,7 @@ export class ItineraryManualInsertionFitService {
       },
     });
 
-    // Baseline-only slot source: never allow candidate C as a slot endpoint.
+ // Baseline-only slot source: never allow candidate C as a slot endpoint.
     const routeAttractions = rawRouteAttractions.filter(
       (r: any) => Number(r.hotspot_ID) !== Number(candidateHotspotId),
     );
@@ -421,7 +421,7 @@ export class ItineraryManualInsertionFitService {
       };
     }
 
-    // 2. Fetch all hotspot names in one query
+ // 2. Fetch all hotspot names in one query
     const hotspotIds = routeAttractions.map((r: any) => Number(r.hotspot_ID));
     const hotspotMasters: any[] = await (tx as any).dvi_hotspot_place.findMany({
       where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
@@ -513,20 +513,20 @@ export class ItineraryManualInsertionFitService {
       destinationAnchorHotspotId = Number(lastDestinationAttraction?.hotspotId || firstDestinationAttraction?.hotspotId || 0) || null;
       destinationAnchorName = String(lastDestinationAttraction?.name || firstDestinationAttraction?.name || '') || null;
       destinationAnchorOrder = Number(lastDestinationAttraction?.hotspotOrder || firstDestinationAttraction?.hotspotOrder || 0) || null;
-      console.log('[ManualDestinationInsert] city_context', {
+ console.log('[ManualDestinationInsert] city_context', {
         routeId: Number(routeId),
         selectedHotspotId: Number(candidateHotspotId),
         hotspotCityContext,
         source: String(routeCityContext?.location_name || ''),
         destination: String(routeCityContext?.next_visiting_location || ''),
       });
-      console.log('[ManualDestinationInsert] destination_hotspot_candidates', {
+ console.log('[ManualDestinationInsert] destination_hotspot_candidates', {
         routeId: Number(routeId),
         selectedHotspotId: Number(candidateHotspotId),
         destinationHotspotIds: destinationRows.map((row: any) => Number(row?.hotspotId || 0)).filter((id: number) => id > 0),
         destinationHotspotNames: destinationRows.map((row: any) => String(row?.name || '')).filter(Boolean),
       });
-      console.log('[ManualDestinationInsert] selected_anchor', {
+ console.log('[ManualDestinationInsert] selected_anchor', {
         routeId: Number(routeId),
         selectedHotspotId: Number(candidateHotspotId),
         destinationAnchorHotspotId,
@@ -554,7 +554,7 @@ export class ItineraryManualInsertionFitService {
       };
     }
 
-    // 3. Build hotspot-to-hotspot slot pairs
+ // 3. Build hotspot-to-hotspot slot pairs
     const slotPairs: Array<{ slotIndex: number; fromId: number; toId: number; fromName: string; toName: string }> = [];
     let nextSlotIndex = 0;
     for (let i = 0; i < routeAttractions.length - 1; i++) {
@@ -766,7 +766,7 @@ export class ItineraryManualInsertionFitService {
           });
         }
 
-        console.log('[ManualDestinationInsert] hotel_side_insertion', {
+ console.log('[ManualDestinationInsert] hotel_side_insertion', {
           routeId: Number(routeId),
           selectedHotspotId: Number(candidateHotspotId),
           anchorId,
@@ -781,7 +781,7 @@ export class ItineraryManualInsertionFitService {
           requiredMinutes: totalRequiredMinutes,
           timingPossible,
         });
-        console.log('[ManualDestinationInsert] skipped_matrix_for_hotel_endpoint', {
+ console.log('[ManualDestinationInsert] skipped_matrix_for_hotel_endpoint', {
           routeId: Number(routeId),
           selectedHotspotId: Number(candidateHotspotId),
           reason: 'Only destination anchor and hotel endpoint are available; hotspot-to-hotspot matrix slot pairs do not apply.',
@@ -898,8 +898,8 @@ export class ItineraryManualInsertionFitService {
       };
     }
 
-    // 4. Query hotspot_route_between_map per original A->B slot for candidate C.
-    // Check both directions: A->B->C and B->A->C (geographically interchangeable)
+ // 4. Query hotspot_route_between_map per original A->B slot for candidate C.
+ // Check both directions: A->B->C and B->A->C (geographically interchangeable)
     const matrixRows: any[] = [];
     for (const slot of slotPairs) {
       try {
@@ -961,11 +961,11 @@ export class ItineraryManualInsertionFitService {
           }
         }
       } catch (err) {
-        console.error('[buildManualInsertionFit] matrix query error:', err);
+ console.error('[buildManualInsertionFit] matrix query error:', err);
       }
     }
 
-    // Index matrix rows by from+to, and also reverse key for directional tolerance.
+ // Index matrix rows by from+to, and also reverse key for directional tolerance.
     const matrixBySlot = new Map<string, any>();
     for (const row of matrixRows) {
       const fromId = Number(row?.from_hotspot_id || 0);
@@ -997,7 +997,7 @@ export class ItineraryManualInsertionFitService {
           matrixRows.push(boundaryMx);
           matrixBySlot.set(`${boundaryFromId}_${boundaryToId}`, boundaryMx);
           matrixBySlot.set(`${boundaryToId}_${boundaryFromId}`, boundaryMx);
-          console.log('[ManualDestinationInsert] boundary_matrix_fallback_added', {
+ console.log('[ManualDestinationInsert] boundary_matrix_fallback_added', {
             routeId: Number(routeId),
             selectedHotspotId: Number(candidateHotspotId),
             fromHotspotId: boundaryFromId,
@@ -1005,7 +1005,7 @@ export class ItineraryManualInsertionFitService {
             routeFitType: String(boundaryMx?.route_fit_type || ''),
           });
         } else {
-          console.warn('[ManualDestinationInsert] boundary_matrix_fallback_missing', {
+ console.warn('[ManualDestinationInsert] boundary_matrix_fallback_missing', {
             routeId: Number(routeId),
             selectedHotspotId: Number(candidateHotspotId),
             fromHotspotId: boundaryFromId,
@@ -1061,7 +1061,7 @@ export class ItineraryManualInsertionFitService {
       return 5;
     };
 
-    // 5. Build allSlotResults
+ // 5. Build allSlotResults
     let allSlotResults: any[] = slotPairs.map((slot) => {
       const key = `${slot.fromId}_${slot.toId}`;
       const mx = matrixBySlot.get(key);
@@ -1255,7 +1255,7 @@ export class ItineraryManualInsertionFitService {
         };
 
         allSlotResults.push(destinationBoundarySlot);
-        console.log('[ManualDestinationInsert] synthetic_destination_entry_slot_added', {
+ console.log('[ManualDestinationInsert] synthetic_destination_entry_slot_added', {
           routeId: Number(routeId),
           selectedHotspotId: Number(candidateHotspotId),
           fromHotspotId: boundaryFromId,
@@ -1290,7 +1290,7 @@ export class ItineraryManualInsertionFitService {
       const destinationCityKey = this.callbacks.deriveLooseCityKey(String(routeRow?.next_visiting_location || ''));
       const sameCity = !!sourceCityKey && !!destinationCityKey && sourceCityKey === destinationCityKey;
 
-      console.log('[SourceCityExitAnchor] loose_city_keys', {
+ console.log('[SourceCityExitAnchor] loose_city_keys', {
         routeId: Number(routeId),
         sourceLocation,
         destinationLocation,
@@ -1299,7 +1299,7 @@ export class ItineraryManualInsertionFitService {
       });
 
       if (sameCity) {
-        console.log('[SourceCityExitAnchor] skipped_same_city', {
+ console.log('[SourceCityExitAnchor] skipped_same_city', {
           routeId: Number(routeId),
           candidateHotspotId: Number(candidateHotspotId),
           sourceLocation,
@@ -1308,7 +1308,7 @@ export class ItineraryManualInsertionFitService {
           destinationCityKey,
         });
       } else {
-        console.log('[SourceCityExitAnchor] attempt', {
+ console.log('[SourceCityExitAnchor] attempt', {
           routeId: Number(routeId),
           candidateHotspotId: Number(candidateHotspotId),
           sourceLocation,
@@ -1428,14 +1428,14 @@ export class ItineraryManualInsertionFitService {
                 });
               }
             } else {
-              console.log('[ManualMatrixEnsure] missing_row', {
+ console.log('[ManualMatrixEnsure] missing_row', {
                 fromHotspotId: Number(anchorHotspotId),
                 toHotspotId: Number(nextConsecutiveRouteHotspotId),
                 candidateHotspotId: Number(candidateHotspotId),
               });
             }
           } else {
-            console.log('[ManualMatrixEnsure] missing_row', {
+ console.log('[ManualMatrixEnsure] missing_row', {
               fromHotspotId: Number(sourceSideHotspotId),
               toHotspotId: Number(destinationSideHotspotId),
               candidateHotspotId: Number(candidateHotspotId),
@@ -1456,7 +1456,7 @@ export class ItineraryManualInsertionFitService {
         ? attractionCityContexts[attractionCityContexts.length - 1]
         : null;
 
-      console.log('[ManualDestinationInsert] destination_reached_at', {
+ console.log('[ManualDestinationInsert] destination_reached_at', {
         routeId: Number(routeId),
         selectedHotspotId: Number(candidateHotspotId),
         destinationReachedAtHotspotId: Number(destinationReachedAt?.hotspotId || 0) || null,
@@ -1495,7 +1495,7 @@ export class ItineraryManualInsertionFitService {
           && travelEnd !== null
           && travelEnd > attractionStart
         ) {
-          console.warn('[ManualDestinationInsert] skipping_invalid_destination_anchor', {
+ console.warn('[ManualDestinationInsert] skipping_invalid_destination_anchor', {
             routeId: Number(routeId),
             selectedHotspotId: Number(candidateHotspotId),
             anchorHotspotId: hotspotId,
@@ -1670,7 +1670,7 @@ export class ItineraryManualInsertionFitService {
         }
 
         allSlotResults.push(hotelSideSlot);
-        console.log('[ManualDestinationInsert] selected_destination_slot', {
+ console.log('[ManualDestinationInsert] selected_destination_slot', {
           routeId: Number(routeId),
           selectedHotspotId: Number(candidateHotspotId),
           slotReason: destinationSlotReason,
@@ -1678,7 +1678,7 @@ export class ItineraryManualInsertionFitService {
           fromName: hotelSideSlot.fromName,
           toName: hotelSideSlot.toName,
         });
-        console.log('[ManualDestinationInsert] hotel_side_slot_used', {
+ console.log('[ManualDestinationInsert] hotel_side_slot_used', {
           routeId: Number(routeId),
           selectedHotspotId: Number(candidateHotspotId),
           used: true,
@@ -1687,8 +1687,8 @@ export class ItineraryManualInsertionFitService {
       }
     }
 
-    // 6. Rank and find bestSlot
-    // Important: if normal ON_ROUTE/MINOR slots exist, prefer those over destination-side hotel insertion.
+ // 6. Rank and find bestSlot
+ // Important: if normal ON_ROUTE/MINOR slots exist, prefer those over destination-side hotel insertion.
     const isDestinationSideSlot = (slot: any): boolean =>
       String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION';
 
@@ -1795,13 +1795,13 @@ export class ItineraryManualInsertionFitService {
         }
       : null;
 
-    // 7. Build requestedSlot
-    // anchorIndex from caller maps to: 0 = before first hotspot (hotel/source), n = after hotspot[n-1]
-    // A hotspot-to-hotspot slot exists at anchor index 1..N-1 (i.e. slotIndex = anchorIndex - 1)
+ // 7. Build requestedSlot
+ // anchorIndex from caller maps to: 0 = before first hotspot (hotel/source), n = after hotspot[n-1]
+ // A hotspot-to-hotspot slot exists at anchor index 1..N-1 (i.e. slotIndex = anchorIndex - 1)
     let requestedSlot: any = null;
     const anchorIdx = Number.isInteger(Number(requestedAnchorIndex)) ? Number(requestedAnchorIndex) : -1;
     const isHotspotSlot = anchorIdx >= 1 && anchorIdx <= slotPairs.length;
-    const requestedSlotIndex = anchorIdx - 1; // maps to slotPairs index
+ const requestedSlotIndex = anchorIdx - 1; // maps to slotPairs index
     const preferredFromHotspotId = Number(matrixPreferredSlot?.fromHotspotId || 0);
     const preferredToHotspotId = Number(matrixPreferredSlot?.toHotspotId || 0);
 
@@ -1880,7 +1880,7 @@ export class ItineraryManualInsertionFitService {
       const rs = allSlotResults[requestedSlotIndex];
       requestedSlot = mapRequestedSlotResult(rs);
     } else if (anchorIdx === 0 || !isHotspotSlot) {
-      // Hotel/source segment or first segment before any hotspot
+ // Hotel/source segment or first segment before any hotspot
       const toName = routeAttractions.length > 0
         ? (nameById.get(Number(routeAttractions[0].hotspot_ID)) || `Hotspot #${routeAttractions[0].hotspot_ID}`)
         : 'First Hotspot';
@@ -1915,7 +1915,7 @@ export class ItineraryManualInsertionFitService {
       };
     }
 
-    // 8. Choose the actual insertion slot
+ // 8. Choose the actual insertion slot
     let chosenSlot: any;
     let chosenSlotSource: 'BEST_FIT' | 'REQUESTED_SLOT' | 'FALLBACK_TIMING' | 'NO_MATRIX_DATA';
     let warning: string | null = null;
@@ -1923,7 +1923,7 @@ export class ItineraryManualInsertionFitService {
       manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
       && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
 
-    // Explicit state detection: distinguish between no matrix data and no feasible slot
+ // Explicit state detection: distinguish between no matrix data and no feasible slot
     const usableTypes = ['ON_ROUTE', 'MINOR_DETOUR', 'BACKTRACK', 'OFF_ROUTE'];
     const feasibleTypes = manualRelaxedRouteFit
       ? ['ON_ROUTE', 'MINOR_DETOUR', 'BACKTRACK', 'OFF_ROUTE']
@@ -1945,7 +1945,7 @@ export class ItineraryManualInsertionFitService {
     const hasOnlyOffRouteOrBacktrack =
       hasAnyMatrixData && !hasFeasibleMatrixSlot;
 
-    // Case 1: MATRIX_MISSING — no real route-fit rows exist
+ // Case 1: MATRIX_MISSING no real route-fit rows exist
     if (!hasAnyMatrixData) {
       if (destinationInsertionMode) {
         return {
@@ -2013,7 +2013,7 @@ export class ItineraryManualInsertionFitService {
       };
     }
 
-    // Case 2: MATRIX_BUILT_BUT_NO_FEASIBLE_SLOT — matrix exists but all slots are OFF_ROUTE or BACKTRACK
+ // Case 2: MATRIX_BUILT_BUT_NO_FEASIBLE_SLOT matrix exists but all slots are OFF_ROUTE or BACKTRACK
     if (hasOnlyOffRouteOrBacktrack && !manualRelaxedRouteFit) {
       const normalizedAllSlotResults = allSlotResults.map((slot) => ({
         ...slot,
@@ -2072,7 +2072,7 @@ export class ItineraryManualInsertionFitService {
         )
       )
     ) {
-      // Best slot is feasible — use it
+ // Best slot is feasible use it
       chosenSlotSource = 'BEST_FIT';
       chosenSlot = {
         slotIndex: bestSlot.slotIndex,
@@ -2104,12 +2104,12 @@ export class ItineraryManualInsertionFitService {
         sourceCityExitAnchorDistanceFromRouteMeters: bestSlot.sourceCityExitAnchorDistanceFromRouteMeters,
         attemptedSlotLabel: bestSlot.attemptedSlotLabel,
       };
-      // Warn if user requested a different slot
+ // Warn if user requested a different slot
       if (requestedSlot && isHotspotSlot && requestedSlotIndex !== bestSlot.slotIndex) {
         warning = `Requested slot (${requestedSlot.fromName} → ${requestedSlot.toName}) is not the optimal insertion point. Best slot is ${bestSlot.fromName} → ${bestSlot.toName} (${bestSlot.label}).`;
       }
     } else if (bestSlot) {
-      // Matrix exists but best slot is not feasible for apply (e.g. BACKTRACK/OFF_ROUTE)
+ // Matrix exists but best slot is not feasible for apply (e.g. BACKTRACK/OFF_ROUTE)
       chosenSlotSource = 'BEST_FIT';
       chosenSlot = {
         ...bestSlot,

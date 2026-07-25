@@ -46,8 +46,8 @@ export class CancelItineraryDto {
   @Max(100)
   cancellation_percentage?: number;
 
-  @ApiProperty({ 
-    required: false, 
+  @ApiProperty({
+    required: false,
     type: CancellationOptionsDto,
     description: 'Selective cancellation options for different components'
   })
@@ -56,7 +56,7 @@ export class CancelItineraryDto {
   @Type(() => CancellationOptionsDto)
   cancellation_options?: CancellationOptionsDto;
 
-  // Legacy fields for backward compatibility
+ // Legacy fields for backward compatibility
   @ApiProperty({ required: false, deprecated: true })
   @IsOptional()
   @IsBoolean()

@@ -62,7 +62,7 @@ export class ItineraryHotelBookingFulfillmentService {
     dto: ConfirmQuotationDto,
     endUserIp: string = process.env.TBO_END_USER_IP || '134.209.145.185',
   ) {
-    const userId = 1; // TODO: Get from authenticated user
+ const userId = 1; // TODO: Get from authenticated user
     const mergedHotelBookings = this.pruneHotelBookingsCoveredByMultiNight(
       this.mergeConsecutiveSupplierHotelBookings(dto.hotel_bookings || []),
     );
@@ -70,10 +70,10 @@ export class ItineraryHotelBookingFulfillmentService {
     const providerHotelBookings = this.getProviderBookableHotelBookings(mergedHotelBookings);
     const skippedExternalStayCount = (dto.hotel_bookings || []).length - providerHotelBookings.length;
 
-    // If no supplier-bookable hotels are selected, still return DB-backed confirmed hotel details.
-    // This covers cases where dto.hotel_bookings contains only external/self-arranged rows.
+ // If no supplier-bookable hotels are selected, still return DB-backed confirmed hotel details.
+ // This covers cases where dto.hotel_bookings contains only external/self-arranged rows.
     if (providerHotelBookings.length === 0) {
-      console.log(
+ console.log(
         '[Hotel Booking] No supplier-bookable hotels to process. External/self-arranged stays skipped:',
         skippedExternalStayCount,
       );
@@ -94,8 +94,8 @@ export class ItineraryHotelBookingFulfillmentService {
       };
     }
 
-    console.log('[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Processing', providerHotelBookings.length, 'hotel(s)');
-    console.log(
+ console.log('[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Processing', providerHotelBookings.length, 'hotel(s)');
+ console.log(
       '[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Incoming supplier hotel_bookings:',
       JSON.stringify(
         providerHotelBookings.map((booking: any) => ({
@@ -121,7 +121,7 @@ export class ItineraryHotelBookingFulfillmentService {
       ),
     );
 
-    // Group hotels by provider and skip bookings that are already successful in DB.
+ // Group hotels by provider and skip bookings that are already successful in DB.
     const normalizedHotelBookings = providerHotelBookings.map((hotel) => ({
       ...hotel,
       __provider: String(hotel?.provider || '').trim().toLowerCase(),
@@ -136,7 +136,7 @@ export class ItineraryHotelBookingFulfillmentService {
     const axisroomsHotels = pendingBookings.filter((h) => h.__provider === 'axisrooms');
     const staahHotels = pendingBookings.filter((h) => h.__provider === 'staah');
 
-    console.log(
+ console.log(
       '[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Total:',
       normalizedHotelBookings.length,
       'Already success:',
@@ -144,14 +144,14 @@ export class ItineraryHotelBookingFulfillmentService {
       'Pending:',
       pendingBookings.length,
     );
-    console.log('[CONFIRM_QUOTATION_DEBUG] Provider counts -> TBO:', tboHotels.length, 'ResAvenue:', resavenueHotels.length, 'HOBSE:', hobseHotels.length, 'AxisRooms:', axisroomsHotels.length, 'STAAH:', staahHotels.length);
+ console.log('[CONFIRM_QUOTATION_DEBUG] Provider counts -> TBO:', tboHotels.length, 'ResAvenue:', resavenueHotels.length, 'HOBSE:', hobseHotels.length, 'AxisRooms:', axisroomsHotels.length, 'STAAH:', staahHotels.length);
 
     const allBookingResults: any[] = [...alreadyConfirmedResults];
 
     try {
-      // Process TBO hotels if any
+ // Process TBO hotels if any
       if (tboHotels.length > 0) {
-        console.log('[TBO Booking] Processing', tboHotels.length, 'hotel(s)');
+ console.log('[TBO Booking] Processing', tboHotels.length, 'hotel(s)');
         const selections = tboHotels.map((hotel) => ({
         routeId: hotel.routeId,
         selection: {
@@ -190,14 +190,14 @@ export class ItineraryHotelBookingFulfillmentService {
         },
       }));
 
-        // Call TBO booking service with group_type
+ // Call TBO booking service with group_type
         const tboBookingResults = await this.tboHotelBooking.confirmItineraryHotels(
           baseResult.confirmed_itinerary_plan_ID,
           baseResult.itinerary_plan_ID,
           selections,
           endUserIp || dto.endUserIp || process.env.TBO_END_USER_IP || '134.209.145.185',
           userId,
-          Number(dto.hotel_group_type) || 1, // Pass the group_type
+ Number(dto.hotel_group_type) || 1, // Pass the group_type
         );
         allBookingResults.push(
           ...tboBookingResults.map((result: any) => ({
@@ -207,17 +207,17 @@ export class ItineraryHotelBookingFulfillmentService {
         );
       }
 
-      // Process ResAvenue hotels if any
+ // Process ResAvenue hotels if any
       if (resavenueHotels.length > 0) {
-        console.log('[ResAvenue Booking] Processing', resavenueHotels.length, 'hotel(s)');
-        
+ console.log('[ResAvenue Booking] Processing', resavenueHotels.length, 'hotel(s)');
+
         const resavenueSelections = resavenueHotels.map((hotel) => {
-          // Note: invCode and rateCode should ideally be fetched from hotel detail table
-          // For now, using fallback values that allow Rate Fetch API to be called
+ // Note: invCode and rateCode should ideally be fetched from hotel detail table
+ // For now, using fallback values that allow Rate Fetch API to be called
           const invCode = 1;
-          const rateCode = 524; // Fallback rate code for Testing
-          
-          console.log(
+ const rateCode = 524; // Fallback rate code for Testing
+
+ console.log(
             `[ResAvenue] Hotel ${hotel.hotelCode}: Using InvCode=${invCode}, RateCode=${rateCode}`,
           );
 
@@ -244,7 +244,7 @@ export class ItineraryHotelBookingFulfillmentService {
           };
         });
 
-        // Call ResAvenue booking service
+ // Call ResAvenue booking service
         const resavenueBookingResults = await this.resavenueHotelBooking.confirmItineraryHotels(
           baseResult.confirmed_itinerary_plan_ID,
           baseResult.itinerary_plan_ID,
@@ -259,11 +259,11 @@ export class ItineraryHotelBookingFulfillmentService {
         );
       }
 
-      // Process HOBSE hotels if any
+ // Process HOBSE hotels if any
       if (hobseHotels.length > 0) {
-        console.log('[HOBSE Booking] Processing', hobseHotels.length, 'hotel(s)');
-        
-        // Call HOBSE booking service
+ console.log('[HOBSE Booking] Processing', hobseHotels.length, 'hotel(s)');
+
+ // Call HOBSE booking service
         const hobseBookingResults = await this.hobseHotelBooking.confirmItineraryHotels(
           baseResult.itinerary_plan_ID,
           hobseHotels,
@@ -287,9 +287,9 @@ export class ItineraryHotelBookingFulfillmentService {
         );
       }
 
-      // Process AxisRooms hotels if any (outbound push to AxisRooms endpoint)
+ // Process AxisRooms hotels if any (outbound push to AxisRooms endpoint)
       if (axisroomsHotels.length > 0) {
-        console.log('[AxisRooms Booking Push] Processing', axisroomsHotels.length, 'hotel(s)');
+ console.log('[AxisRooms Booking Push] Processing', axisroomsHotels.length, 'hotel(s)');
 
         const axisroomsPushResults = [];
         const processedAxisStayKeys = new Set<string>();
@@ -327,7 +327,7 @@ export class ItineraryHotelBookingFulfillmentService {
       }
 
       if (staahHotels.length > 0) {
-        console.log('[STAAH Booking Push] Processing', staahHotels.length, 'hotel(s)');
+ console.log('[STAAH Booking Push] Processing', staahHotels.length, 'hotel(s)');
         const processedStaahStayKeys = new Set<string>();
         const staahBookingResults =
           await this.staahBookingPushService.confirmItineraryHotels({
@@ -377,7 +377,7 @@ export class ItineraryHotelBookingFulfillmentService {
           hotelName: String(b.hotelName || ''),
         }));
 
-      console.log('[CONFIRM_QUOTATION_DEBUG] Final bookingResults before response:', JSON.stringify(allBookingResults, null, 2));
+ console.log('[CONFIRM_QUOTATION_DEBUG] Final bookingResults before response:', JSON.stringify(allBookingResults, null, 2));
 
       if (pendingAfterAttempt.length > 0) {
         throw new BadRequestException({
@@ -421,8 +421,8 @@ export class ItineraryHotelBookingFulfillmentService {
         confirmedHotelDetails,
       };
     } catch (error) {
-      console.error('[CONFIRM_QUOTATION_DEBUG] Error processing hotel bookings:', error);
-      console.error('[STAAH_BOOKING_DEBUG] Error details:', {
+ console.error('[CONFIRM_QUOTATION_DEBUG] Error processing hotel bookings:', error);
+ console.error('[STAAH_BOOKING_DEBUG] Error details:', {
         message: error?.message,
         status: error?.response?.status,
         body: error?.response?.data,

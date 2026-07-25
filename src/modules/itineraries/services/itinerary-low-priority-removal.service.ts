@@ -223,7 +223,7 @@ export class ItineraryLowPriorityRemovalService {
         return a.id - b.id;
       });
 
-    console.log('[LowPriorityRemoval]', {
+ console.log('[LowPriorityRemoval]', {
       selectedHotspotId,
       selectedManualPriority,
       candidateHotspots,
@@ -460,7 +460,7 @@ export class ItineraryLowPriorityRemovalService {
 
       if (!chosenPlan && candidateIds.length > 10) {
         fallbackGreedyUsed = true;
-        console.warn('Combination search capped; fallback greedy used.');
+ console.warn('Combination search capped; fallback greedy used.');
 
         const rollingRemovalIds: number[] = [];
         for (const candidateId of candidateIds) {

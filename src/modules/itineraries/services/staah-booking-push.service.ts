@@ -12,7 +12,7 @@ import {
 export class StaahBookingPushService {
   private readonly apiUrl =
     process.env.STAAH_BOOKING_API_URL ||
-    'https://reservation.otaswitch.com/getapi/reservation/v2';
+ 'https://reservation.otaswitch.com/getapi/reservation/v2';
   private readonly apiKey =  process.env.STAAH_API_KEY || '';
 
   constructor(private readonly prisma: PrismaService) {}
@@ -366,7 +366,7 @@ export class StaahBookingPushService {
         },
       });
     } catch (error: any) {
-      console.error('[STAAH_LOGGING_FAILED]', {
+ console.error('[STAAH_LOGGING_FAILED]', {
         type: params.type,
         staahPropertyId: params.staahPropertyId,
         reservationId: params.reservationId,
@@ -683,7 +683,7 @@ export class StaahBookingPushService {
     fallbackEmail: string;
     fallbackPhone: string;
   }): Promise<any[]> {
-    console.log('[STAAH_BOOKING_PUSH] Starting', { count: params.hotels?.length || 0 });
+ console.log('[STAAH_BOOKING_PUSH] Starting', { count: params.hotels?.length || 0 });
     const results: any[] = [];
     const bookingTimeoutMs = Number(process.env.STAAH_BOOKING_TIMEOUT_MS || 60000);
     const itineraryPlan = await this.prisma.dvi_itinerary_plan_details.findFirst({
@@ -918,11 +918,11 @@ export class StaahBookingPushService {
           },
         };
 
-        console.log('[STAAH_BOOKING_PUSH] Resolved identifiers', {
+ console.log('[STAAH_BOOKING_PUSH] Resolved identifiers', {
           routeId: hotel.routeId, hotelCode: hotel.hotelCode, propertyid, roomId, rateId, outboundRoomId, outboundRateId, pricingRoomIds, pricingRateIds, adults, children, guestCounts, notes, recalculatedPricing,
         });
-        console.log('[STAAH_BOOKING_PUSH] Request URL', this.apiUrl);
-        console.log('[STAAH_BOOKING_PUSH] Request payload', JSON.stringify(this.maskPayload(payload)));
+ console.log('[STAAH_BOOKING_PUSH] Request URL', this.apiUrl);
+ console.log('[STAAH_BOOKING_PUSH] Request payload', JSON.stringify(this.maskPayload(payload)));
 
         if (!this.apiKey) {
           throw new Error('Missing  STAAH_API_KEY');
@@ -988,8 +988,8 @@ export class StaahBookingPushService {
           continue;
         }
 
-        console.log('[STAAH_BOOKING_PUSH] Response status', responseStatus);
-        console.log('[STAAH_BOOKING_PUSH] Response body', responseBody);
+ console.log('[STAAH_BOOKING_PUSH] Response status', responseStatus);
+ console.log('[STAAH_BOOKING_PUSH] Response body', responseBody);
 
         const bodyAsText = typeof responseBody === 'string' ? responseBody.toLowerCase() : '';
         const isFailureLike =
@@ -1039,7 +1039,7 @@ export class StaahBookingPushService {
           continue;
         }
 
-        // Persist confirmation row in staah_hotel_booking_confirmation
+ // Persist confirmation row in staah_hotel_booking_confirmation
         try {
           for (const routeId of routeIds) {
             await this.prisma.staah_hotel_booking_confirmation.create({
@@ -1075,7 +1075,7 @@ export class StaahBookingPushService {
             });
           }
         } catch (e) {
-          console.error('Failed to persist STAAH confirmation:', e?.message || e);
+ console.error('Failed to persist STAAH confirmation:', e?.message || e);
         }
 
         results.push({
@@ -1123,7 +1123,7 @@ export class StaahBookingPushService {
           });
         }
 
-        console.error('[STAAH_BOOKING_PUSH] Failed', {
+ console.error('[STAAH_BOOKING_PUSH] Failed', {
           routeId: hotel?.routeId,
           hotelCode: hotel?.hotelCode,
           message: errorMessage,
@@ -1159,7 +1159,7 @@ export class StaahBookingPushService {
     });
 
     for (const row of rows) {
-      // eslint-disable-next-line no-await-in-loop
+ // eslint-disable-next-line no-await-in-loop
       await this.cancelStaahBookingRow(row as any);
     }
   }
@@ -1177,7 +1177,7 @@ export class StaahBookingPushService {
     });
 
     for (const row of rows) {
-      // eslint-disable-next-line no-await-in-loop
+ // eslint-disable-next-line no-await-in-loop
       await this.cancelStaahBookingRow(row as any);
     }
   }
@@ -1217,7 +1217,7 @@ export class StaahBookingPushService {
     }
 
     if (!row) {
-      console.log('[STAAH_CANCEL_PUSH] No active STAAH confirmation found', {
+ console.log('[STAAH_CANCEL_PUSH] No active STAAH confirmation found', {
         itineraryPlanId: params.itineraryPlanId,
         routeId: params.routeId,
         hotelId: normalizedHotelId || null,
@@ -1235,7 +1235,7 @@ export class StaahBookingPushService {
       };
     }
 
-    console.log('[STAAH_CANCEL_CONFIRMATION_ROW_RESOLVED]', {
+ console.log('[STAAH_CANCEL_CONFIRMATION_ROW_RESOLVED]', {
       itineraryPlanId: params.itineraryPlanId,
       routeId: params.routeId,
       requestedHotelId: normalizedHotelId || null,
@@ -1267,7 +1267,7 @@ export class StaahBookingPushService {
           },
         },
       });
-      console.error('[STAAH_CANCEL_PUSH] Failed', {
+ console.error('[STAAH_CANCEL_PUSH] Failed', {
         id: row.staah_hotel_booking_confirmation_ID,
         reason: 'missing_confirm_request',
       });
@@ -1285,7 +1285,7 @@ export class StaahBookingPushService {
     reservation.status = 'Cancel';
     reservation.reservation_datetime = this.nowIstIsoSeconds();
 
-    console.log('[STAAH_CANCEL_PAYLOAD_BUILT]', {
+ console.log('[STAAH_CANCEL_PAYLOAD_BUILT]', {
       itineraryPlanId: row.itinerary_plan_ID,
       confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
       routeId: row.itinerary_route_ID,
@@ -1302,7 +1302,7 @@ export class StaahBookingPushService {
       departureDate: reservation?.room?.[0]?.departure_date || null,
     });
 
-    console.log('[STAAH_CANCEL_PUSH] Starting', {
+ console.log('[STAAH_CANCEL_PUSH] Starting', {
       itineraryPlanId: row.itinerary_plan_ID,
       confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
       routeId: row.itinerary_route_ID,
@@ -1312,17 +1312,17 @@ export class StaahBookingPushService {
       confirmationId: row.staah_hotel_booking_confirmation_ID,
       cancelUrl: this.apiUrl,
     });
-    console.log('[STAAH_CANCEL_PUSH] API key debug', {
+ console.log('[STAAH_CANCEL_PUSH] API key debug', {
       hasEnvApiKey: !!this.apiKey,
       apiKeyLength: this.apiKey ? this.apiKey.length : 0,
       cancelPayloadApiKeyLength: cancelPayload?.apikey ? String(cancelPayload.apikey).length : 0,
     });
-    console.log('[STAAH_CANCEL_PUSH] Request payload', JSON.stringify(this.maskPayload(cancelPayload)));
+ console.log('[STAAH_CANCEL_PUSH] Request payload', JSON.stringify(this.maskPayload(cancelPayload)));
 
     try {
       const cancelResult = await this.cancelBooking(cancelPayload as any);
-      console.log('[STAAH_CANCEL_PUSH] Response status', cancelResult?.status ?? null);
-      console.log('[STAAH_CANCEL_PUSH] Response body', cancelResult?.response ?? null);
+ console.log('[STAAH_CANCEL_PUSH] Response status', cancelResult?.status null);
+ console.log('[STAAH_CANCEL_PUSH] Response body', cancelResult?.response null);
 
       await this.logStaahReservation({
         type: cancelResult?.success ? 'outbound_cancel' : 'outbound_cancel_failed',
@@ -1370,7 +1370,7 @@ export class StaahBookingPushService {
           },
         },
       });
-      console.log('[STAAH_CANCEL_API_RESPONSE]', {
+ console.log('[STAAH_CANCEL_API_RESPONSE]', {
         itineraryPlanId: row.itinerary_plan_ID,
         confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
         routeId: row.itinerary_route_ID,
@@ -1382,7 +1382,7 @@ export class StaahBookingPushService {
         response: cancelResult?.response ?? null,
         error: cancelResult?.error ?? null,
       });
-      console.log('[STAAH_CANCEL_DB_UPDATED]', {
+ console.log('[STAAH_CANCEL_DB_UPDATED]', {
         itineraryPlanId: row.itinerary_plan_ID,
         confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
         routeId: row.itinerary_route_ID,
@@ -1433,7 +1433,7 @@ export class StaahBookingPushService {
           },
         },
       });
-      console.error('[STAAH_CANCEL_PUSH] Failed', {
+ console.error('[STAAH_CANCEL_PUSH] Failed', {
         itineraryPlanId: row.itinerary_plan_ID,
         confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
         routeId: row.itinerary_route_ID,
@@ -1447,7 +1447,7 @@ export class StaahBookingPushService {
     }
   }
 
-  // STAAH cancel helper - use certified flow: action=reservation_info with reservation.status=Cancel
+ // STAAH cancel helper - use certified flow: action=reservation_info with reservation.status=Cancel
   private async cancelBooking(payload: any): Promise<any> {
     try {
       const req = this.deepClone(payload);

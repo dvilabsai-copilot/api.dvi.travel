@@ -12,7 +12,7 @@ export class VehicleAvailabilityRouteSegmentDto {
 
 export class VehicleAvailabilityCellDto {
   @ApiProperty()
-  date!: string; // YYYY-MM-DD
+ date!: string; // YYYY-MM-DD
 
   @ApiProperty({ required: false, nullable: true })
   itineraryPlanId!: number | null;
@@ -103,7 +103,7 @@ export class VehicleAvailabilityRowDto {
 
 export class VehicleAvailabilityResponseDto {
   @ApiProperty({ type: [String] })
-  dates!: string[]; // YYYY-MM-DD
+ dates!: string[]; // YYYY-MM-DD
 
   @ApiProperty({ type: [VehicleAvailabilityRowDto] })
   rows!: VehicleAvailabilityRowDto[];

@@ -92,10 +92,10 @@ export class LocationsService {
     thiruvananthapuram: ['thiruvananthapuram', 'trivandrum', 'tvm'],
   };
 
-  /**
+ /**
    * Convert database row to API response format
    * Handles field mapping from DB schema to API contract
-   */
+ */
   private mapRowToResponse(row: any): LocationResponseDto {
     return {
       location_ID: Number(row.location_ID),
@@ -123,7 +123,7 @@ export class LocationsService {
     };
   }
 
-  // ------ LIST + FILTERS ------
+ // ------ LIST + FILTERS ------
   async list(q: ListQuery) {
   const page = Math.max(1, Number(q.page) || 1);
   const pageSize = Math.min(500, Math.max(1, Number(q.pageSize) || 10));
@@ -155,7 +155,7 @@ if (source && destination) {
   try {
     await this.ensureExactLocationRouteExists(source, destination);
   } catch (error) {
-    console.error(
+ console.error(
       '[locations] Failed to auto-create exact route',
       { source, destination, error },
     );
@@ -742,7 +742,7 @@ const total = await this.prisma.dvi_stored_locations.count({ where });
     return names.map((name) => ({ get_state: name }));
   }
 
-  // ------ CRUD ------
+ // ------ CRUD ------
   async create(payload: any) {
        const { latitude: sourceLat, longitude: sourceLng } =
       this.resolveCoordinateInput(
@@ -924,8 +924,8 @@ if (citySeed) {
       );
     }
 
-    // A route distance is symmetric in the stored-location master. Keep the
-    // manually edited row and its reverse row in sync in one transaction.
+ // A route distance is symmetric in the stored-location master. Keep the
+ // manually edited row and its reverse row in sync in one transaction.
     const nextDuration = durationProvided
       ? String(payload?.duration_text ?? payload?.duration ?? '').trim()
       : distanceProvided
@@ -1157,7 +1157,7 @@ private async getItineraryDistanceLimit(): Promise<number> {
 }
 
 private async getDistinctExistingSourceLocations(): Promise<SourceLocationSeed[]> {
-  // PHP replication candidates come only from existing SOURCE-side values, not destination rows.
+ // PHP replication candidates come only from existing SOURCE-side values, not destination rows.
   const rows = await this.prisma.dvi_stored_locations.findMany({
     where: {
       deleted: 0,
@@ -1381,7 +1381,7 @@ const SELF_ROUTE_MIN_DISTANCE_KM = 10;
     return;
   }
 
-  //const isSameLocation = source.toLowerCase() === destination.toLowerCase();
+ //const isSameLocation = source.toLowerCase() === destination.toLowerCase();
 
   const distanceKm = isSameLocation
     ? 10
@@ -1557,7 +1557,7 @@ private async createReplicatedLocationRows(
       candidate.source_location.toLowerCase();
 
     if (isSelfRoute) {
-      // Self-route is created unconditionally below with the minimum 10 km distance.
+ // Self-route is created unconditionally below with the minimum 10 km distance.
       continue;
     }
 
@@ -1611,8 +1611,8 @@ private async createReplicatedLocationRows(
     }
   }
 
-  // Always create the self-route (A → A) with the minimum required distance of 10 km,
-  // unless one already exists in the database.
+ // Always create the self-route (A A) with the minimum required distance of 10 km,
+ // unless one already exists in the database.
   const SELF_ROUTE_MIN_DISTANCE_KM = 10;
   const selfNameKey = pairKey(newSource.source_location, newSource.source_location);
   if (!existingNamePairs.has(selfNameKey)) {
@@ -2263,7 +2263,7 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
       })),
     };
   }
-   
+
   async addSuggestedRoute(
     locationId: number,
     payload: {
@@ -2510,7 +2510,7 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
     };
   }
 
-  // ------ Modify Location Name (quick rename) ------
+ // ------ Modify Location Name (quick rename) ------
   async modifyName(id: number, scope: 'source' | 'destination', newName: string) {
     await this.get(id);
     const data =
@@ -2525,12 +2525,12 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
     return this.mapRowToResponse(updated);
   }
 
-  // ------ TOLL CHARGES ------
+ // ------ TOLL CHARGES ------
   async getTolls(locationId: number) {
-    // Verify location exists
+ // Verify location exists
     await this.get(locationId);
 
-    // 1) Get all vehicle types (to render full grid)
+ // 1) Get all vehicle types (to render full grid)
     const vehicleTypes = await this.prisma.dvi_vehicle_type.findMany({
       where: { deleted: 0, status: 1 },
       orderBy: { vehicle_type_id: 'asc' },
@@ -2540,7 +2540,7 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
       },
     });
 
-    // 2) Get existing tolls for this location
+ // 2) Get existing tolls for this location
     const existing = await this.prisma.dvi_vehicle_toll_charges.findMany({
       where: { location_id: BigInt(locationId), deleted: 0 },
       select: {
@@ -2549,12 +2549,12 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
       },
     });
 
-    // Build toll map
+ // Build toll map
     const tollMap = new Map<number, number>(
       existing.map((e) => [Number(e.vehicle_type_id), Number(e.toll_charge || 0)])
     );
 
-    // 3) Return as array of toll objects
+ // 3) Return as array of toll objects
     return vehicleTypes.map((vt) => ({
       vehicle_type_id: vt.vehicle_type_id,
       vehicle_type_name: vt.vehicle_type_title ?? '',
@@ -2562,10 +2562,10 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
     }));
   }
 
-  /**
+ /**
    * Save toll charges for location
    * Deletes all existing and inserts new items from request
-   */
+ */
   async upsertTolls(
     locationId: number,
     items: { vehicle_type_id: number; toll_charge: number }[],
@@ -2574,12 +2574,12 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
     const idBig = BigInt(locationId);
     await this.get(locationId);
 
-    // Delete all existing tolls for this location
+ // Delete all existing tolls for this location
     await this.prisma.dvi_vehicle_toll_charges.deleteMany({
       where: { location_id: idBig },
     });
 
-    // Insert new items if provided
+ // Insert new items if provided
     if (!items?.length) return { ok: true };
 
     await this.prisma.dvi_vehicle_toll_charges.createMany({

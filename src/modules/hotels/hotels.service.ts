@@ -63,17 +63,17 @@ export class HotelsService {
     'hotel_margin_gst_percentage',
   ] as const;
 
-  // =====================================================================================
-  // Helpers
-  // =====================================================================================
+ // =====================================================================================
+ // Helpers
+ // =====================================================================================
 
-  // For dvi_hotel (Boolean deleted)
+ // For dvi_hotel (Boolean deleted)
   private notDeletedBool = { OR: [{ deleted: { equals: false } }, { deleted: null }] } as const;
 
-  // For master tables that use deleted: INT (0/1)
+ // For master tables that use deleted: INT (0/1)
   private notDeletedInt = { OR: [{ deleted: 0 }, { deleted: null }] } as const;
 
-  // Format TIME / DATETIME safely for API responses
+ // Format TIME / DATETIME safely for API responses
   private toHHmm(v: any): string | null {
     if (!v) return null;
     const s = String(v);
@@ -100,21 +100,21 @@ export class HotelsService {
     }
   }
 
-  /** Parse date-like input; returns JS Date or undefined (won't write invalid dates). */
+ /** Parse date-like input; returns JS Date or undefined (won't write invalid dates). */
   private toDate(v: any): Date | undefined {
     if (v === undefined || v === null || v === '') return undefined;
     const d = new Date(v);
     return isNaN(d.getTime()) ? undefined : d;
   }
 
-  /** number normalizer: omit invalid/blank */
+ /** number normalizer: omit invalid/blank */
   private toNumStrict(v: any): number | undefined {
     if (v === '' || v === undefined || v === null) return undefined;
     const n = typeof v === 'string' ? Number(v.trim()) : Number(v);
     return Number.isFinite(n) ? n : undefined;
   }
 
-  /** string normalizer: trim & omit blank */
+ /** string normalizer: trim & omit blank */
   private toStr(v: any): string | undefined {
     if (v === undefined || v === null) return undefined;
     const s = String(v).trim();
@@ -136,7 +136,7 @@ export class HotelsService {
     return parsed;
   }
 
-  /** "hh:mm" or "hh:mm AM/PM" → Date (UTC Jan 1, 1970 hh:mm) */
+ /** "hh:mm" or "hh:mm AM/PM" Date (UTC Jan 1, 1970 hh:mm) */
   private timeToDate(v: any): Date | undefined {
     if (!v) return undefined;
     const raw = String(v).trim();
@@ -155,7 +155,7 @@ export class HotelsService {
     return new Date(Date.UTC(1970, 0, 1, h, m, 0, 0));
   }
 
-  /** UI strings → legacy integer codes for gst_type */
+ /** UI strings legacy integer codes for gst_type */
   private mapGstType(v: any): number | undefined {
     if (v === '' || v === undefined || v === null) return undefined;
     if (typeof v === 'number') return v;
@@ -165,7 +165,7 @@ export class HotelsService {
     return 1;
   }
 
-  /** Map UI/legacy payload → actual dvi_hotel columns; strip unknown/invalid */
+ /** Map UI/legacy payload actual dvi_hotel columns; strip unknown/invalid */
   private async resolveStoredCityValue(v: any): Promise<{ cityId: string | null; cityName: string | null }> {
     const raw = this.toStr(v);
     if (!raw) {
@@ -200,7 +200,7 @@ export class HotelsService {
       resavenue_hotel_code: this.toStr(dto.resavenue_hotel_code),
       hotel_address: this.toStr(dto.hotel_address ?? dto.hotel_address_1),
 
-      // persist selected category id
+ // persist selected category id
       hotel_category: this.toNumStrict(dto.hotel_category),
 
       hotel_margin: this.toNumStrict(dto.hotel_margin),
@@ -351,9 +351,9 @@ export class HotelsService {
     return this.basicInfoRequiredKeys.some((k) => Object.prototype.hasOwnProperty.call(dto, k));
   }
 
-  // =====================================================================================
-  // Hotels: list / options / derived cities / getOne / create / update / remove
-  // =====================================================================================
+ // =====================================================================================
+ // Hotels: list / options / derived cities / getOne / create / update / remove
+ // =====================================================================================
 
   async list(q: PaginationQueryDto) {
     const page = Math.max(1, Number(q.page ?? 1));
@@ -935,7 +935,7 @@ export class HotelsService {
     return Array.from(new Set(names.filter((name) => !!name && String(name).trim().length > 0))).map((name) => ({ name }));
   }
 
-  // -------- dynamic filters ----------
+ // -------- dynamic filters ----------
   async availableStates() {
     const groups = await this.prisma.dvi_hotel.groupBy({
       by: ['hotel_state'],
@@ -971,8 +971,8 @@ export class HotelsService {
 
     return Array.from(new Set(names.filter((name) => !!name && String(name).trim().length > 0))).map((name) => ({ name }));
   }
-  // -----------------------------------
-  // Simple static meal types meta: 1 = Breakfast, 2 = Lunch, 3 = Dinner
+ // -----------------------------------
+ // Simple static meal types meta: 1 = Breakfast, 2 = Lunch, 3 = Dinner
   mealTypes() {
     return [
       { id: 1, value: 1, code: 'B', name: 'Breakfast' },
@@ -1034,7 +1034,7 @@ export class HotelsService {
 
   async create(dto: CreateHotelDto) {
     const data = await this.mapHotelDto(dto);
-    // Apply defaults BEFORE validation so required field checks pass
+ // Apply defaults BEFORE validation so required field checks pass
     if ((data as any).deleted === undefined) (data as any).deleted = false;
     if ((data as any).status === undefined) (data as any).status = 1;
     if ((data as any).hotel_power_backup === undefined) (data as any).hotel_power_backup = 0;
@@ -1083,7 +1083,7 @@ export class HotelsService {
         },
       });
       const merged = { ...(current ?? {}), ...incoming };
-      // Apply defaults before validation
+ // Apply defaults before validation
       if ((merged as any).deleted === undefined) (merged as any).deleted = false;
       if ((merged as any).status === undefined) (merged as any).status = 1;
       if ((merged as any).hotel_power_backup === undefined) (merged as any).hotel_power_backup = 0;
@@ -1110,9 +1110,9 @@ export class HotelsService {
     });
   }
 
-  // =====================================================================================
-  // Form meta
-  // =====================================================================================
+ // =====================================================================================
+ // Form meta
+ // =====================================================================================
 
   async generateCode(city: string | number) {
     const resolved = await this.resolveStoredCityValue(city);
@@ -1326,9 +1326,9 @@ export class HotelsService {
     }));
   }
 
-  // =====================================================================================
-  // Rooms (Step 2)
-  // =====================================================================================
+ // =====================================================================================
+ // Rooms (Step 2)
+ // =====================================================================================
 
   private mapRoomDto(input: any) {
     const data: any = {};
@@ -1376,7 +1376,7 @@ export class HotelsService {
       data.inbuilt_amenities = this.toStr(input.inbuilt_amenities);
     }
 
-    // food flags may come as booleans or 0/1
+ // food flags may come as booleans or 0/1
     const bf = input?.breakfast_included ?? input?.food_breakfast ?? input?.food_included?.breakfast;
     if (bf !== undefined) data.breakfast_included = bf ? 1 : 0;
     const ln = input?.lunch_included ?? input?.food_lunch ?? input?.food_included?.lunch;
@@ -1393,10 +1393,10 @@ export class HotelsService {
     return data;
   }
 
-  /** Returns rate plans configured for a specific room within a hotel.
+ /** Returns rate plans configured for a specific room within a hotel.
    *  Falls back to all canonical plans if none are persisted yet, so the
    *  admin UI always has something to enter rates against.
-   */
+ */
   async getRoomRatePlans(hotel_id: number, room_id: number) {
     const hid = Number(hotel_id);
     const rid = Number(room_id);
@@ -1461,7 +1461,7 @@ export class HotelsService {
       return { items };
     }
 
-    // No DB rows for this room — return canonical plans as fallback
+ // No DB rows for this room return canonical plans as fallback
     const items = CANONICAL_HOTEL_RATE_PLANS.map((c) => ({
       rateplanId: c.defaultRateplanId,
       ratePlanCode: c.code,
@@ -1546,7 +1546,7 @@ export class HotelsService {
     }));
   }
 
-  // >>> createdby default to 1, plus timestamps on create
+ // >>> createdby default to 1, plus timestamps on create
   addRoom(dto: CreateRoomDto) {
     const data = this.mapRoomDto(dto);
     if (data.hotel_id === undefined) {
@@ -1586,7 +1586,7 @@ export class HotelsService {
       }
     }
     delete (data as any).hotel_id;
-    // always touch updatedon
+ // always touch updatedon
     (data as any).updatedon = new Date();
 
     return this.prisma.dvi_hotel_rooms.update({
@@ -1683,17 +1683,17 @@ export class HotelsService {
     return { success: true, ...created };
   }
 
-  // =====================================================================================
-  // NEW: Room Gallery (upload files & insert into dvi_hotel_room_gallery_details)
-  // =====================================================================================
+ // =====================================================================================
+ // NEW: Room Gallery (upload files & insert into dvi_hotel_room_gallery_details)
+ // =====================================================================================
 
-  /**
+ /**
    * Save room gallery:
    * - Files already uploaded by Multer to uploads/tmp-room-gallery
    * - Move each file into ../../uploads/room_gallery/ (relative to compiled __dirname)
    * - New filename: room_ref_code + '_' + index + extension
    * - Insert row into dvi_hotel_room_gallery_details with hotel_id, room_id, room_gallery_name
-   */
+ */
   async saveRoomGallery(params: {
     hotelId: number;
     roomId: number;
@@ -1720,7 +1720,7 @@ export class HotelsService {
       return { success: true, count: 0 };
     }
 
-    // ../../uploads/room_gallery relative to dist/modules/hotels
+ // ../../uploads/room_gallery relative to dist/modules/hotels
     const finalDir = path.resolve(__dirname, '../../uploads/room_gallery');
 
     await fs.promises.mkdir(finalDir, { recursive: true });
@@ -1751,12 +1751,12 @@ export class HotelsService {
       const newName = `${safeRef}_${indexStr}${ext}`;
       const targetPath = path.join(finalDir, newName);
 
-      // Handle relative vs absolute tmp path robustly
+ // Handle relative vs absolute tmp path robustly
       const tmpPath = path.isAbsolute(f.path)
         ? f.path
         : path.join(process.cwd(), f.path);
 
-      // Move file from tmp folder to final room_gallery folder
+ // Move file from tmp folder to final room_gallery folder
       await fs.promises.rename(tmpPath, targetPath);
 
       rows.push({
@@ -1787,9 +1787,9 @@ export class HotelsService {
     };
   }
 
-  // =====================================================================================
-  // Amenities (Step 3)
-  // =====================================================================================
+ // =====================================================================================
+ // Amenities (Step 3)
+ // =====================================================================================
 
   async listAmenities(hotel_id: number) {
     const id = Number(hotel_id);
@@ -1824,7 +1824,7 @@ export class HotelsService {
     }));
   }
 
-  /** normalize single amenity payload → table columns */
+ /** normalize single amenity payload table columns */
   private mapAmenityDto(input: any) {
     const data: any = {};
     const hid = this.toNumStrict(input?.hotel_id);
@@ -1848,9 +1848,9 @@ export class HotelsService {
     const status = this.toNumStrict(input?.status);
     if (status !== undefined) data.status = status;
 
-    // defaults for create
+ // defaults for create
     if (input?.createdby !== undefined) data.createdby = this.toNumStrict(input.createdby);
-    if (data.createdby === undefined) data.createdby = 1; // default creator
+ if (data.createdby === undefined) data.createdby = 1; // default creator
     const now = new Date();
     if (data.createdon === undefined) data.createdon = now;
     if (data.updatedon === undefined) data.updatedon = now;
@@ -1860,9 +1860,9 @@ export class HotelsService {
     return data;
   }
 
-  /** create single amenity row */
+ /** create single amenity row */
   addAmenity(dto: CreateAmenityDto) {
-    // guard: if mistakenly called with bulk body { items: [...] }, reject here
+ // guard: if mistakenly called with bulk body { items: [...] }, reject here
     if (Array.isArray((dto as any)?.items)) {
       throw new Error('Use addAmenitiesBulk() for items array');
     }
@@ -1873,7 +1873,7 @@ export class HotelsService {
     return this.prisma.dvi_hotel_amenities.create({ data } as any);
   }
 
-  /** bulk create amenity rows (createMany) */
+ /** bulk create amenity rows (createMany) */
   async addAmenitiesBulk(hotel_id: number, items: any[]) {
     const hid = Number(hotel_id);
     if (!Number.isFinite(hid) || hid <= 0) throw new Error('Invalid hotel_id');
@@ -1881,7 +1881,7 @@ export class HotelsService {
 
     const rows = items
       .map((it) => this.mapAmenityDto({ ...(it ?? {}), hotel_id: hid }))
-      .filter((r) => r.amenities_title); // need at least a title
+ .filter((r) => r.amenities_title); // need at least a title
 
     if (rows.length === 0) return { count: 0 };
 
@@ -1899,7 +1899,7 @@ export class HotelsService {
     }
     const { amenity_id, hotel_id, ...rest } = dto as any;
     const data = this.mapAmenityDto({ ...rest, hotel_id });
-    // always touch updatedon
+ // always touch updatedon
     data.updatedon = new Date();
 
     return this.prisma.dvi_hotel_amenities.update({
@@ -1915,9 +1915,9 @@ export class HotelsService {
     });
   }
 
-  // =====================================================================================
-  // PriceBook (Step 4)  — ROOM price book (existing single-row helpers)
-  // =====================================================================================
+ // =====================================================================================
+ // PriceBook (Step 4) ROOM price book (existing single-row helpers)
+ // =====================================================================================
 
   getPricebook(hotel_id: number) {
     const id = Number(hotel_id);
@@ -1954,15 +1954,15 @@ export class HotelsService {
     return { success: true, id: updated.hotel_price_book_id };
   }
 
-  // =====================================================================================
-  // NEW: Meal Price Book (per-month rows with day_1..day_31 & meal_type)
-  // NOTE: Your Prisma model has no start_date/end_date columns. We therefore
-  //       write one row per (hotel_id, meal_type, year, month) and populate
-  //       the appropriate day_N columns over the requested date range.
-  //       meal_type convention used: 1=Breakfast, 2=Lunch, 3=Dinner.
-  // =====================================================================================
+ // =====================================================================================
+ // NEW: Meal Price Book (per-month rows with day_1..day_31 & meal_type)
+ // NOTE: Your Prisma model has no start_date/end_date columns. We therefore
+ // write one row per (hotel_id, meal_type, year, month) and populate
+ // the appropriate day_N columns over the requested date range.
+ // meal_type convention used: 1=Breakfast, 2=Lunch, 3=Dinner.
+ // =====================================================================================
 
-  /** Split an inclusive range into month buckets. */
+ /** Split an inclusive range into month buckets. */
   private splitRangeByMonth(
     startDate: Date,
     endDate: Date,
@@ -1975,7 +1975,7 @@ export class HotelsService {
     const cur = new Date(start);
     while (cur <= end) {
       const y = cur.getFullYear();
-      const m = cur.getMonth() + 1; // 1..12
+ const m = cur.getMonth() + 1; // 1..12
       const key = `${y}-${m}`;
       if (!buckets[key]) buckets[key] = { year: String(y), month: String(m).padStart(2, '0'), days: new Set() };
       buckets[key].days.add(cur.getDate());
@@ -1989,7 +1989,7 @@ export class HotelsService {
     }));
   }
 
-  /** Build partial update for day columns. */
+ /** Build partial update for day columns. */
   private buildDayPatch(value: number | string, dayNumbers: number[]) {
     const obj: Record<string, number> = {};
     const val = Number(value);
@@ -1999,7 +1999,7 @@ export class HotelsService {
     return obj;
   }
 
-  /** For UI: list raw meal pricebook rows (all months/meal types). */
+ /** For UI: list raw meal pricebook rows (all months/meal types). */
   async listMealPricebook(hotel_id: number) {
     const id = Number(hotel_id);
     if (!Number.isFinite(id) || id <= 0) return [];
@@ -2014,7 +2014,7 @@ export class HotelsService {
     } as any);
   }
 
-  /** Return prices on a specific date (breakfast/lunch/dinner) by reading day_N. */
+ /** Return prices on a specific date (breakfast/lunch/dinner) by reading day_N. */
   async getMealPricebook(hotel_id: number, onDate?: string | Date) {
     const id = Number(hotel_id);
     if (!Number.isFinite(id) || id <= 0) return null as any;
@@ -2044,13 +2044,13 @@ export class HotelsService {
     };
   }
 
-  /**
+ /**
    * Upsert meal pricebook for a date range.
    * DTO from controller:
    *  - startDate, endDate
    *  - breakfastCost?, lunchCost?, dinnerCost?
    * Writes per (year, month, meal_type) rows and sets day_N columns.
-   */
+ */
   async upsertMealPricebook(
     hotel_id: number,
     dto: {
@@ -2077,7 +2077,7 @@ export class HotelsService {
         for (const b of buckets) {
           const dayPatch = this.buildDayPatch(price, b.days);
 
-          // find row if exists for (hotel, meal_type, year, month)
+ // find row if exists for (hotel, meal_type, year, month)
           const existing = await this.prisma.dvi_hotel_meal_price_book.findFirst({
             where: {
               hotel_id: id,
@@ -2132,20 +2132,20 @@ export class HotelsService {
     }
   }
 
-  // =====================================================================================
-  // NEW: PriceBook Writers for Amenities & Rooms
-  // =====================================================================================
+ // =====================================================================================
+ // NEW: PriceBook Writers for Amenities & Rooms
+ // =====================================================================================
 
-  /** Inclusive day range → per-month buckets with which day indices to fill. */
+ /** Inclusive day range per-month buckets with which day indices to fill. */
   private splitRangeByMonth_forRoomsAndAmenities(
     startDate: Date,
     endDate: Date,
   ): Array<{ year: string; month: string; days: number[] }> {
-    // Keep a separate helper name to avoid accidental refactor collisions
+ // Keep a separate helper name to avoid accidental refactor collisions
     return this.splitRangeByMonth(startDate, endDate);
   }
 
-  /** Build an object like { day_1: value, day_2: value, ... } for provided day numbers. */
+ /** Build an object like { day_1: value, day_2: value, ... } for provided day numbers. */
   private buildDayPatch_forRoomsAndAmenities(value: number | string, dayNumbers: number[], asString = false) {
     const obj: Record<string, any> = {};
     for (const d of dayNumbers) {
@@ -2155,7 +2155,7 @@ export class HotelsService {
     return obj;
   }
 
-  /** AMENITIES: Upsert price rows for a date range. */
+ /** AMENITIES: Upsert price rows for a date range. */
   async upsertAmenitiesPricebookRange(hotel_id: number, body: {
     hotel_amenities_id: number;
     startDate: string | Date;
@@ -2182,7 +2182,7 @@ export class HotelsService {
           pricetype,
           year: b.year,
           month: b.month,
-          ...this.buildDayPatch_forRoomsAndAmenities(charge, b.days, true), // amenity table stores strings
+ ...this.buildDayPatch_forRoomsAndAmenities(charge, b.days, true), // amenity table stores strings
         };
 
         tasks.push(
@@ -2214,7 +2214,7 @@ export class HotelsService {
     return { success: true, rows: tasks.length };
   }
 
-  /** ROOMS: Read saved occupancy pricing rows for a date range, pivoted by date for the UI grid. */
+ /** ROOMS: Read saved occupancy pricing rows for a date range, pivoted by date for the UI grid. */
   async getRoomPricebookRangeView(
     hotel_id: number,
     query: { startDate: string; endDate: string; roomId: number; rateplanId: string },
@@ -2229,7 +2229,7 @@ export class HotelsService {
       return { dates: [], rooms: [], occupancies: [] };
     }
 
-    // All rows that overlap the requested range, latest received_at first
+ // All rows that overlap the requested range, latest received_at first
     const rows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
       where: {
         hotel_id: hid,
@@ -2241,7 +2241,7 @@ export class HotelsService {
       orderBy: { received_at: 'desc' },
     });
 
-    // Build a date spine
+ // Build a date spine
     const dates: string[] = [];
     const cur = new Date(start);
     while (cur <= end) {
@@ -2249,7 +2249,7 @@ export class HotelsService {
       cur.setUTCDate(cur.getUTCDate() + 1);
     }
 
-    // For each date, find the latest row that covers it; collect its occupancy keys
+ // For each date, find the latest row that covers it; collect its occupancy keys
     const bestByDate = new Map<string, Record<string, number>>();
     for (const date of dates) {
       const dt = new Date(`${date}T00:00:00.000Z`);
@@ -2264,13 +2264,13 @@ export class HotelsService {
       }
     }
 
-    // Collect all occupancy keys that appear in at least one effective row
+ // Collect all occupancy keys that appear in at least one effective row
     const allOccKeys = new Set<string>();
     for (const occ of bestByDate.values()) {
       Object.keys(occ).forEach((k) => allOccKeys.add(k));
     }
 
-    // Build pivoted occupancy rows
+ // Build pivoted occupancy rows
     const occupancies = [...allOccKeys].map((occKey) => {
       const values: Record<string, number> = {};
       for (const date of dates) {
@@ -2540,7 +2540,7 @@ export class HotelsService {
     return { dates, items };
   }
 
-  /** ROOMS: Bulk upsert price rows for date ranges. */
+ /** ROOMS: Bulk upsert price rows for date ranges. */
   async bulkUpsertRoomPricebook(
     hotel_id: number,
     body: {
@@ -2780,8 +2780,8 @@ export class HotelsService {
       });
 
       if (Object.keys(mergedOccupancyRates).length > 0) {
-        // Delete any existing overlapping rows for the same hotel/room/rateplan so that
-        // saving new prices always overwrites stale data for the same date range.
+ // Delete any existing overlapping rows for the same hotel/room/rateplan so that
+ // saving new prices always overwrites stale data for the same date range.
         await (this.prisma as any).dvi_hotel_occupancy_rate.deleteMany({
           where: {
             hotel_id: hid,
@@ -2816,9 +2816,9 @@ export class HotelsService {
     };
   }
 
-  // =====================================================================================
-  // Reviews (Step 5)
-  // =====================================================================================
+ // =====================================================================================
+ // Reviews (Step 5)
+ // =====================================================================================
 
   private truncate20(v: string | undefined): string | undefined {
     if (v == null) return undefined;
@@ -2884,11 +2884,11 @@ private mapReviewDto(input: any) {
 }
 
 addReviewUnified(dto: any, createdBy?: number) {
-  console.log('ADD REVIEW DTO:', dto);
+ console.log('ADD REVIEW DTO:', dto);
 
   const data = this.mapReviewDto(dto);
 
-  console.log('ADD REVIEW MAPPED DATA:', data);
+ console.log('ADD REVIEW MAPPED DATA:', data);
 
   if (data.hotel_id === undefined) {
     throw new BadRequestException('hotel_id is required');

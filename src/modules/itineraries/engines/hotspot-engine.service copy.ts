@@ -39,7 +39,7 @@ interface HotspotCandidate {
   hotspot_location: string | null;
   hotspot_latitude: string | null;
   hotspot_longitude: string | null;
-  hotspot_duration: string; // "HH:MM:SS"
+ hotspot_duration: string; // "HH:MM:SS"
   previous_hotspot_location: string | null;
 }
 
@@ -54,7 +54,7 @@ interface HotspotCandidate {
 export class HotspotEngineService {
   private readonly logger = new Logger(HotspotEngineService.name);
 
-  /* ---------- TIME HELPERS ---------- */
+ /* ---------- TIME HELPERS ---------- */
 
   private toSec(t: TimeLike): number {
     if (!t) return 0;
@@ -69,7 +69,7 @@ export class HotspotEngineService {
     return h * 3600 + m * 60 + s;
   }
 
-  // Used only for calculations / debugging if needed.
+ // Used only for calculations / debugging if needed.
   private secToHms(sec: number): string {
     if (!Number.isFinite(sec)) sec = 0;
     let total = Math.max(0, Math.floor(sec));
@@ -81,7 +81,7 @@ export class HotspotEngineService {
     return `${pad(h)}:${pad(m)}:${pad(s)}`;
   }
 
-  // Convert seconds to a Prisma TIME Date object for @db.Time(0) fields
+ // Convert seconds to a Prisma TIME Date object for @db.Time(0) fields
   private secToTimeDate(sec: number): Date {
     if (!Number.isFinite(sec)) sec = 0;
     const d = new Date(1970, 0, 1, 0, 0, 0);
@@ -89,28 +89,28 @@ export class HotspotEngineService {
     return d;
   }
 
-  /* ---------- PUBLIC ENTRY POINT ---------- */
+ /* ---------- PUBLIC ENTRY POINT ---------- */
 
-  /**
+ /**
    * Rebuild all rows in dvi_itinerary_route_hotspot_details for a given plan.
    * This is called from ItinerariesService inside the big transaction.
-   */
+ */
   async rebuildRouteHotspots(
     planId: number,
     tx: Tx,
     userId: number,
   ): Promise<void> {
-    // 1) Collect plan header using Prisma query builder
+ // 1) Collect plan header using Prisma query builder
     const plan = await (tx as any).dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: planId },
     });
 
     if (!plan || plan.deleted === 1) {
-      this.logger.warn(`No plan header for itinerary_plan_ID=${planId}`);
+ this.logger.warn(`No plan header for itinerary_plan_ID=${planId}`);
       return;
     }
 
-    // 2) Collect routes for this plan ordered by itinerary_route_date / ID
+ // 2) Collect routes for this plan ordered by itinerary_route_date / ID
     const routes = await (tx as any).dvi_itinerary_route_details.findMany({
       where: { itinerary_plan_ID: planId, deleted: 0 },
       orderBy: [
@@ -120,8 +120,8 @@ export class HotspotEngineService {
     });
 
     if (!routes.length) {
-      this.logger.warn(`No routes for itinerary_plan_ID=${planId}`);
-      // still delete any old hotspot rows if present
+ this.logger.warn(`No routes for itinerary_plan_ID=${planId}`);
+ // still delete any old hotspot rows if present
       await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
         where: { itinerary_plan_ID: planId },
         data: { deleted: 1, status: 0 },
@@ -129,13 +129,13 @@ export class HotspotEngineService {
       return;
     }
 
-    // 3) Clean existing rows for this plan (soft-delete like PHP)
+ // 3) Clean existing rows for this plan (soft-delete like PHP)
     await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
       where: { itinerary_plan_ID: planId },
       data: { deleted: 1, status: 0 },
     });
 
-    // 4) Rebuild hotspots for each route (PHP-like behaviour)
+ // 4) Rebuild hotspots for each route (PHP-like behaviour)
     let globalOrder = 0;
 
     for (const route of routes) {
@@ -149,7 +149,7 @@ export class HotspotEngineService {
     }
   }
 
-  /* ---------- CORE ROUTE TIMELINE ---------- */
+ /* ---------- CORE ROUTE TIMELINE ---------- */
 
   private async rebuildTimelineForRoute(
     tx: Tx,
@@ -161,17 +161,17 @@ export class HotspotEngineService {
     const planId = plan.itinerary_plan_ID;
     const routeId = route.itinerary_route_ID;
 
-    // --- DAY START / END TIME (fixed 08:00–20:00) ---
+ // --- DAY START / END TIME (fixed 08:0020:00) ---
     const dayStartSec = this.toSec("08:00:00");
     const routeEndSec = this.toSec("20:00:00");
 
-    // ~1 hour refresh at day start (08:00–09:00)
+ // ~1 hour refresh at day start (08:0009:00)
     const refreshSec = this.toSec("01:00:00");
 
     let cursorSec = dayStartSec;
     let order = startingOrder;
 
-    // PHASE 0: Insert REFRESH ROW (item_type=1)
+ // PHASE 0: Insert REFRESH ROW (item_type=1)
     order++;
     await (tx as any).dvi_itinerary_route_hotspot_details.create({
       data: {
@@ -206,7 +206,7 @@ export class HotspotEngineService {
 
     cursorSec += refreshSec;
 
-    // PHASE 1: Build hotspot TRAVEL + VISIT rows (item_type=3 & 4)
+ // PHASE 1: Build hotspot TRAVEL + VISIT rows (item_type=3 & 4)
     const hotspotCandidates: HotspotCandidate[] =
       await this.fetchHotspotsForRoute(tx, route);
 
@@ -219,8 +219,8 @@ export class HotspotEngineService {
         this.toSec(h.hotspot_duration || "01:00:00") ||
         this.toSec("01:00:00");
 
-      // --- TRAVEL SEGMENT (item_type=3) ---
-      const travelSec = this.toSec("00:30:00"); // stub until real distance calc
+ // --- TRAVEL SEGMENT (item_type=3) ---
+ const travelSec = this.toSec("00:30:00"); // stub until real distance calc
       const travelStart = cursorSec;
       const travelEnd = cursorSec + travelSec;
 
@@ -258,7 +258,7 @@ export class HotspotEngineService {
 
       cursorSec = travelEnd;
 
-      // --- HOTSPOT VISIT SEGMENT (item_type=4) ---
+ // --- HOTSPOT VISIT SEGMENT (item_type=4) ---
       const visitStart = cursorSec;
       const visitEnd = cursorSec + visitDurSec;
 
@@ -305,15 +305,15 @@ export class HotspotEngineService {
 
       cursorSec = visitEnd;
 
-      // remember last hotspot coord if needed later
+ // remember last hotspot coord if needed later
       lastLat = h.hotspot_latitude ? Number(h.hotspot_latitude) : lastLat;
       lastLng = h.hotspot_longitude ? Number(h.hotspot_longitude) : lastLng;
 
-      // stop if we exceed route end time
+ // stop if we exceed route end time
       if (cursorSec >= routeEndSec) break;
     }
 
-    // PHASE 2: Travel to hotel (item_type=5) and end at hotel (item_type=6)
+ // PHASE 2: Travel to hotel (item_type=5) and end at hotel (item_type=6)
     const toHotelSec = this.toSec("00:05:00");
     const toHotelStart = cursorSec;
     const toHotelEnd = cursorSec + toHotelSec;
@@ -350,7 +350,7 @@ export class HotspotEngineService {
       } as any,
     });
 
-    // End at hotel (zero duration, item_type=6)
+ // End at hotel (zero duration, item_type=6)
     order++;
     await (tx as any).dvi_itinerary_route_hotspot_details.create({
       data: {
@@ -383,10 +383,10 @@ export class HotspotEngineService {
       } as any,
     });
 
-    // PHASE 3: If this is the *last* route, add RETURN row (item_type=7)
+ // PHASE 3: If this is the *last* route, add RETURN row (item_type=7)
     const isLastRoute = await this.isLastRouteForPlan(tx, planId, routeId);
     if (isLastRoute) {
-      const retTravelSec = this.toSec("00:36:00"); // matches your sample
+ const retTravelSec = this.toSec("00:36:00"); // matches your sample
       const bufSec = this.toSec("02:00:00");
 
       const retStart = cursorSec;
@@ -428,22 +428,22 @@ export class HotspotEngineService {
     return order;
   }
 
-  /* ---------- AUX: fetch hotspots for route ---------- */
+ /* ---------- AUX: fetch hotspots for route ---------- */
 
   private async fetchHotspotsForRoute(
     tx: Tx,
     route: RouteRow,
   ): Promise<HotspotCandidate[]> {
-    // PHP side effectively uses the day's location.
-    // 1. Try next_visiting_location
-    // 2. If empty OR no hotspots, fall back to location_name
+ // PHP side effectively uses the day's location.
+ // 1. Try next_visiting_location
+ // 2. If empty OR no hotspots, fall back to location_name
     let loc = route.next_visiting_location?.trim();
     if (!loc) {
       loc = route.location_name?.trim();
     }
 
     if (!loc) {
-      this.logger.debug(
+ this.logger.debug(
         `Route ${route.itinerary_route_ID}: no location for hotspot lookup`,
       );
       return [];
@@ -458,11 +458,11 @@ export class HotspotEngineService {
       orderBy: { hotspot_ID: "asc" },
     });
 
-    // If nothing found with next_visiting_location, try location_name explicitly
+ // If nothing found with next_visiting_location, try location_name explicitly
     if (!hotspots.length && route.location_name && route.location_name.trim()) {
       const fallbackLoc = route.location_name.trim();
       if (fallbackLoc !== loc) {
-        this.logger.debug(
+ this.logger.debug(
           `Route ${route.itinerary_route_ID}: no hotspots for "${loc}", trying fallback "${fallbackLoc}"`,
         );
 
@@ -477,7 +477,7 @@ export class HotspotEngineService {
       }
     }
 
-    this.logger.debug(
+ this.logger.debug(
       `Route ${route.itinerary_route_ID}: using location "${loc}" -> ${hotspots.length} hotspot(s)`,
     );
 
@@ -492,7 +492,7 @@ export class HotspotEngineService {
     }));
   }
 
-  /* ---------- AUX: hotspot costs ---------- */
+ /* ---------- AUX: hotspot costs ---------- */
 
   private async computeHotspotCosts(
     tx: Tx,
@@ -553,7 +553,7 @@ export class HotspotEngineService {
     };
   }
 
-  /* ---------- AUX: is last route ---------- */
+ /* ---------- AUX: is last route ---------- */
 
   private async isLastRouteForPlan(
     tx: Tx,

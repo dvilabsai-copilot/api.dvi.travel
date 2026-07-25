@@ -19,10 +19,10 @@ import { OfflineHotelCatalogService } from '../../itineraries/services/offline-h
 
 @Injectable()
 export class HotelSearchService {
-  // General room limit for AxisRooms and other channel managers.
+ // General room limit for AxisRooms and other channel managers.
   private static readonly MAX_ROOMS = 25;
 
-  // TBO supports only a maximum of 6 rooms per search.
+ // TBO supports only a maximum of 6 rooms per search.
   private static readonly TBO_MAX_ROOMS = 6;
 
   private static readonly MAX_ADULTS_PER_ROOM = 8;
@@ -76,7 +76,7 @@ export class HotelSearchService {
         throw new BadRequestException('HOTEL_FETCH_AXIS_ONLY and HOTEL_FETCH_TBO_ONLY cannot both be enabled');
       }
       if (this.isAxisOnlyFetchEnabled()) {
-        this.logger.warn(
+ this.logger.warn(
           'HOTEL_FETCH_AXIS_ONLY enabled: fetching Offline + AxisRooms only in HotelSearchService.',
         );
         const [offlineHotels, axisRoomsHotels] = await Promise.all([
@@ -102,26 +102,26 @@ export class HotelSearchService {
         childAges,
         guestNationality,
         occupancies,
-        providers = ['tbo', 'resavenue', 'hobse'], // Search all providers by default
+ providers = ['tbo', 'resavenue', 'hobse'], // Search all providers by default
       } = searchCriteria;
 
-      this.logger.log('\n🔍 HOTEL SEARCH SERVICE PROCESSING');
-      this.logger.log(`📥 Input Criteria:`);
-      this.logger.log(`   - City Code: ${cityCode}`);
-      this.logger.log(`   - Check-in: ${checkInDate}`);
-      this.logger.log(`   - Check-out: ${checkOutDate}`);
-      this.logger.log(`   - Rooms: ${roomCount}`);
-      this.logger.log(`   - Guests: ${guestCount}`);
+ this.logger.log('\n HOTEL SEARCH SERVICE PROCESSING');
+ this.logger.log(` Input Criteria:`);
+ this.logger.log(` - City Code: ${cityCode}`);
+ this.logger.log(` - Check-in: ${checkInDate}`);
+ this.logger.log(` - Check-out: ${checkOutDate}`);
+ this.logger.log(` - Rooms: ${roomCount}`);
+ this.logger.log(` - Guests: ${guestCount}`);
       if (adultCount !== undefined || childCount !== undefined) {
-        this.logger.log(`   - Adults: ${adultCount ?? 'n/a'}`);
-        this.logger.log(`   - Children: ${childCount ?? 'n/a'}`);
+ this.logger.log(` - Adults: ${adultCount 'n/a'}`);
+ this.logger.log(` - Children: ${childCount 'n/a'}`);
       }
       if (guestNationality) {
-        this.logger.log(`   - Nationality: ${guestNationality}`);
+ this.logger.log(` - Nationality: ${guestNationality}`);
       }
-      this.logger.log(`   - Providers: ${providers.join(', ')}`);
+ this.logger.log(` - Providers: ${providers.join(', ')}`);
 
-      // Validation
+ // Validation
       if (!cityCode) {
         throw new BadRequestException('City code is required');
       }
@@ -137,7 +137,7 @@ export class HotelSearchService {
       Boolean(provider) && items.indexOf(provider) === index,
   );
 
-// For 7–25 rooms, do not send the search to TBO.
+// For 725 rooms, do not send the search to TBO.
 // Other registered channel managers will continue handling the search.
 const providerKeysToSearch =
   Number(roomCount) > HotelSearchService.TBO_MAX_ROOMS
@@ -148,7 +148,7 @@ if (
   Number(roomCount) > HotelSearchService.TBO_MAX_ROOMS &&
   requestedProviderKeys.includes('tbo')
 ) {
-  this.logger.log(
+ this.logger.log(
     `Skipping TBO because roomCount ${roomCount} exceeds the TBO limit of ${HotelSearchService.TBO_MAX_ROOMS}.`,
   );
 }
@@ -172,7 +172,7 @@ if (
         throw new BadRequestException('Check-in must be before check-out');
       }
 
-      // Compare at day granularity so same-day bookings remain valid after midnight.
+ // Compare at day granularity so same-day bookings remain valid after midnight.
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       if (checkIn < today) {
@@ -228,7 +228,7 @@ if (normalizedRoomCount > HotelSearchService.MAX_ROOMS) {
           );
         }
 
-        // Derive occupancies from adult/child counts if not explicitly provided
+ // Derive occupancies from adult/child counts if not explicitly provided
         if (!normalizedOccupancies || normalizedOccupancies.length === 0) {
           normalizedOccupancies = this.deriveOccupancies(
             roomCount,
@@ -261,9 +261,9 @@ if (activeProviders.length === 0) {
   );
 }
 
-      this.logger.log(`🔄 Searching across ${activeProviders.length} provider(s): ${activeProviders.map(p => p.getName()).join(', ')}`);
+ this.logger.log(` Searching across ${activeProviders.length} provider(s): ${activeProviders.map(p => p.getName()).join(', ')}`);
 
-      // Search in parallel across all providers
+ // Search in parallel across all providers
       const searchPromises = activeProviders.map((provider) =>
         this.executeProviderSearch(
           provider,
@@ -284,28 +284,28 @@ if (activeProviders.length === 0) {
       const allHotels = results.flat();
 
       if (allHotels.length === 0) {
-        this.logger.warn(`⚠️  No hotels found for the given criteria`);
-        this.logger.log(`⏱️  Total Time: ${Date.now() - startTime}ms`);
+ this.logger.warn(` No hotels found for the given criteria`);
+ this.logger.log(` Total Time: ${Date.now() - startTime}ms`);
         return [];
       }
 
-      this.logger.log(`✅ Found ${allHotels.length} hotels across all providers`);
-      this.logger.log(`⏱️  Provider Search Time: ${Date.now() - startTime}ms`);
+ this.logger.log(` Found ${allHotels.length} hotels across all providers`);
+ this.logger.log(` Provider Search Time: ${Date.now() - startTime}ms`);
 
-      // Deduplicate and rank hotels
+ // Deduplicate and rank hotels
       const uniqueHotels = this.deduplicateHotels(allHotels);
       const rankedHotels = this.rankHotels(uniqueHotels, searchCriteria.preferences);
 
-      this.logger.log(`📋 Returning ${rankedHotels.length} unique, ranked hotels`);
-      this.logger.log(`⏱️  Total Service Time: ${Date.now() - startTime}ms\n`);
+ this.logger.log(` Returning ${rankedHotels.length} unique, ranked hotels`);
+ this.logger.log(` Total Service Time: ${Date.now() - startTime}ms\n`);
 
       return rankedHotels;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : 'No stack trace';
-      this.logger.error(`\n❌ Hotel search error: ${errorMessage}`);
-      this.logger.error(`Error Stack: ${errorStack}`);
-      this.logger.log(`⏱️  Failed After: ${Date.now() - startTime}ms\n`);
+ this.logger.error(`\n Hotel search error: ${errorMessage}`);
+ this.logger.error(`Error Stack: ${errorStack}`);
+ this.logger.log(` Failed After: ${Date.now() - startTime}ms\n`);
       throw error;
     }
   }
@@ -360,31 +360,31 @@ if (activeProviders.length === 0) {
     preferences?: HotelPreferences,
   ): Promise<HotelSearchResult[]> {
     try {
-      this.logger.log(`   🔗 [${provider.getName()}] Starting search...`);
-      this.logger.log(`   🔗 [${provider.getName()}] Criteria: ${JSON.stringify(criteria)}`);
+ this.logger.log(` [${provider.getName()}] Starting search...`);
+ this.logger.log(` [${provider.getName()}] Criteria: ${JSON.stringify(criteria)}`);
       const results = await provider.search(criteria, preferences);
-      this.logger.log(`   ✅ [${provider.getName()}] Found ${results.length} hotels`);
+ this.logger.log(` [${provider.getName()}] Found ${results.length} hotels`);
       if (results.length === 0) {
-        this.logger.warn(`   ⚠️  [${provider.getName()}] Returned empty array!`);
+ this.logger.warn(` [${provider.getName()}] Returned empty array!`);
       }
       return results;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : 'No stack';
-      this.logger.error(
+ this.logger.error(
         `   ❌ [${provider.getName()}] Search failed: ${errorMsg}`,
       );
-      this.logger.error(`   Stack: ${errorStack}`);
-      // Return empty array instead of failing entire search
+ this.logger.error(` Stack: ${errorStack}`);
+ // Return empty array instead of failing entire search
       return [];
     }
   }
 
   private deduplicateHotels(hotels: HotelSearchResult[]): HotelSearchResult[] {
-    // Don't deduplicate - keep ALL room types for price tier generation
-    // Each room type should be treated as a separate pricing option
-    // for the tier generation algorithm
-    this.logger.log(`Keeping all ${hotels.length} room types (no deduplication) for price tier diversity`);
+ // Don't deduplicate - keep ALL room types for price tier generation
+ // Each room type should be treated as a separate pricing option
+ // for the tier generation algorithm
+ this.logger.log(`Keeping all ${hotels.length} room types (no deduplication) for price tier diversity`);
     return hotels;
   }
 
@@ -393,7 +393,7 @@ if (activeProviders.length === 0) {
     preferences?: HotelPreferences,
   ): HotelSearchResult[] {
     return hotels.sort((a, b) => {
-      // Priority 1: Rating (if preference set)
+ // Priority 1: Rating (if preference set)
       if (preferences?.minRating) {
         const aRatingMatch = a.rating >= preferences.minRating ? 1 : 0;
         const bRatingMatch = b.rating >= preferences.minRating ? 1 : 0;
@@ -402,12 +402,12 @@ if (activeProviders.length === 0) {
         }
       }
 
-      // Priority 2: Price (ascending)
+ // Priority 2: Price (ascending)
       if (a.price !== b.price) {
         return a.price - b.price;
       }
 
-      // Priority 3: Rating (descending)
+ // Priority 3: Rating (descending)
       return b.rating - a.rating;
     });
   }
@@ -418,7 +418,7 @@ if (activeProviders.length === 0) {
     childCount: number,
     childAges?: number[],
   ): Array<{ adults: number; children: number; childrenAges?: number[] }> {
-    // Validate that even distribution across rooms won't exceed TBO limits
+ // Validate that even distribution across rooms won't exceed TBO limits
     const maxAdultsInAnyRoom = Math.ceil(adultCount / roomCount);
     const maxChildrenInAnyRoom = Math.ceil(childCount / roomCount);
 
@@ -436,7 +436,7 @@ if (activeProviders.length === 0) {
       );
     }
 
-    // Distribute guests evenly across rooms
+ // Distribute guests evenly across rooms
     const occupancies: Array<{ adults: number; children: number; childrenAges?: number[] }> = [];
     let remainingAdults = adultCount;
     let remainingChildren = childCount;
@@ -474,7 +474,7 @@ if (activeProviders.length === 0) {
       .map((age) => Math.max(0, Math.min(11, age)));
 
     if (sanitized.length > childCount) {
-      this.logger.warn(
+ this.logger.warn(
         `Received ${sanitized.length} child ages for childCount ${childCount}; trimming extras.`,
       );
       return sanitized.slice(0, childCount);
@@ -482,7 +482,7 @@ if (activeProviders.length === 0) {
 
     if (sanitized.length < childCount) {
       const missing = childCount - sanitized.length;
-      this.logger.warn(
+ this.logger.warn(
         `Received ${sanitized.length} child ages for childCount ${childCount}; padding ${missing} age(s) with default ${HotelSearchService.DEFAULT_CHILD_AGE}.`,
       );
       return [

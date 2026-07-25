@@ -13,18 +13,18 @@ import { VehicleAvailabilityResponseDto } from './dto/vehicle-availability-respo
 export class VehicleAvailabilityController {
   constructor(private readonly service: VehicleAvailabilityService) {}
 
-  // ---------------------------------------------------------------------------
-  // CHART
-  // ---------------------------------------------------------------------------
+ // ---------------------------------------------------------------------------
+ // CHART
+ // ---------------------------------------------------------------------------
   @Get()
   @ApiOperation({ summary: 'Vehicle availability chart (date range + vendor/type filters)' })
   async getChart(@Query() query: VehicleAvailabilityQueryDto): Promise<VehicleAvailabilityResponseDto> {
     return this.service.getVehicleAvailabilityChart(query);
   }
 
-  // ---------------------------------------------------------------------------
-  // DROPDOWNS (filters & modals) — mirrors PHP selectize/autocomplete behavior
-  // ---------------------------------------------------------------------------
+ // ---------------------------------------------------------------------------
+ // DROPDOWNS (filters & modals) mirrors PHP selectize/autocomplete behavior
+ // ---------------------------------------------------------------------------
 
   @Get('vendors')
   @ApiOperation({ summary: 'Vendors dropdown' })
@@ -62,7 +62,7 @@ export class VehicleAvailabilityController {
     return this.service.getLocationMeta(label ?? '');
   }
 
-  // Vendor-specific vehicle types (Selectize in PHP: __ajax_get_vendor_vehicle_types.php)
+ // Vendor-specific vehicle types (Selectize in PHP: __ajax_get_vendor_vehicle_types.php)
   @Get('vendor-vehicle-types')
   @ApiOperation({ summary: 'Vendor-specific vehicle types (GET ?vendorId=...)' })
   async vendorVehicleTypes(
@@ -80,7 +80,7 @@ export class VehicleAvailabilityController {
     );
   }
 
-  // Vehicles by vendor + vendor_vehicle_type (Assign modal vehicle dropdown)
+ // Vehicles by vendor + vendor_vehicle_type (Assign modal vehicle dropdown)
   @Get('vehicles-for-assign')
   @ApiOperation({ summary: 'Vehicles for Assign modal (GET ?vendorId=&vendorVehicleTypeId=...)' })
   async vehiclesForAssign(
@@ -93,7 +93,7 @@ export class VehicleAvailabilityController {
     );
   }
 
-  // Drivers by vendor (+ optional vendor_vehicle_type) for Assign modal
+ // Drivers by vendor (+ optional vendor_vehicle_type) for Assign modal
   @Get('drivers-for-assign')
   @ApiOperation({ summary: 'Drivers for Assign modal (GET ?vendorId=&vendorVehicleTypeId=...)' })
   async driversForAssign(
@@ -130,25 +130,25 @@ export class VehicleAvailabilityController {
     return this.service.getCustomerName(itineraryPlanId ? Number(itineraryPlanId) : 0);
   }
 
-  // ---------------------------------------------------------------------------
-  // MODAL ACTIONS (mirror PHP handlers)
-  // ---------------------------------------------------------------------------
+ // ---------------------------------------------------------------------------
+ // MODAL ACTIONS (mirror PHP handlers)
+ // ---------------------------------------------------------------------------
 
-  // Add New Vehicle modal → inserts into dvi_vehicle
+ // Add New Vehicle modal inserts into dvi_vehicle
   @Post('vehicles')
   @ApiOperation({ summary: 'Create vehicle (PHP: ?type=add_vehicle)' })
   async createVehicle(@Body() dto: any) {
     return this.service.createVehicle(dto);
   }
 
-  // Add New Driver modal → inserts into driver master
+ // Add New Driver modal inserts into driver master
   @Post('drivers')
   @ApiOperation({ summary: 'Create driver (PHP: ?type=add_driver)' })
   async createDriver(@Body() dto: any) {
     return this.service.createDriver(dto);
   }
 
-  // Assign Vehicle (and optionally driver) to itinerary
+ // Assign Vehicle (and optionally driver) to itinerary
   @Post('assign-vehicle')
   @ApiOperation({
     summary:
@@ -158,7 +158,7 @@ export class VehicleAvailabilityController {
     return this.service.assignVehicle(dto);
   }
 
-  // Reassign Driver on an itinerary/vendor (update latest active assignment)
+ // Reassign Driver on an itinerary/vendor (update latest active assignment)
   @Post('reassign-driver')
   @ApiOperation({ summary: 'Reassign driver (PHP: ?type=reassign_driver). Expects itineraryPlanId, vendor_id, driver_id, vehicle_id?' })
   async reassignDriver(@Body() dto: { itineraryPlanId: number; vendor_id: number; driver_id: number; vehicle_id?: number; createdby?: number }) {

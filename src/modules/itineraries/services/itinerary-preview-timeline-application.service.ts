@@ -35,8 +35,8 @@ export class ItineraryPreviewTimelineApplicationService {
   ): any[] {
     if (!Array.isArray(previewTimeline) || !manualInsertionFit) return previewTimeline;
 
-    // If backend already produced explicit matrix split legs, treat that order as final.
-    // Moving only the attraction row here can break A->C->B adjacency and create visual duplicates.
+ // If backend already produced explicit matrix split legs, treat that order as final.
+ // Moving only the attraction row here can break A->C->B adjacency and create visual duplicates.
     if (previewTimeline.some((row: any) => row?.isMatrixSplitTravel === true)) {
       return previewTimeline;
     }
@@ -52,7 +52,7 @@ export class ItineraryPreviewTimelineApplicationService {
       );
     };
 
-    // Prefer chosenSlot when valid; otherwise fallback to bestSlot; then first valid allSlotResults row.
+ // Prefer chosenSlot when valid; otherwise fallback to bestSlot; then first valid allSlotResults row.
     let effectiveSlot = !isInvalidSlot(manualInsertionFit?.chosenSlot)
       ? manualInsertionFit.chosenSlot
       : (!isInvalidSlot(manualInsertionFit?.bestSlot)
@@ -65,7 +65,7 @@ export class ItineraryPreviewTimelineApplicationService {
 
     if (!effectiveSlot) return previewTimeline;
 
-    // Reject slots that include the selected hotspot as an endpoint
+ // Reject slots that include the selected hotspot as an endpoint
     if (
       Number(effectiveSlot.fromHotspotId) === selectedIdNum ||
       Number(effectiveSlot.toHotspotId) === selectedIdNum
@@ -73,10 +73,10 @@ export class ItineraryPreviewTimelineApplicationService {
       return previewTimeline;
     }
 
-    // Make a copy of the timeline
+ // Make a copy of the timeline
     let adjustedTimeline = [...previewTimeline];
 
-    // Find the selected hotspot row and its current index
+ // Find the selected hotspot row and its current index
     let selectedRowIndex = -1;
     let selectedRow: any = null;
     for (let i = 0; i < adjustedTimeline.length; i++) {
@@ -91,7 +91,7 @@ export class ItineraryPreviewTimelineApplicationService {
 
     if (!selectedRow || selectedRowIndex === -1) return previewTimeline;
 
-    // Find from and to hotspot rows
+ // Find from and to hotspot rows
     let fromRowIndex = -1;
     let toRowIndex = -1;
     const fromIdNum = Number(effectiveSlot.fromHotspotId || 0);
@@ -108,15 +108,15 @@ export class ItineraryPreviewTimelineApplicationService {
       }
     }
 
-    // Validate slot boundaries exist
+ // Validate slot boundaries exist
     if (fromRowIndex === -1 || toRowIndex === -1 || fromRowIndex >= toRowIndex) {
       return previewTimeline;
     }
 
-    // Remove selected row from its old location
+ // Remove selected row from its old location
     adjustedTimeline.splice(selectedRowIndex, 1);
 
-    // Recalculate indices after removal
+ // Recalculate indices after removal
     if (selectedRowIndex < fromRowIndex) {
       fromRowIndex -= 1;
     }
@@ -124,13 +124,13 @@ export class ItineraryPreviewTimelineApplicationService {
       toRowIndex -= 1;
     }
 
-    // Calculate time range: available gap between from and to hotspots
+ // Calculate time range: available gap between from and to hotspots
     const fromRow = adjustedTimeline[fromRowIndex];
     const toRow = adjustedTimeline[toRowIndex];
     const fromEndMinutes = this.parseSegmentEndMinutes(fromRow);
     const toStartMinutes = this.parseSegmentStartMinutes(toRow);
 
-    // Get selected hotspot duration
+ // Get selected hotspot duration
     const selectedDurationMinutes = this.getPreviewRowDurationMinutes(selectedRow);
 
     let calculatedTimeRange: string | null = null;
@@ -146,22 +146,22 @@ export class ItineraryPreviewTimelineApplicationService {
       const availableGapMinutes = toStartMinutes - fromEndMinutes;
 
       if (availableGapMinutes >= selectedDurationMinutes) {
-        // Fits perfectly in the gap
+ // Fits perfectly in the gap
         const startMinutes = fromEndMinutes;
         const endMinutes = startMinutes + selectedDurationMinutes;
         calculatedTimeRange = this.minutesRangeToTimeString(startMinutes, endMinutes);
       } else {
-        // Does not fit in the time gap
+ // Does not fit in the time gap
         isTimingConflict = true;
         conflictReason = 'Selected hotspot fits route-wise but does not fit current time gap.';
       }
     } else {
-      // Missing timing anchors; never keep stale fallback time for matrix-positioned row.
+ // Missing timing anchors; never keep stale fallback time for matrix-positioned row.
       isTimingConflict = true;
       conflictReason = 'Selected hotspot fits route-wise but does not fit current time gap.';
     }
 
-    // Create adjusted row with matrix positioning metadata
+ // Create adjusted row with matrix positioning metadata
     const adjustedRow = {
       ...selectedRow,
       isUserSelectedPreview: true,
@@ -191,8 +191,8 @@ export class ItineraryPreviewTimelineApplicationService {
       adjustedRow.timeRange = calculatedTimeRange;
     }
 
-    // Reinsert adjusted row between from and to
-    // Insert after fromRowIndex so it comes between from and to
+ // Reinsert adjusted row between from and to
+ // Insert after fromRowIndex so it comes between from and to
     adjustedTimeline.splice(fromRowIndex + 1, 0, adjustedRow);
 
     return adjustedTimeline;
@@ -323,7 +323,7 @@ export class ItineraryPreviewTimelineApplicationService {
 
       if (hotspotId === selectedHotspotId) {
         selectedPivotReached = true;
-        console.log('[FitHere][APJ_PIVOT_DECISION]', {
+ console.log('[FitHere][APJ_PIVOT_DECISION]', {
           routeId: Number(params.routeId),
           hotspotId,
           name,
@@ -347,7 +347,7 @@ export class ItineraryPreviewTimelineApplicationService {
           removalReasonCode: 'BACKTRACK_AFTER_DESTINATION_PIVOT',
           requiresAcknowledgement: true,
         });
-        console.log('[FitHere][APJ_PIVOT_DECISION]', {
+ console.log('[FitHere][APJ_PIVOT_DECISION]', {
           routeId: Number(params.routeId),
           hotspotId,
           name,
@@ -357,7 +357,7 @@ export class ItineraryPreviewTimelineApplicationService {
         });
         return false;
       }
-      console.log('[FitHere][APJ_PIVOT_DECISION]', {
+ console.log('[FitHere][APJ_PIVOT_DECISION]', {
         routeId: Number(params.routeId),
         hotspotId,
         name,

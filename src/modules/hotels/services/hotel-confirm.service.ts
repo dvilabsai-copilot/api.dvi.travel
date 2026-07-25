@@ -29,17 +29,17 @@ export class HotelConfirmService {
     this.providers = new Map<string, any>([
       ['tbo', this.tboProvider],
       ['resavenue', this.resavenueProvider],
-      // Add HOBSE provider here when implemented
+ // Add HOBSE provider here when implemented
     ]);
   }
 
   async confirmHotelBooking(confirmationDTO: HotelConfirmationDTO) {
     try {
-      this.logger.log(
+ this.logger.log(
         `Confirming hotel booking for itinerary: ${confirmationDTO.itineraryPlanId}`,
       );
 
-      // Step 1: Validate search reference exists and is not expired
+ // Step 1: Validate search reference exists and is not expired
       const searchResult = await this.prisma.hotelSearchResults.findUnique({
         where: { search_reference: confirmationDTO.searchReference },
       });
@@ -49,15 +49,15 @@ export class HotelConfirmService {
       }
 
       if (new Date() > new Date(searchResult.expires_at)) {
-        this.logger.warn(`Search reference expired: ${confirmationDTO.searchReference}`);
+ this.logger.warn(`Search reference expired: ${confirmationDTO.searchReference}`);
         throw new BadRequestException(
           'Search reference expired. Please search again.',
         );
       }
 
-      this.logger.log(`Search reference valid, proceeding with confirmation`);
+ this.logger.log(`Search reference valid, proceeding with confirmation`);
 
-      // Step 2: Get provider and confirm booking
+ // Step 2: Get provider and confirm booking
       const provider = this.providers.get(searchResult.provider);
 
       if (!provider) {
@@ -68,11 +68,11 @@ export class HotelConfirmService {
 
       const confirmationResult = await provider.confirmBooking(confirmationDTO);
 
-      this.logger.log(
+ this.logger.log(
         `Booking confirmed with reference: ${confirmationResult.confirmationReference}`,
       );
 
-      // Step 3: Save confirmation to database
+ // Step 3: Save confirmation to database
       const savedConfirmation = await this.prisma.dviHotelConfirmations.create({
         data: {
           itinerary_plan_id: confirmationDTO.itineraryPlanId,
@@ -94,7 +94,7 @@ export class HotelConfirmService {
         },
       });
 
-      this.logger.log(`Confirmation saved to database with ID: ${savedConfirmation.id}`);
+ this.logger.log(`Confirmation saved to database with ID: ${savedConfirmation.id}`);
 
       return {
         success: true,
@@ -112,16 +112,16 @@ export class HotelConfirmService {
         },
       };
     } catch (error) {
-      this.logger.error(`Booking confirmation error: ${error.message}`, error.stack);
+ this.logger.error(`Booking confirmation error: ${error.message}`, error.stack);
       throw error;
     }
   }
 
   async initiatePayment(confirmationReference: string) {
     try {
-      this.logger.log(`Initiating payment for confirmation: ${confirmationReference}`);
+ this.logger.log(`Initiating payment for confirmation: ${confirmationReference}`);
 
-      // Step 1: Verify confirmation exists
+ // Step 1: Verify confirmation exists
       const confirmation = await this.prisma.dviHotelConfirmations.findUnique({
         where: { confirmation_reference: confirmationReference },
       });
@@ -134,10 +134,10 @@ export class HotelConfirmService {
         throw new BadRequestException('Booking already finalized or cancelled');
       }
 
-      this.logger.log(`Confirmation found, proceeding with payment setup`);
+ this.logger.log(`Confirmation found, proceeding with payment setup`);
 
-      // Step 2: Create Razorpay order would happen in a separate service
-      // For now, we'll return the structure needed for frontend to create order
+ // Step 2: Create Razorpay order would happen in a separate service
+ // For now, we'll return the structure needed for frontend to create order
       return {
         success: true,
         message: 'Payment order initiated',
@@ -155,18 +155,18 @@ export class HotelConfirmService {
         },
       };
     } catch (error) {
-      this.logger.error(`Payment initiation error: ${error.message}`, error.stack);
+ this.logger.error(`Payment initiation error: ${error.message}`, error.stack);
       throw error;
     }
   }
 
   async finalizePayment(confirmationReference: string, razorpayPaymentId: string) {
     try {
-      this.logger.log(
+ this.logger.log(
         `Finalizing payment for confirmation: ${confirmationReference}`,
       );
 
-      // Step 1: Verify confirmation exists
+ // Step 1: Verify confirmation exists
       const confirmation = await this.prisma.dviHotelConfirmations.findUnique({
         where: { confirmation_reference: confirmationReference },
       });
@@ -175,7 +175,7 @@ export class HotelConfirmService {
         throw new NotFoundException('Confirmation not found');
       }
 
-      // Step 2: Update confirmation with payment details
+ // Step 2: Update confirmation with payment details
       const updated = await this.prisma.dviHotelConfirmations.update({
         where: { confirmation_reference: confirmationReference },
         data: {
@@ -185,9 +185,9 @@ export class HotelConfirmService {
         },
       });
 
-      this.logger.log(`Payment finalized, booking status updated to confirmed`);
+ this.logger.log(`Payment finalized, booking status updated to confirmed`);
 
-      // Step 3: Update itinerary with hotel confirmation
+ // Step 3: Update itinerary with hotel confirmation
       const hotelRecord = await this.prisma.dviHotel.findFirst({
         where: { tbo_hotel_code: confirmation.hotel_code },
       });
@@ -229,14 +229,14 @@ export class HotelConfirmService {
         },
       };
     } catch (error) {
-      this.logger.error(`Payment finalization error: ${error.message}`, error.stack);
+ this.logger.error(`Payment finalization error: ${error.message}`, error.stack);
       throw error;
     }
   }
 
   async getConfirmation(confirmationReference: string) {
     try {
-      this.logger.log(`Fetching confirmation details: ${confirmationReference}`);
+ this.logger.log(`Fetching confirmation details: ${confirmationReference}`);
 
       const confirmation = await this.prisma.dviHotelConfirmations.findUnique({
         where: { confirmation_reference: confirmationReference },
@@ -246,7 +246,7 @@ export class HotelConfirmService {
         throw new NotFoundException('Confirmation not found');
       }
 
-      // Get latest status from provider
+ // Get latest status from provider
       const provider = this.providers.get(confirmation.provider);
 
       let providerStatus = null;
@@ -254,7 +254,7 @@ export class HotelConfirmService {
         try {
           providerStatus = await provider.getConfirmation(confirmationReference);
         } catch (error) {
-          this.logger.warn(`Failed to fetch provider status: ${error.message}`);
+ this.logger.warn(`Failed to fetch provider status: ${error.message}`);
         }
       }
 
@@ -274,14 +274,14 @@ export class HotelConfirmService {
         },
       };
     } catch (error) {
-      this.logger.error(`Get confirmation error: ${error.message}`, error.stack);
+ this.logger.error(`Get confirmation error: ${error.message}`, error.stack);
       throw error;
     }
   }
 
   async cancelBooking(confirmationReference: string, reason: string) {
     try {
-      this.logger.log(`Cancelling booking: ${confirmationReference}, Reason: ${reason}`);
+ this.logger.log(`Cancelling booking: ${confirmationReference}, Reason: ${reason}`);
 
       const confirmation = await this.prisma.dviHotelConfirmations.findUnique({
         where: { confirmation_reference: confirmationReference },
@@ -295,7 +295,7 @@ export class HotelConfirmService {
         throw new BadRequestException('Can only cancel confirmed bookings');
       }
 
-      // Call provider cancel
+ // Call provider cancel
       const provider = this.providers.get(confirmation.provider);
 
       if (!provider) {
@@ -307,7 +307,7 @@ export class HotelConfirmService {
         reason,
       );
 
-      // Record cancellation
+ // Record cancellation
       await this.prisma.hotelCancellations.create({
         data: {
           confirmation_id: confirmation.id,
@@ -319,13 +319,13 @@ export class HotelConfirmService {
         },
       });
 
-      // Update confirmation
+ // Update confirmation
       await this.prisma.dviHotelConfirmations.update({
         where: { confirmation_reference: confirmationReference },
         data: { status: 'cancelled' },
       });
 
-      this.logger.log(`Booking cancelled successfully: ${confirmationReference}`);
+ this.logger.log(`Booking cancelled successfully: ${confirmationReference}`);
 
       return {
         success: true,
@@ -337,7 +337,7 @@ export class HotelConfirmService {
         },
       };
     } catch (error) {
-      this.logger.error(`Cancellation error: ${error.message}`, error.stack);
+ this.logger.error(`Cancellation error: ${error.message}`, error.stack);
       throw error;
     }
   }

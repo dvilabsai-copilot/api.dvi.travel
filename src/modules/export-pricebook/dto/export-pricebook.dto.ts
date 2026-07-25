@@ -23,11 +23,11 @@ export class VehiclePricebookQueryDto {
 
   @IsOptional()
   @IsString()
-  month?: string; // e.g. "February"
+ month?: string; // e.g. "February"
 
   @IsOptional()
   @IsString()
-  year?: string; // e.g. "2030"
+ year?: string; // e.g. "2030"
 }
 
 export class HotelRoomExportQueryDto {
@@ -42,10 +42,10 @@ export class HotelRoomExportQueryDto {
   cityId!: number;
 
   @IsDateString()
-  startDate!: string; // YYYY-MM-DD
+ startDate!: string; // YYYY-MM-DD
 
   @IsDateString()
-  endDate!: string; // YYYY-MM-DD
+ endDate!: string; // YYYY-MM-DD
 }
 
 export class HotelAmenityExportQueryDto {

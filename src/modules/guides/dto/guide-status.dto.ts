@@ -5,5 +5,5 @@ import { Type } from 'class-transformer';
 
 export class GuideStatusDto {
   @Type(() => Number) @IsInt() @Min(0)
-  status!: number; // 0/1
+ status!: number; // 0/1
 }

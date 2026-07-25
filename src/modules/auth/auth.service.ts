@@ -28,7 +28,7 @@ export class AuthService {
     return String(email || '').trim().toLowerCase();
   }
 
-  /** Finds legacy rows as well as new rows with normalized email matching. */
+ /** Finds legacy rows as well as new rows with normalized email matching. */
   private async findActiveUserByEmail(email: string) {
     const normalizedEmail = this.normalizeEmail(email);
     const rows = await this.prisma.$queryRaw<Array<{ userID: bigint }>>`
@@ -74,10 +74,10 @@ export class AuthService {
     }
   }
 
-  /**
+ /**
    * Validate an existing user against dvi_users.
    * Supports bcrypt and the legacy PHP PwdHash format during migration.
-   */
+ */
   async validateUser(email: string, password: string) {
     const user = await this.findActiveUserByEmail(email);
 

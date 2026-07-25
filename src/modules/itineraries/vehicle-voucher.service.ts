@@ -130,7 +130,7 @@ export class VehicleVoucherService {
   }
 
   async addCancellationPolicy(dto: AddVehicleCancellationPolicyDto, userId: number = 1) {
-    this.logger.log(
+ this.logger.log(
       `Adding vehicle cancellation policy for vendor ${dto.vendorId} / type ${dto.vendorVehicleTypeId} in plan ${dto.itineraryPlanId}`,
     );
 
@@ -265,7 +265,7 @@ export class VehicleVoucherService {
   }
 
   async createVehicleVouchers(dto: CreateVehicleVoucherDto, userId: number = 1) {
-    this.logger.log(`Creating ${dto.vouchers.length} vehicle voucher(s) for plan ${dto.itineraryPlanId}`);
+ this.logger.log(`Creating ${dto.vouchers.length} vehicle voucher(s) for plan ${dto.itineraryPlanId}`);
 
     const invoiceToMap: Record<string, number> = {
       gst_bill_against_dvi: 1,
@@ -383,7 +383,7 @@ export class VehicleVoucherService {
     void this.vehicleVoucherEmailNotifier
       .sendVehicleConfirmationNotifications(itineraryPlanId, vendorEligibleId)
       .catch((error) => {
-        this.logger.error(
+ this.logger.error(
           `Vehicle confirmation email side effect failed for itinerary ${itineraryPlanId}, vendorEligible ${vendorEligibleId}: ${error instanceof Error ? error.message : String(error)}`,
         );
       });

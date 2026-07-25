@@ -182,8 +182,8 @@ export class ItineraryManualFitMatrixPlanningService {
 
       const candidate = {
         extraKm,
-        // anchorIndex uses "after_travel" semantics where preferred order = anchorIndex + 1
-        // so for A(order=n) -> C -> B(order=n+1), anchorIndex should be n.
+ // anchorIndex uses "after_travel" semantics where preferred order = anchorIndex + 1
+ // so for A(order=n) -> C -> B(order=n+1), anchorIndex should be n.
         anchorIndex: Number(a.order),
       };
 
@@ -338,17 +338,17 @@ export class ItineraryManualFitMatrixPlanningService {
   ): Promise<any[]> {
     const ordered = this.sortTimelineSegmentsForPreview(Array.isArray(timeline) ? timeline : []);
     const removedSet = new Set<number>(removedHotspotIds.map((id: any) => Number(id)).filter((id: number) => id > 0));
-    
-    // Detailed logging to track hotspot 220
-    console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] START', {
+
+ // Detailed logging to track hotspot 220
+ console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] START', {
       inputRemovedHotspotIds: removedHotspotIds,
       removedSetContents: Array.from(removedSet),
       orderedTimelineLength: ordered.length,
       contains220: Array.from(removedSet).includes(220),
     });
-    
+
     if (ordered.length === 0 || removedSet.size === 0) {
-      console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] Early return - empty timeline or no removals');
+ console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] Early return - empty timeline or no removals');
       return ordered;
     }
 
@@ -396,7 +396,7 @@ export class ItineraryManualFitMatrixPlanningService {
       };
     };
 
-    // Helper: Check if a row matches a removed hotspot ID
+ // Helper: Check if a row matches a removed hotspot ID
     const containsRemovedHotspotId = (row: any): boolean => {
       const rowId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
       if (rowId > 0 && removedSet.has(rowId)) return true;
@@ -421,9 +421,9 @@ export class ItineraryManualFitMatrixPlanningService {
       const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
       return hid > 0 && !removedSet.has(hid);
     });
-    
-    // Log attractions analysis
-    console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] ATTRACTIONS ANALYSIS', {
+
+ // Log attractions analysis
+ console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] ATTRACTIONS ANALYSIS', {
       totalAttractionRows: attractionRows.length,
       keptAttractionsCount: keptAttractions.length,
       keptIds: keptAttractions.map((r: any) => Number(r?.locationId || r?.hotspot_ID || r?.hotspotId || 0)),
@@ -433,9 +433,9 @@ export class ItineraryManualFitMatrixPlanningService {
         isRemoved: removedSet.has(Number(r?.locationId || r?.hotspot_ID || r?.hotspotId || 0)),
       })),
     });
-    
+
     if (keptAttractions.length === 0) {
-      console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] Early return - no kept attractions');
+ console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] Early return - no kept attractions');
       return ordered;
     }
 
@@ -446,8 +446,8 @@ export class ItineraryManualFitMatrixPlanningService {
       .slice(0, Math.max(0, firstKeptIndex))
       .filter((row: any) => !isHotelLikeRow(row) && !isTravelToHotelRow(row))
       .filter((row: any) => {
-        // Only remove if this row IS a removed hotspot (for attractions)
-        // or if this travel row points TO a removed hotspot
+ // Only remove if this row IS a removed hotspot (for attractions)
+ // or if this travel row points TO a removed hotspot
         const isAttractionRow = () => {
           const type = String(row?.type || '').toLowerCase();
           return type === 'attraction' || Number(row?.item_type || 0) === 4;
@@ -608,7 +608,7 @@ export class ItineraryManualFitMatrixPlanningService {
       const toLabel = String(toAttraction?.text || toAttraction?.name || `Hotspot #${toId}`).trim();
 
       if (leg.durationMin == null) {
-        console.warn(`Cached matrix missing for ${fromLabel} -> ${toLabel}; estimated duration used.`);
+ console.warn(`Cached matrix missing for ${fromLabel} -> ${toLabel}; estimated duration used.`);
       }
 
       const reconnectTravelRow = {
@@ -630,14 +630,14 @@ export class ItineraryManualFitMatrixPlanningService {
         duration: `${durationMin} min`,
         distance: distanceKm != null ? `${Number(distanceKm).toFixed(1)} km` : (fallbackRow?.distance || null),
         isMatrixReconnectedTravel: true,
-        // CRITICAL: Clear hotspot ID fields from fallbackRow to ensure this travel row doesn't get filtered as removed hotspot
+ // CRITICAL: Clear hotspot ID fields from fallbackRow to ensure this travel row doesn't get filtered as removed hotspot
         id: undefined,
         locationId: undefined,
         hotspot_ID: undefined,
         hotspotId: undefined,
         hotspot_id: undefined,
-        toHotspotId: toId, // Set toHotspotId to the destination hotspot
-        fromHotspotId: fromId, // Set fromHotspotId to the source hotspot
+ toHotspotId: toId, // Set toHotspotId to the destination hotspot
+ fromHotspotId: fromId, // Set fromHotspotId to the source hotspot
         isEstimatedTravel: leg.durationMin == null,
       };
 
@@ -687,7 +687,7 @@ export class ItineraryManualFitMatrixPlanningService {
           isMatrixReconnectedTravel: true,
           matrixDurationMin: hotelTravelDuration,
           duration: `${hotelTravelDuration} min`,
-          // CRITICAL: Clear hotspot ID fields to prevent false matching with removed hotspots
+ // CRITICAL: Clear hotspot ID fields to prevent false matching with removed hotspots
           id: undefined,
           locationId: undefined,
           hotspot_ID: undefined,
@@ -714,8 +714,8 @@ export class ItineraryManualFitMatrixPlanningService {
     }
 
     const normalizedRebuilt = this.normalizeTravelLabelsToNextStop(rebuilt);
-    
-    // Final sanitization: remove only rows that ARE removed hotspots or point TO removed hotspots
+
+ // Final sanitization: remove only rows that ARE removed hotspots or point TO removed hotspots
     const sanitized = normalizedRebuilt.filter((row: any) => {
       const isAttractionRow = () => {
         const type = String(row?.type || '').toLowerCase();
@@ -726,13 +726,13 @@ export class ItineraryManualFitMatrixPlanningService {
         return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
       };
 
-      // Remove if this attraction IS a removed hotspot
+ // Remove if this attraction IS a removed hotspot
       if (isAttractionRow()) {
         const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
         return hid <= 0 || !removedSet.has(hid);
       }
 
-      // Remove if this travel row points TO a removed hotspot
+ // Remove if this travel row points TO a removed hotspot
       if (isTravelRow()) {
         const toHotspotId = Number(row?.toHotspotId || 0);
         if (toHotspotId > 0 && removedSet.has(toHotspotId)) return false;
@@ -740,8 +740,8 @@ export class ItineraryManualFitMatrixPlanningService {
 
       return true;
     });
-    
-    // Log final timeline before returning
+
+ // Log final timeline before returning
     const finalAttractionIds = sanitized
       .filter((row: any) => {
         const type = String(row?.type || '').toLowerCase();
@@ -749,25 +749,25 @@ export class ItineraryManualFitMatrixPlanningService {
       })
       .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0))
       .filter((id: number) => id > 0);
-    
-    console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] BEFORE RETURN', {
+
+ console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] BEFORE RETURN', {
       sanitizedLength: sanitized.length,
       finalAttractionIds,
       still_contains_220: finalAttractionIds.includes(220),
       removedSet: Array.from(removedSet),
     });
-    
+
     if (finalAttractionIds.includes(220)) {
-      console.error('[buildMatrixRouteTimelineAfterLowPriorityRemoval] CRITICAL: Hotspot 220 still in sanitized result!');
-      console.error('Sanitized rows containing 220:');
+ console.error('[buildMatrixRouteTimelineAfterLowPriorityRemoval] CRITICAL: Hotspot 220 still in sanitized result!');
+ console.error('Sanitized rows containing 220:');
       for (const row of sanitized) {
         const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
         if (hid === 220) {
-          console.error(`  Row type=${row?.type} id=${hid} text="${row?.text}" name="${row?.name}"`);
+ console.error(` Row type=${row?.type} id=${hid} text="${row?.text}" name="${row?.name}"`);
         }
       }
     }
-    
+
     return sanitized.map((row: any, index: number) => ({
       ...row,
       previewOrder: index,

@@ -321,7 +321,7 @@ deleteLocationName(@Query('location') location: string) {
   }
 
 
-  
+
   @Post(':id/via-routes')
   @ApiOperation({ summary: 'Add a via-route for a location preview' })
   @ApiResponse({

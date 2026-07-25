@@ -4,10 +4,10 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { CreateActivityBookingDto } from './dto/create-activity-booking.dto';
 
-// ——— helpers ———
+// helpers
 function toTimeDate(hhmmss?: string | null): Date | null {
   if (!hhmmss) return null;
-  // Expect "HH:MM" or "HH:MM:SS"
+ // Expect "HH:MM" or "HH:MM:SS"
   const parts = String(hhmmss).split(':').map((x) => parseInt(x, 10));
   if (!parts.length || Number.isNaN(parts[0])) return null;
   const d = new Date();
@@ -52,7 +52,7 @@ function fmtHMS(v: unknown): string | null {
     const ss = String(v.getSeconds()).padStart(2, '0');
     return `${hh}:${mm}:${ss}`;
   }
-  // Some drivers may already give "HH:MM:SS" strings
+ // Some drivers may already give "HH:MM:SS" strings
   const s = String(v);
   if (!s || s.toLowerCase() === 'invalid date') return null;
   const [hh = '00', mm = '00', ss = '00'] = s.split(':');
@@ -87,14 +87,14 @@ const STOREFRONT_CATEGORIES = [
 ] as const;
 
 const ACTIVITY_IMAGE_FALLBACKS: Record<string, string> = {
-  Adventure: 'https://images.unsplash.com/photo-1522163182402-834f871fd851?auto=format&fit=crop&w=900&q=80',
-  'Water Activities': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=900&q=80',
-  Sightseeing: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=900&q=80',
-  Wildlife: 'https://images.unsplash.com/photo-1549366021-9f761d450615?auto=format&fit=crop&w=900&q=80',
-  Cultural: 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?auto=format&fit=crop&w=900&q=80',
-  'Food & Drink': 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=900&q=80',
-  Wellness: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=900&q=80',
-  'Fun & Leisure': 'https://images.unsplash.com/photo-1521336575822-6da63fb45455?auto=format&fit=crop&w=900&q=80',
+ Adventure: 'https://images.unsplash.com/photo-1522163182402-834f871fd851?auto=format&fit=crop&w=900&q=80',
+ 'Water Activities': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=900&q=80',
+ Sightseeing: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=900&q=80',
+ Wildlife: 'https://images.unsplash.com/photo-1549366021-9f761d450615?auto=format&fit=crop&w=900&q=80',
+ Cultural: 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?auto=format&fit=crop&w=900&q=80',
+ 'Food & Drink': 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=900&q=80',
+ Wellness: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=900&q=80',
+ 'Fun & Leisure': 'https://images.unsplash.com/photo-1521336575822-6da63fb45455?auto=format&fit=crop&w=900&q=80',
 };
 
 const PRICEBOOK_DAY_KEYS = [
@@ -192,7 +192,7 @@ function inferActivityCategory(title?: string | null, description?: string | nul
 
 function imageUrlFromGalleryName(name: string | null | undefined): string | null {
   if (!name) return null;
-  if (/^https?:\/\//i.test(name)) return name;
+ if (/^https?:\/\//i.test(name)) return name;
   return `/uploads/activity_gallery/${name}`;
 }
 
@@ -339,7 +339,7 @@ function normalizeStoredRouteName(value: string): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ')
-    .replace(/\s*,\s*/g, ', ')
+ .replace(/\s*,\s*/g, ', ')
     .replace(/,\s*india$/i, '');
 }
 
@@ -684,7 +684,7 @@ export class ActivitiesService {
           .filter((id) => id > 0);
       }
 
-      console.log('[BookActivities] route-aware search', {
+ console.log('[BookActivities] route-aware search', {
         source: primarySource,
         destination: primaryDestination,
         viaRouteLabels,
@@ -730,7 +730,7 @@ export class ActivitiesService {
         .map((row) => Number(row.hotspot_ID ?? 0))
         .filter((id) => id > 0);
 
-      console.log('[BookActivities] destination search', {
+ console.log('[BookActivities] destination search', {
         destination,
         matchedHotspotIdsCount: destinationHotspotIds.length,
         matchedHotspotIds: destinationHotspotIds.slice(0, 20),
@@ -919,7 +919,7 @@ priceRows.forEach((row) => {
     pricingUnitType,
   );
 });
-    console.log('[BookActivities] date availability', {
+ console.log('[BookActivities] date availability', {
       selectedDate: selectedDate ? fmtDateISO(selectedDate) : null,
       selectedMonth,
       selectedYear,
@@ -1847,10 +1847,10 @@ image:
     };
   }
 
-  // ====== LIST ======
+ // ====== LIST ======
   async list(opts: { q?: string; status?: StatusFilter }) {
     try {
-      console.log('[ActivitiesService] list called with opts:', opts);
+ console.log('[ActivitiesService] list called with opts:', opts);
       const where: any = {
         deleted: 0,
       };
@@ -1861,9 +1861,9 @@ image:
         where.OR = [{ activity_title: { contains: opts.q } }];
       }
 
-      console.log('[ActivitiesService] list where:', JSON.stringify(where));
+ console.log('[ActivitiesService] list where:', JSON.stringify(where));
 
-      // Join hotspot for name/location
+ // Join hotspot for name/location
       const rows = await this.prisma.dvi_activity.findMany({
         where,
         orderBy: { activity_id: 'desc' },
@@ -1874,9 +1874,9 @@ image:
           status: true,
         },
       });
-      console.log('[ActivitiesService] found rows:', rows.length);
+ console.log('[ActivitiesService] found rows:', rows.length);
 
-      // fetch hotspot details map
+ // fetch hotspot details map
       const hotspotIds = Array.from(new Set(rows.map((r) => r.hotspot_id).filter((id) => id && id !== 0)));
       let hotspotMap = new Map<number, { name: string; location: string }>();
       if (hotspotIds.length) {
@@ -1901,7 +1901,7 @@ image:
         const hp = hotspotMap.get(r.hotspot_id) ?? { name: '', location: '' };
         return {
           counter: ++counter,
-          modify: r.activity_id, // keep parity with PHP JSON field
+ modify: r.activity_id, // keep parity with PHP JSON field
           activity_title: r.activity_title ?? '',
           hotspot_name: hp.name,
           hotspot_location: hp.location,
@@ -1909,16 +1909,16 @@ image:
           activity_id: r.activity_id,
         };
       });
-      console.log('[ActivitiesService] returning data count:', data.length);
+ console.log('[ActivitiesService] returning data count:', data.length);
 
       return { data };
     } catch (error) {
-      console.error('[ActivitiesService] list error:', error);
+ console.error('[ActivitiesService] list error:', error);
       throw error;
     }
   }
 
-  // ====== HOTSPOTS for dropdown ======
+ // ====== HOTSPOTS for dropdown ======
   async hotspots(q?: string) {
     const where: any = { deleted: 0, status: 1 };
     if (q) {
@@ -1935,19 +1935,19 @@ image:
     }));
   }
 
-  // ====== CREATE BASIC INFO ======
+ // ====== CREATE BASIC INFO ======
   async createActivity(dto: {
     activity_title: string;
     hotspot_id: number | string;
     max_allowed_person_count: number | string;
-    activity_duration?: string; // "HH:MM[:SS]"
+ activity_duration?: string; // "HH:MM[:SS]"
     activity_description?: string;
     createdby?: number;
-    // gallery (optional at create)
+ // gallery (optional at create)
     imageNames?: string[];
-    // default slots
+ // default slots
     defaultSlots?: Array<{ start_time: string; end_time: string }>;
-    // special day slots (optional)
+ // special day slots (optional)
     specialEnabled?: boolean;
     specialSlots?: Array<{ date: string; start_time: string; end_time: string }>;
   }) {
@@ -1970,7 +1970,7 @@ image:
       },
     });
 
-    // gallery
+ // gallery
     if (dto.imageNames?.length) {
       await this.prisma.dvi_activity_image_gallery_details.createMany({
         data: dto.imageNames.map((name) => ({
@@ -1984,12 +1984,12 @@ image:
       });
     }
 
-    // default time slots
+ // default time slots
     if (dto.defaultSlots?.length) {
       await this.prisma.dvi_activity_time_slot_details.createMany({
         data: dto.defaultSlots.map((s) => ({
           activity_id: created.activity_id,
-          time_slot_type: 1, // Default
+ time_slot_type: 1, // Default
           special_date: null,
           start_time: toTimeDate(s.start_time),
           end_time: toTimeDate(s.end_time),
@@ -2001,12 +2001,12 @@ image:
       });
     }
 
-    // special time slots
+ // special time slots
     if (dto.specialEnabled && dto.specialSlots?.length) {
       await this.prisma.dvi_activity_time_slot_details.createMany({
         data: dto.specialSlots.map((s) => ({
           activity_id: created.activity_id,
-          time_slot_type: 2, // Special
+ time_slot_type: 2, // Special
           special_date: toDateOnly(s.date),
           start_time: toTimeDate(s.start_time),
           end_time: toTimeDate(s.end_time),
@@ -2021,7 +2021,7 @@ image:
     return created;
   }
 
-  // ====== UPDATE BASIC INFO ======
+ // ====== UPDATE BASIC INFO ======
   async updateActivity(
     id: number,
     dto: {
@@ -2050,7 +2050,7 @@ image:
     });
   }
 
-  // ====== STATUS / DELETE ======
+ // ====== STATUS / DELETE ======
   async toggleStatus(id: number, status: number) {
     const existing = await this.prisma.dvi_activity.findFirst({ where: { activity_id: id, deleted: 0 } });
     if (!existing) throw new NotFoundException('Activity not found');
@@ -2062,27 +2062,27 @@ image:
 
   async softDelete(id: number) {
     try {
-      console.log('[ActivitiesService] softDelete called for id:', id);
+ console.log('[ActivitiesService] softDelete called for id:', id);
       const existing = await this.prisma.dvi_activity.findFirst({
         where: { activity_id: id, deleted: 0 },
       });
       if (!existing) {
-        console.warn('[ActivitiesService] softDelete: activity not found or already deleted:', id);
+ console.warn('[ActivitiesService] softDelete: activity not found or already deleted:', id);
         throw new NotFoundException('Activity not found');
       }
       const result = await this.prisma.dvi_activity.update({
         where: { activity_id: id },
         data: { deleted: 1, updatedon: new Date() },
       });
-      console.log('[ActivitiesService] softDelete success for id:', id);
+ console.log('[ActivitiesService] softDelete success for id:', id);
       return result;
     } catch (error) {
-      console.error('[ActivitiesService] softDelete error for id:', id, error);
+ console.error('[ActivitiesService] softDelete error for id:', id, error);
       throw error;
     }
   }
 
-  // ====== GALLERY ======
+ // ====== GALLERY ======
   async addImages(activityId: number, imageNames: string[], createdby: number) {
     if (!imageNames?.length) return { count: 0 };
     const existing = await this.prisma.dvi_activity.findFirst({ where: { activity_id: activityId, deleted: 0 } });
@@ -2101,7 +2101,7 @@ image:
     return res;
   }
 
-  // ---- NEW: Save uploaded files (from Multer) into DB (filenames only)
+ // ---- NEW: Save uploaded files (from Multer) into DB (filenames only)
   async saveUploadedImages(
     activityId: number,
     files: Express.Multer.File[],
@@ -2118,7 +2118,7 @@ image:
     const now = new Date();
     const data = files.map((f) => ({
       activity_id: activityId,
-      activity_image_gallery_name: f.filename, // stored by Multer
+ activity_image_gallery_name: f.filename, // stored by Multer
       createdby: toInt(createdby, 0),
       status: 1,
       deleted: 0,
@@ -2138,14 +2138,14 @@ image:
   }
 
   async deleteImage(activityId: number, imageId: number) {
-    // optional: verify image belongs to activity
+ // optional: verify image belongs to activity
     await this.prisma.dvi_activity_image_gallery_details.delete({
       where: { activity_image_gallery_details_id: imageId },
     });
     return { ok: true };
   }
 
-  // ====== TIME SLOTS ======
+ // ====== TIME SLOTS ======
   async saveTimeSlots(
     activityId: number,
     dto: {
@@ -2158,8 +2158,8 @@ image:
     const existing = await this.prisma.dvi_activity.findFirst({ where: { activity_id: activityId, deleted: 0 } });
     if (!existing) throw new NotFoundException('Activity not found');
 
-    // Strategy (parity with PHP UX):
-    // - Remove existing default/special slots then re-insert provided
+ // Strategy (parity with PHP UX):
+ // - Remove existing default/special slots then re-insert provided
     await this.prisma.dvi_activity_time_slot_details.deleteMany({
       where: { activity_id: activityId },
     });
@@ -2203,7 +2203,7 @@ image:
     return { ok: true, count: data.length };
   }
 
-  // ====== PRICEBOOK (month rows with 31 day columns) ======
+ // ====== PRICEBOOK (month rows with 31 day columns) ======
   async getPriceBook(activityId: number) {
   const rows = await this.prisma.dvi_activity_pricebook.findMany({
     where: { activity_id: activityId, deleted: 0, status: 1 },
@@ -2211,7 +2211,7 @@ image:
   });
   if (!rows.length) return null;
 
-  // Derive start/end date from rows
+ // Derive start/end date from rows
   const years = rows.map((r) => Number(r.year));
   const minYear = Math.min(...years);
   const maxYear = Math.max(...years);
@@ -2229,7 +2229,7 @@ image:
   const lastDay = new Date(maxYear, maxMonth, 0).getDate();
   const endDate = `${maxYear}-${String(maxMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-  // Extract per-type prices from day_1 value (uniform per row)
+ // Extract per-type prices from day_1 value (uniform per row)
   const getPrice = (nat: number, type: number): number => {
     const row = rows.find((r) => Number(r.nationality) === nat && Number(r.price_type) === type);
     return row ? Number((row as any).day_1 ?? 0) : 0;
@@ -2264,12 +2264,12 @@ image:
   async savePriceBook(
   activityId: number,
   dto: {
-    hotspot_id: number | string; // BigInt in schema
-    start_date: string; // yyyy-mm-dd
-    end_date: string; // yyyy-mm-dd
+ hotspot_id: number | string; // BigInt in schema
+ start_date: string; // yyyy-mm-dd
+ end_date: string; // yyyy-mm-dd
     pricing_unit_type?: ActivityPricingUnitType | string;
     createdby?: number;
-    // flags per nationality
+ // flags per nationality
     indian?: {
       adult_cost?: number | string;
       child_cost?: number | string;
@@ -2302,7 +2302,7 @@ image:
       (indianUnitCost > 0 || nonIndianUnitCost > 0 ? 'UNIT' : 'PER_ADULT'),
   );
 
-  // Expand month by month
+ // Expand month by month
   const months: Array<{ y: number; m: number }> = [];
   {
     const cur = new Date(start);
@@ -2327,7 +2327,7 @@ image:
             in: priceTypes,
           },
           year: String(y),
-          // @ts-ignore (Prisma model has `month` as string, e.g. "January")
+ // @ts-ignore (Prisma model has `month` as string, e.g. "January")
           month: monthName,
           deleted: 0,
         },
@@ -2340,12 +2340,12 @@ image:
     }
   };
 
-  // helper to upsert a month row with a flat price across all days in that month
+ // helper to upsert a month row with a flat price across all days in that month
   const upsertMonth = async (year: number, month: number, priceType: number, nationality: number, value: number) => {
     const yyyy = String(year);
-    const monthName = new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'long' }); // e.g., "January"
+ const monthName = new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'long' }); // e.g., "January"
     const dayVals: Record<string, number> = {};
-    // fill all possible day1..31 with the price; PHP does the same when a month row is created
+ // fill all possible day1..31 with the price; PHP does the same when a month row is created
     for (let d = 1; d <= 31; d++) {
       dayVals[`day_${d}`] = value;
     }
@@ -2357,7 +2357,7 @@ image:
         nationality,
         price_type: priceType,
         year: yyyy,
-      // @ts-ignore (Prisma model has `month` as string, e.g. "January")
+ // @ts-ignore (Prisma model has `month` as string, e.g. "January")
         month: monthName,
         deleted: 0,
       },
@@ -2419,7 +2419,7 @@ image:
 
   await deactivatePriceTypes([ACTIVITY_PRICE_TYPE_UNIT]);
 
-  // Indian: nationality=1; price_type: 1=Adult, 2=Child, 3=Infant
+ // Indian: nationality=1; price_type: 1=Adult, 2=Child, 3=Infant
   if (dto.indian) {
     const adult = toFloat(dto.indian.adult_cost, 0);
     const child = toFloat(dto.indian.child_cost, 0);
@@ -2431,7 +2431,7 @@ image:
     }
   }
 
-  // Non-Indian: nationality=2
+ // Non-Indian: nationality=2
   if (dto.nonindian) {
     const adult = toFloat(dto.nonindian.adult_cost, 0);
     const child = toFloat(dto.nonindian.child_cost, 0);
@@ -2450,7 +2450,7 @@ image:
   };
 }
 
-  // ====== REVIEWS ======
+ // ====== REVIEWS ======
   async addOrUpdateReview(
     activityId: number,
     dto: { reviewId?: number; activity_rating: string; activity_description?: string; createdby?: number },
@@ -2459,7 +2459,7 @@ image:
     if (!existing) throw new NotFoundException('Activity not found');
 
     if (!dto.activity_rating) throw new BadRequestException('activity_rating required');
-    // NOTE: schema has VarChar(20) for activity_description (!)
+ // NOTE: schema has VarChar(20) for activity_description (!)
     const trimmedDesc = (dto.activity_description ?? '').slice(0, 20);
 
     if (dto.reviewId) {
@@ -2502,7 +2502,7 @@ image:
     return { ok: true };
   }
 
-  // ====== PREVIEW ======
+ // ====== PREVIEW ======
   async preview(activityId: number) {
     const act = await this.prisma.dvi_activity.findFirst({
       where: { activity_id: activityId, deleted: 0 },
@@ -2529,7 +2529,7 @@ image:
       }),
     ]);
 
-    // ---- NEW: serialize time/date fields to strings ----
+ // ---- NEW: serialize time/date fields to strings ----
     const basic = {
       ...act,
       activity_duration: fmtHMS(act.activity_duration),
@@ -2575,7 +2575,7 @@ image:
     };
   }
 
-  // ====== DETAILS ======
+ // ====== DETAILS ======
   async details(activityId: number) {
     const act = await this.prisma.dvi_activity.findFirst({
       where: { activity_id: activityId, deleted: 0 },
@@ -2594,7 +2594,7 @@ image:
       }),
     ]);
 
-    // ---- NEW: serialize time/date in details as well ----
+ // ---- NEW: serialize time/date in details as well ----
     const out = {
       ...act,
       activity_duration: fmtHMS(act.activity_duration),

@@ -43,10 +43,10 @@ export class RoomRateMappingDto {
 }
 
 export class RatePlanInfoResponseDto {
-  /**
+ /**
    * Adapter-defined response body based on current implementation.
    * The fully official STAAH response schema is not yet proven from docs.
-   */
+ */
   roomtypes: RoomTypeDto[];
   rateplans: RatePlanDto[];
   room_rate_mapping: RoomRateMappingDto[];

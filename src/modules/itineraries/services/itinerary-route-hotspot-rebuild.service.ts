@@ -141,7 +141,7 @@ export class ItineraryRouteHotspotRebuildService {
           deleted: 0,
         },
       });
-      console.log('[RouteRebuild][TRACE] before hotspot-engine rebuild', {
+ console.log('[RouteRebuild][TRACE] before hotspot-engine rebuild', {
         planId: normalizedPlanId,
         routeId: normalizedRouteId,
         preRouteVisitCount,
@@ -161,7 +161,7 @@ export class ItineraryRouteHotspotRebuildService {
           deleted: 0,
         },
       });
-      console.log('[RouteRebuild][TRACE] after hotspot-engine rebuild', {
+ console.log('[RouteRebuild][TRACE] after hotspot-engine rebuild', {
         planId: normalizedPlanId,
         routeId: normalizedRouteId,
         postRouteVisitCount,

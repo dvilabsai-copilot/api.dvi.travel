@@ -41,7 +41,7 @@ export class VehicleTypesService {
       },
     });
 
-    // Match PHP-ish response shape used by DataTables JSON
+ // Match PHP-ish response shape used by DataTables JSON
     return { data: rows };
   }
 
@@ -60,10 +60,10 @@ export class VehicleTypesService {
     return { data: row };
   }
 
-  /**
+ /**
    * Mirrors PHP "check title" logic (used by parsley remote validators in legacy UI).
    * If title equals oldTitle, PHP typically treats it as valid.
-   */
+ */
   async checkTitle(titleRaw: string, excludeId?: number, oldTitle?: string) {
     const title = (titleRaw ?? "").toString().trim();
     const old = (oldTitle ?? "").toString().trim();
@@ -90,7 +90,7 @@ export class VehicleTypesService {
     if (!title) throw new Error("vehicle_type_title is required");
     if (occupancy === undefined) throw new Error("occupancy is required");
 
-    // PHP effectively makes new records active
+ // PHP effectively makes new records active
     const created = await this.prisma.dvi_vehicle_type.create({
       data: {
         vehicle_type_title: title,
@@ -126,7 +126,7 @@ export class VehicleTypesService {
     const hasOnlyStatusToggle =
       !hasTitleOrOccupancy && Object.prototype.hasOwnProperty.call(dto, "status");
 
-    // PHP has a dedicated updatestatus action that toggles.
+ // PHP has a dedicated updatestatus action that toggles.
     if (hasOnlyStatusToggle) {
       const current = to01(dto.status);
       const next = current === 1 ? 0 : 1;
@@ -135,7 +135,7 @@ export class VehicleTypesService {
         where: { vehicle_type_id: id },
         data: {
           status: next,
-          createdby: userId ?? 0, // PHP often overwrites createdby on edits
+ createdby: userId 0, // PHP often overwrites createdby on edits
           updatedon: new Date(),
         },
         select: {
@@ -149,7 +149,7 @@ export class VehicleTypesService {
       return { data: updated };
     }
 
-    // PHP edit path: updates title/occupancy and forces status=1
+ // PHP edit path: updates title/occupancy and forces status=1
     const updated = await this.prisma.dvi_vehicle_type.update({
       where: { vehicle_type_id: id },
       data: {
@@ -170,11 +170,11 @@ export class VehicleTypesService {
     return { data: updated };
   }
 
-  /**
+ /**
    * Mirrors PHP delete cascade 1:1:
    * - soft delete on dvi_vehicle_type
    * - then hard deletes across related tables (including vendor_vehicle_type_ID mapping)
-   */
+ */
   async remove(id: number) {
     const existing = await this.prisma.dvi_vehicle_type.findFirst({
       where: { vehicle_type_id: id, deleted: 0 },
@@ -183,13 +183,13 @@ export class VehicleTypesService {
     if (!existing) throw new NotFoundException("Vehicle Type not found");
 
     await this.prisma.$transaction(async (tx) => {
-      // soft delete main record
+ // soft delete main record
       await tx.dvi_vehicle_type.update({
         where: { vehicle_type_id: id },
         data: { deleted: 1, updatedon: new Date() },
       });
 
-      // find vehicles for this type and delete their gallery rows
+ // find vehicles for this type and delete their gallery rows
       const vehicles = await tx.dvi_vehicle.findMany({
         where: { vehicle_type_id: id, deleted: 0 },
         select: { vehicle_id: true },
@@ -202,7 +202,7 @@ export class VehicleTypesService {
         });
       }
 
-      // delete hotspot parking charges + toll charges for this vehicle type
+ // delete hotspot parking charges + toll charges for this vehicle type
       await tx.dvi_hotspot_vehicle_parking_charges.deleteMany({
         where: { vehicle_type_id: id },
       });
@@ -211,23 +211,23 @@ export class VehicleTypesService {
         where: { vehicle_type_id: id },
       });
 
-      // vendor vehicle types for this vehicle_type_id
+ // vendor vehicle types for this vehicle_type_id
       const vendorTypes = await tx.dvi_vendor_vehicle_types.findMany({
         where: { vehicle_type_id: id, deleted: 0 },
         select: { vendor_vehicle_type_ID: true },
       });
 
-      // For each vendor_vehicle_type_ID, PHP deletes multiple tables using that ID
+ // For each vendor_vehicle_type_ID, PHP deletes multiple tables using that ID
       for (const vt of vendorTypes) {
         const vendorVehicleTypeId = vt.vendor_vehicle_type_ID;
 
         await tx.dvi_vehicle_outstation_price_book.deleteMany({
-          // NOTE: PHP uses vehicle_type_id column for vendor_vehicle_type_ID value
+ // NOTE: PHP uses vehicle_type_id column for vendor_vehicle_type_ID value
           where: { vehicle_type_id: vendorVehicleTypeId },
         });
 
         await tx.dvi_vehicle_local_pricebook.deleteMany({
-          // NOTE: PHP uses vehicle_type_id column for vendor_vehicle_type_ID value
+ // NOTE: PHP uses vehicle_type_id column for vendor_vehicle_type_ID value
           where: { vehicle_type_id: vendorVehicleTypeId },
         });
 
@@ -240,17 +240,17 @@ export class VehicleTypesService {
         });
 
         await tx.dvi_permit_cost.deleteMany({
-          // NOTE: PHP uses vehicle_type_id column for vendor_vehicle_type_ID value
+ // NOTE: PHP uses vehicle_type_id column for vendor_vehicle_type_ID value
           where: { vehicle_type_id: vendorVehicleTypeId },
         });
 
-        // NOTE: PHP also deletes vehicles where vehicle_type_id == vendor_vehicle_type_ID
+ // NOTE: PHP also deletes vehicles where vehicle_type_id == vendor_vehicle_type_ID
         await tx.dvi_vehicle.deleteMany({
           where: { vehicle_type_id: vendorVehicleTypeId },
         });
       }
 
-      // finally remove vendor vehicle types rows for this vehicle type
+ // finally remove vendor vehicle types rows for this vehicle type
       await tx.dvi_vendor_vehicle_types.deleteMany({
         where: { vehicle_type_id: id },
       });

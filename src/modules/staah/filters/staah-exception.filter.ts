@@ -43,12 +43,12 @@ export class StaahExceptionFilter implements ExceptionFilter {
     }
 
     if (httpStatus >= 500) {
-      this.logger.error(
+ this.logger.error(
         `STAAH request failed: ${request.method} ${request.url} -> ${httpStatus} ${errorDesc}`,
         exception instanceof Error ? exception.stack : undefined,
       );
     } else {
-      this.logger.warn(
+ this.logger.warn(
         `STAAH request rejected: ${request.method} ${request.url} -> ${httpStatus} ${errorDesc}`,
       );
     }

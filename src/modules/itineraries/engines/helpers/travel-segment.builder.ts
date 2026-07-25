@@ -11,27 +11,27 @@ type Tx = Prisma.TransactionClient;
 export class TravelSegmentBuilder {
   private readonly distanceHelper = new DistanceHelper();
 
-  /**
+ /**
    * Generic travel segment (item_type = 3 by default).
    * You can reuse this for item_type 5/6/7 by overriding item_type.
-   */
+ */
   async buildTravelSegment(
     tx: Tx,
     opts: {
       planId: number;
       routeId: number;
       order: number;
-      item_type: number; // 3 / 5 / 6 / 7
-      locationId?: number; // preferred if you have it
+ item_type: number; // 3 / 5 / 6 / 7
+ locationId?: number; // preferred if you have it
       sourceLocationName?: string;
       destinationLocationName?: string;
-      travelLocationType: 1 | 2; // local vs outstation
-      startTime: string; // HH:MM:SS
+ travelLocationType: 1 | 2; // local vs outstation
+ startTime: string; // HH:MM:SS
       userId: number;
       allowViaRoute?: boolean;
       viaLocationName?: string | null;
-      hotspotId?: number; // For item_type=3 (site-seeing travel), set to target hotspot_ID
-      fromHotspotId?: number; // For cache-first: origin hotspot ID
+ hotspotId?: number; // For item_type=3 (site-seeing travel), set to target hotspot_ID
+ fromHotspotId?: number; // For cache-first: origin hotspot ID
       sourceCoords?: { lat: number; lon: number };
       destCoords?: { lat: number; lon: number };
       isConflict?: boolean;
@@ -60,8 +60,8 @@ export class TravelSegmentBuilder {
     } = opts;
 
     let distanceResult;
-    
-    // ===== CACHE-FIRST FOR HOTSPOT-TO-HOTSPOT LEGS =====
+
+ // ===== CACHE-FIRST FOR HOTSPOT-TO-HOTSPOT LEGS =====
     if (
       fromHotspotId &&
       hotspotId &&
@@ -72,7 +72,7 @@ export class TravelSegmentBuilder {
       destCoords.lat !== 0 &&
       destCoords.lon !== 0
     ) {
-      // Both hotspots with coordinates → use cache-first
+ // Both hotspots with coordinates use cache-first
       distanceResult = await this.distanceHelper.fromSourceAndDestination(
         tx,
         sourceLocationName,
@@ -127,11 +127,11 @@ export class TravelSegmentBuilder {
       };
     }
 
-    // PHP parity:
-    // - sightseeing travel segments (item_type=3) use travel time only
-    // - final return/drop rows (item_type=7) are already anchored against the
-    //   last-route arrival deadline, so adding the road/common buffer again
-    //   would double-count it and can push the airport segment beyond route_end_time
+ // PHP parity:
+ // - sightseeing travel segments (item_type=3) use travel time only
+ // - final return/drop rows (item_type=7) are already anchored against the
+ // last-route arrival deadline, so adding the road/common buffer again
+ // would double-count it and can push the airport segment beyond route_end_time
     const effectiveBufferTime =
       item_type === 3 || item_type === 7
         ? "00:00:00"
@@ -142,7 +142,7 @@ export class TravelSegmentBuilder {
     );
 
     const endTime = addTimes(startTime, totalSegmentTime);
-    
+
     const now = new Date();
 
     const row: HotspotDetailRow = {
@@ -150,7 +150,7 @@ export class TravelSegmentBuilder {
       itinerary_route_ID: routeId,
       item_type,
       hotspot_order: order,
-      hotspot_ID: hotspotId, // For item_type=3, this is the target hotspot; for others, 0
+ hotspot_ID: hotspotId, // For item_type=3, this is the target hotspot; for others, 0
 
       hotspot_adult_entry_cost: 0,
       hotspot_child_entry_cost: 0,

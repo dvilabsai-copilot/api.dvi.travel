@@ -7,10 +7,10 @@ export class CreateInbuiltAmenityDto {
   @IsNotEmpty()
   title!: string;
 
-  /**
+ /**
    * Frontend may send 0/1, but PHP always stores status=1 on create.
    * We keep it optional for compatibility.
-   */
+ */
   @IsOptional()
   @IsInt()
   @IsIn([0, 1])

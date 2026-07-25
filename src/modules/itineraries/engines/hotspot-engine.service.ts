@@ -23,16 +23,16 @@ type Tx = Prisma.TransactionClient;
 export class HotspotEngineService {
   private readonly logger = new Logger(HotspotEngineService.name);
 
-  // We don't use Nest DI for helpers so you don't have to touch the module.
+ // We don't use Nest DI for helpers so you don't have to touch the module.
   private readonly timelineBuilder = new TimelineBuilder();
   private readonly operatingHoursChecker = new OperatingHoursChecker();
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
+ /**
    * Main entry called from ItinerariesService inside a prisma.$transaction.
    * Mirrors PHP: wipes old hotspot timeline & parking charges and rebuilds them.
-   */
+ */
   async rebuildRouteHotspots(
     tx: Tx,
     planId: number,
@@ -48,9 +48,9 @@ export class HotspotEngineService {
         replacedHotspotId?: number;
       }>;
       sameCityAllocationPlan?: SameCityAllocationPlan | null;
-      /** Scope delete + rebuild to a single route. Used by preview simulations to avoid rebuilding every day. */
+ /** Scope delete + rebuild to a single route. Used by preview simulations to avoid rebuilding every day. */
       scopeToRouteId?: number;
-      /** Skip parking charge rebuild (safe for preview since it rolls back). */
+ /** Skip parking charge rebuild (safe for preview since it rolls back). */
       skipParking?: boolean;
     },
   ): Promise<{
@@ -60,22 +60,22 @@ export class HotspotEngineService {
     warnings: RebuildWarning[];
     routeRejectionSummaryByRoute: Record<number, RouteRejectionSummary>;
   }> {
-    // 1) Fetch ALL current hotspots (manual and auto) INCLUDING soft-deleted ones for reference
-    // Note: We include deleted:1 records, but the timeline builder/selector will exclude them
-    // This ensures deleted hotspots are NOT re-added during rebuild
+ // 1) Fetch ALL current hotspots (manual and auto) INCLUDING soft-deleted ones for reference
+ // Note: We include deleted:1 records, but the timeline builder/selector will exclude them
+ // This ensures deleted hotspots are NOT re-added during rebuild
     let existingHotspots = existingHotspotsFromService;
-    
+
     if (!existingHotspots) {
       existingHotspots = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
         where: {
           itinerary_plan_ID: planId,
-          item_type: 4, // Only actual hotspot visits
+ item_type: 4, // Only actual hotspot visits
         },
       });
     }
 
-    // 1.5) EXTRACT MANUAL HOTSPOTS BEFORE DELETION
-    // Manual hotspots (hotspot_plan_own_way=1) must be preserved and reinserted with proper timings
+ // 1.5) EXTRACT MANUAL HOTSPOTS BEFORE DELETION
+ // Manual hotspots (hotspot_plan_own_way=1) must be preserved and reinserted with proper timings
     const manualHotspots = existingHotspots.filter((h: any) =>
       Number(h.hotspot_plan_own_way || 0) === 1 && Number(h.deleted || 0) === 0
     );
@@ -90,7 +90,7 @@ export class HotspotEngineService {
     });
     const manualHotspotIds = new Set(manualHotspots.map((h: any) => Number(h.hotspot_ID || 0)));
 
-    console.log('[ManualHotspot][rebuildRouteHotspots] extracted manual hotspots', {
+ console.log('[ManualHotspot][rebuildRouteHotspots] extracted manual hotspots', {
       planId,
       manualHotspotCount: manualHotspots.length,
       manualHotspotIds: Array.from(manualHotspotIds),
@@ -107,7 +107,7 @@ export class HotspotEngineService {
 
     const logPersistence = (stage: string, details: Record<string, unknown> = {}) => {
       if (!debugRebuildPersistence) return;
-      console.log("[RebuildPersist][RouteHotspotDetails]", {
+ console.log("[RebuildPersist][RouteHotspotDetails]", {
         planId,
         scopeRouteId,
         focusRouteId,
@@ -143,10 +143,10 @@ export class HotspotEngineService {
       preDeleteFocusVisitRows,
     });
 
-    // 2) Delete ONLY active hotspot details before rebuilding.
-    // We keep deleted: 1 records as "tombstones" to prevent auto-selection.
-    // When scoped to a single route (preview), only delete rows for that route to avoid
-    // wiping other days that are not being simulated.
+ // 2) Delete ONLY active hotspot details before rebuilding.
+ // We keep deleted: 1 records as "tombstones" to prevent auto-selection.
+ // When scoped to a single route (preview), only delete rows for that route to avoid
+ // wiping other days that are not being simulated.
     const deleteWhere: any = { itinerary_plan_ID: planId, deleted: 0 };
     if (options?.scopeToRouteId) {
       deleteWhere.itinerary_route_ID = options.scopeToRouteId;
@@ -178,9 +178,9 @@ export class HotspotEngineService {
       await (tx as any).dvi_itinerary_route_hotspot_parking_charge.deleteMany({ where: parkingWhere });
     }
 
-    // 3) Build new timeline rows in memory (WITHOUT manual hotspots)
-    // Pass existing hotspots (including deleted ones) to the builder
-    // The builder/selector will filter out deleted:1 hotspots so they are NOT re-added
+ // 3) Build new timeline rows in memory (WITHOUT manual hotspots)
+ // Pass existing hotspots (including deleted ones) to the builder
+ // The builder/selector will filter out deleted:1 hotspots so they are NOT re-added
     const manualPlacementByRoute: Record<number, { hotspotOrder?: number }> = {};
     for (const manualHotspot of manualHotspots) {
       const routeId = Number((manualHotspot as any)?.itinerary_route_ID || 0);
@@ -205,20 +205,20 @@ export class HotspotEngineService {
         scopeToRouteId: options?.scopeToRouteId,
       });
 
-    console.log('[ManualHotspot][rebuildRouteHotspots] start', {
+ console.log('[ManualHotspot][rebuildRouteHotspots] start', {
       planId,
       hotspotRowCount: Array.isArray(hotspotRows) ? hotspotRows.length : 0,
       protectedHotspotIdsCount: Array.isArray(options?.protectedHotspotIds) ? options!.protectedHotspotIds!.length : 0,
       protectedRouteHotspotIdsCount: Array.isArray(options?.protectedRouteHotspotIds) ? options!.protectedRouteHotspotIds!.length : 0,
     });
 
-    // Initialize tracking arrays
+ // Initialize tracking arrays
     const shiftedItems: any[] = [];
     const droppedItems: any[] = [];
 
-    // 4) Safety filter for final persisted timeline:
-    //    - Drop unschedulable AUTO hotspots from rebuild output.
-    //    - Preserve manual hotspots for manual-confirmed flows.
+ // 4) Safety filter for final persisted timeline:
+ // - Drop unschedulable AUTO hotspots from rebuild output.
+ // - Preserve manual hotspots for manual-confirmed flows.
     const protectedRouteHotspotIds = new Set(
       (options?.protectedRouteHotspotIds || [])
         .map((id) => Number(id || 0))
@@ -230,7 +230,7 @@ export class HotspotEngineService {
         .filter((id) => id > 0),
     );
 
-    // ✅ ADD MANUAL HOTSPOTS TO PROTECTION SET SO THEY ARE NOT FILTERED OUT
+ // ADD MANUAL HOTSPOTS TO PROTECTION SET SO THEY ARE NOT FILTERED OUT
     for (const manualId of manualHotspotIds) {
       protectedHotspotIds.add(manualId);
     }
@@ -277,8 +277,8 @@ export class HotspotEngineService {
       }
     }
 
-    // 4.1) Enforce one occurrence per hotspot_ID per route.
-    // Keep the anchored/protected occurrence and drop duplicate auto-selected ghosts.
+ // 4.1) Enforce one occurrence per hotspot_ID per route.
+ // Keep the anchored/protected occurrence and drop duplicate auto-selected ghosts.
     const visitRows = (hotspotRows as any[]).filter(
       (row) => Number((row as any).item_type || 0) === 4 && Number((row as any).hotspot_ID || 0) > 0,
     );
@@ -336,7 +336,7 @@ export class HotspotEngineService {
         return false;
       }
 
-      // Some travel rows may not carry hotspot_ID; drop by route+order fallback.
+ // Some travel rows may not carry hotspot_ID; drop by route+order fallback.
       if (itemType === 3) {
         const fallbackKey = `${Number((row as any).itinerary_route_ID || 0)}|${Number((row as any).hotspot_order || 0)}|0`;
         if (droppedAutoConflicts.has(fallbackKey)) return false;
@@ -345,7 +345,7 @@ export class HotspotEngineService {
       return true;
     });
 
-    // Populate droppedItems from all dropped/conflict auto-hotspot entries
+ // Populate droppedItems from all dropped/conflict auto-hotspot entries
     const droppedHotspotIdList: number[] = [];
     for (const key of droppedAutoConflicts) {
       const parts = key.split('|');
@@ -384,7 +384,7 @@ export class HotspotEngineService {
         });
       }
 
-      // Persist omitted auto hotspots per route so customization can target skipped items.
+ // Persist omitted auto hotspots per route so customization can target skipped items.
       const omittedByRoute = new Map<number, Set<number>>();
       for (const item of droppedItems) {
         const routeId = Number((item as any)?.itineraryRouteId || 0);
@@ -431,17 +431,17 @@ export class HotspotEngineService {
       return !droppedRouteHotspotPairs.has(pair);
     });
 
-    // ============================================================================
-    // 4.5) INJECT MANUAL HOTSPOTS INTO FILTERED TIMELINE
-    // Manual hotspots with order=999 must be inserted with proper order and timing
-    // ============================================================================
+ // ============================================================================
+ // 4.5) INJECT MANUAL HOTSPOTS INTO FILTERED TIMELINE
+ // Manual hotspots with order=999 must be inserted with proper order and timing
+ // ============================================================================
     if (manualHotspots.length > 0) {
-      console.log('[ManualHotspot][rebuildRouteHotspots] injecting manual hotspots', {
+ console.log('[ManualHotspot][rebuildRouteHotspots] injecting manual hotspots', {
         planId,
         manualCount: manualHotspots.length,
       });
 
-      // Group filteredHotspotRows by route for easier insertion
+ // Group filteredHotspotRows by route for easier insertion
       const rowsByRoute = new Map<number, any[]>();
       for (const row of filteredHotspotRows as any[]) {
         const routeId = Number((row as any).itinerary_route_ID || 0);
@@ -451,7 +451,7 @@ export class HotspotEngineService {
 
       const placeholderEpoch = new Date('1970-01-01T00:00:00Z').getTime();
 
-      // Process each manual hotspot
+ // Process each manual hotspot
       for (const manualHotspot of manualHotspots) {
         const routeId = Number(manualHotspot.itinerary_route_ID || 0);
         const hotspotId = Number(manualHotspot.hotspot_ID || 0);
@@ -486,7 +486,7 @@ export class HotspotEngineService {
         };
 
         if (routeRows.length === 0) {
-          console.warn('[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot', {
+ console.warn('[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot', {
             routeId,
             hotspotId,
           });
@@ -499,11 +499,11 @@ export class HotspotEngineService {
           continue;
         }
 
-        // Find all hotspot visit rows for this route (item_type = 4)
+ // Find all hotspot visit rows for this route (item_type = 4)
         const visitRows = routeRows.filter((r: any) => Number(r.item_type || 0) === 4);
 
         if (visitRows.length === 0) {
-          console.warn('[ManualHotspot][PROOF] No visit rows found - using first position', {
+ console.warn('[ManualHotspot][PROOF] No visit rows found - using first position', {
             routeId,
             hotspotId,
           });
@@ -567,9 +567,9 @@ export class HotspotEngineService {
               })[0] || null
           : null;
 
-        // ════════════════════════════════════════════════════════════════
-        // PROOF: Log last visit row details
-        // ════════════════════════════════════════════════════════════════
+ //
+ // PROOF: Log last visit row details
+ //
         const previousVisitRow = preferredOrder > 0
           ? [...sortedVisitRows]
               .reverse()
@@ -577,7 +577,7 @@ export class HotspotEngineService {
           : null;
         const lastVisitRow = sortedVisitRows[sortedVisitRows.length - 1];
         const timingReferenceRow = anchorTravelRow || previousVisitRow || (preferredOrder > 0 ? null : lastVisitRow);
-        console.log(`\n[ManualHotspot][PROOF][${hotspotId}] LAST VISIT ROW DETAILS:`, {
+ console.log(`\n[ManualHotspot][PROOF][${hotspotId}] LAST VISIT ROW DETAILS:`, {
           routeId,
           hotspotId: hotspotId,
           preferredOrder,
@@ -603,7 +603,7 @@ export class HotspotEngineService {
 
         const anchorTravelEndTime = anchorTravelRow?.hotspot_end_time || anchorTravelRow?.hotspot_start_time;
         const lastVisitEndTime = timingReferenceRow?.hotspot_end_time || timingReferenceRow?.hotspot_start_time;
-        console.log(`[ManualHotspot][PROOF] Extracted lastVisitEndTime:`, {
+ console.log(`[ManualHotspot][PROOF] Extracted lastVisitEndTime:`, {
           value: lastVisitEndTime,
           source: anchorTravelEndTime
             ? 'anchorTravel.hotspot_end_time'
@@ -612,9 +612,9 @@ export class HotspotEngineService {
               : (timingReferenceRow?.hotspot_start_time ? 'hotspot_start_time' : 'route_start_time')),
         });
 
-        // ════════════════════════════════════════════════════════════════
-        // PROOF: Log manualStartTime decision tree
-        // ════════════════════════════════════════════════════════════════
+ //
+ // PROOF: Log manualStartTime decision tree
+ //
         const normalizedAnchorTravelEnd = anchorTravelEndTime ? new Date(anchorTravelEndTime) : null;
         const hasValidAnchorTravelEnd =
           !!normalizedAnchorTravelEnd && Number.isFinite(normalizedAnchorTravelEnd.getTime()) &&
@@ -645,7 +645,7 @@ export class HotspotEngineService {
         ) {
           manualStartTime.setTime(routeStartTime.getTime());
         }
-        console.log(`[ManualHotspot][PROOF] Calculated manualStartTime:`, {
+ console.log(`[ManualHotspot][PROOF] Calculated manualStartTime:`, {
           value: manualStartTime,
           source: preferredPlacementHasValidStart
             ? 'preferredPlacement.hotspotStartTime'
@@ -661,20 +661,20 @@ export class HotspotEngineService {
           anchorVisitStartTime_exists: !!anchorVisitStartTime,
           route_start_time: route?.route_start_time,
         });
-        console.log(`[ManualHotspot][PROOF] Hotspot master data:`, {
+ console.log(`[ManualHotspot][PROOF] Hotspot master data:`, {
           hotspot_ID: hotspotMaster?.hotspot_ID,
           hotspot_name: hotspotMaster?.hotspot_name,
           hotspot_duration: hotspotMaster?.hotspot_duration,
           hotspot_priority: hotspotMaster?.hotspot_priority,
         });
 
-        // ════════════════════════════════════════════════════════════════
-        // CURRENT BEHAVIOR: manualEndTime = manualStartTime (NO DURATION)
-        // ════════════════════════════════════════════════════════════════
+ //
+ // CURRENT BEHAVIOR: manualEndTime = manualStartTime (NO DURATION)
+ //
         const manualEndTime = preferredPlacementHasValidEnd
           ? preferredPlacementEnd!
           : computeEndTime(manualStartTime);
-        console.log(`[ManualHotspot][PROOF] Set manualEndTime to manualStartTime (NO DURATION APPLIED):`, {
+ console.log(`[ManualHotspot][PROOF] Set manualEndTime to manualStartTime (NO DURATION APPLIED):`, {
           manualStartTime,
           manualEndTime,
           sameValue: manualStartTime.getTime() === manualEndTime.getTime(),
@@ -684,16 +684,16 @@ export class HotspotEngineService {
             : 'END TIME NOW APPLIES HOTSPOT DURATION',
         });
 
-        // Update manual hotspot with real order and timing
+ // Update manual hotspot with real order and timing
         manualHotspot.hotspot_order = preferredOrder > 0
           ? preferredOrder
           : (Math.max(...visitRows.map((r: any) => Number(r.hotspot_order || 0))) + 1);
         manualHotspot.hotspot_start_time = manualStartTime;
         manualHotspot.hotspot_end_time = manualEndTime;
 
-        // ════════════════════════════════════════════════════════════════
-        // OPERATING HOURS CHECK: mark conflict if slot is outside open windows
-        // ════════════════════════════════════════════════════════════════
+ //
+ // OPERATING HOURS CHECK: mark conflict if slot is outside open windows
+ //
         try {
           const routeDate = route?.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
           const hotspotTimingRows = await (tx as any).dvi_hotspot_timing.findMany({
@@ -713,7 +713,7 @@ export class HotspotEngineService {
           });
 
           if (!routeDate || hotspotTimingRows.length === 0) {
-            // No route date or no timing data: preserve legacy permissive behavior.
+ // No route date or no timing data: preserve legacy permissive behavior.
           } else {
             const timingMap = new Map<number, Map<number, any[]>>();
             const byDay = new Map<number, any[]>();
@@ -739,7 +739,7 @@ export class HotspotEngineService {
               } else {
                 manualHotspot.is_conflict = 0;
                 manualHotspot.conflict_reason = null;
-                console.log('[MANUAL TEMPLE HOTSPOT TIMING OVERRIDE]', {
+ console.log('[MANUAL TEMPLE HOTSPOT TIMING OVERRIDE]', {
                   routeId,
                   hotspotId,
                   hotspotName: hotspotMaster?.hotspot_name,
@@ -771,7 +771,7 @@ export class HotspotEngineService {
                 } else {
                   manualHotspot.is_conflict = 0;
                   manualHotspot.conflict_reason = null;
-                  console.log('[MANUAL TEMPLE HOTSPOT TIMING OVERRIDE]', {
+ console.log('[MANUAL TEMPLE HOTSPOT TIMING OVERRIDE]', {
                     routeId,
                     hotspotId,
                     hotspotName: hotspotMaster?.hotspot_name,
@@ -780,7 +780,7 @@ export class HotspotEngineService {
                     reason: 'Manual temple hotspot allowed even if closed/outside operating hours',
                   });
                 }
-                console.warn('[ManualHotspot][rebuildRouteHotspots] operating hours conflict', {
+ console.warn('[ManualHotspot][rebuildRouteHotspots] operating hours conflict', {
                   planId,
                   routeId,
                   hotspotId,
@@ -793,14 +793,14 @@ export class HotspotEngineService {
             }
           }
         } catch (timingCheckErr: any) {
-          // Non-fatal: if timing lookup fails, allow insertion without conflict flag
-          console.error('[ManualHotspot][rebuildRouteHotspots] operating hours check failed', {
+ // Non-fatal: if timing lookup fails, allow insertion without conflict flag
+ console.error('[ManualHotspot][rebuildRouteHotspots] operating hours check failed', {
             hotspotId,
             error: timingCheckErr?.message,
           });
         }
 
-        console.log('[ManualHotspot][rebuildRouteHotspots] injected manual hotspot', {
+ console.log('[ManualHotspot][rebuildRouteHotspots] injected manual hotspot', {
           planId,
           routeId,
           hotspotId,
@@ -808,17 +808,17 @@ export class HotspotEngineService {
           startTime: manualStartTime,
         });
 
-        // Insert the manual hotspot at the injection point
+ // Insert the manual hotspot at the injection point
         rowsByRoute.get(routeId)!.splice(insertionPoint, 0, manualHotspot);
       }
 
-      // Rebuild filteredHotspotRows from updated rowsByRoute
+ // Rebuild filteredHotspotRows from updated rowsByRoute
       const rebuiltRows: any[] = [];
       for (const [routeId, routes] of rowsByRoute.entries()) {
         rebuiltRows.push(...routes);
       }
 
-      // Re-assign sequential order numbers for all hotspot visits in each route
+ // Re-assign sequential order numbers for all hotspot visits in each route
       const routed = new Map<number, any[]>();
       for (const row of rebuiltRows) {
         const routeId = Number(row.itinerary_route_ID || 0);
@@ -836,13 +836,13 @@ export class HotspotEngineService {
         }
       }
 
-      // Replace filteredHotspotRows with rebuilt version
+ // Replace filteredHotspotRows with rebuilt version
       filteredHotspotRows.length = 0;
       filteredHotspotRows.push(...rebuiltRows);
     }
 
-    // 5) CRITICAL: Delete old active manual placeholder rows before persisting final rebuilt timeline
-    // This ensures no old order=999 placeholder/manual rows remain in DB
+ // 5) CRITICAL: Delete old active manual placeholder rows before persisting final rebuilt timeline
+ // This ensures no old order=999 placeholder/manual rows remain in DB
     if (manualHotspotIds.size > 0) {
       const manualIdArray = Array.from(manualHotspotIds);
       await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
@@ -853,33 +853,33 @@ export class HotspotEngineService {
           deleted: 0,
         },
       });
-      console.log('[ManualHotspot][rebuildRouteHotspots] deleted old manual placeholder rows', {
+ console.log('[ManualHotspot][rebuildRouteHotspots] deleted old manual placeholder rows', {
         planId,
         manualHotspotIds: manualIdArray,
       });
     }
 
-    // 5.5) DEDUPE final timeline rows before persistence
-    // Remove exact duplicates: same route + item_type + hotspot_id + same timing
+ // 5.5) DEDUPE final timeline rows before persistence
+ // Remove exact duplicates: same route + item_type + hotspot_id + same timing
     const dedupeMap = new Map<string, any>();
     const beforeDedupeCount = filteredHotspotRows.length;
-    
+
     for (const row of filteredHotspotRows as any[]) {
       const routeId = Number(row.itinerary_route_ID || 0);
       const itemType = Number(row.item_type || 0);
       const hotspotId = Number(row.hotspot_ID || 0);
       const startTime = row.hotspot_start_time ? new Date(row.hotspot_start_time).getTime() : 0;
       const endTime = row.hotspot_end_time ? new Date(row.hotspot_end_time).getTime() : 0;
-      
-      // Dedup key: route + item_type + hotspot_id + timing
-      // Keep the key without the unique row_hotspot_ID so duplicates are caught
+
+ // Dedup key: route + item_type + hotspot_id + timing
+ // Keep the key without the unique row_hotspot_ID so duplicates are caught
       const dedupKey = `${routeId}|${itemType}|${hotspotId}|${startTime}|${endTime}`;
-      
-      // Keep first occurrence (prefer protected/manual hotspots if already in map)
+
+ // Keep first occurrence (prefer protected/manual hotspots if already in map)
       if (!dedupeMap.has(dedupKey)) {
         dedupeMap.set(dedupKey, row);
       } else {
-        // If this is a protected/manual hotspot, prefer it over what's already in the map
+ // If this is a protected/manual hotspot, prefer it over what's already in the map
         const existing = dedupeMap.get(dedupKey)!;
         const rowIsProtected = protectedHotspotIds.has(hotspotId);
         const existingIsProtected = protectedHotspotIds.has(Number(existing.hotspot_ID || 0));
@@ -888,19 +888,19 @@ export class HotspotEngineService {
         }
       }
     }
-    
+
     let dedupenedRows = Array.from(dedupeMap.values());
     const afterDedupeCount = dedupenedRows.length;
-    
-    console.log('[ManualHotspot][rebuildRouteHotspots] deduped final rows', {
+
+ console.log('[ManualHotspot][rebuildRouteHotspots] deduped final rows', {
       planId,
       beforeDedupeCount,
       afterDedupeCount,
       duplicatesRemoved: beforeDedupeCount - afterDedupeCount,
     });
 
-    // 5.6) FINAL SAFETY FILTER:
-    // Never persist item_type=4 hotspots that are explicitly excluded on that route.
+ // 5.6) FINAL SAFETY FILTER:
+ // Never persist item_type=4 hotspots that are explicitly excluded on that route.
     const normalizePlaceLabel = (value: any): string =>
       String(value ?? '')
         .toLowerCase()
@@ -984,7 +984,7 @@ export class HotspotEngineService {
         routeContext.viaLocations = Array.from(mergedViaLocations);
       }
     } catch (error: any) {
-      console.warn('[HotspotRebuild][via_route_context_unavailable]', {
+ console.warn('[HotspotRebuild][via_route_context_unavailable]', {
         planId,
         reason: error?.message || String(error),
       });
@@ -1034,7 +1034,7 @@ export class HotspotEngineService {
       const itemType = Number(row?.item_type || 0);
       if (itemType !== 3 && itemType !== 5) return false;
       const hotspotId = Number(row?.hotspot_ID || 0);
-      if (itemType === 3 && hotspotId === 0) return false; // free-time/leisure, not travel
+ if (itemType === 3 && hotspotId === 0) return false; // free-time/leisure, not travel
       const fromLabel = row?.from ?? row?.fromName ?? row?.displayFromName ?? row?.hotspot_name ?? row?.via_location_name ?? '';
       const toLabel = row?.to ?? row?.toName ?? row?.displayToName ?? row?.hotspot_name ?? row?.via_location_name ?? '';
       if (!fromLabel || !toLabel) return false;
@@ -1064,7 +1064,7 @@ export class HotspotEngineService {
       return true;
     });
 
-    console.log('[HotspotRebuild][excluded_safety_filter]', {
+ console.log('[HotspotRebuild][excluded_safety_filter]', {
       planId,
       beforeExcludedSafetyCount,
       afterExcludedSafetyCount: dedupenedRows.length,
@@ -1123,7 +1123,7 @@ export class HotspotEngineService {
 
       const routeHotspotKey = `${routeId}|${hotspotId}`;
       if (!invalidRouteHotspotKeys.has(routeHotspotKey)) {
-        console.warn('[OUT_OF_CORRIDOR_HOTSPOT_REJECTED]', {
+ console.warn('[OUT_OF_CORRIDOR_HOTSPOT_REJECTED]', {
           planId,
           routeId,
           routeSource: String(routeContext?.sourceLocation || ''),
@@ -1156,7 +1156,7 @@ export class HotspotEngineService {
       return !invalidRouteHotspotKeys.has(`${routeId}|${hotspotId}`);
     });
 
-    console.log('[HotspotRebuild][corridor_safety_filter]', {
+ console.log('[HotspotRebuild][corridor_safety_filter]', {
       planId,
       beforeCorridorSafetyCount,
       afterCorridorSafetyCount: dedupenedRows.length,
@@ -1164,35 +1164,35 @@ export class HotspotEngineService {
       rejectedRouteHotspotKeys: Array.from(invalidRouteHotspotKeys.values()),
     });
 
-    // 5.7) SORT final timeline rows by hotspot_start_time ASC (chronological)
-    // Item type priority when times are equal: 1 (start) < 3 (travel) < 4 (attraction) < 5 (hotel travel) < 6 (hotel)
+ // 5.7) SORT final timeline rows by hotspot_start_time ASC (chronological)
+ // Item type priority when times are equal: 1 (start) < 3 (travel) < 4 (attraction) < 5 (hotel travel) < 6 (hotel)
     const itemTypePriority: Record<number, number> = {
-      1: 0, // refreshment/start
-      3: 1, // travel
-      4: 2, // attraction
-      5: 3, // hotel travel
-      6: 4, // hotel/checkin
+ 1: 0, // refreshment/start
+ 3: 1, // travel
+ 4: 2, // attraction
+ 5: 3, // hotel travel
+ 6: 4, // hotel/checkin
     };
-    
+
     const sortedRows = [...dedupenedRows].sort((a: any, b: any) => {
       const aTime = a.hotspot_start_time ? new Date(a.hotspot_start_time).getTime() : 0;
       const bTime = b.hotspot_start_time ? new Date(b.hotspot_start_time).getTime() : 0;
-      
+
       if (aTime !== bTime) {
-        return aTime - bTime; // Chronological
+ return aTime - bTime; // Chronological
       }
-      
-      // Same time: sort by item_type priority
+
+ // Same time: sort by item_type priority
       const aPriority = itemTypePriority[Number(a.item_type || 0)] ?? 99;
       const bPriority = itemTypePriority[Number(b.item_type || 0)] ?? 99;
-      
+
       return aPriority - bPriority;
     });
 
-    // 5.8) REPAIR missing hotspot travel legs before persistence.
-    // Some rebuild paths retain the visit row but lose the paired item_type=3
-    // travel row for the same route/hotspot. Recreate a lightweight travel row
-    // so the persisted timeline always has the companion leg.
+ // 5.8) REPAIR missing hotspot travel legs before persistence.
+ // Some rebuild paths retain the visit row but lose the paired item_type=3
+ // travel row for the same route/hotspot. Recreate a lightweight travel row
+ // so the persisted timeline always has the companion leg.
     const travelRepairRows: any[] = [];
     const travelRepairKeys = new Set<string>();
     for (const row of sortedRows as any[]) {
@@ -1240,7 +1240,7 @@ export class HotspotEngineService {
           conflict_reason: row?.conflict_reason ?? null,
         });
 
-        console.warn('[HotspotRebuild][travel_leg_repair]', {
+ console.warn('[HotspotRebuild][travel_leg_repair]', {
           planId,
           routeId,
           hotspotId,
@@ -1265,19 +1265,19 @@ export class HotspotEngineService {
       return aPriority - bPriority;
     });
 
-    console.log('[ManualHotspot][rebuildRouteHotspots] sorted final rows by timestamp', {
+ console.log('[ManualHotspot][rebuildRouteHotspots] sorted final rows by timestamp', {
       planId,
       rowCount: sortedRowsAfterTravelRepair.length,
     });
 
-    // 5.9) REASSIGN hotspot_order sequentially after sort (normalize order numbers)
-    // Process per-route to ensure correct order per route
+ // 5.9) REASSIGN hotspot_order sequentially after sort (normalize order numbers)
+ // Process per-route to ensure correct order per route
     const routeOrdering = new Map<number, number>();
     for (const row of sortedRowsAfterTravelRepair as any[]) {
       const routeId = Number(row.itinerary_route_ID || 0);
       const itemType = Number(row.item_type || 0);
-      
-      if (itemType === 4) { // Only hotspot visits get order
+
+ if (itemType === 4) { // Only hotspot visits get order
         if (!routeOrdering.has(routeId)) {
           routeOrdering.set(routeId, 1);
         }
@@ -1287,28 +1287,28 @@ export class HotspotEngineService {
       }
     }
 
-    console.log('[ManualHotspot][rebuildRouteHotspots] reassigned hotspot_order after sort', {
+ console.log('[ManualHotspot][rebuildRouteHotspots] reassigned hotspot_order after sort', {
       planId,
       sortedRowCount: sortedRowsAfterTravelRepair.length,
       routesProcessed: routeOrdering.size,
     });
 
-    // 6) Insert hotspot details (using the final sorted, deduped, normalized rows)
+ // 6) Insert hotspot details (using the final sorted, deduped, normalized rows)
     const dbHotspotRows = sortedRowsAfterTravelRepair.map(row => {
       const normalizedRow = normalizePersistedTravelDistance(row);
-      // Strip out UI-only fields before saving to DB
-      const { 
-        isConflict, 
-        conflictReason, 
-        isManual, 
-        type, 
-        text, 
-        timeRange, 
+ // Strip out UI-only fields before saving to DB
+      const {
+        isConflict,
+        conflictReason,
+        isManual,
+        type,
+        text,
+        timeRange,
         locationId,
         route_date,
-        ...dbRow 
+        ...dbRow
       } = normalizedRow as any;
-      
+
       return {
         ...dbRow,
         is_conflict: isConflict ? 1 : 0,
@@ -1358,7 +1358,7 @@ export class HotspotEngineService {
         ? endDate.getUTCHours() * 3600 + endDate.getUTCMinutes() * 60 + endDate.getUTCSeconds()
         : null;
 
-      console.log('[RouteHotspotWrite][PROOF] createMany payload target row', {
+ console.log('[RouteHotspotWrite][PROOF] createMany payload target row', {
         planId,
         routeId: target.itinerary_route_ID,
         hotspotId: target.hotspot_ID,
@@ -1395,9 +1395,9 @@ export class HotspotEngineService {
       createdCount: Number(createManyResult?.count || 0),
     });
 
-    // 6.1) Post-persist safety repair:
-    // If a visit row survived rebuild but its paired travel row did not, add a
-    // lightweight travel segment directly against the persisted DB state.
+ // 6.1) Post-persist safety repair:
+ // If a visit row survived rebuild but its paired travel row did not, add a
+ // lightweight travel segment directly against the persisted DB state.
     const persistedVisitRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
         itinerary_plan_ID: planId,
@@ -1458,7 +1458,7 @@ export class HotspotEngineService {
       await (tx as any).dvi_itinerary_route_hotspot_details.createMany({
         data: missingTravelLegRows,
       });
-      console.warn("[HotspotRebuild][post_persist_travel_leg_repair]", {
+ console.warn("[HotspotRebuild][post_persist_travel_leg_repair]", {
         planId,
         repairedCount: missingTravelLegRows.length,
         repairedHotspotIds: missingTravelLegRows.map((row: any) => Number(row.hotspot_ID || 0)),
@@ -1502,7 +1502,7 @@ export class HotspotEngineService {
         },
       });
 
-      console.log('[RouteHotspotWrite][PROOF] createMany persisted target row lookup', {
+ console.log('[RouteHotspotWrite][PROOF] createMany persisted target row lookup', {
         planId,
         routeId: persistedTarget?.itinerary_route_ID ?? target.itinerary_route_ID,
         hotspotId: persistedTarget?.hotspot_ID ?? target.hotspot_ID,
@@ -1513,14 +1513,14 @@ export class HotspotEngineService {
       });
     }
 
-    // 6) Insert parking charge rows (if any)
+ // 6) Insert parking charge rows (if any)
     if (filteredParkingRows.length) {
       await (tx as any).dvi_itinerary_route_hotspot_parking_charge.createMany({
         data: filteredParkingRows,
       });
     }
 
-    // 7) VERIFY manual hotspots were properly persisted with real order and timing
+ // 7) VERIFY manual hotspots were properly persisted with real order and timing
     if (manualHotspotIds.size > 0) {
       const manualIds = Array.from(manualHotspotIds);
       const persistedManualRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
@@ -1545,21 +1545,21 @@ export class HotspotEngineService {
         const order = Number(mRow.hotspot_order || 0);
         const startTime = mRow.hotspot_start_time ? new Date(mRow.hotspot_start_time).getTime() : 0;
         const isPlaceholder = order === 999 || startTime === new Date('1970-01-01T00:00:00Z').getTime();
-        
+
         if (isPlaceholder) {
-          console.error('[ManualHotspot][rebuildRouteHotspots] ERROR: manual hotspot persisted with placeholder values', {
+ console.error('[ManualHotspot][rebuildRouteHotspots] ERROR: manual hotspot persisted with placeholder values', {
             planId,
             hotspotId: mRow.hotspot_ID,
             routeId: mRow.itinerary_route_ID,
             order,
             startTime: mRow.hotspot_start_time,
           });
-          // Do NOT silently accept this - the injection logic failed
+ // Do NOT silently accept this - the injection logic failed
           throw new Error(`Manual hotspot ${mRow.hotspot_ID} was not properly integrated: order=${order}, hasPlaceholderTime=${isPlaceholder}`);
         }
       }
 
-      console.log('[ManualHotspot][rebuildRouteHotspots] manual hotspot persistence verification passed', {
+ console.log('[ManualHotspot][rebuildRouteHotspots] manual hotspot persistence verification passed', {
         planId,
         manualHotspotIds: manualIds,
         persistedManualCount: persistedManualRows.length,
@@ -1596,22 +1596,22 @@ export class HotspotEngineService {
     };
   }
 
-  /**
+ /**
    * Rebuild ONLY parking charges for a plan (called after vendor vehicles are created).
    * This is needed because parking charge builder requires vendor vehicle details.
-   */
+ */
   async rebuildParkingCharges(planId: number, userId: number): Promise<void> {
     await this.prisma.$transaction(async (tx: Tx) => {
-      // Delete existing parking charges
+ // Delete existing parking charges
       await (tx as any).dvi_itinerary_route_hotspot_parking_charge.deleteMany({
         where: { itinerary_plan_ID: planId },
       });
 
-      // Get all route hotspot details for this plan
+ // Get all route hotspot details for this plan
       const hotspotDetails = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
         where: {
           itinerary_plan_ID: planId,
-          item_type: 4, // Only actual hotspot visits (not travel segments)
+ item_type: 4, // Only actual hotspot visits (not travel segments)
           deleted: 0,
           status: 1,
         },
@@ -1631,7 +1631,7 @@ export class HotspotEngineService {
         }
       }
 
-      // Insert parking charges
+ // Insert parking charges
       if (parkingRows.length) {
         await (tx as any).dvi_itinerary_route_hotspot_parking_charge.createMany({
           data: parkingRows,
@@ -1640,9 +1640,9 @@ export class HotspotEngineService {
     }, { timeout: 60000 });
   }
 
-  /**
+ /**
    * Preview adding a manual hotspot without saving to DB.
-   */
+ */
   async previewManualHotspotAdd(
     tx: Tx,
     planId: number,
@@ -1659,16 +1659,16 @@ export class HotspotEngineService {
       includeConnectedNextDayInPreview?: boolean;
     },
   ): Promise<any> {
-    console.log(`\n🔍 PREVIEW-ADD: planId=${planId}, routeId=${routeId}, hotspotId=${hotspotId}`);
-    console.log('[ManualHotspot][previewManualHotspotAdd] input', {
+ console.log(`\n PREVIEW-ADD: planId=${planId}, routeId=${routeId}, hotspotId=${hotspotId}`);
+ console.log('[ManualHotspot][previewManualHotspotAdd] input', {
       planId,
       routeId,
       hotspotId,
       stillUnschedulable: options?.resolution?.stillUnschedulable,
       droppedItemsCount: Array.isArray(options?.droppedItems) ? options!.droppedItems!.length : 0,
     });
-    
-    // 1) Fetch the current route details
+
+ // 1) Fetch the current route details
     const currentRoute = await (tx as any).dvi_itinerary_route_details.findFirst({
       where: { itinerary_route_ID: routeId },
       select: {
@@ -1685,18 +1685,18 @@ export class HotspotEngineService {
     if (!currentRoute) {
       throw new Error(`Route ${routeId} not found`);
     }
-    
-    console.log(`📍 Route ${routeId}: ${currentRoute.location_name} → ${currentRoute.next_visiting_location}`);
-    console.log(`⏰ Route timing: ${currentRoute.route_start_time} to ${currentRoute.route_end_time}`);
 
-    // 2) Check if there's a next route that connects to this one
+ console.log(` Route ${routeId}: ${currentRoute.location_name} ${currentRoute.next_visiting_location}`);
+ console.log(` Route timing: ${currentRoute.route_start_time} to ${currentRoute.route_end_time}`);
+
+ // 2) Check if there's a next route that connects to this one
     let nextRoute = null;
     let shouldIncludeNextDay = false;
     const includeConnectedNextDayInPreview = options?.includeConnectedNextDayInPreview === true;
 
     const currentDestination = (currentRoute.next_visiting_location || "").split("|")[0].trim();
-    
-    // Find next route by checking date order
+
+ // Find next route by checking date order
     const allRoutes = await (tx as any).dvi_itinerary_route_details.findMany({
       where: { itinerary_plan_ID: planId },
       orderBy: { itinerary_route_date: 'asc' },
@@ -1710,20 +1710,20 @@ export class HotspotEngineService {
     });
 
     const currentRouteIndex = allRoutes.findIndex((r: any) => r.itinerary_route_ID === routeId);
-    
+
     if (includeConnectedNextDayInPreview && currentRouteIndex !== -1 && currentRouteIndex + 1 < allRoutes.length) {
       const potentialNextRoute = allRoutes[currentRouteIndex + 1];
       const nextSource = (potentialNextRoute.location_name || "").split("|")[0].trim();
       const isDirectToNext = Number(potentialNextRoute.direct_to_next_visiting_place || 0) === 1;
 
-      // Check if next route's source matches current route's destination AND it's not direct
+ // Check if next route's source matches current route's destination AND it's not direct
       if (nextSource === currentDestination && !isDirectToNext) {
         nextRoute = potentialNextRoute;
         shouldIncludeNextDay = true;
       }
     }
 
-    // 3) Resolve current/next route scope for preview rendering
+ // 3) Resolve current/next route scope for preview rendering
     const routeIdsToInclude = [routeId];
     if (shouldIncludeNextDay && nextRoute) {
       routeIdsToInclude.push(nextRoute.itinerary_route_ID);
@@ -1732,10 +1732,10 @@ export class HotspotEngineService {
     const shiftedItems: any[] = options?.shiftedItems ?? [];
     const passedDroppedItems: any[] = Array.isArray(options?.droppedItems) ? options!.droppedItems! : [];
 
-    // Branch A: adaptive insertion already succeeded. Read current rebuilt DB state directly.
-    // Do NOT re-run a competing timeline builder path here.
+ // Branch A: adaptive insertion already succeeded. Read current rebuilt DB state directly.
+ // Do NOT re-run a competing timeline builder path here.
     if (options?.resolution?.stillUnschedulable === false) {
-      console.log('[ManualHotspot][previewManualHotspotAdd] success branch hit', {
+ console.log('[ManualHotspot][previewManualHotspotAdd] success branch hit', {
         planId,
         routeId,
         hotspotId,
@@ -1763,7 +1763,7 @@ export class HotspotEngineService {
                Number(r.item_type) === 4,
       );
 
-      console.log('[ManualHotspot][previewManualHotspotAdd] success branch timeline snapshot', {
+ console.log('[ManualHotspot][previewManualHotspotAdd] success branch timeline snapshot', {
         planId,
         routeId,
         hotspotId,
@@ -1773,7 +1773,7 @@ export class HotspotEngineService {
       });
 
       if (!newHotspotRow) {
-        console.error('[ManualHotspot][previewManualHotspotAdd] success branch failed: selected hotspot row missing in rebuilt persisted timeline', {
+ console.error('[ManualHotspot][previewManualHotspotAdd] success branch failed: selected hotspot row missing in rebuilt persisted timeline', {
           planId,
           routeId,
           hotspotId,
@@ -1804,14 +1804,14 @@ export class HotspotEngineService {
         options?.requestedAnchor,
       );
 
-      // Calculate distance delta for the inserted hotspot
+ // Calculate distance delta for the inserted hotspot
       const distanceDelta = this.calculateInsertionDistanceDelta(
         enrichedTimeline,
         routeId,
         hotspotId,
       );
 
-      // Calculate all possible insertion slots with their distance deltas
+ // Calculate all possible insertion slots with their distance deltas
       const allInsertionSlots = this.calculateAllInsertionSlotDeltas(
         enrichedTimeline,
         routeId,
@@ -1835,15 +1835,15 @@ export class HotspotEngineService {
       };
     }
 
-    // ========== BRANCH B: FALLBACK - Adaptive insertion failed ==========
-    console.log('[ManualHotspot][previewManualHotspotAdd] fallback branch hit', {
+ // ========== BRANCH B: FALLBACK - Adaptive insertion failed ==========
+ console.log('[ManualHotspot][previewManualHotspotAdd] fallback branch hit', {
       planId,
       routeId,
       hotspotId,
       stillUnschedulable: options?.resolution?.stillUnschedulable,
     });
 
-    // 1) Read persisted hotspot rows from DB directly (no buildTimelineForPlan)
+ // 1) Read persisted hotspot rows from DB directly (no buildTimelineForPlan)
     const hotspotRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
         itinerary_plan_ID: planId,
@@ -1852,17 +1852,17 @@ export class HotspotEngineService {
       },
     });
 
-    // 2) Filter to included routes only
-    const filteredRows = hotspotRows.filter(row => 
+ // 2) Filter to included routes only
+    const filteredRows = hotspotRows.filter(row =>
       routeIdsToInclude.includes(Number(row.itinerary_route_ID))
     );
 
-    // 3) Enrich rows with UI fields
+ // 3) Enrich rows with UI fields
     const enrichedTimeline = this.sortPreviewTimeline(
       await TimelineEnricher.enrich(tx, planId, filteredRows),
     );
 
-    // 4) Find the manual hotspot in persisted data (already inserted by ensureManualHotspotRow)
+ // 4) Find the manual hotspot in persisted data (already inserted by ensureManualHotspotRow)
     const selectedCandidates = enrichedTimeline.filter(
       (r: any) =>
         Number(r?.itinerary_route_ID) === Number(routeId) &&
@@ -1881,20 +1881,20 @@ export class HotspotEngineService {
       return aStart - bStart;
     })[0];
 
-    // 5) Mark the newly added hotspot as conflict (since adaptive insertion failed)
+ // 5) Mark the newly added hotspot as conflict (since adaptive insertion failed)
     if (newHotspotRow) {
       (newHotspotRow as any).isConflict = true;
       (newHotspotRow as any).conflictReason = 'Manual insertion could not fit within operating hours for this day after removing eligible lower-priority hotspots (priority > 3). Priorities 1-3 are preserved.';
       (newHotspotRow as any).timeRange = 'Not schedulable';
-      console.log(`📊 [FALLBACK] Marked hotspot ${hotspotId} as conflict (adaptive insertion failed)`);
+ console.log(` [FALLBACK] Marked hotspot ${hotspotId} as conflict (adaptive insertion failed)`);
     } else {
-      console.warn(`⚠️ [FALLBACK] Could not find hotspot ${hotspotId} in persisted data`);
+ console.warn(` [FALLBACK] Could not find hotspot ${hotspotId} in persisted data`);
     }
 
-    // 6) Check for other conflicts (excluding the manual hotspot itself)
+ // 6) Check for other conflicts (excluding the manual hotspot itself)
     const otherConflicts = enrichedTimeline.filter(
-      (r) => r.item_type === 4 && 
-             (r as any).isConflict && 
+      (r) => r.item_type === 4 &&
+             (r as any).isConflict &&
              !(Number(r.itinerary_route_ID) === Number(routeId) && Number(r.hotspot_ID) === Number(hotspotId))
     );
 
@@ -1905,19 +1905,19 @@ export class HotspotEngineService {
       options?.requestedAnchor,
     );
 
-    console.log(`[ManualHotspot][previewManualHotspotAdd] fallback result:`, {
+ console.log(`[ManualHotspot][previewManualHotspotAdd] fallback result:`, {
       foundNewHotspot: !!newHotspotRow,
       otherConflicts: otherConflicts.length,
     });
 
-    // 7) Return result with conflict marking
+ // 7) Return result with conflict marking
     const distanceDelta = this.calculateInsertionDistanceDelta(
       enrichedTimeline,
       routeId,
       hotspotId,
     );
 
-    // Calculate all possible insertion slots with their distance deltas
+ // Calculate all possible insertion slots with their distance deltas
     const allInsertionSlots = this.calculateAllInsertionSlotDeltas(
       enrichedTimeline,
       routeId,
@@ -1951,14 +1951,14 @@ export class HotspotEngineService {
         (row: any) => Number(row?.itinerary_route_ID) === Number(routeId),
       );
 
-      // Find the inserted hotspot
+ // Find the inserted hotspot
       const insertedIdx = routeRows.findIndex(
         (row: any) => Number(row?.item_type) === 4 && Number(row?.hotspot_ID) === Number(hotspotId),
       );
 
       if (insertedIdx < 0) return null;
 
-      // Find travel segment immediately before inserted hotspot
+ // Find travel segment immediately before inserted hotspot
       let travelBefore: any = null;
       for (let i = insertedIdx - 1; i >= 0; i--) {
         if (Number(routeRows[i]?.item_type) === 3) {
@@ -1967,7 +1967,7 @@ export class HotspotEngineService {
         }
       }
 
-      // Find travel segment immediately after inserted hotspot
+ // Find travel segment immediately after inserted hotspot
       let travelAfter: any = null;
       for (let i = insertedIdx + 1; i < routeRows.length; i++) {
         if (Number(routeRows[i]?.item_type) === 3) {
@@ -1976,30 +1976,30 @@ export class HotspotEngineService {
         }
       }
 
-      // Extract distances
+ // Extract distances
       const distBefore = travelBefore ? this.parseDistance(travelBefore.hotspot_travelling_distance) : 0;
       const distAfter = travelAfter ? this.parseDistance(travelAfter.hotspot_travelling_distance) : 0;
       const totalNewDist = distBefore + distAfter;
 
-      // If we don't have both travel segments, can't calculate
+ // If we don't have both travel segments, can't calculate
       if (!travelBefore && !travelAfter) return null;
 
-      // The logic: if there's only travel before, it means this is inserted at the end
-      // If there's only travel after, it means this is inserted at the beginning
-      // Ideally we'd have both to compare against original
+ // The logic: if there's only travel before, it means this is inserted at the end
+ // If there's only travel after, it means this is inserted at the beginning
+ // Ideally we'd have both to compare against original
 
-      // For now, we return the total extra distance added (both before and after the insertion)
-      // A positive value means extra distance, negative or zero means no extra distance
+ // For now, we return the total extra distance added (both before and after the insertion)
+ // A positive value means extra distance, negative or zero means no extra distance
       return totalNewDist > 0 ? totalNewDist : 0;
     } catch (error) {
-      console.warn('[calculateInsertionDistanceDelta] Error:', error);
+ console.warn('[calculateInsertionDistanceDelta] Error:', error);
       return null;
     }
   }
 
   private parseDistance(value: any): number {
     if (!value) return 0;
-    
+
     if (typeof value === 'number') {
       return Number.isFinite(value) ? value : 0;
     }
@@ -2013,8 +2013,8 @@ export class HotspotEngineService {
   }
 
   private normalizeRoutePlaceKey(value: any): string {
-    // Use the shared city normalizer so route validation and route resolution
-    // agree on aliases such as Tirupathi -> Tirupati.
+ // Use the shared city normalizer so route validation and route resolution
+ // agree on aliases such as Tirupathi -> Tirupati.
     return normalizeCityName(
       String(value ?? '')
         .replace(/&amp;/gi, '&')
@@ -2177,7 +2177,7 @@ export class HotspotEngineService {
 
       if (routeRows.length === 0) return [];
 
-      // Find all travel segments (item_type === 3)
+ // Find all travel segments (item_type === 3)
       const travelSegments: Array<{ index: number; data: any }> = [];
       routeRows.forEach((row: any, idx: number) => {
         if (Number(row?.item_type) === 3) {
@@ -2189,7 +2189,7 @@ export class HotspotEngineService {
 
       const slots: Array<{ position: number; slot: string; distanceDelta: number }> = [];
 
-      // For each travel segment, calculate the cost of inserting AFTER it
+ // For each travel segment, calculate the cost of inserting AFTER it
       for (let i = 0; i < travelSegments.length; i++) {
         const travelBefore = travelSegments[i].data;
         const travelAfter = i < travelSegments.length - 1 ? travelSegments[i + 1].data : null;
@@ -2198,7 +2198,7 @@ export class HotspotEngineService {
         const distAfter = travelAfter ? this.parseDistance(travelAfter?.hotspot_travelling_distance) : 0;
         const totalDelta = distBefore + distAfter;
 
-        // Get segment names for display
+ // Get segment names for display
         const beforeName = travelBefore?.hotspot_name || `Segment ${i + 1}`;
         const afterName = travelAfter?.hotspot_name || `Segment ${i + 2}`;
 
@@ -2209,16 +2209,16 @@ export class HotspotEngineService {
         });
       }
 
-      // Find the best slot (lowest distance delta)
+ // Find the best slot (lowest distance delta)
       const bestDelta = Math.min(...slots.map(s => s.distanceDelta));
 
-      // Mark slots as best if they're within 0.5 km of the best option
+ // Mark slots as best if they're within 0.5 km of the best option
       return slots.map(s => ({
         ...s,
         isBest: Math.abs(s.distanceDelta - bestDelta) <= 0.5,
       }));
     } catch (error) {
-      console.warn('[calculateAllInsertionSlotDeltas] Error:', error);
+ console.warn('[calculateAllInsertionSlotDeltas] Error:', error);
       return [];
     }
   }
@@ -2316,7 +2316,7 @@ export class HotspotEngineService {
   private parseHotspotDurationMinutes(rawDuration: any): number {
     if (!rawDuration) return 30;
 
-    // TIME fields frequently arrive as Date (1970-01-01 HH:MM:SS).
+ // TIME fields frequently arrive as Date (1970-01-01 HH:MM:SS).
     if (rawDuration instanceof Date) {
       const mins =
         rawDuration.getUTCHours() * 60 +
@@ -2339,7 +2339,7 @@ export class HotspotEngineService {
     }
 
     if (typeof rawDuration === 'number' && Number.isFinite(rawDuration)) {
-      // If a large epoch-like number sneaks in, treat it as invalid and use default.
+ // If a large epoch-like number sneaks in, treat it as invalid and use default.
       if (rawDuration > 24 * 60 * 60) return 30;
       return Math.max(1, Math.floor(rawDuration));
     }

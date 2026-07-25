@@ -33,17 +33,17 @@ export class AccountsExportService {
     res.end();
   }
 
-  // --------------------- ACCOUNTS MANAGER EXPORT ---------------------
+ // --------------------- ACCOUNTS MANAGER EXPORT ---------------------
 
   async exportAccountsManagerExcel(query: AccountsManagerQueryDto, res: Response) {
     const rows = await this.managerService.list(query);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Accounts Manager');
 
-    // Legacy PHP has specific headers and multiple tables if "all" is selected.
-    // For simplicity and parity with the current UI, we'll export the flattened list.
-    // If the user specifically wants the multi-table legacy format, we can implement that too.
-    // Given the request "parity with php", I should try to match the multi-table format if componentType is "all".
+ // Legacy PHP has specific headers and multiple tables if "all" is selected.
+ // For simplicity and parity with the current UI, we'll export the flattened list.
+ // If the user specifically wants the multi-table legacy format, we can implement that too.
+ // Given the request "parity with php", I should try to match the multi-table format if componentType is "all".
 
     if (query.componentType === 'all' || !query.componentType) {
         await this.buildMultiTableManagerExport(sheet, rows, query);
@@ -57,8 +57,8 @@ export class AccountsExportService {
 
   private async buildSingleTableManagerExport(sheet: ExcelJS.Worksheet, rows: any[], type: string) {
     const headers = [
-        'S.NO', 'Quote ID', 'Arrival', 'Destination', 'Start Date', 'End Date', 
-        'Guest', 'Agent', 'Vendor/Hotel', 'Date', 'Amount', 'Paid', 'Balance', 
+        'S.NO', 'Quote ID', 'Arrival', 'Destination', 'Start Date', 'End Date',
+        'Guest', 'Agent', 'Vendor/Hotel', 'Date', 'Amount', 'Paid', 'Balance',
         'Receivable from Agent', 'Inhand Amount', 'Margin Amount', 'Tax', 'Status'
     ];
     const headerRow = sheet.addRow(headers);
@@ -117,16 +117,16 @@ export class AccountsExportService {
         const compRows = rows.filter(r => r.componentType === comp);
         if (compRows.length === 0) continue;
 
-        // Add Title
+ // Add Title
         const titleRow = sheet.getRow(currentRow);
         titleRow.getCell(1).value = comp.toUpperCase() + ' TRANSACTIONS';
         titleRow.getCell(1).font = { bold: true, size: 14 };
         currentRow += 1;
 
-        // Add Headers
+ // Add Headers
         const headers = [
-            'S.NO', 'Quote ID', 'Arrival', 'Destination', 'Start Date', 'End Date', 
-            'Guest', 'Agent', 'Vendor/Hotel', 'Date', 'Amount', 'Paid', 'Balance', 
+            'S.NO', 'Quote ID', 'Arrival', 'Destination', 'Start Date', 'End Date',
+            'Guest', 'Agent', 'Vendor/Hotel', 'Date', 'Amount', 'Paid', 'Balance',
             'Receivable from Agent', 'Inhand Amount', 'Margin Amount', 'Tax', 'Status'
         ];
         const headerRow = sheet.getRow(currentRow);
@@ -148,7 +148,7 @@ export class AccountsExportService {
         });
         currentRow += 1;
 
-        // Add Data
+ // Add Data
         compRows.forEach((r, i) => {
             const dataRow = sheet.getRow(currentRow);
             [
@@ -183,11 +183,11 @@ export class AccountsExportService {
             currentRow += 1;
         });
 
-        currentRow += 2; // Gap between tables
+ currentRow += 2; // Gap between tables
     }
   }
 
-  // --------------------- ACCOUNTS LEDGER EXPORT ---------------------
+ // --------------------- ACCOUNTS LEDGER EXPORT ---------------------
 
   async exportAccountsLedgerExcel(query: AccountsLedgerQueryDto, res: Response) {
     const data = await this.ledgerService.getLedger(query);
@@ -205,7 +205,7 @@ export class AccountsExportService {
   }
 
   private async buildSingleTableLedgerExport(sheet: ExcelJS.Worksheet, data: any[], type: string) {
-    // Ledger data structure is { header, details, transactions[] }
+ // Ledger data structure is { header, details, transactions[] }
     const headers = ['S.NO', 'Quote ID', 'Transaction Date', 'Component', 'Vendor', 'Amount', 'Mode', 'UTR No', 'Done By'];
     const headerRow = sheet.addRow(headers);
     headerRow.font = { bold: true };
@@ -226,7 +226,7 @@ export class AccountsExportService {
     let counter = 1;
     data.forEach((item) => {
         const quoteId = item.header?.itinerary_quote_ID || item.itinerary_quote_ID || '';
-        
+
         if (item.transactions && Array.isArray(item.transactions)) {
             item.transactions.forEach((t: any) => {
                 const row = sheet.addRow([
@@ -250,7 +250,7 @@ export class AccountsExportService {
                 });
             });
         } else if (type === 'agent') {
-            // Agent ledger is just header rows
+ // Agent ledger is just header rows
             const row = sheet.addRow([
                 counter++,
                 quoteId,
@@ -275,9 +275,9 @@ export class AccountsExportService {
   }
 
   private async buildMultiTableLedgerExport(sheet: ExcelJS.Worksheet, data: any[], query: any) {
-      // In "all" mode, data is a flattened list of transactions or grouped?
-      // Actually AccountsLedgerService.getAllLedger returns a combined list.
-      // Let's just use the single table format for "all" but with component column.
+ // In "all" mode, data is a flattened list of transactions or grouped?
+ // Actually AccountsLedgerService.getAllLedger returns a combined list.
+ // Let's just use the single table format for "all" but with component column.
       await this.buildSingleTableLedgerExport(sheet, data, 'ALL');
   }
 

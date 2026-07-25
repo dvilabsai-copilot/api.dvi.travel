@@ -79,7 +79,7 @@ export class PaymentsController {
     return this.paymentsService.handleRazorpayWebhook(rawBody, signature);
   }
 
-  // Backward-compatible endpoints currently used by parts of the frontend.
+ // Backward-compatible endpoints currently used by parts of the frontend.
   @UseGuards(JwtAuthGuard)
   @Post('create-order')
   async createOrderCompat(@Body() dto: { amount: number }, @Req() req: any) {

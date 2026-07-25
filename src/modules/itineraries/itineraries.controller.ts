@@ -1,6 +1,6 @@
 // FILE: src/itineraries/itineraries.controller.ts
-// ✅ Fixes Prisma error by:
-// 1) Moving @Get(':id') to the VERY END (so it won’t swallow /customer-info, /confirmed, etc.)
+// Fixes Prisma error by:
+// 1) Moving @Get(':id') to the VERY END (so it wont swallow /customer-info, /confirmed, etc.)
 // 2) Enforcing numeric :id with ParseIntPipe (so "confirmed" never becomes NaN)
 // 3) Importing Request type correctly (your file used Request without import)
 
@@ -280,7 +280,7 @@ export class ItinerariesController {
           'Update (PHP-like hidden IDs): plan.itinerary_plan_id + routes[].itinerary_route_id + vehicles[].vehicle_details_id',
         value: {
           plan: {
-            itinerary_plan_id: 28230, // <-- UPDATE EXISTING PLAN
+ itinerary_plan_id: 28230, // <-- UPDATE EXISTING PLAN
             agent_id: 126,
             staff_id: 0,
             location_id: 0,
@@ -309,7 +309,7 @@ export class ItinerariesController {
           },
           routes: [
             {
-              itinerary_route_id: 19, // <-- UPDATE EXISTING ROUTE
+ itinerary_route_id: 19, // <-- UPDATE EXISTING ROUTE
               location_name: 'Chennai International Airport',
               next_visiting_location: 'Chennai',
               itinerary_route_date: '2025-11-29T00:00:00+05:30',
@@ -325,7 +325,7 @@ export class ItinerariesController {
               ],
             },
             {
-              itinerary_route_id: 20, // <-- UPDATE EXISTING ROUTE
+ itinerary_route_id: 20, // <-- UPDATE EXISTING ROUTE
               location_name: 'Chennai',
               next_visiting_location: 'Pondicherry',
               itinerary_route_date: '2025-11-30T00:00:00+05:30',
@@ -335,7 +335,7 @@ export class ItinerariesController {
               via_route: '',
             },
             {
-              itinerary_route_id: 21, // <-- UPDATE EXISTING ROUTE
+ itinerary_route_id: 21, // <-- UPDATE EXISTING ROUTE
               location_name: 'Pondicherry',
               next_visiting_location: 'Pondicherry',
               itinerary_route_date: '2025-12-01T00:00:00+05:30',
@@ -347,7 +347,7 @@ export class ItinerariesController {
           ],
           vehicles: [
             {
-              vehicle_details_id: 19879, // <-- UPDATE EXISTING VEHICLE ROW
+ vehicle_details_id: 19879, // <-- UPDATE EXISTING VEHICLE ROW
               vehicle_type_id: 1,
               vehicle_count: 1,
             },
@@ -365,7 +365,7 @@ export class ItinerariesController {
     @Query('type') type?: string,
     @Req() req?: Request,
   ) {
-    // Check if route optimization is requested
+ // Check if route optimization is requested
     const shouldOptimizeRoute = type === 'itineary_basic_info_with_optimized_route';
     const routeCount = Array.isArray((dto as any)?.routes) ? (dto as any).routes.length : 0;
     return this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
@@ -488,14 +488,14 @@ export class ItinerariesController {
     @Query('itineraryRouteId') itineraryRouteId?: string,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
-    this.logger.log('\n════════════════════════════════════════════════════════════════════════════════════════');
-    this.logger.log('🏨 INCOMING ITINERARY HOTEL DETAILS REQUEST (TBO)');
-    this.logger.log(`📍 Request Timestamp: ${new Date().toISOString()}`);
-    this.logger.log(`📋 Quote ID: ${quoteId}`);
-    this.logger.log('────────────────────────────────────────────────────────────────────────────────────────');
+ this.logger.log('\n');
+ this.logger.log(' INCOMING ITINERARY HOTEL DETAILS REQUEST (TBO)');
+ this.logger.log(` Request Timestamp: ${new Date().toISOString()}`);
+ this.logger.log(` Quote ID: ${quoteId}`);
+ this.logger.log('');
 
     try {
-      // Use TBO service to fetch dynamic packages
+ // Use TBO service to fetch dynamic packages
       const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : undefined;
       const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : undefined;
       const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;
@@ -511,20 +511,20 @@ export class ItinerariesController {
       );
       const duration = Date.now() - startTime;
 
-      this.logger.log('\n✅ HOTEL PACKAGES GENERATED FROM TBO');
-      this.logger.log(`📊 Hotel Tabs: ${result.hotelTabs?.length || 0} packages`);
-      this.logger.log(`📊 Hotel Rows: ${result.hotels?.length || 0} total hotels`);
-      this.logger.log(`⏱️  Total Duration: ${duration}ms`);
-      this.logger.log('════════════════════════════════════════════════════════════════════════════════════════\n');
+ this.logger.log('\n HOTEL PACKAGES GENERATED FROM TBO');
+ this.logger.log(` Hotel Tabs: ${result.hotelTabs?.length || 0} packages`);
+ this.logger.log(` Hotel Rows: ${result.hotels?.length || 0} total hotels`);
+ this.logger.log(` Total Duration: ${duration}ms`);
+ this.logger.log('\n');
 
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error('\n❌ HOTEL PACKAGES GENERATION FAILED');
-      this.logger.error(`🚨 Error Message: ${errorMessage}`);
-      this.logger.error(`⏱️  Duration: ${duration}ms`);
-      this.logger.log('════════════════════════════════════════════════════════════════════════════════════════\n');
+ this.logger.error('\n HOTEL PACKAGES GENERATION FAILED');
+ this.logger.error(` Error Message: ${errorMessage}`);
+ this.logger.error(` Duration: ${duration}ms`);
+ this.logger.log('\n');
       throw error;
     }
   }
@@ -599,27 +599,27 @@ export class ItinerariesController {
     @Query('clearCache') clearCache?: string,
   ): Promise<ItineraryHotelRoomDetailsResponseDto> {
     const startTime = Date.now();
-    this.logger.log('\n════════════════════════════════════════════════════════════════════════════════════════');
-    this.logger.log('🏨 INCOMING ITINERARY HOTEL ROOM DETAILS REQUEST (TBO - FRESH DATA)');
-    this.logger.log(`📍 Request Timestamp: ${new Date().toISOString()}`);
-    this.logger.log(`📋 Quote ID: ${quoteId}`);
+ this.logger.log('\n');
+ this.logger.log(' INCOMING ITINERARY HOTEL ROOM DETAILS REQUEST (TBO - FRESH DATA)');
+ this.logger.log(` Request Timestamp: ${new Date().toISOString()}`);
+ this.logger.log(` Quote ID: ${quoteId}`);
     if (itineraryRouteId) {
-      this.logger.log(`🔍 Filter Route ID: ${itineraryRouteId}`);
+ this.logger.log(` Filter Route ID: ${itineraryRouteId}`);
     }
     if (clearCache === 'true') {
-      this.logger.log(`🗑️  Clear Cache Requested: YES`);
+ this.logger.log(` Clear Cache Requested: YES`);
     }
-    this.logger.log('────────────────────────────────────────────────────────────────────────────────────────');
+ this.logger.log('');
 
     try {
-      // ✅ Clear backend memory cache if requested
+ // Clear backend memory cache if requested
       if (clearCache === 'true') {
         this.hotelDetailsTboService.clearCacheForQuote(quoteId);
-        this.logger.log('🗑️  Backend cache cleared - will fetch fresh data from TBO');
+ this.logger.log(' Backend cache cleared - will fetch fresh data from TBO');
       }
-      
-      // Use TBO service to fetch FRESH room details (no stale data)
-      // Pass optional itineraryRouteId to filter results
+
+ // Use TBO service to fetch FRESH room details (no stale data)
+ // Pass optional itineraryRouteId to filter results
       const routeIdNum = itineraryRouteId ? parseInt(itineraryRouteId, 10) : undefined;
       const result = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(
         quoteId,
@@ -627,19 +627,19 @@ export class ItinerariesController {
       );
       const duration = Date.now() - startTime;
 
-      this.logger.log('\n✅ FRESH ROOM DETAILS GENERATED FROM TBO');
-      this.logger.log(`📊 Room Entries: ${result.rooms?.length || 0}`);
-      this.logger.log(`⏱️  Total Duration: ${duration}ms`);
-      this.logger.log('════════════════════════════════════════════════════════════════════════════════════════\n');
+ this.logger.log('\n FRESH ROOM DETAILS GENERATED FROM TBO');
+ this.logger.log(` Room Entries: ${result.rooms?.length || 0}`);
+ this.logger.log(` Total Duration: ${duration}ms`);
+ this.logger.log('\n');
 
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error('\n❌ FRESH ROOM DETAILS GENERATION FAILED');
-      this.logger.error(`🚨 Error Message: ${errorMessage}`);
-      this.logger.error(`⏱️  Duration: ${duration}ms`);
-      this.logger.log('════════════════════════════════════════════════════════════════════════════════════════\n');
+ this.logger.error('\n FRESH ROOM DETAILS GENERATION FAILED');
+ this.logger.error(` Error Message: ${errorMessage}`);
+ this.logger.error(` Duration: ${duration}ms`);
+ this.logger.log('\n');
       throw error;
     }
   }
@@ -1231,7 +1231,7 @@ async exportToExcel(
     !isAccounts;
 
   const canDownloadExcel =
-    role === 1 || // Admin
+ role === 1 || // Admin
     isTravelExpert ||
     isAccounts;
 
@@ -1411,14 +1411,14 @@ async exportToExcel(
   }
 
   @Get('confirmed/:confirmedId')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get confirmed itinerary details by ID',
     description: 'Returns confirmed itinerary with booked hotel details from database'
   })
-  @ApiParam({ 
-    name: 'confirmedId', 
-    example: 31, 
-    description: 'Confirmed Plan ID' 
+  @ApiParam({
+    name: 'confirmedId',
+    example: 31,
+    description: 'Confirmed Plan ID'
   })
   @Public()
   async getConfirmedItineraryDetails(
@@ -1502,7 +1502,7 @@ async exportToExcel(
     await this.itineraryPdfService.downloadPluckCardPdf(id, res);
   }
 
-  // Hotel Voucher Endpoints
+ // Hotel Voucher Endpoints
   @Get(':id/hotel-vouchers/cancellation-policies')
   @ApiOperation({ summary: 'Get all cancellation policies for itinerary hotels' })
   async getAllHotelCancellationPolicies(
@@ -2061,9 +2061,9 @@ async exportToExcel(
     );
   }
 
-  /**
+ /**
    * Hotel Cancellation Endpoints
-   */
+ */
   @Get('cancellation/:confirmedPlanId')
   @ApiOperation({ summary: 'Get confirmed itinerary with hotels for cancellation page' })
   @ApiParam({ name: 'confirmedPlanId', example: 1, description: 'Confirmed Plan ID' })
@@ -2121,12 +2121,12 @@ async exportToExcel(
   @ApiQuery({ name: 'group_type', required: true, type: Number })
   @ApiOkResponse({ type: HotelRoomCategoriesListResponseDto })
   async getHotelRoomCategories(@Query() query: GetHotelRoomCategoriesDto) {
-    // Parse and validate group_type
+ // Parse and validate group_type
     const groupType = Number(query.group_type);
     if (!groupType || groupType < 1 || groupType > 4) {
       throw new BadRequestException('Invalid group_type. Must be between 1-4 (Budget, Mid-Range, Premium, Luxury)');
     }
-    
+
     return this.svc.getHotelRoomCategories({
       itinerary_plan_hotel_details_ID: Number(query.itinerary_plan_hotel_details_ID),
       itinerary_plan_id: Number(query.itinerary_plan_id),
@@ -2156,10 +2156,10 @@ async exportToExcel(
     });
   }
 
-  /**
+ /**
    * ✅ MUST BE LAST.
    * Otherwise it will swallow routes like /customer-info/:planId, /confirmed, /latest, etc.
-   */
+ */
   @Get(':id')
   @ApiOperation({ summary: 'Get itinerary by plan id' })
   @ApiParam({ name: 'id', example: 17940 })

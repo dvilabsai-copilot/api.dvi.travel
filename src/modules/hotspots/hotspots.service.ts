@@ -32,7 +32,7 @@ function hotspotImageExists(name?: string | null): boolean {
   const fileName = String(name || '').trim();
   if (!fileName) return false;
   const apiPath = path.join(resolveBackendRoot(), 'public', 'uploads', 'hotspot_gallery', fileName);
-  // Keep a legacy fallback to avoid breaking previews if older files were stored under workspace root.
+ // Keep a legacy fallback to avoid breaking previews if older files were stored under workspace root.
   const legacyPath = path.join(process.cwd(), 'public', 'uploads', 'hotspot_gallery', fileName);
   return fs.existsSync(apiPath) || fs.existsSync(legacyPath);
 }
@@ -99,7 +99,7 @@ function trimStr(v: any) {
   return (v ?? '').toString().trim();
 }
 
-// ---------- Time & weekday helpers (DB: 0=Mon … 6=Sun) ----------
+// ---------- Time & weekday helpers (DB: 0=Mon 6=Sun) ----------
 const DAY_NAME_TO_INT: Record<string, number> = {
   monday: 0,
   tuesday: 1,
@@ -215,7 +215,7 @@ export type HotspotFormSaveDto = HotspotCreateDto | HotspotUpdateDto;
 export class HotspotsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // --------------------------- List ------------------------------
+ // --------------------------- List ------------------------------
   async list(q: HotspotListQueryDto): Promise<HotspotListResponseDto> {
     const page = q.page ?? DEFAULT_PAGE;
     const size = q.size ?? DEFAULT_SIZE;
@@ -307,7 +307,7 @@ export class HotspotsService {
     return { data };
   }
 
-  // --------------------- Dynamic dropdowns / options ------------------------
+ // --------------------- Dynamic dropdowns / options ------------------------
   async formOptions() {
     const [typesRaw, locationsRaw, vehicleTypesRaw] = await Promise.all([
       this.prisma.dvi_hotspot_place.findMany({
@@ -357,7 +357,7 @@ export class HotspotsService {
 };
   }
 
-  // --------------------------- Form: Get (edit) -----------------------------
+ // --------------------------- Form: Get (edit) -----------------------------
   async getForm(id: number) {
     const hotspot = await this.prisma.dvi_hotspot_place.findUnique({
       where: { hotspot_ID: id },
@@ -398,7 +398,7 @@ export class HotspotsService {
       this.formOptions(),
     ]);
 
-    // Build operatingHours map: day-name keys with slots (UTC-safe times)
+ // Build operatingHours map: day-name keys with slots (UTC-safe times)
     const operatingHours: Record<string, HotspotOperatingDayDto> = {};
     for (const t of timingsRaw as any[]) {
       const dayInt: number = Number(t.hotspot_timing_day ?? -1);
@@ -474,7 +474,7 @@ export class HotspotsService {
     return { payload, options };
   }
 
-  // -------------------------- Form: Save (add/update) -----------------------
+ // -------------------------- Form: Save (add/update) -----------------------
   async saveForm(input: HotspotFormSaveDto) {
     if (!input.hotspot_name?.trim()) {
       throw new BadRequestException('hotspot_name is required');
@@ -524,7 +524,7 @@ export class HotspotsService {
       const hotspotIdNumber = hotspot.hotspot_ID as unknown as number;
       const hotspotIdBig = toBig(hotspotIdNumber);
 
-      // --------------------- Parking Charges upsert ----------------------
+ // --------------------- Parking Charges upsert ----------------------
       const incomingParking = ((input as any).parkingCharges ?? []) as HotspotParkingChargeDto[];
       const keptParkingIds = new Set<bigint>();
 
@@ -570,7 +570,7 @@ export class HotspotsService {
         }
       }
 
-      // --------------------- Operating Hours upsert ----------------------
+ // --------------------- Operating Hours upsert ----------------------
       const incomingOH = ((input as any).operatingHours ?? {}) as Record<string, HotspotOperatingDayDto>;
       const keepTimingIds = new Set<number | bigint>();
 
@@ -582,7 +582,7 @@ export class HotspotsService {
         const open24 = !!def.open24hrs;
         const closed = !!def.closed24hrs;
         const rawSlots = Array.isArray(def.slots) ? def.slots : [];
-        // Persist a day row even when there are no explicit slots for open-24/closed-24.
+ // Persist a day row even when there are no explicit slots for open-24/closed-24.
         const slots =
           (open24 || closed) && rawSlots.length === 0
             ? [{ start: '00:00', end: '23:59' }]
@@ -637,7 +637,7 @@ export class HotspotsService {
         }
       }
 
-      // --------------------- Gallery upsert (by filenames) ---------------
+ // --------------------- Gallery upsert (by filenames) ---------------
       const incomingGallery = ((input as any).gallery ?? []) as HotspotGalleryItemDto[];
       const keepGalleryIds = new Set<number | bigint>();
 
@@ -689,7 +689,7 @@ export class HotspotsService {
     return { id: createdOrUpdated.hotspot_ID };
   }
 
-  // ---------------------- Create gallery row (upload helper) ----------------
+ // ---------------------- Create gallery row (upload helper) ----------------
   async createGalleryRow(hotspotId: number, filename: string) {
     const hp = await this.prisma.dvi_hotspot_place.findUnique({
       where: { hotspot_ID: hotspotId },
@@ -707,7 +707,7 @@ export class HotspotsService {
     });
   }
 
-  // --------------------------- Inline priority ------------------------------
+ // --------------------------- Inline priority ------------------------------
   async updatePriority(id: number, priority: number): Promise<{ ok: true }> {
     if (!Number.isFinite(id) || id <= 0) {
       throw new BadRequestException('Invalid hotspot id');
@@ -730,7 +730,7 @@ export class HotspotsService {
     return { ok: true };
   }
 
-  // --------------------------- Soft delete ----------------------------------
+ // --------------------------- Soft delete ----------------------------------
   async softDelete(id: number): Promise<{ ok: true }> {
     const exists = await this.prisma.dvi_hotspot_place.findUnique({
       where: { hotspot_ID: id },
@@ -746,7 +746,7 @@ export class HotspotsService {
     return { ok: true };
   }
 
-  // --------------------------- Basic getOne ---------------------------------
+ // --------------------------- Basic getOne ---------------------------------
   async getOne(id: number) {
     const row = await this.prisma.dvi_hotspot_place.findUnique({
       where: { hotspot_ID: id },
@@ -755,11 +755,11 @@ export class HotspotsService {
     return row;
   }
 
-  // ======================================================================
-  // ============ NEW: Parking Charge CSV Import Flow (PHP parity) =========
-  // ======================================================================
+ // ======================================================================
+ // ============ NEW: Parking Charge CSV Import Flow (PHP parity) =========
+ // ======================================================================
 
-  /**
+ /**
    * Step 1: Parse CSV and stage rows into dvi_tempcsv with csvtype=4, status=1.
    * CSV Columns (two supported layouts):
    *   A) hotspot_name, hotspot_location, vehicle_type_title, parking_charge
@@ -767,11 +767,11 @@ export class HotspotsService {
    * Returns a sessionId to reference in subsequent steps.
    *
    * IMPORTANT: dvi_tempcsv.field1..field4 are STRINGS in DB. We must insert strings.
-   */
+ */
   async importParkingCsv(csvFilePath: string) {
     const sessionId = crypto.randomBytes(8).toString('hex');
 
-    // Keep values as strings (field4 numeric value stored as string)
+ // Keep values as strings (field4 numeric value stored as string)
     const rows: Array<{
       hotspot_name: string;
       hotspot_location: string;
@@ -796,12 +796,12 @@ export class HotspotsService {
     for await (const rawLine of rl) {
       let line = (rawLine ?? '').trim();
       if (!line) continue;
-      if (line.charCodeAt(0) === 0xfeff) line = line.slice(1); // strip BOM
+ if (line.charCodeAt(0) === 0xfeff) line = line.slice(1); // strip BOM
       lineNo++;
 
       const cols = parseCsvLine(line).map(csvUnquote);
 
-      // Header validation (PHP parity + backward compatibility for 4-col format)
+ // Header validation (PHP parity + backward compatibility for 4-col format)
       if (lineNo === 1) {
         const h = cols.map((c) => c.trim().toLowerCase());
         const is4 =
@@ -874,13 +874,13 @@ export class HotspotsService {
     for (const r of rows) {
       await this.prisma.dvi_tempcsv.create({
         data: {
-          csvtype: 4 as any,                     // parking charge import
+ csvtype: 4 as any, // parking charge import
           sessionID: sessionId as any,
-          field1: String(r.hotspot_name),        // TEXT → Hotspot Name
-          field2: String(r.hotspot_location),    // TEXT → Hotspot Location
-          field3: String(r.vehicle_type_title),  // TEXT → Vehicle Type
-          field4: String(r.parking_charge),      // TEXT → Parking Charge
-          status: 1 as any,                      // staged
+ field1: String(r.hotspot_name), // TEXT Hotspot Name
+ field2: String(r.hotspot_location), // TEXT Hotspot Location
+ field3: String(r.vehicle_type_title), // TEXT Vehicle Type
+ field4: String(r.parking_charge), // TEXT Parking Charge
+ status: 1 as any, // staged
         } as Prisma.dvi_tempcsvCreateInput,
       });
     }
@@ -895,7 +895,7 @@ export class HotspotsService {
           field3: String(r.vehicle_type_title || ''),
           field4: String(r.parking_charge || ''),
           field5: String(r.reason || 'Rejected'),
-          status: 3 as any, // rejected
+ status: 3 as any, // rejected
         } as Prisma.dvi_tempcsvCreateInput,
       });
     }
@@ -905,9 +905,9 @@ export class HotspotsService {
     return { sessionId, stagedCount: rows.length, rejectedCount: rejectedRows.length };
   }
 
-  /**
+ /**
    * Step 2: Read staged rows for preview (status=1, csvtype=4, by sessionId)
-   */
+ */
   async getParkingTemplist(sessionId: string) {
     const data = await this.prisma.dvi_tempcsv.findMany({
       where: {
@@ -918,11 +918,11 @@ export class HotspotsService {
       orderBy: { temp_id: 'asc' },
       select: {
         temp_id: true,
-        field1: true, // hotspot_name
-        field2: true, // hotspot_location
-        field3: true, // vehicle_type_title
-        field4: true, // parking_charge (stored as STRING)
-        field5: true, // reject reason
+ field1: true, // hotspot_name
+ field2: true, // hotspot_location
+ field3: true, // vehicle_type_title
+ field4: true, // parking_charge (stored as STRING)
+ field5: true, // reject reason
         status: true,
       },
     });
@@ -939,18 +939,18 @@ export class HotspotsService {
         hotspot_name: r.field1 ?? '',
         hotspot_location: r.field2 ?? '',
         vehicle_type_title: r.field3 ?? '',
-        parking_charge: Number(r.field4 ?? 0), // convert to number for UI
+ parking_charge: Number(r.field4 0), // convert to number for UI
         reason: r.field5 ?? '',
       })),
     };
   }
 
-  /**
+ /**
    * Step 3: Confirm import
    * - Resolve hotspot (by name + optional location token) and vehicle_type (by title)
    * - Upsert into dvi_hotspot_vehicle_parking_charges (update if exists, else insert)
    * - Mark dvi_tempcsv.status = 2 for imported rows
-   */
+ */
   async confirmParkingImport(sessionId: string, onlyTempIds?: number[]) {
     const whereTemp: Prisma.dvi_tempcsvWhereInput = {
       csvtype: 4 as any,
@@ -973,10 +973,10 @@ export class HotspotsService {
       const hotspotName = trimStr((t as any).field1);
       const hotspotLocToken = trimStr((t as any).field2);
       const vehTypeTitle = trimStr((t as any).field3);
-      const charge = toNumber((t as any).field4); // from STRING
+ const charge = toNumber((t as any).field4); // from STRING
 
       try {
-        // Resolve hotspot
+ // Resolve hotspot
         const hotspot = await this.prisma.dvi_hotspot_place.findFirst({
           where: {
             AND: [
@@ -999,7 +999,7 @@ export class HotspotsService {
           continue;
         }
 
-        // Resolve vehicle type
+ // Resolve vehicle type
         const vtype = await this.prisma.dvi_vehicle_type.findFirst({
           where: {
             vehicle_type_title: { equals: vehTypeTitle } as any,
@@ -1017,7 +1017,7 @@ export class HotspotsService {
           continue;
         }
 
-        // If a record exists for (hotspot_id, vehicle_type_id) -> UPDATE else INSERT
+ // If a record exists for (hotspot_id, vehicle_type_id) -> UPDATE else INSERT
         const existing = await this.prisma.dvi_hotspot_vehicle_parking_charges.findFirst({
           where: {
             AND: [
@@ -1051,7 +1051,7 @@ export class HotspotsService {
           });
         }
 
-        // Mark temp row as imported (status=2)
+ // Mark temp row as imported (status=2)
         await this.prisma.dvi_tempcsv.update({
           where: { temp_id: (t as any).temp_id as any },
           data: { status: 2 as any },
@@ -1066,7 +1066,7 @@ export class HotspotsService {
             data: { status: 3 as any, field5: 'Unexpected import error' as any },
           });
         } catch {
-          // ignore secondary update failure
+ // ignore secondary update failure
         }
       }
     }
@@ -1075,10 +1075,10 @@ export class HotspotsService {
     return { sessionId, total, imported, failed };
   }
 
-  // ======================================================================
-  // NEW: Availability helper — find hotspots open at a given day/time/location
-  // ======================================================================
-  /**
+ // ======================================================================
+ // NEW: Availability helper find hotspots open at a given day/time/location
+ // ======================================================================
+ /**
    * Find hotspots that are OPEN at a specific time and (optionally) location.
    *
    * @param params.location  Optional location keyword; matches inside hotspot_location pipe list
@@ -1087,7 +1087,7 @@ export class HotspotsService {
    * @param params.time      Optional: "HH:mm" (24h). If datetime is given, time is derived from it.
    * @param params.limit     Optional: max results (default 100)
    * @param params.includeGallery Optional: include first gallery image url
-   */
+ */
   async findOpenAt(params: {
     location?: string;
     datetime?: string;
@@ -1098,7 +1098,7 @@ export class HotspotsService {
   }) {
     const limit = Math.max(1, Math.min(500, params.limit ?? 100));
 
-    // Resolve day/time
+ // Resolve day/time
     let dayInt: number | null = null;
     let hhmm: string | null = null;
 
@@ -1107,8 +1107,8 @@ export class HotspotsService {
       if (!Number.isFinite(dt.getTime())) {
         throw new BadRequestException('Invalid datetime');
       }
-      // JS: 0=Sun..6=Sat -> DB: 0=Mon..6=Sun
-      const js = dt.getDay(); // 0..6
+ // JS: 0=Sun..6=Sat -> DB: 0=Mon..6=Sun
+ const js = dt.getDay(); // 0..6
       dayInt = js === 0 ? 6 : js - 1;
       hhmm = `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
     }
@@ -1136,7 +1136,7 @@ export class HotspotsService {
     const tAsUtc = hhmmToUTCDate(hhmm);
     if (!tAsUtc) throw new BadRequestException('Invalid HH:mm');
 
-    // Step 1: find timing rows matching "open at this time" for that day
+ // Step 1: find timing rows matching "open at this time" for that day
     const timingRows = await this.prisma.dvi_hotspot_timing.findMany({
       where: {
         hotspot_timing_day: dayInt as any,
@@ -1161,7 +1161,7 @@ export class HotspotsService {
     const ids = Array.from(new Set((timingRows as any[]).map((r) => Number(r.hotspot_ID)).filter(Boolean)));
     if (ids.length === 0) return { data: [] };
 
-    // Step 2: optional location filter (pipe-separated field contains token)
+ // Step 2: optional location filter (pipe-separated field contains token)
     const locationToken = (params.location ?? '').trim();
     const placeWhere: Prisma.dvi_hotspot_placeWhereInput = {
       hotspot_ID: { in: ids } as any,
@@ -1169,7 +1169,7 @@ export class HotspotsService {
       deleted: 0,
     };
     if (locationToken) {
-      // Keep it simple: contains() over the pipe field.
+ // Keep it simple: contains() over the pipe field.
       placeWhere.hotspot_location = { contains: locationToken } as any;
     }
 
@@ -1191,7 +1191,7 @@ export class HotspotsService {
 
     if (places.length === 0) return { data: [] };
 
-    // Optional: include first gallery image URL
+ // Optional: include first gallery image URL
     let firstImgById: Record<number, string> = {};
     if (params.includeGallery) {
       const g = await this.prisma.dvi_hotspot_gallery_details.findMany({

@@ -20,11 +20,11 @@ export class RestrictionsDto {
 
   @IsString()
   @IsNotEmpty()
-  type: string; // Status | COA | COD | MLos
+ type: string; // Status | COA | COD | MLos
 
   @IsString()
   @IsNotEmpty()
-  value: string; // Open/Close for Status/COA/COD, integer for MLos
+ value: string; // Open/Close for Status/COA/COD, integer for MLos
 }
 
 export class RatePlanDetailsDto {

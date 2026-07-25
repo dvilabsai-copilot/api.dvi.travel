@@ -5,7 +5,7 @@ import { PrismaService } from '../../../prisma.service';
 
 @Module({
   controllers: [CitiesController],
-  providers: [CitiesService, PrismaService], // ensures DI works
+ providers: [CitiesService, PrismaService], // ensures DI works
   exports: [CitiesService],
 })
 export class CitiesModule {}

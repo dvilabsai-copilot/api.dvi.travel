@@ -68,7 +68,7 @@ export class TimelineDay1TravelProjectionService {
     const timeAfterSightseeing = secondsToTime(wrapToDay(absoluteVisitEndSeconds));
 
     if (input.tracePhpIncludeFlow) {
-      console.log('[PHP_INCLUDE_TRACE_CANDIDATE]', JSON.stringify({
+ console.log('[PHP_INCLUDE_TRACE_CANDIDATE]', JSON.stringify({
         routeId: input.route.itinerary_route_ID,
         dayMode: 'day1_different_cities',
         hotspotId: Number(input.hotspot?.hotspot_ID || 0),

@@ -241,7 +241,7 @@ export class EmailLoginOtpService {
 
     if (!host) {
       if (process.env.NODE_ENV !== 'production') {
-        this.logger.warn(
+ this.logger.warn(
           `SMTP is not configured. DEV OTP for ${email}: ${otp}`,
         );
         return;

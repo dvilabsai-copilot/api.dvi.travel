@@ -22,7 +22,7 @@ export interface IHotelProvider {
 
 export interface HotelSearchResult {
   provider: string;
-  /** User-facing provider label; keep provider unchanged for internal routing. */
+ /** User-facing provider label; keep provider unchanged for internal routing. */
   providerDisplayName?: string;
   canonicalHotelId?: number | null;
   providerHotelCode?: string;
@@ -37,7 +37,7 @@ export interface HotelSearchResult {
   latitude?: number | string | null;
   longitude?: number | string | null;
   rating: number;
-  category?: string; // Hotel category/star rating
+ category?: string; // Hotel category/star rating
   facilities: string[];
   amenities?: string[];
   inclusions?: string[];
@@ -49,11 +49,11 @@ export interface HotelSearchResult {
   totalFare?: number;
   currency: string;
   roomTypes: RoomType[];
-  roomType?: string; // Current room type name
-  mealPlan?: string; // Meal plan info (if available)
-  searchReference: string; // Used for confirmation
+ roomType?: string; // Current room type name
+ mealPlan?: string; // Meal plan info (if available)
+ searchReference: string; // Used for confirmation
   bookingCode?: string;
-  expiresAt: Date; // When search result expires
+ expiresAt: Date; // When search result expires
   pricePerNight?: number;
   totalStayPrice?: number;
   numberOfNights?: number;
@@ -71,12 +71,12 @@ export interface HotelSearchResult {
   isSelectable?: boolean;
   approvalStatus?: 'NOT_REQUESTED' | 'NOT_REQUIRED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
   manualConfirmationStatus?: 'NOT_STARTED' | 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'FAILED' | 'CANCELLED';
-  // Supplement summary at hotel level
+ // Supplement summary at hotel level
   supplementSummary?: {
     hasSupplements: boolean;
     supplementCount: number;
     atPropertyChargeCount: number;
-    requiresReview: boolean; // true if unknown types or mandatory charges
+ requiresReview: boolean; // true if unknown types or mandatory charges
   };
   isBookable?: boolean;
   externalStay?: boolean;
@@ -92,9 +92,9 @@ export interface RoomType {
   capacity: number;
   price: number;
   cancellationPolicy: string;
-  // Supplements (optional - from search response)
+ // Supplements (optional - from search response)
   supplements?: Array<{
-    type: string; // "AtProperty", etc
+ type: string; // "AtProperty", etc
     description: string;
     amount: number;
     currency: string;
@@ -105,13 +105,13 @@ export interface RoomType {
 
 export interface HotelSearchCriteria {
   cityCode: string;
-  checkInDate: string; // YYYY-MM-DD
+ checkInDate: string; // YYYY-MM-DD
   checkOutDate: string;
   roomCount: number;
   guestCount: number;
   guestNationality?: string;
   occupancies?: RoomOccupancy[];
-  hotelCodes?: string; // Optional: specific hotel codes to search (comma-separated)
+ hotelCodes?: string; // Optional: specific hotel codes to search (comma-separated)
 }
 
 export interface RoomOccupancy {
@@ -166,7 +166,7 @@ export interface RoomSelection {
 
 export interface HotelConfirmationResult {
   provider: string;
-  /** User-facing provider label; keep provider unchanged for internal routing. */
+ /** User-facing provider label; keep provider unchanged for internal routing. */
   providerDisplayName?: string;
   confirmationReference: string;
   hotelCode: string;

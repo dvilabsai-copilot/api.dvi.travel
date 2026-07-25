@@ -242,7 +242,7 @@ export class HotelPaymentDTO {
 
   @IsString()
   @IsNotEmpty()
-  paymentMethod: string; // 'razorpay', 'netbanking', etc.
+ paymentMethod: string; // 'razorpay', 'netbanking', etc.
 }
 
 export class CancellationDTO {

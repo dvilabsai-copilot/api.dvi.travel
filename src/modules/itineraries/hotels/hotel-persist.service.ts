@@ -30,7 +30,7 @@ export class HotelPersistService {
     private readonly pricing: HotelPricingService,
   ) {}
 
-  /**
+ /**
    * Create real hotel rows for a single route/night:
    * - dvi_itinerary_plan_hotel_details (totals, margin, meals)
    * - dvi_itinerary_plan_hotel_room_details (1 room line with meal flags)
@@ -39,7 +39,7 @@ export class HotelPersistService {
    * - margin base = roomCost + mealCost
    * - margin GST split via splitGST
    * - only breakfast cost used from meal price book
-   */
+ */
   async persistForPlanDay(input: PersistHotelInput) {
     const {
       itinerary_plan_id,
@@ -63,7 +63,7 @@ export class HotelPersistService {
       `persistForPlanDay:start plan=${itinerary_plan_id} route=${itinerary_route_id} date=${routeDateStr} city='${itinerary_route_location}' cat=${hotel_category_id} group=${group_type}`,
     );
 
-    // 1) Pick hotel by category + city
+ // 1) Pick hotel by category + city
     const hotel = await this.pricing.pickHotelByCategory(
       hotel_category_id,
       itinerary_route_location,
@@ -78,7 +78,7 @@ export class HotelPersistService {
       `hotelPick -> id=${hotel_id} city='${(hotel as any)?.hotel_city ?? ""}' marginPct=${marginPct} gstType=${marginGstType} gstPct=${marginGstPct}`,
     );
 
-    // 2) Room price (first non-zero, else first)
+ // 2) Room price (first non-zero, else first)
     const roomPrices = hotel_id
       ? await this.pricing.getRoomPrices(hotel_id, routeDate)
       : [];
@@ -93,7 +93,7 @@ export class HotelPersistService {
       }`,
     );
 
-    // 3) Meal price (BREAKFAST only, to match your sample rows)
+ // 3) Meal price (BREAKFAST only, to match your sample rows)
     const persons = Math.max(0, Number(total_no_of_persons ?? 0));
     const meals =
       hotel_id && persons > 0
@@ -105,7 +105,7 @@ export class HotelPersistService {
           };
 
     const bCost = money(persons * meals.breakfast.price);
-    const lCost = 0; // match export (only breakfast charged)
+ const lCost = 0; // match export (only breakfast charged)
     const dCost = 0;
 
     const bGst = 0;
@@ -115,7 +115,7 @@ export class HotelPersistService {
     const mealCost = money(bCost + lCost + dCost);
     const mealGst = money(bGst + lGst + dGst);
 
-    // 4) Room cost & GST (rooms have gstPct=0 in your schema dump)
+ // 4) Room cost & GST (rooms have gstPct=0 in your schema dump)
     let total_no_of_rooms = 0;
     let total_room_cost = 0;
     let total_room_gst_amount = 0;
@@ -137,20 +137,20 @@ export class HotelPersistService {
 
       const roomGross = money(room_qty * room_rate);
 
-      // If later you add room GST, you can split here with splitGST
-      const roomTax = 0; // currently sample shows 0
-      const roomNet = roomGross; // same as gross
+ // If later you add room GST, you can split here with splitGST
+ const roomTax = 0; // currently sample shows 0
+ const roomNet = roomGross; // same as gross
 
       total_no_of_rooms = room_qty;
       total_room_cost = roomNet;
       total_room_gst_amount = roomTax;
     }
 
-    // 5) Margin on (room + meal)  ❗ THIS IS THE KEY TO MATCH 28232
-    // Example for 28232:
-    //   roomCost = 4144, mealCost = 2, marginPct = 12
-    //   base = 4146, grossMargin = 497.52
-    //   marginTax = 497.52 * 18% = 89.5536
+ // 5) Margin on (room + meal) THIS IS THE KEY TO MATCH 28232
+ // Example for 28232:
+ // roomCost = 4144, mealCost = 2, marginPct = 12
+ // base = 4146, grossMargin = 497.52
+ // marginTax = 497.52 * 18% = 89.5536
     const marginBase = money(total_room_cost + mealCost);
     const grossMargin = money((marginBase * marginPct) / 100);
 
@@ -160,7 +160,7 @@ export class HotelPersistService {
       marginGstType,
     );
 
-    // 6) Insert hotel details (totals row)
+ // 6) Insert hotel details (totals row)
     const details = await this.prisma.dvi_itinerary_plan_hotel_details.create({
       data: {
         group_type,
@@ -223,7 +223,7 @@ export class HotelPersistService {
       `hotelDetails:inserted id=${detailsId} plan=${itinerary_plan_id} route=${itinerary_route_id} hotel_id=${hotel_id} rooms=${total_no_of_rooms} roomCost=${total_room_cost} meal=${mealCost} marginRate=${marginRate} marginGst=${marginRateGst}`,
     );
 
-    // 7) Insert room details line (1 record) with meal flags
+ // 7) Insert room details line (1 record) with meal flags
     if (room) {
       const roomRow = await this.prisma.dvi_itinerary_plan_hotel_room_details.create(
         {
@@ -249,13 +249,13 @@ export class HotelPersistService {
             child_with_bed_count: 0,
             child_with_bed_charges: 0,
 
-            // Match sample: breakfast only, lunch/dinner = 0
+ // Match sample: breakfast only, lunch/dinner = 0
             breakfast_required: bCost > 0 ? 1 : 0,
             lunch_required: 0,
             dinner_required: 0,
 
-            // We don’t know your exact per-person formula, but:
-            // total_breafast_cost = bCost (matches hotel_breakfast_cost)
+ // We dont know your exact per-person formula, but:
+ // total_breafast_cost = bCost (matches hotel_breakfast_cost)
             breakfast_cost_per_person:
               persons > 0 ? money(bCost / persons) : 0,
             lunch_cost_per_person: 0,

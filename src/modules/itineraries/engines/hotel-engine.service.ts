@@ -29,7 +29,7 @@ export class HotelEngineService {
       ),
     );
 
-    // No facility selected: preserve the existing hotel-selection behaviour.
+ // No facility selected: preserve the existing hotel-selection behaviour.
     if (requiredFacilities.length === 0) {
       return hotels;
     }
@@ -77,7 +77,7 @@ export class HotelEngineService {
       facilityCodesByHotelId.set(hotelId, hotelFacilityCodes);
     }
 
-    // A hotel must contain every facility selected by the user.
+ // A hotel must contain every facility selected by the user.
     return hotels.filter((hotel) => {
       const hotelId = Number(hotel?.hotel_id || 0);
       const hotelFacilityCodes = facilityCodesByHotelId.get(hotelId);
@@ -97,9 +97,9 @@ export class HotelEngineService {
     tx: Tx,
     userId: number,
   ) {
-    console.log('[HOTEL-ENGINE] rebuildPlanHotels started for planId:', planId);
+ console.log('[HOTEL-ENGINE] rebuildPlanHotels started for planId:', planId);
 
-    /* ---------------- PHASE 0: HARD RESET ---------------- */
+ /* ---------------- PHASE 0: HARD RESET ---------------- */
     let opStart = Date.now();
 
     await (tx as any).dvi_itinerary_plan_hotel_room_amenities.deleteMany({
@@ -113,9 +113,9 @@ export class HotelEngineService {
     await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
       where: { itinerary_plan_id: planId },
     });
-    console.log('[HOTEL-ENGINE] Delete old data:', Date.now() - opStart, 'ms');
+ console.log('[HOTEL-ENGINE] Delete old data:', Date.now() - opStart, 'ms');
 
-    /* ---------------- PLAN & ROUTES ---------------- */
+ /* ---------------- PLAN & ROUTES ---------------- */
     opStart = Date.now();
 
     const plan = await (tx as any).dvi_itinerary_plan_details.findUnique({
@@ -135,16 +135,16 @@ export class HotelEngineService {
       Number(plan?.total_children || 0) +
       Number(plan?.total_infants || 0);
 
-    // Parse preferred hotel categories (can be comma-separated string)
+ // Parse preferred hotel categories (can be comma-separated string)
     const categoryStr = String(plan?.preferred_hotel_category || "");
     const categories = categoryStr
       .split(",")
       .map((c) => Number(c.trim()))
       .filter((c) => c > 0);
 
-    const preferredCategory = categories[0] || 2; // Default to category 2
+ const preferredCategory = categories[0] || 2; // Default to category 2
 
-    // Hotel facilities are stored as comma-separated amenities codes.
+ // Hotel facilities are stored as comma-separated amenities codes.
     const selectedHotelFacilities: string[] = Array.from(
       new Set(
         String(plan?.hotel_facilities || "")
@@ -161,12 +161,12 @@ export class HotelEngineService {
         itinerary_route_ID: true,
         itinerary_route_date: true,
         location_name: true,
-        next_visiting_location: true, // PHP uses this for hotel city!
+ next_visiting_location: true, // PHP uses this for hotel city!
       },
     });
-    console.log('[HOTEL-ENGINE] Fetch plan+routes:', Date.now() - opStart, 'ms, routes:', routes.length);
+ console.log('[HOTEL-ENGINE] Fetch plan+routes:', Date.now() - opStart, 'ms, routes:', routes.length);
 
-    /* ---------------- PHASE 1: INSERT ROOMS WITH HOTEL SELECTION ---------------- */
+ /* ---------------- PHASE 1: INSERT ROOMS WITH HOTEL SELECTION ---------------- */
     opStart = Date.now();
     let hotelPickCount = 0;
     let roomPriceCount = 0;
@@ -177,8 +177,8 @@ export class HotelEngineService {
     const roomTypeCache = new Map<number, Promise<number>>();
 
     const totalRoutes = routes.length;
-    
-    // Collect all hotel selection tasks for parallel execution
+
+ // Collect all hotel selection tasks for parallel execution
     const hotelTasks: Array<{
       routeIndex: number;
       routeId: number;
@@ -186,17 +186,17 @@ export class HotelEngineService {
       city: string;
       groupType: number;
     }> = [];
-    
+
     for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
       const r = routes[routeIndex];
       const isLastRoute = (routeIndex === totalRoutes - 1);
       const noOfNights = Number(plan?.no_of_nights || 0);
-      
-      // Skip hotel generation for the last route (departure day)
-      // UNLESS it's a multi-day trip and we have fewer routes than nights (edge case)
-      // Standard: if routeIndex < noOfNights, we need a hotel for that night.
+
+ // Skip hotel generation for the last route (departure day)
+ // UNLESS it's a multi-day trip and we have fewer routes than nights (edge case)
+ // Standard: if routeIndex < noOfNights, we need a hotel for that night.
       if (isLastRoute && routeIndex >= noOfNights) continue;
-      
+
       const routeDate = r.itinerary_route_date ? new Date(r.itinerary_route_date) : new Date();
       const city = r.next_visiting_location;
 
@@ -211,7 +211,7 @@ export class HotelEngineService {
       }
     }
 
-    // Execute all hotel picks + pricing in parallel (now gets MULTIPLE hotels per category)
+ // Execute all hotel picks + pricing in parallel (now gets MULTIPLE hotels per category)
     const hotelResults = await Promise.all(
       hotelTasks.map(async (task) => {
         hotelPickCount++;
@@ -219,8 +219,8 @@ export class HotelEngineService {
         const hotelCacheKey =
           `${preferredCategory}|${task.city}|${routeDateKey}`;
 
-        // Keep the existing four-argument HotelPricingService method.
-        // Facility matching is performed below using dvi_hotel_amenities.
+ // Keep the existing four-argument HotelPricingService method.
+ // Facility matching is performed below using dvi_hotel_amenities.
         let hotelsPromise = hotelSearchCache.get(hotelCacheKey);
 
         if (!hotelsPromise) {
@@ -250,7 +250,7 @@ export class HotelEngineService {
           };
         }
 
-        // For each hotel, get room prices and meal prices
+ // For each hotel, get room prices and meal prices
         const hotelDetailsPromises = hotels.map(async (hotel) => {
           const hotelDateKey = `${hotel.hotel_id}|${routeDateKey}`;
 
@@ -275,7 +275,7 @@ export class HotelEngineService {
           mealPriceCount++;
 
           const roomPrice = roomPrices.find(rp => rp.rate > 0) || roomPrices[0] || { room_id: 0, rate: 0 };
-          
+
           let roomTypeId = 0;
           if (roomPrice.room_id > 0) {
             let roomTypePromise = roomTypeCache.get(roomPrice.room_id);
@@ -307,15 +307,15 @@ export class HotelEngineService {
       })
     );
 
-    // Insert all room records for all hotels
+ // Insert all room records for all hotels
     for (const result of hotelResults) {
       const routeForInsert = routes.find((r: any) => r.itinerary_route_ID === result.routeId);
       if (!routeForInsert) continue;
 
-      // For each hotel option in this category/route
+ // For each hotel option in this category/route
       for (const hotelDetail of result.hotels) {
         if (!hotelDetail.hotel) {
-          // No hotel, create placeholder
+ // No hotel, create placeholder
           await (tx as any).dvi_itinerary_plan_hotel_room_details.create({
             data: {
               itinerary_plan_id: planId,
@@ -407,25 +407,25 @@ export class HotelEngineService {
         });
       }
     }
-    console.log('[HOTEL-ENGINE] Phase 1 insert rooms:', Date.now() - opStart, 'ms');
-    console.log('[HOTEL-ENGINE] Hotel picks:', hotelPickCount, '| Room prices:', roomPriceCount, '| Meal prices:', mealPriceCount);
+ console.log('[HOTEL-ENGINE] Phase 1 insert rooms:', Date.now() - opStart, 'ms');
+ console.log('[HOTEL-ENGINE] Hotel picks:', hotelPickCount, '| Room prices:', roomPriceCount, '| Meal prices:', mealPriceCount);
 
-    /* ---------------- PHASE 2: CREATE HEADERS FROM ROOMS ---------------- */
+ /* ---------------- PHASE 2: CREATE HEADERS FROM ROOMS ---------------- */
     opStart = Date.now();
 
     for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
       const r = routes[routeIndex];
       const isLastRoute = (routeIndex === totalRoutes - 1);
       const noOfNights = Number(plan?.no_of_nights || 0);
-      
-      // Skip last route (same as Phase 1)
+
+ // Skip last route (same as Phase 1)
       if (isLastRoute && routeIndex >= noOfNights) {
         continue;
       }
-      
+
       for (const groupType of [1, 2, 3, 4]) {
 
-        // Get ALL unique hotels for this route/category (not just the first one)
+ // Get ALL unique hotels for this route/category (not just the first one)
         const allRooms = await (tx as any).dvi_itinerary_plan_hotel_room_details.findMany({
           where: {
             itinerary_plan_id: planId,
@@ -438,12 +438,12 @@ export class HotelEngineService {
           distinct: ['hotel_id'],
         });
 
-        // If no rooms, skip
+ // If no rooms, skip
         if (!allRooms || allRooms.length === 0) {
           continue;
         }
 
-        // Insert ONE header record per unique hotel option
+ // Insert ONE header record per unique hotel option
         for (const roomRecord of allRooms) {
           const hotelId = roomRecord.hotel_id || 0;
           if (hotelId === 0) continue;
@@ -458,7 +458,7 @@ export class HotelEngineService {
                 deleted: 0,
                 status: 1,
               },
-              _sum: { 
+              _sum: {
                 room_qty: true,
                 total_room_cost: true,
                 total_breafast_cost: true,
@@ -469,10 +469,10 @@ export class HotelEngineService {
           const totalRoomCost = Number(agg._sum.total_room_cost || 0);
           const totalBreakfastCost = Number(agg._sum.total_breafast_cost || 0);
 
-          // Calculate hotel margin (12% of room + breakfast costs)
+ // Calculate hotel margin (12% of room + breakfast costs)
           const baseCost = totalRoomCost + totalBreakfastCost;
-          const marginRate = baseCost * 0.12; // 12%
-          const marginTaxAmt = marginRate * 0.18; // 18% GST on margin
+ const marginRate = baseCost * 0.12; // 12%
+ const marginTaxAmt = marginRate * 0.18; // 18% GST on margin
 
           const header = await (tx as any)
             .dvi_itinerary_plan_hotel_details.create({
@@ -480,7 +480,7 @@ export class HotelEngineService {
                 itinerary_plan_id: planId,
                 itinerary_route_id: r.itinerary_route_ID,
                 itinerary_route_date: r.itinerary_route_date,
-                itinerary_route_location: r.next_visiting_location, // PHP uses next_visiting_location!
+ itinerary_route_location: r.next_visiting_location, // PHP uses next_visiting_location!
                 group_type: groupType,
 
                 hotel_required: 1,
@@ -525,7 +525,7 @@ export class HotelEngineService {
             },
           });
 
-          // Update ONLY the rooms for THIS specific hotel
+ // Update ONLY the rooms for THIS specific hotel
           await (tx as any).dvi_itinerary_plan_hotel_room_details.updateMany({
             where: {
               itinerary_plan_id: planId,
@@ -541,13 +541,13 @@ export class HotelEngineService {
         }
       }
     }
-    console.log('[HOTEL-ENGINE] Phase 2 create headers:', Date.now() - opStart, 'ms');
+ console.log('[HOTEL-ENGINE] Phase 2 create headers:', Date.now() - opStart, 'ms');
 
-    /* ---------------- PHASE 3: ZERO-PRICE CLEANUP ---------------- */
+ /* ---------------- PHASE 3: ZERO-PRICE CLEANUP ---------------- */
     opStart = Date.now();
 
-    // NOTE: We keep the hotel_id even if room_rate is 0
-    // Only zero out the room-specific fields
+ // NOTE: We keep the hotel_id even if room_rate is 0
+ // Only zero out the room-specific fields
     const zeroRows = await (tx as any)
       .dvi_itinerary_plan_hotel_room_details.findMany({
         where: {
@@ -570,7 +570,7 @@ export class HotelEngineService {
           group_type: row.group_type,
         },
         data: {
-          // Keep hotel_id! Don't reset to 0
+ // Keep hotel_id! Don't reset to 0
           room_type_id: 0,
           room_id: 0,
           room_rate: 0,
@@ -582,7 +582,7 @@ export class HotelEngineService {
         },
       });
     }
-    console.log('[HOTEL-ENGINE] Phase 3 zero-price cleanup:', Date.now() - opStart, 'ms');
-    console.log('[HOTEL-ENGINE] rebuildPlanHotels completed');
+ console.log('[HOTEL-ENGINE] Phase 3 zero-price cleanup:', Date.now() - opStart, 'ms');
+ console.log('[HOTEL-ENGINE] rebuildPlanHotels completed');
   }
 }

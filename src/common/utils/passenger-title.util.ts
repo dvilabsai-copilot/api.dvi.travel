@@ -32,7 +32,7 @@ export function normalizePassengerTitle(
 export function resolveProviderPassengerTitle(
   ...candidates: Array<string | null | undefined>
 ): PassengerTitle {
-  // Some downstream hotel providers reject empty title fields.
-  // Use a valid passenger/guest title when available and fall back only here.
+ // Some downstream hotel providers reject empty title fields.
+ // Use a valid passenger/guest title when available and fall back only here.
   return normalizePassengerTitle(...candidates) ?? 'Mr';
 }

@@ -17,14 +17,14 @@ export class ItineraryConfirmedItineraryDetailsService {
   }
 
   public async getConfirmedItineraryDetails(confirmedPlanId: number) {
-    console.log('🔍 getConfirmedItineraryDetails called with confirmedPlanId:', confirmedPlanId);
-    console.log('   this.prisma exists?', !!this.prisma);
-    
+ console.log(' getConfirmedItineraryDetails called with confirmedPlanId:', confirmedPlanId);
+ console.log(' this.prisma exists?', !!this.prisma);
+
     if (!this.prisma) {
       throw new Error('PrismaService not initialized in ItinerariesService');
     }
 
-    // Get the confirmed plan
+ // Get the confirmed plan
     const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({
       where: { confirmed_itinerary_plan_ID: confirmedPlanId },
     });
@@ -33,7 +33,7 @@ export class ItineraryConfirmedItineraryDetailsService {
       throw new NotFoundException('Confirmed itinerary not found');
     }
 
-    // Get the original itinerary plan details separately (no relation in schema)
+ // Get the original itinerary plan details separately (no relation in schema)
     const originalPlan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: plan.itinerary_plan_ID },
     });
@@ -42,7 +42,7 @@ export class ItineraryConfirmedItineraryDetailsService {
       throw new NotFoundException('Original itinerary plan not found');
     }
 
-    console.log('   ✅ Found confirmed plan and original plan');
+ console.log(' Found confirmed plan and original plan');
 
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
       where: {
@@ -56,7 +56,7 @@ export class ItineraryConfirmedItineraryDetailsService {
       ],
     });
 
-    console.log('   📍 Found', routes.length, 'routes');
+ console.log(' Found', routes.length, 'routes');
 
     const guideAssignments = await this.callbacks.listConfirmedGuideAssignments(confirmedPlanId);
 
@@ -397,7 +397,7 @@ export class ItineraryConfirmedItineraryDetailsService {
       ).trim();
 
       if (!resolvedHotelName) {
-        console.warn('[CONFIRMED_HOTEL_NAME_MISSING]', {
+ console.warn('[CONFIRMED_HOTEL_NAME_MISSING]', {
           quoteId: String(originalPlan?.itinerary_quote_ID || ''),
           routeId,
           provider,
@@ -423,7 +423,7 @@ export class ItineraryConfirmedItineraryDetailsService {
         confirmedAmount > 0 &&
         Math.abs(providerAmount - confirmedAmount) > 1
       ) {
-        console.warn('[CONFIRMED_HOTEL_AMOUNT_MISMATCH_USING_CONFIRMED_DB_AMOUNT]', {
+ console.warn('[CONFIRMED_HOTEL_AMOUNT_MISMATCH_USING_CONFIRMED_DB_AMOUNT]', {
           confirmedPlanId,
           routeId,
           provider,
@@ -495,7 +495,7 @@ export class ItineraryConfirmedItineraryDetailsService {
       }];
     });
 
-    console.log('[CONFIRMED_HOTELS_RETURNED]', hotelRows.map((h: any) => ({
+ console.log('[CONFIRMED_HOTELS_RETURNED]', hotelRows.map((h: any) => ({
       routeId: h.itineraryRouteId,
       provider: h.provider,
       hotelCode: h.hotelCode,
@@ -548,8 +548,8 @@ export class ItineraryConfirmedItineraryDetailsService {
     };
   }
 
-  /**
+ /**
    * Map hotel group type to category name
-   */
+ */
 }
 

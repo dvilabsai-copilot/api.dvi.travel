@@ -5,7 +5,7 @@ import { PrismaService } from '../../../prisma.service';
 
 @Module({
   controllers: [GstSettingsController],
-  providers: [GstSettingsService, PrismaService], // ensures DI works
+ providers: [GstSettingsService, PrismaService], // ensures DI works
   exports: [GstSettingsService],
 })
 export class GstSettingsModule {}

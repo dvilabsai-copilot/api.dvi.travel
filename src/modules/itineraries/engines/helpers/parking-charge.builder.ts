@@ -26,17 +26,17 @@ export class ParkingChargeBuilder {
   private vehicleTypeAggCache: any[] | null = null;
   private parkingChargeCache: Map<string, number> = new Map();
 
-  /**
+ /**
    * Clear caches for a new plan.
-   */
+ */
   clearCache() {
     this.vehicleTypeAggCache = null;
     this.parkingChargeCache.clear();
   }
 
-  /**
+ /**
    * Returns an array of ParkingChargeRow, one for each vendor vehicle for the plan (PHP parity).
-   */
+ */
   async buildForHotspot(
     tx: Tx,
     opts: {
@@ -50,17 +50,17 @@ export class ParkingChargeBuilder {
 
     const rows: ParkingChargeRow[] = [];
     try {
-      // 1. Get all required vehicle types and total quantities for the plan (PHP parity)
+ // 1. Get all required vehicle types and total quantities for the plan (PHP parity)
       if (!this.vehicleTypeAggCache) {
         const planVehiclesTable = (tx as any).dvi_itinerary_plan_vehicle_details;
         if (!planVehiclesTable) {
-          console.log(
+ console.log(
             "[ParkingChargeBuilder] dvi_itinerary_plan_vehicle_details table not available",
           );
           return rows;
         }
 
-        // Group by vehicle_type_id, sum vehicle_count for the whole plan (not just this route)
+ // Group by vehicle_type_id, sum vehicle_count for the whole plan (not just this route)
         this.vehicleTypeAggCache = await planVehiclesTable.groupBy({
           by: ["vehicle_type_id"],
           where: {
@@ -75,26 +75,26 @@ export class ParkingChargeBuilder {
       const vehicleTypeAgg = this.vehicleTypeAggCache;
 
       if (!vehicleTypeAgg || vehicleTypeAgg.length === 0) {
-        // No vehicles for this plan
+ // No vehicles for this plan
         return rows;
       }
 
-      // Get parking charges from vehicle parking charges table
+ // Get parking charges from vehicle parking charges table
       const parkingChargesTable = (tx as any).dvi_hotspot_vehicle_parking_charges;
       if (!parkingChargesTable) {
-        console.log(
+ console.log(
           "[ParkingChargeBuilder] dvi_hotspot_vehicle_parking_charges table not available in transaction",
         );
         return rows;
       }
 
-      // For each vehicle type required for this plan, get the parking charge for this hotspot and vehicle type
+ // For each vehicle type required for this plan, get the parking charge for this hotspot and vehicle type
       for (const vt of vehicleTypeAgg) {
         const vehicleTypeId = vt.vehicle_type_id ?? 0;
         const vehicleQty = vt._sum?.vehicle_count ?? 1;
         if (!vehicleTypeId || vehicleQty <= 0) continue;
 
-        // Find parking charge for this hotspot and vehicle type
+ // Find parking charge for this hotspot and vehicle type
         const cacheKey = `${hotspotId}|${vehicleTypeId}`;
         let unitCharge = this.parkingChargeCache.get(cacheKey);
 
@@ -113,7 +113,7 @@ export class ParkingChargeBuilder {
         }
 
         if (unitCharge <= 0) {
-          // No parking charge for this vehicle type at this hotspot
+ // No parking charge for this vehicle type at this hotspot
           continue;
         }
 
@@ -139,7 +139,7 @@ export class ParkingChargeBuilder {
 
       return rows;
     } catch (err) {
-      console.error("[ParkingChargeBuilder] Error building parking charge:", err);
+ console.error("[ParkingChargeBuilder] Error building parking charge:", err);
       return rows;
     }
   }
