@@ -26,7 +26,7 @@ export class ItineraryScenarioSourceController {
   ) {
     const dayNo = day == null || String(day).trim() === '' ? undefined : Number(day);
     const normalizedDayNo = dayNo != null && Number.isFinite(dayNo) ? dayNo : undefined;
- this.logger.log(`Loading hotspot scenario markdown for quote=${quoteId} day=${normalizedDayNo 'all'}`);
+    this.logger.log(`Loading hotspot scenario markdown for quote=${quoteId} day=${normalizedDayNo ?? 'all'}`);
 
     return this.sourceService.getScenarioMarkdown(quoteId, normalizedDayNo);
   }

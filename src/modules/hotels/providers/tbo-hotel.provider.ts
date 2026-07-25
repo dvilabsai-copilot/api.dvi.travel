@@ -110,8 +110,8 @@ export class TBOHotelProvider implements IHotelProvider {
       );
 
       const authTime = Date.now() - authStartTime;
- this.logger.log(` TBO Auth Response Time: ${authTime}ms`);
- this.logger.debug(` TBO Auth Status: ${response.data?.Status 'unknown'}`);
+      this.logger.log(` TBO Auth Response Time: ${authTime}ms`);
+      this.logger.debug(` TBO Auth Status: ${response.data?.Status ?? 'unknown'}`);
 
  // TBO API returns Status: 1 for success, not Status.Code
       const status = response.data?.Status;
@@ -1680,7 +1680,7 @@ export class TBOHotelProvider implements IHotelProvider {
       } else {
         const statusObj = response.data?.Status;
         const statusCode = typeof statusObj === 'object' ? statusObj?.Code : statusObj;
- this.logger.debug(` TBO API response summary: status=${statusCode 'unknown'}, hotels=${(response.data?.HotelResult || []).length}`);
+      this.logger.debug(` TBO API response summary: status=${statusCode ?? 'unknown'}, hotels=${(response.data?.HotelResult || []).length}`);
       }
 
  // Check response status

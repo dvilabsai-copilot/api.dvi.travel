@@ -113,8 +113,8 @@ export class HotelSearchService {
  this.logger.log(` - Rooms: ${roomCount}`);
  this.logger.log(` - Guests: ${guestCount}`);
       if (adultCount !== undefined || childCount !== undefined) {
- this.logger.log(` - Adults: ${adultCount 'n/a'}`);
- this.logger.log(` - Children: ${childCount 'n/a'}`);
+  this.logger.log(` - Adults: ${adultCount ?? 'n/a'}`);
+  this.logger.log(` - Children: ${childCount ?? 'n/a'}`);
       }
       if (guestNationality) {
  this.logger.log(` - Nationality: ${guestNationality}`);

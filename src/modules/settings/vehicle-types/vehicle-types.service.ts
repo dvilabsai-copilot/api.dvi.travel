@@ -135,7 +135,7 @@ export class VehicleTypesService {
         where: { vehicle_type_id: id },
         data: {
           status: next,
- createdby: userId 0, // PHP often overwrites createdby on edits
+          createdby: userId ?? 0, // PHP often overwrites createdby on edits
           updatedon: new Date(),
         },
         select: {
