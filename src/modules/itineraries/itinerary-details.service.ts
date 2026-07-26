@@ -7,6 +7,7 @@ import {
   redactVehicleForAgent,
   redactVehicleCostBreakdowns,
 } from './utils/itinerary-cost-visibility.util';
+import { resolveItineraryPreference } from './utils/itinerary-preference.util';
 import { Request } from 'express';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
@@ -5934,10 +5935,12 @@ const specialInstructions = String(
 const rawItineraryPreference = Number((plan as any).itinerary_preference || 0);
 const hasHotelRows = Array.isArray(hotelRows) && hotelRows.some((row: any) => Number(row?.deleted || 0) === 0);
 const hasVehicleRows = Array.isArray(vehicles) && vehicles.length > 0;
-const normalizedItineraryPreference =
-  parsedRouteFamilyQuote?.baseQuoteId && hasHotelRows && hasVehicleRows
-    ? 3
-    : rawItineraryPreference;
+const normalizedItineraryPreference = resolveItineraryPreference({
+  rawPreference: rawItineraryPreference,
+  hasRouteFamily: Boolean(parsedRouteFamilyQuote?.baseQuoteId),
+  hasHotelRows,
+  hasVehicleRows,
+});
 
 // Calls made internally by clipboard/document builders do not carry an HTTP
 // user. Preserve their existing full-detail behavior; authenticated controller

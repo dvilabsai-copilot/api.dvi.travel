@@ -14,6 +14,7 @@
     "seed": "ts-node prisma/seed.ts",
     "seed:ooty-ghat": "tsx scripts/seed-ooty-ghat-geofence.ts",
     "seed:vendor:php": "node scripts/seed-vendor-from-php.js",
+    "sync:hotel-rates": "node scripts/sync-hotel-rates-between-databases.js",
     "seed:hotel-rateplans": "tsx scripts/sync-hotel-rate-plan-master.ts",
     "backfill:hotel-rateplans": "tsx scripts/backfill-hotel-room-rate-plans.ts",
     "axisrooms:backfill-property-ids": "node backfill-axisrooms-property-ids.js",
