@@ -1,6 +1,6 @@
 // FILE: src/modules/global-settings/global-settings.service.ts
 
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../../prisma.service";
 import { Prisma } from "@prisma/client";
 import { UpdateGlobalSettingsDto } from "./dto/update-global-settings.dto";
@@ -9,6 +9,41 @@ import { StateConfigResultDto, StateConfigUpdateDto } from "./dto/state-config.d
 @Injectable()
 export class GlobalSettingsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private toTimeDate(value: string | Date | null | undefined): Date | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || value === "") return null;
+    if (value instanceof Date) return value;
+
+    const time = value.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (time) {
+      const hours = Number(time[1]);
+      const minutes = Number(time[2]);
+      const seconds = Number(time[3] ?? 0);
+      if (hours > 23 || minutes > 59 || seconds > 59) {
+        throw new BadRequestException(`Invalid time value: ${value}`);
+      }
+      // Prisma represents MySQL TIME columns as Date values. Use a stable
+      // UTC epoch so the stored clock time is not shifted by server timezone.
+      return new Date(Date.UTC(1970, 0, 1, hours, minutes, seconds));
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid time value: ${value}`);
+    }
+    return parsed;
+  }
+
+  private normalizeBoolean(value: unknown): boolean | undefined {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value === 1;
+    if (typeof value === "string") {
+      return ["1", "true", "yes"].includes(value.trim().toLowerCase());
+    }
+    return Boolean(value);
+  }
 
  /**
    * Mirrors global_settings.php:
@@ -33,15 +68,31 @@ export class GlobalSettingsService {
    *
    * Update the single global settings row (all config values) and return it.
    *
-   * NOTE: we intentionally use updateMany(with deleted=0) instead of id=1
-   * to be robust if the id is not exactly 1.
+   * The PHP page submits the settings row id (normally 1). We resolve the
+   * active row first, then update that exact row so multiple stale rows cannot
+   * all be changed accidentally.
  */
   async updateGlobalSettings(dto: UpdateGlobalSettingsDto, userId?: number) {
-    const data: Prisma.dvi_global_settingsUpdateManyMutationInput = {
+    const data: Prisma.dvi_global_settingsUpdateInput = {
       ...(dto as any),
       updatedon: new Date(),
       ...(typeof userId === "number" ? { createdby: userId } : {}),
     };
+
+    for (const field of [
+      "itinerary_common_buffer_time",
+      "itinerary_travel_by_flight_buffer_time",
+      "itinerary_travel_by_train_buffer_time",
+      "itinerary_travel_by_road_buffer_time",
+    ] as const) {
+      if (field in dto) {
+        (data as any)[field] = this.toTimeDate(dto[field]);
+      }
+    }
+
+    if ("hotel_margin_gst_type" in dto) {
+      (data as any).hotel_margin_gst_type = this.normalizeBoolean(dto.hotel_margin_gst_type);
+    }
 
  // If there is no row yet, create one first.
     const existing = await this.prisma.dvi_global_settings.findFirst({
@@ -51,7 +102,7 @@ export class GlobalSettingsService {
     if (!existing) {
       await this.prisma.dvi_global_settings.create({
         data: {
-          ...(dto as any),
+          ...(data as any),
           createdby: typeof userId === "number" ? userId : 0,
           createdon: new Date(),
           updatedon: new Date(),
@@ -63,8 +114,8 @@ export class GlobalSettingsService {
       return this.getGlobalSettings();
     }
 
-    await this.prisma.dvi_global_settings.updateMany({
-      where: { deleted: 0 },
+    await this.prisma.dvi_global_settings.update({
+      where: { global_settings_ID: existing.global_settings_ID },
       data,
     });
 
