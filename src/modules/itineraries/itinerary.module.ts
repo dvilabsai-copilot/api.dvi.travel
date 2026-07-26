@@ -35,6 +35,7 @@ import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
 import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.service';
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { VehicleVoucherEmailNotifierService } from './services/vehicle-voucher-email-notifier.service';
+import { ItineraryBookingConfirmationEmailNotifierService } from './services/itinerary-booking-confirmation-email-notifier.service';
 import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
 import { ItineraryRouteNormalizationService } from './services/itinerary-route-normalization.service';
 import { HotelsModule } from '../hotels/hotels.module';
@@ -130,10 +131,11 @@ import { TransportEarlyArrivalValidationService } from './validation/transport-e
     AxisRoomsBookingPushService,
     StaahBookingPushService,
     HotelVoucherService,
-    VehicleVoucherService,
-    VehicleVoucherEmailNotifierService,
-    SameCityCrossDayOptimizerService,
-    ItineraryRouteNormalizationService,
+VehicleVoucherService,
+VehicleVoucherEmailNotifierService,
+ItineraryBookingConfirmationEmailNotifierService,
+SameCityCrossDayOptimizerService,
+ItineraryRouteNormalizationService,
     ItineraryGuideAssignmentService,
     ItineraryGuideAssignmentWriteService,
     ItineraryConfirmedGuideAssignmentService,
