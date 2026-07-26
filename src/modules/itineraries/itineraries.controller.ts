@@ -75,6 +75,7 @@ import { RouteSuggestionsService } from './route-suggestions.service';
 import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
 import { ItineraryPdfService } from './itinerary-pdf.service';
+import { ItineraryBookingConfirmationEmailNotifierService } from './services/itinerary-booking-confirmation-email-notifier.service';
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
 
@@ -101,11 +102,12 @@ export class ItinerariesController {
     private readonly routeSuggestionsV2Service: RouteSuggestionsV2Service,
     private readonly hotelVoucherService: HotelVoucherService,
     private readonly vehicleVoucherService: VehicleVoucherService,
-    private readonly clipboardService: ItineraryClipboardService,
-    private readonly arrivalHotelPolicyService: ArrivalHotelPolicyService,
-    private readonly itineraryPdfService: ItineraryPdfService,
-    private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
-    private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
+   private readonly clipboardService: ItineraryClipboardService,
+private readonly arrivalHotelPolicyService: ArrivalHotelPolicyService,
+private readonly itineraryPdfService: ItineraryPdfService,
+private readonly bookingConfirmationEmailNotifier: ItineraryBookingConfirmationEmailNotifierService,
+private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
+private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
   ) {}
 
   private parseClipboardGroupTypes(query: Record<string, any>): number[] {
@@ -1311,34 +1313,100 @@ async exportToExcel(
     });
   }
 
-  @Public()
-  @Post('confirm-quotation')
-  @ApiOperation({ summary: 'Confirm quotation with guest details and optional TBO hotel bookings' })
-  @ApiBody({ type: ConfirmQuotationDto })
-  @ApiOkResponse({ description: 'Quotation confirmed successfully' })
-  async confirmQuotation(@Body() dto: ConfirmQuotationDto, @Req() req: Request) {
-    const baseResult = await this.svc.confirmQuotation(dto);
+ @Public()
+@Post('confirm-quotation')
+@ApiOperation({
+  summary:
+    'Confirm quotation with guest details and optional TBO hotel bookings',
+})
+@ApiBody({
+  type: ConfirmQuotationDto,
+})
+@ApiOkResponse({
+  description:
+    'Quotation confirmed successfully',
+})
+async confirmQuotation(
+  @Body() dto: ConfirmQuotationDto,
+  @Req() req: Request,
+) {
+  const baseResult =
+    await this.svc.confirmQuotation(dto);
 
-    if (dto.hotel_bookings && dto.hotel_bookings.length > 0) {
-      const clientIp = (req.ip || req.headers['x-forwarded-for'] || '192.168.1.1') as string;
-      return await this.svc.processConfirmationWithTboBookings(
-        baseResult,
-        dto,
-        clientIp,
-      );
-    }
+  let finalResult: any;
 
-    const confirmedPlanId = Number(baseResult?.confirmed_itinerary_plan_ID || 0);
+  if (
+    dto.hotel_bookings &&
+    dto.hotel_bookings.length > 0
+  ) {
+    const forwardedFor =
+      req.headers['x-forwarded-for'];
 
-    const confirmedHotelDetails = confirmedPlanId > 0
-      ? await this.svc.getConfirmedItineraryDetails(confirmedPlanId)
-      : null;
+    const clientIp = String(
+      req.ip ||
+        (
+          Array.isArray(forwardedFor)
+            ? forwardedFor[0]
+            : forwardedFor
+        ) ||
+        '192.168.1.1',
+    );
 
-    return {
+    /*
+     * This returns successfully only after
+     * selected supplier hotel bookings have
+     * completed successfully.
+     */
+    finalResult =
+      await this.svc
+        .processConfirmationWithTboBookings(
+          baseResult,
+          dto,
+          clientIp,
+        );
+  } else {
+    const confirmedPlanId = Number(
+      baseResult
+        ?.confirmed_itinerary_plan_ID ||
+        0,
+    );
+
+    const confirmedHotelDetails =
+      confirmedPlanId > 0
+        ? await this.svc
+            .getConfirmedItineraryDetails(
+              confirmedPlanId,
+            )
+        : null;
+
+    finalResult = {
       ...baseResult,
       confirmedHotelDetails,
     };
   }
+
+  const itineraryPlanId = Number(
+    finalResult?.itinerary_plan_ID ||
+      baseResult?.itinerary_plan_ID ||
+      dto.itinerary_plan_ID ||
+      0,
+  );
+
+  /*
+   * The email notifier catches its own
+   * errors. Email failure will not cancel
+   * a successfully confirmed booking.
+   */
+  if (itineraryPlanId > 0) {
+    await this
+      .bookingConfirmationEmailNotifier
+      .sendBookingConfirmationNotifications(
+        itineraryPlanId,
+      );
+  }
+
+  return finalResult;
+}
 
   @Post(':planId/hotels/selection-cost-preview')
   @ApiOperation({ summary: 'Preview temporary hotel selection costs without saving draft rows' })
