@@ -110,8 +110,9 @@ getCouponWalletHistory(@Param('id', ParseIntPipe) id: number) {
 addCashWallet(
   @Param('id', ParseIntPipe) id: number,
   @Body() body: { amount: number; remark: string },
+  @Req() req: any,
 ) {
-  return this.service.addCashWallet(id, body);
+  return this.service.addCashWallet(id, body, req.user);
 }
 
 /** Add coupon wallet */
