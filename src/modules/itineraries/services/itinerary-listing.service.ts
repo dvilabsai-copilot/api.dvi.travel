@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import { LatestItineraryQueryDto } from '../dto/latest-itinerary-query.dto';
+import { SystemRole, getRoleId } from '../../auth/constants/system-role.constants';
 
 function parseFilterDate(value?: string): Date | undefined {
   const raw = String(value ?? '').trim();
@@ -35,6 +36,9 @@ export class ItineraryListingService {
     const u: any = (req as any).user ?? {};
     const staffId = Number(u.staffId ?? 0);
     const agentId = Number(u.agentId ?? 0);
+    const role = getRoleId(u);
+
+    if (role === SystemRole.VEHICLE_AGENT && agentId <= 0) return [];
 
     const where: any = { deleted: 0 };
 
@@ -63,13 +67,18 @@ export class ItineraryListingService {
     }));
   }
 
-  async getLocationsForFilter() {
+  async getLocationsForFilter(req?: any) {
  // Get unique arrival and departure locations from confirmed itineraries
+    const u: any = req?.user ?? {};
+    const role = getRoleId(u);
+    const agentId = Number(u.agentId ?? u.agent_id ?? 0) || 0;
+    const where: any = { quotation_status: 1, deleted: 0 };
+    if (role === SystemRole.VEHICLE_AGENT) {
+      where.agent_id = agentId > 0 ? agentId : -1;
+      where.itinerary_preference = 2;
+    }
     const plans = await this.prisma.dvi_itinerary_plan_details.findMany({
-      where: {
-        quotation_status: 1,
-        deleted: 0,
-      },
+      where,
       select: {
         arrival_location: true,
         departure_location: true,
@@ -92,11 +101,17 @@ export class ItineraryListingService {
  /**
    * Get unique locations for latest itineraries filter (from all non-deleted plans)
  */
-  async getLocationsForLatestFilter(): Promise<{ value: string; label: string }[]> {
+  async getLocationsForLatestFilter(req?: any): Promise<{ value: string; label: string }[]> {
+    const u: any = req?.user ?? {};
+    const role = getRoleId(u);
+    const agentId = Number(u.agentId ?? u.agent_id ?? 0) || 0;
+    const where: any = { deleted: 0 };
+    if (role === SystemRole.VEHICLE_AGENT) {
+      where.agent_id = agentId > 0 ? agentId : -1;
+      where.itinerary_preference = 2;
+    }
     const plans = await this.prisma.dvi_itinerary_plan_details.findMany({
-      where: {
-        deleted: 0,
-      },
+      where,
       select: {
         arrival_location: true,
         departure_location: true,
@@ -140,13 +155,17 @@ export class ItineraryListingService {
     const input_staff_id = Number(u.staff_id ?? u.staffId ?? 0) || 0;
     const input_agent_id = Number(u.agent_id ?? u.agentId ?? 0) || 0;
     const input_guide_id = Number(u.guide_id ?? u.guideId ?? 0) || 0;
+    const vehicleAgent = logged_user_level === SystemRole.VEHICLE_AGENT;
 
     const where: any = {
       quotation_status: 1,
       deleted: 0,
     };
 
-    if (input_agent_id > 0) {
+    if (vehicleAgent) {
+      where.agent_id = input_agent_id > 0 ? input_agent_id : -1;
+      where.itinerary_preference = 2;
+    } else if (input_agent_id > 0) {
       where.agent_id = input_agent_id;
     } else if (input_guide_id > 0) {
  // Guide logic: find itineraries where this guide is assigned
@@ -429,6 +448,7 @@ export class ItineraryListingService {
           days: p.no_of_days,
           created_on: p.createdon,
           created_by: p.createdby,
+          itinerary_preference: (p as any).itinerary_preference,
         };
       }),
     };
@@ -447,6 +467,7 @@ export class ItineraryListingService {
     const logged_user_level = Number(u.roleID ?? u.roleId ?? u.role ?? 0) || 0;
     const input_staff_id = Number(u.staff_id ?? u.staffId ?? 0) || 0;
     const input_agent_id = Number(u.agent_id ?? u.agentId ?? 0) || 0;
+    const vehicleAgent = logged_user_level === SystemRole.VEHICLE_AGENT;
 
     const where: any = {
       deleted: 0,
@@ -459,7 +480,16 @@ export class ItineraryListingService {
       };
     }
 
-    if (input_agent_id > 0) {
+    if (vehicleAgent) {
+      const vehiclePlans = await this.prisma.dvi_itinerary_plan_details.findMany({
+        where: {
+          agent_id: input_agent_id > 0 ? input_agent_id : -1,
+          itinerary_preference: 2,
+        },
+        select: { itinerary_plan_ID: true },
+      });
+      where.itinerary_plan_id = { in: vehiclePlans.map((p) => p.itinerary_plan_ID) };
+    } else if (input_agent_id > 0) {
       const agentPlans = await this.prisma.dvi_itinerary_plan_details.findMany({
         where: { agent_id: input_agent_id },
         select: { itinerary_plan_ID: true },
@@ -491,9 +521,7 @@ export class ItineraryListingService {
     }
 
     const [total, filtered, data] = await Promise.all([
-      this.prisma.dvi_cancelled_itineraries.count({
-        where: { deleted: 0 },
-      }),
+      this.prisma.dvi_cancelled_itineraries.count({ where }),
       this.prisma.dvi_cancelled_itineraries.count({ where }),
       this.prisma.dvi_cancelled_itineraries.findMany({
         where,
@@ -549,6 +577,10 @@ export class ItineraryListingService {
     const logged_user_level = Number(u.roleID ?? u.roleId ?? u.role ?? 0) || 0;
     const input_staff_id = Number(u.staff_id ?? u.staffId ?? 0) || 0;
     const input_agent_id = Number(u.agent_id ?? u.agentId ?? 0) || 0;
+
+    if (logged_user_level === SystemRole.VEHICLE_AGENT) {
+      return { draw: query.draw || 1, recordsTotal: 0, recordsFiltered: 0, data: [] };
+    }
 
     const where: any = {
       deleted: 0,

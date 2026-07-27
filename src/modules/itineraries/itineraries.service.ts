@@ -1698,12 +1698,12 @@ private getGuideSlotLabel(slotId: number): string {
     return this.listingService.getAgentsForFilter(req);
   }
 
-  async getLocationsForFilter() {
-    return this.listingService.getLocationsForFilter();
+  async getLocationsForFilter(req?: any) {
+    return this.listingService.getLocationsForFilter(req);
   }
 
-  async getLocationsForLatestFilter(): Promise<{ value: string; label: string }[]> {
-    return this.listingService.getLocationsForLatestFilter();
+  async getLocationsForLatestFilter(req?: any): Promise<{ value: string; label: string }[]> {
+    return this.listingService.getLocationsForLatestFilter(req);
   }
 
   async getConfirmedItineraries(query: LatestItineraryQueryDto, req: any) {

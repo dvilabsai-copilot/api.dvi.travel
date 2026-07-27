@@ -63,6 +63,7 @@ import { ItineraryHotelBookingFulfillmentService } from './services/itinerary-ho
 import { ItineraryConfirmedPlanCopyService } from './services/itinerary-confirmed-plan-copy.service';
 import { ItineraryCancellationService } from './services/itinerary-cancellation.service';
 import { ItineraryListingService } from './services/itinerary-listing.service';
+import { ItineraryAccessService } from './services/itinerary-access.service';
 import { ItineraryVoucherReadService } from './services/itinerary-voucher-read.service';
 import { ItineraryManualHotspotMatrixService } from './services/itinerary-manual-hotspot-matrix.service';
 import { ItineraryManualHotspotPreviewService } from './services/itinerary-manual-hotspot-preview.service';
@@ -155,6 +156,7 @@ ItineraryRouteNormalizationService,
     ItineraryConfirmedPlanCopyService,
     ItineraryCancellationService,
     ItineraryListingService,
+    ItineraryAccessService,
     ItineraryVoucherReadService,
     ItineraryManualHotspotMatrixService,
     ItineraryManualHotspotPreviewService,

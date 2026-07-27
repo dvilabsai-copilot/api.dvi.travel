@@ -1,7 +1,8 @@
-import { Controller, Get, UseGuards, Req, Query } from '@nestjs/common';
+import { Controller, Get, UseGuards, Req, Query, ForbiddenException } from '@nestjs/common';
 import { ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { SystemRole } from '../auth/constants/system-role.constants';
 
 @ApiTags('Dashboard')
 @ApiBearerAuth()
@@ -35,38 +36,44 @@ async getDashboardStats(@Req() req: any) {
     user?.guideId ?? user?.guide_id ?? 0,
   );
  // Role 4 is Agent
-  if (role === 4) {
+  if (role === SystemRole.VEHICLE_AGENT) {
+    if (agentId <= 0) throw new ForbiddenException('Vehicle agent account is not linked to an active agent.');
+    return this.dashboardService.getVehicleAgentDashboardStats(agentId);
+  }
+
+  if (role === SystemRole.AGENT) {
     return this.dashboardService.getAgentDashboardStats(agentId);
   }
 
  // Role 6 is Accounts
-  if (role === 6) {
+  if (role === SystemRole.ACCOUNTS) {
     return this.dashboardService.getAccountsDashboardStats();
   }
 
  // Role 2 is Vendor
-  if (role === 2 || vendorId > 0) {
+  if (role === SystemRole.VENDOR || vendorId > 0) {
     return this.dashboardService.getVendorDashboardStats(vendorId);
   }
 
  // Role 5 is Guide
-  if (role === 5 || guideId > 0) {
+  if (role === SystemRole.GUIDE || guideId > 0) {
     return this.dashboardService.getGuideDashboardStats(guideId);
   }
 
  // Role 3 is Staff.
  // Staff must receive the same complete dashboard response as Admin.
-  if (role === 3) {
+  if (role === SystemRole.STAFF) {
     return this.dashboardService.getDashboardStats();
   }
 
  // Role 8 retains the limited Travel Expert dashboard.
-  if (role === 8) {
+  if (role === SystemRole.TRAVEL_EXPERT) {
     return this.dashboardService.getTravelExpertDashboardStats(staffId);
   }
 
  // Admin and other permitted internal users use the full dashboard.
-  return this.dashboardService.getDashboardStats();
+  if (role === SystemRole.ADMIN) return this.dashboardService.getDashboardStats();
+  throw new ForbiddenException('This role does not have dashboard access.');
 }
   @UseGuards(JwtAuthGuard)
   @Get('most-visited-hotels')

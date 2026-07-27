@@ -78,6 +78,7 @@ import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryBookingConfirmationEmailNotifierService } from './services/itinerary-booking-confirmation-email-notifier.service';
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
+import { ItineraryAccessService } from './services/itinerary-access.service';
 
 @ApiTags('Itineraries')
 @ApiBearerAuth()
@@ -108,6 +109,7 @@ private readonly itineraryPdfService: ItineraryPdfService,
 private readonly bookingConfirmationEmailNotifier: ItineraryBookingConfirmationEmailNotifierService,
 private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
 private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
+private readonly itineraryAccessService: ItineraryAccessService,
   ) {}
 
   private parseClipboardGroupTypes(query: Record<string, any>): number[] {
@@ -135,8 +137,14 @@ private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerServ
     return unique.filter((v) => v >= 1 && v <= 4);
   }
 
+  private denyItineraryAccess(redirectTo: string): never {
+    throw new ForbiddenException({
+      message: 'You are not authorized to access this itinerary.',
+      redirectTo,
+    });
+  }
+
   @Get('clipboard/:quoteId')
-  @Public()
   @ApiOperation({
     summary: 'Generate clipboard HTML for recommended mode',
     description: 'PHP-parity clipboard output for recommended itinerary content',
@@ -144,7 +152,16 @@ private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerServ
   async getClipboardRecommended(
     @Param('quoteId') quoteId: string,
     @Query() query: Record<string, any>,
+    @Req() req: Request,
   ) {
+    const access = await this.itineraryAccessService.getQuoteAccessDecision(
+      quoteId,
+      (req as any).user,
+    );
+    if (!access.exists || !access.allowed) {
+      return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
+    }
+
     const groupTypes = this.parseClipboardGroupTypes(query);
     return this.clipboardService.generateClipboardByQuoteId(
       quoteId,
@@ -154,7 +171,6 @@ private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerServ
   }
 
   @Get('clipboard-highlights/:quoteId')
-  @Public()
   @ApiOperation({
     summary: 'Generate clipboard HTML for highlights mode',
     description: 'PHP-parity clipboard output for highlights itinerary content',
@@ -162,7 +178,16 @@ private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerServ
   async getClipboardHighlights(
     @Param('quoteId') quoteId: string,
     @Query() query: Record<string, any>,
+    @Req() req: Request,
   ) {
+    const access = await this.itineraryAccessService.getQuoteAccessDecision(
+      quoteId,
+      (req as any).user,
+    );
+    if (!access.exists || !access.allowed) {
+      return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
+    }
+
     const groupTypes = this.parseClipboardGroupTypes(query);
     return this.clipboardService.generateClipboardByQuoteId(
       quoteId,
@@ -172,7 +197,6 @@ private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerServ
   }
 
   @Get('clipboard-para/:quoteId')
-  @Public()
   @ApiOperation({
     summary: 'Generate clipboard HTML for paragraph mode',
     description: 'PHP-parity clipboard output for paragraph itinerary content',
@@ -180,7 +204,16 @@ private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerServ
   async getClipboardPara(
     @Param('quoteId') quoteId: string,
     @Query() query: Record<string, any>,
+    @Req() req: Request,
   ) {
+    const access = await this.itineraryAccessService.getQuoteAccessDecision(
+      quoteId,
+      (req as any).user,
+    );
+    if (!access.exists || !access.allowed) {
+      return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
+    }
+
     const groupTypes = this.parseClipboardGroupTypes(query);
     return this.clipboardService.generateClipboardByQuoteId(
       quoteId,
@@ -396,9 +429,15 @@ private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerServ
   @ApiOkResponse({ description: 'Full itinerary details for the given quoteId' })
   async getItineraryDetails(
     @Param('quoteId') quoteId: string,
+    @Req() req: Request,
     @Query('groupType') groupType?: string,
-    @Req() req?: Request,
   ) {
+    const access = await this.itineraryAccessService.getQuoteAccessDecision(
+      quoteId,
+      (req as any).user,
+    );
+    if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
+
     const groupTypeNum = groupType !== undefined ? Number(groupType) : undefined;
     return this.detailsService.getItineraryDetails(
       quoteId,
@@ -660,8 +699,8 @@ private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerServ
 
   @Get('latest/locations')
   @ApiOperation({ summary: 'Get origin/destination locations from latest itineraries' })
-  async getLatestLocations() {
-    return this.svc.getLocationsForLatestFilter();
+  async getLatestLocations(@Req() req: Request) {
+    return this.svc.getLocationsForLatestFilter(req);
   }
 
   @Delete('hotspot/:planId/:routeId/:hotspotId')
@@ -801,7 +840,9 @@ private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerServ
   @ApiOkResponse({ type: HotelArrivalPolicyResponseDto })
   async resolveHotelArrivalPolicy(
     @Body() body: HotelArrivalPolicyRequestDto,
+    @Req() req: Request,
   ): Promise<HotelArrivalPolicyResponseDto> {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
     return this.arrivalHotelPolicyService.resolvePolicy(body);
   }
 
@@ -1048,7 +1089,9 @@ async getAvailableActivities(
     },
   })
   @ApiOkResponse({ description: 'Hotel selected successfully' })
-  async selectHotel(@Body() body: any) {
+  async selectHotel(@Body() body: any, @Req() req: Request) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
     return this.svc.selectHotel(body);
   }
 
@@ -1085,7 +1128,9 @@ async getAvailableActivities(
     },
   })
   @ApiOkResponse({ description: 'All hotels saved successfully' })
-  async bulkSaveHotels(@Body() body: { planId: number; hotels: any[] }) {
+  async bulkSaveHotels(@Body() body: { planId: number; hotels: any[] }, @Req() req: Request) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
     return this.svc.bulkSaveHotels(body.planId, body.hotels);
   }
 
@@ -1103,7 +1148,8 @@ async getAvailableActivities(
     },
   })
   @ApiOkResponse({ description: 'Vehicle vendor selected successfully' })
-  async selectVehicleVendor(@Body() body: any) {
+  async selectVehicleVendor(@Body() body: any, @Req() req: Request) {
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
     return this.svc.selectVehicleVendor(body);
   }
 
@@ -1122,7 +1168,8 @@ async getAvailableActivities(
     },
   })
   @ApiOkResponse({ description: 'Vehicle slab selected and pricing recalculated successfully' })
-  async selectVehicleSlab(@Body() body: any) {
+  async selectVehicleSlab(@Body() body: any, @Req() req: Request) {
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
     return this.svc.selectVehicleSlab(body);
   }
 
@@ -1139,7 +1186,8 @@ async getAvailableActivities(
     },
   })
   @ApiOkResponse({ description: 'Vehicle slabs auto-selected and pricing recalculated successfully' })
-  async autoSelectVehicleSlabs(@Body() body: any) {
+  async autoSelectVehicleSlabs(@Body() body: any, @Req() req: Request) {
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
     return this.svc.autoSelectVehicleSlabs(body);
   }
 
@@ -1167,6 +1215,7 @@ async getAvailableActivities(
     @Param('planId', ParseIntPipe) planId: number,
     @Req() req?: Request,
   ) {
+    await this.itineraryAccessService.assertCanEditPlan(planId, (req as any)?.user);
     return this.svc.triggerVehicleBuild(planId, req);
   }
 
@@ -1178,6 +1227,7 @@ async getAvailableActivities(
     @Param('planId', ParseIntPipe) planId: number,
     @Req() req?: Request,
   ) {
+    await this.itineraryAccessService.assertCanEditPlan(planId, (req as any)?.user);
     return this.svc.triggerVehicleBuild(planId, req);
   }
 
@@ -1209,7 +1259,16 @@ async getAvailableActivities(
   @ApiOkResponse({
     description: 'Returns plan, routes, and vehicles for editing in the form',
   })
-  async getPlanForEdit(@Param('id', ParseIntPipe) id: number) {
+  async getPlanForEdit(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request,
+  ) {
+    const access = await this.itineraryAccessService.getPlanAccessDecision(
+      id,
+      (req as any).user,
+    );
+    if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
+
     return this.svc.getPlanForEdit(id);
   }
 
@@ -1278,7 +1337,6 @@ async exportToExcel(
     return this.svc.checkWalletBalance(agentId);
   }
 
-  @Public()
   @Post('hotels/prebook')
   @ApiOperation({ summary: 'Prebook selected hotels before final quotation confirmation' })
   async prebookHotels(
@@ -1288,17 +1346,22 @@ async exportToExcel(
       hotel_bookings: any[];
       endUserIp?: string;
     },
+    @Req() req: Request,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.itinerary_plan_ID), (req as any).user);
     return this.svc.prebookHotels(body);
   }
 
-  @Public()
   @Post(':planId/hotels/stay-extension-preview')
   @ApiOperation({ summary: 'Preview continuous multi-night hotel booking for STAAH and AxisRooms' })
   async previewHotelStayExtension(
     @Param('planId', ParseIntPipe) planId: number,
     @Body() body: StayExtensionPreviewDto,
+    @Req() req: Request,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(planId, (req as any).user);
     return this.hotelStayBlockValidationService.previewStayExtension({
       planId,
       routeId: Number(body.routeId),
@@ -1313,7 +1376,6 @@ async exportToExcel(
     });
   }
 
- @Public()
 @Post('confirm-quotation')
 @ApiOperation({
   summary:
@@ -1330,6 +1392,8 @@ async confirmQuotation(
   @Body() dto: ConfirmQuotationDto,
   @Req() req: Request,
 ) {
+  this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+  await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_ID), (req as any).user);
   const baseResult =
     await this.svc.confirmQuotation(dto);
 
@@ -1413,7 +1477,10 @@ async confirmQuotation(
   async previewHotelSelectionCost(
     @Param('planId', ParseIntPipe) planId: number,
     @Body() body: { selections?: Record<string, any> | any[]; groupType?: number },
+    @Req() req: Request,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanViewPlan(planId, (req as any).user);
     return this.detailsService.previewHotelSelectionCost({
       planId,
       selections: body?.selections || {},
@@ -1474,8 +1541,8 @@ async confirmQuotation(
   @Get('confirmed/locations')
   @ApiOperation({ summary: 'Get origin/destination locations from confirmed itineraries' })
   @ApiOkResponse({ description: 'Returns unique locations from arrival and departure' })
-  async getConfirmedLocations() {
-    return this.svc.getLocationsForFilter();
+  async getConfirmedLocations(@Req() req: Request) {
+    return this.svc.getLocationsForFilter(req);
   }
 
   @Get('confirmed/:confirmedId')
@@ -1488,10 +1555,17 @@ async confirmQuotation(
     example: 31,
     description: 'Confirmed Plan ID'
   })
-  @Public()
   async getConfirmedItineraryDetails(
     @Param('confirmedId', ParseIntPipe) confirmedId: number,
+    @Req() req: Request,
   ) {
+    const access =
+      await this.itineraryAccessService.getConfirmedPlanAccessDecision(
+        confirmedId,
+        (req as any).user,
+      );
+    if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
+
     return this.svc.getConfirmedItineraryDetails(confirmedId);
   }
 
@@ -1575,7 +1649,10 @@ async confirmQuotation(
   @ApiOperation({ summary: 'Get all cancellation policies for itinerary hotels' })
   async getAllHotelCancellationPolicies(
     @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Req() req: Request,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanViewPlan(itineraryPlanId, (req as any).user);
     return this.hotelVoucherService.getAllCancellationPolicies(itineraryPlanId);
   }
 
@@ -1584,7 +1661,10 @@ async confirmQuotation(
   async getHotelCancellationPolicies(
     @Param('id', ParseIntPipe) itineraryPlanId: number,
     @Param('hotelId', ParseIntPipe) hotelId: number,
+    @Req() req: Request,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanViewPlan(itineraryPlanId, (req as any).user);
     return this.hotelVoucherService.getHotelCancellationPolicies(itineraryPlanId, hotelId);
   }
 
@@ -1595,6 +1675,8 @@ async confirmQuotation(
     @Body() dto: AddCancellationPolicyDto,
     @Req() req: any,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(itineraryPlanId, (req as any).user);
     const userId = Number(req.user?.userId ?? 1);
     return this.hotelVoucherService.addCancellationPolicy(
       { ...dto, itineraryPlanId },
@@ -1605,8 +1687,12 @@ async confirmQuotation(
   @Delete(':id/hotel-vouchers/cancellation-policies/:policyId')
   @ApiOperation({ summary: 'Delete a cancellation policy' })
   async deleteCancellationPolicy(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
     @Param('policyId', ParseIntPipe) policyId: number,
+    @Req() req: Request,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(itineraryPlanId, (req as any).user);
     return this.hotelVoucherService.deleteCancellationPolicy(policyId);
   }
 
@@ -1617,6 +1703,8 @@ async confirmQuotation(
     @Body() dto: CreateVoucherDto,
     @Req() req: any,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(itineraryPlanId, (req as any).user);
     const userId = Number(req.user?.userId ?? 1);
     return this.hotelVoucherService.createHotelVouchers(
       { ...dto, itineraryPlanId },
@@ -1631,6 +1719,8 @@ async confirmQuotation(
     @Body() dto: CancelHotelVouchersDto,
     @Req() req: any,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(itineraryPlanId, (req as any).user);
     const userId = Number(req.user?.userId ?? 1);
     return this.hotelVoucherService.cancelHotelsForItinerary(
       itineraryPlanId,
@@ -1641,7 +1731,12 @@ async confirmQuotation(
 
   @Get(':id/hotel-vouchers/default-terms')
   @ApiOperation({ summary: 'Get default voucher terms from global settings' })
-  async getDefaultVoucherTerms() {
+  async getDefaultVoucherTerms(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Req() req: Request,
+  ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanViewPlan(itineraryPlanId, (req as any).user);
     return { terms: await this.hotelVoucherService.getDefaultVoucherTerms() };
   }
 
@@ -1650,7 +1745,10 @@ async confirmQuotation(
   async getHotelVoucher(
     @Param('id', ParseIntPipe) itineraryPlanId: number,
     @Param('hotelId', ParseIntPipe) hotelId: number,
+    @Req() req: Request,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanViewPlan(itineraryPlanId, (req as any).user);
     return this.hotelVoucherService.getHotelVoucher(itineraryPlanId, hotelId);
   }
 
@@ -1658,7 +1756,9 @@ async confirmQuotation(
   @ApiOperation({ summary: 'Get all cancellation policies for itinerary vehicles' })
   async getAllVehicleCancellationPolicies(
     @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Req() req: Request,
   ) {
+    await this.itineraryAccessService.assertCanViewPlan(itineraryPlanId, (req as any).user);
     return this.vehicleVoucherService.getAllCancellationPolicies(itineraryPlanId);
   }
 
@@ -1668,7 +1768,9 @@ async confirmQuotation(
     @Param('id', ParseIntPipe) itineraryPlanId: number,
     @Param('vendorId', ParseIntPipe) vendorId: number,
     @Param('vendorVehicleTypeId', ParseIntPipe) vendorVehicleTypeId: number,
+    @Req() req: Request,
   ) {
+    await this.itineraryAccessService.assertCanViewPlan(itineraryPlanId, (req as any).user);
     return this.vehicleVoucherService.getVehicleCancellationPolicies(
       itineraryPlanId,
       vendorId,
@@ -1683,6 +1785,7 @@ async confirmQuotation(
     @Body() dto: AddVehicleCancellationPolicyDto,
     @Req() req: any,
   ) {
+    await this.itineraryAccessService.assertCanEditPlan(itineraryPlanId, (req as any).user);
     const userId = Number(req.user?.userId ?? 1);
     return this.vehicleVoucherService.addCancellationPolicy(
       { ...dto, itineraryPlanId },
@@ -1693,8 +1796,11 @@ async confirmQuotation(
   @Delete(':id/vehicle-vouchers/cancellation-policies/:policyId')
   @ApiOperation({ summary: 'Delete a vehicle cancellation policy' })
   async deleteVehicleCancellationPolicy(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
     @Param('policyId', ParseIntPipe) policyId: number,
+    @Req() req: Request,
   ) {
+    await this.itineraryAccessService.assertCanEditPlan(itineraryPlanId, (req as any).user);
     return this.vehicleVoucherService.deleteCancellationPolicy(policyId);
   }
 
@@ -1705,6 +1811,7 @@ async confirmQuotation(
     @Body() dto: CreateVehicleVoucherDto,
     @Req() req: any,
   ) {
+    await this.itineraryAccessService.assertCanEditPlan(itineraryPlanId, (req as any).user);
     const userId = Number(req.user?.userId ?? 1);
     return this.vehicleVoucherService.createVehicleVouchers(
       { ...dto, itineraryPlanId },
@@ -1714,7 +1821,8 @@ async confirmQuotation(
 
   @Get(':id/vehicle-vouchers/default-terms')
   @ApiOperation({ summary: 'Get default vehicle voucher terms from global settings' })
-  async getDefaultVehicleVoucherTerms() {
+  async getDefaultVehicleVoucherTerms(@Param('id', ParseIntPipe) itineraryPlanId: number, @Req() req: Request) {
+    await this.itineraryAccessService.assertCanViewPlan(itineraryPlanId, (req as any).user);
     return { terms: await this.vehicleVoucherService.getDefaultVoucherTerms() };
   }
 
@@ -1723,7 +1831,9 @@ async confirmQuotation(
   async getVehicleVoucher(
     @Param('id', ParseIntPipe) itineraryPlanId: number,
     @Param('vendorEligibleId', ParseIntPipe) vendorEligibleId: number,
+    @Req() req: Request,
   ) {
+    await this.itineraryAccessService.assertCanViewPlan(itineraryPlanId, (req as any).user);
     return this.vehicleVoucherService.getVehicleVoucher(itineraryPlanId, vendorEligibleId);
   }
 
@@ -1733,7 +1843,9 @@ async confirmQuotation(
     @Param('id', ParseIntPipe) itineraryPlanId: number,
     @Param('vendorEligibleId', ParseIntPipe) vendorEligibleId: number,
     @Body() dto: UpdateVehicleVoucherConfirmationDto,
+    @Req() req: Request,
   ) {
+    await this.itineraryAccessService.assertCanEditPlan(itineraryPlanId, (req as any).user);
     return this.vehicleVoucherService.updateVehicleVoucherConfirmation(
       itineraryPlanId,
       vendorEligibleId,
@@ -2188,7 +2300,9 @@ async confirmQuotation(
   @ApiQuery({ name: 'hotel_id', required: true, type: Number })
   @ApiQuery({ name: 'group_type', required: true, type: Number })
   @ApiOkResponse({ type: HotelRoomCategoriesListResponseDto })
-  async getHotelRoomCategories(@Query() query: GetHotelRoomCategoriesDto) {
+  async getHotelRoomCategories(@Query() query: GetHotelRoomCategoriesDto, @Req() req: Request) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanViewPlan(Number(query.itinerary_plan_id), (req as any).user);
  // Parse and validate group_type
     const groupType = Number(query.group_type);
     if (!groupType || groupType < 1 || groupType > 4) {
@@ -2207,7 +2321,9 @@ async confirmQuotation(
   @Post('hotel-rooms/update-category')
   @ApiOperation({ summary: 'Update room category selection' })
   @ApiBody({ type: UpdateRoomCategoryDto })
-  async updateRoomCategory(@Body() dto: UpdateRoomCategoryDto) {
+  async updateRoomCategory(@Body() dto: UpdateRoomCategoryDto, @Req() req: Request) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_id), (req as any).user);
     return this.svc.updateRoomCategory({
       itinerary_plan_hotel_room_details_ID: dto.itinerary_plan_hotel_room_details_ID,
       itinerary_plan_hotel_details_ID: dto.itinerary_plan_hotel_details_ID,
@@ -2238,9 +2354,15 @@ async confirmQuotation(
   })
   async findOne(
     @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request,
     @Query('groupType') groupType?: string,
-    @Req() req?: Request,
   ) {
+    const access = await this.itineraryAccessService.getPlanAccessDecision(
+      id,
+      (req as any).user,
+    );
+    if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
+
     const groupTypeNum = groupType ? Number(groupType) : undefined;
     return this.detailsService.findOne(id, groupTypeNum, (req as any)?.user?.role);
   }
