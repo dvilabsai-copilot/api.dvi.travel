@@ -63,6 +63,7 @@ import { ItineraryHotelBookingFulfillmentService } from './services/itinerary-ho
 import { ItineraryConfirmedPlanCopyService } from './services/itinerary-confirmed-plan-copy.service';
 import { ItineraryCancellationService } from './services/itinerary-cancellation.service';
 import { ItineraryListingService } from './services/itinerary-listing.service';
+import { ItineraryAccessService } from './services/itinerary-access.service';
 import { ItineraryVoucherReadService } from './services/itinerary-voucher-read.service';
 import { ItineraryManualHotspotMatrixService } from './services/itinerary-manual-hotspot-matrix.service';
 import { ItineraryManualHotspotPreviewService } from './services/itinerary-manual-hotspot-preview.service';
@@ -114,6 +115,7 @@ import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.ser
 import { ItineraryHotelApprovalService } from './services/itinerary-hotel-approval.service';
 import { ItineraryHotelApprovalController } from './itinerary-hotel-approval.controller';
 import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
+import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 
 @Module({
   imports: [HotelsModule, RouteVehicleRestrictionsModule],
@@ -155,6 +157,7 @@ ItineraryRouteNormalizationService,
     ItineraryConfirmedPlanCopyService,
     ItineraryCancellationService,
     ItineraryListingService,
+    ItineraryAccessService,
     ItineraryVoucherReadService,
     ItineraryManualHotspotMatrixService,
     ItineraryManualHotspotPreviewService,
@@ -204,6 +207,7 @@ ItineraryRouteNormalizationService,
     ItineraryActivityTimingPolicyService,
     OfflineHotelCatalogService,
     ItineraryHotelApprovalService,
+    HotelAvailabilitySnapshotService,
     TransportEarlyArrivalValidationService,
 
  // existing engines you already had
