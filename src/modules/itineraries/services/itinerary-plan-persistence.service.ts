@@ -371,6 +371,19 @@ export class ItineraryPlanPersistenceService {
       });
  console.log('[PERF] rebuildViaRoutes:', Date.now() - opStart2, 'ms');
 
+ // Via routes are part of the permit location chain, so permits must be
+ // rebuilt after the via-route rows have been persisted.
+      opStart2 = Date.now();
+      await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
+      stepStartedAt = this.logItineraryApiTiming({
+        api: 'save_basic_info',
+        step: 'permit_calculation_after_via_routes',
+        startedAt: apiStartedAt,
+        stepStartedAt,
+        planId,
+      });
+ console.log('[PERF] rebuildPermitChargesAfterViaRoutes:', Date.now() - opStart2, 'ms');
+
       opStart2 = Date.now();
       await this.planEngine.updateNoOfRoutes(planId, tx);
  console.log('[PERF] updateNoOfRoutes:', Date.now() - opStart2, 'ms');
@@ -576,22 +589,7 @@ export class ItineraryPlanPersistenceService {
       };
  }, { timeout: 120000, maxWait: 20000 }); // Increased to 120s while we optimize further
 
-    if (isFullBasicInfoRebuildType) {
-      createPlanStage = 'post_transaction_cross_day_optimizer';
-      try {
-        await this.applySameCityCrossDayOptimizerAfterSave(
-          result.planId,
-          String(result?.quoteId || ''),
-        );
-      } catch (optimizerError) {
- console.error('[ItinerariesService] same-city cross-day optimizer failed (continuing createPlan response):', {
-          planId: result.planId,
-          message: String((optimizerError as any)?.message || optimizerError || 'Unknown optimizer error'),
-        });
-      }
-    }
-
- // Rebuild parking charges AFTER final route/hotspot/optimizer state.
+ // Rebuild parking charges AFTER routes and hotspots
     createPlanStage = 'post_transaction_parking_rebuild';
     let postStart = Date.now();
     try {
@@ -615,42 +613,24 @@ export class ItineraryPlanPersistenceService {
     const shouldBuildVehicles =
       Number(dto?.plan?.itinerary_preference || 0) === 2 ||
       Number(dto?.plan?.itinerary_preference || 0) === 3;
-    let vehicleBuildResult: Awaited<ReturnType<ItineraryVehicleBuildService['buildVehiclesSynchronously']>> | null = null;
 
     if (shouldBuildVehicles) {
       createPlanStage = 'post_transaction_vehicle_build_sync';
-      const vehicleBuildStartedAt = Date.now();
-      const vehicleBuildRunId = this.vehicleBuildService.createBuildRunId(result.planId);
-      try {
-        vehicleBuildResult = await this.vehicleBuildService.buildVehiclesSynchronously(
-          result.planId,
-          Array.isArray(dto.vehicles) ? dto.vehicles : [],
-          userId,
-          result?.quoteId ? String(result.quoteId) : undefined,
-          { buildRunId: vehicleBuildRunId },
-        );
-      } catch (vehicleBuildError: any) {
-        const isBuildInProgress = vehicleBuildError instanceof ConflictException ||
-          String(vehicleBuildError?.response?.code || '').toUpperCase() === 'VEHICLE_BUILD_IN_PROGRESS';
- console.error('[ItinerariesService] Awaited vehicle build failed after itinerary commit', {
-           planId: result.planId,
-           buildRunId: vehicleBuildRunId,
-           message: String(vehicleBuildError?.message || vehicleBuildError || 'Vehicle build failed'),
-         });
-        throw new UnprocessableEntityException({
-          message: isBuildInProgress
-            ? 'Itinerary saved, but vehicle pricing is already running. Retry vehicle pricing after the current build completes.'
-            : 'Itinerary saved, but vehicle pricing failed. Retry vehicle pricing explicitly for this itinerary.',
+      const buildRunId = this.vehicleBuildService.createBuildRunId(result.planId);
+      await this.vehicleBuildService.startRecord(result.planId, buildRunId, userId);
+      void this.vehicleBuildService.buildVehiclesSynchronously(
+        result.planId,
+        Array.isArray(dto.vehicles) ? dto.vehicles : [],
+        userId,
+        result?.quoteId ? String(result.quoteId) : undefined,
+        { buildRunId },
+      ).catch((error) => {
+ console.error('[ItinerariesService] Background vehicle build failed:', {
           planId: result.planId,
-          quoteId: String(result?.quoteId || ''),
-          creationStatus: 'PARTIAL',
-          code: isBuildInProgress ? 'VEHICLE_BUILD_IN_PROGRESS' : 'VEHICLE_BUILD_FAILED',
-          vehicleBuild: {
-            status: isBuildInProgress ? 'IN_PROGRESS' : 'FAILED',
-            buildRunId: vehicleBuildRunId,
-          },
+          message: String(error?.message || error || 'Unknown vehicle build error'),
+          buildRunId,
         });
-      }
+      });
       stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
         step: 'vehicle_details_lookup_and_sync_build',
@@ -659,7 +639,21 @@ export class ItineraryPlanPersistenceService {
         planId: result.planId,
         quoteId: String(result?.quoteId || ''),
       });
- console.log('[PERF] awaitedVehicleBuild:', Date.now() - vehicleBuildStartedAt, 'ms');
+    }
+
+    if (isFullBasicInfoRebuildType) {
+      createPlanStage = 'post_transaction_cross_day_optimizer';
+      try {
+        await this.applySameCityCrossDayOptimizerAfterSave(
+          result.planId,
+          String(result?.quoteId || ''),
+        );
+      } catch (optimizerError) {
+ console.error('[ItinerariesService] same-city cross-day optimizer failed (continuing createPlan response):', {
+          planId: result.planId,
+          message: String((optimizerError as any)?.message || optimizerError || 'Unknown optimizer error'),
+        });
+      }
     }
 
  // Step 10: Persist a reusable template snapshot for this itinerary shape.
@@ -686,17 +680,7 @@ export class ItineraryPlanPersistenceService {
       ...result,
       routeFamilyBaseQuoteId: parsedRouteFamilyQuote?.baseQuoteId ?? null,
       routeVariantIndex: parsedRouteFamilyQuote?.routeVariantIndex ?? null,
-      vehicleBuild: vehicleBuildResult
-        ? {
-            status: vehicleBuildResult.status.status,
-            buildRunId: vehicleBuildResult.buildRunId,
-            durationMs: vehicleBuildResult.durationMs,
-            requestedVehicleTypeCount: vehicleBuildResult.status.requestedVehicleTypeCount,
-            usableVehicleDetailCount: vehicleBuildResult.status.usableVehicleDetailCount,
-            selectedVehicleTypeCount: vehicleBuildResult.status.selectedVehicleTypeCount,
-            requiredSelectionCount: vehicleBuildResult.status.requiredSelectionCount,
-          }
-        : undefined,
+      vehicleBuildStatus: shouldBuildVehicles ? 'PROCESSING' : undefined,
     };
     } catch (error: any) {
       const message = String(error?.message || error || 'Unknown createPlan failure');
