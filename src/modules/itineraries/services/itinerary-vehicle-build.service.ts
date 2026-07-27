@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { RouteEngineService } from '../engines/route-engine.service';
 import { VehiclesEngineService } from '../engines/vehicles-engine.service';
@@ -7,19 +7,16 @@ import { getVehicleRateAvailability } from '../utils/vehicle-rate-availability.u
 import {
   ItineraryVehicleBuildStatusService,
   VehicleBuildState,
+  VehicleBuildStatus,
 } from './itinerary-vehicle-build-status.service';
-import {
-  buildVehiclePricingState,
-  type VehiclePricingState,
-} from '../utils/vehicle-pricing-state.util';
 
 export type VehicleBuildStageTiming = {
   stage: string;
   durationMs: number;
 };
 
-export type VehicleBuildExecutionResult = {
-  status: VehiclePricingState;
+type VehicleBuildExecutionResult = {
+  status: VehicleBuildStatus;
   buildRunId: string;
   startedAt: string;
   finishedAt: string;
@@ -57,10 +54,14 @@ export class ItineraryVehicleBuildService {
     await this.statusService.startRecord(planId, buildRunId, userId);
   }
 
+  async getStatus(planId: number): Promise<VehicleBuildStatus> {
+    return this.statusService.getStatus(planId);
+  }
+
   private async finishRecord(
     planId: number,
     buildRunId: string,
-    status: Extract<VehicleBuildState, 'READY' | 'FAILED' | 'NOT_REQUIRED'>,
+    status: Extract<VehicleBuildState, 'READY' | 'FAILED'>,
     error: string | null,
   ): Promise<void> {
     await this.statusService.finishRecord(planId, buildRunId, status, error);
@@ -71,16 +72,19 @@ export class ItineraryVehicleBuildService {
     vehicles: Array<{ vehicle_type_id: number; vehicle_count: number }>,
     userId: number,
     quoteId?: string,
-    options?: { buildRunId?: string },
+    options?: { buildRunId?: string; skipPermitBuild?: boolean },
   ): Promise<VehicleBuildExecutionResult> {
     const debugVehicleTrace =
       process.env.DEBUG_DVI20260594_INSERT === 'true' ||
       process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
     const buildRunId = String(options?.buildRunId || this.createBuildRunId(planId));
+    const scheduleCount = this.statusService.incrementScheduleCount(planId);
     if (debugVehicleTrace) {
       const shortStack = (new Error().stack || '').split('\n').slice(1, 5).join(' | ');
  console.log('[SYNC_VEHICLE_BUILD_CALL]', { planId, timestamp: new Date().toISOString(), shortStack });
+ console.log('[SCHEDULE_VEHICLE_BUILD_COUNT]', { planId, count: scheduleCount });
     }
+    this.statusService.setStatus(planId, 'PROCESSING', null, buildRunId);
     if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
  console.log('[VEHICLE_BUILD_START]', {
         planId,
@@ -91,7 +95,6 @@ export class ItineraryVehicleBuildService {
       });
     }
 
-    let recordFinished = false;
     try {
       const jobStart = Date.now();
       const startedAtIso = new Date(jobStart).toISOString();
@@ -124,7 +127,8 @@ export class ItineraryVehicleBuildService {
           ),
       );
 
-      await runStage(
+      if (!options?.skipPermitBuild) {
+        await runStage(
           'permit_building',
           30000,
           () =>
@@ -134,7 +138,8 @@ export class ItineraryVehicleBuildService {
               },
               { timeout: 60000, maxWait: 20000 },
             ),
-      );
+        );
+      }
 
       await runStage(
         'rebuild_eligible_vendor_list',
@@ -143,6 +148,11 @@ export class ItineraryVehicleBuildService {
           this.itineraryVehiclesEngine.rebuildEligibleVendorList({
             planId,
             createdBy: userId,
+            beforeVehicleDetailsBuild: options?.skipPermitBuild
+              ? undefined
+              : async ({ tx }) => {
+                  await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
+                },
           }),
       );
 
@@ -154,56 +164,23 @@ export class ItineraryVehicleBuildService {
         );
       }
 
-      const requestedVehicleTypeCount = new Set(
-        vehicles
-          .map((vehicle) => Number(vehicle?.vehicle_type_id || 0))
-          .filter((vehicleTypeId) => vehicleTypeId > 0),
-      ).size;
-      const selectedRows = await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
-        where: {
-          itinerary_plan_id: planId,
-          status: 1,
-          deleted: 0,
-          itineary_plan_assigned_status: 1,
-        },
-        select: { vehicle_type_id: true },
-      });
-      const usableVehicleDetailCount = await this.prisma.dvi_itinerary_plan_vendor_vehicle_details.count({
-        where: {
-          itinerary_plan_id: planId,
-          status: 1,
-          deleted: 0,
-          itinerary_plan_vendor_eligible_ID: { gt: 0 },
-          vehicle_type_id: { gt: 0 },
-          total_vehicle_amount: { gt: 0 },
-        },
-      });
-      const finalStatus = buildVehiclePricingState({
-        requiresVehicles: requestedVehicleTypeCount > 0,
-        requestedVehicleTypeIds: vehicles.map((vehicle) => Number(vehicle.vehicle_type_id || 0)),
-        usableVehicleDetailCount,
-        selectedVehicleTypeIds: selectedRows.map((row) => Number(row.vehicle_type_id || 0)),
-      });
-      if (finalStatus.status !== 'READY' && finalStatus.status !== 'NOT_REQUIRED') {
-        const failureMessage = finalStatus.failureReason || 'Vehicle pricing did not produce a complete persisted selection';
+      const finalStatus = await this.getStatus(planId);
+      if (!finalStatus.hasUsableVehicleDetails) {
+        const failureMessage =
+          finalStatus.requestedVehicleCount > 0
+            ? 'Vehicle build completed without usable vehicle pricing rows'
+            : 'Vehicle build completed without requested vehicle rows';
         await this.finishRecord(planId, buildRunId, 'FAILED', failureMessage);
-        recordFinished = true;
         throw new Error(failureMessage);
       }
 
-      await this.finishRecord(
-        planId,
-        buildRunId,
-        finalStatus.status === 'NOT_REQUIRED' ? 'NOT_REQUIRED' : 'READY',
-        null,
-      );
-      recordFinished = true;
+      await this.finishRecord(planId, buildRunId, 'READY', null);
       if (debugVehicleTrace) {
  console.log('[SYNC_VEHICLE_BUILD_DONE]', { planId, durationMs: Date.now() - jobStart });
       }
  console.log('[PERF] syncVehicleBuild total:', Date.now() - jobStart, 'ms', 'planId=', planId);
       return {
-        status: finalStatus,
+        status: await this.getStatus(planId),
         buildRunId,
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
@@ -212,9 +189,7 @@ export class ItineraryVehicleBuildService {
       };
     } catch (error: any) {
       const message = String(error?.message || error || 'Vehicle build failed');
-      if (!recordFinished) {
-        await this.finishRecord(planId, buildRunId, 'FAILED', message);
-      }
+      await this.finishRecord(planId, buildRunId, 'FAILED', message);
       if (debugVehicleTrace) {
  console.log('[SYNC_VEHICLE_BUILD_FAILED]', { planId, error: message });
       }
@@ -232,19 +207,22 @@ export class ItineraryVehicleBuildService {
     vehicles: Array<{ vehicle_type_id: number; vehicle_count: number }>,
     userId: number,
     quoteId?: string,
-    options?: { buildRunId?: string },
-  ): Promise<VehicleBuildExecutionResult> {
-    const buildRunId = String(options?.buildRunId || this.createBuildRunId(planId));
-    // Creation and explicit rebuilds must not queue behind another build and
-    // then start a second rebuild after the first one releases the lock.
-    // MySQL GET_LOCK(..., 0) gives us a bounded, cross-process fail-fast guard.
-    return this.statusService.withPlanBuildLock(planId, async () => {
-      await this.startRecord(planId, buildRunId, userId);
-      return this.executeVehicleBuild(planId, vehicles, userId, quoteId, {
-        ...options,
-        buildRunId,
-      });
-    }, 0);
+    options?: { buildRunId?: string; skipPermitBuild?: boolean },
+  ): Promise<VehicleBuildStatus> {
+    const result = await this.executeVehicleBuild(planId, vehicles, userId, quoteId, options);
+    return result.status;
+  }
+
+  private isTransientVehicleBuildFailure(error: any): boolean {
+    const message = String(error?.message || error || '');
+    return (
+      message === 'Vehicle build completed without usable vehicle pricing rows' ||
+      message === 'Vehicle build completed without requested vehicle rows'
+    );
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async runStageWithTimeout<T>(
@@ -253,12 +231,8 @@ export class ItineraryVehicleBuildService {
     work: () => Promise<T>,
     timeoutMs: number,
   ): Promise<T> {
-    // This is an observation deadline, not hard cancellation: Prisma/MySQL work
-    // already sent to the database cannot be cancelled from this promise. The
-    // caller drains the work before releasing the plan advisory lock.
     const startedAt = Date.now();
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const workPromise = work();
 
     try {
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -267,21 +241,13 @@ export class ItineraryVehicleBuildService {
         }, timeoutMs);
       });
 
-      const result = await Promise.race([workPromise, timeoutPromise]);
+      const result = await Promise.race([work(), timeoutPromise]);
  console.log('[VEHICLE_BUILD_STAGE_DONE]', {
         planId,
         stage,
         durationMs: Date.now() - startedAt,
       });
       return result as T;
-    } catch (error) {
-      // Prisma work cannot be cancelled once sent to MySQL. Drain the
-      // underlying promise before releasing the per-plan advisory lock so a
-      // timed-out stage cannot overlap a subsequent rebuild.
-      if (timer) {
-        await workPromise.catch(() => undefined);
-      }
-      throw error;
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -366,7 +332,6 @@ export class ItineraryVehicleBuildService {
       }
     } catch (autoAssignErr) {
  console.error('[ItinerariesService] Auto-select lowest vendor failed:', autoAssignErr);
-      throw autoAssignErr;
     }
   }
 
@@ -392,9 +357,38 @@ export class ItineraryVehicleBuildService {
     };
   }
 
+  async buildPermitsSync(planId: number, req: any): Promise<{
+    planId: number;
+    status: 'READY';
+    stage: 'permit_building';
+    durationMs: number;
+    startedAt: string;
+    finishedAt: string;
+  }> {
+    const normalizedPlanId = Number(planId || 0);
+    if (!normalizedPlanId) throw new BadRequestException('planId is required');
+    const userId = Number(((req as any)?.user ?? {}).userId ?? 1);
+    const startedAtMs = Date.now();
+    const startedAt = new Date(startedAtMs).toISOString();
+
+    await this.prisma.$transaction(
+      async (tx) => this.routeEngine.rebuildPermitCharges(tx, normalizedPlanId, userId),
+      { timeout: 60000, maxWait: 20000 },
+    );
+
+    return {
+      planId: normalizedPlanId,
+      status: 'READY',
+      stage: 'permit_building',
+      durationMs: Date.now() - startedAtMs,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    };
+  }
+
   async buildVehiclesSync(planId: number, req: any): Promise<{
     planId: number;
-    status: VehiclePricingState['status'];
+    status: VehicleBuildState;
     stage: 'vehicle_building';
     buildRunId: string;
     durationMs: number;
@@ -408,35 +402,72 @@ export class ItineraryVehicleBuildService {
     const { quoteId, vehicles } = await this.getPlanContext(normalizedPlanId);
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
-    return this.statusService.withPlanBuildLock(normalizedPlanId, async () => {
-      const buildRunId = this.createBuildRunId(normalizedPlanId);
-      await this.startRecord(normalizedPlanId, buildRunId, userId);
+    let buildRunId = this.createBuildRunId(normalizedPlanId);
+    await this.startRecord(normalizedPlanId, buildRunId, userId);
 
-      let result: VehicleBuildExecutionResult;
-      try {
-        result = await this.executeVehicleBuild(normalizedPlanId, vehicles, userId, quoteId, {
-          buildRunId,
-        });
-      } catch (error: any) {
-        throw new UnprocessableEntityException({
-          message: 'Vehicle pricing failed. Retry vehicle pricing explicitly for this itinerary.',
-          planId: normalizedPlanId,
-          creationStatus: 'PARTIAL',
-          vehicleBuild: { status: 'FAILED', buildRunId },
-        });
-      }
-
-      return {
+    let result: VehicleBuildExecutionResult;
+    try {
+      result = await this.executeVehicleBuild(normalizedPlanId, vehicles, userId, quoteId, {
+        buildRunId,
+        skipPermitBuild: false,
+      });
+    } catch (error: any) {
+      if (!this.isTransientVehicleBuildFailure(error)) throw error;
+ console.warn('[ItinerariesService] Retrying sync vehicle build after transient failure', {
         planId: normalizedPlanId,
-        status: result.status.status,
-        stage: 'vehicle_building',
-        buildRunId: result.buildRunId,
-        durationMs: result.durationMs,
-        startedAt: result.startedAt,
-        finishedAt: result.finishedAt,
-        timings: result.timings,
-      };
-    }, 0);
+        buildRunId,
+        message: String(error?.message || error || 'Vehicle build failed'),
+      });
+      await this.sleep(1000);
+      const statusAfterWait = await this.getStatus(normalizedPlanId);
+      if (statusAfterWait.hasUsableVehicleDetails) {
+        return {
+          planId: normalizedPlanId,
+          status: statusAfterWait.status,
+          stage: 'vehicle_building',
+          buildRunId: statusAfterWait.buildRunId || buildRunId,
+          durationMs: Date.now() - startedAtMs,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          timings: [],
+        };
+      }
+      buildRunId = this.createBuildRunId(normalizedPlanId);
+      await this.startRecord(normalizedPlanId, buildRunId, userId);
+      result = await this.executeVehicleBuild(normalizedPlanId, vehicles, userId, quoteId, {
+        buildRunId,
+        skipPermitBuild: false,
+      });
+    }
+
+    return {
+      planId: normalizedPlanId,
+      status: result.status.status,
+      stage: 'vehicle_building',
+      buildRunId: result.buildRunId,
+      durationMs: result.durationMs,
+      startedAt: result.startedAt,
+      finishedAt: result.finishedAt,
+      timings: result.timings,
+    };
   }
 
+  async triggerVehicleBuild(planId: number, req: any): Promise<VehicleBuildStatus> {
+    const normalizedPlanId = Number(planId || 0);
+    if (!normalizedPlanId) throw new BadRequestException('planId is required');
+    const userId = Number(((req as any)?.user ?? {}).userId ?? 1);
+    const { quoteId, vehicles } = await this.getPlanContext(normalizedPlanId);
+    const buildRunId = this.createBuildRunId(normalizedPlanId);
+    await this.startRecord(normalizedPlanId, buildRunId, userId);
+
+    void this.buildVehiclesSynchronously(normalizedPlanId, vehicles, userId, quoteId, { buildRunId }).catch((error) => {
+ console.error('[ItinerariesService] triggerVehicleBuild failed:', {
+        planId: normalizedPlanId,
+        message: String(error?.message || error || 'Vehicle build failed'),
+        buildRunId,
+      });
+    });
+
+    return this.getStatus(normalizedPlanId);
+  }
 }

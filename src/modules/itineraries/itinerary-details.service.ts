@@ -25,10 +25,6 @@ import {
 import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-vehicle-km.service';
 import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
-import {
-  buildVehiclePricingState,
-  type VehiclePricingState,
-} from './utils/vehicle-pricing-state.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -431,7 +427,6 @@ days: {
 
  // VEHICLES
   vehicles: ItineraryVehicleRowDto[];
-  vehiclePricingState: VehiclePricingState;
   vehicleRateAvailability?: Array<{
     vehicleTypeId: number;
     vehicleTypeName: string;
@@ -3964,50 +3959,8 @@ sightseeingDistance, // local sightseeing separately
 
     const shouldIncludeVehicles = itineraryPreference === 2 || itineraryPreference === 3;
 
-  // ------------------------------ VEHICLES ------------------------------
-    const requestedVehicleRows = shouldIncludeVehicles
-      ? await this.prisma.dvi_itinerary_plan_vehicle_details.findMany({
-          where: { itinerary_plan_id: planId, status: 1, deleted: 0 },
-          select: { vehicle_type_id: true, vehicle_count: true },
-        })
-      : [];
-    const requestedVehicleTypeIds = new Set(
-      requestedVehicleRows
-        .filter((row) => Number(row.vehicle_count || 0) > 0)
-        .map((row) => Number(row.vehicle_type_id || 0))
-        .filter((id) => id > 0),
-    );
-    const persistedUsableVehicleDetailCount = shouldIncludeVehicles
-      ? await this.prisma.dvi_itinerary_plan_vendor_vehicle_details.count({
-          where: {
-            itinerary_plan_id: planId,
-            status: 1,
-            deleted: 0,
-            itinerary_plan_vendor_eligible_ID: { gt: 0 },
-            vehicle_type_id: { gt: 0 },
-            total_vehicle_amount: { gt: 0 },
-          },
-        })
-      : 0;
-    let latestVehicleBuildAudit: { build_run_id: string | null; status: string; error: string | null } | null = null;
-    if (shouldIncludeVehicles) {
-      try {
-        latestVehicleBuildAudit = await this.prisma.dvi_itinerary_vehicle_build_status.findFirst({
-          where: { itinerary_plan_id: planId },
-          orderBy: { id: 'desc' },
-          select: { build_run_id: true, status: true, error: true },
-        });
-      } catch (auditError) {
-        // Audit history is optional metadata; persisted vehicle rows remain the
-        // readiness authority even if the history table is temporarily unavailable.
-        console.warn('[ItineraryDetails] Vehicle build audit lookup failed; continuing with persisted readiness', {
-          planId,
-          message: String((auditError as any)?.message || auditError || 'Unknown audit lookup failure'),
-        });
-      }
-    }
-
-  // PHP displays vehicles directly from dvi_itinerary_plan_vendor_eligible_list
+ // ------------------------------ VEHICLES ------------------------------
+ // PHP displays vehicles directly from dvi_itinerary_plan_vendor_eligible_list
  // Each row in eligible list is already aggregated per vendor/branch/type/origin
     const rawEligibleRows = shouldIncludeVehicles
       ? await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
@@ -4167,9 +4120,8 @@ sightseeingDistance, // local sightseeing separately
         status,
         deleted
       FROM dvi_itinerary_plan_vendor_vehicle_details
-       WHERE itinerary_plan_id = ${planId}
-         AND status = 1
-         AND deleted = 0
+      WHERE itinerary_plan_id = ${planId}
+        AND deleted = 0
         AND itinerary_plan_vendor_eligible_ID IN (${allEligibleIds.join(",")})
       ORDER BY itinerary_route_date ASC
     `) as any[]
@@ -4197,23 +4149,7 @@ sightseeingDistance, // local sightseeing separately
       );
     });
 
-    const selectedVehicleTypeIds = new Set(
-      rawEligibleRows
-        .filter((row: any) => Number(row?.itineary_plan_assigned_status || 0) === 1)
-        .map((row: any) => Number(row?.vehicle_type_id || 0))
-        .filter((id: number) => id > 0),
-    );
-    const vehiclePricingState = buildVehiclePricingState({
-      requiresVehicles: shouldIncludeVehicles,
-      requestedVehicleTypeIds,
-      usableVehicleDetailCount: Number(persistedUsableVehicleDetailCount || 0),
-      selectedVehicleTypeIds,
-      latestBuildStatus: latestVehicleBuildAudit?.status,
-      latestBuildRunId: latestVehicleBuildAudit?.build_run_id,
-      latestFailureReason: latestVehicleBuildAudit?.error,
-    });
-
-  // Group vehicle details by eligible ID to sum KMs
+ // Group vehicle details by eligible ID to sum KMs
     const vehicleDetailsByEligible = new Map<number, any[]>();
     for (const vd of vehicleDetailsRows) {
       const eligibleId = (vd as any).itinerary_plan_vendor_eligible_ID;
@@ -6076,7 +6012,6 @@ guestFoodPreferenceName: guestFoodPreference,
       days,
 
       vehicles: visibleVehicles,
-      vehiclePricingState,
       vehicleRateAvailability,
       packageIncludes: {
         description: '',
