@@ -8,7 +8,6 @@ import {
   redactVehicleCostBreakdowns,
 } from './utils/itinerary-cost-visibility.util';
 import { resolveItineraryPreference } from './utils/itinerary-preference.util';
-import { Request } from 'express';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 import { calculateRouteTollCharges, getEffectiveTimeLimitKm } from './engines/vehicle-calculation.helpers';
@@ -64,12 +63,23 @@ function roundCurrency(value: number): number {
 }
 
 function buildVehicleOfferKey(row: any): string {
+  const assignedEligibleId =
+    Number(row?.itineary_plan_assigned_status || 0) === 1
+      ? Number(
+          row?.itinerary_plan_vendor_eligible_ID || 0,
+        )
+      : 0;
+
   return [
     Number(row?.vendor_id || 0),
     Number(row?.vendor_branch_id || 0),
     Number(row?.vehicle_type_id || 0),
+    Number(row?.vendor_vehicle_type_id || 0),
+    assignedEligibleId,
     normalizeVehicleOfferText(row?.vehicle_orign),
-    normalizeVehicleOfferAmount(row?.vehicle_grand_total),
+    normalizeVehicleOfferAmount(
+      row?.vehicle_grand_total,
+    ),
   ].join('|');
 }
 
@@ -185,10 +195,13 @@ export interface ItineraryVehicleRowDto {
   vehicleRegistrationNumber?: string | null;
   vehicleRegistrationStateCode?: string | null;
   vehicleRegistrationStateName?: string | null;
-  vendorEligibleId?: number;
-  vehicleTypeId?: number;
-  vehicleTypeName?: string;
-  isAssigned?: boolean;
+ vendorEligibleId?: number;
+vendorId?: number;
+vendorBranchId?: number;
+vendorVehicleTypeId?: number;
+vehicleTypeId?: number;
+vehicleTypeName?: string;
+isAssigned?: boolean;
   rateAvailable?: boolean;
   missingRateTypes?: Array<'Local' | 'Outstation'>;
   rateAvailabilityMessage?: string | null;
@@ -345,6 +358,17 @@ export interface CostBreakdownDto {
   companyName: string;
 }
 
+export type VehicleSelectionSourceDto =
+  | "auto"
+  | "manual";
+
+export interface VehicleSelectionDto {
+  vehicleTypeId: number;
+  selectedVendorEligibleId: number | null;
+  assignedVendorEligibleIds: number[];
+  selectionSource: VehicleSelectionSourceDto;
+}
+
 // NOTE: Hotel fields removed hotels come from a separate endpoint now.
 export interface ItineraryDetailsResponseDto {
   quoteId: string;
@@ -426,9 +450,10 @@ days: {
   segments: any[];
 }[]; // already shaped for FE (Start/Travel/Attraction/Return)
 
- // VEHICLES
-  vehicles: ItineraryVehicleRowDto[];
-  vehicleRateAvailability?: Array<{
+// VEHICLES
+vehicles: ItineraryVehicleRowDto[];
+vehicleSelections: VehicleSelectionDto[];
+vehicleRateAvailability?: Array<{
     vehicleTypeId: number;
     vehicleTypeName: string;
     message: string;
@@ -5292,10 +5317,23 @@ sightseeingDistance, // local sightseeing separately
           vehicleRegistrationStateCode
             ? permitStateByCode.get(vehicleRegistrationStateCode)?.state_name || null
             : null,
-        vendorEligibleId: eligible.itinerary_plan_vendor_eligible_ID,
-        vehicleTypeId: vehicleTypeId,
-        vehicleTypeName: vehicleTypeNameMap.get(vehicleTypeId) || 'Unknown Vehicle Type',
-        isAssigned: (eligible as any).itineary_plan_assigned_status === 1,
+      vendorEligibleId:
+  eligible.itinerary_plan_vendor_eligible_ID,
+vendorId: Number(
+  (eligible as any).vendor_id || 0,
+),
+vendorBranchId: Number(
+  (eligible as any).vendor_branch_id || 0,
+),
+vendorVehicleTypeId: Number(
+  (eligible as any).vendor_vehicle_type_id || 0,
+),
+vehicleTypeId,
+vehicleTypeName:
+  vehicleTypeNameMap.get(vehicleTypeId) ||
+  "Unknown Vehicle Type",
+isAssigned:
+  (eligible as any).itineary_plan_assigned_status === 1,
         rateAvailable: rateAvailability.available,
         missingRateTypes: rateAvailability.missingRateTypes,
         rateAvailabilityMessage,
@@ -5445,42 +5483,198 @@ sightseeingDistance, // local sightseeing separately
       startedAt: apiStartedAt,
       stepStartedAt,
     });
+const persistedVehicleSelections = shouldIncludeVehicles
+  ? await (
+      this.prisma as any
+    ).dvi_itinerary_plan_vehicle_vendor_selection.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        status: 1,
+        deleted: 0,
+      },
+    })
+  : [];
 
- // Normalize assignment in the API response so each vehicle type marks the
- // lowest displayed amount as selected, even if the DB carries an older choice.
-    const vehiclesByTypeForSelection = new Map<number, any[]>();
-    for (const vehicle of vehicles as any[]) {
-      const vehicleTypeId = Number(vehicle?.vehicleTypeId || 0);
-      if (!vehicleTypeId) continue;
+const persistedSelectionByType =
+  new Map<number, any>();
 
-      if (!vehiclesByTypeForSelection.has(vehicleTypeId)) {
-        vehiclesByTypeForSelection.set(vehicleTypeId, []);
-      }
+for (const selection of persistedVehicleSelections) {
+  persistedSelectionByType.set(
+    Number(selection.vehicle_type_id || 0),
+    selection,
+  );
+}
 
-      vehiclesByTypeForSelection.get(vehicleTypeId)!.push(vehicle);
+const requiredVehicleRowsForSelection =
+  shouldIncludeVehicles
+    ? await this.prisma.dvi_itinerary_plan_vehicle_details.findMany({
+        where: {
+          itinerary_plan_id: planId,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          vehicle_type_id: true,
+          vehicle_count: true,
+        },
+      })
+    : [];
+
+const requiredVehicleCountByType =
+  new Map<number, number>();
+
+for (const row of requiredVehicleRowsForSelection) {
+  const vehicleTypeId = Number(
+    row.vehicle_type_id || 0,
+  );
+
+  if (!vehicleTypeId) continue;
+
+  requiredVehicleCountByType.set(
+    vehicleTypeId,
+    (requiredVehicleCountByType.get(vehicleTypeId) || 0) +
+      Number(row.vehicle_count || 0),
+  );
+}
+
+const vehiclesByTypeForSelection =
+  new Map<number, any[]>();
+
+for (const vehicle of vehicles as any[]) {
+  const vehicleTypeId = Number(
+    vehicle?.vehicleTypeId || 0,
+  );
+
+  if (!vehicleTypeId) continue;
+
+  const rows =
+    vehiclesByTypeForSelection.get(vehicleTypeId) || [];
+
+  rows.push(vehicle);
+  vehiclesByTypeForSelection.set(
+    vehicleTypeId,
+    rows,
+  );
+}
+
+const vehicleSelections: VehicleSelectionDto[] = [];
+
+for (const [
+  vehicleTypeId,
+  rows,
+] of vehiclesByTypeForSelection.entries()) {
+  let assignedRows = rows.filter(
+    (row: any) => row?.isAssigned === true,
+  );
+
+  // Legacy fallback remains backend-only. The frontend must never
+  // decide which vendor is cheapest.
+  if (!assignedRows.length && rows.length > 0) {
+    const requiredCount = Math.max(
+      1,
+      Number(
+        requiredVehicleCountByType.get(vehicleTypeId) ||
+          1,
+      ),
+    );
+
+    assignedRows = [...rows]
+      .sort(
+        (a: any, b: any) =>
+          Number(
+            a?.grandTotal ??
+              a?.totalAmount ??
+              0,
+          ) -
+            Number(
+              b?.grandTotal ??
+                b?.totalAmount ??
+                0,
+            ) ||
+          Number(a?.vendorEligibleId || 0) -
+            Number(b?.vendorEligibleId || 0),
+      )
+      .slice(0, requiredCount);
+
+    for (const assignedRow of assignedRows) {
+      assignedRow.isAssigned = true;
     }
+  }
 
-    for (const rows of vehiclesByTypeForSelection.values()) {
-      const cheapest = rows.reduce((prev, curr) => {
-        const prevAmount = Number(prev?.grandTotal ?? prev?.totalAmount ?? 0);
-        const currAmount = Number(curr?.grandTotal ?? curr?.totalAmount ?? 0);
+  const persistedSelection =
+    persistedSelectionByType.get(vehicleTypeId);
 
-        if (currAmount < prevAmount) return curr;
+  const isManualSelection =
+  String(
+    persistedSelection?.selection_source || "",
+  ).toLowerCase() === "manual";
 
-        if (currAmount === prevAmount) {
-          return Number(curr?.vendorEligibleId || 0) < Number(prev?.vendorEligibleId || 0)
-            ? curr
-            : prev;
-        }
+const persistedSelectedEligibleId = Number(
+  persistedSelection?.selected_vendor_eligible_id || 0,
+);
 
-        return prev;
-      }, rows[0]);
+const manualAssignedRow = isManualSelection
+  ? (
+      assignedRows.find(
+        (row: any) =>
+          persistedSelectedEligibleId > 0 &&
+          Number(row.vendorEligibleId || 0) ===
+            persistedSelectedEligibleId,
+      ) ??
+      assignedRows.find(
+        (row: any) =>
+          Number(row.vendorId || 0) ===
+            Number(persistedSelection.vendor_id || 0) &&
+          Number(row.vendorBranchId || 0) ===
+            Number(
+              persistedSelection.vendor_branch_id || 0,
+            ) &&
+          Number(row.vendorVehicleTypeId || 0) ===
+            Number(
+              persistedSelection.vendor_vehicle_type_id || 0,
+            ) &&
+          Number(row.vehicleId || 0) ===
+            Number(persistedSelection.vehicle_id || 0),
+      )
+    )
+  : undefined;
 
-      for (const row of rows) {
-        row.isAssigned =
-          Number(row?.vendorEligibleId || 0) === Number(cheapest?.vendorEligibleId || 0);
-      }
-    }
+  const primaryAssignedRow =
+    manualAssignedRow ??
+    [...assignedRows].sort(
+      (a: any, b: any) =>
+        Number(
+          a?.grandTotal ??
+            a?.totalAmount ??
+            0,
+        ) -
+          Number(
+            b?.grandTotal ??
+              b?.totalAmount ??
+              0,
+          ) ||
+        Number(a?.vendorEligibleId || 0) -
+          Number(b?.vendorEligibleId || 0),
+    )[0];
+
+  vehicleSelections.push({
+    vehicleTypeId,
+    selectedVendorEligibleId:
+      primaryAssignedRow
+        ? Number(
+            primaryAssignedRow.vendorEligibleId || 0,
+          )
+        : null,
+    assignedVendorEligibleIds: assignedRows
+      .map((row: any) =>
+        Number(row.vendorEligibleId || 0),
+      )
+      .filter((id: number) => id > 0),
+    selectionSource: manualAssignedRow
+      ? "manual"
+      : "auto",
+  });
+}
 
  // 5) Total vehicle amount for footer: sum only ASSIGNED vehicles (itineary_plan_assigned_status = 1)
  // This matches PHP behavior which filters by assigned status
@@ -5498,14 +5692,28 @@ sightseeingDistance, // local sightseeing separately
             0,
           );
 
-    const selectedVehicleRows = (vehicles as any[]).filter(
-      (vehicle: any) => vehicle?.isAssigned === true,
-    );
-    const hasRequiredVehicleSelection = !shouldIncludeVehicles || (
-      vehiclesByTypeForSelection.size > 0 &&
-      vehicleRateAvailability.length === 0 &&
-      selectedVehicleRows.length === vehiclesByTypeForSelection.size
-    );
+ const selectedVehicleRows = (vehicles as any[]).filter(
+  (vehicle: any) => vehicle?.isAssigned === true,
+);
+
+const assignedVehicleTypeIds = new Set(
+  selectedVehicleRows
+    .map((vehicle: any) =>
+      Number(vehicle?.vehicleTypeId || 0),
+    )
+    .filter((vehicleTypeId: number) =>
+      vehicleTypeId > 0,
+    ),
+);
+
+const hasRequiredVehicleSelection =
+  !shouldIncludeVehicles ||
+  (
+    vehiclesByTypeForSelection.size > 0 &&
+    vehicleRateAvailability.length === 0 &&
+    assignedVehicleTypeIds.size ===
+      vehiclesByTypeForSelection.size
+  );
 
  /**
      * KM warning should not sum every eligible vendor row.
@@ -6010,11 +6218,12 @@ guestFoodPreference: guestFoodPreference,
 guest_food_preference_name: guestFoodPreference,
 guestFoodPreferenceName: guestFoodPreference,
 
-      days,
+  days,
 
-      vehicles: visibleVehicles,
-      vehicleRateAvailability,
-      packageIncludes: {
+vehicles: visibleVehicles,
+vehicleSelections,
+vehicleRateAvailability,
+packageIncludes: {
         description: '',
         houseBoatNote: '',
         rateNote: '',
