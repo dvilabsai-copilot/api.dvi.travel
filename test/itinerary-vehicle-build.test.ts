@@ -12,16 +12,9 @@ function createService() {
   );
 }
 
-test('vehicle build permit sync preserves the required plan id validation', async () => {
+test('vehicle build sync preserves the required plan id validation', async () => {
   await assert.rejects(
-    () => createService().buildPermitsSync(0, {}),
-    /planId is required/,
-  );
-});
-
-test('vehicle build trigger preserves the required plan id validation', async () => {
-  await assert.rejects(
-    () => createService().triggerVehicleBuild(0, {}),
+    () => createService().buildVehiclesSync(0, {}),
     /planId is required/,
   );
 });
