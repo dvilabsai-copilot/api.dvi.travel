@@ -396,50 +396,58 @@ const manualVendorCandidates = exactManualCandidate
       continue;
     }
 
-    await (
-      tx as any
-    ).dvi_itinerary_plan_vehicle_vendor_selection.upsert({
-      where: {
-        itinerary_plan_id_vehicle_type_id: {
-          itinerary_plan_id: planId,
-          vehicle_type_id: vehicleTypeId,
-        },
-      },
-      create: {
+    const selectionWhere = {
+      itinerary_plan_id_vehicle_type_id: {
         itinerary_plan_id: planId,
         vehicle_type_id: vehicleTypeId,
-        selected_vendor_eligible_id: primaryEligibleId,
-        vendor_id: Number(primarySelection.vendor_id || 0),
-        vendor_branch_id: Number(
-          primarySelection.vendor_branch_id || 0,
-        ),
-        vendor_vehicle_type_id: Number(
-          primarySelection.vendor_vehicle_type_id || 0,
-        ),
-        vehicle_id: Number(primarySelection.vehicle_id || 0),
-        selection_source: "auto",
-        createdby: createdBy,
-        createdon: new Date(),
-        updatedon: new Date(),
-        status: 1,
-        deleted: 0,
       },
-      update: {
-        selected_vendor_eligible_id: primaryEligibleId,
-        vendor_id: Number(primarySelection.vendor_id || 0),
-        vendor_branch_id: Number(
-          primarySelection.vendor_branch_id || 0,
-        ),
-        vendor_vehicle_type_id: Number(
-          primarySelection.vendor_vehicle_type_id || 0,
-        ),
-        vehicle_id: Number(primarySelection.vehicle_id || 0),
-        selection_source: "auto",
-        updatedon: new Date(),
-        status: 1,
-        deleted: 0,
-      },
-    });
+    };
+    const selectionUpdateData = {
+      selected_vendor_eligible_id: primaryEligibleId,
+      vendor_id: Number(primarySelection.vendor_id || 0),
+      vendor_branch_id: Number(primarySelection.vendor_branch_id || 0),
+      vendor_vehicle_type_id: Number(
+        primarySelection.vendor_vehicle_type_id || 0,
+      ),
+      vehicle_id: Number(primarySelection.vehicle_id || 0),
+      selection_source: "auto",
+      updatedon: new Date(),
+      status: 1,
+      deleted: 0,
+    };
+
+    try {
+      await (
+        tx as any
+      ).dvi_itinerary_plan_vehicle_vendor_selection.upsert({
+        where: selectionWhere,
+        create: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: vehicleTypeId,
+          ...selectionUpdateData,
+          createdby: createdBy,
+          createdon: new Date(),
+        },
+        update: selectionUpdateData,
+      });
+    } catch (error: any) {
+      // Two itinerary-details requests can rebuild the same plan concurrently.
+      // If both try to create the auto row, MySQL can report a duplicate-key
+      // error even though the desired row already exists. Recover by updating
+      // the winner, while never overwriting a manual selection.
+      if (error?.code !== "P2002") throw error;
+
+      await (
+        tx as any
+      ).dvi_itinerary_plan_vehicle_vendor_selection.updateMany({
+        where: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: vehicleTypeId,
+          selection_source: { not: "manual" },
+        },
+        data: selectionUpdateData,
+      });
+    }
   }
 }
 
