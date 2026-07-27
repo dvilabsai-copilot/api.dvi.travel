@@ -368,6 +368,7 @@ export class AgentService {
         agent_gst_attachment: a.agent_gst_attachment ?? null,
         subscription_plan_id: a.subscription_plan_id ?? null,
         travel_expert_id: a.travel_expert_id ?? null,
+        roleID: user?.roleID ?? null,
         login_enabled,
 
         country_label: a.agent_country ? countryMap.get(a.agent_country) ?? null : null,
@@ -525,6 +526,7 @@ export class AgentService {
       agent_gst_attachment: a.agent_gst_attachment ?? null,
       subscription_plan_id: a.subscription_plan_id ?? null,
       travel_expert_id: a.travel_expert_id ?? null,
+      roleID: user?.roleID ?? null,
       login_enabled,
       total_cash_wallet: totalCashWallet,
       total_coupon_wallet: totalCouponWallet,

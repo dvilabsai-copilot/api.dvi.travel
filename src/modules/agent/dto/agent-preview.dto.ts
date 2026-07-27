@@ -12,6 +12,7 @@ export type AgentPreviewDto = {
   agent_gst_attachment: string | null;
   subscription_plan_id: number | null;
   travel_expert_id: number | null;
+  roleID?: number | null;
   login_enabled: boolean;
   total_cash_wallet?: number | null;
   total_coupon_wallet?: number | null;
