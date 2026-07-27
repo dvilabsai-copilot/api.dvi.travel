@@ -122,31 +122,109 @@ export function renderTransportVoucherHtml(
       .map((item) => `<li>${safeText(truncateWithEllipsis(item, 62))}</li>`)
       .join('');
 
-  const renderVehicleCard = (vehicle: TransportVoucherDetails['vehicles'][number]) => `
-    <div class="vehicle-row">
-      <div class="vehicle-image-panel">
+  const renderVehicleCard = (
+  vehicle: TransportVoucherDetails['vehicles'][number],
+) => `
+  <div class="vehicle-row">
+    <div
+      class="vehicle-summary-grid"
+      style="
+        width:100%;
+        flex:1;
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+      "
+    >
+      <div class="vehicle-summary">
+        <div class="vehicle-name">
+          ${safeText(
+            truncateWithEllipsis(
+              vehicle.type || 'Vehicle',
+              40,
+            ),
+          )}
+        </div>
+
+        <div class="vehicle-mini-line">
+          Vehicle No.:
+          ${safeText(
+            truncateWithEllipsis(
+              vehicle.vehicleNo,
+              40,
+            ),
+          )}
+        </div>
+
+        <div class="vehicle-mini-line">
+          Seating:
+          ${safeText(
+            truncateWithEllipsis(
+              vehicle.seatingCapacity,
+              30,
+            ),
+          )}
+        </div>
+
         ${
-          assets.vehicleImageDataUri
-            ? `<img src="${assets.vehicleImageDataUri}" alt="${safeText(vehicle.type || 'Vehicle')}">`
-            : `<div class="vehicle-image-fallback"><div class="fallback-car-shape"></div><div class="vehicle-placeholder-subtitle">${safeText(truncateWithEllipsis(vehicle.type || vehicleType, 30))}</div></div>`
+          vehicle.vendorName
+            ? `
+              <div class="vehicle-mini-line">
+                Vendor:
+                ${safeText(
+                  truncateWithEllipsis(
+                    vehicle.vendorName,
+                    40,
+                  ),
+                )}
+              </div>
+            `
+            : ''
         }
       </div>
-      <div class="vehicle-summary-grid">
-        <div class="vehicle-summary">
-          <div class="vehicle-name">${safeText(truncateWithEllipsis(vehicle.type, 28))}</div>
-          <div class="vehicle-mini-line">Vehicle No.: ${safeText(truncateWithEllipsis(vehicle.vehicleNo, 24))}</div>
-          <div class="vehicle-mini-line">Seating: ${safeText(truncateWithEllipsis(vehicle.seatingCapacity, 22))}</div>
-          ${vehicle.vendorName ? `<div class="vehicle-mini-line">Vendor: ${safeText(truncateWithEllipsis(vehicle.vendorName, 26))}</div>` : ''}
+
+      <div class="vehicle-summary">
+        <div class="vehicle-mini-line">
+          AC:
+          ${safeText(
+            truncateWithEllipsis(
+              vehicle.ac,
+              20,
+            ),
+          )}
         </div>
-        <div class="vehicle-summary">
-          <div class="vehicle-mini-line">AC: ${safeText(truncateWithEllipsis(vehicle.ac, 12))}</div>
-          <div class="vehicle-mini-line">Luggage: ${safeText(truncateWithEllipsis(vehicle.luggageSpace, 18))}</div>
-          <div class="vehicle-mini-line">Insurance: ${safeText(truncateWithEllipsis(vehicle.insurance, 24))}</div>
-          ${vehicle.qty && vehicle.qty > 1 ? `<div class="vehicle-mini-line">Qty: ${safeText(vehicle.qty)}</div>` : ''}
+
+        <div class="vehicle-mini-line">
+          Luggage:
+          ${safeText(
+            truncateWithEllipsis(
+              vehicle.luggageSpace,
+              30,
+            ),
+          )}
         </div>
+
+        <div class="vehicle-mini-line">
+          Insurance:
+          ${safeText(
+            truncateWithEllipsis(
+              vehicle.insurance,
+              40,
+            ),
+          )}
+        </div>
+
+        ${
+          vehicle.qty && vehicle.qty > 1
+            ? `
+              <div class="vehicle-mini-line">
+                Qty: ${safeText(vehicle.qty)}
+              </div>
+            `
+            : ''
+        }
       </div>
     </div>
-  `;
+  </div>
+`;
 
   return `<!DOCTYPE html>
 <html lang="en">
