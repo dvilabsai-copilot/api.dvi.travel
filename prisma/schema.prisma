@@ -4307,6 +4307,29 @@ model dvi_itinerary_plan_vendor_eligible_list {
   @@index([vendor_vehicle_type_id], map: "idx_itinerary_plan_vendor_eligible_list_vendor_vehicle_type_id")
 }
 
+model dvi_itinerary_plan_vehicle_vendor_selection {
+  itinerary_plan_vehicle_vendor_selection_ID Int       @id @default(autoincrement())
+  itinerary_plan_id                          Int
+  vehicle_type_id                            Int
+  selected_vendor_eligible_id                Int?
+  vendor_id                                  Int
+  vendor_branch_id                           Int
+  vendor_vehicle_type_id                     Int
+  vehicle_id                                 Int       @default(0)
+  selection_source                           String    @default("auto") @db.VarChar(10)
+  createdby                                  Int       @default(0)
+  createdon                                  DateTime? @db.DateTime(0)
+  updatedon                                  DateTime? @db.DateTime(0)
+  status                                     Int       @default(1) @db.TinyInt
+  deleted                                    Int       @default(0) @db.TinyInt
+
+  @@unique([itinerary_plan_id, vehicle_type_id], map: "uq_itinerary_vehicle_vendor_selection")
+  @@index([itinerary_plan_id], map: "idx_vehicle_vendor_selection_plan")
+  @@index([vehicle_type_id], map: "idx_vehicle_vendor_selection_type")
+  @@index([vendor_id], map: "idx_vehicle_vendor_selection_vendor")
+  @@index([selection_source], map: "idx_vehicle_vendor_selection_source")
+}
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model dvi_itinerary_plan_vendor_vehicle_details {
   itinerary_plan_vendor_vehicle_details_ID Int       @id @default(autoincrement())

@@ -15,7 +15,7 @@ import {
 } from "./vehicle-calculation.helpers";
 import { timeStringToPrismaTime } from "../utils/itinerary.utils";
 import { filterActiveVendorCandidateRows } from "../utils/active-vendor-candidate.util";
-
+import { getVehicleRateAvailability } from "../utils/vehicle-rate-availability.util";
 function toNum(v: any) {
   const n = typeof v === "number" ? v : Number(String(v ?? "").trim());
   return Number.isFinite(n) ? n : 0;
@@ -119,6 +119,337 @@ export class ItineraryVehiclesEngine {
  // LOGGING
  // ---------------------------------------------------------------------------
   private writeLog(_line: string) {}
+
+private async applyFinalVehicleAssignments(
+  tx: any,
+  planId: number,
+  requiredCountByType: Map<number, number>,
+  createdBy: number,
+): Promise<void> {
+  const persistedSelections = await (
+    tx as any
+  ).dvi_itinerary_plan_vehicle_vendor_selection.findMany({
+    where: {
+      itinerary_plan_id: planId,
+      status: 1,
+      deleted: 0,
+    },
+  });
+
+  const persistedSelectionByType = new Map<number, any>();
+
+  for (const selection of persistedSelections) {
+    persistedSelectionByType.set(
+      Number(selection.vehicle_type_id || 0),
+      selection,
+    );
+  }
+
+  for (const [
+    vehicleTypeId,
+    requestedVehicleCount,
+  ] of requiredCountByType.entries()) {
+    await (
+      tx as any
+    ).dvi_itinerary_plan_vendor_eligible_list.updateMany({
+      where: {
+        itinerary_plan_id: planId,
+        vehicle_type_id: vehicleTypeId,
+        status: 1,
+        deleted: 0,
+      },
+      data: {
+        itineary_plan_assigned_status: 0,
+      },
+    });
+
+    const candidateRows = await (
+      tx as any
+    ).dvi_itinerary_plan_vendor_eligible_list.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        vehicle_type_id: vehicleTypeId,
+        vehicle_grand_total: { gt: 0 },
+        status: 1,
+        deleted: 0,
+      },
+      orderBy: [
+        { vehicle_grand_total: "asc" },
+        { itinerary_plan_vendor_eligible_ID: "asc" },
+      ],
+    });
+
+    if (!candidateRows.length) {
+      continue;
+    }
+
+    const candidateIds = candidateRows
+      .map((row: any) =>
+        Number(row.itinerary_plan_vendor_eligible_ID || 0),
+      )
+      .filter((id: number) => id > 0);
+
+    const detailRows = candidateIds.length
+      ? await tx.$queryRawUnsafe(`
+          SELECT
+            itinerary_plan_vendor_eligible_ID,
+            travel_type,
+            total_pickup_km,
+            total_running_km,
+            total_siteseeing_km,
+            total_drop_km,
+            vehicle_rental_charges
+          FROM dvi_itinerary_plan_vendor_vehicle_details
+          WHERE itinerary_plan_id = ${Number(planId)}
+            AND deleted = 0
+            AND itinerary_plan_vendor_eligible_ID IN (
+              ${candidateIds.join(",")}
+            )
+        `)
+      : [];
+
+    const detailRowsByEligibleId = new Map<number, any[]>();
+
+    for (const detail of detailRows as any[]) {
+      const eligibleId = Number(
+        detail.itinerary_plan_vendor_eligible_ID || 0,
+      );
+
+      const rows =
+        detailRowsByEligibleId.get(eligibleId) || [];
+
+      rows.push(detail);
+      detailRowsByEligibleId.set(eligibleId, rows);
+    }
+
+    const validCandidates = candidateRows.filter(
+      (candidate: any) => {
+        const eligibleId = Number(
+          candidate.itinerary_plan_vendor_eligible_ID || 0,
+        );
+
+        return getVehicleRateAvailability(
+          detailRowsByEligibleId.get(eligibleId) || [],
+        ).available;
+      },
+    );
+
+    if (!validCandidates.length) {
+      continue;
+    }
+
+    const persistedSelection =
+      persistedSelectionByType.get(vehicleTypeId);
+
+    const hasManualSelection =
+      String(
+        persistedSelection?.selection_source || "",
+      ).toLowerCase() === "manual";
+
+  const isPersistedManualVendor = (candidate: any) =>
+  hasManualSelection &&
+  Number(candidate.vendor_id || 0) ===
+    Number(persistedSelection.vendor_id || 0) &&
+  Number(candidate.vendor_branch_id || 0) ===
+    Number(persistedSelection.vendor_branch_id || 0) &&
+  Number(candidate.vendor_vehicle_type_id || 0) ===
+    Number(
+      persistedSelection.vendor_vehicle_type_id || 0,
+    );
+
+const isPersistedManualVehicle = (candidate: any) =>
+  isPersistedManualVendor(candidate) &&
+  Number(candidate.vehicle_id || 0) ===
+    Number(persistedSelection.vehicle_id || 0);
+
+const exactManualCandidate = validCandidates.find(
+  isPersistedManualVehicle,
+);
+
+const sameVendorCandidates = validCandidates
+  .filter((candidate: any) => {
+    if (!isPersistedManualVendor(candidate)) {
+      return false;
+    }
+
+    if (!exactManualCandidate) {
+      return true;
+    }
+
+    return (
+      Number(candidate.itinerary_plan_vendor_eligible_ID || 0) !==
+      Number(
+        exactManualCandidate.itinerary_plan_vendor_eligible_ID || 0,
+      )
+    );
+  })
+  .sort(
+    (a: any, b: any) =>
+      Number(a.vehicle_grand_total || 0) -
+        Number(b.vehicle_grand_total || 0) ||
+      Number(a.itinerary_plan_vendor_eligible_ID || 0) -
+        Number(b.itinerary_plan_vendor_eligible_ID || 0),
+  );
+
+const manualVendorCandidates = exactManualCandidate
+  ? [exactManualCandidate, ...sameVendorCandidates]
+  : sameVendorCandidates;
+
+    const otherCandidates = validCandidates
+      .filter(
+        (candidate: any) =>
+          !manualVendorCandidates.some(
+            (manualCandidate: any) =>
+              Number(
+                manualCandidate.itinerary_plan_vendor_eligible_ID ||
+                  0,
+              ) ===
+              Number(
+                candidate.itinerary_plan_vendor_eligible_ID || 0,
+              ),
+          ),
+      )
+      .sort(
+        (a: any, b: any) =>
+          Number(a.vehicle_grand_total || 0) -
+            Number(b.vehicle_grand_total || 0) ||
+          Number(a.itinerary_plan_vendor_eligible_ID || 0) -
+            Number(b.itinerary_plan_vendor_eligible_ID || 0),
+      );
+
+    const orderedCandidates =
+      manualVendorCandidates.length > 0
+        ? [...manualVendorCandidates, ...otherCandidates]
+        : [...otherCandidates];
+
+    const assignedRows = orderedCandidates.slice(
+      0,
+      Math.max(1, Number(requestedVehicleCount || 1)),
+    );
+
+    const assignedIds = assignedRows
+      .map((row: any) =>
+        Number(row.itinerary_plan_vendor_eligible_ID || 0),
+      )
+      .filter((id: number) => id > 0);
+
+    if (!assignedIds.length) {
+      continue;
+    }
+
+    await (
+      tx as any
+    ).dvi_itinerary_plan_vendor_eligible_list.updateMany({
+      where: {
+        itinerary_plan_vendor_eligible_ID: {
+          in: assignedIds,
+        },
+      },
+      data: {
+        itineary_plan_assigned_status: 1,
+      },
+    });
+
+    const primarySelection = assignedRows[0];
+    const primaryEligibleId = Number(
+      primarySelection.itinerary_plan_vendor_eligible_ID || 0,
+    );
+
+    if (manualVendorCandidates.length > 0) {
+      await (
+        tx as any
+      ).dvi_itinerary_plan_vehicle_vendor_selection.update({
+        where: {
+          itinerary_plan_id_vehicle_type_id: {
+            itinerary_plan_id: planId,
+            vehicle_type_id: vehicleTypeId,
+          },
+        },
+        data: {
+          selected_vendor_eligible_id: primaryEligibleId,
+          vehicle_id: Number(primarySelection.vehicle_id || 0),
+          updatedon: new Date(),
+        },
+      });
+
+      continue;
+    }
+
+    if (hasManualSelection) {
+      // Keep the stable manual preference for a future rebuild,
+      // but do not claim that it is the current assignment.
+      await (
+        tx as any
+      ).dvi_itinerary_plan_vehicle_vendor_selection.update({
+        where: {
+          itinerary_plan_id_vehicle_type_id: {
+            itinerary_plan_id: planId,
+            vehicle_type_id: vehicleTypeId,
+          },
+        },
+        data: {
+          selected_vendor_eligible_id: null,
+          updatedon: new Date(),
+        },
+      });
+
+      continue;
+    }
+
+    const selectionWhere = {
+      itinerary_plan_id_vehicle_type_id: {
+        itinerary_plan_id: planId,
+        vehicle_type_id: vehicleTypeId,
+      },
+    };
+    const selectionUpdateData = {
+      selected_vendor_eligible_id: primaryEligibleId,
+      vendor_id: Number(primarySelection.vendor_id || 0),
+      vendor_branch_id: Number(primarySelection.vendor_branch_id || 0),
+      vendor_vehicle_type_id: Number(
+        primarySelection.vendor_vehicle_type_id || 0,
+      ),
+      vehicle_id: Number(primarySelection.vehicle_id || 0),
+      selection_source: "auto",
+      updatedon: new Date(),
+      status: 1,
+      deleted: 0,
+    };
+
+    try {
+      await (
+        tx as any
+      ).dvi_itinerary_plan_vehicle_vendor_selection.upsert({
+        where: selectionWhere,
+        create: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: vehicleTypeId,
+          ...selectionUpdateData,
+          createdby: createdBy,
+          createdon: new Date(),
+        },
+        update: selectionUpdateData,
+      });
+    } catch (error: any) {
+      // Two itinerary-details requests can rebuild the same plan concurrently.
+      // If both try to create the auto row, MySQL can report a duplicate-key
+      // error even though the desired row already exists. Recover by updating
+      // the winner, while never overwriting a manual selection.
+      if (error?.code !== "P2002") throw error;
+
+      await (
+        tx as any
+      ).dvi_itinerary_plan_vehicle_vendor_selection.updateMany({
+        where: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: vehicleTypeId,
+          selection_source: { not: "manual" },
+        },
+        data: selectionUpdateData,
+      });
+    }
+  }
+}
 
   private escapeString(value: string): string {
     return value.replace(/'/g, "''");
@@ -334,10 +665,11 @@ export class ItineraryVehiclesEngine {
    *   1) dvi_itinerary_plan_vendor_eligible_list
    *   2) dvi_itinerary_plan_vendor_vehicle_details
    *
-   * Behaviour aligned with PHP `add_vehicle_plan`:
-   * - Build vendor eligibles
-   * - Mark cheapest per vehicle type as assigned
-   * - Build vendor_vehicle_details for ALL eligibles (not just assigned)
+ * Vehicle assignment behaviour:
+ * - Build vendor eligibles
+ * - Restore the persisted manual selection when valid
+ * - Otherwise assign the cheapest valid vehicle rows
+ * - Build vendor_vehicle_details for ALL eligibles
  */
   async rebuildEligibleVendorList(args: {
     planId: number;
@@ -1667,65 +1999,9 @@ export class ItineraryVehiclesEngine {
         data: resetData,
       });
 
-    for (const [planVehicleTypeId, requiredCount] of requiredCountByType.entries()) {
-      const picksWhere = {
-        itinerary_plan_id: planId,
-        vehicle_type_id: planVehicleTypeId,
-        vehicle_grand_total: { gt: 0 },
-        status: 1,
-        deleted: 0,
-      };
-      this.logSql(
-        "ELIGIBLE_SELECT_CHEAPEST",
-        this.buildSelectSql(
-          "dvi_itinerary_plan_vendor_eligible_list",
-          picksWhere,
-          `ORDER BY \`vehicle_grand_total\` ASC, \`itinerary_plan_vendor_eligible_ID\` ASC LIMIT ${Math.max(
-            0,
-            requiredCount,
-          )}`,
-        ),
-        { where: picksWhere },
-      );
-
-      const picks =
-        await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
-          where: picksWhere,
-          orderBy: [
-            { vehicle_grand_total: "asc" },
-            { itinerary_plan_vendor_eligible_ID: "asc" },
-          ],
-          take: Math.max(0, requiredCount),
-          select: { itinerary_plan_vendor_eligible_ID: true },
-        });
-
-      const ids = picks
-        .map((p: any) => Number(p.itinerary_plan_vendor_eligible_ID ?? 0))
-        .filter((x: any) => x > 0);
-
-      if (ids.length) {
-        const markWhere = {
-          itinerary_plan_vendor_eligible_ID: { in: ids },
-        };
-        const markData = { itineary_plan_assigned_status: 1 };
-        this.logSql(
-          "ELIGIBLE_MARK_ASSIGNED",
-          this.buildUpdateSql(
-            "dvi_itinerary_plan_vendor_eligible_list",
-            markData,
-            markWhere,
-          ),
-          { where: markWhere, data: markData },
-        );
-
-        const markRes =
-          await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
-            where: markWhere,
-            data: markData },
-        );
-      }
-    }
-
+    // Do not select the cheapest vendor here.
+// Final assignments are applied after all vehicle totals are recalculated,
+// so a persisted manual selection can be restored correctly.
     const cleanWhere = {
       itinerary_plan_id: planId,
       vehicle_type_id: { notIn: requiredVehicleTypeIds },
@@ -2780,51 +3056,20 @@ export class ItineraryVehiclesEngine {
     }
     stageStartedAt = logStageTiming('vehicle_detail_recalculate_eligible_totals', stageStartedAt);
 
- // Re-assign cheapest vendors AFTER final totals update.
- // Earlier assignment can be based on provisional totals before toll/permit recalculation.
-    for (const [planVehicleTypeId, requiredCount] of requiredCountByType.entries()) {
-      await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
-        where: {
-          itinerary_plan_id: planId,
-          vehicle_type_id: planVehicleTypeId,
-          status: 1,
-          deleted: 0,
-        },
-        data: { itineary_plan_assigned_status: 0 },
-      });
+// Apply the persisted manual vendor selection after final vehicle totals
+// are recalculated. Cheapest valid vendors are used only when no valid
+// manual selection exists.
+await this.applyFinalVehicleAssignments(
+  tx,
+  planId,
+  requiredCountByType,
+  createdBy,
+);
 
-      const finalPicks = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
-        where: {
-          itinerary_plan_id: planId,
-          vehicle_type_id: planVehicleTypeId,
-          vehicle_grand_total: { gt: 0 },
-          status: 1,
-          deleted: 0,
-        },
-        orderBy: [
-          { vehicle_grand_total: "asc" },
-          { itinerary_plan_vendor_eligible_ID: "asc" },
-        ],
-        take: Math.max(0, requiredCount),
-        select: { itinerary_plan_vendor_eligible_ID: true, vehicle_grand_total: true },
-      });
-
-      const finalIds = finalPicks
-        .map((p: any) => Number(p.itinerary_plan_vendor_eligible_ID || 0))
-        .filter((id: number) => id > 0);
-
-      if (finalIds.length > 0) {
-        await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
-          where: { itinerary_plan_vendor_eligible_ID: { in: finalIds } },
-          data: { itineary_plan_assigned_status: 1 },
-        });
-
-        this.writeLog(
-          `[vehiclesEngine] Final cheapest assigned for vehicle_type_id=${planVehicleTypeId}: ids=[${finalIds.join(',')}]`,
-        );
-      }
-    }
-    stageStartedAt = logStageTiming('final_assignment', stageStartedAt);
+stageStartedAt = logStageTiming(
+  "final_assignment",
+  stageStartedAt,
+);
 
     if (debugVehicleTrace) {
  console.log('[VEHICLE_REBUILD_DONE]', {

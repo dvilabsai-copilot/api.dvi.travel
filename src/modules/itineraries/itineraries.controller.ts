@@ -1148,11 +1148,20 @@ async getAvailableActivities(
     },
   })
   @ApiOkResponse({ description: 'Vehicle vendor selected successfully' })
-  async selectVehicleVendor(@Body() body: any, @Req() req: Request) {
-    await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
-    return this.svc.selectVehicleVendor(body);
-  }
+  async selectVehicleVendor(
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    await this.itineraryAccessService.assertCanEditPlan(
+      Number(body.planId),
+      (req as any).user,
+    );
 
+    return this.svc.selectVehicleVendor(
+      body,
+      (req as any)?.user?.role,
+    );
+  }
   @Post('vehicles/select-slab')
   @ApiOperation({ summary: 'Select slab for a vendor vehicle and recalculate vehicle pricing' })
   @ApiBody({
