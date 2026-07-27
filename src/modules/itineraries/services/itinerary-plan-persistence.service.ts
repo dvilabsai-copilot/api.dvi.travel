@@ -11,6 +11,11 @@ import { RouteValidationService } from '../validation/route-validation.service';
 import { ItineraryVehicleBuildService } from './itinerary-vehicle-build.service';
 import { TransportEarlyArrivalValidationService } from '../validation/transport-early-arrival-validation.service';
 import { RouteVehicleRestrictionService } from '../../route-vehicle-restrictions/route-vehicle-restriction.service';
+import {
+  assertVehicleAgentCreatePolicy,
+  assertVehicleAgentNoHotelPayload,
+  assertVehicleAgentUpdatePolicy,
+} from '../policies/vehicle-agent.policy';
 
 type RouteFamilyQuote = {
   baseQuoteId: string;
@@ -133,6 +138,19 @@ export class ItineraryPlanPersistenceService {
     const shouldCheckLocalDbHotels =
       String(process.env.LOCAL_DB_HOTEL_CHECK || 'true').toLowerCase() === 'true';
 
+    const existingPlanId = Number((dto?.plan as any)?.itinerary_plan_id || 0);
+    assertVehicleAgentNoHotelPayload(u, dto);
+    if (existingPlanId > 0) {
+      const existingPlan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+        where: { itinerary_plan_ID: existingPlanId },
+        select: { agent_id: true, itinerary_preference: true },
+      });
+      if (!existingPlan) throw new NotFoundException('Itinerary plan not found');
+      assertVehicleAgentUpdatePolicy(u, existingPlan, dto.plan);
+    } else {
+      assertVehicleAgentCreatePolicy(u, dto.plan);
+    }
+
  // If user is an agent, force their agentId
     if (agentId > 0) {
       dto.plan.agent_id = agentId;
@@ -224,6 +242,16 @@ export class ItineraryPlanPersistenceService {
  // Increase interactive transaction timeout; hotspot rebuild + hotel lookups can exceed default 5s
     const result = await this.prisma.$transaction(async (tx) => {
       const opStart = Date.now();
+      if (existingPlanId > 0) {
+        const currentPlan = await tx.dvi_itinerary_plan_details.findUnique({
+          where: { itinerary_plan_ID: existingPlanId },
+          select: { agent_id: true, itinerary_preference: true },
+        });
+        if (!currentPlan) throw new NotFoundException('Itinerary plan not found');
+        assertVehicleAgentUpdatePolicy(u, currentPlan, dto.plan);
+      } else {
+        assertVehicleAgentCreatePolicy(u, dto.plan);
+      }
       const planId = await this.planEngine.upsertPlanHeader(
         dto.plan,
         dto.travellers,

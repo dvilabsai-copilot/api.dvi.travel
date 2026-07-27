@@ -13,6 +13,7 @@ import {
 } from '../../common/utils/password-migration.util';
 import { EmailLoginOtpService } from './email-login-otp.service';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
+import { SystemRole } from './constants/system-role.constants';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -69,7 +70,11 @@ export class AuthService {
       throw new UnauthorizedException('This account is inactive. Please contact support.');
     }
 
-    if (Number(user.roleID || 0) === 4 && Number(user.userapproved || 0) !== 1) {
+    if (
+      (Number(user.roleID || 0) === SystemRole.AGENT ||
+        Number(user.roleID || 0) === SystemRole.VEHICLE_AGENT) &&
+      Number(user.userapproved || 0) !== 1
+    ) {
       throw new UnauthorizedException('Your partner account is pending approval.');
     }
   }

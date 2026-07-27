@@ -284,6 +284,18 @@ export class DashboardService {
     };
   }
 
+  async getVehicleAgentDashboardStats(agentId: number) {
+    const scope = { agent_id: agentId, itinerary_preference: 2, deleted: 0 };
+    const [totalItineraries, confirmedItineraries] = await Promise.all([
+      this.prisma.dvi_itinerary_plan_details.count({ where: scope }),
+      this.prisma.dvi_itinerary_plan_details.count({
+        where: { ...scope, quotation_status: 1 },
+      }),
+    ]);
+
+    return { totalItineraries, confirmedItineraries };
+  }
+
   async getTravelExpertDashboardStats(staffId: number) {
  // Travel Expert manages a set of agents
     const agents = await this.prisma.dvi_agent.findMany({

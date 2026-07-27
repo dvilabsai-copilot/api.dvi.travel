@@ -25,6 +25,7 @@ import {
 import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-vehicle-km.service';
 import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
+import { SystemRole } from '../auth/constants/system-role.constants';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -6079,12 +6080,18 @@ guestFoodPreferenceName: guestFoodPreference,
       Number(u.roleID ?? u.roleId ?? u.role ?? 0) || 0;
     const input_staff_id = Number(u.staff_id ?? u.staffId ?? 0) || 0;
     const input_agent_id = Number(u.agent_id ?? u.agentId ?? 0) || 0;
+    const vehicleAgent = logged_user_level === SystemRole.VEHICLE_AGENT;
 
     const s = String(searchValue ?? '').trim();
 
     let roleOr: any | null = null;
 
-    if (input_staff_id > 0 && logged_user_level !== 6) {
+    if (vehicleAgent) {
+      roleOr = {
+        agent_id: input_agent_id > 0 ? input_agent_id : -1,
+        itinerary_preference: 2,
+      };
+    } else if (input_staff_id > 0 && logged_user_level !== 6) {
       const teAgents = await this.prisma.dvi_agent.findMany({
         where: {
           travel_expert_id: input_staff_id,
@@ -6193,8 +6200,10 @@ guestFoodPreferenceName: guestFoodPreference,
 
     const where: any = {
       deleted: 0,
-      ...(roleOr ? roleOr : {}),
-      ...(s ? { OR: searchOr } : {}),
+      AND: [
+        ...(roleOr ? [roleOr] : []),
+        ...(s ? [{ OR: searchOr }] : []),
+      ],
     };
 
     if (startDate) {
@@ -6213,8 +6222,8 @@ guestFoodPreferenceName: guestFoodPreference,
     if (source_location) where.arrival_location = source_location;
     if (destination_location) where.departure_location = destination_location;
 
-    if (filter_agent_id > 0) where.agent_id = filter_agent_id;
-    if (filter_staff_id > 0) where.staff_id = filter_staff_id;
+    if (!vehicleAgent && filter_agent_id > 0) where.agent_id = filter_agent_id;
+    if (!vehicleAgent && filter_staff_id > 0) where.staff_id = filter_staff_id;
 
     const allPlans = await this.prisma.dvi_itinerary_plan_details.findMany({
       where,
