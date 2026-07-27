@@ -3,7 +3,6 @@ import { PrismaService } from '../../../prisma.service';
 import { RouteEngineService } from '../engines/route-engine.service';
 import { VehiclesEngineService } from '../engines/vehicles-engine.service';
 import { ItineraryVehiclesEngine } from '../engines/itinerary-vehicles.engine';
-import { getVehicleRateAvailability } from '../utils/vehicle-rate-availability.util';
 import {
   ItineraryVehicleBuildStatusService,
   VehicleBuildState,
@@ -24,16 +23,8 @@ type VehicleBuildExecutionResult = {
   timings: VehicleBuildStageTiming[];
 };
 
-type VehicleSelection = {
-  planId: number;
-  vehicleTypeId: number;
-  vendorEligibleId: number;
-};
-
 @Injectable()
 export class ItineraryVehicleBuildService {
-  private vehicleVendorSelector: ((data: VehicleSelection) => Promise<any>) | null = null;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly routeEngine: RouteEngineService,
@@ -41,10 +32,6 @@ export class ItineraryVehicleBuildService {
     private readonly itineraryVehiclesEngine: ItineraryVehiclesEngine,
     private readonly statusService: ItineraryVehicleBuildStatusService,
   ) {}
-
-  setVehicleVendorSelector(selector: (data: VehicleSelection) => Promise<any>): void {
-    this.vehicleVendorSelector = selector;
-  }
 
   createBuildRunId(planId: number): string {
     return this.statusService.createBuildRunId(planId);
@@ -156,14 +143,6 @@ export class ItineraryVehicleBuildService {
           }),
       );
 
-      if (quoteId) {
-        await runStage(
-          'auto_select_lowest_vehicle_vendors',
-          30000,
-          () => this.autoSelectLowestVehicleVendors(planId),
-        );
-      }
-
       const finalStatus = await this.getStatus(planId);
       if (!finalStatus.hasUsableVehicleDetails) {
         const failureMessage =
@@ -250,88 +229,6 @@ export class ItineraryVehicleBuildService {
       return result as T;
     } finally {
       if (timer) clearTimeout(timer);
-    }
-  }
-
-  private async selectVehicleVendor(data: VehicleSelection): Promise<any> {
-    if (!this.vehicleVendorSelector) {
-      throw new Error('Vehicle vendor selector is not configured');
-    }
-    return this.vehicleVendorSelector(data);
-  }
-
-  private async autoSelectLowestVehicleVendors(planId: number): Promise<void> {
-    try {
-      const eligibleRows = await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
-        where: { itinerary_plan_id: planId, status: 1, deleted: 0 },
-        select: {
-          itinerary_plan_vendor_eligible_ID: true,
-          vehicle_type_id: true,
-          vehicle_grand_total: true,
-        },
-        orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
-      });
-
-      const eligibleIds = eligibleRows
-        .map((row: any) => Number(row?.itinerary_plan_vendor_eligible_ID || 0))
-        .filter((id) => id > 0);
-      const vehicleDetailRows = eligibleIds.length
-        ? await this.prisma.$queryRawUnsafe(`
-            SELECT itinerary_plan_vendor_eligible_ID, travel_type, total_pickup_km,
-              total_running_km, total_siteseeing_km, total_drop_km, vehicle_rental_charges
-            FROM dvi_itinerary_plan_vendor_vehicle_details
-            WHERE itinerary_plan_id = ${Number(planId)}
-              AND deleted = 0
-              AND itinerary_plan_vendor_eligible_ID IN (${eligibleIds.join(',')})
-          `) as any[]
-        : [];
-      const detailsByEligibleId = new Map<number, any[]>();
-      for (const detail of vehicleDetailRows) {
-        const eligibleId = Number(detail?.itinerary_plan_vendor_eligible_ID || 0);
-        const rows = detailsByEligibleId.get(eligibleId) || [];
-        rows.push(detail);
-        detailsByEligibleId.set(eligibleId, rows);
-      }
-
-      const byVehicleType = new Map<number, Array<{
-        vendorEligibleId: number;
-        totalAmount: number;
-        rateAvailable: boolean;
-      }>>();
-      for (const row of eligibleRows) {
-        const vehicleTypeId = Number((row as any)?.vehicle_type_id || 0);
-        const vendorEligibleId = Number((row as any)?.itinerary_plan_vendor_eligible_ID || 0);
-        const totalAmount = Number((row as any)?.vehicle_grand_total || 0);
-        if (!vehicleTypeId || !vendorEligibleId || !Number.isFinite(totalAmount)) continue;
-        const rateAvailable = getVehicleRateAvailability(detailsByEligibleId.get(vendorEligibleId) || []).available;
-        const list = byVehicleType.get(vehicleTypeId) || [];
-        list.push({ vendorEligibleId, totalAmount, rateAvailable });
-        byVehicleType.set(vehicleTypeId, list);
-      }
-
-      for (const [vehicleTypeId, list] of byVehicleType.entries()) {
-        const validRows = list.filter((row) => row.rateAvailable);
-        if (!validRows.length) {
-          await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.updateMany({
-            where: { itinerary_plan_id: planId, vehicle_type_id: vehicleTypeId, status: 1, deleted: 0 },
-            data: { itineary_plan_assigned_status: 0 },
-          });
-          continue;
-        }
-
-        validRows.sort((a, b) => {
-          if (a.totalAmount !== b.totalAmount) return a.totalAmount - b.totalAmount;
-          return a.vendorEligibleId - b.vendorEligibleId;
-        });
-
-        await this.selectVehicleVendor({
-          planId,
-          vehicleTypeId,
-          vendorEligibleId: validRows[0].vendorEligibleId,
-        });
-      }
-    } catch (autoAssignErr) {
- console.error('[ItinerariesService] Auto-select lowest vendor failed:', autoAssignErr);
     }
   }
 

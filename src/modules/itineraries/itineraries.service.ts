@@ -66,8 +66,6 @@ import {
   validateManualFitAttemptDisplayTimelineImpl,
 } from "./helpers/manual-fit-here-preview.helper";
 import { createHash, randomUUID } from "crypto";
-import { filterActiveVendorCandidateRows } from "./utils/active-vendor-candidate.util";
-import { getVehicleRateAvailability } from "./utils/vehicle-rate-availability.util";
 import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assignment.service';
 import { ItineraryGuideAssignmentWriteService, SaveGuideAssignmentPayload } from './services/itinerary-guide-assignment-write.service';
 import { ItineraryConfirmedGuideAssignmentService } from './services/itinerary-confirmed-guide-assignment.service';
@@ -809,7 +807,6 @@ export class ItinerariesService {
       addMinutesToTime: (...args) => (this.addMinutesToTime as any)(...args),
     });
     this.transportFormattingService.setFormatTimeCallback((time) => this.formatTime(time));
-    this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
     this.activityAvailabilityService.setCalculateActivityPlanPricingCallback(
       (params) => this.calculateActivityPlanPricing(params),
     );
@@ -1579,13 +1576,49 @@ private getGuideSlotLabel(slotId: number): string {
     return this.selectionWorkflowService.bulkSaveHotels(planId, hotels);
   }
 
-  async selectVehicleVendor(data: {
+  async selectVehicleVendor(
+  data: {
     planId: number;
     vehicleTypeId: number;
     vendorEligibleId: number;
-  }) {
-    return this.selectionWorkflowService.selectVehicleVendor(data);
-  }
+  },
+  viewerRole?: unknown,
+) {
+  const selection =
+    await this.selectionWorkflowService.selectVehicleVendor(
+      data,
+    );
+
+  const plan =
+    await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: {
+        itinerary_plan_ID: Number(data.planId),
+      },
+      select: {
+        itinerary_quote_ID: true,
+      },
+    });
+
+  const quoteId = String(
+    plan?.itinerary_quote_ID || "",
+  ).trim();
+
+  const itinerary = quoteId
+    ? await this.itineraryDetails.getItineraryDetails(
+        quoteId,
+        undefined,
+        viewerRole,
+      )
+    : null;
+
+  return {
+    ...selection,
+    costBreakdown:
+      itinerary?.costBreakdown ?? null,
+    vehicleSelections:
+      itinerary?.vehicleSelections ?? [],
+  };
+}
   async selectVehicleSlab(data: {
     planId: number;
     vehicleTypeId: number;

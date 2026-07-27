@@ -527,45 +527,187 @@ export class ItinerarySelectionWorkflowService {
     return getVehicleRateAvailability(detailRows);
   }
 
-  async selectVehicleVendor(data: {
-    planId: number;
-    vehicleTypeId: number;
-    vendorEligibleId: number;
-  }) {
-    const selectedEligible = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+ async selectVehicleVendor(data: {
+  planId: number;
+  vehicleTypeId: number;
+  vendorEligibleId: number;
+}) {
+  const planId = Number(data.planId || 0);
+  const vehicleTypeId = Number(data.vehicleTypeId || 0);
+  const vendorEligibleId = Number(data.vendorEligibleId || 0);
+
+  const selectedEligible = await (
+    this.prisma as any
+  ).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+    where: {
+      itinerary_plan_vendor_eligible_ID: vendorEligibleId,
+      itinerary_plan_id: planId,
+      vehicle_type_id: vehicleTypeId,
+      status: 1,
+      deleted: 0,
+    },
+  });
+
+  if (!selectedEligible) {
+    throw new NotFoundException(
+      'Selected vendor eligible row not found for plan/vehicle type',
+    );
+  }
+
+  const { rows: activeSelectedRows } =
+    await filterActiveVendorCandidateRows<any>(
+      this.prisma,
+      [selectedEligible],
+    );
+
+  if (!activeSelectedRows.length) {
+    throw new BadRequestException(
+      'Selected vendor is no longer active and cannot be assigned',
+    );
+  }
+
+  const selectedRateAvailability =
+    await this.getVehicleRateAvailabilityForEligible(
+      planId,
+      vendorEligibleId,
+    );
+
+  if (!selectedRateAvailability.available) {
+    throw new BadRequestException(
+      'Selected vendor does not have applicable local or outstation rates for this vehicle type',
+    );
+  }
+
+  const requiredVehicleRows =
+    await this.prisma.dvi_itinerary_plan_vehicle_details.findMany({
       where: {
-        itinerary_plan_vendor_eligible_ID: Number(data.vendorEligibleId),
-        itinerary_plan_id: Number(data.planId),
-        vehicle_type_id: Number(data.vehicleTypeId),
+        itinerary_plan_id: planId,
+        vehicle_type_id: vehicleTypeId,
         status: 1,
         deleted: 0,
       },
+      select: {
+        vehicle_count: true,
+      },
     });
 
-    if (!selectedEligible) {
-      throw new NotFoundException('Selected vendor eligible row not found for plan/vehicle type');
-    }
+  const requiredVehicleCount = Math.max(
+    1,
+    requiredVehicleRows.reduce(
+      (sum, row) => sum + Number(row.vehicle_count || 0),
+      0,
+    ),
+  );
 
-    const { rows: activeSelectedRows } = await filterActiveVendorCandidateRows<any>(this.prisma, [selectedEligible]);
-    if (!activeSelectedRows.length) {
-      throw new BadRequestException('Selected vendor is no longer active and cannot be assigned');
-    }
+  const candidateRows = await (
+    this.prisma as any
+  ).dvi_itinerary_plan_vendor_eligible_list.findMany({
+    where: {
+      itinerary_plan_id: planId,
+      vehicle_type_id: vehicleTypeId,
+      vehicle_grand_total: { gt: 0 },
+      status: 1,
+      deleted: 0,
+    },
+    orderBy: [
+      { vehicle_grand_total: 'asc' },
+      { itinerary_plan_vendor_eligible_ID: 'asc' },
+    ],
+  });
 
-    const rateAvailability = await this.getVehicleRateAvailabilityForEligible(
-      Number(data.planId),
-      Number(data.vendorEligibleId),
+  const { rows: activeCandidateRows } =
+    await filterActiveVendorCandidateRows<any>(
+      this.prisma,
+      candidateRows,
     );
-    if (!rateAvailability.available) {
-      throw new BadRequestException(
-        'Selected vendor does not have applicable local or outstation rates for this vehicle type',
-      );
-    }
 
- // First, reset all vendors for this vehicle type to unassigned (0)
-    await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.updateMany({
+  const rateValidCandidates: any[] = [];
+
+  for (const candidate of activeCandidateRows) {
+    const candidateEligibleId = Number(
+      candidate.itinerary_plan_vendor_eligible_ID || 0,
+    );
+
+    const availability =
+      candidateEligibleId === vendorEligibleId
+        ? selectedRateAvailability
+        : await this.getVehicleRateAvailabilityForEligible(
+            planId,
+            candidateEligibleId,
+          );
+
+    if (availability.available) {
+      rateValidCandidates.push(candidate);
+    }
+  }
+
+  const isSameSelectedVendor = (candidate: any) =>
+    Number(candidate.vendor_id || 0) ===
+      Number(selectedEligible.vendor_id || 0) &&
+    Number(candidate.vendor_branch_id || 0) ===
+      Number(selectedEligible.vendor_branch_id || 0) &&
+    Number(candidate.vendor_vehicle_type_id || 0) ===
+      Number(selectedEligible.vendor_vehicle_type_id || 0);
+
+  const selectedCandidate = rateValidCandidates.find(
+    (candidate) =>
+      Number(candidate.itinerary_plan_vendor_eligible_ID || 0) ===
+      vendorEligibleId,
+  );
+
+  if (!selectedCandidate) {
+    throw new BadRequestException(
+      'Selected vehicle vendor is no longer available',
+    );
+  }
+
+  const remainingCandidates = rateValidCandidates
+    .filter(
+      (candidate) =>
+        Number(candidate.itinerary_plan_vendor_eligible_ID || 0) !==
+        vendorEligibleId,
+    )
+    .sort((a, b) => {
+      const sameVendorDifference =
+        Number(!isSameSelectedVendor(a)) -
+        Number(!isSameSelectedVendor(b));
+
+      if (sameVendorDifference !== 0) {
+        return sameVendorDifference;
+      }
+
+      const amountDifference =
+        Number(a.vehicle_grand_total || 0) -
+        Number(b.vehicle_grand_total || 0);
+
+      if (amountDifference !== 0) {
+        return amountDifference;
+      }
+
+      return (
+        Number(a.itinerary_plan_vendor_eligible_ID || 0) -
+        Number(b.itinerary_plan_vendor_eligible_ID || 0)
+      );
+    });
+
+  const assignedRows = [
+    selectedCandidate,
+    ...remainingCandidates,
+  ].slice(0, requiredVehicleCount);
+
+  const assignedVendorEligibleIds = assignedRows
+    .map((row) =>
+      Number(row.itinerary_plan_vendor_eligible_ID || 0),
+    )
+    .filter((id) => id > 0);
+
+  await this.prisma.$transaction(async (tx) => {
+    await (
+      tx as any
+    ).dvi_itinerary_plan_vendor_eligible_list.updateMany({
       where: {
-        itinerary_plan_id: data.planId,
-        vehicle_type_id: data.vehicleTypeId,
+        itinerary_plan_id: planId,
+        vehicle_type_id: vehicleTypeId,
         status: 1,
         deleted: 0,
       },
@@ -574,69 +716,100 @@ export class ItinerarySelectionWorkflowService {
       },
     });
 
- // Then, set the selected vendor to assigned (1)
-    await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.update({
+    await (
+      tx as any
+    ).dvi_itinerary_plan_vendor_eligible_list.updateMany({
       where: {
-        itinerary_plan_vendor_eligible_ID: data.vendorEligibleId,
+        itinerary_plan_vendor_eligible_ID: {
+          in: assignedVendorEligibleIds,
+        },
       },
       data: {
         itineary_plan_assigned_status: 1,
       },
     });
 
-    return {
-      success: true,
-      message: 'Vehicle vendor selected successfully',
-    };
-  }
-
-  private async rebuildVehiclePricingWithSlabOverrides(data: {
-    planId: number;
-    selectedTimeLimitByEligible?: Record<string, number>;
-    preserveSelection?: {
-      vehicleTypeId: number;
-      vendorId: number;
-      vendorBranchId: number;
-      vendorVehicleTypeId: number;
-      vehicleId: number;
-    } | null;
-  }) {
-    const userId = 1;
-    await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
-      planId: Number(data.planId),
-      createdBy: userId,
-      selectedTimeLimitByEligible: data.selectedTimeLimitByEligible || {},
-      beforeVehicleDetailsBuild: async ({ tx, planId }) => {
-        await this.routeEngine.rebuildPermitCharges(tx, Number(planId), userId);
+    await (
+      tx as any
+    ).dvi_itinerary_plan_vehicle_vendor_selection.upsert({
+      where: {
+        itinerary_plan_id_vehicle_type_id: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: vehicleTypeId,
+        },
+      },
+      create: {
+        itinerary_plan_id: planId,
+        vehicle_type_id: vehicleTypeId,
+        selected_vendor_eligible_id: vendorEligibleId,
+        vendor_id: Number(selectedEligible.vendor_id || 0),
+        vendor_branch_id: Number(
+          selectedEligible.vendor_branch_id || 0,
+        ),
+        vendor_vehicle_type_id: Number(
+          selectedEligible.vendor_vehicle_type_id || 0,
+        ),
+        vehicle_id: Number(selectedEligible.vehicle_id || 0),
+        selection_source: 'manual',
+        createdby: 1,
+        createdon: new Date(),
+        updatedon: new Date(),
+        status: 1,
+        deleted: 0,
+      },
+      update: {
+        selected_vendor_eligible_id: vendorEligibleId,
+        vendor_id: Number(selectedEligible.vendor_id || 0),
+        vendor_branch_id: Number(
+          selectedEligible.vendor_branch_id || 0,
+        ),
+        vendor_vehicle_type_id: Number(
+          selectedEligible.vendor_vehicle_type_id || 0,
+        ),
+        vehicle_id: Number(selectedEligible.vehicle_id || 0),
+        selection_source: 'manual',
+        updatedon: new Date(),
+        status: 1,
+        deleted: 0,
       },
     });
+  });
 
-    if (data.preserveSelection) {
-      const matched = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
-        where: {
-          itinerary_plan_id: Number(data.planId),
-          vehicle_type_id: Number(data.preserveSelection.vehicleTypeId),
-          vendor_id: Number(data.preserveSelection.vendorId),
-          vendor_branch_id: Number(data.preserveSelection.vendorBranchId),
-          vendor_vehicle_type_id: Number(data.preserveSelection.vendorVehicleTypeId),
-          vehicle_id: Number(data.preserveSelection.vehicleId),
-          status: 1,
-          deleted: 0,
-        },
-        orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
-      });
+  return {
+    success: true,
+    message: 'Vehicle vendor selected successfully',
+    vehicleTypeId,
+    selectedVendorEligibleId: vendorEligibleId,
+    assignedVendorEligibleIds,
+    selectionSource: 'manual' as const,
+  };
+}
 
-      if (matched?.itinerary_plan_vendor_eligible_ID) {
-        await this.selectVehicleVendor({
-          planId: Number(data.planId),
-          vehicleTypeId: Number(data.preserveSelection.vehicleTypeId),
-          vendorEligibleId: Number(matched.itinerary_plan_vendor_eligible_ID),
-        });
-      }
-    }
-  }
+  private async rebuildVehiclePricingWithSlabOverrides(data: {
+  planId: number;
+  selectedTimeLimitByEligible?: Record<string, number>;
+}) {
+  const userId = 1;
 
- // Backward-compatible wrapper for legacy select-slab endpoint.
+  await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+    planId: Number(data.planId),
+    createdBy: userId,
+    selectedTimeLimitByEligible:
+      data.selectedTimeLimitByEligible || {},
+    beforeVehicleDetailsBuild: async ({
+      tx,
+      planId,
+    }) => {
+      await this.routeEngine.rebuildPermitCharges(
+        tx,
+        Number(planId),
+        userId,
+      );
+    },
+  });
+}
+
+  // Backward-compatible wrapper for legacy select-slab endpoint.
   async selectVehicleSlab(data: {
     planId: number;
     vehicleTypeId: number;
@@ -644,17 +817,33 @@ export class ItinerarySelectionWorkflowService {
     timeLimitId?: number;
   }) {
     const planId = Number(data?.planId || 0);
-    const vehicleTypeId = Number(data?.vehicleTypeId || 0);
-    const vendorEligibleId = Number(data?.vendorEligibleId || 0);
-    const timeLimitId = Number(data?.timeLimitId || 0);
+    const vehicleTypeId = Number(
+      data?.vehicleTypeId || 0,
+    );
+    const vendorEligibleId = Number(
+      data?.vendorEligibleId || 0,
+    );
+    const timeLimitId = Number(
+      data?.timeLimitId || 0,
+    );
 
-    if (!planId || !vehicleTypeId || !vendorEligibleId || !timeLimitId) {
-      throw new BadRequestException('planId, vehicleTypeId, vendorEligibleId and timeLimitId are required');
+    if (
+      !planId ||
+      !vehicleTypeId ||
+      !vendorEligibleId ||
+      !timeLimitId
+    ) {
+      throw new BadRequestException(
+        'planId, vehicleTypeId, vendorEligibleId and timeLimitId are required',
+      );
     }
 
-    const selectedEligible = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+    const selectedEligible = await (
+      this.prisma as any
+    ).dvi_itinerary_plan_vendor_eligible_list.findFirst({
       where: {
-        itinerary_plan_vendor_eligible_ID: vendorEligibleId,
+        itinerary_plan_vendor_eligible_ID:
+          vendorEligibleId,
         itinerary_plan_id: planId,
         vehicle_type_id: vehicleTypeId,
         status: 1,
@@ -671,29 +860,37 @@ export class ItinerarySelectionWorkflowService {
     });
 
     if (!selectedEligible) {
-      throw new NotFoundException('Selected vendor eligible row not found for plan/vehicle type');
+      throw new NotFoundException(
+        'Selected vendor eligible row not found for plan/vehicle type',
+      );
     }
 
     const selectedMap: Record<string, number> = {};
-    selectedMap[String(vendorEligibleId)] = timeLimitId;
-    const compositeKey = `${Number(selectedEligible.vendor_id || 0)}:${Number(selectedEligible.vendor_branch_id || 0)}:${Number(selectedEligible.vendor_vehicle_type_id || 0)}:${Number(selectedEligible.vehicle_id || 0)}`;
+
+    selectedMap[String(vendorEligibleId)] =
+      timeLimitId;
+
+    const compositeKey = [
+      Number(selectedEligible.vendor_id || 0),
+      Number(
+        selectedEligible.vendor_branch_id || 0,
+      ),
+      Number(
+        selectedEligible.vendor_vehicle_type_id || 0,
+      ),
+      Number(selectedEligible.vehicle_id || 0),
+    ].join(':');
+
     selectedMap[compositeKey] = timeLimitId;
 
-    await this.rebuildVehiclePricingWithSlabOverrides({
-      planId,
-      selectedTimeLimitByEligible: selectedMap,
-      preserveSelection: {
-        vehicleTypeId,
-        vendorId: Number(selectedEligible.vendor_id || 0),
-        vendorBranchId: Number(selectedEligible.vendor_branch_id || 0),
-        vendorVehicleTypeId: Number(selectedEligible.vendor_vehicle_type_id || 0),
-        vehicleId: Number(selectedEligible.vehicle_id || 0),
-      },
-    });
-
+   await this.rebuildVehiclePricingWithSlabOverrides({
+  planId,
+  selectedTimeLimitByEligible: selectedMap,
+});
     return {
       success: true,
-      message: 'Vehicle slab selected and pricing recalculated successfully',
+      message:
+        'Vehicle slab selected and pricing recalculated successfully',
       planId,
       vehicleTypeId,
       vendorEligibleId,
@@ -701,128 +898,55 @@ export class ItinerarySelectionWorkflowService {
     };
   }
 
- // Backward-compatible wrapper for legacy auto-select endpoint.
-  async autoSelectVehicleSlabs(data: {
-    planId: number;
-    vehicleTypeId?: number;
-  }) {
-    const planId = Number(data?.planId || 0);
-    const vehicleTypeId = Number(data?.vehicleTypeId || 0) || 0;
-    if (!planId) {
-      throw new BadRequestException('planId is required');
-    }
+// Backward-compatible wrapper for legacy auto-select endpoint.
+async autoSelectVehicleSlabs(data: {
+  planId: number;
+  vehicleTypeId?: number;
+}) {
+  const planId = Number(data?.planId || 0);
+  const vehicleTypeId =
+    Number(data?.vehicleTypeId || 0) || 0;
 
-    const where: any = {
-      itinerary_plan_id: planId,
-      status: 1,
-      deleted: 0,
-      itineary_plan_assigned_status: 1,
-    };
-    if (vehicleTypeId > 0) {
-      where.vehicle_type_id = vehicleTypeId;
-    }
-
-    const assignedBefore = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findMany({
-      where,
-      select: {
-        vehicle_type_id: true,
-        vendor_id: true,
-        vendor_branch_id: true,
-        vendor_vehicle_type_id: true,
-        vehicle_id: true,
-      },
-      orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
-    });
-
-    await this.rebuildVehiclePricingWithSlabOverrides({
-      planId,
-      selectedTimeLimitByEligible: {},
-      preserveSelection: null,
-    });
-
-    for (const s of assignedBefore) {
-      const matched = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
-        where: {
-          itinerary_plan_id: planId,
-          vehicle_type_id: Number(s.vehicle_type_id || 0),
-          vendor_id: Number(s.vendor_id || 0),
-          vendor_branch_id: Number(s.vendor_branch_id || 0),
-          vendor_vehicle_type_id: Number(s.vendor_vehicle_type_id || 0),
-          vehicle_id: Number(s.vehicle_id || 0),
-          status: 1,
-          deleted: 0,
-        },
-        select: { itinerary_plan_vendor_eligible_ID: true },
-        orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
-      });
-
-      if (matched?.itinerary_plan_vendor_eligible_ID) {
-        await this.selectVehicleVendor({
-          planId,
-          vehicleTypeId: Number(s.vehicle_type_id || 0),
-          vendorEligibleId: Number(matched.itinerary_plan_vendor_eligible_ID),
-        });
-      }
-    }
-
-    return {
-      success: true,
-      message: 'Vehicle slabs auto-selected and pricing recalculated successfully',
-      planId,
-      vehicleTypeId: vehicleTypeId || undefined,
-    };
+  if (!planId) {
+    throw new BadRequestException(
+      'planId is required',
+    );
   }
 
-  async forceRebuildVehiclePricingAfterHotspotChange(planId: number, routeId?: number) {
+  await this.rebuildVehiclePricingWithSlabOverrides({
+    planId,
+    selectedTimeLimitByEligible: {},
+  });
+
+  return {
+    success: true,
+    message:
+      'Vehicle slabs auto-selected and pricing recalculated successfully',
+    planId,
+    vehicleTypeId: vehicleTypeId || undefined,
+  };
+}
+  async forceRebuildVehiclePricingAfterHotspotChange(
+    planId: number,
+    routeId?: number,
+  ) {
     const normalizedPlanId = Number(planId || 0);
-    if (!normalizedPlanId) return;
 
-    const assignedBeforeRaw = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findMany({
-      where: {
-        itinerary_plan_id: normalizedPlanId,
-        status: 1,
-        deleted: 0,
-        itineary_plan_assigned_status: 1,
-      },
-      select: {
-        vehicle_type_id: true,
-        vendor_id: true,
-        vendor_branch_id: true,
-        vendor_vehicle_type_id: true,
-        vehicle_id: true,
-      },
-    });
-    const {
-      rows: assignedBefore,
-      activeVendorIds,
-      activeBranchIds,
-      activeVehicleIds,
-    } = await filterActiveVendorCandidateRows<any>(this.prisma, assignedBeforeRaw);
-    const skippedInactiveAssignedBefore = assignedBeforeRaw.filter((row: any) => (
-      !activeVendorIds.has(Number(row?.vendor_id || 0))
-      || !activeBranchIds.has(Number(row?.vendor_branch_id || 0))
-      || !activeVehicleIds.has(Number(row?.vehicle_id || 0))
-    ));
-
-    if (skippedInactiveAssignedBefore.length > 0) {
- console.warn('[HOTSPOT_CHANGE_VEHICLE_REBUILD_SKIP_INACTIVE_ASSIGNED_VENDOR]', {
-        planId: normalizedPlanId,
-        routeId: routeId || null,
-        skipped: skippedInactiveAssignedBefore.map((row: any) => ({
-          eligibleId: Number(row?.itinerary_plan_vendor_eligible_ID || 0),
-          vehicleTypeId: Number(row?.vehicle_type_id || 0),
-          vendorId: Number(row?.vendor_id || 0),
-          vendorBranchId: Number(row?.vendor_branch_id || 0),
-          vehicleId: Number(row?.vehicle_id || 0),
-        })),
-      });
+    if (!normalizedPlanId) {
+      return;
     }
 
-    const vehicleRowsBefore = await (this.prisma as any).dvi_itinerary_plan_vendor_vehicle_details.findMany({
+    const vehicleRowsBefore = await (
+      this.prisma as any
+    ).dvi_itinerary_plan_vendor_vehicle_details.findMany({
       where: {
         itinerary_plan_id: normalizedPlanId,
         deleted: 0,
-        ...(routeId ? { itinerary_route_id: Number(routeId) } : {}),
+        ...(routeId
+          ? {
+              itinerary_route_id: Number(routeId),
+            }
+          : {}),
       },
       select: {
         itinerary_route_id: true,
@@ -830,44 +954,42 @@ export class ItinerarySelectionWorkflowService {
         total_vehicle_amount: true,
       },
     });
-    const beforeKm = vehicleRowsBefore.reduce((sum: number, r: any) => sum + Number(r?.total_travelled_km || 0), 0);
-    const beforeAmount = vehicleRowsBefore.reduce((sum: number, r: any) => sum + Number(r?.total_vehicle_amount || 0), 0);
- console.log('[HOTSPOT_CHANGE_VEHICLE_REBUILD_BEFORE]', {
-      planId: normalizedPlanId,
-      routeId: routeId || null,
-      totalKms: Number(beforeKm.toFixed(2)),
-      totalAmount: Number(beforeAmount.toFixed(2)),
-    });
+
+    const beforeKm = vehicleRowsBefore.reduce(
+      (sum: number, row: any) =>
+        sum + Number(row?.total_travelled_km || 0),
+      0,
+    );
+
+    const beforeAmount = vehicleRowsBefore.reduce(
+      (sum: number, row: any) =>
+        sum + Number(row?.total_vehicle_amount || 0),
+      0,
+    );
+
+    console.log(
+      '[HOTSPOT_CHANGE_VEHICLE_REBUILD_BEFORE]',
+      {
+        planId: normalizedPlanId,
+        routeId: routeId || null,
+        totalKms: Number(beforeKm.toFixed(2)),
+        totalAmount: Number(beforeAmount.toFixed(2)),
+      },
+    );
 
     await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
       planId: normalizedPlanId,
       createdBy: 1,
-      beforeVehicleDetailsBuild: async ({ tx, planId }) => {
-        await this.routeEngine.rebuildPermitCharges(tx, Number(planId), 1);
+      beforeVehicleDetailsBuild: async ({
+        tx,
+        planId,
+      }) => {
+        await this.routeEngine.rebuildPermitCharges(
+          tx,
+          Number(planId),
+          1,
+        );
       },
     });
-
-    for (const s of assignedBefore) {
-      const matched = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
-        where: {
-          itinerary_plan_id: normalizedPlanId,
-          vehicle_type_id: Number(s.vehicle_type_id || 0),
-          vendor_id: Number(s.vendor_id || 0),
-          vendor_branch_id: Number(s.vendor_branch_id || 0),
-          vendor_vehicle_type_id: Number(s.vendor_vehicle_type_id || 0),
-          vehicle_id: Number(s.vehicle_id || 0),
-          status: 1,
-          deleted: 0,
-        },
-        select: { itinerary_plan_vendor_eligible_ID: true },
-      });
-      if (matched?.itinerary_plan_vendor_eligible_ID) {
-        await this.selectVehicleVendor({
-          planId: normalizedPlanId,
-          vehicleTypeId: Number(s.vehicle_type_id || 0),
-          vendorEligibleId: Number(matched.itinerary_plan_vendor_eligible_ID),
-        });
-      }
-    }
   }
 }

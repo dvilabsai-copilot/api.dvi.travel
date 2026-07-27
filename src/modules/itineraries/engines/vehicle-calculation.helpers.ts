@@ -1609,56 +1609,34 @@ export function sumStringNumbers(numbers: string[]): string {
 export async function getKmsLimitId(
   prisma: any,
   vendor_id: number,
-  vendor_vehicle_type_ID: number,
-  itinerary_plan_ID?: number,
+  vendor_vehicle_type_ID: number
 ): Promise<number> {
   try {
- // Reuse a saved detail only from this itinerary, and only while its KMS
- // limit is still active. Older itineraries can retain IDs whose KMS limit
- // and pricebook rows have since been replaced.
-    const existingDetailsWhere: any = {
-      vendor_id,
-      vendor_vehicle_type_id: vendor_vehicle_type_ID,
-      deleted: 0,
-      status: 1,
-    };
-    if (Number(itinerary_plan_ID || 0) > 0) {
-      existingDetailsWhere.itinerary_plan_id = Number(itinerary_plan_ID);
-    }
-
+ // Try to find existing vehicle details record for this vendor/vehicle type
     const existingVehicleDetails = await prisma.dvi_itinerary_plan_vendor_vehicle_details.findFirst({
-      where: existingDetailsWhere,
-      select: {
-        kms_limit_id: true,
-      },
-      orderBy: [
-        { createdon: 'desc' },
-        { itinerary_plan_vendor_vehicle_details_ID: 'desc' },
-      ],
-    });
-
-    if (existingVehicleDetails && existingVehicleDetails.kms_limit_id) {
-      const activeExistingKmsLimit = await prisma.dvi_kms_limit.findFirst({
-        where: {
-          kms_limit_id: Number(existingVehicleDetails.kms_limit_id),
-          vendor_id,
-          vendor_vehicle_type_id: vendor_vehicle_type_ID,
-          status: 1,
-          deleted: 0,
-        },
-        select: { kms_limit_id: true },
-      });
-
-      if (activeExistingKmsLimit?.kms_limit_id) {
-        return Number(activeExistingKmsLimit.kms_limit_id);
-      }
-    }
-
- // Otherwise use the latest active KMS limit for this vendor vehicle type.
-    const activeKmsLimit = await prisma.dvi_kms_limit.findFirst({
       where: {
         vendor_id,
         vendor_vehicle_type_id: vendor_vehicle_type_ID,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        kms_limit_id: true,
+      },
+      orderBy: {
+ createdby: 'desc', // Get most recent
+      },
+    });
+
+    if (existingVehicleDetails && existingVehicleDetails.kms_limit_id) {
+      return existingVehicleDetails.kms_limit_id;
+    }
+
+ // If no existing record, try to find from outstation pricebook
+    const pricebook = await prisma.dvi_vehicle_outstation_price_book.findFirst({
+      where: {
+        vendor_id,
+        vehicle_type_id: vendor_vehicle_type_ID,
         status: 1,
         deleted: 0,
       },
@@ -1666,15 +1644,15 @@ export async function getKmsLimitId(
         kms_limit_id: true,
       },
       orderBy: {
-        kms_limit_id: 'desc',
+ kms_limit_id: 'asc', // Use lowest available
       },
     });
 
-    if (activeKmsLimit?.kms_limit_id) {
-      return Number(activeKmsLimit.kms_limit_id);
+    if (pricebook) {
+      return pricebook.kms_limit_id;
     }
 
- console.log(`[getKmsLimitId] No active kms_limit_id found for vendor=${vendor_id}, vehicle_type=${vendor_vehicle_type_ID}, using default 1`);
+ console.log(`[getKmsLimitId] No kms_limit_id found for vendor=${vendor_id}, vehicle_type=${vendor_vehicle_type_ID}, using default 1`);
  return 1; // Default fallback
   } catch (error) {
  console.error('[getKmsLimitId] Error:', error);
@@ -3122,12 +3100,7 @@ export async function calculateRouteVehicleDetails(
   const year = routeDate.getFullYear().toString();
 
  // Get kms_limit_id for outstation pricing
-  kms_limit_id = await getKmsLimitId(
-    prisma,
-    vendor_id,
-    vendor_vehicle_type_ID,
-    itinerary_plan_ID,
-  );
+  kms_limit_id = await getKmsLimitId(prisma, vendor_id, vendor_vehicle_type_ID);
 
  // Calculate vehicle rental based on travel type
   const isFirstLocalArrivalLeg =
