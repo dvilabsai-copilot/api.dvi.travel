@@ -8,6 +8,7 @@ import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.
 import { OfflineHotelCatalogService } from './offline-hotel-catalog.service';
 import { filterActiveVendorCandidateRows } from '../utils/active-vendor-candidate.util';
 import { getVehicleRateAvailability } from '../utils/vehicle-rate-availability.util';
+import { hotelSelectionKey, hotelSelectionKeyFromRow } from '../utils/hotel-selection-identity.util';
 
 @Injectable()
 export class ItinerarySelectionWorkflowService {
@@ -93,6 +94,18 @@ export class ItinerarySelectionWorkflowService {
     canonicalHotelId?: number;
     rateOptionId?: string;
     provider?: string;
+    optionKey?: string;
+    pricePerNight?: number;
+    totalPrice?: number;
+    currency?: string;
+    hotelName?: string;
+    category?: number;
+    roomType?: string;
+    mealPlanCode?: string;
+    bookingCode?: string;
+    searchReference?: string;
+    roomId?: string | number;
+    rateId?: string | number;
     roomCount?: number;
     requestedBy?: number;
   }) {
@@ -176,16 +189,26 @@ export class ItinerarySelectionWorkflowService {
         };
 
  // Check if hotel assignment already exists in hotel_details
-    const existingHotelDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findFirst({
+    const existingHotelCandidates = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
       where: {
         itinerary_plan_id: data.planId,
         itinerary_route_id: data.routeId,
         group_type: data.groupType || 1,
-        hotel_required: { not: 2 },
+        hotel_required: 1,
         deleted: 0,
+        status: 1,
       },
       orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
     });
+    const selectionKey = hotelSelectionKey(
+      data.planId,
+      data.routeId,
+      data.groupType || 1,
+      route?.itinerary_route_date,
+    );
+    const existingHotelDetails = existingHotelCandidates.find((row: any) =>
+      hotelSelectionKeyFromRow(data.planId, row) === selectionKey,
+    ) || existingHotelCandidates[0];
 
     const mealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
     const mealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
@@ -205,7 +228,36 @@ export class ItinerarySelectionWorkflowService {
  group_type: data.groupType || 1, // Save groupType
           updatedon: new Date(),
           ...liveRateMetadata,
+          selected_rate_option_id: data.rateOptionId || data.optionKey || null,
+          selected_price_per_night: data.pricePerNight ?? null,
+          selected_total_price: data.totalPrice ?? null,
+          selected_currency: data.currency || null,
+          selected_price_snapshot: JSON.stringify({
+            optionKey: data.optionKey || null,
+            rateOptionId: data.rateOptionId || null,
+            selectionOrigin: 'USER_SELECTED',
+            hotelName: data.hotelName || null,
+            category: data.category || null,
+            roomType: data.roomType || null,
+            mealPlan: data.mealPlanCode || null,
+            bookingCode: data.bookingCode || null,
+            searchReference: data.searchReference || null,
+            roomId: data.roomId || null,
+            rateId: data.rateId || null,
+          }),
         },
+      });
+      await (this.prisma as any).dvi_itinerary_plan_hotel_details.updateMany({
+        where: {
+          itinerary_plan_id: data.planId,
+          itinerary_route_id: data.routeId,
+          group_type: data.groupType || 1,
+          hotel_required: 1,
+          deleted: 0,
+          status: 1,
+          itinerary_plan_hotel_details_ID: { not: existingHotelDetails.itinerary_plan_hotel_details_ID },
+        },
+        data: { status: 0, deleted: 1, updatedon: new Date() },
       });
       const updated = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findUnique({
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
@@ -230,6 +282,24 @@ export class ItinerarySelectionWorkflowService {
           createdon: new Date(),
           status: 1,
           deleted: 0,
+          ...liveRateMetadata,
+          selected_rate_option_id: data.rateOptionId || data.optionKey || null,
+          selected_price_per_night: data.pricePerNight ?? null,
+          selected_total_price: data.totalPrice ?? null,
+          selected_currency: data.currency || null,
+          selected_price_snapshot: JSON.stringify({
+            optionKey: data.optionKey || null,
+            rateOptionId: data.rateOptionId || null,
+            selectionOrigin: 'USER_SELECTED',
+            hotelName: data.hotelName || null,
+            category: data.category || null,
+            roomType: data.roomType || null,
+            mealPlan: data.mealPlanCode || null,
+            bookingCode: data.bookingCode || null,
+            searchReference: data.searchReference || null,
+            roomId: data.roomId || null,
+            rateId: data.rateId || null,
+          }),
         },
       });
  console.log(` Created. Values - hotel_id: ${(created as any).hotel_id}, group_type: ${(created as any).group_type}`);
@@ -239,11 +309,11 @@ export class ItinerarySelectionWorkflowService {
  // Check if room details already exist
     const existingRoomDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findFirst({
       where: {
-        itinerary_plan_id: data.planId,
-        itinerary_route_id: data.routeId,
-        hotel_id: data.hotelId,
+        itinerary_plan_hotel_details_id: hotelDetailsId,
         deleted: 0,
+        status: 1,
       },
+      orderBy: { itinerary_plan_hotel_room_details_ID: 'desc' },
     });
 
     if (existingRoomDetails) {
@@ -257,6 +327,15 @@ export class ItinerarySelectionWorkflowService {
           dinner_required: mealDinner,
           updatedon: new Date(),
         },
+      });
+      await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.updateMany({
+        where: {
+          itinerary_plan_hotel_details_id: hotelDetailsId,
+          deleted: 0,
+          status: 1,
+          itinerary_plan_hotel_room_details_ID: { not: existingRoomDetails.itinerary_plan_hotel_room_details_ID },
+        },
+        data: { status: 0, deleted: 1, updatedon: new Date() },
       });
     } else {
  // Create new room details
@@ -345,16 +424,26 @@ export class ItinerarySelectionWorkflowService {
     if (checkOutDate) checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
 
     await this.prisma.$transaction(async (tx) => {
-      const existingHotel = await (tx as any).dvi_itinerary_plan_hotel_details.findFirst({
+      const existingHotelCandidates = await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
         where: {
           itinerary_plan_id: Number(data.planId),
           itinerary_route_id: Number(data.routeId),
           group_type: Number(data.groupType || 1),
-          hotel_required: { not: 2 },
+          hotel_required: 1,
           deleted: 0,
+          status: 1,
         },
         orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
       });
+      const offlineSelectionKey = hotelSelectionKey(
+        Number(data.planId),
+        Number(data.routeId),
+        Number(data.groupType || 1),
+        checkInDate,
+      );
+      const existingHotel = existingHotelCandidates.find((row: any) =>
+        hotelSelectionKeyFromRow(Number(data.planId), row) === offlineSelectionKey,
+      ) || existingHotelCandidates[0];
       const hotelData = {
         hotel_id: resolvedRate.canonicalHotelId,
         hotel_code: String(resolvedRate.canonicalHotelId),

@@ -60,6 +60,7 @@ import {
 import { StayExtensionPreviewDto } from './dto/stay-extension-preview.dto';
 import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
+import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 import { ItineraryExportService } from './itinerary-export.service';
 import { HotelVoucherService, AddCancellationPolicyDto, CreateVoucherDto } from './hotel-voucher.service';
 import {
@@ -98,6 +99,7 @@ export class ItinerariesController {
     private readonly detailsService: ItineraryDetailsService,
     private readonly hotelDetailsService: ItineraryHotelDetailsService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
+    private readonly hotelAvailabilitySnapshotService: HotelAvailabilitySnapshotService,
     private readonly exportService: ItineraryExportService,
     private readonly routeSuggestionsService: RouteSuggestionsService,
     private readonly routeSuggestionsV2Service: RouteSuggestionsV2Service,
@@ -509,9 +511,9 @@ private readonly itineraryAccessService: ItineraryAccessService,
 
   @Get('hotel_details/:quoteId')
   @ApiOperation({
-    summary: 'Get dynamic hotel packages from TBO API',
+    summary: 'Get persisted hotel availability snapshot',
     description:
-      'Fetches itinerary dates/destinations and generates 4 hotel packages from TBO in real-time. Returns Budget, Mid-Range, Premium, and Luxury options.',
+      'Database-only read of the latest persisted hotel availability snapshot. Live suppliers are called only by the explicit Check Availability command.',
   })
   @ApiParam({
     name: 'quoteId',
@@ -519,8 +521,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
     description: 'Quote ID generated for the itinerary',
     example: 'DVI202512032',
   })
-  @ApiOkResponse({ description: 'Dynamic hotel packages from TBO API' })
-  @Public()
+  @ApiOkResponse({ description: 'Persisted hotel availability snapshot' })
   async getItineraryHotelDetails(
     @Param('quoteId') quoteId: string,
     @Query('page') page?: string,
@@ -530,29 +531,28 @@ private readonly itineraryAccessService: ItineraryAccessService,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
  this.logger.log('\n');
- this.logger.log(' INCOMING ITINERARY HOTEL DETAILS REQUEST (TBO)');
+ this.logger.log(' INCOMING ITINERARY HOTEL DETAILS REQUEST (PERSISTED)');
  this.logger.log(` Request Timestamp: ${new Date().toISOString()}`);
  this.logger.log(` Quote ID: ${quoteId}`);
  this.logger.log('');
 
     try {
- // Use TBO service to fetch dynamic packages
-      const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : undefined;
-      const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : undefined;
+ // Read the persisted snapshot; the fallback is also database-only and
+ // exposes legacy selected rows for itineraries created before snapshots.
+      const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : 1;
+      const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : 100;
       const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;
       const itineraryRouteIdNum = itineraryRouteId
         ? Math.max(0, parseInt(itineraryRouteId, 10) || 0)
         : undefined;
-      const result = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+      const result = await this.hotelAvailabilitySnapshotService.readPersisted(
         quoteId,
-        pageNum,
-        pageSizeNum,
-        groupTypeNum,
-        itineraryRouteIdNum,
+        { page: pageNum, pageSize: pageSizeNum, groupType: groupTypeNum, itineraryRouteId: itineraryRouteIdNum },
+        () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
       );
       const duration = Date.now() - startTime;
 
- this.logger.log('\n HOTEL PACKAGES GENERATED FROM TBO');
+ this.logger.log('\n PERSISTED HOTEL SNAPSHOT READ');
  this.logger.log(` Hotel Tabs: ${result.hotelTabs?.length || 0} packages`);
  this.logger.log(` Hotel Rows: ${result.hotels?.length || 0} total hotels`);
  this.logger.log(` Total Duration: ${duration}ms`);
@@ -570,11 +570,55 @@ private readonly itineraryAccessService: ItineraryAccessService,
     }
   }
 
+  @Get('hotel_details/:quoteId/persisted')
+  @ApiOperation({
+    summary: 'Get persisted hotel availability snapshot',
+    description: 'Database-only alias for clients that need an explicit persisted-read contract.',
+  })
+  async getPersistedItineraryHotelDetails(
+    @Param('quoteId') quoteId: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('groupType') groupType?: string,
+    @Query('itineraryRouteId') itineraryRouteId?: string,
+  ): Promise<ItineraryHotelDetailsResponseDto> {
+    return this.hotelAvailabilitySnapshotService.readPersisted(
+      quoteId,
+      {
+        page: page ? Math.max(1, parseInt(page, 10) || 1) : 1,
+        pageSize: page ? Math.min(100, Math.max(1, parseInt(pageSize || '20', 10) || 20)) : 100,
+        groupType: groupType ? parseInt(groupType, 10) : undefined,
+        itineraryRouteId: itineraryRouteId ? Math.max(0, parseInt(itineraryRouteId, 10) || 0) : undefined,
+      },
+      () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
+    );
+  }
+
+  @Post('hotel_details/:quoteId/check-availability')
+  @ApiOperation({
+    summary: 'Explicitly check hotel availability',
+    description: 'Calls enabled live suppliers and offline inventory, then atomically replaces the persisted snapshot.',
+  })
+  async checkItineraryHotelAvailability(
+    @Param('quoteId') quoteId: string,
+    @Req() req: any,
+  ) {
+    const result = await this.hotelAvailabilitySnapshotService.searchAndPersist(
+      quoteId,
+      'CHECK_AVAILABILITY',
+      Number(req.user?.userId || 0),
+    );
+    return {
+      hotelDetails: result.response,
+      changeSummary: result.changeSummary,
+    };
+  }
+
   @Post('hotel_details/:quoteId/rebuild')
   @ApiOperation({
     summary: 'Rebuild hotel cache for a quote and return fresh hotel details',
     description:
-      'Clears cached hotel rows for the quote, then fetches fresh supplier results immediately (page=1, pageSize=20 unless overridden).',
+      'Deprecated compatibility command. Performs the same explicit availability refresh without clearing the active snapshot first.',
   })
   @ApiParam({
     name: 'quoteId',
@@ -585,7 +629,6 @@ private readonly itineraryAccessService: ItineraryAccessService,
   @ApiQuery({ name: 'page', required: false, example: 1, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, example: 20, type: Number })
   @ApiQuery({ name: 'groupType', required: false, example: 1, type: Number })
-  @Public()
   async rebuildItineraryHotelDetails(
     @Param('quoteId') quoteId: string,
     @Query('page') page?: string,
@@ -596,14 +639,16 @@ private readonly itineraryAccessService: ItineraryAccessService,
     const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : 20;
     const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;
 
-    await this.hotelDetailsTboService.clearHotelCacheForQuote(quoteId);
-
-    return this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+    const result = await this.hotelAvailabilitySnapshotService.searchAndPersist(
       quoteId,
-      pageNum,
-      pageSizeNum,
-      groupTypeNum,
+      'CHECK_AVAILABILITY',
+      0,
     );
+    return this.hotelAvailabilitySnapshotService.readPersisted(quoteId, {
+      page: pageNum,
+      pageSize: pageSizeNum,
+      groupType: groupTypeNum,
+    });
   }
 
   @Get('hotel_room_details/:quoteId')
@@ -633,7 +678,6 @@ private readonly itineraryAccessService: ItineraryAccessService,
     type: 'boolean',
   })
   @ApiOkResponse({ description: 'Fresh hotel room details from TBO API' })
-  @Public()
   async getItineraryHotelRoomDetails(
     @Param('quoteId') quoteId: string,
     @Query('itineraryRouteId') itineraryRouteId?: string,

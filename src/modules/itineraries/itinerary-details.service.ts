@@ -25,6 +25,7 @@ import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-v
 import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { SystemRole } from '../auth/constants/system-role.constants';
+import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -481,6 +482,7 @@ export class ItineraryDetailsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
+    private readonly hotelAvailabilitySnapshotService: HotelAvailabilitySnapshotService,
   ) {}
 
   private normalizeHotelSelectionEntries(
@@ -515,10 +517,13 @@ export class ItineraryDetailsService {
   }): Promise<HotelCostOverride> {
     const selectedEntries = this.normalizeHotelSelectionEntries(params.selections)
       .filter((selection: any) => selection && !selection.__coveredByMultiNight);
-    const hotelDetails = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
-      params.quoteId,
-    );
-    const availableRows = Array.isArray(hotelDetails.hotels) ? hotelDetails.hotels : [];
+    const availableRows = await this.hotelAvailabilitySnapshotService.getActiveRows(params.quoteId);
+    if (!availableRows) {
+      throw new BadRequestException({
+        message: 'No persisted hotel availability snapshot exists. Check Availability before previewing pricing.',
+        code: 'HOTEL_AVAILABILITY_SNAPSHOT_MISSING',
+      });
+    }
     const selectedRows: any[] = [];
     const breakdown: NonNullable<CostBreakdownDto['hotelRateBreakdown']> = [];
     const usedRouteIds = new Set<number>();
@@ -544,33 +549,23 @@ export class ItineraryDetailsService {
           .filter((row: any) => Number(row.itineraryRouteId || 0) === routeId)
           .filter((row: any) => !params.groupType || Number(row.groupType || 0) === Number(params.groupType))
           .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider);
-        const exactCodeCandidates = routeCandidates
+        const requestedOptionKey = this.normalizeIdentity(selection.optionKey);
+        const candidates = routeCandidates
           .filter((row: any) => {
-            if (!hotelCode) return true;
+            const rowOptionKey = this.normalizeIdentity(row.optionKey || this.hotelAvailabilitySnapshotService.optionKey(row));
+            if (requestedOptionKey) return requestedOptionKey === rowOptionKey;
             const rowCodes = [row.hotelCode, row.hotelId].map((value) => this.normalizeIdentity(value));
-            return rowCodes.includes(hotelCode);
-          });
-        const candidates = (exactCodeCandidates.length > 0
-          ? exactCodeCandidates
-          : (() => {
-            const sameHotelCandidates = routeCandidates.filter((row: any) => (
-              this.normalizeHotelName(row.hotelName) !== '' &&
-              this.normalizeHotelName(row.hotelName) === this.normalizeHotelName(selection.hotelName)
-            ));
-            if (sameHotelCandidates.length > 0) return sameHotelCandidates;
-
-            // If the selected property disappeared from the fresh snapshot,
-            // continue with the cheapest valid rate from the same provider.
-            return routeCandidates
-              .filter((row: any) => row.isSelectable !== false && row.isBookable !== false)
-              .filter((row: any) => !['NOT_BOOKABLE', 'NO_SUPPLIER_AVAILABILITY'].includes(
-                this.normalizeIdentity(row.availabilityStatus).toUpperCase(),
-              ))
-              .sort((a: any, b: any) => (
-                Number(a.totalHotelCost ?? a.pricePerNight ?? 0) -
-                Number(b.totalHotelCost ?? b.pricePerNight ?? 0)
-              ));
-          })())
+            if (hotelCode && !rowCodes.includes(hotelCode)) return false;
+            const rowBookingCode = this.normalizeIdentity(row.bookingCode);
+            const rowSearchReference = this.normalizeIdentity(row.searchReference);
+            const rowRoomId = this.normalizeIdentity(row.roomId);
+            const rowRateId = this.normalizeIdentity(row.rateId);
+            if (bookingCode && bookingCode !== rowBookingCode && bookingCode !== rowSearchReference) return false;
+            if (searchReference && searchReference !== rowSearchReference && searchReference !== rowBookingCode) return false;
+            if (roomId && roomId !== rowRoomId) return false;
+            if (rateId && rateId !== rowRateId) return false;
+            return true;
+          })
           .map((row: any) => {
             const rowBookingCode = this.normalizeIdentity(row.bookingCode);
             const rowSearchReference = this.normalizeIdentity(row.searchReference);
@@ -6407,6 +6402,9 @@ packageIncludes: {
       ];
     }
 
+    // Keep access scope and search criteria as separate AND clauses. Spreading
+    // both objects into the same level would make the later search OR replace
+    // the Agent/Travel Expert scope.
     const where: any = {
       deleted: 0,
       AND: [
