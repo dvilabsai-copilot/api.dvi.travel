@@ -274,24 +274,6 @@ type ManualOptimizerAttemptLog = {
   attempts: ManualScheduleAttempt[];
 };
 
-type VehicleBuildState = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
-
-type VehicleBuildStatus = {
-  planId: number;
-  status: VehicleBuildState;
-  buildRunId: string | null;
-  startedAt: string | null;
-  finishedAt: string | null;
-  updatedAt: string;
-  error: string | null;
-  eligibleCount: number;
-  vehicleDetailCount: number;
-  requestedVehicleCount: number;
-  hasUsableVehicleDetails: boolean;
-  isLatestBuildReady: boolean;
-  statusSource: 'db' | 'memory' | 'derived';
-};
-
 type ManualFitHereAnchorIntent = 'AFTER_START' | 'AFTER_ATTRACTION';
 
 type ManualFitHereAnchorType = 'after_travel' | 'BETWEEN_ROWS';
@@ -1359,20 +1341,12 @@ private getGuideSlotLabel(slotId: number): string {
     await this.vehicleBuildStatusService.startRecord(planId, buildRunId, userId);
   }
 
-  async getVehicleBuildStatus(planId: number): Promise<VehicleBuildStatus> {
-    return this.vehicleBuildStatusService.getStatus(planId);
-  }
-
   async buildPermitsSync(planId: number, req: any) {
     return this.vehicleBuildService.buildPermitsSync(planId, req);
   }
 
   async buildVehiclesSync(planId: number, req: any) {
     return this.vehicleBuildService.buildVehiclesSync(planId, req);
-  }
-
-  async triggerVehicleBuild(planId: number, req: any): Promise<VehicleBuildStatus> {
-    return this.vehicleBuildService.triggerVehicleBuild(planId, req);
   }
 
  /**

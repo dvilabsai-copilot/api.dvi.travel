@@ -646,19 +646,13 @@ export class ItineraryPlanPersistenceService {
       createPlanStage = 'post_transaction_vehicle_build_sync';
       const buildRunId = this.vehicleBuildService.createBuildRunId(result.planId);
       await this.vehicleBuildService.startRecord(result.planId, buildRunId, userId);
-      void this.vehicleBuildService.buildVehiclesSynchronously(
+      await this.vehicleBuildService.buildVehiclesSynchronously(
         result.planId,
         Array.isArray(dto.vehicles) ? dto.vehicles : [],
         userId,
         result?.quoteId ? String(result.quoteId) : undefined,
         { buildRunId },
-      ).catch((error) => {
- console.error('[ItinerariesService] Background vehicle build failed:', {
-          planId: result.planId,
-          message: String(error?.message || error || 'Unknown vehicle build error'),
-          buildRunId,
-        });
-      });
+      );
       stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
         step: 'vehicle_details_lookup_and_sync_build',
@@ -708,7 +702,7 @@ export class ItineraryPlanPersistenceService {
       ...result,
       routeFamilyBaseQuoteId: parsedRouteFamilyQuote?.baseQuoteId ?? null,
       routeVariantIndex: parsedRouteFamilyQuote?.routeVariantIndex ?? null,
-      vehicleBuildStatus: shouldBuildVehicles ? 'PROCESSING' : undefined,
+      vehicleBuildStatus: shouldBuildVehicles ? 'READY' : undefined,
     };
     } catch (error: any) {
       const message = String(error?.message || error || 'Unknown createPlan failure');

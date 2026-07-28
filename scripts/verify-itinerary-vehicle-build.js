@@ -251,21 +251,9 @@ async function main() {
     throw new Error('QUOTE_ID and PLAN_ID are required unless CREATE_ITINERARY=1 returns them');
   }
 
-  const statusUrl = `${apiBase}/itineraries/${planId}/vehicle-build-status`;
   const permitUrl = `${apiBase}/itineraries/${planId}/permit-build-sync`;
   const vehicleUrl = `${apiBase}/itineraries/${planId}/vehicle-build-sync`;
   const detailsUrl = `${apiBase}/itineraries/details/${encodeURIComponent(quoteId)}`;
-
-  const beforeStatus = await apiRequest(statusUrl, {
-    method: 'GET',
-    headers: authHeaders(token),
-  });
-
-  console.log('[vehicle-build-status:before]', JSON.stringify({
-    status: beforeStatus.status,
-    durationMs: beforeStatus.durationMs,
-    body: beforeStatus.json || beforeStatus.text,
-  }, null, 2));
 
   const permitRes = await apiRequest(permitUrl, {
     method: 'POST',
