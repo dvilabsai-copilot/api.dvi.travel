@@ -443,8 +443,18 @@ export class ItineraryHotelDetailsTboService {
   const shouldFilterByCategory =
     preferredCategories.length > 0;
 
-  const shouldFilterByMeal =
+   const shouldFilterByMeal =
     !!preferredMealPlanCode;
+
+  const normalizedPreferredMealPlanCode =
+    String(preferredMealPlanCode || '')
+      .trim()
+      .toUpperCase();
+
+  const shouldUseMealPlanFallback =
+    normalizedPreferredMealPlanCode === 'CP' ||
+    normalizedPreferredMealPlanCode === 'MAP' ||
+    normalizedPreferredMealPlanCode === 'AP';
 
   const shouldFilterByFacilities =
     normalizedPreferredFacilities.length > 0;
@@ -778,7 +788,11 @@ export class ItineraryHotelDetailsTboService {
         }
       }
 
-      if (included && shouldFilterByMeal) {
+           if (
+        included &&
+        shouldFilterByMeal &&
+        !shouldUseMealPlanFallback
+      ) {
         const mealPlanCandidates =
           this.getMealPlanCandidatesFromHotel(hotel);
 
@@ -910,15 +924,39 @@ if (hotelMasterId) {
         );
       }
 
-      if (included) {
+           if (included) {
         filteredHotels.push(nextHotel);
       }
     }
 
+    const preferredMealHotels =
+      shouldUseMealPlanFallback
+        ? filteredHotels
+            .filter((hotel) =>
+              this.getMealPlanCandidatesFromHotel(
+                hotel,
+              ).includes(
+                normalizedPreferredMealPlanCode,
+              ),
+            )
+            .map((hotel) =>
+              this.alignHotelToPreferredMealPlan(
+                hotel,
+                normalizedPreferredMealPlanCode,
+              ),
+            )
+        : [];
+
+    const finalHotels =
+      shouldUseMealPlanFallback &&
+      preferredMealHotels.length > 0
+        ? preferredMealHotels
+        : filteredHotels;
+
  this.logger.log(
       `   Preference filter route ${routeId}: ` +
         `before=${hotels.length}, ` +
-        `after=${filteredHotels.length}, ` +
+        `after=${finalHotels.length}, ` +
         `category=${
           shouldFilterByCategory
             ? preferredCategories.join(',')
@@ -934,7 +972,7 @@ if (hotelMasterId) {
         }`,
     );
 
-    filteredMap.set(routeId, filteredHotels);
+    filteredMap.set(routeId, finalHotels);
   });
 
   return filteredMap;
