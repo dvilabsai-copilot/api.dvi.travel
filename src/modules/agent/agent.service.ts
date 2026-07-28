@@ -1,5 +1,5 @@
 // FILE: src/modules/agent/agent.service.ts
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { ListAgentQueryDto } from './dto/list-agent.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
@@ -812,8 +812,21 @@ async getCouponWalletHistory(agentId: number) {
   return this.getWalletHistory(agentId, 'coupon');
 }
 
-async addCashWallet(agentId: number, body: { amount: number; remark: string }) {
+async addCashWallet(agentId: number, body: { amount: number; remark: string }, reqUser?: any) {
   await this.ensureAgentExists(agentId);
+  
+  // Security: Verify the authenticated user owns this agent or is admin
+  if (reqUser) {
+    const userAgentId = Number(reqUser.agentId || 0);
+    const userRole = Number(reqUser.role || 0);
+    // Allow if user is the agent themselves (role 4), or admin/staff (role 1,2,3,8)
+    const isOwner = userAgentId === agentId && userRole === 4;
+    const isAdmin = [1, 2, 3, 8].includes(userRole);
+    if (!isOwner && !isAdmin) {
+      throw new ForbiddenException('You can only recharge your own wallet');
+    }
+  }
+  
   const input = this.validateWalletInput(body);
   return this.addWallet(agentId, 'cash', input);
 }
