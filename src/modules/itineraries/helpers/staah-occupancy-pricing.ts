@@ -167,6 +167,13 @@ export function normalizeStaahOccupancyRates(occupancyRates: unknown): Record<st
     if (extraChild !== null && normalized.EXTRACHILD === undefined) {
       normalized.EXTRACHILD = extraChild;
     }
+
+    const extraBed = toNonNegativeNumber(
+      amountSource.extrabed ?? amountSource.extraBed ?? amountSource.extra_bed,
+    );
+    if (extraBed !== null && normalized.EXTRABED === undefined) {
+      normalized.EXTRABED = extraBed;
+    }
   }
 
   return normalized;
