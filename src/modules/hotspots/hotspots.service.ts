@@ -173,8 +173,10 @@ function parseCsvLine(line: string): string[] {
   const out: string[] = [];
   let cur = '';
   let inQ = false;
+
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
+
     if (inQ) {
       if (ch === '"') {
         if (i + 1 < line.length && line[i + 1] === '"') {
@@ -197,8 +199,47 @@ function parseCsvLine(line: string): string[] {
       }
     }
   }
+
   out.push(cur);
   return out;
+}
+
+function csvCell(value: unknown): string {
+  const text = String(value ?? '');
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+const PARKING_CSV_HEADER_ALIASES: Record<string, string> = {
+  's.no': 'sno',
+  's_no': 'sno',
+  'sno': 'sno',
+
+  'hotspot name': 'hotspot_name',
+  'hotspot_name': 'hotspot_name',
+
+  'hotspot location': 'hotspot_location',
+  'hotspot_location': 'hotspot_location',
+
+  'vehicle type': 'vehicle_type_title',
+  'vehicle_type': 'vehicle_type_title',
+  'vehicle type title': 'vehicle_type_title',
+  'vehicle_type_title': 'vehicle_type_title',
+
+  'parking charge': 'parking_charge',
+  'parking_charge': 'parking_charge',
+};
+
+function normalizeParkingCsvHeader(value: string): string {
+  const normalized = String(value ?? '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+  return (
+    PARKING_CSV_HEADER_ALIASES[normalized] ??
+    normalized.replace(/\s+/g, '_')
+  );
 }
 
 // ----------------------------- local shapes ----------------------------
@@ -768,6 +809,116 @@ export class HotspotsService {
    *
    * IMPORTANT: dvi_tempcsv.field1..field4 are STRINGS in DB. We must insert strings.
  */
+
+/**
+ * Generate the same parking-charge sample structure used by B2B.
+ * One CSV row represents one hotspot + one vehicle type.
+ */
+async buildParkingChargeSampleCsv(): Promise<string> {
+  const [hotspots, vehicleTypes, parkingCharges] = await Promise.all([
+    this.prisma.dvi_hotspot_place.findMany({
+      where: {
+        status: 1 as any,
+        deleted: 0 as any,
+      },
+      orderBy: {
+        hotspot_ID: 'asc',
+      },
+      select: {
+        hotspot_ID: true,
+        hotspot_name: true,
+        hotspot_location: true,
+      },
+    }),
+
+    this.prisma.dvi_vehicle_type.findMany({
+      where: {
+        status: 1 as any,
+        deleted: 0 as any,
+      },
+      orderBy: {
+        vehicle_type_id: 'asc',
+      },
+      select: {
+        vehicle_type_id: true,
+        vehicle_type_title: true,
+      },
+    }),
+
+    this.prisma.dvi_hotspot_vehicle_parking_charges.findMany({
+      where: {
+        status: 1 as any,
+        deleted: 0 as any,
+      },
+      orderBy: {
+        vehicle_parking_charge_ID: 'asc',
+      },
+      select: {
+        hotspot_id: true,
+        vehicle_type_id: true,
+        parking_charge: true,
+      },
+    }),
+  ]);
+
+  const chargeByHotspotAndVehicle = new Map<string, string>();
+
+  for (const parking of parkingCharges) {
+    const key = `${String(parking.hotspot_id)}:${String(
+      parking.vehicle_type_id,
+    )}`;
+
+    // Keep the first active record if old duplicate rows already exist.
+    if (!chargeByHotspotAndVehicle.has(key)) {
+      chargeByHotspotAndVehicle.set(
+        key,
+        String(parking.parking_charge ?? 0),
+      );
+    }
+  }
+
+  const lines: string[] = [
+    [
+      'S.NO',
+      'Hotspot Name',
+      'Hotspot Location',
+      'Vehicle Type',
+      'Parking Charge',
+    ]
+      .map(csvCell)
+      .join(','),
+  ];
+
+  let serialNumber = 1;
+
+  for (const hotspot of hotspots) {
+    for (const vehicleType of vehicleTypes) {
+      const key = `${String(hotspot.hotspot_ID)}:${String(
+        vehicleType.vehicle_type_id,
+      )}`;
+
+      const parkingCharge =
+        chargeByHotspotAndVehicle.get(key) ?? '0';
+
+      lines.push(
+        [
+          serialNumber,
+          hotspot.hotspot_name ?? '',
+          hotspot.hotspot_location ?? '',
+          vehicleType.vehicle_type_title ?? '',
+          parkingCharge,
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+
+      serialNumber++;
+    }
+  }
+
+  return `${lines.join('\r\n')}\r\n`;
+}
+
   async importParkingCsv(csvFilePath: string) {
     const sessionId = crypto.randomBytes(8).toString('hex');
 
@@ -801,30 +952,34 @@ export class HotspotsService {
 
       const cols = parseCsvLine(line).map(csvUnquote);
 
- // Header validation (PHP parity + backward compatibility for 4-col format)
-      if (lineNo === 1) {
-        const h = cols.map((c) => c.trim().toLowerCase());
-        const is4 =
-          h.length >= 4 &&
-          h[0] === 'hotspot_name' &&
-          h[1] === 'hotspot_location' &&
-          h[2] === 'vehicle_type_title' &&
-          h[3] === 'parking_charge';
-        const is5 =
-          h.length >= 5 &&
-          (h[0] === 's.no' || h[0] === 's_no' || h[0] === 'sno') &&
-          h[1] === 'hotspot_name' &&
-          h[2] === 'hotspot_location' &&
-          h[3] === 'vehicle_type_title' &&
-          h[4] === 'parking_charge';
-        if (!is4 && !is5) {
-          throw new BadRequestException(
-            'Invalid CSV header. Expected hotspot_name,hotspot_location,vehicle_type_title,parking_charge (optionally with leading S.NO).',
-          );
-        }
-        expectedLayout = is5 ? '5col-sno' : '4col';
-        continue;
-      }
+// Accept both the B2B display headers and the existing snake-case headers.
+if (lineNo === 1) {
+  const h = cols.map(normalizeParkingCsvHeader);
+
+  const is4 =
+    h.length === 4 &&
+    h[0] === 'hotspot_name' &&
+    h[1] === 'hotspot_location' &&
+    h[2] === 'vehicle_type_title' &&
+    h[3] === 'parking_charge';
+
+  const is5 =
+    h.length === 5 &&
+    h[0] === 'sno' &&
+    h[1] === 'hotspot_name' &&
+    h[2] === 'hotspot_location' &&
+    h[3] === 'vehicle_type_title' &&
+    h[4] === 'parking_charge';
+
+  if (!is4 && !is5) {
+    throw new BadRequestException(
+      'Invalid CSV header. Expected S.NO,Hotspot Name,Hotspot Location,Vehicle Type,Parking Charge.',
+    );
+  }
+
+  expectedLayout = is5 ? '5col-sno' : '4col';
+  continue;
+}
 
       if (cols.length < 4) {
         rejectedRows.push({
