@@ -330,3 +330,35 @@ export function calculateStaahOccupancyAmount(
     finalCalculatedAmount,
   };
 }
+
+/**
+ * A multi-night STAAH reservation is persisted once per itinerary route, while
+ * the outbound reservation amount is for the complete stay. Keep each route's
+ * stored amount aligned with the nightly price rows so confirmed-itinerary
+ * details do not compare a stay total with a single night.
+ */
+export function allocateStaahAmountAcrossRoutes(
+  totalAmount: number,
+  nightlyRates: Array<{ amountAfterTax?: unknown }> = [],
+  routeCount: number,
+): number[] {
+  const count = Math.max(Math.trunc(Number(routeCount || 0)), 0);
+  if (count === 0) return [];
+
+  const normalizedTotal = Number(Number(totalAmount || 0).toFixed(2));
+  const nightlyAmounts = nightlyRates.slice(0, count).map((night) => Number(Number(night?.amountAfterTax || 0).toFixed(2)));
+  const nightlyTotal = nightlyAmounts.reduce((sum, amount) => sum + amount, 0);
+
+  if (
+    nightlyAmounts.length === count &&
+    nightlyAmounts.every((amount) => Number.isFinite(amount) && amount >= 0) &&
+    Math.abs(nightlyTotal - normalizedTotal) <= 0.01
+  ) {
+    return nightlyAmounts;
+  }
+
+  const equalAmount = Number((normalizedTotal / count).toFixed(2));
+  const allocated = Array.from({ length: count }, () => equalAmount);
+  allocated[count - 1] = Number((normalizedTotal - equalAmount * (count - 1)).toFixed(2));
+  return allocated;
+}
