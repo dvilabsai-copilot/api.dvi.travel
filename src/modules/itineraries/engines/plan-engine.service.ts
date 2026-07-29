@@ -73,7 +73,10 @@ export class PlanEngineService {
    * - child_bed_type: 1 => without bed, 2 => with bed
    * - total_extra_bed: +1 per room where adult count is greater than 2
  */
-  private getBedAndChildTotals(travellers: CreateTravellerDto[]): {
+  private getBedAndChildTotals(
+    travellers: CreateTravellerDto[],
+    explicitTotalExtraBed?: number,
+  ): {
     totalExtraBed: number;
     totalChildWithBed: number;
     totalChildWithoutBed: number;
@@ -100,10 +103,19 @@ export class PlanEngineService {
       }
     }
 
-    let totalExtraBed = 0;
-    for (const adultCount of adultsByRoom.values()) {
-      if (adultCount > 2) {
-        totalExtraBed += 1;
+    const hasExplicitExtraBedCount =
+      explicitTotalExtraBed !== undefined &&
+      Number.isFinite(Number(explicitTotalExtraBed)) &&
+      Number(explicitTotalExtraBed) >= 0;
+    let totalExtraBed = hasExplicitExtraBedCount
+      ? Math.trunc(Number(explicitTotalExtraBed))
+      : 0;
+
+    if (!hasExplicitExtraBedCount) {
+      for (const adultCount of adultsByRoom.values()) {
+        if (adultCount > 2) {
+          totalExtraBed += 1;
+        }
       }
     }
 
@@ -489,7 +501,10 @@ export class PlanEngineService {
       totalExtraBed,
       totalChildWithBed,
       totalChildWithoutBed,
-    } = this.getBedAndChildTotals(travellers || []);
+    } = this.getBedAndChildTotals(
+      travellers || [],
+      plan.total_extra_bed,
+    );
 
     const preferredRoomCount = this.getPreferredRoomCount(travellers || []);
 

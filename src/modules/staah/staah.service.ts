@@ -658,6 +658,13 @@ export class StaahService {
       occupancyRates.EXTRACHILD = extraChild;
     }
 
+    const extraBed = this.toFiniteNumber(
+      source.extrabed ?? source.extraBed ?? source.extra_bed,
+    );
+    if (extraBed !== null) {
+      occupancyRates.EXTRABED = extraBed;
+    }
+
     return Object.keys(occupancyRates).length > 0 ? occupancyRates : null;
   }
 
