@@ -156,6 +156,17 @@ export class LocationsController {
     return this.svc.searchCities({ phrase, format, type });
   }
 
+  @Get('autosuggest/vehicle-origins')
+  @ApiOperation({ summary: 'Search active stored locations for vendor vehicle origin' })
+  @ApiQuery({ name: 'search', required: true, type: String })
+  @ApiQuery({ name: 'vendorId', required: false, type: Number })
+  @ApiQuery({ name: 'branchId', required: false, type: Number })
+  @ApiQuery({ name: 'vehicleId', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  vehicleOriginAutosuggest(@Query() q: any) {
+    return this.svc.searchVehicleOrigins(q);
+  }
+
   @Get('autosuggest/states')
   @ApiOperation({ summary: 'Autosuggest states (legacy PHP-compatible shape)' })
   @ApiQuery({ name: 'phrase', required: false, type: String })

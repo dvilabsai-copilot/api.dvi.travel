@@ -37,6 +37,14 @@ type AutosuggestQuery = {
   type?: string;
 };
 
+type VehicleOriginAutosuggestQuery = {
+  search?: string;
+  vendorId?: number | string;
+  branchId?: number | string;
+  vehicleId?: number | string;
+  limit?: number | string;
+};
+
 type StoredLocationContextRow = {
   location_ID: bigint;
   source_location: string | null;
@@ -719,6 +727,157 @@ const total = await this.prisma.dvi_stored_locations.count({ where });
     }
 
     return names.map((name) => ({ get_city: name }));
+  }
+
+  async searchVehicleOrigins(query: VehicleOriginAutosuggestQuery) {
+    const search = String(query?.search ?? '').trim();
+    if (search.length < 2) return { items: [], total: 0 };
+
+    const limit = Math.min(50, Math.max(1, Number(query?.limit) || 20));
+    const vendorId = Number(query?.vendorId || 0);
+    const branchId = Number(query?.branchId || 0);
+    const vehicleId = Number(query?.vehicleId || 0);
+
+    const [vendor, branch, vehicle] = await Promise.all([
+      vendorId > 0
+        ? this.prisma.dvi_vendor_details.findFirst({
+            where: { vendor_id: vendorId, deleted: 0 },
+            select: { vendor_country: true, vendor_state: true, vendor_city: true },
+          })
+        : null,
+      branchId > 0
+        ? this.prisma.dvi_vendor_branches.findFirst({
+            where: { vendor_branch_id: branchId, deleted: 0 },
+            select: {
+              vendor_id: true,
+              vendor_branch_country: true,
+              vendor_branch_state: true,
+              vendor_branch_city: true,
+            },
+          })
+        : null,
+      vehicleId > 0
+        ? this.prisma.dvi_vehicle.findFirst({
+            where: { vehicle_id: vehicleId, deleted: 0 },
+            select: {
+              vendor_id: true,
+              vendor_branch_id: true,
+              owner_country: true,
+              owner_state: true,
+              owner_city: true,
+            },
+          })
+        : null,
+    ]);
+
+    const numeric = (value: unknown) => {
+      const parsed = Number(value ?? 0);
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+    };
+
+    const cityIds = Array.from(
+      new Set(
+        [vendor?.vendor_city, branch?.vendor_branch_city, vehicle?.owner_city]
+          .map(numeric)
+          .filter((value): value is number => value !== null),
+      ),
+    );
+    const stateIds = Array.from(
+      new Set(
+        [vendor?.vendor_state, branch?.vendor_branch_state, numeric(vehicle?.owner_state)]
+          .map(numeric)
+          .filter((value): value is number => value !== null),
+      ),
+    );
+
+    const [cities, states] = await Promise.all([
+      cityIds.length
+        ? this.prisma.dvi_cities.findMany({
+            where: { id: { in: cityIds }, deleted: 0 },
+            select: { id: true, name: true, state_id: true },
+          })
+        : [],
+      stateIds.length
+        ? this.prisma.dvi_states.findMany({
+            where: { id: { in: stateIds }, deleted: 0 },
+            select: { id: true, name: true, country_id: true },
+          })
+        : [],
+    ]);
+
+    const cityNames = cities.map((city) => String(city.name ?? '').trim()).filter(Boolean);
+    const stateNames = states.map((state) => String(state.name ?? '').trim()).filter(Boolean);
+    const vehicleTextCity = String(vehicle?.owner_city ?? '').trim();
+    const vehicleTextState = String(vehicle?.owner_state ?? '').trim();
+    if (vehicleTextCity && !numeric(vehicleTextCity)) cityNames.push(vehicleTextCity);
+    if (vehicleTextState && !numeric(vehicleTextState)) stateNames.push(vehicleTextState);
+
+    const searchWhere = {
+      OR: [
+        { source_location: { contains: search } },
+        { source_location_city: { contains: search } },
+        { source_location_state: { contains: search } },
+      ],
+    };
+    const contextWhere = [
+      ...cityIds.map((id) => ({ source_city_id: id })),
+      ...cityNames.flatMap((name) => [
+        { source_location_city: { contains: name } },
+        { source_location: { contains: name } },
+      ]),
+      ...stateNames.map((name) => ({ source_location_state: { contains: name } })),
+    ];
+
+    const where: any = { deleted: 0, status: 1, ...searchWhere };
+    if (contextWhere.length) where.AND = [{ OR: contextWhere }];
+
+    const rows = await this.prisma.dvi_stored_locations.findMany({
+      where,
+      select: {
+        location_ID: true,
+        source_location: true,
+        source_location_city: true,
+        source_city_id: true,
+        source_location_state: true,
+      },
+      orderBy: [{ source_location: 'asc' }, { location_ID: 'asc' }],
+      take: limit * 3,
+    });
+
+    const cityStateIds = Array.from(
+      new Set(rows.map((row) => Number(row.source_city_id ?? 0)).filter((id) => id > 0)),
+    );
+    const cityStateRows = cityStateIds.length
+      ? await this.prisma.dvi_cities.findMany({
+          where: { id: { in: cityStateIds }, deleted: 0 },
+          select: { id: true, state_id: true },
+        })
+      : [];
+    const stateByCityId = new Map(cityStateRows.map((row) => [row.id, row.state_id]));
+
+    const seen = new Set<string>();
+    const items = rows
+      .map((row) => {
+        const location = String(row.source_location ?? '').trim();
+        const city = String(row.source_location_city ?? '').trim();
+        const state = String(row.source_location_state ?? '').trim();
+        const key = `${location.toLowerCase()}|${city.toLowerCase()}|${state.toLowerCase()}`;
+        if (!location || seen.has(key)) return null;
+        seen.add(key);
+        const sourceCityId = row.source_city_id ? Number(row.source_city_id) : null;
+        return {
+          location_ID: Number(row.location_ID),
+          source_location: location,
+          source_city: city,
+          source_city_id: sourceCityId,
+          source_state: state,
+          source_state_id: sourceCityId ? stateByCityId.get(sourceCityId) ?? null : null,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .slice(0, limit);
+
+    return { items, total: items.length };
   }
 
   async searchStates(query: AutosuggestQuery) {
