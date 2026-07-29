@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Prisma, dvi_hotel } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import {
+  allocateStaahAmountAcrossRoutes,
   calculateStaahOccupancyAmount,
   type StaahOccupancyPricingBreakdown,
   type StaahPricingPaxInput,
@@ -1041,7 +1042,8 @@ export class StaahBookingPushService {
 
  // Persist confirmation row in staah_hotel_booking_confirmation
         try {
-          for (const routeId of routeIds) {
+          const routeAmounts = allocateStaahAmountAcrossRoutes(roomAmountAfterTax, nightlyRates, routeIds.length);
+          for (const [routeIndex, routeId] of routeIds.entries()) {
             await this.prisma.staah_hotel_booking_confirmation.create({
               data: {
                 confirmed_itinerary_plan_ID: params.confirmedItineraryPlanId,
@@ -1053,7 +1055,7 @@ export class StaahBookingPushService {
                 check_in_date: hotel.checkInDate ? new Date(hotel.checkInDate) : null,
                 check_out_date: hotel.checkOutDate ? new Date(hotel.checkOutDate) : null,
                 number_of_rooms: Number(hotel.numberOfRooms || 1),
-                net_amount: roomAmountAfterTax,
+                net_amount: routeAmounts[routeIndex] ?? roomAmountAfterTax,
                 guest_nationality: String(hotel.guestNationality || ''),
                 total_guests: Number((adults || 0) + (children || 0)),
                 api_response: {

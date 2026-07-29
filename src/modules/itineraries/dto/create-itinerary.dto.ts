@@ -120,6 +120,12 @@ export class CreatePlanDto {
   @ApiProperty({ example: 0 }) @IsInt() child_count!: number;
   @ApiProperty({ example: 0 }) @IsInt() infant_count!: number;
 
+  @ApiProperty({ example: 0, required: false, description: 'Explicit extra-bed count across all rooms. If omitted, legacy adult occupancy derivation is used.' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  total_extra_bed?: number;
+
   @ApiProperty({ example: '' })
   @IsString()
   special_instructions!: string;
