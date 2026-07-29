@@ -1427,7 +1427,8 @@ private getGuideSlotLabel(slotId: number): string {
       return {
         ...result,
         hotelSearch: {
-          status: hotelSearch.response.hotelAvailability?.isPlaceholderOnly ? 'PARTIAL' : 'COMPLETE',
+          status: Number(hotelSearch.response.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
+            hotelSearch.response.hotelAvailability?.availabilityState === 'PARTIAL' ? 'PARTIAL' : 'COMPLETE',
           searchRunId: hotelSearch.searchRunId,
           checkedAt: hotelSearch.response.hotelAvailability?.checkedAt,
           optionCount: hotelSearch.response.hotels?.length || 0,
@@ -1573,7 +1574,7 @@ private getGuideSlotLabel(slotId: number): string {
   async selectHotel(data: {
     planId: number;
     routeId: number;
-    hotelId: number;
+    hotelId: number | null;
     roomTypeId: number;
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
@@ -1584,8 +1585,8 @@ private getGuideSlotLabel(slotId: number): string {
  /**
    * Bulk save hotel selections - used before confirming itinerary
  */
-  async bulkSaveHotels(planId: number, hotels: any[]) {
-    return this.selectionWorkflowService.bulkSaveHotels(planId, hotels);
+  async bulkSaveHotels(planId: number, hotels: any[], requestedBy = 1) {
+    return this.selectionWorkflowService.bulkSaveHotels(planId, hotels, requestedBy);
   }
 
   async selectVehicleVendor(

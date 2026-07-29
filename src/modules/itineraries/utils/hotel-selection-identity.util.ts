@@ -9,6 +9,11 @@ export type HotelSelectionSnapshot = {
   provider?: string;
   hotelCode?: string | number;
   hotelId?: string | number;
+  roomType?: string;
+  mealPlan?: string;
+  roomId?: string | number;
+  totalPrice?: number;
+  pricePerNight?: number;
   searchRunId?: string;
   selectionOrigin?: HotelSelectionOrigin;
   availabilityStatus?: string;
@@ -116,11 +121,67 @@ export function selectedOptionKeyFromRow(row: any): string {
   return clean(snapshot.optionKey || row?.selected_rate_option_id);
 }
 
+export function hotelPropertyMatchesSelection(selection: any, option: any): boolean {
+  const snapshot = parseHotelSelectionSnapshot(selection);
+  const selectedProvider = clean(selection?.hotel_provider || snapshot.provider);
+  const optionProvider = clean(option?.provider || option?.hotel_provider);
+  if (selectedProvider && optionProvider && selectedProvider !== optionProvider) return false;
+
+  const selectedCanonicalId = clean(selection?.hotel_id || snapshot.hotelId);
+  const optionCanonicalId = clean(option?.canonicalHotelId || option?.canonical_hotel_id || option?.hotelId || option?.hotel_id);
+  if (selectedCanonicalId && optionCanonicalId && selectedCanonicalId === optionCanonicalId) return true;
+
+  const selectedCode = clean(snapshot.hotelCode || selection?.hotel_code || selection?.hotel_id);
+  const optionCode = clean(option?.hotelCode || option?.providerHotelCode || option?.hotel_code || option?.hotelId || option?.hotel_id);
+  return Boolean(selectedCode && optionCode && selectedCode === optionCode);
+}
+
+export function hotelRateMatchesSelection(selection: any, option: any): boolean {
+  if (!hotelPropertyMatchesSelection(selection, option)) return false;
+  const snapshot = parseHotelSelectionSnapshot(selection);
+  const selectedRoom = clean(snapshot.roomType || selection?.room_type);
+  const optionRoom = clean(option?.roomType || option?.room_type || option?.roomTypeName);
+  if (selectedRoom && optionRoom && selectedRoom !== optionRoom) return false;
+
+  const selectedMeal = clean(snapshot.mealPlan || selection?.meal_plan);
+  const optionMeal = clean(option?.mealPlan || option?.meal_plan);
+  if (selectedMeal && optionMeal && selectedMeal !== optionMeal) return false;
+
+  const selectedRoomId = clean(snapshot.roomId || selection?.room_id);
+  const optionRoomId = clean(option?.roomId || option?.room_id);
+  if (selectedRoomId && optionRoomId && selectedRoomId !== optionRoomId) return false;
+  const selectedRateId = clean(snapshot.rateId || selection?.rate_id);
+  const optionRateId = clean(option?.rateId || option?.rate_id);
+  if (selectedRateId && optionRateId && selectedRateId !== optionRateId) return false;
+
+  const selectedAmounts = [
+    snapshot.totalPrice,
+    snapshot.pricePerNight,
+    selection?.selected_total_price,
+    selection?.selected_price_per_night,
+    selection?.total_hotel_cost,
+  ].map(Number).filter((amount) => Number.isFinite(amount) && amount > 0);
+  const optionAmounts = [
+    option?.totalHotelCost,
+    option?.total_hotel_cost,
+    option?.totalPrice,
+    option?.totalStayPrice,
+    option?.pricePerNight,
+    option?.price_per_night,
+    option?.totalAmount,
+  ].map(Number).filter((amount) => Number.isFinite(amount) && amount > 0);
+  return selectedAmounts.length === 0 || optionAmounts.length === 0 || selectedAmounts.some((selectedAmount) =>
+    optionAmounts.some((optionAmount) => Math.abs(selectedAmount - optionAmount) <= 0.009),
+  );
+}
+
 export function optionMatchesSelection(selection: any, option: any): boolean {
   const snapshot = parseHotelSelectionSnapshot(selection);
   const expectedOptionKey = clean(snapshot.optionKey);
   const actualOptionKey = clean(option?.optionKey || hotelOptionKey(option));
-  if (expectedOptionKey && expectedOptionKey === actualOptionKey) return true;
+  if (expectedOptionKey && expectedOptionKey === actualOptionKey) {
+    return hotelRateMatchesSelection(selection, option);
+  }
 
   const selectedRate = clean(snapshot.rateOptionId || selection?.selected_rate_option_id);
   const optionIds = [
@@ -129,12 +190,11 @@ export function optionMatchesSelection(selection: any, option: any): boolean {
     option?.searchReference,
     option?.bookingCode,
   ].map(clean).filter(Boolean);
-  if (selectedRate && optionIds.includes(selectedRate)) return true;
+  if (selectedRate && optionIds.includes(selectedRate)) {
+    return hotelRateMatchesSelection(selection, option);
+  }
 
-  const selectedCode = clean(selection?.hotel_code || selection?.hotel_id);
-  const optionCode = clean(option?.hotelCode || option?.hotelId);
-  return Boolean(selectedCode && optionCode && selectedCode === optionCode &&
-    (!selection?.hotel_provider || clean(selection.hotel_provider) === clean(option?.provider)));
+  return hotelRateMatchesSelection(selection, option);
 }
 
 export function hotelDisplaySnapshot(row: any): Record<string, unknown> {

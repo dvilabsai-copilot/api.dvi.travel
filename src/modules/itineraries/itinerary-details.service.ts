@@ -545,11 +545,22 @@ export class ItineraryDetailsService {
         const rateId = this.normalizeIdentity(selection.rateId);
         const roomType = this.normalizeIdentity(selection.roomType);
         const mealPlan = this.normalizeIdentity(selection.mealPlan);
+        const requestedOptionKey = this.normalizeIdentity(selection.optionKey);
+        const hasExplicitRateIdentity = Boolean(
+          requestedOptionKey || bookingCode || searchReference || roomId || rateId,
+        );
         const routeCandidates = availableRows
           .filter((row: any) => Number(row.itineraryRouteId || 0) === routeId)
-          .filter((row: any) => !params.groupType || Number(row.groupType || 0) === Number(params.groupType))
+          // `groupType` is a package-level hint, not a route-level rate
+          // identity. A single preview can contain selections from different
+          // groups (especially when offline rows are group 0), so do not let
+          // the global hint hide an explicitly selected rate.
+          .filter((row: any) => {
+            if (hasExplicitRateIdentity) return true;
+            const requestedGroupType = Number(selection.groupType || params.groupType || 0);
+            return !requestedGroupType || Number(row.groupType || 0) === requestedGroupType;
+          })
           .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider);
-        const requestedOptionKey = this.normalizeIdentity(selection.optionKey);
         const candidates = routeCandidates
           .filter((row: any) => {
             const rowOptionKey = this.normalizeIdentity(row.optionKey || this.hotelAvailabilitySnapshotService.optionKey(row));

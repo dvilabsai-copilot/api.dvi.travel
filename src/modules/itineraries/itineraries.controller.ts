@@ -548,7 +548,6 @@ private readonly itineraryAccessService: ItineraryAccessService,
       const result = await this.hotelAvailabilitySnapshotService.readPersisted(
         quoteId,
         { page: pageNum, pageSize: pageSizeNum, groupType: groupTypeNum, itineraryRouteId: itineraryRouteIdNum },
-        () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
       );
       const duration = Date.now() - startTime;
 
@@ -590,14 +589,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
         groupType: groupType ? parseInt(groupType, 10) : undefined,
         itineraryRouteId: itineraryRouteId ? Math.max(0, parseInt(itineraryRouteId, 10) || 0) : undefined,
       },
-      () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
     );
   }
 
   @Post('hotel_details/:quoteId/check-availability')
   @ApiOperation({
     summary: 'Explicitly check hotel availability',
-    description: 'Calls enabled live suppliers and offline inventory, then atomically replaces the persisted snapshot.',
+    description: 'Calls enabled live suppliers and offline inventory for comparison, then atomically replaces the persisted snapshot without silently selecting offline inventory.',
   })
   async checkItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
@@ -606,6 +604,46 @@ private readonly itineraryAccessService: ItineraryAccessService,
     const result = await this.hotelAvailabilitySnapshotService.searchAndPersist(
       quoteId,
       'CHECK_AVAILABILITY',
+      Number(req.user?.userId || 0),
+    );
+    return {
+      hotelDetails: result.response,
+      changeSummary: result.changeSummary,
+    };
+  }
+
+  @Post('hotel_details/:quoteId/reset')
+  @ApiOperation({
+    summary: 'Reset hotel selections and rebuild availability',
+    description: 'Clears the current editable hotel selections, then performs the same live and offline hotel search used during itinerary creation.',
+  })
+  async resetItineraryHotelAvailability(
+    @Param('quoteId') quoteId: string,
+    @Req() req: any,
+  ) {
+    const result = await this.hotelAvailabilitySnapshotService.resetAndPersist(
+      quoteId,
+      Number(req.user?.userId || 0),
+    );
+    return {
+      hotelDetails: result.response,
+      changeSummary: result.changeSummary,
+    };
+  }
+
+  @Post('hotel_details/:quoteId/offline-availability')
+  @ApiOperation({
+    summary: 'Fetch offline hotels for one stay group or all stay groups',
+    description: 'Does not call live suppliers. Existing hotel selections are preserved; missing groups may be auto-selected from the explicitly requested offline inventory.',
+  })
+  async fetchOfflineItineraryHotelAvailability(
+    @Param('quoteId') quoteId: string,
+    @Body() body: { routeId?: number },
+    @Req() req: any,
+  ) {
+    const result = await this.hotelAvailabilitySnapshotService.fetchOfflineForStay(
+      quoteId,
+      body?.routeId ? Number(body.routeId) : undefined,
       Number(req.user?.userId || 0),
     );
     return {
@@ -1116,7 +1154,12 @@ async getAvailableActivities(
       properties: {
         planId: { type: 'number', example: 17940 },
         routeId: { type: 'number', example: 1 },
-        hotelId: { type: 'number', example: 123 },
+        hotelId: {
+          type: 'number',
+          nullable: true,
+          example: 123,
+          description: 'Canonical dvi_hotel.hotel_id when mapped; null for live supplier-only rows such as TBO.',
+        },
         roomTypeId: { type: 'number', example: 456 },
         groupType: { type: 'number', example: 2, description: '1=Budget, 2=Mid-Range, 3=Premium, 4=Luxury' },
         mealPlan: {
@@ -1129,14 +1172,17 @@ async getAvailableActivities(
           },
         },
       },
-      required: ['planId', 'routeId', 'hotelId', 'roomTypeId'],
+      required: ['planId', 'routeId', 'roomTypeId'],
     },
   })
   @ApiOkResponse({ description: 'Hotel selected successfully' })
   async selectHotel(@Body() body: any, @Req() req: Request) {
     this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
     await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
-    return this.svc.selectHotel(body);
+    return this.svc.selectHotel({
+      ...body,
+      requestedBy: Number((req as any).user?.userId || 1),
+    });
   }
 
   @Post('hotels/bulk-save')
@@ -1175,7 +1221,11 @@ async getAvailableActivities(
   async bulkSaveHotels(@Body() body: { planId: number; hotels: any[] }, @Req() req: Request) {
     this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
     await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
-    return this.svc.bulkSaveHotels(body.planId, body.hotels);
+    return this.svc.bulkSaveHotels(
+      body.planId,
+      body.hotels,
+      Number((req as any).user?.userId || 1),
+    );
   }
 
   @Post('vehicles/select-vendor')
