@@ -240,6 +240,71 @@ export class ItineraryConfirmedItineraryDetailsService {
       },
       orderBy: { staah_hotel_booking_confirmation_ID: 'desc' },
     });
+
+    // Older multi-night rows stored the complete stay total on every route
+    // row. Normalize those rows while reading them so the details response
+    // compares like-for-like (one route/night against one route/night).
+    const normalizedStaahNetAmountById = new Map<number, number>();
+    const staahRowsByBooking = new Map<string, any[]>();
+    const parseStaahApiResponse = (value: unknown): any => {
+      if (value && typeof value === 'object') return value;
+      if (typeof value !== 'string') return {};
+      try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    };
+    const getStaahReservationRequest = (row: any): any => {
+      const apiResponse = parseStaahApiResponse(row?.api_response);
+      return apiResponse?.confirm?.request || {};
+    };
+    const getStaahBookingKey = (row: any): string => {
+      const bookingReference = String(row?.staah_booking_reference || '').trim();
+      if (bookingReference) return bookingReference;
+      return [
+        String(row?.staah_hotel_code || '').trim(),
+        String(row?.check_in_date || '').slice(0, 10),
+        String(row?.check_out_date || '').slice(0, 10),
+      ].join('|');
+    };
+
+    staahRows.forEach((row: any) => {
+      const key = getStaahBookingKey(row);
+      const groupedRows = staahRowsByBooking.get(key) || [];
+      groupedRows.push(row);
+      staahRowsByBooking.set(key, groupedRows);
+    });
+    staahRowsByBooking.forEach((rows) => {
+      const firstRequest = getStaahReservationRequest(rows[0]);
+      const reservation = firstRequest?.reservations?.reservation?.[0] || {};
+      const stayTotal = Number(reservation?.totalamountaftertax || 0);
+      const payloadRouteIds = String(
+        (Array.isArray(reservation?.extraData)
+          ? reservation.extraData.find((item: any) => item?.name === 'routeIds')?.value
+          : '') || '',
+      )
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      const routeCount = new Set<number>([
+        ...rows.map((row: any) => Number(row?.itinerary_route_ID || 0)),
+        ...payloadRouteIds,
+      ].filter((value) => value > 0)).size;
+
+      if (stayTotal <= 0 || routeCount <= 1) return;
+
+      rows.forEach((row: any) => {
+        const storedAmount = Number(row?.net_amount || 0);
+        if (storedAmount > 0 && Math.abs(storedAmount - stayTotal) <= 1) {
+          normalizedStaahNetAmountById.set(
+            Number(row?.staah_hotel_booking_confirmation_ID || 0),
+            Number((stayTotal / routeCount).toFixed(2)),
+          );
+        }
+      });
+    });
     const hobseRows = await (this.prisma as any).hobse_hotel_booking_confirmation.findMany({
       where: {
         plan_id: plan.itinerary_plan_ID,
@@ -314,7 +379,9 @@ export class ItineraryConfirmedItineraryDetailsService {
       ).trim() || null,
       checkInDate: row.check_in_date,
       checkOutDate: row.check_out_date,
-      netAmount: Number(row.net_amount || 0),
+      netAmount:
+        normalizedStaahNetAmountById.get(Number(row.staah_hotel_booking_confirmation_ID || 0)) ??
+        Number(row.net_amount || 0),
       roomType: String(
         row?.api_response?.confirm?.request?.reservations?.reservation?.[0]?.room?.[0]?.room_name || '',
       ).trim() || null,
