@@ -69,6 +69,13 @@ export class HotelSearchService {
     return new Date(year, month, day, 0, 0, 0, 0);
   }
 
+  private normalizeCityToken(value: unknown): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
   async searchHotels(searchCriteria: HotelSearchDTO): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
     try {
@@ -101,6 +108,7 @@ export class HotelSearchService {
         childCount,
         childAges,
         guestNationality,
+        hotelName,
         occupancies,
  providers = ['tbo', 'resavenue', 'hobse'], // Search all providers by default
       } = searchCriteria;
@@ -118,6 +126,9 @@ export class HotelSearchService {
       }
       if (guestNationality) {
  this.logger.log(` - Nationality: ${guestNationality}`);
+      }
+      if (hotelName) {
+ this.logger.log(` - Hotel Name: ${hotelName}`);
       }
  this.logger.log(` - Providers: ${providers.join(', ')}`);
 
@@ -274,26 +285,35 @@ if (activeProviders.length === 0) {
             roomCount,
             guestCount,
             guestNationality,
+            hotelName,
             occupancies: normalizedOccupancies,
           },
           searchCriteria.preferences,
         ),
       );
 
+      if (!this.isTboOnlyFetchEnabled()) {
+        searchPromises.push(this.searchAxisRoomsHotels(searchCriteria));
+        searchPromises.push(this.searchStaahHotels(searchCriteria));
+      }
+
       const results = await Promise.all(searchPromises);
       const allHotels = results.flat();
 
-      if (allHotels.length === 0) {
+      const filteredHotels = this.filterHotelsByName(allHotels, hotelName);
+
+      if (filteredHotels.length === 0) {
  this.logger.warn(` No hotels found for the given criteria`);
  this.logger.log(` Total Time: ${Date.now() - startTime}ms`);
         return [];
       }
 
  this.logger.log(` Found ${allHotels.length} hotels across all providers`);
+ this.logger.log(` Returning ${filteredHotels.length} hotels after hotel-name filtering`);
  this.logger.log(` Provider Search Time: ${Date.now() - startTime}ms`);
 
  // Deduplicate and rank hotels
-      const uniqueHotels = this.deduplicateHotels(allHotels);
+      const uniqueHotels = this.deduplicateHotels(filteredHotels);
       const rankedHotels = this.rankHotels(uniqueHotels, searchCriteria.preferences);
 
  this.logger.log(` Returning ${rankedHotels.length} unique, ranked hotels`);
@@ -312,12 +332,20 @@ if (activeProviders.length === 0) {
 
   private async searchAxisRoomsHotels(criteria: HotelSearchDTO): Promise<HotelSearchResult[]> {
     const cityToken = String(criteria.cityCode || '').trim().toLowerCase();
+    const hotelNameQuery = String(criteria.hotelName || '').trim().toLowerCase();
     const checkIn = new Date(`${String(criteria.checkInDate).slice(0, 10)}T00:00:00.000Z`);
     const hotels = await (this.prisma as any).dvi_hotel.findMany({
       where: { axisrooms_enabled: 1, status: 1, OR: [{ deleted: false }, { deleted: null }] },
       select: { hotel_id: true, hotel_name: true, hotel_city: true, hotel_address: true, hotel_category: true, axisrooms_property_id: true },
     });
-    const matching = hotels.filter((hotel: any) => String(hotel.hotel_city || '').trim().toLowerCase() === cityToken || String(hotel.hotel_id) === cityToken);
+    const matching = hotels.filter((hotel: any) => {
+      const matchesCity =
+        String(hotel.hotel_city || '').trim().toLowerCase() === cityToken ||
+        String(hotel.hotel_id) === cityToken;
+      if (!matchesCity) return false;
+      if (!hotelNameQuery) return true;
+      return String(hotel.hotel_name || '').trim().toLowerCase().includes(hotelNameQuery);
+    });
     const results: HotelSearchResult[] = [];
     for (const hotel of matching) {
       const availability = await (this.prisma as any).dvi_hotel_room_availability.findMany({ where: { hotel_id: hotel.hotel_id, start_date: { lte: checkIn }, end_date: { gte: checkIn }, free: { gt: 0 } }, select: { room_id: true, free: true } });
@@ -338,6 +366,201 @@ if (activeProviders.length === 0) {
       });
     }
     return results;
+  }
+
+  private async searchStaahHotels(criteria: HotelSearchDTO): Promise<HotelSearchResult[]> {
+    const cityToken = this.normalizeCityToken(criteria.cityCode);
+    const hotelNameQuery = String(criteria.hotelName || '').trim().toLowerCase();
+    const checkIn = new Date(`${String(criteria.checkInDate).slice(0, 10)}T00:00:00.000Z`);
+    const roomCount = Math.max(Number(criteria.roomCount || 1), 1);
+    const staahHotels = await (this.prisma as any).dvi_hotel.findMany({
+      where: {
+        staah_enabled: 1,
+        status: 1,
+        deleted: false,
+        AND: [
+          { staah_property_id: { not: null } },
+          { staah_property_id: { not: '' } },
+        ],
+      },
+      select: {
+        hotel_id: true,
+        hotel_name: true,
+        hotel_city: true,
+        hotel_address: true,
+        hotel_category: true,
+        staah_property_id: true,
+      },
+    });
+
+    if (!staahHotels.length) {
+      return [];
+    }
+
+    const cityIds = Array.from(
+      new Set(
+        staahHotels
+          .map((hotel: any) => Number(hotel.hotel_city || 0))
+          .filter((value) => Number.isFinite(value) && value > 0),
+      ),
+    );
+    const cityRows = cityIds.length
+      ? await (this.prisma as any).dvi_cities.findMany({
+          where: { id: { in: cityIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const cityMap = new Map<number, string>(
+      cityRows.map((row: any) => [Number(row.id), String(row.name || '')]),
+    );
+
+    const matchingHotels = staahHotels.filter((hotel: any) => {
+      const cityId = Number(hotel.hotel_city || 0);
+      const resolvedCity = cityMap.get(cityId) || String(hotel.hotel_city || '');
+      const hotelCityToken = this.normalizeCityToken(resolvedCity);
+      if (!hotelCityToken || hotelCityToken !== cityToken) {
+        return false;
+      }
+      if (!hotelNameQuery) {
+        return true;
+      }
+      return String(hotel.hotel_name || '').trim().toLowerCase().includes(hotelNameQuery);
+    });
+
+    if (!matchingHotels.length) {
+      return [];
+    }
+
+    const propertyIds = matchingHotels
+      .map((hotel: any) => String(hotel.staah_property_id || '').trim())
+      .filter(Boolean);
+    const [inventoryRows, ratePlanRows, rateRows] = await Promise.all([
+      (this.prisma as any).staah_inventory.findMany({
+        where: {
+          staah_property_id: { in: propertyIds },
+          start_date: { lte: checkIn },
+          end_date: { gte: checkIn },
+          free: { gte: roomCount },
+        },
+        orderBy: { received_at: 'desc' },
+      }),
+      (this.prisma as any).staah_rateplan.findMany({
+        where: { staah_property_id: { in: propertyIds } },
+      }),
+      (this.prisma as any).staah_rate.findMany({
+        where: {
+          staah_property_id: { in: propertyIds },
+          start_date: { lte: checkIn },
+          end_date: { gte: checkIn },
+        },
+        orderBy: { received_at: 'desc' },
+      }),
+    ]);
+
+    const results: HotelSearchResult[] = [];
+    for (const hotel of matchingHotels) {
+      const propertyId = String((hotel as any).staah_property_id || '').trim();
+      const propertyInventory = (inventoryRows as any[]).filter(
+        (row) => String(row.staah_property_id || '') === propertyId,
+      );
+      if (!propertyInventory.length) continue;
+
+      for (const inventory of propertyInventory) {
+        const roomId = String((inventory as any).room_id || '').trim();
+        if (!roomId) continue;
+
+        const matchingPlans = (ratePlanRows as any[]).filter(
+          (row) =>
+            String(row.staah_property_id || '') === propertyId &&
+            String(row.room_id || '') === roomId,
+        );
+        for (const plan of matchingPlans) {
+          const rate = (rateRows as any[]).find(
+            (row) =>
+              String(row.staah_property_id || '') === propertyId &&
+              String(row.room_id || '') === roomId &&
+              String(row.rateplan_id || '') === String((plan as any).rateplan_id || ''),
+          );
+          if (!rate) continue;
+
+          const price = this.extractAxisRate((rate as any).occupancy_rates);
+          if (!price) continue;
+
+          const ratePlanName = String((plan as any).rateplan_name || '').trim();
+          const mealPlanDescription = String((plan as any).meal_plan_description || ratePlanName || '').trim();
+          const ratePlanId = String((plan as any).rateplan_id || '').trim();
+          const optionId = `STAAH-${propertyId}-${roomId}-${ratePlanId}-${String(criteria.checkInDate).slice(0, 10).replace(/-/g, '')}`;
+
+          results.push({
+            provider: 'staah',
+            providerDisplayName: 'STAAH',
+            canonicalHotelId: Number((hotel as any).hotel_id || 0) || null,
+            providerHotelCode: propertyId,
+            rateOptionId: optionId,
+            roomId,
+            rateId: ratePlanId,
+            hotelCode: String((hotel as any).hotel_id || ''),
+            hotelName: String((hotel as any).hotel_name || 'Hotel'),
+            cityCode: String(criteria.cityCode || ''),
+            address: String((hotel as any).hotel_address || ''),
+            rating: Number((hotel as any).hotel_category || 0),
+            facilities: [],
+            amenities: [],
+            inclusions: [],
+            rateConditions: [],
+            images: [],
+            price,
+            netAmount: price,
+            totalFare: price,
+            currency: 'INR',
+            roomType: roomId,
+            mealPlan: mealPlanDescription || '-',
+            roomTypes: [{
+              roomCode: roomId,
+              roomName: roomId,
+              bedType: '',
+              capacity: 0,
+              price,
+              cancellationPolicy: '',
+            }],
+            searchReference: optionId,
+            bookingCode: optionId,
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+            pricePerNight: price,
+            totalStayPrice: price,
+            numberOfNights: 1,
+            bookingMode: 'LIVE_API',
+            priceSource: 'LIVE_API',
+            availabilityStatus: 'LIVE_AVAILABLE',
+            isLiveRate: true,
+            isLiveBookable: true,
+            isSelectable: true,
+            requiresHotelApproval: false,
+            approvalStatus: 'NOT_REQUIRED',
+            manualConfirmationStatus: 'NOT_STARTED',
+          });
+        }
+      }
+    }
+
+    return results;
+  }
+
+  private filterHotelsByName(
+    hotels: HotelSearchResult[],
+    hotelName?: string,
+  ): HotelSearchResult[] {
+    const query = String(hotelName || '').trim().toLowerCase();
+    if (!query) {
+      return hotels;
+    }
+
+    return hotels.filter((hotel) => {
+      const name = String(hotel.hotelName || '').trim().toLowerCase();
+      const address = String(hotel.address || '').trim().toLowerCase();
+      const roomType = String(hotel.roomType || '').trim().toLowerCase();
+      return name.includes(query) || address.includes(query) || roomType.includes(query);
+    });
   }
 
   private extractAxisRate(value: unknown): number {
