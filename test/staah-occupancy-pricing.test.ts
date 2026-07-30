@@ -46,3 +46,19 @@ test('applies nested STAAH extra-bed and extra-child rates for multi-room occupa
   assert.equal(breakdown.extraChildAmount, 150);
   assert.equal(breakdown.finalCalculatedAmount, 1950);
 });
+
+test('calculates STAAH price entries independently for DOUBLE plus SINGLE rooms', () => {
+  const rates = { DOUBLE: 900, SINGLE: 800, EXTRACHILD: 150 };
+  const doubleWithChild = calculateStaahOccupancyAmount(rates, {
+    roomCount: 1,
+    adults: 2,
+    children: 1,
+    childWithBedCount: 1,
+  });
+  const single = calculateStaahOccupancyAmount(rates, { roomCount: 1, adults: 1 });
+
+  assert.equal(doubleWithChild.finalCalculatedAmount, 1050);
+  assert.equal(doubleWithChild.extraChildCount, 1);
+  assert.equal(doubleWithChild.extraChildRate, 150);
+  assert.equal(single.finalCalculatedAmount, 800);
+});
