@@ -28,6 +28,7 @@ export interface HotelSearchResult {
   providerHotelCode?: string;
   rateOptionId?: string;
   roomId?: string | number;
+  rateId?: string | number;
   roomTypeId?: number;
   rateOptions?: Array<Record<string, unknown>>;
   hotelCode: string;
@@ -110,6 +111,7 @@ export interface HotelSearchCriteria {
   roomCount: number;
   guestCount: number;
   guestNationality?: string;
+  hotelName?: string;
   occupancies?: RoomOccupancy[];
  hotelCodes?: string; // Optional: specific hotel codes to search (comma-separated)
 }
