@@ -204,12 +204,45 @@ async downloadParkingChargeSample(@Res() res: Response) {
     return this.svc.getParkingTemplist(sessionId);
   }
 
- // 3) Confirm import -> upsert into dvi_hotspot_vehicle_parking_charges and mark temp rows status=2
+// 3) Confirm import -> upsert into dvi_hotspot_vehicle_parking_charges and mark temp rows status=2
  // POST /hotspots/parking-charge/confirm { sessionId: string, tempIds?: number[] }
   @Post('parking-charge/confirm')
   confirmParkingImport(@Body() body: { sessionId: string; tempIds?: number[] }) {
     const { sessionId, tempIds } = body || {};
     if (!sessionId) throw new BadRequestException('sessionId is required');
     return this.svc.confirmParkingImport(sessionId, Array.isArray(tempIds) ? tempIds : undefined);
+  }
+
+  @Get('parking-charge/records')
+  getParkingChargeRecords(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('hotspotId') hotspotId?: string,
+    @Query('vehicleTypeId') vehicleTypeId?: string,
+  ) {
+    return this.svc.getParkingChargeRecords({
+      page: Number(page || 1),
+      pageSize: Number(pageSize || 25),
+      hotspotId: hotspotId ? Number(hotspotId) : undefined,
+      vehicleTypeId: vehicleTypeId ? Number(vehicleTypeId) : undefined,
+    });
+  }
+
+  @Patch('parking-charge/records')
+  updateParkingChargeRecords(
+    @Body() body: {
+      rows: Array<{
+        hotspotId: number;
+        vehicleTypeId: number;
+        parkingCharge: number;
+      }>;
+    },
+  ) {
+    return this.svc.updateParkingChargeRecords(body?.rows);
+  }
+
+  @Delete('parking-charge/records/:id')
+  deleteParkingChargeRecord(@Param('id') id: string) {
+    return this.svc.deleteParkingChargeRecord(Number(id));
   }
 }

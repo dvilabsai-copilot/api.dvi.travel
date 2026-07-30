@@ -1231,6 +1231,270 @@ if (lineNo === 1) {
   }
 
  // ======================================================================
+ // Parking Charge Records: list, update/insert and soft delete
+ // ======================================================================
+  async getParkingChargeRecords(params: {
+    page?: number;
+    pageSize?: number;
+    hotspotId?: number;
+    vehicleTypeId?: number;
+  }) {
+    const requestedPage = Math.max(1, Number(params.page || 1));
+    const pageSize = Math.max(1, Math.min(100, Number(params.pageSize || 25)));
+    const hotspotId = Number(params.hotspotId || 0);
+    const vehicleTypeId = Number(params.vehicleTypeId || 0);
+
+    const [allHotspots, allVehicleTypes] = await Promise.all([
+      this.prisma.dvi_hotspot_place.findMany({
+        where: { status: 1 as any, deleted: 0 as any },
+        orderBy: [{ hotspot_name: 'asc' }, { hotspot_ID: 'asc' }],
+        select: {
+          hotspot_ID: true,
+          hotspot_name: true,
+          hotspot_location: true,
+        },
+      }),
+      this.prisma.dvi_vehicle_type.findMany({
+        where: { status: 1 as any, deleted: 0 as any },
+        orderBy: [{ vehicle_type_title: 'asc' }, { vehicle_type_id: 'asc' }],
+        select: {
+          vehicle_type_id: true,
+          vehicle_type_title: true,
+        },
+      }),
+    ]);
+
+    const hotspots = hotspotId
+      ? allHotspots.filter((row) => Number(row.hotspot_ID) === hotspotId)
+      : allHotspots;
+    const vehicleTypes = vehicleTypeId
+      ? allVehicleTypes.filter((row) => Number(row.vehicle_type_id) === vehicleTypeId)
+      : allVehicleTypes;
+
+    const total = hotspots.length * vehicleTypes.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(requestedPage, totalPages);
+    const start = (page - 1) * pageSize;
+    const end = Math.min(total, start + pageSize);
+
+    const combinations: Array<{
+      hotspotId: number;
+      hotspotName: string;
+      location: string;
+      vehicleTypeId: number;
+      vehicleType: string;
+    }> = [];
+
+    if (vehicleTypes.length > 0) {
+      for (let index = start; index < end; index++) {
+        const hotspotIndex = Math.floor(index / vehicleTypes.length);
+        const vehicleIndex = index % vehicleTypes.length;
+        const hotspot = hotspots[hotspotIndex];
+        const vehicleType = vehicleTypes[vehicleIndex];
+        if (!hotspot || !vehicleType) continue;
+
+        combinations.push({
+          hotspotId: Number(hotspot.hotspot_ID),
+          hotspotName: String(hotspot.hotspot_name || ''),
+          location: splitPipeToArray(hotspot.hotspot_location).join(', '),
+          vehicleTypeId: Number(vehicleType.vehicle_type_id),
+          vehicleType: String(vehicleType.vehicle_type_title || ''),
+        });
+      }
+    }
+
+    const combinationHotspotIds = Array.from(
+      new Set(combinations.map((row) => row.hotspotId)),
+    );
+    const combinationVehicleTypeIds = Array.from(
+      new Set(combinations.map((row) => row.vehicleTypeId)),
+    );
+
+    const existingRows = combinations.length
+      ? await this.prisma.dvi_hotspot_vehicle_parking_charges.findMany({
+          where: {
+            hotspot_id: { in: combinationHotspotIds as any },
+            vehicle_type_id: { in: combinationVehicleTypeIds as any },
+            status: 1 as any,
+            deleted: 0 as any,
+          },
+          orderBy: { vehicle_parking_charge_ID: 'asc' },
+          select: {
+            vehicle_parking_charge_ID: true,
+            hotspot_id: true,
+            vehicle_type_id: true,
+            parking_charge: true,
+          },
+        })
+      : [];
+
+    const existingByPair = new Map<string, (typeof existingRows)[number]>();
+    for (const row of existingRows) {
+      const key = `${Number(row.hotspot_id)}:${Number(row.vehicle_type_id)}`;
+      if (!existingByPair.has(key)) existingByPair.set(key, row);
+    }
+
+    return {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      rows: combinations.map((combination) => {
+        const existing = existingByPair.get(
+          `${combination.hotspotId}:${combination.vehicleTypeId}`,
+        );
+        return {
+          id: existing ? Number(existing.vehicle_parking_charge_ID) : null,
+          hotspotId: combination.hotspotId,
+          hotspotName: combination.hotspotName,
+          location: combination.location,
+          vehicleTypeId: combination.vehicleTypeId,
+          vehicleType: combination.vehicleType,
+          parkingCharge: existing ? Number(existing.parking_charge ?? 0) : 0,
+        };
+      }),
+      options: {
+        hotspots: allHotspots.map((row) => ({
+          id: Number(row.hotspot_ID),
+          name: String(row.hotspot_name || ''),
+        })),
+        vehicleTypes: allVehicleTypes.map((row) => ({
+          id: Number(row.vehicle_type_id),
+          name: String(row.vehicle_type_title || ''),
+        })),
+      },
+    };
+  }
+
+  async updateParkingChargeRecords(
+    inputRows: Array<{
+      hotspotId: number;
+      vehicleTypeId: number;
+      parkingCharge: number;
+    }>,
+  ) {
+    if (!Array.isArray(inputRows) || inputRows.length === 0) {
+      throw new BadRequestException('At least one parking charge row is required');
+    }
+
+    const rowsByPair = new Map<
+      string,
+      { hotspotId: number; vehicleTypeId: number; parkingCharge: number }
+    >();
+
+    for (const input of inputRows) {
+      const hotspotId = Number(input?.hotspotId);
+      const vehicleTypeId = Number(input?.vehicleTypeId);
+      const parkingCharge = Number(input?.parkingCharge);
+      if (
+        !Number.isInteger(hotspotId) ||
+        hotspotId <= 0 ||
+        !Number.isInteger(vehicleTypeId) ||
+        vehicleTypeId <= 0 ||
+        !Number.isFinite(parkingCharge) ||
+        parkingCharge < 0
+      ) {
+        throw new BadRequestException('Invalid parking charge row');
+      }
+      rowsByPair.set(`${hotspotId}:${vehicleTypeId}`, {
+        hotspotId,
+        vehicleTypeId,
+        parkingCharge,
+      });
+    }
+
+    const rows = Array.from(rowsByPair.values());
+    const hotspotIds = Array.from(new Set(rows.map((row) => row.hotspotId)));
+    const vehicleTypeIds = Array.from(
+      new Set(rows.map((row) => row.vehicleTypeId)),
+    );
+
+    const [hotspots, vehicleTypes] = await Promise.all([
+      this.prisma.dvi_hotspot_place.findMany({
+        where: {
+          hotspot_ID: { in: hotspotIds as any },
+          status: 1 as any,
+          deleted: 0 as any,
+        },
+        select: { hotspot_ID: true },
+      }),
+      this.prisma.dvi_vehicle_type.findMany({
+        where: {
+          vehicle_type_id: { in: vehicleTypeIds as any },
+          status: 1 as any,
+          deleted: 0 as any,
+        },
+        select: { vehicle_type_id: true },
+      }),
+    ]);
+
+    if (hotspots.length !== hotspotIds.length) {
+      throw new BadRequestException('One or more hotspots are invalid');
+    }
+    if (vehicleTypes.length !== vehicleTypeIds.length) {
+      throw new BadRequestException('One or more vehicle types are invalid');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        const existing = await tx.dvi_hotspot_vehicle_parking_charges.findFirst({
+          where: {
+            hotspot_id: row.hotspotId as any,
+            vehicle_type_id: row.vehicleTypeId as any,
+          },
+          orderBy: { vehicle_parking_charge_ID: 'asc' },
+          select: { vehicle_parking_charge_ID: true },
+        });
+
+        if (existing) {
+          await tx.dvi_hotspot_vehicle_parking_charges.update({
+            where: {
+              vehicle_parking_charge_ID:
+                existing.vehicle_parking_charge_ID as any,
+            },
+            data: {
+              parking_charge: row.parkingCharge as any,
+              status: 1 as any,
+              deleted: 0 as any,
+            },
+          });
+        } else {
+          await tx.dvi_hotspot_vehicle_parking_charges.create({
+            data: {
+              hotspot_id: row.hotspotId as any,
+              vehicle_type_id: row.vehicleTypeId as any,
+              parking_charge: row.parkingCharge as any,
+              status: 1 as any,
+              deleted: 0 as any,
+            } as any,
+          });
+        }
+      }
+    });
+
+    return { ok: true, updated: rows.length };
+  }
+
+  async deleteParkingChargeRecord(id: number) {
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new BadRequestException('Invalid parking charge id');
+    }
+
+    const existing = await this.prisma.dvi_hotspot_vehicle_parking_charges.findUnique({
+      where: { vehicle_parking_charge_ID: id as any },
+      select: { vehicle_parking_charge_ID: true },
+    });
+    if (!existing) throw new NotFoundException('Parking charge record not found');
+
+    await this.prisma.dvi_hotspot_vehicle_parking_charges.update({
+      where: { vehicle_parking_charge_ID: id as any },
+      data: { status: 0 as any, deleted: 1 as any },
+    });
+
+    return { ok: true };
+  }
+
+ // ======================================================================
  // NEW: Availability helper find hotspots open at a given day/time/location
  // ======================================================================
  /**
