@@ -190,7 +190,6 @@ export class HotelSelectionDto {
   })
   @IsOptional()
   @IsArray()
-  @IsObject({ each: true })
   roomSelections?: Array<Record<string, unknown>>;
 
   @ApiProperty({ example: 'MAP', required: false })

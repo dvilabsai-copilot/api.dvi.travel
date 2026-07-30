@@ -28,9 +28,11 @@ export class ItineraryHotelRoomCategoryService {
     if (!route) throw new NotFoundException('Route not found');
 
     const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(plan.itinerary_quote_ID, params.itinerary_route_id);
-    const hotelRoom = (tboRoomDetails.rooms || []).find((room: any) => room.hotelId === params.hotel_id && room.groupType === params.group_type);
+    const matchingHotelRooms = (tboRoomDetails.rooms || []).filter((room: any) =>
+      Number(room.hotelId) === Number(params.hotel_id) && Number(room.groupType) === Number(params.group_type));
+    const hotelRoom = matchingHotelRooms[0];
     if (!hotelRoom) throw new NotFoundException('Hotel not found in VSR results');
-    const availableRoomTypes = hotelRoom.availableRoomTypes || [];
+    const availableRoomTypes = await this.resolveAvailableRoomTypes(params.hotel_id, matchingHotelRooms);
     if (availableRoomTypes.length === 0) throw new NotFoundException('No room types available for this hotel from VSR');
 
     const existingRooms = await this.prisma.dvi_itinerary_plan_hotel_room_details.findMany({
@@ -50,7 +52,7 @@ export class ItineraryHotelRoomCategoryService {
         room_number: index + 1,
         itinerary_plan_hotel_room_details_ID: room.itinerary_plan_hotel_room_details_ID,
         room_type_id: room.room_type_id,
-        room_type_title: availableRoomTypes.find((type: any) => type.roomTypeId === room.room_type_id)?.roomTypeTitle || room.room_type_id.toString(),
+        room_type_title: availableRoomTypes.find((type: any) => Number(type.roomTypeId) === Number(room.room_type_id))?.roomTypeTitle || room.room_type_id.toString(),
         room_qty: room.room_qty,
         available_room_types: available,
       }))
@@ -97,16 +99,20 @@ export class ItineraryHotelRoomCategoryService {
     if (!planDetails) throw new NotFoundException('Itinerary plan details not found');
 
     const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(planDetails.itinerary_quote_ID, params.itinerary_route_id);
-    const hotelRoom = (tboRoomDetails.rooms || []).find((room: any) => room.hotelId === params.hotel_id && room.groupType === params.group_type);
+    const matchingHotelRooms = (tboRoomDetails.rooms || []).filter((room: any) =>
+      Number(room.hotelId) === Number(params.hotel_id) && Number(room.groupType) === Number(params.group_type));
+    const hotelRoom = matchingHotelRooms[0];
     if (!hotelRoom) throw new NotFoundException('Hotel not found in VSR results');
-    const selectedRoomType = (hotelRoom.availableRoomTypes || []).find((roomType: any) => roomType.roomTypeId === params.room_type_id);
+    const availableRoomTypes = await this.resolveAvailableRoomTypes(params.hotel_id, matchingHotelRooms);
+    const selectedRoomType = availableRoomTypes.find((roomType: any) =>
+      Number(roomType.roomTypeId) === Number(params.room_type_id));
     if (!selectedRoomType) throw new NotFoundException('Selected room type not available from VSR');
 
-    const roomRate = hotelRoom.pricePerNight || 0;
+    const roomRate = Number(selectedRoomType.pricePerNight || hotelRoom.pricePerNight || 0);
     const now = new Date();
     const data = {
       room_type_id: params.room_type_id,
-      room_id: params.room_type_id,
+      room_id: Number(selectedRoomType.roomId || params.room_type_id),
       room_qty: params.room_qty || 1,
       room_rate: roomRate,
       breakfast_required: params.breakfast_meal_plan || params.all_meal_plan || 0,
@@ -138,5 +144,70 @@ export class ItineraryHotelRoomCategoryService {
       });
     }
     return { success: true, message: 'Room category updated successfully', roomTypeName: selectedRoomType.roomTypeTitle };
+  }
+
+  private async resolveAvailableRoomTypes(hotelId: number, matchingHotelRooms: any[]) {
+    const hotelRooms = await (this.prisma as any).dvi_hotel_rooms.findMany({
+      where: {
+        hotel_id: hotelId,
+        deleted: 0,
+      },
+      select: {
+        room_ID: true,
+        room_type_id: true,
+        room_title: true,
+        room_ref_code: true,
+      },
+      orderBy: { room_ID: 'asc' },
+    });
+
+    const hotelRoomByRef = new Map<string, any>();
+    const hotelRoomByTitle = new Map<string, any>();
+    for (const room of hotelRooms) {
+      const refCode = this.normalizeText(room.room_ref_code);
+      const title = this.normalizeText(room.room_title);
+      if (refCode) hotelRoomByRef.set(refCode, room);
+      if (title) hotelRoomByTitle.set(title, room);
+    }
+
+    const availableRoomTypes: Array<{
+      roomTypeId: number;
+      roomTypeTitle: string;
+      roomId: number;
+      pricePerNight: number;
+    }> = [];
+    const seenRoomTypeIds = new Set<number>();
+
+    for (const room of matchingHotelRooms) {
+      for (const candidate of room.availableRoomTypes || []) {
+        const bookingCode = this.normalizeText((candidate as any).bookingCode);
+        const roomTitle = this.normalizeText(candidate.roomTypeTitle || (candidate as any).roomName);
+        const matchedHotelRoom =
+          hotelRoomByRef.get(bookingCode) ||
+          hotelRoomByTitle.get(roomTitle);
+        if (!matchedHotelRoom) {
+          continue;
+        }
+
+        const roomTypeId = Number(matchedHotelRoom.room_type_id || 0);
+        if (!roomTypeId || seenRoomTypeIds.has(roomTypeId)) {
+          continue;
+        }
+
+        seenRoomTypeIds.add(roomTypeId);
+        availableRoomTypes.push({
+          roomTypeId,
+          roomTypeTitle: String(matchedHotelRoom.room_title || candidate.roomTypeTitle || '').trim() || String(matchedHotelRoom.room_ref_code || roomTypeId),
+          roomId: Number(matchedHotelRoom.room_ID || 0),
+          pricePerNight: Number(room.pricePerNight || room.price || 0),
+        });
+      }
+    }
+
+    return availableRoomTypes;
+  }
+
+  private normalizeText(value: unknown): string {
+    return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
   }
 }

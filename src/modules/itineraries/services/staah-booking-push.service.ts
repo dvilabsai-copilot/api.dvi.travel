@@ -743,7 +743,15 @@ export class StaahBookingPushService {
     rateId: string;
     rateName: string;
     roomType: string;
-    prices: Array<{ date: string; amountAfterTax: number; extraAdultCount: number; extraChildCount: number; extraAdultRate: number; extraChildRate: number }>;
+    prices: Array<{
+      date: string;
+      amountAfterTax: number;
+      baseAmount: number;
+      extraAdultCount: number;
+      extraChildCount: number;
+      extraAdultRate: number;
+      extraChildRate: number;
+    }>;
     amountAfterTax: number;
     guestCounts: Array<{ AgeQualifyingCode: string; Count: string }>;
   }>> {
@@ -762,7 +770,15 @@ export class StaahBookingPushService {
         select: { occupancy_rates: true, start_date: true, end_date: true, received_at: true },
         orderBy: { received_at: 'desc' },
       });
-      const prices: Array<{ date: string; amountAfterTax: number; extraAdultCount: number; extraChildCount: number; extraAdultRate: number; extraChildRate: number }> = [];
+      const prices: Array<{
+        date: string;
+        amountAfterTax: number;
+        baseAmount: number;
+        extraAdultCount: number;
+        extraChildCount: number;
+        extraAdultRate: number;
+        extraChildRate: number;
+      }> = [];
       for (let night = new Date(checkIn); night < checkOut; night = this.addDaysUtc(night, 1)) {
         const nightlyRate = rateRows.find((row) => new Date(row.start_date) <= night && new Date(row.end_date) >= night);
         if (!nightlyRate) {
@@ -789,6 +805,7 @@ export class StaahBookingPushService {
         prices.push({
           date: night.toISOString().slice(0, 10),
           amountAfterTax: Number(breakdown.finalCalculatedAmount.toFixed(2)),
+          baseAmount: Number(breakdown.baseOccupancyAmount.toFixed(2)),
           extraAdultCount,
           extraChildCount: Number(breakdown.extraChildCount || 0),
           extraAdultRate: extraAdultCount > 0 ? Number(normalizedRates.EXTRAADULT || 0) : 0,
@@ -1013,7 +1030,7 @@ export class StaahBookingPushService {
               room_id: this.toStaahOutboundId(room.roomId),
               room_name: room.roomType || hotel.roomType || '',
               price: room.prices.map((night) => ({
-                amountaftertax: this.toMoneyString(night.amountAfterTax),
+                amountaftertax: this.toMoneyString(night.baseAmount),
                 date: night.date,
                 extraGuests: {
                   extraAdult: String(night.extraAdultCount),
