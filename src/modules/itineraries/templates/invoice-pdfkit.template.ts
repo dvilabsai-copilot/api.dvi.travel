@@ -259,10 +259,21 @@ export function renderInvoicePdfKit(
     width: guestWidth - 20,
   });
   doc.text(`Contact Number: ${safeText(safe.guest.contactNo)}`, margin + buyerWidth + 10, y + 28, { width: guestWidth - 20 });
-  doc.text(`Arrival: ${safeText(safe.guest.arrivalPlace)}, ${formatDate(safe.guest.arrivalDateTime)}`, margin + buyerWidth + 10, y + 48, {
+  const arrivalText = `Arrival: ${safeText(safe.guest.arrivalPlace)}, ${formatDate(safe.guest.arrivalDateTime)}`;
+  const arrivalY = y + 48;
+
+  doc.text(arrivalText, margin + buyerWidth + 10, arrivalY, {
     width: guestWidth - 20,
   });
-  doc.text(`Departure: ${safeText(safe.guest.departurePlace)}, ${formatDate(safe.guest.departureDateTime)}`, margin + buyerWidth + 10, y + 68, {
+
+  const departureY =
+    arrivalY +
+    doc.heightOfString(arrivalText, {
+      width: guestWidth - 20,
+    }) +
+    4;
+
+  doc.text(`Departure: ${safeText(safe.guest.departurePlace)}, ${formatDate(safe.guest.departureDateTime)}`, margin + buyerWidth + 10, departureY, {
     width: guestWidth - 20,
   });
 
@@ -350,16 +361,29 @@ export function renderInvoicePdfKit(
     });
   }
 
-  ensureSpace(32, false);
+    ensureSpace(32, false);
   drawCellBorder(doc, tableX, y, tableWidth, 28, '#ffffff', border);
-  doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#000000').text('Total Amount', tableX + tableWidth - 140, y + 8, {
-    width: 108,
-    align: 'right',
-  });
-  doc.font('Helvetica').fontSize(10.5).fillColor('#000000').text(formatCurrency(safe.totals.totalAmount), tableX + tableWidth - 24, y + 8, {
-    width: 18,
-    align: 'right',
-  });
+
+  doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#000000').text(
+    'Total Amount',
+    tableX + colSlNo + 6,
+    y + 8,
+    {
+      width: colParticulars + colHsn - 12,
+      align: 'right',
+    },
+  );
+
+  doc.font('Helvetica').fontSize(10.5).fillColor('#000000').text(
+    formatCurrency(safe.totals.totalAmount),
+    tableX + colSlNo + colParticulars + colHsn + 4,
+    y + 8,
+    {
+      width: colAmount - 8,
+      align: 'right',
+    },
+  );
+
   y += 34;
 
   const footerTop = y + 4;
