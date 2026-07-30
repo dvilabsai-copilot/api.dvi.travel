@@ -725,33 +725,57 @@ export class StaahBookingPushService {
 
   private async buildStaahRoomPayloadsFromRateRows(params: {
     propertyId: string;
-    roomIds: string[];
-    rateIds: string[];
     checkInDate: string;
     checkOutDate: string;
-    roomProfiles: Array<{ adults: number; children: number; childWithBedCount: number; childWithoutBedCount: number; extraBedCount: number }>;
-  }): Promise<Array<{ prices: Array<{ date: string; amountAfterTax: number; extraAdultCount: number; extraChildCount: number; extraAdultRate: number; extraChildRate: number }>; amountAfterTax: number; guestCounts: Array<{ AgeQualifyingCode: string; Count: string }> }>> {
+    roomProfiles: Array<{
+      adults: number;
+      children: number;
+      childWithBedCount: number;
+      childWithoutBedCount: number;
+      extraBedCount: number;
+      roomId: string;
+      rateId: string;
+      rateName?: string;
+      roomType?: string;
+    }>;
+  }): Promise<Array<{
+    roomId: string;
+    rateId: string;
+    rateName: string;
+    roomType: string;
+    prices: Array<{ date: string; amountAfterTax: number; extraAdultCount: number; extraChildCount: number; extraAdultRate: number; extraChildRate: number }>;
+    amountAfterTax: number;
+    guestCounts: Array<{ AgeQualifyingCode: string; Count: string }>;
+  }>> {
     const checkIn = this.parseDateOnlyAsUtc(params.checkInDate);
     const checkOut = this.parseDateOnlyAsUtc(params.checkOutDate);
     if (!checkIn || !checkOut || checkOut <= checkIn || !params.roomProfiles.length) return [];
-    const rateRows = await this.prisma.staah_rate.findMany({
-      where: {
-        staah_property_id: params.propertyId,
-        room_id: { in: params.roomIds },
-        rateplan_id: { in: params.rateIds },
-        start_date: { lte: checkOut } as any,
-        end_date: { gte: checkIn } as any,
-      },
-      select: { occupancy_rates: true, start_date: true, end_date: true, received_at: true },
-      orderBy: { received_at: 'desc' },
-    });
-    if (!rateRows.length) return [];
-
-    return params.roomProfiles.map((profile) => {
+    return Promise.all(params.roomProfiles.map(async (profile) => {
+      const rateRows = await this.prisma.staah_rate.findMany({
+        where: {
+          staah_property_id: params.propertyId,
+          room_id: profile.roomId,
+          rateplan_id: profile.rateId,
+          start_date: { lte: checkOut } as any,
+          end_date: { gte: checkIn } as any,
+        },
+        select: { occupancy_rates: true, start_date: true, end_date: true, received_at: true },
+        orderBy: { received_at: 'desc' },
+      });
       const prices: Array<{ date: string; amountAfterTax: number; extraAdultCount: number; extraChildCount: number; extraAdultRate: number; extraChildRate: number }> = [];
       for (let night = new Date(checkIn); night < checkOut; night = this.addDaysUtc(night, 1)) {
         const nightlyRate = rateRows.find((row) => new Date(row.start_date) <= night && new Date(row.end_date) >= night);
-        if (!nightlyRate) return { prices: [], amountAfterTax: 0, guestCounts: [] };
+        if (!nightlyRate) {
+          return {
+            roomId: profile.roomId,
+            rateId: profile.rateId,
+            rateName: String(profile.rateName || ''),
+            roomType: String(profile.roomType || 'Room'),
+            prices: [],
+            amountAfterTax: 0,
+            guestCounts: [],
+          };
+        }
         const breakdown = calculateStaahOccupancyAmount(nightlyRate.occupancy_rates, {
           roomCount: 1,
           adults: profile.adults,
@@ -772,11 +796,15 @@ export class StaahBookingPushService {
         });
       }
       return {
+        roomId: profile.roomId,
+        rateId: profile.rateId,
+        rateName: String(profile.rateName || ''),
+        roomType: String(profile.roomType || 'Room'),
         prices,
         amountAfterTax: Number(prices.reduce((sum, price) => sum + price.amountAfterTax, 0).toFixed(2)),
         guestCounts: this.buildStaahGuestCounts(profile.adults, profile.children),
       };
-    });
+    }));
   }
 
   async confirmItineraryHotels(params: {
@@ -816,10 +844,17 @@ export class StaahBookingPushService {
         const parsedBookingCode = this.extractStaahSearchReference(
           String((hotel as any)?.bookingCode || '').trim(),
         );
+        const requestedRoomSelections = Array.isArray((hotel as any)?.roomSelections)
+          ? (hotel as any).roomSelections.filter((selection: any) => selection && typeof selection === 'object')
+          : [];
         const hasStaahMapping =
           (!!directRoomId && !!directRateId) ||
           !!parsedSearchReference ||
-          !!parsedBookingCode;
+          !!parsedBookingCode ||
+          requestedRoomSelections.some((selection: any) =>
+            (String(selection?.roomId || '').trim() && String(selection?.rateId || '').trim()) ||
+            String(selection?.rateOptionId || selection?.searchReference || '').trim(),
+          );
 
         if (!hasStaahMapping) {
           results.push(this.buildMissingStaahMappingResult(hotel));
@@ -884,15 +919,47 @@ export class StaahBookingPushService {
               paxProfile,
             });
         const roomProfiles = this.buildStaahRoomOccupancyProfiles(itineraryPlan, hotel);
+        const resolvedRoomProfiles = await Promise.all(roomProfiles.map(async (profile, roomIndex) => {
+          const selection = requestedRoomSelections.find(
+            (candidate: any) => Number(candidate?.roomIndex ?? -1) === roomIndex,
+          ) || requestedRoomSelections[roomIndex];
+          if (!selection) {
+            return {
+              ...profile,
+              roomId,
+              rateId,
+              rateName,
+              roomType: String(hotel.roomType || 'Room'),
+            };
+          }
+
+          const selectionReference = String(
+            selection?.searchReference || selection?.rateOptionId || '',
+          ).trim();
+          const resolvedSelection = await this.resolveRoomRate({
+            ...hotel,
+            roomId: String(selection?.roomId || '').trim() || undefined,
+            rateId: String(selection?.rateId || '').trim() || undefined,
+            roomType: String(selection?.roomType || hotel.roomType || '').trim(),
+            searchReference: selectionReference || hotel.searchReference,
+            bookingCode: selectionReference || hotel.bookingCode,
+          }, hotelMaster);
+
+          return {
+            ...profile,
+            roomId: resolvedSelection.roomId,
+            rateId: resolvedSelection.rateId,
+            rateName: String(selection?.rateName || selection?.mealPlan || resolvedSelection.rateName || ''),
+            roomType: String(selection?.roomType || hotel.roomType || 'Room'),
+          };
+        }));
         const roomPayloads = await this.buildStaahRoomPayloadsFromRateRows({
           propertyId: propertyid,
-          roomIds: pricingRoomIds,
-          rateIds: pricingRateIds,
           checkInDate: String(hotel.checkInDate || ''),
           checkOutDate: String(hotel.checkOutDate || ''),
-          roomProfiles,
+          roomProfiles: resolvedRoomProfiles,
         });
-        const hasRoomPayloads = roomPayloads.length === roomProfiles.length && roomPayloads.every((room) => room.prices.length > 0);
+        const hasRoomPayloads = roomPayloads.length === resolvedRoomProfiles.length && roomPayloads.every((room) => room.prices.length > 0);
         const roomAmountAfterTax = nightlyRates.length > 0
           ? nightlyRates.reduce((sum: number, night: any) => sum + Number(night?.amountAfterTax || 0), 0)
           : Number(
@@ -943,8 +1010,8 @@ export class StaahBookingPushService {
           ? roomPayloads.map((room) => ({
               arrival_date: hotel.checkInDate,
               departure_date: hotel.checkOutDate,
-              room_id: outboundRoomId,
-              room_name: hotel.roomType || '',
+              room_id: this.toStaahOutboundId(room.roomId),
+              room_name: room.roomType || hotel.roomType || '',
               price: room.prices.map((night) => ({
                 amountaftertax: this.toMoneyString(night.amountAfterTax),
                 date: night.date,
@@ -954,8 +1021,8 @@ export class StaahBookingPushService {
                   extraChild: String(night.extraChildCount),
                   extraChildRate: this.toMoneyString(night.extraChildRate),
                 },
-                rate_id: outboundRateId,
-                rate_name: rateName || '',
+                rate_id: this.toStaahOutboundId(room.rateId),
+                rate_name: room.rateName || rateName || '',
               })),
               salutation: passenger.title || 'Mr.',
               first_name: passenger.firstName || params.fallbackBookedBy || 'Guest',

@@ -172,6 +172,27 @@ export class HotelSelectionDto {
   @IsString()
   rateId?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Independent supplier room/rate selection for each requested room',
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        roomIndex: { type: 'number', example: 0 },
+        roomId: { type: 'string', example: 'DELUXEROOM' },
+        rateId: { type: 'string', example: 'CP_PLAN' },
+        roomType: { type: 'string', example: 'Deluxe Room' },
+        mealPlan: { type: 'string', example: 'CP' },
+        rateOptionId: { type: 'string', example: 'STAAH-44596-DELUXEROOM-CP_PLAN-20260801' },
+      },
+    },
+  })
+  @IsOptional()
+  @IsArray()
+  @IsObject({ each: true })
+  roomSelections?: Array<Record<string, unknown>>;
+
   @ApiProperty({ example: 'MAP', required: false })
   @IsOptional()
   @IsString()
