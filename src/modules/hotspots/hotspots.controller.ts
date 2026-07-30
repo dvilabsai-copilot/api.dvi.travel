@@ -10,9 +10,11 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { HotspotsService } from './hotspots.service';
 import { HotspotListQueryDto } from './dto/hotspot-list.query.dto';
@@ -163,9 +165,25 @@ export class HotspotsController {
     };
   }
 
- // -------------------- PARKING CHARGE CSV FLOW --------------------
- // 1) Upload CSV -> stage each line into dvi_tempcsv with csvtype=4 (PHP parity)
- // POST /hotspots/parking-charge/upload (multipart/form-data, field: file)
+// -------------------- PARKING CHARGE CSV FLOW --------------------
+
+// Download a database-generated sample, matching the B2B format.
+// GET /hotspots/parking-charge/sample.csv
+@Get('parking-charge/sample.csv')
+@ApiOperation({ summary: 'Download parking charge sample CSV' })
+async downloadParkingChargeSample(@Res() res: Response) {
+  const csv = await this.svc.buildParkingChargeSampleCsv();
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader(
+    'Content-Disposition',
+    'attachment; filename="parking_charges_sample.csv"',
+  );
+
+  return res.send(csv);
+}
+
+// 1) Upload CSV -> stage each line into dvi_tempcsv with csvtype=4 (PHP parity)
   @Post('parking-charge/upload')
   @UseInterceptors(
     FileInterceptor('file', {

@@ -41,6 +41,7 @@ const LOCATION_ALIAS_MAP: Record<string, string> = {
   chennaiinternationalairport: 'chennai',
   chennaiegmorestation: 'chennai',
   chennaicentral: 'chennai',
+  cochininternationalairport: 'cochin',
   coimbatoreinternationalairport: 'coimbatore',
   coimbatorerailwaystation: 'coimbatore',
   trivandrumdomesticairport: 'thiruvananthapuram',

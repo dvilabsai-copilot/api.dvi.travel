@@ -101,6 +101,10 @@ async function runPolicyTests() {
   const normalizedCity = normalizeCityName('Madurai');
   assert.equal(normalizedAirport, normalizedCity);
 
+  // Preserve the legacy vehicle-owner city key used for Cochin airport
+  // vehicles so eligible-vehicle lookup can resolve city ID 70862.
+  assert.equal(normalizeCityName('Cochin International Airport'), 'cochin');
+
   const sameCity = areCitiesEquivalent({
     cityNameA: 'Madurai Airport',
     cityNameB: 'Madurai',
