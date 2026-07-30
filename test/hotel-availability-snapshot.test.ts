@@ -57,6 +57,72 @@ test('persisted hotel read never invokes a live supplier', async () => {
   assert.equal(response.hotelAvailability?.availabilityState, 'FRESH');
 });
 
+test('unscoped offline rows stay inside the existing recommendation groups', async () => {
+  const syncedAt = new Date('2026-07-29T10:00:00.000Z');
+  const prisma = makePrisma();
+  prisma.dvi_itinerary_plan_details.findFirst = async () => ({
+    itinerary_plan_ID: 44,
+    itinerary_quote_ID: 'DVI2026072701',
+    hotel_rates_visibility: 1,
+    no_of_nights: 1,
+  });
+  prisma.dvi_itinerary_route_details = {
+    findMany: async () => [{
+      itinerary_route_ID: 10,
+      itinerary_route_date: new Date('2026-07-28T00:00:00.000Z'),
+      next_visiting_location: 'Munnar',
+    }],
+  };
+  prisma.dvi_itinerary_hotel_search_cache.findFirst = async () => ({
+    synced_at: syncedAt,
+    full_payload: JSON.stringify({ searchRunId: 'offline-run' }),
+  });
+  prisma.dvi_itinerary_hotel_search_cache.findMany = async () => [{
+    id: 1,
+    group_type: 0,
+    synced_at: syncedAt,
+    sort_rank: 0,
+    full_payload: JSON.stringify({
+      itineraryRouteId: 10,
+      date: '2026-07-28',
+      hotelCode: 'OFF-1',
+      hotelId: 101,
+      hotelName: 'Offline Munnar Hotel',
+      provider: 'offline',
+      totalHotelCost: 100,
+      isBookable: true,
+    }),
+  }];
+  prisma.dvi_itinerary_plan_hotel_details.findMany = async () => [1, 2, 3, 4].map((groupType) => ({
+    itinerary_plan_hotel_details_ID: groupType,
+    itinerary_plan_id: 44,
+    itinerary_route_id: 10,
+    itinerary_route_date: new Date('2026-07-28T00:00:00.000Z'),
+    group_type: groupType,
+    hotel_required: 1,
+    hotel_id: 101,
+  }));
+
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any);
+  const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
+
+  assert.deepEqual(response.hotelTabs.map((tab) => tab.groupType), [1, 2, 3, 4]);
+  assert.equal(response.hotelTabs.some((tab) => tab.groupType === 0), false);
+  assert.equal(response.hotelTabs.length, 4);
+  assert.deepEqual(Array.from(new Set(response.hotels.map((row: any) => row.groupType))), [1, 2, 3, 4]);
+});
+
+test('offline materialization creates rows for valid recommendation groups only', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const rows = (service as any).materializeOfflineRows(
+    new Map([[10, [{ hotelId: 101, hotelName: 'Offline Hotel', provider: 'offline' }]]]),
+    [{ itinerary_route_ID: 10, itinerary_route_date: new Date('2026-07-28T00:00:00.000Z'), next_visiting_location: 'Munnar' }],
+    [1, 2, 3, 4, 5, 0],
+  );
+
+  assert.deepEqual(rows.map((row: any) => row.groupType), [1, 2, 3, 4]);
+});
+
 test('persisted hotel read remaps stale snapshot route IDs by stay date', async () => {
   const prisma = makePrisma();
   prisma.dvi_itinerary_plan_details.findFirst = async () => ({
@@ -242,6 +308,49 @@ test('persisted read includes selected stays missing from a partial availability
   assert.equal((response.hotels[1] as any).availabilityStatus, 'REVIEW_REQUIRED');
   assert.equal((response.hotelAvailability as any)?.availabilityState, 'PARTIAL');
   assert.equal(response.hotelTabs[0].totalAmount, 250);
+});
+
+test('missing legacy selection gets an explicit unavailable label instead of Selected hotel', async () => {
+  const syncedAt = new Date('2026-07-27T10:00:00.000Z');
+  const prisma = makePrisma();
+  prisma.dvi_itinerary_plan_details.findFirst = async () => ({
+    itinerary_plan_ID: 44,
+    itinerary_quote_ID: 'DVI2026072701',
+    hotel_rates_visibility: 1,
+    no_of_nights: 1,
+  });
+  prisma.dvi_itinerary_route_details = {
+    findMany: async () => [{
+      itinerary_route_ID: 11,
+      itinerary_route_date: new Date('2026-07-29T00:00:00.000Z'),
+      next_visiting_location: 'Trichy',
+    }],
+  };
+  prisma.dvi_itinerary_hotel_search_cache.findFirst = async () => ({
+    synced_at: syncedAt,
+    full_payload: JSON.stringify({ searchRunId: 'hotel-run-missing-selection' }),
+  });
+  prisma.dvi_itinerary_hotel_search_cache.findMany = async () => [];
+  prisma.dvi_itinerary_plan_hotel_details.findMany = async () => [{
+    itinerary_plan_hotel_details_ID: 99,
+    itinerary_plan_id: 44,
+    itinerary_route_id: 11,
+    itinerary_route_date: new Date('2026-07-29T00:00:00.000Z'),
+    group_type: 1,
+    hotel_required: 1,
+    hotel_id: 690,
+    total_hotel_cost: 4935,
+  }];
+  prisma.dvi_hotel = { findMany: async () => [] };
+
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any);
+  const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
+  const row: any = response.hotels[0];
+
+  assert.equal(row.hotelName, 'Previously selected hotel unavailable');
+  assert.equal(row.category, null);
+  assert.equal(row.selectionStatus, 'UNAVAILABLE');
+  assert.equal(row.showSelectionWarning, true);
 });
 
 test('persisted read omits missing-night placeholders and reports empty routes as metadata', async () => {
@@ -537,6 +646,40 @@ test('initial availability creates one canonical auto-selection per missing stay
   assert.equal(createdSelections[0].selected_price_snapshot.includes('AUTO_SELECTED'), true);
   assert.equal(createdRooms.length, 1);
   assert.equal(createdRooms[0].hotel_id, 987);
+});
+
+test('reset clears editable selections before rebuilding the live snapshot', async () => {
+  const calls: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_room_details: {
+      updateMany: async (args: any) => calls.push(['rooms', args]),
+    },
+    dvi_itinerary_plan_hotel_room_amenities: {
+      updateMany: async (args: any) => calls.push(['amenities', args]),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      updateMany: async (args: any) => calls.push(['selections', args]),
+      findMany: async (args: any) => {
+        calls.push(['verify', args]);
+        return [];
+      },
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).clearEditableHotelSelections(tx, 44);
+
+  const selectionReset = calls.find(([name]) => name === 'selections')?.[1];
+  const verification = calls.find(([name]) => name === 'verify')?.[1];
+  assert.deepEqual(selectionReset.where, {
+    itinerary_plan_id: 44,
+    hotel_required: 1,
+    status: 1,
+    deleted: 0,
+  });
+  assert.deepEqual(verification.where, selectionReset.where);
+  assert.equal(selectionReset.data.deleted, 1);
+  assert.equal(selectionReset.data.status, 0);
 });
 
 test('missing auto selection is replaced in place and reports AUTO_SELECTION_CHANGED', async () => {

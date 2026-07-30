@@ -1454,6 +1454,17 @@ this.logger.log(
         planChildAges,
       );
 
+      // A failed supplier stay block is deliberately represented as null by
+      // the retry layer so it can be retried/compared.  Downstream merging and
+      // preference filtering operate on route hotel arrays; keep the failed
+      // route empty without allowing it to abort successful routes.
+      hotelsByRoute.forEach((hotels, routeId) => {
+        if (!Array.isArray(hotels)) {
+          this.logger.warn(`[HOTEL_SEARCH] Route ${routeId} returned no supplier data; continuing with an empty route.`);
+          hotelsByRoute.set(routeId, []);
+        }
+      });
+
       const tboOnlyFetch = this.isTboOnlyFetchEnabled();
       if (tboOnlyFetch) {
       this.logger.warn(
@@ -1485,8 +1496,15 @@ this.logger.log(
         if (this.isHobseSearchEnabled()) {
  // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
  // First, create a HOBSE-specific city code map using hobse_city_code
-          const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
-          const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
+          let hobseHotelsByRoute = new Map<number, HotelSearchResult[]>();
+          try {
+            const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
+            hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
+          } catch (error) {
+            this.logger.warn(
+              `[HOBSE] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
 
  // Merge HOBSE hotels into the TBO hotel map
           hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
@@ -1499,14 +1517,21 @@ this.logger.log(
 
  // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
  this.logger.log(`\n STEP 3.6: Starting ResAvenue hotel fetch for ${routes.length} routes...`);
-        const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
-          routes,
-          noOfNights,
-          guestNationality,
-          planRoomCount,
-          planAdultCount,
-          planChildCount,
-        );
+        let resavenueHotelsByRoute = new Map<number, HotelSearchResult[]>();
+        try {
+          resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+            routes,
+            noOfNights,
+            guestNationality,
+            planRoomCount,
+            planAdultCount,
+            planChildCount,
+          );
+        } catch (error) {
+          this.logger.warn(
+            `[RESAVENUE] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
 
  // Debug: Check what ResAvenue returned
         let totalResavenueHotels = 0;
@@ -1541,12 +1566,19 @@ this.logger.log(
         const savedMealPlansByRoute = await this.loadSavedMealPlansPerRoute(planId, routes);
 
  // Step 3.8: Fetch AxisRooms-enabled hotels from local DB and merge with existing providers.
-        const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
-          routes,
-          noOfNights,
-          savedMealPlansByRoute,
-          preferredMealPlanCode,
-        );
+        let axisroomsHotelsByRoute = new Map<number, HotelSearchResult[]>();
+        try {
+          axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
+            routes,
+            noOfNights,
+            savedMealPlansByRoute,
+            preferredMealPlanCode,
+          );
+        } catch (error) {
+          this.logger.warn(
+            `[AXISROOMS] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
         axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
           const hotelStrs = existingHotels.map((h) => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
@@ -1559,21 +1591,28 @@ this.logger.log(
           hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
         });
 
-        const staahHotelsByRoute = await this.fetchStaahHotelsForRoutes(
-          routes,
-          noOfNights,
-          savedMealPlansByRoute,
-          preferredMealPlanCode,
-          true,
-          {
-            roomCount: planRoomCount,
-            adults: planAdultCount,
-            children: planChildCount,
-            extraBedCount: Number((plan as any).total_extra_bed || 0),
-            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
-            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
-          },
-        );
+        let staahHotelsByRoute = new Map<number, HotelSearchResult[]>();
+        try {
+          staahHotelsByRoute = await this.fetchStaahHotelsForRoutes(
+            routes,
+            noOfNights,
+            savedMealPlansByRoute,
+            preferredMealPlanCode,
+            true,
+            {
+              roomCount: planRoomCount,
+              adults: planAdultCount,
+              children: planChildCount,
+              extraBedCount: Number((plan as any).total_extra_bed || 0),
+              childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+              childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+            },
+          );
+        } catch (error) {
+          this.logger.warn(
+            `[STAAH] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
         staahHotelsByRoute.forEach((staahHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
           const hotelStrs = existingHotels.map((h) =>

@@ -548,6 +548,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
       const result = await this.hotelAvailabilitySnapshotService.readPersisted(
         quoteId,
         { page: pageNum, pageSize: pageSizeNum, groupType: groupTypeNum, itineraryRouteId: itineraryRouteIdNum },
+        () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
       );
       const duration = Date.now() - startTime;
 
@@ -589,6 +590,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
         groupType: groupType ? parseInt(groupType, 10) : undefined,
         itineraryRouteId: itineraryRouteId ? Math.max(0, parseInt(itineraryRouteId, 10) || 0) : undefined,
       },
+      () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
     );
   }
 
@@ -615,7 +617,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
   @Post('hotel_details/:quoteId/reset')
   @ApiOperation({
     summary: 'Reset hotel selections and rebuild availability',
-    description: 'Clears the current editable hotel selections, then performs the same live and offline hotel search used during itinerary creation.',
+    description: 'Clears the current editable hotel selections, then performs the fresh live supplier hotel search used during itinerary creation.',
   })
   async resetItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
