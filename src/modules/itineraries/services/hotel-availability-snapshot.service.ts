@@ -722,7 +722,7 @@ export class HotelAvailabilitySnapshotService {
         undefined,
         undefined,
         undefined,
-        false,
+        resetSelections,
       );
       const sourceRows = this.filterSearchableLiveRows(
         Array.isArray(liveResponse.hotels) ? liveResponse.hotels : [],

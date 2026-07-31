@@ -1708,6 +1708,11 @@ this.logger.log(
           requireKnownDistance: String(process.env.HOTEL_RECOMMENDATION_REQUIRE_DISTANCE || '').trim() === 'true',
         })
       : this.adaptLegacyPackages(this.generatePricePackages(filteredHotelsByRoute, routes), routes);
+    // Keep v2 recommendation packages for the recommendation tabs, but expose
+    // every fetched live/offline option in the hotel list. The legacy price
+    // grouping is only used to assign the complete option set to the same four
+    // display groups; it does not change the v2 recommendation selection.
+    const allAvailabilityPackages = this.generatePricePackages(filteredHotelsByRoute, routes);
     this.logger.log(`[HOTEL_RECOMMENDATION] algorithm=${algorithm} planId=${planId} groups=${packages.length}`);
 
  // Step 5: Build response
@@ -1719,6 +1724,7 @@ this.logger.log(
       restrictedHotelsByRoute,
       routes,
       noOfNights,
+      allAvailabilityPackages,
     );
 
     const duration = Date.now() - startTime;
@@ -3703,6 +3709,7 @@ this.logger.log(
     restrictedHotelsByRoute: Map<number, HotelSearchResult[]>,
     routes: any[],
     noOfNights: number,
+    allAvailabilityPackages: Array<{ groupType: number; hotels: any[] }> = packages,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_plan_ID: planId, deleted: 0 },
@@ -4199,7 +4206,7 @@ this.logger.log(
       return false;
     };
 
-    for (const pkg of packages) {
+    for (const pkg of allAvailabilityPackages) {
       for (const hotel of pkg.hotels) {
  // Find the route using the routeId attached to the hotel
         const route = routes.find((r: any) => r.itinerary_route_ID === hotel.routeId);
