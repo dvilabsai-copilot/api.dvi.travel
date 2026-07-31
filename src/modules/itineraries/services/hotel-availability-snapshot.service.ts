@@ -1494,7 +1494,12 @@ export class HotelAvailabilitySnapshotService {
         ...tab,
         groupType: Number(tab?.groupType || 0),
         label: String(tab?.label || `Recommended #${Number(tab?.groupType || 0)}`),
-        totalAmount: tab?.totalAmount == null ? null : Number(tab.totalAmount),
+        // Incomplete recommendation packages intentionally have a null
+        // totalAmount. Their partialTotal is still the package total for the
+        // available stay blocks and is the value the UI should display.
+        totalAmount: tab?.totalAmount == null
+          ? (tab?.partialTotal == null ? null : Number(tab.partialTotal))
+          : Number(tab.totalAmount),
       }))
       .filter((tab: any) => tab.groupType >= 1 && tab.groupType <= 4)
       .filter((tab: any) => !requestedGroup || tab.groupType === requestedGroup)
@@ -1504,7 +1509,10 @@ export class HotelAvailabilitySnapshotService {
     // Reuse them when reading the persisted snapshot; the snapshot contains
     // every availability option and cannot derive a package total by summing
     // all of those rows.
-    if (storedTabs.length > 0) return storedTabs;
+    if (
+      storedTabs.length > 0 &&
+      storedTabs.every((tab: any) => Number.isFinite(tab.totalAmount) && tab.totalAmount >= 0)
+    ) return storedTabs;
 
     const searchableRoutes = (routes || []).filter((route: any, index: number) =>
       !(index === routes.length - 1 && index >= noOfNights),

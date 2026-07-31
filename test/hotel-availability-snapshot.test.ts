@@ -166,6 +166,18 @@ test('persisted recommendation totals are preferred over availability-row sums',
   assert.equal(tabs[0].totalAmount, 3520);
 });
 
+test('incomplete persisted packages use partial totals instead of returning null tab rates', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const tabs = (service as any).buildTabs(
+    [],
+    [],
+    2,
+    [{ groupType: 1, label: 'Recommended #1', totalAmount: null, partialTotal: 3900, complete: false }],
+  );
+
+  assert.equal(tabs[0].totalAmount, 3900);
+});
+
 test('persisted hotel read remaps stale snapshot route IDs by stay date', async () => {
   const prisma = makePrisma();
   prisma.dvi_itinerary_plan_details.findFirst = async () => ({
