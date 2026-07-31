@@ -177,10 +177,19 @@ export interface ItineraryHotelDetailsResponseDto {
   totalRoomCount: number;
   hotelAvailability?: HotelAvailabilityMetaDto;
   recommendationAlgorithm?: 'v1' | 'v2';
+  recommendationGeneration?: RecommendationGenerationDto;
  /** Present when ?page param is used; one entry per groupType requested */
   pagination?: Record<number, HotelPaginationMeta>;
  /** Per-route/day pagination metadata keyed by `${groupType}-${routeId}` */
   routePagination?: Record<string, HotelRoutePaginationMeta>;
+}
+
+export interface RecommendationGenerationDto {
+  version: 'v1' | 'v2';
+  algorithm: 'LEGACY_PRICE_PACKAGE' | 'TARGET_PRICE_DIVERSITY_BEAM_SEARCH';
+  searchRunId?: string;
+  generatedAt?: string;
+  warnings: string[];
 }
 
 export interface HotelAvailabilityMetaDto {
@@ -194,6 +203,7 @@ export interface HotelAvailabilityMetaDto {
   availabilityState?: 'NOT_CHECKED' | 'CHECKING' | 'FRESH' | 'STALE' | 'PARTIAL' | 'FAILED';
   recommendationAlgorithm?: 'v1' | 'v2';
   searchRunId?: string;
+  recommendationGeneration?: RecommendationGenerationDto;
   checkedAt?: string;
   expiresAt?: string | null;
   providerErrors?: Array<{ provider?: string; message?: string }>;

@@ -28,6 +28,7 @@ import {
   selectionOriginFromRow,
   selectedOptionKeyFromRow,
 } from '../utils/hotel-selection-identity.util';
+import { resolveHotelRecommendationAlgorithm } from './hotel-recommendation-package.service';
 
 type PersistedReadFallback = () => Promise<ItineraryHotelDetailsResponseDto>;
 
@@ -558,7 +559,23 @@ export class HotelAvailabilitySnapshotService {
     const paged = normalizedRows.slice(start, start + pageSize);
     const checkedAt = new Date(latest.synced_at);
     const latestPayload = this.parsePayload(latest.full_payload);
-    const searchRunId = String(latestPayload?.searchRunId || `legacy-hotel-${plan.itinerary_plan_ID}-${checkedAt.toISOString()}`);
+    const recommendationAlgorithm = String(
+      (latest as any).recommendation_algorithm_version ||
+      latestPayload?.recommendationAlgorithm ||
+      resolveHotelRecommendationAlgorithm(),
+    ).toLowerCase() === 'v2' ? 'v2' : 'v1';
+    const searchRunId = String(
+      (latest as any).recommendation_search_run_id ||
+      latestPayload?.searchRunId ||
+      `legacy-hotel-${plan.itinerary_plan_ID}-${checkedAt.toISOString()}`,
+    );
+    const recommendationGeneration = {
+      version: recommendationAlgorithm,
+      algorithm: recommendationAlgorithm === 'v2' ? 'TARGET_PRICE_DIVERSITY_BEAM_SEARCH' : 'LEGACY_PRICE_PACKAGE',
+      searchRunId,
+      generatedAt: new Date((latest as any).recommendation_generated_at || checkedAt).toISOString(),
+      warnings: [] as string[],
+    } as const;
     const ttlMinutes = Math.max(Number(process.env.HOTEL_AVAILABILITY_TTL_MINUTES || 60), 1);
     const expiresAt = new Date(checkedAt.getTime() + ttlMinutes * 60 * 1000).toISOString();
     const hasUnavailableSelection = normalizedRows.some((row: any) => row.selectionStatus === 'UNAVAILABLE');
@@ -628,6 +645,8 @@ export class HotelAvailabilitySnapshotService {
             ? 'Showing persisted hotel availability. Live suppliers are called only by Check Availability.'
             : 'No persisted hotel options are available yet. Click Check Availability to search.'),
         availabilityState,
+        recommendationAlgorithm,
+        recommendationGeneration,
         searchRunId,
         checkedAt: checkedAt.toISOString(),
         expiresAt,
@@ -640,6 +659,8 @@ export class HotelAvailabilitySnapshotService {
             hotel.isSelected && Number(hotel.selectionId || 0) === Number(row.itinerary_plan_hotel_details_ID),
           )).length,
       } as any,
+      recommendationAlgorithm,
+      recommendationGeneration,
     };
   }
 
@@ -766,6 +787,9 @@ export class HotelAvailabilitySnapshotService {
             synced_at: checkedAt,
             status: 1,
             deleted: 0,
+            recommendation_algorithm_version: resolveHotelRecommendationAlgorithm(),
+            recommendation_search_run_id: searchRunId,
+            recommendation_generated_at: checkedAt,
           })),
         });
 
@@ -1049,6 +1073,9 @@ export class HotelAvailabilitySnapshotService {
           synced_at: checkedAt,
           status: 1,
           deleted: 0,
+          recommendation_algorithm_version: resolveHotelRecommendationAlgorithm(),
+          recommendation_search_run_id: searchRunId,
+          recommendation_generated_at: checkedAt,
         })),
       });
       return this.reconcileSelections(tx, plan.itinerary_plan_ID, mergedRows, searchRunId, createdBy, true, requestedRouteIds);
@@ -1248,6 +1275,9 @@ export class HotelAvailabilitySnapshotService {
       synced_at: checkedAt,
       status: 1,
       deleted: 0,
+      recommendation_algorithm_version: resolveHotelRecommendationAlgorithm(),
+      recommendation_search_run_id: searchRunId,
+      recommendation_generated_at: checkedAt,
     };
   }
 

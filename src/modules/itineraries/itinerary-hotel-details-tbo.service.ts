@@ -986,6 +986,17 @@ if (hotelMasterId) {
     return resolveHotelRecommendationAlgorithm();
   }
 
+  private recommendationGeneration(searchRunId?: string, generatedAt = new Date().toISOString()) {
+    const version = this.recommendationAlgorithm();
+    return {
+      version,
+      algorithm: version === 'v2' ? 'TARGET_PRICE_DIVERSITY_BEAM_SEARCH' as const : 'LEGACY_PRICE_PACKAGE' as const,
+      ...(searchRunId ? { searchRunId } : {}),
+      generatedAt,
+      warnings: [],
+    };
+  }
+
   private getHotelMarginPercentage(hotel: any, globalMargin = 0): number {
     const hotelMargin = Number(
       hotel?._resolvedHotelMargin ??
@@ -4726,6 +4737,7 @@ this.logger.log(
       hotelRatesVisible,
       hotelTabs,
       recommendationAlgorithm: this.recommendationAlgorithm(),
+      recommendationGeneration: this.recommendationGeneration(),
       hotels: cleanedHotelRows,
       restrictedHotels: restrictedHotelRows,
       totalRoomCount: cleanedHotelRows.length,
@@ -4738,6 +4750,7 @@ this.logger.log(
         isPlaceholderOnly: false,
         message: availabilityMessage,
         recommendationAlgorithm: this.recommendationAlgorithm(),
+        recommendationGeneration: this.recommendationGeneration(),
       },
     };
   }

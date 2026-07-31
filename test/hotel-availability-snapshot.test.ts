@@ -182,6 +182,9 @@ test('unavailable selection is metadata on the existing availability row, never 
   const prisma = makePrisma();
   prisma.dvi_itinerary_hotel_search_cache.findFirst = async () => ({
     synced_at: syncedAt,
+    recommendation_algorithm_version: 'v2',
+    recommendation_search_run_id: 'hotel-run-stable',
+    recommendation_generated_at: syncedAt,
     full_payload: JSON.stringify({ searchRunId: 'hotel-run-stable' }),
   });
   prisma.dvi_itinerary_hotel_search_cache.findMany = async () => [{
@@ -231,6 +234,8 @@ test('unavailable selection is metadata on the existing availability row, never 
   assert.equal((response.hotels[0] as any).selection?.hotelName, 'Old Hotel');
   assert.equal((response.hotels as any[]).some((row) => String(row.hotelName).includes('Previously selected')), false);
   assert.equal((response.hotelAvailability as any)?.searchRunId, 'hotel-run-stable');
+  assert.equal((response as any).recommendationGeneration?.version, 'v2');
+  assert.equal((response as any).recommendationGeneration?.algorithm, 'TARGET_PRICE_DIVERSITY_BEAM_SEARCH');
 });
 
 test('persisted read includes selected stays missing from a partial availability snapshot', async () => {

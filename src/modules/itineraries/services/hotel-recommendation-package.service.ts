@@ -451,6 +451,11 @@ export class HotelRecommendationPackageService {
     if (offline) {
       return { ok: true };
     }
+    const hasExplicitAvailability = Boolean(raw);
+    const hasExplicitBookability = candidate.isLiveBookable === true || candidate.isBookable === true;
+    if (!hasExplicitAvailability && !hasExplicitBookability) {
+      return { ok: false, reason: 'Live rate has no explicit availability or bookability signal.' };
+    }
     if (candidate.isLiveBookable === false || candidate.isBookable === false) return { ok: false, reason: 'Live rate is not bookable.' };
     return { ok: true };
   }

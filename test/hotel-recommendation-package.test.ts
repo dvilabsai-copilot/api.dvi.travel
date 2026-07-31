@@ -200,6 +200,20 @@ test('offline inventory may be selectable for approval without live bookability'
   assert.equal(packages[0].hotels[0].isSelectable, true);
 });
 
+test('rejects a live candidate with no explicit availability or bookability signal', () => {
+  const packages = service().generate({
+    routes: oneRoute(),
+    hotelsByRoute: new Map([[1, [option('Unverifiable Live Hotel', 100, 'CP', {
+      availabilityStatus: undefined,
+      isLiveBookable: undefined,
+      isBookable: undefined,
+    })]]]),
+    preferredMealPlanCode: 'CP',
+  });
+  assert.equal(packages[0].complete, false);
+  assert.match(packages[0].stayResults[0].reason || '', /explicit availability or bookability/i);
+});
+
 test('normalizes star categories without reading unrelated numbers', () => {
   const accepted = service().generate({
     routes: oneRoute(),

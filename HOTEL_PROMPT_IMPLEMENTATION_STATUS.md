@@ -264,3 +264,53 @@ Result: 17 passed, 0 failed
 
 Do not describe this as production-ready until those remaining persistence,
 supplier, and browser-E2E risks are closed.
+
+## Consolidated prompt audit and correction update — 2026-07-31
+
+The current working branch was audited against the consolidated operations
+prompt before this update. The earlier P0 CP/EP inheritance issue remains
+fixed: expanded rate options use only their own totals/nightly rates/per-night
+values, while parent pricing is allowed only for a single unexpanded exact
+rate.
+
+Additional verified corrections:
+
+- A live candidate with neither an explicit availability status nor an
+  explicit bookability signal is now rejected as unverifiable rather than
+  silently treated as available.
+- Snapshot rows now persist nullable
+  `recommendation_algorithm_version`, `recommendation_search_run_id`, and
+  `recommendation_generated_at` fields. Existing rows remain valid because the
+  migration is additive and nullable; legacy payload fallback remains in
+  place.
+- API responses now expose `recommendationGeneration` with version, algorithm,
+  search run, generation time, and warnings.
+- Coordinate validation accepts valid zero-valued coordinates and rejects
+  out-of-range/invalid pairs instead of using truthiness checks.
+- The local backend `.env` and tracked `.env.example` explicitly set v2 and
+  the 15-km distance configuration. Code still defaults to v1 for rollback
+  safety when the flag is absent.
+
+Database migration:
+
+```text
+prisma/migrations/20260731180000_add_hotel_recommendation_snapshot_metadata/migration.sql
+```
+
+This migration was not applied to the database in this worktree. Apply it
+through the normal deployment migration process after reviewing the target
+database. No destructive selected-hotel cleanup or uniqueness migration was
+performed; existing selection identity and protected confirmed/booked rows
+remain untouched. A duplicate audit is still required before adding any
+selection uniqueness constraint.
+
+Current runtime audit:
+
+- `.env` now resolves `HOTEL_RECOMMENDATION_ALGORITHM=v2` locally.
+- `HOTEL_RECOMMENDATION_PACKAGE_SERVICE` and frontend state remain modular;
+  vehicle logic was not changed.
+- Focused backend suite: 49 passed, 0 failed.
+- Focused frontend suite: 17 passed, 0 failed.
+- Backend and frontend production builds passed.
+- Full Playwright/Chrome itinerary verification remains unavailable because
+  localhost browser reload is blocked by the browser security policy.
