@@ -1557,24 +1557,50 @@ doc
       quoteId,
     );
 
-    doc.roundedRect(30, 132, doc.page.width - 60, 163, 18).fillAndStroke('#FFFDF9', '#E7D9C4');
+      doc.roundedRect(
+      30,
+      132,
+      doc.page.width - 60,
+      Boolean(data?.summary?.shouldShowHotels) ? 180 : 163,
+      18,
+    ).fillAndStroke('#FFFDF9', '#E7D9C4');
+
     doc.font('Helvetica').fontSize(10).fillColor('#6A6077').text(
       `${Number(data?.summary?.noOfNights || 0)} Nights / ${Number(data?.summary?.noOfDays || 0)} Days`,
       46,
       146,
     );
 
-    doc.roundedRect(400, 146, 150, 62, 12).fillAndStroke('#FFFFFF', '#EADFF3');
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#8A6AB0').text('VOUCHER COUNTS', 414, 150);
-    doc.font('Helvetica-Bold').fontSize(14).fillColor('#3F3654').text(
+    doc.roundedRect(400, 140, 150, 30, 12).fillAndStroke('#FFFFFF', '#EADFF3');
+
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#8A6AB0').text(
+      'VOUCHER COUNTS',
+      414,
+      144,
+      {
+        width: 122,
+        lineBreak: false,
+      },
+    );
+
+    doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#3F3654').text(
       `${Number(data?.summary?.existingHotelVoucherCount || 0)} Hotel`,
       414,
-      168,
+      156,
+      {
+        width: 58,
+        lineBreak: false,
+      },
     );
-    doc.font('Helvetica-Bold').fontSize(14).text(
+
+    doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#3F3654').text(
       `${Number(data?.summary?.existingVehicleVoucherCount || 0)} Vehicle`,
-      414,
-      184,
+      480,
+      156,
+      {
+        width: 58,
+        lineBreak: false,
+      },
     );
 
     this.drawLabelValue(doc, 46, 178, 'Arrival Location', String(data?.summary?.arrivalLocation || '--'), 155);
@@ -1605,12 +1631,12 @@ doc
       155,
     );
 
-    if (Boolean(data?.summary?.shouldShowHotels)) {
-      doc.roundedRect(46, 286, 498, 20, 8).fillAndStroke('#FFFFFF', '#F0E6FB');
-      this.drawLabelValue(doc, 58, 290, 'Room Count', String(data?.summary?.roomCount || 0), 90);
-      this.drawLabelValue(doc, 176, 290, 'Extra Bed', String(data?.summary?.extraBed || 0), 90);
-      this.drawLabelValue(doc, 294, 290, 'Child With Bed', String(data?.summary?.childWithBed || 0), 100);
-      this.drawLabelValue(doc, 422, 290, 'Child Without Bed', String(data?.summary?.childWithoutBed || 0), 110);
+       if (Boolean(data?.summary?.shouldShowHotels)) {
+      doc.roundedRect(46, 280, 498, 30, 8).fillAndStroke('#FFFFFF', '#F0E6FB');
+      this.drawLabelValue(doc, 58, 284, 'Room Count', String(data?.summary?.roomCount || 0), 90);
+      this.drawLabelValue(doc, 176, 284, 'Extra Bed', String(data?.summary?.extraBed || 0), 90);
+      this.drawLabelValue(doc, 294, 284, 'Child With Bed', String(data?.summary?.childWithBed || 0), 100);
+      this.drawLabelValue(doc, 422, 284, 'Child Without Bed', String(data?.summary?.childWithoutBed || 0), 110);
     }
 
     doc.y = Boolean(data?.summary?.shouldShowHotels) ? 332 : 312;
