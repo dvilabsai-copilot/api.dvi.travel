@@ -1,0 +1,86 @@
+name: Deploy staging API
+
+on:
+  push:
+    branches:
+      - staging
+
+concurrency:
+  group: dvi-staging-backend-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Deploy staging API over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          STAGING_BACKEND_ENV_FILE: ${{ secrets.STAGING_BACKEND_ENV_FILE }}
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          port: ${{ secrets.DO_PORT }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          envs: STAGING_BACKEND_ENV_FILE
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -Eeuo pipefail
+
+            APP_DIR="/var/www/staging-api.dvi.travel"
+            APP_NAME="staging-api-dvi-travel"
+            ENV_TMP=""
+
+            cleanup() {
+              status=$?
+              if [ -n "${ENV_TMP:-}" ]; then
+                rm -f -- "$ENV_TMP"
+              fi
+              if [ "$status" -ne 0 ]; then
+                pm2 logs "$APP_NAME" --lines 100 --nostream || true
+              fi
+              exit "$status"
+            }
+            trap cleanup EXIT
+
+            cd "$APP_DIR"
+            test "$(git rev-parse --show-toplevel)" = "$APP_DIR"
+            test "$(git remote get-url origin)" = "https://github.com/dvilabsai-copilot/api.dvi.travel.git"
+            test "$(git branch --show-current)" = "staging"
+            test -z "$(git status --porcelain)"
+
+            git fetch origin staging
+            git merge --ff-only origin/staging
+
+            if [ -n "${STAGING_BACKEND_ENV_FILE:-}" ]; then
+              if [ -f .env ]; then
+                cp -p .env ".env.backup-$(date +%Y%m%d-%H%M%S)"
+              fi
+              ENV_TMP="$(mktemp)"
+              printf '%s\n' "$STAGING_BACKEND_ENV_FILE" > "$ENV_TMP"
+              chmod 600 "$ENV_TMP"
+              mv -- "$ENV_TMP" .env
+              ENV_TMP=""
+            fi
+            chmod 600 .env
+
+            npm ci --no-audit --no-fund
+            npx prisma generate
+            npx prisma validate
+            npm run build
+
+            if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+              pm2 restart "$APP_NAME" --update-env
+            else
+              pm2 start dist/src/main.js --name "$APP_NAME" --time --cwd "$APP_DIR"
+            fi
+            pm2 save
+
+            curl --fail --silent --show-error --max-time 30 \
+              http://127.0.0.1:4016/api/v1/docs >/dev/null
