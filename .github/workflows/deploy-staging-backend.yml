@@ -82,5 +82,15 @@ jobs:
             fi
             pm2 save
 
-            curl --fail --silent --show-error --max-time 30 \
-              http://127.0.0.1:4016/api/v1/docs >/dev/null
+            for attempt in $(seq 1 12); do
+              if curl --fail --silent --show-error --connect-timeout 3 --max-time 10 \
+                http://127.0.0.1:4016/api/v1/docs >/dev/null; then
+                echo "Staging API health check passed on attempt $attempt"
+                exit 0
+              fi
+              echo "Staging API is not ready yet (attempt $attempt/12); waiting 5 seconds..."
+              sleep 5
+            done
+
+            echo "Staging API did not become healthy within 60 seconds" >&2
+            exit 1
