@@ -1063,7 +1063,7 @@ export class StaahBookingPushService {
                 propertyname: hotel.hotelName || hotelMaster?.hotel_name || '',
                 reservation_id: bookingId,
                 payment_required: '15',
-                payment_type: 'Hotel Collect',
+                payment_type: 'Channel Collect',
                 commissionamount: '0.00',
                 discountamount: '0.00',
                 deposit: '0.00',
