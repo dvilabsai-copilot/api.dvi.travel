@@ -17,6 +17,7 @@ import { OfflineHotelCatalogService } from './offline-hotel-catalog.service';
 import {
   hotelDisplaySnapshot,
   hotelOptionKey,
+  hotelSelectionKey,
   hotelSelectionKeyFromRow,
   isProtectedHotelSelection,
   isSpecialHotelPlanRow,
@@ -126,6 +127,35 @@ export class HotelAvailabilitySnapshotService {
     ].some((value) => String(value ?? '').trim().length > 0);
   }
 
+  private normalizeRoomIdentity(value: unknown): string {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  private rowMatchesRoomCategorySelection(selection: any, row: any): boolean {
+    if (!selection?.__roomCategorySelection) return false;
+    const snapshot = parseHotelSelectionSnapshot(selection) as any;
+    const selectedHotelId = Number(snapshot?.hotelId || selection?.hotel_id || 0);
+    const rowHotelId = Number(
+      row?.hotelId ||
+      row?.hotel_id ||
+      row?.canonicalHotelId ||
+      row?.canonical_hotel_id ||
+      0,
+    );
+    if (selectedHotelId > 0 && rowHotelId > 0 && selectedHotelId !== rowHotelId) return false;
+
+    const roomTypeKeys = Array.isArray(snapshot?.roomTypeKeys)
+      ? snapshot.roomTypeKeys.map((value: unknown) => this.normalizeRoomIdentity(value)).filter(Boolean)
+      : [];
+    if (roomTypeKeys.length === 0) return true;
+
+    const rowRoomIdentity = this.normalizeRoomIdentity(row?.roomId || row?.roomType || row?.room_type);
+    return Boolean(rowRoomIdentity) && roomTypeKeys.includes(rowRoomIdentity);
+  }
+
   async readPersisted(
     quoteId: string,
     options: SnapshotReadOptions = {},
@@ -163,6 +193,27 @@ export class HotelAvailabilitySnapshotService {
       // allowed to reappear as a selected hotel after a reset.
       where: { itinerary_plan_id: plan.itinerary_plan_ID, hotel_required: 1, deleted: 0, status: 1 },
       orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
+    });
+    const roomDetailRows = await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findMany({
+      where: { itinerary_plan_id: plan.itinerary_plan_ID, deleted: 0, status: 1 },
+      orderBy: { itinerary_plan_hotel_room_details_ID: 'asc' },
+    });
+    const roomTypeIds = Array.from(
+      new Set(
+        roomDetailRows
+          .map((row: any) => Number(row.room_type_id || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      ),
+    );
+    const roomTypeRows = roomTypeIds.length
+      ? await (this.prisma as any).dvi_hotel_roomtype.findMany({
+          where: { room_type_id: { in: roomTypeIds }, deleted: 0 },
+          select: { room_type_id: true, room_type_title: true },
+        })
+      : [];
+    const roomTypeTitleById = new Map<number, string>();
+    roomTypeRows.forEach((row: any) => {
+      roomTypeTitleById.set(Number(row.room_type_id || 0), String(row.room_type_title || '').trim());
     });
     const routeDetailsModel = (this.prisma as any).dvi_itinerary_route_details;
     const currentRoutes = routeDetailsModel?.findMany
@@ -232,6 +283,90 @@ export class HotelAvailabilitySnapshotService {
         selectedByRouteGroup.set(key, row);
       }
     }
+    const roomSelectionsByRouteGroup = new Map<string, {
+      hotelId: number;
+      roomCount: number;
+      roomTypeKeys: Set<string>;
+      roomTypeLabels: string[];
+    }>();
+    roomDetailRows.forEach((row: any) => {
+      const key = hotelSelectionKey(
+        plan.itinerary_plan_ID,
+        Number(row.itinerary_route_id || 0),
+        Number(row.group_type || 0),
+        row.itinerary_route_date,
+      );
+      if (!key) return;
+      const existingSelection = selectedByRouteGroup.get(key);
+      const existingSnapshot = existingSelection ? parseHotelSelectionSnapshot(existingSelection) as any : null;
+      const providerRoomId = String(row.room_id || '').trim();
+      const mappedRoomTypeTitle = String(
+        roomTypeTitleById.get(Number(row.room_type_id || 0)) ||
+        '',
+      ).trim();
+      const snapshotRoomType = String(
+        existingSnapshot?.roomType ||
+        existingSelection?.room_type ||
+        '',
+      ).trim();
+      const roomTypeLabel = mappedRoomTypeTitle ||
+        (providerRoomId && !/^\d+$/.test(providerRoomId) ? providerRoomId : '') ||
+        snapshotRoomType ||
+        String(row.room_type_id || '').trim();
+      const roomTypeKey = this.normalizeRoomIdentity(
+        (providerRoomId && !/^\d+$/.test(providerRoomId) ? providerRoomId : '') ||
+        snapshotRoomType ||
+        roomTypeLabel,
+      );
+      const current = roomSelectionsByRouteGroup.get(key) || {
+        hotelId: Number(row.hotel_id || 0),
+        roomCount: 0,
+        roomTypeKeys: new Set<string>(),
+        roomTypeLabels: [],
+      };
+      current.hotelId = Number(current.hotelId || row.hotel_id || 0);
+      (current as any).routeId = Number(row.itinerary_route_id || 0);
+      (current as any).groupType = Number(row.group_type || 0);
+      (current as any).routeDate = row.itinerary_route_date || null;
+      current.roomCount += Math.max(Number(row.room_qty || 1), 1);
+      if (roomTypeKey) current.roomTypeKeys.add(roomTypeKey);
+      if (roomTypeLabel && !current.roomTypeLabels.includes(roomTypeLabel)) current.roomTypeLabels.push(roomTypeLabel);
+      roomSelectionsByRouteGroup.set(key, current);
+    });
+    roomSelectionsByRouteGroup.forEach((roomSelection: any, key: string) => {
+      const existingSelection = selectedByRouteGroup.get(key);
+      const existingSnapshot = existingSelection ? parseHotelSelectionSnapshot(existingSelection) as any : null;
+      const existingHotelId = Number(existingSnapshot?.hotelId || existingSelection?.hotel_id || 0);
+      const existingRoomKey = this.normalizeRoomIdentity(
+        existingSnapshot?.roomType ||
+        existingSelection?.room_type ||
+        existingSelection?.room_id,
+      );
+      const shouldOverrideSelection =
+        !existingSelection ||
+        (Number(roomSelection.hotelId || 0) > 0 && existingHotelId > 0 && Number(roomSelection.hotelId) !== existingHotelId) ||
+        (roomSelection.roomTypeKeys.size > 0 && existingRoomKey && !roomSelection.roomTypeKeys.has(existingRoomKey));
+      if (!shouldOverrideSelection) return;
+      const primaryRoomType = roomSelection.roomTypeLabels[0] || '';
+      selectedByRouteGroup.set(key, {
+        ...(existingSelection || {}),
+        __roomCategorySelection: true,
+        itinerary_plan_id: plan.itinerary_plan_ID,
+        itinerary_route_id: Number(roomSelection.routeId || 0),
+        group_type: Number(roomSelection.groupType || 0),
+        itinerary_route_date: roomSelection.routeDate || null,
+        hotel_id: Number(roomSelection.hotelId || 0),
+        room_type: primaryRoomType,
+        total_no_of_rooms: Math.max(Number(roomSelection.roomCount || 0), 1),
+        selected_price_snapshot: JSON.stringify({
+          hotelId: Number(roomSelection.hotelId || 0),
+          roomType: primaryRoomType,
+          roomTypeKeys: Array.from(roomSelection.roomTypeKeys || []),
+          totalRooms: Math.max(Number(roomSelection.roomCount || 0), 1),
+          selectionOrigin: 'USER_SELECTED',
+        }),
+      });
+    });
 
     const recommendationGroupTypes = this.normalizeRecommendationGroupTypes(
       planRows,
@@ -259,6 +394,50 @@ export class HotelAvailabilitySnapshotService {
       .map(remapSnapshotRoute)
       .filter((row: any) => !currentRouteIds.size || currentRouteIds.has(Number(row.itineraryRouteId || 0)))
       .map((row: any) => this.decorateSelection(row, selectedByRouteGroup, plan.itinerary_plan_ID)) as any[];
+
+    const appliedRoomSelectionKeys = new Set<string>();
+    normalizedRows = normalizedRows.map((row: any) => {
+      const key = hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row);
+      if (selectedByRouteGroup.has(key)) return row;
+      const roomSelection = roomSelectionsByRouteGroup.get(key);
+      if (!roomSelection) return row;
+      if (appliedRoomSelectionKeys.has(key)) return row;
+
+      const rowHotelId = Number(
+        row.hotelId ||
+        row.hotel_id ||
+        row.canonicalHotelId ||
+        row.canonical_hotel_id ||
+        0,
+      );
+      if (Number(roomSelection.hotelId || 0) > 0 && rowHotelId > 0 && Number(roomSelection.hotelId) !== rowHotelId) {
+        return row;
+      }
+
+      const rowRoomIdentity = this.normalizeRoomIdentity(row.roomId || row.roomType || row.room_type);
+      if (roomSelection.roomTypeKeys.size > 0 && rowRoomIdentity && !roomSelection.roomTypeKeys.has(rowRoomIdentity)) {
+        return row;
+      }
+
+      appliedRoomSelectionKeys.add(key);
+      const roomCount = Math.max(Number(roomSelection.roomCount || 0), Number(row.noOfRooms || 0), 1);
+      return {
+        ...row,
+        isSelected: true,
+        selectionOrigin: 'USER_SELECTED',
+        selectionId: Number(row.selectionId || 0),
+        selectionStatus: 'AVAILABLE',
+        noOfRooms: roomCount,
+        total_no_of_rooms: roomCount,
+        selection: {
+          ...hotelDisplaySnapshot(row),
+          status: 'AVAILABLE',
+          selectionOrigin: 'USER_SELECTED',
+          selectionId: Number(row.selectionId || 0),
+          totalRooms: roomCount,
+        },
+      };
+    });
 
     // A missing selected option is selection metadata on the existing
     // route/day/group row, never a synthetic option row. This keeps row/day
@@ -1128,12 +1307,33 @@ export class HotelAvailabilitySnapshotService {
   }
 
   private decorateSelection(row: any, selectedByRouteGroup: Map<string, any>, planId: number): any {
-    const selection = selectedByRouteGroup.get(hotelSelectionKeyFromRow(planId, row));
-    const normalized = { ...row, optionKey: row.optionKey || this.optionKey(row) };
-    if (!selection) return normalized;
-    const nestedOption = Array.isArray(normalized.rateOptions)
-      ? normalized.rateOptions.find((option: any) => optionMatchesSelection(selection, { ...normalized, ...option }))
-      : null;
+      const selection = selectedByRouteGroup.get(hotelSelectionKeyFromRow(planId, row));
+      const normalized = { ...row, optionKey: row.optionKey || this.optionKey(row) };
+      if (!selection) return normalized;
+      if (this.rowMatchesRoomCategorySelection(selection, normalized)) {
+        const snapshot = parseHotelSelectionSnapshot(selection) as any;
+        const roomCount = Math.max(Number(snapshot?.totalRooms || selection?.total_no_of_rooms || 0), Number(normalized.noOfRooms || 0), 1);
+        return {
+          ...normalized,
+          isSelected: true,
+          selectionOrigin: 'USER_SELECTED',
+          selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
+          itineraryPlanHotelDetailsId: Number(selection.itinerary_plan_hotel_details_ID || 0),
+          noOfRooms: roomCount,
+          total_no_of_rooms: roomCount,
+          selectionStatus: 'AVAILABLE',
+          selection: {
+            ...hotelDisplaySnapshot(normalized),
+            status: 'AVAILABLE',
+            selectionOrigin: 'USER_SELECTED',
+            selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
+            totalRooms: roomCount,
+          },
+        };
+      }
+      const nestedOption = Array.isArray(normalized.rateOptions)
+        ? normalized.rateOptions.find((option: any) => optionMatchesSelection(selection, { ...normalized, ...option }))
+        : null;
     const matched = Boolean(nestedOption) || optionMatchesSelection(selection, normalized);
     if (!matched) return normalized;
     const selectionOrigin = selectionOriginFromRow(selection);
@@ -1162,6 +1362,7 @@ export class HotelAvailabilitySnapshotService {
   }
 
   private rowMatchesSelection(selection: any, row: any): boolean {
+    if (this.rowMatchesRoomCategorySelection(selection, row)) return true;
     if (optionMatchesSelection(selection, row)) return true;
     return Array.isArray(row?.rateOptions) && row.rateOptions.some((option: any) =>
       optionMatchesSelection(selection, { ...row, ...option }),

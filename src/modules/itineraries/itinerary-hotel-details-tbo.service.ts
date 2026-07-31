@@ -24,6 +24,12 @@ import {
   calculateStaahOccupancyAmount,
   type StaahPricingPaxInput,
 } from './helpers/staah-occupancy-pricing';
+import {
+  hotelDisplaySnapshot,
+  optionMatchesSelection,
+  parseHotelSelectionSnapshot,
+  selectionOriginFromRow,
+} from './utils/hotel-selection-identity.util';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -3741,6 +3747,14 @@ this.logger.log(
         early_checkin_extra_payment_applicable: true,
         early_checkin_payment_status: true,
         early_checkin_note: true,
+        hotel_code: true,
+        hotel_provider: true,
+        selected_rate_option_id: true,
+        selected_price_per_night: true,
+        selected_total_price: true,
+        selected_currency: true,
+        selected_price_snapshot: true,
+        requires_price_reacceptance: true,
       },
     });
 
@@ -4013,6 +4027,87 @@ this.logger.log(
 
  // Build hotel rows (detail rows for each package)
     const hotelRows: ItineraryHotelRowDto[] = [];
+    const selectionRowsByRouteAndGroup = new Map<string, any[]>();
+    for (const detail of hotelDetailsInDb as any[]) {
+      const routeId = Number(detail?.itinerary_route_id || 0);
+      const groupType = Number(detail?.group_type || 0);
+      if (routeId <= 0 || groupType <= 0) continue;
+      const canonicalHotelId = Number(detail?.hotel_id || 0);
+      const hotelCode = String(detail?.hotel_code || '').trim();
+      if (canonicalHotelId <= 0 && !hotelCode) continue;
+      const key = `${routeId}-${groupType}`;
+      const existing = selectionRowsByRouteAndGroup.get(key) || [];
+      existing.push(detail);
+      selectionRowsByRouteAndGroup.set(key, existing);
+    }
+
+    const decorateLiveSelection = (row: any, selection: any): any => {
+      const snapshot = parseHotelSelectionSnapshot(selection);
+      const selectionOrigin = selectionOriginFromRow(selection);
+      return {
+        ...row,
+        isSelected: true,
+        selectionOrigin,
+        selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
+        itineraryPlanHotelDetailsId:
+          Number(selection.itinerary_plan_hotel_details_ID || 0) ||
+          row.itineraryPlanHotelDetailsId,
+        selectedRateOptionId:
+          selection.selected_rate_option_id || row.rateOptionId || row.searchReference,
+        selectedPricePerNight: selection.selected_price_per_night,
+        selectedTotalPrice: selection.selected_total_price,
+        selectedCurrency: selection.selected_currency,
+        requiresPriceReacceptance: Boolean(selection.requires_price_reacceptance),
+        selectedPriceSnapshot: selection.selected_price_snapshot || null,
+        selectionStatus: 'AVAILABLE',
+        selection: {
+          ...hotelDisplaySnapshot({ ...selection, ...snapshot }),
+          status: 'AVAILABLE',
+          selectionOrigin,
+          selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
+        },
+      };
+    };
+
+    const cleanIdentity = (value: unknown): string =>
+      String(value ?? '').trim().toLowerCase();
+
+    const normalizeMealIdentity = (value: unknown): string => {
+      const normalized = cleanIdentity(value).replace(/[^a-z]/g, '');
+      if (!normalized) return '';
+      if (['cp', 'continentalplan', 'breakfast'].includes(normalized)) return 'cp';
+      if (['ep', 'europeanplan', 'roomonly'].includes(normalized)) return 'ep';
+      if (['map', 'modifiedamericanplan'].includes(normalized)) return 'map';
+      if (['ap', 'americanplan', 'fullboard'].includes(normalized)) return 'ap';
+      return normalized;
+    };
+
+    const fallbackSelectionMatches = (selection: any, row: any): boolean => {
+      const snapshot = parseHotelSelectionSnapshot(selection);
+      const selectionProvider = cleanIdentity(snapshot.provider || selection?.hotel_provider);
+      const rowProvider = cleanIdentity(row?.provider);
+      if (selectionProvider && rowProvider && selectionProvider !== rowProvider) return false;
+
+      const selectionHotelCode = cleanIdentity(snapshot.hotelCode || selection?.hotel_code);
+      const rowHotelCode = cleanIdentity(row?.hotelCode || row?.providerHotelCode);
+      if (selectionHotelCode && rowHotelCode && selectionHotelCode !== rowHotelCode) return false;
+
+      const selectionRoomType = cleanIdentity(snapshot.roomType || selection?.room_type);
+      const rowRoomType = cleanIdentity(row?.roomType);
+      if (selectionRoomType && rowRoomType && selectionRoomType !== rowRoomType) return false;
+
+      const selectionMealPlan = normalizeMealIdentity(snapshot.mealPlan || selection?.meal_plan);
+      const rowMealPlan = normalizeMealIdentity(row?.mealPlan);
+      if (selectionMealPlan && rowMealPlan && selectionMealPlan !== rowMealPlan) return false;
+
+      const selectionSearchReference = cleanIdentity(snapshot.searchReference || snapshot.bookingCode || selection?.selected_rate_option_id);
+      const rowSearchReference = cleanIdentity(row?.searchReference || row?.bookingCode);
+      if (selectionSearchReference && rowSearchReference) {
+        return selectionSearchReference === rowSearchReference;
+      }
+
+      return false;
+    };
 
     for (const pkg of packages) {
       for (const hotel of pkg.hotels) {
@@ -4136,7 +4231,7 @@ this.logger.log(
           normalizedProvider !== 'tbo' || rawBookingCode.includes('!TB!');
         const isPrebookReady = hasSupplierHotel && hasLiveBookingCode;
 
-        hotelRows.push({
+        let hotelRow: ItineraryHotelRowDto & Record<string, any> = {
           groupType: pkg.groupType,
           itineraryRouteId: routeId,
           day: `Day ${routeIndex + 1} | ${dateLabel}`,
@@ -4243,7 +4338,23 @@ this.logger.log(
               ? [String((hotel as any).cancellationPolicy).trim()]
               : undefined),
           supplementSummary: hotel.supplementSummary,
-        });
+        };
+
+        const candidateSelections = selectionRowsByRouteAndGroup.get(`${routeId}-${pkg.groupType}`) || [];
+        const matchedSelection = candidateSelections.find((selection) =>
+          optionMatchesSelection(selection, hotelRow) ||
+          fallbackSelectionMatches(selection, hotelRow) ||
+          (Array.isArray(hotelRow.rateOptions) &&
+            hotelRow.rateOptions.some((option: any) =>
+              optionMatchesSelection(selection, { ...hotelRow, ...option }) ||
+              fallbackSelectionMatches(selection, { ...hotelRow, ...option }),
+            )),
+        );
+        if (matchedSelection) {
+          hotelRow = decorateLiveSelection(hotelRow, matchedSelection);
+        }
+
+        hotelRows.push(hotelRow);
 
  // Log HOBSE hotel codes for debugging
         if (hotel.provider === 'HOBSE') {
@@ -4438,6 +4549,31 @@ this.logger.log(
 
       return !(hasSupplierSibling && isStaleZeroCostExternal);
     });
+
+    for (const [routeGroupKey, selections] of selectionRowsByRouteAndGroup.entries()) {
+      const [routeIdRaw, groupTypeRaw] = routeGroupKey.split('-');
+      const routeId = Number(routeIdRaw || 0);
+      const groupType = Number(groupTypeRaw || 0);
+      if (routeId <= 0 || groupType <= 0) continue;
+
+      for (const selection of selections) {
+        for (let index = 0; index < cleanedHotelRows.length; index++) {
+          const row: any = cleanedHotelRows[index];
+          if (Number(row?.itineraryRouteId || 0) !== routeId) continue;
+          if (Number(row?.groupType || 0) !== groupType) continue;
+          const matched =
+            optionMatchesSelection(selection, row) ||
+            fallbackSelectionMatches(selection, row) ||
+            (Array.isArray(row?.rateOptions) &&
+              row.rateOptions.some((option: any) =>
+                optionMatchesSelection(selection, { ...row, ...option }) ||
+                fallbackSelectionMatches(selection, { ...row, ...option }),
+              ));
+          if (!matched) continue;
+          cleanedHotelRows[index] = decorateLiveSelection(row, selection);
+        }
+      }
+    }
 
     const supplierHotelRows = cleanedHotelRows.filter((row) => row.isBookable !== false);
 

@@ -35,6 +35,17 @@ export type HotelOptionIdentity = {
 
 const clean = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 
+const normalizeMealIdentity = (value: unknown): string => {
+  const normalized = clean(value)
+    .replace(/[^a-z]/g, '');
+  if (!normalized) return '';
+  if (['cp', 'continentalplan', 'breakfast'].includes(normalized)) return 'cp';
+  if (['ep', 'europeanplan', 'roomonly'].includes(normalized)) return 'ep';
+  if (['map', 'modifiedamericanplan'].includes(normalized)) return 'map';
+  if (['ap', 'americanplan', 'fullboard'].includes(normalized)) return 'ap';
+  return normalized;
+};
+
 export function normalizeHotelDate(value: unknown): string {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(String(value));
@@ -144,8 +155,9 @@ export function hotelRateMatchesSelection(selection: any, option: any): boolean 
   if (selectedRoom && optionRoom && selectedRoom !== optionRoom) return false;
 
   const selectedMeal = clean(snapshot.mealPlan || selection?.meal_plan);
-  const optionMeal = clean(option?.mealPlan || option?.meal_plan);
-  if (selectedMeal && optionMeal && selectedMeal !== optionMeal) return false;
+  const optionMeal = normalizeMealIdentity(option?.mealPlan || option?.meal_plan);
+  const normalizedSelectedMeal = normalizeMealIdentity(selectedMeal);
+  if (normalizedSelectedMeal && optionMeal && normalizedSelectedMeal !== optionMeal) return false;
 
   const selectedRoomId = clean(snapshot.roomId || selection?.room_id);
   const optionRoomId = clean(option?.roomId || option?.room_id);
