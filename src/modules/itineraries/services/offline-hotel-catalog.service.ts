@@ -40,6 +40,8 @@ export type OfflineRateResolution = {
 @Injectable()
 export class OfflineHotelCatalogService {
   private readonly logger = new Logger(OfflineHotelCatalogService.name);
+  private readonly availabilityCache = new Map<string, { expiresAt: number; hotels: HotelSearchResult[] }>();
+  private readonly availabilityCacheTtlMs = 15 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -51,13 +53,16 @@ export class OfflineHotelCatalogService {
     checkInDate: string;
     checkOutDate: string;
     roomCount: number;
+    adultCount?: number;
+    childCount?: number;
+    childAges?: number[];
   }): Promise<HotelSearchResult[]> {
     const hotels = await this.fetchOfflineHotelsForStayBlock({
       destination: String(criteria.cityCode || '').trim(),
       checkInDate: String(criteria.checkInDate || '').slice(0, 10),
       checkOutDate: String(criteria.checkOutDate || '').slice(0, 10),
       routeIds: [],
-    }, Math.max(Number(criteria.roomCount || 1), 1));
+    }, Math.max(Number(criteria.roomCount || 1), 1), `adults:${Number(criteria.adultCount || 0)}|children:${Number(criteria.childCount || 0)}|ages:${(criteria.childAges || []).join(',')}`, Number(criteria.adultCount || 0), Number(criteria.childCount || 0));
     return hotels;
   }
 
@@ -82,6 +87,9 @@ export class OfflineHotelCatalogService {
       const hotels = await this.fetchOfflineHotelsForStayBlock(
         block,
         roomCount,
+        `adults:${adultCount}|children:${childCount}|ages:${childAges.join(',')}`,
+        adultCount,
+        childCount,
       );
 
       for (const routeId of block.routeIds) {
@@ -182,7 +190,23 @@ export class OfflineHotelCatalogService {
   private async fetchOfflineHotelsForStayBlock(
     block: StayBlock,
     roomCount: number,
+    occupancyKey = '',
+    adultCount = 0,
+    childCount = 0,
   ): Promise<HotelSearchResult[]> {
+    const cacheKey = [
+      block.destination,
+      block.checkInDate,
+      block.checkOutDate,
+      Math.max(Number(roomCount || 1), 1),
+      occupancyKey,
+    ].join('|').toLowerCase();
+    const cached = this.availabilityCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.hotels;
+    }
+    if (cached) this.availabilityCache.delete(cacheKey);
+
     const dateList = this.getNightDates(block.checkInDate, block.checkOutDate);
     if (dateList.length === 0) {
       return [];
@@ -221,7 +245,7 @@ export class OfflineHotelCatalogService {
 
     const results: HotelSearchResult[] = [];
     for (const hotel of hotels as any[]) {
-      const offers = await this.buildRoomOffers(hotel, dateList, roomCount);
+      const offers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount);
       if (offers.length === 0) {
         continue;
       }
@@ -328,13 +352,23 @@ export class OfflineHotelCatalogService {
     }
 
     results.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+    this.availabilityCache.set(cacheKey, {
+      expiresAt: Date.now() + this.availabilityCacheTtlMs,
+      hotels: results,
+    });
     return results;
+  }
+
+  clearCache(): void {
+    this.availabilityCache.clear();
   }
 
   private async buildRoomOffers(
     hotel: any,
     dateList: string[],
     roomCount: number,
+    adultCount = 0,
+    childCount = 0,
   ): Promise<OfflineRoomOffer[]> {
     const activeRooms = await this.prisma.dvi_hotel_rooms.findMany({
       where: {
@@ -347,6 +381,8 @@ export class OfflineHotelCatalogService {
         room_type_id: true,
         room_title: true,
         room_ref_code: true,
+        total_max_adults: true,
+        total_max_childrens: true,
         breakfast_included: true,
         lunch_included: true,
         dinner_included: true,
@@ -358,6 +394,17 @@ export class OfflineHotelCatalogService {
       return [];
     }
 
+    const roomsNeeded = Math.max(Number(roomCount || 1), 1);
+    const roomsWithCapacity = activeRooms.filter((room: any) => {
+      const maxAdults = Number(room.total_max_adults || 0);
+      const maxChildren = Number(room.total_max_childrens || 0);
+      const adultCapacityOk = !adultCount || !maxAdults || maxAdults * roomsNeeded >= adultCount;
+      const childCapacityOk = !childCount || !maxChildren || maxChildren * roomsNeeded >= childCount;
+      return adultCapacityOk && childCapacityOk;
+    });
+    if (roomsWithCapacity.length === 0) return [];
+    activeRooms.splice(0, activeRooms.length, ...roomsWithCapacity);
+
     const roomTypeIds = Array.from(
       new Set(
         activeRooms
@@ -368,6 +415,26 @@ export class OfflineHotelCatalogService {
 
     if (roomTypeIds.length === 0) {
       return [];
+    }
+
+    // A room row is usable only when its master room type is active too.
+    // Otherwise deactivated room types can leak back into offline search.
+    const roomTypeModel = (this.prisma as any).dvi_hotel_roomtype;
+    if (roomTypeModel?.findMany) {
+      const activeRoomTypes = await roomTypeModel.findMany({
+        where: { room_type_id: { in: roomTypeIds }, status: 1, deleted: 0 },
+        select: { room_type_id: true },
+      });
+      const activeRoomTypeIds = new Set(
+        (activeRoomTypes as any[]).map((row) => Number(row.room_type_id)).filter((id) => id > 0),
+      );
+      if (activeRoomTypeIds.size === 0) return [];
+      for (let index = activeRooms.length - 1; index >= 0; index -= 1) {
+        if (!activeRoomTypeIds.has(Number((activeRooms[index] as any).room_type_id || 0))) {
+          activeRooms.splice(index, 1);
+        }
+      }
+      if (activeRooms.length === 0) return [];
     }
 
     const yearMonthPairs = Array.from(
@@ -511,7 +578,13 @@ export class OfflineHotelCatalogService {
     }
 
     const dateList = this.getNightDates(checkInDate, checkOutDate);
-    const offers = await this.buildRoomOffers(hotel, dateList, Math.max(Number(input.roomCount || 1), 1));
+    const offers = await this.buildRoomOffers(
+      hotel,
+      dateList,
+      Math.max(Number(input.roomCount || 1), 1),
+      Number((plan as any).total_adult || 0),
+      Number((plan as any).total_children || 0),
+    );
     const offer = offers.find((candidate) => candidate.roomId === roomId && candidate.roomTypeId === roomTypeId);
     if (!offer) {
       throw new Error('Offline rate option is no longer priced for every requested night');

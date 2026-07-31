@@ -108,12 +108,29 @@ export class ItineraryHotelApprovalService {
       }
       if (row.hotel_approval_status !== HOTEL_APPROVAL_STATUS.PENDING_APPROVAL) throw new BadRequestException('Hotel approval is no longer pending.');
       const now = new Date();
-      const priceChanged = action === 'approve' && approvedPrice !== undefined && Number(approvedPrice) !== Number(row.selected_total_price);
+      const normalizedApprovedPrice = approvedPrice === undefined ? undefined : Number(approvedPrice);
+      if (action === 'approve' && normalizedApprovedPrice !== undefined &&
+        (!Number.isFinite(normalizedApprovedPrice) || normalizedApprovedPrice <= 0)) {
+        throw new BadRequestException('approvedPrice must be a positive number when supplied.');
+      }
+      const priceChanged = action === 'approve' && normalizedApprovedPrice !== undefined &&
+        Math.abs(normalizedApprovedPrice - Number(row.selected_total_price || 0)) > 0.01;
+      let approvedSnapshot: string | null = null;
+      if (action === 'approve' && normalizedApprovedPrice !== undefined) {
+        let snapshot: Record<string, unknown> = {};
+        try { snapshot = row.selected_price_snapshot ? JSON.parse(row.selected_price_snapshot) : {}; } catch { snapshot = {}; }
+        approvedSnapshot = JSON.stringify({
+          ...snapshot,
+          approvedTotalPrice: normalizedApprovedPrice,
+          approvedAt: now.toISOString(),
+          approvedBy: actorId,
+        });
+      }
       const updated = await (tx as any).dvi_itinerary_plan_hotel_details.update({
         where: { itinerary_plan_hotel_details_ID: Number(selectionId) },
         data: action === 'approve'
-          ? { hotel_approval_status: targetStatus, hotel_approved_at: now, hotel_approved_by: actorId, manual_confirmation_status: MANUAL_CONFIRMATION_STATUS.PENDING_CONFIRMATION, requires_price_reacceptance: priceChanged, hotel_approval_notes: notes || null, updatedon: now }
-          : { hotel_approval_status: targetStatus, hotel_rejected_at: now, hotel_rejected_by: actorId, hotel_approval_notes: notes || null, updatedon: now },
+          ? { hotel_approval_status: targetStatus, hotel_approved_at: now, hotel_approved_by: actorId, manual_confirmation_status: MANUAL_CONFIRMATION_STATUS.PENDING_CONFIRMATION, requires_price_reacceptance: priceChanged, ...(normalizedApprovedPrice !== undefined ? { selected_total_price: normalizedApprovedPrice } : {}), ...(approvedSnapshot ? { selected_price_snapshot: approvedSnapshot } : {}), hotel_approval_notes: notes || null, updatedon: now }
+          : { hotel_approval_status: targetStatus, hotel_rejected_at: now, hotel_rejected_by: actorId, manual_confirmation_status: MANUAL_CONFIRMATION_STATUS.CANCELLED, hotel_approval_notes: notes || null, updatedon: now },
       });
       await this.writeHistory(tx, row, updated, actorId, notes || `Hotel ${action}d`);
       return { success: true, selectionId: updated.itinerary_plan_hotel_details_ID, approvalStatus: updated.hotel_approval_status, manualConfirmationStatus: updated.manual_confirmation_status, requiresPriceReacceptance: updated.requires_price_reacceptance };
@@ -147,6 +164,13 @@ export class ItineraryHotelApprovalService {
     const hotelIds = Array.from(new Set(rows.map((row) => Number(row.hotel_id)).filter((id) => id > 0)));
     const selectionIds = rows.map((row) => Number(row.itinerary_plan_hotel_details_ID)).filter((id) => id > 0);
     const hotels = hotelIds.length ? await this.prisma.dvi_hotel.findMany({ where: { hotel_id: { in: hotelIds } }, select: { hotel_id: true, hotel_name: true, hotel_city: true } }) : [];
+    const planIds = Array.from(new Set(rows.map((row) => Number(row.itinerary_plan_id)).filter((id) => id > 0)));
+    const plans = planIds.length
+      ? await (this.prisma as any).dvi_itinerary_plan_details.findMany({
+        where: { itinerary_plan_ID: { in: planIds } },
+        select: { itinerary_plan_ID: true, itinerary_quote_ID: true },
+      })
+      : [];
     const rooms = selectionIds.length
       ? await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findMany({
         where: { itinerary_plan_hotel_details_id: { in: selectionIds }, deleted: 0, status: 1 },
@@ -158,6 +182,7 @@ export class ItineraryHotelApprovalService {
       ? await (this.prisma as any).dvi_hotel_roomtype.findMany({ where: { room_type_id: { in: roomTypeIds } }, select: { room_type_id: true, room_type_title: true } })
       : [];
     const hotelById = new Map(hotels.map((hotel) => [Number(hotel.hotel_id), hotel]));
+    const quoteByPlanId = new Map((plans as any[]).map((plan) => [Number(plan.itinerary_plan_ID), plan.itinerary_quote_ID]));
     const roomBySelection = new Map<number, any>();
     for (const room of rooms) {
       if (!roomBySelection.has(Number(room.itinerary_plan_hotel_details_id))) roomBySelection.set(Number(room.itinerary_plan_hotel_details_id), room);
@@ -167,7 +192,7 @@ export class ItineraryHotelApprovalService {
       ...this.parseSnapshotFields(row),
       selectionId: row.itinerary_plan_hotel_details_ID,
       itineraryPlanId: row.itinerary_plan_id,
-      itineraryQuoteId: null,
+      itineraryQuoteId: quoteByPlanId.get(Number(row.itinerary_plan_id)) || null,
       routeId: row.itinerary_route_id,
       hotelId: row.hotel_id,
       hotelName: hotelById.get(Number(row.hotel_id))?.hotel_name || 'Hotel',
