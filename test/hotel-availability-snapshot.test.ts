@@ -651,6 +651,7 @@ test('initial availability creates one canonical auto-selection per missing stay
   assert.equal(createdSelections[0].selected_price_snapshot.includes('AUTO_SELECTED'), true);
   assert.equal(createdRooms.length, 1);
   assert.equal(createdRooms[0].hotel_id, 987);
+  assert.equal(createdRooms[0].room_id, 0);
 });
 
 test('reset clears editable selections before rebuilding the live snapshot', async () => {
