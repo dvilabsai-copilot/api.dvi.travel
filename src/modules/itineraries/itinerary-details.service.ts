@@ -579,8 +579,30 @@ export class ItineraryDetailsService {
         const hasExplicitRateIdentity = Boolean(
           requestedOptionKey || bookingCode || searchReference || roomId || rateId,
         );
-        const routeCandidates = availableRows
-          .filter((row: any) => Number(row.itineraryRouteId || 0) === routeId)
+        const requestedDate = String(
+          selection.checkInDate || selection.check_in_date || selection.date || '',
+        ).slice(0, 10);
+        const exactRouteCandidates = availableRows
+          .filter((row: any) => Number(row.itineraryRouteId || 0) === routeId);
+        const exactRouteAndDateCandidates = requestedDate
+          ? exactRouteCandidates.filter((row: any) => {
+              const rowDate = String(row.date || row.checkInDate || '').slice(0, 10);
+              return !rowDate || rowDate === requestedDate;
+            })
+          : exactRouteCandidates;
+        // A live search can rebuild route rows while preserving the same stay
+        // dates. If the route id changed between the selection map and the
+        // latest snapshot, use the date-scoped rows as a safe fallback; never
+        // fall back to an unrestricted hotel list.
+        const routeCandidates = exactRouteAndDateCandidates.length > 0
+          ? exactRouteAndDateCandidates
+          : requestedDate
+            ? availableRows.filter((row: any) => String(row.date || row.checkInDate || '').slice(0, 10) === requestedDate)
+            : [];
+        const buildCandidates = (
+          allowPerNightRateIdentityFallback = false,
+          allowOptionKeyFallback = false,
+        ) => routeCandidates
           // `groupType` is a package-level hint, not a route-level rate
           // identity. A single preview can contain selections from different
           // groups (especially when offline rows are group 0), so do not let
@@ -590,11 +612,10 @@ export class ItineraryDetailsService {
             const requestedGroupType = Number(selection.groupType || params.groupType || 0);
             return !requestedGroupType || Number(row.groupType || 0) === requestedGroupType;
           })
-          .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider);
-        const buildCandidates = (allowPerNightRateIdentityFallback = false) => routeCandidates
+          .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider)
           .filter((row: any) => {
             const rowOptionKey = this.normalizeIdentity(row.optionKey || this.hotelAvailabilitySnapshotService.optionKey(row));
-            if (requestedOptionKey && !allowPerNightRateIdentityFallback) return requestedOptionKey === rowOptionKey;
+            if (requestedOptionKey && !allowOptionKeyFallback && requestedOptionKey !== rowOptionKey) return false;
             const rowCodes = [
               row.hotelCode,
               row.providerHotelCode,
@@ -647,6 +668,14 @@ export class ItineraryDetailsService {
         let candidates = buildCandidates(false);
         if (candidates.length === 0 && routeIds.length > 1 && routeId !== routeIds[0]) {
           candidates = buildCandidates(true);
+        }
+        // optionKey is a derived display identity. Supplier booking/search
+        // references are the authoritative rate identity and may differ in
+        // casing or formatting after snapshot normalization. Permit that
+        // derived key to fall back only after the route/property/rate fields
+        // still match the current snapshot.
+        if (candidates.length === 0) {
+          candidates = buildCandidates(false, true);
         }
 
         const match = candidates[0]?.row;
