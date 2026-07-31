@@ -8,12 +8,34 @@ import { haversineKm } from './utils/distance-utils';
 export interface ItineraryHotelTabDto {
   groupType: number;
   label: string;
-  totalAmount: number;
+  totalAmount: number | null;
+  partialTotal?: number;
+  targetAmount?: number | null;
+  complete?: boolean;
+  diversityScore?: number;
+  repeatedAcrossGroupsHotelIds?: string[];
+  sameOptionAcrossGroups?: string[];
+  duplicateWithinPackageHotelIds?: string[];
+  repeatedFromGroups?: number[];
+  stayResults?: Array<{
+    stayKey: string;
+    parentRouteId: number;
+    routeIds: number[];
+    destination: string;
+    checkInDate: string;
+    checkOutDate: string;
+    nights: number;
+    state: 'SELECTED' | 'OFFLINE_FALLBACK' | 'UNAVAILABLE';
+    reason?: string;
+    totalPrice?: number;
+  }>;
 }
 
 export interface ItineraryHotelRowDto {
   groupType: number;
   itineraryRouteId: number;
+  routeIds?: number[];
+  stayKey?: string;
   day: string;
   destination: string;
   hotelId: number;
@@ -97,6 +119,11 @@ export interface ItineraryHotelRowDto {
   isSelected?: boolean;
   selectionOrigin?: 'AUTO_SELECTED' | 'USER_SELECTED';
   selectionStatus?: 'AVAILABLE' | 'UNAVAILABLE' | 'REVIEW_REQUIRED';
+  selectionReason?: string | null;
+  distanceKm?: number | null;
+  distanceStatus?: 'WITHIN_RADIUS' | 'OUTSIDE_RADIUS' | 'UNKNOWN';
+  distanceReference?: 'HOTSPOT' | 'DESTINATION_CENTRE' | 'ROUTE_DESTINATION' | 'UNKNOWN';
+  availabilityState?: 'AVAILABLE' | 'UNAVAILABLE' | 'RESTRICTED' | 'STALE' | 'UNKNOWN' | 'OFFLINE_APPROVAL_REQUIRED';
   selection?: {
     hotelName?: string | null;
     category?: number | null;
@@ -149,6 +176,7 @@ export interface ItineraryHotelDetailsResponseDto {
   restrictedHotels?: ItineraryHotelRowDto[];
   totalRoomCount: number;
   hotelAvailability?: HotelAvailabilityMetaDto;
+  recommendationAlgorithm?: 'v1' | 'v2';
  /** Present when ?page param is used; one entry per groupType requested */
   pagination?: Record<number, HotelPaginationMeta>;
  /** Per-route/day pagination metadata keyed by `${groupType}-${routeId}` */
@@ -164,6 +192,7 @@ export interface HotelAvailabilityMetaDto {
   isPlaceholderOnly: boolean;
   message: string;
   availabilityState?: 'NOT_CHECKED' | 'CHECKING' | 'FRESH' | 'STALE' | 'PARTIAL' | 'FAILED';
+  recommendationAlgorithm?: 'v1' | 'v2';
   searchRunId?: string;
   checkedAt?: string;
   expiresAt?: string | null;

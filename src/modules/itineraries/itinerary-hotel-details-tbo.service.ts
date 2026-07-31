@@ -6,7 +6,12 @@ import { HotelSearchService } from '../hotels/services/hotel-search.service';
 import { HobseHotelProvider } from '../hotels/providers/hobse-hotel.provider';
 import { HotelSearchResult } from '../hotels/interfaces/hotel-provider.interface';
 import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.service';
-import { HotelRecommendationPackageService } from './services/hotel-recommendation-package.service';
+import {
+  HotelRecommendationPackageService,
+  resolveHotelRecommendationAlgorithm,
+  type RecommendationPackage,
+  type RecommendationHotel,
+} from './services/hotel-recommendation-package.service';
 import {
   ItineraryHotelTabDto,
   ItineraryHotelRowDto,
@@ -978,8 +983,7 @@ if (hotelMasterId) {
   ) {}
 
   private recommendationAlgorithm(): 'v1' | 'v2' {
-    const value = String(process.env.HOTEL_RECOMMENDATION_ALGORITHM || 'v1').trim().toLowerCase();
-    return value === 'v2' ? 'v2' : 'v1';
+    return resolveHotelRecommendationAlgorithm();
   }
 
   private getHotelMarginPercentage(hotel: any, globalMargin = 0): number {
@@ -1692,7 +1696,7 @@ this.logger.log(
           maxDistanceKm: Number(process.env.MAX_RECOMMENDED_HOTEL_DISTANCE_KM || 15),
           requireKnownDistance: String(process.env.HOTEL_RECOMMENDATION_REQUIRE_DISTANCE || '').trim() === 'true',
         })
-      : this.generatePricePackages(filteredHotelsByRoute, routes);
+      : this.adaptLegacyPackages(this.generatePricePackages(filteredHotelsByRoute, routes), routes);
     this.logger.log(`[HOTEL_RECOMMENDATION] algorithm=${algorithm} planId=${planId} groups=${packages.length}`);
 
  // Step 5: Build response
@@ -3448,6 +3452,68 @@ this.logger.log(
   }
 
 
+  private adaptLegacyPackages(
+    legacyPackages: Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }>,
+    routes: any[],
+  ): RecommendationPackage[] {
+    return legacyPackages.map((pkg) => {
+      const hotels = pkg.hotels.map((hotel) => {
+        const route = routes.find((candidate) => Number(candidate?.itinerary_route_ID || 0) === Number(hotel.routeId));
+        const date = route?.itinerary_route_date
+          ? new Date(route.itinerary_route_date).toISOString().slice(0, 10)
+          : 'unknown';
+        const nextDate = date === 'unknown'
+          ? date
+          : new Date(`${date}T00:00:00.000Z`);
+        if (nextDate instanceof Date) nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+        const checkOut = nextDate instanceof Date ? nextDate.toISOString().slice(0, 10) : date;
+        const offline = String(hotel.provider || '').trim().toLowerCase() === 'offline';
+        return {
+          ...hotel,
+          routeId: Number(hotel.routeId),
+          routeIds: [Number(hotel.routeId)],
+          stayKey: `${Number(hotel.routeId)}|${date}|${checkOut}`,
+          exactFullStayTotal: Number(hotel.totalStayPrice ?? hotel.price ?? 0),
+          canonicalMealPlan: inferCanonicalHotelRatePlanCode(String((hotel as any).mealPlan || '')) || inferCanonicalHotelRatePlanCodeFromMealText(String((hotel as any).mealPlan || '')),
+          availabilityState: offline ? 'OFFLINE_APPROVAL_REQUIRED' : 'AVAILABLE',
+          distanceStatus: 'UNKNOWN',
+          distanceReference: 'UNKNOWN',
+          normalizedCategory: 'UNKNOWN',
+        } as RecommendationHotel;
+      });
+      const totalPrice = this.money(hotels.reduce((sum, hotel) => sum + Number(hotel.exactFullStayTotal || 0), 0));
+      return {
+        groupType: pkg.groupType,
+        label: pkg.label,
+        hotels,
+        totalPrice,
+        partialTotal: totalPrice,
+        targetPrice: null,
+        complete: true,
+        distinctFromPrevious: true,
+        diversityScore: 0,
+        repeatedHotelIds: [],
+        repeatedAcrossGroupsHotelIds: [],
+        sameOptionAcrossGroups: [],
+        duplicateWithinPackageHotelIds: [],
+        repeatedFromGroups: [],
+        fallbackReasons: [],
+        stayResults: hotels.map((hotel) => ({
+          stayKey: hotel.stayKey,
+          parentRouteId: hotel.routeId,
+          routeIds: hotel.routeIds,
+          destination: String(routes.find((route) => Number(route?.itinerary_route_ID || 0) === hotel.routeId)?.next_visiting_location || ''),
+          checkInDate: hotel.stayKey.split('|')[1] || '',
+          checkOutDate: hotel.stayKey.split('|')[2] || '',
+          nights: 1,
+          state: hotel.availabilityState === 'OFFLINE_APPROVAL_REQUIRED' ? 'OFFLINE_FALLBACK' : 'SELECTED',
+          hotel,
+          totalPrice: hotel.exactFullStayTotal,
+        })),
+      };
+    });
+  }
+
   private generatePricePackages(
     hotelsByRoute: Map<number, HotelSearchResult[]>,
     routes: any[],
@@ -3621,7 +3687,7 @@ this.logger.log(
   private async buildHotelDetailsResponse(
     quoteId: string,
     planId: number,
-    packages: Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }>,
+    packages: RecommendationPackage[],
     hotelsByRoute: Map<number, HotelSearchResult[]>,
     restrictedHotelsByRoute: Map<number, HotelSearchResult[]>,
     routes: any[],
@@ -3714,24 +3780,33 @@ this.logger.log(
     }
 
     const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
-      const totalAmount = this.money(
-        pkg.hotels.reduce((sum, h) => {
-          const pricedHotel = this.enrichHotelWithMasterMargin(
-            h,
-            marginHotelMasterByProviderCode,
-            globalHotelMargin,
-          );
-          return sum + this.applyInvisibleHotelMargin(
-            Number(pricedHotel.price || 0),
-            pricedHotel,
-            globalHotelMargin,
-          );
-        }, 0),
-      );
+      const totalAmount = pkg.complete && pkg.totalPrice !== null
+        ? this.money(pkg.totalPrice)
+        : null;
       return {
         groupType: pkg.groupType,
         label: pkg.label,
         totalAmount,
+        partialTotal: this.money(pkg.partialTotal || 0),
+        targetAmount: pkg.targetPrice,
+        complete: pkg.complete,
+        diversityScore: pkg.diversityScore,
+        repeatedAcrossGroupsHotelIds: pkg.repeatedAcrossGroupsHotelIds,
+        sameOptionAcrossGroups: pkg.sameOptionAcrossGroups,
+        duplicateWithinPackageHotelIds: pkg.duplicateWithinPackageHotelIds,
+        repeatedFromGroups: pkg.repeatedFromGroups,
+        stayResults: pkg.stayResults.map((stay) => ({
+          stayKey: stay.stayKey,
+          parentRouteId: stay.parentRouteId,
+          routeIds: stay.routeIds,
+          destination: stay.destination,
+          checkInDate: stay.checkInDate,
+          checkOutDate: stay.checkOutDate,
+          nights: stay.nights,
+          state: stay.state,
+          reason: stay.reason,
+          totalPrice: stay.totalPrice,
+        })),
       };
     });
 
@@ -4122,13 +4197,7 @@ this.logger.log(
           continue;
         }
 
- // Skip departure day (last route when routeIndex >= noOfNights)
         const routeIndex = routes.indexOf(route);
-        const isLastRoute = routeIndex === routes.length - 1;
-        if (isLastRoute && routeIndex >= noOfNights) {
- this.logger.log(` Skipping route ${hotel.routeId} from response (departure day)`);
-          continue;
-        }
 
  // Use next_visiting_location (where you're staying) for destination display
         const destination = (route as any).next_visiting_location || (route as any).location_name || '';
@@ -4238,13 +4307,19 @@ this.logger.log(
         let hotelRow: ItineraryHotelRowDto & Record<string, any> = {
           groupType: pkg.groupType,
           itineraryRouteId: routeId,
+          routeIds: Array.isArray((hotel as any).routeIds) && (hotel as any).routeIds.length > 0
+            ? (hotel as any).routeIds
+            : [routeId],
+          stayKey: (hotel as any).stayKey,
           day: `Day ${routeIndex + 1} | ${dateLabel}`,
           destination: destination,
           hotelId: hotelId,
           canonicalHotelId: hotelId || null,
           hotelCode: rawHotelCode,
           hotelName: displayHotelName,
-          category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
+          category: Number((hotel as any).normalizedCategory || '').toString().startsWith('STAR_')
+            ? Number(String((hotel as any).normalizedCategory).slice(5))
+            : (hotel.rating ? parseInt(String(hotel.rating), 10) : 0),
           roomType: hotel.roomType || '',
           mealPlan: hotel.mealPlan || '',
           baseHotelCost,
@@ -4305,7 +4380,7 @@ this.logger.log(
           priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' ? 'DATABASE' : 'LIVE_API'),
           priceLabel: (hotel as any).priceLabel,
           pricePerNight: Number((hotel as any).pricePerNight ?? totalHotelCost),
-          totalStayPrice: Number((hotel as any).totalStayPrice ?? billableHotelCost * Math.max(Number((hotel as any).numberOfNights || noOfNights || 1), 1)),
+          totalStayPrice: Number((hotel as any).exactFullStayTotal ?? (hotel as any).totalStayPrice ?? billableHotelCost * Math.max(Number((hotel as any).numberOfNights || noOfNights || 1), 1)),
           numberOfNights: Number((hotel as any).numberOfNights || noOfNights || 1),
           nightlyRates: (hotel as any).nightlyRates,
           requiresHotelApproval: normalizedProvider === 'offline',
@@ -4314,9 +4389,14 @@ this.logger.log(
           isSelectable: true,
           approvalStatus: normalizedProvider === 'offline' ? 'NOT_REQUESTED' : 'NOT_REQUIRED',
           manualConfirmationStatus: normalizedProvider === 'offline' ? 'NOT_STARTED' : 'NOT_STARTED',
-          isBookable: hasSupplierHotel,
+          isBookable: (hotel as any).isLiveBookable === false ? false : hasSupplierHotel,
           externalStay: !hasSupplierHotel,
-          availabilityStatus: hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY',
+          availabilityStatus: (hotel as any).availabilityStatus || (hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY'),
+          availabilityState: (hotel as any).availabilityState || (hasSupplierHotel ? 'AVAILABLE' : 'UNAVAILABLE'),
+          distanceKm: Number.isFinite(Number((hotel as any).distanceKm)) ? Number((hotel as any).distanceKm) : null,
+          distanceStatus: (hotel as any).distanceStatus || 'UNKNOWN',
+          distanceReference: (hotel as any).distanceReference || 'UNKNOWN',
+          selectionReason: (hotel as any).availabilityReason || null,
           availabilityMessage: hasSupplierHotel
             ? null
             : 'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
@@ -4364,6 +4444,49 @@ this.logger.log(
         if (hotel.provider === 'HOBSE') {
  this.logger.debug(` HOBSE Hotel Response: hotelCode="${hotel.hotelCode}", provider="${hotel.provider}"`);
         }
+      }
+    }
+
+ // Preserve every unavailable logical stay in the response. An incomplete
+ // package must not disappear just because one stay has no eligible option.
+    for (const pkg of packages) {
+      for (const stay of pkg.stayResults || []) {
+        if (stay.state !== 'UNAVAILABLE') continue;
+        const alreadyRendered = hotelRows.some((row: any) => row.groupType === pkg.groupType && row.stayKey === stay.stayKey);
+        if (alreadyRendered) continue;
+        const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === Number(stay.parentRouteId));
+        if (!route) continue;
+        const dateLabel = new Date(route.itinerary_route_date).toISOString().slice(0, 10);
+        hotelRows.push({
+          groupType: pkg.groupType,
+          itineraryRouteId: stay.parentRouteId,
+          routeIds: stay.routeIds,
+          stayKey: stay.stayKey,
+          day: `Day ${routes.indexOf(route) + 1} | ${dateLabel}`,
+          destination: stay.destination,
+          hotelId: 0,
+          canonicalHotelId: null,
+          hotelCode: '',
+          hotelName: 'No hotel available',
+          category: 0,
+          roomType: '',
+          mealPlan: '',
+          totalHotelCost: 0,
+          totalHotelTaxAmount: 0,
+          provider: 'external',
+          isBookable: false,
+          isSelectable: false,
+          externalStay: true,
+          availabilityStatus: 'NO_SUPPLIER_AVAILABILITY',
+          availabilityState: 'UNAVAILABLE',
+          availabilityMessage: stay.reason || 'No eligible hotel is available for this stay.',
+          selectionStatus: 'UNAVAILABLE',
+          selectionReason: stay.reason || null,
+          date: dateLabel,
+          hotelCheckInDate: stay.checkInDate,
+          checkOutDate: stay.checkOutDate,
+          itineraryPlanHotelDetailsId: 0,
+        } as any);
       }
     }
 
@@ -4582,10 +4705,7 @@ this.logger.log(
     const supplierHotelRows = cleanedHotelRows.filter((row) => row.isBookable !== false);
 
     const searchableRouteIds = routes
-      .filter((route, index) => {
-        const isLastRoute = index === routes.length - 1;
-        return !(isLastRoute && index >= noOfNights);
-      })
+      .filter((route: any) => route?.hotelRequired !== false && route?.hotel_required !== false && !route?.isDeparture && !route?.isTransit && !route?.isActivityOnly)
       .map((route: any) => Number(route.itinerary_route_ID));
 
     const totalSearchRoutes = searchableRouteIds.length;
@@ -4605,6 +4725,7 @@ this.logger.log(
       showHotelMargins: this.shouldShowHotelMargins(),
       hotelRatesVisible,
       hotelTabs,
+      recommendationAlgorithm: this.recommendationAlgorithm(),
       hotels: cleanedHotelRows,
       restrictedHotels: restrictedHotelRows,
       totalRoomCount: cleanedHotelRows.length,
@@ -4616,6 +4737,7 @@ this.logger.log(
         emptySearchRoutes,
         isPlaceholderOnly: false,
         message: availabilityMessage,
+        recommendationAlgorithm: this.recommendationAlgorithm(),
       },
     };
   }

@@ -38,6 +38,8 @@ export interface HotelSearchResult {
   longitude?: number | string | null;
   distanceKm?: number | null;
   distanceStatus?: 'WITHIN_RADIUS' | 'OUTSIDE_RADIUS' | 'UNKNOWN';
+  distanceReference?: 'HOTSPOT' | 'DESTINATION_CENTRE' | 'ROUTE_DESTINATION' | 'UNKNOWN';
+  distanceSource?: string | null;
   accommodationType?: string | null;
   propertyType?: string | null;
   tags?: string[];
@@ -85,7 +87,7 @@ export interface HotelSearchResult {
   };
   isBookable?: boolean;
   externalStay?: boolean;
-  availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE';
+  availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE' | 'UNAVAILABLE' | 'RESTRICTED' | 'STALE' | 'UNKNOWN';
   availabilityMessage?: string | null;
   availableAgainFrom?: string | null;
 }

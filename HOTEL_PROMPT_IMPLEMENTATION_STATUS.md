@@ -174,3 +174,82 @@ Documentation:
 ```
 
 No commits were pushed to the remote.
+
+## Review correction update — 2026-07-31
+
+The follow-up review identified defects in the first partial implementation.
+Those defects were corrected in the current working tree as follows.
+
+### Corrected defects
+
+- Rate options are expanded into exact candidates before eligibility checks.
+  CP eligibility now carries the CP rate identity and CP full-stay price; it
+  cannot retain the cheaper EP price from the parent hotel object.
+- Logical-stay availability is merged from every `routeIds` source and a
+  child-route one-night rate is rejected when the stay requires multiple
+  nights without full-stay coverage.
+- Incomplete packages preserve selected/offline stays and return
+  `UNAVAILABLE` stay results with reasons. `totalPrice` is `null` and
+  `partialTotal` is used for the available-stay subtotal.
+- Stay construction now uses stable stay groups, parent route IDs, dates, and
+  destination IDs where present. Alleppey/Alappuzha aliases are normalized;
+  explicit departure, transit, and activity-only routes are excluded.
+- Recommendation diversity compares all previous packages and exposes
+  repeated physical hotels, repeated exact options, duplicate-in-package
+  hotels, and source group numbers.
+- DFS first-N Cartesian enumeration was replaced with bounded deterministic
+  beam search.
+- Target scoring uses the previous actual total multiplied by 1.10 and an
+  explicit below-target penalty.
+- Availability normalization distinguishes live availability from offline
+  approval, and offline candidates may be selectable even when they are not
+  live-bookable.
+- Category normalization accepts structured numeric/star values and does not
+  extract arbitrary digits from unrelated text.
+- Zero/missing distance is `UNKNOWN`, not a valid 0 km distance. Distance
+  status/reference fields are returned when supplier metadata provides them.
+- The API response now exposes algorithm version, stay-level package metadata,
+  target/partial totals, route IDs, stay keys, and incomplete-stay rows.
+- The frontend renders partial totals, target totals, stable logical stay keys,
+  selectable offline approval options, and unknown meal plans without EP
+  fallback.
+
+### Additional tests
+
+The actual test file is now present at:
+
+```text
+api.dvi.travel/test/hotel-recommendation-package.test.ts
+dvi_frontend/src/test/hotel-recommendation-v2-ui.test.ts
+```
+
+Coverage includes exact rate-option pricing, parent/child route resolution,
+partial packages, stable stay construction, offline selectability, category
+normalization, unknown distance, feature-flag defaulting, beam-search target
+selection, deterministic shuffled input, and fewer-than-four package behavior.
+
+### Reproducible verification
+
+```text
+Backend build: npm.cmd run build
+Backend focused suite: npx.cmd tsx --test test/hotel-recommendation-package.test.ts test/itinerary-hotel-room-category.test.ts test/hotel-availability-snapshot.test.ts test/offline-hotel-approval.test.ts test/itinerary-selection-workflow.test.ts test/staah-room-selection.test.ts
+Result: 46 passed, 0 failed
+
+Frontend build: npm.cmd run build
+Frontend focused suite: npm.cmd test -- --run src/test/hotel-recommendation-v2-ui.test.ts src/test/offline-hotel-flow.test.ts src/test/itinerary-details.utils.test.ts src/test/hotelStayDates.utils.test.ts
+Result: 17 passed, 0 failed
+```
+
+### Remaining risks
+
+- The feature flag still defaults to v1. Enable v2 consistently for a search
+  run with `HOTEL_RECOMMENDATION_ALGORITHM=v2`; do not change it mid-request.
+- Algorithm version is logged and returned in the response, but a dedicated
+  persisted snapshot column/migration has not been added in this change.
+- Provider-specific upstream coordinate enrichment and full supplier
+  certification still require environment/database verification.
+- Full create-itinerary-to-refresh Playwright/Chrome verification remains
+  blocked for localhost by the browser security policy; no bypass was used.
+
+Do not describe this as production-ready until those remaining persistence,
+supplier, and browser-E2E risks are closed.
