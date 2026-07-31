@@ -53,3 +53,71 @@ test('selection preview matches TBO rates when hotelId is zero and provider hote
   assert.equal(override.breakdown[0].hotelCode, '1130400');
   assert.equal(override.breakdown[0].totalAmount, 1000);
 });
+
+test('selection preview matches per-night supplier references for a multi-night stay', async () => {
+  const service = new ItineraryDetailsService(
+    {
+      dvi_itinerary_plan_details: {
+        findFirst: async () => ({ itinerary_quote_ID: 'DVI202607282' }),
+      },
+    } as any,
+    {} as any,
+    {
+      getActiveRows: async () => [
+        {
+          itineraryRouteId: 10208,
+          groupType: 1,
+          provider: 'axisrooms',
+          hotelCode: '95',
+          hotelName: 'CLOUDS VALLEY',
+          bookingCode: 'AX-95-20260812',
+          searchReference: 'AX-95-20260812',
+          roomType: 'Valley View Double',
+          mealPlan: 'Breakfast only',
+          totalHotelCost: 3410,
+          totalHotelTaxAmount: 0,
+          baseHotelCost: 3410,
+        },
+        {
+          itineraryRouteId: 10209,
+          groupType: 1,
+          provider: 'axisrooms',
+          hotelCode: '95',
+          hotelName: 'CLOUDS VALLEY',
+          bookingCode: 'AX-95-20260813',
+          searchReference: 'AX-95-20260813',
+          roomType: 'Valley View Double',
+          mealPlan: '-',
+          totalHotelCost: 3410,
+          totalHotelTaxAmount: 0,
+          baseHotelCost: 3410,
+        },
+      ],
+      optionKey: (row: any) => `axisrooms|${row.hotelCode}|${row.bookingCode}`,
+    } as any,
+  );
+
+  const override = await (service as any).buildSelectedHotelCostOverride({
+    planId: 10062,
+    quoteId: 'DVI202607282',
+    selections: {
+      10208: {
+        routeId: 10208,
+        routeIds: [10208, 10209],
+        multiNightBooking: true,
+        groupType: 1,
+        provider: 'axisrooms',
+        hotelId: 0,
+        hotelCode: '95',
+        bookingCode: 'AX-95-20260812',
+        searchReference: 'AX-95-20260812',
+        roomType: 'Valley View Double',
+        hotelName: 'CLOUDS VALLEY',
+      },
+    },
+    groupType: 1,
+  });
+
+  assert.equal(override.rows.length, 2);
+  assert.deepEqual(override.breakdown.map((row: any) => row.routeId), [10208, 10209]);
+});

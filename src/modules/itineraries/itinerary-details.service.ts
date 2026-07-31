@@ -574,6 +574,7 @@ export class ItineraryDetailsService {
         const rateId = normalizeRateIdentity(selection.rateId, selection.rate_id, selection.rateOptionId, selection.rate_option_id);
         const roomType = this.normalizeIdentity(selection.roomType || selection.room_type);
         const mealPlan = this.normalizeIdentity(selection.mealPlan || selection.meal_plan);
+        const hotelName = this.normalizeHotelName(selection.hotelName || selection.hotel_name);
         const requestedOptionKey = normalizeRateIdentity(selection.optionKey, selection.option_key);
         const hasExplicitRateIdentity = Boolean(
           requestedOptionKey || bookingCode || searchReference || roomId || rateId,
@@ -590,20 +591,39 @@ export class ItineraryDetailsService {
             return !requestedGroupType || Number(row.groupType || 0) === requestedGroupType;
           })
           .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider);
-        const candidates = routeCandidates
+        const buildCandidates = (allowPerNightRateIdentityFallback = false) => routeCandidates
           .filter((row: any) => {
             const rowOptionKey = this.normalizeIdentity(row.optionKey || this.hotelAvailabilitySnapshotService.optionKey(row));
-            if (requestedOptionKey) return requestedOptionKey === rowOptionKey;
-            const rowCodes = [row.hotelCode, row.hotelId].map((value) => this.normalizeIdentity(value));
+            if (requestedOptionKey && !allowPerNightRateIdentityFallback) return requestedOptionKey === rowOptionKey;
+            const rowCodes = [
+              row.hotelCode,
+              row.providerHotelCode,
+              row.provider_hotel_code,
+              row.hotel_code,
+              row.hotelId,
+              row.hotel_id,
+            ].map((value) => this.normalizeIdentity(value));
             if (hotelCode && !rowCodes.includes(hotelCode)) return false;
             const rowBookingCode = this.normalizeIdentity(row.bookingCode);
             const rowSearchReference = this.normalizeIdentity(row.searchReference);
             const rowRoomId = this.normalizeIdentity(row.roomId);
             const rowRateId = this.normalizeIdentity(row.rateId);
-            if (bookingCode && bookingCode !== rowBookingCode && bookingCode !== rowSearchReference) return false;
-            if (searchReference && searchReference !== rowSearchReference && searchReference !== rowBookingCode) return false;
+            const hasDifferentBookingIdentity = Boolean(
+              (bookingCode && bookingCode !== rowBookingCode && bookingCode !== rowSearchReference) ||
+              (searchReference && searchReference !== rowSearchReference && searchReference !== rowBookingCode),
+            );
+            if (hasDifferentBookingIdentity && !allowPerNightRateIdentityFallback) return false;
             if (roomId && roomId !== rowRoomId) return false;
             if (rateId && rateId !== rowRateId) return false;
+            if (hasDifferentBookingIdentity && allowPerNightRateIdentityFallback) {
+              // A multi-night booking can have a different supplier booking
+              // reference for each night. Keep the property/room identity,
+              // but do not require night one’s rate reference on later rows.
+              const rowRoomType = this.normalizeIdentity(row.roomType || row.room_type);
+              const rowHotelName = this.normalizeHotelName(row.hotelName || row.hotel_name);
+              if (roomType && rowRoomType && roomType !== rowRoomType) return false;
+              if (!hotelCode && hotelName && rowHotelName && hotelName !== rowHotelName) return false;
+            }
             return true;
           })
           .map((row: any) => {
@@ -623,6 +643,11 @@ export class ItineraryDetailsService {
             return { row, score };
           })
           .sort((a: any, b: any) => b.score - a.score);
+
+        let candidates = buildCandidates(false);
+        if (candidates.length === 0 && routeIds.length > 1 && routeId !== routeIds[0]) {
+          candidates = buildCandidates(true);
+        }
 
         const match = candidates[0]?.row;
         if (!match) {
