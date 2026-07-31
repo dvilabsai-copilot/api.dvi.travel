@@ -416,23 +416,12 @@ export class ItineraryHotelConfirmationSupportService {
         String((booking as any).bookingMode || '').trim().toUpperCase() === 'MANUAL_APPROVAL';
 
       const hotelCodeRaw = String((booking as any).hotelCode || '').trim();
-      const providerUsesHotelCodeOnly = new Set([
-        'tbo',
-        'hobse',
-        'resavenue',
-        'axisrooms',
-        'staah',
-      ]);
-
-      const shouldUseHotelCodeOnly =
-        providerUsesHotelCodeOnly.has(normalizedProvider) || !hotelCodeRaw;
-      const parsedHotelId = Number(hotelCodeRaw);
-      const hotelId = shouldUseHotelCodeOnly
-        ? 0
-        : Number.isFinite(parsedHotelId) && parsedHotelId > 0
-          ? parsedHotelId
-          : 0;
-      const hotelCodeForSave = shouldUseHotelCodeOnly ? hotelCodeRaw : null;
+      // Provider hotel codes are not canonical dvi_hotel.hotel_id values.
+      // Persist the canonical identity supplied by the selection DTO and keep
+      // the provider code in hotel_code for booking/provider operations.
+      const canonicalHotelId = Number((booking as any).canonicalHotelId ?? (booking as any).hotelId ?? 0);
+      const hotelId = Number.isFinite(canonicalHotelId) && canonicalHotelId > 0 ? canonicalHotelId : 0;
+      const hotelCodeForSave = hotelCodeRaw || null;
 
       let bookingAmount = Number(
         (booking as any).prebookContext?.prebookNetAmount ??

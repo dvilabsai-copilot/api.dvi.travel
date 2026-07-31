@@ -91,6 +91,13 @@ export class ItineraryConfirmationService {
       throw new BadRequestException('Quote ID not found for this plan');
     }
 
+    // Offline selections are customer-selectable but never supplier-bookable.
+    // Finalization is allowed only after the separate approval and manual
+    // confirmation workflow has completed for every selected offline stay.
+    if (this.hotelApprovalService) {
+      await this.hotelApprovalService.assertPlanCanFinalize(dto.itinerary_plan_ID);
+    }
+
     const shouldConfirmHotels = [1, 3].includes(Number(plan.itinerary_preference || 0));
 
     if (shouldConfirmHotels && Array.isArray((dto as any).hotel_bookings)) {
@@ -115,6 +122,9 @@ export class ItineraryConfirmationService {
       groupType,
       skippedExternalStayCount,
     } = hotelSelectionState;
+    if (this.hotelApprovalService) {
+      await this.hotelApprovalService.assertPlanCanFinalize(dto.itinerary_plan_ID);
+    }
  console.log('[CONFIRM_QUOTATION_HOTEL_SELECTION_SYNCED]', {
       planId: dto.itinerary_plan_ID,
       shouldConfirmHotels,
