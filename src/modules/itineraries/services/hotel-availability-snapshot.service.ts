@@ -194,10 +194,13 @@ export class HotelAvailabilitySnapshotService {
       where: { itinerary_plan_id: plan.itinerary_plan_ID, hotel_required: 1, deleted: 0, status: 1 },
       orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
     });
-    const roomDetailRows = await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findMany({
-      where: { itinerary_plan_id: plan.itinerary_plan_ID, deleted: 0, status: 1 },
-      orderBy: { itinerary_plan_hotel_room_details_ID: 'asc' },
-    });
+    const roomDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_room_details;
+    const roomDetailRows = roomDetailsModel?.findMany
+      ? await roomDetailsModel.findMany({
+          where: { itinerary_plan_id: plan.itinerary_plan_ID, deleted: 0, status: 1 },
+          orderBy: { itinerary_plan_hotel_room_details_ID: 'asc' },
+        })
+      : [];
     const roomTypeIds = Array.from(
       new Set(
         roomDetailRows
@@ -205,8 +208,9 @@ export class HotelAvailabilitySnapshotService {
           .filter((id: number) => Number.isFinite(id) && id > 0),
       ),
     );
-    const roomTypeRows = roomTypeIds.length
-      ? await (this.prisma as any).dvi_hotel_roomtype.findMany({
+    const roomTypeModel = (this.prisma as any).dvi_hotel_roomtype;
+    const roomTypeRows = roomTypeIds.length && roomTypeModel?.findMany
+      ? await roomTypeModel.findMany({
           where: { room_type_id: { in: roomTypeIds }, deleted: 0 },
           select: { room_type_id: true, room_type_title: true },
         })
