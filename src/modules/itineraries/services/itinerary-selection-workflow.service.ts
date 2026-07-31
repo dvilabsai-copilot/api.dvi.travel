@@ -673,31 +673,60 @@ export class ItinerarySelectionWorkflowService {
       },
       select: { full_payload: true },
     });
-    const requestedRate = String(data.rateOptionId || data.optionKey || data.searchReference || '').trim();
+    const requestedRateIds = [data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
     const requestedCanonicalId = Number((data.canonicalHotelId ?? data.hotelId) || 0);
-    const matched = rows
+    const requestedHotelCode = String(
+      data.hotelCode || data.providerHotelCode || data.provider_hotel_code || '',
+    ).trim().toLowerCase();
+    const requestedRoomType = String(data.roomType || '').trim().toLowerCase();
+    const requestedHotelName = String(data.hotelName || '').trim().toLowerCase();
+    const parsedRows = rows
       .map((row: any) => {
         try { return typeof row.full_payload === 'string' ? JSON.parse(row.full_payload) : row.full_payload; } catch { return null; }
       })
-      .filter(Boolean)
-      .find((candidate: any) => {
+      .filter(Boolean);
+    const propertyMatches = (candidate: any): boolean => {
         if (String(candidate.provider || '').trim().toLowerCase() !== provider) return false;
-        const canonicalId = Number(candidate.canonicalHotelId ?? candidate.hotelId ?? 0);
-        if (canonicalId !== requestedCanonicalId) return false;
-        if (!requestedRate) return false;
+        const candidateCanonicalId = Number(candidate.canonicalHotelId ?? candidate.hotelId ?? candidate.hotel_id ?? 0);
+        const candidateHotelCode = String(
+          candidate.hotelCode || candidate.providerHotelCode || candidate.provider_hotel_code || candidate.hotel_code || '',
+        ).trim().toLowerCase();
+        const canonicalMatch = requestedCanonicalId > 0 && candidateCanonicalId > 0 && candidateCanonicalId === requestedCanonicalId;
+        const codeMatch = Boolean(requestedHotelCode && candidateHotelCode && requestedHotelCode === candidateHotelCode);
+        if (!canonicalMatch && !codeMatch) return false;
+        return true;
+    };
+    const rateMatches = (candidate: any): boolean => {
+        if (requestedRateIds.length === 0) return false;
         const candidateRateIds = [candidate.rateOptionId, candidate.optionKey, candidate.searchReference, candidate.bookingCode]
           .map((value) => String(value || '').trim())
           .filter(Boolean);
-        return candidateRateIds.includes(requestedRate);
-      });
+        return requestedRateIds.some((requestedRate) => candidateRateIds.includes(requestedRate));
+    };
+    const matched = parsedRows.find((candidate: any) => {
+      if (!propertyMatches(candidate) || !rateMatches(candidate)) return false;
+      const candidateRoomType = String(candidate.roomType || candidate.room_type || '').trim().toLowerCase();
+      const candidateHotelName = String(candidate.hotelName || candidate.hotel_name || '').trim().toLowerCase();
+      if (requestedRoomType && candidateRoomType && requestedRoomType !== candidateRoomType) return false;
+      if (requestedHotelName && candidateHotelName && requestedHotelName !== candidateHotelName) return false;
+      return true;
+    });
 
     if (!matched) {
       throw new BadRequestException('The selected hotel rate is stale or unavailable. Refresh hotel availability and select again.');
     }
 
     const requestedTotal = Number(data.totalPrice ?? 0);
-    const snapshotTotal = Number(matched.totalHotelCost ?? matched.totalCost ?? matched.totalRoomCost ?? matched.price ?? 0);
-    if (requestedTotal > 0 && snapshotTotal > 0 && Math.abs(requestedTotal - snapshotTotal) > 0.01) {
+    const snapshotTotals = [
+      matched.totalHotelCost,
+      matched.totalCost,
+      matched.totalRoomCost,
+      matched.price,
+      matched.pricePerNight,
+    ].map(Number).filter((amount) => Number.isFinite(amount) && amount > 0);
+    if (requestedTotal > 0 && snapshotTotals.length > 0 && !snapshotTotals.some((snapshotTotal) => Math.abs(requestedTotal - snapshotTotal) <= 0.01)) {
       throw new BadRequestException('The selected hotel price changed. Refresh hotel availability and review the updated rate.');
     }
   }

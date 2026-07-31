@@ -19,6 +19,74 @@ test('hotel availability preserves the empty result when the route is absent', a
   assert.deepEqual(await service.getAvailableHotels(99), []);
 });
 
+test('live multi-night selection must use the current route rate reference and nightly amount', async () => {
+  const syncedAt = new Date('2026-07-31T15:25:00.000Z');
+  const currentRoutePayload = {
+    itineraryRouteId: 10209,
+    provider: 'axisrooms',
+    hotelCode: '95',
+    hotelId: 95,
+    hotelName: 'CLOUDS VALLEY',
+    roomType: 'Valley View Double',
+    mealPlan: '-',
+    bookingCode: 'AX-95-20260813',
+    searchReference: 'AX-95-20260813',
+    optionKey: 'axisrooms|95|2026-08-13|AX-95-20260813',
+    totalHotelCost: 3410,
+  };
+  const prisma: any = {
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: syncedAt }),
+      findMany: async () => [{ full_payload: JSON.stringify(currentRoutePayload) }],
+    },
+  };
+  const service = createService(prisma);
+
+  await (service as any).validateLiveSelectionAgainstSnapshot(
+    {
+      planId: 10062,
+      routeId: 10209,
+      provider: 'axisrooms',
+      hotelId: 95,
+      canonicalHotelId: 95,
+      hotelCode: '95',
+      // This is the parent stay's 12-Aug reference, not route 10209's
+      // 13-Aug reference. The request also carries the current route's
+      // booking/search reference, which is the identity persisted by the UI.
+      rateOptionId: 'axisrooms|95|2026-08-12|AX-95-20260812',
+      bookingCode: 'AX-95-20260813',
+      searchReference: 'AX-95-20260813',
+      roomType: 'Valley View Double',
+      hotelName: 'CLOUDS VALLEY',
+      totalPrice: 3410,
+    },
+    { itinerary_plan_ID: 10062 },
+    'DVI202607282',
+  );
+
+  await assert.rejects(
+    () => (service as any).validateLiveSelectionAgainstSnapshot(
+      {
+        planId: 10062,
+        routeId: 10209,
+        provider: 'axisrooms',
+        hotelId: 95,
+        canonicalHotelId: 95,
+        hotelCode: '95',
+        rateOptionId: 'axisrooms|95|2026-08-12|AX-95-20260812',
+        bookingCode: 'AX-95-20260812',
+        searchReference: 'AX-95-20260812',
+        roomType: 'Valley View Double',
+        hotelName: 'CLOUDS VALLEY',
+        totalPrice: 3410,
+      },
+      { itinerary_plan_ID: 10062 },
+      'DVI202607282',
+    ),
+    /stale or unavailable/,
+  );
+});
+
 test('vehicle slab selection preserves required-field validation', async () => {
   await assert.rejects(
     () => createService().selectVehicleSlab({ planId: 0, vehicleTypeId: 0 }),
