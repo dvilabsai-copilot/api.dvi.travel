@@ -1,7 +1,7 @@
 // REPLACE-WHOLE-FILE
 // FILE: src/itineraries/itineraries.service.ts
 
-import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException, UnprocessableEntityException } from "@nestjs/common";
+import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
 import {
@@ -32,7 +32,6 @@ import { HotelStayBlockValidationService } from "./services/hotel-stay-block-val
 import { SameCityCrossDayOptimizerService } from "./services/same-city-cross-day-optimizer.service";
 import { ItineraryRouteNormalizationService } from './services/itinerary-route-normalization.service';
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
-import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 import { TimelineEnricher } from "./engines/helpers/timeline.enricher";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
 import { SupplementNormalizerService } from "../../modules/hotels/services/supplement-normalizer.service";
@@ -272,6 +271,24 @@ type ManualOptimizerAttemptLog = {
   selectedStrategyLabel: string | null;
   summary: string | null;
   attempts: ManualScheduleAttempt[];
+};
+
+type VehicleBuildState = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
+
+type VehicleBuildStatus = {
+  planId: number;
+  status: VehicleBuildState;
+  buildRunId: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string;
+  error: string | null;
+  eligibleCount: number;
+  vehicleDetailCount: number;
+  requestedVehicleCount: number;
+  hasUsableVehicleDetails: boolean;
+  isLatestBuildReady: boolean;
+  statusSource: 'db' | 'memory' | 'derived';
 };
 
 type ManualFitHereAnchorIntent = 'AFTER_START' | 'AFTER_ATTRACTION';
@@ -547,7 +564,6 @@ export class ItinerariesService {
     private readonly staahBookingPushService: StaahBookingPushService,
     private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
-    private readonly hotelAvailabilitySnapshotService: HotelAvailabilitySnapshotService,
     private readonly supplementNormalizer: SupplementNormalizerService,
     private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
     private readonly routeNormalization: ItineraryRouteNormalizationService = new ItineraryRouteNormalizationService(),
@@ -1341,12 +1357,20 @@ private getGuideSlotLabel(slotId: number): string {
     await this.vehicleBuildStatusService.startRecord(planId, buildRunId, userId);
   }
 
+  async getVehicleBuildStatus(planId: number): Promise<VehicleBuildStatus> {
+    return this.vehicleBuildStatusService.getStatus(planId);
+  }
+
   async buildPermitsSync(planId: number, req: any) {
     return this.vehicleBuildService.buildPermitsSync(planId, req);
   }
 
   async buildVehiclesSync(planId: number, req: any) {
     return this.vehicleBuildService.buildVehiclesSync(planId, req);
+  }
+
+  async triggerVehicleBuild(planId: number, req: any): Promise<VehicleBuildStatus> {
+    return this.vehicleBuildService.triggerVehicleBuild(planId, req);
   }
 
  /**
@@ -1409,44 +1433,7 @@ private getGuideSlotLabel(slotId: number): string {
     shouldOptimizeRoute: boolean = false,
     requestType?: string,
   ) {
-    const isNewPlan = Number((dto?.plan as any)?.itinerary_plan_id || 0) <= 0;
-    const result = await this.planPersistenceService.createPlan(dto, req, shouldOptimizeRoute, requestType);
-    const hotelsRequired = Number((dto?.plan as any)?.itinerary_preference || 0) === 1 ||
-      Number((dto?.plan as any)?.itinerary_preference || 0) === 3;
-
-    if (!isNewPlan || !hotelsRequired || !result?.quoteId) {
-      return { ...result, hotelSearch: { status: hotelsRequired ? 'NOT_REQUIRED' : 'NOT_REQUIRED' } };
-    }
-
-    try {
-      const hotelSearch = await this.hotelAvailabilitySnapshotService.searchAndPersist(
-        String(result.quoteId),
-        'CREATE',
-        Number(req?.user?.userId || 0),
-      );
-      return {
-        ...result,
-        hotelSearch: {
-          status: Number(hotelSearch.response.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
-            hotelSearch.response.hotelAvailability?.availabilityState === 'PARTIAL' ? 'PARTIAL' : 'COMPLETE',
-          searchRunId: hotelSearch.searchRunId,
-          checkedAt: hotelSearch.response.hotelAvailability?.checkedAt,
-          optionCount: hotelSearch.response.hotels?.length || 0,
-          selectedCount: hotelSearch.response.hotels?.filter((row: any) => row.isSelected).length || 0,
-          providerErrors: hotelSearch.response.hotelAvailability?.providerErrors || [],
-        },
-      };
-    } catch (error) {
-      throw new UnprocessableEntityException({
-        message: 'Itinerary saved, but the initial hotel availability search failed. Open the saved itinerary and use Check Availability.',
-        planId: result.planId,
-        quoteId: result.quoteId,
-        creationStatus: 'PARTIAL',
-        code: 'HOTEL_AVAILABILITY_FAILED',
-        hotelSearch: { status: 'FAILED' },
-        cause: String((error as any)?.response?.message || (error as any)?.message || 'Hotel search failed'),
-      });
-    }
+    return this.planPersistenceService.createPlan(dto, req, shouldOptimizeRoute, requestType);
   }
 
   async saveReusableTemplate(data: { planId: number; templateName?: string }, userId: number) {
@@ -1574,7 +1561,7 @@ private getGuideSlotLabel(slotId: number): string {
   async selectHotel(data: {
     planId: number;
     routeId: number;
-    hotelId: number | null;
+    hotelId: number;
     roomTypeId: number;
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
@@ -1585,8 +1572,8 @@ private getGuideSlotLabel(slotId: number): string {
  /**
    * Bulk save hotel selections - used before confirming itinerary
  */
-  async bulkSaveHotels(planId: number, hotels: any[], requestedBy = 1) {
-    return this.selectionWorkflowService.bulkSaveHotels(planId, hotels, requestedBy);
+  async bulkSaveHotels(planId: number, hotels: any[]) {
+    return this.selectionWorkflowService.bulkSaveHotels(planId, hotels);
   }
 
   async selectVehicleVendor(

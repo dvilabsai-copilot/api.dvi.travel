@@ -92,9 +92,6 @@ export class HotelSearchService {
             checkInDate: searchCriteria.checkInDate,
             checkOutDate: searchCriteria.checkOutDate,
             roomCount: searchCriteria.roomCount,
-            adultCount: searchCriteria.adultCount,
-            childCount: searchCriteria.childCount,
-            childAges: searchCriteria.childAges,
           }),
           this.searchAxisRoomsHotels(searchCriteria),
         ]);
