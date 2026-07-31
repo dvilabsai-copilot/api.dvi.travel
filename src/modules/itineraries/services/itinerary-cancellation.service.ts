@@ -314,12 +314,6 @@ export class ItineraryCancellationService {
       });
 
       if (hotels.length > 0) {
-        const supplierHotels = hotels.filter((hotel: any) => {
-          const provider = String(hotel.hotel_provider || '').trim().toLowerCase();
-          const bookingMode = String(hotel.hotel_booking_mode || '').trim().toUpperCase();
-          return provider !== 'offline' && bookingMode !== 'MANUAL_APPROVAL';
-        });
-        if (supplierHotels.length > 0) {
  // Cancel TBO bookings via API BEFORE updating database
         try {
           const tboCancellationResults = await this.tboHotelBooking.cancelItineraryHotels(
@@ -353,7 +347,6 @@ export class ItineraryCancellationService {
         } catch (error) {
  console.error(`[HOBSE Cancellation] Failed but continuing with DB updates:`, error.message);
  // Continue with database updates even if HOBSE cancellation fails
-        }
         }
 
  // Mark hotels as cancelled
