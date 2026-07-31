@@ -157,7 +157,7 @@ export class ItinerarySelectionWorkflowService {
     ) {
       throw new BadRequestException('Hotel selection requires a canonical dvi_hotel.hotel_id');
     }
-    await this.validateLiveSelectionAgainstSnapshot(data, plan, quoteId);
+    await this.validateLiveSelectionAgainstSnapshot(data, plan, quoteId, route);
 
     const actualGuestArrivalAt = (plan as any)?.trip_start_date_and_time
       ? new Date((plan as any).trip_start_date_and_time)
@@ -646,7 +646,12 @@ export class ItinerarySelectionWorkflowService {
    for databases where the snapshot model is unavailable; production has this
    table because Check Availability owns the durable search boundary.
    */
-  private async validateLiveSelectionAgainstSnapshot(data: any, plan: any, quoteId: string): Promise<void> {
+  private async validateLiveSelectionAgainstSnapshot(
+    data: any,
+    plan: any,
+    quoteId: string,
+    route?: any,
+  ): Promise<void> {
     const provider = String(data.provider || '').trim().toLowerCase();
     if (!provider || provider === 'offline') return;
 
@@ -662,17 +667,58 @@ export class ItinerarySelectionWorkflowService {
       throw new BadRequestException('Hotel availability has not been checked yet. Refresh hotel availability and select a current rate.');
     }
 
-    const rows = await cache.findMany({
+    const routeWhere = {
+      quote_id: String(quoteId),
+      plan_id: Number(plan?.itinerary_plan_ID || data.planId),
+      route_id: Number(data.routeId),
+      deleted: 0,
+      status: 1,
+      synced_at: latest.synced_at,
+    };
+    let rows = await cache.findMany({
       where: {
-        quote_id: String(quoteId),
-        plan_id: Number(plan?.itinerary_plan_ID || data.planId),
-        route_id: Number(data.routeId),
-        deleted: 0,
-        status: 1,
-        synced_at: latest.synced_at,
+        ...routeWhere,
       },
       select: { full_payload: true },
     });
+    // A route rebuild can replace itinerary route IDs after availability was
+    // persisted. In that case the latest snapshot is still valid when its
+    // stay date/group matches the current route, but a route_id-only lookup
+    // returns no rows. Scope the fallback to the same latest snapshot and
+    // current route date/group; supplier identity and price remain exact below.
+    if (rows.length === 0 && route?.itinerary_route_date) {
+      const routeDate = new Date(route.itinerary_route_date);
+      const routeDateKey = Number.isNaN(routeDate.getTime())
+        ? ''
+        : routeDate.toISOString().slice(0, 10);
+      if (routeDateKey) {
+        const snapshotRows = await cache.findMany({
+          where: {
+            quote_id: String(quoteId),
+            plan_id: Number(plan?.itinerary_plan_ID || data.planId),
+            deleted: 0,
+            status: 1,
+            synced_at: latest.synced_at,
+          },
+          select: { full_payload: true },
+        });
+        rows = snapshotRows.filter((row: any) => {
+          try {
+            const payload = typeof row.full_payload === 'string'
+              ? JSON.parse(row.full_payload)
+              : row.full_payload;
+            const payloadDate = String(
+              payload?.date || payload?.checkInDate || payload?.check_in_date || '',
+            ).slice(0, 10);
+            const payloadGroup = Number(payload?.groupType ?? payload?.group_type ?? 0);
+            return payloadDate === routeDateKey &&
+              (!Number(data.groupType) || !payloadGroup || payloadGroup === Number(data.groupType));
+          } catch {
+            return false;
+          }
+        });
+      }
+    }
     const requestedRateIds = [data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
       .map((value) => String(value || '').trim())
       .filter(Boolean);

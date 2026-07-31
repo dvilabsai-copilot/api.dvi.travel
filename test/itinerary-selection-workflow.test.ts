@@ -87,6 +87,54 @@ test('live multi-night selection must use the current route rate reference and n
   );
 });
 
+test('live selection tolerates a rebuilt route id when the latest snapshot has the same stay date', async () => {
+  const currentSnapshotPayload = {
+    itineraryRouteId: 10208,
+    provider: 'axisrooms',
+    hotelCode: '95',
+    hotelId: 95,
+    hotelName: 'CLOUDS VALLEY',
+    roomType: 'Valley View Double',
+    mealPlan: 'Breakfast only',
+    bookingCode: 'AX-95-20260812',
+    searchReference: 'AX-95-20260812',
+    rateOptionId: 'axisrooms:95:231:CP_PLAN:2026-08-12',
+    totalHotelCost: 3410,
+    date: '2026-08-12',
+    groupType: 1,
+  };
+  const prisma: any = {
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: new Date('2026-07-31T17:35:22.000Z') }),
+      findMany: async (args: any) => args.where.route_id
+        ? []
+        : [{ full_payload: JSON.stringify(currentSnapshotPayload) }],
+    },
+  };
+  const service = createService(prisma);
+
+  await (service as any).validateLiveSelectionAgainstSnapshot(
+    {
+      planId: 10062,
+      routeId: 10214,
+      groupType: 1,
+      provider: 'axisrooms',
+      hotelId: 95,
+      canonicalHotelId: 95,
+      hotelCode: '95',
+      rateOptionId: 'axisrooms:95:231:CP_PLAN:2026-08-12',
+      bookingCode: 'AX-95-20260812',
+      searchReference: 'AX-95-20260812',
+      roomType: 'Valley View Double',
+      hotelName: 'CLOUDS VALLEY',
+      totalPrice: 3410,
+    },
+    { itinerary_plan_ID: 10062 },
+    'DVI202607282',
+    { itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') },
+  );
+});
+
 test('vehicle slab selection preserves required-field validation', async () => {
   await assert.rejects(
     () => createService().selectVehicleSlab({ planId: 0, vehicleTypeId: 0 }),
