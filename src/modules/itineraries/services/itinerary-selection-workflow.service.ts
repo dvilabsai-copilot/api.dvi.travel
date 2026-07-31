@@ -386,11 +386,10 @@ export class ItinerarySelectionWorkflowService {
       });
     }
 
- // Clear cache for this quote so next request gets fresh data
-    if (quoteId) {
-      this.hotelDetailsTboService.clearCacheForQuote(quoteId);
-    }
-
+    // Keep the latest availability snapshot available while the frontend
+    // persists a multi-route stay (one request per route). Bulk-save clears
+    // the snapshot once after all selections have been written; clearing it
+    // here would make the second concurrent route request look stale.
     return {
       success: true,
       message: 'Hotel selected successfully',
