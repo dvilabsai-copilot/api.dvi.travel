@@ -537,15 +537,44 @@ export class ItineraryDetailsService {
       for (const routeId of routeIds) {
         if (usedRouteIds.has(routeId)) continue;
 
-        const provider = this.normalizeIdentity(selection.provider);
-        const hotelCode = this.normalizeIdentity(selection.hotelCode);
-        const bookingCode = this.normalizeIdentity(selection.bookingCode);
-        const searchReference = this.normalizeIdentity(selection.searchReference);
-        const roomId = this.normalizeIdentity(selection.roomId);
-        const rateId = this.normalizeIdentity(selection.rateId);
-        const roomType = this.normalizeIdentity(selection.roomType);
-        const mealPlan = this.normalizeIdentity(selection.mealPlan);
-        const requestedOptionKey = this.normalizeIdentity(selection.optionKey);
+        const provider = this.normalizeIdentity(selection.provider || selection.hotel_provider);
+        const normalizeRateIdentity = (...values: unknown[]): string => {
+          for (const value of values) {
+            const normalized = this.normalizeIdentity(value);
+            // Supplier hotel IDs are optional for TBO. A serialized zero is
+            // not a usable property identity and must not block matching by
+            // provider hotel code, booking code, or search reference.
+            if (normalized && normalized !== '0' && normalized !== 'null' && normalized !== 'undefined') {
+              return normalized;
+            }
+          }
+          return '';
+        };
+        const hotelCode = normalizeRateIdentity(
+          selection.hotelCode,
+          selection.providerHotelCode,
+          selection.provider_hotel_code,
+          selection.hotel_code,
+          selection.hotelId,
+          selection.hotel_id,
+        );
+        const bookingCode = normalizeRateIdentity(
+          selection.bookingCode,
+          selection.booking_code,
+          selection.searchReference,
+          selection.search_reference,
+        );
+        const searchReference = normalizeRateIdentity(
+          selection.searchReference,
+          selection.search_reference,
+          selection.bookingCode,
+          selection.booking_code,
+        );
+        const roomId = normalizeRateIdentity(selection.roomId, selection.room_id);
+        const rateId = normalizeRateIdentity(selection.rateId, selection.rate_id, selection.rateOptionId, selection.rate_option_id);
+        const roomType = this.normalizeIdentity(selection.roomType || selection.room_type);
+        const mealPlan = this.normalizeIdentity(selection.mealPlan || selection.meal_plan);
+        const requestedOptionKey = normalizeRateIdentity(selection.optionKey, selection.option_key);
         const hasExplicitRateIdentity = Boolean(
           requestedOptionKey || bookingCode || searchReference || roomId || rateId,
         );
