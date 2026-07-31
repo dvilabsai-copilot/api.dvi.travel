@@ -688,6 +688,21 @@ test('reset clears editable selections before rebuilding the live snapshot', asy
   assert.equal(selectionReset.data.status, 0);
 });
 
+test('live reset rows exclude synthetic departure-route availability rows', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const searchableRouteIds = (service as any).getSearchableRouteIds([
+    { itinerary_route_ID: 10208 },
+    { itinerary_route_ID: 10209 },
+    { itinerary_route_ID: 10210 },
+  ], 2);
+  const rows = (service as any).filterSearchableLiveRows([
+    { itineraryRouteId: 10208, hotelName: 'Live Hotel' },
+    { itineraryRouteId: 10210, hotelName: 'No hotel available', provider: 'external' },
+  ], searchableRouteIds);
+
+  assert.deepEqual(rows.map((row: any) => row.itineraryRouteId), [10208]);
+});
+
 test('missing auto selection is replaced in place and reports AUTO_SELECTION_CHANGED', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections, rooms } = makeReconciliationTx();

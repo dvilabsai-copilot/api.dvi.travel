@@ -708,6 +708,14 @@ export class HotelAvailabilitySnapshotService {
       // here would persist the old supplier-only response and hide newly merged
       // Offline/AxisRooms options from the UI.
       this.tboHotelDetails.clearCacheForQuote?.(quoteId);
+      const routes = await this.prisma.dvi_itinerary_route_details.findMany({
+        where: { itinerary_plan_ID: plan.itinerary_plan_ID, deleted: 0 },
+        orderBy: { itinerary_route_date: 'asc' },
+      });
+      const searchableRouteIds = this.getSearchableRouteIds(
+        routes,
+        Math.max(Number((plan as any).no_of_nights || 0), 0),
+      );
       const liveResponse = await this.tboHotelDetails.getHotelDetailsByQuoteIdFromTbo(
         quoteId,
         undefined,
@@ -716,7 +724,10 @@ export class HotelAvailabilitySnapshotService {
         undefined,
         false,
       );
-      const sourceRows = Array.isArray(liveResponse.hotels) ? liveResponse.hotels : [];
+      const sourceRows = this.filterSearchableLiveRows(
+        Array.isArray(liveResponse.hotels) ? liveResponse.hotels : [],
+        searchableRouteIds,
+      );
       if (sourceRows.length === 0 && requestType !== 'CHECK_AVAILABILITY') {
         throw new ServiceUnavailableException({
           message: 'Hotel availability returned no options; the previous snapshot was retained.',
@@ -733,10 +744,6 @@ export class HotelAvailabilitySnapshotService {
       // become a silent fallback or replace a live selection.
       let rows: any[] = sourceRows;
       if (requestType === 'CHECK_AVAILABILITY') {
-        const routes = await this.prisma.dvi_itinerary_route_details.findMany({
-          where: { itinerary_plan_ID: plan.itinerary_plan_ID, deleted: 0 },
-          orderBy: { itinerary_route_date: 'asc' },
-        });
         const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
         const offlineByRoute = await this.offlineHotelCatalog.fetchOfflineHotelsForRoutes(
           routes,
@@ -918,6 +925,28 @@ export class HotelAvailabilitySnapshotService {
     });
     if (!plan) throw new BadRequestException('Itinerary not found');
     return plan;
+  }
+
+  private getSearchableRouteIds(routes: any[], noOfNights: number): Set<number> {
+    return new Set(
+      (routes || [])
+        .filter((route: any, index: number) => {
+          if (index === routes.length - 1 && index >= noOfNights) return false;
+          if (route?.hotelRequired === false || route?.hotel_required === false) return false;
+          if (route?.isDeparture || route?.isTransit || route?.isActivityOnly) return false;
+          return true;
+        })
+        .map((route: any) => Number(route?.itinerary_route_ID || 0))
+        .filter((routeId: number) => routeId > 0),
+    );
+  }
+
+  private filterSearchableLiveRows(rows: any[], searchableRouteIds: Set<number>): any[] {
+    if (searchableRouteIds.size === 0) return rows;
+    return rows.filter((row: any) => {
+      const routeId = Number(row?.itineraryRouteId || row?.routeId || row?.route_id || 0);
+      return routeId > 0 && searchableRouteIds.has(routeId);
+    });
   }
 
   async resetAndPersist(
