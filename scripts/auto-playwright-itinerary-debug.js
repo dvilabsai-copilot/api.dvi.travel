@@ -33,7 +33,6 @@ const { chromium } = require('playwright');
 
   const requestCounts = {
     details: 0,
-    status: 0,
     permitSync: 0,
     vehicleSync: 0,
   };
@@ -43,10 +42,6 @@ const { chromium } = require('playwright');
     if (url.includes('/api/v1/itineraries/details/')) {
       requestCounts.details += 1;
       console.log('[REQ][DETAILS]', request.method(), url);
-    }
-    if (url.includes('/api/v1/itineraries/') && url.includes('/vehicle-build-status')) {
-      requestCounts.status += 1;
-      console.log('[REQ][STATUS]', request.method(), url);
     }
     if (url.includes('/api/v1/itineraries/') && url.includes('/permit-build-sync')) {
       requestCounts.permitSync += 1;
@@ -60,7 +55,7 @@ const { chromium } = require('playwright');
 
   page.on('response', (response) => {
     const url = response.url();
-    if (url.includes('/api/v1/itineraries/details/') || url.includes('/vehicle-build-status') || url.includes('/permit-build-sync') || url.includes('/vehicle-build-sync')) {
+    if (url.includes('/api/v1/itineraries/details/') || url.includes('/permit-build-sync') || url.includes('/vehicle-build-sync')) {
       console.log('[RES]', response.status(), url);
     }
   });

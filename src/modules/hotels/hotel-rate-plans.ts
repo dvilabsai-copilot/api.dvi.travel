@@ -119,7 +119,8 @@ export function inferCanonicalHotelRatePlanCodeFromMealText(
   value?: string | null,
 ): CanonicalHotelRatePlanCode | null {
   const raw = String(value || '').trim().toUpperCase();
-  if (!raw || raw === '-' || raw === 'ROOM ONLY') return 'EP';
+  if (!raw || raw === '-') return null;
+  if (raw === 'ROOM ONLY') return 'EP';
 
  // Explicit supplier keywords should win over generic breakfast mentions.
   if (raw.includes('ALL MEALS') || raw.includes('FULL BOARD') || raw.includes('FULLBOARD')) return 'AP';
@@ -133,7 +134,7 @@ export function inferCanonicalHotelRatePlanCodeFromMealText(
   if ((hasBreakfast && hasLunch) || (hasBreakfast && hasDinner) || (hasLunch && hasDinner)) return 'MAP';
   if (hasBreakfast) return 'CP';
 
-  return 'EP';
+  return null;
 }
 
 export function getCanonicalHotelRatePlanDefinition(
@@ -152,7 +153,7 @@ export function getTboMealTypeForCanonicalHotelRatePlan(
 
 export function getNormalizedMealPlanLabelFromMealText(value?: string | null): string {
   const raw = String(value || '').trim();
-  if (!raw || raw === '-') return 'Room Only';
+  if (!raw || raw === '-') return 'UNKNOWN';
 
   const upper = raw.toUpperCase();
 
@@ -173,5 +174,5 @@ export function getNormalizedMealPlanLabelFromMealText(value?: string | null): s
   if (hasBreakfast) return 'CP';
 
  // For noisy/non-meal inclusions (e.g. parking/wifi), use a clean fallback.
-  return 'Room Only';
+  return 'UNKNOWN';
 }

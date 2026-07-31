@@ -107,6 +107,11 @@ export class ItineraryHotelRoomCategoryService {
     const selectedRoomType = availableRoomTypes.find((roomType: any) =>
       Number(roomType.roomTypeId) === Number(params.room_type_id));
     if (!selectedRoomType) throw new NotFoundException('Selected room type not available from VSR');
+    const selectedLiveRoomRow = (tboRoomDetails.rooms || []).find((room: any) =>
+      Number(room.hotelId || room.canonicalHotelId || 0) === Number(params.hotel_id || 0) &&
+      Number(room.groupType || 0) === Number(params.group_type || 0) &&
+      Number(room.roomTypeId || 0) === Number(params.room_type_id || 0),
+    ) || hotelRoom;
 
     const roomRate = Number(selectedRoomType.pricePerNight || hotelRoom.pricePerNight || 0);
     const now = new Date();
@@ -143,11 +148,91 @@ export class ItineraryHotelRoomCategoryService {
         },
       });
     }
+    const roomDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_room_details;
+    const activeRoomRows = roomDetailsModel?.findMany ? await roomDetailsModel.findMany({
+      where: {
+        itinerary_plan_hotel_details_id: params.itinerary_plan_hotel_details_ID,
+        itinerary_plan_id: params.itinerary_plan_id,
+        itinerary_route_id: params.itinerary_route_id,
+        itinerary_route_date: route.itinerary_route_date,
+        hotel_id: params.hotel_id,
+        group_type: params.group_type,
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: { itinerary_plan_hotel_room_details_ID: 'asc' },
+    }) : [{ room_qty: data.room_qty || 1 }];
+    const totalRooms = Math.max(
+      activeRoomRows.reduce((sum: number, room: any) => sum + Math.max(Number(room.room_qty || 1), 1), 0),
+      1,
+    );
+    const selectedRateOptionId =
+      String(
+        (selectedLiveRoomRow as any)?.rateOptionId ||
+        (selectedLiveRoomRow as any)?.searchReference ||
+        (selectedLiveRoomRow as any)?.bookingCode ||
+        '',
+      ).trim() || null;
+    const selectedPricePerNight = Number(
+      (selectedLiveRoomRow as any)?.pricePerNight ??
+      (selectedLiveRoomRow as any)?.basePricePerNight ??
+      roomRate ??
+      0,
+    ) || null;
+    const selectedTotalPrice = Number(
+      (selectedLiveRoomRow as any)?.totalPrice ??
+      (selectedLiveRoomRow as any)?.totalStayPrice ??
+      selectedPricePerNight ??
+      0,
+    ) || null;
+    const selectedMealPlan = String(
+      (selectedLiveRoomRow as any)?.mealPlan ||
+      '',
+    ).trim() || null;
+    const selectedRoomTypeName = String(
+      selectedRoomType.roomTypeTitle ||
+      (selectedLiveRoomRow as any)?.roomTypeName ||
+      (selectedLiveRoomRow as any)?.roomType ||
+      '',
+    ).trim() || null;
+    const selectedSnapshot = JSON.stringify({
+      optionKey: selectedRateOptionId,
+      rateOptionId: selectedRateOptionId,
+      hotelCode: String((selectedLiveRoomRow as any)?.hotelCode || params.hotel_id || '').trim() || null,
+      provider: String((selectedLiveRoomRow as any)?.provider || 'staah').trim().toLowerCase() || null,
+      selectionOrigin: 'USER_SELECTED',
+      hotelName: String((selectedLiveRoomRow as any)?.hotelName || '').trim() || null,
+      category: Number((selectedLiveRoomRow as any)?.hotelCategory || (selectedLiveRoomRow as any)?.category || 0) || null,
+      roomType: selectedRoomTypeName,
+      mealPlan: selectedMealPlan,
+      bookingCode: String((selectedLiveRoomRow as any)?.bookingCode || '').trim() || null,
+      searchReference: String((selectedLiveRoomRow as any)?.searchReference || '').trim() || null,
+      roomId: String((selectedLiveRoomRow as any)?.roomId || '').trim() || null,
+      rateId: String((selectedLiveRoomRow as any)?.rateId || '').trim() || null,
+      totalRooms,
+    });
+    const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
+    if (hotelDetailsModel?.update) await hotelDetailsModel.update({
+      where: { itinerary_plan_hotel_details_ID: params.itinerary_plan_hotel_details_ID },
+      data: {
+        hotel_id: params.hotel_id,
+        hotel_required: 1,
+        total_no_of_rooms: totalRooms,
+        hotel_provider: String((selectedLiveRoomRow as any)?.provider || 'staah').trim().toLowerCase(),
+        selected_rate_option_id: selectedRateOptionId,
+        selected_price_per_night: selectedPricePerNight,
+        selected_total_price: selectedTotalPrice,
+        selected_currency: String((selectedLiveRoomRow as any)?.currency || 'INR').trim() || null,
+        selected_price_snapshot: selectedSnapshot,
+        updatedon: now,
+      },
+    });
     return { success: true, message: 'Room category updated successfully', roomTypeName: selectedRoomType.roomTypeTitle };
   }
 
   private async resolveAvailableRoomTypes(hotelId: number, matchingHotelRooms: any[]) {
-    const hotelRooms = await (this.prisma as any).dvi_hotel_rooms.findMany({
+    const roomModel = (this.prisma as any).dvi_hotel_rooms;
+    const hotelRooms = roomModel?.findMany ? await roomModel.findMany({
       where: {
         hotel_id: hotelId,
         deleted: 0,
@@ -159,7 +244,7 @@ export class ItineraryHotelRoomCategoryService {
         room_ref_code: true,
       },
       orderBy: { room_ID: 'asc' },
-    });
+    }) : [];
 
     const hotelRoomByRef = new Map<string, any>();
     const hotelRoomByTitle = new Map<string, any>();
@@ -186,6 +271,17 @@ export class ItineraryHotelRoomCategoryService {
           hotelRoomByRef.get(bookingCode) ||
           hotelRoomByTitle.get(roomTitle);
         if (!matchedHotelRoom) {
+          const providerRoomTypeId = Number((candidate as any).roomTypeId || 0);
+          const providerRoomTypeTitle = String(candidate.roomTypeTitle || (candidate as any).roomName || '').trim();
+          if (providerRoomTypeId > 0 && !seenRoomTypeIds.has(providerRoomTypeId)) {
+            seenRoomTypeIds.add(providerRoomTypeId);
+            availableRoomTypes.push({
+              roomTypeId: providerRoomTypeId,
+              roomTypeTitle: providerRoomTypeTitle || `Room ${providerRoomTypeId}`,
+              roomId: Number((candidate as any).roomId || providerRoomTypeId),
+              pricePerNight: Number((candidate as any).pricePerNight || room.pricePerNight || room.price || 0),
+            });
+          }
           continue;
         }
 
