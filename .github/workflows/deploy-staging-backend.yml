@@ -75,6 +75,8 @@ jobs:
             npm ci --no-audit --no-fund
             npx prisma generate
             npx prisma validate
+            echo "Synchronizing staging database schema with Prisma..."
+            npx prisma db push --skip-generate
             npm run build
 
             if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
