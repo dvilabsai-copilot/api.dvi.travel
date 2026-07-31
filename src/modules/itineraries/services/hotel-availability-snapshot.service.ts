@@ -1791,14 +1791,23 @@ export class HotelAvailabilitySnapshotService {
       });
     }
     const meal = String(option.mealPlan || '').toUpperCase();
+    // Supplier room identifiers are often opaque strings (for example
+    // `room-1`).  They are kept in the availability snapshot, but this legacy
+    // room-details table stores only the local numeric room id.  Passing
+    // Number('room-1') produces NaN, which Prisma rejects and which previously
+    // rolled back the entire availability snapshot during reset.
+    const numericRoomId = Number(option.roomId ?? selection.room_id ?? 0);
+    const numericRoomTypeId = Number(option.roomTypeId ?? selection.room_type_id ?? 0);
+    const roomId = Number.isInteger(numericRoomId) && numericRoomId >= 0 ? numericRoomId : 0;
+    const roomTypeId = Number.isInteger(numericRoomTypeId) && numericRoomTypeId >= 0 ? numericRoomTypeId : 0;
     const roomData = {
       group_type: Number(selection.group_type || option.groupType || 0),
       itinerary_plan_id: Number(selection.itinerary_plan_id),
       itinerary_route_id: Number(selection.itinerary_route_id),
       itinerary_route_date: selection.itinerary_route_date || this.toDate(option.date || option.checkInDate),
       hotel_id: this.persistedHotelId(option, selection.hotel_id),
-      room_type_id: Number(option.roomTypeId || selection.room_type_id || 0),
-      room_id: Number(option.roomId || selection.room_id || 0),
+      room_type_id: roomTypeId,
+      room_id: roomId,
       room_qty: Math.max(Number(selection.total_no_of_rooms || 1), 1),
       room_rate: Number(option.pricePerNight || option.totalStayPrice || option.totalHotelCost || 0),
       total_room_cost: Number(option.totalStayPrice || option.totalHotelCost || option.totalPrice || 0),
