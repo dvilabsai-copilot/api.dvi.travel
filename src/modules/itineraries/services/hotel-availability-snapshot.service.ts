@@ -553,10 +553,16 @@ export class HotelAvailabilitySnapshotService {
 
     const tabs = this.buildTabs(normalizedRows);
     const page = Math.max(1, Number(options.page || 1));
-    const pageSize = Math.min(100, Math.max(1, Number(options.pageSize || 20)));
+    // Internal availability searches use pageSize=0 to return the complete
+    // snapshot to the reset/refresh caller. Public persisted reads remain
+    // capped at 100 rows per page through the controller contract.
+    const unpaged = Number(options.pageSize) === 0;
+    const pageSize = unpaged
+      ? Math.max(normalizedRows.length, 1)
+      : Math.min(100, Math.max(1, Number(options.pageSize || 20)));
     const total = normalizedRows.length;
     const start = (page - 1) * pageSize;
-    const paged = normalizedRows.slice(start, start + pageSize);
+    const paged = unpaged ? normalizedRows : normalizedRows.slice(start, start + pageSize);
     const checkedAt = new Date(latest.synced_at);
     const latestPayload = this.parsePayload(latest.full_payload);
     const recommendationAlgorithm = String(
@@ -803,7 +809,7 @@ export class HotelAvailabilitySnapshotService {
         return this.reconcileSelections(tx, plan.itinerary_plan_ID, rows, searchRunId, createdBy);
       });
 
-      const response = await this.readPersisted(quoteId, { page: 1, pageSize: 100 });
+      const response = await this.readPersisted(quoteId, { page: 1, pageSize: 0 });
       const hasPartialAvailability = Number(liveResponse.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
         (Array.isArray(liveResponse.hotelAvailability?.providerErrors) && liveResponse.hotelAvailability.providerErrors.length > 0);
       (response as any).hotelAvailability = {
