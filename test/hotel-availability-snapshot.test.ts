@@ -123,6 +123,49 @@ test('offline materialization creates rows for valid recommendation groups only'
   assert.deepEqual(rows.map((row: any) => row.groupType), [1, 2, 3, 4]);
 });
 
+test('tab totals use one full-stay recommendation per logical stay', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const routes = [
+    {
+      itinerary_route_ID: 10,
+      itinerary_route_date: new Date('2026-07-28T00:00:00.000Z'),
+      next_visiting_location: 'Munnar',
+    },
+    {
+      itinerary_route_ID: 11,
+      itinerary_route_date: new Date('2026-07-29T00:00:00.000Z'),
+      next_visiting_location: 'Munnar',
+    },
+  ];
+  const rows = [
+    // The same two-night rate is materialized once for each night. It must
+    // contribute ₹10,000 once, not ₹20,000.
+    { groupType: 1, itineraryRouteId: 10, provider: 'tbo', hotelCode: 'H-1', totalHotelCost: 5000, totalStayPrice: 10000 },
+    { groupType: 1, itineraryRouteId: 11, provider: 'tbo', hotelCode: 'H-1', totalHotelCost: 5000, totalStayPrice: 10000 },
+    { groupType: 1, itineraryRouteId: 10, provider: 'tbo', hotelCode: 'H-2', totalHotelCost: 6000, totalStayPrice: 12000 },
+    { groupType: 1, itineraryRouteId: 11, provider: 'tbo', hotelCode: 'H-2', totalHotelCost: 6000, totalStayPrice: 12000 },
+  ];
+
+  const tabs = (service as any).buildTabs(rows, routes, 2);
+
+  assert.deepEqual(tabs, [{ groupType: 1, label: 'Recommended #1', totalAmount: 10000 }]);
+});
+
+test('persisted recommendation totals are preferred over availability-row sums', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const tabs = (service as any).buildTabs(
+    [
+      { groupType: 1, itineraryRouteId: 10, provider: 'tbo', totalHotelCost: 500000 },
+      { groupType: 1, itineraryRouteId: 11, provider: 'tbo', totalHotelCost: 500000 },
+    ],
+    [],
+    2,
+    [{ groupType: 1, label: 'Budget Hotels', totalAmount: 3520, complete: true }],
+  );
+
+  assert.equal(tabs[0].totalAmount, 3520);
+});
+
 test('persisted hotel read remaps stale snapshot route IDs by stay date', async () => {
   const prisma = makePrisma();
   prisma.dvi_itinerary_plan_details.findFirst = async () => ({
