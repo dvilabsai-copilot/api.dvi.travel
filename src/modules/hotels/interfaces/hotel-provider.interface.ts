@@ -36,6 +36,11 @@ export interface HotelSearchResult {
   address: string;
   latitude?: number | string | null;
   longitude?: number | string | null;
+  distanceKm?: number | null;
+  distanceStatus?: 'WITHIN_RADIUS' | 'OUTSIDE_RADIUS' | 'UNKNOWN';
+  accommodationType?: string | null;
+  propertyType?: string | null;
+  tags?: string[];
   rating: number;
  category?: string; // Hotel category/star rating
   facilities: string[];

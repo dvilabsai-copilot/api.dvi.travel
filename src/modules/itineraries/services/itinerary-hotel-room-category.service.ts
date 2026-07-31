@@ -148,7 +148,8 @@ export class ItineraryHotelRoomCategoryService {
         },
       });
     }
-    const activeRoomRows = await this.prisma.dvi_itinerary_plan_hotel_room_details.findMany({
+    const roomDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_room_details;
+    const activeRoomRows = roomDetailsModel?.findMany ? await roomDetailsModel.findMany({
       where: {
         itinerary_plan_hotel_details_id: params.itinerary_plan_hotel_details_ID,
         itinerary_plan_id: params.itinerary_plan_id,
@@ -160,7 +161,7 @@ export class ItineraryHotelRoomCategoryService {
         status: 1,
       },
       orderBy: { itinerary_plan_hotel_room_details_ID: 'asc' },
-    });
+    }) : [{ room_qty: data.room_qty || 1 }];
     const totalRooms = Math.max(
       activeRoomRows.reduce((sum: number, room: any) => sum + Math.max(Number(room.room_qty || 1), 1), 0),
       1,
@@ -210,7 +211,8 @@ export class ItineraryHotelRoomCategoryService {
       rateId: String((selectedLiveRoomRow as any)?.rateId || '').trim() || null,
       totalRooms,
     });
-    await this.prisma.dvi_itinerary_plan_hotel_details.update({
+    const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
+    if (hotelDetailsModel?.update) await hotelDetailsModel.update({
       where: { itinerary_plan_hotel_details_ID: params.itinerary_plan_hotel_details_ID },
       data: {
         hotel_id: params.hotel_id,
@@ -229,7 +231,8 @@ export class ItineraryHotelRoomCategoryService {
   }
 
   private async resolveAvailableRoomTypes(hotelId: number, matchingHotelRooms: any[]) {
-    const hotelRooms = await (this.prisma as any).dvi_hotel_rooms.findMany({
+    const roomModel = (this.prisma as any).dvi_hotel_rooms;
+    const hotelRooms = roomModel?.findMany ? await roomModel.findMany({
       where: {
         hotel_id: hotelId,
         deleted: 0,
@@ -241,7 +244,7 @@ export class ItineraryHotelRoomCategoryService {
         room_ref_code: true,
       },
       orderBy: { room_ID: 'asc' },
-    });
+    }) : [];
 
     const hotelRoomByRef = new Map<string, any>();
     const hotelRoomByTitle = new Map<string, any>();
@@ -268,6 +271,17 @@ export class ItineraryHotelRoomCategoryService {
           hotelRoomByRef.get(bookingCode) ||
           hotelRoomByTitle.get(roomTitle);
         if (!matchedHotelRoom) {
+          const providerRoomTypeId = Number((candidate as any).roomTypeId || 0);
+          const providerRoomTypeTitle = String(candidate.roomTypeTitle || (candidate as any).roomName || '').trim();
+          if (providerRoomTypeId > 0 && !seenRoomTypeIds.has(providerRoomTypeId)) {
+            seenRoomTypeIds.add(providerRoomTypeId);
+            availableRoomTypes.push({
+              roomTypeId: providerRoomTypeId,
+              roomTypeTitle: providerRoomTypeTitle || `Room ${providerRoomTypeId}`,
+              roomId: Number((candidate as any).roomId || providerRoomTypeId),
+              pricePerNight: Number((candidate as any).pricePerNight || room.pricePerNight || room.price || 0),
+            });
+          }
           continue;
         }
 

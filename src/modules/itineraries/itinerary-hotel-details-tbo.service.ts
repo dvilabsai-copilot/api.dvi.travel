@@ -6,6 +6,7 @@ import { HotelSearchService } from '../hotels/services/hotel-search.service';
 import { HobseHotelProvider } from '../hotels/providers/hobse-hotel.provider';
 import { HotelSearchResult } from '../hotels/interfaces/hotel-provider.interface';
 import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.service';
+import { HotelRecommendationPackageService } from './services/hotel-recommendation-package.service';
 import {
   ItineraryHotelTabDto,
   ItineraryHotelRowDto,
@@ -269,14 +270,32 @@ export class ItineraryHotelDetailsTboService {
   private getMealPlanCandidatesFromHotel(hotel: HotelSearchResult): string[] {
     const candidates = new Set<string>();
 
-    this.collectMealPlanCodesFromText((hotel as any).mealPlan, candidates);
-    this.collectMealPlanCodesFromText((hotel as any).roomType, candidates);
+    const rateOptions = Array.isArray((hotel as any).rateOptions)
+      ? (hotel as any).rateOptions
+      : [];
+    if (rateOptions.length > 0) {
+      rateOptions.forEach((option: any) => this.collectMealPlanValue(option?.mealPlan, candidates));
+      return Array.from(candidates);
+    }
+
+    this.collectMealPlanValue((hotel as any).mealPlan, candidates);
+    if (candidates.size > 0) return Array.from(candidates);
+
+    // Legacy providers sometimes only expose a structured room label. Use it
+    // only when no structured meal-plan value exists anywhere on the option.
+    this.collectMealPlanValue((hotel as any).roomType, candidates);
 
     for (const roomType of hotel.roomTypes || []) {
-      this.collectMealPlanCodesFromText((roomType as any).roomName, candidates);
+      this.collectMealPlanValue((roomType as any).roomName, candidates);
     }
 
     return Array.from(candidates);
+  }
+
+  private collectMealPlanValue(rawValue: unknown, collector: Set<string>): void {
+    const value = String(rawValue ?? '').trim();
+    if (!value || value === '-' || value.toUpperCase() === 'UNKNOWN') return;
+    this.collectMealPlanCodesFromText(value, collector);
   }
 
   private alignHotelToPreferredMealPlan(
@@ -456,11 +475,6 @@ export class ItineraryHotelDetailsTboService {
     String(preferredMealPlanCode || '')
       .trim()
       .toUpperCase();
-
-  const shouldUseMealPlanFallback =
-    normalizedPreferredMealPlanCode === 'CP' ||
-    normalizedPreferredMealPlanCode === 'MAP' ||
-    normalizedPreferredMealPlanCode === 'AP';
 
   const shouldFilterByFacilities =
     normalizedPreferredFacilities.length > 0;
@@ -794,11 +808,7 @@ export class ItineraryHotelDetailsTboService {
         }
       }
 
-           if (
-        included &&
-        shouldFilterByMeal &&
-        !shouldUseMealPlanFallback
-      ) {
+           if (included && shouldFilterByMeal) {
         const mealPlanCandidates =
           this.getMealPlanCandidatesFromHotel(hotel);
 
@@ -807,10 +817,7 @@ export class ItineraryHotelDetailsTboService {
             preferredMealPlanCode!,
           );
 
-        if (
-          mealPlanCandidates.length > 0 &&
-          !hasMatchingMeal
-        ) {
+        if (!hasMatchingMeal) {
           included = false;
           filterReason =
             `Meal plan mismatch: ` +
@@ -935,29 +942,7 @@ if (hotelMasterId) {
       }
     }
 
-    const preferredMealHotels =
-      shouldUseMealPlanFallback
-        ? filteredHotels
-            .filter((hotel) =>
-              this.getMealPlanCandidatesFromHotel(
-                hotel,
-              ).includes(
-                normalizedPreferredMealPlanCode,
-              ),
-            )
-            .map((hotel) =>
-              this.alignHotelToPreferredMealPlan(
-                hotel,
-                normalizedPreferredMealPlanCode,
-              ),
-            )
-        : [];
-
-    const finalHotels =
-      shouldUseMealPlanFallback &&
-      preferredMealHotels.length > 0
-        ? preferredMealHotels
-        : filteredHotels;
+    const finalHotels = filteredHotels;
 
  this.logger.log(
       `   Preference filter route ${routeId}: ` +
@@ -989,7 +974,13 @@ if (hotelMasterId) {
     private readonly hotelSearchService: HotelSearchService,
     private readonly hobseProvider: HobseHotelProvider,
     private readonly offlineHotelCatalogService: OfflineHotelCatalogService,
+    private readonly hotelRecommendationPackageService: HotelRecommendationPackageService,
   ) {}
+
+  private recommendationAlgorithm(): 'v1' | 'v2' {
+    const value = String(process.env.HOTEL_RECOMMENDATION_ALGORITHM || 'v1').trim().toLowerCase();
+    return value === 'v2' ? 'v2' : 'v1';
+  }
 
   private getHotelMarginPercentage(hotel: any, globalMargin = 0): number {
     const hotelMargin = Number(
@@ -1688,8 +1679,21 @@ this.logger.log(
 
  // this.logger.log(` Hotels by Route: ${JSON.stringify(Object.fromEntries(hotelsByRoute))}`);
 
- // Step 4: Generate 4 price tier packages
-    const packages = this.generatePricePackages(filteredHotelsByRoute, routes);
+ // Step 4: Generate recommendation packages. v1 remains the rollback path;
+ // v2 selects complete logical-stay packages from real eligible options.
+    const algorithm = this.recommendationAlgorithm();
+    const packages = algorithm === 'v2'
+      ? this.hotelRecommendationPackageService.generate({
+          routes: routes as any,
+          hotelsByRoute: filteredHotelsByRoute,
+          noOfNights,
+          preferredMealPlanCode,
+          preferredCategories,
+          maxDistanceKm: Number(process.env.MAX_RECOMMENDED_HOTEL_DISTANCE_KM || 15),
+          requireKnownDistance: String(process.env.HOTEL_RECOMMENDATION_REQUIRE_DISTANCE || '').trim() === 'true',
+        })
+      : this.generatePricePackages(filteredHotelsByRoute, routes);
+    this.logger.log(`[HOTEL_RECOMMENDATION] algorithm=${algorithm} planId=${planId} groups=${packages.length}`);
 
  // Step 5: Build response
     const response = await this.buildHotelDetailsResponse(
