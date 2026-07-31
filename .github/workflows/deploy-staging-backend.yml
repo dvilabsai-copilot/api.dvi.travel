@@ -35,6 +35,7 @@ jobs:
 
             APP_DIR="/var/www/staging-api.dvi.travel"
             APP_NAME="staging-api-dvi-travel"
+            ENV_BACKUP_DIR="/root/dvi-staging-api-env-backups"
             ENV_TMP=""
 
             cleanup() {
@@ -60,7 +61,8 @@ jobs:
 
             if [ -n "${STAGING_BACKEND_ENV_FILE:-}" ]; then
               if [ -f .env ]; then
-                cp -p .env ".env.backup-$(date +%Y%m%d-%H%M%S)"
+                install -d -m 700 "$ENV_BACKUP_DIR"
+                cp -p .env "$ENV_BACKUP_DIR/.env.backup-$(date +%Y%m%d-%H%M%S)"
               fi
               ENV_TMP="$(mktemp)"
               printf '%s\n' "$STAGING_BACKEND_ENV_FILE" > "$ENV_TMP"
