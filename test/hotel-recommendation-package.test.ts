@@ -67,6 +67,25 @@ test('selects the exact CP rate option and its CP price, not the hotel-level EP 
   assert.deepEqual(packages[0].hotels[0].rateOptions?.map((rate) => rate.rateOptionId), ['A-CP']);
 });
 
+test('never inherits the parent EP total when an expanded CP option only has a per-night price', () => {
+  const hotel = option('Hotel B', 1800, 'EP', {
+    rateOptions: [
+      { rateOptionId: 'B-EP', rateId: 'EP-RATE', roomId: 'ROOM-1', roomType: 'Standard', mealPlan: 'EP', totalStayPrice: 1800, pricePerNight: 1800 },
+      { rateOptionId: 'B-CP', rateId: 'CP-RATE', roomId: 'ROOM-1', roomType: 'Standard', mealPlan: 'CP', pricePerNight: 2100 },
+    ],
+    totalStayPrice: 1800,
+  });
+  const packages = service().generate({
+    routes: oneRoute(),
+    hotelsByRoute: new Map([[1, [hotel as any]]]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].hotels[0].rateOptionId, 'B-CP');
+  assert.equal(packages[0].totalPrice, 2100);
+  assert.equal(packages[0].hotels[0].exactFullStayTotal, 2100);
+});
+
 test('merges parent and child route availability for a logical multi-night stay', () => {
   const packages = service().generate({
     routes,
@@ -116,6 +135,25 @@ test('preserves valid stays when another logical stay is unavailable', () => {
   assert.equal(packages[0].partialTotal, 100);
   assert.equal(packages[0].hotels.length, 1);
   assert.deepEqual(packages[0].stayResults.map((stay) => stay.state), ['SELECTED', 'UNAVAILABLE']);
+});
+
+test('returns partial alternatives for available stays while preserving the unavailable stay row', () => {
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 1, itinerary_route_date: '2026-08-02', next_visiting_location: 'Munnar' },
+      { itinerary_route_ID: 2, itinerary_route_date: '2026-08-03', next_visiting_location: 'Kochi' },
+    ],
+    hotelsByRoute: new Map([
+      [1, [option('Munnar A', 100), option('Munnar B', 110)]],
+      [2, []],
+    ]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages.length, 2);
+  assert.deepEqual(packages.map((pkg) => pkg.hotels[0].hotelName), ['Munnar A', 'Munnar B']);
+  assert.ok(packages.every((pkg) => pkg.totalPrice === null && pkg.partialTotal > 0));
+  assert.ok(packages.every((pkg) => pkg.stayResults[1].state === 'UNAVAILABLE'));
 });
 
 test('constructs stable logical stays and handles aliases, repeated destinations, departure, and transit routes', () => {

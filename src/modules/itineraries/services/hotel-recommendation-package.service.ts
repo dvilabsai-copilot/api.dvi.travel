@@ -152,7 +152,29 @@ export class HotelRecommendationPackageService {
     const hasUnavailableStay = evaluations.some((evaluation) => evaluation.options.length === 0);
 
     if (hasUnavailableStay) {
-      return [this.toIncompletePackage(evaluations)];
+      const packageLimit = Math.min(Math.max(input.packageLimit ?? 4, 1), 4);
+      const beamWidth = Math.max(input.beamWidth ?? 200, 1);
+      const maxCandidates = Math.max(input.maxCandidatesPerStay ?? this.envNumber('HOTEL_RECOMMENDATION_CANDIDATES_PER_STAY', 20), 1);
+      const availableEvaluations = evaluations
+        .filter((evaluation) => evaluation.options.length > 0)
+        .map((evaluation) => ({ ...evaluation, options: evaluation.options.slice(0, maxCandidates) }));
+      if (availableEvaluations.length === 0) return [this.toIncompletePackage(evaluations)];
+
+      const states = this.beamSearch(
+        availableEvaluations.map((evaluation) => evaluation.options),
+        null,
+        [],
+        beamWidth,
+        Math.max(packageLimit, 4),
+      );
+      const packages: RecommendationPackage[] = [];
+      for (const state of states) {
+        const candidate = this.toIncompletePackage(evaluations, state.options, packages.length + 1, packages);
+        if (packages.some((existing) => this.packageKey(existing.hotels) === this.packageKey(candidate.hotels))) continue;
+        packages.push(candidate);
+        if (packages.length >= packageLimit) break;
+      }
+      return packages.length > 0 ? packages : [this.toIncompletePackage(evaluations)];
     }
 
     const packages: RecommendationPackage[] = [];
@@ -168,7 +190,7 @@ export class HotelRecommendationPackageService {
       const previous = packages[packages.length - 1];
       const targetCents = groupIndex === 0
         ? null
-        : Math.round((previous?.totalPrice || 0) * 100 * 1.1);
+        : Math.round(this.toCents(previous?.totalPrice || 0) * 1.1);
       const searchStates = this.beamSearch(
         normalizedEvaluations.map((evaluation) => evaluation.options),
         targetCents,
@@ -304,11 +326,14 @@ export class HotelRecommendationPackageService {
   }
 
   private expandRateOptions(base: HotelSearchResult, stay: LogicalHotelStay, sourceRouteId: number): HotelSearchResult[] {
-    const rawOptions = Array.isArray(base.rateOptions) && base.rateOptions.length > 0 ? base.rateOptions : [base as unknown as Record<string, unknown>];
+    const isExpandedRateOption = Array.isArray(base.rateOptions) && base.rateOptions.length > 0;
+    const rawOptions = isExpandedRateOption ? base.rateOptions : [base as unknown as Record<string, unknown>];
     return rawOptions.map((rawOption) => {
       const option = rawOption as any;
-      const nightlyRates = Array.isArray(option.nightlyRates) ? option.nightlyRates : (base as any).nightlyRates;
-      const total = this.resolveFullStayTotal(base, option, stay, nightlyRates, sourceRouteId);
+      const nightlyRates = Array.isArray(option.nightlyRates)
+        ? option.nightlyRates
+        : (isExpandedRateOption ? undefined : (base as any).nightlyRates);
+      const total = this.resolveFullStayTotal(base, option, stay, nightlyRates, sourceRouteId, isExpandedRateOption);
       return {
         ...base,
         ...option,
@@ -328,13 +353,20 @@ export class HotelRecommendationPackageService {
         nightlyRates,
         numberOfNights: option.numberOfNights ?? base.numberOfNights,
         totalStayPrice: total === null ? undefined : total,
-        price: Number(option.price ?? option.pricePerNight ?? base.price ?? 0),
-        pricePerNight: Number(option.pricePerNight ?? base.pricePerNight ?? base.price ?? 0),
+        price: Number(option.price ?? option.pricePerNight ?? (isExpandedRateOption ? 0 : base.price) ?? 0),
+        pricePerNight: Number(option.pricePerNight ?? option.price ?? (isExpandedRateOption ? 0 : base.pricePerNight ?? base.price) ?? 0),
       } as HotelSearchResult;
     });
   }
 
-  private resolveFullStayTotal(base: HotelSearchResult, option: any, stay: LogicalHotelStay, nightlyRates: any[], sourceRouteId: number): number | null {
+  private resolveFullStayTotal(
+    base: HotelSearchResult,
+    option: any,
+    stay: LogicalHotelStay,
+    nightlyRates: any[] | undefined,
+    sourceRouteId: number,
+    isExpandedRateOption: boolean,
+  ): number | null {
     const optionCheckIn = this.dateOnly(option.checkInDate || option.check_in_date || (base as any).checkInDate);
     const optionCheckOut = this.dateOnly(option.checkOutDate || option.check_out_date || (base as any).checkOutDate);
     if (optionCheckIn && optionCheckIn !== stay.checkInDate) return null;
@@ -347,13 +379,20 @@ export class HotelRecommendationPackageService {
       if (stay.nights > 1) return null;
     }
 
-    const suppliedNights = Number(option.numberOfNights ?? base.numberOfNights ?? 0);
-    const explicitTotal = Number(option.totalStayPrice ?? option.totalPrice ?? option.totalFare ?? base.totalStayPrice ?? base.totalFare ?? 0);
+    const suppliedNights = Number(option.numberOfNights ?? (isExpandedRateOption ? 0 : base.numberOfNights) ?? 0);
+    const explicitTotal = Number(
+      option.totalStayPrice ??
+      option.totalPrice ??
+      option.totalFare ??
+      (isExpandedRateOption ? 0 : base.totalStayPrice) ??
+      (isExpandedRateOption ? 0 : base.totalFare) ??
+      0,
+    );
     if (suppliedNights > 0 && suppliedNights !== stay.nights) return null;
     if (stay.nights > 1 && suppliedNights <= 0 && !nightlyRates?.length && sourceRouteId !== stay.parentRouteId) return null;
     if (explicitTotal > 0) return this.money(explicitTotal);
 
-    const price = Number(option.pricePerNight ?? option.price ?? base.pricePerNight ?? base.price ?? 0);
+    const price = Number(option.pricePerNight ?? option.price ?? (isExpandedRateOption ? 0 : base.pricePerNight) ?? (isExpandedRateOption ? 0 : base.price) ?? 0);
     if (price <= 0) return null;
     return this.money(price * stay.nights);
   }
@@ -443,9 +482,15 @@ export class HotelRecommendationPackageService {
     };
   }
 
-  private toIncompletePackage(evaluations: StayEvaluation[]): RecommendationPackage {
+  private toIncompletePackage(
+    evaluations: StayEvaluation[],
+    selectedOptions: StayOption[] = evaluations.flatMap((evaluation) => evaluation.options.slice(0, 1)),
+    groupType = 1,
+    prior: RecommendationPackage[] = [],
+  ): RecommendationPackage {
+    const selectedByStay = new Map(selectedOptions.map((option) => [option.stay.stayKey, option]));
     const stayResults: RecommendationStayResult[] = evaluations.map((evaluation) => {
-      const option = evaluation.options[0];
+      const option = selectedByStay.get(evaluation.stay.stayKey);
       if (option) {
         return {
           ...this.staySummary(evaluation.stay),
@@ -463,21 +508,27 @@ export class HotelRecommendationPackageService {
       };
     });
     const hotels = stayResults.flatMap((result) => result.hotel ? [result.hotel] : []);
+    const physicalIds = hotels.map((hotel) => `${hotel.stayKey}|${this.physicalIdentity(hotel)}`);
+    const optionIds = hotels.map((hotel) => `${hotel.stayKey}|${this.optionKey(hotel)}`);
+    const repeatedAcrossGroupsHotelIds = Array.from(new Set(physicalIds.filter((id) => prior.some((pkg) => pkg.hotels.some((hotel) => `${hotel.stayKey}|${this.physicalIdentity(hotel)}` === id)))));
+    const sameOptionAcrossGroups = Array.from(new Set(optionIds.filter((id) => prior.some((pkg) => pkg.hotels.some((hotel) => `${hotel.stayKey}|${this.optionKey(hotel)}` === id)))));
+    const repeatedFromGroups = prior.filter((pkg) => pkg.hotels.some((hotel) => physicalIds.includes(`${hotel.stayKey}|${this.physicalIdentity(hotel)}`))).map((pkg) => pkg.groupType);
+    const diversityPenalty = repeatedAcrossGroupsHotelIds.length + sameOptionAcrossGroups.length * 2;
     return {
-      groupType: 1,
-      label: LABELS[0],
+      groupType,
+      label: LABELS[groupType - 1] || `Recommended #${groupType}`,
       hotels,
       totalPrice: null,
       partialTotal: this.money(stayResults.reduce((sum, result) => sum + Number(result.totalPrice || 0), 0)),
       targetPrice: null,
       complete: false,
-      distinctFromPrevious: true,
-      diversityScore: 0,
+      distinctFromPrevious: !prior.some((pkg) => this.packageKey(pkg.hotels) === this.packageKey(hotels)),
+      diversityScore: Math.max(0, Number((1 - diversityPenalty / Math.max(hotels.length, 1)).toFixed(4))),
       repeatedHotelIds: [],
-      repeatedAcrossGroupsHotelIds: [],
-      sameOptionAcrossGroups: [],
+      repeatedAcrossGroupsHotelIds,
+      sameOptionAcrossGroups,
       duplicateWithinPackageHotelIds: [],
-      repeatedFromGroups: [],
+      repeatedFromGroups,
       fallbackReasons: stayResults.filter((result) => result.state === 'OFFLINE_FALLBACK').map((result) => `${result.destination}: offline approval required`),
       stayResults,
     };
@@ -505,8 +556,10 @@ export class HotelRecommendationPackageService {
     if (aValue !== bValue) return aValue - bValue;
     const aKey = a.options.map((option) => this.physicalIdentity(option.hotel)).sort().join('|');
     const bKey = b.options.map((option) => this.physicalIdentity(option.hotel)).sort().join('|');
-    const aPrior = prior.filter((pkg) => pkg.hotels.some((hotel) => aKey.includes(this.physicalIdentity(hotel)))).length;
-    const bPrior = prior.filter((pkg) => pkg.hotels.some((hotel) => bKey.includes(this.physicalIdentity(hotel)))).length;
+    const aIdentities = new Set(a.options.map((option) => this.physicalIdentity(option.hotel)));
+    const bIdentities = new Set(b.options.map((option) => this.physicalIdentity(option.hotel)));
+    const aPrior = prior.filter((pkg) => pkg.hotels.some((hotel) => aIdentities.has(this.physicalIdentity(hotel)))).length;
+    const bPrior = prior.filter((pkg) => pkg.hotels.some((hotel) => bIdentities.has(this.physicalIdentity(hotel)))).length;
     return aPrior - bPrior || aKey.localeCompare(bKey);
   }
 

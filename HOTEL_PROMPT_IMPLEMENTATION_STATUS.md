@@ -213,6 +213,14 @@ Those defects were corrected in the current working tree as follows.
 - The frontend renders partial totals, target totals, stable logical stay keys,
   selectable offline approval options, and unknown meal plans without EP
   fallback.
+- Expanded rate options never inherit parent-hotel totals or nightly prices;
+  parent pricing is used only when the hotel object itself is one exact rate.
+- Partial recommendations can return bounded alternatives for available stays
+  while retaining the unavailable stay row in every package.
+- Beam-search diversity tie-breaking uses exact identity-set membership, and
+  target arithmetic stays in integer cents until response formatting.
+- Recommendation-tab changes are immediate; no artificial 500 ms loader is used
+  for a local tab switch.
 
 ### Additional tests
 
@@ -233,7 +241,7 @@ selection, deterministic shuffled input, and fewer-than-four package behavior.
 ```text
 Backend build: npm.cmd run build
 Backend focused suite: npx.cmd tsx --test test/hotel-recommendation-package.test.ts test/itinerary-hotel-room-category.test.ts test/hotel-availability-snapshot.test.ts test/offline-hotel-approval.test.ts test/itinerary-selection-workflow.test.ts test/staah-room-selection.test.ts
-Result: 46 passed, 0 failed
+Result: 48 passed, 0 failed
 
 Frontend build: npm.cmd run build
 Frontend focused suite: npm.cmd test -- --run src/test/hotel-recommendation-v2-ui.test.ts src/test/offline-hotel-flow.test.ts src/test/itinerary-details.utils.test.ts src/test/hotelStayDates.utils.test.ts
@@ -250,6 +258,9 @@ Result: 17 passed, 0 failed
   certification still require environment/database verification.
 - Full create-itinerary-to-refresh Playwright/Chrome verification remains
   blocked for localhost by the browser security policy; no bypass was used.
+- The uploaded archive used for external review may not contain the complete
+  backend test directory; the current working repository does contain the
+  focused tests listed above.
 
 Do not describe this as production-ready until those remaining persistence,
 supplier, and browser-E2E risks are closed.
