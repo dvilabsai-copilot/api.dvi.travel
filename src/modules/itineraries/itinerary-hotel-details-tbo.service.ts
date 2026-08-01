@@ -1442,6 +1442,7 @@ this.logger.log(
         noOfNights,
         savedMealPlansByRoute,
         preferredMealPlanCode,
+        planRoomCount,
       );
       axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
         const existingHotels = hotelsByRoute.get(routeId) || [];
@@ -1585,6 +1586,7 @@ this.logger.log(
             noOfNights,
             savedMealPlansByRoute,
             preferredMealPlanCode,
+            planRoomCount,
           );
         } catch (error) {
           this.logger.warn(
@@ -2608,8 +2610,10 @@ this.logger.log(
     noOfNights: number,
     savedMealPlansByRoute?: Map<number, string>,
     preferredMealPlanCode?: string | null,
+    roomCount: number = 1,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
+    const requiredRoomCount = Math.max(Number(roomCount || 1), 1);
     const totalRoutes = routes.length;
 
  this.logger.log(`\n AXISROOMS HOTEL FETCH: Attempting to fetch AxisRooms hotels for ${routes.length} routes`);
@@ -2732,12 +2736,14 @@ this.logger.log(
           hotel_id: { in: hotelIds },
           start_date: { lte: dateOnly },
           end_date: { gte: dateOnly },
-          free: { gt: 0 },
         },
         select: {
           hotel_id: true,
           room_id: true,
+          start_date: true,
+          end_date: true,
           free: true,
+          received_at: true,
         },
       });
 
@@ -2747,7 +2753,58 @@ this.logger.log(
         continue;
       }
 
-      const roomIds = Array.from(new Set(availRows.map((r) => Number((r as any).room_id)).filter((id) => Number.isFinite(id) && id > 0)));
+      // ARI sends broad validity ranges and later date-specific corrections.
+      // Resolve one effective row per hotel/room before applying room-count
+      // eligibility; otherwise an old broad row can mask a newer daily update.
+      const effectiveAvailabilityByRoom = new Map<string, any>();
+      for (const row of availRows as any[]) {
+        const hotelId = Number(row.hotel_id);
+        const roomId = Number(row.room_id);
+        if (!Number.isFinite(hotelId) || hotelId <= 0 || !Number.isFinite(roomId) || roomId <= 0) {
+          continue;
+        }
+
+        const startTime = new Date(row.start_date).getTime();
+        const endTime = new Date(row.end_date).getTime();
+        const rangeDays = Number.isFinite(startTime) && Number.isFinite(endTime)
+          ? Math.max(0, Math.round((endTime - startTime) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
+          : Number.MAX_SAFE_INTEGER;
+        const key = `${hotelId}|${roomId}`;
+        const current = effectiveAvailabilityByRoom.get(key);
+        const currentStart = current ? new Date(current.start_date).getTime() : Number.NaN;
+        const currentEnd = current ? new Date(current.end_date).getTime() : Number.NaN;
+        const currentRangeDays = current && Number.isFinite(currentStart) && Number.isFinite(currentEnd)
+          ? Math.max(0, Math.round((currentEnd - currentStart) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
+          : Number.MAX_SAFE_INTEGER;
+        const receivedAt = new Date(row.received_at).getTime();
+        const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
+
+        if (
+          !current ||
+          rangeDays < currentRangeDays ||
+          (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)
+        ) {
+          effectiveAvailabilityByRoom.set(key, row);
+        }
+      }
+
+      const effectiveAvailability = Array.from(effectiveAvailabilityByRoom.values());
+      const eligibleAvailability = effectiveAvailability.filter(
+        (row: any) => Number(row.free || 0) >= requiredRoomCount,
+      );
+      const roomIds = Array.from(
+        new Set(
+          eligibleAvailability
+            .map((r: any) => Number(r.room_id))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      if (effectiveAvailability.length > eligibleAvailability.length) {
+        this.logger.log(
+          ` AxisRooms Route ${routeId}: filtered ${effectiveAvailability.length - eligibleAvailability.length} room(s) below required room count ${requiredRoomCount}`,
+        );
+      }
 
  // AxisRooms gate: keep only rooms that have an active AxisRooms-mapped rate plan
  // (axisrooms_room_id NOT NULL = mapped from inbound AxisRooms room/rateplan setup).
@@ -2811,13 +2868,34 @@ this.logger.log(
           room_id: true,
           rateplan_id: true,
           occupancy_rates: true,
+          start_date: true,
+          end_date: true,
+          received_at: true,
+          source: true,
         },
       });
 
-      const occupancyRows = occupancyRowsRaw.filter((row: any) => {
+      const validOccupancyRows = occupancyRowsRaw.filter((row: any) => {
         const key = `${Number((row as any).hotel_id)}|${Number((row as any).room_id)}|${String((row as any).rateplan_id || '')}`;
         return validRatePlanKeySet.has(key);
       });
+      const effectiveOccupancyByPlan = new Map<string, any>();
+      for (const row of validOccupancyRows as any[]) {
+        const startTime = new Date(row.start_date).getTime();
+        const endTime = new Date(row.end_date).getTime();
+        const rangeDays = Math.max(0, Math.round((endTime - startTime) / ItineraryHotelDetailsTboService.ONE_DAY_MS));
+        const key = `${Number(row.hotel_id)}|${Number(row.room_id)}|${String(row.rateplan_id || '')}`;
+        const current = effectiveOccupancyByPlan.get(key);
+        const currentRangeDays = current
+          ? Math.max(0, Math.round((new Date(current.end_date).getTime() - new Date(current.start_date).getTime()) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
+          : Number.MAX_SAFE_INTEGER;
+        const receivedAt = new Date(row.received_at).getTime();
+        const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
+        if (!current || rangeDays < currentRangeDays || (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)) {
+          effectiveOccupancyByPlan.set(key, row);
+        }
+      }
+      const occupancyRows = Array.from(effectiveOccupancyByPlan.values());
 
       const roomMeta = await this.prisma.dvi_hotel_rooms.findMany({
         where: {
@@ -2834,7 +2912,7 @@ this.logger.log(
       );
 
       const availableRoomByHotel = new Map<number, Set<number>>();
-      for (const row of availRows as any[]) {
+      for (const row of eligibleAvailability as any[]) {
         const hid = Number((row as any).hotel_id);
         const rid = Number((row as any).room_id);
         if (!availableRoomByHotel.has(hid)) {
@@ -2939,15 +3017,18 @@ this.logger.log(
           canonicalHotelId: hid,
           providerHotelCode: String((hotel as any).axisrooms_property_id || hid),
           rateOptionId: `axisrooms:${hid}:${selectedRoomId}:${selectedRateplanId}:${dateOnly.toISOString().slice(0, 10)}`,
+          // AxisRooms availability/rates are read from our ARI-synchronised
+          // database. Booking remains supplier-bookable, but the displayed
+          // price is not fetched from a live search request.
           bookingMode: 'LIVE_API',
-          priceSource: 'LIVE_API',
-          isLiveRate: true,
+          priceSource: 'DATABASE',
+          isLiveRate: false,
           isLiveBookable: true,
           isSelectable: true,
           requiresHotelApproval: false,
           approvalStatus: 'NOT_REQUIRED',
           manualConfirmationStatus: 'NOT_STARTED',
-          availabilityStatus: 'LIVE_AVAILABLE',
+          availabilityStatus: 'AVAILABLE',
           hotelCode: String(hid),
           hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
           cityCode: String((hotel as any).hotel_city || destinationRaw),
@@ -4384,25 +4465,25 @@ this.logger.log(
                 bookingCode: rawBookingCode || undefined,
                 searchReference: rawSearchReference || undefined,
                 bookingMode: (hotel as any).bookingMode || (normalizedProvider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
-                priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' ? 'DATABASE' : 'LIVE_API'),
+                priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' || normalizedProvider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
                 pricePerNight: Number((hotel as any).pricePerNight ?? totalHotelCost),
                 totalStayPrice: Number((hotel as any).totalStayPrice ?? billableHotelCost),
                 currency: hotel.currency || 'INR',
-                isLiveRate: normalizedProvider !== 'offline',
+                isLiveRate: (hotel as any).isLiveRate ?? (normalizedProvider !== 'offline' && normalizedProvider !== 'axisrooms'),
                 isLiveBookable: normalizedProvider !== 'offline' && hasSupplierHotel,
                 isSelectable: true,
                 requiresHotelApproval: normalizedProvider === 'offline',
                 approvalStatus: normalizedProvider === 'offline' ? 'NOT_REQUESTED' : 'NOT_REQUIRED',
               }],
           bookingMode: (hotel as any).bookingMode || (normalizedProvider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
-          priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' ? 'DATABASE' : 'LIVE_API'),
+          priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' || normalizedProvider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
           priceLabel: (hotel as any).priceLabel,
           pricePerNight: Number((hotel as any).pricePerNight ?? totalHotelCost),
           totalStayPrice: Number((hotel as any).exactFullStayTotal ?? (hotel as any).totalStayPrice ?? billableHotelCost * Math.max(Number((hotel as any).numberOfNights || noOfNights || 1), 1)),
           numberOfNights: Number((hotel as any).numberOfNights || noOfNights || 1),
           nightlyRates: (hotel as any).nightlyRates,
           requiresHotelApproval: normalizedProvider === 'offline',
-          isLiveRate: normalizedProvider !== 'offline',
+          isLiveRate: (hotel as any).isLiveRate ?? (normalizedProvider !== 'offline' && normalizedProvider !== 'axisrooms'),
           isLiveBookable: normalizedProvider !== 'offline' && hasSupplierHotel,
           isSelectable: true,
           approvalStatus: normalizedProvider === 'offline' ? 'NOT_REQUESTED' : 'NOT_REQUIRED',
@@ -4890,7 +4971,13 @@ this.logger.log(
         hotelsByRoute.set(routeId, [...existing, ...offlineHotels]);
       });
 
-      const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(routesToProcess, noOfNights);
+      const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
+        routesToProcess,
+        noOfNights,
+        undefined,
+        undefined,
+        planRoomCount2,
+      );
       axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
         const existing = hotelsByRoute.get(routeId) || [];
         const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
@@ -4959,7 +5046,13 @@ this.logger.log(
         });
 
  // AxisRooms
-        const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(routesToProcess, noOfNights);
+        const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
+          routesToProcess,
+          noOfNights,
+          undefined,
+          undefined,
+          planRoomCount2,
+        );
         axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
           const existing = hotelsByRoute.get(routeId) || [];
           const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
@@ -5199,9 +5292,9 @@ this.logger.log(
               : (firstRoomType?.cancellationPolicy ? [String(firstRoomType.cancellationPolicy)] : [])),
           isBookable: (hotel as any).isBookable ?? true,
           bookingMode: (hotel as any).bookingMode || (String(hotel.provider || '').toLowerCase() === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
-          priceSource: (hotel as any).priceSource || (String(hotel.provider || '').toLowerCase() === 'offline' ? 'DATABASE' : 'LIVE_API'),
+          priceSource: (hotel as any).priceSource || (['offline', 'axisrooms'].includes(String(hotel.provider || '').toLowerCase()) ? 'DATABASE' : 'LIVE_API'),
           priceLabel: (hotel as any).priceLabel,
-          isLiveRate: (hotel as any).isLiveRate ?? String(hotel.provider || '').toLowerCase() !== 'offline',
+          isLiveRate: (hotel as any).isLiveRate ?? !['offline', 'axisrooms'].includes(String(hotel.provider || '').toLowerCase()),
           isLiveBookable: (hotel as any).isLiveBookable ?? String(hotel.provider || '').toLowerCase() !== 'offline',
           isSelectable: (hotel as any).isSelectable ?? true,
           requiresHotelApproval: (hotel as any).requiresHotelApproval ?? String(hotel.provider || '').toLowerCase() === 'offline',
