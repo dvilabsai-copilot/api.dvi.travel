@@ -310,15 +310,22 @@ export class HotelAvailabilitySnapshotService {
         String(row?.selected_rate_option_id || '').trim() ||
           String(row?.selected_price_snapshot || '').trim(),
       );
+      const rowSelectionOrigin = selectionOriginFromRow(row);
       const currentHasSelectionMetadata = Boolean(
         String(current?.selected_rate_option_id || '').trim() ||
           String(current?.selected_price_snapshot || '').trim(),
       );
+      const currentSelectionOrigin = selectionOriginFromRow(current);
       // The same table stores both availability option rows and the actual
       // persisted selection. Prefer the row carrying selection metadata;
-      // otherwise a later availability row can hide a user's meal-plan and
-      // hotel choice on the next page load.
-      if (!current || (rowHasSelectionMetadata && !currentHasSelectionMetadata)) {
+      // otherwise a later AUTO_SELECTED availability row can hide a user's
+      // meal-plan and hotel choice on the next page load. A USER_SELECTED
+      // row is authoritative even when its numeric ID is older.
+      if (
+        !current ||
+        (rowSelectionOrigin === 'USER_SELECTED' && currentSelectionOrigin !== 'USER_SELECTED') ||
+        (rowHasSelectionMetadata && !currentHasSelectionMetadata)
+      ) {
         selectedByRouteGroup.set(key, row);
       }
     }
