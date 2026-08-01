@@ -1554,7 +1554,20 @@ export class HotelAvailabilitySnapshotService {
 
   private decorateSelection(row: any, selectedByRouteGroup: Map<string, any>, planId: number): any {
       const selection = selectedByRouteGroup.get(hotelSelectionKeyFromRow(planId, row));
-      const normalized = { ...row, optionKey: row.optionKey || this.optionKey(row) };
+    // Availability rows may carry selection flags from an older snapshot.
+    // Selection state must come only from the current plan selection rows;
+    // otherwise a stale cached row can remain selected alongside the user's
+    // current hotel after a reload.
+    const normalized = {
+      ...row,
+      optionKey: row.optionKey || this.optionKey(row),
+      isSelected: false,
+      selectionOrigin: undefined,
+      selectionId: undefined,
+      itineraryPlanHotelDetailsId: undefined,
+      selectionStatus: undefined,
+      selection: undefined,
+    };
       if (!selection) return normalized;
       if (this.rowMatchesRoomCategorySelection(selection, normalized)) {
         const snapshot = parseHotelSelectionSnapshot(selection) as any;
