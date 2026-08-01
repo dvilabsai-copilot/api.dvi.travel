@@ -5209,6 +5209,9 @@ this.logger.log(
     routeHotelRows.forEach(({ routeId, hotel }) => {
       const route = routes.find(r => (r as any).itinerary_route_ID === routeId);
       if (!route) return;
+      const routeDateOnly = this.toIstDateOnly((route as any).itinerary_route_date);
+      const routeDateLabel = this.formatDateOnly(routeDateOnly);
+      const routeCheckOutDate = this.addDays(routeDateOnly, 1);
 
  // FIXED: Use actual room type from TBO, not groupType
         const firstRoomType = hotel.roomTypes?.[0];
@@ -5233,8 +5236,13 @@ this.logger.log(
 
         roomDetailsList.push({
           itineraryPlanId: planId,
-          itineraryRouteId: routeId,
-          itineraryPlanHotelRoomDetailsId: roomDetailsId++,
+           itineraryRouteId: routeId,
+           date: routeDateLabel,
+           checkInDate: routeDateLabel,
+           checkOutDate: this.formatDateOnly(routeCheckOutDate),
+           itineraryRouteDate: routeDateLabel,
+           destination: String((route as any).next_visiting_location || (route as any).location_name || '').trim(),
+           itineraryPlanHotelRoomDetailsId: roomDetailsId++,
           hotelId: canonicalRoomHotelId,
           hotelCode: String(hotel.hotelCode || '').trim(),
           hotelName: hotel.hotelName || 'Hotel',

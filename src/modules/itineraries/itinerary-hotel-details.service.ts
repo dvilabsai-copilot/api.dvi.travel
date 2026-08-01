@@ -242,6 +242,11 @@ export interface RoomTypeOptionDto {
 export interface ItineraryHotelRoomDto {
   itineraryPlanId: number;
   itineraryRouteId: number;
+  date?: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  itineraryRouteDate?: string;
+  destination?: string;
   itineraryPlanHotelRoomDetailsId: number;
   hotelId: number;
   canonicalHotelId?: number | null;
@@ -255,6 +260,8 @@ export interface ItineraryHotelRoomDto {
   providerDisplayName?: string;
   bookingCode?: string;
   searchReference?: string;
+  rateOptionId?: string;
+  optionKey?: string;
   availableRoomTypes: RoomTypeOptionDto[];
   mealPlan?: string;
   numberOfNights?: number;

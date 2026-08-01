@@ -19,7 +19,7 @@ test('hotel availability preserves the empty result when the route is absent', a
   assert.deepEqual(await service.getAvailableHotels(99), []);
 });
 
-test('live multi-night selection must use the current route rate reference and nightly amount', async () => {
+test('live multi-night selection rejects a stale primary rate reference even when another alias is current', async () => {
   const syncedAt = new Date('2026-07-31T15:25:00.000Z');
   const currentRoutePayload = {
     itineraryRouteId: 10209,
@@ -42,28 +42,6 @@ test('live multi-night selection must use the current route rate reference and n
   };
   const service = createService(prisma);
 
-  await (service as any).validateLiveSelectionAgainstSnapshot(
-    {
-      planId: 10062,
-      routeId: 10209,
-      provider: 'axisrooms',
-      hotelId: 95,
-      canonicalHotelId: 95,
-      hotelCode: '95',
-      // This is the parent stay's 12-Aug reference, not route 10209's
-      // 13-Aug reference. The request also carries the current route's
-      // booking/search reference, which is the identity persisted by the UI.
-      rateOptionId: 'axisrooms|95|2026-08-12|AX-95-20260812',
-      bookingCode: 'AX-95-20260813',
-      searchReference: 'AX-95-20260813',
-      roomType: 'Valley View Double',
-      hotelName: 'CLOUDS VALLEY',
-      totalPrice: 3410,
-    },
-    { itinerary_plan_ID: 10062 },
-    'DVI202607282',
-  );
-
   await assert.rejects(
     () => (service as any).validateLiveSelectionAgainstSnapshot(
       {
@@ -82,8 +60,51 @@ test('live multi-night selection must use the current route rate reference and n
       },
       { itinerary_plan_ID: 10062 },
       'DVI202607282',
+      { itinerary_route_date: new Date('2026-08-13T00:00:00.000Z') },
     ),
-    /stale or unavailable/,
+    (error: any) => error?.response?.code === 'HOTEL_RATE_ROUTE_DATE_MISMATCH',
+  );
+});
+
+test('AxisRooms accepts a current ARI database rate when the snapshot has no matching row', async () => {
+  const prisma: any = {
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: new Date('2026-07-31T15:25:00.000Z') }),
+      findMany: async () => [],
+    },
+    dvi_hotel_room_availability: {
+      findFirst: async () => ({ free: 2 }),
+    },
+    dvi_hotel_room_rate_plan: {
+      findFirst: async () => ({ rateplan_id: 'CP_PLAN' }),
+    },
+    dvi_hotel_occupancy_rate: {
+      findMany: async () => [{ occupancy_rates: { DOUBLE: 6950 } }],
+    },
+  };
+  const service = createService(prisma);
+
+  await (service as any).validateLiveSelectionAgainstSnapshot(
+    {
+      planId: 10062,
+      routeId: 10218,
+      groupType: 1,
+      provider: 'axisrooms',
+      hotelId: 561,
+      canonicalHotelId: 561,
+      hotelCode: '561',
+      roomId: 1706,
+      rateOptionId: 'axisrooms:561:1706:CP_PLAN:2026-08-13',
+      bookingCode: 'AX-561-20260813',
+      searchReference: 'AX-561-20260813',
+      roomType: 'Executive Room',
+      hotelName: 'Fort Munnar',
+      totalPrice: 6950,
+      roomCount: 2,
+    },
+    { itinerary_plan_ID: 10062 },
+    'DVI202607282',
+    { itinerary_route_date: new Date('2026-08-13T00:00:00.000Z') },
   );
 });
 

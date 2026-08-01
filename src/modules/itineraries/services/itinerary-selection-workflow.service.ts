@@ -399,6 +399,20 @@ export class ItinerarySelectionWorkflowService {
   private getLiveRateMetadata(provider?: string) {
     const normalizedProvider = String(provider || '').trim().toLowerCase();
     if (!['tbo', 'axisrooms', 'staah', 'resavenue', 'hobse'].includes(normalizedProvider)) return {};
+    if (normalizedProvider === 'axisrooms') {
+      // AxisRooms availability and price are read from our ARI-synchronised
+      // tables. Booking is still supplier-bookable, but this is not a live
+      // search price and must not be labelled as one in the persisted row.
+      return {
+        hotel_provider: normalizedProvider,
+        hotel_booking_mode: 'LIVE_API',
+        price_source: 'DATABASE',
+        is_live_rate: false,
+        hotel_approval_status: 'NOT_REQUIRED',
+        manual_confirmation_status: 'NOT_STARTED',
+        requires_price_reacceptance: false,
+      };
+    }
     return {
       hotel_provider: normalizedProvider,
       hotel_booking_mode: 'LIVE_API',
@@ -654,6 +668,17 @@ export class ItinerarySelectionWorkflowService {
     const provider = String(data.provider || '').trim().toLowerCase();
     if (!provider || provider === 'offline') return;
 
+    if (provider === 'axisrooms') {
+      this.assertAxisRoomsReferenceMatchesRoute(data, route);
+
+      // AxisRooms is not a live-search snapshot provider in this flow. Its
+      // availability and price are read from the ARI tables populated by the
+      // daily inventory feed. Validate that source directly and do not require
+      // a row in dvi_itinerary_hotel_search_cache, which may be absent or
+      // belong to a different search run.
+      if (await this.isCurrentAxisRoomsDatabaseRate(data, route)) return;
+    }
+
     const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
     if (!cache?.findFirst || !cache?.findMany) return;
 
@@ -744,11 +769,21 @@ export class ItinerarySelectionWorkflowService {
         return true;
     };
     const rateMatches = (candidate: any): boolean => {
-        if (requestedRateIds.length === 0) return false;
-        const candidateRateIds = [candidate.rateOptionId, candidate.optionKey, candidate.searchReference, candidate.bookingCode]
-          .map((value) => String(value || '').trim())
-          .filter(Boolean);
-        return requestedRateIds.some((requestedRate) => candidateRateIds.includes(requestedRate));
+      if (requestedRateIds.length === 0) return false;
+      const candidateRateIds = [candidate.rateOptionId, candidate.optionKey, candidate.searchReference, candidate.bookingCode]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+
+      // rateOptionId/optionKey are the primary identity. Do not let a current
+      // bookingCode or searchReference mask an older rateOptionId from another
+      // night; that was the source of the AxisRooms stale-rate false positive.
+      const requestedPrimary = String(data.rateOptionId || data.optionKey || '').trim();
+      if (requestedPrimary) return candidateRateIds.includes(requestedPrimary);
+
+      const requestedBookingIdentity = [data.searchReference, data.bookingCode]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+      return requestedBookingIdentity.length > 0 && requestedBookingIdentity.every((value) => candidateRateIds.includes(value));
     };
     const matched = parsedRows.find((candidate: any) => {
       if (!propertyMatches(candidate) || !rateMatches(candidate)) return false;
@@ -774,6 +809,114 @@ export class ItinerarySelectionWorkflowService {
     if (requestedTotal > 0 && snapshotTotals.length > 0 && !snapshotTotals.some((snapshotTotal) => Math.abs(requestedTotal - snapshotTotal) <= 0.01)) {
       throw new BadRequestException('The selected hotel price changed. Refresh hotel availability and review the updated rate.');
     }
+  }
+
+  private toDateOnly(value: unknown): string {
+    const parsed = value ? new Date(String(value)) : new Date('invalid');
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+  }
+
+  private axisRoomsReferenceDate(value: unknown): string {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const isoDate = raw.match(/(20\d{2})[-](\d{2})[-](\d{2})/);
+    if (isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+    const compactDate = raw.match(/(?:^|[-|:])((20\d{2})(\d{2})(\d{2}))(?:$|[-|:])/i);
+    return compactDate ? `${compactDate[2]}-${compactDate[3]}-${compactDate[4]}` : '';
+  }
+
+  private parseAxisRoomsRateReference(data: any): {
+    hotelId: number;
+    roomId: number;
+    rateplanId: string;
+    date: string;
+  } {
+    const references = [data?.rateOptionId, data?.optionKey, data?.searchReference, data?.bookingCode]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    let hotelId = Number(data?.canonicalHotelId ?? data?.hotelId ?? 0) || 0;
+    let roomId = Number(data?.roomId || 0) || 0;
+    let rateplanId = String(data?.rateId || '').trim();
+    let date = '';
+
+    for (const reference of references) {
+      const rateOption = reference.match(/^axisrooms:(\d+):(\d+):([^:|]+):(\d{4}-\d{2}-\d{2})$/i);
+      if (rateOption) {
+        hotelId = Number(rateOption[1]) || hotelId;
+        roomId = Number(rateOption[2]) || roomId;
+        rateplanId = rateOption[3] || rateplanId;
+        date = rateOption[4];
+        break;
+      }
+      const optionRate = reference.match(/axisrooms[:|](\d+)[:|](\d+)[:|]([^:|]+)[:|](\d{4}-\d{2}-\d{2})/i);
+      if (optionRate) {
+        hotelId = Number(optionRate[1]) || hotelId;
+        roomId = Number(optionRate[2]) || roomId;
+        rateplanId = optionRate[3] || rateplanId;
+        date = optionRate[4];
+      }
+      const booking = reference.match(/^AX[-:](\d+)[-:](\d{8})$/i);
+      if (booking) {
+        hotelId = Number(booking[1]) || hotelId;
+        date = `${booking[2].slice(0, 4)}-${booking[2].slice(4, 6)}-${booking[2].slice(6, 8)}`;
+      }
+      date = date || this.axisRoomsReferenceDate(reference);
+    }
+
+    return { hotelId, roomId, rateplanId, date };
+  }
+
+  private assertAxisRoomsReferenceMatchesRoute(data: any, route?: any): void {
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    if (!routeDate) return;
+    const references = [data?.rateOptionId, data?.optionKey, data?.searchReference, data?.bookingCode]
+      .map((value) => this.axisRoomsReferenceDate(value))
+      .filter(Boolean);
+    const uniqueReferenceDates = Array.from(new Set(references));
+    if (uniqueReferenceDates.length > 1 || (uniqueReferenceDates.length === 1 && uniqueReferenceDates[0] !== routeDate)) {
+      throw new BadRequestException({
+        message: `The selected AxisRooms rate belongs to ${uniqueReferenceDates[0] || 'another date'}, but this itinerary route is ${routeDate}.`,
+        code: 'HOTEL_RATE_ROUTE_DATE_MISMATCH',
+        provider: 'axisrooms',
+        routeId: Number(data?.routeId || 0),
+        routeDate,
+        rateDate: uniqueReferenceDates[0] || null,
+      });
+    }
+  }
+
+  private async isCurrentAxisRoomsDatabaseRate(data: any, route?: any): Promise<boolean> {
+    const identity = this.parseAxisRoomsRateReference(data);
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    if (!identity.hotelId || !identity.roomId || !identity.rateplanId || !routeDate || identity.date !== routeDate) return false;
+
+    const availabilityModel = (this.prisma as any).dvi_hotel_room_availability;
+    const ratePlanModel = (this.prisma as any).dvi_hotel_room_rate_plan;
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!availabilityModel?.findFirst || !ratePlanModel?.findFirst || !occupancyModel?.findMany) return false;
+
+    const date = new Date(`${routeDate}T00:00:00.000Z`);
+    const requiredRooms = Math.max(Number(data?.roomCount || 1), 1);
+    const [availability, ratePlan, occupancyRows] = await Promise.all([
+      availabilityModel.findFirst({
+        where: { hotel_id: identity.hotelId, room_id: identity.roomId, start_date: { lte: date }, end_date: { gte: date } },
+        orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+        select: { free: true },
+      }),
+      ratePlanModel.findFirst({
+        where: { hotel_id: identity.hotelId, room_id: identity.roomId, rateplan_id: identity.rateplanId, axisrooms_room_id: { not: null }, deleted: 0, status: 1 },
+        select: { rateplan_id: true },
+      }),
+      occupancyModel.findMany({
+        where: { hotel_id: identity.hotelId, room_id: identity.roomId, rateplan_id: identity.rateplanId, start_date: { lte: date }, end_date: { gte: date } },
+        select: { occupancy_rates: true },
+      }),
+    ]);
+    if (!availability || Number(availability.free || 0) < requiredRooms || !ratePlan) return false;
+    return occupancyRows.some((row: any) => {
+      const values = row?.occupancy_rates && typeof row.occupancy_rates === 'object' ? Object.values(row.occupancy_rates) : [];
+      return values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+    });
   }
 
   private async getVehicleRateAvailabilityForEligible(
