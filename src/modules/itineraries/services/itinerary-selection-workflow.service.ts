@@ -9,6 +9,12 @@ import { OfflineHotelCatalogService } from './offline-hotel-catalog.service';
 import { filterActiveVendorCandidateRows } from '../utils/active-vendor-candidate.util';
 import { getVehicleRateAvailability } from '../utils/vehicle-rate-availability.util';
 import { hotelSelectionKey, hotelSelectionKeyFromRow } from '../utils/hotel-selection-identity.util';
+import {
+  getCanonicalMealPlanFlags,
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealText,
+  inferCanonicalHotelRatePlanCodeFromMealFlags,
+} from '../../hotels/hotel-rate-plans';
 
 @Injectable()
 export class ItinerarySelectionWorkflowService {
@@ -232,9 +238,26 @@ export class ItinerarySelectionWorkflowService {
     const persistedHotelCode =
       String(data.hotelCode || existingHotelDetails?.hotel_code || '').trim() || null;
 
-    const mealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
-    const mealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
-    const mealDinner = data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0;
+    const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
+    const rawMealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
+    const rawMealDinner = data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0;
+    const canonicalMealPlanCode =
+      inferCanonicalHotelRatePlanCode(data.mealPlanCode) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(data.mealPlanCode) ||
+      (rawMealBreakfast || rawMealLunch || rawMealDinner
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(rawMealBreakfast, rawMealLunch, rawMealDinner)
+        : null);
+    const canonicalMealFlags = canonicalMealPlanCode
+      ? getCanonicalMealPlanFlags(canonicalMealPlanCode)
+      : {
+          all: false,
+          breakfast: Boolean(rawMealBreakfast),
+          lunch: Boolean(rawMealLunch),
+          dinner: Boolean(rawMealDinner),
+        };
+    const mealBreakfast = canonicalMealFlags.breakfast ? 1 : 0;
+    const mealLunch = canonicalMealFlags.lunch ? 1 : 0;
+    const mealDinner = canonicalMealFlags.dinner ? 1 : 0;
 
     let hotelDetailsId: number;
 
@@ -264,7 +287,7 @@ export class ItinerarySelectionWorkflowService {
             hotelName: data.hotelName || null,
             category: data.category || null,
             roomType: data.roomType || null,
-            mealPlan: data.mealPlanCode || null,
+            mealPlan: canonicalMealPlanCode || null,
             bookingCode: data.bookingCode || null,
             searchReference: data.searchReference || null,
             roomId: data.roomId || null,
@@ -322,7 +345,7 @@ export class ItinerarySelectionWorkflowService {
             hotelName: data.hotelName || null,
             category: data.category || null,
             roomType: data.roomType || null,
-            mealPlan: data.mealPlanCode || null,
+            mealPlan: canonicalMealPlanCode || null,
             bookingCode: data.bookingCode || null,
             searchReference: data.searchReference || null,
             roomId: data.roomId || null,
@@ -757,6 +780,27 @@ export class ItinerarySelectionWorkflowService {
         try { return typeof row.full_payload === 'string' ? JSON.parse(row.full_payload) : row.full_payload; } catch { return null; }
       })
       .filter(Boolean);
+    const candidateRows = parsedRows.flatMap((row: any) => {
+      const rateOptions = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
+      if (rateOptions.length === 0) return [row];
+      return [row, ...rateOptions.map((option: any) => ({
+        ...row,
+        ...option,
+        provider: option.provider || row.provider,
+        canonicalHotelId: row.canonicalHotelId ?? option.canonicalHotelId,
+        hotelId: row.hotelId ?? option.hotelId,
+        hotelCode: row.hotelCode || row.providerHotelCode || option.hotelCode,
+        hotelName: row.hotelName || option.hotelName,
+        roomType: option.roomType || option.roomTypeName || row.roomType,
+        mealPlan: option.mealPlan || option.mealPlanCode || option.ratePlanName || row.mealPlan,
+        bookingCode: option.bookingCode || row.bookingCode,
+        searchReference: option.searchReference || row.searchReference,
+        rateOptionId: option.rateOptionId || option.rate_option_id || row.rateOptionId,
+        optionKey: option.optionKey || option.option_key || row.optionKey,
+        roomId: option.roomId || option.room_id || row.roomId,
+        rateId: option.rateId || option.rate_id || option.rateOptionId || row.rateId,
+      }))];
+    });
     const propertyMatches = (candidate: any): boolean => {
         if (String(candidate.provider || '').trim().toLowerCase() !== provider) return false;
         const candidateCanonicalId = Number(candidate.canonicalHotelId ?? candidate.hotelId ?? candidate.hotel_id ?? 0);
@@ -785,7 +829,7 @@ export class ItinerarySelectionWorkflowService {
         .filter(Boolean);
       return requestedBookingIdentity.length > 0 && requestedBookingIdentity.every((value) => candidateRateIds.includes(value));
     };
-    const matched = parsedRows.find((candidate: any) => {
+    const matched = candidateRows.find((candidate: any) => {
       if (!propertyMatches(candidate) || !rateMatches(candidate)) return false;
       const candidateRoomType = String(candidate.roomType || candidate.room_type || '').trim().toLowerCase();
       const candidateHotelName = String(candidate.hotelName || candidate.hotel_name || '').trim().toLowerCase();

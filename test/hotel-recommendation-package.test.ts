@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HotelRecommendationPackageService, resolveHotelRecommendationAlgorithm } from '../src/modules/itineraries/services/hotel-recommendation-package.service';
 import { HotelMealPlanPolicyService } from '../src/modules/itineraries/services/hotel-meal-plan-policy.service';
-import { inferCanonicalHotelRatePlanCodeFromMealText } from '../src/modules/hotels/hotel-rate-plans';
+import {
+  getCanonicalMealPlanFlags,
+  inferCanonicalHotelRatePlanCodeFromMealFlags,
+  inferCanonicalHotelRatePlanCodeFromMealText,
+} from '../src/modules/hotels/hotel-rate-plans';
 
 const option = (hotelName: string, price: number, mealPlan = 'CP', extra: Record<string, unknown> = {}) => ({
   provider: 'tbo',
@@ -243,6 +247,30 @@ test('unknown meal text is not silently treated as EP', () => {
     preferredMealPlanCode: 'EP',
   });
   assert.equal(packages[0].complete, false);
+});
+
+test('meal-plan flags preserve the canonical CP/MAP/AP contract', () => {
+  assert.deepEqual(getCanonicalMealPlanFlags('CP'), {
+    all: false,
+    breakfast: true,
+    lunch: false,
+    dinner: false,
+  });
+  assert.deepEqual(getCanonicalMealPlanFlags('MAP'), {
+    all: false,
+    breakfast: true,
+    lunch: false,
+    dinner: true,
+  });
+  assert.deepEqual(getCanonicalMealPlanFlags('AP'), {
+    all: true,
+    breakfast: true,
+    lunch: true,
+    dinner: true,
+  });
+  assert.equal(inferCanonicalHotelRatePlanCodeFromMealFlags(1, 1, 0), 'MAP');
+  assert.equal(inferCanonicalHotelRatePlanCodeFromMealFlags(1, 0, 1), 'MAP');
+  assert.equal(inferCanonicalHotelRatePlanCodeFromMealFlags(1, 1, 1), 'AP');
 });
 
 test('houseboat policy requires AP', () => {

@@ -517,13 +517,52 @@ export class ItineraryDetailsService {
   }): Promise<HotelCostOverride> {
     const selectedEntries = this.normalizeHotelSelectionEntries(params.selections)
       .filter((selection: any) => selection && !selection.__coveredByMultiNight);
-    const availableRows = await this.hotelAvailabilitySnapshotService.getActiveRows(params.quoteId);
-    if (!availableRows) {
+    const snapshotRows = await this.hotelAvailabilitySnapshotService.getActiveRows(params.quoteId);
+    if (!snapshotRows) {
       throw new BadRequestException({
         message: 'No persisted hotel availability snapshot exists. Check Availability before previewing pricing.',
         code: 'HOTEL_AVAILABILITY_SNAPSHOT_MISSING',
       });
     }
+    // A cached supplier hotel may contain several rate/meal-plan options in
+    // `rateOptions`, while the parent row represents only the supplier's
+    // default rate. Selection requests carry the nested rate identity (for
+    // example MAP), so preview must compare against those concrete options.
+    // Keep the parent row as well for legacy snapshots that do not have a
+    // nested option list.
+    const availableRows = snapshotRows.flatMap((row: any) => {
+      const rateOptions = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
+      if (rateOptions.length === 0) return [row];
+
+      return [row, ...rateOptions.map((option: any) => ({
+        ...row,
+        ...option,
+        itineraryRouteId: row.itineraryRouteId ?? row.routeId,
+        routeId: row.routeId ?? row.itineraryRouteId,
+        date: option.date || option.checkInDate || row.date || row.checkInDate,
+        checkInDate: option.checkInDate || row.checkInDate || row.date,
+        checkOutDate: option.checkOutDate || row.checkOutDate,
+        provider: option.provider || row.provider,
+        hotelCode: row.hotelCode || row.providerHotelCode || option.hotelCode,
+        hotelId: row.hotelId ?? option.hotelId,
+        canonicalHotelId: row.canonicalHotelId ?? option.canonicalHotelId,
+        hotelName: row.hotelName || option.hotelName,
+        roomType: option.roomType || option.roomTypeName || row.roomType,
+        mealPlan: option.mealPlan || option.mealPlanCode || option.ratePlanName || row.mealPlan,
+        bookingCode: option.bookingCode || row.bookingCode,
+        searchReference: option.searchReference || row.searchReference,
+        rateOptionId: option.rateOptionId || option.rate_option_id || row.rateOptionId,
+        optionKey: option.optionKey || option.option_key || row.optionKey,
+        roomId: option.roomId || option.room_id || row.roomId,
+        rateId: option.rateId || option.rate_id || option.rateOptionId || row.rateId,
+        baseHotelCost: option.baseHotelCost ?? option.totalStayPrice ?? option.totalPrice ?? option.price ?? row.baseHotelCost,
+        totalHotelCost: option.totalHotelCost ?? option.totalStayPrice ?? option.totalPrice ?? option.price ?? row.totalHotelCost,
+        totalHotelTaxAmount: option.totalHotelTaxAmount ?? option.totalTax ?? row.totalHotelTaxAmount,
+        hotelRoomGstAmount: option.hotelRoomGstAmount ?? row.hotelRoomGstAmount,
+        hotelMealPlanCost: option.hotelMealPlanCost ?? row.hotelMealPlanCost,
+        hotelMealPlanGstAmount: option.hotelMealPlanGstAmount ?? row.hotelMealPlanGstAmount,
+      }))];
+    });
     const selectedRows: any[] = [];
     const breakdown: NonNullable<CostBreakdownDto['hotelRateBreakdown']> = [];
     const usedRouteIds = new Set<number>();

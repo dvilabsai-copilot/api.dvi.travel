@@ -109,10 +109,43 @@ export function inferCanonicalHotelRatePlanCodeFromMealFlags(
 
   if (normalizedBreakfast === 0 && normalizedLunch === 0 && normalizedDinner === 0) return 'EP';
   if (normalizedBreakfast === 1 && normalizedLunch === 0 && normalizedDinner === 0) return 'CP';
-  if (normalizedBreakfast === 1 && normalizedLunch === 0 && normalizedDinner === 1) return 'MAP';
   if (normalizedBreakfast === 1 && normalizedLunch === 1 && normalizedDinner === 1) return 'AP';
+  // MAP is breakfast plus exactly one major meal. The legacy flags can
+  // represent either lunch or dinner, so accept either form here. AP must be
+  // checked first because it contains both major meals.
+  if (
+    normalizedBreakfast === 1 &&
+    ((normalizedLunch === 1 && normalizedDinner === 0) ||
+      (normalizedLunch === 0 && normalizedDinner === 1))
+  ) return 'MAP';
 
   return null;
+}
+
+export type CanonicalMealPlanFlags = {
+  all: boolean;
+  breakfast: boolean;
+  lunch: boolean;
+  dinner: boolean;
+};
+
+/**
+ * Converts a supplier/UI meal-plan value into the canonical package flags.
+ * `meal_plan_code` remains the authoritative identity; these booleans are
+ * retained only for legacy pricing/database compatibility.
+ */
+export function getCanonicalMealPlanFlags(value?: string | null): CanonicalMealPlanFlags {
+  const code =
+    inferCanonicalHotelRatePlanCode(value) ||
+    inferCanonicalHotelRatePlanCodeFromMealText(value);
+  const definition = code ? HOTEL_RATE_PLAN_BY_CODE.get(code) : null;
+
+  return {
+    all: code === 'AP',
+    breakfast: Boolean(definition?.includesBreakfast),
+    lunch: Boolean(definition?.includesLunch),
+    dinner: Boolean(definition?.includesDinner),
+  };
 }
 
 export function inferCanonicalHotelRatePlanCodeFromMealText(

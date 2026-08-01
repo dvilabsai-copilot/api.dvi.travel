@@ -792,7 +792,7 @@ test('missing auto selection is replaced in place and reports AUTO_SELECTION_CHA
   assert.equal(rooms.filter((row) => row.deleted === 0 && row.status === 1).length, 1);
 });
 
-test('live reconciliation never auto-selects offline inventory', async () => {
+test('live reconciliation falls back to offline inventory only when live is absent', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -822,7 +822,53 @@ test('live reconciliation never auto-selects offline inventory', async () => {
     isSelectable: true,
   }], 'live-run', 7);
 
-  assert.equal(createdSelections.length, 0);
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_provider, 'offline');
+});
+
+test('live inventory wins over offline fallback for the same stay/group', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 902 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 987,
+    hotelCode: 'OFFLINE-987',
+    hotelName: 'Offline Hotel',
+    totalHotelCost: 1200,
+    isBookable: true,
+    isSelectable: true,
+  }, {
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'staah',
+    hotelId: 988,
+    hotelCode: 'LIVE-988',
+    hotelName: 'Live Hotel',
+    totalHotelCost: 1800,
+    isBookable: true,
+    isSelectable: true,
+  }], 'live-run-with-offline', 7);
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_provider, 'staah');
 });
 
 test('explicit offline fetch can auto-select only its requested stay group', async () => {

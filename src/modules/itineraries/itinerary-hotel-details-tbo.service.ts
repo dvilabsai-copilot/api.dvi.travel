@@ -43,6 +43,21 @@ import {
  */
 @Injectable()
 export class ItineraryHotelDetailsTboService {
+  private availabilityOptionKey(hotel: any): string {
+    const provider = String(hotel?.provider || '').trim().toLowerCase();
+    const hotelCode = String(hotel?.hotelCode || hotel?.providerHotelCode || hotel?.hotelId || '').trim();
+    const rateIdentity = String(
+      hotel?.rateOptionId || hotel?.searchReference || hotel?.bookingCode || '',
+    ).trim().toLowerCase();
+    return [
+      provider,
+      hotelCode,
+      rateIdentity,
+      String(hotel?.roomType || hotel?.roomTypeName || '').trim().toLowerCase(),
+      String(hotel?.mealPlan || '').trim().toLowerCase(),
+    ].join('|');
+  }
+
   private normalizeExactRoomCode(value: unknown): string {
     return String(value || '').trim().toUpperCase();
   }
@@ -307,6 +322,47 @@ export class ItineraryHotelDetailsTboService {
     hotel: HotelSearchResult,
     preferredMealPlanCode: string,
   ): HotelSearchResult {
+    // TBO normally returns one display row with all room/rate variants under
+    // `rateOptions`.  The first variant is not guaranteed to be the package's
+    // preferred meal plan (it is often EP/UNKNOWN), so changing only the
+    // display label leaves the selected rate and booking reference pointing at
+    // the wrong meal plan.  Promote the matching rate option to the primary
+    // hotel row while retaining the complete variant list for UI filtering.
+    const rateOptions = Array.isArray((hotel as any).rateOptions)
+      ? (hotel as any).rateOptions
+      : [];
+    const matchedRateOption = rateOptions.find((rateOption: any) => {
+      const candidates = new Set<string>();
+      this.collectMealPlanValue(rateOption?.mealPlan, candidates);
+      this.collectMealPlanValue(rateOption?.mealPlanCode, candidates);
+      this.collectMealPlanValue(rateOption?.ratePlanName, candidates);
+      return candidates.has(preferredMealPlanCode);
+    });
+
+    if (matchedRateOption) {
+      return {
+        ...hotel,
+        rateOptionId: matchedRateOption.rateOptionId || hotel.rateOptionId,
+        roomTypeId: matchedRateOption.roomTypeId || (hotel as any).roomTypeId,
+        roomType: matchedRateOption.roomType || hotel.roomType,
+        mealPlan: preferredMealPlanCode,
+        bookingCode: matchedRateOption.bookingCode || hotel.bookingCode,
+        searchReference: matchedRateOption.searchReference || hotel.searchReference,
+        price: Number(matchedRateOption.price ?? hotel.price ?? 0),
+        pricePerNight: Number(matchedRateOption.pricePerNight ?? hotel.pricePerNight ?? 0),
+        totalStayPrice: Number(
+          matchedRateOption.totalStayPrice ??
+            matchedRateOption.totalPrice ??
+            hotel.totalStayPrice ??
+            0,
+        ),
+        rateOptions: [
+          matchedRateOption,
+          ...rateOptions.filter((rateOption: any) => rateOption !== matchedRateOption),
+        ],
+      };
+    }
+
     const roomTypes = Array.isArray(hotel.roomTypes) ? hotel.roomTypes : [];
     const matchedRoomType = roomTypes.find((roomType) => {
       const roomCandidates = new Set<string>();
@@ -1258,6 +1314,7 @@ if (hotelMasterId) {
     groupType?: number,
     itineraryRouteId?: number,
     includeOffline = true,
+    includeAllMealPlans = false,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
  this.logger.log(`\n TBO HOTEL PACKAGES: Fetching dynamic packages for quote: ${quoteId}`);
@@ -1446,9 +1503,9 @@ this.logger.log(
       );
       axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
         const existingHotels = hotelsByRoute.get(routeId) || [];
-        const hotelStrs = existingHotels.map((h) => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
+        const hotelStrs = existingHotels.map((h) => this.availabilityOptionKey(h));
         const newHotels = axisroomsHotels.filter(
-          (h) => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`),
+          (h) => !hotelStrs.includes(this.availabilityOptionKey(h)),
         );
         if (newHotels.length > 0) {
  this.logger.log(` Added ${newHotels.length} new AxisRooms hotel(s) to route ${routeId}`);
@@ -1595,9 +1652,9 @@ this.logger.log(
         }
         axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
-          const hotelStrs = existingHotels.map((h) => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
+          const hotelStrs = existingHotels.map((h) => this.availabilityOptionKey(h));
           const newHotels = axisroomsHotels.filter(
-            (h) => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`),
+            (h) => !hotelStrs.includes(this.availabilityOptionKey(h)),
           );
           if (newHotels.length > 0) {
  this.logger.log(` Added ${newHotels.length} new AxisRooms hotel(s) to route ${routeId}`);
@@ -1665,7 +1722,7 @@ this.logger.log(
   await this.applyPlanPreferenceFilters(
     hotelsByRoute,
     preferredCategories,
-    preferredMealPlanCode,
+    includeAllMealPlans ? null : preferredMealPlanCode,
     preferredFacilities,
   );
 
@@ -2957,106 +3014,78 @@ this.logger.log(
  continue; // No valid rates found for any meal plan
         }
 
-        const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
-        const preferredDef = preferredCode
-          ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any)
-          : undefined;
-        const preferredRatePlanCandidates = [
-          String(preferredDef?.defaultRateplanId || '').trim(),
-          String(preferredDef?.externalRateplanId || '').trim(),
-        ].filter((x) => !!x);
-
-        let selectedRateplanId = '';
-        let selectedRate = Number.POSITIVE_INFINITY;
-        let selectedRoomId = 0;
-
-        for (const candidate of preferredRatePlanCandidates) {
-          const hit = ratesByPlan.get(candidate);
-          if (hit) {
-            selectedRateplanId = candidate;
-            selectedRate = Number(hit.rate);
-            selectedRoomId = Number(hit.roomId);
-            break;
-          }
-        }
-
- // Fallback: if preferred meal plan isn't present for this hotel, pick the lowest available rate plan.
-        if (!selectedRateplanId) {
-          for (const [rpid, hit] of ratesByPlan.entries()) {
-            const rateVal = Number(hit.rate);
-            if (Number.isFinite(rateVal) && rateVal > 0 && rateVal < selectedRate) {
-              selectedRateplanId = rpid;
-              selectedRate = rateVal;
-              selectedRoomId = Number(hit.roomId);
-            }
-          }
-        }
-
-        if (!selectedRateplanId || !Number.isFinite(selectedRate) || selectedRate <= 0 || !selectedRoomId) {
-          continue;
-        }
-
-        const rate = selectedRate;
-
-        const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
         const hotelAmenities = Array.from(new Set(amenitiesByHotel.get(hid) || []));
-        const rateMeta = ratePlanMetaByHotelRoom.get(`${hid}|${selectedRoomId}`) || {
-
-          rateConditions: [],
-          inclusions: [],
-        };
-        const rateConditions = Array.from(new Set(rateMeta.rateConditions));
-        const inclusions = Array.from(new Set(rateMeta.inclusions));
         const cancelPolicyText = String((hotel as any).hotel_cancel_policy || '').trim();
 
-        const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
-
-        axisroomsRouteHotels.push({
-          provider: 'axisrooms',
-          providerDisplayName: 'AxisRooms',
-          canonicalHotelId: hid,
-          providerHotelCode: String((hotel as any).axisrooms_property_id || hid),
-          rateOptionId: `axisrooms:${hid}:${selectedRoomId}:${selectedRateplanId}:${dateOnly.toISOString().slice(0, 10)}`,
-          // AxisRooms availability/rates are read from our ARI-synchronised
-          // database. Booking remains supplier-bookable, but the displayed
-          // price is not fetched from a live search request.
-          bookingMode: 'LIVE_API',
-          priceSource: 'DATABASE',
-          isLiveRate: false,
-          isLiveBookable: true,
-          isSelectable: true,
-          requiresHotelApproval: false,
-          approvalStatus: 'NOT_REQUIRED',
-          manualConfirmationStatus: 'NOT_STARTED',
-          availabilityStatus: 'AVAILABLE',
-          hotelCode: String(hid),
-          hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
-          cityCode: String((hotel as any).hotel_city || destinationRaw),
-          address: String((hotel as any).hotel_address || ''),
-          rating: Number((hotel as any).hotel_category || 0),
-          facilities: hotelAmenities,
-          amenities: hotelAmenities,
-          inclusions,
-          rateConditions,
-          cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
-          images: [],
-          price: Number(rate),
-          currency: 'INR',
-          roomTypes: [
-            {
-              roomCode: String(selectedRoomId),
-              roomName,
-              bedType: '',
-              capacity: 0,
-              price: Number(rate),
-              cancellationPolicy: cancelPolicyText,
-            },
-          ],
-          roomType: roomName,
-          mealPlan: selectedMealPlan,
-          searchReference: `AX-${hid}-${dateStamp}`,
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        // ARI contains independent rates for each rate plan. Persist every
+        // plan as a separate option so the UI can filter EP/CP/MAP/AP without
+        // issuing another supplier request or losing the other rate plans.
+        const sortedRates = Array.from(ratesByPlan.entries()).sort(([, left], [, right]) => {
+          return Number(left.rate) - Number(right.rate);
         });
+        for (const [selectedRateplanId, rateInfo] of sortedRates) {
+          const selectedRoomId = Number(rateInfo.roomId);
+          const rate = Number(rateInfo.rate);
+          if (!selectedRateplanId || !Number.isFinite(rate) || rate <= 0 || !selectedRoomId) continue;
+
+          const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
+          const rateMeta = ratePlanMetaByHotelRoom.get(`${hid}|${selectedRoomId}`) || {
+            rateConditions: [],
+            inclusions: [],
+          };
+          const rateConditions = Array.from(new Set(rateMeta.rateConditions));
+          const inclusions = Array.from(new Set(rateMeta.inclusions));
+          const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
+          const rateIdentity = `${hid}:${selectedRoomId}:${selectedRateplanId}:${dateOnly.toISOString().slice(0, 10)}`;
+
+          axisroomsRouteHotels.push({
+            provider: 'axisrooms',
+            providerDisplayName: 'AxisRooms',
+            canonicalHotelId: hid,
+            providerHotelCode: String((hotel as any).axisrooms_property_id || hid),
+            rateOptionId: `axisrooms:${rateIdentity}`,
+            // AxisRooms availability/rates are read from our ARI-synchronised
+            // database. Booking remains supplier-bookable, but the displayed
+            // price is not fetched from a live search request.
+            bookingMode: 'LIVE_API',
+            priceSource: 'DATABASE',
+            isLiveRate: false,
+            isLiveBookable: true,
+            isSelectable: true,
+            requiresHotelApproval: false,
+            approvalStatus: 'NOT_REQUIRED',
+            manualConfirmationStatus: 'NOT_STARTED',
+            availabilityStatus: 'AVAILABLE',
+            hotelCode: String(hid),
+            hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
+            cityCode: String((hotel as any).hotel_city || destinationRaw),
+            address: String((hotel as any).hotel_address || ''),
+            rating: Number((hotel as any).hotel_category || 0),
+            facilities: hotelAmenities,
+            amenities: hotelAmenities,
+            inclusions,
+            rateConditions,
+            cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
+            images: [],
+            price: rate,
+            currency: 'INR',
+            roomTypes: [
+              {
+                roomCode: String(selectedRoomId),
+                roomName,
+                bedType: '',
+                capacity: 0,
+                price: rate,
+                cancellationPolicy: cancelPolicyText,
+              },
+            ],
+            roomType: roomName,
+            mealPlan: selectedMealPlan,
+            bookingCode: `AX-${rateIdentity}`,
+            searchReference: `AX-${rateIdentity}`,
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+          });
+        }
       }
 
       hotelsByRoute.set(routeId, axisroomsRouteHotels);
@@ -4222,8 +4251,25 @@ this.logger.log(
     const decorateLiveSelection = (row: any, selection: any): any => {
       const snapshot = parseHotelSelectionSnapshot(selection);
       const selectionOrigin = selectionOriginFromRow(selection);
+      const display = hotelDisplaySnapshot({ ...selection, ...snapshot });
+      const selectedRoomType =
+        snapshot.roomType ||
+        (snapshot as any).roomTypeName ||
+        (snapshot as any).room_type_title ||
+        selection.room_type ||
+        row.roomType;
+      const selectedMealPlan = snapshot.mealPlan || selection.meal_plan || row.mealPlan;
       return {
         ...row,
+        hotelName: display.hotelName || row.hotelName,
+        category: display.category || row.category,
+        hotelCode: display.hotelCode || row.hotelCode,
+        roomType: selectedRoomType,
+        mealPlan: selectedMealPlan,
+        pricePerNight: Number(display.pricePerNight || row.pricePerNight || 0),
+        totalHotelCost: Number(display.totalPrice || row.totalHotelCost || 0),
+        totalStayPrice: Number(display.totalPrice || row.totalStayPrice || 0),
+        selectedRoomType: selectedRoomType,
         isSelected: true,
         selectionOrigin,
         selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
@@ -4239,12 +4285,129 @@ this.logger.log(
         selectedPriceSnapshot: selection.selected_price_snapshot || null,
         selectionStatus: 'AVAILABLE',
         selection: {
-          ...hotelDisplaySnapshot({ ...selection, ...snapshot }),
+          ...display,
+          roomType: selectedRoomType,
+          mealPlan: selectedMealPlan,
           status: 'AVAILABLE',
           selectionOrigin,
           selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
         },
       };
+    };
+
+    const selectionPropertyMatchesRow = (selection: any, row: any): boolean => {
+      const snapshot = parseHotelSelectionSnapshot(selection);
+      const selectedProvider = cleanIdentity(snapshot.provider || selection?.hotel_provider);
+      const rowProvider = cleanIdentity(row?.provider);
+      if (selectedProvider && rowProvider && selectedProvider !== rowProvider) return false;
+
+      const selectedCanonicalId = cleanIdentity(snapshot.hotelId || selection?.hotel_id);
+      const rowCanonicalId = cleanIdentity(row?.canonicalHotelId || row?.hotelId);
+      if (selectedCanonicalId && rowCanonicalId && selectedCanonicalId === rowCanonicalId) return true;
+
+      const selectedCode = cleanIdentity(snapshot.hotelCode || selection?.hotel_code || selection?.hotel_id);
+      const rowCode = cleanIdentity(row?.hotelCode || row?.providerHotelCode || row?.hotelId);
+      if (selectedCode && rowCode && selectedCode === rowCode) return true;
+
+      const selectedName = cleanIdentity((snapshot as any).hotelName || selection?.hotel_name);
+      const rowName = cleanIdentity(row?.hotelName);
+      return Boolean(selectedName && rowName && selectedName === rowName);
+    };
+
+    const buildPersistedSelectionRow = (selection: any, route: any, groupType: number): any => {
+      const snapshot = parseHotelSelectionSnapshot(selection) as any;
+      const provider = cleanIdentity(snapshot.provider || selection?.hotel_provider || 'external') || 'external';
+      const hotelId = Number(snapshot.hotelId || selection?.hotel_id || 0) || 0;
+      const hotelCode = String(snapshot.hotelCode || selection?.hotel_code || hotelId || '').trim();
+      const hotelName = String(snapshot.hotelName || selection?.hotel_name || 'Selected hotel').trim();
+      const roomType = String(
+        snapshot.roomType || snapshot.roomTypeName || snapshot.room_type_title || selection?.room_type || '',
+      ).trim();
+      const mealPlan = String(snapshot.mealPlan || selection?.meal_plan || '').trim();
+      const totalPrice = Number(
+        snapshot.totalPrice || snapshot.totalStayPrice || selection?.selected_total_price || selection?.total_hotel_cost || 0,
+      ) || 0;
+      const pricePerNight = Number(
+        snapshot.pricePerNight || selection?.selected_price_per_night || 0,
+      ) || 0;
+      const rateOptionId = String(
+        snapshot.rateOptionId || selection?.selected_rate_option_id || snapshot.searchReference || snapshot.bookingCode || '',
+      ).trim();
+      const dateLabel = toDateOnly(route?.itinerary_route_date) || '';
+      const selectedRow = {
+        groupType,
+        itineraryRouteId: Number(selection?.itinerary_route_id || route?.itinerary_route_ID || 0),
+        routeIds: [Number(selection?.itinerary_route_id || route?.itinerary_route_ID || 0)],
+        stayKey: `persisted-${Number(selection?.itinerary_route_id || route?.itinerary_route_ID || 0)}-${groupType}`,
+        day: `Day ${routes.indexOf(route) + 1} | ${dateLabel}`,
+        destination: route?.next_visiting_location || route?.location_name || '',
+        hotelId,
+        canonicalHotelId: hotelId || null,
+        hotelCode,
+        provider,
+        providerDisplayName: provider === 'offline' ? 'Offline' : provider === 'axisrooms' ? 'AxisRooms' : provider === 'tbo' ? 'VSR' : undefined,
+        providerHotelCode: hotelCode,
+        hotelName,
+        category: Number(selection?.hotel_category_id || snapshot.category || 0) || 0,
+        roomType,
+        mealPlan,
+        totalHotelCost: totalPrice,
+        totalStayPrice: totalPrice,
+        pricePerNight,
+        selectedRoomType: roomType,
+        numberOfNights: noOfNights,
+        bookingCode: snapshot.bookingCode || undefined,
+        searchReference: snapshot.searchReference || undefined,
+        rateOptionId: rateOptionId || undefined,
+        rateOptions: [{
+          rateOptionId: rateOptionId || undefined,
+          canonicalHotelId: hotelId || null,
+          provider,
+          providerHotelCode: hotelCode,
+          roomId: snapshot.roomId,
+          roomType,
+          mealPlan,
+          bookingCode: snapshot.bookingCode || undefined,
+          searchReference: snapshot.searchReference || undefined,
+          pricePerNight,
+          totalStayPrice: totalPrice,
+          totalPrice,
+          currency: snapshot.currency || selection?.selected_currency || 'INR',
+          isSelectable: true,
+          isLiveRate: provider !== 'offline' && provider !== 'axisrooms',
+        }],
+        isSelected: true,
+        selectionOrigin: selectionOriginFromRow(selection),
+        selectionId: Number(selection?.itinerary_plan_hotel_details_ID || 0),
+        itineraryPlanHotelDetailsId: Number(selection?.itinerary_plan_hotel_details_ID || 0),
+        selectedRateOptionId: selection?.selected_rate_option_id || rateOptionId || undefined,
+        selectedPricePerNight: selection?.selected_price_per_night,
+        selectedTotalPrice: selection?.selected_total_price,
+        selectedCurrency: selection?.selected_currency,
+        selectedPriceSnapshot: selection?.selected_price_snapshot || null,
+        selectionStatus: 'AVAILABLE',
+        isSelectable: true,
+        isBookable: provider !== 'offline',
+        isLiveBookable: provider !== 'offline' && provider !== 'axisrooms',
+        externalStay: provider === 'external',
+        availabilityStatus: 'AVAILABLE',
+        availabilityState: 'AVAILABLE',
+        bookingMode: selection?.hotel_booking_mode || (provider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
+        priceSource: selection?.price_source || (provider === 'offline' || provider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
+        selection: {
+          ...hotelDisplaySnapshot({ ...selection, ...snapshot }),
+          hotelName,
+          hotelCode,
+          roomType,
+          mealPlan,
+          totalPrice,
+          pricePerNight,
+          status: 'AVAILABLE',
+          selectionOrigin: selectionOriginFromRow(selection),
+          selectionId: Number(selection?.itinerary_plan_hotel_details_ID || 0),
+        },
+      };
+      return selectedRow;
     };
 
     const cleanIdentity = (value: unknown): string =>
@@ -4783,6 +4946,7 @@ this.logger.log(
       if (routeId <= 0 || groupType <= 0) continue;
 
       for (const selection of selections) {
+        let matchedSelectionRow = false;
         for (let index = 0; index < cleanedHotelRows.length; index++) {
           const row: any = cleanedHotelRows[index];
           if (Number(row?.itineraryRouteId || 0) !== routeId) continue;
@@ -4795,8 +4959,17 @@ this.logger.log(
                 optionMatchesSelection(selection, { ...row, ...option }) ||
                 fallbackSelectionMatches(selection, { ...row, ...option }),
               ));
-          if (!matched) continue;
+          const sameProperty = selectionPropertyMatchesRow(selection, row);
+          if (!matched && !sameProperty) continue;
           cleanedHotelRows[index] = decorateLiveSelection(row, selection);
+          matchedSelectionRow = true;
+          break;
+        }
+
+        if (!matchedSelectionRow) {
+          const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === routeId);
+          if (!route) continue;
+          cleanedHotelRows.push(buildPersistedSelectionRow(selection, route, groupType));
         }
       }
     }
@@ -4980,8 +5153,8 @@ this.logger.log(
       );
       axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
         const existing = hotelsByRoute.get(routeId) || [];
-        const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
-        const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`));
+        const hotelStrs = existing.map(h => this.availabilityOptionKey(h));
+        const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(this.availabilityOptionKey(h)));
         hotelsByRoute.set(routeId, [...existing, ...newHotels]);
       });
     } else {
@@ -5055,8 +5228,8 @@ this.logger.log(
         );
         axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
           const existing = hotelsByRoute.get(routeId) || [];
-          const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
-          const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`));
+          const hotelStrs = existing.map(h => this.availabilityOptionKey(h));
+          const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(this.availabilityOptionKey(h)));
           hotelsByRoute.set(routeId, [...existing, ...newHotels]);
         });
       }

@@ -4458,6 +4458,9 @@ private getGuideSlotLabel(slotId: number): string {
     itinerary_route_id: number;
     hotel_id: number;
     group_type: number;
+    hotel_code?: string;
+    provider?: string;
+    hotel_name?: string;
   }) {
     return this.hotelRoomCategoryService.getHotelRoomCategories(params);
   }
@@ -4469,6 +4472,9 @@ private getGuideSlotLabel(slotId: number): string {
     itinerary_route_id: number;
     hotel_id: number;
     group_type: number;
+    hotel_code?: string;
+    provider?: string;
+    hotel_name?: string;
     room_type_id: number;
     room_qty?: number;
     all_meal_plan?: number;
