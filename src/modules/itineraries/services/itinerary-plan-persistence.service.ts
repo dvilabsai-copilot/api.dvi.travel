@@ -238,6 +238,7 @@ export class ItineraryPlanPersistenceService {
       || normalizedRequestType === 'itineary_basic_info_with_optimized_route';
     const isPlanUpdate = Number((dto?.plan as any)?.itinerary_plan_id || 0) > 0;
     const shouldResetManualHotspotsForFullRebuild = isFullBasicInfoRebuildType && isPlanUpdate;
+    let globalMealPlanChanged = false;
 
  // Increase interactive transaction timeout; hotspot rebuild + hotel lookups can exceed default 5s
     const result = await this.prisma.$transaction(async (tx) => {
@@ -245,10 +246,23 @@ export class ItineraryPlanPersistenceService {
       if (existingPlanId > 0) {
         const currentPlan = await tx.dvi_itinerary_plan_details.findUnique({
           where: { itinerary_plan_ID: existingPlanId },
-          select: { agent_id: true, itinerary_preference: true },
+          select: {
+            agent_id: true,
+            itinerary_preference: true,
+            meal_plan_code: true,
+            meal_plan_breakfast: true,
+            meal_plan_lunch: true,
+            meal_plan_dinner: true,
+          },
         });
         if (!currentPlan) throw new NotFoundException('Itinerary plan not found');
         assertVehicleAgentUpdatePolicy(u, currentPlan, dto.plan);
+        globalMealPlanChanged = [
+          ['meal_plan_code', currentPlan.meal_plan_code, (dto.plan as any)?.meal_plan_code],
+          ['meal_plan_breakfast', currentPlan.meal_plan_breakfast, (dto.plan as any)?.meal_plan_breakfast],
+          ['meal_plan_lunch', currentPlan.meal_plan_lunch, (dto.plan as any)?.meal_plan_lunch],
+          ['meal_plan_dinner', currentPlan.meal_plan_dinner, (dto.plan as any)?.meal_plan_dinner],
+        ].some(([, previous, next]) => String(previous ?? '') !== String(next ?? ''));
       } else {
         assertVehicleAgentCreatePolicy(u, dto.plan);
       }
@@ -265,7 +279,17 @@ export class ItineraryPlanPersistenceService {
         stepStartedAt,
         planId,
       });
- console.log('[PERF] upsertPlanHeader:', Date.now() - opStart, 'ms');
+      console.log('[PERF] upsertPlanHeader:', Date.now() - opStart, 'ms');
+
+      // Hotel availability is a meal-plan-aware snapshot. Once the global
+      // plan changes, the previous snapshot and per-day auto selections must
+      // not be reused as if they were still valid. The post-save hotel search
+      // will create a complete fresh snapshot using the new plan.
+      if (globalMealPlanChanged) {
+        await (tx as any).dvi_itinerary_hotel_search_cache.deleteMany({
+          where: { plan_id: planId },
+        });
+      }
 
  // PRESERVE HOTSPOT CONTEXT: Fetch existing hotspots and their route dates BEFORE routes are deleted
  // This ensures that when we rebuild hotspots later, we know which day each "tombstone" (deleted hotspot) belonged to.

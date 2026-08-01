@@ -597,7 +597,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
   @Post('hotel_details/:quoteId/check-availability')
   @ApiOperation({
     summary: 'Explicitly check hotel availability',
-    description: 'Calls enabled live suppliers and offline inventory for comparison, then atomically replaces the persisted snapshot without silently selecting offline inventory.',
+    description: 'Calls enabled live suppliers and offline inventory for comparison, then atomically replaces the persisted snapshot. Live rates are preferred; offline inventory is auto-selected only for stays with no live selectable rate.',
   })
   async checkItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
@@ -2380,6 +2380,9 @@ async confirmQuotation(
       itinerary_route_id: Number(query.itinerary_route_id),
       hotel_id: Number(query.hotel_id),
       group_type: groupType,
+      hotel_code: query.hotel_code,
+      provider: query.provider,
+      hotel_name: query.hotel_name,
     });
   }
 
@@ -2396,6 +2399,9 @@ async confirmQuotation(
       itinerary_route_id: dto.itinerary_route_id,
       hotel_id: dto.hotel_id,
       group_type: dto.group_type,
+      hotel_code: dto.hotel_code,
+      provider: dto.provider,
+      hotel_name: dto.hotel_name,
       room_type_id: dto.room_type_id,
       room_qty: dto.room_qty,
       all_meal_plan: dto.all_meal_plan,
