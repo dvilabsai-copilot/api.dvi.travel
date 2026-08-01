@@ -409,10 +409,14 @@ export class ItinerarySelectionWorkflowService {
       });
     }
 
-    // Keep the latest availability snapshot available while the frontend
-    // persists a multi-route stay (one request per route). Bulk-save clears
-    // the snapshot once after all selections have been written; clearing it
-    // here would make the second concurrent route request look stale.
+    // A live selection changes the durable assignment. Invalidate the
+    // per-quote hotel-details cache so a subsequent itinerary reload reads
+    // this USER_SELECTED rate instead of reconstructing the previous
+    // auto-selected row from the stale snapshot.
+    if (plan?.itinerary_quote_ID) {
+      this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
+    }
+
     return {
       success: true,
       message: 'Hotel selected successfully',
