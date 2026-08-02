@@ -114,6 +114,7 @@ export class ItinerarySelectionWorkflowService {
     roomId?: string | number;
     rateId?: string | number;
     roomCount?: number;
+    routeDate?: string;
     requestedBy?: number;
   }) {
     if (String(data.provider || '').trim().toLowerCase() === 'offline' || String(data.rateOptionId || '').startsWith('offline:')) {
@@ -459,6 +460,7 @@ export class ItinerarySelectionWorkflowService {
     canonicalHotelId?: number;
     rateOptionId?: string;
     roomCount?: number;
+    routeDate?: string;
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
     requestedBy?: number;
@@ -475,6 +477,7 @@ export class ItinerarySelectionWorkflowService {
       resolvedRate = await this.offlineHotelCatalogService.resolveOfflineRateOption({
         planId: Number(data.planId),
         routeId: Number(data.routeId),
+        routeDate: data.routeDate,
         canonicalHotelId,
         rateOptionId,
         roomCount: Math.max(Number(data.roomCount || 1), 1),
@@ -486,6 +489,7 @@ export class ItinerarySelectionWorkflowService {
     const requestedBy = Number(data.requestedBy || 1);
     const now = new Date();
     const snapshot = JSON.stringify(resolvedRate);
+    const resolvedRouteId = Number(resolvedRate.routeId || data.routeId);
     const checkInDate = resolvedRate.nightlyRates[0]?.date || null;
     const checkOutDate = resolvedRate.nightlyRates.length
       ? new Date(`${resolvedRate.nightlyRates[resolvedRate.nightlyRates.length - 1].date}T00:00:00.000Z`)
@@ -496,7 +500,7 @@ export class ItinerarySelectionWorkflowService {
       const existingHotelCandidates = await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
         where: {
           itinerary_plan_id: Number(data.planId),
-          itinerary_route_id: Number(data.routeId),
+          itinerary_route_id: resolvedRouteId,
           group_type: Number(data.groupType || 1),
           hotel_required: 1,
           deleted: 0,
@@ -506,7 +510,7 @@ export class ItinerarySelectionWorkflowService {
       });
       const offlineSelectionKey = hotelSelectionKey(
         Number(data.planId),
-        Number(data.routeId),
+        resolvedRouteId,
         Number(data.groupType || 1),
         checkInDate,
       );
@@ -554,7 +558,7 @@ export class ItinerarySelectionWorkflowService {
         : await (tx as any).dvi_itinerary_plan_hotel_details.create({
             data: {
               itinerary_plan_id: Number(data.planId),
-              itinerary_route_id: Number(data.routeId),
+              itinerary_route_id: resolvedRouteId,
               group_type: Number(data.groupType || 1),
               createdby: requestedBy,
               createdon: now,
@@ -590,7 +594,7 @@ export class ItinerarySelectionWorkflowService {
           data: {
             itinerary_plan_hotel_details_id: selection.itinerary_plan_hotel_details_ID,
             itinerary_plan_id: Number(data.planId),
-            itinerary_route_id: Number(data.routeId),
+            itinerary_route_id: resolvedRouteId,
             group_type: Number(data.groupType || 1),
             createdby: requestedBy,
             createdon: now,
