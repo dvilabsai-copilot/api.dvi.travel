@@ -453,6 +453,7 @@ export class HotelAvailabilitySnapshotService {
       .filter(Boolean)
       .map(remapSnapshotRoute)
       .filter((row: any) => !currentRouteIds.size || currentRouteIds.has(Number(row.itineraryRouteId || 0)))
+      .map((row: any) => this.normalizeRatePlanLabels(row))
       .map((row: any) => this.decorateSelection(row, selectedByRouteGroup, plan.itinerary_plan_ID)) as any[];
 
     // A room-category edit intentionally changes the selected rate/room
@@ -1448,6 +1449,70 @@ export class HotelAvailabilitySnapshotService {
       seen.add(key);
       return true;
     });
+  }
+
+  /**
+   * Some supplier rows carry the rate-plan identity only in a booking/rate
+   * reference (for example CP_PLAN or MAP_PLAN) and leave mealPlan as '-'.
+   * Normalize both the card row and nested rates before the UI filters them.
+   */
+  private normalizeRatePlanLabels(row: any): any {
+    const inferFrom = (...values: unknown[]): string | null => {
+      for (const value of values) {
+        const raw = String(value || '');
+        const direct = inferCanonicalHotelRatePlanCode(raw);
+        if (direct) return direct;
+        const fromText = inferCanonicalHotelRatePlanCodeFromMealText(raw);
+        if (fromText) return fromText;
+
+        // AxisRooms references are namespaced, e.g.
+        // axisrooms:95:231:CP_PLAN:2026-08-13.
+        const embeddedPlan = raw.toUpperCase().match(/(?:^|[^A-Z0-9])(MAP|CP|AP|EP)_PLAN(?:$|[^A-Z0-9])/);
+        if (embeddedPlan?.[1]) return embeddedPlan[1];
+      }
+      return null;
+    };
+
+    const normalizeOption = (option: any): any => {
+      const mealPlan = inferFrom(
+        option?.mealPlan,
+        option?.meal_plan,
+        option?.mealPlanCode,
+        option?.ratePlanName,
+        option?.rateOptionId,
+        option?.rateId,
+        option?.bookingCode,
+        option?.searchReference,
+      );
+      return mealPlan && (!option?.mealPlan || String(option.mealPlan).trim() === '-')
+        ? { ...option, mealPlan }
+        : option;
+    };
+
+    const rateOptions = Array.isArray(row?.rateOptions)
+      ? row.rateOptions.map(normalizeOption)
+      : row?.rateOptions;
+    const mealPlan = inferFrom(
+      row?.mealPlan,
+      row?.meal_plan,
+      row?.mealPlanCode,
+      row?.ratePlanName,
+      row?.selectedRateOptionId,
+      row?.selected_rate_option_id,
+      row?.rateOptionId,
+      row?.rateId,
+      row?.bookingCode,
+      row?.searchReference,
+      row?.optionKey,
+    );
+
+    return {
+      ...row,
+      ...(mealPlan && (!row?.mealPlan || String(row.mealPlan).trim() === '-'))
+        ? { mealPlan }
+        : {},
+      ...(Array.isArray(rateOptions) ? { rateOptions } : {}),
+    };
   }
 
   /**

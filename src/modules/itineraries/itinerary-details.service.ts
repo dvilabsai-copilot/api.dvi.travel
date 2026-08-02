@@ -6004,6 +6004,20 @@ const hasRequiredVehicleSelection =
       const fallbackRoomCost = Number(h.total_hotel_cost || 0);
       const rowMultiplier = earlyCheckInBillingMultiplier;
 
+      // A hotel selection stores the authoritative current rate separately
+      // from the legacy room-cost columns. Those columns may still represent
+      // the previous auto-selection, which made the details summary disagree
+      // with the hotel list and revert after a page refresh.
+      const persistedSelectedTotal = Number((h as any).selected_total_price || 0);
+      const hasPersistedSelectedTotal = Number.isFinite(persistedSelectedTotal) && persistedSelectedTotal > 0;
+      if (hasPersistedSelectedTotal) {
+        const selectedAmount = persistedSelectedTotal * rowMultiplier;
+        hotelListTotal += selectedAmount;
+        hotelRoomBaseCost += selectedAmount;
+        totalRoomCost += selectedAmount;
+        return;
+      }
+
       hotelListTotal += (
         Number(h.total_hotel_cost || 0) + Number(h.total_hotel_tax_amount || 0)
       ) * rowMultiplier;
