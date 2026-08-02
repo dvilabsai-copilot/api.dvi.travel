@@ -32,7 +32,9 @@ test('axis-only search never invokes registered forbidden suppliers and rejects 
 test('offline option is priced from every requested night and missing nights are rejected', async () => {
   const prisma = {
     dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_plan_ID: 1 }) },
-    dvi_itinerary_route_details: { findFirst: async () => ({ itinerary_route_date: new Date('2099-01-01') }) },
+    // The route may be any night in the continuous stay represented by the
+    // rate option, not only the first night.
+    dvi_itinerary_route_details: { findFirst: async () => ({ itinerary_route_date: new Date('2099-01-02') }) },
     dvi_hotel: { findFirst: async () => ({ hotel_id: 153, hotel_margin: 0, hotel_margin_gst_type: 0, hotel_margin_gst_percentage: 0 }) },
     dvi_hotel_rooms: { findMany: async () => [{ room_ID: 22, room_type_id: 7, room_title: 'Deluxe', room_ref_code: 'D', breakfast_included: 1, lunch_included: 0, dinner_included: 0 }] },
     dvi_hotel_room_price_book: { findMany: async () => [{ room_type_id: 7, price_type: 0, year: '2099', month: 'January', day_1: '4500', day_2: '4500' }] },

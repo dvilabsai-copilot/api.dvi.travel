@@ -911,11 +911,15 @@ export class OfflineHotelCatalogService {
 
     const routeDate = new Date(route.itinerary_route_date);
     const routeDateOnly = Number.isNaN(routeDate.getTime()) ? '' : routeDate.toISOString().slice(0, 10);
-    if (routeDateOnly !== checkInDate) {
+    const dateList = this.getNightDates(checkInDate, checkOutDate);
+    // A continuous offline stay is exposed against each route in the block,
+    // but its rate option is keyed by the block's first night. Selecting a
+    // room/meal option from a later day must therefore validate against the
+    // complete stay window, not only the first night.
+    if (!dateList.includes(routeDateOnly)) {
       throw new Error('Offline rate option is stale for the selected stay dates');
     }
 
-    const dateList = this.getNightDates(checkInDate, checkOutDate);
     const offers = await this.buildRoomOffers(
       hotel,
       dateList,
