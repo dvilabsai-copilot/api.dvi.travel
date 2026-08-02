@@ -1414,6 +1414,49 @@ private getGuideSlotLabel(slotId: number): string {
     const hotelsRequired = Number((dto?.plan as any)?.itinerary_preference || 0) === 1 ||
       Number((dto?.plan as any)?.itinerary_preference || 0) === 3;
 
+    // A route rebuild regenerates route IDs and invalidates every hotel
+    // selection, room choice, per-day meal-plan override, and supplier rate
+    // snapshot tied to the old stay dates/destinations. Reuse the same reset
+    // path as the Reset Hotels button after the route transaction commits.
+    // This deliberately runs only for an existing plan whose semantic route
+    // shape changed; ordinary edits keep the current hotel snapshot intact.
+    if (!isNewPlan && hotelsRequired && result?.routeChanged && result?.quoteId) {
+      try {
+        const hotelSearch = await this.hotelAvailabilitySnapshotService.resetAndPersist(
+          String(result.quoteId),
+          Number(req?.user?.userId || 0),
+        );
+        return {
+          ...result,
+          hotelSearch: {
+            status: Number(hotelSearch.response.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
+              hotelSearch.response.hotelAvailability?.availabilityState === 'PARTIAL' ? 'PARTIAL' : 'COMPLETE',
+            resetApplied: true,
+            searchRunId: hotelSearch.searchRunId,
+            checkedAt: hotelSearch.response.hotelAvailability?.checkedAt,
+            optionCount: hotelSearch.response.hotels?.length || 0,
+            selectedCount: hotelSearch.response.hotels?.filter((row: any) => row.isSelected).length || 0,
+            providerErrors: hotelSearch.response.hotelAvailability?.providerErrors || [],
+          },
+        };
+      } catch (error) {
+        // The itinerary transaction is already committed. Return the same
+        // recoverable partial-save contract used by initial itinerary create,
+        // so the UI opens the saved itinerary and can explicitly retry hotel
+        // availability instead of claiming the old hotel is still valid.
+        throw new UnprocessableEntityException({
+          message: 'Itinerary routes were updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
+          planId: result.planId,
+          quoteId: result.quoteId,
+          creationStatus: 'PARTIAL',
+          code: 'HOTEL_AVAILABILITY_ROUTE_RESET_FAILED',
+          routeChanged: true,
+          hotelSearch: { status: 'FAILED' },
+          cause: String((error as any)?.response?.message || (error as any)?.message || 'Hotel availability reset failed'),
+        });
+      }
+    }
+
     if (!isNewPlan || !hotelsRequired || !result?.quoteId) {
       return { ...result, hotelSearch: { status: hotelsRequired ? 'NOT_REQUIRED' : 'NOT_REQUIRED' } };
     }

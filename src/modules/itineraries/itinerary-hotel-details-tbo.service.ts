@@ -2314,7 +2314,6 @@ this.logger.log(
     childCount: number = 0,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
-    const totalRoutes = routes.length;
 
  this.logger.log(`\n RESAVENUE HOTEL FETCH: Attempting to fetch ResAvenue hotels for ${routes.length} routes`);
 
@@ -2324,49 +2323,41 @@ this.logger.log(
       const safeRoomCount = Math.max(Number(roomCount || 1), 1);
       const guestCount = safeAdultCount + safeChildCount;
 
-      for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
-        const route = routes[routeIndex];
-        const routeId = (route as any).itinerary_route_ID;
-
- // Skip hotel generation for the last route (departure day) if routeIndex >= noOfNights
-        const isLastRoute = routeIndex === totalRoutes - 1;
-        if (isLastRoute && routeIndex >= noOfNights) {
- this.logger.log(` Skipping ResAvenue route ${routeIndex + 1} (last route - departure day)`);
-          continue;
-        }
-
-        const destination = (route as any).next_visiting_location;
-        const routeDate = new Date((route as any).itinerary_route_date);
-        const checkOutDate = new Date(routeDate);
-        checkOutDate.setDate(checkOutDate.getDate() + 1);
-
+      // ResAvenue searches are expensive because they call the provider for
+      // every local property. Search one logical stay block once and reuse the
+      // result for each route/night in that block.
+      const stayBlocks = this.buildStayBlocks(routes, noOfNights);
+      await Promise.all(stayBlocks.map(async (block) => {
         try {
- // Search ResAvenue hotels using city name directly
           const resavenueHotels = await this.hotelSearchService.searchHotels({
- cityCode: destination, // ResAvenue provider accepts city names
-            checkInDate: routeDate.toISOString().split('T')[0],
-            checkOutDate: checkOutDate.toISOString().split('T')[0],
+            cityCode: block.destination,
+            checkInDate: block.checkInDate,
+            checkOutDate: block.checkOutDate,
             roomCount: safeRoomCount,
             guestCount,
             adultCount: safeAdultCount,
             childCount: safeChildCount,
             guestNationality,
- providers: ['resavenue'], // Only ResAvenue
+            providers: ['resavenue'],
           });
-
-          if (resavenueHotels && resavenueHotels.length > 0) {
- this.logger.log(` ResAvenue Route ${routeId}: Found ${resavenueHotels.length} hotels in ${destination}`);
-            hotelsByRoute.set(routeId, resavenueHotels);
-          } else {
- this.logger.log(` ResAvenue Route ${routeId}: No hotels found in ${destination}`);
-            hotelsByRoute.set(routeId, []);
+          const hotels = resavenueHotels || [];
+          this.logger.log(
+            ` ResAvenue stay block ${block.destination} (${block.checkInDate} -> ${block.checkOutDate}): ` +
+              `Found ${hotels.length} hotels for ${block.routeIds.length} route(s)`,
+          );
+          for (const routeId of block.routeIds) {
+            hotelsByRoute.set(routeId, hotels);
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
- this.logger.warn(` ResAvenue Route ${routeId} search failed: ${errorMsg}`);
-          hotelsByRoute.set(routeId, []);
+          this.logger.warn(
+            ` ResAvenue stay block ${block.destination} (${block.checkInDate} -> ${block.checkOutDate}) failed: ${errorMsg}`,
+          );
+          for (const routeId of block.routeIds) {
+            hotelsByRoute.set(routeId, []);
+          }
         }
-      }
+      }));
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
  this.logger.error(` RESAVENUE HOTEL FETCH FAILED: ${errorMsg}`);
@@ -2391,6 +2382,64 @@ this.logger.log(
       bangalore: 'bengaluru',
     };
     return aliases[token] || token;
+  }
+
+  /**
+   * Resolve route destinations to the values used by dvi_hotel.hotel_city.
+   * The city master is loaded once; provider hotel rows are then filtered by
+   * SQL predicates instead of loading a global provider catalog and filtering
+   * every row in JavaScript for every route.
+   */
+  private async loadProviderCityCandidates(destinations: string[]): Promise<Map<string, string[]>> {
+    const uniqueDestinations = Array.from(new Set(
+      destinations.map((destination) => String(destination || '').trim()).filter(Boolean),
+    ));
+    const result = new Map<string, string[]>();
+    if (uniqueDestinations.length === 0) return result;
+
+    const cityRows = await this.prisma.dvi_cities.findMany({
+      select: { id: true, name: true },
+    });
+    const aliases: Record<string, string[]> = {
+      cochin: ['kochi'],
+      alleppey: ['alappuzha'],
+      alleppe: ['alappuzha'],
+      calicut: ['kozhikode'],
+      trivandrum: ['thiruvananthapuram'],
+      pondicherry: ['puducherry'],
+      bangalore: ['bengaluru'],
+    };
+
+    for (const destination of uniqueDestinations) {
+      const firstPart = destination.split(/[,(\-]/)[0].trim();
+      const normalized = this.normalizeCityToken(destination);
+      const lookupTokens = new Set([
+        destination.toLowerCase(),
+        firstPart.toLowerCase(),
+        normalized,
+        ...(aliases[normalized] || []),
+      ].filter(Boolean));
+      const candidates = new Set<string>([
+        destination,
+        firstPart,
+        normalized,
+        ...(aliases[normalized] || []),
+      ].filter(Boolean));
+
+      for (const city of cityRows as any[]) {
+        const cityName = String(city.name || '').trim();
+        const cityFirstPart = cityName.split(/[,(\-]/)[0].trim();
+        const cityTokens = [cityName.toLowerCase(), cityFirstPart.toLowerCase(), this.normalizeCityToken(cityName)];
+        if (cityTokens.some((token) => lookupTokens.has(token))) {
+          candidates.add(cityName);
+          candidates.add(cityFirstPart);
+          candidates.add(String(city.id));
+        }
+      }
+      result.set(destination, Array.from(candidates));
+    }
+
+    return result;
   }
 
   private toIstDateOnly(value: unknown): Date {
@@ -2691,29 +2740,62 @@ this.logger.log(
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const requiredRoomCount = Math.max(Number(roomCount || 1), 1);
-    const totalRoutes = routes.length;
 
  this.logger.log(`\n AXISROOMS HOTEL FETCH: Attempting to fetch AxisRooms hotels for ${routes.length} routes`);
 
-    const axisroomsHotels = await this.prisma.dvi_hotel.findMany({
-      where: {
-        axisrooms_enabled: 1,
-        status: 1,
-        OR: [{ deleted: false }, { deleted: null }],
-      } as any,
-      select: {
-        hotel_id: true,
-        hotel_name: true,
-        hotel_city: true,
-        hotel_address: true,
-        hotel_category: true,
-        axisrooms_property_id: true,
-        hotel_cancel_policy: true,
-      },
-    });
+    const routeContexts = routes
+      .map((route, routeIndex) => {
+        const isLastRoute = routeIndex === routes.length - 1;
+        if (isLastRoute && routeIndex >= noOfNights) return null;
+        return {
+          route,
+          routeId: Number((route as any).itinerary_route_ID),
+          destinationRaw: String((route as any).next_visiting_location || '').trim(),
+        };
+      })
+      .filter((context): context is NonNullable<typeof context> => Boolean(context));
+    if (routeContexts.length === 0) return hotelsByRoute;
 
+    const cityCandidatesByDestination = await this.loadProviderCityCandidates(
+      routeContexts.map((context) => context.destinationRaw),
+    );
+    const uniqueDestinations = Array.from(new Set(routeContexts.map((context) => context.destinationRaw)));
+    const axisHotelsByDestination = new Map<string, any[]>();
+    await Promise.all(uniqueDestinations.map(async (destination) => {
+      const cityCandidates = cityCandidatesByDestination.get(destination) || [];
+      if (cityCandidates.length === 0) {
+        axisHotelsByDestination.set(destination, []);
+        return;
+      }
+      const cityHotels = await this.prisma.dvi_hotel.findMany({
+        where: {
+          axisrooms_enabled: 1,
+          status: 1,
+          OR: [{ deleted: false }, { deleted: null }],
+          hotel_city: { in: cityCandidates },
+        } as any,
+        select: {
+          hotel_id: true,
+          hotel_name: true,
+          hotel_city: true,
+          hotel_address: true,
+          hotel_category: true,
+          axisrooms_property_id: true,
+          hotel_cancel_policy: true,
+        },
+      });
+      axisHotelsByDestination.set(destination, cityHotels as any[]);
+    }));
+    const routeHotels = routeContexts.map((context) => ({
+      context,
+      cityHotels: axisHotelsByDestination.get(context.destinationRaw) || [],
+    }));
+    const axisroomsHotels = Array.from(new Map(
+      routeHotels.flatMap(({ cityHotels }) => cityHotels)
+        .map((hotel: any) => [Number(hotel.hotel_id), hotel]),
+    ).values());
     if (!axisroomsHotels.length) {
- this.logger.log(' No axisrooms-enabled hotels found in local DB');
+      this.logger.log(' No axisrooms-enabled hotels found in local DB for requested route cities');
       return hotelsByRoute;
     }
 
@@ -2733,50 +2815,10 @@ this.logger.log(
       });
     }
 
- // hotel_city may be stored as a numeric city ID string (e.g. "1979") or a plain name.
- // Build a map from city id -> city name so both cases resolve correctly.
-    const numericCityIds = Array.from(
-      new Set(
-        axisroomsHotels
-          .map((h: any) => Number((h as any).hotel_city))
-          .filter((id) => Number.isFinite(id) && id > 0),
-      ),
-    );
-    const cityIdNameMap = new Map<number, string>();
-    if (numericCityIds.length > 0) {
-      const cityRows = await this.prisma.dvi_cities.findMany({
-        where: { id: { in: numericCityIds } },
-        select: { id: true, name: true },
-      });
-      for (const c of cityRows as any[]) {
-        cityIdNameMap.set(Number((c as any).id), String((c as any).name || ''));
-      }
-    }
-
-    for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
-      const route = routes[routeIndex];
-      const routeId = Number((route as any).itinerary_route_ID);
-      const isLastRoute = routeIndex === totalRoutes - 1;
-      if (isLastRoute && routeIndex >= noOfNights) {
- this.logger.log(` Skipping AxisRooms route ${routeIndex + 1} (last route - departure day)`);
-        continue;
-      }
-
-      const destinationRaw = String((route as any).next_visiting_location || '');
-      const routeCityToken = this.normalizeCityToken(destinationRaw);
+    for (const { context, cityHotels } of routeHotels) {
+      const { route, routeId, destinationRaw } = context;
       const dateOnly = this.toIstDateOnly((route as any).itinerary_route_date);
       const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
-
-      const cityHotels = axisroomsHotels.filter((h: any) => {
-        const rawCity = String((h as any).hotel_city || '');
- // Resolve: if it looks like a numeric ID, look up the actual city name
-        const numId = Number(rawCity);
-        const resolvedCity = (Number.isFinite(numId) && numId > 0 && cityIdNameMap.has(numId))
-          ? cityIdNameMap.get(numId)!
-          : rawCity;
-        const hotelCityToken = this.normalizeCityToken(resolvedCity);
-        return !!hotelCityToken && hotelCityToken === routeCityToken;
-      });
 
       if (!cityHotels.length) {
         hotelsByRoute.set(routeId, []);
@@ -3127,59 +3169,94 @@ this.logger.log(
     paxProfile?: StaahPricingPaxInput,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
-    let staahHotels: any[] = [];
-    try {
-      staahHotels = await this.prisma.dvi_hotel.findMany({
-        where: {
-          staah_enabled: 1,
-          status: 1,
-          deleted: false,
-          AND: [
-            { staah_property_id: { not: null } },
-            { staah_property_id: { not: '' } },
-          ],
-        },
-        select: {
-          hotel_id: true,
-          hotel_name: true,
-          hotel_city: true,
-          hotel_address: true,
-          hotel_category: true,
-          hotel_cancel_policy: true,
-          staah_property_id: true,
-          hotel_margin: true,
-          hotel_margin_gst_type: true,
-          hotel_margin_gst_percentage: true,
-        },
-      });
-    } catch (error) {
- this.logger.error(`[STAAH] Failed loading STAAH-enabled hotels: ${error instanceof Error ? error.message : String(error)}`);
-      return hotelsByRoute;
-    }
-    staahHotels = staahHotels.filter((hotel: any) => String(hotel?.staah_property_id || '').trim().length > 0);
-    if (!staahHotels.length) return hotelsByRoute;
-    const cityIds = Array.from(new Set(staahHotels.map((h: any) => Number((h as any).hotel_city)).filter((x) => Number.isFinite(x) && x > 0)));
-    const cityRows = cityIds.length ? await this.prisma.dvi_cities.findMany({ where: { id: { in: cityIds } }, select: { id: true, name: true } }) : [];
-    const cityMap = new Map<number, string>(cityRows.map((c: any) => [Number(c.id), String(c.name || '')]));
-
-    for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
-      try {
-        const route = routes[routeIndex];
-        const routeId = Number((route as any).itinerary_route_ID);
+    const routeContexts = routes
+      .map((route, routeIndex) => {
         const isLastRoute = routeIndex === routes.length - 1;
-        if (isLastRoute && routeIndex >= noOfNights) continue;
-        const destinationRaw = String((route as any).next_visiting_location || '');
-        const routeCityToken = this.normalizeCityToken(destinationRaw);
-        const { checkInDate: dateOnly, checkOutDate, lengthOfStay } = this.getStaahStayWindow(routes, routeIndex);
-        const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
-        const cityHotels = staahHotels.filter((h: any) => {
-          const raw = String((h as any).hotel_city || '');
-          const nid = Number(raw);
-          const resolved = Number.isFinite(nid) && nid > 0 && cityMap.has(nid) ? cityMap.get(nid)! : raw;
-          const hotelCityToken = this.normalizeCityToken(resolved);
-          const cityMatch = !!hotelCityToken && hotelCityToken === routeCityToken;
-          return cityMatch;
+        if (isLastRoute && routeIndex >= noOfNights) return null;
+        const routeId = Number((route as any).itinerary_route_ID);
+        const destinationRaw = String((route as any).next_visiting_location || '').trim();
+        const stayWindow = this.getStaahStayWindow(routes, routeIndex);
+        return {
+          route,
+          routeId,
+          destinationRaw,
+          ...stayWindow,
+        };
+      })
+      .filter((context): context is NonNullable<typeof context> => Boolean(context));
+    if (routeContexts.length === 0) return hotelsByRoute;
+
+    const cityCandidatesByDestination = await this.loadProviderCityCandidates(
+      routeContexts.map((context) => context.destinationRaw),
+    );
+    const uniqueDestinations = Array.from(new Set(routeContexts.map((context) => context.destinationRaw)));
+    const staahHotelsByDestination = new Map<string, any[]>();
+    await Promise.all(uniqueDestinations.map(async (destination) => {
+      const cityCandidates = cityCandidatesByDestination.get(destination) || [];
+      if (cityCandidates.length === 0) {
+        staahHotelsByDestination.set(destination, []);
+        return;
+      }
+      try {
+        const cityHotels = await this.prisma.dvi_hotel.findMany({
+          where: {
+            staah_enabled: 1,
+            status: 1,
+            deleted: false,
+            staah_property_id: { not: null },
+            hotel_city: { in: cityCandidates },
+          },
+          select: {
+            hotel_id: true,
+            hotel_name: true,
+            hotel_city: true,
+            hotel_address: true,
+            hotel_category: true,
+            hotel_cancel_policy: true,
+            staah_property_id: true,
+            hotel_margin: true,
+            hotel_margin_gst_type: true,
+            hotel_margin_gst_percentage: true,
+          },
         });
+        staahHotelsByDestination.set(destination, cityHotels as any[]);
+      } catch (error) {
+        this.logger.error(
+          `[STAAH] Failed loading hotels for destination ${destination}: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+        staahHotelsByDestination.set(destination, []);
+      }
+    }));
+    const routeHotels = routeContexts.map((context) => ({
+      context,
+      cityHotels: staahHotelsByDestination.get(context.destinationRaw) || [],
+    }));
+    const allStaahHotels = Array.from(new Map(
+      routeHotels.flatMap(({ cityHotels }) => cityHotels)
+        .map((hotel: any) => [Number(hotel.hotel_id), hotel]),
+    ).values());
+    if (allStaahHotels.length === 0) return hotelsByRoute;
+
+    const allHotelIds = allStaahHotels
+      .map((hotel: any) => Number(hotel.hotel_id || 0))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    const activeAdminRooms = await this.prisma.dvi_hotel_rooms.findMany({
+      where: { hotel_id: { in: allHotelIds }, status: 1, deleted: 0 } as any,
+      select: { hotel_id: true, room_ID: true, room_ref_code: true, room_title: true } as any,
+    });
+    const activeAdminRoomsByHotelId = new Map<number, any[]>();
+    for (const room of activeAdminRooms as any[]) {
+      const hotelId = Number(room.hotel_id || 0);
+      const rows = activeAdminRoomsByHotelId.get(hotelId) || [];
+      rows.push(room);
+      activeAdminRoomsByHotelId.set(hotelId, rows);
+    }
+
+    for (const { context, cityHotels } of routeHotels) {
+      try {
+        const { routeId, destinationRaw, checkInDate: dateOnly, checkOutDate, lengthOfStay } = context;
+        const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
         if (!cityHotels.length) {
  this.logger.log(`[STAAH DEBUG] routeId=${routeId} matched STAAH city hotels=0`);
           hotelsByRoute.set(routeId, []);
@@ -3194,26 +3271,12 @@ this.logger.log(
         const hotelIds = cityHotels
           .map((h: any) => Number(h.hotel_id || 0))
           .filter((id) => Number.isFinite(id) && id > 0);
-        const activeAdminRooms = hotelIds.length
-          ? await this.prisma.dvi_hotel_rooms.findMany({
-              where: {
-                hotel_id: { in: hotelIds },
-                status: 1,
-                deleted: 0,
-              } as any,
-              select: {
-                hotel_id: true,
-                room_ID: true,
-                room_ref_code: true,
-                room_title: true,
-              } as any,
-            })
-          : [];
+        const routeAdminRooms = hotelIds.flatMap((hotelId) => activeAdminRoomsByHotelId.get(hotelId) || []);
         const activeRoomCodesByHotelId = new Map<number, Set<string>>();
         const activeRoomLooseCodesByHotelId = new Map<number, Set<string>>();
         const activeRoomLooseExactCodesByHotelId = new Map<number, Map<string, Set<string>>>();
         const roomTitleByHotelAndCode = new Map<string, string>();
-        for (const room of activeAdminRooms as any[]) {
+        for (const room of routeAdminRooms as any[]) {
           const hotelId = Number(room.hotel_id || 0);
           const exactCode = this.normalizeExactRoomCode(room.room_ref_code);
           const looseCode = this.normalizeLooseRoomCode(room.room_ref_code);
@@ -3590,9 +3653,9 @@ this.logger.log(
         }
         hotelsByRoute.set(routeId, results);
       } catch (error) {
-        const routeId = Number((routes[routeIndex] as any)?.itinerary_route_ID || 0);
- this.logger.error(`[STAAH] Route ${routeId} failed: ${error instanceof Error ? error.message : String(error)}`);
-        if (routeId > 0) hotelsByRoute.set(routeId, []);
+        const failedRouteId = Number(context.routeId || 0);
+ this.logger.error(`[STAAH] Route ${failedRouteId} failed: ${error instanceof Error ? error.message : String(error)}`);
+        if (failedRouteId > 0) hotelsByRoute.set(failedRouteId, []);
       }
     }
     return hotelsByRoute;
@@ -5702,7 +5765,10 @@ this.logger.log(
       this.hotelRoomDetailsCache.delete(key);
  this.logger.log(` [CACHE CLEARED] Removed cache for ${key}`);
     }
-    this.offlineHotelCatalogService.clearCache?.();
+    // The offline catalog has its own destination/date/occupancy cache with a
+    // bounded TTL. Clearing it here made every quote refresh reload all hotel
+    // masters, rooms, and price-book rows even though this method only needs to
+    // invalidate the supplier room-detail cache.
   }
 
  /**
