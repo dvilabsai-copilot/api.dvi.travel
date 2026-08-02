@@ -608,9 +608,15 @@ private readonly itineraryAccessService: ItineraryAccessService,
       'CHECK_AVAILABILITY',
       Number(req.user?.userId || 0),
     );
+    const itinerary = await this.detailsService.getItineraryDetails(
+      quoteId,
+      undefined,
+      req.user?.role,
+    );
     return {
       hotelDetails: result.response,
       changeSummary: result.changeSummary,
+      itinerary,
     };
   }
 
@@ -627,9 +633,15 @@ private readonly itineraryAccessService: ItineraryAccessService,
       quoteId,
       Number(req.user?.userId || 0),
     );
+    const itinerary = await this.detailsService.getItineraryDetails(
+      quoteId,
+      undefined,
+      req.user?.role,
+    );
     return {
       hotelDetails: result.response,
       changeSummary: result.changeSummary,
+      itinerary,
     };
   }
 
@@ -648,9 +660,15 @@ private readonly itineraryAccessService: ItineraryAccessService,
       body?.routeId ? Number(body.routeId) : undefined,
       Number(req.user?.userId || 0),
     );
+    const itinerary = await this.detailsService.getItineraryDetails(
+      quoteId,
+      undefined,
+      req.user?.role,
+    );
     return {
       hotelDetails: result.response,
       changeSummary: result.changeSummary,
+      itinerary,
     };
   }
 
