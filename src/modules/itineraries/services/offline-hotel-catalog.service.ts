@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { HotelSearchResult, RoomType } from '../../hotels/interfaces/hotel-provider.interface';
+import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
 
 type StayBlock = {
   destination: string;
@@ -35,6 +36,12 @@ export type OfflineRateResolution = {
   numberOfNights: number;
   currency: string;
   nightlyRates: Array<{ date: string; baseAmount: number; sellAmount: number }>;
+};
+
+type OfflineCatalogRows = {
+  roomsByHotel: Map<number, any[]>;
+  activeRoomTypeIds: Set<number>;
+  pricesByHotelRoomType: Map<string, any[]>;
 };
 
 @Injectable()
@@ -75,27 +82,86 @@ export class OfflineHotelCatalogService {
     childCount: number = 0,
     childAges: number[] = [],
   ): Promise<Map<number, HotelSearchResult[]>> {
+    const startedAt = Date.now();
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const stayBlocks = this.buildStayBlocks(routes, noOfNights);
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
+      stage: 'build-stay-blocks',
+      durationMs: Date.now() - startedAt,
+      routeCount: routes?.length || 0,
+      stayBlockCount: stayBlocks.length,
+    });
 
- this.logger.log(
+    this.logger.log(
       `Offline hotel catalog processing ${stayBlocks.length} stay block(s) ` +
         `for roomCount=${roomCount}, adults=${adultCount}, children=${childCount}, nationality=${guestNationality || 'n/a'}`,
     );
 
+    const occupancyKey = `adults:${adultCount}|children:${childCount}|ages:${childAges.join(',')}`;
+    const now = Date.now();
+    const cachePartitionStartedAt = Date.now();
+    const uncachedBlocks = stayBlocks.filter((block) => {
+      const cached = this.availabilityCache.get(this.blockCacheKey(block, roomCount, occupancyKey));
+      return !cached || cached.expiresAt <= now;
+    });
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
+      stage: 'cache-partition',
+      durationMs: Date.now() - cachePartitionStartedAt,
+      stayBlockCount: stayBlocks.length,
+      uncachedBlockCount: uncachedBlocks.length,
+    });
+
+    const hotelLoadStartedAt = Date.now();
+    const hotelsByBlock = await this.loadHotelsByStayBlock(uncachedBlocks, roomCount, occupancyKey);
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
+      stage: 'hotel-master-load',
+      durationMs: Date.now() - hotelLoadStartedAt,
+      uncachedBlockCount: uncachedBlocks.length,
+      hotelCount: Array.from(hotelsByBlock.values()).reduce((sum, rows) => sum + rows.length, 0),
+    });
+    const allHotels = Array.from(
+      new Map(
+        Array.from(hotelsByBlock.values())
+          .flat()
+          .map((hotel: any) => [Number(hotel.hotel_id), hotel]),
+      ).values(),
+    );
+    const catalogLoadStartedAt = Date.now();
+    const requestedDates = Array.from(new Set(
+      stayBlocks.flatMap((block) => this.getNightDates(block.checkInDate, block.checkOutDate)),
+    ));
+    const catalogRows = await this.loadCatalogRows(allHotels, requestedDates);
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
+      stage: 'room-and-price-catalog-load',
+      durationMs: Date.now() - catalogLoadStartedAt,
+      hotelCount: allHotels.length,
+      roomCount: Array.from(catalogRows.roomsByHotel.values()).reduce((sum, rows) => sum + rows.length, 0),
+      priceRowCount: Array.from(catalogRows.pricesByHotelRoomType.values()).reduce((sum, rows) => sum + rows.length, 0),
+    });
+
+    const offerBuildStartedAt = Date.now();
     for (const block of stayBlocks) {
       const hotels = await this.fetchOfflineHotelsForStayBlock(
         block,
         roomCount,
-        `adults:${adultCount}|children:${childCount}|ages:${childAges.join(',')}`,
+        occupancyKey,
         adultCount,
         childCount,
+        catalogRows,
+        hotelsByBlock.get(this.blockCacheKey(block, roomCount, occupancyKey)),
       );
 
       for (const routeId of block.routeIds) {
         hotelsByRoute.set(routeId, hotels);
       }
     }
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
+      stage: 'offer-build-and-response-shape',
+      durationMs: Date.now() - offerBuildStartedAt,
+      stayBlockCount: stayBlocks.length,
+      routeCount: hotelsByRoute.size,
+      hotelResultCount: Array.from(hotelsByRoute.values()).reduce((sum, rows) => sum + rows.length, 0),
+    });
 
     for (const route of routes || []) {
       const routeId = Number((route as any)?.itinerary_route_ID || 0);
@@ -104,6 +170,13 @@ export class OfflineHotelCatalogService {
       }
     }
 
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
+      stage: 'total',
+      durationMs: Date.now() - startedAt,
+      stayBlockCount: stayBlocks.length,
+      uncachedBlockCount: uncachedBlocks.length,
+      routeCount: hotelsByRoute.size,
+    });
     return hotelsByRoute;
   }
 
@@ -193,6 +266,8 @@ export class OfflineHotelCatalogService {
     occupancyKey = '',
     adultCount = 0,
     childCount = 0,
+    catalogRows?: OfflineCatalogRows,
+    prefetchedHotels?: any[],
   ): Promise<HotelSearchResult[]> {
     const cacheKey = [
       block.destination,
@@ -217,7 +292,7 @@ export class OfflineHotelCatalogService {
       return [];
     }
 
-    const hotels = await this.prisma.dvi_hotel.findMany({
+    const hotels = prefetchedHotels || await this.prisma.dvi_hotel.findMany({
       where: {
         status: 1,
         deleted: false,
@@ -245,7 +320,7 @@ export class OfflineHotelCatalogService {
 
     const results: HotelSearchResult[] = [];
     for (const hotel of hotels as any[]) {
-      const offers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount);
+      const offers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount, catalogRows);
       if (offers.length === 0) {
         continue;
       }
@@ -359,8 +434,259 @@ export class OfflineHotelCatalogService {
     return results;
   }
 
+  private blockCacheKey(block: StayBlock, roomCount: number, occupancyKey: string): string {
+    return [
+      block.destination,
+      block.checkInDate,
+      block.checkOutDate,
+      Math.max(Number(roomCount || 1), 1),
+      occupancyKey,
+    ].join('|').toLowerCase();
+  }
+
+  /** Load hotel masters with SQL city predicates, once per logical stay block. */
+  private async loadHotelsByStayBlock(
+    blocks: StayBlock[],
+    roomCount: number,
+    occupancyKey: string,
+  ): Promise<Map<string, any[]>> {
+    const cityCandidatesByDestination = await this.resolveCityCandidatesForDestinations(
+      blocks.map((block) => block.destination),
+    );
+    const entries = await Promise.all(blocks.map(async (block) => {
+      const cacheKey = this.blockCacheKey(block, roomCount, occupancyKey);
+      const cityCandidates = cityCandidatesByDestination.get(block.destination) || [];
+      if (cityCandidates.length === 0) return [cacheKey, [] as any[]] as const;
+
+      const hotels = await this.prisma.dvi_hotel.findMany({
+        where: {
+          status: 1,
+          deleted: false,
+          OR: [
+            { hotel_city: { in: cityCandidates } },
+            { hotel_state: { in: cityCandidates } },
+          ],
+        },
+        select: {
+          hotel_id: true,
+          hotel_name: true,
+          hotel_code: true,
+          hotel_city: true,
+          hotel_state: true,
+          hotel_address: true,
+          hotel_latitude: true,
+          hotel_longitude: true,
+          hotel_category: true,
+          hotel_margin: true,
+          hotel_margin_gst_type: true,
+          hotel_margin_gst_percentage: true,
+          hotel_cancel_policy: true,
+        },
+      });
+      return [cacheKey, hotels as any[]] as const;
+    }));
+
+    return new Map(entries);
+  }
+
+  /** Load all room, room-type, and monthly price rows in three bulk queries. */
+  private async loadCatalogRows(hotels: any[], requestedDates: string[] = []): Promise<OfflineCatalogRows> {
+    const hotelIds = Array.from(new Set(
+      hotels.map((hotel) => Number(hotel.hotel_id || 0)).filter((id) => id > 0),
+    ));
+    if (hotelIds.length === 0) {
+      return {
+        roomsByHotel: new Map(),
+        activeRoomTypeIds: new Set(),
+        pricesByHotelRoomType: new Map(),
+      };
+    }
+
+    const activeRoomsStartedAt = Date.now();
+    const activeRooms = await this.prisma.dvi_hotel_rooms.findMany({
+      where: { hotel_id: { in: hotelIds }, status: 1, deleted: 0 },
+      select: {
+        hotel_id: true,
+        room_ID: true,
+        room_type_id: true,
+        room_title: true,
+        room_ref_code: true,
+        total_max_adults: true,
+        total_max_childrens: true,
+        breakfast_included: true,
+        lunch_included: true,
+        dinner_included: true,
+      },
+      orderBy: [{ room_type_id: 'asc' }, { room_ID: 'asc' }],
+    });
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_QUERY', {
+      query: 'active-rooms',
+      durationMs: Date.now() - activeRoomsStartedAt,
+      hotelCount: hotelIds.length,
+      rowCount: activeRooms.length,
+    });
+    const roomsByHotel = new Map<number, any[]>();
+    for (const room of activeRooms as any[]) {
+      const hotelId = Number(room.hotel_id || 0);
+      const rows = roomsByHotel.get(hotelId) || [];
+      rows.push(room);
+      roomsByHotel.set(hotelId, rows);
+    }
+
+    const roomTypeIds = Array.from(new Set(
+      (activeRooms as any[]).map((room) => Number(room.room_type_id || 0)).filter((id) => id > 0),
+    ));
+    const roomTypeModel = (this.prisma as any).dvi_hotel_roomtype;
+    const hasRoomTypeModel = Boolean(roomTypeModel?.findMany);
+    const activeRoomTypesStartedAt = Date.now();
+    const activeRoomTypes = hasRoomTypeModel && roomTypeIds.length > 0
+      ? await roomTypeModel.findMany({
+          where: { room_type_id: { in: roomTypeIds }, status: 1, deleted: 0 },
+          select: { room_type_id: true },
+        })
+      : [];
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_QUERY', {
+      query: 'active-room-types',
+      durationMs: Date.now() - activeRoomTypesStartedAt,
+      roomTypeCount: roomTypeIds.length,
+      rowCount: activeRoomTypes.length,
+    });
+    const activeRoomTypeIds = new Set<number>(
+      hasRoomTypeModel
+        ? (activeRoomTypes as any[]).map((row) => Number(row.room_type_id)).filter((id) => id > 0)
+        : roomTypeIds,
+    );
+
+    const requestedPeriods = Array.from(new Set(
+      requestedDates.map((date) => {
+        const parsed = new Date(`${date}T00:00:00.000Z`);
+        return Number.isNaN(parsed.getTime())
+          ? ''
+          : `${parsed.getUTCFullYear()}|${parsed.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })}`;
+      }).filter(Boolean),
+    ));
+    const requestedDayNumbers = Array.from(new Set(
+      requestedDates.map((date) => {
+        const parsed = new Date(`${date}T00:00:00.000Z`);
+        return Number.isNaN(parsed.getTime()) ? 0 : parsed.getUTCDate();
+      }).filter((day) => day > 0),
+    ));
+    const priceSelect: Record<string, boolean> = {
+      hotel_id: true,
+      room_type_id: true,
+      year: true,
+      month: true,
+    };
+    for (const dayNumber of requestedDayNumbers) {
+      priceSelect[`day_${dayNumber}`] = true;
+    }
+
+    const priceRowsStartedAt = Date.now();
+    const priceRows = roomTypeIds.length > 0
+      ? await this.prisma.dvi_hotel_room_price_book.findMany({
+          where: {
+            hotel_id: { in: hotelIds },
+            room_type_id: { in: roomTypeIds },
+            price_type: 0,
+            status: 1,
+            deleted: 0,
+            ...(requestedPeriods.length > 0
+              ? { OR: requestedPeriods.map((period) => {
+                  const [year, month] = period.split('|');
+                  return { year, month };
+                }) }
+              : {}),
+          },
+          select: priceSelect as any,
+        })
+      : [];
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_QUERY', {
+      query: 'room-price-book',
+      durationMs: Date.now() - priceRowsStartedAt,
+      hotelCount: hotelIds.length,
+      roomTypeCount: roomTypeIds.length,
+      requestedPeriods,
+      requestedDayNumbers,
+      rowCount: priceRows.length,
+    });
+    const pricesByHotelRoomType = new Map<string, any[]>();
+    for (const row of priceRows as any[]) {
+      const key = `${Number(row.hotel_id || 0)}|${Number(row.room_type_id || 0)}`;
+      const rows = pricesByHotelRoomType.get(key) || [];
+      rows.push(row);
+      pricesByHotelRoomType.set(key, rows);
+    }
+
+    return { roomsByHotel, activeRoomTypeIds, pricesByHotelRoomType };
+  }
+
   clearCache(): void {
     this.availabilityCache.clear();
+  }
+
+  private buildRoomOffersFromCatalogRows(
+    hotel: any,
+    dateList: string[],
+    roomCount: number,
+    adultCount: number,
+    childCount: number,
+    catalogRows: OfflineCatalogRows,
+  ): OfflineRoomOffer[] {
+    const hotelId = Number(hotel.hotel_id || 0);
+    const roomsNeeded = Math.max(Number(roomCount || 1), 1);
+    const activeRooms = (catalogRows.roomsByHotel.get(hotelId) || []).filter((room: any) => {
+      const maxAdults = Number(room.total_max_adults || 0);
+      const maxChildren = Number(room.total_max_childrens || 0);
+      return (!adultCount || !maxAdults || maxAdults * roomsNeeded >= adultCount) &&
+        (!childCount || !maxChildren || maxChildren * roomsNeeded >= childCount) &&
+        catalogRows.activeRoomTypeIds.has(Number(room.room_type_id || 0));
+    });
+    const offers: OfflineRoomOffer[] = [];
+
+    for (const room of activeRooms) {
+      const roomTypeId = Number(room.room_type_id || 0);
+      const matchingPriceRows = catalogRows.pricesByHotelRoomType.get(`${hotelId}|${roomTypeId}`) || [];
+      if (matchingPriceRows.length === 0) continue;
+
+      const nightlyBase: number[] = [];
+      const nightlySell: number[] = [];
+      let valid = true;
+      for (const date of dateList) {
+        const parsed = new Date(`${date}T00:00:00.000Z`);
+        const dayKey = `day_${parsed.getUTCDate()}`;
+        const year = String(parsed.getUTCFullYear());
+        const month = parsed.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+        const nightlyPrices = matchingPriceRows
+          .filter((row) => String(row.year || '') === year && String(row.month || '') === month)
+          .map((row) => Number(row[dayKey] || 0))
+          .filter((price) => Number.isFinite(price) && price > 0);
+        if (nightlyPrices.length === 0) {
+          valid = false;
+          break;
+        }
+
+        const baseAmount = Math.min(...nightlyPrices);
+        const sellAmount = this.hotelPricingService.applyInvisibleHotelMargin(baseAmount, hotel);
+        nightlyBase.push(baseAmount);
+        nightlySell.push(this.hotelPricingService.money(sellAmount * roomsNeeded));
+      }
+
+      if (!valid || nightlySell.length !== dateList.length) continue;
+      offers.push({
+        roomId: Number(room.room_ID || 0),
+        roomTypeId,
+        roomTitle: String(room.room_title || room.room_ref_code || `Room ${roomTypeId}`),
+        bookingCode: `OFFLINE-${hotelId}-${room.room_ID}-${roomTypeId}`,
+        mealPlan: this.resolveMealPlan(room),
+        nightlyBase,
+        nightlySell,
+        totalStayPrice: this.hotelPricingService.money(nightlySell.reduce((sum, amount) => sum + amount, 0)),
+        pricePerNight: this.hotelPricingService.money(Math.min(...nightlySell)),
+        roomCount,
+      });
+    }
+
+    return offers.sort((a, b) => a.totalStayPrice - b.totalStayPrice);
   }
 
   private async buildRoomOffers(
@@ -369,7 +695,19 @@ export class OfflineHotelCatalogService {
     roomCount: number,
     adultCount = 0,
     childCount = 0,
+    catalogRows?: OfflineCatalogRows,
   ): Promise<OfflineRoomOffer[]> {
+    if (catalogRows) {
+      return this.buildRoomOffersFromCatalogRows(
+        hotel,
+        dateList,
+        roomCount,
+        adultCount,
+        childCount,
+        catalogRows,
+      );
+    }
+
     const activeRooms = await this.prisma.dvi_hotel_rooms.findMany({
       where: {
         hotel_id: Number(hotel.hotel_id || 0),
@@ -643,36 +981,55 @@ export class OfflineHotelCatalogService {
   }
 
   private async resolveCityCandidates(destination: string): Promise<string[]> {
-    const raw = String(destination || '').trim();
-    if (!raw) {
-      return [];
-    }
+    const candidatesByDestination = await this.resolveCityCandidatesForDestinations([destination]);
+    return candidatesByDestination.get(String(destination || '').trim()) || [];
+  }
 
-    const firstPart = raw.split(/[,(-]/)[0].trim();
+  /** Resolve all requested destinations with one city-master query. */
+  private async resolveCityCandidatesForDestinations(
+    destinations: string[],
+  ): Promise<Map<string, string[]>> {
+    const uniqueDestinations = Array.from(new Set(
+      destinations.map((destination) => String(destination || '').trim()).filter(Boolean),
+    ));
+    const result = new Map<string, string[]>();
+    if (uniqueDestinations.length === 0) return result;
+
+    const lookupParts = uniqueDestinations.flatMap((destination) => {
+      const firstPart = destination.split(/[,(-]/)[0].trim();
+      return [
+        { name: { equals: firstPart } },
+        { name: { contains: firstPart } },
+        { name: { equals: destination } },
+        { name: { contains: destination } },
+      ];
+    });
     const cityRecords = await this.prisma.dvi_cities.findMany({
-      where: {
-        deleted: 0,
-        OR: [
-          { name: { equals: firstPart } },
-          { name: { contains: firstPart } },
-          { name: { equals: raw } },
-          { name: { contains: raw } },
-        ],
-      },
+      where: { deleted: 0, OR: lookupParts },
       select: { id: true, name: true },
     });
 
-    const candidates = new Set<string>([raw, firstPart]);
-    for (const city of cityRecords as any[]) {
-      candidates.add(String(city.id || '').trim());
-      candidates.add(String(city.name || '').trim());
-      const prefix = String(city.name || '').split(',')[0].trim();
-      if (prefix) {
-        candidates.add(prefix);
+    for (const destination of uniqueDestinations) {
+      const firstPart = destination.split(/[,(-]/)[0].trim();
+      const candidates = new Set<string>([destination, firstPart]);
+      for (const city of cityRecords as any[]) {
+        const cityName = String(city.name || '').trim();
+        if (
+          cityName === firstPart ||
+          cityName.includes(firstPart) ||
+          cityName === destination ||
+          cityName.includes(destination)
+        ) {
+          candidates.add(String(city.id || '').trim());
+          candidates.add(cityName);
+          const prefix = cityName.split(',')[0].trim();
+          if (prefix) candidates.add(prefix);
+        }
       }
+      result.set(destination, Array.from(candidates).filter(Boolean));
     }
 
-    return Array.from(candidates).filter(Boolean);
+    return result;
   }
 
   private normalizeTextList(value: unknown): string[] {
