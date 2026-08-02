@@ -26,6 +26,8 @@ type OfflineRoomOffer = {
 
 export type OfflineRateResolution = {
   canonicalHotelId: number;
+  /** The route that was actually matched after stale UI route IDs are reconciled. */
+  routeId: number;
   rateOptionId: string;
   roomId: number;
   roomTypeId: number;
@@ -873,6 +875,7 @@ export class OfflineHotelCatalogService {
   async resolveOfflineRateOption(input: {
     planId: number;
     routeId: number;
+    routeDate?: string;
     canonicalHotelId: number;
     rateOptionId: string;
     roomCount?: number;
@@ -895,7 +898,7 @@ export class OfflineHotelCatalogService {
       throw new Error('Offline rate option does not belong to the selected hotel');
     }
 
-    const [plan, route, hotel] = await Promise.all([
+    const [plan, requestedRoute, hotel] = await Promise.all([
       this.prisma.dvi_itinerary_plan_details.findUnique({ where: { itinerary_plan_ID: Number(input.planId) } }),
       (this.prisma as any).dvi_itinerary_route_details.findFirst({
         where: { itinerary_route_ID: Number(input.routeId), itinerary_plan_ID: Number(input.planId), deleted: 0 },
@@ -905,18 +908,58 @@ export class OfflineHotelCatalogService {
         select: { hotel_id: true, hotel_margin: true, hotel_margin_gst_type: true, hotel_margin_gst_percentage: true },
       }),
     ]);
-    if (!plan || !route || !hotel) {
+    if (!plan || !hotel) {
+      throw new Error('Offline rate option is no longer available for this itinerary');
+    }
+
+    const dateList = this.getNightDates(checkInDate, checkOutDate);
+    const requestedRouteDate = String(input.routeDate || '').slice(0, 10);
+    const routeDateOnly = requestedRouteDate || (() => {
+      const parsed = requestedRoute
+        ? new Date(requestedRoute.itinerary_route_date)
+        : null;
+      return parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : '';
+    })();
+
+    // Availability rows can outlive an itinerary route edit. In that case the
+    // browser still has the old route ID, but it does have the current route
+    // date on the selected card. Reconcile that date to the current plan
+    // before persisting instead of rejecting a valid offline option.
+    let route = requestedRoute;
+    if (requestedRoute && routeDateOnly && (() => {
+      const parsed = new Date(requestedRoute.itinerary_route_date);
+      return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== routeDateOnly;
+    })()) {
+      route = await (this.prisma as any).dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: Number(input.planId),
+          deleted: 0,
+          itinerary_route_date: new Date(`${routeDateOnly}T00:00:00.000Z`),
+        },
+        orderBy: { itinerary_route_ID: 'asc' },
+      });
+    }
+    if (!route && routeDateOnly) {
+      route = await (this.prisma as any).dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: Number(input.planId),
+          deleted: 0,
+          itinerary_route_date: new Date(`${routeDateOnly}T00:00:00.000Z`),
+        },
+        orderBy: { itinerary_route_ID: 'asc' },
+      });
+    }
+    if (!route) {
       throw new Error('Offline rate option is no longer available for this itinerary');
     }
 
     const routeDate = new Date(route.itinerary_route_date);
-    const routeDateOnly = Number.isNaN(routeDate.getTime()) ? '' : routeDate.toISOString().slice(0, 10);
-    const dateList = this.getNightDates(checkInDate, checkOutDate);
+    const resolvedRouteDateOnly = Number.isNaN(routeDate.getTime()) ? '' : routeDate.toISOString().slice(0, 10);
     // A continuous offline stay is exposed against each route in the block,
     // but its rate option is keyed by the block's first night. Selecting a
     // room/meal option from a later day must therefore validate against the
     // complete stay window, not only the first night.
-    if (!dateList.includes(routeDateOnly)) {
+    if (!dateList.includes(resolvedRouteDateOnly)) {
       throw new Error('Offline rate option is stale for the selected stay dates');
     }
 
@@ -934,6 +977,7 @@ export class OfflineHotelCatalogService {
 
     return {
       canonicalHotelId: hotelId,
+      routeId: Number(route.itinerary_route_ID),
       rateOptionId: input.rateOptionId,
       roomId,
       roomTypeId,

@@ -1619,6 +1619,7 @@ private getGuideSlotLabel(slotId: number): string {
     routeId: number;
     hotelId: number | null;
     roomTypeId: number;
+    routeDate?: string;
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
   }) {
