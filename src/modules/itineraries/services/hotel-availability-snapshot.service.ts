@@ -15,6 +15,7 @@ import {
 } from '../itinerary-hotel-details.service';
 import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
 import { OfflineHotelCatalogService } from './offline-hotel-catalog.service';
+import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
 import {
   hotelDisplaySnapshot,
   hotelOptionKey,
@@ -803,6 +804,17 @@ export class HotelAvailabilitySnapshotService {
       // here would persist the old supplier-only response and hide newly merged
       // Offline/AxisRooms options from the UI.
       this.tboHotelDetails.clearCacheForQuote?.(quoteId);
+      const logStage = (stage: string, stageStartedAt: number) => {
+      const details = {
+        quoteId,
+        planId: plan.itinerary_plan_ID,
+        searchRunId,
+        stage,
+        durationMs: Date.now() - stageStartedAt,
+      };
+      this.logger.log(`[HOTEL_AVAILABILITY_OUTER_STAGE] ${JSON.stringify(details)}`);
+      HotelAvailabilityTimingLogger.log('HOTEL_AVAILABILITY_OUTER_STAGE', details);
+      };
       const routes = await this.prisma.dvi_itinerary_route_details.findMany({
         where: { itinerary_plan_ID: plan.itinerary_plan_ID, deleted: 0 },
         orderBy: { itinerary_route_date: 'asc' },
@@ -811,6 +823,7 @@ export class HotelAvailabilitySnapshotService {
         routes,
         Math.max(Number((plan as any).no_of_nights || 0), 0),
       );
+      const liveSearchStartedAt = Date.now();
       const liveResponse = await this.tboHotelDetails.getHotelDetailsByQuoteIdFromTbo(
         quoteId,
         undefined,
@@ -820,6 +833,7 @@ export class HotelAvailabilitySnapshotService {
         resetSelections,
         true,
       );
+      logStage('supplier-and-provider-search', liveSearchStartedAt);
       const sourceRows = this.filterSearchableLiveRows(
         Array.isArray(liveResponse.hotels) ? liveResponse.hotels : [],
         searchableRouteIds,
@@ -828,6 +842,7 @@ export class HotelAvailabilitySnapshotService {
       // inventory snapshot. Live rows win automatically; offline rows are used
       // only for a stay where no live selectable row exists.
       const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
+      const offlineFetchStartedAt = Date.now();
       const offlineByRoute = await this.offlineHotelCatalog.fetchOfflineHotelsForRoutes(
         routes,
         noOfNights,
@@ -836,6 +851,7 @@ export class HotelAvailabilitySnapshotService {
         Math.max(Number((plan as any).total_adult || 0), 0),
         Math.max(Number((plan as any).total_children || 0), 0),
       );
+      logStage('offline-fetch-in-reset-coordinator', offlineFetchStartedAt);
       const recommendationGroupTypes = await this.getRecommendationGroupTypes(plan.itinerary_plan_ID, [], sourceRows);
       const offlineRows = this.materializeOfflineRows(offlineByRoute, routes, recommendationGroupTypes);
       let rows = [...sourceRows, ...offlineRows];
@@ -857,6 +873,7 @@ export class HotelAvailabilitySnapshotService {
       const cacheRows = storageRows.length > 0
         ? storageRows
         : [this.buildEmptySnapshotRow(plan, quoteId, searchRunId, checkedAt)];
+      const persistenceStartedAt = Date.now();
       const changeSummary = await this.prisma.$transaction(async (tx) => {
         const txCache = (tx as any).dvi_itinerary_hotel_search_cache;
         if (resetSelections) {
@@ -912,8 +929,11 @@ export class HotelAvailabilitySnapshotService {
           this.getPlanMealPlanCode(plan),
         );
       });
+      logStage('snapshot-persistence-and-selection-reconciliation', persistenceStartedAt);
 
+      const readStartedAt = Date.now();
       const response = await this.readPersisted(quoteId, { page: 1, pageSize: 0 });
+      logStage('read-persisted-response', readStartedAt);
       const hasPartialAvailability = Number(liveResponse.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
         (Array.isArray(liveResponse.hotelAvailability?.providerErrors) && liveResponse.hotelAvailability.providerErrors.length > 0);
       (response as any).hotelAvailability = {

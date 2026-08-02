@@ -1,5 +1,6 @@
 import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
+import { HotelAvailabilityTimingLogger } from '../../itineraries/services/hotel-availability-timing.logger';
 import { PrismaService } from '../../../prisma.service';
 import {
   IHotelProvider,
@@ -1643,6 +1644,25 @@ export class TBOHotelProvider implements IHotelProvider {
     basicAuth: string,
     description: string = ''
   ): Promise<any[]> {
+    const requestStartedAt = Date.now();
+    const requestUrl = `${this.SEARCH_API_URL}/Search`;
+    const requestDetails = {
+      endpoint: requestUrl,
+      timeoutMs: 30000,
+      description,
+      checkIn: searchRequest.CheckIn,
+      checkOut: searchRequest.CheckOut,
+      cityCode: searchRequest.CityCode,
+      hotelCodeCount: searchRequest.HotelCodes
+        ? searchRequest.HotelCodes.split(',').filter((code: string) => code.trim()).length
+        : 0,
+      guestNationality: searchRequest.GuestNationality,
+      paxRooms: searchRequest.PaxRooms,
+      noOfRoomsFilter: searchRequest.Filters?.NoOfRooms,
+      mealTypeFilter: searchRequest.Filters?.MealType || '',
+      starRatingFilter: searchRequest.Filters?.StarRating || 0,
+    };
+    HotelAvailabilityTimingLogger.log('TBO_SEARCH_REQUEST', requestDetails);
     try {
       const logFullPayload = (process.env.TBO_LOG_FULL_PAYLOAD || 'true').toLowerCase() === 'true';
  console.log(logFullPayload,'logFullPayload');
@@ -1674,6 +1694,20 @@ export class TBOHotelProvider implements IHotelProvider {
       });
 
       const responseTime = Date.now() - startTime;
+      HotelAvailabilityTimingLogger.log('TBO_SEARCH_RESPONSE', {
+        ...requestDetails,
+        durationMs: responseTime,
+        httpStatus: response.status,
+        providerStatus: typeof response.data?.Status === 'object'
+          ? response.data?.Status?.Code
+          : response.data?.Status,
+        providerStatusDescription: typeof response.data?.Status === 'object'
+          ? response.data?.Status?.Description
+          : undefined,
+        hotelResultCount: Array.isArray(response.data?.HotelResult)
+          ? response.data.HotelResult.length
+          : 0,
+      });
  this.logger.log(` TBO API Response Time ${description}: ${responseTime}ms`);
       if (logFullPayload && false) {
  this.logger.log(` TBO API Response JSON: ${JSON.stringify(response.data)}`);
@@ -1699,7 +1733,16 @@ export class TBOHotelProvider implements IHotelProvider {
       return hotels;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
- this.logger.error(` TBO Search Error ${description}: ${errorMsg}`);
+      HotelAvailabilityTimingLogger.log('TBO_SEARCH_ERROR', {
+        ...requestDetails,
+        durationMs: Date.now() - requestStartedAt,
+        errorName: error?.name,
+        errorCode: error?.code,
+        errorMessage: errorMsg,
+        httpStatus: error?.response?.status,
+        providerStatus: error?.response?.data?.Status,
+      });
+      this.logger.error(` TBO Search Error ${description}: ${errorMsg}`);
 
       return [];
     }

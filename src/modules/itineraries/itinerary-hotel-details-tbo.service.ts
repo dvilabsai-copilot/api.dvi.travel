@@ -6,6 +6,7 @@ import { HotelSearchService } from '../hotels/services/hotel-search.service';
 import { HobseHotelProvider } from '../hotels/providers/hobse-hotel.provider';
 import { HotelSearchResult } from '../hotels/interfaces/hotel-provider.interface';
 import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.service';
+import { HotelAvailabilityTimingLogger } from './services/hotel-availability-timing.logger';
 import {
   HotelRecommendationPackageService,
   resolveHotelRecommendationAlgorithm,
@@ -1344,6 +1345,22 @@ if (hotelMasterId) {
     }
 
  const planId = plan.itinerary_plan_ID;
+    const stageTimings: Record<string, number> = {};
+    const measureStage = async <T>(stage: string, work: () => Promise<T>): Promise<T> => {
+      const stageStartedAt = Date.now();
+      const details = { quoteId, planId, stage };
+      this.logger.log(`[HOTEL_AVAILABILITY_STAGE_START] ${JSON.stringify(details)}`);
+      HotelAvailabilityTimingLogger.log('HOTEL_AVAILABILITY_STAGE_START', details);
+      try {
+        return await work();
+      } finally {
+        const durationMs = Date.now() - stageStartedAt;
+        stageTimings[stage] = durationMs;
+        const completedDetails = { quoteId, planId, stage, durationMs };
+        this.logger.log(`[HOTEL_AVAILABILITY_STAGE_COMPLETE] ${JSON.stringify(completedDetails)}`);
+        HotelAvailabilityTimingLogger.log('HOTEL_AVAILABILITY_STAGE_COMPLETE', completedDetails);
+      }
+    };
 const guestNationality = await this.resolveGuestNationality(plan);
 
 const preferredCategories = this.normalizeNumberList(
@@ -1514,7 +1531,7 @@ this.logger.log(
       });
     } else {
  // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
-      hotelsByRoute = await this.fetchHotelsForRoutesWithRetry(
+      hotelsByRoute = await measureStage('tbo-search', () => this.fetchHotelsForRoutesWithRetry(
         routes,
         noOfNights,
         guestNationality,
@@ -1522,7 +1539,7 @@ this.logger.log(
         planAdultCount,
         planChildCount,
         planChildAges,
-      );
+      ));
 
       // A failed supplier stay block is deliberately represented as null by
       // the retry layer so it can be retried/compared.  Downstream merging and
@@ -1542,7 +1559,7 @@ this.logger.log(
         );
       } else {
         if (includeOffline) {
-          const offlineHotelsByRoute = await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
+          const offlineHotelsByRoute = await measureStage('offline-fetch-in-supplier-service', () => this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
             routes,
             noOfNights,
             guestNationality,
@@ -1550,7 +1567,7 @@ this.logger.log(
             planAdultCount,
             planChildCount,
             planChildAges,
-          );
+          ));
           offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
             const existingHotels = hotelsByRoute.get(routeId) || [];
             const hotelKeys = new Set(
@@ -1568,8 +1585,8 @@ this.logger.log(
  // First, create a HOBSE-specific city code map using hobse_city_code
           let hobseHotelsByRoute = new Map<number, HotelSearchResult[]>();
           try {
-            const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
-            hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
+            const hobseCityCodeMap = await measureStage('hobse-city-mapping', () => this.batchMapDestinationsToHobseCityCodes(routes));
+            hobseHotelsByRoute = await measureStage('hobse-search', () => this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap));
           } catch (error) {
             this.logger.warn(
               `[HOBSE] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
@@ -1589,14 +1606,14 @@ this.logger.log(
  this.logger.log(`\n STEP 3.6: Starting ResAvenue hotel fetch for ${routes.length} routes...`);
         let resavenueHotelsByRoute = new Map<number, HotelSearchResult[]>();
         try {
-          resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+          resavenueHotelsByRoute = await measureStage('resavenue-search', () => this.fetchResavenueHotelsForRoutes(
             routes,
             noOfNights,
             guestNationality,
             planRoomCount,
             planAdultCount,
             planChildCount,
-          );
+          ));
         } catch (error) {
           this.logger.warn(
             `[RESAVENUE] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
@@ -1633,18 +1650,18 @@ this.logger.log(
         });
 
  // Step 3.7: Load saved meal plans per route for AxisRooms filtering
-        const savedMealPlansByRoute = await this.loadSavedMealPlansPerRoute(planId, routes);
+        const savedMealPlansByRoute = await measureStage('saved-meal-plan-load', () => this.loadSavedMealPlansPerRoute(planId, routes));
 
  // Step 3.8: Fetch AxisRooms-enabled hotels from local DB and merge with existing providers.
         let axisroomsHotelsByRoute = new Map<number, HotelSearchResult[]>();
         try {
-          axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
+          axisroomsHotelsByRoute = await measureStage('axisrooms-search', () => this.fetchAxisroomsHotelsForRoutes(
             routes,
             noOfNights,
             savedMealPlansByRoute,
             preferredMealPlanCode,
             planRoomCount,
-          );
+          ));
         } catch (error) {
           this.logger.warn(
             `[AXISROOMS] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
@@ -1664,7 +1681,7 @@ this.logger.log(
 
         let staahHotelsByRoute = new Map<number, HotelSearchResult[]>();
         try {
-          staahHotelsByRoute = await this.fetchStaahHotelsForRoutes(
+          staahHotelsByRoute = await measureStage('staah-search', () => this.fetchStaahHotelsForRoutes(
             routes,
             noOfNights,
             savedMealPlansByRoute,
@@ -1678,7 +1695,7 @@ this.logger.log(
               childWithBedCount: Number((plan as any).total_child_with_bed || 0),
               childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
             },
-          );
+          ));
         } catch (error) {
           this.logger.warn(
             `[STAAH] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
@@ -1787,6 +1804,9 @@ this.logger.log(
     );
 
     const duration = Date.now() - startTime;
+    const stageSummary = { quoteId, planId, totalDurationMs: duration, stageTimings };
+    this.logger.log(`[HOTEL_AVAILABILITY_STAGE_SUMMARY] ${JSON.stringify(stageSummary)}`);
+    HotelAvailabilityTimingLogger.log('HOTEL_AVAILABILITY_STAGE_SUMMARY', stageSummary);
  this.logger.log(` Generated ${packages.length} hotel packages`);
  this.logger.log(` Total TBO Service Time: ${duration}ms\n`);
 
@@ -3940,7 +3960,11 @@ this.logger.log(
 
  // Fetch all hotel details from database to get IDs and voucher status
     const hotelDetailsInDb = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
-      where: { itinerary_plan_id: planId, deleted: 0 },
+      // Only active rows belong to the current editable hotel snapshot.  Old
+      // reset/rebuild rows remain in the table for audit history and must not
+      // be projected back into the live response as a second "Selected hotel"
+      // row when they no longer match the fresh supplier inventory.
+      where: { itinerary_plan_id: planId, deleted: 0, status: 1 },
       select: {
         itinerary_plan_hotel_details_ID: true,
         itinerary_route_id: true,
@@ -4236,6 +4260,10 @@ this.logger.log(
     const hotelRows: ItineraryHotelRowDto[] = [];
     const selectionRowsByRouteAndGroup = new Map<string, any[]>();
     for (const detail of hotelDetailsInDb as any[]) {
+      // hotel_required=2 rows are previous-night/early-arrival markers, not
+      // selectable hotel selections. They are handled separately through
+      // earlyArrivalMap above and must never be appended as persisted hotels.
+      if (Number(detail?.hotel_required || 0) !== 1) continue;
       const routeId = Number(detail?.itinerary_route_id || 0);
       const groupType = Number(detail?.group_type || 0);
       if (routeId <= 0 || groupType <= 0) continue;
