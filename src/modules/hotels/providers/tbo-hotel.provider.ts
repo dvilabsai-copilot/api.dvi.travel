@@ -40,6 +40,11 @@ export class TBOHotelProvider implements IHotelProvider {
   private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
   private readonly SEARCH_USERNAME = process.env.TBO_SEARCH_USERNAME || process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
   private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
+  /** Maximum time allowed for one TBO hotel availability Search request. */
+  private readonly SEARCH_TIMEOUT_MS = (() => {
+    const configured = Number(process.env.TBO_SEARCH_TIMEOUT_MS || 5000);
+    return Number.isFinite(configured) && configured > 0 ? configured : 5000;
+  })();
 
  // Real Production Credentials (From Postman - Verified Working)
   private readonly USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
@@ -60,6 +65,7 @@ export class TBOHotelProvider implements IHotelProvider {
  this.logger.error(' PrismaService is NULL/UNDEFINED!');
     }
  this.logger.log(' TBO Hotel Provider initialized with production endpoints');
+ this.logger.log(`TBO hotel search timeout: ${this.SEARCH_TIMEOUT_MS}ms`);
  this.logger.log(`Using credentials: ${this.USERNAME}`);
     if (
       (process.env.TBO_SEARCH_USERNAME && this.SEARCH_USERNAME !== this.USERNAME) ||
@@ -1648,7 +1654,7 @@ export class TBOHotelProvider implements IHotelProvider {
     const requestUrl = `${this.SEARCH_API_URL}/Search`;
     const requestDetails = {
       endpoint: requestUrl,
-      timeoutMs: 30000,
+      timeoutMs: this.SEARCH_TIMEOUT_MS,
       description,
       checkIn: searchRequest.CheckIn,
       checkOut: searchRequest.CheckOut,
@@ -1686,7 +1692,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       const startTime = Date.now();
       const response = await this.http.post(`${this.SEARCH_API_URL}/Search`, searchRequest, {
-        timeout: 30000,
+        timeout: this.SEARCH_TIMEOUT_MS,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Basic ${basicAuth}`,
