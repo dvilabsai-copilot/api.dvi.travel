@@ -13,6 +13,7 @@ type VehicleVoucherEmailContext = {
   verifiedEmailId: string;
   bookingStatusLabel: string;
   vendorEmails: string[];
+  agentEmails: string[];
   travelExpertEmail: string[];
   accountsEmails: string[];
   defaultVehicleEmails: string[];
@@ -205,11 +206,14 @@ export class VehicleVoucherEmailNotifierService {
     ]);
 
     let travelExpertEmail: string[] = [];
+    let agentEmails: string[] = [];
     if (Number(plan?.agent_id || 0) > 0) {
       const agent = await this.prisma.dvi_agent.findFirst({
         where: { agent_ID: Number(plan?.agent_id || 0), deleted: 0 },
-        select: { travel_expert_id: true },
+        select: { travel_expert_id: true, agent_email_id: true },
       });
+
+      agentEmails = this.parseEmails(agent?.agent_email_id);
 
       if (Number(agent?.travel_expert_id || 0) > 0) {
         const staff = await this.prisma.dvi_staff_details.findFirst({
@@ -236,6 +240,7 @@ export class VehicleVoucherEmailNotifierService {
         ...this.parseEmails(voucher.vehicle_confirmed_email_id),
         ...this.parseEmails(voucher.vehicle_confirmation_verified_email_id),
       ]),
+      agentEmails,
       travelExpertEmail,
       accountsEmails: this.parseEmails(settings?.default_accounts_email_id),
       defaultVehicleEmails: this.parseEmails(settings?.default_vehicle_voucher_email_id),
@@ -274,6 +279,7 @@ export class VehicleVoucherEmailNotifierService {
         ...context.defaultVehicleEmails,
       ]);
       const vendorCc = this.uniqueEmails([
+        ...context.agentEmails,
         ...context.travelExpertEmail,
         ...context.ccEmails,
       ]);
