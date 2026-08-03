@@ -70,7 +70,10 @@ export class AuthService {
       throw new UnauthorizedException('This account is inactive. Please contact support.');
     }
 
+    const isStaffLogin = Number(user.staff_id || 0) > 0;
+
     if (
+      !isStaffLogin &&
       (Number(user.roleID || 0) === SystemRole.AGENT ||
         Number(user.roleID || 0) === SystemRole.VEHICLE_AGENT) &&
       Number(user.userapproved || 0) !== 1
