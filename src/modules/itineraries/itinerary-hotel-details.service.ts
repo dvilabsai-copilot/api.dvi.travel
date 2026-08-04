@@ -769,6 +769,21 @@ async getHotelRoomDetailsByQuoteId(
       const routeId = Number((h as any).itinerary_route_id ?? 0);
       const routeDayNumber = routeDayNumberMap.get(routeId) || 0;
       const isSyntheticPreviousDayBilling = Boolean((h as any).__previousDayBillingSynthetic);
+      const rawSelectedPriceSnapshot = (h as any).selected_price_snapshot;
+      let selectedPriceSnapshot: Record<string, unknown> = {};
+      if (rawSelectedPriceSnapshot && typeof rawSelectedPriceSnapshot === 'object') {
+        selectedPriceSnapshot = rawSelectedPriceSnapshot as Record<string, unknown>;
+      } else if (rawSelectedPriceSnapshot) {
+        try {
+          const parsed = JSON.parse(String(rawSelectedPriceSnapshot));
+          if (parsed && typeof parsed === 'object') {
+            selectedPriceSnapshot = parsed as Record<string, unknown>;
+          }
+        } catch {
+          // Preserve the raw snapshot below; malformed legacy snapshots do
+          // not prevent the itinerary details response from loading.
+        }
+      }
       const storedEarlyCheckIn = Number((h as any).early_checkin ?? 0) === 1;
  // The marker row represents the extra night; it must not hide the
  // structured metadata stored on the real selected hotel row. The
@@ -875,8 +890,16 @@ async getHotelRoomDetailsByQuoteId(
         hotelId: Number((h as any).hotel_id ?? 0) || 0,
         hotelName: master ? ((master as any).hotel_name ?? '') : '',
         category: master ? ((master as any).hotel_category ?? 0) : 0,
- roomType: '', // room/meal details can be wired later
-        mealPlan: '',
+        roomType: String(
+          selectedPriceSnapshot.roomType ||
+          selectedPriceSnapshot.roomTypeName ||
+          '',
+        ).trim(),
+        mealPlan: String(
+          selectedPriceSnapshot.mealPlan ||
+          selectedPriceSnapshot.mealPlanCode ||
+          '',
+        ).trim(),
         totalHotelCost: Number((h as any).total_hotel_cost ?? 0) * earlyCheckInBillingMultiplier,
         totalHotelTaxAmount: Number((h as any).total_hotel_tax_amount ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
@@ -906,7 +929,7 @@ async getHotelRoomDetailsByQuoteId(
           : (Number((h as any).hotel_id || 0) > 0 ? 'AUTO_SELECTED' : undefined),
         selectionId: Number(hotelDetailsId || 0),
         requiresPriceReacceptance: Boolean((h as any).requires_price_reacceptance),
-        selectedPriceSnapshot: (h as any).selected_price_snapshot || null,
+        selectedPriceSnapshot: rawSelectedPriceSnapshot || null,
       };
     });
 
