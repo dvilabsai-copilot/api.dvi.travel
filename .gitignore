@@ -14,3 +14,4 @@ scripts/*.local.ts
 scripts/staah-sync.env
 backups/staah/
 resavenue-hotel-provider.log
+hobse-hotel-provider.log

@@ -8,6 +8,13 @@ import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.
 import { OfflineHotelCatalogService } from './offline-hotel-catalog.service';
 import { filterActiveVendorCandidateRows } from '../utils/active-vendor-candidate.util';
 import { getVehicleRateAvailability } from '../utils/vehicle-rate-availability.util';
+import { hotelSelectionKey, hotelSelectionKeyFromRow } from '../utils/hotel-selection-identity.util';
+import {
+  getCanonicalMealPlanFlags,
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealText,
+  inferCanonicalHotelRatePlanCodeFromMealFlags,
+} from '../../hotels/hotel-rate-plans';
 
 @Injectable()
 export class ItinerarySelectionWorkflowService {
@@ -86,14 +93,28 @@ export class ItinerarySelectionWorkflowService {
   async selectHotel(data: {
     planId: number;
     routeId: number;
-    hotelId: number;
+    hotelId: number | null;
     roomTypeId: number;
  groupType?: number; // ADD groupType parameter
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean; };
-    canonicalHotelId?: number;
+    canonicalHotelId?: number | null;
+    hotelCode?: string;
     rateOptionId?: string;
     provider?: string;
+    optionKey?: string;
+    pricePerNight?: number;
+    totalPrice?: number;
+    currency?: string;
+    hotelName?: string;
+    category?: number;
+    roomType?: string;
+    mealPlanCode?: string;
+    bookingCode?: string;
+    searchReference?: string;
+    roomId?: string | number;
+    rateId?: string | number;
     roomCount?: number;
+    routeDate?: string;
     requestedBy?: number;
   }) {
     if (String(data.provider || '').trim().toLowerCase() === 'offline' || String(data.rateOptionId || '').startsWith('offline:')) {
@@ -127,6 +148,23 @@ export class ItinerarySelectionWorkflowService {
       }),
     ]);
     const quoteId = (plan as any)?.itinerary_quote_ID || '';
+    const normalizedProvider = String(data.provider || '').trim().toLowerCase();
+    const hasLiveSupplierRateIdentity =
+      ['tbo', 'axisrooms', 'staah', 'resavenue', 'hobse'].includes(normalizedProvider) &&
+      Boolean(
+        String(data.hotelCode || '').trim() ||
+        String(data.rateOptionId || '').trim() ||
+        String(data.optionKey || '').trim() ||
+        String(data.searchReference || '').trim() ||
+        String(data.bookingCode || '').trim(),
+      );
+    if (
+      (!Number.isInteger(Number(data.hotelId)) || Number(data.hotelId) <= 0) &&
+      !hasLiveSupplierRateIdentity
+    ) {
+      throw new BadRequestException('Hotel selection requires a canonical dvi_hotel.hotel_id');
+    }
+    await this.validateLiveSelectionAgainstSnapshot(data, plan, quoteId, route);
 
     const actualGuestArrivalAt = (plan as any)?.trip_start_date_and_time
       ? new Date((plan as any).trip_start_date_and_time)
@@ -176,36 +214,99 @@ export class ItinerarySelectionWorkflowService {
         };
 
  // Check if hotel assignment already exists in hotel_details
-    const existingHotelDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findFirst({
+    const existingHotelCandidates = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
       where: {
         itinerary_plan_id: data.planId,
         itinerary_route_id: data.routeId,
         group_type: data.groupType || 1,
-        hotel_required: { not: 2 },
+        hotel_required: 1,
         deleted: 0,
+        status: 1,
       },
       orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
     });
+    const selectionKey = hotelSelectionKey(
+      data.planId,
+      data.routeId,
+      data.groupType || 1,
+      route?.itinerary_route_date,
+    );
+    const existingHotelDetails = existingHotelCandidates.find((row: any) =>
+      hotelSelectionKeyFromRow(data.planId, row) === selectionKey,
+    ) || existingHotelCandidates[0];
+    const canonicalHotelId = Number(data.canonicalHotelId ?? data.hotelId ?? 0);
+    const persistedHotelId = canonicalHotelId > 0 ? canonicalHotelId : null;
+    const persistedHotelCode =
+      String(data.hotelCode || existingHotelDetails?.hotel_code || '').trim() || null;
 
-    const mealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
-    const mealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
-    const mealDinner = data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0;
+    const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
+    const rawMealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
+    const rawMealDinner = data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0;
+    const canonicalMealPlanCode =
+      inferCanonicalHotelRatePlanCode(data.mealPlanCode) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(data.mealPlanCode) ||
+      (rawMealBreakfast || rawMealLunch || rawMealDinner
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(rawMealBreakfast, rawMealLunch, rawMealDinner)
+        : null);
+    const canonicalMealFlags = canonicalMealPlanCode
+      ? getCanonicalMealPlanFlags(canonicalMealPlanCode)
+      : {
+          all: false,
+          breakfast: Boolean(rawMealBreakfast),
+          lunch: Boolean(rawMealLunch),
+          dinner: Boolean(rawMealDinner),
+        };
+    const mealBreakfast = canonicalMealFlags.breakfast ? 1 : 0;
+    const mealLunch = canonicalMealFlags.lunch ? 1 : 0;
+    const mealDinner = canonicalMealFlags.dinner ? 1 : 0;
 
     let hotelDetailsId: number;
 
     if (existingHotelDetails) {
  // Update existing hotel assignment
- console.log(` Updating existing hotel - Old ID: ${existingHotelDetails.hotel_id}, New ID: ${data.hotelId}, GroupType: ${data.groupType}`);
+ console.log(` Updating existing hotel - Old ID: ${existingHotelDetails.hotel_id}, New ID: ${persistedHotelId ?? 'NULL'}, GroupType: ${data.groupType}`);
       await (this.prisma as any).dvi_itinerary_plan_hotel_details.update({
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
         data: {
-          hotel_id: data.hotelId,
+          hotel_id: persistedHotelId,
+          hotel_code: persistedHotelCode,
           hotel_required: 1,
           ...earlyCheckInData,
  group_type: data.groupType || 1, // Save groupType
           updatedon: new Date(),
           ...liveRateMetadata,
+          selected_rate_option_id: data.rateOptionId || data.optionKey || null,
+          selected_price_per_night: data.pricePerNight ?? null,
+          selected_total_price: data.totalPrice ?? null,
+          selected_currency: data.currency || null,
+            selected_price_snapshot: JSON.stringify({
+              optionKey: data.optionKey || null,
+              rateOptionId: data.rateOptionId || null,
+              hotelCode: data.hotelCode || null,
+              provider: data.provider || null,
+              selectionOrigin: 'USER_SELECTED',
+            hotelName: data.hotelName || null,
+            category: data.category || null,
+            roomType: data.roomType || null,
+            mealPlan: canonicalMealPlanCode || null,
+            bookingCode: data.bookingCode || null,
+            searchReference: data.searchReference || null,
+            roomId: data.roomId || null,
+            rateId: data.rateId || null,
+          }),
         },
+      });
+      await (this.prisma as any).dvi_itinerary_plan_hotel_details.updateMany({
+        where: {
+          itinerary_plan_id: data.planId,
+          itinerary_route_id: data.routeId,
+          group_type: data.groupType || 1,
+          hotel_required: 1,
+          deleted: 0,
+          status: 1,
+          itinerary_plan_hotel_details_ID: { not: existingHotelDetails.itinerary_plan_hotel_details_ID },
+        },
+        data: { status: 0, deleted: 1, updatedon: new Date() },
       });
       const updated = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findUnique({
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
@@ -214,7 +315,7 @@ export class ItinerarySelectionWorkflowService {
       hotelDetailsId = existingHotelDetails.itinerary_plan_hotel_details_ID;
     } else {
  // Create new hotel assignment
- console.log(` Creating new hotel - ID: ${data.hotelId}, GroupType: ${data.groupType}`);
+ console.log(` Creating new hotel - ID: ${persistedHotelId ?? 'NULL'}, GroupType: ${data.groupType}`);
       const created = await (this.prisma as any).dvi_itinerary_plan_hotel_details.create({
         data: {
           itinerary_plan_id: data.planId,
@@ -222,7 +323,8 @@ export class ItinerarySelectionWorkflowService {
           itinerary_route_date: route?.itinerary_route_date || null,
           itinerary_route_location:
             route?.next_visiting_location || route?.location_name || null,
-          hotel_id: data.hotelId,
+          hotel_id: persistedHotelId,
+          hotel_code: persistedHotelCode,
           hotel_required: 1,
           ...earlyCheckInData,
  group_type: data.groupType || 1, // Save groupType
@@ -230,6 +332,26 @@ export class ItinerarySelectionWorkflowService {
           createdon: new Date(),
           status: 1,
           deleted: 0,
+          ...liveRateMetadata,
+          selected_rate_option_id: data.rateOptionId || data.optionKey || null,
+          selected_price_per_night: data.pricePerNight ?? null,
+          selected_total_price: data.totalPrice ?? null,
+          selected_currency: data.currency || null,
+          selected_price_snapshot: JSON.stringify({
+            optionKey: data.optionKey || null,
+            rateOptionId: data.rateOptionId || null,
+            hotelCode: data.hotelCode || null,
+            provider: data.provider || null,
+            selectionOrigin: 'USER_SELECTED',
+            hotelName: data.hotelName || null,
+            category: data.category || null,
+            roomType: data.roomType || null,
+            mealPlan: canonicalMealPlanCode || null,
+            bookingCode: data.bookingCode || null,
+            searchReference: data.searchReference || null,
+            roomId: data.roomId || null,
+            rateId: data.rateId || null,
+          }),
         },
       });
  console.log(` Created. Values - hotel_id: ${(created as any).hotel_id}, group_type: ${(created as any).group_type}`);
@@ -239,11 +361,11 @@ export class ItinerarySelectionWorkflowService {
  // Check if room details already exist
     const existingRoomDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findFirst({
       where: {
-        itinerary_plan_id: data.planId,
-        itinerary_route_id: data.routeId,
-        hotel_id: data.hotelId,
+        itinerary_plan_hotel_details_id: hotelDetailsId,
         deleted: 0,
+        status: 1,
       },
+      orderBy: { itinerary_plan_hotel_room_details_ID: 'desc' },
     });
 
     if (existingRoomDetails) {
@@ -251,12 +373,22 @@ export class ItinerarySelectionWorkflowService {
       await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.update({
         where: { itinerary_plan_hotel_room_details_ID: existingRoomDetails.itinerary_plan_hotel_room_details_ID },
         data: {
+          hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
           dinner_required: mealDinner,
           updatedon: new Date(),
         },
+      });
+      await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.updateMany({
+        where: {
+          itinerary_plan_hotel_details_id: hotelDetailsId,
+          deleted: 0,
+          status: 1,
+          itinerary_plan_hotel_room_details_ID: { not: existingRoomDetails.itinerary_plan_hotel_room_details_ID },
+        },
+        data: { status: 0, deleted: 1, updatedon: new Date() },
       });
     } else {
  // Create new room details
@@ -265,7 +397,7 @@ export class ItinerarySelectionWorkflowService {
           itinerary_plan_hotel_details_id: hotelDetailsId,
           itinerary_plan_id: data.planId,
           itinerary_route_id: data.routeId,
-          hotel_id: data.hotelId,
+          hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
@@ -278,9 +410,12 @@ export class ItinerarySelectionWorkflowService {
       });
     }
 
- // Clear cache for this quote so next request gets fresh data
-    if (quoteId) {
-      this.hotelDetailsTboService.clearCacheForQuote(quoteId);
+    // A live selection changes the durable assignment. Invalidate the
+    // per-quote hotel-details cache so a subsequent itinerary reload reads
+    // this USER_SELECTED rate instead of reconstructing the previous
+    // auto-selected row from the stale snapshot.
+    if (plan?.itinerary_quote_ID) {
+      this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
     }
 
     return {
@@ -292,6 +427,20 @@ export class ItinerarySelectionWorkflowService {
   private getLiveRateMetadata(provider?: string) {
     const normalizedProvider = String(provider || '').trim().toLowerCase();
     if (!['tbo', 'axisrooms', 'staah', 'resavenue', 'hobse'].includes(normalizedProvider)) return {};
+    if (normalizedProvider === 'axisrooms') {
+      // AxisRooms availability and price are read from our ARI-synchronised
+      // tables. Booking is still supplier-bookable, but this is not a live
+      // search price and must not be labelled as one in the persisted row.
+      return {
+        hotel_provider: normalizedProvider,
+        hotel_booking_mode: 'LIVE_API',
+        price_source: 'DATABASE',
+        is_live_rate: false,
+        hotel_approval_status: 'NOT_REQUIRED',
+        manual_confirmation_status: 'NOT_STARTED',
+        requires_price_reacceptance: false,
+      };
+    }
     return {
       hotel_provider: normalizedProvider,
       hotel_booking_mode: 'LIVE_API',
@@ -311,6 +460,7 @@ export class ItinerarySelectionWorkflowService {
     canonicalHotelId?: number;
     rateOptionId?: string;
     roomCount?: number;
+    routeDate?: string;
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
     requestedBy?: number;
@@ -327,6 +477,7 @@ export class ItinerarySelectionWorkflowService {
       resolvedRate = await this.offlineHotelCatalogService.resolveOfflineRateOption({
         planId: Number(data.planId),
         routeId: Number(data.routeId),
+        routeDate: data.routeDate,
         canonicalHotelId,
         rateOptionId,
         roomCount: Math.max(Number(data.roomCount || 1), 1),
@@ -338,6 +489,7 @@ export class ItinerarySelectionWorkflowService {
     const requestedBy = Number(data.requestedBy || 1);
     const now = new Date();
     const snapshot = JSON.stringify(resolvedRate);
+    const resolvedRouteId = Number(resolvedRate.routeId || data.routeId);
     const checkInDate = resolvedRate.nightlyRates[0]?.date || null;
     const checkOutDate = resolvedRate.nightlyRates.length
       ? new Date(`${resolvedRate.nightlyRates[resolvedRate.nightlyRates.length - 1].date}T00:00:00.000Z`)
@@ -345,16 +497,26 @@ export class ItinerarySelectionWorkflowService {
     if (checkOutDate) checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
 
     await this.prisma.$transaction(async (tx) => {
-      const existingHotel = await (tx as any).dvi_itinerary_plan_hotel_details.findFirst({
+      const existingHotelCandidates = await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
         where: {
           itinerary_plan_id: Number(data.planId),
-          itinerary_route_id: Number(data.routeId),
+          itinerary_route_id: resolvedRouteId,
           group_type: Number(data.groupType || 1),
-          hotel_required: { not: 2 },
+          hotel_required: 1,
           deleted: 0,
+          status: 1,
         },
         orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
       });
+      const offlineSelectionKey = hotelSelectionKey(
+        Number(data.planId),
+        resolvedRouteId,
+        Number(data.groupType || 1),
+        checkInDate,
+      );
+      const existingHotel = existingHotelCandidates.find((row: any) =>
+        hotelSelectionKeyFromRow(Number(data.planId), row) === offlineSelectionKey,
+      ) || existingHotelCandidates[0];
       const hotelData = {
         hotel_id: resolvedRate.canonicalHotelId,
         hotel_code: String(resolvedRate.canonicalHotelId),
@@ -396,7 +558,7 @@ export class ItinerarySelectionWorkflowService {
         : await (tx as any).dvi_itinerary_plan_hotel_details.create({
             data: {
               itinerary_plan_id: Number(data.planId),
-              itinerary_route_id: Number(data.routeId),
+              itinerary_route_id: resolvedRouteId,
               group_type: Number(data.groupType || 1),
               createdby: requestedBy,
               createdon: now,
@@ -432,7 +594,7 @@ export class ItinerarySelectionWorkflowService {
           data: {
             itinerary_plan_hotel_details_id: selection.itinerary_plan_hotel_details_ID,
             itinerary_plan_id: Number(data.planId),
-            itinerary_route_id: Number(data.routeId),
+            itinerary_route_id: resolvedRouteId,
             group_type: Number(data.groupType || 1),
             createdby: requestedBy,
             createdon: now,
@@ -473,8 +635,7 @@ export class ItinerarySelectionWorkflowService {
  /**
    * Bulk save hotel selections - used before confirming itinerary
  */
-  async bulkSaveHotels(planId: number, hotels: any[]) {
-    const userId = 1;
+  async bulkSaveHotels(planId: number, hotels: any[], requestedBy = 1) {
 
  // Get the quote ID to clear the cache
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
@@ -492,6 +653,23 @@ export class ItinerarySelectionWorkflowService {
         roomTypeId: hotel.roomTypeId || 1,
         groupType: hotel.groupType,
         mealPlan: hotel.mealPlan,
+        canonicalHotelId: hotel.canonicalHotelId ?? hotel.hotelId,
+        rateOptionId: hotel.rateOptionId,
+        provider: hotel.provider,
+        optionKey: hotel.optionKey,
+        pricePerNight: hotel.pricePerNight,
+        totalPrice: hotel.totalPrice,
+        currency: hotel.currency,
+        hotelName: hotel.hotelName,
+        category: hotel.category,
+        roomType: hotel.roomType,
+        mealPlanCode: hotel.mealPlanCode,
+        bookingCode: hotel.bookingCode,
+        searchReference: hotel.searchReference,
+        roomId: hotel.roomId,
+        rateId: hotel.rateId,
+        roomCount: hotel.roomCount,
+        requestedBy,
       });
     }
 
@@ -504,6 +682,307 @@ export class ItinerarySelectionWorkflowService {
       success: true,
       message: `Successfully saved ${hotels.length} hotel selections`,
     };
+  }
+
+  /**
+   * A selection must come from the latest persisted availability snapshot.
+   * The fallback for test doubles/legacy installations is intentionally only
+   for databases where the snapshot model is unavailable; production has this
+   table because Check Availability owns the durable search boundary.
+   */
+  private async validateLiveSelectionAgainstSnapshot(
+    data: any,
+    plan: any,
+    quoteId: string,
+    route?: any,
+  ): Promise<void> {
+    const provider = String(data.provider || '').trim().toLowerCase();
+    if (!provider || provider === 'offline') return;
+
+    if (provider === 'axisrooms') {
+      this.assertAxisRoomsReferenceMatchesRoute(data, route);
+
+      // AxisRooms is not a live-search snapshot provider in this flow. Its
+      // availability and price are read from the ARI tables populated by the
+      // daily inventory feed. Validate that source directly and do not require
+      // a row in dvi_itinerary_hotel_search_cache, which may be absent or
+      // belong to a different search run.
+      if (await this.isCurrentAxisRoomsDatabaseRate(data, route)) return;
+    }
+
+    const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
+    if (!cache?.findFirst || !cache?.findMany) return;
+
+    const latest = await cache.findFirst({
+      where: { quote_id: String(quoteId), plan_id: Number(plan?.itinerary_plan_ID || data.planId), deleted: 0, status: 1 },
+      orderBy: [{ synced_at: 'desc' }, { id: 'desc' }],
+      select: { synced_at: true },
+    });
+    if (!latest?.synced_at) {
+      throw new BadRequestException('Hotel availability has not been checked yet. Refresh hotel availability and select a current rate.');
+    }
+
+    const routeWhere = {
+      quote_id: String(quoteId),
+      plan_id: Number(plan?.itinerary_plan_ID || data.planId),
+      route_id: Number(data.routeId),
+      deleted: 0,
+      status: 1,
+      synced_at: latest.synced_at,
+    };
+    let rows = await cache.findMany({
+      where: {
+        ...routeWhere,
+      },
+      select: { full_payload: true },
+    });
+    // A route rebuild can replace itinerary route IDs after availability was
+    // persisted. In that case the latest snapshot is still valid when its
+    // stay date/group matches the current route, but a route_id-only lookup
+    // returns no rows. Scope the fallback to the same latest snapshot and
+    // current route date/group; supplier identity and price remain exact below.
+    if (rows.length === 0 && route?.itinerary_route_date) {
+      const routeDate = new Date(route.itinerary_route_date);
+      const routeDateKey = Number.isNaN(routeDate.getTime())
+        ? ''
+        : routeDate.toISOString().slice(0, 10);
+      if (routeDateKey) {
+        const snapshotRows = await cache.findMany({
+          where: {
+            quote_id: String(quoteId),
+            plan_id: Number(plan?.itinerary_plan_ID || data.planId),
+            deleted: 0,
+            status: 1,
+            synced_at: latest.synced_at,
+          },
+          select: { full_payload: true },
+        });
+        rows = snapshotRows.filter((row: any) => {
+          try {
+            const payload = typeof row.full_payload === 'string'
+              ? JSON.parse(row.full_payload)
+              : row.full_payload;
+            const payloadDate = String(
+              payload?.date || payload?.checkInDate || payload?.check_in_date || '',
+            ).slice(0, 10);
+            const payloadGroup = Number(payload?.groupType ?? payload?.group_type ?? 0);
+            return payloadDate === routeDateKey &&
+              (!Number(data.groupType) || !payloadGroup || payloadGroup === Number(data.groupType));
+          } catch {
+            return false;
+          }
+        });
+      }
+    }
+    const requestedRateIds = [data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    const requestedCanonicalId = Number((data.canonicalHotelId ?? data.hotelId) || 0);
+    const requestedHotelCode = String(
+      data.hotelCode || data.providerHotelCode || data.provider_hotel_code || '',
+    ).trim().toLowerCase();
+    const requestedRoomType = String(data.roomType || '').trim().toLowerCase();
+    const requestedHotelName = String(data.hotelName || '').trim().toLowerCase();
+    const parsedRows = rows
+      .map((row: any) => {
+        try { return typeof row.full_payload === 'string' ? JSON.parse(row.full_payload) : row.full_payload; } catch { return null; }
+      })
+      .filter(Boolean);
+    const candidateRows = parsedRows.flatMap((row: any) => {
+      const rateOptions = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
+      if (rateOptions.length === 0) return [row];
+      // A hotel row is a container for its room/rate options. Prefer the
+      // concrete option when validating a selection so a parent row cannot
+      // hide the selected option's price and room identity.
+      return [...rateOptions.map((option: any) => ({
+        ...row,
+        ...option,
+        provider: option.provider || row.provider,
+        canonicalHotelId: row.canonicalHotelId ?? option.canonicalHotelId,
+        hotelId: row.hotelId ?? option.hotelId,
+        hotelCode: row.hotelCode || row.providerHotelCode || option.hotelCode,
+        hotelName: row.hotelName || option.hotelName,
+        roomType: option.roomType || option.roomTypeName || row.roomType,
+        mealPlan: option.mealPlan || option.mealPlanCode || option.ratePlanName || row.mealPlan,
+        bookingCode: option.bookingCode || row.bookingCode,
+        searchReference: option.searchReference || row.searchReference,
+        rateOptionId: option.rateOptionId || option.rate_option_id || row.rateOptionId,
+        optionKey: option.optionKey || option.option_key || row.optionKey,
+        roomId: option.roomId || option.room_id || row.roomId,
+        rateId: option.rateId || option.rate_id || option.rateOptionId || row.rateId,
+      })), row];
+    });
+    const propertyMatches = (candidate: any): boolean => {
+        if (String(candidate.provider || '').trim().toLowerCase() !== provider) return false;
+        const candidateCanonicalId = Number(candidate.canonicalHotelId ?? candidate.hotelId ?? candidate.hotel_id ?? 0);
+        const candidateHotelCode = String(
+          candidate.hotelCode || candidate.providerHotelCode || candidate.provider_hotel_code || candidate.hotel_code || '',
+        ).trim().toLowerCase();
+        const canonicalMatch = requestedCanonicalId > 0 && candidateCanonicalId > 0 && candidateCanonicalId === requestedCanonicalId;
+        const codeMatch = Boolean(requestedHotelCode && candidateHotelCode && requestedHotelCode === candidateHotelCode);
+        if (!canonicalMatch && !codeMatch) return false;
+        return true;
+    };
+    const rateMatches = (candidate: any): boolean => {
+      if (requestedRateIds.length === 0) return false;
+      const candidateRateIds = [candidate.rateOptionId, candidate.optionKey, candidate.searchReference, candidate.bookingCode]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+
+      // rateOptionId/optionKey are the primary identity. Do not let a current
+      // bookingCode or searchReference mask an older rateOptionId from another
+      // night; that was the source of the AxisRooms stale-rate false positive.
+      const requestedPrimary = String(data.rateOptionId || data.optionKey || '').trim();
+      if (requestedPrimary) return candidateRateIds.includes(requestedPrimary);
+
+      const requestedBookingIdentity = [data.searchReference, data.bookingCode]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+      return requestedBookingIdentity.length > 0 && requestedBookingIdentity.every((value) => candidateRateIds.includes(value));
+    };
+    const matched = candidateRows.find((candidate: any) => {
+      if (!propertyMatches(candidate) || !rateMatches(candidate)) return false;
+      const candidateRoomType = String(candidate.roomType || candidate.room_type || '').trim().toLowerCase();
+      const candidateHotelName = String(candidate.hotelName || candidate.hotel_name || '').trim().toLowerCase();
+      if (requestedRoomType && candidateRoomType && requestedRoomType !== candidateRoomType) return false;
+      if (requestedHotelName && candidateHotelName && requestedHotelName !== candidateHotelName) return false;
+      return true;
+    });
+
+    if (!matched) {
+      throw new BadRequestException('The selected hotel rate is stale or unavailable. Refresh hotel availability and select again.');
+    }
+
+    const requestedTotal = Number(data.totalPrice ?? 0);
+    const explicitSnapshotTotals = [
+      matched.totalStayPrice,
+      matched.totalPrice,
+      matched.totalAmount,
+      matched.totalAmountAfterTax,
+      matched.totalHotelCost,
+      matched.totalCost,
+      matched.totalRoomCost,
+      matched.total_hotel_cost,
+    ].map(Number).filter((amount) => Number.isFinite(amount) && amount > 0);
+    // Only use a nightly price as a fallback when the snapshot does not
+    // expose any stay-level amount. Comparing a multi-night selection with a
+    // per-night value can incorrectly accept or reject a stale selection.
+    const snapshotTotals = explicitSnapshotTotals.length > 0
+      ? explicitSnapshotTotals
+      : [matched.price, matched.pricePerNight, matched.price_per_night]
+        .map(Number)
+        .filter((amount) => Number.isFinite(amount) && amount > 0);
+    if (requestedTotal > 0 && snapshotTotals.length > 0 && !snapshotTotals.some((snapshotTotal) => Math.abs(requestedTotal - snapshotTotal) <= 0.01)) {
+      throw new BadRequestException('The selected hotel price changed. Refresh hotel availability and review the updated rate.');
+    }
+  }
+
+  private toDateOnly(value: unknown): string {
+    const parsed = value ? new Date(String(value)) : new Date('invalid');
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+  }
+
+  private axisRoomsReferenceDate(value: unknown): string {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const isoDate = raw.match(/(20\d{2})[-](\d{2})[-](\d{2})/);
+    if (isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+    const compactDate = raw.match(/(?:^|[-|:])((20\d{2})(\d{2})(\d{2}))(?:$|[-|:])/i);
+    return compactDate ? `${compactDate[2]}-${compactDate[3]}-${compactDate[4]}` : '';
+  }
+
+  private parseAxisRoomsRateReference(data: any): {
+    hotelId: number;
+    roomId: number;
+    rateplanId: string;
+    date: string;
+  } {
+    const references = [data?.rateOptionId, data?.optionKey, data?.searchReference, data?.bookingCode]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    let hotelId = Number(data?.canonicalHotelId ?? data?.hotelId ?? 0) || 0;
+    let roomId = Number(data?.roomId || 0) || 0;
+    let rateplanId = String(data?.rateId || '').trim();
+    let date = '';
+
+    for (const reference of references) {
+      const rateOption = reference.match(/^axisrooms:(\d+):(\d+):([^:|]+):(\d{4}-\d{2}-\d{2})$/i);
+      if (rateOption) {
+        hotelId = Number(rateOption[1]) || hotelId;
+        roomId = Number(rateOption[2]) || roomId;
+        rateplanId = rateOption[3] || rateplanId;
+        date = rateOption[4];
+        break;
+      }
+      const optionRate = reference.match(/axisrooms[:|](\d+)[:|](\d+)[:|]([^:|]+)[:|](\d{4}-\d{2}-\d{2})/i);
+      if (optionRate) {
+        hotelId = Number(optionRate[1]) || hotelId;
+        roomId = Number(optionRate[2]) || roomId;
+        rateplanId = optionRate[3] || rateplanId;
+        date = optionRate[4];
+      }
+      const booking = reference.match(/^AX[-:](\d+)[-:](\d{8})$/i);
+      if (booking) {
+        hotelId = Number(booking[1]) || hotelId;
+        date = `${booking[2].slice(0, 4)}-${booking[2].slice(4, 6)}-${booking[2].slice(6, 8)}`;
+      }
+      date = date || this.axisRoomsReferenceDate(reference);
+    }
+
+    return { hotelId, roomId, rateplanId, date };
+  }
+
+  private assertAxisRoomsReferenceMatchesRoute(data: any, route?: any): void {
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    if (!routeDate) return;
+    const references = [data?.rateOptionId, data?.optionKey, data?.searchReference, data?.bookingCode]
+      .map((value) => this.axisRoomsReferenceDate(value))
+      .filter(Boolean);
+    const uniqueReferenceDates = Array.from(new Set(references));
+    if (uniqueReferenceDates.length > 1 || (uniqueReferenceDates.length === 1 && uniqueReferenceDates[0] !== routeDate)) {
+      throw new BadRequestException({
+        message: `The selected AxisRooms rate belongs to ${uniqueReferenceDates[0] || 'another date'}, but this itinerary route is ${routeDate}.`,
+        code: 'HOTEL_RATE_ROUTE_DATE_MISMATCH',
+        provider: 'axisrooms',
+        routeId: Number(data?.routeId || 0),
+        routeDate,
+        rateDate: uniqueReferenceDates[0] || null,
+      });
+    }
+  }
+
+  private async isCurrentAxisRoomsDatabaseRate(data: any, route?: any): Promise<boolean> {
+    const identity = this.parseAxisRoomsRateReference(data);
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    if (!identity.hotelId || !identity.roomId || !identity.rateplanId || !routeDate || identity.date !== routeDate) return false;
+
+    const availabilityModel = (this.prisma as any).dvi_hotel_room_availability;
+    const ratePlanModel = (this.prisma as any).dvi_hotel_room_rate_plan;
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!availabilityModel?.findFirst || !ratePlanModel?.findFirst || !occupancyModel?.findMany) return false;
+
+    const date = new Date(`${routeDate}T00:00:00.000Z`);
+    const requiredRooms = Math.max(Number(data?.roomCount || 1), 1);
+    const [availability, ratePlan, occupancyRows] = await Promise.all([
+      availabilityModel.findFirst({
+        where: { hotel_id: identity.hotelId, room_id: identity.roomId, start_date: { lte: date }, end_date: { gte: date } },
+        orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+        select: { free: true },
+      }),
+      ratePlanModel.findFirst({
+        where: { hotel_id: identity.hotelId, room_id: identity.roomId, rateplan_id: identity.rateplanId, axisrooms_room_id: { not: null }, deleted: 0, status: 1 },
+        select: { rateplan_id: true },
+      }),
+      occupancyModel.findMany({
+        where: { hotel_id: identity.hotelId, room_id: identity.roomId, rateplan_id: identity.rateplanId, start_date: { lte: date }, end_date: { gte: date } },
+        select: { occupancy_rates: true },
+      }),
+    ]);
+    if (!availability || Number(availability.free || 0) < requiredRooms || !ratePlan) return false;
+    return occupancyRows.some((row: any) => {
+      const values = row?.occupancy_rates && typeof row.occupancy_rates === 'object' ? Object.values(row.occupancy_rates) : [];
+      return values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+    });
   }
 
   private async getVehicleRateAvailabilityForEligible(

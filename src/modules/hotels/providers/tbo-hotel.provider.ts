@@ -1,5 +1,6 @@
 import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
+import { HotelAvailabilityTimingLogger } from '../../itineraries/services/hotel-availability-timing.logger';
 import { PrismaService } from '../../../prisma.service';
 import {
   IHotelProvider,
@@ -39,6 +40,11 @@ export class TBOHotelProvider implements IHotelProvider {
   private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
   private readonly SEARCH_USERNAME = process.env.TBO_SEARCH_USERNAME || process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
   private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
+  /** Maximum time allowed for one TBO hotel availability Search request. */
+  private readonly SEARCH_TIMEOUT_MS = (() => {
+    const configured = Number(process.env.TBO_SEARCH_TIMEOUT_MS || 5000);
+    return Number.isFinite(configured) && configured > 0 ? configured : 5000;
+  })();
 
  // Real Production Credentials (From Postman - Verified Working)
   private readonly USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
@@ -59,6 +65,7 @@ export class TBOHotelProvider implements IHotelProvider {
  this.logger.error(' PrismaService is NULL/UNDEFINED!');
     }
  this.logger.log(' TBO Hotel Provider initialized with production endpoints');
+ this.logger.log(`TBO hotel search timeout: ${this.SEARCH_TIMEOUT_MS}ms`);
  this.logger.log(`Using credentials: ${this.USERNAME}`);
     if (
       (process.env.TBO_SEARCH_USERNAME && this.SEARCH_USERNAME !== this.USERNAME) ||
@@ -1643,6 +1650,25 @@ export class TBOHotelProvider implements IHotelProvider {
     basicAuth: string,
     description: string = ''
   ): Promise<any[]> {
+    const requestStartedAt = Date.now();
+    const requestUrl = `${this.SEARCH_API_URL}/Search`;
+    const requestDetails = {
+      endpoint: requestUrl,
+      timeoutMs: this.SEARCH_TIMEOUT_MS,
+      description,
+      checkIn: searchRequest.CheckIn,
+      checkOut: searchRequest.CheckOut,
+      cityCode: searchRequest.CityCode,
+      hotelCodeCount: searchRequest.HotelCodes
+        ? searchRequest.HotelCodes.split(',').filter((code: string) => code.trim()).length
+        : 0,
+      guestNationality: searchRequest.GuestNationality,
+      paxRooms: searchRequest.PaxRooms,
+      noOfRoomsFilter: searchRequest.Filters?.NoOfRooms,
+      mealTypeFilter: searchRequest.Filters?.MealType || '',
+      starRatingFilter: searchRequest.Filters?.StarRating || 0,
+    };
+    HotelAvailabilityTimingLogger.log('TBO_SEARCH_REQUEST', requestDetails);
     try {
       const logFullPayload = (process.env.TBO_LOG_FULL_PAYLOAD || 'true').toLowerCase() === 'true';
  console.log(logFullPayload,'logFullPayload');
@@ -1666,7 +1692,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       const startTime = Date.now();
       const response = await this.http.post(`${this.SEARCH_API_URL}/Search`, searchRequest, {
-        timeout: 30000,
+        timeout: this.SEARCH_TIMEOUT_MS,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Basic ${basicAuth}`,
@@ -1674,6 +1700,20 @@ export class TBOHotelProvider implements IHotelProvider {
       });
 
       const responseTime = Date.now() - startTime;
+      HotelAvailabilityTimingLogger.log('TBO_SEARCH_RESPONSE', {
+        ...requestDetails,
+        durationMs: responseTime,
+        httpStatus: response.status,
+        providerStatus: typeof response.data?.Status === 'object'
+          ? response.data?.Status?.Code
+          : response.data?.Status,
+        providerStatusDescription: typeof response.data?.Status === 'object'
+          ? response.data?.Status?.Description
+          : undefined,
+        hotelResultCount: Array.isArray(response.data?.HotelResult)
+          ? response.data.HotelResult.length
+          : 0,
+      });
  this.logger.log(` TBO API Response Time ${description}: ${responseTime}ms`);
       if (logFullPayload && false) {
  this.logger.log(` TBO API Response JSON: ${JSON.stringify(response.data)}`);
@@ -1699,7 +1739,16 @@ export class TBOHotelProvider implements IHotelProvider {
       return hotels;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
- this.logger.error(` TBO Search Error ${description}: ${errorMsg}`);
+      HotelAvailabilityTimingLogger.log('TBO_SEARCH_ERROR', {
+        ...requestDetails,
+        durationMs: Date.now() - requestStartedAt,
+        errorName: error?.name,
+        errorCode: error?.code,
+        errorMessage: errorMsg,
+        httpStatus: error?.response?.status,
+        providerStatus: error?.response?.data?.Status,
+      });
+      this.logger.error(` TBO Search Error ${description}: ${errorMsg}`);
 
       return [];
     }

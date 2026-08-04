@@ -25,6 +25,8 @@ import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-v
 import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { SystemRole } from '../auth/constants/system-role.constants';
+import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
+import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -481,6 +483,7 @@ export class ItineraryDetailsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
+    private readonly hotelAvailabilitySnapshotService: HotelAvailabilitySnapshotService,
   ) {}
 
   private normalizeHotelSelectionEntries(
@@ -515,10 +518,52 @@ export class ItineraryDetailsService {
   }): Promise<HotelCostOverride> {
     const selectedEntries = this.normalizeHotelSelectionEntries(params.selections)
       .filter((selection: any) => selection && !selection.__coveredByMultiNight);
-    const hotelDetails = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
-      params.quoteId,
-    );
-    const availableRows = Array.isArray(hotelDetails.hotels) ? hotelDetails.hotels : [];
+    const snapshotRows = await this.hotelAvailabilitySnapshotService.getActiveRows(params.quoteId);
+    if (!snapshotRows) {
+      throw new BadRequestException({
+        message: 'No persisted hotel availability snapshot exists. Check Availability before previewing pricing.',
+        code: 'HOTEL_AVAILABILITY_SNAPSHOT_MISSING',
+      });
+    }
+    // A cached supplier hotel may contain several rate/meal-plan options in
+    // `rateOptions`, while the parent row represents only the supplier's
+    // default rate. Selection requests carry the nested rate identity (for
+    // example MAP), so preview must compare against those concrete options.
+    // Keep the parent row as well for legacy snapshots that do not have a
+    // nested option list.
+    const availableRows = snapshotRows.flatMap((row: any) => {
+      const rateOptions = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
+      if (rateOptions.length === 0) return [row];
+
+      return [row, ...rateOptions.map((option: any) => ({
+        ...row,
+        ...option,
+        itineraryRouteId: row.itineraryRouteId ?? row.routeId,
+        routeId: row.routeId ?? row.itineraryRouteId,
+        date: option.date || option.checkInDate || row.date || row.checkInDate,
+        checkInDate: option.checkInDate || row.checkInDate || row.date,
+        checkOutDate: option.checkOutDate || row.checkOutDate,
+        provider: option.provider || row.provider,
+        hotelCode: row.hotelCode || row.providerHotelCode || option.hotelCode,
+        hotelId: row.hotelId ?? option.hotelId,
+        canonicalHotelId: row.canonicalHotelId ?? option.canonicalHotelId,
+        hotelName: row.hotelName || option.hotelName,
+        roomType: option.roomType || option.roomTypeName || row.roomType,
+        mealPlan: option.mealPlan || option.mealPlanCode || option.ratePlanName || row.mealPlan,
+        bookingCode: option.bookingCode || row.bookingCode,
+        searchReference: option.searchReference || row.searchReference,
+        rateOptionId: option.rateOptionId || option.rate_option_id || row.rateOptionId,
+        optionKey: option.optionKey || option.option_key || row.optionKey,
+        roomId: option.roomId || option.room_id || row.roomId,
+        rateId: option.rateId || option.rate_id || option.rateOptionId || row.rateId,
+        baseHotelCost: option.baseHotelCost ?? option.totalStayPrice ?? option.totalPrice ?? option.price ?? row.baseHotelCost,
+        totalHotelCost: option.totalHotelCost ?? option.totalStayPrice ?? option.totalPrice ?? option.price ?? row.totalHotelCost,
+        totalHotelTaxAmount: option.totalHotelTaxAmount ?? option.totalTax ?? row.totalHotelTaxAmount,
+        hotelRoomGstAmount: option.hotelRoomGstAmount ?? row.hotelRoomGstAmount,
+        hotelMealPlanCost: option.hotelMealPlanCost ?? row.hotelMealPlanCost,
+        hotelMealPlanGstAmount: option.hotelMealPlanGstAmount ?? row.hotelMealPlanGstAmount,
+      }))];
+    });
     const selectedRows: any[] = [];
     const breakdown: NonNullable<CostBreakdownDto['hotelRateBreakdown']> = [];
     const usedRouteIds = new Set<number>();
@@ -532,45 +577,116 @@ export class ItineraryDetailsService {
       for (const routeId of routeIds) {
         if (usedRouteIds.has(routeId)) continue;
 
-        const provider = this.normalizeIdentity(selection.provider);
-        const hotelCode = this.normalizeIdentity(selection.hotelCode);
-        const bookingCode = this.normalizeIdentity(selection.bookingCode);
-        const searchReference = this.normalizeIdentity(selection.searchReference);
-        const roomId = this.normalizeIdentity(selection.roomId);
-        const rateId = this.normalizeIdentity(selection.rateId);
-        const roomType = this.normalizeIdentity(selection.roomType);
-        const mealPlan = this.normalizeIdentity(selection.mealPlan);
-        const routeCandidates = availableRows
-          .filter((row: any) => Number(row.itineraryRouteId || 0) === routeId)
-          .filter((row: any) => !params.groupType || Number(row.groupType || 0) === Number(params.groupType))
-          .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider);
-        const exactCodeCandidates = routeCandidates
+        const provider = this.normalizeIdentity(selection.provider || selection.hotel_provider);
+        const normalizeRateIdentity = (...values: unknown[]): string => {
+          for (const value of values) {
+            const normalized = this.normalizeIdentity(value);
+            // Supplier hotel IDs are optional for TBO. A serialized zero is
+            // not a usable property identity and must not block matching by
+            // provider hotel code, booking code, or search reference.
+            if (normalized && normalized !== '0' && normalized !== 'null' && normalized !== 'undefined') {
+              return normalized;
+            }
+          }
+          return '';
+        };
+        const hotelCode = normalizeRateIdentity(
+          selection.hotelCode,
+          selection.providerHotelCode,
+          selection.provider_hotel_code,
+          selection.hotel_code,
+          selection.hotelId,
+          selection.hotel_id,
+        );
+        const bookingCode = normalizeRateIdentity(
+          selection.bookingCode,
+          selection.booking_code,
+          selection.searchReference,
+          selection.search_reference,
+        );
+        const searchReference = normalizeRateIdentity(
+          selection.searchReference,
+          selection.search_reference,
+          selection.bookingCode,
+          selection.booking_code,
+        );
+        const roomId = normalizeRateIdentity(selection.roomId, selection.room_id);
+        const rateId = normalizeRateIdentity(selection.rateId, selection.rate_id, selection.rateOptionId, selection.rate_option_id);
+        const roomType = this.normalizeIdentity(selection.roomType || selection.room_type);
+        const mealPlan = this.normalizeIdentity(selection.mealPlan || selection.meal_plan);
+        const hotelName = this.normalizeHotelName(selection.hotelName || selection.hotel_name);
+        const requestedOptionKey = normalizeRateIdentity(selection.optionKey, selection.option_key);
+        const hasExplicitRateIdentity = Boolean(
+          requestedOptionKey || bookingCode || searchReference || roomId || rateId,
+        );
+        const requestedDate = String(
+          selection.checkInDate || selection.check_in_date || selection.date || '',
+        ).slice(0, 10);
+        const exactRouteCandidates = availableRows
+          .filter((row: any) => Number(row.itineraryRouteId || 0) === routeId);
+        const exactRouteAndDateCandidates = requestedDate
+          ? exactRouteCandidates.filter((row: any) => {
+              const rowDate = String(row.date || row.checkInDate || '').slice(0, 10);
+              return !rowDate || rowDate === requestedDate;
+            })
+          : exactRouteCandidates;
+        // A live search can rebuild route rows while preserving the same stay
+        // dates. If the route id changed between the selection map and the
+        // latest snapshot, use the date-scoped rows as a safe fallback; never
+        // fall back to an unrestricted hotel list.
+        const routeCandidates = exactRouteAndDateCandidates.length > 0
+          ? exactRouteAndDateCandidates
+          : requestedDate
+            ? availableRows.filter((row: any) => String(row.date || row.checkInDate || '').slice(0, 10) === requestedDate)
+            : [];
+        const buildCandidates = (
+          allowPerNightRateIdentityFallback = false,
+          allowOptionKeyFallback = false,
+        ) => routeCandidates
+          // `groupType` is a package-level hint, not a route-level rate
+          // identity. A single preview can contain selections from different
+          // groups (especially when offline rows are group 0), so do not let
+          // the global hint hide an explicitly selected rate.
           .filter((row: any) => {
-            if (!hotelCode) return true;
-            const rowCodes = [row.hotelCode, row.hotelId].map((value) => this.normalizeIdentity(value));
-            return rowCodes.includes(hotelCode);
-          });
-        const candidates = (exactCodeCandidates.length > 0
-          ? exactCodeCandidates
-          : (() => {
-            const sameHotelCandidates = routeCandidates.filter((row: any) => (
-              this.normalizeHotelName(row.hotelName) !== '' &&
-              this.normalizeHotelName(row.hotelName) === this.normalizeHotelName(selection.hotelName)
-            ));
-            if (sameHotelCandidates.length > 0) return sameHotelCandidates;
-
-            // If the selected property disappeared from the fresh snapshot,
-            // continue with the cheapest valid rate from the same provider.
-            return routeCandidates
-              .filter((row: any) => row.isSelectable !== false && row.isBookable !== false)
-              .filter((row: any) => !['NOT_BOOKABLE', 'NO_SUPPLIER_AVAILABILITY'].includes(
-                this.normalizeIdentity(row.availabilityStatus).toUpperCase(),
-              ))
-              .sort((a: any, b: any) => (
-                Number(a.totalHotelCost ?? a.pricePerNight ?? 0) -
-                Number(b.totalHotelCost ?? b.pricePerNight ?? 0)
-              ));
-          })())
+            if (hasExplicitRateIdentity) return true;
+            const requestedGroupType = Number(selection.groupType || params.groupType || 0);
+            return !requestedGroupType || Number(row.groupType || 0) === requestedGroupType;
+          })
+          .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider)
+          .filter((row: any) => {
+            const rowOptionKey = this.normalizeIdentity(row.optionKey || this.hotelAvailabilitySnapshotService.optionKey(row));
+            if (requestedOptionKey && !allowOptionKeyFallback && requestedOptionKey !== rowOptionKey) return false;
+            const rowCodes = [
+              row.hotelCode,
+              row.providerHotelCode,
+              row.provider_hotel_code,
+              row.hotel_code,
+              row.hotelId,
+              row.hotel_id,
+            ].map((value) => this.normalizeIdentity(value));
+            if (hotelCode && !rowCodes.includes(hotelCode)) return false;
+            const rowBookingCode = this.normalizeIdentity(row.bookingCode);
+            const rowSearchReference = this.normalizeIdentity(row.searchReference);
+            const rowRoomId = this.normalizeIdentity(row.roomId);
+            const rowRateId = this.normalizeIdentity(row.rateId);
+            const hasDifferentBookingIdentity = Boolean(
+              (bookingCode && bookingCode !== rowBookingCode && bookingCode !== rowSearchReference) ||
+              (searchReference && searchReference !== rowSearchReference && searchReference !== rowBookingCode),
+            );
+            if (hasDifferentBookingIdentity && !allowPerNightRateIdentityFallback) return false;
+            if (roomId && roomId !== rowRoomId) return false;
+            if (rateId && rateId !== rowRateId) return false;
+            if (hasDifferentBookingIdentity && allowPerNightRateIdentityFallback) {
+              // A multi-night booking can have a different supplier booking
+              // reference for each night. Keep the property/room identity,
+              // but do not require night one’s rate reference on later rows.
+              const rowRoomType = this.normalizeIdentity(row.roomType || row.room_type);
+              const rowHotelName = this.normalizeHotelName(row.hotelName || row.hotel_name);
+              if (roomType && rowRoomType && roomType !== rowRoomType) return false;
+              if (!hotelCode && hotelName && rowHotelName && hotelName !== rowHotelName) return false;
+            }
+            return true;
+          })
           .map((row: any) => {
             const rowBookingCode = this.normalizeIdentity(row.bookingCode);
             const rowSearchReference = this.normalizeIdentity(row.searchReference);
@@ -588,6 +704,19 @@ export class ItineraryDetailsService {
             return { row, score };
           })
           .sort((a: any, b: any) => b.score - a.score);
+
+        let candidates = buildCandidates(false);
+        if (candidates.length === 0 && routeIds.length > 1 && routeId !== routeIds[0]) {
+          candidates = buildCandidates(true);
+        }
+        // optionKey is a derived display identity. Supplier booking/search
+        // references are the authoritative rate identity and may differ in
+        // casing or formatting after snapshot normalization. Permit that
+        // derived key to fall back only after the route/property/rate fields
+        // still match the current snapshot.
+        if (candidates.length === 0) {
+          candidates = buildCandidates(false, true);
+        }
 
         const match = candidates[0]?.row;
         if (!match) {
@@ -5876,6 +6005,24 @@ const hasRequiredVehicleSelection =
       const fallbackRoomCost = Number(h.total_hotel_cost || 0);
       const rowMultiplier = earlyCheckInBillingMultiplier;
 
+      // A hotel selection stores the authoritative current rate separately
+      // from the legacy room-cost columns. Those columns may still represent
+      // the previous auto-selection, which made the details summary disagree
+      // with the hotel list and revert after a page refresh.
+      const persistedSelectedTotal = Number((h as any).selected_total_price || 0);
+      const hasPersistedSelectedTotal = Number.isFinite(persistedSelectedTotal) && persistedSelectedTotal > 0;
+      if (hasPersistedSelectedTotal) {
+        const selectedAmount = hotelStayTotal({
+          ...h,
+          totalStayPrice: persistedSelectedTotal,
+          pricePerNight: (h as any).selected_price_per_night || (h as any).price_per_night,
+        }, 1) * rowMultiplier;
+        hotelListTotal += selectedAmount;
+        hotelRoomBaseCost += selectedAmount;
+        totalRoomCost += selectedAmount;
+        return;
+      }
+
       hotelListTotal += (
         Number(h.total_hotel_cost || 0) + Number(h.total_hotel_tax_amount || 0)
       ) * rowMultiplier;
@@ -6407,6 +6554,9 @@ packageIncludes: {
       ];
     }
 
+    // Keep access scope and search criteria as separate AND clauses. Spreading
+    // both objects into the same level would make the later search OR replace
+    // the Agent/Travel Expert scope.
     const where: any = {
       deleted: 0,
       AND: [

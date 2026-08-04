@@ -32,7 +32,9 @@ test('axis-only search never invokes registered forbidden suppliers and rejects 
 test('offline option is priced from every requested night and missing nights are rejected', async () => {
   const prisma = {
     dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_plan_ID: 1 }) },
-    dvi_itinerary_route_details: { findFirst: async () => ({ itinerary_route_date: new Date('2099-01-01') }) },
+    // The route may be any night in the continuous stay represented by the
+    // rate option, not only the first night.
+    dvi_itinerary_route_details: { findFirst: async () => ({ itinerary_route_ID: 10, itinerary_route_date: new Date('2099-01-02') }) },
     dvi_hotel: { findFirst: async () => ({ hotel_id: 153, hotel_margin: 0, hotel_margin_gst_type: 0, hotel_margin_gst_percentage: 0 }) },
     dvi_hotel_rooms: { findMany: async () => [{ room_ID: 22, room_type_id: 7, room_title: 'Deluxe', room_ref_code: 'D', breakfast_included: 1, lunch_included: 0, dinner_included: 0 }] },
     dvi_hotel_room_price_book: { findMany: async () => [{ room_type_id: 7, price_type: 0, year: '2099', month: 'January', day_1: '4500', day_2: '4500' }] },
@@ -41,10 +43,40 @@ test('offline option is priced from every requested night and missing nights are
   const service = new OfflineHotelCatalogService(prisma, pricing);
   const resolved = await service.resolveOfflineRateOption({ planId: 1, routeId: 10, canonicalHotelId: 153, rateOptionId: 'offline:153:22:7:2099-01-01:2099-01-03', roomCount: 1 });
   assert.equal(resolved.pricePerNight, 4500);
+  assert.equal(resolved.routeId, 10);
   assert.equal(resolved.totalStayPrice, 9000);
   assert.equal(resolved.nightlyRates.length, 2);
   prisma.dvi_hotel_room_price_book.findMany = async () => [{ room_type_id: 7, price_type: 0, year: '2099', month: 'January', day_1: '4500' }];
   await assert.rejects(() => service.resolveOfflineRateOption({ planId: 1, routeId: 10, canonicalHotelId: 153, rateOptionId: 'offline:153:22:7:2099-01-01:2099-01-03', roomCount: 1 }), /no longer priced/);
+});
+
+test('offline selection reconciles a stale route id using the selected route date', async () => {
+  const calls: any[] = [];
+  const prisma = {
+    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_plan_ID: 1 }) },
+    dvi_itinerary_route_details: {
+      findFirst: async ({ where }: any) => {
+        calls.push(where);
+        if (where.itinerary_route_ID === 999) return null;
+        return { itinerary_route_ID: 10, itinerary_route_date: new Date('2099-01-02') };
+      },
+    },
+    dvi_hotel: { findFirst: async () => ({ hotel_id: 153, hotel_margin: 0, hotel_margin_gst_type: 0, hotel_margin_gst_percentage: 0 }) },
+    dvi_hotel_rooms: { findMany: async () => [{ room_ID: 22, room_type_id: 7, room_title: 'Deluxe', room_ref_code: 'D', breakfast_included: 1, lunch_included: 0, dinner_included: 0 }] },
+    dvi_hotel_room_price_book: { findMany: async () => [{ room_type_id: 7, price_type: 0, year: '2099', month: 'January', day_1: '4500', day_2: '4500' }] },
+  } as any;
+  const pricing = { applyInvisibleHotelMargin: (value: number) => value, money: (value: number) => Number(value.toFixed(2)) } as any;
+  const service = new OfflineHotelCatalogService(prisma, pricing);
+  const resolved = await service.resolveOfflineRateOption({
+    planId: 1,
+    routeId: 999,
+    routeDate: '2099-01-02',
+    canonicalHotelId: 153,
+    rateOptionId: 'offline:153:22:7:2099-01-01:2099-01-03',
+    roomCount: 1,
+  });
+  assert.equal(resolved.routeId, 10);
+  assert.equal(calls.length, 2);
 });
 
 test('approval and manual confirmation transitions are transactional and idempotent', async () => {

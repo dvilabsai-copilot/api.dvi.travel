@@ -85,7 +85,6 @@ async function ensureLoggedIn(page) {
   const interesting = [
     '/api/v1/itineraries/details/',
     '/api/v1/itineraries/',
-    '/vehicle-build-status',
     '/vehicle-build-sync',
     '/permit-build-sync',
     '/auth/login',

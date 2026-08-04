@@ -19,6 +19,213 @@ test('hotel availability preserves the empty result when the route is absent', a
   assert.deepEqual(await service.getAvailableHotels(99), []);
 });
 
+test('live multi-night selection rejects a stale primary rate reference even when another alias is current', async () => {
+  const syncedAt = new Date('2026-07-31T15:25:00.000Z');
+  const currentRoutePayload = {
+    itineraryRouteId: 10209,
+    provider: 'axisrooms',
+    hotelCode: '95',
+    hotelId: 95,
+    hotelName: 'CLOUDS VALLEY',
+    roomType: 'Valley View Double',
+    mealPlan: '-',
+    bookingCode: 'AX-95-20260813',
+    searchReference: 'AX-95-20260813',
+    optionKey: 'axisrooms|95|2026-08-13|AX-95-20260813',
+    totalHotelCost: 3410,
+  };
+  const prisma: any = {
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: syncedAt }),
+      findMany: async () => [{ full_payload: JSON.stringify(currentRoutePayload) }],
+    },
+  };
+  const service = createService(prisma);
+
+  await assert.rejects(
+    () => (service as any).validateLiveSelectionAgainstSnapshot(
+      {
+        planId: 10062,
+        routeId: 10209,
+        provider: 'axisrooms',
+        hotelId: 95,
+        canonicalHotelId: 95,
+        hotelCode: '95',
+        rateOptionId: 'axisrooms|95|2026-08-12|AX-95-20260812',
+        bookingCode: 'AX-95-20260812',
+        searchReference: 'AX-95-20260812',
+        roomType: 'Valley View Double',
+        hotelName: 'CLOUDS VALLEY',
+        totalPrice: 3410,
+      },
+      { itinerary_plan_ID: 10062 },
+      'DVI202607282',
+      { itinerary_route_date: new Date('2026-08-13T00:00:00.000Z') },
+    ),
+    (error: any) => error?.response?.code === 'HOTEL_RATE_ROUTE_DATE_MISMATCH',
+  );
+});
+
+test('AxisRooms accepts a current ARI database rate when the snapshot has no matching row', async () => {
+  const prisma: any = {
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: new Date('2026-07-31T15:25:00.000Z') }),
+      findMany: async () => [],
+    },
+    dvi_hotel_room_availability: {
+      findFirst: async () => ({ free: 2 }),
+    },
+    dvi_hotel_room_rate_plan: {
+      findFirst: async () => ({ rateplan_id: 'CP_PLAN' }),
+    },
+    dvi_hotel_occupancy_rate: {
+      findMany: async () => [{ occupancy_rates: { DOUBLE: 6950 } }],
+    },
+  };
+  const service = createService(prisma);
+
+  await (service as any).validateLiveSelectionAgainstSnapshot(
+    {
+      planId: 10062,
+      routeId: 10218,
+      groupType: 1,
+      provider: 'axisrooms',
+      hotelId: 561,
+      canonicalHotelId: 561,
+      hotelCode: '561',
+      roomId: 1706,
+      rateOptionId: 'axisrooms:561:1706:CP_PLAN:2026-08-13',
+      bookingCode: 'AX-561-20260813',
+      searchReference: 'AX-561-20260813',
+      roomType: 'Executive Room',
+      hotelName: 'Fort Munnar',
+      totalPrice: 6950,
+      roomCount: 2,
+    },
+    { itinerary_plan_ID: 10062 },
+    'DVI202607282',
+    { itinerary_route_date: new Date('2026-08-13T00:00:00.000Z') },
+  );
+});
+
+test('live selection tolerates a rebuilt route id when the latest snapshot has the same stay date', async () => {
+  const currentSnapshotPayload = {
+    itineraryRouteId: 10208,
+    provider: 'axisrooms',
+    hotelCode: '95',
+    hotelId: 95,
+    hotelName: 'CLOUDS VALLEY',
+    roomType: 'Valley View Double',
+    mealPlan: 'Breakfast only',
+    bookingCode: 'AX-95-20260812',
+    searchReference: 'AX-95-20260812',
+    rateOptionId: 'axisrooms:95:231:CP_PLAN:2026-08-12',
+    totalHotelCost: 3410,
+    date: '2026-08-12',
+    groupType: 1,
+  };
+  const prisma: any = {
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: new Date('2026-07-31T17:35:22.000Z') }),
+      findMany: async (args: any) => args.where.route_id
+        ? []
+        : [{ full_payload: JSON.stringify(currentSnapshotPayload) }],
+    },
+  };
+  const service = createService(prisma);
+
+  await (service as any).validateLiveSelectionAgainstSnapshot(
+    {
+      planId: 10062,
+      routeId: 10214,
+      groupType: 1,
+      provider: 'axisrooms',
+      hotelId: 95,
+      canonicalHotelId: 95,
+      hotelCode: '95',
+      rateOptionId: 'axisrooms:95:231:CP_PLAN:2026-08-12',
+      bookingCode: 'AX-95-20260812',
+      searchReference: 'AX-95-20260812',
+      roomType: 'Valley View Double',
+      hotelName: 'CLOUDS VALLEY',
+      totalPrice: 3410,
+    },
+    { itinerary_plan_ID: 10062 },
+    'DVI202607282',
+    { itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') },
+  );
+});
+
+test('live selection validates the selected nested rate option before its parent hotel row', async () => {
+  const selectedRate = {
+    provider: 'tbo',
+    hotelCode: 'TBO-123',
+    hotelId: 'TBO-123',
+    hotelName: 'Seven Springs Resort',
+    roomType: 'Honey Moon Cottage with Jacuzzi',
+    mealPlan: 'CP',
+    rateOptionId: 'tbo-rate-selected',
+    optionKey: 'tbo-rate-selected',
+    totalPrice: 30149,
+  };
+  const parentHotelRow = {
+    ...selectedRate,
+    // This is the parent row amount, not the selected room/rate amount.
+    totalPrice: 9999,
+    rateOptions: [selectedRate],
+  };
+  const prisma: any = {
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: new Date('2026-08-04T08:00:00.000Z') }),
+      findMany: async () => [{ full_payload: JSON.stringify(parentHotelRow) }],
+    },
+  };
+  const service = createService(prisma);
+
+  await (service as any).validateLiveSelectionAgainstSnapshot(
+    {
+      planId: 10060,
+      routeId: 10203,
+      provider: 'tbo',
+      hotelId: 'TBO-123',
+      canonicalHotelId: 'TBO-123',
+      hotelCode: 'TBO-123',
+      hotelName: 'Seven Springs Resort',
+      roomType: 'Honey Moon Cottage with Jacuzzi',
+      mealPlanCode: 'CP',
+      rateOptionId: 'tbo-rate-selected',
+      optionKey: 'tbo-rate-selected',
+      totalPrice: 30149,
+    },
+    { itinerary_plan_ID: 10060 },
+    'DVI202607280',
+    { itinerary_route_date: new Date('2026-08-11T00:00:00.000Z') },
+  );
+
+  await assert.rejects(
+    () => (service as any).validateLiveSelectionAgainstSnapshot(
+      {
+        planId: 10060,
+        routeId: 10203,
+        provider: 'tbo',
+        hotelId: 'TBO-123',
+        canonicalHotelId: 'TBO-123',
+        hotelCode: 'TBO-123',
+        hotelName: 'Seven Springs Resort',
+        roomType: 'Honey Moon Cottage with Jacuzzi',
+        mealPlanCode: 'CP',
+        rateOptionId: 'tbo-rate-selected',
+        optionKey: 'tbo-rate-selected',
+        totalPrice: 30150,
+      },
+      { itinerary_plan_ID: 10060 },
+      'DVI202607280',
+      { itinerary_route_date: new Date('2026-08-11T00:00:00.000Z') },
+    ),
+    /selected hotel price changed/,
+  );
+});
+
 test('vehicle slab selection preserves required-field validation', async () => {
   await assert.rejects(
     () => createService().selectVehicleSlab({ planId: 0, vehicleTypeId: 0 }),

@@ -115,6 +115,9 @@ import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.ser
 import { ItineraryHotelApprovalService } from './services/itinerary-hotel-approval.service';
 import { ItineraryHotelApprovalController } from './itinerary-hotel-approval.controller';
 import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
+import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
+import { HotelRecommendationPackageService } from './services/hotel-recommendation-package.service';
+import { HotelMealPlanPolicyService } from './services/hotel-meal-plan-policy.service';
 
 @Module({
   imports: [HotelsModule, RouteVehicleRestrictionsModule],
@@ -206,6 +209,9 @@ ItineraryRouteNormalizationService,
     ItineraryActivityTimingPolicyService,
     OfflineHotelCatalogService,
     ItineraryHotelApprovalService,
+    HotelAvailabilitySnapshotService,
+    HotelRecommendationPackageService,
+    HotelMealPlanPolicyService,
     TransportEarlyArrivalValidationService,
 
  // existing engines you already had

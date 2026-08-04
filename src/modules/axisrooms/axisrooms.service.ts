@@ -256,6 +256,7 @@ export class AxisRoomsService {
         },
       } as any,
       update: {
+        axisrooms_room_id: roomId,
         ...(details?.ratePlanName ? { rateplan_name: details.ratePlanName } : {}),
         ...(occupancy.length ? { occupancy } : {}),
         ...(details?.commissionPerc ? { commission_perc: details.commissionPerc } : {}),
@@ -266,6 +267,7 @@ export class AxisRoomsService {
       create: {
         hotel_id: hid,
         room_id: rid,
+        axisrooms_room_id: roomId,
         rateplan_id: rateplanId,
         rateplan_name: details?.ratePlanName || canonicalDefinition?.name || rateplanId,
         occupancy,
@@ -701,8 +703,10 @@ export class AxisRoomsService {
   }
 
  /**
-   * POST rateUpdate - Accepts payload but intentionally does not write to DB.
-   * Rates are managed from Admin dashboard flows.
+   * POST rateUpdate - Stores the rate rows pushed by AxisRooms.
+   *
+   * AxisRooms is an ARI-push integration: itinerary hotel search reads these
+   * rows from our database rather than calling AxisRooms synchronously.
  */
   async updateRate(
     dto: RateUpdateRequestDto,
@@ -729,8 +733,70 @@ export class AxisRoomsService {
     }
 
     try {
+      await this.logInbound('rateUpdate', propertyId, roomId, rateplanId, dto);
+
+      const hotelRow = await this.prisma.dvi_hotel.findFirst({
+        where: { axisrooms_property_id: propertyId, deleted: { not: true } },
+        select: { hotel_id: true },
+      });
+      const hotelId = Number(hotelRow?.hotel_id || 0);
+      const roomRow = hotelId
+        ? await this.prisma.dvi_hotel_rooms.findFirst({
+            where: { hotel_id: hotelId, room_ref_code: roomId, deleted: 0 } as any,
+            select: { room_ID: true } as any,
+          })
+        : null;
+      const internalRoomId = Number((roomRow as any)?.room_ID || 0);
+
+      if (!hotelId || !internalRoomId) {
+        return {
+          message: AXISROOMS_MESSAGES.NO_RATEPLANS_FOUND,
+          status: 'failure',
+        };
+      }
+
+      await this.ensureRatePlanExists(propertyId, roomId, internalRateplanId, {
+        ratePlanName: canonicalRatePlanDefinition.name,
+        currency: 'INR',
+      });
+
+      for (const row of Array.isArray(rate) ? rate : []) {
+        const startDate = new Date(row.startDate);
+        const endDate = new Date(row.endDate);
+        if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) {
+          continue;
+        }
+
+        await (this.prisma as any).dvi_hotel_occupancy_rate.upsert({
+          where: {
+            hotel_id_room_id_rateplan_id_start_date_end_date: {
+              hotel_id: hotelId,
+              room_id: internalRoomId,
+              rateplan_id: internalRateplanId,
+              start_date: startDate,
+              end_date: endDate,
+            },
+          },
+          update: {
+            occupancy_rates: row,
+            received_at: new Date(),
+            source: 'axisrooms',
+          },
+          create: {
+            hotel_id: hotelId,
+            room_id: internalRoomId,
+            rateplan_id: internalRateplanId,
+            start_date: startDate,
+            end_date: endDate,
+            occupancy_rates: row,
+            received_at: new Date(),
+            source: 'axisrooms',
+          },
+        });
+      }
+
  this.logger.log(
-        `AxisRooms rateUpdate ignored for DB writes (propertyId=${propertyId}, roomId=${roomId}, rateplanId=${rateplanId}, rows=${Array.isArray(rate) ? rate.length : 0})`,
+        `AxisRooms rateUpdate persisted (propertyId=${propertyId}, roomId=${roomId}, rateplanId=${internalRateplanId}, rows=${Array.isArray(rate) ? rate.length : 0})`,
       );
 
       return {

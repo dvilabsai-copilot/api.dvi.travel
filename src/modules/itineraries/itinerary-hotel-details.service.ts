@@ -8,12 +8,34 @@ import { haversineKm } from './utils/distance-utils';
 export interface ItineraryHotelTabDto {
   groupType: number;
   label: string;
-  totalAmount: number;
+  totalAmount: number | null;
+  partialTotal?: number;
+  targetAmount?: number | null;
+  complete?: boolean;
+  diversityScore?: number;
+  repeatedAcrossGroupsHotelIds?: string[];
+  sameOptionAcrossGroups?: string[];
+  duplicateWithinPackageHotelIds?: string[];
+  repeatedFromGroups?: number[];
+  stayResults?: Array<{
+    stayKey: string;
+    parentRouteId: number;
+    routeIds: number[];
+    destination: string;
+    checkInDate: string;
+    checkOutDate: string;
+    nights: number;
+    state: 'SELECTED' | 'OFFLINE_FALLBACK' | 'UNAVAILABLE';
+    reason?: string;
+    totalPrice?: number;
+  }>;
 }
 
 export interface ItineraryHotelRowDto {
   groupType: number;
   itineraryRouteId: number;
+  routeIds?: number[];
+  stayKey?: string;
   day: string;
   destination: string;
   hotelId: number;
@@ -44,6 +66,7 @@ export interface ItineraryHotelRowDto {
   providerDisplayName?: string;
   providerHotelCode?: string;
   rateOptionId?: string;
+  rateOptions?: Array<Record<string, unknown>>;
   bookingMode?: 'LIVE_API' | 'MANUAL_APPROVAL';
   priceSource?: 'LIVE_API' | 'DATABASE' | 'LEGACY_UNKNOWN';
   priceLabel?: string;
@@ -92,6 +115,39 @@ export interface ItineraryHotelRowDto {
     atPropertyChargeCount?: number;
     requiresReview?: boolean;
   };
+  optionKey?: string;
+  isSelected?: boolean;
+  selectionOrigin?: 'AUTO_SELECTED' | 'USER_SELECTED';
+  selectionStatus?: 'AVAILABLE' | 'UNAVAILABLE' | 'REVIEW_REQUIRED';
+  selectionReason?: string | null;
+  distanceKm?: number | null;
+  distanceStatus?: 'WITHIN_RADIUS' | 'OUTSIDE_RADIUS' | 'UNKNOWN';
+  distanceReference?: 'HOTSPOT' | 'DESTINATION_CENTRE' | 'ROUTE_DESTINATION' | 'UNKNOWN';
+  availabilityState?: 'AVAILABLE' | 'UNAVAILABLE' | 'RESTRICTED' | 'STALE' | 'UNKNOWN' | 'OFFLINE_APPROVAL_REQUIRED';
+  selection?: {
+    hotelName?: string | null;
+    category?: number | null;
+    provider?: string | null;
+    hotelCode?: string | number | null;
+    roomType?: string | null;
+    mealPlan?: string | null;
+    totalPrice?: number | null;
+    pricePerNight?: number | null;
+    currency?: string | null;
+    optionKey?: string | null;
+    rateOptionId?: string | null;
+    rateId?: string | null;
+    bookingCode?: string | null;
+    searchReference?: string | null;
+    searchRunId?: string | null;
+    availabilityStatus?: string | null;
+    status?: string;
+    selectionOrigin?: string;
+    selectionId?: number;
+  };
+  selectionId?: number;
+  requiresPriceReacceptance?: boolean;
+  selectedPriceSnapshot?: unknown;
 }
 
 export interface HotelPaginationMeta {
@@ -120,10 +176,20 @@ export interface ItineraryHotelDetailsResponseDto {
   restrictedHotels?: ItineraryHotelRowDto[];
   totalRoomCount: number;
   hotelAvailability?: HotelAvailabilityMetaDto;
+  recommendationAlgorithm?: 'v1' | 'v2';
+  recommendationGeneration?: RecommendationGenerationDto;
  /** Present when ?page param is used; one entry per groupType requested */
   pagination?: Record<number, HotelPaginationMeta>;
  /** Per-route/day pagination metadata keyed by `${groupType}-${routeId}` */
   routePagination?: Record<string, HotelRoutePaginationMeta>;
+}
+
+export interface RecommendationGenerationDto {
+  version: 'v1' | 'v2';
+  algorithm: 'LEGACY_PRICE_PACKAGE' | 'TARGET_PRICE_DIVERSITY_BEAM_SEARCH';
+  searchRunId?: string;
+  generatedAt?: string;
+  warnings: string[];
 }
 
 export interface HotelAvailabilityMetaDto {
@@ -134,6 +200,31 @@ export interface HotelAvailabilityMetaDto {
   emptySearchRoutes: number;
   isPlaceholderOnly: boolean;
   message: string;
+  availabilityState?: 'NOT_CHECKED' | 'CHECKING' | 'FRESH' | 'STALE' | 'PARTIAL' | 'FAILED';
+  recommendationAlgorithm?: 'v1' | 'v2';
+  searchRunId?: string;
+  recommendationGeneration?: RecommendationGenerationDto;
+  checkedAt?: string;
+  expiresAt?: string | null;
+  providerErrors?: Array<{ provider?: string; message?: string }>;
+  unavailableSelectionCount?: number;
+  emptyStayBlocks?: Array<{
+    routeIds: number[];
+    dayNumbers: number[];
+    dates: string[];
+    destination: string;
+  }>;
+  stayRoutes?: Array<{
+    routeId: number;
+    dayNumber: number;
+    date: string;
+    destination: string;
+  }>;
+  offlineFetch?: {
+    requestedRouteIds: number[];
+    fetchedHotelCount: number;
+    noResultRouteIds: number[];
+  };
 }
 
 /**
@@ -151,6 +242,11 @@ export interface RoomTypeOptionDto {
 export interface ItineraryHotelRoomDto {
   itineraryPlanId: number;
   itineraryRouteId: number;
+  date?: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  itineraryRouteDate?: string;
+  destination?: string;
   itineraryPlanHotelRoomDetailsId: number;
   hotelId: number;
   canonicalHotelId?: number | null;
@@ -164,6 +260,8 @@ export interface ItineraryHotelRoomDto {
   providerDisplayName?: string;
   bookingCode?: string;
   searchReference?: string;
+  rateOptionId?: string;
+  optionKey?: string;
   availableRoomTypes: RoomTypeOptionDto[];
   mealPlan?: string;
   numberOfNights?: number;
@@ -793,6 +891,22 @@ async getHotelRoomDetailsByQuoteId(
         hotelierEarlyCheckInNote,
         previousDayBillingSynthetic: isSyntheticPreviousDayBilling,
         hotelDistance,
+        provider: String((h as any).hotel_provider || '').trim().toLowerCase() || undefined,
+        hotelCode: String((h as any).hotel_code || '').trim() || undefined,
+        bookingCode: String((h as any).selected_rate_option_id || '').trim() || undefined,
+        rateOptionId: String((h as any).selected_rate_option_id || '').trim() || undefined,
+        priceSource: (h as any).price_source || undefined,
+        bookingMode: (h as any).hotel_booking_mode || undefined,
+        isLiveRate: (h as any).is_live_rate ?? undefined,
+        approvalStatus: (h as any).hotel_approval_status || undefined,
+        manualConfirmationStatus: (h as any).manual_confirmation_status || undefined,
+        isSelected: Number((h as any).hotel_id || 0) > 0,
+        selectionOrigin: String((h as any).selected_rate_option_id || '').trim()
+          ? 'USER_SELECTED'
+          : (Number((h as any).hotel_id || 0) > 0 ? 'AUTO_SELECTED' : undefined),
+        selectionId: Number(hotelDetailsId || 0),
+        requiresPriceReacceptance: Boolean((h as any).requires_price_reacceptance),
+        selectedPriceSnapshot: (h as any).selected_price_snapshot || null,
       };
     });
 

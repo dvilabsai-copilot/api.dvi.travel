@@ -1,7 +1,19 @@
 // FILE: src/main.ts
 import 'reflect-metadata';
+import * as fs from 'fs';
+import * as path from 'path';
 import * as dotenv from 'dotenv';
-dotenv.config(); // loads .env if present
+
+// The API is sometimes started from the monorepo root and sometimes from
+// api.dvi.travel. Resolve the backend-local env file explicitly so pricing
+// configuration (including HOTEL_MARGIN) is not silently omitted.
+const envCandidates = [
+  path.resolve(__dirname, '..', '.env'),
+  path.resolve(__dirname, '..', '..', '.env'),
+  path.resolve(process.cwd(), '.env'),
+];
+const envPath = envCandidates.find((candidate) => fs.existsSync(candidate));
+dotenv.config(envPath ? { path: envPath } : undefined);
 
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -11,8 +23,6 @@ import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serial
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ensureUniqueOpenApiOperationIds } from './common/swagger/normalize-openapi';
 import * as express from 'express';
-import * as fs from 'fs';
-import * as path from 'path';
 
 function resolveBackendRoot(): string {
  // Works for both src/main.ts (dev) and dist/main.js (prod).

@@ -1,7 +1,7 @@
 // REPLACE-WHOLE-FILE
 // FILE: src/itineraries/itineraries.service.ts
 
-import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException } from "@nestjs/common";
+import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException, UnprocessableEntityException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
 import {
@@ -32,6 +32,7 @@ import { HotelStayBlockValidationService } from "./services/hotel-stay-block-val
 import { SameCityCrossDayOptimizerService } from "./services/same-city-cross-day-optimizer.service";
 import { ItineraryRouteNormalizationService } from './services/itinerary-route-normalization.service';
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
+import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 import { TimelineEnricher } from "./engines/helpers/timeline.enricher";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
 import { SupplementNormalizerService } from "../../modules/hotels/services/supplement-normalizer.service";
@@ -271,24 +272,6 @@ type ManualOptimizerAttemptLog = {
   selectedStrategyLabel: string | null;
   summary: string | null;
   attempts: ManualScheduleAttempt[];
-};
-
-type VehicleBuildState = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
-
-type VehicleBuildStatus = {
-  planId: number;
-  status: VehicleBuildState;
-  buildRunId: string | null;
-  startedAt: string | null;
-  finishedAt: string | null;
-  updatedAt: string;
-  error: string | null;
-  eligibleCount: number;
-  vehicleDetailCount: number;
-  requestedVehicleCount: number;
-  hasUsableVehicleDetails: boolean;
-  isLatestBuildReady: boolean;
-  statusSource: 'db' | 'memory' | 'derived';
 };
 
 type ManualFitHereAnchorIntent = 'AFTER_START' | 'AFTER_ATTRACTION';
@@ -564,6 +547,7 @@ export class ItinerariesService {
     private readonly staahBookingPushService: StaahBookingPushService,
     private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
+    private readonly hotelAvailabilitySnapshotService: HotelAvailabilitySnapshotService,
     private readonly supplementNormalizer: SupplementNormalizerService,
     private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
     private readonly routeNormalization: ItineraryRouteNormalizationService = new ItineraryRouteNormalizationService(),
@@ -631,7 +615,6 @@ export class ItinerariesService {
     private readonly hotelPrebookService: ItineraryHotelPrebookService = new ItineraryHotelPrebookService(
       prisma,
       tboHotelBooking,
-      hotelDetailsTboService,
       supplementNormalizer,
     ),
     private readonly hotelBookingFulfillmentService: ItineraryHotelBookingFulfillmentService = new ItineraryHotelBookingFulfillmentService(
@@ -1357,20 +1340,12 @@ private getGuideSlotLabel(slotId: number): string {
     await this.vehicleBuildStatusService.startRecord(planId, buildRunId, userId);
   }
 
-  async getVehicleBuildStatus(planId: number): Promise<VehicleBuildStatus> {
-    return this.vehicleBuildStatusService.getStatus(planId);
-  }
-
   async buildPermitsSync(planId: number, req: any) {
     return this.vehicleBuildService.buildPermitsSync(planId, req);
   }
 
   async buildVehiclesSync(planId: number, req: any) {
     return this.vehicleBuildService.buildVehiclesSync(planId, req);
-  }
-
-  async triggerVehicleBuild(planId: number, req: any): Promise<VehicleBuildStatus> {
-    return this.vehicleBuildService.triggerVehicleBuild(planId, req);
   }
 
  /**
@@ -1433,7 +1408,87 @@ private getGuideSlotLabel(slotId: number): string {
     shouldOptimizeRoute: boolean = false,
     requestType?: string,
   ) {
-    return this.planPersistenceService.createPlan(dto, req, shouldOptimizeRoute, requestType);
+    const isNewPlan = Number((dto?.plan as any)?.itinerary_plan_id || 0) <= 0;
+    const result = await this.planPersistenceService.createPlan(dto, req, shouldOptimizeRoute, requestType);
+    const hotelsRequired = Number((dto?.plan as any)?.itinerary_preference || 0) === 1 ||
+      Number((dto?.plan as any)?.itinerary_preference || 0) === 3;
+
+    // A route rebuild regenerates route IDs and invalidates every hotel
+    // selection, room choice, per-day meal-plan override, and supplier rate
+    // snapshot tied to the old stay dates/destinations. Reuse the same reset
+    // path as the Reset Hotels button after the route transaction commits.
+    // This deliberately runs only for an existing plan whose semantic route
+    // shape changed; ordinary edits keep the current hotel snapshot intact.
+    if (!isNewPlan && hotelsRequired && result?.routeChanged && result?.quoteId) {
+      try {
+        const hotelSearch = await this.hotelAvailabilitySnapshotService.resetAndPersist(
+          String(result.quoteId),
+          Number(req?.user?.userId || 0),
+        );
+        return {
+          ...result,
+          hotelSearch: {
+            status: Number(hotelSearch.response.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
+              hotelSearch.response.hotelAvailability?.availabilityState === 'PARTIAL' ? 'PARTIAL' : 'COMPLETE',
+            resetApplied: true,
+            searchRunId: hotelSearch.searchRunId,
+            checkedAt: hotelSearch.response.hotelAvailability?.checkedAt,
+            optionCount: hotelSearch.response.hotels?.length || 0,
+            selectedCount: hotelSearch.response.hotels?.filter((row: any) => row.isSelected).length || 0,
+            providerErrors: hotelSearch.response.hotelAvailability?.providerErrors || [],
+          },
+        };
+      } catch (error) {
+        // The itinerary transaction is already committed. Return the same
+        // recoverable partial-save contract used by initial itinerary create,
+        // so the UI opens the saved itinerary and can explicitly retry hotel
+        // availability instead of claiming the old hotel is still valid.
+        throw new UnprocessableEntityException({
+          message: 'Itinerary routes were updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
+          planId: result.planId,
+          quoteId: result.quoteId,
+          creationStatus: 'PARTIAL',
+          code: 'HOTEL_AVAILABILITY_ROUTE_RESET_FAILED',
+          routeChanged: true,
+          hotelSearch: { status: 'FAILED' },
+          cause: String((error as any)?.response?.message || (error as any)?.message || 'Hotel availability reset failed'),
+        });
+      }
+    }
+
+    if (!isNewPlan || !hotelsRequired || !result?.quoteId) {
+      return { ...result, hotelSearch: { status: hotelsRequired ? 'NOT_REQUIRED' : 'NOT_REQUIRED' } };
+    }
+
+    try {
+      const hotelSearch = await this.hotelAvailabilitySnapshotService.searchAndPersist(
+        String(result.quoteId),
+        'CREATE',
+        Number(req?.user?.userId || 0),
+      );
+      return {
+        ...result,
+        hotelSearch: {
+          status: Number(hotelSearch.response.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
+            hotelSearch.response.hotelAvailability?.availabilityState === 'PARTIAL' ? 'PARTIAL' : 'COMPLETE',
+          searchRunId: hotelSearch.searchRunId,
+          checkedAt: hotelSearch.response.hotelAvailability?.checkedAt,
+          optionCount: hotelSearch.response.hotels?.length || 0,
+          selectedCount: hotelSearch.response.hotels?.filter((row: any) => row.isSelected).length || 0,
+          providerErrors: hotelSearch.response.hotelAvailability?.providerErrors || [],
+        },
+      };
+    } catch (error) {
+      throw new UnprocessableEntityException({
+        message: 'Itinerary saved, but the initial hotel availability search failed. Open the saved itinerary and use Check Availability.',
+        planId: result.planId,
+        quoteId: result.quoteId,
+        creationStatus: 'PARTIAL',
+        code: 'HOTEL_AVAILABILITY_FAILED',
+        hotelSearch: { status: 'FAILED' },
+        cause: String((error as any)?.response?.message || (error as any)?.message || 'Hotel search failed'),
+      });
+    }
   }
 
   async saveReusableTemplate(data: { planId: number; templateName?: string }, userId: number) {
@@ -1561,8 +1616,9 @@ private getGuideSlotLabel(slotId: number): string {
   async selectHotel(data: {
     planId: number;
     routeId: number;
-    hotelId: number;
+    hotelId: number | null;
     roomTypeId: number;
+    routeDate?: string;
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
   }) {
@@ -1572,8 +1628,8 @@ private getGuideSlotLabel(slotId: number): string {
  /**
    * Bulk save hotel selections - used before confirming itinerary
  */
-  async bulkSaveHotels(planId: number, hotels: any[]) {
-    return this.selectionWorkflowService.bulkSaveHotels(planId, hotels);
+  async bulkSaveHotels(planId: number, hotels: any[], requestedBy = 1) {
+    return this.selectionWorkflowService.bulkSaveHotels(planId, hotels, requestedBy);
   }
 
   async selectVehicleVendor(
@@ -4445,6 +4501,9 @@ private getGuideSlotLabel(slotId: number): string {
     itinerary_route_id: number;
     hotel_id: number;
     group_type: number;
+    hotel_code?: string;
+    provider?: string;
+    hotel_name?: string;
   }) {
     return this.hotelRoomCategoryService.getHotelRoomCategories(params);
   }
@@ -4456,6 +4515,9 @@ private getGuideSlotLabel(slotId: number): string {
     itinerary_route_id: number;
     hotel_id: number;
     group_type: number;
+    hotel_code?: string;
+    provider?: string;
+    hotel_name?: string;
     room_type_id: number;
     room_qty?: number;
     all_meal_plan?: number;
