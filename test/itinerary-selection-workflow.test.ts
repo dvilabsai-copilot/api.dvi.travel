@@ -156,6 +156,76 @@ test('live selection tolerates a rebuilt route id when the latest snapshot has t
   );
 });
 
+test('live selection validates the selected nested rate option before its parent hotel row', async () => {
+  const selectedRate = {
+    provider: 'tbo',
+    hotelCode: 'TBO-123',
+    hotelId: 'TBO-123',
+    hotelName: 'Seven Springs Resort',
+    roomType: 'Honey Moon Cottage with Jacuzzi',
+    mealPlan: 'CP',
+    rateOptionId: 'tbo-rate-selected',
+    optionKey: 'tbo-rate-selected',
+    totalPrice: 30149,
+  };
+  const parentHotelRow = {
+    ...selectedRate,
+    // This is the parent row amount, not the selected room/rate amount.
+    totalPrice: 9999,
+    rateOptions: [selectedRate],
+  };
+  const prisma: any = {
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: new Date('2026-08-04T08:00:00.000Z') }),
+      findMany: async () => [{ full_payload: JSON.stringify(parentHotelRow) }],
+    },
+  };
+  const service = createService(prisma);
+
+  await (service as any).validateLiveSelectionAgainstSnapshot(
+    {
+      planId: 10060,
+      routeId: 10203,
+      provider: 'tbo',
+      hotelId: 'TBO-123',
+      canonicalHotelId: 'TBO-123',
+      hotelCode: 'TBO-123',
+      hotelName: 'Seven Springs Resort',
+      roomType: 'Honey Moon Cottage with Jacuzzi',
+      mealPlanCode: 'CP',
+      rateOptionId: 'tbo-rate-selected',
+      optionKey: 'tbo-rate-selected',
+      totalPrice: 30149,
+    },
+    { itinerary_plan_ID: 10060 },
+    'DVI202607280',
+    { itinerary_route_date: new Date('2026-08-11T00:00:00.000Z') },
+  );
+
+  await assert.rejects(
+    () => (service as any).validateLiveSelectionAgainstSnapshot(
+      {
+        planId: 10060,
+        routeId: 10203,
+        provider: 'tbo',
+        hotelId: 'TBO-123',
+        canonicalHotelId: 'TBO-123',
+        hotelCode: 'TBO-123',
+        hotelName: 'Seven Springs Resort',
+        roomType: 'Honey Moon Cottage with Jacuzzi',
+        mealPlanCode: 'CP',
+        rateOptionId: 'tbo-rate-selected',
+        optionKey: 'tbo-rate-selected',
+        totalPrice: 30150,
+      },
+      { itinerary_plan_ID: 10060 },
+      'DVI202607280',
+      { itinerary_route_date: new Date('2026-08-11T00:00:00.000Z') },
+    ),
+    /selected hotel price changed/,
+  );
+});
+
 test('vehicle slab selection preserves required-field validation', async () => {
   await assert.rejects(
     () => createService().selectVehicleSlab({ planId: 0, vehicleTypeId: 0 }),

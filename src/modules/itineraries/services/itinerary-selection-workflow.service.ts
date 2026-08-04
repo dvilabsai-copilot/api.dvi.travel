@@ -791,7 +791,10 @@ export class ItinerarySelectionWorkflowService {
     const candidateRows = parsedRows.flatMap((row: any) => {
       const rateOptions = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
       if (rateOptions.length === 0) return [row];
-      return [row, ...rateOptions.map((option: any) => ({
+      // A hotel row is a container for its room/rate options. Prefer the
+      // concrete option when validating a selection so a parent row cannot
+      // hide the selected option's price and room identity.
+      return [...rateOptions.map((option: any) => ({
         ...row,
         ...option,
         provider: option.provider || row.provider,
@@ -807,7 +810,7 @@ export class ItinerarySelectionWorkflowService {
         optionKey: option.optionKey || option.option_key || row.optionKey,
         roomId: option.roomId || option.room_id || row.roomId,
         rateId: option.rateId || option.rate_id || option.rateOptionId || row.rateId,
-      }))];
+      })), row];
     });
     const propertyMatches = (candidate: any): boolean => {
         if (String(candidate.provider || '').trim().toLowerCase() !== provider) return false;
@@ -851,13 +854,24 @@ export class ItinerarySelectionWorkflowService {
     }
 
     const requestedTotal = Number(data.totalPrice ?? 0);
-    const snapshotTotals = [
+    const explicitSnapshotTotals = [
+      matched.totalStayPrice,
+      matched.totalPrice,
+      matched.totalAmount,
+      matched.totalAmountAfterTax,
       matched.totalHotelCost,
       matched.totalCost,
       matched.totalRoomCost,
-      matched.price,
-      matched.pricePerNight,
+      matched.total_hotel_cost,
     ].map(Number).filter((amount) => Number.isFinite(amount) && amount > 0);
+    // Only use a nightly price as a fallback when the snapshot does not
+    // expose any stay-level amount. Comparing a multi-night selection with a
+    // per-night value can incorrectly accept or reject a stale selection.
+    const snapshotTotals = explicitSnapshotTotals.length > 0
+      ? explicitSnapshotTotals
+      : [matched.price, matched.pricePerNight, matched.price_per_night]
+        .map(Number)
+        .filter((amount) => Number.isFinite(amount) && amount > 0);
     if (requestedTotal > 0 && snapshotTotals.length > 0 && !snapshotTotals.some((snapshotTotal) => Math.abs(requestedTotal - snapshotTotal) <= 0.01)) {
       throw new BadRequestException('The selected hotel price changed. Refresh hotel availability and review the updated rate.');
     }
