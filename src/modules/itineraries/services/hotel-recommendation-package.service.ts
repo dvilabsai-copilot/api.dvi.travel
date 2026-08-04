@@ -6,6 +6,7 @@ import {
   type CanonicalHotelRatePlanCode,
 } from '../../hotels/hotel-rate-plans';
 import { HotelMealPlanPolicyService } from './hotel-meal-plan-policy.service';
+import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 
 export type RecommendationAvailabilityState =
   | 'AVAILABLE'
@@ -57,6 +58,9 @@ export type RecommendationHotel = HotelSearchResult & {
   routeId: number;
   routeIds: number[];
   stayKey: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  numberOfNights?: number;
   exactFullStayTotal: number;
   canonicalMealPlan: CanonicalHotelRatePlanCode | null;
   availabilityState: RecommendationAvailabilityState;
@@ -147,7 +151,7 @@ export class HotelRecommendationPackageService {
 
   generate(input: RecommendationPackageInput): RecommendationPackage[] {
     const stays = this.buildLogicalStays(input.routes, input.noOfNights);
-    if (stays.length === 0) return [];
+    if (stays.length === 0) return this.ensureFourPackages([], []);
     const evaluations = stays.map((stay) => this.buildOptions(stay, input));
     const hasUnavailableStay = evaluations.some((evaluation) => evaluation.options.length === 0);
 
@@ -158,7 +162,9 @@ export class HotelRecommendationPackageService {
       const availableEvaluations = evaluations
         .filter((evaluation) => evaluation.options.length > 0)
         .map((evaluation) => ({ ...evaluation, options: evaluation.options.slice(0, maxCandidates) }));
-      if (availableEvaluations.length === 0) return [this.toIncompletePackage(evaluations)];
+      if (availableEvaluations.length === 0) {
+        return this.ensureFourPackages([this.toIncompletePackage(evaluations)], evaluations);
+      }
 
       const states = this.beamSearch(
         availableEvaluations.map((evaluation) => evaluation.options),
@@ -174,7 +180,10 @@ export class HotelRecommendationPackageService {
         packages.push(candidate);
         if (packages.length >= packageLimit) break;
       }
-      return packages.length > 0 ? packages : [this.toIncompletePackage(evaluations)];
+      return this.ensureFourPackages(
+        packages.length > 0 ? packages : [this.toIncompletePackage(evaluations)],
+        evaluations,
+      );
     }
 
     const packages: RecommendationPackage[] = [];
@@ -207,7 +216,64 @@ export class HotelRecommendationPackageService {
       packages.push(candidates[0]);
     }
 
-    return packages;
+    return this.ensureFourPackages(packages, evaluations);
+  }
+
+  /**
+   * The hotel list contract always exposes four recommendation tabs.  The
+   * optimizer can find fewer than four distinct packages when inventory is
+   * sparse (or when a stay is unavailable), but hiding tabs makes the result
+   * look inconsistent and changes the user's group-selection model.  In that
+   * case, repeat the last real package as an explicit fallback.  This does not
+   * invent a hotel, price, or availability state; it only fills the display
+   * slots with the same package that is actually available.
+   */
+  private ensureFourPackages(
+    packages: RecommendationPackage[],
+    evaluations: StayEvaluation[],
+  ): RecommendationPackage[] {
+    const normalized = packages.slice(0, 4).map((pkg, index) => ({
+      ...pkg,
+      groupType: index + 1,
+      label: LABELS[index],
+      hotels: [...pkg.hotels],
+      stayResults: [...pkg.stayResults],
+    }));
+
+    if (normalized.length === 0) {
+      normalized.push(this.toIncompletePackage(evaluations, [], 1));
+    }
+
+    while (normalized.length < 4) {
+      const source = normalized[normalized.length - 1];
+      const groupType = normalized.length + 1;
+      const physicalIds = source.hotels.map((hotel) => `${hotel.stayKey}|${this.physicalIdentity(hotel)}`);
+      const optionIds = source.hotels.map((hotel) => `${hotel.stayKey}|${this.optionKey(hotel)}`);
+      const repeatedFromGroups = Array.from(new Set([
+        ...source.repeatedFromGroups,
+        source.groupType,
+      ]));
+
+      normalized.push({
+        ...source,
+        groupType,
+        label: LABELS[groupType - 1],
+        hotels: [...source.hotels],
+        stayResults: [...source.stayResults],
+        distinctFromPrevious: false,
+        repeatedAcrossGroupsHotelIds: Array.from(new Set([
+          ...source.repeatedAcrossGroupsHotelIds,
+          ...physicalIds,
+        ])),
+        sameOptionAcrossGroups: Array.from(new Set([
+          ...source.sameOptionAcrossGroups,
+          ...optionIds,
+        ])),
+        repeatedFromGroups,
+      });
+    }
+
+    return normalized;
   }
 
   buildLogicalStays(routes: RecommendationRoute[], _noOfNights?: number): LogicalHotelStay[] {
@@ -379,7 +445,6 @@ export class HotelRecommendationPackageService {
       if (stay.nights > 1) return null;
     }
 
-    const suppliedNights = Number(option.numberOfNights ?? (isExpandedRateOption ? 0 : base.numberOfNights) ?? 0);
     const explicitTotal = Number(
       option.totalStayPrice ??
       option.totalPrice ??
@@ -388,11 +453,26 @@ export class HotelRecommendationPackageService {
       (isExpandedRateOption ? 0 : base.totalFare) ??
       0,
     );
-    if (suppliedNights > 0 && suppliedNights !== stay.nights) return null;
-    if (stay.nights > 1 && suppliedNights <= 0 && !nightlyRates?.length && sourceRouteId !== stay.parentRouteId) return null;
-    if (explicitTotal > 0) return this.money(explicitTotal);
-
     const price = Number(option.pricePerNight ?? option.price ?? (isExpandedRateOption ? 0 : base.pricePerNight) ?? (isExpandedRateOption ? 0 : base.price) ?? 0);
+    const suppliedNights = Number(option.numberOfNights ?? (isExpandedRateOption ? 0 : base.numberOfNights) ?? 0);
+    if (suppliedNights > 0 && suppliedNights !== stay.nights) {
+      // Some supplier/base rows retain the itinerary-wide night count while
+      // the expanded option is tied to a route-specific date span. Accept the
+      // row only when its total is exactly that stale night-count multiple;
+      // otherwise reject it rather than fabricating a stay total.
+      const staleMultiple = price > 0 && explicitTotal > 0 && Math.abs(explicitTotal / price - suppliedNights) < 0.01;
+      if (!(staleMultiple && suppliedNights > stay.nights)) return null;
+      return this.money(price * stay.nights);
+    }
+    if (stay.nights > 1 && suppliedNights <= 0 && !nightlyRates?.length && sourceRouteId !== stay.parentRouteId) return null;
+    if (explicitTotal > 0 || price > 0) {
+      return this.money(hotelStayTotal({
+        totalStayPrice: explicitTotal,
+        pricePerNight: price,
+        checkInDate: optionCheckIn || undefined,
+        checkOutDate: optionCheckOut || undefined,
+      }, stay.nights));
+    }
     if (price <= 0) return null;
     return this.money(price * stay.nights);
   }
@@ -463,9 +543,12 @@ export class HotelRecommendationPackageService {
   private toRecommendationHotel(candidate: HotelSearchResult, stay: LogicalHotelStay, optionKey: string, fallback: boolean): RecommendationHotel {
     const distance = this.normalizeDistance(candidate);
     const category = this.normalizedCategory(candidate);
-    const exactTotal = Number(candidate.totalStayPrice || 0);
+    const exactTotal = hotelStayTotal(candidate, stay.nights);
     return {
       ...candidate,
+      checkInDate: stay.checkInDate,
+      checkOutDate: stay.checkOutDate,
+      numberOfNights: stay.nights,
       routeId: stay.parentRouteId,
       routeIds: [...stay.routeIds],
       stayKey: stay.stayKey,

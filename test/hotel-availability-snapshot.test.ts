@@ -166,6 +166,26 @@ test('persisted recommendation totals are preferred over availability-row sums',
   assert.equal(tabs[0].totalAmount, 3520);
 });
 
+test('route-specific selected totals do not inherit the itinerary night count', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const tabs = (service as any).buildTabs(
+    [{
+      groupType: 1,
+      itineraryRouteId: 10,
+      provider: 'tbo',
+      hotelCode: 'HABLIS',
+      checkInDate: '2026-08-08',
+      checkOutDate: '2026-08-09',
+      pricePerNight: 7179.38,
+      totalStayPrice: 14358.76,
+    }],
+    [{ itinerary_route_ID: 10, itinerary_route_date: '2026-08-08', next_visiting_location: 'Chennai' }],
+    2,
+  );
+
+  assert.equal(tabs[0].totalAmount, 7179.38);
+});
+
 test('incomplete persisted packages use partial totals instead of returning null tab rates', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const tabs = (service as any).buildTabs(
@@ -223,6 +243,87 @@ test('persisted hotel read remaps stale snapshot route IDs by stay date', async 
   assert.equal(response.hotels[0].itineraryRouteId, 20);
   assert.equal(response.hotels[0].day, 'Day 1 | 2026-07-28');
   assert.equal((response.hotelAvailability as any)?.emptySearchRoutes, 0);
+});
+
+test('persisted hotel read rejects cache and selection rows from an older date on a reused route ID', async () => {
+  const syncedAt = new Date('2026-07-29T10:00:00.000Z');
+  const prisma = makePrisma();
+  prisma.dvi_itinerary_plan_details.findFirst = async () => ({
+    itinerary_plan_ID: 44,
+    itinerary_quote_ID: 'DVI2026072701',
+    hotel_rates_visibility: 1,
+    no_of_nights: 1,
+  });
+  prisma.dvi_itinerary_route_details = {
+    findMany: async () => [{
+      itinerary_route_ID: 11,
+      itinerary_route_date: new Date('2026-07-29T00:00:00.000Z'),
+      next_visiting_location: 'Chennai',
+    }],
+  };
+  prisma.dvi_itinerary_hotel_search_cache.findFirst = async () => ({
+    synced_at: syncedAt,
+    full_payload: JSON.stringify({ searchRunId: 'current-run' }),
+  });
+  prisma.dvi_itinerary_hotel_search_cache.findMany = async () => [
+    {
+      id: 1,
+      route_id: 11,
+      check_in_date: new Date('2026-07-28T00:00:00.000Z'),
+      check_out_date: new Date('2026-07-30T00:00:00.000Z'),
+      synced_at: syncedAt,
+      sort_rank: 0,
+      full_payload: JSON.stringify({
+        groupType: 1,
+        itineraryRouteId: 11,
+        date: '2026-07-28',
+        hotelName: 'Stale TBO Hotel',
+        hotelCode: 'STALE',
+        provider: 'tbo',
+        totalStayPrice: 4531.68,
+      }),
+    },
+    {
+      id: 2,
+      route_id: 11,
+      check_in_date: new Date('2026-07-29T00:00:00.000Z'),
+      check_out_date: new Date('2026-07-30T00:00:00.000Z'),
+      synced_at: syncedAt,
+      sort_rank: 1,
+      full_payload: JSON.stringify({
+        groupType: 1,
+        itineraryRouteId: 11,
+        date: '2026-07-29',
+        hotelName: 'Current Lemon Tree',
+        hotelCode: 'CURRENT',
+        provider: 'offline',
+        totalStayPrice: 7350,
+        pricePerNight: 7350,
+        roomType: 'Superior Double',
+        mealPlan: 'CP',
+      }),
+    },
+  ];
+  prisma.dvi_itinerary_plan_hotel_details.findMany = async () => [{
+    itinerary_plan_hotel_details_ID: 99,
+    itinerary_plan_id: 44,
+    itinerary_route_id: 11,
+    itinerary_route_date: new Date('2026-07-28T00:00:00.000Z'),
+    group_type: 1,
+    hotel_required: 1,
+    hotel_id: 1498639,
+    hotel_provider: 'tbo',
+    selected_total_price: 4531.68,
+  }];
+
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any);
+  const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
+
+  assert.equal(response.hotels.length, 1);
+  assert.equal(response.hotels[0].hotelName, 'Current Lemon Tree');
+  assert.equal(response.hotels[0].date, '2026-07-29');
+  assert.equal((response.hotels as any[]).some((row) => row.hotelName === 'Stale TBO Hotel'), false);
+  assert.equal((response.hotels[0] as any).selectionStatus, undefined);
 });
 
 test('option identity includes provider, property, room and rate dimensions', () => {
@@ -936,4 +1037,170 @@ test('empty availability is reported as one continuous destination stay block', 
     dates: ['2026-07-29', '2026-07-30'],
     destination: 'Kabini',
   }]);
+});
+test('property reconciliation keeps the current availability price', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const row = {
+    provider: 'offline',
+    hotelId: 687,
+    hotelCode: '687',
+    hotelName: 'Lemon Tree Shimona',
+    roomType: 'Superior Double',
+    mealPlan: 'CP',
+    totalHotelCost: 7350,
+    totalPrice: 7350,
+    pricePerNight: 7350,
+    isSelectable: true,
+  };
+  const staleSelection = {
+    itinerary_plan_hotel_details_ID: 12201,
+    hotel_id: 687,
+    hotel_code: '687',
+    hotel_provider: 'tbo',
+    room_type: 'Superior Double',
+    meal_plan: 'CP',
+    selected_total_price: 4531.68,
+    selected_price_per_night: 4531.68,
+    selected_price_snapshot: JSON.stringify({
+      provider: 'tbo',
+      optionKey: 'tbo|687|old-rate',
+      totalPrice: 4531.68,
+      pricePerNight: 4531.68,
+    }),
+  };
+
+  const decorated = (service as any).decoratePropertySelection(row, staleSelection, 10039);
+
+  assert.equal(decorated.totalPrice, 7350);
+  assert.equal(decorated.totalHotelCost, 7350);
+  assert.equal(decorated.selectedTotalPrice, 7350);
+  assert.equal(decorated.pricePerNight, 7350);
+  assert.equal(decorated.selectedPricePerNight, 7350);
+  assert.equal(decorated.provider, 'offline');
+});
+
+test('property reconciliation keeps the persisted payable total for the same provider', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const row = {
+    provider: 'offline',
+    hotelId: 618,
+    hotelCode: '618',
+    hotelName: 'GOKULAM PARK - ASHOK NAGAR',
+    roomType: 'Deluxe Rooms',
+    mealPlan: 'CP',
+    totalHotelCost: 3990,
+    totalPrice: 3990,
+    pricePerNight: 3990,
+    isSelectable: true,
+  };
+  const persistedSelection = {
+    itinerary_plan_hotel_details_ID: 12225,
+    hotel_id: 618,
+    hotel_code: '618',
+    hotel_provider: 'offline',
+    room_type: 'Deluxe Rooms',
+    meal_plan: 'CP',
+    selected_total_price: 4389,
+    selected_price_per_night: 3990,
+    selected_price_snapshot: JSON.stringify({
+      provider: 'offline',
+      optionKey: 'offline|618|current-rate',
+      totalPrice: 4389,
+      pricePerNight: 3990,
+    }),
+  };
+
+  const decorated = (service as any).decoratePropertySelection(row, persistedSelection, 10039);
+
+  assert.equal(decorated.totalPrice, 4389);
+  assert.equal(decorated.totalHotelCost, 4389);
+  assert.equal(decorated.selectedTotalPrice, 4389);
+  assert.equal(decorated.pricePerNight, 3990);
+  assert.equal(decorated.selectedPricePerNight, 3990);
+  assert.equal(decorated.provider, 'offline');
+});
+
+test('room-category reconciliation uses the current nested rate instead of a stale selected total', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const row = {
+    provider: 'tbo',
+    itineraryRouteId: 10107,
+    itineraryRouteDate: '2026-08-08',
+    date: '2026-08-08',
+    groupType: 1,
+    hotelId: 687,
+    hotelCode: '687',
+    hotelName: 'Park Hyatt Chennai',
+    roomType: 'Room, 1 King Bed, Park View',
+    totalHotelCost: 11700.15,
+    totalPrice: 11700.15,
+    pricePerNight: 11700.15,
+    rateOptions: [{
+      provider: 'tbo',
+      hotelId: 687,
+      roomType: 'Room, 1 King Bed, Park View',
+      roomId: 'park-view',
+      mealPlan: 'UNKNOWN',
+      totalPrice: 11700.15,
+      pricePerNight: 11700.15,
+    }],
+    // Simulate the stale selected-price fields that can survive on the
+    // canonical parent row after a reset.
+    selectedTotalPrice: 9983.46,
+    selectedPricePerNight: 9983.46,
+    isSelectable: true,
+  };
+  const staleRoomSelection = {
+    __roomCategorySelection: true,
+    itinerary_plan_hotel_details_ID: 12201,
+    hotel_id: 687,
+    hotel_provider: 'tbo',
+    selected_total_price: 9983.46,
+    selected_price_per_night: 9983.46,
+    selected_price_snapshot: JSON.stringify({
+      hotelId: 687,
+      roomType: 'Room, 1 King Bed, Park View',
+      roomTypeKeys: ['room1kingbedparkview'],
+      totalPrice: 9983.46,
+      pricePerNight: 9983.46,
+    }),
+  };
+
+  const decorated = (service as any).decorateSelection(
+    row,
+    new Map([['10039|10107|1|2026-08-08|NORMAL', staleRoomSelection]]),
+    10039,
+  );
+
+  assert.equal(decorated.totalPrice, 11700.15);
+  assert.equal(decorated.totalHotelCost, 11700.15);
+  assert.equal(decorated.selectedTotalPrice, 11700.15);
+  assert.equal(decorated.pricePerNight, 11700.15);
+});
+
+test('supplier rows are normalized to the current route date before persistence', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const [normalized] = (service as any).normalizeRowsToCurrentRouteDates([
+    {
+      itineraryRouteId: 10107,
+      routeIds: [10107],
+      date: '2026-08-03',
+      checkInDate: '2026-08-03',
+      checkOutDate: '2026-08-05',
+      provider: 'tbo',
+      hotelCode: 'old-rate',
+      totalPrice: 4531.68,
+    },
+  ], [
+    {
+      itinerary_route_ID: 10107,
+      itinerary_route_date: new Date('2026-08-08T00:00:00.000Z'),
+    },
+  ]);
+
+  assert.equal(normalized.date, '2026-08-08');
+  assert.equal(normalized.checkInDate, '2026-08-08');
+  assert.equal(normalized.checkOutDate, '2026-08-09');
+  assert.equal(normalized.itinerary_route_date, '2026-08-08');
+  assert.equal(normalized.totalPrice, 4531.68);
 });
