@@ -94,6 +94,10 @@ export class HotelSearchService {
         return [...axisRoomsHotels, ...offlineHotels];
       }
 
+      if ((searchCriteria.providers || []).some((provider) => String(provider).trim().toLowerCase() === 'axisrooms')) {
+        return this.searchAxisRoomsHotels(searchCriteria);
+      }
+
       const {
         cityCode,
         checkInDate,
@@ -278,6 +282,7 @@ if (activeProviders.length === 0) {
             guestCount,
             guestNationality,
             occupancies: normalizedOccupancies,
+            hotelCodes: searchCriteria.hotelCodes,
           },
           searchCriteria.preferences,
         ),
@@ -322,8 +327,15 @@ if (activeProviders.length === 0) {
       select: { hotel_id: true, hotel_name: true, hotel_city: true, hotel_address: true, hotel_category: true, axisrooms_property_id: true },
     });
     const matching = hotels.filter((hotel: any) => String(hotel.hotel_city || '').trim().toLowerCase() === cityToken || String(hotel.hotel_id) === cityToken);
+    const requestedHotelCodes = new Set(String(criteria.hotelCodes || '')
+      .split(',')
+      .map((code) => code.trim())
+      .filter(Boolean));
+    const scopedMatching = requestedHotelCodes.size === 0
+      ? matching
+      : matching.filter((hotel: any) => requestedHotelCodes.has(String(hotel.axisrooms_property_id || hotel.hotel_id || '').trim()));
     const results: HotelSearchResult[] = [];
-    for (const hotel of matching) {
+    for (const hotel of scopedMatching) {
       const availability = await (this.prisma as any).dvi_hotel_room_availability.findMany({
         where: { hotel_id: hotel.hotel_id, start_date: { lte: checkIn }, end_date: { gte: checkIn } },
         select: { room_id: true, free: true, start_date: true, end_date: true, received_at: true },

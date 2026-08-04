@@ -1117,6 +1117,111 @@ export class HotelAvailabilitySnapshotService {
     return rows.map((row: any) => this.parsePayload(row.full_payload)).filter(Boolean);
   }
 
+  /**
+   * Add a supplier-scoped refresh to the current durable snapshot.  A selected
+   * hotel refresh must participate in the same snapshot used by selection-cost
+   * preview and final selection; returning fresh rows only to the browser would
+   * leave those API validations reading stale availability.
+   */
+  async mergeSelectedHotelRates(
+    quoteId: string,
+    routeId: number,
+    provider: string,
+    hotelCode: string,
+    hotels: any[],
+  ): Promise<void> {
+    const plan = await this.findPlan(quoteId);
+    const normalizedRouteId = Number(routeId || 0);
+    const normalizedProvider = String(provider || '').trim().toLowerCase() === 'ax'
+      ? 'axisrooms'
+      : String(provider || '').trim().toLowerCase();
+    const normalizedHotelCode = String(hotelCode || '').trim();
+    const rows = Array.isArray(hotels)
+      ? hotels.filter((row: any) => Number(row?.itineraryRouteId || row?.routeId || row?.route_id || 0) === normalizedRouteId)
+      : [];
+    if (normalizedRouteId <= 0 || !normalizedProvider || !normalizedHotelCode || rows.length === 0) {
+      return;
+    }
+
+    const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
+    const latest = await cache.findFirst({
+      where: { quote_id: quoteId, plan_id: plan.itinerary_plan_ID, deleted: 0, status: 1 },
+      orderBy: [{ synced_at: 'desc' }, { id: 'desc' }],
+      select: { synced_at: true },
+    });
+    const syncedAt = latest?.synced_at || new Date();
+    const searchRunId = `selected-hotel-${plan.itinerary_plan_ID}-${randomUUID()}`;
+    const rateOptions = rows.flatMap((row: any) =>
+      Array.isArray(row?.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row],
+    );
+    const row = { ...rows[0], rateOptions };
+    const numericRating = Number(row.rating);
+    const categoryRating = Number(String(row.category || '').match(/\d+(?:\.\d+)?/)?.[0] || 0);
+    const rating = Number.isFinite(numericRating) ? numericRating : categoryRating;
+
+    await this.prisma.$transaction(async (tx) => {
+      const txCache = (tx as any).dvi_itinerary_hotel_search_cache;
+      const existingRows = await txCache.findMany({
+        where: {
+          quote_id: quoteId,
+          plan_id: plan.itinerary_plan_ID,
+          route_id: normalizedRouteId,
+          provider: normalizedProvider,
+          status: 1,
+          deleted: 0,
+        },
+        select: { id: true, hotel_code: true, full_payload: true },
+      });
+      const matchingIds = existingRows
+        .filter((existing: any) => {
+          const payload = this.parsePayload(existing.full_payload) || {};
+          const existingCode = String(
+            existing.hotel_code ||
+            payload.hotelCode ||
+            payload.providerHotelCode ||
+            payload.hotelId ||
+            '',
+          ).trim().toLowerCase();
+          const requestedCode = normalizedHotelCode.toLowerCase();
+          return existingCode === requestedCode ||
+            (Number(existingCode) > 0 && Number(existingCode) === Number(requestedCode));
+        })
+        .map((existing: any) => Number(existing.id))
+        .filter((id: number) => id > 0);
+      if (matchingIds.length > 0) {
+        await txCache.deleteMany({ where: { id: { in: matchingIds } } });
+      }
+      await txCache.create({
+        data: {
+          quote_id: quoteId,
+          plan_id: plan.itinerary_plan_ID,
+          route_id: normalizedRouteId,
+          group_type: Number(row.groupType || row.group_type || 1),
+          hotel_code: String(row.hotelCode || row.providerHotelCode || row.hotel_code || normalizedHotelCode),
+          provider: normalizedProvider,
+          hotel_name: String(row.hotelName || row.hotel_name || 'Hotel'),
+          rating: Number.isFinite(rating) ? rating : 0,
+          price: Number(row.totalStayPrice ?? row.totalPrice ?? row.totalHotelCost ?? row.pricePerNight ?? row.price ?? 0),
+          room_type: String(row.roomType || row.roomTypeName || row.room_type || '').slice(0, 255) || null,
+          meal_plan: String(row.mealPlan || row.mealPlanCode || row.meal_plan || '').slice(0, 100) || null,
+          search_reference: row.searchReference || row.search_reference ? String(row.searchReference || row.search_reference) : null,
+          full_payload: JSON.stringify({ ...row, itineraryRouteId: normalizedRouteId, routeId: normalizedRouteId, provider: normalizedProvider, hotelCode: normalizedHotelCode, optionKey: this.optionKey(row), searchRunId }),
+          check_in_date: this.toDate(row.date || row.checkInDate || row.check_in_date || new Date()),
+          check_out_date: row.checkOutDate || row.check_out_date
+            ? this.toDate(row.checkOutDate || row.check_out_date)
+            : this.addDays(this.toDate(row.date || row.checkInDate || row.check_in_date || new Date()), Number(row.numberOfNights || 1)),
+          sort_rank: 100000,
+          synced_at: syncedAt,
+          status: 1,
+          deleted: 0,
+          recommendation_algorithm_version: resolveHotelRecommendationAlgorithm(),
+          recommendation_search_run_id: searchRunId,
+          recommendation_generated_at: syncedAt,
+        },
+      });
+    });
+  }
+
   private async findPlan(quoteId: string): Promise<any> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: String(quoteId).trim(), deleted: 0 },

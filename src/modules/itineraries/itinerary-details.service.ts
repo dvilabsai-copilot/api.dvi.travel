@@ -611,6 +611,7 @@ export class ItineraryDetailsService {
           selection.booking_code,
         );
         const roomId = normalizeRateIdentity(selection.roomId, selection.room_id);
+        const rateOptionId = normalizeRateIdentity(selection.rateOptionId, selection.rate_option_id);
         const rateId = normalizeRateIdentity(selection.rateId, selection.rate_id, selection.rateOptionId, selection.rate_option_id);
         const roomType = this.normalizeIdentity(selection.roomType || selection.room_type);
         const mealPlan = this.normalizeIdentity(selection.mealPlan || selection.meal_plan);
@@ -716,6 +717,38 @@ export class ItineraryDetailsService {
         // still match the current snapshot.
         if (candidates.length === 0) {
           candidates = buildCandidates(false, true);
+        }
+        // The supplier booking/search/rate option identity is authoritative.
+        // A UI row can retain stale display metadata after a room or meal-plan
+        // refresh (for example, MAP bookingCode with an older CP roomId). If
+        // the exact supplier identity exists in the current snapshot, use that
+        // row rather than rejecting the valid rate because of stale metadata.
+        if (candidates.length === 0) {
+          const authoritativeIds = [bookingCode, searchReference, rateOptionId]
+            .filter(Boolean);
+          if (authoritativeIds.length > 0) {
+            candidates = routeCandidates
+              .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider)
+              .filter((row: any) => {
+                const rowCodes = [
+                  row.hotelCode,
+                  row.providerHotelCode,
+                  row.provider_hotel_code,
+                  row.hotel_code,
+                  row.hotelId,
+                  row.hotel_id,
+                ].map((value) => this.normalizeIdentity(value));
+                if (hotelCode && !rowCodes.includes(hotelCode)) return false;
+                const rowIdentities = [
+                  row.bookingCode,
+                  row.searchReference,
+                  row.rateOptionId,
+                  row.rate_option_id,
+                ].map((value) => this.normalizeIdentity(value));
+                return authoritativeIds.some((identity) => rowIdentities.includes(identity));
+              })
+              .map((row: any) => ({ row, score: 1 }));
+          }
         }
 
         const match = candidates[0]?.row;

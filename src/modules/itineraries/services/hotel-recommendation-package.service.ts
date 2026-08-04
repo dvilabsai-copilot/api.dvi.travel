@@ -276,10 +276,17 @@ export class HotelRecommendationPackageService {
     return normalized;
   }
 
-  buildLogicalStays(routes: RecommendationRoute[], _noOfNights?: number): LogicalHotelStay[] {
-    const ordered = [...routes]
+  buildLogicalStays(routes: RecommendationRoute[], noOfNights?: number): LogicalHotelStay[] {
+    const hotelRoutes = [...routes]
       .filter((route) => this.isHotelStayRoute(route))
       .sort((a, b) => this.dateValue(a.itinerary_route_date) - this.dateValue(b.itinerary_route_date) || Number(a.itinerary_route_ID) - Number(b.itinerary_route_ID));
+    // Route details include the departure/airport route, but the hotel plan
+    // has one hotel stay per night. Keep recommendation packages scoped to
+    // those hotel nights so the departure route cannot create an unavailable
+    // third stay and force incomplete/zero fallback packages.
+    const ordered = Number.isInteger(noOfNights) && Number(noOfNights) >= 0
+      ? hotelRoutes.slice(0, Number(noOfNights))
+      : hotelRoutes;
     const stays: LogicalHotelStay[] = [];
     let current: (LogicalHotelStay & { lastDate: string; stableGroup: string; destinationKey: string }) | null = null;
 
