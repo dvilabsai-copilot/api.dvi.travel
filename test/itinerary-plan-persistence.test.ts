@@ -56,6 +56,65 @@ test('route reset detection ignores regenerated route IDs when the stay shape is
   assert.equal(hasItineraryRouteChanged(previous, next), false);
 });
 
+test('route reset detection ignores derived distance changes', () => {
+  const previous = [{
+    itinerary_route_date: '2026-08-02',
+    location_name: 'Cochin Airport',
+    next_visiting_location: 'Munnar',
+    no_of_km: 109.5,
+  }];
+  const next = [{
+    itinerary_route_date: '2026-08-02',
+    location_name: 'Cochin Airport',
+    next_visiting_location: 'Munnar',
+    no_of_km: 112.75,
+  }];
+
+  assert.equal(hasItineraryRouteChanged(previous, next), false);
+});
+
+test('route reset detection preserves the calendar day across timezone formats', () => {
+  const previous = [{
+    itinerary_route_date: '2026-08-19T00:00:00.000Z',
+    location_name: 'Cochin Airport',
+    next_visiting_location: 'Munnar',
+  }];
+  const next = [{
+    itinerary_route_date: '2026-08-19T00:00:00+05:30',
+    location_name: 'Cochin Airport',
+    next_visiting_location: 'Munnar',
+  }];
+
+  assert.equal(hasItineraryRouteChanged(previous, next), false);
+});
+
+test('route reset detection ignores non-route plan edits', () => {
+  const routes = [{
+    itinerary_route_date: '2026-08-02',
+    location_name: 'Cochin Airport',
+    next_visiting_location: 'Munnar',
+    no_of_km: 109.5,
+  }];
+  const plan = {
+    trip_start_date: '2026-08-02T12:00:00+05:30',
+    trip_end_date: '2026-08-04T12:00:00+05:30',
+    no_of_nights: 2,
+    no_of_days: 3,
+    arrival_point: 'Cochin Airport',
+    departure_point: 'Cochin Airport',
+    budget: 20000,
+    guide_for_itinerary: 0,
+    meal_plan_code: 'CP',
+  };
+
+  assert.equal(hasItineraryRouteChanged(
+    routes,
+    routes,
+    plan,
+    { ...plan, budget: 30000, guide_for_itinerary: 1, meal_plan_code: 'MAP' },
+  ), false);
+});
+
 test('route reset detection fires when a destination or stay date changes', () => {
   const previous = [{
     itinerary_route_ID: 10,

@@ -29,6 +29,11 @@ function normalizeRouteDate(value: unknown): string {
 
   const raw = String(value ?? '').trim();
   if (!raw) return '';
+  // Route dates represent calendar days, not instants. Preserve the date
+  // supplied by the form before parsing timezone-bearing ISO values; otherwise
+  // midnight in a positive offset can compare as the previous UTC day.
+  const calendarDate = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (calendarDate?.[1]) return calendarDate[1];
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? raw.slice(0, 10) : parsed.toISOString().slice(0, 10);
 }
@@ -60,7 +65,6 @@ function routeShapeSignature(route: any): string {
     normalizeRouteDate(route?.itinerary_route_date ?? route?.date),
     normalizeRouteText(route?.location_name ?? route?.source),
     normalizeRouteText(route?.next_visiting_location ?? route?.destination ?? route?.next),
-    normalizeRouteNumber(route?.no_of_km ?? route?.distance),
     normalizeRouteNumber(route?.direct_to_next_visiting_place ?? route?.directVisit),
     normalizeRouteText(route?.via_route ?? route?.via),
     viaRoutes,
@@ -316,7 +320,6 @@ export class ItineraryPlanPersistenceService {
       || normalizedRequestType === 'itineary_basic_info_with_optimized_route';
     const isPlanUpdate = Number((dto?.plan as any)?.itinerary_plan_id || 0) > 0;
     const shouldResetManualHotspotsForFullRebuild = isFullBasicInfoRebuildType && isPlanUpdate;
-    let globalMealPlanChanged = false;
     let routeChanged = false;
     let previousRoutePlan: any = null;
 
@@ -344,12 +347,6 @@ export class ItineraryPlanPersistenceService {
         if (!currentPlan) throw new NotFoundException('Itinerary plan not found');
         previousRoutePlan = currentPlan;
         assertVehicleAgentUpdatePolicy(u, currentPlan, dto.plan);
-        globalMealPlanChanged = [
-          ['meal_plan_code', currentPlan.meal_plan_code, (dto.plan as any)?.meal_plan_code],
-          ['meal_plan_breakfast', currentPlan.meal_plan_breakfast, (dto.plan as any)?.meal_plan_breakfast],
-          ['meal_plan_lunch', currentPlan.meal_plan_lunch, (dto.plan as any)?.meal_plan_lunch],
-          ['meal_plan_dinner', currentPlan.meal_plan_dinner, (dto.plan as any)?.meal_plan_dinner],
-        ].some(([, previous, next]) => String(previous ?? '') !== String(next ?? ''));
       } else {
         assertVehicleAgentCreatePolicy(u, dto.plan);
       }
@@ -367,16 +364,6 @@ export class ItineraryPlanPersistenceService {
         planId,
       });
       console.log('[PERF] upsertPlanHeader:', Date.now() - opStart, 'ms');
-
-      // Hotel availability is a meal-plan-aware snapshot. Once the global
-      // plan changes, the previous snapshot and per-day auto selections must
-      // not be reused as if they were still valid. The post-save hotel search
-      // will create a complete fresh snapshot using the new plan.
-      if (globalMealPlanChanged) {
-        await (tx as any).dvi_itinerary_hotel_search_cache.deleteMany({
-          where: { plan_id: planId },
-        });
-      }
 
  // PRESERVE HOTSPOT CONTEXT: Fetch existing hotspots and their route dates BEFORE routes are deleted
  // This ensures that when we rebuild hotspots later, we know which day each "tombstone" (deleted hotspot) belonged to.
@@ -419,7 +406,32 @@ export class ItineraryPlanPersistenceService {
       }));
       const oldRouteDateMap = new Map(oldRoutes.map((r: any) => [r.itinerary_route_ID, r.itinerary_route_date]));
 
-      if (shouldResetManualHotspotsForFullRebuild) {
+      // Decide whether this is a route edit before deleting/recreating route
+      // rows. Non-route edits must preserve route IDs, hotel detail rows, and
+      // the persisted supplier snapshot selected by the user.
+      routeChanged = isPlanUpdate && hasItineraryRouteChanged(
+        oldRoutesWithViaRoutes,
+        Array.isArray(dto.routes) ? dto.routes : [],
+        previousRoutePlan,
+        dto.plan,
+      );
+      const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
+
+      if (routeChanged) {
+        console.log('[HOTEL_ROUTE_CHANGE_RESET_REQUIRED]', {
+          planId,
+          previousRouteCount: oldRoutes.length,
+          nextRouteCount: Array.isArray(dto.routes) ? dto.routes.length : 0,
+        });
+      } else if (isPlanUpdate) {
+        console.log('[HOTEL_ROUTE_CHANGE_NOT_DETECTED]', {
+          planId,
+          routeCount: oldRoutes.length,
+          preservedHotelSnapshot: true,
+        });
+      }
+
+      if (shouldResetManualHotspotsForFullRebuild && shouldRebuildRouteData) {
         const manualCleanupResult = await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
           where: {
             itinerary_plan_ID: planId,
@@ -459,7 +471,7 @@ export class ItineraryPlanPersistenceService {
 
  // Some environments enforce FK constraints from route-linked tables to route_details.
  // Clear old route-linked rows before deleting/recreating routes to avoid update 500s.
-      if (isPlanUpdate) {
+      if (shouldRebuildRouteData && isPlanUpdate) {
         const oldRouteIds = oldRoutes
           .map((r: any) => Number(r?.itinerary_route_ID || 0))
           .filter((id: number) => Number.isFinite(id) && id > 0);
@@ -496,26 +508,15 @@ export class ItineraryPlanPersistenceService {
       }
 
       let opStart2 = Date.now();
-      const routes = await this.routeEngine.rebuildRoutes(
-        planId,
-        dto.plan,
-        dto.routes,
-        tx,
-        userId,
-      );
-      routeChanged = isPlanUpdate && hasItineraryRouteChanged(
-        oldRoutesWithViaRoutes,
-        routes,
-        previousRoutePlan,
-        dto.plan,
-      );
-      if (routeChanged) {
-        console.log('[HOTEL_ROUTE_CHANGE_RESET_REQUIRED]', {
-          planId,
-          previousRouteCount: oldRoutes.length,
-          nextRouteCount: routes.length,
-        });
-      }
+      const routes = shouldRebuildRouteData
+        ? await this.routeEngine.rebuildRoutes(
+            planId,
+            dto.plan,
+            dto.routes,
+            tx,
+            userId,
+          )
+        : oldRoutes;
       stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
         step: 'routes_lookup_rebuild',
@@ -523,7 +524,7 @@ export class ItineraryPlanPersistenceService {
         stepStartedAt,
         planId,
       });
- console.log('[PERF] rebuildRoutes:', Date.now() - opStart2, 'ms');
+ console.log(shouldRebuildRouteData ? '[PERF] rebuildRoutes:' : '[PERF] preserveRoutes:', Date.now() - opStart2, 'ms');
  console.log('[ITINERARY_BASIC_INFO_BUILD_PATH]', {
         planId,
         type: normalizedRequestType || null,
@@ -543,35 +544,37 @@ export class ItineraryPlanPersistenceService {
         });
       }
 
- // Rebuild via routes AFTER routes are created and BEFORE hotspots
-      opStart2 = Date.now();
-      const routeIds = routes.map((r: any) => r.itinerary_route_ID);
-      await this.viaRoutesEngine.rebuildViaRoutes(tx, planId, dto.routes, routeIds, userId);
-      stepStartedAt = this.logItineraryApiTiming({
-        api: 'save_basic_info',
-        step: 'location_dropdown_lookup_via_routes',
-        startedAt: apiStartedAt,
-        stepStartedAt,
-        planId,
-      });
+      if (shouldRebuildRouteData) {
+        // Rebuild via routes AFTER routes are created and BEFORE hotspots.
+        opStart2 = Date.now();
+        const routeIds = routes.map((r: any) => r.itinerary_route_ID);
+        await this.viaRoutesEngine.rebuildViaRoutes(tx, planId, dto.routes, routeIds, userId);
+        stepStartedAt = this.logItineraryApiTiming({
+          api: 'save_basic_info',
+          step: 'location_dropdown_lookup_via_routes',
+          startedAt: apiStartedAt,
+          stepStartedAt,
+          planId,
+        });
  console.log('[PERF] rebuildViaRoutes:', Date.now() - opStart2, 'ms');
 
- // Via routes are part of the permit location chain, so permits must be
- // rebuilt after the via-route rows have been persisted.
-      opStart2 = Date.now();
-      await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
-      stepStartedAt = this.logItineraryApiTiming({
-        api: 'save_basic_info',
-        step: 'permit_calculation_after_via_routes',
-        startedAt: apiStartedAt,
-        stepStartedAt,
-        planId,
-      });
+        // Via routes are part of the permit location chain, so permits must
+        // be rebuilt after the via-route rows have been persisted.
+        opStart2 = Date.now();
+        await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
+        stepStartedAt = this.logItineraryApiTiming({
+          api: 'save_basic_info',
+          step: 'permit_calculation_after_via_routes',
+          startedAt: apiStartedAt,
+          stepStartedAt,
+          planId,
+        });
  console.log('[PERF] rebuildPermitChargesAfterViaRoutes:', Date.now() - opStart2, 'ms');
 
-      opStart2 = Date.now();
-      await this.planEngine.updateNoOfRoutes(planId, tx);
+        opStart2 = Date.now();
+        await this.planEngine.updateNoOfRoutes(planId, tx);
  console.log('[PERF] updateNoOfRoutes:', Date.now() - opStart2, 'ms');
+      }
 
       opStart2 = Date.now();
       await this.travellersEngine.rebuildTravellers(
@@ -589,10 +592,10 @@ export class ItineraryPlanPersistenceService {
       });
  console.log('[PERF] rebuildTravellers:', Date.now() - opStart2, 'ms');
 
-      if (
+      if (shouldRebuildRouteData && (
         dto.plan.itinerary_preference === 1 ||
         dto.plan.itinerary_preference === 3
-      ) {
+      )) {
         opStart2 = Date.now();
         await this.hotelEngine.rebuildPlanHotels(
           planId,
@@ -716,7 +719,9 @@ export class ItineraryPlanPersistenceService {
       }
 
       opStart2 = Date.now();
-      await this.hotspotEngine.rebuildRouteHotspots(tx, planId, existingHotspotsWithDates);
+      if (shouldRebuildRouteData) {
+        await this.hotspotEngine.rebuildRouteHotspots(tx, planId, existingHotspotsWithDates);
+      }
       await this.routeVehicleRestrictions.assertPersistedPlan(planId, 'create-itinerary-timeline', tx);
       stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
@@ -727,7 +732,7 @@ export class ItineraryPlanPersistenceService {
       });
  console.log('[PERF] rebuildRouteHotspots:', Date.now() - opStart2, 'ms');
 
-      if (shouldResetManualHotspotsForFullRebuild) {
+      if (shouldResetManualHotspotsForFullRebuild && shouldRebuildRouteData) {
         const staleManualCleanupResult = await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
           where: {
             itinerary_plan_ID: planId,
