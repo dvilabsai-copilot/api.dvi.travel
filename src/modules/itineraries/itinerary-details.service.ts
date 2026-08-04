@@ -26,6 +26,7 @@ import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { SystemRole } from '../auth/constants/system-role.constants';
 import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
+import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -6011,7 +6012,11 @@ const hasRequiredVehicleSelection =
       const persistedSelectedTotal = Number((h as any).selected_total_price || 0);
       const hasPersistedSelectedTotal = Number.isFinite(persistedSelectedTotal) && persistedSelectedTotal > 0;
       if (hasPersistedSelectedTotal) {
-        const selectedAmount = persistedSelectedTotal * rowMultiplier;
+        const selectedAmount = hotelStayTotal({
+          ...h,
+          totalStayPrice: persistedSelectedTotal,
+          pricePerNight: (h as any).selected_price_per_night || (h as any).price_per_night,
+        }, 1) * rowMultiplier;
         hotelListTotal += selectedAmount;
         hotelRoomBaseCost += selectedAmount;
         totalRoomCost += selectedAmount;

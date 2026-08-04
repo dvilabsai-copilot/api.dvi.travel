@@ -37,6 +37,7 @@ import {
   parseHotelSelectionSnapshot,
   selectionOriginFromRow,
 } from './utils/hotel-selection-identity.util';
+import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -3917,7 +3918,13 @@ this.logger.log(
       orderBy: { global_settings_ID: 'asc' },
       select: { hotel_margin: true },
     });
-    const globalHotelMargin = Number((globalSettings as any)?.hotel_margin || 0);
+    // The database setting may intentionally be zero while local/staging uses
+    // HOTEL_MARGIN as the configured fallback. Resolve it once at the response
+    // boundary so every downstream pricing path receives the same margin.
+    const configuredEnvironmentMargin = Number(process.env.HOTEL_MARGIN || 0);
+    const globalHotelMargin = Number(
+      (globalSettings as any)?.hotel_margin || configuredEnvironmentMargin || 0,
+    );
 
     const hotelRatesVisible =
       Number((plan as any)?.hotel_rates_visibility || 0) === 1 ||
@@ -3990,7 +3997,160 @@ this.logger.log(
       if (hotelId > 0) marginHotelMasterByProviderCode.set(`staah|${hotelId}`, hm);
     }
 
-    const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
+    // Recommendation packages, cards, rows, and selections must expose the
+    // same payable amount. Previously only totalStayPrice was changed here;
+    // price/pricePerNight remained the supplier amount, so the UI could show
+    // an un-margined card beside a margined recommendation/summary.
+    const priceHotelStay = (hotel: any, fallbackNights: number): any => {
+      const pricedHotel = this.enrichHotelWithMasterMargin(
+        hotel,
+        marginHotelMasterByProviderCode,
+        globalHotelMargin,
+      );
+      const nights = Math.max(Number(fallbackNights || hotel?.numberOfNights || 1), 1);
+      const provider = String(hotel?.provider || '').trim().toLowerCase();
+      // Offline catalog offers carry an explicit nightlySell/base breakdown
+      // and are already sell prices. Persisted offline selections also carry
+      // the explicit marker below. Live/ARI rows are supplier/base prices.
+      const amountAlreadyIncludesMargin = provider === 'offline' ||
+        hotel?.amountIncludesHotelMargin === true ||
+        hotel?.amount_includes_hotel_margin === true;
+      const rawTotal = hotelStayTotal({
+        ...hotel,
+        selectedTotalPrice: undefined,
+        selected_total_price: undefined,
+        selectedPricePerNight: undefined,
+        selected_price_per_night: undefined,
+        exactFullStayTotal: undefined,
+        totalStayPrice: hotel?.totalStayPrice ?? hotel?.totalPrice ?? hotel?.totalFare,
+      }, nights);
+      const marginPercentage = this.getHotelMarginPercentage(
+        pricedHotel,
+        globalHotelMargin,
+      );
+      const payableTotal = rawTotal > 0
+        ? amountAlreadyIncludesMargin
+          ? this.money(rawTotal)
+          : this.applyInvisibleHotelMargin(rawTotal, pricedHotel, globalHotelMargin)
+        : 0;
+      const basePricePerNight = rawTotal > 0
+        ? this.money(rawTotal / nights)
+        : Number(hotel?.basePricePerNight ?? hotel?.pricePerNight ?? hotel?.price ?? 0);
+      const payablePricePerNight = payableTotal > 0
+        ? this.money(payableTotal / nights)
+        : Number(hotel?.pricePerNight ?? hotel?.price ?? 0);
+      const hasSelection = Boolean(
+        hotel?.isSelected || hotel?.selectionId || hotel?.selectionOrigin ||
+        hotel?.selectedTotalPrice || hotel?.selected_total_price,
+      );
+      const pricedOptions = Array.isArray(hotel?.rateOptions)
+        ? hotel.rateOptions.map((option: any) => {
+            const optionRawTotal = hotelStayTotal({
+              ...hotel,
+              ...option,
+              selectedTotalPrice: undefined,
+              selected_total_price: undefined,
+              selectedPricePerNight: undefined,
+              selected_price_per_night: undefined,
+              checkInDate: option?.checkInDate ?? hotel?.checkInDate,
+              checkOutDate: option?.checkOutDate ?? hotel?.checkOutDate,
+              totalStayPrice: option?.totalStayPrice ?? option?.totalPrice,
+            }, nights);
+            const optionPayableTotal = optionRawTotal > 0
+              ? amountAlreadyIncludesMargin
+                ? this.money(optionRawTotal)
+                : this.applyInvisibleHotelMargin(optionRawTotal, pricedHotel, globalHotelMargin)
+              : 0;
+            return {
+              ...option,
+              basePricePerNight: optionRawTotal > 0
+                ? this.money(optionRawTotal / nights)
+                : option?.basePricePerNight,
+              amountIncludesHotelMargin: amountAlreadyIncludesMargin,
+              totalStayPrice: optionPayableTotal > 0 ? optionPayableTotal : option?.totalStayPrice,
+              totalPrice: optionPayableTotal > 0 ? optionPayableTotal : option?.totalPrice,
+              price: optionRawTotal > 0
+                ? this.money(optionPayableTotal / nights)
+                : option?.price,
+              pricePerNight: optionRawTotal > 0
+                ? this.money(optionPayableTotal / nights)
+                : option?.pricePerNight,
+            };
+          })
+        : hotel?.rateOptions;
+
+      const result = {
+        ...hotel,
+        rateOptions: pricedOptions,
+        price: payablePricePerNight > 0 ? payablePricePerNight : hotel?.price,
+        pricePerNight: payablePricePerNight > 0 ? payablePricePerNight : hotel?.pricePerNight,
+        basePricePerNight,
+        baseStayPrice: rawTotal,
+        amountIncludesHotelMargin: amountAlreadyIncludesMargin,
+        exactFullStayTotal: payableTotal > 0 ? payableTotal : hotel?.exactFullStayTotal,
+        totalStayPrice: payableTotal > 0 ? payableTotal : hotel?.totalStayPrice,
+        totalPrice: payableTotal > 0 ? payableTotal : hotel?.totalPrice,
+        totalFare: payableTotal > 0 ? payableTotal : hotel?.totalFare,
+        hotelMarginAmount: amountAlreadyIncludesMargin
+          ? 0
+          : this.money(Math.max(payableTotal - rawTotal, 0)),
+        hotelMarginPercentage: amountAlreadyIncludesMargin ? 0 : marginPercentage,
+      };
+      if (hasSelection && payableTotal > 0) {
+        result.selectedPricePerNight = payablePricePerNight;
+        result.selectedTotalPrice = payableTotal;
+        result.selected_price_per_night = payablePricePerNight;
+        result.selected_total_price = payableTotal;
+        if (result.selection && typeof result.selection === 'object') {
+          result.selection = {
+            ...result.selection,
+            pricePerNight: payablePricePerNight,
+            totalPrice: payableTotal,
+          };
+        }
+      }
+      return result;
+    };
+
+    const pricedPackages = packages.map((pkg) => {
+      const stayResults = (pkg.stayResults || []).map((stay) => {
+        const pricedHotel = stay.hotel
+          ? priceHotelStay(stay.hotel, stay.nights)
+          : undefined;
+        const stayTotal = stay.state !== 'UNAVAILABLE' && pricedHotel
+          ? hotelStayTotal(pricedHotel, stay.nights)
+          : 0;
+        return {
+          ...stay,
+          hotel: pricedHotel,
+          totalPrice: stayTotal > 0 ? stayTotal : stay.totalPrice,
+        };
+      });
+      const packageTotal = stayResults.reduce(
+        (sum, stay) => sum + (Number(stay.totalPrice) > 0 ? Number(stay.totalPrice) : 0),
+        0,
+      );
+      return {
+        ...pkg,
+        hotels: (pkg.hotels || []).map((hotel) => priceHotelStay(
+          hotel,
+          Number(hotel?.numberOfNights || noOfNights || 1),
+        )),
+        stayResults,
+        totalPrice: pkg.complete ? this.money(packageTotal) : null,
+        partialTotal: this.money(packageTotal),
+      };
+    });
+
+    const pricedAvailabilityPackages = allAvailabilityPackages.map((pkg) => ({
+      ...pkg,
+      hotels: (pkg.hotels || []).map((hotel) => priceHotelStay(
+        hotel,
+        Number(hotel?.numberOfNights || noOfNights || 1),
+      )),
+    }));
+
+    const hotelTabs: ItineraryHotelTabDto[] = pricedPackages.map((pkg) => {
       const totalAmount = pkg.complete && pkg.totalPrice !== null
         ? this.money(pkg.totalPrice)
         : null;
@@ -4350,7 +4510,7 @@ this.logger.log(
         selection.room_type ||
         row.roomType;
       const selectedMealPlan = snapshot.mealPlan || selection.meal_plan || row.mealPlan;
-      return {
+      const decorated = {
         ...row,
         hotelName: display.hotelName || row.hotelName,
         category: display.category || row.category,
@@ -4384,6 +4544,10 @@ this.logger.log(
           selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
         },
       };
+      // Legacy selection snapshots may contain the supplier amount. Re-run
+      // the same stay pricing used for live cards so persisted selections do
+      // not bypass HOTEL_MARGIN after refresh/reset.
+      return priceHotelStay(decorated, noOfNights);
     };
 
     const selectionPropertyMatchesRow = (selection: any, row: any): boolean => {
@@ -4498,7 +4662,9 @@ this.logger.log(
           selectionId: Number(selection?.itinerary_plan_hotel_details_ID || 0),
         },
       };
-      return selectedRow;
+      // Persisted selections are display rows too. Normalize their amount at
+      // the response boundary; the database value is not mutated here.
+      return priceHotelStay(selectedRow, noOfNights);
     };
 
     const cleanIdentity = (value: unknown): string =>
@@ -4541,7 +4707,7 @@ this.logger.log(
       return false;
     };
 
-    for (const pkg of allAvailabilityPackages) {
+    for (const pkg of pricedAvailabilityPackages) {
       for (const hotel of pkg.hotels) {
  // Find the route using the routeId attached to the hotel
         const route = routes.find((r: any) => r.itinerary_route_ID === hotel.routeId);
@@ -4616,23 +4782,35 @@ this.logger.log(
           }
         }
 
+        const normalizedProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
         const pricedHotel = this.enrichHotelWithMasterMargin(
           hotel,
           hotelMasterByProviderCode,
           globalHotelMargin,
         );
-        const baseHotelCost = Number(pricedHotel.price || 0);
-        const marginPercentage = this.getHotelMarginPercentage(pricedHotel, globalHotelMargin);
-        const hotelMarginAmount = this.money((baseHotelCost * marginPercentage) / 100);
-        const totalHotelCost = this.applyInvisibleHotelMargin(
-          baseHotelCost,
-          pricedHotel,
-          globalHotelMargin,
+        const amountAlreadyIncludesMargin = normalizedProvider === 'offline' ||
+          hotel?.amountIncludesHotelMargin === true;
+        const numberOfNights = Math.max(Number(hotel?.numberOfNights || noOfNights || 1), 1);
+        const baseHotelCost = Number(
+          hotel?.basePricePerNight ?? pricedHotel?.basePricePerNight ?? hotel?.price ?? 0,
         );
+        const payableHotelCost = Number(
+          hotel?.pricePerNight ?? hotel?.price ?? 0,
+        );
+        const marginPercentage = amountAlreadyIncludesMargin
+          ? 0
+          : Number(hotel?.hotelMarginPercentage ?? this.getHotelMarginPercentage(pricedHotel, globalHotelMargin));
+        const hotelMarginAmount = amountAlreadyIncludesMargin
+          ? 0
+          : this.money(Math.max(payableHotelCost - baseHotelCost, 0));
+        const totalHotelCost = payableHotelCost > 0
+          ? this.money(payableHotelCost)
+          : amountAlreadyIncludesMargin
+            ? this.money(baseHotelCost)
+            : this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel, globalHotelMargin);
         const billableHotelCost = earlyCheckInExtraPaymentApplicable
           ? this.money(totalHotelCost * 2)
           : totalHotelCost;
-        const normalizedProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
         const rawSearchReference = String(hotel.searchReference || '').trim();
         const parsedStaahReference = this.parseStaahSearchReference(
           rawSearchReference || (hotel as any).bookingCode || '',
@@ -4678,6 +4856,14 @@ this.logger.log(
           baseHotelCost,
           hotelMarginPercentage: marginPercentage,
           hotelMarginAmount: this.money(hotelMarginAmount * (earlyCheckInExtraPaymentApplicable ? 2 : 1)),
+          baseStayPrice: Number(hotel?.baseStayPrice ?? baseHotelCost * numberOfNights),
+          hotelMarginStayAmount: this.money(
+            Math.max(
+              Number(hotel?.totalStayPrice ?? hotel?.totalPrice ?? payableHotelCost * numberOfNights) -
+                Number(hotel?.baseStayPrice ?? baseHotelCost * numberOfNights),
+              0,
+            ) * (earlyCheckInExtraPaymentApplicable ? 2 : 1),
+          ),
           hotelMarginGstAmount: 0,
           hotelRoomGstAmount: 0,
           hotelMealPlanCost: 0,
@@ -4721,7 +4907,8 @@ this.logger.log(
                 bookingMode: (hotel as any).bookingMode || (normalizedProvider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
                 priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' || normalizedProvider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
                 pricePerNight: Number((hotel as any).pricePerNight ?? totalHotelCost),
-                totalStayPrice: Number((hotel as any).totalStayPrice ?? billableHotelCost),
+                totalStayPrice: Number((hotel as any).totalStayPrice ?? billableHotelCost * numberOfNights),
+                totalPrice: Number((hotel as any).totalPrice ?? (hotel as any).totalStayPrice ?? billableHotelCost * numberOfNights),
                 currency: hotel.currency || 'INR',
                 isLiveRate: (hotel as any).isLiveRate ?? (normalizedProvider !== 'offline' && normalizedProvider !== 'axisrooms'),
                 isLiveBookable: normalizedProvider !== 'offline' && hasSupplierHotel,
@@ -4733,8 +4920,8 @@ this.logger.log(
           priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' || normalizedProvider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
           priceLabel: (hotel as any).priceLabel,
           pricePerNight: Number((hotel as any).pricePerNight ?? totalHotelCost),
-          totalStayPrice: Number((hotel as any).exactFullStayTotal ?? (hotel as any).totalStayPrice ?? billableHotelCost * Math.max(Number((hotel as any).numberOfNights || noOfNights || 1), 1)),
-          numberOfNights: Number((hotel as any).numberOfNights || noOfNights || 1),
+          totalStayPrice: Number((hotel as any).totalStayPrice ?? (hotel as any).totalPrice ?? (hotel as any).exactFullStayTotal ?? billableHotelCost * numberOfNights),
+          numberOfNights,
           nightlyRates: (hotel as any).nightlyRates,
           requiresHotelApproval: normalizedProvider === 'offline',
           isLiveRate: (hotel as any).isLiveRate ?? (normalizedProvider !== 'offline' && normalizedProvider !== 'axisrooms'),
@@ -4802,7 +4989,7 @@ this.logger.log(
 
  // Preserve every unavailable logical stay in the response. An incomplete
  // package must not disappear just because one stay has no eligible option.
-    for (const pkg of packages) {
+    for (const pkg of pricedPackages) {
       for (const stay of pkg.stayResults || []) {
         if (stay.state !== 'UNAVAILABLE') continue;
         const alreadyRendered = hotelRows.some((row: any) => row.groupType === pkg.groupType && row.stayKey === stay.stayKey);
@@ -5148,7 +5335,10 @@ this.logger.log(
       orderBy: { global_settings_ID: 'asc' },
       select: { hotel_margin: true },
     });
-    const globalHotelMargin = Number((globalSettings as any)?.hotel_margin || 0);
+    const configuredEnvironmentMargin = Number(process.env.HOTEL_MARGIN || 0);
+    const globalHotelMargin = Number(
+      (globalSettings as any)?.hotel_margin || configuredEnvironmentMargin || 0,
+    );
 
  // Step 2: Get itinerary routes (days and destinations)
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({

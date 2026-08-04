@@ -615,7 +615,6 @@ export class ItinerariesService {
     private readonly hotelPrebookService: ItineraryHotelPrebookService = new ItineraryHotelPrebookService(
       prisma,
       tboHotelBooking,
-      hotelDetailsTboService,
       supplementNormalizer,
     ),
     private readonly hotelBookingFulfillmentService: ItineraryHotelBookingFulfillmentService = new ItineraryHotelBookingFulfillmentService(

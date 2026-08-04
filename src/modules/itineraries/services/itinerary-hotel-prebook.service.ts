@@ -4,7 +4,6 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { ConfirmQuotationDto } from '../dto/confirm-quotation.dto';
 import { TboHotelBookingService } from './tbo-hotel-booking.service';
-import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
 import { SupplementNormalizerService } from '../../../modules/hotels/services/supplement-normalizer.service';
 
 type HotelPrebookCallbacks = Partial<Record<
@@ -23,7 +22,6 @@ export class ItineraryHotelPrebookService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tboHotelBooking: TboHotelBookingService,
-    private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly supplementNormalizer: SupplementNormalizerService,
   ) {}
 
@@ -86,7 +84,35 @@ export class ItineraryHotelPrebookService {
     endUserIp?: string;
   }) {
     const incomingHotelBookings = payload?.hotel_bookings || [];
-    const providerHotelBookings = this.getProviderBookableHotelBookings(incomingHotelBookings);
+    // A TBO/VSR row is a prebook candidate even when its booking code is
+    // missing or expired. In that case prebook must fail clearly and ask the
+    // user to run the explicit Refresh Availability action. It must not call
+    // TBO implicitly from the confirmation flow.
+    const providerHotelBookings = incomingHotelBookings.filter((hotel: any) => {
+      const provider = String(hotel?.provider || '').trim().toLowerCase();
+      if (provider === 'tbo' || provider === 'vsr') {
+        const hotelCode = String(hotel?.hotelCode || hotel?.hotelId || '').trim();
+        const hotelName = String(hotel?.hotelName || '').trim().toLowerCase();
+        const availabilityStatus = String(hotel?.availabilityStatus || '').trim().toUpperCase();
+        const netAmount = Number(
+          hotel?.netAmount ??
+          hotel?.totalAmount ??
+          hotel?.totalPrice ??
+          hotel?.price ??
+          0,
+        );
+        return hotel.externalStay !== true &&
+          hotel.isBookable !== false &&
+          availabilityStatus !== 'NO_SUPPLIER_AVAILABILITY' &&
+          availabilityStatus !== 'NOT_BOOKABLE' &&
+          hotelName !== 'no hotels available' &&
+          hotelCode !== '' &&
+          hotelCode !== '0' &&
+          Number.isFinite(netAmount) &&
+          netAmount > 0;
+      }
+      return this.getProviderBookableHotelBookings([hotel]).length > 0;
+    });
     const skippedExternalStayCount = incomingHotelBookings.length - providerHotelBookings.length;
 
     if (incomingHotelBookings.length === 0 || providerHotelBookings.length === 0) {
@@ -109,7 +135,7 @@ export class ItineraryHotelPrebookService {
     }
 
     const tboHotels = providerHotelBookings.filter(
-      (hotel) => String(hotel.provider || '').toLowerCase() === 'tbo',
+      (hotel) => ['tbo', 'vsr'].includes(String(hotel.provider || '').toLowerCase()),
     );
 
     if (tboHotels.length === 0) {
@@ -414,7 +440,7 @@ export class ItineraryHotelPrebookService {
   }
 
   private async resolvePrebookBookingCode(
-    itineraryPlanId: number,
+    _itineraryPlanId: number,
     hotel: {
       routeId: number;
       hotelCode: string;
@@ -427,69 +453,9 @@ export class ItineraryHotelPrebookService {
       return incomingBookingCode;
     }
 
-    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
-      where: { itinerary_plan_ID: itineraryPlanId },
-      select: { itinerary_quote_ID: true },
-    });
-
-    const quoteId = String((plan as any)?.itinerary_quote_ID || '').trim();
-    if (!quoteId) {
-      throw new BadRequestException(
-        'Unable to resolve itinerary quote for fresh hotel room validation. Please refresh hotel search and try prebook again.',
-      );
-    }
-
- // Force a fresh room search to avoid stale cached booking codes.
-    this.hotelDetailsTboService.clearCacheForQuote(quoteId);
-    const roomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(
-      quoteId,
-      Number(hotel.routeId),
+    throw new BadRequestException(
+      `Hotel availability has expired for ${hotel.hotelCode || 'the selected hotel'}. Click Refresh Availability and select the hotel again before confirming.`,
     );
-
-    const hotelCode = String(hotel.hotelCode || '').trim();
-    const requestedRoomType = String(hotel.roomType || '').trim().toLowerCase();
-
-    const matchingRooms = (roomDetails?.rooms || []).filter(
-      (room: any) =>
-        Number(room.itineraryRouteId) === Number(hotel.routeId) &&
-        String(room.hotelId || '') === hotelCode,
-    );
-
-    if (matchingRooms.length === 0) {
-      throw new BadRequestException(
-        'No fresh room options found for selected hotel. Please run hotel search again and select a room before prebook.',
-      );
-    }
-
-    const roomTypeMatch = requestedRoomType
-      ? matchingRooms.find((room: any) => {
-          const roomTypeName = String(room.roomTypeName || '').toLowerCase();
-          if (roomTypeName && roomTypeName === requestedRoomType) {
-            return true;
-          }
-
-          const availableRoomTypes = Array.isArray(room.availableRoomTypes)
-            ? room.availableRoomTypes
-            : [];
-          return availableRoomTypes.some(
-            (rt: any) =>
-              String(rt.roomTypeTitle || '').toLowerCase() === requestedRoomType,
-          );
-        })
-      : undefined;
-
-    const selectedRoom = roomTypeMatch || matchingRooms[0];
-    const selectedBookingCode =
-      String(selectedRoom?.bookingCode || '').trim() ||
-      String(selectedRoom?.availableRoomTypes?.[0]?.bookingCode || '').trim();
-
-    if (!selectedBookingCode || !selectedBookingCode.includes('!TB!')) {
-      throw new BadRequestException(
-        'Fresh room booking code not available for selected hotel. Please refresh hotel selection and prebook again.',
-      );
-    }
-
-    return selectedBookingCode;
   }
 
  /**

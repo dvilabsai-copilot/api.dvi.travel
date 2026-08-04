@@ -123,6 +123,22 @@ test('rejects a child-route one-night rate when the logical stay needs multiple 
   assert.match(packages[0].stayResults[0].reason || '', /full logical stay/i);
 });
 
+test('normalizes a stale itinerary-wide total to the route-specific one-night stay', () => {
+  const hotel = option('Hablis Hotel Chennai', 7179.38, 'UNKNOWN', {
+    numberOfNights: 2,
+    totalStayPrice: 14358.76,
+    checkInDate: '2026-08-08',
+    checkOutDate: '2026-08-09',
+  });
+  const packages = service().generate({
+    routes: [{ itinerary_route_ID: 401, itinerary_route_date: '2026-08-08', next_visiting_location: 'Chennai' }],
+    hotelsByRoute: new Map([[401, [hotel as any]]]),
+  });
+
+  assert.equal(packages[0].hotels[0].exactFullStayTotal, 7179.38);
+  assert.equal(packages[0].totalPrice, 7179.38);
+});
+
 test('preserves valid stays when another logical stay is unavailable', () => {
   const packages = service().generate({
     routes: [
@@ -133,12 +149,20 @@ test('preserves valid stays when another logical stay is unavailable', () => {
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages.length, 1);
+  assert.equal(packages.length, 4);
+  assert.deepEqual(packages.map((pkg) => pkg.groupType), [1, 2, 3, 4]);
+  assert.deepEqual(packages.map((pkg) => pkg.label), [
+    'Recommended #1',
+    'Recommended #2',
+    'Recommended #3',
+    'Recommended #4',
+  ]);
   assert.equal(packages[0].complete, false);
   assert.equal(packages[0].totalPrice, null);
   assert.equal(packages[0].partialTotal, 100);
   assert.equal(packages[0].hotels.length, 1);
   assert.deepEqual(packages[0].stayResults.map((stay) => stay.state), ['SELECTED', 'UNAVAILABLE']);
+  assert.ok(packages.slice(1).every((pkg) => pkg.distinctFromPrevious === false));
 });
 
 test('returns partial alternatives for available stays while preserving the unavailable stay row', () => {
@@ -154,10 +178,24 @@ test('returns partial alternatives for available stays while preserving the unav
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages.length, 2);
-  assert.deepEqual(packages.map((pkg) => pkg.hotels[0].hotelName), ['Munnar A', 'Munnar B']);
-  assert.ok(packages.every((pkg) => pkg.totalPrice === null && pkg.partialTotal > 0));
+  assert.equal(packages.length, 4);
+  assert.deepEqual(packages.map((pkg) => pkg.hotels[0].hotelName), ['Munnar A', 'Munnar B', 'Munnar B', 'Munnar B']);
+  assert.ok(packages.slice(0, 2).every((pkg) => pkg.totalPrice === null && pkg.partialTotal > 0));
   assert.ok(packages.every((pkg) => pkg.stayResults[1].state === 'UNAVAILABLE'));
+});
+
+test('always exposes four tabs when no hotel stay has availability', () => {
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 1, itinerary_route_date: '2026-08-02', next_visiting_location: 'Kabini' },
+    ],
+    hotelsByRoute: new Map([[1, []]]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.deepEqual(packages.map((pkg) => pkg.groupType), [1, 2, 3, 4]);
+  assert.ok(packages.every((pkg) => pkg.complete === false && pkg.hotels.length === 0));
+  assert.ok(packages.every((pkg) => pkg.stayResults[0].state === 'UNAVAILABLE'));
 });
 
 test('constructs stable logical stays and handles aliases, repeated destinations, departure, and transit routes', () => {
