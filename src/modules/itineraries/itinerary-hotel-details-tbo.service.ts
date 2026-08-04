@@ -1040,6 +1040,94 @@ if (hotelMasterId) {
     private readonly hotelRecommendationPackageService: HotelRecommendationPackageService,
   ) {}
 
+  /** Fetch the latest room/rate/meal options for one selected supplier hotel. */
+  async getSelectedHotelRates(
+    quoteId: string,
+    routeId: number,
+    provider: string,
+    hotelCode: string,
+  ): Promise<{ quoteId: string; routeId: number; provider: string; hotelCode: string; hotels: HotelSearchResult[] }> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+      where: { itinerary_quote_ID: quoteId, deleted: 0 },
+    });
+    const route = await this.prisma.dvi_itinerary_route_details.findFirst({
+      where: { itinerary_route_ID: Number(routeId), itinerary_plan_ID: plan?.itinerary_plan_ID, deleted: 0 },
+    });
+    if (!plan || !route) throw new NotFoundException('Itinerary route not found');
+
+    const requestedProvider = String(provider || '').trim().toLowerCase();
+    const normalizedProvider = requestedProvider === 'ax' ? 'axisrooms' : requestedProvider;
+    const normalizedHotelCode = String(hotelCode || '').trim();
+    if (!normalizedProvider || !normalizedHotelCode) {
+      throw new BadRequestException('provider and hotelCode are required');
+    }
+
+    const checkInDate = new Date(route.itinerary_route_date).toISOString().slice(0, 10);
+    const checkOutDate = new Date(new Date(route.itinerary_route_date).getTime() + ItineraryHotelDetailsTboService.ONE_DAY_MS)
+      .toISOString().slice(0, 10);
+    const roomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
+    const adultCount = Math.max(Number((plan as any).total_adult || 1), 1);
+    const childCount = Math.max(Number((plan as any).total_children || 0), 0);
+    const hotels = normalizedProvider === 'staah'
+      ? (await this.fetchStaahHotelsForRoutes(
+          [route], 1, undefined, null, false,
+          { roomCount, adults: adultCount, children: childCount }, normalizedHotelCode,
+        )).get(Number(routeId)) || []
+      : normalizedProvider === 'axisrooms'
+        ? (await this.fetchAxisroomsHotelsForRoutes(
+            [route], 1, undefined, null, roomCount, normalizedHotelCode,
+          )).get(Number(routeId)) || []
+        : normalizedProvider === 'offline'
+          ? ((await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
+              [route],
+              1,
+              String((plan as any).guest_nationality || 'IN').trim().toUpperCase(),
+              roomCount,
+              adultCount,
+              childCount,
+            )).get(Number(routeId)) || []).filter((hotel: any) =>
+              String(
+                hotel?.hotelCode || hotel?.providerHotelCode || hotel?.canonicalHotelId || hotel?.hotelId || '',
+              ).trim() === normalizedHotelCode,
+            )
+        : await this.hotelSearchService.searchHotels({
+            cityCode: String((route as any).next_visiting_location || '').trim(),
+            checkInDate, checkOutDate, roomCount,
+            guestCount: adultCount + childCount, adultCount, childCount,
+            guestNationality: String((plan as any).guest_nationality || 'IN').trim().toUpperCase(),
+            providers: [normalizedProvider], hotelCodes: normalizedHotelCode,
+          });
+
+    return {
+      quoteId, routeId: Number(routeId), provider: normalizedProvider, hotelCode: normalizedHotelCode,
+      hotels: (hotels || []).map((hotel: any) => {
+        const totalAmount = Number(
+          hotel.totalHotelCost ?? hotel.totalAmountAfterTax ?? hotel.totalPrice ?? hotel.price ?? 0,
+        );
+        return {
+          ...hotel,
+          itineraryPlanId: plan.itinerary_plan_ID,
+          itineraryRouteId: Number(routeId),
+          routeId: Number(routeId),
+          groupType: 1,
+          date: checkInDate,
+          checkInDate,
+          checkOutDate,
+          totalHotelCost: Number.isFinite(totalAmount) ? totalAmount : 0,
+          totalAmount: Number.isFinite(totalAmount) ? totalAmount : 0,
+          totalAmountAfterTax: Number.isFinite(totalAmount) ? totalAmount : 0,
+          totalPrice: Number.isFinite(totalAmount) ? totalAmount : 0,
+          pricePerNight: Number(hotel.pricePerNight ?? hotel.price ?? totalAmount) || 0,
+          roomTypeName: hotel.roomTypeName || hotel.roomType || hotel.roomName,
+          isBookable: hotel.isBookable !== false,
+          isSelectable: hotel.isSelectable !== false,
+          isLiveBookable: hotel.isLiveBookable !== false,
+          availabilityStatus: hotel.availabilityStatus || 'AVAILABLE',
+        };
+      }),
+    };
+  }
+
   private recommendationAlgorithm(): 'v1' | 'v2' {
     return resolveHotelRecommendationAlgorithm();
   }
@@ -2738,6 +2826,7 @@ this.logger.log(
     savedMealPlansByRoute?: Map<number, string>,
     preferredMealPlanCode?: string | null,
     roomCount: number = 1,
+    targetHotelCode?: string,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const requiredRoomCount = Math.max(Number(roomCount || 1), 1);
@@ -2789,7 +2878,10 @@ this.logger.log(
     }));
     const routeHotels = routeContexts.map((context) => ({
       context,
-      cityHotels: axisHotelsByDestination.get(context.destinationRaw) || [],
+      cityHotels: (axisHotelsByDestination.get(context.destinationRaw) || []).filter((hotel: any) =>
+        !targetHotelCode || [hotel.axisrooms_property_id, hotel.hotel_id]
+          .some((value) => String(value ?? '').trim() === String(targetHotelCode).trim()),
+      ),
     }));
     const axisroomsHotels = Array.from(new Map(
       routeHotels.flatMap(({ cityHotels }) => cityHotels)
@@ -3168,6 +3260,7 @@ this.logger.log(
     preferredMealPlanCode?: string | null,
     includeRestrictedForDisplay: boolean = false,
     paxProfile?: StaahPricingPaxInput,
+    targetHotelCode?: string,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const routeContexts = routes
@@ -3231,7 +3324,9 @@ this.logger.log(
     }));
     const routeHotels = routeContexts.map((context) => ({
       context,
-      cityHotels: staahHotelsByDestination.get(context.destinationRaw) || [],
+      cityHotels: (staahHotelsByDestination.get(context.destinationRaw) || []).filter((hotel: any) =>
+        !targetHotelCode || String(hotel.staah_property_id || hotel.hotel_id || '').trim() === String(targetHotelCode).trim(),
+      ),
     }));
     const allStaahHotels = Array.from(new Map(
       routeHotels.flatMap(({ cityHotels }) => cityHotels)

@@ -620,6 +620,28 @@ private readonly itineraryAccessService: ItineraryAccessService,
     };
   }
 
+  @Post('hotel_details/:quoteId/selected-hotel-refresh')
+  @ApiOperation({ summary: 'Refresh the latest rates for one selected supplier hotel' })
+  async refreshSelectedHotelRates(
+    @Param('quoteId') quoteId: string,
+    @Body() body: { routeId?: number; provider?: string; hotelCode?: string },
+  ) {
+    const result = await this.hotelDetailsTboService.getSelectedHotelRates(
+      quoteId,
+      Number(body?.routeId || 0),
+      String(body?.provider || ''),
+      String(body?.hotelCode || ''),
+    );
+    await this.hotelAvailabilitySnapshotService.mergeSelectedHotelRates(
+      quoteId,
+      Number(body?.routeId || 0),
+      String(body?.provider || ''),
+      String(body?.hotelCode || ''),
+      Array.isArray(result?.hotels) ? result.hotels : [],
+    );
+    return result;
+  }
+
   @Post('hotel_details/:quoteId/reset')
   @ApiOperation({
     summary: 'Reset hotel selections and rebuild availability',

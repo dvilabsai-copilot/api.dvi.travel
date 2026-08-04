@@ -408,6 +408,10 @@ export class ResAvenueHotelProvider implements IHotelProvider {
           })
         : [];
       const cityIdCandidates = cityRows.map((row) => String(row.id));
+      const requestedHotelCodes = String(criteria.hotelCodes || '')
+        .split(',')
+        .map((code) => code.trim())
+        .filter(Boolean);
 
  // Step 2: Query database for ResAvenue hotels in this city
  this.logger.log(
@@ -422,7 +426,9 @@ export class ResAvenueHotelProvider implements IHotelProvider {
               ? [{ hotel_city: { startsWith: `${primaryCityName},` } }]
               : []),
           ],
-          resavenue_hotel_code: { not: null },
+          ...(requestedHotelCodes.length > 0
+            ? { resavenue_hotel_code: { in: requestedHotelCodes } }
+            : { resavenue_hotel_code: { not: null } }),
           deleted: false,
           status: 1,
           ...(selectedStarRatings.length > 0

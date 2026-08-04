@@ -101,6 +101,10 @@ export class HotelSearchDTO {
   @IsOptional()
   providers?: string[];
 
+  @IsOptional()
+  @IsString()
+  hotelCodes?: string;
+
   @IsObject()
   @IsOptional()
   preferences?: {
