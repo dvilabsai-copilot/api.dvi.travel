@@ -540,7 +540,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
  // Read the persisted snapshot; the fallback is also database-only and
  // exposes legacy selected rows for itineraries created before snapshots.
       const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : 1;
-      const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : 100;
+      // An unfiltered page load is the edit/reload contract: it must rebuild
+      // the hotel panel from the complete persisted snapshot. Pagination is
+      // still used for explicit group/stay requests and load-more calls.
+      const isCompleteSnapshotRead = !page && !groupType && !itineraryRouteId;
+      const pageSizeNum = isCompleteSnapshotRead
+        ? 0
+        : pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : 100;
       const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;
       const itineraryRouteIdNum = itineraryRouteId
         ? Math.max(0, parseInt(itineraryRouteId, 10) || 0)
@@ -586,7 +592,11 @@ private readonly itineraryAccessService: ItineraryAccessService,
       quoteId,
       {
         page: page ? Math.max(1, parseInt(page, 10) || 1) : 1,
-        pageSize: page ? Math.min(100, Math.max(1, parseInt(pageSize || '20', 10) || 20)) : 100,
+        pageSize: !page && !groupType && !itineraryRouteId
+          ? 0
+          : page
+            ? Math.min(100, Math.max(1, parseInt(pageSize || '20', 10) || 20))
+            : 100,
         groupType: groupType ? parseInt(groupType, 10) : undefined,
         itineraryRouteId: itineraryRouteId ? Math.max(0, parseInt(itineraryRouteId, 10) || 0) : undefined,
       },
