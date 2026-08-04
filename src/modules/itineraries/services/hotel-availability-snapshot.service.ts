@@ -1699,15 +1699,18 @@ export class HotelAvailabilitySnapshotService {
       totalPrice: selectedTotal,
       pricePerNight: selectedPerNight,
     });
+    // Persisted user selections are authoritative after a refresh. Supplier
+    // rows can still contain the original/default CP label even when the
+    // saved selection is MAP/AP.
     const roomType = String(
-      row?.roomType ||
       snapshot?.roomType ||
       snapshot?.roomTypeName ||
       snapshot?.room_type_title ||
       selection?.room_type ||
+      row?.roomType ||
       '',
     ).trim();
-    const mealPlan = row?.mealPlan || snapshot?.mealPlan || selection?.meal_plan || null;
+    const mealPlan = snapshot?.mealPlan || selection?.meal_plan || row?.mealPlan || null;
 
     return {
       ...row,
