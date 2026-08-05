@@ -588,11 +588,14 @@ private readonly itineraryAccessService: ItineraryAccessService,
     @Query('groupType') groupType?: string,
     @Query('itineraryRouteId') itineraryRouteId?: string,
   ): Promise<ItineraryHotelDetailsResponseDto> {
+    const hasExplicitCompletePageSize = pageSize !== undefined && Number(pageSize) === 0;
+    const isCompleteSnapshotRead = (!page && !groupType && !itineraryRouteId) ||
+      (!groupType && !itineraryRouteId && hasExplicitCompletePageSize);
     return this.hotelAvailabilitySnapshotService.readPersisted(
       quoteId,
       {
         page: page ? Math.max(1, parseInt(page, 10) || 1) : 1,
-        pageSize: !page && !groupType && !itineraryRouteId
+        pageSize: isCompleteSnapshotRead
           ? 0
           : page
             ? Math.min(100, Math.max(1, parseInt(pageSize || '20', 10) || 20))
