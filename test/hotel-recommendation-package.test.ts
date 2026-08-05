@@ -334,6 +334,26 @@ test('recommendations stop at the number of real combinations and expose diversi
   assert.ok(Array.isArray(packages[3].duplicateWithinPackageHotelIds));
 });
 
+test('recommendation totals never move backwards between package numbers', () => {
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 1, itinerary_route_date: '2026-08-02', next_visiting_location: 'Munnar' },
+      { itinerary_route_ID: 2, itinerary_route_date: '2026-08-03', next_visiting_location: 'Kochi' },
+    ],
+    hotelsByRoute: new Map([
+      [1, [option('Munnar A', 100), option('Munnar B', 125), option('Munnar C', 145), option('Munnar D', 165)]],
+      [2, [option('Kochi A', 100), option('Kochi B', 110), option('Kochi C', 135), option('Kochi D', 155)]],
+    ]),
+    preferredMealPlanCode: 'CP',
+    beamWidth: 200,
+    packageLimit: 1000,
+  });
+
+  const totals = packages.map((pkg) => Number(pkg.totalPrice || pkg.partialTotal || 0));
+  assert.deepEqual(totals, [...totals].sort((left, right) => left - right));
+  assert.equal(totals.every((total, index) => index === 0 || total >= totals[index - 1]), true);
+});
+
 test('beam search finds the closest real target package without DFS first-N truncation', () => {
   const packages = service().generate({
     routes: [
