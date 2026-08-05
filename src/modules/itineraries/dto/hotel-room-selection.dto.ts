@@ -120,6 +120,11 @@ export class UpdateRoomCategoryDto {
   @IsNotEmpty()
   room_type_id: number;
 
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  room_number?: number;
+
   @ApiProperty({ description: 'Room Quantity', required: false })
   @IsInt()
   @IsOptional()

@@ -30,7 +30,13 @@ export class ItineraryHotelRoomCategoryService {
     });
     if (!route) throw new NotFoundException('Route not found');
 
-    const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(plan.itinerary_quote_ID, params.itinerary_route_id);
+    const providerName = String(params.provider || '').trim().toLowerCase();
+    const requiresLiveRoomDetails = !providerName || ['tbo', 'vsr', 'vrs'].includes(providerName);
+    // Offline and local supplier cards use the canonical room master below.
+    // Do not block opening their editor on a TBO network request.
+    const tboRoomDetails = requiresLiveRoomDetails
+      ? await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(plan.itinerary_quote_ID, params.itinerary_route_id)
+      : { rooms: [] };
     const matchingHotelRooms = this.matchHotelRooms(tboRoomDetails.rooms || [], params);
     // AxisRooms/STAAH selections are persisted in the itinerary snapshot but
     // are not necessarily present in the VSR/TBO room-detail response. The
@@ -49,6 +55,7 @@ export class ItineraryHotelRoomCategoryService {
       params.hotel_id,
       matchingHotelRooms,
       params.provider,
+      route.itinerary_route_date,
     );
     if (availableRoomTypes.length === 0) throw new NotFoundException('No room types available for this hotel');
 
@@ -150,7 +157,7 @@ export class ItineraryHotelRoomCategoryService {
         room_type_id: roomTypeId || null,
         room_type_title: selectedRoomType?.roomTypeTitle ||
           (roomTypeId > 0 ? String(roomTypeId) : selectedSnapshotRoomType),
-        room_qty: room.room_qty,
+        room_qty: 1,
         available_room_types: available,
       };
     });
@@ -184,6 +191,7 @@ export class ItineraryHotelRoomCategoryService {
     provider?: string;
     hotel_name?: string;
     room_type_id: number;
+    room_number?: number;
     room_qty?: number;
     all_meal_plan?: number;
     breakfast_meal_plan?: number;
@@ -225,6 +233,7 @@ export class ItineraryHotelRoomCategoryService {
       params.hotel_id,
       matchingHotelRooms,
       params.provider,
+      route.itinerary_route_date,
     );
     const selectedRoomType = availableRoomTypes.find((roomType: any) =>
       Number(roomType.roomTypeId) === Number(params.room_type_id));
@@ -277,10 +286,29 @@ export class ItineraryHotelRoomCategoryService {
       selectedTotalPrice,
       now,
     });
+    // A newly added room may not have a child-row ID yet. Resolve it by its
+    // displayed room number before deciding to create, otherwise repeated
+    // confirms can target the wrong child row and lose Room 2's selection.
+    let roomDetailsId = Number(params.itinerary_plan_hotel_room_details_ID || 0);
+    if (!roomDetailsId && Number(params.room_number || 0) > 0) {
+      const roomRows = await this.prisma.dvi_itinerary_plan_hotel_room_details.findMany({
+        where: {
+          itinerary_plan_hotel_details_id: hotelDetailsId,
+          itinerary_plan_id: params.itinerary_plan_id,
+          itinerary_route_id: params.itinerary_route_id,
+          itinerary_route_date: route.itinerary_route_date,
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: { itinerary_plan_hotel_room_details_ID: 'asc' },
+        select: { itinerary_plan_hotel_room_details_ID: true },
+      });
+      roomDetailsId = Number(roomRows[Number(params.room_number) - 1]?.itinerary_plan_hotel_room_details_ID || 0);
+    }
     const baseData = {
       room_type_id: params.room_type_id,
       room_id: Number(selectedRoomType.roomId || params.room_type_id),
-      room_qty: params.room_qty || 1,
+      room_qty: 1,
       room_rate: roomRate,
       updatedon: now,
     };
@@ -297,7 +325,7 @@ export class ItineraryHotelRoomCategoryService {
         dinner_required: params.dinner_meal_plan || params.all_meal_plan || 0,
       }
       : {};
-    const data = params.itinerary_plan_hotel_room_details_ID
+    const data = roomDetailsId
       ? { ...baseData, ...mealPlanData }
       : {
         ...baseData,
@@ -305,9 +333,9 @@ export class ItineraryHotelRoomCategoryService {
         lunch_required: mealPlanData.lunch_required ?? 0,
         dinner_required: mealPlanData.dinner_required ?? 0,
       };
-    if (params.itinerary_plan_hotel_room_details_ID) {
+    if (roomDetailsId) {
       await this.prisma.dvi_itinerary_plan_hotel_room_details.update({
-        where: { itinerary_plan_hotel_room_details_ID: params.itinerary_plan_hotel_room_details_ID },
+        where: { itinerary_plan_hotel_room_details_ID: roomDetailsId },
         data: {
           ...data,
           // Older live-hotel selections could create room rows with parent ID 0.
@@ -633,6 +661,7 @@ export class ItineraryHotelRoomCategoryService {
     hotelId: number,
     matchingHotelRooms: any[],
     provider?: string,
+    routeDate?: Date | null,
   ) {
     const roomModel = (this.prisma as any).dvi_hotel_rooms;
     const hotelRooms = roomModel?.findMany ? await roomModel.findMany({
@@ -744,7 +773,48 @@ export class ItineraryHotelRoomCategoryService {
       }
     }
 
-    return availableRoomTypes;
+    // Offline/canonical room categories must carry their DB price into the
+    // update path; otherwise changing a room type silently writes a zero rate.
+    // Use the route date's price-book column so the API recalculates the
+    // persisted room rate and totals from DB data.
+    if (routeDate && availableRoomTypes.length > 0) {
+      const priceModel = (this.prisma as any).dvi_hotel_room_price_book;
+      if (priceModel?.findMany) {
+        const dayColumn = `day_${routeDate.getDate()}`;
+        const priceRows = await priceModel.findMany({
+          where: {
+            hotel_id: hotelId,
+            room_type_id: { in: availableRoomTypes.map((roomType) => roomType.roomTypeId) },
+            year: String(routeDate.getFullYear()),
+            month: routeDate.toLocaleString('en-US', { month: 'long' }),
+            price_type: 0,
+            status: 1,
+            deleted: 0,
+          },
+          select: { room_type_id: true, [dayColumn]: true } as any,
+        });
+        const pricesByRoomType = new Map<number, number>();
+        for (const row of priceRows as any[]) {
+          const price = Number(row[dayColumn] || 0);
+          if (price > 0 && !pricesByRoomType.has(Number(row.room_type_id))) {
+            pricesByRoomType.set(Number(row.room_type_id), price);
+          }
+        }
+        for (const roomType of availableRoomTypes) {
+          roomType.pricePerNight = pricesByRoomType.get(roomType.roomTypeId) || roomType.pricePerNight;
+        }
+      }
+    }
+
+    // IDs are not sufficient for supplier data: the same displayed category
+    // can be emitted under multiple room IDs. The editor presents one option
+    // per normalized title while retaining the first canonical identity.
+    const uniqueByTitle = new Map<string, typeof availableRoomTypes[number]>();
+    for (const roomType of availableRoomTypes) {
+      const key = this.normalizeText(roomType.roomTypeTitle);
+      if (key && !uniqueByTitle.has(key)) uniqueByTitle.set(key, roomType);
+    }
+    return Array.from(uniqueByTitle.values());
   }
 
   private parseSelectedSnapshot(value: unknown): any {
