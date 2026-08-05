@@ -2084,27 +2084,7 @@ export class HotelAvailabilitySnapshotService {
       // on read so the UI contract remains stable without recalculating live
       // availability during a normal page load.
       if (requestedGroup || tabs.length === 0) return tabs;
-      // Older snapshots were written before recommendation totals were
-      // validated.  Their group numbers can therefore be out of numeric
-      // order (for example #2 cheaper than #1 or #3 cheaper than #2).  The
-      // snapshot is the source for a normal reload, so repair that durable
-      // display metadata here instead of summing the entire inventory again.
-      // Keep the package payload attached to its amount while assigning the
-      // public group numbers in ascending order.
-      const effectiveTotal = (tab: any): number => {
-        const total = Number(tab?.totalAmount);
-        if (Number.isFinite(total) && total >= 0) return total;
-        const partial = Number(tab?.partialTotal);
-        return Number.isFinite(partial) && partial >= 0 ? partial : Number.POSITIVE_INFINITY;
-      };
-      const orderedTabs = tabs
-        .slice(0, 4)
-        .map((tab: any, originalIndex: number) => ({ tab, originalIndex }))
-        .sort((left: any, right: any) =>
-          effectiveTotal(left.tab) - effectiveTotal(right.tab) || left.originalIndex - right.originalIndex,
-        )
-        .map(({ tab }: any) => tab);
-      const normalized = orderedTabs.map((tab: any, index: number) => ({
+      const normalized = tabs.slice(0, 4).map((tab: any, index: number) => ({
         ...tab,
         groupType: index + 1,
         label: `Recommended #${index + 1}`,
