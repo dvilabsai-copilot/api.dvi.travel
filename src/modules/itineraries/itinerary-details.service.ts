@@ -617,9 +617,6 @@ export class ItineraryDetailsService {
         const mealPlan = this.normalizeIdentity(selection.mealPlan || selection.meal_plan);
         const hotelName = this.normalizeHotelName(selection.hotelName || selection.hotel_name);
         const requestedOptionKey = normalizeRateIdentity(selection.optionKey, selection.option_key);
-        const hasExplicitRateIdentity = Boolean(
-          requestedOptionKey || bookingCode || searchReference || roomId || rateId,
-        );
         const requestedDate = String(
           selection.checkInDate || selection.check_in_date || selection.date || '',
         ).slice(0, 10);
@@ -644,15 +641,11 @@ export class ItineraryDetailsService {
           allowPerNightRateIdentityFallback = false,
           allowOptionKeyFallback = false,
         ) => routeCandidates
-          // `groupType` is a package-level hint, not a route-level rate
-          // identity. A single preview can contain selections from different
-          // groups (especially when offline rows are group 0), so do not let
-          // the global hint hide an explicitly selected rate.
-          .filter((row: any) => {
-            if (hasExplicitRateIdentity) return true;
-            const requestedGroupType = Number(selection.groupType || params.groupType || 0);
-            return !requestedGroupType || Number(row.groupType || 0) === requestedGroupType;
-          })
+          // `groupType` is a package-level ownership hint, not a route-level
+          // availability identity. A hotel selected from another package
+          // must remain selectable in the active package even when its card
+          // does not carry a complete rate identity. The matched row is still
+          // written with the active target group below.
           .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider)
           .filter((row: any) => {
             const rowOptionKey = this.normalizeIdentity(row.optionKey || this.hotelAvailabilitySnapshotService.optionKey(row));
@@ -749,6 +742,43 @@ export class ItineraryDetailsService {
               })
               .map((row: any) => ({ row, score: 1 }));
           }
+        }
+        // A card copied from another recommendation package can carry the
+        // source package's stale supplier rate references. Once the exact
+        // references fail, resolve the current snapshot by the stable
+        // inventory identity (provider + property + room + meal plan). This
+        // keeps cross-group selection valid while still avoiding a generic
+        // property-only match.
+        if (candidates.length === 0) {
+          candidates = routeCandidates
+            .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider)
+            .filter((row: any) => {
+              const rowCodes = [
+                row.hotelCode,
+                row.providerHotelCode,
+                row.provider_hotel_code,
+                row.hotel_code,
+                row.hotelId,
+                row.hotel_id,
+              ].map((value) => this.normalizeIdentity(value));
+              if (hotelCode && !rowCodes.includes(hotelCode)) return false;
+              const rowRoomType = this.normalizeIdentity(row.roomType || row.room_type);
+              const rowMealPlan = this.normalizeIdentity(row.mealPlan || row.meal_plan || row.mealPlanCode);
+              const rowHotelName = this.normalizeHotelName(row.hotelName || row.hotel_name);
+              if (roomType && rowRoomType && roomType !== rowRoomType) return false;
+              if (mealPlan && rowMealPlan && mealPlan !== rowMealPlan) return false;
+              if (!hotelCode && hotelName && rowHotelName && hotelName !== rowHotelName) return false;
+              return true;
+            })
+            .map((row: any) => {
+              const rowRoomType = this.normalizeIdentity(row.roomType || row.room_type);
+              const rowMealPlan = this.normalizeIdentity(row.mealPlan || row.meal_plan || row.mealPlanCode);
+              let score = 0;
+              if (roomType && roomType === rowRoomType) score += 4;
+              if (mealPlan && mealPlan === rowMealPlan) score += 2;
+              return { row, score };
+            })
+            .sort((a: any, b: any) => b.score - a.score);
         }
 
         const match = candidates[0]?.row;
