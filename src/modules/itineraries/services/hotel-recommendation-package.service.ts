@@ -174,8 +174,7 @@ export class HotelRecommendationPackageService {
         Math.max(packageLimit, 4),
       );
       const packages: RecommendationPackage[] = [];
-      const orderedStates = [...states].sort((left, right) => left.totalCents - right.totalCents);
-      for (const state of orderedStates) {
+      for (const state of states) {
         const candidate = this.toIncompletePackage(evaluations, state.options, packages.length + 1, packages);
         if (packages.some((existing) => this.packageKey(existing.hotels) === this.packageKey(candidate.hotels))) continue;
         packages.push(candidate);
@@ -201,9 +200,6 @@ export class HotelRecommendationPackageService {
       const targetCents = groupIndex === 0
         ? null
         : Math.round(this.toCents(previous?.totalPrice || 0) * 1.1);
-      const minimumCents = previous?.totalPrice != null
-        ? this.toCents(previous.totalPrice)
-        : null;
       const searchStates = this.beamSearch(
         normalizedEvaluations.map((evaluation) => evaluation.options),
         targetCents,
@@ -213,10 +209,7 @@ export class HotelRecommendationPackageService {
       );
       const candidates = searchStates
         .map((state) => this.toPackage(state.options, groupIndex + 1, targetCents, packages, input))
-        .filter((candidate) =>
-          !packages.some((existing) => this.packageKey(existing.hotels) === this.packageKey(candidate.hotels)) &&
-          (minimumCents === null || this.toCents(candidate.totalPrice || 0) >= minimumCents),
-        )
+        .filter((candidate) => !packages.some((existing) => this.packageKey(existing.hotels) === this.packageKey(candidate.hotels)))
         .sort((a, b) => this.packageScore(a, targetCents, packages, input) - this.packageScore(b, targetCents, packages, input));
 
       if (candidates.length === 0) break;
@@ -239,20 +232,7 @@ export class HotelRecommendationPackageService {
     packages: RecommendationPackage[],
     evaluations: StayEvaluation[],
   ): RecommendationPackage[] {
-    const effectiveTotal = (pkg: RecommendationPackage): number => {
-      const total = Number(pkg.totalPrice);
-      if (Number.isFinite(total) && total >= 0) return total;
-      const partial = Number(pkg.partialTotal);
-      return Number.isFinite(partial) && partial >= 0 ? partial : Number.POSITIVE_INFINITY;
-    };
-    const orderedPackages = packages
-      .slice(0, 4)
-      .map((pkg, originalIndex) => ({ pkg, originalIndex }))
-      .sort((left, right) =>
-        effectiveTotal(left.pkg) - effectiveTotal(right.pkg) || left.originalIndex - right.originalIndex,
-      )
-      .map(({ pkg }) => pkg);
-    const normalized = orderedPackages.map((pkg, index) => ({
+    const normalized = packages.slice(0, 4).map((pkg, index) => ({
       ...pkg,
       groupType: index + 1,
       label: LABELS[index],
