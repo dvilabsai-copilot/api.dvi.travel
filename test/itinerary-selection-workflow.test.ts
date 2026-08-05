@@ -19,6 +19,22 @@ test('hotel availability preserves the empty result when the route is absent', a
   assert.deepEqual(await service.getAvailableHotels(99), []);
 });
 
+test('manual hotel persistence rejects a missing target group instead of defaulting to Group 1', async () => {
+  const service = createService();
+
+  await assert.rejects(
+    () => service.selectHotel({
+      planId: 100,
+      routeId: 10,
+      hotelId: 22,
+      roomTypeId: 3,
+      provider: 'offline',
+      rateOptionId: 'offline:hotel-b',
+    }),
+    /valid target groupType between 1 and 4/,
+  );
+});
+
 test('live multi-night selection rejects a stale primary rate reference even when another alias is current', async () => {
   const syncedAt = new Date('2026-07-31T15:25:00.000Z');
   const currentRoutePayload = {

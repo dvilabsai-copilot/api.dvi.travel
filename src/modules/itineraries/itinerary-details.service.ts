@@ -774,10 +774,11 @@ export class ItineraryDetailsService {
           Number(match.totalHotelCost || 0) + Number(match.totalHotelTaxAmount || 0),
         );
 
+        const targetGroupType = Number(selection.groupType || params.groupType || 0);
         selectedRows.push({
           itinerary_plan_id: params.planId,
           itinerary_route_id: routeId,
-          group_type: Number(match.groupType || selection.groupType || params.groupType || 0),
+          group_type: targetGroupType,
           hotel_required: 1,
           deleted: 0,
           status: 1,
@@ -806,7 +807,7 @@ export class ItineraryDetailsService {
           searchReference: String(match.searchReference || selection.searchReference || '').trim() || undefined,
           roomId: String(match.roomId || selection.roomId || '').trim() || undefined,
           rateId: String(match.rateId || selection.rateId || '').trim() || undefined,
-          groupType: Number(match.groupType || selection.groupType || params.groupType || 0),
+          groupType: targetGroupType,
           roomType: String(match.roomType || selection.roomType || '').trim() || undefined,
           mealPlan: String(match.mealPlan || selection.mealPlan || '').trim() || undefined,
           checkInDate: String(match.checkInDate || match.date || selection.checkInDate || '').trim() || undefined,

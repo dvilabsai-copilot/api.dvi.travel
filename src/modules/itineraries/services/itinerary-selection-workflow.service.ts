@@ -15,6 +15,7 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealText,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
+import { resolveHotelSelectionPricing } from '../utils/hotel-selection-pricing.util';
 
 @Injectable()
 export class ItinerarySelectionWorkflowService {
@@ -25,6 +26,14 @@ export class ItinerarySelectionWorkflowService {
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly offlineHotelCatalogService?: OfflineHotelCatalogService,
   ) {}
+
+  private requireTargetGroupType(groupType: unknown): number {
+    const targetGroupType = Number(groupType);
+    if (!Number.isInteger(targetGroupType) || targetGroupType < 1 || targetGroupType > 4) {
+      throw new BadRequestException('Hotel selection requires a valid target groupType between 1 and 4');
+    }
+    return targetGroupType;
+  }
 
   async getAvailableHotels(routeId: number) {
  // Get route details
@@ -115,8 +124,12 @@ export class ItinerarySelectionWorkflowService {
     rateId?: string | number;
     roomCount?: number;
     routeDate?: string;
-    requestedBy?: number;
+     requestedBy?: number;
   }) {
+    // groupType is the target recommendation package being edited. It must be
+    // explicit; never infer it from the selected inventory row or default it
+    // to Group 1 because that can overwrite a different package's row.
+    data = { ...data, groupType: this.requireTargetGroupType(data.groupType) };
     if (String(data.provider || '').trim().toLowerCase() === 'offline' || String(data.rateOptionId || '').startsWith('offline:')) {
       return this.selectOfflineHotel(data);
     }
@@ -238,6 +251,11 @@ export class ItinerarySelectionWorkflowService {
     const persistedHotelId = canonicalHotelId > 0 ? canonicalHotelId : null;
     const persistedHotelCode =
       String(data.hotelCode || existingHotelDetails?.hotel_code || '').trim() || null;
+    const selectionPricing = resolveHotelSelectionPricing({
+      totalPrice: data.totalPrice,
+      pricePerNight: data.pricePerNight,
+      roomCount: data.roomCount,
+    });
 
     const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
     const rawMealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
@@ -277,7 +295,10 @@ export class ItinerarySelectionWorkflowService {
           ...liveRateMetadata,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
           selected_price_per_night: data.pricePerNight ?? null,
-          selected_total_price: data.totalPrice ?? null,
+          selected_total_price: selectionPricing.totalPrice || null,
+          total_no_of_rooms: selectionPricing.roomCount,
+          total_room_cost: selectionPricing.totalPrice || null,
+          total_hotel_cost: selectionPricing.totalPrice || null,
           selected_currency: data.currency || null,
             selected_price_snapshot: JSON.stringify({
               optionKey: data.optionKey || null,
@@ -335,7 +356,10 @@ export class ItinerarySelectionWorkflowService {
           ...liveRateMetadata,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
           selected_price_per_night: data.pricePerNight ?? null,
-          selected_total_price: data.totalPrice ?? null,
+          selected_total_price: selectionPricing.totalPrice || null,
+          total_no_of_rooms: selectionPricing.roomCount,
+          total_room_cost: selectionPricing.totalPrice || null,
+          total_hotel_cost: selectionPricing.totalPrice || null,
           selected_currency: data.currency || null,
           selected_price_snapshot: JSON.stringify({
             optionKey: data.optionKey || null,
@@ -375,6 +399,9 @@ export class ItinerarySelectionWorkflowService {
         data: {
           hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
+          room_qty: selectionPricing.roomCount,
+          room_rate: selectionPricing.roomRate,
+          total_room_cost: selectionPricing.totalPrice,
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
           dinner_required: mealDinner,
@@ -399,6 +426,9 @@ export class ItinerarySelectionWorkflowService {
           itinerary_route_id: data.routeId,
           hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
+          room_qty: selectionPricing.roomCount,
+          room_rate: selectionPricing.roomRate,
+          total_room_cost: selectionPricing.totalPrice,
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
           dinner_required: mealDinner,
@@ -465,6 +495,7 @@ export class ItinerarySelectionWorkflowService {
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
     requestedBy?: number;
   }) {
+    data = { ...data, groupType: this.requireTargetGroupType(data.groupType) };
     const canonicalHotelId = Number(data.canonicalHotelId ?? data.hotelId ?? 0);
     const rateOptionId = String(data.rateOptionId || '').trim();
     if (!canonicalHotelId || !rateOptionId) {
