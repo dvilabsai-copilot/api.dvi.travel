@@ -634,13 +634,14 @@ private readonly itineraryAccessService: ItineraryAccessService,
   @ApiOperation({ summary: 'Refresh the latest rates for one selected supplier hotel' })
   async refreshSelectedHotelRates(
     @Param('quoteId') quoteId: string,
-    @Body() body: { routeId?: number; provider?: string; hotelCode?: string },
+    @Body() body: { routeId?: number; provider?: string; hotelCode?: string; groupType?: number },
   ) {
     const result = await this.hotelDetailsTboService.getSelectedHotelRates(
       quoteId,
       Number(body?.routeId || 0),
       String(body?.provider || ''),
       String(body?.hotelCode || ''),
+      Number(body?.groupType || 0),
     );
     await this.hotelAvailabilitySnapshotService.mergeSelectedHotelRates(
       quoteId,

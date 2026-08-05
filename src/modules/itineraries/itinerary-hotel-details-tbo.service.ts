@@ -1046,6 +1046,7 @@ if (hotelMasterId) {
     routeId: number,
     provider: string,
     hotelCode: string,
+    groupType = 0,
   ): Promise<{ quoteId: string; routeId: number; provider: string; hotelCode: string; hotels: HotelSearchResult[] }> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
@@ -1109,7 +1110,7 @@ if (hotelMasterId) {
           itineraryPlanId: plan.itinerary_plan_ID,
           itineraryRouteId: Number(routeId),
           routeId: Number(routeId),
-          groupType: 1,
+          groupType: Number(groupType || 1),
           date: checkInDate,
           checkInDate,
           checkOutDate,
