@@ -17,8 +17,9 @@ import {
   Res,
   ParseIntPipe,
 Logger,
-BadRequestException,
-ForbiddenException,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -1416,6 +1417,17 @@ async exportToExcel(
     throw new ForbiddenException(
       'Excel export is available only for Admin, Travel Expert, and Accounts users.',
     );
+  }
+
+  const access = await this.itineraryAccessService.getPlanAccessDecision(
+    id,
+    req.user,
+  );
+  if (!access.exists) {
+    throw new NotFoundException('Itinerary plan not found');
+  }
+  if (!access.allowed) {
+    throw new ForbiddenException('You are not allowed to access this itinerary.');
   }
 
   const { workbook, fileName } =
