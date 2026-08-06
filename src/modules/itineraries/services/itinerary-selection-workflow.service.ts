@@ -123,6 +123,10 @@ export class ItinerarySelectionWorkflowService {
     roomId?: string | number;
     rateId?: string | number;
     roomCount?: number;
+    extraBedCount?: number;
+    extraBedRate?: number;
+    extraBedAmount?: number;
+    extraBedGstAmount?: number;
     routeDate?: string;
      requestedBy?: number;
   }) {
@@ -256,6 +260,13 @@ export class ItinerarySelectionWorkflowService {
       pricePerNight: data.pricePerNight,
       roomCount: data.roomCount,
     });
+    const extraBedCount = Math.max(Math.trunc(Number(data.extraBedCount || 0)), 0);
+    const extraBedRate = Math.max(Number(data.extraBedRate || 0), 0);
+    const extraBedAmount = Math.max(
+      Number(data.extraBedAmount ?? (extraBedCount * extraBedRate)),
+      0,
+    );
+    const extraBedGstAmount = Math.max(Number(data.extraBedGstAmount || 0), 0);
 
     const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
     const rawMealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
@@ -299,6 +310,8 @@ export class ItinerarySelectionWorkflowService {
           total_no_of_rooms: selectionPricing.roomCount,
           total_room_cost: selectionPricing.totalPrice || null,
           total_hotel_cost: selectionPricing.totalPrice || null,
+          total_extra_bed_cost: extraBedAmount,
+          total_extra_bed_cost_gst_amount: extraBedGstAmount,
           selected_currency: data.currency || null,
             selected_price_snapshot: JSON.stringify({
               optionKey: data.optionKey || null,
@@ -314,6 +327,10 @@ export class ItinerarySelectionWorkflowService {
             searchReference: data.searchReference || null,
             roomId: data.roomId || null,
             rateId: data.rateId || null,
+            extraBedCount,
+            extraBedRate,
+            extraBedAmount,
+            extraBedGstAmount,
           }),
         },
       });
@@ -360,6 +377,8 @@ export class ItinerarySelectionWorkflowService {
           total_no_of_rooms: selectionPricing.roomCount,
           total_room_cost: selectionPricing.totalPrice || null,
           total_hotel_cost: selectionPricing.totalPrice || null,
+          total_extra_bed_cost: extraBedAmount,
+          total_extra_bed_cost_gst_amount: extraBedGstAmount,
           selected_currency: data.currency || null,
           selected_price_snapshot: JSON.stringify({
             optionKey: data.optionKey || null,
@@ -375,6 +394,10 @@ export class ItinerarySelectionWorkflowService {
             searchReference: data.searchReference || null,
             roomId: data.roomId || null,
             rateId: data.rateId || null,
+            extraBedCount,
+            extraBedRate,
+            extraBedAmount,
+            extraBedGstAmount,
           }),
         },
       });
@@ -402,6 +425,8 @@ export class ItinerarySelectionWorkflowService {
           room_qty: selectionPricing.roomCount,
           room_rate: selectionPricing.roomRate,
           total_room_cost: selectionPricing.totalPrice,
+          extra_bed_count: extraBedCount,
+          extra_bed_rate: extraBedRate,
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
           dinner_required: mealDinner,
@@ -429,6 +454,8 @@ export class ItinerarySelectionWorkflowService {
           room_qty: selectionPricing.roomCount,
           room_rate: selectionPricing.roomRate,
           total_room_cost: selectionPricing.totalPrice,
+          extra_bed_count: extraBedCount,
+          extra_bed_rate: extraBedRate,
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
           dinner_required: mealDinner,
@@ -700,6 +727,10 @@ export class ItinerarySelectionWorkflowService {
         roomId: hotel.roomId,
         rateId: hotel.rateId,
         roomCount: hotel.roomCount,
+        extraBedCount: hotel.extraBedCount,
+        extraBedRate: hotel.extraBedRate,
+        extraBedAmount: hotel.extraBedAmount,
+        extraBedGstAmount: hotel.extraBedGstAmount,
         requestedBy,
       });
     }
