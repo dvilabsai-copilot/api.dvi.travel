@@ -6,7 +6,7 @@ type ItineraryExportResult = { workbook: ExcelJS.Workbook; fileName: string };
 
 const vehicleHeaders = ['Vendor Name', 'Branch Name', 'Origin', 'Total Days', 'Rental Charges', 'Toll Charges', 'Parking Charges', 'Driver Charges', 'Permit Charges', '6AM Charges(D)', '6AM Charges(V)', '8PM Charges(D)', '8PM Charges(V)', 'Total Used KM', 'Total Outstation Allowed KM', 'Total Location Allowed KM', 'Extra Rate', 'Total Extra KM', 'Extra Charge', 'Subtotal', 'GST Amount', 'Margin Amount', 'Margin Tax Amount', 'Total Sales', 'Total Cost', 'Total P&L'];
 const dayHeaders = ['Day', 'Location', 'Cost Type', 'Total Travelled KM', 'Total Travelled Time', 'Total Pickup KM', 'Total Pickup Duration', 'Total Drop KM', 'Total Drop Duration'];
-const hotelHeaders = ['Day', 'Destination', 'Hotel & Category', 'Room Type', 'Meal Plan', 'No of Room', 'Extra Bed Count', 'CWB Count', 'CNB Count', 'Room Rent', 'Breakfast', 'Lunch', 'Dinner', 'EB Cost', 'CWB Cost', 'CNB Cost', 'Margin Cost', 'Margin Rate Tax', 'Total Sales', 'Total Cost', 'Total P&L'];
+const hotelHeaders = ['Day', 'Destination', 'Hotel & Category', 'Room Type', 'Meal Plan', 'No of Room', 'Extra Bed Count', 'CWB Count', 'CNB Count', 'Room Rent', 'Breakfast', 'Lunch', 'Dinner', 'EB Cost', 'CWB Cost', 'CNB Cost', 'Margin Cost', 'Margin Rate Tax', 'Total Sales', 'Total Cost ', 'Total P&L'];
 
 @Injectable()
 export class ItineraryExportService {
@@ -61,7 +61,7 @@ export class ItineraryExportService {
         const totalSales = this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + this.num(d.total_extra_bed_cost) + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
         const pl = totalCost - totalSales; overallCost += totalCost; overallSales += totalSales; overallPL += pl;
         const meals = [['B', d.breakfast_required, d.breakfast_cost_per_person], ['L', d.lunch_required, d.lunch_cost_per_person], ['D', d.dinner_required, d.dinner_cost_per_person]].filter(([, required, cost]) => Number(required) === 1 && this.num(cost) !== 0).map(([label]) => label).join(', ') || 'EP';
-        this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', d.hotel_name || '', d.room_type_title || '', meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), this.num(d.total_extra_bed_cost), this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), this.num(d.hotel_margin_rate), this.num(d.hotel_margin_rate_tax_amt), totalCost, totalSales, pl], styles.data, 21, 10);
+        this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', this.hotelName(d), d.room_type_title || '', meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), this.num(d.total_extra_bed_cost), this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), this.num(d.hotel_margin_rate), this.num(d.hotel_margin_rate_tax_amt), totalCost, totalSales, pl], styles.data, 21, 10);
         row += 1;
       }
       if (details.length) {
@@ -97,15 +97,27 @@ export class ItineraryExportService {
     return row;
   }
 
-  private styles() { const border: Partial<ExcelJS.Borders> = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; const fill = (argb: string, bold = false): Partial<ExcelJS.Style> => ({ font: { bold }, alignment: { horizontal: 'left', vertical: 'middle', wrapText: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb } }, border }); return { yellow: fill('FFFFFF00', true), blue: fill('FF8DB4E2', true), orange: fill('FFFFA500', true), green: fill('FF90EE90', true), label: { font: { bold: true }, alignment: { horizontal: 'left' }, border } as Partial<ExcelJS.Style>, data: { alignment: { vertical: 'middle', wrapText: true }, border } as Partial<ExcelJS.Style> }; }
+  private styles() { const border: Partial<ExcelJS.Borders> = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; const fill = (argb: string, bold = false): Partial<ExcelJS.Style> => ({ font: { bold }, alignment: { horizontal: 'left', vertical: 'middle', wrapText: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb } }, border }); return { yellow: fill('FFFFFF00', true), blue: fill('FF8DB4E2', true), orange: fill('FFFFA500', true), green: fill('FF90EE90', true), label: { font: { bold: true }, alignment: { horizontal: 'left' }, border } as Partial<ExcelJS.Style>, data: { font: { bold: true }, alignment: { vertical: 'middle', wrapText: true }, border } as Partial<ExcelJS.Style> }; }
   private writeHeaderRow(sheet: ExcelJS.Worksheet, rowNumber: number, values: any[], styles: ReturnType<ItineraryExportService['styles']>) { values.forEach((value, index) => { const cell = sheet.getRow(rowNumber).getCell(index + 1); cell.value = value; cell.style = { ...(index < 2 ? styles.yellow : index % 2 === 0 ? styles.label : styles.data) }; }); }
   private writeRow(sheet: ExcelJS.Worksheet, rowNumber: number, values: any[], style: Partial<ExcelJS.Style>, columns: number, moneyFrom?: number, moneyTo?: number) { const row = sheet.getRow(rowNumber); values.forEach((value, i) => { const cell = row.getCell(i + 1); cell.value = value; cell.style = { ...style }; if (moneyFrom && i + 1 >= moneyFrom && (!moneyTo || i + 1 <= moneyTo)) cell.numFmt = '0.00'; }); }
   private writeMerged(sheet: ExcelJS.Worksheet, row: number, value: string, style: Partial<ExcelJS.Style>, columns: number) { const cell = sheet.getRow(row).getCell(1); cell.value = value; cell.style = { ...style, alignment: { horizontal: 'center', vertical: 'middle' } }; for (let i = 2; i <= columns; i += 1) sheet.getRow(row).getCell(i).style = { ...style }; }
   private writePartialRow(sheet: ExcelJS.Worksheet, row: number, col: number, value: number, style: Partial<ExcelJS.Style>) { const cell = sheet.getRow(row).getCell(col); cell.value = value; cell.style = { ...style }; cell.numFmt = '0.00'; }
-  private autoSize(sheet: ExcelJS.Worksheet) { sheet.columns.forEach((column) => { let max = 10; column.eachCell?.({ includeEmpty: false }, (cell) => { max = Math.max(max, String(cell.value ?? '').length + 2); }); column.width = Math.min(45, max); }); }
+  private autoSize(sheet: ExcelJS.Worksheet) { const mergedRows = new Set<number>(); for (const range of sheet.model.merges || []) { const match = String(range).match(/^[A-Z]+(\d+):[A-Z]+(\d+)$/); if (!match) continue; for (let row = Number(match[1]); row <= Number(match[2]); row += 1) mergedRows.add(row); } sheet.columns.forEach((column) => { let max = 10; column.eachCell?.({ includeEmpty: false }, (cell) => { if (mergedRows.has(Number(cell.row))) return; max = Math.max(max, String(cell.value ?? '').length + 2); }); column.width = Math.min(60, max); }); }
   private duration(details: any[], kind: 'pickup' | 'drop') { const field = kind === 'pickup' ? 'total_pickup_duration' : 'total_drop_duration'; return this.durationValue(details.find((d) => d[field])?.[field]); }
   private durationValue(value: any) { if (!value) return ''; const text = String(value); const match = text.match(/(\d{1,3}):(\d{2})(?::(\d{2}))?/); if (!match) return text; const minutes = Math.round(Number(match[1]) * 60 + Number(match[2]) + Number(match[3] || 0) / 60); const h = Math.floor(minutes / 60), m = minutes % 60; return h && m ? `${h} Hour ${m} Min` : h ? `${h} Hour` : `${m} Min`; }
   private num(value: any): number { const n = Number(value); return Number.isFinite(n) ? n : 0; }
+  private hotelName(detail: any): string {
+    const masterName = String(detail?.hotel_name || '').trim();
+    if (masterName) return masterName;
+    try {
+      const snapshot = typeof detail?.selected_price_snapshot === 'string'
+        ? JSON.parse(detail.selected_price_snapshot)
+        : detail?.selected_price_snapshot;
+      return String(snapshot?.hotelName || snapshot?.hotel_name || snapshot?.propertyName || snapshot?.propertyname || '').trim();
+    } catch {
+      return '';
+    }
+  }
   private round(value: any): number { return Math.round(this.num(value)); }
   private date(value: any): string { const d = value ? new Date(value) : null; return d && !Number.isNaN(d.getTime()) ? `${String(d.getDate()).padStart(2, '0')} ${d.toLocaleString('en-US', { month: 'short' })} ${d.getFullYear()}` : ''; }
   private dateTime(value: any): string { const d = value ? new Date(value) : null; if (!d || Number.isNaN(d.getTime())) return ''; const h = d.getHours(), hh = String(h % 12 || 12).padStart(2, '0'); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${hh}:${String(d.getMinutes()).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; }
