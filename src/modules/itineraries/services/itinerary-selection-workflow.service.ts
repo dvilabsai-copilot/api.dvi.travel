@@ -127,6 +127,10 @@ export class ItinerarySelectionWorkflowService {
     extraBedRate?: number;
     extraBedAmount?: number;
     extraBedGstAmount?: number;
+    hotelMarginPercentage?: number;
+    hotelMarginAmount?: number;
+    hotelMarginStayAmount?: number;
+    hotelMarginGstAmount?: number;
     routeDate?: string;
      requestedBy?: number;
   }) {
@@ -267,6 +271,13 @@ export class ItinerarySelectionWorkflowService {
       0,
     );
     const extraBedGstAmount = Math.max(Number(data.extraBedGstAmount || 0), 0);
+    const hotelMarginPercentage = Math.max(Number(data.hotelMarginPercentage ?? process.env.HOTEL_MARGIN ?? 0), 0);
+    const hotelMarginRate = Math.max(
+      Number(data.hotelMarginStayAmount ?? data.hotelMarginAmount ?? 0) ||
+        (selectionPricing.totalPrice * hotelMarginPercentage) / 100,
+      0,
+    );
+    const hotelMarginRateTaxAmount = Math.max(Number(data.hotelMarginGstAmount || 0), 0);
 
     const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
     const rawMealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
@@ -309,6 +320,8 @@ export class ItinerarySelectionWorkflowService {
           selected_total_price: selectionPricing.totalPrice || null,
           total_no_of_rooms: selectionPricing.roomCount,
           total_room_cost: selectionPricing.totalPrice || null,
+          hotel_margin_rate: hotelMarginRate || null,
+          hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount || null,
           total_hotel_cost: selectionPricing.totalPrice || null,
           total_extra_bed_cost: extraBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
@@ -331,6 +344,9 @@ export class ItinerarySelectionWorkflowService {
             extraBedRate,
             extraBedAmount,
             extraBedGstAmount,
+            hotelMarginPercentage,
+            hotelMarginAmount: hotelMarginRate,
+            hotelMarginGstAmount: hotelMarginRateTaxAmount,
           }),
         },
       });
@@ -376,6 +392,8 @@ export class ItinerarySelectionWorkflowService {
           selected_total_price: selectionPricing.totalPrice || null,
           total_no_of_rooms: selectionPricing.roomCount,
           total_room_cost: selectionPricing.totalPrice || null,
+          hotel_margin_rate: hotelMarginRate || null,
+          hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount || null,
           total_hotel_cost: selectionPricing.totalPrice || null,
           total_extra_bed_cost: extraBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
@@ -398,6 +416,9 @@ export class ItinerarySelectionWorkflowService {
             extraBedRate,
             extraBedAmount,
             extraBedGstAmount,
+            hotelMarginPercentage,
+            hotelMarginAmount: hotelMarginRate,
+            hotelMarginGstAmount: hotelMarginRateTaxAmount,
           }),
         },
       });
