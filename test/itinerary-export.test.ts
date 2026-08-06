@@ -19,7 +19,7 @@ function prismaFor(preference: number) {
       if (sql.includes('FROM dvi_itinerary_plan_hotel_details h')) return [{
         itinerary_plan_hotel_details_ID: 1, itinerary_route_date: new Date('2026-08-01'), itinerary_route_location: 'Agra', hotel_name: null, selected_price_snapshot: JSON.stringify({ hotelName: 'Saved Hotel List Name' }), room_type_title: 'Deluxe',
         total_no_of_rooms: 1, total_room_cost: 100, total_room_gst_amount: 18, total_hotel_meal_plan_cost: 20, total_hotel_meal_plan_cost_gst_amount: 3.6,
-        total_extra_bed_cost: 10, total_extra_bed_cost_gst_amount: 1.8, total_childwith_bed_cost: 5, total_childwith_bed_cost_gst_amount: 0.9,
+        total_extra_bed_cost: 0, total_extra_bed_cost_gst_amount: 1.8, room_extra_bed_rate: 10, total_childwith_bed_cost: 5, total_childwith_bed_cost_gst_amount: 0.9,
         total_childwithout_bed_cost: 4, total_childwithout_bed_cost_gst_amount: 0.72, hotel_margin_rate: 12, hotel_margin_rate_tax_amt: 2.16,
         total_amenities_cost: 6, total_amenities_gst_amount: 1.08, hotel_breakfast_cost: 20, hotel_lunch_cost: 0, hotel_dinner_cost: 0,
         breakfast_required: 1, breakfast_cost_per_person: 10, lunch_required: 0, lunch_cost_per_person: 0, dinner_required: 0, dinner_cost_per_person: 0,
@@ -47,6 +47,7 @@ test('preference 1 writes PHP header and hotel totals/styles', async () => {
   assert.equal(sheet.getCell('A2').value, 'Quote ID'); assert.equal(sheet.getCell('B2').value, 'DVI202608336');
   assert.equal(sheet.getCell('A6').value, 'Day'); assert.ok(Number(sheet.getCell('U7').value) > 0);
   assert.equal(sheet.getCell('C7').value, 'Saved Hotel List Name');
+  assert.equal(sheet.getCell('G7').value, 1); assert.equal(sheet.getCell('N7').value, 10);
   assert.equal(sheet.getCell('J7').numFmt, '0.00'); assert.equal(sheet.getCell('A5').fill.fgColor?.argb, 'FFFFA500');
   assert.ok(Object.keys((sheet as any)._merges).length > 0);
 });

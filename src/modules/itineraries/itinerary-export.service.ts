@@ -45,6 +45,7 @@ export class ItineraryExportService {
         SELECT h.*, MAX(r.breakfast_required) AS breakfast_required, MAX(r.lunch_required) AS lunch_required, MAX(r.dinner_required) AS dinner_required,
           MAX(r.breakfast_cost_per_person) AS breakfast_cost_per_person, MAX(r.lunch_cost_per_person) AS lunch_cost_per_person, MAX(r.dinner_cost_per_person) AS dinner_cost_per_person,
           COALESCE(SUM(r.extra_bed_count), 0) AS room_extra_bed_count,
+          COALESCE(MAX(r.extra_bed_rate), 0) AS room_extra_bed_rate,
           COALESCE(SUM(r.child_without_bed_count), 0) AS room_cnb_count,
           COALESCE(SUM(r.child_with_bed_count), 0) AS room_cwb_count,
           MAX(hotel.hotel_name) AS hotel_name, MAX(rt.room_type_title) AS room_type_title
@@ -56,12 +57,13 @@ export class ItineraryExportService {
         GROUP BY h.itinerary_plan_hotel_details_ID, h.itinerary_route_date ORDER BY h.itinerary_route_date ASC`;
       let overallCost = 0, overallSales = 0, overallPL = 0;
       for (const d of details) {
+        const extraBedCost = this.hotelExtraBedCost(d);
         const roomRent = this.num(d.total_room_cost) + this.num(d.total_room_gst_amount);
-        const totalCost = this.num(d.hotel_margin_rate) + this.num(d.hotel_margin_rate_tax_amt) + this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + this.num(d.total_extra_bed_cost) + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
-        const totalSales = this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + this.num(d.total_extra_bed_cost) + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
+        const totalCost = this.num(d.hotel_margin_rate) + this.num(d.hotel_margin_rate_tax_amt) + this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + extraBedCost + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
+        const totalSales = this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + extraBedCost + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
         const pl = totalCost - totalSales; overallCost += totalCost; overallSales += totalSales; overallPL += pl;
         const meals = [['B', d.breakfast_required, d.breakfast_cost_per_person], ['L', d.lunch_required, d.lunch_cost_per_person], ['D', d.dinner_required, d.dinner_cost_per_person]].filter(([, required, cost]) => Number(required) === 1 && this.num(cost) !== 0).map(([label]) => label).join(', ') || 'EP';
-        this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', this.hotelName(d), d.room_type_title || '', meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), this.num(d.total_extra_bed_cost), this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), this.num(d.hotel_margin_rate), this.num(d.hotel_margin_rate_tax_amt), totalCost, totalSales, pl], styles.data, 21, 10);
+        this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', this.hotelName(d), d.room_type_title || '', meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), extraBedCost, this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), this.num(d.hotel_margin_rate), this.num(d.hotel_margin_rate_tax_amt), totalCost, totalSales, pl], styles.data, 21, 10);
         row += 1;
       }
       if (details.length) {
@@ -116,6 +118,22 @@ export class ItineraryExportService {
       return String(snapshot?.hotelName || snapshot?.hotel_name || snapshot?.propertyName || snapshot?.propertyname || '').trim();
     } catch {
       return '';
+    }
+  }
+  private hotelExtraBedCost(detail: any): number {
+    const stored = this.num(detail?.total_extra_bed_cost);
+    if (stored > 0) return stored;
+    const count = this.num(detail?.room_extra_bed_count);
+    const rate = this.num(detail?.room_extra_bed_rate);
+    if (count > 0 && rate > 0) return count * rate;
+    try {
+      const snapshot = typeof detail?.selected_price_snapshot === 'string'
+        ? JSON.parse(detail.selected_price_snapshot)
+        : detail?.selected_price_snapshot;
+      return this.num(snapshot?.extraBedAmount ?? snapshot?.extraBedCost) ||
+        this.num(snapshot?.extraBedCount) * this.num(snapshot?.extraBedRate);
+    } catch {
+      return 0;
     }
   }
   private round(value: any): number { return Math.round(this.num(value)); }

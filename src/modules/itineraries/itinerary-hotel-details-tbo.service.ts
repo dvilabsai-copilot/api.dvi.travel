@@ -3676,6 +3676,9 @@ this.logger.log(
             const cancellation = String((hotel as any).hotel_cancel_policy || '').trim();
             const mealPlan =
               String((candidate.rp as any)?.meal_plan_description || (candidate.rp as any)?.rateplan_name || '-').trim() || '-';
+            const occupancyBreakdown = paxProfile && Object.keys(paxProfile).length > 0
+              ? calculateStaahOccupancyAmount((candidate.rate as any).occupancy_rates, paxProfile)
+              : null;
             const currency = String((candidate.rp as any)?.currency || 'INR').trim() || 'INR';
             const exactRoomCode = this.normalizeExactRoomCode(roomId);
             const looseRoomCode = this.normalizeLooseRoomCode(roomId);
@@ -3698,6 +3701,9 @@ this.logger.log(
               cancellationPolicy: cancellation ? [cancellation] : [],
               images: [],
               price: Number(candidate.price || 0),
+              extraBedCount: occupancyBreakdown?.extraBedCount || 0,
+              extraBedRate: occupancyBreakdown?.extraBedRate || 0,
+              extraBedAmount: this.money((occupancyBreakdown?.extraBedAmount || 0) * Math.max(lengthOfStay, 1)),
               currency,
               roomTypes: [{
                 roomCode: roomId,
@@ -4964,6 +4970,10 @@ this.logger.log(
           hotelRoomGstAmount: 0,
           hotelMealPlanCost: 0,
           hotelMealPlanGstAmount: 0,
+          extraBedCount: Number((hotel as any).extraBedCount || 0),
+          extraBedRate: Number((hotel as any).extraBedRate || 0),
+          extraBedAmount: Number((hotel as any).extraBedAmount || 0),
+          extraBedGstAmount: Number((hotel as any).extraBedGstAmount || 0),
           totalHotelCost: billableHotelCost,
           totalHotelTaxAmount: 0,
           searchReference: rawSearchReference || undefined,
