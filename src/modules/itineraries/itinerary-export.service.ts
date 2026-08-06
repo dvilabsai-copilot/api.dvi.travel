@@ -62,7 +62,8 @@ export class ItineraryExportService {
         const storedMargin = this.num(d.hotel_margin_rate);
         const storedMarginTax = this.num(d.hotel_margin_rate_tax_amt);
         const configuredMargin = Math.max(this.num(process.env.HOTEL_MARGIN), 0);
-        const margin = storedMargin || (configuredMargin > 0 ? (this.num(d.total_room_cost) * configuredMargin) / 100 : 0);
+        const savedRoomBase = this.num(d.total_room_cost) || this.num(d.selected_total_price);
+        const margin = storedMargin || (configuredMargin > 0 ? (savedRoomBase * configuredMargin) / 100 : 0);
         const totalCost = margin + storedMarginTax + this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + extraBedCost + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
         const totalSales = this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + extraBedCost + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
         const pl = totalCost - totalSales; overallCost += totalCost; overallSales += totalSales; overallPL += pl;
