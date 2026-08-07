@@ -1,6 +1,7 @@
 // FILE: src/modules/global-settings/dto/update-global-settings.dto.ts
 
-import { Allow } from "class-validator";
+import { Type } from "class-transformer";
+import { Allow, IsNumber, Max, Min } from "class-validator";
 
 export class UpdateGlobalSettingsDto {
   // The application uses a global whitelist ValidationPipe. Keep every
@@ -16,7 +17,10 @@ export class UpdateGlobalSettingsDto {
   @Allow()
   childnobed_rate_percentage?: number;
 
-  @Allow()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(100)
   hotel_margin?: number;
   @Allow()
   hotel_margin_gst_type?: boolean;

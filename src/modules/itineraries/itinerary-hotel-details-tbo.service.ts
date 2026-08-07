@@ -4025,7 +4025,7 @@ this.logger.log(
     // boundary so every downstream pricing path receives the same margin.
     const configuredEnvironmentMargin = Number(process.env.HOTEL_MARGIN || 0);
     const globalHotelMargin = Number(
-      (globalSettings as any)?.hotel_margin || configuredEnvironmentMargin || 0,
+      (globalSettings as any)?.hotel_margin ?? configuredEnvironmentMargin ?? 0,
     );
 
     const hotelRatesVisible =
@@ -5443,7 +5443,7 @@ this.logger.log(
     });
     const configuredEnvironmentMargin = Number(process.env.HOTEL_MARGIN || 0);
     const globalHotelMargin = Number(
-      (globalSettings as any)?.hotel_margin || configuredEnvironmentMargin || 0,
+      (globalSettings as any)?.hotel_margin ?? configuredEnvironmentMargin ?? 0,
     );
 
  // Step 2: Get itinerary routes (days and destinations)

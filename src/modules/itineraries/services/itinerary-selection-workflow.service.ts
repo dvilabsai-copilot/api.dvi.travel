@@ -271,7 +271,16 @@ export class ItinerarySelectionWorkflowService {
       0,
     );
     const extraBedGstAmount = Math.max(Number(data.extraBedGstAmount || 0), 0);
-    const hotelMarginPercentage = Math.max(Number(data.hotelMarginPercentage ?? process.env.HOTEL_MARGIN ?? 0), 0);
+    const globalSettingsModel = (this.prisma as any).dvi_global_settings;
+    const globalSettings = globalSettingsModel
+      ? await globalSettingsModel.findFirst({
+          where: { deleted: 0, status: 1 },
+          orderBy: { global_settings_ID: 'asc' },
+          select: { hotel_margin: true },
+        })
+      : null;
+    const configuredMargin = globalSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0;
+    const hotelMarginPercentage = Math.max(Number(data.hotelMarginPercentage ?? configuredMargin ?? 0), 0);
     const hotelMarginRate = Math.max(
       Number(data.hotelMarginStayAmount ?? data.hotelMarginAmount ?? 0) ||
         (selectionPricing.totalPrice * hotelMarginPercentage) / 100,

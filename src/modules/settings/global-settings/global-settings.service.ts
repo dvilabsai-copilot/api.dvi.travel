@@ -62,6 +62,28 @@ export class GlobalSettingsService {
     return row;
   }
 
+  /**
+   * Return the active global hotel margin. The database setting is
+   * authoritative; HOTEL_MARGIN is retained only for installations that have
+   * not initialized dvi_global_settings yet.
+   */
+  async getHotelMarginPercentage(): Promise<number> {
+    const row = await this.prisma.dvi_global_settings.findFirst({
+      where: { deleted: 0, status: 1 },
+      orderBy: { global_settings_ID: "asc" },
+      select: { hotel_margin: true },
+    });
+
+    const configured = row?.hotel_margin;
+    if (configured !== null && configured !== undefined) {
+      const value = Number(configured);
+      return Number.isFinite(value) ? Math.max(value, 0) : 0;
+    }
+
+    const fallback = Number(process.env.HOTEL_MARGIN ?? 0);
+    return Number.isFinite(fallback) ? Math.max(fallback, 0) : 0;
+  }
+
  /**
    * Mirrors __ajax_manage_global_setting.php:
    * type = global_settings_update
