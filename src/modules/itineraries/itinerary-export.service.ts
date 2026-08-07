@@ -16,6 +16,17 @@ export class ItineraryExportService {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({ where: { itinerary_plan_ID: planId, deleted: 0 } });
     if (!plan) throw new NotFoundException('Itinerary plan not found');
 
+    const globalSettingsModel = (this.prisma as any).dvi_global_settings;
+    const globalSettings = globalSettingsModel
+      ? await globalSettingsModel.findFirst({
+          where: { deleted: 0, status: 1 },
+          orderBy: { global_settings_ID: 'asc' },
+          select: { hotel_margin: true },
+        })
+      : null;
+    const configuredMargin = globalSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0;
+    const hotelMarginPercentage = Math.max(this.num(configuredMargin), 0);
+
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Worksheet');
     const styles = this.styles();
@@ -24,14 +35,14 @@ export class ItineraryExportService {
     row += 3;
 
     const preference = Number(plan.itinerary_preference);
-    if (preference === 1 || preference === 3) row = await this.writeHotels(sheet, row, planId, styles);
+    if (preference === 1 || preference === 3) row = await this.writeHotels(sheet, row, planId, styles, hotelMarginPercentage);
     if (preference === 3) row += 1;
     if (preference === 2 || preference === 3) row = await this.writeVehicles(sheet, row, planId, this.num(plan.no_of_days), preference, styles);
     this.autoSize(sheet);
     return { workbook, fileName: `ITINERARY-${this.safeFilePart(plan.itinerary_quote_ID || `DVI${planId}`)}.xlsx` };
   }
 
-  private async writeHotels(sheet: ExcelJS.Worksheet, start: number, planId: number, styles: ReturnType<ItineraryExportService['styles']>): Promise<number> {
+  private async writeHotels(sheet: ExcelJS.Worksheet, start: number, planId: number, styles: ReturnType<ItineraryExportService['styles']>, hotelMarginPercentage: number): Promise<number> {
     const groups = await this.prisma.$queryRaw<any[]>`SELECT group_type FROM dvi_itinerary_plan_hotel_details WHERE itinerary_plan_id = ${planId} AND deleted = 0 GROUP BY group_type ORDER BY group_type`;
     let row = start;
     let counter = 1;
@@ -61,7 +72,6 @@ export class ItineraryExportService {
         const roomRent = this.num(d.total_room_cost) + this.num(d.total_room_gst_amount);
         const storedMargin = this.num(d.hotel_margin_rate);
         const storedMarginTax = this.num(d.hotel_margin_rate_tax_amt);
-        const configuredMargin = Math.max(this.num(process.env.HOTEL_MARGIN), 0);
         const savedRoomBase = this.num(d.total_room_cost) || this.num(d.selected_total_price);
         const totalSales = this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + extraBedCost + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
         const persistedTotalDifference = Math.max(
@@ -69,7 +79,7 @@ export class ItineraryExportService {
           0,
         );
         const margin = storedMargin || persistedTotalDifference ||
-          (configuredMargin > 0 ? (savedRoomBase * configuredMargin) / 100 : 0);
+          (hotelMarginPercentage > 0 ? (savedRoomBase * hotelMarginPercentage) / 100 : 0);
         const totalCost = margin + storedMarginTax + this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + extraBedCost + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
         const pl = totalCost - totalSales; overallCost += totalCost; overallSales += totalSales; overallPL += pl;
         const meals = [['B', d.breakfast_required, d.breakfast_cost_per_person], ['L', d.lunch_required, d.lunch_cost_per_person], ['D', d.dinner_required, d.dinner_cost_per_person]].filter(([, required, cost]) => Number(required) === 1 && this.num(cost) !== 0).map(([label]) => label).join(', ') || 'EP';
