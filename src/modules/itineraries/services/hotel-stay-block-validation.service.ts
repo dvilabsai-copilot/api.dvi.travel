@@ -22,6 +22,7 @@ export interface StayBlockCandidate {
   routeIds: number[];
   stayDates: string[];
   stayKey: string;
+  anchorRouteId?: number;
 }
 
 export interface RestrictionConflict {
@@ -41,6 +42,14 @@ export interface RestrictionConflict {
 
 export interface NightlyRate {
   date: string;
+  routeId?: number;
+  roomId?: string;
+  rateId?: string;
+  roomType?: string;
+  mealPlan?: string;
+  rateOptionId?: string;
+  bookingCode?: string;
+  searchReference?: string;
   amountAfterTax: number;
   baseAmount?: number;
   extraAdultCount?: number;
@@ -50,6 +59,13 @@ export interface NightlyRate {
 }
 
 export interface StayBlockValidationResult {
+  continuityStatus?: 'EXACT' | 'MIXED_ROOM_MEAL' | 'BLOCKED';
+  continuityWarning?: {
+    type: 'ROOM_MEAL_MISMATCH';
+    message: string;
+    existing?: string;
+    selected?: string;
+  };
   canBookSingleNight: boolean;
   canBookMultiNight: boolean;
   blocked: boolean;
@@ -83,9 +99,36 @@ export class HotelStayBlockValidationService {
     roomType?: string;
     mealPlan?: string;
     checkInDate: string;
+    groupType?: number;
   }): Promise<StayBlockValidationResult> {
     const candidate = await this.buildContinuousStayCandidate(params);
-    const fullStayValidation = await this.validateCandidate(candidate);
+    let fullStayValidation = await this.validateCandidate(candidate);
+    if (
+      candidate.provider === 'staah'
+      && candidate.nights > 1
+      && fullStayValidation.blocked
+      && fullStayValidation.restrictionConflicts.length > 0
+      && fullStayValidation.restrictionConflicts.every((conflict) =>
+        conflict.type === 'NO_RATE' || conflict.type === 'NO_INVENTORY',
+      )
+    ) {
+      const mixedStayValidation = await this.tryBuildStaahMixedStay(candidate);
+      if (mixedStayValidation) {
+        fullStayValidation = mixedStayValidation;
+      }
+    }
+    const continuityWarning = candidate.nights > 1 && params.groupType
+      ? await this.findExistingRoomMealMismatch(candidate, params.groupType)
+      : undefined;
+
+    if (continuityWarning && !fullStayValidation.blocked) {
+      fullStayValidation.continuityStatus = 'MIXED_ROOM_MEAL';
+      fullStayValidation.continuityWarning = continuityWarning;
+      fullStayValidation.warnings = [
+        ...fullStayValidation.warnings,
+        { type: continuityWarning.type, message: continuityWarning.message },
+      ];
+    }
 
     if (candidate.nights <= 1) {
       return {
@@ -105,6 +148,69 @@ export class HotelStayBlockValidationService {
     return {
       ...fullStayValidation,
       canBookSingleNight: !singleNightValidation.blocked,
+    };
+  }
+
+  private async findExistingRoomMealMismatch(
+    candidate: StayBlockCandidate,
+    groupType: number,
+  ): Promise<StayBlockValidationResult['continuityWarning'] | undefined> {
+    const rows = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
+      where: {
+        itinerary_plan_id: candidate.planId,
+        group_type: Number(groupType),
+        itinerary_route_id: { in: candidate.routeIds },
+        hotel_required: 1,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_id: true,
+        hotel_provider: true,
+        hotel_code: true,
+        hotel_id: true,
+        selected_price_snapshot: true,
+      },
+    });
+    const targetProvider = String(candidate.provider || '').trim().toLowerCase();
+    const targetHotelCode = this.normalizeText(candidate.hotelCode || '');
+    const targetRoom = this.normalizeText(candidate.roomType || '');
+    const targetMeal = this.normalizeText(candidate.mealPlan || '');
+    const mismatch = rows.find((row: any) => {
+      const routeId = Number(row.itinerary_route_id || 0);
+      if (!routeId || routeId === Number(candidate.anchorRouteId)) return false;
+      if (String(row.hotel_provider || '').trim().toLowerCase() !== targetProvider) return false;
+      const rowCode = this.normalizeText(row.hotel_code || row.hotel_id || '');
+      if (targetHotelCode && rowCode && rowCode !== targetHotelCode) return false;
+      let snapshot: any = {};
+      try {
+        snapshot = typeof row.selected_price_snapshot === 'string'
+          ? JSON.parse(row.selected_price_snapshot)
+          : (row.selected_price_snapshot || {});
+      } catch {
+        snapshot = {};
+      }
+      const existingRoom = String(snapshot.roomType || snapshot.roomTypeName || '').trim();
+      const existingMeal = String(snapshot.mealPlan || snapshot.mealPlanCode || '').trim();
+      return this.normalizeText(existingRoom) !== targetRoom || this.normalizeText(existingMeal) !== targetMeal;
+    });
+    if (!mismatch) return undefined;
+
+    let snapshot: any = {};
+    try {
+      snapshot = typeof mismatch.selected_price_snapshot === 'string'
+        ? JSON.parse(mismatch.selected_price_snapshot)
+        : (mismatch.selected_price_snapshot || {});
+    } catch {
+      snapshot = {};
+    }
+    const existing = `${String(snapshot.roomType || snapshot.roomTypeName || '-').trim()} / ${String(snapshot.mealPlan || snapshot.mealPlanCode || '-').trim()}`;
+    const selected = `${String(candidate.roomType || '-').trim()} / ${String(candidate.mealPlan || '-').trim()}`;
+    return {
+      type: 'ROOM_MEAL_MISMATCH',
+      existing,
+      selected,
+      message: `This manual selection creates a different room type or meal plan for the same hotel across the itinerary. Existing: ${existing}. Selected: ${selected}. This may be unfair or confusing for families travelling together. Continue only if you want.`,
     };
   }
 
@@ -150,31 +256,46 @@ export class HotelStayBlockValidationService {
     const routeIds = [Number(currentRoute.itinerary_route_ID)];
     const stayDates = [checkInDate];
 
+    // Continuity is anchored to the selected route, but a stay can extend in
+    // either direction. This is important when the user edits Day 2: Day 1
+    // must be checked as well as any following night.
+    for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
+      const previousRoute: any = routes[previousIndex];
+      const expectedDate = this.addDays(checkInDate, -((index - previousIndex)));
+      const previousRouteDate = this.toDateOnly(previousRoute.itinerary_route_date);
+      if (!previousRouteDate || previousRouteDate !== expectedDate) break;
+
+      const previousDestination = this.normalizeLocation(
+        previousRoute.next_visiting_location || previousRoute.location_name || '',
+      );
+      if (!stayCity || previousDestination !== stayCity) break;
+
+      routeIds.unshift(Number(previousRoute.itinerary_route_ID));
+      stayDates.unshift(previousRouteDate);
+    }
+
     for (let nextIndex = index + 1; nextIndex < routes.length; nextIndex += 1) {
       const nextRoute: any = routes[nextIndex];
-      const expectedDate = this.addDays(checkInDate, routeIds.length);
+      const expectedDate = this.addDays(checkInDate, nextIndex - index);
       const nextRouteDate = this.toDateOnly(nextRoute.itinerary_route_date);
-      if (!nextRouteDate || nextRouteDate !== expectedDate) {
-        break;
-      }
+      if (!nextRouteDate || nextRouteDate !== expectedDate) break;
 
       const nextLocation = this.normalizeLocation(nextRoute.location_name || '');
       const nextDestination = this.normalizeLocation(nextRoute.next_visiting_location || '');
-      if (!stayCity || nextLocation !== stayCity || nextDestination !== stayCity) {
-        break;
-      }
+      if (!stayCity || nextLocation !== stayCity || nextDestination !== stayCity) break;
 
       routeIds.push(Number(nextRoute.itinerary_route_ID));
       stayDates.push(nextRouteDate);
     }
 
-    const checkOutDate = this.addDays(checkInDate, stayDates.length);
+    const stayStartDate = stayDates[0] || checkInDate;
+    const checkOutDate = this.addDays(stayStartDate, stayDates.length);
     const stayKey = [
       params.provider,
       params.hotelCode,
       String(params.roomId || ''),
       String(params.rateId || params.mealPlan || ''),
-      `${checkInDate}_to_${checkOutDate}`,
+      `${stayStartDate}_to_${checkOutDate}`,
     ].join(':');
 
     return {
@@ -186,12 +307,13 @@ export class HotelStayBlockValidationService {
       rateId: params.rateId,
       roomType: params.roomType,
       mealPlan: params.mealPlan,
-      checkInDate,
+      checkInDate: stayStartDate,
       checkOutDate,
       nights: stayDates.length,
       routeIds,
       stayDates,
       stayKey,
+      anchorRouteId: Number(params.routeId),
     };
   }
 
@@ -252,7 +374,16 @@ export class HotelStayBlockValidationService {
         continue;
       }
 
-      nightlyRates.push(this.buildNightlyRate(date, calculateStaahOccupancyAmount(rateRow.occupancy_rates, paxProfile)));
+      nightlyRates.push(this.buildNightlyRate(
+        date,
+        calculateStaahOccupancyAmount(rateRow.occupancy_rates, paxProfile),
+        Number(candidate.routeIds[candidate.stayDates.indexOf(date)] || 0),
+        resolvedRoomId,
+        resolvedRate.rateId,
+        candidate.roomType,
+        resolvedRate.rateName,
+        this.buildStaahRateOptionId(candidate.hotelName, resolvedRoomId, resolvedRate.rateId, date),
+      ));
     }
 
     return this.buildValidationResult(candidate, conflicts, nightlyRates);
@@ -331,7 +462,15 @@ export class HotelStayBlockValidationService {
         continue;
       }
 
-      nightlyRates.push(this.buildNightlyRate(date, calculateStaahOccupancyAmount(rateRow.occupancy_rates, paxProfile)));
+      nightlyRates.push(this.buildNightlyRate(
+        date,
+        calculateStaahOccupancyAmount(rateRow.occupancy_rates, paxProfile),
+        Number(candidate.routeIds[candidate.stayDates.indexOf(date)] || 0),
+        String(roomRow.room_ref_code || roomRow.room_ID || ''),
+        ratePlan.ratePlanId,
+        candidate.roomType || String(roomRow.room_title || ''),
+        candidate.mealPlan,
+      ));
     }
 
     return this.buildValidationResult(candidate, conflicts, nightlyRates);
@@ -344,22 +483,129 @@ export class HotelStayBlockValidationService {
     return this.validateAxisRoomsStayBlock(candidate);
   }
 
+  private async tryBuildStaahMixedStay(
+    candidate: StayBlockCandidate,
+  ): Promise<StayBlockValidationResult | null> {
+    const hotelMaster = await this.resolveHotel(candidate.provider, candidate.hotelCode);
+    const propertyId = String(hotelMaster?.staah_property_id || '').trim();
+    if (!propertyId) return null;
+    const plan = await this.getPlan(candidate.planId);
+    const roomId = await this.resolveStaahRoomId(
+      hotelMaster?.hotel_id,
+      propertyId,
+      candidate.roomId,
+      candidate.roomType,
+    );
+    const ratePlans = await this.prisma.staah_rateplan.findMany({
+      where: { staah_property_id: propertyId, room_id: roomId },
+      select: { room_id: true, rateplan_id: true, rateplan_name: true },
+    });
+    if (!ratePlans.length) return null;
+
+    const requestedRate = this.normalizeText(candidate.rateId || candidate.mealPlan || '');
+    const requestedMeal = this.normalizeText(candidate.mealPlan || '');
+    const orderedRatePlans = [...ratePlans].sort((left: any, right: any) => {
+      const score = (row: any) => {
+        const id = this.normalizeText(row.rateplan_id);
+        const name = this.normalizeText(row.rateplan_name);
+        return (id === requestedRate ? 4 : 0)
+          + (name === requestedMeal ? 2 : 0)
+          + (id.includes(requestedRate) && requestedRate ? 1 : 0);
+      };
+      return score(right) - score(left);
+    });
+    const paxProfile = this.buildPaxProfile(plan);
+    const nightlyRates: NightlyRate[] = [];
+    const conflicts: RestrictionConflict[] = [];
+
+    for (const date of candidate.stayDates) {
+      const inventory = await this.findStaahInventoryRow(propertyId, roomId, date);
+      if (!inventory || Number(inventory.free || 0) <= 0) return null;
+      let selected: { plan: any; rate: any; amount: ReturnType<typeof calculateStaahOccupancyAmount> } | null = null;
+      for (const ratePlan of orderedRatePlans) {
+        const rate = await this.findStaahRateRow(
+          propertyId,
+          roomId,
+          String(ratePlan.rateplan_id || ''),
+          date,
+        );
+        if (!rate) continue;
+        const restrictions = await this.findStaahRestrictionRows(
+          propertyId,
+          roomId,
+          String(ratePlan.rateplan_id || ''),
+          date,
+          this.addDays(date, 1),
+        );
+        const oneNightCandidate = {
+          ...candidate,
+          checkInDate: date,
+          checkOutDate: this.addDays(date, 1),
+          nights: 1,
+          stayDates: [date],
+          routeIds: [candidate.routeIds[candidate.stayDates.indexOf(date)]],
+        };
+        const rateConflicts = this.collectRestrictionConflicts(
+          restrictions,
+          oneNightCandidate,
+          (row: any) => String(row.type || ''),
+          (row: any) => String(row.value || ''),
+        );
+        if (rateConflicts.length > 0) continue;
+        selected = {
+          plan: ratePlan,
+          rate,
+          amount: calculateStaahOccupancyAmount(rate.occupancy_rates, paxProfile),
+        };
+        break;
+      }
+      if (!selected) return null;
+      nightlyRates.push(this.buildNightlyRate(
+        date,
+        selected.amount,
+        Number(candidate.routeIds[candidate.stayDates.indexOf(date)] || 0),
+        roomId,
+        String(selected.plan.rateplan_id || ''),
+        candidate.roomType,
+        String(selected.plan.rateplan_name || candidate.mealPlan || ''),
+        this.buildStaahRateOptionId(
+          candidate.hotelName,
+          roomId,
+          String(selected.plan.rateplan_id || ''),
+          date,
+        ),
+      ));
+    }
+
+    const result = this.buildValidationResult(candidate, conflicts, nightlyRates);
+    result.continuityStatus = 'MIXED_ROOM_MEAL';
+    result.warnings = [{
+      type: 'ROOM_MEAL_MISMATCH',
+      message: 'The selected room/meal rate is not available for every night. Available complete supplier rates were selected per night; confirm to continue.',
+    }];
+    return result;
+  }
+
   private toSingleNightCandidate(candidate: StayBlockCandidate): StayBlockCandidate {
-    const singleNightCheckOutDate = this.addDays(candidate.checkInDate, 1);
-    const firstRouteId = Number(candidate.routeIds[0] || 0);
+    const firstRouteId = Number(candidate.anchorRouteId || candidate.routeIds[0] || 0);
+    const anchorIndex = candidate.routeIds.findIndex((routeId) => Number(routeId) === firstRouteId);
+    const anchorDate = candidate.stayDates[anchorIndex >= 0 ? anchorIndex : 0] || candidate.checkInDate;
+    const singleNightCheckOutDate = this.addDays(anchorDate, 1);
     return {
       ...candidate,
+      checkInDate: anchorDate,
       checkOutDate: singleNightCheckOutDate,
       nights: 1,
       routeIds: firstRouteId > 0 ? [firstRouteId] : [],
-      stayDates: [candidate.checkInDate],
+      stayDates: [anchorDate],
       stayKey: [
         candidate.provider,
         candidate.hotelCode,
         String(candidate.roomId || ''),
         String(candidate.rateId || candidate.mealPlan || ''),
-        `${candidate.checkInDate}_to_${singleNightCheckOutDate}`,
+        `${anchorDate}_to_${singleNightCheckOutDate}`,
       ].join(':'),
+      anchorRouteId: firstRouteId,
     };
   }
 
@@ -656,7 +902,16 @@ export class HotelStayBlockValidationService {
     };
   }
 
-  private buildNightlyRate(date: string, breakdown: ReturnType<typeof calculateStaahOccupancyAmount>): NightlyRate {
+  private buildNightlyRate(
+    date: string,
+    breakdown: ReturnType<typeof calculateStaahOccupancyAmount>,
+    routeId?: number,
+    roomId?: string,
+    rateId?: string,
+    roomType?: string,
+    mealPlan?: string,
+    rateOptionId?: string,
+  ): NightlyRate {
     const extraAdultAmount = Number(
       (
         breakdown.finalCalculatedAmount
@@ -669,9 +924,18 @@ export class HotelStayBlockValidationService {
     );
     const extraAdultCount = breakdown.baseOccupancyKey.includes('EXTRAADULT') ? 1 : 0;
     const extraAdultRate = extraAdultCount > 0 ? extraAdultAmount : 0;
+    const authoritativeRateOptionId = rateOptionId || [roomId, rateId, date].filter(Boolean).join(':');
 
     return {
       date,
+      routeId,
+      roomId,
+      rateId,
+      roomType,
+      mealPlan,
+      rateOptionId: authoritativeRateOptionId,
+      bookingCode: authoritativeRateOptionId,
+      searchReference: authoritativeRateOptionId,
       amountAfterTax: Number(breakdown.finalCalculatedAmount.toFixed(2)),
       baseAmount: Number(breakdown.baseOccupancyAmount.toFixed(2)),
       extraAdultCount,
@@ -683,6 +947,29 @@ export class HotelStayBlockValidationService {
           : breakdown.extraChildRate || 0).toFixed(2),
       ),
     };
+  }
+
+  /**
+   * STAAH snapshot rows use this stable, date-scoped identity. Continuity
+   * validation must return the same identity so /hotels/select can validate
+   * the exact supplier option instead of treating a correct recalculation as
+   * a stale selection.
+   */
+  private buildStaahRateOptionId(
+    hotelName: string | undefined,
+    roomId: string | undefined,
+    rateId: string | undefined,
+    date: string,
+  ): string {
+    const normalize = (value: unknown) => String(value || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '');
+    const room = String(roomId || '').trim().toUpperCase();
+    const rate = String(rateId || '').trim().toUpperCase();
+    const day = String(date || '').replace(/-/g, '');
+    const property = normalize(hotelName);
+    return ['STAAH', property, room, rate, day].filter(Boolean).join('-');
   }
 
   private buildValidationResult(
@@ -697,6 +984,7 @@ export class HotelStayBlockValidationService {
       : Number(nightlyRates.reduce((sum, night) => sum + Number(night.amountAfterTax || 0), 0).toFixed(2));
 
     return {
+      continuityStatus: blocked ? 'BLOCKED' : (candidate.nights > 1 ? 'EXACT' : 'EXACT'),
       canBookSingleNight: !blocked && candidate.nights === 1,
       canBookMultiNight: !blocked && candidate.nights > 1,
       blocked,

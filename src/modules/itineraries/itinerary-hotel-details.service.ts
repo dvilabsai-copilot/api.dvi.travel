@@ -53,6 +53,16 @@ export interface ItineraryHotelRowDto {
   hotelRoomGstAmount?: number;
   hotelMealPlanCost?: number;
   hotelMealPlanGstAmount?: number;
+  totalExtraBedCost?: number;
+  totalExtraBedCostGstAmount?: number;
+  totalChildWithBedCost?: number;
+  totalChildWithBedCostGstAmount?: number;
+  totalChildWithoutBedCost?: number;
+  totalChildWithoutBedCostGstAmount?: number;
+  extraBedCount?: number;
+  childWithBedCount?: number;
+  childWithoutBedCount?: number;
+  totalRoomCost?: number;
   totalHotelCost: number;
   totalHotelTaxAmount: number;
   noOfRooms?: number;
@@ -902,6 +912,23 @@ async getHotelRoomDetailsByQuoteId(
         ).trim(),
         totalHotelCost: Number((h as any).total_hotel_cost ?? 0) * earlyCheckInBillingMultiplier,
         totalHotelTaxAmount: Number((h as any).total_hotel_tax_amount ?? 0) * earlyCheckInBillingMultiplier,
+        baseHotelCost: Number((h as any).total_room_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalRoomCost: Number((h as any).total_room_cost ?? 0) * earlyCheckInBillingMultiplier,
+        hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        hotelMealPlanCost: Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier,
+        hotelMealPlanGstAmount: Number((h as any).total_hotel_meal_plan_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        totalExtraBedCost: Number((h as any).total_extra_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalExtraBedCostGstAmount: Number((h as any).total_extra_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithBedCost: Number((h as any).total_childwith_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithBedCostGstAmount: Number((h as any).total_childwith_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithoutBedCost: Number((h as any).total_childwithout_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithoutBedCostGstAmount: Number((h as any).total_childwithout_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        extraBedCount: Number((h as any).room_extra_bed_count ?? (h as any).total_extra_bed ?? (plan as any).total_extra_bed ?? 0),
+        childWithBedCount: Number((h as any).room_cwb_count ?? (h as any).total_child_with_bed ?? (plan as any).total_child_with_bed ?? 0),
+        childWithoutBedCount: Number((h as any).room_cnb_count ?? (h as any).total_child_without_bed ?? (plan as any).total_child_without_bed ?? 0),
+        hotelMarginPercentage: Number((h as any).hotel_margin_percentage ?? 0),
+        hotelMarginAmount: Number((h as any).hotel_margin_rate ?? 0) * earlyCheckInBillingMultiplier,
+        hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
         date: dateLabel,

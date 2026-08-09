@@ -1,5 +1,7 @@
 import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
 import { HotelAvailabilityTimingLogger } from '../../itineraries/services/hotel-availability-timing.logger';
 import { PrismaService } from '../../../prisma.service';
 import {
@@ -56,6 +58,28 @@ export class TBOHotelProvider implements IHotelProvider {
   private tokenId: string | null = null;
   private tokenExpiry: Date | null = null;
   private http: AxiosInstance = axios;
+
+  /** Persist raw supplier responses for traceability; never include auth headers. */
+  private async persistRawSearchResponse(metadata: Record<string, unknown>, responseData: unknown): Promise<void> {
+    const enabled = String(process.env.TBO_RAW_RESPONSE_LOG || 'true').trim().toLowerCase() !== 'false';
+    if (!enabled) return;
+
+    try {
+      const directory = process.env.TBO_RAW_RESPONSE_LOG_DIR
+        ? join(process.cwd(), process.env.TBO_RAW_RESPONSE_LOG_DIR)
+        : join(process.cwd(), 'logs', 'tbo-raw');
+      await fs.mkdir(directory, { recursive: true });
+      const filePath = join(directory, `tbo-search-${new Date().toISOString().slice(0, 10)}.jsonl`);
+      await fs.appendFile(
+        filePath,
+        `${JSON.stringify({ capturedAt: new Date().toISOString(), ...metadata, response: responseData })}\n`,
+        'utf8',
+      );
+      this.logger.log(` TBO raw response persisted: ${filePath}`);
+    } catch (error: any) {
+      this.logger.warn(` TBO raw response persistence failed: ${error?.message || String(error)}`);
+    }
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1715,7 +1739,16 @@ export class TBOHotelProvider implements IHotelProvider {
           : 0,
       });
  this.logger.log(` TBO API Response Time ${description}: ${responseTime}ms`);
-      if (logFullPayload && false) {
+      await this.persistRawSearchResponse({
+        endpoint: requestUrl,
+        description,
+        httpStatus: response.status,
+        checkIn: searchRequest.CheckIn,
+        checkOut: searchRequest.CheckOut,
+        cityCode: searchRequest.CityCode,
+        hotelCodeCount: requestDetails.hotelCodeCount,
+      }, response.data);
+      if (logFullPayload) {
  this.logger.log(` TBO API Response JSON: ${JSON.stringify(response.data)}`);
       } else {
         const statusObj = response.data?.Status;

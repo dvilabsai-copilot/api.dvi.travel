@@ -44,4 +44,10 @@ export class StayExtensionPreviewDto {
   @ApiProperty({ example: '2026-07-15' })
   @IsString()
   checkInDate!: string;
+
+  @ApiProperty({ example: 1, required: false })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  groupType?: number;
 }

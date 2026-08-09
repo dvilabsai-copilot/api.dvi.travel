@@ -37,7 +37,7 @@ import {
   parseHotelSelectionSnapshot,
   selectionOriginFromRow,
 } from './utils/hotel-selection-identity.util';
-import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
+import { hotelDateOnly, hotelStayTotal } from './utils/hotel-stay-pricing.util';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -1069,6 +1069,8 @@ if (hotelMasterId) {
     const roomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
     const adultCount = Math.max(Number((plan as any).total_adult || 1), 1);
     const childCount = Math.max(Number((plan as any).total_children || 0), 0);
+    const childWithBedCount = Math.max(Number((plan as any).total_child_with_bed || 0), 0);
+    const extraBedCount = Math.max(Number((plan as any).total_extra_bed || 0), 0);
     const hotels = normalizedProvider === 'staah'
       ? (await this.fetchStaahHotelsForRoutes(
           [route], 1, undefined, null, false,
@@ -1076,7 +1078,12 @@ if (hotelMasterId) {
         )).get(Number(routeId)) || []
       : normalizedProvider === 'axisrooms'
         ? (await this.fetchAxisroomsHotelsForRoutes(
-            [route], 1, undefined, null, roomCount, normalizedHotelCode,
+            [route], 1, undefined, null, roomCount, {
+              adults: adultCount,
+              children: childCount,
+              childWithBedCount,
+              extraBedCount,
+            }, normalizedHotelCode,
           )).get(Number(routeId)) || []
         : normalizedProvider === 'offline'
           ? ((await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
@@ -1406,6 +1413,7 @@ if (hotelMasterId) {
     itineraryRouteId?: number,
     includeOffline = true,
     includeAllMealPlans = false,
+    ignorePersistedSelections = false,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
  this.logger.log(`\n TBO HOTEL PACKAGES: Fetching dynamic packages for quote: ${quoteId}`);
@@ -1607,6 +1615,12 @@ this.logger.log(
         savedMealPlansByRoute,
         preferredMealPlanCode,
         planRoomCount,
+        {
+          adults: planAdultCount,
+          children: planChildCount,
+          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          extraBedCount: Number((plan as any).total_extra_bed || 0),
+        },
       );
       axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
         const existingHotels = hotelsByRoute.get(routeId) || [];
@@ -1751,6 +1765,12 @@ this.logger.log(
             savedMealPlansByRoute,
             preferredMealPlanCode,
             planRoomCount,
+            {
+              adults: planAdultCount,
+              children: planChildCount,
+              childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+              extraBedCount: Number((plan as any).total_extra_bed || 0),
+            },
           ));
         } catch (error) {
           this.logger.warn(
@@ -1891,6 +1911,7 @@ this.logger.log(
       routes,
       noOfNights,
       allAvailabilityPackages,
+      ignorePersistedSelections,
     );
 
     const duration = Date.now() - startTime;
@@ -2551,10 +2572,36 @@ this.logger.log(
     ));
   }
 
-  private extractAxisroomsRate(occupancyRates: unknown): number {
+  private extractAxisroomsRate(
+    occupancyRates: unknown,
+    pax?: { roomCount?: number; adults?: number; childWithBedCount?: number; extraBedCount?: number },
+  ): number {
     try {
       const data = occupancyRates as Record<string, unknown>;
       if (!data || typeof data !== 'object') return 0;
+
+      const roomCount = Math.max(Math.trunc(Number(pax?.roomCount || 1)), 1);
+      const adults = Math.max(Math.trunc(Number(pax?.adults || 0)), 0);
+      const childWithBedCount = Math.max(Math.trunc(Number(pax?.childWithBedCount || 0)), 0);
+      const extraBedCount = Math.max(Math.trunc(Number(pax?.extraBedCount || 0)), 0);
+      if (adults > 0) {
+        const adultsPerRoom = Math.max(Math.ceil(adults / roomCount), 1);
+        const occupancyKey = adultsPerRoom <= 1
+          ? 'SINGLE'
+          : adultsPerRoom === 2
+            ? 'DOUBLE'
+            : adultsPerRoom === 3
+              ? 'TRIPLE'
+              : 'QUAD';
+        const roomRate = Number(data[occupancyKey]);
+        if (Number.isFinite(roomRate) && roomRate > 0) {
+          const extraBeds = Math.max(childWithBedCount + extraBedCount, 0);
+          const extraBedRate = Number(data.EXTRABED ?? data.EXTRAADULT ?? data.EXTRACHILD ?? 0);
+          return (roomRate * roomCount) + (Number.isFinite(extraBedRate) && extraBedRate > 0
+            ? extraBedRate * extraBeds
+            : 0);
+        }
+      }
 
       const preferredKeys = ['SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'EXTRABED'];
       for (const key of preferredKeys) {
@@ -2575,6 +2622,35 @@ this.logger.log(
 
   private extractStaahRate(occupancyRates: unknown): number {
     return calculateStaahOccupancyAmount(occupancyRates, { roomCount: 1, adults: 1 }).finalCalculatedAmount;
+  }
+
+  private selectEffectiveStaahRateRows(rows: any[]): any[] {
+    const effectiveByIdentity = new Map<string, any>();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const key = [
+        String(row?.staah_property_id || '').trim().toUpperCase(),
+        String(row?.room_id || '').trim().toUpperCase(),
+        String(row?.rateplan_id || '').trim().toUpperCase(),
+      ].join('|');
+      if (!key || key === '||') continue;
+
+      const current = effectiveByIdentity.get(key);
+      const receivedAt = new Date(row?.received_at || 0).getTime();
+      const currentReceivedAt = current
+        ? new Date(current?.received_at || 0).getTime()
+        : Number.NEGATIVE_INFINITY;
+      const rowId = Number(row?.id || 0);
+      const currentId = Number(current?.id || 0);
+
+      if (
+        !current ||
+        receivedAt > currentReceivedAt ||
+        (receivedAt === currentReceivedAt && rowId > currentId)
+      ) {
+        effectiveByIdentity.set(key, row);
+      }
+    }
+    return Array.from(effectiveByIdentity.values());
   }
 
   private formatDateOnly(date: Date): string {
@@ -2827,6 +2903,12 @@ this.logger.log(
     savedMealPlansByRoute?: Map<number, string>,
     preferredMealPlanCode?: string | null,
     roomCount: number = 1,
+    paxProfile?: {
+      adults?: number;
+      children?: number;
+      childWithBedCount?: number;
+      extraBedCount?: number;
+    },
     targetHotelCode?: string,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
@@ -3156,7 +3238,12 @@ this.logger.log(
 
  // Only extract rate if we haven't found one for this rate plan yet
           if (!ratesByPlan.has(rateplanId)) {
-            const extractedRate = this.extractAxisroomsRate((occ as any).occupancy_rates);
+            const extractedRate = this.extractAxisroomsRate((occ as any).occupancy_rates, {
+              roomCount: requiredRoomCount,
+              adults: Number(paxProfile?.adults || 0),
+              childWithBedCount: Number(paxProfile?.childWithBedCount || 0),
+              extraBedCount: Number(paxProfile?.extraBedCount || 0),
+            });
             if (extractedRate > 0) {
               ratesByPlan.set(rateplanId, { rate: extractedRate, roomId: rid });
             }
@@ -3495,6 +3582,16 @@ this.logger.log(
         const rateRows = (rateRowsRaw as any[]).filter((row) =>
           isAllowedStaahRoom(row.staah_property_id, row.room_id),
         );
+        // STAAH can retain overlapping historical rows for the same
+        // property/room/rate-plan.  Keep the most recently received row for
+        // each identity; otherwise Prisma's unspecified result order can make
+        // an older broad-range rate win over a newer correction.
+        const effectiveRateRows = this.selectEffectiveStaahRateRows(rateRows);
+        if (effectiveRateRows.length !== rateRows.length) {
+          this.logger.log(
+            `[STAAH RATE ROW RESOLUTION] routeId=${routeId} retained=${effectiveRateRows.length} discarded=${rateRows.length - effectiveRateRows.length}`,
+          );
+        }
         const restrictionRowsByRateKey = new Map<string, any[]>();
         for (const row of restrictionRows as any[]) {
           const rateKey = `${row.staah_property_id}|${row.room_id}|${row.rateplan_id}`;
@@ -3513,7 +3610,7 @@ this.logger.log(
           }
           const propertyInventoryRows = (inventoryRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
           const propertyRatePlanRows = (ratePlanRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
-          const rows = (rateRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
+          const rows = (effectiveRateRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
  this.logger.debug(
             `[STAAH] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} inventory=${propertyInventoryRows.length} rateplans=${propertyRatePlanRows.length} rates=${rows.length}`,
           );
@@ -3704,6 +3801,15 @@ this.logger.log(
               extraBedCount: occupancyBreakdown?.extraBedCount || 0,
               extraBedRate: occupancyBreakdown?.extraBedRate || 0,
               extraBedAmount: this.money((occupancyBreakdown?.extraBedAmount || 0) * Math.max(lengthOfStay, 1)),
+              childWithBedCount: occupancyBreakdown?.childWithBedCount || 0,
+              childWithBedRate: occupancyBreakdown?.childWithBedRate || 0,
+              childWithBedAmount: this.money((occupancyBreakdown?.childWithBedAmount || 0) * Math.max(lengthOfStay, 1)),
+              childWithoutBedCount: occupancyBreakdown?.childWithoutBedCount || 0,
+              childWithoutBedRate: occupancyBreakdown?.childWithoutBedRate || 0,
+              childWithoutBedAmount: this.money((occupancyBreakdown?.childWithoutBedAmount || 0) * Math.max(lengthOfStay, 1)),
+              extraChildCount: occupancyBreakdown?.extraChildCount || 0,
+              extraChildRate: occupancyBreakdown?.extraChildRate || 0,
+              extraChildAmount: this.money((occupancyBreakdown?.extraChildAmount || 0) * Math.max(lengthOfStay, 1)),
               currency,
               roomTypes: [{
                 roomCode: roomId,
@@ -4006,6 +4112,7 @@ this.logger.log(
     routes: any[],
     noOfNights: number,
     allAvailabilityPackages: Array<{ groupType: number; hotels: any[] }> = packages,
+    ignorePersistedSelections = false,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_plan_ID: planId, deleted: 0 },
@@ -4103,7 +4210,58 @@ this.logger.log(
     // same payable amount. Previously only totalStayPrice was changed here;
     // price/pricePerNight remained the supplier amount, so the UI could show
     // an un-margined card beside a margined recommendation/summary.
+    const findSelectedRateOption = (hotel: any): any | null => {
+      const selectedRateOptionId = String(
+        hotel?.selectedRateOptionId ||
+        hotel?.selected_rate_option_id ||
+        hotel?.selection?.rateOptionId ||
+        '',
+      ).trim().toLowerCase();
+      if (!selectedRateOptionId || !Array.isArray(hotel?.rateOptions)) return null;
+      return hotel.rateOptions.find((option: any) => [
+        option?.rateOptionId,
+        option?.rate_option_id,
+        option?.bookingCode,
+        option?.searchReference,
+      ].some((value) => String(value ?? '').trim().toLowerCase() === selectedRateOptionId)) || null;
+    };
+
+    const applySelectedRateOption = (hotel: any): any => {
+      const selectedRateOption = findSelectedRateOption(hotel);
+      if (!selectedRateOption) return hotel;
+      return {
+        ...hotel,
+        ...selectedRateOption,
+        itineraryRouteId: hotel.itineraryRouteId ?? hotel.routeId,
+        routeId: hotel.routeId ?? hotel.itineraryRouteId,
+        checkInDate: selectedRateOption.checkInDate ?? hotel.checkInDate,
+        checkOutDate: selectedRateOption.checkOutDate ?? hotel.checkOutDate,
+        rateOptions: hotel.rateOptions,
+        // Identity and price fields must come from this option only. Do not
+        // retain the parent row's room/rate/base-price values.
+        roomId: selectedRateOption.roomId ?? selectedRateOption.room_id ?? selectedRateOption.roomTypeId ?? null,
+        room_id: selectedRateOption.room_id ?? selectedRateOption.roomId ?? selectedRateOption.roomTypeId ?? null,
+        rateId: selectedRateOption.rateId ?? selectedRateOption.rate_id ?? selectedRateOption.ratePlanId ?? null,
+        rate_id: selectedRateOption.rate_id ?? selectedRateOption.rateId ?? selectedRateOption.ratePlanId ?? null,
+        rateOptionId: selectedRateOption.rateOptionId ?? selectedRateOption.rate_option_id,
+        searchReference: selectedRateOption.searchReference ?? selectedRateOption.bookingCode,
+        bookingCode: selectedRateOption.bookingCode ?? selectedRateOption.searchReference,
+        basePricePerNight: selectedRateOption.basePricePerNight ?? selectedRateOption.basePrice ?? selectedRateOption.pricePerNight ?? selectedRateOption.price,
+        pricePerNight: selectedRateOption.pricePerNight ?? selectedRateOption.price,
+        totalStayPrice: selectedRateOption.pricePerNight ?? selectedRateOption.price ?? selectedRateOption.totalStayPrice ?? selectedRateOption.totalPrice,
+        totalPrice: selectedRateOption.pricePerNight ?? selectedRateOption.price ?? selectedRateOption.totalPrice ?? selectedRateOption.totalStayPrice,
+        selectedRateOptionId: hotel.selectedRateOptionId || hotel.selected_rate_option_id,
+        selected_rate_option_id: hotel.selected_rate_option_id || hotel.selectedRateOptionId,
+      };
+    };
+
     const priceHotelStay = (hotel: any, fallbackNights: number): any => {
+      // A persisted row can be a parent hotel row whose nested rateOptions
+      // contain the actual selected room/meal option. Once a rate option ID
+      // exists, replace the parent identity and price fields with that one
+      // option before doing any pricing. Spreading the parent and option
+      // independently was the source of Suite/MAP + Deluxe/CP mixtures.
+      hotel = applySelectedRateOption(hotel);
       const pricedHotel = this.enrichHotelWithMasterMargin(
         hotel,
         marginHotelMasterByProviderCode,
@@ -4117,7 +4275,10 @@ this.logger.log(
       const amountAlreadyIncludesMargin = provider === 'offline' ||
         hotel?.amountIncludesHotelMargin === true ||
         hotel?.amount_includes_hotel_margin === true;
-      const rawTotal = hotelStayTotal({
+      const sourceNightlyAmount = Number(hotel?.pricePerNight ?? hotel?.price ?? 0);
+      const rawTotal = nights === 1 && Number.isFinite(sourceNightlyAmount) && sourceNightlyAmount > 0
+        ? this.money(sourceNightlyAmount)
+        : hotelStayTotal({
         ...hotel,
         selectedTotalPrice: undefined,
         selected_total_price: undefined,
@@ -4125,7 +4286,7 @@ this.logger.log(
         selected_price_per_night: undefined,
         exactFullStayTotal: undefined,
         totalStayPrice: hotel?.totalStayPrice ?? hotel?.totalPrice ?? hotel?.totalFare,
-      }, nights);
+        }, nights);
       const marginPercentage = this.getHotelMarginPercentage(
         pricedHotel,
         globalHotelMargin,
@@ -4147,7 +4308,10 @@ this.logger.log(
       );
       const pricedOptions = Array.isArray(hotel?.rateOptions)
         ? hotel.rateOptions.map((option: any) => {
-            const optionRawTotal = hotelStayTotal({
+            const optionNightlyAmount = Number(option?.pricePerNight ?? option?.price ?? 0);
+            const optionRawTotal = nights === 1 && Number.isFinite(optionNightlyAmount) && optionNightlyAmount > 0
+              ? this.money(optionNightlyAmount)
+              : hotelStayTotal({
               ...hotel,
               ...option,
               selectedTotalPrice: undefined,
@@ -4157,20 +4321,21 @@ this.logger.log(
               checkInDate: option?.checkInDate ?? hotel?.checkInDate,
               checkOutDate: option?.checkOutDate ?? hotel?.checkOutDate,
               totalStayPrice: option?.totalStayPrice ?? option?.totalPrice,
-            }, nights);
+              }, nights);
             const optionPayableTotal = optionRawTotal > 0
               ? amountAlreadyIncludesMargin
                 ? this.money(optionRawTotal)
                 : this.applyInvisibleHotelMargin(optionRawTotal, pricedHotel, globalHotelMargin)
               : 0;
+            const optionRouteTotal = nights === 1 ? optionPayableTotal : optionPayableTotal;
             return {
               ...option,
               basePricePerNight: optionRawTotal > 0
                 ? this.money(optionRawTotal / nights)
                 : option?.basePricePerNight,
               amountIncludesHotelMargin: amountAlreadyIncludesMargin,
-              totalStayPrice: optionPayableTotal > 0 ? optionPayableTotal : option?.totalStayPrice,
-              totalPrice: optionPayableTotal > 0 ? optionPayableTotal : option?.totalPrice,
+              totalStayPrice: optionRouteTotal > 0 ? optionRouteTotal : option?.totalStayPrice,
+              totalPrice: optionRouteTotal > 0 ? optionRouteTotal : option?.totalPrice,
               price: optionRawTotal > 0
                 ? this.money(optionPayableTotal / nights)
                 : option?.price,
@@ -4214,6 +4379,37 @@ this.logger.log(
       return result;
     };
 
+    // Availability cards and persisted hotel rows represent one route-night.
+    // Do not use the itinerary-wide noOfNights here: that value belongs to
+    // the complete itinerary and caused a two-night amount to be stored on
+    // each individual route row.
+    const getRouteNightHotel = (hotel: any): { hotel: any; nights: number } => {
+      const routeId = Number(hotel?.routeId || hotel?.itineraryRouteId || 0);
+      const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === routeId);
+      const checkInDate = hotelDateOnly(
+        hotel?.checkInDate || hotel?.check_in_date || hotel?.date || route?.itinerary_route_date,
+      );
+      const nextNightDate = checkInDate
+        ? (() => {
+            const next = new Date(`${checkInDate}T00:00:00.000Z`);
+            next.setUTCDate(next.getUTCDate() + 1);
+            return next.toISOString().slice(0, 10);
+          })()
+        : null;
+      const checkOutDate = hotelDateOnly(
+        hotel?.checkOutDate || hotel?.check_out_date ||
+          nextNightDate,
+      );
+      return {
+        hotel: {
+          ...hotel,
+          ...(checkInDate ? { checkInDate } : {}),
+          ...(checkOutDate ? { checkOutDate } : {}),
+        },
+        nights: 1,
+      };
+    };
+
     const pricedPackages = packages.map((pkg) => {
       const stayResults = (pkg.stayResults || []).map((stay) => {
         const pricedHotel = stay.hotel
@@ -4234,10 +4430,10 @@ this.logger.log(
       );
       return {
         ...pkg,
-        hotels: (pkg.hotels || []).map((hotel) => priceHotelStay(
-          hotel,
-          Number(hotel?.numberOfNights || noOfNights || 1),
-        )),
+        hotels: (pkg.hotels || []).map((hotel) => {
+          const routeNight = getRouteNightHotel(hotel);
+          return priceHotelStay(routeNight.hotel, routeNight.nights);
+        }),
         stayResults,
         totalPrice: pkg.complete ? this.money(packageTotal) : null,
         partialTotal: this.money(packageTotal),
@@ -4246,10 +4442,10 @@ this.logger.log(
 
     const pricedAvailabilityPackages = allAvailabilityPackages.map((pkg) => ({
       ...pkg,
-      hotels: (pkg.hotels || []).map((hotel) => priceHotelStay(
-        hotel,
-        Number(hotel?.numberOfNights || noOfNights || 1),
-      )),
+      hotels: (pkg.hotels || []).map((hotel) => {
+        const routeNight = getRouteNightHotel(hotel);
+        return priceHotelStay(routeNight.hotel, routeNight.nights);
+      }),
     }));
 
     const hotelTabs: ItineraryHotelTabDto[] = pricedPackages.map((pkg) => {
@@ -4284,7 +4480,9 @@ this.logger.log(
     });
 
  // Fetch all hotel details from database to get IDs and voucher status
-    const hotelDetailsInDb = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+    const hotelDetailsInDb = ignorePersistedSelections
+      ? []
+      : await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
       // Only active rows belong to the current editable hotel snapshot.  Old
       // reset/rebuild rows remain in the table for audit history and must not
       // be projected back into the live response as a second "Selected hotel"
@@ -4649,7 +4847,21 @@ this.logger.log(
       // Legacy selection snapshots may contain the supplier amount. Re-run
       // the same stay pricing used for live cards so persisted selections do
       // not bypass HOTEL_MARGIN after refresh/reset.
-      return priceHotelStay(decorated, noOfNights);
+      const priced = priceHotelStay(decorated, noOfNights);
+      const selectedPayable = Number(selection?.selected_price_per_night || snapshot?.pricePerNight || 0);
+      const selectedTotal = Number(selection?.selected_total_price || snapshot?.totalPrice || 0);
+      return selectedPayable > 0
+        ? {
+            ...priced,
+            price: selectedPayable,
+            pricePerNight: selectedPayable,
+            totalHotelCost: selectedTotal > 0 ? selectedTotal : selectedPayable,
+            totalStayPrice: selectedTotal > 0 ? selectedTotal : selectedPayable,
+            totalPrice: selectedTotal > 0 ? selectedTotal : selectedPayable,
+            selectedPricePerNight: selectedPayable,
+            selectedTotalPrice: selectedTotal > 0 ? selectedTotal : selectedPayable,
+          }
+        : priced;
     };
 
     const selectionPropertyMatchesRow = (selection: any, row: any): boolean => {
@@ -4811,6 +5023,13 @@ this.logger.log(
 
     for (const pkg of pricedAvailabilityPackages) {
       for (const hotel of pkg.hotels) {
+        // Reconcile the final route row once more after package pricing. This
+        // protects the row builder from a parent cache row that still carries
+        // another option's roomId/rateId/base price.
+        const reconciledHotel = applySelectedRateOption(hotel);
+        if (reconciledHotel !== hotel) {
+          Object.assign(hotel, reconciledHotel);
+        }
  // Find the route using the routeId attached to the hotel
         const route = routes.find((r: any) => r.itinerary_route_ID === hotel.routeId);
         if (!route) {
@@ -4892,7 +5111,9 @@ this.logger.log(
         );
         const amountAlreadyIncludesMargin = normalizedProvider === 'offline' ||
           hotel?.amountIncludesHotelMargin === true;
-        const numberOfNights = Math.max(Number(hotel?.numberOfNights || noOfNights || 1), 1);
+        // This row is one route-night. The complete itinerary night count
+        // must never leak into the row or its nested rate options.
+        const numberOfNights = 1;
         const baseHotelCost = Number(
           hotel?.basePricePerNight ?? pricedHotel?.basePricePerNight ?? hotel?.price ?? 0,
         );
@@ -4974,6 +5195,15 @@ this.logger.log(
           extraBedRate: Number((hotel as any).extraBedRate || 0),
           extraBedAmount: Number((hotel as any).extraBedAmount || 0),
           extraBedGstAmount: Number((hotel as any).extraBedGstAmount || 0),
+          childWithBedCount: Number((hotel as any).childWithBedCount || 0),
+          childWithBedRate: Number((hotel as any).childWithBedRate || 0),
+          childWithBedAmount: Number((hotel as any).childWithBedAmount || 0),
+          childWithoutBedCount: Number((hotel as any).childWithoutBedCount || 0),
+          childWithoutBedRate: Number((hotel as any).childWithoutBedRate || 0),
+          childWithoutBedAmount: Number((hotel as any).childWithoutBedAmount || 0),
+          extraChildCount: Number((hotel as any).extraChildCount || 0),
+          extraChildRate: Number((hotel as any).extraChildRate || 0),
+          extraChildAmount: Number((hotel as any).extraChildAmount || 0),
           totalHotelCost: billableHotelCost,
           totalHotelTaxAmount: 0,
           searchReference: rawSearchReference || undefined,
@@ -5358,6 +5588,135 @@ this.logger.log(
       }
     }
 
+    // Keep card pricing API-driven. The legacy PHP screen uses the lowest
+    // non-zero room rate as the card's "starting from" value, but compares
+    // each candidate's calculated payable total with the selected row total.
+    // Return both values with the row/option so the frontend only renders them.
+    const toPositiveAmount = (...values: unknown[]): number => {
+      for (const value of values) {
+        const amount = Number(value);
+        if (Number.isFinite(amount) && amount > 0) return this.money(amount);
+      }
+      return 0;
+    };
+    const getSelectionAmount = (selection: any): number => toPositiveAmount(
+      selection?.selected_price_per_night,
+      selection?.selectedPricePerNight,
+      selection?.pricePerNight,
+      selection?.selectedTotalPrice,
+      selection?.selected_total_price,
+      selection?.totalPrice,
+      selection?.total_price,
+      selection?.totalHotelCost,
+      selection?.total_hotel_cost,
+    );
+    const getCandidateAmount = (row: any): number => toPositiveAmount(
+      row?.pricePerNight,
+      row?.price_per_night,
+      row?.perNightAmount,
+      row?.totalPrice,
+      row?.totalStayPrice,
+      row?.exactFullStayTotal,
+      row?.totalHotelCost,
+      row?.price,
+      row?.pricePerNight,
+    );
+    const getCandidateBaseAmount = (row: any): number => toPositiveAmount(
+      row?.basePricePerNight,
+      row?.baseHotelCost,
+      row?.baseAmount,
+    );
+    const getPropertyKey = (row: any): string => [
+      Number(row?.itineraryRouteId || 0),
+      Number(row?.groupType || 0),
+      String(row?.provider || '').trim().toLowerCase(),
+      String(row?.hotelCode || row?.providerHotelCode || '').trim().toLowerCase(),
+      String(row?.hotelName || '').trim().toLowerCase(),
+    ].join('|');
+
+    const selectedTotalByRouteGroup = new Map<string, number>();
+    for (const [routeGroupKey, selections] of selectionRowsByRouteAndGroup.entries()) {
+      const selectedAmount = (selections || [])
+        .map((selection: any) => getSelectionAmount(selection))
+        .find((amount: number) => amount > 0) || 0;
+      if (selectedAmount > 0) selectedTotalByRouteGroup.set(routeGroupKey, selectedAmount);
+    }
+
+    // The selected package tab must use the same active persisted selections
+    // as the detail rows. Recommendation totals can otherwise remain at the
+    // old auto-selected package amount after a user books a different hotel.
+    const selectedTotalByGroup = new Map<number, number>();
+    for (const [routeGroupKey, selections] of selectionRowsByRouteAndGroup.entries()) {
+      const groupType = Number(routeGroupKey.split('-')[1] || 0);
+      if (groupType <= 0) continue;
+      const selectedAmount = (selections || [])
+        .map((selection: any) => getSelectionAmount(selection))
+        .find((amount: number) => amount > 0) || 0;
+      if (selectedAmount > 0) {
+        selectedTotalByGroup.set(groupType, Number(((selectedTotalByGroup.get(groupType) || 0) + selectedAmount).toFixed(2)));
+      }
+    }
+    const reconciledHotelTabs = hotelTabs.map((tab) => {
+      const selectedTotal = selectedTotalByGroup.get(Number(tab.groupType || 0)) || 0;
+      return selectedTotal > 0
+        ? { ...tab, totalAmount: selectedTotal, partialTotal: selectedTotal }
+        : tab;
+    });
+
+    const cardGroups = new Map<string, any[]>();
+    for (const row of cleanedHotelRows as any[]) {
+      const key = getPropertyKey(row);
+      const group = cardGroups.get(key) || [];
+      const options = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0
+        ? row.rateOptions
+        : [row];
+      group.push(...options);
+      cardGroups.set(key, group);
+    }
+
+    const cardPricingByProperty = new Map<string, { startingFromAmount: number; startingFromBaseAmount: number }>();
+    cardGroups.forEach((options, key) => {
+      const pricedOptions = options.filter((option) => getCandidateAmount(option) > 0);
+      cardPricingByProperty.set(key, {
+        startingFromAmount: pricedOptions.reduce((lowest, option) => {
+          const amount = getCandidateAmount(option);
+          return lowest === 0 || amount < lowest ? amount : lowest;
+        }, 0),
+        startingFromBaseAmount: pricedOptions.reduce((lowest, option) => {
+          const amount = getCandidateBaseAmount(option);
+          return lowest === 0 || (amount > 0 && amount < lowest) ? amount : lowest;
+        }, 0),
+      });
+        });
+
+    for (const row of cleanedHotelRows as any[]) {
+      const propertyKey = getPropertyKey(row);
+      const cardPricing = cardPricingByProperty.get(propertyKey) || {
+        startingFromAmount: 0,
+        startingFromBaseAmount: 0,
+      };
+      const selectedTotal = selectedTotalByRouteGroup.get(
+        `${Number(row?.itineraryRouteId || 0)}-${Number(row?.groupType || 0)}`,
+      ) || 0;
+      const decorateCardPricing = (option: any): any => ({
+        ...option,
+        startingFromAmount: cardPricing.startingFromAmount,
+        startingFromBaseAmount: cardPricing.startingFromBaseAmount,
+        priceDifference: selectedTotal > 0
+          ? this.money(getCandidateAmount(option) - selectedTotal)
+          : 0,
+      });
+
+      row.startingFromAmount = cardPricing.startingFromAmount;
+      row.startingFromBaseAmount = cardPricing.startingFromBaseAmount;
+      row.priceDifference = selectedTotal > 0
+        ? this.money(getCandidateAmount(row) - selectedTotal)
+        : 0;
+      if (Array.isArray(row.rateOptions) && row.rateOptions.length > 0) {
+        row.rateOptions = row.rateOptions.map(decorateCardPricing);
+      }
+    }
+
     const supplierHotelRows = cleanedHotelRows.filter((row) => row.isBookable !== false);
 
     const searchableRouteIds = routes
@@ -5380,7 +5739,7 @@ this.logger.log(
       planId,
       showHotelMargins: this.shouldShowHotelMargins(),
       hotelRatesVisible,
-      hotelTabs,
+      hotelTabs: reconciledHotelTabs,
       recommendationAlgorithm: this.recommendationAlgorithm(),
       recommendationGeneration: this.recommendationGeneration(),
       hotels: cleanedHotelRows,
@@ -5537,6 +5896,12 @@ this.logger.log(
         undefined,
         undefined,
         planRoomCount2,
+        {
+          adults: planAdultCount2,
+          children: planChildCount2,
+          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          extraBedCount: Number((plan as any).total_extra_bed || 0),
+        },
       );
       axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
         const existing = hotelsByRoute.get(routeId) || [];
@@ -5612,6 +5977,12 @@ this.logger.log(
           undefined,
           undefined,
           planRoomCount2,
+          {
+            adults: planAdultCount2,
+            children: planChildCount2,
+            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            extraBedCount: Number((plan as any).total_extra_bed || 0),
+          },
         );
         axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
           const existing = hotelsByRoute.get(routeId) || [];
