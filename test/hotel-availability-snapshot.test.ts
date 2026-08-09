@@ -57,6 +57,35 @@ test('persisted hotel read never invokes a live supplier', async () => {
   assert.equal(response.hotelAvailability?.availabilityState, 'FRESH');
 });
 
+test('canonical selected rate id never falls back to another nested option', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const selected = (service as any).selectedRateOption(
+    {
+      selected_rate_option_id: 'fresh-suite-map',
+      selected_price_snapshot: JSON.stringify({ rateOptionId: 'fresh-suite-map' }),
+    },
+    {
+      rateOptions: [
+        { rateOptionId: 'old-deluxe-cp', roomType: 'Deluxe Room', mealPlan: 'CP', totalPrice: 1450 },
+        { rateOptionId: 'fresh-suite-map', roomType: 'Suite Room', mealPlan: 'MAP', totalPrice: 1630 },
+      ],
+    },
+  );
+
+  assert.equal(selected.rateOptionId, 'fresh-suite-map');
+  assert.equal(selected.roomType, 'Suite Room');
+  assert.equal(selected.mealPlan, 'MAP');
+
+  const stale = (service as any).selectedRateOption(
+    {
+      selected_rate_option_id: 'missing-rate',
+      selected_price_snapshot: JSON.stringify({ rateOptionId: 'missing-rate' }),
+    },
+    { rateOptions: [{ rateOptionId: 'old-deluxe-cp', roomType: 'Deluxe Room', mealPlan: 'CP', totalPrice: 1450 }] },
+  );
+  assert.equal(stale, null);
+});
+
 test('unscoped offline rows stay inside the existing recommendation groups', async () => {
   const syncedAt = new Date('2026-07-29T10:00:00.000Z');
   const prisma = makePrisma();

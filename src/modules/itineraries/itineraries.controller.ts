@@ -1482,7 +1482,7 @@ async exportToExcel(
   }
 
   @Post(':planId/hotels/stay-extension-preview')
-  @ApiOperation({ summary: 'Preview continuous multi-night hotel booking for STAAH and AxisRooms' })
+  @ApiOperation({ summary: 'Preview continuous multi-night hotel booking from current supplier availability' })
   async previewHotelStayExtension(
     @Param('planId', ParseIntPipe) planId: number,
     @Body() body: StayExtensionPreviewDto,

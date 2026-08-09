@@ -5,7 +5,7 @@ import {
   type StaahPricingPaxInput,
 } from '../helpers/staah-occupancy-pricing';
 
-export type ProviderCode = 'staah' | 'axisrooms';
+export type ProviderCode = 'staah' | 'axisrooms' | 'tbo' | 'offline';
 
 export interface StayBlockCandidate {
   planId: number;
@@ -280,9 +280,17 @@ export class HotelStayBlockValidationService {
       const nextRouteDate = this.toDateOnly(nextRoute.itinerary_route_date);
       if (!nextRouteDate || nextRouteDate !== expectedDate) break;
 
-      const nextLocation = this.normalizeLocation(nextRoute.location_name || '');
-      const nextDestination = this.normalizeLocation(nextRoute.next_visiting_location || '');
-      if (!stayCity || nextLocation !== stayCity || nextDestination !== stayCity) break;
+      // The overnight destination is the authoritative continuity key. The
+      // route's `location_name` can describe the place the vehicle departed
+      // from (for example, an airport/previous city) while
+      // `next_visiting_location` is the hotel destination. Requiring both
+      // fields to equal the anchor made a middle/last-night edit look like a
+      // single-night stay even though the itinerary had consecutive nights
+      // in the same destination.
+      const nextDestination = this.normalizeLocation(
+        nextRoute.next_visiting_location || nextRoute.location_name || '',
+      );
+      if (!stayCity || nextDestination !== stayCity) break;
 
       routeIds.push(Number(nextRoute.itinerary_route_ID));
       stayDates.push(nextRouteDate);
@@ -481,7 +489,109 @@ export class HotelStayBlockValidationService {
     if (candidate.provider === 'staah') {
       return this.validateStaahStayBlock(candidate);
     }
-    return this.validateAxisRoomsStayBlock(candidate);
+    if (candidate.provider === 'axisrooms') {
+      return this.validateAxisRoomsStayBlock(candidate);
+    }
+    // TBO and offline do not expose the STAAH/AxisRooms restriction tables in
+    // this application. Their continuity decision must still be backend/API
+    // driven: validate every date against the latest persisted supplier
+    // snapshot and return the exact per-night option identities found there.
+    return this.validateSnapshotStayBlock(candidate);
+  }
+
+  private async validateSnapshotStayBlock(candidate: StayBlockCandidate): Promise<StayBlockValidationResult> {
+    const plan = await this.getPlan(candidate.planId);
+    const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
+    const latest = cache?.findFirst
+      ? await cache.findFirst({
+          where: {
+            quote_id: String((plan as any)?.itinerary_quote_ID || ''),
+            plan_id: Number(candidate.planId),
+            deleted: 0,
+            status: 1,
+          },
+          orderBy: [{ synced_at: 'desc' }, { id: 'desc' }],
+          select: { synced_at: true },
+        })
+      : null;
+    const conflicts: RestrictionConflict[] = [];
+    const nightlyRates: NightlyRate[] = [];
+    if (!latest?.synced_at || !cache?.findMany) {
+      return this.buildValidationResult(candidate, [{
+        type: 'NO_RATE',
+        message: 'No current availability snapshot exists for the requested continuous stay.',
+      }], []);
+    }
+
+    const cachedRows = await cache.findMany({
+      where: {
+        quote_id: String((plan as any)?.itinerary_quote_ID || ''),
+        plan_id: Number(candidate.planId),
+        deleted: 0,
+        status: 1,
+        synced_at: latest.synced_at,
+        route_id: { in: candidate.routeIds },
+      },
+      select: { route_id: true, full_payload: true },
+    });
+    const parse = (value: any) => {
+      try { return typeof value === 'string' ? JSON.parse(value) : (value || {}); } catch { return {}; }
+    };
+    const normalize = (value: any) => String(value || '').trim().toLowerCase();
+    const property = normalize(candidate.hotelCode);
+    const room = normalize(candidate.roomType);
+    const meal = normalize(candidate.mealPlan);
+    const optionRows = (cachedRows || []).flatMap((row: any) => {
+      const payload = parse(row.full_payload);
+      const options = Array.isArray(payload.rateOptions) ? payload.rateOptions : [payload];
+      return options.map((option: any) => ({
+        ...payload,
+        ...option,
+        routeId: Number(row.route_id || payload.routeId || payload.itineraryRouteId || 0),
+        provider: String(option.provider || payload.provider || '').trim().toLowerCase(),
+        hotelCode: String(option.hotelCode || payload.hotelCode || option.providerHotelCode || payload.providerHotelCode || '').trim(),
+        roomType: option.roomType || option.roomTypeName || payload.roomType || payload.roomTypeName,
+        mealPlan: option.mealPlan || option.mealPlanCode || payload.mealPlan || payload.mealPlanCode,
+      }));
+    });
+
+    for (let index = 0; index < candidate.routeIds.length; index += 1) {
+      const routeId = Number(candidate.routeIds[index]);
+      const date = candidate.stayDates[index];
+      const matches = optionRows.filter((option: any) => {
+        if (Number(option.routeId) !== routeId) return false;
+        if (normalize(option.provider) !== normalize(candidate.provider)) return false;
+        const optionProperty = normalize(option.hotelCode || option.canonicalHotelId || option.hotelId);
+        if (property && optionProperty && optionProperty !== property) return false;
+        if (room && normalize(option.roomType) && normalize(option.roomType) !== room) return false;
+        if (meal && normalize(option.mealPlan) && normalize(option.mealPlan) !== meal) return false;
+        return true;
+      }).sort((left: any, right: any) => Number(left.totalPrice || left.totalStayPrice || left.pricePerNight || left.amountAfterTax || 0) - Number(right.totalPrice || right.totalStayPrice || right.pricePerNight || right.amountAfterTax || 0));
+      const option = matches[0];
+      if (!option) {
+        conflicts.push({ date, type: 'NO_RATE', message: `No current rate for ${candidate.hotelName || candidate.hotelCode} on ${date}.` });
+        continue;
+      }
+      const amount = Number(option.amountAfterTax ?? option.pricePerNight ?? option.totalPrice ?? option.totalStayPrice ?? option.totalAmount ?? 0);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        conflicts.push({ date, type: 'NO_RATE', message: `The current rate for ${candidate.hotelName || candidate.hotelCode} has no positive price on ${date}.` });
+        continue;
+      }
+      nightlyRates.push({
+        date,
+        routeId,
+        roomId: String(option.roomId || option.room_id || candidate.roomId || '').trim() || undefined,
+        rateId: String(option.rateId || option.rate_id || candidate.rateId || '').trim() || undefined,
+        roomType: option.roomType || candidate.roomType,
+        mealPlan: option.mealPlan || candidate.mealPlan,
+        rateOptionId: option.rateOptionId || option.rate_option_id || option.optionKey || option.bookingCode,
+        bookingCode: option.bookingCode,
+        searchReference: option.searchReference,
+        amountAfterTax: Number(amount.toFixed(2)),
+        baseAmount: Number((option.baseAmount ?? option.pricePerNight ?? amount).toFixed(2)),
+      });
+    }
+    return this.buildValidationResult(candidate, conflicts, nightlyRates);
   }
 
   private async tryBuildStaahMixedStay(

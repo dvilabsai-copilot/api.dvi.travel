@@ -205,7 +205,12 @@ export class HotelAvailabilitySnapshotService {
         option?.searchReference,
         option?.bookingCode,
       ].some((value: unknown) => String(value ?? '').trim() === selectedRateId));
-      if (exact) return exact;
+      // Once a persisted canonical rate id exists, an approximate
+      // room/meal/price match is unsafe. It can combine the old selected
+      // rate's money with another option's room label. The caller must treat
+      // a missing exact option as unavailable and reconcile to a fresh
+      // complete option instead.
+      return exact || null;
     }
     return rateOptions.find((option: any) =>
       optionMatchesSelection(selection, { ...row, ...option }),
@@ -729,25 +734,12 @@ export class HotelAvailabilitySnapshotService {
         : latestPayload?.recommendationTabs,
       options.groupType,
     );
-    // The recommendation payload is historical metadata. Once a user has
-    // selected rates, the selected payable rows are the authoritative package
-    // total for that group; keep the tab and summary on the same calculation.
-    const selectedTotalsByGroup = new Map<number, number>();
-    normalizedRows
-      .filter((row: any) => String(row?.selectionOrigin || '').trim().toUpperCase() === 'USER_SELECTED')
-      .forEach((row: any) => {
-        const group = Number(row?.groupType || 0);
-        const amount = Number(row?.selectedTotalPrice ?? row?.totalPrice ?? row?.totalHotelCost ?? 0);
-        if (group >= 1 && group <= 4 && Number.isFinite(amount) && amount > 0) {
-          selectedTotalsByGroup.set(group, Number(((selectedTotalsByGroup.get(group) || 0) + amount).toFixed(2)));
-        }
-      });
-    const tabs = builtTabs.map((tab: any) => {
-      const selectedTotal = selectedTotalsByGroup.get(Number(tab?.groupType || 0));
-      return selectedTotal && selectedTotal > 0
-        ? { ...tab, totalAmount: selectedTotal, partialTotal: tab.partialTotal == null ? tab.partialTotal : selectedTotal }
-        : tab;
-    });
+    // buildTabs already resolves one authoritative payable option per logical
+    // stay. Do not replace that result by summing USER_SELECTED rows: a
+    // partial snapshot may contain a fresh selectable night plus an
+    // unavailable persisted night, and summing only the latter drops the
+    // fresh night's amount from the package total.
+    const tabs = builtTabs;
     const page = Math.max(1, Number(options.page || 1));
     // pageSize=0 is the complete-snapshot contract used by reset and by the
     // unfiltered edit/reload endpoint. Filtered and explicit page requests
@@ -1810,6 +1802,9 @@ export class HotelAvailabilitySnapshotService {
       1,
     );
     const selectedOption = this.selectedRateOption(selection, row);
+    const persistedRateId = String(
+      selection?.selected_rate_option_id || snapshot?.rateOptionId || '',
+    ).trim();
     const currentRow = selectedOption ? { ...row, ...selectedOption } : row;
     // The property fallback is only an identity reconciliation. It must not
     // copy the persisted price from an older room/rate/provider onto the
@@ -1856,12 +1851,16 @@ export class HotelAvailabilitySnapshotService {
     // selection from another provider is rejected by hotelPropertyMatchesSelection
     // before this method is called, so this does not resurrect old TBO money
     // on a new offline/live row.
-    const selectedTotal = hasPersistedSelection && providerMatches && persistedTotal > 0
+    const selectedTotal = selectedOption && currentTotal > 0
+      ? currentTotal
+      : hasPersistedSelection && providerMatches && persistedTotal > 0
       ? persistedTotal
       : currentTotal > 0
         ? currentTotal
         : persistedTotal;
-    const selectedPerNight = hasPersistedSelection && providerMatches && persistedPerNight > 0
+    const selectedPerNight = selectedOption && currentPerNight > 0
+      ? currentPerNight
+      : hasPersistedSelection && providerMatches && persistedPerNight > 0
       ? persistedPerNight
       : currentPerNight > 0
         ? currentPerNight
@@ -2306,13 +2305,46 @@ export class HotelAvailabilitySnapshotService {
       Number(row?.selectionId || row?.itineraryPlanHotelDetailsId || 0) > 0,
     );
     const overlayUserSelectedTabTotal = (tab: any): any => {
-      const selectedRows = (rows || []).filter((row: any) =>
-        Number(row?.groupType || 0) === Number(tab?.groupType || 0) &&
+      const groupRows = (rows || []).filter((row: any) =>
+        Number(row?.groupType || 0) === Number(tab?.groupType || 0),
+      );
+      const selectedRows = groupRows.filter((row: any) =>
         String(row?.selectionOrigin || '').trim().toUpperCase() === 'USER_SELECTED',
       );
       if (selectedRows.length === 0) return tab;
-      const totalAmount = selectedRows.reduce((sum: number, row: any) =>
-        sum + selectedAmount(row), 0);
+
+      // A partial snapshot can contain a user-selected unavailable night and
+      // a fresh selectable night. Summing only USER_SELECTED rows drops the
+      // fresh night; summing every row double-counts a multi-night stay. Use
+      // one authoritative amount per route/date/stay identity instead.
+      const stayIdentity = (row: any): string => {
+        const stayKey = String(row?.stayKey || row?.stay_key || '').trim();
+        if (stayKey) return stayKey;
+        const routeIds = [
+          row?.itineraryRouteId,
+          row?.routeId,
+          ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
+        ].map((value: unknown) => Number(value || 0)).filter((value: number) => value > 0).sort((a, b) => a - b);
+        const date = String(row?.date || row?.checkInDate || row?.itineraryRouteDate || '').slice(0, 10);
+        return `${routeIds.join(',')}|${date}`;
+      };
+      const byStay = new Map<string, any[]>();
+      groupRows.forEach((row: any) => {
+        const key = stayIdentity(row);
+        byStay.set(key, [...(byStay.get(key) || []), row]);
+      });
+      const totalAmount = Array.from(byStay.values()).reduce((sum: number, stayRows: any[]) => {
+        const selected = stayRows.find((row: any) =>
+          String(row?.selectionOrigin || '').trim().toUpperCase() === 'USER_SELECTED',
+        );
+        const selectable = stayRows.filter((row: any) =>
+          row?.isBookable !== false && row?.isSelectable !== false && row?.isPlaceholder !== true,
+        );
+        const chosen = selected || [...selectable, ...stayRows]
+          .filter((row: any) => selectedAmount(row) > 0)
+          .sort((left: any, right: any) => selectedAmount(left) - selectedAmount(right))[0];
+        return sum + selectedAmount(chosen);
+      }, 0);
       if (!Number.isFinite(totalAmount) || totalAmount <= 0) return tab;
       return {
         ...tab,
@@ -2387,7 +2419,10 @@ export class HotelAvailabilitySnapshotService {
         .map((value: unknown) => Number(value || 0))
         .filter((value: number) => Number.isFinite(value) && value > 0),
     );
-    const storedTabsMatchCurrentRoutes = storedTabs.length > 0 && storedTabs.every((tab: any) =>
+    const storedTabsMatchCurrentRoutes = storedTabs.length > 0 && (
+      !routes.length ||
+      currentAvailabilityRouteIds.size === 0 ||
+      storedTabs.every((tab: any) =>
       Array.isArray(tab?.stayResults) &&
       tab.stayResults.length > 0 &&
       tab.stayResults.every((stay: any) => {
@@ -2399,6 +2434,7 @@ export class HotelAvailabilitySnapshotService {
           .filter((value: number) => Number.isFinite(value) && value > 0);
         return stayRouteIds.some((routeId: number) => currentAvailabilityRouteIds.has(routeId));
       }),
+      )
     );
 
     // Fresh searches carry the totals generated by the recommendation engine.

@@ -7,10 +7,10 @@ export class StayExtensionPreviewDto {
   @Min(1)
   routeId!: number;
 
-  @ApiProperty({ example: 'staah', enum: ['staah', 'axisrooms'] })
+  @ApiProperty({ example: 'staah', enum: ['staah', 'axisrooms', 'tbo', 'offline'] })
   @IsString()
-  @IsIn(['staah', 'axisrooms'])
-  provider!: 'staah' | 'axisrooms';
+  @IsIn(['staah', 'axisrooms', 'tbo', 'offline'])
+  provider!: 'staah' | 'axisrooms' | 'tbo' | 'offline';
 
   @ApiProperty({ example: '934001' })
   @IsString()
