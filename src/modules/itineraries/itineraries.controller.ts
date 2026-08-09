@@ -1239,6 +1239,17 @@ async getAvailableActivities(
     });
   }
 
+  @Post('hotels/select-intent')
+  @ApiOperation({ summary: 'Refresh, resolve, validate, and persist a hotel selection intent' })
+  async selectHotelIntent(@Body() body: any, @Req() req: Request) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
+    return this.svc.selectHotelIntent({
+      ...body,
+      requestedBy: Number((req as any).user?.userId || 1),
+    });
+  }
+
   @Post('hotels/bulk-save')
   @ApiOperation({ summary: 'Save multiple hotel selections at once before confirming itinerary' })
   @ApiBody({

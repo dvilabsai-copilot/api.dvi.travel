@@ -2644,11 +2644,21 @@ export class HotelAvailabilitySnapshotService {
       // contain several nested room/meal options and must never win with a
       // different identity or price.
       const matched = options.find((row: any) => optionMatchesSelection(selection, row));
-      const sameHotel = this.findNearestReplacement(
-        selection,
-        options.filter((row: any) => hotelPropertyMatchesSelection(selection, row)),
+      // AUTO_SELECTED is recomputed from the current eligible snapshot. It
+      // must never be pulled toward the previous price. USER_SELECTED keeps
+      // the existing nearest same-property fallback for legacy review flows,
+      // but an auto selection always follows the current lowest-price policy.
+      const sameHotel = origin === 'USER_SELECTED'
+        ? this.findNearestReplacement(
+            selection,
+            options.filter((row: any) => hotelPropertyMatchesSelection(selection, row)),
+          )
+        : null;
+      const replacement = matched || sameHotel || (
+        origin === 'USER_SELECTED'
+          ? this.findNearestReplacement(selection, options)
+          : this.findLowestReplacement(options)
       );
-      const replacement = matched || sameHotel || this.findNearestReplacement(selection, options);
       const previousSnapshot = { ...selection, ...parseHotelSelectionSnapshot(selection) };
       const previous = hotelDisplaySnapshot(previousSnapshot);
 
@@ -2985,12 +2995,6 @@ export class HotelAvailabilitySnapshotService {
       }
     }
 
-    const providerRank = (provider: unknown): number => {
-      const value = String(provider || '').trim().toLowerCase();
-      if (value === 'axisrooms') return 0;
-      if (value === 'offline') return 2;
-      return 1;
-    };
     for (const [key, options] of optionsByKey.entries()) {
       if (existingKeys.has(key)) continue;
       const mealPlanOptions = this.filterRowsByMealPlan(options, preferredMealPlanCode);
@@ -3000,14 +3004,11 @@ export class HotelAvailabilitySnapshotService {
         !liveSelectionKeys.has(key),
       );
       if (eligibleOptions.length === 0) continue;
-      const option = [...mealPlanOptions].sort((a, b) => {
-        const providerDelta = providerRank(a.provider) - providerRank(b.provider);
-        if (providerDelta !== 0) return providerDelta;
-        const priceDelta = Number(a.totalStayPrice ?? a.totalHotelCost ?? a.totalPrice ?? 0) -
-          Number(b.totalStayPrice ?? b.totalHotelCost ?? b.totalPrice ?? 0);
+      const option = [...eligibleOptions].sort((a, b) => {
+        const priceDelta = this.authoritativeAutoTotal(a) - this.authoritativeAutoTotal(b);
         if (priceDelta !== 0) return priceDelta;
         return this.optionKey(a).localeCompare(this.optionKey(b));
-      }).find((candidate) => eligibleOptions.includes(candidate));
+      })[0];
       if (!option) continue;
 
       const provider = String(option.provider || 'external').trim().toLowerCase();
@@ -3148,6 +3149,38 @@ export class HotelAvailabilitySnapshotService {
       if (providerDelta !== 0) return providerDelta;
       return this.optionKey(left).localeCompare(this.optionKey(right));
     })[0] || null;
+  }
+
+  /**
+   * AUTO_SELECTED policy: current eligible price first, deterministic
+   * identity second. Historical selected price and supplier rank are not
+   * inputs to this decision.
+   */
+  private authoritativeAutoTotal(row: any): number {
+    const amount = Number(
+      row?.totalStayPrice ??
+      row?.totalPrice ??
+      row?.totalHotelCost ??
+      row?.totalAmountAfterTax ??
+      row?.totalAmount ??
+      row?.price ??
+      row?.pricePerNight ??
+      0,
+    );
+    return Number.isFinite(amount) && amount > 0 ? amount : Number.MAX_SAFE_INTEGER;
+  }
+
+  private findLowestReplacement(options: any[], allowOfflineFallback = true): any | null {
+    const selectable = (options || []).filter((row: any) =>
+      row?.isBookable !== false && row?.isSelectable !== false,
+    );
+    if (selectable.length === 0) return null;
+    const live = selectable.filter((row: any) => String(row?.provider || '').trim().toLowerCase() !== 'offline');
+    const candidates = live.length > 0 ? live : allowOfflineFallback ? selectable : [];
+    return [...candidates].sort((left, right) =>
+      this.authoritativeAutoTotal(left) - this.authoritativeAutoTotal(right) ||
+      this.optionKey(left).localeCompare(this.optionKey(right)),
+    )[0] || null;
   }
 
   private buildSelectionUpdate(selection: any, option: any, origin: string, searchRunId: string): Record<string, unknown> {

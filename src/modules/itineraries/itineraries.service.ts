@@ -601,6 +601,8 @@ export class ItinerariesService {
       routeEngine,
       itineraryVehiclesEngine,
       hotelDetailsTboService,
+      undefined,
+      hotelAvailabilitySnapshotService,
     ),
     private readonly quoteContextService: ItineraryQuoteContextService = new ItineraryQuoteContextService(prisma),
     private readonly confirmationService: ItineraryConfirmationService = new ItineraryConfirmationService(
@@ -1623,6 +1625,106 @@ private getGuideSlotLabel(slotId: number): string {
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
   }) {
     return this.selectionWorkflowService.selectHotel(data);
+  }
+
+  /**
+   * Server-owned selection intent.  The browser identifies what the user
+   * meant; the current snapshot and supplier refresh determine the option and
+   * price that are persisted.
+   */
+  async selectHotelIntent(data: any) {
+    const intent = String(data.selectionIntent || 'RATE_OPTION').trim().toUpperCase();
+    if (!['HOTEL', 'ROOM_TYPE', 'MEAL_PLAN', 'RATE_OPTION'].includes(intent)) {
+      throw new BadRequestException('selectionIntent must be HOTEL, ROOM_TYPE, MEAL_PLAN, or RATE_OPTION');
+    }
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: Number(data.planId) },
+    });
+    if (!plan) throw new NotFoundException('Itinerary plan not found');
+    const quoteId = String((plan as any).itinerary_quote_ID || '');
+    const provider = String(data.provider || '').trim().toLowerCase();
+    const hotelCode = String(data.hotelCode || data.providerHotelCode || data.hotelId || '').trim();
+
+    if (provider && hotelCode && provider !== 'offline') {
+      const refreshed = await this.hotelDetailsTboService.getSelectedHotelRates(
+        quoteId,
+        Number(data.routeId),
+        provider,
+        hotelCode,
+        Number(data.groupType || 1),
+      );
+      await this.hotelAvailabilitySnapshotService.mergeSelectedHotelRates(
+        quoteId,
+        Number(data.routeId),
+        provider,
+        hotelCode,
+        Array.isArray(refreshed?.hotels) ? refreshed.hotels : [],
+      );
+    }
+
+    const snapshotRows = await this.hotelAvailabilitySnapshotService.getActiveRows(quoteId) || [];
+    const candidates = snapshotRows.flatMap((row: any) => {
+      const options = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row];
+      return options.map((option: any) => ({
+        ...row,
+        ...option,
+        provider: option.provider || row.provider,
+        hotelId: option.hotelId ?? row.hotelId,
+        canonicalHotelId: option.canonicalHotelId ?? row.canonicalHotelId ?? row.hotelId,
+        hotelCode: option.hotelCode || row.hotelCode || row.providerHotelCode,
+        hotelName: option.hotelName || row.hotelName,
+        roomType: option.roomType || option.roomTypeName || row.roomType,
+        mealPlan: option.mealPlan || option.mealPlanCode || row.mealPlan,
+        rateOptionId: option.rateOptionId || option.rate_option_id || row.rateOptionId,
+        optionKey: option.optionKey || option.option_key || row.optionKey,
+      }));
+    }).filter((option: any) => {
+      const routeMatches = Number(option.itineraryRouteId || option.routeId || option.route_id || 0) === Number(data.routeId);
+      const dateMatches = !data.routeDate || String(option.date || option.checkInDate || '').slice(0, 10) === String(data.routeDate).slice(0, 10);
+      const propertyMatches = Number(data.canonicalHotelId || data.hotelId || 0) > 0
+        ? Number(option.canonicalHotelId || option.hotelId || 0) === Number(data.canonicalHotelId || data.hotelId)
+        : String(option.hotelCode || '').trim().toLowerCase() === hotelCode.toLowerCase();
+      return routeMatches && dateMatches && propertyMatches && option.isSelectable !== false && option.isBookable !== false;
+    });
+    const requestedRoom = String(data.roomType || '').trim().toLowerCase();
+    const requestedMeal = String(data.mealPlanCode || data.mealPlan || '').trim().toLowerCase();
+    const requestedRate = String(data.rateOptionId || data.optionKey || '').trim();
+    const filtered = candidates.filter((option: any) => {
+      if (intent === 'ROOM_TYPE' && requestedRoom && String(option.roomType || option.roomTypeName || '').trim().toLowerCase() !== requestedRoom) return false;
+      if (intent === 'MEAL_PLAN' && requestedRoom && String(option.roomType || option.roomTypeName || '').trim().toLowerCase() !== requestedRoom) return false;
+      if (intent === 'MEAL_PLAN' && requestedMeal && String(option.mealPlan || option.mealPlanCode || '').trim().toLowerCase() !== requestedMeal) return false;
+      if (intent === 'RATE_OPTION' && requestedRate && ![option.rateOptionId, option.optionKey].map(String).includes(requestedRate)) return false;
+      return true;
+    });
+    const ordered = [...filtered].sort((left, right) =>
+      Number(left.totalStayPrice ?? left.totalPrice ?? left.totalAmountAfterTax ?? left.pricePerNight ?? Number.MAX_SAFE_INTEGER) -
+      Number(right.totalStayPrice ?? right.totalPrice ?? right.totalAmountAfterTax ?? right.pricePerNight ?? Number.MAX_SAFE_INTEGER),
+    );
+    const selected = ordered[0];
+    if (!selected) {
+      if (intent === 'RATE_OPTION') throw new BadRequestException('The selected hotel rate is stale or unavailable');
+      throw new BadRequestException('No current hotel option matches the requested selection intent');
+    }
+    return this.selectionWorkflowService.selectHotel({
+      ...data,
+      hotelId: Number(selected.canonicalHotelId || selected.hotelId || data.hotelId || 0),
+      canonicalHotelId: Number(selected.canonicalHotelId || selected.hotelId || data.canonicalHotelId || 0),
+      roomTypeId: Number(selected.roomTypeId || data.roomTypeId || 1),
+      provider: selected.provider,
+      hotelCode: selected.hotelCode,
+      rateOptionId: selected.rateOptionId || selected.optionKey,
+      optionKey: selected.optionKey,
+      hotelName: selected.hotelName,
+      roomType: selected.roomType || selected.roomTypeName,
+      mealPlanCode: selected.mealPlanCode || selected.mealPlan,
+      roomId: selected.roomId,
+      rateId: selected.rateId,
+      pricePerNight: selected.pricePerNight,
+      totalPrice: selected.totalStayPrice ?? selected.totalPrice,
+      bookingCode: selected.bookingCode,
+      searchReference: selected.searchReference,
+      currency: selected.currency,
+    });
   }
 
  /**
