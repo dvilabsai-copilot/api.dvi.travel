@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { PrismaService } from '../../prisma.service';
+import { ItineraryPricingService } from './itinerary-pricing.service';
 
 type ItineraryExportResult = { workbook: ExcelJS.Workbook; fileName: string };
 
@@ -68,22 +69,16 @@ export class ItineraryExportService {
         GROUP BY h.itinerary_plan_hotel_details_ID, h.itinerary_route_date ORDER BY h.itinerary_route_date ASC`;
       let overallCost = 0, overallSales = 0, overallPL = 0;
       for (const d of details) {
-        const extraBedCost = this.hotelExtraBedCost(d);
+        const extraBedCost = this.num(d.total_extra_bed_cost) || this.hotelExtraBedCost(d);
         const roomRent = this.num(d.total_room_cost) + this.num(d.total_room_gst_amount);
-        const storedMargin = this.num(d.hotel_margin_rate);
-        const storedMarginTax = this.num(d.hotel_margin_rate_tax_amt);
-        const savedRoomBase = this.num(d.total_room_cost) || this.num(d.selected_total_price);
-        const totalSales = this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + extraBedCost + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
-        const persistedTotalDifference = Math.max(
-          this.num(d.total_hotel_cost) + this.num(d.total_hotel_tax_amount) - totalSales,
-          0,
-        );
-        const margin = storedMargin || persistedTotalDifference ||
-          (hotelMarginPercentage > 0 ? (savedRoomBase * hotelMarginPercentage) / 100 : 0);
-        const totalCost = margin + storedMarginTax + this.num(d.total_hotel_meal_plan_cost) + this.num(d.total_hotel_meal_plan_cost_gst_amount) + extraBedCost + this.num(d.total_extra_bed_cost_gst_amount) + this.num(d.total_childwith_bed_cost) + this.num(d.total_childwith_bed_cost_gst_amount) + this.num(d.total_childwithout_bed_cost) + this.num(d.total_childwithout_bed_cost_gst_amount) + this.num(d.total_room_cost) + this.num(d.total_room_gst_amount) + this.num(d.total_amenities_cost) + this.num(d.total_amenities_gst_amount);
-        const pl = totalCost - totalSales; overallCost += totalCost; overallSales += totalSales; overallPL += pl;
+        const pricing = ItineraryPricingService.hotel({ ...d, total_extra_bed_cost: extraBedCost });
+        const storedMargin = pricing.margin;
+        const storedMarginTax = pricing.marginGst;
+        const totalSales = pricing.sales;
+        const totalCost = pricing.cost;
+        const pl = pricing.pl; overallCost += totalCost; overallSales += totalSales; overallPL += pl;
         const meals = [['B', d.breakfast_required, d.breakfast_cost_per_person], ['L', d.lunch_required, d.lunch_cost_per_person], ['D', d.dinner_required, d.dinner_cost_per_person]].filter(([, required, cost]) => Number(required) === 1 && this.num(cost) !== 0).map(([label]) => label).join(', ') || 'EP';
-        this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', this.hotelName(d), d.room_type_title || '', meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), extraBedCost, this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), margin, storedMarginTax, totalCost, totalSales, pl], styles.data, 21, 10);
+        this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', this.hotelName(d), d.room_type_title || '', meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), extraBedCost, this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), storedMargin, storedMarginTax, totalCost, totalSales, pl], styles.data, 21, 10);
         row += 1;
       }
       if (details.length) {
@@ -106,7 +101,8 @@ export class ItineraryExportService {
       for (const v of vehicles) {
         this.writeRow(sheet, row, vehicleHeaders, styles.yellow, 26); row += 1;
         const qty = this.num(v.total_vehicle_qty), grand = this.num(v.vehicle_grand_total), margin = this.num(v.vendor_margin_amount), marginTax = this.num(v.vendor_margin_gst_amount);
-        const totalAmount = Math.round(qty * grand), totalSale = Math.round(totalAmount - margin - marginTax), totalPL = Math.round(margin + marginTax);
+        const pricing = ItineraryPricingService.vehicle(v);
+        const totalAmount = Math.round(pricing.cost), totalSale = Math.round(pricing.sales), totalPL = Math.round(pricing.pl);
         const details = await this.prisma.$queryRaw<any[]>`SELECT d.*, r.location_name, r.next_visiting_location FROM dvi_itinerary_plan_vendor_vehicle_details d LEFT JOIN dvi_itinerary_route_details r ON r.itinerary_route_ID = d.itinerary_route_id WHERE d.itinerary_plan_vendor_eligible_ID = ${Number(v.itinerary_plan_vendor_eligible_ID)} AND d.deleted = 0 AND d.status = 1 ORDER BY d.itinerary_route_date ASC, d.itinerary_route_id ASC`;
         const pickupKm = details.reduce((sum, d) => sum + this.num(d.total_pickup_km), 0), dropKm = details.reduce((sum, d) => sum + this.num(d.total_drop_km), 0);
         this.writeRow(sheet, row, [v.vendor_name || '-', v.vendor_branch_name || '-', v.vehicle_orign || '', `Day- ${noOfDays}`, this.round(v.total_rental_charges), this.round(v.total_toll_charges), this.round(v.total_parking_charges), this.round(v.total_driver_charges), this.round(v.total_permit_charges), this.round(v.total_before_6_am_charges_for_driver), this.round(v.total_before_6_am_charges_for_vehicle), this.round(v.total_after_8_pm_charges_for_driver), this.round(v.total_after_8_pm_charges_for_vehicle), this.round(v.total_kms), this.round(v.total_allowed_kms), this.round(v.total_allowed_local_kms), this.round(v.extra_km_rate), this.round(this.num(v.total_extra_kms) + this.num(v.total_extra_local_kms)), this.round(this.num(v.total_extra_kms_charge) + this.num(v.total_extra_local_kms_charge)), this.round(v.vehicle_total_amount), this.round(v.vehicle_gst_amount), this.round(margin), this.round(marginTax), totalAmount, totalSale, totalPL], styles.data, 26, 5, 26);

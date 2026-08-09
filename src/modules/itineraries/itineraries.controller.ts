@@ -1501,6 +1501,7 @@ async exportToExcel(
       roomType: body.roomType,
       mealPlan: body.mealPlan,
       checkInDate: body.checkInDate,
+      groupType: body.groupType,
     });
   }
 

@@ -64,6 +64,18 @@ export interface HotelSearchResult {
   pricePerNight?: number;
   totalStayPrice?: number;
   numberOfNights?: number;
+  extraBedCount?: number;
+  extraBedRate?: number;
+  extraBedAmount?: number;
+  childWithBedCount?: number;
+  childWithBedRate?: number;
+  childWithBedAmount?: number;
+  childWithoutBedCount?: number;
+  childWithoutBedRate?: number;
+  childWithoutBedAmount?: number;
+  extraChildCount?: number;
+  extraChildRate?: number;
+  extraChildAmount?: number;
   nightlyRates?: Array<{
     date: string;
     baseAmount: number;

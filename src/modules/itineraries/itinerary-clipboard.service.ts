@@ -1084,22 +1084,13 @@ export class ItineraryClipboardService {
         ? selectedVehicleAmount
         : Number(incomingCost.totalVehicleAmount || incomingCost.totalVehicleCost || 0);
 
-    const totalAmount =
-      totalRoomCost +
-      vehicleAmount +
-      totalAmenitiesCost +
-      extraBedCost +
-      childWithBedCost +
-      childWithoutBedCost +
-      totalGuideCost +
-      totalHotspotCost +
-      totalActivityCost +
-      additionalMargin;
-
+    // The details endpoint is the single pricing authority. Clipboard output
+    // may format its rows, but must never rebuild the payable calculation.
+    const totalAmount = Number(incomingCost.totalAmount || 0);
     const couponDiscount = Number(incomingCost.couponDiscount || 0);
     const agentMargin = Number(incomingCost.agentMargin || 0);
     const totalRoundOff = Number(incomingCost.totalRoundOff || 0);
-    const netPayable = totalAmount - couponDiscount + agentMargin + totalRoundOff;
+    const netPayable = Number(incomingCost.netPayable || 0);
 
     const costBreakdown = {
       ...incomingCost,

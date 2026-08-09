@@ -169,6 +169,14 @@ export class ItinerarySelectionWorkflowService {
       }),
     ]);
     const quoteId = (plan as any)?.itinerary_quote_ID || '';
+    // The itinerary occupancy is the minimum authoritative room count. Older
+    // frontend payloads can still send roomCount=1 from a supplier row even
+    // when the plan requests multiple rooms.
+    const itineraryRoomCount = Math.max(Number((plan as any)?.preferred_room_count || 1), 1);
+    data = {
+      ...data,
+      roomCount: Math.max(Number(data.roomCount || 1), itineraryRoomCount),
+    };
     const normalizedProvider = String(data.provider || '').trim().toLowerCase();
     const hasLiveSupplierRateIdentity =
       ['tbo', 'axisrooms', 'staah', 'resavenue', 'hobse'].includes(normalizedProvider) &&
@@ -259,11 +267,15 @@ export class ItinerarySelectionWorkflowService {
     const persistedHotelId = canonicalHotelId > 0 ? canonicalHotelId : null;
     const persistedHotelCode =
       String(data.hotelCode || existingHotelDetails?.hotel_code || '').trim() || null;
-    const selectionPricing = resolveHotelSelectionPricing({
+    let selectionPricing = resolveHotelSelectionPricing({
       totalPrice: data.totalPrice,
       pricePerNight: data.pricePerNight,
       roomCount: data.roomCount,
     });
+    let axisRoomsBasePrice = 0;
+    if (String(data.provider || '').trim().toLowerCase() === 'axisrooms') {
+      axisRoomsBasePrice = await this.resolveAxisRoomsSelectionBasePrice(data, route);
+    }
     const extraBedCount = Math.max(Math.trunc(Number(data.extraBedCount || 0)), 0);
     const extraBedRate = Math.max(Number(data.extraBedRate || 0), 0);
     const extraBedAmount = Math.max(
@@ -280,12 +292,56 @@ export class ItinerarySelectionWorkflowService {
         })
       : null;
     const configuredMargin = globalSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0;
-    const hotelMarginPercentage = Math.max(Number(data.hotelMarginPercentage ?? configuredMargin ?? 0), 0);
-    const hotelMarginRate = Math.max(
-      Number(data.hotelMarginStayAmount ?? data.hotelMarginAmount ?? 0) ||
-        (selectionPricing.totalPrice * hotelMarginPercentage) / 100,
+    const requestedHotelMargin = Number(data.hotelMarginPercentage);
+    const providerForPricing = String(data.provider || '').trim().toLowerCase();
+    const hotelMarginPercentage = Math.max(
+      providerForPricing === 'axisrooms' && (!Number.isFinite(requestedHotelMargin) || requestedHotelMargin <= 0)
+        ? Number(configuredMargin || 0)
+        : Number(data.hotelMarginPercentage ?? configuredMargin ?? 0),
       0,
     );
+    // STAAH's nightly occupancy amount is the supplier room cost before our
+    // margin.  Older clients sent the previous row's margin amount, which
+    // caused a fresh ₹1,630 rate to be reconciled as ₹1,666 (using the stale
+    // ₹290 margin from a ₹1,450 rate).  Derive the payable amount and margin
+    // from this option's own base amount instead.
+    const staahBasePricePerNight = providerForPricing === 'staah'
+      ? Math.max(Number(data.pricePerNight || 0), 0)
+      : 0;
+    const staahBaseTotal = staahBasePricePerNight > 0
+      ? Number((staahBasePricePerNight * Math.max(Number(data.roomCount || 1), 1)).toFixed(2))
+      : 0;
+    const staahMarginRate = staahBaseTotal > 0
+      ? Number((staahBaseTotal * hotelMarginPercentage / 100).toFixed(2))
+      : 0;
+    if (providerForPricing === 'staah' && staahBaseTotal > 0) {
+      data.pricePerNight = Number((staahBasePricePerNight * (1 + hotelMarginPercentage / 100)).toFixed(2));
+      data.totalPrice = Number((staahBaseTotal + staahMarginRate).toFixed(2));
+      selectionPricing = resolveHotelSelectionPricing({
+        totalPrice: data.totalPrice,
+        pricePerNight: data.pricePerNight,
+        roomCount: data.roomCount,
+      });
+    }
+    if (axisRoomsBasePrice > 0) {
+      const authoritativePayable = Number((axisRoomsBasePrice * (1 + hotelMarginPercentage / 100)).toFixed(2));
+      // AxisRooms selections must be priced from the matching ARI row, never
+      // from a stale client payload that can combine another option's total.
+      data.pricePerNight = authoritativePayable;
+      data.totalPrice = authoritativePayable;
+      selectionPricing = resolveHotelSelectionPricing({
+        totalPrice: authoritativePayable,
+        pricePerNight: authoritativePayable,
+        roomCount: data.roomCount,
+      });
+    }
+    const hotelMarginRate = providerForPricing === 'staah' && staahMarginRate > 0
+      ? staahMarginRate
+      : Math.max(
+        Number(data.hotelMarginStayAmount ?? data.hotelMarginAmount ?? 0) ||
+          (selectionPricing.totalPrice * hotelMarginPercentage) / 100,
+        0,
+      );
     const hotelMarginRateTaxAmount = Math.max(Number(data.hotelMarginGstAmount || 0), 0);
 
     const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
@@ -329,8 +385,11 @@ export class ItinerarySelectionWorkflowService {
           selected_total_price: selectionPricing.totalPrice || null,
           total_no_of_rooms: selectionPricing.roomCount,
           total_room_cost: selectionPricing.totalPrice || null,
-          hotel_margin_rate: hotelMarginRate || null,
-          hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount || null,
+          // This column is non-nullable; zero is a valid margin amount.
+          hotel_margin_percentage: hotelMarginPercentage,
+          hotel_margin_rate: hotelMarginRate,
+          // This column is non-nullable; zero is a valid tax amount.
+          hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount,
           total_hotel_cost: selectionPricing.totalPrice || null,
           total_extra_bed_cost: extraBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
@@ -356,6 +415,14 @@ export class ItinerarySelectionWorkflowService {
             hotelMarginPercentage,
             hotelMarginAmount: hotelMarginRate,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
+            basePricePerNight: axisRoomsBasePrice || null,
+            pricePerNight: data.pricePerNight ?? null,
+            totalPrice: selectionPricing.totalPrice || null,
+            ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
+              basePricePerNight: staahBasePricePerNight,
+              baseTotalPrice: staahBaseTotal,
+              roomCostTaxAmount: 0,
+            } : {}),
           }),
         },
       });
@@ -401,8 +468,11 @@ export class ItinerarySelectionWorkflowService {
           selected_total_price: selectionPricing.totalPrice || null,
           total_no_of_rooms: selectionPricing.roomCount,
           total_room_cost: selectionPricing.totalPrice || null,
-          hotel_margin_rate: hotelMarginRate || null,
-          hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount || null,
+          // This column is non-nullable; zero is a valid margin amount.
+          hotel_margin_percentage: hotelMarginPercentage,
+          hotel_margin_rate: hotelMarginRate,
+          // This column is non-nullable; zero is a valid tax amount.
+          hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount,
           total_hotel_cost: selectionPricing.totalPrice || null,
           total_extra_bed_cost: extraBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
@@ -428,6 +498,14 @@ export class ItinerarySelectionWorkflowService {
             hotelMarginPercentage,
             hotelMarginAmount: hotelMarginRate,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
+            basePricePerNight: axisRoomsBasePrice || null,
+            pricePerNight: data.pricePerNight ?? null,
+            totalPrice: selectionPricing.totalPrice || null,
+            ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
+              basePricePerNight: staahBasePricePerNight,
+              baseTotalPrice: staahBaseTotal,
+              roomCostTaxAmount: 0,
+            } : {}),
           }),
         },
       });
@@ -1075,6 +1153,72 @@ export class ItinerarySelectionWorkflowService {
       const values = row?.occupancy_rates && typeof row.occupancy_rates === 'object' ? Object.values(row.occupancy_rates) : [];
       return values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
     });
+  }
+
+  private async resolveAxisRoomsSelectionBasePrice(data: any, route?: any): Promise<number> {
+    const identity = this.parseAxisRoomsRateReference(data);
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!identity.hotelId || !identity.roomId || !identity.rateplanId || !routeDate || !occupancyModel?.findMany) {
+      return 0;
+    }
+    const rows = await occupancyModel.findMany({
+      where: {
+        hotel_id: identity.hotelId,
+        room_id: identity.roomId,
+        rateplan_id: identity.rateplanId,
+        start_date: { lte: new Date(`${routeDate}T00:00:00.000Z`) },
+        end_date: { gte: new Date(`${routeDate}T00:00:00.000Z`) },
+      },
+      select: { occupancy_rates: true, start_date: true, end_date: true, received_at: true },
+      orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+    });
+    if (!Array.isArray(rows) || rows.length === 0) return 0;
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: Number(data.planId) },
+      select: {
+        total_adult: true,
+        total_child_with_bed: true,
+        total_extra_bed: true,
+      } as any,
+    });
+    const roomCount = Math.max(Math.trunc(Number(data.roomCount || 1)), 1);
+    const amount = this.extractAxisroomsRate(rows[0].occupancy_rates, {
+      roomCount,
+      adults: Number((plan as any)?.total_adult || 0),
+      childWithBedCount: Number((plan as any)?.total_child_with_bed || 0),
+      extraBedCount: Number((plan as any)?.total_extra_bed || 0),
+    });
+    return Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : 0;
+  }
+
+  private extractAxisroomsRate(
+    occupancyRates: unknown,
+    pax?: { roomCount?: number; adults?: number; childWithBedCount?: number; extraBedCount?: number },
+  ): number {
+    const values = occupancyRates && typeof occupancyRates === 'object'
+      ? occupancyRates as Record<string, unknown>
+      : {};
+    const roomCount = Math.max(Math.trunc(Number(pax?.roomCount || 1)), 1);
+    const adults = Math.max(Math.trunc(Number(pax?.adults || 0)), 0);
+    if (adults > 0) {
+      const adultsPerRoom = Math.max(Math.ceil(adults / roomCount), 1);
+      const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : adultsPerRoom === 2 ? 'DOUBLE' : adultsPerRoom === 3 ? 'TRIPLE' : 'QUAD';
+      const roomRate = Number(values[occupancyKey]);
+      if (Number.isFinite(roomRate) && roomRate > 0) {
+        const extraBeds = Math.max(
+          Math.trunc(Number(pax?.childWithBedCount || 0)) + Math.trunc(Number(pax?.extraBedCount || 0)),
+          0,
+        );
+        const extraBedRate = Number(values.EXTRABED ?? values.EXTRAADULT ?? values.EXTRACHILD ?? 0);
+        return roomRate * roomCount + (Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate * extraBeds : 0);
+      }
+    }
+    for (const key of ['SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'EXTRABED']) {
+      const value = Number(values[key]);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+    return 0;
   }
 
   private async getVehicleRateAvailabilityForEligible(

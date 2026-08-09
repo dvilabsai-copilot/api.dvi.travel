@@ -695,6 +695,83 @@ test('persisted selection matches a nested supplier rate without marking the hot
   assert.equal((service as any).rowMatchesSelection(selection, row), true);
 });
 
+test('reconciliation uses selected rate id first and persists one complete nested option', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const { tx, selections } = makeReconciliationTx();
+  selections[0].selected_rate_option_id = 'rate-1';
+  selections[0].selected_total_price = 2304;
+  selections[0].selected_price_per_night = 1152;
+  selections[0].selected_price_snapshot = JSON.stringify({
+    provider: 'staah',
+    hotelCode: 'H-1',
+    roomType: 'Suite Room',
+    mealPlan: 'MAP',
+    rateOptionId: 'rate-1',
+    totalPrice: 2304,
+    pricePerNight: 1152,
+  });
+
+  const refreshed: any = {
+    groupType: 1,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    provider: 'tbo',
+    hotelCode: 'H-1',
+    hotelId: 101,
+    hotelName: 'Stable Hotel',
+    // The parent intentionally describes another option. Reconciliation must
+    // use the nested rate matching selected_rate_option_id instead.
+    roomType: 'Suite Room',
+    mealPlan: 'MAP',
+    rateOptionId: 'rate-2',
+    pricePerNight: 999,
+    totalPrice: 999,
+    rateOptions: [
+      {
+        provider: 'tbo',
+        hotelCode: 'H-1',
+        hotelId: 101,
+        hotelName: 'Stable Hotel',
+        roomType: 'Deluxe Room',
+        mealPlan: 'CP',
+        roomId: 'deluxe-room',
+        rateId: 'cp-rate',
+        rateOptionId: 'rate-1',
+        pricePerNight: 1600,
+        totalStayPrice: 3200,
+        totalPrice: 3200,
+      },
+      {
+        provider: 'tbo',
+        hotelCode: 'H-1',
+        hotelId: 101,
+        hotelName: 'Stable Hotel',
+        roomType: 'Suite Room',
+        mealPlan: 'MAP',
+        roomId: 'suite-room',
+        rateId: 'map-rate',
+        rateOptionId: 'rate-2',
+        pricePerNight: 1800,
+        totalStayPrice: 3600,
+        totalPrice: 3600,
+      },
+    ],
+  };
+
+  const summary = await (service as any).reconcileSelections(tx, 44, [refreshed], 'run-nested-rate', 1);
+  const snapshot = JSON.parse(selections[0].selected_price_snapshot);
+
+  assert.equal(summary.hasChanges, true);
+  assert.equal(selections[0].selected_rate_option_id, 'rate-1');
+  assert.equal(selections[0].selected_price_per_night, 1600);
+  assert.equal(selections[0].selected_total_price, 3200);
+  assert.equal(snapshot.rateOptionId, 'rate-1');
+  assert.equal(snapshot.roomType, 'Deluxe Room');
+  assert.equal(snapshot.mealPlan, 'CP');
+  assert.equal(snapshot.pricePerNight, 1600);
+  assert.equal(snapshot.totalPrice, 3200);
+});
+
 test('same hotel with a changed rate updates the selection and reports old versus new', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections } = makeReconciliationTx();
@@ -721,7 +798,7 @@ test('same hotel with a changed rate updates the selection and reports old versu
 
   assert.equal(summary.hasChanges, true);
   assert.equal(summary.totalChanges, 1);
-  assert.equal(summary.changes.some((change: any) => change.changeType === 'RATE_CHANGED'), true);
+  assert.equal(summary.changes.some((change: any) => change.changeType === 'SELECTION_REPLACED'), true);
   assert.equal(summary.changes.some((change: any) => change.previous?.hotelName === 'Stable Hotel' && change.current?.hotelName === 'Stable Hotel'), true);
   assert.equal(selections[0].selected_total_price, 125);
 });
