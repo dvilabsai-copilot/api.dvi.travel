@@ -319,6 +319,8 @@ export interface CostBreakdownDto {
     provider: string;
     hotelCode: string;
     hotelName: string;
+    rateOptionId?: string;
+    optionKey?: string;
     bookingCode?: string;
     searchReference?: string;
     roomId?: string;
@@ -878,6 +880,8 @@ export class ItineraryDetailsService {
           provider: String(match.provider || selection.provider || '').trim().toLowerCase(),
           hotelCode: String(match.hotelCode || match.hotelId || selection.hotelCode || '').trim(),
           hotelName: String(match.hotelName || selection.hotelName || '').trim(),
+          rateOptionId: String(match.rateOptionId || match.rate_option_id || selection.rateOptionId || '').trim() || undefined,
+          optionKey: String(match.optionKey || match.option_key || selection.optionKey || '').trim() || undefined,
           bookingCode: String(match.bookingCode || selection.bookingCode || '').trim() || undefined,
           searchReference: String(match.searchReference || selection.searchReference || '').trim() || undefined,
           roomId: String(match.roomId || selection.roomId || '').trim() || undefined,

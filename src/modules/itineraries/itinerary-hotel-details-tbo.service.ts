@@ -5676,7 +5676,18 @@ this.logger.log(
 
     const cardPricingByProperty = new Map<string, { startingFromAmount: number; startingFromBaseAmount: number }>();
     cardGroups.forEach((options, key) => {
+      // A persisted selected row can contain a valid payable price while its
+      // nested rateOptions are legacy placeholders with zero amounts. Keep
+      // the nested options as the primary source, but fall back to the
+      // parent row when none of them has a usable price. This prevents an
+      // AxisRooms card from rendering "starting from ₹0.00/d".
       const pricedOptions = options.filter((option) => getCandidateAmount(option) > 0);
+      if (pricedOptions.length === 0) {
+        const parentRow = (cleanedHotelRows as any[]).find((row) => getPropertyKey(row) === key);
+        if (parentRow && getCandidateAmount(parentRow) > 0) {
+          pricedOptions.push(parentRow);
+        }
+      }
       cardPricingByProperty.set(key, {
         startingFromAmount: pricedOptions.reduce((lowest, option) => {
           const amount = getCandidateAmount(option);
