@@ -1,6 +1,7 @@
 // FILE: src/modules/itineraries/services/itinerary-selection-workflow.service.ts
 
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { createConnection } from 'mysql2/promise';
 import { PrismaService } from '../../../prisma.service';
 import { RouteEngineService } from '../engines/route-engine.service';
 import { ItineraryVehiclesEngine } from '../engines/itinerary-vehicles.engine';
@@ -16,6 +17,7 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
 import { resolveHotelSelectionPricing } from '../utils/hotel-selection-pricing.util';
+import { HotelAvailabilitySnapshotService } from './hotel-availability-snapshot.service';
 
 @Injectable()
 export class ItinerarySelectionWorkflowService {
@@ -25,6 +27,7 @@ export class ItinerarySelectionWorkflowService {
     private readonly itineraryVehiclesEngine: ItineraryVehiclesEngine,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly offlineHotelCatalogService?: OfflineHotelCatalogService,
+    private readonly hotelAvailabilitySnapshotService?: HotelAvailabilitySnapshotService,
   ) {}
 
   private requireTargetGroupType(groupType: unknown): number {
@@ -133,6 +136,8 @@ export class ItinerarySelectionWorkflowService {
     hotelMarginGstAmount?: number;
     routeDate?: string;
      requestedBy?: number;
+    /** Internal transaction client used by atomic multi-route saves. */
+    transactionClient?: any;
   }) {
     // groupType is the target recommendation package being edited. It must be
     // explicit; never infer it from the selected inventory row or default it
@@ -141,22 +146,23 @@ export class ItinerarySelectionWorkflowService {
     if (String(data.provider || '').trim().toLowerCase() === 'offline' || String(data.rateOptionId || '').startsWith('offline:')) {
       return this.selectOfflineHotel(data);
     }
+    const db = data.transactionClient || this.prisma;
     const userId = 1;
     const liveRateMetadata = this.getLiveRateMetadata(data.provider);
 
  // Get the quote ID and Day 1 early-check-in metadata.
     const [plan, route, previousDayMarker] = await Promise.all([
-      this.prisma.dvi_itinerary_plan_details.findUnique({
+      db.dvi_itinerary_plan_details.findUnique({
         where: { itinerary_plan_ID: data.planId },
       }),
-      (this.prisma as any).dvi_itinerary_route_details.findFirst({
+      (db as any).dvi_itinerary_route_details.findFirst({
         where: {
           itinerary_plan_ID: data.planId,
           itinerary_route_ID: data.routeId,
           deleted: 0,
         },
       }),
-      (this.prisma as any).dvi_itinerary_plan_hotel_details.findFirst({
+      (db as any).dvi_itinerary_plan_hotel_details.findFirst({
         where: {
           itinerary_plan_id: data.planId,
           itinerary_route_id: data.routeId,
@@ -243,7 +249,7 @@ export class ItinerarySelectionWorkflowService {
         };
 
  // Check if hotel assignment already exists in hotel_details
-    const existingHotelCandidates = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
+    const existingHotelCandidates = await (db as any).dvi_itinerary_plan_hotel_details.findMany({
       where: {
         itinerary_plan_id: data.planId,
         itinerary_route_id: data.routeId,
@@ -283,7 +289,7 @@ export class ItinerarySelectionWorkflowService {
       0,
     );
     const extraBedGstAmount = Math.max(Number(data.extraBedGstAmount || 0), 0);
-    const globalSettingsModel = (this.prisma as any).dvi_global_settings;
+    const globalSettingsModel = (db as any).dvi_global_settings;
     const globalSettings = globalSettingsModel
       ? await globalSettingsModel.findFirst({
           where: { deleted: 0, status: 1 },
@@ -370,7 +376,7 @@ export class ItinerarySelectionWorkflowService {
     if (existingHotelDetails) {
  // Update existing hotel assignment
  console.log(` Updating existing hotel - Old ID: ${existingHotelDetails.hotel_id}, New ID: ${persistedHotelId ?? 'NULL'}, GroupType: ${data.groupType}`);
-      await (this.prisma as any).dvi_itinerary_plan_hotel_details.update({
+      await (db as any).dvi_itinerary_plan_hotel_details.update({
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
         data: {
           hotel_id: persistedHotelId,
@@ -426,7 +432,7 @@ export class ItinerarySelectionWorkflowService {
           }),
         },
       });
-      await (this.prisma as any).dvi_itinerary_plan_hotel_details.updateMany({
+      await (db as any).dvi_itinerary_plan_hotel_details.updateMany({
         where: {
           itinerary_plan_id: data.planId,
           itinerary_route_id: data.routeId,
@@ -438,7 +444,7 @@ export class ItinerarySelectionWorkflowService {
         },
         data: { status: 0, deleted: 1, updatedon: new Date() },
       });
-      const updated = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findUnique({
+      const updated = await (db as any).dvi_itinerary_plan_hotel_details.findUnique({
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
       });
  console.log(` Updated. New values - hotel_id: ${(updated as any).hotel_id}, group_type: ${(updated as any).group_type}`);
@@ -446,7 +452,7 @@ export class ItinerarySelectionWorkflowService {
     } else {
  // Create new hotel assignment
  console.log(` Creating new hotel - ID: ${persistedHotelId ?? 'NULL'}, GroupType: ${data.groupType}`);
-      const created = await (this.prisma as any).dvi_itinerary_plan_hotel_details.create({
+      const created = await (db as any).dvi_itinerary_plan_hotel_details.create({
         data: {
           itinerary_plan_id: data.planId,
           itinerary_route_id: data.routeId,
@@ -514,7 +520,7 @@ export class ItinerarySelectionWorkflowService {
     }
 
  // Check if room details already exist
-    const existingRoomDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findFirst({
+    const existingRoomDetails = await (db as any).dvi_itinerary_plan_hotel_room_details.findFirst({
       where: {
         itinerary_plan_hotel_details_id: hotelDetailsId,
         deleted: 0,
@@ -525,7 +531,7 @@ export class ItinerarySelectionWorkflowService {
 
     if (existingRoomDetails) {
  // Update existing room details
-      await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.update({
+      await (db as any).dvi_itinerary_plan_hotel_room_details.update({
         where: { itinerary_plan_hotel_room_details_ID: existingRoomDetails.itinerary_plan_hotel_room_details_ID },
         data: {
           hotel_id: persistedHotelId,
@@ -541,7 +547,7 @@ export class ItinerarySelectionWorkflowService {
           updatedon: new Date(),
         },
       });
-      await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.updateMany({
+      await (db as any).dvi_itinerary_plan_hotel_room_details.updateMany({
         where: {
           itinerary_plan_hotel_details_id: hotelDetailsId,
           deleted: 0,
@@ -552,7 +558,7 @@ export class ItinerarySelectionWorkflowService {
       });
     } else {
  // Create new room details
-      await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.create({
+      await (db as any).dvi_itinerary_plan_hotel_room_details.create({
         data: {
           itinerary_plan_hotel_details_id: hotelDetailsId,
           itinerary_plan_id: data.planId,
@@ -579,7 +585,7 @@ export class ItinerarySelectionWorkflowService {
     // per-quote hotel-details cache so a subsequent itinerary reload reads
     // this USER_SELECTED rate instead of reconstructing the previous
     // auto-selected row from the stale snapshot.
-    if (plan?.itinerary_quote_ID) {
+    if (plan?.itinerary_quote_ID && !data.transactionClient) {
       this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
     }
 
@@ -629,6 +635,7 @@ export class ItinerarySelectionWorkflowService {
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
     requestedBy?: number;
+    transactionClient?: any;
   }) {
     data = { ...data, groupType: this.requireTargetGroupType(data.groupType) };
     const canonicalHotelId = Number(data.canonicalHotelId ?? data.hotelId ?? 0);
@@ -662,7 +669,7 @@ export class ItinerarySelectionWorkflowService {
       : null;
     if (checkOutDate) checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
 
-    await this.prisma.$transaction(async (tx) => {
+    const persist = async (tx: any) => {
       const existingHotelCandidates = await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
         where: {
           itinerary_plan_id: Number(data.planId),
@@ -784,10 +791,12 @@ export class ItinerarySelectionWorkflowService {
           metadata: snapshot,
         },
       });
-    });
+    };
+    if (data.transactionClient) await persist(data.transactionClient);
+    else await this.prisma.$transaction(persist);
 
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({ where: { itinerary_plan_ID: Number(data.planId) } });
-    if (plan?.itinerary_quote_ID) this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
+    if (plan?.itinerary_quote_ID && !data.transactionClient) this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
     return {
       success: true,
       message: 'Hotel selected successfully and is pending hotel approval',
@@ -803,6 +812,14 @@ export class ItinerarySelectionWorkflowService {
  */
   async bulkSaveHotels(planId: number, hotels: any[], requestedBy = 1) {
 
+    if (!Array.isArray(hotels) || hotels.length === 0) {
+      throw new BadRequestException('At least one hotel selection is required');
+    }
+    const groups = new Set(hotels.map((hotel) => this.requireTargetGroupType(hotel.groupType)));
+    if (groups.size !== 1) {
+      throw new BadRequestException('Atomic hotel persistence requires one recommendation group per operation');
+    }
+
  // Get the quote ID to clear the cache
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: planId },
@@ -811,36 +828,78 @@ export class ItinerarySelectionWorkflowService {
 
  console.log(` Bulk saving ${hotels.length} hotel(s) for plan ${planId}`);
 
-    for (const hotel of hotels) {
-      await this.selectHotel({
-        planId,
-        routeId: hotel.routeId,
-        hotelId: hotel.hotelId,
-        roomTypeId: hotel.roomTypeId || 1,
-        groupType: hotel.groupType,
-        mealPlan: hotel.mealPlan,
-        canonicalHotelId: hotel.canonicalHotelId ?? hotel.hotelId,
-        rateOptionId: hotel.rateOptionId,
-        provider: hotel.provider,
-        optionKey: hotel.optionKey,
-        pricePerNight: hotel.pricePerNight,
-        totalPrice: hotel.totalPrice,
-        currency: hotel.currency,
-        hotelName: hotel.hotelName,
-        category: hotel.category,
-        roomType: hotel.roomType,
-        mealPlanCode: hotel.mealPlanCode,
-        bookingCode: hotel.bookingCode,
-        searchReference: hotel.searchReference,
-        roomId: hotel.roomId,
-        rateId: hotel.rateId,
-        roomCount: hotel.roomCount,
-        extraBedCount: hotel.extraBedCount,
-        extraBedRate: hotel.extraBedRate,
-        extraBedAmount: hotel.extraBedAmount,
-        extraBedGstAmount: hotel.extraBedGstAmount,
-        requestedBy,
+    const lockName = `itinerary-hotel-selection:${planId}:${String(hotels[0]?.groupType || 1)}`;
+    const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+    const lockConnection = databaseUrl ? await createConnection(databaseUrl) : null;
+    let lockAcquired = false;
+    try {
+      if (lockConnection) {
+        const lockResult: any = await lockConnection.query('SELECT GET_LOCK(?, 10) AS acquired', [lockName]);
+        lockAcquired = Number((lockResult as any)?.[0]?.[0]?.acquired || 0) === 1;
+        if (!lockAcquired) throw new BadRequestException('Another hotel selection is being applied. Please retry.');
+      }
+
+      // Supplier refresh is deliberately outside the Prisma transaction, but
+      // inside the plan/group lock. A late refresh from request A therefore
+      // cannot overwrite a newer request B after B has committed.
+      for (const hotel of hotels) {
+        const provider = String(hotel.provider || '').trim().toLowerCase();
+        const hotelCode = String(hotel.hotelCode || hotel.providerHotelCode || hotel.hotelId || '').trim();
+        if (!provider || provider === 'offline' || !hotelCode || !plan?.itinerary_quote_ID) continue;
+        const refreshed = await this.hotelDetailsTboService.getSelectedHotelRates(
+          String(plan.itinerary_quote_ID), Number(hotel.routeId), provider, hotelCode, Number(hotel.groupType),
+        );
+        if (!Array.isArray(refreshed?.hotels) || refreshed.hotels.length === 0) {
+          throw new BadRequestException(`No current rates are available for ${hotelCode}`);
+        }
+        if (this.hotelAvailabilitySnapshotService) {
+          await this.hotelAvailabilitySnapshotService.mergeSelectedHotelRates(
+            String(plan.itinerary_quote_ID), Number(hotel.routeId), provider, hotelCode, refreshed.hotels,
+          );
+        }
+      }
+
+      await this.prisma.$transaction(async (tx: any) => {
+        for (const hotel of hotels) {
+          await this.selectHotel({
+            planId,
+            routeId: hotel.routeId,
+            hotelId: hotel.hotelId,
+            roomTypeId: hotel.roomTypeId || 1,
+            groupType: hotel.groupType,
+            mealPlan: hotel.mealPlan,
+            canonicalHotelId: hotel.canonicalHotelId ?? hotel.hotelId,
+            rateOptionId: hotel.rateOptionId,
+            provider: hotel.provider,
+            optionKey: hotel.optionKey,
+            pricePerNight: hotel.pricePerNight,
+            totalPrice: hotel.totalPrice,
+            currency: hotel.currency,
+            hotelName: hotel.hotelName,
+            category: hotel.category,
+            roomType: hotel.roomType,
+            mealPlanCode: hotel.mealPlanCode,
+            bookingCode: hotel.bookingCode,
+            searchReference: hotel.searchReference,
+            roomId: hotel.roomId,
+            rateId: hotel.rateId,
+            roomCount: hotel.roomCount,
+            extraBedCount: hotel.extraBedCount,
+            extraBedRate: hotel.extraBedRate,
+            extraBedAmount: hotel.extraBedAmount,
+            extraBedGstAmount: hotel.extraBedGstAmount,
+            requestedBy,
+            transactionClient: tx,
+          });
+        }
       });
+    } finally {
+      if (lockConnection) {
+        if (lockAcquired) {
+          try { await lockConnection.query('SELECT RELEASE_LOCK(?)', [lockName]); } catch { /* connection close releases it */ }
+        }
+        await lockConnection.end();
+      }
     }
 
  // Clear cache once at the end
