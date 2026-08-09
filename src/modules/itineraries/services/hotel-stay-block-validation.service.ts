@@ -470,6 +470,7 @@ export class HotelStayBlockValidationService {
         ratePlan.ratePlanId,
         candidate.roomType || String(roomRow.room_title || ''),
         candidate.mealPlan,
+        `axisrooms:${hotelId}:${Number(roomRow.room_ID)}:${ratePlan.ratePlanId}:${date}`,
       ));
     }
 
