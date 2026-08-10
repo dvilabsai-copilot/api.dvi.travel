@@ -1628,12 +1628,22 @@ async confirmQuotation(
     });
   }
 
-  @Post('cancel')
+    @Post('cancel')
   @ApiOperation({ summary: 'Cancel a confirmed itinerary' })
   @ApiBody({ type: CancelItineraryDto })
   @ApiOkResponse({ description: 'Itinerary cancelled successfully' })
   async cancelItinerary(@Body() dto: CancelItineraryDto) {
     return this.svc.cancelItinerary(dto);
+  }
+
+  @Get(':planId/cancellation-options')
+  @ApiOperation({
+    summary: 'Get cancellable components and their cancellation policies for a confirmed itinerary',
+  })
+  async getItineraryCancellationOptions(
+    @Param('planId', ParseIntPipe) planId: number,
+  ) {
+    return this.svc.getItineraryCancellationDetails(planId);
   }
 
   @Get('confirmed')

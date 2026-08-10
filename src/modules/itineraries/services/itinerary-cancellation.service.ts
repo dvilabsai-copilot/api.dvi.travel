@@ -256,6 +256,157 @@ export class ItineraryCancellationService {
     }
   }
 
+ /**
+   * Read-only: returns which components of a confirmed itinerary are
+   * cancellable (and not already cancelled) plus their cancellation
+   * policies, so the cancellation modal can show only the relevant
+   * options and display the applicable policy.
+  */
+  async getCancellationDetails(itineraryPlanId: number) {
+    const planId = Number(itineraryPlanId || 0);
+    if (!planId) {
+      throw new BadRequestException('Itinerary Plan ID is required');
+    }
+
+    const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+    });
+
+    if (!confirmedPlan) {
+      throw new NotFoundException(`Confirmed itinerary not found for Plan ID: ${planId}`);
+    }
+
+    const existingCancellation = await this.prisma.dvi_cancelled_itineraries.findFirst({
+      where: { itinerary_plan_id: planId, deleted: 0 },
+    });
+
+    if (existingCancellation) {
+      throw new ConflictException(`Itinerary already cancelled. Cancellation ID: ${existingCancellation.cancelled_itinerary_ID}`);
+    }
+
+ // Only non-deleted, not-yet-cancelled rows are cancellable (matches the
+ // cancellation rules used by cancelHotspots/cancelHotels/cancelVehicles/...)
+    const [hotels, vehicles, hotspots, guides, activities] = await Promise.all([
+      this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+        where: {
+          itinerary_plan_id: planId,
+          deleted: 0,
+          hotel_cancellation_status: { not: 1 },
+        },
+        select: { hotel_id: true },
+      }),
+      this.prisma.dvi_itinerary_plan_vehicle_details.findMany({
+        where: {
+          itinerary_plan_id: planId,
+          deleted: 0,
+          status: { not: 0 },
+        },
+        select: { vehicle_details_ID: true },
+      }),
+      this.prisma.dvi_itinerary_route_hotspot_details.findMany({
+        where: {
+          itinerary_plan_ID: planId,
+          deleted: 0,
+          status: { not: 0 },
+        },
+        select: { route_hotspot_ID: true },
+      }),
+      this.prisma.dvi_itinerary_route_guide_details.findMany({
+        where: {
+          itinerary_plan_ID: planId,
+          deleted: 0,
+          status: { not: 0 },
+        },
+        select: { route_guide_ID: true },
+      }),
+      this.prisma.dvi_itinerary_route_activity_details.findMany({
+        where: {
+          itinerary_plan_ID: planId,
+          deleted: 0,
+          status: { not: 0 },
+        },
+        select: { route_activity_ID: true },
+      }),
+    ]);
+
+    const [hotelPolicies, vehiclePolicies] = await Promise.all([
+      this.prisma.dvi_confirmed_itinerary_plan_hotel_cancellation_policy.findMany({
+        where: { itinerary_plan_id: planId, deleted: 0 },
+        orderBy: { cancellation_date: 'asc' },
+      }),
+      this.prisma.dvi_confirmed_itinerary_plan_vehicle_cancellation_policy.findMany({
+        where: { itinerary_plan_id: planId, deleted: 0 },
+        orderBy: { cancellation_date: 'asc' },
+      }),
+    ]);
+
+    const hotelNameById = await this.resolveHotelNames(
+      hotelPolicies.map((p: any) => Number(p.hotel_id || 0)),
+    );
+    const vehicleMeta = await this.resolveVehicleMeta(
+      vehiclePolicies.map((p: any) => ({
+        vendorId: Number(p.vendor_id || 0),
+        vendorVehicleTypeId: Number(p.vendor_vehicle_type_id || 0),
+      })),
+    );
+
+    return {
+      success: true,
+      data: {
+        itinerary_plan_ID: planId,
+        confirmed_itinerary_plan_ID: confirmedPlan.confirmed_itinerary_plan_ID,
+        total_amount: confirmedPlan.itinerary_total_net_payable_amount || 0,
+        components: {
+          hotspot: {
+            present: hotspots.length > 0,
+            count: hotspots.length,
+            policies: [],
+          },
+          hotel: {
+            present: hotels.length > 0,
+            count: hotels.length,
+            policies: hotelPolicies.map((p: any) => ({
+              hotelId: p.hotel_id,
+              hotelName: hotelNameById.get(Number(p.hotel_id)) || '',
+              cancellationDate: p.cancellation_date
+                ? p.cancellation_date.toISOString().split('T')[0]
+                : '',
+              cancellationPercentage: p.cancellation_percentage,
+              description: p.cancellation_descrption || '',
+            })),
+          },
+          vehicle: {
+            present: vehicles.length > 0,
+            count: vehicles.length,
+            policies: vehiclePolicies.map((p: any) => {
+              const meta = vehicleMeta.get(`${p.vendor_id}|${p.vendor_vehicle_type_id}`);
+              return {
+                vendorId: p.vendor_id,
+                vendorName: meta?.vendorName || '',
+                vehicleTypeName: meta?.vehicleTypeName || '',
+                cancellationDate: p.cancellation_date
+                  ? p.cancellation_date.toISOString().split('T')[0]
+                  : '',
+                cancellationPercentage: p.cancellation_percentage,
+                description: p.cancellation_descrption || '',
+              };
+            }),
+          },
+          guide: {
+            present: guides.length > 0,
+            count: guides.length,
+            policies: [],
+          },
+          activity: {
+            present: activities.length > 0,
+            count: activities.length,
+            policies: [],
+          },
+        },
+      },
+    };
+  }
+
  // Helper methods for selective cancellation
   private async cancelHotspots(tx: any, itineraryPlanId: number, cancellationId: number, userId: number): Promise<number> {
     try {
@@ -598,12 +749,69 @@ export class ItineraryCancellationService {
       cancellationOptions,
     });
 
- // Example: Send email notification
+  // Example: Send email notification
  // await this.emailService.sendCancellationEmail({
  // to: confirmedPlan.customer_email,
  // subject: `Itinerary Cancellation - ${cancellationReference}`,
  // body: `Your itinerary has been cancelled. Refund amount: ${refundAmount}`,
  // });
+  }
+
+  private async resolveHotelNames(hotelIds: number[]): Promise<Map<number, string>> {
+    const ids = Array.from(new Set(hotelIds.filter((id) => id > 0)));
+    if (!ids.length) return new Map();
+    const hotels = await this.prisma.dvi_hotel.findMany({
+      where: { hotel_id: { in: ids } as any },
+      select: { hotel_id: true, hotel_name: true },
+    });
+    return new Map((hotels as any[]).map((h) => [Number(h.hotel_id), String(h.hotel_name || '')]));
+  }
+
+  private async resolveVehicleMeta(
+    entries: Array<{ vendorId: number; vendorVehicleTypeId: number }>,
+  ): Promise<Map<string, { vendorName: string; vehicleTypeName: string }>> {
+    const vendorIds = Array.from(
+      new Set(entries.map((e) => e.vendorId).filter((id) => id > 0)),
+    );
+    const vehicleTypeIds = Array.from(
+      new Set(entries.map((e) => e.vendorVehicleTypeId).filter((id) => id > 0)),
+    );
+
+    const [vendors, vehicleTypes] = await Promise.all([
+      vendorIds.length
+        ? this.prisma.dvi_vendor_details.findMany({
+            where: { vendor_id: { in: vendorIds } as any },
+            select: { vendor_id: true, vendor_name: true },
+          })
+        : Promise.resolve([] as any[]),
+      vehicleTypeIds.length
+        ? this.prisma.dvi_vehicle_type.findMany({
+            where: { vehicle_type_id: { in: vehicleTypeIds } as any },
+            select: { vehicle_type_id: true, vehicle_type_title: true },
+          })
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const map = new Map<string, { vendorName: string; vehicleTypeName: string }>();
+    (vendors as any[]).forEach((vendor) => {
+      entries.forEach((entry) => {
+        if (Number(entry.vendorId) === Number(vendor.vendor_id)) {
+          const key = `${entry.vendorId}|${entry.vendorVehicleTypeId}`;
+          const current = map.get(key) || { vendorName: '', vehicleTypeName: '' };
+          map.set(key, { ...current, vendorName: String(vendor.vendor_name || '') });
+        }
+      });
+    });
+    (vehicleTypes as any[]).forEach((vt) => {
+      entries.forEach((entry) => {
+        if (Number(entry.vendorVehicleTypeId) === Number(vt.vehicle_type_id)) {
+          const key = `${entry.vendorId}|${entry.vendorVehicleTypeId}`;
+          const current = map.get(key) || { vendorName: '', vehicleTypeName: '' };
+          map.set(key, { ...current, vehicleTypeName: String(vt.vehicle_type_title || '') });
+        }
+      });
+    });
+    return map;
   }
 
 }
