@@ -1879,8 +1879,12 @@ private getGuideSlotLabel(slotId: number): string {
       options,
     );
   }
-  async cancelItinerary(dto: CancelItineraryDto) {
+    async cancelItinerary(dto: CancelItineraryDto) {
     return this.cancellationService.cancelItinerary(dto);
+  }
+
+  async getItineraryCancellationDetails(itineraryPlanId: number) {
+    return this.cancellationService.getCancellationDetails(itineraryPlanId);
   }
   private async logCancellationAction(...args: any[]) {
     return (this.cancellationService.logCancellationAction as any)(...args);
