@@ -31,6 +31,10 @@ import {
   selectionOriginFromRow,
   selectedOptionKeyFromRow,
 } from '../utils/hotel-selection-identity.util';
+import {
+  buildHotelSelectionState,
+  resolveHotelRequiredRoutes,
+} from '../utils/hotel-selection-view-state.util';
 import { resolveHotelRecommendationAlgorithm } from './hotel-recommendation-package.service';
 import {
   inferCanonicalHotelRatePlanCode,
@@ -379,10 +383,7 @@ export class HotelAvailabilitySnapshotService {
     const remappedPlanRows = planRows.map(remapSnapshotRoute).filter(Boolean);
     const remappedRoomDetailRows = roomDetailRows.map(remapSnapshotRoute).filter(Boolean);
     const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
-    const searchableRoutes = currentRoutes.filter((route: any, index: number) => {
-      const isLastRoute = index === currentRoutes.length - 1;
-      return !(isLastRoute && index >= noOfNights);
-    });
+    const searchableRoutes = resolveHotelRequiredRoutes(currentRoutes, noOfNights);
 
     const selectedByRouteGroup = new Map<string, any>();
     for (const row of remappedPlanRows) {
@@ -860,12 +861,19 @@ export class HotelAvailabilitySnapshotService {
         }
       : undefined;
 
+    const authoritativeHotelSelectionState = buildHotelSelectionState({
+      tabs,
+      rows: normalizedRows,
+      requiredRoutes: searchableRoutes,
+    });
+
     return {
       quoteId,
       planId: plan.itinerary_plan_ID,
       hotelRatesVisible: Boolean((plan as any).hotel_rates_visibility),
       showHotelMargins: String(process.env.SHOW_HOTEL_MARGINS || '').toLowerCase() === 'true',
       hotelTabs: tabs,
+      hotelSelectionState: authoritativeHotelSelectionState,
       hotels: paged,
       totalRoomCount: normalizedRows.length,
       pagination: {
@@ -1335,13 +1343,7 @@ export class HotelAvailabilitySnapshotService {
 
   private getSearchableRouteIds(routes: any[], noOfNights: number): Set<number> {
     return new Set(
-      (routes || [])
-        .filter((route: any, index: number) => {
-          if (index === routes.length - 1 && index >= noOfNights) return false;
-          if (route?.hotelRequired === false || route?.hotel_required === false) return false;
-          if (route?.isDeparture || route?.isTransit || route?.isActivityOnly) return false;
-          return true;
-        })
+      resolveHotelRequiredRoutes(routes || [], noOfNights)
         .map((route: any) => Number(route?.itinerary_route_ID || 0))
         .filter((routeId: number) => routeId > 0),
     );
@@ -1622,9 +1624,7 @@ export class HotelAvailabilitySnapshotService {
         })
       : [];
     const noOfNights = Math.max(Number(plan?.no_of_nights || 0), 0);
-    const searchableRoutes = currentRoutes.filter((route: any, index: number) =>
-      !(index === currentRoutes.length - 1 && index >= noOfNights),
-    );
+    const searchableRoutes = resolveHotelRequiredRoutes(currentRoutes, noOfNights);
     const toDateOnly = (value: unknown): string => {
       const raw = String(value || '').trim();
       if (!raw) return '';
@@ -1664,6 +1664,11 @@ export class HotelAvailabilitySnapshotService {
     });
     return {
       ...response,
+      hotelSelectionState: buildHotelSelectionState({
+        tabs: response.hotelTabs || [],
+        rows: hotels,
+        requiredRoutes: searchableRoutes,
+      }),
       hotels,
       totalRoomCount: hotels.length,
       hotelAvailability: {
@@ -2480,9 +2485,7 @@ export class HotelAvailabilitySnapshotService {
       .map(overlayStoredTabSelections)
       .map(overlayUserSelectedTabTotal));
 
-    const searchableRoutes = (routes || []).filter((route: any, index: number) =>
-      !(index === routes.length - 1 && index >= noOfNights),
-    );
+    const searchableRoutes = resolveHotelRequiredRoutes(routes || [], noOfNights);
     const stayKeyByRouteId = new Map<number, string>();
     const destinationOf = (route: any): string =>
       String(route?.next_visiting_location || route?.location_name || '').trim().toLowerCase();

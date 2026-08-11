@@ -16,6 +16,7 @@ export type HotelSelectionSnapshot = {
   hotelId?: string | number;
   canonicalHotelId?: string | number;
   providerHotelCode?: string | number;
+  selectionKey?: string;
   hotelName?: string;
   category?: string | number;
   roomType?: string;
@@ -57,6 +58,30 @@ const clean = (value: unknown): string => String(value ?? '').trim().toLowerCase
 
 export function isTboSupplierBookingCode(value: unknown): boolean {
   return String(value || '').trim().includes('!TB!');
+}
+
+/**
+ * Stable commercial identity for a supplier option. TBO BookingCode contains
+ * a search-session UUID, so only the supplier hotel and room-option segment
+ * are used for matching a refreshed Search result. The opaque full token is
+ * still retained separately for PreBook/Book.
+ */
+export function supplierSelectionKey(row: any): string {
+  const explicit = String(row?.selectionKey || '').trim();
+  if (explicit) return explicit;
+  const provider = clean(row?.provider || row?.hotel_provider);
+  if (provider === 'tbo') {
+    const token = [row?.bookingCode, row?.searchReference, row?.rateOptionId, row?.rate_option_id]
+      .map((value) => String(value || '').trim())
+      .find(isTboSupplierBookingCode) || '';
+    const parts = token.split('!TB!');
+    if (parts.length >= 2 && parts[0] && parts[1]) return `tbo:${parts[0]}:${parts[1]}`;
+  }
+  const providerCode = String(row?.providerHotelCode || row?.provider_hotel_code || row?.hotelCode || '').trim();
+  const room = String(row?.roomTypeId || row?.roomId || row?.roomType || row?.roomTypeName || '').trim();
+  const meal = String(row?.mealPlanCode || row?.mealPlan || '').trim();
+  const rate = String(row?.rateId || row?.rateOptionId || '').trim();
+  return providerCode || room || meal || rate ? `${provider}:${providerCode}:${room}:${meal}:${rate}` : '';
 }
 
 export function normalizeSupplierRateIdentity<T extends Record<string, any>>(row: T): T {
@@ -109,6 +134,9 @@ export function supplierRateIdentityMatches(requestedRow: any, candidateRow: any
   if (provider && clean(candidate.provider || candidate.hotel_provider) !== provider) return false;
 
   if (provider === 'tbo') {
+    const requestedSelectionKey = supplierSelectionKey(requested);
+    const candidateSelectionKey = supplierSelectionKey(candidate);
+    if (requestedSelectionKey && candidateSelectionKey) return requestedSelectionKey === candidateSelectionKey;
     const requestedBookingCode = [requested.rateOptionId, requested.bookingCode, requested.searchReference]
       .map((value) => String(value || '').trim())
       .find(isTboSupplierBookingCode);
@@ -291,8 +319,14 @@ export function hotelPropertyMatchesSelection(selection: any, option: any): bool
   const optionCanonicalId = clean(option?.canonicalHotelId || option?.canonical_hotel_id || option?.hotelId || option?.hotel_id);
   if (selectedCanonicalId && optionCanonicalId && selectedCanonicalId === optionCanonicalId) return true;
 
-  const selectedCode = clean(snapshot.hotelCode || selection?.hotel_code || selection?.hotel_id);
-  const optionCode = clean(option?.hotelCode || option?.providerHotelCode || option?.hotel_code || option?.hotelId || option?.hotel_id);
+  const selectedCode = clean(
+    snapshot.providerHotelCode || selection?.providerHotelCode || selection?.provider_hotel_code ||
+    snapshot.hotelCode || selection?.hotel_code || selection?.hotel_id,
+  );
+  const optionCode = clean(
+    option?.providerHotelCode || option?.provider_hotel_code || option?.hotelCode ||
+    option?.hotel_code || option?.hotelId || option?.hotel_id,
+  );
   return Boolean(selectedCode && optionCode && selectedCode === optionCode);
 }
 
@@ -368,6 +402,9 @@ export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
     category: Number(row?.category ?? row?.hotel_category_id ?? 0) || null,
     provider: row?.provider ?? row?.hotel_provider ?? null,
     hotelCode: row?.hotelCode ?? row?.hotel_code ?? row?.hotelId ?? row?.hotel_id ?? null,
+    canonicalHotelId: row?.canonicalHotelId ?? row?.canonical_hotel_id ?? row?.hotelId ?? row?.hotel_id ?? null,
+    providerHotelCode: row?.providerHotelCode ?? row?.provider_hotel_code ?? null,
+    selectionKey: supplierSelectionKey(row) || null,
     roomType: row?.roomType ?? row?.room_type ?? null,
     mealPlan: row?.mealPlan ?? row?.meal_plan ?? null,
     totalPrice: Number(row?.totalPrice ?? row?.totalStayPrice ?? row?.totalHotelCost ?? row?.total_hotel_cost ?? row?.totalAmount ?? row?.selected_total_price ?? 0),

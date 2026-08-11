@@ -49,7 +49,7 @@ test('AxisRooms supplier references normalize canonical meal plans before persis
   }).mealPlan, 'MAP');
 });
 
-test('TBO identity preserves a real booking code and rejects replaced supplier sessions', () => {
+test('TBO identity preserves a real booking code while accepting a fresh session for the same commercial room', () => {
   const current = '1114182!TB!1!TB!current-search!TB!N!TB!AFF!';
   const normalized = normalizeSupplierRateIdentity({
     provider: 'tbo', hotelCode: '1114182',
@@ -64,6 +64,10 @@ test('TBO identity preserves a real booking code and rejects replaced supplier s
   const stale = '1114182!TB!1!TB!stale-search!TB!N!TB!AFF!';
   assert.equal(supplierRateIdentityMatches(normalized, {
     ...normalized, rateOptionId: stale, bookingCode: stale, searchReference: stale,
+  }), true);
+  const differentCommercialRoom = '1114182!TB!2!TB!stale-room!TB!N!TB!AFF!';
+  assert.equal(supplierRateIdentityMatches(normalized, {
+    ...normalized, rateOptionId: differentCommercialRoom, bookingCode: differentCommercialRoom, searchReference: differentCommercialRoom,
   }), false);
 });
 
@@ -328,7 +332,7 @@ test('current TBO supplier booking identity passes while stale and different hot
   await (service as any).validateLiveSelectionAgainstSnapshot(
     currentSelection, { itinerary_plan_ID: 10040 }, 'DVI2026082', route,
   );
-  const stale = '1114182!TB!1!TB!old-search!TB!N!TB!AFF!';
+  const stale = '1114182!TB!2!TB!old-search!TB!N!TB!AFF!';
   await assert.rejects(
     () => (service as any).validateLiveSelectionAgainstSnapshot(
       { ...currentSelection, rateOptionId: stale, bookingCode: stale, searchReference: stale },

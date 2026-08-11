@@ -42,6 +42,7 @@ import { haversineKm } from "./utils/distance-utils";
 import {
   normalizeSupplierRateIdentity,
   resolvePersistedHotelIdentity,
+  supplierSelectionKey,
 } from './utils/hotel-selection-identity.util';
 import {
   buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper,
@@ -1704,18 +1705,34 @@ private getGuideSlotLabel(slotId: number): string {
     if (!plan) throw new NotFoundException('Itinerary plan not found');
     const quoteId = String((plan as any).itinerary_quote_ID || '');
     const provider = String(data.provider || '').trim().toLowerCase();
-    const hotelCode = String(data.hotelCode || data.providerHotelCode || data.hotelId || '').trim();
+    const requestedCanonicalHotelId = Number(data.canonicalHotelId || data.hotelId || 0);
+    let providerHotelCode = String(data.providerHotelCode || '').trim();
+    if (!providerHotelCode && requestedCanonicalHotelId > 0 && provider !== 'offline') {
+      const master = await this.prisma.dvi_hotel.findUnique({
+        where: { hotel_id: requestedCanonicalHotelId },
+        select: { hotel_id: true, staah_property_id: true, axisrooms_property_id: true },
+      });
+      providerHotelCode = provider === 'staah'
+        ? String(master?.staah_property_id || '').trim()
+        : provider === 'axisrooms' || provider === 'ax'
+          ? String(master?.axisrooms_property_id || '').trim()
+          : provider === 'offline'
+            ? String(master?.hotel_id || requestedCanonicalHotelId)
+            : '';
+    }
+    const hotelCode = providerHotelCode || String(data.hotelCode || data.hotelId || '').trim();
     const groupType = Number(data.groupType || 0);
     if (!Number.isInteger(groupType) || groupType < 1 || groupType > 4) {
       throw new BadRequestException('Hotel selection requires a valid target groupType between 1 and 4');
     }
     if (!Number(data.routeId) || !provider || !hotelCode) {
-      throw new BadRequestException('Hotel intent requires routeId, provider, and hotelCode');
+      throw new BadRequestException('Hotel intent requires routeId, provider, and providerHotelCode');
     }
 
     const requestedRoom = String(data.roomType || '').trim();
     const requestedMeal = String(data.mealPlanCode || data.mealPlan || '').trim();
     const anchorRateOptionId = String(data.rateOptionId || data.optionKey || '').trim();
+    const anchorSelectionKey = String(data.selectionKey || '').trim();
 
     // Resolve the complete contiguous same-destination block on the server.
     // The browser must not calculate previous/next route ids or send them as
@@ -1827,14 +1844,16 @@ private getGuideSlotLabel(slotId: number): string {
     const routeIdOf = (option: any) => Number(option.itineraryRouteId || option.routeId || option.route_id || 0);
     const dateOf = (option: any) => String(option.date || option.checkInDate || option.routeDate || '').slice(0, 10);
     const propertyMatches = (option: any) => {
-      const requestedCanonical = Number(data.canonicalHotelId || data.hotelId || 0);
+      const requestedCanonical = requestedCanonicalHotelId;
       const optionProvider = normalize(option.provider || option.hotelProvider || option.supplier);
       const requestedProvider = normalize(provider);
       const providerMatches = optionProvider === requestedProvider ||
         (requestedProvider === 'axisrooms' && optionProvider === 'ax');
+      const optionCanonical = Number(option.canonicalHotelId || option.hotelId || 0);
+      const optionProviderCode = normalize(option.providerHotelCode || option.provider_hotel_code || option.hotelCode);
       return providerMatches && (requestedCanonical > 0
-        ? Number(option.canonicalHotelId || option.hotelId || 0) === requestedCanonical
-        : normalize(option.hotelCode) === normalize(hotelCode));
+        ? optionCanonical === requestedCanonical
+        : optionProviderCode === normalize(hotelCode));
     };
     const payableAmount = (option: any) => Number(
       option.totalStayPrice ?? option.totalPrice ?? option.totalAmountAfterTax ?? option.pricePerNight ?? option.price ?? Number.MAX_SAFE_INTEGER,
@@ -1846,9 +1865,14 @@ private getGuideSlotLabel(slotId: number): string {
     });
     const selectedByRoute: any[] = [];
     const anchorCandidates = routeOptions(Number(data.routeId), stay.stayDates[stay.routeIds.indexOf(Number(data.routeId))] || String(data.routeDate || '').slice(0, 10));
-    const anchorOption = anchorCandidates.find((option: any) =>
-      intent === 'RATE_OPTION' && anchorRateOptionId && [option.rateOptionId, option.optionKey].map(String).includes(anchorRateOptionId),
-    ) || null;
+    const anchorOption = anchorCandidates.find((option: any) => {
+      if (intent !== 'RATE_OPTION') return false;
+      if (anchorSelectionKey) return supplierSelectionKey(option) === anchorSelectionKey;
+      if (provider === 'tbo' && anchorRateOptionId) {
+        return supplierSelectionKey({ provider, rateOptionId: anchorRateOptionId }) === supplierSelectionKey(option);
+      }
+      return anchorRateOptionId && [option.rateOptionId, option.optionKey].map(String).includes(anchorRateOptionId);
+    }) || null;
     if (intent === 'RATE_OPTION' && !anchorOption) {
       throw new BadRequestException({
         code: 'HOTEL_RATE_STALE',
@@ -1929,6 +1953,7 @@ private getGuideSlotLabel(slotId: number): string {
           routeDate: String(selection.date || '').slice(0, 10),
           provider: selection.provider || provider,
           hotelCode: selection.hotelCode || hotelCode,
+          providerHotelCode: selection.providerHotelCode || selection.provider_hotel_code || hotelCode,
           canonicalHotelId: Number(selection.canonicalHotelId || selection.hotelId || data.canonicalHotelId || data.hotelId || 0) || null,
           hotelId: Number(selection.hotelId || selection.canonicalHotelId || data.hotelId || 0) || null,
           hotelName: selection.hotelName || data.hotelName || hotelCode,
@@ -1937,6 +1962,8 @@ private getGuideSlotLabel(slotId: number): string {
           selectedRateOptionId: selection.rateOptionId || selection.optionKey,
           rateOptionId: selection.rateOptionId || selection.optionKey,
           optionKey: selection.optionKey || selection.rateOptionId,
+          selectionKey: supplierSelectionKey(selection) || undefined,
+          supplierBookingCode: selection.bookingCode || selection.searchReference || undefined,
           pricePerNight: Number(selection.pricePerNight ?? selection.amountAfterTax ?? selection.price ?? 0),
           totalPrice: Number(selection.totalStayPrice ?? selection.totalPrice ?? selection.amountAfterTax ?? selection.price ?? 0),
           basePricePerNight: Number(selection.basePricePerNight ?? 0),
@@ -1997,7 +2024,10 @@ private getGuideSlotLabel(slotId: number): string {
         hotelId: Number(selected.canonicalHotelId || selected.hotelId || data.hotelId || 0) || null,
         canonicalHotelId: Number(selected.canonicalHotelId || selected.hotelId || data.canonicalHotelId || 0) || null,
         roomTypeId: Number(selected.roomTypeId || data.roomTypeId || 1), provider: selected.provider || provider,
-        hotelCode: selected.hotelCode || hotelCode, rateOptionId: selected.rateOptionId || selected.optionKey,
+        providerHotelCode: selected.providerHotelCode || selected.provider_hotel_code || providerHotelCode || hotelCode,
+        hotelCode: selected.providerHotelCode || selected.provider_hotel_code || providerHotelCode || selected.hotelCode || hotelCode,
+        selectionKey: supplierSelectionKey(selected) || data.selectionKey || undefined,
+        rateOptionId: selected.rateOptionId || selected.optionKey,
         optionKey: selected.optionKey || selected.rateOptionId, hotelName: selected.hotelName,
         roomType: selected.roomType || selected.roomTypeName, mealPlanCode: selected.mealPlanCode || selected.mealPlan,
         roomId: selected.roomId, rateId: selected.rateId, pricePerNight, totalPrice,
@@ -2071,7 +2101,10 @@ private getGuideSlotLabel(slotId: number): string {
       return {
         routeId: Number(row.itinerary_route_id), routeDate: persistedRouteDate,
         hotelId: row.hotel_id, canonicalHotelId: row.hotel_id,
-        hotelCode: row.hotel_code || snapshot.hotelCode, provider: row.hotel_provider,
+        hotelCode: row.hotel_code || snapshot.providerHotelCode || snapshot.hotelCode,
+        providerHotelCode: snapshot.providerHotelCode || row.hotel_code || null,
+        selectionKey: snapshot.selectionKey || supplierSelectionKey(snapshot) || undefined,
+        provider: row.hotel_provider,
         hotelName: identity.provider === 'offline'
           ? identity.hotelName
           : snapshot.hotelName || row.hotel_name || data.hotelName || hotelCode,
