@@ -4,6 +4,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { dvi_itinerary_plan_details, Prisma } from '@prisma/client';
 import { haversineKm } from './utils/distance-utils';
+import { resolvePersistedHotelIdentity } from './utils/hotel-selection-identity.util';
 
 export interface ItineraryHotelTabDto {
   groupType: number;
@@ -158,6 +159,7 @@ export interface ItineraryHotelRowDto {
   selectionId?: number;
   requiresPriceReacceptance?: boolean;
   selectedPriceSnapshot?: unknown;
+  identityMismatch?: boolean;
 }
 
 export interface HotelPaginationMeta {
@@ -507,8 +509,9 @@ async getHotelRoomDetailsByQuoteId(
 
  // Get hotel master data for actual hotel name
       const hotelMaster = hotelMap.get(hotelId) || null;
-      const hotelName = hotelMaster ? ((hotelMaster as any).hotel_name ?? 'Hotel') : 'Hotel';
-      const hotelCategory = hotelMaster ? Number((hotelMaster as any).hotel_category ?? 2) : 2;
+      const identity = resolvePersistedHotelIdentity(hotelRow, hotelMaster);
+      const hotelName = identity.hotelName || 'Hotel';
+      const hotelCategory = identity.category || 2;
 
  // Create 1 room entry per unique hotel per category
       roomDetailsList.push({
@@ -794,6 +797,17 @@ async getHotelRoomDetailsByQuoteId(
           // not prevent the itinerary details response from loading.
         }
       }
+      const persistedIdentity = resolvePersistedHotelIdentity(h, master);
+      if (persistedIdentity.provider === 'offline' && !persistedIdentity.consistent) {
+        this.logger.warn(JSON.stringify({
+          event: 'PERSISTED_OFFLINE_HOTEL_IDENTITY_MISMATCH',
+          planId,
+          routeId,
+          groupType: Number((h as any).group_type || 0),
+          hotelId: Number((h as any).hotel_id || 0),
+          mismatches: persistedIdentity.mismatches,
+        }));
+      }
       const storedEarlyCheckIn = Number((h as any).early_checkin ?? 0) === 1;
  // The marker row represents the extra night; it must not hide the
  // structured metadata stored on the real selected hotel row. The
@@ -846,6 +860,28 @@ async getHotelRoomDetailsByQuoteId(
               'EXTRA_PAYMENT_APPLICABLE',
           )
         : null;
+      const snapshotBaseTotal = Number(
+        selectedPriceSnapshot.baseTotalPrice ?? selectedPriceSnapshot.base_total_price ?? 0,
+      );
+      const snapshotBasePerNight = Number(
+        selectedPriceSnapshot.basePricePerNight ?? selectedPriceSnapshot.base_price_per_night ?? 0,
+      );
+      const snapshotRoomCount = Math.max(
+        Number((h as any).total_no_of_rooms ?? selectedPriceSnapshot.roomCount ?? 1),
+        1,
+      );
+      const hasSelectedPayable = Number((h as any).selected_total_price || 0) > 0 ||
+        Boolean(String((h as any).selected_rate_option_id || '').trim());
+      const authoritativeBaseHotelCost = snapshotBaseTotal > 0
+        ? snapshotBaseTotal
+        : snapshotBasePerNight > 0
+          ? snapshotBasePerNight * snapshotRoomCount
+          // Legacy selected rows commonly stored payable in total_room_cost.
+          // Do not expose that value as a supplier/base amount when no
+          // authoritative base breakdown exists.
+          : hasSelectedPayable
+            ? 0
+            : Number((h as any).total_room_cost ?? 0);
       const hotelierEarlyCheckInNote = showEarlyCheckInDetails
         ? String((h as any).early_checkin_note || '').trim() ||
           'Guest has opted for early morning check-in with extra payment. Room to be blocked from the previous night, with actual guest arrival/check-in on the next day early morning.'
@@ -898,22 +934,24 @@ async getHotelRoomDetailsByQuoteId(
           : `Day ${routeDayNumber || 0} | ${dateLabel}`,
         destination: (h as any).itinerary_route_location ?? '',
         hotelId: Number((h as any).hotel_id ?? 0) || 0,
-        hotelName: master ? ((master as any).hotel_name ?? '') : '',
-        category: master ? ((master as any).hotel_category ?? 0) : 0,
+        hotelName: persistedIdentity.hotelName,
+        category: persistedIdentity.category,
         roomType: String(
-          selectedPriceSnapshot.roomType ||
-          selectedPriceSnapshot.roomTypeName ||
+          (persistedIdentity.consistent
+            ? selectedPriceSnapshot.roomType || selectedPriceSnapshot.roomTypeName
+            : '') ||
           '',
         ).trim(),
         mealPlan: String(
-          selectedPriceSnapshot.mealPlan ||
-          selectedPriceSnapshot.mealPlanCode ||
+          (persistedIdentity.consistent
+            ? selectedPriceSnapshot.mealPlan || selectedPriceSnapshot.mealPlanCode
+            : '') ||
           '',
         ).trim(),
         totalHotelCost: Number((h as any).total_hotel_cost ?? 0) * earlyCheckInBillingMultiplier,
         totalHotelTaxAmount: Number((h as any).total_hotel_tax_amount ?? 0) * earlyCheckInBillingMultiplier,
-        baseHotelCost: Number((h as any).total_room_cost ?? 0) * earlyCheckInBillingMultiplier,
-        totalRoomCost: Number((h as any).total_room_cost ?? 0) * earlyCheckInBillingMultiplier,
+        baseHotelCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
+        totalRoomCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
         hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanCost: Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanGstAmount: Number((h as any).total_hotel_meal_plan_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
@@ -957,6 +995,7 @@ async getHotelRoomDetailsByQuoteId(
         selectionId: Number(hotelDetailsId || 0),
         requiresPriceReacceptance: Boolean((h as any).requires_price_reacceptance),
         selectedPriceSnapshot: rawSelectedPriceSnapshot || null,
+        identityMismatch: !persistedIdentity.consistent,
       };
     });
 
