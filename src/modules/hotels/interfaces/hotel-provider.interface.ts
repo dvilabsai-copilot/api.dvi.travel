@@ -26,6 +26,8 @@ export interface HotelSearchResult {
   providerDisplayName?: string;
   canonicalHotelId?: number | null;
   providerHotelCode?: string;
+  /** Backend-issued stable commercial identity; never created by the client. */
+  selectionKey?: string;
   rateOptionId?: string;
   roomId?: string | number;
   roomTypeId?: number;

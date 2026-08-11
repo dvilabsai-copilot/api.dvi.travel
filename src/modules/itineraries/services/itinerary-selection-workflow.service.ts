@@ -147,6 +147,8 @@ export class ItinerarySelectionWorkflowService {
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean; };
     canonicalHotelId?: number | null;
     hotelCode?: string;
+    providerHotelCode?: string;
+    selectionKey?: string;
     rateOptionId?: string;
     provider?: string;
     optionKey?: string;
@@ -315,7 +317,7 @@ export class ItinerarySelectionWorkflowService {
     const canonicalHotelId = Number(data.canonicalHotelId ?? data.hotelId ?? 0);
     const persistedHotelId = canonicalHotelId > 0 ? canonicalHotelId : null;
     const persistedHotelCode =
-      String(data.hotelCode || existingHotelDetails?.hotel_code || '').trim() || null;
+      String(data.providerHotelCode || data.hotelCode || existingHotelDetails?.hotel_code || '').trim() || null;
     let selectionPricing = resolveHotelSelectionPricing({
       totalPrice: data.totalPrice,
       pricePerNight: data.pricePerNight,
@@ -488,6 +490,9 @@ export class ItinerarySelectionWorkflowService {
               optionKey: data.optionKey || null,
               rateOptionId: data.rateOptionId || null,
               hotelCode: data.hotelCode || null,
+              canonicalHotelId: data.canonicalHotelId ?? data.hotelId ?? null,
+              providerHotelCode: data.providerHotelCode || null,
+              selectionKey: data.selectionKey || null,
               provider: data.provider || null,
               selectionOrigin: 'USER_SELECTED',
             hotelName: data.hotelName || null,
@@ -570,6 +575,9 @@ export class ItinerarySelectionWorkflowService {
             optionKey: data.optionKey || null,
             rateOptionId: data.rateOptionId || null,
             hotelCode: data.hotelCode || null,
+            canonicalHotelId: data.canonicalHotelId ?? data.hotelId ?? null,
+            providerHotelCode: data.providerHotelCode || null,
+            selectionKey: data.selectionKey || null,
             provider: data.provider || null,
             selectionOrigin: 'USER_SELECTED',
             hotelName: data.hotelName || null,
@@ -976,7 +984,7 @@ export class ItinerarySelectionWorkflowService {
       // cannot overwrite a newer request B after B has committed.
       for (const hotel of skipSupplierRefresh ? [] : hotels) {
         const provider = String(hotel.provider || '').trim().toLowerCase();
-        const hotelCode = String(hotel.hotelCode || hotel.providerHotelCode || hotel.hotelId || '').trim();
+        const hotelCode = String(hotel.providerHotelCode || hotel.hotelCode || hotel.hotelId || '').trim();
         if (!provider || provider === 'offline' || !hotelCode || !plan?.itinerary_quote_ID) continue;
         const refreshed = await this.hotelDetailsTboService.getSelectedHotelRates(
           String(plan.itinerary_quote_ID), Number(hotel.routeId), provider, hotelCode, Number(hotel.groupType),
@@ -1001,6 +1009,8 @@ export class ItinerarySelectionWorkflowService {
             groupType: hotel.groupType,
             mealPlan: hotel.mealPlan,
             canonicalHotelId: hotel.canonicalHotelId ?? hotel.hotelId,
+            providerHotelCode: hotel.providerHotelCode,
+            selectionKey: hotel.selectionKey,
             rateOptionId: hotel.rateOptionId,
             provider: hotel.provider,
             hotelCode: hotel.hotelCode,
@@ -1136,7 +1146,7 @@ export class ItinerarySelectionWorkflowService {
         });
       }
     }
-    const requestedRateIds = [data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
+    const requestedRateIds = [data.selectionKey, data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
       .map((value) => String(value || '').trim())
       .filter(Boolean);
     const requestedCanonicalId = Number((data.canonicalHotelId ?? data.hotelId) || 0);
@@ -1178,7 +1188,7 @@ export class ItinerarySelectionWorkflowService {
         if (String(candidate.provider || '').trim().toLowerCase() !== provider) return false;
         const candidateCanonicalId = Number(candidate.canonicalHotelId ?? candidate.hotelId ?? candidate.hotel_id ?? 0);
         const candidateHotelCode = String(
-          candidate.hotelCode || candidate.providerHotelCode || candidate.provider_hotel_code || candidate.hotel_code || '',
+          candidate.providerHotelCode || candidate.provider_hotel_code || candidate.hotelCode || candidate.hotel_code || '',
         ).trim().toLowerCase();
         const canonicalMatch = requestedCanonicalId > 0 && candidateCanonicalId > 0 && candidateCanonicalId === requestedCanonicalId;
         const codeMatch = Boolean(requestedHotelCode && candidateHotelCode && requestedHotelCode === candidateHotelCode);

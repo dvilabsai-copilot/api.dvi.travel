@@ -359,6 +359,10 @@ export class TBOHotelProvider implements IHotelProvider {
 
  // Use REAL BookingCode from TBO Search API response (not generated)
           const realBookingCode = room.BookingCode || `${hotel.HotelCode}_${room.TBORoomID}`;
+          const tboBookingParts = String(realBookingCode).split('!TB!');
+          const selectionKey = tboBookingParts.length >= 2
+            ? `tbo:${String(hotel.HotelCode || '')}:${tboBookingParts[1]}`
+            : `tbo:${String(hotel.HotelCode || '')}:${String(room.TBORoomID || idx + 1)}`;
 
  // Extract and normalize supplements from search response
           const rawSupplements = room.Supplements || [];
@@ -387,6 +391,8 @@ export class TBOHotelProvider implements IHotelProvider {
             provider: 'tbo',
             providerDisplayName: 'VSR',
             hotelCode: hotel.HotelCode,
+            providerHotelCode: String(hotel.HotelCode || ''),
+            selectionKey,
  hotelName: hotelDisplayName, // Real hotel name from database
             cityCode: criteria.cityCode,
             address: hotelMasterData?.hotel_address ?? '',

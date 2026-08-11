@@ -166,6 +166,159 @@ test('preview from either night preserves the same continuous stay', async () =>
   assert.deepEqual(dayOne.logicalStay.stayDates, dayTwo.logicalStay.stayDates);
 });
 
+test('STAAH HOTEL preview resolves the canonical hotel id to the supplier property code', async () => {
+  const service = Object.create(ItinerariesService.prototype) as any;
+  const refreshedCodes: string[] = [];
+  const staahCandidates = stay.routeIds.map((routeId, index) => ({
+    routeId,
+    itineraryRouteId: routeId,
+    date: stay.stayDates[index],
+    provider: 'staah',
+    canonicalHotelId: 44596,
+    hotelId: 44596,
+    hotelCode: '44596',
+    providerHotelCode: 'STAAHTESTHOTELPROD',
+    hotelName: 'STAAH TEST HOTEL PROD',
+    roomType: 'Deluxe Room',
+    mealPlan: 'CP',
+    rateOptionId: `STAAH-STAAHTESTHOTELPROD-DELUXEROOM-CP_PLAN-${stay.stayDates[index].replaceAll('-', '')}`,
+    optionKey: `STAAH-STAAHTESTHOTELPROD-DELUXEROOM-CP_PLAN-${stay.stayDates[index].replaceAll('-', '')}`,
+    pricePerNight: 1850,
+    totalPrice: 1850,
+    isSelectable: true,
+    isBookable: true,
+  }));
+
+  service.prisma = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ itinerary_quote_ID: 'DVI2026082' }),
+    },
+    dvi_hotel: {
+      findUnique: async () => ({
+        hotel_id: 44596,
+        staah_property_id: 'STAAHTESTHOTELPROD',
+        axisrooms_property_id: null,
+      }),
+    },
+    dvi_itinerary_route_details: {
+      findFirst: async () => ({ itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') }),
+    },
+  };
+  service.selectionWorkflowService = {
+    withHotelSelectionLock: async (_planId: number, _groupType: number, callback: () => Promise<any>) => callback(),
+  };
+  service.hotelStayBlockValidationService = {
+    buildContinuousStayCandidate: async () => stay,
+    previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
+  };
+  service.hotelDetailsTboService = {
+    getSelectedHotelRates: async (_quoteId: string, _routeId: number, _provider: string, hotelCode: string) => {
+      refreshedCodes.push(hotelCode);
+      return { hotels: [{}] };
+    },
+  };
+  service.hotelAvailabilitySnapshotService = {
+    mergeSelectedHotelRates: async () => undefined,
+    getActiveRows: async () => staahCandidates,
+  };
+
+  const result = await service.previewHotelIntent({
+    planId: 10040,
+    routeId: 10145,
+    groupType: 1,
+    selectionIntent: 'HOTEL',
+    provider: 'staah',
+    hotelCode: '44596',
+    canonicalHotelId: 44596,
+    hotelId: 44596,
+    routeDate: '2026-08-12',
+  });
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.deepEqual(refreshedCodes, ['STAAHTESTHOTELPROD', 'STAAHTESTHOTELPROD']);
+  assert.deepEqual(result.selections.map((selection: any) => selection.providerHotelCode), [
+    'STAAHTESTHOTELPROD',
+    'STAAHTESTHOTELPROD',
+  ]);
+});
+
+test('TBO RATE_OPTION preview keeps the commercial room while replacing an expired session token', async () => {
+  const service = Object.create(ItinerariesService.prototype) as any;
+  const staleBookingCode = '1313362!TB!1!TB!old-session!TB!N!TB!AFF!';
+  const freshBookingCode = '1313362!TB!1!TB!fresh-session!TB!N!TB!AFF!';
+  const selectionKey = 'tbo:1313362:1';
+  const tboStay = {
+    routeIds: [10145],
+    stayDates: ['2026-08-12'],
+    nights: 1,
+    checkInDate: '2026-08-12',
+    checkOutDate: '2026-08-13',
+    stayKey: 'tbo:1313362:2026-08-12_to_2026-08-13',
+  };
+  const freshCandidate = {
+    routeId: 10145,
+    itineraryRouteId: 10145,
+    date: '2026-08-12',
+    provider: 'tbo',
+    hotelCode: '1313362',
+    providerHotelCode: '1313362',
+    hotelName: 'BLACKBERRY HILLS RETREAT & SPA',
+    roomType: 'Garden Suite',
+    mealPlan: 'MAP',
+    rateOptionId: freshBookingCode,
+    optionKey: freshBookingCode,
+    bookingCode: freshBookingCode,
+    searchReference: freshBookingCode,
+    selectionKey,
+    pricePerNight: 20951.95,
+    totalPrice: 20951.95,
+    isSelectable: true,
+    isBookable: true,
+  };
+
+  service.prisma = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ itinerary_quote_ID: 'DVI2026082' }),
+    },
+    dvi_itinerary_route_details: {
+      findFirst: async () => ({ itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') }),
+    },
+  };
+  service.selectionWorkflowService = {
+    withHotelSelectionLock: async (_planId: number, _groupType: number, callback: () => Promise<any>) => callback(),
+  };
+  service.hotelStayBlockValidationService = {
+    buildContinuousStayCandidate: async () => tboStay,
+    previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
+  };
+  service.hotelDetailsTboService = {
+    getSelectedHotelRates: async () => ({ hotels: [freshCandidate] }),
+  };
+  service.hotelAvailabilitySnapshotService = {
+    mergeSelectedHotelRates: async () => undefined,
+    getActiveRows: async () => [freshCandidate],
+  };
+
+  const result = await service.previewHotelIntent({
+    planId: 10040,
+    routeId: 10145,
+    groupType: 3,
+    selectionIntent: 'RATE_OPTION',
+    provider: 'tbo',
+    hotelCode: '1313362',
+    providerHotelCode: '1313362',
+    rateOptionId: staleBookingCode,
+    optionKey: staleBookingCode,
+    selectionKey,
+    routeDate: '2026-08-12',
+  });
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.equal(result.selections[0].selectionKey, selectionKey);
+  assert.equal(result.selections[0].selectedRateOptionId, freshBookingCode);
+  assert.equal(result.selections[0].supplierBookingCode, freshBookingCode);
+});
+
 test('offline confirm returns DB-verified identity even when request name is contradictory', async () => {
   const { service } = createService(async () => candidates);
 

@@ -43,6 +43,7 @@ import { projectHotelPayablePricing } from './utils/hotel-payable-pricing.util';
 import {
   hotelCardPropertyKey,
 } from './utils/hotel-card-pricing.util';
+import { resolveHotelRequiredRoutes } from './utils/hotel-selection-view-state.util';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -3794,6 +3795,8 @@ this.logger.log(
               `Room ${roomId}`;
             results.push({
               provider: 'staah',
+              canonicalHotelId: Number((hotel as any).hotel_id) || null,
+              providerHotelCode: String((hotel as any).staah_property_id || '').trim() || undefined,
               hotelCode: String((hotel as any).hotel_id),
               hotelName: String((hotel as any).hotel_name || ''),
               cityCode: String((hotel as any).hotel_city || destinationRaw),
@@ -5737,8 +5740,7 @@ this.logger.log(
 
     const supplierHotelRows = cleanedHotelRows.filter((row) => row.isBookable !== false);
 
-    const searchableRouteIds = routes
-      .filter((route: any) => route?.hotelRequired !== false && route?.hotel_required !== false && !route?.isDeparture && !route?.isTransit && !route?.isActivityOnly)
+    const searchableRouteIds = resolveHotelRequiredRoutes(routes, noOfNights)
       .map((route: any) => Number(route.itinerary_route_ID));
 
     const totalSearchRoutes = searchableRouteIds.length;

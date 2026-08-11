@@ -5,6 +5,11 @@ import { PrismaService } from '../../prisma.service';
 import { dvi_itinerary_plan_details, Prisma } from '@prisma/client';
 import { haversineKm } from './utils/distance-utils';
 import { resolvePersistedHotelIdentity } from './utils/hotel-selection-identity.util';
+import {
+  buildHotelSelectionState,
+  HotelSelectionGroupView,
+  resolveHotelRequiredRoutes,
+} from './utils/hotel-selection-view-state.util';
 
 export interface ItineraryHotelTabDto {
   groupType: number;
@@ -184,6 +189,8 @@ export interface ItineraryHotelDetailsResponseDto {
   hotelRatesVisible: boolean;
   showHotelMargins?: boolean;
   hotelTabs: ItineraryHotelTabDto[];
+  /** Complete server-authoritative selection/total view for each package. */
+  hotelSelectionState?: HotelSelectionGroupView[];
   hotels: ItineraryHotelRowDto[];
   restrictedHotels?: ItineraryHotelRowDto[];
   totalRoomCount: number;
@@ -728,12 +735,16 @@ async getHotelRoomDetailsByQuoteId(
     );
 
  // Fetch route details to get location ID for each route
-    const routeDetails = routeIds.length
-      ? await this.prisma.dvi_itinerary_route_details.findMany({
-          where: { itinerary_route_ID: { in: routeIds }, deleted: 0 },
-          select: { itinerary_route_ID: true, location_id: true, no_of_days: true },
-        })
-      : [];
+    const routeDetails = await this.prisma.dvi_itinerary_route_details.findMany({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      orderBy: { itinerary_route_date: 'asc' },
+      select: {
+        itinerary_route_ID: true,
+        itinerary_route_date: true,
+        location_id: true,
+        no_of_days: true,
+      },
+    });
 
     const routeLocationMap = new Map(
       routeDetails.map((r) => [
@@ -1004,6 +1015,13 @@ async getHotelRoomDetailsByQuoteId(
       (sum, h) => sum + ((h as any).total_no_of_rooms ?? 0),
       0,
     );
+    const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
+    const requiredHotelRoutes = resolveHotelRequiredRoutes(routeDetails, noOfNights);
+    const hotelSelectionState = buildHotelSelectionState({
+      tabs: hotelTabs,
+      rows: hotels,
+      requiredRoutes: requiredHotelRoutes,
+    });
 
     return {
       quoteId: plan.itinerary_quote_ID ?? '',
@@ -1011,6 +1029,7 @@ async getHotelRoomDetailsByQuoteId(
       hotelRatesVisible,
       showHotelMargins: this.shouldShowHotelMargins(),
       hotelTabs,
+      hotelSelectionState,
       hotels,
       totalRoomCount,
     };
