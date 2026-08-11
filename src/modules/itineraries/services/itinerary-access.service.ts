@@ -17,6 +17,8 @@ export type ItineraryViewer = {
   staff_id?: unknown;
   guideId?: unknown;
   guide_id?: unknown;
+  vendorId?: unknown;
+  vendor_id?: unknown;
 };
 
 export type ItineraryAccessDecision = {
@@ -122,19 +124,44 @@ export class ItineraryAccessService {
     viewer?: ItineraryViewer,
   ): Promise<boolean> {
     const role = getRoleId(viewer);
-    const agentId = Number(viewer?.agentId ?? viewer?.agent_id ?? 0) || 0;
-    const staffId = Number(viewer?.staffId ?? viewer?.staff_id ?? 0) || 0;
-    const guideId = Number(viewer?.guideId ?? viewer?.guide_id ?? 0) || 0;
+const agentId = Number(viewer?.agentId ?? viewer?.agent_id ?? 0) || 0;
+const staffId = Number(viewer?.staffId ?? viewer?.staff_id ?? 0) || 0;
+const guideId = Number(viewer?.guideId ?? viewer?.guide_id ?? 0) || 0;
+const vendorId = Number(viewer?.vendorId ?? viewer?.vendor_id ?? 0) || 0;
 
-    // This check must happen before the generic agentId branch. A vehicle
-    // agent is deliberately limited to vehicle-only plans owned by itself.
-    if (role === SystemRole.VEHICLE_AGENT) {
-      return agentId > 0 &&
-        Number(plan.agent_id) === agentId &&
-        Number(plan.itinerary_preference) === VEHICLE_ONLY_PREFERENCE;
-    }
+// This check must happen before the generic agentId branch.
+if (role === SystemRole.VEHICLE_AGENT) {
+  return agentId > 0 &&
+    Number(plan.agent_id) === agentId &&
+    Number(plan.itinerary_preference) === VEHICLE_ONLY_PREFERENCE;
+}
 
-    if (role === SystemRole.ADMIN || role === SystemRole.ACCOUNTS) return true;
+if (role === SystemRole.VENDOR) {
+  if (
+    vendorId <= 0 ||
+    Number(plan.quotation_status) !== 1
+  ) {
+    return false;
+  }
+
+  const assignment =
+    await this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findFirst({
+      where: {
+        itinerary_plan_id: Number(plan.itinerary_plan_ID),
+        vendor_id: vendorId,
+        itineary_plan_assigned_status: 1,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_plan_id: true,
+      },
+    });
+
+  return Boolean(assignment);
+}
+
+if (role === SystemRole.ADMIN || role === SystemRole.ACCOUNTS) return true;
     if (agentId > 0) return Number(plan.agent_id) === agentId;
 
     if ((role === SystemRole.STAFF || role === SystemRole.TRAVEL_EXPERT) && staffId > 0) {
