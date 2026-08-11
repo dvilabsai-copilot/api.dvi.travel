@@ -1239,6 +1239,17 @@ async getAvailableActivities(
     });
   }
 
+  @Post('hotels/select-intent')
+  @ApiOperation({ summary: 'Refresh, resolve, validate, and persist a hotel selection intent' })
+  async selectHotelIntent(@Body() body: any, @Req() req: Request) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.planId), (req as any).user);
+    return this.svc.selectHotelIntent({
+      ...body,
+      requestedBy: Number((req as any).user?.userId || 1),
+    });
+  }
+
   @Post('hotels/bulk-save')
   @ApiOperation({ summary: 'Save multiple hotel selections at once before confirming itinerary' })
   @ApiBody({
@@ -1482,7 +1493,7 @@ async exportToExcel(
   }
 
   @Post(':planId/hotels/stay-extension-preview')
-  @ApiOperation({ summary: 'Preview continuous multi-night hotel booking for STAAH and AxisRooms' })
+  @ApiOperation({ summary: 'Preview continuous multi-night hotel booking from current supplier availability' })
   async previewHotelStayExtension(
     @Param('planId', ParseIntPipe) planId: number,
     @Body() body: StayExtensionPreviewDto,
@@ -1501,6 +1512,7 @@ async exportToExcel(
       roomType: body.roomType,
       mealPlan: body.mealPlan,
       checkInDate: body.checkInDate,
+      groupType: body.groupType,
     });
   }
 
@@ -1616,12 +1628,22 @@ async confirmQuotation(
     });
   }
 
-  @Post('cancel')
+    @Post('cancel')
   @ApiOperation({ summary: 'Cancel a confirmed itinerary' })
   @ApiBody({ type: CancelItineraryDto })
   @ApiOkResponse({ description: 'Itinerary cancelled successfully' })
   async cancelItinerary(@Body() dto: CancelItineraryDto) {
     return this.svc.cancelItinerary(dto);
+  }
+
+  @Get(':planId/cancellation-options')
+  @ApiOperation({
+    summary: 'Get cancellable components and their cancellation policies for a confirmed itinerary',
+  })
+  async getItineraryCancellationOptions(
+    @Param('planId', ParseIntPipe) planId: number,
+  ) {
+    return this.svc.getItineraryCancellationDetails(planId);
   }
 
   @Get('confirmed')

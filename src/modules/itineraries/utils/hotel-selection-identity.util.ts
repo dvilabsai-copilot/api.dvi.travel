@@ -189,20 +189,24 @@ export function hotelRateMatchesSelection(selection: any, option: any): boolean 
 
 export function optionMatchesSelection(selection: any, option: any): boolean {
   const snapshot = parseHotelSelectionSnapshot(selection);
-  const expectedOptionKey = clean(snapshot.optionKey);
-  const actualOptionKey = clean(option?.optionKey || hotelOptionKey(option));
-  if (expectedOptionKey && expectedOptionKey === actualOptionKey) {
-    return hotelRateMatchesSelection(selection, option);
-  }
-
-  const selectedRate = clean(snapshot.rateOptionId || selection?.selected_rate_option_id);
+  // A persisted supplier rate ID is the strongest identity. Do this before
+  // optionKey/room/meal/price comparison: those fields can be stale after a
+  // reset, while the nested rate option ID identifies the exact fresh rate.
+  const selectedRate = clean(selection?.selected_rate_option_id || snapshot.rateOptionId);
   const optionIds = [
     option?.rateOptionId,
+    option?.rate_option_id,
     option?.rateId,
     option?.searchReference,
     option?.bookingCode,
   ].map(clean).filter(Boolean);
   if (selectedRate && optionIds.includes(selectedRate)) {
+    return hotelPropertyMatchesSelection(selection, option);
+  }
+
+  const expectedOptionKey = clean(snapshot.optionKey);
+  const actualOptionKey = clean(option?.optionKey || hotelOptionKey(option));
+  if (expectedOptionKey && expectedOptionKey === actualOptionKey) {
     return hotelRateMatchesSelection(selection, option);
   }
 
@@ -217,8 +221,8 @@ export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
     hotelCode: row?.hotelCode ?? row?.hotel_code ?? row?.hotelId ?? row?.hotel_id ?? null,
     roomType: row?.roomType ?? row?.room_type ?? null,
     mealPlan: row?.mealPlan ?? row?.meal_plan ?? null,
-    totalPrice: Number(row?.totalPrice ?? row?.totalHotelCost ?? row?.total_hotel_cost ?? row?.selected_total_price ?? 0),
-    pricePerNight: Number(row?.pricePerNight ?? row?.selected_price_per_night ?? 0),
+    totalPrice: Number(row?.totalPrice ?? row?.totalStayPrice ?? row?.totalHotelCost ?? row?.total_hotel_cost ?? row?.totalAmount ?? row?.selected_total_price ?? 0),
+    pricePerNight: Number(row?.pricePerNight ?? row?.price_per_night ?? row?.price ?? row?.selected_price_per_night ?? 0),
     currency: row?.currency ?? row?.selected_currency ?? null,
     optionKey: (row?.optionKey ?? selectedOptionKeyFromRow(row)) || null,
     rateOptionId: row?.rateOptionId ?? row?.selected_rate_option_id ?? null,

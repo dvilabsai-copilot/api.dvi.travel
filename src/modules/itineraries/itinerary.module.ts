@@ -118,6 +118,7 @@ import { TransportEarlyArrivalValidationService } from './validation/transport-e
 import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 import { HotelRecommendationPackageService } from './services/hotel-recommendation-package.service';
 import { HotelMealPlanPolicyService } from './services/hotel-meal-plan-policy.service';
+import { ItineraryPricingService } from './itinerary-pricing.service';
 
 @Module({
   imports: [HotelsModule, RouteVehicleRestrictionsModule],
@@ -129,6 +130,7 @@ import { HotelMealPlanPolicyService } from './services/hotel-meal-plan-policy.se
     ItineraryHotelDetailsService,
     ItineraryHotelDetailsTboService,
     ItineraryExportService,
+    ItineraryPricingService,
     TboHotelBookingService,
     ResAvenueHotelBookingService,
     HobseHotelBookingService,

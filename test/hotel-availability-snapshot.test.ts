@@ -57,6 +57,35 @@ test('persisted hotel read never invokes a live supplier', async () => {
   assert.equal(response.hotelAvailability?.availabilityState, 'FRESH');
 });
 
+test('canonical selected rate id never falls back to another nested option', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const selected = (service as any).selectedRateOption(
+    {
+      selected_rate_option_id: 'fresh-suite-map',
+      selected_price_snapshot: JSON.stringify({ rateOptionId: 'fresh-suite-map' }),
+    },
+    {
+      rateOptions: [
+        { rateOptionId: 'old-deluxe-cp', roomType: 'Deluxe Room', mealPlan: 'CP', totalPrice: 1450 },
+        { rateOptionId: 'fresh-suite-map', roomType: 'Suite Room', mealPlan: 'MAP', totalPrice: 1630 },
+      ],
+    },
+  );
+
+  assert.equal(selected.rateOptionId, 'fresh-suite-map');
+  assert.equal(selected.roomType, 'Suite Room');
+  assert.equal(selected.mealPlan, 'MAP');
+
+  const stale = (service as any).selectedRateOption(
+    {
+      selected_rate_option_id: 'missing-rate',
+      selected_price_snapshot: JSON.stringify({ rateOptionId: 'missing-rate' }),
+    },
+    { rateOptions: [{ rateOptionId: 'old-deluxe-cp', roomType: 'Deluxe Room', mealPlan: 'CP', totalPrice: 1450 }] },
+  );
+  assert.equal(stale, null);
+});
+
 test('unscoped offline rows stay inside the existing recommendation groups', async () => {
   const syncedAt = new Date('2026-07-29T10:00:00.000Z');
   const prisma = makePrisma();
@@ -695,6 +724,83 @@ test('persisted selection matches a nested supplier rate without marking the hot
   assert.equal((service as any).rowMatchesSelection(selection, row), true);
 });
 
+test('reconciliation uses selected rate id first and persists one complete nested option', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const { tx, selections } = makeReconciliationTx();
+  selections[0].selected_rate_option_id = 'rate-1';
+  selections[0].selected_total_price = 2304;
+  selections[0].selected_price_per_night = 1152;
+  selections[0].selected_price_snapshot = JSON.stringify({
+    provider: 'staah',
+    hotelCode: 'H-1',
+    roomType: 'Suite Room',
+    mealPlan: 'MAP',
+    rateOptionId: 'rate-1',
+    totalPrice: 2304,
+    pricePerNight: 1152,
+  });
+
+  const refreshed: any = {
+    groupType: 1,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    provider: 'tbo',
+    hotelCode: 'H-1',
+    hotelId: 101,
+    hotelName: 'Stable Hotel',
+    // The parent intentionally describes another option. Reconciliation must
+    // use the nested rate matching selected_rate_option_id instead.
+    roomType: 'Suite Room',
+    mealPlan: 'MAP',
+    rateOptionId: 'rate-2',
+    pricePerNight: 999,
+    totalPrice: 999,
+    rateOptions: [
+      {
+        provider: 'tbo',
+        hotelCode: 'H-1',
+        hotelId: 101,
+        hotelName: 'Stable Hotel',
+        roomType: 'Deluxe Room',
+        mealPlan: 'CP',
+        roomId: 'deluxe-room',
+        rateId: 'cp-rate',
+        rateOptionId: 'rate-1',
+        pricePerNight: 1600,
+        totalStayPrice: 3200,
+        totalPrice: 3200,
+      },
+      {
+        provider: 'tbo',
+        hotelCode: 'H-1',
+        hotelId: 101,
+        hotelName: 'Stable Hotel',
+        roomType: 'Suite Room',
+        mealPlan: 'MAP',
+        roomId: 'suite-room',
+        rateId: 'map-rate',
+        rateOptionId: 'rate-2',
+        pricePerNight: 1800,
+        totalStayPrice: 3600,
+        totalPrice: 3600,
+      },
+    ],
+  };
+
+  const summary = await (service as any).reconcileSelections(tx, 44, [refreshed], 'run-nested-rate', 1);
+  const snapshot = JSON.parse(selections[0].selected_price_snapshot);
+
+  assert.equal(summary.hasChanges, true);
+  assert.equal(selections[0].selected_rate_option_id, 'rate-1');
+  assert.equal(selections[0].selected_price_per_night, 1600);
+  assert.equal(selections[0].selected_total_price, 3200);
+  assert.equal(snapshot.rateOptionId, 'rate-1');
+  assert.equal(snapshot.roomType, 'Deluxe Room');
+  assert.equal(snapshot.mealPlan, 'CP');
+  assert.equal(snapshot.pricePerNight, 1600);
+  assert.equal(snapshot.totalPrice, 3200);
+});
+
 test('same hotel with a changed rate updates the selection and reports old versus new', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections } = makeReconciliationTx();
@@ -721,7 +827,7 @@ test('same hotel with a changed rate updates the selection and reports old versu
 
   assert.equal(summary.hasChanges, true);
   assert.equal(summary.totalChanges, 1);
-  assert.equal(summary.changes.some((change: any) => change.changeType === 'RATE_CHANGED'), true);
+  assert.equal(summary.changes.some((change: any) => change.changeType === 'SELECTION_REPLACED'), true);
   assert.equal(summary.changes.some((change: any) => change.previous?.hotelName === 'Stable Hotel' && change.current?.hotelName === 'Stable Hotel'), true);
   assert.equal(selections[0].selected_total_price, 125);
 });
@@ -891,6 +997,59 @@ test('missing auto selection is replaced in place and reports AUTO_SELECTION_CHA
   assert.equal(selections.filter((row) => row.deleted === 0 && row.status === 1).length, 1);
   assert.equal(selections[0].hotel_id, 202);
   assert.equal(rooms.filter((row) => row.deleted === 0 && row.status === 1).length, 1);
+});
+
+test('AUTO_SELECTED replacement ignores historical price proximity', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const { tx, selections } = makeReconciliationTx();
+  selections[0].selected_price_snapshot = JSON.stringify({ selectionOrigin: 'AUTO_SELECTED' });
+  selections[0].selected_rate_option_id = 'old-suite';
+  const deluxe: any = {
+    groupType: 1, itineraryRouteId: 10, date: '2026-07-28', provider: 'staah',
+    hotelCode: 'H-2', hotelId: 202, roomId: 'deluxe', rateId: 'deluxe-rate',
+    rateOptionId: 'deluxe-rate', hotelName: 'New Hotel', roomType: 'Deluxe',
+    mealPlan: 'CP', pricePerNight: 5000, totalStayPrice: 5000,
+    isBookable: true, isSelectable: true,
+  };
+  deluxe.optionKey = hotelOptionKey(deluxe);
+  const suite: any = { ...deluxe, roomType: 'Suite', roomId: 'suite', rateId: 'suite-rate', rateOptionId: 'suite-rate', pricePerNight: 9500, totalStayPrice: 9500 };
+  suite.optionKey = hotelOptionKey(suite);
+
+  await (service as any).reconcileSelections(tx, 44, [deluxe, suite], 'run-auto-price', 1);
+
+  assert.equal(selections[0].hotel_id, 202);
+  assert.equal(selections[0].selected_rate_option_id, 'deluxe-rate');
+  assert.equal(JSON.parse(selections[0].selected_price_snapshot).roomType, 'Deluxe');
+  assert.equal(Number(selections[0].selected_total_price), 5000);
+});
+
+test('AUTO_SELECTED chooses the cheapest eligible live provider before deterministic tie-breaks', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => { createdSelections.push(data); return { ...data, itinerary_plan_hotel_details_ID: 777 }; },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const rows = ['axisrooms', 'tbo', 'staah'].map((provider, index) => ({
+    itineraryRouteId: 10, groupType: 1, date: '2026-07-28', provider,
+    hotelId: 300 + index, hotelCode: `${provider}-hotel`, hotelName: provider,
+    roomId: provider, rateId: `${provider}-rate`, rateOptionId: `${provider}-rate`,
+    totalStayPrice: provider === 'staah' ? 2800 : provider === 'tbo' ? 3000 : 4000,
+    isBookable: true, isSelectable: true,
+  }));
+  rows.forEach((row: any) => { row.optionKey = hotelOptionKey(row); });
+
+  await (service as any).ensureAutoSelections(tx, 44, rows, 'run-provider-price', 7);
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_provider, 'staah');
+  assert.equal(Number(createdSelections[0].selected_total_price), 2800);
 });
 
 test('live reconciliation falls back to offline inventory only when live is absent', async () => {

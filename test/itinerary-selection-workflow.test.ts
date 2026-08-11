@@ -242,6 +242,41 @@ test('live selection validates the selected nested rate option before its parent
   );
 });
 
+test('bulk hotel persistence rolls back every route when one route fails', async () => {
+  const committed: number[] = [];
+  const staged: number[] = [];
+  const prisma: any = {
+    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'Q-1' }) },
+    $transaction: async (callback: any) => {
+      const tx = { $queryRawUnsafe: async (sql: string) => sql.includes('GET_LOCK') ? [{ acquired: 1 }] : [{ released: 1 }] };
+      try {
+        await callback(tx);
+        committed.push(...staged);
+      } catch (error) {
+        staged.length = 0;
+        throw error;
+      }
+    },
+  };
+  const service = createService(prisma);
+  (service as any).selectHotel = async (data: any) => {
+    staged.push(Number(data.routeId));
+    if (Number(data.routeId) === 103) throw new Error('simulated route 103 persistence failure');
+    return { success: true };
+  };
+
+  await assert.rejects(
+    () => service.bulkSaveHotels(77, [
+      { routeId: 101, hotelId: 1, groupType: 1 },
+      { routeId: 102, hotelId: 1, groupType: 1 },
+      { routeId: 103, hotelId: 1, groupType: 1 },
+    ]),
+    /simulated route 103 persistence failure/,
+  );
+  assert.deepEqual(committed, []);
+  assert.deepEqual(staged, []);
+});
+
 test('vehicle slab selection preserves required-field validation', async () => {
   await assert.rejects(
     () => createService().selectVehicleSlab({ planId: 0, vehicleTypeId: 0 }),

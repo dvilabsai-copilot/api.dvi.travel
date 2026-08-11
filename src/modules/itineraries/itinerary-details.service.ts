@@ -8,6 +8,7 @@ import {
   redactVehicleCostBreakdowns,
 } from './utils/itinerary-cost-visibility.util';
 import { resolveItineraryPreference } from './utils/itinerary-preference.util';
+import { ItineraryPricingService, money } from './itinerary-pricing.service';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 import { calculateRouteTollCharges, getEffectiveTimeLimitKm } from './engines/vehicle-calculation.helpers';
@@ -288,6 +289,21 @@ isAssigned?: boolean;
 
 export interface CostBreakdownDto {
  // Hotel costs
+  hotelPresentation?: {
+    roomCount: number;
+    roomPaxCount: number;
+    roomCost: number;
+    roomCostPerPerson: number;
+    breakfastCost: number;
+    extraBedCount: number;
+    extraBedCost: number;
+    childWithBedCost: number;
+    childWithoutBedCost: number;
+    hotelMarginPercentage: number;
+    hotelMarginCost: number;
+    serviceTax: number;
+    grandTotal: number;
+  };
   totalRoomCost?: number;
   roomCostPerPerson?: number;
   hotelPaxCount?: number;
@@ -303,6 +319,8 @@ export interface CostBreakdownDto {
     provider: string;
     hotelCode: string;
     hotelName: string;
+    rateOptionId?: string;
+    optionKey?: string;
     bookingCode?: string;
     searchReference?: string;
     roomId?: string;
@@ -317,6 +335,18 @@ export interface CostBreakdownDto {
     marginAmount: number;
     marginGstAmount: number;
     totalAmount: number;
+    extraBedCount?: number;
+    extraBedRate?: number;
+    extraBedAmount?: number;
+    childWithBedCount?: number;
+    childWithBedRate?: number;
+    childWithBedAmount?: number;
+    childWithoutBedCount?: number;
+    childWithoutBedRate?: number;
+    childWithoutBedAmount?: number;
+    extraChildCount?: number;
+    extraChildRate?: number;
+    extraChildAmount?: number;
   }>;
   hotelRoomBaseCost?: number;
   hotelRoomGstCost?: number;
@@ -791,17 +821,33 @@ export class ItineraryDetailsService {
           });
         }
 
-        const baseAmount = roundCurrency(Number(match.baseHotelCost ?? match.totalHotelCost ?? 0));
+        const baseAmount = roundCurrency(Number(
+          match.basePricePerNight ??
+          match.base_price_per_night ??
+          match.baseHotelCost ??
+          match.totalHotelCost ??
+          0,
+        ));
+        const payableAmount = roundCurrency(Number(
+          match.pricePerNight ??
+          match.price_per_night ??
+          match.totalPrice ??
+          match.totalStayPrice ??
+          match.totalHotelCost ??
+          0,
+        ));
         const marginAmount = roundCurrency(Number(
           match.hotelMarginAmount ??
-          (baseAmount * Number(match.hotelMarginPercentage || 0)) / 100,
+          (payableAmount > 0 && baseAmount > 0
+            ? payableAmount - baseAmount
+            : (baseAmount * Number(match.hotelMarginPercentage || 0)) / 100),
         ));
         const roomGstAmount = roundCurrency(Number(match.hotelRoomGstAmount ?? 0));
         const marginGstAmount = roundCurrency(Number(match.hotelMarginGstAmount ?? 0));
         const mealPlanAmount = roundCurrency(Number(match.hotelMealPlanCost ?? 0));
         const mealPlanGstAmount = roundCurrency(Number(match.hotelMealPlanGstAmount ?? 0));
         const totalAmount = roundCurrency(
-          Number(match.totalHotelCost || 0) + Number(match.totalHotelTaxAmount || 0),
+          payableAmount + Number(match.totalHotelTaxAmount || 0),
         );
 
         const targetGroupType = Number(selection.groupType || params.groupType || 0);
@@ -812,7 +858,7 @@ export class ItineraryDetailsService {
           hotel_required: 1,
           deleted: 0,
           status: 1,
-          total_hotel_cost: Number(match.totalHotelCost || 0),
+          total_hotel_cost: totalAmount,
           total_hotel_tax_amount: Number(match.totalHotelTaxAmount || 0),
           total_room_cost: baseAmount,
           total_room_gst_amount: roomGstAmount,
@@ -823,8 +869,8 @@ export class ItineraryDetailsService {
           total_extra_bed_cost: Number(match.extraBedAmount ?? match.extraBedCost ?? 0),
           total_extra_bed_cost_gst_amount: Number(match.extraBedGstAmount ?? 0),
           total_amenities_cost: 0,
-          total_childwith_bed_cost: 0,
-          total_childwithout_bed_cost: 0,
+          total_childwith_bed_cost: Number(match.childWithBedAmount ?? match.childWithBedCost ?? 0),
+          total_childwithout_bed_cost: Number(match.childWithoutBedAmount ?? match.childWithoutBedCost ?? 0),
           early_checkin: match.earlyCheckIn ? 1 : 0,
           early_checkin_extra_payment_applicable: match.earlyCheckInExtraPaymentApplicable ? 1 : 0,
         });
@@ -834,6 +880,8 @@ export class ItineraryDetailsService {
           provider: String(match.provider || selection.provider || '').trim().toLowerCase(),
           hotelCode: String(match.hotelCode || match.hotelId || selection.hotelCode || '').trim(),
           hotelName: String(match.hotelName || selection.hotelName || '').trim(),
+          rateOptionId: String(match.rateOptionId || match.rate_option_id || selection.rateOptionId || '').trim() || undefined,
+          optionKey: String(match.optionKey || match.option_key || selection.optionKey || '').trim() || undefined,
           bookingCode: String(match.bookingCode || selection.bookingCode || '').trim() || undefined,
           searchReference: String(match.searchReference || selection.searchReference || '').trim() || undefined,
           roomId: String(match.roomId || selection.roomId || '').trim() || undefined,
@@ -848,6 +896,18 @@ export class ItineraryDetailsService {
           marginAmount,
           marginGstAmount,
           totalAmount,
+          extraBedCount: Number(match.extraBedCount ?? 0),
+          extraBedRate: Number(match.extraBedRate ?? 0),
+          extraBedAmount: Number(match.extraBedAmount ?? match.extraBedCost ?? 0),
+          childWithBedCount: Number(match.childWithBedCount ?? 0),
+          childWithBedRate: Number(match.childWithBedRate ?? 0),
+          childWithBedAmount: Number(match.childWithBedAmount ?? match.childWithBedCost ?? 0),
+          childWithoutBedCount: Number(match.childWithoutBedCount ?? 0),
+          childWithoutBedRate: Number(match.childWithoutBedRate ?? 0),
+          childWithoutBedAmount: Number(match.childWithoutBedAmount ?? match.childWithoutBedCost ?? 0),
+          extraChildCount: Number(match.extraChildCount ?? 0),
+          extraChildRate: Number(match.extraChildRate ?? 0),
+          extraChildAmount: Number(match.extraChildAmount ?? match.extraChildCost ?? 0),
         });
         usedRouteIds.add(routeId);
       }
@@ -5874,7 +5934,9 @@ const manualAssignedRow = isManualSelection
  // This matches PHP behavior which filters by assigned status
     const totalVehicleAmountFromEligible = vehicles.reduce(
       (sum: number, vehicle: any) =>
-        sum + (vehicle?.isAssigned ? Number(vehicle?.grandTotal || vehicle?.totalAmount || 0) : 0),
+        sum + (vehicle?.isAssigned
+          ? money(Number(vehicle?.grandTotal || vehicle?.totalAmount || 0) * Number(vehicle?.totalQty || 1))
+          : 0),
       0,
     );
 
@@ -5882,7 +5944,7 @@ const manualAssignedRow = isManualSelection
       totalVehicleAmountFromEligible > 0
         ? totalVehicleAmountFromEligible
         : vehicles.reduce(
-            (sum: number, v: any) => sum + (Number(v.grandTotal || v.totalAmount || 0) || 0),
+            (sum: number, v: any) => sum + money(Number(v.grandTotal || v.totalAmount || 0) * Number(v.totalQty || 1)),
             0,
           );
 
@@ -6025,13 +6087,26 @@ const hasRequiredVehicleSelection =
 
  // 1. Calculate Hotel Costs with detailed breakdown
  // Filter by group_type if provided (for hotel recommendation tabs)
-    const hotelWhere: any = { itinerary_plan_id: planId, deleted: 0 };
-    if (groupType !== undefined) {
-      hotelWhere.group_type = groupType;
-    }
-    const hotelRows = hotelCostOverride?.rows ?? await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+    const hotelWhere: any = { itinerary_plan_id: planId, deleted: 0, status: 1 };
+    const allHotelRows = hotelCostOverride?.rows ?? await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
       where: hotelWhere,
     });
+    // The PHP page prices one recommendation at a time. The details page has
+    // no group query on its initial load, so use Recommended #1 and fall back
+    // to the first persisted group when that package is absent.
+    const persistedHotelGroups = Array.from(new Set(
+      (allHotelRows as any[])
+        .map((row) => Number(row?.group_type || 0))
+        .filter((value) => value > 0),
+    )).sort((a, b) => a - b);
+    const activeHotelGroupType = groupType ?? (persistedHotelGroups.includes(1)
+      ? 1
+      : persistedHotelGroups[0]);
+    const hotelRows = hotelCostOverride?.rows ?? (
+      activeHotelGroupType
+        ? (allHotelRows as any[]).filter((row) => Number(row?.group_type || 0) === activeHotelGroupType)
+        : allHotelRows
+    );
 
  // Exclude marker/placeholder rows from cost math.
     let costHotelRows = hotelRows.filter(
@@ -6077,13 +6152,52 @@ const hasRequiredVehicleSelection =
       const persistedSelectedTotal = Number((h as any).selected_total_price || 0);
       const hasPersistedSelectedTotal = Number.isFinite(persistedSelectedTotal) && persistedSelectedTotal > 0;
       if (hasPersistedSelectedTotal) {
+        // STAAH persists selected_total_price as the single-room/night value,
+        // while selected_price_snapshot.totalPrice contains the authoritative
+        // selected total for the requested room occupancy. Use the snapshot
+        // total when it is available so a two-room itinerary is not priced as
+        // one room after the page is reloaded.
+        let selectedTotalForStay = persistedSelectedTotal;
+        if (String((h as any).hotel_provider || '').trim().toLowerCase() === 'staah') {
+          try {
+            const snapshot = typeof (h as any).selected_price_snapshot === 'string'
+              ? JSON.parse((h as any).selected_price_snapshot)
+              : (h as any).selected_price_snapshot;
+            const snapshotTotal = Number(snapshot?.totalPrice ?? snapshot?.totalStayPrice ?? 0);
+            if (Number.isFinite(snapshotTotal) && snapshotTotal > 0) {
+              selectedTotalForStay = snapshotTotal;
+            }
+          } catch {
+            // Keep the persisted selected total when the optional snapshot is invalid.
+          }
+        }
         const selectedAmount = hotelStayTotal({
           ...h,
-          totalStayPrice: persistedSelectedTotal,
+          totalStayPrice: selectedTotalForStay,
+          selected_total_price: selectedTotalForStay,
           pricePerNight: (h as any).selected_price_per_night || (h as any).price_per_night,
         }, 1) * rowMultiplier;
+        let selectedBaseAmount = 0;
+        try {
+          const snapshot = typeof (h as any).selected_price_snapshot === 'string'
+            ? JSON.parse((h as any).selected_price_snapshot)
+            : (h as any).selected_price_snapshot;
+          const basePerNight = Number(snapshot?.basePricePerNight || 0);
+          if (Number.isFinite(basePerNight) && basePerNight > 0) {
+            selectedBaseAmount = basePerNight * rowMultiplier;
+          }
+        } catch {
+          selectedBaseAmount = 0;
+        }
+        // Selected totals are payable amounts. Preserve the supplier/base and
+        // margin components separately so the tooltip can show 4,200 + 840 =
+        // 5,040 instead of presenting the payable amount as the room base.
+        const selectedBase = selectedBaseAmount > 0
+          ? selectedBaseAmount
+          : Math.max(selectedAmount - Number(h.hotel_margin_rate || 0) * rowMultiplier, 0);
         hotelListTotal += selectedAmount;
-        hotelRoomBaseCost += selectedAmount;
+        hotelRoomBaseCost += selectedBase;
+        hotelMarginCost += Math.max(selectedAmount - selectedBase, 0);
         totalRoomCost += selectedAmount;
         return;
       }
@@ -6210,13 +6324,23 @@ const hasRequiredVehicleSelection =
       totalActivityCost,
     });
 
- // 4. Calculate additional margin (10% for trips <= configured day limit)
-    const itineraryNoDays = plan.no_of_days || 0;
- const additionalMarginPercentage = 10; // Could come from global settings
- const additionalMarginDayLimit = 3; // Could come from global settings
-
     const shouldIncludeHotels = itineraryPreference === 1 || itineraryPreference === 3;
-    const effectiveHotelAmount = shouldIncludeHotels ? totalHotelAmount : 0;
+    // `hotelListTotal` is the selected recommendation total (room + taxes +
+    // margin). Do not add its component costs a second time.
+    const selectedHotelAmount = hotelListTotal > 0 ? Number(hotelListTotal.toFixed(2)) : totalHotelAmount;
+    const effectiveHotelAmount = shouldIncludeHotels ? selectedHotelAmount : 0;
+    const displayExtraBedCost = updatedExtraBedCost;
+    // For selected hotel rows, hotelRoomBaseCost is derived from the matched
+    // selection snapshot (supplier/base amount). Keep the payable amount in
+    // grandTotal and expose the base separately so the tooltip can show the
+    // actual pricing chain: base + hotel margin = payable.
+    const displayRoomCost = hotelRoomBaseCost > 0
+      ? hotelRoomBaseCost
+      : Math.max(0, effectiveHotelAmount - displayExtraBedCost);
+    const hotelMarginPercentage = costHotelRows.reduce(
+      (max, row: any) => Math.max(max, Number(row?.hotel_margin_percentage ?? row?.hotelMarginPercentage ?? 0)),
+      0,
+    );
 
     const subtotal =
       effectiveHotelAmount +
@@ -6224,24 +6348,36 @@ const hasRequiredVehicleSelection =
       totalGuideCost +
       totalHotspotCost +
       totalActivityCost;
-    const additionalMargin = itineraryNoDays <= additionalMarginDayLimit
-      ? (subtotal * additionalMarginPercentage) / 100
-      : 0;
-
- // 4. Calculate total amount before discounts
-    const totalAmount = subtotal + additionalMargin;
-
- // 5. Get coupon discount and agent margin from plan
- const couponDiscount = 0; // Not currently stored in plan table
-    const agentMargin = hasRequiredVehicleSelection ? Number(plan.agent_margin || 0) : 0;
-
- // 6. Calculate round off
-    const netBeforeRoundOff = totalAmount - couponDiscount + agentMargin;
-    const roundedNet = Math.round(netBeforeRoundOff);
-    const totalRoundOff = roundedNet - netBeforeRoundOff;
-
- // 7. Final net payable
-    const netPayable = roundedNet;
+    const itineraryNoDays = Number(plan.no_of_days || 0);
+    const vehicleMarginBase = selectedVehicleRows.reduce(
+      (sum: number, vehicle: any) => sum + Number(vehicle?.vendorMarginAmount || 0) * Number(vehicle?.totalQty || 1),
+      0,
+    );
+    const pricing = ItineraryPricingService.overall({
+      hotspot: totalHotspotCost,
+      activity: totalActivityCost,
+      hotel: effectiveHotelAmount,
+      vehicle: totalVehicleCost,
+      guide: totalGuideCost,
+      incidentalCount: Number(totalGuideCost > 0) + Number(totalHotspotCost > 0) + Number(totalActivityCost > 0),
+      agentMarginRate: hasRequiredVehicleSelection ? Number(plan.agent_margin || 0) : 0,
+      agentMarginGstType: (plan as any).agent_margin_gst_type,
+      agentMarginGstRate: (plan as any).agent_margin_gst_percentage,
+      additionalMarginPercentage: Number(process.env.ITINERARY_ADDITIONAL_MARGIN_PERCENTAGE || 10),
+      additionalMarginDayLimit: Number(process.env.ITINERARY_ADDITIONAL_MARGIN_DAY_LIMIT || 3),
+      noOfDays: itineraryNoDays,
+      marginBase: money(
+        (subtotal * Number(plan.agent_margin || 0)) / 100 + hotelMarginCost + vehicleMarginBase,
+      ),
+      marginDiscountPercentage: Number((plan as any).itinerary_margin_discount_percentage || 0),
+      userLevel: 1,
+    });
+    const additionalMargin = pricing.additionalMargin;
+    const totalAmount = pricing.totalNetAmount;
+    const couponDiscount = pricing.couponDiscount;
+    const agentMargin = pricing.agentMargin;
+    const totalRoundOff = pricing.roundoff;
+    const netPayable = pricing.finalPayable;
 
     const costBreakdown: CostBreakdownDto = {
  // Hotel costs
@@ -6269,6 +6405,28 @@ const hasRequiredVehicleSelection =
       hotelMealPlanGstCost: shouldIncludeHotels && hotelMealPlanGstCost > 0 ? Number(hotelMealPlanGstCost.toFixed(2)) : undefined,
       hotelMealPlanAllocatedCost: shouldIncludeHotels && hotelMealPlanAllocatedCost > 0 ? Number(hotelMealPlanAllocatedCost.toFixed(2)) : undefined,
       totalHotelAmount: shouldIncludeHotels && effectiveHotelAmount > 0 ? effectiveHotelAmount : undefined,
+      hotelPresentation: shouldIncludeHotels && effectiveHotelAmount > 0
+        ? {
+            roomCount: Math.max(
+              Number((plan as any).preferred_room_count ?? 0),
+              Number((plan as any).room_count ?? 0),
+              Number((plan as any).total_room_count ?? 0),
+              1,
+            ),
+            roomPaxCount: hotelPaxCount,
+            roomCost: Number(displayRoomCost.toFixed(2)),
+            roomCostPerPerson: Number((hotelPaxCount > 0 ? displayRoomCost / hotelPaxCount : 0).toFixed(2)),
+            breakfastCost: Number(totalMealCost.toFixed(2)),
+            extraBedCount: totalExtraBed,
+            extraBedCost: Number(displayExtraBedCost.toFixed(2)),
+            childWithBedCost: Number(updatedChildWithBedCost.toFixed(2)),
+            childWithoutBedCost: Number(updatedChildWithoutBedCost.toFixed(2)),
+            hotelMarginPercentage: Number(hotelMarginPercentage.toFixed(2)),
+            hotelMarginCost: Number(hotelMarginCost.toFixed(2)),
+            serviceTax: Number((hotelRoomGstCost + hotelMarginGstCost + hotelMealPlanGstCost).toFixed(2)),
+            grandTotal: Number(effectiveHotelAmount.toFixed(2)),
+          }
+        : undefined,
 
  // Vehicle costs
       totalVehicleCost: shouldIncludeVehicles ? totalVehicleCost : 0,
