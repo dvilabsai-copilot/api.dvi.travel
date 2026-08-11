@@ -18,26 +18,44 @@ type OfflineRoomOffer = {
   bookingCode: string;
   mealPlan: string;
   nightlyBase: number[];
+  nightlyMargin: number[];
   nightlySell: number[];
+  hotelMarginPercentage: number;
+  baseTotalPrice: number;
+  hotelMarginTotalAmount: number;
   totalStayPrice: number;
   pricePerNight: number;
   roomCount: number;
 };
 
 export type OfflineRateResolution = {
+  provider: 'offline';
+  hotelId: number;
   canonicalHotelId: number;
+  hotelCode: string;
+  providerHotelCode: string;
+  hotelName: string;
+  category: number;
   /** The route that was actually matched after stale UI route IDs are reconciled. */
   routeId: number;
+  routeDate: string;
   rateOptionId: string;
+  bookingCode: string;
+  searchReference: string;
   roomId: number;
   roomTypeId: number;
   roomType: string;
   mealPlan: string;
   pricePerNight: number;
+  basePricePerNight: number;
+  baseTotalPrice: number;
+  hotelMarginPercentage: number;
+  hotelMarginAmount: number;
+  hotelMarginTotalAmount: number;
   totalStayPrice: number;
   numberOfNights: number;
   currency: string;
-  nightlyRates: Array<{ date: string; baseAmount: number; sellAmount: number }>;
+  nightlyRates: Array<{ date: string; baseAmount: number; marginPercentage: number; marginAmount: number; sellAmount: number }>;
 };
 
 type OfflineCatalogRows = {
@@ -372,11 +390,18 @@ export class OfflineHotelCatalogService {
         },
         canonicalHotelId: Number(hotel.hotel_id || 0) || null,
         pricePerNight: bestOffer.pricePerNight,
+        basePricePerNight: bestOffer.nightlyBase[0] || 0,
+        baseTotalPrice: bestOffer.baseTotalPrice,
+        hotelMarginPercentage: bestOffer.hotelMarginPercentage,
+        hotelMarginAmount: bestOffer.nightlyMargin[0] || 0,
+        hotelMarginTotalAmount: bestOffer.hotelMarginTotalAmount,
         totalStayPrice: bestOffer.totalStayPrice,
         numberOfNights: dateList.length,
         nightlyRates: dateList.map((date, index) => ({
           date,
           baseAmount: bestOffer.nightlyBase[index] || 0,
+          marginPercentage: bestOffer.hotelMarginPercentage,
+          marginAmount: bestOffer.nightlyMargin[index] || 0,
           sellAmount: bestOffer.nightlySell[index] || 0,
         })),
         priceLabel: 'Price subject to hotel approval',
@@ -408,6 +433,11 @@ export class OfflineHotelCatalogService {
           bookingMode: 'MANUAL_APPROVAL',
           priceSource: 'DATABASE',
           pricePerNight: offer.pricePerNight,
+          basePricePerNight: offer.nightlyBase[0] || 0,
+          baseTotalPrice: offer.baseTotalPrice,
+          hotelMarginPercentage: offer.hotelMarginPercentage,
+          hotelMarginAmount: offer.nightlyMargin[0] || 0,
+          hotelMarginTotalAmount: offer.hotelMarginTotalAmount,
           totalStayPrice: offer.totalStayPrice,
           numberOfNights: dateList.length,
           currency: 'INR',
@@ -422,6 +452,8 @@ export class OfflineHotelCatalogService {
           nightlyRates: dateList.map((date, index) => ({
             date,
             baseAmount: offer.nightlyBase[index] || 0,
+            marginPercentage: offer.hotelMarginPercentage,
+            marginAmount: offer.nightlyMargin[index] || 0,
             sellAmount: offer.nightlySell[index] || 0,
           })),
         })),
@@ -633,6 +665,7 @@ export class OfflineHotelCatalogService {
     adultCount: number,
     childCount: number,
     catalogRows: OfflineCatalogRows,
+    marginPercentage: number,
   ): OfflineRoomOffer[] {
     const hotelId = Number(hotel.hotel_id || 0);
     const roomsNeeded = Math.max(Number(roomCount || 1), 1);
@@ -651,6 +684,7 @@ export class OfflineHotelCatalogService {
       if (matchingPriceRows.length === 0) continue;
 
       const nightlyBase: number[] = [];
+      const nightlyMargin: number[] = [];
       const nightlySell: number[] = [];
       let valid = true;
       for (const date of dateList) {
@@ -667,10 +701,11 @@ export class OfflineHotelCatalogService {
           break;
         }
 
-        const baseAmount = Math.min(...nightlyPrices);
-        const sellAmount = this.hotelPricingService.applyInvisibleHotelMargin(baseAmount, hotel);
-        nightlyBase.push(baseAmount);
-        nightlySell.push(this.hotelPricingService.money(sellAmount * roomsNeeded));
+        const baseAmount = this.hotelPricingService.money(Math.min(...nightlyPrices) * roomsNeeded);
+        const breakdown = this.hotelPricingService.marginBreakdown(baseAmount, marginPercentage);
+        nightlyBase.push(breakdown.baseAmount);
+        nightlyMargin.push(breakdown.marginAmount);
+        nightlySell.push(breakdown.sellAmount);
       }
 
       if (!valid || nightlySell.length !== dateList.length) continue;
@@ -681,7 +716,11 @@ export class OfflineHotelCatalogService {
         bookingCode: `OFFLINE-${hotelId}-${room.room_ID}-${roomTypeId}`,
         mealPlan: this.resolveMealPlan(room),
         nightlyBase,
+        nightlyMargin,
         nightlySell,
+        hotelMarginPercentage: marginPercentage,
+        baseTotalPrice: this.hotelPricingService.money(nightlyBase.reduce((sum, amount) => sum + amount, 0)),
+        hotelMarginTotalAmount: this.hotelPricingService.money(nightlyMargin.reduce((sum, amount) => sum + amount, 0)),
         totalStayPrice: this.hotelPricingService.money(nightlySell.reduce((sum, amount) => sum + amount, 0)),
         pricePerNight: this.hotelPricingService.money(Math.min(...nightlySell)),
         roomCount,
@@ -699,6 +738,7 @@ export class OfflineHotelCatalogService {
     childCount = 0,
     catalogRows?: OfflineCatalogRows,
   ): Promise<OfflineRoomOffer[]> {
+    const marginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage(hotel);
     if (catalogRows) {
       return this.buildRoomOffersFromCatalogRows(
         hotel,
@@ -707,6 +747,7 @@ export class OfflineHotelCatalogService {
         adultCount,
         childCount,
         catalogRows,
+        marginPercentage,
       );
     }
 
@@ -818,6 +859,7 @@ export class OfflineHotelCatalogService {
       }
 
       const nightlyBase: number[] = [];
+      const nightlyMargin: number[] = [];
       const nightlySell: number[] = [];
       let valid = true;
 
@@ -836,11 +878,11 @@ export class OfflineHotelCatalogService {
           break;
         }
 
-        const baseAmount = Math.min(...nightlyPrices);
-        const sellAmount = this.hotelPricingService.applyInvisibleHotelMargin(baseAmount, hotel);
-        const totalSellAmount = this.hotelPricingService.money(sellAmount * Math.max(roomCount, 1));
-        nightlyBase.push(baseAmount);
-        nightlySell.push(totalSellAmount);
+        const baseAmount = this.hotelPricingService.money(Math.min(...nightlyPrices) * Math.max(roomCount, 1));
+        const breakdown = this.hotelPricingService.marginBreakdown(baseAmount, marginPercentage);
+        nightlyBase.push(breakdown.baseAmount);
+        nightlyMargin.push(breakdown.marginAmount);
+        nightlySell.push(breakdown.sellAmount);
       }
 
       if (!valid || nightlySell.length !== dateList.length) {
@@ -861,7 +903,11 @@ export class OfflineHotelCatalogService {
         bookingCode: `OFFLINE-${hotel.hotel_id}-${room.room_ID}-${roomTypeId}`,
         mealPlan: this.resolveMealPlan(room),
         nightlyBase,
+        nightlyMargin,
         nightlySell,
+        hotelMarginPercentage: marginPercentage,
+        baseTotalPrice: this.hotelPricingService.money(nightlyBase.reduce((sum, amount) => sum + amount, 0)),
+        hotelMarginTotalAmount: this.hotelPricingService.money(nightlyMargin.reduce((sum, amount) => sum + amount, 0)),
         totalStayPrice,
         pricePerNight,
         roomCount,
@@ -905,7 +951,14 @@ export class OfflineHotelCatalogService {
       }),
       this.prisma.dvi_hotel.findFirst({
         where: { hotel_id: hotelId, status: 1, deleted: false },
-        select: { hotel_id: true, hotel_margin: true, hotel_margin_gst_type: true, hotel_margin_gst_percentage: true },
+        select: {
+          hotel_id: true,
+          hotel_name: true,
+          hotel_category: true,
+          hotel_margin: true,
+          hotel_margin_gst_type: true,
+          hotel_margin_gst_percentage: true,
+        },
       }),
     ]);
     if (!plan || !hotel) {
@@ -976,20 +1029,36 @@ export class OfflineHotelCatalogService {
     }
 
     return {
+      provider: 'offline',
+      hotelId,
       canonicalHotelId: hotelId,
+      hotelCode: String(hotelId),
+      providerHotelCode: String(hotelId),
+      hotelName: String(hotel.hotel_name || '').trim(),
+      category: Number(hotel.hotel_category || 0),
       routeId: Number(route.itinerary_route_ID),
+      routeDate: resolvedRouteDateOnly,
       rateOptionId: input.rateOptionId,
+      bookingCode: input.rateOptionId,
+      searchReference: input.rateOptionId,
       roomId,
       roomTypeId,
       roomType: offer.roomTitle,
       mealPlan: offer.mealPlan,
       pricePerNight: offer.pricePerNight,
+      basePricePerNight: offer.nightlyBase[0] || 0,
+      baseTotalPrice: offer.baseTotalPrice,
+      hotelMarginPercentage: offer.hotelMarginPercentage,
+      hotelMarginAmount: offer.nightlyMargin[0] || 0,
+      hotelMarginTotalAmount: offer.hotelMarginTotalAmount,
       totalStayPrice: offer.totalStayPrice,
       numberOfNights: dateList.length,
       currency: 'INR',
       nightlyRates: dateList.map((date, index) => ({
         date,
         baseAmount: offer.nightlyBase[index] || 0,
+        marginPercentage: offer.hotelMarginPercentage,
+        marginAmount: offer.nightlyMargin[index] || 0,
         sellAmount: offer.nightlySell[index] || 0,
       })),
     };

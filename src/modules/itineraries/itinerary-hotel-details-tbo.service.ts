@@ -38,6 +38,11 @@ import {
   selectionOriginFromRow,
 } from './utils/hotel-selection-identity.util';
 import { hotelDateOnly, hotelStayTotal } from './utils/hotel-stay-pricing.util';
+import { HotelPricingService } from './hotels/hotel-pricing.service';
+import { projectHotelPayablePricing } from './utils/hotel-payable-pricing.util';
+import {
+  hotelCardPropertyKey,
+} from './utils/hotel-card-pricing.util';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -1038,6 +1043,7 @@ if (hotelMasterId) {
     private readonly hobseProvider: HobseHotelProvider,
     private readonly offlineHotelCatalogService: OfflineHotelCatalogService,
     private readonly hotelRecommendationPackageService: HotelRecommendationPackageService,
+    private readonly hotelPricingService: HotelPricingService = new HotelPricingService(prisma),
   ) {}
 
   /** Fetch the latest room/rate/meal options for one selected supplier hotel. */
@@ -1106,9 +1112,11 @@ if (hotelMasterId) {
             providers: [normalizedProvider], hotelCodes: normalizedHotelCode,
           });
 
+    const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
     return {
       quoteId, routeId: Number(routeId), provider: normalizedProvider, hotelCode: normalizedHotelCode,
-      hotels: (hotels || []).map((hotel: any) => {
+      hotels: (hotels || []).map((rawHotel: any) => {
+        const hotel = projectHotelPayablePricing(rawHotel, effectiveMarginPercentage);
         const totalAmount = Number(
           hotel.totalHotelCost ?? hotel.totalAmountAfterTax ?? hotel.totalPrice ?? hotel.price ?? 0,
         );
@@ -4333,7 +4341,9 @@ this.logger.log(
               basePricePerNight: optionRawTotal > 0
                 ? this.money(optionRawTotal / nights)
                 : option?.basePricePerNight,
-              amountIncludesHotelMargin: amountAlreadyIncludesMargin,
+              // optionPayableTotal is already the sell amount at this point.
+              amountIncludesHotelMargin: true,
+              pricingIncludesHotelMargin: true,
               totalStayPrice: optionRouteTotal > 0 ? optionRouteTotal : option?.totalStayPrice,
               totalPrice: optionRouteTotal > 0 ? optionRouteTotal : option?.totalPrice,
               price: optionRawTotal > 0
@@ -4353,7 +4363,10 @@ this.logger.log(
         pricePerNight: payablePricePerNight > 0 ? payablePricePerNight : hotel?.pricePerNight,
         basePricePerNight,
         baseStayPrice: rawTotal,
-        amountIncludesHotelMargin: amountAlreadyIncludesMargin,
+        // payableTotal is already the sell amount at this point. Preserve an
+        // idempotent marker for persisted-snapshot reads and intent previews.
+        amountIncludesHotelMargin: true,
+        pricingIncludesHotelMargin: true,
         exactFullStayTotal: payableTotal > 0 ? payableTotal : hotel?.exactFullStayTotal,
         totalStayPrice: payableTotal > 0 ? payableTotal : hotel?.totalStayPrice,
         totalPrice: payableTotal > 0 ? payableTotal : hotel?.totalPrice,
@@ -5626,13 +5639,7 @@ this.logger.log(
       row?.baseHotelCost,
       row?.baseAmount,
     );
-    const getPropertyKey = (row: any): string => [
-      Number(row?.itineraryRouteId || 0),
-      Number(row?.groupType || 0),
-      String(row?.provider || '').trim().toLowerCase(),
-      String(row?.hotelCode || row?.providerHotelCode || '').trim().toLowerCase(),
-      String(row?.hotelName || '').trim().toLowerCase(),
-    ].join('|');
+    const getPropertyKey = hotelCardPropertyKey;
 
     const selectedTotalByRouteGroup = new Map<string, number>();
     for (const [routeGroupKey, selections] of selectionRowsByRouteAndGroup.entries()) {

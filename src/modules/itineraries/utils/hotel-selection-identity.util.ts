@@ -1,3 +1,8 @@
+import {
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealText,
+} from '../../hotels/hotel-rate-plans';
+
 export type HotelSelectionOrigin = 'USER_SELECTED' | 'AUTO_SELECTED';
 
 export type HotelSelectionSnapshot = {
@@ -9,6 +14,10 @@ export type HotelSelectionSnapshot = {
   provider?: string;
   hotelCode?: string | number;
   hotelId?: string | number;
+  canonicalHotelId?: string | number;
+  providerHotelCode?: string | number;
+  hotelName?: string;
+  category?: string | number;
   roomType?: string;
   mealPlan?: string;
   roomId?: string | number;
@@ -17,6 +26,17 @@ export type HotelSelectionSnapshot = {
   searchRunId?: string;
   selectionOrigin?: HotelSelectionOrigin;
   availabilityStatus?: string;
+};
+
+export type PersistedHotelIdentity = {
+  provider: string;
+  hotelId: number;
+  hotelCode: string;
+  hotelName: string;
+  category: number;
+  consistent: boolean;
+  mismatches: string[];
+  snapshot: HotelSelectionSnapshot;
 };
 
 export type HotelOptionIdentity = {
@@ -34,6 +54,82 @@ export type HotelOptionIdentity = {
 };
 
 const clean = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+
+export function isTboSupplierBookingCode(value: unknown): boolean {
+  return String(value || '').trim().includes('!TB!');
+}
+
+export function normalizeSupplierRateIdentity<T extends Record<string, any>>(row: T): T {
+  const provider = clean(row?.provider || row?.hotel_provider);
+  const inferredMealPlan = [
+    row?.mealPlan,
+    row?.meal_plan,
+    row?.mealPlanCode,
+    row?.ratePlanName,
+    row?.rateOptionId,
+    row?.rate_option_id,
+    row?.rateId,
+    row?.bookingCode,
+    row?.searchReference,
+    row?.optionKey,
+  ].map((value) =>
+    inferCanonicalHotelRatePlanCode(String(value || '')) ||
+    inferCanonicalHotelRatePlanCodeFromMealText(String(value || '')),
+  ).find(Boolean) || null;
+  const explicitMealPlan = String(row?.mealPlan || row?.meal_plan || row?.mealPlanCode || '').trim();
+  const mealPlan = explicitMealPlan && explicitMealPlan !== '-'
+    ? explicitMealPlan
+    : inferredMealPlan;
+
+  if (provider !== 'tbo') {
+    return {
+      ...row,
+      ...(mealPlan ? { mealPlan, mealPlanCode: mealPlan } : {}),
+    };
+  }
+
+  const supplierBookingCode = [row?.bookingCode, row?.searchReference]
+    .map((value) => String(value || '').trim())
+    .find(isTboSupplierBookingCode);
+  const rateOptionId = supplierBookingCode || String(row?.rateOptionId || row?.rate_option_id || '').trim() || undefined;
+
+  return {
+    ...row,
+    ...(mealPlan ? { mealPlan, mealPlanCode: mealPlan } : {}),
+    rateOptionId,
+    bookingCode: supplierBookingCode || undefined,
+    searchReference: supplierBookingCode || String(row?.searchReference || '').trim() || undefined,
+  };
+}
+
+export function supplierRateIdentityMatches(requestedRow: any, candidateRow: any): boolean {
+  const requested = normalizeSupplierRateIdentity(requestedRow || {});
+  const candidate = normalizeSupplierRateIdentity(candidateRow || {});
+  const provider = clean(requested.provider || requested.hotel_provider);
+  if (provider && clean(candidate.provider || candidate.hotel_provider) !== provider) return false;
+
+  if (provider === 'tbo') {
+    const requestedBookingCode = [requested.rateOptionId, requested.bookingCode, requested.searchReference]
+      .map((value) => String(value || '').trim())
+      .find(isTboSupplierBookingCode);
+    if (!requestedBookingCode) return false;
+    return [candidate.rateOptionId, candidate.bookingCode, candidate.searchReference]
+      .map((value) => String(value || '').trim())
+      .includes(requestedBookingCode);
+  }
+
+  const requestedPrimary = String(requested.rateOptionId || requested.optionKey || '').trim();
+  const candidateIds = [candidate.rateOptionId, candidate.optionKey, candidate.searchReference, candidate.bookingCode]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  if (requestedPrimary) return candidateIds.includes(requestedPrimary);
+
+  const requestedBookingIdentity = [requested.searchReference, requested.bookingCode]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  return requestedBookingIdentity.length > 0 &&
+    requestedBookingIdentity.every((value) => candidateIds.includes(value));
+}
 
 const normalizeMealIdentity = (value: unknown): string => {
   const normalized = clean(value)
@@ -105,6 +201,59 @@ export function parseHotelSelectionSnapshot(row: any): HotelSelectionSnapshot {
     }
   }
   return {};
+}
+
+/**
+ * Reconstruct a persisted offline property only when the selected columns,
+ * rate identifier, snapshot, and dvi_hotel master all describe the same hotel.
+ * Missing fields are allowed for legacy snapshots; contradictory fields are
+ * never allowed to override the canonical master identity.
+ */
+export function resolvePersistedHotelIdentity(row: any, master: any): PersistedHotelIdentity {
+  const snapshot = parseHotelSelectionSnapshot(row);
+  const provider = clean(row?.hotel_provider || snapshot.provider);
+  const hotelId = Number(row?.hotel_id || 0);
+  const hotelCode = String(row?.hotel_code || hotelId || '').trim();
+  const masterId = Number(master?.hotel_id || 0);
+  const masterName = String(master?.hotel_name || '').trim();
+  const masterCategory = Number(master?.hotel_category || 0);
+  const mismatches: string[] = [];
+
+  if (provider === 'offline') {
+    if (!hotelId || !masterId || hotelId !== masterId) mismatches.push('masterHotelId');
+
+    const snapshotId = Number(snapshot.canonicalHotelId || snapshot.hotelId || 0);
+    if (snapshotId && snapshotId !== hotelId) mismatches.push('snapshotHotelId');
+
+    const snapshotProvider = clean(snapshot.provider);
+    if (snapshotProvider && snapshotProvider !== provider) mismatches.push('snapshotProvider');
+
+    const snapshotCode = clean(snapshot.hotelCode || snapshot.providerHotelCode);
+    if (snapshotCode && snapshotCode !== clean(hotelCode)) mismatches.push('snapshotHotelCode');
+
+    const rateOptionId = String(row?.selected_rate_option_id || snapshot.rateOptionId || '').trim();
+    const rateParts = rateOptionId.split(':');
+    if (rateOptionId && (rateParts[0] !== 'offline' || Number(rateParts[1] || 0) !== hotelId)) {
+      mismatches.push('rateOptionHotelId');
+    }
+
+    const snapshotName = String(snapshot.hotelName || '').trim();
+    if (snapshotName && masterName && clean(snapshotName) !== clean(masterName)) mismatches.push('snapshotHotelName');
+
+    const snapshotCategory = Number(snapshot.category || 0);
+    if (snapshotCategory && masterCategory && snapshotCategory !== masterCategory) mismatches.push('snapshotCategory');
+  }
+
+  return {
+    provider,
+    hotelId,
+    hotelCode,
+    hotelName: masterName,
+    category: masterCategory,
+    consistent: mismatches.length === 0,
+    mismatches,
+    snapshot,
+  };
 }
 
 export function selectionOriginFromRow(row: any): HotelSelectionOrigin {
