@@ -32,24 +32,68 @@ function escapeLikePattern(value: string): string {
 export class ItineraryListingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getAgentsForFilter(req: any) {
-    const u: any = (req as any).user ?? {};
-    const staffId = Number(u.staffId ?? 0);
-    const agentId = Number(u.agentId ?? 0);
-    const role = getRoleId(u);
+ async getAgentsForFilter(req: any) {
+  const u: any = (req as any).user ?? {};
+  const staffId = Number(u.staffId ?? u.staff_id ?? 0) || 0;
+  const agentId = Number(u.agentId ?? u.agent_id ?? 0) || 0;
+  const vendorId = Number(u.vendorId ?? u.vendor_id ?? 0) || 0;
+  const role = getRoleId(u);
 
-    if (role === SystemRole.VEHICLE_AGENT && agentId <= 0) return [];
+  if (role === SystemRole.VEHICLE_AGENT && agentId <= 0) return [];
 
-    const where: any = { deleted: 0 };
+  if (role === SystemRole.VENDOR) {
+    if (vendorId <= 0) return [];
 
-    if (agentId > 0) {
-      where.agent_ID = agentId;
-    } else if (staffId > 0) {
-      where.travel_expert_id = staffId;
-    }
+    const vendorRows =
+      await this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
+        where: {
+          vendor_id: vendorId,
+          itineary_plan_assigned_status: 1,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          itinerary_plan_id: true,
+        },
+      });
+
+    const planIds = [
+      ...new Set(
+        vendorRows
+          .map((row) => Number(row.itinerary_plan_id))
+          .filter((id) => id > 0),
+      ),
+    ];
+
+    if (planIds.length === 0) return [];
+
+    const plans =
+      await this.prisma.dvi_itinerary_plan_details.findMany({
+        where: {
+          itinerary_plan_ID: { in: planIds },
+          quotation_status: 1,
+          deleted: 0,
+        },
+        select: {
+          agent_id: true,
+        },
+      });
+
+    const agentIds = [
+      ...new Set(
+        plans
+          .map((plan) => Number(plan.agent_id))
+          .filter((id) => id > 0),
+      ),
+    ];
+
+    if (agentIds.length === 0) return [];
 
     const agents = await this.prisma.dvi_agent.findMany({
-      where,
+      where: {
+        agent_ID: { in: agentIds },
+        deleted: 0,
+      },
       select: {
         agent_ID: true,
         agent_name: true,
@@ -67,16 +111,76 @@ export class ItineraryListingService {
     }));
   }
 
+  const where: any = { deleted: 0 };
+
+  if (agentId > 0) {
+    where.agent_ID = agentId;
+  } else if (staffId > 0) {
+    where.travel_expert_id = staffId;
+  }
+
+  const agents = await this.prisma.dvi_agent.findMany({
+    where,
+    select: {
+      agent_ID: true,
+      agent_name: true,
+      agent_lastname: true,
+    },
+    orderBy: {
+      agent_name: 'asc',
+    },
+  });
+
+  return agents.map((a) => ({
+    id: a.agent_ID,
+    name: a.agent_name || '',
+    staff_name: a.agent_lastname || '',
+  }));
+}
+
   async getLocationsForFilter(req?: any) {
  // Get unique arrival and departure locations from confirmed itineraries
-    const u: any = req?.user ?? {};
-    const role = getRoleId(u);
-    const agentId = Number(u.agentId ?? u.agent_id ?? 0) || 0;
-    const where: any = { quotation_status: 1, deleted: 0 };
-    if (role === SystemRole.VEHICLE_AGENT) {
-      where.agent_id = agentId > 0 ? agentId : -1;
-      where.itinerary_preference = 2;
-    }
+   const u: any = req?.user ?? {};
+const role = getRoleId(u);
+const agentId = Number(u.agentId ?? u.agent_id ?? 0) || 0;
+const vendorId = Number(u.vendorId ?? u.vendor_id ?? 0) || 0;
+
+const where: any = {
+  quotation_status: 1,
+  deleted: 0,
+};
+
+if (role === SystemRole.VENDOR) {
+  const vendorRows =
+    vendorId > 0
+      ? await this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
+          where: {
+            vendor_id: vendorId,
+            itineary_plan_assigned_status: 1,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            itinerary_plan_id: true,
+          },
+        })
+      : [];
+
+  const planIds = [
+    ...new Set(
+      vendorRows
+        .map((row) => Number(row.itinerary_plan_id))
+        .filter((id) => id > 0),
+    ),
+  ];
+
+  where.itinerary_plan_ID = {
+    in: planIds.length ? planIds : [-1],
+  };
+} else if (role === SystemRole.VEHICLE_AGENT) {
+  where.agent_id = agentId > 0 ? agentId : -1;
+  where.itinerary_preference = 2;
+}
     const plans = await this.prisma.dvi_itinerary_plan_details.findMany({
       where,
       select: {
@@ -153,16 +257,51 @@ export class ItineraryListingService {
     const u: any = (req as any).user ?? {};
     const logged_user_level = Number(u.roleID ?? u.roleId ?? u.role ?? 0) || 0;
     const input_staff_id = Number(u.staff_id ?? u.staffId ?? 0) || 0;
-    const input_agent_id = Number(u.agent_id ?? u.agentId ?? 0) || 0;
-    const input_guide_id = Number(u.guide_id ?? u.guideId ?? 0) || 0;
-    const vehicleAgent = logged_user_level === SystemRole.VEHICLE_AGENT;
+const input_agent_id = Number(u.agent_id ?? u.agentId ?? 0) || 0;
+const input_guide_id = Number(u.guide_id ?? u.guideId ?? 0) || 0;
+const input_vendor_id = Number(u.vendor_id ?? u.vendorId ?? 0) || 0;
 
-    const where: any = {
-      quotation_status: 1,
-      deleted: 0,
-    };
+const vehicleAgent =
+  logged_user_level === SystemRole.VEHICLE_AGENT;
 
-    if (vehicleAgent) {
+const vendorUser =
+  logged_user_level === SystemRole.VENDOR;
+
+const where: any = {
+  quotation_status: 1,
+  deleted: 0,
+};
+
+if (vendorUser) {
+  const vendorRows =
+    input_vendor_id > 0
+      ? await this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
+          where: {
+            vendor_id: input_vendor_id,
+            itineary_plan_assigned_status: 1,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            itinerary_plan_id: true,
+          },
+        })
+      : [];
+
+  const assignedPlanIds = [
+    ...new Set(
+      vendorRows
+        .map((row) => Number(row.itinerary_plan_id))
+        .filter((id) => id > 0),
+    ),
+  ];
+
+  where.itinerary_plan_ID = {
+    in: assignedPlanIds.length
+      ? assignedPlanIds
+      : [-1],
+  };
+} else if (vehicleAgent) {
       where.agent_id = input_agent_id > 0 ? input_agent_id : -1;
       where.itinerary_preference = 2;
     } else if (input_agent_id > 0) {
@@ -240,16 +379,28 @@ export class ItineraryListingService {
       constrainToPlanIds([...new Set(guideRows.map((row) => Number(row.itinerary_plan_ID))) ]);
     }
 
-    if (vendor_id && vendor_id > 0) {
-      const vendorRows = await this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
-        where: {
-          vendor_id,
-          itineary_plan_assigned_status: 1,
-        },
-        select: { itinerary_plan_id: true },
-      });
-      constrainToPlanIds([...new Set(vendorRows.map((row) => Number(row.itinerary_plan_id))) ]);
-    }
+   if (!vendorUser && vendor_id && vendor_id > 0) {
+  const vendorRows =
+    await this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
+      where: {
+        vendor_id,
+        itineary_plan_assigned_status: 1,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_plan_id: true,
+      },
+    });
+
+  constrainToPlanIds([
+    ...new Set(
+      vendorRows.map((row) =>
+        Number(row.itinerary_plan_id),
+      ),
+    ),
+  ]);
+}
 
     if (include_cancelled) {
       const cancelledRows = await this.prisma.dvi_cancelled_itineraries.findMany({

@@ -1,12 +1,17 @@
 // FILE: src/modules/accounts-ledger/dto/accounts-ledger-options.dto.ts
 
+export class AccountsLedgerOptionDto {
+  id!: number;
+  label!: string;
+}
+
 export class AccountsLedgerOptionsDto {
-  agents!: string[];
-  vehicleBranches!: string[];
-  vehicles!: string[];
-  vendors!: string[];
-  guides!: string[];
-  hotspots!: string[];
-  activities!: string[];
-  hotels!: string[];
+  agents!: AccountsLedgerOptionDto[];
+  vehicleBranches!: AccountsLedgerOptionDto[];
+  vehicles!: AccountsLedgerOptionDto[];
+  vendors!: AccountsLedgerOptionDto[];
+  guides!: AccountsLedgerOptionDto[];
+  hotspots!: AccountsLedgerOptionDto[];
+  activities!: AccountsLedgerOptionDto[];
+  hotels!: AccountsLedgerOptionDto[];
 }
