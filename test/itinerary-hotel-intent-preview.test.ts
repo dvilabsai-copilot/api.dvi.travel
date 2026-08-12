@@ -258,6 +258,93 @@ test('STAAH HOTEL preview resolves the canonical hotel id to the supplier proper
   ]);
 });
 
+test('STAAH ROOM_TYPE preview keeps nested Suite identity instead of inheriting parent Deluxe identity', async () => {
+  const service = Object.create(ItinerariesService.prototype) as any;
+  const staahRows = stay.routeIds.map((routeId, index) => ({
+    routeId,
+    itineraryRouteId: routeId,
+    date: stay.stayDates[index],
+    provider: 'staah',
+    canonicalHotelId: 44596,
+    hotelId: 44596,
+    hotelCode: 'STAAHTESTHOTELPROD',
+    providerHotelCode: 'STAAHTESTHOTELPROD',
+    hotelName: 'STAAH TEST HOTEL PROD',
+    roomType: 'Deluxe Room',
+    mealPlan: 'CP',
+    rateOptionId: `staah|44596|deluxeroom|cp_plan|||continental plan|${stay.stayDates[index]}|2026-08-14`,
+    optionKey: `staah|44596|deluxeroom|cp_plan|||continental plan|${stay.stayDates[index]}|2026-08-14`,
+    rateOptions: [
+      {
+        roomType: 'Deluxe Room',
+        mealPlan: 'CP',
+        rateId: 'CP_PLAN',
+        searchReference: `DELUXE-${index}`,
+        pricePerNight: 2347.2,
+      },
+      {
+        roomType: 'Suite Room',
+        mealPlan: 'MAP',
+        roomId: 'SUITEROOM',
+        rateId: 'MAP_PLAN',
+        searchReference: `SUITE-${index}`,
+        pricePerNight: 1956,
+      },
+    ],
+  }));
+
+  service.prisma = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ itinerary_quote_ID: 'DVI2026082' }),
+    },
+    dvi_hotel: {
+      findUnique: async () => ({
+        hotel_id: 44596,
+        staah_property_id: 'STAAHTESTHOTELPROD',
+        axisrooms_property_id: null,
+      }),
+    },
+    dvi_itinerary_route_details: {
+      findFirst: async () => ({ itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') }),
+    },
+  };
+  service.selectionWorkflowService = {
+    withHotelSelectionLock: async (_planId: number, _groupType: number, callback: () => Promise<any>) => callback(),
+  };
+  service.hotelStayBlockValidationService = {
+    buildContinuousStayCandidate: async () => stay,
+    previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
+  };
+  service.hotelDetailsTboService = {
+    getSelectedHotelRates: async () => ({ hotels: [{}] }),
+  };
+  service.hotelAvailabilitySnapshotService = {
+    mergeSelectedHotelRates: async () => undefined,
+    getActiveRows: async () => staahRows,
+  };
+
+  const result = await service.previewHotelIntent({
+    planId: 10040,
+    routeId: 10145,
+    groupType: 1,
+    selectionIntent: 'ROOM_TYPE',
+    provider: 'staah',
+    providerHotelCode: 'STAAHTESTHOTELPROD',
+    hotelCode: 'STAAHTESTHOTELPROD',
+    canonicalHotelId: 44596,
+    hotelId: 44596,
+    hotelName: 'STAAH TEST HOTEL PROD',
+    roomType: 'Suite Room',
+    routeDate: '2026-08-12',
+  });
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Suite Room', 'Suite Room']);
+  assert.deepEqual(result.selections.map((selection: any) => selection.mealPlan), ['MAP', 'MAP']);
+  assert.ok(result.selections.every((selection: any) => selection.selectedRateOptionId.includes('SUITE')));
+  assert.ok(result.selections.every((selection: any) => !selection.selectedRateOptionId.includes('DELUXE')));
+});
+
 test('TBO RATE_OPTION preview keeps the commercial room while replacing an expired session token', async () => {
   const service = Object.create(ItinerariesService.prototype) as any;
   const staleBookingCode = '1313362!TB!1!TB!old-session!TB!N!TB!AFF!';

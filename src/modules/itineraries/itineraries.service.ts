@@ -1819,7 +1819,24 @@ private getGuideSlotLabel(slotId: number): string {
     const snapshotRows = await this.hotelAvailabilitySnapshotService.getActiveRows(quoteId) || [];
     let candidates = snapshotRows.flatMap((row: any) => {
       const options = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row];
-      return options.map((option: any) => normalizeSupplierRateIdentity({
+      return options.map((option: any) => {
+        // Nested supplier options are independent selectable rates. Do not
+        // inherit the parent row's rateOptionId/optionKey: the parent is often
+        // the cheapest Deluxe option while ROOM_TYPE may target Suite.
+        const optionRateOptionId = String(
+          option.rateOptionId ||
+          option.rate_option_id ||
+          option.optionKey ||
+          option.option_key ||
+          option.searchReference ||
+          option.search_reference ||
+          option.bookingCode ||
+          option.booking_code ||
+          option.rateId ||
+          option.rate_id ||
+          '',
+        ).trim() || undefined;
+        const optionIdentity = {
         ...row,
         ...option,
         provider: option.provider || row.provider,
@@ -1829,10 +1846,12 @@ private getGuideSlotLabel(slotId: number): string {
         hotelName: option.hotelName || row.hotelName,
         roomType: option.roomType || option.roomTypeName || row.roomType,
         mealPlan: option.mealPlan || option.mealPlanCode || row.mealPlan,
-        rateOptionId: option.rateOptionId || option.rate_option_id || row.rateOptionId,
-        optionKey: option.optionKey || option.option_key || row.optionKey,
+        rateOptionId: optionRateOptionId,
+        optionKey: optionRateOptionId,
         routeIds: option.routeIds || row.routeIds,
-      }));
+        };
+        return normalizeSupplierRateIdentity(optionIdentity);
+      });
     });
     if (provider === 'offline') {
       try {
