@@ -3,6 +3,7 @@ import { PrismaService } from '../../../prisma.service';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { HotelSearchResult, RoomType } from '../../hotels/interfaces/hotel-provider.interface';
 import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
+import { normalizeHotelDisplayName } from '../utils/hotel-selection-identity.util';
 
 type StayBlock = {
   destination: string;
@@ -359,7 +360,7 @@ export class OfflineHotelCatalogService {
         provider: 'offline',
         providerDisplayName: 'Offline',
         hotelCode: String(hotel.hotel_id),
-        hotelName: String(hotel.hotel_name || 'Hotel'),
+        hotelName: normalizeHotelDisplayName(hotel.hotel_name) || 'Hotel',
         cityCode: String(hotel.hotel_city || ''),
         address: String(hotel.hotel_address || ''),
         latitude: hotel.hotel_latitude ?? null,
@@ -1034,7 +1035,7 @@ export class OfflineHotelCatalogService {
       canonicalHotelId: hotelId,
       hotelCode: String(hotelId),
       providerHotelCode: String(hotelId),
-      hotelName: String(hotel.hotel_name || '').trim(),
+      hotelName: normalizeHotelDisplayName(hotel.hotel_name),
       category: Number(hotel.hotel_category || 0),
       routeId: Number(route.itinerary_route_ID),
       routeDate: resolvedRouteDateOnly,

@@ -1275,40 +1275,49 @@ export class HotelAvailabilitySnapshotService {
       const existingRows = await txCache.findMany({
         where: {
           quote_id: quoteId,
-          plan_id: plan.itinerary_plan_ID,
           route_id: normalizedRouteId,
           provider: normalizedProvider,
-          status: 1,
-          deleted: 0,
         },
-        select: { id: true, hotel_code: true, full_payload: true },
+        select: { hotel_code: true, full_payload: true },
       });
-      const matchingIds = existingRows
-        .filter((existing: any) => {
-          const payload = this.parsePayload(existing.full_payload) || {};
-          const existingCode = String(
-            existing.hotel_code ||
-            payload.hotelCode ||
-            payload.providerHotelCode ||
-            payload.hotelId ||
-            '',
-          ).trim().toLowerCase();
-          const requestedCode = normalizedHotelCode.toLowerCase();
-          return existingCode === requestedCode ||
-            (Number(existingCode) > 0 && Number(existingCode) === Number(requestedCode));
-        })
-        .map((existing: any) => Number(existing.id))
-        .filter((id: number) => id > 0);
-      if (matchingIds.length > 0) {
-        await txCache.deleteMany({ where: { id: { in: matchingIds } } });
-      }
-      await txCache.create({
-        data: {
+      const requestedCode = normalizedHotelCode.toLowerCase();
+      const matchingExisting = existingRows.find((existing: any) => {
+        const payload = this.parsePayload(existing.full_payload) || {};
+        const aliases = [
+          existing.hotel_code,
+          payload.hotelCode,
+          payload.providerHotelCode,
+          payload.provider_hotel_code,
+          payload.hotelId,
+          payload.canonicalHotelId,
+        ].map((value) => String(value ?? '').trim().toLowerCase()).filter(Boolean);
+        return aliases.includes(requestedCode) || aliases.some((alias) =>
+          Number(alias) > 0 && Number(alias) === Number(requestedCode));
+      });
+      // Older snapshots keyed STAAH by the canonical numeric hotel id while
+      // the supplier refresh identifies the same property by provider code.
+      // Keep that existing key when replacing the row; otherwise the upsert
+      // would look up one unique key and attempt to create another.
+      const persistedHotelCode = String(
+        matchingExisting?.hotel_code ||
+        row.hotelCode ||
+        row.providerHotelCode ||
+        row.hotel_code ||
+        normalizedHotelCode,
+      ).trim();
+      const persistedGroupType = Number(row.groupType || row.group_type || 1);
+      // The cache key is enforced by the database across all snapshot rows,
+      // including rows that are not currently active. Replacing rows by
+      // payload matching (the old implementation) can miss a stale row whose
+      // hotel_code differs from the normalized supplier code, then fail with
+      // P2002 on create. Upsert the database key directly so refresh is
+      // idempotent and safe when the same preview is retried.
+      const cacheData = {
           quote_id: quoteId,
           plan_id: plan.itinerary_plan_ID,
           route_id: normalizedRouteId,
-          group_type: Number(row.groupType || row.group_type || 1),
-          hotel_code: String(row.hotelCode || row.providerHotelCode || row.hotel_code || normalizedHotelCode),
+          group_type: persistedGroupType,
+          hotel_code: persistedHotelCode,
           provider: normalizedProvider,
           hotel_name: String(row.hotelName || row.hotel_name || 'Hotel'),
           rating: Number.isFinite(rating) ? rating : 0,
@@ -1328,7 +1337,19 @@ export class HotelAvailabilitySnapshotService {
           recommendation_algorithm_version: resolveHotelRecommendationAlgorithm(),
           recommendation_search_run_id: searchRunId,
           recommendation_generated_at: syncedAt,
+      };
+      await txCache.upsert({
+        where: {
+          quote_id_route_id_group_type_hotel_code_provider: {
+            quote_id: quoteId,
+            route_id: normalizedRouteId,
+            group_type: persistedGroupType,
+            hotel_code: persistedHotelCode,
+            provider: normalizedProvider,
+          },
         },
+        create: cacheData,
+        update: cacheData,
       });
     });
   }

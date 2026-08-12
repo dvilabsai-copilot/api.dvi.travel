@@ -1,6 +1,7 @@
 import { hotelCardPayableAmount } from './hotel-card-pricing.util';
 import {
   isTboSupplierBookingCode,
+  normalizeHotelDisplayName,
   supplierSelectionKey,
 } from './hotel-selection-identity.util';
 
@@ -129,6 +130,9 @@ const selectionPriority = (row: any): number => {
 const selectedView = (row: any): HotelSelectionSelectedView => {
   const snapshot = parseSnapshot(row?.selectedPriceSnapshot ?? row?.selected_price_snapshot);
   const identity = snapshot || {};
+  const selectedPriceSnapshot = snapshot
+    ? { ...snapshot, hotelName: normalizeHotelDisplayName(snapshot.hotelName) || null }
+    : null;
   const providerHotelCode = String(
     row?.providerHotelCode ?? row?.provider_hotel_code ?? identity.providerHotelCode ?? '',
   ).trim() || null;
@@ -170,7 +174,9 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
     canonicalHotelId: Number.isFinite(canonicalHotelId) && canonicalHotelId > 0 ? canonicalHotelId : null,
     providerHotelCode,
     hotelCode,
-    hotelName: String(row?.hotelName ?? row?.hotel_name ?? identity.hotelName ?? '').trim() || null,
+    hotelName: normalizeHotelDisplayName(
+      row?.hotelName ?? row?.hotel_name ?? identity.hotelName,
+    ) || null,
     roomType: String(row?.roomType ?? row?.roomTypeName ?? row?.room_type ?? identity.roomType ?? '').trim() || null,
     mealPlan: String(row?.mealPlan ?? row?.mealPlanCode ?? row?.meal_plan ?? identity.mealPlan ?? '').trim() || null,
     selectionKey: supplierSelectionKey({ ...row, ...identity }) || null,
@@ -178,7 +184,7 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
     supplierBookingCode,
     pricePerNight: money(Number.isFinite(pricePerNight) ? pricePerNight : 0),
     totalPrice: money(Number.isFinite(totalPrice) ? totalPrice : payable),
-    selectedPriceSnapshot: snapshot,
+    selectedPriceSnapshot,
   };
 };
 

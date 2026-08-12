@@ -808,6 +808,14 @@ export class HotelStayBlockValidationService {
     );
     const roomId = propertyMatch || mappedRoomId;
     if (!roomId) {
+      console.error('[STAAH_ROOM_MAPPING_FAILED]', {
+        hotelId,
+        propertyId,
+        directRoomId: direct,
+        roomType,
+        propertyRoomIds,
+        masterRoomRefs: rooms.map((room: any) => ({ ref: room.room_ref_code, title: room.room_title })),
+      });
       throw new BadRequestException('STAAH room mapping not found');
     }
     return roomId;

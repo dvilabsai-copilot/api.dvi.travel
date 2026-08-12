@@ -3832,6 +3832,14 @@ this.logger.log(
               }],
               roomType: roomName,
               mealPlan,
+              // Keep the supplier room/rate identity on the top-level option.
+              // The continuity validator consumes these fields after the
+              // selected-rate snapshot is flattened; providerRoomId alone
+              // is not sufficient for STAAH stay validation.
+              roomId,
+              room_id: roomId,
+              rateId: rateplanId,
+              rate_id: rateplanId,
               hotel_margin: Number((hotel as any).hotel_margin || 0),
               hotel_margin_gst_type: Number((hotel as any).hotel_margin_gst_type || 0),
               hotel_margin_gst_percentage: Number((hotel as any).hotel_margin_gst_percentage || 0),

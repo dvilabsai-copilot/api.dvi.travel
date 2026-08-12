@@ -145,6 +145,22 @@ test('offline catalog failure remains REFRESH_FAILED', async () => {
   assert.equal(wasPersisted(), false);
 });
 
+test('database duplicate-key failure is retryable refresh failure, not supplier unavailability', async () => {
+  const service = Object.create(ItinerariesService.prototype) as any;
+  service.selectionWorkflowService = {
+    withHotelSelectionLock: async (_planId: number, _groupType: number, callback: () => Promise<any>) => callback(),
+  };
+  service.selectHotelIntentUnlocked = async () => {
+    throw { code: 'P2002', message: 'Unique constraint failed on uq_hotel_cache_key' };
+  };
+
+  const result = await service.previewHotelIntent(payload());
+
+  assert.equal(result.status, 'REFRESH_FAILED');
+  assert.equal(result.retryable, true);
+  assert.equal(result.code, 'P2002');
+});
+
 test('stale offline rate identity is rejected instead of reused', async () => {
   const { service } = createService(async () => candidates);
 
@@ -449,4 +465,28 @@ test('wrong snapshot name cannot override the persisted offline master identity'
   assert.equal(identity.hotelName, 'GREENRIDGE');
   assert.equal(identity.category, 2);
   assert.deepEqual(identity.mismatches, ['snapshotHotelName', 'snapshotCategory']);
+});
+
+test('offline persisted identity decodes HTML entities without creating a false name mismatch', () => {
+  const identity = resolvePersistedHotelIdentity({
+    hotel_id: 435,
+    hotel_code: '435',
+    hotel_provider: 'offline',
+    selected_rate_option_id: 'offline:435:1247:1051:2026-08-12:2026-08-14',
+    selected_price_snapshot: JSON.stringify({
+      provider: 'offline',
+      canonicalHotelId: 435,
+      hotelCode: '435',
+      hotelName: 'SPRISE MUNNAR RESORT & SPA',
+      category: 4,
+    }),
+  }, {
+    hotel_id: 435,
+    hotel_name: 'SPRISE MUNNAR RESORT &amp; SPA',
+    hotel_category: 4,
+  });
+
+  assert.equal(identity.consistent, true);
+  assert.equal(identity.hotelName, 'SPRISE MUNNAR RESORT & SPA');
+  assert.deepEqual(identity.mismatches, []);
 });

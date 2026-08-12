@@ -248,3 +248,27 @@ test('serializes the complete hard-reload selected-row contract', () => {
     ].sort(),
   );
 });
+
+test('decodes persisted hotel display names for React hydration', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 5700 }],
+    requiredRoutes: [{ routeId: 10145, routeDate: '2026-08-12' }],
+    rows: [{
+      groupType: 1,
+      routeId: 10145,
+      selectionOrigin: 'USER_SELECTED',
+      provider: 'offline',
+      hotelName: 'SPRISE MUNNAR RESORT &amp; SPA',
+      selectedPriceSnapshot: JSON.stringify({
+        hotelName: 'SPRISE MUNNAR RESORT &amp; SPA',
+        totalPrice: 5700,
+      }),
+    }],
+  });
+
+  assert.equal(state[0].routes[0].selected?.hotelName, 'SPRISE MUNNAR RESORT & SPA');
+  assert.equal(
+    state[0].routes[0].selected?.selectedPriceSnapshot?.hotelName,
+    'SPRISE MUNNAR RESORT & SPA',
+  );
+});

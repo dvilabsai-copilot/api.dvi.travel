@@ -28,6 +28,7 @@ import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.s
 import { SystemRole } from '../auth/constants/system-role.constants';
 import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
+import { normalizeHotelDisplayName } from './utils/hotel-selection-identity.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -1752,7 +1753,7 @@ const foodTypeMap: Record<string, string> = {
     const rows = Array.isArray(segments) ? segments : [];
     if (rows.length === 0) return rows;
 
-    const cleanName = (value?: string | null): string => String(value ?? '').trim();
+    const cleanName = (value?: string | null): string => normalizeHotelDisplayName(value);
     const lower = (value?: string | null): string => cleanName(value).toLowerCase();
     const canonicalStopName = (value?: string | null): string => {
       const raw = cleanName(value);
@@ -1816,6 +1817,10 @@ const foodTypeMap: Record<string, string> = {
 
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index];
+
+      if (row?.hotelName) row.hotelName = cleanName(row.hotelName);
+      if (row?.anchorFrom) row.anchorFrom = cleanName(row.anchorFrom);
+      if (row?.anchorTo) row.anchorTo = cleanName(row.anchorTo);
 
       if (isAttraction(row)) {
         const attractionName = getAttractionName(row);
