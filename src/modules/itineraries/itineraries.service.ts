@@ -1670,13 +1670,26 @@ private getGuideSlotLabel(slotId: number): string {
         } catch (error: any) {
           const response = error?.response;
           const code = String(response?.code || error?.code || '').trim();
+          console.error('[HOTEL_INTENT_PREVIEW_FAILED]', {
+            code,
+            message: String(error?.message || response?.message || error || 'Unknown hotel preview failure'),
+            stack: error?.stack,
+          });
           const noAvailability = new Set([
             'HOTEL_NO_AVAILABILITY',
             'HOTEL_INTENT_UNAVAILABLE',
             'HOTEL_RATE_STALE',
             'HOTEL_CONTINUOUS_STAY_UNAVAILABLE',
           ]).has(code);
-          const status = code === 'HOTEL_REFRESH_FAILED' || response?.status === 'REFRESH_FAILED' || (!noAvailability && !code)
+          // Supplier unavailability is a domain result. Prisma/database,
+          // timeout, and other unknown errors are refresh failures and must
+          // remain retryable; reporting them as NO_AVAILABILITY hides defects
+          // and incorrectly tells the user that inventory is absent.
+          const knownRefreshFailure = code === 'HOTEL_REFRESH_FAILED' ||
+            code === 'HOTEL_AVAILABILITY_REFRESH_FAILED' ||
+            code === 'P2002' ||
+            response?.status === 'REFRESH_FAILED';
+          const status = knownRefreshFailure || (!noAvailability && !code)
             ? 'REFRESH_FAILED'
             : 'NO_AVAILABILITY';
           return {
@@ -1920,12 +1933,18 @@ private getGuideSlotLabel(slotId: number): string {
     }
 
     if (stay.nights > 1 && provider !== 'offline') {
+      // HOTEL intent has no explicit rate-option anchor. Use the freshly
+      // selected supplier option for continuity validation; otherwise the
+      // validator receives empty room/rate identity and cannot resolve the
+      // supplier mapping even though the refreshed option is valid.
+      const continuityAnchor = anchorOption || selectedByRoute[stay.routeIds.indexOf(Number(data.routeId))] || selectedByRoute[0];
       const continuity = await this.hotelStayBlockValidationService.previewStayExtension({
         planId: Number(data.planId), routeId: Number(data.routeId), provider: provider as any, hotelCode,
-        hotelName: String(anchorOption?.hotelName || data.hotelName || '').trim() || undefined,
-        roomId: String(anchorOption?.roomId || data.roomId || '').trim() || undefined,
-        rateId: String(anchorOption?.rateId || data.rateId || '').trim() || undefined,
-        roomType: anchorRoom || undefined, mealPlan: anchorMeal || undefined,
+        hotelName: String(continuityAnchor?.hotelName || data.hotelName || '').trim() || undefined,
+        roomId: String(continuityAnchor?.roomId || continuityAnchor?.providerRoomId || data.roomId || '').trim() || undefined,
+        rateId: String(continuityAnchor?.rateId || continuityAnchor?.ratePlanId || data.rateId || '').trim() || undefined,
+        roomType: String(continuityAnchor?.roomType || continuityAnchor?.roomTypeName || anchorRoom || '').trim() || undefined,
+        mealPlan: String(continuityAnchor?.mealPlan || continuityAnchor?.mealPlanCode || anchorMeal || '').trim() || undefined,
         checkInDate: stay.checkInDate, groupType,
       });
       if (!continuity.canBookMultiNight || continuity.blocked) {

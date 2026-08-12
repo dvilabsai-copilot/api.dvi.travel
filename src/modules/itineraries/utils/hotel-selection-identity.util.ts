@@ -56,6 +56,17 @@ export type HotelOptionIdentity = {
 
 const clean = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 
+export function normalizeHotelDisplayName(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function isTboSupplierBookingCode(value: unknown): boolean {
   return String(value || '').trim().includes('!TB!');
 }
@@ -243,7 +254,7 @@ export function resolvePersistedHotelIdentity(row: any, master: any): PersistedH
   const hotelId = Number(row?.hotel_id || 0);
   const hotelCode = String(row?.hotel_code || hotelId || '').trim();
   const masterId = Number(master?.hotel_id || 0);
-  const masterName = String(master?.hotel_name || '').trim();
+  const masterName = normalizeHotelDisplayName(master?.hotel_name);
   const masterCategory = Number(master?.hotel_category || 0);
   const mismatches: string[] = [];
 
@@ -265,7 +276,7 @@ export function resolvePersistedHotelIdentity(row: any, master: any): PersistedH
       mismatches.push('rateOptionHotelId');
     }
 
-    const snapshotName = String(snapshot.hotelName || '').trim();
+    const snapshotName = normalizeHotelDisplayName(snapshot.hotelName);
     if (snapshotName && masterName && clean(snapshotName) !== clean(masterName)) mismatches.push('snapshotHotelName');
 
     const snapshotCategory = Number(snapshot.category || 0);
