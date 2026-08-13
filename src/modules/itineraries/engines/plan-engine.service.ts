@@ -11,11 +11,55 @@ import {
 } from "../dto/create-itinerary.dto";
 import { TransportEarlyArrivalOption } from "../transport-early-arrival";
 import {
+  getCanonicalMealPlanFlags,
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from "../../hotels/hotel-rate-plans";
 
 type Tx = Prisma.TransactionClient;
+
+export type CanonicalPlanMealSelection = {
+  mealPlanCode: string | null;
+  breakfast: number;
+  lunch: number;
+  dinner: number;
+};
+
+/**
+ * Canonical meal_plan_code is authoritative. Legacy meal flags remain in the
+ * schema for pricing compatibility, so derive them from the code whenever the
+ * client sends one instead of persisting contradictory client flags.
+ */
+export function resolveCanonicalPlanMealSelection(plan: any): CanonicalPlanMealSelection {
+  const incomingBreakfast = Number(plan?.meal_plan_breakfast ?? 0) ? 1 : 0;
+  const incomingLunch = Number(plan?.meal_plan_lunch ?? 0) ? 1 : 0;
+  const incomingDinner = Number(plan?.meal_plan_dinner ?? 0) ? 1 : 0;
+  const explicitMealPlanCode = inferCanonicalHotelRatePlanCode(plan?.meal_plan_code);
+
+  if (explicitMealPlanCode) {
+    const flags = getCanonicalMealPlanFlags(explicitMealPlanCode);
+    return {
+      mealPlanCode: explicitMealPlanCode,
+      breakfast: Number(flags.breakfast),
+      lunch: Number(flags.lunch),
+      dinner: Number(flags.dinner),
+    };
+  }
+
+  const hasExplicitMealFlags = incomingBreakfast === 1 || incomingLunch === 1 || incomingDinner === 1;
+  return {
+    mealPlanCode: hasExplicitMealFlags
+      ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+          incomingBreakfast,
+          incomingLunch,
+          incomingDinner,
+        )
+      : null,
+    breakfast: incomingBreakfast,
+    lunch: incomingLunch,
+    dinner: incomingDinner,
+  };
+}
 
 @Injectable()
 export class PlanEngineService {
@@ -508,19 +552,11 @@ export class PlanEngineService {
 
     const preferredRoomCount = this.getPreferredRoomCount(travellers || []);
 
-    const meal_plan_breakfast = Number((plan as any).meal_plan_breakfast ?? 0) ? 1 : 0;
-    const meal_plan_lunch = Number((plan as any).meal_plan_lunch ?? 0) ? 1 : 0;
-    const meal_plan_dinner = Number((plan as any).meal_plan_dinner ?? 0) ? 1 : 0;
-    const explicitMealPlanCode = inferCanonicalHotelRatePlanCode((plan as any).meal_plan_code);
-    const hasExplicitMealFlags = meal_plan_breakfast === 1 || meal_plan_lunch === 1 || meal_plan_dinner === 1;
-    const meal_plan_code = explicitMealPlanCode
-      || (hasExplicitMealFlags
-        ? inferCanonicalHotelRatePlanCodeFromMealFlags(
-            meal_plan_breakfast,
-            meal_plan_lunch,
-            meal_plan_dinner,
-          )
-        : null);
+    const canonicalMealSelection = resolveCanonicalPlanMealSelection(plan);
+    const meal_plan_code = canonicalMealSelection.mealPlanCode;
+    const meal_plan_breakfast = canonicalMealSelection.breakfast;
+    const meal_plan_lunch = canonicalMealSelection.lunch;
+    const meal_plan_dinner = canonicalMealSelection.dinner;
 
     const preferred_hotel_category = this.normalizeNumberList(
       (plan as any).preferred_hotel_category,

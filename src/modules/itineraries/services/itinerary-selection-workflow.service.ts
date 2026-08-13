@@ -743,13 +743,19 @@ export class ItinerarySelectionWorkflowService {
         routeDate: data.routeDate,
         canonicalHotelId,
         rateOptionId,
-        roomCount: Math.max(Number(data.roomCount || 1), 1),
+        roomCount: Number(data.roomCount || 0) > 0
+          ? Number(data.roomCount)
+          : undefined,
       });
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : 'Offline hotel rate is stale or invalid');
     }
 
     const requestedBy = Number(data.requestedBy || 1);
+    const effectiveRoomCount = Math.max(
+      Number(resolvedRate.roomCount || data.roomCount || 1),
+      1,
+    );
     const now = new Date();
     const resolvedRouteId = Number(resolvedRate.routeId || data.routeId);
     const routeNight = resolvedRate.nightlyRates.find((night: any) => night.date === resolvedRate.routeDate);
@@ -825,7 +831,7 @@ export class ItinerarySelectionWorkflowService {
         selected_total_price: routePayableAmount,
         selected_currency: resolvedRate.currency,
         selected_price_snapshot: snapshot,
-        total_no_of_rooms: Math.max(Number(data.roomCount || 1), 1),
+        total_no_of_rooms: effectiveRoomCount,
         total_room_cost: routeBaseAmount,
         hotel_margin_percentage: resolvedRate.hotelMarginPercentage,
         hotel_margin_rate: routeMarginAmount,
@@ -875,7 +881,7 @@ export class ItinerarySelectionWorkflowService {
         hotel_id: resolvedRate.canonicalHotelId,
         room_id: resolvedRate.roomId,
         room_type_id: resolvedRate.roomTypeId,
-        room_qty: Math.max(Number(data.roomCount || 1), 1),
+        room_qty: effectiveRoomCount,
         room_rate: routePayableAmount,
         total_room_cost: routePayableAmount,
         breakfast_required: data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0,

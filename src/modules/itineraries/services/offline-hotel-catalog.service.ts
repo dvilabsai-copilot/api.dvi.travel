@@ -47,6 +47,7 @@ export type OfflineRateResolution = {
   roomTypeId: number;
   roomType: string;
   mealPlan: string;
+  roomCount: number;
   pricePerNight: number;
   basePricePerNight: number;
   baseTotalPrice: number;
@@ -1020,7 +1021,14 @@ export class OfflineHotelCatalogService {
     const offers = await this.buildRoomOffers(
       hotel,
       dateList,
-      Math.max(Number(input.roomCount || 1), 1),
+      // The itinerary header is authoritative for the number of rooms being
+      // priced. Confirmation requests may omit roomCount (and older clients
+      // can send a stale value), so using the request first can incorrectly
+      // reject a valid room on occupancy capacity during revalidation.
+      Math.max(
+        Number((plan as any).preferred_room_count || input.roomCount || 1),
+        1,
+      ),
       Number((plan as any).total_adult || 0),
       Number((plan as any).total_children || 0),
     );
@@ -1046,6 +1054,7 @@ export class OfflineHotelCatalogService {
       roomTypeId,
       roomType: offer.roomTitle,
       mealPlan: offer.mealPlan,
+      roomCount: offer.roomCount,
       pricePerNight: offer.pricePerNight,
       basePricePerNight: offer.nightlyBase[0] || 0,
       baseTotalPrice: offer.baseTotalPrice,

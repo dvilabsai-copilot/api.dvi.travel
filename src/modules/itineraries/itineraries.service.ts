@@ -104,7 +104,10 @@ import { ItineraryActivityPricingService } from './services/itinerary-activity-p
 import { ItineraryActivityTimingPolicyService } from './services/itinerary-activity-timing-policy.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
-import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
+import {
+  getHotelAvailabilityResetReason,
+  ItineraryPlanPersistenceService,
+} from './services/itinerary-plan-persistence.service';
 import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
 import { RouteVehicleRestrictionService } from '../route-vehicle-restrictions/route-vehicle-restriction.service';
 import { TransportEarlyArrivalOption } from './transport-early-arrival';
@@ -1422,13 +1425,12 @@ private getGuideSlotLabel(slotId: number): string {
     const hotelsRequired = Number((dto?.plan as any)?.itinerary_preference || 0) === 1 ||
       Number((dto?.plan as any)?.itinerary_preference || 0) === 3;
 
-    // A route rebuild regenerates route IDs and invalidates every hotel
-    // selection, room choice, per-day meal-plan override, and supplier rate
-    // snapshot tied to the old stay dates/destinations. Reuse the same reset
-    // path as the Reset Hotels button after the route transaction commits.
-    // This deliberately runs only for an existing plan whose semantic route
-    // shape changed; ordinary edits keep the current hotel snapshot intact.
-    if (!isNewPlan && hotelsRequired && result?.routeChanged && result?.quoteId) {
+    // Route changes invalidate stay identities; itinerary meal-plan changes
+    // invalidate the auto-selected hotel/rate choices. Reuse the same reset
+    // path as the Reset Hotels button after the plan transaction commits.
+    // Meal-plan-only edits do not rebuild routes, hotspots, or transport data.
+    const hotelResetReason = getHotelAvailabilityResetReason(result);
+    if (!isNewPlan && hotelsRequired && hotelResetReason && result?.quoteId) {
       try {
         const hotelSearch = await this.hotelAvailabilitySnapshotService.resetAndPersist(
           String(result.quoteId),
@@ -1440,6 +1442,7 @@ private getGuideSlotLabel(slotId: number): string {
             status: Number(hotelSearch.response.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
               hotelSearch.response.hotelAvailability?.availabilityState === 'PARTIAL' ? 'PARTIAL' : 'COMPLETE',
             resetApplied: true,
+            resetReason: hotelResetReason,
             searchRunId: hotelSearch.searchRunId,
             checkedAt: hotelSearch.response.hotelAvailability?.checkedAt,
             optionCount: hotelSearch.response.hotels?.length || 0,
@@ -1453,12 +1456,17 @@ private getGuideSlotLabel(slotId: number): string {
         // so the UI opens the saved itinerary and can explicitly retry hotel
         // availability instead of claiming the old hotel is still valid.
         throw new UnprocessableEntityException({
-          message: 'Itinerary routes were updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
+          message: hotelResetReason === 'ROUTE_CHANGED'
+            ? 'Itinerary routes were updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
+            : 'The itinerary meal plan was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
           planId: result.planId,
           quoteId: result.quoteId,
           creationStatus: 'PARTIAL',
-          code: 'HOTEL_AVAILABILITY_ROUTE_RESET_FAILED',
-          routeChanged: true,
+          code: hotelResetReason === 'ROUTE_CHANGED'
+            ? 'HOTEL_AVAILABILITY_ROUTE_RESET_FAILED'
+            : 'HOTEL_AVAILABILITY_MEAL_PLAN_RESET_FAILED',
+          routeChanged: Boolean(result?.routeChanged),
+          mealPlanChanged: Boolean(result?.mealPlanChanged),
           hotelSearch: { status: 'FAILED' },
           cause: String((error as any)?.response?.message || (error as any)?.message || 'Hotel availability reset failed'),
         });
