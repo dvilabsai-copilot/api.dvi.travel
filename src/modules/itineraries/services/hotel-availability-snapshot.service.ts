@@ -738,7 +738,6 @@ export class HotelAvailabilitySnapshotService {
     const selectedPayableByRouteGroup = new Map<string, number>();
     const selectedPayableByGroup = new Map<number, number>();
     const selectedRouteIdsByGroup = new Map<number, Set<number>>();
-    const userSelectedGroups = new Set<number>();
     for (const selection of selectedByRouteGroup.values()) {
       const routeId = Number(selection?.itinerary_route_id || 0);
       const groupType = Number(selection?.group_type || 0);
@@ -752,9 +751,6 @@ export class HotelAvailabilitySnapshotService {
       const selectedRouteIds = selectedRouteIdsByGroup.get(groupType) || new Set<number>();
       selectedRouteIds.add(routeId);
       selectedRouteIdsByGroup.set(groupType, selectedRouteIds);
-      if (selectionOriginFromRow(selection) === 'USER_SELECTED') {
-        userSelectedGroups.add(groupType);
-      }
       selectedPayableByGroup.set(
         groupType,
         this.money((selectedPayableByGroup.get(groupType) || 0) + amount),
@@ -779,10 +775,22 @@ export class HotelAvailabilitySnapshotService {
     const tabs = builtTabs.map((tab) => {
       const tabGroupType = Number(tab.groupType || 0);
       const selectedTotal = selectedPayableByGroup.get(tabGroupType) || 0;
-      const selectedRouteCount = selectedRouteIdsByGroup.get(tabGroupType)?.size || 0;
-      const hasCompletePersistedCoverage = searchableRoutes.length > 0 &&
-        selectedRouteCount >= searchableRoutes.length;
-      return selectedTotal > 0 && hasCompletePersistedCoverage && userSelectedGroups.has(tabGroupType)
+      const selectedRouteIds = selectedRouteIdsByGroup.get(tabGroupType) || new Set<number>();
+      const selectableRouteIds = new Set(normalizedRows
+        .filter((row: any) =>
+          Number(row?.groupType || 0) === tabGroupType &&
+          Number(row?.itineraryRouteId || 0) > 0 &&
+          row?.isPlaceholder !== true &&
+          row?.isSelectable !== false &&
+          row?.isBookable !== false,
+        )
+        .map((row: any) => Number(row.itineraryRouteId)));
+      // A genuinely empty stay (for example a destination with no hotel
+      // inventory) cannot have a persisted selection and must not prevent the
+      // other selected routes from becoming the package price authority.
+      const hasCompletePersistedCoverage = selectableRouteIds.size > 0 &&
+        Array.from(selectableRouteIds).every((routeId) => selectedRouteIds.has(routeId));
+      return selectedTotal > 0 && hasCompletePersistedCoverage
         ? { ...tab, totalAmount: selectedTotal, partialTotal: selectedTotal }
         : tab;
     });
@@ -870,6 +878,7 @@ export class HotelAvailabilitySnapshotService {
     return {
       quoteId,
       planId: plan.itinerary_plan_ID,
+      mealPlanCode: String((plan as any).meal_plan_code || '').trim() || null,
       hotelRatesVisible: Boolean((plan as any).hotel_rates_visibility),
       showHotelMargins: String(process.env.SHOW_HOTEL_MARGINS || '').toLowerCase() === 'true',
       hotelTabs: tabs,
@@ -1593,16 +1602,17 @@ export class HotelAvailabilitySnapshotService {
     });
   }
 
+  private extractRecommendationGroupTypes(values: unknown[]): number[] {
+    return Array.from(new Set((values || [])
+      .map((value: any) => Number(value?.group_type ?? value?.groupType ?? value))
+      .filter((value: number) => Number.isInteger(value) && value >= 1 && value <= 4)))
+      .sort((a, b) => a - b);
+  }
+
   private normalizeRecommendationGroupTypes(values: unknown[], fallbackValues: unknown[] = []): number[] {
-    const groups = Array.from(new Set((values || [])
-      .map((value: any) => Number(value?.group_type ?? value?.groupType ?? value))
-      .filter((value: number) => Number.isInteger(value) && value >= 1 && value <= 4)))
-      .sort((a, b) => a - b);
+    const groups = this.extractRecommendationGroupTypes(values);
     if (groups.length > 0) return groups;
-    const fallbackGroups = Array.from(new Set((fallbackValues || [])
-      .map((value: any) => Number(value?.group_type ?? value?.groupType ?? value))
-      .filter((value: number) => Number.isInteger(value) && value >= 1 && value <= 4)))
-      .sort((a, b) => a - b);
+    const fallbackGroups = this.extractRecommendationGroupTypes(fallbackValues);
     return fallbackGroups.length > 0 ? fallbackGroups : [1];
   }
 
@@ -1613,7 +1623,12 @@ export class HotelAvailabilitySnapshotService {
           where: { itinerary_plan_id: Number(planId || 0), deleted: 0, status: 1 },
           select: { group_type: true },
         }).catch(() => []);
-    const persistedGroups = this.normalizeRecommendationGroupTypes(persistedRows);
+    // An empty persisted selection set is not Group 1. Preserve that absence
+    // so reset/create can derive all active package groups from the fresh
+    // response. Previously normalizeRecommendationGroupTypes([]) returned
+    // [1], causing offline inventory (and therefore auto-selection) to be
+    // materialized only for Recommended #1.
+    const persistedGroups = this.extractRecommendationGroupTypes(persistedRows);
     return planRows.length > 0 || persistedGroups.length > 0
       ? persistedGroups
       : this.normalizeRecommendationGroupTypes([], fallbackRows);
@@ -1750,7 +1765,15 @@ export class HotelAvailabilitySnapshotService {
   private dedupeRows(rows: any[]): any[] {
     const seen = new Set<string>();
     return rows.filter((row) => {
-      const key = this.optionKey(row);
+      // The same physical/rate option may intentionally participate in more
+      // than one recommendation group as a sparse-inventory fallback. Group
+      // and route are therefore part of row identity here; de-duplicating only
+      // by supplier option erased Groups 2-4 after offline materialization.
+      const key = [
+        Number(row?.itineraryRouteId || row?.routeId || 0),
+        Number(row?.groupType || 0),
+        this.optionKey(row),
+      ].join('|');
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -3028,7 +3051,11 @@ export class HotelAvailabilitySnapshotService {
     });
     const existingKeys = new Set(existing.map((row: any) => hotelSelectionKeyFromRow(planId, row)));
     const optionsByKey = new Map<string, any[]>();
-    for (const row of rows) {
+    // Supplier hotel containers may expose the visible/default meal plan on
+    // the parent row while the requested MAP/CP/AP variants live in
+    // `rateOptions`. Automatic persistence must select a concrete nested rate,
+    // not reject the whole hotel because only the parent's label was checked.
+    for (const row of this.expandRateOptions(rows)) {
       const canonicalHotelId = this.persistedHotelId(row);
       const routeId = Number(row.itineraryRouteId || row.routeId || 0);
       const groupType = Number(row.groupType || 0);
@@ -3059,13 +3086,12 @@ export class HotelAvailabilitySnapshotService {
     for (const [key, options] of optionsByKey.entries()) {
       if (existingKeys.has(key)) continue;
       const mealPlanOptions = this.filterRowsByMealPlan(options, preferredMealPlanCode);
-      // PHP assigns a candidate to every populated route/group.  A strict
-      // meal-plan filter could leave a whole recommendation group without a
-      // persisted selection even though that group has valid supplier rows
-      // (for example, MAP requested but only CP is returned for Group 2).
-      // Keep the requested plan as the first choice; if it is unavailable for
-      // this specific stay/group, fall back to the eligible group inventory.
-      // Existing USER_SELECTED rows never enter this path and remain intact.
+      // Prefer a concrete rate matching the itinerary meal plan. Legacy/PHP
+      // package semantics still require one recommended hotel for every
+      // populated route/group, though, so a group whose inventory contains no
+      // matching rate falls back to its eligible package inventory. The API
+      // returns the itinerary meal-plan preference separately for the row
+      // header; cards continue to expose their actual supplier rate plans.
       const selectionPool = mealPlanOptions.length > 0 ? mealPlanOptions : options;
       const eligibleOptions = selectionPool.filter((option: any) =>
         allowOfflineAutoSelection ||

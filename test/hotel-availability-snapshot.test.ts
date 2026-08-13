@@ -150,6 +150,28 @@ test('offline materialization creates rows for valid recommendation groups only'
   );
 
   assert.deepEqual(rows.map((row: any) => row.groupType), [1, 2, 3, 4]);
+  assert.deepEqual(
+    (service as any).dedupeRows(rows).map((row: any) => row.groupType),
+    [1, 2, 3, 4],
+  );
+});
+
+test('fresh recommendation groups are preserved when reset has no persisted selections', async () => {
+  const prisma: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any);
+
+  const groups = await (service as any).getRecommendationGroupTypes(44, [], [
+    { groupType: 1 },
+    { groupType: 2 },
+    { groupType: 3 },
+    { groupType: 4 },
+  ]);
+
+  assert.deepEqual(groups, [1, 2, 3, 4]);
 });
 
 test('tab totals use one full-stay recommendation per logical stay', () => {
@@ -916,7 +938,7 @@ test('initial availability creates one canonical auto-selection per missing stay
   assert.equal(createdRooms[0].room_id, 0);
 });
 
-test('auto-selection falls back to available group inventory when the requested meal plan is absent', async () => {
+test('auto-selection preserves package coverage when the requested meal plan is absent', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -956,7 +978,60 @@ test('auto-selection falls back to available group inventory when the requested 
   assert.equal(createdSelections[0].selected_price_snapshot.includes('AUTO_SELECTED'), true);
 });
 
-test('auto-selection accepts explicit offline approval candidates', async () => {
+test('auto-selection uses a requested nested rate option instead of the parent display meal plan', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 504 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 2,
+    date: '2026-07-28',
+    provider: 'tbo',
+    hotelId: 988,
+    hotelCode: 'PROVIDER-HOTEL-988',
+    hotelName: 'Group Two Hotel',
+    mealPlan: 'CP',
+    roomType: 'Standard Room',
+    totalHotelCost: 1300,
+    isBookable: true,
+    isSelectable: true,
+    rateOptions: [
+      {
+        roomId: 'room-cp',
+        rateId: 'rate-cp',
+        rateOptionId: 'rate-cp',
+        mealPlan: 'CP',
+        totalHotelCost: 1300,
+      },
+      {
+        roomId: 'room-map',
+        rateId: 'rate-map',
+        rateOptionId: 'rate-map',
+        mealPlan: 'MAP',
+        totalHotelCost: 1600,
+      },
+    ],
+  }], 'hotel-run-nested-map', 7, false, undefined, 'MAP');
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].selected_rate_option_id, 'rate-map');
+  assert.equal(JSON.parse(createdSelections[0].selected_price_snapshot).mealPlan, 'MAP');
+});
+
+test('auto-selection accepts explicit offline approval candidates when no meal plan is constrained', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -989,7 +1064,7 @@ test('auto-selection accepts explicit offline approval candidates', async () => 
     availabilityStatus: 'OFFLINE_APPROVAL_REQUIRED',
     bookingMode: 'MANUAL_APPROVAL',
     requiresHotelApproval: true,
-  }], 'hotel-run-approval-fallback', 7, false, undefined, 'MAP');
+  }], 'hotel-run-approval-fallback', 7, false, undefined, undefined);
 
   assert.equal(createdSelections.length, 1);
   assert.equal(createdSelections[0].group_type, 3);
