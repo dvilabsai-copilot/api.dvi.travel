@@ -2779,30 +2779,31 @@ export class HotelsService {
         },
       });
 
-      if (Object.keys(mergedOccupancyRates).length > 0) {
- // Delete any existing overlapping rows for the same hotel/room/rateplan so that
- // saving new prices always overwrites stale data for the same date range.
-        await (this.prisma as any).dvi_hotel_occupancy_rate.deleteMany({
-          where: {
-            hotel_id: hid,
-            room_id: roomId,
-            rateplan_id: rateplanId,
-            start_date: { lte: end },
-            end_date: { gte: start },
-          },
-        });
+    if (Object.keys(mergedOccupancyRates).length > 0) {
+  // Partial date-range update:
+  // remove only an existing record for this exact submitted range.
+  // Broader or partially overlapping saved ranges must remain untouched.
+  await (this.prisma as any).dvi_hotel_occupancy_rate.deleteMany({
+    where: {
+      hotel_id: hid,
+      room_id: roomId,
+      rateplan_id: rateplanId,
+      start_date: start,
+      end_date: end,
+    },
+  });
 
-        await this.prisma.dvi_hotel_occupancy_rate.create({
-          data: {
-            hotel_id: hid,
-            room_id: roomId,
-            rateplan_id: rateplanId,
-            start_date: start,
-            end_date: end,
-            occupancy_rates: mergedOccupancyRates,
-          },
-        });
-      }
+  await this.prisma.dvi_hotel_occupancy_rate.create({
+    data: {
+      hotel_id: hid,
+      room_id: roomId,
+      rateplan_id: rateplanId,
+      start_date: start,
+      end_date: end,
+      occupancy_rates: mergedOccupancyRates,
+    },
+  });
+}
 
       axisroomsSyncedCount++;
     }
