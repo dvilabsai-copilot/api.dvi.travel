@@ -3033,7 +3033,13 @@ export class HotelAvailabilitySnapshotService {
       const routeId = Number(row.itineraryRouteId || row.routeId || 0);
       const groupType = Number(row.groupType || 0);
       if (eligibleRouteIds && !eligibleRouteIds.has(routeId)) continue;
-      if ((!canonicalHotelId && !this.hasSupplierIdentity(row)) || !routeId || !groupType || row.isBookable === false || row.isSelectable === false) continue;
+      const approvalRequired = row.requiresHotelApproval === true ||
+        String(row.requiresHotelApproval || '').trim().toLowerCase() === 'true' ||
+        String(row.availabilityStatus || '').trim().toUpperCase() === 'OFFLINE_APPROVAL_REQUIRED' ||
+        String(row.bookingMode || '').trim().toUpperCase() === 'MANUAL_APPROVAL';
+      const approvalCandidate = row.isBookable === false && approvalRequired && row.isSelectable !== false;
+      if ((!canonicalHotelId && !this.hasSupplierIdentity(row)) || !routeId || !groupType ||
+        (row.isBookable === false && !approvalCandidate) || row.isSelectable === false) continue;
       const key = hotelSelectionKeyFromRow(planId, row);
       const bucket = optionsByKey.get(key) || [];
       bucket.push({ ...row, canonicalHotelId });
@@ -3053,7 +3059,15 @@ export class HotelAvailabilitySnapshotService {
     for (const [key, options] of optionsByKey.entries()) {
       if (existingKeys.has(key)) continue;
       const mealPlanOptions = this.filterRowsByMealPlan(options, preferredMealPlanCode);
-      const eligibleOptions = mealPlanOptions.filter((option: any) =>
+      // PHP assigns a candidate to every populated route/group.  A strict
+      // meal-plan filter could leave a whole recommendation group without a
+      // persisted selection even though that group has valid supplier rows
+      // (for example, MAP requested but only CP is returned for Group 2).
+      // Keep the requested plan as the first choice; if it is unavailable for
+      // this specific stay/group, fall back to the eligible group inventory.
+      // Existing USER_SELECTED rows never enter this path and remain intact.
+      const selectionPool = mealPlanOptions.length > 0 ? mealPlanOptions : options;
+      const eligibleOptions = selectionPool.filter((option: any) =>
         allowOfflineAutoSelection ||
         String(option.provider || '').trim().toLowerCase() !== 'offline' ||
         !liveSelectionKeys.has(key),

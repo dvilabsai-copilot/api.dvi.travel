@@ -1977,6 +1977,30 @@ private getGuideSlotLabel(slotId: number): string {
     }
 
     if (data.previewOnly) {
+      // Confirmation persists STAAH pricing as room-count-scaled payable
+      // totals with the configured hotel margin. The preview must expose that
+      // same financial basis; returning the raw supplier room rate here makes
+      // the confirmation dialog claim a decrease while persistence later
+      // increases the amount for multiple rooms.
+      const previewRoomCount = Math.max(
+        Number((plan as any)?.preferred_room_count || data.roomCount || 1),
+        1,
+      );
+      let previewMarginPercentage = Number(data.hotelMarginPercentage || 0);
+      if (provider === 'staah' && previewMarginPercentage <= 0) {
+        const settingsModel = (this.prisma as any).dvi_global_settings;
+        if (settingsModel?.findFirst) {
+          const settings = await settingsModel.findFirst({
+            where: { deleted: 0, status: 1 },
+            orderBy: { global_settings_ID: 'asc' },
+            select: { hotel_margin: true },
+          });
+          previewMarginPercentage = Math.max(
+            Number(settings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0),
+            0,
+          );
+        }
+      }
       return {
         status: 'AVAILABLE',
         success: true,
@@ -1985,7 +2009,22 @@ private getGuideSlotLabel(slotId: number): string {
         selectionIntent: intent,
         logicalStay: stay,
         affectedRouteIds: stay.routeIds,
-        selections: selectedByRoute.map((selection: any) => ({
+        selections: selectedByRoute.map((selection: any) => {
+          const rawPricePerNight = Number(
+            selection.pricePerNight ?? selection.amountAfterTax ?? selection.price ?? 0,
+          );
+          const isStaahBaseRate = provider === 'staah' &&
+            selection.amountIncludesHotelMargin !== true &&
+            selection.pricingIncludesHotelMargin !== true;
+          const payablePricePerNight = isStaahBaseRate && rawPricePerNight > 0
+            ? Number((rawPricePerNight * (1 + previewMarginPercentage / 100)).toFixed(2))
+            : rawPricePerNight;
+          const payableTotal = isStaahBaseRate && rawPricePerNight > 0
+            ? Number((payablePricePerNight * previewRoomCount).toFixed(2))
+            : Number(
+              selection.totalStayPrice ?? selection.totalPrice ?? selection.amountAfterTax ?? selection.price ?? 0,
+            );
+          return {
           ...selection,
           routeId: Number(selection.routeId || selection.itineraryRouteId),
           routeDate: String(selection.date || '').slice(0, 10),
@@ -2002,17 +2041,28 @@ private getGuideSlotLabel(slotId: number): string {
           optionKey: selection.optionKey || selection.rateOptionId,
           selectionKey: supplierSelectionKey(selection) || undefined,
           supplierBookingCode: selection.bookingCode || selection.searchReference || undefined,
-          pricePerNight: Number(selection.pricePerNight ?? selection.amountAfterTax ?? selection.price ?? 0),
-          totalPrice: Number(selection.totalStayPrice ?? selection.totalPrice ?? selection.amountAfterTax ?? selection.price ?? 0),
-          basePricePerNight: Number(selection.basePricePerNight ?? 0),
-          baseTotalPrice: Number(selection.baseTotalPrice ?? 0),
-          hotelMarginPercentage: Number(selection.hotelMarginPercentage ?? 0),
-          hotelMarginAmount: Number(selection.hotelMarginAmount ?? 0),
-          hotelMarginTotalAmount: Number(selection.hotelMarginTotalAmount ?? selection.hotelMarginStayAmount ?? 0),
-          amountIncludesHotelMargin: selection.amountIncludesHotelMargin === true,
-          pricingIncludesHotelMargin: selection.pricingIncludesHotelMargin === true,
+          pricePerNight: payablePricePerNight,
+          totalPrice: payableTotal,
+          basePricePerNight: isStaahBaseRate ? rawPricePerNight : Number(selection.basePricePerNight ?? 0),
+          baseTotalPrice: isStaahBaseRate
+            ? Number((rawPricePerNight * previewRoomCount).toFixed(2))
+            : Number(selection.baseTotalPrice ?? 0),
+          hotelMarginPercentage: isStaahBaseRate ? previewMarginPercentage : Number(selection.hotelMarginPercentage ?? 0),
+          hotelMarginAmount: isStaahBaseRate
+            ? Number(((payablePricePerNight - rawPricePerNight) * previewRoomCount).toFixed(2))
+            : Number(selection.hotelMarginAmount ?? 0),
+          hotelMarginTotalAmount: isStaahBaseRate
+            ? Number(((payablePricePerNight - rawPricePerNight) * previewRoomCount).toFixed(2))
+            : Number(selection.hotelMarginTotalAmount ?? selection.hotelMarginStayAmount ?? 0),
+          amountIncludesHotelMargin: isStaahBaseRate
+            ? true
+            : selection.amountIncludesHotelMargin === true,
+          pricingIncludesHotelMargin: isStaahBaseRate
+            ? true
+            : selection.pricingIncludesHotelMargin === true,
           currency: selection.currency || 'INR',
-        })),
+          };
+        }),
       };
     }
 
