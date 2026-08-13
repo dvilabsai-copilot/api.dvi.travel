@@ -82,6 +82,7 @@ test('offline persistence stores one route night and retains explicit stay total
     resolveOfflineRateOption: async () => ({
       provider: 'offline', canonicalHotelId: 436, routeId: 10, routeDate: '2099-01-02',
       rateOptionId: 'offline:436:1251:612:2099-01-01:2099-01-03', roomId: 1251, roomTypeId: 612,
+      roomCount: 2,
       pricePerNight: 3120, basePricePerNight: 2600, baseTotalPrice: 5200,
       hotelMarginPercentage: 20, hotelMarginAmount: 520, hotelMarginTotalAmount: 1040,
       totalStayPrice: 6240, numberOfNights: 2, currency: 'INR',
@@ -106,6 +107,8 @@ test('offline persistence stores one route night and retains explicit stay total
   assert.equal(hotelWrite.hotel_margin_rate, 520);
   assert.equal(hotelWrite.selected_total_price, 3120);
   assert.equal(hotelWrite.total_hotel_cost, 3120);
+  assert.equal(hotelWrite.total_no_of_rooms, 2);
+  assert.equal(roomWrite.room_qty, 2);
   assert.equal(roomWrite.total_room_cost, 3120);
   const snapshot = JSON.parse(hotelWrite.selected_price_snapshot);
   assert.equal(snapshot.pricingScope, 'ROUTE_NIGHT');
