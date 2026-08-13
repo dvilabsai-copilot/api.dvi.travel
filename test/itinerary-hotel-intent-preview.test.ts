@@ -199,15 +199,18 @@ test('STAAH HOTEL preview resolves the canonical hotel id to the supplier proper
     mealPlan: 'CP',
     rateOptionId: `STAAH-STAAHTESTHOTELPROD-DELUXEROOM-CP_PLAN-${stay.stayDates[index].replaceAll('-', '')}`,
     optionKey: `STAAH-STAAHTESTHOTELPROD-DELUXEROOM-CP_PLAN-${stay.stayDates[index].replaceAll('-', '')}`,
-    pricePerNight: 1850,
-    totalPrice: 1850,
+    pricePerNight: 2340,
+    totalPrice: 2340,
     isSelectable: true,
     isBookable: true,
   }));
 
   service.prisma = {
     dvi_itinerary_plan_details: {
-      findUnique: async () => ({ itinerary_quote_ID: 'DVI2026082' }),
+      findUnique: async () => ({ itinerary_quote_ID: 'DVI2026082', preferred_room_count: 3 }),
+    },
+    dvi_global_settings: {
+      findFirst: async () => ({ hotel_margin: 20 }),
     },
     dvi_hotel: {
       findUnique: async () => ({
@@ -256,6 +259,10 @@ test('STAAH HOTEL preview resolves the canonical hotel id to the supplier proper
     'STAAHTESTHOTELPROD',
     'STAAHTESTHOTELPROD',
   ]);
+  assert.deepEqual(result.selections.map((selection: any) => selection.pricePerNight), [2808, 2808]);
+  assert.deepEqual(result.selections.map((selection: any) => selection.totalPrice), [8424, 8424]);
+  assert.equal(result.selections[0].amountIncludesHotelMargin, true);
+  assert.equal(result.selections[0].pricingIncludesHotelMargin, true);
 });
 
 test('STAAH ROOM_TYPE preview keeps nested Suite identity instead of inheriting parent Deluxe identity', async () => {

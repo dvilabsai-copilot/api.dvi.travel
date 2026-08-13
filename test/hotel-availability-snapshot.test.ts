@@ -916,6 +916,87 @@ test('initial availability creates one canonical auto-selection per missing stay
   assert.equal(createdRooms[0].room_id, 0);
 });
 
+test('auto-selection falls back to available group inventory when the requested meal plan is absent', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 502 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 2,
+    date: '2026-07-28',
+    provider: 'tbo',
+    hotelId: 988,
+    hotelCode: 'PROVIDER-HOTEL-988',
+    hotelName: 'Group Two Hotel',
+    mealPlan: 'CP',
+    roomId: 'room-2',
+    rateId: 'rate-2',
+    rateOptionId: 'rate-2',
+    totalHotelCost: 1300,
+    isBookable: true,
+    isSelectable: true,
+  }], 'hotel-run-meal-fallback', 7, false, undefined, 'MAP');
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].group_type, 2);
+  assert.equal(createdSelections[0].hotel_id, 988);
+  assert.equal(createdSelections[0].selected_price_snapshot.includes('AUTO_SELECTED'), true);
+});
+
+test('auto-selection accepts explicit offline approval candidates', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 503 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 3,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 989,
+    hotelCode: 'OFFLINE-HOTEL-989',
+    hotelName: 'Approval Hotel',
+    mealPlan: 'CP',
+    roomType: 'Queen Bed',
+    totalHotelCost: 12000,
+    isBookable: false,
+    isSelectable: true,
+    availabilityStatus: 'OFFLINE_APPROVAL_REQUIRED',
+    bookingMode: 'MANUAL_APPROVAL',
+    requiresHotelApproval: true,
+  }], 'hotel-run-approval-fallback', 7, false, undefined, 'MAP');
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].group_type, 3);
+  assert.equal(createdSelections[0].hotel_id, 989);
+  assert.equal(createdSelections[0].selected_price_snapshot.includes('AUTO_SELECTED'), true);
+});
+
 test('reset clears editable selections before rebuilding the live snapshot', async () => {
   const calls: any[] = [];
   const tx: any = {
