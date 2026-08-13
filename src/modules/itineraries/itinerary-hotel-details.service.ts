@@ -186,6 +186,7 @@ export interface HotelRoutePaginationMeta {
 export interface ItineraryHotelDetailsResponseDto {
   quoteId: string;
   planId: number;
+  mealPlanCode?: string | null;
   hotelRatesVisible: boolean;
   showHotelMargins?: boolean;
   hotelTabs: ItineraryHotelTabDto[];

@@ -455,6 +455,7 @@ export interface ItineraryDetailsResponseDto {
   infants: number;
  overallCost: string;
 meal_plan_code?: string | null;
+mealPlanCode?: string | null;
 
 // Guest food preference for frontend day-wise header
 food_type?: string | null;
@@ -6582,6 +6583,7 @@ const response: ItineraryDetailsResponseDto = {
       infants: plan.total_infants ?? 0,
  overallCost: netPayable.toFixed(2), // Use calculated net payable
 meal_plan_code: (plan as any).meal_plan_code ?? null,
+mealPlanCode: (plan as any).meal_plan_code ?? null,
 
 // Guest food preference for frontend day-wise header
 food_type: guestFoodPreference,
