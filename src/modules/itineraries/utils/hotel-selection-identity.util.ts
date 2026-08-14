@@ -298,6 +298,10 @@ export function resolvePersistedHotelIdentity(row: any, master: any): PersistedH
 export function selectionOriginFromRow(row: any): HotelSelectionOrigin {
   const snapshot = parseHotelSelectionSnapshot(row);
   if (snapshot.selectionOrigin === 'USER_SELECTED') return 'USER_SELECTED';
+  if (snapshot.selectionOrigin === 'AUTO_SELECTED') return 'AUTO_SELECTED';
+  // Legacy offline rows predate explicit origin metadata and represented
+  // manual choices. Preserve that compatibility only when the snapshot does
+  // not state that the API created the selection.
   return row?.hotel_provider === 'offline' ? 'USER_SELECTED' : 'AUTO_SELECTED';
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HotelAvailabilitySnapshotService } from '../src/modules/itineraries/services/hotel-availability-snapshot.service';
-import { hotelOptionKey } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
+import { hotelOptionKey, selectionOriginFromRow } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
 
 function makePrisma() {
   const persistedRow = {
@@ -247,6 +247,133 @@ test('incomplete persisted packages use partial totals instead of returning null
   );
 
   assert.equal(tabs[0].totalAmount, 3900);
+});
+
+test('incomplete persisted packages cannot retain totals from unavailable stays', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const tabs = (service as any).buildTabs(
+    [],
+    [],
+    2,
+    [{
+      groupType: 1,
+      label: 'Recommended #1',
+      totalAmount: 19793.4,
+      partialTotal: 19793.4,
+      complete: false,
+      stayResults: [
+        { stayKey: '10|2026-08-17', state: 'UNAVAILABLE' },
+        { stayKey: '11|2026-08-18', state: 'UNAVAILABLE' },
+      ],
+    }],
+  );
+
+  assert.equal(tabs[0].totalAmount, 0);
+  assert.equal(tabs[0].partialTotal, 0);
+});
+
+test('an explicitly empty recommendation tab is not rebuilt from shared group inventory', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const route = {
+    itinerary_route_ID: 10,
+    itinerary_route_date: new Date('2026-08-17T00:00:00.000Z'),
+    next_visiting_location: 'Ooty',
+  };
+  const populatedTab = (groupType: number) => ({
+    groupType,
+    label: `Recommended #${groupType}`,
+    totalAmount: groupType * 1000,
+    partialTotal: groupType * 1000,
+    complete: true,
+    stayResults: [{ parentRouteId: 10, state: 'AVAILABLE', totalPrice: groupType * 1000 }],
+  });
+  const tabs = (service as any).buildTabs(
+    [{
+      groupType: 4,
+      itineraryRouteId: 10,
+      provider: 'offline',
+      hotelCode: '211',
+      totalStayPrice: 6741,
+      selectionOrigin: 'USER_SELECTED',
+      isSelected: true,
+    }],
+    [route],
+    1,
+    [
+      populatedTab(1),
+      populatedTab(2),
+      populatedTab(3),
+      {
+        groupType: 4,
+        label: 'Recommended #4',
+        hotels: [],
+        stayResults: [],
+        totalAmount: null,
+        partialTotal: 0,
+        complete: false,
+        distinctFromPrevious: false,
+      },
+    ],
+  );
+
+  assert.equal(tabs[3].totalAmount, 0);
+  assert.deepEqual(tabs[3].stayResults, []);
+});
+
+test('recommendation tabs are ranked by payable total while retaining package identity', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const persistedTabs = [
+    {
+      groupType: 1,
+      label: 'Recommended #1',
+      totalAmount: 100,
+      partialTotal: 100,
+      complete: true,
+      stayResults: [{ parentRouteId: 10, state: 'AVAILABLE', totalPrice: 100 }],
+    },
+    {
+      groupType: 2,
+      label: 'Recommended #2',
+      totalAmount: 300,
+      partialTotal: 300,
+      complete: true,
+      stayResults: [{ parentRouteId: 10, state: 'AVAILABLE', totalPrice: 300 }],
+    },
+    {
+      groupType: 3,
+      label: 'Recommended #3',
+      totalAmount: 200,
+      partialTotal: 200,
+      complete: true,
+      stayResults: [{ parentRouteId: 10, state: 'AVAILABLE', totalPrice: 200 }],
+    },
+    {
+      groupType: 4,
+      label: 'Recommended #4',
+      hotels: [],
+      stayResults: [],
+      totalAmount: null,
+      partialTotal: 0,
+      complete: false,
+      distinctFromPrevious: false,
+    },
+  ];
+
+  const tabs = (service as any).buildTabs([], [], 1, persistedTabs);
+
+  assert.deepEqual(
+    tabs.map((tab: any) => ({
+      groupType: tab.groupType,
+      label: tab.label,
+      totalAmount: tab.totalAmount,
+    })),
+    [
+      { groupType: 1, label: 'Recommended #1', totalAmount: 100 },
+      { groupType: 3, label: 'Recommended #2', totalAmount: 200 },
+      { groupType: 2, label: 'Recommended #3', totalAmount: 300 },
+      { groupType: 4, label: 'Recommended #4', totalAmount: 0 },
+    ],
+  );
 });
 
 test('persisted hotel read remaps stale snapshot route IDs by stay date', async () => {
@@ -938,7 +1065,7 @@ test('initial availability creates one canonical auto-selection per missing stay
   assert.equal(createdRooms[0].room_id, 0);
 });
 
-test('auto-selection preserves package coverage when the requested meal plan is absent', async () => {
+test('MAP fallback auto-selects live CP without relabelling it as MAP', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -973,9 +1100,170 @@ test('auto-selection preserves package coverage when the requested meal plan is 
   }], 'hotel-run-meal-fallback', 7, false, undefined, 'MAP');
 
   assert.equal(createdSelections.length, 1);
-  assert.equal(createdSelections[0].group_type, 2);
-  assert.equal(createdSelections[0].hotel_id, 988);
-  assert.equal(createdSelections[0].selected_price_snapshot.includes('AUTO_SELECTED'), true);
+  const snapshot = JSON.parse(createdSelections[0].selected_price_snapshot);
+  assert.equal(snapshot.mealPlan, 'CP');
+  assert.equal(snapshot.selectionOrigin, 'AUTO_SELECTED');
+});
+
+test('an explicitly auto-selected offline snapshot remains automatic', () => {
+  assert.equal(selectionOriginFromRow({
+    hotel_provider: 'offline',
+    selected_price_snapshot: JSON.stringify({ selectionOrigin: 'AUTO_SELECTED' }),
+  }), 'AUTO_SELECTED');
+  assert.equal(selectionOriginFromRow({
+    hotel_provider: 'offline',
+    selected_price_snapshot: JSON.stringify({ selectionOrigin: 'USER_SELECTED' }),
+  }), 'USER_SELECTED');
+});
+
+test('auto-selection falls back to CP without relabelling it when MAP has no priced option', async () => {
+  const createdSelections: any[] = [];
+  const createdRooms: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 503 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdRooms.push(data);
+        return data;
+      },
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 2,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 322,
+    hotelCode: '322',
+    hotelName: 'Offline CP Hotel',
+    mealPlan: 'CP',
+    roomId: 834,
+    roomType: 'Vinayaga Superior',
+    rateOptionId: 'offline-322-834-cp',
+    totalHotelCost: 1300,
+    isBookable: true,
+    isSelectable: true,
+  }], 'hotel-run-map-offline-fallback', 7, false, undefined, 'MAP', {
+    breakfast: 1,
+    lunch: 0,
+    dinner: 1,
+  });
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdRooms.length, 1);
+  const snapshot = JSON.parse(createdSelections[0].selected_price_snapshot);
+  assert.equal(snapshot.mealPlan, 'CP');
+  assert.equal(snapshot.selectionOrigin, 'AUTO_SELECTED');
+  assert.equal(createdSelections[0].selected_rate_option_id, 'offline-322-834-cp');
+});
+
+test('meal-plan notice keeps CP inventory selectable and explains the MAP fallback', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const cpOption = {
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 322,
+    hotelName: 'CP Hotel',
+    roomType: 'Superior',
+    mealPlan: 'CP',
+    totalHotelCost: 1300,
+    isBookable: true,
+    isSelectable: true,
+  };
+
+  const [decorated] = (service as any).decorateMealPlanAutoSelectionBlockers(
+    [cpOption],
+    'MAP',
+    new Map(),
+    44,
+  );
+
+  assert.equal(decorated.autoSelectionBlocked, true);
+  assert.equal(decorated.autoSelectionBlockCode, 'REQUESTED_MEAL_PLAN_PRICE_UNAVAILABLE');
+  assert.equal(decorated.autoSelectionBlockMessage, 'MAP requested — price unavailable.');
+  assert.deepEqual(decorated.availableMealPlanCodes, ['CP']);
+  assert.equal(decorated.isSelectable, true);
+  assert.equal(decorated.mealPlan, 'CP');
+});
+
+test('meal-plan blocker is absent when an exact MAP option is priced', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const rows = (service as any).decorateMealPlanAutoSelectionBlockers([{
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'staah',
+    hotelId: 500,
+    hotelName: 'MAP Hotel',
+    roomType: 'Deluxe',
+    mealPlan: 'MAP',
+    totalHotelCost: 1800,
+    isBookable: true,
+    isSelectable: true,
+  }], 'MAP', new Map(), 44);
+
+  assert.equal(rows[0].autoSelectionBlocked, undefined);
+});
+
+test('refresh replaces an incompatible AUTO_SELECTED rate with the permitted CP fallback', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const { tx, selections, rooms } = makeReconciliationTx();
+  selections[0].selected_price_snapshot = JSON.stringify({
+    selectionOrigin: 'AUTO_SELECTED',
+    hotelName: 'Old EP Hotel',
+    roomType: 'Deluxe - OTA EP Plan',
+    mealPlan: 'EP',
+  });
+  selections[0].selected_rate_option_id = 'rate-ep';
+
+  const cpOnly: any = {
+    groupType: 1,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    provider: 'resavenue',
+    hotelCode: 'H-CP',
+    hotelId: 202,
+    roomId: 'room-cp',
+    rateId: 'rate-cp',
+    rateOptionId: 'rate-cp',
+    hotelName: 'CP Only Hotel',
+    roomType: 'Deluxe - OTA CP Plan',
+    mealPlan: 'CP',
+    pricePerNight: 140,
+    totalStayPrice: 140,
+    isBookable: true,
+    isSelectable: true,
+  };
+  cpOnly.optionKey = hotelOptionKey(cpOnly);
+
+  const summary = await (service as any).reconcileSelections(
+    tx,
+    44,
+    [cpOnly],
+    'run-map-mismatch',
+    1,
+    false,
+    undefined,
+    'MAP',
+  );
+
+  const activeSelection = selections.find((row) => row.deleted === 0 && row.status === 1);
+  assert.ok(activeSelection);
+  assert.equal(activeSelection.selected_rate_option_id, 'rate-cp');
+  assert.equal(JSON.parse(activeSelection.selected_price_snapshot).mealPlan, 'CP');
+  assert.equal(rooms.filter((row) => row.deleted === 0 && row.status === 1).length, 1);
+  assert.equal(summary.changes.some((change: any) => change.changeType === 'AUTO_SELECTION_CHANGED'), true);
 });
 
 test('auto-selection uses a requested nested rate option instead of the parent display meal plan', async () => {
@@ -1287,6 +1575,55 @@ test('live inventory wins over offline fallback for the same stay/group', async 
   assert.equal(createdSelections[0].hotel_provider, 'staah');
 });
 
+test('a live rate with the wrong meal plan does not block a matching offline auto-selection', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 903 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 987,
+    hotelCode: 'OFFLINE-CP-987',
+    hotelName: 'Offline CP Hotel',
+    mealPlan: 'CP',
+    totalHotelCost: 1200,
+    isBookable: true,
+    isSelectable: true,
+  }, {
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'resavenue',
+    hotelId: 988,
+    hotelCode: 'LIVE-EP-988',
+    hotelName: 'Live EP Hotel',
+    mealPlan: 'EP',
+    totalHotelCost: 900,
+    isBookable: true,
+    isSelectable: true,
+  }], 'live-ep-offline-cp', 7, false, undefined, 'CP');
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_provider, 'offline');
+  assert.equal(createdSelections[0].hotel_id, 987);
+  assert.equal(JSON.parse(createdSelections[0].selected_price_snapshot).mealPlan, 'CP');
+});
+
 test('explicit offline fetch can auto-select only its requested stay group', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
@@ -1406,6 +1743,7 @@ test('property reconciliation keeps the persisted payable total for the same pro
     totalHotelCost: 3990,
     totalPrice: 3990,
     pricePerNight: 3990,
+    hotelMarginPercentage: 0,
     isSelectable: true,
   };
   const persistedSelection = {
@@ -1417,6 +1755,7 @@ test('property reconciliation keeps the persisted payable total for the same pro
     meal_plan: 'CP',
     selected_total_price: 4389,
     selected_price_per_night: 3990,
+    hotel_margin_percentage: 7,
     selected_price_snapshot: JSON.stringify({
       provider: 'offline',
       optionKey: 'offline|618|current-rate',
@@ -1432,6 +1771,7 @@ test('property reconciliation keeps the persisted payable total for the same pro
   assert.equal(decorated.selectedTotalPrice, 4389);
   assert.equal(decorated.pricePerNight, 3990);
   assert.equal(decorated.selectedPricePerNight, 3990);
+  assert.equal(decorated.hotelMarginPercentage, 7);
   assert.equal(decorated.provider, 'offline');
 });
 

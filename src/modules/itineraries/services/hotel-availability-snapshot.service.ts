@@ -651,6 +651,16 @@ export class HotelAvailabilitySnapshotService {
       return this.decorateUnavailableSelection(row, selection);
     });
 
+    // A requested meal plan is a pricing requirement, not a display label.
+    // Keep differently-priced plans available for explicit selection, but do
+    // not present them as an automatic selection for the requested plan.
+    normalizedRows = this.decorateMealPlanAutoSelectionBlockers(
+      normalizedRows,
+      String((plan as any).meal_plan_code || '').trim(),
+      selectedByRouteGroup,
+      plan.itinerary_plan_ID,
+    );
+
     // A persisted supplier snapshot can be partial: a live search may return
     // an option for only some stays while the itinerary still has selected
     // hotels for the remaining route/day groups. Keep that selection on its
@@ -843,6 +853,27 @@ export class HotelAvailabilitySnapshotService {
       row.isPlaceholder !== true,
     )).length;
     const emptyStayBlocks = this.buildEmptyStayBlocks(searchableRoutes, normalizedRows, noOfNights);
+    const mealPlanAutoSelectionBlocks = Array.from(
+      new Map(
+        normalizedRows
+          .filter((row: any) => row?.autoSelectionBlocked === true)
+          .map((row: any) => {
+            const key = hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row);
+            return [key, {
+              routeId: Number(row.itineraryRouteId || row.routeId || 0),
+              groupType: Number(row.groupType || 0),
+              date: this.toDateOnly(row.date || row.checkInDate || row.itineraryRouteDate),
+              destination: String(row.destination || '').trim(),
+              requestedMealPlanCode: String(row.requestedMealPlanCode || '').trim(),
+              availableMealPlanCodes: Array.isArray(row.availableMealPlanCodes)
+                ? row.availableMealPlanCodes
+                : [],
+              code: String(row.autoSelectionBlockCode || ''),
+              message: String(row.autoSelectionBlockMessage || ''),
+            }];
+          }),
+      ).values(),
+    );
     const stayRoutes = searchableRoutes
       .map((route: any, index: number) => {
         const parsedDate = new Date(route.itinerary_route_date);
@@ -913,6 +944,7 @@ export class HotelAvailabilitySnapshotService {
         checkedAt: checkedAt.toISOString(),
         expiresAt,
         providerErrors: [],
+        mealPlanAutoSelectionBlocks,
         emptyStayBlocks,
         stayRoutes,
         offlineFetch: latestPayload?.offlineFetch,
@@ -998,7 +1030,12 @@ export class HotelAvailabilitySnapshotService {
         undefined,
         resetSelections,
         true,
-        resetSelections,
+        // A refresh must build recommendation packages only from the fresh
+        // supplier result. Persisted selections are reconciled below, after
+        // the new snapshot exists. Reading them here lets a stale selection
+        // overwrite an incomplete package total immediately before that same
+        // selection is deactivated by reconcileSelections().
+        true,
       );
       logStage('supplier-and-provider-search', liveSearchStartedAt);
       // Supplier responses can contain a route id from the current itinerary
@@ -1113,6 +1150,7 @@ export class HotelAvailabilitySnapshotService {
           false,
           undefined,
           this.getPlanMealPlanCode(plan),
+          this.getPlanMealPlanFlags(plan),
         );
       });
       logStage('snapshot-persistence-and-selection-reconciliation', persistenceStartedAt);
@@ -1545,7 +1583,17 @@ export class HotelAvailabilitySnapshotService {
           recommendation_generated_at: checkedAt,
         })),
       });
-      return this.reconcileSelections(tx, plan.itinerary_plan_ID, mergedRows, searchRunId, createdBy, true, requestedRouteIds);
+      return this.reconcileSelections(
+        tx,
+        plan.itinerary_plan_ID,
+        mergedRows,
+        searchRunId,
+        createdBy,
+        true,
+        requestedRouteIds,
+        this.getPlanMealPlanCode(plan),
+        this.getPlanMealPlanFlags(plan),
+      );
     });
 
     const response = await this.readPersisted(quoteId, { page: 1, pageSize: 100 });
@@ -1916,6 +1964,12 @@ export class HotelAvailabilitySnapshotService {
       : currentPerNight > 0
         ? currentPerNight
         : persistedPerNight;
+    const persistedBaseTotal = Number(
+      snapshot?.baseTotalPrice ??
+      snapshot?.base_total_price ??
+      selection?.total_room_cost ??
+      0,
+    );
     const selectedBasePerNight = Number(
       snapshot?.basePricePerNight ??
       snapshot?.base_price_per_night ??
@@ -1924,17 +1978,31 @@ export class HotelAvailabilitySnapshotService {
       selectedOption?.baseHotelCost ??
       currentRow?.basePricePerNight ??
       currentRow?.baseHotelCost ??
+      (persistedBaseTotal > 0 ? persistedBaseTotal / roomCount : 0),
+    );
+    const explicitMarginPercentage = Number(
+      snapshot?.hotelMarginPercentage ||
+      selection?.hotel_margin_percentage ||
+      selectedOption?.hotelMarginPercentage ||
+      currentRow?.hotelMarginPercentage ||
       0,
     );
-    const selectedMarginPercentage = Number(
-      snapshot?.hotelMarginPercentage ??
-      selectedOption?.hotelMarginPercentage ??
-      currentRow?.hotelMarginPercentage ??
+    const inferredMarginAmount = persistedBaseTotal > 0 && selectedTotal > persistedBaseTotal
+      ? this.money(selectedTotal - persistedBaseTotal)
+      : 0;
+    const selectedMarginPercentage = explicitMarginPercentage > 0
+      ? explicitMarginPercentage
+      : persistedBaseTotal > 0 && inferredMarginAmount > 0
+        ? Number(((inferredMarginAmount / persistedBaseTotal) * 100).toFixed(2))
+        : 0;
+    const selectedMarginAmount = Number(
+      snapshot?.hotelMarginTotalAmount ||
+      snapshot?.hotelMarginAmount ||
+      selection?.hotel_margin_rate ||
+      currentRow?.hotelMarginAmount ||
+      inferredMarginAmount ||
       0,
     );
-    const selectedMarginAmount = selectedBasePerNight > 0 && selectedPerNight > 0
-      ? this.money((selectedPerNight - selectedBasePerNight) * roomCount)
-      : Number(currentRow?.hotelMarginAmount || 0);
     const display = hotelDisplaySnapshot({
       ...currentRow,
       totalPrice: selectedTotal,
@@ -2072,14 +2140,40 @@ export class HotelAvailabilitySnapshotService {
         // is only a fallback for legacy snapshots without current pricing.
         const selectedTotal = currentTotal > 0 ? currentTotal : persistedTotal;
         const selectedPerNight = currentPerNight > 0 ? currentPerNight : persistedPerNight;
+        const persistedBaseTotal = Number(
+          snapshot?.baseTotalPrice ?? snapshot?.base_total_price ??
+          selection?.total_room_cost ?? 0,
+        );
         const selectedBasePerNight = Number(
           currentRateRow?.basePricePerNight ?? currentRateRow?.base_price_per_night ??
-          currentRateRow?.baseHotelCost ?? 0,
+          currentRateRow?.baseHotelCost ??
+          (persistedBaseTotal > 0 ? persistedBaseTotal / roomCount : 0),
         );
-        const selectedMarginPercentage = Number(currentRateRow?.hotelMarginPercentage ?? 0);
-        const selectedMarginAmount = selectedBasePerNight > 0 && selectedPerNight > 0
-          ? this.money((selectedPerNight - selectedBasePerNight) * roomCount)
-          : Number(currentRateRow?.hotelMarginAmount || 0);
+        // Cache inventory can legitimately carry 0 while the persisted
+        // selection stores the hotel-specific margin. Zero is not an
+        // authoritative override in that merge.
+        const explicitMarginPercentage = Number(
+          currentRateRow?.hotelMarginPercentage ||
+          selection?.hotel_margin_percentage ||
+          snapshot?.hotelMarginPercentage ||
+          0,
+        );
+        const inferredMarginAmount = persistedBaseTotal > 0 && selectedTotal > persistedBaseTotal
+          ? this.money(selectedTotal - persistedBaseTotal)
+          : 0;
+        const selectedMarginPercentage = explicitMarginPercentage > 0
+          ? explicitMarginPercentage
+          : persistedBaseTotal > 0 && inferredMarginAmount > 0
+            ? Number(((inferredMarginAmount / persistedBaseTotal) * 100).toFixed(2))
+            : 0;
+        const selectedMarginAmount = Number(
+          snapshot?.hotelMarginTotalAmount ||
+          snapshot?.hotelMarginAmount ||
+          selection?.hotel_margin_rate ||
+          currentRateRow?.hotelMarginAmount ||
+          inferredMarginAmount ||
+          0,
+        );
         const selectedSnapshot = selection?.selected_price_snapshot || null;
         return {
           ...normalized,
@@ -2188,19 +2282,37 @@ export class HotelAvailabilitySnapshotService {
         : (persistedPerNight > 0 ? persistedPerNight : currentPerNight);
     const selectedSnapshot = parseHotelSelectionSnapshot(selection);
     const selectedFinancialSnapshot = selectedSnapshot as any;
-    const selectedBasePerNight = Number(
-      selectedFinancialSnapshot?.basePricePerNight ?? selectedFinancialSnapshot?.base_price_per_night ?? 0,
-    );
     const selectedBaseTotal = Number(
-      selectedFinancialSnapshot?.baseTotalPrice ?? selectedFinancialSnapshot?.base_total_price ?? 0,
+      selectedFinancialSnapshot?.baseTotalPrice ??
+      selectedFinancialSnapshot?.base_total_price ??
+      selection?.total_room_cost ??
+      0,
     );
-    const selectedMarginPercentage = Number(
-      selectedFinancialSnapshot?.hotelMarginPercentage ?? selection?.hotel_margin_percentage ?? 0,
+    const selectedRoomCount = Math.max(
+      Number(selectedFinancialSnapshot?.totalRooms || selection?.total_no_of_rooms || normalized?.noOfRooms || 0),
+      1,
     );
+    const selectedBasePerNight = Number(
+      selectedFinancialSnapshot?.basePricePerNight ??
+      selectedFinancialSnapshot?.base_price_per_night ??
+      (selectedBaseTotal > 0 ? selectedBaseTotal / selectedRoomCount : 0),
+    );
+    const explicitSelectedMarginPercentage = Number(
+      selectedFinancialSnapshot?.hotelMarginPercentage || selection?.hotel_margin_percentage || 0,
+    );
+    const inferredSelectedMarginAmount = selectedBaseTotal > 0 && selectedTotal > selectedBaseTotal
+      ? this.money(selectedTotal - selectedBaseTotal)
+      : 0;
+    const selectedMarginPercentage = explicitSelectedMarginPercentage > 0
+      ? explicitSelectedMarginPercentage
+      : selectedBaseTotal > 0 && inferredSelectedMarginAmount > 0
+        ? Number(((inferredSelectedMarginAmount / selectedBaseTotal) * 100).toFixed(2))
+        : 0;
     const selectedMarginAmount = Number(
-      selectedFinancialSnapshot?.hotelMarginTotalAmount ??
-      selectedFinancialSnapshot?.hotelMarginAmount ??
-      selection?.hotel_margin_rate ??
+      selectedFinancialSnapshot?.hotelMarginTotalAmount ||
+      selectedFinancialSnapshot?.hotelMarginAmount ||
+      selection?.hotel_margin_rate ||
+      inferredSelectedMarginAmount ||
       0,
     );
     const selectedRateOptionId = String(
@@ -2317,17 +2429,35 @@ export class HotelAvailabilitySnapshotService {
   ): ItineraryHotelTabDto[] {
     const requestedGroup = Number(requestedGroupType || 0);
     const storedTabs = (Array.isArray(persistedRecommendationTabs) ? persistedRecommendationTabs : [])
-      .map((tab: any) => ({
-        ...tab,
-        groupType: Number(tab?.groupType || 0),
-        label: String(tab?.label || `Recommended #${Number(tab?.groupType || 0)}`),
-        // Incomplete recommendation packages intentionally have a null
-        // totalAmount. Their partialTotal is still the package total for the
-        // available stay blocks and is the value the UI should display.
-        totalAmount: tab?.totalAmount == null
-          ? (tab?.partialTotal == null ? null : Number(tab.partialTotal))
-          : Number(tab.totalAmount),
-      }))
+      .map((tab: any) => {
+        const stayResults = Array.isArray(tab?.stayResults) ? tab.stayResults : [];
+        // stayResults are the package-level source of truth. A refresh can
+        // legitimately produce an incomplete package, and an old persisted
+        // selection must not leave a positive tab amount attached to stays
+        // that the same payload marks UNAVAILABLE.
+        const derivedPartialTotal = stayResults.length > 0
+          ? stayResults.reduce((sum: number, stay: any) => {
+              if (String(stay?.state || '').trim().toUpperCase() === 'UNAVAILABLE') return sum;
+              const amount = Number(stay?.totalPrice || 0);
+              return Number.isFinite(amount) && amount > 0 ? sum + amount : sum;
+            }, 0)
+          : Number(tab?.partialTotal ?? 0);
+        const partialTotal = Number.isFinite(derivedPartialTotal)
+          ? Number(derivedPartialTotal.toFixed(2))
+          : 0;
+        const totalAmount = tab?.complete === false
+          ? partialTotal
+          : (tab?.totalAmount == null
+              ? (tab?.partialTotal == null ? null : Number(tab.partialTotal))
+              : Number(tab.totalAmount));
+        return {
+          ...tab,
+          groupType: Number(tab?.groupType || 0),
+          label: String(tab?.label || `Recommended #${Number(tab?.groupType || 0)}`),
+          partialTotal,
+          totalAmount,
+        };
+      })
       .filter((tab: any) => tab.groupType >= 1 && tab.groupType <= 4)
       .filter((tab: any) => !requestedGroup || tab.groupType === requestedGroup)
       .sort((left: any, right: any) => left.groupType - right.groupType);
@@ -2338,24 +2468,73 @@ export class HotelAvailabilitySnapshotService {
       // on read so the UI contract remains stable without recalculating live
       // availability during a normal page load.
       if (requestedGroup || tabs.length === 0) return tabs;
-      const normalized = tabs.slice(0, 4).map((tab: any, index: number) => ({
-        ...tab,
-        groupType: index + 1,
-        label: `Recommended #${index + 1}`,
-        stayResults: Array.isArray(tab.stayResults) ? [...tab.stayResults] : tab.stayResults,
-      }));
+      const normalized = tabs.slice(0, 4).map((tab: any, index: number) => {
+        const repeatedFallback = index > 0 && tab?.distinctFromPrevious === false;
+        if (repeatedFallback) {
+          return {
+            groupType: index + 1,
+            label: `Recommended #${index + 1}`,
+            hotels: [],
+            stayResults: [],
+            totalAmount: 0,
+            partialTotal: 0,
+            complete: false,
+            distinctFromPrevious: false,
+            diversityScore: 0,
+            repeatedAcrossGroupsHotelIds: [],
+            sameOptionAcrossGroups: [],
+            duplicateWithinPackageHotelIds: [],
+            repeatedFromGroups: [],
+            fallbackReasons: ['No distinct hotel package is available for this recommendation group.'],
+          };
+        }
+        return {
+          ...tab,
+          groupType: index + 1,
+          label: `Recommended #${index + 1}`,
+          stayResults: Array.isArray(tab.stayResults) ? [...tab.stayResults] : tab.stayResults,
+        };
+      });
       while (normalized.length < 4) {
-        const source = normalized[normalized.length - 1];
         const groupType = normalized.length + 1;
         normalized.push({
-          ...source,
           groupType,
           label: `Recommended #${groupType}`,
-          stayResults: Array.isArray(source.stayResults) ? [...source.stayResults] : source.stayResults,
+          hotels: [],
+          stayResults: [],
+          totalAmount: 0,
+          partialTotal: 0,
+          complete: false,
           distinctFromPrevious: false,
+          diversityScore: 0,
+          repeatedAcrossGroupsHotelIds: [],
+          sameOptionAcrossGroups: [],
+          duplicateWithinPackageHotelIds: [],
+          repeatedFromGroups: [],
+          fallbackReasons: ['No distinct hotel package is available for this recommendation group.'],
         });
       }
       return normalized;
+    };
+    const orderTabsForDisplay = (tabs: any[]): any[] => {
+      if (requestedGroup) return tabs;
+      const isEmpty = (tab: any): boolean =>
+        tab?.complete === false &&
+        Array.isArray(tab?.stayResults) &&
+        tab.stayResults.length === 0;
+      const amount = (tab: any): number => {
+        const value = Number(tab?.totalAmount ?? tab?.partialTotal ?? Number.POSITIVE_INFINITY);
+        return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+      };
+      return [...tabs]
+        .sort((left, right) => {
+          const emptyDifference = Number(isEmpty(left)) - Number(isEmpty(right));
+          return emptyDifference || amount(left) - amount(right) ||
+            Number(left?.groupType || 0) - Number(right?.groupType || 0);
+        })
+        // groupType remains the API identity used for hotel rows and
+        // selection commands; only the user-facing rank is reassigned.
+        .map((tab, index) => ({ ...tab, label: `Recommended #${index + 1}` }));
     };
 
     // Recommendation metadata is generated before a user changes a room,
@@ -2384,7 +2563,16 @@ export class HotelAvailabilitySnapshotService {
       String(row?.selectionOrigin || '').trim() ||
       Number(row?.selectionId || row?.itineraryPlanHotelDetailsId || 0) > 0,
     );
+    const isExplicitlyEmptyRecommendationTab = (tab: any): boolean =>
+      tab?.complete === false &&
+      Array.isArray(tab?.stayResults) &&
+      tab.stayResults.length === 0;
     const overlayUserSelectedTabTotal = (tab: any): any => {
+      // An empty package is an intentional optimizer result. Inventory and
+      // persisted selections are materialized for every group, so overlaying
+      // those rows here would manufacture a recommendation that never
+      // existed (typically copying group 1 into group 4).
+      if (isExplicitlyEmptyRecommendationTab(tab)) return tab;
       const groupRows = (rows || []).filter((row: any) =>
         Number(row?.groupType || 0) === Number(tab?.groupType || 0),
       );
@@ -2503,6 +2691,7 @@ export class HotelAvailabilitySnapshotService {
       !routes.length ||
       currentAvailabilityRouteIds.size === 0 ||
       storedTabs.every((tab: any) =>
+      isExplicitlyEmptyRecommendationTab(tab) || (
       Array.isArray(tab?.stayResults) &&
       tab.stayResults.length > 0 &&
       tab.stayResults.every((stay: any) => {
@@ -2513,7 +2702,7 @@ export class HotelAvailabilitySnapshotService {
           .map((value: unknown) => Number(value || 0))
           .filter((value: number) => Number.isFinite(value) && value > 0);
         return stayRouteIds.some((routeId: number) => currentAvailabilityRouteIds.has(routeId));
-      }),
+      })),
       )
     );
 
@@ -2525,9 +2714,9 @@ export class HotelAvailabilitySnapshotService {
       storedTabsMatchCurrentRoutes &&
       storedTabs.length > 0 &&
       storedTabs.every((tab: any) => Number.isFinite(tab.totalAmount) && tab.totalAmount >= 0)
-    ) return ensureFourStoredTabs(storedTabs
+    ) return orderTabsForDisplay(ensureFourStoredTabs(storedTabs
       .map(overlayStoredTabSelections)
-      .map(overlayUserSelectedTabTotal));
+      .map(overlayUserSelectedTabTotal)));
 
     const searchableRoutes = resolveHotelRequiredRoutes(routes || [], noOfNights);
     const stayKeyByRouteId = new Map<number, string>();
@@ -2580,7 +2769,7 @@ export class HotelAvailabilitySnapshotService {
       groups.set(groupType, group);
     }
 
-    return Array.from(groups.entries())
+    const derivedTabs = Array.from(groups.entries())
       .sort(([left], [right]) => left - right)
       .map(([groupType, stays]) => {
         let totalAmount = 0;
@@ -2603,6 +2792,7 @@ export class HotelAvailabilitySnapshotService {
         };
       })
       .filter((tab) => !requestedGroup || tab.groupType === requestedGroup);
+    return orderTabsForDisplay(derivedTabs);
   }
 
   private buildEmptyStayBlocks(routes: any[], rows: any[], noOfNights: number): EmptyHotelStayBlock[] {
@@ -2661,6 +2851,7 @@ export class HotelAvailabilitySnapshotService {
     allowOfflineAutoSelection = false,
     eligibleRouteIds?: Set<number>,
     preferredMealPlanCode?: string | null,
+    preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
   ): Promise<HotelAvailabilityChangeSummary> {
     const changes: HotelAvailabilityChange[] = [];
     await this.removeStaleSelectionVersions(tx, planId);
@@ -2673,6 +2864,7 @@ export class HotelAvailabilitySnapshotService {
       allowOfflineAutoSelection,
       eligibleRouteIds,
       preferredMealPlanCode,
+      preferredMealPlanFlags,
     );
     const selections = await tx.dvi_itinerary_plan_hotel_details.findMany({
       where: { itinerary_plan_id: planId, deleted: 0, status: 1, hotel_required: 1 },
@@ -2717,7 +2909,11 @@ export class HotelAvailabilitySnapshotService {
       // uses another meal plan.
       const options = origin === 'USER_SELECTED'
         ? allOptions
-        : this.filterRowsByMealPlan(allOptions, preferredMealPlanCode);
+        : this.getAutoSelectionPool(
+            allOptions,
+            preferredMealPlanCode,
+            preferredMealPlanFlags,
+          );
       // Match the exact persisted supplier rate first. A parent hotel row can
       // contain several nested room/meal options and must never win with a
       // different identity or price.
@@ -2751,6 +2947,22 @@ export class HotelAvailabilitySnapshotService {
           await tx.dvi_itinerary_plan_hotel_details.update({
             where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
             data: { selected_price_snapshot: JSON.stringify(snapshot), updatedon: new Date() },
+          });
+          changes.push(this.buildChange('SELECTION_UNAVAILABLE', selection, null, {
+            previous,
+            selectionOrigin: origin,
+          }));
+        } else {
+          // An automatic selection is derived state. If the fresh snapshot no
+          // longer has an option satisfying the itinerary meal plan, retaining
+          // the old row falsely presents an EP/CP rate as the requested MAP.
+          await tx.dvi_itinerary_plan_hotel_details.update({
+            where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
+            data: { status: 0, deleted: 1, updatedon: new Date() },
+          });
+          await tx.dvi_itinerary_plan_hotel_room_details.updateMany({
+            where: { itinerary_plan_hotel_details_id: selection.itinerary_plan_hotel_details_ID, deleted: 0 },
+            data: { status: 0, deleted: 1, updatedon: new Date() },
           });
           changes.push(this.buildChange('SELECTION_UNAVAILABLE', selection, null, {
             previous,
@@ -2969,6 +3181,14 @@ export class HotelAvailabilitySnapshotService {
     );
   }
 
+  private getPlanMealPlanFlags(plan: any): { breakfast: number; lunch: number; dinner: number } {
+    return {
+      breakfast: Number(plan?.meal_plan_breakfast || 0) === 1 ? 1 : 0,
+      lunch: Number(plan?.meal_plan_lunch || 0) === 1 ? 1 : 0,
+      dinner: Number(plan?.meal_plan_dinner || 0) === 1 ? 1 : 0,
+    };
+  }
+
   private getRowMealPlanCode(row: any): string | null {
     const values = [row?.mealPlan, row?.meal_plan, row?.mealPlanCode, row?.ratePlanName];
     for (const value of values) {
@@ -2984,6 +3204,80 @@ export class HotelAvailabilitySnapshotService {
     const normalized = String(preferredMealPlanCode || '').trim().toUpperCase();
     if (!normalized) return rows;
     return rows.filter((row: any) => this.getRowMealPlanCode(row) === normalized);
+  }
+
+  /**
+   * Prefer the exact requested meal plan. When MAP has no priced option, CP is
+   * the only permitted automatic fallback. The CP supplier identity and meal
+   * plan are persisted unchanged; it is never relabelled as MAP.
+   */
+  private getAutoSelectionPool(
+    rows: any[],
+    preferredMealPlanCode?: string | null,
+    _preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
+  ): any[] {
+    const preferred = String(preferredMealPlanCode || '').trim().toUpperCase();
+    if (!preferred) return rows;
+    const exactMatches = this.filterRowsByMealPlan(rows, preferred);
+    if (exactMatches.length > 0) return exactMatches;
+    return preferred === 'MAP' ? this.filterRowsByMealPlan(rows, 'CP') : [];
+  }
+
+  private decorateMealPlanAutoSelectionBlockers(
+    rows: any[],
+    preferredMealPlanCode?: string | null,
+    selectedByRouteGroup: Map<string, any> = new Map(),
+    planId = 0,
+  ): any[] {
+    const preferred = String(preferredMealPlanCode || '').trim().toUpperCase();
+    if (!preferred || rows.length === 0) return rows;
+
+    const rowsByStay = new Map<string, any[]>();
+    for (const row of rows) {
+      const key = hotelSelectionKeyFromRow(planId, row);
+      rowsByStay.set(key, [...(rowsByStay.get(key) || []), row]);
+    }
+
+    const blockedStayDetails = new Map<string, { codes: string[]; message: string }>();
+    for (const [key, bucket] of rowsByStay.entries()) {
+      const persisted = selectedByRouteGroup.get(key);
+      if (persisted && selectionOriginFromRow(persisted) === 'USER_SELECTED') continue;
+
+      const selectableOptions = this.expandRateOptions(bucket).filter((option: any) =>
+        option?.isSelectable !== false &&
+        option?.isBookable !== false &&
+        option?.isPlaceholder !== true,
+      );
+      if (selectableOptions.length === 0) continue;
+      if (selectableOptions.some((option: any) => this.getRowMealPlanCode(option) === preferred)) continue;
+
+      const codes = Array.from(new Set(
+        selectableOptions
+          .map((option: any) => this.getRowMealPlanCode(option))
+          .filter((code): code is string => Boolean(code)),
+      )).sort();
+      if (codes.length === 0) continue;
+      const cpFallbackApplied = preferred === 'MAP' && codes.includes('CP');
+      blockedStayDetails.set(key, {
+        codes,
+        message: cpFallbackApplied
+          ? `${preferred} requested — price unavailable.`
+          : `${preferred} requested — price unavailable. Select ${codes.join(' or ')} if acceptable.`,
+      });
+    }
+
+    return rows.map((row: any) => {
+      const details = blockedStayDetails.get(hotelSelectionKeyFromRow(planId, row));
+      if (!details) return row;
+      return {
+        ...row,
+        requestedMealPlanCode: preferred,
+        availableMealPlanCodes: details.codes,
+        autoSelectionBlocked: true,
+        autoSelectionBlockCode: 'REQUESTED_MEAL_PLAN_PRICE_UNAVAILABLE',
+        autoSelectionBlockMessage: details.message,
+      };
+    });
   }
 
   /**
@@ -3026,6 +3320,7 @@ export class HotelAvailabilitySnapshotService {
     allowOfflineAutoSelection = false,
     eligibleRouteIds?: Set<number>,
     preferredMealPlanCode?: string | null,
+    preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
   ): Promise<void> {
     if (!tx?.dvi_itinerary_plan_hotel_details?.findMany || !tx?.dvi_itinerary_plan_hotel_details?.create) return;
 
@@ -3073,30 +3368,23 @@ export class HotelAvailabilitySnapshotService {
       optionsByKey.set(key, bucket);
     }
 
-    // Offline inventory is a fallback only when the same stay/group has no
-    // live selectable inventory. Explicit offline fetches may still include
-    // both providers, with the normal provider ranking choosing live first.
-    const liveSelectionKeys = new Set<string>();
-    for (const [key, options] of optionsByKey.entries()) {
-      if (options.some((option: any) => String(option.provider || '').trim().toLowerCase() !== 'offline')) {
-        liveSelectionKeys.add(key);
-      }
-    }
-
     for (const [key, options] of optionsByKey.entries()) {
       if (existingKeys.has(key)) continue;
-      const mealPlanOptions = this.filterRowsByMealPlan(options, preferredMealPlanCode);
-      // Prefer a concrete rate matching the itinerary meal plan. Legacy/PHP
-      // package semantics still require one recommended hotel for every
-      // populated route/group, though, so a group whose inventory contains no
-      // matching rate falls back to its eligible package inventory. The API
-      // returns the itinerary meal-plan preference separately for the row
-      // header; cards continue to expose their actual supplier rate plans.
-      const selectionPool = mealPlanOptions.length > 0 ? mealPlanOptions : options;
+      const selectionPool = this.getAutoSelectionPool(
+        options,
+        preferredMealPlanCode,
+        preferredMealPlanFlags,
+      );
+      // Offline inventory is a fallback only when this *meal-plan-compatible*
+      // pool has no live option. A live EP rate must not block an offline CP
+      // rate when the itinerary requests CP (and likewise for other plans).
+      const hasMatchingLiveOption = selectionPool.some((option: any) =>
+        String(option.provider || '').trim().toLowerCase() !== 'offline',
+      );
       const eligibleOptions = selectionPool.filter((option: any) =>
         allowOfflineAutoSelection ||
         String(option.provider || '').trim().toLowerCase() !== 'offline' ||
-        !liveSelectionKeys.has(key),
+        !hasMatchingLiveOption,
       );
       if (eligibleOptions.length === 0) continue;
       const option = [...eligibleOptions].sort((a, b) => {
@@ -3159,6 +3447,12 @@ export class HotelAvailabilitySnapshotService {
           selected_price_snapshot: JSON.stringify({
             ...hotelDisplaySnapshot(option),
             optionKey,
+            ...(option.itineraryMealPlanOverride === true ? {
+              itineraryMealPlanOverride: true,
+              sourceRateMealPlan: option.sourceRateMealPlan || null,
+              mealPlan: option.mealPlan,
+              mealPlanCode: option.mealPlanCode || option.mealPlan,
+            } : {}),
             ...(provider === 'staah' && baseTotalPrice > 0 ? {
               basePricePerNight: Number((baseTotalPrice / roomCount).toFixed(2)),
               baseTotalPrice,
@@ -3335,6 +3629,11 @@ export class HotelAvailabilitySnapshotService {
       });
     }
     const meal = String(option.mealPlan || '').toUpperCase();
+    const requestedBreakfast = Number(option.mealPlanBreakfast);
+    const requestedLunch = Number(option.mealPlanLunch);
+    const requestedDinner = Number(option.mealPlanDinner);
+    const hasExplicitMealFlags = [requestedBreakfast, requestedLunch, requestedDinner]
+      .every((value) => value === 0 || value === 1);
     // Supplier room identifiers are often opaque strings (for example
     // `room-1`).  They are kept in the availability snapshot, but this legacy
     // room-details table stores only the local numeric room id.  Passing
@@ -3383,9 +3682,9 @@ export class HotelAvailabilitySnapshotService {
       room_qty: Math.max(Number(selection.total_no_of_rooms || 1), 1),
       room_rate: pricePerNight,
       total_room_cost: hotelStayTotal(option, 1),
-      breakfast_required: /CP|MAP|AP|BREAKFAST|ALL/.test(meal) ? 1 : 0,
-      lunch_required: /MAP|AP|LUNCH|ALL/.test(meal) ? 1 : 0,
-      dinner_required: /MAP|AP|DINNER|ALL/.test(meal) ? 1 : 0,
+      breakfast_required: hasExplicitMealFlags ? requestedBreakfast : (/CP|MAP|AP|BREAKFAST|ALL/.test(meal) ? 1 : 0),
+      lunch_required: hasExplicitMealFlags ? requestedLunch : (/MAP|AP|LUNCH|ALL/.test(meal) ? 1 : 0),
+      dinner_required: hasExplicitMealFlags ? requestedDinner : (/MAP|AP|DINNER|ALL/.test(meal) ? 1 : 0),
       status: 1,
       deleted: 0,
       updatedon: new Date(),
