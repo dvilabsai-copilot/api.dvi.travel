@@ -165,6 +165,11 @@ export interface ItineraryHotelRowDto {
   requiresPriceReacceptance?: boolean;
   selectedPriceSnapshot?: unknown;
   identityMismatch?: boolean;
+  requestedMealPlanCode?: string;
+  availableMealPlanCodes?: string[];
+  autoSelectionBlocked?: boolean;
+  autoSelectionBlockCode?: 'REQUESTED_MEAL_PLAN_PRICE_UNAVAILABLE';
+  autoSelectionBlockMessage?: string;
 }
 
 export interface HotelPaginationMeta {
@@ -245,6 +250,16 @@ export interface HotelAvailabilityMetaDto {
     fetchedHotelCount: number;
     noResultRouteIds: number[];
   };
+  mealPlanAutoSelectionBlocks?: Array<{
+    routeId: number;
+    groupType: number;
+    date: string;
+    destination: string;
+    requestedMealPlanCode: string;
+    availableMealPlanCodes: string[];
+    code: string;
+    message: string;
+  }>;
 }
 
 /**

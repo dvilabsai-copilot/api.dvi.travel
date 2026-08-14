@@ -109,6 +109,8 @@ export interface HotelSearchResult {
 export interface RoomType {
   roomCode: string;
   roomName: string;
+  /** Canonical supplier rate-plan identity for this room/rate option. */
+  mealPlan?: string;
   bedType: string;
   capacity: number;
   price: number;

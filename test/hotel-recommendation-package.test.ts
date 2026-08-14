@@ -179,9 +179,10 @@ test('returns partial alternatives for available stays while preserving the unav
   });
 
   assert.equal(packages.length, 4);
-  assert.deepEqual(packages.map((pkg) => pkg.hotels[0].hotelName), ['Munnar A', 'Munnar B', 'Munnar B', 'Munnar B']);
+  assert.deepEqual(packages.slice(0, 2).map((pkg) => pkg.hotels[0].hotelName), ['Munnar A', 'Munnar B']);
+  assert.ok(packages.slice(2).every((pkg) => pkg.hotels.length === 0 && pkg.stayResults.length === 0));
   assert.ok(packages.slice(0, 2).every((pkg) => pkg.totalPrice === null && pkg.partialTotal > 0));
-  assert.ok(packages.every((pkg) => pkg.stayResults[1].state === 'UNAVAILABLE'));
+  assert.ok(packages.slice(0, 2).every((pkg) => pkg.stayResults[1].state === 'UNAVAILABLE'));
 });
 
 test('always exposes four tabs when no hotel stay has availability', () => {
@@ -195,7 +196,8 @@ test('always exposes four tabs when no hotel stay has availability', () => {
 
   assert.deepEqual(packages.map((pkg) => pkg.groupType), [1, 2, 3, 4]);
   assert.ok(packages.every((pkg) => pkg.complete === false && pkg.hotels.length === 0));
-  assert.ok(packages.every((pkg) => pkg.stayResults[0].state === 'UNAVAILABLE'));
+  assert.equal(packages[0].stayResults[0].state, 'UNAVAILABLE');
+  assert.ok(packages.slice(1).every((pkg) => pkg.stayResults.length === 0));
 });
 
 test('constructs stable logical stays and handles aliases, repeated destinations, departure, and transit routes', () => {
@@ -329,6 +331,7 @@ test('recommendations stop at the number of real combinations and expose diversi
   assert.equal(packages.length, 4);
   assert.equal(packages[0].totalPrice, 100);
   assert.equal(packages[1].targetPrice, 110);
+  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 110, 120, 130]);
   assert.ok(Array.isArray(packages[3].repeatedAcrossGroupsHotelIds));
   assert.ok(Array.isArray(packages[3].sameOptionAcrossGroups));
   assert.ok(Array.isArray(packages[3].duplicateWithinPackageHotelIds));

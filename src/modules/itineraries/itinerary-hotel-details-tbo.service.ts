@@ -307,13 +307,17 @@ export class ItineraryHotelDetailsTboService {
     }
 
     this.collectMealPlanValue((hotel as any).mealPlan, candidates);
-    if (candidates.size > 0) return Array.from(candidates);
 
-    // Legacy providers sometimes only expose a structured room label. Use it
-    // only when no structured meal-plan value exists anywhere on the option.
+    // A property can expose several room/rate variants (for example EP and
+    // CP) while the top-level display row represents only the cheapest one.
+    // Collect every room-level plan so preference matching can promote the
+    // requested variant instead of rejecting the whole property.
     this.collectMealPlanValue((hotel as any).roomType, candidates);
 
     for (const roomType of hotel.roomTypes || []) {
+      this.collectMealPlanValue((roomType as any).mealPlan, candidates);
+      this.collectMealPlanValue((roomType as any).mealPlanCode, candidates);
+      this.collectMealPlanValue((roomType as any).ratePlanName, candidates);
       this.collectMealPlanValue((roomType as any).roomName, candidates);
     }
 
@@ -374,6 +378,9 @@ export class ItineraryHotelDetailsTboService {
     const roomTypes = Array.isArray(hotel.roomTypes) ? hotel.roomTypes : [];
     const matchedRoomType = roomTypes.find((roomType) => {
       const roomCandidates = new Set<string>();
+      this.collectMealPlanValue((roomType as any).mealPlan, roomCandidates);
+      this.collectMealPlanValue((roomType as any).mealPlanCode, roomCandidates);
+      this.collectMealPlanValue((roomType as any).ratePlanName, roomCandidates);
       this.collectMealPlanCodesFromText((roomType as any).roomName, roomCandidates);
       return roomCandidates.has(preferredMealPlanCode);
     });
@@ -4434,7 +4441,7 @@ this.logger.log(
       };
     };
 
-    const pricedPackages = packages.map((pkg) => {
+    const pricedPackagesUnordered = packages.map((pkg) => {
       const stayResults = (pkg.stayResults || []).map((stay) => {
         const pricedHotel = stay.hotel
           ? priceHotelStay(stay.hotel, stay.nights)
@@ -4464,8 +4471,34 @@ this.logger.log(
       };
     });
 
+    // Supplier/base totals are not the final values displayed to the user.
+    // Margin and provider-specific payable projection can reverse two nearby
+    // packages, so assign recommendation numbers only after pricing. Keep a
+    // remap for inventory rows so each tab still opens its own hotels.
+    const pricedPackageOrder = [...pricedPackagesUnordered]
+      .sort((left, right) => {
+        const amount = (pkg: any): number =>
+          (!Array.isArray(pkg?.hotels) || pkg.hotels.length === 0) &&
+          (!Array.isArray(pkg?.stayResults) || pkg.stayResults.length === 0)
+            ? Number.POSITIVE_INFINITY
+            : Number(pkg.totalPrice ?? pkg.partialTotal ?? Number.POSITIVE_INFINITY);
+        const leftAmount = amount(left);
+        const rightAmount = amount(right);
+        return leftAmount - rightAmount;
+      });
+    const pricedGroupTypeRemap = new Map<number, number>(
+      pricedPackageOrder.map((pkg, index) => [Number(pkg.groupType || 0), index + 1]),
+    );
+    const pricedPackages = pricedPackageOrder.map((pkg, index) => ({
+        ...pkg,
+        groupType: index + 1,
+        label: `Recommended #${index + 1}`,
+      }));
+
     const pricedAvailabilityPackages = allAvailabilityPackages.map((pkg) => ({
       ...pkg,
+      groupType: pricedGroupTypeRemap.get(Number(pkg.groupType || 0)) || pkg.groupType,
+      label: `Recommended #${pricedGroupTypeRemap.get(Number(pkg.groupType || 0)) || pkg.groupType}`,
       hotels: (pkg.hotels || []).map((hotel) => {
         const routeNight = getRouteNightHotel(hotel);
         return priceHotelStay(routeNight.hotel, routeNight.nights);
