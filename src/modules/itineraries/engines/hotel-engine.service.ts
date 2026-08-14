@@ -300,9 +300,28 @@ export class HotelEngineService {
 
         const hotelDetails = await Promise.all(hotelDetailsPromises);
 
+        // A reset creates the auto-selection snapshot for each recommendation
+        // group. Do not persist the complete hotel list into every group: that
+        // makes group 4 a copy of group 1 and prevents the UI from explaining
+        // that a route has no distinct hotel for a later group.
+        const orderedHotelDetails = [...hotelDetails].sort((left, right) => {
+          const leftRate = Number(left.roomPrice?.rate || 0);
+          const rightRate = Number(right.roomPrice?.rate || 0);
+          return leftRate - rightRate || Number(left.hotel?.hotel_id || 0) - Number(right.hotel?.hotel_id || 0);
+        });
+        const selectedHotelDetails = orderedHotelDetails.length <= 4
+          ? (orderedHotelDetails[task.groupType - 1] ? [orderedHotelDetails[task.groupType - 1]] : [])
+          : (() => {
+              const index = Math.min(
+                Math.floor(((task.groupType - 1) / 4) * orderedHotelDetails.length),
+                orderedHotelDetails.length - 1,
+              );
+              return orderedHotelDetails[index] ? [orderedHotelDetails[index]] : [];
+            })();
+
         return {
           ...task,
-          hotels: hotelDetails,
+          hotels: selectedHotelDetails,
         };
       })
     );

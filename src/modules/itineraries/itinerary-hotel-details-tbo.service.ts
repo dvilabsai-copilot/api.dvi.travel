@@ -3984,9 +3984,10 @@ this.logger.log(
  this.logger.log(` Route ${routeId}: ${hotels.length} hotels (Prices: ${prices})`);
     });
 
- // NEW LOGIC: Assign hotels to groups PER DESTINATION (per route)
- // Rule: If 1 hotel -> put in all 4 groups
- // If 2+ hotels -> distribute in ascending price order across groups
+ // Assign hotels to groups PER DESTINATION (per route).
+ // Each supplier option belongs to one recommendation group only. A route
+ // with fewer than four distinct options therefore has empty groups; it must
+ // not be padded by copying the cheapest option into those groups.
 
  // First pass: Determine groupType for each hotel based on its destination
  const hotelGroupAssignments = new Map<string, number>(); // key: "routeId-hotelCode" -> groupType
@@ -4008,13 +4009,12 @@ this.logger.log(
       const sortedHotels = [...availableHotels].sort((a, b) => a.price - b.price);
 
       if (sortedHotels.length === 1) {
- // Single hotel: assign to ALL 4 groups
+ // A single hotel is a valid option for group 1 only. Reusing it in groups
+ // 2-4 makes those recommendations look distinct while they are identical.
         const hotel = sortedHotels[0];
-        for (let groupType = 1; groupType <= 4; groupType++) {
-          const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-          hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
-        }
- this.logger.debug(` Route ${routeId}: 1 hotel - "${hotel.hotelName}" (${hotel.price}) assigned to ALL groups`);
+        const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
+        hotelGroupAssignments.set(`${key}:1`, 1);
+ this.logger.debug(` Route ${routeId}: 1 hotel - "${hotel.hotelName}" (${hotel.price}) assigned to group 1 only`);
       } else {
  // Multiple hotels: distribute across groups by price order
         const numHotels = sortedHotels.length;
@@ -4083,23 +4083,10 @@ this.logger.log(
           }
         }
 
- // Overlap fallback: if this route has hotels but none mapped to current tier,
- // pick deterministic fallback by sorted price index so every tier has data.
-        if (!foundForGroup && availableHotels.length > 0) {
-          const sortedHotels = [...availableHotels].sort((a, b) => (a.price || 0) - (b.price || 0));
-          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
-          const fallbackHotel = sortedHotels[fallbackIndex];
-          if (fallbackHotel) {
-            const fallbackWithRoute = {
-              ...fallbackHotel,
-              routeId,
-              __fallbackAssigned: true,
-            } as HotelSearchResult & { routeId: number };
-            tieredHotels.push(fallbackWithRoute);
+        if (!foundForGroup) {
  this.logger.debug(
-              `   Tier ${groupType}, Route ${routeId}: overlap fallback -> ${fallbackHotel.hotelName}`,
+              `   Tier ${groupType}, Route ${routeId}: no distinct hotel assigned; leaving this group empty for the route`,
             );
-          }
         }
       }
 
@@ -5380,6 +5367,57 @@ this.logger.log(
       }
     }
 
+    // Keep the group/route matrix explicit. If a route has supplier hotels but
+    // all of them belong to another recommendation group, do not silently
+    // reuse one of those hotels here. Emit a non-selectable row so the UI can
+    // say "No hotel available" for this group without rendering a fake card.
+    const requiredRoutesForGroupMatrix = resolveHotelRequiredRoutes(routes, noOfNights);
+    for (const pkg of pricedPackages) {
+      const groupType = Number(pkg.groupType || 0);
+      if (groupType <= 0) continue;
+      for (const route of requiredRoutesForGroupMatrix) {
+        const routeId = Number((route as any).itinerary_route_ID || 0);
+        const alreadyRendered = hotelRows.some((row: any) =>
+          Number(row?.groupType || 0) === groupType &&
+          Number(row?.itineraryRouteId || 0) === routeId,
+        );
+        if (alreadyRendered) continue;
+
+        const dateLabel = new Date((route as any).itinerary_route_date).toISOString().slice(0, 10);
+        const destination = (route as any).next_visiting_location || (route as any).location_name || '';
+        hotelRows.push({
+          groupType,
+          itineraryRouteId: routeId,
+          routeIds: [routeId],
+          stayKey: `group-missing-${groupType}-${routeId}`,
+          day: `Day ${routes.indexOf(route) + 1} | ${dateLabel}`,
+          destination,
+          hotelId: 0,
+          canonicalHotelId: null,
+          hotelCode: '',
+          hotelName: 'No hotel available',
+          category: 0,
+          roomType: '',
+          mealPlan: '',
+          totalHotelCost: 0,
+          totalHotelTaxAmount: 0,
+          provider: 'external',
+          isBookable: false,
+          isSelectable: false,
+          externalStay: true,
+          availabilityStatus: 'NO_DISTINCT_GROUP_AVAILABILITY',
+          availabilityState: 'UNAVAILABLE',
+          availabilityMessage: 'No hotel available for this recommendation group.',
+          selectionStatus: 'UNAVAILABLE',
+          selectionReason: 'All available hotels for this route are assigned to another recommendation group.',
+          date: dateLabel,
+          hotelCheckInDate: dateLabel,
+          checkOutDate: addUtcDays(dateLabel, 1),
+          itineraryPlanHotelDetailsId: 0,
+        } as any);
+      }
+    }
+
  // Preserve every unavailable logical stay in the response. An incomplete
  // package must not disappear just because one stay has no eligible option.
     for (const pkg of pricedPackages) {
@@ -6090,8 +6128,8 @@ this.logger.log(
     const roomDetailsList: ItineraryHotelRoomDto[] = [];
     let roomDetailsId = 1;
 
- // Build route-scoped room candidates with group coverage fallback.
- // PHP behavior allows overlap fallback when a recommendation bucket would be empty.
+ // Build route-scoped room candidates. A room candidate belongs to the price
+ // group calculated for that route; do not copy it into empty groups.
     const routeHotelRows: Array<{ routeId: number; hotel: any }> = [];
 
     hotelsByRoute.forEach((hotelsForRoute, routeId) => {
@@ -6102,7 +6140,6 @@ this.logger.log(
       }
 
       const allPrices = hotelsForRoute.map((h: HotelSearchResult) => h.price || 0);
-      const sortedHotels = [...hotelsForRoute].sort((a, b) => (a.price || 0) - (b.price || 0));
 
       const byGroup = new Map<number, any[]>();
 
@@ -6112,24 +6149,6 @@ this.logger.log(
         if (!byGroup.has(groupType)) byGroup.set(groupType, []);
         byGroup.get(groupType)!.push({ ...hotel, groupType, __fallbackAssigned: false });
       });
-
- // Ensure all 4 groups are represented when a route has at least one hotel.
-      for (let groupType = 1; groupType <= 4; groupType++) {
-        const groupHotels = byGroup.get(groupType) ?? [];
-        if (groupHotels.length === 0 && sortedHotels.length > 0) {
-          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
-          const fallbackHotel = sortedHotels[fallbackIndex];
-          if (fallbackHotel) {
-            byGroup.set(groupType, [
-              {
-                ...fallbackHotel,
-                groupType,
-                __fallbackAssigned: true,
-              },
-            ]);
-          }
-        }
-      }
 
       for (let groupType = 1; groupType <= 4; groupType++) {
         const groupHotels = byGroup.get(groupType) ?? [];

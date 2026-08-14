@@ -288,20 +288,47 @@ if (activeProviders.length === 0) {
         ),
       );
 
-      const results = await Promise.all(searchPromises);
-      const allHotels = results.flat();
+      const includeOfflineHotels =
+        !Array.isArray(searchCriteria.providers) ||
+        searchCriteria.providers.length === 0 ||
+        searchCriteria.providers.some((provider) => String(provider).trim().toLowerCase() === 'offline');
 
-      if (allHotels.length === 0) {
+      const offlineSearchPromise = includeOfflineHotels
+        ? this.offlineHotelCatalog.searchOfflineHotels({
+            cityCode: searchCriteria.cityCode,
+            checkInDate: searchCriteria.checkInDate,
+            checkOutDate: searchCriteria.checkOutDate,
+            roomCount: searchCriteria.roomCount,
+            adultCount: searchCriteria.adultCount,
+            childCount: searchCriteria.childCount,
+            childAges: searchCriteria.childAges,
+          })
+        : Promise.resolve([] as HotelSearchResult[]);
+
+      const [providerResults, offlineHotels] = await Promise.all([
+        Promise.all(searchPromises),
+        offlineSearchPromise,
+      ]);
+      const allHotels = [...providerResults.flat(), ...offlineHotels];
+
+      const hotelNameQuery = String(searchCriteria.hotelName || '').trim().toLowerCase();
+      const filteredHotels = hotelNameQuery
+        ? allHotels.filter((hotel) =>
+            String(hotel.hotelName || '').toLowerCase().includes(hotelNameQuery),
+          )
+        : allHotels;
+
+      if (filteredHotels.length === 0) {
  this.logger.warn(` No hotels found for the given criteria`);
  this.logger.log(` Total Time: ${Date.now() - startTime}ms`);
         return [];
       }
 
- this.logger.log(` Found ${allHotels.length} hotels across all providers`);
+      this.logger.log(` Found ${filteredHotels.length} hotels across all providers and offline catalog`);
  this.logger.log(` Provider Search Time: ${Date.now() - startTime}ms`);
 
  // Deduplicate and rank hotels
-      const uniqueHotels = this.deduplicateHotels(allHotels);
+      const uniqueHotels = this.deduplicateHotels(filteredHotels);
       const rankedHotels = this.rankHotels(uniqueHotels, searchCriteria.preferences);
 
  this.logger.log(` Returning ${rankedHotels.length} unique, ranked hotels`);

@@ -66,6 +66,28 @@ type OfflineCatalogRows = {
   pricesByHotelRoomType: Map<string, any[]>;
 };
 
+/**
+ * Route data contains both customer-facing names and supplier/city-master
+ * names. Keep this list deliberately small: aliases may broaden the hotel
+ * search, so an unverified landmark must not silently become a city.
+ */
+const OFFLINE_DESTINATION_ALIASES: Record<string, string[]> = {
+  bangalore: ['Bengaluru'],
+  bengaluru: ['Bangalore'],
+  cochin: ['Kochi'],
+  kochi: ['Cochin'],
+  chikmagaluru: ['Chikmagalur'],
+  chikmagalur: ['Chikmagaluru'],
+  trichy: ['Tiruchirappalli'],
+  tiruchirappalli: ['Trichy'],
+  tirupathi: ['Tirupati'],
+  tirupati: ['Tirupathi'],
+  pondicherry: ['Puducherry'],
+  puducherry: ['Pondicherry'],
+  trivandrum: ['Thiruvananthapuram'],
+  thiruvananthapuram: ['Trivandrum'],
+};
+
 @Injectable()
 export class OfflineHotelCatalogService {
   private readonly logger = new Logger(OfflineHotelCatalogService.name);
@@ -1122,31 +1144,33 @@ export class OfflineHotelCatalogService {
     const result = new Map<string, string[]>();
     if (uniqueDestinations.length === 0) return result;
 
-    const lookupParts = uniqueDestinations.flatMap((destination) => {
-      const firstPart = destination.split(/[,(-]/)[0].trim();
-      return [
-        { name: { equals: firstPart } },
-        { name: { contains: firstPart } },
-        { name: { equals: destination } },
-        { name: { contains: destination } },
-      ];
-    });
+    const lookupTermsByDestination = new Map(
+      uniqueDestinations.map((destination) => [destination, this.destinationLookupTerms(destination)]),
+    );
+    const lookupParts = Array.from(new Set(
+      Array.from(lookupTermsByDestination.values())
+        .flat()
+        .filter(Boolean),
+    )).flatMap((term) => [
+      { name: { equals: term } },
+      { name: { contains: term } },
+    ]);
     const cityRecords = await this.prisma.dvi_cities.findMany({
       where: { deleted: 0, OR: lookupParts },
       select: { id: true, name: true },
     });
 
     for (const destination of uniqueDestinations) {
-      const firstPart = destination.split(/[,(-]/)[0].trim();
-      const candidates = new Set<string>([destination, firstPart]);
+      const lookupTerms = lookupTermsByDestination.get(destination) || [destination];
+      const normalizedTerms = new Set(lookupTerms.map((term) => this.normalizeCityLookupKey(term)));
+      const candidates = new Set<string>(lookupTerms);
       for (const city of cityRecords as any[]) {
         const cityName = String(city.name || '').trim();
-        if (
-          cityName === firstPart ||
-          cityName.includes(firstPart) ||
-          cityName === destination ||
-          cityName.includes(destination)
-        ) {
+        const normalizedCityName = this.normalizeCityLookupKey(cityName);
+        if (Array.from(normalizedTerms).some((term) => (
+          normalizedCityName === term ||
+          normalizedCityName.startsWith(`${term} `)
+        ))) {
           candidates.add(String(city.id || '').trim());
           candidates.add(cityName);
           const prefix = cityName.split(',')[0].trim();
@@ -1157,6 +1181,33 @@ export class OfflineHotelCatalogService {
     }
 
     return result;
+  }
+
+  private destinationLookupTerms(destination: string): string[] {
+    const raw = String(destination || '').trim();
+    if (!raw) return [];
+
+    const firstPart = raw.split(/[,(-]/)[0].trim();
+    const withoutFacilitySuffix = firstPart
+      .replace(/\b(international|domestic)?\s*airport\b/gi, '')
+      .replace(/\brailway\s+station\b/gi, '')
+      .replace(/\bbus\s+stand\b/gi, '')
+      .replace(/\bport\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const base = withoutFacilitySuffix || firstPart || raw;
+    const aliases = OFFLINE_DESTINATION_ALIASES[this.normalizeCityLookupKey(base)] || [];
+
+    return Array.from(new Set([raw, firstPart, base, ...aliases].filter(Boolean)));
+  }
+
+  private normalizeCityLookupKey(value: string): string {
+    return String(value || '')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
   }
 
   private normalizeTextList(value: unknown): string[] {
