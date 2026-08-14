@@ -786,6 +786,20 @@ export class HotelAvailabilitySnapshotService {
       const tabGroupType = Number(tab.groupType || 0);
       const selectedTotal = selectedPayableByGroup.get(tabGroupType) || 0;
       const selectedRouteIds = selectedRouteIdsByGroup.get(tabGroupType) || new Set<number>();
+      // If a group has no persisted selection for some routes, derive only
+      // those unresolved routes from the current snapshot. This preserves the
+      // selected route prices while adding a price for any remaining route
+      // that actually has an authoritative availability row. Do not derive
+      // from the full group: that could replace a selected price with a
+      // cheaper alternative or double-count a multi-night stay.
+      const unresolvedRows = normalizedRows.filter((row: any) =>
+        Number(row?.groupType || 0) === tabGroupType &&
+        !selectedRouteIds.has(Number(row?.itineraryRouteId || 0)),
+      );
+      const unresolvedTabs = unresolvedRows.length > 0
+        ? this.buildTabs(unresolvedRows, searchableRoutes, noOfNights, [], tabGroupType)
+        : [];
+      const unresolvedTotal = Number(unresolvedTabs[0]?.totalAmount || 0);
       const selectableRouteIds = new Set(normalizedRows
         .filter((row: any) =>
           Number(row?.groupType || 0) === tabGroupType &&
@@ -800,9 +814,20 @@ export class HotelAvailabilitySnapshotService {
       // other selected routes from becoming the package price authority.
       const hasCompletePersistedCoverage = selectableRouteIds.size > 0 &&
         Array.from(selectableRouteIds).every((routeId) => selectedRouteIds.has(routeId));
-      return selectedTotal > 0 && hasCompletePersistedCoverage
-        ? { ...tab, totalAmount: selectedTotal, partialTotal: selectedTotal }
-        : tab;
+      if (selectedTotal <= 0) return tab;
+
+      // A recommendation can be incomplete when one or more destinations
+      // have no selected hotel. The selected routes still have a real price,
+      // so expose that partial amount instead of collapsing the whole package
+      // to zero. The incomplete state remains visible to the client through
+      // the existing tab/route selection metadata; missing routes are not
+      // priced and remain the user's external-arrangement responsibility.
+      return {
+        ...tab,
+        totalAmount: this.money(selectedTotal + (Number.isFinite(unresolvedTotal) ? unresolvedTotal : 0)),
+        partialTotal: this.money(selectedTotal + (Number.isFinite(unresolvedTotal) ? unresolvedTotal : 0)),
+        ...(hasCompletePersistedCoverage ? {} : { complete: false }),
+      };
     });
     normalizedRows = decorateHotelCardPricing(
       normalizedRows.map((row) => projectHotelPayablePricing(row, effectiveMarginPercentage)),
