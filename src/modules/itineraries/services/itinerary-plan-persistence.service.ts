@@ -136,13 +136,29 @@ export function hasItineraryMealPlanChanged(previousPlan: any, nextPlan: any): b
   return resolveItineraryMealPlanCode(previousPlan) !== resolveItineraryMealPlanCode(nextPlan);
 }
 
-export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'MEAL_PLAN_CHANGED';
+/** Keep this derivation aligned with PlanEngineService. */
+export function resolveItineraryRoomCount(travellers: any[] = []): number {
+  const maxRoom = (Array.isArray(travellers) ? travellers : []).reduce((max, traveller) => {
+    const roomId = Number(traveller?.room_id || 0);
+    return Number.isFinite(roomId) && roomId > max ? roomId : max;
+  }, 0);
+  return maxRoom || 1;
+}
+
+export function hasItineraryRoomCountChanged(previousPlan: any, travellers: any[] = []): boolean {
+  const previousRoomCount = Math.max(Number(previousPlan?.preferred_room_count || 1), 1);
+  return previousRoomCount !== resolveItineraryRoomCount(travellers);
+}
+
+export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'MEAL_PLAN_CHANGED';
 
 export function getHotelAvailabilityResetReason(result: {
   routeChanged?: boolean;
+  roomCountChanged?: boolean;
   mealPlanChanged?: boolean;
 } | null | undefined): HotelAvailabilityResetReason | null {
   if (result?.routeChanged) return 'ROUTE_CHANGED';
+  if (result?.roomCountChanged) return 'ROOM_COUNT_CHANGED';
   if (result?.mealPlanChanged) return 'MEAL_PLAN_CHANGED';
   return null;
 }
@@ -364,6 +380,7 @@ export class ItineraryPlanPersistenceService {
     const isPlanUpdate = Number((dto?.plan as any)?.itinerary_plan_id || 0) > 0;
     const shouldResetManualHotspotsForFullRebuild = isFullBasicInfoRebuildType && isPlanUpdate;
     let routeChanged = false;
+    let roomCountChanged = false;
     let mealPlanChanged = false;
     let previousRoutePlan: any = null;
 
@@ -380,6 +397,7 @@ export class ItineraryPlanPersistenceService {
             trip_end_date_and_time: true,
             no_of_nights: true,
             no_of_days: true,
+            preferred_room_count: true,
             arrival_location: true,
             departure_location: true,
             meal_plan_code: true,
@@ -460,6 +478,7 @@ export class ItineraryPlanPersistenceService {
         dto.plan,
       );
       mealPlanChanged = isPlanUpdate && hasItineraryMealPlanChanged(previousRoutePlan, dto.plan);
+      roomCountChanged = isPlanUpdate && hasItineraryRoomCountChanged(previousRoutePlan, dto.travellers);
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
 
       if (routeChanged) {
@@ -477,7 +496,17 @@ export class ItineraryPlanPersistenceService {
           nextMealPlan: resolveItineraryMealPlanCode(dto.plan),
           routeDataPreserved: !routeChanged,
         });
-      } else if (isPlanUpdate && !routeChanged) {
+      }
+
+      if (roomCountChanged) {
+        console.log('[HOTEL_ROOM_COUNT_CHANGE_RESET_REQUIRED]', {
+          planId,
+          previousRoomCount: Number(previousRoutePlan?.preferred_room_count || 1),
+          nextRoomCount: resolveItineraryRoomCount(dto.travellers),
+        });
+      }
+
+      if (isPlanUpdate && !routeChanged && !roomCountChanged && !mealPlanChanged) {
         console.log('[HOTEL_ROUTE_CHANGE_NOT_DETECTED]', {
           planId,
           routeCount: oldRoutes.length,
@@ -829,6 +858,7 @@ export class ItineraryPlanPersistenceService {
         quoteId: planRow?.itinerary_quote_ID,
         routeIds: routes.map((r: any) => r.itinerary_route_ID),
         routeChanged,
+        roomCountChanged,
         mealPlanChanged,
         message:
           "Plan created/updated with routes, travellers, hotspots, and hotels.",

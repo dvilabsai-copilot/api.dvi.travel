@@ -1458,14 +1458,19 @@ private getGuideSlotLabel(slotId: number): string {
         throw new UnprocessableEntityException({
           message: hotelResetReason === 'ROUTE_CHANGED'
             ? 'Itinerary routes were updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
-            : 'The itinerary meal plan was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
+            : hotelResetReason === 'ROOM_COUNT_CHANGED'
+              ? 'Itinerary room count was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
+              : 'The itinerary meal plan was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
           planId: result.planId,
           quoteId: result.quoteId,
           creationStatus: 'PARTIAL',
           code: hotelResetReason === 'ROUTE_CHANGED'
             ? 'HOTEL_AVAILABILITY_ROUTE_RESET_FAILED'
-            : 'HOTEL_AVAILABILITY_MEAL_PLAN_RESET_FAILED',
+            : hotelResetReason === 'ROOM_COUNT_CHANGED'
+              ? 'HOTEL_AVAILABILITY_ROOM_COUNT_RESET_FAILED'
+              : 'HOTEL_AVAILABILITY_MEAL_PLAN_RESET_FAILED',
           routeChanged: Boolean(result?.routeChanged),
+          roomCountChanged: Boolean(result?.roomCountChanged),
           mealPlanChanged: Boolean(result?.mealPlanChanged),
           hotelSearch: { status: 'FAILED' },
           cause: String((error as any)?.response?.message || (error as any)?.message || 'Hotel availability reset failed'),
