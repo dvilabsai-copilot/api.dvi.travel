@@ -115,6 +115,10 @@ import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.ser
 import { ItineraryHotelApprovalService } from './services/itinerary-hotel-approval.service';
 import { ItineraryHotelApprovalController } from './itinerary-hotel-approval.controller';
 import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
+import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
+import { HotelRecommendationPackageService } from './services/hotel-recommendation-package.service';
+import { HotelMealPlanPolicyService } from './services/hotel-meal-plan-policy.service';
+import { ItineraryPricingService } from './itinerary-pricing.service';
 
 @Module({
   imports: [HotelsModule, RouteVehicleRestrictionsModule],
@@ -126,6 +130,7 @@ import { TransportEarlyArrivalValidationService } from './validation/transport-e
     ItineraryHotelDetailsService,
     ItineraryHotelDetailsTboService,
     ItineraryExportService,
+    ItineraryPricingService,
     TboHotelBookingService,
     ResAvenueHotelBookingService,
     HobseHotelBookingService,
@@ -206,6 +211,9 @@ ItineraryRouteNormalizationService,
     ItineraryActivityTimingPolicyService,
     OfflineHotelCatalogService,
     ItineraryHotelApprovalService,
+    HotelAvailabilitySnapshotService,
+    HotelRecommendationPackageService,
+    HotelMealPlanPolicyService,
     TransportEarlyArrivalValidationService,
 
  // existing engines you already had

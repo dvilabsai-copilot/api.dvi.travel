@@ -439,78 +439,81 @@ export class AuthService {
         Array.from(configuredKeys),
     };
   }
+private async buildLoginResponse(user: any) {
+  const userId = user.userID.toString();
 
-  private async buildLoginResponse(user: any) {
-    const userId = user.userID.toString();
+  const email = this.normalizeEmail(
+    user.useremail || '',
+  );
 
-    const email = this.normalizeEmail(
-      user.useremail || '',
-    );
+  const roleID = Number(user.roleID || 0);
 
-    const roleID = Number(user.roleID || 0);
+  const staffContext =
+    roleID === 3
+      ? await this.resolveStaffLoginContext(user)
+      : null;
 
-    const staffContext =
-      roleID === 3
-        ? await this.resolveStaffLoginContext(user)
-        : null;
+  const agentId = Number(user.agent_id || 0);
+  const vendorId = Number(user.vendor_id || 0);
 
-    const agentId = Number(user.agent_id || 0);
+  const staffId =
+    staffContext?.staffId ??
+    Number(user.staff_id || 0);
 
-    const staffId =
-      staffContext?.staffId ??
-      Number(user.staff_id || 0);
+  const guideId = Number(user.guide_id || 0);
 
-    const guideId = Number(user.guide_id || 0);
+  const fullName =
+    staffContext?.staffName ||
+    user.username ||
+    '';
 
-    const fullName =
-      staffContext?.staffName ||
-      user.username ||
-      '';
+  const payload = {
+    sub: userId,
+    email,
+    role: roleID,
+    roleID,
+    agentId,
+    vendorId,
+    staffId,
+    guideId,
+    name: fullName,
+    ...(staffContext
+      ? {
+          permissionRoleId:
+            staffContext.permissionRoleId,
+          allowedAccessKeys:
+            staffContext.allowedAccessKeys,
+          configuredAccessKeys:
+            staffContext.configuredAccessKeys,
+        }
+      : {}),
+  };
 
-    const payload = {
-      sub: userId,
+  const accessToken =
+    await this.jwt.signAsync(payload);
+
+  return {
+    accessToken,
+    roleID,
+    staffId,
+    vendorId,
+    user: {
+      id: userId,
       email,
       role: roleID,
       roleID,
       agentId,
+      vendorId,
       staffId,
       guideId,
-      name: fullName,
-      ...(staffContext
-        ? {
-            permissionRoleId:
-              staffContext.permissionRoleId,
-            allowedAccessKeys:
-              staffContext.allowedAccessKeys,
-            configuredAccessKeys:
-              staffContext.configuredAccessKeys,
-          }
-        : {}),
-    };
-
-    const accessToken =
-      await this.jwt.signAsync(payload);
-
-    return {
-      accessToken,
-      roleID,
-      staffId,
-      user: {
-        id: userId,
-        email,
-        role: roleID,
-        roleID,
-        agentId,
-        staffId,
-        guideId,
-        fullName,
-        permissionRoleId:
-          staffContext?.permissionRoleId ?? null,
-        allowedAccessKeys:
-          staffContext?.allowedAccessKeys ?? [],
-        configuredAccessKeys:
-          staffContext?.configuredAccessKeys ?? [],
-      },
-    };
-  }
+      fullName,
+      permissionRoleId:
+        staffContext?.permissionRoleId ?? null,
+      allowedAccessKeys:
+        staffContext?.allowedAccessKeys ?? [],
+      configuredAccessKeys:
+        staffContext?.configuredAccessKeys ?? [],
+    },
+  };
+}
 }

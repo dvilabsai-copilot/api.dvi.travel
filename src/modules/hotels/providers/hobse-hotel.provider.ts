@@ -277,7 +277,14 @@ export class HobseHotelProvider implements IHotelProvider {
 
  // Filter by city name
       const cityNameLower = cityRow.name.toLowerCase();
-      const cityHotels = allHotels.filter((h) => (h?.cityName || '').toLowerCase() === cityNameLower);
+      const requestedHotelCodes = new Set(String(criteria.hotelCodes || '')
+        .split(',')
+        .map((code) => code.trim())
+        .filter(Boolean));
+      const cityHotels = allHotels.filter((h) =>
+        (h?.cityName || '').toLowerCase() === cityNameLower &&
+        (requestedHotelCodes.size === 0 || requestedHotelCodes.has(String(h?.hotelId || '').trim())),
+      );
 
       if (cityHotels.length === 0) {
  this.logger.warn(` No HOBSE hotels found for city: ${cityRow.name}`);

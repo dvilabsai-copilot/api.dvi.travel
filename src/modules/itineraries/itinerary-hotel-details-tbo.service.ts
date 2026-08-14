@@ -6,6 +6,13 @@ import { HotelSearchService } from '../hotels/services/hotel-search.service';
 import { HobseHotelProvider } from '../hotels/providers/hobse-hotel.provider';
 import { HotelSearchResult } from '../hotels/interfaces/hotel-provider.interface';
 import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.service';
+import { HotelAvailabilityTimingLogger } from './services/hotel-availability-timing.logger';
+import {
+  HotelRecommendationPackageService,
+  resolveHotelRecommendationAlgorithm,
+  type RecommendationPackage,
+  type RecommendationHotel,
+} from './services/hotel-recommendation-package.service';
 import {
   ItineraryHotelTabDto,
   ItineraryHotelRowDto,
@@ -24,6 +31,19 @@ import {
   calculateStaahOccupancyAmount,
   type StaahPricingPaxInput,
 } from './helpers/staah-occupancy-pricing';
+import {
+  hotelDisplaySnapshot,
+  optionMatchesSelection,
+  parseHotelSelectionSnapshot,
+  selectionOriginFromRow,
+} from './utils/hotel-selection-identity.util';
+import { hotelDateOnly, hotelStayTotal } from './utils/hotel-stay-pricing.util';
+import { HotelPricingService } from './hotels/hotel-pricing.service';
+import { projectHotelPayablePricing } from './utils/hotel-payable-pricing.util';
+import {
+  hotelCardPropertyKey,
+} from './utils/hotel-card-pricing.util';
+import { resolveHotelRequiredRoutes } from './utils/hotel-selection-view-state.util';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -31,6 +51,21 @@ import {
  */
 @Injectable()
 export class ItineraryHotelDetailsTboService {
+  private availabilityOptionKey(hotel: any): string {
+    const provider = String(hotel?.provider || '').trim().toLowerCase();
+    const hotelCode = String(hotel?.hotelCode || hotel?.providerHotelCode || hotel?.hotelId || '').trim();
+    const rateIdentity = String(
+      hotel?.rateOptionId || hotel?.searchReference || hotel?.bookingCode || '',
+    ).trim().toLowerCase();
+    return [
+      provider,
+      hotelCode,
+      rateIdentity,
+      String(hotel?.roomType || hotel?.roomTypeName || '').trim().toLowerCase(),
+      String(hotel?.mealPlan || '').trim().toLowerCase(),
+    ].join('|');
+  }
+
   private normalizeExactRoomCode(value: unknown): string {
     return String(value || '').trim().toUpperCase();
   }
@@ -263,23 +298,89 @@ export class ItineraryHotelDetailsTboService {
   private getMealPlanCandidatesFromHotel(hotel: HotelSearchResult): string[] {
     const candidates = new Set<string>();
 
-    this.collectMealPlanCodesFromText((hotel as any).mealPlan, candidates);
-    this.collectMealPlanCodesFromText((hotel as any).roomType, candidates);
+    const rateOptions = Array.isArray((hotel as any).rateOptions)
+      ? (hotel as any).rateOptions
+      : [];
+    if (rateOptions.length > 0) {
+      rateOptions.forEach((option: any) => this.collectMealPlanValue(option?.mealPlan, candidates));
+      return Array.from(candidates);
+    }
+
+    this.collectMealPlanValue((hotel as any).mealPlan, candidates);
+
+    // A property can expose several room/rate variants (for example EP and
+    // CP) while the top-level display row represents only the cheapest one.
+    // Collect every room-level plan so preference matching can promote the
+    // requested variant instead of rejecting the whole property.
+    this.collectMealPlanValue((hotel as any).roomType, candidates);
 
     for (const roomType of hotel.roomTypes || []) {
-      this.collectMealPlanCodesFromText((roomType as any).roomName, candidates);
+      this.collectMealPlanValue((roomType as any).mealPlan, candidates);
+      this.collectMealPlanValue((roomType as any).mealPlanCode, candidates);
+      this.collectMealPlanValue((roomType as any).ratePlanName, candidates);
+      this.collectMealPlanValue((roomType as any).roomName, candidates);
     }
 
     return Array.from(candidates);
+  }
+
+  private collectMealPlanValue(rawValue: unknown, collector: Set<string>): void {
+    const value = String(rawValue ?? '').trim();
+    if (!value || value === '-' || value.toUpperCase() === 'UNKNOWN') return;
+    this.collectMealPlanCodesFromText(value, collector);
   }
 
   private alignHotelToPreferredMealPlan(
     hotel: HotelSearchResult,
     preferredMealPlanCode: string,
   ): HotelSearchResult {
+    // TBO normally returns one display row with all room/rate variants under
+    // `rateOptions`.  The first variant is not guaranteed to be the package's
+    // preferred meal plan (it is often EP/UNKNOWN), so changing only the
+    // display label leaves the selected rate and booking reference pointing at
+    // the wrong meal plan.  Promote the matching rate option to the primary
+    // hotel row while retaining the complete variant list for UI filtering.
+    const rateOptions = Array.isArray((hotel as any).rateOptions)
+      ? (hotel as any).rateOptions
+      : [];
+    const matchedRateOption = rateOptions.find((rateOption: any) => {
+      const candidates = new Set<string>();
+      this.collectMealPlanValue(rateOption?.mealPlan, candidates);
+      this.collectMealPlanValue(rateOption?.mealPlanCode, candidates);
+      this.collectMealPlanValue(rateOption?.ratePlanName, candidates);
+      return candidates.has(preferredMealPlanCode);
+    });
+
+    if (matchedRateOption) {
+      return {
+        ...hotel,
+        rateOptionId: matchedRateOption.rateOptionId || hotel.rateOptionId,
+        roomTypeId: matchedRateOption.roomTypeId || (hotel as any).roomTypeId,
+        roomType: matchedRateOption.roomType || hotel.roomType,
+        mealPlan: preferredMealPlanCode,
+        bookingCode: matchedRateOption.bookingCode || hotel.bookingCode,
+        searchReference: matchedRateOption.searchReference || hotel.searchReference,
+        price: Number(matchedRateOption.price ?? hotel.price ?? 0),
+        pricePerNight: Number(matchedRateOption.pricePerNight ?? hotel.pricePerNight ?? 0),
+        totalStayPrice: Number(
+          matchedRateOption.totalStayPrice ??
+            matchedRateOption.totalPrice ??
+            hotel.totalStayPrice ??
+            0,
+        ),
+        rateOptions: [
+          matchedRateOption,
+          ...rateOptions.filter((rateOption: any) => rateOption !== matchedRateOption),
+        ],
+      };
+    }
+
     const roomTypes = Array.isArray(hotel.roomTypes) ? hotel.roomTypes : [];
     const matchedRoomType = roomTypes.find((roomType) => {
       const roomCandidates = new Set<string>();
+      this.collectMealPlanValue((roomType as any).mealPlan, roomCandidates);
+      this.collectMealPlanValue((roomType as any).mealPlanCode, roomCandidates);
+      this.collectMealPlanValue((roomType as any).ratePlanName, roomCandidates);
       this.collectMealPlanCodesFromText((roomType as any).roomName, roomCandidates);
       return roomCandidates.has(preferredMealPlanCode);
     });
@@ -450,11 +551,6 @@ export class ItineraryHotelDetailsTboService {
     String(preferredMealPlanCode || '')
       .trim()
       .toUpperCase();
-
-  const shouldUseMealPlanFallback =
-    normalizedPreferredMealPlanCode === 'CP' ||
-    normalizedPreferredMealPlanCode === 'MAP' ||
-    normalizedPreferredMealPlanCode === 'AP';
 
   const shouldFilterByFacilities =
     normalizedPreferredFacilities.length > 0;
@@ -788,11 +884,7 @@ export class ItineraryHotelDetailsTboService {
         }
       }
 
-           if (
-        included &&
-        shouldFilterByMeal &&
-        !shouldUseMealPlanFallback
-      ) {
+           if (included && shouldFilterByMeal) {
         const mealPlanCandidates =
           this.getMealPlanCandidatesFromHotel(hotel);
 
@@ -801,10 +893,7 @@ export class ItineraryHotelDetailsTboService {
             preferredMealPlanCode!,
           );
 
-        if (
-          mealPlanCandidates.length > 0 &&
-          !hasMatchingMeal
-        ) {
+        if (!hasMatchingMeal) {
           included = false;
           filterReason =
             `Meal plan mismatch: ` +
@@ -929,29 +1018,7 @@ if (hotelMasterId) {
       }
     }
 
-    const preferredMealHotels =
-      shouldUseMealPlanFallback
-        ? filteredHotels
-            .filter((hotel) =>
-              this.getMealPlanCandidatesFromHotel(
-                hotel,
-              ).includes(
-                normalizedPreferredMealPlanCode,
-              ),
-            )
-            .map((hotel) =>
-              this.alignHotelToPreferredMealPlan(
-                hotel,
-                normalizedPreferredMealPlanCode,
-              ),
-            )
-        : [];
-
-    const finalHotels =
-      shouldUseMealPlanFallback &&
-      preferredMealHotels.length > 0
-        ? preferredMealHotels
-        : filteredHotels;
+    const finalHotels = filteredHotels;
 
  this.logger.log(
       `   Preference filter route ${routeId}: ` +
@@ -983,7 +1050,122 @@ if (hotelMasterId) {
     private readonly hotelSearchService: HotelSearchService,
     private readonly hobseProvider: HobseHotelProvider,
     private readonly offlineHotelCatalogService: OfflineHotelCatalogService,
+    private readonly hotelRecommendationPackageService: HotelRecommendationPackageService,
+    private readonly hotelPricingService: HotelPricingService = new HotelPricingService(prisma),
   ) {}
+
+  /** Fetch the latest room/rate/meal options for one selected supplier hotel. */
+  async getSelectedHotelRates(
+    quoteId: string,
+    routeId: number,
+    provider: string,
+    hotelCode: string,
+    groupType = 0,
+  ): Promise<{ quoteId: string; routeId: number; provider: string; hotelCode: string; hotels: HotelSearchResult[] }> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+      where: { itinerary_quote_ID: quoteId, deleted: 0 },
+    });
+    const route = await this.prisma.dvi_itinerary_route_details.findFirst({
+      where: { itinerary_route_ID: Number(routeId), itinerary_plan_ID: plan?.itinerary_plan_ID, deleted: 0 },
+    });
+    if (!plan || !route) throw new NotFoundException('Itinerary route not found');
+
+    const requestedProvider = String(provider || '').trim().toLowerCase();
+    const normalizedProvider = requestedProvider === 'ax' ? 'axisrooms' : requestedProvider;
+    const normalizedHotelCode = String(hotelCode || '').trim();
+    if (!normalizedProvider || !normalizedHotelCode) {
+      throw new BadRequestException('provider and hotelCode are required');
+    }
+
+    const checkInDate = new Date(route.itinerary_route_date).toISOString().slice(0, 10);
+    const checkOutDate = new Date(new Date(route.itinerary_route_date).getTime() + ItineraryHotelDetailsTboService.ONE_DAY_MS)
+      .toISOString().slice(0, 10);
+    const roomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
+    const adultCount = Math.max(Number((plan as any).total_adult || 1), 1);
+    const childCount = Math.max(Number((plan as any).total_children || 0), 0);
+    const childWithBedCount = Math.max(Number((plan as any).total_child_with_bed || 0), 0);
+    const extraBedCount = Math.max(Number((plan as any).total_extra_bed || 0), 0);
+    const hotels = normalizedProvider === 'staah'
+      ? (await this.fetchStaahHotelsForRoutes(
+          [route], 1, undefined, null, false,
+          { roomCount, adults: adultCount, children: childCount }, normalizedHotelCode,
+        )).get(Number(routeId)) || []
+      : normalizedProvider === 'axisrooms'
+        ? (await this.fetchAxisroomsHotelsForRoutes(
+            [route], 1, undefined, null, roomCount, {
+              adults: adultCount,
+              children: childCount,
+              childWithBedCount,
+              extraBedCount,
+            }, normalizedHotelCode,
+          )).get(Number(routeId)) || []
+        : normalizedProvider === 'offline'
+          ? ((await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
+              [route],
+              1,
+              String((plan as any).guest_nationality || 'IN').trim().toUpperCase(),
+              roomCount,
+              adultCount,
+              childCount,
+            )).get(Number(routeId)) || []).filter((hotel: any) =>
+              String(
+                hotel?.hotelCode || hotel?.providerHotelCode || hotel?.canonicalHotelId || hotel?.hotelId || '',
+              ).trim() === normalizedHotelCode,
+            )
+        : await this.hotelSearchService.searchHotels({
+            cityCode: String((route as any).next_visiting_location || '').trim(),
+            checkInDate, checkOutDate, roomCount,
+            guestCount: adultCount + childCount, adultCount, childCount,
+            guestNationality: String((plan as any).guest_nationality || 'IN').trim().toUpperCase(),
+            providers: [normalizedProvider], hotelCodes: normalizedHotelCode,
+          });
+
+    const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
+    return {
+      quoteId, routeId: Number(routeId), provider: normalizedProvider, hotelCode: normalizedHotelCode,
+      hotels: (hotels || []).map((rawHotel: any) => {
+        const hotel = projectHotelPayablePricing(rawHotel, effectiveMarginPercentage);
+        const totalAmount = Number(
+          hotel.totalHotelCost ?? hotel.totalAmountAfterTax ?? hotel.totalPrice ?? hotel.price ?? 0,
+        );
+        return {
+          ...hotel,
+          itineraryPlanId: plan.itinerary_plan_ID,
+          itineraryRouteId: Number(routeId),
+          routeId: Number(routeId),
+          groupType: Number(groupType || 1),
+          date: checkInDate,
+          checkInDate,
+          checkOutDate,
+          totalHotelCost: Number.isFinite(totalAmount) ? totalAmount : 0,
+          totalAmount: Number.isFinite(totalAmount) ? totalAmount : 0,
+          totalAmountAfterTax: Number.isFinite(totalAmount) ? totalAmount : 0,
+          totalPrice: Number.isFinite(totalAmount) ? totalAmount : 0,
+          pricePerNight: Number(hotel.pricePerNight ?? hotel.price ?? totalAmount) || 0,
+          roomTypeName: hotel.roomTypeName || hotel.roomType || hotel.roomName,
+          isBookable: hotel.isBookable !== false,
+          isSelectable: hotel.isSelectable !== false,
+          isLiveBookable: hotel.isLiveBookable !== false,
+          availabilityStatus: hotel.availabilityStatus || 'AVAILABLE',
+        };
+      }),
+    };
+  }
+
+  private recommendationAlgorithm(): 'v1' | 'v2' {
+    return resolveHotelRecommendationAlgorithm();
+  }
+
+  private recommendationGeneration(searchRunId?: string, generatedAt = new Date().toISOString()) {
+    const version = this.recommendationAlgorithm();
+    return {
+      version,
+      algorithm: version === 'v2' ? 'TARGET_PRICE_DIVERSITY_BEAM_SEARCH' as const : 'LEGACY_PRICE_PACKAGE' as const,
+      ...(searchRunId ? { searchRunId } : {}),
+      generatedAt,
+      warnings: [],
+    };
+  }
 
   private getHotelMarginPercentage(hotel: any, globalMargin = 0): number {
     const hotelMargin = Number(
@@ -1245,6 +1427,9 @@ if (hotelMasterId) {
     pageSize?: number,
     groupType?: number,
     itineraryRouteId?: number,
+    includeOffline = true,
+    includeAllMealPlans = false,
+    ignorePersistedSelections = false,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
  this.logger.log(`\n TBO HOTEL PACKAGES: Fetching dynamic packages for quote: ${quoteId}`);
@@ -1274,6 +1459,22 @@ if (hotelMasterId) {
     }
 
  const planId = plan.itinerary_plan_ID;
+    const stageTimings: Record<string, number> = {};
+    const measureStage = async <T>(stage: string, work: () => Promise<T>): Promise<T> => {
+      const stageStartedAt = Date.now();
+      const details = { quoteId, planId, stage };
+      this.logger.log(`[HOTEL_AVAILABILITY_STAGE_START] ${JSON.stringify(details)}`);
+      HotelAvailabilityTimingLogger.log('HOTEL_AVAILABILITY_STAGE_START', details);
+      try {
+        return await work();
+      } finally {
+        const durationMs = Date.now() - stageStartedAt;
+        stageTimings[stage] = durationMs;
+        const completedDetails = { quoteId, planId, stage, durationMs };
+        this.logger.log(`[HOTEL_AVAILABILITY_STAGE_COMPLETE] ${JSON.stringify(completedDetails)}`);
+        HotelAvailabilityTimingLogger.log('HOTEL_AVAILABILITY_STAGE_COMPLETE', completedDetails);
+      }
+    };
 const guestNationality = await this.resolveGuestNationality(plan);
 
 const preferredCategories = this.normalizeNumberList(
@@ -1407,56 +1608,7 @@ this.logger.log(
         }
       });
 
-      const offlineHotelsByRoute = await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
-        routes,
-        noOfNights,
-        guestNationality,
-        planRoomCount,
-        planAdultCount,
-        planChildCount,
-        planChildAges,
-      );
-      offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
-        const existingHotels = hotelsByRoute.get(routeId) || [];
-        hotelsByRoute.set(routeId, [...existingHotels, ...offlineHotels]);
-      });
-
-      const savedMealPlansByRoute = await this.loadSavedMealPlansPerRoute(planId, routes);
-      const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
-        routes,
-        noOfNights,
-        savedMealPlansByRoute,
-        preferredMealPlanCode,
-      );
-      axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
-        const existingHotels = hotelsByRoute.get(routeId) || [];
-        const hotelStrs = existingHotels.map((h) => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
-        const newHotels = axisroomsHotels.filter(
-          (h) => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`),
-        );
-        if (newHotels.length > 0) {
- this.logger.log(` Added ${newHotels.length} new AxisRooms hotel(s) to route ${routeId}`);
-        }
-        hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
-      });
-    } else {
- // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
-      hotelsByRoute = await this.fetchHotelsForRoutesWithRetry(
-        routes,
-        noOfNights,
-        guestNationality,
-        planRoomCount,
-        planAdultCount,
-        planChildCount,
-        planChildAges,
-      );
-
-      const tboOnlyFetch = this.isTboOnlyFetchEnabled();
-      if (tboOnlyFetch) {
-      this.logger.warn(
-        '[WARN] HOTEL_FETCH_TBO_ONLY enabled: skipping HOBSE/ResAvenue/AxisRooms provider fetch and returning only TBO hotels',
-        );
-      } else {
+      if (includeOffline) {
         const offlineHotelsByRoute = await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
           routes,
           noOfNights,
@@ -1468,20 +1620,98 @@ this.logger.log(
         );
         offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
-          const hotelKeys = new Set(
-            existingHotels.map((hotel) => `${String(hotel.hotelCode)}|${String(hotel.provider).toLowerCase()}`),
-          );
-          const newHotels = offlineHotels.filter(
-            (hotel) => !hotelKeys.has(`${String(hotel.hotelCode)}|${String(hotel.provider).toLowerCase()}`),
-          );
-          hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+          hotelsByRoute.set(routeId, [...existingHotels, ...offlineHotels]);
         });
+      }
+
+      const savedMealPlansByRoute = await this.loadSavedMealPlansPerRoute(planId, routes);
+      const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
+        routes,
+        noOfNights,
+        savedMealPlansByRoute,
+        preferredMealPlanCode,
+        planRoomCount,
+        {
+          adults: planAdultCount,
+          children: planChildCount,
+          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          extraBedCount: Number((plan as any).total_extra_bed || 0),
+        },
+      );
+      axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
+        const existingHotels = hotelsByRoute.get(routeId) || [];
+        const hotelStrs = existingHotels.map((h) => this.availabilityOptionKey(h));
+        const newHotels = axisroomsHotels.filter(
+          (h) => !hotelStrs.includes(this.availabilityOptionKey(h)),
+        );
+        if (newHotels.length > 0) {
+ this.logger.log(` Added ${newHotels.length} new AxisRooms hotel(s) to route ${routeId}`);
+        }
+        hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+      });
+    } else {
+ // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
+      hotelsByRoute = await measureStage('tbo-search', () => this.fetchHotelsForRoutesWithRetry(
+        routes,
+        noOfNights,
+        guestNationality,
+        planRoomCount,
+        planAdultCount,
+        planChildCount,
+        planChildAges,
+      ));
+
+      // A failed supplier stay block is deliberately represented as null by
+      // the retry layer so it can be retried/compared.  Downstream merging and
+      // preference filtering operate on route hotel arrays; keep the failed
+      // route empty without allowing it to abort successful routes.
+      hotelsByRoute.forEach((hotels, routeId) => {
+        if (!Array.isArray(hotels)) {
+          this.logger.warn(`[HOTEL_SEARCH] Route ${routeId} returned no supplier data; continuing with an empty route.`);
+          hotelsByRoute.set(routeId, []);
+        }
+      });
+
+      const tboOnlyFetch = this.isTboOnlyFetchEnabled();
+      if (tboOnlyFetch) {
+      this.logger.warn(
+        '[WARN] HOTEL_FETCH_TBO_ONLY enabled: skipping HOBSE/ResAvenue/AxisRooms provider fetch and returning only TBO hotels',
+        );
+      } else {
+        if (includeOffline) {
+          const offlineHotelsByRoute = await measureStage('offline-fetch-in-supplier-service', () => this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
+            routes,
+            noOfNights,
+            guestNationality,
+            planRoomCount,
+            planAdultCount,
+            planChildCount,
+            planChildAges,
+          ));
+          offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
+            const existingHotels = hotelsByRoute.get(routeId) || [];
+            const hotelKeys = new Set(
+              existingHotels.map((hotel) => `${String(hotel.hotelCode)}|${String(hotel.provider).toLowerCase()}`),
+            );
+            const newHotels = offlineHotels.filter(
+              (hotel) => !hotelKeys.has(`${String(hotel.hotelCode)}|${String(hotel.provider).toLowerCase()}`),
+            );
+            hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+          });
+        }
 
         if (this.isHobseSearchEnabled()) {
  // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
  // First, create a HOBSE-specific city code map using hobse_city_code
-          const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
-          const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
+          let hobseHotelsByRoute = new Map<number, HotelSearchResult[]>();
+          try {
+            const hobseCityCodeMap = await measureStage('hobse-city-mapping', () => this.batchMapDestinationsToHobseCityCodes(routes));
+            hobseHotelsByRoute = await measureStage('hobse-search', () => this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap));
+          } catch (error) {
+            this.logger.warn(
+              `[HOBSE] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
 
  // Merge HOBSE hotels into the TBO hotel map
           hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
@@ -1494,14 +1724,21 @@ this.logger.log(
 
  // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
  this.logger.log(`\n STEP 3.6: Starting ResAvenue hotel fetch for ${routes.length} routes...`);
-        const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
-          routes,
-          noOfNights,
-          guestNationality,
-          planRoomCount,
-          planAdultCount,
-          planChildCount,
-        );
+        let resavenueHotelsByRoute = new Map<number, HotelSearchResult[]>();
+        try {
+          resavenueHotelsByRoute = await measureStage('resavenue-search', () => this.fetchResavenueHotelsForRoutes(
+            routes,
+            noOfNights,
+            guestNationality,
+            planRoomCount,
+            planAdultCount,
+            planChildCount,
+          ));
+        } catch (error) {
+          this.logger.warn(
+            `[RESAVENUE] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
 
  // Debug: Check what ResAvenue returned
         let totalResavenueHotels = 0;
@@ -1533,20 +1770,34 @@ this.logger.log(
         });
 
  // Step 3.7: Load saved meal plans per route for AxisRooms filtering
-        const savedMealPlansByRoute = await this.loadSavedMealPlansPerRoute(planId, routes);
+        const savedMealPlansByRoute = await measureStage('saved-meal-plan-load', () => this.loadSavedMealPlansPerRoute(planId, routes));
 
  // Step 3.8: Fetch AxisRooms-enabled hotels from local DB and merge with existing providers.
-        const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
-          routes,
-          noOfNights,
-          savedMealPlansByRoute,
-          preferredMealPlanCode,
-        );
+        let axisroomsHotelsByRoute = new Map<number, HotelSearchResult[]>();
+        try {
+          axisroomsHotelsByRoute = await measureStage('axisrooms-search', () => this.fetchAxisroomsHotelsForRoutes(
+            routes,
+            noOfNights,
+            savedMealPlansByRoute,
+            preferredMealPlanCode,
+            planRoomCount,
+            {
+              adults: planAdultCount,
+              children: planChildCount,
+              childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+              extraBedCount: Number((plan as any).total_extra_bed || 0),
+            },
+          ));
+        } catch (error) {
+          this.logger.warn(
+            `[AXISROOMS] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
         axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
-          const hotelStrs = existingHotels.map((h) => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
+          const hotelStrs = existingHotels.map((h) => this.availabilityOptionKey(h));
           const newHotels = axisroomsHotels.filter(
-            (h) => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`),
+            (h) => !hotelStrs.includes(this.availabilityOptionKey(h)),
           );
           if (newHotels.length > 0) {
  this.logger.log(` Added ${newHotels.length} new AxisRooms hotel(s) to route ${routeId}`);
@@ -1554,21 +1805,28 @@ this.logger.log(
           hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
         });
 
-        const staahHotelsByRoute = await this.fetchStaahHotelsForRoutes(
-          routes,
-          noOfNights,
-          savedMealPlansByRoute,
-          preferredMealPlanCode,
-          true,
-          {
-            roomCount: planRoomCount,
-            adults: planAdultCount,
-            children: planChildCount,
-            extraBedCount: Number((plan as any).total_extra_bed || 0),
-            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
-            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
-          },
-        );
+        let staahHotelsByRoute = new Map<number, HotelSearchResult[]>();
+        try {
+          staahHotelsByRoute = await measureStage('staah-search', () => this.fetchStaahHotelsForRoutes(
+            routes,
+            noOfNights,
+            savedMealPlansByRoute,
+            preferredMealPlanCode,
+            true,
+            {
+              roomCount: planRoomCount,
+              adults: planAdultCount,
+              children: planChildCount,
+              extraBedCount: Number((plan as any).total_extra_bed || 0),
+              childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+              childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+            },
+          ));
+        } catch (error) {
+          this.logger.warn(
+            `[STAAH] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
         staahHotelsByRoute.forEach((staahHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
           const hotelStrs = existingHotels.map((h) =>
@@ -1607,7 +1865,7 @@ this.logger.log(
   await this.applyPlanPreferenceFilters(
     hotelsByRoute,
     preferredCategories,
-    preferredMealPlanCode,
+    includeAllMealPlans ? null : preferredMealPlanCode,
     preferredFacilities,
   );
 
@@ -1638,8 +1896,26 @@ this.logger.log(
 
  // this.logger.log(` Hotels by Route: ${JSON.stringify(Object.fromEntries(hotelsByRoute))}`);
 
- // Step 4: Generate 4 price tier packages
-    const packages = this.generatePricePackages(filteredHotelsByRoute, routes);
+ // Step 4: Generate recommendation packages. v1 remains the rollback path;
+ // v2 selects complete logical-stay packages from real eligible options.
+    const algorithm = this.recommendationAlgorithm();
+    const packages = algorithm === 'v2'
+      ? this.hotelRecommendationPackageService.generate({
+          routes: routes as any,
+          hotelsByRoute: filteredHotelsByRoute,
+          noOfNights,
+          preferredMealPlanCode,
+          preferredCategories,
+          maxDistanceKm: Number(process.env.MAX_RECOMMENDED_HOTEL_DISTANCE_KM || 15),
+          requireKnownDistance: String(process.env.HOTEL_RECOMMENDATION_REQUIRE_DISTANCE || '').trim() === 'true',
+        })
+      : this.adaptLegacyPackages(this.generatePricePackages(filteredHotelsByRoute, routes), routes);
+    // Keep v2 recommendation packages for the recommendation tabs, but expose
+    // every fetched live/offline option in the hotel list. The legacy price
+    // grouping is only used to assign the complete option set to the same four
+    // display groups; it does not change the v2 recommendation selection.
+    const allAvailabilityPackages = this.generatePricePackages(filteredHotelsByRoute, routes);
+    this.logger.log(`[HOTEL_RECOMMENDATION] algorithm=${algorithm} planId=${planId} groups=${packages.length}`);
 
  // Step 5: Build response
     const response = await this.buildHotelDetailsResponse(
@@ -1650,9 +1926,14 @@ this.logger.log(
       restrictedHotelsByRoute,
       routes,
       noOfNights,
+      allAvailabilityPackages,
+      ignorePersistedSelections,
     );
 
     const duration = Date.now() - startTime;
+    const stageSummary = { quoteId, planId, totalDurationMs: duration, stageTimings };
+    this.logger.log(`[HOTEL_AVAILABILITY_STAGE_SUMMARY] ${JSON.stringify(stageSummary)}`);
+    HotelAvailabilityTimingLogger.log('HOTEL_AVAILABILITY_STAGE_SUMMARY', stageSummary);
  this.logger.log(` Generated ${packages.length} hotel packages`);
  this.logger.log(` Total TBO Service Time: ${duration}ms\n`);
 
@@ -2160,7 +2441,6 @@ this.logger.log(
     childCount: number = 0,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
-    const totalRoutes = routes.length;
 
  this.logger.log(`\n RESAVENUE HOTEL FETCH: Attempting to fetch ResAvenue hotels for ${routes.length} routes`);
 
@@ -2170,49 +2450,41 @@ this.logger.log(
       const safeRoomCount = Math.max(Number(roomCount || 1), 1);
       const guestCount = safeAdultCount + safeChildCount;
 
-      for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
-        const route = routes[routeIndex];
-        const routeId = (route as any).itinerary_route_ID;
-
- // Skip hotel generation for the last route (departure day) if routeIndex >= noOfNights
-        const isLastRoute = routeIndex === totalRoutes - 1;
-        if (isLastRoute && routeIndex >= noOfNights) {
- this.logger.log(` Skipping ResAvenue route ${routeIndex + 1} (last route - departure day)`);
-          continue;
-        }
-
-        const destination = (route as any).next_visiting_location;
-        const routeDate = new Date((route as any).itinerary_route_date);
-        const checkOutDate = new Date(routeDate);
-        checkOutDate.setDate(checkOutDate.getDate() + 1);
-
+      // ResAvenue searches are expensive because they call the provider for
+      // every local property. Search one logical stay block once and reuse the
+      // result for each route/night in that block.
+      const stayBlocks = this.buildStayBlocks(routes, noOfNights);
+      await Promise.all(stayBlocks.map(async (block) => {
         try {
- // Search ResAvenue hotels using city name directly
           const resavenueHotels = await this.hotelSearchService.searchHotels({
- cityCode: destination, // ResAvenue provider accepts city names
-            checkInDate: routeDate.toISOString().split('T')[0],
-            checkOutDate: checkOutDate.toISOString().split('T')[0],
+            cityCode: block.destination,
+            checkInDate: block.checkInDate,
+            checkOutDate: block.checkOutDate,
             roomCount: safeRoomCount,
             guestCount,
             adultCount: safeAdultCount,
             childCount: safeChildCount,
             guestNationality,
- providers: ['resavenue'], // Only ResAvenue
+            providers: ['resavenue'],
           });
-
-          if (resavenueHotels && resavenueHotels.length > 0) {
- this.logger.log(` ResAvenue Route ${routeId}: Found ${resavenueHotels.length} hotels in ${destination}`);
-            hotelsByRoute.set(routeId, resavenueHotels);
-          } else {
- this.logger.log(` ResAvenue Route ${routeId}: No hotels found in ${destination}`);
-            hotelsByRoute.set(routeId, []);
+          const hotels = resavenueHotels || [];
+          this.logger.log(
+            ` ResAvenue stay block ${block.destination} (${block.checkInDate} -> ${block.checkOutDate}): ` +
+              `Found ${hotels.length} hotels for ${block.routeIds.length} route(s)`,
+          );
+          for (const routeId of block.routeIds) {
+            hotelsByRoute.set(routeId, hotels);
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
- this.logger.warn(` ResAvenue Route ${routeId} search failed: ${errorMsg}`);
-          hotelsByRoute.set(routeId, []);
+          this.logger.warn(
+            ` ResAvenue stay block ${block.destination} (${block.checkInDate} -> ${block.checkOutDate}) failed: ${errorMsg}`,
+          );
+          for (const routeId of block.routeIds) {
+            hotelsByRoute.set(routeId, []);
+          }
         }
-      }
+      }));
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
  this.logger.error(` RESAVENUE HOTEL FETCH FAILED: ${errorMsg}`);
@@ -2239,6 +2511,64 @@ this.logger.log(
     return aliases[token] || token;
   }
 
+  /**
+   * Resolve route destinations to the values used by dvi_hotel.hotel_city.
+   * The city master is loaded once; provider hotel rows are then filtered by
+   * SQL predicates instead of loading a global provider catalog and filtering
+   * every row in JavaScript for every route.
+   */
+  private async loadProviderCityCandidates(destinations: string[]): Promise<Map<string, string[]>> {
+    const uniqueDestinations = Array.from(new Set(
+      destinations.map((destination) => String(destination || '').trim()).filter(Boolean),
+    ));
+    const result = new Map<string, string[]>();
+    if (uniqueDestinations.length === 0) return result;
+
+    const cityRows = await this.prisma.dvi_cities.findMany({
+      select: { id: true, name: true },
+    });
+    const aliases: Record<string, string[]> = {
+      cochin: ['kochi'],
+      alleppey: ['alappuzha'],
+      alleppe: ['alappuzha'],
+      calicut: ['kozhikode'],
+      trivandrum: ['thiruvananthapuram'],
+      pondicherry: ['puducherry'],
+      bangalore: ['bengaluru'],
+    };
+
+    for (const destination of uniqueDestinations) {
+      const firstPart = destination.split(/[,(\-]/)[0].trim();
+      const normalized = this.normalizeCityToken(destination);
+      const lookupTokens = new Set([
+        destination.toLowerCase(),
+        firstPart.toLowerCase(),
+        normalized,
+        ...(aliases[normalized] || []),
+      ].filter(Boolean));
+      const candidates = new Set<string>([
+        destination,
+        firstPart,
+        normalized,
+        ...(aliases[normalized] || []),
+      ].filter(Boolean));
+
+      for (const city of cityRows as any[]) {
+        const cityName = String(city.name || '').trim();
+        const cityFirstPart = cityName.split(/[,(\-]/)[0].trim();
+        const cityTokens = [cityName.toLowerCase(), cityFirstPart.toLowerCase(), this.normalizeCityToken(cityName)];
+        if (cityTokens.some((token) => lookupTokens.has(token))) {
+          candidates.add(cityName);
+          candidates.add(cityFirstPart);
+          candidates.add(String(city.id));
+        }
+      }
+      result.set(destination, Array.from(candidates));
+    }
+
+    return result;
+  }
+
   private toIstDateOnly(value: unknown): Date {
     const raw = new Date(String(value || ''));
     if (Number.isNaN(raw.getTime())) {
@@ -2258,10 +2588,36 @@ this.logger.log(
     ));
   }
 
-  private extractAxisroomsRate(occupancyRates: unknown): number {
+  private extractAxisroomsRate(
+    occupancyRates: unknown,
+    pax?: { roomCount?: number; adults?: number; childWithBedCount?: number; extraBedCount?: number },
+  ): number {
     try {
       const data = occupancyRates as Record<string, unknown>;
       if (!data || typeof data !== 'object') return 0;
+
+      const roomCount = Math.max(Math.trunc(Number(pax?.roomCount || 1)), 1);
+      const adults = Math.max(Math.trunc(Number(pax?.adults || 0)), 0);
+      const childWithBedCount = Math.max(Math.trunc(Number(pax?.childWithBedCount || 0)), 0);
+      const extraBedCount = Math.max(Math.trunc(Number(pax?.extraBedCount || 0)), 0);
+      if (adults > 0) {
+        const adultsPerRoom = Math.max(Math.ceil(adults / roomCount), 1);
+        const occupancyKey = adultsPerRoom <= 1
+          ? 'SINGLE'
+          : adultsPerRoom === 2
+            ? 'DOUBLE'
+            : adultsPerRoom === 3
+              ? 'TRIPLE'
+              : 'QUAD';
+        const roomRate = Number(data[occupancyKey]);
+        if (Number.isFinite(roomRate) && roomRate > 0) {
+          const extraBeds = Math.max(childWithBedCount + extraBedCount, 0);
+          const extraBedRate = Number(data.EXTRABED ?? data.EXTRAADULT ?? data.EXTRACHILD ?? 0);
+          return (roomRate * roomCount) + (Number.isFinite(extraBedRate) && extraBedRate > 0
+            ? extraBedRate * extraBeds
+            : 0);
+        }
+      }
 
       const preferredKeys = ['SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'EXTRABED'];
       for (const key of preferredKeys) {
@@ -2282,6 +2638,35 @@ this.logger.log(
 
   private extractStaahRate(occupancyRates: unknown): number {
     return calculateStaahOccupancyAmount(occupancyRates, { roomCount: 1, adults: 1 }).finalCalculatedAmount;
+  }
+
+  private selectEffectiveStaahRateRows(rows: any[]): any[] {
+    const effectiveByIdentity = new Map<string, any>();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const key = [
+        String(row?.staah_property_id || '').trim().toUpperCase(),
+        String(row?.room_id || '').trim().toUpperCase(),
+        String(row?.rateplan_id || '').trim().toUpperCase(),
+      ].join('|');
+      if (!key || key === '||') continue;
+
+      const current = effectiveByIdentity.get(key);
+      const receivedAt = new Date(row?.received_at || 0).getTime();
+      const currentReceivedAt = current
+        ? new Date(current?.received_at || 0).getTime()
+        : Number.NEGATIVE_INFINITY;
+      const rowId = Number(row?.id || 0);
+      const currentId = Number(current?.id || 0);
+
+      if (
+        !current ||
+        receivedAt > currentReceivedAt ||
+        (receivedAt === currentReceivedAt && rowId > currentId)
+      ) {
+        effectiveByIdentity.set(key, row);
+      }
+    }
+    return Array.from(effectiveByIdentity.values());
   }
 
   private formatDateOnly(date: Date): string {
@@ -2533,31 +2918,76 @@ this.logger.log(
     noOfNights: number,
     savedMealPlansByRoute?: Map<number, string>,
     preferredMealPlanCode?: string | null,
+    roomCount: number = 1,
+    paxProfile?: {
+      adults?: number;
+      children?: number;
+      childWithBedCount?: number;
+      extraBedCount?: number;
+    },
+    targetHotelCode?: string,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
-    const totalRoutes = routes.length;
+    const requiredRoomCount = Math.max(Number(roomCount || 1), 1);
 
  this.logger.log(`\n AXISROOMS HOTEL FETCH: Attempting to fetch AxisRooms hotels for ${routes.length} routes`);
 
-    const axisroomsHotels = await this.prisma.dvi_hotel.findMany({
-      where: {
-        axisrooms_enabled: 1,
-        status: 1,
-        OR: [{ deleted: false }, { deleted: null }],
-      } as any,
-      select: {
-        hotel_id: true,
-        hotel_name: true,
-        hotel_city: true,
-        hotel_address: true,
-        hotel_category: true,
-        axisrooms_property_id: true,
-        hotel_cancel_policy: true,
-      },
-    });
+    const routeContexts = routes
+      .map((route, routeIndex) => {
+        const isLastRoute = routeIndex === routes.length - 1;
+        if (isLastRoute && routeIndex >= noOfNights) return null;
+        return {
+          route,
+          routeId: Number((route as any).itinerary_route_ID),
+          destinationRaw: String((route as any).next_visiting_location || '').trim(),
+        };
+      })
+      .filter((context): context is NonNullable<typeof context> => Boolean(context));
+    if (routeContexts.length === 0) return hotelsByRoute;
 
+    const cityCandidatesByDestination = await this.loadProviderCityCandidates(
+      routeContexts.map((context) => context.destinationRaw),
+    );
+    const uniqueDestinations = Array.from(new Set(routeContexts.map((context) => context.destinationRaw)));
+    const axisHotelsByDestination = new Map<string, any[]>();
+    await Promise.all(uniqueDestinations.map(async (destination) => {
+      const cityCandidates = cityCandidatesByDestination.get(destination) || [];
+      if (cityCandidates.length === 0) {
+        axisHotelsByDestination.set(destination, []);
+        return;
+      }
+      const cityHotels = await this.prisma.dvi_hotel.findMany({
+        where: {
+          axisrooms_enabled: 1,
+          status: 1,
+          OR: [{ deleted: false }, { deleted: null }],
+          hotel_city: { in: cityCandidates },
+        } as any,
+        select: {
+          hotel_id: true,
+          hotel_name: true,
+          hotel_city: true,
+          hotel_address: true,
+          hotel_category: true,
+          axisrooms_property_id: true,
+          hotel_cancel_policy: true,
+        },
+      });
+      axisHotelsByDestination.set(destination, cityHotels as any[]);
+    }));
+    const routeHotels = routeContexts.map((context) => ({
+      context,
+      cityHotels: (axisHotelsByDestination.get(context.destinationRaw) || []).filter((hotel: any) =>
+        !targetHotelCode || [hotel.axisrooms_property_id, hotel.hotel_id]
+          .some((value) => String(value ?? '').trim() === String(targetHotelCode).trim()),
+      ),
+    }));
+    const axisroomsHotels = Array.from(new Map(
+      routeHotels.flatMap(({ cityHotels }) => cityHotels)
+        .map((hotel: any) => [Number(hotel.hotel_id), hotel]),
+    ).values());
     if (!axisroomsHotels.length) {
- this.logger.log(' No axisrooms-enabled hotels found in local DB');
+      this.logger.log(' No axisrooms-enabled hotels found in local DB for requested route cities');
       return hotelsByRoute;
     }
 
@@ -2577,50 +3007,10 @@ this.logger.log(
       });
     }
 
- // hotel_city may be stored as a numeric city ID string (e.g. "1979") or a plain name.
- // Build a map from city id -> city name so both cases resolve correctly.
-    const numericCityIds = Array.from(
-      new Set(
-        axisroomsHotels
-          .map((h: any) => Number((h as any).hotel_city))
-          .filter((id) => Number.isFinite(id) && id > 0),
-      ),
-    );
-    const cityIdNameMap = new Map<number, string>();
-    if (numericCityIds.length > 0) {
-      const cityRows = await this.prisma.dvi_cities.findMany({
-        where: { id: { in: numericCityIds } },
-        select: { id: true, name: true },
-      });
-      for (const c of cityRows as any[]) {
-        cityIdNameMap.set(Number((c as any).id), String((c as any).name || ''));
-      }
-    }
-
-    for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
-      const route = routes[routeIndex];
-      const routeId = Number((route as any).itinerary_route_ID);
-      const isLastRoute = routeIndex === totalRoutes - 1;
-      if (isLastRoute && routeIndex >= noOfNights) {
- this.logger.log(` Skipping AxisRooms route ${routeIndex + 1} (last route - departure day)`);
-        continue;
-      }
-
-      const destinationRaw = String((route as any).next_visiting_location || '');
-      const routeCityToken = this.normalizeCityToken(destinationRaw);
+    for (const { context, cityHotels } of routeHotels) {
+      const { route, routeId, destinationRaw } = context;
       const dateOnly = this.toIstDateOnly((route as any).itinerary_route_date);
       const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
-
-      const cityHotels = axisroomsHotels.filter((h: any) => {
-        const rawCity = String((h as any).hotel_city || '');
- // Resolve: if it looks like a numeric ID, look up the actual city name
-        const numId = Number(rawCity);
-        const resolvedCity = (Number.isFinite(numId) && numId > 0 && cityIdNameMap.has(numId))
-          ? cityIdNameMap.get(numId)!
-          : rawCity;
-        const hotelCityToken = this.normalizeCityToken(resolvedCity);
-        return !!hotelCityToken && hotelCityToken === routeCityToken;
-      });
 
       if (!cityHotels.length) {
         hotelsByRoute.set(routeId, []);
@@ -2657,12 +3047,14 @@ this.logger.log(
           hotel_id: { in: hotelIds },
           start_date: { lte: dateOnly },
           end_date: { gte: dateOnly },
-          free: { gt: 0 },
         },
         select: {
           hotel_id: true,
           room_id: true,
+          start_date: true,
+          end_date: true,
           free: true,
+          received_at: true,
         },
       });
 
@@ -2672,7 +3064,58 @@ this.logger.log(
         continue;
       }
 
-      const roomIds = Array.from(new Set(availRows.map((r) => Number((r as any).room_id)).filter((id) => Number.isFinite(id) && id > 0)));
+      // ARI sends broad validity ranges and later date-specific corrections.
+      // Resolve one effective row per hotel/room before applying room-count
+      // eligibility; otherwise an old broad row can mask a newer daily update.
+      const effectiveAvailabilityByRoom = new Map<string, any>();
+      for (const row of availRows as any[]) {
+        const hotelId = Number(row.hotel_id);
+        const roomId = Number(row.room_id);
+        if (!Number.isFinite(hotelId) || hotelId <= 0 || !Number.isFinite(roomId) || roomId <= 0) {
+          continue;
+        }
+
+        const startTime = new Date(row.start_date).getTime();
+        const endTime = new Date(row.end_date).getTime();
+        const rangeDays = Number.isFinite(startTime) && Number.isFinite(endTime)
+          ? Math.max(0, Math.round((endTime - startTime) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
+          : Number.MAX_SAFE_INTEGER;
+        const key = `${hotelId}|${roomId}`;
+        const current = effectiveAvailabilityByRoom.get(key);
+        const currentStart = current ? new Date(current.start_date).getTime() : Number.NaN;
+        const currentEnd = current ? new Date(current.end_date).getTime() : Number.NaN;
+        const currentRangeDays = current && Number.isFinite(currentStart) && Number.isFinite(currentEnd)
+          ? Math.max(0, Math.round((currentEnd - currentStart) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
+          : Number.MAX_SAFE_INTEGER;
+        const receivedAt = new Date(row.received_at).getTime();
+        const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
+
+        if (
+          !current ||
+          rangeDays < currentRangeDays ||
+          (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)
+        ) {
+          effectiveAvailabilityByRoom.set(key, row);
+        }
+      }
+
+      const effectiveAvailability = Array.from(effectiveAvailabilityByRoom.values());
+      const eligibleAvailability = effectiveAvailability.filter(
+        (row: any) => Number(row.free || 0) >= requiredRoomCount,
+      );
+      const roomIds = Array.from(
+        new Set(
+          eligibleAvailability
+            .map((r: any) => Number(r.room_id))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      if (effectiveAvailability.length > eligibleAvailability.length) {
+        this.logger.log(
+          ` AxisRooms Route ${routeId}: filtered ${effectiveAvailability.length - eligibleAvailability.length} room(s) below required room count ${requiredRoomCount}`,
+        );
+      }
 
  // AxisRooms gate: keep only rooms that have an active AxisRooms-mapped rate plan
  // (axisrooms_room_id NOT NULL = mapped from inbound AxisRooms room/rateplan setup).
@@ -2736,13 +3179,34 @@ this.logger.log(
           room_id: true,
           rateplan_id: true,
           occupancy_rates: true,
+          start_date: true,
+          end_date: true,
+          received_at: true,
+          source: true,
         },
       });
 
-      const occupancyRows = occupancyRowsRaw.filter((row: any) => {
+      const validOccupancyRows = occupancyRowsRaw.filter((row: any) => {
         const key = `${Number((row as any).hotel_id)}|${Number((row as any).room_id)}|${String((row as any).rateplan_id || '')}`;
         return validRatePlanKeySet.has(key);
       });
+      const effectiveOccupancyByPlan = new Map<string, any>();
+      for (const row of validOccupancyRows as any[]) {
+        const startTime = new Date(row.start_date).getTime();
+        const endTime = new Date(row.end_date).getTime();
+        const rangeDays = Math.max(0, Math.round((endTime - startTime) / ItineraryHotelDetailsTboService.ONE_DAY_MS));
+        const key = `${Number(row.hotel_id)}|${Number(row.room_id)}|${String(row.rateplan_id || '')}`;
+        const current = effectiveOccupancyByPlan.get(key);
+        const currentRangeDays = current
+          ? Math.max(0, Math.round((new Date(current.end_date).getTime() - new Date(current.start_date).getTime()) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
+          : Number.MAX_SAFE_INTEGER;
+        const receivedAt = new Date(row.received_at).getTime();
+        const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
+        if (!current || rangeDays < currentRangeDays || (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)) {
+          effectiveOccupancyByPlan.set(key, row);
+        }
+      }
+      const occupancyRows = Array.from(effectiveOccupancyByPlan.values());
 
       const roomMeta = await this.prisma.dvi_hotel_rooms.findMany({
         where: {
@@ -2759,7 +3223,7 @@ this.logger.log(
       );
 
       const availableRoomByHotel = new Map<number, Set<number>>();
-      for (const row of availRows as any[]) {
+      for (const row of eligibleAvailability as any[]) {
         const hid = Number((row as any).hotel_id);
         const rid = Number((row as any).room_id);
         if (!availableRoomByHotel.has(hid)) {
@@ -2790,7 +3254,12 @@ this.logger.log(
 
  // Only extract rate if we haven't found one for this rate plan yet
           if (!ratesByPlan.has(rateplanId)) {
-            const extractedRate = this.extractAxisroomsRate((occ as any).occupancy_rates);
+            const extractedRate = this.extractAxisroomsRate((occ as any).occupancy_rates, {
+              roomCount: requiredRoomCount,
+              adults: Number(paxProfile?.adults || 0),
+              childWithBedCount: Number(paxProfile?.childWithBedCount || 0),
+              extraBedCount: Number(paxProfile?.extraBedCount || 0),
+            });
             if (extractedRate > 0) {
               ratesByPlan.set(rateplanId, { rate: extractedRate, roomId: rid });
             }
@@ -2804,103 +3273,78 @@ this.logger.log(
  continue; // No valid rates found for any meal plan
         }
 
-        const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
-        const preferredDef = preferredCode
-          ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any)
-          : undefined;
-        const preferredRatePlanCandidates = [
-          String(preferredDef?.defaultRateplanId || '').trim(),
-          String(preferredDef?.externalRateplanId || '').trim(),
-        ].filter((x) => !!x);
-
-        let selectedRateplanId = '';
-        let selectedRate = Number.POSITIVE_INFINITY;
-        let selectedRoomId = 0;
-
-        for (const candidate of preferredRatePlanCandidates) {
-          const hit = ratesByPlan.get(candidate);
-          if (hit) {
-            selectedRateplanId = candidate;
-            selectedRate = Number(hit.rate);
-            selectedRoomId = Number(hit.roomId);
-            break;
-          }
-        }
-
- // Fallback: if preferred meal plan isn't present for this hotel, pick the lowest available rate plan.
-        if (!selectedRateplanId) {
-          for (const [rpid, hit] of ratesByPlan.entries()) {
-            const rateVal = Number(hit.rate);
-            if (Number.isFinite(rateVal) && rateVal > 0 && rateVal < selectedRate) {
-              selectedRateplanId = rpid;
-              selectedRate = rateVal;
-              selectedRoomId = Number(hit.roomId);
-            }
-          }
-        }
-
-        if (!selectedRateplanId || !Number.isFinite(selectedRate) || selectedRate <= 0 || !selectedRoomId) {
-          continue;
-        }
-
-        const rate = selectedRate;
-
-        const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
         const hotelAmenities = Array.from(new Set(amenitiesByHotel.get(hid) || []));
-        const rateMeta = ratePlanMetaByHotelRoom.get(`${hid}|${selectedRoomId}`) || {
-
-          rateConditions: [],
-          inclusions: [],
-        };
-        const rateConditions = Array.from(new Set(rateMeta.rateConditions));
-        const inclusions = Array.from(new Set(rateMeta.inclusions));
         const cancelPolicyText = String((hotel as any).hotel_cancel_policy || '').trim();
 
-        const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
-
-        axisroomsRouteHotels.push({
-          provider: 'axisrooms',
-          providerDisplayName: 'AxisRooms',
-          canonicalHotelId: hid,
-          providerHotelCode: String((hotel as any).axisrooms_property_id || hid),
-          rateOptionId: `axisrooms:${hid}:${selectedRoomId}:${selectedRateplanId}:${dateOnly.toISOString().slice(0, 10)}`,
-          bookingMode: 'LIVE_API',
-          priceSource: 'LIVE_API',
-          isLiveRate: true,
-          isLiveBookable: true,
-          isSelectable: true,
-          requiresHotelApproval: false,
-          approvalStatus: 'NOT_REQUIRED',
-          manualConfirmationStatus: 'NOT_STARTED',
-          availabilityStatus: 'LIVE_AVAILABLE',
-          hotelCode: String(hid),
-          hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
-          cityCode: String((hotel as any).hotel_city || destinationRaw),
-          address: String((hotel as any).hotel_address || ''),
-          rating: Number((hotel as any).hotel_category || 0),
-          facilities: hotelAmenities,
-          amenities: hotelAmenities,
-          inclusions,
-          rateConditions,
-          cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
-          images: [],
-          price: Number(rate),
-          currency: 'INR',
-          roomTypes: [
-            {
-              roomCode: String(selectedRoomId),
-              roomName,
-              bedType: '',
-              capacity: 0,
-              price: Number(rate),
-              cancellationPolicy: cancelPolicyText,
-            },
-          ],
-          roomType: roomName,
-          mealPlan: selectedMealPlan,
-          searchReference: `AX-${hid}-${dateStamp}`,
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        // ARI contains independent rates for each rate plan. Persist every
+        // plan as a separate option so the UI can filter EP/CP/MAP/AP without
+        // issuing another supplier request or losing the other rate plans.
+        const sortedRates = Array.from(ratesByPlan.entries()).sort(([, left], [, right]) => {
+          return Number(left.rate) - Number(right.rate);
         });
+        for (const [selectedRateplanId, rateInfo] of sortedRates) {
+          const selectedRoomId = Number(rateInfo.roomId);
+          const rate = Number(rateInfo.rate);
+          if (!selectedRateplanId || !Number.isFinite(rate) || rate <= 0 || !selectedRoomId) continue;
+
+          const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
+          const rateMeta = ratePlanMetaByHotelRoom.get(`${hid}|${selectedRoomId}`) || {
+            rateConditions: [],
+            inclusions: [],
+          };
+          const rateConditions = Array.from(new Set(rateMeta.rateConditions));
+          const inclusions = Array.from(new Set(rateMeta.inclusions));
+          const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
+          const rateIdentity = `${hid}:${selectedRoomId}:${selectedRateplanId}:${dateOnly.toISOString().slice(0, 10)}`;
+
+          axisroomsRouteHotels.push({
+            provider: 'axisrooms',
+            providerDisplayName: 'AxisRooms',
+            canonicalHotelId: hid,
+            providerHotelCode: String((hotel as any).axisrooms_property_id || hid),
+            rateOptionId: `axisrooms:${rateIdentity}`,
+            // AxisRooms availability/rates are read from our ARI-synchronised
+            // database. Booking remains supplier-bookable, but the displayed
+            // price is not fetched from a live search request.
+            bookingMode: 'LIVE_API',
+            priceSource: 'DATABASE',
+            isLiveRate: false,
+            isLiveBookable: true,
+            isSelectable: true,
+            requiresHotelApproval: false,
+            approvalStatus: 'NOT_REQUIRED',
+            manualConfirmationStatus: 'NOT_STARTED',
+            availabilityStatus: 'AVAILABLE',
+            hotelCode: String(hid),
+            hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
+            cityCode: String((hotel as any).hotel_city || destinationRaw),
+            address: String((hotel as any).hotel_address || ''),
+            rating: Number((hotel as any).hotel_category || 0),
+            facilities: hotelAmenities,
+            amenities: hotelAmenities,
+            inclusions,
+            rateConditions,
+            cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
+            images: [],
+            price: rate,
+            currency: 'INR',
+            roomTypes: [
+              {
+                roomCode: String(selectedRoomId),
+                roomName,
+                bedType: '',
+                capacity: 0,
+                price: rate,
+                cancellationPolicy: cancelPolicyText,
+              },
+            ],
+            roomType: roomName,
+            mealPlan: selectedMealPlan,
+            bookingCode: `AX-${rateIdentity}`,
+            searchReference: `AX-${rateIdentity}`,
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+          });
+        }
       }
 
       hotelsByRoute.set(routeId, axisroomsRouteHotels);
@@ -2920,61 +3364,99 @@ this.logger.log(
     preferredMealPlanCode?: string | null,
     includeRestrictedForDisplay: boolean = false,
     paxProfile?: StaahPricingPaxInput,
+    targetHotelCode?: string,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
-    let staahHotels: any[] = [];
-    try {
-      staahHotels = await this.prisma.dvi_hotel.findMany({
-        where: {
-          staah_enabled: 1,
-          status: 1,
-          deleted: false,
-          AND: [
-            { staah_property_id: { not: null } },
-            { staah_property_id: { not: '' } },
-          ],
-        },
-        select: {
-          hotel_id: true,
-          hotel_name: true,
-          hotel_city: true,
-          hotel_address: true,
-          hotel_category: true,
-          hotel_cancel_policy: true,
-          staah_property_id: true,
-          hotel_margin: true,
-          hotel_margin_gst_type: true,
-          hotel_margin_gst_percentage: true,
-        },
-      });
-    } catch (error) {
- this.logger.error(`[STAAH] Failed loading STAAH-enabled hotels: ${error instanceof Error ? error.message : String(error)}`);
-      return hotelsByRoute;
-    }
-    staahHotels = staahHotels.filter((hotel: any) => String(hotel?.staah_property_id || '').trim().length > 0);
-    if (!staahHotels.length) return hotelsByRoute;
-    const cityIds = Array.from(new Set(staahHotels.map((h: any) => Number((h as any).hotel_city)).filter((x) => Number.isFinite(x) && x > 0)));
-    const cityRows = cityIds.length ? await this.prisma.dvi_cities.findMany({ where: { id: { in: cityIds } }, select: { id: true, name: true } }) : [];
-    const cityMap = new Map<number, string>(cityRows.map((c: any) => [Number(c.id), String(c.name || '')]));
-
-    for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
-      try {
-        const route = routes[routeIndex];
-        const routeId = Number((route as any).itinerary_route_ID);
+    const routeContexts = routes
+      .map((route, routeIndex) => {
         const isLastRoute = routeIndex === routes.length - 1;
-        if (isLastRoute && routeIndex >= noOfNights) continue;
-        const destinationRaw = String((route as any).next_visiting_location || '');
-        const routeCityToken = this.normalizeCityToken(destinationRaw);
-        const { checkInDate: dateOnly, checkOutDate, lengthOfStay } = this.getStaahStayWindow(routes, routeIndex);
-        const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
-        const cityHotels = staahHotels.filter((h: any) => {
-          const raw = String((h as any).hotel_city || '');
-          const nid = Number(raw);
-          const resolved = Number.isFinite(nid) && nid > 0 && cityMap.has(nid) ? cityMap.get(nid)! : raw;
-          const hotelCityToken = this.normalizeCityToken(resolved);
-          const cityMatch = !!hotelCityToken && hotelCityToken === routeCityToken;
-          return cityMatch;
+        if (isLastRoute && routeIndex >= noOfNights) return null;
+        const routeId = Number((route as any).itinerary_route_ID);
+        const destinationRaw = String((route as any).next_visiting_location || '').trim();
+        const stayWindow = this.getStaahStayWindow(routes, routeIndex);
+        return {
+          route,
+          routeId,
+          destinationRaw,
+          ...stayWindow,
+        };
+      })
+      .filter((context): context is NonNullable<typeof context> => Boolean(context));
+    if (routeContexts.length === 0) return hotelsByRoute;
+
+    const cityCandidatesByDestination = await this.loadProviderCityCandidates(
+      routeContexts.map((context) => context.destinationRaw),
+    );
+    const uniqueDestinations = Array.from(new Set(routeContexts.map((context) => context.destinationRaw)));
+    const staahHotelsByDestination = new Map<string, any[]>();
+    await Promise.all(uniqueDestinations.map(async (destination) => {
+      const cityCandidates = cityCandidatesByDestination.get(destination) || [];
+      if (cityCandidates.length === 0) {
+        staahHotelsByDestination.set(destination, []);
+        return;
+      }
+      try {
+        const cityHotels = await this.prisma.dvi_hotel.findMany({
+          where: {
+            staah_enabled: 1,
+            status: 1,
+            deleted: false,
+            staah_property_id: { not: null },
+            hotel_city: { in: cityCandidates },
+          },
+          select: {
+            hotel_id: true,
+            hotel_name: true,
+            hotel_city: true,
+            hotel_address: true,
+            hotel_category: true,
+            hotel_cancel_policy: true,
+            staah_property_id: true,
+            hotel_margin: true,
+            hotel_margin_gst_type: true,
+            hotel_margin_gst_percentage: true,
+          },
         });
+        staahHotelsByDestination.set(destination, cityHotels as any[]);
+      } catch (error) {
+        this.logger.error(
+          `[STAAH] Failed loading hotels for destination ${destination}: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+        staahHotelsByDestination.set(destination, []);
+      }
+    }));
+    const routeHotels = routeContexts.map((context) => ({
+      context,
+      cityHotels: (staahHotelsByDestination.get(context.destinationRaw) || []).filter((hotel: any) =>
+        !targetHotelCode || String(hotel.staah_property_id || hotel.hotel_id || '').trim() === String(targetHotelCode).trim(),
+      ),
+    }));
+    const allStaahHotels = Array.from(new Map(
+      routeHotels.flatMap(({ cityHotels }) => cityHotels)
+        .map((hotel: any) => [Number(hotel.hotel_id), hotel]),
+    ).values());
+    if (allStaahHotels.length === 0) return hotelsByRoute;
+
+    const allHotelIds = allStaahHotels
+      .map((hotel: any) => Number(hotel.hotel_id || 0))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    const activeAdminRooms = await this.prisma.dvi_hotel_rooms.findMany({
+      where: { hotel_id: { in: allHotelIds }, status: 1, deleted: 0 } as any,
+      select: { hotel_id: true, room_ID: true, room_ref_code: true, room_title: true } as any,
+    });
+    const activeAdminRoomsByHotelId = new Map<number, any[]>();
+    for (const room of activeAdminRooms as any[]) {
+      const hotelId = Number(room.hotel_id || 0);
+      const rows = activeAdminRoomsByHotelId.get(hotelId) || [];
+      rows.push(room);
+      activeAdminRoomsByHotelId.set(hotelId, rows);
+    }
+
+    for (const { context, cityHotels } of routeHotels) {
+      try {
+        const { routeId, destinationRaw, checkInDate: dateOnly, checkOutDate, lengthOfStay } = context;
+        const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
         if (!cityHotels.length) {
  this.logger.log(`[STAAH DEBUG] routeId=${routeId} matched STAAH city hotels=0`);
           hotelsByRoute.set(routeId, []);
@@ -2989,26 +3471,12 @@ this.logger.log(
         const hotelIds = cityHotels
           .map((h: any) => Number(h.hotel_id || 0))
           .filter((id) => Number.isFinite(id) && id > 0);
-        const activeAdminRooms = hotelIds.length
-          ? await this.prisma.dvi_hotel_rooms.findMany({
-              where: {
-                hotel_id: { in: hotelIds },
-                status: 1,
-                deleted: 0,
-              } as any,
-              select: {
-                hotel_id: true,
-                room_ID: true,
-                room_ref_code: true,
-                room_title: true,
-              } as any,
-            })
-          : [];
+        const routeAdminRooms = hotelIds.flatMap((hotelId) => activeAdminRoomsByHotelId.get(hotelId) || []);
         const activeRoomCodesByHotelId = new Map<number, Set<string>>();
         const activeRoomLooseCodesByHotelId = new Map<number, Set<string>>();
         const activeRoomLooseExactCodesByHotelId = new Map<number, Map<string, Set<string>>>();
         const roomTitleByHotelAndCode = new Map<string, string>();
-        for (const room of activeAdminRooms as any[]) {
+        for (const room of routeAdminRooms as any[]) {
           const hotelId = Number(room.hotel_id || 0);
           const exactCode = this.normalizeExactRoomCode(room.room_ref_code);
           const looseCode = this.normalizeLooseRoomCode(room.room_ref_code);
@@ -3130,6 +3598,16 @@ this.logger.log(
         const rateRows = (rateRowsRaw as any[]).filter((row) =>
           isAllowedStaahRoom(row.staah_property_id, row.room_id),
         );
+        // STAAH can retain overlapping historical rows for the same
+        // property/room/rate-plan.  Keep the most recently received row for
+        // each identity; otherwise Prisma's unspecified result order can make
+        // an older broad-range rate win over a newer correction.
+        const effectiveRateRows = this.selectEffectiveStaahRateRows(rateRows);
+        if (effectiveRateRows.length !== rateRows.length) {
+          this.logger.log(
+            `[STAAH RATE ROW RESOLUTION] routeId=${routeId} retained=${effectiveRateRows.length} discarded=${rateRows.length - effectiveRateRows.length}`,
+          );
+        }
         const restrictionRowsByRateKey = new Map<string, any[]>();
         for (const row of restrictionRows as any[]) {
           const rateKey = `${row.staah_property_id}|${row.room_id}|${row.rateplan_id}`;
@@ -3148,7 +3626,7 @@ this.logger.log(
           }
           const propertyInventoryRows = (inventoryRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
           const propertyRatePlanRows = (ratePlanRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
-          const rows = (rateRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
+          const rows = (effectiveRateRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
  this.logger.debug(
             `[STAAH] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} inventory=${propertyInventoryRows.length} rateplans=${propertyRatePlanRows.length} rates=${rows.length}`,
           );
@@ -3311,6 +3789,9 @@ this.logger.log(
             const cancellation = String((hotel as any).hotel_cancel_policy || '').trim();
             const mealPlan =
               String((candidate.rp as any)?.meal_plan_description || (candidate.rp as any)?.rateplan_name || '-').trim() || '-';
+            const occupancyBreakdown = paxProfile && Object.keys(paxProfile).length > 0
+              ? calculateStaahOccupancyAmount((candidate.rate as any).occupancy_rates, paxProfile)
+              : null;
             const currency = String((candidate.rp as any)?.currency || 'INR').trim() || 'INR';
             const exactRoomCode = this.normalizeExactRoomCode(roomId);
             const looseRoomCode = this.normalizeLooseRoomCode(roomId);
@@ -3321,6 +3802,8 @@ this.logger.log(
               `Room ${roomId}`;
             results.push({
               provider: 'staah',
+              canonicalHotelId: Number((hotel as any).hotel_id) || null,
+              providerHotelCode: String((hotel as any).staah_property_id || '').trim() || undefined,
               hotelCode: String((hotel as any).hotel_id),
               hotelName: String((hotel as any).hotel_name || ''),
               cityCode: String((hotel as any).hotel_city || destinationRaw),
@@ -3333,6 +3816,18 @@ this.logger.log(
               cancellationPolicy: cancellation ? [cancellation] : [],
               images: [],
               price: Number(candidate.price || 0),
+              extraBedCount: occupancyBreakdown?.extraBedCount || 0,
+              extraBedRate: occupancyBreakdown?.extraBedRate || 0,
+              extraBedAmount: this.money((occupancyBreakdown?.extraBedAmount || 0) * Math.max(lengthOfStay, 1)),
+              childWithBedCount: occupancyBreakdown?.childWithBedCount || 0,
+              childWithBedRate: occupancyBreakdown?.childWithBedRate || 0,
+              childWithBedAmount: this.money((occupancyBreakdown?.childWithBedAmount || 0) * Math.max(lengthOfStay, 1)),
+              childWithoutBedCount: occupancyBreakdown?.childWithoutBedCount || 0,
+              childWithoutBedRate: occupancyBreakdown?.childWithoutBedRate || 0,
+              childWithoutBedAmount: this.money((occupancyBreakdown?.childWithoutBedAmount || 0) * Math.max(lengthOfStay, 1)),
+              extraChildCount: occupancyBreakdown?.extraChildCount || 0,
+              extraChildRate: occupancyBreakdown?.extraChildRate || 0,
+              extraChildAmount: this.money((occupancyBreakdown?.extraChildAmount || 0) * Math.max(lengthOfStay, 1)),
               currency,
               roomTypes: [{
                 roomCode: roomId,
@@ -3344,6 +3839,14 @@ this.logger.log(
               }],
               roomType: roomName,
               mealPlan,
+              // Keep the supplier room/rate identity on the top-level option.
+              // The continuity validator consumes these fields after the
+              // selected-rate snapshot is flattened; providerRoomId alone
+              // is not sufficient for STAAH stay validation.
+              roomId,
+              room_id: roomId,
+              rateId: rateplanId,
+              rate_id: rateplanId,
               hotel_margin: Number((hotel as any).hotel_margin || 0),
               hotel_margin_gst_type: Number((hotel as any).hotel_margin_gst_type || 0),
               hotel_margin_gst_percentage: Number((hotel as any).hotel_margin_gst_percentage || 0),
@@ -3385,14 +3888,76 @@ this.logger.log(
         }
         hotelsByRoute.set(routeId, results);
       } catch (error) {
-        const routeId = Number((routes[routeIndex] as any)?.itinerary_route_ID || 0);
- this.logger.error(`[STAAH] Route ${routeId} failed: ${error instanceof Error ? error.message : String(error)}`);
-        if (routeId > 0) hotelsByRoute.set(routeId, []);
+        const failedRouteId = Number(context.routeId || 0);
+ this.logger.error(`[STAAH] Route ${failedRouteId} failed: ${error instanceof Error ? error.message : String(error)}`);
+        if (failedRouteId > 0) hotelsByRoute.set(failedRouteId, []);
       }
     }
     return hotelsByRoute;
   }
 
+
+  private adaptLegacyPackages(
+    legacyPackages: Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }>,
+    routes: any[],
+  ): RecommendationPackage[] {
+    return legacyPackages.map((pkg) => {
+      const hotels = pkg.hotels.map((hotel) => {
+        const route = routes.find((candidate) => Number(candidate?.itinerary_route_ID || 0) === Number(hotel.routeId));
+        const date = route?.itinerary_route_date
+          ? new Date(route.itinerary_route_date).toISOString().slice(0, 10)
+          : 'unknown';
+        const nextDate = date === 'unknown'
+          ? date
+          : new Date(`${date}T00:00:00.000Z`);
+        if (nextDate instanceof Date) nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+        const checkOut = nextDate instanceof Date ? nextDate.toISOString().slice(0, 10) : date;
+        const offline = String(hotel.provider || '').trim().toLowerCase() === 'offline';
+        return {
+          ...hotel,
+          routeId: Number(hotel.routeId),
+          routeIds: [Number(hotel.routeId)],
+          stayKey: `${Number(hotel.routeId)}|${date}|${checkOut}`,
+          exactFullStayTotal: Number(hotel.totalStayPrice ?? hotel.price ?? 0),
+          canonicalMealPlan: inferCanonicalHotelRatePlanCode(String((hotel as any).mealPlan || '')) || inferCanonicalHotelRatePlanCodeFromMealText(String((hotel as any).mealPlan || '')),
+          availabilityState: offline ? 'OFFLINE_APPROVAL_REQUIRED' : 'AVAILABLE',
+          distanceStatus: 'UNKNOWN',
+          distanceReference: 'UNKNOWN',
+          normalizedCategory: 'UNKNOWN',
+        } as RecommendationHotel;
+      });
+      const totalPrice = this.money(hotels.reduce((sum, hotel) => sum + Number(hotel.exactFullStayTotal || 0), 0));
+      return {
+        groupType: pkg.groupType,
+        label: pkg.label,
+        hotels,
+        totalPrice,
+        partialTotal: totalPrice,
+        targetPrice: null,
+        complete: true,
+        distinctFromPrevious: true,
+        diversityScore: 0,
+        repeatedHotelIds: [],
+        repeatedAcrossGroupsHotelIds: [],
+        sameOptionAcrossGroups: [],
+        duplicateWithinPackageHotelIds: [],
+        repeatedFromGroups: [],
+        fallbackReasons: [],
+        stayResults: hotels.map((hotel) => ({
+          stayKey: hotel.stayKey,
+          parentRouteId: hotel.routeId,
+          routeIds: hotel.routeIds,
+          destination: String(routes.find((route) => Number(route?.itinerary_route_ID || 0) === hotel.routeId)?.next_visiting_location || ''),
+          checkInDate: hotel.stayKey.split('|')[1] || '',
+          checkOutDate: hotel.stayKey.split('|')[2] || '',
+          nights: 1,
+          state: hotel.availabilityState === 'OFFLINE_APPROVAL_REQUIRED' ? 'OFFLINE_FALLBACK' : 'SELECTED',
+          hotel,
+          totalPrice: hotel.exactFullStayTotal,
+        })),
+      };
+    });
+  }
 
   private generatePricePackages(
     hotelsByRoute: Map<number, HotelSearchResult[]>,
@@ -3419,9 +3984,10 @@ this.logger.log(
  this.logger.log(` Route ${routeId}: ${hotels.length} hotels (Prices: ${prices})`);
     });
 
- // NEW LOGIC: Assign hotels to groups PER DESTINATION (per route)
- // Rule: If 1 hotel -> put in all 4 groups
- // If 2+ hotels -> distribute in ascending price order across groups
+ // Assign hotels to groups PER DESTINATION (per route).
+ // Each supplier option belongs to one recommendation group only. A route
+ // with fewer than four distinct options therefore has empty groups; it must
+ // not be padded by copying the cheapest option into those groups.
 
  // First pass: Determine groupType for each hotel based on its destination
  const hotelGroupAssignments = new Map<string, number>(); // key: "routeId-hotelCode" -> groupType
@@ -3443,13 +4009,12 @@ this.logger.log(
       const sortedHotels = [...availableHotels].sort((a, b) => a.price - b.price);
 
       if (sortedHotels.length === 1) {
- // Single hotel: assign to ALL 4 groups
+ // A single hotel is a valid option for group 1 only. Reusing it in groups
+ // 2-4 makes those recommendations look distinct while they are identical.
         const hotel = sortedHotels[0];
-        for (let groupType = 1; groupType <= 4; groupType++) {
-          const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-          hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
-        }
- this.logger.debug(` Route ${routeId}: 1 hotel - "${hotel.hotelName}" (${hotel.price}) assigned to ALL groups`);
+        const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
+        hotelGroupAssignments.set(`${key}:1`, 1);
+ this.logger.debug(` Route ${routeId}: 1 hotel - "${hotel.hotelName}" (${hotel.price}) assigned to group 1 only`);
       } else {
  // Multiple hotels: distribute across groups by price order
         const numHotels = sortedHotels.length;
@@ -3501,23 +4066,6 @@ this.logger.log(
         }
         if (!Array.isArray(availableHotels) || availableHotels.length === 0) {
  this.logger.debug(` Tier ${groupType}, Route ${routeId}: No hotels available`);
- // CREATE PLACEHOLDER FOR NO HOTELS - price 0
-          const placeholderHotel: any = {
-            hotelCode: '0',
-            hotelName: 'No Hotels Available',
-            roomType: '-',
-            mealPlan: '-',
-            price: 0,
-            rating: 0,
-            routeId: routeId,
-            provider: 'external',
-            isBookable: false,
-            externalStay: true,
-            availabilityStatus: 'NO_SUPPLIER_AVAILABILITY',
-            availabilityMessage:
-              'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
-          };
-          tieredHotels.push(placeholderHotel);
           continue;
         }
 
@@ -3535,23 +4083,10 @@ this.logger.log(
           }
         }
 
- // Overlap fallback: if this route has hotels but none mapped to current tier,
- // pick deterministic fallback by sorted price index so every tier has data.
-        if (!foundForGroup && availableHotels.length > 0) {
-          const sortedHotels = [...availableHotels].sort((a, b) => (a.price || 0) - (b.price || 0));
-          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
-          const fallbackHotel = sortedHotels[fallbackIndex];
-          if (fallbackHotel) {
-            const fallbackWithRoute = {
-              ...fallbackHotel,
-              routeId,
-              __fallbackAssigned: true,
-            } as HotelSearchResult & { routeId: number };
-            tieredHotels.push(fallbackWithRoute);
+        if (!foundForGroup) {
  this.logger.debug(
-              `   Tier ${groupType}, Route ${routeId}: overlap fallback -> ${fallbackHotel.hotelName}`,
+              `   Tier ${groupType}, Route ${routeId}: no distinct hotel assigned; leaving this group empty for the route`,
             );
-          }
         }
       }
 
@@ -3584,11 +4119,13 @@ this.logger.log(
   private async buildHotelDetailsResponse(
     quoteId: string,
     planId: number,
-    packages: Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }>,
+    packages: RecommendationPackage[],
     hotelsByRoute: Map<number, HotelSearchResult[]>,
     restrictedHotelsByRoute: Map<number, HotelSearchResult[]>,
     routes: any[],
     noOfNights: number,
+    allAvailabilityPackages: Array<{ groupType: number; hotels: any[] }> = packages,
+    ignorePersistedSelections = false,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_plan_ID: planId, deleted: 0 },
@@ -3603,7 +4140,13 @@ this.logger.log(
       orderBy: { global_settings_ID: 'asc' },
       select: { hotel_margin: true },
     });
-    const globalHotelMargin = Number((globalSettings as any)?.hotel_margin || 0);
+    // The database setting may intentionally be zero while local/staging uses
+    // HOTEL_MARGIN as the configured fallback. Resolve it once at the response
+    // boundary so every downstream pricing path receives the same margin.
+    const configuredEnvironmentMargin = Number(process.env.HOTEL_MARGIN || 0);
+    const globalHotelMargin = Number(
+      (globalSettings as any)?.hotel_margin ?? configuredEnvironmentMargin ?? 0,
+    );
 
     const hotelRatesVisible =
       Number((plan as any)?.hotel_rates_visibility || 0) === 1 ||
@@ -3676,31 +4219,319 @@ this.logger.log(
       if (hotelId > 0) marginHotelMasterByProviderCode.set(`staah|${hotelId}`, hm);
     }
 
-    const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
-      const totalAmount = this.money(
-        pkg.hotels.reduce((sum, h) => {
-          const pricedHotel = this.enrichHotelWithMasterMargin(
-            h,
-            marginHotelMasterByProviderCode,
-            globalHotelMargin,
-          );
-          return sum + this.applyInvisibleHotelMargin(
-            Number(pricedHotel.price || 0),
-            pricedHotel,
-            globalHotelMargin,
-          );
-        }, 0),
+    // Recommendation packages, cards, rows, and selections must expose the
+    // same payable amount. Previously only totalStayPrice was changed here;
+    // price/pricePerNight remained the supplier amount, so the UI could show
+    // an un-margined card beside a margined recommendation/summary.
+    const findSelectedRateOption = (hotel: any): any | null => {
+      const selectedRateOptionId = String(
+        hotel?.selectedRateOptionId ||
+        hotel?.selected_rate_option_id ||
+        hotel?.selection?.rateOptionId ||
+        '',
+      ).trim().toLowerCase();
+      if (!selectedRateOptionId || !Array.isArray(hotel?.rateOptions)) return null;
+      return hotel.rateOptions.find((option: any) => [
+        option?.rateOptionId,
+        option?.rate_option_id,
+        option?.bookingCode,
+        option?.searchReference,
+      ].some((value) => String(value ?? '').trim().toLowerCase() === selectedRateOptionId)) || null;
+    };
+
+    const applySelectedRateOption = (hotel: any): any => {
+      const selectedRateOption = findSelectedRateOption(hotel);
+      if (!selectedRateOption) return hotel;
+      return {
+        ...hotel,
+        ...selectedRateOption,
+        itineraryRouteId: hotel.itineraryRouteId ?? hotel.routeId,
+        routeId: hotel.routeId ?? hotel.itineraryRouteId,
+        checkInDate: selectedRateOption.checkInDate ?? hotel.checkInDate,
+        checkOutDate: selectedRateOption.checkOutDate ?? hotel.checkOutDate,
+        rateOptions: hotel.rateOptions,
+        // Identity and price fields must come from this option only. Do not
+        // retain the parent row's room/rate/base-price values.
+        roomId: selectedRateOption.roomId ?? selectedRateOption.room_id ?? selectedRateOption.roomTypeId ?? null,
+        room_id: selectedRateOption.room_id ?? selectedRateOption.roomId ?? selectedRateOption.roomTypeId ?? null,
+        rateId: selectedRateOption.rateId ?? selectedRateOption.rate_id ?? selectedRateOption.ratePlanId ?? null,
+        rate_id: selectedRateOption.rate_id ?? selectedRateOption.rateId ?? selectedRateOption.ratePlanId ?? null,
+        rateOptionId: selectedRateOption.rateOptionId ?? selectedRateOption.rate_option_id,
+        searchReference: selectedRateOption.searchReference ?? selectedRateOption.bookingCode,
+        bookingCode: selectedRateOption.bookingCode ?? selectedRateOption.searchReference,
+        basePricePerNight: selectedRateOption.basePricePerNight ?? selectedRateOption.basePrice ?? selectedRateOption.pricePerNight ?? selectedRateOption.price,
+        pricePerNight: selectedRateOption.pricePerNight ?? selectedRateOption.price,
+        totalStayPrice: selectedRateOption.pricePerNight ?? selectedRateOption.price ?? selectedRateOption.totalStayPrice ?? selectedRateOption.totalPrice,
+        totalPrice: selectedRateOption.pricePerNight ?? selectedRateOption.price ?? selectedRateOption.totalPrice ?? selectedRateOption.totalStayPrice,
+        selectedRateOptionId: hotel.selectedRateOptionId || hotel.selected_rate_option_id,
+        selected_rate_option_id: hotel.selected_rate_option_id || hotel.selectedRateOptionId,
+      };
+    };
+
+    const priceHotelStay = (hotel: any, fallbackNights: number): any => {
+      // A persisted row can be a parent hotel row whose nested rateOptions
+      // contain the actual selected room/meal option. Once a rate option ID
+      // exists, replace the parent identity and price fields with that one
+      // option before doing any pricing. Spreading the parent and option
+      // independently was the source of Suite/MAP + Deluxe/CP mixtures.
+      hotel = applySelectedRateOption(hotel);
+      const pricedHotel = this.enrichHotelWithMasterMargin(
+        hotel,
+        marginHotelMasterByProviderCode,
+        globalHotelMargin,
       );
+      const nights = Math.max(Number(fallbackNights || hotel?.numberOfNights || 1), 1);
+      const provider = String(hotel?.provider || '').trim().toLowerCase();
+      // Offline catalog offers carry an explicit nightlySell/base breakdown
+      // and are already sell prices. Persisted offline selections also carry
+      // the explicit marker below. Live/ARI rows are supplier/base prices.
+      const amountAlreadyIncludesMargin = provider === 'offline' ||
+        hotel?.amountIncludesHotelMargin === true ||
+        hotel?.amount_includes_hotel_margin === true;
+      const sourceNightlyAmount = Number(hotel?.pricePerNight ?? hotel?.price ?? 0);
+      const rawTotal = nights === 1 && Number.isFinite(sourceNightlyAmount) && sourceNightlyAmount > 0
+        ? this.money(sourceNightlyAmount)
+        : hotelStayTotal({
+        ...hotel,
+        selectedTotalPrice: undefined,
+        selected_total_price: undefined,
+        selectedPricePerNight: undefined,
+        selected_price_per_night: undefined,
+        exactFullStayTotal: undefined,
+        totalStayPrice: hotel?.totalStayPrice ?? hotel?.totalPrice ?? hotel?.totalFare,
+        }, nights);
+      const marginPercentage = this.getHotelMarginPercentage(
+        pricedHotel,
+        globalHotelMargin,
+      );
+      const payableTotal = rawTotal > 0
+        ? amountAlreadyIncludesMargin
+          ? this.money(rawTotal)
+          : this.applyInvisibleHotelMargin(rawTotal, pricedHotel, globalHotelMargin)
+        : 0;
+      const basePricePerNight = rawTotal > 0
+        ? this.money(rawTotal / nights)
+        : Number(hotel?.basePricePerNight ?? hotel?.pricePerNight ?? hotel?.price ?? 0);
+      const payablePricePerNight = payableTotal > 0
+        ? this.money(payableTotal / nights)
+        : Number(hotel?.pricePerNight ?? hotel?.price ?? 0);
+      const hasSelection = Boolean(
+        hotel?.isSelected || hotel?.selectionId || hotel?.selectionOrigin ||
+        hotel?.selectedTotalPrice || hotel?.selected_total_price,
+      );
+      const pricedOptions = Array.isArray(hotel?.rateOptions)
+        ? hotel.rateOptions.map((option: any) => {
+            const optionNightlyAmount = Number(option?.pricePerNight ?? option?.price ?? 0);
+            const optionRawTotal = nights === 1 && Number.isFinite(optionNightlyAmount) && optionNightlyAmount > 0
+              ? this.money(optionNightlyAmount)
+              : hotelStayTotal({
+              ...hotel,
+              ...option,
+              selectedTotalPrice: undefined,
+              selected_total_price: undefined,
+              selectedPricePerNight: undefined,
+              selected_price_per_night: undefined,
+              checkInDate: option?.checkInDate ?? hotel?.checkInDate,
+              checkOutDate: option?.checkOutDate ?? hotel?.checkOutDate,
+              totalStayPrice: option?.totalStayPrice ?? option?.totalPrice,
+              }, nights);
+            const optionPayableTotal = optionRawTotal > 0
+              ? amountAlreadyIncludesMargin
+                ? this.money(optionRawTotal)
+                : this.applyInvisibleHotelMargin(optionRawTotal, pricedHotel, globalHotelMargin)
+              : 0;
+            const optionRouteTotal = nights === 1 ? optionPayableTotal : optionPayableTotal;
+            return {
+              ...option,
+              basePricePerNight: optionRawTotal > 0
+                ? this.money(optionRawTotal / nights)
+                : option?.basePricePerNight,
+              // optionPayableTotal is already the sell amount at this point.
+              amountIncludesHotelMargin: true,
+              pricingIncludesHotelMargin: true,
+              totalStayPrice: optionRouteTotal > 0 ? optionRouteTotal : option?.totalStayPrice,
+              totalPrice: optionRouteTotal > 0 ? optionRouteTotal : option?.totalPrice,
+              price: optionRawTotal > 0
+                ? this.money(optionPayableTotal / nights)
+                : option?.price,
+              pricePerNight: optionRawTotal > 0
+                ? this.money(optionPayableTotal / nights)
+                : option?.pricePerNight,
+            };
+          })
+        : hotel?.rateOptions;
+
+      const result = {
+        ...hotel,
+        rateOptions: pricedOptions,
+        price: payablePricePerNight > 0 ? payablePricePerNight : hotel?.price,
+        pricePerNight: payablePricePerNight > 0 ? payablePricePerNight : hotel?.pricePerNight,
+        basePricePerNight,
+        baseStayPrice: rawTotal,
+        // payableTotal is already the sell amount at this point. Preserve an
+        // idempotent marker for persisted-snapshot reads and intent previews.
+        amountIncludesHotelMargin: true,
+        pricingIncludesHotelMargin: true,
+        exactFullStayTotal: payableTotal > 0 ? payableTotal : hotel?.exactFullStayTotal,
+        totalStayPrice: payableTotal > 0 ? payableTotal : hotel?.totalStayPrice,
+        totalPrice: payableTotal > 0 ? payableTotal : hotel?.totalPrice,
+        totalFare: payableTotal > 0 ? payableTotal : hotel?.totalFare,
+        hotelMarginAmount: amountAlreadyIncludesMargin
+          ? 0
+          : this.money(Math.max(payableTotal - rawTotal, 0)),
+        hotelMarginPercentage: amountAlreadyIncludesMargin ? 0 : marginPercentage,
+      };
+      if (hasSelection && payableTotal > 0) {
+        result.selectedPricePerNight = payablePricePerNight;
+        result.selectedTotalPrice = payableTotal;
+        result.selected_price_per_night = payablePricePerNight;
+        result.selected_total_price = payableTotal;
+        if (result.selection && typeof result.selection === 'object') {
+          result.selection = {
+            ...result.selection,
+            pricePerNight: payablePricePerNight,
+            totalPrice: payableTotal,
+          };
+        }
+      }
+      return result;
+    };
+
+    // Availability cards and persisted hotel rows represent one route-night.
+    // Do not use the itinerary-wide noOfNights here: that value belongs to
+    // the complete itinerary and caused a two-night amount to be stored on
+    // each individual route row.
+    const getRouteNightHotel = (hotel: any): { hotel: any; nights: number } => {
+      const routeId = Number(hotel?.routeId || hotel?.itineraryRouteId || 0);
+      const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === routeId);
+      const checkInDate = hotelDateOnly(
+        hotel?.checkInDate || hotel?.check_in_date || hotel?.date || route?.itinerary_route_date,
+      );
+      const nextNightDate = checkInDate
+        ? (() => {
+            const next = new Date(`${checkInDate}T00:00:00.000Z`);
+            next.setUTCDate(next.getUTCDate() + 1);
+            return next.toISOString().slice(0, 10);
+          })()
+        : null;
+      const checkOutDate = hotelDateOnly(
+        hotel?.checkOutDate || hotel?.check_out_date ||
+          nextNightDate,
+      );
+      return {
+        hotel: {
+          ...hotel,
+          ...(checkInDate ? { checkInDate } : {}),
+          ...(checkOutDate ? { checkOutDate } : {}),
+        },
+        nights: 1,
+      };
+    };
+
+    const pricedPackagesUnordered = packages.map((pkg) => {
+      const stayResults = (pkg.stayResults || []).map((stay) => {
+        const pricedHotel = stay.hotel
+          ? priceHotelStay(stay.hotel, stay.nights)
+          : undefined;
+        const stayTotal = stay.state !== 'UNAVAILABLE' && pricedHotel
+          ? hotelStayTotal(pricedHotel, stay.nights)
+          : 0;
+        return {
+          ...stay,
+          hotel: pricedHotel,
+          totalPrice: stayTotal > 0 ? stayTotal : stay.totalPrice,
+        };
+      });
+      const packageTotal = stayResults.reduce(
+        (sum, stay) => sum + (Number(stay.totalPrice) > 0 ? Number(stay.totalPrice) : 0),
+        0,
+      );
+      return {
+        ...pkg,
+        hotels: (pkg.hotels || []).map((hotel) => {
+          const routeNight = getRouteNightHotel(hotel);
+          return priceHotelStay(routeNight.hotel, routeNight.nights);
+        }),
+        stayResults,
+        totalPrice: pkg.complete ? this.money(packageTotal) : null,
+        partialTotal: this.money(packageTotal),
+      };
+    });
+
+    // Supplier/base totals are not the final values displayed to the user.
+    // Margin and provider-specific payable projection can reverse two nearby
+    // packages, so assign recommendation numbers only after pricing. Keep a
+    // remap for inventory rows so each tab still opens its own hotels.
+    const pricedPackageOrder = [...pricedPackagesUnordered]
+      .sort((left, right) => {
+        const amount = (pkg: any): number =>
+          (!Array.isArray(pkg?.hotels) || pkg.hotels.length === 0) &&
+          (!Array.isArray(pkg?.stayResults) || pkg.stayResults.length === 0)
+            ? Number.POSITIVE_INFINITY
+            : Number(pkg.totalPrice ?? pkg.partialTotal ?? Number.POSITIVE_INFINITY);
+        const leftAmount = amount(left);
+        const rightAmount = amount(right);
+        return leftAmount - rightAmount;
+      });
+    const pricedGroupTypeRemap = new Map<number, number>(
+      pricedPackageOrder.map((pkg, index) => [Number(pkg.groupType || 0), index + 1]),
+    );
+    const pricedPackages = pricedPackageOrder.map((pkg, index) => ({
+        ...pkg,
+        groupType: index + 1,
+        label: `Recommended #${index + 1}`,
+      }));
+
+    const pricedAvailabilityPackages = allAvailabilityPackages.map((pkg) => ({
+      ...pkg,
+      groupType: pricedGroupTypeRemap.get(Number(pkg.groupType || 0)) || pkg.groupType,
+      label: `Recommended #${pricedGroupTypeRemap.get(Number(pkg.groupType || 0)) || pkg.groupType}`,
+      hotels: (pkg.hotels || []).map((hotel) => {
+        const routeNight = getRouteNightHotel(hotel);
+        return priceHotelStay(routeNight.hotel, routeNight.nights);
+      }),
+    }));
+
+    const hotelTabs: ItineraryHotelTabDto[] = pricedPackages.map((pkg) => {
+      const totalAmount = pkg.complete && pkg.totalPrice !== null
+        ? this.money(pkg.totalPrice)
+        : null;
       return {
         groupType: pkg.groupType,
         label: pkg.label,
         totalAmount,
+        partialTotal: this.money(pkg.partialTotal || 0),
+        targetAmount: pkg.targetPrice,
+        complete: pkg.complete,
+        diversityScore: pkg.diversityScore,
+        repeatedAcrossGroupsHotelIds: pkg.repeatedAcrossGroupsHotelIds,
+        sameOptionAcrossGroups: pkg.sameOptionAcrossGroups,
+        duplicateWithinPackageHotelIds: pkg.duplicateWithinPackageHotelIds,
+        repeatedFromGroups: pkg.repeatedFromGroups,
+        stayResults: pkg.stayResults.map((stay) => ({
+          stayKey: stay.stayKey,
+          parentRouteId: stay.parentRouteId,
+          routeIds: stay.routeIds,
+          destination: stay.destination,
+          checkInDate: stay.checkInDate,
+          checkOutDate: stay.checkOutDate,
+          nights: stay.nights,
+          state: stay.state,
+          reason: stay.reason,
+          totalPrice: stay.totalPrice,
+        })),
       };
     });
 
  // Fetch all hotel details from database to get IDs and voucher status
-    const hotelDetailsInDb = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
-      where: { itinerary_plan_id: planId, deleted: 0 },
+    const hotelDetailsInDb = ignorePersistedSelections
+      ? []
+      : await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+      // Only active rows belong to the current editable hotel snapshot.  Old
+      // reset/rebuild rows remain in the table for audit history and must not
+      // be projected back into the live response as a second "Selected hotel"
+      // row when they no longer match the fresh supplier inventory.
+      where: { itinerary_plan_id: planId, deleted: 0, status: 1 },
       select: {
         itinerary_plan_hotel_details_ID: true,
         itinerary_route_id: true,
@@ -3714,6 +4545,14 @@ this.logger.log(
         early_checkin_extra_payment_applicable: true,
         early_checkin_payment_status: true,
         early_checkin_note: true,
+        hotel_code: true,
+        hotel_provider: true,
+        selected_rate_option_id: true,
+        selected_price_per_night: true,
+        selected_total_price: true,
+        selected_currency: true,
+        selected_price_snapshot: true,
+        requires_price_reacceptance: true,
       },
     });
 
@@ -3886,29 +4725,47 @@ this.logger.log(
     const hotelCoordsByProviderCode = new Map<string, { lat: number; lon: number }>();
     const hotelMasterByProviderCode = new Map<string, any>();
     for (const hm of hotelMasters as any[]) {
+      const tboCode = String((hm as any).tbo_hotel_code || '').trim();
+      const resavenueCode = String((hm as any).resavenue_hotel_code || '').trim();
+      const hobseCode = String((hm as any).hotel_code || '').trim();
+      const hotelId = Number((hm as any).hotel_id || 0);
+
+      // The provider code is not the canonical dvi_hotel.hotel_id. Keep this
+      // mapping even when coordinates are missing so live supplier rows can
+      // still be selected and persisted with the canonical hotel identity.
+      if (tboCode) hotelMasterByProviderCode.set(`tbo|${tboCode}`, hm);
+      if (resavenueCode) hotelMasterByProviderCode.set(`resavenue|${resavenueCode}`, hm);
+      if (hobseCode) hotelMasterByProviderCode.set(`hobse|${hobseCode}`, hm);
+      if (hotelId > 0) hotelMasterByProviderCode.set(`axisrooms|${hotelId}`, hm);
+      if (hotelId > 0) hotelMasterByProviderCode.set(`staah|${hotelId}`, hm);
+
       const lat = Number((hm as any).hotel_latitude ?? 0);
       const lon = Number((hm as any).hotel_longitude ?? 0);
       if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat === 0 || lon === 0) {
         continue;
       }
 
-      const tboCode = String((hm as any).tbo_hotel_code || '').trim();
-      const resavenueCode = String((hm as any).resavenue_hotel_code || '').trim();
-      const hobseCode = String((hm as any).hotel_code || '').trim();
-      const hotelId = Number((hm as any).hotel_id || 0);
-
       if (tboCode) hotelCoordsByProviderCode.set(`tbo|${tboCode}`, { lat, lon });
       if (resavenueCode) hotelCoordsByProviderCode.set(`resavenue|${resavenueCode}`, { lat, lon });
       if (hobseCode) hotelCoordsByProviderCode.set(`hobse|${hobseCode}`, { lat, lon });
       if (hotelId > 0) hotelCoordsByProviderCode.set(`axisrooms|${hotelId}`, { lat, lon });
       if (hotelId > 0) hotelCoordsByProviderCode.set(`staah|${hotelId}`, { lat, lon });
-
-      if (tboCode) hotelMasterByProviderCode.set(`tbo|${tboCode}`, hm);
-      if (resavenueCode) hotelMasterByProviderCode.set(`resavenue|${resavenueCode}`, hm);
-      if (hobseCode) hotelMasterByProviderCode.set(`hobse|${hobseCode}`, hm);
-      if (hotelId > 0) hotelMasterByProviderCode.set(`axisrooms|${hotelId}`, hm);
-      if (hotelId > 0) hotelMasterByProviderCode.set(`staah|${hotelId}`, hm);
     }
+
+    const resolveCanonicalHotelId = (hotel: any, masterMap = hotelMasterByProviderCode): number => {
+      const explicitId = Number(hotel?.canonicalHotelId || 0);
+      if (Number.isFinite(explicitId) && explicitId > 0) return explicitId;
+
+      const provider = String(hotel?.provider || 'tbo').trim().toLowerCase();
+      const providerCode = String(hotel?.hotelCode || '').trim();
+      const mappedId = Number(masterMap.get(`${provider}|${providerCode}`)?.hotel_id || 0);
+      if (Number.isFinite(mappedId) && mappedId > 0) return mappedId;
+
+      // AxisRooms/STAAH/offline rows already use the canonical ID as their
+      // hotelId. A TBO code must never be persisted as dvi_hotel.hotel_id.
+      const hotelId = Number(hotel?.hotelId || 0);
+      return provider === 'tbo' ? 0 : (Number.isFinite(hotelId) && hotelId > 0 ? hotelId : 0);
+    };
 
  // Fallback: TBO static master has wider code coverage than dvi_hotel in many environments.
     if (tboCodes.length > 0) {
@@ -3968,9 +4825,255 @@ this.logger.log(
 
  // Build hotel rows (detail rows for each package)
     const hotelRows: ItineraryHotelRowDto[] = [];
+    const selectionRowsByRouteAndGroup = new Map<string, any[]>();
+    for (const detail of hotelDetailsInDb as any[]) {
+      // hotel_required=2 rows are previous-night/early-arrival markers, not
+      // selectable hotel selections. They are handled separately through
+      // earlyArrivalMap above and must never be appended as persisted hotels.
+      if (Number(detail?.hotel_required || 0) !== 1) continue;
+      const routeId = Number(detail?.itinerary_route_id || 0);
+      const groupType = Number(detail?.group_type || 0);
+      if (routeId <= 0 || groupType <= 0) continue;
+      const canonicalHotelId = Number(detail?.hotel_id || 0);
+      const hotelCode = String(detail?.hotel_code || '').trim();
+      if (canonicalHotelId <= 0 && !hotelCode) continue;
+      const key = `${routeId}-${groupType}`;
+      const existing = selectionRowsByRouteAndGroup.get(key) || [];
+      existing.push(detail);
+      selectionRowsByRouteAndGroup.set(key, existing);
+    }
 
-    for (const pkg of packages) {
+    const decorateLiveSelection = (row: any, selection: any): any => {
+      const snapshot = parseHotelSelectionSnapshot(selection);
+      const selectionOrigin = selectionOriginFromRow(selection);
+      const display = hotelDisplaySnapshot({ ...selection, ...snapshot });
+      const selectedRoomType =
+        snapshot.roomType ||
+        (snapshot as any).roomTypeName ||
+        (snapshot as any).room_type_title ||
+        selection.room_type ||
+        row.roomType;
+      const selectedMealPlan = snapshot.mealPlan || selection.meal_plan || row.mealPlan;
+      const decorated = {
+        ...row,
+        hotelName: display.hotelName || row.hotelName,
+        category: display.category || row.category,
+        hotelCode: display.hotelCode || row.hotelCode,
+        roomType: selectedRoomType,
+        mealPlan: selectedMealPlan,
+        pricePerNight: Number(display.pricePerNight || row.pricePerNight || 0),
+        totalHotelCost: Number(display.totalPrice || row.totalHotelCost || 0),
+        totalStayPrice: Number(display.totalPrice || row.totalStayPrice || 0),
+        selectedRoomType: selectedRoomType,
+        isSelected: true,
+        selectionOrigin,
+        selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
+        itineraryPlanHotelDetailsId:
+          Number(selection.itinerary_plan_hotel_details_ID || 0) ||
+          row.itineraryPlanHotelDetailsId,
+        selectedRateOptionId:
+          selection.selected_rate_option_id || row.rateOptionId || row.searchReference,
+        selectedPricePerNight: selection.selected_price_per_night,
+        selectedTotalPrice: selection.selected_total_price,
+        selectedCurrency: selection.selected_currency,
+        requiresPriceReacceptance: Boolean(selection.requires_price_reacceptance),
+        selectedPriceSnapshot: selection.selected_price_snapshot || null,
+        selectionStatus: 'AVAILABLE',
+        selection: {
+          ...display,
+          roomType: selectedRoomType,
+          mealPlan: selectedMealPlan,
+          status: 'AVAILABLE',
+          selectionOrigin,
+          selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
+        },
+      };
+      // Legacy selection snapshots may contain the supplier amount. Re-run
+      // the same stay pricing used for live cards so persisted selections do
+      // not bypass HOTEL_MARGIN after refresh/reset.
+      const priced = priceHotelStay(decorated, noOfNights);
+      const selectedPayable = Number(selection?.selected_price_per_night || snapshot?.pricePerNight || 0);
+      const selectedTotal = Number(selection?.selected_total_price || snapshot?.totalPrice || 0);
+      return selectedPayable > 0
+        ? {
+            ...priced,
+            price: selectedPayable,
+            pricePerNight: selectedPayable,
+            totalHotelCost: selectedTotal > 0 ? selectedTotal : selectedPayable,
+            totalStayPrice: selectedTotal > 0 ? selectedTotal : selectedPayable,
+            totalPrice: selectedTotal > 0 ? selectedTotal : selectedPayable,
+            selectedPricePerNight: selectedPayable,
+            selectedTotalPrice: selectedTotal > 0 ? selectedTotal : selectedPayable,
+          }
+        : priced;
+    };
+
+    const selectionPropertyMatchesRow = (selection: any, row: any): boolean => {
+      const snapshot = parseHotelSelectionSnapshot(selection);
+      const selectedProvider = cleanIdentity(snapshot.provider || selection?.hotel_provider);
+      const rowProvider = cleanIdentity(row?.provider);
+      if (selectedProvider && rowProvider && selectedProvider !== rowProvider) return false;
+
+      const selectedCanonicalId = cleanIdentity(snapshot.hotelId || selection?.hotel_id);
+      const rowCanonicalId = cleanIdentity(row?.canonicalHotelId || row?.hotelId);
+      if (selectedCanonicalId && rowCanonicalId && selectedCanonicalId === rowCanonicalId) return true;
+
+      const selectedCode = cleanIdentity(snapshot.hotelCode || selection?.hotel_code || selection?.hotel_id);
+      const rowCode = cleanIdentity(row?.hotelCode || row?.providerHotelCode || row?.hotelId);
+      if (selectedCode && rowCode && selectedCode === rowCode) return true;
+
+      const selectedName = cleanIdentity((snapshot as any).hotelName || selection?.hotel_name);
+      const rowName = cleanIdentity(row?.hotelName);
+      return Boolean(selectedName && rowName && selectedName === rowName);
+    };
+
+    const buildPersistedSelectionRow = (selection: any, route: any, groupType: number): any => {
+      const snapshot = parseHotelSelectionSnapshot(selection) as any;
+      const provider = cleanIdentity(snapshot.provider || selection?.hotel_provider || 'external') || 'external';
+      const hotelId = Number(snapshot.hotelId || selection?.hotel_id || 0) || 0;
+      const hotelCode = String(snapshot.hotelCode || selection?.hotel_code || hotelId || '').trim();
+      const hotelName = String(snapshot.hotelName || selection?.hotel_name || 'Selected hotel').trim();
+      const roomType = String(
+        snapshot.roomType || snapshot.roomTypeName || snapshot.room_type_title || selection?.room_type || '',
+      ).trim();
+      const mealPlan = String(snapshot.mealPlan || selection?.meal_plan || '').trim();
+      const totalPrice = Number(
+        snapshot.totalPrice || snapshot.totalStayPrice || selection?.selected_total_price || selection?.total_hotel_cost || 0,
+      ) || 0;
+      const pricePerNight = Number(
+        snapshot.pricePerNight || selection?.selected_price_per_night || 0,
+      ) || 0;
+      const rateOptionId = String(
+        snapshot.rateOptionId || selection?.selected_rate_option_id || snapshot.searchReference || snapshot.bookingCode || '',
+      ).trim();
+      const dateLabel = toDateOnly(route?.itinerary_route_date) || '';
+      const selectedRow = {
+        groupType,
+        itineraryRouteId: Number(selection?.itinerary_route_id || route?.itinerary_route_ID || 0),
+        routeIds: [Number(selection?.itinerary_route_id || route?.itinerary_route_ID || 0)],
+        stayKey: `persisted-${Number(selection?.itinerary_route_id || route?.itinerary_route_ID || 0)}-${groupType}`,
+        day: `Day ${routes.indexOf(route) + 1} | ${dateLabel}`,
+        destination: route?.next_visiting_location || route?.location_name || '',
+        hotelId,
+        canonicalHotelId: hotelId || null,
+        hotelCode,
+        provider,
+        providerDisplayName: provider === 'offline' ? 'Offline' : provider === 'axisrooms' ? 'AxisRooms' : provider === 'tbo' ? 'VSR' : undefined,
+        providerHotelCode: hotelCode,
+        hotelName,
+        category: Number(selection?.hotel_category_id || snapshot.category || 0) || 0,
+        roomType,
+        mealPlan,
+        totalHotelCost: totalPrice,
+        totalStayPrice: totalPrice,
+        pricePerNight,
+        selectedRoomType: roomType,
+        numberOfNights: noOfNights,
+        bookingCode: snapshot.bookingCode || undefined,
+        searchReference: snapshot.searchReference || undefined,
+        rateOptionId: rateOptionId || undefined,
+        rateOptions: [{
+          rateOptionId: rateOptionId || undefined,
+          canonicalHotelId: hotelId || null,
+          provider,
+          providerHotelCode: hotelCode,
+          roomId: snapshot.roomId,
+          roomType,
+          mealPlan,
+          bookingCode: snapshot.bookingCode || undefined,
+          searchReference: snapshot.searchReference || undefined,
+          pricePerNight,
+          totalStayPrice: totalPrice,
+          totalPrice,
+          currency: snapshot.currency || selection?.selected_currency || 'INR',
+          isSelectable: true,
+          isLiveRate: provider !== 'offline' && provider !== 'axisrooms',
+        }],
+        isSelected: true,
+        selectionOrigin: selectionOriginFromRow(selection),
+        selectionId: Number(selection?.itinerary_plan_hotel_details_ID || 0),
+        itineraryPlanHotelDetailsId: Number(selection?.itinerary_plan_hotel_details_ID || 0),
+        selectedRateOptionId: selection?.selected_rate_option_id || rateOptionId || undefined,
+        selectedPricePerNight: selection?.selected_price_per_night,
+        selectedTotalPrice: selection?.selected_total_price,
+        selectedCurrency: selection?.selected_currency,
+        selectedPriceSnapshot: selection?.selected_price_snapshot || null,
+        selectionStatus: 'AVAILABLE',
+        isSelectable: true,
+        isBookable: provider !== 'offline',
+        isLiveBookable: provider !== 'offline' && provider !== 'axisrooms',
+        externalStay: provider === 'external',
+        availabilityStatus: 'AVAILABLE',
+        availabilityState: 'AVAILABLE',
+        bookingMode: selection?.hotel_booking_mode || (provider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
+        priceSource: selection?.price_source || (provider === 'offline' || provider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
+        selection: {
+          ...hotelDisplaySnapshot({ ...selection, ...snapshot }),
+          hotelName,
+          hotelCode,
+          roomType,
+          mealPlan,
+          totalPrice,
+          pricePerNight,
+          status: 'AVAILABLE',
+          selectionOrigin: selectionOriginFromRow(selection),
+          selectionId: Number(selection?.itinerary_plan_hotel_details_ID || 0),
+        },
+      };
+      // Persisted selections are display rows too. Normalize their amount at
+      // the response boundary; the database value is not mutated here.
+      return priceHotelStay(selectedRow, noOfNights);
+    };
+
+    const cleanIdentity = (value: unknown): string =>
+      String(value ?? '').trim().toLowerCase();
+
+    const normalizeMealIdentity = (value: unknown): string => {
+      const normalized = cleanIdentity(value).replace(/[^a-z]/g, '');
+      if (!normalized) return '';
+      if (['cp', 'continentalplan', 'breakfast'].includes(normalized)) return 'cp';
+      if (['ep', 'europeanplan', 'roomonly'].includes(normalized)) return 'ep';
+      if (['map', 'modifiedamericanplan'].includes(normalized)) return 'map';
+      if (['ap', 'americanplan', 'fullboard'].includes(normalized)) return 'ap';
+      return normalized;
+    };
+
+    const fallbackSelectionMatches = (selection: any, row: any): boolean => {
+      const snapshot = parseHotelSelectionSnapshot(selection);
+      const selectionProvider = cleanIdentity(snapshot.provider || selection?.hotel_provider);
+      const rowProvider = cleanIdentity(row?.provider);
+      if (selectionProvider && rowProvider && selectionProvider !== rowProvider) return false;
+
+      const selectionHotelCode = cleanIdentity(snapshot.hotelCode || selection?.hotel_code);
+      const rowHotelCode = cleanIdentity(row?.hotelCode || row?.providerHotelCode);
+      if (selectionHotelCode && rowHotelCode && selectionHotelCode !== rowHotelCode) return false;
+
+      const selectionRoomType = cleanIdentity(snapshot.roomType || selection?.room_type);
+      const rowRoomType = cleanIdentity(row?.roomType);
+      if (selectionRoomType && rowRoomType && selectionRoomType !== rowRoomType) return false;
+
+      const selectionMealPlan = normalizeMealIdentity(snapshot.mealPlan || selection?.meal_plan);
+      const rowMealPlan = normalizeMealIdentity(row?.mealPlan);
+      if (selectionMealPlan && rowMealPlan && selectionMealPlan !== rowMealPlan) return false;
+
+      const selectionSearchReference = cleanIdentity(snapshot.searchReference || snapshot.bookingCode || selection?.selected_rate_option_id);
+      const rowSearchReference = cleanIdentity(row?.searchReference || row?.bookingCode);
+      if (selectionSearchReference && rowSearchReference) {
+        return selectionSearchReference === rowSearchReference;
+      }
+
+      return false;
+    };
+
+    for (const pkg of pricedAvailabilityPackages) {
       for (const hotel of pkg.hotels) {
+        // Reconcile the final route row once more after package pricing. This
+        // protects the row builder from a parent cache row that still carries
+        // another option's roomId/rateId/base price.
+        const reconciledHotel = applySelectedRateOption(hotel);
+        if (reconciledHotel !== hotel) {
+          Object.assign(hotel, reconciledHotel);
+        }
  // Find the route using the routeId attached to the hotel
         const route = routes.find((r: any) => r.itinerary_route_ID === hotel.routeId);
         if (!route) {
@@ -3978,13 +5081,7 @@ this.logger.log(
           continue;
         }
 
- // Skip departure day (last route when routeIndex >= noOfNights)
         const routeIndex = routes.indexOf(route);
-        const isLastRoute = routeIndex === routes.length - 1;
-        if (isLastRoute && routeIndex >= noOfNights) {
- this.logger.log(` Skipping route ${hotel.routeId} from response (departure day)`);
-          continue;
-        }
 
  // Use next_visiting_location (where you're staying) for destination display
         const destination = (route as any).next_visiting_location || (route as any).location_name || '';
@@ -3992,8 +5089,7 @@ this.logger.log(
  // Use actual hotel name from TBO API response
         const displayHotelName = hotel.hotelName;
 
- // Canonical hotel id when available, otherwise fall back to numeric provider code.
-        const hotelId = Number((hotel as any).canonicalHotelId ?? (hotel as any).hotelId ?? Number.parseInt(String(hotel.hotelCode || '0'), 10)) || 0;
+        const hotelId = resolveCanonicalHotelId(hotel);
         const routeId = (route as any).itinerary_route_ID;
         const dateLabel = new Date((route as any).itinerary_route_date).toISOString().split('T')[0];
 
@@ -4051,23 +5147,37 @@ this.logger.log(
           }
         }
 
+        const normalizedProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
         const pricedHotel = this.enrichHotelWithMasterMargin(
           hotel,
           hotelMasterByProviderCode,
           globalHotelMargin,
         );
-        const baseHotelCost = Number(pricedHotel.price || 0);
-        const marginPercentage = this.getHotelMarginPercentage(pricedHotel, globalHotelMargin);
-        const hotelMarginAmount = this.money((baseHotelCost * marginPercentage) / 100);
-        const totalHotelCost = this.applyInvisibleHotelMargin(
-          baseHotelCost,
-          pricedHotel,
-          globalHotelMargin,
+        const amountAlreadyIncludesMargin = normalizedProvider === 'offline' ||
+          hotel?.amountIncludesHotelMargin === true;
+        // This row is one route-night. The complete itinerary night count
+        // must never leak into the row or its nested rate options.
+        const numberOfNights = 1;
+        const baseHotelCost = Number(
+          hotel?.basePricePerNight ?? pricedHotel?.basePricePerNight ?? hotel?.price ?? 0,
         );
+        const payableHotelCost = Number(
+          hotel?.pricePerNight ?? hotel?.price ?? 0,
+        );
+        const marginPercentage = amountAlreadyIncludesMargin
+          ? 0
+          : Number(hotel?.hotelMarginPercentage ?? this.getHotelMarginPercentage(pricedHotel, globalHotelMargin));
+        const hotelMarginAmount = amountAlreadyIncludesMargin
+          ? 0
+          : this.money(Math.max(payableHotelCost - baseHotelCost, 0));
+        const totalHotelCost = payableHotelCost > 0
+          ? this.money(payableHotelCost)
+          : amountAlreadyIncludesMargin
+            ? this.money(baseHotelCost)
+            : this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel, globalHotelMargin);
         const billableHotelCost = earlyCheckInExtraPaymentApplicable
           ? this.money(totalHotelCost * 2)
           : totalHotelCost;
-        const normalizedProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
         const rawSearchReference = String(hotel.searchReference || '').trim();
         const parsedStaahReference = this.parseStaahSearchReference(
           rawSearchReference || (hotel as any).bookingCode || '',
@@ -4092,25 +5202,52 @@ this.logger.log(
           normalizedProvider !== 'tbo' || rawBookingCode.includes('!TB!');
         const isPrebookReady = hasSupplierHotel && hasLiveBookingCode;
 
-        hotelRows.push({
+        let hotelRow: ItineraryHotelRowDto & Record<string, any> = {
           groupType: pkg.groupType,
           itineraryRouteId: routeId,
+          routeIds: Array.isArray((hotel as any).routeIds) && (hotel as any).routeIds.length > 0
+            ? (hotel as any).routeIds
+            : [routeId],
+          stayKey: (hotel as any).stayKey,
           day: `Day ${routeIndex + 1} | ${dateLabel}`,
           destination: destination,
           hotelId: hotelId,
-          canonicalHotelId: Number((hotel as any).canonicalHotelId ?? hotelId) || null,
+          canonicalHotelId: hotelId || null,
           hotelCode: rawHotelCode,
           hotelName: displayHotelName,
-          category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
+          category: Number((hotel as any).normalizedCategory || '').toString().startsWith('STAR_')
+            ? Number(String((hotel as any).normalizedCategory).slice(5))
+            : (hotel.rating ? parseInt(String(hotel.rating), 10) : 0),
           roomType: hotel.roomType || '',
           mealPlan: hotel.mealPlan || '',
           baseHotelCost,
           hotelMarginPercentage: marginPercentage,
           hotelMarginAmount: this.money(hotelMarginAmount * (earlyCheckInExtraPaymentApplicable ? 2 : 1)),
+          baseStayPrice: Number(hotel?.baseStayPrice ?? baseHotelCost * numberOfNights),
+          hotelMarginStayAmount: this.money(
+            Math.max(
+              Number(hotel?.totalStayPrice ?? hotel?.totalPrice ?? payableHotelCost * numberOfNights) -
+                Number(hotel?.baseStayPrice ?? baseHotelCost * numberOfNights),
+              0,
+            ) * (earlyCheckInExtraPaymentApplicable ? 2 : 1),
+          ),
           hotelMarginGstAmount: 0,
           hotelRoomGstAmount: 0,
           hotelMealPlanCost: 0,
           hotelMealPlanGstAmount: 0,
+          extraBedCount: Number((hotel as any).extraBedCount || 0),
+          extraBedRate: Number((hotel as any).extraBedRate || 0),
+          extraBedAmount: Number((hotel as any).extraBedAmount || 0),
+          extraBedGstAmount: Number((hotel as any).extraBedGstAmount || 0),
+          childWithBedCount: Number((hotel as any).childWithBedCount || 0),
+          childWithBedRate: Number((hotel as any).childWithBedRate || 0),
+          childWithBedAmount: Number((hotel as any).childWithBedAmount || 0),
+          childWithoutBedCount: Number((hotel as any).childWithoutBedCount || 0),
+          childWithoutBedRate: Number((hotel as any).childWithoutBedRate || 0),
+          childWithoutBedAmount: Number((hotel as any).childWithoutBedAmount || 0),
+          extraChildCount: Number((hotel as any).extraChildCount || 0),
+          extraChildRate: Number((hotel as any).extraChildRate || 0),
+          extraChildAmount: Number((hotel as any).extraChildAmount || 0),
           totalHotelCost: billableHotelCost,
           totalHotelTaxAmount: 0,
           searchReference: rawSearchReference || undefined,
@@ -4133,22 +5270,53 @@ this.logger.log(
                 : undefined,
           providerHotelCode: (hotel as any).providerHotelCode || rawHotelCode,
           rateOptionId: (hotel as any).rateOptionId || rawSearchReference || rawBookingCode || undefined,
+          rateOptions: Array.isArray((hotel as any).rateOptions) && (hotel as any).rateOptions.length > 0
+            ? (hotel as any).rateOptions
+            : [{
+                rateOptionId: (hotel as any).rateOptionId || rawSearchReference || rawBookingCode || undefined,
+                canonicalHotelId: hotelId || null,
+                provider: normalizedProvider,
+                providerDisplayName: normalizedProvider === 'offline' ? 'Offline' : normalizedProvider === 'axisrooms' ? 'AxisRooms' : normalizedProvider === 'tbo' ? 'VSR' : undefined,
+                providerHotelCode: (hotel as any).providerHotelCode || rawHotelCode,
+                roomId: (hotel as any).roomId,
+                roomTypeId: (hotel as any).roomTypeId ?? (hotel.roomTypes?.[0] as any)?.roomTypeId ?? hotel.roomTypes?.[0]?.roomCode,
+                roomType: hotel.roomType || hotel.roomTypes?.[0]?.roomName,
+                mealPlan: hotel.mealPlan,
+                bookingCode: rawBookingCode || undefined,
+                searchReference: rawSearchReference || undefined,
+                bookingMode: (hotel as any).bookingMode || (normalizedProvider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
+                priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' || normalizedProvider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
+                pricePerNight: Number((hotel as any).pricePerNight ?? totalHotelCost),
+                totalStayPrice: Number((hotel as any).totalStayPrice ?? billableHotelCost * numberOfNights),
+                totalPrice: Number((hotel as any).totalPrice ?? (hotel as any).totalStayPrice ?? billableHotelCost * numberOfNights),
+                currency: hotel.currency || 'INR',
+                isLiveRate: (hotel as any).isLiveRate ?? (normalizedProvider !== 'offline' && normalizedProvider !== 'axisrooms'),
+                isLiveBookable: normalizedProvider !== 'offline' && hasSupplierHotel,
+                isSelectable: true,
+                requiresHotelApproval: normalizedProvider === 'offline',
+                approvalStatus: normalizedProvider === 'offline' ? 'NOT_REQUESTED' : 'NOT_REQUIRED',
+              }],
           bookingMode: (hotel as any).bookingMode || (normalizedProvider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
-          priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' ? 'DATABASE' : 'LIVE_API'),
+          priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' || normalizedProvider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
           priceLabel: (hotel as any).priceLabel,
           pricePerNight: Number((hotel as any).pricePerNight ?? totalHotelCost),
-          totalStayPrice: Number((hotel as any).totalStayPrice ?? billableHotelCost * Math.max(Number((hotel as any).numberOfNights || noOfNights || 1), 1)),
-          numberOfNights: Number((hotel as any).numberOfNights || noOfNights || 1),
+          totalStayPrice: Number((hotel as any).totalStayPrice ?? (hotel as any).totalPrice ?? (hotel as any).exactFullStayTotal ?? billableHotelCost * numberOfNights),
+          numberOfNights,
           nightlyRates: (hotel as any).nightlyRates,
           requiresHotelApproval: normalizedProvider === 'offline',
-          isLiveRate: normalizedProvider !== 'offline',
+          isLiveRate: (hotel as any).isLiveRate ?? (normalizedProvider !== 'offline' && normalizedProvider !== 'axisrooms'),
           isLiveBookable: normalizedProvider !== 'offline' && hasSupplierHotel,
           isSelectable: true,
           approvalStatus: normalizedProvider === 'offline' ? 'NOT_REQUESTED' : 'NOT_REQUIRED',
           manualConfirmationStatus: normalizedProvider === 'offline' ? 'NOT_STARTED' : 'NOT_STARTED',
-          isBookable: hasSupplierHotel,
+          isBookable: (hotel as any).isLiveBookable === false ? false : hasSupplierHotel,
           externalStay: !hasSupplierHotel,
-          availabilityStatus: hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY',
+          availabilityStatus: (hotel as any).availabilityStatus || (hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY'),
+          availabilityState: (hotel as any).availabilityState || (hasSupplierHotel ? 'AVAILABLE' : 'UNAVAILABLE'),
+          distanceKm: Number.isFinite(Number((hotel as any).distanceKm)) ? Number((hotel as any).distanceKm) : null,
+          distanceStatus: (hotel as any).distanceStatus || 'UNKNOWN',
+          distanceReference: (hotel as any).distanceReference || 'UNKNOWN',
+          selectionReason: (hotel as any).availabilityReason || null,
           availabilityMessage: hasSupplierHotel
             ? null
             : 'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
@@ -4174,12 +5342,122 @@ this.logger.log(
               ? [String((hotel as any).cancellationPolicy).trim()]
               : undefined),
           supplementSummary: hotel.supplementSummary,
-        });
+        };
+
+        const candidateSelections = selectionRowsByRouteAndGroup.get(`${routeId}-${pkg.groupType}`) || [];
+        const matchedSelection = candidateSelections.find((selection) =>
+          optionMatchesSelection(selection, hotelRow) ||
+          fallbackSelectionMatches(selection, hotelRow) ||
+          (Array.isArray(hotelRow.rateOptions) &&
+            hotelRow.rateOptions.some((option: any) =>
+              optionMatchesSelection(selection, { ...hotelRow, ...option }) ||
+              fallbackSelectionMatches(selection, { ...hotelRow, ...option }),
+            )),
+        );
+        if (matchedSelection) {
+          hotelRow = decorateLiveSelection(hotelRow, matchedSelection);
+        }
+
+        hotelRows.push(hotelRow);
 
  // Log HOBSE hotel codes for debugging
         if (hotel.provider === 'HOBSE') {
  this.logger.debug(` HOBSE Hotel Response: hotelCode="${hotel.hotelCode}", provider="${hotel.provider}"`);
         }
+      }
+    }
+
+    // Keep the group/route matrix explicit. If a route has supplier hotels but
+    // all of them belong to another recommendation group, do not silently
+    // reuse one of those hotels here. Emit a non-selectable row so the UI can
+    // say "No hotel available" for this group without rendering a fake card.
+    const requiredRoutesForGroupMatrix = resolveHotelRequiredRoutes(routes, noOfNights);
+    for (const pkg of pricedPackages) {
+      const groupType = Number(pkg.groupType || 0);
+      if (groupType <= 0) continue;
+      for (const route of requiredRoutesForGroupMatrix) {
+        const routeId = Number((route as any).itinerary_route_ID || 0);
+        const alreadyRendered = hotelRows.some((row: any) =>
+          Number(row?.groupType || 0) === groupType &&
+          Number(row?.itineraryRouteId || 0) === routeId,
+        );
+        if (alreadyRendered) continue;
+
+        const dateLabel = new Date((route as any).itinerary_route_date).toISOString().slice(0, 10);
+        const destination = (route as any).next_visiting_location || (route as any).location_name || '';
+        hotelRows.push({
+          groupType,
+          itineraryRouteId: routeId,
+          routeIds: [routeId],
+          stayKey: `group-missing-${groupType}-${routeId}`,
+          day: `Day ${routes.indexOf(route) + 1} | ${dateLabel}`,
+          destination,
+          hotelId: 0,
+          canonicalHotelId: null,
+          hotelCode: '',
+          hotelName: 'No hotel available',
+          category: 0,
+          roomType: '',
+          mealPlan: '',
+          totalHotelCost: 0,
+          totalHotelTaxAmount: 0,
+          provider: 'external',
+          isBookable: false,
+          isSelectable: false,
+          externalStay: true,
+          availabilityStatus: 'NO_DISTINCT_GROUP_AVAILABILITY',
+          availabilityState: 'UNAVAILABLE',
+          availabilityMessage: 'No hotel available for this recommendation group.',
+          selectionStatus: 'UNAVAILABLE',
+          selectionReason: 'All available hotels for this route are assigned to another recommendation group.',
+          date: dateLabel,
+          hotelCheckInDate: dateLabel,
+          checkOutDate: addUtcDays(dateLabel, 1),
+          itineraryPlanHotelDetailsId: 0,
+        } as any);
+      }
+    }
+
+ // Preserve every unavailable logical stay in the response. An incomplete
+ // package must not disappear just because one stay has no eligible option.
+    for (const pkg of pricedPackages) {
+      for (const stay of pkg.stayResults || []) {
+        if (stay.state !== 'UNAVAILABLE') continue;
+        const alreadyRendered = hotelRows.some((row: any) => row.groupType === pkg.groupType && row.stayKey === stay.stayKey);
+        if (alreadyRendered) continue;
+        const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === Number(stay.parentRouteId));
+        if (!route) continue;
+        const dateLabel = new Date(route.itinerary_route_date).toISOString().slice(0, 10);
+        hotelRows.push({
+          groupType: pkg.groupType,
+          itineraryRouteId: stay.parentRouteId,
+          routeIds: stay.routeIds,
+          stayKey: stay.stayKey,
+          day: `Day ${routes.indexOf(route) + 1} | ${dateLabel}`,
+          destination: stay.destination,
+          hotelId: 0,
+          canonicalHotelId: null,
+          hotelCode: '',
+          hotelName: 'No hotel available',
+          category: 0,
+          roomType: '',
+          mealPlan: '',
+          totalHotelCost: 0,
+          totalHotelTaxAmount: 0,
+          provider: 'external',
+          isBookable: false,
+          isSelectable: false,
+          externalStay: true,
+          availabilityStatus: 'NO_SUPPLIER_AVAILABILITY',
+          availabilityState: 'UNAVAILABLE',
+          availabilityMessage: stay.reason || 'No eligible hotel is available for this stay.',
+          selectionStatus: 'UNAVAILABLE',
+          selectionReason: stay.reason || null,
+          date: dateLabel,
+          hotelCheckInDate: stay.checkInDate,
+          checkOutDate: stay.checkOutDate,
+          itineraryPlanHotelDetailsId: 0,
+        } as any);
       }
     }
 
@@ -4204,7 +5482,10 @@ this.logger.log(
         const reservationRoom: any = reservation?.room?.[0] || {};
         const reservationPrice: any = reservationRoom?.price?.[0] || {};
 
-        const hotelCodeNum = Number((confirmedRow as any).staah_hotel_code || 0);
+        // The confirmation row stores the provider property code, not the
+        // canonical dvi_hotel.hotel_id. Preserve the canonical identity from
+        // the already-normalized row and expose the STAAH code separately.
+        const canonicalHotelId = Number(row.hotelId || row.canonicalHotelId || 0);
         const safeCheckIn = (confirmedRow as any).check_in_date
           ? new Date((confirmedRow as any).check_in_date).toISOString().split('T')[0]
           : row.date;
@@ -4220,7 +5501,9 @@ this.logger.log(
           ...row,
           provider: 'staah',
           itineraryRouteId: routeId,
-          hotelId: Number.isFinite(hotelCodeNum) ? hotelCodeNum : 0,
+          hotelId: Number.isFinite(canonicalHotelId) ? canonicalHotelId : 0,
+          canonicalHotelId: Number.isFinite(canonicalHotelId) ? canonicalHotelId : null,
+          hotelCode: String((confirmedRow as any).staah_hotel_code || row.hotelCode || '').trim(),
           hotelName: String(reservation?.propertyname || 'STAAH Hotel'),
           roomType: String(reservationRoom?.room_name || ''),
           mealPlan: String(reservationPrice?.rate_name || ''),
@@ -4295,7 +5578,7 @@ this.logger.log(
           itineraryRouteId: routeId,
           day: `Day ${routeIndex + 1} | ${dateLabel}`,
           destination,
-          hotelId: Number((hotel as any).canonicalHotelId ?? (hotel as any).hotelId ?? Number.parseInt(String(hotel.hotelCode || '0'), 10)) || 0,
+          hotelId: resolveCanonicalHotelId(hotel),
           hotelName: String(hotel.hotelName || 'Hotel'),
           category: hotel.rating ? parseInt(String(hotel.rating), 10) : 0,
           roomType: String(hotel.roomType || ''),
@@ -4348,11 +5631,7 @@ this.logger.log(
 
     const supplierRouteGroupKeys = new Set(
       hotelRows
-        .filter(
-          (row) =>
-            row.isBookable !== false &&
-            row.hotelName !== 'No Hotels Available',
-        )
+        .filter((row) => row.isBookable !== false)
         .map((row) => `${row.itineraryRouteId}:${row.groupType}`),
     );
 
@@ -4364,23 +5643,183 @@ this.logger.log(
         row.provider === 'external' &&
         Number(row.totalHotelCost || 0) <= 0 &&
         Number(row.itineraryPlanHotelDetailsId || 0) <= 0 &&
-        row.hotelName !== 'No Hotels Available';
+        !String(row.hotelName || '').toLowerCase().includes('previously selected hotel');
 
       return !(hasSupplierSibling && isStaleZeroCostExternal);
     });
 
-    const supplierHotelRows = cleanedHotelRows.filter(
-      (row) => row.isBookable !== false && row.hotelName !== 'No Hotels Available',
-    );
-    const placeholderRows = cleanedHotelRows.filter(
-      (row) => row.externalStay === true || row.hotelName === 'No Hotels Available' || row.isBookable === false,
-    );
+    for (const [routeGroupKey, selections] of selectionRowsByRouteAndGroup.entries()) {
+      const [routeIdRaw, groupTypeRaw] = routeGroupKey.split('-');
+      const routeId = Number(routeIdRaw || 0);
+      const groupType = Number(groupTypeRaw || 0);
+      if (routeId <= 0 || groupType <= 0) continue;
 
-    const searchableRouteIds = routes
-      .filter((route, index) => {
-        const isLastRoute = index === routes.length - 1;
-        return !(isLastRoute && index >= noOfNights);
-      })
+      for (const selection of selections) {
+        let matchedSelectionRow = false;
+        for (let index = 0; index < cleanedHotelRows.length; index++) {
+          const row: any = cleanedHotelRows[index];
+          if (Number(row?.itineraryRouteId || 0) !== routeId) continue;
+          if (Number(row?.groupType || 0) !== groupType) continue;
+          const matched =
+            optionMatchesSelection(selection, row) ||
+            fallbackSelectionMatches(selection, row) ||
+            (Array.isArray(row?.rateOptions) &&
+              row.rateOptions.some((option: any) =>
+                optionMatchesSelection(selection, { ...row, ...option }) ||
+                fallbackSelectionMatches(selection, { ...row, ...option }),
+              ));
+          const sameProperty = selectionPropertyMatchesRow(selection, row);
+          if (!matched && !sameProperty) continue;
+          cleanedHotelRows[index] = decorateLiveSelection(row, selection);
+          matchedSelectionRow = true;
+          break;
+        }
+
+        if (!matchedSelectionRow) {
+          const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === routeId);
+          if (!route) continue;
+          cleanedHotelRows.push(buildPersistedSelectionRow(selection, route, groupType));
+        }
+      }
+    }
+
+    // Keep card pricing API-driven. The legacy PHP screen uses the lowest
+    // non-zero room rate as the card's "starting from" value, but compares
+    // each candidate's calculated payable total with the selected row total.
+    // Return both values with the row/option so the frontend only renders them.
+    const toPositiveAmount = (...values: unknown[]): number => {
+      for (const value of values) {
+        const amount = Number(value);
+        if (Number.isFinite(amount) && amount > 0) return this.money(amount);
+      }
+      return 0;
+    };
+    const getSelectionAmount = (selection: any): number => toPositiveAmount(
+      selection?.selected_price_per_night,
+      selection?.selectedPricePerNight,
+      selection?.pricePerNight,
+      selection?.selectedTotalPrice,
+      selection?.selected_total_price,
+      selection?.totalPrice,
+      selection?.total_price,
+      selection?.totalHotelCost,
+      selection?.total_hotel_cost,
+    );
+    const getCandidateAmount = (row: any): number => toPositiveAmount(
+      row?.pricePerNight,
+      row?.price_per_night,
+      row?.perNightAmount,
+      row?.totalPrice,
+      row?.totalStayPrice,
+      row?.exactFullStayTotal,
+      row?.totalHotelCost,
+      row?.price,
+      row?.pricePerNight,
+    );
+    const getCandidateBaseAmount = (row: any): number => toPositiveAmount(
+      row?.basePricePerNight,
+      row?.baseHotelCost,
+      row?.baseAmount,
+    );
+    const getPropertyKey = hotelCardPropertyKey;
+
+    const selectedTotalByRouteGroup = new Map<string, number>();
+    for (const [routeGroupKey, selections] of selectionRowsByRouteAndGroup.entries()) {
+      const selectedAmount = (selections || [])
+        .map((selection: any) => getSelectionAmount(selection))
+        .find((amount: number) => amount > 0) || 0;
+      if (selectedAmount > 0) selectedTotalByRouteGroup.set(routeGroupKey, selectedAmount);
+    }
+
+    // The selected package tab must use the same active persisted selections
+    // as the detail rows. Recommendation totals can otherwise remain at the
+    // old auto-selected package amount after a user books a different hotel.
+    const selectedTotalByGroup = new Map<number, number>();
+    for (const [routeGroupKey, selections] of selectionRowsByRouteAndGroup.entries()) {
+      const groupType = Number(routeGroupKey.split('-')[1] || 0);
+      if (groupType <= 0) continue;
+      const selectedAmount = (selections || [])
+        .map((selection: any) => getSelectionAmount(selection))
+        .find((amount: number) => amount > 0) || 0;
+      if (selectedAmount > 0) {
+        selectedTotalByGroup.set(groupType, Number(((selectedTotalByGroup.get(groupType) || 0) + selectedAmount).toFixed(2)));
+      }
+    }
+    const reconciledHotelTabs = hotelTabs.map((tab) => {
+      const selectedTotal = selectedTotalByGroup.get(Number(tab.groupType || 0)) || 0;
+      return selectedTotal > 0
+        ? { ...tab, totalAmount: selectedTotal, partialTotal: selectedTotal }
+        : tab;
+    });
+
+    const cardGroups = new Map<string, any[]>();
+    for (const row of cleanedHotelRows as any[]) {
+      const key = getPropertyKey(row);
+      const group = cardGroups.get(key) || [];
+      const options = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0
+        ? row.rateOptions
+        : [row];
+      group.push(...options);
+      cardGroups.set(key, group);
+    }
+
+    const cardPricingByProperty = new Map<string, { startingFromAmount: number; startingFromBaseAmount: number }>();
+    cardGroups.forEach((options, key) => {
+      // A persisted selected row can contain a valid payable price while its
+      // nested rateOptions are legacy placeholders with zero amounts. Keep
+      // the nested options as the primary source, but fall back to the
+      // parent row when none of them has a usable price. This prevents an
+      // AxisRooms card from rendering "starting from ₹0.00/d".
+      const pricedOptions = options.filter((option) => getCandidateAmount(option) > 0);
+      if (pricedOptions.length === 0) {
+        const parentRow = (cleanedHotelRows as any[]).find((row) => getPropertyKey(row) === key);
+        if (parentRow && getCandidateAmount(parentRow) > 0) {
+          pricedOptions.push(parentRow);
+        }
+      }
+      cardPricingByProperty.set(key, {
+        startingFromAmount: pricedOptions.reduce((lowest, option) => {
+          const amount = getCandidateAmount(option);
+          return lowest === 0 || amount < lowest ? amount : lowest;
+        }, 0),
+        startingFromBaseAmount: pricedOptions.reduce((lowest, option) => {
+          const amount = getCandidateBaseAmount(option);
+          return lowest === 0 || (amount > 0 && amount < lowest) ? amount : lowest;
+        }, 0),
+      });
+        });
+
+    for (const row of cleanedHotelRows as any[]) {
+      const propertyKey = getPropertyKey(row);
+      const cardPricing = cardPricingByProperty.get(propertyKey) || {
+        startingFromAmount: 0,
+        startingFromBaseAmount: 0,
+      };
+      const selectedTotal = selectedTotalByRouteGroup.get(
+        `${Number(row?.itineraryRouteId || 0)}-${Number(row?.groupType || 0)}`,
+      ) || 0;
+      const decorateCardPricing = (option: any): any => ({
+        ...option,
+        startingFromAmount: cardPricing.startingFromAmount,
+        startingFromBaseAmount: cardPricing.startingFromBaseAmount,
+        priceDifference: selectedTotal > 0
+          ? this.money(getCandidateAmount(option) - selectedTotal)
+          : 0,
+      });
+
+      row.startingFromAmount = cardPricing.startingFromAmount;
+      row.startingFromBaseAmount = cardPricing.startingFromBaseAmount;
+      row.priceDifference = selectedTotal > 0
+        ? this.money(getCandidateAmount(row) - selectedTotal)
+        : 0;
+      if (Array.isArray(row.rateOptions) && row.rateOptions.length > 0) {
+        row.rateOptions = row.rateOptions.map(decorateCardPricing);
+      }
+    }
+
+    const supplierHotelRows = cleanedHotelRows.filter((row) => row.isBookable !== false);
+
+    const searchableRouteIds = resolveHotelRequiredRoutes(routes, noOfNights)
       .map((route: any) => Number(route.itinerary_route_ID));
 
     const totalSearchRoutes = searchableRouteIds.length;
@@ -4390,30 +5829,31 @@ this.logger.log(
     }).length;
 
     const hasSupplierHotels = supplierHotelRows.length > 0;
-    const isPlaceholderOnly = !hasSupplierHotels && placeholderRows.length > 0;
-    const availabilityMessage = isPlaceholderOnly
-      ? 'Supplier search completed but no available rooms were returned for the selected city/date criteria.'
-      : hasSupplierHotels
+    const availabilityMessage = hasSupplierHotels
         ? 'Live supplier hotels are available for the current itinerary selection.'
-        : 'No hotel data available yet. Try refreshing search or adjusting criteria.';
+        : 'No live hotel options are available for one or more stays. Use Check Availability again after adjusting the itinerary.';
 
     return {
       quoteId,
       planId,
       showHotelMargins: this.shouldShowHotelMargins(),
       hotelRatesVisible,
-      hotelTabs,
+      hotelTabs: reconciledHotelTabs,
+      recommendationAlgorithm: this.recommendationAlgorithm(),
+      recommendationGeneration: this.recommendationGeneration(),
       hotels: cleanedHotelRows,
       restrictedHotels: restrictedHotelRows,
       totalRoomCount: cleanedHotelRows.length,
       hotelAvailability: {
         hasSupplierHotels,
         supplierHotelCount: supplierHotelRows.length,
-        placeholderRowCount: placeholderRows.length,
+        placeholderRowCount: 0,
         totalSearchRoutes,
         emptySearchRoutes,
-        isPlaceholderOnly,
+        isPlaceholderOnly: false,
         message: availabilityMessage,
+        recommendationAlgorithm: this.recommendationAlgorithm(),
+        recommendationGeneration: this.recommendationGeneration(),
       },
     };
   }
@@ -4459,7 +5899,10 @@ this.logger.log(
       orderBy: { global_settings_ID: 'asc' },
       select: { hotel_margin: true },
     });
-    const globalHotelMargin = Number((globalSettings as any)?.hotel_margin || 0);
+    const configuredEnvironmentMargin = Number(process.env.HOTEL_MARGIN || 0);
+    const globalHotelMargin = Number(
+      (globalSettings as any)?.hotel_margin ?? configuredEnvironmentMargin ?? 0,
+    );
 
  // Step 2: Get itinerary routes (days and destinations)
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
@@ -4546,11 +5989,23 @@ this.logger.log(
         hotelsByRoute.set(routeId, [...existing, ...offlineHotels]);
       });
 
-      const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(routesToProcess, noOfNights);
+      const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
+        routesToProcess,
+        noOfNights,
+        undefined,
+        undefined,
+        planRoomCount2,
+        {
+          adults: planAdultCount2,
+          children: planChildCount2,
+          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          extraBedCount: Number((plan as any).total_extra_bed || 0),
+        },
+      );
       axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
         const existing = hotelsByRoute.get(routeId) || [];
-        const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
-        const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`));
+        const hotelStrs = existing.map(h => this.availabilityOptionKey(h));
+        const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(this.availabilityOptionKey(h)));
         hotelsByRoute.set(routeId, [...existing, ...newHotels]);
       });
     } else {
@@ -4615,11 +6070,23 @@ this.logger.log(
         });
 
  // AxisRooms
-        const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(routesToProcess, noOfNights);
+        const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
+          routesToProcess,
+          noOfNights,
+          undefined,
+          undefined,
+          planRoomCount2,
+          {
+            adults: planAdultCount2,
+            children: planChildCount2,
+            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            extraBedCount: Number((plan as any).total_extra_bed || 0),
+          },
+        );
         axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
           const existing = hotelsByRoute.get(routeId) || [];
-          const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
-          const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`));
+          const hotelStrs = existing.map(h => this.availabilityOptionKey(h));
+          const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(this.availabilityOptionKey(h)));
           hotelsByRoute.set(routeId, [...existing, ...newHotels]);
         });
       }
@@ -4661,8 +6128,8 @@ this.logger.log(
     const roomDetailsList: ItineraryHotelRoomDto[] = [];
     let roomDetailsId = 1;
 
- // Build route-scoped room candidates with group coverage fallback.
- // PHP behavior allows overlap fallback when a recommendation bucket would be empty.
+ // Build route-scoped room candidates. A room candidate belongs to the price
+ // group calculated for that route; do not copy it into empty groups.
     const routeHotelRows: Array<{ routeId: number; hotel: any }> = [];
 
     hotelsByRoute.forEach((hotelsForRoute, routeId) => {
@@ -4673,7 +6140,6 @@ this.logger.log(
       }
 
       const allPrices = hotelsForRoute.map((h: HotelSearchResult) => h.price || 0);
-      const sortedHotels = [...hotelsForRoute].sort((a, b) => (a.price || 0) - (b.price || 0));
 
       const byGroup = new Map<number, any[]>();
 
@@ -4683,24 +6149,6 @@ this.logger.log(
         if (!byGroup.has(groupType)) byGroup.set(groupType, []);
         byGroup.get(groupType)!.push({ ...hotel, groupType, __fallbackAssigned: false });
       });
-
- // Ensure all 4 groups are represented when a route has at least one hotel.
-      for (let groupType = 1; groupType <= 4; groupType++) {
-        const groupHotels = byGroup.get(groupType) ?? [];
-        if (groupHotels.length === 0 && sortedHotels.length > 0) {
-          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
-          const fallbackHotel = sortedHotels[fallbackIndex];
-          if (fallbackHotel) {
-            byGroup.set(groupType, [
-              {
-                ...fallbackHotel,
-                groupType,
-                __fallbackAssigned: true,
-              },
-            ]);
-          }
-        }
-      }
 
       for (let groupType = 1; groupType <= 4; groupType++) {
         const groupHotels = byGroup.get(groupType) ?? [];
@@ -4772,6 +6220,9 @@ this.logger.log(
     routeHotelRows.forEach(({ routeId, hotel }) => {
       const route = routes.find(r => (r as any).itinerary_route_ID === routeId);
       if (!route) return;
+      const routeDateOnly = this.toIstDateOnly((route as any).itinerary_route_date);
+      const routeDateLabel = this.formatDateOnly(routeDateOnly);
+      const routeCheckOutDate = this.addDays(routeDateOnly, 1);
 
  // FIXED: Use actual room type from TBO, not groupType
         const firstRoomType = hotel.roomTypes?.[0];
@@ -4785,12 +6236,25 @@ this.logger.log(
         const marginPercentage = this.getHotelMarginPercentage(pricedHotel, globalHotelMargin);
         const hotelMarginAmount = this.money((baseHotelCost * marginPercentage) / 100);
         const totalHotelCost = this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel, globalHotelMargin);
+        const roomProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
+        const roomProviderCode = String(hotel.hotelCode || '').trim();
+        const mappedRoomHotelId = Number(
+          (roomMarginByProviderCode.get(`${roomProvider}|${roomProviderCode}`) as any)?.hotel_id || 0,
+        );
+        const canonicalRoomHotelId = Number((hotel as any).canonicalHotelId || 0) ||
+          mappedRoomHotelId ||
+          (roomProvider === 'tbo' ? 0 : Number((hotel as any).hotelId || 0));
 
         roomDetailsList.push({
           itineraryPlanId: planId,
-          itineraryRouteId: routeId,
-          itineraryPlanHotelRoomDetailsId: roomDetailsId++,
-          hotelId: Number((hotel as any).canonicalHotelId ?? (hotel as any).hotelId ?? Number.parseInt(String(hotel.hotelCode || '0'), 10)) || 0,
+           itineraryRouteId: routeId,
+           date: routeDateLabel,
+           checkInDate: routeDateLabel,
+           checkOutDate: this.formatDateOnly(routeCheckOutDate),
+           itineraryRouteDate: routeDateLabel,
+           destination: String((route as any).next_visiting_location || (route as any).location_name || '').trim(),
+           itineraryPlanHotelRoomDetailsId: roomDetailsId++,
+          hotelId: canonicalRoomHotelId,
           hotelCode: String(hotel.hotelCode || '').trim(),
           hotelName: hotel.hotelName || 'Hotel',
           hotelCategory: this.getCategoryFromRating(hotel.category || hotel.rating),
@@ -4800,8 +6264,10 @@ this.logger.log(
           roomId:
             String(hotel.provider || 'tbo').toLowerCase() === 'staah'
               ? 0
-              : Number((hotel as any).canonicalHotelId ?? (hotel as any).hotelId ?? Number.parseInt(String(hotel.hotelCode || '0'), 10)) || 0,
-          provider: String(hotel.provider || 'tbo').toLowerCase(),
+              : canonicalRoomHotelId,
+          provider: roomProvider,
+          canonicalHotelId: canonicalRoomHotelId || null,
+          providerHotelCode: (hotel as any).providerHotelCode || String(hotel.hotelCode || '').trim(),
           providerDisplayName:
             String(hotel.provider || 'tbo').toLowerCase() === 'tbo'
               ? 'VSR'
@@ -4825,6 +6291,8 @@ this.logger.log(
             String(hotel.provider || 'tbo').toLowerCase() === 'staah'
               ? this.parseStaahSearchReference(hotel.searchReference || (hotel as any).bookingCode)?.rateId || undefined
               : undefined,
+          rateOptionId: (hotel as any).rateOptionId || hotel.searchReference || (hotel as any).bookingCode || undefined,
+          rateOptions: (hotel as any).rateOptions || undefined,
           basePricePerNight: baseHotelCost,
           hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
           pricePerNight: totalHotelCost,
@@ -4842,6 +6310,15 @@ this.logger.log(
               ? [String((hotel as any).cancellationPolicy).trim()]
               : (firstRoomType?.cancellationPolicy ? [String(firstRoomType.cancellationPolicy)] : [])),
           isBookable: (hotel as any).isBookable ?? true,
+          bookingMode: (hotel as any).bookingMode || (String(hotel.provider || '').toLowerCase() === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
+          priceSource: (hotel as any).priceSource || (['offline', 'axisrooms'].includes(String(hotel.provider || '').toLowerCase()) ? 'DATABASE' : 'LIVE_API'),
+          priceLabel: (hotel as any).priceLabel,
+          isLiveRate: (hotel as any).isLiveRate ?? !['offline', 'axisrooms'].includes(String(hotel.provider || '').toLowerCase()),
+          isLiveBookable: (hotel as any).isLiveBookable ?? String(hotel.provider || '').toLowerCase() !== 'offline',
+          isSelectable: (hotel as any).isSelectable ?? true,
+          requiresHotelApproval: (hotel as any).requiresHotelApproval ?? String(hotel.provider || '').toLowerCase() === 'offline',
+          approvalStatus: (hotel as any).approvalStatus || (String(hotel.provider || '').toLowerCase() === 'offline' ? 'NOT_REQUESTED' : 'NOT_REQUIRED'),
+          manualConfirmationStatus: (hotel as any).manualConfirmationStatus || 'NOT_STARTED',
           externalStay: (hotel as any).externalStay ?? false,
           availabilityStatus: (hotel as any).availabilityStatus || 'AVAILABLE',
           availabilityMessage: (hotel as any).availabilityMessage || null,
@@ -5035,6 +6512,10 @@ this.logger.log(
       this.hotelRoomDetailsCache.delete(key);
  this.logger.log(` [CACHE CLEARED] Removed cache for ${key}`);
     }
+    // The offline catalog has its own destination/date/occupancy cache with a
+    // bounded TTL. Clearing it here made every quote refresh reload all hotel
+    // masters, rooms, and price-book rows even though this method only needs to
+    // invalidate the supplier room-detail cache.
   }
 
  /**

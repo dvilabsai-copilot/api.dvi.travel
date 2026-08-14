@@ -23,6 +23,7 @@ function createSelectionService(overrides: Record<string, any> = {}) {
     },
     dvi_itinerary_plan_hotel_details: {
       findFirst: async () => null,
+      findMany: async () => [],
       update: async ({ data }: any) => ({
         itinerary_plan_hotel_details_ID: 12,
         hotel_id: data.hotel_id,

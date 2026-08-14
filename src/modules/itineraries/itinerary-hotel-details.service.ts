@@ -4,16 +4,44 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { dvi_itinerary_plan_details, Prisma } from '@prisma/client';
 import { haversineKm } from './utils/distance-utils';
+import { resolvePersistedHotelIdentity } from './utils/hotel-selection-identity.util';
+import {
+  buildHotelSelectionState,
+  HotelSelectionGroupView,
+  resolveHotelRequiredRoutes,
+} from './utils/hotel-selection-view-state.util';
 
 export interface ItineraryHotelTabDto {
   groupType: number;
   label: string;
-  totalAmount: number;
+  totalAmount: number | null;
+  partialTotal?: number;
+  targetAmount?: number | null;
+  complete?: boolean;
+  diversityScore?: number;
+  repeatedAcrossGroupsHotelIds?: string[];
+  sameOptionAcrossGroups?: string[];
+  duplicateWithinPackageHotelIds?: string[];
+  repeatedFromGroups?: number[];
+  stayResults?: Array<{
+    stayKey: string;
+    parentRouteId: number;
+    routeIds: number[];
+    destination: string;
+    checkInDate: string;
+    checkOutDate: string;
+    nights: number;
+    state: 'SELECTED' | 'OFFLINE_FALLBACK' | 'UNAVAILABLE';
+    reason?: string;
+    totalPrice?: number;
+  }>;
 }
 
 export interface ItineraryHotelRowDto {
   groupType: number;
   itineraryRouteId: number;
+  routeIds?: number[];
+  stayKey?: string;
   day: string;
   destination: string;
   hotelId: number;
@@ -31,6 +59,16 @@ export interface ItineraryHotelRowDto {
   hotelRoomGstAmount?: number;
   hotelMealPlanCost?: number;
   hotelMealPlanGstAmount?: number;
+  totalExtraBedCost?: number;
+  totalExtraBedCostGstAmount?: number;
+  totalChildWithBedCost?: number;
+  totalChildWithBedCostGstAmount?: number;
+  totalChildWithoutBedCost?: number;
+  totalChildWithoutBedCostGstAmount?: number;
+  extraBedCount?: number;
+  childWithBedCount?: number;
+  childWithoutBedCount?: number;
+  totalRoomCost?: number;
   totalHotelCost: number;
   totalHotelTaxAmount: number;
   noOfRooms?: number;
@@ -44,6 +82,7 @@ export interface ItineraryHotelRowDto {
   providerDisplayName?: string;
   providerHotelCode?: string;
   rateOptionId?: string;
+  rateOptions?: Array<Record<string, unknown>>;
   bookingMode?: 'LIVE_API' | 'MANUAL_APPROVAL';
   priceSource?: 'LIVE_API' | 'DATABASE' | 'LEGACY_UNKNOWN';
   priceLabel?: string;
@@ -92,6 +131,45 @@ export interface ItineraryHotelRowDto {
     atPropertyChargeCount?: number;
     requiresReview?: boolean;
   };
+  optionKey?: string;
+  isSelected?: boolean;
+  selectionOrigin?: 'AUTO_SELECTED' | 'USER_SELECTED';
+  selectionStatus?: 'AVAILABLE' | 'UNAVAILABLE' | 'REVIEW_REQUIRED';
+  selectionReason?: string | null;
+  distanceKm?: number | null;
+  distanceStatus?: 'WITHIN_RADIUS' | 'OUTSIDE_RADIUS' | 'UNKNOWN';
+  distanceReference?: 'HOTSPOT' | 'DESTINATION_CENTRE' | 'ROUTE_DESTINATION' | 'UNKNOWN';
+  availabilityState?: 'AVAILABLE' | 'UNAVAILABLE' | 'RESTRICTED' | 'STALE' | 'UNKNOWN' | 'OFFLINE_APPROVAL_REQUIRED';
+  selection?: {
+    hotelName?: string | null;
+    category?: number | null;
+    provider?: string | null;
+    hotelCode?: string | number | null;
+    roomType?: string | null;
+    mealPlan?: string | null;
+    totalPrice?: number | null;
+    pricePerNight?: number | null;
+    currency?: string | null;
+    optionKey?: string | null;
+    rateOptionId?: string | null;
+    rateId?: string | null;
+    bookingCode?: string | null;
+    searchReference?: string | null;
+    searchRunId?: string | null;
+    availabilityStatus?: string | null;
+    status?: string;
+    selectionOrigin?: string;
+    selectionId?: number;
+  };
+  selectionId?: number;
+  requiresPriceReacceptance?: boolean;
+  selectedPriceSnapshot?: unknown;
+  identityMismatch?: boolean;
+  requestedMealPlanCode?: string;
+  availableMealPlanCodes?: string[];
+  autoSelectionBlocked?: boolean;
+  autoSelectionBlockCode?: 'REQUESTED_MEAL_PLAN_PRICE_UNAVAILABLE';
+  autoSelectionBlockMessage?: string;
 }
 
 export interface HotelPaginationMeta {
@@ -113,17 +191,30 @@ export interface HotelRoutePaginationMeta {
 export interface ItineraryHotelDetailsResponseDto {
   quoteId: string;
   planId: number;
+  mealPlanCode?: string | null;
   hotelRatesVisible: boolean;
   showHotelMargins?: boolean;
   hotelTabs: ItineraryHotelTabDto[];
+  /** Complete server-authoritative selection/total view for each package. */
+  hotelSelectionState?: HotelSelectionGroupView[];
   hotels: ItineraryHotelRowDto[];
   restrictedHotels?: ItineraryHotelRowDto[];
   totalRoomCount: number;
   hotelAvailability?: HotelAvailabilityMetaDto;
+  recommendationAlgorithm?: 'v1' | 'v2';
+  recommendationGeneration?: RecommendationGenerationDto;
  /** Present when ?page param is used; one entry per groupType requested */
   pagination?: Record<number, HotelPaginationMeta>;
  /** Per-route/day pagination metadata keyed by `${groupType}-${routeId}` */
   routePagination?: Record<string, HotelRoutePaginationMeta>;
+}
+
+export interface RecommendationGenerationDto {
+  version: 'v1' | 'v2';
+  algorithm: 'LEGACY_PRICE_PACKAGE' | 'TARGET_PRICE_DIVERSITY_BEAM_SEARCH';
+  searchRunId?: string;
+  generatedAt?: string;
+  warnings: string[];
 }
 
 export interface HotelAvailabilityMetaDto {
@@ -134,6 +225,41 @@ export interface HotelAvailabilityMetaDto {
   emptySearchRoutes: number;
   isPlaceholderOnly: boolean;
   message: string;
+  availabilityState?: 'NOT_CHECKED' | 'CHECKING' | 'FRESH' | 'STALE' | 'PARTIAL' | 'FAILED';
+  recommendationAlgorithm?: 'v1' | 'v2';
+  searchRunId?: string;
+  recommendationGeneration?: RecommendationGenerationDto;
+  checkedAt?: string;
+  expiresAt?: string | null;
+  providerErrors?: Array<{ provider?: string; message?: string }>;
+  unavailableSelectionCount?: number;
+  emptyStayBlocks?: Array<{
+    routeIds: number[];
+    dayNumbers: number[];
+    dates: string[];
+    destination: string;
+  }>;
+  stayRoutes?: Array<{
+    routeId: number;
+    dayNumber: number;
+    date: string;
+    destination: string;
+  }>;
+  offlineFetch?: {
+    requestedRouteIds: number[];
+    fetchedHotelCount: number;
+    noResultRouteIds: number[];
+  };
+  mealPlanAutoSelectionBlocks?: Array<{
+    routeId: number;
+    groupType: number;
+    date: string;
+    destination: string;
+    requestedMealPlanCode: string;
+    availableMealPlanCodes: string[];
+    code: string;
+    message: string;
+  }>;
 }
 
 /**
@@ -151,6 +277,11 @@ export interface RoomTypeOptionDto {
 export interface ItineraryHotelRoomDto {
   itineraryPlanId: number;
   itineraryRouteId: number;
+  date?: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  itineraryRouteDate?: string;
+  destination?: string;
   itineraryPlanHotelRoomDetailsId: number;
   hotelId: number;
   canonicalHotelId?: number | null;
@@ -164,6 +295,8 @@ export interface ItineraryHotelRoomDto {
   providerDisplayName?: string;
   bookingCode?: string;
   searchReference?: string;
+  rateOptionId?: string;
+  optionKey?: string;
   availableRoomTypes: RoomTypeOptionDto[];
   mealPlan?: string;
   numberOfNights?: number;
@@ -399,8 +532,9 @@ async getHotelRoomDetailsByQuoteId(
 
  // Get hotel master data for actual hotel name
       const hotelMaster = hotelMap.get(hotelId) || null;
-      const hotelName = hotelMaster ? ((hotelMaster as any).hotel_name ?? 'Hotel') : 'Hotel';
-      const hotelCategory = hotelMaster ? Number((hotelMaster as any).hotel_category ?? 2) : 2;
+      const identity = resolvePersistedHotelIdentity(hotelRow, hotelMaster);
+      const hotelName = identity.hotelName || 'Hotel';
+      const hotelCategory = identity.category || 2;
 
  // Create 1 room entry per unique hotel per category
       roomDetailsList.push({
@@ -617,12 +751,16 @@ async getHotelRoomDetailsByQuoteId(
     );
 
  // Fetch route details to get location ID for each route
-    const routeDetails = routeIds.length
-      ? await this.prisma.dvi_itinerary_route_details.findMany({
-          where: { itinerary_route_ID: { in: routeIds }, deleted: 0 },
-          select: { itinerary_route_ID: true, location_id: true, no_of_days: true },
-        })
-      : [];
+    const routeDetails = await this.prisma.dvi_itinerary_route_details.findMany({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      orderBy: { itinerary_route_date: 'asc' },
+      select: {
+        itinerary_route_ID: true,
+        itinerary_route_date: true,
+        location_id: true,
+        no_of_days: true,
+      },
+    });
 
     const routeLocationMap = new Map(
       routeDetails.map((r) => [
@@ -671,6 +809,32 @@ async getHotelRoomDetailsByQuoteId(
       const routeId = Number((h as any).itinerary_route_id ?? 0);
       const routeDayNumber = routeDayNumberMap.get(routeId) || 0;
       const isSyntheticPreviousDayBilling = Boolean((h as any).__previousDayBillingSynthetic);
+      const rawSelectedPriceSnapshot = (h as any).selected_price_snapshot;
+      let selectedPriceSnapshot: Record<string, unknown> = {};
+      if (rawSelectedPriceSnapshot && typeof rawSelectedPriceSnapshot === 'object') {
+        selectedPriceSnapshot = rawSelectedPriceSnapshot as Record<string, unknown>;
+      } else if (rawSelectedPriceSnapshot) {
+        try {
+          const parsed = JSON.parse(String(rawSelectedPriceSnapshot));
+          if (parsed && typeof parsed === 'object') {
+            selectedPriceSnapshot = parsed as Record<string, unknown>;
+          }
+        } catch {
+          // Preserve the raw snapshot below; malformed legacy snapshots do
+          // not prevent the itinerary details response from loading.
+        }
+      }
+      const persistedIdentity = resolvePersistedHotelIdentity(h, master);
+      if (persistedIdentity.provider === 'offline' && !persistedIdentity.consistent) {
+        this.logger.warn(JSON.stringify({
+          event: 'PERSISTED_OFFLINE_HOTEL_IDENTITY_MISMATCH',
+          planId,
+          routeId,
+          groupType: Number((h as any).group_type || 0),
+          hotelId: Number((h as any).hotel_id || 0),
+          mismatches: persistedIdentity.mismatches,
+        }));
+      }
       const storedEarlyCheckIn = Number((h as any).early_checkin ?? 0) === 1;
  // The marker row represents the extra night; it must not hide the
  // structured metadata stored on the real selected hotel row. The
@@ -723,6 +887,28 @@ async getHotelRoomDetailsByQuoteId(
               'EXTRA_PAYMENT_APPLICABLE',
           )
         : null;
+      const snapshotBaseTotal = Number(
+        selectedPriceSnapshot.baseTotalPrice ?? selectedPriceSnapshot.base_total_price ?? 0,
+      );
+      const snapshotBasePerNight = Number(
+        selectedPriceSnapshot.basePricePerNight ?? selectedPriceSnapshot.base_price_per_night ?? 0,
+      );
+      const snapshotRoomCount = Math.max(
+        Number((h as any).total_no_of_rooms ?? selectedPriceSnapshot.roomCount ?? 1),
+        1,
+      );
+      const hasSelectedPayable = Number((h as any).selected_total_price || 0) > 0 ||
+        Boolean(String((h as any).selected_rate_option_id || '').trim());
+      const authoritativeBaseHotelCost = snapshotBaseTotal > 0
+        ? snapshotBaseTotal
+        : snapshotBasePerNight > 0
+          ? snapshotBasePerNight * snapshotRoomCount
+          // Legacy selected rows commonly stored payable in total_room_cost.
+          // Do not expose that value as a supplier/base amount when no
+          // authoritative base breakdown exists.
+          : hasSelectedPayable
+            ? 0
+            : Number((h as any).total_room_cost ?? 0);
       const hotelierEarlyCheckInNote = showEarlyCheckInDetails
         ? String((h as any).early_checkin_note || '').trim() ||
           'Guest has opted for early morning check-in with extra payment. Room to be blocked from the previous night, with actual guest arrival/check-in on the next day early morning.'
@@ -775,12 +961,39 @@ async getHotelRoomDetailsByQuoteId(
           : `Day ${routeDayNumber || 0} | ${dateLabel}`,
         destination: (h as any).itinerary_route_location ?? '',
         hotelId: Number((h as any).hotel_id ?? 0) || 0,
-        hotelName: master ? ((master as any).hotel_name ?? '') : '',
-        category: master ? ((master as any).hotel_category ?? 0) : 0,
- roomType: '', // room/meal details can be wired later
-        mealPlan: '',
+        hotelName: persistedIdentity.hotelName,
+        category: persistedIdentity.category,
+        roomType: String(
+          (persistedIdentity.consistent
+            ? selectedPriceSnapshot.roomType || selectedPriceSnapshot.roomTypeName
+            : '') ||
+          '',
+        ).trim(),
+        mealPlan: String(
+          (persistedIdentity.consistent
+            ? selectedPriceSnapshot.mealPlan || selectedPriceSnapshot.mealPlanCode
+            : '') ||
+          '',
+        ).trim(),
         totalHotelCost: Number((h as any).total_hotel_cost ?? 0) * earlyCheckInBillingMultiplier,
         totalHotelTaxAmount: Number((h as any).total_hotel_tax_amount ?? 0) * earlyCheckInBillingMultiplier,
+        baseHotelCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
+        totalRoomCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
+        hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        hotelMealPlanCost: Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier,
+        hotelMealPlanGstAmount: Number((h as any).total_hotel_meal_plan_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        totalExtraBedCost: Number((h as any).total_extra_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalExtraBedCostGstAmount: Number((h as any).total_extra_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithBedCost: Number((h as any).total_childwith_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithBedCostGstAmount: Number((h as any).total_childwith_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithoutBedCost: Number((h as any).total_childwithout_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithoutBedCostGstAmount: Number((h as any).total_childwithout_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
+        extraBedCount: Number((h as any).room_extra_bed_count ?? (h as any).total_extra_bed ?? (plan as any).total_extra_bed ?? 0),
+        childWithBedCount: Number((h as any).room_cwb_count ?? (h as any).total_child_with_bed ?? (plan as any).total_child_with_bed ?? 0),
+        childWithoutBedCount: Number((h as any).room_cnb_count ?? (h as any).total_child_without_bed ?? (plan as any).total_child_without_bed ?? 0),
+        hotelMarginPercentage: Number((h as any).hotel_margin_percentage ?? 0),
+        hotelMarginAmount: Number((h as any).hotel_margin_rate ?? 0) * earlyCheckInBillingMultiplier,
+        hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
         date: dateLabel,
@@ -793,6 +1006,23 @@ async getHotelRoomDetailsByQuoteId(
         hotelierEarlyCheckInNote,
         previousDayBillingSynthetic: isSyntheticPreviousDayBilling,
         hotelDistance,
+        provider: String((h as any).hotel_provider || '').trim().toLowerCase() || undefined,
+        hotelCode: String((h as any).hotel_code || '').trim() || undefined,
+        bookingCode: String((h as any).selected_rate_option_id || '').trim() || undefined,
+        rateOptionId: String((h as any).selected_rate_option_id || '').trim() || undefined,
+        priceSource: (h as any).price_source || undefined,
+        bookingMode: (h as any).hotel_booking_mode || undefined,
+        isLiveRate: (h as any).is_live_rate ?? undefined,
+        approvalStatus: (h as any).hotel_approval_status || undefined,
+        manualConfirmationStatus: (h as any).manual_confirmation_status || undefined,
+        isSelected: Number((h as any).hotel_id || 0) > 0,
+        selectionOrigin: String((h as any).selected_rate_option_id || '').trim()
+          ? 'USER_SELECTED'
+          : (Number((h as any).hotel_id || 0) > 0 ? 'AUTO_SELECTED' : undefined),
+        selectionId: Number(hotelDetailsId || 0),
+        requiresPriceReacceptance: Boolean((h as any).requires_price_reacceptance),
+        selectedPriceSnapshot: rawSelectedPriceSnapshot || null,
+        identityMismatch: !persistedIdentity.consistent,
       };
     });
 
@@ -801,6 +1031,13 @@ async getHotelRoomDetailsByQuoteId(
       (sum, h) => sum + ((h as any).total_no_of_rooms ?? 0),
       0,
     );
+    const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
+    const requiredHotelRoutes = resolveHotelRequiredRoutes(routeDetails, noOfNights);
+    const hotelSelectionState = buildHotelSelectionState({
+      tabs: hotelTabs,
+      rows: hotels,
+      requiredRoutes: requiredHotelRoutes,
+    });
 
     return {
       quoteId: plan.itinerary_quote_ID ?? '',
@@ -808,6 +1045,7 @@ async getHotelRoomDetailsByQuoteId(
       hotelRatesVisible,
       showHotelMargins: this.shouldShowHotelMargins(),
       hotelTabs,
+      hotelSelectionState,
       hotels,
       totalRoomCount,
     };

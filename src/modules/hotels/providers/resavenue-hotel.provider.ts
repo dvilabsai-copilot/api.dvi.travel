@@ -14,6 +14,7 @@ import {
   HotelConfirmationDetails,
   CancellationResult,
 } from '../interfaces/hotel-provider.interface';
+import { inferCanonicalHotelRatePlanCode } from '../hotel-rate-plans';
 
 interface ResAvenueInventory {
   InvCode: number;
@@ -408,6 +409,10 @@ export class ResAvenueHotelProvider implements IHotelProvider {
           })
         : [];
       const cityIdCandidates = cityRows.map((row) => String(row.id));
+      const requestedHotelCodes = String(criteria.hotelCodes || '')
+        .split(',')
+        .map((code) => code.trim())
+        .filter(Boolean);
 
  // Step 2: Query database for ResAvenue hotels in this city
  this.logger.log(
@@ -422,7 +427,9 @@ export class ResAvenueHotelProvider implements IHotelProvider {
               ? [{ hotel_city: { startsWith: `${primaryCityName},` } }]
               : []),
           ],
-          resavenue_hotel_code: { not: null },
+          ...(requestedHotelCodes.length > 0
+            ? { resavenue_hotel_code: { in: requestedHotelCodes } }
+            : { resavenue_hotel_code: { not: null } }),
           deleted: false,
           status: 1,
           ...(selectedStarRatings.length > 0
@@ -573,7 +580,9 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         price: minPrice,
         currency: 'INR',
         roomType: cheapestRoom.roomName || '',
- mealPlan: null, // ResAvenue doesn't provide meal plan in inventory response
+        // PropertyDetails supplies the meal-plan identity in rate_name even
+        // though the inventory response itself has no separate meal field.
+        mealPlan: cheapestRoom.mealPlan || null,
         roomTypes: availableRooms,
         searchReference: `RESAVENUE-${hotelCode}-${Date.now()}`,
  expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
@@ -631,6 +640,7 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         availableRooms.push({
           roomCode: `${inv.InvCode}-${rate.RateCode}`,
           roomName: `${roomType.room_name} - ${ratePlan.rate_name}`,
+          mealPlan: inferCanonicalHotelRatePlanCode(ratePlan.rate_name) || undefined,
           bedType: 'Standard',
           capacity: roomType.max_occupancy || 2,
           price: totalPrice,

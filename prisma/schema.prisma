@@ -726,7 +726,7 @@ model dvi_cancelled_itinerary_plan_hotel_details {
   itinerary_route_location                  String?   @db.Text
   hotel_required                            Int       @default(0)
   hotel_category_id                         Int       @default(0)
-  hotel_id                                  Int       @default(0)
+  hotel_id                                  Int?
   hotel_margin_percentage                   Float     @default(0) @db.Float
   hotel_margin_gst_type                     Int       @default(0)
   hotel_margin_gst_percentage               Float     @default(0) @db.Float
@@ -811,7 +811,7 @@ model dvi_cancelled_itinerary_plan_hotel_room_details {
   itinerary_plan_id                              Int       @default(0)
   itinerary_route_id                             Int       @default(0)
   itinerary_route_date                           DateTime? @db.Date
-  hotel_id                                       Int       @default(0)
+  hotel_id                                       Int?
   room_type_id                                   Int       @default(0)
   room_id                                        Int       @default(0)
   room_qty                                       Int       @default(0)
@@ -1598,7 +1598,7 @@ model dvi_confirmed_itinerary_plan_hotel_details {
   itinerary_route_location                  String?   @db.Text
   hotel_required                            Int       @default(0)
   hotel_category_id                         Int       @default(0)
-  hotel_id                                  Int       @default(0)
+  hotel_id                                  Int?
   hotel_margin_percentage                   Float     @default(0) @db.Float
   hotel_margin_gst_type                     Int       @default(0)
   hotel_margin_gst_percentage               Float     @default(0) @db.Float
@@ -1759,7 +1759,7 @@ model dvi_confirmed_itinerary_plan_hotel_room_details {
   itinerary_plan_id                              Int       @default(0)
   itinerary_route_id                             Int       @default(0)
   itinerary_route_date                           DateTime? @db.Date
-  hotel_id                                       Int       @default(0)
+  hotel_id                                       Int?
   room_type_id                                   Int       @default(0)
   room_id                                        Int       @default(0)
   room_qty                                       Int       @default(0)
@@ -3945,7 +3945,7 @@ model dvi_itinerary_plan_hotel_details {
   itinerary_route_location               String?   @db.Text
   hotel_required                         Int       @default(0)
   hotel_category_id                      Int       @default(0)
-  hotel_id                               Int       @default(0)
+  hotel_id                               Int?
   hotel_margin_percentage                Float     @default(0) @db.Float
   hotel_margin_gst_type                  Int       @default(0)
   hotel_margin_gst_percentage            Float     @default(0) @db.Float
@@ -4097,7 +4097,7 @@ model dvi_itinerary_plan_hotel_room_details {
   itinerary_plan_id                    Int       @default(0)
   itinerary_route_id                   Int       @default(0)
   itinerary_route_date                 DateTime? @db.Date
-  hotel_id                             Int       @default(0)
+  hotel_id                             Int?
   room_type_id                         Int       @default(0)
   room_id                              Int       @default(0)
   room_qty                             Int       @default(0)
@@ -6397,11 +6397,15 @@ model dvi_itinerary_hotel_search_cache {
   synced_at        DateTime @default(now()) @db.DateTime(0)
   status           Int      @default(1) @db.TinyInt
   deleted          Int      @default(0) @db.TinyInt
+  recommendation_algorithm_version String? @db.VarChar(8)
+  recommendation_search_run_id    String? @db.VarChar(100)
+  recommendation_generated_at     DateTime? @db.DateTime(0)
 
   @@unique([quote_id, route_id, group_type, hotel_code, provider], map: "uq_hotel_cache_key")
   @@index([quote_id, group_type, sort_rank], map: "idx_hotel_cache_pagination")
   @@index([quote_id, synced_at], map: "idx_hotel_cache_stale_check")
   @@index([route_id], map: "idx_hotel_cache_route")
+  @@index([plan_id, recommendation_search_run_id], map: "idx_hotel_cache_recommendation_run")
 }
 
 model dvi_manual_fit_preview_attempts {

@@ -13,4 +13,6 @@ start-dev.log
 scripts/*.local.ts
 scripts/staah-sync.env
 backups/staah/
+logs/
 resavenue-hotel-provider.log
+hobse-hotel-provider.log

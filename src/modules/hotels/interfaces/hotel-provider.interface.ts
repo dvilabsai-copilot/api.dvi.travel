@@ -26,6 +26,8 @@ export interface HotelSearchResult {
   providerDisplayName?: string;
   canonicalHotelId?: number | null;
   providerHotelCode?: string;
+  /** Backend-issued stable commercial identity; never created by the client. */
+  selectionKey?: string;
   rateOptionId?: string;
   roomId?: string | number;
   roomTypeId?: number;
@@ -36,6 +38,13 @@ export interface HotelSearchResult {
   address: string;
   latitude?: number | string | null;
   longitude?: number | string | null;
+  distanceKm?: number | null;
+  distanceStatus?: 'WITHIN_RADIUS' | 'OUTSIDE_RADIUS' | 'UNKNOWN';
+  distanceReference?: 'HOTSPOT' | 'DESTINATION_CENTRE' | 'ROUTE_DESTINATION' | 'UNKNOWN';
+  distanceSource?: string | null;
+  accommodationType?: string | null;
+  propertyType?: string | null;
+  tags?: string[];
   rating: number;
  category?: string; // Hotel category/star rating
   facilities: string[];
@@ -57,6 +66,18 @@ export interface HotelSearchResult {
   pricePerNight?: number;
   totalStayPrice?: number;
   numberOfNights?: number;
+  extraBedCount?: number;
+  extraBedRate?: number;
+  extraBedAmount?: number;
+  childWithBedCount?: number;
+  childWithBedRate?: number;
+  childWithBedAmount?: number;
+  childWithoutBedCount?: number;
+  childWithoutBedRate?: number;
+  childWithoutBedAmount?: number;
+  extraChildCount?: number;
+  extraChildRate?: number;
+  extraChildAmount?: number;
   nightlyRates?: Array<{
     date: string;
     baseAmount: number;
@@ -80,7 +101,7 @@ export interface HotelSearchResult {
   };
   isBookable?: boolean;
   externalStay?: boolean;
-  availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE';
+  availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE' | 'UNAVAILABLE' | 'RESTRICTED' | 'STALE' | 'UNKNOWN';
   availabilityMessage?: string | null;
   availableAgainFrom?: string | null;
 }
@@ -88,6 +109,8 @@ export interface HotelSearchResult {
 export interface RoomType {
   roomCode: string;
   roomName: string;
+  /** Canonical supplier rate-plan identity for this room/rate option. */
+  mealPlan?: string;
   bedType: string;
   capacity: number;
   price: number;

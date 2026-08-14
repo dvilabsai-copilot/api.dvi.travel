@@ -85,6 +85,22 @@ export function inferCanonicalHotelRatePlanCode(value?: string | null): Canonica
   const raw = String(value || '').trim().toUpperCase();
   if (!raw) return null;
 
+  // Supplier identities can namespace the authoritative plan code, e.g.
+  // axisrooms:232:605:CP_PLAN:2026-08-12 or AX-232:605:MAP_PLAN:...
+  const embeddedPlan = raw.match(/(?:^|[^A-Z0-9])(MAP|CP|AP|EP)_PLAN(?:$|[^A-Z0-9])/);
+  if (embeddedPlan?.[1]) return embeddedPlan[1] as CanonicalHotelRatePlanCode;
+
+  // Channel managers commonly place the canonical abbreviation inside a
+  // descriptive rate-plan name, e.g. "Double Deluxe Room - OTA EP Plan".
+  // Require the word PLAN so unrelated room/property names containing a
+  // standalone two-letter token are not classified as meal plans.
+  const embeddedNamedPlan = raw.match(
+    /(?:^|[^A-Z0-9])(MAP|CP|AP|EP)[\s_-]*PLAN(?:$|[^A-Z0-9])/,
+  );
+  if (embeddedNamedPlan?.[1]) {
+    return embeddedNamedPlan[1] as CanonicalHotelRatePlanCode;
+  }
+
   if (raw === '12' || raw.startsWith('12')) return 'CP';
   if (raw === '13' || raw.startsWith('13')) return 'MAP';
   if (raw === '14' || raw.startsWith('14')) return 'AP';
@@ -109,17 +125,51 @@ export function inferCanonicalHotelRatePlanCodeFromMealFlags(
 
   if (normalizedBreakfast === 0 && normalizedLunch === 0 && normalizedDinner === 0) return 'EP';
   if (normalizedBreakfast === 1 && normalizedLunch === 0 && normalizedDinner === 0) return 'CP';
-  if (normalizedBreakfast === 1 && normalizedLunch === 0 && normalizedDinner === 1) return 'MAP';
   if (normalizedBreakfast === 1 && normalizedLunch === 1 && normalizedDinner === 1) return 'AP';
+  // MAP is breakfast plus exactly one major meal. The legacy flags can
+  // represent either lunch or dinner, so accept either form here. AP must be
+  // checked first because it contains both major meals.
+  if (
+    normalizedBreakfast === 1 &&
+    ((normalizedLunch === 1 && normalizedDinner === 0) ||
+      (normalizedLunch === 0 && normalizedDinner === 1))
+  ) return 'MAP';
 
   return null;
+}
+
+export type CanonicalMealPlanFlags = {
+  all: boolean;
+  breakfast: boolean;
+  lunch: boolean;
+  dinner: boolean;
+};
+
+/**
+ * Converts a supplier/UI meal-plan value into the canonical package flags.
+ * `meal_plan_code` remains the authoritative identity; these booleans are
+ * retained only for legacy pricing/database compatibility.
+ */
+export function getCanonicalMealPlanFlags(value?: string | null): CanonicalMealPlanFlags {
+  const code =
+    inferCanonicalHotelRatePlanCode(value) ||
+    inferCanonicalHotelRatePlanCodeFromMealText(value);
+  const definition = code ? HOTEL_RATE_PLAN_BY_CODE.get(code) : null;
+
+  return {
+    all: code === 'AP',
+    breakfast: Boolean(definition?.includesBreakfast),
+    lunch: Boolean(definition?.includesLunch),
+    dinner: Boolean(definition?.includesDinner),
+  };
 }
 
 export function inferCanonicalHotelRatePlanCodeFromMealText(
   value?: string | null,
 ): CanonicalHotelRatePlanCode | null {
   const raw = String(value || '').trim().toUpperCase();
-  if (!raw || raw === '-' || raw === 'ROOM ONLY') return 'EP';
+  if (!raw || raw === '-') return null;
+  if (raw === 'ROOM ONLY') return 'EP';
 
  // Explicit supplier keywords should win over generic breakfast mentions.
   if (raw.includes('ALL MEALS') || raw.includes('FULL BOARD') || raw.includes('FULLBOARD')) return 'AP';
@@ -133,7 +183,7 @@ export function inferCanonicalHotelRatePlanCodeFromMealText(
   if ((hasBreakfast && hasLunch) || (hasBreakfast && hasDinner) || (hasLunch && hasDinner)) return 'MAP';
   if (hasBreakfast) return 'CP';
 
-  return 'EP';
+  return null;
 }
 
 export function getCanonicalHotelRatePlanDefinition(
@@ -152,7 +202,7 @@ export function getTboMealTypeForCanonicalHotelRatePlan(
 
 export function getNormalizedMealPlanLabelFromMealText(value?: string | null): string {
   const raw = String(value || '').trim();
-  if (!raw || raw === '-') return 'Room Only';
+  if (!raw || raw === '-') return 'UNKNOWN';
 
   const upper = raw.toUpperCase();
 
@@ -173,5 +223,5 @@ export function getNormalizedMealPlanLabelFromMealText(value?: string | null): s
   if (hasBreakfast) return 'CP';
 
  // For noisy/non-meal inclusions (e.g. parking/wifi), use a clean fallback.
-  return 'Room Only';
+  return 'UNKNOWN';
 }

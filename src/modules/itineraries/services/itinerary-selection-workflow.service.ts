@@ -1,6 +1,7 @@
 // FILE: src/modules/itineraries/services/itinerary-selection-workflow.service.ts
 
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { createConnection } from 'mysql2/promise';
 import { PrismaService } from '../../../prisma.service';
 import { RouteEngineService } from '../engines/route-engine.service';
 import { ItineraryVehiclesEngine } from '../engines/itinerary-vehicles.engine';
@@ -8,6 +9,20 @@ import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.
 import { OfflineHotelCatalogService } from './offline-hotel-catalog.service';
 import { filterActiveVendorCandidateRows } from '../utils/active-vendor-candidate.util';
 import { getVehicleRateAvailability } from '../utils/vehicle-rate-availability.util';
+import {
+  hotelSelectionKey,
+  hotelSelectionKeyFromRow,
+  normalizeSupplierRateIdentity,
+  supplierRateIdentityMatches,
+} from '../utils/hotel-selection-identity.util';
+import {
+  getCanonicalMealPlanFlags,
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealText,
+  inferCanonicalHotelRatePlanCodeFromMealFlags,
+} from '../../hotels/hotel-rate-plans';
+import { resolveHotelSelectionPricing } from '../utils/hotel-selection-pricing.util';
+import { HotelAvailabilitySnapshotService } from './hotel-availability-snapshot.service';
 
 @Injectable()
 export class ItinerarySelectionWorkflowService {
@@ -17,7 +32,47 @@ export class ItinerarySelectionWorkflowService {
     private readonly itineraryVehiclesEngine: ItineraryVehiclesEngine,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly offlineHotelCatalogService?: OfflineHotelCatalogService,
+    private readonly hotelAvailabilitySnapshotService?: HotelAvailabilitySnapshotService,
   ) {}
+
+  private requireTargetGroupType(groupType: unknown): number {
+    const targetGroupType = Number(groupType);
+    if (!Number.isInteger(targetGroupType) || targetGroupType < 1 || targetGroupType > 4) {
+      throw new BadRequestException('Hotel selection requires a valid target groupType between 1 and 4');
+    }
+    return targetGroupType;
+  }
+
+  /**
+   * Own the plan/group advisory lock for the complete authoritative operation.
+   * Supplier calls intentionally run outside the Prisma transaction, but no
+   * competing intent may resolve against the snapshot while this callback is
+   * in progress.
+   */
+  async withHotelSelectionLock<T>(planId: number, groupType: number, work: () => Promise<T>): Promise<T> {
+    const targetGroupType = this.requireTargetGroupType(groupType);
+    const lockName = `itinerary-hotel-selection:${Number(planId)}:${targetGroupType}`;
+    const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+    if (!databaseUrl) {
+      throw new InternalServerErrorException({
+        code: 'HOTEL_SELECTION_LOCK_UNAVAILABLE',
+        message: 'The hotel selection lock could not be established.',
+      });
+    }
+    const connection = await createConnection(databaseUrl);
+    let acquired = false;
+    try {
+      const result: any = await connection.query('SELECT GET_LOCK(?, 10) AS acquired', [lockName]);
+      acquired = Number(result?.[0]?.[0]?.acquired || 0) === 1;
+      if (!acquired) throw new BadRequestException('Another hotel selection is being applied. Please retry.');
+      return await work();
+    } finally {
+      if (acquired) {
+        try { await connection.query('SELECT RELEASE_LOCK(?)', [lockName]); } catch { /* close releases it */ }
+      }
+      await connection.end();
+    }
+  }
 
   async getAvailableHotels(routeId: number) {
  // Get route details
@@ -86,35 +141,73 @@ export class ItinerarySelectionWorkflowService {
   async selectHotel(data: {
     planId: number;
     routeId: number;
-    hotelId: number;
+    hotelId: number | null;
     roomTypeId: number;
  groupType?: number; // ADD groupType parameter
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean; };
-    canonicalHotelId?: number;
+    canonicalHotelId?: number | null;
+    hotelCode?: string;
+    providerHotelCode?: string;
+    selectionKey?: string;
     rateOptionId?: string;
     provider?: string;
+    optionKey?: string;
+    pricePerNight?: number;
+    totalPrice?: number;
+    currency?: string;
+    hotelName?: string;
+    category?: number;
+    roomType?: string;
+    mealPlanCode?: string;
+    bookingCode?: string;
+    searchReference?: string;
+    roomId?: string | number;
+    rateId?: string | number;
     roomCount?: number;
-    requestedBy?: number;
+    extraBedCount?: number;
+    extraBedRate?: number;
+    extraBedAmount?: number;
+    extraBedGstAmount?: number;
+    hotelMarginPercentage?: number;
+    basePricePerNight?: number;
+    baseTotalPrice?: number;
+    hotelMarginAmount?: number;
+    hotelMarginStayAmount?: number;
+    hotelMarginTotalAmount?: number;
+    hotelMarginGstAmount?: number;
+    amountIncludesHotelMargin?: boolean;
+    pricingIncludesHotelMargin?: boolean;
+    numberOfNights?: number;
+    nightlyRates?: Array<Record<string, unknown>>;
+    routeDate?: string;
+     requestedBy?: number;
+    /** Internal transaction client used by atomic multi-route saves. */
+    transactionClient?: any;
   }) {
+    // groupType is the target recommendation package being edited. It must be
+    // explicit; never infer it from the selected inventory row or default it
+    // to Group 1 because that can overwrite a different package's row.
+    data = { ...data, groupType: this.requireTargetGroupType(data.groupType) };
     if (String(data.provider || '').trim().toLowerCase() === 'offline' || String(data.rateOptionId || '').startsWith('offline:')) {
       return this.selectOfflineHotel(data);
     }
+    const db = data.transactionClient || this.prisma;
     const userId = 1;
     const liveRateMetadata = this.getLiveRateMetadata(data.provider);
 
  // Get the quote ID and Day 1 early-check-in metadata.
     const [plan, route, previousDayMarker] = await Promise.all([
-      this.prisma.dvi_itinerary_plan_details.findUnique({
+      db.dvi_itinerary_plan_details.findUnique({
         where: { itinerary_plan_ID: data.planId },
       }),
-      (this.prisma as any).dvi_itinerary_route_details.findFirst({
+      (db as any).dvi_itinerary_route_details.findFirst({
         where: {
           itinerary_plan_ID: data.planId,
           itinerary_route_ID: data.routeId,
           deleted: 0,
         },
       }),
-      (this.prisma as any).dvi_itinerary_plan_hotel_details.findFirst({
+      (db as any).dvi_itinerary_plan_hotel_details.findFirst({
         where: {
           itinerary_plan_id: data.planId,
           itinerary_route_id: data.routeId,
@@ -127,6 +220,31 @@ export class ItinerarySelectionWorkflowService {
       }),
     ]);
     const quoteId = (plan as any)?.itinerary_quote_ID || '';
+    // The itinerary occupancy is the minimum authoritative room count. Older
+    // frontend payloads can still send roomCount=1 from a supplier row even
+    // when the plan requests multiple rooms.
+    const itineraryRoomCount = Math.max(Number((plan as any)?.preferred_room_count || 1), 1);
+    data = {
+      ...data,
+      roomCount: Math.max(Number(data.roomCount || 1), itineraryRoomCount),
+    };
+    const normalizedProvider = String(data.provider || '').trim().toLowerCase();
+    const hasLiveSupplierRateIdentity =
+      ['tbo', 'axisrooms', 'staah', 'resavenue', 'hobse'].includes(normalizedProvider) &&
+      Boolean(
+        String(data.hotelCode || '').trim() ||
+        String(data.rateOptionId || '').trim() ||
+        String(data.optionKey || '').trim() ||
+        String(data.searchReference || '').trim() ||
+        String(data.bookingCode || '').trim(),
+      );
+    if (
+      (!Number.isInteger(Number(data.hotelId)) || Number(data.hotelId) <= 0) &&
+      !hasLiveSupplierRateIdentity
+    ) {
+      throw new BadRequestException('Hotel selection requires a canonical dvi_hotel.hotel_id');
+    }
+    await this.validateLiveSelectionAgainstSnapshot(data, plan, quoteId, route);
 
     const actualGuestArrivalAt = (plan as any)?.trip_start_date_and_time
       ? new Date((plan as any).trip_start_date_and_time)
@@ -176,53 +294,261 @@ export class ItinerarySelectionWorkflowService {
         };
 
  // Check if hotel assignment already exists in hotel_details
-    const existingHotelDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findFirst({
+    const existingHotelCandidates = await (db as any).dvi_itinerary_plan_hotel_details.findMany({
       where: {
         itinerary_plan_id: data.planId,
         itinerary_route_id: data.routeId,
         group_type: data.groupType || 1,
-        hotel_required: { not: 2 },
+        hotel_required: 1,
         deleted: 0,
+        status: 1,
       },
       orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
     });
+    const selectionKey = hotelSelectionKey(
+      data.planId,
+      data.routeId,
+      data.groupType || 1,
+      route?.itinerary_route_date,
+    );
+    const existingHotelDetails = existingHotelCandidates.find((row: any) =>
+      hotelSelectionKeyFromRow(data.planId, row) === selectionKey,
+    ) || existingHotelCandidates[0];
+    const canonicalHotelId = Number(data.canonicalHotelId ?? data.hotelId ?? 0);
+    const persistedHotelId = canonicalHotelId > 0 ? canonicalHotelId : null;
+    const persistedHotelCode =
+      String(data.providerHotelCode || data.hotelCode || existingHotelDetails?.hotel_code || '').trim() || null;
+    let selectionPricing = resolveHotelSelectionPricing({
+      totalPrice: data.totalPrice,
+      pricePerNight: data.pricePerNight,
+      roomCount: data.roomCount,
+    });
+    let axisRoomsBasePrice = 0;
+    if (String(data.provider || '').trim().toLowerCase() === 'axisrooms') {
+      axisRoomsBasePrice = await this.resolveAxisRoomsSelectionBasePrice(data, route);
+    }
+    const extraBedCount = Math.max(Math.trunc(Number(data.extraBedCount || 0)), 0);
+    const extraBedRate = Math.max(Number(data.extraBedRate || 0), 0);
+    const extraBedAmount = Math.max(
+      Number(data.extraBedAmount ?? (extraBedCount * extraBedRate)),
+      0,
+    );
+    const extraBedGstAmount = Math.max(Number(data.extraBedGstAmount || 0), 0);
+    const globalSettingsModel = (db as any).dvi_global_settings;
+    const globalSettings = globalSettingsModel
+      ? await globalSettingsModel.findFirst({
+          where: { deleted: 0, status: 1 },
+          orderBy: { global_settings_ID: 'asc' },
+          select: { hotel_margin: true },
+        })
+      : null;
+    const configuredMargin = globalSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0;
+    const requestedHotelMargin = Number(data.hotelMarginPercentage);
+    const providerForPricing = String(data.provider || '').trim().toLowerCase();
+    const hotelMarginPercentage = Math.max(
+      providerForPricing === 'axisrooms' && (!Number.isFinite(requestedHotelMargin) || requestedHotelMargin <= 0)
+        ? Number(configuredMargin || 0)
+        : Number(data.hotelMarginPercentage ?? configuredMargin ?? 0),
+      0,
+    );
+    // STAAH's nightly occupancy amount is the supplier room cost before our
+    // margin.  Older clients sent the previous row's margin amount, which
+    // caused a fresh ₹1,630 rate to be reconciled as ₹1,666 (using the stale
+    // ₹290 margin from a ₹1,450 rate).  Derive the payable amount and margin
+    // from this option's own base amount instead.
+    const pricingAlreadyIncludesMargin = data.amountIncludesHotelMargin === true ||
+      data.pricingIncludesHotelMargin === true;
+    const staahBasePricePerNight = providerForPricing === 'staah'
+      ? Math.max(Number(
+          pricingAlreadyIncludesMargin
+            ? data.basePricePerNight || data.pricePerNight
+            : data.pricePerNight,
+        ), 0)
+      : 0;
+    const staahBaseTotal = staahBasePricePerNight > 0
+      ? Number((staahBasePricePerNight * Math.max(Number(data.roomCount || 1), 1)).toFixed(2))
+      : 0;
+    const staahMarginRate = staahBaseTotal > 0
+      ? Number((staahBaseTotal * hotelMarginPercentage / 100).toFixed(2))
+      : 0;
+    if (providerForPricing === 'staah' && staahBaseTotal > 0) {
+      data.pricePerNight = Number((staahBasePricePerNight * (1 + hotelMarginPercentage / 100)).toFixed(2));
+      data.totalPrice = Number((staahBaseTotal + staahMarginRate).toFixed(2));
+      selectionPricing = resolveHotelSelectionPricing({
+        totalPrice: data.totalPrice,
+        pricePerNight: data.pricePerNight,
+        roomCount: data.roomCount,
+      });
+    }
+    if (axisRoomsBasePrice > 0) {
+      const authoritativePayable = Number((axisRoomsBasePrice * (1 + hotelMarginPercentage / 100)).toFixed(2));
+      // AxisRooms selections must be priced from the matching ARI row, never
+      // from a stale client payload that can combine another option's total.
+      data.pricePerNight = authoritativePayable;
+      data.totalPrice = authoritativePayable;
+      selectionPricing = resolveHotelSelectionPricing({
+        totalPrice: authoritativePayable,
+        pricePerNight: authoritativePayable,
+        roomCount: data.roomCount,
+      });
+    }
+    const suppliedBasePricePerNight = Math.max(Number(data.basePricePerNight || 0), 0);
+    const suppliedBaseTotal = Math.max(
+      Number(data.baseTotalPrice || 0) ||
+        suppliedBasePricePerNight * Math.max(Number(data.roomCount || 1), 1),
+      0,
+    );
+    const authoritativeBasePricePerNight = axisRoomsBasePrice > 0
+      ? axisRoomsBasePrice
+      : staahBasePricePerNight > 0
+        ? staahBasePricePerNight
+        : suppliedBasePricePerNight;
+    const authoritativeBaseTotal = axisRoomsBasePrice > 0
+      ? axisRoomsBasePrice
+      : staahBaseTotal > 0
+        ? staahBaseTotal
+        : suppliedBaseTotal;
+    const suppliedMarginAmount = Math.max(Number(
+      data.hotelMarginStayAmount ?? data.hotelMarginTotalAmount ?? data.hotelMarginAmount ?? 0,
+    ), 0);
+    const hotelMarginRate = providerForPricing === 'staah' && staahMarginRate > 0
+      ? staahMarginRate
+      : suppliedMarginAmount > 0
+        ? suppliedMarginAmount
+        : authoritativeBaseTotal > 0 && hotelMarginPercentage > 0
+          ? Number((authoritativeBaseTotal * hotelMarginPercentage / 100).toFixed(2))
+          // Preserve legacy live-provider behavior in this surgical fix. An
+          // Offline rate is never allowed to derive markup from payable; its
+          // catalog path supplies authoritative base and margin explicitly.
+          : providerForPricing !== 'offline'
+            ? Math.max((selectionPricing.totalPrice * hotelMarginPercentage) / 100, 0)
+            : 0;
+    const hotelMarginRateTaxAmount = Math.max(Number(data.hotelMarginGstAmount || 0), 0);
+    const authoritativePricingSnapshot = {
+      ...(authoritativeBasePricePerNight > 0 ? { basePricePerNight: authoritativeBasePricePerNight } : {}),
+      ...(authoritativeBaseTotal > 0 ? { baseTotalPrice: authoritativeBaseTotal } : {}),
+      ...(hotelMarginPercentage > 0 ? { hotelMarginPercentage } : {}),
+      ...(hotelMarginRate > 0 ? {
+        hotelMarginAmount: hotelMarginRate,
+        hotelMarginTotalAmount: hotelMarginRate,
+      } : {}),
+      ...(Number(data.numberOfNights || 0) > 0 ? { numberOfNights: Number(data.numberOfNights) } : {}),
+      ...(Array.isArray(data.nightlyRates) ? { nightlyRates: data.nightlyRates } : {}),
+    };
 
-    const mealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
-    const mealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
-    const mealDinner = data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0;
+    const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
+    const rawMealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
+    const rawMealDinner = data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0;
+    const canonicalMealPlanCode =
+      inferCanonicalHotelRatePlanCode(data.mealPlanCode) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(data.mealPlanCode) ||
+      (rawMealBreakfast || rawMealLunch || rawMealDinner
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(rawMealBreakfast, rawMealLunch, rawMealDinner)
+        : null);
+    const canonicalMealFlags = canonicalMealPlanCode
+      ? getCanonicalMealPlanFlags(canonicalMealPlanCode)
+      : {
+          all: false,
+          breakfast: Boolean(rawMealBreakfast),
+          lunch: Boolean(rawMealLunch),
+          dinner: Boolean(rawMealDinner),
+        };
+    const mealBreakfast = canonicalMealFlags.breakfast ? 1 : 0;
+    const mealLunch = canonicalMealFlags.lunch ? 1 : 0;
+    const mealDinner = canonicalMealFlags.dinner ? 1 : 0;
 
     let hotelDetailsId: number;
 
     if (existingHotelDetails) {
  // Update existing hotel assignment
- console.log(` Updating existing hotel - Old ID: ${existingHotelDetails.hotel_id}, New ID: ${data.hotelId}, GroupType: ${data.groupType}`);
-      await (this.prisma as any).dvi_itinerary_plan_hotel_details.update({
+ console.log(` Updating existing hotel - Old ID: ${existingHotelDetails.hotel_id}, New ID: ${persistedHotelId ?? 'NULL'}, GroupType: ${data.groupType}`);
+      await (db as any).dvi_itinerary_plan_hotel_details.update({
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
         data: {
-          hotel_id: data.hotelId,
+          hotel_id: persistedHotelId,
+          hotel_code: persistedHotelCode,
           hotel_required: 1,
           ...earlyCheckInData,
  group_type: data.groupType || 1, // Save groupType
           updatedon: new Date(),
           ...liveRateMetadata,
+          selected_rate_option_id: data.rateOptionId || data.optionKey || null,
+          selected_price_per_night: data.pricePerNight ?? null,
+          selected_total_price: selectionPricing.totalPrice || null,
+          total_no_of_rooms: selectionPricing.roomCount,
+          total_room_cost: selectionPricing.totalPrice || null,
+          // This column is non-nullable; zero is a valid margin amount.
+          hotel_margin_percentage: hotelMarginPercentage,
+          hotel_margin_rate: hotelMarginRate,
+          // This column is non-nullable; zero is a valid tax amount.
+          hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount,
+          total_hotel_cost: selectionPricing.totalPrice || null,
+          total_extra_bed_cost: extraBedAmount,
+          total_extra_bed_cost_gst_amount: extraBedGstAmount,
+          selected_currency: data.currency || null,
+            selected_price_snapshot: JSON.stringify({
+              optionKey: data.optionKey || null,
+              rateOptionId: data.rateOptionId || null,
+              hotelCode: data.hotelCode || null,
+              canonicalHotelId: data.canonicalHotelId ?? data.hotelId ?? null,
+              providerHotelCode: data.providerHotelCode || null,
+              selectionKey: data.selectionKey || null,
+              provider: data.provider || null,
+              selectionOrigin: 'USER_SELECTED',
+            hotelName: data.hotelName || null,
+            category: data.category || null,
+            roomTypeId: data.roomTypeId || null,
+            roomType: data.roomType || null,
+            mealPlan: canonicalMealPlanCode || null,
+            bookingCode: data.bookingCode || null,
+            searchReference: data.searchReference || null,
+            roomId: data.roomId || null,
+            rateId: data.rateId || null,
+            extraBedCount,
+            extraBedRate,
+            extraBedAmount,
+            extraBedGstAmount,
+            ...authoritativePricingSnapshot,
+            hotelMarginGstAmount: hotelMarginRateTaxAmount,
+            pricePerNight: data.pricePerNight ?? null,
+            totalPrice: selectionPricing.totalPrice || null,
+            ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
+              basePricePerNight: staahBasePricePerNight,
+              baseTotalPrice: staahBaseTotal,
+              roomCostTaxAmount: 0,
+            } : {}),
+          }),
         },
       });
-      const updated = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findUnique({
+      await (db as any).dvi_itinerary_plan_hotel_details.updateMany({
+        where: {
+          itinerary_plan_id: data.planId,
+          itinerary_route_id: data.routeId,
+          group_type: data.groupType || 1,
+          hotel_required: 1,
+          deleted: 0,
+          status: 1,
+          itinerary_plan_hotel_details_ID: { not: existingHotelDetails.itinerary_plan_hotel_details_ID },
+        },
+        data: { status: 0, deleted: 1, updatedon: new Date() },
+      });
+      const updated = await (db as any).dvi_itinerary_plan_hotel_details.findUnique({
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
       });
  console.log(` Updated. New values - hotel_id: ${(updated as any).hotel_id}, group_type: ${(updated as any).group_type}`);
       hotelDetailsId = existingHotelDetails.itinerary_plan_hotel_details_ID;
     } else {
  // Create new hotel assignment
- console.log(` Creating new hotel - ID: ${data.hotelId}, GroupType: ${data.groupType}`);
-      const created = await (this.prisma as any).dvi_itinerary_plan_hotel_details.create({
+ console.log(` Creating new hotel - ID: ${persistedHotelId ?? 'NULL'}, GroupType: ${data.groupType}`);
+      const created = await (db as any).dvi_itinerary_plan_hotel_details.create({
         data: {
           itinerary_plan_id: data.planId,
           itinerary_route_id: data.routeId,
           itinerary_route_date: route?.itinerary_route_date || null,
           itinerary_route_location:
             route?.next_visiting_location || route?.location_name || null,
-          hotel_id: data.hotelId,
+          hotel_id: persistedHotelId,
+          hotel_code: persistedHotelCode,
           hotel_required: 1,
           ...earlyCheckInData,
  group_type: data.groupType || 1, // Save groupType
@@ -230,6 +556,53 @@ export class ItinerarySelectionWorkflowService {
           createdon: new Date(),
           status: 1,
           deleted: 0,
+          ...liveRateMetadata,
+          selected_rate_option_id: data.rateOptionId || data.optionKey || null,
+          selected_price_per_night: data.pricePerNight ?? null,
+          selected_total_price: selectionPricing.totalPrice || null,
+          total_no_of_rooms: selectionPricing.roomCount,
+          total_room_cost: selectionPricing.totalPrice || null,
+          // This column is non-nullable; zero is a valid margin amount.
+          hotel_margin_percentage: hotelMarginPercentage,
+          hotel_margin_rate: hotelMarginRate,
+          // This column is non-nullable; zero is a valid tax amount.
+          hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount,
+          total_hotel_cost: selectionPricing.totalPrice || null,
+          total_extra_bed_cost: extraBedAmount,
+          total_extra_bed_cost_gst_amount: extraBedGstAmount,
+          selected_currency: data.currency || null,
+          selected_price_snapshot: JSON.stringify({
+            optionKey: data.optionKey || null,
+            rateOptionId: data.rateOptionId || null,
+            hotelCode: data.hotelCode || null,
+            canonicalHotelId: data.canonicalHotelId ?? data.hotelId ?? null,
+            providerHotelCode: data.providerHotelCode || null,
+            selectionKey: data.selectionKey || null,
+            provider: data.provider || null,
+            selectionOrigin: 'USER_SELECTED',
+            hotelName: data.hotelName || null,
+            category: data.category || null,
+            roomTypeId: data.roomTypeId || null,
+            roomType: data.roomType || null,
+            mealPlan: canonicalMealPlanCode || null,
+            bookingCode: data.bookingCode || null,
+            searchReference: data.searchReference || null,
+            roomId: data.roomId || null,
+            rateId: data.rateId || null,
+            extraBedCount,
+            extraBedRate,
+            extraBedAmount,
+            extraBedGstAmount,
+            ...authoritativePricingSnapshot,
+            hotelMarginGstAmount: hotelMarginRateTaxAmount,
+            pricePerNight: data.pricePerNight ?? null,
+            totalPrice: selectionPricing.totalPrice || null,
+            ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
+              basePricePerNight: staahBasePricePerNight,
+              baseTotalPrice: staahBaseTotal,
+              roomCostTaxAmount: 0,
+            } : {}),
+          }),
         },
       });
  console.log(` Created. Values - hotel_id: ${(created as any).hotel_id}, group_type: ${(created as any).group_type}`);
@@ -237,36 +610,56 @@ export class ItinerarySelectionWorkflowService {
     }
 
  // Check if room details already exist
-    const existingRoomDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findFirst({
+    const existingRoomDetails = await (db as any).dvi_itinerary_plan_hotel_room_details.findFirst({
       where: {
-        itinerary_plan_id: data.planId,
-        itinerary_route_id: data.routeId,
-        hotel_id: data.hotelId,
+        itinerary_plan_hotel_details_id: hotelDetailsId,
         deleted: 0,
+        status: 1,
       },
+      orderBy: { itinerary_plan_hotel_room_details_ID: 'desc' },
     });
 
     if (existingRoomDetails) {
  // Update existing room details
-      await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.update({
+      await (db as any).dvi_itinerary_plan_hotel_room_details.update({
         where: { itinerary_plan_hotel_room_details_ID: existingRoomDetails.itinerary_plan_hotel_room_details_ID },
         data: {
+          hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
+          room_qty: selectionPricing.roomCount,
+          room_rate: selectionPricing.roomRate,
+          total_room_cost: selectionPricing.totalPrice,
+          extra_bed_count: extraBedCount,
+          extra_bed_rate: extraBedRate,
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
           dinner_required: mealDinner,
           updatedon: new Date(),
         },
       });
+      await (db as any).dvi_itinerary_plan_hotel_room_details.updateMany({
+        where: {
+          itinerary_plan_hotel_details_id: hotelDetailsId,
+          deleted: 0,
+          status: 1,
+          itinerary_plan_hotel_room_details_ID: { not: existingRoomDetails.itinerary_plan_hotel_room_details_ID },
+        },
+        data: { status: 0, deleted: 1, updatedon: new Date() },
+      });
     } else {
  // Create new room details
-      await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.create({
+      await (db as any).dvi_itinerary_plan_hotel_room_details.create({
         data: {
           itinerary_plan_hotel_details_id: hotelDetailsId,
           itinerary_plan_id: data.planId,
           itinerary_route_id: data.routeId,
-          hotel_id: data.hotelId,
+          hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
+          room_qty: selectionPricing.roomCount,
+          room_rate: selectionPricing.roomRate,
+          total_room_cost: selectionPricing.totalPrice,
+          extra_bed_count: extraBedCount,
+          extra_bed_rate: extraBedRate,
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
           dinner_required: mealDinner,
@@ -278,9 +671,12 @@ export class ItinerarySelectionWorkflowService {
       });
     }
 
- // Clear cache for this quote so next request gets fresh data
-    if (quoteId) {
-      this.hotelDetailsTboService.clearCacheForQuote(quoteId);
+    // A live selection changes the durable assignment. Invalidate the
+    // per-quote hotel-details cache so a subsequent itinerary reload reads
+    // this USER_SELECTED rate instead of reconstructing the previous
+    // auto-selected row from the stale snapshot.
+    if (plan?.itinerary_quote_ID && !data.transactionClient) {
+      this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
     }
 
     return {
@@ -292,6 +688,20 @@ export class ItinerarySelectionWorkflowService {
   private getLiveRateMetadata(provider?: string) {
     const normalizedProvider = String(provider || '').trim().toLowerCase();
     if (!['tbo', 'axisrooms', 'staah', 'resavenue', 'hobse'].includes(normalizedProvider)) return {};
+    if (normalizedProvider === 'axisrooms') {
+      // AxisRooms availability and price are read from our ARI-synchronised
+      // tables. Booking is still supplier-bookable, but this is not a live
+      // search price and must not be labelled as one in the persisted row.
+      return {
+        hotel_provider: normalizedProvider,
+        hotel_booking_mode: 'LIVE_API',
+        price_source: 'DATABASE',
+        is_live_rate: false,
+        hotel_approval_status: 'NOT_REQUIRED',
+        manual_confirmation_status: 'NOT_STARTED',
+        requires_price_reacceptance: false,
+      };
+    }
     return {
       hotel_provider: normalizedProvider,
       hotel_booking_mode: 'LIVE_API',
@@ -311,10 +721,13 @@ export class ItinerarySelectionWorkflowService {
     canonicalHotelId?: number;
     rateOptionId?: string;
     roomCount?: number;
+    routeDate?: string;
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
     requestedBy?: number;
+    transactionClient?: any;
   }) {
+    data = { ...data, groupType: this.requireTargetGroupType(data.groupType) };
     const canonicalHotelId = Number(data.canonicalHotelId ?? data.hotelId ?? 0);
     const rateOptionId = String(data.rateOptionId || '').trim();
     if (!canonicalHotelId || !rateOptionId) {
@@ -327,34 +740,84 @@ export class ItinerarySelectionWorkflowService {
       resolvedRate = await this.offlineHotelCatalogService.resolveOfflineRateOption({
         planId: Number(data.planId),
         routeId: Number(data.routeId),
+        routeDate: data.routeDate,
         canonicalHotelId,
         rateOptionId,
-        roomCount: Math.max(Number(data.roomCount || 1), 1),
+        roomCount: Number(data.roomCount || 0) > 0
+          ? Number(data.roomCount)
+          : undefined,
       });
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : 'Offline hotel rate is stale or invalid');
     }
 
     const requestedBy = Number(data.requestedBy || 1);
+    const effectiveRoomCount = Math.max(
+      Number(resolvedRate.roomCount || data.roomCount || 1),
+      1,
+    );
     const now = new Date();
-    const snapshot = JSON.stringify(resolvedRate);
-    const checkInDate = resolvedRate.nightlyRates[0]?.date || null;
-    const checkOutDate = resolvedRate.nightlyRates.length
-      ? new Date(`${resolvedRate.nightlyRates[resolvedRate.nightlyRates.length - 1].date}T00:00:00.000Z`)
+    const resolvedRouteId = Number(resolvedRate.routeId || data.routeId);
+    const routeNight = resolvedRate.nightlyRates.find((night: any) => night.date === resolvedRate.routeDate);
+    if (!routeNight) {
+      throw new BadRequestException('Offline hotel pricing does not contain the selected route night');
+    }
+    const routeBaseAmount = Number(routeNight.baseAmount || 0);
+    const routeMarginAmount = Number(routeNight.marginAmount || 0);
+    const routePayableAmount = Number(routeNight.sellAmount || 0);
+    if (Math.abs(routeBaseAmount + routeMarginAmount - routePayableAmount) > 0.01) {
+      throw new BadRequestException({
+        code: 'HOTEL_PRICING_INTEGRITY_ERROR',
+        message: 'Offline hotel base, margin, and payable amounts do not reconcile.',
+      });
+    }
+    // One DB row represents one itinerary route/night. Keep the complete stay
+    // totals under explicit stay-prefixed fields so downstream row sums cannot
+    // accidentally charge the full continuous stay once per route.
+    const routeSnapshot = {
+      ...resolvedRate,
+      pricingScope: 'ROUTE_NIGHT',
+      stayBaseTotalPrice: resolvedRate.baseTotalPrice,
+      stayHotelMarginTotalAmount: resolvedRate.hotelMarginTotalAmount,
+      stayTotalPrice: resolvedRate.totalStayPrice,
+      basePricePerNight: routeBaseAmount,
+      baseTotalPrice: routeBaseAmount,
+      hotelMarginAmount: routeMarginAmount,
+      hotelMarginTotalAmount: routeMarginAmount,
+      pricePerNight: routePayableAmount,
+      totalPrice: routePayableAmount,
+      totalStayPrice: routePayableAmount,
+      numberOfNights: 1,
+      nightlyRates: [routeNight],
+    };
+    const snapshot = JSON.stringify(routeSnapshot);
+    const checkInDate = resolvedRate.routeDate || routeNight.date || null;
+    const checkOutDate = checkInDate
+      ? new Date(`${checkInDate}T00:00:00.000Z`)
       : null;
     if (checkOutDate) checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
 
-    await this.prisma.$transaction(async (tx) => {
-      const existingHotel = await (tx as any).dvi_itinerary_plan_hotel_details.findFirst({
+    const persist = async (tx: any) => {
+      const existingHotelCandidates = await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
         where: {
           itinerary_plan_id: Number(data.planId),
-          itinerary_route_id: Number(data.routeId),
+          itinerary_route_id: resolvedRouteId,
           group_type: Number(data.groupType || 1),
-          hotel_required: { not: 2 },
+          hotel_required: 1,
           deleted: 0,
+          status: 1,
         },
         orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
       });
+      const offlineSelectionKey = hotelSelectionKey(
+        Number(data.planId),
+        resolvedRouteId,
+        Number(data.groupType || 1),
+        checkInDate,
+      );
+      const existingHotel = existingHotelCandidates.find((row: any) =>
+        hotelSelectionKeyFromRow(Number(data.planId), row) === offlineSelectionKey,
+      ) || existingHotelCandidates[0];
       const hotelData = {
         hotel_id: resolvedRate.canonicalHotelId,
         hotel_code: String(resolvedRate.canonicalHotelId),
@@ -364,10 +827,16 @@ export class ItinerarySelectionWorkflowService {
         price_source: 'DATABASE',
         is_live_rate: false,
         selected_rate_option_id: rateOptionId,
-        selected_price_per_night: resolvedRate.pricePerNight,
-        selected_total_price: resolvedRate.totalStayPrice,
+        selected_price_per_night: routePayableAmount,
+        selected_total_price: routePayableAmount,
         selected_currency: resolvedRate.currency,
         selected_price_snapshot: snapshot,
+        total_no_of_rooms: effectiveRoomCount,
+        total_room_cost: routeBaseAmount,
+        hotel_margin_percentage: resolvedRate.hotelMarginPercentage,
+        hotel_margin_rate: routeMarginAmount,
+        hotel_margin_rate_tax_amt: 0,
+        total_hotel_cost: routePayableAmount,
         hotel_approval_status: 'PENDING_APPROVAL',
         hotel_approval_requested_at: now,
         hotel_approval_requested_by: requestedBy,
@@ -396,7 +865,7 @@ export class ItinerarySelectionWorkflowService {
         : await (tx as any).dvi_itinerary_plan_hotel_details.create({
             data: {
               itinerary_plan_id: Number(data.planId),
-              itinerary_route_id: Number(data.routeId),
+              itinerary_route_id: resolvedRouteId,
               group_type: Number(data.groupType || 1),
               createdby: requestedBy,
               createdon: now,
@@ -412,9 +881,9 @@ export class ItinerarySelectionWorkflowService {
         hotel_id: resolvedRate.canonicalHotelId,
         room_id: resolvedRate.roomId,
         room_type_id: resolvedRate.roomTypeId,
-        room_qty: Math.max(Number(data.roomCount || 1), 1),
-        room_rate: resolvedRate.pricePerNight,
-        total_room_cost: resolvedRate.totalStayPrice,
+        room_qty: effectiveRoomCount,
+        room_rate: routePayableAmount,
+        total_room_cost: routePayableAmount,
         breakfast_required: data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0,
         lunch_required: data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0,
         dinner_required: data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0,
@@ -432,7 +901,7 @@ export class ItinerarySelectionWorkflowService {
           data: {
             itinerary_plan_hotel_details_id: selection.itinerary_plan_hotel_details_ID,
             itinerary_plan_id: Number(data.planId),
-            itinerary_route_id: Number(data.routeId),
+            itinerary_route_id: resolvedRouteId,
             group_type: Number(data.groupType || 1),
             createdby: requestedBy,
             createdon: now,
@@ -448,7 +917,7 @@ export class ItinerarySelectionWorkflowService {
           new_approval_status: 'PENDING_APPROVAL',
           previous_confirmation_status: existingHotel?.manual_confirmation_status || 'NOT_STARTED',
           new_confirmation_status: 'NOT_STARTED',
-          price: resolvedRate.totalStayPrice,
+          price: routePayableAmount,
           currency: resolvedRate.currency,
           notes: 'Offline hotel selection requested',
           acted_by: requestedBy,
@@ -456,10 +925,12 @@ export class ItinerarySelectionWorkflowService {
           metadata: snapshot,
         },
       });
-    });
+    };
+    if (data.transactionClient) await persist(data.transactionClient);
+    else await this.prisma.$transaction(persist);
 
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({ where: { itinerary_plan_ID: Number(data.planId) } });
-    if (plan?.itinerary_quote_ID) this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
+    if (plan?.itinerary_quote_ID && !data.transactionClient) this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
     return {
       success: true,
       message: 'Hotel selected successfully and is pending hotel approval',
@@ -473,8 +944,21 @@ export class ItinerarySelectionWorkflowService {
  /**
    * Bulk save hotel selections - used before confirming itinerary
  */
-  async bulkSaveHotels(planId: number, hotels: any[]) {
-    const userId = 1;
+  async bulkSaveHotels(
+    planId: number,
+    hotels: any[],
+    requestedBy = 1,
+    skipSupplierRefresh = false,
+    lockAlreadyHeld = false,
+  ) {
+
+    if (!Array.isArray(hotels) || hotels.length === 0) {
+      throw new BadRequestException('At least one hotel selection is required');
+    }
+    const groups = new Set(hotels.map((hotel) => this.requireTargetGroupType(hotel.groupType)));
+    if (groups.size !== 1) {
+      throw new BadRequestException('Atomic hotel persistence requires one recommendation group per operation');
+    }
 
  // Get the quote ID to clear the cache
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
@@ -484,15 +968,87 @@ export class ItinerarySelectionWorkflowService {
 
  console.log(` Bulk saving ${hotels.length} hotel(s) for plan ${planId}`);
 
-    for (const hotel of hotels) {
-      await this.selectHotel({
-        planId,
-        routeId: hotel.routeId,
-        hotelId: hotel.hotelId,
-        roomTypeId: hotel.roomTypeId || 1,
-        groupType: hotel.groupType,
-        mealPlan: hotel.mealPlan,
+    const lockName = `itinerary-hotel-selection:${planId}:${String(hotels[0]?.groupType || 1)}`;
+    const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+    if (!lockAlreadyHeld && !databaseUrl) {
+      throw new InternalServerErrorException({
+        code: 'HOTEL_SELECTION_LOCK_UNAVAILABLE',
+        message: 'The hotel selection lock could not be established.',
       });
+    }
+    const lockConnection = lockAlreadyHeld ? null : await createConnection(databaseUrl);
+    let lockAcquired = false;
+    try {
+      if (lockConnection) {
+        const lockResult: any = await lockConnection.query('SELECT GET_LOCK(?, 10) AS acquired', [lockName]);
+        lockAcquired = Number((lockResult as any)?.[0]?.[0]?.acquired || 0) === 1;
+        if (!lockAcquired) throw new BadRequestException('Another hotel selection is being applied. Please retry.');
+      }
+
+      // Supplier refresh is deliberately outside the Prisma transaction, but
+      // inside the plan/group lock. A late refresh from request A therefore
+      // cannot overwrite a newer request B after B has committed.
+      for (const hotel of skipSupplierRefresh ? [] : hotels) {
+        const provider = String(hotel.provider || '').trim().toLowerCase();
+        const hotelCode = String(hotel.providerHotelCode || hotel.hotelCode || hotel.hotelId || '').trim();
+        if (!provider || provider === 'offline' || !hotelCode || !plan?.itinerary_quote_ID) continue;
+        const refreshed = await this.hotelDetailsTboService.getSelectedHotelRates(
+          String(plan.itinerary_quote_ID), Number(hotel.routeId), provider, hotelCode, Number(hotel.groupType),
+        );
+        if (!Array.isArray(refreshed?.hotels) || refreshed.hotels.length === 0) {
+          throw new BadRequestException(`No current rates are available for ${hotelCode}`);
+        }
+        if (this.hotelAvailabilitySnapshotService) {
+          await this.hotelAvailabilitySnapshotService.mergeSelectedHotelRates(
+            String(plan.itinerary_quote_ID), Number(hotel.routeId), provider, hotelCode, refreshed.hotels,
+          );
+        }
+      }
+
+      await this.prisma.$transaction(async (tx: any) => {
+        for (const hotel of hotels) {
+          await this.selectHotel({
+            planId,
+            routeId: hotel.routeId,
+            hotelId: hotel.hotelId,
+            roomTypeId: hotel.roomTypeId || 1,
+            groupType: hotel.groupType,
+            mealPlan: hotel.mealPlan,
+            canonicalHotelId: hotel.canonicalHotelId ?? hotel.hotelId,
+            providerHotelCode: hotel.providerHotelCode,
+            selectionKey: hotel.selectionKey,
+            rateOptionId: hotel.rateOptionId,
+            provider: hotel.provider,
+            hotelCode: hotel.hotelCode,
+            optionKey: hotel.optionKey,
+            pricePerNight: hotel.pricePerNight,
+            totalPrice: hotel.totalPrice,
+            currency: hotel.currency,
+            hotelName: hotel.hotelName,
+            category: hotel.category,
+            roomType: hotel.roomType,
+            mealPlanCode: hotel.mealPlanCode,
+            bookingCode: hotel.bookingCode,
+            searchReference: hotel.searchReference,
+            roomId: hotel.roomId,
+            rateId: hotel.rateId,
+            roomCount: hotel.roomCount,
+            extraBedCount: hotel.extraBedCount,
+            extraBedRate: hotel.extraBedRate,
+            extraBedAmount: hotel.extraBedAmount,
+            extraBedGstAmount: hotel.extraBedGstAmount,
+            requestedBy,
+            transactionClient: tx,
+          });
+        }
+      });
+    } finally {
+      if (lockConnection) {
+        if (lockAcquired) {
+          try { await lockConnection.query('SELECT RELEASE_LOCK(?)', [lockName]); } catch { /* connection close releases it */ }
+        }
+        await lockConnection.end();
+      }
     }
 
  // Clear cache once at the end
@@ -504,6 +1060,358 @@ export class ItinerarySelectionWorkflowService {
       success: true,
       message: `Successfully saved ${hotels.length} hotel selections`,
     };
+  }
+
+  /**
+   * A selection must come from the latest persisted availability snapshot.
+   * The fallback for test doubles/legacy installations is intentionally only
+   for databases where the snapshot model is unavailable; production has this
+   table because Check Availability owns the durable search boundary.
+   */
+  private async validateLiveSelectionAgainstSnapshot(
+    data: any,
+    plan: any,
+    quoteId: string,
+    route?: any,
+  ): Promise<void> {
+    const provider = String(data.provider || '').trim().toLowerCase();
+    if (!provider || provider === 'offline') return;
+
+    if (provider === 'axisrooms') {
+      this.assertAxisRoomsReferenceMatchesRoute(data, route);
+
+      // AxisRooms is not a live-search snapshot provider in this flow. Its
+      // availability and price are read from the ARI tables populated by the
+      // daily inventory feed. Validate that source directly and do not require
+      // a row in dvi_itinerary_hotel_search_cache, which may be absent or
+      // belong to a different search run.
+      if (await this.isCurrentAxisRoomsDatabaseRate(data, route)) return;
+    }
+
+    const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
+    if (!cache?.findFirst || !cache?.findMany) return;
+
+    const latest = await cache.findFirst({
+      where: { quote_id: String(quoteId), plan_id: Number(plan?.itinerary_plan_ID || data.planId), deleted: 0, status: 1 },
+      orderBy: [{ synced_at: 'desc' }, { id: 'desc' }],
+      select: { synced_at: true },
+    });
+    if (!latest?.synced_at) {
+      throw new BadRequestException('Hotel availability has not been checked yet. Refresh hotel availability and select a current rate.');
+    }
+
+    const routeWhere = {
+      quote_id: String(quoteId),
+      plan_id: Number(plan?.itinerary_plan_ID || data.planId),
+      route_id: Number(data.routeId),
+      deleted: 0,
+      status: 1,
+      synced_at: latest.synced_at,
+    };
+    let rows = await cache.findMany({
+      where: {
+        ...routeWhere,
+      },
+      select: { full_payload: true },
+    });
+    // A route rebuild can replace itinerary route IDs after availability was
+    // persisted. In that case the latest snapshot is still valid when its
+    // stay date/group matches the current route, but a route_id-only lookup
+    // returns no rows. Scope the fallback to the same latest snapshot and
+    // current route date/group; supplier identity and price remain exact below.
+    if (rows.length === 0 && route?.itinerary_route_date) {
+      const routeDate = new Date(route.itinerary_route_date);
+      const routeDateKey = Number.isNaN(routeDate.getTime())
+        ? ''
+        : routeDate.toISOString().slice(0, 10);
+      if (routeDateKey) {
+        const snapshotRows = await cache.findMany({
+          where: {
+            quote_id: String(quoteId),
+            plan_id: Number(plan?.itinerary_plan_ID || data.planId),
+            deleted: 0,
+            status: 1,
+            synced_at: latest.synced_at,
+          },
+          select: { full_payload: true },
+        });
+        rows = snapshotRows.filter((row: any) => {
+          try {
+            const payload = typeof row.full_payload === 'string'
+              ? JSON.parse(row.full_payload)
+              : row.full_payload;
+            const payloadDate = String(
+              payload?.date || payload?.checkInDate || payload?.check_in_date || '',
+            ).slice(0, 10);
+            const payloadGroup = Number(payload?.groupType ?? payload?.group_type ?? 0);
+            return payloadDate === routeDateKey &&
+              (!Number(data.groupType) || !payloadGroup || payloadGroup === Number(data.groupType));
+          } catch {
+            return false;
+          }
+        });
+      }
+    }
+    const requestedRateIds = [data.selectionKey, data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    const requestedCanonicalId = Number((data.canonicalHotelId ?? data.hotelId) || 0);
+    const requestedHotelCode = String(
+      data.hotelCode || data.providerHotelCode || data.provider_hotel_code || '',
+    ).trim().toLowerCase();
+    const requestedRoomType = String(data.roomType || '').trim().toLowerCase();
+    const requestedHotelName = String(data.hotelName || '').trim().toLowerCase();
+    const parsedRows = rows
+      .map((row: any) => {
+        try { return typeof row.full_payload === 'string' ? JSON.parse(row.full_payload) : row.full_payload; } catch { return null; }
+      })
+      .filter(Boolean);
+    const candidateRows = parsedRows.flatMap((row: any) => {
+      const rateOptions = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
+      if (rateOptions.length === 0) return [row];
+      // A hotel row is a container for its room/rate options. Prefer the
+      // concrete option when validating a selection so a parent row cannot
+      // hide the selected option's price and room identity.
+      return [...rateOptions.map((option: any) => normalizeSupplierRateIdentity({
+        ...row,
+        ...option,
+        provider: option.provider || row.provider,
+        canonicalHotelId: row.canonicalHotelId ?? option.canonicalHotelId,
+        hotelId: row.hotelId ?? option.hotelId,
+        hotelCode: row.hotelCode || row.providerHotelCode || option.hotelCode,
+        hotelName: row.hotelName || option.hotelName,
+        roomType: option.roomType || option.roomTypeName || row.roomType,
+        mealPlan: option.mealPlan || option.mealPlanCode || option.ratePlanName || row.mealPlan,
+        bookingCode: option.bookingCode || row.bookingCode,
+        searchReference: option.searchReference || row.searchReference,
+        rateOptionId: option.rateOptionId || option.rate_option_id || row.rateOptionId,
+        optionKey: option.optionKey || option.option_key || row.optionKey,
+        roomId: option.roomId || option.room_id || row.roomId,
+        rateId: option.rateId || option.rate_id || option.rateOptionId || row.rateId,
+      })), normalizeSupplierRateIdentity(row)];
+    });
+    const propertyMatches = (candidate: any): boolean => {
+        if (String(candidate.provider || '').trim().toLowerCase() !== provider) return false;
+        const candidateCanonicalId = Number(candidate.canonicalHotelId ?? candidate.hotelId ?? candidate.hotel_id ?? 0);
+        const candidateHotelCode = String(
+          candidate.providerHotelCode || candidate.provider_hotel_code || candidate.hotelCode || candidate.hotel_code || '',
+        ).trim().toLowerCase();
+        const canonicalMatch = requestedCanonicalId > 0 && candidateCanonicalId > 0 && candidateCanonicalId === requestedCanonicalId;
+        const codeMatch = Boolean(requestedHotelCode && candidateHotelCode && requestedHotelCode === candidateHotelCode);
+        if (!canonicalMatch && !codeMatch) return false;
+        return true;
+    };
+    const rateMatches = (candidate: any): boolean =>
+      requestedRateIds.length > 0 && supplierRateIdentityMatches(data, candidate);
+    const matched = candidateRows.find((candidate: any) => {
+      if (!propertyMatches(candidate) || !rateMatches(candidate)) return false;
+      const candidateRoomType = String(candidate.roomType || candidate.room_type || '').trim().toLowerCase();
+      const candidateHotelName = String(candidate.hotelName || candidate.hotel_name || '').trim().toLowerCase();
+      if (requestedRoomType && candidateRoomType && requestedRoomType !== candidateRoomType) return false;
+      if (requestedHotelName && candidateHotelName && requestedHotelName !== candidateHotelName) return false;
+      return true;
+    });
+
+    if (!matched) {
+      throw new BadRequestException('The selected hotel rate is stale or unavailable. Refresh hotel availability and select again.');
+    }
+
+    const requestedTotal = Number(data.totalPrice ?? 0);
+    const explicitSnapshotTotals = [
+      matched.totalStayPrice,
+      matched.totalPrice,
+      matched.totalAmount,
+      matched.totalAmountAfterTax,
+      matched.totalHotelCost,
+      matched.totalCost,
+      matched.totalRoomCost,
+      matched.total_hotel_cost,
+    ].map(Number).filter((amount) => Number.isFinite(amount) && amount > 0);
+    // Only use a nightly price as a fallback when the snapshot does not
+    // expose any stay-level amount. Comparing a multi-night selection with a
+    // per-night value can incorrectly accept or reject a stale selection.
+    const snapshotTotals = explicitSnapshotTotals.length > 0
+      ? explicitSnapshotTotals
+      : [matched.price, matched.pricePerNight, matched.price_per_night]
+        .map(Number)
+        .filter((amount) => Number.isFinite(amount) && amount > 0);
+    if (requestedTotal > 0 && snapshotTotals.length > 0 && !snapshotTotals.some((snapshotTotal) => Math.abs(requestedTotal - snapshotTotal) <= 0.01)) {
+      throw new BadRequestException('The selected hotel price changed. Refresh hotel availability and review the updated rate.');
+    }
+  }
+
+  private toDateOnly(value: unknown): string {
+    const parsed = value ? new Date(String(value)) : new Date('invalid');
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+  }
+
+  private axisRoomsReferenceDate(value: unknown): string {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const isoDate = raw.match(/(20\d{2})[-](\d{2})[-](\d{2})/);
+    if (isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+    const compactDate = raw.match(/(?:^|[-|:])((20\d{2})(\d{2})(\d{2}))(?:$|[-|:])/i);
+    return compactDate ? `${compactDate[2]}-${compactDate[3]}-${compactDate[4]}` : '';
+  }
+
+  private parseAxisRoomsRateReference(data: any): {
+    hotelId: number;
+    roomId: number;
+    rateplanId: string;
+    date: string;
+  } {
+    const references = [data?.rateOptionId, data?.optionKey, data?.searchReference, data?.bookingCode]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    let hotelId = Number(data?.canonicalHotelId ?? data?.hotelId ?? 0) || 0;
+    let roomId = Number(data?.roomId || 0) || 0;
+    let rateplanId = String(data?.rateId || '').trim();
+    let date = '';
+
+    for (const reference of references) {
+      const rateOption = reference.match(/^axisrooms:(\d+):(\d+):([^:|]+):(\d{4}-\d{2}-\d{2})$/i);
+      if (rateOption) {
+        hotelId = Number(rateOption[1]) || hotelId;
+        roomId = Number(rateOption[2]) || roomId;
+        rateplanId = rateOption[3] || rateplanId;
+        date = rateOption[4];
+        break;
+      }
+      const optionRate = reference.match(/axisrooms[:|](\d+)[:|](\d+)[:|]([^:|]+)[:|](\d{4}-\d{2}-\d{2})/i);
+      if (optionRate) {
+        hotelId = Number(optionRate[1]) || hotelId;
+        roomId = Number(optionRate[2]) || roomId;
+        rateplanId = optionRate[3] || rateplanId;
+        date = optionRate[4];
+      }
+      const booking = reference.match(/^AX[-:](\d+)[-:](\d{8})$/i);
+      if (booking) {
+        hotelId = Number(booking[1]) || hotelId;
+        date = `${booking[2].slice(0, 4)}-${booking[2].slice(4, 6)}-${booking[2].slice(6, 8)}`;
+      }
+      date = date || this.axisRoomsReferenceDate(reference);
+    }
+
+    return { hotelId, roomId, rateplanId, date };
+  }
+
+  private assertAxisRoomsReferenceMatchesRoute(data: any, route?: any): void {
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    if (!routeDate) return;
+    const references = [data?.rateOptionId, data?.optionKey, data?.searchReference, data?.bookingCode]
+      .map((value) => this.axisRoomsReferenceDate(value))
+      .filter(Boolean);
+    const uniqueReferenceDates = Array.from(new Set(references));
+    if (uniqueReferenceDates.length > 1 || (uniqueReferenceDates.length === 1 && uniqueReferenceDates[0] !== routeDate)) {
+      throw new BadRequestException({
+        message: `The selected AxisRooms rate belongs to ${uniqueReferenceDates[0] || 'another date'}, but this itinerary route is ${routeDate}.`,
+        code: 'HOTEL_RATE_ROUTE_DATE_MISMATCH',
+        provider: 'axisrooms',
+        routeId: Number(data?.routeId || 0),
+        routeDate,
+        rateDate: uniqueReferenceDates[0] || null,
+      });
+    }
+  }
+
+  private async isCurrentAxisRoomsDatabaseRate(data: any, route?: any): Promise<boolean> {
+    const identity = this.parseAxisRoomsRateReference(data);
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    if (!identity.hotelId || !identity.roomId || !identity.rateplanId || !routeDate || identity.date !== routeDate) return false;
+
+    const availabilityModel = (this.prisma as any).dvi_hotel_room_availability;
+    const ratePlanModel = (this.prisma as any).dvi_hotel_room_rate_plan;
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!availabilityModel?.findFirst || !ratePlanModel?.findFirst || !occupancyModel?.findMany) return false;
+
+    const date = new Date(`${routeDate}T00:00:00.000Z`);
+    const requiredRooms = Math.max(Number(data?.roomCount || 1), 1);
+    const [availability, ratePlan, occupancyRows] = await Promise.all([
+      availabilityModel.findFirst({
+        where: { hotel_id: identity.hotelId, room_id: identity.roomId, start_date: { lte: date }, end_date: { gte: date } },
+        orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+        select: { free: true },
+      }),
+      ratePlanModel.findFirst({
+        where: { hotel_id: identity.hotelId, room_id: identity.roomId, rateplan_id: identity.rateplanId, axisrooms_room_id: { not: null }, deleted: 0, status: 1 },
+        select: { rateplan_id: true },
+      }),
+      occupancyModel.findMany({
+        where: { hotel_id: identity.hotelId, room_id: identity.roomId, rateplan_id: identity.rateplanId, start_date: { lte: date }, end_date: { gte: date } },
+        select: { occupancy_rates: true },
+      }),
+    ]);
+    if (!availability || Number(availability.free || 0) < requiredRooms || !ratePlan) return false;
+    return occupancyRows.some((row: any) => {
+      const values = row?.occupancy_rates && typeof row.occupancy_rates === 'object' ? Object.values(row.occupancy_rates) : [];
+      return values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+    });
+  }
+
+  private async resolveAxisRoomsSelectionBasePrice(data: any, route?: any): Promise<number> {
+    const identity = this.parseAxisRoomsRateReference(data);
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!identity.hotelId || !identity.roomId || !identity.rateplanId || !routeDate || !occupancyModel?.findMany) {
+      return 0;
+    }
+    const rows = await occupancyModel.findMany({
+      where: {
+        hotel_id: identity.hotelId,
+        room_id: identity.roomId,
+        rateplan_id: identity.rateplanId,
+        start_date: { lte: new Date(`${routeDate}T00:00:00.000Z`) },
+        end_date: { gte: new Date(`${routeDate}T00:00:00.000Z`) },
+      },
+      select: { occupancy_rates: true, start_date: true, end_date: true, received_at: true },
+      orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+    });
+    if (!Array.isArray(rows) || rows.length === 0) return 0;
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: Number(data.planId) },
+      select: {
+        total_adult: true,
+        total_child_with_bed: true,
+        total_extra_bed: true,
+      } as any,
+    });
+    const roomCount = Math.max(Math.trunc(Number(data.roomCount || 1)), 1);
+    const amount = this.extractAxisroomsRate(rows[0].occupancy_rates, {
+      roomCount,
+      adults: Number((plan as any)?.total_adult || 0),
+      childWithBedCount: Number((plan as any)?.total_child_with_bed || 0),
+      extraBedCount: Number((plan as any)?.total_extra_bed || 0),
+    });
+    return Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : 0;
+  }
+
+  private extractAxisroomsRate(
+    occupancyRates: unknown,
+    pax?: { roomCount?: number; adults?: number; childWithBedCount?: number; extraBedCount?: number },
+  ): number {
+    const values = occupancyRates && typeof occupancyRates === 'object'
+      ? occupancyRates as Record<string, unknown>
+      : {};
+    const roomCount = Math.max(Math.trunc(Number(pax?.roomCount || 1)), 1);
+    const adults = Math.max(Math.trunc(Number(pax?.adults || 0)), 0);
+    if (adults > 0) {
+      const adultsPerRoom = Math.max(Math.ceil(adults / roomCount), 1);
+      const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : adultsPerRoom === 2 ? 'DOUBLE' : adultsPerRoom === 3 ? 'TRIPLE' : 'QUAD';
+      const roomRate = Number(values[occupancyKey]);
+      if (Number.isFinite(roomRate) && roomRate > 0) {
+        const extraBeds = Math.max(
+          Math.trunc(Number(pax?.childWithBedCount || 0)) + Math.trunc(Number(pax?.extraBedCount || 0)),
+          0,
+        );
+        const extraBedRate = Number(values.EXTRABED ?? values.EXTRAADULT ?? values.EXTRACHILD ?? 0);
+        return roomRate * roomCount + (Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate * extraBeds : 0);
+      }
+    }
+    for (const key of ['SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'EXTRABED']) {
+      const value = Number(values[key]);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+    return 0;
   }
 
   private async getVehicleRateAvailabilityForEligible(

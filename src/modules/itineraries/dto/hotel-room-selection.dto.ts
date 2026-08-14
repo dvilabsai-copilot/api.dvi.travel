@@ -28,6 +28,21 @@ export class GetHotelRoomCategoriesDto {
   @IsNotEmpty()
   group_type: number;
 
+  @ApiProperty({ description: 'Provider hotel code (used by TBO/VSR)', required: false })
+  @IsString()
+  @IsOptional()
+  hotel_code?: string;
+
+  @ApiProperty({ description: 'Hotel provider', required: false })
+  @IsString()
+  @IsOptional()
+  provider?: string;
+
+  @ApiProperty({ description: 'Hotel name (fallback identity for TBO/VSR)', required: false })
+  @IsString()
+  @IsOptional()
+  hotel_name?: string;
+
   @ApiProperty({ description: 'Hotel Required (0 or 1)', required: false })
   @IsInt()
   @IsOptional()
@@ -85,10 +100,30 @@ export class UpdateRoomCategoryDto {
   @IsNotEmpty()
   group_type: number;
 
+  @ApiProperty({ description: 'Provider hotel code (used by TBO/VSR)', required: false })
+  @IsString()
+  @IsOptional()
+  hotel_code?: string;
+
+  @ApiProperty({ description: 'Hotel provider', required: false })
+  @IsString()
+  @IsOptional()
+  provider?: string;
+
+  @ApiProperty({ description: 'Hotel name (fallback identity for TBO/VSR)', required: false })
+  @IsString()
+  @IsOptional()
+  hotel_name?: string;
+
   @ApiProperty({ description: 'Selected Room Type ID' })
   @IsInt()
   @IsNotEmpty()
   room_type_id: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  room_number?: number;
 
   @ApiProperty({ description: 'Room Quantity', required: false })
   @IsInt()

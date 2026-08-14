@@ -48,26 +48,37 @@ export class AccountsLedgerService {
    *   - AGENT: header rows from dvi_accounts_itinerary_details
    *   - others: { header, details, transactions[] }
  */
-  async getLedger(query: AccountsLedgerQueryDto): Promise<any[]> {
-    switch (query.componentType) {
-      case AccountsLedgerComponentType.AGENT:
-        return this.getAgentLedger(query);
-      case AccountsLedgerComponentType.GUIDE:
-        return this.getGuideLedger(query);
-      case AccountsLedgerComponentType.ACTIVITY:
-        return this.getActivityLedger(query);
-      case AccountsLedgerComponentType.HOTEL:
-        return this.getHotelLedger(query);
-      case AccountsLedgerComponentType.HOTSPOT:
-        return this.getHotspotLedger(query);
-      case AccountsLedgerComponentType.VEHICLE:
-        return this.getVehicleLedger(query);
-      case AccountsLedgerComponentType.ALL:
-        return this.getAllLedger(query);
-      default:
-        throw new BadRequestException('Unknown component type');
-    }
+ async getLedger(
+  query: AccountsLedgerQueryDto,
+): Promise<any[]> {
+  switch (query.componentType) {
+    case AccountsLedgerComponentType.AGENT:
+      return this.getAgentLedger(query);
+
+    case AccountsLedgerComponentType.GUIDE:
+      return this.getGuideLedger(query);
+
+    case AccountsLedgerComponentType.ACTIVITY:
+      return this.getActivityLedger(query);
+
+    case AccountsLedgerComponentType.HOTEL:
+      return this.getHotelLedger(query);
+
+    case AccountsLedgerComponentType.HOTSPOT:
+      return this.getHotspotLedger(query);
+
+    case AccountsLedgerComponentType.VEHICLE:
+      return this.getVehicleLedger(query);
+
+    case AccountsLedgerComponentType.ALL:
+      return this.getAllLedger(query);
+
+    default:
+      throw new BadRequestException(
+        'Unknown component type',
+      );
   }
+}
 
  //
  // Common header (dvi_accounts_itinerary_details) filter
@@ -136,13 +147,14 @@ export class AccountsLedgerService {
       (h) => h.accounts_itinerary_details_ID,
     );
 
-    const detailsWhere: any = {
-      deleted: 0,
-      accounts_itinerary_details_ID: { in: headerIds },
-    };
-    if (query.guideId && query.guideId > 0) {
-      detailsWhere.guide_id = query.guideId;
-    }
+const detailsWhere: any = {
+  deleted: 0,
+  accounts_itinerary_details_ID: { in: headerIds },
+};
+
+if (query.guideId && query.guideId > 0) {
+  detailsWhere.guide_id = query.guideId;
+}
 
     const details =
       await this.prisma.dvi_accounts_itinerary_guide_details.findMany({
@@ -201,15 +213,14 @@ export class AccountsLedgerService {
     const headerIds = headers.map(
       (h) => h.accounts_itinerary_details_ID,
     );
+const detailsWhere: any = {
+  deleted: 0,
+  accounts_itinerary_details_ID: { in: headerIds },
+};
 
-    const detailsWhere: any = {
-      deleted: 0,
-      accounts_itinerary_details_ID: { in: headerIds },
-    };
-    if (query.activityId && query.activityId > 0) {
-      detailsWhere.activity_ID = query.activityId;
-    }
-
+if (query.activityId && query.activityId > 0) {
+  detailsWhere.activity_ID = query.activityId;
+}
     const details =
       await this.prisma.dvi_accounts_itinerary_activity_details.findMany(
         {
@@ -270,14 +281,14 @@ export class AccountsLedgerService {
     const headerIds = headers.map(
       (h) => h.accounts_itinerary_details_ID,
     );
+const detailsWhere: any = {
+  deleted: 0,
+  accounts_itinerary_details_ID: { in: headerIds },
+};
 
-    const detailsWhere: any = {
-      deleted: 0,
-      accounts_itinerary_details_ID: { in: headerIds },
-    };
-    if (query.hotelId && query.hotelId > 0) {
-      detailsWhere.hotel_id = query.hotelId;
-    }
+if (query.hotelId && query.hotelId > 0) {
+  detailsWhere.hotel_id = query.hotelId;
+}
 
     const details =
       await this.prisma.dvi_accounts_itinerary_hotel_details.findMany(
@@ -408,15 +419,33 @@ export class AccountsLedgerService {
       (h) => h.accounts_itinerary_details_ID,
     );
 
-    const detailsWhere: any = {
-      deleted: 0,
-      accounts_itinerary_details_ID: { in: headerIds },
-    };
+ const detailsWhere: any = {
+  deleted: 0,
+  accounts_itinerary_details_ID: { in: headerIds },
+};
 
- // vendor filter
-    if (query.vendorId && query.vendorId > 0) {
-      detailsWhere.vendor_id = query.vendorId;
-    }
+// Vendor
+if (query.vendorId && query.vendorId > 0) {
+  detailsWhere.vendor_id = query.vendorId;
+}
+
+// Vendor Branch
+if (
+  query.vendorBranchId &&
+  query.vendorBranchId > 0
+) {
+  detailsWhere.vendor_branch_id =
+    query.vendorBranchId;
+}
+
+// Vehicle Type
+if (
+  query.vehicleTypeId &&
+  query.vehicleTypeId > 0
+) {
+  detailsWhere.vehicle_type_id =
+    query.vehicleTypeId;
+}
 
     const details =
       await this.prisma.dvi_accounts_itinerary_vehicle_details.findMany(
@@ -509,195 +538,347 @@ export class AccountsLedgerService {
  //
  // DROPDOWN OPTIONS dynamic, PHP-style
  //
-  async getFilterOptions(
-    _query: AccountsLedgerQueryDto,
-  ): Promise<AccountsLedgerOptionsDto> {
-    const [
-      agentRows,
-      branchRows,
-      vendorRows,
-      guideRows,
-      hotspotRows,
-      activityRows,
-      hotelRows,
-      vehicleRows,
-    ] = await Promise.all([
- // Agents
-      this.prisma.dvi_agent.findMany({
-        where: { deleted: 0 },
-        select: {
-          agent_ID: true,
-          agent_name: true,
-          agent_lastname: true,
-        },
-        orderBy: [
-          { agent_name: 'asc' },
-          { agent_lastname: 'asc' },
-        ],
-      }),
+async getFilterOptions(
+  query: AccountsLedgerQueryDto,
+): Promise<AccountsLedgerOptionsDto> {
+  const vendorId = Number(
+    query.vendorId || 0,
+  );
 
- // Vehicle branches (branch dropdown)
-      this.prisma.dvi_vendor_branches.findMany({
-        where: { deleted: 0 },
-        select: {
-          vendor_branch_location: true,
-        },
-        orderBy: {
-          vendor_branch_location: 'asc',
-        },
-      }),
+  /*
+   * When a Vendor is logged in, determine the Agents and
+   * Vehicle Types that actually occur in that Vendor's ledger.
+   */
+  const vendorLedgerRows =
+    vendorId > 0
+      ? await this.prisma
+          .dvi_accounts_itinerary_vehicle_details
+          .findMany({
+            where: {
+              vendor_id: vendorId,
+              deleted: 0,
+            },
+            select: {
+              accounts_itinerary_details_ID:
+                true,
+              vehicle_type_id: true,
+            },
+          })
+      : [];
 
- // Vehicle vendors dvi_vendor_details.vendor_name
-      this.prisma.dvi_vendor_details.findMany({
-        where: { deleted: 0 },
-        select: {
-          vendor_name: true,
-        },
-        orderBy: {
-          vendor_name: 'asc',
-        },
-      }),
+  const vendorHeaderIds = Array.from(
+    new Set(
+      vendorLedgerRows
+        .map((row) =>
+          Number(
+            row.accounts_itinerary_details_ID ||
+              0,
+          ),
+        )
+        .filter((id) => id > 0),
+    ),
+  );
 
- // Guides dvi_guide_details.guide_name
-      this.prisma.dvi_guide_details.findMany({
-        where: { deleted: 0 },
-        select: {
-          guide_name: true,
-        },
-        orderBy: {
-          guide_name: 'asc',
-        },
-      }),
+  const vendorHeaderRows =
+    vendorId > 0 &&
+    vendorHeaderIds.length > 0
+      ? await this.prisma
+          .dvi_accounts_itinerary_details
+          .findMany({
+            where: {
+              accounts_itinerary_details_ID: {
+                in: vendorHeaderIds,
+              },
+              deleted: 0,
+            },
+            select: {
+              agent_id: true,
+            },
+          })
+      : [];
 
- // Hotspots dvi_hotspot_place.hotspot_name
-      this.prisma.dvi_hotspot_place.findMany({
-        where: { deleted: 0 },
-        select: {
-          hotspot_name: true,
-        },
-        orderBy: {
-          hotspot_name: 'asc',
-        },
-      }),
+  const vendorAgentIds = Array.from(
+    new Set(
+      vendorHeaderRows
+        .map((row) =>
+          Number(row.agent_id || 0),
+        )
+        .filter((id) => id > 0),
+    ),
+  );
 
- // Activities dvi_activity.activity_title
-      this.prisma.dvi_activity.findMany({
-        where: { deleted: 0 },
-        select: {
-          activity_title: true,
-        },
-        orderBy: {
-          activity_title: 'asc',
-        },
-      }),
-
- // Hotels deleted is boolean in Prisma
-      this.prisma.dvi_hotel.findMany({
-        where: {
-          deleted: false,
-        },
-        select: {
-          hotel_name: true,
-        },
-        orderBy: {
-          hotel_name: 'asc',
-        },
-      }),
-
- // Vehicles only to get used vehicle_type_id values
-      this.prisma.dvi_vehicle.findMany({
-        where: { deleted: 0 },
-        select: {
-          vehicle_type_id: true,
-        },
-      }),
-    ]);
-
- // Resolve vehicle_type_id vehicle_type_title
-    const usedTypeIds = Array.from(
+  const vendorVehicleTypeIds =
+    Array.from(
       new Set(
-        vehicleRows
-          .map((v) => v.vehicle_type_id)
-          .filter((id): id is number => typeof id === 'number'),
+        vendorLedgerRows
+          .map((row) =>
+            Number(
+              row.vehicle_type_id || 0,
+            ),
+          )
+          .filter((id) => id > 0),
       ),
     );
 
-    let vehicleTypeRows:
-      | { vehicle_type_title: string | null }[]
-      | [] = [];
+  const [
+    agentRows,
+    branchRows,
+    vendorRows,
+    guideRows,
+    hotspotRows,
+    activityRows,
+    hotelRows,
+    vehicleTypeRows,
+  ] = await Promise.all([
+    this.prisma.dvi_agent.findMany({
+      where: {
+        deleted: 0,
+        ...(vendorId > 0
+          ? {
+              agent_ID: {
+                in: vendorAgentIds,
+              },
+            }
+          : {}),
+      },
+      select: {
+        agent_ID: true,
+        agent_name: true,
+        agent_lastname: true,
+      },
+      orderBy: [
+        { agent_name: 'asc' },
+        { agent_lastname: 'asc' },
+      ],
+    }),
 
-    if (usedTypeIds.length > 0) {
-      vehicleTypeRows =
-        await this.prisma.dvi_vehicle_type.findMany({
-          where: {
- // assuming PK is vehicle_type_ID
-            vehicle_type_id: { in: usedTypeIds },
-          },
+    this.prisma.dvi_vendor_branches.findMany({
+      where: {
+        deleted: 0,
+        ...(vendorId > 0
+          ? { vendor_id: vendorId }
+          : {}),
+      },
+      select: {
+        vendor_branch_id: true,
+        vendor_branch_name: true,
+        vendor_branch_location: true,
+      },
+      orderBy: {
+        vendor_branch_name: 'asc',
+      },
+    }),
+
+    this.prisma.dvi_vendor_details.findMany({
+      where: {
+        deleted: 0,
+        ...(vendorId > 0
+          ? { vendor_id: vendorId }
+          : {}),
+      },
+      select: {
+        vendor_id: true,
+        vendor_name: true,
+      },
+      orderBy: {
+        vendor_name: 'asc',
+      },
+    }),
+
+    vendorId > 0
+      ? Promise.resolve([])
+      : this.prisma.dvi_guide_details.findMany({
+          where: { deleted: 0 },
           select: {
-            vehicle_type_title: true,
+            guide_id: true,
+            guide_name: true,
           },
           orderBy: {
-            vehicle_type_title: 'asc',
+            guide_name: 'asc',
           },
-        });
-    }
+        }),
 
-    const agents = agentRows
-      .map((a) => {
-        const parts = [a.agent_name, a.agent_lastname]
-          .filter((v) => !!v && String(v).trim().length > 0)
-          .map((v) => String(v).trim());
+    vendorId > 0
+      ? Promise.resolve([])
+      : this.prisma.dvi_hotspot_place.findMany({
+          where: { deleted: 0 },
+          select: {
+            hotspot_ID: true,
+            hotspot_name: true,
+          },
+          orderBy: {
+            hotspot_name: 'asc',
+          },
+        }),
 
-        const label = parts.join(' ').trim();
-        return label || `Agent #${a.agent_ID}`;
-      })
-      .filter((v, idx, arr) => v && arr.indexOf(v) === idx)
-      .sort((a, b) => a.localeCompare(b));
+    vendorId > 0
+      ? Promise.resolve([])
+      : this.prisma.dvi_activity.findMany({
+          where: { deleted: 0 },
+          select: {
+            activity_id: true,
+            activity_title: true,
+          },
+          orderBy: {
+            activity_title: 'asc',
+          },
+        }),
 
-    const vehicleBranches = branchRows
-      .map((b) => (b.vendor_branch_location ?? '').trim())
-      .filter((v, idx, arr) => v && arr.indexOf(v) === idx)
-      .sort((a, b) => a.localeCompare(b));
+    vendorId > 0
+      ? Promise.resolve([])
+      : this.prisma.dvi_hotel.findMany({
+          where: {
+            deleted: false,
+          },
+          select: {
+            hotel_id: true,
+            hotel_name: true,
+          },
+          orderBy: {
+            hotel_name: 'asc',
+          },
+        }),
 
-    const vehicles = vehicleTypeRows
-      .map((v) => (v.vehicle_type_title ?? '').trim())
-      .filter((v, idx, arr) => v && arr.indexOf(v) === idx)
-      .sort((a, b) => a.localeCompare(b));
+    this.prisma.dvi_vehicle_type.findMany({
+      where: {
+        deleted: 0,
+        ...(vendorId > 0
+          ? {
+              vehicle_type_id: {
+                in: vendorVehicleTypeIds,
+              },
+            }
+          : {}),
+      },
+      select: {
+        vehicle_type_id: true,
+        vehicle_type_title: true,
+      },
+      orderBy: {
+        vehicle_type_title: 'asc',
+      },
+    }),
+  ]);
 
-    const vendors = vendorRows
-      .map((v) => (v.vendor_name ?? '').trim())
-      .filter((v, idx, arr) => v && arr.indexOf(v) === idx)
-      .sort((a, b) => a.localeCompare(b));
+  const agents = agentRows
+    .map((agent) => {
+      const name = [
+        agent.agent_name,
+        agent.agent_lastname,
+      ]
+        .filter(
+          (value) =>
+            value &&
+            String(value).trim(),
+        )
+        .map((value) =>
+          String(value).trim(),
+        )
+        .join(' ')
+        .trim();
 
-    const guides = guideRows
-      .map((g) => (g.guide_name ?? '').trim())
-      .filter((v, idx, arr) => v && arr.indexOf(v) === idx)
-      .sort((a, b) => a.localeCompare(b));
+      return {
+        id: Number(agent.agent_ID),
+        label:
+          name ||
+          `Agent #${agent.agent_ID}`,
+      };
+    })
+    .filter(
+      (item) =>
+        item.id > 0 &&
+        item.label.length > 0,
+    );
 
-    const hotspots = hotspotRows
-      .map((h) => (h.hotspot_name ?? '').trim())
-      .filter((v, idx, arr) => v && arr.indexOf(v) === idx)
-      .sort((a, b) => a.localeCompare(b));
+  const vehicleBranches =
+    branchRows.map((branch) => ({
+      id: Number(
+        branch.vendor_branch_id,
+      ),
+      label:
+        String(
+          branch.vendor_branch_name ||
+            branch.vendor_branch_location ||
+            `Branch #${branch.vendor_branch_id}`,
+        ).trim(),
+    }));
 
-    const activities = activityRows
-      .map((a) => (a.activity_title ?? '').trim())
-      .filter((v, idx, arr) => v && arr.indexOf(v) === idx)
-      .sort((a, b) => a.localeCompare(b));
+  const vendors = vendorRows.map(
+    (vendor) => ({
+      id: Number(vendor.vendor_id),
+      label:
+        String(
+          vendor.vendor_name ||
+            `Vendor #${vendor.vendor_id}`,
+        ).trim(),
+    }),
+  );
 
-    const hotels = hotelRows
-      .map((h) => (h.hotel_name ?? '').trim())
-      .filter((v, idx, arr) => v && arr.indexOf(v) === idx)
-      .sort((a, b) => a.localeCompare(b));
+  const vehicles =
+    vehicleTypeRows.map((vehicle) => ({
+      id: Number(
+        vehicle.vehicle_type_id,
+      ),
+      label:
+        String(
+          vehicle.vehicle_type_title ||
+            `Vehicle Type #${vehicle.vehicle_type_id}`,
+        ).trim(),
+    }));
 
-    return {
-      agents,
-      vehicleBranches,
-      vehicles,
-      vendors,
-      guides,
-      hotspots,
-      activities,
-      hotels,
-    };
-  }
+  const guides = guideRows.map(
+    (guide: any) => ({
+      id: Number(guide.guide_id),
+      label:
+        String(
+          guide.guide_name ||
+            `Guide #${guide.guide_id}`,
+        ).trim(),
+    }),
+  );
+
+  const hotspots = hotspotRows.map(
+    (hotspot: any) => ({
+      id: Number(hotspot.hotspot_ID),
+      label:
+        String(
+          hotspot.hotspot_name ||
+            `Hotspot #${hotspot.hotspot_ID}`,
+        ).trim(),
+    }),
+  );
+
+  const activities = activityRows.map(
+    (activity: any) => ({
+      id: Number(activity.activity_id),
+      label:
+        String(
+          activity.activity_title ||
+            `Activity #${activity.activity_id}`,
+        ).trim(),
+    }),
+  );
+
+  const hotels = hotelRows.map(
+    (hotel: any) => ({
+      id: Number(hotel.hotel_id),
+      label:
+        String(
+          hotel.hotel_name ||
+            `Hotel #${hotel.hotel_id}`,
+        ).trim(),
+    }),
+  );
+
+  return {
+    agents,
+    vehicleBranches,
+    vehicles,
+    vendors,
+    guides,
+    hotspots,
+    activities,
+    hotels,
+  };
+}
 }

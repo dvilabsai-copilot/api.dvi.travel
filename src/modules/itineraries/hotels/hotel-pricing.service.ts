@@ -81,6 +81,51 @@ export class HotelPricingService {
     return Number.isFinite(fallbackMargin) && fallbackMargin > 0 ? fallbackMargin : 0;
   }
 
+  /**
+   * Resolve the single effective hotel margin used to create a new price.
+   * Hotel configuration wins, followed by the active global DB setting; the
+   * environment value is retained only as an installation fallback.
+   */
+  async resolveEffectiveHotelMarginPercentage(hotel: any): Promise<number> {
+    const hotelMargin = Number(
+      hotel?.hotel_margin ??
+      hotel?.hotelMargin ??
+      hotel?.marginPercentage ??
+      0,
+    );
+    if (Number.isFinite(hotelMargin) && hotelMargin > 0) {
+      return hotelMargin;
+    }
+
+    const settingsModel = (this.prisma as any).dvi_global_settings;
+    if (settingsModel?.findFirst) {
+      const settings = await settingsModel.findFirst({
+        where: { deleted: 0, status: 1 },
+        orderBy: { global_settings_ID: 'asc' },
+        select: { hotel_margin: true },
+      });
+      const globalMargin = Number(settings?.hotel_margin ?? 0);
+      if (Number.isFinite(globalMargin) && globalMargin > 0) {
+        return globalMargin;
+      }
+    }
+
+    const fallbackMargin = Number(process.env.HOTEL_MARGIN ?? 0);
+    return Number.isFinite(fallbackMargin) && fallbackMargin > 0 ? fallbackMargin : 0;
+  }
+
+  marginBreakdown(baseAmount: number, marginPercentage: number) {
+    const base = this.money(baseAmount);
+    const percentage = Math.max(Number(marginPercentage || 0), 0);
+    const marginAmount = this.money((base * percentage) / 100);
+    return {
+      baseAmount: base,
+      marginPercentage: percentage,
+      marginAmount,
+      sellAmount: this.money(base + marginAmount),
+    };
+  }
+
   applyInvisibleHotelMargin(amount: number, hotel: any): number {
     const baseAmount = Number(amount || 0);
     if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
