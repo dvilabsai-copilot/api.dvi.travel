@@ -3,9 +3,11 @@ import test from 'node:test';
 import {
   getHotelAvailabilityResetReason,
   hasItineraryMealPlanChanged,
+  hasItineraryRoomCountChanged,
   hasItineraryRouteChanged,
   ItineraryPlanPersistenceService,
   resolveItineraryMealPlanCode,
+  resolveItineraryRoomCount,
 } from '../src/modules/itineraries/services/itinerary-plan-persistence.service';
 
 function createService() {
@@ -168,7 +170,19 @@ test('meal-plan reset detection falls back to legacy flags when the canonical co
 test('hotel reset reason triggers for meal-plan-only edits and preserves route precedence', () => {
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, mealPlanChanged: true }), 'MEAL_PLAN_CHANGED');
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: true, mealPlanChanged: true }), 'ROUTE_CHANGED');
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, roomCountChanged: true }), 'ROOM_COUNT_CHANGED');
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: true, roomCountChanged: true }), 'ROUTE_CHANGED');
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, mealPlanChanged: false }), null);
+});
+
+test('room-count reset detection follows traveller room ids', () => {
+  const twoRooms = [{ room_id: 1 }, { room_id: 2 }, { room_id: 1 }];
+  const oneRoom = [{ room_id: 1 }, { room_id: 1 }];
+
+  assert.equal(resolveItineraryRoomCount(twoRooms), 2);
+  assert.equal(resolveItineraryRoomCount(oneRoom), 1);
+  assert.equal(hasItineraryRoomCountChanged({ preferred_room_count: 2 }, oneRoom), true);
+  assert.equal(hasItineraryRoomCountChanged({ preferred_room_count: 1 }, oneRoom), false);
 });
 
 test('route reset detection fires when a destination or stay date changes', () => {
