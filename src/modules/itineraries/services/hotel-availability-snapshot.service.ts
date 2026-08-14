@@ -3342,6 +3342,9 @@ export class HotelAvailabilitySnapshotService {
         itinerary_route_id: true,
         itinerary_route_date: true,
         group_type: true,
+        hotel_id: true,
+        hotel_code: true,
+        hotel_provider: true,
       },
     });
     const existingKeys = new Set(existing.map((row: any) => hotelSelectionKeyFromRow(planId, row)));
@@ -3368,7 +3371,38 @@ export class HotelAvailabilitySnapshotService {
       optionsByKey.set(key, bucket);
     }
 
-    for (const [key, options] of optionsByKey.entries()) {
+    // The inventory is shared by all recommendation groups, but automatic
+    // selections must be distinct within a route.  Do not let every group
+    // independently choose the same cheapest hotel.  Existing selections are
+    // also reserved so a newly-created group cannot collide with one that was
+    // already persisted during this transaction.
+    const reservedHotelIdsByRoute = new Map<number, Set<string>>();
+    const hotelIdentity = (option: any): string => {
+      const canonicalId = Number(option?.canonicalHotelId || option?.hotelId || 0);
+      if (canonicalId > 0) return `id:${canonicalId}`;
+      const provider = String(option?.provider || '').trim().toLowerCase();
+      const code = String(option?.hotelCode || option?.providerHotelCode || option?.hotel_code || '').trim().toLowerCase();
+      const name = String(option?.hotelName || '').trim().toLowerCase();
+      return `property:${provider}:${code || name}`;
+    };
+    for (const row of existing) {
+      const routeId = Number(row?.itinerary_route_id || 0);
+      if (!routeId) continue;
+      const bucket = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
+      const identity = hotelIdentity(row);
+      if (identity !== 'property::') bucket.add(identity);
+      reservedHotelIdsByRoute.set(routeId, bucket);
+    }
+
+    const orderedOptions = [...optionsByKey.entries()].sort(([leftKey], [rightKey]) => {
+      const leftParts = leftKey.split('|');
+      const rightParts = rightKey.split('|');
+      return Number(leftParts[1] || 0) - Number(rightParts[1] || 0) ||
+        Number(leftParts[2] || 0) - Number(rightParts[2] || 0) ||
+        leftKey.localeCompare(rightKey);
+    });
+
+    for (const [key, options] of orderedOptions) {
       if (existingKeys.has(key)) continue;
       const selectionPool = this.getAutoSelectionPool(
         options,
@@ -3387,12 +3421,20 @@ export class HotelAvailabilitySnapshotService {
         !hasMatchingLiveOption,
       );
       if (eligibleOptions.length === 0) continue;
-      const option = [...eligibleOptions].sort((a, b) => {
+      const sortedOptions = [...eligibleOptions].sort((a, b) => {
         const priceDelta = this.authoritativeAutoTotal(a) - this.authoritativeAutoTotal(b);
         if (priceDelta !== 0) return priceDelta;
         return this.optionKey(a).localeCompare(this.optionKey(b));
-      })[0];
+      });
+      const routeId = Number(sortedOptions[0]?.itineraryRouteId || sortedOptions[0]?.routeId || 0);
+      const reserved = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
+      const option = sortedOptions.find((candidate: any) => !reserved.has(hotelIdentity(candidate)));
+      // There is no distinct hotel left for this recommendation group. Keep
+      // the group visible in the inventory, but do not persist a duplicate
+      // automatic selection.
       if (!option) continue;
+      reserved.add(hotelIdentity(option));
+      reservedHotelIdsByRoute.set(routeId, reserved);
 
       const provider = String(option.provider || 'external').trim().toLowerCase();
       const roomCount = Math.max(Number(option.roomCount || option.totalNoOfRooms || 1), 1);
