@@ -20,6 +20,7 @@ import { AgentService } from './agent.service';
 import { ListAgentQueryDto } from './dto/list-agent.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
+import { UpdateAgentConfigDto } from './dto/update-agent-config.dto';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 
 @ApiTags('agents')
@@ -91,6 +92,16 @@ export class AgentController {
 @Get(':id/config')
 getConfig(@Param('id', ParseIntPipe) id: number) {
   return this.service.getConfig(id);
+}
+
+/** Update agent configuration and margin settings. */
+@UseGuards(JwtAuthGuard)
+@Put(':id/config')
+updateConfig(
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: UpdateAgentConfigDto,
+) {
+  return this.service.updateConfig(id, body);
 }
 
 /** Cash wallet history */
