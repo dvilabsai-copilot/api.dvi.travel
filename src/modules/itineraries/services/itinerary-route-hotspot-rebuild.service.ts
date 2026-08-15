@@ -29,10 +29,10 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
     const normalizedPlanId = Number(planId);
     const normalizedRouteId = Number(routeId);
     let planQuoteId = '';
-    await this.routeVehicleRestrictions.assertPersistedPlan(normalizedPlanId);
 
     let rebuildResult;
     try {
+      await this.routeVehicleRestrictions.assertPersistedPlan(normalizedPlanId);
       rebuildResult = await this.prisma.$transaction(async (tx: any) => {
         const route = await tx.dvi_itinerary_route_details.findFirst({
           where: {
@@ -63,7 +63,6 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
             item_type: 4,
             deleted: 0,
             status: 1,
-            hotspot_plan_own_way: { not: 1 },
           },
         });
         const existingHotspotsWithDates = oldHotspots.map((row: any) => ({
@@ -150,7 +149,9 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
           preRouteVisitCount,
         });
 
-        const engineResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId, existingHotspotsWithDates);
+        const engineResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId, existingHotspotsWithDates, {
+          scopeToRouteId: normalizedRouteId,
+        });
         await this.routeVehicleRestrictions.assertPersistedPlan(
           normalizedPlanId,
           `hotspot-rebuild:${normalizedPlanId}:${normalizedRouteId}`,
@@ -195,16 +196,39 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
       throw new BadRequestException(detail);
     }
 
+    const postProcessErrors: { stage: string; message: string }[] = [];
+
+    const runPostRebuildStep = async (stage: string, step: () => Promise<any>) => {
+      try {
+        await step();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err || '');
+        console.error(`[RouteRebuild][POST-PROCESS][${stage}]`, {
+          planId: normalizedPlanId,
+          routeId: normalizedRouteId,
+          message,
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+        postProcessErrors.push({ stage, message });
+      }
+    };
+
     if (!rebuildResult?.skipped) {
-      await this.callbacks.applySameCityCrossDayOptimizerAfterSave(normalizedPlanId, planQuoteId);
-      await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
-      await this.callbacks.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId);
+      await runPostRebuildStep('sameCityCrossDayOptimizer', () =>
+        this.callbacks.applySameCityCrossDayOptimizerAfterSave(normalizedPlanId, planQuoteId));
+      await runPostRebuildStep('parkingCharges', () =>
+        this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1)));
+      await runPostRebuildStep('vehiclePricing', () =>
+        this.callbacks.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId));
     }
+
+    const failedStages = new Set(postProcessErrors.map((e) => e.stage));
 
     return {
       ...rebuildResult,
-      parkingChargesRebuilt: !rebuildResult?.skipped,
-      vehiclePricingRebuilt: !rebuildResult?.skipped,
+      parkingChargesRebuilt: !rebuildResult?.skipped && !failedStages.has('parkingCharges'),
+      vehiclePricingRebuilt: !rebuildResult?.skipped && !failedStages.has('vehiclePricing'),
+      postProcessErrors: postProcessErrors.length > 0 ? postProcessErrors : undefined,
     };
   }
 }
