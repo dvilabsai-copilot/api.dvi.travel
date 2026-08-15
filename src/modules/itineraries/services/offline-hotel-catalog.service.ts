@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { HotelSearchResult, RoomType } from '../../hotels/interfaces/hotel-provider.interface';
+import { inferCanonicalHotelRatePlanCode } from '../../hotels/hotel-rate-plans';
 import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
 import { normalizeHotelDisplayName } from '../utils/hotel-selection-identity.util';
 
@@ -62,6 +63,7 @@ export type OfflineRateResolution = {
 
 type OfflineCatalogRows = {
   roomsByHotel: Map<number, any[]>;
+  ratePlansByRoom: Map<number, any[]>;
   activeRoomTypeIds: Set<number>;
   pricesByHotelRoomType: Map<string, any[]>;
 };
@@ -107,13 +109,14 @@ export class OfflineHotelCatalogService {
     adultCount?: number;
     childCount?: number;
     childAges?: number[];
+    requestedMealPlanCode?: string;
   }): Promise<HotelSearchResult[]> {
     const hotels = await this.fetchOfflineHotelsForStayBlock({
       destination: String(criteria.cityCode || '').trim(),
       checkInDate: String(criteria.checkInDate || '').slice(0, 10),
       checkOutDate: String(criteria.checkOutDate || '').slice(0, 10),
       routeIds: [],
-    }, Math.max(Number(criteria.roomCount || 1), 1), `adults:${Number(criteria.adultCount || 0)}|children:${Number(criteria.childCount || 0)}|ages:${(criteria.childAges || []).join(',')}`, Number(criteria.adultCount || 0), Number(criteria.childCount || 0));
+    }, Math.max(Number(criteria.roomCount || 1), 1), `adults:${Number(criteria.adultCount || 0)}|children:${Number(criteria.childCount || 0)}|ages:${(criteria.childAges || []).join(',')}|meal:${inferCanonicalHotelRatePlanCode(criteria.requestedMealPlanCode) || 'ANY'}`, Number(criteria.adultCount || 0), Number(criteria.childCount || 0), undefined, undefined, String(criteria.requestedMealPlanCode || ''));
     return hotels;
   }
 
@@ -125,6 +128,7 @@ export class OfflineHotelCatalogService {
     adultCount: number = 2,
     childCount: number = 0,
     childAges: number[] = [],
+    requestedMealPlanCode = '',
   ): Promise<Map<number, HotelSearchResult[]>> {
     const startedAt = Date.now();
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
@@ -141,7 +145,7 @@ export class OfflineHotelCatalogService {
         `for roomCount=${roomCount}, adults=${adultCount}, children=${childCount}, nationality=${guestNationality || 'n/a'}`,
     );
 
-    const occupancyKey = `adults:${adultCount}|children:${childCount}|ages:${childAges.join(',')}`;
+    const occupancyKey = `adults:${adultCount}|children:${childCount}|ages:${childAges.join(',')}|meal:${inferCanonicalHotelRatePlanCode(requestedMealPlanCode) || 'ANY'}`;
     const now = Date.now();
     const cachePartitionStartedAt = Date.now();
     const uncachedBlocks = stayBlocks.filter((block) => {
@@ -193,6 +197,7 @@ export class OfflineHotelCatalogService {
         childCount,
         catalogRows,
         hotelsByBlock.get(this.blockCacheKey(block, roomCount, occupancyKey)),
+        requestedMealPlanCode,
       );
 
       for (const routeId of block.routeIds) {
@@ -312,6 +317,7 @@ export class OfflineHotelCatalogService {
     childCount = 0,
     catalogRows?: OfflineCatalogRows,
     prefetchedHotels?: any[],
+    requestedMealPlanCode = '',
   ): Promise<HotelSearchResult[]> {
     const cacheKey = [
       block.destination,
@@ -364,7 +370,7 @@ export class OfflineHotelCatalogService {
 
     const results: HotelSearchResult[] = [];
     for (const hotel of hotels as any[]) {
-      const offers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount, catalogRows);
+      const offers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount, catalogRows, requestedMealPlanCode);
       if (offers.length === 0) {
         continue;
       }
@@ -555,6 +561,7 @@ export class OfflineHotelCatalogService {
     if (hotelIds.length === 0) {
       return {
         roomsByHotel: new Map(),
+        ratePlansByRoom: new Map(),
         activeRoomTypeIds: new Set(),
         pricesByHotelRoomType: new Map(),
       };
@@ -589,6 +596,22 @@ export class OfflineHotelCatalogService {
       const rows = roomsByHotel.get(hotelId) || [];
       rows.push(room);
       roomsByHotel.set(hotelId, rows);
+    }
+
+    const ratePlansByRoom = new Map<number, any[]>();
+    const ratePlanModel = (this.prisma as any).dvi_hotel_room_rate_plan;
+    if (ratePlanModel?.findMany) {
+      const ratePlans = await ratePlanModel.findMany({
+        where: { hotel_id: { in: hotelIds }, status: 1, deleted: 0 },
+        select: { room_id: true, rateplan_id: true, rateplan_name: true, meal_plan_description: true },
+      });
+      for (const plan of ratePlans as any[]) {
+        const roomId = Number(plan.room_id || 0);
+        if (roomId <= 0) continue;
+        const rows = ratePlansByRoom.get(roomId) || [];
+        rows.push(plan);
+        ratePlansByRoom.set(roomId, rows);
+      }
     }
 
     const roomTypeIds = Array.from(new Set(
@@ -675,7 +698,7 @@ export class OfflineHotelCatalogService {
       pricesByHotelRoomType.set(key, rows);
     }
 
-    return { roomsByHotel, activeRoomTypeIds, pricesByHotelRoomType };
+    return { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, pricesByHotelRoomType };
   }
 
   clearCache(): void {
@@ -690,6 +713,7 @@ export class OfflineHotelCatalogService {
     childCount: number,
     catalogRows: OfflineCatalogRows,
     marginPercentage: number,
+    requestedMealPlanCode = '',
   ): OfflineRoomOffer[] {
     const hotelId = Number(hotel.hotel_id || 0);
     const roomsNeeded = Math.max(Number(roomCount || 1), 1);
@@ -738,7 +762,7 @@ export class OfflineHotelCatalogService {
         roomTypeId,
         roomTitle: String(room.room_title || room.room_ref_code || `Room ${roomTypeId}`),
         bookingCode: `OFFLINE-${hotelId}-${room.room_ID}-${roomTypeId}`,
-        mealPlan: this.resolveMealPlan(room),
+        mealPlan: this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom),
         nightlyBase,
         nightlyMargin,
         nightlySell,
@@ -761,6 +785,7 @@ export class OfflineHotelCatalogService {
     adultCount = 0,
     childCount = 0,
     catalogRows?: OfflineCatalogRows,
+    requestedMealPlanCode = '',
   ): Promise<OfflineRoomOffer[]> {
     const marginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage(hotel);
     if (catalogRows) {
@@ -772,6 +797,7 @@ export class OfflineHotelCatalogService {
         childCount,
         catalogRows,
         marginPercentage,
+        requestedMealPlanCode,
       );
     }
 
@@ -809,6 +835,22 @@ export class OfflineHotelCatalogService {
     });
     if (roomsWithCapacity.length === 0) return [];
     activeRooms.splice(0, activeRooms.length, ...roomsWithCapacity);
+
+    const ratePlansByRoom = new Map<number, any[]>();
+    const ratePlanModel = (this.prisma as any).dvi_hotel_room_rate_plan;
+    if (ratePlanModel?.findMany && requestedMealPlanCode) {
+      const ratePlans = await ratePlanModel.findMany({
+        where: { hotel_id: Number(hotel.hotel_id || 0), status: 1, deleted: 0 },
+        select: { room_id: true, rateplan_id: true, rateplan_name: true, meal_plan_description: true },
+      });
+      for (const plan of ratePlans as any[]) {
+        const roomId = Number(plan.room_id || 0);
+        if (roomId <= 0) continue;
+        const rows = ratePlansByRoom.get(roomId) || [];
+        rows.push(plan);
+        ratePlansByRoom.set(roomId, rows);
+      }
+    }
 
     const roomTypeIds = Array.from(
       new Set(
@@ -925,7 +967,7 @@ export class OfflineHotelCatalogService {
         roomTypeId,
         roomTitle: String(room.room_title || room.room_ref_code || `Room ${roomTypeId}`),
         bookingCode: `OFFLINE-${hotel.hotel_id}-${room.room_ID}-${roomTypeId}`,
-        mealPlan: this.resolveMealPlan(room),
+        mealPlan: this.resolveMealPlan(room, requestedMealPlanCode, ratePlansByRoom),
         nightlyBase,
         nightlyMargin,
         nightlySell,
@@ -1102,7 +1144,18 @@ export class OfflineHotelCatalogService {
     return `offline:${hotelId}:${offer.roomId}:${offer.roomTypeId}:${checkInDate}:${checkOutDate.toISOString().slice(0, 10)}`;
   }
 
-  private resolveMealPlan(room: any): string {
+  private resolveMealPlan(room: any, requestedMealPlanCode = '', ratePlansByRoom?: Map<number, any[]>): string {
+    const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
+    if (requested && ratePlansByRoom) {
+      const roomPlans = ratePlansByRoom.get(Number(room?.room_ID || 0)) || [];
+      const hasRequestedPlan = roomPlans.some((plan: any) =>
+        inferCanonicalHotelRatePlanCode(
+          plan?.meal_plan_description || plan?.rateplan_name || plan?.rateplan_id,
+        ) === requested,
+      );
+      if (hasRequestedPlan) return requested;
+    }
+
     const breakfast = Number(room?.breakfast_included || 0) === 1;
     const lunch = Number(room?.lunch_included || 0) === 1;
     const dinner = Number(room?.dinner_included || 0) === 1;

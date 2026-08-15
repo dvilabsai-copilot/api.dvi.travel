@@ -1088,6 +1088,8 @@ export class HotelAvailabilitySnapshotService {
         Math.max(Number((plan as any).preferred_room_count || 1), 1),
         Math.max(Number((plan as any).total_adult || 0), 0),
         Math.max(Number((plan as any).total_children || 0), 0),
+        [],
+        String((plan as any).meal_plan_code || ''),
       );
       logStage('offline-fetch-in-reset-coordinator', offlineFetchStartedAt);
       const recommendationGroupTypes = await this.getRecommendationGroupTypes(plan.itinerary_plan_ID, [], sourceRows);
@@ -1538,6 +1540,7 @@ export class HotelAvailabilitySnapshotService {
       adultCount,
       childCount,
       childAges,
+      String((plan as any).meal_plan_code || ''),
     );
 
     const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;

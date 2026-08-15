@@ -3117,14 +3117,14 @@ this.logger.log(
         );
       }
 
- // AxisRooms gate: keep only rooms that have an active AxisRooms-mapped rate plan
- // (axisrooms_room_id NOT NULL = mapped from inbound AxisRooms room/rateplan setup).
- // Occupancy rows may be sourced from AxisRooms or manual admin updates; we do not hard-filter source here.
+ // Keep every active rate plan with a priced occupancy row. A locally
+ // maintained plan (for example MAP_PLAN) may not have an external
+ // axisrooms_room_id, but its ARI price is still valid and must remain
+ // available to the itinerary rate-option selector.
       const activeRatePlanRows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
         where: {
           hotel_id: { in: hotelIds },
           room_id: { in: roomIds },
-          axisrooms_room_id: { not: null },
           deleted: 0,
           status: 1,
         } as any,
@@ -3156,7 +3156,11 @@ this.logger.log(
               const mealPlanByRatePlan = new Map<string, string>();
               for (const rp of activeRatePlanRows as any[]) {
                 const rateplanId = String((rp as any).rateplan_id || '').trim();
-                const mealPlanDesc = String((rp as any).meal_plan_description || '').trim();
+                const mealPlanDesc = String(
+                  (rp as any).meal_plan_description ||
+                  (rp as any).rateplan_name ||
+                  rateplanId,
+                ).trim();
                 if (rateplanId && mealPlanDesc && !mealPlanByRatePlan.has(rateplanId)) {
                   mealPlanByRatePlan.set(rateplanId, mealPlanDesc);
                 }
