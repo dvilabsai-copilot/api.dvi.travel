@@ -756,6 +756,11 @@ export class HotelAvailabilitySnapshotService {
       snapshotKeys.add(key);
     }
 
+    // Recommendation groups own only the automatic selection.  The day-pane
+    // inventory must be shared, so retain the complete unfiltered snapshot
+    // before applying any group/route pagination filters below.
+    const allSharedInventoryRows = normalizedRows;
+
     if (options.groupType && options.groupType > 0) {
       normalizedRows = normalizedRows.filter((row) => Number(row.groupType || 0) === Number(options.groupType));
     }
@@ -850,6 +855,26 @@ export class HotelAvailabilitySnapshotService {
     normalizedRows = decorateHotelCardPricing(
       normalizedRows.map((row) => projectHotelPayablePricing(row, effectiveMarginPercentage)),
       selectedPayableByRouteGroup,
+    );
+    const sharedHotelInventory = decorateHotelCardPricing(
+      allSharedInventoryRows.map((row: any) => {
+        const {
+          selection: _selection,
+          selectionId: _selectionId,
+          selectionOrigin: _selectionOrigin,
+          selectionStatus: _selectionStatus,
+          isSelected: _isSelected,
+          ...inventoryRow
+        } = projectHotelPayablePricing(row, effectiveMarginPercentage);
+        return {
+          ...inventoryRow,
+          groupType: 0,
+          isSelected: false,
+          selectionId: 0,
+          selectionStatus: 'AVAILABLE',
+        };
+      }),
+      new Map(),
     );
     const page = Math.max(1, Number(options.page || 1));
     // pageSize=0 is the complete-snapshot contract used by reset and by the
@@ -969,6 +994,7 @@ export class HotelAvailabilitySnapshotService {
       },
       routePagination,
       hotelAvailability: {
+        sharedHotelInventory,
         hasSupplierHotels: normalizedRows.some((row: any) => row.isBookable !== false && row.provider !== 'offline'),
         supplierHotelCount: normalizedRows.filter((row: any) => row.isBookable !== false && row.provider !== 'offline').length,
         placeholderRowCount: placeholderRows.length,
