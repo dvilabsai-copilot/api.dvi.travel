@@ -218,6 +218,8 @@ export interface RecommendationGenerationDto {
 }
 
 export interface HotelAvailabilityMetaDto {
+  /** Complete route/day inventory shared by every recommendation pane. */
+  sharedHotelInventory?: ItineraryHotelRowDto[];
   hasSupplierHotels: boolean;
   supplierHotelCount: number;
   placeholderRowCount: number;
