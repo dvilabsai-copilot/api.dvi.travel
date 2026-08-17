@@ -1,0 +1,25 @@
+name: Enforce staging promotion
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  only-staging:
+    name: Only staging may promote to main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify source branch
+        env:
+          SOURCE_BRANCH: ${{ github.head_ref }}
+        run: |
+          if [ "$SOURCE_BRANCH" != "staging" ]; then
+            echo "Only the staging branch may be promoted to main."
+            echo "Source branch: $SOURCE_BRANCH"
+            exit 1
+          fi
+          echo "Approved source branch: staging"
