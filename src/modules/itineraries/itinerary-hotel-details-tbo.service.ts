@@ -3989,9 +3989,10 @@ this.logger.log(
     });
 
  // Assign hotels to groups PER DESTINATION (per route).
- // With fewer than four distinct hotels, reuse the available options so every
- // recommendation package still has a complete route. Routes with four or
- // more hotels continue to use distinct hotels per group.
+ // Group 1 starts with the cheapest available hotel. Later groups target the
+ // documented 1.2x/1.4x/1.6x price progression from that route's cheapest
+ // hotel. A hotel is consumed once; sparse routes therefore leave later
+ // groups unavailable instead of duplicating a hotel.
 
  // First pass: Determine groupType for each hotel based on its destination
  const hotelGroupAssignments = new Map<string, number>(); // key: "routeId-hotelCode" -> groupType
@@ -4012,43 +4013,24 @@ this.logger.log(
  // Sort hotels by price (ascending) for this destination
       const sortedHotels = [...availableHotels].sort((a, b) => a.price - b.price);
 
-      if (sortedHotels.length === 1) {
-        const hotel = sortedHotels[0];
-        const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-        for (let groupType = 1; groupType <= 4; groupType++) {
-          hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
-        }
-        this.logger.debug(` Route ${routeId}: 1 hotel - "${hotel.hotelName}" (${hotel.price}) reused across groups`);
-      } else {
- // Multiple hotels: distribute across groups by price order
-        const numHotels = sortedHotels.length;
-
-        sortedHotels.forEach((hotel, index) => {
- // Map hotels to groups in ascending price order
-          let groupType = 1;
-          if (numHotels <= 4) {
-            groupType = Math.min(index + 1, 4);
-          } else {
- // More hotels than groups: distribute proportionally
-            groupType = Math.floor((index / numHotels) * 4) + 1;
-            groupType = Math.min(groupType, 4);
-          }
-
-          const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-          if (numHotels < 4) {
-            // Round-robin reuse fills all four groups while preserving price order.
-            for (let targetGroup = 1; targetGroup <= 4; targetGroup++) {
-              if ((targetGroup - 1) % numHotels === index) {
-                hotelGroupAssignments.set(`${key}:${targetGroup}`, targetGroup);
-              }
-            }
-          } else {
-            hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
-          }
-        });
-
-        this.logger.debug(` Route ${routeId}: ${numHotels} hotels - Distributed across groups by price order${numHotels < 4 ? ' with reuse' : ''}`);
+      const usedHotels = new Set<string>();
+      const groupMultipliers = [1, 1.2, 1.4, 1.6];
+      const initialPrice = Number(sortedHotels[0]?.price || 0);
+      for (let groupType = 1; groupType <= 4; groupType += 1) {
+        const targetPrice = initialPrice * groupMultipliers[groupType - 1];
+        const candidate = sortedHotels
+          .filter((hotel) => !usedHotels.has(`${hotel.hotelCode || hotel.hotelName}`))
+          .sort((left, right) =>
+            Math.abs(Number(left.price || 0) - targetPrice) -
+            Math.abs(Number(right.price || 0) - targetPrice),
+          )[0];
+        if (!candidate) continue;
+        const hotelKey = `${candidate.hotelCode || candidate.hotelName}`;
+        usedHotels.add(hotelKey);
+        const key = `${routeId}-${hotelKey}`;
+        hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
       }
+      this.logger.debug(` Route ${routeId}: ${sortedHotels.length} hotels - assigned without reuse using 1.0x/1.2x/1.4x/1.6x progression`);
     }
 
  // Second pass: Build packages from the assignments

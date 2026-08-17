@@ -3395,9 +3395,9 @@ export class HotelAvailabilitySnapshotService {
         hotel_id: true,
         hotel_code: true,
         hotel_provider: true,
+        selected_price_snapshot: true,
       },
     });
-    const existingKeys = new Set(existing.map((row: any) => hotelSelectionKeyFromRow(planId, row)));
     const optionsByKey = new Map<string, any[]>();
     // Supplier hotel containers may expose the visible/default meal plan on
     // the parent row while the requested MAP/CP/AP variants live in
@@ -3422,10 +3422,10 @@ export class HotelAvailabilitySnapshotService {
     }
 
     // The inventory is shared by all recommendation groups, but automatic
-    // selections must be distinct within a route.  Do not let every group
-    // independently choose the same cheapest hotel.  Existing selections are
-    // also reserved so a newly-created group cannot collide with one that was
-    // already persisted during this transaction.
+    // selections must be distinct within a route. Existing manual/protected
+    // selections are reserved first. Duplicate AUTO_SELECTED rows from an
+    // older snapshot are retired so the next pass can fill that group with
+    // the next unused hotel (or leave it unavailable when none remains).
     const reservedHotelIdsByRoute = new Map<number, Set<string>>();
     const hotelIdentity = (option: any): string => {
       const canonicalId = Number(option?.canonicalHotelId || option?.hotelId || 0);
@@ -3435,23 +3435,45 @@ export class HotelAvailabilitySnapshotService {
       const name = String(option?.hotelName || '').trim().toLowerCase();
       return `property:${provider}:${code || name}`;
     };
-    const distinctHotelCountByRoute = new Map<number, Set<string>>();
-    for (const options of optionsByKey.values()) {
-      for (const option of options) {
-        const routeId = Number(option?.itineraryRouteId || option?.routeId || 0);
-        if (!routeId) continue;
-        const identities = distinctHotelCountByRoute.get(routeId) || new Set<string>();
-        identities.add(hotelIdentity(option));
-        distinctHotelCountByRoute.set(routeId, identities);
-      }
-    }
-    for (const row of existing) {
+    const existingKeys = new Set<string>();
+    const reserveExisting = (row: any): void => {
       const routeId = Number(row?.itinerary_route_id || 0);
-      if (!routeId) continue;
+      if (!routeId) return;
       const bucket = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
       const identity = hotelIdentity(row);
       if (identity !== 'property::') bucket.add(identity);
       reservedHotelIdsByRoute.set(routeId, bucket);
+      existingKeys.add(hotelSelectionKeyFromRow(planId, row));
+    };
+
+    const protectedExisting = existing.filter((row: any) =>
+      isProtectedHotelSelection(row) || selectionOriginFromRow(row) === 'USER_SELECTED',
+    );
+    protectedExisting.forEach(reserveExisting);
+
+    const autoExisting = existing
+      .filter((row: any) => !protectedExisting.includes(row))
+      .sort((left: any, right: any) => Number(left.group_type || 0) - Number(right.group_type || 0));
+    for (const row of autoExisting) {
+      const routeId = Number(row?.itinerary_route_id || 0);
+      const identity = hotelIdentity(row);
+      const bucket = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
+      if (identity !== 'property::' && bucket.has(identity)) {
+        if (tx.dvi_itinerary_plan_hotel_details?.update) {
+          await tx.dvi_itinerary_plan_hotel_details.update({
+            where: { itinerary_plan_hotel_details_ID: row.itinerary_plan_hotel_details_ID },
+            data: { status: 0, deleted: 1, updatedon: new Date() },
+          });
+        }
+        if (tx.dvi_itinerary_plan_hotel_room_details?.updateMany) {
+          await tx.dvi_itinerary_plan_hotel_room_details.updateMany({
+            where: { itinerary_plan_hotel_details_id: row.itinerary_plan_hotel_details_ID, deleted: 0 },
+            data: { status: 0, deleted: 1, updatedon: new Date() },
+          });
+        }
+        continue;
+      }
+      reserveExisting(row);
     }
 
     const orderedOptions = [...optionsByKey.entries()].sort(([leftKey], [rightKey]) => {
@@ -3488,12 +3510,10 @@ export class HotelAvailabilitySnapshotService {
       });
       const routeId = Number(sortedOptions[0]?.itineraryRouteId || sortedOptions[0]?.routeId || 0);
       const reserved = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
-      const requireDistinctHotel = (distinctHotelCountByRoute.get(routeId)?.size || 0) >= 4;
-      const option = requireDistinctHotel
-        ? sortedOptions.find((candidate: any) => !reserved.has(hotelIdentity(candidate)))
-        : sortedOptions[0];
-      // Sparse routes reuse the cheapest eligible option for later groups;
-      // routes with four or more hotels remain distinct by recommendation group.
+      const option = sortedOptions.find((candidate: any) => !reserved.has(hotelIdentity(candidate)));
+      // Never duplicate an automatic hotel across recommendation groups. A
+      // sparse route therefore produces an unavailable group once all
+      // distinct eligible properties have been consumed.
       if (!option) continue;
       reserved.add(hotelIdentity(option));
       reservedHotelIdsByRoute.set(routeId, reserved);
