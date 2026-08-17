@@ -335,7 +335,24 @@ test('recommendations use progressive targets and leave unavailable groups empty
   assert.deepEqual(packages[3].hotels, []);
 });
 
-test('beam search finds the closest real target package without DFS first-N truncation', () => {
+test('does not reuse a physical hotel across recommendation groups when rates differ', () => {
+  const packages = service().generate({
+    routes: oneRoute(),
+    hotelsByRoute: new Map([[1, [
+      option('Same Hotel', 100, 'CP', { rateOptionId: 'same-hotel-cheap' }),
+      option('Same Hotel', 110, 'CP', { rateOptionId: 'same-hotel-expensive' }),
+      option('Different Hotel', 200),
+    ]]]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 200, null, null]);
+  assert.equal(packages[0].hotels[0].hotelName, 'Same Hotel');
+  assert.equal(packages[1].hotels[0].hotelName, 'Different Hotel');
+  assert.deepEqual(packages[2].hotels, []);
+});
+
+test('beam search finds the closest distinct real target package without DFS first-N truncation', () => {
   const packages = service().generate({
     routes: [
       { itinerary_route_ID: 1, itinerary_route_date: '2026-08-02', next_visiting_location: 'Munnar' },
@@ -350,7 +367,9 @@ test('beam search finds the closest real target package without DFS first-N trun
     packageLimit: 1000,
   });
   assert.equal(packages[0].totalPrice, 200);
-  assert.equal(packages[1].totalPrice, 300);
+  // The 300 combination reuses one of group 1's physical hotels. The next
+  // valid distinct package is 400.
+  assert.equal(packages[1].totalPrice, 400);
 });
 
 test('shuffled source input produces deterministic recommendations', () => {
