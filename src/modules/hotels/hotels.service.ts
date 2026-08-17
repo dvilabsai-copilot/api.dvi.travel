@@ -2292,6 +2292,115 @@ export class HotelsService {
     return { dates, rooms: [], occupancies };
   }
 
+
+  /** MEALS: Read saved meal pricing for a date range for the Price Book UI. */
+  async getMealPricebookRangeView(
+    hotel_id: number,
+    query: { startDate: string; endDate: string },
+  ) {
+    const hid = Number(hotel_id);
+
+    if (!Number.isFinite(hid) || hid <= 0) {
+      throw new BadRequestException('hotelId must be a valid number');
+    }
+
+    const start = this.parseRangeViewDate(query.startDate, 'startDate');
+    const end = this.parseRangeViewDate(query.endDate, 'endDate');
+
+    if (start.getTime() > end.getTime()) {
+      throw new BadRequestException(
+        'startDate must be less than or equal to endDate',
+      );
+    }
+
+    const dates: string[] = [];
+    const cur = new Date(start);
+
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    const savedRows =
+      await this.prisma.dvi_hotel_meal_price_book.findMany({
+        where: {
+          hotel_id: hid,
+          status: 1,
+          deleted: 0,
+        } as any,
+        orderBy: {
+          hotel_meal_price_book_id: 'desc',
+        } as any,
+      } as any);
+
+    const rowByKey = new Map<string, any>();
+
+    for (const row of savedRows as any[]) {
+      const mealType = Number(row.meal_type);
+      const year = String(row.year ?? '');
+      const month = String(row.month ?? '').padStart(2, '0');
+
+      const key = `${mealType}:${year}:${month}`;
+
+      if (!rowByKey.has(key)) {
+        rowByKey.set(key, row);
+      }
+    }
+
+    const mealTypes = [
+      { id: 1, name: 'Breakfast' },
+      { id: 2, name: 'Lunch' },
+      { id: 3, name: 'Dinner' },
+    ];
+
+    const rows = mealTypes
+      .map((meal) => {
+        const values: Record<string, number> = {};
+
+        for (const date of dates) {
+          const dt = new Date(`${date}T00:00:00.000Z`);
+
+          const year = String(dt.getUTCFullYear());
+          const month = String(dt.getUTCMonth() + 1).padStart(2, '0');
+          const dayKey = `day_${dt.getUTCDate()}`;
+
+          const saved =
+            rowByKey.get(`${meal.id}:${year}:${month}`);
+
+          if (!saved) {
+            continue;
+          }
+
+          const rawValue = saved[dayKey];
+
+          if (
+            rawValue === null ||
+            rawValue === undefined
+          ) {
+            continue;
+          }
+
+          const value = Number(rawValue);
+
+          if (Number.isFinite(value)) {
+            values[date] = value;
+          }
+        }
+
+        return {
+          mealType: meal.name,
+          values,
+        };
+      })
+      .filter(
+        (row) => Object.keys(row.values).length > 0,
+      );
+
+    return {
+      dates,
+      rows,
+    };
+  }
   async getRoomAvailabilityRangeView(
     hotel_id: number,
     query: { startDate: string; endDate: string; roomId: number },
@@ -2779,30 +2888,31 @@ export class HotelsService {
         },
       });
 
-      if (Object.keys(mergedOccupancyRates).length > 0) {
- // Delete any existing overlapping rows for the same hotel/room/rateplan so that
- // saving new prices always overwrites stale data for the same date range.
-        await (this.prisma as any).dvi_hotel_occupancy_rate.deleteMany({
-          where: {
-            hotel_id: hid,
-            room_id: roomId,
-            rateplan_id: rateplanId,
-            start_date: { lte: end },
-            end_date: { gte: start },
-          },
-        });
+    if (Object.keys(mergedOccupancyRates).length > 0) {
+  // Partial date-range update:
+  // remove only an existing record for this exact submitted range.
+  // Broader or partially overlapping saved ranges must remain untouched.
+  await (this.prisma as any).dvi_hotel_occupancy_rate.deleteMany({
+    where: {
+      hotel_id: hid,
+      room_id: roomId,
+      rateplan_id: rateplanId,
+      start_date: start,
+      end_date: end,
+    },
+  });
 
-        await this.prisma.dvi_hotel_occupancy_rate.create({
-          data: {
-            hotel_id: hid,
-            room_id: roomId,
-            rateplan_id: rateplanId,
-            start_date: start,
-            end_date: end,
-            occupancy_rates: mergedOccupancyRates,
-          },
-        });
-      }
+  await this.prisma.dvi_hotel_occupancy_rate.create({
+    data: {
+      hotel_id: hid,
+      room_id: roomId,
+      rateplan_id: rateplanId,
+      start_date: start,
+      end_date: end,
+      occupancy_rates: mergedOccupancyRates,
+    },
+  });
+}
 
       axisroomsSyncedCount++;
     }
