@@ -27,6 +27,15 @@ export type HotelSelectionSnapshot = {
   searchRunId?: string;
   selectionOrigin?: HotelSelectionOrigin;
   availabilityStatus?: string;
+  authoritativeRecommendation?: boolean;
+  autoSelectionCandidate?: boolean;
+  autoSelectionIdentity?: Record<string, unknown> | null;
+  autoSelectionFallbackFromGroup?: number;
+  authoritativeStayKey?: string;
+  authoritativeParentRouteId?: number;
+  authoritativeRouteIds?: number[];
+  authoritativeCheckInDate?: string;
+  authoritativeCheckOutDate?: string;
 };
 
 export type PersistedHotelIdentity = {
@@ -55,6 +64,76 @@ export type HotelOptionIdentity = {
 };
 
 const clean = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+
+/** Rate-level identity for an authoritative automatic recommendation. */
+export function buildAutoSelectionIdentity(row: any): Record<string, unknown> {
+  return {
+    provider: clean(row?.provider || row?.hotel_provider),
+    canonicalHotelId: Number(row?.canonicalHotelId || row?.canonical_hotel_id || row?.hotelId || row?.hotel_id || 0) || null,
+    providerHotelCode: String(row?.providerHotelCode || row?.provider_hotel_code || row?.hotelCode || row?.hotel_code || '').trim(),
+    rateOptionId: String(row?.rateOptionId || row?.rate_option_id || row?.optionKey || '').trim(),
+    searchReference: String(row?.searchReference || row?.search_reference || '').trim(),
+    bookingCode: String(row?.bookingCode || row?.booking_code || '').trim(),
+    roomId: String(row?.roomId || row?.room_id || '').trim(),
+    roomTypeId: String(row?.roomTypeId || row?.room_type_id || '').trim(),
+    roomType: String(row?.roomType || row?.room_type || row?.roomTypeName || '').trim(),
+    rateId: String(row?.rateId || row?.rate_id || '').trim(),
+    mealPlan: String(row?.mealPlan || row?.meal_plan || row?.mealPlanCode || '').trim().toUpperCase(),
+  };
+}
+
+/** Match the complete authoritative rate identity; absent legacy fields are wildcards. */
+export function autoSelectionIdentityMatches(option: any, identity: any): boolean {
+  if (!identity || typeof identity !== 'object') return false;
+  const actual = buildAutoSelectionIdentity(option);
+  const checks: Array<[unknown, unknown]> = [
+    [actual.provider, identity.provider],
+    [actual.canonicalHotelId, identity.canonicalHotelId],
+    [actual.providerHotelCode, identity.providerHotelCode],
+    [actual.rateOptionId, identity.rateOptionId],
+    [actual.searchReference, identity.searchReference],
+    [actual.bookingCode, identity.bookingCode],
+    [actual.roomId, identity.roomId],
+    [actual.roomTypeId, identity.roomTypeId],
+    [actual.roomType, identity.roomType],
+    [actual.rateId, identity.rateId],
+    [actual.mealPlan, identity.mealPlan],
+  ];
+  return checks.every(([actualValue, expectedValue]) => {
+    const expected = clean(expectedValue);
+    return !expected || clean(actualValue) === expected;
+  });
+}
+
+/**
+ * Fresh recommendation matching. Missing expected fields are not allowed to
+ * turn a property-level identity into an arbitrary room/rate match. A rate
+ * discriminator must exist, unless both sides genuinely expose no rate-level
+ * fields at all (the provider's single-option/property-only case).
+ */
+export function strictAutoSelectionIdentityMatches(option: any, identity: any): boolean {
+  if (!identity || typeof identity !== 'object') return false;
+  const actual = buildAutoSelectionIdentity(option);
+  const propertyChecks: Array<[unknown, unknown]> = [
+    [actual.provider, identity.provider],
+    [actual.canonicalHotelId, identity.canonicalHotelId],
+    [actual.providerHotelCode, identity.providerHotelCode],
+  ];
+  if (!propertyChecks.every(([actualValue, expectedValue]) => {
+    const expected = clean(expectedValue);
+    return !expected || clean(actualValue) === expected;
+  })) return false;
+
+  const rateFields = [
+    'rateOptionId', 'searchReference', 'bookingCode', 'roomId',
+    'roomTypeId', 'roomType', 'rateId', 'mealPlan',
+  ] as const;
+  const expectedRateFields = rateFields.filter((field) => clean(identity[field]));
+  if (expectedRateFields.length === 0) {
+    return rateFields.every((field) => !clean(actual[field]));
+  }
+  return expectedRateFields.every((field) => clean(actual[field]) === clean(identity[field]));
+}
 
 export function normalizeHotelDisplayName(value: unknown): string {
   return String(value ?? '')

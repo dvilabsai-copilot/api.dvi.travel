@@ -529,7 +529,20 @@ export class HotelRecommendationPackageService {
       }
     }
 
-    const selected = (live.length > 0 ? live : offline).sort((a, b) => a.priceCents - b.priceCents || a.optionKey.localeCompare(b.optionKey));
+    const permittedPlans = this.mealPlanPolicy.resolve({
+      destination: stay.destination,
+      itineraryMealPlan: meal,
+    }).permittedPlans;
+    const mealRank = (option: StayOption): number => {
+      const code = this.exactMealPlan(option.hotel);
+      const index = permittedPlans.indexOf(code as any);
+      return index >= 0 ? index : permittedPlans.length;
+    };
+    const selected = (live.length > 0 ? live : offline).sort((a, b) =>
+      mealRank(a) - mealRank(b) ||
+      a.priceCents - b.priceCents ||
+      a.optionKey.localeCompare(b.optionKey),
+    );
     return { stay, options: selected, rejectedCandidates };
   }
 
@@ -641,7 +654,9 @@ export class HotelRecommendationPackageService {
     });
     const requiredMeal = policy.effectiveRequiredPlan;
     const exactMeal = this.exactMealPlan(candidate);
-    if (requiredMeal && exactMeal !== requiredMeal) return { ok: false, reason: `Meal plan mismatch: required ${requiredMeal}, option is ${exactMeal || 'UNKNOWN'}.` };
+    if (requiredMeal && !policy.permittedPlans.includes(exactMeal as any)) {
+      return { ok: false, reason: `Meal plan mismatch: required ${requiredMeal}, option is ${exactMeal || 'UNKNOWN'}.` };
+    }
 
     if (categories.size > 0) {
       const category = this.categoryNumber(candidate);
