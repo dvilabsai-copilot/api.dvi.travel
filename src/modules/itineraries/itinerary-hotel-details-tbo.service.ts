@@ -33,10 +33,12 @@ import {
   type StaahPricingPaxInput,
 } from './helpers/staah-occupancy-pricing';
 import {
+  buildAutoSelectionIdentity,
   hotelDisplaySnapshot,
   optionMatchesSelection,
   parseHotelSelectionSnapshot,
   selectionOriginFromRow,
+  strictAutoSelectionIdentityMatches,
 } from './utils/hotel-selection-identity.util';
 import { hotelDateOnly, hotelStayTotal } from './utils/hotel-stay-pricing.util';
 import { HotelPricingService } from './hotels/hotel-pricing.service';
@@ -99,6 +101,14 @@ export class ItineraryHotelDetailsTboService {
           selectionStatus: _selectionStatus,
           isSelected: _isSelected,
           itineraryPlanHotelDetailsId: _itineraryPlanHotelDetailsId,
+          authoritativeRecommendation: _authoritativeRecommendation,
+          autoSelectionStatus: _autoSelectionStatus,
+          autoSelectionCandidate: _autoSelectionCandidate,
+          autoSelectionIdentity: _autoSelectionIdentity,
+          autoSelectionFallbackFromGroup: _autoSelectionFallbackFromGroup,
+          authoritativeStayKey: _authoritativeStayKey,
+          authoritativeParentRouteId: _authoritativeParentRouteId,
+          authoritativeRouteIds: _authoritativeRouteIds,
           ...inventoryRow
         } = row;
         return {
@@ -308,6 +318,8 @@ export class ItineraryHotelDetailsTboService {
 
     const categoryRaw = String((hotel as any).category ?? '').trim();
     if (categoryRaw) {
+      const mappedCategory = mapHotelCategoryLabelToStar(categoryRaw);
+      if (mappedCategory) candidates.add(mappedCategory);
       const match = categoryRaw.match(/\d+/);
       if (match) {
         const categoryNum = Number(match[0]);
@@ -1921,6 +1933,9 @@ this.logger.log(
  this.logger.log(` Route ${routeId}: STAAH before filter = ${staahCount}`);
     });
 
+  // Keep the provider result intact for the shared day picker. Category and
+  // meal filters are recommendation rules, not display-inventory rules.
+  const completeHotelsByRoute = hotelsByRoute;
   const filteredHotelsByRoute =
   await this.applyPlanPreferenceFilters(
     hotelsByRoute,
@@ -1975,7 +1990,11 @@ this.logger.log(
     // every fetched live/offline option in the hotel list. The legacy price
     // grouping is only used to assign the complete option set to the same four
     // display groups; it does not change the v2 recommendation selection.
-    const allAvailabilityPackages = this.generatePricePackages(filteredHotelsByRoute, routes, preferredCategories);
+    const allAvailabilityPackages = this.generateSharedAvailabilityPackages(
+      completeHotelsByRoute,
+      routes,
+      packages,
+    );
     this.logger.log(`[HOTEL_RECOMMENDATION] algorithm=${algorithm} planId=${planId} groups=${packages.length}`);
 
  // Step 5: Build response
@@ -1983,7 +2002,7 @@ this.logger.log(
       quoteId,
       planId,
       packages,
-      filteredHotelsByRoute,
+      completeHotelsByRoute,
       restrictedHotelsByRoute,
       routes,
       noOfNights,
@@ -4025,7 +4044,7 @@ this.logger.log(
   }
 
   private generatePricePackages(
-    hotelsByRoute: Map<number, HotelSearchResult[]>,
+    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
     routes: any[],
     preferredCategories: number[] = [],
   ): Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }> {
@@ -4161,8 +4180,70 @@ this.logger.log(
     */
   }
 
+  /**
+   * Every recommendation pane receives the same complete route inventory.
+   * Only the row marked by the authoritative recommendation package may be
+   * used for automatic persistence.
+   */
+  private generateSharedAvailabilityPackages(
+    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
+    routes: any[],
+    recommendationPackages: RecommendationPackage[],
+  ): Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }> {
+    return [1, 2, 3, 4].map((groupType) => {
+      const recommendation = recommendationPackages.find((pkg) => Number(pkg.groupType) === groupType);
+      const hotels: Array<HotelSearchResult & { routeId: number }> = [];
+      for (const route of routes) {
+        const routeId = Number(route?.itinerary_route_ID || 0);
+        const source = hotelsByRoute.get(routeId);
+        if (!routeId || !Array.isArray(source)) continue;
+        const stay = recommendation?.stayResults?.find((result: any) =>
+          Number(result.parentRouteId || 0) === routeId ||
+          (Array.isArray(result.routeIds) && result.routeIds.map(Number).includes(routeId)),
+        );
+        const selected = stay && 'hotel' in stay ? (stay as any).hotel : null;
+        const selectedIdentity = selected ? buildAutoSelectionIdentity(selected) : null;
+        const containsSelectedRate = (hotel: any): boolean => Boolean(selectedIdentity && (
+          strictAutoSelectionIdentityMatches(hotel, selectedIdentity) ||
+          (Array.isArray(hotel?.rateOptions) && hotel.rateOptions.some((rateOption: any) =>
+            strictAutoSelectionIdentityMatches({ ...hotel, ...rateOption }, selectedIdentity),
+          ))
+        ));
+        const isFallback = groupType === 4 && stay?.state === 'SELECTED' &&
+          recommendationPackages.find((pkg) => Number(pkg.groupType) === 3)?.stayResults?.some((result: any) =>
+            Number(result.parentRouteId || 0) === routeId && 'hotel' in result && result.hotel && selected &&
+            strictAutoSelectionIdentityMatches(result.hotel, selectedIdentity),
+          );
+        for (const hotel of source) {
+          hotels.push({
+            ...hotel,
+            routeId,
+            groupType,
+            authoritativeRecommendation: true,
+            autoSelectionStatus: selected ? 'AVAILABLE' : 'UNAVAILABLE',
+            ...(stay ? {
+              authoritativeStayKey: stay.stayKey,
+              authoritativeParentRouteId: Number(stay.parentRouteId || 0) || undefined,
+              authoritativeRouteIds: Array.isArray(stay.routeIds) ? stay.routeIds.map(Number) : undefined,
+              authoritativeCheckInDate: stay.checkInDate,
+              authoritativeCheckOutDate: stay.checkOutDate,
+            } : {}),
+            ...(selected && containsSelectedRate(hotel)
+              ? {
+                  autoSelectionCandidate: true,
+                  autoSelectionIdentity: selectedIdentity,
+                  ...(isFallback ? { autoSelectionFallbackFromGroup: 3 } : {}),
+                }
+              : {}),
+          } as HotelSearchResult & { routeId: number });
+        }
+      }
+      return { groupType, label: `Recommended #${groupType}`, hotels };
+    });
+  }
+
   private generateCategoryAvailabilityPackages(
-    hotelsByRoute: Map<number, HotelSearchResult[]>,
+    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
     routes: any[],
     categories: number[],
   ): Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }> {
@@ -4243,7 +4324,7 @@ this.logger.log(
     quoteId: string,
     planId: number,
     packages: RecommendationPackage[],
-    hotelsByRoute: Map<number, HotelSearchResult[]>,
+    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
     restrictedHotelsByRoute: Map<number, HotelSearchResult[]>,
     routes: any[],
     noOfNights: number,
@@ -4963,6 +5044,17 @@ this.logger.log(
       const selectedMealPlan = snapshot.mealPlan || selection.meal_plan || row.mealPlan;
       const decorated = {
         ...row,
+        authoritativeRecommendation: row.authoritativeRecommendation === true || snapshot.authoritativeRecommendation === true,
+        autoSelectionCandidate: row.autoSelectionCandidate === true || snapshot.autoSelectionCandidate === true,
+        autoSelectionIdentity: row.autoSelectionIdentity || snapshot.autoSelectionIdentity || null,
+        autoSelectionFallbackFromGroup: Number(row.autoSelectionFallbackFromGroup || snapshot.autoSelectionFallbackFromGroup || 0) || undefined,
+        authoritativeStayKey: row.authoritativeStayKey || snapshot.authoritativeStayKey || null,
+        authoritativeParentRouteId: Number(row.authoritativeParentRouteId || snapshot.authoritativeParentRouteId || 0) || null,
+        authoritativeRouteIds: Array.isArray(row.authoritativeRouteIds)
+          ? row.authoritativeRouteIds
+          : Array.isArray(snapshot.authoritativeRouteIds) ? snapshot.authoritativeRouteIds : null,
+        authoritativeCheckInDate: row.authoritativeCheckInDate || snapshot.authoritativeCheckInDate || null,
+        authoritativeCheckOutDate: row.authoritativeCheckOutDate || snapshot.authoritativeCheckOutDate || null,
         hotelName: display.hotelName || row.hotelName,
         category: display.category || row.category,
         hotelCode: display.hotelCode || row.hotelCode,
@@ -5311,6 +5403,18 @@ this.logger.log(
 
         let hotelRow: ItineraryHotelRowDto & Record<string, any> = {
           groupType: pkg.groupType,
+          authoritativeRecommendation: (hotel as any).authoritativeRecommendation === true,
+          autoSelectionStatus: (hotel as any).autoSelectionStatus || null,
+          autoSelectionCandidate: (hotel as any).autoSelectionCandidate === true,
+          autoSelectionIdentity: (hotel as any).autoSelectionIdentity || null,
+          autoSelectionFallbackFromGroup: Number((hotel as any).autoSelectionFallbackFromGroup || 0) || undefined,
+          authoritativeStayKey: (hotel as any).authoritativeStayKey || null,
+          authoritativeParentRouteId: Number((hotel as any).authoritativeParentRouteId || 0) || null,
+          authoritativeRouteIds: Array.isArray((hotel as any).authoritativeRouteIds)
+            ? (hotel as any).authoritativeRouteIds.map(Number)
+            : null,
+          authoritativeCheckInDate: (hotel as any).authoritativeCheckInDate || null,
+          authoritativeCheckOutDate: (hotel as any).authoritativeCheckOutDate || null,
           itineraryRouteId: routeId,
           routeIds: Array.isArray((hotel as any).routeIds) && (hotel as any).routeIds.length > 0
             ? (hotel as any).routeIds

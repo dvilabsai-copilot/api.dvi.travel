@@ -48,12 +48,17 @@ export class HotelMealPlanPolicyService {
       return this.houseboat('HOUSEBOAT_LEGACY_NAME');
     }
 
+    const permittedPlans = requested === 'MAP'
+      ? ['MAP', 'CP', 'EP'] as CanonicalHotelRatePlanCode[]
+      : requested ? [requested] : [];
     return {
       effectiveRequiredPlan: requested,
-      permittedPlans: requested ? [requested] : [],
+      permittedPlans,
       policySource: requested ? 'ITINERARY' : 'NONE',
-      fallbackAllowed: false,
-      reason: requested ? `Itinerary meal plan ${requested} is required.` : 'No meal-plan requirement was configured.',
+      fallbackAllowed: requested === 'MAP',
+      reason: requested === 'MAP'
+        ? 'MAP is preferred; CP then EP are permitted when the requested plan is unavailable.'
+        : requested ? `Itinerary meal plan ${requested} is required.` : 'No meal-plan requirement was configured.',
     };
   }
 

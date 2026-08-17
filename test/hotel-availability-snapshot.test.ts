@@ -86,6 +86,153 @@ test('canonical selected rate id never falls back to another nested option', () 
   assert.equal(stale, null);
 });
 
+test('authoritative unavailable groups do not invent a cheapest automatic selection', async () => {
+  const created: any[] = [];
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => { created.push(data); return data; },
+    },
+    dvi_itinerary_plan_hotel_room_details: { updateMany: async () => ({}) },
+  };
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    groupType: 3,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    hotelCode: 'H-1',
+    hotelName: 'Lower category hotel',
+    provider: 'tbo',
+    rateOptionId: 'rate-1',
+    totalStayPrice: 100,
+    isBookable: true,
+    isSelectable: true,
+    authoritativeRecommendation: true,
+    autoSelectionStatus: 'UNAVAILABLE',
+  }], 'run-authoritative-empty', 1);
+
+  assert.equal(created.length, 0);
+});
+
+test('authoritative identity rejects a different nested room or meal rate', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const identity = {
+    provider: 'staah',
+    canonicalHotelId: 101,
+    providerHotelCode: 'H1',
+    rateOptionId: 'suite-map',
+    roomId: 'suite',
+    rateId: 'map-rate',
+    mealPlan: 'MAP',
+  };
+
+  assert.equal((service as any).autoSelectionIdentityMatches({
+    provider: 'staah', hotelId: 101, hotelCode: 'H1', rateOptionId: 'suite-map',
+    roomId: 'suite', rateId: 'map-rate', mealPlan: 'MAP',
+  }, identity), true);
+  assert.equal((service as any).autoSelectionIdentityMatches({
+    provider: 'staah', hotelId: 101, hotelCode: 'H1', rateOptionId: 'deluxe-cp',
+    roomId: 'deluxe', rateId: 'cp-rate', mealPlan: 'CP',
+  }, identity), false);
+});
+
+test('strict authoritative identity rejects a different rate when room fields are absent', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const identity = {
+    provider: 'staah', canonicalHotelId: 101, providerHotelCode: 'H1',
+    rateOptionId: 'suite-map', mealPlan: 'MAP', roomId: '', roomType: '', rateId: '',
+  };
+  assert.equal((service as any).autoSelectionIdentityMatches({
+    provider: 'staah', hotelId: 101, hotelCode: 'H1', rateOptionId: 'suite-map', mealPlan: 'MAP',
+  }, identity), true);
+  assert.equal((service as any).autoSelectionIdentityMatches({
+    provider: 'staah', hotelId: 101, hotelCode: 'H1', rateOptionId: 'deluxe-cp', mealPlan: 'MAP',
+  }, identity), false);
+});
+
+test('continuous logical stay persists one parent selection and one full-stay total', async () => {
+  const created: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => { created.push(data); return data; },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+      updateMany: async () => ({}),
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 102,
+    routeId: 102,
+    routeIds: [101, 102],
+    groupType: 1,
+    authoritativeRecommendation: true,
+    autoSelectionStatus: 'AVAILABLE',
+    autoSelectionCandidate: true,
+    autoSelectionIdentity: {
+      provider: 'tbo', canonicalHotelId: 501, providerHotelCode: 'H-501',
+      rateOptionId: 'suite-map', searchReference: '', bookingCode: '',
+      roomId: 'suite', roomTypeId: '', roomType: 'Suite', rateId: 'map-rate', mealPlan: 'MAP',
+    },
+    authoritativeStayKey: '101|2026-08-02|2026-08-04',
+    authoritativeParentRouteId: 101,
+    authoritativeRouteIds: [101, 102],
+    authoritativeCheckInDate: '2026-08-02',
+    authoritativeCheckOutDate: '2026-08-04',
+    provider: 'tbo', hotelId: 501, hotelCode: 'H-501', hotelName: 'Hotel A',
+    rateOptionId: 'suite-map', roomId: 'suite', roomType: 'Suite', rateId: 'map-rate', mealPlan: 'MAP',
+    pricePerNight: 2500, totalStayPrice: 5000,
+    checkInDate: '2026-08-02', checkOutDate: '2026-08-04',
+    isBookable: true, isSelectable: true,
+  }], 'logical-stay-run', 7);
+
+  assert.equal(created.length, 1);
+  assert.equal(created[0].itinerary_route_id, 101);
+  assert.equal(created[0].selected_total_price, 5000);
+  const snapshot = JSON.parse(created[0].selected_price_snapshot);
+  assert.equal(snapshot.authoritativeStayKey, '101|2026-08-02|2026-08-04');
+  assert.deepEqual(snapshot.authoritativeRouteIds, [101, 102]);
+  assert.equal(snapshot.rateOptionId, 'suite-map');
+});
+
+test('genuine G4 recommendation clears stale G3 fallback metadata', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const fallbackSelection: any = {
+    hotel_id: 101,
+    hotel_code: 'A',
+    hotel_provider: 'staah',
+    selected_total_price: 100,
+    total_hotel_cost: 100,
+    selected_price_snapshot: JSON.stringify({
+      selectionOrigin: 'AUTO_SELECTED',
+      autoSelectionFallbackFromGroup: 3,
+      hotelName: 'Hotel A',
+    }),
+  };
+  const fallbackOption = {
+    provider: 'staah', hotelId: 101, hotelCode: 'A', hotelName: 'Hotel A',
+    rateOptionId: 'a-cp', roomId: 'a-room', rateId: 'a-rate', mealPlan: 'CP',
+    totalPrice: 100, autoSelectionFallbackFromGroup: 3,
+  };
+  const first = (service as any).buildSelectionUpdate(fallbackSelection, fallbackOption, 'AUTO_SELECTED', 'run-1');
+  Object.assign(fallbackSelection, first);
+  assert.equal(JSON.parse(fallbackSelection.selected_price_snapshot).autoSelectionFallbackFromGroup, 3);
+
+  const genuineG4 = {
+    provider: 'staah', hotelId: 202, hotelCode: 'B', hotelName: 'Hotel B',
+    rateOptionId: 'b-map', roomId: 'b-room', rateId: 'b-rate', mealPlan: 'MAP',
+    totalPrice: 200,
+  };
+  const second = (service as any).buildSelectionUpdate(fallbackSelection, genuineG4, 'AUTO_SELECTED', 'run-2');
+  const refreshedSnapshot = JSON.parse(second.selected_price_snapshot);
+  assert.equal(refreshedSnapshot.hotelName, 'Hotel B');
+  assert.equal(Object.prototype.hasOwnProperty.call(refreshedSnapshot, 'autoSelectionFallbackFromGroup'), false);
+});
+
 test('unscoped offline rows stay inside the existing recommendation groups', async () => {
   const syncedAt = new Date('2026-07-29T10:00:00.000Z');
   const prisma = makePrisma();

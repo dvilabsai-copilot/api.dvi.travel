@@ -30,12 +30,16 @@ import {
   parseHotelSelectionSnapshot,
   selectionOriginFromRow,
   selectedOptionKeyFromRow,
+  strictAutoSelectionIdentityMatches,
 } from '../utils/hotel-selection-identity.util';
 import {
   buildHotelSelectionState,
   resolveHotelRequiredRoutes,
 } from '../utils/hotel-selection-view-state.util';
-import { resolveHotelRecommendationAlgorithm } from './hotel-recommendation-package.service';
+import {
+  mapHotelCategoryLabelToStar,
+  resolveHotelRecommendationAlgorithm,
+} from './hotel-recommendation-package.service';
 import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
@@ -131,16 +135,32 @@ export class HotelAvailabilitySnapshotService {
     return normalized ? normalized.slice(0, 255) : null;
   }
 
-  private getPlanPreferredHotelCategories(plan: any): number[] {
+  private async getPlanPreferredHotelCategories(plan: any): Promise<number[]> {
     const raw = String(plan?.preferred_hotel_category ?? '').trim();
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(Number).filter((value) => Number.isFinite(value) && value > 0);
+      if (Array.isArray(parsed)) return this.resolveLogicalHotelCategories(parsed);
     } catch {
       // Legacy plans store this field as comma-separated text.
     }
-    return raw.split(',').map(Number).filter((value) => Number.isFinite(value) && value > 0);
+    return this.resolveLogicalHotelCategories(raw.split(','));
+  }
+
+  private async resolveLogicalHotelCategories(values: unknown[]): Promise<number[]> {
+    const ids = values.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
+    if (ids.length === 0) return [];
+    const masters = await this.prisma.dvi_hotel_category.findMany({
+      where: { hotel_category_id: { in: ids }, deleted: 0 },
+      select: { hotel_category_id: true, hotel_category_title: true, hotel_category_code: true },
+    });
+    const masterById = new Map(masters.map((row: any) => [Number(row.hotel_category_id), row]));
+    return Array.from(new Set(ids.map((id) => {
+      const master = masterById.get(id);
+      return master
+        ? mapHotelCategoryLabelToStar(`${master.hotel_category_title || ''} ${master.hotel_category_code || ''}`)
+        : id;
+    }).filter((value): value is number => Number.isFinite(value) && value > 0))).sort((a, b) => a - b);
   }
 
   private persistedHotelId(option: any, fallback?: unknown): number | null {
@@ -1134,7 +1154,7 @@ export class HotelAvailabilitySnapshotService {
         Math.max(Number((plan as any).total_children || 0), 0),
         [],
         String((plan as any).meal_plan_code || ''),
-        this.getPlanPreferredHotelCategories(plan),
+        [],
       );
       logStage('offline-fetch-in-reset-coordinator', offlineFetchStartedAt);
       const recommendationGroupTypes = await this.getRecommendationGroupTypes(plan.itinerary_plan_ID, [], sourceRows);
@@ -1586,7 +1606,7 @@ export class HotelAvailabilitySnapshotService {
       childCount,
       childAges,
       String((plan as any).meal_plan_code || ''),
-      this.getPlanPreferredHotelCategories(plan),
+      [],
     );
 
     const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
@@ -1753,7 +1773,7 @@ export class HotelAvailabilitySnapshotService {
     const persistedGroups = this.extractRecommendationGroupTypes(persistedRows);
     return planRows.length > 0 || persistedGroups.length > 0
       ? persistedGroups
-      : this.normalizeRecommendationGroupTypes([], fallbackRows);
+      : this.normalizeRecommendationGroupTypes([], fallbackRows.length > 0 ? fallbackRows : [1, 2, 3, 4]);
   }
 
   private async sanitizeLegacyResponse(
@@ -2913,17 +2933,6 @@ export class HotelAvailabilitySnapshotService {
   ): Promise<HotelAvailabilityChangeSummary> {
     const changes: HotelAvailabilityChange[] = [];
     await this.removeStaleSelectionVersions(tx, planId);
-    await this.ensureAutoSelections(
-      tx,
-      planId,
-      rows,
-      searchRunId,
-      createdBy,
-      allowOfflineAutoSelection,
-      eligibleRouteIds,
-      preferredMealPlanCode,
-      preferredMealPlanFlags,
-    );
     const selections = await tx.dvi_itinerary_plan_hotel_details.findMany({
       where: { itinerary_plan_id: planId, deleted: 0, status: 1, hotel_required: 1 },
       orderBy: [{ itinerary_plan_hotel_details_ID: 'desc' }],
@@ -2965,13 +2974,18 @@ export class HotelAvailabilitySnapshotService {
       // A global meal plan controls automatic/default selections. A user
       // override is intentionally preserved across refreshes even when it
       // uses another meal plan.
+      const authoritativeGroup = allOptions.some((row: any) => row.authoritativeRecommendation === true);
+      const authoritativeAutoOptions = allOptions.filter((row: any) =>
+        row.autoSelectionCandidate === true &&
+        this.autoSelectionIdentityMatches(row, row.autoSelectionIdentity),
+      );
       const options = origin === 'USER_SELECTED'
         ? allOptions
-        : this.getAutoSelectionPool(
-            allOptions,
-            preferredMealPlanCode,
-            preferredMealPlanFlags,
-          );
+        : authoritativeGroup
+          ? authoritativeAutoOptions
+          : authoritativeAutoOptions.length > 0
+          ? authoritativeAutoOptions
+          : this.getAutoSelectionPool(allOptions, preferredMealPlanCode, preferredMealPlanFlags);
       // Match the exact persisted supplier rate first. A parent hotel row can
       // contain several nested room/meal options and must never win with a
       // different identity or price.
@@ -3067,6 +3081,20 @@ export class HotelAvailabilitySnapshotService {
         }));
       }
     }
+
+    // Existing rows are reconciled first. This invalidates stale automatic
+    // selections after a category change before any new candidate is created.
+    await this.ensureAutoSelections(
+      tx,
+      planId,
+      rows,
+      searchRunId,
+      createdBy,
+      allowOfflineAutoSelection,
+      eligibleRouteIds,
+      preferredMealPlanCode,
+      preferredMealPlanFlags,
+    );
 
     return { hasChanges: changes.length > 0, totalChanges: changes.length, changes };
   }
@@ -3360,6 +3388,7 @@ export class HotelAvailabilitySnapshotService {
         hotelName: option?.hotelName || row?.hotelName,
         roomType: option?.roomType || option?.roomTypeName || row?.roomType,
         roomTypeName: option?.roomTypeName || option?.roomType || row?.roomTypeName,
+        roomTypeId: option?.roomTypeId ?? option?.room_type_id ?? row?.roomTypeId,
         mealPlan: option?.mealPlan || option?.mealPlanCode || row?.mealPlan,
         rateOptionId: option?.rateOptionId || option?.rate_option_id,
         optionKey: option?.optionKey || option?.option_key,
@@ -3413,7 +3442,22 @@ export class HotelAvailabilitySnapshotService {
     // the parent row while the requested MAP/CP/AP variants live in
     // `rateOptions`. Automatic persistence must select a concrete nested rate,
     // not reject the whole hotel because only the parent's label was checked.
-    for (const row of this.expandRateOptions(rows)) {
+    for (const rawRow of this.expandRateOptions(rows)) {
+      const authoritativeParentRouteId = Number(rawRow?.authoritativeParentRouteId || 0);
+      const authoritativeRouteIds = Array.isArray(rawRow?.authoritativeRouteIds)
+        ? rawRow.authoritativeRouteIds.map(Number).filter((value: number) => value > 0)
+        : [];
+      const row = authoritativeParentRouteId > 0
+        ? {
+            ...rawRow,
+            itineraryRouteId: authoritativeParentRouteId,
+            routeId: authoritativeParentRouteId,
+            date: rawRow.authoritativeCheckInDate || rawRow.date || rawRow.checkInDate,
+            checkInDate: rawRow.authoritativeCheckInDate || rawRow.checkInDate || rawRow.date,
+            checkOutDate: rawRow.authoritativeCheckOutDate || rawRow.checkOutDate,
+            routeIds: authoritativeRouteIds.length > 0 ? authoritativeRouteIds : rawRow.routeIds,
+          }
+        : rawRow;
       const canonicalHotelId = this.persistedHotelId(row);
       const routeId = Number(row.itineraryRouteId || row.routeId || 0);
       const groupType = Number(row.groupType || 0);
@@ -3470,7 +3514,9 @@ export class HotelAvailabilitySnapshotService {
       const routeId = Number(row?.itinerary_route_id || 0);
       const identity = hotelIdentity(row);
       const bucket = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
-      if (identity !== 'property::' && bucket.has(identity)) {
+      const fallbackFromGroup = Number((parseHotelSelectionSnapshot(row) as any)?.autoSelectionFallbackFromGroup || 0);
+      const allowsFallbackDuplicate = Number(row?.group_type || 0) === 4 && fallbackFromGroup === 3;
+      if (identity !== 'property::' && bucket.has(identity) && !allowsFallbackDuplicate) {
         if (tx.dvi_itinerary_plan_hotel_details?.update) {
           await tx.dvi_itinerary_plan_hotel_details.update({
             where: { itinerary_plan_hotel_details_ID: row.itinerary_plan_hotel_details_ID },
@@ -3498,11 +3544,16 @@ export class HotelAvailabilitySnapshotService {
 
     for (const [key, options] of orderedOptions) {
       if (existingKeys.has(key)) continue;
-      const selectionPool = this.getAutoSelectionPool(
-        options,
-        preferredMealPlanCode,
-        preferredMealPlanFlags,
+      const authoritativeGroup = options.some((option: any) => option.authoritativeRecommendation === true);
+      const authoritativeOptions = options.filter((option: any) =>
+        option.autoSelectionCandidate === true &&
+        this.autoSelectionIdentityMatches(option, option.autoSelectionIdentity),
       );
+      const selectionPool = authoritativeGroup
+        ? authoritativeOptions
+        : authoritativeOptions.length > 0
+        ? authoritativeOptions
+        : this.getAutoSelectionPool(options, preferredMealPlanCode, preferredMealPlanFlags);
       // Offline inventory is a fallback only when this *meal-plan-compatible*
       // pool has no live option. A live EP rate must not block an offline CP
       // rate when the itinerary requests CP (and likewise for other plans).
@@ -3522,7 +3573,11 @@ export class HotelAvailabilitySnapshotService {
       });
       const routeId = Number(sortedOptions[0]?.itineraryRouteId || sortedOptions[0]?.routeId || 0);
       const reserved = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
-      const option = sortedOptions.find((candidate: any) => !reserved.has(hotelIdentity(candidate)));
+      const option = sortedOptions.find((candidate: any) => {
+        if (!reserved.has(hotelIdentity(candidate))) return true;
+        return Number(candidate.groupType || 0) === 4 &&
+          Number(candidate.autoSelectionFallbackFromGroup || 0) === 3;
+      });
       // Never duplicate an automatic hotel across recommendation groups. A
       // sparse route therefore produces an unavailable group once all
       // distinct eligible properties have been consumed.
@@ -3583,6 +3638,13 @@ export class HotelAvailabilitySnapshotService {
           selected_price_snapshot: JSON.stringify({
             ...hotelDisplaySnapshot(option),
             optionKey,
+            ...(option.authoritativeStayKey ? {
+              authoritativeStayKey: option.authoritativeStayKey,
+              authoritativeParentRouteId: Number(option.authoritativeParentRouteId || option.itineraryRouteId || option.routeId || 0) || null,
+              authoritativeRouteIds: Array.isArray(option.authoritativeRouteIds) ? option.authoritativeRouteIds.map(Number) : undefined,
+              authoritativeCheckInDate: option.authoritativeCheckInDate || option.checkInDate || option.date || null,
+              authoritativeCheckOutDate: option.authoritativeCheckOutDate || option.checkOutDate || null,
+            } : {}),
             ...(option.itineraryMealPlanOverride === true ? {
               itineraryMealPlanOverride: true,
               sourceRateMealPlan: option.sourceRateMealPlan || null,
@@ -3599,6 +3661,9 @@ export class HotelAvailabilitySnapshotService {
               totalPrice,
             } : {}),
             selectionOrigin: 'AUTO_SELECTED',
+            ...(Number(option.autoSelectionFallbackFromGroup || 0) > 0
+              ? { autoSelectionFallbackFromGroup: Number(option.autoSelectionFallbackFromGroup) }
+              : {}),
             availabilityStatus: provider === 'offline' ? 'OFFLINE_APPROVAL_REQUIRED' : 'AVAILABLE',
             searchRunId,
           }),
@@ -3695,6 +3760,10 @@ export class HotelAvailabilitySnapshotService {
     return Number.isFinite(amount) && amount > 0 ? amount : Number.MAX_SAFE_INTEGER;
   }
 
+  private autoSelectionIdentityMatches(option: any, identity: any): boolean {
+    return strictAutoSelectionIdentityMatches(option, identity);
+  }
+
   private findLowestReplacement(options: any[], allowOfflineFallback = true): any | null {
     const selectable = (options || []).filter((row: any) =>
       row?.isBookable !== false && row?.isSelectable !== false,
@@ -3710,6 +3779,7 @@ export class HotelAvailabilitySnapshotService {
 
   private buildSelectionUpdate(selection: any, option: any, origin: string, searchRunId: string): Record<string, unknown> {
     const priorSnapshot = parseHotelSelectionSnapshot(selection);
+    const { autoSelectionFallbackFromGroup: _oldFallback, ...priorSnapshotWithoutFallback } = priorSnapshot as any;
     const optionKey = String(option.optionKey || hotelOptionKey(option));
     const pricePerNight = Number(option.pricePerNight || option.price_per_night || option.price || option.totalHotelCost || option.totalStayPrice || 0);
     const totalPrice = hotelStayTotal(option, 1);
@@ -3737,11 +3807,21 @@ export class HotelAvailabilitySnapshotService {
       total_hotel_cost: totalPrice,
       total_hotel_tax_amount: Number(option.totalHotelTaxAmount || selection.total_hotel_tax_amount || 0),
       selected_price_snapshot: JSON.stringify({
-        ...priorSnapshot,
+        ...priorSnapshotWithoutFallback,
         ...hotelDisplaySnapshot(option),
         optionKey,
+        ...(option.authoritativeStayKey ? {
+          authoritativeStayKey: option.authoritativeStayKey,
+          authoritativeParentRouteId: Number(option.authoritativeParentRouteId || option.itineraryRouteId || option.routeId || 0) || null,
+          authoritativeRouteIds: Array.isArray(option.authoritativeRouteIds) ? option.authoritativeRouteIds.map(Number) : undefined,
+          authoritativeCheckInDate: option.authoritativeCheckInDate || option.checkInDate || option.date || null,
+          authoritativeCheckOutDate: option.authoritativeCheckOutDate || option.checkOutDate || null,
+        } : {}),
         rateOptionId: option.rateOptionId || option.optionKey || option.searchReference || option.bookingCode || null,
         selectionOrigin: origin,
+        ...(Number(option.autoSelectionFallbackFromGroup || 0) > 0
+          ? { autoSelectionFallbackFromGroup: Number(option.autoSelectionFallbackFromGroup) }
+          : {}),
         availabilityStatus: 'AVAILABLE',
         searchRunId,
       }),
