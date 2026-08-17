@@ -39,6 +39,7 @@ import { UpdateHotelDto } from './dto/update-hotel.dto';
  * DTOs
  * =======================================================================================
  */
+
 class UpsertHotelMealPriceBookDto {
   @IsDateString()
   startDate!: string;
@@ -141,15 +142,17 @@ class ReviewDto {
   description?: string;
   status?: number;
 }
+
 @ApiTags('hotels')
-@ApiBearerAuth() // <-- uses default 'bearer'
+@ApiBearerAuth()
 @Controller('hotels')
 export class HotelsController {
   constructor(private readonly hotels: HotelsService) {}
 
- // =============================================================================
- // Listing & basic helpers
- // =============================================================================
+  // =============================================================================
+  // Listing & basic helpers
+  // =============================================================================
+
   @Get()
   list(@Query() q: PaginationQueryDto) {
     return this.hotels.list(q);
@@ -171,14 +174,26 @@ export class HotelsController {
   }
 
   @Get('meta/states')
-  states(@Query('countryId') countryId: string, @Query('all') all?: string) {
-    if (String(all) === '1') return this.hotels.statesAll();
+  states(
+    @Query('countryId') countryId: string,
+    @Query('all') all?: string,
+  ) {
+    if (String(all) === '1') {
+      return this.hotels.statesAll();
+    }
+
     return this.hotels.states(Number(countryId));
   }
 
   @Get('meta/cities')
-  cities(@Query('stateId') stateId: string, @Query('all') all?: string) {
-    if (String(all) === '1') return this.hotels.citiesAll();
+  cities(
+    @Query('stateId') stateId: string,
+    @Query('all') all?: string,
+  ) {
+    if (String(all) === '1') {
+      return this.hotels.citiesAll();
+    }
+
     return this.hotels.cities(Number(stateId));
   }
 
@@ -213,7 +228,10 @@ export class HotelsController {
   }
 
   @Get('code')
-  generateCode(@Query('cityId') cityId?: string, @Query('city') city?: string) {
+  generateCode(
+    @Query('cityId') cityId?: string,
+    @Query('city') city?: string,
+  ) {
     const key = city ?? cityId ?? '';
     return this.hotels.generateCode(key);
   }
@@ -223,19 +241,23 @@ export class HotelsController {
     return this.hotels.roomTypes();
   }
 
- // NEW: simple meal types meta (1=B, 2=L, 3=D)
+  // NEW: simple meal types meta (1=B, 2=L, 3=D)
   @Get('meal-types')
   mealTypes() {
     return this.hotels.mealTypes();
   }
 
   @Get(':id/roomtypes')
-  roomTypesAliasPlain(@Param('id', ParseIntPipe) id: number) {
+  roomTypesAliasPlain(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.roomTypesByHotel(id);
   }
 
   @Get(':id/room-types')
-  roomTypesAliasKebab(@Param('id', ParseIntPipe) id: number) {
+  roomTypesAliasKebab(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.roomTypesByHotel(id);
   }
 
@@ -266,21 +288,31 @@ export class HotelsController {
   }
 
   @Get('axisrooms/:id/preview')
-  getAxisroomsHotelPreview(@Param('id', ParseIntPipe) id: number) {
+  getAxisroomsHotelPreview(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.getAxisroomsHotelPreview(id);
   }
 
- // =============================================================================
- // Core Hotel CRUD
- // =============================================================================
+  // =============================================================================
+  // Core Hotel CRUD
+  // =============================================================================
+
   @Get(':id')
-  getOne(@Param('id', ParseIntPipe) id: number) {
+  getOne(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.getOne(id);
   }
 
   @Post()
-  create(@Body() dto: CreateHotelDto) {
-    const payload: any = { ...dto };
+  create(
+    @Body() dto: CreateHotelDto,
+  ) {
+    const payload: any = {
+      ...dto,
+    };
+
     const catId =
       Number(
         (dto as any)?.hotel_category ??
@@ -288,18 +320,40 @@ export class HotelsController {
           (dto as any)?.categoryId ??
           (dto as any)?.hotelCategoryId,
       ) || 0;
-    if (catId > 0) payload.hotel_category = catId;
+
+    if (catId > 0) {
+      payload.hotel_category = catId;
+    }
+
     return this.hotels.create(payload);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateHotelDto) {
-    const payload: any = { ...dto };
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateHotelDto,
+  ) {
+    const payload: any = {
+      ...dto,
+    };
+
     const hasCat =
-      Object.prototype.hasOwnProperty.call(dto, 'hotel_category') ||
-      Object.prototype.hasOwnProperty.call(dto, 'hotel_category_id') ||
-      Object.prototype.hasOwnProperty.call(dto, 'categoryId') ||
-      Object.prototype.hasOwnProperty.call(dto, 'hotelCategoryId');
+      Object.prototype.hasOwnProperty.call(
+        dto,
+        'hotel_category',
+      ) ||
+      Object.prototype.hasOwnProperty.call(
+        dto,
+        'hotel_category_id',
+      ) ||
+      Object.prototype.hasOwnProperty.call(
+        dto,
+        'categoryId',
+      ) ||
+      Object.prototype.hasOwnProperty.call(
+        dto,
+        'hotelCategoryId',
+      );
 
     if (hasCat) {
       const catId =
@@ -309,32 +363,46 @@ export class HotelsController {
             (dto as any)?.categoryId ??
             (dto as any)?.hotelCategoryId,
         ) || 0;
-      if (catId > 0) payload.hotel_category = catId;
+
+      if (catId > 0) {
+        payload.hotel_category = catId;
+      }
     }
-    return this.hotels.update(id, payload);
+
+    return this.hotels.update(
+      id,
+      payload,
+    );
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.remove(id);
   }
 
- // =============================================================================
- // Step 2: Rooms
- // =============================================================================
+  // =============================================================================
+  // Step 2: Rooms
+  // =============================================================================
 
   @Get(':id/rooms')
-  listRooms(@Param('id', ParseIntPipe) id: number) {
+  listRooms(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.listRooms(id);
   }
 
- /** Rate plans for a specific room used by Admin Price Book tab */
+  /** Rate plans for a specific room used by Admin Price Book tab */
   @Get(':id/rooms/:roomId/rateplans')
   getRoomRatePlans(
     @Param('id', ParseIntPipe) id: number,
     @Param('roomId', ParseIntPipe) roomId: number,
   ) {
-    return this.hotels.getRoomRatePlans(id, roomId);
+    return this.hotels.getRoomRatePlans(
+      id,
+      roomId,
+    );
   }
 
   @Get(':id/rooms/:roomId/availability/range-view')
@@ -344,48 +412,68 @@ export class HotelsController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
-    return this.hotels.getRoomAvailabilityRangeView(id, {
-      startDate,
-      endDate,
-      roomId,
-    });
+    return this.hotels.getRoomAvailabilityRangeView(
+      id,
+      {
+        startDate,
+        endDate,
+        roomId,
+      },
+    );
   }
 
- // NEW: bulk rooms endpoint used by React RoomsStep
- // POST /api/v1/hotels/:id/rooms/bulk with body: { items: [ { ...roomPayload } ] }
+  // NEW: bulk rooms endpoint used by React RoomsStep
   @Post(':id/rooms/bulk')
   async saveRoomsBulk(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: any,
   ) {
-    const items: any[] = Array.isArray(body?.items)
-      ? body.items
-      : Array.isArray(body)
-      ? body
-      : [];
+    const items: any[] =
+      Array.isArray(body?.items)
+        ? body.items
+        : Array.isArray(body)
+          ? body
+          : [];
 
     if (!items.length) {
-      throw new BadRequestException('items array is required');
+      throw new BadRequestException(
+        'items array is required',
+      );
     }
 
     const results: any[] = [];
     const errors: any[] = [];
+
     for (const raw of items) {
-      const payload = { ...(raw ?? {}), hotel_id: id };
+      const payload = {
+        ...(raw ?? {}),
+        hotel_id: id,
+      };
+
       try {
-        const res = await this.hotels.saveRoom(payload as any);
+        const res =
+          await this.hotels.saveRoom(
+            payload as any,
+          );
+
         results.push(res);
       } catch (e: any) {
         errors.push({
-          room_id: payload?.room_id ?? payload?.room_ID ?? null,
-          message: e?.message || 'Failed to save room row',
+          room_id:
+            payload?.room_id ??
+            payload?.room_ID ??
+            null,
+          message:
+            e?.message ||
+            'Failed to save room row',
         });
       }
     }
 
     if (!results.length) {
       throw new BadRequestException(
-        errors[0]?.message || 'Failed to save rooms',
+        errors[0]?.message ||
+          'Failed to save rooms',
       );
     }
 
@@ -399,8 +487,14 @@ export class HotelsController {
   }
 
   @Post(':id/rooms')
-  createRoom(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
-    return this.hotels.addRoom({ ...(body ?? {}), hotel_id: id } as any);
+  createRoom(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ) {
+    return this.hotels.addRoom({
+      ...(body ?? {}),
+      hotel_id: id,
+    } as any);
   }
 
   @Patch(':id/rooms/:roomId')
@@ -410,6 +504,7 @@ export class HotelsController {
     @Body() body: any,
   ) {
     const rid = Number(roomId);
+
     return this.hotels.updateRoom({
       ...(body ?? {}),
       hotel_id: id,
@@ -422,31 +517,40 @@ export class HotelsController {
     @Param('id', ParseIntPipe) id: number,
     @Param('roomId') roomId: string,
   ) {
-    return this.hotels.removeRoom(id, Number(roomId));
+    return this.hotels.removeRoom(
+      id,
+      Number(roomId),
+    );
   }
 
- // === NEW: Room gallery upload (files saved & DB rows inserted in service) =====
- // POST /api/v1/hotels/:id/rooms/:roomId/gallery
- // - multipart/form-data
- // - field name for files: room_gallery
- // - body should contain roomRefCode or room_ref_code
+  // Room gallery upload
   @Post(':id/rooms/:roomId/gallery')
   @UseInterceptors(
-    FilesInterceptor('room_gallery', 20, {
-      dest: 'uploads/tmp-room-gallery',
-    }),
+    FilesInterceptor(
+      'room_gallery',
+      20,
+      {
+        dest: 'uploads/tmp-room-gallery',
+      },
+    ),
   )
   async uploadRoomGallery(
     @Param('id', ParseIntPipe) id: number,
-    @Param('roomId', ParseIntPipe) roomId: number,
-    @UploadedFiles() files: Express.Multer.File[],
+    @Param('roomId', ParseIntPipe)
+    roomId: number,
+    @UploadedFiles()
+    files: Express.Multer.File[],
     @Body() body: any,
     @Req() req: any,
   ) {
-    const roomRefCode: string = body?.roomRefCode ?? body?.room_ref_code;
+    const roomRefCode: string =
+      body?.roomRefCode ??
+      body?.room_ref_code;
 
     if (!roomRefCode) {
-      throw new BadRequestException('roomRefCode (or room_ref_code) is required');
+      throw new BadRequestException(
+        'roomRefCode (or room_ref_code) is required',
+      );
     }
 
     const userId =
@@ -463,53 +567,82 @@ export class HotelsController {
       createdBy: userId || 0,
     });
 
-    return { success: true };
+    return {
+      success: true,
+    };
   }
 
   @Post('/rooms')
-  saveRoomFromRoot(@Body() body: any) {
+  saveRoomFromRoot(
+    @Body() body: any,
+  ) {
     return this.hotels.saveRoom(body);
   }
 
   @Get('rooms/pref-for')
   roomPrefFor() {
-    return ['Family', 'Friends', 'Adults', 'Couples'];
+    return [
+      'Family',
+      'Friends',
+      'Adults',
+      'Couples',
+    ];
   }
 
- // =============================================================================
- // Step 3: Amenities
- // =============================================================================
+  // =============================================================================
+  // Step 3: Amenities
+  // =============================================================================
 
- /** Hotel amenities list */
+  /** Hotel amenities list */
   @Get(':id/amenities')
-  listAmenities(@Param('id', ParseIntPipe) id: number) {
+  listAmenities(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.listAmenities(id);
   }
 
- /** Create amenity (single or bulk detection) */
+  /** Create amenity */
   @Post(':id/amenities')
-  async addAmenity(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
+  async addAmenity(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ) {
     if (Array.isArray(body?.items)) {
-      return this.hotels.addAmenitiesBulk(id, body.items);
+      return this.hotels.addAmenitiesBulk(
+        id,
+        body.items,
+      );
     }
-    return this.hotels.addAmenity({ ...(body ?? {}), hotel_id: id } as any);
+
+    return this.hotels.addAmenity({
+      ...(body ?? {}),
+      hotel_id: id,
+    } as any);
   }
 
- /** Explicit bulk endpoint to match UI call: POST /api/v1/hotels/:id/amenities/bulk */
   @Post(':id/amenities/bulk')
-  addAmenityBulk(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
-    const items = Array.isArray(body?.items)
-      ? body.items
-      : Array.isArray(body)
-      ? body
-      : [];
-    return this.hotels.addAmenitiesBulk(id, items);
+  addAmenityBulk(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ) {
+    const items =
+      Array.isArray(body?.items)
+        ? body.items
+        : Array.isArray(body)
+          ? body
+          : [];
+
+    return this.hotels.addAmenitiesBulk(
+      id,
+      items,
+    );
   }
 
   @Patch(':id/amenities/:amenityId')
   updateAmenity(
     @Param('id', ParseIntPipe) id: number,
-    @Param('amenityId') amenityId: string,
+    @Param('amenityId')
+    amenityId: string,
     @Body() body: any,
   ) {
     return this.hotels.updateAmenity({
@@ -522,193 +655,353 @@ export class HotelsController {
   @Delete(':id/amenities/:amenityId')
   removeAmenity(
     @Param('id', ParseIntPipe) id: number,
-    @Param('amenityId') amenityId: string,
+    @Param('amenityId')
+    amenityId: string,
   ) {
-    return this.hotels.removeAmenity(id, Number(amenityId));
+    return this.hotels.removeAmenity(
+      id,
+      Number(amenityId),
+    );
   }
 
- /** SINGLE amenity details for UI header on pricebook card */
+  /** SINGLE amenity details */
   @Get(':id/amenities/:amenityId/detail')
   async amenityDetail(
     @Param('id', ParseIntPipe) id: number,
-    @Param('amenityId') amenityId: string,
+    @Param('amenityId')
+    amenityId: string,
   ) {
-    const rows = (await this.hotels.listAmenities(id)) as any[];
-    const found = rows.find(
-      (r) =>
-        Number(r.hotel_amenities_id ?? r.amenity_id ?? r.id) ===
-        Number(amenityId),
-    );
+    const rows =
+      (await this.hotels.listAmenities(
+        id,
+      )) as any[];
+
+    const found =
+      rows.find(
+        (r) =>
+          Number(
+            r.hotel_amenities_id ??
+              r.amenity_id ??
+              r.id,
+          ) === Number(amenityId),
+      );
+
     if (!found) {
-      throw new BadRequestException('Amenity not found for this hotel');
+      throw new BadRequestException(
+        'Amenity not found for this hotel',
+      );
     }
+
     return {
-      id: Number(found.hotel_amenities_id ?? found.amenity_id ?? found.id),
-      name: found.amenities_title ?? found.amenities_code ?? 'Amenity',
-      code: found.amenities_code ?? null,
+      id: Number(
+        found.hotel_amenities_id ??
+          found.amenity_id ??
+          found.id,
+      ),
+
+      name:
+        found.amenities_title ??
+        found.amenities_code ??
+        'Amenity',
+
+      code:
+        found.amenities_code ??
+        null,
     };
   }
 
- /** Amenities pricebook writer (hours/day) across date range */
+  /** Amenities pricebook writer */
   @Post(':id/amenities/:amenityId/pricebook')
   upsertAmenityPricebook(
     @Param('id', ParseIntPipe) id: number,
-    @Param('amenityId') amenityId: string,
-    @Body() dto: UpsertAmenityPricebookDto,
+    @Param('amenityId')
+    amenityId: string,
+    @Body()
+    dto: UpsertAmenityPricebookDto,
   ) {
-    return this.hotels.upsertAmenitiesPricebookRange(id, {
-      hotel_amenities_id: Number(amenityId),
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      hoursCharge: dto.hoursCharge,
-      dayCharge: dto.dayCharge,
-    });
+    return this.hotels.upsertAmenitiesPricebookRange(
+      id,
+      {
+        hotel_amenities_id:
+          Number(amenityId),
+
+        startDate:
+          dto.startDate,
+
+        endDate:
+          dto.endDate,
+
+        hoursCharge:
+          dto.hoursCharge,
+
+        dayCharge:
+          dto.dayCharge,
+      },
+    );
   }
 
- // =============================================================================
- // Step 4: Price Book (Rate Plans)
- // =============================================================================
+  // =============================================================================
+  // Step 4: Price Book
+  // =============================================================================
+
   @Get(':id/pricebook')
-  getPricebook(@Param('id', ParseIntPipe) id: number) {
+  getPricebook(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.getPricebook(id);
   }
 
   @Get(':id/price-book')
-  getPricebookAlias(@Param('id', ParseIntPipe) id: number) {
+  getPricebookAlias(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.getPricebook(id);
   }
 
   @Post(':id/pricebook')
-  addPrice(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
-    return this.hotels.addPrice({ ...(body ?? {}), hotel_id: id } as any);
+  addPrice(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ) {
+    return this.hotels.addPrice({
+      ...(body ?? {}),
+      hotel_id: id,
+    } as any);
   }
 
   @Patch(':id/pricebook')
-  upsertPricebook(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
-    return this.hotels.upsertPricebook(id, body ?? {});
+  upsertPricebook(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ) {
+    return this.hotels.upsertPricebook(
+      id,
+      body ?? {},
+    );
   }
 
- /** Bulk room pricebook */
+  /** Bulk room pricebook */
   @Post(':id/rooms/pricebook/bulk')
   bulkRoomPricebook(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: BulkRoomPricebookDto,
+    @Body()
+    dto: BulkRoomPricebookDto,
   ) {
-    return this.hotels.bulkUpsertRoomPricebook(id, dto);
+    return this.hotels.bulkUpsertRoomPricebook(
+      id,
+      dto,
+    );
   }
 
- /** Room pricebook range-view returns saved occupancy rates pivoted by date for the Admin Price Book grid */
+  /** Room Price Book range view */
   @Get(':id/pricebook/range-view')
   getRoomPricebookRangeView(
     @Param('id', ParseIntPipe) id: number,
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-    @Query('roomId') roomId: string,
-    @Query('rateplanId') rateplanId: string,
+    @Query('startDate')
+    startDate: string,
+    @Query('endDate')
+    endDate: string,
+    @Query('roomId')
+    roomId: string,
+    @Query('rateplanId')
+    rateplanId: string,
   ) {
-    return this.hotels.getRoomPricebookRangeView(id, {
-      startDate,
-      endDate,
-      roomId: Number(roomId),
-      rateplanId,
-    });
+    return this.hotels.getRoomPricebookRangeView(
+      id,
+      {
+        startDate,
+        endDate,
+        roomId: Number(roomId),
+        rateplanId,
+      },
+    );
   }
 
- // =============================================================================
- // Step 4A: Meal Price Book
- // =============================================================================
+  // =============================================================================
+  // Step 4A: Meal Price Book
+  // =============================================================================
 
+  /**
+   * READ Meal Price Book.
+   *
+   * GET:
+   * /api/v1/hotels/:hotelId/meal-pricebook/range-view
+   *
+   * Query:
+   * startDate=YYYY-MM-DD
+   * endDate=YYYY-MM-DD
+   */
+  @Get(':hotelId/meal-pricebook/range-view')
+  getMealPriceBookRangeView(
+    @Param(
+      'hotelId',
+      ParseIntPipe,
+    )
+    hotelId: number,
+
+    @Query('startDate')
+    startDate: string,
+
+    @Query('endDate')
+    endDate: string,
+  ) {
+    return this.hotels.getMealPricebookRangeView(
+      hotelId,
+      {
+        startDate,
+        endDate,
+      },
+    );
+  }
+
+  /**
+   * SAVE Meal Price Book.
+   */
   @Post(':hotelId/meal-pricebook')
   upsertMealPriceBookPrimary(
-    @Param('hotelId', ParseIntPipe) hotelId: number,
-    @Body() dto: UpsertHotelMealPriceBookDto,
-    @Req() _req: any,
+    @Param(
+      'hotelId',
+      ParseIntPipe,
+    )
+    hotelId: number,
+
+    @Body()
+    dto: UpsertHotelMealPriceBookDto,
+
+    @Req()
+    _req: any,
   ) {
-    return this.hotels.upsertMealPricebook(hotelId, dto);
+    return this.hotels.upsertMealPricebook(
+      hotelId,
+      dto,
+    );
   }
 
   @Post('meal-pricebook/:hotelId')
   upsertMealPriceBookAliasParam(
-    @Param('hotelId', ParseIntPipe) hotelId: number,
-    @Body() dto: UpsertHotelMealPriceBookDto,
-    @Req() _req: any,
+    @Param(
+      'hotelId',
+      ParseIntPipe,
+    )
+    hotelId: number,
+
+    @Body()
+    dto: UpsertHotelMealPriceBookDto,
+
+    @Req()
+    _req: any,
   ) {
-    return this.hotels.upsertMealPricebook(hotelId, dto);
+    return this.hotels.upsertMealPricebook(
+      hotelId,
+      dto,
+    );
   }
 
- // =============================================================================
- // Step 5: Reviews (new)
- // =============================================================================
+  // =============================================================================
+  // Step 5: Reviews
+  // =============================================================================
 
- /** GET /api/v1/hotels/:id/reviews */
   @Get(':id/reviews')
-  listReviews(@Param('id', ParseIntPipe) id: number) {
+  listReviews(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.hotels.listReviews(id);
   }
 
- /** POST /api/v1/hotels/:id/reviews (UI primary) */
-@Post(':id/reviews')
-addReviewForHotel(
-  @Param('id', ParseIntPipe) id: number,
-  @Body() body: any,
-  @Req() req: any,
-) {
-  return this.hotels.addReviewUnified(
-    {
-      ...(body ?? {}),
-      hotel_id: id,
-      hotelId: id,
-    },
-    Number(req?.user?.id) || 1,
-  );
-}
+  @Post(':id/reviews')
+  addReviewForHotel(
+    @Param('id', ParseIntPipe)
+    id: number,
 
+    @Body()
+    body: any,
 
- /** Alias: POST /api/v1/hotels/:id/feedback */
-  @Post(':id/feedback')
-addFeedbackAlias(
-  @Param('id', ParseIntPipe) id: number,
-  @Body() body: any,
-  @Req() req: any,
-) {
-  return this.hotels.addReviewUnified(
-    {
-      ...(body ?? {}),
-      hotel_id: id,
-      hotelId: id,
-    },
-    Number(req?.user?.id) || 1,
-  );
-}
+    @Req()
+    req: any,
+  ) {
+    return this.hotels.addReviewUnified(
+      {
+        ...(body ?? {}),
+        hotel_id: id,
+        hotelId: id,
+      },
 
- /** Root POST for cases where UI sends { hotel_id, ... } to /api/v1/hotels/reviews */
- @Post('reviews')
-addReviewRoot(
-  @Body() body: any,
-  @Req() req: any,
-) {
-  const hid = Number(body?.hotel_id ?? body?.hotelId);
-  if (!Number.isFinite(hid) || hid <= 0) {
-    throw new BadRequestException('hotel_id is required');
+      Number(req?.user?.id) || 1,
+    );
   }
 
-  return this.hotels.addReviewUnified(
-    {
-      ...(body ?? {}),
-      hotel_id: hid,
-      hotelId: hid,
-    },
-    Number(req?.user?.id) || 1,
-  );
-}
+  @Post(':id/feedback')
+  addFeedbackAlias(
+    @Param('id', ParseIntPipe)
+    id: number,
 
- /** PATCH /api/v1/hotels/:id/reviews/:reviewId */
+    @Body()
+    body: any,
+
+    @Req()
+    req: any,
+  ) {
+    return this.hotels.addReviewUnified(
+      {
+        ...(body ?? {}),
+        hotel_id: id,
+        hotelId: id,
+      },
+
+      Number(req?.user?.id) || 1,
+    );
+  }
+
+  @Post('reviews')
+  addReviewRoot(
+    @Body()
+    body: any,
+
+    @Req()
+    req: any,
+  ) {
+    const hid =
+      Number(
+        body?.hotel_id ??
+          body?.hotelId,
+      );
+
+    if (
+      !Number.isFinite(hid) ||
+      hid <= 0
+    ) {
+      throw new BadRequestException(
+        'hotel_id is required',
+      );
+    }
+
+    return this.hotels.addReviewUnified(
+      {
+        ...(body ?? {}),
+        hotel_id: hid,
+        hotelId: hid,
+      },
+
+      Number(req?.user?.id) || 1,
+    );
+  }
+
   @Patch(':id/reviews/:reviewId')
   updateReview(
-    @Param('id', ParseIntPipe) id: number,
-    @Param('reviewId', ParseIntPipe) reviewId: number,
-    @Body() body: any,
-    @Req() req: any,
+    @Param('id', ParseIntPipe)
+    id: number,
+
+    @Param(
+      'reviewId',
+      ParseIntPipe,
+    )
+    reviewId: number,
+
+    @Body()
+    body: any,
+
+    @Req()
+    req: any,
   ) {
     return this.hotels.updateReviewUnified(
       reviewId,
@@ -718,208 +1011,382 @@ addReviewRoot(
     );
   }
 
- /** DELETE /api/v1/hotels/:id/reviews/:reviewId */
   @Delete(':id/reviews/:reviewId')
   removeReview(
-    @Param('id', ParseIntPipe) id: number,
-    @Param('reviewId', ParseIntPipe) reviewId: number,
+    @Param('id', ParseIntPipe)
+    id: number,
+
+    @Param(
+      'reviewId',
+      ParseIntPipe,
+    )
+    reviewId: number,
   ) {
-    return this.hotels.removeReview(id, reviewId);
+    return this.hotels.removeReview(
+      id,
+      reviewId,
+    );
   }
 }
 
-// ---------- Aliases & preview endpoints ----------
+// ============================================================================
+// Aliases & preview endpoints
+// ============================================================================
+
 @Controller('locations')
 export class LocationsController {
-  constructor(private readonly hotels: HotelsService) {}
+  constructor(
+    private readonly hotels: HotelsService,
+  ) {}
 
   @Get('states')
   async allStates(
-    @Query('all') all?: string,
-    @Query('countryId') countryId?: string,
+    @Query('all')
+    all?: string,
+
+    @Query('countryId')
+    countryId?: string,
   ) {
     if (String(all) === '1') {
       return this.hotels.statesAll();
     }
-    return this.hotels.states(Number(countryId ?? 0));
+
+    return this.hotels.states(
+      Number(countryId ?? 0),
+    );
   }
 
   @Get('cities')
   async allCities(
-    @Query('all') all?: string,
-    @Query('stateId') stateId?: string,
+    @Query('all')
+    all?: string,
+
+    @Query('stateId')
+    stateId?: string,
   ) {
     if (String(all) === '1') {
       return this.hotels.citiesAll();
     }
-    return this.hotels.cities(Number(stateId ?? 0));
+
+    return this.hotels.cities(
+      Number(stateId ?? 0),
+    );
   }
 }
 
 @Controller('states')
 export class RootStatesController {
-  constructor(private readonly hotels: HotelsService) {}
+  constructor(
+    private readonly hotels: HotelsService,
+  ) {}
 
   @Get()
   async rootStates(
-    @Query('all') all?: string,
-    @Query('countryId') countryId?: string,
+    @Query('all')
+    all?: string,
+
+    @Query('countryId')
+    countryId?: string,
   ) {
     if (String(all) === '1') {
       return this.hotels.statesAll();
     }
-    return this.hotels.states(Number(countryId ?? 0));
+
+    return this.hotels.states(
+      Number(countryId ?? 0),
+    );
   }
 }
 
 @Controller('cities')
 export class RootCitiesController {
-  constructor(private readonly hotels: HotelsService) {}
+  constructor(
+    private readonly hotels: HotelsService,
+  ) {}
 
   @Get()
   async rootCities(
-    @Query('all') all?: string,
-    @Query('stateId') stateId?: string,
+    @Query('all')
+    all?: string,
+
+    @Query('stateId')
+    stateId?: string,
   ) {
     if (String(all) === '1') {
       return this.hotels.citiesAll();
     }
-    return this.hotels.cities(Number(stateId ?? 0));
+
+    return this.hotels.cities(
+      Number(stateId ?? 0),
+    );
   }
 }
 
 @Controller('dvi')
 export class DviGeoController {
-  constructor(private readonly hotels: HotelsService) {}
+  constructor(
+    private readonly hotels: HotelsService,
+  ) {}
 
   @Get('states')
   async dviStates(
-    @Query('all') all?: string,
-    @Query('countryId') countryId?: string,
+    @Query('all')
+    all?: string,
+
+    @Query('countryId')
+    countryId?: string,
   ) {
     if (String(all) === '1') {
       return this.hotels.statesAll();
     }
-    return this.hotels.states(Number(countryId ?? 0));
+
+    return this.hotels.states(
+      Number(countryId ?? 0),
+    );
   }
 
   @Get('cities')
   async dviCities(
-    @Query('all') all?: string,
-    @Query('stateId') stateId?: string,
+    @Query('all')
+    all?: string,
+
+    @Query('stateId')
+    stateId?: string,
   ) {
     if (String(all) === '1') {
       return this.hotels.citiesAll();
     }
-    return this.hotels.cities(Number(stateId ?? 0));
+
+    return this.hotels.cities(
+      Number(stateId ?? 0),
+    );
   }
 }
 
 @Controller()
 export class PreviewAliasesController {
-  constructor(private readonly hotels: HotelsService) {}
+  constructor(
+    private readonly hotels: HotelsService,
+  ) {}
 
- // PHP JSON parity aliases:
- // - engine/json/__JSONsearchhotel.php?phrase=...
- // - engine/json/__JSONsearchroomtype.php?phrase=...
+  // PHP JSON parity aliases
+
   @Get('json/searchhotel')
-  searchHotelNames(@Query('phrase') phrase = '') {
-    return this.hotels.searchHotelNames(phrase);
+  searchHotelNames(
+    @Query('phrase')
+    phrase = '',
+  ) {
+    return this.hotels.searchHotelNames(
+      phrase,
+    );
   }
 
   @Get('json/searchroomtype')
-  searchRoomTypeNames(@Query('phrase') phrase = '') {
-    return this.hotels.searchRoomTypeNames(phrase);
+  searchRoomTypeNames(
+    @Query('phrase')
+    phrase = '',
+  ) {
+    return this.hotels.searchRoomTypeNames(
+      phrase,
+    );
   }
 
- // ===== Amenities aliases that your UI calls =====
+  // ==========================================================================
+  // Amenities aliases
+  // ==========================================================================
 
- // GET /api/v1/hotel-amenities?hotelId=119
   @Get('hotel-amenities')
   listAmenitiesByQuery(
-    @Query('hotelId', new DefaultValuePipe('')) hotelId: string,
+    @Query(
+      'hotelId',
+      new DefaultValuePipe(''),
+    )
+    hotelId: string,
   ) {
-    const id = Number(hotelId);
-    if (!Number.isFinite(id) || id <= 0) {
+    const id =
+      Number(hotelId);
+
+    if (
+      !Number.isFinite(id) ||
+      id <= 0
+    ) {
       throw new BadRequestException(
         'Validation failed (numeric string is expected)',
       );
     }
-    return this.hotels.listAmenities(id);
+
+    return this.hotels.listAmenities(
+      id,
+    );
   }
 
- // GET /api/v1/hotel-amenities/119
   @Get('hotel-amenities/:hotelId')
-  listAmenitiesByParam(@Param('hotelId', ParseIntPipe) hotelId: number) {
-    return this.hotels.listAmenities(hotelId);
+  listAmenitiesByParam(
+    @Param(
+      'hotelId',
+      ParseIntPipe,
+    )
+    hotelId: number,
+  ) {
+    return this.hotels.listAmenities(
+      hotelId,
+    );
   }
 
- // POST /api/v1/hotel-amenities (single or bulk)
   @Post('hotel-amenities')
-  addAmenityRoot(@Body() body: any) {
-    const hotelId = Number(body?.hotel_id ?? body?.hotelId);
-    if (!Number.isFinite(hotelId) || hotelId <= 0) {
-      throw new BadRequestException('hotel_id is required');
+  addAmenityRoot(
+    @Body()
+    body: any,
+  ) {
+    const hotelId =
+      Number(
+        body?.hotel_id ??
+          body?.hotelId,
+      );
+
+    if (
+      !Number.isFinite(hotelId) ||
+      hotelId <= 0
+    ) {
+      throw new BadRequestException(
+        'hotel_id is required',
+      );
     }
-    if (Array.isArray(body?.items)) {
-      return this.hotels.addAmenitiesBulk(hotelId, body.items);
+
+    if (
+      Array.isArray(
+        body?.items,
+      )
+    ) {
+      return this.hotels.addAmenitiesBulk(
+        hotelId,
+        body.items,
+      );
     }
-    return this.hotels.addAmenity({ ...(body ?? {}), hotel_id: hotelId } as any);
+
+    return this.hotels.addAmenity({
+      ...(body ?? {}),
+      hotel_id: hotelId,
+    } as any);
   }
 
- // POST /api/v1/hotel-amenities/bulk
   @Post('hotel-amenities/bulk')
-  addAmenityRootBulk(@Body() body: any) {
-    const hotelId = Number(body?.hotel_id ?? body?.hotelId);
-    const items = Array.isArray(body?.items)
-      ? body.items
-      : Array.isArray(body)
-      ? body
-      : [];
-    if (!Number.isFinite(hotelId) || hotelId <= 0) {
-      throw new BadRequestException('hotel_id is required');
+  addAmenityRootBulk(
+    @Body()
+    body: any,
+  ) {
+    const hotelId =
+      Number(
+        body?.hotel_id ??
+          body?.hotelId,
+      );
+
+    const items =
+      Array.isArray(body?.items)
+        ? body.items
+        : Array.isArray(body)
+          ? body
+          : [];
+
+    if (
+      !Number.isFinite(hotelId) ||
+      hotelId <= 0
+    ) {
+      throw new BadRequestException(
+        'hotel_id is required',
+      );
     }
-    return this.hotels.addAmenitiesBulk(hotelId, items);
+
+    return this.hotels.addAmenitiesBulk(
+      hotelId,
+      items,
+    );
   }
 
- // ===== Pricebook preview aliases =====
+  // ==========================================================================
+  // Pricebook aliases
+  // ==========================================================================
 
   @Get('pricebook')
   getPricebookByQuery(
-    @Query('hotelId', new DefaultValuePipe('')) hotelId: string,
+    @Query(
+      'hotelId',
+      new DefaultValuePipe(''),
+    )
+    hotelId: string,
   ) {
-    const id = Number(hotelId);
-    if (!Number.isFinite(id) || id <= 0) {
+    const id =
+      Number(hotelId);
+
+    if (
+      !Number.isFinite(id) ||
+      id <= 0
+    ) {
       throw new BadRequestException(
         'Validation failed (numeric string is expected)',
       );
     }
-    return this.hotels.getPricebook(id);
+
+    return this.hotels.getPricebook(
+      id,
+    );
   }
 
   @Post('hotel-meal-pricebook')
   upsertHotelMealPriceBookByQuery(
-    @Query('hotelId', new DefaultValuePipe('')) hotelId: string,
-    @Body() dto: UpsertHotelMealPriceBookDto,
-    @Req() _req: any,
+    @Query(
+      'hotelId',
+      new DefaultValuePipe(''),
+    )
+    hotelId: string,
+
+    @Body()
+    dto: UpsertHotelMealPriceBookDto,
+
+    @Req()
+    _req: any,
   ) {
-    const id = Number(hotelId);
-    if (!Number.isFinite(id) || id <= 0) {
+    const id =
+      Number(hotelId);
+
+    if (
+      !Number.isFinite(id) ||
+      id <= 0
+    ) {
       throw new BadRequestException(
         'Validation failed (numeric string is expected)',
       );
     }
-    return this.hotels.upsertMealPricebook(id, dto);
+
+    return this.hotels.upsertMealPricebook(
+      id,
+      dto,
+    );
   }
 
   @Post('hotel-amenities-pricebook')
   upsertAmenityPricebookByQuery(
-    @Query('hotelId', new DefaultValuePipe('')) hotelId: string,
-    @Query('amenityId', new DefaultValuePipe('')) amenityId: string,
-    @Body() dto: UpsertAmenityPricebookDto,
+    @Query(
+      'hotelId',
+      new DefaultValuePipe(''),
+    )
+    hotelId: string,
+
+    @Query(
+      'amenityId',
+      new DefaultValuePipe(''),
+    )
+    amenityId: string,
+
+    @Body()
+    dto: UpsertAmenityPricebookDto,
   ) {
-    const hid = Number(hotelId);
-    const aid = Number(amenityId);
+    const hid =
+      Number(hotelId);
+
+    const aid =
+      Number(amenityId);
+
     if (
       !Number.isFinite(hid) ||
       hid <= 0 ||
@@ -930,12 +1397,20 @@ export class PreviewAliasesController {
         'Validation failed (numeric string is expected)',
       );
     }
-    return this.hotels.upsertAmenitiesPricebookRange(hid, {
-      hotel_amenities_id: aid,
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      hoursCharge: dto.hoursCharge,
-      dayCharge: dto.dayCharge,
-    });
+
+    return this.hotels.upsertAmenitiesPricebookRange(
+      hid,
+      {
+        hotel_amenities_id: aid,
+        startDate:
+          dto.startDate,
+        endDate:
+          dto.endDate,
+        hoursCharge:
+          dto.hoursCharge,
+        dayCharge:
+          dto.dayCharge,
+      },
+    );
   }
 }
