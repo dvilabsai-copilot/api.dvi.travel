@@ -4019,13 +4019,13 @@ this.logger.log(
       for (let groupType = 1; groupType <= 4; groupType += 1) {
         const targetPrice = initialPrice * groupMultipliers[groupType - 1];
         const candidate = sortedHotels
-          .filter((hotel) => !usedHotels.has(`${hotel.hotelCode || hotel.hotelName}`))
+          .filter((hotel) => !usedHotels.has(this.legacyPhysicalHotelIdentity(hotel)))
           .sort((left, right) =>
             Math.abs(Number(left.price || 0) - targetPrice) -
             Math.abs(Number(right.price || 0) - targetPrice),
           )[0];
         if (!candidate) continue;
-        const hotelKey = `${candidate.hotelCode || candidate.hotelName}`;
+        const hotelKey = this.legacyPhysicalHotelIdentity(candidate);
         usedHotels.add(hotelKey);
         const key = `${routeId}-${hotelKey}`;
         hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
@@ -4055,7 +4055,7 @@ this.logger.log(
 
  // Get hotels that belong to this tier for this route
         for (const hotel of availableHotels) {
-          const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
+          const key = `${routeId}-${this.legacyPhysicalHotelIdentity(hotel)}`;
           const assignedGroupType = hotelGroupAssignments.get(`${key}:${groupType}`);
 
           if (assignedGroupType === groupType) {
@@ -4093,6 +4093,17 @@ this.logger.log(
 
  this.logger.log(` Generated ${packages.length} price tier packages\n`);
     return packages;
+  }
+
+  private legacyPhysicalHotelIdentity(hotel: any): string {
+    const canonicalId = Number(hotel?.canonicalHotelId || hotel?.hotelId || hotel?.hotel_id || 0);
+    if (canonicalId > 0) return `canonical:${canonicalId}`;
+    const normalizedName = String(hotel?.hotelName || hotel?.hotel_name || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+    if (normalizedName) return `name:${normalizedName}`;
+    return `${String(hotel?.provider || '').trim().toLowerCase()}|${String(hotel?.hotelCode || hotel?.providerHotelCode || '').trim().toLowerCase()}`;
   }
 
  /**
