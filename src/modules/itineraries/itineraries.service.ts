@@ -1460,7 +1460,9 @@ private getGuideSlotLabel(slotId: number): string {
             ? 'Itinerary routes were updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
             : hotelResetReason === 'ROOM_COUNT_CHANGED'
               ? 'Itinerary room count was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
-              : 'The itinerary meal plan was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
+              : hotelResetReason === 'MEAL_PLAN_CHANGED'
+                ? 'The itinerary meal plan was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
+                : 'The hotel category was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
           planId: result.planId,
           quoteId: result.quoteId,
           creationStatus: 'PARTIAL',
@@ -1468,10 +1470,13 @@ private getGuideSlotLabel(slotId: number): string {
             ? 'HOTEL_AVAILABILITY_ROUTE_RESET_FAILED'
             : hotelResetReason === 'ROOM_COUNT_CHANGED'
               ? 'HOTEL_AVAILABILITY_ROOM_COUNT_RESET_FAILED'
-              : 'HOTEL_AVAILABILITY_MEAL_PLAN_RESET_FAILED',
+              : hotelResetReason === 'MEAL_PLAN_CHANGED'
+                ? 'HOTEL_AVAILABILITY_MEAL_PLAN_RESET_FAILED'
+                : 'HOTEL_AVAILABILITY_CATEGORY_RESET_FAILED',
           routeChanged: Boolean(result?.routeChanged),
           roomCountChanged: Boolean(result?.roomCountChanged),
           mealPlanChanged: Boolean(result?.mealPlanChanged),
+          hotelCategoryChanged: Boolean(result?.hotelCategoryChanged),
           hotelSearch: { status: 'FAILED' },
           cause: String((error as any)?.response?.message || (error as any)?.message || 'Hotel availability reset failed'),
         });

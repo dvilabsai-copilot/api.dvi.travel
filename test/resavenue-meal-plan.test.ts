@@ -122,3 +122,20 @@ test('itinerary meal preference promotes the matching ResAvenue room and rejects
   );
   assert.deepEqual(mapFiltered.get(10293), []);
 });
+
+test('preferred hotel category filters known offline alternatives', async () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  service.logger = { log() {}, warn() {}, debug() {} };
+
+  const filtered = await service.applyPlanPreferenceFilters(
+    new Map([[10293, [
+      { provider: 'offline', hotelCode: 'five', hotelName: 'Five Star', rating: 5, category: '5-Star' },
+      { provider: 'offline', hotelCode: 'two', hotelName: 'Two Star', rating: 2, category: '2-Star' },
+    ]]]),
+    [5],
+    null,
+    [],
+  );
+
+  assert.deepEqual(filtered.get(10293).map((hotel: any) => hotel.hotelCode), ['five']);
+});
