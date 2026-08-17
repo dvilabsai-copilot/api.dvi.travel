@@ -4152,14 +4152,18 @@ this.logger.log(
         const selected = candidates.find((candidate) => Number(candidate.price || 0) >= threshold && !used.has(this.legacyPhysicalHotelIdentity(candidate)));
         if (!selected) return;
         used.add(this.legacyPhysicalHotelIdentity(selected));
-        packages[index].hotels.push(selected);
+        // Every recommendation pane must expose the complete eligible
+        // inventory for its own category/threshold. Put the automatic choice
+        // first so initial selection remains deterministic, then expose the
+        // remaining candidates for manual selection in the same pane.
+        const eligible = candidates.filter((candidate) => Number(candidate.price || 0) >= threshold);
+        packages[index].hotels.push(
+          { ...selected, routeId },
+          ...eligible
+            .filter((candidate) => this.availabilityOptionKey(candidate) !== this.availabilityOptionKey(selected))
+            .map((candidate) => ({ ...candidate, routeId })),
+        );
       });
-      // Keep every remaining eligible inventory option available to the
-      // manual picker without assigning it to an automatic recommendation.
-      for (const hotel of source) {
-        if (packages.some((pkg) => pkg.hotels.some((selected) => this.availabilityOptionKey(selected) === this.availabilityOptionKey(hotel)))) continue;
-        packages[0].hotels.push({ ...hotel, routeId });
-      }
     }
     // Match the recommendation service's G4 rule: only when at least one
     // genuine G4 exists, fill a missing route's G4 inventory with its G3
