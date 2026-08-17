@@ -288,20 +288,47 @@ if (activeProviders.length === 0) {
         ),
       );
 
-      const results = await Promise.all(searchPromises);
-      const allHotels = results.flat();
+      const includeOfflineHotels =
+        !Array.isArray(searchCriteria.providers) ||
+        searchCriteria.providers.length === 0 ||
+        searchCriteria.providers.some((provider) => String(provider).trim().toLowerCase() === 'offline');
 
-      if (allHotels.length === 0) {
+      const offlineSearchPromise = includeOfflineHotels
+        ? this.offlineHotelCatalog.searchOfflineHotels({
+            cityCode: searchCriteria.cityCode,
+            checkInDate: searchCriteria.checkInDate,
+            checkOutDate: searchCriteria.checkOutDate,
+            roomCount: searchCriteria.roomCount,
+            adultCount: searchCriteria.adultCount,
+            childCount: searchCriteria.childCount,
+            childAges: searchCriteria.childAges,
+          })
+        : Promise.resolve([] as HotelSearchResult[]);
+
+      const [providerResults, offlineHotels] = await Promise.all([
+        Promise.all(searchPromises),
+        offlineSearchPromise,
+      ]);
+      const allHotels = [...providerResults.flat(), ...offlineHotels];
+
+      const hotelNameQuery = String(searchCriteria.hotelName || '').trim().toLowerCase();
+      const filteredHotels = hotelNameQuery
+        ? allHotels.filter((hotel) =>
+            String(hotel.hotelName || '').toLowerCase().includes(hotelNameQuery),
+          )
+        : allHotels;
+
+      if (filteredHotels.length === 0) {
  this.logger.warn(` No hotels found for the given criteria`);
  this.logger.log(` Total Time: ${Date.now() - startTime}ms`);
         return [];
       }
 
- this.logger.log(` Found ${allHotels.length} hotels across all providers`);
+      this.logger.log(` Found ${filteredHotels.length} hotels across all providers and offline catalog`);
  this.logger.log(` Provider Search Time: ${Date.now() - startTime}ms`);
 
  // Deduplicate and rank hotels
-      const uniqueHotels = this.deduplicateHotels(allHotels);
+      const uniqueHotels = this.deduplicateHotels(filteredHotels);
       const rankedHotels = this.rankHotels(uniqueHotels, searchCriteria.preferences);
 
  this.logger.log(` Returning ${rankedHotels.length} unique, ranked hotels`);
@@ -361,7 +388,11 @@ if (activeProviders.length === 0) {
       );
       if (!eligibleAvailability.length) continue;
       const roomIds = eligibleAvailability.map((row: any) => Number(row.room_id)).filter((id: number) => id > 0);
-      const plans = await (this.prisma as any).dvi_hotel_room_rate_plan.findMany({ where: { hotel_id: hotel.hotel_id, room_id: { in: roomIds }, axisrooms_room_id: { not: null }, status: 1, deleted: 0 }, select: { room_id: true, rateplan_id: true, meal_plan_description: true } });
+      // A rate plan can be maintained locally (for example MAP_PLAN) even
+      // when AxisRooms did not send an external room mapping for that plan.
+      // The price is still authoritative in dvi_hotel_occupancy_rate, so do
+      // not discard the plan solely because axisrooms_room_id is null.
+      const plans = await (this.prisma as any).dvi_hotel_room_rate_plan.findMany({ where: { hotel_id: hotel.hotel_id, room_id: { in: roomIds }, status: 1, deleted: 0 }, select: { room_id: true, rateplan_id: true, rateplan_name: true, meal_plan_description: true } });
       if (!plans.length) continue;
       const occupancyRows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({ where: { hotel_id: hotel.hotel_id, room_id: { in: roomIds }, start_date: { lte: checkIn }, end_date: { gte: checkIn } }, select: { room_id: true, rateplan_id: true, occupancy_rates: true, start_date: true, end_date: true, received_at: true } });
       const effectiveOccupancy = new Map<string, any>();
@@ -381,16 +412,22 @@ if (activeProviders.length === 0) {
         }
       }
       const occupancy = Array.from(effectiveOccupancy.values());
-      const plan = plans.find((candidate: any) => occupancy.some((row: any) => String(row.room_id) === String(candidate.room_id) && String(row.rateplan_id) === String(candidate.rateplan_id)));
-      const rateRow = plan ? occupancy.find((row: any) => String(row.room_id) === String(plan.room_id) && String(row.rateplan_id) === String(plan.rateplan_id)) : null;
-      const rate = this.extractAxisRate(rateRow?.occupancy_rates);
-      if (!plan || !rate) continue;
-      const room = await (this.prisma as any).dvi_hotel_rooms.findFirst({ where: { room_ID: plan.room_id, deleted: 0 }, select: { room_title: true } });
-      const optionId = `axisrooms:${hotel.hotel_id}:${plan.room_id}:${plan.rateplan_id}:${String(criteria.checkInDate).slice(0, 10)}`;
-      results.push({
-        provider: 'axisrooms', providerDisplayName: 'AxisRooms', canonicalHotelId: Number(hotel.hotel_id), providerHotelCode: String(hotel.axisrooms_property_id || hotel.hotel_id), rateOptionId: optionId,
-        hotelCode: String(hotel.hotel_id), hotelName: String(hotel.hotel_name || 'Hotel'), cityCode: String(hotel.hotel_city || criteria.cityCode), address: String(hotel.hotel_address || ''), rating: Number(hotel.hotel_category || 0), facilities: [], amenities: [], inclusions: [], rateConditions: [], cancellationPolicy: [], images: [], price: rate, currency: 'INR', roomTypes: [{ roomCode: String(plan.room_id), roomName: String(room?.room_title || 'Room'), bedType: '', capacity: 0, price: rate, cancellationPolicy: '' }], roomType: String(room?.room_title || 'Room'), mealPlan: String(plan.meal_plan_description || '-'), searchReference: optionId, expiresAt: new Date(Date.now() + 15 * 60 * 1000), pricePerNight: rate, bookingMode: 'LIVE_API', priceSource: 'DATABASE', availabilityStatus: 'AVAILABLE', isLiveRate: false, isLiveBookable: true, isSelectable: true, requiresHotelApproval: false, approvalStatus: 'NOT_REQUIRED', manualConfirmationStatus: 'NOT_STARTED',
+      const validPlans = plans.filter((candidate: any) => {
+        const rateRow = occupancy.find((row: any) => String(row.room_id) === String(candidate.room_id) && String(row.rateplan_id) === String(candidate.rateplan_id));
+        return this.extractAxisRate(rateRow?.occupancy_rates) > 0;
       });
+      for (const plan of validPlans) {
+        const rateRow = occupancy.find((row: any) => String(row.room_id) === String(plan.room_id) && String(row.rateplan_id) === String(plan.rateplan_id));
+        const rate = this.extractAxisRate(rateRow?.occupancy_rates);
+        if (!rate) continue;
+        const room = await (this.prisma as any).dvi_hotel_rooms.findFirst({ where: { room_ID: plan.room_id, deleted: 0 }, select: { room_title: true } });
+        const optionId = `axisrooms:${hotel.hotel_id}:${plan.room_id}:${plan.rateplan_id}:${String(criteria.checkInDate).slice(0, 10)}`;
+        const mealPlan = String(plan.meal_plan_description || plan.rateplan_name || plan.rateplan_id || '-');
+        results.push({
+        provider: 'axisrooms', providerDisplayName: 'AxisRooms', canonicalHotelId: Number(hotel.hotel_id), providerHotelCode: String(hotel.axisrooms_property_id || hotel.hotel_id), rateOptionId: optionId,
+        hotelCode: String(hotel.hotel_id), hotelName: String(hotel.hotel_name || 'Hotel'), cityCode: String(hotel.hotel_city || criteria.cityCode), address: String(hotel.hotel_address || ''), rating: Number(hotel.hotel_category || 0), facilities: [], amenities: [], inclusions: [], rateConditions: [], cancellationPolicy: [], images: [], price: rate, currency: 'INR', roomTypes: [{ roomCode: String(plan.room_id), roomName: String(room?.room_title || 'Room'), bedType: '', capacity: 0, price: rate, cancellationPolicy: '' }], roomType: String(room?.room_title || 'Room'), mealPlan, searchReference: optionId, expiresAt: new Date(Date.now() + 15 * 60 * 1000), pricePerNight: rate, bookingMode: 'LIVE_API', priceSource: 'DATABASE', availabilityStatus: 'AVAILABLE', isLiveRate: false, isLiveBookable: true, isSelectable: true, requiresHotelApproval: false, approvalStatus: 'NOT_REQUIRED', manualConfirmationStatus: 'NOT_STARTED',
+        });
+      }
     }
     return results;
   }

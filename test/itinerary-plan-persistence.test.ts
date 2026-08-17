@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  getHotelAvailabilityResetReason,
+  hasItineraryMealPlanChanged,
+  hasItineraryRoomCountChanged,
   hasItineraryRouteChanged,
   ItineraryPlanPersistenceService,
+  resolveItineraryMealPlanCode,
+  resolveItineraryRoomCount,
 } from '../src/modules/itineraries/services/itinerary-plan-persistence.service';
 
 function createService() {
@@ -113,6 +118,71 @@ test('route reset detection ignores non-route plan edits', () => {
     plan,
     { ...plan, budget: 30000, guide_for_itinerary: 1, meal_plan_code: 'MAP' },
   ), false);
+});
+
+test('meal-plan reset detection fires for a canonical CP to MAP change', () => {
+  assert.equal(hasItineraryMealPlanChanged(
+    {
+      meal_plan_code: 'CP',
+      meal_plan_breakfast: 1,
+      meal_plan_lunch: 0,
+      meal_plan_dinner: 0,
+    },
+    {
+      meal_plan_code: 'MAP',
+      meal_plan_breakfast: 1,
+      meal_plan_lunch: 0,
+      meal_plan_dinner: 1,
+    },
+  ), true);
+});
+
+test('meal-plan reset detection does not fire when only legacy flags disagree with an explicit code', () => {
+  const previous = {
+    meal_plan_code: 'MAP',
+    meal_plan_breakfast: 1,
+    meal_plan_lunch: 1,
+    meal_plan_dinner: 1,
+  };
+  const next = {
+    meal_plan_code: 'Modified American Plan',
+    meal_plan_breakfast: 1,
+    meal_plan_lunch: 0,
+    meal_plan_dinner: 1,
+  };
+
+  assert.equal(resolveItineraryMealPlanCode(previous), 'MAP');
+  assert.equal(resolveItineraryMealPlanCode(next), 'MAP');
+  assert.equal(hasItineraryMealPlanChanged(previous, next), false);
+});
+
+test('meal-plan reset detection falls back to legacy flags when the canonical code is absent', () => {
+  assert.equal(hasItineraryMealPlanChanged(
+    { meal_plan_breakfast: 1, meal_plan_lunch: 0, meal_plan_dinner: 0 },
+    { meal_plan_breakfast: 0, meal_plan_lunch: 0, meal_plan_dinner: 0 },
+  ), true);
+  assert.equal(
+    resolveItineraryMealPlanCode({ meal_plan_breakfast: 0, meal_plan_lunch: 0, meal_plan_dinner: 0 }),
+    'EP',
+  );
+});
+
+test('hotel reset reason triggers for meal-plan-only edits and preserves route precedence', () => {
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, mealPlanChanged: true }), 'MEAL_PLAN_CHANGED');
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: true, mealPlanChanged: true }), 'ROUTE_CHANGED');
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, roomCountChanged: true }), 'ROOM_COUNT_CHANGED');
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: true, roomCountChanged: true }), 'ROUTE_CHANGED');
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, mealPlanChanged: false }), null);
+});
+
+test('room-count reset detection follows traveller room ids', () => {
+  const twoRooms = [{ room_id: 1 }, { room_id: 2 }, { room_id: 1 }];
+  const oneRoom = [{ room_id: 1 }, { room_id: 1 }];
+
+  assert.equal(resolveItineraryRoomCount(twoRooms), 2);
+  assert.equal(resolveItineraryRoomCount(oneRoom), 1);
+  assert.equal(hasItineraryRoomCountChanged({ preferred_room_count: 2 }, oneRoom), true);
+  assert.equal(hasItineraryRoomCountChanged({ preferred_room_count: 1 }, oneRoom), false);
 });
 
 test('route reset detection fires when a destination or stay date changes', () => {

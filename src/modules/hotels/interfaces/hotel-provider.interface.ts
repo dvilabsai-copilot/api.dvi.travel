@@ -26,6 +26,8 @@ export interface HotelSearchResult {
   providerDisplayName?: string;
   canonicalHotelId?: number | null;
   providerHotelCode?: string;
+  /** Backend-issued stable commercial identity; never created by the client. */
+  selectionKey?: string;
   rateOptionId?: string;
   roomId?: string | number;
   roomTypeId?: number;
@@ -107,6 +109,8 @@ export interface HotelSearchResult {
 export interface RoomType {
   roomCode: string;
   roomName: string;
+  /** Canonical supplier rate-plan identity for this room/rate option. */
+  mealPlan?: string;
   bedType: string;
   capacity: number;
   price: number;

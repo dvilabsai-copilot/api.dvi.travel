@@ -28,6 +28,7 @@ import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.s
 import { SystemRole } from '../auth/constants/system-role.constants';
 import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
+import { normalizeHotelDisplayName } from './utils/hotel-selection-identity.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -454,6 +455,7 @@ export interface ItineraryDetailsResponseDto {
   infants: number;
  overallCost: string;
 meal_plan_code?: string | null;
+mealPlanCode?: string | null;
 
 // Guest food preference for frontend day-wise header
 food_type?: string | null;
@@ -1752,7 +1754,7 @@ const foodTypeMap: Record<string, string> = {
     const rows = Array.isArray(segments) ? segments : [];
     if (rows.length === 0) return rows;
 
-    const cleanName = (value?: string | null): string => String(value ?? '').trim();
+    const cleanName = (value?: string | null): string => normalizeHotelDisplayName(value);
     const lower = (value?: string | null): string => cleanName(value).toLowerCase();
     const canonicalStopName = (value?: string | null): string => {
       const raw = cleanName(value);
@@ -1816,6 +1818,10 @@ const foodTypeMap: Record<string, string> = {
 
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index];
+
+      if (row?.hotelName) row.hotelName = cleanName(row.hotelName);
+      if (row?.anchorFrom) row.anchorFrom = cleanName(row.anchorFrom);
+      if (row?.anchorTo) row.anchorTo = cleanName(row.anchorTo);
 
       if (isAttraction(row)) {
         const attractionName = getAttractionName(row);
@@ -6577,6 +6583,7 @@ const response: ItineraryDetailsResponseDto = {
       infants: plan.total_infants ?? 0,
  overallCost: netPayable.toFixed(2), // Use calculated net payable
 meal_plan_code: (plan as any).meal_plan_code ?? null,
+mealPlanCode: (plan as any).meal_plan_code ?? null,
 
 // Guest food preference for frontend day-wise header
 food_type: guestFoodPreference,

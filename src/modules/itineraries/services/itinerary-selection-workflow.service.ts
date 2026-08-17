@@ -1,6 +1,6 @@
 // FILE: src/modules/itineraries/services/itinerary-selection-workflow.service.ts
 
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { createConnection } from 'mysql2/promise';
 import { PrismaService } from '../../../prisma.service';
 import { RouteEngineService } from '../engines/route-engine.service';
@@ -9,7 +9,12 @@ import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.
 import { OfflineHotelCatalogService } from './offline-hotel-catalog.service';
 import { filterActiveVendorCandidateRows } from '../utils/active-vendor-candidate.util';
 import { getVehicleRateAvailability } from '../utils/vehicle-rate-availability.util';
-import { hotelSelectionKey, hotelSelectionKeyFromRow } from '../utils/hotel-selection-identity.util';
+import {
+  hotelSelectionKey,
+  hotelSelectionKeyFromRow,
+  normalizeSupplierRateIdentity,
+  supplierRateIdentityMatches,
+} from '../utils/hotel-selection-identity.util';
 import {
   getCanonicalMealPlanFlags,
   inferCanonicalHotelRatePlanCode,
@@ -36,6 +41,37 @@ export class ItinerarySelectionWorkflowService {
       throw new BadRequestException('Hotel selection requires a valid target groupType between 1 and 4');
     }
     return targetGroupType;
+  }
+
+  /**
+   * Own the plan/group advisory lock for the complete authoritative operation.
+   * Supplier calls intentionally run outside the Prisma transaction, but no
+   * competing intent may resolve against the snapshot while this callback is
+   * in progress.
+   */
+  async withHotelSelectionLock<T>(planId: number, groupType: number, work: () => Promise<T>): Promise<T> {
+    const targetGroupType = this.requireTargetGroupType(groupType);
+    const lockName = `itinerary-hotel-selection:${Number(planId)}:${targetGroupType}`;
+    const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+    if (!databaseUrl) {
+      throw new InternalServerErrorException({
+        code: 'HOTEL_SELECTION_LOCK_UNAVAILABLE',
+        message: 'The hotel selection lock could not be established.',
+      });
+    }
+    const connection = await createConnection(databaseUrl);
+    let acquired = false;
+    try {
+      const result: any = await connection.query('SELECT GET_LOCK(?, 10) AS acquired', [lockName]);
+      acquired = Number(result?.[0]?.[0]?.acquired || 0) === 1;
+      if (!acquired) throw new BadRequestException('Another hotel selection is being applied. Please retry.');
+      return await work();
+    } finally {
+      if (acquired) {
+        try { await connection.query('SELECT RELEASE_LOCK(?)', [lockName]); } catch { /* close releases it */ }
+      }
+      await connection.end();
+    }
   }
 
   async getAvailableHotels(routeId: number) {
@@ -111,6 +147,8 @@ export class ItinerarySelectionWorkflowService {
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean; };
     canonicalHotelId?: number | null;
     hotelCode?: string;
+    providerHotelCode?: string;
+    selectionKey?: string;
     rateOptionId?: string;
     provider?: string;
     optionKey?: string;
@@ -131,9 +169,16 @@ export class ItinerarySelectionWorkflowService {
     extraBedAmount?: number;
     extraBedGstAmount?: number;
     hotelMarginPercentage?: number;
+    basePricePerNight?: number;
+    baseTotalPrice?: number;
     hotelMarginAmount?: number;
     hotelMarginStayAmount?: number;
+    hotelMarginTotalAmount?: number;
     hotelMarginGstAmount?: number;
+    amountIncludesHotelMargin?: boolean;
+    pricingIncludesHotelMargin?: boolean;
+    numberOfNights?: number;
+    nightlyRates?: Array<Record<string, unknown>>;
     routeDate?: string;
      requestedBy?: number;
     /** Internal transaction client used by atomic multi-route saves. */
@@ -272,7 +317,7 @@ export class ItinerarySelectionWorkflowService {
     const canonicalHotelId = Number(data.canonicalHotelId ?? data.hotelId ?? 0);
     const persistedHotelId = canonicalHotelId > 0 ? canonicalHotelId : null;
     const persistedHotelCode =
-      String(data.hotelCode || existingHotelDetails?.hotel_code || '').trim() || null;
+      String(data.providerHotelCode || data.hotelCode || existingHotelDetails?.hotel_code || '').trim() || null;
     let selectionPricing = resolveHotelSelectionPricing({
       totalPrice: data.totalPrice,
       pricePerNight: data.pricePerNight,
@@ -311,8 +356,14 @@ export class ItinerarySelectionWorkflowService {
     // caused a fresh ₹1,630 rate to be reconciled as ₹1,666 (using the stale
     // ₹290 margin from a ₹1,450 rate).  Derive the payable amount and margin
     // from this option's own base amount instead.
+    const pricingAlreadyIncludesMargin = data.amountIncludesHotelMargin === true ||
+      data.pricingIncludesHotelMargin === true;
     const staahBasePricePerNight = providerForPricing === 'staah'
-      ? Math.max(Number(data.pricePerNight || 0), 0)
+      ? Math.max(Number(
+          pricingAlreadyIncludesMargin
+            ? data.basePricePerNight || data.pricePerNight
+            : data.pricePerNight,
+        ), 0)
       : 0;
     const staahBaseTotal = staahBasePricePerNight > 0
       ? Number((staahBasePricePerNight * Math.max(Number(data.roomCount || 1), 1)).toFixed(2))
@@ -341,14 +392,49 @@ export class ItinerarySelectionWorkflowService {
         roomCount: data.roomCount,
       });
     }
+    const suppliedBasePricePerNight = Math.max(Number(data.basePricePerNight || 0), 0);
+    const suppliedBaseTotal = Math.max(
+      Number(data.baseTotalPrice || 0) ||
+        suppliedBasePricePerNight * Math.max(Number(data.roomCount || 1), 1),
+      0,
+    );
+    const authoritativeBasePricePerNight = axisRoomsBasePrice > 0
+      ? axisRoomsBasePrice
+      : staahBasePricePerNight > 0
+        ? staahBasePricePerNight
+        : suppliedBasePricePerNight;
+    const authoritativeBaseTotal = axisRoomsBasePrice > 0
+      ? axisRoomsBasePrice
+      : staahBaseTotal > 0
+        ? staahBaseTotal
+        : suppliedBaseTotal;
+    const suppliedMarginAmount = Math.max(Number(
+      data.hotelMarginStayAmount ?? data.hotelMarginTotalAmount ?? data.hotelMarginAmount ?? 0,
+    ), 0);
     const hotelMarginRate = providerForPricing === 'staah' && staahMarginRate > 0
       ? staahMarginRate
-      : Math.max(
-        Number(data.hotelMarginStayAmount ?? data.hotelMarginAmount ?? 0) ||
-          (selectionPricing.totalPrice * hotelMarginPercentage) / 100,
-        0,
-      );
+      : suppliedMarginAmount > 0
+        ? suppliedMarginAmount
+        : authoritativeBaseTotal > 0 && hotelMarginPercentage > 0
+          ? Number((authoritativeBaseTotal * hotelMarginPercentage / 100).toFixed(2))
+          // Preserve legacy live-provider behavior in this surgical fix. An
+          // Offline rate is never allowed to derive markup from payable; its
+          // catalog path supplies authoritative base and margin explicitly.
+          : providerForPricing !== 'offline'
+            ? Math.max((selectionPricing.totalPrice * hotelMarginPercentage) / 100, 0)
+            : 0;
     const hotelMarginRateTaxAmount = Math.max(Number(data.hotelMarginGstAmount || 0), 0);
+    const authoritativePricingSnapshot = {
+      ...(authoritativeBasePricePerNight > 0 ? { basePricePerNight: authoritativeBasePricePerNight } : {}),
+      ...(authoritativeBaseTotal > 0 ? { baseTotalPrice: authoritativeBaseTotal } : {}),
+      ...(hotelMarginPercentage > 0 ? { hotelMarginPercentage } : {}),
+      ...(hotelMarginRate > 0 ? {
+        hotelMarginAmount: hotelMarginRate,
+        hotelMarginTotalAmount: hotelMarginRate,
+      } : {}),
+      ...(Number(data.numberOfNights || 0) > 0 ? { numberOfNights: Number(data.numberOfNights) } : {}),
+      ...(Array.isArray(data.nightlyRates) ? { nightlyRates: data.nightlyRates } : {}),
+    };
 
     const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
     const rawMealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
@@ -404,10 +490,14 @@ export class ItinerarySelectionWorkflowService {
               optionKey: data.optionKey || null,
               rateOptionId: data.rateOptionId || null,
               hotelCode: data.hotelCode || null,
+              canonicalHotelId: data.canonicalHotelId ?? data.hotelId ?? null,
+              providerHotelCode: data.providerHotelCode || null,
+              selectionKey: data.selectionKey || null,
               provider: data.provider || null,
               selectionOrigin: 'USER_SELECTED',
             hotelName: data.hotelName || null,
             category: data.category || null,
+            roomTypeId: data.roomTypeId || null,
             roomType: data.roomType || null,
             mealPlan: canonicalMealPlanCode || null,
             bookingCode: data.bookingCode || null,
@@ -418,10 +508,8 @@ export class ItinerarySelectionWorkflowService {
             extraBedRate,
             extraBedAmount,
             extraBedGstAmount,
-            hotelMarginPercentage,
-            hotelMarginAmount: hotelMarginRate,
+            ...authoritativePricingSnapshot,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
-            basePricePerNight: axisRoomsBasePrice || null,
             pricePerNight: data.pricePerNight ?? null,
             totalPrice: selectionPricing.totalPrice || null,
             ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
@@ -487,10 +575,14 @@ export class ItinerarySelectionWorkflowService {
             optionKey: data.optionKey || null,
             rateOptionId: data.rateOptionId || null,
             hotelCode: data.hotelCode || null,
+            canonicalHotelId: data.canonicalHotelId ?? data.hotelId ?? null,
+            providerHotelCode: data.providerHotelCode || null,
+            selectionKey: data.selectionKey || null,
             provider: data.provider || null,
             selectionOrigin: 'USER_SELECTED',
             hotelName: data.hotelName || null,
             category: data.category || null,
+            roomTypeId: data.roomTypeId || null,
             roomType: data.roomType || null,
             mealPlan: canonicalMealPlanCode || null,
             bookingCode: data.bookingCode || null,
@@ -501,10 +593,8 @@ export class ItinerarySelectionWorkflowService {
             extraBedRate,
             extraBedAmount,
             extraBedGstAmount,
-            hotelMarginPercentage,
-            hotelMarginAmount: hotelMarginRate,
+            ...authoritativePricingSnapshot,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
-            basePricePerNight: axisRoomsBasePrice || null,
             pricePerNight: data.pricePerNight ?? null,
             totalPrice: selectionPricing.totalPrice || null,
             ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
@@ -653,19 +743,57 @@ export class ItinerarySelectionWorkflowService {
         routeDate: data.routeDate,
         canonicalHotelId,
         rateOptionId,
-        roomCount: Math.max(Number(data.roomCount || 1), 1),
+        roomCount: Number(data.roomCount || 0) > 0
+          ? Number(data.roomCount)
+          : undefined,
       });
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : 'Offline hotel rate is stale or invalid');
     }
 
     const requestedBy = Number(data.requestedBy || 1);
+    const effectiveRoomCount = Math.max(
+      Number(resolvedRate.roomCount || data.roomCount || 1),
+      1,
+    );
     const now = new Date();
-    const snapshot = JSON.stringify(resolvedRate);
     const resolvedRouteId = Number(resolvedRate.routeId || data.routeId);
-    const checkInDate = resolvedRate.nightlyRates[0]?.date || null;
-    const checkOutDate = resolvedRate.nightlyRates.length
-      ? new Date(`${resolvedRate.nightlyRates[resolvedRate.nightlyRates.length - 1].date}T00:00:00.000Z`)
+    const routeNight = resolvedRate.nightlyRates.find((night: any) => night.date === resolvedRate.routeDate);
+    if (!routeNight) {
+      throw new BadRequestException('Offline hotel pricing does not contain the selected route night');
+    }
+    const routeBaseAmount = Number(routeNight.baseAmount || 0);
+    const routeMarginAmount = Number(routeNight.marginAmount || 0);
+    const routePayableAmount = Number(routeNight.sellAmount || 0);
+    if (Math.abs(routeBaseAmount + routeMarginAmount - routePayableAmount) > 0.01) {
+      throw new BadRequestException({
+        code: 'HOTEL_PRICING_INTEGRITY_ERROR',
+        message: 'Offline hotel base, margin, and payable amounts do not reconcile.',
+      });
+    }
+    // One DB row represents one itinerary route/night. Keep the complete stay
+    // totals under explicit stay-prefixed fields so downstream row sums cannot
+    // accidentally charge the full continuous stay once per route.
+    const routeSnapshot = {
+      ...resolvedRate,
+      pricingScope: 'ROUTE_NIGHT',
+      stayBaseTotalPrice: resolvedRate.baseTotalPrice,
+      stayHotelMarginTotalAmount: resolvedRate.hotelMarginTotalAmount,
+      stayTotalPrice: resolvedRate.totalStayPrice,
+      basePricePerNight: routeBaseAmount,
+      baseTotalPrice: routeBaseAmount,
+      hotelMarginAmount: routeMarginAmount,
+      hotelMarginTotalAmount: routeMarginAmount,
+      pricePerNight: routePayableAmount,
+      totalPrice: routePayableAmount,
+      totalStayPrice: routePayableAmount,
+      numberOfNights: 1,
+      nightlyRates: [routeNight],
+    };
+    const snapshot = JSON.stringify(routeSnapshot);
+    const checkInDate = resolvedRate.routeDate || routeNight.date || null;
+    const checkOutDate = checkInDate
+      ? new Date(`${checkInDate}T00:00:00.000Z`)
       : null;
     if (checkOutDate) checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
 
@@ -699,10 +827,16 @@ export class ItinerarySelectionWorkflowService {
         price_source: 'DATABASE',
         is_live_rate: false,
         selected_rate_option_id: rateOptionId,
-        selected_price_per_night: resolvedRate.pricePerNight,
-        selected_total_price: resolvedRate.totalStayPrice,
+        selected_price_per_night: routePayableAmount,
+        selected_total_price: routePayableAmount,
         selected_currency: resolvedRate.currency,
         selected_price_snapshot: snapshot,
+        total_no_of_rooms: effectiveRoomCount,
+        total_room_cost: routeBaseAmount,
+        hotel_margin_percentage: resolvedRate.hotelMarginPercentage,
+        hotel_margin_rate: routeMarginAmount,
+        hotel_margin_rate_tax_amt: 0,
+        total_hotel_cost: routePayableAmount,
         hotel_approval_status: 'PENDING_APPROVAL',
         hotel_approval_requested_at: now,
         hotel_approval_requested_by: requestedBy,
@@ -747,9 +881,9 @@ export class ItinerarySelectionWorkflowService {
         hotel_id: resolvedRate.canonicalHotelId,
         room_id: resolvedRate.roomId,
         room_type_id: resolvedRate.roomTypeId,
-        room_qty: Math.max(Number(data.roomCount || 1), 1),
-        room_rate: resolvedRate.pricePerNight,
-        total_room_cost: resolvedRate.totalStayPrice,
+        room_qty: effectiveRoomCount,
+        room_rate: routePayableAmount,
+        total_room_cost: routePayableAmount,
         breakfast_required: data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0,
         lunch_required: data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0,
         dinner_required: data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0,
@@ -783,7 +917,7 @@ export class ItinerarySelectionWorkflowService {
           new_approval_status: 'PENDING_APPROVAL',
           previous_confirmation_status: existingHotel?.manual_confirmation_status || 'NOT_STARTED',
           new_confirmation_status: 'NOT_STARTED',
-          price: resolvedRate.totalStayPrice,
+          price: routePayableAmount,
           currency: resolvedRate.currency,
           notes: 'Offline hotel selection requested',
           acted_by: requestedBy,
@@ -810,7 +944,13 @@ export class ItinerarySelectionWorkflowService {
  /**
    * Bulk save hotel selections - used before confirming itinerary
  */
-  async bulkSaveHotels(planId: number, hotels: any[], requestedBy = 1) {
+  async bulkSaveHotels(
+    planId: number,
+    hotels: any[],
+    requestedBy = 1,
+    skipSupplierRefresh = false,
+    lockAlreadyHeld = false,
+  ) {
 
     if (!Array.isArray(hotels) || hotels.length === 0) {
       throw new BadRequestException('At least one hotel selection is required');
@@ -830,7 +970,13 @@ export class ItinerarySelectionWorkflowService {
 
     const lockName = `itinerary-hotel-selection:${planId}:${String(hotels[0]?.groupType || 1)}`;
     const databaseUrl = String(process.env.DATABASE_URL || '').trim();
-    const lockConnection = databaseUrl ? await createConnection(databaseUrl) : null;
+    if (!lockAlreadyHeld && !databaseUrl) {
+      throw new InternalServerErrorException({
+        code: 'HOTEL_SELECTION_LOCK_UNAVAILABLE',
+        message: 'The hotel selection lock could not be established.',
+      });
+    }
+    const lockConnection = lockAlreadyHeld ? null : await createConnection(databaseUrl);
     let lockAcquired = false;
     try {
       if (lockConnection) {
@@ -842,9 +988,9 @@ export class ItinerarySelectionWorkflowService {
       // Supplier refresh is deliberately outside the Prisma transaction, but
       // inside the plan/group lock. A late refresh from request A therefore
       // cannot overwrite a newer request B after B has committed.
-      for (const hotel of hotels) {
+      for (const hotel of skipSupplierRefresh ? [] : hotels) {
         const provider = String(hotel.provider || '').trim().toLowerCase();
-        const hotelCode = String(hotel.hotelCode || hotel.providerHotelCode || hotel.hotelId || '').trim();
+        const hotelCode = String(hotel.providerHotelCode || hotel.hotelCode || hotel.hotelId || '').trim();
         if (!provider || provider === 'offline' || !hotelCode || !plan?.itinerary_quote_ID) continue;
         const refreshed = await this.hotelDetailsTboService.getSelectedHotelRates(
           String(plan.itinerary_quote_ID), Number(hotel.routeId), provider, hotelCode, Number(hotel.groupType),
@@ -869,8 +1015,11 @@ export class ItinerarySelectionWorkflowService {
             groupType: hotel.groupType,
             mealPlan: hotel.mealPlan,
             canonicalHotelId: hotel.canonicalHotelId ?? hotel.hotelId,
+            providerHotelCode: hotel.providerHotelCode,
+            selectionKey: hotel.selectionKey,
             rateOptionId: hotel.rateOptionId,
             provider: hotel.provider,
+            hotelCode: hotel.hotelCode,
             optionKey: hotel.optionKey,
             pricePerNight: hotel.pricePerNight,
             totalPrice: hotel.totalPrice,
@@ -1003,7 +1152,7 @@ export class ItinerarySelectionWorkflowService {
         });
       }
     }
-    const requestedRateIds = [data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
+    const requestedRateIds = [data.selectionKey, data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
       .map((value) => String(value || '').trim())
       .filter(Boolean);
     const requestedCanonicalId = Number((data.canonicalHotelId ?? data.hotelId) || 0);
@@ -1023,7 +1172,7 @@ export class ItinerarySelectionWorkflowService {
       // A hotel row is a container for its room/rate options. Prefer the
       // concrete option when validating a selection so a parent row cannot
       // hide the selected option's price and room identity.
-      return [...rateOptions.map((option: any) => ({
+      return [...rateOptions.map((option: any) => normalizeSupplierRateIdentity({
         ...row,
         ...option,
         provider: option.provider || row.provider,
@@ -1039,36 +1188,21 @@ export class ItinerarySelectionWorkflowService {
         optionKey: option.optionKey || option.option_key || row.optionKey,
         roomId: option.roomId || option.room_id || row.roomId,
         rateId: option.rateId || option.rate_id || option.rateOptionId || row.rateId,
-      })), row];
+      })), normalizeSupplierRateIdentity(row)];
     });
     const propertyMatches = (candidate: any): boolean => {
         if (String(candidate.provider || '').trim().toLowerCase() !== provider) return false;
         const candidateCanonicalId = Number(candidate.canonicalHotelId ?? candidate.hotelId ?? candidate.hotel_id ?? 0);
         const candidateHotelCode = String(
-          candidate.hotelCode || candidate.providerHotelCode || candidate.provider_hotel_code || candidate.hotel_code || '',
+          candidate.providerHotelCode || candidate.provider_hotel_code || candidate.hotelCode || candidate.hotel_code || '',
         ).trim().toLowerCase();
         const canonicalMatch = requestedCanonicalId > 0 && candidateCanonicalId > 0 && candidateCanonicalId === requestedCanonicalId;
         const codeMatch = Boolean(requestedHotelCode && candidateHotelCode && requestedHotelCode === candidateHotelCode);
         if (!canonicalMatch && !codeMatch) return false;
         return true;
     };
-    const rateMatches = (candidate: any): boolean => {
-      if (requestedRateIds.length === 0) return false;
-      const candidateRateIds = [candidate.rateOptionId, candidate.optionKey, candidate.searchReference, candidate.bookingCode]
-        .map((value) => String(value || '').trim())
-        .filter(Boolean);
-
-      // rateOptionId/optionKey are the primary identity. Do not let a current
-      // bookingCode or searchReference mask an older rateOptionId from another
-      // night; that was the source of the AxisRooms stale-rate false positive.
-      const requestedPrimary = String(data.rateOptionId || data.optionKey || '').trim();
-      if (requestedPrimary) return candidateRateIds.includes(requestedPrimary);
-
-      const requestedBookingIdentity = [data.searchReference, data.bookingCode]
-        .map((value) => String(value || '').trim())
-        .filter(Boolean);
-      return requestedBookingIdentity.length > 0 && requestedBookingIdentity.every((value) => candidateRateIds.includes(value));
-    };
+    const rateMatches = (candidate: any): boolean =>
+      requestedRateIds.length > 0 && supplierRateIdentityMatches(data, candidate);
     const matched = candidateRows.find((candidate: any) => {
       if (!propertyMatches(candidate) || !rateMatches(candidate)) return false;
       const candidateRoomType = String(candidate.roomType || candidate.room_type || '').trim().toLowerCase();

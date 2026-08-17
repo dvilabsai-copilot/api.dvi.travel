@@ -38,6 +38,12 @@ import {
   selectionOriginFromRow,
 } from './utils/hotel-selection-identity.util';
 import { hotelDateOnly, hotelStayTotal } from './utils/hotel-stay-pricing.util';
+import { HotelPricingService } from './hotels/hotel-pricing.service';
+import { projectHotelPayablePricing } from './utils/hotel-payable-pricing.util';
+import {
+  hotelCardPropertyKey,
+} from './utils/hotel-card-pricing.util';
+import { resolveHotelRequiredRoutes } from './utils/hotel-selection-view-state.util';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -301,13 +307,17 @@ export class ItineraryHotelDetailsTboService {
     }
 
     this.collectMealPlanValue((hotel as any).mealPlan, candidates);
-    if (candidates.size > 0) return Array.from(candidates);
 
-    // Legacy providers sometimes only expose a structured room label. Use it
-    // only when no structured meal-plan value exists anywhere on the option.
+    // A property can expose several room/rate variants (for example EP and
+    // CP) while the top-level display row represents only the cheapest one.
+    // Collect every room-level plan so preference matching can promote the
+    // requested variant instead of rejecting the whole property.
     this.collectMealPlanValue((hotel as any).roomType, candidates);
 
     for (const roomType of hotel.roomTypes || []) {
+      this.collectMealPlanValue((roomType as any).mealPlan, candidates);
+      this.collectMealPlanValue((roomType as any).mealPlanCode, candidates);
+      this.collectMealPlanValue((roomType as any).ratePlanName, candidates);
       this.collectMealPlanValue((roomType as any).roomName, candidates);
     }
 
@@ -368,6 +378,9 @@ export class ItineraryHotelDetailsTboService {
     const roomTypes = Array.isArray(hotel.roomTypes) ? hotel.roomTypes : [];
     const matchedRoomType = roomTypes.find((roomType) => {
       const roomCandidates = new Set<string>();
+      this.collectMealPlanValue((roomType as any).mealPlan, roomCandidates);
+      this.collectMealPlanValue((roomType as any).mealPlanCode, roomCandidates);
+      this.collectMealPlanValue((roomType as any).ratePlanName, roomCandidates);
       this.collectMealPlanCodesFromText((roomType as any).roomName, roomCandidates);
       return roomCandidates.has(preferredMealPlanCode);
     });
@@ -1038,6 +1051,7 @@ if (hotelMasterId) {
     private readonly hobseProvider: HobseHotelProvider,
     private readonly offlineHotelCatalogService: OfflineHotelCatalogService,
     private readonly hotelRecommendationPackageService: HotelRecommendationPackageService,
+    private readonly hotelPricingService: HotelPricingService = new HotelPricingService(prisma),
   ) {}
 
   /** Fetch the latest room/rate/meal options for one selected supplier hotel. */
@@ -1106,9 +1120,11 @@ if (hotelMasterId) {
             providers: [normalizedProvider], hotelCodes: normalizedHotelCode,
           });
 
+    const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
     return {
       quoteId, routeId: Number(routeId), provider: normalizedProvider, hotelCode: normalizedHotelCode,
-      hotels: (hotels || []).map((hotel: any) => {
+      hotels: (hotels || []).map((rawHotel: any) => {
+        const hotel = projectHotelPayablePricing(rawHotel, effectiveMarginPercentage);
         const totalAmount = Number(
           hotel.totalHotelCost ?? hotel.totalAmountAfterTax ?? hotel.totalPrice ?? hotel.price ?? 0,
         );
@@ -3101,14 +3117,14 @@ this.logger.log(
         );
       }
 
- // AxisRooms gate: keep only rooms that have an active AxisRooms-mapped rate plan
- // (axisrooms_room_id NOT NULL = mapped from inbound AxisRooms room/rateplan setup).
- // Occupancy rows may be sourced from AxisRooms or manual admin updates; we do not hard-filter source here.
+ // Keep every active rate plan with a priced occupancy row. A locally
+ // maintained plan (for example MAP_PLAN) may not have an external
+ // axisrooms_room_id, but its ARI price is still valid and must remain
+ // available to the itinerary rate-option selector.
       const activeRatePlanRows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
         where: {
           hotel_id: { in: hotelIds },
           room_id: { in: roomIds },
-          axisrooms_room_id: { not: null },
           deleted: 0,
           status: 1,
         } as any,
@@ -3140,7 +3156,11 @@ this.logger.log(
               const mealPlanByRatePlan = new Map<string, string>();
               for (const rp of activeRatePlanRows as any[]) {
                 const rateplanId = String((rp as any).rateplan_id || '').trim();
-                const mealPlanDesc = String((rp as any).meal_plan_description || '').trim();
+                const mealPlanDesc = String(
+                  (rp as any).meal_plan_description ||
+                  (rp as any).rateplan_name ||
+                  rateplanId,
+                ).trim();
                 if (rateplanId && mealPlanDesc && !mealPlanByRatePlan.has(rateplanId)) {
                   mealPlanByRatePlan.set(rateplanId, mealPlanDesc);
                 }
@@ -3786,6 +3806,8 @@ this.logger.log(
               `Room ${roomId}`;
             results.push({
               provider: 'staah',
+              canonicalHotelId: Number((hotel as any).hotel_id) || null,
+              providerHotelCode: String((hotel as any).staah_property_id || '').trim() || undefined,
               hotelCode: String((hotel as any).hotel_id),
               hotelName: String((hotel as any).hotel_name || ''),
               cityCode: String((hotel as any).hotel_city || destinationRaw),
@@ -3821,6 +3843,14 @@ this.logger.log(
               }],
               roomType: roomName,
               mealPlan,
+              // Keep the supplier room/rate identity on the top-level option.
+              // The continuity validator consumes these fields after the
+              // selected-rate snapshot is flattened; providerRoomId alone
+              // is not sufficient for STAAH stay validation.
+              roomId,
+              room_id: roomId,
+              rateId: rateplanId,
+              rate_id: rateplanId,
               hotel_margin: Number((hotel as any).hotel_margin || 0),
               hotel_margin_gst_type: Number((hotel as any).hotel_margin_gst_type || 0),
               hotel_margin_gst_percentage: Number((hotel as any).hotel_margin_gst_percentage || 0),
@@ -3958,9 +3988,10 @@ this.logger.log(
  this.logger.log(` Route ${routeId}: ${hotels.length} hotels (Prices: ${prices})`);
     });
 
- // NEW LOGIC: Assign hotels to groups PER DESTINATION (per route)
- // Rule: If 1 hotel -> put in all 4 groups
- // If 2+ hotels -> distribute in ascending price order across groups
+ // Assign hotels to groups PER DESTINATION (per route).
+ // Each supplier option belongs to one recommendation group only. A route
+ // with fewer than four distinct options therefore has empty groups; it must
+ // not be padded by copying the cheapest option into those groups.
 
  // First pass: Determine groupType for each hotel based on its destination
  const hotelGroupAssignments = new Map<string, number>(); // key: "routeId-hotelCode" -> groupType
@@ -3982,13 +4013,12 @@ this.logger.log(
       const sortedHotels = [...availableHotels].sort((a, b) => a.price - b.price);
 
       if (sortedHotels.length === 1) {
- // Single hotel: assign to ALL 4 groups
+ // A single hotel is a valid option for group 1 only. Reusing it in groups
+ // 2-4 makes those recommendations look distinct while they are identical.
         const hotel = sortedHotels[0];
-        for (let groupType = 1; groupType <= 4; groupType++) {
-          const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-          hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
-        }
- this.logger.debug(` Route ${routeId}: 1 hotel - "${hotel.hotelName}" (${hotel.price}) assigned to ALL groups`);
+        const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
+        hotelGroupAssignments.set(`${key}:1`, 1);
+ this.logger.debug(` Route ${routeId}: 1 hotel - "${hotel.hotelName}" (${hotel.price}) assigned to group 1 only`);
       } else {
  // Multiple hotels: distribute across groups by price order
         const numHotels = sortedHotels.length;
@@ -4057,23 +4087,10 @@ this.logger.log(
           }
         }
 
- // Overlap fallback: if this route has hotels but none mapped to current tier,
- // pick deterministic fallback by sorted price index so every tier has data.
-        if (!foundForGroup && availableHotels.length > 0) {
-          const sortedHotels = [...availableHotels].sort((a, b) => (a.price || 0) - (b.price || 0));
-          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
-          const fallbackHotel = sortedHotels[fallbackIndex];
-          if (fallbackHotel) {
-            const fallbackWithRoute = {
-              ...fallbackHotel,
-              routeId,
-              __fallbackAssigned: true,
-            } as HotelSearchResult & { routeId: number };
-            tieredHotels.push(fallbackWithRoute);
+        if (!foundForGroup) {
  this.logger.debug(
-              `   Tier ${groupType}, Route ${routeId}: overlap fallback -> ${fallbackHotel.hotelName}`,
+              `   Tier ${groupType}, Route ${routeId}: no distinct hotel assigned; leaving this group empty for the route`,
             );
-          }
         }
       }
 
@@ -4333,7 +4350,9 @@ this.logger.log(
               basePricePerNight: optionRawTotal > 0
                 ? this.money(optionRawTotal / nights)
                 : option?.basePricePerNight,
-              amountIncludesHotelMargin: amountAlreadyIncludesMargin,
+              // optionPayableTotal is already the sell amount at this point.
+              amountIncludesHotelMargin: true,
+              pricingIncludesHotelMargin: true,
               totalStayPrice: optionRouteTotal > 0 ? optionRouteTotal : option?.totalStayPrice,
               totalPrice: optionRouteTotal > 0 ? optionRouteTotal : option?.totalPrice,
               price: optionRawTotal > 0
@@ -4353,7 +4372,10 @@ this.logger.log(
         pricePerNight: payablePricePerNight > 0 ? payablePricePerNight : hotel?.pricePerNight,
         basePricePerNight,
         baseStayPrice: rawTotal,
-        amountIncludesHotelMargin: amountAlreadyIncludesMargin,
+        // payableTotal is already the sell amount at this point. Preserve an
+        // idempotent marker for persisted-snapshot reads and intent previews.
+        amountIncludesHotelMargin: true,
+        pricingIncludesHotelMargin: true,
         exactFullStayTotal: payableTotal > 0 ? payableTotal : hotel?.exactFullStayTotal,
         totalStayPrice: payableTotal > 0 ? payableTotal : hotel?.totalStayPrice,
         totalPrice: payableTotal > 0 ? payableTotal : hotel?.totalPrice,
@@ -4410,7 +4432,7 @@ this.logger.log(
       };
     };
 
-    const pricedPackages = packages.map((pkg) => {
+    const pricedPackagesUnordered = packages.map((pkg) => {
       const stayResults = (pkg.stayResults || []).map((stay) => {
         const pricedHotel = stay.hotel
           ? priceHotelStay(stay.hotel, stay.nights)
@@ -4440,8 +4462,34 @@ this.logger.log(
       };
     });
 
+    // Supplier/base totals are not the final values displayed to the user.
+    // Margin and provider-specific payable projection can reverse two nearby
+    // packages, so assign recommendation numbers only after pricing. Keep a
+    // remap for inventory rows so each tab still opens its own hotels.
+    const pricedPackageOrder = [...pricedPackagesUnordered]
+      .sort((left, right) => {
+        const amount = (pkg: any): number =>
+          (!Array.isArray(pkg?.hotels) || pkg.hotels.length === 0) &&
+          (!Array.isArray(pkg?.stayResults) || pkg.stayResults.length === 0)
+            ? Number.POSITIVE_INFINITY
+            : Number(pkg.totalPrice ?? pkg.partialTotal ?? Number.POSITIVE_INFINITY);
+        const leftAmount = amount(left);
+        const rightAmount = amount(right);
+        return leftAmount - rightAmount;
+      });
+    const pricedGroupTypeRemap = new Map<number, number>(
+      pricedPackageOrder.map((pkg, index) => [Number(pkg.groupType || 0), index + 1]),
+    );
+    const pricedPackages = pricedPackageOrder.map((pkg, index) => ({
+        ...pkg,
+        groupType: index + 1,
+        label: `Recommended #${index + 1}`,
+      }));
+
     const pricedAvailabilityPackages = allAvailabilityPackages.map((pkg) => ({
       ...pkg,
+      groupType: pricedGroupTypeRemap.get(Number(pkg.groupType || 0)) || pkg.groupType,
+      label: `Recommended #${pricedGroupTypeRemap.get(Number(pkg.groupType || 0)) || pkg.groupType}`,
       hotels: (pkg.hotels || []).map((hotel) => {
         const routeNight = getRouteNightHotel(hotel);
         return priceHotelStay(routeNight.hotel, routeNight.nights);
@@ -5323,6 +5371,57 @@ this.logger.log(
       }
     }
 
+    // Keep the group/route matrix explicit. If a route has supplier hotels but
+    // all of them belong to another recommendation group, do not silently
+    // reuse one of those hotels here. Emit a non-selectable row so the UI can
+    // say "No hotel available" for this group without rendering a fake card.
+    const requiredRoutesForGroupMatrix = resolveHotelRequiredRoutes(routes, noOfNights);
+    for (const pkg of pricedPackages) {
+      const groupType = Number(pkg.groupType || 0);
+      if (groupType <= 0) continue;
+      for (const route of requiredRoutesForGroupMatrix) {
+        const routeId = Number((route as any).itinerary_route_ID || 0);
+        const alreadyRendered = hotelRows.some((row: any) =>
+          Number(row?.groupType || 0) === groupType &&
+          Number(row?.itineraryRouteId || 0) === routeId,
+        );
+        if (alreadyRendered) continue;
+
+        const dateLabel = new Date((route as any).itinerary_route_date).toISOString().slice(0, 10);
+        const destination = (route as any).next_visiting_location || (route as any).location_name || '';
+        hotelRows.push({
+          groupType,
+          itineraryRouteId: routeId,
+          routeIds: [routeId],
+          stayKey: `group-missing-${groupType}-${routeId}`,
+          day: `Day ${routes.indexOf(route) + 1} | ${dateLabel}`,
+          destination,
+          hotelId: 0,
+          canonicalHotelId: null,
+          hotelCode: '',
+          hotelName: 'No hotel available',
+          category: 0,
+          roomType: '',
+          mealPlan: '',
+          totalHotelCost: 0,
+          totalHotelTaxAmount: 0,
+          provider: 'external',
+          isBookable: false,
+          isSelectable: false,
+          externalStay: true,
+          availabilityStatus: 'NO_DISTINCT_GROUP_AVAILABILITY',
+          availabilityState: 'UNAVAILABLE',
+          availabilityMessage: 'No hotel available for this recommendation group.',
+          selectionStatus: 'UNAVAILABLE',
+          selectionReason: 'All available hotels for this route are assigned to another recommendation group.',
+          date: dateLabel,
+          hotelCheckInDate: dateLabel,
+          checkOutDate: addUtcDays(dateLabel, 1),
+          itineraryPlanHotelDetailsId: 0,
+        } as any);
+      }
+    }
+
  // Preserve every unavailable logical stay in the response. An incomplete
  // package must not disappear just because one stay has no eligible option.
     for (const pkg of pricedPackages) {
@@ -5626,13 +5725,7 @@ this.logger.log(
       row?.baseHotelCost,
       row?.baseAmount,
     );
-    const getPropertyKey = (row: any): string => [
-      Number(row?.itineraryRouteId || 0),
-      Number(row?.groupType || 0),
-      String(row?.provider || '').trim().toLowerCase(),
-      String(row?.hotelCode || row?.providerHotelCode || '').trim().toLowerCase(),
-      String(row?.hotelName || '').trim().toLowerCase(),
-    ].join('|');
+    const getPropertyKey = hotelCardPropertyKey;
 
     const selectedTotalByRouteGroup = new Map<string, number>();
     for (const [routeGroupKey, selections] of selectionRowsByRouteAndGroup.entries()) {
@@ -5730,8 +5823,7 @@ this.logger.log(
 
     const supplierHotelRows = cleanedHotelRows.filter((row) => row.isBookable !== false);
 
-    const searchableRouteIds = routes
-      .filter((route: any) => route?.hotelRequired !== false && route?.hotel_required !== false && !route?.isDeparture && !route?.isTransit && !route?.isActivityOnly)
+    const searchableRouteIds = resolveHotelRequiredRoutes(routes, noOfNights)
       .map((route: any) => Number(route.itinerary_route_ID));
 
     const totalSearchRoutes = searchableRouteIds.length;
@@ -6040,8 +6132,8 @@ this.logger.log(
     const roomDetailsList: ItineraryHotelRoomDto[] = [];
     let roomDetailsId = 1;
 
- // Build route-scoped room candidates with group coverage fallback.
- // PHP behavior allows overlap fallback when a recommendation bucket would be empty.
+ // Build route-scoped room candidates. A room candidate belongs to the price
+ // group calculated for that route; do not copy it into empty groups.
     const routeHotelRows: Array<{ routeId: number; hotel: any }> = [];
 
     hotelsByRoute.forEach((hotelsForRoute, routeId) => {
@@ -6052,7 +6144,6 @@ this.logger.log(
       }
 
       const allPrices = hotelsForRoute.map((h: HotelSearchResult) => h.price || 0);
-      const sortedHotels = [...hotelsForRoute].sort((a, b) => (a.price || 0) - (b.price || 0));
 
       const byGroup = new Map<number, any[]>();
 
@@ -6062,24 +6153,6 @@ this.logger.log(
         if (!byGroup.has(groupType)) byGroup.set(groupType, []);
         byGroup.get(groupType)!.push({ ...hotel, groupType, __fallbackAssigned: false });
       });
-
- // Ensure all 4 groups are represented when a route has at least one hotel.
-      for (let groupType = 1; groupType <= 4; groupType++) {
-        const groupHotels = byGroup.get(groupType) ?? [];
-        if (groupHotels.length === 0 && sortedHotels.length > 0) {
-          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
-          const fallbackHotel = sortedHotels[fallbackIndex];
-          if (fallbackHotel) {
-            byGroup.set(groupType, [
-              {
-                ...fallbackHotel,
-                groupType,
-                __fallbackAssigned: true,
-              },
-            ]);
-          }
-        }
-      }
 
       for (let groupType = 1; groupType <= 4; groupType++) {
         const groupHotels = byGroup.get(groupType) ?? [];

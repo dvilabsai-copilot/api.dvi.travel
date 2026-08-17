@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ItinerarySelectionWorkflowService } from '../src/modules/itineraries/services/itinerary-selection-workflow.service';
+import {
+  normalizeSupplierRateIdentity,
+  supplierRateIdentityMatches,
+} from '../src/modules/itineraries/utils/hotel-selection-identity.util';
 
 function createService(prisma: any = {}) {
   return new ItinerarySelectionWorkflowService(
@@ -17,6 +21,54 @@ test('hotel availability preserves the empty result when the route is absent', a
   });
 
   assert.deepEqual(await service.getAvailableHotels(99), []);
+});
+
+test('AxisRooms supplier references normalize canonical meal plans before persistence', () => {
+  const cp = normalizeSupplierRateIdentity({
+    provider: 'axisrooms',
+    mealPlan: '-',
+    rateOptionId: 'axisrooms:232:605:CP_PLAN:2026-08-12',
+    bookingCode: 'AX-232:605:CP_PLAN:2026-08-12',
+  });
+  assert.equal(cp.mealPlan, 'CP');
+  assert.equal(cp.mealPlanCode, 'CP');
+  const mappedProperty = normalizeSupplierRateIdentity({
+    ...cp,
+    canonicalHotelId: 232,
+    hotelId: 232,
+    hotelCode: '435',
+    providerHotelCode: '435',
+  });
+  assert.equal(mappedProperty.canonicalHotelId, 232);
+  assert.equal(mappedProperty.hotelId, 232);
+  assert.equal(mappedProperty.hotelCode, '435');
+  assert.equal(mappedProperty.providerHotelCode, '435');
+  assert.equal(normalizeSupplierRateIdentity({
+    provider: 'axisrooms',
+    bookingCode: 'AX-232:605:MAP_PLAN:2026-08-12',
+  }).mealPlan, 'MAP');
+});
+
+test('TBO identity preserves a real booking code while accepting a fresh session for the same commercial room', () => {
+  const current = '1114182!TB!1!TB!current-search!TB!N!TB!AFF!';
+  const normalized = normalizeSupplierRateIdentity({
+    provider: 'tbo', hotelCode: '1114182',
+    optionKey: 'tbo|1114182|cp|2026-08-12',
+    bookingCode: 'tbo|1114182|cp|2026-08-12',
+    searchReference: current,
+  });
+  assert.equal(normalized.rateOptionId, current);
+  assert.equal(normalized.bookingCode, current);
+  assert.equal(normalized.searchReference, current);
+  assert.equal(supplierRateIdentityMatches(normalized, { ...normalized }), true);
+  const stale = '1114182!TB!1!TB!stale-search!TB!N!TB!AFF!';
+  assert.equal(supplierRateIdentityMatches(normalized, {
+    ...normalized, rateOptionId: stale, bookingCode: stale, searchReference: stale,
+  }), true);
+  const differentCommercialRoom = '1114182!TB!2!TB!stale-room!TB!N!TB!AFF!';
+  assert.equal(supplierRateIdentityMatches(normalized, {
+    ...normalized, rateOptionId: differentCommercialRoom, bookingCode: differentCommercialRoom, searchReference: differentCommercialRoom,
+  }), false);
 });
 
 test('manual hotel persistence rejects a missing target group instead of defaulting to Group 1', async () => {
@@ -173,6 +225,7 @@ test('live selection tolerates a rebuilt route id when the latest snapshot has t
 });
 
 test('live selection validates the selected nested rate option before its parent hotel row', async () => {
+  const tboBookingCode = 'TBO-123!TB!1!TB!selected-search!TB!N!TB!AFF!';
   const selectedRate = {
     provider: 'tbo',
     hotelCode: 'TBO-123',
@@ -180,8 +233,10 @@ test('live selection validates the selected nested rate option before its parent
     hotelName: 'Seven Springs Resort',
     roomType: 'Honey Moon Cottage with Jacuzzi',
     mealPlan: 'CP',
-    rateOptionId: 'tbo-rate-selected',
-    optionKey: 'tbo-rate-selected',
+    rateOptionId: tboBookingCode,
+    optionKey: 'tbo|TBO-123|CP|2026-08-11',
+    bookingCode: tboBookingCode,
+    searchReference: tboBookingCode,
     totalPrice: 30149,
   };
   const parentHotelRow = {
@@ -209,8 +264,10 @@ test('live selection validates the selected nested rate option before its parent
       hotelName: 'Seven Springs Resort',
       roomType: 'Honey Moon Cottage with Jacuzzi',
       mealPlanCode: 'CP',
-      rateOptionId: 'tbo-rate-selected',
-      optionKey: 'tbo-rate-selected',
+      rateOptionId: tboBookingCode,
+      optionKey: 'tbo|TBO-123|CP|2026-08-11',
+      bookingCode: tboBookingCode,
+      searchReference: tboBookingCode,
       totalPrice: 30149,
     },
     { itinerary_plan_ID: 10060 },
@@ -230,8 +287,10 @@ test('live selection validates the selected nested rate option before its parent
         hotelName: 'Seven Springs Resort',
         roomType: 'Honey Moon Cottage with Jacuzzi',
         mealPlanCode: 'CP',
-        rateOptionId: 'tbo-rate-selected',
-        optionKey: 'tbo-rate-selected',
+        rateOptionId: tboBookingCode,
+        optionKey: 'tbo|TBO-123|CP|2026-08-11',
+        bookingCode: tboBookingCode,
+        searchReference: tboBookingCode,
         totalPrice: 30150,
       },
       { itinerary_plan_ID: 10060 },
@@ -240,6 +299,69 @@ test('live selection validates the selected nested rate option before its parent
     ),
     /selected hotel price changed/,
   );
+});
+
+test('current TBO supplier booking identity passes while stale and different hotels fail', async () => {
+  const syncedAt = new Date('2026-08-11T14:02:55.000Z');
+  const currentBookingCode = '1114182!TB!1!TB!current-search!TB!N!TB!AFF!';
+  const snapshot = {
+    provider: 'tbo', hotelCode: '1114182', hotelName: 'Mountain Club Resort',
+    roomType: 'Family Double Room,2 Queen Beds', mealPlan: 'CP',
+    optionKey: 'tbo|1114182|||||cp|2026-08-12|2026-08-13',
+    searchReference: currentBookingCode,
+    rateOptions: [{
+      provider: 'tbo', hotelCode: '1114182', hotelName: 'Mountain Club Resort',
+      roomType: 'Family Double Room,2 Queen Beds', mealPlan: 'CP',
+      searchReference: currentBookingCode, pricePerNight: 14541.83, totalPrice: 14541.83,
+    }],
+  };
+  const service = createService({
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: syncedAt }),
+      findMany: async () => [{ full_payload: JSON.stringify(snapshot) }],
+    },
+  });
+  const currentSelection = {
+    planId: 10040, routeId: 10145, provider: 'tbo', hotelCode: '1114182',
+    hotelName: 'Mountain Club Resort', roomType: 'Family Double Room,2 Queen Beds',
+    rateOptionId: currentBookingCode, optionKey: snapshot.optionKey,
+    bookingCode: currentBookingCode, searchReference: currentBookingCode,
+    totalPrice: 14541.83,
+  };
+  const route = { itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') };
+  await (service as any).validateLiveSelectionAgainstSnapshot(
+    currentSelection, { itinerary_plan_ID: 10040 }, 'DVI2026082', route,
+  );
+  const stale = '1114182!TB!2!TB!old-search!TB!N!TB!AFF!';
+  await assert.rejects(
+    () => (service as any).validateLiveSelectionAgainstSnapshot(
+      { ...currentSelection, rateOptionId: stale, bookingCode: stale, searchReference: stale },
+      { itinerary_plan_ID: 10040 }, 'DVI2026082', route,
+    ),
+    /stale or unavailable/,
+  );
+  await assert.rejects(
+    () => (service as any).validateLiveSelectionAgainstSnapshot(
+      { ...currentSelection, hotelCode: '9999999' },
+      { itinerary_plan_ID: 10040 }, 'DVI2026082', route,
+    ),
+    /stale or unavailable/,
+  );
+});
+
+test('bulk hotel persistence forwards provider hotel code into atomic validation', async () => {
+  let forwarded: any;
+  const service = createService({
+    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'DVI2026082' }) },
+    $transaction: async (callback: any) => callback({}),
+  });
+  (service as any).selectHotel = async (data: any) => { forwarded = data; };
+  (service as any).hotelDetailsTboService = { clearCacheForQuote: () => undefined };
+  await service.bulkSaveHotels(10040, [{
+    routeId: 10145, groupType: 1, provider: 'tbo', hotelCode: '1114182',
+    rateOptionId: '1114182!TB!1!TB!current-search!TB!N!TB!AFF!',
+  }], 1, true, true);
+  assert.equal(forwarded.hotelCode, '1114182');
 });
 
 test('bulk hotel persistence rolls back every route when one route fails', async () => {
@@ -270,11 +392,26 @@ test('bulk hotel persistence rolls back every route when one route fails', async
       { routeId: 101, hotelId: 1, groupType: 1 },
       { routeId: 102, hotelId: 1, groupType: 1 },
       { routeId: 103, hotelId: 1, groupType: 1 },
-    ]),
+    ], 1, false, true),
     /simulated route 103 persistence failure/,
   );
   assert.deepEqual(committed, []);
   assert.deepEqual(staged, []);
+});
+
+test('hotel selection lock fails closed when DATABASE_URL is unavailable', async () => {
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  try {
+    const service = createService({} as any);
+    await assert.rejects(
+      () => (service as any).withHotelSelectionLock(77, 1, async () => 'unlocked'),
+      (error: any) => error?.response?.code === 'HOTEL_SELECTION_LOCK_UNAVAILABLE',
+    );
+  } finally {
+    if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousDatabaseUrl;
+  }
 });
 
 test('vehicle slab selection preserves required-field validation', async () => {

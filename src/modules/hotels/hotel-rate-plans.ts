@@ -85,6 +85,22 @@ export function inferCanonicalHotelRatePlanCode(value?: string | null): Canonica
   const raw = String(value || '').trim().toUpperCase();
   if (!raw) return null;
 
+  // Supplier identities can namespace the authoritative plan code, e.g.
+  // axisrooms:232:605:CP_PLAN:2026-08-12 or AX-232:605:MAP_PLAN:...
+  const embeddedPlan = raw.match(/(?:^|[^A-Z0-9])(MAP|CP|AP|EP)_PLAN(?:$|[^A-Z0-9])/);
+  if (embeddedPlan?.[1]) return embeddedPlan[1] as CanonicalHotelRatePlanCode;
+
+  // Channel managers commonly place the canonical abbreviation inside a
+  // descriptive rate-plan name, e.g. "Double Deluxe Room - OTA EP Plan".
+  // Require the word PLAN so unrelated room/property names containing a
+  // standalone two-letter token are not classified as meal plans.
+  const embeddedNamedPlan = raw.match(
+    /(?:^|[^A-Z0-9])(MAP|CP|AP|EP)[\s_-]*PLAN(?:$|[^A-Z0-9])/,
+  );
+  if (embeddedNamedPlan?.[1]) {
+    return embeddedNamedPlan[1] as CanonicalHotelRatePlanCode;
+  }
+
   if (raw === '12' || raw.startsWith('12')) return 'CP';
   if (raw === '13' || raw.startsWith('13')) return 'MAP';
   if (raw === '14' || raw.startsWith('14')) return 'AP';

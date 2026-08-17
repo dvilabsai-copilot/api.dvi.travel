@@ -220,60 +220,70 @@ export class HotelRecommendationPackageService {
   }
 
   /**
-   * The hotel list contract always exposes four recommendation tabs.  The
-   * optimizer can find fewer than four distinct packages when inventory is
-   * sparse (or when a stay is unavailable), but hiding tabs makes the result
-   * look inconsistent and changes the user's group-selection model.  In that
-   * case, repeat the last real package as an explicit fallback.  This does not
-   * invent a hotel, price, or availability state; it only fills the display
-   * slots with the same package that is actually available.
+   * The hotel list contract always exposes four recommendation tabs. When
+   * fewer than four distinct packages exist, keep the tab but leave it empty.
+   * Repeating the last package makes an unavailable recommendation look like
+   * a valid alternative and causes duplicate hotel cards in the UI.
    */
   private ensureFourPackages(
     packages: RecommendationPackage[],
     evaluations: StayEvaluation[],
   ): RecommendationPackage[] {
-    const normalized = packages.slice(0, 4).map((pkg, index) => ({
-      ...pkg,
-      groupType: index + 1,
-      label: LABELS[index],
-      hotels: [...pkg.hotels],
-      stayResults: [...pkg.stayResults],
-    }));
+    const seenPackageKeys = new Set<string>();
+    const distinctPackages = packages.filter((pkg) => {
+      if (!Array.isArray(pkg.hotels) || pkg.hotels.length === 0) return false;
+      const key = this.packageKey(pkg.hotels);
+      if (seenPackageKeys.has(key)) return false;
+      seenPackageKeys.add(key);
+      return true;
+    });
+    const packageAmount = (pkg: RecommendationPackage): number => {
+      const amount = pkg.totalPrice ?? pkg.partialTotal;
+      return Number.isFinite(Number(amount)) ? Number(amount) : Number.POSITIVE_INFINITY;
+    };
+    const normalized = distinctPackages
+      .sort((left, right) => packageAmount(left) - packageAmount(right))
+      .slice(0, 4)
+      .map((pkg, index) => ({
+        ...pkg,
+        groupType: index + 1,
+        label: LABELS[index],
+        hotels: [...pkg.hotels],
+        stayResults: [...pkg.stayResults],
+        distinctFromPrevious: true,
+      }));
 
     if (normalized.length === 0) {
       normalized.push(this.toIncompletePackage(evaluations, [], 1));
     }
 
     while (normalized.length < 4) {
-      const source = normalized[normalized.length - 1];
       const groupType = normalized.length + 1;
-      const physicalIds = source.hotels.map((hotel) => `${hotel.stayKey}|${this.physicalIdentity(hotel)}`);
-      const optionIds = source.hotels.map((hotel) => `${hotel.stayKey}|${this.optionKey(hotel)}`);
-      const repeatedFromGroups = Array.from(new Set([
-        ...source.repeatedFromGroups,
-        source.groupType,
-      ]));
-
-      normalized.push({
-        ...source,
-        groupType,
-        label: LABELS[groupType - 1],
-        hotels: [...source.hotels],
-        stayResults: [...source.stayResults],
-        distinctFromPrevious: false,
-        repeatedAcrossGroupsHotelIds: Array.from(new Set([
-          ...source.repeatedAcrossGroupsHotelIds,
-          ...physicalIds,
-        ])),
-        sameOptionAcrossGroups: Array.from(new Set([
-          ...source.sameOptionAcrossGroups,
-          ...optionIds,
-        ])),
-        repeatedFromGroups,
-      });
+      normalized.push(this.emptyRecommendationPackage(groupType));
     }
 
     return normalized;
+  }
+
+  private emptyRecommendationPackage(groupType: number): RecommendationPackage {
+    return {
+      groupType,
+      label: LABELS[groupType - 1] || `Recommended #${groupType}`,
+      hotels: [],
+      totalPrice: null,
+      partialTotal: 0,
+      targetPrice: null,
+      complete: false,
+      distinctFromPrevious: false,
+      diversityScore: 0,
+      repeatedHotelIds: [],
+      repeatedAcrossGroupsHotelIds: [],
+      sameOptionAcrossGroups: [],
+      duplicateWithinPackageHotelIds: [],
+      repeatedFromGroups: [],
+      fallbackReasons: ['No distinct hotel package is available for this recommendation group.'],
+      stayResults: [],
+    };
   }
 
   buildLogicalStays(routes: RecommendationRoute[], noOfNights?: number): LogicalHotelStay[] {

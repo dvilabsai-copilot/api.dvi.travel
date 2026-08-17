@@ -39,6 +39,8 @@
     "backfill:locations:self-route:apply": "tsx scripts/backfill-location-self-routes.ts --apply",
     "backfill:stored-location-city-ids": "tsx scripts/backfill-stored-location-city-ids.ts",
     "backfill:stored-location-city-ids:apply": "tsx scripts/backfill-stored-location-city-ids.ts --apply",
+    "backfill:meal-plan-code": "node scripts/backfill-meal-plan-code.js",
+    "backfill:meal-plan-code:apply": "node scripts/backfill-meal-plan-code.js --apply",
     "backfill:stored-location-osrm": "tsx scripts/backfill-stored-location-osrm.ts",
     "backfill:stored-location-osrm:apply": "tsx scripts/backfill-stored-location-osrm.ts --apply",
     "rollback:stored-location-osrm": "tsx scripts/rollback-stored-location-osrm.ts",

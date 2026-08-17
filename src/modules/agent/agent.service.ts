@@ -1,11 +1,13 @@
 // FILE: src/modules/agent/agent.service.ts
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma.service';
 import { ListAgentQueryDto } from './dto/list-agent.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 import { AgentPreviewDto } from './dto/agent-preview.dto';
 import { mapAgentToListRow } from './agent.mapper';
+import { UpdateAgentConfigDto } from './dto/update-agent-config.dto';
 
 type SubRow = {
   id: number;
@@ -612,22 +614,96 @@ async getConfig(agentId: number) {
       agent_ID: true,
       agent_name: true,
       agent_lastname: true,
+      itinerary_margin_discount_percentage: true,
+      agent_margin: true,
+      agent_margin_gst_type: true,
+      agent_margin_gst_percentage: true,
     },
   });
 
   if (!agent) throw new NotFoundException('Agent not found');
 
+  const config = await this.prisma.dvi_agent_configuration.findFirst({
+    where: { agent_id: agentId, deleted: 0, status: 1 },
+    orderBy: { agent_config_id: 'desc' },
+  });
+
+  const gstType = Number(agent.agent_margin_gst_type || 0);
   return {
-    itineraryDiscountMargin: 0,
-    serviceCharge: 0,
-    agentMarginGstType: 'INCLUSIVE',
-    agentMarginGstPercentage: '0',
-    companyName: [agent.agent_name ?? '', agent.agent_lastname ?? '']
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim(),
-    address: '',
+    itineraryDiscountMargin: Number(agent.itinerary_margin_discount_percentage || 0),
+    serviceCharge: Number(agent.agent_margin || 0),
+    agentMarginGstType: gstType === 1 ? 'Included' : gstType === 2 ? 'Excluded' : 'Not Applicable',
+    agentMarginGstPercentage: String(Number(agent.agent_margin_gst_percentage || 0)),
+    companyName: config?.company_name ?? [agent.agent_name ?? '', agent.agent_lastname ?? ''].join(' ').replace(/\s+/g, ' ').trim(),
+    address: config?.site_address ?? '',
+    termsAndCondition: config?.terms_condition ?? '',
+    gstinNumber: config?.invoice_gstin_no ?? '',
+    panNo: config?.invoice_pan_no ?? '',
+    invoiceAddress: config?.invoice_address ?? '',
   };
+}
+
+async updateConfig(agentId: number, payload: UpdateAgentConfigDto) {
+  await this.ensureAgentExists(agentId);
+
+  const gstTypeValue = (() => {
+    const value = String(payload.agentMarginGstType ?? '').trim().toLowerCase();
+    if (value === 'included' || value === 'inclusive') return 1;
+    if (value === 'excluded' || value === 'exclusive') return 2;
+    return 0;
+  })();
+  const now = new Date();
+
+  await this.prisma.$transaction(async (tx) => {
+    await tx.dvi_agent.update({
+      where: { agent_ID: agentId },
+      data: {
+        itinerary_margin_discount_percentage: Number(payload.itineraryDiscountMargin ?? 0),
+        agent_margin: Number(payload.serviceCharge ?? 0),
+        agent_margin_gst_type: gstTypeValue,
+        agent_margin_gst_percentage: Number(payload.agentMarginGstPercentage ?? 0),
+        updatedon: now,
+      },
+    });
+
+    const existing = await tx.dvi_agent_configuration.findFirst({
+      where: { agent_id: agentId, deleted: 0 },
+      orderBy: { agent_config_id: 'desc' },
+      select: { agent_config_id: true },
+    });
+    const configData = {
+      company_name: payload.companyName ?? null,
+      site_address: payload.address ?? null,
+      terms_condition: payload.termsAndCondition ?? null,
+      invoice_gstin_no: payload.gstinNumber ?? null,
+      invoice_pan_no: payload.panNo ?? null,
+      invoice_address: payload.invoiceAddress ?? null,
+      status: 1,
+      deleted: 0,
+      updatedon: now,
+    };
+    if (existing) {
+      await tx.dvi_agent_configuration.update({ where: { agent_config_id: existing.agent_config_id }, data: configData });
+    } else {
+      await tx.dvi_agent_configuration.create({ data: { agent_id: agentId, createdby: 0, createdon: now, ...configData } });
+    }
+
+    if (payload.password?.trim()) {
+      const user = await tx.dvi_users.findFirst({
+        where: { agent_id: agentId, deleted: 0 },
+        orderBy: { userID: 'desc' },
+        select: { userID: true },
+      });
+      if (user) {
+        await tx.dvi_users.update({
+          where: { userID: user.userID },
+          data: { password: await bcrypt.hash(payload.password.trim(), 10), updatedon: now },
+        });
+      }
+    }
+  });
+
+  return this.getConfig(agentId);
 }
 
 /** ---------- Wallet helpers ---------- */
