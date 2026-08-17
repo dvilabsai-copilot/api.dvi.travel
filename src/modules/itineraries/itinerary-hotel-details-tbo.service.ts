@@ -67,6 +67,50 @@ export class ItineraryHotelDetailsTboService {
     ].join('|');
   }
 
+  /**
+   * The recommendation group controls only the automatic choice.  The day
+   * picker must browse one shared inventory, so build a group-neutral union
+   * from every package before the response is returned.
+   */
+  private buildSharedHotelInventory(rows: any[]): any[] {
+    const seen = new Set<string>();
+    return (rows || [])
+      .filter((row: any) => {
+        const provider = String(row?.provider || '').trim().toLowerCase();
+        const name = String(row?.hotelName || '').trim().toLowerCase();
+        return row?.isSelectable !== false &&
+          name !== 'no hotel available' &&
+          name !== 'no hotels available' &&
+          (row?.isBookable !== false || provider === 'offline');
+      })
+      .filter((row: any) => {
+        const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
+        const date = String(row?.date || row?.checkInDate || '').trim();
+        const key = `${routeId}|${date}|${this.availabilityOptionKey(row)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((row: any) => {
+        const {
+          selection: _selection,
+          selectionId: _selectionId,
+          selectionOrigin: _selectionOrigin,
+          selectionStatus: _selectionStatus,
+          isSelected: _isSelected,
+          itineraryPlanHotelDetailsId: _itineraryPlanHotelDetailsId,
+          ...inventoryRow
+        } = row;
+        return {
+          ...inventoryRow,
+          groupType: 0,
+          isSelected: false,
+          selectionId: 0,
+          selectionStatus: 'AVAILABLE',
+        };
+      });
+  }
+
   private normalizeExactRoomCode(value: unknown): string {
     return String(value || '').trim().toUpperCase();
   }
@@ -5908,6 +5952,7 @@ this.logger.log(
     const availabilityMessage = hasSupplierHotels
         ? 'Live supplier hotels are available for the current itinerary selection.'
         : 'No live hotel options are available for one or more stays. Use Check Availability again after adjusting the itinerary.';
+    const sharedHotelInventory = this.buildSharedHotelInventory(cleanedHotelRows);
 
     return {
       quoteId,
@@ -5923,6 +5968,7 @@ this.logger.log(
       restrictedHotels: restrictedHotelRows,
       totalRoomCount: cleanedHotelRows.length,
       hotelAvailability: {
+        sharedHotelInventory,
         hasSupplierHotels,
         supplierHotelCount: supplierHotelRows.length,
         placeholderRowCount: 0,
