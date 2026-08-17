@@ -2110,10 +2110,15 @@ async confirmQuotation(
         anchorIndex?: number;
         beforeRowId?: string | number | null;
         afterRowId?: string | number | null;
+        beforeRowType?: string | null;      // NEW: accept from frontend
+        afterRowType?: string | null;       // NEW: accept from frontend
         beforeHotspotId?: number | null;
         afterHotspotId?: number | null;
+        beforeRouteHotspotId?: number | null; // NEW: accept from frontend
+        afterRouteHotspotId?: number | null;  // NEW: accept from frontend
         anchorFrom?: string | null;
         anchorTo?: string | null;
+        anchorLabel?: string | null;          // NEW: accept from frontend
         anchorTimeRange?: string | null;
       };
       allowP3Removal?: boolean;
@@ -2122,7 +2127,6 @@ async confirmQuotation(
   ) {
     return this.svc.previewManualHotspotFitHere(planId, body);
   }
-
   @Post(':planId/manual-hotspot/auto-fit-preview')
   @ApiOperation({ summary: 'Auto-preview selected manual hotspot across all valid Fit Here positions' })
   async previewManualHotspotAutoFitHere(
