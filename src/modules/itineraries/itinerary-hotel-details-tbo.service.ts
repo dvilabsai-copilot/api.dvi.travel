@@ -5746,7 +5746,7 @@ this.logger.log(
           const currentStay = currentPackage?.stayResults?.find(
             (stay) => Number(stay.parentRouteId || 0) === routeId,
           );
-          if (currentStay && currentStay.state === 'UNAVAILABLE') continue;
+          if (currentStay) continue;
 
           cleanedHotelRows.push(buildPersistedSelectionRow(selection, route, groupType));
         }
@@ -5908,7 +5908,9 @@ this.logger.log(
       planId,
       showHotelMargins: this.shouldShowHotelMargins(),
       hotelRatesVisible,
-      hotelTabs: reconciledHotelTabs,
+      hotelTabs: reconciledHotelTabs
+        .slice()
+        .sort((left, right) => Number(left.groupType || 0) - Number(right.groupType || 0)),
       recommendationAlgorithm: this.recommendationAlgorithm(),
       recommendationGeneration: this.recommendationGeneration(),
       hotels: cleanedHotelRows,
