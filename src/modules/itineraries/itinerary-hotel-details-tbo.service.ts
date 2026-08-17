@@ -4156,7 +4156,9 @@ this.logger.log(
         // inventory for its own category/threshold. Put the automatic choice
         // first so initial selection remains deterministic, then expose the
         // remaining candidates for manual selection in the same pane.
-        const eligible = candidates.filter((candidate) => Number(candidate.price || 0) >= threshold);
+        const eligible = source
+          .slice()
+          .sort((left, right) => Number(left.price || 0) - Number(right.price || 0) || this.legacyPhysicalHotelIdentity(left).localeCompare(this.legacyPhysicalHotelIdentity(right)));
         packages[index].hotels.push(
           { ...selected, routeId },
           ...eligible
