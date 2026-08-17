@@ -3430,10 +3430,12 @@ export class HotelAvailabilitySnapshotService {
     const hotelIdentity = (option: any): string => {
       const canonicalId = Number(option?.canonicalHotelId || option?.hotelId || 0);
       if (canonicalId > 0) return `id:${canonicalId}`;
+      const name = String(option?.hotelName || '').trim().toLowerCase();
+      const normalizedName = name.replace(/[^a-z0-9]+/g, '');
+      if (normalizedName) return `name:${normalizedName}`;
       const provider = String(option?.provider || '').trim().toLowerCase();
       const code = String(option?.hotelCode || option?.providerHotelCode || option?.hotel_code || '').trim().toLowerCase();
-      const name = String(option?.hotelName || '').trim().toLowerCase();
-      return `property:${provider}:${code || name}`;
+      return `property:${provider}:${code}`;
     };
     const existingKeys = new Set<string>();
     const reserveExisting = (row: any): void => {
