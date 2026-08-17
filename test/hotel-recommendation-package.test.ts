@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HotelRecommendationPackageService, resolveHotelRecommendationAlgorithm } from '../src/modules/itineraries/services/hotel-recommendation-package.service';
+import { HotelRecommendationPackageService, mapHotelCategoryLabelToStar, resolveHotelRecommendationAlgorithm } from '../src/modules/itineraries/services/hotel-recommendation-package.service';
 import { HotelMealPlanPolicyService } from '../src/modules/itineraries/services/hotel-meal-plan-policy.service';
 import {
   getCanonicalMealPlanFlags,
@@ -162,7 +162,7 @@ test('preserves valid stays when another logical stay is unavailable', () => {
   assert.equal(packages[0].partialTotal, 100);
   assert.equal(packages[0].hotels.length, 1);
   assert.deepEqual(packages[0].stayResults.map((stay) => stay.state), ['SELECTED', 'UNAVAILABLE']);
-  assert.ok(packages.slice(1).every((pkg) => pkg.distinctFromPrevious === false));
+  assert.deepEqual(packages.map((pkg) => pkg.groupType), [1, 2, 3, 4]);
 });
 
 test('returns partial alternatives for available stays while preserving the unavailable stay row', () => {
@@ -179,9 +179,9 @@ test('returns partial alternatives for available stays while preserving the unav
   });
 
   assert.equal(packages.length, 4);
-  assert.deepEqual(packages.slice(0, 2).map((pkg) => pkg.hotels[0].hotelName), ['Munnar A', 'Munnar B']);
-  assert.ok(packages.slice(2).every((pkg) => pkg.hotels.length === 0 && pkg.stayResults.length === 0));
-  assert.ok(packages.slice(0, 2).every((pkg) => pkg.totalPrice === null && pkg.partialTotal > 0));
+  assert.deepEqual(packages.slice(0, 2).flatMap((pkg) => pkg.hotels.map((hotel) => hotel.hotelName)), ['Munnar A']);
+  assert.ok(packages.slice(2).every((pkg) => pkg.hotels.length === 0));
+  assert.ok(packages.slice(0, 2).filter((pkg) => pkg.hotels.length > 0).every((pkg) => pkg.totalPrice === null && pkg.partialTotal > 0));
   assert.ok(packages.slice(0, 2).every((pkg) => pkg.stayResults[1].state === 'UNAVAILABLE'));
 });
 
@@ -197,7 +197,7 @@ test('always exposes four tabs when no hotel stay has availability', () => {
   assert.deepEqual(packages.map((pkg) => pkg.groupType), [1, 2, 3, 4]);
   assert.ok(packages.every((pkg) => pkg.complete === false && pkg.hotels.length === 0));
   assert.equal(packages[0].stayResults[0].state, 'UNAVAILABLE');
-  assert.ok(packages.slice(1).every((pkg) => pkg.stayResults.length === 0));
+  assert.ok(packages.every((pkg) => pkg.stayResults.length === 0 || (pkg.stayResults.length === 1 && pkg.stayResults[0].state === 'UNAVAILABLE')));
 });
 
 test('constructs stable logical stays and handles aliases, repeated destinations, departure, and transit routes', () => {
@@ -322,7 +322,7 @@ test('houseboat policy requires AP', () => {
   assert.equal(packages[0].hotels[0].hotelName, 'Houseboat AP');
 });
 
-test('recommendations use progressive targets and leave unavailable groups empty', () => {
+test('recommendations use category thresholds and leave sold-out G4 empty', () => {
   const packages = service().generate({
     routes: oneRoute(),
     hotelsByRoute: new Map([[1, [option('A', 100), option('B', 110), option('C', 120), option('D', 130)]]]),
@@ -330,9 +330,16 @@ test('recommendations use progressive targets and leave unavailable groups empty
   });
   assert.equal(packages.length, 4);
   assert.equal(packages[0].totalPrice, 100);
-  assert.equal(packages[1].targetPrice, 120);
-  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 120, 130, null]);
+  assert.equal(packages[1].targetPrice, null);
+  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 120, null, null]);
   assert.deepEqual(packages[3].hotels, []);
+});
+
+test('maps category master labels and codes to logical star buckets', () => {
+  assert.equal(mapHotelCategoryLabelToStar('Budget'), 2);
+  assert.equal(mapHotelCategoryLabelToStar('STD'), 2);
+  assert.equal(mapHotelCategoryLabelToStar('3*'), 3);
+  assert.equal(mapHotelCategoryLabelToStar('hotel_category_5_star'), 5);
 });
 
 test('does not reuse a physical hotel across recommendation groups when rates differ', () => {
@@ -381,4 +388,46 @@ test('shuffled source input produces deterministic recommendations', () => {
   const second = service().generate({ ...input, hotelsByRoute: new Map([[1, [option('A', 100), option('B', 200)]]]) });
   assert.equal(first[0].hotels[0].rateOptionId, second[0].hotels[0].rateOptionId);
   assert.equal(first[0].totalPrice, second[0].totalPrice);
+});
+
+test('allocates one selected category with minimum thresholds and sold-out G4', () => {
+  const hotels = [100, 120, 140, 160].map((price) => option(`A-${price}`, price, 'CP', { category: '5-star' }));
+  const packages = service().generate({ routes: oneRoute(), hotelsByRoute: new Map([[1, hotels as any]]), preferredCategories: [5] });
+  assert.deepEqual(packages.map((pkg) => pkg.hotels[0]?.price), [100, 120, 140, 160]);
+  assert.equal(packages[0].groupType, 1);
+  assert.equal(packages[3].complete, true);
+});
+
+test('allocates two categories as A/A/B/B using each category base', () => {
+  const hotels = [100, 150, 200, 300].map((price, index) => option(`H-${index}`, price, 'CP', { category: index < 2 ? '3-star' : '4-star' }));
+  const packages = service().generate({ routes: oneRoute(), hotelsByRoute: new Map([[1, hotels as any]]), preferredCategories: [3, 4] });
+  assert.deepEqual(packages.map((pkg) => pkg.hotels[0]?.category), ['3-star', '3-star', '4-star', '4-star']);
+  assert.deepEqual(packages.map((pkg) => pkg.hotels[0]?.price), [100, 150, 200, 300]);
+});
+
+test('allocates three categories as A/B/B/C and four categories one per group', () => {
+  const three = [100, 200, 300, 400].map((price, index) => option(`T-${index}`, price, 'CP', { category: `${index === 0 ? 2 : index < 3 ? 3 : 4}-star` }));
+  const threePackages = service().generate({ routes: oneRoute(), hotelsByRoute: new Map([[1, three as any]]), preferredCategories: [2, 3, 4] });
+  assert.deepEqual(threePackages.map((pkg) => pkg.hotels[0]?.category), ['2-star', '3-star', '3-star', '4-star']);
+  const four = [100, 200, 300, 400].map((price, index) => option(`F-${index}`, price, 'CP', { category: `${index + 2}-star` }));
+  const fourPackages = service().generate({ routes: oneRoute(), hotelsByRoute: new Map([[1, four as any]]), preferredCategories: [2, 3, 4, 5] });
+  assert.deepEqual(fourPackages.map((pkg) => pkg.hotels[0]?.category), ['2-star', '3-star', '4-star', '5-star']);
+});
+
+test('falls back to G3 only for missing G4 stays when another stay has genuine G4', () => {
+  const routesForTwoStays = [
+    { itinerary_route_ID: 1, itinerary_route_date: '2026-08-02', next_visiting_location: 'A' },
+    { itinerary_route_ID: 2, itinerary_route_date: '2026-08-03', next_visiting_location: 'B' },
+  ];
+  const packages = service().generate({
+    routes: routesForTwoStays,
+    hotelsByRoute: new Map([
+      [1, [option('A3', 100, 'CP', { category: '3-star' }), option('A3b', 120, 'CP', { category: '3-star' }), option('A4', 200, 'CP', { category: '4-star' }), option('A4b', 300, 'CP', { category: '4-star' })] as any],
+      [2, [option('B4', 120, 'CP', { category: '4-star' })] as any],
+    ]),
+    preferredCategories: [3, 4],
+  });
+  assert.equal(packages[3].stayResults.find((stay) => stay.destination === 'A')?.state, 'SELECTED');
+  assert.equal(packages[3].stayResults.find((stay) => stay.destination === 'B')?.state, 'SELECTED');
+  assert.equal(packages[3].stayResults.find((stay) => stay.destination === 'B')?.hotel?.hotelName, 'B4');
 });

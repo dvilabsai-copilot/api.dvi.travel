@@ -9,6 +9,7 @@ import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.ser
 import { HotelAvailabilityTimingLogger } from './services/hotel-availability-timing.logger';
 import {
   HotelRecommendationPackageService,
+  mapHotelCategoryLabelToStar,
   resolveHotelRecommendationAlgorithm,
   type RecommendationPackage,
   type RecommendationHotel,
@@ -273,6 +274,21 @@ export class ItineraryHotelDetailsTboService {
     }
 
     return Array.from(candidates);
+  }
+
+  /** Convert persisted hotel-category master IDs to logical star buckets. */
+  private async resolvePreferredHotelStars(rawValue: unknown): Promise<number[]> {
+    const ids = this.normalizeNumberList(rawValue);
+    if (ids.length === 0) return [];
+    const masters = await this.prisma.dvi_hotel_category.findMany({
+      where: { hotel_category_id: { in: ids }, deleted: 0 },
+      select: { hotel_category_id: true, hotel_category_title: true, hotel_category_code: true },
+    });
+    const resolve = (row: any): number | null => {
+      return mapHotelCategoryLabelToStar(`${row?.hotel_category_title || ''} ${row?.hotel_category_code || ''}`);
+    };
+    return Array.from(new Set(masters.map(resolve).filter((value): value is number => Boolean(value))))
+      .sort((a, b) => a - b);
   }
 
   private inferMealPlanCodeFromHotel(hotel: HotelSearchResult): string | null {
@@ -1477,7 +1493,7 @@ if (hotelMasterId) {
     };
 const guestNationality = await this.resolveGuestNationality(plan);
 
-const preferredCategories = this.normalizeNumberList(
+const preferredCategories = await this.resolvePreferredHotelStars(
   (plan as any).preferred_hotel_category,
 );
 
@@ -1899,22 +1915,23 @@ this.logger.log(
  // Step 4: Generate recommendation packages. v1 remains the rollback path;
  // v2 selects complete logical-stay packages from real eligible options.
     const algorithm = this.recommendationAlgorithm();
-    const packages = algorithm === 'v2'
-      ? this.hotelRecommendationPackageService.generate({
-          routes: routes as any,
-          hotelsByRoute: filteredHotelsByRoute,
-          noOfNights,
-          preferredMealPlanCode,
-          preferredCategories,
-          maxDistanceKm: Number(process.env.MAX_RECOMMENDED_HOTEL_DISTANCE_KM || 15),
-          requireKnownDistance: String(process.env.HOTEL_RECOMMENDATION_REQUIRE_DISTANCE || '').trim() === 'true',
-        })
-      : this.adaptLegacyPackages(this.generatePricePackages(filteredHotelsByRoute, routes), routes);
+    // v1/v2 are now compatibility labels only. Both execution paths use the
+    // same category strategy so the persisted snapshot cannot diverge from
+    // the recommendation tabs when an environment still says v1.
+    const packages = this.hotelRecommendationPackageService.generate({
+      routes: routes as any,
+      hotelsByRoute: filteredHotelsByRoute,
+      noOfNights,
+      preferredMealPlanCode,
+      preferredCategories,
+      maxDistanceKm: Number(process.env.MAX_RECOMMENDED_HOTEL_DISTANCE_KM || 15),
+      requireKnownDistance: String(process.env.HOTEL_RECOMMENDATION_REQUIRE_DISTANCE || '').trim() === 'true',
+    });
     // Keep v2 recommendation packages for the recommendation tabs, but expose
     // every fetched live/offline option in the hotel list. The legacy price
     // grouping is only used to assign the complete option set to the same four
     // display groups; it does not change the v2 recommendation selection.
-    const allAvailabilityPackages = this.generatePricePackages(filteredHotelsByRoute, routes);
+    const allAvailabilityPackages = this.generatePricePackages(filteredHotelsByRoute, routes, preferredCategories);
     this.logger.log(`[HOTEL_RECOMMENDATION] algorithm=${algorithm} planId=${planId} groups=${packages.length}`);
 
  // Step 5: Build response
@@ -3966,7 +3983,11 @@ this.logger.log(
   private generatePricePackages(
     hotelsByRoute: Map<number, HotelSearchResult[]>,
     routes: any[],
+    preferredCategories: number[] = [],
   ): Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }> {
+    return this.generateCategoryAvailabilityPackages(hotelsByRoute, routes, preferredCategories);
+    /* legacy price-tier implementation retained below for rollback history */
+    /*
     const packages: Array<{
       groupType: number;
       label: string;
@@ -4092,6 +4113,65 @@ this.logger.log(
     }
 
  this.logger.log(` Generated ${packages.length} price tier packages\n`);
+    return packages;
+    */
+  }
+
+  private generateCategoryAvailabilityPackages(
+    hotelsByRoute: Map<number, HotelSearchResult[]>,
+    routes: any[],
+    categories: number[],
+  ): Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }> {
+    const unique = Array.from(new Set(categories.map(Number).filter((value) => value >= 1 && value <= 5))).sort((a, b) => a - b);
+    const [a, b, c, d] = unique;
+    const slots = unique.length <= 1
+      ? [a, a, a, a]
+      : unique.length === 2 ? [a, a, b, b]
+        : unique.length === 3 ? [a, b, b, c]
+          : [a, b, c, d];
+    const multipliers = unique.length <= 1 ? [1, 1.2, 1.4, 1.6] : unique.length === 2 ? [1, 1.5, 1, 1.5] : [1, 1, 1.5, 1];
+    const packages = [1, 2, 3, 4].map((groupType) => ({ groupType, label: `Recommended #${groupType}`, hotels: [] as Array<HotelSearchResult & { routeId: number }> }));
+    for (const route of routes) {
+      const routeId = Number(route?.itinerary_route_ID || 0);
+      const source = hotelsByRoute.get(routeId);
+      if (!routeId || !Array.isArray(source)) continue;
+      const candidatesByCategory = new Map<number, Array<HotelSearchResult & { routeId: number }>>();
+      for (const hotel of source) {
+        const category = this.getHotelCategoryCandidates(hotel)[0];
+        if (!category || (unique.length > 0 && !unique.includes(category))) continue;
+        const bucket = candidatesByCategory.get(category) || [];
+        bucket.push({ ...hotel, routeId });
+        candidatesByCategory.set(category, bucket);
+      }
+      const used = new Set<string>();
+      slots.forEach((category, index) => {
+        const candidates = (candidatesByCategory.get(category) || []).sort((left, right) => Number(left.price || 0) - Number(right.price || 0) || this.legacyPhysicalHotelIdentity(left).localeCompare(this.legacyPhysicalHotelIdentity(right)));
+        if (!candidates.length) return;
+        const base = Number(candidates[0].price || 0);
+        const threshold = base * multipliers[index];
+        const selected = candidates.find((candidate) => Number(candidate.price || 0) >= threshold && !used.has(this.legacyPhysicalHotelIdentity(candidate)));
+        if (!selected) return;
+        used.add(this.legacyPhysicalHotelIdentity(selected));
+        packages[index].hotels.push(selected);
+      });
+      // Keep every remaining eligible inventory option available to the
+      // manual picker without assigning it to an automatic recommendation.
+      for (const hotel of source) {
+        if (packages.some((pkg) => pkg.hotels.some((selected) => this.availabilityOptionKey(selected) === this.availabilityOptionKey(hotel)))) continue;
+        packages[0].hotels.push({ ...hotel, routeId });
+      }
+    }
+    // Match the recommendation service's G4 rule: only when at least one
+    // genuine G4 exists, fill a missing route's G4 inventory with its G3
+    // selection so snapshot auto-selection persists the same fallback.
+    if (packages[3].hotels.length > 0) {
+      for (const route of routes) {
+        const routeId = Number(route?.itinerary_route_ID || 0);
+        if (!routeId || packages[3].hotels.some((hotel) => Number(hotel.routeId) === routeId)) continue;
+        const group3Hotel = packages[2].hotels.find((hotel) => Number(hotel.routeId) === routeId);
+        if (group3Hotel) packages[3].hotels.push({ ...group3Hotel, groupType: 4 } as any);
+      }
+    }
     return packages;
   }
 
@@ -4451,34 +4531,18 @@ this.logger.log(
       };
     });
 
-    // Supplier/base totals are not the final values displayed to the user.
-    // Margin and provider-specific payable projection can reverse two nearby
-    // packages, so assign recommendation numbers only after pricing. Keep a
-    // remap for inventory rows so each tab still opens its own hotels.
-    const pricedPackageOrder = [...pricedPackagesUnordered]
-      .sort((left, right) => {
-        const amount = (pkg: any): number =>
-          (!Array.isArray(pkg?.hotels) || pkg.hotels.length === 0) &&
-          (!Array.isArray(pkg?.stayResults) || pkg.stayResults.length === 0)
-            ? Number.POSITIVE_INFINITY
-            : Number(pkg.totalPrice ?? pkg.partialTotal ?? Number.POSITIVE_INFINITY);
-        const leftAmount = amount(left);
-        const rightAmount = amount(right);
-        return leftAmount - rightAmount;
-      });
-    const pricedGroupTypeRemap = new Map<number, number>(
-      pricedPackageOrder.map((pkg, index) => [Number(pkg.groupType || 0), index + 1]),
-    );
-    const pricedPackages = pricedPackageOrder.map((pkg, index) => ({
-        ...pkg,
-        groupType: index + 1,
-        label: `Recommended #${index + 1}`,
-      }));
+    // Group numbers are semantic category slots. Pricing must never reorder
+    // or remap them (Group 1 remains Group 1 even when it costs more).
+    const pricedPackages = pricedPackagesUnordered.map((pkg) => ({
+      ...pkg,
+      groupType: Number(pkg.groupType || 0),
+      label: `Recommended #${Number(pkg.groupType || 0)}`,
+    }));
 
     const pricedAvailabilityPackages = allAvailabilityPackages.map((pkg) => ({
       ...pkg,
-      groupType: pricedGroupTypeRemap.get(Number(pkg.groupType || 0)) || pkg.groupType,
-      label: `Recommended #${pricedGroupTypeRemap.get(Number(pkg.groupType || 0)) || pkg.groupType}`,
+      groupType: Number(pkg.groupType || 0),
+      label: `Recommended #${Number(pkg.groupType || 0)}`,
       hotels: (pkg.hotels || []).map((hotel) => {
         const routeNight = getRouteNightHotel(hotel);
         return priceHotelStay(routeNight.hotel, routeNight.nights);
