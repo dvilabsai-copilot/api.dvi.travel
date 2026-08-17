@@ -176,6 +176,7 @@ export class HotelRecommendationPackageService {
       const packages: RecommendationPackage[] = [];
       for (const state of states) {
         const candidate = this.toIncompletePackage(evaluations, state.options, packages.length + 1, packages);
+        if (this.reusesHotelAcrossGroups(candidate.hotels, packages)) continue;
         if (packages.some((existing) => this.packageKey(existing.hotels) === this.packageKey(candidate.hotels))) continue;
         packages.push(candidate);
         if (packages.length >= packageLimit) break;
@@ -221,6 +222,7 @@ export class HotelRecommendationPackageService {
           // If no unused option is more expensive, leave that group empty.
           return Number(candidate.totalPrice || 0) > previousTotal;
         })
+        .filter((candidate) => !this.reusesHotelAcrossGroups(candidate.hotels, packages))
         .filter((candidate) => !packages.some((existing) => this.packageKey(existing.hotels) === this.packageKey(candidate.hotels)))
         .sort((a, b) => this.packageScore(a, targetCents, packages, input) - this.packageScore(b, targetCents, packages, input));
 
@@ -728,6 +730,21 @@ export class HotelRecommendationPackageService {
     const repetitionPenalty = pkg.repeatedAcrossGroupsHotelIds.length * 500 + pkg.sameOptionAcrossGroups.length * 1000 + pkg.duplicateWithinPackageHotelIds.length * 2500;
     const identicalPenalty = prior.some((existing) => this.packageKey(existing.hotels) === this.packageKey(pkg.hotels)) ? 1_000_000 : 0;
     return Math.abs(difference) + belowPenalty + repetitionPenalty + identicalPenalty;
+  }
+
+  /**
+   * A recommendation group must offer a different physical property for the
+   * same logical stay. Comparing the full rate/package key is insufficient:
+   * one hotel can expose multiple rooms or rate options and would otherwise
+   * be selected again as a different recommendation.
+   */
+  private reusesHotelAcrossGroups(hotels: RecommendationHotel[], prior: RecommendationPackage[]): boolean {
+    const physicalIds = new Set(
+      hotels.map((hotel) => `${hotel.stayKey}|${this.physicalIdentity(hotel)}`),
+    );
+    return prior.some((pkg) => pkg.hotels.some((hotel) =>
+      physicalIds.has(`${hotel.stayKey}|${this.physicalIdentity(hotel)}`),
+    ));
   }
 
   private staySummary(stay: LogicalHotelStay) {
