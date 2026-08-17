@@ -2516,12 +2516,13 @@ export class HotelAvailabilitySnapshotService {
       // on read so the UI contract remains stable without recalculating live
       // availability during a normal page load.
       if (requestedGroup || tabs.length === 0) return tabs;
-      const normalized = tabs.slice(0, 4).map((tab: any, index: number) => {
-        const repeatedFallback = index > 0 && tab?.distinctFromPrevious === false;
+      const normalized = tabs.slice(0, 4).map((tab: any) => {
+        const groupType = Number(tab?.groupType || 0);
+        const repeatedFallback = tab?.distinctFromPrevious === false;
         if (repeatedFallback) {
           return {
-            groupType: index + 1,
-            label: `Recommended #${index + 1}`,
+            groupType,
+            label: `Recommended #${groupType}`,
             hotels: [],
             stayResults: [],
             totalAmount: 0,
@@ -2538,14 +2539,13 @@ export class HotelAvailabilitySnapshotService {
         }
         return {
           ...tab,
-          groupType: index + 1,
-          label: `Recommended #${index + 1}`,
+          groupType,
+          label: `Recommended #${groupType}`,
           stayResults: Array.isArray(tab.stayResults) ? [...tab.stayResults] : tab.stayResults,
         };
       });
-      while (normalized.length < 4) {
-        const groupType = normalized.length + 1;
-        normalized.push({
+      const byGroup = new Map(normalized.map((tab: any) => [Number(tab.groupType || 0), tab]));
+      return [1, 2, 3, 4].map((groupType) => byGroup.get(groupType) || {
           groupType,
           label: `Recommended #${groupType}`,
           hotels: [],
@@ -2561,28 +2561,12 @@ export class HotelAvailabilitySnapshotService {
           repeatedFromGroups: [],
           fallbackReasons: ['No distinct hotel package is available for this recommendation group.'],
         });
-      }
-      return normalized;
     };
     const orderTabsForDisplay = (tabs: any[]): any[] => {
       if (requestedGroup) return tabs;
-      const isEmpty = (tab: any): boolean =>
-        tab?.complete === false &&
-        Array.isArray(tab?.stayResults) &&
-        tab.stayResults.length === 0;
-      const amount = (tab: any): number => {
-        const value = Number(tab?.totalAmount ?? tab?.partialTotal ?? Number.POSITIVE_INFINITY);
-        return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
-      };
       return [...tabs]
-        .sort((left, right) => {
-          const emptyDifference = Number(isEmpty(left)) - Number(isEmpty(right));
-          return emptyDifference || amount(left) - amount(right) ||
-            Number(left?.groupType || 0) - Number(right?.groupType || 0);
-        })
-        // groupType remains the API identity used for hotel rows and
-        // selection commands; only the user-facing rank is reassigned.
-        .map((tab, index) => ({ ...tab, label: `Recommended #${index + 1}` }));
+        .sort((left, right) => Number(left?.groupType || 0) - Number(right?.groupType || 0))
+        .map((tab) => ({ ...tab, label: `Recommended #${Number(tab.groupType || 0)}` }));
     };
 
     // Recommendation metadata is generated before a user changes a room,

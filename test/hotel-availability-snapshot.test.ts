@@ -320,7 +320,7 @@ test('an explicitly empty recommendation tab is not rebuilt from shared group in
   assert.deepEqual(tabs[3].stayResults, []);
 });
 
-test('recommendation tabs are ranked by payable total while retaining package identity', () => {
+test('recommendation tabs retain category group identity instead of payable-total ranking', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const persistedTabs = [
     {
@@ -369,8 +369,8 @@ test('recommendation tabs are ranked by payable total while retaining package id
     })),
     [
       { groupType: 1, label: 'Recommended #1', totalAmount: 100 },
-      { groupType: 3, label: 'Recommended #2', totalAmount: 200 },
-      { groupType: 2, label: 'Recommended #3', totalAmount: 300 },
+      { groupType: 2, label: 'Recommended #2', totalAmount: 300 },
+      { groupType: 3, label: 'Recommended #3', totalAmount: 200 },
       { groupType: 4, label: 'Recommended #4', totalAmount: 0 },
     ],
   );
