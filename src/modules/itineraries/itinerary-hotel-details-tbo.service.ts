@@ -5735,6 +5735,19 @@ this.logger.log(
         if (!matchedSelectionRow) {
           const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === routeId);
           if (!route) continue;
+
+          // Do not resurrect an old persisted selection into a category slot
+          // that the fresh recommendation snapshot now marks unavailable.
+          // This is especially important after changing the requested hotel
+          // categories: the old row may still exist for audit/history, but it
+          // must not turn a sold-out Group 3/4 into a stale lower-category
+          // hotel card.
+          const currentPackage = pricedPackages.find((pkg) => Number(pkg.groupType || 0) === groupType);
+          const currentStay = currentPackage?.stayResults?.find(
+            (stay) => Number(stay.parentRouteId || 0) === routeId,
+          );
+          if (currentStay && currentStay.state === 'UNAVAILABLE') continue;
+
           cleanedHotelRows.push(buildPersistedSelectionRow(selection, route, groupType));
         }
       }
