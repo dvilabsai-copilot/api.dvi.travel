@@ -19,8 +19,8 @@ test('availability panes keep every eligible hotel in the matching recommendatio
 
   assert.deepEqual(packages.map((pkg: any) => pkg.hotels.map((hotel: any) => hotel.hotelCode)), [
     ['LOW', 'MID', 'HIGH'],
-    ['MID', 'HIGH'],
-    ['HIGH'],
+    ['MID', 'LOW', 'HIGH'],
+    ['HIGH', 'LOW', 'MID'],
     [],
   ]);
 });
