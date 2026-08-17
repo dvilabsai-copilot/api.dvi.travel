@@ -848,11 +848,11 @@ export class ItineraryHotelDetailsTboService {
       let filterReason = '';
       let nextHotel = hotel;
 
- // Keep priced offline options visible for manual approval even when
- // the itinerary's preferred category is narrower than the catalog.
+ // Apply the preferred category to every provider, including offline/manual
+ // catalog rows. Otherwise a 5-star itinerary can still display known 1-4
+ // star offline alternatives alongside the correctly filtered live results.
       if (
-        shouldFilterByCategory &&
-        hotel.provider !== 'offline'
+        shouldFilterByCategory
       ) {
         const categoryCandidates =
           this.getHotelCategoryCandidates(hotel);
@@ -3989,9 +3989,9 @@ this.logger.log(
     });
 
  // Assign hotels to groups PER DESTINATION (per route).
- // Each supplier option belongs to one recommendation group only. A route
- // with fewer than four distinct options therefore has empty groups; it must
- // not be padded by copying the cheapest option into those groups.
+ // With fewer than four distinct hotels, reuse the available options so every
+ // recommendation package still has a complete route. Routes with four or
+ // more hotels continue to use distinct hotels per group.
 
  // First pass: Determine groupType for each hotel based on its destination
  const hotelGroupAssignments = new Map<string, number>(); // key: "routeId-hotelCode" -> groupType
@@ -4013,22 +4013,20 @@ this.logger.log(
       const sortedHotels = [...availableHotels].sort((a, b) => a.price - b.price);
 
       if (sortedHotels.length === 1) {
- // A single hotel is a valid option for group 1 only. Reusing it in groups
- // 2-4 makes those recommendations look distinct while they are identical.
         const hotel = sortedHotels[0];
         const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-        hotelGroupAssignments.set(`${key}:1`, 1);
- this.logger.debug(` Route ${routeId}: 1 hotel - "${hotel.hotelName}" (${hotel.price}) assigned to group 1 only`);
+        for (let groupType = 1; groupType <= 4; groupType++) {
+          hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
+        }
+        this.logger.debug(` Route ${routeId}: 1 hotel - "${hotel.hotelName}" (${hotel.price}) reused across groups`);
       } else {
  // Multiple hotels: distribute across groups by price order
         const numHotels = sortedHotels.length;
-        const groupsNeeded = Math.min(numHotels, 4);
 
         sortedHotels.forEach((hotel, index) => {
  // Map hotels to groups in ascending price order
           let groupType = 1;
           if (numHotels <= 4) {
- // Fewer hotels than groups: distribute evenly
             groupType = Math.min(index + 1, 4);
           } else {
  // More hotels than groups: distribute proportionally
@@ -4037,21 +4035,19 @@ this.logger.log(
           }
 
           const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-          hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
+          if (numHotels < 4) {
+            // Round-robin reuse fills all four groups while preserving price order.
+            for (let targetGroup = 1; targetGroup <= 4; targetGroup++) {
+              if ((targetGroup - 1) % numHotels === index) {
+                hotelGroupAssignments.set(`${key}:${targetGroup}`, targetGroup);
+              }
+            }
+          } else {
+            hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
+          }
         });
 
- this.logger.debug(` Route ${routeId}: ${numHotels} hotels - Distributed across groups by price order`);
-        sortedHotels.forEach((h, i) => {
-          const key = `${routeId}-${h.hotelCode || h.hotelName}`;
-          let groupType = 1;
-          if (numHotels <= 4) {
-            groupType = Math.min(i + 1, 4);
-          } else {
-            groupType = Math.floor((i / numHotels) * 4) + 1;
-            groupType = Math.min(groupType, 4);
-          }
- // this.logger.debug(` "${h.hotelName}" (${h.price}) -> Group ${groupType}`);
-        });
+        this.logger.debug(` Route ${routeId}: ${numHotels} hotels - Distributed across groups by price order${numHotels < 4 ? ' with reuse' : ''}`);
       }
     }
 

@@ -129,6 +129,7 @@ export class OfflineHotelCatalogService {
     childCount: number = 0,
     childAges: number[] = [],
     requestedMealPlanCode = '',
+    preferredCategories: number[] = [],
   ): Promise<Map<number, HotelSearchResult[]>> {
     const startedAt = Date.now();
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
@@ -189,7 +190,7 @@ export class OfflineHotelCatalogService {
 
     const offerBuildStartedAt = Date.now();
     for (const block of stayBlocks) {
-      const hotels = await this.fetchOfflineHotelsForStayBlock(
+      const fetchedHotels = await this.fetchOfflineHotelsForStayBlock(
         block,
         roomCount,
         occupancyKey,
@@ -199,6 +200,14 @@ export class OfflineHotelCatalogService {
         hotelsByBlock.get(this.blockCacheKey(block, roomCount, occupancyKey)),
         requestedMealPlanCode,
       );
+      const preferredCategorySet = new Set(
+        (preferredCategories || [])
+          .map(Number)
+          .filter((category) => Number.isFinite(category) && category > 0),
+      );
+      const hotels = preferredCategorySet.size > 0
+        ? fetchedHotels.filter((hotel: any) => preferredCategorySet.has(Number(hotel.rating || hotel.category || 0)))
+        : fetchedHotels;
 
       for (const routeId of block.routeIds) {
         hotelsByRoute.set(routeId, hotels);

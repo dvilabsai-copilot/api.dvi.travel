@@ -1105,6 +1105,46 @@ test('MAP fallback auto-selects live CP without relabelling it as MAP', async ()
   assert.equal(snapshot.selectionOrigin, 'AUTO_SELECTED');
 });
 
+test('MAP fallback auto-selects EP when CP is unavailable without relabelling it as MAP', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 505 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 2,
+    date: '2026-07-28',
+    provider: 'tbo',
+    hotelId: 989,
+    hotelCode: 'PROVIDER-HOTEL-989',
+    hotelName: 'Group Two EP Hotel',
+    mealPlan: 'EP',
+    roomId: 'room-ep',
+    rateId: 'rate-ep',
+    rateOptionId: 'rate-ep',
+    totalHotelCost: 1200,
+    isBookable: true,
+    isSelectable: true,
+  }], 'hotel-run-meal-ep-fallback', 7, false, undefined, 'MAP');
+
+  assert.equal(createdSelections.length, 1);
+  const snapshot = JSON.parse(createdSelections[0].selected_price_snapshot);
+  assert.equal(snapshot.mealPlan, 'EP');
+  assert.equal(snapshot.selectionOrigin, 'AUTO_SELECTED');
+});
+
 test('an explicitly auto-selected offline snapshot remains automatic', () => {
   assert.equal(selectionOriginFromRow({
     hotel_provider: 'offline',

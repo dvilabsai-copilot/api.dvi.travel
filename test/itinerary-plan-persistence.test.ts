@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   getHotelAvailabilityResetReason,
+  hasItineraryHotelCategoryChanged,
   hasItineraryMealPlanChanged,
   hasItineraryRoomCountChanged,
   hasItineraryRouteChanged,
@@ -173,6 +174,18 @@ test('hotel reset reason triggers for meal-plan-only edits and preserves route p
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, roomCountChanged: true }), 'ROOM_COUNT_CHANGED');
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: true, roomCountChanged: true }), 'ROUTE_CHANGED');
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, mealPlanChanged: false }), null);
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, hotelCategoryChanged: true }), 'HOTEL_CATEGORY_CHANGED');
+});
+
+test('hotel category reset detection handles JSON and legacy comma-separated storage', () => {
+  assert.equal(hasItineraryHotelCategoryChanged(
+    { preferred_hotel_category: '[2,3,4]' },
+    { preferred_hotel_category: [5] },
+  ), true);
+  assert.equal(hasItineraryHotelCategoryChanged(
+    { preferred_hotel_category: '[5]' },
+    { preferred_hotel_category: '5' },
+  ), false);
 });
 
 test('room-count reset detection follows traveller room ids', () => {

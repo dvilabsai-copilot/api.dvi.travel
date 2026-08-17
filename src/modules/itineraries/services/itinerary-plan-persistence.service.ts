@@ -136,6 +136,27 @@ export function hasItineraryMealPlanChanged(previousPlan: any, nextPlan: any): b
   return resolveItineraryMealPlanCode(previousPlan) !== resolveItineraryMealPlanCode(nextPlan);
 }
 
+function normalizeItineraryCategoryList(value: unknown): number[] {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map(Number).filter((item) => Number.isFinite(item) && item > 0)))
+      .sort((a, b) => a - b);
+  }
+  const raw = String(value ?? '').trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return normalizeItineraryCategoryList(parsed);
+  } catch {
+    // Legacy plans store this field as comma-separated text.
+  }
+  return normalizeItineraryCategoryList(raw.split(','));
+}
+
+export function hasItineraryHotelCategoryChanged(previousPlan: any, nextPlan: any): boolean {
+  return normalizeItineraryCategoryList(previousPlan?.preferred_hotel_category).join(',') !==
+    normalizeItineraryCategoryList(nextPlan?.preferred_hotel_category).join(',');
+}
+
 /** Keep this derivation aligned with PlanEngineService. */
 export function resolveItineraryRoomCount(travellers: any[] = []): number {
   const maxRoom = (Array.isArray(travellers) ? travellers : []).reduce((max, traveller) => {
@@ -150,16 +171,18 @@ export function hasItineraryRoomCountChanged(previousPlan: any, travellers: any[
   return previousRoomCount !== resolveItineraryRoomCount(travellers);
 }
 
-export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'MEAL_PLAN_CHANGED';
+export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'MEAL_PLAN_CHANGED' | 'HOTEL_CATEGORY_CHANGED';
 
 export function getHotelAvailabilityResetReason(result: {
   routeChanged?: boolean;
   roomCountChanged?: boolean;
   mealPlanChanged?: boolean;
+  hotelCategoryChanged?: boolean;
 } | null | undefined): HotelAvailabilityResetReason | null {
   if (result?.routeChanged) return 'ROUTE_CHANGED';
   if (result?.roomCountChanged) return 'ROOM_COUNT_CHANGED';
   if (result?.mealPlanChanged) return 'MEAL_PLAN_CHANGED';
+  if (result?.hotelCategoryChanged) return 'HOTEL_CATEGORY_CHANGED';
   return null;
 }
 
@@ -382,6 +405,7 @@ export class ItineraryPlanPersistenceService {
     let routeChanged = false;
     let roomCountChanged = false;
     let mealPlanChanged = false;
+    let hotelCategoryChanged = false;
     let previousRoutePlan: any = null;
 
  // Increase interactive transaction timeout; hotspot rebuild + hotel lookups can exceed default 5s
@@ -479,6 +503,7 @@ export class ItineraryPlanPersistenceService {
       );
       mealPlanChanged = isPlanUpdate && hasItineraryMealPlanChanged(previousRoutePlan, dto.plan);
       roomCountChanged = isPlanUpdate && hasItineraryRoomCountChanged(previousRoutePlan, dto.travellers);
+      hotelCategoryChanged = isPlanUpdate && hasItineraryHotelCategoryChanged(previousRoutePlan, dto.plan);
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
 
       if (routeChanged) {
@@ -503,6 +528,14 @@ export class ItineraryPlanPersistenceService {
           planId,
           previousRoomCount: Number(previousRoutePlan?.preferred_room_count || 1),
           nextRoomCount: resolveItineraryRoomCount(dto.travellers),
+        });
+      }
+
+      if (hotelCategoryChanged) {
+        console.log('[HOTEL_CATEGORY_CHANGE_RESET_REQUIRED]', {
+          planId,
+          previousCategories: previousRoutePlan?.preferred_hotel_category,
+          nextCategories: dto.plan?.preferred_hotel_category,
         });
       }
 
@@ -860,6 +893,7 @@ export class ItineraryPlanPersistenceService {
         routeChanged,
         roomCountChanged,
         mealPlanChanged,
+        hotelCategoryChanged,
         message:
           "Plan created/updated with routes, travellers, hotspots, and hotels.",
       };
