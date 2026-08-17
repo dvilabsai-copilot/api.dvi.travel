@@ -1557,13 +1557,16 @@ export class DailyMomentTrackerService {
       } as unknown as DayViewDayDto;
     });
 
-    return {
+      return {
       itinerary_plan_ID: plan.itinerary_plan_ID,
       quote_id: plan.itinerary_quote_ID ?? '',
       trip_start_date: this.formatDateDDMMYYYY(plan.trip_start_date_and_time),
       trip_end_date: this.formatDateDDMMYYYY(plan.trip_end_date_and_time),
+      trip_start_time: this.formatTimeHHMM(plan.trip_start_date_and_time),
+      trip_end_time: this.formatTimeHHMM(plan.trip_end_date_and_time),
       no_of_days: plan.no_of_days ?? 0,
       no_of_nights: plan.no_of_nights ?? 0,
+      total_adult: plan.total_adult ?? 0,
       arrival_location: plan.arrival_location ?? '',
       departure_location: plan.departure_location ?? '',
       guest_name: guest?.customer_name ?? '',
