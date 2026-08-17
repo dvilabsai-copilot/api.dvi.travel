@@ -322,7 +322,7 @@ test('houseboat policy requires AP', () => {
   assert.equal(packages[0].hotels[0].hotelName, 'Houseboat AP');
 });
 
-test('recommendations stop at the number of real combinations and expose diversity metadata', () => {
+test('recommendations use progressive targets and leave unavailable groups empty', () => {
   const packages = service().generate({
     routes: oneRoute(),
     hotelsByRoute: new Map([[1, [option('A', 100), option('B', 110), option('C', 120), option('D', 130)]]]),
@@ -330,11 +330,9 @@ test('recommendations stop at the number of real combinations and expose diversi
   });
   assert.equal(packages.length, 4);
   assert.equal(packages[0].totalPrice, 100);
-  assert.equal(packages[1].targetPrice, 110);
-  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 110, 120, 130]);
-  assert.ok(Array.isArray(packages[3].repeatedAcrossGroupsHotelIds));
-  assert.ok(Array.isArray(packages[3].sameOptionAcrossGroups));
-  assert.ok(Array.isArray(packages[3].duplicateWithinPackageHotelIds));
+  assert.equal(packages[1].targetPrice, 120);
+  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 120, 130, null]);
+  assert.deepEqual(packages[3].hotels, []);
 });
 
 test('beam search finds the closest real target package without DFS first-N truncation', () => {

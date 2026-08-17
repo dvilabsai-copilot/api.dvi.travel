@@ -195,11 +195,16 @@ export class HotelRecommendationPackageService {
       options: evaluation.options.slice(0, maxCandidates),
     }));
 
+    const groupMultipliers = [1, 1.2, 1.4, 1.6];
     for (let groupIndex = 0; groupIndex < 4; groupIndex += 1) {
-      const previous = packages[packages.length - 1];
-      const targetCents = groupIndex === 0
+      // Group 1 is the cheapest complete package. Later groups target the
+      // same baseline with the documented 1.2x/1.4x/1.6x progression. The
+      // itinerary budget remains the user's original value; it is not
+      // mutated into a new budget for each recommendation group.
+      const initialPackage = packages[0];
+      const targetCents = groupIndex === 0 || !initialPackage
         ? null
-        : Math.round(this.toCents(previous?.totalPrice || 0) * 1.1);
+        : Math.round(this.toCents(initialPackage.totalPrice || 0) * groupMultipliers[groupIndex]);
       const searchStates = this.beamSearch(
         normalizedEvaluations.map((evaluation) => evaluation.options),
         targetCents,
@@ -209,6 +214,13 @@ export class HotelRecommendationPackageService {
       );
       const candidates = searchStates
         .map((state) => this.toPackage(state.options, groupIndex + 1, targetCents, packages, input))
+        .filter((candidate) => {
+          if (groupIndex === 0) return true;
+          const previousTotal = Number(packages[packages.length - 1]?.totalPrice || 0);
+          // Never wrap to a cheaper option for a later recommendation group.
+          // If no unused option is more expensive, leave that group empty.
+          return Number(candidate.totalPrice || 0) > previousTotal;
+        })
         .filter((candidate) => !packages.some((existing) => this.packageKey(existing.hotels) === this.packageKey(candidate.hotels)))
         .sort((a, b) => this.packageScore(a, targetCents, packages, input) - this.packageScore(b, targetCents, packages, input));
 
