@@ -140,7 +140,17 @@ type SearchState = {
   totalCents: number;
 };
 
+type CategorySlot = { category: number; multiplier: number };
+
 const LABELS = ['Recommended #1', 'Recommended #2', 'Recommended #3', 'Recommended #4'];
+
+export function mapHotelCategoryLabelToStar(value: unknown): number | null {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) return null;
+  if (/\b(budget|std|standard)\b/.test(text)) return 2;
+  const match = text.match(/(?:^|\D)([1-5])\s*(?:\*|[-_ ]?star|[-_ ]?stars)?\b/);
+  return match ? Number(match[1]) : null;
+}
 
 export const resolveHotelRecommendationAlgorithm = (value = process.env.HOTEL_RECOMMENDATION_ALGORITHM): 'v1' | 'v2' =>
   String(value || 'v1').trim().toLowerCase() === 'v2' ? 'v2' : 'v1';
@@ -150,6 +160,10 @@ export class HotelRecommendationPackageService {
   constructor(private readonly mealPlanPolicy: HotelMealPlanPolicyService) {}
 
   generate(input: RecommendationPackageInput): RecommendationPackage[] {
+    return this.generateCategoryPackages(input);
+    /* istanbul ignore next -- retained below as a rollback reference while
+       deployments converge; category allocation above is authoritative. */
+    /*
     const stays = this.buildLogicalStays(input.routes, input.noOfNights);
     if (stays.length === 0) return this.ensureFourPackages([], []);
     const evaluations = stays.map((stay) => this.buildOptions(stay, input));
@@ -231,6 +245,103 @@ export class HotelRecommendationPackageService {
     }
 
     return this.ensureFourPackages(packages, evaluations);
+    */
+  }
+
+  /**
+   * Allocate semantic recommendation groups from the selected logical star
+   * buckets. A group's identity is its category slot, never its payable total.
+   */
+  private generateCategoryPackages(input: RecommendationPackageInput): RecommendationPackage[] {
+    const stays = this.buildLogicalStays(input.routes, input.noOfNights);
+    if (stays.length === 0) return [1, 2, 3, 4].map((group) => this.emptyRecommendationPackage(group));
+    const evaluations = stays.map((stay) => this.buildOptions(stay, input));
+    let categories = Array.from(new Set((input.preferredCategories || [])
+      .map(Number).filter((value) => value >= 1 && value <= 5))).sort((a, b) => a - b);
+    if (categories.length === 0) {
+      categories = Array.from(new Set(evaluations.flatMap((evaluation) => evaluation.options
+        .map((option) => this.categoryNumber(option.hotel) || 0)
+        .filter((value) => value > 0)))).sort((a, b) => a - b);
+    }
+    const slots = this.categorySlots(categories);
+    const selectedByGroup = slots.map((slot) => new Map<string, StayOption>());
+
+    evaluations.forEach((evaluation) => {
+      const used = new Set<string>();
+      slots.forEach((slot, groupIndex) => {
+        const candidates = evaluation.options.filter((option) => this.categoryNumber(option.hotel) === slot.category);
+        if (candidates.length === 0) return;
+        const base = candidates[0].priceCents;
+        const threshold = Math.ceil(base * slot.multiplier);
+        const selected = candidates.find((candidate) =>
+          candidate.priceCents >= threshold && !used.has(this.physicalIdentity(candidate.hotel)),
+        );
+        if (!selected) return;
+        selectedByGroup[groupIndex].set(evaluation.stay.stayKey, selected);
+        used.add(this.physicalIdentity(selected.hotel));
+      });
+    });
+
+    const packages = selectedByGroup.map((selection, index) =>
+      this.packageFromSelections(evaluations, selection, index + 1),
+    );
+    const hasGenuineGroup4 = packages[3].stayResults.some((result) => result.state !== 'UNAVAILABLE');
+    if (hasGenuineGroup4) {
+      const group3 = packages[2];
+      packages[3] = this.packageWithG4Fallback(packages[3], group3);
+    } else {
+      packages[3] = this.emptyRecommendationPackage(4);
+      packages[3].fallbackReasons = ['No eligible hotel is available for Group 4.'];
+    }
+    return packages;
+  }
+
+  private categorySlots(categories: number[]): CategorySlot[] {
+    const [a, b, c, d] = categories;
+    if (categories.length <= 1) return [1, 1.2, 1.4, 1.6].map((multiplier) => ({ category: a || 0, multiplier }));
+    if (categories.length === 2) return [{ category: a, multiplier: 1 }, { category: a, multiplier: 1.5 }, { category: b, multiplier: 1 }, { category: b, multiplier: 1.5 }];
+    if (categories.length === 3) return [{ category: a, multiplier: 1 }, { category: b, multiplier: 1 }, { category: b, multiplier: 1.5 }, { category: c, multiplier: 1 }];
+    return [{ category: a, multiplier: 1 }, { category: b, multiplier: 1 }, { category: c, multiplier: 1 }, { category: d, multiplier: 1 }];
+  }
+
+  private packageFromSelections(evaluations: StayEvaluation[], selections: Map<string, StayOption>, groupType: number): RecommendationPackage {
+    const stayResults = evaluations.map((evaluation) => {
+      const option = selections.get(evaluation.stay.stayKey);
+      return option ? {
+        ...this.staySummary(evaluation.stay),
+        state: option.fallback ? 'OFFLINE_FALLBACK' as const : 'SELECTED' as const,
+        hotel: option.hotel,
+        totalPrice: option.hotel.exactFullStayTotal,
+        rejectedCandidates: evaluation.rejectedCandidates,
+      } : {
+        ...this.staySummary(evaluation.stay),
+        state: 'UNAVAILABLE' as const,
+        reason: evaluation.rejectedCandidates[0]?.reason || 'No eligible hotel is available for this stay.',
+        rejectedCandidates: evaluation.rejectedCandidates,
+      };
+    });
+    const hotels = stayResults.flatMap((result) => 'hotel' in result && result.hotel ? [result.hotel] : []);
+    const total = this.money(stayResults.reduce((sum, result) => sum + Number('totalPrice' in result ? result.totalPrice || 0 : 0), 0));
+    return {
+      groupType, label: LABELS[groupType - 1], hotels,
+      totalPrice: stayResults.every((result) => result.state !== 'UNAVAILABLE') ? total : null,
+      partialTotal: total, targetPrice: null,
+      complete: stayResults.length > 0 && stayResults.every((result) => result.state !== 'UNAVAILABLE'),
+      distinctFromPrevious: true, diversityScore: 1, repeatedHotelIds: [],
+      repeatedAcrossGroupsHotelIds: [], sameOptionAcrossGroups: [], duplicateWithinPackageHotelIds: [],
+      repeatedFromGroups: [], fallbackReasons: stayResults.filter((result) => result.state === 'OFFLINE_FALLBACK').map((result) => `${result.destination}: offline approval required`),
+      stayResults,
+    };
+  }
+
+  private packageWithG4Fallback(group4: RecommendationPackage, group3: RecommendationPackage): RecommendationPackage {
+    const fallbackByStay = new Map(group3.stayResults.filter((result): result is RecommendationStayResult & { hotel: RecommendationHotel; totalPrice?: number } => Boolean(result.hotel)).map((result) => [result.stayKey, result]));
+    const stayResults = group4.stayResults.map((result) => result.state === 'UNAVAILABLE' && fallbackByStay.has(result.stayKey)
+      ? { ...result, state: 'SELECTED' as const, hotel: fallbackByStay.get(result.stayKey)!.hotel, totalPrice: fallbackByStay.get(result.stayKey)!.totalPrice, reason: undefined }
+      : result);
+    const hotels = stayResults.flatMap((result) => 'hotel' in result && result.hotel ? [result.hotel] : []);
+    const total = this.money(stayResults.reduce((sum, result) => sum + Number('totalPrice' in result ? result.totalPrice || 0 : 0), 0));
+    return { ...group4, hotels, stayResults, partialTotal: total, totalPrice: stayResults.every((result) => result.state !== 'UNAVAILABLE') ? total : null, complete: stayResults.every((result) => result.state !== 'UNAVAILABLE'), fallbackReasons: ['G4 fallback used only for stays without a genuine Group 4 option.'] };
   }
 
   /**
@@ -769,8 +880,8 @@ export class HotelRecommendationPackageService {
     for (const value of values) {
       if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5) return `STAR_${value}`;
       const raw = String(value ?? '').trim();
-      if (/^budget$/i.test(raw)) return 'BUDGET';
-      const match = raw.match(/^([1-5])\s*(?:\*|star|stars)(?:\s*[- ]?.*)?$/i);
+      if (/^(budget|std|standard)$/i.test(raw)) return 'STAR_2';
+      const match = raw.match(/^([1-5])\s*(?:\*|[- ]?star|[- ]?stars)(?:\s*[- ]?.*)?$/i);
       if (match) return `STAR_${match[1]}`;
       if (/^[1-5]$/.test(raw)) return `STAR_${raw}`;
     }
