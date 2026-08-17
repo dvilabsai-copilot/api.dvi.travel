@@ -805,7 +805,12 @@ export class HotelRecommendationPackageService {
   private physicalIdentity(candidate: HotelSearchResult): string {
     const canonical = Number(candidate.canonicalHotelId || 0);
     if (canonical > 0) return `canonical:${canonical}`;
-    return `${String(candidate.provider || '').trim().toLowerCase()}|${String(candidate.providerHotelCode || candidate.hotelCode || candidate.hotelName || '').trim().toLowerCase()}`;
+    const normalizedName = String(candidate.hotelName || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+    if (normalizedName) return `name:${normalizedName}`;
+    return `${String(candidate.provider || '').trim().toLowerCase()}|${String(candidate.providerHotelCode || candidate.hotelCode || '').trim().toLowerCase()}`;
   }
 
   private optionKey(candidate: HotelSearchResult): string {
