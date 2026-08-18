@@ -977,7 +977,17 @@ export class HotelAvailabilitySnapshotService {
       rows: normalizedRows,
       requiredRoutes: searchableRoutes,
     });
-    const clientHotelRows = paged.map((row: any) => this.toClientHotelRow(row));
+    // The complete unfiltered read is consumed together with
+    // hotelAvailability.sharedHotelInventory. Returning every option once per
+    // recommendation group in `hotels` multiplies the JSON payload without
+    // adding display information; the group-specific automatic selections are
+    // already represented by hotelSelectionState. Keep one compact summary row
+    // per route/stay in the legacy `hotels` field and leave the full selectable
+    // inventory in the shared field used by the panes.
+    const responseRows = unpaged
+      ? this.buildClientStaySummaryRows(normalizedRows)
+      : paged;
+    const clientHotelRows = responseRows.map((row: any) => this.toClientHotelRow(row));
 
     return {
       quoteId,
@@ -1952,6 +1962,28 @@ export class HotelAvailabilitySnapshotService {
       this.coalesceRowsForCache(groupNeutralRows),
       new Map(),
     );
+  }
+
+  private buildClientStaySummaryRows(rows: any[]): any[] {
+    const byStay = new Map<string, any>();
+    const stayKey = (row: any): string => {
+      const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
+      const date = String(row?.date || row?.checkInDate || row?.itineraryRouteDate || '').slice(0, 10);
+      return `${routeId}|${date}`;
+    };
+    const rank = (row: any): number => {
+      if (row?.isSelected === true || String(row?.selectionOrigin || '').trim()) return 0;
+      if (row?.isBookable !== false && row?.isSelectable !== false && row?.isPlaceholder !== true) return 1;
+      return 2;
+    };
+
+    for (const row of rows || []) {
+      const key = stayKey(row);
+      if (!key || key === '0|') continue;
+      const current = byStay.get(key);
+      if (!current || rank(row) < rank(current)) byStay.set(key, row);
+    }
+    return Array.from(byStay.values());
   }
 
   private buildEmptySnapshotRow(plan: any, quoteId: string, searchRunId: string, checkedAt: Date): Record<string, unknown> {

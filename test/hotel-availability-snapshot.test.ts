@@ -116,6 +116,25 @@ test('client recommendation tabs never carry nested hotel inventories', () => {
   assert.equal(tab.stayResults.length, 1);
 });
 
+test('complete persisted reads expose one hotel summary row per stay', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const rows = [1, 2, 3, 4].map((groupType) => ({
+    groupType,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    hotelName: `Hotel ${groupType}`,
+    isBookable: true,
+    isSelectable: true,
+    isSelected: groupType === 3,
+  }));
+
+  const summary = (service as any).buildClientStaySummaryRows(rows);
+
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].groupType, 3);
+  assert.equal(summary[0].hotelName, 'Hotel 3');
+});
+
 test('canonical selected rate id never falls back to another nested option', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const selected = (service as any).selectedRateOption(
