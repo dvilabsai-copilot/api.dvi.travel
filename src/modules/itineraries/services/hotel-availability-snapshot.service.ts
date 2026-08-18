@@ -1878,6 +1878,56 @@ export class HotelAvailabilitySnapshotService {
     return clientRow;
   }
 
+  /**
+   * Stored recommendation tabs are metadata, not another hotel inventory.
+   * Older snapshots embedded complete package hotel arrays in each tab;
+   * returning those arrays repeated the inventory on top of `hotels` and
+   * `sharedHotelInventory`. Keep only the documented tab/stay fields needed
+   * by the client for totals and group identity.
+   */
+  private toClientHotelTab(tab: any): any {
+    const source = tab && typeof tab === 'object' ? tab : {};
+    const stayResults = Array.isArray(source.stayResults)
+      ? source.stayResults.map((stay: any) => ({
+          stayKey: String(stay?.stayKey || '').trim(),
+          parentRouteId: Number(stay?.parentRouteId || 0),
+          routeIds: Array.isArray(stay?.routeIds)
+            ? stay.routeIds.map((id: any) => Number(id || 0)).filter((id: number) => id > 0)
+            : [],
+          destination: String(stay?.destination || '').trim(),
+          checkInDate: String(stay?.checkInDate || '').trim(),
+          checkOutDate: String(stay?.checkOutDate || '').trim(),
+          nights: Number(stay?.nights || 0),
+          state: stay?.state,
+          ...(stay?.reason ? { reason: String(stay.reason) } : {}),
+          ...(stay?.totalPrice != null ? { totalPrice: Number(stay.totalPrice) } : {}),
+        }))
+      : [];
+
+    return {
+      groupType: Number(source.groupType || 0),
+      label: String(source.label || '').trim(),
+      totalAmount: source.totalAmount == null ? null : Number(source.totalAmount),
+      ...(source.partialTotal != null ? { partialTotal: Number(source.partialTotal) } : {}),
+      ...(source.targetAmount != null ? { targetAmount: Number(source.targetAmount) } : {}),
+      ...(source.complete != null ? { complete: Boolean(source.complete) } : {}),
+      ...(source.diversityScore != null ? { diversityScore: Number(source.diversityScore) } : {}),
+      ...(Array.isArray(source.repeatedAcrossGroupsHotelIds)
+        ? { repeatedAcrossGroupsHotelIds: source.repeatedAcrossGroupsHotelIds.map(String) }
+        : {}),
+      ...(Array.isArray(source.sameOptionAcrossGroups)
+        ? { sameOptionAcrossGroups: source.sameOptionAcrossGroups.map(String) }
+        : {}),
+      ...(Array.isArray(source.duplicateWithinPackageHotelIds)
+        ? { duplicateWithinPackageHotelIds: source.duplicateWithinPackageHotelIds.map(String) }
+        : {}),
+      ...(Array.isArray(source.repeatedFromGroups)
+        ? { repeatedFromGroups: source.repeatedFromGroups.map((id: any) => Number(id || 0)).filter((id: number) => id > 0) }
+        : {}),
+      stayResults,
+    };
+  }
+
   private buildSharedHotelInventory(rows: any[], effectiveMarginPercentage: number): any[] {
     const groupNeutralRows = (rows || []).map((row: any) => {
       const {
@@ -2556,7 +2606,8 @@ export class HotelAvailabilitySnapshotService {
     const requestedGroup = Number(requestedGroupType || 0);
     const storedTabs = (Array.isArray(persistedRecommendationTabs) ? persistedRecommendationTabs : [])
       .map((tab: any) => {
-        const stayResults = Array.isArray(tab?.stayResults) ? tab.stayResults : [];
+        const clientTab = this.toClientHotelTab(tab);
+        const stayResults = Array.isArray(clientTab?.stayResults) ? clientTab.stayResults : [];
         // stayResults are the package-level source of truth. A refresh can
         // legitimately produce an incomplete package, and an old persisted
         // selection must not leave a positive tab amount attached to stays
@@ -2571,15 +2622,15 @@ export class HotelAvailabilitySnapshotService {
         const partialTotal = Number.isFinite(derivedPartialTotal)
           ? Number(derivedPartialTotal.toFixed(2))
           : 0;
-        const totalAmount = tab?.complete === false
+        const totalAmount = clientTab?.complete === false
           ? partialTotal
           : (tab?.totalAmount == null
               ? (tab?.partialTotal == null ? null : Number(tab.partialTotal))
               : Number(tab.totalAmount));
         return {
-          ...tab,
-          groupType: Number(tab?.groupType || 0),
-          label: String(tab?.label || `Recommended #${Number(tab?.groupType || 0)}`),
+          ...clientTab,
+          groupType: Number(clientTab?.groupType || 0),
+          label: String(clientTab?.label || `Recommended #${Number(clientTab?.groupType || 0)}`),
           partialTotal,
           totalAmount,
         };

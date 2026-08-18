@@ -88,6 +88,34 @@ test('client hotel payload strips recommendation internals and shared inventory 
   assert.equal(Object.prototype.hasOwnProperty.call(clientRow, 'autoSelectionIdentity'), false);
 });
 
+test('client recommendation tabs never carry nested hotel inventories', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const tab = (service as any).toClientHotelTab({
+    groupType: 1,
+    label: 'Recommended #1',
+    totalAmount: 1234,
+    hotels: Array.from({ length: 100 }, () => ({ hotelName: 'duplicated payload' })),
+    fullPackage: { hotels: [{ hotelName: 'duplicated payload' }] },
+    stayResults: [{
+      stayKey: '10|2026-07-28',
+      parentRouteId: 10,
+      routeIds: [10],
+      destination: 'Ooty',
+      checkInDate: '2026-07-28',
+      checkOutDate: '2026-07-29',
+      nights: 1,
+      state: 'SELECTED',
+      totalPrice: 1234,
+    }],
+  });
+
+  assert.equal(tab.groupType, 1);
+  assert.equal(tab.totalAmount, 1234);
+  assert.equal(Object.prototype.hasOwnProperty.call(tab, 'hotels'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(tab, 'fullPackage'), false);
+  assert.equal(tab.stayResults.length, 1);
+});
+
 test('canonical selected rate id never falls back to another nested option', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const selected = (service as any).selectedRateOption(
