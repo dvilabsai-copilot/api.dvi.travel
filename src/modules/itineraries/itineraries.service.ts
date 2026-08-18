@@ -1715,7 +1715,7 @@ private getGuideSlotLabel(slotId: number): string {
             retryable: status === 'REFRESH_FAILED',
             message: status === 'REFRESH_FAILED'
               ? 'Hotel availability could not be checked right now. Please try again.'
-              : 'The selected hotel is not available for the requested stay.',
+              : String(response?.message || error?.message || 'The selected hotel is not available for the requested stay.'),
             code: code || (status === 'REFRESH_FAILED' ? 'HOTEL_REFRESH_FAILED' : 'HOTEL_NO_AVAILABILITY'),
             affectedRouteIds: response?.affectedRouteIds || [],
             logicalStay: response?.logicalStay,

@@ -960,6 +960,30 @@ export class HotelAvailabilitySnapshotService {
       .filter((route): route is { routeId: number; dayNumber: number; date: string; destination: string } =>
         Boolean(route && route.routeId > 0 && route.date),
       );
+
+    // The persisted snapshot can contain valid route/date rows for a stay
+    // that is absent from the current route projection (for example after a
+    // partial recommendation-group search). Keep those identities in the
+    // response metadata so every frontend recommendation tab can render the
+    // same complete itinerary timeline.
+    const stayRouteById = new Map(stayRoutes.map((route) => [route.routeId, route]));
+    normalizedRows.forEach((row: any) => {
+      const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
+      const date = this.toDateOnly(
+        row?.date || row?.checkInDate || row?.itineraryRouteDate || row?.itinerary_route_date,
+      );
+      if (!routeId || !date || stayRouteById.has(routeId)) return;
+      const dayMatch = String(row?.day || '').match(/Day\s+(\d+)/i);
+      stayRouteById.set(routeId, {
+        routeId,
+        dayNumber: Number(row?.dayNumber || dayMatch?.[1] || 0),
+        date,
+        destination: String(row?.destination || '').trim(),
+      });
+    });
+    const completeStayRoutes = Array.from(stayRouteById.values())
+      .sort((a, b) => a.dayNumber - b.dayNumber || a.date.localeCompare(b.date))
+      .map((route, index) => ({ ...route, dayNumber: route.dayNumber || index + 1 }));
     const routePagination = options.itineraryRouteId && options.itineraryRouteId > 0
       ? {
           [`${Number(options.groupType || 0)}-${Number(options.itineraryRouteId)}`]: {
@@ -1030,7 +1054,7 @@ export class HotelAvailabilitySnapshotService {
         providerErrors: [],
         mealPlanAutoSelectionBlocks,
         emptyStayBlocks,
-        stayRoutes,
+        stayRoutes: completeStayRoutes,
         offlineFetch: latestPayload?.offlineFetch,
         unavailableSelectionCount: remappedPlanRows.filter((row: any) => !isSpecialHotelPlanRow(row))
           .filter((row: any) => !normalizedRows.some((hotel: any) =>
