@@ -13,6 +13,7 @@ test('canonicalizes ResAvenue descriptive OTA rate-plan names', () => {
   assert.equal(inferCanonicalHotelRatePlanCode('Family Room - OTA MAP_PLAN'), 'MAP');
   assert.equal(inferCanonicalHotelRatePlanCode('Family Room - OTA APPLAN'), 'AP');
   assert.equal(getNormalizedMealPlanLabelFromMealText('Double Deluxe Room - OTA EP Plan'), 'EP');
+  assert.equal(getNormalizedMealPlanLabelFromMealText('Room_Only'), 'EP');
   assert.equal(inferCanonicalHotelRatePlanCode('AP Residency Suite'), null);
 });
 

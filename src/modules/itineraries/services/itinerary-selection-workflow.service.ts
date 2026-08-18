@@ -1166,7 +1166,12 @@ export class ItinerarySelectionWorkflowService {
         try { return typeof row.full_payload === 'string' ? JSON.parse(row.full_payload) : row.full_payload; } catch { return null; }
       })
       .filter(Boolean);
-    const candidateRows = parsedRows.flatMap((row: any) => {
+    const targetGroupType = Number(data.groupType || 0);
+    const groupScopedRows = parsedRows.filter((row: any) => {
+      const candidateGroupType = Number(row?.groupType ?? row?.group_type ?? 0);
+      return !targetGroupType || candidateGroupType === 0 || candidateGroupType === targetGroupType;
+    });
+    const candidateRows = groupScopedRows.flatMap((row: any) => {
       const rateOptions = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
       if (rateOptions.length === 0) return [row];
       // A hotel row is a container for its room/rate options. Prefer the
@@ -1236,6 +1241,24 @@ export class ItinerarySelectionWorkflowService {
         .map(Number)
         .filter((amount) => Number.isFinite(amount) && amount > 0);
     if (requestedTotal > 0 && snapshotTotals.length > 0 && !snapshotTotals.some((snapshotTotal) => Math.abs(requestedTotal - snapshotTotal) <= 0.01)) {
+      console.error('[HOTEL_SELECTION_PRICE_MISMATCH]', JSON.stringify({
+        planId: data.planId,
+        routeId: data.routeId,
+        groupType: data.groupType,
+        provider,
+        hotelCode: requestedHotelCode,
+        requestedTotal,
+        snapshotTotals,
+        matched: {
+          rateOptionId: matched.rateOptionId,
+          bookingCode: matched.bookingCode,
+          selectionKey: matched.selectionKey,
+          totalPrice: matched.totalPrice,
+          totalStayPrice: matched.totalStayPrice,
+          pricePerNight: matched.pricePerNight,
+          groupType: matched.groupType ?? matched.group_type,
+        },
+      }));
       throw new BadRequestException('The selected hotel price changed. Refresh hotel availability and review the updated rate.');
     }
   }

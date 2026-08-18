@@ -107,6 +107,52 @@ test('every recommendation pane receives the same complete route inventory', () 
   ]);
 });
 
+test('category filtering never removes a hotel from the shared inventory', async () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  service.prisma = {
+    dvi_hotel: { findMany: async () => [] },
+    dvi_hotel_amenities: { findMany: async () => [] },
+  };
+  service.logger = { debug: () => undefined, log: () => undefined, warn: () => undefined };
+
+  const route = {
+    itinerary_route_ID: 10,
+    itinerary_route_date: '2026-08-19',
+    next_visiting_location: 'Ooty',
+  };
+  const source = Array.from({ length: 11 }, (_, index) => ({
+    provider: 'tbo',
+    hotelCode: `H${index + 1}`,
+    hotelName: `Hotel ${index + 1}`,
+    category: index === 10 ? '3*' : '4*',
+    price: 1000 + index * 100,
+  }));
+  const completeHotelsByRoute = new Map([[10, source]]);
+
+  // Category 4 is allowed to narrow recommendation candidates only.
+  const recommendationCandidates = await service.applyPlanPreferenceFilters(
+    completeHotelsByRoute,
+    [4],
+    null,
+    [],
+  );
+  assert.equal(recommendationCandidates.get(10)?.length, 10);
+
+  const packages = service.generateSharedAvailabilityPackages(
+    completeHotelsByRoute,
+    [route],
+    [1, 2, 3, 4].map((groupType) => ({
+      groupType,
+      stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: source[groupType - 1] }],
+    })),
+  );
+
+  assert.deepEqual(
+    packages.map((pkg: any) => pkg.hotels.map((hotel: any) => hotel.hotelCode)),
+    [1, 2, 3, 4].map(() => source.map((hotel) => hotel.hotelCode)),
+  );
+});
+
 test('recommendation metadata identifies the exact selected rate, not every nested rate', () => {
   const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
   const selected = {

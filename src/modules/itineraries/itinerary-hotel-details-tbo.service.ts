@@ -78,17 +78,24 @@ export class ItineraryHotelDetailsTboService {
     const seen = new Set<string>();
     return (rows || [])
       .filter((row: any) => {
-        const provider = String(row?.provider || '').trim().toLowerCase();
         const name = String(row?.hotelName || '').trim().toLowerCase();
-        return row?.isSelectable !== false &&
-          name !== 'no hotel available' &&
+        // Shared inventory is the complete fetched property list. A row that
+        // is not an automatic candidate can still be manually selectable in
+        // another recommendation pane, so do not apply candidate/bookability
+        // filters here. Only synthetic no-inventory placeholders are excluded.
+        return name !== 'no hotel available' &&
           name !== 'no hotels available' &&
-          (row?.isBookable !== false || provider === 'offline');
+          name !== 'no availability';
       })
       .filter((row: any) => {
         const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
         const date = String(row?.date || row?.checkInDate || '').trim();
-        const key = `${routeId}|${date}|${this.availabilityOptionKey(row)}`;
+        const propertyIdentity = [
+          row?.canonicalHotelId || row?.hotelId || row?.hotel_id || '',
+          row?.hotelCode || row?.providerHotelCode || '',
+          row?.hotelName || row?.hotel_name || '',
+        ].map((value) => String(value).trim().toLowerCase()).join('|');
+        const key = `${routeId}|${date}|${propertyIdentity}|${this.availabilityOptionKey(row)}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -1938,7 +1945,22 @@ this.logger.log(
 
   // Keep the provider result intact for the shared day picker. Category and
   // meal filters are recommendation rules, not display-inventory rules.
-  const completeHotelsByRoute = hotelsByRoute;
+  // Keep an independent snapshot before applying recommendation-only
+  // category/meal/facility filters. The filter pipeline may mutate its input
+  // arrays; aliasing this map would silently shrink the shared picker too.
+  const completeHotelsByRoute = new Map<number, HotelSearchResult[] | null>(
+    Array.from(hotelsByRoute.entries()).map(([routeId, rows]) => [
+      routeId,
+      Array.isArray(rows)
+        ? rows.map((row: any) => ({
+            ...row,
+            rateOptions: Array.isArray(row?.rateOptions)
+              ? row.rateOptions.map((rateOption: any) => ({ ...rateOption }))
+              : row?.rateOptions,
+          }))
+        : rows,
+    ]),
+  );
   const filteredHotelsByRoute =
   await this.applyPlanPreferenceFilters(
     hotelsByRoute,
@@ -1955,7 +1977,7 @@ this.logger.log(
 
  // Debug: Check if any hotels were found
     const hotelEntries = Array.from(filteredHotelsByRoute.entries());
- this.logger.log(`\n HOTEL FETCH RESULTS (ALL ENABLED PROVIDERS):`);
+ this.logger.log(`\n HOTEL RECOMMENDATION CANDIDATES (after category/meal/facility rules):`);
     hotelEntries.forEach(([routeId, hotels]) => {
       const tboCount = hotels.filter(h => h.provider === 'tbo').length;
       const hobseCount = hotels.filter(h => h.provider === 'hobse').length;
@@ -1988,6 +2010,16 @@ this.logger.log(
       preferredCategories,
       maxDistanceKm: Number(process.env.MAX_RECOMMENDED_HOTEL_DISTANCE_KM || 15),
       requireKnownDistance: String(process.env.HOTEL_RECOMMENDATION_REQUIRE_DISTANCE || '').trim() === 'true',
+    });
+
+    // This is the inventory shown by every recommendation pane. Keep this
+    // count separate from the recommendation-candidate count above: category,
+    // meal-plan, and facility rules choose automatic selections only and must
+    // never remove a fetched hotel from the shared picker inventory.
+    this.logger.log(`\n SHARED HOTEL INVENTORY (same for groups 1-4):`);
+    completeHotelsByRoute.forEach((hotels, routeId) => {
+      const inventory = Array.isArray(hotels) ? hotels : [];
+      this.logger.log(` Route ${routeId}: ${inventory.length} hotels`);
     });
     // Keep v2 recommendation packages for the recommendation tabs, but expose
     // every fetched live/offline option in the hotel list. The legacy price
@@ -4184,6 +4216,123 @@ this.logger.log(
   }
 
   /**
+   * Validate the selected supplier hotel against the complete logical stay.
+   *
+   * Selection used to refresh each route as a one-night search first. That
+   * allowed a hotel returned for one night to enter the selection pipeline
+   * before the continuous-stay check ran. TBO/VSR, ResAvenue, and HOBSE all
+   * support a check-in/check-out search, so perform that supplier search before
+   * the per-route snapshot refresh used to materialize nightly rows.
+   */
+  async searchSelectedHotelForContinuousStay(params: {
+    planId: number;
+    routeIds: number[];
+    provider: string;
+    hotelCode: string;
+    checkInDate: string;
+    checkOutDate: string;
+  }): Promise<HotelSearchResult[]> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: Number(params.planId) },
+    });
+    const firstRoute = await this.prisma.dvi_itinerary_route_details.findFirst({
+      where: {
+        itinerary_route_ID: { in: params.routeIds.map(Number) },
+        itinerary_plan_ID: Number(params.planId),
+        deleted: 0,
+      } as any,
+      orderBy: { itinerary_route_date: 'asc' },
+    });
+    if (!plan || !firstRoute) throw new NotFoundException('Itinerary route not found');
+
+    const provider = String(params.provider || '').trim().toLowerCase();
+    const roomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
+    const adultCount = Math.max(Number((plan as any).total_adult || 1), 1);
+    const childCount = Math.max(Number((plan as any).total_children || 0), 0);
+    const guestNationality = String((plan as any).guest_nationality || 'IN').trim().toUpperCase();
+    const city = String((firstRoute as any).next_visiting_location || (firstRoute as any).location_name || '').trim();
+
+    this.logger.log(
+      `[CONTINUOUS_SELECTION_SEARCH] provider=${provider} hotel=${params.hotelCode} ` +
+      `routes=${params.routeIds.join(',')} checkIn=${params.checkInDate} checkOut=${params.checkOutDate} city=${city}`,
+    );
+
+    if (provider === 'tbo' || provider === 'resavenue') {
+      return this.hotelSearchService.searchHotels({
+        cityCode: city,
+        checkInDate: params.checkInDate,
+        checkOutDate: params.checkOutDate,
+        roomCount,
+        guestCount: adultCount + childCount,
+        adultCount,
+        childCount,
+        guestNationality,
+        providers: [provider],
+        hotelCodes: params.hotelCode,
+      });
+    }
+
+    if (provider === 'hobse') {
+      const cityCodeMap = await this.batchMapDestinationsToHobseCityCodes([firstRoute]);
+      const cityCode = cityCodeMap[city] || city;
+      return this.hobseProvider.search({
+        cityCode,
+        checkInDate: params.checkInDate,
+        checkOutDate: params.checkOutDate,
+        roomCount,
+        guestCount: adultCount + childCount,
+      });
+    }
+
+    if (provider === 'axisrooms' || provider === 'staah') {
+      const routes = await this.prisma.dvi_itinerary_route_details.findMany({
+        where: {
+          itinerary_route_ID: { in: params.routeIds.map(Number) },
+          itinerary_plan_ID: Number(params.planId),
+          deleted: 0,
+        } as any,
+        orderBy: { itinerary_route_date: 'asc' },
+      });
+      if (routes.length !== params.routeIds.length) return [];
+
+      const byRoute = provider === 'axisrooms'
+        ? await this.fetchAxisroomsHotelsForRoutes(
+            routes,
+            params.routeIds.length,
+            undefined,
+            null,
+            roomCount,
+            { adults: adultCount, children: childCount },
+            params.hotelCode,
+          )
+        : await this.fetchStaahHotelsForRoutes(
+            routes,
+            params.routeIds.length,
+            undefined,
+            null,
+            false,
+            { roomCount, adults: adultCount, children: childCount },
+            params.hotelCode,
+          );
+
+      const allRows: HotelSearchResult[] = [];
+      for (const routeId of params.routeIds.map(Number)) {
+        const rows = byRoute.get(routeId) || [];
+        // ARI/restriction providers expose nightly availability rather than a
+        // single multi-night search response. Every night is therefore
+        // required before the selection is allowed to continue.
+        if (rows.length === 0) return [];
+        allRows.push(...rows);
+      }
+      return allRows;
+    }
+
+    // AxisRooms/STAAH are validated through their date-specific ARI/restriction
+    // data by HotelStayBlockValidationService.
+    return [];
+  }
+
+  /**
    * Every recommendation pane receives the same complete route inventory.
    * Only the row marked by the authoritative recommendation package may be
    * used for automatic persistence.
@@ -6059,7 +6208,23 @@ this.logger.log(
     const availabilityMessage = hasSupplierHotels
         ? 'Live supplier hotels are available for the current itinerary selection.'
         : 'No live hotel options are available for one or more stays. Use Check Availability again after adjusting the itinerary.';
-    const sharedHotelInventory = this.buildSharedHotelInventory(cleanedHotelRows);
+    // The picker inventory must come from the complete supplier snapshot, not
+    // from cleanedHotelRows. cleanedHotelRows is intentionally reduced to the
+    // recommendation candidates and can therefore contain only the hotels
+    // selected by category/meal rules. Category rules choose AUTO_SELECTED
+    // hotels; they must never remove eligible properties from the shared picker.
+    const completeInventoryRows = Array.from(hotelsByRoute.entries())
+      .flatMap(([routeId, rows]) => (Array.isArray(rows) ? rows : []).map((row: any) => ({
+        ...row,
+        // The map key is authoritative. A supplier row can retain the
+        // logical-stay anchor/parent route from a continuous stay; using that
+        // value here makes the row disappear from the actual nightly route in
+        // the frontend picker.
+        itineraryRouteId: Number(routeId),
+        routeId: Number(routeId),
+        routeIds: [Number(routeId)],
+      })));
+    const sharedHotelInventory = this.buildSharedHotelInventory(completeInventoryRows);
 
     return {
       quoteId,
