@@ -500,6 +500,14 @@ test('TBO RATE_OPTION preview keeps the commercial room while replacing an expir
     previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
   };
   service.hotelDetailsTboService = {
+    searchSelectedHotelForContinuousStay: async (params: any) => {
+      assert.deepEqual(params.routeIds, [10145]);
+      assert.equal(params.checkInDate, '2026-08-12');
+      assert.equal(params.checkOutDate, '2026-08-13');
+      assert.equal(params.provider, 'tbo');
+      assert.equal(params.hotelCode, '1313362');
+      return [freshCandidate];
+    },
     getSelectedHotelRates: async () => ({ hotels: [freshCandidate] }),
   };
   service.hotelAvailabilitySnapshotService = {

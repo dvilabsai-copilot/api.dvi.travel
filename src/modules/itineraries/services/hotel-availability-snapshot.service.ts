@@ -377,6 +377,10 @@ export class HotelAvailabilitySnapshotService {
         row?.check_in_date ??
         row?.date,
     );
+    const usableDestination = (value: unknown): string => {
+      const label = String(value || '').trim();
+      return /^(?:-|—|–|n\/a|na|unknown|null|undefined)$/i.test(label) ? '' : label;
+    };
     const remapSnapshotRoute = (row: any): any => {
       if (!row) return null;
       const routeId = Number(row?.itineraryRouteId ?? row?.itinerary_route_id ?? 0);
@@ -410,7 +414,9 @@ export class HotelAvailabilitySnapshotService {
         itinerary_route_id: Number(currentRoute.itinerary_route_ID),
         itinerary_route_date: currentRoute.itinerary_route_date,
         day: row.day || `Day ${currentRouteIndex + 1} | ${date}`,
-        destination: row.destination || currentRoute.next_visiting_location || currentRoute.location_name,
+        destination: usableDestination(row.destination) ||
+          usableDestination(currentRoute.next_visiting_location) ||
+          usableDestination(currentRoute.location_name),
       };
     };
     // Persisted hotel selections and room-category rows can retain route IDs
@@ -1151,14 +1157,39 @@ export class HotelAvailabilitySnapshotService {
       // after editing dates and then resetting availability).  Never persist
       // that mixed identity: the current route table is authoritative for the
       // stay dates used by the snapshot and by auto-selection.
+      // The top-level `hotels` array contains recommendation candidates and
+      // may already be reduced by category/meal rules. Reset persistence must
+      // retain the complete group-neutral inventory returned by the supplier
+      // search so every recommendation pane can display the same properties.
+      const liveInventoryRows = Array.isArray((liveResponse as any)?.hotelAvailability?.sharedHotelInventory)
+        ? (liveResponse as any).hotelAvailability.sharedHotelInventory
+        : (Array.isArray(liveResponse.hotels) ? liveResponse.hotels : []);
       const currentDatedLiveRows = this.normalizeRowsToCurrentRouteDates(
-        Array.isArray(liveResponse.hotels) ? liveResponse.hotels : [],
+        liveInventoryRows,
         routes,
       );
       const sourceRows = this.filterSearchableLiveRows(
         currentDatedLiveRows,
         searchableRouteIds,
       );
+      const hasUsableLiveInventory = sourceRows.some((row: any) => {
+        const name = String(row?.hotelName || row?.hotel_name || '').trim().toLowerCase();
+        return name &&
+          name !== 'no hotel available' &&
+          name !== 'no hotels available' &&
+          name !== 'availability marker' &&
+          name !== 'no availability';
+      });
+      if (!hasUsableLiveInventory && requestType !== 'CHECK_AVAILABILITY') {
+        throw new ServiceUnavailableException({
+          message: 'Hotel availability returned no usable inventory; the previous snapshot was retained.',
+          code: 'HOTEL_AVAILABILITY_EMPTY',
+          planId: plan.itinerary_plan_ID,
+          quoteId,
+          searchRunId,
+          previousSnapshotRetained: true,
+        });
+      }
       // CREATE, RESET, and CHECK AVAILABILITY all need the same complete
       // inventory snapshot. Live rows win automatically; offline rows are used
       // only for a stay where no live selectable row exists.
@@ -1221,12 +1252,20 @@ export class HotelAvailabilitySnapshotService {
             hotel_code: String(row.hotelCode || row.hotel_code || row.hotelId || '0'),
             provider: String(row.provider || row.hotel_provider || 'external').toLowerCase(),
             hotel_name: String(row.hotelName || row.hotel_name || 'Hotel'),
-            rating: Number(row.category || row.rating || 0),
+            // Prisma rejects NaN/undefined for required numeric fields. Some
+            // supplier/offline rows do not carry a category/rating, so always
+            // persist a finite fallback instead of allowing one malformed row
+            // to abort the entire reset and replace the snapshot with EMPTY.
+            rating: Number.isFinite(Number(row.category ?? row.rating))
+              ? Number(row.category ?? row.rating)
+              : 0,
             // `price` is the catalog/display amount stored with the snapshot.
             // Prefer the supplier stay total over a derived/gross field that
             // may include a margin. The selected payable total is stored on
             // the plan selection record and hydrated separately.
-            price: Number(row.totalStayPrice ?? row.totalPrice ?? row.totalHotelCost ?? row.pricePerNight ?? row.price ?? 0),
+            price: Number.isFinite(Number(row.totalStayPrice ?? row.totalPrice ?? row.totalHotelCost ?? row.pricePerNight ?? row.price))
+              ? Number(row.totalStayPrice ?? row.totalPrice ?? row.totalHotelCost ?? row.pricePerNight ?? row.price)
+              : 0,
             room_type: String(row.roomType || row.room_type || '').slice(0, 255) || null,
             meal_plan: String(row.mealPlan || row.meal_plan || '').slice(0, 100) || null,
             search_reference: row.searchReference || row.search_reference ? String(row.searchReference || row.search_reference) : null,
@@ -2080,6 +2119,7 @@ export class HotelAvailabilitySnapshotService {
       const key = [
         Number(row?.itineraryRouteId || row?.routeId || 0),
         Number(row?.groupType || 0),
+        String(row?.hotelName || row?.hotel_name || '').trim().toLowerCase(),
         this.optionKey(row),
       ].join('|');
       if (seen.has(key)) return false;
@@ -2114,8 +2154,9 @@ export class HotelAvailabilitySnapshotService {
       const key = [
         Number(row.itineraryRouteId || row.routeId || 0),
         ...(includeGroupType ? [Number(row.groupType || 0)] : []),
-        String(row.hotelCode || row.hotelId || '0'),
         String(row.provider || 'external').trim().toLowerCase(),
+        String(row.hotelCode || row.hotelId || row.canonicalHotelId || '0'),
+        String(row.hotelName || row.hotel_name || '').trim().toLowerCase(),
       ].join('|');
       const existing = grouped.get(key);
       const optionCandidates = Array.isArray(row.rateOptions) && row.rateOptions.length > 0

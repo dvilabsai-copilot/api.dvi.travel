@@ -1803,6 +1803,37 @@ private getGuideSlotLabel(slotId: number): string {
     // The logical stay is known before any supplier work. Refresh every
     // affected route so no night is silently filled from an anchor-only rate.
     if (provider !== 'offline') {
+      if (['tbo', 'resavenue', 'hobse', 'axisrooms', 'staah'].includes(provider) &&
+        typeof (this.hotelDetailsTboService as any).searchSelectedHotelForContinuousStay === 'function') {
+        const continuousHotels = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
+          planId: Number(data.planId),
+          routeIds: stay.routeIds,
+          provider,
+          hotelCode,
+          checkInDate: stay.checkInDate,
+          checkOutDate: stay.checkOutDate,
+        });
+        const continuousMatch = provider === 'axisrooms' || provider === 'staah'
+          ? continuousHotels.length > 0
+          : continuousHotels.some((hotel: any) =>
+              String(hotel?.hotelCode || hotel?.providerHotelCode || '').trim() === hotelCode,
+            );
+        if (!continuousMatch) {
+          throw new BadRequestException({
+            code: 'HOTEL_CONTINUOUS_STAY_UNAVAILABLE',
+            status: 'NO_AVAILABILITY',
+            retryable: false,
+            message: `The selected hotel is not available for the complete stay ${stay.checkInDate} to ${stay.checkOutDate}.`,
+            provider,
+            hotelCode,
+            affectedRouteIds: stay.routeIds,
+            logicalStay: stay,
+            canBookSingleNight: false,
+            canBookMultiNight: false,
+          });
+        }
+      }
+
       const refreshTimeoutMs = Math.max(Number(process.env.HOTEL_INTENT_REFRESH_TIMEOUT_MS || 15000), 1000);
       for (const routeId of stay.routeIds.map(Number)) {
         let refreshed: any;
@@ -1911,7 +1942,9 @@ private getGuideSlotLabel(slotId: number): string {
     const routeOptions = (routeId: number, routeDate: string) => candidates.filter((option: any) => {
       const routeMatches = routeIdOf(option) === routeId || (Array.isArray(option.routeIds) && option.routeIds.map(Number).includes(routeId));
       const dateMatches = !dateOf(option) || dateOf(option) === routeDate;
-      return routeMatches && dateMatches && propertyMatches(option) && option.isSelectable !== false && option.isBookable !== false;
+      const candidateGroupType = Number(option.groupType ?? option.group_type ?? 0);
+      const groupMatches = candidateGroupType === 0 || candidateGroupType === groupType;
+      return routeMatches && dateMatches && groupMatches && propertyMatches(option) && option.isSelectable !== false && option.isBookable !== false;
     });
     const selectedByRoute: any[] = [];
     const anchorCandidates = routeOptions(Number(data.routeId), stay.stayDates[stay.routeIds.indexOf(Number(data.routeId))] || String(data.routeDate || '').slice(0, 10));

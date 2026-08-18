@@ -414,7 +414,11 @@ export class TBOHotelProvider implements IHotelProvider {
             totalFare: formattedTotalFare,
             currency: hotel.Currency || 'INR',
  roomType: roomName, // Room type name for display
-            mealPlan: getNormalizedMealPlanLabelFromMealText(room.Inclusion),
+            // Prefer TBO's structured MealType. Inclusion may contain only
+            // parking/wifi text, which cannot identify Room_Only as EP.
+            mealPlan: getNormalizedMealPlanLabelFromMealText(
+              room.MealType || room.Inclusion,
+            ),
             roomTypes: [roomTypeObj],
  // Use REAL BookingCode from TBO as searchReference
             searchReference: realBookingCode,
