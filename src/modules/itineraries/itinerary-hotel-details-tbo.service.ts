@@ -109,6 +109,9 @@ export class ItineraryHotelDetailsTboService {
           authoritativeStayKey: _authoritativeStayKey,
           authoritativeParentRouteId: _authoritativeParentRouteId,
           authoritativeRouteIds: _authoritativeRouteIds,
+          authoritativeCheckInDate: _authoritativeCheckInDate,
+          authoritativeCheckOutDate: _authoritativeCheckOutDate,
+          recommendationTabs: _recommendationTabs,
           ...inventoryRow
         } = row;
         return {

@@ -57,6 +57,37 @@ test('persisted hotel read never invokes a live supplier', async () => {
   assert.equal(response.hotelAvailability?.availabilityState, 'FRESH');
 });
 
+test('client hotel payload strips recommendation internals and shared inventory deduplicates groups', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const rows = [1, 2, 3, 4].map((groupType) => ({
+    groupType,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    provider: 'tbo',
+    hotelCode: 'H-1',
+    hotelName: 'Shared Hotel',
+    roomType: 'Deluxe',
+    mealPlan: 'CP',
+    totalHotelCost: 100,
+    rateOptions: [{ rateOptionId: 'rate-1', roomType: 'Deluxe', mealPlan: 'CP', totalPrice: 100 }],
+    recommendationTabs: [{ groupType: 1, label: 'Recommended #1' }],
+    authoritativeRecommendation: true,
+    autoSelectionCandidate: groupType === 1,
+    autoSelectionIdentity: { rateOptionId: 'rate-1' },
+  }));
+
+  const shared = (service as any).buildSharedHotelInventory(rows, 0);
+  const clientRow = (service as any).toClientHotelRow(rows[0]);
+
+  assert.equal(shared.length, 1);
+  assert.equal(shared[0].groupType, 0);
+  assert.equal(Object.prototype.hasOwnProperty.call(shared[0], 'recommendationTabs'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(shared[0], 'autoSelectionCandidate'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(clientRow, 'recommendationTabs'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(clientRow, 'authoritativeRecommendation'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(clientRow, 'autoSelectionIdentity'), false);
+});
+
 test('canonical selected rate id never falls back to another nested option', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const selected = (service as any).selectedRateOption(
