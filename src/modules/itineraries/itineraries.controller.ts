@@ -2108,6 +2108,7 @@ async confirmQuotation(
       anchor: {
         anchorType?: 'BETWEEN_ROWS' | 'BEFORE_ROW' | 'AFTER_ROW' | 'BEFORE_HOTEL' | 'after_travel';
         anchorIndex?: number;
+        anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
         beforeRowId?: string | number | null;
         afterRowId?: string | number | null;
         beforeRowType?: string | null;      // NEW: accept from frontend
