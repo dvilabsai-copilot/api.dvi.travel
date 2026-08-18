@@ -960,6 +960,30 @@ export class HotelAvailabilitySnapshotService {
       .filter((route): route is { routeId: number; dayNumber: number; date: string; destination: string } =>
         Boolean(route && route.routeId > 0 && route.date),
       );
+
+    // The persisted snapshot can contain valid route/date rows for a stay
+    // that is absent from the current route projection (for example after a
+    // partial recommendation-group search). Keep those identities in the
+    // response metadata so every frontend recommendation tab can render the
+    // same complete itinerary timeline.
+    const stayRouteById = new Map(stayRoutes.map((route) => [route.routeId, route]));
+    normalizedRows.forEach((row: any) => {
+      const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
+      const date = this.toDateOnly(
+        row?.date || row?.checkInDate || row?.itineraryRouteDate || row?.itinerary_route_date,
+      );
+      if (!routeId || !date || stayRouteById.has(routeId)) return;
+      const dayMatch = String(row?.day || '').match(/Day\s+(\d+)/i);
+      stayRouteById.set(routeId, {
+        routeId,
+        dayNumber: Number(row?.dayNumber || dayMatch?.[1] || 0),
+        date,
+        destination: String(row?.destination || '').trim(),
+      });
+    });
+    const completeStayRoutes = Array.from(stayRouteById.values())
+      .sort((a, b) => a.dayNumber - b.dayNumber || a.date.localeCompare(b.date))
+      .map((route, index) => ({ ...route, dayNumber: route.dayNumber || index + 1 }));
     const routePagination = options.itineraryRouteId && options.itineraryRouteId > 0
       ? {
           [`${Number(options.groupType || 0)}-${Number(options.itineraryRouteId)}`]: {
@@ -1030,7 +1054,7 @@ export class HotelAvailabilitySnapshotService {
         providerErrors: [],
         mealPlanAutoSelectionBlocks,
         emptyStayBlocks,
-        stayRoutes,
+        stayRoutes: completeStayRoutes,
         offlineFetch: latestPayload?.offlineFetch,
         unavailableSelectionCount: remappedPlanRows.filter((row: any) => !isSpecialHotelPlanRow(row))
           .filter((row: any) => !normalizedRows.some((hotel: any) =>
@@ -1293,7 +1317,7 @@ export class HotelAvailabilitySnapshotService {
               data: this.buildEmptySnapshotRow(plan, quoteId, searchRunId, checkedAt),
             });
           });
-          const response = await this.readPersisted(quoteId, { page: 1, pageSize: 100 });
+          const response = await this.readPersisted(quoteId, { page: 1, pageSize: 0 });
           (response as any).hotelAvailability = {
             ...(response as any).hotelAvailability,
             availabilityState: 'PARTIAL',
@@ -1685,7 +1709,7 @@ export class HotelAvailabilitySnapshotService {
       );
     });
 
-    const response = await this.readPersisted(quoteId, { page: 1, pageSize: 100 });
+    const response = await this.readPersisted(quoteId, { page: 1, pageSize: 0 });
     (response as any).hotelAvailability = {
       ...(response as any).hotelAvailability,
       availabilityState: 'FRESH',
@@ -1885,7 +1909,31 @@ export class HotelAvailabilitySnapshotService {
       authoritativeCheckOutDate: _authoritativeCheckOutDate,
       ...clientRow
     } = row || {};
+    if (Array.isArray(clientRow.rateOptions)) {
+      clientRow.rateOptions = clientRow.rateOptions.map((option: any) => this.toClientRateOption(option));
+    }
     return clientRow;
+  }
+
+  private toClientRateOption(option: any): any {
+    const source = option && typeof option === 'object' ? option : {};
+    const fields = [
+      'rateOptionId', 'rate_option_id', 'optionKey', 'option_key', 'bookingCode', 'booking_code',
+      'searchReference', 'search_reference', 'roomId', 'room_id', 'rateId', 'rate_id',
+      'roomTypeId', 'room_type_id', 'roomType', 'roomTypeName', 'mealPlan', 'mealPlanCode',
+      'ratePlanName', 'provider', 'providerDisplayName', 'providerHotelCode', 'currency',
+      'pricePerNight', 'totalStayPrice', 'totalPrice', 'totalAmount', 'price', 'basePricePerNight',
+      'baseTotalPrice', 'startingFromAmount', 'startingFromBaseAmount', 'priceDifference',
+      'bookingMode', 'priceSource', 'isLiveRate', 'isLiveBookable', 'isSelectable',
+      'requiresHotelApproval', 'approvalStatus', 'manualConfirmationStatus', 'isBookable',
+      'availabilityStatus', 'availabilityState', 'availabilityMessage', 'rateConditions',
+      'cancellationPolicy', 'inclusions', 'facilities', 'amenities', 'mandatorySupplements',
+      'supplementSummary',
+    ];
+    return fields.reduce((result: any, field: string) => {
+      if (source[field] !== undefined) result[field] = source[field];
+      return result;
+    }, {});
   }
 
   /**
@@ -1959,7 +2007,11 @@ export class HotelAvailabilitySnapshotService {
     });
 
     return decorateHotelCardPricing(
-      this.coalesceRowsForCache(groupNeutralRows),
+      // Shared inventory is deliberately group-neutral. The same physical
+      // hotel/rate must appear once for a stay, not once per recommendation
+      // group. Group identity belongs to the automatic selection state, not
+      // to the common inventory shown in every pane.
+      this.coalesceRowsForCache(groupNeutralRows, false),
       new Map(),
     );
   }
@@ -2056,12 +2108,12 @@ export class HotelAvailabilitySnapshotService {
    * supplier search returns many room/rate rows for that property. Store one
    * canonical card row and retain every rate as nested `rateOptions`.
    */
-  private coalesceRowsForCache(rows: any[]): any[] {
+  private coalesceRowsForCache(rows: any[], includeGroupType = true): any[] {
     const grouped = new Map<string, any>();
     for (const row of rows) {
       const key = [
         Number(row.itineraryRouteId || row.routeId || 0),
-        Number(row.groupType || 0),
+        ...(includeGroupType ? [Number(row.groupType || 0)] : []),
         String(row.hotelCode || row.hotelId || '0'),
         String(row.provider || 'external').trim().toLowerCase(),
       ].join('|');

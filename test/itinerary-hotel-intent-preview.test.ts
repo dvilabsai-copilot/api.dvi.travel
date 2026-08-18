@@ -182,6 +182,104 @@ test('preview from either night preserves the same continuous stay', async () =>
   assert.deepEqual(dayOne.logicalStay.stayDates, dayTwo.logicalStay.stayDates);
 });
 
+test('HOTEL intent does not pin a one-night card rate across a multi-night stay', async () => {
+  const axisStay = {
+    planId: 10124,
+    provider: 'axisrooms',
+    hotelCode: 'AX_DVI_HOTEL_232',
+    hotelName: 'THE ARBOUR RESORT',
+    checkInDate: '2026-08-22',
+    checkOutDate: '2026-08-24',
+    nights: 2,
+    routeIds: [10719, 10720],
+    stayDates: ['2026-08-22', '2026-08-23'],
+    stayKey: 'axisrooms:AX_DVI_HOTEL_232:::2026-08-22_to_2026-08-24',
+    anchorRouteId: 10720,
+  };
+  const axisCandidates = [
+    {
+      routeId: 10719,
+      itineraryRouteId: 10719,
+      date: '2026-08-22',
+      provider: 'axisrooms',
+      providerHotelCode: 'AX_DVI_HOTEL_232',
+      hotelCode: '232',
+      canonicalHotelId: 232,
+      hotelId: 232,
+      hotelName: 'THE ARBOUR RESORT',
+      roomType: 'Room 607',
+      mealPlan: 'CP',
+      rateOptionId: 'axisrooms:232:607:CP_PLAN:2026-08-22',
+      pricePerNight: 5000,
+      totalPrice: 5000,
+      isSelectable: true,
+      isBookable: true,
+    },
+    {
+      routeId: 10720,
+      itineraryRouteId: 10720,
+      date: '2026-08-23',
+      provider: 'axisrooms',
+      providerHotelCode: 'AX_DVI_HOTEL_232',
+      hotelCode: '232',
+      canonicalHotelId: 232,
+      hotelId: 232,
+      hotelName: 'THE ARBOUR RESORT',
+      roomType: 'Room 606',
+      mealPlan: 'CP',
+      rateOptionId: 'axisrooms:232:606:CP_PLAN:2026-08-23',
+      pricePerNight: 4500,
+      totalPrice: 4500,
+      isSelectable: true,
+      isBookable: true,
+    },
+  ];
+  const service = Object.create(ItinerariesService.prototype) as any;
+  service.prisma = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ itinerary_quote_ID: 'DVI20260847', preferred_room_count: 1 }),
+    },
+    dvi_itinerary_route_details: {
+      findFirst: async () => ({ itinerary_route_date: new Date('2026-08-23T00:00:00.000Z') }),
+    },
+  };
+  service.hotelStayBlockValidationService = {
+    buildContinuousStayCandidate: async () => axisStay,
+    previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
+  };
+  service.hotelDetailsTboService = {
+    getSelectedHotelRates: async (_quoteId: string, routeId: number) => ({
+      hotels: axisCandidates.filter((candidate) => candidate.routeId === routeId),
+    }),
+  };
+  service.hotelAvailabilitySnapshotService = {
+    mergeSelectedHotelRates: async () => undefined,
+    getActiveRows: async () => axisCandidates,
+  };
+  service.selectionWorkflowService = {
+    withHotelSelectionLock: async (_planId: number, _groupType: number, callback: () => Promise<any>) => callback(),
+  };
+
+  const payload = {
+    planId: 10124,
+    routeId: 10720,
+    groupType: 1,
+    selectionIntent: 'HOTEL',
+    provider: 'axisrooms',
+    hotelCode: 'AX_DVI_HOTEL_232',
+    providerHotelCode: 'AX_DVI_HOTEL_232',
+    canonicalHotelId: 232,
+    hotelName: 'THE ARBOUR RESORT',
+    routeDate: '2026-08-23',
+    previewOnly: true,
+  };
+  const result = await service.previewHotelIntent(payload);
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.deepEqual(result.selections.map((selection: any) => selection.routeDate), ['2026-08-22', '2026-08-23']);
+  assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Room 607', 'Room 606']);
+});
+
 test('STAAH HOTEL preview resolves the canonical hotel id to the supplier property code', async () => {
   const service = Object.create(ItinerariesService.prototype) as any;
   const refreshedCodes: string[] = [];
