@@ -61,6 +61,9 @@ test('group-neutral shared inventory strips recommendation-only metadata', () =>
     authoritativeStayKey: '10|2026-08-02|2026-08-04',
     authoritativeParentRouteId: 10,
     authoritativeRouteIds: [10, 11],
+    authoritativeCheckInDate: '2026-08-02',
+    authoritativeCheckOutDate: '2026-08-04',
+    recommendationTabs: [{ groupType: 1, label: 'Recommended #1' }],
   }]);
 
   assert.equal(inventory.length, 1);
@@ -68,6 +71,7 @@ test('group-neutral shared inventory strips recommendation-only metadata', () =>
     'authoritativeRecommendation', 'autoSelectionStatus', 'autoSelectionCandidate',
     'autoSelectionIdentity', 'autoSelectionFallbackFromGroup',
     'authoritativeStayKey', 'authoritativeParentRouteId', 'authoritativeRouteIds',
+    'authoritativeCheckInDate', 'authoritativeCheckOutDate', 'recommendationTabs',
   ]) assert.equal(Object.prototype.hasOwnProperty.call(inventory[0], field), false, field);
 });
 

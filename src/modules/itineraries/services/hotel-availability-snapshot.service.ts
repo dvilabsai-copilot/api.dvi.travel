@@ -876,25 +876,9 @@ export class HotelAvailabilitySnapshotService {
       normalizedRows.map((row) => projectHotelPayablePricing(row, effectiveMarginPercentage)),
       selectedPayableByRouteGroup,
     );
-    const sharedHotelInventory = decorateHotelCardPricing(
-      allSharedInventoryRows.map((row: any) => {
-        const {
-          selection: _selection,
-          selectionId: _selectionId,
-          selectionOrigin: _selectionOrigin,
-          selectionStatus: _selectionStatus,
-          isSelected: _isSelected,
-          ...inventoryRow
-        } = projectHotelPayablePricing(row, effectiveMarginPercentage);
-        return {
-          ...inventoryRow,
-          groupType: 0,
-          isSelected: false,
-          selectionId: 0,
-          selectionStatus: 'AVAILABLE',
-        };
-      }),
-      new Map(),
+    const sharedHotelInventory = this.buildSharedHotelInventory(
+      allSharedInventoryRows,
+      effectiveMarginPercentage,
     );
     const page = Math.max(1, Number(options.page || 1));
     // pageSize=0 is the complete-snapshot contract used by reset and by the
@@ -993,6 +977,7 @@ export class HotelAvailabilitySnapshotService {
       rows: normalizedRows,
       requiredRoutes: searchableRoutes,
     });
+    const clientHotelRows = paged.map((row: any) => this.toClientHotelRow(row));
 
     return {
       quoteId,
@@ -1002,7 +987,7 @@ export class HotelAvailabilitySnapshotService {
       showHotelMargins: String(process.env.SHOW_HOTEL_MARGINS || '').toLowerCase() === 'true',
       hotelTabs: tabs,
       hotelSelectionState: authoritativeHotelSelectionState,
-      hotels: paged,
+      hotels: clientHotelRows,
       totalRoomCount: normalizedRows.length,
       pagination: {
         [Number(options.groupType || 0) || 0]: {
@@ -1780,13 +1765,15 @@ export class HotelAvailabilitySnapshotService {
     response: ItineraryHotelDetailsResponseDto,
     plan: any,
   ): Promise<ItineraryHotelDetailsResponseDto> {
-    const hotels = (Array.isArray(response?.hotels) ? response.hotels : []).filter((row: any) => {
-      const name = String(row?.hotelName || '').trim().toLowerCase();
-      if (row?.isPlaceholder === true || row?.synthetic === true) return false;
-      if (name.includes('previously selected hotel') || name === 'no hotels available') return false;
-      return Number(row?.itineraryRouteId || row?.routeId || 0) > 0 &&
-        Boolean(String(row?.date || row?.checkInDate || '').trim());
-    });
+    const hotels = (Array.isArray(response?.hotels) ? response.hotels : [])
+      .filter((row: any) => {
+        const name = String(row?.hotelName || '').trim().toLowerCase();
+        if (row?.isPlaceholder === true || row?.synthetic === true) return false;
+        if (name.includes('previously selected hotel') || name === 'no hotels available') return false;
+        return Number(row?.itineraryRouteId || row?.routeId || 0) > 0 &&
+          Boolean(String(row?.date || row?.checkInDate || '').trim());
+        })
+      .map((row: any) => this.toClientHotelRow(row));
     const availability = (response as any)?.hotelAvailability || {};
     const routeDetailsModel = (this.prisma as any).dvi_itinerary_route_details;
     const currentRoutes = routeDetailsModel?.findMany
@@ -1870,6 +1857,51 @@ export class HotelAvailabilitySnapshotService {
   private parsePayload(payload: unknown): any | null {
     if (payload && typeof payload === 'object') return payload;
     try { return JSON.parse(String(payload || '')); } catch { return null; }
+  }
+
+  private toClientHotelRow(row: any): any {
+    const {
+      recommendationTabs: _recommendationTabs,
+      offlineFetch: _offlineFetch,
+      authoritativeRecommendation: _authoritativeRecommendation,
+      autoSelectionStatus: _autoSelectionStatus,
+      autoSelectionCandidate: _autoSelectionCandidate,
+      autoSelectionIdentity: _autoSelectionIdentity,
+      autoSelectionFallbackFromGroup: _autoSelectionFallbackFromGroup,
+      authoritativeStayKey: _authoritativeStayKey,
+      authoritativeParentRouteId: _authoritativeParentRouteId,
+      authoritativeRouteIds: _authoritativeRouteIds,
+      authoritativeCheckInDate: _authoritativeCheckInDate,
+      authoritativeCheckOutDate: _authoritativeCheckOutDate,
+      ...clientRow
+    } = row || {};
+    return clientRow;
+  }
+
+  private buildSharedHotelInventory(rows: any[], effectiveMarginPercentage: number): any[] {
+    const groupNeutralRows = (rows || []).map((row: any) => {
+      const {
+        selection: _selection,
+        selectionId: _selectionId,
+        selectionOrigin: _selectionOrigin,
+        selectionStatus: _selectionStatus,
+        isSelected: _isSelected,
+        ...inventoryRow
+      } = this.toClientHotelRow(projectHotelPayablePricing(row, effectiveMarginPercentage));
+
+      return {
+        ...inventoryRow,
+        groupType: 0,
+        isSelected: false,
+        selectionId: 0,
+        selectionStatus: 'AVAILABLE',
+      };
+    });
+
+    return decorateHotelCardPricing(
+      this.coalesceRowsForCache(groupNeutralRows),
+      new Map(),
+    );
   }
 
   private buildEmptySnapshotRow(plan: any, quoteId: string, searchRunId: string, checkedAt: Date): Record<string, unknown> {
