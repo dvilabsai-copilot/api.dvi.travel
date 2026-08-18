@@ -88,6 +88,31 @@ test('client hotel payload strips recommendation internals and shared inventory 
   assert.equal(Object.prototype.hasOwnProperty.call(clientRow, 'autoSelectionIdentity'), false);
 });
 
+test('client hotel payload keeps every rate option but removes unused supplier fields', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const clientRow = (service as any).toClientHotelRow({
+    hotelName: 'Shared Hotel',
+    rateOptions: [{
+      rateOptionId: 'rate-1',
+      roomType: 'Deluxe Room',
+      mealPlan: 'CP',
+      totalPrice: 100,
+      bookingCode: 'BOOK-1',
+      supplierRawResponse: { thousands: 'of unused fields' },
+      roomAvailabilityBreakdown: Array.from({ length: 20 }, () => ({ rooms: 2 })),
+    }],
+  });
+
+  assert.equal(clientRow.rateOptions.length, 1);
+  assert.equal(clientRow.rateOptions[0].rateOptionId, 'rate-1');
+  assert.equal(clientRow.rateOptions[0].roomType, 'Deluxe Room');
+  assert.equal(clientRow.rateOptions[0].mealPlan, 'CP');
+  assert.equal(clientRow.rateOptions[0].totalPrice, 100);
+  assert.equal(clientRow.rateOptions[0].bookingCode, 'BOOK-1');
+  assert.equal(Object.prototype.hasOwnProperty.call(clientRow.rateOptions[0], 'supplierRawResponse'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(clientRow.rateOptions[0], 'roomAvailabilityBreakdown'), false);
+});
+
 test('client recommendation tabs never carry nested hotel inventories', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const tab = (service as any).toClientHotelTab({
