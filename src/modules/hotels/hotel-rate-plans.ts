@@ -205,9 +205,17 @@ export function getNormalizedMealPlanLabelFromMealText(value?: string | null): s
   if (!raw || raw === '-') return 'UNKNOWN';
 
   const upper = raw.toUpperCase();
+  const normalizedUpper = upper.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
 
- // Canonical or known plan identifiers map directly to CP/EP/MAP/AP labels.
-  const directPlanCode = inferCanonicalHotelRatePlanCode(upper);
+  // TBO sends the structured value as `Room_Only`. This is the canonical
+  // European Plan (EP), even when the inclusion text only contains parking
+  // or other non-meal inclusions.
+  if (normalizedUpper === 'ROOM ONLY') return 'EP';
+
+  // Canonical or known plan identifiers map directly to CP/EP/MAP/AP labels.
+  const directPlanCode =
+    inferCanonicalHotelRatePlanCode(upper) ||
+    inferCanonicalHotelRatePlanCode(normalizedUpper);
   if (directPlanCode) return directPlanCode;
 
  // Supplier meal keywords in inclusion text.

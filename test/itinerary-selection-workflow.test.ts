@@ -301,6 +301,41 @@ test('live selection validates the selected nested rate option before its parent
   );
 });
 
+test('live selection ignores same-hotel rates belonging to another recommendation group', async () => {
+  const bookingCode = '1130403!TB!1!TB!same-commercial-room!TB!N!TB!AFF!';
+  const groupThreeRow = {
+    provider: 'tbo', hotelCode: '1130403', hotelName: 'Ela Ecoland Nature Retreat',
+    groupType: 3, itineraryRouteId: 10719, bookingCode, searchReference: bookingCode,
+    rateOptionId: bookingCode, totalPrice: 9999,
+  };
+  const groupFourRow = {
+    provider: 'tbo', hotelCode: '1130403', hotelName: 'Ela Ecoland Nature Retreat',
+    groupType: 4, itineraryRouteId: 10719, bookingCode, searchReference: bookingCode,
+    rateOptionId: bookingCode, totalPrice: 2056.89,
+  };
+  const service = createService({
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: new Date('2026-08-18T00:00:00.000Z') }),
+      findMany: async () => [
+        { full_payload: JSON.stringify(groupThreeRow) },
+        { full_payload: JSON.stringify(groupFourRow) },
+      ],
+    },
+  });
+
+  await (service as any).validateLiveSelectionAgainstSnapshot(
+    {
+      planId: 10124, routeId: 10719, groupType: 4, provider: 'tbo',
+      hotelCode: '1130403', hotelName: 'Ela Ecoland Nature Retreat',
+      bookingCode, searchReference: bookingCode, rateOptionId: bookingCode,
+      totalPrice: 2056.89,
+    },
+    { itinerary_plan_ID: 10124 },
+    'DVI20260847',
+    { itinerary_route_date: new Date('2026-08-22T00:00:00.000Z') },
+  );
+});
+
 test('current TBO supplier booking identity passes while stale and different hotels fail', async () => {
   const syncedAt = new Date('2026-08-11T14:02:55.000Z');
   const currentBookingCode = '1114182!TB!1!TB!current-search!TB!N!TB!AFF!';
