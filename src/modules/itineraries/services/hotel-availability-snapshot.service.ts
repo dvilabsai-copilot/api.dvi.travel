@@ -3390,11 +3390,13 @@ export class HotelAvailabilitySnapshotService {
       );
       const options = origin === 'USER_SELECTED'
         ? allOptions
-        : authoritativeGroup
-          ? authoritativeAutoOptions
-          : authoritativeAutoOptions.length > 0
-          ? authoritativeAutoOptions
-          : this.getAutoSelectionPool(allOptions, preferredMealPlanCode, preferredMealPlanFlags);
+        : this.getEffectiveAutoSelectionPool(
+            allOptions,
+            preferredMealPlanCode,
+            preferredMealPlanFlags,
+            authoritativeAutoOptions,
+            authoritativeGroup,
+          );
       // Match the exact persisted supplier rate first. A parent hotel row can
       // contain several nested room/meal options and must never win with a
       // different identity or price.
@@ -3735,6 +3737,58 @@ export class HotelAvailabilitySnapshotService {
     return cpMatches.length > 0 ? cpMatches : this.filterRowsByMealPlan(rows, 'EP');
   }
 
+  /**
+   * Apply the authoritative recommendation scope without allowing a missing
+   * requested MAP rate to suppress a valid CP/EP fallback. The authoritative
+   * scope remains preferred whenever it contains a compatible rate; only when
+   * it does not do we fall back to the complete eligible pool.
+   */
+  private getEffectiveAutoSelectionPool(
+    allOptions: any[],
+    preferredMealPlanCode?: string | null,
+    preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
+    authoritativeOptions: any[] = [],
+    authoritativeGroup = false,
+  ): any[] {
+    const scopedOptions = Array.isArray(authoritativeOptions) && authoritativeOptions.length > 0
+      ? authoritativeOptions
+      : [];
+    if (scopedOptions.length === 0) {
+      if (authoritativeGroup) return [];
+      return this.getAutoSelectionPool(allOptions, preferredMealPlanCode, preferredMealPlanFlags);
+    }
+
+    const preferred = String(preferredMealPlanCode || '').trim().toUpperCase();
+    if (!preferred) return scopedOptions;
+
+    if (preferred === 'MAP') {
+      const scopedMap = this.filterRowsByMealPlan(scopedOptions, 'MAP');
+      if (scopedMap.length > 0) return scopedMap;
+
+      // Prefer CP over EP even when the authoritative subset contains only
+      // EP. A MAP request with no MAP rate is explicitly allowed to use the
+      // available CP rate without relabelling it.
+      const scopedCp = this.filterRowsByMealPlan(scopedOptions, 'CP');
+      if (scopedCp.length > 0) return scopedCp;
+      const completeCp = this.filterRowsByMealPlan(allOptions, 'CP');
+      if (completeCp.length > 0) return completeCp;
+      const scopedEp = this.filterRowsByMealPlan(scopedOptions, 'EP');
+      if (scopedEp.length > 0) return scopedEp;
+      const completeEp = this.filterRowsByMealPlan(allOptions, 'EP');
+      if (completeEp.length > 0) return completeEp;
+      return scopedOptions;
+    }
+
+    const scopedCompatible = this.getAutoSelectionPool(
+      scopedOptions,
+      preferredMealPlanCode,
+      preferredMealPlanFlags,
+    );
+    if (scopedCompatible.length > 0) return scopedCompatible;
+
+    return scopedOptions;
+  }
+
   private decorateMealPlanAutoSelectionBlockers(
     rows: any[],
     preferredMealPlanCode?: string | null,
@@ -3973,11 +4027,13 @@ export class HotelAvailabilitySnapshotService {
         option.autoSelectionCandidate === true &&
         this.autoSelectionIdentityMatches(option, option.autoSelectionIdentity),
       );
-      const selectionPool = authoritativeGroup
-        ? authoritativeOptions
-        : authoritativeOptions.length > 0
-        ? authoritativeOptions
-        : this.getAutoSelectionPool(options, preferredMealPlanCode, preferredMealPlanFlags);
+      const selectionPool = this.getEffectiveAutoSelectionPool(
+        options,
+        preferredMealPlanCode,
+        preferredMealPlanFlags,
+        authoritativeOptions,
+        authoritativeGroup,
+      );
       // Provider class is not a category or availability gate. The pool is
       // already meal-plan compatible, so compare every live and offline/local
       // option together. A live higher-category row must not block a valid
