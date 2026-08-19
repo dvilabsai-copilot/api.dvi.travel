@@ -69,6 +69,66 @@ export class ItineraryHotelDetailsTboService {
     ].join('|');
   }
 
+  /** Collapse raw and projected copies of the same supplier rate before cards
+   * are built. Distinct rooms/plans retain distinct supplier identities. */
+  private canonicalizeRateOptions(parent: any, options: any[]): any[] {
+    const text = (value: any) => String(value ?? '').trim().toLowerCase();
+    const amount = (value: any) => Number(Number(value ?? 0).toFixed(2));
+    const normalizeSupplierRoomIdentity = (option: any): any => {
+      const provider = text(option?.provider || parent?.provider);
+      if (provider !== 'hobse') return option;
+      try {
+        const reference = option?.searchReference || option?.search_reference;
+        const parsed = typeof reference === 'string' ? JSON.parse(reference) : reference;
+        const roomCode = String(parsed?.roomCode || '').trim();
+        if (!roomCode) return option;
+        return { ...option, roomTypeId: roomCode, roomCode };
+      } catch {
+        return option;
+      }
+    };
+    const rateIdentity = (option: any) => text(
+      option.rateOptionId || option.rate_option_id || option.bookingCode || option.booking_code ||
+      option.searchReference || option.search_reference || option.rateId || option.rate_id ||
+      option.optionKey || option.option_key,
+    );
+    const roomIdentity = (option: any) => text(
+      option.roomTypeId || option.room_type_id || option.roomId || option.room_id || option.roomType,
+    );
+    const mealIdentity = (option: any) => text(option.mealPlan || option.meal_plan || option.mealPlanCode);
+    const result = new Map<string, any>();
+    for (const sourceOption of options || []) {
+      const option = normalizeSupplierRoomIdentity(sourceOption);
+      if (!option || typeof option !== 'object') continue;
+      const identity = rateIdentity(option);
+      // When a real supplier rate identity exists, it is authoritative. Raw
+      // and normalized copies can disagree on roomTypeId because the latter
+      // enriches it from searchReference; that must not create a second rate.
+      const room = roomIdentity(option);
+      const key = [
+        text(option.provider || parent.provider),
+        identity || `room:${room}`,
+        identity ? '' : room,
+        mealIdentity(option),
+      ].join('|');
+      const existing = result.get(key);
+      if (!existing) {
+        result.set(key, option);
+        continue;
+      }
+      const existingBase = amount(existing.baseTotalPrice || existing.baseStayPrice || existing.baseHotelCost || existing.basePricePerNight);
+      const candidateBase = amount(option.baseTotalPrice || option.baseStayPrice || option.baseHotelCost || option.basePricePerNight);
+      // Same supplier identity with a lower base is the raw supplier amount;
+      // a higher amount is a repeated margin projection, not another rate.
+      if (candidateBase > 0 && (existingBase <= 0 || candidateBase < existingBase)) {
+        result.set(key, { ...existing, ...option });
+      } else if (existing) {
+        result.set(key, { ...option, ...existing });
+      }
+    }
+    return Array.from(result.values());
+  }
+
   /**
    * The recommendation group controls only the automatic choice.  The day
    * picker must browse one shared inventory, so build a group-neutral union
@@ -128,7 +188,11 @@ export class ItineraryHotelDetailsTboService {
           selectionId: 0,
           selectionStatus: 'AVAILABLE',
         };
-      });
+      })
+      .map((row: any) => ({
+        ...row,
+        rateOptions: this.canonicalizeRateOptions(row, row.rateOptions || []),
+      }));
   }
 
   private normalizeExactRoomCode(value: unknown): string {
@@ -1963,9 +2027,13 @@ this.logger.log(
   );
   const filteredHotelsByRoute =
   await this.applyPlanPreferenceFilters(
-    hotelsByRoute,
-    preferredCategories,
-    includeAllMealPlans ? null : preferredMealPlanCode,
+    completeHotelsByRoute,
+    // Category and meal plan are selection preferences, not inventory
+    // filters. The centralized recommendation service must see fallback
+    // categories and permitted meal-plan alternatives (for example CP when
+    // MAP has no price) before it emits an authoritative selection.
+    [],
+    null,
     preferredFacilities,
   );
 
@@ -4355,10 +4423,32 @@ this.logger.log(
         );
         const selected = stay && 'hotel' in stay ? (stay as any).hotel : null;
         const selectedIdentity = selected ? buildAutoSelectionIdentity(selected) : null;
+        const sameSelectedRate = (candidate: any): boolean => {
+          if (!selectedIdentity) return false;
+          const candidateIdentity = buildAutoSelectionIdentity(candidate);
+          const providerMatches = !selectedIdentity.provider ||
+            String(candidateIdentity.provider || '').toLowerCase() === String(selectedIdentity.provider).toLowerCase();
+          const codeMatches = !selectedIdentity.providerHotelCode ||
+            String(candidateIdentity.providerHotelCode || '').toLowerCase() === String(selectedIdentity.providerHotelCode).toLowerCase();
+          if (!providerMatches || !codeMatches) return false;
+          const selectedRate = String(selectedIdentity.rateOptionId || selectedIdentity.bookingCode || selectedIdentity.searchReference || '').trim().toLowerCase();
+          const candidateRate = String(candidateIdentity.rateOptionId || candidateIdentity.bookingCode || candidateIdentity.searchReference || '').trim().toLowerCase();
+          if (selectedRate && candidateRate && selectedRate === candidateRate) return true;
+          const selectedRoom = String(selectedIdentity.roomId || selectedIdentity.roomTypeId || selectedIdentity.roomType || '').trim().toLowerCase();
+          const candidateRoom = String(candidateIdentity.roomId || candidateIdentity.roomTypeId || candidateIdentity.roomType || '').trim().toLowerCase();
+          const selectedMeal = String(selectedIdentity.mealPlan || '').trim().toLowerCase();
+          const candidateMeal = String(candidateIdentity.mealPlan || '').trim().toLowerCase();
+          return Boolean(selectedRoom && candidateRoom && selectedRoom === candidateRoom &&
+            (!selectedMeal || !candidateMeal || selectedMeal === candidateMeal));
+        };
         const containsSelectedRate = (hotel: any): boolean => Boolean(selectedIdentity && (
           strictAutoSelectionIdentityMatches(hotel, selectedIdentity) ||
+          sameSelectedRate(hotel) ||
           (Array.isArray(hotel?.rateOptions) && hotel.rateOptions.some((rateOption: any) =>
             strictAutoSelectionIdentityMatches({ ...hotel, ...rateOption }, selectedIdentity),
+          )) ||
+          (Array.isArray(hotel?.rateOptions) && hotel.rateOptions.some((rateOption: any) =>
+            sameSelectedRate({ ...hotel, ...rateOption }),
           ))
         ));
         const isFallback = groupType === 4 && stay?.state === 'SELECTED' &&
@@ -4384,6 +4474,10 @@ this.logger.log(
               ? {
                   autoSelectionCandidate: true,
                   autoSelectionIdentity: selectedIdentity,
+                  requestedCategory: selected.requestedCategory,
+                  selectedCategory: selected.selectedCategory,
+                  categoryFallbackApplied: selected.categoryFallbackApplied,
+                  categoryFallbackReason: selected.categoryFallbackReason,
                   ...(isFallback ? { autoSelectionFallbackFromGroup: 3 } : {}),
                 }
               : {}),
@@ -4676,7 +4770,7 @@ this.logger.log(
         hotel?.selectedTotalPrice || hotel?.selected_total_price,
       );
       const pricedOptions = Array.isArray(hotel?.rateOptions)
-        ? hotel.rateOptions.map((option: any) => {
+        ? this.canonicalizeRateOptions(hotel, hotel.rateOptions).map((option: any) => {
             const optionNightlyAmount = Number(option?.pricePerNight ?? option?.price ?? 0);
             const optionRawTotal = nights === 1 && Number.isFinite(optionNightlyAmount) && optionNightlyAmount > 0
               ? this.money(optionNightlyAmount)
@@ -5184,7 +5278,7 @@ this.logger.log(
     }
 
     const decorateLiveSelection = (row: any, selection: any): any => {
-      const snapshot = parseHotelSelectionSnapshot(selection);
+      const snapshot = parseHotelSelectionSnapshot(selection) as any;
       const selectionOrigin = selectionOriginFromRow(selection);
       const display = hotelDisplaySnapshot({ ...selection, ...snapshot });
       const selectedRoomType =
@@ -5200,6 +5294,10 @@ this.logger.log(
         autoSelectionCandidate: row.autoSelectionCandidate === true || snapshot.autoSelectionCandidate === true,
         autoSelectionIdentity: row.autoSelectionIdentity || snapshot.autoSelectionIdentity || null,
         autoSelectionFallbackFromGroup: Number(row.autoSelectionFallbackFromGroup || snapshot.autoSelectionFallbackFromGroup || 0) || undefined,
+        requestedCategory: Number(row.requestedCategory || snapshot.requestedCategory || 0) || null,
+        selectedCategory: Number(row.selectedCategory || snapshot.selectedCategory || row.category || snapshot.category || 0) || null,
+        categoryFallbackApplied: Boolean(row.categoryFallbackApplied ?? snapshot.categoryFallbackApplied),
+        categoryFallbackReason: row.categoryFallbackReason || snapshot.categoryFallbackReason || null,
         authoritativeStayKey: row.authoritativeStayKey || snapshot.authoritativeStayKey || null,
         authoritativeParentRouteId: Number(row.authoritativeParentRouteId || snapshot.authoritativeParentRouteId || 0) || null,
         authoritativeRouteIds: Array.isArray(row.authoritativeRouteIds)
@@ -5313,6 +5411,10 @@ this.logger.log(
         providerHotelCode: hotelCode,
         hotelName,
         category: Number(selection?.hotel_category_id || snapshot.category || 0) || 0,
+        requestedCategory: Number(snapshot.requestedCategory || 0) || null,
+        selectedCategory: Number(snapshot.selectedCategory || selection?.hotel_category_id || snapshot.category || 0) || null,
+        categoryFallbackApplied: Boolean(snapshot.categoryFallbackApplied),
+        categoryFallbackReason: snapshot.categoryFallbackReason || null,
         roomType,
         mealPlan,
         totalHotelCost: totalPrice,
@@ -5560,6 +5662,10 @@ this.logger.log(
           autoSelectionCandidate: (hotel as any).autoSelectionCandidate === true,
           autoSelectionIdentity: (hotel as any).autoSelectionIdentity || null,
           autoSelectionFallbackFromGroup: Number((hotel as any).autoSelectionFallbackFromGroup || 0) || undefined,
+          requestedCategory: Number((hotel as any).requestedCategory || 0) || null,
+          selectedCategory: Number((hotel as any).selectedCategory || (hotel as any).category || 0) || null,
+          categoryFallbackApplied: Boolean((hotel as any).categoryFallbackApplied),
+          categoryFallbackReason: (hotel as any).categoryFallbackReason || null,
           authoritativeStayKey: (hotel as any).authoritativeStayKey || null,
           authoritativeParentRouteId: Number((hotel as any).authoritativeParentRouteId || 0) || null,
           authoritativeRouteIds: Array.isArray((hotel as any).authoritativeRouteIds)

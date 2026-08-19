@@ -22,6 +22,10 @@ export type HotelSelectionSelectedView = {
   pricePerNight: number;
   totalPrice: number;
   selectedPriceSnapshot: Record<string, unknown> | null;
+  requestedCategory: number | null;
+  selectedCategory: number | null;
+  categoryFallbackApplied: boolean;
+  categoryFallbackReason: string | null;
 };
 
 export type HotelSelectionRouteView = {
@@ -185,6 +189,10 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
     pricePerNight: money(Number.isFinite(pricePerNight) ? pricePerNight : 0),
     totalPrice: money(Number.isFinite(totalPrice) ? totalPrice : payable),
     selectedPriceSnapshot,
+    requestedCategory: Number(row?.requestedCategory ?? row?.requested_category ?? identity.requestedCategory ?? 0) || null,
+    selectedCategory: Number(row?.selectedCategory ?? row?.selected_category ?? identity.selectedCategory ?? row?.category ?? identity.category ?? 0) || null,
+    categoryFallbackApplied: Boolean(row?.categoryFallbackApplied ?? row?.category_fallback_applied ?? identity.categoryFallbackApplied),
+    categoryFallbackReason: String(row?.categoryFallbackReason ?? row?.category_fallback_reason ?? identity.categoryFallbackReason ?? '').trim() || null,
   };
 };
 

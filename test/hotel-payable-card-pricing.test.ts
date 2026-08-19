@@ -23,6 +23,36 @@ test('Axis base 4200 projects once to the same payable 5040 used by preview and 
   assert.equal(projectHotelPayablePricing(projected, 20).totalPrice, 5040);
 });
 
+test('nested supplier options retain the idempotency marker after projection', () => {
+  const projected = projectHotelPayablePricing({
+    provider: 'hobse',
+    hotelCode: 'ABC',
+    baseTotalPrice: 4020,
+    totalPrice: 4020,
+    rateOptions: [{
+      rateOptionId: 'hobse-rate-1',
+      baseTotalPrice: 4020,
+      totalPrice: 4020,
+    }],
+  }, 10);
+
+  const nested = projected.rateOptions[0];
+  assert.equal(nested.totalPrice, 4422);
+  assert.equal(nested.baseTotalPrice, 4020);
+  assert.equal(nested.amountIncludesHotelMargin, true);
+  assert.equal(projectHotelPayablePricing(projected, 10).rateOptions[0].totalPrice, 4422);
+});
+
+test('ResAvenue margin projection remains idempotent at 9499 -> 10448.90', () => {
+  const projected = projectHotelPayablePricing({
+    provider: 'resavenue', hotelCode: '20', baseTotalPrice: 9499, totalPrice: 9499,
+    rateOptions: [{ rateOptionId: 'RESAVENUE-20-rate', baseTotalPrice: 9499, totalPrice: 9499 }],
+  }, 10);
+  assert.equal(projected.rateOptions[0].baseTotalPrice, 9499);
+  assert.equal(projected.rateOptions[0].totalPrice, 10448.9);
+  assert.equal(projectHotelPayablePricing(projected, 10).rateOptions[0].totalPrice, 10448.9);
+});
+
 test('card identity is stable across supplier hotel-code representations', () => {
   const base = {
     itineraryRouteId: 10145,

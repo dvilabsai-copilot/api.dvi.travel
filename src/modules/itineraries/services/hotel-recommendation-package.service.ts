@@ -69,6 +69,10 @@ export type RecommendationHotel = HotelSearchResult & {
   distanceReference: 'HOTSPOT' | 'DESTINATION_CENTRE' | 'ROUTE_DESTINATION' | 'UNKNOWN';
   normalizedCategory: string;
   recommendationFallbackReason?: string;
+  requestedCategory?: number;
+  selectedCategory?: number;
+  categoryFallbackApplied?: boolean;
+  categoryFallbackReason?: string;
 };
 
 export type RecommendationStayResult = {
@@ -126,6 +130,11 @@ type StayOption = {
   priceCents: number;
   optionKey: string;
   fallback: boolean;
+  mealPlanRank: number;
+  requestedCategory?: number;
+  selectedCategory?: number;
+  categoryFallbackApplied?: boolean;
+  categoryFallbackReason?: string;
   rejectedCandidates?: Array<{ optionKey: string; reason: string }>;
 };
 
@@ -267,15 +276,12 @@ export class HotelRecommendationPackageService {
     const selectedByGroup = slots.map((slot) => new Map<string, StayOption>());
 
     evaluations.forEach((evaluation) => {
+      // Diversity is scoped to one logical stay. A continuous Munnar stay
+      // must consume distinct physical properties across G1..G4, while a
+      // different destination/stay has its own independent inventory.
       const used = new Set<string>();
       slots.forEach((slot, groupIndex) => {
-        const candidates = evaluation.options.filter((option) => this.categoryNumber(option.hotel) === slot.category);
-        if (candidates.length === 0) return;
-        const base = candidates[0].priceCents;
-        const threshold = Math.ceil(base * slot.multiplier);
-        const selected = candidates.find((candidate) =>
-          candidate.priceCents >= threshold && !used.has(this.physicalIdentity(candidate.hotel)),
-        );
+        const selected = this.selectCategoryOption(evaluation.options, slot, used);
         if (!selected) return;
         selectedByGroup[groupIndex].set(evaluation.stay.stayKey, selected);
         used.add(this.physicalIdentity(selected.hotel));
@@ -294,6 +300,94 @@ export class HotelRecommendationPackageService {
       packages[3].fallbackReasons = ['No eligible hotel is available for Group 4.'];
     }
     return packages;
+  }
+
+  /** Exact category first, then lower categories, then higher categories. */
+  private categoryFallbackOrder(targetCategory: number): number[] {
+    const supported = [2, 3, 4, 5];
+    if (!supported.includes(targetCategory)) return supported;
+    return [
+      targetCategory,
+      ...supported.filter((category) => category < targetCategory).sort((a, b) => b - a),
+      ...supported.filter((category) => category > targetCategory),
+    ];
+  }
+
+  private selectCategoryOption(options: StayOption[], slot: CategorySlot, used: Set<string>): StayOption | undefined {
+    const orderedCategories = this.categoryFallbackOrder(slot.category);
+
+    // Pass 1: exhaust every unused physical property before permitting reuse.
+    // Category preference remains stronger than meal-plan preference: for each
+    // category, first look only at unused properties, then rank their rates.
+    for (const category of orderedCategories) {
+      const categoryCandidates = options
+        .filter((option) => this.categoryNumber(option.hotel) === category)
+        .sort((a, b) => a.priceCents - b.priceCents || a.optionKey.localeCompare(b.optionKey));
+      if (categoryCandidates.length === 0) continue;
+
+      const unusedCandidates = categoryCandidates.filter(
+        (candidate) => !used.has(this.physicalIdentity(candidate.hotel)),
+      );
+      if (unusedCandidates.length === 0) continue;
+
+      const selected = this.rankCategoryCandidates(unusedCandidates, slot, categoryCandidates);
+      if (selected) return this.withCategoryMetadata(selected, slot, category);
+    }
+
+    // Pass 2: no unused usable property exists anywhere for this stay. Reuse
+    // is now allowed, using the same category/meal/target ordering.
+    for (const category of orderedCategories) {
+      const categoryCandidates = options
+        .filter((option) => this.categoryNumber(option.hotel) === category)
+        .sort((a, b) => a.priceCents - b.priceCents || a.optionKey.localeCompare(b.optionKey));
+      if (categoryCandidates.length === 0) continue;
+
+      const selected = this.rankCategoryCandidates(categoryCandidates, slot, categoryCandidates);
+      if (selected) return this.withCategoryMetadata(selected, slot, category);
+    }
+    return undefined;
+  }
+
+  private rankCategoryCandidates(candidates: StayOption[], slot: CategorySlot, allCategoryCandidates: StayOption[]): StayOption | undefined {
+    if (candidates.length === 0) return undefined;
+
+      // Meal-plan preference is evaluated inside the selected category. A
+      // cheaper CP rate must not beat a valid MAP rate in the same category.
+      // The multiplier is applied only after this meal-plan class is chosen.
+      const bestMealPlanRank = Math.min(...candidates.map((candidate) => candidate.mealPlanRank));
+      const mealCandidates = candidates.filter((candidate) => candidate.mealPlanRank === bestMealPlanRank);
+
+      const base = allCategoryCandidates
+        .filter((candidate) => candidate.mealPlanRank === bestMealPlanRank)
+        .sort((a, b) => a.priceCents - b.priceCents || a.optionKey.localeCompare(b.optionKey))[0]?.priceCents
+        ?? mealCandidates[0].priceCents;
+      const threshold = Math.ceil(base * slot.multiplier);
+      return mealCandidates.find((candidate) => candidate.priceCents >= threshold) ||
+        // The target is a preference, not a reason to reuse an already-used
+        // property or mark an otherwise usable unused property unavailable.
+        mealCandidates[0];
+  }
+
+  private withCategoryMetadata(selected: StayOption, slot: CategorySlot, category: number): StayOption {
+    const applied = category !== slot.category;
+    const fallbackReason = applied
+      ? `${category}* selected — ${slot.category}* not available`
+      : undefined;
+    return {
+      ...selected,
+      requestedCategory: slot.category,
+      selectedCategory: category,
+      categoryFallbackApplied: applied,
+      categoryFallbackReason: fallbackReason,
+      hotel: {
+        ...selected.hotel,
+        requestedCategory: slot.category,
+        selectedCategory: category,
+        categoryFallbackApplied: applied,
+        categoryFallbackReason: fallbackReason,
+        recommendationFallbackReason: fallbackReason || selected.hotel.recommendationFallbackReason,
+      },
+    };
   }
 
   private categorySlots(categories: number[]): CategorySlot[] {
@@ -337,11 +431,28 @@ export class HotelRecommendationPackageService {
   private packageWithG4Fallback(group4: RecommendationPackage, group3: RecommendationPackage): RecommendationPackage {
     const fallbackByStay = new Map(group3.stayResults.filter((result): result is RecommendationStayResult & { hotel: RecommendationHotel; totalPrice?: number } => Boolean(result.hotel)).map((result) => [result.stayKey, result]));
     const stayResults = group4.stayResults.map((result) => result.state === 'UNAVAILABLE' && fallbackByStay.has(result.stayKey)
-      ? { ...result, state: 'SELECTED' as const, hotel: fallbackByStay.get(result.stayKey)!.hotel, totalPrice: fallbackByStay.get(result.stayKey)!.totalPrice, reason: undefined }
+      ? {
+        ...result,
+        state: 'SELECTED' as const,
+        hotel: this.cloneRecommendationHotel(fallbackByStay.get(result.stayKey)!.hotel),
+        totalPrice: fallbackByStay.get(result.stayKey)!.totalPrice,
+        reason: undefined,
+      }
       : result);
     const hotels = stayResults.flatMap((result) => 'hotel' in result && result.hotel ? [result.hotel] : []);
     const total = this.money(stayResults.reduce((sum, result) => sum + Number('totalPrice' in result ? result.totalPrice || 0 : 0), 0));
     return { ...group4, hotels, stayResults, partialTotal: total, totalPrice: stayResults.every((result) => result.state !== 'UNAVAILABLE') ? total : null, complete: stayResults.every((result) => result.state !== 'UNAVAILABLE'), fallbackReasons: ['G4 fallback used only for stays without a genuine Group 4 option.'] };
+  }
+
+  private cloneRecommendationHotel(hotel: RecommendationHotel): RecommendationHotel {
+    const selectedPriceSnapshot = (hotel as any).selectedPriceSnapshot;
+    return {
+      ...hotel,
+      rateOptions: Array.isArray((hotel as any).rateOptions)
+        ? (hotel as any).rateOptions.map((option: any) => ({ ...option }))
+        : (hotel as any).rateOptions,
+      ...(selectedPriceSnapshot ? { selectedPriceSnapshot: { ...selectedPriceSnapshot } } : {}),
+    };
   }
 
   /**
@@ -493,6 +604,15 @@ export class HotelRecommendationPackageService {
     const offline: StayOption[] = [];
     const rejectedCandidates: Array<{ optionKey: string; reason: string }> = missingRoutes.map((routeId) => ({ optionKey: `route:${routeId}`, reason: 'No availability snapshot for route.' }));
     const seen = new Set<string>();
+    const permittedPlans = this.mealPlanPolicy.resolve({
+      destination: stay.destination,
+      itineraryMealPlan: meal,
+    }).permittedPlans;
+    const mealRank = (option: StayOption): number => {
+      const code = this.exactMealPlan(option.hotel);
+      const index = permittedPlans.indexOf(code as any);
+      return index >= 0 ? index : permittedPlans.length;
+    };
 
     for (const routeId of stay.routeIds) {
       const routeHotels = input.hotelsByRoute.get(routeId);
@@ -522,23 +642,20 @@ export class HotelRecommendationPackageService {
           priceCents: this.toCents(hotel.exactFullStayTotal),
           optionKey,
           fallback,
+          mealPlanRank: 0,
           rejectedCandidates,
         };
+        option.mealPlanRank = mealRank(option);
         (fallback ? offline : live).push(option);
       }
       }
     }
 
-    const permittedPlans = this.mealPlanPolicy.resolve({
-      destination: stay.destination,
-      itineraryMealPlan: meal,
-    }).permittedPlans;
-    const mealRank = (option: StayOption): number => {
-      const code = this.exactMealPlan(option.hotel);
-      const index = permittedPlans.indexOf(code as any);
-      return index >= 0 ? index : permittedPlans.length;
-    };
-    const selected = (live.length > 0 ? live : offline).sort((a, b) =>
+    // Provider availability is not a category preference. Keep live and
+    // offline/local offers in one comparable pool so category fallback is
+    // evaluated across all providers. A live 4* must not displace a usable
+    // offline 2* when the requested category is 3*.
+    const selected = [...live, ...offline].sort((a, b) =>
       mealRank(a) - mealRank(b) ||
       a.priceCents - b.priceCents ||
       a.optionKey.localeCompare(b.optionKey),
@@ -660,7 +777,7 @@ export class HotelRecommendationPackageService {
 
     if (categories.size > 0) {
       const category = this.categoryNumber(candidate);
-      if (!category || !categories.has(category)) return { ok: false, reason: `Category ${this.normalizedCategory(candidate)} is not in the requested category set.` };
+      if (!category) return { ok: false, reason: `Category ${this.normalizedCategory(candidate)} is not a supported star category.` };
     }
 
     const distance = this.normalizeDistance(candidate);
@@ -720,6 +837,10 @@ export class HotelRecommendationPackageService {
       normalizedCategory: category,
       recommendationFallbackReason: fallback ? 'LIVE inventory unavailable; offline approval required' : undefined,
       rateOptionId: candidate.rateOptionId || optionKey,
+      requestedCategory: (candidate as any).requestedCategory,
+      selectedCategory: (candidate as any).selectedCategory || this.categoryNumber(candidate) || undefined,
+      categoryFallbackApplied: (candidate as any).categoryFallbackApplied,
+      categoryFallbackReason: (candidate as any).categoryFallbackReason,
       requiresHotelApproval: fallback || candidate.requiresHotelApproval,
       isLiveBookable: fallback ? false : candidate.isLiveBookable !== false,
       isSelectable: candidate.isSelectable !== false,
