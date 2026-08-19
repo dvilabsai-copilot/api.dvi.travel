@@ -1637,6 +1637,39 @@ test('meal-plan blocker is absent when an exact MAP option is priced', () => {
   assert.equal(rows[0].autoSelectionBlocked, undefined);
 });
 
+test('authoritative recommendation scope falls back to complete CP inventory when MAP is unavailable', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const authoritativeEp = {
+    provider: 'tbo',
+    hotelId: 24188,
+    hotelCode: 'TBO-24188',
+    roomId: 'ep-room',
+    rateOptionId: 'ep-rate',
+    roomType: 'Standard Room',
+    mealPlan: 'EP',
+    totalHotelCost: 2200,
+  };
+  const completeCp = {
+    provider: 'tbo',
+    hotelId: 24188,
+    hotelCode: 'TBO-24188',
+    roomId: 'cp-room',
+    rateOptionId: 'cp-rate',
+    roomType: 'Standard Room',
+    mealPlan: 'CP',
+    totalHotelCost: 2400,
+  };
+
+  const pool = (service as any).getEffectiveAutoSelectionPool(
+    [authoritativeEp, completeCp],
+    'MAP',
+    undefined,
+    [authoritativeEp],
+  );
+
+  assert.deepEqual(pool, [completeCp]);
+});
+
 test('refresh replaces an incompatible AUTO_SELECTED rate with the permitted CP fallback', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections, rooms } = makeReconciliationTx();
