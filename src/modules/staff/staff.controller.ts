@@ -62,16 +62,40 @@ export class StaffController {
     });
   }
 
- // STATIC ROUTE MUST COME BEFORE :id
-  @Get('roles')
-  async listRoleOptions() {
-    return this.staffService.listRoleOptions();
+  // STATIC ROUTE MUST COME BEFORE :id 
+  @Get('roles') 
+  async listRoleOptions() { 
+    return this.staffService.listRoleOptions(); 
   }
 
- // GET ONE
-  @Get(':id')
-  async getOne(@Param('id', new ParseIntPipe()) id: number) {
-    return this.staffService.getOne(id);
+  @UseGuards(JwtAuthGuard)
+  @Get('check-duplicate')
+  async checkDuplicate(
+    @Req() req: any,
+    @Query('email') email?: string,
+    @Query('mobile') mobile?: string,
+    @Query('ignoreStaffId') ignoreStaffId?: string,
+  ) {
+    const user = req.user;
+
+    let finalAgentId = 0;
+
+    if (user.role === 4) {
+      finalAgentId = Number(user.agentId);
+    }
+
+    return this.staffService.checkDuplicate(
+      finalAgentId,
+      email?.trim(),
+      mobile?.trim(),
+      ignoreStaffId ? Number(ignoreStaffId) : undefined,
+    );
+  }
+ 
+ // GET ONE 
+  @Get(':id') 
+  async getOne(@Param('id', new ParseIntPipe()) id: number) { 
+    return this.staffService.getOne(id); 
   }
 
  // PREVIEW (if you have it; still after :id static roles)
