@@ -3754,7 +3754,16 @@ export class HotelAvailabilitySnapshotService {
       ? authoritativeOptions
       : [];
     if (scopedOptions.length === 0) {
-      if (authoritativeGroup) return [];
+      if (authoritativeGroup && String(preferredMealPlanCode || '').trim().toUpperCase() !== 'MAP') return [];
+      if (authoritativeGroup && String(preferredMealPlanCode || '').trim().toUpperCase() === 'MAP') {
+        const completeMapFallback = this.getAutoSelectionPool(
+          allOptions,
+          preferredMealPlanCode,
+          preferredMealPlanFlags,
+        );
+        if (completeMapFallback.length > 0) return completeMapFallback;
+        return [];
+      }
       return this.getAutoSelectionPool(allOptions, preferredMealPlanCode, preferredMealPlanFlags);
     }
 

@@ -1670,6 +1670,30 @@ test('authoritative recommendation scope falls back to complete CP inventory whe
   assert.deepEqual(pool, [completeCp]);
 });
 
+test('empty authoritative MAP scope uses complete CP inventory when available', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const completeCp = {
+    provider: 'tbo',
+    hotelId: 24188,
+    hotelCode: 'TBO-24188',
+    roomId: 'cp-room',
+    rateOptionId: 'cp-rate',
+    roomType: 'Standard Room',
+    mealPlan: 'CP',
+    totalHotelCost: 2400,
+  };
+
+  const pool = (service as any).getEffectiveAutoSelectionPool(
+    [completeCp],
+    'MAP',
+    undefined,
+    [],
+    true,
+  );
+
+  assert.deepEqual(pool, [completeCp]);
+});
+
 test('refresh replaces an incompatible AUTO_SELECTED rate with the permitted CP fallback', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections, rooms } = makeReconciliationTx();
