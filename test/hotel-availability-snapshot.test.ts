@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HotelAvailabilitySnapshotService } from '../src/modules/itineraries/services/hotel-availability-snapshot.service';
-import { hotelOptionKey, selectionOriginFromRow } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
+import { hotelOptionKey, hotelSelectionKeyFromRow, selectionOriginFromRow } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
 
 function makePrisma() {
   const persistedRow = {
@@ -88,6 +88,21 @@ test('client hotel payload strips recommendation internals and shared inventory 
   assert.equal(Object.prototype.hasOwnProperty.call(clientRow, 'autoSelectionIdentity'), false);
 });
 
+test('reset keeps authoritative group rows separate from shared inventory rows', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const rows = (service as any).extractAuthoritativeRecommendationRows({
+    hotels: [
+      { groupType: 0, hotelCode: 'shared' },
+      { groupType: 1, hotelCode: 'g1', authoritativeRecommendation: true },
+      { groupType: 2, hotelCode: 'g2', autoSelectionCandidate: true },
+      { groupType: 3, hotelCode: 'g3', authoritativeRecommendation: false },
+      { groupType: 4, hotelCode: 'g4', authoritativeRecommendation: true },
+    ],
+  });
+
+  assert.deepEqual(rows.map((row: any) => row.hotelCode), ['g1', 'g2', 'g4']);
+});
+
 test('client hotel payload keeps every rate option but removes unused supplier fields', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const clientRow = (service as any).toClientHotelRow({
@@ -111,6 +126,23 @@ test('client hotel payload keeps every rate option but removes unused supplier f
   assert.equal(clientRow.rateOptions[0].bookingCode, 'BOOK-1');
   assert.equal(Object.prototype.hasOwnProperty.call(clientRow.rateOptions[0], 'supplierRawResponse'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(clientRow.rateOptions[0], 'roomAvailabilityBreakdown'), false);
+});
+
+test('canonicalizes raw and normalized HOBSE copies into one rate and one room identity', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const reference = JSON.stringify({ provider: 'HOBSE', roomCode: 'supplier-room-1', ratePlanCode: 'ep-1' });
+  const options = (service as any).canonicalizeRateOptions(
+    { provider: 'HOBSE', hotelCode: 'fe1d1c893b009365', roomType: 'Superior Room', mealPlan: 'European Plan' },
+    [
+      { provider: 'HOBSE', searchReference: reference, roomType: 'Superior Room', mealPlan: 'European Plan', baseTotalPrice: 4020, totalPrice: 4422 },
+      { provider: 'hobse', rateOptionId: reference, bookingCode: reference, searchReference: reference, roomTypeId: 'wrong-normalized-id', roomType: 'Superior Room', mealPlan: 'European Plan', baseTotalPrice: 4422, totalPrice: 4864.2 },
+    ],
+  );
+  assert.equal(options.length, 1);
+  assert.equal(options[0].baseTotalPrice, 4020);
+  assert.equal(options[0].totalPrice, 4422);
+  assert.equal(options[0].roomTypeId, 'supplier-room-1');
+  assert.equal(options[0].roomCode, 'supplier-room-1');
 });
 
 test('client recommendation tabs never carry nested hotel inventories', () => {
@@ -404,6 +436,105 @@ test('offline materialization creates rows for valid recommendation groups only'
     (service as any).dedupeRows(rows).map((row: any) => row.groupType),
     [1, 2, 3, 4],
   );
+});
+
+test('authoritative recommendation metadata wins when generic and authoritative rows dedupe', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const rows = (service as any).dedupeRows([
+    {
+      itineraryRouteId: 10,
+      groupType: 1,
+      canonicalHotelId: 101,
+      hotelCode: 'JEEVAN',
+      hotelName: 'JEEVAN BEACH RESORT',
+      provider: 'offline',
+      rateOptionId: 'CP_PLAN',
+      optionKey: 'offline|JEEVAN|CP_PLAN',
+      price: 2530,
+    },
+    {
+      itineraryRouteId: 10,
+      groupType: 1,
+      canonicalHotelId: 101,
+      hotelCode: 'JEEVAN',
+      hotelName: 'JEEVAN BEACH RESORT',
+      provider: 'offline',
+      rateOptionId: 'CP_PLAN',
+      optionKey: 'offline|JEEVAN|CP_PLAN',
+      price: 2530,
+      authoritativeRecommendation: true,
+      autoSelectionCandidate: true,
+      requestedCategory: 3,
+      selectedCategory: 2,
+      categoryFallbackApplied: true,
+      categoryFallbackReason: '2* selected — 3* not available',
+      selectedPriceSnapshot: JSON.stringify({ rateOptionId: 'CP_PLAN' }),
+    },
+  ]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].requestedCategory, 3);
+  assert.equal(rows[0].selectedCategory, 2);
+  assert.equal(rows[0].categoryFallbackApplied, true);
+  assert.equal(rows[0].categoryFallbackReason, '2* selected — 3* not available');
+});
+
+test('decorated nested MAP selection replaces parent CP identity and money atomically', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const date = '2026-08-25';
+  const row: any = {
+    itineraryRouteId: 10,
+    groupType: 1,
+    itineraryRouteDate: date,
+    provider: 'axisrooms',
+    canonicalHotelId: 101,
+    hotelCode: 'HAVELI',
+    hotelName: 'HAVELI BACKWATER RESORT',
+    roomId: 'ROOM-1',
+    rateId: 'CP-RATE',
+    rateOptionId: 'CP_PLAN',
+    optionKey: 'axisrooms|HAVELI|CP_PLAN',
+    mealPlan: 'CP',
+    price: 3424,
+    pricePerNight: 3424,
+    totalPrice: 3424,
+    rateOptions: [
+      { provider: 'axisrooms', hotelCode: 'HAVELI', canonicalHotelId: 101, roomId: 'ROOM-1', rateId: 'CP-RATE', rateOptionId: 'CP_PLAN', bookingCode: 'CP-BOOK', mealPlan: 'CP', pricePerNight: 3424, totalPrice: 3424 },
+      { provider: 'axisrooms', hotelCode: 'HAVELI', canonicalHotelId: 101, roomId: 'ROOM-1', rateId: 'MAP-RATE', rateOptionId: 'MAP_PLAN', bookingCode: 'MAP-BOOK', searchReference: 'MAP-REF', mealPlan: 'MAP', pricePerNight: 4708, totalPrice: 4708 },
+    ],
+  };
+  const selection: any = {
+    itinerary_plan_hotel_details_ID: 99,
+    itinerary_plan_id: 44,
+    itinerary_route_id: 10,
+    group_type: 1,
+    itinerary_route_date: date,
+    hotel_provider: 'axisrooms',
+    hotel_id: 101,
+    hotel_code: 'HAVELI',
+    selected_rate_option_id: 'MAP_PLAN',
+    selected_price_per_night: 4708,
+    selected_total_price: 4708,
+    selected_price_snapshot: JSON.stringify({ rateOptionId: 'MAP_PLAN', mealPlan: 'MAP', optionKey: 'axisrooms|HAVELI|MAP_PLAN' }),
+  };
+  const decorated = (service as any).decorateSelection(
+    row,
+    new Map([[hotelSelectionKeyFromRow(44, row), selection]]),
+    44,
+  );
+
+  assert.equal(decorated.rateOptionId, 'MAP_PLAN');
+  assert.equal(decorated.selectedRateOptionId, 'MAP_PLAN');
+  assert.equal(decorated.mealPlan, 'MAP');
+  assert.equal(decorated.price, 4708);
+  assert.equal(decorated.pricePerNight, 4708);
+  assert.equal(decorated.totalPrice, 4708);
+  assert.equal(decorated.totalAmount, 4708);
+  assert.match(String(decorated.optionKey), /map_plan/i);
+  assert.doesNotMatch(String(decorated.optionKey), /cp_plan/i);
+  const snapshot = JSON.parse(decorated.selectedPriceSnapshot);
+  assert.equal(snapshot.rateOptionId, 'MAP_PLAN');
+  assert.match(String(snapshot.optionKey), /map_plan/i);
 });
 
 test('fresh recommendation groups are preserved when reset has no persisted selections', async () => {
@@ -1820,7 +1951,7 @@ test('live reconciliation falls back to offline inventory only when live is abse
   assert.equal(createdSelections[0].hotel_provider, 'offline');
 });
 
-test('live inventory wins over offline fallback for the same stay/group', async () => {
+test('replacement compares live and offline providers by current valid price', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -1862,7 +1993,7 @@ test('live inventory wins over offline fallback for the same stay/group', async 
   }], 'live-run-with-offline', 7);
 
   assert.equal(createdSelections.length, 1);
-  assert.equal(createdSelections[0].hotel_provider, 'staah');
+  assert.equal(createdSelections[0].hotel_provider, 'offline');
 });
 
 test('a live rate with the wrong meal plan does not block a matching offline auto-selection', async () => {

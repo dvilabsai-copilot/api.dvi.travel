@@ -186,6 +186,20 @@ export function getHotelAvailabilityResetReason(result: {
   return null;
 }
 
+export function shouldRebuildHotelData(result: {
+  routeChanged?: boolean;
+  roomCountChanged?: boolean;
+  mealPlanChanged?: boolean;
+  hotelCategoryChanged?: boolean;
+} | null | undefined): boolean {
+  return Boolean(
+    result?.routeChanged ||
+    result?.roomCountChanged ||
+    result?.mealPlanChanged ||
+    result?.hotelCategoryChanged,
+  );
+}
+
 @Injectable()
 export class ItineraryPlanPersistenceService {
   private optimizeRouteOrderFn: ((routes: any[]) => Promise<any[]>) | null = null;
@@ -505,6 +519,15 @@ export class ItineraryPlanPersistenceService {
       roomCountChanged = isPlanUpdate && hasItineraryRoomCountChanged(previousRoutePlan, dto.travellers);
       hotelCategoryChanged = isPlanUpdate && hasItineraryHotelCategoryChanged(previousRoutePlan, dto.plan);
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
+      // Hotel selections are derived from these plan-level preferences. Keep
+      // route rows/hotspots intact for a preference-only edit, but rebuild the
+      // hotel rows so stale category/meal/room selections cannot survive.
+      const shouldRebuildHotelRows = shouldRebuildHotelData({
+        routeChanged: shouldRebuildRouteData,
+        hotelCategoryChanged,
+        mealPlanChanged,
+        roomCountChanged,
+      });
 
       if (routeChanged) {
         console.log('[HOTEL_ROUTE_CHANGE_RESET_REQUIRED]', {
@@ -708,7 +731,7 @@ export class ItineraryPlanPersistenceService {
       });
  console.log('[PERF] rebuildTravellers:', Date.now() - opStart2, 'ms');
 
-      if (shouldRebuildRouteData && (
+      if (shouldRebuildHotelRows && (
         dto.plan.itinerary_preference === 1 ||
         dto.plan.itinerary_preference === 3
       )) {

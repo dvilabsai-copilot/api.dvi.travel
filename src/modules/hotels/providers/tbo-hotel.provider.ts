@@ -422,6 +422,15 @@ export class TBOHotelProvider implements IHotelProvider {
             roomTypes: [roomTypeObj],
  // Use REAL BookingCode from TBO as searchReference
             searchReference: realBookingCode,
+            // TBO search returned a real BookingCode and positive fare. Treat
+            // that normalized rate as live/selectable; leaving these fields
+            // undefined makes the recommendation engine reject it as an
+            // unverifiable live rate before selection.
+            isLiveRate: true,
+            isLiveBookable: Boolean(realBookingCode && formattedTotalFare > 0),
+            isBookable: Boolean(realBookingCode && formattedTotalFare > 0),
+            isSelectable: Boolean(realBookingCode && formattedTotalFare > 0),
+            availabilityStatus: realBookingCode && formattedTotalFare > 0 ? 'LIVE_AVAILABLE' : 'NO_AVAILABILITY',
             expiresAt: expiresAt,
  // Add hotel-level supplement summary
             supplementSummary: {
