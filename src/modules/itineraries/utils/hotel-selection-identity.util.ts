@@ -511,5 +511,9 @@ export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
     searchReference: row?.searchReference ?? row?.search_reference ?? null,
     searchRunId: row?.searchRunId ?? null,
     availabilityStatus: row?.availabilityStatus ?? null,
+    requestedCategory: Number(row?.requestedCategory ?? row?.requested_category ?? 0) || null,
+    selectedCategory: Number(row?.selectedCategory ?? row?.selected_category ?? row?.category ?? 0) || null,
+    categoryFallbackApplied: row?.categoryFallbackApplied ?? row?.category_fallback_applied ?? false,
+    categoryFallbackReason: row?.categoryFallbackReason ?? row?.category_fallback_reason ?? null,
   };
 }

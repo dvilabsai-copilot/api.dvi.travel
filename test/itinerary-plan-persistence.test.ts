@@ -9,6 +9,7 @@ import {
   ItineraryPlanPersistenceService,
   resolveItineraryMealPlanCode,
   resolveItineraryRoomCount,
+  shouldRebuildHotelData,
 } from '../src/modules/itineraries/services/itinerary-plan-persistence.service';
 
 function createService() {
@@ -175,6 +176,13 @@ test('hotel reset reason triggers for meal-plan-only edits and preserves route p
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: true, roomCountChanged: true }), 'ROUTE_CHANGED');
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, mealPlanChanged: false }), null);
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, hotelCategoryChanged: true }), 'HOTEL_CATEGORY_CHANGED');
+});
+
+test('hotel rows rebuild when category changes without a route change', () => {
+  assert.equal(shouldRebuildHotelData({ routeChanged: false, hotelCategoryChanged: true }), true);
+  assert.equal(shouldRebuildHotelData({ routeChanged: false, mealPlanChanged: true }), true);
+  assert.equal(shouldRebuildHotelData({ routeChanged: false, roomCountChanged: true }), true);
+  assert.equal(shouldRebuildHotelData({ routeChanged: false }), false);
 });
 
 test('hotel category reset detection handles JSON and legacy comma-separated storage', () => {

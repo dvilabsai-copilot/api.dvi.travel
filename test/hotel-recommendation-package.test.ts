@@ -179,8 +179,8 @@ test('returns partial alternatives for available stays while preserving the unav
   });
 
   assert.equal(packages.length, 4);
-  assert.deepEqual(packages.slice(0, 2).flatMap((pkg) => pkg.hotels.map((hotel) => hotel.hotelName)), ['Munnar A']);
-  assert.ok(packages.slice(2).every((pkg) => pkg.hotels.length === 0));
+  assert.deepEqual(packages.slice(0, 2).flatMap((pkg) => pkg.hotels.map((hotel) => hotel.hotelName)), ['Munnar A', 'Munnar B']);
+  assert.deepEqual(packages.slice(2).flatMap((pkg) => pkg.hotels.map((hotel) => hotel.hotelName)), ['Munnar A', 'Munnar A']);
   assert.ok(packages.slice(0, 2).filter((pkg) => pkg.hotels.length > 0).every((pkg) => pkg.totalPrice === null && pkg.partialTotal > 0));
   assert.ok(packages.slice(0, 2).every((pkg) => pkg.stayResults[1].state === 'UNAVAILABLE'));
 });
@@ -322,7 +322,7 @@ test('houseboat policy requires AP', () => {
   assert.equal(packages[0].hotels[0].hotelName, 'Houseboat AP');
 });
 
-test('recommendations use category thresholds and leave sold-out G4 empty', () => {
+test('recommendations use target prices but exhaust unused properties before reuse', () => {
   const packages = service().generate({
     routes: oneRoute(),
     hotelsByRoute: new Map([[1, [option('A', 100), option('B', 110), option('C', 120), option('D', 130)]]]),
@@ -331,8 +331,8 @@ test('recommendations use category thresholds and leave sold-out G4 empty', () =
   assert.equal(packages.length, 4);
   assert.equal(packages[0].totalPrice, 100);
   assert.equal(packages[1].targetPrice, null);
-  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 120, null, null]);
-  assert.deepEqual(packages[3].hotels, []);
+  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 120, 110, 130]);
+  assert.equal(packages[3].hotels[0].hotelName, 'D');
 });
 
 test('maps category master labels and codes to logical star buckets', () => {
@@ -342,7 +342,7 @@ test('maps category master labels and codes to logical star buckets', () => {
   assert.equal(mapHotelCategoryLabelToStar('hotel_category_5_star'), 5);
 });
 
-test('does not reuse a physical hotel across recommendation groups when rates differ', () => {
+test('reuses a valid physical hotel when no distinct property remains', () => {
   const packages = service().generate({
     routes: oneRoute(),
     hotelsByRoute: new Map([[1, [
@@ -353,10 +353,87 @@ test('does not reuse a physical hotel across recommendation groups when rates di
     preferredMealPlanCode: 'CP',
   });
 
-  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 200, null, null]);
+  assert.deepEqual(packages.map((pkg) => pkg.totalPrice), [100, 200, 200, 200]);
   assert.equal(packages[0].hotels[0].hotelName, 'Same Hotel');
   assert.equal(packages[1].hotels[0].hotelName, 'Different Hotel');
-  assert.deepEqual(packages[2].hotels, []);
+  assert.equal(packages[2].hotels[0].hotelName, 'Different Hotel');
+  assert.equal(packages[3].hotels[0].hotelName, 'Different Hotel');
+});
+
+test('distinct-property pass prefers another target-category property before meal fallback', () => {
+  const packages = service().generate({
+    routes: oneRoute('Munnar'),
+    hotelsByRoute: new Map([[1, [
+      option('Hotel A', 100, 'MAP', { category: '3-star', canonicalHotelId: 301 }),
+      option('Hotel B', 110, 'CP', { category: '3-star', canonicalHotelId: 302 }),
+      option('Hotel C', 120, 'MAP', { category: '2-star', canonicalHotelId: 303 }),
+      option('Hotel D', 130, 'MAP', { category: '4-star', canonicalHotelId: 304 }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'MAP',
+  });
+
+  assert.deepEqual(packages.map((pkg) => pkg.hotels[0]?.hotelName), ['Hotel A', 'Hotel B', 'Hotel C', 'Hotel D']);
+  assert.deepEqual(packages.map((pkg) => pkg.hotels[0]?.selectedCategory), [3, 3, 2, 4]);
+});
+
+test('distinct-property pass chooses lower category before reusing the target property', () => {
+  const packages = service().generate({
+    routes: oneRoute('Munnar'),
+    hotelsByRoute: new Map([[1, [
+      option('Hotel A', 100, 'MAP', { category: '3-star', canonicalHotelId: 401 }),
+      option('Hotel B', 120, 'CP', { category: '2-star', canonicalHotelId: 402 }),
+      option('Hotel C', 130, 'MAP', { category: '4-star', canonicalHotelId: 403 }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'MAP',
+  });
+
+  assert.deepEqual(packages.slice(0, 3).map((pkg) => pkg.hotels[0]?.hotelName), ['Hotel A', 'Hotel B', 'Hotel C']);
+  assert.equal(packages[1].hotels[0]?.categoryFallbackApplied, true);
+});
+
+test('reuse is allowed only after every physical property is exhausted', () => {
+  const packages = service().generate({
+    routes: oneRoute('Munnar'),
+    hotelsByRoute: new Map([[1, [option('Only Hotel', 100, 'MAP', { category: '3-star', canonicalHotelId: 501 })] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'MAP',
+  });
+
+  assert.deepEqual(packages.map((pkg) => pkg.hotels[0]?.hotelName), ['Only Hotel', 'Only Hotel', 'Only Hotel', 'Only Hotel']);
+});
+
+test('provider variants with one canonical hotel count as one physical property', () => {
+  const packages = service().generate({
+    routes: oneRoute('Munnar'),
+    hotelsByRoute: new Map([[1, [
+      option('Canonical Hotel', 100, 'MAP', { provider: 'axisrooms', canonicalHotelId: 601 }),
+      option('Canonical Hotel', 105, 'MAP', { provider: 'offline', canonicalHotelId: 601 }),
+      option('Other Hotel', 110, 'MAP', { provider: 'tbo', canonicalHotelId: 602 }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'MAP',
+  });
+
+  assert.equal(packages[0].hotels[0]?.canonicalHotelId, 601);
+  assert.equal(packages[1].hotels[0]?.canonicalHotelId, 602);
+  assert.equal(packages[2].hotels[0]?.canonicalHotelId, 601);
+});
+
+test('an unused candidate is chosen when the target multiplier cannot be met', () => {
+  const packages = service().generate({
+    routes: oneRoute('Munnar'),
+    hotelsByRoute: new Map([[1, [
+      option('Hotel A', 100, 'CP', { category: '3-star', canonicalHotelId: 701 }),
+      option('Hotel B', 110, 'CP', { category: '3-star', canonicalHotelId: 702 }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].hotels[0]?.hotelName, 'Hotel A');
+  assert.equal(packages[1].hotels[0]?.hotelName, 'Hotel B');
 });
 
 test('beam search finds the closest distinct real target package without DFS first-N truncation', () => {
@@ -390,7 +467,7 @@ test('shuffled source input produces deterministic recommendations', () => {
   assert.equal(first[0].totalPrice, second[0].totalPrice);
 });
 
-test('allocates one selected category with minimum thresholds and sold-out G4', () => {
+test('allocates one selected category with minimum thresholds and distinct properties', () => {
   const hotels = [100, 120, 140, 160].map((price) => option(`A-${price}`, price, 'CP', { category: '5-star' }));
   const packages = service().generate({ routes: oneRoute(), hotelsByRoute: new Map([[1, hotels as any]]), preferredCategories: [5] });
   assert.deepEqual(packages.map((pkg) => pkg.hotels[0]?.price), [100, 120, 140, 160]);
@@ -414,6 +491,89 @@ test('allocates three categories as A/B/B/C and four categories one per group', 
   assert.deepEqual(fourPackages.map((pkg) => pkg.hotels[0]?.category), ['2-star', '3-star', '4-star', '5-star']);
 });
 
+test('falls back from requested 3-star to lower 2-star before higher 4-star', () => {
+  const packages = service().generate({
+    routes: oneRoute('Kovalam'),
+    hotelsByRoute: new Map([[1, [
+      option('Jeevan Beach Resort', 2530, 'CP', { category: '2-star' }),
+      option('Higher Category Resort', 2600, 'CP', { category: '4-star' }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+  assert.equal(packages[0].hotels[0].hotelName, 'Jeevan Beach Resort');
+  assert.equal(packages[0].hotels[0].selectedCategory, 2);
+  assert.equal(packages[0].hotels[0].requestedCategory, 3);
+  assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
+  assert.equal(packages[0].hotels[0].categoryFallbackReason, '2* selected — 3* not available');
+});
+
+test('category fallback compares live and offline providers in one pool', () => {
+  const packages = service().generate({
+    routes: oneRoute('Kovalam'),
+    hotelsByRoute: new Map([[1, [
+      option('Live 4 Star', 4000, 'CP', { provider: 'tbo', category: '4-star' }),
+      option('Offline 2 Star', 2500, 'CP', {
+        provider: 'offline',
+        category: '2-star',
+        bookingMode: 'MANUAL_APPROVAL',
+        requiresHotelApproval: true,
+        isBookable: false,
+        isLiveBookable: false,
+      }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].hotels[0].hotelName, 'Offline 2 Star');
+  assert.equal(packages[0].hotels[0].provider, 'offline');
+  assert.equal(packages[0].hotels[0].selectedCategory, 2);
+  assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
+});
+
+test('valid local 3-star beats a live higher-category offer', () => {
+  const packages = service().generate({
+    routes: oneRoute('Kovalam'),
+    hotelsByRoute: new Map([[1, [
+      option('Live 4 Star', 4000, 'CP', { provider: 'tbo', category: '4-star' }),
+      option('Offline 3 Star', 5000, 'CP', {
+        provider: 'offline',
+        category: '3-star',
+        bookingMode: 'MANUAL_APPROVAL',
+        requiresHotelApproval: true,
+        isBookable: false,
+        isLiveBookable: false,
+      }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].hotels[0].hotelName, 'Offline 3 Star');
+  assert.equal(packages[0].hotels[0].selectedCategory, 3);
+  assert.equal(packages[0].hotels[0].categoryFallbackApplied, false);
+});
+
+test('fallback selects the only usable lower-category hotel even when its multiplier is not met', () => {
+  const packages = service().generate({
+    routes: oneRoute('Kovalam'),
+    hotelsByRoute: new Map([[1, [option('Only Offline Hotel', 100, 'CP', {
+      provider: 'offline',
+      category: '2-star',
+      bookingMode: 'MANUAL_APPROVAL',
+      requiresHotelApproval: true,
+      isBookable: false,
+      isLiveBookable: false,
+    })] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+  assert.equal(packages[3].stayResults[0].state, 'OFFLINE_FALLBACK');
+  assert.equal(packages[3].hotels[0].hotelName, 'Only Offline Hotel');
+  assert.equal(packages[3].hotels[0].selectedCategory, 2);
+});
+
 test('falls back to G3 only for missing G4 stays when another stay has genuine G4', () => {
   const routesForTwoStays = [
     { itinerary_route_ID: 1, itinerary_route_date: '2026-08-02', next_visiting_location: 'A' },
@@ -430,4 +590,69 @@ test('falls back to G3 only for missing G4 stays when another stay has genuine G
   assert.equal(packages[3].stayResults.find((stay) => stay.destination === 'A')?.state, 'SELECTED');
   assert.equal(packages[3].stayResults.find((stay) => stay.destination === 'B')?.state, 'SELECTED');
   assert.equal(packages[3].stayResults.find((stay) => stay.destination === 'B')?.hotel?.hotelName, 'B4');
+});
+
+test('requested MAP wins over a cheaper CP rate within the same category', () => {
+  const packages = service().generate({
+    routes: oneRoute(),
+    hotelsByRoute: new Map([[1, [
+      option('MAP Hotel', 6500, 'Modified American Plan'),
+      option('CP Hotel', 5000, 'Continental Plan'),
+    ]]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'MAP',
+  });
+
+  assert.equal(packages[0].hotels[0].mealPlan, 'Modified American Plan');
+  assert.equal(packages[0].hotels[0].totalStayPrice, 6500);
+  assert.equal(packages[0].hotels[0].requestedCategory, 3);
+  assert.equal(packages[0].hotels[0].selectedCategory, 3);
+  assert.equal(packages[0].hotels[0].categoryFallbackApplied, false);
+});
+
+test('price multipliers are applied after choosing the MAP candidate population', () => {
+  const packages = service().generate({
+    routes: oneRoute(),
+    hotelsByRoute: new Map([[1, [
+      option('MAP Base', 6500, 'MAP'),
+      option('MAP Premium', 8000, 'MAP'),
+      option('Cheap CP', 5000, 'CP'),
+    ]]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'MAP',
+  });
+
+  assert.equal(packages[0].stayResults[0].hotel?.mealPlan, 'MAP');
+  assert.equal(packages[1].stayResults[0].hotel?.mealPlan, 'MAP');
+  assert.equal(packages[1].stayResults[0].totalPrice, 8000);
+  assert.equal(packages[1].stayResults[0].hotel?.hotelName, 'MAP Premium');
+});
+
+test('category preference remains stronger than meal-plan preference', () => {
+  const packages = service().generate({
+    routes: oneRoute(),
+    hotelsByRoute: new Map([[1, [
+      option('Three Star CP', 5000, 'CP', { category: '3-star' }),
+      option('Two Star MAP', 4000, 'MAP', { category: '2-star' }),
+    ]]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'MAP',
+  });
+
+  assert.equal(packages[0].stayResults[0].hotel?.hotelName, 'Three Star CP');
+  assert.equal(packages[0].stayResults[0].hotel?.mealPlan, 'CP');
+  assert.equal(packages[0].stayResults[0].hotel?.selectedCategory, 3);
+  assert.equal(packages[0].stayResults[0].hotel?.categoryFallbackApplied, false);
+});
+
+test('a single valid MAP rate remains selectable for every group', () => {
+  const packages = service().generate({
+    routes: oneRoute(),
+    hotelsByRoute: new Map([[1, [option('Only MAP Hotel', 6500, 'MAP')]]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'MAP',
+  });
+
+  assert.ok(packages.slice(0, 4).every((pkg) => pkg.stayResults[0].state !== 'UNAVAILABLE'));
+  assert.ok(packages.slice(0, 4).every((pkg) => pkg.stayResults[0].hotel?.mealPlan === 'MAP'));
 });
