@@ -1317,6 +1317,11 @@ export class HotelAvailabilitySnapshotService {
         ? storageRows
         : [this.buildEmptySnapshotRow(plan, quoteId, searchRunId, checkedAt)];
       const persistenceStartedAt = Date.now();
+      // Reset persists the complete supplier/offline snapshot and reconciles
+      // selections in the same transaction.  A multi-stay itinerary can
+      // legitimately exceed Prisma's 5s interactive-transaction default
+      // while inserting the detail rows; allowing the default to expire
+      // leaves the cache empty and the UI reports "No hotel groups available".
       const changeSummary = await this.prisma.$transaction(async (tx) => {
         const txCache = (tx as any).dvi_itinerary_hotel_search_cache;
         if (resetSelections) {
@@ -1384,7 +1389,7 @@ export class HotelAvailabilitySnapshotService {
           this.getPlanMealPlanCode(plan),
           this.getPlanMealPlanFlags(plan),
         );
-      });
+      }, { maxWait: 15000, timeout: 120000 });
       logStage('snapshot-persistence-and-selection-reconciliation', persistenceStartedAt);
 
       const readStartedAt = Date.now();
