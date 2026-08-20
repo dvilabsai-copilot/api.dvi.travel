@@ -17,7 +17,7 @@ function prismaFor(preference: number) {
       const sql = strings.join('?');
       if (sql.includes('GROUP BY group_type')) return preference === 1 || preference === 3 ? [{ group_type: 1 }] : [];
       if (sql.includes('FROM dvi_itinerary_plan_hotel_details h')) return [{
-        itinerary_plan_hotel_details_ID: 1, itinerary_route_date: new Date('2026-08-01'), itinerary_route_location: 'Agra', hotel_name: null, selected_price_snapshot: JSON.stringify({ hotelName: 'Saved Hotel List Name' }), room_type_title: 'Deluxe',
+        itinerary_plan_hotel_details_ID: 1, itinerary_route_date: new Date('2026-08-01'), itinerary_route_location: 'Agra', hotel_name: null, selected_price_snapshot: JSON.stringify({ hotelName: 'Saved Hotel List Name', roomTypeName: 'Deluxe from snapshot' }), room_type_title: null, room_title: null,
         total_no_of_rooms: 1, total_room_cost: 100, total_room_gst_amount: 18, total_hotel_meal_plan_cost: 20, total_hotel_meal_plan_cost_gst_amount: 3.6,
         total_extra_bed_cost: 0, total_extra_bed_cost_gst_amount: 1.8, room_extra_bed_rate: 10, total_childwith_bed_cost: 5, total_childwith_bed_cost_gst_amount: 0.9,
         total_childwithout_bed_cost: 4, total_childwithout_bed_cost_gst_amount: 0.72, hotel_margin_rate: 12, hotel_margin_rate_tax_amt: 2.16,
@@ -46,7 +46,7 @@ test('preference 1 writes PHP header and hotel totals/styles', async () => {
   assert.equal(result.fileName, 'ITINERARY-DVI202608336.xlsx'); assert.equal(sheet.getCell('A1').value, null);
   assert.equal(sheet.getCell('A2').value, 'Quote ID'); assert.equal(sheet.getCell('B2').value, 'DVI202608336');
   assert.equal(sheet.getCell('A6').value, 'Day'); assert.ok(Number(sheet.getCell('U7').value) > 0);
-  assert.equal(sheet.getCell('C7').value, 'Saved Hotel List Name');
+  assert.equal(sheet.getCell('C7').value, 'Saved Hotel List Name'); assert.equal(sheet.getCell('D7').value, 'Deluxe from snapshot');
   assert.equal(sheet.getCell('G7').value, 1); assert.equal(sheet.getCell('N7').value, 10);
   assert.equal(sheet.getCell('J7').numFmt, '0.00'); assert.equal(sheet.getCell('A5').fill.fgColor?.argb, 'FFFFA500');
   assert.ok(Object.keys((sheet as any)._merges).length > 0);
