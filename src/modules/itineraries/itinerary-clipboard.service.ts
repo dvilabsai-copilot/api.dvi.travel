@@ -255,6 +255,10 @@ export class ItineraryClipboardService {
   private buildHotelSection(args: {
     selectedGroupTypes: number[];
     hotels: any[];
+    hotelSelectionState?: any[];
+    hotelTabs?: any[];
+    sharedInventory?: any[];
+    routeMetadata?: any[];
     roomCount: number;
     showRates: boolean;
     noOfDays: number;
@@ -264,6 +268,10 @@ export class ItineraryClipboardService {
     const {
       selectedGroupTypes,
       hotels,
+      hotelSelectionState,
+      hotelTabs,
+      sharedInventory,
+      routeMetadata,
       roomCount,
       showRates,
       noOfDays,
@@ -273,11 +281,85 @@ export class ItineraryClipboardService {
 
     let groupSections = '';
     const totalColumns = showRates ? 6 : 5;
+    const destinationByRouteId = new Map<number, string>();
+    for (const row of [...hotels, ...(sharedInventory || [])]) {
+      const routeId = Number(row?.itineraryRouteId || 0);
+      const destination = String(row?.destination || '').trim();
+      if (routeId && destination && !destinationByRouteId.has(routeId)) {
+        destinationByRouteId.set(routeId, destination);
+      }
+    }
+    const routeById = new Map(
+      (routeMetadata || []).map((route: any) => [Number(route?.routeId), route] as const),
+    );
 
     for (const groupType of selectedGroupTypes) {
       const groupRows = hotels
         .filter((h) => Number(h.groupType) === groupType)
+        .map((row) => {
+          const routeId = Number(row?.itineraryRouteId || 0);
+          const route = routeById.get(routeId);
+          return {
+            ...row,
+            destination: String(row?.destination || '').trim()
+              || destinationByRouteId.get(routeId)
+              || '',
+            date: row?.date || route?.date || '',
+            ...(route?.dayNumber ? { dayNumber: route.dayNumber } : {}),
+          };
+        })
         .sort((a, b) => Number(a.itineraryRouteId || 0) - Number(b.itineraryRouteId || 0));
+
+      const selectionGroup = (hotelSelectionState || []).find(
+        (state: any) => Number(state?.groupType) === groupType,
+      );
+      const stayResults = (hotelTabs || []).find(
+        (tab: any) => Number(tab?.groupType) === groupType,
+      )?.stayResults || [];
+      const stayByRouteId = new Map<number, any>();
+      for (const stay of stayResults) {
+        for (const routeId of stay?.routeIds || [stay?.parentRouteId]) {
+          stayByRouteId.set(Number(routeId), stay);
+        }
+      }
+
+      const existingRouteIds = new Set(
+        groupRows.map((row: any) => Number(row?.itineraryRouteId || 0)),
+      );
+      for (const route of selectionGroup?.routes || []) {
+        const routeId = Number(route?.routeId || 0);
+        if (!routeId || existingRouteIds.has(routeId)) continue;
+
+        const selected = route?.selected || null;
+        const hotelName = String(selected?.hotelName || '').trim();
+        const available = route?.selectionStatus !== 'UNAVAILABLE' && Boolean(hotelName);
+        const stay = stayByRouteId.get(routeId);
+        groupRows.push({
+          groupType,
+          itineraryRouteId: routeId,
+          routeIds: [routeId],
+          stayKey: `clipboard-selection-${groupType}-${routeId}`,
+          day: `Day ${routeId}`,
+          dayNumber: 0,
+          date: route?.routeDate || stay?.checkInDate || '',
+          destination: stay?.destination || destinationByRouteId.get(routeId) || '',
+          hotelId: Number(selected?.canonicalHotelId || 0),
+          hotelName: available ? hotelName : 'No hotel available',
+          category: selected?.category ?? '',
+          roomType: available ? selected?.roomType || '' : '',
+          mealPlan: available ? selected?.mealPlan || '' : '',
+          totalHotelCost: 0,
+          totalHotelTaxAmount: 0,
+          provider: selected?.provider || 'external',
+          isBookable: available,
+          isSelectable: available,
+          availabilityState: available ? 'AVAILABLE' : 'UNAVAILABLE',
+          selectionStatus: available ? 'AVAILABLE' : 'UNAVAILABLE',
+        });
+        existingRouteIds.add(routeId);
+      }
+
+      groupRows.sort((a, b) => Number(a.itineraryRouteId || 0) - Number(b.itineraryRouteId || 0));
 
       const clipboardRows = this.expandHotelRowsForClipboard(groupRows);
       const rowHtml = clipboardRows.length
@@ -963,6 +1045,10 @@ export class ItineraryClipboardService {
     const hotelsHtml = this.buildHotelSection({
       selectedGroupTypes,
       hotels: hotelDetails.hotels,
+      hotelSelectionState: (hotelDetails as any).hotelSelectionState,
+      hotelTabs: (hotelDetails as any).hotelTabs,
+      sharedInventory: (hotelDetails as any).hotelAvailability?.sharedHotelInventory,
+      routeMetadata: (hotelDetails as any).hotelAvailability?.stayRoutes,
       roomCount: Number(plan.preferred_room_count || itinerary.roomCount || 0),
       showRates,
       noOfDays: Number(plan.no_of_days || 0),
