@@ -280,6 +280,55 @@ export class StaffService {
     }
   }
 
+   async checkDuplicate(
+    agentId: number,
+    staffEmail?: string,
+    staffMobile?: string,
+    ignoreStaffId?: number,
+  ): Promise<{ emailExists: boolean; mobileExists: boolean }> {
+    let emailExists = false;
+    let mobileExists = false;
+
+    if (staffEmail) {
+      const staffEmailDup = await this.prisma.dvi_staff_details.findFirst({
+        where: {
+          deleted: 0,
+          agent_id: agentId,
+          staff_email: staffEmail,
+          ...(ignoreStaffId ? { staff_id: { not: ignoreStaffId } } : {}),
+        },
+        select: { staff_id: true },
+      });
+
+      const loginEmailDup = await this.prisma.dvi_users.findFirst({
+        where: {
+          deleted: 0,
+          useremail: staffEmail,
+          ...(ignoreStaffId ? { staff_id: { not: ignoreStaffId } } : {}),
+        },
+        select: { userID: true },
+      });
+
+      emailExists = Boolean(staffEmailDup || loginEmailDup);
+    }
+
+    if (staffMobile) {
+      const staffMobileDup = await this.prisma.dvi_staff_details.findFirst({
+        where: {
+          deleted: 0,
+          agent_id: agentId,
+          staff_mobile: staffMobile,
+          ...(ignoreStaffId ? { staff_id: { not: ignoreStaffId } } : {}),
+        },
+        select: { staff_id: true },
+      });
+
+      mobileExists = Boolean(staffMobileDup);
+    }
+
+    return { emailExists, mobileExists };
+  }
+
   private async assertUniqueLoginEmail(loginEmail: string, ignoreUserId?: bigint) {
     if (!loginEmail) return;
     const dup = await this.prisma.dvi_users.findFirst({
@@ -292,7 +341,6 @@ export class StaffService {
     });
     if (dup) throw new BadRequestException('Login email already exists');
   }
-
   async create(input: {
   agentId: number;
   staffName: string;
