@@ -857,6 +857,16 @@ export class HotelAvailabilitySnapshotService {
       snapshotKeys.add(key);
     }
 
+    // Project the complete snapshot before calculating tab totals or compact
+    // stay-summary rows.  Stored recommendation tabs and persisted selection
+    // rows can contain supplier/base amounts while the client contract is
+    // payable (base + margin).  Previously the later projection happened only
+    // after `buildTabs`, so a legacy stored tab could keep returning the raw
+    // base total even though the hotel card itself had a margin.
+    normalizedRows = normalizedRows.map((row: any) =>
+      projectHotelPayablePricing(row, effectiveMarginPercentage),
+    );
+
     // Recommendation groups own only the automatic selection.  The day-pane
     // inventory must be shared, so retain the complete unfiltered snapshot
     // before applying any group/route pagination filters below.
@@ -875,11 +885,17 @@ export class HotelAvailabilitySnapshotService {
     for (const selection of selectedByRouteGroup.values()) {
       const routeId = Number(selection?.itinerary_route_id || 0);
       const groupType = Number(selection?.group_type || 0);
-      const amount = hotelCardPayableAmount({
+      const selectedRow = allSharedInventoryRows.find((row: any) =>
+        Number(row?.groupType || 0) === groupType &&
+        Number(row?.itineraryRouteId || row?.routeId || 0) === routeId &&
+        row?.isSelected === true,
+      );
+      const amount = hotelCardPayableAmount(selectedRow || projectHotelPayablePricing({
         ...selection,
+        ...parseHotelSelectionSnapshot(selection),
         totalPrice: selection?.selected_total_price ?? selection?.total_hotel_cost,
         pricePerNight: selection?.selected_price_per_night,
-      });
+      }, effectiveMarginPercentage));
       if (!routeId || groupType < 1 || groupType > 4 || amount <= 0) continue;
       selectedPayableByRouteGroup.set(`${routeId}-${groupType}`, amount);
       const selectedRouteIds = selectedRouteIdsByGroup.get(groupType) || new Set<number>();
