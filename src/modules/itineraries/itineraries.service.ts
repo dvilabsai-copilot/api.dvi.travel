@@ -41,6 +41,7 @@ import { normalizeCityName } from "./utils/city-normalization.util";
 import { haversineKm } from "./utils/distance-utils";
 import {
   normalizeSupplierRateIdentity,
+  supplierRateIdentityMatches,
   resolvePersistedHotelIdentity,
   supplierSelectionKey,
 } from './utils/hotel-selection-identity.util';
@@ -1980,18 +1981,22 @@ private getGuideSlotLabel(slotId: number): string {
     });
     const selectedByRoute: any[] = [];
     const anchorCandidates = routeOptions(Number(data.routeId), stay.stayDates[stay.routeIds.indexOf(Number(data.routeId))] || String(data.routeDate || '').slice(0, 10));
-    const anchorOption = anchorCandidates.find((option: any) => {
-      // A preview-confirmed HOTEL selection also carries the exact supplier
-      // rate identity. Treat it as an anchored option so the same rate is
-      // persisted instead of selecting a different cheapest option.
-      if (!anchorRateOptionId && intent !== 'RATE_OPTION') return false;
-      if (anchorSelectionKey) return supplierSelectionKey(option) === anchorSelectionKey;
-      if (provider === 'tbo' && anchorRateOptionId) {
-        return supplierSelectionKey({ provider, rateOptionId: anchorRateOptionId }) === supplierSelectionKey(option);
-      }
-      return anchorRateOptionId && [option.rateOptionId, option.optionKey].map(String).includes(anchorRateOptionId);
-    }) || null;
-    if (intent === 'RATE_OPTION' && !anchorOption) {
+    // Prefer the exact supplier rate returned by preview. The TBO
+    // selectionKey is deliberately session-agnostic and can otherwise match
+    // a parent/zero-price row from another search session.
+    let anchorOption: any = null;
+    if (anchorRateOptionId) {
+      anchorOption = anchorCandidates.find((option: any) => supplierRateIdentityMatches({
+        provider,
+        rateOptionId: anchorRateOptionId,
+        bookingCode: data.bookingCode,
+        searchReference: data.searchReference,
+      }, option)) || null;
+    }
+    if (!anchorOption && !anchorRateOptionId && anchorSelectionKey) {
+      anchorOption = anchorCandidates.find((option: any) => supplierSelectionKey(option) === anchorSelectionKey) || null;
+    }
+    if ((intent === 'RATE_OPTION' || Boolean(anchorRateOptionId)) && !anchorOption) {
       throw new BadRequestException({
         code: 'HOTEL_RATE_STALE',
         message: 'The selected hotel rate is stale or unavailable. No nights were changed.',
@@ -2020,7 +2025,7 @@ private getGuideSlotLabel(slotId: number): string {
         }
         return true;
       }).sort((left: any, right: any) => payableAmount(left) - payableAmount(right));
-      const selected = anchorOption
+      const selected = index === stay.routeIds.indexOf(Number(data.routeId)) && anchorOption
         ? anchorOption
         : options[0];
       if (!selected) {
