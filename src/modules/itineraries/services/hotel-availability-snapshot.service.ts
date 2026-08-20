@@ -973,8 +973,13 @@ export class HotelAvailabilitySnapshotService {
       normalizedRows.map((row) => projectHotelPayablePricing(row, effectiveMarginPercentage)),
       selectedPayableByRouteGroup,
     );
+    const sharedInventoryRows = options.itineraryRouteId && options.itineraryRouteId > 0
+      ? allSharedInventoryRows.filter((row: any) =>
+          Number(row?.itineraryRouteId || row?.routeId || 0) === Number(options.itineraryRouteId),
+        )
+      : allSharedInventoryRows;
     const sharedHotelInventory = this.buildSharedHotelInventory(
-      allSharedInventoryRows,
+      sharedInventoryRows,
       effectiveMarginPercentage,
     );
     const page = Math.max(1, Number(options.page || 1));
@@ -3946,6 +3951,11 @@ export class HotelAvailabilitySnapshotService {
     const existing = await tx.dvi_itinerary_plan_hotel_details.findMany({
       where: { itinerary_plan_id: planId, deleted: 0, status: 1, hotel_required: 1 },
       select: {
+        // Existing auto selections are updated or retired below. Keep the
+        // primary key in this projection; without it Prisma receives
+        // `where: { itinerary_plan_hotel_details_ID: undefined }` when a
+        // duplicate recommendation is reconciled.
+        itinerary_plan_hotel_details_ID: true,
         itinerary_route_id: true,
         itinerary_route_date: true,
         group_type: true,
