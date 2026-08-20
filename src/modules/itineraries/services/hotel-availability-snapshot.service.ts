@@ -3932,6 +3932,16 @@ export class HotelAvailabilitySnapshotService {
       Number(globalSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0),
       0,
     );
+    const plan = tx?.dvi_itinerary_plan_details?.findUnique
+      ? await tx.dvi_itinerary_plan_details.findUnique({
+          where: { itinerary_plan_ID: planId },
+          select: {
+            total_adult: true,
+            total_child_with_bed: true,
+            total_extra_bed: true,
+          } as any,
+        })
+      : null;
 
     const existing = await tx.dvi_itinerary_plan_hotel_details.findMany({
       where: { itinerary_plan_id: planId, deleted: 0, status: 1, hotel_required: 1 },
@@ -4086,16 +4096,24 @@ export class HotelAvailabilitySnapshotService {
       // availability requirement. Sparse routes (for example one valid
       // offline hotel for a requested category fallback) must still receive
       // an authoritative selection in every recommendation group.
-      const option = distinctOption || sortedOptions[0];
+      let option = distinctOption || sortedOptions[0];
       if (!option) continue;
       reserved.add(hotelIdentity(option));
       reservedHotelIdsByRoute.set(routeId, reserved);
 
       const provider = String(option.provider || 'external').trim().toLowerCase();
       const roomCount = Math.max(Number(option.roomCount || option.totalNoOfRooms || 1), 1);
+      const persistedOptionHotelId = this.persistedHotelId(option);
+      const hotelMaster = provider === 'axisrooms' && persistedOptionHotelId > 0 && tx?.dvi_hotel?.findUnique
+        ? await tx.dvi_hotel.findUnique({
+            where: { hotel_id: persistedOptionHotelId },
+            select: { hotel_margin: true },
+          })
+        : null;
+      const hotelMasterMargin = Number(hotelMaster?.hotel_margin || 0);
       const rawTotalPrice = hotelStayTotal(option, 1);
       const rawPricePerNight = Number(option.pricePerNight ?? option.price_per_night ?? option.price ?? rawTotalPrice);
-      const baseTotalPrice = provider === 'staah'
+      let baseTotalPrice = provider === 'staah'
         ? Math.max(Number(
             option.baseTotalPrice ??
             option.base_total_price ??
@@ -4103,24 +4121,62 @@ export class HotelAvailabilitySnapshotService {
             option.base_hotel_cost ??
             option.totalRoomCost ??
             option.total_room_cost ??
-            rawPricePerNight * roomCount,
+          rawPricePerNight * roomCount,
           ), 0)
         : 0;
-      const marginPercentage = provider === 'staah'
+      let marginPercentage = provider === 'staah'
         ? Math.max(Number(option.hotelMarginPercentage ?? defaultHotelMarginPercentage), 0)
-        : Number(option.hotelMarginPercentage ?? 0);
-      const roomTaxAmount = provider === 'staah'
+        : provider === 'axisrooms'
+          ? Math.max(hotelMasterMargin > 0
+            ? hotelMasterMargin
+            : Number(option.hotelMarginPercentage ?? defaultHotelMarginPercentage), 0)
+          : Number(option.hotelMarginPercentage ?? 0);
+      let roomTaxAmount = provider === 'staah'
         ? Math.max(Number(option.totalHotelTaxAmount ?? option.taxAmount ?? 0), 0)
         : 0;
-      const calculatedMargin = baseTotalPrice > 0
+      let calculatedMargin = baseTotalPrice > 0
         ? Number((baseTotalPrice * marginPercentage / 100).toFixed(2))
         : 0;
-      const totalPrice = provider === 'staah' && baseTotalPrice > 0
+      let totalPrice = provider === 'staah' && baseTotalPrice > 0
         ? Number(Math.max(rawTotalPrice, baseTotalPrice + roomTaxAmount + calculatedMargin).toFixed(2))
         : rawTotalPrice;
-      const pricePerNight = provider === 'staah' && totalPrice > 0
+      let pricePerNight = provider === 'staah' && totalPrice > 0
         ? Number((totalPrice / roomCount).toFixed(2))
         : rawPricePerNight;
+
+      // AxisRooms occupancy rates are the authoritative room price for a
+      // selected rate. The normalized supplier option can still carry an old
+      // base/total pair from a previous search, so resolve the matching ARI
+      // row before writing the durable hotel-detail row.
+      if (provider === 'axisrooms') {
+        const axisBase = await this.resolveAxisRoomsBasePrice(tx, option, plan, roomCount);
+        if (axisBase > 0) {
+          baseTotalPrice = axisBase;
+          marginPercentage = Math.max(
+            hotelMasterMargin > 0
+              ? hotelMasterMargin
+              : Number(option.hotelMarginPercentage ?? defaultHotelMarginPercentage),
+            0,
+          );
+          roomTaxAmount = Math.max(Number(option.totalHotelTaxAmount ?? option.taxAmount ?? 0), 0);
+          calculatedMargin = Number((baseTotalPrice * marginPercentage / 100).toFixed(2));
+          totalPrice = Number((baseTotalPrice + roomTaxAmount + calculatedMargin).toFixed(2));
+          pricePerNight = Number((totalPrice / roomCount).toFixed(2));
+          option = {
+            ...option,
+            basePricePerNight: Number((baseTotalPrice / roomCount).toFixed(2)),
+            baseTotalPrice,
+            baseHotelCost: baseTotalPrice,
+            hotelMarginPercentage: marginPercentage,
+            hotelMarginAmount: calculatedMargin,
+            hotelMarginTotalAmount: calculatedMargin,
+            pricePerNight,
+            totalPrice,
+            totalStayPrice: totalPrice,
+            totalHotelCost: totalPrice,
+          };
+        }
+      }
       const optionKey = this.optionKey(option);
       const created = await tx.dvi_itinerary_plan_hotel_details.create({
         data: {
@@ -4157,7 +4213,7 @@ export class HotelAvailabilitySnapshotService {
               mealPlan: option.mealPlan,
               mealPlanCode: option.mealPlanCode || option.mealPlan,
             } : {}),
-            ...(provider === 'staah' && baseTotalPrice > 0 ? {
+            ...((provider === 'staah' || provider === 'axisrooms') && baseTotalPrice > 0 ? {
               basePricePerNight: Number((baseTotalPrice / roomCount).toFixed(2)),
               baseTotalPrice,
               roomCostTaxAmount: roomTaxAmount,
@@ -4180,6 +4236,8 @@ export class HotelAvailabilitySnapshotService {
             ...option,
             totalStayPrice: provider === 'staah' && baseTotalPrice > 0
               ? baseTotalPrice
+              : provider === 'axisrooms' && baseTotalPrice > 0
+                ? baseTotalPrice
               : option.baseHotelCost ?? option.totalHotelCost ?? totalPrice,
             pricePerNight,
           }, 1),
@@ -4340,6 +4398,69 @@ export class HotelAvailabilitySnapshotService {
         Math.abs(Number(selection.selected_total_price || selection.total_hotel_cost || 0) - totalPrice) > 0.009,
       updatedon: new Date(),
     };
+  }
+
+  private async resolveAxisRoomsBasePrice(
+    tx: any,
+    option: any,
+    plan: any,
+    roomCount: number,
+  ): Promise<number> {
+    const reference = String(
+      option?.rateOptionId || option?.rate_option_id || option?.bookingCode || option?.booking_code || '',
+    ).trim();
+    const match = reference.match(/(?:axisrooms:|AX-)([^:|-]+)[:|-]([^:|-]+)[:|-]([^:|-]+)/i);
+    const hotelId = Number(option?.canonicalHotelId || option?.hotelId || option?.hotel_id || match?.[1] || 0);
+    const roomId = Number(option?.roomId || option?.room_id || match?.[2] || 0);
+    const rateplanId = String(option?.rateplanId || option?.ratePlanId || option?.rateplan_id || match?.[3] || '').trim();
+    const dateText = String(option?.date || option?.checkInDate || '').slice(0, 10);
+    const occupancyModel = tx?.dvi_hotel_occupancy_rate;
+    if (!hotelId || !roomId || !rateplanId || !/^\d{4}-\d{2}-\d{2}$/.test(dateText) || !occupancyModel?.findMany) {
+      return 0;
+    }
+
+    const rows = await occupancyModel.findMany({
+      where: {
+        hotel_id: hotelId,
+        room_id: roomId,
+        rateplan_id: rateplanId,
+        start_date: { lte: new Date(`${dateText}T00:00:00.000Z`) },
+        end_date: { gte: new Date(`${dateText}T00:00:00.000Z`) },
+      },
+      select: { occupancy_rates: true, start_date: true, received_at: true },
+      orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+    });
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) return 0;
+
+    let rates: Record<string, unknown> = {};
+    try {
+      rates = typeof row.occupancy_rates === 'string'
+        ? JSON.parse(row.occupancy_rates)
+        : (row.occupancy_rates || {});
+    } catch {
+      return 0;
+    }
+    const adults = Math.max(Math.trunc(Number(plan?.total_adult || 0)), 0);
+    const adultsPerRoom = Math.max(Math.ceil(adults / Math.max(roomCount, 1)), 1);
+    const occupancyKey = adultsPerRoom <= 1
+      ? 'SINGLE'
+      : adultsPerRoom === 2
+        ? 'DOUBLE'
+        : adultsPerRoom === 3
+          ? 'TRIPLE'
+          : 'QUAD';
+    const roomRate = Number(rates[occupancyKey]);
+    if (!Number.isFinite(roomRate) || roomRate <= 0) return 0;
+
+    const extraBeds = Math.max(
+      Math.trunc(Number(plan?.total_child_with_bed || 0)) + Math.trunc(Number(plan?.total_extra_bed || 0)),
+      0,
+    );
+    const extraBedRate = Number(rates.EXTRABED ?? rates.EXTRAADULT ?? rates.EXTRACHILD ?? 0);
+    const total = roomRate * Math.max(roomCount, 1) +
+      (Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate * extraBeds : 0);
+    return Number.isFinite(total) && total > 0 ? Number(total.toFixed(2)) : 0;
   }
 
   private async syncSelectedRoom(tx: any, selection: any, option: any, createdBy: number): Promise<void> {

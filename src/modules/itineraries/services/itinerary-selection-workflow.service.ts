@@ -345,9 +345,18 @@ export class ItinerarySelectionWorkflowService {
     const configuredMargin = globalSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0;
     const requestedHotelMargin = Number(data.hotelMarginPercentage);
     const providerForPricing = String(data.provider || '').trim().toLowerCase();
+    const hotelMaster = providerForPricing === 'axisrooms' && persistedHotelId
+      ? await (db as any).dvi_hotel?.findUnique?.({
+          where: { hotel_id: persistedHotelId },
+          select: { hotel_margin: true },
+        })
+      : null;
+    const hotelMasterMargin = Number(hotelMaster?.hotel_margin || 0);
     const hotelMarginPercentage = Math.max(
-      providerForPricing === 'axisrooms' && (!Number.isFinite(requestedHotelMargin) || requestedHotelMargin <= 0)
-        ? Number(configuredMargin || 0)
+      providerForPricing === 'axisrooms'
+        ? hotelMasterMargin > 0
+          ? hotelMasterMargin
+          : Number(configuredMargin || requestedHotelMargin || 0)
         : Number(data.hotelMarginPercentage ?? configuredMargin ?? 0),
       0,
     );

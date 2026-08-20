@@ -39,6 +39,32 @@ function makePrisma() {
   } as any;
 }
 
+test('AxisRooms DOUBLE price is resolved from the matching occupancy row', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const tx = {
+    dvi_hotel_occupancy_rate: {
+      findMany: async () => [{
+        occupancy_rates: JSON.stringify({ DOUBLE: 3500, SINGLE: 3500, TRIPLE: 4500 }),
+      }],
+    },
+  } as any;
+
+  const base = await (service as any).resolveAxisRoomsBasePrice(
+    tx,
+    {
+      provider: 'axisrooms',
+      canonicalHotelId: 231,
+      roomId: 604,
+      rateOptionId: 'axisrooms:231:604:CP_PLAN:2026-09-01',
+      date: '2026-09-01',
+    },
+    { total_adult: 2, total_child_with_bed: 0, total_extra_bed: 0 },
+    1,
+  );
+
+  assert.equal(base, 3500);
+});
+
 test('persisted hotel read never invokes a live supplier', async () => {
   const prisma = makePrisma();
   let supplierCalls = 0;
