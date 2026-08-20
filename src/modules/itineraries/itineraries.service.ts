@@ -1719,6 +1719,15 @@ private getGuideSlotLabel(slotId: number): string {
             code: code || (status === 'REFRESH_FAILED' ? 'HOTEL_REFRESH_FAILED' : 'HOTEL_NO_AVAILABILITY'),
             affectedRouteIds: response?.affectedRouteIds || [],
             logicalStay: response?.logicalStay,
+            // Multi-night itinerary selection is all-or-nothing. Even when
+            // the validator finds inventory for the clicked night alone, do
+            // not expose that as a bookable fallback to the client.
+            canBookSingleNight: false,
+            canBookMultiNight: response?.canBookMultiNight === true,
+            blocked: response?.canBookMultiNight === false,
+            restriction: response?.restriction,
+            restrictionConflicts: response?.restriction?.restrictionConflicts || [],
+            warnings: response?.restriction?.warnings || [],
           };
         }
       },
@@ -1800,9 +1809,32 @@ private getGuideSlotLabel(slotId: number): string {
       });
     }
 
+    // The user may explicitly accept the anchor night after the continuous
+    // stay preview reports that one or more follow-on nights are unavailable.
+    // In that case the intent must be resolved against only the clicked route;
+    // otherwise confirmation would immediately repeat the multi-night check.
+    if (data.singleNightOnly === true) {
+      const checkOut = new Date(`${intentCheckInDate}T00:00:00.000Z`);
+      checkOut.setUTCDate(checkOut.getUTCDate() + 1);
+      stay = {
+        ...stay,
+        routeIds: [Number(data.routeId)],
+        stayDates: [intentCheckInDate],
+        checkInDate: intentCheckInDate,
+        checkOutDate: checkOut.toISOString().slice(0, 10),
+        nights: 1,
+      };
+    }
+
     // The logical stay is known before any supplier work. Refresh every
     // affected route so no night is silently filled from an anchor-only rate.
-    if (provider !== 'offline') {
+    // select-intent-preview has already refreshed and stored the supplier
+    // snapshot used to build the confirmation row. When the browser sends
+    // that authoritative rate back, do not perform a second TBO search: TBO
+    // may issue a new booking code or fare milliseconds later and make a
+    // valid selection look stale.
+    const reusePreviewSnapshot = data.reusePreviewSnapshot === true;
+    if (provider !== 'offline' && !reusePreviewSnapshot) {
       if (['tbo', 'resavenue', 'hobse', 'axisrooms', 'staah'].includes(provider) &&
         typeof (this.hotelDetailsTboService as any).searchSelectedHotelForContinuousStay === 'function') {
         const continuousHotels = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
@@ -1949,7 +1981,10 @@ private getGuideSlotLabel(slotId: number): string {
     const selectedByRoute: any[] = [];
     const anchorCandidates = routeOptions(Number(data.routeId), stay.stayDates[stay.routeIds.indexOf(Number(data.routeId))] || String(data.routeDate || '').slice(0, 10));
     const anchorOption = anchorCandidates.find((option: any) => {
-      if (intent !== 'RATE_OPTION') return false;
+      // A preview-confirmed HOTEL selection also carries the exact supplier
+      // rate identity. Treat it as an anchored option so the same rate is
+      // persisted instead of selecting a different cheapest option.
+      if (!anchorRateOptionId && intent !== 'RATE_OPTION') return false;
       if (anchorSelectionKey) return supplierSelectionKey(option) === anchorSelectionKey;
       if (provider === 'tbo' && anchorRateOptionId) {
         return supplierSelectionKey({ provider, rateOptionId: anchorRateOptionId }) === supplierSelectionKey(option);
@@ -1985,7 +2020,7 @@ private getGuideSlotLabel(slotId: number): string {
         }
         return true;
       }).sort((left: any, right: any) => payableAmount(left) - payableAmount(right));
-      const selected = index === stay.routeIds.indexOf(Number(data.routeId)) && anchorOption
+      const selected = anchorOption
         ? anchorOption
         : options[0];
       if (!selected) {
@@ -1995,7 +2030,7 @@ private getGuideSlotLabel(slotId: number): string {
           selectionIntent: intent,
           logicalStay: stay,
           affectedRouteIds: stay.routeIds,
-          canBookSingleNight: true,
+          canBookSingleNight: stay.nights <= 1,
           canBookMultiNight: false,
         });
       }
@@ -2008,6 +2043,8 @@ private getGuideSlotLabel(slotId: number): string {
       // validator receives empty room/rate identity and cannot resolve the
       // supplier mapping even though the refreshed option is valid.
       const continuityAnchor = anchorOption || selectedByRoute[stay.routeIds.indexOf(Number(data.routeId))] || selectedByRoute[0];
+      const selectedRouteIndex = stay.routeIds.indexOf(Number(data.routeId));
+      const selectedRouteDate = stay.stayDates[selectedRouteIndex] || stay.checkInDate;
       const continuity = await this.hotelStayBlockValidationService.previewStayExtension({
         planId: Number(data.planId), routeId: Number(data.routeId), provider: provider as any, hotelCode,
         hotelName: String(continuityAnchor?.hotelName || data.hotelName || '').trim() || undefined,
@@ -2015,14 +2052,18 @@ private getGuideSlotLabel(slotId: number): string {
         rateId: String(continuityAnchor?.rateId || continuityAnchor?.ratePlanId || data.rateId || '').trim() || undefined,
         roomType: String(continuityAnchor?.roomType || continuityAnchor?.roomTypeName || anchorRoom || '').trim() || undefined,
         mealPlan: String(continuityAnchor?.mealPlan || continuityAnchor?.mealPlanCode || anchorMeal || '').trim() || undefined,
-        checkInDate: stay.checkInDate, groupType,
+        // The validator is anchored to the clicked route. Passing the
+        // overall stay start here made a later route (for example 10702 on
+        // 2026-08-23) validate as 2026-08-22 and collapse to a false
+        // single-night result.
+        checkInDate: selectedRouteDate, groupType,
       });
       if (!continuity.canBookMultiNight || continuity.blocked) {
         throw new BadRequestException({
           code: 'HOTEL_CONTINUOUS_STAY_UNAVAILABLE',
           message: continuity.restrictionConflicts?.map((conflict: any) => conflict.message).join(' | ') || 'The selected hotel cannot be booked for the complete continuous stay.',
           selectionIntent: intent, logicalStay: stay, restriction: continuity,
-          canBookSingleNight: continuity.canBookSingleNight, canBookMultiNight: false,
+          canBookSingleNight: false, canBookMultiNight: false,
         });
       }
     }

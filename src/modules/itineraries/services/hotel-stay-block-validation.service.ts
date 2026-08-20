@@ -247,7 +247,13 @@ export class HotelStayBlockValidationService {
     }
 
     const currentRoute: any = routes[index];
-    const checkInDate = this.toDateOnly(params.checkInDate) || this.toDateOnly(currentRoute.itinerary_route_date);
+    // The route table is authoritative for the selected night. Callers may
+    // carry the logical stay start date (for example 2026-08-22) while the
+    // selected route is a later night (for example route 10702 on
+    // 2026-08-23). Using the caller date here collapses the candidate onto
+    // the wrong day and produces a false one-night result.
+    const routeDate = this.toDateOnly(currentRoute.itinerary_route_date);
+    const checkInDate = routeDate || this.toDateOnly(params.checkInDate);
     if (!checkInDate) {
       throw new BadRequestException('checkInDate is required');
     }
@@ -538,6 +544,31 @@ export class HotelStayBlockValidationService {
       try { return typeof value === 'string' ? JSON.parse(value) : (value || {}); } catch { return {}; }
     };
     const normalize = (value: any) => String(value || '').trim().toLowerCase();
+    const positiveAmount = (value: unknown): number | null => {
+      const amount = Number(value);
+      return Number.isFinite(amount) && amount > 0 ? amount : null;
+    };
+    const snapshotAmount = (option: any): number => {
+      // TBO recommendation rows use price/netAmount/totalFare while
+      // normalized refresh rows use pricePerNight/totalPrice. Prefer the
+      // first positive value so a legacy zero field cannot hide a valid rate.
+      const directAmount = [
+        option.amountAfterTax,
+        option.totalAmountAfterTax,
+        option.pricePerNight,
+        option.totalPrice,
+        option.totalStayPrice,
+        option.totalAmount,
+        option.totalFare,
+        option.netAmount,
+        option.price,
+      ].map(positiveAmount).find((amount): amount is number => amount !== null);
+      if (directAmount !== undefined) return directAmount;
+      const roomAmount = Array.isArray(option.roomTypes)
+        ? option.roomTypes.map((room: any) => positiveAmount(room?.price)).find((amount): amount is number => amount !== null)
+        : undefined;
+      return roomAmount ?? 0;
+    };
     const property = normalize(candidate.hotelCode);
     const room = normalize(candidate.roomType);
     const meal = normalize(candidate.mealPlan);
@@ -558,7 +589,7 @@ export class HotelStayBlockValidationService {
     for (let index = 0; index < candidate.routeIds.length; index += 1) {
       const routeId = Number(candidate.routeIds[index]);
       const date = candidate.stayDates[index];
-      const matches = optionRows.filter((option: any) => {
+      const matchingOptions = optionRows.filter((option: any) => {
         if (Number(option.routeId) !== routeId) return false;
         if (normalize(option.provider) !== normalize(candidate.provider)) return false;
         const optionProperty = normalize(option.hotelCode || option.canonicalHotelId || option.hotelId);
@@ -566,17 +597,24 @@ export class HotelStayBlockValidationService {
         if (room && normalize(option.roomType) && normalize(option.roomType) !== room) return false;
         if (meal && normalize(option.mealPlan) && normalize(option.mealPlan) !== meal) return false;
         return true;
-      }).sort((left: any, right: any) => Number(left.totalPrice || left.totalStayPrice || left.pricePerNight || left.amountAfterTax || 0) - Number(right.totalPrice || right.totalStayPrice || right.pricePerNight || right.amountAfterTax || 0));
-      const option = matches[0];
-      if (!option) {
-        conflicts.push({ date, type: 'NO_RATE', message: `No current rate for ${candidate.hotelName || candidate.hotelCode} on ${date}.` });
+      });
+      const matches = matchingOptions
+        .map((option: any) => ({ option, amount: snapshotAmount(option) }))
+        .filter((entry: any) => entry.amount > 0)
+        .sort((left: any, right: any) => left.amount - right.amount);
+      const selected = matches[0];
+      if (!selected) {
+        conflicts.push({
+          date,
+          type: 'NO_RATE',
+          message: matchingOptions.length > 0
+            ? `The current rate for ${candidate.hotelName || candidate.hotelCode} has no positive price on ${date}.`
+            : `No current rate for ${candidate.hotelName || candidate.hotelCode} on ${date}.`,
+        });
         continue;
       }
-      const amount = Number(option.amountAfterTax ?? option.pricePerNight ?? option.totalPrice ?? option.totalStayPrice ?? option.totalAmount ?? 0);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        conflicts.push({ date, type: 'NO_RATE', message: `The current rate for ${candidate.hotelName || candidate.hotelCode} has no positive price on ${date}.` });
-        continue;
-      }
+      const option = selected.option;
+      const amount = selected.amount;
       nightlyRates.push({
         date,
         routeId,

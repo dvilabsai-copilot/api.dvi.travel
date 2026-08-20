@@ -52,3 +52,62 @@ test('continuous stay stops at a destination boundary', async () => {
   });
   assert.deepEqual(candidate.routeIds, [101, 102]);
 });
+
+test('snapshot validation selects positive TBO price fields from duplicate cache rows', async () => {
+  const service = new HotelStayBlockValidationService({
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ itinerary_quote_ID: 'Q-1' }),
+    },
+    dvi_itinerary_hotel_search_cache: {
+      findFirst: async () => ({ synced_at: new Date('2026-08-20T18:49:53.000Z') }),
+      findMany: async () => [
+        {
+          route_id: 101,
+          full_payload: JSON.stringify({
+            provider: 'tbo',
+            hotelCode: 'H-1',
+            roomType: 'Deluxe Room',
+            mealPlan: 'CP',
+            rateOptions: [{
+              provider: 'tbo',
+              hotelCode: 'H-1',
+              roomType: 'Deluxe Room',
+              mealPlan: 'CP',
+              price: 100,
+              netAmount: 100,
+              totalFare: 100,
+            }],
+          }),
+        },
+        {
+          route_id: 101,
+          full_payload: JSON.stringify({
+            provider: 'tbo', hotelCode: 'H-1', roomType: 'Deluxe Room', mealPlan: 'CP',
+            pricePerNight: 0,
+          }),
+        },
+        {
+          route_id: 102,
+          full_payload: JSON.stringify({
+            provider: 'tbo', hotelCode: 'H-1', roomType: 'Deluxe Room', mealPlan: 'CP',
+            pricePerNight: 110,
+          }),
+        },
+      ],
+    },
+  } as any);
+
+  const result = await (service as any).validateSnapshotStayBlock({
+    ...baseParams,
+    hotelName: 'Test Hotel',
+    checkInDate: '2026-08-12',
+    checkOutDate: '2026-08-14',
+    nights: 2,
+    routeIds: [101, 102],
+    stayDates: ['2026-08-12', '2026-08-13'],
+    stayKey: 'tbo:H-1:2026-08-12_to_2026-08-14',
+  });
+
+  assert.equal(result.canBookMultiNight, true);
+  assert.deepEqual(result.nightlyRates.map((rate: any) => rate.amountAfterTax), [100, 110]);
+});
