@@ -2834,6 +2834,87 @@ export class HotelsService {
       }
     };
 
+    const buildOccupancyRates = (item: any): Record<string, number> => {
+      const rates: Record<string, number> = {};
+      const raw = item?.occupancyRates && typeof item.occupancyRates === 'object'
+        ? (item.occupancyRates as Record<string, unknown>)
+        : undefined;
+
+      if (raw) {
+        for (const [key, value] of Object.entries(raw)) {
+          const occupancyKey = this.toStr(key)?.toUpperCase();
+          const numericValue = this.toNumStrict(value);
+          if (occupancyKey && numericValue !== undefined) rates[occupancyKey] = numericValue;
+        }
+      }
+
+      // Compatibility payloads may only provide roomPrice and the three
+      // legacy supplements. Preserve the existing SINGLE fallback behavior.
+      if (Object.keys(rates).length === 0) {
+        const single = this.toNumStrict(item?.roomPrice);
+        if (single !== undefined) rates.SINGLE = single;
+        const extraBed = this.toNumStrict(item?.extraBed);
+        if (extraBed !== undefined) rates.EXTRABED = extraBed;
+        const childWithBed = this.toNumStrict(item?.childWithBed);
+        if (childWithBed !== undefined) rates.CHILD_WITH_BED = childWithBed;
+        const childWithoutBed = this.toNumStrict(item?.childWithoutBed);
+        if (childWithoutBed !== undefined) rates.CHILD_WITHOUT_BED = childWithoutBed;
+      }
+
+      return rates;
+    };
+
+    const saveOccupancyRates = async (
+      roomId: number,
+      rateplanId: string,
+      start: Date,
+      end: Date,
+      rates: Record<string, number>,
+    ) => {
+      if (Object.keys(rates).length === 0) return {} as Record<string, number>;
+
+      const existing = await (this.prisma as any).dvi_hotel_occupancy_rate.findFirst({
+        where: {
+          hotel_id: hid,
+          room_id: roomId,
+          rateplan_id: rateplanId,
+          start_date: { lte: end },
+          end_date: { gte: start },
+        },
+        orderBy: { received_at: 'desc' },
+        select: { occupancy_rates: true },
+      });
+      const merged: Record<string, number> = {};
+      const previous = existing?.occupancy_rates;
+      if (previous && typeof previous === 'object') {
+        for (const [key, value] of Object.entries(previous as Record<string, unknown>)) {
+          const numericValue = this.toNumStrict(value);
+          if (numericValue !== undefined) merged[this.toStr(key)?.toUpperCase() || key] = numericValue;
+        }
+      }
+      Object.assign(merged, rates);
+      if (!previous) {
+        for (const key of PRICEBOOK_OCCUPANCY_KEYS) {
+          if (merged[key] === undefined) merged[key] = 0;
+        }
+      }
+
+      await (this.prisma as any).dvi_hotel_occupancy_rate.deleteMany({
+        where: { hotel_id: hid, room_id: roomId, rateplan_id: rateplanId, start_date: start, end_date: end },
+      });
+      await this.prisma.dvi_hotel_occupancy_rate.create({
+        data: {
+          hotel_id: hid,
+          room_id: roomId,
+          rateplan_id: rateplanId,
+          start_date: start,
+          end_date: end,
+          occupancy_rates: merged,
+        },
+      });
+      return merged;
+    };
+
     const hotel = await this.prisma.dvi_hotel.findFirst({
       where: { hotel_id: hid } as any,
       select: {
@@ -2874,7 +2955,13 @@ export class HotelsService {
         continue;
       }
 
+      const occupancyRates = buildOccupancyRates(it);
+
       if (!axisroomsEnabled || !axisroomsPropertyId) {
+        // Offline hotels use the same normalized occupancy table as supplier
+        // hotels. The form's SINGLE/DOUBLE/TRIPLE values must not be reduced
+        // to the legacy ROOM_RATE row.
+        await saveOccupancyRates(roomId, rateplanId, start, end, occupancyRates);
         axisroomsSkippedCount++;
         continue;
       }
@@ -2903,80 +2990,7 @@ export class HotelsService {
 
       const ratePlanName = this.toStr(it.ratePlanName) || rateplanId;
 
-      const occupancyRates: Record<string, number> = {};
-      const rawOccupancyRates =
-        it.occupancyRates && typeof it.occupancyRates === 'object'
-          ? (it.occupancyRates as Record<string, unknown>)
-          : undefined;
-
-      if (rawOccupancyRates) {
-        for (const [key, value] of Object.entries(rawOccupancyRates)) {
-          const occupancyKey = this.toStr(key)?.toUpperCase();
-          const numericValue = this.toNumStrict(value);
-          if (!occupancyKey || numericValue === undefined) continue;
-          occupancyRates[occupancyKey] = numericValue;
-        }
-      }
-
-      if (Object.keys(occupancyRates).length === 0) {
-        if (it.roomPrice !== undefined && it.roomPrice !== '' && it.roomPrice !== null) {
-          const single = Number(it.roomPrice);
-          if (Number.isFinite(single)) occupancyRates.SINGLE = single;
-        }
-        if (it.extraBed !== undefined && it.extraBed !== '' && it.extraBed !== null) {
-          const extraBed = Number(it.extraBed);
-          if (Number.isFinite(extraBed)) occupancyRates.EXTRABED = extraBed;
-        }
-        if (it.childWithBed !== undefined && it.childWithBed !== '' && it.childWithBed !== null) {
-          const childWithBed = Number(it.childWithBed);
-          if (Number.isFinite(childWithBed)) occupancyRates.CHILD_WITH_BED = childWithBed;
-        }
-        if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
-          const childWithoutBed = Number(it.childWithoutBed);
-          if (Number.isFinite(childWithoutBed)) occupancyRates.CHILD_WITHOUT_BED = childWithoutBed;
-        }
-      }
-
-      const existingOccupancyRate = await (this.prisma as any).dvi_hotel_occupancy_rate.findFirst({
-        where: {
-          hotel_id: hid,
-          room_id: roomId,
-          rateplan_id: rateplanId,
-          start_date: { lte: end },
-          end_date: { gte: start },
-        },
-        orderBy: { received_at: 'desc' },
-        select: { occupancy_rates: true } as any,
-      });
-
-      const existingOccupancyRates =
-        existingOccupancyRate &&
-        typeof existingOccupancyRate.occupancy_rates === 'object' &&
-        existingOccupancyRate.occupancy_rates !== null
-          ? (existingOccupancyRate.occupancy_rates as Record<string, unknown>)
-          : undefined;
-
-      const mergedOccupancyRates: Record<string, number> = {};
-      if (existingOccupancyRates) {
-        for (const [key, value] of Object.entries(existingOccupancyRates)) {
-          const numericValue = this.toNumStrict(value);
-          if (numericValue !== undefined) {
-            mergedOccupancyRates[this.toStr(key)?.toUpperCase() || key] = numericValue;
-          }
-        }
-      }
-
-      for (const [key, value] of Object.entries(occupancyRates)) {
-        mergedOccupancyRates[key] = value;
-      }
-
-      if (!existingOccupancyRates && Object.keys(mergedOccupancyRates).length > 0) {
-        for (const key of PRICEBOOK_OCCUPANCY_KEYS) {
-          if (mergedOccupancyRates[key] === undefined) {
-            mergedOccupancyRates[key] = 0;
-          }
-        }
-      }
+      const mergedOccupancyRates = await saveOccupancyRates(roomId, rateplanId, start, end, occupancyRates);
 
       await this.prisma.dvi_hotel_room_rate_plan.upsert({
         where: {
@@ -3006,32 +3020,6 @@ export class HotelsService {
           updatedon: new Date(),
         },
       });
-
-    if (Object.keys(mergedOccupancyRates).length > 0) {
-  // Partial date-range update:
-  // remove only an existing record for this exact submitted range.
-  // Broader or partially overlapping saved ranges must remain untouched.
-  await (this.prisma as any).dvi_hotel_occupancy_rate.deleteMany({
-    where: {
-      hotel_id: hid,
-      room_id: roomId,
-      rateplan_id: rateplanId,
-      start_date: start,
-      end_date: end,
-    },
-  });
-
-  await this.prisma.dvi_hotel_occupancy_rate.create({
-    data: {
-      hotel_id: hid,
-      room_id: roomId,
-      rateplan_id: rateplanId,
-      start_date: start,
-      end_date: end,
-      occupancy_rates: mergedOccupancyRates,
-    },
-  });
-}
 
       axisroomsSyncedCount++;
     }
