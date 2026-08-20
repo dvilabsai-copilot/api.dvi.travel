@@ -12,6 +12,36 @@ const positive = (...values: unknown[]): number => {
   return 0;
 };
 
+export interface StoredHotelPayablePricingInput {
+  storedTotal?: unknown;
+  baseTotal?: unknown;
+  marginAmount?: unknown;
+  marginPercentage?: unknown;
+}
+
+/** Normalize legacy persisted rows to the margin-inclusive payable amount. */
+export function resolveStoredHotelPayablePricing(input: StoredHotelPayablePricingInput) {
+  const storedTotal = money(input.storedTotal);
+  const baseTotal = money(input.baseTotal);
+  const explicitMargin = money(input.marginAmount);
+  const marginPercentage = Math.max(Number(input.marginPercentage || 0), 0);
+  const calculatedMargin = explicitMargin > 0
+    ? explicitMargin
+    : money((baseTotal * marginPercentage) / 100);
+  const payableTotal = Math.max(storedTotal, money(baseTotal + calculatedMargin));
+
+  return {
+    baseTotal,
+    marginAmount: calculatedMargin,
+    payableTotal: money(payableTotal),
+    marginPercentage: marginPercentage > 0
+      ? marginPercentage
+      : baseTotal > 0 && calculatedMargin > 0
+        ? money((calculatedMargin / baseTotal) * 100)
+        : 0,
+  };
+}
+
 /**
  * Convert one supplier option from base cost to the authoritative payable
  * amount. The marker makes the operation idempotent so snapshot refresh,

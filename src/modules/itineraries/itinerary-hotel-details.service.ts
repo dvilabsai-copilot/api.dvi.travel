@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma.service';
 import { dvi_itinerary_plan_details, Prisma } from '@prisma/client';
 import { haversineKm } from './utils/distance-utils';
 import { resolvePersistedHotelIdentity } from './utils/hotel-selection-identity.util';
+import { resolveStoredHotelPayablePricing } from './utils/hotel-payable-pricing.util';
 import {
   buildHotelSelectionState,
   HotelSelectionGroupView,
@@ -700,23 +701,6 @@ async getHotelRoomDetailsByQuoteId(
       hotelMasters.map((h) => [Number((h as any).hotel_id), h]),
     );
 
-    const hotelGroupTotals = new Map<number, number>();
-    hotelRowsExpanded.forEach((row: any) => {
-      const groupType = Number(row.group_type ?? 0) || 0;
-      const currentTotal = hotelGroupTotals.get(groupType) || 0;
-      const rowTotal =
-        Number(row.total_hotel_cost ?? 0) + Number(row.total_hotel_tax_amount ?? 0);
-      hotelGroupTotals.set(groupType, currentTotal + rowTotal);
-    });
-
-    const hotelTabs: ItineraryHotelTabDto[] = Array.from(hotelGroupTotals.entries())
-      .map(([groupType, totalAmount]) => ({
-        groupType,
-        label: `Recommended #${groupType}`,
-        totalAmount: Number(totalAmount),
-      }))
-      .sort((a, b) => a.groupType - b.groupType);
-
  // 5) Per-row hotel list (with group_type & per-row cost)
  // Also check voucher cancellation status
     const hotelDetailsIds = hotelRowsExpanded.map(h => (h as any).itinerary_plan_hotel_details_ID).filter(id => id);
@@ -899,18 +883,15 @@ async getHotelRoomDetailsByQuoteId(
         Number((h as any).total_no_of_rooms ?? selectedPriceSnapshot.roomCount ?? 1),
         1,
       );
-      const hasSelectedPayable = Number((h as any).selected_total_price || 0) > 0 ||
-        Boolean(String((h as any).selected_rate_option_id || '').trim());
       const authoritativeBaseHotelCost = snapshotBaseTotal > 0
         ? snapshotBaseTotal
         : snapshotBasePerNight > 0
           ? snapshotBasePerNight * snapshotRoomCount
-          // Legacy selected rows commonly stored payable in total_room_cost.
-          // Do not expose that value as a supplier/base amount when no
-          // authoritative base breakdown exists.
-          : hasSelectedPayable
-            ? 0
-            : Number((h as any).total_room_cost ?? 0);
+          // Legacy selected rows keep the room base in total_room_cost while
+          // total_hotel_cost is the persisted payable column. Keep the room
+          // base available so the margin can be reconstructed when an older
+          // row has not stored a selected-price snapshot.
+          : Number((h as any).total_room_cost ?? 0);
       const hotelierEarlyCheckInNote = showEarlyCheckInDetails
         ? String((h as any).early_checkin_note || '').trim() ||
           'Guest has opted for early morning check-in with extra payment. Room to be blocked from the previous night, with actual guest arrival/check-in on the next day early morning.'
@@ -955,6 +936,18 @@ async getHotelRoomDetailsByQuoteId(
         }
       }
 
+      const storedTotal = Number((h as any).total_hotel_cost ?? 0);
+      const storedTax = Number((h as any).total_hotel_tax_amount ?? 0);
+      const storedMargin = Number((h as any).hotel_margin_rate ?? 0);
+      const storedMarginPercentage = Number((h as any).hotel_margin_percentage ?? 0);
+      const storedPricing = resolveStoredHotelPayablePricing({
+        storedTotal,
+        baseTotal: authoritativeBaseHotelCost,
+        marginAmount: storedMargin,
+        marginPercentage: storedMarginPercentage,
+      });
+      const payableHotelCost = storedPricing.payableTotal * earlyCheckInBillingMultiplier;
+
       return {
         groupType: Number((h as any).group_type ?? 0) || 0,
         itineraryRouteId: routeId,
@@ -977,8 +970,8 @@ async getHotelRoomDetailsByQuoteId(
             : '') ||
           '',
         ).trim(),
-        totalHotelCost: Number((h as any).total_hotel_cost ?? 0) * earlyCheckInBillingMultiplier,
-        totalHotelTaxAmount: Number((h as any).total_hotel_tax_amount ?? 0) * earlyCheckInBillingMultiplier,
+        totalHotelCost: payableHotelCost,
+        totalHotelTaxAmount: storedTax * earlyCheckInBillingMultiplier,
         baseHotelCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
         totalRoomCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
         hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
@@ -993,8 +986,8 @@ async getHotelRoomDetailsByQuoteId(
         extraBedCount: Number((h as any).room_extra_bed_count ?? (h as any).total_extra_bed ?? (plan as any).total_extra_bed ?? 0),
         childWithBedCount: Number((h as any).room_cwb_count ?? (h as any).total_child_with_bed ?? (plan as any).total_child_with_bed ?? 0),
         childWithoutBedCount: Number((h as any).room_cnb_count ?? (h as any).total_child_without_bed ?? (plan as any).total_child_without_bed ?? 0),
-        hotelMarginPercentage: Number((h as any).hotel_margin_percentage ?? 0),
-        hotelMarginAmount: Number((h as any).hotel_margin_rate ?? 0) * earlyCheckInBillingMultiplier,
+        hotelMarginPercentage: storedPricing.marginPercentage,
+        hotelMarginAmount: storedPricing.marginAmount * earlyCheckInBillingMultiplier,
         hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
@@ -1027,6 +1020,21 @@ async getHotelRoomDetailsByQuoteId(
         identityMismatch: !persistedIdentity.consistent,
       };
     });
+
+    const hotelGroupTotals = new Map<number, number>();
+    hotels.forEach((row: any) => {
+      const groupType = Number(row.groupType ?? 0) || 0;
+      const currentTotal = hotelGroupTotals.get(groupType) || 0;
+      const rowTotal = Number(row.totalHotelCost ?? 0) + Number(row.totalHotelTaxAmount ?? 0);
+      hotelGroupTotals.set(groupType, currentTotal + rowTotal);
+    });
+    const hotelTabs: ItineraryHotelTabDto[] = Array.from(hotelGroupTotals.entries())
+      .map(([groupType, totalAmount]) => ({
+        groupType,
+        label: `Recommended #${groupType}`,
+        totalAmount: Number(totalAmount.toFixed(2)),
+      }))
+      .sort((a, b) => a.groupType - b.groupType);
 
  // 6) Total room count (fallback)
     const totalRoomCount = hotelRowsRaw.reduce(
