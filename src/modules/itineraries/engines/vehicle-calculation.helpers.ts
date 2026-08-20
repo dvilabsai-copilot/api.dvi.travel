@@ -3384,11 +3384,10 @@ export async function calculateRouteVehicleDetails(
     }
 
  // Calculate extra KM charges for LOCAL
-    if (pricedLocalSlab.noHigherSlabAvailable && totalKmNum > TOTAL_ALLOWED_LOCAL_KM) {
-      TOTAL_LOCAL_EXTRA_KM = Math.max(0, Math.ceil(totalKmNum - TOTAL_ALLOWED_LOCAL_KM));
-      TOTAL_LOCAL_EXTRA_KM_CHARGES = TOTAL_LOCAL_EXTRA_KM * ctx.extra_km_charge;
-    }
-
+    if (totalKmNum > TOTAL_ALLOWED_LOCAL_KM) {
+  TOTAL_LOCAL_EXTRA_KM = Math.max(0, Math.ceil(totalKmNum - TOTAL_ALLOWED_LOCAL_KM));
+  TOTAL_LOCAL_EXTRA_KM_CHARGES = TOTAL_LOCAL_EXTRA_KM * ctx.extra_km_charge;
+}
     vehicle_cost_for_the_day += TOTAL_LOCAL_EXTRA_HOUR_CHARGES;
   } else {
  // OUTSTATION - use day-based pricebook
