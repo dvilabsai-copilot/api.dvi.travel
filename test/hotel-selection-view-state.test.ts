@@ -272,3 +272,34 @@ test('decodes persisted hotel display names for React hydration', () => {
     'SPRISE MUNNAR RESORT & SPA',
   );
 });
+
+test('projects legacy selected snapshots to payable pricing for hard reload', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 3025 }],
+    requiredRoutes: [{ routeId: 10145, routeDate: '2026-08-12' }],
+    rows: [{
+      groupType: 1,
+      routeId: 10145,
+      selectionOrigin: 'AUTO_SELECTED',
+      isSelected: true,
+      provider: 'offline',
+      hotelName: 'The Whispering Meadows',
+      totalPrice: 2750,
+      selectedPriceSnapshot: JSON.stringify({
+        provider: 'offline',
+        hotelName: 'The Whispering Meadows',
+        basePricePerNight: 2750,
+        baseTotalPrice: 2750,
+        hotelMarginPercentage: 10,
+        pricePerNight: 2750,
+        totalPrice: 2750,
+      }),
+    }],
+  });
+
+  const selected = state[0].routes[0].selected;
+  assert.equal(selected?.pricePerNight, 3025);
+  assert.equal(selected?.totalPrice, 3025);
+  assert.equal(selected?.selectedPriceSnapshot?.pricePerNight, 3025);
+  assert.equal(selected?.selectedPriceSnapshot?.totalPrice, 3025);
+});

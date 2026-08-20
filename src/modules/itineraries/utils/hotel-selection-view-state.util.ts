@@ -1,4 +1,5 @@
 import { hotelCardPayableAmount } from './hotel-card-pricing.util';
+import { projectHotelPayablePricing } from './hotel-payable-pricing.util';
 import {
   isTboSupplierBookingCode,
   normalizeHotelDisplayName,
@@ -22,10 +23,10 @@ export type HotelSelectionSelectedView = {
   pricePerNight: number;
   totalPrice: number;
   selectedPriceSnapshot: Record<string, unknown> | null;
-  requestedCategory: number | null;
-  selectedCategory: number | null;
-  categoryFallbackApplied: boolean;
-  categoryFallbackReason: string | null;
+  requestedCategory?: number;
+  selectedCategory?: number;
+  categoryFallbackApplied?: boolean;
+  categoryFallbackReason?: string;
 };
 
 export type HotelSelectionRouteView = {
@@ -133,9 +134,46 @@ const selectionPriority = (row: any): number => {
 
 const selectedView = (row: any): HotelSelectionSelectedView => {
   const snapshot = parseSnapshot(row?.selectedPriceSnapshot ?? row?.selected_price_snapshot);
-  const identity = snapshot || {};
+  // Persisted selection snapshots may predate the payable-price contract and
+  // still contain the supplier/base amount. Project the snapshot itself
+  // before exposing it through hotelSelectionState; otherwise the tabs use
+  // payable totals while the table hydrates its authoritative selected row
+  // from a stale raw snapshot.
+  const identity: Record<string, any> = snapshot
+    ? (() => {
+        const projected: Record<string, any> = projectHotelPayablePricing(
+          {
+            ...snapshot,
+            isSelected: true,
+            selectionOrigin: row?.selectionOrigin ?? row?.selection_origin ?? snapshot.selectionOrigin,
+          },
+          Number(snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? row?.marginPercentage ?? 0),
+        );
+        // Keep the public selected-view shape stable. Only replace pricing
+        // fields in the existing snapshot; do not leak internal projection
+        // markers or derived aliases into hotelSelectionState.
+        return {
+          ...snapshot,
+          basePricePerNight: projected.basePricePerNight,
+          baseTotalPrice: projected.baseTotalPrice,
+          hotelMarginPercentage: projected.hotelMarginPercentage,
+          hotelMarginAmount: projected.hotelMarginAmount,
+          hotelMarginStayAmount: projected.hotelMarginStayAmount,
+          hotelMarginTotalAmount: projected.hotelMarginTotalAmount,
+          price: projected.price,
+          pricePerNight: projected.pricePerNight,
+          totalPrice: projected.totalPrice,
+          totalStayPrice: projected.totalStayPrice,
+          totalHotelCost: projected.totalHotelCost,
+          totalAmount: projected.totalAmount,
+          totalAmountAfterTax: projected.totalAmountAfterTax,
+          selectedPricePerNight: projected.selectedPricePerNight,
+          selectedTotalPrice: projected.selectedTotalPrice,
+        };
+      })()
+    : {};
   const selectedPriceSnapshot = snapshot
-    ? { ...snapshot, hotelName: normalizeHotelDisplayName(snapshot.hotelName) || null }
+    ? { ...identity, hotelName: normalizeHotelDisplayName(identity.hotelName) || null }
     : null;
   const providerHotelCode = String(
     row?.providerHotelCode ?? row?.provider_hotel_code ?? identity.providerHotelCode ?? '',
@@ -189,10 +227,18 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
     pricePerNight: money(Number.isFinite(pricePerNight) ? pricePerNight : 0),
     totalPrice: money(Number.isFinite(totalPrice) ? totalPrice : payable),
     selectedPriceSnapshot,
-    requestedCategory: Number(row?.requestedCategory ?? row?.requested_category ?? identity.requestedCategory ?? 0) || null,
-    selectedCategory: Number(row?.selectedCategory ?? row?.selected_category ?? identity.selectedCategory ?? row?.category ?? identity.category ?? 0) || null,
-    categoryFallbackApplied: Boolean(row?.categoryFallbackApplied ?? row?.category_fallback_applied ?? identity.categoryFallbackApplied),
-    categoryFallbackReason: String(row?.categoryFallbackReason ?? row?.category_fallback_reason ?? identity.categoryFallbackReason ?? '').trim() || null,
+    ...(Number(row?.requestedCategory ?? row?.requested_category ?? identity.requestedCategory ?? 0) > 0
+      ? { requestedCategory: Number(row?.requestedCategory ?? row?.requested_category ?? identity.requestedCategory) }
+      : {}),
+    ...(Number(row?.selectedCategory ?? row?.selected_category ?? identity.selectedCategory ?? row?.category ?? identity.category ?? 0) > 0
+      ? { selectedCategory: Number(row?.selectedCategory ?? row?.selected_category ?? identity.selectedCategory ?? row?.category ?? identity.category) }
+      : {}),
+    ...(row?.categoryFallbackApplied != null || row?.category_fallback_applied != null || identity.categoryFallbackApplied != null
+      ? { categoryFallbackApplied: Boolean(row?.categoryFallbackApplied ?? row?.category_fallback_applied ?? identity.categoryFallbackApplied) }
+      : {}),
+    ...(String(row?.categoryFallbackReason ?? row?.category_fallback_reason ?? identity.categoryFallbackReason ?? '').trim()
+      ? { categoryFallbackReason: String(row?.categoryFallbackReason ?? row?.category_fallback_reason ?? identity.categoryFallbackReason).trim() }
+      : {}),
   };
 };
 
