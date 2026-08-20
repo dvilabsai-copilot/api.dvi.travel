@@ -3247,9 +3247,10 @@ this.logger.log(
         continue;
       }
 
-      // ARI sends broad validity ranges and later date-specific corrections.
-      // Resolve one effective row per hotel/room before applying room-count
-      // eligibility; otherwise an old broad row can mask a newer daily update.
+      // ARI sends broad validity ranges and later corrections. The pricebook
+      // treats the latest received update as authoritative for each requested
+      // date, regardless of the row's range width. Keep the same rule here so
+      // itinerary search and pricebook cannot disagree about inventory.
       const effectiveAvailabilityByRoom = new Map<string, any>();
       for (const row of availRows as any[]) {
         const hotelId = Number(row.hotel_id);
@@ -3258,25 +3259,14 @@ this.logger.log(
           continue;
         }
 
-        const startTime = new Date(row.start_date).getTime();
-        const endTime = new Date(row.end_date).getTime();
-        const rangeDays = Number.isFinite(startTime) && Number.isFinite(endTime)
-          ? Math.max(0, Math.round((endTime - startTime) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
-          : Number.MAX_SAFE_INTEGER;
         const key = `${hotelId}|${roomId}`;
         const current = effectiveAvailabilityByRoom.get(key);
-        const currentStart = current ? new Date(current.start_date).getTime() : Number.NaN;
-        const currentEnd = current ? new Date(current.end_date).getTime() : Number.NaN;
-        const currentRangeDays = current && Number.isFinite(currentStart) && Number.isFinite(currentEnd)
-          ? Math.max(0, Math.round((currentEnd - currentStart) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
-          : Number.MAX_SAFE_INTEGER;
         const receivedAt = new Date(row.received_at).getTime();
         const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
 
         if (
           !current ||
-          rangeDays < currentRangeDays ||
-          (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)
+          receivedAt > currentReceivedAt
         ) {
           effectiveAvailabilityByRoom.set(key, row);
         }

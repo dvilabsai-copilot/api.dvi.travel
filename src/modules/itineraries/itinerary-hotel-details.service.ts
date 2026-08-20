@@ -105,6 +105,10 @@ export interface ItineraryHotelRowDto {
   externalStay?: boolean;
   availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE';
   availabilityMessage?: string | null;
+  availableDates?: string[];
+  unavailableDates?: string[];
+  completeStayBookable?: boolean;
+  completeStayRouteIds?: number[];
   availableAgainFrom?: string | null;
  // Voucher cancellation status
   voucherCancelled?: boolean;
@@ -326,6 +330,10 @@ export interface ItineraryHotelRoomDto {
   externalStay?: boolean;
   availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE';
   availabilityMessage?: string | null;
+  availableDates?: string[];
+  unavailableDates?: string[];
+  completeStayBookable?: boolean;
+  completeStayRouteIds?: number[];
   availableAgainFrom?: string | null;
   requiresHotelApproval?: boolean;
   isLiveRate?: boolean;
