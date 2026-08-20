@@ -29,6 +29,7 @@ import { SystemRole } from '../auth/constants/system-role.constants';
 import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
 import { normalizeHotelDisplayName } from './utils/hotel-selection-identity.util';
+import { resolveStoredHotelPayablePricing } from './utils/hotel-payable-pricing.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -6184,6 +6185,7 @@ const hasRequiredVehicleSelection =
           pricePerNight: (h as any).selected_price_per_night || (h as any).price_per_night,
         }, 1) * rowMultiplier;
         let selectedBaseAmount = 0;
+        let selectedSnapshotMarginAmount = 0;
         try {
           const snapshot = typeof (h as any).selected_price_snapshot === 'string'
             ? JSON.parse((h as any).selected_price_snapshot)
@@ -6192,19 +6194,40 @@ const hasRequiredVehicleSelection =
           if (Number.isFinite(basePerNight) && basePerNight > 0) {
             selectedBaseAmount = basePerNight * rowMultiplier;
           }
+          const snapshotMargin = Number(
+            snapshot?.hotelMarginStayAmount ??
+            snapshot?.hotelMarginTotalAmount ??
+            snapshot?.hotelMarginAmount ??
+            0,
+          );
+          if (Number.isFinite(snapshotMargin) && snapshotMargin > 0) {
+            selectedSnapshotMarginAmount = snapshotMargin;
+          }
         } catch {
           selectedBaseAmount = 0;
+        }
+        if (selectedBaseAmount <= 0) {
+          selectedBaseAmount = Number(h.total_room_cost || 0) * rowMultiplier;
         }
         // Selected totals are payable amounts. Preserve the supplier/base and
         // margin components separately so the tooltip can show 4,200 + 840 =
         // 5,040 instead of presenting the payable amount as the room base.
-        const selectedBase = selectedBaseAmount > 0
-          ? selectedBaseAmount
-          : Math.max(selectedAmount - Number(h.hotel_margin_rate || 0) * rowMultiplier, 0);
-        hotelListTotal += selectedAmount;
+        const selectedPricing = resolveStoredHotelPayablePricing({
+          storedTotal: selectedAmount,
+          baseTotal: selectedBaseAmount,
+          marginAmount: selectedSnapshotMarginAmount > 0
+            ? selectedSnapshotMarginAmount
+            : Number(h.hotel_margin_rate || 0) * rowMultiplier,
+          marginPercentage: Number(h.hotel_margin_percentage || 0),
+        });
+        const selectedBase = selectedPricing.baseTotal > 0
+          ? selectedPricing.baseTotal
+          : Math.max(selectedAmount - selectedPricing.marginAmount, 0);
+        const selectedPayable = selectedPricing.payableTotal;
+        hotelListTotal += selectedPayable;
         hotelRoomBaseCost += selectedBase;
-        hotelMarginCost += Math.max(selectedAmount - selectedBase, 0);
-        totalRoomCost += selectedAmount;
+        hotelMarginCost += Math.max(selectedPayable - selectedBase, 0);
+        totalRoomCost += selectedPayable;
         return;
       }
 

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { projectHotelPayablePricing } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
+import {
+  projectHotelPayablePricing,
+  resolveStoredHotelPayablePricing,
+} from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
 import {
   decorateHotelCardPricing,
   hotelCardPropertyKey,
@@ -41,6 +44,28 @@ test('nested supplier options retain the idempotency marker after projection', (
   assert.equal(nested.baseTotalPrice, 4020);
   assert.equal(nested.amountIncludesHotelMargin, true);
   assert.equal(projectHotelPayablePricing(projected, 10).rateOptions[0].totalPrice, 4422);
+});
+
+test('legacy persisted row exposes margin-inclusive payable total', () => {
+  const pricing = resolveStoredHotelPayablePricing({
+    storedTotal: 2750,
+    baseTotal: 2750,
+    marginAmount: 275,
+    marginPercentage: 10,
+  });
+
+  assert.deepEqual(pricing, {
+    baseTotal: 2750,
+    marginAmount: 275,
+    payableTotal: 3025,
+    marginPercentage: 10,
+  });
+  assert.equal(resolveStoredHotelPayablePricing({
+    storedTotal: 3025,
+    baseTotal: 2750,
+    marginAmount: 275,
+    marginPercentage: 10,
+  }).payableTotal, 3025);
 });
 
 test('ResAvenue margin projection remains idempotent at 9499 -> 10448.90', () => {
