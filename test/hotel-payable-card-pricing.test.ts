@@ -66,6 +66,18 @@ test('legacy persisted row exposes margin-inclusive payable total', () => {
     marginAmount: 275,
     marginPercentage: 10,
   }).payableTotal, 3025);
+
+  const underProjected = projectHotelPayablePricing({
+    basePricePerNight: 2750,
+    baseTotalPrice: 2750,
+    pricePerNight: 2750,
+    totalPrice: 2750,
+    hotelMarginPercentage: 10,
+    hotelMarginAmount: 275,
+    amountIncludesHotelMargin: true,
+  }, 10);
+  assert.equal(underProjected.pricePerNight, 3025);
+  assert.equal(underProjected.totalPrice, 3025);
 });
 
 test('ResAvenue margin projection remains idempotent at 9499 -> 10448.90', () => {
