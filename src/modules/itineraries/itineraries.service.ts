@@ -1965,9 +1965,13 @@ private getGuideSlotLabel(slotId: number): string {
         (requestedProvider === 'axisrooms' && optionProvider === 'ax');
       const optionCanonical = Number(option.canonicalHotelId || option.hotelId || 0);
       const optionProviderCode = normalize(option.providerHotelCode || option.provider_hotel_code || option.hotelCode);
+      const providerCodeMatches = optionProviderCode === normalize(hotelCode);
+      // Fresh supplier responses may not carry our internal canonical ID.
+      // Once provider and provider hotel code match, allow that authoritative
+      // supplier identity to match the persisted canonical selection too.
       return providerMatches && (requestedCanonical > 0
-        ? optionCanonical === requestedCanonical
-        : optionProviderCode === normalize(hotelCode));
+        ? optionCanonical === requestedCanonical || (!optionCanonical && providerCodeMatches)
+        : providerCodeMatches);
     };
     const payableAmount = (option: any) => Number(
       option.totalStayPrice ?? option.totalPrice ?? option.totalAmountAfterTax ?? option.pricePerNight ?? option.price ?? Number.MAX_SAFE_INTEGER,
