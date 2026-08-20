@@ -115,6 +115,17 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     pricingIncludesHotelMargin: true,
   } as T;
 
+  // Persisted selected rows expose a second price surface that the itinerary
+  // table uses in preference to the generic total fields. Keep it aligned
+  // with the projected payable amount; otherwise the card/tooltip can show
+  // margin-inclusive pricing while the table still renders the old base rate.
+  if (option?.isSelected === true || String(option?.selectionOrigin || '').trim()) {
+    (projected as any).selectedTotalPrice = payableTotal;
+    (projected as any).selected_total_price = payableTotal;
+    (projected as any).selectedPricePerNight = payablePerNight;
+    (projected as any).selected_price_per_night = payablePerNight;
+  }
+
   if (Array.isArray(option?.rateOptions)) {
     (projected as any).rateOptions = option.rateOptions.map((rateOption: Record<string, any>) =>
       projectHotelPayablePricing({
