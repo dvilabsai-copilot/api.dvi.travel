@@ -60,11 +60,12 @@ export class ItineraryExportService {
           COALESCE(MAX(r.extra_bed_rate), 0) AS room_extra_bed_rate,
           COALESCE(SUM(r.child_without_bed_count), 0) AS room_cnb_count,
           COALESCE(SUM(r.child_with_bed_count), 0) AS room_cwb_count,
-          MAX(hotel.hotel_name) AS hotel_name, MAX(rt.room_type_title) AS room_type_title
+          MAX(hotel.hotel_name) AS hotel_name, MAX(rt.room_type_title) AS room_type_title, MAX(rooms.room_title) AS room_title
         FROM dvi_itinerary_plan_hotel_details h
         LEFT JOIN dvi_itinerary_plan_hotel_room_details r ON r.itinerary_plan_hotel_details_id = h.itinerary_plan_hotel_details_ID AND r.group_type = h.group_type AND r.deleted = 0 AND r.status = 1
         LEFT JOIN dvi_hotel hotel ON hotel.hotel_id = h.hotel_id
         LEFT JOIN dvi_hotel_roomtype rt ON rt.room_type_id = r.room_type_id
+        LEFT JOIN dvi_hotel_rooms rooms ON rooms.room_ID = r.room_id AND rooms.hotel_id = h.hotel_id
         WHERE h.itinerary_plan_id = ${planId} AND h.group_type = ${Number(group.group_type)} AND h.deleted = 0 AND h.status = 1
         GROUP BY h.itinerary_plan_hotel_details_ID, h.itinerary_route_date ORDER BY h.itinerary_route_date ASC`;
       let overallCost = 0, overallSales = 0, overallPL = 0;
@@ -78,7 +79,7 @@ export class ItineraryExportService {
         const totalCost = pricing.cost;
         const pl = pricing.pl; overallCost += totalCost; overallSales += totalSales; overallPL += pl;
         const meals = [['B', d.breakfast_required, d.breakfast_cost_per_person], ['L', d.lunch_required, d.lunch_cost_per_person], ['D', d.dinner_required, d.dinner_cost_per_person]].filter(([, required, cost]) => Number(required) === 1 && this.num(cost) !== 0).map(([label]) => label).join(', ') || 'EP';
-        this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', this.hotelName(d), d.room_type_title || '', meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), extraBedCost, this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), storedMargin, storedMarginTax, totalCost, totalSales, pl], styles.data, 21, 10);
+        this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', this.hotelName(d), this.roomTypeName(d), meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), extraBedCost, this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), storedMargin, storedMarginTax, totalCost, totalSales, pl], styles.data, 21, 10);
         row += 1;
       }
       if (details.length) {
@@ -132,6 +133,21 @@ export class ItineraryExportService {
         ? JSON.parse(detail.selected_price_snapshot)
         : detail?.selected_price_snapshot;
       return String(snapshot?.hotelName || snapshot?.hotel_name || snapshot?.propertyName || snapshot?.propertyname || '').trim();
+    } catch {
+      return '';
+    }
+  }
+  private roomTypeName(detail: any): string {
+    const direct = String(detail?.room_type_title || detail?.room_title || '').trim();
+    if (direct) return direct;
+    try {
+      const snapshot = typeof detail?.selected_price_snapshot === 'string'
+        ? JSON.parse(detail.selected_price_snapshot)
+        : detail?.selected_price_snapshot;
+      return String(
+        snapshot?.roomType || snapshot?.roomTypeName || snapshot?.room_type_title ||
+        snapshot?.room_type || snapshot?.roomName || snapshot?.room_name || ''
+      ).trim();
     } catch {
       return '';
     }
