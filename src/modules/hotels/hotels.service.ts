@@ -2229,6 +2229,32 @@ export class HotelsService {
       return { dates: [], rooms: [], occupancies: [] };
     }
 
+    // Rate rows contain identifiers only. Resolve the selected room metadata
+    // here so every occupancy row renders the same Room Name and Room Type as
+    // the rest of the price-book UI.
+    const roomMetadata = await (this.prisma as any).dvi_hotel_rooms.findFirst({
+      where: {
+        hotel_id: hid,
+        room_ID: BigInt(rid),
+        deleted: 0,
+      },
+      select: {
+        room_title: true,
+        room_type_id: true,
+      },
+    });
+    const roomTypeMetadata = roomMetadata?.room_type_id
+      ? await (this.prisma as any).dvi_hotel_roomtype.findFirst({
+          where: {
+            room_type_id: Number(roomMetadata.room_type_id),
+            OR: [{ deleted: 0 }, { deleted: null }],
+          },
+          select: { room_type_title: true },
+        })
+      : null;
+    const roomName = String(roomMetadata?.room_title || '').trim();
+    const roomType = String(roomTypeMetadata?.room_type_title || '').trim();
+
  // All rows that overlap the requested range, latest received_at first
     const rows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
       where: {
@@ -2374,8 +2400,8 @@ export class HotelsService {
       }
       return {
         roomId: rid,
-        roomName: '',
-        roomType: '',
+        roomName,
+        roomType,
         rateplanId,
         occupancyType: occKey,
         values,
