@@ -588,8 +588,9 @@ private readonly itineraryAccessService: ItineraryAccessService,
     @Query('pageSize') pageSize?: string,
     @Query('groupType') groupType?: string,
     @Query('itineraryRouteId') itineraryRouteId?: string,
+    @Query('includeInventory') includeInventory?: string,
   ): Promise<ItineraryHotelDetailsResponseDto> {
-    return this.hotelAvailabilitySnapshotService.readPersisted(
+    const persisted = await this.hotelAvailabilitySnapshotService.readPersisted(
       quoteId,
       {
         page: page ? Math.max(1, parseInt(page, 10) || 1) : 1,
@@ -603,6 +604,15 @@ private readonly itineraryAccessService: ItineraryAccessService,
       },
       () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
     );
+
+    if (page || groupType || itineraryRouteId || String(includeInventory || '').toLowerCase() === 'true') {
+      return persisted;
+    }
+
+    return this.buildCompactHotelAvailabilityResponse(
+      { response: persisted, changeSummary: null },
+      null,
+    ).hotelDetails;
   }
 
   @Post('hotel_details/:quoteId/check-availability')
@@ -624,11 +634,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
       undefined,
       req.user?.role,
     );
-    return {
-      hotelDetails: result.response,
-      changeSummary: result.changeSummary,
-      itinerary,
-    };
+    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
   }
 
   @Post('hotel_details/:quoteId/selected-hotel-refresh')
@@ -672,11 +678,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
       undefined,
       req.user?.role,
     );
-    return {
-      hotelDetails: result.response,
-      changeSummary: result.changeSummary,
-      itinerary,
-    };
+    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
   }
 
   @Post('hotel_details/:quoteId/offline-availability')
@@ -699,10 +701,82 @@ private readonly itineraryAccessService: ItineraryAccessService,
       undefined,
       req.user?.role,
     );
+    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
+  }
+
+  private buildCompactHotelAvailabilityResponse(result: any, itinerary: any) {
+    const {
+      recommendationAlgorithm: _recommendationAlgorithm,
+      recommendationGeneration: _recommendationGeneration,
+      hotelAvailability,
+      ...resetHotelDetails
+    } = result.response;
+    const {
+      sharedHotelInventory: _sharedHotelInventory,
+      recommendationAlgorithm: _availabilityRecommendationAlgorithm,
+      recommendationGeneration: _availabilityRecommendationGeneration,
+      ...compactAvailability
+    } = hotelAvailability || ({} as any);
+
     return {
-      hotelDetails: result.response,
+      hotelDetails: {
+        ...resetHotelDetails,
+        hotels: (result.response.hotels || []).map((row: any) => {
+          const {
+            rateOptions: _rateOptions,
+            roomTypes: _roomTypes,
+            nightlyRates: _nightlyRates,
+            supplementSummary: _supplementSummary,
+            selection: _selection,
+            selectedPriceSnapshot: _selectedPriceSnapshot,
+            selected_price_snapshot: _selectedPriceSnapshotLegacy,
+            itinerary_route_id: _itineraryRouteIdLegacy,
+            itinerary_route_date: _itineraryRouteDateLegacy,
+            check_in_date: _checkInDateLegacy,
+            check_out_date: _checkOutDateLegacy,
+            hotelCheckInDate: _hotelCheckInDateLegacy,
+            hotel_check_in_date: _hotelCheckInDateSnake,
+            hotelCheckOutDate: _hotelCheckOutDateLegacy,
+            hotel_check_out_date: _hotelCheckOutDateSnake,
+            ...summaryRow
+          } = row;
+          return summaryRow;
+        }),
+        hotelTabs: (result.response.hotelTabs || []).map((tab: any) => ({
+          groupType: tab.groupType,
+          label: tab.label,
+          totalAmount: tab.totalAmount,
+          partialTotal: tab.partialTotal,
+          complete: tab.complete,
+          stayResults: (tab.stayResults || []).map((stay: any) => ({
+            stayKey: stay.stayKey,
+            parentRouteId: stay.parentRouteId,
+            routeIds: stay.routeIds,
+            destination: stay.destination,
+            checkInDate: stay.checkInDate,
+            checkOutDate: stay.checkOutDate,
+            nights: stay.nights,
+          })),
+        })),
+        hotelSelectionState: (result.response.hotelSelectionState || []).map((group: any) => ({
+          ...group,
+          routes: (group.routes || []).map((route: any) => {
+            if (!route?.selected) return route;
+            const snapshot = route.selected.selectedPriceSnapshot &&
+              typeof route.selected.selectedPriceSnapshot === 'object'
+              ? route.selected.selectedPriceSnapshot
+              : {};
+            const { selectedPriceSnapshot: _selectedPriceSnapshot, ...selected } = route.selected;
+            return { ...route, selected: { ...snapshot, ...selected } };
+          }),
+        })),
+        hotelAvailability: compactAvailability,
+      },
       changeSummary: result.changeSummary,
-      itinerary,
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
     };
   }
 
