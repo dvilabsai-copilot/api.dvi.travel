@@ -180,6 +180,16 @@ export class ItineraryConfirmedItineraryDetailsService {
       }
     });
 
+// Build a map of confirmation hotel names by route_id for fallback lookup
+    const confirmationHotelNames = new Map<number, string>();
+    const confirmations = await (this.prisma as any).$queryRaw<any[]> `SELECT confirmation_reference, hotel_name, itinerary_route_id FROM dviHotelConfirmations WHERE itinerary_plan_id = ${plan.itinerary_plan_ID} AND status = 1`;
+    confirmations.forEach((conf: any) => {
+      const routeId = Number(conf.itinerary_route_id || 0);
+      if (routeId > 0 && !confirmationHotelNames.has(routeId)) {
+        confirmationHotelNames.set(routeId, String(conf.hotel_name || '').trim());
+      }
+    });
+
     const tboHotelCodes = confirmedHotels
       .map((row: any) => String(row?.hotel_code || '').trim())
       .filter(Boolean);
@@ -456,6 +466,7 @@ export class ItineraryConfirmedItineraryDetailsService {
         hotelMasterById.get(Number((matchedConfirmedHotel as any)?.hotel_id || 0));
       const resolvedHotelName = String(
         providerBooking?.hotelName ||
+        confirmationHotelNames.get(routeId) ||
         (matchedConfirmedHotel as any)?.hotel_name ||
         (matchedConfirmedHotel as any)?.hotelName ||
         (hotelMaster as any)?.hotel_name ||
