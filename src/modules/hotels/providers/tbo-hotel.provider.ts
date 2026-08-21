@@ -468,6 +468,20 @@ export class TBOHotelProvider implements IHotelProvider {
       return { tboCityCode: null, source: null };
     }
 
+    // Itinerary destinations can be stored as descriptive strings such as
+    // "Bandipur National Park, Karnataka, India", while dvi_cities stores
+    // the canonical city as "Bandipur". Try the useful city portion(s) as
+    // well as the original value before falling back to the supplier list.
+    const cityNameCandidates = Array.from(
+      new Set(
+        [
+          normalized,
+          normalized.split(',')[0]?.trim(),
+          normalized.split(',')[0]?.trim().replace(/\s+national park$/i, ''),
+        ].filter(Boolean),
+      ),
+    );
+
     const aliasMap: Record<string, string> = {
       cochin: 'Kochi',
       alleppey: 'Alappuzha',
@@ -525,22 +539,27 @@ export class TBOHotelProvider implements IHotelProvider {
     }
 
  // 3) Input might be city name in dvi_cities (case-insensitive where supported).
-    const byName = await this.prisma.dvi_cities.findFirst({
-      where: {
-        name: {
-          equals: normalized,
-        } as any,
-      },
-      select: { tbo_city_code: true },
-    });
-    if (byName?.tbo_city_code) {
-      return { tboCityCode: byName.tbo_city_code, source: 'dvi_cities.name' };
+    for (const cityName of cityNameCandidates) {
+      const byName = await this.prisma.dvi_cities.findFirst({
+        where: {
+          name: { equals: cityName } as any,
+          tbo_city_code: { not: null },
+          status: 1,
+        },
+        orderBy: { id: 'asc' },
+        select: { tbo_city_code: true },
+      });
+      if (byName?.tbo_city_code) {
+        return { tboCityCode: byName.tbo_city_code, source: `dvi_cities.name:${cityName}` };
+      }
     }
 
- // 3b) Resolve by static CityList (Postman certification flow).
-    const fromStaticByName = await this.fetchTboCityCodeFromStaticCityList(normalized);
-    if (fromStaticByName) {
-      return { tboCityCode: fromStaticByName, source: 'static-citylist-by-name' };
+    // 3b) Resolve by static CityList (Postman certification flow).
+    for (const cityName of cityNameCandidates) {
+      const fromStaticByName = await this.fetchTboCityCodeFromStaticCityList(cityName);
+      if (fromStaticByName) {
+        return { tboCityCode: fromStaticByName, source: `static-citylist-by-name:${cityName}` };
+      }
     }
 
  // 4) Fallback to existing dvi_hotel.tbo_city_code usage (no schema changes).
@@ -557,19 +576,19 @@ export class TBOHotelProvider implements IHotelProvider {
     }
 
  // 5) If input is city name used in dvi_hotel.hotel_city, derive mapped tbo_city_code.
-    const hotelByCityName = await this.prisma.dvi_hotel.findFirst({
-      where: {
-        hotel_city: {
-          equals: normalized,
-        } as any,
-        tbo_city_code: { not: null },
-        deleted: false,
-      },
-      select: { tbo_city_code: true },
-      orderBy: { hotel_id: 'desc' },
-    });
-    if (hotelByCityName?.tbo_city_code) {
-      return { tboCityCode: hotelByCityName.tbo_city_code, source: 'dvi_hotel.hotel_city' };
+    for (const cityName of cityNameCandidates) {
+      const hotelByCityName = await this.prisma.dvi_hotel.findFirst({
+        where: {
+          hotel_city: { equals: cityName } as any,
+          tbo_city_code: { not: null },
+          deleted: false,
+        },
+        select: { tbo_city_code: true },
+        orderBy: { hotel_id: 'desc' },
+      });
+      if (hotelByCityName?.tbo_city_code) {
+        return { tboCityCode: hotelByCityName.tbo_city_code, source: `dvi_hotel.hotel_city:${cityName}` };
+      }
     }
 
  // 6) Last resort: treat numeric input as direct TBO code when no mapping exists locally.
