@@ -360,6 +360,15 @@ export class HotelsService {
     const limit = Math.max(1, Math.min(100, Number(q.limit ?? 10)));
     const skip = (page - 1) * limit;
 
+    const providerAlias: Record<string, 'axisrooms' | 'resavenue' | 'staah'> = {
+      AX: 'axisrooms',
+      RS: 'resavenue',
+      ST: 'staah',
+      axisrooms: 'axisrooms',
+      resavenue: 'resavenue',
+      staah: 'staah',
+    };
+    const provider = providerAlias[String(q.provider ?? '').trim()];
     const AND: Prisma.dvi_hotelWhereInput[] = [this.notDeletedBool as any];
 
     const rawStatus: any = (q as any).status;
@@ -375,6 +384,19 @@ export class HotelsService {
           ? ({ hotel_city: resolvedCity.cityId } as any)
           : ({ hotel_city: q.hotel_city } as any),
       );
+    }
+
+    if (provider === 'axisrooms') {
+      AND.push({ axisrooms_enabled: 1 } as any);
+      AND.push({ axisrooms_property_id: { not: null } } as any);
+      AND.push({ axisrooms_property_id: { not: '' } } as any);
+    } else if (provider === 'resavenue') {
+      AND.push({ resavenue_hotel_code: { not: null } } as any);
+      AND.push({ resavenue_hotel_code: { not: '' } } as any);
+    } else if (provider === 'staah') {
+      AND.push({ staah_enabled: 1 } as any);
+      AND.push({ staah_property_id: { not: null } } as any);
+      AND.push({ staah_property_id: { not: '' } } as any);
     }
 
     const term = (q.search ?? '').toString().trim();
