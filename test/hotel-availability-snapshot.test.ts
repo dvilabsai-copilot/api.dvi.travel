@@ -2034,7 +2034,7 @@ test('live reconciliation falls back to offline inventory only when live is abse
   assert.equal(createdSelections[0].hotel_provider, 'offline');
 });
 
-test('replacement compares live and offline providers by current valid price', async () => {
+test('automatic replacement prefers live providers even when offline is cheaper', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -2076,10 +2076,10 @@ test('replacement compares live and offline providers by current valid price', a
   }], 'live-run-with-offline', 7);
 
   assert.equal(createdSelections.length, 1);
-  assert.equal(createdSelections[0].hotel_provider, 'offline');
+  assert.equal(createdSelections[0].hotel_provider, 'staah');
 });
 
-test('a live rate with the wrong meal plan does not block a matching offline auto-selection', async () => {
+test('a live rate remains the automatic choice when offline has the requested meal plan', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -2123,9 +2123,9 @@ test('a live rate with the wrong meal plan does not block a matching offline aut
   }], 'live-ep-offline-cp', 7, false, undefined, 'CP');
 
   assert.equal(createdSelections.length, 1);
-  assert.equal(createdSelections[0].hotel_provider, 'offline');
-  assert.equal(createdSelections[0].hotel_id, 987);
-  assert.equal(JSON.parse(createdSelections[0].selected_price_snapshot).mealPlan, 'CP');
+  assert.equal(createdSelections[0].hotel_provider, 'resavenue');
+  assert.equal(createdSelections[0].hotel_id, 988);
+  assert.equal(JSON.parse(createdSelections[0].selected_price_snapshot).mealPlan, 'EP');
 });
 
 test('explicit offline fetch can auto-select only its requested stay group', async () => {

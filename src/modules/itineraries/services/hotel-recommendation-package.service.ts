@@ -315,12 +315,17 @@ export class HotelRecommendationPackageService {
 
   private selectCategoryOption(options: StayOption[], slot: CategorySlot, used: Set<string>): StayOption | undefined {
     const orderedCategories = this.categoryFallbackOrder(slot.category);
+    // Automatic recommendations are live-first for this stay/day. Offline
+    // catalog options are considered only when no live supplier option exists.
+    // Explicit user selections are handled outside this recommendation path.
+    const liveOptions = options.filter((option) => !this.isOffline(option.hotel));
+    const selectableOptions = liveOptions.length > 0 ? liveOptions : options;
 
     // Pass 1: exhaust every unused physical property before permitting reuse.
     // Category preference remains stronger than meal-plan preference: for each
     // category, first look only at unused properties, then rank their rates.
     for (const category of orderedCategories) {
-      const categoryCandidates = options
+      const categoryCandidates = selectableOptions
         .filter((option) => this.categoryNumber(option.hotel) === category)
         .sort((a, b) => a.priceCents - b.priceCents || a.optionKey.localeCompare(b.optionKey));
       if (categoryCandidates.length === 0) continue;
@@ -337,7 +342,7 @@ export class HotelRecommendationPackageService {
     // Pass 2: no unused usable property exists anywhere for this stay. Reuse
     // is now allowed, using the same category/meal/target ordering.
     for (const category of orderedCategories) {
-      const categoryCandidates = options
+      const categoryCandidates = selectableOptions
         .filter((option) => this.categoryNumber(option.hotel) === category)
         .sort((a, b) => a.priceCents - b.priceCents || a.optionKey.localeCompare(b.optionKey));
       if (categoryCandidates.length === 0) continue;

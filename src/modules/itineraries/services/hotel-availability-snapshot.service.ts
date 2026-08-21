@@ -1406,7 +1406,7 @@ export class HotelAvailabilitySnapshotService {
           rows,
           searchRunId,
           createdBy,
-          false,
+          true,
           undefined,
           this.getPlanMealPlanCode(plan),
           this.getPlanMealPlanFlags(plan),
@@ -3485,7 +3485,7 @@ export class HotelAvailabilitySnapshotService {
     rows: any[],
     searchRunId: string,
     createdBy: number,
-    allowOfflineAutoSelection = false,
+    allowOfflineAutoSelection = true,
     eligibleRouteIds?: Set<number>,
     preferredMealPlanCode?: string | null,
     preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
@@ -3538,7 +3538,7 @@ export class HotelAvailabilitySnapshotService {
         row.autoSelectionCandidate === true &&
         this.autoSelectionIdentityMatches(row, row.autoSelectionIdentity),
       );
-      const options = origin === 'USER_SELECTED'
+      let options = origin === 'USER_SELECTED'
         ? allOptions
         : this.getEffectiveAutoSelectionPool(
             allOptions,
@@ -3547,6 +3547,20 @@ export class HotelAvailabilitySnapshotService {
             authoritativeAutoOptions,
             authoritativeGroup,
           );
+      if (origin !== 'USER_SELECTED') {
+        const liveOptions = allOptions.filter((option: any) =>
+          String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
+        );
+        const selectedLiveOptions = options.filter((option: any) =>
+          String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
+        );
+        // A meal-plan-filtered pool must not make an offline row look like the
+        // only option when a live hotel exists for this route/day. Keep the
+        // live option and let its actual meal plan be shown as the fallback.
+        if (options.length > 0 && liveOptions.length > 0 && selectedLiveOptions.length === 0) {
+          options = liveOptions;
+        }
+      }
       // Match the exact persisted supplier rate first. A parent hotel row can
       // contain several nested room/meal options and must never win with a
       // different identity or price.
@@ -4043,7 +4057,7 @@ export class HotelAvailabilitySnapshotService {
     rows: any[],
     searchRunId: string,
     createdBy: number,
-    allowOfflineAutoSelection = false,
+    allowOfflineAutoSelection = true,
     eligibleRouteIds?: Set<number>,
     preferredMealPlanCode?: string | null,
     preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
@@ -4208,11 +4222,20 @@ export class HotelAvailabilitySnapshotService {
         authoritativeOptions,
         authoritativeGroup,
       );
-      // Provider class is not a category or availability gate. The pool is
-      // already meal-plan compatible, so compare every live and offline/local
-      // option together. A live higher-category row must not block a valid
-      // lower-category offline fallback.
-      const eligibleOptions = selectionPool;
+      // Automatic selection is per route/day. Prefer any live supplier option
+      // in this route/group pool; only use offline catalog pricing when this
+      // pool contains no live option. Manual/user-selected offline rows are
+      // protected earlier and are not changed by this rule.
+      const liveOptions = selectionPool.filter((option: any) =>
+        String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
+      );
+      const allLiveOptions = options.filter((option: any) =>
+        String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
+      );
+      const eligibleLiveOptions = liveOptions.length > 0 ? liveOptions : allLiveOptions;
+      const eligibleOptions = selectionPool.length > 0 && allLiveOptions.length > 0
+        ? eligibleLiveOptions
+        : selectionPool;
       if (eligibleOptions.length === 0) continue;
       const sortedOptions = [...eligibleOptions].sort((a, b) => {
         const priceDelta = this.authoritativeAutoTotal(a) - this.authoritativeAutoTotal(b);
@@ -4467,12 +4490,19 @@ export class HotelAvailabilitySnapshotService {
       row?.isBookable !== false && row?.isSelectable !== false,
     );
     if (selectable.length === 0) return null;
-    // Provider class is not an availability/category gate. The authoritative
-    // recommendation normally supplies this pool already; when reconciliation
-    // must choose a replacement, compare every selectable provider together.
-    // Keep the parameter for compatibility with older callers, but do not let
-    // a live row displace a valid lower-category offline row.
-    const candidates = selectable;
+    // Automatic selection is route/day scoped: a live supplier option always
+    // wins when one exists for this route/day, regardless of price. Offline
+    // catalog pricing is only an automatic fallback when this pool has no
+    // live option. Explicit USER_SELECTED rows are handled separately and are
+    // never replaced by this method.
+    const liveOptions = selectable.filter((row: any) =>
+      String(row?.provider || row?.hotel_provider || '').trim().toLowerCase() !== 'offline',
+    );
+    const candidates = liveOptions.length > 0
+      ? liveOptions
+      : allowOfflineFallback
+        ? selectable
+        : [];
     return [...candidates].sort((left, right) =>
       this.authoritativeAutoTotal(left) - this.authoritativeAutoTotal(right) ||
       this.optionKey(left).localeCompare(this.optionKey(right)),
