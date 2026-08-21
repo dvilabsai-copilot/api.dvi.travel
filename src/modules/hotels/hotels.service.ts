@@ -378,17 +378,16 @@ export class HotelsService {
     }
 
     if (q.provider === 'axisrooms') {
-      AND.push({
-        axisrooms_enabled: 1,
-        axisrooms_property_id: { AND: [{ not: null }, { not: '' }] },
-      } as any);
+      AND.push({ axisrooms_enabled: 1 } as any);
+      AND.push({ axisrooms_property_id: { not: null } } as any);
+      AND.push({ axisrooms_property_id: { not: '' } } as any);
     } else if (q.provider === 'resavenue') {
-      AND.push({ resavenue_hotel_code: { AND: [{ not: null }, { not: '' }] } } as any);
+      AND.push({ resavenue_hotel_code: { not: null } } as any);
+      AND.push({ resavenue_hotel_code: { not: '' } } as any);
     } else if (q.provider === 'staah') {
-      AND.push({
-        staah_enabled: 1,
-        staah_property_id: { AND: [{ not: null }, { not: '' }] },
-      } as any);
+      AND.push({ staah_enabled: 1 } as any);
+      AND.push({ staah_property_id: { not: null } } as any);
+      AND.push({ staah_property_id: { not: '' } } as any);
     }
 
     const term = (q.search ?? '').toString().trim();
