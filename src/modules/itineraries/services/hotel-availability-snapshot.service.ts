@@ -1178,6 +1178,12 @@ export class HotelAvailabilitySnapshotService {
     response: ItineraryHotelDetailsResponseDto;
     changeSummary: HotelAvailabilityChangeSummary;
   }> {
+    // Check Availability is a fresh rebuild as well as an explicit supplier
+    // refresh. Clear editable selections before reconciling the new snapshot
+    // so a stale automatic offline row cannot survive after live options are
+    // returned for the same stay. Explicit offline-only fetches use their
+    // separate path and remain non-destructive.
+    resetSelections = resetSelections || requestType === 'CHECK_AVAILABILITY';
     const plan = await this.findPlan(quoteId);
     const lockName = `itinerary_hotel_availability:${plan.itinerary_plan_ID}`;
     const databaseUrl = String(process.env.DATABASE_URL || '').trim();
@@ -1406,7 +1412,7 @@ export class HotelAvailabilitySnapshotService {
           rows,
           searchRunId,
           createdBy,
-          true,
+          false,
           undefined,
           this.getPlanMealPlanCode(plan),
           this.getPlanMealPlanFlags(plan),
@@ -3564,7 +3570,18 @@ export class HotelAvailabilitySnapshotService {
       // Match the exact persisted supplier rate first. A parent hotel row can
       // contain several nested room/meal options and must never win with a
       // different identity or price.
-      const matched = options.find((row: any) => optionMatchesSelection(selection, row));
+      const matchedCandidate = options.find((row: any) => optionMatchesSelection(selection, row));
+      const liveOptionsForSelection = options.filter((row: any) =>
+        String(row?.provider || row?.hotel_provider || '').trim().toLowerCase() !== 'offline',
+      );
+      // A persisted AUTO_SELECTED offline row may still match the refreshed
+      // snapshot. It must not win merely because its identity survived: when
+      // a live option exists for this route/day, recompute the selection from
+      // the live pool. Explicit USER_SELECTED offline rows are protected.
+      const matched = origin !== 'USER_SELECTED' && liveOptionsForSelection.length > 0 &&
+        String(matchedCandidate?.provider || matchedCandidate?.hotel_provider || '').trim().toLowerCase() === 'offline'
+        ? null
+        : matchedCandidate;
       // AUTO_SELECTED is recomputed from the current eligible snapshot. It
       // must never be pulled toward the previous price. USER_SELECTED keeps
       // the existing nearest same-property fallback for legacy review flows,
