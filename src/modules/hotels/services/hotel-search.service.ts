@@ -369,17 +369,11 @@ if (activeProviders.length === 0) {
       });
       const effectiveAvailability = new Map<string, any>();
       for (const row of availability) {
-        const startTime = new Date(row.start_date).getTime();
-        const endTime = new Date(row.end_date).getTime();
-        const rangeDays = Math.max(0, Math.round((endTime - startTime) / 86_400_000));
         const key = String(row.room_id);
         const current = effectiveAvailability.get(key);
-        const currentRangeDays = current
-          ? Math.max(0, Math.round((new Date(current.end_date).getTime() - new Date(current.start_date).getTime()) / 86_400_000))
-          : Number.MAX_SAFE_INTEGER;
         const receivedAt = new Date(row.received_at).getTime();
         const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
-        if (!current || rangeDays < currentRangeDays || (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)) {
+        if (!current || receivedAt > currentReceivedAt) {
           effectiveAvailability.set(key, row);
         }
       }

@@ -973,8 +973,13 @@ export class HotelAvailabilitySnapshotService {
       normalizedRows.map((row) => projectHotelPayablePricing(row, effectiveMarginPercentage)),
       selectedPayableByRouteGroup,
     );
+    const sharedInventoryRows = options.itineraryRouteId && options.itineraryRouteId > 0
+      ? allSharedInventoryRows.filter((row: any) =>
+          Number(row?.itineraryRouteId || row?.routeId || 0) === Number(options.itineraryRouteId),
+        )
+      : allSharedInventoryRows;
     const sharedHotelInventory = this.buildSharedHotelInventory(
-      allSharedInventoryRows,
+      sharedInventoryRows,
       effectiveMarginPercentage,
     );
     const page = Math.max(1, Number(options.page || 1));
@@ -1324,6 +1329,7 @@ export class HotelAvailabilitySnapshotService {
           previousSnapshotRetained: true,
         });
       }
+      rows = this.applyCompleteStayAvailability(rows, routes, noOfNights);
       rows = this.dedupeRows(rows);
       const storageRows = this.coalesceRowsForCache(rows);
       const recommendationTabs = Array.isArray((liveResponse as any).hotelTabs)
@@ -2076,7 +2082,8 @@ export class HotelAvailabilitySnapshotService {
       'baseTotalPrice', 'startingFromAmount', 'startingFromBaseAmount', 'priceDifference',
       'bookingMode', 'priceSource', 'isLiveRate', 'isLiveBookable', 'isSelectable',
       'requiresHotelApproval', 'approvalStatus', 'manualConfirmationStatus', 'isBookable',
-      'availabilityStatus', 'availabilityState', 'availabilityMessage', 'rateConditions',
+      'availabilityStatus', 'availabilityState', 'availabilityMessage',
+      'availableDates', 'unavailableDates', 'completeStayBookable', 'completeStayRouteIds', 'rateConditions',
       'cancellationPolicy', 'inclusions', 'facilities', 'amenities', 'mandatorySupplements',
       'supplementSummary',
       'hotelMarginPercentage', 'hotelMarginAmount', 'hotelMarginStayAmount',
@@ -2136,6 +2143,128 @@ export class HotelAvailabilitySnapshotService {
         : {}),
       stayResults,
     };
+  }
+
+  private applyCompleteStayAvailability(rows: any[], routes: any[], noOfNights: number): any[] {
+    const searchableRoutes = resolveHotelRequiredRoutes(routes || [], noOfNights);
+    const normalizedDestination = (route: any): string =>
+      String(route?.next_visiting_location || route?.location_name || '').trim().toLowerCase();
+    const routeDate = (route: any): string => this.toDateOnly(route?.itinerary_route_date);
+    const routeId = (route: any): number => Number(route?.itinerary_route_ID || 0);
+    const stayBlocks: Array<{ routeIds: number[]; dates: string[] }> = [];
+
+    for (const route of searchableRoutes) {
+      const currentRouteId = routeId(route);
+      const currentDate = routeDate(route);
+      if (!currentRouteId || !currentDate) continue;
+      const previousBlock = stayBlocks[stayBlocks.length - 1];
+      const previousRouteId = previousBlock?.routeIds[previousBlock.routeIds.length - 1];
+      const previousRoute = previousRouteId
+        ? searchableRoutes.find((candidate: any) => routeId(candidate) === previousRouteId)
+        : null;
+      const previousDate = previousRoute ? routeDate(previousRoute) : '';
+      const previousTime = previousDate ? new Date(`${previousDate}T00:00:00.000Z`).getTime() : NaN;
+      const currentTime = new Date(`${currentDate}T00:00:00.000Z`).getTime();
+      const continuous = Boolean(
+        previousBlock && previousRoute &&
+        normalizedDestination(previousRoute) === normalizedDestination(route) &&
+        Number.isFinite(previousTime) && currentTime - previousTime === 24 * 60 * 60 * 1000,
+      );
+      if (continuous) {
+        previousBlock.routeIds.push(currentRouteId);
+        previousBlock.dates.push(currentDate);
+      } else {
+        stayBlocks.push({ routeIds: [currentRouteId], dates: [currentDate] });
+      }
+    }
+
+    const blockByRouteId = new Map<number, { routeIds: number[]; dates: string[] }>();
+    stayBlocks.forEach((block) => block.routeIds.forEach((id) => blockByRouteId.set(id, block)));
+    const normalizeIdentity = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+    const propertyIdentity = (row: any): string => {
+      const provider = normalizeIdentity(row?.provider || row?.hotel_provider);
+      const canonicalHotelId = Number(row?.canonicalHotelId || row?.canonical_hotel_id || row?.hotelId || 0);
+      if (canonicalHotelId > 0) return `${provider}|canonical:${canonicalHotelId}`;
+      const providerHotelCode = normalizeIdentity(row?.providerHotelCode || row?.provider_hotel_code || row?.hotelCode || row?.hotel_code);
+      if (providerHotelCode) return `${provider}|supplier:${providerHotelCode}`;
+      return `${provider}|name:${normalizeIdentity(row?.hotelName || row?.hotel_name)}`;
+    };
+    const optionIdentity = (row: any): string => {
+      const roomType = normalizeIdentity(row?.roomTypeName || row?.roomType || row?.room_type || row?.roomTypeId || row?.room_type_id);
+      const mealPlan = normalizeIdentity(row?.mealPlan || row?.mealPlanCode || row?.meal_plan);
+      if (roomType || mealPlan) return `${propertyIdentity(row)}|room:${roomType}|meal:${mealPlan}`;
+      return `${propertyIdentity(row)}|rate:${normalizeIdentity(row?.rateOptionId || row?.rate_option_id || row?.optionKey || row?.option_key || row?.bookingCode || row?.booking_code || row?.searchReference || row?.search_reference || row?.rateId || row?.rate_id)}`;
+    };
+    const rowRouteIds = (row: any): number[] => {
+      const routeIds: number[] = Array.isArray(row?.routeIds) ? row.routeIds.map(Number).filter((id: number) => id > 0) : [];
+      const primaryRouteId = Number(row?.itineraryRouteId || row?.routeId || row?.route_id || row?.itinerary_route_id || 0);
+      if (primaryRouteId > 0 && !routeIds.includes(primaryRouteId)) routeIds.unshift(primaryRouteId);
+      return [...new Set(routeIds)];
+    };
+    const isAvailabilityEligible = (row: any): boolean => {
+      const provider = normalizeIdentity(row?.provider || row?.hotel_provider);
+      const availabilityStatus = String(row?.availabilityStatus || '').trim().toUpperCase();
+      const approvalRequired = provider === 'offline' || availabilityStatus === 'OFFLINE_APPROVAL_REQUIRED' ||
+        String(row?.bookingMode || '').trim().toUpperCase() === 'MANUAL_APPROVAL' || row?.requiresHotelApproval === true;
+      if (row?.isSelectable === false) return false;
+      if (!approvalRequired && row?.isBookable === false) return false;
+      return row?.isPlaceholder !== true;
+    };
+    const propertyCoverage = new Map<string, Set<number>>();
+    const optionCoverage = new Map<string, Set<number>>();
+    for (const row of rows || []) {
+      const routeIds = rowRouteIds(row);
+      if (isAvailabilityEligible(row)) {
+        const key = propertyIdentity(row);
+        const covered = propertyCoverage.get(key) || new Set<number>();
+        routeIds.forEach((id) => covered.add(id));
+        propertyCoverage.set(key, covered);
+      }
+      const rateOptions = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row];
+      for (const option of rateOptions) {
+        const mergedOption = { ...row, ...option };
+        if (!isAvailabilityEligible(mergedOption)) continue;
+        const key = optionIdentity(mergedOption);
+        const covered = optionCoverage.get(key) || new Set<number>();
+        routeIds.forEach((id) => covered.add(id));
+        optionCoverage.set(key, covered);
+      }
+    }
+    const formatDate = (date: string): string => {
+      const parsed = new Date(`${date}T00:00:00.000Z`);
+      return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+    };
+    const decorate = (row: any, coverage: Set<number>, block: { routeIds: number[]; dates: string[] }): any => {
+      const availableDates = block.routeIds.map((id, index) => coverage.has(id) ? block.dates[index] : null).filter(Boolean) as string[];
+      const unavailableDates = block.routeIds.map((id, index) => !coverage.has(id) ? block.dates[index] : null).filter(Boolean) as string[];
+      const completeStayBookable = unavailableDates.length === 0;
+      const availabilityMessage = completeStayBookable ? row?.availabilityMessage : [
+        availableDates.length > 0 ? `Available on ${availableDates.map(formatDate).join(', ')}.` : null,
+        unavailableDates.length > 0 ? `Not available on ${unavailableDates.map(formatDate).join(', ')}.` : null,
+      ].filter(Boolean).join(' ');
+      return {
+        ...row,
+        availableDates,
+        unavailableDates,
+        completeStayBookable,
+        completeStayRouteIds: [...block.routeIds],
+        ...(completeStayBookable ? {} : { isSelectable: false }),
+        availabilityMessage,
+      };
+    };
+    return (rows || []).map((row: any) => {
+      const block = rowRouteIds(row).map((id) => blockByRouteId.get(id)).find(Boolean);
+      if (!block) return row;
+      const decoratedRow = decorate(row, propertyCoverage.get(propertyIdentity(row)) || new Set<number>(), block);
+      if (!Array.isArray(row?.rateOptions)) return decoratedRow;
+      return {
+        ...decoratedRow,
+        rateOptions: row.rateOptions.map((option: any) => {
+          const mergedOption = { ...row, ...option };
+          return decorate(option, optionCoverage.get(optionIdentity(mergedOption)) || new Set<number>(), block);
+        }),
+      };
+    });
   }
 
   private buildSharedHotelInventory(rows: any[], effectiveMarginPercentage: number): any[] {
@@ -3946,6 +4075,11 @@ export class HotelAvailabilitySnapshotService {
     const existing = await tx.dvi_itinerary_plan_hotel_details.findMany({
       where: { itinerary_plan_id: planId, deleted: 0, status: 1, hotel_required: 1 },
       select: {
+        // Existing auto selections are updated or retired below. Keep the
+        // primary key in this projection; without it Prisma receives
+        // `where: { itinerary_plan_hotel_details_ID: undefined }` when a
+        // duplicate recommendation is reconciled.
+        itinerary_plan_hotel_details_ID: true,
         itinerary_route_id: true,
         itinerary_route_date: true,
         group_type: true,
