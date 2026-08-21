@@ -726,13 +726,14 @@ export class OfflineHotelCatalogService {
   ): OfflineRoomOffer[] {
     const hotelId = Number(hotel.hotel_id || 0);
     const roomsNeeded = Math.max(Number(roomCount || 1), 1);
-    const activeRooms = (catalogRows.roomsByHotel.get(hotelId) || []).filter((room: any) => {
-      const maxAdults = Number(room.total_max_adults || 0);
-      const maxChildren = Number(room.total_max_childrens || 0);
-      return (!adultCount || !maxAdults || maxAdults * roomsNeeded >= adultCount) &&
-        (!childCount || !maxChildren || maxChildren * roomsNeeded >= childCount) &&
-        catalogRows.activeRoomTypeIds.has(Number(room.room_type_id || 0));
-    });
+    // Offline hotels do not publish live inventory or availability. The room
+    // master is used only to identify the room and its configured price; the
+    // hotel confirms whether it can fulfil the request after itinerary
+    // confirmation. Do not use occupancy/capacity fields as an availability
+    // gate here.
+    const activeRooms = (catalogRows.roomsByHotel.get(hotelId) || []).filter((room: any) =>
+      catalogRows.activeRoomTypeIds.has(Number(room.room_type_id || 0)),
+    );
     const offers: OfflineRoomOffer[] = [];
 
     for (const room of activeRooms) {
@@ -835,16 +836,6 @@ export class OfflineHotelCatalogService {
     }
 
     const roomsNeeded = Math.max(Number(roomCount || 1), 1);
-    const roomsWithCapacity = activeRooms.filter((room: any) => {
-      const maxAdults = Number(room.total_max_adults || 0);
-      const maxChildren = Number(room.total_max_childrens || 0);
-      const adultCapacityOk = !adultCount || !maxAdults || maxAdults * roomsNeeded >= adultCount;
-      const childCapacityOk = !childCount || !maxChildren || maxChildren * roomsNeeded >= childCount;
-      return adultCapacityOk && childCapacityOk;
-    });
-    if (roomsWithCapacity.length === 0) return [];
-    activeRooms.splice(0, activeRooms.length, ...roomsWithCapacity);
-
     const ratePlansByRoom = new Map<number, any[]>();
     const ratePlanModel = (this.prisma as any).dvi_hotel_room_rate_plan;
     if (ratePlanModel?.findMany && requestedMealPlanCode) {
