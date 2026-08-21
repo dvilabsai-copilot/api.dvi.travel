@@ -2170,6 +2170,9 @@ private getGuideSlotLabel(slotId: number): string {
     const persistencePayloads = selectedByRoute.map((rawSelected: any) => {
       const selected = normalizeSupplierRateIdentity(rawSelected);
       const routeDate = String(selected.date || '').slice(0, 10);
+      const isAnchorRoute = Number(selected.routeId) === Number(data.routeId);
+      const requestedPricePerNight = Number(data.pricePerNight ?? 0);
+      const requestedTotalPrice = Number(data.totalPrice ?? 0);
       const selectedProvider = String(selected.provider || provider).trim().toLowerCase();
       const routeNight = Array.isArray(selected.nightlyRates)
         ? selected.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === routeDate)
@@ -2197,16 +2200,33 @@ private getGuideSlotLabel(slotId: number): string {
         selected.hotelMarginAmount ??
         0,
       );
-      const pricePerNight = Number(
-        routeScopedOffline?.sellAmount ?? selected.pricePerNight ?? selected.amountAfterTax ?? 0,
+      const selectedPricePerNight = Number(
+        routeScopedOffline?.sellAmount ?? selected.pricePerNight ?? selected.amountAfterTax ?? selected.price ?? 0,
       );
-      const totalPrice = Number(
+      const selectedTotalPrice = Number(
         routeScopedOffline?.sellAmount ??
         selected.totalStayPrice ??
         selected.totalPrice ??
         selected.amountAfterTax ??
+        selected.price ??
         0,
       );
+      // A preview snapshot can contain a zero-valued parent option even when
+      // the browser has the exact selected rate and its payable amount. If
+      // the identity already matched that anchor, retain the request's
+      // positive price instead of passing a zero into the persistence layer.
+      const pricePerNight = selectedPricePerNight > 0
+        ? selectedPricePerNight
+        : isAnchorRoute && requestedPricePerNight > 0
+          ? requestedPricePerNight
+          : 0;
+      const totalPrice = selectedTotalPrice > 0
+        ? selectedTotalPrice
+        : isAnchorRoute && requestedTotalPrice > 0
+          ? requestedTotalPrice
+          : pricePerNight > 0
+            ? Number((pricePerNight * Math.max(Number(data.roomCount || 1), 1)).toFixed(2))
+            : 0;
       return {
         ...data,
         routeId: Number(selected.routeId), routeDate, groupType,
