@@ -377,6 +377,20 @@ export class HotelsService {
       );
     }
 
+    if (q.provider === 'axisrooms') {
+      AND.push({
+        axisrooms_enabled: 1,
+        axisrooms_property_id: { AND: [{ not: null }, { not: '' }] },
+      } as any);
+    } else if (q.provider === 'resavenue') {
+      AND.push({ resavenue_hotel_code: { AND: [{ not: null }, { not: '' }] } } as any);
+    } else if (q.provider === 'staah') {
+      AND.push({
+        staah_enabled: 1,
+        staah_property_id: { AND: [{ not: null }, { not: '' }] },
+      } as any);
+    }
+
     const term = (q.search ?? '').toString().trim();
     if (term) {
       const cityCandidate = await resolveCityRecordByName(this.prisma, term);
