@@ -314,7 +314,10 @@ export class ItineraryHotelDetailsTboService {
 
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
- // Cache for hotel details endpoint response (key = quoteId)
+ // The complete hotel-details response contains the full supplier inventory,
+ // rate options, and recommendation payloads. It is intentionally not cached
+ // in-process: the persisted snapshot is the authoritative read path and
+ // retaining these responses caused the Node heap to grow across itineraries.
   private hotelDetailsCache = new Map<string, {
     data: ItineraryHotelDetailsResponseDto;
     timestamp: number;
@@ -6931,31 +6934,17 @@ this.logger.log(
   }
 
   private getCachedHotelDetails(quoteId: string): ItineraryHotelDetailsResponseDto | null {
-    const cached = this.hotelDetailsCache.get(quoteId);
-    if (!cached) {
-      return null;
-    }
-
-    if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_DETAILS_CACHE_TTL_MS)) {
-      this.hotelDetailsCache.delete(quoteId);
- this.logger.debug(` [CACHE EXPIRED] Removed stale hotel details cache for ${quoteId}`);
-      return null;
-    }
-
- this.logger.log(` [CACHE HIT] Hotel details from cache for ${quoteId}`);
-    return cached.data;
+    // Do not retain the full response in the long-lived Nest process. Callers
+    // that need the current snapshot use /persisted?includeInventory=true.
+    return null;
   }
 
   private setCachedHotelDetails(
     quoteId: string,
     data: ItineraryHotelDetailsResponseDto,
   ): void {
-    this.evictOldestIfNeeded(this.hotelDetailsCache);
-    this.hotelDetailsCache.set(quoteId, {
-      data,
-      timestamp: Date.now(),
-    });
- this.logger.log(` [CACHE SET] Hotel details cached for ${quoteId}`);
+    // Keep the method for call-site compatibility, but never retain the large
+    // supplier response. The persisted DB snapshot remains unchanged.
   }
 
   private isCacheExpired(timestamp: number, ttlMs: number): boolean {
