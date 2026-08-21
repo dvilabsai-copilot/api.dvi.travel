@@ -4224,9 +4224,19 @@ export class HotelAvailabilitySnapshotService {
         Number(leftParts[2] || 0) - Number(rightParts[2] || 0) ||
         leftKey.localeCompare(rightKey);
     });
+    const optionsByRoute = new Map<number, any[]>();
+    for (const routeOptions of optionsByKey.values()) {
+      for (const option of routeOptions) {
+        const routeId = Number(option?.itineraryRouteId || option?.routeId || 0);
+        const bucket = optionsByRoute.get(routeId) || [];
+        bucket.push(option);
+        optionsByRoute.set(routeId, bucket);
+      }
+    }
 
     for (const [key, options] of orderedOptions) {
       if (existingKeys.has(key)) continue;
+      const optionRouteId = Number(options[0]?.itineraryRouteId || options[0]?.routeId || 0);
       const authoritativeGroup = options.some((option: any) => option.authoritativeRecommendation === true);
       const authoritativeOptions = options.filter((option: any) =>
         option.autoSelectionCandidate === true &&
@@ -4249,10 +4259,23 @@ export class HotelAvailabilitySnapshotService {
       const allLiveOptions = options.filter((option: any) =>
         String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
       );
+      const liveOptionsForStay = (optionsByRoute.get(optionRouteId) || []).filter((option: any) =>
+        String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
+      );
       const eligibleLiveOptions = liveOptions.length > 0 ? liveOptions : allLiveOptions;
-      const eligibleOptions = selectionPool.length > 0 && allLiveOptions.length > 0
-        ? eligibleLiveOptions
-        : selectionPool;
+      const liveStayFallback = liveOptionsForStay.length > 0 && eligibleLiveOptions.length === 0
+        ? liveOptionsForStay.map((option: any) => ({ ...option, groupType: options[0]?.groupType }))
+        : [];
+      // The offline fallback rule is scoped to the complete stay/day, not to
+      // one recommendation tab. If any live option exists for this route,
+      // never create an automatic offline selection for another group on the
+      // same stay. Rebind the live candidate to the current group so the
+      // recommendation package remains structurally valid.
+      const eligibleOptions = liveStayFallback.length > 0
+        ? liveStayFallback
+        : selectionPool.length > 0 && allLiveOptions.length > 0
+          ? eligibleLiveOptions
+          : selectionPool;
       if (eligibleOptions.length === 0) continue;
       const sortedOptions = [...eligibleOptions].sort((a, b) => {
         const priceDelta = this.authoritativeAutoTotal(a) - this.authoritativeAutoTotal(b);

@@ -2083,6 +2083,52 @@ test('live reconciliation falls back to offline inventory only when live is abse
   assert.equal(createdSelections[0].hotel_provider, 'offline');
 });
 
+test('stay-level live inventory prevents offline auto-selection across recommendation groups', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 903 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+      updateMany: async () => ({}),
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 987,
+    hotelCode: 'OFFLINE-987',
+    hotelName: 'Offline Hotel',
+    totalHotelCost: 1200,
+    isBookable: true,
+    isSelectable: true,
+  }, {
+    itineraryRouteId: 10,
+    groupType: 2,
+    date: '2026-07-28',
+    provider: 'staah',
+    hotelId: 988,
+    hotelCode: 'LIVE-988',
+    hotelName: 'Live Hotel',
+    totalHotelCost: 1800,
+    isBookable: true,
+    isSelectable: true,
+  }], 'stay-live-run', 7);
+
+  assert.equal(createdSelections.length, 2);
+  assert.equal(createdSelections.every((row: any) => row.hotel_provider === 'staah'), true);
+});
+
 test('automatic replacement prefers live providers even when offline is cheaper', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
