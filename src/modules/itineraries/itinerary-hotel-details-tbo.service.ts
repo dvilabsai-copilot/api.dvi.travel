@@ -3369,10 +3369,75 @@ this.logger.log(
         },
       });
 
-      const validOccupancyRows = occupancyRowsRaw.filter((row: any) => {
+      let validOccupancyRows = occupancyRowsRaw.filter((row: any) => {
         const key = `${Number((row as any).hotel_id)}|${Number((row as any).room_id)}|${String((row as any).rateplan_id || '')}`;
         return validRatePlanKeySet.has(key);
       });
+
+      // AxisRooms legacy pricebooks are intentionally not migrated into the
+      // Offline canonical occupancy table. Keep AxisRooms independent: when
+      // no canonical ARI rate exists, read the existing monthly pricebook for
+      // the requested date and shape it like an occupancy row for the rest of
+      // the AxisRooms pricing pipeline.
+      const canonicalAxisKeys = new Set(
+        validOccupancyRows.map((row: any) =>
+          `${Number(row.hotel_id)}|${Number(row.room_id)}|${String(row.rateplan_id || '')}`,
+        ),
+      );
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+      ];
+      const legacyPricebookRows = await (this.prisma as any).dvi_hotel_room_price_book.findMany({
+        where: {
+          hotel_id: { in: hotelIds },
+          room_id: { in: roomIds },
+          year: String(dateOnly.getUTCFullYear()),
+          month: monthNames[dateOnly.getUTCMonth()],
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          hotel_id: true,
+          room_id: true,
+          price_type: true,
+          [`day_${dateOnly.getUTCDate()}`]: true,
+        } as any,
+      });
+      const legacyOccupancyByRoom = new Map<string, Record<string, number>>();
+      for (const row of legacyPricebookRows as any[]) {
+        const value = Number(row[`day_${dateOnly.getUTCDate()}`]);
+        if (!Number.isFinite(value) || value <= 0) continue;
+        const key = `${Number(row.hotel_id)}|${Number(row.room_id)}`;
+        const occupancy = legacyOccupancyByRoom.get(key) || {};
+        const occupancyKey = Number(row.price_type) === 0
+          ? 'ROOM_RATE'
+          : Number(row.price_type) === 1
+            ? 'EXTRABED'
+            : Number(row.price_type) === 2
+              ? 'CHILD_WITH_BED'
+              : Number(row.price_type) === 3
+                ? 'CHILD_WITHOUT_BED'
+                : '';
+        if (occupancyKey) occupancy[occupancyKey] = value;
+        legacyOccupancyByRoom.set(key, occupancy);
+      }
+      for (const planRow of activeRatePlanRows as any[]) {
+        const planKey = `${Number(planRow.hotel_id)}|${Number(planRow.room_id)}|${String(planRow.rateplan_id || '')}`;
+        if (canonicalAxisKeys.has(planKey)) continue;
+        const occupancyRates = legacyOccupancyByRoom.get(`${Number(planRow.hotel_id)}|${Number(planRow.room_id)}`);
+        if (!occupancyRates || Object.keys(occupancyRates).length === 0) continue;
+        validOccupancyRows.push({
+          hotel_id: Number(planRow.hotel_id),
+          room_id: Number(planRow.room_id),
+          rateplan_id: String(planRow.rateplan_id || ''),
+          occupancy_rates: occupancyRates,
+          start_date: dateOnly,
+          end_date: dateOnly,
+          received_at: new Date(0),
+          source: 'legacy-pricebook',
+        });
+      }
       const effectiveOccupancyByPlan = new Map<string, any>();
       for (const row of validOccupancyRows as any[]) {
         const startTime = new Date(row.start_date).getTime();

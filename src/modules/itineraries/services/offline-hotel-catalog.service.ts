@@ -673,6 +673,28 @@ export class OfflineHotelCatalogService {
       const key = `${Number(row.hotel_id || 0)}|${Number(row.room_id || 0)}|${String(row.rateplan_id || '')}`;
       const rows = occupancyRatesByRoomPlan.get(key) || [];
       rows.push(row); occupancyRatesByRoomPlan.set(key, rows);
+
+      // The canonical occupancy table is the source of truth for Offline
+      // prices.  Some migrated hotels do not have a corresponding active row
+      // in dvi_hotel_room_rate_plan, so synthesize only the metadata needed by
+      // the offer builder from the canonical rate-plan id.  This does not
+      // create or alter database rows and keeps the legacy rate-plan table out
+      // of the Offline pricing path.
+      const roomId = Number(row.room_id || 0);
+      const rateplanId = String(row.rateplan_id || '').trim();
+      if (roomId > 0 && rateplanId) {
+        const plans = ratePlansByRoom.get(roomId) || [];
+        if (!plans.some((plan: any) => String(plan.rateplan_id || '').trim() === rateplanId)) {
+          plans.push({
+            room_id: roomId,
+            rateplan_id: rateplanId,
+            rateplan_name: rateplanId,
+            meal_plan_description: rateplanId,
+            occupancy: null,
+          });
+          ratePlansByRoom.set(roomId, plans);
+        }
+      }
     }
 
     return { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan };
@@ -724,7 +746,7 @@ export class OfflineHotelCatalogService {
         const target = new Date(`${date}T00:00:00.000Z`).getTime();
         const candidates = matchingRateRows.filter((row: any) => new Date(row.start_date).getTime() <= target && new Date(row.end_date).getTime() >= target);
         candidates.sort((a: any, b: any) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
-        const rates = candidates[0]?.occupancy_rates && typeof candidates[0].occupancy_rates === 'object' ? candidates[0].occupancy_rates : {};
+        const rates = this.parseJsonObject(candidates[0]?.occupancy_rates);
         const nightlyPrices = [rates.DOUBLE, rates.ROOM_RATE, rates.SINGLE, rates.TRIPLE, rates.QUAD]
           .map((price) => Number(price)).filter((price) => Number.isFinite(price) && price > 0);
         if (nightlyPrices.length === 0) {
@@ -1140,7 +1162,7 @@ export class OfflineHotelCatalogService {
       const text = `${candidate.rateplan_id || ''} ${candidate.rateplan_name || ''} ${candidate.meal_plan_description || ''}`;
       return requested ? inferCanonicalHotelRatePlanCode(text) === requested : true;
     }) || plans[0];
-    const occupancy = plan?.occupancy && typeof plan.occupancy === 'object' ? plan.occupancy : {};
+    const occupancy = this.parseJsonObject(plan?.occupancy);
     const extraBedRate = Number(occupancy.EXTRABED ?? occupancy.EXTRAADULT ?? occupancy.EXTRACHILD ?? 0);
     const childWithBedRate = Number(occupancy.CHILDWITHBED ?? occupancy.CHILD_WITH_BED ?? occupancy.CWB ?? 0);
     return {
@@ -1155,7 +1177,7 @@ export class OfflineHotelCatalogService {
       const target = new Date(`${date}T00:00:00.000Z`).getTime();
       const row = rows.filter((candidate: any) => new Date(candidate.start_date).getTime() <= target && new Date(candidate.end_date).getTime() >= target)
         .sort((a: any, b: any) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime())[0];
-      const rates = row?.occupancy_rates && typeof row.occupancy_rates === 'object' ? row.occupancy_rates : {};
+      const rates = this.parseJsonObject(row?.occupancy_rates);
       const extra = Number(rates.EXTRABED ?? rates.EXTRA_BED ?? rates.EXTRAADULT ?? 0);
       const child = Number(rates.CHILDWITHBED ?? rates.CHILD_WITH_BED ?? rates.CWB ?? 0);
       if (extra > 0) values.extraBedRate = extra;
@@ -1168,6 +1190,25 @@ export class OfflineHotelCatalogService {
     const checkOutDate = new Date(`${lastNightDate}T00:00:00.000Z`);
     checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
     return `offline:${hotelId}:${offer.roomId}:${offer.roomTypeId}:${checkInDate}:${checkOutDate.toISOString().slice(0, 10)}`;
+  }
+
+  /**
+   * Prisma returns JSON columns as objects, but older deployments may still
+   * have the canonical columns physically stored as LONGTEXT. Keep the
+   * canonical occupancy-rate source compatible with both schemas while the
+   * database migration is rolled out.
+   */
+  private parseJsonObject(value: unknown): Record<string, any> {
+    if (value && typeof value === 'object' && !Buffer.isBuffer(value)) {
+      return value as Record<string, any>;
+    }
+    if (typeof value !== 'string' || !value.trim()) return {};
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
   }
 
   private resolveMealPlan(room: any, requestedMealPlanCode = '', ratePlansByRoom?: Map<number, any[]>): string {
