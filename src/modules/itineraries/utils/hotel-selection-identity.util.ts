@@ -391,7 +391,13 @@ export function selectionOriginFromRow(row: any): HotelSelectionOrigin {
   // Legacy offline rows predate explicit origin metadata and represented
   // manual choices. Preserve that compatibility only when the snapshot does
   // not state that the API created the selection.
-  return row?.hotel_provider === 'offline' ? 'USER_SELECTED' : 'AUTO_SELECTED';
+  if (String(row?.hotel_provider || '').trim().toLowerCase() === 'offline') {
+    const bookingMode = String(row?.hotel_booking_mode || '').trim().toUpperCase();
+    const priceSource = String(row?.price_source || '').trim().toUpperCase();
+    if (bookingMode === 'OFFLINE_MANUAL' || priceSource === 'OFFLINE_DB') return 'AUTO_SELECTED';
+    return 'USER_SELECTED';
+  }
+  return 'AUTO_SELECTED';
 }
 
 export function hotelOptionKey(row: HotelOptionIdentity): string {

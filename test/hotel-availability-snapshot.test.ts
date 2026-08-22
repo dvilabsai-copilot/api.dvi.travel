@@ -1561,6 +1561,16 @@ test('an explicitly auto-selected offline snapshot remains automatic', () => {
     hotel_provider: 'offline',
     selected_price_snapshot: JSON.stringify({ selectionOrigin: 'USER_SELECTED' }),
   }), 'USER_SELECTED');
+  assert.equal(selectionOriginFromRow({
+    hotel_provider: 'offline',
+    hotel_booking_mode: 'OFFLINE_MANUAL',
+    price_source: 'OFFLINE_DB',
+  }), 'AUTO_SELECTED');
+  assert.equal(selectionOriginFromRow({
+    hotel_provider: 'offline',
+    hotel_booking_mode: 'MANUAL_APPROVAL',
+    price_source: 'DATABASE',
+  }), 'USER_SELECTED');
 });
 
 test('auto-selection falls back to CP without relabelling it when MAP has no priced option', async () => {
