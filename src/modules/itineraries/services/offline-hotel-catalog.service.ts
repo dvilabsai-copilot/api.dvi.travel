@@ -71,7 +71,7 @@ type OfflineCatalogRows = {
   roomsByHotel: Map<number, any[]>;
   ratePlansByRoom: Map<number, any[]>;
   activeRoomTypeIds: Set<number>;
-  pricesByHotelRoomType: Map<string, any[]>;
+  occupancyRatesByRoomPlan: Map<string, any[]>;
 };
 
 /**
@@ -191,7 +191,7 @@ export class OfflineHotelCatalogService {
       durationMs: Date.now() - catalogLoadStartedAt,
       hotelCount: allHotels.length,
       roomCount: Array.from(catalogRows.roomsByHotel.values()).reduce((sum, rows) => sum + rows.length, 0),
-      priceRowCount: Array.from(catalogRows.pricesByHotelRoomType.values()).reduce((sum, rows) => sum + rows.length, 0),
+      priceRowCount: Array.from(catalogRows.occupancyRatesByRoomPlan.values()).reduce((sum, rows) => sum + rows.length, 0),
     });
 
     const offerBuildStartedAt = Date.now();
@@ -578,7 +578,7 @@ export class OfflineHotelCatalogService {
         roomsByHotel: new Map(),
         ratePlansByRoom: new Map(),
         activeRoomTypeIds: new Set(),
-        pricesByHotelRoomType: new Map(),
+        occupancyRatesByRoomPlan: new Map(),
       };
     }
 
@@ -653,67 +653,29 @@ export class OfflineHotelCatalogService {
         : roomTypeIds,
     );
 
-    const requestedPeriods = Array.from(new Set(
-      requestedDates.map((date) => {
-        const parsed = new Date(`${date}T00:00:00.000Z`);
-        return Number.isNaN(parsed.getTime())
-          ? ''
-          : `${parsed.getUTCFullYear()}|${parsed.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })}`;
-      }).filter(Boolean),
-    ));
-    const requestedDayNumbers = Array.from(new Set(
-      requestedDates.map((date) => {
-        const parsed = new Date(`${date}T00:00:00.000Z`);
-        return Number.isNaN(parsed.getTime()) ? 0 : parsed.getUTCDate();
-      }).filter((day) => day > 0),
-    ));
-    const priceSelect: Record<string, boolean> = {
-      hotel_id: true,
-      room_type_id: true,
-      year: true,
-      month: true,
-    };
-    for (const dayNumber of requestedDayNumbers) {
-      priceSelect[`day_${dayNumber}`] = true;
-    }
-
-    const priceRowsStartedAt = Date.now();
-    const priceRows = roomTypeIds.length > 0
-      ? await this.prisma.dvi_hotel_room_price_book.findMany({
-          where: {
-            hotel_id: { in: hotelIds },
-            room_type_id: { in: roomTypeIds },
-            price_type: 0,
-            status: 1,
-            deleted: 0,
-            ...(requestedPeriods.length > 0
-              ? { OR: requestedPeriods.map((period) => {
-                  const [year, month] = period.split('|');
-                  return { year, month };
-                }) }
-              : {}),
-          },
-          select: priceSelect as any,
-        })
-      : [];
-    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_QUERY', {
-      query: 'room-price-book',
-      durationMs: Date.now() - priceRowsStartedAt,
-      hotelCount: hotelIds.length,
-      roomTypeCount: roomTypeIds.length,
-      requestedPeriods,
-      requestedDayNumbers,
-      rowCount: priceRows.length,
+    const occupancyRowsStartedAt = Date.now();
+    const occupancyRows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
+      where: {
+        hotel_id: { in: hotelIds },
+        // Fetch every rate interval intersecting the stay. Daily migrated
+        // rows must not be filtered out by a multi-night range predicate.
+        start_date: { lte: new Date(`${requestedDates[requestedDates.length - 1] || '2999-12-31'}T00:00:00.000Z`) },
+        end_date: { gte: new Date(`${requestedDates[0] || '1900-01-01'}T00:00:00.000Z`) },
+      },
+      select: { hotel_id: true, room_id: true, rateplan_id: true, start_date: true, end_date: true, occupancy_rates: true, received_at: true },
     });
-    const pricesByHotelRoomType = new Map<string, any[]>();
-    for (const row of priceRows as any[]) {
-      const key = `${Number(row.hotel_id || 0)}|${Number(row.room_type_id || 0)}`;
-      const rows = pricesByHotelRoomType.get(key) || [];
-      rows.push(row);
-      pricesByHotelRoomType.set(key, rows);
+    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_QUERY', {
+      query: 'occupancy-rates', durationMs: Date.now() - occupancyRowsStartedAt,
+      hotelCount: hotelIds.length, rowCount: occupancyRows.length,
+    });
+    const occupancyRatesByRoomPlan = new Map<string, any[]>();
+    for (const row of occupancyRows as any[]) {
+      const key = `${Number(row.hotel_id || 0)}|${Number(row.room_id || 0)}|${String(row.rateplan_id || '')}`;
+      const rows = occupancyRatesByRoomPlan.get(key) || [];
+      rows.push(row); occupancyRatesByRoomPlan.set(key, rows);
     }
 
-    return { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, pricesByHotelRoomType };
+    return { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan };
   }
 
   clearCache(): void {
@@ -744,22 +706,27 @@ export class OfflineHotelCatalogService {
 
     for (const room of activeRooms) {
       const roomTypeId = Number(room.room_type_id || 0);
-      const matchingPriceRows = catalogRows.pricesByHotelRoomType.get(`${hotelId}|${roomTypeId}`) || [];
-      if (matchingPriceRows.length === 0) continue;
+      const roomPlans = catalogRows.ratePlansByRoom.get(Number(room.room_ID || 0)) || [];
+      const matchingPlans = roomPlans.filter((plan: any) => {
+        const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
+        return !requested || inferCanonicalHotelRatePlanCode(`${plan.rateplan_id || ''} ${plan.rateplan_name || ''} ${plan.meal_plan_description || ''}`) === requested;
+      });
+      const plan = matchingPlans[0] || roomPlans[0];
+      if (!plan) continue;
+      const matchingRateRows = catalogRows.occupancyRatesByRoomPlan.get(`${hotelId}|${Number(room.room_ID || 0)}|${String(plan.rateplan_id || '')}`) || [];
+      if (matchingRateRows.length === 0) continue;
 
       const nightlyBase: number[] = [];
       const nightlyMargin: number[] = [];
       const nightlySell: number[] = [];
       let valid = true;
       for (const date of dateList) {
-        const parsed = new Date(`${date}T00:00:00.000Z`);
-        const dayKey = `day_${parsed.getUTCDate()}`;
-        const year = String(parsed.getUTCFullYear());
-        const month = parsed.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
-        const nightlyPrices = matchingPriceRows
-          .filter((row) => String(row.year || '') === year && String(row.month || '') === month)
-          .map((row) => Number(row[dayKey] || 0))
-          .filter((price) => Number.isFinite(price) && price > 0);
+        const target = new Date(`${date}T00:00:00.000Z`).getTime();
+        const candidates = matchingRateRows.filter((row: any) => new Date(row.start_date).getTime() <= target && new Date(row.end_date).getTime() >= target);
+        candidates.sort((a: any, b: any) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
+        const rates = candidates[0]?.occupancy_rates && typeof candidates[0].occupancy_rates === 'object' ? candidates[0].occupancy_rates : {};
+        const nightlyPrices = [rates.DOUBLE, rates.ROOM_RATE, rates.SINGLE, rates.TRIPLE, rates.QUAD]
+          .map((price) => Number(price)).filter((price) => Number.isFinite(price) && price > 0);
         if (nightlyPrices.length === 0) {
           valid = false;
           break;
@@ -773,7 +740,7 @@ export class OfflineHotelCatalogService {
       }
 
       if (!valid || nightlySell.length !== dateList.length) continue;
-      const supplements = this.resolveSupplementRates(room, requestedMealPlanCode, catalogRows.ratePlansByRoom);
+      const supplements = this.resolveSupplementRatesFromOccupancy(matchingRateRows, dateList);
       offers.push({
         roomId: Number(room.room_ID || 0),
         roomTypeId,
@@ -819,6 +786,14 @@ export class OfflineHotelCatalogService {
         requestedMealPlanCode,
       );
     }
+
+    // Occupancy-rate rows are the canonical Offline price source. The legacy
+    // monthly room-price table is intentionally not consulted during search.
+    const canonicalRows = await this.loadCatalogRows([hotel], dateList);
+    return this.buildRoomOffersFromCatalogRows(
+      hotel, dateList, roomCount, adultCount, childCount, canonicalRows,
+      marginPercentage, requestedMealPlanCode,
+    );
 
     const activeRooms = await this.prisma.dvi_hotel_rooms.findMany({
       where: {
@@ -1172,6 +1147,21 @@ export class OfflineHotelCatalogService {
       extraBedRate: Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate : 0,
       childWithBedRate: Number.isFinite(childWithBedRate) && childWithBedRate > 0 ? childWithBedRate : 0,
     };
+  }
+
+  private resolveSupplementRatesFromOccupancy(rows: any[], dates: string[]): { extraBedRate: number; childWithBedRate: number } {
+    const values = { extraBedRate: 0, childWithBedRate: 0 };
+    for (const date of dates) {
+      const target = new Date(`${date}T00:00:00.000Z`).getTime();
+      const row = rows.filter((candidate: any) => new Date(candidate.start_date).getTime() <= target && new Date(candidate.end_date).getTime() >= target)
+        .sort((a: any, b: any) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime())[0];
+      const rates = row?.occupancy_rates && typeof row.occupancy_rates === 'object' ? row.occupancy_rates : {};
+      const extra = Number(rates.EXTRABED ?? rates.EXTRA_BED ?? rates.EXTRAADULT ?? 0);
+      const child = Number(rates.CHILDWITHBED ?? rates.CHILD_WITH_BED ?? rates.CWB ?? 0);
+      if (extra > 0) values.extraBedRate = extra;
+      if (child > 0) values.childWithBedRate = child;
+    }
+    return values;
   }
 
   private getRateOptionId(hotelId: number, offer: OfflineRoomOffer, checkInDate: string, lastNightDate: string): string {

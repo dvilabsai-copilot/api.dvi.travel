@@ -255,7 +255,11 @@ const activeProviders = providerKeysToSearch
       provider !== undefined,
   );
 
-if (activeProviders.length === 0) {
+const offlineOnlyRequested = Array.isArray(searchCriteria.providers)
+  && searchCriteria.providers.length > 0
+  && searchCriteria.providers.every((provider) => String(provider).trim().toLowerCase() === 'offline');
+
+if (activeProviders.length === 0 && !offlineOnlyRequested) {
   if (Number(roomCount) > HotelSearchService.TBO_MAX_ROOMS) {
     throw new BadRequestException(
       `No eligible non-TBO hotel provider is available for ${roomCount} rooms. ` +
