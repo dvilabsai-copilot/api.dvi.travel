@@ -954,7 +954,31 @@ async getHotelRoomDetailsByQuoteId(
         marginAmount: storedMargin,
         marginPercentage: storedMarginPercentage,
       });
-      const payableHotelCost = storedPricing.payableTotal * earlyCheckInBillingMultiplier;
+      const provider = String((h as any).hotel_provider || '').trim().toLowerCase();
+      const isOffline = provider === 'offline';
+      // Offline rate snapshots represent a continuous stay, while this API
+      // row represents one itinerary route/night. Return the route-night
+      // amount to the UI and retain the complete stay amount separately.
+      // This keeps API totals authoritative and prevents a two-night amount
+      // from being charged once on every daily row.
+      const offlinePricePerNight = Number(
+        selectedPriceSnapshot.pricePerNight ?? selectedPriceSnapshot.price_per_night ?? 0,
+      );
+      const offlineBasePerNight = Number(
+        selectedPriceSnapshot.basePricePerNight ?? selectedPriceSnapshot.base_price_per_night ?? 0,
+      );
+      const offlineMarginPerNight = Number(
+        selectedPriceSnapshot.hotelMarginAmount ?? selectedPriceSnapshot.hotel_margin_amount ?? 0,
+      );
+      const payableHotelCost = (isOffline && offlinePricePerNight > 0
+        ? offlinePricePerNight
+        : storedPricing.payableTotal) * earlyCheckInBillingMultiplier;
+      const baseHotelCost = (isOffline && offlineBasePerNight > 0
+        ? offlineBasePerNight
+        : authoritativeBaseHotelCost) * earlyCheckInBillingMultiplier;
+      const hotelMarginAmount = (isOffline && offlineMarginPerNight > 0
+        ? offlineMarginPerNight
+        : storedPricing.marginAmount) * earlyCheckInBillingMultiplier;
 
       return {
         groupType: Number((h as any).group_type ?? 0) || 0,
@@ -979,9 +1003,15 @@ async getHotelRoomDetailsByQuoteId(
           '',
         ).trim(),
         totalHotelCost: payableHotelCost,
+        pricePerNight: payableHotelCost,
+        totalStayPrice: isOffline
+          ? Number(selectedPriceSnapshot.totalStayPrice ?? selectedPriceSnapshot.total_price ?? payableHotelCost)
+          : payableHotelCost,
+        numberOfNights: 1,
+        basePricePerNight: baseHotelCost,
         totalHotelTaxAmount: storedTax * earlyCheckInBillingMultiplier,
-        baseHotelCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
-        totalRoomCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
+        baseHotelCost,
+        totalRoomCost: baseHotelCost,
         hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanCost: Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanGstAmount: Number((h as any).total_hotel_meal_plan_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
@@ -995,7 +1025,7 @@ async getHotelRoomDetailsByQuoteId(
         childWithBedCount: Number((h as any).room_cwb_count ?? (h as any).total_child_with_bed ?? (plan as any).total_child_with_bed ?? 0),
         childWithoutBedCount: Number((h as any).room_cnb_count ?? (h as any).total_child_without_bed ?? (plan as any).total_child_without_bed ?? 0),
         hotelMarginPercentage: storedPricing.marginPercentage,
-        hotelMarginAmount: storedPricing.marginAmount * earlyCheckInBillingMultiplier,
+        hotelMarginAmount,
         hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
@@ -1009,7 +1039,7 @@ async getHotelRoomDetailsByQuoteId(
         hotelierEarlyCheckInNote,
         previousDayBillingSynthetic: isSyntheticPreviousDayBilling,
         hotelDistance,
-        provider: String((h as any).hotel_provider || '').trim().toLowerCase() || undefined,
+        provider: provider || undefined,
         hotelCode: String((h as any).hotel_code || '').trim() || undefined,
         bookingCode: String((h as any).selected_rate_option_id || '').trim() || undefined,
         rateOptionId: String((h as any).selected_rate_option_id || '').trim() || undefined,
