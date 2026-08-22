@@ -224,12 +224,22 @@ export function supplierRateIdentityMatches(requestedRow: any, candidateRow: any
   if (provider && clean(candidate.provider || candidate.hotel_provider) !== provider) return false;
 
   if (provider === 'tbo') {
-    const requestedSelectionKey = supplierSelectionKey(requested);
-    const candidateSelectionKey = supplierSelectionKey(candidate);
-    if (requestedSelectionKey && candidateSelectionKey) return requestedSelectionKey === candidateSelectionKey;
     const requestedBookingCode = [requested.rateOptionId, requested.bookingCode, requested.searchReference]
       .map((value) => String(value || '').trim())
       .find(isTboSupplierBookingCode);
+    const candidateRateTokens = [candidate.rateOptionId, candidate.bookingCode, candidate.searchReference]
+      .map((value) => String(value || '').trim())
+      .filter(isTboSupplierBookingCode);
+
+    // A TBO selectionKey intentionally omits the search-session UUID. It is
+    // useful as a fallback, but it must never override an exact booking-code
+    // match or match a different session's zero/parent row.
+    if (requestedBookingCode) {
+      return candidateRateTokens.includes(requestedBookingCode);
+    }
+    const requestedSelectionKey = supplierSelectionKey(requested);
+    const candidateSelectionKey = supplierSelectionKey(candidate);
+    if (requestedSelectionKey && candidateSelectionKey) return requestedSelectionKey === candidateSelectionKey;
     if (!requestedBookingCode) return false;
     return [candidate.rateOptionId, candidate.bookingCode, candidate.searchReference]
       .map((value) => String(value || '').trim())

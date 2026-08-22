@@ -314,7 +314,10 @@ export class ItineraryHotelDetailsTboService {
 
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
- // Cache for hotel details endpoint response (key = quoteId)
+ // The complete hotel-details response contains the full supplier inventory,
+ // rate options, and recommendation payloads. It is intentionally not cached
+ // in-process: the persisted snapshot is the authoritative read path and
+ // retaining these responses caused the Node heap to grow across itineraries.
   private hotelDetailsCache = new Map<string, {
     data: ItineraryHotelDetailsResponseDto;
     timestamp: number;
@@ -3247,9 +3250,10 @@ this.logger.log(
         continue;
       }
 
-      // ARI sends broad validity ranges and later date-specific corrections.
-      // Resolve one effective row per hotel/room before applying room-count
-      // eligibility; otherwise an old broad row can mask a newer daily update.
+      // ARI sends broad validity ranges and later corrections. The pricebook
+      // treats the latest received update as authoritative for each requested
+      // date, regardless of the row's range width. Keep the same rule here so
+      // itinerary search and pricebook cannot disagree about inventory.
       const effectiveAvailabilityByRoom = new Map<string, any>();
       for (const row of availRows as any[]) {
         const hotelId = Number(row.hotel_id);
@@ -3258,25 +3262,14 @@ this.logger.log(
           continue;
         }
 
-        const startTime = new Date(row.start_date).getTime();
-        const endTime = new Date(row.end_date).getTime();
-        const rangeDays = Number.isFinite(startTime) && Number.isFinite(endTime)
-          ? Math.max(0, Math.round((endTime - startTime) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
-          : Number.MAX_SAFE_INTEGER;
         const key = `${hotelId}|${roomId}`;
         const current = effectiveAvailabilityByRoom.get(key);
-        const currentStart = current ? new Date(current.start_date).getTime() : Number.NaN;
-        const currentEnd = current ? new Date(current.end_date).getTime() : Number.NaN;
-        const currentRangeDays = current && Number.isFinite(currentStart) && Number.isFinite(currentEnd)
-          ? Math.max(0, Math.round((currentEnd - currentStart) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
-          : Number.MAX_SAFE_INTEGER;
         const receivedAt = new Date(row.received_at).getTime();
         const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
 
         if (
           !current ||
-          rangeDays < currentRangeDays ||
-          (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)
+          receivedAt > currentReceivedAt
         ) {
           effectiveAvailabilityByRoom.set(key, row);
         }
@@ -6941,31 +6934,17 @@ this.logger.log(
   }
 
   private getCachedHotelDetails(quoteId: string): ItineraryHotelDetailsResponseDto | null {
-    const cached = this.hotelDetailsCache.get(quoteId);
-    if (!cached) {
-      return null;
-    }
-
-    if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_DETAILS_CACHE_TTL_MS)) {
-      this.hotelDetailsCache.delete(quoteId);
- this.logger.debug(` [CACHE EXPIRED] Removed stale hotel details cache for ${quoteId}`);
-      return null;
-    }
-
- this.logger.log(` [CACHE HIT] Hotel details from cache for ${quoteId}`);
-    return cached.data;
+    // Do not retain the full response in the long-lived Nest process. Callers
+    // that need the current snapshot use /persisted?includeInventory=true.
+    return null;
   }
 
   private setCachedHotelDetails(
     quoteId: string,
     data: ItineraryHotelDetailsResponseDto,
   ): void {
-    this.evictOldestIfNeeded(this.hotelDetailsCache);
-    this.hotelDetailsCache.set(quoteId, {
-      data,
-      timestamp: Date.now(),
-    });
- this.logger.log(` [CACHE SET] Hotel details cached for ${quoteId}`);
+    // Keep the method for call-site compatibility, but never retain the large
+    // supplier response. The persisted DB snapshot remains unchanged.
   }
 
   private isCacheExpired(timestamp: number, ttlMs: number): boolean {

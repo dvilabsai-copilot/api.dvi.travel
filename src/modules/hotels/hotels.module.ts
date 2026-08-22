@@ -27,10 +27,13 @@ import { HobseHotelCsvImportService } from './services/hobse-hotel-csv-import.se
 import { SupplementNormalizerService } from './services/supplement-normalizer.service';
 import { OfflineHotelCatalogService } from '../itineraries/services/offline-hotel-catalog.service';
 import { HotelPricingService } from '../itineraries/hotels/hotel-pricing.service';
+import { TboMasterHotelController } from './controllers/tbo-master-hotel.controller';
+import { TboMasterHotelService } from './services/tbo-master-hotel.service';
 
 @Module({
   imports: [],
   controllers: [
+    TboMasterHotelController,
     HotelsController,
     LocationsController,
     RootStatesController,
@@ -57,6 +60,7 @@ import { HotelPricingService } from '../itineraries/hotels/hotel-pricing.service
  SupplementNormalizerService, // NEW: For supplement normalization
     HotelPricingService,
     OfflineHotelCatalogService,
+    TboMasterHotelService,
   ],
   exports: [
     HotelsService,

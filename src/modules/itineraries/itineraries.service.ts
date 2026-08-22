@@ -41,6 +41,7 @@ import { normalizeCityName } from "./utils/city-normalization.util";
 import { haversineKm } from "./utils/distance-utils";
 import {
   normalizeSupplierRateIdentity,
+  supplierRateIdentityMatches,
   resolvePersistedHotelIdentity,
   supplierSelectionKey,
 } from './utils/hotel-selection-identity.util';
@@ -1719,6 +1720,15 @@ private getGuideSlotLabel(slotId: number): string {
             code: code || (status === 'REFRESH_FAILED' ? 'HOTEL_REFRESH_FAILED' : 'HOTEL_NO_AVAILABILITY'),
             affectedRouteIds: response?.affectedRouteIds || [],
             logicalStay: response?.logicalStay,
+            // Multi-night itinerary selection is all-or-nothing. Even when
+            // the validator finds inventory for the clicked night alone, do
+            // not expose that as a bookable fallback to the client.
+            canBookSingleNight: false,
+            canBookMultiNight: response?.canBookMultiNight === true,
+            blocked: response?.canBookMultiNight === false,
+            restriction: response?.restriction,
+            restrictionConflicts: response?.restriction?.restrictionConflicts || [],
+            warnings: response?.restriction?.warnings || [],
           };
         }
       },
@@ -1800,9 +1810,32 @@ private getGuideSlotLabel(slotId: number): string {
       });
     }
 
+    // The user may explicitly accept the anchor night after the continuous
+    // stay preview reports that one or more follow-on nights are unavailable.
+    // In that case the intent must be resolved against only the clicked route;
+    // otherwise confirmation would immediately repeat the multi-night check.
+    if (data.singleNightOnly === true) {
+      const checkOut = new Date(`${intentCheckInDate}T00:00:00.000Z`);
+      checkOut.setUTCDate(checkOut.getUTCDate() + 1);
+      stay = {
+        ...stay,
+        routeIds: [Number(data.routeId)],
+        stayDates: [intentCheckInDate],
+        checkInDate: intentCheckInDate,
+        checkOutDate: checkOut.toISOString().slice(0, 10),
+        nights: 1,
+      };
+    }
+
     // The logical stay is known before any supplier work. Refresh every
     // affected route so no night is silently filled from an anchor-only rate.
-    if (provider !== 'offline') {
+    // select-intent-preview has already refreshed and stored the supplier
+    // snapshot used to build the confirmation row. When the browser sends
+    // that authoritative rate back, do not perform a second TBO search: TBO
+    // may issue a new booking code or fare milliseconds later and make a
+    // valid selection look stale.
+    const reusePreviewSnapshot = data.reusePreviewSnapshot === true;
+    if (provider !== 'offline' && !reusePreviewSnapshot) {
       if (['tbo', 'resavenue', 'hobse', 'axisrooms', 'staah'].includes(provider) &&
         typeof (this.hotelDetailsTboService as any).searchSelectedHotelForContinuousStay === 'function') {
         const continuousHotels = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
@@ -1932,9 +1965,13 @@ private getGuideSlotLabel(slotId: number): string {
         (requestedProvider === 'axisrooms' && optionProvider === 'ax');
       const optionCanonical = Number(option.canonicalHotelId || option.hotelId || 0);
       const optionProviderCode = normalize(option.providerHotelCode || option.provider_hotel_code || option.hotelCode);
+      const providerCodeMatches = optionProviderCode === normalize(hotelCode);
+      // Fresh supplier responses may not carry our internal canonical ID.
+      // Once provider and provider hotel code match, allow that authoritative
+      // supplier identity to match the persisted canonical selection too.
       return providerMatches && (requestedCanonical > 0
-        ? optionCanonical === requestedCanonical
-        : optionProviderCode === normalize(hotelCode));
+        ? optionCanonical === requestedCanonical || (!optionCanonical && providerCodeMatches)
+        : providerCodeMatches);
     };
     const payableAmount = (option: any) => Number(
       option.totalStayPrice ?? option.totalPrice ?? option.totalAmountAfterTax ?? option.pricePerNight ?? option.price ?? Number.MAX_SAFE_INTEGER,
@@ -1948,15 +1985,22 @@ private getGuideSlotLabel(slotId: number): string {
     });
     const selectedByRoute: any[] = [];
     const anchorCandidates = routeOptions(Number(data.routeId), stay.stayDates[stay.routeIds.indexOf(Number(data.routeId))] || String(data.routeDate || '').slice(0, 10));
-    const anchorOption = anchorCandidates.find((option: any) => {
-      if (intent !== 'RATE_OPTION') return false;
-      if (anchorSelectionKey) return supplierSelectionKey(option) === anchorSelectionKey;
-      if (provider === 'tbo' && anchorRateOptionId) {
-        return supplierSelectionKey({ provider, rateOptionId: anchorRateOptionId }) === supplierSelectionKey(option);
-      }
-      return anchorRateOptionId && [option.rateOptionId, option.optionKey].map(String).includes(anchorRateOptionId);
-    }) || null;
-    if (intent === 'RATE_OPTION' && !anchorOption) {
+    // Prefer the exact supplier rate returned by preview. The TBO
+    // selectionKey is deliberately session-agnostic and can otherwise match
+    // a parent/zero-price row from another search session.
+    let anchorOption: any = null;
+    if (anchorRateOptionId) {
+      anchorOption = anchorCandidates.find((option: any) => supplierRateIdentityMatches({
+        provider,
+        rateOptionId: anchorRateOptionId,
+        bookingCode: data.bookingCode,
+        searchReference: data.searchReference,
+      }, option)) || null;
+    }
+    if (!anchorOption && !anchorRateOptionId && anchorSelectionKey) {
+      anchorOption = anchorCandidates.find((option: any) => supplierSelectionKey(option) === anchorSelectionKey) || null;
+    }
+    if ((intent === 'RATE_OPTION' || Boolean(anchorRateOptionId)) && !anchorOption) {
       throw new BadRequestException({
         code: 'HOTEL_RATE_STALE',
         message: 'The selected hotel rate is stale or unavailable. No nights were changed.',
@@ -1995,7 +2039,7 @@ private getGuideSlotLabel(slotId: number): string {
           selectionIntent: intent,
           logicalStay: stay,
           affectedRouteIds: stay.routeIds,
-          canBookSingleNight: true,
+          canBookSingleNight: stay.nights <= 1,
           canBookMultiNight: false,
         });
       }
@@ -2008,6 +2052,8 @@ private getGuideSlotLabel(slotId: number): string {
       // validator receives empty room/rate identity and cannot resolve the
       // supplier mapping even though the refreshed option is valid.
       const continuityAnchor = anchorOption || selectedByRoute[stay.routeIds.indexOf(Number(data.routeId))] || selectedByRoute[0];
+      const selectedRouteIndex = stay.routeIds.indexOf(Number(data.routeId));
+      const selectedRouteDate = stay.stayDates[selectedRouteIndex] || stay.checkInDate;
       const continuity = await this.hotelStayBlockValidationService.previewStayExtension({
         planId: Number(data.planId), routeId: Number(data.routeId), provider: provider as any, hotelCode,
         hotelName: String(continuityAnchor?.hotelName || data.hotelName || '').trim() || undefined,
@@ -2015,14 +2061,18 @@ private getGuideSlotLabel(slotId: number): string {
         rateId: String(continuityAnchor?.rateId || continuityAnchor?.ratePlanId || data.rateId || '').trim() || undefined,
         roomType: String(continuityAnchor?.roomType || continuityAnchor?.roomTypeName || anchorRoom || '').trim() || undefined,
         mealPlan: String(continuityAnchor?.mealPlan || continuityAnchor?.mealPlanCode || anchorMeal || '').trim() || undefined,
-        checkInDate: stay.checkInDate, groupType,
+        // The validator is anchored to the clicked route. Passing the
+        // overall stay start here made a later route (for example 10702 on
+        // 2026-08-23) validate as 2026-08-22 and collapse to a false
+        // single-night result.
+        checkInDate: selectedRouteDate, groupType,
       });
       if (!continuity.canBookMultiNight || continuity.blocked) {
         throw new BadRequestException({
           code: 'HOTEL_CONTINUOUS_STAY_UNAVAILABLE',
           message: continuity.restrictionConflicts?.map((conflict: any) => conflict.message).join(' | ') || 'The selected hotel cannot be booked for the complete continuous stay.',
           selectionIntent: intent, logicalStay: stay, restriction: continuity,
-          canBookSingleNight: continuity.canBookSingleNight, canBookMultiNight: false,
+          canBookSingleNight: false, canBookMultiNight: false,
         });
       }
     }
@@ -2120,6 +2170,9 @@ private getGuideSlotLabel(slotId: number): string {
     const persistencePayloads = selectedByRoute.map((rawSelected: any) => {
       const selected = normalizeSupplierRateIdentity(rawSelected);
       const routeDate = String(selected.date || '').slice(0, 10);
+      const isAnchorRoute = Number(selected.routeId) === Number(data.routeId);
+      const requestedPricePerNight = Number(data.pricePerNight ?? 0);
+      const requestedTotalPrice = Number(data.totalPrice ?? 0);
       const selectedProvider = String(selected.provider || provider).trim().toLowerCase();
       const routeNight = Array.isArray(selected.nightlyRates)
         ? selected.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === routeDate)
@@ -2147,16 +2200,33 @@ private getGuideSlotLabel(slotId: number): string {
         selected.hotelMarginAmount ??
         0,
       );
-      const pricePerNight = Number(
-        routeScopedOffline?.sellAmount ?? selected.pricePerNight ?? selected.amountAfterTax ?? 0,
+      const selectedPricePerNight = Number(
+        routeScopedOffline?.sellAmount ?? selected.pricePerNight ?? selected.amountAfterTax ?? selected.price ?? 0,
       );
-      const totalPrice = Number(
+      const selectedTotalPrice = Number(
         routeScopedOffline?.sellAmount ??
         selected.totalStayPrice ??
         selected.totalPrice ??
         selected.amountAfterTax ??
+        selected.price ??
         0,
       );
+      // A preview snapshot can contain a zero-valued parent option even when
+      // the browser has the exact selected rate and its payable amount. If
+      // the identity already matched that anchor, retain the request's
+      // positive price instead of passing a zero into the persistence layer.
+      const pricePerNight = selectedPricePerNight > 0
+        ? selectedPricePerNight
+        : isAnchorRoute && requestedPricePerNight > 0
+          ? requestedPricePerNight
+          : 0;
+      const totalPrice = selectedTotalPrice > 0
+        ? selectedTotalPrice
+        : isAnchorRoute && requestedTotalPrice > 0
+          ? requestedTotalPrice
+          : pricePerNight > 0
+            ? Number((pricePerNight * Math.max(Number(data.roomCount || 1), 1)).toFixed(2))
+            : 0;
       return {
         ...data,
         routeId: Number(selected.routeId), routeDate, groupType,

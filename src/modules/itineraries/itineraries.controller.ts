@@ -634,7 +634,17 @@ private readonly itineraryAccessService: ItineraryAccessService,
       undefined,
       req.user?.role,
     );
-    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
+    // Reset already has the complete persisted snapshot in result.response.
+    // Return it directly so the client does not issue a second /persisted
+    // request just to restore inventory and rate options for the hotel pane.
+    return {
+      hotelDetails: result.response,
+      changeSummary: result.changeSummary,
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
+    };
   }
 
   @Post('hotel_details/:quoteId/selected-hotel-refresh')

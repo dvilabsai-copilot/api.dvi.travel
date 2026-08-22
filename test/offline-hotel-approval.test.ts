@@ -71,6 +71,37 @@ test('offline option is priced from every requested night and missing nights are
   await assert.rejects(() => service.resolveOfflineRateOption({ planId: 1, routeId: 10, canonicalHotelId: 153, rateOptionId: 'offline:153:22:7:2099-01-01:2099-01-03', roomCount: 1 }), /no longer priced/);
 });
 
+test('offline pricing does not reject a room because of configured capacity', async () => {
+  const pricing = {
+    resolveEffectiveHotelMarginPercentage: async () => 0,
+    marginBreakdown: (value: number) => ({ baseAmount: value, marginPercentage: 0, marginAmount: 0, sellAmount: value }),
+    money: (value: number) => Number(value.toFixed(2)),
+  } as any;
+  const service = new OfflineHotelCatalogService({} as any, pricing);
+  const offers = await (service as any).buildRoomOffersFromCatalogRows(
+    { hotel_id: 153 },
+    ['2099-01-01'],
+    2,
+    20,
+    10,
+    {
+      roomsByHotel: new Map([[153, [{
+        room_ID: 22,
+        room_type_id: 7,
+        room_title: 'Deluxe',
+        total_max_adults: 1,
+        total_max_childrens: 0,
+      }]]]),
+      activeRoomTypeIds: new Set([7]),
+      pricesByHotelRoomType: new Map([['153|7', [{ year: '2099', month: 'January', day_1: '4500' }]]]),
+      ratePlansByRoom: new Map(),
+    },
+    0,
+  );
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].totalStayPrice, 9000);
+});
+
 test('offline option uses the itinerary room count when the request omits or understates it', async () => {
   const prisma = {
     dvi_itinerary_plan_details: {
