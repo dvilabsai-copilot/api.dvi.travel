@@ -1784,6 +1784,7 @@ this.logger.log(
           adults: planAdultCount,
           children: planChildCount,
           childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
           extraBedCount: Number((plan as any).total_extra_bed || 0),
         },
       );
@@ -1934,6 +1935,7 @@ this.logger.log(
               adults: planAdultCount,
               children: planChildCount,
               childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+              childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
               extraBedCount: Number((plan as any).total_extra_bed || 0),
             },
           ));
@@ -2776,7 +2778,7 @@ this.logger.log(
 
   private extractAxisroomsRate(
     occupancyRates: unknown,
-    pax?: { roomCount?: number; adults?: number; childWithBedCount?: number; extraBedCount?: number },
+    pax?: { roomCount?: number; adults?: number; childWithBedCount?: number; childWithoutBedCount?: number; extraBedCount?: number },
   ): number {
     try {
       const data = occupancyRates as Record<string, unknown>;
@@ -3109,6 +3111,7 @@ this.logger.log(
       adults?: number;
       children?: number;
       childWithBedCount?: number;
+      childWithoutBedCount?: number;
       extraBedCount?: number;
     },
     targetHotelCode?: string,
@@ -3422,7 +3425,7 @@ this.logger.log(
         }
 
  // Group occupancy rows by rateplan_id and extract rate from each plan
-        const ratesByPlan = new Map<string, { rate: number; roomId: number }>();
+        const ratesByPlan = new Map<string, { rate: number; roomId: number; occupancyRates: unknown }>();
 
         for (const occ of occupancyRows as any[]) {
           if (Number((occ as any).hotel_id) !== hid) continue;
@@ -3438,10 +3441,15 @@ this.logger.log(
               roomCount: requiredRoomCount,
               adults: Number(paxProfile?.adults || 0),
               childWithBedCount: Number(paxProfile?.childWithBedCount || 0),
+              childWithoutBedCount: Number(paxProfile?.childWithoutBedCount || 0),
               extraBedCount: Number(paxProfile?.extraBedCount || 0),
             });
             if (extractedRate > 0) {
-              ratesByPlan.set(rateplanId, { rate: extractedRate, roomId: rid });
+              ratesByPlan.set(rateplanId, {
+                rate: extractedRate,
+                roomId: rid,
+                occupancyRates: (occ as any).occupancy_rates,
+              });
             }
           }
         }
@@ -3464,7 +3472,17 @@ this.logger.log(
         });
         for (const [selectedRateplanId, rateInfo] of sortedRates) {
           const selectedRoomId = Number(rateInfo.roomId);
-          const rate = Number(rateInfo.rate);
+          const occupancyBreakdown = paxProfile && Object.keys(paxProfile).length > 0
+            ? calculateStaahOccupancyAmount(rateInfo.occupancyRates, {
+                roomCount: requiredRoomCount,
+                adults: Number(paxProfile.adults || 0),
+                children: Number(paxProfile.children || 0),
+                childWithBedCount: Number(paxProfile.childWithBedCount || 0),
+                childWithoutBedCount: Number(paxProfile.childWithoutBedCount || 0),
+                extraBedCount: Number(paxProfile.extraBedCount || 0),
+              })
+            : null;
+          const rate = Number(occupancyBreakdown?.finalCalculatedAmount || rateInfo.rate);
           if (!selectedRateplanId || !Number.isFinite(rate) || rate <= 0 || !selectedRoomId) continue;
 
           const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
@@ -3507,6 +3525,18 @@ this.logger.log(
             cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
             images: [],
             price: rate,
+            extraBedCount: occupancyBreakdown?.extraBedCount || 0,
+            extraBedRate: occupancyBreakdown?.extraBedRate || 0,
+            extraBedAmount: occupancyBreakdown?.extraBedAmount || 0,
+            childWithBedCount: occupancyBreakdown?.childWithBedCount || 0,
+            childWithBedRate: occupancyBreakdown?.childWithBedRate || 0,
+            childWithBedAmount: occupancyBreakdown?.childWithBedAmount || 0,
+            childWithoutBedCount: occupancyBreakdown?.childWithoutBedCount || 0,
+            childWithoutBedRate: occupancyBreakdown?.childWithoutBedRate || 0,
+            childWithoutBedAmount: occupancyBreakdown?.childWithoutBedAmount || 0,
+            extraChildCount: occupancyBreakdown?.extraChildCount || 0,
+            extraChildRate: occupancyBreakdown?.extraChildRate || 0,
+            extraChildAmount: occupancyBreakdown?.extraChildAmount || 0,
             currency: 'INR',
             roomTypes: [
               {
@@ -6494,6 +6524,7 @@ this.logger.log(
           adults: planAdultCount2,
           children: planChildCount2,
           childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
           extraBedCount: Number((plan as any).total_extra_bed || 0),
         },
       );
@@ -6575,6 +6606,7 @@ this.logger.log(
             adults: planAdultCount2,
             children: planChildCount2,
             childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
             extraBedCount: Number((plan as any).total_extra_bed || 0),
           },
         );
