@@ -4438,6 +4438,8 @@ export class HotelAvailabilitySnapshotService {
               : option.baseHotelCost ?? option.totalHotelCost ?? totalPrice,
             pricePerNight,
           }, 1),
+          total_extra_bed_cost: Number(option.extraBedAmount || 0),
+          total_childwith_bed_cost: Number(option.childWithBedAmount || 0),
           hotel_margin_percentage: marginPercentage,
           hotel_margin_rate: calculatedMargin,
           total_room_gst_amount: roomTaxAmount,
@@ -4576,6 +4578,9 @@ export class HotelAvailabilitySnapshotService {
       selected_price_per_night: pricePerNight,
       selected_total_price: totalPrice,
       selected_currency: option.currency || selection.selected_currency || null,
+      total_room_cost: Number(option.baseTotalPrice || option.baseHotelCost || option.totalHotelCost || totalPrice),
+      total_extra_bed_cost: Number(option.extraBedAmount || 0),
+      total_childwith_bed_cost: Number(option.childWithBedAmount || 0),
       total_hotel_cost: totalPrice,
       total_hotel_tax_amount: Number(option.totalHotelTaxAmount || selection.total_hotel_tax_amount || 0),
       selected_price_snapshot: JSON.stringify({
@@ -4590,6 +4595,12 @@ export class HotelAvailabilitySnapshotService {
           authoritativeCheckOutDate: option.authoritativeCheckOutDate || option.checkOutDate || null,
         } : {}),
         rateOptionId: option.rateOptionId || option.optionKey || option.searchReference || option.bookingCode || null,
+        extraBedCount: Number(option.extraBedCount || 0),
+        extraBedRate: Number(option.extraBedRate || 0),
+        extraBedAmount: Number(option.extraBedAmount || 0),
+        childWithBedCount: Number(option.childWithBedCount || 0),
+        childWithBedRate: Number(option.childWithBedRate || 0),
+        childWithBedAmount: Number(option.childWithBedAmount || 0),
         selectionOrigin: origin,
         ...(Number(option.autoSelectionFallbackFromGroup || 0) > 0
           ? { autoSelectionFallbackFromGroup: Number(option.autoSelectionFallbackFromGroup) }

@@ -28,6 +28,8 @@ type OfflineRoomOffer = {
   totalStayPrice: number;
   pricePerNight: number;
   roomCount: number;
+  extraBedRate: number;
+  childWithBedRate: number;
 };
 
 export type OfflineRateResolution = {
@@ -57,6 +59,10 @@ export type OfflineRateResolution = {
   hotelMarginTotalAmount: number;
   totalStayPrice: number;
   numberOfNights: number;
+  extraBedRate: number;
+  extraBedAmount: number;
+  childWithBedRate: number;
+  childWithBedAmount: number;
   currency: string;
   nightlyRates: Array<{ date: string; baseAmount: number; marginPercentage: number; marginAmount: number; sellAmount: number }>;
 };
@@ -612,7 +618,7 @@ export class OfflineHotelCatalogService {
     if (ratePlanModel?.findMany) {
       const ratePlans = await ratePlanModel.findMany({
         where: { hotel_id: { in: hotelIds }, status: 1, deleted: 0 },
-        select: { room_id: true, rateplan_id: true, rateplan_name: true, meal_plan_description: true },
+        select: { room_id: true, rateplan_id: true, rateplan_name: true, meal_plan_description: true, occupancy: true },
       });
       for (const plan of ratePlans as any[]) {
         const roomId = Number(plan.room_id || 0);
@@ -767,6 +773,7 @@ export class OfflineHotelCatalogService {
       }
 
       if (!valid || nightlySell.length !== dateList.length) continue;
+      const supplements = this.resolveSupplementRates(room, requestedMealPlanCode, catalogRows.ratePlansByRoom);
       offers.push({
         roomId: Number(room.room_ID || 0),
         roomTypeId,
@@ -782,6 +789,8 @@ export class OfflineHotelCatalogService {
         totalStayPrice: this.hotelPricingService.money(nightlySell.reduce((sum, amount) => sum + amount, 0)),
         pricePerNight: this.hotelPricingService.money(Math.min(...nightlySell)),
         roomCount,
+        extraBedRate: supplements.extraBedRate,
+        childWithBedRate: supplements.childWithBedRate,
       });
     }
 
@@ -838,10 +847,10 @@ export class OfflineHotelCatalogService {
     const roomsNeeded = Math.max(Number(roomCount || 1), 1);
     const ratePlansByRoom = new Map<number, any[]>();
     const ratePlanModel = (this.prisma as any).dvi_hotel_room_rate_plan;
-    if (ratePlanModel?.findMany && requestedMealPlanCode) {
+    if (ratePlanModel?.findMany) {
       const ratePlans = await ratePlanModel.findMany({
         where: { hotel_id: Number(hotel.hotel_id || 0), status: 1, deleted: 0 },
-        select: { room_id: true, rateplan_id: true, rateplan_name: true, meal_plan_description: true },
+        select: { room_id: true, rateplan_id: true, rateplan_name: true, meal_plan_description: true, occupancy: true },
       });
       for (const plan of ratePlans as any[]) {
         const roomId = Number(plan.room_id || 0);
@@ -962,6 +971,7 @@ export class OfflineHotelCatalogService {
         Math.min(...nightlySell),
       );
 
+      const supplements = this.resolveSupplementRates(room, requestedMealPlanCode, ratePlansByRoom);
       offers.push({
         roomId: Number(room.room_ID || 0),
         roomTypeId,
@@ -977,6 +987,8 @@ export class OfflineHotelCatalogService {
         totalStayPrice,
         pricePerNight,
         roomCount,
+        extraBedRate: supplements.extraBedRate,
+        childWithBedRate: supplements.childWithBedRate,
       });
     }
 
@@ -1127,6 +1139,10 @@ export class OfflineHotelCatalogService {
       hotelMarginTotalAmount: offer.hotelMarginTotalAmount,
       totalStayPrice: offer.totalStayPrice,
       numberOfNights: dateList.length,
+      extraBedRate: offer.extraBedRate,
+      extraBedAmount: offer.extraBedRate * Math.max(Number(plan.total_extra_bed || 0), 0),
+      childWithBedRate: offer.childWithBedRate || offer.extraBedRate,
+      childWithBedAmount: (offer.childWithBedRate || offer.extraBedRate) * Math.max(Number(plan.total_child_with_bed || 0), 0),
       currency: 'INR',
       nightlyRates: dateList.map((date, index) => ({
         date,
@@ -1135,6 +1151,26 @@ export class OfflineHotelCatalogService {
         marginAmount: offer.nightlyMargin[index] || 0,
         sellAmount: offer.nightlySell[index] || 0,
       })),
+    };
+  }
+
+  private resolveSupplementRates(
+    room: any,
+    requestedMealPlanCode: string,
+    ratePlansByRoom: Map<number, any[]>,
+  ): { extraBedRate: number; childWithBedRate: number } {
+    const plans = ratePlansByRoom.get(Number(room?.room_ID || 0)) || [];
+    const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
+    const plan = plans.find((candidate: any) => {
+      const text = `${candidate.rateplan_id || ''} ${candidate.rateplan_name || ''} ${candidate.meal_plan_description || ''}`;
+      return requested ? inferCanonicalHotelRatePlanCode(text) === requested : true;
+    }) || plans[0];
+    const occupancy = plan?.occupancy && typeof plan.occupancy === 'object' ? plan.occupancy : {};
+    const extraBedRate = Number(occupancy.EXTRABED ?? occupancy.EXTRAADULT ?? occupancy.EXTRACHILD ?? 0);
+    const childWithBedRate = Number(occupancy.CHILDWITHBED ?? occupancy.CHILD_WITH_BED ?? occupancy.CWB ?? 0);
+    return {
+      extraBedRate: Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate : 0,
+      childWithBedRate: Number.isFinite(childWithBedRate) && childWithBedRate > 0 ? childWithBedRate : 0,
     };
   }
 
