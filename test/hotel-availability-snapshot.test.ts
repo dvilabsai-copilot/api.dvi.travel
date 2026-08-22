@@ -218,6 +218,31 @@ test('complete persisted reads expose one hotel summary row per stay', () => {
   assert.equal(summary[0].hotelName, 'Hotel 3');
 });
 
+test('complete persisted reads prefer a live supplier over offline fallback per stay', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const summary = (service as any).buildClientStaySummaryRows([
+    {
+      itineraryRouteId: 10,
+      date: '2026-07-28',
+      provider: 'offline',
+      hotelName: 'Offline Hotel',
+      isBookable: true,
+      isSelectable: true,
+    },
+    {
+      itineraryRouteId: 10,
+      date: '2026-07-28',
+      provider: 'staah',
+      hotelName: 'Live Hotel',
+      isBookable: true,
+      isSelectable: true,
+    },
+  ]);
+
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].hotelName, 'Live Hotel');
+});
+
 test('canonical selected rate id never falls back to another nested option', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const selected = (service as any).selectedRateOption(

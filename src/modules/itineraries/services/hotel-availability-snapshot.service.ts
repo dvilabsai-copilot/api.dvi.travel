@@ -2317,7 +2317,16 @@ export class HotelAvailabilitySnapshotService {
     };
     const rank = (row: any): number => {
       if (row?.isSelected === true || String(row?.selectionOrigin || '').trim()) return 0;
-      if (row?.isBookable !== false && row?.isSelectable !== false && row?.isPlaceholder !== true) return 1;
+      if (row?.isPlaceholder === true) return 3;
+
+      // The compact `hotels` response is also used for the itinerary header.
+      // Live and offline rows can exist for the same stay, but offline must
+      // never win merely because it was inserted first. Reset clears the
+      // selection, so a live supplier row must be the visible fallback when
+      // one exists; offline is only the fallback when no live row exists.
+      const provider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+      if (provider === 'offline') return 2;
+      if (row?.isBookable !== false && row?.isSelectable !== false) return 1;
       return 2;
     };
 
