@@ -4117,6 +4117,8 @@ export class HotelAvailabilitySnapshotService {
         hotel_id: true,
         hotel_code: true,
         hotel_provider: true,
+        hotel_booking_mode: true,
+        price_source: true,
         selected_price_snapshot: true,
       },
     });
