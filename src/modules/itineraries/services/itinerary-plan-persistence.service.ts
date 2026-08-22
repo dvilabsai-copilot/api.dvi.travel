@@ -941,24 +941,244 @@ if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
             });
           }
         }
-        stepStartedAt = this.logItineraryApiTiming({
+           stepStartedAt = this.logItineraryApiTiming({
           api: 'save_basic_info',
           step: 'hotel_details_lookup_rebuild',
           startedAt: apiStartedAt,
           stepStartedAt,
           planId,
         });
- console.log('[PERF] rebuildPlanHotels:', Date.now() - opStart2, 'ms');
+        console.log('[PERF] rebuildPlanHotels:', Date.now() - opStart2, 'ms');
+      }
+
+      // A start-time-only edit must not rebuild the selected hotel rows.
+      // Only sync previous-day early-check-in billing markers/details.
+      if (
+        itineraryStartTimeChanged &&
+        !shouldRebuildHotelRows &&
+        (
+          Number(dto.plan.itinerary_preference) === 1 ||
+          Number(dto.plan.itinerary_preference) === 3
+        )
+      ) {
+        const firstHotelRoute = (routes || [])[0] as any;
+        const firstHotelRouteId = Number(
+          firstHotelRoute?.itinerary_route_ID || 0,
+        );
+
+        const requestedStartTime = normalizeWallClockTime(
+          dto.plan.trip_start_date,
+        );
+
+        if (firstHotelRouteId > 0 && requestedStartTime) {
+          const [arrivalHour, arrivalMinute, arrivalSecond] =
+            requestedStartTime.split(':').map((value) => Number(value || 0));
+
+          const arrivalSeconds =
+            (arrivalHour * 3600) +
+            (arrivalMinute * 60) +
+            arrivalSecond;
+
+          const existingMarkerRows =
+            await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
+              where: {
+                itinerary_plan_id: planId,
+                itinerary_route_id: firstHotelRouteId,
+                hotel_required: 2,
+                hotel_id: 0,
+                deleted: 0,
+              },
+              select: {
+                group_type: true,
+                itinerary_route_date: true,
+                itinerary_route_location: true,
+              },
+            });
+
+          const shouldApplyPreviousDayBilling =
+            Boolean(dto.previousDayBillingDecisionProvided) &&
+            Boolean(dto.previousDayBillingConfirmed) &&
+            arrivalSeconds >= 3600 &&
+            arrivalSeconds < 28800;
+
+          if (shouldApplyPreviousDayBilling) {
+            const firstRouteDate = new Date(
+              firstHotelRoute.itinerary_route_date,
+            );
+
+            if (!Number.isNaN(firstRouteDate.getTime())) {
+              const actualGuestArrivalAt = new Date(Date.UTC(
+                firstRouteDate.getUTCFullYear(),
+                firstRouteDate.getUTCMonth(),
+                firstRouteDate.getUTCDate(),
+                arrivalHour,
+                arrivalMinute,
+                arrivalSecond,
+              ));
+
+              const previousDayDate = new Date(Date.UTC(
+                firstRouteDate.getUTCFullYear(),
+                firstRouteDate.getUTCMonth(),
+                firstRouteDate.getUTCDate(),
+                0,
+                0,
+                0,
+              ));
+              previousDayDate.setUTCDate(
+                previousDayDate.getUTCDate() - 1,
+              );
+
+              const hotelCheckOutDate = new Date(Date.UTC(
+                firstRouteDate.getUTCFullYear(),
+                firstRouteDate.getUTCMonth(),
+                firstRouteDate.getUTCDate(),
+                0,
+                0,
+                0,
+              ));
+              hotelCheckOutDate.setUTCDate(
+                hotelCheckOutDate.getUTCDate() + 1,
+              );
+
+              const routeLocation = String(
+                firstHotelRoute.next_visiting_location ||
+                firstHotelRoute.location_name ||
+                '',
+              ).trim();
+
+              const expectedDateIso =
+                previousDayDate.toISOString().slice(0, 10);
+
+              const expectedGroups = new Set([1, 2, 3, 4]);
+
+              const markersAlreadyUpToDate =
+                existingMarkerRows.length === 4 &&
+                existingMarkerRows.every((row: any) => {
+                  const rowDateIso = new Date(
+                    row.itinerary_route_date,
+                  ).toISOString().slice(0, 10);
+
+                  const rowGroup = Number(row.group_type || 0);
+                  const rowLocation = String(
+                    row.itinerary_route_location || '',
+                  ).trim();
+
+                  return (
+                    expectedGroups.has(rowGroup) &&
+                    rowDateIso === expectedDateIso &&
+                    rowLocation === routeLocation
+                  );
+                });
+
+              if (!markersAlreadyUpToDate) {
+                if (existingMarkerRows.length > 0) {
+                  await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+                    where: {
+                      itinerary_plan_id: planId,
+                      itinerary_route_id: firstHotelRouteId,
+                      hotel_required: 2,
+                      hotel_id: 0,
+                      deleted: 0,
+                    },
+                  });
+                }
+
+                await (tx as any).dvi_itinerary_plan_hotel_details.createMany({
+                  data: [1, 2, 3, 4].map((groupType) => ({
+                    group_type: groupType,
+                    itinerary_plan_id: planId,
+                    itinerary_route_id: firstHotelRouteId,
+                    itinerary_route_date: previousDayDate,
+                    itinerary_route_location: routeLocation || null,
+                    hotel_required: 2,
+                    hotel_id: 0,
+                    total_no_of_rooms: 0,
+                    total_hotel_cost: 0,
+                    total_hotel_tax_amount: 0,
+                    createdby: userId,
+                    createdon: new Date(),
+                    status: 1,
+                    deleted: 0,
+                  })),
+                });
+              }
+
+              const actualArrivalDateIso =
+                actualGuestArrivalAt.toISOString().slice(0, 10);
+
+              const earlyCheckInNote =
+                `Guest has opted for early morning check-in with extra payment. ` +
+                `Room to be blocked from ${expectedDateIso}, with actual guest arrival/check-in ` +
+                `on ${actualArrivalDateIso} at ${requestedStartTime}.`;
+
+              await (tx as any).dvi_itinerary_plan_hotel_details.updateMany({
+                where: {
+                  itinerary_plan_id: planId,
+                  itinerary_route_id: firstHotelRouteId,
+                  hotel_required: 1,
+                  hotel_id: { gt: 0 },
+                  deleted: 0,
+                },
+                data: {
+                  hotel_check_in_date: previousDayDate,
+                  actual_guest_arrival_at: actualGuestArrivalAt,
+                  hotel_check_out_date: hotelCheckOutDate,
+                  early_checkin: 1,
+                  early_checkin_extra_payment_applicable: 1,
+                  early_checkin_payment_status:
+                    'EXTRA_PAYMENT_APPLICABLE',
+                  early_checkin_note: earlyCheckInNote,
+                  updatedon: new Date(),
+                },
+              });
+            }
+          } else {
+            // "No, keep same-day", or the new start time is outside the
+            // early-arrival window: remove any old previous-day billing state.
+            if (existingMarkerRows.length > 0) {
+              await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+                where: {
+                  itinerary_plan_id: planId,
+                  itinerary_route_id: firstHotelRouteId,
+                  hotel_required: 2,
+                  hotel_id: 0,
+                  deleted: 0,
+                },
+              });
+            }
+
+            await (tx as any).dvi_itinerary_plan_hotel_details.updateMany({
+              where: {
+                itinerary_plan_id: planId,
+                itinerary_route_id: firstHotelRouteId,
+                hotel_required: 1,
+                hotel_id: { gt: 0 },
+                deleted: 0,
+              },
+              data: {
+                hotel_check_in_date: null,
+                actual_guest_arrival_at: null,
+                hotel_check_out_date: null,
+                early_checkin: 0,
+                early_checkin_extra_payment_applicable: 0,
+                early_checkin_payment_status: null,
+                early_checkin_note: null,
+                updatedon: new Date(),
+              },
+            });
+          }
+        }
       }
 
       opStart2 = Date.now();
-   if (shouldRebuildTimeline) {
-  await this.hotspotEngine.rebuildRouteHotspots(
-    tx,
-    planId,
-    existingHotspotsWithDates,
-  );
-}
+
+      if (shouldRebuildTimeline) {
+        await this.hotspotEngine.rebuildRouteHotspots(
+          tx,
+          planId,
+          existingHotspotsWithDates,
+        );
+      }
       await this.routeVehicleRestrictions.assertPersistedPlan(planId, 'create-itinerary-timeline', tx);
       stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
