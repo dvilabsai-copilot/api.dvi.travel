@@ -20,6 +20,7 @@ import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
+import { TimeConverter } from '../engines/helpers/time-converter';
 
 type RouteFamilyQuote = {
   baseQuoteId: string;
@@ -50,6 +51,44 @@ function normalizeRouteNumber(value: unknown): string {
   if (value === null || value === undefined || String(value).trim() === '') return '';
   const parsed = Number(value);
   return Number.isFinite(parsed) ? String(parsed) : String(value).trim();
+}
+
+function normalizeWallClockTime(value: unknown): string {
+  if (!value) return '';
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+
+    return [
+      String(value.getUTCHours()).padStart(2, '0'),
+      String(value.getUTCMinutes()).padStart(2, '0'),
+      String(value.getUTCSeconds()).padStart(2, '0'),
+    ].join(':');
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+
+  const timeMatch = raw.match(
+    /(?:T|\s|^)(\d{1,2}):(\d{2})(?::(\d{2}))?/,
+  );
+
+  if (timeMatch) {
+    return [
+      String(Number(timeMatch[1])).padStart(2, '0'),
+      timeMatch[2],
+      timeMatch[3] || '00',
+    ].join(':');
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+
+  return [
+    String(parsed.getUTCHours()).padStart(2, '0'),
+    String(parsed.getUTCMinutes()).padStart(2, '0'),
+    String(parsed.getUTCSeconds()).padStart(2, '0'),
+  ].join(':');
 }
 
 function routeShapeSignature(route: any): string {
@@ -417,10 +456,11 @@ export class ItineraryPlanPersistenceService {
     const isPlanUpdate = Number((dto?.plan as any)?.itinerary_plan_id || 0) > 0;
     const shouldResetManualHotspotsForFullRebuild = isFullBasicInfoRebuildType && isPlanUpdate;
     let routeChanged = false;
-    let roomCountChanged = false;
-    let mealPlanChanged = false;
-    let hotelCategoryChanged = false;
-    let previousRoutePlan: any = null;
+let itineraryStartTimeChanged = false;
+let roomCountChanged = false;
+let mealPlanChanged = false;
+let hotelCategoryChanged = false;
+let previousRoutePlan: any = null;
 
  // Increase interactive transaction timeout; hotspot rebuild + hotel lookups can exceed default 5s
     const result = await this.prisma.$transaction(async (tx) => {
@@ -450,13 +490,29 @@ export class ItineraryPlanPersistenceService {
       } else {
         assertVehicleAgentCreatePolicy(u, dto.plan);
       }
-      const planId = await this.planEngine.upsertPlanHeader(
-        dto.plan,
-        dto.travellers,
-        tx,
-        userId,
-      );
-      stepStartedAt = this.logItineraryApiTiming({
+    if (isPlanUpdate && previousRoutePlan) {
+  const previousStartTime = normalizeWallClockTime(
+    previousRoutePlan.trip_start_date_and_time,
+  );
+
+  const requestedStartTime = normalizeWallClockTime(
+    dto.plan.trip_start_date,
+  );
+
+  itineraryStartTimeChanged =
+    Boolean(previousStartTime) &&
+    Boolean(requestedStartTime) &&
+    previousStartTime !== requestedStartTime;
+}
+
+const planId = await this.planEngine.upsertPlanHeader(
+  dto.plan,
+  dto.travellers,
+  tx,
+  userId,
+);
+
+stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
         step: 'plan_lookup_upsert',
         startedAt: apiStartedAt,
@@ -519,6 +575,11 @@ export class ItineraryPlanPersistenceService {
       roomCountChanged = isPlanUpdate && hasItineraryRoomCountChanged(previousRoutePlan, dto.travellers);
       hotelCategoryChanged = isPlanUpdate && hasItineraryHotelCategoryChanged(previousRoutePlan, dto.plan);
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
+
+// A start-time-only edit must preserve the existing route structure/IDs,
+// but its persisted travel/hotspot timeline must be regenerated.
+const shouldRebuildTimeline =
+  shouldRebuildRouteData || itineraryStartTimeChanged;
       // Hotel selections are derived from these plan-level preferences. Keep
       // route rows/hotspots intact for a preference-only edit, but rebuild the
       // hotel rows so stale category/meal/room selections cannot survive.
@@ -656,6 +717,39 @@ export class ItineraryPlanPersistenceService {
             userId,
           )
         : oldRoutes;
+if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
+  const firstRoute = await tx.dvi_itinerary_route_details.findFirst({
+    where: {
+      itinerary_plan_ID: planId,
+      deleted: 0,
+      status: 1,
+    },
+    orderBy: [
+      { no_of_days: 'asc' },
+      { itinerary_route_date: 'asc' },
+      { itinerary_route_ID: 'asc' },
+    ],
+    select: {
+      itinerary_route_ID: true,
+    },
+  });
+
+  const requestedStartTime = normalizeWallClockTime(
+    dto.plan.trip_start_date,
+  );
+
+  if (firstRoute && requestedStartTime) {
+    await tx.dvi_itinerary_route_details.update({
+      where: {
+        itinerary_route_ID: firstRoute.itinerary_route_ID,
+      },
+      data: {
+        route_start_time: TimeConverter.toDate(requestedStartTime),
+        updatedon: new Date(),
+      },
+    });
+  }
+}
       stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
         step: 'routes_lookup_rebuild',
@@ -858,9 +952,13 @@ export class ItineraryPlanPersistenceService {
       }
 
       opStart2 = Date.now();
-      if (shouldRebuildRouteData) {
-        await this.hotspotEngine.rebuildRouteHotspots(tx, planId, existingHotspotsWithDates);
-      }
+   if (shouldRebuildTimeline) {
+  await this.hotspotEngine.rebuildRouteHotspots(
+    tx,
+    planId,
+    existingHotspotsWithDates,
+  );
+}
       await this.routeVehicleRestrictions.assertPersistedPlan(planId, 'create-itinerary-timeline', tx);
       stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
@@ -909,17 +1007,17 @@ export class ItineraryPlanPersistenceService {
  console.log('[PERF] getPlanRow:', Date.now() - opStart2, 'ms');
  console.log('[PERF] TOTAL TRANSACTION:', Date.now() - txStart, 'ms');
 
-      return {
-        planId,
-        quoteId: planRow?.itinerary_quote_ID,
-        routeIds: routes.map((r: any) => r.itinerary_route_ID),
-        routeChanged,
-        roomCountChanged,
-        mealPlanChanged,
-        hotelCategoryChanged,
-        message:
-          "Plan created/updated with routes, travellers, hotspots, and hotels.",
-      };
+ return {
+  planId,
+  quoteId: planRow?.itinerary_quote_ID,
+  routeIds: routes.map((r: any) => r.itinerary_route_ID),
+  routeChanged,
+  roomCountChanged,
+  mealPlanChanged,
+  hotelCategoryChanged,
+  message:
+    "Plan created/updated with routes, travellers, hotspots, and hotels.",
+};
  }, { timeout: 120000, maxWait: 20000 }); // Increased to 120s while we optimize further
 
  // Rebuild parking charges AFTER routes and hotspots
