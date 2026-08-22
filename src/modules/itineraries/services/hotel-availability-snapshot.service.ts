@@ -4107,10 +4107,56 @@ export class HotelAvailabilitySnapshotService {
           select: {
             total_adult: true,
             total_child_with_bed: true,
+            total_child_without_bed: true,
             total_extra_bed: true,
           } as any,
         })
       : null;
+
+    // A hotel is not a valid automatic choice when the itinerary requests a
+    // paid supplement but the selected rate does not provide that price. In
+    // that case the hotel may have rooms, but it cannot fulfil this booking
+    // request. Keep this rule in the backend so reset/rebuild cannot persist
+    // a restricted hotel merely because its base room price is lowest.
+    const missingRequiredSupplementReasons = (row: any): string[] => {
+      const snapshot: any = parseHotelSelectionSnapshot(row);
+      const hasRate = (...values: unknown[]): boolean =>
+        values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+      const reasons: string[] = [];
+      if (Number(plan?.total_extra_bed || 0) > 0 && !hasRate(
+        row?.extraBedRate,
+        row?.extra_bed_rate,
+        row?.extraBedAmount,
+        row?.total_extra_bed_cost,
+        snapshot?.extraBedRate,
+        snapshot?.extra_bed_rate,
+        snapshot?.extraBedAmount,
+      )) {
+        reasons.push('Extra bed not available');
+      }
+      if (Number(plan?.total_child_with_bed || 0) > 0 && !hasRate(
+        row?.childWithBedRate,
+        row?.child_with_bed_rate,
+        row?.childWithBedAmount,
+        row?.total_childwith_bed_cost,
+        snapshot?.childWithBedRate,
+        snapshot?.child_with_bed_rate,
+        snapshot?.childWithBedAmount,
+      )) {
+        reasons.push('Child with bed not available');
+      }
+      if (Number(plan?.total_child_without_bed || 0) > 0 && !hasRate(
+        row?.childWithoutBedRate,
+        row?.child_without_bed_rate,
+        row?.childWithoutBedAmount,
+        snapshot?.childWithoutBedRate,
+        snapshot?.child_without_bed_rate,
+        snapshot?.childWithoutBedAmount,
+      )) {
+        reasons.push('Child without bed not available');
+      }
+      return reasons;
+    };
 
     const existing = await tx.dvi_itinerary_plan_hotel_details.findMany({
       where: { itinerary_plan_id: planId, deleted: 0, status: 1, hotel_required: 1 },
@@ -4162,7 +4208,8 @@ export class HotelAvailabilitySnapshotService {
         String(row.bookingMode || '').trim().toUpperCase() === 'MANUAL_APPROVAL';
       const approvalCandidate = row.isBookable === false && approvalRequired && row.isSelectable !== false;
       if ((!canonicalHotelId && !this.hasSupplierIdentity(row)) || !routeId || !groupType ||
-        (row.isBookable === false && !approvalCandidate) || row.isSelectable === false) continue;
+        (row.isBookable === false && !approvalCandidate) || row.isSelectable === false ||
+        missingRequiredSupplementReasons(row).length > 0) continue;
       const key = hotelSelectionKeyFromRow(planId, row);
       const bucket = optionsByKey.get(key) || [];
       bucket.push({ ...row, canonicalHotelId });
@@ -4208,6 +4255,21 @@ export class HotelAvailabilitySnapshotService {
       const routeId = Number(row?.itinerary_route_id || 0);
       const identity = hotelIdentity(row);
       const bucket = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
+      if (missingRequiredSupplementReasons(row).length > 0) {
+        if (tx.dvi_itinerary_plan_hotel_details?.update) {
+          await tx.dvi_itinerary_plan_hotel_details.update({
+            where: { itinerary_plan_hotel_details_ID: row.itinerary_plan_hotel_details_ID },
+            data: { status: 0, deleted: 1, updatedon: new Date() },
+          });
+        }
+        if (tx.dvi_itinerary_plan_hotel_room_details?.updateMany) {
+          await tx.dvi_itinerary_plan_hotel_room_details.updateMany({
+            where: { itinerary_plan_hotel_details_id: row.itinerary_plan_hotel_details_ID, deleted: 0 },
+            data: { status: 0, deleted: 1, updatedon: new Date() },
+          });
+        }
+        continue;
+      }
       const fallbackFromGroup = Number((parseHotelSelectionSnapshot(row) as any)?.autoSelectionFallbackFromGroup || 0);
       const allowsFallbackDuplicate = Number(row?.group_type || 0) === 4 && fallbackFromGroup === 3;
       if (identity !== 'property::' && bucket.has(identity) && !allowsFallbackDuplicate) {
