@@ -148,15 +148,17 @@ export class ItineraryHotelRoomCategoryService {
         })
         : undefined;
       const selectedRoomType = persistedRoomType || snapshotRoomType;
-      const roomTypeId = persistedRoomTypeId > 0
-        ? persistedRoomTypeId
-        : Number(selectedRoomType?.roomTypeId || 0);
+      // A room child can retain a category ID from a previous hotel after the
+      // parent hotel changes. Never expose that stale ID to the selector: if
+      // it is not part of this hotel's current categories, resolve the room
+      // from the persisted selected snapshot instead.
+      const roomTypeId = Number(selectedRoomType?.roomTypeId || 0);
       return {
         room_number: index + 1,
         itinerary_plan_hotel_room_details_ID: room.itinerary_plan_hotel_room_details_ID,
         room_type_id: roomTypeId || null,
         room_type_title: selectedRoomType?.roomTypeTitle ||
-          (roomTypeId > 0 ? String(roomTypeId) : selectedSnapshotRoomType),
+          selectedSnapshotRoomType,
         room_qty: 1,
         available_room_types: available,
       };
