@@ -345,3 +345,24 @@ export function buildHotelSelectionState({
     };
   });
 }
+
+/** Keep package totals aligned with the server-authoritative selected state. */
+export function synchronizeHotelTabTotals<T extends SelectionStateTab>(
+  tabs: T[],
+  selectionState: HotelSelectionGroupView[],
+): T[] {
+  return (tabs || []).map((tab) => {
+    const group = (selectionState || []).find(
+      (candidate) => Number(candidate.groupType) === Number(tab.groupType),
+    );
+    const authoritativeTotal = Number(group?.totalAmount ?? 0);
+    if (!group || !Number.isFinite(authoritativeTotal) || authoritativeTotal <= 0) {
+      return tab;
+    }
+    return {
+      ...tab,
+      totalAmount: money(authoritativeTotal),
+      ...(tab.partialTotal == null ? {} : { partialTotal: money(authoritativeTotal) }),
+    };
+  });
+}
