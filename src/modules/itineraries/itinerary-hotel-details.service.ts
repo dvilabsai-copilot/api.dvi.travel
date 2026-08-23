@@ -952,6 +952,11 @@ async getHotelRoomDetailsByQuoteId(
       const storedTax = Number((h as any).total_hotel_tax_amount ?? 0);
       const storedMargin = Number((h as any).hotel_margin_rate ?? 0);
       const storedMarginPercentage = Number((h as any).hotel_margin_percentage ?? 0);
+      const snapshotMarginPercentage = Number(
+        selectedPriceSnapshot.hotelMarginPercentage ??
+        selectedPriceSnapshot.hotel_margin_percentage ??
+        0,
+      );
       const storedPricing = resolveStoredHotelPayablePricing({
         storedTotal,
         baseTotal: authoritativeBaseHotelCost,
@@ -1005,8 +1010,11 @@ async getHotelRoomDetailsByQuoteId(
         childWithBedCost +
         childWithoutBedCost
       ).toFixed(2));
-      const hotelMarginAmount = storedPricing.marginPercentage > 0
-        ? Number((hotelMarginBaseAmount * storedPricing.marginPercentage / 100).toFixed(2))
+      const effectiveMarginPercentage = storedPricing.marginPercentage > 0
+        ? storedPricing.marginPercentage
+        : snapshotMarginPercentage;
+      const hotelMarginAmount = effectiveMarginPercentage > 0
+        ? Number((hotelMarginBaseAmount * effectiveMarginPercentage / 100).toFixed(2))
         : storedHotelMarginAmount;
       const extraBedRate = Number((h as any).extra_bed_rate ?? selectedPriceSnapshot.extraBedRate ?? (extraBedCount > 0 ? extraBedCost / extraBedCount : 0));
       const childWithBedRate = Number(selectedPriceSnapshot.childWithBedRate ?? (childWithBedCount > 0 ? childWithBedCost / childWithBedCount : 0));
@@ -1059,7 +1067,7 @@ async getHotelRoomDetailsByQuoteId(
         childWithBedRate,
         childWithoutBedCount,
         childWithoutBedRate,
-        hotelMarginPercentage: storedPricing.marginPercentage,
+        hotelMarginPercentage: effectiveMarginPercentage,
         hotelMarginAmount,
         hotelMarginBaseAmount,
         hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
