@@ -56,6 +56,7 @@ export interface ItineraryHotelRowDto {
   basePricePerNight?: number;
   hotelMarginPercentage?: number;
   hotelMarginAmount?: number;
+  hotelMarginBaseAmount?: number;
   hotelMarginGstAmount?: number;
   hotelRoomGstAmount?: number;
   hotelMealPlanCost?: number;
@@ -67,8 +68,11 @@ export interface ItineraryHotelRowDto {
   totalChildWithoutBedCost?: number;
   totalChildWithoutBedCostGstAmount?: number;
   extraBedCount?: number;
+  extraBedRate?: number;
   childWithBedCount?: number;
+  childWithBedRate?: number;
   childWithoutBedCount?: number;
+  childWithoutBedRate?: number;
   totalRoomCost?: number;
   totalHotelCost: number;
   totalHotelTaxAmount: number;
@@ -976,9 +980,37 @@ async getHotelRoomDetailsByQuoteId(
       const baseHotelCost = (isOffline && offlineBasePerNight > 0
         ? offlineBasePerNight
         : authoritativeBaseHotelCost) * earlyCheckInBillingMultiplier;
-      const hotelMarginAmount = (isOffline && offlineMarginPerNight > 0
+      const storedHotelMarginAmount = (isOffline && offlineMarginPerNight > 0
         ? offlineMarginPerNight
         : storedPricing.marginAmount) * earlyCheckInBillingMultiplier;
+      const extraBedCount = Number((h as any).room_extra_bed_count ?? (h as any).total_extra_bed ?? (plan as any).total_extra_bed ?? 0);
+      const childWithBedCount = Number((h as any).room_cwb_count ?? (h as any).total_child_with_bed ?? (plan as any).total_child_with_bed ?? 0);
+      const childWithoutBedCount = Number((h as any).room_cnb_count ?? (h as any).total_child_without_bed ?? (plan as any).total_child_without_bed ?? 0);
+      const storedExtraBedCost = Number((h as any).total_extra_bed_cost ?? 0);
+      const storedChildWithBedCost = Number((h as any).total_childwith_bed_cost ?? 0);
+      const storedChildWithoutBedCost = Number((h as any).total_childwithout_bed_cost ?? 0);
+      const extraBedCost = (storedExtraBedCost > 0 ? storedExtraBedCost : Number(selectedPriceSnapshot.extraBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const childWithBedCost = (storedChildWithBedCost > 0 ? storedChildWithBedCost : Number(selectedPriceSnapshot.childWithBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const childWithoutBedCost = (storedChildWithoutBedCost > 0 ? storedChildWithoutBedCost : Number(selectedPriceSnapshot.childWithoutBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const roomCountForMargin = Math.max(
+        Number((h as any).total_no_of_rooms ?? 0),
+        Number((plan as any).preferred_room_count ?? 0),
+        1,
+      );
+      const marginRoomCost = Number((baseHotelCost * roomCountForMargin).toFixed(2));
+      const hotelMarginBaseAmount = Number((
+        marginRoomCost +
+        Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier +
+        extraBedCost +
+        childWithBedCost +
+        childWithoutBedCost
+      ).toFixed(2));
+      const hotelMarginAmount = storedPricing.marginPercentage > 0
+        ? Number((hotelMarginBaseAmount * storedPricing.marginPercentage / 100).toFixed(2))
+        : storedHotelMarginAmount;
+      const extraBedRate = Number((h as any).extra_bed_rate ?? selectedPriceSnapshot.extraBedRate ?? (extraBedCount > 0 ? extraBedCost / extraBedCount : 0));
+      const childWithBedRate = Number(selectedPriceSnapshot.childWithBedRate ?? (childWithBedCount > 0 ? childWithBedCost / childWithBedCount : 0));
+      const childWithoutBedRate = Number(selectedPriceSnapshot.childWithoutBedRate ?? (childWithoutBedCount > 0 ? childWithoutBedCost / childWithoutBedCount : 0));
 
       return {
         groupType: Number((h as any).group_type ?? 0) || 0,
@@ -1015,17 +1047,21 @@ async getHotelRoomDetailsByQuoteId(
         hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanCost: Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanGstAmount: Number((h as any).total_hotel_meal_plan_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        totalExtraBedCost: Number((h as any).total_extra_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalExtraBedCost: extraBedCost,
         totalExtraBedCostGstAmount: Number((h as any).total_extra_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        totalChildWithBedCost: Number((h as any).total_childwith_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithBedCost: childWithBedCost,
         totalChildWithBedCostGstAmount: Number((h as any).total_childwith_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        totalChildWithoutBedCost: Number((h as any).total_childwithout_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithoutBedCost: childWithoutBedCost,
         totalChildWithoutBedCostGstAmount: Number((h as any).total_childwithout_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        extraBedCount: Number((h as any).room_extra_bed_count ?? (h as any).total_extra_bed ?? (plan as any).total_extra_bed ?? 0),
-        childWithBedCount: Number((h as any).room_cwb_count ?? (h as any).total_child_with_bed ?? (plan as any).total_child_with_bed ?? 0),
-        childWithoutBedCount: Number((h as any).room_cnb_count ?? (h as any).total_child_without_bed ?? (plan as any).total_child_without_bed ?? 0),
+        extraBedCount,
+        extraBedRate,
+        childWithBedCount,
+        childWithBedRate,
+        childWithoutBedCount,
+        childWithoutBedRate,
         hotelMarginPercentage: storedPricing.marginPercentage,
         hotelMarginAmount,
+        hotelMarginBaseAmount,
         hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
