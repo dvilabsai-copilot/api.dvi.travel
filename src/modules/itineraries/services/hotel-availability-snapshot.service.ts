@@ -3323,6 +3323,44 @@ export class HotelAvailabilitySnapshotService {
       };
     };
 
+    const reconcileStoredTabTotalFromCurrentSelections = (tab: any): any => {
+      if (isExplicitlyEmptyRecommendationTab(tab)) return tab;
+      const selectedRows = (rows || []).filter((row: any) =>
+        Number(row?.groupType || 0) === Number(tab?.groupType || 0) &&
+        hasSelectionMarker(row) &&
+        String(row?.selectionStatus || '').trim().toUpperCase() !== 'UNAVAILABLE' &&
+        selectedAmount(row) > 0,
+      );
+      if (selectedRows.length === 0) return tab;
+
+      // One persisted selection is repeated on every night of a continuous
+      // stay. Count the selection once, otherwise a two-night hotel becomes
+      // double-priced when the package total is rebuilt from route rows.
+      const seen = new Set<string>();
+      const totalAmount = selectedRows.reduce((sum: number, row: any) => {
+        const selectionId = Number(row?.selectionId || row?.selection_id || row?.itineraryPlanHotelDetailsId || 0);
+        const stayKey = String(row?.stayKey || row?.stay_key || row?.authoritativeStayKey || '').trim();
+        const commercialKey = String(
+          row?.selectionKey || row?.optionKey ||
+          `${String(row?.provider || '').trim().toLowerCase()}|${String(row?.hotelCode || row?.hotelId || '').trim()}|${String(row?.roomType || row?.roomTypeName || '').trim()}|${String(row?.mealPlan || row?.mealPlanCode || '').trim()}`,
+        ).trim();
+        const key = selectionId > 0
+          ? `selection:${selectionId}`
+          : stayKey
+            ? `stay:${stayKey}`
+            : `option:${commercialKey}`;
+        if (seen.has(key)) return sum;
+        seen.add(key);
+        return sum + selectedAmount(row);
+      }, 0);
+      if (!Number.isFinite(totalAmount) || totalAmount <= 0) return tab;
+      return {
+        ...tab,
+        totalAmount: Number(totalAmount.toFixed(2)),
+        partialTotal: tab.partialTotal == null ? tab.partialTotal : Number(totalAmount.toFixed(2)),
+      };
+    };
+
     // Recommendation metadata is tied to the route IDs that produced the
     // availability snapshot. Editing an itinerary can recreate route rows
     // without changing the visible dates, leaving the old tab metadata in
@@ -3368,7 +3406,8 @@ export class HotelAvailabilitySnapshotService {
       storedTabs.every((tab: any) => Number.isFinite(tab.totalAmount) && tab.totalAmount >= 0)
     ) return orderTabsForDisplay(ensureFourStoredTabs(storedTabs
       .map(overlayStoredTabSelections)
-      .map(overlayUserSelectedTabTotal)));
+      .map(overlayUserSelectedTabTotal)
+      .map(reconcileStoredTabTotalFromCurrentSelections)));
 
     const searchableRoutes = resolveHotelRequiredRoutes(routes || [], noOfNights);
     const stayKeyByRouteId = new Map<number, string>();
