@@ -6301,14 +6301,31 @@ const hasRequiredVehicleSelection =
       );
       const selectedRoutes = (selectedGroup?.routes || [])
         .filter((route: any) => route?.selected)
-        .map((route: any) => route.selected);
+        .map((route: any) => ({
+          ...route.selected,
+          routeDate: route.routeDate || route.date,
+        }));
 
       if (selectedRoutes.length > 0) {
         const readAmount = (value: unknown): number => {
           const parsed = Number(value ?? 0);
           return Number.isFinite(parsed) ? parsed : 0;
         };
+        const lastSelectedStayDate = new Map<string, number>();
         const selectedSummary = selectedRoutes.reduce((sum: any, selected: any) => {
+          const selectedKey = String(
+            selected.selectionKey || selected.rateOptionId ||
+            `${selected.provider || ''}|${selected.hotelCode || ''}|${selected.roomType || ''}|${selected.mealPlan || ''}`,
+          ).trim();
+          const selectedDate = new Date(String(selected.routeDate || selected.date || '')).getTime();
+          const previousDate = lastSelectedStayDate.get(selectedKey);
+          const isRepeatedNight = Number.isFinite(selectedDate) && Number.isFinite(previousDate) &&
+            selectedDate - Number(previousDate) === 24 * 60 * 60 * 1000;
+          if (isRepeatedNight) {
+            lastSelectedStayDate.set(selectedKey, selectedDate);
+            return sum;
+          }
+          if (Number.isFinite(selectedDate)) lastSelectedStayDate.set(selectedKey, selectedDate);
           const roomBase = readAmount(
             selected.baseTotalPrice ?? selected.base_total_price ?? selected.basePricePerNight,
           );

@@ -315,7 +315,25 @@ export function buildHotelSelectionState({
       : statuses.length > 0 && statuses.every((status) => status === 'UNAVAILABLE')
         ? 'UNAVAILABLE'
         : 'UNRESOLVED';
-    const rawTotal = tab.totalAmount ?? tab.partialTotal;
+    // A persisted tab total can belong to an older recommendation package.
+    // Rebuild the amount from the currently selected commercial identity when
+    // route selections are present. A continuous stay repeats the same
+    // selection on each night, so count each selection key only once.
+    const selectedTotalByIdentity = new Map<string, number>();
+    routes.forEach((route) => {
+      if (!route.selected || !Number(route.selected.totalPrice || 0)) return;
+      const selected = route.selected;
+      const key = String(
+        selected.selectionKey || selected.rateOptionId ||
+        `${selected.provider || ''}|${selected.hotelCode || ''}|${selected.roomType || ''}|${selected.mealPlan || ''}`,
+      ).trim();
+      if (!selectedTotalByIdentity.has(key)) {
+        selectedTotalByIdentity.set(key, money(selected.totalPrice));
+      }
+    });
+    const selectedTotal = Array.from(selectedTotalByIdentity.values())
+      .reduce((sum, amount) => sum + amount, 0);
+    const rawTotal = selectedTotal > 0 ? selectedTotal : tab.totalAmount ?? tab.partialTotal;
     const totalAmount = rawTotal == null || !Number.isFinite(Number(rawTotal)) ? null : money(rawTotal);
 
     return {
