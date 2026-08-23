@@ -6286,6 +6286,72 @@ const hasRequiredVehicleSelection =
       totalMealCost += Number(h.total_hotel_meal_plan_cost || 0) * rowMultiplier;
     });
 
+    // The availability snapshot is the source of truth after Reset/Refresh.
+    // Legacy plan-hotel rows can still contain the previous recommendation's
+    // room total, which makes the lower Overall Cost section disagree with the
+    // hotel-list rows returned by the same request. Reconcile the summary from
+    // the selected snapshot before exposing hotelPresentation to the client.
+    try {
+      const persistedSnapshot = await this.hotelAvailabilitySnapshotService.readPersisted(
+        quoteId,
+        { page: 1, pageSize: 0, groupType: activeHotelGroupType },
+      );
+      const selectedGroup = (persistedSnapshot.hotelSelectionState || []).find(
+        (group: any) => Number(group?.groupType || 0) === Number(activeHotelGroupType || 0),
+      );
+      const selectedRoutes = (selectedGroup?.routes || [])
+        .filter((route: any) => route?.selected)
+        .map((route: any) => route.selected);
+
+      if (selectedRoutes.length > 0) {
+        const readAmount = (value: unknown): number => {
+          const parsed = Number(value ?? 0);
+          return Number.isFinite(parsed) ? parsed : 0;
+        };
+        const selectedSummary = selectedRoutes.reduce((sum: any, selected: any) => {
+          const roomBase = readAmount(
+            selected.baseTotalPrice ?? selected.base_total_price ?? selected.basePricePerNight,
+          );
+          const extraBed = readAmount(selected.extraBedAmount ?? selected.extra_bed_amount ?? selected.extraBedCost);
+          const childWithBed = readAmount(selected.childWithBedAmount ?? selected.child_with_bed_amount ?? selected.childWithBedCost);
+          const childWithoutBed = readAmount(selected.childWithoutBedAmount ?? selected.child_without_bed_amount ?? selected.childWithoutBedCost);
+          const payable = readAmount(
+            selected.totalPrice ?? selected.totalStayPrice ?? selected.selectedTotalPrice ?? selected.totalAmount,
+          );
+          const margin = readAmount(
+            selected.hotelMarginAmount ?? selected.hotelMarginTotalAmount ?? selected.hotelMarginStayAmount,
+          );
+          sum.hotelListTotal += payable;
+          sum.hotelRoomBaseCost += roomBase;
+          sum.extraBedCost += extraBed;
+          sum.childWithBedCost += childWithBed;
+          sum.childWithoutBedCost += childWithoutBed;
+          sum.hotelMarginCost += margin;
+          return sum;
+        }, {
+          hotelListTotal: 0,
+          hotelRoomBaseCost: 0,
+          extraBedCost: 0,
+          childWithBedCost: 0,
+          childWithoutBedCost: 0,
+          hotelMarginCost: 0,
+        });
+
+        if (selectedSummary.hotelListTotal > 0) {
+          hotelListTotal = Number(selectedSummary.hotelListTotal.toFixed(2));
+          hotelRoomBaseCost = Number(selectedSummary.hotelRoomBaseCost.toFixed(2));
+          extraBedCost = Number(selectedSummary.extraBedCost.toFixed(2));
+          childWithBedCost = Number(selectedSummary.childWithBedCost.toFixed(2));
+          childWithoutBedCost = Number(selectedSummary.childWithoutBedCost.toFixed(2));
+          hotelMarginCost = Number(selectedSummary.hotelMarginCost.toFixed(2));
+          totalRoomCost = Number((hotelRoomBaseCost + extraBedCost + childWithBedCost + childWithoutBedCost).toFixed(2));
+        }
+      }
+    } catch {
+      // Details remain available from the legacy rows if the optional
+      // availability snapshot is not present yet.
+    }
+
  // For selected recommendation tabs, derive room total from live group-specific hotel details
  // and override stale duplicated DB costs when they differ.
  // Disabled for details API latency: this endpoint should read saved values only.
