@@ -6185,6 +6185,9 @@ const hasRequiredVehicleSelection =
           pricePerNight: (h as any).selected_price_per_night || (h as any).price_per_night,
         }, 1) * rowMultiplier;
         let selectedBaseAmount = 0;
+        let selectedExtraBedAmount = 0;
+        let selectedChildWithBedAmount = 0;
+        let selectedChildWithoutBedAmount = 0;
         let selectedSnapshotMarginAmount = 0;
         try {
           const snapshot = typeof (h as any).selected_price_snapshot === 'string'
@@ -6194,6 +6197,18 @@ const hasRequiredVehicleSelection =
           if (Number.isFinite(basePerNight) && basePerNight > 0) {
             selectedBaseAmount = basePerNight * rowMultiplier;
           }
+          selectedExtraBedAmount = Number(
+            snapshot?.extraBedAmount ?? snapshot?.extra_bed_amount ??
+            snapshot?.extraBedCost ?? snapshot?.total_extra_bed_cost ?? 0,
+          ) * rowMultiplier;
+          selectedChildWithBedAmount = Number(
+            snapshot?.childWithBedAmount ?? snapshot?.child_with_bed_amount ??
+            snapshot?.childWithBedCost ?? snapshot?.total_childwith_bed_cost ?? 0,
+          ) * rowMultiplier;
+          selectedChildWithoutBedAmount = Number(
+            snapshot?.childWithoutBedAmount ?? snapshot?.child_without_bed_amount ??
+            snapshot?.childWithoutBedCost ?? snapshot?.total_childwithout_bed_cost ?? 0,
+          ) * rowMultiplier;
           const snapshotMargin = Number(
             snapshot?.hotelMarginStayAmount ??
             snapshot?.hotelMarginTotalAmount ??
@@ -6209,6 +6224,8 @@ const hasRequiredVehicleSelection =
         if (selectedBaseAmount <= 0) {
           selectedBaseAmount = Number(h.total_room_cost || 0) * rowMultiplier;
         }
+        const selectedSupplementAmount = selectedExtraBedAmount +
+          selectedChildWithBedAmount + selectedChildWithoutBedAmount;
         // Selected totals are payable amounts. Preserve the supplier/base and
         // margin components separately so the tooltip can show 4,200 + 840 =
         // 5,040 instead of presenting the payable amount as the room base.
@@ -6229,7 +6246,7 @@ const hasRequiredVehicleSelection =
           : selectedSnapshotMarginPercentage;
         const selectedPricing = resolveStoredHotelPayablePricing({
           storedTotal: selectedAmount,
-          baseTotal: selectedBaseAmount,
+          baseTotal: selectedBaseAmount + selectedSupplementAmount,
           marginAmount: selectedMarginPercentage > 0
             ? 0
             : selectedSnapshotMarginAmount > 0
@@ -6238,12 +6255,15 @@ const hasRequiredVehicleSelection =
           marginPercentage: selectedMarginPercentage,
         });
         const selectedBase = selectedPricing.baseTotal > 0
-          ? selectedPricing.baseTotal
-          : Math.max(selectedAmount - selectedPricing.marginAmount, 0);
+          ? Math.max(selectedPricing.baseTotal - selectedSupplementAmount, 0)
+          : Math.max(selectedAmount - selectedPricing.marginAmount - selectedSupplementAmount, 0);
         const selectedPayable = selectedPricing.payableTotal;
         hotelListTotal += selectedPayable;
         hotelRoomBaseCost += selectedBase;
-        hotelMarginCost += Math.max(selectedPayable - selectedBase, 0);
+        extraBedCost += selectedExtraBedAmount;
+        childWithBedCost += selectedChildWithBedAmount;
+        childWithoutBedCost += selectedChildWithoutBedAmount;
+        hotelMarginCost += selectedPricing.marginAmount;
         totalRoomCost += selectedPayable;
         return;
       }

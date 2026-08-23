@@ -4401,14 +4401,43 @@ export class HotelAvailabilitySnapshotService {
             ? hotelMasterMargin
             : Number(option.hotelMarginPercentage ?? defaultHotelMarginPercentage), 0)
           : Number(option.hotelMarginPercentage ?? 0);
+      const supplementAmount = (amount: unknown, cost: unknown, count: unknown, rate: unknown): number => {
+        const explicit = Number(amount ?? cost ?? 0);
+        if (Number.isFinite(explicit) && explicit > 0) return explicit;
+        const quantity = Number(count ?? 0);
+        const unitRate = Number(rate ?? 0);
+        return Number.isFinite(quantity) && Number.isFinite(unitRate) && quantity > 0 && unitRate > 0
+          ? quantity * unitRate
+          : 0;
+      };
+      const extraBedAmount = supplementAmount(
+        option.extraBedAmount ?? option.extra_bed_amount,
+        option.extraBedCost ?? option.totalExtraBedCost ?? option.total_extra_bed_cost,
+        option.extraBedCount ?? option.extra_bed_count,
+        option.extraBedRate ?? option.extra_bed_rate,
+      );
+      const childWithBedAmount = supplementAmount(
+        option.childWithBedAmount ?? option.child_with_bed_amount,
+        option.childWithBedCost ?? option.totalChildWithBedCost ?? option.total_childwith_bed_cost,
+        option.childWithBedCount ?? option.child_with_bed_count,
+        option.childWithBedRate ?? option.child_with_bed_rate,
+      );
+      const childWithoutBedAmount = supplementAmount(
+        option.childWithoutBedAmount ?? option.child_without_bed_amount,
+        option.childWithoutBedCost ?? option.totalChildWithoutBedCost ?? option.total_childwithout_bed_cost,
+        option.childWithoutBedCount ?? option.child_without_bed_count,
+        option.childWithoutBedRate ?? option.child_without_bed_rate,
+      );
+      const supplementTotal = Number((extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
+      let marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
       let roomTaxAmount = provider === 'staah'
         ? Math.max(Number(option.totalHotelTaxAmount ?? option.taxAmount ?? 0), 0)
         : 0;
       let calculatedMargin = baseTotalPrice > 0
-        ? Number((baseTotalPrice * marginPercentage / 100).toFixed(2))
+        ? Number((marginBaseTotal * marginPercentage / 100).toFixed(2))
         : 0;
       let totalPrice = provider === 'staah' && baseTotalPrice > 0
-        ? Number(Math.max(rawTotalPrice, baseTotalPrice + roomTaxAmount + calculatedMargin).toFixed(2))
+        ? Number(Math.max(rawTotalPrice, marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2))
         : rawTotalPrice;
       let pricePerNight = provider === 'staah' && totalPrice > 0
         ? Number((totalPrice / roomCount).toFixed(2))
@@ -4419,9 +4448,23 @@ export class HotelAvailabilitySnapshotService {
       // base/total pair from a previous search, so resolve the matching ARI
       // row before writing the durable hotel-detail row.
       if (provider === 'axisrooms') {
-        const axisBase = await this.resolveAxisRoomsBasePrice(tx, option, plan, roomCount);
+        const axisBase = Math.max(
+          await this.resolveAxisRoomsBasePrice(tx, option, plan, roomCount),
+          Number(
+            option.baseTotalPrice ??
+            option.base_total_price ??
+            option.baseHotelCost ??
+            option.base_hotel_cost ??
+            option.totalRoomCost ??
+            option.total_room_cost ??
+            option.price ??
+            option.pricePerNight ??
+            0,
+          ),
+        );
         if (axisBase > 0) {
           baseTotalPrice = axisBase;
+          marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
           marginPercentage = Math.max(
             hotelMasterMargin > 0
               ? hotelMasterMargin
@@ -4429,8 +4472,8 @@ export class HotelAvailabilitySnapshotService {
             0,
           );
           roomTaxAmount = Math.max(Number(option.totalHotelTaxAmount ?? option.taxAmount ?? 0), 0);
-          calculatedMargin = Number((baseTotalPrice * marginPercentage / 100).toFixed(2));
-          totalPrice = Number((baseTotalPrice + roomTaxAmount + calculatedMargin).toFixed(2));
+          calculatedMargin = Number((marginBaseTotal * marginPercentage / 100).toFixed(2));
+          totalPrice = Number((marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2));
           pricePerNight = Number((totalPrice / roomCount).toFixed(2));
           option = {
             ...option,
@@ -4439,6 +4482,10 @@ export class HotelAvailabilitySnapshotService {
             baseHotelCost: baseTotalPrice,
             hotelMarginPercentage: marginPercentage,
             hotelMarginAmount: calculatedMargin,
+            hotelMarginBaseAmount: marginBaseTotal,
+            extraBedAmount,
+            childWithBedAmount,
+            childWithoutBedAmount,
             hotelMarginTotalAmount: calculatedMargin,
             pricePerNight,
             totalPrice,
@@ -4489,6 +4536,10 @@ export class HotelAvailabilitySnapshotService {
               roomCostTaxAmount: roomTaxAmount,
               hotelMarginPercentage: marginPercentage,
               hotelMarginAmount: calculatedMargin,
+              hotelMarginBaseAmount: marginBaseTotal,
+              extraBedAmount,
+              childWithBedAmount,
+              childWithoutBedAmount,
               pricePerNight,
               totalPrice,
             } : {}),

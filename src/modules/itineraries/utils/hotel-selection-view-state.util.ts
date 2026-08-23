@@ -22,6 +22,9 @@ export type HotelSelectionSelectedView = {
   supplierBookingCode: string | null;
   pricePerNight: number;
   totalPrice: number;
+  hotelMarginBaseAmount?: number;
+  hotelMarginPercentage?: number;
+  hotelMarginAmount?: number;
   selectedPriceSnapshot: Record<string, unknown> | null;
   requestedCategory?: number;
   selectedCategory?: number;
@@ -156,6 +159,7 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
           ...snapshot,
           basePricePerNight: projected.basePricePerNight,
           baseTotalPrice: projected.baseTotalPrice,
+          hotelMarginBaseAmount: projected.hotelMarginBaseAmount,
           hotelMarginPercentage: projected.hotelMarginPercentage,
           hotelMarginAmount: projected.hotelMarginAmount,
           hotelMarginStayAmount: projected.hotelMarginStayAmount,
@@ -226,6 +230,9 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
     supplierBookingCode,
     pricePerNight: money(Number.isFinite(pricePerNight) ? pricePerNight : 0),
     totalPrice: money(Number.isFinite(totalPrice) ? totalPrice : payable),
+    hotelMarginBaseAmount: money(Number(identity.hotelMarginBaseAmount ?? 0)),
+    hotelMarginPercentage: money(Number(identity.hotelMarginPercentage ?? 0)),
+    hotelMarginAmount: money(Number(identity.hotelMarginAmount ?? 0)),
     selectedPriceSnapshot,
     ...(Number(row?.requestedCategory ?? row?.requested_category ?? identity.requestedCategory ?? 0) > 0
       ? { requestedCategory: Number(row?.requestedCategory ?? row?.requested_category ?? identity.requestedCategory) }
