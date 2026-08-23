@@ -30,6 +30,7 @@ type OfflineRoomOffer = {
   roomCount: number;
   extraBedRate: number;
   childWithBedRate: number;
+  childWithoutBedRate: number;
 };
 
 export type OfflineRateResolution = {
@@ -442,6 +443,9 @@ export class OfflineHotelCatalogService {
         hotelMarginTotalAmount: bestOffer.hotelMarginTotalAmount,
         totalStayPrice: bestOffer.totalStayPrice,
         numberOfNights: dateList.length,
+        extraBedRate: bestOffer.extraBedRate,
+        childWithBedRate: bestOffer.childWithBedRate,
+        childWithoutBedRate: bestOffer.childWithoutBedRate,
         nightlyRates: dateList.map((date, index) => ({
           date,
           baseAmount: bestOffer.nightlyBase[index] || 0,
@@ -485,6 +489,9 @@ export class OfflineHotelCatalogService {
           hotelMarginTotalAmount: offer.hotelMarginTotalAmount,
           totalStayPrice: offer.totalStayPrice,
           numberOfNights: dateList.length,
+          extraBedRate: offer.extraBedRate,
+          childWithBedRate: offer.childWithBedRate,
+          childWithoutBedRate: offer.childWithoutBedRate,
           currency: 'INR',
           priceLabel: 'Price subject to hotel approval',
           isLiveRate: false,
@@ -780,6 +787,7 @@ export class OfflineHotelCatalogService {
         roomCount,
         extraBedRate: supplements.extraBedRate,
         childWithBedRate: supplements.childWithBedRate,
+        childWithoutBedRate: supplements.childWithoutBedRate,
       });
     }
 
@@ -986,6 +994,7 @@ export class OfflineHotelCatalogService {
         roomCount,
         extraBedRate: supplements.extraBedRate,
         childWithBedRate: supplements.childWithBedRate,
+        childWithoutBedRate: supplements.childWithoutBedRate,
       });
     }
 
@@ -1155,7 +1164,7 @@ export class OfflineHotelCatalogService {
     room: any,
     requestedMealPlanCode: string,
     ratePlansByRoom: Map<number, any[]>,
-  ): { extraBedRate: number; childWithBedRate: number } {
+  ): { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } {
     const plans = ratePlansByRoom.get(Number(room?.room_ID || 0)) || [];
     const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
     const plan = plans.find((candidate: any) => {
@@ -1165,14 +1174,16 @@ export class OfflineHotelCatalogService {
     const occupancy = this.parseJsonObject(plan?.occupancy);
     const extraBedRate = Number(occupancy.EXTRABED ?? occupancy.EXTRAADULT ?? occupancy.EXTRACHILD ?? 0);
     const childWithBedRate = Number(occupancy.CHILDWITHBED ?? occupancy.CHILD_WITH_BED ?? occupancy.CWB ?? 0);
+    const childWithoutBedRate = Number(occupancy.CHILDWITHOUTBED ?? occupancy.CHILD_WITHOUT_BED ?? occupancy.CWOB ?? 0);
     return {
       extraBedRate: Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate : 0,
       childWithBedRate: Number.isFinite(childWithBedRate) && childWithBedRate > 0 ? childWithBedRate : 0,
+      childWithoutBedRate: Number.isFinite(childWithoutBedRate) && childWithoutBedRate > 0 ? childWithoutBedRate : 0,
     };
   }
 
-  private resolveSupplementRatesFromOccupancy(rows: any[], dates: string[]): { extraBedRate: number; childWithBedRate: number } {
-    const values = { extraBedRate: 0, childWithBedRate: 0 };
+  private resolveSupplementRatesFromOccupancy(rows: any[], dates: string[]): { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } {
+    const values = { extraBedRate: 0, childWithBedRate: 0, childWithoutBedRate: 0 };
     for (const date of dates) {
       const target = new Date(`${date}T00:00:00.000Z`).getTime();
       const row = rows.filter((candidate: any) => new Date(candidate.start_date).getTime() <= target && new Date(candidate.end_date).getTime() >= target)
@@ -1180,8 +1191,10 @@ export class OfflineHotelCatalogService {
       const rates = this.parseJsonObject(row?.occupancy_rates);
       const extra = Number(rates.EXTRABED ?? rates.EXTRA_BED ?? rates.EXTRAADULT ?? 0);
       const child = Number(rates.CHILDWITHBED ?? rates.CHILD_WITH_BED ?? rates.CWB ?? 0);
+      const childWithout = Number(rates.CHILDWITHOUTBED ?? rates.CHILD_WITHOUT_BED ?? rates.CWOB ?? 0);
       if (extra > 0) values.extraBedRate = extra;
       if (child > 0) values.childWithBedRate = child;
+      if (childWithout > 0) values.childWithoutBedRate = childWithout;
     }
     return values;
   }
