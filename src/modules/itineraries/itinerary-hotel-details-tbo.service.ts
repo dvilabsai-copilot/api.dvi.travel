@@ -6169,6 +6169,19 @@ this.logger.log(
           externalStay: false,
           availabilityStatus: 'NOT_BOOKABLE',
           availabilityMessage: String((hotel as any).availabilityMessage || '').trim() || 'Restricted for the selected stay.',
+          // Restricted supplier rows are intentionally returned so the UI can
+          // explain why the option was rejected. Preserve the structured
+          // stay-state as well; otherwise the frontend treats a missing
+          // completeStayBookable flag as bookable and renders an amber
+          // "Restricted for this stay" notice instead of the red NOT
+          // AVAILABLE state.
+          availableDates: Array.isArray((hotel as any).availableDates)
+            ? (hotel as any).availableDates
+            : [],
+          unavailableDates: Array.isArray((hotel as any).unavailableDates)
+            ? (hotel as any).unavailableDates
+            : [],
+          completeStayBookable: false,
           availableAgainFrom: String((hotel as any).availableAgainFrom || '').trim() || null,
           voucherCancelled: false,
           itineraryPlanHotelDetailsId: 0,
