@@ -631,6 +631,35 @@ export class HotelAvailabilitySnapshotService {
       });
     });
 
+    // Legacy persisted selections can retain a route/date alias that differs
+    // from the current snapshot row after a route rebuild. Reconcile only
+    // within the same group and stay, and only when the hotel identity agrees;
+    // this prevents a selection from another day or property leaking in.
+    const selectionForSnapshotRow = (row: any): any | undefined => {
+      const key = hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row);
+      const direct = selectedByRouteGroup.get(key);
+      if (direct) return direct;
+
+      const rowGroupType = Number(row?.groupType ?? row?.group_type ?? 0);
+      const rowRouteId = Number(
+        row?.itineraryRouteId ?? row?.routeId ?? row?.itinerary_route_id ?? 0,
+      );
+      const rowDate = rowStayDate(row);
+      return Array.from(selectedByRouteGroup.values()).find((selection: any) => {
+        if (Number(selection?.group_type || selection?.groupType || 0) !== rowGroupType) {
+          return false;
+        }
+        const selectionRouteId = Number(
+          selection?.itinerary_route_id ?? selection?.routeId ?? 0,
+        );
+        const selectionDate = rowStayDate(selection);
+        const sameStay =
+          (selectionRouteId > 0 && rowRouteId > 0 && selectionRouteId === rowRouteId) ||
+          Boolean(selectionDate && rowDate && selectionDate === rowDate);
+        return sameStay && hotelPropertyMatchesSelection(selection, row);
+      });
+    };
+
     const recommendationGroupTypes = this.normalizeRecommendationGroupTypes(
       remappedPlanRows,
       rows.map((row: any) => ({
@@ -668,13 +697,23 @@ export class HotelAvailabilitySnapshotService {
     });
 
     const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
+    const selectedForSnapshotRows = new Map(selectedByRouteGroup);
+    snapshotRows.forEach((row: any) => {
+      const selection = selectionForSnapshotRow(row);
+      if (selection) {
+        selectedForSnapshotRows.set(
+          hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row),
+          selection,
+        );
+      }
+    });
     let normalizedRows = snapshotRows
       .filter(Boolean)
       .map(remapSnapshotRoute)
       .filter(Boolean)
       .filter((row: any) => !currentRouteIds.size || currentRouteIds.has(Number(row.itineraryRouteId || 0)))
       .map((row: any) => this.normalizeRatePlanLabels(row))
-      .map((row: any) => this.decorateSelection(row, selectedByRouteGroup, plan.itinerary_plan_ID)) as any[];
+      .map((row: any) => this.decorateSelection(row, selectedForSnapshotRows, plan.itinerary_plan_ID)) as any[];
 
     // A room-category edit intentionally changes the selected rate/room
     // identity. The availability snapshot can still contain the same hotel
@@ -685,7 +724,7 @@ export class HotelAvailabilitySnapshotService {
     const exactSelectionKeys = new Set(
       normalizedRows
         .filter((row: any) => {
-          const selection = selectedByRouteGroup.get(hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row));
+          const selection = selectedForSnapshotRows.get(hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row));
           return Boolean(selection && this.rowMatchesSelection(selection, row));
         })
         .map((row: any) => hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row)),
@@ -693,7 +732,7 @@ export class HotelAvailabilitySnapshotService {
     const propertyFallbackKeys = new Set<string>();
     normalizedRows = normalizedRows.map((row: any) => {
       const key = hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row);
-      const selection = selectedByRouteGroup.get(key);
+      const selection = selectedForSnapshotRows.get(key);
       if (!selection || exactSelectionKeys.has(key) || propertyFallbackKeys.has(key)) return row;
       if (!hotelPropertyMatchesSelection(selection, row)) return row;
       propertyFallbackKeys.add(key);
@@ -703,7 +742,7 @@ export class HotelAvailabilitySnapshotService {
     const appliedRoomSelectionKeys = new Set<string>();
     normalizedRows = normalizedRows.map((row: any) => {
       const key = hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row);
-      if (selectedByRouteGroup.has(key)) return row;
+      if (selectedForSnapshotRows.has(key)) return row;
       const roomSelection = roomSelectionsByRouteGroup.get(key);
       if (!roomSelection) return row;
       if (appliedRoomSelectionKeys.has(key)) return row;
@@ -752,7 +791,7 @@ export class HotelAvailabilitySnapshotService {
     const matchedSelectionKeys = new Set(
       normalizedRows
         .filter((row: any) => {
-          const selection = selectedByRouteGroup.get(hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row));
+          const selection = selectedForSnapshotRows.get(hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row));
           return Boolean(selection && (
             row.isSelected ||
             this.rowMatchesSelection(selection, row) ||
@@ -762,7 +801,7 @@ export class HotelAvailabilitySnapshotService {
         .map((row: any) => hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row)),
     );
     normalizedRows = normalizedRows.map((row: any) => {
-      const selection = selectedByRouteGroup.get(hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row));
+      const selection = selectedForSnapshotRows.get(hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row));
       if (!selection || this.rowMatchesSelection(selection, row)) return row;
       const key = hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row);
       if (matchedSelectionKeys.has(key)) return row;
@@ -777,7 +816,7 @@ export class HotelAvailabilitySnapshotService {
     normalizedRows = this.decorateMealPlanAutoSelectionBlockers(
       normalizedRows,
       String((plan as any).meal_plan_code || '').trim(),
-      selectedByRouteGroup,
+      selectedForSnapshotRows,
       plan.itinerary_plan_ID,
     );
 
@@ -883,9 +922,18 @@ export class HotelAvailabilitySnapshotService {
     const selectedPayableByRouteGroup = new Map<string, number>();
     const selectedPayableByGroup = new Map<number, number>();
     const selectedRouteIdsByGroup = new Map<number, Set<number>>();
-    for (const selection of selectedByRouteGroup.values()) {
-      const routeId = Number(selection?.itinerary_route_id || 0);
-      const groupType = Number(selection?.group_type || 0);
+    const selectedSnapshotKeys = new Set(
+      allSharedInventoryRows
+        .filter((row: any) => row?.isSelected === true)
+        .map((row: any) => hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row)),
+    );
+    for (const key of selectedSnapshotKeys) {
+      const selection = selectedForSnapshotRows.get(key);
+      const selectedRowFromKey = allSharedInventoryRows.find(
+        (row: any) => hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row) === key && row?.isSelected === true,
+      );
+      const routeId = Number(selectedRowFromKey?.itineraryRouteId || selectedRowFromKey?.routeId || 0);
+      const groupType = Number(selectedRowFromKey?.groupType || selection?.group_type || 0);
       const selectedRow = allSharedInventoryRows.find((row: any) =>
         Number(row?.groupType || 0) === groupType &&
         Number(row?.itineraryRouteId || row?.routeId || 0) === routeId &&
