@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildHotelSelectionState,
   resolveHotelRequiredRoutes,
+  synchronizeHotelTabTotals,
 } from '../src/modules/itineraries/utils/hotel-selection-view-state.util';
 
 const routes = [
@@ -54,6 +55,34 @@ test('builds a complete two-night authoritative group without recalculating its 
   assert.deepEqual(state[0].routes.map((route) => route.selected?.providerHotelCode), ['435', '435']);
   assert.equal(state[0].routes[0].selected?.canonicalHotelId, 232);
   assert.equal(state[0].routes[0].selected?.selectedPriceSnapshot?.hotelMarginAmount, 840);
+});
+
+test('DVI20260891 aligns hotelTabs with hotelSelectionState and deduplicates Day 1/2', () => {
+  const dviRoutes = [
+    { routeId: 1, routeDate: '2026-08-31' },
+    { routeId: 2, routeDate: '2026-09-01' },
+    { routeId: 3, routeDate: '2026-09-02' },
+    { routeId: 4, routeDate: '2026-09-03' },
+  ];
+  const rows = [
+    selectedRow(1, { canonicalHotelId: 10, hotelName: 'MAMALLA HERITAGE', selectionKey: 'offline:10:cp', totalPrice: 60637.5, selectedPriceSnapshot: { provider: 'offline', canonicalHotelId: 10, rateOptionId: 'offline:10:cp', totalPrice: 60637.5, pricePerNight: 60637.5 } }),
+    selectedRow(2, { canonicalHotelId: 10, hotelName: 'MAMALLA HERITAGE', selectionKey: 'offline:10:cp', totalPrice: 60637.5, selectedPriceSnapshot: { provider: 'offline', canonicalHotelId: 10, rateOptionId: 'offline:10:cp', totalPrice: 60637.5, pricePerNight: 60637.5 } }),
+    selectedRow(3, { canonicalHotelId: 20, hotelName: 'MGM Beach Resorts', selectionKey: 'tbo:mgm:deluxe:cp', totalPrice: 871765.73, selectedPriceSnapshot: { provider: 'tbo', canonicalHotelId: 20, providerHotelCode: 'mgm', rateOptionId: 'tbo:mgm:deluxe:cp', totalPrice: 871765.73, pricePerNight: 871765.73 } }),
+    selectedRow(4, { canonicalHotelId: 30, hotelName: 'GREEN PALACE', selectionKey: 'offline:30:cp', totalPrice: 20900, selectedPriceSnapshot: { provider: 'offline', canonicalHotelId: 30, rateOptionId: 'offline:30:cp', totalPrice: 20900, pricePerNight: 20900 } }),
+  ];
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 81537.5 }],
+    rows,
+    requiredRoutes: dviRoutes,
+  });
+  const tabs = synchronizeHotelTabTotals(
+    [{ groupType: 1, label: 'Recommended #1', totalAmount: 81537.5 }],
+    state,
+  );
+
+  assert.equal(state[0].routes[2].selected?.hotelName, 'MGM Beach Resorts');
+  assert.equal(state[0].totalAmount, 953303.23);
+  assert.equal(tabs[0].totalAmount, 953303.23);
 });
 
 test('marks a partial legacy two-night group unresolved even when a numeric total exists', () => {
@@ -242,7 +271,7 @@ test('serializes the complete hard-reload selected-row contract', () => {
   assert.deepEqual(
     Object.keys(restored.hotelSelectionState[0].routes[0].selected).sort(),
     [
-      'canonicalHotelId', 'hotelCode', 'hotelName', 'mealPlan', 'pricePerNight',
+      'canonicalHotelId', 'hotelCode', 'hotelMarginAmount', 'hotelMarginBaseAmount', 'hotelMarginPercentage', 'hotelName', 'mealPlan', 'pricePerNight',
       'provider', 'providerHotelCode', 'rateOptionId', 'selectedPriceSnapshot',
       'selectionKey', 'supplierBookingCode', 'totalPrice', 'roomType',
     ].sort(),

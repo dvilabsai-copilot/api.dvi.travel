@@ -35,6 +35,7 @@ import {
 import {
   buildHotelSelectionState,
   resolveHotelRequiredRoutes,
+  synchronizeHotelTabTotals,
 } from '../utils/hotel-selection-view-state.util';
 import {
   mapHotelCategoryLabelToStar,
@@ -1103,6 +1104,10 @@ export class HotelAvailabilitySnapshotService {
       rows: normalizedRows,
       requiredRoutes: searchableRoutes,
     });
+    const synchronizedHotelTabs = synchronizeHotelTabTotals(
+      tabs,
+      authoritativeHotelSelectionState,
+    );
     // The complete unfiltered read is consumed together with
     // hotelAvailability.sharedHotelInventory. Returning every option once per
     // recommendation group in `hotels` multiplies the JSON payload without
@@ -1121,7 +1126,7 @@ export class HotelAvailabilitySnapshotService {
       mealPlanCode: String((plan as any).meal_plan_code || '').trim() || null,
       hotelRatesVisible: Boolean((plan as any).hotel_rates_visibility),
       showHotelMargins: String(process.env.SHOW_HOTEL_MARGINS || '').toLowerCase() === 'true',
-      hotelTabs: tabs,
+      hotelTabs: synchronizedHotelTabs,
       hotelSelectionState: authoritativeHotelSelectionState,
       hotels: clientHotelRows,
       totalRoomCount: normalizedRows.length,
