@@ -6212,13 +6212,30 @@ const hasRequiredVehicleSelection =
         // Selected totals are payable amounts. Preserve the supplier/base and
         // margin components separately so the tooltip can show 4,200 + 840 =
         // 5,040 instead of presenting the payable amount as the room base.
+        const selectedSnapshotMarginPercentage = Number(
+          (() => {
+            try {
+              const snapshot = typeof (h as any).selected_price_snapshot === 'string'
+                ? JSON.parse((h as any).selected_price_snapshot)
+                : (h as any).selected_price_snapshot;
+              return snapshot?.hotelMarginPercentage ?? snapshot?.hotel_margin_percentage ?? 0;
+            } catch {
+              return 0;
+            }
+          })(),
+        );
+        const selectedMarginPercentage = Number(h.hotel_margin_percentage || 0) > 0
+          ? Number(h.hotel_margin_percentage || 0)
+          : selectedSnapshotMarginPercentage;
         const selectedPricing = resolveStoredHotelPayablePricing({
           storedTotal: selectedAmount,
           baseTotal: selectedBaseAmount,
-          marginAmount: selectedSnapshotMarginAmount > 0
+          marginAmount: selectedMarginPercentage > 0
+            ? 0
+            : selectedSnapshotMarginAmount > 0
             ? selectedSnapshotMarginAmount
             : Number(h.hotel_margin_rate || 0) * rowMultiplier,
-          marginPercentage: Number(h.hotel_margin_percentage || 0),
+          marginPercentage: selectedMarginPercentage,
         });
         const selectedBase = selectedPricing.baseTotal > 0
           ? selectedPricing.baseTotal
