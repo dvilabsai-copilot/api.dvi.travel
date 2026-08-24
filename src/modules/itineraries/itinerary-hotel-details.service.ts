@@ -54,6 +54,7 @@ export interface ItineraryHotelRowDto {
   mealPlan: string;
   baseHotelCost?: number;
   basePricePerNight?: number;
+  baseTotalPrice?: number;
   hotelMarginPercentage?: number;
   hotelMarginAmount?: number;
   hotelMarginBaseAmount?: number;
@@ -976,14 +977,26 @@ async getHotelRoomDetailsByQuoteId(
       const offlineBasePerNight = Number(
         selectedPriceSnapshot.basePricePerNight ?? selectedPriceSnapshot.base_price_per_night ?? 0,
       );
+      // Offline snapshots may have stored the all-room one-night base in
+      // basePricePerNight. The response contract is explicit: expose the
+      // per-room rate in basePricePerNight and the all-room one-night base in
+      // baseTotalPrice. The payable row amount remains totalHotelCost.
+      const offlineBaseTotal = snapshotBaseTotal > 0
+        ? snapshotBaseTotal
+        : offlineBasePerNight > 0
+          ? Number((offlineBasePerNight * snapshotRoomCount).toFixed(2))
+          : 0;
+      const offlineBaseRoomRate = offlineBaseTotal > 0
+        ? Number((offlineBaseTotal / snapshotRoomCount).toFixed(2))
+        : offlineBasePerNight;
       const offlineMarginPerNight = Number(
         selectedPriceSnapshot.hotelMarginAmount ?? selectedPriceSnapshot.hotel_margin_amount ?? 0,
       );
       const payableHotelCost = (isOffline && offlinePricePerNight > 0
         ? offlinePricePerNight
         : storedPricing.payableTotal) * earlyCheckInBillingMultiplier;
-      const baseHotelCost = (isOffline && offlineBasePerNight > 0
-        ? offlineBasePerNight
+      const baseHotelCost = (isOffline && offlineBaseTotal > 0
+        ? offlineBaseRoomRate
         : authoritativeBaseHotelCost) * earlyCheckInBillingMultiplier;
       const storedHotelMarginAmount = (isOffline && offlineMarginPerNight > 0
         ? offlineMarginPerNight
@@ -1049,9 +1062,14 @@ async getHotelRoomDetailsByQuoteId(
           : payableHotelCost,
         numberOfNights: 1,
         basePricePerNight: baseHotelCost,
+        baseTotalPrice: isOffline
+          ? Number((baseHotelCost * snapshotRoomCount).toFixed(2))
+          : authoritativeBaseHotelCost,
         totalHotelTaxAmount: storedTax * earlyCheckInBillingMultiplier,
         baseHotelCost,
-        totalRoomCost: baseHotelCost,
+        totalRoomCost: isOffline
+          ? Number((baseHotelCost * snapshotRoomCount).toFixed(2))
+          : baseHotelCost,
         hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanCost: Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanGstAmount: Number((h as any).total_hotel_meal_plan_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,

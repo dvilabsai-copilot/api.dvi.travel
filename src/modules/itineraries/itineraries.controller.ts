@@ -683,6 +683,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
       quoteId,
       Number(req.user?.userId || 0),
     );
+    // Reset persists the authoritative selection snapshots. Read them again
+    // after the transaction so the response cannot reuse a stale in-memory
+    // availability row for room/supplement totals.
+    result.response = await this.hotelAvailabilitySnapshotService.readPersisted(
+      quoteId,
+      { page: 1, pageSize: 0 },
+    );
     const itinerary = await this.detailsService.getItineraryDetails(
       quoteId,
       undefined,
@@ -777,7 +784,11 @@ private readonly itineraryAccessService: ItineraryAccessService,
               ? route.selected.selectedPriceSnapshot
               : {};
             const { selectedPriceSnapshot: _selectedPriceSnapshot, ...selected } = route.selected;
-            return { ...route, selected: { ...snapshot, ...selected } };
+            // The snapshot is the authoritative payable selection produced by
+            // the hotel availability rebuild. Legacy scalar columns can be
+            // stale (for example room count and supplement totals after a
+            // reset), so they must not overwrite the snapshot values.
+            return { ...route, selected: { ...selected, ...snapshot } };
           }),
         })),
         hotelAvailability: compactAvailability,

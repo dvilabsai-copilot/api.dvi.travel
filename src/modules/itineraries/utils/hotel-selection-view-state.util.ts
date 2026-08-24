@@ -120,6 +120,14 @@ const parseSnapshot = (value: unknown): Record<string, unknown> | null => {
 const rowRouteIds = (row: any): number[] => Array.from(new Set([
   Number(row?.itineraryRouteId || row?.routeId || row?.itinerary_route_id || 0),
   ...(Array.isArray(row?.routeIds) ? row.routeIds.map(Number) : []),
+  // A continuous-stay availability row is anchored to its first route, but
+  // completeStayRouteIds is the authoritative coverage for every night in
+  // that same-city block. Include those routes when projecting selection
+  // state; otherwise the last available night becomes UNRESOLVED even though
+  // the database has a valid rate for it.
+  ...(row?.completeStayBookable === true && Array.isArray(row?.completeStayRouteIds)
+    ? row.completeStayRouteIds.map(Number)
+    : []),
 ].filter((routeId) => Number.isFinite(routeId) && routeId > 0)));
 
 const isUnavailableSelection = (row: any): boolean =>
@@ -136,7 +144,42 @@ const selectionPriority = (row: any): number => {
 };
 
 const selectedView = (row: any): HotelSelectionSelectedView => {
-  const snapshot = parseSnapshot(row?.selectedPriceSnapshot ?? row?.selected_price_snapshot);
+  let snapshot = parseSnapshot(
+    row?.selectedPriceSnapshot ??
+    row?.selected_price_snapshot ??
+    row?.selection?.selectedPriceSnapshot ??
+    row?.selection?.selected_price_snapshot,
+  );
+  const nestedSelection = row?.selection && typeof row.selection === 'object' ? row.selection : {};
+  if (snapshot) {
+    const positiveOrNested = (value: unknown, nested: unknown): number =>
+      Number(value || 0) > 0 ? Number(value) : Number(nested || 0);
+    const extraBedAmount = positiveOrNested(snapshot.extraBedAmount, nestedSelection.extraBedAmount);
+    const childWithBedAmount = positiveOrNested(snapshot.childWithBedAmount, nestedSelection.childWithBedAmount);
+    const childWithoutBedAmount = positiveOrNested(snapshot.childWithoutBedAmount, nestedSelection.childWithoutBedAmount);
+    const supplementTotal = extraBedAmount + childWithBedAmount + childWithoutBedAmount;
+    const baseTotal = Number(snapshot.baseTotalPrice ?? snapshot.baseHotelCost ?? 0);
+    const marginAmount = Number(snapshot.hotelMarginAmount ?? snapshot.hotelMarginTotalAmount ?? 0);
+    if (baseTotal > 0 && supplementTotal > 0) {
+      const payableTotal = Number((baseTotal + supplementTotal + marginAmount).toFixed(2));
+      snapshot = {
+        ...snapshot,
+        extraBedCount: positiveOrNested(snapshot.extraBedCount, nestedSelection.extraBedCount),
+        extraBedAmount,
+        childWithBedCount: positiveOrNested(snapshot.childWithBedCount, nestedSelection.childWithBedCount),
+        childWithBedAmount,
+        childWithoutBedCount: positiveOrNested(snapshot.childWithoutBedCount, nestedSelection.childWithoutBedCount),
+        childWithoutBedAmount,
+        hotelMarginBaseAmount: Number((baseTotal + supplementTotal).toFixed(2)),
+        totalPrice: payableTotal,
+        totalStayPrice: payableTotal,
+        totalHotelCost: payableTotal,
+        selectedTotalPrice: payableTotal,
+        pricePerNight: payableTotal,
+        selectedPricePerNight: payableTotal,
+      };
+    }
+  }
   // Persisted selection snapshots may predate the payable-price contract and
   // still contain the supplier/base amount. Project the snapshot itself
   // before exposing it through hotelSelectionState; otherwise the tabs use
@@ -147,6 +190,15 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
         const projected: Record<string, any> = projectHotelPayablePricing(
           {
             ...snapshot,
+            noOfRooms: Number(
+              snapshot.noOfRooms ??
+              snapshot.total_no_of_rooms ??
+              snapshot.roomCount ??
+              row?.noOfRooms ??
+              row?.total_no_of_rooms ??
+              row?.roomCount ??
+              1,
+            ),
             isSelected: true,
             selectionOrigin: row?.selectionOrigin ?? row?.selection_origin ?? snapshot.selectionOrigin,
           },

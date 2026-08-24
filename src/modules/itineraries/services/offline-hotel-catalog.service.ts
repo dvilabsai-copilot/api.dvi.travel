@@ -33,6 +33,16 @@ type OfflineRoomOffer = {
   childWithoutBedRate: number;
 };
 
+// Offline availability exposes the room base for the selected occupancy as a
+// one-night amount. The complete continuous-stay amount remains available in
+// totalStayPrice and nightlyBase, but must not be sent as baseTotalPrice for a
+// single room/night response field.
+const oneNightRoomBase = (offer: OfflineRoomOffer): number =>
+  Number((offer.nightlyBase[0] || 0).toFixed(2));
+
+const oneRoomNightBase = (offer: OfflineRoomOffer): number =>
+  Number((oneNightRoomBase(offer) / Math.max(Number(offer.roomCount || 1), 1)).toFixed(2));
+
 export type OfflineRateResolution = {
   provider: 'offline';
   hotelId: number;
@@ -436,8 +446,8 @@ export class OfflineHotelCatalogService {
         },
         canonicalHotelId: Number(hotel.hotel_id || 0) || null,
         pricePerNight: bestOffer.pricePerNight,
-        basePricePerNight: bestOffer.nightlyBase[0] || 0,
-        baseTotalPrice: bestOffer.baseTotalPrice,
+        basePricePerNight: oneRoomNightBase(bestOffer),
+        baseTotalPrice: oneNightRoomBase(bestOffer),
         hotelMarginPercentage: bestOffer.hotelMarginPercentage,
         hotelMarginAmount: bestOffer.nightlyMargin[0] || 0,
         hotelMarginTotalAmount: bestOffer.hotelMarginTotalAmount,
@@ -482,8 +492,8 @@ export class OfflineHotelCatalogService {
           bookingMode: 'MANUAL_APPROVAL',
           priceSource: 'DATABASE',
           pricePerNight: offer.pricePerNight,
-          basePricePerNight: offer.nightlyBase[0] || 0,
-          baseTotalPrice: offer.baseTotalPrice,
+          basePricePerNight: oneRoomNightBase(offer),
+          baseTotalPrice: oneNightRoomBase(offer),
           hotelMarginPercentage: offer.hotelMarginPercentage,
           hotelMarginAmount: offer.nightlyMargin[0] || 0,
           hotelMarginTotalAmount: offer.hotelMarginTotalAmount,
@@ -1138,8 +1148,8 @@ export class OfflineHotelCatalogService {
       mealPlan: offer.mealPlan,
       roomCount: offer.roomCount,
       pricePerNight: offer.pricePerNight,
-      basePricePerNight: offer.nightlyBase[0] || 0,
-      baseTotalPrice: offer.baseTotalPrice,
+      basePricePerNight: oneRoomNightBase(offer),
+      baseTotalPrice: oneNightRoomBase(offer),
       hotelMarginPercentage: offer.hotelMarginPercentage,
       hotelMarginAmount: offer.nightlyMargin[0] || 0,
       hotelMarginTotalAmount: offer.hotelMarginTotalAmount,
