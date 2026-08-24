@@ -2305,7 +2305,12 @@ export class HotelsService {
         (r: any) => new Date(r.start_date) <= dt && new Date(r.end_date) >= dt,
       );
       if (best) {
-        const occ = best.occupancy_rates as Record<string, number>;
+        const rawOcc = best.occupancy_rates as Record<string, number>;
+        const occ = rawOcc && typeof rawOcc === 'object' ? { ...rawOcc } : undefined;
+        if (occ && occ.ROOM_RATE === undefined && occ.DOUBLE !== undefined) {
+          occ.ROOM_RATE = occ.DOUBLE;
+        }
+        if (occ) delete occ.DOUBLE;
         if (occ && typeof occ === 'object') {
           bestByDate.set(date, occ);
         }
@@ -2825,6 +2830,14 @@ export class HotelsService {
           const numericValue = this.toNumStrict(value);
           if (occupancyKey && numericValue !== undefined) rates[occupancyKey] = numericValue;
         }
+
+        // The admin form exposes DOUBLE as the room price field. Persist the
+        // canonical room-price key as ROOM_RATE, while accepting older payloads
+        // that already send ROOM_RATE. DOUBLE remains a read fallback below.
+        if (rates.ROOM_RATE === undefined && rates.DOUBLE !== undefined) {
+          rates.ROOM_RATE = rates.DOUBLE;
+        }
+        delete rates.DOUBLE;
       }
 
       // Compatibility payloads may only provide roomPrice and the three
