@@ -1761,7 +1761,26 @@ export class HotelAvailabilitySnapshotService {
     response: ItineraryHotelDetailsResponseDto;
     changeSummary: HotelAvailabilityChangeSummary;
   }> {
-    return this.searchAndPersist(quoteId, 'CREATE', createdBy, true);
+    const result = await this.searchAndPersist(quoteId, 'CREATE', createdBy, true);
+    const hotelRows = Array.isArray((result.response as any)?.hotels)
+      ? (result.response as any).hotels
+      : [];
+
+    // Reset normally performs the fresh CREATE search above. If that search
+    // leaves a persisted snapshot with no hotel rows, immediately retry via
+    // the explicit live-availability path. This handles transient supplier
+    // responses without making React invent hotel rows or totals from an
+    // empty snapshot.
+    if (hotelRows.length === 0) {
+      this.logger.warn('[HOTEL_AVAILABILITY_RESET_EMPTY_FALLBACK]', {
+        quoteId,
+        initialSearchRunId: result.searchRunId,
+        message: 'Reset persisted zero hotel rows; retrying live availability rebuild.',
+      });
+      return this.searchAndPersist(quoteId, 'CHECK_AVAILABILITY', createdBy, true);
+    }
+
+    return result;
   }
 
   /**

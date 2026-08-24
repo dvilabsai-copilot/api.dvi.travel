@@ -1933,6 +1933,30 @@ test('reset clears editable selections before rebuilding the live snapshot', asy
   assert.equal(selectionReset.data.status, 0);
 });
 
+test('reset retries the live availability rebuild when the first snapshot has no hotels', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const calls: any[] = [];
+  (service as any).searchAndPersist = async (
+    quoteId: string,
+    requestType: string,
+    createdBy: number,
+    resetSelections: boolean,
+  ) => {
+    calls.push({ quoteId, requestType, createdBy, resetSelections });
+    return calls.length === 1
+      ? { searchRunId: 'empty-run', response: { hotels: [] }, changeSummary: { hasChanges: false, totalChanges: 0, changes: [] } }
+      : { searchRunId: 'live-run', response: { hotels: [{ hotelName: 'Live Hotel' }] }, changeSummary: { hasChanges: false, totalChanges: 0, changes: [] } };
+  };
+
+  const result = await service.resetAndPersist('DVI20260893', 7);
+
+  assert.equal(result.searchRunId, 'live-run');
+  assert.deepEqual(calls, [
+    { quoteId: 'DVI20260893', requestType: 'CREATE', createdBy: 7, resetSelections: true },
+    { quoteId: 'DVI20260893', requestType: 'CHECK_AVAILABILITY', createdBy: 7, resetSelections: true },
+  ]);
+});
+
 test('live reset rows exclude synthetic departure-route availability rows', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const searchableRouteIds = (service as any).getSearchableRouteIds([
