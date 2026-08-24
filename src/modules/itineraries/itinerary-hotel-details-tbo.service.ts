@@ -2349,6 +2349,33 @@ this.logger.log(
     });
  this.logger.log(` Loaded ${allCities.length} cities from database in single query`);
 
+    // A route's next_visiting_location is often a landmark/point name rather
+    // than a city (for example, "Chennai Koyembedu"). The saved route
+    // location points to dvi_stored_locations, which already carries the
+    // canonical destination city. Prefer that relationship before trying to
+    // resolve the display text as a city name.
+    const routeLocationIds = routes
+      .map((route) => {
+        const value = Number((route as any).location_id || 0);
+        return Number.isSafeInteger(value) && value > 0 ? BigInt(value) : null;
+      })
+      .filter((value): value is bigint => value !== null);
+    const storedLocations = routeLocationIds.length > 0
+      ? await this.prisma.dvi_stored_locations.findMany({
+        where: { location_ID: { in: routeLocationIds } },
+        select: { location_ID: true, destination_location_city: true },
+      })
+      : [];
+    const destinationCityByLocationId = new Map(
+      storedLocations.map((row: any) => [String(row.location_ID), String(row.destination_location_city || '').trim()]),
+    );
+    const destinationCityByName = new Map<string, string>();
+    routes.forEach((route) => {
+      const destination = String((route as any).next_visiting_location || '').trim();
+      const city = destinationCityByLocationId.get(String((route as any).location_id || ''));
+      if (destination && city) destinationCityByName.set(destination, city);
+    });
+
  // Build a map for fast lookup
     const cityNameMap: Record<string, string> = {};
     const cityPrefixMap: Record<string, string> = {};
@@ -2374,9 +2401,11 @@ this.logger.log(
       const firstPart = rawDestination.split(/[,\(\-]/)[0].trim();
       const normalizedToken = this.normalizeCityToken(rawDestination);
       const aliasTokens = cityAliases[normalizedToken] || [];
+      const mappedDestinationCity = destinationCityByName.get(rawDestination);
       const lookupTerms = Array.from(
         new Set(
           [
+            mappedDestinationCity?.toLowerCase(),
             normalizedToken,
             ...aliasTokens,
             rawDestination.toLowerCase(),
