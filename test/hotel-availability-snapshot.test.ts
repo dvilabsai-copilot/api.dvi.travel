@@ -2433,6 +2433,63 @@ test('property reconciliation keeps the persisted payable total for the same pro
   assert.equal(decorated.provider, 'offline');
 });
 
+test('persisted selected rows expose per-room category assignments', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const roomSelections = [
+    { room_number: 1, room_type_title: 'Suite Room', room_qty: 1 },
+    { room_number: 2, room_type_title: 'Club Room', room_qty: 1 },
+    { room_number: 3, room_type_title: 'Club Room', room_qty: 1 },
+    { room_number: 4, room_type_title: 'Club Room', room_qty: 1 },
+    { room_number: 5, room_type_title: 'Club Room', room_qty: 1 },
+  ];
+  const row = {
+    provider: 'offline',
+    hotelId: 315,
+    hotelCode: '315',
+    hotelName: 'GREEN PALACE',
+    itineraryRouteId: 11048,
+    itineraryRouteDate: '2026-09-03',
+    groupType: 1,
+    roomType: 'Club Room',
+    mealPlan: 'CP',
+    totalHotelCost: 20900,
+    totalPrice: 20900,
+    pricePerNight: 20900,
+    isSelectable: true,
+    rateOptions: [{ roomType: 'Club Room', totalPrice: 20900, pricePerNight: 20900 }],
+  };
+  const selection = {
+    __roomCategorySelection: true,
+    itinerary_plan_hotel_details_ID: 19920,
+    hotel_id: 315,
+    hotel_code: '315',
+    hotel_provider: 'offline',
+    itinerary_route_id: 11048,
+    itinerary_route_date: '2026-09-03',
+    group_type: 1,
+    room_type: 'Club Room',
+    selected_total_price: 20900,
+    selected_price_per_night: 20900,
+    total_no_of_rooms: 5,
+    roomSelections,
+    selected_price_snapshot: JSON.stringify({
+      provider: 'offline',
+      roomType: 'Club Room',
+      totalPrice: 20900,
+      pricePerNight: 20900,
+    }),
+  };
+
+  const decorated = (service as any).decorateSelection(
+    row,
+    new Map([[hotelSelectionKeyFromRow(10039, row), selection]]),
+    10039,
+  );
+
+  assert.deepEqual(decorated.roomSelections, roomSelections);
+  assert.deepEqual(decorated.selection.roomSelections, roomSelections);
+});
+
 test('room-category reconciliation uses the current nested rate instead of a stale selected total', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const row = {

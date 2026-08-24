@@ -231,6 +231,11 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
   const selectedPriceSnapshot = snapshot
     ? { ...identity, hotelName: normalizeHotelDisplayName(identity.hotelName) || null }
     : null;
+  const roomSelections = Array.isArray(row?.roomSelections)
+    ? row.roomSelections
+    : Array.isArray(identity.roomSelections)
+      ? identity.roomSelections
+      : null;
   const providerHotelCode = String(
     row?.providerHotelCode ?? row?.provider_hotel_code ?? identity.providerHotelCode ?? '',
   ).trim() || null;
@@ -277,6 +282,7 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
     ) || null,
     roomType: String(row?.roomType ?? row?.roomTypeName ?? row?.room_type ?? identity.roomType ?? '').trim() || null,
     mealPlan: String(row?.mealPlan ?? row?.mealPlanCode ?? row?.meal_plan ?? identity.mealPlan ?? '').trim() || null,
+    ...(roomSelections ? { roomSelections } : {}),
     selectionKey: supplierSelectionKey({ ...row, ...identity }) || null,
     rateOptionId,
     supplierBookingCode,

@@ -538,6 +538,7 @@ export class HotelAvailabilitySnapshotService {
       roomCount: number;
       roomTypeKeys: Set<string>;
       roomTypeLabels: string[];
+      roomTypeAssignments: string[];
     }>();
     remappedRoomDetailRows.forEach((row: any) => {
       const key = hotelSelectionKey(
@@ -547,9 +548,19 @@ export class HotelAvailabilitySnapshotService {
         row.itinerary_route_date,
       );
       if (!key) return;
-      const existingSelection = selectedByRouteGroup.get(key);
-      const persistedSelectionId = Number(existingSelection?.itinerary_plan_hotel_details_ID || 0);
       const roomDetailSelectionId = Number(row.itinerary_plan_hotel_details_id || 0);
+      const existingSelection = selectedByRouteGroup.get(key) || Array.from(selectedByRouteGroup.values()).find((candidate: any) => {
+        const candidateSelectionId = Number(candidate?.itinerary_plan_hotel_details_ID || 0);
+        const candidateRouteId = Number(candidate?.itinerary_route_id || candidate?.itineraryRouteId || 0);
+        const candidateDate = String(candidate?.itinerary_route_date || candidate?.itineraryRouteDate || candidate?.date || '').slice(0, 10);
+        const roomDate = String(row.itinerary_route_date || '').slice(0, 10);
+        return roomDetailSelectionId > 0 && candidateSelectionId === roomDetailSelectionId &&
+          candidateRouteId === Number(row.itinerary_route_id || 0) && candidateDate === roomDate;
+      });
+      const selectionKey = existingSelection
+        ? hotelSelectionKeyFromRow(plan.itinerary_plan_ID, existingSelection)
+        : key;
+      const persistedSelectionId = Number(existingSelection?.itinerary_plan_hotel_details_ID || 0);
       // Room-detail rows are also persisted for every availability option.
       // Once a selected hotel row is known, only its room rows may participate
       // in reconciliation; otherwise the last availability option can replace
@@ -581,23 +592,39 @@ export class HotelAvailabilitySnapshotService {
         snapshotRoomType ||
         roomTypeLabel,
       );
-      const current = roomSelectionsByRouteGroup.get(key) || {
+      const current = roomSelectionsByRouteGroup.get(selectionKey) || {
         hotelId: Number(row.hotel_id || 0),
         roomCount: 0,
         roomTypeKeys: new Set<string>(),
         roomTypeLabels: [],
+        roomTypeAssignments: [],
       };
       current.hotelId = Number(current.hotelId || row.hotel_id || 0);
       (current as any).routeId = Number(row.itinerary_route_id || 0);
-      (current as any).groupType = Number(row.group_type || 0);
-      (current as any).routeDate = row.itinerary_route_date || null;
+      (current as any).groupType = Number(existingSelection?.group_type || existingSelection?.groupType || row.group_type || 0);
+      (current as any).routeDate = existingSelection?.itinerary_route_date || row.itinerary_route_date || null;
       current.roomCount += Math.max(Number(row.room_qty || 1), 1);
+      for (let index = 0; index < Math.max(Number(row.room_qty || 1), 1); index += 1) {
+        if (roomTypeLabel) current.roomTypeAssignments.push(roomTypeLabel);
+      }
       if (roomTypeKey) current.roomTypeKeys.add(roomTypeKey);
       if (roomTypeLabel && !current.roomTypeLabels.includes(roomTypeLabel)) current.roomTypeLabels.push(roomTypeLabel);
-      roomSelectionsByRouteGroup.set(key, current);
+      roomSelectionsByRouteGroup.set(selectionKey, current);
     });
     roomSelectionsByRouteGroup.forEach((roomSelection: any, key: string) => {
-      const existingSelection = selectedByRouteGroup.get(key);
+      const existingSelection = selectedByRouteGroup.get(key) || Array.from(selectedByRouteGroup.values()).find((candidate: any) => {
+        const candidateRouteId = Number(candidate?.itinerary_route_id ?? candidate?.itineraryRouteId ?? 0);
+        const candidateGroupType = Number(candidate?.group_type ?? candidate?.groupType ?? 0);
+        const candidateDate = rowStayDate(candidate);
+        const sameStay = candidateRouteId === Number(roomSelection.routeId || 0) &&
+          candidateDate === toDateOnly(roomSelection.routeDate);
+        const sameGroup = candidateGroupType === Number(roomSelection.groupType || 0);
+        const sameHotel = Number(candidate?.hotel_id || candidate?.hotelId || 0) === Number(roomSelection.hotelId || 0);
+        return sameStay && sameGroup && sameHotel;
+      });
+      const selectionKey = existingSelection
+        ? hotelSelectionKeyFromRow(plan.itinerary_plan_ID, existingSelection)
+        : key;
       const existingSnapshot = existingSelection ? parseHotelSelectionSnapshot(existingSelection) as any : null;
       const existingHotelId = Number(existingSnapshot?.hotelId || existingSelection?.hotel_id || 0);
       const existingRoomKey = this.normalizeRoomIdentity(
@@ -609,10 +636,22 @@ export class HotelAvailabilitySnapshotService {
         !existingSelection ||
         (Number(roomSelection.hotelId || 0) > 0 && existingHotelId > 0 && Number(roomSelection.hotelId) !== existingHotelId) ||
         (roomSelection.roomTypeKeys.size > 0 && existingRoomKey && !roomSelection.roomTypeKeys.has(existingRoomKey));
+      const roomSelections = roomSelection.roomTypeAssignments.map((roomTypeTitle: string, index: number) => ({
+        room_number: index + 1,
+        room_type_title: roomTypeTitle,
+        room_qty: 1,
+      }));
+      if (existingSelection) {
+        selectedByRouteGroup.set(selectionKey, {
+          ...existingSelection,
+          roomSelections,
+        });
+      }
       if (!shouldOverrideSelection) return;
       const primaryRoomType = roomSelection.roomTypeLabels[0] || '';
-      selectedByRouteGroup.set(key, {
+      selectedByRouteGroup.set(selectionKey, {
         ...(existingSelection || {}),
+        roomSelections,
         __roomCategorySelection: true,
         itinerary_plan_id: plan.itinerary_plan_ID,
         itinerary_route_id: Number(roomSelection.routeId || 0),
@@ -630,7 +669,6 @@ export class HotelAvailabilitySnapshotService {
         }),
       });
     });
-
     // Legacy persisted selections can retain a route/date alias that differs
     // from the current snapshot row after a route rebuild. Reconcile only
     // within the same group and stay, and only when the hotel identity agrees;
@@ -1150,15 +1188,6 @@ export class HotelAvailabilitySnapshotService {
         }
       : undefined;
 
-    const authoritativeHotelSelectionState = buildHotelSelectionState({
-      tabs,
-      rows: normalizedRows,
-      requiredRoutes: searchableRoutes,
-    });
-    const synchronizedHotelTabs = synchronizeHotelTabTotals(
-      tabs,
-      authoritativeHotelSelectionState,
-    );
     // The complete unfiltered read is consumed together with
     // hotelAvailability.sharedHotelInventory. Returning every option once per
     // recommendation group in `hotels` multiplies the JSON payload without
@@ -1166,9 +1195,63 @@ export class HotelAvailabilitySnapshotService {
     // already represented by hotelSelectionState. Keep one compact summary row
     // per route/stay in the legacy `hotels` field and leave the full selectable
     // inventory in the shared field used by the panes.
-    const responseRows = unpaged
-      ? this.buildClientStaySummaryRows(normalizedRows)
-      : paged;
+    const roomSelectionsForRow = (row: any): any[] | null => {
+      const key = hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row);
+      const direct = roomSelectionsByRouteGroup.get(key);
+      const fallback = direct || Array.from(roomSelectionsByRouteGroup.values()).find((candidate: any) => {
+        const rowRouteId = Number(row?.itineraryRouteId ?? row?.routeId ?? row?.itinerary_route_id ?? 0);
+        const rowGroupType = Number(row?.groupType ?? row?.group_type ?? 0);
+        const rowDate = rowStayDate(row);
+        return Number(candidate?.routeId || 0) === rowRouteId &&
+          Number(candidate?.groupType || 0) === rowGroupType &&
+          toDateOnly(candidate?.routeDate) === rowDate &&
+          Number(candidate?.hotelId || 0) === Number(row?.hotelId || row?.hotel_id || row?.canonicalHotelId || 0);
+      });
+      if (!fallback || !Array.isArray(fallback.roomTypeAssignments) || fallback.roomTypeAssignments.length === 0) return null;
+      return fallback.roomTypeAssignments.map((roomTypeTitle: string, index: number) => ({
+        room_number: index + 1,
+        room_type_title: roomTypeTitle,
+        room_qty: 1,
+      }));
+    };
+    const normalizedRowsWithRoomSelections = normalizedRows.map((row: any) => {
+      const roomSelections = roomSelectionsForRow(row);
+      if (!roomSelections) return row;
+      return {
+        ...row,
+        roomSelections,
+        selection: row.selection && typeof row.selection === 'object'
+          ? { ...row.selection, roomSelections }
+          : row.selection,
+      };
+    });
+    const roomSelectionsByResponseKey = new Map(
+      normalizedRowsWithRoomSelections
+        .filter((row: any) => Array.isArray(row?.roomSelections))
+        .map((row: any) => [hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row), row.roomSelections]),
+    );
+    const authoritativeHotelSelectionState = buildHotelSelectionState({
+      tabs,
+      rows: normalizedRowsWithRoomSelections,
+      requiredRoutes: searchableRoutes,
+    });
+    const synchronizedHotelTabs = synchronizeHotelTabTotals(
+      tabs,
+      authoritativeHotelSelectionState,
+    );
+    const responseRows = (unpaged
+      ? this.buildClientStaySummaryRows(normalizedRowsWithRoomSelections)
+      : paged).map((row: any) => {
+        const roomSelections = roomSelectionsByResponseKey.get(hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row));
+        if (!roomSelections) return row;
+        return {
+          ...row,
+          roomSelections,
+          selection: row.selection && typeof row.selection === 'object'
+            ? { ...row.selection, roomSelections }
+            : row.selection,
+        };
+      });
     const clientHotelRows = responseRows.map((row: any) => this.toClientHotelRow(row));
 
     return {
@@ -2783,6 +2866,7 @@ export class HotelAvailabilitySnapshotService {
       } : {}),
       noOfRooms: roomCount,
       total_no_of_rooms: roomCount,
+      roomSelections: Array.isArray(selection.roomSelections) ? selection.roomSelections : undefined,
       isSelected: true,
       isSelectable: true,
       selectionOrigin: selectionOriginFromRow(selection),
@@ -2816,6 +2900,7 @@ export class HotelAvailabilitySnapshotService {
         totalPrice: selectedTotal || display.totalPrice,
         pricePerNight: selectedPerNight || display.pricePerNight,
         totalRooms: roomCount,
+        roomSelections: Array.isArray(selection.roomSelections) ? selection.roomSelections : undefined,
         status: 'AVAILABLE',
         selectionOrigin: selectionOriginFromRow(selection),
         selectionId,
@@ -2961,6 +3046,7 @@ export class HotelAvailabilitySnapshotService {
           itineraryPlanHotelDetailsId: Number(selection.itinerary_plan_hotel_details_ID || 0),
           noOfRooms: roomCount,
           total_no_of_rooms: roomCount,
+          roomSelections: Array.isArray(selection.roomSelections) ? selection.roomSelections : undefined,
           ...(selectedTotal > 0
             ? {
                 selectedTotalPrice: selectedTotal,
@@ -3019,6 +3105,7 @@ export class HotelAvailabilitySnapshotService {
             selectionOrigin: 'USER_SELECTED',
             selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
             totalRooms: roomCount,
+            roomSelections: Array.isArray(selection.roomSelections) ? selection.roomSelections : undefined,
           },
         };
       }
