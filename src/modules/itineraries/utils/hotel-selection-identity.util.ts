@@ -317,7 +317,7 @@ export function isProtectedHotelSelection(row: any): boolean {
 }
 
 export function parseHotelSelectionSnapshot(row: any): HotelSelectionSnapshot {
-  const raw = row?.selected_price_snapshot;
+  const raw = row?.selected_price_snapshot ?? row?.selectedPriceSnapshot;
   if (raw && typeof raw === 'object') return raw as HotelSelectionSnapshot;
   if (raw) {
     try {

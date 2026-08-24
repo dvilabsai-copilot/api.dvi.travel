@@ -65,19 +65,28 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     option?.price,
     option?.pricePerNight,
   );
-  const baseTotal = positive(
+  const explicitBaseTotal = positive(
     option?.baseTotalPrice,
     option?.baseStayPrice,
     option?.baseHotelCost,
     option?.baseAmount,
-    option?.basePricePerNight,
-    alreadyProjected ? 0 : payableBeforeProjection,
   );
-  const basePerNight = positive(
+  const roomCount = Math.max(
+    Number(option?.total_no_of_rooms ?? option?.noOfRooms ?? option?.roomCount ?? 1),
+    1,
+  );
+  const baseTotal = explicitBaseTotal > 0
+    ? explicitBaseTotal
+    : positive(option?.basePricePerNight, alreadyProjected ? 0 : payableBeforeProjection);
+  const rawBasePerNight = positive(
     option?.basePricePerNight,
     option?.baseAmountPerNight,
     baseTotal,
   );
+  const basePerNight = explicitBaseTotal > 0 && roomCount > 1 &&
+    Math.abs(rawBasePerNight - explicitBaseTotal) < 0.01
+    ? money(explicitBaseTotal / roomCount)
+    : rawBasePerNight;
   const supplementTotal = money(
     positive(option?.extraBedAmount, option?.extraBedCost, option?.total_extra_bed_cost) +
     positive(option?.childWithBedAmount, option?.childWithBedCost, option?.total_childwith_bed_cost) +

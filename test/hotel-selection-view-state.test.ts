@@ -85,6 +85,58 @@ test('DVI20260891 aligns hotelTabs with hotelSelectionState and deduplicates Day
   assert.equal(tabs[0].totalAmount, 953303.23);
 });
 
+test('DVI20260891 projects a complete MGM stay through Day 3 without double counting it', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 41112.5 }],
+    rows: [
+      selectedRow(11045, {
+        groupType: 1,
+        provider: 'offline',
+        canonicalHotelId: 277,
+        hotelName: 'MAMALLA HERITAGE',
+        completeStayBookable: true,
+        completeStayRouteIds: [11045, 11046, 11047],
+        selectionKey: 'offline:277:cp:2026-08-31:2026-09-03',
+        totalPrice: 20212.5,
+        selectedPriceSnapshot: {
+          provider: 'offline',
+          canonicalHotelId: 277,
+          hotelName: 'MAMALLA HERITAGE',
+          rateOptionId: 'offline:277:733:445:2026-08-31:2026-09-03',
+          totalPrice: 20212.5,
+          pricePerNight: 20212.5,
+        },
+      }),
+      selectedRow(11048, {
+        groupType: 1,
+        provider: 'offline',
+        canonicalHotelId: 315,
+        hotelName: 'GREEN PALACE',
+        selectionKey: 'offline:315:cp',
+        totalPrice: 20900,
+        selectedPriceSnapshot: {
+          provider: 'offline', canonicalHotelId: 315, hotelName: 'GREEN PALACE',
+          rateOptionId: 'offline:315:cp', totalPrice: 20900, pricePerNight: 20900,
+        },
+      }),
+    ],
+    requiredRoutes: [
+      { routeId: 11045, routeDate: '2026-08-31' },
+      { routeId: 11046, routeDate: '2026-09-01' },
+      { routeId: 11047, routeDate: '2026-09-02' },
+      { routeId: 11048, routeDate: '2026-09-03' },
+    ],
+  });
+
+  assert.deepEqual(state[0].routes.map((route) => route.selectionStatus), [
+    'SELECTED', 'SELECTED', 'SELECTED', 'SELECTED',
+  ]);
+  assert.deepEqual(state[0].routes.slice(0, 3).map((route) => route.selected?.hotelName), [
+    'MAMALLA HERITAGE', 'MAMALLA HERITAGE', 'MAMALLA HERITAGE',
+  ]);
+  assert.equal(state[0].totalAmount, 41112.5);
+});
+
 test('marks a partial legacy two-night group unresolved even when a numeric total exists', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 5040 }],

@@ -903,9 +903,12 @@ export class HotelAvailabilitySnapshotService {
     // payable (base + margin).  Previously the later projection happened only
     // after `buildTabs`, so a legacy stored tab could keep returning the raw
     // base total even though the hotel card itself had a margin.
-    normalizedRows = normalizedRows.map((row: any) =>
-      projectHotelPayablePricing(row, effectiveMarginPercentage),
-    );
+    const itineraryRoomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
+    normalizedRows = normalizedRows.map((row: any) => projectHotelPayablePricing({
+      ...row,
+      noOfRooms: Number(row?.noOfRooms || row?.total_no_of_rooms || itineraryRoomCount),
+      total_no_of_rooms: Number(row?.total_no_of_rooms || row?.noOfRooms || itineraryRoomCount),
+    }, effectiveMarginPercentage));
 
     // Recommendation groups own only the automatic selection.  The day-pane
     // inventory must be shared, so retain the complete unfiltered snapshot
@@ -2383,7 +2386,45 @@ export class HotelAvailabilitySnapshotService {
       return 2;
     };
 
-    for (const row of rows || []) {
+    const rowsWithContinuousStayCoverage = (rows || []).flatMap((row: any) => {
+      // Only a selected continuous-stay row should project into the compact
+      // client table. Unselected rows remain route-scoped so a live supplier
+      // option is not hidden by an offline availability candidate.
+      if (row?.isSelected !== true || row?.completeStayBookable !== true ||
+        !Array.isArray(row?.completeStayRouteIds) || row.completeStayRouteIds.length < 2) {
+        return [row];
+      }
+
+      const anchorDate = this.toDateOnly(row?.date || row?.checkInDate || row?.itineraryRouteDate);
+      const availableDates = Array.isArray(row?.availableDates)
+        ? row.availableDates.map((value: unknown) => this.toDateOnly(value))
+        : [];
+      const routeIds = row.completeStayRouteIds
+        .map((value: unknown) => Number(value))
+        .filter((value: number) => Number.isFinite(value) && value > 0);
+
+      return routeIds.map((routeId: number, index: number) => {
+        const date = availableDates[index] || (
+          anchorDate
+            ? this.addDays(this.toDate(anchorDate), index).toISOString().slice(0, 10)
+            : ''
+        );
+        return {
+          ...row,
+          itineraryRouteId: routeId,
+          routeId,
+          itinerary_route_id: routeId,
+          itineraryRouteDate: date,
+          itinerary_route_date: date,
+          date,
+          checkInDate: date,
+          check_in_date: date,
+          routeIds: [routeId],
+        };
+      });
+    });
+
+    for (const row of rowsWithContinuousStayCoverage) {
       const key = stayKey(row);
       if (!key || key === '0|') continue;
       const current = byStay.get(key);
@@ -2603,6 +2644,10 @@ export class HotelAvailabilitySnapshotService {
       snapshot?.totalPrice ||
       0,
     );
+    const snapshotHasSupplement = [
+      snapshot?.extraBedAmount, snapshot?.childWithBedAmount, snapshot?.childWithoutBedAmount,
+    ].some((value) => Number(value || 0) > 0);
+    const snapshotTotal = Number(snapshot?.totalPrice ?? snapshot?.totalStayPrice ?? snapshot?.totalHotelCost ?? 0);
     const persistedPerNight = Number(
       selection?.selected_price_per_night ||
       snapshot?.pricePerNight ||
@@ -2622,14 +2667,18 @@ export class HotelAvailabilitySnapshotService {
     // selection from another provider is rejected by hotelPropertyMatchesSelection
     // before this method is called, so this does not resurrect old TBO money
     // on a new offline/live row.
-    const selectedTotal = selectedOption && currentTotal > 0
+    const selectedTotal = snapshotHasSupplement && snapshotTotal > 0
+      ? snapshotTotal
+      : selectedOption && currentTotal > 0
       ? currentTotal
       : hasPersistedSelection && providerMatches && persistedTotal > 0
       ? persistedTotal
       : currentTotal > 0
         ? currentTotal
         : persistedTotal;
-    const selectedPerNight = selectedOption && currentPerNight > 0
+    const selectedPerNight = snapshotHasSupplement && Number(snapshot?.pricePerNight || 0) > 0
+      ? Number(snapshot.pricePerNight)
+      : selectedOption && currentPerNight > 0
       ? currentPerNight
       : hasPersistedSelection && providerMatches && persistedPerNight > 0
       ? persistedPerNight
@@ -2729,6 +2778,7 @@ export class HotelAvailabilitySnapshotService {
       selectedCurrency: currentRow.currency || selection.selected_currency || snapshot.currency || 'INR',
       selectedPriceSnapshot: JSON.stringify({
         ...display,
+        ...(snapshot || {}),
         ...(selectedBasePerNight > 0 ? {
           basePricePerNight: selectedBasePerNight,
           baseTotalPrice: this.money(selectedBasePerNight * roomCount),
@@ -2807,20 +2857,37 @@ export class HotelAvailabilitySnapshotService {
           currentRateRow?.perNightAmount ??
           0,
         );
+        const snapshotTotal = Number(snapshot?.totalPrice ?? snapshot?.totalStayPrice ?? snapshot?.totalHotelCost ?? 0);
+        const snapshotPerNight = Number(snapshot?.pricePerNight ?? snapshot?.selectedPricePerNight ?? 0);
+        const snapshotHasSupplement = [
+          snapshot?.extraBedAmount, snapshot?.childWithBedAmount, snapshot?.childWithoutBedAmount,
+        ].some((value) => Number(value || 0) > 0);
         // The room editor identifies a room category, not an old supplier
         // quote. A fresh matching rate is authoritative; the persisted amount
         // is only a fallback for legacy snapshots without current pricing.
-        const selectedTotal = currentTotal > 0 ? currentTotal : persistedTotal;
-        const selectedPerNight = currentPerNight > 0 ? currentPerNight : persistedPerNight;
+        const selectedTotal = snapshotHasSupplement && snapshotTotal > 0
+          ? snapshotTotal : currentTotal > 0 ? currentTotal : persistedTotal;
+        const selectedPerNight = snapshotHasSupplement && snapshotPerNight > 0
+          ? snapshotPerNight
+          : currentPerNight > 0 ? currentPerNight : persistedPerNight;
         const persistedBaseTotal = Number(
           snapshot?.baseTotalPrice ?? snapshot?.base_total_price ??
           selection?.total_room_cost ?? 0,
         );
-        const selectedBasePerNight = Number(
+        const rawSelectedBasePerNight = Number(
           currentRateRow?.basePricePerNight ?? currentRateRow?.base_price_per_night ??
           currentRateRow?.baseHotelCost ??
           (persistedBaseTotal > 0 ? persistedBaseTotal / roomCount : 0),
         );
+        const selectedProvider = String(
+          currentRateRow?.provider || currentRateRow?.hotel_provider || snapshot?.provider || selection?.hotel_provider || '',
+        ).trim().toLowerCase();
+        const basePerNightIsOccupancyTotal = roomCount > 1 &&
+          persistedBaseTotal > 0 &&
+          Math.abs(rawSelectedBasePerNight - persistedBaseTotal) < 0.01;
+        const selectedBasePerNight = (selectedProvider === 'offline' || basePerNightIsOccupancyTotal) && persistedBaseTotal > 0
+          ? this.money(persistedBaseTotal / roomCount)
+          : rawSelectedBasePerNight;
         // Cache inventory can legitimately carry 0 while the persisted
         // selection stores the hotel-specific margin. Zero is not an
         // authoritative override in that merge.
@@ -2858,6 +2925,7 @@ export class HotelAvailabilitySnapshotService {
             totalPrice: selectedTotal,
             pricePerNight: selectedPerNight,
           }),
+          ...(snapshot || {}),
           ...(selectedBasePerNight > 0 ? {
             basePricePerNight: selectedBasePerNight,
             baseTotalPrice: this.money(selectedBasePerNight * roomCount),
@@ -2885,8 +2953,20 @@ export class HotelAvailabilitySnapshotService {
                 price: selectedPerNight,
               }
             : {}),
+          ...(snapshotTotal > 0 ? {
+            extraBedCount: Number(snapshot?.extraBedCount ?? snapshot?.extra_bed_count ?? 0),
+            extraBedRate: Number(snapshot?.extraBedRate ?? snapshot?.extra_bed_rate ?? 0),
+            extraBedAmount: Number(snapshot?.extraBedAmount ?? snapshot?.extra_bed_amount ?? 0),
+            childWithBedCount: Number(snapshot?.childWithBedCount ?? snapshot?.child_with_bed_count ?? 0),
+            childWithBedRate: Number(snapshot?.childWithBedRate ?? snapshot?.child_with_bed_rate ?? 0),
+            childWithBedAmount: Number(snapshot?.childWithBedAmount ?? snapshot?.child_with_bed_amount ?? 0),
+            childWithoutBedCount: Number(snapshot?.childWithoutBedCount ?? snapshot?.child_without_bed_count ?? 0),
+            childWithoutBedRate: Number(snapshot?.childWithoutBedRate ?? snapshot?.child_without_bed_rate ?? 0),
+            childWithoutBedAmount: Number(snapshot?.childWithoutBedAmount ?? snapshot?.child_without_bed_amount ?? 0),
+          } : {}),
           ...(selectedBasePerNight > 0 ? {
             basePricePerNight: selectedBasePerNight,
+            baseTotalPrice: this.money(persistedBaseTotal > 0 ? persistedBaseTotal : selectedBasePerNight * roomCount),
             baseHotelCost: this.money(selectedBasePerNight * roomCount),
           } : {}),
           hotelMarginPercentage: selectedMarginPercentage,
@@ -2985,11 +3065,20 @@ export class HotelAvailabilitySnapshotService {
       Number(selectedFinancialSnapshot?.totalRooms || selection?.total_no_of_rooms || normalized?.noOfRooms || 0),
       1,
     );
-    const selectedBasePerNight = Number(
+    const rawSelectedBasePerNight = Number(
       selectedFinancialSnapshot?.basePricePerNight ??
       selectedFinancialSnapshot?.base_price_per_night ??
       (selectedBaseTotal > 0 ? selectedBaseTotal / selectedRoomCount : 0),
     );
+    const selectedProvider = String(
+      currentRateRow?.provider || currentRateRow?.hotel_provider || selection?.hotel_provider || selectedFinancialSnapshot?.provider || '',
+    ).trim().toLowerCase();
+    const basePerNightIsOccupancyTotal = selectedRoomCount > 1 &&
+      selectedBaseTotal > 0 &&
+      Math.abs(rawSelectedBasePerNight - selectedBaseTotal) < 0.01;
+    const selectedBasePerNight = (selectedProvider === 'offline' || basePerNightIsOccupancyTotal) && selectedBaseTotal > 0
+      ? this.money(selectedBaseTotal / selectedRoomCount)
+      : rawSelectedBasePerNight;
     const explicitSelectedMarginPercentage = Number(
       selectedFinancialSnapshot?.hotelMarginPercentage || selection?.hotel_margin_percentage || 0,
     );
@@ -3058,6 +3147,9 @@ export class HotelAvailabilitySnapshotService {
       ...(selectedTotal > 0 ? { totalAmount: selectedTotal, netAmount: selectedTotal } : {}),
       ...(selectedBasePerNight > 0 ? {
         basePricePerNight: selectedBasePerNight,
+        baseTotalPrice: selectedBaseTotal > 0
+          ? this.money(selectedBaseTotal)
+          : this.money(selectedBasePerNight * selectedRoomCount),
         baseHotelCost: selectedBaseTotal > 0 ? selectedBaseTotal : selectedBasePerNight,
       } : {}),
       ...(selectedMarginPercentage > 0 ? { hotelMarginPercentage: selectedMarginPercentage } : {}),
@@ -4193,9 +4285,12 @@ export class HotelAvailabilitySnapshotService {
       Number(globalSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0),
       0,
     );
-    const plan = tx?.dvi_itinerary_plan_details?.findUnique
-      ? await tx.dvi_itinerary_plan_details.findUnique({
-          where: { itinerary_plan_ID: planId },
+    const planModel = tx?.dvi_itinerary_plan_details?.findUnique
+      ? tx.dvi_itinerary_plan_details
+      : this.prisma?.dvi_itinerary_plan_details;
+    const plan = planModel?.findUnique
+      ? await planModel.findUnique({
+          where: { itinerary_plan_ID: Number(planId) },
           select: {
             total_adult: true,
             total_child_with_bed: true,
@@ -4485,6 +4580,16 @@ export class HotelAvailabilitySnapshotService {
             option.total_room_cost ??
           rawPricePerNight * roomCount,
           ), 0)
+        : provider === 'offline'
+          ? Math.max(Number(
+              option.baseTotalPrice ??
+              option.base_total_price ??
+              option.baseHotelCost ??
+              option.base_hotel_cost ??
+              option.totalRoomCost ??
+              option.total_room_cost ??
+              0,
+            ), 0)
         : 0;
       let marginPercentage = provider === 'staah'
         ? Math.max(Number(option.hotelMarginPercentage ?? defaultHotelMarginPercentage), 0)
@@ -4502,22 +4607,28 @@ export class HotelAvailabilitySnapshotService {
           ? quantity * unitRate
           : 0;
       };
+      const supplementCount = (value: unknown, planValue: unknown): number => {
+        const selectedCount = Number(value ?? 0);
+        if (Number.isFinite(selectedCount) && selectedCount > 0) return selectedCount;
+        const itineraryCount = Number(planValue ?? 0);
+        return Number.isFinite(itineraryCount) && itineraryCount > 0 ? itineraryCount : 0;
+      };
       const extraBedAmount = supplementAmount(
         option.extraBedAmount ?? option.extra_bed_amount,
         option.extraBedCost ?? option.totalExtraBedCost ?? option.total_extra_bed_cost,
-        option.extraBedCount ?? option.extra_bed_count,
+        supplementCount(option.extraBedCount ?? option.extra_bed_count, plan?.total_extra_bed),
         option.extraBedRate ?? option.extra_bed_rate,
       );
       const childWithBedAmount = supplementAmount(
         option.childWithBedAmount ?? option.child_with_bed_amount,
         option.childWithBedCost ?? option.totalChildWithBedCost ?? option.total_childwith_bed_cost,
-        option.childWithBedCount ?? option.child_with_bed_count,
+        supplementCount(option.childWithBedCount ?? option.child_with_bed_count, plan?.total_child_with_bed),
         option.childWithBedRate ?? option.child_with_bed_rate,
       );
       const childWithoutBedAmount = supplementAmount(
         option.childWithoutBedAmount ?? option.child_without_bed_amount,
         option.childWithoutBedCost ?? option.totalChildWithoutBedCost ?? option.total_childwithout_bed_cost,
-        option.childWithoutBedCount ?? option.child_without_bed_count,
+        supplementCount(option.childWithoutBedCount ?? option.child_without_bed_count, plan?.total_child_without_bed),
         option.childWithoutBedRate ?? option.child_without_bed_rate,
       );
       const supplementTotal = Number((extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
@@ -4534,6 +4645,36 @@ export class HotelAvailabilitySnapshotService {
       let pricePerNight = provider === 'staah' && totalPrice > 0
         ? Number((totalPrice / roomCount).toFixed(2))
         : rawPricePerNight;
+
+      if (provider === 'offline' && baseTotalPrice > 0) {
+        marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
+        calculatedMargin = Number((marginBaseTotal * marginPercentage / 100).toFixed(2));
+        totalPrice = Number((marginBaseTotal + calculatedMargin).toFixed(2));
+        pricePerNight = totalPrice;
+        option = {
+          ...option,
+          basePricePerNight: Number((baseTotalPrice / roomCount).toFixed(2)),
+          baseTotalPrice,
+          baseHotelCost: baseTotalPrice,
+          extraBedCount: supplementCount(option.extraBedCount, plan?.total_extra_bed),
+          extraBedRate: Number(option.extraBedRate ?? option.extra_bed_rate ?? 0),
+          extraBedAmount,
+          childWithBedCount: supplementCount(option.childWithBedCount, plan?.total_child_with_bed),
+          childWithBedRate: Number(option.childWithBedRate ?? option.child_with_bed_rate ?? 0),
+          childWithBedAmount,
+          childWithoutBedCount: supplementCount(option.childWithoutBedCount, plan?.total_child_without_bed),
+          childWithoutBedRate: Number(option.childWithoutBedRate ?? option.child_without_bed_rate ?? 0),
+          childWithoutBedAmount,
+          hotelMarginPercentage: marginPercentage,
+          hotelMarginAmount: calculatedMargin,
+          hotelMarginBaseAmount: marginBaseTotal,
+          hotelMarginTotalAmount: calculatedMargin,
+          pricePerNight,
+          totalPrice,
+          totalStayPrice: totalPrice,
+          totalHotelCost: totalPrice,
+        };
+      }
 
       // AxisRooms occupancy rates are the authoritative room price for a
       // selected rate. The normalized supplier option can still carry an old
