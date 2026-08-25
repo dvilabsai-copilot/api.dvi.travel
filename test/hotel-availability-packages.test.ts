@@ -47,6 +47,18 @@ test('shared hotel inventory unions every package without leaking group selectio
   assert.ok(inventory.every((hotel: any) => hotel.selectionStatus === 'AVAILABLE'));
 });
 
+test('shared hotel inventory collapses duplicate visible supplier offers', () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  const inventory = service.buildSharedHotelInventory([
+    { groupType: 1, itineraryRouteId: 11081, date: '2026-09-01', provider: 'tbo', hotelCode: '5004143', hotelName: 'Itsy Hotels Deluxe Inn', roomType: 'Economy Double Room,1 Queen Bed', mealPlan: 'CP', pricePerNight: 2916.7, rateOptionId: 'booking-a' },
+    { groupType: 2, itineraryRouteId: 11081, date: '2026-09-01', provider: 'tbo', hotelCode: '5004143', hotelName: 'Itsy Hotels Deluxe Inn', roomType: 'Economy Double Room,1 Queen Bed', mealPlan: 'CP', pricePerNight: 2916.7, rateOptionId: 'booking-b' },
+    { groupType: 3, itineraryRouteId: 11081, date: '2026-09-01', provider: 'tbo', hotelCode: '5004143', hotelName: 'Itsy Hotels Deluxe Inn', roomType: 'Economy Double Room,1 Queen Bed', mealPlan: 'CP', pricePerNight: 3000, rateOptionId: 'booking-c' },
+  ]);
+
+  assert.equal(inventory.length, 2);
+  assert.deepEqual(inventory.map((row: any) => row.pricePerNight), [2916.7, 3000]);
+});
+
 test('group-neutral shared inventory strips recommendation-only metadata', () => {
   const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
   const inventory = service.buildSharedHotelInventory([{
