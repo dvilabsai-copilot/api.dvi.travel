@@ -6624,3 +6624,23 @@ model dvi_itinerary_plan_hotel_approval_history {
   @@index([new_approval_status], map: "idx_hotel_approval_history_status")
   @@map("dvi_itinerary_plan_hotel_approval_history")
 }
+
+model public_itinerary_links {
+  id               Int       @id @default(autoincrement())
+  tokenHash        String    @unique @db.VarChar(64)
+  itineraryPlanId  Int
+  groupType        Int
+  createdAt        DateTime  @default(now()) @db.DateTime(0)
+  expiresAt        DateTime  @db.DateTime(0)
+  revokedAt        DateTime? @db.DateTime(0)
+  createdByUserId  Int?
+  createdByAgentId Int?
+  firstAccessedAt  DateTime? @db.DateTime(0)
+  lastAccessedAt   DateTime? @db.DateTime(0)
+  accessCount      Int       @default(0)
+
+  @@index([itineraryPlanId], map: "idx_public_itinerary_plan")
+  @@index([expiresAt], map: "idx_public_itinerary_expires")
+  @@index([createdByAgentId], map: "idx_public_itinerary_created_by_agent")
+  @@map("public_itinerary_links")
+}

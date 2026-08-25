@@ -9,6 +9,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import {AccountsManagerModule} from './modules/accounts-manager/accounts-manager.module';
 import { AccountsLedgerModule } from './modules/accounts-ledger/accounts-ledger.module';
 import { ItinerariesModule } from './modules/itineraries/itinerary.module';
+import { PublicItineraryLinksModule } from './modules/public-itinerary-links/public-itinerary-links.module';
 import {ItineraryDropdownsModule  } from './modules/itinerary-dropdowns/itinerary-dropdowns.module';
 import { DailyMomentTrackerModule } from './modules/daily-moment-tracker/daily-moment-tracker.module';
 import { AgentsModule } from './modules/agents/agents.module';
@@ -42,7 +43,10 @@ import { StaahModule } from './modules/staah/staah.module';
 import { GraphqlV2Module } from './graphql-v2/graphql-v2.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, UsersModule,VendorsModule,AgentsModule,ItineraryViaRoutesModule,HotelsModule,DailyMomentTrackerModule, ItineraryDropdownsModule, ItinerariesModule,AccountsManagerModule, AccountsLedgerModule, DriversModule, VehicleAvailabilityModule, HotspotsModule, HotspotDistanceCacheModule, ActivitiesModule, LocationsModule, GuidesModule, StaffModule, AgentModule, DashboardModule, GstSettingsModule,InbuiltAmenitiesModule, VehicleTypesModule, CitiesModule, ExportPricebookModule, IncidentalExpensesModule, PaymentsModule, LanguageModule, RolePermissionModule, AgentSubscriptionPlanModule, HotelCategoryModule, GlobalSettingsModule, AccountsExportModule, AxisRoomsModule, StaahModule, GraphqlV2Module],
+  imports: [PrismaModule, AuthModule, UsersModule,VendorsModule,AgentsModule,ItineraryViaRoutesModule,HotelsModule,DailyMomentTrackerModule, ItineraryDropdownsModule,
+ItinerariesModule,
+PublicItineraryLinksModule,
+AccountsManagerModule, AccountsLedgerModule, DriversModule, VehicleAvailabilityModule, HotspotsModule, HotspotDistanceCacheModule, ActivitiesModule, LocationsModule, GuidesModule, StaffModule, AgentModule, DashboardModule, GstSettingsModule,InbuiltAmenitiesModule, VehicleTypesModule, CitiesModule, ExportPricebookModule, IncidentalExpensesModule, PaymentsModule, LanguageModule, RolePermissionModule, AgentSubscriptionPlanModule, HotelCategoryModule, GlobalSettingsModule, AccountsExportModule, AxisRoomsModule, StaahModule, GraphqlV2Module],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
