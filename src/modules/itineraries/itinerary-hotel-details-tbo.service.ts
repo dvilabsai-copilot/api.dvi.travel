@@ -4828,8 +4828,8 @@ this.logger.log(
         bookingCode: selectedRateOption.bookingCode ?? selectedRateOption.searchReference,
         basePricePerNight: selectedRateOption.basePricePerNight ?? selectedRateOption.basePrice ?? selectedRateOption.pricePerNight ?? selectedRateOption.price,
         pricePerNight: selectedRateOption.pricePerNight ?? selectedRateOption.price,
-        totalStayPrice: selectedRateOption.pricePerNight ?? selectedRateOption.price ?? selectedRateOption.totalStayPrice ?? selectedRateOption.totalPrice,
-        totalPrice: selectedRateOption.pricePerNight ?? selectedRateOption.price ?? selectedRateOption.totalPrice ?? selectedRateOption.totalStayPrice,
+        totalStayPrice: selectedRateOption.totalStayPrice ?? selectedRateOption.totalPrice ?? selectedRateOption.pricePerNight ?? selectedRateOption.price,
+        totalPrice: selectedRateOption.totalPrice ?? selectedRateOption.totalStayPrice ?? selectedRateOption.pricePerNight ?? selectedRateOption.price,
         selectedRateOptionId: hotel.selectedRateOptionId || hotel.selected_rate_option_id,
         selected_rate_option_id: hotel.selected_rate_option_id || hotel.selectedRateOptionId,
       };
@@ -4985,11 +4985,26 @@ this.logger.log(
         hotel?.checkOutDate || hotel?.check_out_date ||
           nextNightDate,
       );
+      const isOffline = String(hotel?.provider || '').trim().toLowerCase() === 'offline';
+      const routeNight = isOffline && Array.isArray(hotel?.nightlyRates)
+        ? hotel.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === checkInDate)
+        : null;
+      const roomCount = Math.max(Number(hotel?.roomCount || hotel?.noOfRooms || hotel?.total_no_of_rooms || 1), 1);
       return {
         hotel: {
           ...hotel,
           ...(checkInDate ? { checkInDate } : {}),
           ...(checkOutDate ? { checkOutDate } : {}),
+          ...(routeNight ? {
+            // The offer remains a continuous stay, but this package row is a
+            // single route/night. Project only the per-night fields here;
+            // totalStayPrice/price remain available for package totals.
+            basePricePerNight: Number((Number(routeNight.baseAmount || 0) / roomCount).toFixed(2)),
+            baseTotalPrice: Number(routeNight.baseAmount || 0),
+            pricePerNight: Number(routeNight.sellAmount || 0),
+            price: Number(routeNight.sellAmount || 0),
+            hotelMarginAmount: Number(routeNight.marginAmount || 0),
+          } : {}),
         },
         nights: 1,
       };

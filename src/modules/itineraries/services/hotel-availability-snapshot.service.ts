@@ -14,7 +14,7 @@ import {
   ItineraryHotelTabDto,
 } from '../itinerary-hotel-details.service';
 import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
-import { OfflineHotelCatalogService } from './offline-hotel-catalog.service';
+import { OfflineHotelCatalogService, selectOfflineRouteNightlyRate } from './offline-hotel-catalog.service';
 import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
 import {
   hotelDisplaySnapshot,
@@ -189,10 +189,18 @@ export class HotelAvailabilitySnapshotService {
       }
       const existingBase = amount(existing.baseTotalPrice || existing.baseStayPrice || existing.baseHotelCost || existing.basePricePerNight);
       const optionBase = amount(option.baseTotalPrice || option.baseStayPrice || option.baseHotelCost || option.basePricePerNight);
+      const existingIsRouteNight = existing.offlineRouteNightApplied === true;
+      const optionIsRouteNight = option.offlineRouteNightApplied === true;
       // If the same supplier identity appears once raw and once projected,
       // the lower base is the supplier amount. Keep legitimate distinct rates
       // separate by their supplier identity/room/meal key above.
-      if (optionBase > 0 && (existingBase <= 0 || optionBase < existingBase)) {
+      // Offline continuous-stay rows are also emitted as route-night rows.
+      // The route-night projection is authoritative for the route being
+      // persisted; never let the anchor-night copy win just because its
+      // amount is lower.
+      if (optionIsRouteNight !== existingIsRouteNight) {
+        if (optionIsRouteNight) canonical.set(key, { ...existing, ...option });
+      } else if (optionBase > 0 && (existingBase <= 0 || optionBase < existingBase)) {
         canonical.set(key, { ...existing, ...option });
       } else if (existing) {
         canonical.set(key, { ...option, ...existing });
@@ -942,11 +950,70 @@ export class HotelAvailabilitySnapshotService {
     // after `buildTabs`, so a legacy stored tab could keep returning the raw
     // base total even though the hotel card itself had a margin.
     const itineraryRoomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
-    normalizedRows = normalizedRows.map((row: any) => projectHotelPayablePricing({
-      ...row,
-      noOfRooms: Number(row?.noOfRooms || row?.total_no_of_rooms || itineraryRoomCount),
-      total_no_of_rooms: Number(row?.total_no_of_rooms || row?.noOfRooms || itineraryRoomCount),
-    }, effectiveMarginPercentage));
+    normalizedRows = normalizedRows.map((row: any) => {
+      const normalizedProvider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+      const nightlyRates = Array.isArray(row?.nightlyRates) ? row.nightlyRates : [];
+      const routeDate = toDateOnly(row?.date || row?.checkInDate || row?.itineraryRouteDate);
+      const routeNight = normalizedProvider === 'offline'
+        ? nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === routeDate)
+        : null;
+      const roomCount = Math.max(Number(row?.noOfRooms || row?.total_no_of_rooms || itineraryRoomCount), 1);
+      if (!row?.isSelected || !routeNight) {
+        return projectHotelPayablePricing({
+          ...row,
+          noOfRooms: roomCount,
+          total_no_of_rooms: roomCount,
+        }, effectiveMarginPercentage);
+      }
+
+      // A continuous offline stay keeps one offer and one nightlyRates array,
+      // but each selected itinerary route must expose that route's payable
+      // night. decorateSelection can merge the parent offer back onto the
+      // selected row, so project it again here from the matching calendar
+      // date before building tabs and returning the API response.
+      const baseTotal = Math.max(Number(routeNight.baseAmount || 0), 0);
+      const extraBedAmount = Math.max(Number(row?.extraBedAmount || 0), 0);
+      const childWithBedAmount = Math.max(Number(row?.childWithBedAmount || 0), 0);
+      const childWithoutBedAmount = Math.max(Number(row?.childWithoutBedAmount || 0), 0);
+      const supplementTotal = Number((extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
+      const marginPercentage = Math.max(Number(row?.hotelMarginPercentage || effectiveMarginPercentage || 0), 0);
+      const marginBase = Number((baseTotal + supplementTotal).toFixed(2));
+      const marginAmount = Number((marginBase * marginPercentage / 100).toFixed(2));
+      const payableTotal = Number((marginBase + marginAmount).toFixed(2));
+      const projected = {
+        ...row,
+        noOfRooms: roomCount,
+        total_no_of_rooms: roomCount,
+        basePricePerNight: Number((baseTotal / roomCount).toFixed(2)),
+        baseTotalPrice: baseTotal,
+        baseHotelCost: baseTotal,
+        totalRoomCost: baseTotal,
+        pricePerNight: payableTotal,
+        selectedPricePerNight: payableTotal,
+        selected_price_per_night: payableTotal,
+        totalPrice: payableTotal,
+        selectedTotalPrice: payableTotal,
+        selected_total_price: payableTotal,
+        totalStayPrice: payableTotal,
+        totalHotelCost: payableTotal,
+        hotelMarginBaseAmount: marginBase,
+        hotelMarginAmount: marginAmount,
+        hotelMarginTotalAmount: marginAmount,
+        hotelMarginPercentage: marginPercentage,
+        selection: row.selection
+          ? {
+              ...row.selection,
+              basePricePerNight: Number((baseTotal / roomCount).toFixed(2)),
+              baseTotalPrice: baseTotal,
+              pricePerNight: payableTotal,
+              totalPrice: payableTotal,
+              hotelMarginAmount: marginAmount,
+              hotelMarginTotalAmount: marginAmount,
+            }
+          : row.selection,
+      };
+      return projectHotelPayablePricing(projected, effectiveMarginPercentage);
+    });
 
     // Recommendation groups own only the automatic selection.  The day-pane
     // inventory must be shared, so retain the complete unfiltered snapshot
@@ -2069,16 +2136,37 @@ export class HotelAvailabilitySnapshotService {
         ? route.itinerary_route_date.toISOString().slice(0, 10)
         : String(route?.itinerary_route_date || '').slice(0, 10);
       const destination = String(route?.next_visiting_location || route?.location_name || '').trim();
-      return (offlineByRoute.get(routeId) || []).flatMap((row: any) => groupTypes.map((groupType) => ({
-        ...row,
-        groupType,
-        itineraryRouteId: routeId,
-        routeId,
-        itineraryRouteDate: routeDate,
-        date: routeDate,
-        day: row.day || `Day ${routeIndex + 1} | ${routeDate}`,
-        destination: row.destination || destination,
-      })));
+      return (offlineByRoute.get(routeId) || []).flatMap((row: any) => {
+        const isOffline = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase() === 'offline';
+        const nightlyRates = Array.isArray(row?.nightlyRates) ? row.nightlyRates : [];
+        const routeNight = isOffline
+          ? nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === routeDate)
+          : null;
+        const roomCount = Math.max(Number(row?.roomCount || row?.noOfRooms || row?.total_no_of_rooms || 1), 1);
+        const routeFields = routeNight
+          ? {
+              // Keep totalStayPrice/price as the full continuous-stay offer
+              // total for recommendation ranking. These fields are the
+              // route-night values consumed by a selected itinerary row.
+              basePricePerNight: Number((Number(routeNight.baseAmount || 0) / roomCount).toFixed(2)),
+              baseTotalPrice: Number(routeNight.baseAmount || 0),
+              pricePerNight: Number(routeNight.sellAmount || 0),
+              hotelMarginAmount: Number(routeNight.marginAmount || 0),
+              offlineRouteNightApplied: true,
+            }
+          : {};
+        return groupTypes.map((groupType) => ({
+          ...row,
+          ...routeFields,
+          groupType,
+          itineraryRouteId: routeId,
+          routeId,
+          itineraryRouteDate: routeDate,
+          date: routeDate,
+          day: row.day || `Day ${routeIndex + 1} | ${routeDate}`,
+          destination: row.destination || destination,
+        }));
+      });
     });
   }
 
@@ -2697,7 +2785,8 @@ export class HotelAvailabilitySnapshotService {
       const candidatePrice = Number(row.totalHotelCost ?? row.totalStayPrice ?? row.price ?? 0);
       const currentProvider = String(existing.provider || '').toLowerCase();
       const candidateProvider = String(row.provider || '').toLowerCase();
-      const shouldPromote = candidateProvider === 'axisrooms' && currentProvider !== 'axisrooms' ||
+      const shouldPromote = candidateProvider === 'offline' && row.offlineRouteNightApplied === true && existing.offlineRouteNightApplied !== true ||
+        candidateProvider === 'axisrooms' && currentProvider !== 'axisrooms' ||
         candidateProvider !== 'offline' && currentProvider === 'offline' ||
         currentPrice <= 0 || candidatePrice > 0 && candidatePrice < currentPrice;
       if (shouldPromote) {
@@ -4491,21 +4580,41 @@ export class HotelAvailabilitySnapshotService {
             routeIds: authoritativeRouteIds.length > 0 ? authoritativeRouteIds : rawRow.routeIds,
           }
         : rawRow;
-      const canonicalHotelId = this.persistedHotelId(row);
-      const routeId = Number(row.itineraryRouteId || row.routeId || 0);
-      const groupType = Number(row.groupType || 0);
+      const rowProvider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+      const rowDate = String(row?.date || row?.checkInDate || row?.itineraryRouteDate || '').slice(0, 10);
+      const routeNight = rowProvider === 'offline' && Array.isArray(row?.nightlyRates)
+        ? row.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === rowDate)
+        : null;
+      const routeRoomCount = Math.max(Number(row?.roomCount || row?.noOfRooms || row?.total_no_of_rooms || 1), 1);
+      const routePricedRow = routeNight
+        ? {
+            ...row,
+            // Automatic selections are persisted per route/night. The offer's
+            // totalStayPrice remains the continuous-stay amount, while these
+            // fields must come from the matching nightlyRates entry.
+            basePricePerNight: Number((Number(routeNight.baseAmount || 0) / routeRoomCount).toFixed(2)),
+            baseTotalPrice: Number(routeNight.baseAmount || 0),
+            baseHotelCost: Number(routeNight.baseAmount || 0),
+            pricePerNight: Number(routeNight.sellAmount || 0),
+            price: Number(routeNight.sellAmount || 0),
+            hotelMarginAmount: Number(routeNight.marginAmount || 0),
+          }
+        : row;
+      const canonicalHotelId = this.persistedHotelId(routePricedRow);
+      const routeId = Number(routePricedRow.itineraryRouteId || routePricedRow.routeId || 0);
+      const groupType = Number(routePricedRow.groupType || 0);
       if (eligibleRouteIds && !eligibleRouteIds.has(routeId)) continue;
-      const approvalRequired = row.requiresHotelApproval === true ||
-        String(row.requiresHotelApproval || '').trim().toLowerCase() === 'true' ||
-        String(row.availabilityStatus || '').trim().toUpperCase() === 'OFFLINE_APPROVAL_REQUIRED' ||
-        String(row.bookingMode || '').trim().toUpperCase() === 'MANUAL_APPROVAL';
-      const approvalCandidate = row.isBookable === false && approvalRequired && row.isSelectable !== false;
-      if ((!canonicalHotelId && !this.hasSupplierIdentity(row)) || !routeId || !groupType ||
-        (row.isBookable === false && !approvalCandidate) || row.isSelectable === false ||
-        missingRequiredSupplementReasons(row).length > 0) continue;
-      const key = hotelSelectionKeyFromRow(planId, row);
+      const approvalRequired = routePricedRow.requiresHotelApproval === true ||
+        String(routePricedRow.requiresHotelApproval || '').trim().toLowerCase() === 'true' ||
+        String(routePricedRow.availabilityStatus || '').trim().toUpperCase() === 'OFFLINE_APPROVAL_REQUIRED' ||
+        String(routePricedRow.bookingMode || '').trim().toUpperCase() === 'MANUAL_APPROVAL';
+      const approvalCandidate = routePricedRow.isBookable === false && approvalRequired && routePricedRow.isSelectable !== false;
+      if ((!canonicalHotelId && !this.hasSupplierIdentity(routePricedRow)) || !routeId || !groupType ||
+        (routePricedRow.isBookable === false && !approvalCandidate) || routePricedRow.isSelectable === false ||
+        missingRequiredSupplementReasons(routePricedRow).length > 0) continue;
+      const key = hotelSelectionKeyFromRow(planId, routePricedRow);
       const bucket = optionsByKey.get(key) || [];
-      bucket.push({ ...row, canonicalHotelId });
+      bucket.push({ ...routePricedRow, canonicalHotelId });
       optionsByKey.set(key, bucket);
     }
 

@@ -143,7 +143,7 @@ const selectionPriority = (row: any): number => {
   return 0;
 };
 
-const selectedView = (row: any): HotelSelectionSelectedView => {
+const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
   let snapshot = parseSnapshot(
     row?.selectedPriceSnapshot ??
     row?.selected_price_snapshot ??
@@ -151,6 +151,38 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
     row?.selection?.selected_price_snapshot,
   );
   const nestedSelection = row?.selection && typeof row.selection === 'object' ? row.selection : {};
+  const normalizedProvider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+  const routeNight = normalizedProvider === 'offline' && Array.isArray(row?.nightlyRates)
+    ? row.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === String(routeDate || '').slice(0, 10))
+    : null;
+  // A continuous offline stay is persisted once at its anchor route. Its
+  // nightlyRates array is the authoritative price source for each covered
+  // route; never expose the anchor night's base total on a later night.
+  if (snapshot && routeNight && Number(routeNight.baseAmount || 0) > 0) {
+    const extraBedAmount = Number(snapshot.extraBedAmount ?? nestedSelection.extraBedAmount ?? row?.extraBedAmount ?? 0);
+    const childWithBedAmount = Number(snapshot.childWithBedAmount ?? nestedSelection.childWithBedAmount ?? row?.childWithBedAmount ?? 0);
+    const childWithoutBedAmount = Number(snapshot.childWithoutBedAmount ?? nestedSelection.childWithoutBedAmount ?? row?.childWithoutBedAmount ?? 0);
+    const supplementTotal = extraBedAmount + childWithBedAmount + childWithoutBedAmount;
+    const marginPercentage = Number(snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? routeNight.marginPercentage ?? 0);
+    const marginBase = Number((Number(routeNight.baseAmount) + supplementTotal).toFixed(2));
+    const marginAmount = Number((marginBase * marginPercentage / 100).toFixed(2));
+    const payableTotal = Number((marginBase + marginAmount).toFixed(2));
+    snapshot = {
+      ...snapshot,
+      basePricePerNight: Number((Number(routeNight.baseAmount) / Math.max(Number(snapshot.totalRooms ?? row?.noOfRooms ?? 1), 1)).toFixed(2)),
+      baseTotalPrice: Number(routeNight.baseAmount),
+      hotelMarginBaseAmount: marginBase,
+      hotelMarginAmount: marginAmount,
+      hotelMarginTotalAmount: marginAmount,
+      pricePerNight: payableTotal,
+      totalPrice: payableTotal,
+      totalStayPrice: payableTotal,
+      totalHotelCost: payableTotal,
+      totalAmount: payableTotal,
+      selectedPricePerNight: payableTotal,
+      selectedTotalPrice: payableTotal,
+    };
+  }
   if (snapshot) {
     const positiveOrNested = (value: unknown, nested: unknown): number =>
       Number(value || 0) > 0 ? Number(value) : Number(nested || 0);
@@ -344,14 +376,26 @@ export function buildHotelSelectionState({
     const routes: HotelSelectionRouteView[] = routesToBuild.map((requiredRoute) => {
       const candidates = groupRows
         .filter((row) => rowRouteIds(row).includes(requiredRoute.routeId))
-        .sort((left, right) => selectionPriority(right) - selectionPriority(left));
+        .sort((left, right) => {
+          // Continuous-stay rows advertise every covered route through
+          // completeStayRouteIds, but their pricing snapshot belongs to the
+          // anchor night. When a route-specific persisted row exists, it must
+          // win for that night so date-specific rates are not copied from the
+          // first night. Keep the continuous-stay row as the fallback when no
+          // exact route row is available.
+          const leftRouteId = Number(left?.itineraryRouteId || left?.routeId || left?.itinerary_route_id || 0);
+          const rightRouteId = Number(right?.itineraryRouteId || right?.routeId || right?.itinerary_route_id || 0);
+          const leftExact = leftRouteId === requiredRoute.routeId ? 1 : 0;
+          const rightExact = rightRouteId === requiredRoute.routeId ? 1 : 0;
+          return rightExact - leftExact || selectionPriority(right) - selectionPriority(left);
+        });
       const selectedRow = candidates.find((row) => selectionPriority(row) >= 3 && !isUnavailableSelection(row));
       const unavailableRow = candidates.find(isUnavailableSelection);
       if (selectedRow) {
         return {
           ...requiredRoute,
           selectionStatus: 'SELECTED' as const,
-          selected: selectedView(selectedRow),
+          selected: selectedView(selectedRow, requiredRoute.routeDate),
         };
       }
       if (unavailableRow) {

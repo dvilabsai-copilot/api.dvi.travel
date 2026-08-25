@@ -33,6 +33,38 @@ type OfflineRoomOffer = {
   childWithoutBedRate: number;
 };
 
+export function selectOfflineRouteNightlyRate(
+  offer: Pick<OfflineRoomOffer, 'nightlyBase' | 'nightlyMargin' | 'nightlySell' | 'roomCount'>,
+  dates: string[],
+  routeDate: string,
+) {
+  const index = dates.indexOf(String(routeDate || '').slice(0, 10));
+  const fallbackIndex = 0;
+  const selectedIndex = index >= 0 ? index : fallbackIndex;
+  const roomCount = Math.max(Number(offer.roomCount || 1), 1);
+  const baseAmount = Number(offer.nightlyBase[selectedIndex] || 0);
+  const marginAmount = Number(offer.nightlyMargin[selectedIndex] || 0);
+  const sellAmount = Number(offer.nightlySell[selectedIndex] || 0);
+  return {
+    index: selectedIndex,
+    baseAmount,
+    marginAmount,
+    sellAmount,
+    basePricePerNight: Number((baseAmount / roomCount).toFixed(2)),
+  };
+}
+
+/** Select the pricebook's room charge without mixing occupancy categories. */
+export function selectOfflineRoomRate(occupancyRates: Record<string, unknown>): number {
+  const roomRate = Number(occupancyRates?.ROOM_RATE);
+  if (Number.isFinite(roomRate) && roomRate > 0) return roomRate;
+  const doubleRate = Number(occupancyRates?.DOUBLE);
+  if (Number.isFinite(doubleRate) && doubleRate > 0) return doubleRate;
+  return [occupancyRates?.SINGLE, occupancyRates?.TRIPLE, occupancyRates?.QUAD]
+    .map((price) => Number(price))
+    .find((price) => Number.isFinite(price) && price > 0) || 0;
+}
+
 // Offline availability exposes the room base for the selected occupancy as a
 // one-night amount. The complete continuous-stay amount remains available in
 // totalStayPrice and nightlyBase, but must not be sent as baseTotalPrice for a
@@ -764,14 +796,18 @@ export class OfflineHotelCatalogService {
         const candidates = matchingRateRows.filter((row: any) => new Date(row.start_date).getTime() <= target && new Date(row.end_date).getTime() >= target);
         candidates.sort((a: any, b: any) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
         const rates = this.parseJsonObject(candidates[0]?.occupancy_rates);
-        const nightlyPrices = [rates.DOUBLE, rates.ROOM_RATE, rates.SINGLE, rates.TRIPLE, rates.QUAD]
-          .map((price) => Number(price)).filter((price) => Number.isFinite(price) && price > 0);
-        if (nightlyPrices.length === 0) {
+        // ROOM_RATE is the authoritative per-room nightly price used by the
+        // itinerary. DOUBLE is the legacy/admin-form fallback only when the
+        // pricebook row has no ROOM_RATE. Taking the minimum occupancy value
+        // silently selected a different rate on nights where ROOM_RATE was
+        // higher (for example 02-Sep: ₹3,675 instead of the stale lower value).
+        const nightlyPrice = selectOfflineRoomRate(rates);
+        if (!(nightlyPrice > 0)) {
           valid = false;
           break;
         }
 
-        const baseAmount = this.hotelPricingService.money(Math.min(...nightlyPrices) * roomsNeeded);
+        const baseAmount = this.hotelPricingService.money(nightlyPrice * roomsNeeded);
         const breakdown = this.hotelPricingService.marginBreakdown(baseAmount, marginPercentage);
         nightlyBase.push(breakdown.baseAmount);
         nightlyMargin.push(breakdown.marginAmount);
@@ -1129,6 +1165,11 @@ export class OfflineHotelCatalogService {
       throw new Error('Offline rate option is no longer priced for every requested night');
     }
 
+    const routeNight = selectOfflineRouteNightlyRate(offer, dateList, resolvedRouteDateOnly);
+    const routeBaseAmount = routeNight.baseAmount || oneNightRoomBase(offer);
+    const routeMarginAmount = routeNight.marginAmount || Number(offer.nightlyMargin[0] || 0);
+    const routeSellAmount = routeNight.sellAmount || Number(offer.nightlySell[0] || 0);
+
     return {
       provider: 'offline',
       hotelId,
@@ -1147,11 +1188,14 @@ export class OfflineHotelCatalogService {
       roomType: offer.roomTitle,
       mealPlan: offer.mealPlan,
       roomCount: offer.roomCount,
-      pricePerNight: offer.pricePerNight,
-      basePricePerNight: oneRoomNightBase(offer),
-      baseTotalPrice: oneNightRoomBase(offer),
+      // The resolved option is consumed by a single itinerary route/night.
+      // Keep totalStayPrice as the complete continuous-stay amount, but make
+      // the route-night fields date-specific instead of reusing night one.
+      pricePerNight: routeSellAmount,
+      basePricePerNight: routeNight.basePricePerNight || oneRoomNightBase(offer),
+      baseTotalPrice: routeBaseAmount,
       hotelMarginPercentage: offer.hotelMarginPercentage,
-      hotelMarginAmount: offer.nightlyMargin[0] || 0,
+      hotelMarginAmount: routeMarginAmount,
       hotelMarginTotalAmount: offer.hotelMarginTotalAmount,
       totalStayPrice: offer.totalStayPrice,
       numberOfNights: dateList.length,
