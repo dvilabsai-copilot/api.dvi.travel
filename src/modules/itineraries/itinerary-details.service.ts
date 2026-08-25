@@ -2888,6 +2888,62 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             const toName = master?.hotspot_name ?? viaLocationName ?? previousStopName;
             const breakRange = this.orderedTimeRange(startTimeText, endTimeText);
 
+ // If the guest is already travelling from the selected hotel to this hotspot,
+ // leave the hotel late enough to arrive when the hotspot opens. Do not expose
+ // an avoidable waiting block in the API timeline.
+            const precedingTravelIndex = (() => {
+              for (let segmentIndex = segments.length - 1; segmentIndex >= 0; segmentIndex -= 1) {
+                if (segments[segmentIndex]?.type === 'travel') return segmentIndex;
+                if (segments[segmentIndex]?.type !== 'hotspot') break;
+              }
+              return -1;
+            })();
+            const precedingTravel = precedingTravelIndex >= 0
+              ? segments[precedingTravelIndex]
+              : null;
+            const routeHotelName = getRouteHotelName();
+            const normalizeTimelineName = (value?: string | null) =>
+              String(value ?? '').trim().toLowerCase();
+            const isTravelFromRouteHotel = Boolean(
+              precedingTravel?.type === 'travel' &&
+              normalizeTimelineName(precedingTravel.from) === normalizeTimelineName(routeHotelName) &&
+              normalizeTimelineName(precedingTravel.to) === normalizeTimelineName(toName),
+            );
+
+            if (isTravelFromRouteHotel && breakRange) {
+              const travelRange = String(precedingTravel.timeRange || '').split(' - ');
+              const travelStart = travelRange[0]?.trim() || null;
+              const travelEnd = travelRange[1]?.trim() || null;
+              const travelStartMinutes = this.parseDisplayTimeMinutesStrict(travelStart);
+              const travelEndMinutes = this.parseDisplayTimeMinutesStrict(travelEnd);
+              const breakStartMinutes = this.parseDisplayTimeMinutesStrict(startTimeText);
+              const breakEndMinutes = this.parseDisplayTimeMinutesStrict(endTimeText);
+
+              if (
+                travelStartMinutes !== null &&
+                travelEndMinutes !== null &&
+                breakStartMinutes !== null &&
+                breakEndMinutes !== null &&
+                travelEndMinutes === breakStartMinutes &&
+                breakEndMinutes > breakStartMinutes
+              ) {
+                const travelMinutes = Math.max(0, travelEndMinutes - travelStartMinutes);
+                const shiftedTravelStart = breakEndMinutes - travelMinutes;
+                const shiftedTravelRange = `${this.minutesToDisplayTime(shiftedTravelStart)} - ${this.minutesToDisplayTime(breakEndMinutes)}`;
+                precedingTravel.timeRange = shiftedTravelRange;
+
+                for (let segmentIndex = precedingTravelIndex - 1; segmentIndex >= 0; segmentIndex -= 1) {
+                  if (segments[segmentIndex]?.type === 'hotspot') {
+                    segments[segmentIndex].anchorTimeRange = shiftedTravelRange;
+                    break;
+                  }
+                  if (segments[segmentIndex]?.type !== 'hotspot') break;
+                }
+
+                continue;
+              }
+            }
+
             segments.push({
               type: 'break' as const,
               location: toName,
