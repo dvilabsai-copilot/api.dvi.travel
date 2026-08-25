@@ -238,5 +238,10 @@ ItineraryRouteNormalizationService,
     ItineraryPdfService,
     ItineraryScenarioSourceService,
   ],
+  exports: [
+    ItineraryAccessService,
+    ItineraryDetailsService,
+    ItineraryHotelDetailsService,
+  ],
 })
 export class ItinerariesModule {}
