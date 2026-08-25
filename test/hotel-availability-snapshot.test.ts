@@ -1934,7 +1934,12 @@ test('reset clears editable selections before rebuilding the live snapshot', asy
 });
 
 test('reset retries the live availability rebuild when the first snapshot has no hotels', async () => {
-  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  let offlineCacheCleared = 0;
+  const service = new HotelAvailabilitySnapshotService(
+    {} as any,
+    {} as any,
+    { clearCache: () => { offlineCacheCleared += 1; } } as any,
+  );
   const calls: any[] = [];
   (service as any).searchAndPersist = async (
     quoteId: string,
@@ -1951,6 +1956,7 @@ test('reset retries the live availability rebuild when the first snapshot has no
   const result = await service.resetAndPersist('DVI20260893', 7);
 
   assert.equal(result.searchRunId, 'live-run');
+  assert.equal(offlineCacheCleared, 1);
   assert.deepEqual(calls, [
     { quoteId: 'DVI20260893', requestType: 'CREATE', createdBy: 7, resetSelections: true },
     { quoteId: 'DVI20260893', requestType: 'CHECK_AVAILABILITY', createdBy: 7, resetSelections: true },

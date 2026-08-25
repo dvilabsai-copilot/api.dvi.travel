@@ -1911,6 +1911,11 @@ export class HotelAvailabilitySnapshotService {
     response: ItineraryHotelDetailsResponseDto;
     changeSummary: HotelAvailabilityChangeSummary;
   }> {
+    // Reset is explicitly requested after admin pricebook edits. Offline
+    // offers contain prices and are cached in-process, so retaining that cache
+    // would persist the previous rate into the new snapshot even though the
+    // database already contains the edited date-specific rate.
+    this.offlineHotelCatalog?.clearCache?.();
     const result = await this.searchAndPersist(quoteId, 'CREATE', createdBy, true);
     const hotelRows = Array.isArray((result.response as any)?.hotels)
       ? (result.response as any).hotels
