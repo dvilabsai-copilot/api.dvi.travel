@@ -753,10 +753,6 @@ private readonly itineraryAccessService: ItineraryAccessService,
         itinerary_route_date: _itineraryRouteDateLegacy,
         check_in_date: _checkInDateLegacy,
         check_out_date: _checkOutDateLegacy,
-        hotelCheckInDate: _hotelCheckInDateLegacy,
-        hotel_check_in_date: _hotelCheckInDateSnake,
-        hotelCheckOutDate: _hotelCheckOutDateLegacy,
-        hotel_check_out_date: _hotelCheckOutDateSnake,
         ...summaryRow
       } = row || {};
       return summaryRow;

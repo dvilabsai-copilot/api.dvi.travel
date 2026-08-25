@@ -1463,6 +1463,8 @@ private getGuideSlotLabel(slotId: number): string {
               ? 'Itinerary room count was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
               : hotelResetReason === 'MEAL_PLAN_CHANGED'
                 ? 'The itinerary meal plan was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
+              : hotelResetReason === 'EARLY_ARRIVAL_CONFIRMED'
+                ? 'Early check-in was confirmed, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
                 : 'The hotel category was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
           planId: result.planId,
           quoteId: result.quoteId,
@@ -1473,6 +1475,8 @@ private getGuideSlotLabel(slotId: number): string {
               ? 'HOTEL_AVAILABILITY_ROOM_COUNT_RESET_FAILED'
               : hotelResetReason === 'MEAL_PLAN_CHANGED'
                 ? 'HOTEL_AVAILABILITY_MEAL_PLAN_RESET_FAILED'
+              : hotelResetReason === 'EARLY_ARRIVAL_CONFIRMED'
+                ? 'HOTEL_AVAILABILITY_EARLY_ARRIVAL_RESET_FAILED'
                 : 'HOTEL_AVAILABILITY_CATEGORY_RESET_FAILED',
           routeChanged: Boolean(result?.routeChanged),
           roomCountChanged: Boolean(result?.roomCountChanged),

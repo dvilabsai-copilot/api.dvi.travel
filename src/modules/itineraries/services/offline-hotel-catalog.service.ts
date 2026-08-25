@@ -146,6 +146,11 @@ const OFFLINE_DESTINATION_ALIASES: Record<string, string[]> = {
   tirupati: ['Tirupathi'],
   pondicherry: ['Puducherry'],
   puducherry: ['Pondicherry'],
+  // Route destinations may contain a locality/landmark while the hotel
+  // catalog is keyed by the canonical city. Keep these verified Chennai
+  // mappings explicit instead of broadening every unknown landmark.
+  'chennai koyembedu': ['Chennai'],
+  'ecr beach': ['Chennai'],
   trivandrum: ['Thiruvananthapuram'],
   thiruvananthapuram: ['Trivandrum'],
 };

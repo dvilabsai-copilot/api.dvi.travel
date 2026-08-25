@@ -11,6 +11,12 @@ test('compact reset response preserves complete per-day hotel inventory for the 
           itineraryRouteId: 11046,
           date: '2026-09-01',
           hotelName: 'MAMALLA HERITAGE',
+          hotelCheckInDate: '2026-08-31',
+          hotelCheckOutDate: '2026-09-02',
+          actualGuestArrivalAt: '2026-09-01T06:00:00.000Z',
+          earlyCheckIn: true,
+          earlyCheckInExtraPaymentApplicable: true,
+          previousDayBillingSynthetic: false,
           rateOptions: [{ id: 'selected-rate' }],
         }],
         hotelTabs: [],
@@ -43,4 +49,10 @@ test('compact reset response preserves complete per-day hotel inventory for the 
   );
   assert.equal((inventory[0] as any).rateOptions, undefined);
   assert.equal(result.hotelDetails.hotels[0].rateOptions, undefined);
+  assert.equal(result.hotelDetails.hotels[0].hotelCheckInDate, '2026-08-31');
+  assert.equal(result.hotelDetails.hotels[0].hotelCheckOutDate, '2026-09-02');
+  assert.equal(result.hotelDetails.hotels[0].actualGuestArrivalAt, '2026-09-01T06:00:00.000Z');
+  assert.equal(result.hotelDetails.hotels[0].earlyCheckIn, true);
+  assert.equal(result.hotelDetails.hotels[0].earlyCheckInExtraPaymentApplicable, true);
+  assert.equal(result.hotelDetails.hotels[0].previousDayBillingSynthetic, false);
 });

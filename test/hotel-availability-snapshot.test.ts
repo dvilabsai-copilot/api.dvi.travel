@@ -199,7 +199,7 @@ test('client recommendation tabs never carry nested hotel inventories', () => {
   assert.equal(tab.stayResults.length, 1);
 });
 
-test('complete persisted reads expose one hotel summary row per stay', () => {
+test('complete persisted reads expose one hotel summary row per recommendation group and stay', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const rows = [1, 2, 3, 4].map((groupType) => ({
     groupType,
@@ -213,9 +213,12 @@ test('complete persisted reads expose one hotel summary row per stay', () => {
 
   const summary = (service as any).buildClientStaySummaryRows(rows);
 
-  assert.equal(summary.length, 1);
-  assert.equal(summary[0].groupType, 3);
-  assert.equal(summary[0].hotelName, 'Hotel 3');
+  assert.equal(summary.length, 4);
+  assert.deepEqual(
+    summary.map((row: any) => row.groupType),
+    [1, 2, 3, 4],
+  );
+  assert.equal(summary.find((row: any) => row.groupType === 3)?.hotelName, 'Hotel 3');
 });
 
 test('complete persisted reads prefer a live supplier over offline fallback per stay', () => {
@@ -586,6 +589,59 @@ test('decorated nested MAP selection replaces parent CP identity and money atomi
   const snapshot = JSON.parse(decorated.selectedPriceSnapshot);
   assert.equal(snapshot.rateOptionId, 'MAP_PLAN');
   assert.match(String(snapshot.optionKey), /map_plan/i);
+});
+
+test('persisted early-arrival selection exposes Day 0 metadata without changing selection identity', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const row: any = {
+    itineraryRouteId: 11045,
+    itineraryRouteDate: '2026-08-31',
+    provider: 'offline',
+    hotelId: 277,
+    hotelCode: '277',
+    hotelName: 'MAMALLA HERITAGE',
+    roomType: 'Standard Double',
+    mealPlan: 'CP',
+    rateOptionId: 'offline:277:733:445:2026-08-31:2026-09-03',
+    pricePerNight: 15213,
+    totalPrice: 15213,
+  };
+  const selection: any = {
+    itinerary_plan_hotel_details_ID: 19977,
+    itinerary_plan_id: 10176,
+    itinerary_route_id: 11045,
+    itinerary_route_date: '2026-08-31',
+    group_type: 1,
+    hotel_id: 277,
+    hotel_code: '277',
+    hotel_provider: 'offline',
+    selected_rate_option_id: row.rateOptionId,
+    selected_price_per_night: 15213,
+    selected_total_price: 15213,
+    early_checkin: 1,
+    early_checkin_extra_payment_applicable: 1,
+    early_checkin_payment_status: 'EXTRA_PAYMENT_APPLICABLE',
+    hotel_check_in_date: '2026-08-30',
+    hotel_check_out_date: '2026-09-01',
+    actual_guest_arrival_at: new Date('2026-08-31T01:00:00.000Z'),
+    early_checkin_note: 'Room to be blocked from 2026-08-30.',
+  };
+
+  const key = hotelSelectionKeyFromRow(10176, row);
+  const decorated = (service as any).decorateSelection(row, new Map([[key, selection]]), 10176);
+
+  assert.equal(decorated.isSelected, true);
+  assert.equal(decorated.hotelName, 'MAMALLA HERITAGE');
+  assert.equal(decorated.roomType, 'Standard Double');
+  assert.equal(decorated.mealPlan, 'CP');
+  assert.equal(decorated.earlyCheckIn, true);
+  assert.equal(decorated.earlyCheckInExtraPaymentApplicable, true);
+  assert.equal(decorated.hotelCheckInDate, '2026-08-30');
+  assert.equal(decorated.hotelCheckOutDate, '2026-09-01');
+  assert.equal(decorated.actualGuestArrivalAt.toISOString(), '2026-08-31T01:00:00.000Z');
+  assert.equal(decorated.previousDayBillingSynthetic, false);
+  assert.equal(decorated.totalPrice, 15213);
+  assert.equal(decorated.selection.earlyCheckIn, undefined);
 });
 
 test('fresh recommendation groups are preserved when reset has no persisted selections', async () => {

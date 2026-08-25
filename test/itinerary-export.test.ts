@@ -66,3 +66,45 @@ test('preference 3 preserves hotel-before-vehicle ordering and no duplicate flow
   assert.ok(values.indexOf('Hotel Recommendation - 1') < values.indexOf('Vehicle Type: SUV | Total Required Vehicle Count: 2 '));
   assert.equal(sheet.getCell('A5').value, 'Hotel Recommendation - 1');
 });
+
+test('early-arrival export includes a non-priced Day 0 hotel block row', async () => {
+  const prisma = prismaFor(1);
+  const originalQueryRaw = prisma.$queryRaw;
+  prisma.$queryRaw = async (strings: TemplateStringsArray, ...values: any[]) => {
+    const sql = strings.join('?');
+    const result = await originalQueryRaw(strings, ...values);
+    if (sql.includes('FROM dvi_itinerary_plan_hotel_details h')) {
+      const detail = result[0];
+      return [
+        {
+          ...detail,
+          itinerary_route_id: 1,
+          itinerary_route_date: new Date('2026-08-31'),
+          early_checkin: 1,
+          hotel_check_in_date: new Date('2026-08-30'),
+          hotel_required: 1,
+          hotel_id: 101,
+        },
+        {
+          itinerary_route_id: 1,
+          itinerary_route_date: new Date('2026-08-30'),
+          itinerary_route_location: 'Agra',
+          hotel_required: 2,
+          hotel_id: 0,
+        },
+      ];
+    }
+    return result;
+  };
+  const { workbook } = await (async () => {
+    const result = await new ItineraryExportService(prisma).exportItineraryToExcel(51788);
+    const buffer = await result.workbook.xlsx.writeBuffer();
+    const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(buffer as Buffer);
+    return { workbook };
+  })();
+  const sheet = workbook.getWorksheet('Worksheet')!;
+  assert.equal(sheet.getCell('A7').value, 'Day 0 | 30 Aug 2026');
+  assert.equal(sheet.getCell('C7').value, 'Saved Hotel List Name (Early check-in room block)');
+  assert.equal(sheet.getCell('J7').value, '');
+  assert.equal(sheet.getCell('A8').value, '31 Aug 2026');
+});

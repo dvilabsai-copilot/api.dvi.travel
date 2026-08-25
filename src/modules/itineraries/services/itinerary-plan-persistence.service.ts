@@ -210,18 +210,20 @@ export function hasItineraryRoomCountChanged(previousPlan: any, travellers: any[
   return previousRoomCount !== resolveItineraryRoomCount(travellers);
 }
 
-export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'MEAL_PLAN_CHANGED' | 'HOTEL_CATEGORY_CHANGED';
+export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'MEAL_PLAN_CHANGED' | 'HOTEL_CATEGORY_CHANGED' | 'EARLY_ARRIVAL_CONFIRMED';
 
 export function getHotelAvailabilityResetReason(result: {
   routeChanged?: boolean;
   roomCountChanged?: boolean;
   mealPlanChanged?: boolean;
   hotelCategoryChanged?: boolean;
+  earlyArrivalChanged?: boolean;
 } | null | undefined): HotelAvailabilityResetReason | null {
   if (result?.routeChanged) return 'ROUTE_CHANGED';
   if (result?.roomCountChanged) return 'ROOM_COUNT_CHANGED';
   if (result?.mealPlanChanged) return 'MEAL_PLAN_CHANGED';
   if (result?.hotelCategoryChanged) return 'HOTEL_CATEGORY_CHANGED';
+  if (result?.earlyArrivalChanged) return 'EARLY_ARRIVAL_CONFIRMED';
   return null;
 }
 
@@ -230,12 +232,14 @@ export function shouldRebuildHotelData(result: {
   roomCountChanged?: boolean;
   mealPlanChanged?: boolean;
   hotelCategoryChanged?: boolean;
+  earlyArrivalChanged?: boolean;
 } | null | undefined): boolean {
   return Boolean(
     result?.routeChanged ||
     result?.roomCountChanged ||
     result?.mealPlanChanged ||
-    result?.hotelCategoryChanged,
+    result?.hotelCategoryChanged ||
+    result?.earlyArrivalChanged,
   );
 }
 
@@ -460,6 +464,7 @@ let itineraryStartTimeChanged = false;
 let roomCountChanged = false;
 let mealPlanChanged = false;
 let hotelCategoryChanged = false;
+let earlyArrivalChanged = false;
 let previousRoutePlan: any = null;
 
  // Increase interactive transaction timeout; hotspot rebuild + hotel lookups can exceed default 5s
@@ -717,6 +722,30 @@ const shouldRebuildTimeline =
             userId,
           )
         : oldRoutes;
+
+      // Confirming early check-in changes the effective hotel stay window even
+      // when routes, rooms, meal plan, and category are unchanged. Mark this
+      // edit so the existing post-save hotel reset rebuilds the snapshot with
+      // the persisted previous-day marker.
+      const firstHotelRouteForArrival = (routes || [])[0] as any;
+      const arrivalTimeForHotelReset = String(dto.plan.trip_start_date || '').match(
+        /T(\d{2}):(\d{2})(?::(\d{2}))?/,
+      );
+      const arrivalSecondsForHotelReset = arrivalTimeForHotelReset
+        ? (Number(arrivalTimeForHotelReset[1]) * 3600) +
+          (Number(arrivalTimeForHotelReset[2]) * 60) +
+          Number(arrivalTimeForHotelReset[3] || 0)
+        : -1;
+      earlyArrivalChanged = Boolean(
+        isPlanUpdate &&
+        (Number(dto.plan.itinerary_preference) === 1 ||
+          Number(dto.plan.itinerary_preference) === 3) &&
+        dto.previousDayBillingDecisionProvided &&
+        dto.previousDayBillingConfirmed &&
+        arrivalSecondsForHotelReset >= 3600 &&
+        arrivalSecondsForHotelReset < 28800 &&
+        Number(firstHotelRouteForArrival?.itinerary_route_ID || 0) > 0,
+      );
 if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
   const firstRoute = await tx.dvi_itinerary_route_details.findFirst({
     where: {
@@ -1235,6 +1264,7 @@ if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
   roomCountChanged,
   mealPlanChanged,
   hotelCategoryChanged,
+  earlyArrivalChanged,
   message:
     "Plan created/updated with routes, travellers, hotspots, and hotels.",
 };
