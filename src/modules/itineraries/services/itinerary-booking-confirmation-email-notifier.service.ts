@@ -75,32 +75,142 @@ export class ItineraryBookingConfirmationEmailNotifierService {
   }
 
   private formatDate(
-    value?: Date | string | null,
-  ): string {
-    if (!value) {
-      return '--';
-    }
+  value?: Date | string | null,
+): string {
+  if (!value) {
+    return '--';
+  }
 
-    const date =
-      value instanceof Date
-        ? value
-        : new Date(value);
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(value);
 
-    if (Number.isNaN(date.getTime())) {
-      return '--';
-    }
+  if (Number.isNaN(date.getTime())) {
+    return '--';
+  }
 
-    return date.toLocaleDateString(
-      'en-IN',
-      {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
+  return date.toLocaleDateString(
+    'en-IN',
+    {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    },
+  );
+}
+
+/**
+ * Resolve recipient emails only from successfully confirmed
+ * live-supplier hotel rows.
+ *
+ * No hotel/vendor email is hardcoded.
+ *
+ * Confirmed hotel:
+ *   dvi_confirmed_itinerary_plan_hotel_details.hotel_id
+ *
+ * Hotel master:
+ *   dvi_hotel.hotel_email
+ */
+private async resolveSupplierHotelEmails(
+  itineraryPlanId: number,
+): Promise<string[]> {
+  const supplierProviders = new Set([
+    'tbo',
+    'vsr',
+    'resavenue',
+    'hobse',
+    'axisrooms',
+    'staah',
+  ]);
+
+  const confirmedHotels =
+    await this.prisma
+      .dvi_confirmed_itinerary_plan_hotel_details
+      .findMany({
+        where: {
+          itinerary_plan_id:
+            itineraryPlanId,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          hotel_id: true,
+          hotel_provider: true,
+        },
+      });
+
+  const supplierHotelRows =
+    confirmedHotels.filter((hotel) =>
+      supplierProviders.has(
+        String(
+          hotel.hotel_provider || '',
+        )
+          .trim()
+          .toLowerCase(),
+      ),
+    );
+
+  if (supplierHotelRows.length === 0) {
+    return [];
+  }
+
+  const supplierHotelIds =
+    Array.from(
+      new Set(
+        supplierHotelRows
+          .map((hotel) =>
+            Number(hotel.hotel_id || 0),
+          )
+          .filter(
+            (hotelId) =>
+              Number.isFinite(hotelId) &&
+              hotelId > 0,
+          ),
+      ),
+    );
+
+  if (supplierHotelIds.length === 0) {
+    this.logger.warn(
+      `Confirmed supplier hotel rows for itinerary ${itineraryPlanId} do not have a canonical hotel_id. Hotel confirmation email cannot be resolved.`,
+    );
+
+    return [];
+  }
+
+  const hotelMasters =
+    await this.prisma.dvi_hotel.findMany({
+      where: {
+        hotel_id: {
+          in: supplierHotelIds,
+        } as any,
       },
+      select: {
+        hotel_id: true,
+        hotel_name: true,
+        hotel_email: true,
+      },
+    });
+
+  const supplierHotelEmails =
+    this.uniqueEmails(
+      hotelMasters.flatMap((hotel) =>
+        this.parseEmails(
+          hotel.hotel_email,
+        ),
+      ),
+    );
+
+  if (supplierHotelEmails.length === 0) {
+    this.logger.warn(
+      `No hotel_email was found for the confirmed supplier hotel(s) of itinerary ${itineraryPlanId}.`,
     );
   }
 
-  private getTransporter(): Transporter | null {
+  return supplierHotelEmails;
+}
+
+private getTransporter(): Transporter | null {
     if (!this.isEnabled()) {
       if (!this.warnedDisabled) {
         this.logger.warn(
@@ -362,19 +472,33 @@ export class ItineraryBookingConfirmationEmailNotifierService {
           settings,
         );
 
-      if (!voucher) {
-        this.logger.warn(
-          `Unsupported itinerary preference ${itineraryPreference}. Plan: ${itineraryPlanId}`,
-        );
+if (!voucher) {
+  this.logger.warn(
+    `Unsupported itinerary preference ${itineraryPreference}. Plan: ${itineraryPlanId}`,
+  );
 
-        return;
-      }
+  return;
+}
 
-      /*
-       * Travel Expert recipient comes from
-       * dvi_staff_details.staff_email via
-       * dvi_agent.travel_expert_id.
-       */
+/*
+ * Supplier hotel recipient comes only from
+ * successfully confirmed hotel rows.
+ *
+ * Hotel Only = 1
+ * Transportation + Hotel = 3
+ */
+const supplierHotelEmails =
+  [1, 3].includes(itineraryPreference)
+    ? await this.resolveSupplierHotelEmails(
+        itineraryPlanId,
+      )
+    : [];
+
+/*
+ * Travel Expert recipient comes from
+ * dvi_staff_details.staff_email via
+ * dvi_agent.travel_expert_id.
+ */
       const travelExpertId = Number(
         agent?.travel_expert_id || 0,
       );
@@ -448,34 +572,52 @@ export class ItineraryBookingConfirmationEmailNotifierService {
           ...travelExpertEmails,
         ]);
 
-      /*
-       * Agent is the primary recipient.
-       * Admin and OPS are CC recipients.
-       *
-       * When Agent email is unavailable,
-       * Admin and OPS become primary recipients.
-       */
-      const toEmails =
-        agentEmails.length > 0
-          ? agentEmails
-          : internalEmails;
+/*
+ * Preserve the existing recipient behaviour:
+ *
+ * - Agent remains primary when available.
+ * - Admin / OPS / mapped Travel Expert remain internal recipients.
+ * - Confirmed supplier hotels receive the same confirmation through BCC,
+ *   so different hotels cannot see one another's email addresses.
+ *
+ * If no existing internal recipient exists, use the first supplier
+ * hotel as the primary recipient and BCC any remaining hotel emails.
+ */
+const primaryEmails =
+  agentEmails.length > 0
+    ? agentEmails
+    : internalEmails;
 
-      const ccEmails =
-        agentEmails.length > 0
-          ? internalEmails.filter(
-              (email) =>
-                !agentEmails.includes(email),
-            )
-          : [];
+const toEmails =
+  primaryEmails.length > 0
+    ? primaryEmails
+    : supplierHotelEmails.slice(0, 1);
 
-      if (toEmails.length === 0) {
-        this.logger.warn(
-          `No Agent, Admin, or OPS email was found for itinerary ${itineraryPlanId}`,
-        );
+const ccEmails =
+  agentEmails.length > 0
+    ? internalEmails.filter(
+        (email) =>
+          !agentEmails.includes(email),
+      )
+    : [];
 
-        return;
-      }
+const bccEmails =
+  supplierHotelEmails.filter(
+    (email) =>
+      !toEmails.includes(email) &&
+      !ccEmails.includes(email),
+  );
 
+if (
+  toEmails.length === 0 &&
+  bccEmails.length === 0
+) {
+  this.logger.warn(
+    `No Agent, Admin, OPS, Travel Expert, or supplier hotel email was found for itinerary ${itineraryPlanId}`,
+  );
+
+  return;
+}
       const frontendBaseUrl = String(
         process.env.FRONTEND_URL ||
           process.env.DVI_FRONTEND_URL ||
@@ -815,27 +957,42 @@ export class ItineraryBookingConfirmationEmailNotifierService {
       ).trim();
 
       await transporter.sendMail({
-        from: {
-          name: fromName,
-          address: fromAddress,
-        },
-        to: toEmails,
-        cc:
-          ccEmails.length > 0
-            ? ccEmails
-            : undefined,
-        subject,
-        text,
-        html,
-      });
+  from: {
+    name: fromName,
+    address: fromAddress,
+  },
 
-      this.logger.log(
-        `Booking confirmation email sent for itinerary ${itineraryPlanId}. To: ${toEmails.join(
-          ', ',
-        )}; CC: ${
-          ccEmails.join(', ') || 'none'
-        }`,
-      );
+  to: toEmails,
+
+  cc:
+    ccEmails.length > 0
+      ? ccEmails
+      : undefined,
+
+  /*
+   * Supplier hotel recipients are deliberately BCC'd.
+   * This prevents one hotel from seeing another hotel's
+   * email address on multi-hotel itineraries.
+   */
+  bcc:
+    bccEmails.length > 0
+      ? bccEmails
+      : undefined,
+
+  subject,
+  text,
+  html,
+});
+
+this.logger.log(
+  `Booking confirmation email sent for itinerary ${itineraryPlanId}. ` +
+    `To: ${toEmails.join(', ')}; ` +
+    `CC: ${ccEmails.join(', ') || 'none'}; ` +
+    `Supplier hotels: ${
+      supplierHotelEmails.join(', ') ||
+      'none'
+    }`,
+);
     } catch (error: any) {
       /*
        * Email failure must never cancel or
