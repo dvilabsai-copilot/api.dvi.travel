@@ -729,36 +729,49 @@ private readonly itineraryAccessService: ItineraryAccessService,
       ...resetHotelDetails
     } = result.response;
     const {
-      sharedHotelInventory: _sharedHotelInventory,
       recommendationAlgorithm: _availabilityRecommendationAlgorithm,
       recommendationGeneration: _availabilityRecommendationGeneration,
+      sharedHotelInventory,
       ...compactAvailability
     } = hotelAvailability || ({} as any);
+
+    // Keep the complete route/day inventory in reset and offline-availability
+    // responses. The compact response intentionally removes rate internals,
+    // but removing this list also removes the alternative hotels needed by
+    // HotelListTable's per-day hotel editor. The selected `hotels` rows alone
+    // are not sufficient because they contain only the current recommendation.
+    const toCompactHotelRow = (row: any) => {
+      const {
+        rateOptions: _rateOptions,
+        roomTypes: _roomTypes,
+        nightlyRates: _nightlyRates,
+        supplementSummary: _supplementSummary,
+        selection: _selection,
+        selectedPriceSnapshot: _selectedPriceSnapshot,
+        selected_price_snapshot: _selectedPriceSnapshotLegacy,
+        itinerary_route_id: _itineraryRouteIdLegacy,
+        itinerary_route_date: _itineraryRouteDateLegacy,
+        check_in_date: _checkInDateLegacy,
+        check_out_date: _checkOutDateLegacy,
+        hotelCheckInDate: _hotelCheckInDateLegacy,
+        hotel_check_in_date: _hotelCheckInDateSnake,
+        hotelCheckOutDate: _hotelCheckOutDateLegacy,
+        hotel_check_out_date: _hotelCheckOutDateSnake,
+        ...summaryRow
+      } = row || {};
+      return summaryRow;
+    };
 
     return {
       hotelDetails: {
         ...resetHotelDetails,
-        hotels: (result.response.hotels || []).map((row: any) => {
-          const {
-            rateOptions: _rateOptions,
-            roomTypes: _roomTypes,
-            nightlyRates: _nightlyRates,
-            supplementSummary: _supplementSummary,
-            selection: _selection,
-            selectedPriceSnapshot: _selectedPriceSnapshot,
-            selected_price_snapshot: _selectedPriceSnapshotLegacy,
-            itinerary_route_id: _itineraryRouteIdLegacy,
-            itinerary_route_date: _itineraryRouteDateLegacy,
-            check_in_date: _checkInDateLegacy,
-            check_out_date: _checkOutDateLegacy,
-            hotelCheckInDate: _hotelCheckInDateLegacy,
-            hotel_check_in_date: _hotelCheckInDateSnake,
-            hotelCheckOutDate: _hotelCheckOutDateLegacy,
-            hotel_check_out_date: _hotelCheckOutDateSnake,
-            ...summaryRow
-          } = row;
-          return summaryRow;
-        }),
+        hotels: (result.response.hotels || []).map(toCompactHotelRow),
+        hotelAvailability: {
+          ...compactAvailability,
+          sharedHotelInventory: Array.isArray(sharedHotelInventory)
+            ? sharedHotelInventory.map(toCompactHotelRow)
+            : [],
+        },
         hotelTabs: (result.response.hotelTabs || []).map((tab: any) => ({
           groupType: tab.groupType,
           label: tab.label,
@@ -791,7 +804,6 @@ private readonly itineraryAccessService: ItineraryAccessService,
             return { ...route, selected: { ...selected, ...snapshot } };
           }),
         })),
-        hotelAvailability: compactAvailability,
       },
       changeSummary: result.changeSummary,
       financialSummary: {
