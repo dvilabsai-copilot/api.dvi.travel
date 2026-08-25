@@ -65,6 +65,17 @@ export function selectOfflineRoomRate(occupancyRates: Record<string, unknown>): 
     .find((price) => Number.isFinite(price) && price > 0) || 0;
 }
 
+/** Resolve an occupancy row using the same latest-covering-row rule as admin. */
+export function selectAdminMatchingOccupancyRow(rows: any[], target: number): any | undefined {
+  return rows
+    .filter((row: any) => {
+      const start = new Date(row.start_date).getTime();
+      const end = new Date(row.end_date).getTime();
+      return Number.isFinite(start) && Number.isFinite(end) && start <= target && end >= target;
+    })
+    .sort((a: any, b: any) => new Date(b.received_at || 0).getTime() - new Date(a.received_at || 0).getTime())[0];
+}
+
 // Offline availability exposes the room base for the selected occupancy as a
 // one-night amount. The complete continuous-stay amount remains available in
 // totalStayPrice and nightlyBase, but must not be sent as baseTotalPrice for a
@@ -793,9 +804,8 @@ export class OfflineHotelCatalogService {
       let valid = true;
       for (const date of dateList) {
         const target = new Date(`${date}T00:00:00.000Z`).getTime();
-        const candidates = matchingRateRows.filter((row: any) => new Date(row.start_date).getTime() <= target && new Date(row.end_date).getTime() >= target);
-        candidates.sort((a: any, b: any) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
-        const rates = this.parseJsonObject(candidates[0]?.occupancy_rates);
+        const selectedRateRow = selectAdminMatchingOccupancyRow(matchingRateRows, target);
+        const rates = this.parseJsonObject(selectedRateRow?.occupancy_rates);
         // ROOM_RATE is the authoritative per-room nightly price used by the
         // itinerary. DOUBLE is the legacy/admin-form fallback only when the
         // pricebook row has no ROOM_RATE. Taking the minimum occupancy value
@@ -1240,8 +1250,7 @@ export class OfflineHotelCatalogService {
     const values = { extraBedRate: 0, childWithBedRate: 0, childWithoutBedRate: 0 };
     for (const date of dates) {
       const target = new Date(`${date}T00:00:00.000Z`).getTime();
-      const row = rows.filter((candidate: any) => new Date(candidate.start_date).getTime() <= target && new Date(candidate.end_date).getTime() >= target)
-        .sort((a: any, b: any) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime())[0];
+      const row = selectAdminMatchingOccupancyRow(rows, target);
       const rates = this.parseJsonObject(row?.occupancy_rates);
       const extra = Number(rates.EXTRABED ?? rates.EXTRA_BED ?? rates.EXTRAADULT ?? 0);
       const child = Number(rates.CHILDWITHBED ?? rates.CHILD_WITH_BED ?? rates.CWB ?? 0);
