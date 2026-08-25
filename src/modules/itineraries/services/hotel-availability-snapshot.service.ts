@@ -383,13 +383,17 @@ export class HotelAvailabilitySnapshotService {
       },
       orderBy: [{ group_type: 'asc' }, { sort_rank: 'asc' }, { id: 'asc' }],
     });
-    const planRows = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
-      // Only hotel_required=1 rows are editable hotel selections.  Previous
-      // night billing markers (2) and non-required legacy rows must never be
-      // allowed to reappear as a selected hotel after a reset.
-      where: { itinerary_plan_id: plan.itinerary_plan_ID, hotel_required: 1, deleted: 0, status: 1 },
+    const persistedPlanHotelRows = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
+      // Read the previous-night markers together with editable selections. The
+      // marker is the durable source of truth for early-arrival billing when a
+      // later hotel rebuild recreates the selected row without its metadata.
+      where: { itinerary_plan_id: plan.itinerary_plan_ID, hotel_required: { in: [1, 2] }, deleted: 0, status: 1 },
       orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
     });
+    const planRows = persistedPlanHotelRows.filter((row: any) => Number(row?.hotel_required || 0) === 1);
+    const earlyArrivalMarkers = persistedPlanHotelRows.filter((row: any) =>
+      Number(row?.hotel_required || 0) === 2 && Number(row?.hotel_id || 0) === 0,
+    );
     const roomDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_room_details;
     const roomDetailRows = roomDetailsModel?.findMany
       ? await roomDetailsModel.findMany({
@@ -423,6 +427,7 @@ export class HotelAvailabilitySnapshotService {
           select: {
             itinerary_route_ID: true,
             itinerary_route_date: true,
+            route_start_time: true,
             next_visiting_location: true,
             location_name: true,
           },
@@ -510,11 +515,60 @@ export class HotelAvailabilitySnapshotService {
     // to the current snapshot and the auto-selected row wins on reload.
     const remappedPlanRows = planRows.map(remapSnapshotRoute).filter(Boolean);
     const remappedRoomDetailRows = roomDetailRows.map(remapSnapshotRoute).filter(Boolean);
+    const earlyArrivalMarkerByRouteGroup = new Map<string, any>(
+      earlyArrivalMarkers.map((marker: any) => [
+        `${Number(marker?.itinerary_route_id || 0)}-${Number(marker?.group_type || 0)}`,
+        marker,
+      ]),
+    );
+    // Early-arrival billing is an itinerary/route decision. A persisted
+    // marker is written for every recommendation group, but supplier rows
+    // from older snapshots can omit or carry a stale group_type. Keep the
+    // exact group match first, then use the route marker as a safe fallback;
+    // this only decorates the existing payable row and never changes its
+    // selection identity, room, meal plan, or price.
+    const earlyArrivalMarkerByRoute = new Map<number, any>();
+    earlyArrivalMarkers.forEach((marker: any) => {
+      const routeId = Number(marker?.itinerary_route_id || 0);
+      if (routeId > 0 && !earlyArrivalMarkerByRoute.has(routeId)) {
+        earlyArrivalMarkerByRoute.set(routeId, marker);
+      }
+    });
+    const earlyArrivalSelectionRows = remappedPlanRows.map((row: any) => {
+      const routeId = Number(row?.itinerary_route_id || row?.itineraryRouteId || 0);
+      const groupType = Number(row?.group_type || row?.groupType || 0);
+      const marker = earlyArrivalMarkerByRouteGroup.get(`${routeId}-${groupType}`) ||
+        earlyArrivalMarkerByRoute.get(routeId);
+      if (!marker) return row;
+
+      const route = currentRoutes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === routeId);
+      const routeDate = route?.itinerary_route_date || row?.itinerary_route_date;
+      const hotelCheckOutDate = routeDate ? new Date(routeDate) : null;
+      if (hotelCheckOutDate && !Number.isNaN(hotelCheckOutDate.getTime())) {
+        hotelCheckOutDate.setUTCDate(hotelCheckOutDate.getUTCDate() + 1);
+      }
+      const actualGuestArrivalAt = (plan as any).trip_start_date_and_time || null;
+      const blockedFromDate = marker?.itinerary_route_date || row?.itinerary_route_date || null;
+      const arrivalDate = actualGuestArrivalAt || routeDate;
+      const earlyCheckInNote = String(marker?.early_checkin_note || '').trim() ||
+        `Guest has opted for early morning check-in with extra payment. Room to be blocked from ${String(blockedFromDate || '').slice(0, 10)}.`;
+
+      return {
+        ...row,
+        early_checkin: 1,
+        early_checkin_extra_payment_applicable: 1,
+        early_checkin_payment_status: 'EXTRA_PAYMENT_APPLICABLE',
+        hotel_check_in_date: blockedFromDate,
+        hotel_check_out_date: hotelCheckOutDate || row?.hotel_check_out_date || null,
+        actual_guest_arrival_at: arrivalDate,
+        early_checkin_note: earlyCheckInNote,
+      };
+    });
     const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
     const searchableRoutes = resolveHotelRequiredRoutes(currentRoutes, noOfNights);
 
     const selectedByRouteGroup = new Map<string, any>();
-    for (const row of remappedPlanRows) {
+    for (const row of earlyArrivalSelectionRows) {
       const key = hotelSelectionKeyFromRow(plan.itinerary_plan_ID, row);
       if (isSpecialHotelPlanRow(row)) continue;
       const current = selectedByRouteGroup.get(key);
@@ -1281,7 +1335,27 @@ export class HotelAvailabilitySnapshotService {
         room_qty: 1,
       }));
     };
-    const normalizedRowsWithRoomSelections = normalizedRows.map((row: any) => {
+    // Final response guard: the Day 0 display flag must survive every later
+    // projection (room selections, pagination, and client-row normalization).
+    // Apply the route-level persisted marker to every recommendation row for
+    // the first hotel route. This is display metadata only; the payable row,
+    // selection identity, room type, meal plan, and totals remain unchanged.
+    const normalizedRowsWithEarlyArrival = normalizedRows.map((row: any) => {
+      const routeId = Number(row?.itineraryRouteId || row?.itinerary_route_id || 0);
+      const marker = earlyArrivalMarkerByRoute.get(routeId);
+      if (!marker || isSpecialHotelPlanRow(row)) return row;
+      return {
+        ...row,
+        ...this.earlyArrivalDisplayFields({
+          early_checkin: 1,
+          hotel_check_in_date: marker.itinerary_route_date,
+          hotel_check_out_date: row.hotel_check_out_date,
+          actual_guest_arrival_at: row.actual_guest_arrival_at || (plan as any).trip_start_date_and_time,
+          early_checkin_note: marker.early_checkin_note,
+        }),
+      };
+    });
+    const normalizedRowsWithRoomSelections = normalizedRowsWithEarlyArrival.map((row: any) => {
       const roomSelections = roomSelectionsForRow(row);
       if (!roomSelections) return row;
       return {
@@ -1368,6 +1442,12 @@ export class HotelAvailabilitySnapshotService {
           .filter((row: any) => !normalizedRows.some((hotel: any) =>
             hotel.isSelected && Number(hotel.selectionId || 0) === Number(row.itinerary_plan_hotel_details_ID),
           )).length,
+        earlyArrivalMarkers: earlyArrivalMarkers.map((marker: any) => ({
+          routeId: Number(marker.itinerary_route_id || 0),
+          groupType: Number(marker.group_type || 0),
+          blockedFromDate: this.toDateOnly(marker.itinerary_route_date),
+          location: String(marker.itinerary_route_location || '').trim(),
+        })),
       } as any,
       recommendationAlgorithm,
       recommendationGeneration,
@@ -2562,9 +2642,13 @@ export class HotelAvailabilitySnapshotService {
   private buildClientStaySummaryRows(rows: any[]): any[] {
     const byStay = new Map<string, any>();
     const stayKey = (row: any): string => {
+      const groupType = Number(row?.groupType || row?.group_type || 0);
       const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
       const date = String(row?.date || row?.checkInDate || row?.itineraryRouteDate || '').slice(0, 10);
-      return `${routeId}|${date}`;
+      // The compact response feeds all recommendation tabs. Group is part of
+      // the identity; omitting it collapses Groups 2-4 into Group 1 before
+      // the frontend can render their early-arrival Day 0 metadata.
+      return `${groupType}|${routeId}|${date}`;
     };
     const rank = (row: any): number => {
       if (row?.isSelected === true || String(row?.selectionOrigin || '').trim()) return 0;
@@ -2621,7 +2705,7 @@ export class HotelAvailabilitySnapshotService {
 
     for (const row of rowsWithContinuousStayCoverage) {
       const key = stayKey(row);
-      if (!key || key === '0|') continue;
+      if (!key || key === '0|0|') continue;
       const current = byStay.get(key);
       if (!current || rank(row) < rank(current)) byStay.set(key, row);
     }
@@ -3003,6 +3087,35 @@ export class HotelAvailabilitySnapshotService {
     };
   }
 
+  private earlyArrivalDisplayFields(selection: any): Record<string, unknown> {
+    const earlyCheckIn = Number(selection?.early_checkin ?? 0) === 1 || selection?.earlyCheckIn === true;
+    if (!earlyCheckIn) return {};
+
+    const hotelCheckInDate = selection?.hotel_check_in_date ?? selection?.hotelCheckInDate ?? null;
+    const hotelCheckOutDate = selection?.hotel_check_out_date ?? selection?.hotelCheckOutDate ?? null;
+    const actualGuestArrivalAt = selection?.actual_guest_arrival_at ?? selection?.actualGuestArrivalAt ?? null;
+    const earlyCheckInExtraPaymentApplicable =
+      Number(selection?.early_checkin_extra_payment_applicable ?? 0) === 1 ||
+      selection?.earlyCheckInExtraPaymentApplicable === true;
+    const earlyCheckInPaymentStatus =
+      selection?.early_checkin_payment_status ?? selection?.earlyCheckInPaymentStatus ?? null;
+    const earlyCheckInNote = selection?.early_checkin_note ?? selection?.hotelierEarlyCheckInNote ?? null;
+
+    return {
+      earlyCheckIn: true,
+      earlyCheckInExtraPaymentApplicable,
+      earlyCheckInPaymentStatus,
+      hotelCheckInDate,
+      hotel_check_in_date: hotelCheckInDate,
+      hotelCheckOutDate,
+      hotel_check_out_date: hotelCheckOutDate,
+      actualGuestArrivalAt,
+      earlyCheckInNote,
+      hotelierEarlyCheckInNote: earlyCheckInNote,
+      previousDayBillingSynthetic: false,
+    };
+  }
+
   private decorateSelection(row: any, selectedByRouteGroup: Map<string, any>, planId: number): any {
       const selection = selectedByRouteGroup.get(hotelSelectionKeyFromRow(planId, row));
     // Availability rows may carry selection flags from an older snapshot.
@@ -3011,6 +3124,11 @@ export class HotelAvailabilitySnapshotService {
     // current hotel after a reload.
     const normalized = {
       ...row,
+      // Early-arrival billing belongs to the persisted route selection, not
+      // to the supplier rate identity. Apply it before room/rate matching so
+      // a stale or changed room option cannot hide Day 0 in one recommendation
+      // group while another group still shows it.
+      ...this.earlyArrivalDisplayFields(selection),
       optionKey: row.optionKey || this.optionKey(row),
       isSelected: false,
       // These fields belong to the previous persisted selection, not to the
@@ -3134,6 +3252,7 @@ export class HotelAvailabilitySnapshotService {
         return {
           ...normalized,
           ...(currentOption || {}),
+          ...this.earlyArrivalDisplayFields(selection),
           isSelected: true,
           selectionOrigin: 'USER_SELECTED',
           selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
@@ -3190,6 +3309,7 @@ export class HotelAvailabilitySnapshotService {
             ...hotelDisplaySnapshot({
               ...normalized,
               ...currentRateRow,
+              ...this.earlyArrivalDisplayFields(selection),
               optionKey: selectedOptionKey,
               rateOptionId: selectedRateOptionId,
               ...(selectedTotal > 0 ? { totalPrice: selectedTotal } : {}),
@@ -3334,6 +3454,7 @@ export class HotelAvailabilitySnapshotService {
     return {
       ...normalized,
       ...(nestedOption || {}),
+      ...this.earlyArrivalDisplayFields(selection),
       rateOptions: normalized.rateOptions,
       ...(selectedTotal > 0
         ? {
@@ -3378,6 +3499,7 @@ export class HotelAvailabilitySnapshotService {
           ...selection,
           ...parseHotelSelectionSnapshot(selection),
           ...currentRateRow,
+          ...this.earlyArrivalDisplayFields(selection),
           optionKey: selectedOptionKey,
           rateOptionId: selectedRateOptionId,
           totalPrice: selectedTotal,
