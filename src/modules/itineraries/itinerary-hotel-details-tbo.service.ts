@@ -2826,16 +2826,10 @@ this.logger.log(
       const extraBedCount = Math.max(Math.trunc(Number(pax?.extraBedCount || 0)), 0);
       if (adults > 0) {
         const adultsPerRoom = Math.max(Math.ceil(adults / roomCount), 1);
-        const occupancyKey = adultsPerRoom <= 1
-          ? 'SINGLE'
-          : adultsPerRoom === 2
-            ? 'DOUBLE'
-            : adultsPerRoom === 3
-              ? 'TRIPLE'
-              : 'QUAD';
+        const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : 'DOUBLE';
         const roomRate = Number(data[occupancyKey]);
         if (Number.isFinite(roomRate) && roomRate > 0) {
-          const extraBeds = Math.max(childWithBedCount + extraBedCount, 0);
+          const extraBeds = Math.max(extraBedCount, 0);
           const extraBedRate = Number(data.EXTRABED ?? data.EXTRAADULT ?? data.EXTRACHILD ?? 0);
           return (roomRate * roomCount) + (Number.isFinite(extraBedRate) && extraBedRate > 0
             ? extraBedRate * extraBeds
@@ -2843,16 +2837,10 @@ this.logger.log(
         }
       }
 
-      const preferredKeys = ['SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'EXTRABED'];
-      for (const key of preferredKeys) {
-        const value = Number(data[key]);
-        if (Number.isFinite(value) && value > 0) return value;
-      }
-
-      for (const value of Object.values(data)) {
-        const num = Number(value);
-        if (Number.isFinite(num) && num > 0) return num;
-      }
+      // A supplement-only row is not a room rate. Do not select a hotel from
+      // EXTRABED/ROOM_RATE or an arbitrary numeric field when SINGLE/DOUBLE
+      // is missing.
+      return 0;
     } catch {
       return 0;
     }
@@ -3410,83 +3398,18 @@ this.logger.log(
         return validRatePlanKeySet.has(key);
       });
 
-      // AxisRooms legacy pricebooks are intentionally not migrated into the
-      // Offline canonical occupancy table. Keep AxisRooms independent: when
-      // no canonical ARI rate exists, read the existing monthly pricebook for
-      // the requested date and shape it like an occupancy row for the rest of
-      // the AxisRooms pricing pipeline.
-      const canonicalAxisKeys = new Set(
-        validOccupancyRows.map((row: any) =>
-          `${Number(row.hotel_id)}|${Number(row.room_id)}|${String(row.rateplan_id || '')}`,
-        ),
-      );
-      const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December',
-      ];
-      const legacyPricebookRows = await (this.prisma as any).dvi_hotel_room_price_book.findMany({
-        where: {
-          hotel_id: { in: hotelIds },
-          room_id: { in: roomIds },
-          year: String(dateOnly.getUTCFullYear()),
-          month: monthNames[dateOnly.getUTCMonth()],
-          status: 1,
-          deleted: 0,
-        },
-        select: {
-          hotel_id: true,
-          room_id: true,
-          price_type: true,
-          [`day_${dateOnly.getUTCDate()}`]: true,
-        } as any,
-      });
-      const legacyOccupancyByRoom = new Map<string, Record<string, number>>();
-      for (const row of legacyPricebookRows as any[]) {
-        const value = Number(row[`day_${dateOnly.getUTCDate()}`]);
-        if (!Number.isFinite(value) || value <= 0) continue;
-        const key = `${Number(row.hotel_id)}|${Number(row.room_id)}`;
-        const occupancy = legacyOccupancyByRoom.get(key) || {};
-        const occupancyKey = Number(row.price_type) === 0
-          ? 'ROOM_RATE'
-          : Number(row.price_type) === 1
-            ? 'EXTRABED'
-            : Number(row.price_type) === 2
-              ? 'CHILD_WITH_BED'
-              : Number(row.price_type) === 3
-                ? 'CHILD_WITHOUT_BED'
-                : '';
-        if (occupancyKey) occupancy[occupancyKey] = value;
-        legacyOccupancyByRoom.set(key, occupancy);
-      }
-      for (const planRow of activeRatePlanRows as any[]) {
-        const planKey = `${Number(planRow.hotel_id)}|${Number(planRow.room_id)}|${String(planRow.rateplan_id || '')}`;
-        if (canonicalAxisKeys.has(planKey)) continue;
-        const occupancyRates = legacyOccupancyByRoom.get(`${Number(planRow.hotel_id)}|${Number(planRow.room_id)}`);
-        if (!occupancyRates || Object.keys(occupancyRates).length === 0) continue;
-        validOccupancyRows.push({
-          hotel_id: Number(planRow.hotel_id),
-          room_id: Number(planRow.room_id),
-          rateplan_id: String(planRow.rateplan_id || ''),
-          occupancy_rates: occupancyRates,
-          start_date: dateOnly,
-          end_date: dateOnly,
-          received_at: new Date(0),
-          source: 'legacy-pricebook',
-        });
-      }
       const effectiveOccupancyByPlan = new Map<string, any>();
       for (const row of validOccupancyRows as any[]) {
-        const startTime = new Date(row.start_date).getTime();
-        const endTime = new Date(row.end_date).getTime();
-        const rangeDays = Math.max(0, Math.round((endTime - startTime) / ItineraryHotelDetailsTboService.ONE_DAY_MS));
         const key = `${Number(row.hotel_id)}|${Number(row.room_id)}|${String(row.rateplan_id || '')}`;
         const current = effectiveOccupancyByPlan.get(key);
-        const currentRangeDays = current
-          ? Math.max(0, Math.round((new Date(current.end_date).getTime() - new Date(current.start_date).getTime()) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
-          : Number.MAX_SAFE_INTEGER;
-        const receivedAt = new Date(row.received_at).getTime();
-        const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
-        if (!current || rangeDays < currentRangeDays || (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)) {
+        const receivedAt = new Date(row.received_at || 0).getTime();
+        const currentReceivedAt = current ? new Date(current.received_at || 0).getTime() : Number.NEGATIVE_INFINITY;
+        const startTime = new Date(row.start_date || 0).getTime();
+        const currentStartTime = current ? new Date(current.start_date || 0).getTime() : Number.NEGATIVE_INFINITY;
+        // The newest received covering row is authoritative. A short,
+        // historical row containing only supplements must not override the
+        // current row containing SINGLE/DOUBLE.
+        if (!current || receivedAt > currentReceivedAt || (receivedAt === currentReceivedAt && startTime > currentStartTime)) {
           effectiveOccupancyByPlan.set(key, row);
         }
       }

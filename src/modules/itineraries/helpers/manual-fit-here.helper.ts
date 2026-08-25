@@ -1682,6 +1682,38 @@ export async function confirmManualHotspotFitHereImpl(
   });
   const persistedRouteHotspotId = Number(persistedManualRow.route_hotspot_ID || 0);
 
+  // Keep a durable link between this confirmed manual insertion and the
+  // hotspots removed to make room for it. The preview attempt is temporary;
+  // deletion/rebuild must still be able to restore these rows later.
+  const confirmedRemovedHotspotIds = Array.from(new Set(
+    (
+      effectiveApplyResult?.resolution?.authoritativeRemovedHotspotIds
+      || effectiveApplyResult?.authoritativeRemovedHotspotIds
+      || entry.removedHotspotsSnapshot?.map((row: any) => row?.id || row?.hotspotId || row?.hotspot_ID)
+      || []
+    )
+      .map((id: any) => Number(id || 0))
+      .filter((id: number) => Number.isFinite(id) && id > 0),
+  ));
+  if (confirmedRemovedHotspotIds.length > 0) {
+    await this.prisma.$transaction(async (tx: any) => {
+      await tx.dvi_itinerary_manual_hotspot_displacement.createMany({
+        data: confirmedRemovedHotspotIds.map((displacedHotspotId: number) => ({
+          itinerary_plan_ID: Number(planId),
+          itinerary_route_ID: Number(entry.routeId),
+          manual_hotspot_ID: Number(entry.selectedHotspotId),
+          displaced_hotspot_ID: displacedHotspotId,
+          createdby: Number(userId || 1),
+          createdon: new Date(),
+          updatedon: new Date(),
+          status: 1,
+          deleted: 0,
+        })),
+        skipDuplicates: true,
+      });
+    });
+  }
+
   await this.deleteManualFitAttemptEntry(entry.attemptId);
   return {
     success: true,

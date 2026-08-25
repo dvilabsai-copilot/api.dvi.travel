@@ -30,6 +30,10 @@ import { HotelAvailabilitySnapshotService } from './services/hotel-availability-
 import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
 import { normalizeHotelDisplayName } from './utils/hotel-selection-identity.util';
 import { resolveStoredHotelPayablePricing } from './utils/hotel-payable-pricing.util';
+import {
+  selectAdminMatchingOccupancyRow,
+  selectOfflineRoomRate,
+} from './services/offline-hotel-catalog.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -545,7 +549,11 @@ export class ItineraryDetailsService {
       .toLowerCase();
   }
 
-  private async resolveOfflineRoomRatePerNight(selected: any): Promise<number> {
+  private async resolveOfflineRoomRatePerNight(
+    selected: any,
+    adults: number,
+    roomCount: number,
+  ): Promise<number> {
     if (String(selected?.provider || '').trim().toLowerCase() !== 'offline') return 0;
     const selectionKey = String(selected?.selectionKey || selected?.rateOptionId || '').trim();
     const keyParts = selectionKey.split(':');
@@ -580,15 +588,52 @@ export class ItineraryDetailsService {
       select: { occupancy_rates: true },
       orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
     });
-    const rawRates = rows?.[0]?.occupancy_rates;
+    const target = new Date(`${date}T00:00:00.000Z`).getTime();
+    const selectedRow = selectAdminMatchingOccupancyRow(rows, target);
+    const rawRates = selectedRow?.occupancy_rates;
     let rates: Record<string, unknown> = {};
     try {
       rates = typeof rawRates === 'string' ? JSON.parse(rawRates) : (rawRates || {});
     } catch {
       return 0;
     }
-    const roomRate = Number(rates.ROOM_RATE);
-    return Number.isFinite(roomRate) && roomRate > 0 ? Number(roomRate.toFixed(2)) : 0;
+    return selectOfflineRoomRate(rates, adults, roomCount);
+  }
+
+  private async resolveAxisRoomsRoomRatePerNight(
+    selected: any,
+    adults: number,
+    roomCount: number,
+  ): Promise<number> {
+    if (String(selected?.provider || '').trim().toLowerCase() !== 'axisrooms') return 0;
+    const reference = String(selected?.selectionKey || selected?.rateOptionId || selected?.bookingCode || '').trim();
+    const match = reference.match(/(?:axisrooms:|AX-)([^:|-]+)[:|-]([^:|-]+)[:|-]([^:|-]+)/i);
+    const hotelId = Number(selected?.canonicalHotelId || selected?.hotelId || selected?.hotel_id || match?.[1] || 0);
+    const roomId = Number(selected?.roomId || selected?.room_id || match?.[2] || 0);
+    const rateplanId = String(selected?.rateplanId || selected?.ratePlanId || selected?.rateplan_id || match?.[3] || '').trim();
+    const date = String(selected?.routeDate || selected?.date || selected?.checkInDate || '').slice(0, 10);
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!hotelId || !roomId || !rateplanId || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !occupancyModel?.findMany) return 0;
+    const rows = await occupancyModel.findMany({
+      where: {
+        hotel_id: hotelId,
+        room_id: roomId,
+        rateplan_id: rateplanId,
+        start_date: { lte: new Date(`${date}T00:00:00.000Z`) },
+        end_date: { gte: new Date(`${date}T00:00:00.000Z`) },
+      },
+      select: { occupancy_rates: true, received_at: true, start_date: true },
+      orderBy: [{ received_at: 'desc' }, { start_date: 'desc' }],
+    });
+    const adultsPerRoom = Math.max(Math.ceil(Math.max(Number(adults || 0), 1) / Math.max(roomCount, 1)), 1);
+    const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : 'DOUBLE';
+    for (const row of rows || []) {
+      let rates: any;
+      try { rates = typeof row.occupancy_rates === 'string' ? JSON.parse(row.occupancy_rates) : row.occupancy_rates || {}; } catch { continue; }
+      const rate = Number(rates?.[occupancyKey]);
+      if (Number.isFinite(rate) && rate > 0) return Number(rate.toFixed(2));
+    }
+    return 0;
   }
 
   private async buildSelectedHotelCostOverride(params: {
@@ -6417,28 +6462,35 @@ const hasRequiredVehicleSelection =
         (selected: any) => String(selected?.provider || '').trim().toLowerCase() === 'offline',
       );
       if (selectedOfflineRoom) {
-        roomRatePerNight = await this.resolveOfflineRoomRatePerNight(selectedOfflineRoom);
         const roomCount = Math.max(
           Number((plan as any).preferred_room_count ?? 0),
           Number((plan as any).room_count ?? 0),
           Number((plan as any).total_room_count ?? 0),
           1,
         );
-        // The persisted availability row already contains the one-night
-        // base amount calculated from dvi_hotel_occupancy_rate. Use it only
-        // as a fallback when the selected snapshot omitted the rate-plan
-        // identity needed for the direct ROOM_RATE lookup.
-        if (roomRatePerNight <= 0) {
-          const selectedAvailabilityRow = (persistedSnapshot?.hotels || []).find((row: any) =>
-            Number(row?.routeId || row?.itineraryRouteId || 0) === Number(selectedOfflineRoom.routeId || 0) &&
-            this.normalizeHotelName(row?.hotelName) === this.normalizeHotelName(selectedOfflineRoom.hotelName) &&
-            Number((row as any)?.startingFromBaseAmount || 0) > 0,
-          );
-          const startingFromBaseAmount = Number((selectedAvailabilityRow as any)?.startingFromBaseAmount || 0);
-          if (startingFromBaseAmount > 0) {
-            roomRatePerNight = Number((startingFromBaseAmount / roomCount).toFixed(2));
-          }
-        }
+        roomRatePerNight = await this.resolveOfflineRoomRatePerNight(
+          selectedOfflineRoom,
+          Number((plan as any).total_adult || 1),
+          roomCount,
+        );
+        oneNightRoomCost = Number((roomRatePerNight * roomCount).toFixed(2));
+      }
+
+      const selectedAxisRooms = selectedRoutes.find(
+        (selected: any) => String(selected?.provider || '').trim().toLowerCase() === 'axisrooms',
+      );
+      if (!selectedOfflineRoom && selectedAxisRooms) {
+        const roomCount = Math.max(
+          Number((plan as any).preferred_room_count ?? 0),
+          Number((plan as any).room_count ?? 0),
+          Number((plan as any).total_room_count ?? 0),
+          1,
+        );
+        roomRatePerNight = await this.resolveAxisRoomsRoomRatePerNight(
+          selectedAxisRooms,
+          Number((plan as any).total_adult || 1),
+          roomCount,
+        );
         oneNightRoomCost = Number((roomRatePerNight * roomCount).toFixed(2));
       }
 

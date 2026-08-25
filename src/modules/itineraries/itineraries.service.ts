@@ -37,6 +37,10 @@ import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.ser
 import { TimelineEnricher } from "./engines/helpers/timeline.enricher";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
 import { SupplementNormalizerService } from "../../modules/hotels/services/supplement-normalizer.service";
+import {
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealText,
+} from "../../modules/hotels/hotel-rate-plans";
 import { normalizeCityName } from "./utils/city-normalization.util";
 import { haversineKm } from "./utils/distance-utils";
 import {
@@ -1779,6 +1783,49 @@ private getGuideSlotLabel(slotId: number): string {
     const anchorRateOptionId = String(data.rateOptionId || data.optionKey || '').trim();
     const anchorSelectionKey = String(data.selectionKey || '').trim();
 
+    // Rate-option identifiers are authoritative for the supplier rate. Do not
+    // allow a stale AP/CP identifier to be saved with the opposite itinerary
+    // meal-plan selection. This is especially important when a preview
+    // snapshot is reused: reuse is safe only when the snapshot belongs to the
+    // requested meal plan.
+    const mealPlanFromReference = (...values: unknown[]): string => {
+      for (const value of values) {
+        const reference = String(value || '').trim().toUpperCase();
+        if (!reference) continue;
+        const planToken = reference.match(/(?:^|[:|_-])(MAP|AP|CP|AI)(?:_PLAN)?(?:$|[:|_-])/i);
+        if (planToken?.[1]) return inferCanonicalHotelRatePlanCode(planToken[1]) || planToken[1].toUpperCase();
+      }
+      return '';
+    };
+    const requestedMealPlan =
+      inferCanonicalHotelRatePlanCode(requestedMeal) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(requestedMeal) ||
+      mealPlanFromReference(requestedMeal);
+    const referencedMealPlan = mealPlanFromReference(
+      data.rateOptionId,
+      data.optionKey,
+      data.selectionKey,
+      data.bookingCode,
+      data.searchReference,
+    );
+    if (requestedMealPlan && referencedMealPlan && requestedMealPlan !== referencedMealPlan) {
+      console.error('[HOTEL_INTENT_MEAL_PLAN_MISMATCH]', JSON.stringify({
+        planId: Number(data.planId),
+        routeId: Number(data.routeId),
+        provider,
+        hotelCode,
+        requestedMealPlan,
+        referencedMealPlan,
+        reusePreviewSnapshot: data.reusePreviewSnapshot === true,
+      }));
+      throw new BadRequestException({
+        code: 'HOTEL_MEAL_PLAN_MISMATCH',
+        message: `Selected rate plan ${referencedMealPlan} does not match requested meal plan ${requestedMealPlan}. Refresh hotel availability and select the ${requestedMealPlan} rate.`,
+        requestedMealPlan,
+        referencedMealPlan,
+      });
+    }
+
     // Resolve the complete contiguous same-destination block on the server.
     // The browser must not calculate previous/next route ids or send them as
     // authority because an anchor can be the first, middle, or last night.
@@ -2026,7 +2073,13 @@ private getGuideSlotLabel(slotId: number): string {
         const meal = String(option.mealPlan || option.mealPlanCode || '').trim();
         if (intent === 'ROOM_TYPE' && requestedRoom && normalize(room) !== normalize(requestedRoom)) return false;
         if (intent === 'MEAL_PLAN' && requestedRoom && normalize(room) !== normalize(requestedRoom)) return false;
-        if (intent === 'MEAL_PLAN' && requestedMeal && normalize(meal) !== normalize(requestedMeal)) return false;
+        // HOTEL and ROOM_TYPE actions preserve the itinerary's global meal
+        // plan just like MEAL_PLAN actions. Without this filter, a card that
+        // displays CP could still select the cheapest AP option when its
+        // concrete rate identity is omitted intentionally.
+        if (requestedMeal &&
+          (intent === 'HOTEL' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') &&
+          normalize(meal) !== normalize(requestedMeal)) return false;
         if ((intent === 'RATE_OPTION' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') && index !== stay.routeIds.indexOf(Number(data.routeId))) {
           if (anchorRoom && normalize(room) !== normalize(anchorRoom)) return false;
           if (anchorMeal && normalize(meal) !== normalize(anchorMeal)) return false;
@@ -2233,6 +2286,7 @@ private getGuideSlotLabel(slotId: number): string {
             : 0;
       return {
         ...data,
+        selectionIntent: data.selectionIntent,
         routeId: Number(selected.routeId), routeDate, groupType,
         hotelId: Number(selected.canonicalHotelId || selected.hotelId || data.hotelId || 0) || null,
         canonicalHotelId: Number(selected.canonicalHotelId || selected.hotelId || data.canonicalHotelId || 0) || null,

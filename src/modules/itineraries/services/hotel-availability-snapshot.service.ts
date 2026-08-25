@@ -1493,6 +1493,16 @@ export class HotelAvailabilitySnapshotService {
         });
       }
 
+      const cacheResetRequested = requestType === 'CREATE' || resetSelections;
+      if (cacheResetRequested) {
+        this.offlineHotelCatalog?.clearCache?.();
+        await this.clearPersistedSearchCache(
+          quoteId,
+          Number(plan.itinerary_plan_ID),
+          requestType === 'CREATE' ? 'FRESH_ITINERARY' : 'HOTEL_RESET_OR_EDIT',
+        );
+      }
+
       this.logger.log('[HOTEL_AVAILABILITY_START]', {
         quoteId,
         planId: plan.itinerary_plan_ID,
@@ -1556,16 +1566,21 @@ export class HotelAvailabilitySnapshotService {
         liveInventoryRows,
         routes,
       );
-      const sourceRows = this.filterSearchableLiveRows(
+      let sourceRows = this.filterSearchableLiveRows(
         currentDatedLiveRows,
         searchableRouteIds,
       );
-      const authoritativeRecommendationRows = this.filterSearchableLiveRows(
+      sourceRows = await this.applyAuthoritativeAxisRoomsRates(sourceRows, plan);
+      let authoritativeRecommendationRows = this.filterSearchableLiveRows(
         this.normalizeRowsToCurrentRouteDates(
           this.extractAuthoritativeRecommendationRows(liveResponse),
           routes,
         ),
         searchableRouteIds,
+      );
+      authoritativeRecommendationRows = await this.applyAuthoritativeAxisRoomsRates(
+        authoritativeRecommendationRows,
+        plan,
       );
       const hasUsableLiveInventory = sourceRows.some((row: any) => {
         const name = String(row?.hotelName || row?.hotel_name || '').trim().toLowerCase();
@@ -1965,6 +1980,20 @@ export class HotelAvailabilitySnapshotService {
     });
     if (!plan) throw new BadRequestException('Itinerary not found');
     return plan;
+  }
+
+  private async clearPersistedSearchCache(quoteId: string, planId: number, reason: string): Promise<void> {
+    const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
+    if (!cache?.deleteMany) return;
+    const result = await cache.deleteMany({
+      where: { quote_id: String(quoteId).trim(), plan_id: Number(planId) },
+    });
+    this.logger.log('[HOTEL_AVAILABILITY_CACHE_CLEARED]', {
+      quoteId,
+      planId,
+      reason,
+      deletedRows: Number(result?.count || 0),
+    });
   }
 
   private getSearchableRouteIds(routes: any[], noOfNights: number): Set<number> {
@@ -2629,12 +2658,68 @@ export class HotelAvailabilitySnapshotService {
         ...row,
         rateOptions: this.canonicalizeRateOptions(row, row.rateOptions || []),
       }));
+    // The shared inventory is the source for the hotel pane.  A property can
+    // be present from both AxisRooms and the offline catalogue, but the pane
+    // must expose one card per property/stay. Keep all concrete offers as
+    // nested rateOptions and use the cheapest offer for the card summary;
+    // AxisRooms wins a price tie over offline.
+    const providerRank = (provider: unknown): number => {
+      const normalized = String(provider || '').trim().toLowerCase();
+      if (normalized === 'axisrooms') return 0;
+      if (normalized === 'tbo') return 1;
+      if (normalized === 'staah') return 2;
+      if (normalized === 'offline') return 3;
+      return 4;
+    };
+    const amountOf = (row: any): number => Number(
+      row?.totalHotelCost ?? row?.totalStayPrice ?? row?.totalPrice ?? row?.totalAmount ?? row?.price ?? row?.pricePerNight ?? 0,
+    );
+    const propertyKey = (row: any): string => {
+      const canonicalId = Number(row?.canonicalHotelId || row?.canonical_hotel_id || row?.hotelId || 0);
+      const name = String(row?.hotelName || row?.hotel_name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const property = canonicalId > 0 ? `id:${canonicalId}` : `name:${name}`;
+      return [
+        Number(row?.itineraryRouteId || row?.routeId || 0),
+        String(row?.date || row?.checkInDate || row?.itineraryRouteDate || '').slice(0, 10),
+        property,
+      ].join('|');
+    };
+    const grouped = new Map<string, any>();
+    for (const row of canonicalRows) {
+      const key = propertyKey(row);
+      const existing = grouped.get(key);
+      const offers = [
+        ...(Array.isArray(row.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row]),
+      ];
+      if (!existing) {
+        grouped.set(key, { ...row, rateOptions: offers });
+        continue;
+      }
+      const existingAmount = amountOf(existing);
+      const candidateAmount = amountOf(row);
+      const candidateWins = candidateAmount < existingAmount || (
+        candidateAmount === existingAmount &&
+        providerRank(row.provider || row.hotel_provider) < providerRank(existing.provider || existing.hotel_provider)
+      );
+      const mergedOptions = this.canonicalizeRateOptions(existing, [
+        ...(existing.rateOptions || []),
+        ...offers,
+      ]);
+      grouped.set(key, {
+        ...(candidateWins ? row : existing),
+        rateOptions: mergedOptions,
+      });
+    }
+    const oneCardPerProperty = Array.from(grouped.values()).map((row: any) => ({
+      ...row,
+      rateOptions: this.canonicalizeRateOptions(row, row.rateOptions || []),
+    }));
     return decorateHotelCardPricing(
       // Shared inventory is deliberately group-neutral. The same physical
       // hotel/rate must appear once for a stay, not once per recommendation
       // group. Group identity belongs to the automatic selection state, not
       // to the common inventory shown in every pane.
-      canonicalRows,
+      oneCardPerProperty,
       new Map(),
     );
   }
@@ -4289,6 +4374,178 @@ export class HotelAvailabilitySnapshotService {
   }
 
   /**
+   * AxisRooms rows are database-backed. Reconcile every live row with the
+   * newest covering occupancy row before it can enter the cache or selection
+   * tables. This is deliberately a last-mile guard because older persisted
+   * supplier snapshots can still contain baseHotelCost/price values.
+   */
+  private async applyAuthoritativeAxisRoomsRates(rows: any[], plan: any): Promise<any[]> {
+    const axisRows = (rows || []).filter((row: any) =>
+      String(row?.provider || row?.hotel_provider || '').trim().toLowerCase() === 'axisrooms',
+    );
+    if (axisRows.length === 0) return rows;
+
+    const identities = axisRows.map((row: any) => {
+      const reference = String(row?.rateOptionId || row?.rate_option_id || row?.bookingCode || row?.booking_code || '').trim();
+      const match = reference.match(/(?:axisrooms:|AX-)([^:|-]+)[:|-]([^:|-]+)[:|-]([^:|-]+)(?::([^:|-]+))?/i);
+      return {
+        row,
+        hotelId: Number(row?.canonicalHotelId || row?.hotelId || row?.hotel_id || match?.[1] || 0),
+        roomId: Number(row?.roomId || row?.room_id || match?.[2] || 0),
+        rateplanId: String(row?.rateplanId || row?.ratePlanId || row?.rateplan_id || match?.[3] || '').trim(),
+        date: String(row?.date || row?.checkInDate || row?.check_in_date || '').slice(0, 10),
+      };
+    }).filter((item: any) => item.hotelId > 0 && item.roomId > 0 && item.rateplanId && /^\d{4}-\d{2}-\d{2}$/.test(item.date));
+    if (identities.length === 0) return rows;
+
+    const hotelIds = [...new Set(identities.map((item: any) => item.hotelId))];
+    const roomIds = [...new Set(identities.map((item: any) => item.roomId))];
+    const requestedMealPlanCode = this.getPlanMealPlanCode(plan);
+    const requestedRateplanId = requestedMealPlanCode ? `${requestedMealPlanCode}_PLAN` : '';
+    const rateplanIds = [...new Set([
+      ...identities.map((item: any) => item.rateplanId),
+      ...(requestedRateplanId ? [requestedRateplanId] : []),
+    ])];
+    const dates = identities.map((item: any) => item.date).sort();
+    const occupancyRows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
+      where: {
+        hotel_id: { in: hotelIds },
+        room_id: { in: roomIds },
+        rateplan_id: { in: rateplanIds },
+        start_date: { lte: new Date(`${dates[dates.length - 1]}T00:00:00.000Z`) },
+        end_date: { gte: new Date(`${dates[0]}T00:00:00.000Z`) },
+      },
+      select: { hotel_id: true, room_id: true, rateplan_id: true, start_date: true, end_date: true, received_at: true, occupancy_rates: true },
+    });
+
+    const adults = Math.max(Math.trunc(Number(plan?.total_adult || 0)), 0);
+    const roomCount = Math.max(Math.trunc(Number(plan?.preferred_room_count || 1)), 1);
+    const adultsPerRoom = Math.max(Math.ceil(adults / roomCount), 1);
+    const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : 'DOUBLE';
+    const extraBedCount = Math.max(Math.trunc(Number(plan?.total_extra_bed || 0)), 0);
+    const childWithBedCount = Math.max(Math.trunc(Number(plan?.total_child_with_bed || 0)), 0);
+    const childWithoutBedCount = Math.max(Math.trunc(Number(plan?.total_child_without_bed || 0)), 0);
+    const rowKey = (hotelId: number, roomId: number, rateplanId: string) => `${hotelId}|${roomId}|${rateplanId}`;
+    const matchingRows = new Map<string, any[]>();
+    for (const occupancy of occupancyRows || []) {
+      const key = rowKey(Number(occupancy.hotel_id), Number(occupancy.room_id), String(occupancy.rateplan_id || ''));
+      const list = matchingRows.get(key) || [];
+      list.push(occupancy);
+      matchingRows.set(key, list);
+    }
+
+    const corrected = new Map<any, any>();
+    for (const identity of identities) {
+      // The supplier row may carry the first plan returned (for example AP)
+      // while the itinerary requests CP.  The occupancy table is authoritative
+      // for the requested plan, so use that plan's row when it exists instead
+      // of treating a rateConditions label as a priced CP offer.
+      const coversDate = (candidate: any): boolean =>
+        new Date(candidate.start_date).getTime() <= new Date(`${identity.date}T00:00:00.000Z`).getTime() &&
+        new Date(candidate.end_date).getTime() >= new Date(`${identity.date}T00:00:00.000Z`).getTime();
+      const requestedCandidates = requestedRateplanId
+        ? (matchingRows.get(rowKey(identity.hotelId, identity.roomId, requestedRateplanId)) || []).filter(coversDate)
+        : [];
+      const originalCandidates = (matchingRows.get(rowKey(identity.hotelId, identity.roomId, identity.rateplanId)) || []).filter(coversDate);
+      const sourceCandidates = requestedCandidates.length > 0 ? requestedCandidates : originalCandidates;
+      const effectiveRateplanId = requestedCandidates.length > 0
+        ? requestedRateplanId
+        : identity.rateplanId;
+      const candidates = sourceCandidates
+        .sort((a: any, b: any) => new Date(b.received_at || 0).getTime() - new Date(a.received_at || 0).getTime());
+      let rates: any = null;
+      for (const candidate of candidates) {
+        const parsed = typeof candidate.occupancy_rates === 'string' ? this.parsePayload(candidate.occupancy_rates) : candidate.occupancy_rates;
+        if (parsed && Number(parsed[occupancyKey]) > 0) { rates = parsed; break; }
+      }
+      const row = identity.row;
+      if (!rates) {
+        corrected.set(row, { ...row, price: 0, pricePerNight: 0, totalPrice: 0, totalStayPrice: 0, totalHotelCost: 0, isSelectable: false, isBookable: false, availabilityStatus: 'UNAVAILABLE', availabilityMessage: 'Hotel rate not available' });
+        continue;
+      }
+      const roomRate = Number(rates[occupancyKey]);
+      const extraBedRate = Number(rates.EXTRABED || rates.EXTRAADULT || 0);
+      const childWithBedRate = Number(rates.CHILD_WITH_BED || 0);
+      const childWithoutBedRate = Number(rates.CHILD_WITHOUT_BED || 0);
+      const extraBedAmount = extraBedRate * extraBedCount;
+      const childWithBedAmount = childWithBedRate * childWithBedCount;
+      const childWithoutBedAmount = childWithoutBedRate * childWithoutBedCount;
+      const rawTotal = roomRate * roomCount + extraBedAmount + childWithBedAmount + childWithoutBedAmount;
+      const planLabel = requestedCandidates.length > 0 ? requestedMealPlanCode : null;
+      const replaceRateplan = (value: unknown): string => String(value || '').replace(
+        /(?:AP|MAP|CP|EP)_PLAN/i,
+        effectiveRateplanId,
+      );
+      const correctedRateOptions = Array.isArray(row.rateOptions)
+        ? row.rateOptions.map((option: any) => {
+            const optionReference = String(option?.rateOptionId || option?.rate_option_id || option?.bookingCode || '').trim();
+            const optionMatch = optionReference.match(/(?:axisrooms:|AX-)([^:|-]+)[:|-]([^:|-]+)[:|-]([^:|-]+)/i);
+            const optionRateplan = String(option?.rateplanId || option?.ratePlanId || option?.rateplan_id || optionMatch?.[3] || '').trim();
+            if (optionRateplan !== identity.rateplanId) return option;
+            return {
+              ...option,
+              ...(planLabel ? {
+                mealPlan: planLabel,
+                mealPlanCode: planLabel,
+                rateplanId: effectiveRateplanId,
+                rateOptionId: replaceRateplan(option.rateOptionId || option.rate_option_id),
+                bookingCode: replaceRateplan(option.bookingCode || option.booking_code),
+                searchReference: replaceRateplan(option.searchReference || option.search_reference),
+              } : {}),
+              basePricePerNight: roomRate,
+              baseHotelCost: roomRate * roomCount,
+              baseTotalPrice: roomRate * roomCount,
+              price: rawTotal,
+              pricePerNight: rawTotal,
+              totalPrice: rawTotal,
+              totalStayPrice: rawTotal,
+              totalHotelCost: rawTotal,
+              extraBedRate,
+              extraBedAmount,
+              childWithBedRate,
+              childWithBedAmount,
+              childWithoutBedRate,
+              childWithoutBedAmount,
+              priceSource: 'DATABASE',
+            };
+          })
+        : row.rateOptions;
+      corrected.set(row, {
+        ...row,
+        ...(planLabel ? {
+          mealPlan: planLabel,
+          mealPlanCode: planLabel,
+          rateplanId: effectiveRateplanId,
+          rateOptionId: replaceRateplan(row.rateOptionId || row.rate_option_id),
+          bookingCode: replaceRateplan(row.bookingCode || row.booking_code),
+          searchReference: replaceRateplan(row.searchReference || row.search_reference),
+        } : {}),
+        basePricePerNight: roomRate,
+        baseHotelCost: roomRate * roomCount,
+        baseTotalPrice: roomRate * roomCount,
+        price: rawTotal,
+        pricePerNight: rawTotal,
+        totalPrice: rawTotal,
+        totalStayPrice: rawTotal,
+        totalHotelCost: rawTotal,
+        extraBedRate,
+        extraBedAmount,
+        childWithBedRate,
+        childWithBedAmount,
+        childWithoutBedRate,
+        childWithoutBedAmount,
+        rateOptions: correctedRateOptions,
+        priceSource: 'DATABASE',
+        isSelectable: true,
+        isBookable: true,
+        availabilityStatus: 'AVAILABLE',
+        availabilityMessage: null,
+      });
+    }
+    return (rows || []).map((row: any) => corrected.get(row) || row);
+  }
+
+  /**
    * Keep the group-scoped automatic recommendation separate from the
    * group-neutral shared inventory used by the manual hotel picker.
    */
@@ -4882,6 +5139,21 @@ export class HotelAvailabilitySnapshotService {
       const sortedOptions = [...eligibleOptions].sort((a, b) => {
         const priceDelta = this.authoritativeAutoTotal(a) - this.authoritativeAutoTotal(b);
         if (priceDelta !== 0) return priceDelta;
+        // When the payable amounts tie, prefer a live AxisRooms rate over
+        // the offline catalogue.  The provider must be deterministic here;
+        // optionKey ordering is not a business rule and could select the
+        // offline copy merely because it sorts first.
+        const providerRank = (provider: unknown): number => {
+          const normalized = String(provider || '').trim().toLowerCase();
+          if (normalized === 'axisrooms') return 0;
+          if (normalized === 'tbo') return 1;
+          if (normalized === 'staah') return 2;
+          if (normalized === 'offline') return 3;
+          return 4;
+        };
+        const providerDelta = providerRank(a?.provider || a?.hotel_provider) -
+          providerRank(b?.provider || b?.hotel_provider);
+        if (providerDelta !== 0) return providerDelta;
         return this.optionKey(a).localeCompare(this.optionKey(b));
       });
       const routeId = Number(sortedOptions[0]?.itineraryRouteId || sortedOptions[0]?.routeId || 0);
@@ -5023,20 +5295,9 @@ export class HotelAvailabilitySnapshotService {
       // base/total pair from a previous search, so resolve the matching ARI
       // row before writing the durable hotel-detail row.
       if (provider === 'axisrooms') {
-        const axisBase = Math.max(
-          await this.resolveAxisRoomsBasePrice(tx, option, plan, roomCount),
-          Number(
-            option.baseTotalPrice ??
-            option.base_total_price ??
-            option.baseHotelCost ??
-            option.base_hotel_cost ??
-            option.totalRoomCost ??
-            option.total_room_cost ??
-            option.price ??
-            option.pricePerNight ??
-            0,
-          ),
-        );
+        // Occupancy rates are the only authoritative AxisRooms source.
+        // Do not revive the legacy cached/base price when no rate exists.
+        const axisBase = await this.resolveAxisRoomsBasePrice(tx, option, plan, roomCount);
         if (axisBase > 0) {
           baseTotalPrice = axisBase;
           marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
@@ -5244,10 +5505,21 @@ export class HotelAvailabilitySnapshotService {
       : allowOfflineFallback
         ? selectable
         : [];
-    return [...candidates].sort((left, right) =>
-      this.authoritativeAutoTotal(left) - this.authoritativeAutoTotal(right) ||
-      this.optionKey(left).localeCompare(this.optionKey(right)),
-    )[0] || null;
+    const providerRank = (provider: unknown): number => {
+      const normalized = String(provider || '').trim().toLowerCase();
+      if (normalized === 'axisrooms') return 0;
+      if (normalized === 'tbo') return 1;
+      if (normalized === 'staah') return 2;
+      if (normalized === 'offline') return 3;
+      return 4;
+    };
+    return [...candidates].sort((left, right) => {
+      const priceDelta = this.authoritativeAutoTotal(left) - this.authoritativeAutoTotal(right);
+      if (priceDelta !== 0) return priceDelta;
+      const providerDelta = providerRank(left?.provider || left?.hotel_provider) -
+        providerRank(right?.provider || right?.hotel_provider);
+      return providerDelta || this.optionKey(left).localeCompare(this.optionKey(right));
+    })[0] || null;
   }
 
   private buildSelectionUpdate(selection: any, option: any, origin: string, searchRunId: string): Record<string, unknown> {
@@ -5344,33 +5616,34 @@ export class HotelAvailabilitySnapshotService {
       select: { occupancy_rates: true, start_date: true, received_at: true },
       orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
     });
-    const row = Array.isArray(rows) ? rows[0] : null;
-    if (!row) return 0;
-
-    let rates: Record<string, unknown> = {};
-    try {
-      rates = typeof row.occupancy_rates === 'string'
-        ? JSON.parse(row.occupancy_rates)
-        : (row.occupancy_rates || {});
-    } catch {
-      return 0;
-    }
     const adults = Math.max(Math.trunc(Number(plan?.total_adult || 0)), 0);
     const adultsPerRoom = Math.max(Math.ceil(adults / Math.max(roomCount, 1)), 1);
-    const occupancyKey = adultsPerRoom <= 1
-      ? 'SINGLE'
-      : adultsPerRoom === 2
-        ? 'DOUBLE'
-        : adultsPerRoom === 3
-          ? 'TRIPLE'
-          : 'QUAD';
-    const roomRate = Number(rates[occupancyKey]);
-    if (!Number.isFinite(roomRate) || roomRate <= 0) return 0;
+    const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : 'DOUBLE';
 
-    const extraBeds = Math.max(
-      Math.trunc(Number(plan?.total_child_with_bed || 0)) + Math.trunc(Number(plan?.total_extra_bed || 0)),
-      0,
-    );
+    const sortedRows = [...(Array.isArray(rows) ? rows : [])].sort((a: any, b: any) => {
+      const receivedDelta = new Date(b?.received_at || 0).getTime() - new Date(a?.received_at || 0).getTime();
+      if (receivedDelta !== 0) return receivedDelta;
+      return new Date(b?.start_date || 0).getTime() - new Date(a?.start_date || 0).getTime();
+    });
+    let rates: Record<string, unknown> | null = null;
+    for (const candidate of sortedRows) {
+      try {
+        const parsed = typeof candidate?.occupancy_rates === 'string'
+          ? JSON.parse(candidate.occupancy_rates)
+          : (candidate?.occupancy_rates || {});
+        const candidateRate = Number(parsed?.[occupancyKey]);
+        if (Number.isFinite(candidateRate) && candidateRate > 0) {
+          rates = parsed;
+          break;
+        }
+      } catch {
+        // Ignore malformed historical rows and continue looking for a valid rate.
+      }
+    }
+    if (!rates) return 0;
+    const roomRate = Number(rates[occupancyKey]);
+
+    const extraBeds = Math.max(Math.trunc(Number(plan?.total_extra_bed || 0)), 0);
     const extraBedRate = Number(rates.EXTRABED ?? rates.EXTRAADULT ?? rates.EXTRACHILD ?? 0);
     const total = roomRate * Math.max(roomCount, 1) +
       (Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate * extraBeds : 0);

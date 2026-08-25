@@ -143,6 +143,7 @@ export class ItinerarySelectionWorkflowService {
     routeId: number;
     hotelId: number | null;
     roomTypeId: number;
+    selectionIntent?: 'HOTEL' | 'ROOM_TYPE' | 'MEAL_PLAN' | 'RATE_OPTION';
  groupType?: number; // ADD groupType parameter
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean; };
     canonicalHotelId?: number | null;
@@ -1024,7 +1025,8 @@ export class ItinerarySelectionWorkflowService {
         for (const hotel of hotels) {
           await this.selectHotel({
             planId,
-            routeId: hotel.routeId,
+          routeId: hotel.routeId,
+            selectionIntent: hotel.selectionIntent,
             hotelId: hotel.hotelId,
             roomTypeId: hotel.roomTypeId || 1,
             groupType: hotel.groupType,
@@ -1036,8 +1038,8 @@ export class ItinerarySelectionWorkflowService {
             provider: hotel.provider,
             hotelCode: hotel.hotelCode,
             optionKey: hotel.optionKey,
-            pricePerNight: hotel.pricePerNight,
-            totalPrice: hotel.totalPrice,
+            pricePerNight: hotel.selectionIntent === 'RATE_OPTION' ? hotel.pricePerNight : undefined,
+            totalPrice: hotel.selectionIntent === 'RATE_OPTION' ? hotel.totalPrice : undefined,
             currency: hotel.currency,
             hotelName: hotel.hotelName,
             category: hotel.category,
@@ -1092,7 +1094,24 @@ export class ItinerarySelectionWorkflowService {
     const provider = String(data.provider || '').trim().toLowerCase();
     if (!provider || provider === 'offline') return;
 
-    if (provider === 'axisrooms') {
+    // A property/room/meal selection is intentionally not a concrete rate
+    // selection. It must be resolved by the current availability source
+    // (AxisRooms occupancy data for AX) rather than compared with a stale
+    // client/container price from the search cache. Exact RATE_OPTION
+    // selections continue through the strict snapshot identity/price check.
+    const selectionIntent = String(data.selectionIntent || '').trim().toUpperCase();
+    const hasExplicitRateIdentity = [
+      data.selectionKey,
+      data.rateOptionId,
+      data.optionKey,
+      data.searchReference,
+      data.bookingCode,
+    ].some((value) => String(value || '').trim().length > 0);
+    if (['HOTEL', 'ROOM_TYPE', 'MEAL_PLAN'].includes(selectionIntent) && !hasExplicitRateIdentity) {
+      return;
+    }
+
+    if (provider === 'axisrooms' || provider === 'ax') {
       this.assertAxisRoomsReferenceMatchesRoute(data, route);
 
       // AxisRooms is not a live-search snapshot provider in this flow. Its
@@ -1101,6 +1120,25 @@ export class ItinerarySelectionWorkflowService {
       // a row in dvi_itinerary_hotel_search_cache, which may be absent or
       // belong to a different search run.
       if (await this.isCurrentAxisRoomsDatabaseRate(data, route)) return;
+
+      // HOTEL/ROOM_TYPE/MEAL_PLAN actions intentionally omit supplier rate
+      // identities. The card is a selection intent, and the authoritative
+      // SINGLE/DOUBLE/EXTRABED/child rate must be resolved from the current
+      // occupancy-rate tables by the selection service. Requiring a nested
+      // rateOptionId here makes a valid CP card fail as stale before that
+      // resolver runs. RATE_OPTION actions still fall through and require an
+      // exact supplier identity.
+      const selectionIntent = String(data.selectionIntent || '').trim().toUpperCase();
+      const hasExplicitRateIdentity = [
+        data.selectionKey,
+        data.rateOptionId,
+        data.optionKey,
+        data.searchReference,
+        data.bookingCode,
+      ].some((value) => String(value || '').trim().length > 0);
+      if (['HOTEL', 'ROOM_TYPE', 'MEAL_PLAN'].includes(selectionIntent) && !hasExplicitRateIdentity) {
+        return;
+      }
     }
 
     const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
@@ -1434,11 +1472,11 @@ export class ItinerarySelectionWorkflowService {
     const adults = Math.max(Math.trunc(Number(pax?.adults || 0)), 0);
     if (adults > 0) {
       const adultsPerRoom = Math.max(Math.ceil(adults / roomCount), 1);
-      const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : adultsPerRoom === 2 ? 'DOUBLE' : adultsPerRoom === 3 ? 'TRIPLE' : 'QUAD';
+      const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : 'DOUBLE';
       const roomRate = Number(values[occupancyKey]);
       if (Number.isFinite(roomRate) && roomRate > 0) {
         const extraBeds = Math.max(
-          Math.trunc(Number(pax?.childWithBedCount || 0)) + Math.trunc(Number(pax?.extraBedCount || 0)),
+          Math.trunc(Number(pax?.extraBedCount || 0)),
           0,
         );
         const extraBedRate = Number(values.EXTRABED ?? values.EXTRAADULT ?? values.EXTRACHILD ?? 0);

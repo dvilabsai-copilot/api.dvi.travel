@@ -54,15 +54,19 @@ export function selectOfflineRouteNightlyRate(
   };
 }
 
-/** Select the pricebook's room charge without mixing occupancy categories. */
-export function selectOfflineRoomRate(occupancyRates: Record<string, unknown>): number {
-  const roomRate = Number(occupancyRates?.ROOM_RATE);
-  if (Number.isFinite(roomRate) && roomRate > 0) return roomRate;
-  const doubleRate = Number(occupancyRates?.DOUBLE);
-  if (Number.isFinite(doubleRate) && doubleRate > 0) return doubleRate;
-  return [occupancyRates?.SINGLE, occupancyRates?.TRIPLE, occupancyRates?.QUAD]
-    .map((price) => Number(price))
-    .find((price) => Number.isFinite(price) && price > 0) || 0;
+/** Select the canonical room charge from SINGLE/DOUBLE only. */
+export function selectOfflineRoomRate(
+  occupancyRates: Record<string, unknown>,
+  adults = 2,
+  roomCount = 1,
+): number {
+  const adultsPerRoom = Math.max(
+    Math.ceil(Math.max(Number(adults || 0), 1) / Math.max(Number(roomCount || 1), 1)),
+    1,
+  );
+  const key = adultsPerRoom === 1 ? 'SINGLE' : 'DOUBLE';
+  const rate = Number(occupancyRates?.[key]);
+  return Number.isFinite(rate) && rate > 0 ? rate : 0;
 }
 
 /** Resolve an occupancy row using the same latest-covering-row rule as admin. */
@@ -816,7 +820,7 @@ export class OfflineHotelCatalogService {
         // pricebook row has no ROOM_RATE. Taking the minimum occupancy value
         // silently selected a different rate on nights where ROOM_RATE was
         // higher (for example 02-Sep: ₹3,675 instead of the stale lower value).
-        const nightlyPrice = selectOfflineRoomRate(rates);
+        const nightlyPrice = selectOfflineRoomRate(rates, adultCount, roomsNeeded);
         if (!(nightlyPrice > 0)) {
           valid = false;
           break;
