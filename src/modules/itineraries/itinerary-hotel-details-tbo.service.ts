@@ -136,6 +136,13 @@ export class ItineraryHotelDetailsTboService {
    */
   private buildSharedHotelInventory(rows: any[]): any[] {
     const seen = new Set<string>();
+    const visibleOfferKey = (row: any): string => [
+      String(row?.provider || '').trim().toLowerCase(),
+      String(row?.canonicalHotelId || row?.hotelId || row?.providerHotelCode || row?.hotelCode || '').trim().toLowerCase(),
+      String(row?.roomType || row?.roomTypeName || '').trim().toLowerCase(),
+      String(row?.mealPlan || '').trim().toLowerCase(),
+      Number(row?.totalPrice ?? row?.totalStayPrice ?? row?.totalHotelCost ?? row?.pricePerNight ?? row?.price ?? 0).toFixed(2),
+    ].join('|');
     return (rows || [])
       .filter((row: any) => {
         const name = String(row?.hotelName || '').trim().toLowerCase();
@@ -155,7 +162,7 @@ export class ItineraryHotelDetailsTboService {
           row?.hotelCode || row?.providerHotelCode || '',
           row?.hotelName || row?.hotel_name || '',
         ].map((value) => String(value).trim().toLowerCase()).join('|');
-        const key = `${routeId}|${date}|${propertyIdentity}|${this.availabilityOptionKey(row)}`;
+        const key = `${routeId}|${date}|${propertyIdentity}|${visibleOfferKey(row)}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
