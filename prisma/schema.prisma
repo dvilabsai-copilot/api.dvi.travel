@@ -3995,6 +3995,7 @@ model dvi_itinerary_plan_hotel_details {
   selected_price_per_night               Float?    @db.Float
   selected_total_price                   Float?    @db.Float
   selected_currency                      String?   @db.VarChar(8)
+  selection_origin                       String?   @db.VarChar(20)
   selected_price_snapshot                String?   @db.LongText
   hotel_approval_status                  String    @default("NOT_REQUESTED") @db.VarChar(32)
   hotel_approval_requested_at            DateTime? @db.DateTime(0)

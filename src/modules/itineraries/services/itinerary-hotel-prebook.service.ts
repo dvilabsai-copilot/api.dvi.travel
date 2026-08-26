@@ -86,7 +86,7 @@ export class ItineraryHotelPrebookService {
     const incomingHotelBookings = payload?.hotel_bookings || [];
     // A TBO/VSR row is a prebook candidate even when its booking code is
     // missing or expired. In that case prebook must fail clearly and ask the
-    // user to run the explicit Refresh Availability action. It must not call
+    // user to reopen the itinerary for automatic validation. It must not call
     // TBO implicitly from the confirmation flow.
     const providerHotelBookings = incomingHotelBookings.filter((hotel: any) => {
       const provider = String(hotel?.provider || '').trim().toLowerCase();
@@ -454,7 +454,7 @@ export class ItineraryHotelPrebookService {
     }
 
     throw new BadRequestException(
-      `Hotel availability has expired for ${hotel.hotelCode || 'the selected hotel'}. Click Refresh Availability and select the hotel again before confirming.`,
+      `Hotel availability has expired for ${hotel.hotelCode || 'the selected hotel'}. Reload the itinerary and select the hotel again before confirming.`,
     );
   }
 

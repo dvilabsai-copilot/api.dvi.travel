@@ -53,17 +53,16 @@ test('continuous stay stops at a destination boundary', async () => {
   assert.deepEqual(candidate.routeIds, [101, 102]);
 });
 
-test('snapshot validation selects positive TBO price fields from duplicate cache rows', async () => {
+test('fresh TBO validation selects positive price fields from duplicate response rows', async () => {
   const service = new HotelStayBlockValidationService({
     dvi_itinerary_plan_details: {
       findUnique: async () => ({ itinerary_quote_ID: 'Q-1' }),
     },
-    dvi_itinerary_hotel_search_cache: {
-      findFirst: async () => ({ synced_at: new Date('2026-08-20T18:49:53.000Z') }),
-      findMany: async () => [
-        {
-          route_id: 101,
-          full_payload: JSON.stringify({
+  } as any, {
+    getSelectedHotelRates: async () => ({
+      hotels: [
+          {
+            itineraryRouteId: 101,
             provider: 'tbo',
             hotelCode: 'H-1',
             roomType: 'Deluxe Room',
@@ -77,24 +76,19 @@ test('snapshot validation selects positive TBO price fields from duplicate cache
               netAmount: 100,
               totalFare: 100,
             }],
-          }),
-        },
+          },
         {
-          route_id: 101,
-          full_payload: JSON.stringify({
+          itineraryRouteId: 101,
             provider: 'tbo', hotelCode: 'H-1', roomType: 'Deluxe Room', mealPlan: 'CP',
             pricePerNight: 0,
-          }),
         },
         {
-          route_id: 102,
-          full_payload: JSON.stringify({
+          itineraryRouteId: 102,
             provider: 'tbo', hotelCode: 'H-1', roomType: 'Deluxe Room', mealPlan: 'CP',
             pricePerNight: 110,
-          }),
         },
       ],
-    },
+    }),
   } as any);
 
   const result = await (service as any).validateSnapshotStayBlock({

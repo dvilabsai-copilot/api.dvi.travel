@@ -496,6 +496,7 @@ export class ItinerarySelectionWorkflowService {
           total_extra_bed_cost: extraBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
           selected_currency: data.currency || null,
+          selection_origin: 'USER_SELECTED',
             selected_price_snapshot: JSON.stringify({
               optionKey: data.optionKey || null,
               rateOptionId: data.rateOptionId || null,
@@ -581,6 +582,7 @@ export class ItinerarySelectionWorkflowService {
           total_extra_bed_cost: extraBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
           selected_currency: data.currency || null,
+          selection_origin: 'USER_SELECTED',
           selected_price_snapshot: JSON.stringify({
             optionKey: data.optionKey || null,
             rateOptionId: data.rateOptionId || null,
@@ -807,6 +809,13 @@ export class ItinerarySelectionWorkflowService {
       : null;
     if (checkOutDate) checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
 
+    // Load the plan before the transaction callback. The callback needs the
+    // itinerary occupancy counts when creating room details.
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: Number(data.planId) },
+      select: { total_extra_bed: true, total_child_with_bed: true, itinerary_quote_ID: true },
+    });
+
     const persist = async (tx: any) => {
       const existingHotelCandidates = await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
         where: {
@@ -840,6 +849,7 @@ export class ItinerarySelectionWorkflowService {
         selected_price_per_night: routePayableAmount,
         selected_total_price: routePayableAmount,
         selected_currency: resolvedRate.currency,
+        selection_origin: 'USER_SELECTED',
         selected_price_snapshot: snapshot,
         total_no_of_rooms: effectiveRoomCount,
         total_room_cost: routeBaseAmount,
@@ -945,7 +955,6 @@ export class ItinerarySelectionWorkflowService {
     if (data.transactionClient) await persist(data.transactionClient);
     else await this.prisma.$transaction(persist);
 
-    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({ where: { itinerary_plan_ID: Number(data.planId) } });
     if (plan?.itinerary_quote_ID && !data.transactionClient) this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
     return {
       success: true,
@@ -1083,7 +1092,7 @@ export class ItinerarySelectionWorkflowService {
    * A selection must come from the latest persisted availability snapshot.
    * The fallback for test doubles/legacy installations is intentionally only
    for databases where the snapshot model is unavailable; production has this
-   table because Check Availability owns the durable search boundary.
+   table because automatic availability validation owns the durable search boundary.
    */
   private async validateLiveSelectionAgainstSnapshot(
     data: any,
@@ -1117,8 +1126,8 @@ export class ItinerarySelectionWorkflowService {
       // AxisRooms is not a live-search snapshot provider in this flow. Its
       // availability and price are read from the ARI tables populated by the
       // daily inventory feed. Validate that source directly and do not require
-      // a row in dvi_itinerary_hotel_search_cache, which may be absent or
-      // belong to a different search run.
+      // a prior search-result row, which may be absent or belong to another
+      // request lifecycle.
       if (await this.isCurrentAxisRoomsDatabaseRate(data, route)) return;
 
       // HOTEL/ROOM_TYPE/MEAL_PLAN actions intentionally omit supplier rate
@@ -1141,70 +1150,18 @@ export class ItinerarySelectionWorkflowService {
       }
     }
 
-    const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
-    if (!cache?.findFirst || !cache?.findMany) return;
-
-    const latest = await cache.findFirst({
-      where: { quote_id: String(quoteId), plan_id: Number(plan?.itinerary_plan_ID || data.planId), deleted: 0, status: 1 },
-      orderBy: [{ synced_at: 'desc' }, { id: 'desc' }],
-      select: { synced_at: true },
-    });
-    if (!latest?.synced_at) {
-      throw new BadRequestException('Hotel availability has not been checked yet. Refresh hotel availability and select a current rate.');
-    }
-
-    const routeWhere = {
-      quote_id: String(quoteId),
-      plan_id: Number(plan?.itinerary_plan_ID || data.planId),
-      route_id: Number(data.routeId),
-      deleted: 0,
-      status: 1,
-      synced_at: latest.synced_at,
-    };
-    let rows = await cache.findMany({
-      where: {
-        ...routeWhere,
-      },
-      select: { full_payload: true },
-    });
-    // A route rebuild can replace itinerary route IDs after availability was
-    // persisted. In that case the latest snapshot is still valid when its
-    // stay date/group matches the current route, but a route_id-only lookup
-    // returns no rows. Scope the fallback to the same latest snapshot and
-    // current route date/group; supplier identity and price remain exact below.
-    if (rows.length === 0 && route?.itinerary_route_date) {
-      const routeDate = new Date(route.itinerary_route_date);
-      const routeDateKey = Number.isNaN(routeDate.getTime())
-        ? ''
-        : routeDate.toISOString().slice(0, 10);
-      if (routeDateKey) {
-        const snapshotRows = await cache.findMany({
-          where: {
-            quote_id: String(quoteId),
-            plan_id: Number(plan?.itinerary_plan_ID || data.planId),
-            deleted: 0,
-            status: 1,
-            synced_at: latest.synced_at,
-          },
-          select: { full_payload: true },
-        });
-        rows = snapshotRows.filter((row: any) => {
-          try {
-            const payload = typeof row.full_payload === 'string'
-              ? JSON.parse(row.full_payload)
-              : row.full_payload;
-            const payloadDate = String(
-              payload?.date || payload?.checkInDate || payload?.check_in_date || '',
-            ).slice(0, 10);
-            const payloadGroup = Number(payload?.groupType ?? payload?.group_type ?? 0);
-            return payloadDate === routeDateKey &&
-              (!Number(data.groupType) || !payloadGroup || payloadGroup === Number(data.groupType));
-          } catch {
-            return false;
-          }
-        });
-      }
-    }
+    // A selection is validated against a fresh provider/local-source lookup
+    // for that property. Full inventory is never recovered from a database or
+    // process cache between the search response and this selection request.
+    const freshResult = await this.hotelDetailsTboService.getSelectedHotelRates(
+      quoteId,
+      Number(data.routeId),
+      provider,
+      String(data.hotelCode || data.providerHotelCode || data.hotelId || ''),
+      Number(data.groupType || 0),
+    );
+    const rows = (Array.isArray((freshResult as any)?.hotels) ? (freshResult as any).hotels : [])
+      .map((full_payload: any) => ({ full_payload }));
     const requestedRateIds = [data.selectionKey, data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
       .map((value) => String(value || '').trim())
       .filter(Boolean);

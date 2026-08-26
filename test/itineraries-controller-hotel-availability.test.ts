@@ -56,3 +56,36 @@ test('compact reset response preserves complete per-day hotel inventory for the 
   assert.equal(result.hotelDetails.hotels[0].earlyCheckInExtraPaymentApplicable, true);
   assert.equal(result.hotelDetails.hotels[0].previousDayBillingSynthetic, false);
 });
+
+test('acknowledgement returns accepted selections and financial totals without another supplier search', async () => {
+  const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  let acceptedIds: number[] = [];
+  (controller as any).hotelAvailabilitySnapshotService = {
+    applyAcceptedSelectionChanges: async (_quoteId: string, selectionIds: number[]) => {
+      acceptedIds = selectionIds;
+      return { appliedCount: selectionIds.length, selectionIds };
+    },
+    readPersisted: async () => ({
+      hotels: [{ hotelName: 'Accepted replacement' }],
+      hotelTabs: [{ groupType: 1, totalAmount: 125 }],
+      hotelSelectionState: [],
+    }),
+  };
+  (controller as any).hotelDetailsService = {
+    getHotelDetailsByQuoteId: async () => { throw new Error('fallback should not be needed'); },
+  };
+  (controller as any).detailsService = {
+    getItineraryDetails: async () => ({ overallCost: 725, costBreakdown: { hotel: 125 } }),
+  };
+
+  const response = await controller.acknowledgeItineraryHotelAvailabilityChanges(
+    'DVI-ACK',
+    { selectionIds: [10, 11] },
+    { user: { userId: 7, role: 1 } },
+  );
+
+  assert.deepEqual(acceptedIds, [10, 11]);
+  assert.equal(response.appliedCount, 2);
+  assert.equal(response.hotelDetails.hotels[0].hotelName, 'Accepted replacement');
+  assert.equal(response.financialSummary.overallCost, 725);
+});

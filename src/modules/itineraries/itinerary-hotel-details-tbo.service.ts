@@ -232,8 +232,6 @@ export class ItineraryHotelDetailsTboService {
   }
 
   private static readonly HOTEL_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
-  private static readonly HOTEL_ROOM_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
-  private static readonly MAX_CACHE_ENTRIES = 200;
 
   private parseBooleanEnv(name: string): boolean {
     const raw = String(process.env[name] || '').trim().toLowerCase();
@@ -321,21 +319,8 @@ export class ItineraryHotelDetailsTboService {
 
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
- // The complete hotel-details response contains the full supplier inventory,
- // rate options, and recommendation payloads. It is intentionally not cached
- // in-process: the persisted snapshot is the authoritative read path and
- // retaining these responses caused the Node heap to grow across itineraries.
-  private hotelDetailsCache = new Map<string, {
-    data: ItineraryHotelDetailsResponseDto;
-    timestamp: number;
-  }>();
-
- // Cache structure: key = "quoteId:routeId" or "quoteId" (no route filter)
- // Stores the entire response to avoid re-fetching TBO data
-  private hotelRoomDetailsCache = new Map<string, {
-    data: ItineraryHotelRoomDetailsResponseDto;
-    timestamp: number;
-  }>();
+ // Supplier inventory is intentionally request-scoped. No full hotel or room
+ // response is retained by the NestJS process.
 
   private isTboOnlyFetchEnabled(): boolean {
     return this.parseBooleanEnv('HOTEL_FETCH_TBO_ONLY');
@@ -6388,7 +6373,7 @@ this.logger.log(
     const hasSupplierHotels = supplierHotelRows.length > 0;
     const availabilityMessage = hasSupplierHotels
         ? 'Live supplier hotels are available for the current itinerary selection.'
-        : 'No live hotel options are available for one or more stays. Use Check Availability again after adjusting the itinerary.';
+        : 'No live hotel options are available for one or more stays. Adjust the itinerary and reopen it to validate availability automatically.';
     // The picker inventory must come from the complete supplier snapshot, not
     // from cleanedHotelRows. cleanedHotelRows is intentionally reduced to the
     // recommendation candidates and can therefore contain only the hotels
@@ -6973,30 +6958,12 @@ this.logger.log(
    * Generate cache key for hotel room details
    * Format: "quoteId" or "quoteId:routeId" if filtered
  */
-  private getCacheKey(quoteId: string, routeId?: number): string {
-    if (routeId) {
-      return `${quoteId}:${routeId}`;
-    }
-    return quoteId;
-  }
-
  /**
    * Get cached hotel room details if available
  */
   private getCachedRoomDetails(quoteId: string, routeId?: number): ItineraryHotelRoomDetailsResponseDto | null {
-    const cacheKey = this.getCacheKey(quoteId, routeId);
-    const cached = this.hotelRoomDetailsCache.get(cacheKey);
-
-    if (cached) {
-      if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_ROOM_DETAILS_CACHE_TTL_MS)) {
-        this.hotelRoomDetailsCache.delete(cacheKey);
- this.logger.debug(` [CACHE EXPIRED] Removed stale room cache for ${cacheKey}`);
-        return null;
-      }
- this.logger.log(` [CACHE HIT] Using cached data for ${cacheKey}`);
-      return cached.data;
-    }
-
+    void quoteId;
+    void routeId;
     return null;
   }
 
@@ -7008,13 +6975,9 @@ this.logger.log(
     data: ItineraryHotelRoomDetailsResponseDto,
     routeId?: number,
   ): void {
-    const cacheKey = this.getCacheKey(quoteId, routeId);
-    this.evictOldestIfNeeded(this.hotelRoomDetailsCache);
-    this.hotelRoomDetailsCache.set(cacheKey, {
-      data,
-      timestamp: Date.now(),
-    });
- this.logger.log(` [CACHE SET] Cached data for ${cacheKey}`);
+    void quoteId;
+    void data;
+    void routeId;
   }
 
   private getCachedHotelDetails(quoteId: string): ItineraryHotelDetailsResponseDto | null {
@@ -7031,69 +6994,19 @@ this.logger.log(
     // supplier response. The persisted DB snapshot remains unchanged.
   }
 
-  private isCacheExpired(timestamp: number, ttlMs: number): boolean {
-    return Date.now() - timestamp > ttlMs;
-  }
-
-  private evictOldestIfNeeded<T extends { timestamp: number }>(cache: Map<string, T>): void {
-    if (cache.size < ItineraryHotelDetailsTboService.MAX_CACHE_ENTRIES) {
-      return;
-    }
-
-    let oldestKey: string | null = null;
-    let oldestTs = Number.MAX_SAFE_INTEGER;
-
-    cache.forEach((value, key) => {
-      if (value.timestamp < oldestTs) {
-        oldestTs = value.timestamp;
-        oldestKey = key;
-      }
-    });
-
-    if (oldestKey) {
-      cache.delete(oldestKey);
-    }
-  }
-
  /**
    * Clear cache for a specific quote (called on refresh/update)
    * Clears both general cache (quoteId) and route-specific caches (quoteId:routeId)
  */
   clearCacheForQuote(quoteId: string): void {
-    const keysToDelete: string[] = [];
-
-    this.hotelDetailsCache.delete(quoteId);
-
-    for (const key of this.hotelRoomDetailsCache.keys()) {
- if (key.startsWith(`${quoteId}:`)) { // Matches "quoteId:routeId"
-        keysToDelete.push(key);
-      }
-    }
-
- // Also delete the base key
-    keysToDelete.push(quoteId);
-
-    for (const key of keysToDelete) {
-      this.hotelRoomDetailsCache.delete(key);
- this.logger.log(` [CACHE CLEARED] Removed cache for ${key}`);
-    }
-    // The offline catalog has its own destination/date/occupancy cache with a
-    // bounded TTL. Clearing it here made every quote refresh reload all hotel
-    // masters, rooms, and price-book rows even though this method only needs to
-    // invalidate the supplier room-detail cache.
+    void quoteId;
   }
 
  /**
    * Get current cache size and stats (for debugging)
  */
   getCacheStats(): { size: number; entries: string[] } {
-    const detailEntries = Array.from(this.hotelDetailsCache.keys()).map((k) => `details:${k}`);
-    const roomEntries = Array.from(this.hotelRoomDetailsCache.keys()).map((k) => `rooms:${k}`);
-
-    return {
-      size: this.hotelDetailsCache.size + this.hotelRoomDetailsCache.size,
-      entries: [...detailEntries, ...roomEntries],
-    };
+    return { size: 0, entries: [] };
   }
 }
 

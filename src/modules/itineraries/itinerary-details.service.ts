@@ -647,7 +647,7 @@ export class ItineraryDetailsService {
     const snapshotRows = await this.hotelAvailabilitySnapshotService.getActiveRows(params.quoteId);
     if (!snapshotRows) {
       throw new BadRequestException({
-        message: 'No persisted hotel availability snapshot exists. Check Availability before previewing pricing.',
+        message: 'No persisted hotel availability snapshot exists. Reopen the itinerary to validate availability automatically.',
         code: 'HOTEL_AVAILABILITY_SNAPSHOT_MISSING',
       });
     }

@@ -162,8 +162,6 @@ const OFFLINE_DESTINATION_ALIASES: Record<string, string[]> = {
 @Injectable()
 export class OfflineHotelCatalogService {
   private readonly logger = new Logger(OfflineHotelCatalogService.name);
-  private readonly availabilityCache = new Map<string, { expiresAt: number; hotels: HotelSearchResult[] }>();
-  private readonly availabilityCacheTtlMs = 15 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -216,25 +214,12 @@ export class OfflineHotelCatalogService {
     );
 
     const occupancyKey = `adults:${adultCount}|children:${childCount}|ages:${childAges.join(',')}|meal:${inferCanonicalHotelRatePlanCode(requestedMealPlanCode) || 'ANY'}`;
-    const now = Date.now();
-    const cachePartitionStartedAt = Date.now();
-    const uncachedBlocks = stayBlocks.filter((block) => {
-      const cached = this.availabilityCache.get(this.blockCacheKey(block, roomCount, occupancyKey));
-      return !cached || cached.expiresAt <= now;
-    });
-    HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
-      stage: 'cache-partition',
-      durationMs: Date.now() - cachePartitionStartedAt,
-      stayBlockCount: stayBlocks.length,
-      uncachedBlockCount: uncachedBlocks.length,
-    });
-
     const hotelLoadStartedAt = Date.now();
-    const hotelsByBlock = await this.loadHotelsByStayBlock(uncachedBlocks, roomCount, occupancyKey);
+    const hotelsByBlock = await this.loadHotelsByStayBlock(stayBlocks, roomCount, occupancyKey);
     HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
       stage: 'hotel-master-load',
       durationMs: Date.now() - hotelLoadStartedAt,
-      uncachedBlockCount: uncachedBlocks.length,
+      stayBlockCount: stayBlocks.length,
       hotelCount: Array.from(hotelsByBlock.values()).reduce((sum, rows) => sum + rows.length, 0),
     });
     const allHotels = Array.from(
@@ -301,7 +286,6 @@ export class OfflineHotelCatalogService {
       stage: 'total',
       durationMs: Date.now() - startedAt,
       stayBlockCount: stayBlocks.length,
-      uncachedBlockCount: uncachedBlocks.length,
       routeCount: hotelsByRoute.size,
     });
     return hotelsByRoute;
@@ -397,19 +381,6 @@ export class OfflineHotelCatalogService {
     prefetchedHotels?: any[],
     requestedMealPlanCode = '',
   ): Promise<HotelSearchResult[]> {
-    const cacheKey = [
-      block.destination,
-      block.checkInDate,
-      block.checkOutDate,
-      Math.max(Number(roomCount || 1), 1),
-      occupancyKey,
-    ].join('|').toLowerCase();
-    const cached = this.availabilityCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.hotels;
-    }
-    if (cached) this.availabilityCache.delete(cacheKey);
-
     const dateList = this.getNightDates(block.checkInDate, block.checkOutDate);
     if (dateList.length === 0) {
       return [];
@@ -575,10 +546,6 @@ export class OfflineHotelCatalogService {
     }
 
     results.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
-    this.availabilityCache.set(cacheKey, {
-      expiresAt: Date.now() + this.availabilityCacheTtlMs,
-      hotels: results,
-    });
     return results;
   }
 
@@ -770,7 +737,7 @@ export class OfflineHotelCatalogService {
   }
 
   clearCache(): void {
-    this.availabilityCache.clear();
+    // Kept for call-site compatibility; offline inventory is request-scoped.
   }
 
   private buildRoomOffersFromCatalogRows(
