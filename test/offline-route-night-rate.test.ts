@@ -7,9 +7,10 @@ import {
 } from '../src/modules/itineraries/services/offline-hotel-catalog.service';
 import { buildHotelSelectionState } from '../src/modules/itineraries/utils/hotel-selection-view-state.util';
 
-test('ROOM_RATE is authoritative and DOUBLE is only the fallback', () => {
-  assert.equal(selectOfflineRoomRate({ ROOM_RATE: 3675, DOUBLE: 1500, SINGLE: 1200 }), 3675);
-  assert.equal(selectOfflineRoomRate({ DOUBLE: 1800, SINGLE: 1200 }), 1800);
+test('adult occupancy selects SINGLE or DOUBLE without ROOM_RATE fallback', () => {
+  assert.equal(selectOfflineRoomRate({ DOUBLE: 1500, SINGLE: 1200 }, 1), 1200);
+  assert.equal(selectOfflineRoomRate({ DOUBLE: 1800, SINGLE: 1200 }, 2), 1800);
+  assert.equal(selectOfflineRoomRate({ ROOM_RATE: 3675, SINGLE: 1200 }, 2), 0);
 });
 
 test('each date uses the latest admin-matching occupancy row', () => {
@@ -18,17 +19,17 @@ test('each date uses the latest admin-matching occupancy row', () => {
       start_date: '2026-08-31',
       end_date: '2026-09-03',
       received_at: '2026-08-24T10:00:00.000Z',
-      occupancy_rates: { ROOM_RATE: 1500 },
+      occupancy_rates: { DOUBLE: 1500 },
     },
     {
       start_date: '2026-09-02',
       end_date: '2026-09-02',
       received_at: '2026-08-25T10:00:00.000Z',
-      occupancy_rates: { ROOM_RATE: 3600 },
+      occupancy_rates: { DOUBLE: 3600 },
     },
   ], new Date('2026-09-02T00:00:00.000Z').getTime());
 
-  assert.equal(selectOfflineRoomRate(selected.occupancy_rates), 3600);
+  assert.equal(selectOfflineRoomRate(selected.occupancy_rates, 2), 3600);
 });
 
 test('DVI20260891 route rows use each date rate while retaining room-count semantics', () => {

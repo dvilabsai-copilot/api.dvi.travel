@@ -1111,9 +1111,9 @@ async getHotelRoomDetailsByQuoteId(
         approvalStatus: (h as any).hotel_approval_status || undefined,
         manualConfirmationStatus: (h as any).manual_confirmation_status || undefined,
         isSelected: Number((h as any).hotel_id || 0) > 0,
-        selectionOrigin: String((h as any).selected_rate_option_id || '').trim()
-          ? 'USER_SELECTED'
-          : (Number((h as any).hotel_id || 0) > 0 ? 'AUTO_SELECTED' : undefined),
+        selectionOrigin: (String((h as any).selection_origin || '').trim().toUpperCase() ||
+          (Number((h as any).hotel_id || 0) > 0 ? 'AUTO_SELECTED' : undefined)) as
+          'AUTO_SELECTED' | 'USER_SELECTED' | undefined,
         selectionId: Number(hotelDetailsId || 0),
         requiresPriceReacceptance: Boolean((h as any).requires_price_reacceptance),
         selectedPriceSnapshot: rawSelectedPriceSnapshot || null,

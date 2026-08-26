@@ -37,6 +37,10 @@ import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.ser
 import { TimelineEnricher } from "./engines/helpers/timeline.enricher";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
 import { SupplementNormalizerService } from "../../modules/hotels/services/supplement-normalizer.service";
+import {
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealText,
+} from "../../modules/hotels/hotel-rate-plans";
 import { normalizeCityName } from "./utils/city-normalization.util";
 import { haversineKm } from "./utils/distance-utils";
 import {
@@ -1428,7 +1432,7 @@ private getGuideSlotLabel(slotId: number): string {
 
     // Route changes invalidate stay identities; itinerary meal-plan changes
     // invalidate the auto-selected hotel/rate choices. Reuse the same reset
-    // path as the Reset Hotels button after the plan transaction commits.
+    // path as the internal hotel reset operation after the plan transaction commits.
     // Meal-plan-only edits do not rebuild routes, hotspots, or transport data.
     const hotelResetReason = getHotelAvailabilityResetReason(result);
     if (!isNewPlan && hotelsRequired && hotelResetReason && result?.quoteId) {
@@ -1458,14 +1462,14 @@ private getGuideSlotLabel(slotId: number): string {
         // availability instead of claiming the old hotel is still valid.
         throw new UnprocessableEntityException({
           message: hotelResetReason === 'ROUTE_CHANGED'
-            ? 'Itinerary routes were updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
+            ? 'Itinerary routes were updated, but hotel availability could not be reset. Open the saved itinerary to retry automatically.'
             : hotelResetReason === 'ROOM_COUNT_CHANGED'
-              ? 'Itinerary room count was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
+              ? 'Itinerary room count was updated, but hotel availability could not be reset. Open the saved itinerary to retry automatically.'
               : hotelResetReason === 'MEAL_PLAN_CHANGED'
-                ? 'The itinerary meal plan was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
+                ? 'The itinerary meal plan was updated, but hotel availability could not be reset. Open the saved itinerary to retry automatically.'
               : hotelResetReason === 'EARLY_ARRIVAL_CONFIRMED'
-                ? 'Early check-in was confirmed, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.'
-                : 'The hotel category was updated, but hotel availability could not be reset. Open the saved itinerary and use Check Availability.',
+                ? 'Early check-in was confirmed, but hotel availability could not be reset. Open the saved itinerary to retry automatically.'
+                : 'The hotel category was updated, but hotel availability could not be reset. Open the saved itinerary to retry automatically.',
           planId: result.planId,
           quoteId: result.quoteId,
           creationStatus: 'PARTIAL',
@@ -1512,7 +1516,7 @@ private getGuideSlotLabel(slotId: number): string {
       };
     } catch (error) {
       throw new UnprocessableEntityException({
-        message: 'Itinerary saved, but the initial hotel availability search failed. Open the saved itinerary and use Check Availability.',
+        message: 'Itinerary saved, but the initial hotel availability search failed. Open the saved itinerary to retry automatically.',
         planId: result.planId,
         quoteId: result.quoteId,
         creationStatus: 'PARTIAL',
@@ -1722,7 +1726,7 @@ private getGuideSlotLabel(slotId: number): string {
               ? 'Hotel availability could not be checked right now. Please try again.'
               : String(response?.message || error?.message || 'The selected hotel is not available for the requested stay.'),
             code: code || (status === 'REFRESH_FAILED' ? 'HOTEL_REFRESH_FAILED' : 'HOTEL_NO_AVAILABILITY'),
-            affectedRouteIds: response?.affectedRouteIds || [],
+             affectedRouteIds: response?.affectedRouteIds || response?.logicalStay?.routeIds || [],
             logicalStay: response?.logicalStay,
             // Multi-night itinerary selection is all-or-nothing. Even when
             // the validator finds inventory for the clicked night alone, do
@@ -1779,6 +1783,49 @@ private getGuideSlotLabel(slotId: number): string {
     const anchorRateOptionId = String(data.rateOptionId || data.optionKey || '').trim();
     const anchorSelectionKey = String(data.selectionKey || '').trim();
 
+    // Rate-option identifiers are authoritative for the supplier rate. Do not
+    // allow a stale AP/CP identifier to be saved with the opposite itinerary
+    // meal-plan selection. This is especially important when a preview
+    // snapshot is reused: reuse is safe only when the snapshot belongs to the
+    // requested meal plan.
+    const mealPlanFromReference = (...values: unknown[]): string => {
+      for (const value of values) {
+        const reference = String(value || '').trim().toUpperCase();
+        if (!reference) continue;
+        const planToken = reference.match(/(?:^|[:|_-])(MAP|AP|CP|AI)(?:_PLAN)?(?:$|[:|_-])/i);
+        if (planToken?.[1]) return inferCanonicalHotelRatePlanCode(planToken[1]) || planToken[1].toUpperCase();
+      }
+      return '';
+    };
+    const requestedMealPlan =
+      inferCanonicalHotelRatePlanCode(requestedMeal) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(requestedMeal) ||
+      mealPlanFromReference(requestedMeal);
+    const referencedMealPlan = mealPlanFromReference(
+      data.rateOptionId,
+      data.optionKey,
+      data.selectionKey,
+      data.bookingCode,
+      data.searchReference,
+    );
+    if (requestedMealPlan && referencedMealPlan && requestedMealPlan !== referencedMealPlan) {
+      console.error('[HOTEL_INTENT_MEAL_PLAN_MISMATCH]', JSON.stringify({
+        planId: Number(data.planId),
+        routeId: Number(data.routeId),
+        provider,
+        hotelCode,
+        requestedMealPlan,
+        referencedMealPlan,
+        reusePreviewSnapshot: data.reusePreviewSnapshot === true,
+      }));
+      throw new BadRequestException({
+        code: 'HOTEL_MEAL_PLAN_MISMATCH',
+        message: `Selected rate plan ${referencedMealPlan} does not match requested meal plan ${requestedMealPlan}. Refresh hotel availability and select the ${requestedMealPlan} rate.`,
+        requestedMealPlan,
+        referencedMealPlan,
+      });
+    }
+
     // Resolve the complete contiguous same-destination block on the server.
     // The browser must not calculate previous/next route ids or send them as
     // authority because an anchor can be the first, middle, or last night.
@@ -1802,6 +1849,7 @@ private getGuideSlotLabel(slotId: number): string {
         roomType: requestedRoom || undefined,
         mealPlan: requestedMeal || undefined,
         checkInDate: intentCheckInDate,
+        allowRoomTypeChanges: intent === 'HOTEL',
       });
     } catch (error) {
       console.error('[HOTEL_INTENT] continuous stay resolution failed', error);
@@ -1833,13 +1881,11 @@ private getGuideSlotLabel(slotId: number): string {
 
     // The logical stay is known before any supplier work. Refresh every
     // affected route so no night is silently filled from an anchor-only rate.
-    // select-intent-preview has already refreshed and stored the supplier
-    // snapshot used to build the confirmation row. When the browser sends
-    // that authoritative rate back, do not perform a second TBO search: TBO
-    // may issue a new booking code or fare milliseconds later and make a
-    // valid selection look stale.
-    const reusePreviewSnapshot = data.reusePreviewSnapshot === true;
-    if (provider !== 'offline' && !reusePreviewSnapshot) {
+    // Search results are never retained between requests. Resolve the selected
+    // property again and keep those rates only in this request while building
+    // the atomic stay selection.
+    const requestScopedCandidates: any[] = [];
+    if (provider !== 'offline') {
       if (['tbo', 'resavenue', 'hobse', 'axisrooms', 'staah'].includes(provider) &&
         typeof (this.hotelDetailsTboService as any).searchSelectedHotelForContinuousStay === 'function') {
         const continuousHotels = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
@@ -1896,13 +1942,11 @@ private getGuideSlotLabel(slotId: number): string {
             canBookSingleNight: false, canBookMultiNight: false,
           });
         }
-        await this.hotelAvailabilitySnapshotService.mergeSelectedHotelRates(
-          quoteId, routeId, provider, hotelCode, refreshedHotels,
-        );
+        requestScopedCandidates.push(...refreshedHotels);
       }
     }
 
-    const snapshotRows = await this.hotelAvailabilitySnapshotService.getActiveRows(quoteId) || [];
+    const snapshotRows = requestScopedCandidates;
     let candidates = snapshotRows.flatMap((row: any) => {
       const options = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row];
       return options.map((option: any) => {
@@ -1959,6 +2003,10 @@ private getGuideSlotLabel(slotId: number): string {
       }
     }
     const normalize = (value: unknown) => String(value || '').trim().toLowerCase();
+    const normalizeMealPlan = (value: unknown) =>
+      inferCanonicalHotelRatePlanCode(String(value || '')) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(String(value || '')) ||
+      normalize(value);
     const routeIdOf = (option: any) => Number(option.itineraryRouteId || option.routeId || option.route_id || 0);
     const dateOf = (option: any) => String(option.date || option.checkInDate || option.routeDate || '').slice(0, 10);
     const propertyMatches = (option: any) => {
@@ -1973,13 +2021,23 @@ private getGuideSlotLabel(slotId: number): string {
       // Fresh supplier responses may not carry our internal canonical ID.
       // Once provider and provider hotel code match, allow that authoritative
       // supplier identity to match the persisted canonical selection too.
-      return providerMatches && (requestedCanonical > 0
-        ? optionCanonical === requestedCanonical || (!optionCanonical && providerCodeMatches)
-        : providerCodeMatches);
+      return providerMatches && (providerCodeMatches || (requestedCanonical > 0 && optionCanonical === requestedCanonical));
     };
     const payableAmount = (option: any) => Number(
       option.totalStayPrice ?? option.totalPrice ?? option.totalAmountAfterTax ?? option.pricePerNight ?? option.price ?? Number.MAX_SAFE_INTEGER,
     );
+    const hasPositiveRate = (...values: unknown[]) => values.some((value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0;
+    });
+    const hasRequiredSupplementRates = (option: any) => {
+      const extraBedRequired = Number((plan as any).total_extra_bed || 0) > 0;
+      const childWithBedRequired = Number((plan as any).total_child_with_bed || 0) > 0;
+      const childWithoutBedRequired = Number((plan as any).total_child_without_bed || 0) > 0;
+      return (!extraBedRequired || hasPositiveRate(option.extraBedRate, option.extra_bed_rate)) &&
+        (!childWithBedRequired || hasPositiveRate(option.childWithBedRate, option.child_with_bed_rate)) &&
+        (!childWithoutBedRequired || hasPositiveRate(option.childWithoutBedRate, option.child_without_bed_rate));
+    };
     const routeOptions = (routeId: number, routeDate: string) => candidates.filter((option: any) => {
       const routeMatches = routeIdOf(option) === routeId || (Array.isArray(option.routeIds) && option.routeIds.map(Number).includes(routeId));
       const dateMatches = !dateOf(option) || dateOf(option) === routeDate;
@@ -2026,17 +2084,62 @@ private getGuideSlotLabel(slotId: number): string {
         const meal = String(option.mealPlan || option.mealPlanCode || '').trim();
         if (intent === 'ROOM_TYPE' && requestedRoom && normalize(room) !== normalize(requestedRoom)) return false;
         if (intent === 'MEAL_PLAN' && requestedRoom && normalize(room) !== normalize(requestedRoom)) return false;
-        if (intent === 'MEAL_PLAN' && requestedMeal && normalize(meal) !== normalize(requestedMeal)) return false;
+        // HOTEL and ROOM_TYPE actions preserve the itinerary's global meal
+        // plan just like MEAL_PLAN actions. Without this filter, a card that
+        // displays CP could still select the cheapest AP option when its
+        // concrete rate identity is omitted intentionally.
+        if (requestedMeal &&
+          (intent === 'HOTEL' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') &&
+          normalizeMealPlan(meal) !== normalizeMealPlan(requestedMeal)) return false;
         if ((intent === 'RATE_OPTION' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') && index !== stay.routeIds.indexOf(Number(data.routeId))) {
           if (anchorRoom && normalize(room) !== normalize(anchorRoom)) return false;
-          if (anchorMeal && normalize(meal) !== normalize(anchorMeal)) return false;
+          if (anchorMeal && normalizeMealPlan(meal) !== normalizeMealPlan(anchorMeal)) return false;
         }
         return true;
       }).sort((left: any, right: any) => payableAmount(left) - payableAmount(right));
-      const selected = index === stay.routeIds.indexOf(Number(data.routeId)) && anchorOption
+      // HOTEL intent selects a property for the itinerary occupancy, not an
+      // arbitrary room-only option. Exclude options missing a required
+      // extra-bed/child rate before choosing or persisting the selection.
+      const selectableOptions = options.filter(hasRequiredSupplementRates);
+      const eligibleAnchorOption = anchorOption && hasRequiredSupplementRates(anchorOption)
         ? anchorOption
-        : options[0];
+        : null;
+      const selected = index === stay.routeIds.indexOf(Number(data.routeId)) && eligibleAnchorOption
+        ? eligibleAnchorOption
+        : selectableOptions[0];
       if (!selected) {
+        console.warn('[HOTEL_INTENT_NO_REQUEST_SCOPED_OPTION]', {
+          quoteId,
+          provider,
+          hotelCode,
+          requestedCanonicalHotelId,
+          groupType,
+          routeId,
+          routeDate,
+          requestedRoom,
+          requestedMeal,
+          candidateCount: candidates.length,
+          routeCandidateCount: candidates.filter((option: any) => {
+            const candidateRouteId = routeIdOf(option);
+            return candidateRouteId === routeId ||
+              (Array.isArray(option.routeIds) && option.routeIds.map(Number).includes(routeId));
+          }).length,
+          candidateIdentities: candidates.slice(0, 8).map((option: any) => ({
+            routeId: routeIdOf(option),
+            routeIds: option.routeIds,
+            date: dateOf(option),
+            provider: option.provider,
+            canonicalHotelId: option.canonicalHotelId,
+            hotelId: option.hotelId,
+            hotelCode: option.hotelCode,
+            providerHotelCode: option.providerHotelCode,
+            roomType: option.roomType,
+            mealPlan: option.mealPlan,
+            groupType: option.groupType,
+            selectable: option.isSelectable,
+            bookable: option.isBookable,
+          })),
+        });
         throw new BadRequestException({
           code: 'HOTEL_INTENT_UNAVAILABLE',
           message: `The requested hotel selection is unavailable for ${routeDate}. No partial selection was saved.`,
@@ -2061,10 +2164,11 @@ private getGuideSlotLabel(slotId: number): string {
       const continuity = await this.hotelStayBlockValidationService.previewStayExtension({
         planId: Number(data.planId), routeId: Number(data.routeId), provider: provider as any, hotelCode,
         hotelName: String(continuityAnchor?.hotelName || data.hotelName || '').trim() || undefined,
-        roomId: String(continuityAnchor?.roomId || continuityAnchor?.providerRoomId || data.roomId || '').trim() || undefined,
-        rateId: String(continuityAnchor?.rateId || continuityAnchor?.ratePlanId || data.rateId || '').trim() || undefined,
-        roomType: String(continuityAnchor?.roomType || continuityAnchor?.roomTypeName || anchorRoom || '').trim() || undefined,
-        mealPlan: String(continuityAnchor?.mealPlan || continuityAnchor?.mealPlanCode || anchorMeal || '').trim() || undefined,
+         roomId: intent === 'HOTEL' ? undefined : String(continuityAnchor?.roomId || continuityAnchor?.providerRoomId || data.roomId || '').trim() || undefined,
+         rateId: intent === 'HOTEL' ? undefined : String(continuityAnchor?.rateId || continuityAnchor?.ratePlanId || data.rateId || '').trim() || undefined,
+         roomType: intent === 'HOTEL' ? undefined : String(continuityAnchor?.roomType || continuityAnchor?.roomTypeName || anchorRoom || '').trim() || undefined,
+         mealPlan: String(continuityAnchor?.mealPlan || continuityAnchor?.mealPlanCode || anchorMeal || '').trim() || undefined,
+         allowRoomTypeChanges: intent === 'HOTEL',
         // The validator is anchored to the clicked route. Passing the
         // overall stay start here made a later route (for example 10702 on
         // 2026-08-23) validate as 2026-08-22 and collapse to a false
@@ -2233,6 +2337,7 @@ private getGuideSlotLabel(slotId: number): string {
             : 0;
       return {
         ...data,
+        selectionIntent: data.selectionIntent,
         routeId: Number(selected.routeId), routeDate, groupType,
         hotelId: Number(selected.canonicalHotelId || selected.hotelId || data.hotelId || 0) || null,
         canonicalHotelId: Number(selected.canonicalHotelId || selected.hotelId || data.canonicalHotelId || 0) || null,

@@ -315,11 +315,10 @@ export class HotelRecommendationPackageService {
 
   private selectCategoryOption(options: StayOption[], slot: CategorySlot, used: Set<string>): StayOption | undefined {
     const orderedCategories = this.categoryFallbackOrder(slot.category);
-    // Automatic recommendations are live-first for this stay/day. Offline
-    // catalog options are considered only when no live supplier option exists.
-    // Explicit user selections are handled outside this recommendation path.
-    const liveOptions = options.filter((option) => !this.isOffline(option.hotel));
-    const selectableOptions = liveOptions.length > 0 ? liveOptions : options;
+    // Every eligible provider participates in category allocation. Provider
+    // class is not a category filter; AxisRooms is preferred only when two
+    // otherwise equivalent payable options have the same price.
+    const selectableOptions = options;
 
     // Pass 1: exhaust every unused physical property before permitting reuse.
     // Category preference remains stronger than meal-plan preference: for each
@@ -327,7 +326,7 @@ export class HotelRecommendationPackageService {
     for (const category of orderedCategories) {
       const categoryCandidates = selectableOptions
         .filter((option) => this.categoryNumber(option.hotel) === category)
-        .sort((a, b) => a.priceCents - b.priceCents || a.optionKey.localeCompare(b.optionKey));
+        .sort((a, b) => this.compareRecommendationOptions(a, b));
       if (categoryCandidates.length === 0) continue;
 
       const unusedCandidates = categoryCandidates.filter(
@@ -344,7 +343,7 @@ export class HotelRecommendationPackageService {
     for (const category of orderedCategories) {
       const categoryCandidates = selectableOptions
         .filter((option) => this.categoryNumber(option.hotel) === category)
-        .sort((a, b) => a.priceCents - b.priceCents || a.optionKey.localeCompare(b.optionKey));
+        .sort((a, b) => this.compareRecommendationOptions(a, b));
       if (categoryCandidates.length === 0) continue;
 
       const selected = this.rankCategoryCandidates(categoryCandidates, slot, categoryCandidates);
@@ -364,7 +363,7 @@ export class HotelRecommendationPackageService {
 
       const base = allCategoryCandidates
         .filter((candidate) => candidate.mealPlanRank === bestMealPlanRank)
-        .sort((a, b) => a.priceCents - b.priceCents || a.optionKey.localeCompare(b.optionKey))[0]?.priceCents
+        .sort((a, b) => this.compareRecommendationOptions(a, b))[0]?.priceCents
         ?? mealCandidates[0].priceCents;
       const threshold = Math.ceil(base * slot.multiplier);
       return mealCandidates.find((candidate) => candidate.priceCents >= threshold) ||
@@ -1052,6 +1051,21 @@ export class HotelRecommendationPackageService {
 
   private isOffline(candidate: HotelSearchResult): boolean {
     return String(candidate.provider || '').trim().toLowerCase() === 'offline' || candidate.bookingMode === 'MANUAL_APPROVAL' || candidate.requiresHotelApproval === true;
+  }
+
+  private compareRecommendationOptions(left: StayOption, right: StayOption): number {
+    const priceDelta = left.priceCents - right.priceCents;
+    if (priceDelta !== 0) return priceDelta;
+    const providerRank = (provider: unknown): number => {
+      const normalized = String(provider || '').trim().toLowerCase();
+      if (normalized === 'axisrooms') return 0;
+      if (normalized === 'tbo') return 1;
+      if (normalized === 'staah') return 2;
+      if (normalized === 'offline') return 3;
+      return 4;
+    };
+    const providerDelta = providerRank(left.hotel.provider) - providerRank(right.hotel.provider);
+    return providerDelta || left.optionKey.localeCompare(right.optionKey);
   }
 
   private physicalIdentity(candidate: HotelSearchResult): string {

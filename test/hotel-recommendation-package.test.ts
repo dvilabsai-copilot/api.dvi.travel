@@ -508,7 +508,7 @@ test('falls back from requested 3-star to lower 2-star before higher 4-star', ()
   assert.equal(packages[0].hotels[0].categoryFallbackReason, '2* selected — 3* not available');
 });
 
-test('category fallback prefers live providers over offline options', () => {
+test('category fallback compares live and offline options by category before provider', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -526,13 +526,13 @@ test('category fallback prefers live providers over offline options', () => {
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages[0].hotels[0].hotelName, 'Live 4 Star');
-  assert.equal(packages[0].hotels[0].provider, 'tbo');
-  assert.equal(packages[0].hotels[0].selectedCategory, 4);
+  assert.equal(packages[0].hotels[0].hotelName, 'Offline 2 Star');
+  assert.equal(packages[0].hotels[0].provider, 'offline');
+  assert.equal(packages[0].hotels[0].selectedCategory, 2);
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
-test('offline is used for category fallback only when no live option exists', () => {
+test('exact-category offline option wins over a higher-category live option', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -550,10 +550,25 @@ test('offline is used for category fallback only when no live option exists', ()
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages[0].hotels[0].hotelName, 'Live 4 Star');
-  assert.equal(packages[0].hotels[0].provider, 'tbo');
-  assert.equal(packages[0].hotels[0].selectedCategory, 4);
-  assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
+  assert.equal(packages[0].hotels[0].hotelName, 'Offline 3 Star');
+  assert.equal(packages[0].hotels[0].provider, 'offline');
+  assert.equal(packages[0].hotels[0].selectedCategory, 3);
+  assert.equal(packages[0].hotels[0].categoryFallbackApplied, false);
+});
+
+test('AxisRooms wins a payable-price tie without excluding offline inventory', () => {
+  const packages = service().generate({
+    routes: oneRoute('Munnar'),
+    hotelsByRoute: new Map([[1, [
+      option('Offline Tie', 5000, 'CP', { provider: 'offline', category: '3-star', canonicalHotelId: 801 }),
+      option('Axis Tie', 5000, 'CP', { provider: 'axisrooms', category: '3-star', canonicalHotelId: 802 }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].hotels[0].hotelName, 'Axis Tie');
+  assert.equal(packages[0].hotels[0].provider, 'axisrooms');
 });
 
 test('fallback selects the only usable lower-category hotel even when its multiplier is not met', () => {

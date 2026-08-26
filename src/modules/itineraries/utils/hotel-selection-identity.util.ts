@@ -65,6 +65,15 @@ export type HotelOptionIdentity = {
 
 const clean = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 
+const canonicalMealPlanIdentity = (value: unknown): string => {
+  const raw = String(value ?? '').trim();
+  return String(
+    inferCanonicalHotelRatePlanCode(raw) ||
+    inferCanonicalHotelRatePlanCodeFromMealText(raw) ||
+    raw,
+  ).trim().toLowerCase();
+};
+
 /** Rate-level identity for an authoritative automatic recommendation. */
 export function buildAutoSelectionIdentity(row: any): Record<string, unknown> {
   return {
@@ -78,7 +87,9 @@ export function buildAutoSelectionIdentity(row: any): Record<string, unknown> {
     roomTypeId: String(row?.roomTypeId || row?.room_type_id || '').trim(),
     roomType: String(row?.roomType || row?.room_type || row?.roomTypeName || '').trim(),
     rateId: String(row?.rateId || row?.rate_id || '').trim(),
-    mealPlan: String(row?.mealPlan || row?.meal_plan || row?.mealPlanCode || '').trim().toUpperCase(),
+    mealPlan: canonicalMealPlanIdentity(
+      row?.mealPlan || row?.meal_plan || row?.mealPlanCode || '',
+    ).toUpperCase(),
   };
 }
 
@@ -97,12 +108,15 @@ export function autoSelectionIdentityMatches(option: any, identity: any): boolea
     [actual.roomTypeId, identity.roomTypeId],
     [actual.roomType, identity.roomType],
     [actual.rateId, identity.rateId],
-    [actual.mealPlan, identity.mealPlan],
   ];
-  return checks.every(([actualValue, expectedValue]) => {
+  const fieldsMatch = checks.every(([actualValue, expectedValue]) => {
     const expected = clean(expectedValue);
     return !expected || clean(actualValue) === expected;
   });
+  const expectedMealPlan = canonicalMealPlanIdentity(identity.mealPlan);
+  return fieldsMatch && (
+    !expectedMealPlan || canonicalMealPlanIdentity(actual.mealPlan) === expectedMealPlan
+  );
 }
 
 /**
@@ -132,7 +146,9 @@ export function strictAutoSelectionIdentityMatches(option: any, identity: any): 
   if (expectedRateFields.length === 0) {
     return rateFields.every((field) => !clean(actual[field]));
   }
-  return expectedRateFields.every((field) => clean(actual[field]) === clean(identity[field]));
+  return expectedRateFields.every((field) => field === 'mealPlan'
+    ? canonicalMealPlanIdentity(actual[field]) === canonicalMealPlanIdentity(identity[field])
+    : clean(actual[field]) === clean(identity[field]));
 }
 
 export function normalizeHotelDisplayName(value: unknown): string {

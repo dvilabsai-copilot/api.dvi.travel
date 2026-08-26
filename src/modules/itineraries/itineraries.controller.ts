@@ -514,7 +514,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
   @ApiOperation({
     summary: 'Get persisted hotel availability snapshot',
     description:
-      'Database-only read of the latest persisted hotel availability snapshot. Live suppliers are called only by the explicit Check Availability command.',
+      'Database-only read of the latest persisted hotel availability snapshot. Live suppliers are called by automatic availability validation.',
   })
   @ApiParam({
     name: 'quoteId',
@@ -647,6 +647,36 @@ private readonly itineraryAccessService: ItineraryAccessService,
     };
   }
 
+  @Post('hotel_details/:quoteId/acknowledge-changes')
+  @ApiOperation({ summary: 'Accept staged hotel availability changes' })
+  async acknowledgeItineraryHotelAvailabilityChanges(
+    @Param('quoteId') quoteId: string,
+    @Body() body: { selectionIds?: number[] },
+    @Req() req: any,
+  ) {
+    const applied = await this.hotelAvailabilitySnapshotService.applyAcceptedSelectionChanges(
+      quoteId,
+      Array.isArray(body?.selectionIds) ? body.selectionIds : [],
+      Number(req.user?.userId || 0),
+    );
+    const [hotelDetails, itinerary] = await Promise.all([
+      this.hotelAvailabilitySnapshotService.readPersisted(
+        quoteId,
+        { page: 1, pageSize: 0 },
+        () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
+      ),
+      this.detailsService.getItineraryDetails(quoteId, undefined, req.user?.role),
+    ]);
+    return {
+      ...applied,
+      hotelDetails,
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
+    };
+  }
+
   @Post('hotel_details/:quoteId/selected-hotel-refresh')
   @ApiOperation({ summary: 'Refresh the latest rates for one selected supplier hotel' })
   async refreshSelectedHotelRates(
@@ -683,13 +713,10 @@ private readonly itineraryAccessService: ItineraryAccessService,
       quoteId,
       Number(req.user?.userId || 0),
     );
-    // Reset persists the authoritative selection snapshots. Read them again
-    // after the transaction so the response cannot reuse a stale in-memory
-    // availability row for room/supplement totals.
-    result.response = await this.hotelAvailabilitySnapshotService.readPersisted(
-      quoteId,
-      { page: 1, pageSize: 0 },
-    );
+    // The coordinator returns the fresh request-scoped inventory together
+    // with selections persisted during reconciliation. Do not replace it with
+    // a second database read: persisted reads intentionally contain selections
+    // only and never supplier search results.
     const itinerary = await this.detailsService.getItineraryDetails(
       quoteId,
       undefined,

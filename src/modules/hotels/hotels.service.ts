@@ -2307,105 +2307,9 @@ export class HotelsService {
       if (best) {
         const rawOcc = best.occupancy_rates as Record<string, number>;
         const occ = rawOcc && typeof rawOcc === 'object' ? { ...rawOcc } : undefined;
-        if (occ && occ.ROOM_RATE === undefined && occ.DOUBLE !== undefined) {
-          occ.ROOM_RATE = occ.DOUBLE;
-        }
-        if (occ) delete occ.DOUBLE;
         if (occ && typeof occ === 'object') {
+          delete occ.ROOM_RATE;
           bestByDate.set(date, occ);
-        }
-      }
-    }
-
-    // Older/manual hotel price books predate dvi_hotel_occupancy_rate.  They
-    // store one monthly row per price_type with day_1..day_31 columns.  Keep
-    // the normalized occupancy table authoritative, but fill dates for which
-    // it has no row from the legacy table so the admin price-book screen does
-    // not show an empty grid for existing manual hotels.
-    if (bestByDate.size < dates.length) {
-      const legacyRows = await (this.prisma as any).dvi_hotel_room_price_book.findMany({
-        where: {
-          hotel_id: hid,
-          room_id: rid,
-          status: 1,
-          deleted: 0,
-        },
-        select: {
-          price_type: true,
-          month: true,
-          year: true,
-          day_1: true,
-          day_2: true,
-          day_3: true,
-          day_4: true,
-          day_5: true,
-          day_6: true,
-          day_7: true,
-          day_8: true,
-          day_9: true,
-          day_10: true,
-          day_11: true,
-          day_12: true,
-          day_13: true,
-          day_14: true,
-          day_15: true,
-          day_16: true,
-          day_17: true,
-          day_18: true,
-          day_19: true,
-          day_20: true,
-          day_21: true,
-          day_22: true,
-          day_23: true,
-          day_24: true,
-          day_25: true,
-          day_26: true,
-          day_27: true,
-          day_28: true,
-          day_29: true,
-          day_30: true,
-          day_31: true,
-        },
-      });
-
-      const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December',
-      ];
-      const legacyKey = (year: unknown, month: unknown) =>
-        `${String(year ?? '').trim()}-${String(month ?? '').trim().toLowerCase()}`;
-      const priceTypeLabel = (priceType: number) => {
-        switch (priceType) {
-          case 0: return 'ROOM_RATE';
-          case 1: return 'EXTRA_BED';
-          case 2: return 'CHILD_WITH_BED';
-          case 3: return 'CHILD_WITHOUT_BED';
-          default: return `PRICE_TYPE_${priceType}`;
-        }
-      };
-      const legacyByMonth = new Map<string, any[]>();
-      for (const row of legacyRows as any[]) {
-        const key = legacyKey(row.year, row.month);
-        const bucket = legacyByMonth.get(key) || [];
-        bucket.push(row);
-        legacyByMonth.set(key, bucket);
-      }
-
-      for (const date of dates) {
-        if (bestByDate.has(date)) continue;
-        const dt = new Date(`${date}T00:00:00.000Z`);
-        const rowsForMonth = legacyByMonth.get(
-          legacyKey(dt.getUTCFullYear(), monthNames[dt.getUTCMonth()]),
-        ) || [];
-        const occupancy: Record<string, number> = {};
-        const dayColumn = `day_${dt.getUTCDate()}`;
-        for (const row of rowsForMonth) {
-          const value = Number(row[dayColumn]);
-          if (!Number.isFinite(value) || value <= 0) continue;
-          occupancy[priceTypeLabel(Number(row.price_type))] = value;
-        }
-        if (Object.keys(occupancy).length > 0) {
-          bestByDate.set(date, occupancy);
         }
       }
     }
@@ -2828,16 +2732,10 @@ export class HotelsService {
         for (const [key, value] of Object.entries(raw)) {
           const occupancyKey = this.toStr(key)?.toUpperCase();
           const numericValue = this.toNumStrict(value);
-          if (occupancyKey && numericValue !== undefined) rates[occupancyKey] = numericValue;
+          if (occupancyKey && occupancyKey !== 'ROOM_RATE' && numericValue !== undefined) {
+            rates[occupancyKey] = numericValue;
+          }
         }
-
-        // The admin form exposes DOUBLE as the room price field. Persist the
-        // canonical room-price key as ROOM_RATE, while accepting older payloads
-        // that already send ROOM_RATE. DOUBLE remains a read fallback below.
-        if (rates.ROOM_RATE === undefined && rates.DOUBLE !== undefined) {
-          rates.ROOM_RATE = rates.DOUBLE;
-        }
-        delete rates.DOUBLE;
       }
 
       // Compatibility payloads may only provide roomPrice and the three
@@ -2885,6 +2783,7 @@ export class HotelsService {
         }
       }
       Object.assign(merged, rates);
+      delete merged.ROOM_RATE;
       if (!previous) {
         for (const key of PRICEBOOK_OCCUPANCY_KEYS) {
           if (merged[key] === undefined) merged[key] = 0;

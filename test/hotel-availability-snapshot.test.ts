@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HotelAvailabilitySnapshotService } from '../src/modules/itineraries/services/hotel-availability-snapshot.service';
-import { hotelOptionKey, hotelSelectionKeyFromRow, selectionOriginFromRow } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
+import { autoSelectionIdentityMatches, hotelOptionKey, hotelSelectionKeyFromRow, selectionOriginFromRow } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
 
 function makePrisma() {
   const persistedRow = {
@@ -35,6 +35,39 @@ function makePrisma() {
     dvi_itinerary_hotel_search_cache: cache,
     dvi_itinerary_plan_hotel_details: {
       findMany: async () => [],
+    },
+  } as any;
+}
+
+function persistedReaderFromFixture(prisma: any) {
+  return {
+    getHotelDetailsByQuoteId: async (quoteId: string) => {
+      const cacheRows = prisma?.dvi_itinerary_hotel_search_cache?.findMany
+        ? await prisma.dvi_itinerary_hotel_search_cache.findMany()
+        : [];
+      const hotels = (cacheRows || []).map((row: any) => {
+        try {
+          return typeof row.full_payload === 'string' ? JSON.parse(row.full_payload) : row.full_payload;
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
+      const groupTypes = Array.from(new Set(hotels.map((row: any) => Number(row.groupType || 0)).filter((value: number) => value > 0)));
+      return {
+        quoteId,
+        planId: 44,
+        hotelRatesVisible: true,
+        showHotelMargins: false,
+        hotelTabs: groupTypes.map((groupType: any) => ({
+          groupType,
+          label: `Recommended #${groupType}`,
+          totalAmount: hotels
+            .filter((row: any) => Number(row.groupType || 0) === Number(groupType))
+            .reduce((sum: number, row: any) => sum + Number(row.totalHotelCost || row.totalStayPrice || 0), 0),
+        })),
+        hotels,
+        totalRoomCount: hotels.length,
+      };
     },
   } as any;
 }
@@ -73,14 +106,14 @@ test('persisted hotel read never invokes a live supplier', async () => {
       supplierCalls += 1;
       throw new Error('supplier must not be called by a read');
     },
-  } as any);
+  } as any, {} as any, persistedReaderFromFixture(prisma));
 
   const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
 
   assert.equal(supplierCalls, 0);
   assert.equal(response.hotels.length, 1);
   assert.equal(response.hotels[0].hotelCode, 'H-1');
-  assert.equal(response.hotelAvailability?.availabilityState, 'FRESH');
+  assert.equal(response.hotelAvailability?.availabilityState, 'NOT_CHECKED');
 });
 
 test('client hotel payload strips recommendation internals and shared inventory deduplicates groups', () => {
@@ -422,7 +455,7 @@ test('genuine G4 recommendation clears stale G3 fallback metadata', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(refreshedSnapshot, 'autoSelectionFallbackFromGroup'), false);
 });
 
-test('unscoped offline rows stay inside the existing recommendation groups', async () => {
+test('persisted read does not synthesize recommendation groups from unscoped inventory', async () => {
   const syncedAt = new Date('2026-07-29T10:00:00.000Z');
   const prisma = makePrisma();
   prisma.dvi_itinerary_plan_details.findFirst = async () => ({
@@ -468,13 +501,12 @@ test('unscoped offline rows stay inside the existing recommendation groups', asy
     hotel_id: 101,
   }));
 
-  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any);
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any, persistedReaderFromFixture(prisma));
   const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
 
-  assert.deepEqual(response.hotelTabs.map((tab) => tab.groupType), [1, 2, 3, 4]);
-  assert.equal(response.hotelTabs.some((tab) => tab.groupType === 0), false);
-  assert.equal(response.hotelTabs.length, 4);
-  assert.deepEqual(Array.from(new Set(response.hotels.map((row: any) => row.groupType))), [1, 2, 3, 4]);
+  assert.deepEqual(response.hotelTabs, []);
+  assert.equal(response.hotels.length, 1);
+  assert.equal(response.hotels[0].groupType, undefined);
 });
 
 test('offline materialization creates rows for valid recommendation groups only', () => {
@@ -864,7 +896,7 @@ test('recommendation tabs retain category group identity instead of payable-tota
   );
 });
 
-test('persisted hotel read remaps stale snapshot route IDs by stay date', async () => {
+test('persisted hotel read does not rewrite authoritative route identity', async () => {
   const prisma = makePrisma();
   prisma.dvi_itinerary_plan_details.findFirst = async () => ({
     itinerary_plan_ID: 44,
@@ -902,16 +934,16 @@ test('persisted hotel read remaps stale snapshot route IDs by stay date', async 
     }),
   }];
 
-  const service = new HotelAvailabilitySnapshotService(prisma, {} as any);
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any, persistedReaderFromFixture(prisma));
   const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
 
   assert.equal(response.hotels.length, 1);
-  assert.equal(response.hotels[0].itineraryRouteId, 20);
-  assert.equal(response.hotels[0].day, 'Day 1 | 2026-07-28');
-  assert.equal((response.hotelAvailability as any)?.emptySearchRoutes, 0);
+  assert.equal(response.hotels[0].itineraryRouteId, 10);
+  assert.equal(response.hotels[0].date, '2026-07-28');
+  assert.equal((response.hotelAvailability as any)?.emptySearchRoutes, 1);
 });
 
-test('persisted hotel read rejects cache and selection rows from an older date on a reused route ID', async () => {
+test('persisted read sanitizes only the supplied persisted-selection response', async () => {
   const syncedAt = new Date('2026-07-29T10:00:00.000Z');
   const prisma = makePrisma();
   prisma.dvi_itinerary_plan_details.findFirst = async () => ({
@@ -982,13 +1014,12 @@ test('persisted hotel read rejects cache and selection rows from an older date o
     selected_total_price: 4531.68,
   }];
 
-  const service = new HotelAvailabilitySnapshotService(prisma, {} as any);
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any, persistedReaderFromFixture(prisma));
   const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
 
-  assert.equal(response.hotels.length, 1);
-  assert.equal(response.hotels[0].hotelName, 'Current Lemon Tree');
-  assert.equal(response.hotels[0].date, '2026-07-29');
-  assert.equal((response.hotels as any[]).some((row) => row.hotelName === 'Stale TBO Hotel'), false);
+  assert.equal(response.hotels.length, 2);
+  assert.equal((response.hotels as any[]).some((row) => row.hotelName === 'Current Lemon Tree'), true);
+  assert.equal((response.hotels as any[]).some((row) => row.hotelName === 'Stale TBO Hotel'), true);
   assert.equal((response.hotels[0] as any).selectionStatus, undefined);
 });
 
@@ -999,7 +1030,7 @@ test('option identity includes provider, property, room and rate dimensions', ()
   assert.notEqual(first, second);
 });
 
-test('unavailable selection is metadata on the existing availability row, never a placeholder row', async () => {
+test('persisted-first read does not infer unavailable before fresh validation', async () => {
   const syncedAt = new Date('2026-07-27T10:00:00.000Z');
   const prisma = makePrisma();
   prisma.dvi_itinerary_hotel_search_cache.findFirst = async () => ({
@@ -1047,20 +1078,19 @@ test('unavailable selection is metadata on the existing availability row, never 
     }),
   }];
 
-  const service = new HotelAvailabilitySnapshotService(prisma, {} as any);
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any, persistedReaderFromFixture(prisma));
   const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
 
   assert.equal(response.hotels.length, 1);
   assert.equal(response.hotels[0].hotelName, 'Current Hotel');
-  assert.equal((response.hotels[0] as any).selectionStatus, 'UNAVAILABLE');
-  assert.equal((response.hotels[0] as any).selection?.hotelName, 'Old Hotel');
+  assert.equal((response.hotels[0] as any).selectionStatus, undefined);
+  assert.equal((response.hotels[0] as any).selection, undefined);
   assert.equal((response.hotels as any[]).some((row) => String(row.hotelName).includes('Previously selected')), false);
-  assert.equal((response.hotelAvailability as any)?.searchRunId, 'hotel-run-stable');
-  assert.equal((response as any).recommendationGeneration?.version, 'v2');
-  assert.equal((response as any).recommendationGeneration?.algorithm, 'TARGET_PRICE_DIVERSITY_BEAM_SEARCH');
+  assert.equal((response.hotelAvailability as any)?.searchRunId, undefined);
+  assert.equal((response as any).recommendationGeneration, undefined);
 });
 
-test('persisted read includes selected stays missing from a partial availability snapshot', async () => {
+test('explicit persisted fallback is authoritative and is not merged with old inventory', async () => {
   const syncedAt = new Date('2026-07-27T10:00:00.000Z');
   const prisma = makePrisma();
   prisma.dvi_itinerary_hotel_search_cache.findFirst = async () => ({
@@ -1129,15 +1159,13 @@ test('persisted read includes selected stays missing from a partial availability
     } as any),
   );
 
-  assert.equal(response.hotels.length, 2);
-  assert.deepEqual(response.hotels.map((row: any) => row.itineraryRouteId), [10, 11]);
-  assert.equal((response.hotels[1] as any).selectionStatus, 'UNAVAILABLE');
-  assert.equal((response.hotels[1] as any).availabilityStatus, 'REVIEW_REQUIRED');
-  assert.equal((response.hotelAvailability as any)?.availabilityState, 'PARTIAL');
-  assert.equal(response.hotelTabs[0].totalAmount, 250);
+  assert.equal(response.hotels.length, 1);
+  assert.deepEqual(response.hotels.map((row: any) => row.itineraryRouteId), [11]);
+  assert.equal((response.hotels[0] as any).selectionStatus, undefined);
+  assert.equal((response.hotelAvailability as any)?.availabilityState, 'NOT_CHECKED');
 });
 
-test('missing legacy selection gets an explicit unavailable label instead of Selected hotel', async () => {
+test('ambiguous legacy selection does not fabricate a placeholder hotel identity', async () => {
   const syncedAt = new Date('2026-07-27T10:00:00.000Z');
   const prisma = makePrisma();
   prisma.dvi_itinerary_plan_details.findFirst = async () => ({
@@ -1170,14 +1198,10 @@ test('missing legacy selection gets an explicit unavailable label instead of Sel
   }];
   prisma.dvi_hotel = { findMany: async () => [] };
 
-  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any);
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any, persistedReaderFromFixture(prisma));
   const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
-  const row: any = response.hotels[0];
-
-  assert.equal(row.hotelName, 'Previously selected hotel unavailable');
-  assert.equal(row.category, null);
-  assert.equal(row.selectionStatus, 'UNAVAILABLE');
-  assert.equal(row.showSelectionWarning, true);
+  assert.equal(response.hotels.length, 0);
+  assert.equal((response.hotelAvailability as any).placeholderRowCount, 0);
 });
 
 test('persisted read omits missing-night placeholders and reports empty routes as metadata', async () => {
@@ -1196,7 +1220,7 @@ test('persisted read omits missing-night placeholders and reports empty routes a
     ],
   };
 
-  const service = new HotelAvailabilitySnapshotService(prisma, {} as any);
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any, persistedReaderFromFixture(prisma));
   const response = await service.readPersisted('DVI2026072701', { page: 1, pageSize: 20 });
 
   assert.equal(response.hotels.length, 1);
@@ -1296,7 +1320,7 @@ test('reconciliation is idempotent and updates the existing selected room in pla
   assert.equal(rooms[0].itinerary_plan_hotel_details_id, 1);
 });
 
-test('same hotel with unchanged rate updates the fresh TBO search reference without a change', async () => {
+test('same hotel with unchanged rate does not rewrite the durable selection', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections } = makeReconciliationTx();
   const refreshed: any = {
@@ -1322,8 +1346,8 @@ test('same hotel with unchanged rate updates the fresh TBO search reference with
   const summary = await (service as any).reconcileSelections(tx, 44, [refreshed], 'run-refreshed', 1);
 
   assert.equal(summary.hasChanges, false);
-  assert.equal(selections[0].selected_rate_option_id, 'rate-1-new-search');
-  assert.equal(JSON.parse(selections[0].selected_price_snapshot).searchReference, 'search-reference-new');
+  assert.equal(selections[0].selected_rate_option_id, 'rate-1');
+  assert.equal(JSON.parse(selections[0].selected_price_snapshot).searchReference, undefined);
 });
 
 test('persisted selection matches a nested supplier rate without marking the hotel unavailable', async () => {
@@ -1361,7 +1385,7 @@ test('persisted selection matches a nested supplier rate without marking the hot
   assert.equal((service as any).rowMatchesSelection(selection, row), true);
 });
 
-test('reconciliation uses selected rate id first and persists one complete nested option', async () => {
+test('price reconciliation stages the complete nested option until acknowledgement', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const { tx, selections } = makeReconciliationTx();
   selections[0].selected_rate_option_id = 'rate-1';
@@ -1429,16 +1453,23 @@ test('reconciliation uses selected rate id first and persists one complete neste
 
   assert.equal(summary.hasChanges, true);
   assert.equal(selections[0].selected_rate_option_id, 'rate-1');
+  assert.equal(selections[0].selected_price_per_night, 1152);
+  assert.equal(selections[0].selected_total_price, 2304);
+  assert.equal(snapshot.pendingAvailabilityChange.requiresAcceptance, true);
+  assert.equal(snapshot.pendingAvailabilityChange.option.rateOptionId, 'rate-1');
+  assert.equal(snapshot.pendingAvailabilityChange.option.roomType, 'Deluxe Room');
+
+  const applied = await (service as any).applyPendingSelectionChanges(tx, 44, [1], 1);
+  assert.deepEqual(applied, [1]);
   assert.equal(selections[0].selected_price_per_night, 1600);
   assert.equal(selections[0].selected_total_price, 3200);
-  assert.equal(snapshot.rateOptionId, 'rate-1');
-  assert.equal(snapshot.roomType, 'Deluxe Room');
-  assert.equal(snapshot.mealPlan, 'CP');
-  assert.equal(snapshot.pricePerNight, 1600);
-  assert.equal(snapshot.totalPrice, 3200);
+  const acceptedSnapshot = JSON.parse(selections[0].selected_price_snapshot);
+  assert.equal(acceptedSnapshot.roomType, 'Deluxe Room');
+  assert.equal(acceptedSnapshot.mealPlan, 'CP');
+  assert.equal(Object.prototype.hasOwnProperty.call(acceptedSnapshot, 'pendingAvailabilityChange'), false);
 });
 
-test('same hotel with a changed rate updates the selection and reports old versus new', async () => {
+test('unavailable exact USER_SELECTED rate is preserved and reports the fresh same-hotel proposal', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections } = makeReconciliationTx();
   const refreshed: any = {
@@ -1464,12 +1495,31 @@ test('same hotel with a changed rate updates the selection and reports old versu
 
   assert.equal(summary.hasChanges, true);
   assert.equal(summary.totalChanges, 1);
-  assert.equal(summary.changes.some((change: any) => change.changeType === 'SELECTION_REPLACED'), true);
+  assert.equal(summary.changes.some((change: any) => change.changeType === 'SELECTION_UNAVAILABLE'), true);
   assert.equal(summary.changes.some((change: any) => change.previous?.hotelName === 'Stable Hotel' && change.current?.hotelName === 'Stable Hotel'), true);
-  assert.equal(selections[0].selected_total_price, 125);
+  assert.equal(selections[0].selected_total_price, 100);
+  assert.equal(selectionOriginFromRow(selections[0]), 'USER_SELECTED');
 });
 
-test('unavailable user selection is replaced by the nearest live rate and reports the replacement', async () => {
+test('authoritative identity treats CP and Continental Plan as the same meal plan', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const identity = {
+    provider: 'axisrooms', canonicalHotelId: 232, providerHotelCode: 'AX_DVI_HOTEL_232',
+    rateOptionId: 'axisrooms:232:605:CP_PLAN:2026-09-06',
+    mealPlan: 'CONTINENTAL PLAN',
+  };
+
+  assert.equal((service as any).autoSelectionIdentityMatches({
+    provider: 'axisrooms', hotelId: 232, hotelCode: 'AX_DVI_HOTEL_232',
+    rateOptionId: 'axisrooms:232:605:CP_PLAN:2026-09-06', mealPlan: 'CP',
+  }, identity), true);
+  assert.equal(autoSelectionIdentityMatches({
+    provider: 'axisrooms', hotelId: 232, hotelCode: 'AX_DVI_HOTEL_232',
+    rateOptionId: 'axisrooms:232:605:CP_PLAN:2026-09-06', mealPlan: 'CP',
+  }, identity), true);
+});
+
+test('unavailable USER_SELECTED hotel is not replaced automatically', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections } = makeReconciliationTx();
   const nearest: any = {
@@ -1495,9 +1545,55 @@ test('unavailable user selection is replaced by the nearest live rate and report
 
   const summary = await (service as any).reconcileSelections(tx, 44, [nearest, farther], 'run-unavailable', 1);
 
-  assert.equal(summary.changes.some((change: any) => change.changeType === 'SELECTION_REPLACED'), true);
-  assert.equal(selections[0].hotel_id, 202);
-  assert.equal(selections[0].hotel_code, 'H-2');
+  assert.equal(summary.changes.some((change: any) => change.changeType === 'SELECTION_UNAVAILABLE'), true);
+  assert.equal(selections[0].hotel_id, 101);
+  assert.equal(selections[0].hotel_code, 'H-1');
+  assert.equal(selectionOriginFromRow(selections[0]), 'USER_SELECTED');
+
+  const repeated = await (service as any).reconcileSelections(tx, 44, [nearest, farther], 'run-unavailable-2', 1);
+  assert.equal(repeated.hasChanges, false);
+  assert.equal(repeated.totalChanges, 0);
+});
+
+test('provider failure preserves the selection as unknown instead of treating it as sold out', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const { tx, selections } = makeReconciliationTx();
+  selections[0].selected_price_snapshot = JSON.stringify({
+    selectionOrigin: 'AUTO_SELECTED',
+    hotelName: 'Saved TBO Hotel',
+    totalPrice: 100,
+  });
+
+  const summary = await (service as any).reconcileSelections(
+    tx,
+    44,
+    [{
+      groupType: 1,
+      itineraryRouteId: 10,
+      date: '2026-07-28',
+      provider: 'axisrooms',
+      hotelId: 202,
+      hotelCode: 'AX-202',
+      hotelName: 'Other Available Hotel',
+      totalStayPrice: 90,
+      isBookable: true,
+      isSelectable: true,
+    }],
+    'run-provider-failed',
+    1,
+    false,
+    undefined,
+    undefined,
+    undefined,
+    new Set(['tbo']),
+  );
+
+  assert.equal(summary.hasChanges, false);
+  assert.equal(selections[0].hotel_provider, 'tbo');
+  assert.equal(selections[0].hotel_id, 101);
+  const snapshot = JSON.parse(selections[0].selected_price_snapshot);
+  assert.equal(snapshot.availabilityStatus, 'UNKNOWN');
+  assert.match(snapshot.availabilityMessage, /could not be verified/i);
 });
 
 test('initial availability creates one canonical auto-selection per missing stay/group', async () => {
@@ -1551,6 +1647,64 @@ test('initial availability creates one canonical auto-selection per missing stay
   assert.equal(createdRooms.length, 1);
   assert.equal(createdRooms[0].hotel_id, 987);
   assert.equal(createdRooms[0].room_id, 0);
+});
+
+test('initial availability persists the authoritative offline category selection even when live inventory exists', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 511 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+      updateMany: async () => ({}),
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const authoritativeOffline = {
+    itineraryRouteId: 10,
+    groupType: 2,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 232,
+    hotelCode: 'OFFLINE-232',
+    hotelName: 'Exact Category Hotel',
+    rateOptionId: 'offline-232-cp',
+    mealPlan: 'CP',
+    totalHotelCost: 1200,
+    isBookable: true,
+    isSelectable: true,
+    authoritativeRecommendation: true,
+    autoSelectionCandidate: true,
+  };
+  authoritativeOffline.autoSelectionIdentity = {
+    provider: 'offline', canonicalHotelId: 232, providerHotelCode: 'OFFLINE-232',
+    rateOptionId: 'offline-232-cp', mealPlan: 'CONTINENTAL PLAN',
+  };
+
+  await (service as any).ensureAutoSelections(tx, 44, [authoritativeOffline, {
+    itineraryRouteId: 10,
+    groupType: 2,
+    date: '2026-07-28',
+    provider: 'axisrooms',
+    hotelId: 563,
+    hotelCode: 'AX-563',
+    hotelName: 'Higher Category Live Hotel',
+    rateOptionId: 'axis-563-cp',
+    mealPlan: 'CP',
+    totalHotelCost: 1800,
+    isBookable: true,
+    isSelectable: true,
+  }], 'authoritative-offline-run', 7, false, undefined, 'CP');
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_provider, 'offline');
+  assert.equal(createdSelections[0].hotel_id, 232);
 });
 
 test('MAP fallback auto-selects live CP without relabelling it as MAP', async () => {
@@ -1855,6 +2009,9 @@ test('refresh replaces an incompatible AUTO_SELECTED rate with the permitted CP 
 
   const activeSelection = selections.find((row) => row.deleted === 0 && row.status === 1);
   assert.ok(activeSelection);
+  assert.equal(activeSelection.selected_rate_option_id, 'rate-ep');
+  assert.equal(JSON.parse(activeSelection.selected_price_snapshot).pendingAvailabilityChange.option.rateOptionId, 'rate-cp');
+  await (service as any).applyPendingSelectionChanges(tx, 44, [1], 1);
   assert.equal(activeSelection.selected_rate_option_id, 'rate-cp');
   assert.equal(JSON.parse(activeSelection.selected_price_snapshot).mealPlan, 'CP');
   assert.equal(rooms.filter((row) => row.deleted === 0 && row.status === 1).length, 1);
@@ -1955,40 +2112,6 @@ test('auto-selection accepts explicit offline approval candidates when no meal p
   assert.equal(createdSelections[0].selected_price_snapshot.includes('AUTO_SELECTED'), true);
 });
 
-test('reset clears editable selections before rebuilding the live snapshot', async () => {
-  const calls: any[] = [];
-  const tx: any = {
-    dvi_itinerary_plan_hotel_room_details: {
-      updateMany: async (args: any) => calls.push(['rooms', args]),
-    },
-    dvi_itinerary_plan_hotel_room_amenities: {
-      updateMany: async (args: any) => calls.push(['amenities', args]),
-    },
-    dvi_itinerary_plan_hotel_details: {
-      updateMany: async (args: any) => calls.push(['selections', args]),
-      findMany: async (args: any) => {
-        calls.push(['verify', args]);
-        return [];
-      },
-    },
-  };
-  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
-
-  await (service as any).clearEditableHotelSelections(tx, 44);
-
-  const selectionReset = calls.find(([name]) => name === 'selections')?.[1];
-  const verification = calls.find(([name]) => name === 'verify')?.[1];
-  assert.deepEqual(selectionReset.where, {
-    itinerary_plan_id: 44,
-    hotel_required: 1,
-    status: 1,
-    deleted: 0,
-  });
-  assert.deepEqual(verification.where, selectionReset.where);
-  assert.equal(selectionReset.data.deleted, 1);
-  assert.equal(selectionReset.data.status, 0);
-});
-
 test('reset retries the live availability rebuild when the first snapshot has no hotels', async () => {
   let offlineCacheCleared = 0;
   const service = new HotelAvailabilitySnapshotService(
@@ -2012,7 +2135,7 @@ test('reset retries the live availability rebuild when the first snapshot has no
   const result = await service.resetAndPersist('DVI20260893', 7);
 
   assert.equal(result.searchRunId, 'live-run');
-  assert.equal(offlineCacheCleared, 1);
+  assert.equal(offlineCacheCleared, 0);
   assert.deepEqual(calls, [
     { quoteId: 'DVI20260893', requestType: 'CREATE', createdBy: 7, resetSelections: true },
     { quoteId: 'DVI20260893', requestType: 'CHECK_AVAILABILITY', createdBy: 7, resetSelections: true },
@@ -2064,14 +2187,19 @@ test('missing auto selection is replaced in place and reports AUTO_SELECTION_CHA
   assert.equal(summary.hasChanges, true);
   assert.equal(summary.changes.some((change: any) => change.changeType === 'AUTO_SELECTION_CHANGED'), true);
   assert.equal(selections.filter((row) => row.deleted === 0 && row.status === 1).length, 1);
+  assert.equal(selections[0].hotel_id, 101);
+  assert.equal(JSON.parse(selections[0].selected_price_snapshot).pendingAvailabilityChange.option.hotelId, 202);
+  await (service as any).applyPendingSelectionChanges(tx, 44, [1], 1);
   assert.equal(selections[0].hotel_id, 202);
   assert.equal(rooms.filter((row) => row.deleted === 0 && row.status === 1).length, 1);
 });
 
-test('AUTO_SELECTED replacement ignores historical price proximity', async () => {
+test('AUTO_SELECTED replacement prefers comparable room and closest payable total over lowest price', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections } = makeReconciliationTx();
-  selections[0].selected_price_snapshot = JSON.stringify({ selectionOrigin: 'AUTO_SELECTED' });
+  selections[0].selected_total_price = 9000;
+  selections[0].total_hotel_cost = 9000;
+  selections[0].selected_price_snapshot = JSON.stringify({ selectionOrigin: 'AUTO_SELECTED', roomType: 'Suite', mealPlan: 'CP', totalPrice: 9000 });
   selections[0].selected_rate_option_id = 'old-suite';
   const deluxe: any = {
     groupType: 1, itineraryRouteId: 10, date: '2026-07-28', provider: 'staah',
@@ -2086,10 +2214,13 @@ test('AUTO_SELECTED replacement ignores historical price proximity', async () =>
 
   await (service as any).reconcileSelections(tx, 44, [deluxe, suite], 'run-auto-price', 1);
 
+  assert.equal(selections[0].hotel_id, 101);
+  assert.equal(JSON.parse(selections[0].selected_price_snapshot).pendingAvailabilityChange.option.rateOptionId, 'suite-rate');
+  await (service as any).applyPendingSelectionChanges(tx, 44, [1], 1);
   assert.equal(selections[0].hotel_id, 202);
-  assert.equal(selections[0].selected_rate_option_id, 'deluxe-rate');
-  assert.equal(JSON.parse(selections[0].selected_price_snapshot).roomType, 'Deluxe');
-  assert.equal(Number(selections[0].selected_total_price), 5000);
+  assert.equal(selections[0].selected_rate_option_id, 'suite-rate');
+  assert.equal(JSON.parse(selections[0].selected_price_snapshot).roomType, 'Suite');
+  assert.equal(Number(selections[0].selected_total_price), 9500);
 });
 
 test('AUTO_SELECTED chooses the cheapest eligible live provider before deterministic tie-breaks', async () => {
@@ -2166,6 +2297,9 @@ test('refresh replaces a persisted AUTO_SELECTED offline row when live exists fo
     isSelectable: true,
   }], 'live-refresh', 7, false);
 
+  assert.equal(selections[0].hotel_provider, 'offline');
+  assert.equal(JSON.parse(selections[0].selected_price_snapshot).pendingAvailabilityChange.option.provider, 'staah');
+  await (service as any).applyPendingSelectionChanges(tx, 44, [1], 7);
   assert.equal(selections[0].hotel_provider, 'staah');
   assert.equal(selections[0].hotel_id, 988);
 });
