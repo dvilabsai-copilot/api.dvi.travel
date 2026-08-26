@@ -12,6 +12,10 @@ import {
   ItineraryAccessService,
   type ItineraryViewer,
 } from '../itineraries/services/itinerary-access.service';
+
+import {
+  SystemRole,
+} from '../auth/constants/system-role.constants';
 import { CreatePublicItineraryLinkDto } from './dto/create-public-itinerary-link.dto';
 
 type PublicLinkViewer = ItineraryViewer & {
@@ -103,17 +107,6 @@ const viewerRoleId = Number(
     0,
 );
 
-const viewerAgentId = Number(
-  authenticatedViewer?.agentId ??
-    authenticatedViewer?.agent_id ??
-    0,
-);
-
-const createdByAgentId =
-  viewerRoleId === 4 && viewerAgentId > 0
-    ? viewerAgentId
-    : null;
-
 const access =
   await this.itineraryAccessService.getPlanAccessDecision(
     itineraryPlanId,
@@ -137,16 +130,26 @@ const access =
           itinerary_plan_ID: itineraryPlanId,
           deleted: 0,
         },
-        select: {
-          itinerary_plan_ID: true,
-        },
+      select: {
+  itinerary_plan_ID: true,
+  agent_id: true,
+},
       });
 
     if (!plan) {
-      throw new NotFoundException(
-        'Active itinerary plan not found',
-      );
-    }
+  throw new NotFoundException(
+    'Active itinerary plan not found',
+  );
+}
+
+const planAgentId =
+  Number(plan.agent_id || 0);
+
+const createdByAgentId =
+  viewerRoleId === SystemRole.AGENT &&
+  planAgentId > 0
+    ? planAgentId
+    : null;
 
     const cancelledItinerary =
       await this.prisma.dvi_cancelled_itineraries.findFirst({
