@@ -84,11 +84,105 @@ function normalizeWallClockTime(value: unknown): string {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return '';
 
-  return [
+    return [
     String(parsed.getUTCHours()).padStart(2, '0'),
     String(parsed.getUTCMinutes()).padStart(2, '0'),
     String(parsed.getUTCSeconds()).padStart(2, '0'),
   ].join(':');
+}
+
+function normalizeComparableRouteLocation(value: unknown): string {
+  return normalizeRouteText(value)
+    .replace(/\s*\([^)]*\)\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shouldDisableEarlyMorningFirstRouteVia(
+  plan: any,
+  routes: any[] = [],
+): boolean {
+  if (!Array.isArray(routes) || routes.length === 0) {
+    return false;
+  }
+
+  const normalizedStartTime = normalizeWallClockTime(
+    plan?.trip_start_date ?? plan?.trip_start_date_and_time,
+  );
+
+  if (!normalizedStartTime) {
+    return false;
+  }
+
+  const [hours, minutes, seconds] = normalizedStartTime
+    .split(':')
+    .map((value) => Number(value || 0));
+
+  const arrivalSeconds =
+    (hours * 3600) +
+    (minutes * 60) +
+    seconds;
+
+  // Existing early-arrival cutoff: before 08:00 AM.
+  if (!Number.isFinite(arrivalSeconds) || arrivalSeconds >= 8 * 3600) {
+    return false;
+  }
+
+  const explicitDayOneIndex = routes.findIndex(
+    (route: any) =>
+      Number(route?.no_of_days ?? route?.day ?? 0) === 1,
+  );
+
+  const firstRouteIndex =
+    explicitDayOneIndex >= 0 ? explicitDayOneIndex : 0;
+
+  const firstRoute = routes[firstRouteIndex];
+
+  const source = normalizeComparableRouteLocation(
+    firstRoute?.location_name ?? firstRoute?.source,
+  );
+
+  const nextDestination = normalizeComparableRouteLocation(
+    firstRoute?.next_visiting_location ??
+    firstRoute?.destination ??
+    firstRoute?.next,
+  );
+
+  if (!source || !nextDestination) {
+    return false;
+  }
+
+  // Same place -> Via Routes remain available.
+  // Different place -> Via Routes must be disabled.
+  return source !== nextDestination;
+}
+
+function enforceEarlyMorningDirectFirstRoute(
+  plan: any,
+  routes: any[] = [],
+): any[] {
+  if (!shouldDisableEarlyMorningFirstRouteVia(plan, routes)) {
+    return routes;
+  }
+
+  const explicitDayOneIndex = routes.findIndex(
+    (route: any) =>
+      Number(route?.no_of_days ?? route?.day ?? 0) === 1,
+  );
+
+  const firstRouteIndex =
+    explicitDayOneIndex >= 0 ? explicitDayOneIndex : 0;
+
+  return routes.map((route: any, index: number) =>
+    index === firstRouteIndex
+      ? {
+          ...route,
+          via_route: '',
+          via: '',
+          via_routes: [],
+        }
+      : route,
+  );
 }
 
 function routeShapeSignature(route: any): string {
@@ -394,6 +488,54 @@ export class ItineraryPlanPersistenceService {
     } else {
  console.log('[ItinerariesService] Route optimization NOT triggered. shouldOptimizeRoute=', shouldOptimizeRoute, 'routeCount=', dto.routes?.length);
     }
+
+    if (
+      Array.isArray(dto.routes) &&
+      dto.routes.length > 0 &&
+      shouldDisableEarlyMorningFirstRouteVia(dto.plan, dto.routes)
+    ) {
+      const explicitDayOneIndex = dto.routes.findIndex(
+        (route: any) =>
+          Number(route?.no_of_days ?? route?.day ?? 0) === 1,
+      );
+
+      const firstRouteIndex =
+        explicitDayOneIndex >= 0 ? explicitDayOneIndex : 0;
+
+      const firstRouteBeforeCleanup = dto.routes[firstRouteIndex] as any;
+
+      const hadViaRoute =
+        Boolean(
+          String(
+            firstRouteBeforeCleanup?.via_route ??
+            firstRouteBeforeCleanup?.via ??
+            '',
+          ).trim(),
+        ) ||
+        (
+          Array.isArray(firstRouteBeforeCleanup?.via_routes) &&
+          firstRouteBeforeCleanup.via_routes.length > 0
+        );
+
+      dto.routes = enforceEarlyMorningDirectFirstRoute(
+        dto.plan,
+        dto.routes,
+      );
+
+      console.log('[EARLY_MORNING_DAY1_DIRECT_ROUTE]', {
+        source:
+          firstRouteBeforeCleanup?.location_name ??
+          firstRouteBeforeCleanup?.source ??
+          '',
+        destination:
+          firstRouteBeforeCleanup?.next_visiting_location ??
+          firstRouteBeforeCleanup?.destination ??
+          firstRouteBeforeCleanup?.next ??
+          '',
+        viaRouteRemoved: hadViaRoute,
+      });
+    }
+
     stepStartedAt = this.logItineraryApiTiming({
       api: 'save_basic_info',
       step: 'route_optimization',
