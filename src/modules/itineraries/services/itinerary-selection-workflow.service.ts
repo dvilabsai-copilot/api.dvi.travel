@@ -1460,7 +1460,9 @@ export class ItinerarySelectionWorkflowService {
         return roomRate * roomCount + (Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate * extraBeds : 0);
       }
     }
-    for (const key of ['SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'EXTRABED']) {
+    // Supplements are not room rates. In particular, never use EXTRABED as
+    // the room price when a legacy occupancy row has no SINGLE/DOUBLE value.
+    for (const key of ['SINGLE', 'DOUBLE']) {
       const value = Number(values[key]);
       if (Number.isFinite(value) && value > 0) return value;
     }
