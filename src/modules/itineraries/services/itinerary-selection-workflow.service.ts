@@ -23,6 +23,7 @@ import {
 } from '../../hotels/hotel-rate-plans';
 import { resolveHotelSelectionPricing } from '../utils/hotel-selection-pricing.util';
 import { HotelAvailabilitySnapshotService } from './hotel-availability-snapshot.service';
+import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 
 @Injectable()
 export class ItinerarySelectionWorkflowService {
@@ -421,7 +422,11 @@ export class ItinerarySelectionWorkflowService {
     const suppliedMarginAmount = Math.max(Number(
       data.hotelMarginStayAmount ?? data.hotelMarginTotalAmount ?? data.hotelMarginAmount ?? 0,
     ), 0);
-    const hotelMarginRate = providerForPricing === 'staah' && staahMarginRate > 0
+    const hotelMarginRate = providerForPricing === 'axisrooms'
+      ? authoritativeBaseTotal > 0
+        ? Number((authoritativeBaseTotal * hotelMarginPercentage / 100).toFixed(2))
+        : 0
+      : providerForPricing === 'staah' && staahMarginRate > 0
       ? staahMarginRate
       : suppliedMarginAmount > 0
         ? suppliedMarginAmount
@@ -805,7 +810,7 @@ export class ItinerarySelectionWorkflowService {
     const snapshot = JSON.stringify(routeSnapshot);
     const checkInDate = resolvedRate.routeDate || routeNight.date || null;
     const checkOutDate = checkInDate
-      ? new Date(`${checkInDate}T00:00:00.000Z`)
+      ? toDatabaseBusinessDate(checkInDate)
       : null;
     if (checkOutDate) checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
 
@@ -876,7 +881,7 @@ export class ItinerarySelectionWorkflowService {
         updatedon: now,
         status: 1,
         deleted: 0,
-        ...(checkInDate ? { hotel_check_in_date: new Date(`${checkInDate}T00:00:00.000Z`) } : {}),
+        ...(checkInDate ? { hotel_check_in_date: toDatabaseBusinessDate(checkInDate) } : {}),
         ...(checkOutDate ? { hotel_check_out_date: checkOutDate } : {}),
       };
       const selection = existingHotel
@@ -891,7 +896,7 @@ export class ItinerarySelectionWorkflowService {
               group_type: Number(data.groupType || 1),
               createdby: requestedBy,
               createdon: now,
-              itinerary_route_date: checkInDate ? new Date(`${checkInDate}T00:00:00.000Z`) : null,
+              itinerary_route_date: checkInDate ? toDatabaseBusinessDate(checkInDate) : null,
               ...hotelData,
             },
           });
@@ -1357,7 +1362,7 @@ export class ItinerarySelectionWorkflowService {
     const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
     if (!availabilityModel?.findFirst || !ratePlanModel?.findFirst || !occupancyModel?.findMany) return false;
 
-    const date = new Date(`${routeDate}T00:00:00.000Z`);
+    const date = toDatabaseBusinessDate(routeDate);
     const requiredRooms = Math.max(Number(data?.roomCount || 1), 1);
     const [availability, ratePlan, occupancyRows] = await Promise.all([
       availabilityModel.findFirst({
@@ -1393,8 +1398,8 @@ export class ItinerarySelectionWorkflowService {
         hotel_id: identity.hotelId,
         room_id: identity.roomId,
         rateplan_id: identity.rateplanId,
-        start_date: { lte: new Date(`${routeDate}T00:00:00.000Z`) },
-        end_date: { gte: new Date(`${routeDate}T00:00:00.000Z`) },
+        start_date: { lte: toDatabaseBusinessDate(routeDate) },
+        end_date: { gte: toDatabaseBusinessDate(routeDate) },
       },
       select: { occupancy_rates: true, start_date: true, end_date: true, received_at: true },
       orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],

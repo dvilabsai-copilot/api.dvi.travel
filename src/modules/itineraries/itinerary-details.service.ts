@@ -30,6 +30,7 @@ import { HotelAvailabilitySnapshotService } from './services/hotel-availability-
 import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
 import { normalizeHotelDisplayName } from './utils/hotel-selection-identity.util';
 import { resolveStoredHotelPayablePricing } from './utils/hotel-payable-pricing.util';
+import { toDatabaseBusinessDate } from './utils/itinerary.utils';
 import {
   selectAdminMatchingOccupancyRow,
   selectOfflineRoomRate,
@@ -582,13 +583,13 @@ export class ItineraryDetailsService {
         hotel_id: hotelId,
         room_id: roomId,
         rateplan_id: rateplanId,
-        start_date: { lte: new Date(`${date}T00:00:00.000Z`) },
-        end_date: { gte: new Date(`${date}T00:00:00.000Z`) },
+        start_date: { lte: toDatabaseBusinessDate(date) },
+        end_date: { gte: toDatabaseBusinessDate(date) },
       },
       select: { occupancy_rates: true },
       orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
     });
-    const target = new Date(`${date}T00:00:00.000Z`).getTime();
+    const target = toDatabaseBusinessDate(date).getTime();
     const selectedRow = selectAdminMatchingOccupancyRow(rows, target);
     const rawRates = selectedRow?.occupancy_rates;
     let rates: Record<string, unknown> = {};
@@ -619,8 +620,8 @@ export class ItineraryDetailsService {
         hotel_id: hotelId,
         room_id: roomId,
         rateplan_id: rateplanId,
-        start_date: { lte: new Date(`${date}T00:00:00.000Z`) },
-        end_date: { gte: new Date(`${date}T00:00:00.000Z`) },
+        start_date: { lte: toDatabaseBusinessDate(date) },
+        end_date: { gte: toDatabaseBusinessDate(date) },
       },
       select: { occupancy_rates: true, received_at: true, start_date: true },
       orderBy: [{ received_at: 'desc' }, { start_date: 'desc' }],

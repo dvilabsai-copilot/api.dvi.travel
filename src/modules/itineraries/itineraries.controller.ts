@@ -769,7 +769,6 @@ private readonly itineraryAccessService: ItineraryAccessService,
     // are not sufficient because they contain only the current recommendation.
     const toCompactHotelRow = (row: any) => {
       const {
-        rateOptions: _rateOptions,
         roomTypes: _roomTypes,
         nightlyRates: _nightlyRates,
         supplementSummary: _supplementSummary,
@@ -782,7 +781,27 @@ private readonly itineraryAccessService: ItineraryAccessService,
         check_out_date: _checkOutDateLegacy,
         ...summaryRow
       } = row || {};
-      return summaryRow;
+      // Keep the concrete options needed by the hotel card. Availability and
+      // supplement rates are calculated per option by the API; removing this
+      // array makes the UI inspect the parent summary row, which can have no
+      // extra-bed/child rate and incorrectly render a valid hotel unavailable.
+      const compactRateOptions = Array.isArray(row?.rateOptions)
+        ? row.rateOptions.map((option: any) => {
+            const {
+              roomTypes: _optionRoomTypes,
+              nightlyRates: _optionNightlyRates,
+              supplementSummary: _optionSupplementSummary,
+              selectedPriceSnapshot: _optionSelectedPriceSnapshot,
+              selected_price_snapshot: _optionSelectedPriceSnapshotLegacy,
+              ...compactOption
+            } = option || {};
+            return compactOption;
+          })
+        : undefined;
+      return {
+        ...summaryRow,
+        ...(compactRateOptions ? { rateOptions: compactRateOptions } : {}),
+      };
     };
 
     return {
