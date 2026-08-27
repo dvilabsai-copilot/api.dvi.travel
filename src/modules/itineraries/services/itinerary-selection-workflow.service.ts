@@ -1114,14 +1114,13 @@ export class ItinerarySelectionWorkflowService {
     // client/container price from the search cache. Exact RATE_OPTION
     // selections continue through the strict snapshot identity/price check.
     const selectionIntent = String(data.selectionIntent || '').trim().toUpperCase();
-    const hasExplicitRateIdentity = [
-      data.selectionKey,
-      data.rateOptionId,
-      data.optionKey,
-      data.searchReference,
-      data.bookingCode,
-    ].some((value) => String(value || '').trim().length > 0);
-    if (['HOTEL', 'ROOM_TYPE', 'MEAL_PLAN'].includes(selectionIntent) && !hasExplicitRateIdentity) {
+    // selectHotelIntentUnlocked resolves a property-level intent into a
+    // concrete route option before persistence. Therefore checking for rate
+    // identity here is incorrect: those generated identities belong to the
+    // server's current selection, not to a client-supplied RATE_OPTION.
+    // Property/room/meal intents have already been resolved against current
+    // candidates and continuous-stay availability by the caller.
+    if (['HOTEL', 'ROOM_TYPE', 'MEAL_PLAN'].includes(selectionIntent)) {
       return;
     }
 
@@ -1135,24 +1134,6 @@ export class ItinerarySelectionWorkflowService {
       // request lifecycle.
       if (await this.isCurrentAxisRoomsDatabaseRate(data, route)) return;
 
-      // HOTEL/ROOM_TYPE/MEAL_PLAN actions intentionally omit supplier rate
-      // identities. The card is a selection intent, and the authoritative
-      // SINGLE/DOUBLE/EXTRABED/child rate must be resolved from the current
-      // occupancy-rate tables by the selection service. Requiring a nested
-      // rateOptionId here makes a valid CP card fail as stale before that
-      // resolver runs. RATE_OPTION actions still fall through and require an
-      // exact supplier identity.
-      const selectionIntent = String(data.selectionIntent || '').trim().toUpperCase();
-      const hasExplicitRateIdentity = [
-        data.selectionKey,
-        data.rateOptionId,
-        data.optionKey,
-        data.searchReference,
-        data.bookingCode,
-      ].some((value) => String(value || '').trim().length > 0);
-      if (['HOTEL', 'ROOM_TYPE', 'MEAL_PLAN'].includes(selectionIntent) && !hasExplicitRateIdentity) {
-        return;
-      }
     }
 
     // A selection is validated against a fresh provider/local-source lookup
