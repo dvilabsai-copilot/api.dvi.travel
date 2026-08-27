@@ -395,6 +395,7 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
       if (!plans.length) continue;
       const occupancyRows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({ where: { hotel_id: hotel.hotel_id, room_id: { in: roomIds }, start_date: { lte: checkIn }, end_date: { gte: checkIn } }, select: { room_id: true, rateplan_id: true, occupancy_rates: true, start_date: true, end_date: true, received_at: true } });
       const effectiveOccupancy = new Map<string, any>();
+      const requestedAdultCount = Math.max(Number(criteria.adultCount || 2), 1);
       for (const row of occupancyRows) {
         const startTime = new Date(row.start_date).getTime();
         const endTime = new Date(row.end_date).getTime();
@@ -406,18 +407,28 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
           : Number.MAX_SAFE_INTEGER;
         const receivedAt = new Date(row.received_at).getTime();
         const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
-        if (!current || rangeDays < currentRangeDays || (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)) {
+        const rowHasRoomRate = this.extractAxisRate(row.occupancy_rates, requestedAdultCount, requiredRoomCount) > 0;
+        const currentHasRoomRate = current
+          ? this.extractAxisRate(current.occupancy_rates, requestedAdultCount, requiredRoomCount) > 0
+          : false;
+        // Prefer a row containing the requested room occupancy. A legacy row
+        // with only EXTRABED/child supplements must never hide a valid
+        // SINGLE/DOUBLE row merely because its date range is shorter.
+        if (!current ||
+          (rowHasRoomRate && !currentHasRoomRate) ||
+          (rowHasRoomRate === currentHasRoomRate &&
+            (rangeDays < currentRangeDays || (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)))) {
           effectiveOccupancy.set(key, row);
         }
       }
       const occupancy = Array.from(effectiveOccupancy.values());
       const validPlans = plans.filter((candidate: any) => {
         const rateRow = occupancy.find((row: any) => String(row.room_id) === String(candidate.room_id) && String(row.rateplan_id) === String(candidate.rateplan_id));
-        return this.extractAxisRate(rateRow?.occupancy_rates) > 0;
+        return this.extractAxisRate(rateRow?.occupancy_rates, requestedAdultCount, requiredRoomCount) > 0;
       });
       for (const plan of validPlans) {
         const rateRow = occupancy.find((row: any) => String(row.room_id) === String(plan.room_id) && String(row.rateplan_id) === String(plan.rateplan_id));
-        const rate = this.extractAxisRate(rateRow?.occupancy_rates);
+        const rate = this.extractAxisRate(rateRow?.occupancy_rates, requestedAdultCount, requiredRoomCount);
         if (!rate) continue;
         const room = await (this.prisma as any).dvi_hotel_rooms.findFirst({ where: { room_ID: plan.room_id, deleted: 0 }, select: { room_title: true } });
         const optionId = `axisrooms:${hotel.hotel_id}:${plan.room_id}:${plan.rateplan_id}:${String(criteria.checkInDate).slice(0, 10)}`;
@@ -431,18 +442,17 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
     return results;
   }
 
-  private extractAxisRate(value: unknown): number {
-    if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : 0;
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-    }
-    if (!value || typeof value !== 'object') return 0;
-    for (const candidate of Object.values(value as Record<string, unknown>)) {
-      const rate = this.extractAxisRate(candidate);
-      if (rate > 0) return rate;
-    }
-    return 0;
+  private extractAxisRate(value: unknown, adultCount?: number, roomCount = 1): number {
+    // EXTRABED and child rates are supplements, never the room rate. A row
+    // without the requested SINGLE/DOUBLE rate is not a sellable room option.
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return 0;
+    const rates = value as Record<string, unknown>;
+    const adultsPerRoom = Math.max(
+      Math.ceil(Math.max(Number(adultCount || 2), 1) / Math.max(Number(roomCount || 1), 1)),
+      1,
+    );
+    const roomRate = Number(rates[adultsPerRoom <= 1 ? 'SINGLE' : 'DOUBLE']);
+    return Number.isFinite(roomRate) && roomRate > 0 ? roomRate : 0;
   }
 
   private async executeProviderSearch(
