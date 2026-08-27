@@ -2366,6 +2366,10 @@ private getGuideSlotLabel(slotId: number): string {
           ? selected.searchReference || selected.bookingCode
           : selected.searchReference || selected.rateOptionId || selected.optionKey,
         currency: selected.currency || 'INR', selectionOrigin: 'USER_SELECTED',
+        // This payload was resolved from the current supplier response above.
+        // It is safe to persist its price; unlike a browser-supplied price,
+        // it is not trusted merely because it came from the request body.
+        selectionPricingSource: 'SERVER_RESOLVED',
       };
     });
     try {

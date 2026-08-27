@@ -1052,8 +1052,12 @@ export class ItinerarySelectionWorkflowService {
             provider: hotel.provider,
             hotelCode: hotel.hotelCode,
             optionKey: hotel.optionKey,
-            pricePerNight: hotel.selectionIntent === 'RATE_OPTION' ? hotel.pricePerNight : undefined,
-            totalPrice: hotel.selectionIntent === 'RATE_OPTION' ? hotel.totalPrice : undefined,
+            pricePerNight: hotel.selectionPricingSource === 'SERVER_RESOLVED' || hotel.selectionIntent === 'RATE_OPTION'
+              ? hotel.pricePerNight
+              : undefined,
+            totalPrice: hotel.selectionPricingSource === 'SERVER_RESOLVED' || hotel.selectionIntent === 'RATE_OPTION'
+              ? hotel.totalPrice
+              : undefined,
             currency: hotel.currency,
             hotelName: hotel.hotelName,
             category: hotel.category,
