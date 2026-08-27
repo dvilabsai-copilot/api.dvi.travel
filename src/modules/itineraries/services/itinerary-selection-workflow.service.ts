@@ -1420,12 +1420,21 @@ export class ItinerarySelectionWorkflowService {
       } as any,
     });
     const roomCount = Math.max(Math.trunc(Number(data.roomCount || 1)), 1);
-    const amount = this.extractAxisroomsRate(rows[0].occupancy_rates, {
+    const rateContext = {
       roomCount,
       adults: Number((plan as any)?.total_adult || 0),
       childWithBedCount: Number((plan as any)?.total_child_with_bed || 0),
       extraBedCount: Number((plan as any)?.total_extra_bed || 0),
-    });
+    };
+    // A later-starting legacy row may contain only EXTRABED/child
+    // supplements. Do not let that row become the room price. Select the
+    // most recent matching row that actually contains SINGLE/DOUBLE.
+    const rateRow = rows.find((row: any) =>
+      this.extractAxisroomsRate(row.occupancy_rates, rateContext) > 0,
+    );
+    const amount = rateRow
+      ? this.extractAxisroomsRate(rateRow.occupancy_rates, rateContext)
+      : 0;
     return Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : 0;
   }
 
