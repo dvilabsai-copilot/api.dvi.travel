@@ -354,12 +354,15 @@ export class ItinerarySelectionWorkflowService {
         })
       : null;
     const hotelMasterMargin = Number(hotelMaster?.hotel_margin || 0);
+    const suppliedHotelMargin = Number(data.hotelMarginPercentage || 0);
     const hotelMarginPercentage = Math.max(
       providerForPricing === 'axisrooms'
         ? hotelMasterMargin > 0
           ? hotelMasterMargin
           : Number(configuredMargin || requestedHotelMargin || 0)
-        : Number(data.hotelMarginPercentage ?? configuredMargin ?? 0),
+        : suppliedHotelMargin > 0
+          ? suppliedHotelMargin
+          : Number(configuredMargin || 0),
       0,
     );
     // STAAH's nightly occupancy amount is the supplier room cost before our
