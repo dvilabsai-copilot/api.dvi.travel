@@ -49,6 +49,7 @@ import {
   resolvePersistedHotelIdentity,
   supplierSelectionKey,
 } from './utils/hotel-selection-identity.util';
+import { resolveHotelOccupancyPricing } from './utils/hotel-selection-pricing.util';
 import {
   buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper,
   ManualHotspotMatrixBuildResult,
@@ -2150,7 +2151,10 @@ private getGuideSlotLabel(slotId: number): string {
           canBookMultiNight: false,
         });
       }
-      selectedByRoute.push({ ...selected, itineraryRouteId: routeId, routeId, date: routeDate });
+      const pricedSelected = provider === 'axisrooms'
+        ? await this.resolveAxisRoomsSelectionPricing(selected, plan, routeDate)
+        : selected;
+      selectedByRoute.push({ ...pricedSelected, itineraryRouteId: routeId, routeId, date: routeDate });
     }
 
     if (stay.nights > 1 && provider !== 'offline') {
@@ -2356,6 +2360,15 @@ private getGuideSlotLabel(slotId: number): string {
         roomId: selected.roomId, rateId: selected.rateId, pricePerNight, totalPrice,
         basePricePerNight,
         baseTotalPrice,
+        extraBedCount: selected.extraBedCount,
+        extraBedRate: selected.extraBedRate,
+        extraBedAmount: selected.extraBedAmount,
+        childWithBedCount: selected.childWithBedCount,
+        childWithBedRate: selected.childWithBedRate,
+        childWithBedAmount: selected.childWithBedAmount,
+        childWithoutBedCount: selected.childWithoutBedCount,
+        childWithoutBedRate: selected.childWithoutBedRate,
+        childWithoutBedAmount: selected.childWithoutBedAmount,
         hotelMarginPercentage,
         hotelMarginAmount,
         hotelMarginStayAmount: hotelMarginTotalAmount,
@@ -2446,6 +2459,15 @@ private getGuideSlotLabel(slotId: number): string {
         selectedPriceSnapshot: snapshot,
         basePricePerNight: Number(snapshot.basePricePerNight ?? snapshot.base_price_per_night ?? 0),
         baseTotalPrice: Number(snapshot.baseTotalPrice ?? snapshot.base_total_price ?? 0),
+        extraBedCount: Number(snapshot.extraBedCount ?? snapshot.extra_bed_count ?? 0),
+        extraBedRate: Number(snapshot.extraBedRate ?? snapshot.extra_bed_rate ?? 0),
+        extraBedAmount: Number(snapshot.extraBedAmount ?? snapshot.extra_bed_amount ?? 0),
+        childWithBedCount: Number(snapshot.childWithBedCount ?? snapshot.child_with_bed_count ?? 0),
+        childWithBedRate: Number(snapshot.childWithBedRate ?? snapshot.child_with_bed_rate ?? 0),
+        childWithBedAmount: Number(snapshot.childWithBedAmount ?? snapshot.child_with_bed_amount ?? 0),
+        childWithoutBedCount: Number(snapshot.childWithoutBedCount ?? snapshot.child_without_bed_count ?? 0),
+        childWithoutBedRate: Number(snapshot.childWithoutBedRate ?? snapshot.child_without_bed_rate ?? 0),
+        childWithoutBedAmount: Number(snapshot.childWithoutBedAmount ?? snapshot.child_without_bed_amount ?? 0),
         hotelMarginPercentage: Number(snapshot.hotelMarginPercentage ?? row.hotel_margin_percentage ?? 0),
         hotelMarginAmount: Number(snapshot.hotelMarginAmount ?? row.hotel_margin_rate ?? 0),
         hotelMarginTotalAmount: Number(
@@ -2459,6 +2481,85 @@ private getGuideSlotLabel(slotId: number): string {
     return {
       success: true, planId: Number(data.planId), groupType, selectionIntent: intent,
       logicalStay: stay, selections, totals: { totalPrice: selections.reduce((sum: number, selection: any) => sum + Number(selection.totalPrice || 0), 0) },
+    };
+  }
+
+  /**
+   * Resolve AxisRooms selection amounts from the current occupancy-rate row.
+   * Selection responses must contain the complete API-owned breakdown; a
+   * browser snapshot or supplier parent total must never be used as the room
+   * cost when the occupancy table has the authoritative components.
+   */
+  private async resolveAxisRoomsSelectionPricing(option: any, plan: any, routeDate: string): Promise<any> {
+    const reference = String(
+      option?.rateOptionId || option?.rate_option_id || option?.bookingCode || option?.booking_code || '',
+    ).trim();
+    const match = reference.match(/(?:axisrooms:|AX-)([^:|-]+)[:|-]([^:|-]+)[:|-]([^:|-]+)/i);
+    const hotelId = Number(option?.canonicalHotelId || option?.hotelId || option?.hotel_id || match?.[1] || 0);
+    const roomId = Number(option?.roomId || option?.room_id || match?.[2] || 0);
+    const rateplanId = String(option?.rateplanId || option?.ratePlanId || option?.rateplan_id || match?.[3] || '').trim();
+    if (!hotelId || !roomId || !rateplanId || !/^\d{4}-\d{2}-\d{2}$/.test(routeDate)) return option;
+
+    const rows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
+      where: {
+        hotel_id: hotelId,
+        room_id: roomId,
+        rateplan_id: rateplanId,
+        start_date: { lte: new Date(`${routeDate}T00:00:00.000Z`) },
+        end_date: { gte: new Date(`${routeDate}T00:00:00.000Z`) },
+      },
+      select: { occupancy_rates: true, received_at: true, start_date: true },
+      orderBy: [{ received_at: 'desc' }, { start_date: 'desc' }],
+    });
+    let rates: Record<string, any> | null = null;
+    for (const row of Array.isArray(rows) ? rows : []) {
+      try {
+        const parsed = typeof row.occupancy_rates === 'string' ? JSON.parse(row.occupancy_rates) : row.occupancy_rates;
+        if (parsed && typeof parsed === 'object') { rates = parsed; break; }
+      } catch { /* ignore malformed historical rows */ }
+    }
+    if (!rates) return option;
+
+    const roomCount = Math.max(Number(plan?.preferred_room_count || plan?.total_no_of_rooms || 1), 1);
+    const adults = Math.max(Number(plan?.total_adult || 0), 0);
+    const hotel = await this.prisma.dvi_hotel.findUnique({ where: { hotel_id: hotelId }, select: { hotel_margin: true } });
+    let marginPercentage = Number(hotel?.hotel_margin || 0);
+    if (!(marginPercentage > 0)) {
+      const settings = await (this.prisma as any).dvi_global_settings?.findFirst?.({
+        where: { deleted: 0, status: 1 }, orderBy: { global_settings_ID: 'asc' }, select: { hotel_margin: true },
+      });
+      marginPercentage = Number(settings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0);
+    }
+    const pricing = resolveHotelOccupancyPricing({
+      rates,
+      roomCount,
+      adultCount: adults,
+      extraBedCount: plan?.total_extra_bed,
+      childWithBedCount: plan?.total_child_with_bed,
+      childWithoutBedCount: plan?.total_child_without_bed,
+      marginPercentage,
+    });
+    if (!(pricing.hotelMarginBaseAmount > 0)) return option;
+    const marginAmount = pricing.hotelMarginAmount;
+    const totalPrice = pricing.totalPrice;
+    return {
+      ...option,
+      basePricePerNight: pricing.roomRate,
+      baseTotalPrice: pricing.baseTotalPrice,
+      baseHotelCost: pricing.baseTotalPrice,
+      extraBedCount: pricing.extraBedCount, extraBedRate: pricing.extraBedRate, extraBedAmount: pricing.extraBedAmount,
+      childWithBedCount: pricing.childWithBedCount, childWithBedRate: pricing.childWithBedRate, childWithBedAmount: pricing.childWithBedAmount,
+      childWithoutBedCount: pricing.childWithoutBedCount, childWithoutBedRate: pricing.childWithoutBedRate, childWithoutBedAmount: pricing.childWithoutBedAmount,
+      hotelMarginPercentage: pricing.hotelMarginPercentage,
+      hotelMarginBaseAmount: pricing.hotelMarginBaseAmount,
+      hotelMarginAmount: marginAmount,
+      hotelMarginTotalAmount: marginAmount,
+      amountIncludesHotelMargin: true,
+      pricingIncludesHotelMargin: true,
+      pricePerNight: Number((totalPrice / roomCount).toFixed(2)),
+      totalPrice,
+      totalStayPrice: totalPrice,
+      totalHotelCost: totalPrice,
     };
   }
 

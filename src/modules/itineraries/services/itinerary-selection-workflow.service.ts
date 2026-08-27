@@ -325,17 +325,53 @@ export class ItinerarySelectionWorkflowService {
       pricePerNight: data.pricePerNight,
       roomCount: data.roomCount,
     });
+    const providerForPricing = String(data.provider || '').trim().toLowerCase();
     let axisRoomsBasePrice = 0;
+    let axisRoomsSupplementRates: { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } | null = null;
     if (String(data.provider || '').trim().toLowerCase() === 'axisrooms') {
       axisRoomsBasePrice = await this.resolveAxisRoomsSelectionBasePrice(data, route);
+      axisRoomsSupplementRates = await this.resolveAxisRoomsSelectionSupplementRates(data, route);
     }
-    const extraBedCount = Math.max(Math.trunc(Number(data.extraBedCount || 0)), 0);
-    const extraBedRate = Math.max(Number(data.extraBedRate || 0), 0);
+    // Selection requests intentionally contain identity, not occupancy
+    // quantities. When a client omits them, use the itinerary plan as the
+    // authoritative source instead of persisting zero supplements.
+    const extraBedCount = Math.max(Math.trunc(Number(
+      data.extraBedCount ?? (plan as any)?.total_extra_bed ?? 0,
+    )), 0);
+    const extraBedRate = Math.max(Number(
+      providerForPricing === 'axisrooms'
+        ? axisRoomsSupplementRates?.extraBedRate ?? data.extraBedRate ?? 0
+        : data.extraBedRate || 0,
+    ), 0);
     const extraBedAmount = Math.max(
       Number(data.extraBedAmount ?? (extraBedCount * extraBedRate)),
       0,
     );
     const extraBedGstAmount = Math.max(Number(data.extraBedGstAmount || 0), 0);
+    const childWithBedCount = Math.max(Math.trunc(Number(
+      (data as any).childWithBedCount ?? (plan as any)?.total_child_with_bed ?? 0,
+    )), 0);
+    const childWithBedRate = Math.max(Number(
+      providerForPricing === 'axisrooms'
+        ? axisRoomsSupplementRates?.childWithBedRate ?? (data as any).childWithBedRate ?? 0
+        : (data as any).childWithBedRate || 0,
+    ), 0);
+    const childWithBedAmount = Math.max(
+      Number((data as any).childWithBedAmount ?? (childWithBedCount * childWithBedRate)),
+      0,
+    );
+    const childWithoutBedCount = Math.max(Math.trunc(Number(
+      (data as any).childWithoutBedCount ?? (plan as any)?.total_child_without_bed ?? 0,
+    )), 0);
+    const childWithoutBedRate = Math.max(Number(
+      providerForPricing === 'axisrooms'
+        ? axisRoomsSupplementRates?.childWithoutBedRate ?? (data as any).childWithoutBedRate ?? 0
+        : (data as any).childWithoutBedRate || 0,
+    ), 0);
+    const childWithoutBedAmount = Math.max(
+      Number((data as any).childWithoutBedAmount ?? (childWithoutBedCount * childWithoutBedRate)),
+      0,
+    );
     const globalSettingsModel = (db as any).dvi_global_settings;
     const globalSettings = globalSettingsModel
       ? await globalSettingsModel.findFirst({
@@ -346,7 +382,6 @@ export class ItinerarySelectionWorkflowService {
       : null;
     const configuredMargin = globalSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0;
     const requestedHotelMargin = Number(data.hotelMarginPercentage);
-    const providerForPricing = String(data.provider || '').trim().toLowerCase();
     const hotelMaster = providerForPricing === 'axisrooms' && persistedHotelId
       ? await (db as any).dvi_hotel?.findUnique?.({
           where: { hotel_id: persistedHotelId },
@@ -395,11 +430,20 @@ export class ItinerarySelectionWorkflowService {
       });
     }
     if (axisRoomsBasePrice > 0) {
-      const authoritativePayable = Number((axisRoomsBasePrice * (1 + hotelMarginPercentage / 100)).toFixed(2));
+      const axisRoomsMarginBase = Number((
+        axisRoomsBasePrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount
+      ).toFixed(2));
+      const axisRoomsMargin = Number((axisRoomsMarginBase * hotelMarginPercentage / 100).toFixed(2));
+      const authoritativePayable = Number((axisRoomsMarginBase + axisRoomsMargin).toFixed(2));
       // AxisRooms selections must be priced from the matching ARI row, never
       // from a stale client payload that can combine another option's total.
-      data.pricePerNight = authoritativePayable;
+      data.pricePerNight = Number((authoritativePayable / Math.max(Number(data.roomCount || 1), 1)).toFixed(2));
       data.totalPrice = authoritativePayable;
+      data.basePricePerNight = Number((axisRoomsBasePrice / Math.max(Number(data.roomCount || 1), 1)).toFixed(2));
+      data.baseTotalPrice = axisRoomsBasePrice;
+      (data as any).hotelMarginBaseAmount = axisRoomsMarginBase;
+      data.hotelMarginAmount = axisRoomsMargin;
+      data.hotelMarginTotalAmount = axisRoomsMargin;
       selectionPricing = resolveHotelSelectionPricing({
         totalPrice: authoritativePayable,
         pricePerNight: authoritativePayable,
@@ -412,8 +456,9 @@ export class ItinerarySelectionWorkflowService {
         suppliedBasePricePerNight * Math.max(Number(data.roomCount || 1), 1),
       0,
     );
+    const effectiveRoomCount = Math.max(Number(data.roomCount || 1), 1);
     const authoritativeBasePricePerNight = axisRoomsBasePrice > 0
-      ? axisRoomsBasePrice
+      ? Number((axisRoomsBasePrice / effectiveRoomCount).toFixed(2))
       : staahBasePricePerNight > 0
         ? staahBasePricePerNight
         : suppliedBasePricePerNight;
@@ -425,9 +470,12 @@ export class ItinerarySelectionWorkflowService {
     const suppliedMarginAmount = Math.max(Number(
       data.hotelMarginStayAmount ?? data.hotelMarginTotalAmount ?? data.hotelMarginAmount ?? 0,
     ), 0);
+    const hotelMarginBaseAmount = providerForPricing === 'axisrooms' && axisRoomsBasePrice > 0
+      ? Number((axisRoomsBasePrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2))
+      : authoritativeBaseTotal;
     const hotelMarginRate = providerForPricing === 'axisrooms'
-      ? authoritativeBaseTotal > 0
-        ? Number((authoritativeBaseTotal * hotelMarginPercentage / 100).toFixed(2))
+      ? hotelMarginBaseAmount > 0
+         ? Number((hotelMarginBaseAmount * hotelMarginPercentage / 100).toFixed(2))
         : 0
       : providerForPricing === 'staah' && staahMarginRate > 0
       ? staahMarginRate
@@ -442,9 +490,13 @@ export class ItinerarySelectionWorkflowService {
             ? Math.max((selectionPricing.totalPrice * hotelMarginPercentage) / 100, 0)
             : 0;
     const hotelMarginRateTaxAmount = Math.max(Number(data.hotelMarginGstAmount || 0), 0);
+    const persistedRoomCost = providerForPricing === 'axisrooms' && axisRoomsBasePrice > 0
+      ? axisRoomsBasePrice
+      : selectionPricing.totalPrice;
     const authoritativePricingSnapshot = {
       ...(authoritativeBasePricePerNight > 0 ? { basePricePerNight: authoritativeBasePricePerNight } : {}),
       ...(authoritativeBaseTotal > 0 ? { baseTotalPrice: authoritativeBaseTotal } : {}),
+      ...(hotelMarginBaseAmount > 0 ? { hotelMarginBaseAmount } : {}),
       ...(hotelMarginPercentage > 0 ? { hotelMarginPercentage } : {}),
       ...(hotelMarginRate > 0 ? {
         hotelMarginAmount: hotelMarginRate,
@@ -494,14 +546,16 @@ export class ItinerarySelectionWorkflowService {
           selected_price_per_night: data.pricePerNight ?? null,
           selected_total_price: selectionPricing.totalPrice,
           total_no_of_rooms: selectionPricing.roomCount,
-          total_room_cost: selectionPricing.totalPrice,
+            total_room_cost: persistedRoomCost,
           // This column is non-nullable; zero is a valid margin amount.
           hotel_margin_percentage: hotelMarginPercentage,
           hotel_margin_rate: hotelMarginRate,
           // This column is non-nullable; zero is a valid tax amount.
           hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount,
           total_hotel_cost: selectionPricing.totalPrice,
-          total_extra_bed_cost: extraBedAmount,
+           total_extra_bed_cost: extraBedAmount,
+           total_childwith_bed_cost: childWithBedAmount,
+           total_childwithout_bed_cost: childWithoutBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
           selected_currency: data.currency || null,
           selection_origin: 'USER_SELECTED',
@@ -525,8 +579,14 @@ export class ItinerarySelectionWorkflowService {
             rateId: data.rateId || null,
             extraBedCount,
             extraBedRate,
-            extraBedAmount,
-            extraBedGstAmount,
+             extraBedAmount,
+             extraBedGstAmount,
+             childWithBedCount,
+             childWithBedRate,
+             childWithBedAmount,
+             childWithoutBedCount,
+             childWithoutBedRate,
+             childWithoutBedAmount,
             ...authoritativePricingSnapshot,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
             pricePerNight: data.pricePerNight ?? null,
@@ -580,14 +640,16 @@ export class ItinerarySelectionWorkflowService {
           selected_price_per_night: data.pricePerNight ?? null,
           selected_total_price: selectionPricing.totalPrice,
           total_no_of_rooms: selectionPricing.roomCount,
-          total_room_cost: selectionPricing.totalPrice,
+           total_room_cost: persistedRoomCost,
           // This column is non-nullable; zero is a valid margin amount.
           hotel_margin_percentage: hotelMarginPercentage,
           hotel_margin_rate: hotelMarginRate,
           // This column is non-nullable; zero is a valid tax amount.
           hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount,
           total_hotel_cost: selectionPricing.totalPrice,
-          total_extra_bed_cost: extraBedAmount,
+           total_extra_bed_cost: extraBedAmount,
+           total_childwith_bed_cost: childWithBedAmount,
+           total_childwithout_bed_cost: childWithoutBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
           selected_currency: data.currency || null,
           selection_origin: 'USER_SELECTED',
@@ -611,8 +673,14 @@ export class ItinerarySelectionWorkflowService {
             rateId: data.rateId || null,
             extraBedCount,
             extraBedRate,
-            extraBedAmount,
-            extraBedGstAmount,
+             extraBedAmount,
+             extraBedGstAmount,
+             childWithBedCount,
+             childWithBedRate,
+             childWithBedAmount,
+             childWithoutBedCount,
+             childWithoutBedRate,
+             childWithoutBedAmount,
             ...authoritativePricingSnapshot,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
             pricePerNight: data.pricePerNight ?? null,
@@ -1441,6 +1509,43 @@ export class ItinerarySelectionWorkflowService {
     return Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : 0;
   }
 
+  private async resolveAxisRoomsSelectionSupplementRates(
+    data: any,
+    route?: any,
+  ): Promise<{ extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number }> {
+    const identity = this.parseAxisRoomsRateReference(data);
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!identity.hotelId || !identity.roomId || !identity.rateplanId || !routeDate || !occupancyModel?.findMany) {
+      return { extraBedRate: 0, childWithBedRate: 0, childWithoutBedRate: 0 };
+    }
+    const rows = await occupancyModel.findMany({
+      where: {
+        hotel_id: identity.hotelId,
+        room_id: identity.roomId,
+        rateplan_id: identity.rateplanId,
+        start_date: { lte: toDatabaseBusinessDate(routeDate) },
+        end_date: { gte: toDatabaseBusinessDate(routeDate) },
+      },
+      select: { occupancy_rates: true, start_date: true, received_at: true },
+      orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+    });
+    const matchingRow = (rows || []).find((row: any) => {
+      const values = row?.occupancy_rates && typeof row.occupancy_rates === 'object'
+        ? row.occupancy_rates as Record<string, unknown>
+        : {};
+      return ['SINGLE', 'DOUBLE'].some((key) => Number(values[key]) > 0);
+    });
+    const values = matchingRow?.occupancy_rates && typeof matchingRow.occupancy_rates === 'object'
+      ? matchingRow.occupancy_rates as Record<string, unknown>
+      : {};
+    return {
+      extraBedRate: Math.max(Number(values.EXTRABED ?? values.EXTRAADULT ?? values.EXTRACHILD ?? 0), 0),
+      childWithBedRate: Math.max(Number(values.CHILD_WITH_BED ?? 0), 0),
+      childWithoutBedRate: Math.max(Number(values.CHILD_WITHOUT_BED ?? 0), 0),
+    };
+  }
+
   private extractAxisroomsRate(
     occupancyRates: unknown,
     pax?: { roomCount?: number; adults?: number; childWithBedCount?: number; extraBedCount?: number },
@@ -1460,7 +1565,9 @@ export class ItinerarySelectionWorkflowService {
           0,
         );
         const extraBedRate = Number(values.EXTRABED ?? values.EXTRAADULT ?? values.EXTRACHILD ?? 0);
-        return roomRate * roomCount + (Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate * extraBeds : 0);
+        // Return only the room occupancy amount. Supplements are persisted
+        // separately and must not be folded into the room base.
+        return roomRate * roomCount;
       }
     }
     // Supplements are not room rates. In particular, never use EXTRABED as
