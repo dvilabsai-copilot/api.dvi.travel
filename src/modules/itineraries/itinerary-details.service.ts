@@ -6672,9 +6672,21 @@ const hasRequiredVehicleSelection =
     // selection snapshot (supplier/base amount). Keep the payable amount in
     // grandTotal and expose the base separately so the tooltip can show the
     // actual pricing chain: base + hotel margin = payable.
+    // Older VSR/TBO selections can contain the payable amount and margin but
+    // omit the persisted base room field. Keep the presentation breakdown
+    // balanced instead of exposing Room Cost = 0 alongside a real margin.
     const displayRoomCost = hotelRoomBaseCost > 0
       ? hotelRoomBaseCost
-      : Math.max(0, effectiveHotelAmount - displayExtraBedCost);
+      : Math.max(
+          0,
+          effectiveHotelAmount -
+            displayExtraBedCost -
+            hotelMarginCost -
+            hotelRoomGstCost -
+            hotelMarginGstCost -
+            hotelMealPlanCost -
+            hotelMealPlanGstCost,
+        );
     const hotelMarginPercentage = costHotelRows.reduce(
       (max, row: any) => Math.max(max, Number(row?.hotel_margin_percentage ?? row?.hotelMarginPercentage ?? 0)),
       0,

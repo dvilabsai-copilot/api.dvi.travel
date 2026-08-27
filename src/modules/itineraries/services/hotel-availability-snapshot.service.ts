@@ -4143,14 +4143,32 @@ export class HotelAvailabilitySnapshotService {
               option.total_room_cost ??
               0,
             ), 0)
-        : 0;
-      let marginPercentage = provider === 'staah'
-        ? Math.max(Number(option.hotelMarginPercentage ?? defaultHotelMarginPercentage), 0)
-        : provider === 'axisrooms'
-          ? Math.max(hotelMasterMargin > 0
-            ? hotelMasterMargin
-            : Number(option.hotelMarginPercentage ?? defaultHotelMarginPercentage), 0)
-          : Number(option.hotelMarginPercentage ?? 0);
+          : Math.max(Number(
+              option.baseTotalPrice ??
+              option.base_total_price ??
+              option.baseHotelCost ??
+              option.base_hotel_cost ??
+              option.netAmount ??
+              option.net_amount ??
+              option.pricePerNight ??
+              option.price_per_night ??
+              option.price ??
+              0,
+            ), 0) * roomCount;
+      const suppliedMarginPercentage = Number(
+        option.hotelMarginPercentage ?? option.hotel_margin_percentage ?? 0,
+      );
+      // All provider rates use the same global fallback when a hotel-specific
+      // margin is absent. A zero/undefined value must not suppress the global
+      // setting (this was the reason VSR/TBO rows were saved without margin).
+      let marginPercentage = provider === 'axisrooms' && hotelMasterMargin > 0
+        ? hotelMasterMargin
+        : Math.max(
+            suppliedMarginPercentage > 0
+              ? suppliedMarginPercentage
+              : defaultHotelMarginPercentage,
+            0,
+          );
       const supplementAmount = (amount: unknown, cost: unknown, count: unknown, rate: unknown): number => {
         const explicit = Number(amount ?? cost ?? 0);
         if (Number.isFinite(explicit) && explicit > 0) return explicit;
@@ -4192,12 +4210,31 @@ export class HotelAvailabilitySnapshotService {
       let calculatedMargin = baseTotalPrice > 0
         ? Number((marginBaseTotal * marginPercentage / 100).toFixed(2))
         : 0;
-      let totalPrice = provider === 'staah' && baseTotalPrice > 0
+      let totalPrice = baseTotalPrice > 0
         ? Number(Math.max(rawTotalPrice, marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2))
         : rawTotalPrice;
-      let pricePerNight = provider === 'staah' && totalPrice > 0
+      let pricePerNight = baseTotalPrice > 0 && totalPrice > 0
         ? Number((totalPrice / roomCount).toFixed(2))
         : rawPricePerNight;
+
+      if (provider !== 'staah' && provider !== 'axisrooms' && provider !== 'offline' && baseTotalPrice > 0) {
+        totalPrice = Number((marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2));
+        pricePerNight = Number((totalPrice / roomCount).toFixed(2));
+        option = {
+          ...option,
+          basePricePerNight: Number((baseTotalPrice / roomCount).toFixed(2)),
+          baseTotalPrice,
+          baseHotelCost: baseTotalPrice,
+          hotelMarginPercentage: marginPercentage,
+          hotelMarginAmount: calculatedMargin,
+          hotelMarginBaseAmount: marginBaseTotal,
+          hotelMarginTotalAmount: calculatedMargin,
+          pricePerNight,
+          totalPrice,
+          totalStayPrice: totalPrice,
+          totalHotelCost: totalPrice,
+        };
+      }
 
       if (provider === 'offline' && baseTotalPrice > 0) {
         marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
