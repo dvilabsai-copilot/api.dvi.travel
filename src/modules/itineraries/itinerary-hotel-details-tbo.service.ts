@@ -4977,13 +4977,25 @@ this.logger.log(
       }),
     }));
 
-    const hotelTabs: ItineraryHotelTabDto[] = pricedPackages.map((pkg) => {
+    // Group IDs remain semantic category slots for selection/persistence, but
+    // the tab strip is a price presentation. Sort only this projection so a
+    // cheaper Group 3 can appear before a costlier Group 2 without changing
+    // which package those group IDs refer to internally.
+    const orderedPackagesForDisplay = [...pricedPackages].sort((left, right) => {
+      const amount = (pkg: typeof left): number =>
+        pkg.complete && pkg.totalPrice !== null
+          ? Number(pkg.totalPrice)
+          : Number.POSITIVE_INFINITY;
+      return amount(left) - amount(right) || left.groupType - right.groupType;
+    });
+
+    const hotelTabs: ItineraryHotelTabDto[] = orderedPackagesForDisplay.map((pkg, index) => {
       const totalAmount = pkg.complete && pkg.totalPrice !== null
         ? this.money(pkg.totalPrice)
         : null;
       return {
         groupType: pkg.groupType,
-        label: pkg.label,
+        label: `Recommended #${index + 1}`,
         totalAmount,
         partialTotal: this.money(pkg.partialTotal || 0),
         targetAmount: pkg.targetPrice,
