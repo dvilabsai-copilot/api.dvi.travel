@@ -130,11 +130,12 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
           data: { deleted: 1, status: 0, updatedon: new Date() },
         });
 
-        await tx.dvi_itinerary_route_details.update({
-          where: { itinerary_route_ID: normalizedRouteId },
-          data: { excluded_hotspot_ids: [], updatedon: new Date() },
-        });
-
+   await tx.dvi_itinerary_route_details.update({
+  where: { itinerary_route_ID: normalizedRouteId },
+ data: {
+  updatedon: new Date(),
+},
+});
         const preRouteVisitCount = await tx.dvi_itinerary_route_hotspot_details.count({
           where: {
             itinerary_plan_ID: normalizedPlanId,

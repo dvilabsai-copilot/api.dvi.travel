@@ -637,20 +637,12 @@ let previousRoutePlan: any = null;
       } else {
         assertVehicleAgentCreatePolicy(u, dto.plan);
       }
-    if (isPlanUpdate && previousRoutePlan) {
-  const previousStartTime = normalizeWallClockTime(
-    previousRoutePlan.trip_start_date_and_time,
-  );
-
-  const requestedStartTime = normalizeWallClockTime(
-    dto.plan.trip_start_date,
-  );
-
-  itineraryStartTimeChanged =
-    Boolean(previousStartTime) &&
-    Boolean(requestedStartTime) &&
-    previousStartTime !== requestedStartTime;
-}
+const previousStartTime =
+  isPlanUpdate && previousRoutePlan
+    ? normalizeWallClockTime(
+        previousRoutePlan.trip_start_date_and_time,
+      )
+    : '';
 
 const planId = await this.planEngine.upsertPlanHeader(
   dto.plan,
@@ -658,6 +650,25 @@ const planId = await this.planEngine.upsertPlanHeader(
   tx,
   userId,
 );
+
+const persistedPlanAfterUpsert =
+  await tx.dvi_itinerary_plan_details.findUnique({
+    where: {
+      itinerary_plan_ID: planId,
+    },
+    select: {
+      trip_start_date_and_time: true,
+    },
+  });
+
+const persistedStartTime = normalizeWallClockTime(
+  persistedPlanAfterUpsert?.trip_start_date_and_time,
+);
+
+itineraryStartTimeChanged =
+  Boolean(previousStartTime) &&
+  Boolean(persistedStartTime) &&
+  previousStartTime !== persistedStartTime;
 
 stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
@@ -905,17 +916,13 @@ if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
     },
   });
 
-  const requestedStartTime = normalizeWallClockTime(
-    dto.plan.trip_start_date,
-  );
-
-  if (firstRoute && requestedStartTime) {
+  if (firstRoute && persistedStartTime) {
     await tx.dvi_itinerary_route_details.update({
       where: {
         itinerary_route_ID: firstRoute.itinerary_route_ID,
       },
       data: {
-        route_start_time: TimeConverter.toDate(requestedStartTime),
+        route_start_time: TimeConverter.toDate(persistedStartTime),
         updatedon: new Date(),
       },
     });

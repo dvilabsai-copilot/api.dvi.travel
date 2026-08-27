@@ -4380,7 +4380,7 @@ sightseeingDistance, // local sightseeing separately
   endTime: dayEndTimeText,
   departureTime: this.formatTime(plan.trip_end_date_and_time as any),
   viaRoutes: viaRoutesList,
-  needsRebuild: excludedIds.size > 0,
+ needsRebuild: false,
   excludedHotspotIds: Array.from(excludedIds.values()),
   segments,
 });

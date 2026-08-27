@@ -148,10 +148,10 @@ export class ItineraryHotspotDeletionService {
               where: {
                 itinerary_route_ID: Number(targetRoute.itinerary_route_ID),
               },
-              data: {
-                excluded_hotspot_ids: [...current, actualHotspotId],
-                updatedon: new Date(),
-              },
+   data: {
+  excluded_hotspot_ids: [...current, actualHotspotId],
+  updatedon: new Date(),
+},
             });
           }
         }
@@ -203,11 +203,18 @@ export class ItineraryHotspotDeletionService {
 
  // Trigger a full rebuild of the hotspots for this plan
  // This ensures travel times and hotel arrival are recalculated after deletion
-      return {
-        rebuildResult: await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId),
-        restoredHotspotIds,
-        deletedHotspotWasFitManual: restoredHotspotIds.length > 0,
-      };
+     return {
+  rebuildResult: await this.hotspotEngine.rebuildRouteHotspots(
+    tx,
+    normalizedPlanId,
+    undefined,
+    {
+      scopeToRouteId: normalizedRouteId,
+    },
+  ),
+  restoredHotspotIds,
+  deletedHotspotWasFitManual: restoredHotspotIds.length > 0,
+};
     }, { timeout: 60000 });
 
  // Rebuild parking charges after deletion
