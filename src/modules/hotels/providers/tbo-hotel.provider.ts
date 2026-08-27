@@ -23,12 +23,32 @@ import {
 } from '../hotel-rate-plans';
 import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
 
+type TboHotelMixSegment =
+  | 'economy'
+  | 'threeStar'
+  | 'fourStar'
+  | 'fiveStar';
+
+type TboHotelCodeCandidate = {
+  hotelCode: string;
+  starRating: number;
+  isPriority: boolean;
+};
+
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
  // TBO API Constraints - Certification Required
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
+  private static readonly DEFAULT_MIXED_HOTEL_LIMIT = 100;
+  private static readonly MAX_MIXED_HOTEL_LIMIT = 500;
+  private static readonly HOTEL_MIX_PERCENTAGES = {
+    economy: 20,
+    threeStar: 50,
+    fourStar: 20,
+    fiveStar: 10,
+  } as const;
 
  // Production API Endpoints from Postman Collection
  private readonly SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
@@ -198,8 +218,16 @@ export class TBOHotelProvider implements IHotelProvider {
         `${resolvedCity.source ? ` (source: ${resolvedCity.source})` : ''}`
       );
 
- // Ensure DB has city/hotel master data for this TBO city before searching.
+      // Ensure DB has city/hotel master data for this TBO city before searching.
       await this.ensureCityAndHotelsInDb(criteria.cityCode, resolvedTboCityCode);
+
+      const selectedStarRatings = Array.from(
+        new Set(
+          (preferences?.starRatings || [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value >= 1 && value <= 5),
+        ),
+      ).sort((a, b) => a - b);
 
  // Step 2: Get hotel codes from TBO SharedData API or master database
  // Instead of hardcoding, fetch from TBO's master hotel list
@@ -213,7 +241,10 @@ export class TBOHotelProvider implements IHotelProvider {
       } else {
  // Query database for hotel codes from tbo_hotel_master table
  // This table is synced daily from TBO's GetHotels API via cron/scheduler
-        hotelCodes = await this.getHotelCodesForCityFromDb(resolvedTboCityCode);
+        hotelCodes = await this.getHotelCodesForCityFromDb(
+          resolvedTboCityCode,
+          selectedStarRatings,
+        );
         if (!hotelCodes) {
  this.logger.warn(` No hotel codes in database for city ${resolvedTboCityCode} - trying static TBOHotelCodeList fallback`);
           hotelCodes = await this.fetchHotelCodesFromStaticApi(resolvedTboCityCode);
@@ -254,13 +285,6 @@ export class TBOHotelProvider implements IHotelProvider {
       const guestNationality = this.normalizeNationality(criteria.guestNationality);
       const selectedMealPlanCode = String(preferences?.mealPlanCode || '').trim().toUpperCase();
       const selectedTboMealType = String(preferences?.tboMealType || '').trim();
-      const selectedStarRatings = Array.from(
-        new Set(
-          (preferences?.starRatings || [])
-            .map((value) => Number(value))
-            .filter((value) => Number.isInteger(value) && value >= 1 && value <= 5),
-        ),
-      ).sort((a, b) => a - b);
       const tboStarRatingFilter = selectedStarRatings.length === 1 ? selectedStarRatings[0] : 0;
       if (selectedStarRatings.length > 0) {
  this.logger.log(
@@ -1490,7 +1514,10 @@ export class TBOHotelProvider implements IHotelProvider {
    * 2. If DB empty, return empty string (error handling)
    * 3. No hardcoding - database must be synced via POST /hotels/sync/all
  */
-  private async getHotelCodesForCityFromDb(tboCityCode: string): Promise<string> {
+  private async getHotelCodesForCityFromDb(
+    tboCityCode: string,
+    selectedStarRatings: number[] = [],
+  ): Promise<string> {
     try {
  this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
 
@@ -1503,12 +1530,20 @@ export class TBOHotelProvider implements IHotelProvider {
       const hotels = await this.prisma.tbo_hotel_master.findMany({
         where: {
           tbo_city_code: tboCityCode,
- status: 1, // Active hotels only
+          status: 1,
+          tbo_hotel_code: {
+            not: '',
+          },
         },
         select: {
           tbo_hotel_code: true,
+          star_rating: true,
+          is_priority: true,
         },
- // take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
+        orderBy: [
+          { is_priority: 'desc' },
+          { tbo_hotel_code: 'asc' },
+        ],
       });
 
       if (!hotels || hotels.length === 0) {
@@ -1523,21 +1558,36 @@ export class TBOHotelProvider implements IHotelProvider {
           where: {
             tbo_city_code: tboCityCode,
             deleted: false,
+            status: 1,
+            tbo_hotel_code: {
+              not: null,
+            },
           },
           select: {
             tbo_hotel_code: true,
+            hotel_category: true,
           },
- take: 500, // Allow up to 500 hotels
+          orderBy: {
+            tbo_hotel_code: 'asc',
+          },
+          take: TBOHotelProvider.MAX_MIXED_HOTEL_LIMIT,
         });
 
         if (dviHotels && dviHotels.length > 0) {
-          const codes = dviHotels
-            .map((h) => h.tbo_hotel_code)
-            .filter((code) => code && code.trim() !== '')
-            .join(',');
+          const candidates: TboHotelCodeCandidate[] = dviHotels
+            .map((hotel) => ({
+              hotelCode: String(hotel.tbo_hotel_code || '').trim(),
+              starRating: Number(hotel.hotel_category || 0),
+              isPriority: false,
+            }))
+            .filter((hotel) => Boolean(hotel.hotelCode));
+          const selected = selectedStarRatings.length > 0
+            ? this.selectExplicitStarRatingHotels(candidates, selectedStarRatings)
+            : this.selectHotelsByPercentage(candidates);
+          const codes = selected.map((hotel) => hotel.hotelCode).join(',');
 
  this.logger.log(` FALLBACK: Found ${dviHotels.length} hotels in dvi_hotel`);
- this.logger.log(` Hotel codes: ${codes.substring(0, 100)}...`);
+          this.logHotelMix(tboCityCode, candidates, selected);
           return codes;
         }
 
@@ -1548,13 +1598,20 @@ export class TBOHotelProvider implements IHotelProvider {
         return '';
       }
 
-      const hotelCodes = hotels
-        .map((h) => h.tbo_hotel_code)
-        .filter((code) => code && code.trim() !== '')
-        .join(',');
+      const candidates: TboHotelCodeCandidate[] = hotels
+        .map((hotel) => ({
+          hotelCode: String(hotel.tbo_hotel_code || '').trim(),
+          starRating: Number(hotel.star_rating || 0),
+          isPriority: Number(hotel.is_priority || 0) === 1,
+        }))
+        .filter((hotel) => Boolean(hotel.hotelCode));
+      const selected = selectedStarRatings.length > 0
+        ? this.selectExplicitStarRatingHotels(candidates, selectedStarRatings)
+        : this.selectHotelsByPercentage(candidates);
+      const hotelCodes = selected.map((hotel) => hotel.hotelCode).join(',');
 
  this.logger.log(` PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master`);
- this.logger.log(` Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
+      this.logHotelMix(tboCityCode, candidates, selected);
 
       return hotelCodes;
     } catch (error: any) {
@@ -1564,6 +1621,189 @@ export class TBOHotelProvider implements IHotelProvider {
       );
       return '';
     }
+  }
+
+  private selectHotelsByPercentage(
+    candidates: TboHotelCodeCandidate[],
+  ): TboHotelCodeCandidate[] {
+    const requestedLimit = this.getMixedHotelLimit();
+    const uniqueCandidates = this.uniqueHotelCandidates(candidates);
+    const pools: Record<TboHotelMixSegment, TboHotelCodeCandidate[]> = {
+      economy: uniqueCandidates.filter((hotel) => [1, 2].includes(hotel.starRating)),
+      threeStar: uniqueCandidates.filter((hotel) => hotel.starRating === 3),
+      fourStar: uniqueCandidates.filter((hotel) => hotel.starRating === 4),
+      fiveStar: uniqueCandidates.filter((hotel) => hotel.starRating === 5),
+    };
+    const availableCount = Object.values(pools).reduce(
+      (total, pool) => total + pool.length,
+      0,
+    );
+    const targetCount = Math.min(requestedLimit, availableCount);
+
+    if (targetCount === 0) {
+      return [];
+    }
+
+    const quotas = this.calculateHotelMixQuotas(targetCount);
+    const selected: TboHotelCodeCandidate[] = [];
+    const selectedCodes = new Set<string>();
+    const takeFromPool = (segment: TboHotelMixSegment, count: number): void => {
+      if (count <= 0) return;
+
+      for (const hotel of pools[segment]) {
+        if (selected.length >= targetCount || count <= 0) break;
+        if (selectedCodes.has(hotel.hotelCode)) continue;
+
+        selected.push(hotel);
+        selectedCodes.add(hotel.hotelCode);
+        count -= 1;
+      }
+    };
+
+    takeFromPool('economy', quotas.economy);
+    takeFromPool('threeStar', quotas.threeStar);
+    takeFromPool('fourStar', quotas.fourStar);
+    takeFromPool('fiveStar', quotas.fiveStar);
+
+    const redistributionOrder: TboHotelMixSegment[] = [
+      'threeStar',
+      'fourStar',
+      'economy',
+      'fiveStar',
+    ];
+    while (selected.length < targetCount) {
+      const countBeforePass = selected.length;
+      for (const segment of redistributionOrder) {
+        takeFromPool(segment, 1);
+        if (selected.length >= targetCount) break;
+      }
+      if (selected.length === countBeforePass) break;
+    }
+
+    return selected;
+  }
+
+  private selectExplicitStarRatingHotels(
+    candidates: TboHotelCodeCandidate[],
+    selectedStarRatings: number[],
+  ): TboHotelCodeCandidate[] {
+    const allowedRatings = new Set(selectedStarRatings);
+    return this.uniqueHotelCandidates(candidates)
+      .filter((hotel) => allowedRatings.has(hotel.starRating))
+      .slice(0, this.getMixedHotelLimit());
+  }
+
+  private calculateHotelMixQuotas(
+    total: number,
+  ): Record<TboHotelMixSegment, number> {
+    const segments: TboHotelMixSegment[] = [
+      'economy',
+      'threeStar',
+      'fourStar',
+      'fiveStar',
+    ];
+    const percentages = TBOHotelProvider.HOTEL_MIX_PERCENTAGES;
+    const exactValues = segments.map((segment) => ({
+      segment,
+      exact: (total * percentages[segment]) / 100,
+    }));
+    const quotas = exactValues.reduce(
+      (result, item) => {
+        result[item.segment] = Math.floor(item.exact);
+        return result;
+      },
+      {
+        economy: 0,
+        threeStar: 0,
+        fourStar: 0,
+        fiveStar: 0,
+      } as Record<TboHotelMixSegment, number>,
+    );
+    let unallocated = total - Object.values(quotas).reduce(
+      (sum, quota) => sum + quota,
+      0,
+    );
+    const tieBreakOrder: TboHotelMixSegment[] = [
+      'threeStar',
+      'economy',
+      'fourStar',
+      'fiveStar',
+    ];
+
+    exactValues
+      .sort((left, right) => {
+        const remainderDifference =
+          (right.exact - Math.floor(right.exact)) -
+          (left.exact - Math.floor(left.exact));
+        return remainderDifference ||
+          tieBreakOrder.indexOf(left.segment) - tieBreakOrder.indexOf(right.segment);
+      })
+      .forEach((item) => {
+        if (unallocated <= 0) return;
+        quotas[item.segment] += 1;
+        unallocated -= 1;
+      });
+
+    return quotas;
+  }
+
+  private uniqueHotelCandidates(
+    candidates: TboHotelCodeCandidate[],
+  ): TboHotelCodeCandidate[] {
+    const unique = new Map<string, TboHotelCodeCandidate>();
+    for (const candidate of candidates) {
+      const hotelCode = String(candidate.hotelCode || '').trim();
+      if (!hotelCode || unique.has(hotelCode)) continue;
+      unique.set(hotelCode, { ...candidate, hotelCode });
+    }
+
+    return Array.from(unique.values()).sort(
+      (left, right) =>
+        Number(right.isPriority) - Number(left.isPriority) ||
+        left.hotelCode.localeCompare(right.hotelCode),
+    );
+  }
+
+  private getMixedHotelLimit(): number {
+    const configuredLimit = Number(
+      process.env.TBO_MIXED_HOTEL_LIMIT ||
+        TBOHotelProvider.DEFAULT_MIXED_HOTEL_LIMIT,
+    );
+    if (!Number.isInteger(configuredLimit) || configuredLimit <= 0) {
+      return TBOHotelProvider.DEFAULT_MIXED_HOTEL_LIMIT;
+    }
+    return Math.min(configuredLimit, TBOHotelProvider.MAX_MIXED_HOTEL_LIMIT);
+  }
+
+  private getMixSegment(starRating: number): TboHotelMixSegment | null {
+    if (starRating === 1 || starRating === 2) return 'economy';
+    if (starRating === 3) return 'threeStar';
+    if (starRating === 4) return 'fourStar';
+    if (starRating === 5) return 'fiveStar';
+    return null;
+  }
+
+  private logHotelMix(
+    cityCode: string,
+    candidates: TboHotelCodeCandidate[],
+    selected: TboHotelCodeCandidate[],
+  ): void {
+    const countBySegment = (items: TboHotelCodeCandidate[]): Record<string, number> =>
+      items.reduce<Record<string, number>>((result, hotel) => {
+        const segment = this.getMixSegment(hotel.starRating) || 'unknown';
+        result[segment] = (result[segment] || 0) + 1;
+        return result;
+      }, {});
+
+    this.logger.log(
+      `TBO hotel mix for city ${cityCode}: ${JSON.stringify({
+        configuredLimit: this.getMixedHotelLimit(),
+        available: countBySegment(candidates),
+        selected: countBySegment(selected),
+        totalSelected: selected.length,
+        selectedHotelCodes: selected.map((hotel) => hotel.hotelCode),
+      })}`,
+    );
   }
 
  /**
