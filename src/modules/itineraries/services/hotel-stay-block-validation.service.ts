@@ -5,6 +5,7 @@ import {
   calculateStaahOccupancyAmount,
   type StaahPricingPaxInput,
 } from '../helpers/staah-occupancy-pricing';
+import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 
 export type ProviderCode = 'staah' | 'axisrooms' | 'tbo' | 'offline';
 
@@ -431,8 +432,8 @@ export class HotelStayBlockValidationService {
         axisrooms_property_id: propertyId,
         room_id: String(roomRow.room_ref_code || ''),
         rateplan_id: ratePlan.ratePlanId,
-        start_date: { lte: new Date(candidate.checkOutDate) } as any,
-        end_date: { gte: new Date(candidate.checkInDate) } as any,
+        start_date: { lte: this.toDatabaseBusinessDate(candidate.checkOutDate) } as any,
+        end_date: { gte: this.toDatabaseBusinessDate(candidate.checkInDate) } as any,
       },
       orderBy: [{ received_at: 'desc' }, { start_date: 'asc' }] as any,
     });
@@ -452,8 +453,8 @@ export class HotelStayBlockValidationService {
         where: {
           hotel_id: hotelId,
           room_id: Number(roomRow.room_ID),
-          start_date: { lte: new Date(date) },
-          end_date: { gte: new Date(date) },
+          start_date: { lte: this.toDatabaseBusinessDate(date) },
+          end_date: { gte: this.toDatabaseBusinessDate(date) },
         },
         orderBy: { received_at: 'desc' },
       });
@@ -472,8 +473,8 @@ export class HotelStayBlockValidationService {
           hotel_id: hotelId,
           room_id: Number(roomRow.room_ID),
           rateplan_id: ratePlan.ratePlanId,
-          start_date: { lte: new Date(date) },
-          end_date: { gte: new Date(date) },
+          start_date: { lte: this.toDatabaseBusinessDate(date) },
+          end_date: { gte: this.toDatabaseBusinessDate(date) },
         },
         orderBy: { received_at: 'desc' },
       });
@@ -525,8 +526,8 @@ export class HotelStayBlockValidationService {
           where: {
             hotel_id: hotelId,
             room_id: Number(room.room_ID),
-            start_date: { lte: new Date(date) },
-            end_date: { gte: new Date(date) },
+            start_date: { lte: this.toDatabaseBusinessDate(date) },
+            end_date: { gte: this.toDatabaseBusinessDate(date) },
           },
           orderBy: { received_at: 'desc' },
         });
@@ -544,8 +545,8 @@ export class HotelStayBlockValidationService {
             hotel_id: hotelId,
             room_id: Number(room.room_ID),
             rateplan_id: ratePlan.ratePlanId,
-            start_date: { lte: new Date(date) },
-            end_date: { gte: new Date(date) },
+            start_date: { lte: this.toDatabaseBusinessDate(date) },
+            end_date: { gte: this.toDatabaseBusinessDate(date) },
           },
           orderBy: { received_at: 'desc' },
         });
@@ -1125,9 +1126,11 @@ export class HotelStayBlockValidationService {
 
     const direct = this.normalizeText(directRateId || '');
     const meal = this.normalizeText(mealPlan || '');
-    const matched = rows.find((row: any) => this.normalizeText(row.rateplan_id) === direct)
-      || rows.find((row: any) => this.normalizeText(row.rate_plan_code) === direct)
+    const shortMealCode = this.axisRoomsMealPlanCode(directRateId || mealPlan || '');
+    const matched = rows.find((row: any) => !!direct && this.normalizeText(row.rateplan_id) === direct)
+      || rows.find((row: any) => !!direct && this.normalizeText(row.rate_plan_code) === direct)
       || rows.find((row: any) => this.normalizeText(row.rateplan_name) === meal || this.normalizeText(row.rate_plan_code) === meal)
+      || rows.find((row: any) => this.normalizeText(row.rateplan_id) === shortMealCode)
       || rows[0];
 
     if (!matched) {
@@ -1137,6 +1140,15 @@ export class HotelStayBlockValidationService {
     return {
       ratePlanId: String(matched.rateplan_id || '').trim(),
     };
+  }
+
+  /** Match UI meal codes (CP/MAP/AP) to the canonical AxisRooms plan IDs. */
+  private axisRoomsMealPlanCode(value: string): string {
+    const normalized = this.normalizeText(value);
+    if (normalized === 'CP') return 'CPPLAN';
+    if (normalized === 'MAP') return 'MAPPLAN';
+    if (normalized === 'AP') return 'APPLAN';
+    return normalized;
   }
 
   private buildNightlyRate(
@@ -1427,6 +1439,15 @@ export class HotelStayBlockValidationService {
     }
     const date = new Date(raw);
     return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+  }
+
+  /**
+   * Inventory and price-book dates are stored as India business-day midnight.
+   * MySQL returns that value as the previous UTC day at 18:30 (UTC+05:30).
+   * A bare `new Date('YYYY-MM-DD')` is UTC midnight and misses those rows.
+   */
+  private toDatabaseBusinessDate(value: unknown): Date {
+    return toDatabaseBusinessDate(value);
   }
 
   private addDays(date: string, days: number): string {

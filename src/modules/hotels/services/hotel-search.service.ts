@@ -16,6 +16,7 @@ import { TBOHotelProvider } from '../providers/tbo-hotel.provider';
 import { ResAvenueHotelProvider } from '../providers/resavenue-hotel.provider';
 import { HobseHotelProvider } from '../providers/hobse-hotel.provider';
 import { OfflineHotelCatalogService } from '../../itineraries/services/offline-hotel-catalog.service';
+import { toDatabaseBusinessDate } from '../../itineraries/utils/itinerary.utils';
 
 @Injectable()
 export class HotelSearchService {
@@ -351,7 +352,7 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
 
   private async searchAxisRoomsHotels(criteria: HotelSearchDTO): Promise<HotelSearchResult[]> {
     const cityToken = String(criteria.cityCode || '').trim().toLowerCase();
-    const checkIn = new Date(`${String(criteria.checkInDate).slice(0, 10)}T00:00:00.000Z`);
+    const checkIn = toDatabaseBusinessDate(criteria.checkInDate);
     const requiredRoomCount = Math.max(Number(criteria.roomCount || 1), 1);
     const hotels = await (this.prisma as any).dvi_hotel.findMany({
       where: { axisrooms_enabled: 1, status: 1, OR: [{ deleted: false }, { deleted: null }] },

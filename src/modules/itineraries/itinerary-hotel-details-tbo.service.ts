@@ -47,6 +47,7 @@ import {
   hotelCardPropertyKey,
 } from './utils/hotel-card-pricing.util';
 import { resolveHotelRequiredRoutes } from './utils/hotel-selection-view-state.util';
+import { toDatabaseBusinessDate } from './utils/itinerary.utils';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -3208,6 +3209,9 @@ this.logger.log(
     for (const { context, cityHotels } of routeHotels) {
       const { route, routeId, destinationRaw } = context;
       const dateOnly = this.toIstDateOnly((route as any).itinerary_route_date);
+      // ARI date columns are MySQL DATE values. Preserve the business date;
+      // do not shift it to the previous UTC day.
+      const databaseDateOnly = toDatabaseBusinessDate(dateOnly.toISOString().slice(0, 10));
       const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
 
       if (!cityHotels.length) {
@@ -3243,8 +3247,8 @@ this.logger.log(
       const availRows = await this.prisma.dvi_hotel_room_availability.findMany({
         where: {
           hotel_id: { in: hotelIds },
-          start_date: { lte: dateOnly },
-          end_date: { gte: dateOnly },
+          start_date: { lte: databaseDateOnly },
+          end_date: { gte: databaseDateOnly },
         },
         select: {
           hotel_id: true,
@@ -3363,8 +3367,8 @@ this.logger.log(
         where: {
           hotel_id: { in: hotelIds },
           room_id: { in: roomIds },
-          start_date: { lte: dateOnly },
-          end_date: { gte: dateOnly },
+          start_date: { lte: databaseDateOnly },
+          end_date: { gte: databaseDateOnly },
         },
         select: {
           hotel_id: true,

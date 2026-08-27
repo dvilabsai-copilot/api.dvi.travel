@@ -33,6 +33,7 @@ import {
   selectedOptionKeyFromRow,
   strictAutoSelectionIdentityMatches,
 } from '../utils/hotel-selection-identity.util';
+import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 import {
   buildHotelSelectionState,
   resolveHotelRequiredRoutes,
@@ -372,6 +373,7 @@ export class HotelAvailabilitySnapshotService {
     freshRows: any[],
     searchRunId: string,
     checkedAt: Date,
+    routes: any[] = [],
     availabilityState: 'FRESH' | 'PARTIAL' = 'FRESH',
     extraAvailability: Record<string, unknown> = {},
   ): Promise<ItineraryHotelDetailsResponseDto> {
@@ -384,6 +386,7 @@ export class HotelAvailabilitySnapshotService {
       );
     });
     const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
+    const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
     const normalizedRows = this.dedupeRows(freshRows || [])
       .map((row: any) => this.normalizeRatePlanLabels(row))
       .map((row: any) => this.decorateSelection(
@@ -391,9 +394,19 @@ export class HotelAvailabilitySnapshotService {
         selectedByRouteGroup,
         Number(plan.itinerary_plan_ID),
       ));
-    const sharedHotelInventory = this.buildSharedHotelInventory(
-      normalizedRows,
-      effectiveMarginPercentage,
+    // Re-run the complete-stay guard after coalescing the supplier rows into
+    // the shared inventory returned to the hotel pane.  The raw search rows
+    // can be complete per route while coalescing selects a parent row and
+    // nested rateOptions from different dates.  Without this final pass, the
+    // pane can show Choose and the select-intent request can be the first
+    // place that discovers a missing night.
+    const sharedHotelInventory = this.applyCompleteStayAvailability(
+      this.buildSharedHotelInventory(
+        normalizedRows,
+        effectiveMarginPercentage,
+      ),
+      routes,
+      noOfNights,
     ).map((row: any) => ({
       ...row,
       rateOptions: this.canonicalizeRateOptions(row, row.rateOptions || []),
@@ -470,6 +483,14 @@ export class HotelAvailabilitySnapshotService {
         searchRunId,
         requestType,
       });
+      if (resetSelections) {
+        // Reset/edit is a destructive rebuild of the hotel portion of this
+        // itinerary.  Clear the short-lived supplier caches before searching
+        // so neither the old provider response nor the old offline catalog can
+        // be reused as the new snapshot.
+        this.tboHotelDetails.clearCacheForQuote?.(quoteId);
+        this.offlineHotelCatalog?.clearCache?.();
+      }
       const logStage = (stage: string, stageStartedAt: number) => {
       const details = {
         quoteId,
@@ -604,6 +625,18 @@ export class HotelAvailabilitySnapshotService {
       // Persist only selected itinerary rows. Fresh inventory remains scoped
       // to this request and is returned directly to the mounted React page.
       const changeSummary = await this.prisma.$transaction(async (tx) => {
+        if (resetSelections) {
+          await this.clearEditableHotelSelections(tx, plan.itinerary_plan_ID);
+          // This table is legacy inventory storage. The current response is
+          // built from the fresh request, but remove old rows so another read
+          // cannot fall back to stale rates from this quote.
+          await tx?.dvi_itinerary_hotel_search_cache?.deleteMany?.({
+            where: {
+              quote_id: String(quoteId).trim(),
+              plan_id: plan.itinerary_plan_ID,
+            },
+          });
+        }
         return this.reconcileSelections(
           tx,
           plan.itinerary_plan_ID,
@@ -628,6 +661,7 @@ export class HotelAvailabilitySnapshotService {
         rows,
         searchRunId,
         checkedAt,
+        routes,
         hasPartialAvailability ? 'PARTIAL' : 'FRESH',
         { providerErrors },
       );
@@ -824,6 +858,8 @@ export class HotelAvailabilitySnapshotService {
     response: ItineraryHotelDetailsResponseDto;
     changeSummary: HotelAvailabilityChangeSummary;
   }> {
+    // searchAndPersist owns the complete reset lifecycle. Keeping this method
+    // as a thin entry point prevents reset and edit from drifting apart.
     const result = await this.searchAndPersist(quoteId, 'CREATE', createdBy, true);
     const hotelRows = Array.isArray((result.response as any)?.hotels)
       ? (result.response as any).hotels
@@ -844,6 +880,42 @@ export class HotelAvailabilitySnapshotService {
     }
 
     return result;
+  }
+
+  /**
+   * Retire all editable hotel selections and their dependent room data for a
+   * scoped plan reset. Previous-night billing marker rows use hotel_required=2
+   * and are intentionally preserved because they are itinerary timeline data,
+   * not hotel-rate selections.
+   */
+  private async clearEditableHotelSelections(tx: any, planId: number): Promise<void> {
+    const resetData = { status: 0, deleted: 1, updatedon: new Date() };
+    const selectionWhere = {
+      itinerary_plan_id: Number(planId),
+      hotel_required: 1,
+      status: 1,
+      deleted: 0,
+    };
+
+    await tx?.dvi_itinerary_plan_hotel_room_details?.updateMany?.({
+      where: { itinerary_plan_id: Number(planId), status: 1, deleted: 0 },
+      data: resetData,
+    });
+    await tx?.dvi_itinerary_plan_hotel_room_amenities?.updateMany?.({
+      where: { itinerary_plan_id: Number(planId), status: 1, deleted: 0 },
+      data: resetData,
+    });
+    await tx?.dvi_itinerary_plan_hotel_details?.updateMany?.({
+      where: selectionWhere,
+      data: resetData,
+    });
+
+    const remaining = await tx?.dvi_itinerary_plan_hotel_details?.count?.({
+      where: selectionWhere,
+    });
+    if (Number(remaining || 0) > 0) {
+      throw new Error(`Hotel reset left ${remaining} editable selection(s) active`);
+    }
   }
 
   async fetchOfflineForStay(
@@ -924,6 +996,7 @@ export class HotelAvailabilitySnapshotService {
       mergedRows,
       searchRunId,
       checkedAt,
+      requestedRoutes,
       'FRESH',
       { offlineFetch },
     );
@@ -1324,7 +1397,10 @@ export class HotelAvailabilitySnapshotService {
         unavailableDates,
         completeStayBookable,
         completeStayRouteIds: [...block.routeIds],
-        ...(completeStayBookable ? {} : { isSelectable: false }),
+        ...(completeStayBookable ? {} : {
+          isSelectable: false,
+          availabilityStatus: 'NO_AVAILABILITY',
+        }),
         availabilityMessage,
       };
     };
@@ -1332,12 +1408,38 @@ export class HotelAvailabilitySnapshotService {
       const block = rowRouteIds(row).map((id) => blockByRouteId.get(id)).find(Boolean);
       if (!block) return row;
       const decoratedRow = decorate(row, propertyCoverage.get(propertyIdentity(row)) || new Set<number>(), block);
+      // The pane represents a hotel/property, while nested options represent
+      // one concrete room/rate. A hotel-level selection is allowed to use a
+      // different room on another night, so expose the property decision
+      // separately instead of forcing the UI to infer it from a room option.
+      const hotelStayAvailability = {
+        hotelStayAvailableDates: decoratedRow.availableDates,
+        hotelStayUnavailableDates: decoratedRow.unavailableDates,
+        hotelStayCompleteStayBookable: decoratedRow.completeStayBookable,
+        hotelStayCompleteStayRouteIds: decoratedRow.completeStayRouteIds,
+        hotelStayAvailabilityMessage: decoratedRow.availabilityMessage,
+        // `row` can carry a strict room/rate status from an earlier search
+        // (for example NO_AVAILABILITY) even though the property has valid
+        // rates on every requested night.  That status must not be reused for
+        // the hotel-level card: the property coverage calculated above is the
+        // authority for a HOTEL selection.
+        hotelStayAvailabilityStatus: decoratedRow.completeStayBookable
+          ? (normalizeIdentity(row?.provider) === 'offline'
+            ? 'OFFLINE_APPROVAL_REQUIRED'
+            : 'AVAILABLE')
+          : decoratedRow.availabilityStatus,
+        hotelStayIsSelectable: decoratedRow.completeStayBookable && decoratedRow.isSelectable !== false,
+      };
       if (!Array.isArray(row?.rateOptions)) return decoratedRow;
       return {
         ...decoratedRow,
+        ...hotelStayAvailability,
         rateOptions: row.rateOptions.map((option: any) => {
           const mergedOption = { ...row, ...option };
-          return decorate(option, optionCoverage.get(optionIdentity(mergedOption)) || new Set<number>(), block);
+          return {
+            ...decorate(option, optionCoverage.get(optionIdentity(mergedOption)) || new Set<number>(), block),
+            ...hotelStayAvailability,
+          };
         }),
       };
     });
@@ -3182,8 +3284,8 @@ export class HotelAvailabilitySnapshotService {
         hotel_id: { in: hotelIds },
         room_id: { in: roomIds },
         rateplan_id: { in: rateplanIds },
-        start_date: { lte: new Date(`${dates[dates.length - 1]}T00:00:00.000Z`) },
-        end_date: { gte: new Date(`${dates[0]}T00:00:00.000Z`) },
+        start_date: { lte: toDatabaseBusinessDate(dates[dates.length - 1]) },
+        end_date: { gte: toDatabaseBusinessDate(dates[0]) },
       },
       select: { hotel_id: true, room_id: true, rateplan_id: true, start_date: true, end_date: true, received_at: true, occupancy_rates: true },
     });
@@ -3211,8 +3313,8 @@ export class HotelAvailabilitySnapshotService {
       // for the requested plan, so use that plan's row when it exists instead
       // of treating a rateConditions label as a priced CP offer.
       const coversDate = (candidate: any): boolean =>
-        new Date(candidate.start_date).getTime() <= new Date(`${identity.date}T00:00:00.000Z`).getTime() &&
-        new Date(candidate.end_date).getTime() >= new Date(`${identity.date}T00:00:00.000Z`).getTime();
+        new Date(candidate.start_date).getTime() <= toDatabaseBusinessDate(identity.date).getTime() &&
+        new Date(candidate.end_date).getTime() >= toDatabaseBusinessDate(identity.date).getTime();
       const requestedCandidates = requestedRateplanId
         ? (matchingRows.get(rowKey(identity.hotelId, identity.roomId, requestedRateplanId)) || []).filter(coversDate)
         : [];
@@ -3230,7 +3332,41 @@ export class HotelAvailabilitySnapshotService {
       }
       const row = identity.row;
       if (!rates) {
-        corrected.set(row, { ...row, price: 0, pricePerNight: 0, totalPrice: 0, totalStayPrice: 0, totalHotelCost: 0, isSelectable: false, isBookable: false, availabilityStatus: 'UNAVAILABLE', availabilityMessage: 'Hotel rate not available' });
+        const clearMargin = (value: any) => {
+          const {
+            hotelMarginPercentage: _hotelMarginPercentage,
+            hotelMarginAmount: _hotelMarginAmount,
+            hotelMarginStayAmount: _hotelMarginStayAmount,
+            hotelMarginTotalAmount: _hotelMarginTotalAmount,
+            hotelMarginBaseAmount: _hotelMarginBaseAmount,
+            amountIncludesHotelMargin: _amountIncludesHotelMargin,
+            pricingIncludesHotelMargin: _pricingIncludesHotelMargin,
+            ...withoutMargin
+          } = value || {};
+          return withoutMargin;
+        };
+        corrected.set(row, {
+          ...clearMargin(row),
+          rateOptions: Array.isArray(row.rateOptions)
+            ? row.rateOptions.map((option: any) => ({
+                ...clearMargin(option),
+                price: 0,
+                pricePerNight: 0,
+                totalPrice: 0,
+                totalStayPrice: 0,
+                totalHotelCost: 0,
+              }))
+            : row.rateOptions,
+          price: 0,
+          pricePerNight: 0,
+          totalPrice: 0,
+          totalStayPrice: 0,
+          totalHotelCost: 0,
+          isSelectable: false,
+          isBookable: false,
+          availabilityStatus: 'UNAVAILABLE',
+          availabilityMessage: 'Hotel rate not available',
+        });
         continue;
       }
       const roomRate = Number(rates[occupancyKey]);
@@ -3248,12 +3384,22 @@ export class HotelAvailabilitySnapshotService {
       );
       const correctedRateOptions = Array.isArray(row.rateOptions)
         ? row.rateOptions.map((option: any) => {
+            const {
+              hotelMarginPercentage: _hotelMarginPercentage,
+              hotelMarginAmount: _hotelMarginAmount,
+              hotelMarginStayAmount: _hotelMarginStayAmount,
+              hotelMarginTotalAmount: _hotelMarginTotalAmount,
+              hotelMarginBaseAmount: _hotelMarginBaseAmount,
+              amountIncludesHotelMargin: _amountIncludesHotelMargin,
+              pricingIncludesHotelMargin: _pricingIncludesHotelMargin,
+              ...optionWithoutMargin
+            } = option || {};
             const optionReference = String(option?.rateOptionId || option?.rate_option_id || option?.bookingCode || '').trim();
             const optionMatch = optionReference.match(/(?:axisrooms:|AX-)([^:|-]+)[:|-]([^:|-]+)[:|-]([^:|-]+)/i);
             const optionRateplan = String(option?.rateplanId || option?.ratePlanId || option?.rateplan_id || optionMatch?.[3] || '').trim();
-            if (optionRateplan !== identity.rateplanId) return option;
+            if (optionRateplan !== identity.rateplanId) return optionWithoutMargin;
             return {
-              ...option,
+              ...optionWithoutMargin,
               ...(planLabel ? {
                 mealPlan: planLabel,
                 mealPlanCode: planLabel,
@@ -3281,7 +3427,19 @@ export class HotelAvailabilitySnapshotService {
           })
         : row.rateOptions;
       corrected.set(row, {
-        ...row,
+        ...(() => {
+          const {
+            hotelMarginPercentage: _hotelMarginPercentage,
+            hotelMarginAmount: _hotelMarginAmount,
+            hotelMarginStayAmount: _hotelMarginStayAmount,
+            hotelMarginTotalAmount: _hotelMarginTotalAmount,
+            hotelMarginBaseAmount: _hotelMarginBaseAmount,
+            amountIncludesHotelMargin: _amountIncludesHotelMargin,
+            pricingIncludesHotelMargin: _pricingIncludesHotelMargin,
+            ...rowWithoutMargin
+          } = row;
+          return rowWithoutMargin;
+        })(),
         ...(planLabel ? {
           mealPlan: planLabel,
           mealPlanCode: planLabel,
@@ -4529,8 +4687,8 @@ export class HotelAvailabilitySnapshotService {
         hotel_id: hotelId,
         room_id: roomId,
         rateplan_id: rateplanId,
-        start_date: { lte: new Date(`${dateText}T00:00:00.000Z`) },
-        end_date: { gte: new Date(`${dateText}T00:00:00.000Z`) },
+        start_date: { lte: toDatabaseBusinessDate(dateText) },
+        end_date: { gte: toDatabaseBusinessDate(dateText) },
       },
       select: { occupancy_rates: true, start_date: true, received_at: true },
       orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],

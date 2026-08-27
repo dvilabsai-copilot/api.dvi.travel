@@ -53,6 +53,29 @@ test('continuous stay stops at a destination boundary', async () => {
   assert.deepEqual(candidate.routeIds, [101, 102]);
 });
 
+test('AxisRooms business dates use the database IST-midnight boundary', () => {
+  const service = serviceWithRoutes([]);
+  const databaseDate = (service as any).toDatabaseBusinessDate('2026-09-07') as Date;
+  assert.equal(databaseDate.toISOString(), '2026-09-07T00:00:00.000Z');
+});
+
+test('AxisRooms resolves short meal codes to the matching rate plan', async () => {
+  const service = new HotelStayBlockValidationService({
+    dvi_hotel_room_rate_plan: {
+      findMany: async () => [
+        { rateplan_id: 'AP_PLAN', rateplan_name: 'American Plan', rate_plan_code: null },
+        { rateplan_id: 'CP_PLAN', rateplan_name: 'Continental Plan', rate_plan_code: null },
+        { rateplan_id: 'MAP_PLAN', rateplan_name: 'Modified American Plan', rate_plan_code: null },
+      ],
+    },
+  } as any);
+
+  for (const [mealPlan, expected] of [['AP', 'AP_PLAN'], ['CP', 'CP_PLAN'], ['MAP', 'MAP_PLAN']] as const) {
+    const resolved = await (service as any).resolveAxisRatePlan(95, 231, undefined, mealPlan);
+    assert.equal(resolved.ratePlanId, expected);
+  }
+});
+
 test('fresh TBO validation selects positive price fields from duplicate response rows', async () => {
   const service = new HotelStayBlockValidationService({
     dvi_itinerary_plan_details: {
