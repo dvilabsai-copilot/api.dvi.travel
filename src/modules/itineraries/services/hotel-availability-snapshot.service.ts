@@ -1345,10 +1345,18 @@ export class HotelAvailabilitySnapshotService {
       return `${propertyIdentity(row)}|rate:${normalizeIdentity(row?.rateOptionId || row?.rate_option_id || row?.optionKey || row?.option_key || row?.bookingCode || row?.booking_code || row?.searchReference || row?.search_reference || row?.rateId || row?.rate_id)}`;
     };
     const rowRouteIds = (row: any): number[] => {
-      const routeIds: number[] = Array.isArray(row?.routeIds) ? row.routeIds.map(Number).filter((id: number) => id > 0) : [];
       const primaryRouteId = Number(row?.itineraryRouteId || row?.routeId || row?.route_id || row?.itinerary_route_id || 0);
-      if (primaryRouteId > 0 && !routeIds.includes(primaryRouteId)) routeIds.unshift(primaryRouteId);
-      return [...new Set(routeIds)];
+      // Search results are one-night rows. Some providers copy the complete
+      // logical-stay routeIds onto every row; treating those IDs as coverage
+      // would make night 1 falsely cover night 2 when night 2 has no rate.
+      // Coverage must therefore come from the row's actual route. Only use
+      // routeIds as a fallback for legacy rows that have no primary route.
+      if (primaryRouteId > 0) return [primaryRouteId];
+      return Array.isArray(row?.routeIds)
+        ? [...new Set<number>(row.routeIds
+          .map((id: unknown): number => Number(id))
+          .filter((id: number): boolean => id > 0))]
+        : [];
     };
     const isAvailabilityEligible = (row: any): boolean => {
       const provider = normalizeIdentity(row?.provider || row?.hotel_provider);

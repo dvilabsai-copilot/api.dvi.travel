@@ -1176,6 +1176,10 @@ export class ItinerarySelectionWorkflowService {
     ).trim().toLowerCase();
     const requestedRoomType = String(data.roomType || '').trim().toLowerCase();
     const requestedHotelName = String(data.hotelName || '').trim().toLowerCase();
+    const requestedMealPlan =
+      inferCanonicalHotelRatePlanCode(data.mealPlanCode) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(data.mealPlanCode) ||
+      '';
     const parsedRows = rows
       .map((row: any) => {
         try { return typeof row.full_payload === 'string' ? JSON.parse(row.full_payload) : row.full_payload; } catch { return null; }
@@ -1221,9 +1225,24 @@ export class ItinerarySelectionWorkflowService {
         if (!canonicalMatch && !codeMatch) return false;
         return true;
     };
-    const rateMatches = (candidate: any): boolean =>
-      requestedRateIds.length > 0 && supplierRateIdentityMatches(data, candidate);
-    const matched = candidateRows.find((candidate: any) => {
+    const candidateMealPlan = (candidate: any): string =>
+      inferCanonicalHotelRatePlanCode(candidate?.mealPlanCode) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(
+        candidate?.mealPlan || candidate?.meal_plan || candidate?.ratePlanName,
+      ) ||
+      '';
+    const rateMatches = (candidate: any): boolean => {
+      // A card-level HOTEL selection can intentionally omit a concrete rate
+      // identity. In that case select the current lowest rate for the
+      // requested property/meal plan; do not reject it as stale merely because
+      // the UI did not send a nested bookingCode.
+      if (requestedRateIds.length === 0) {
+        if (!requestedMealPlan) return true;
+        return candidateMealPlan(candidate) === requestedMealPlan;
+      }
+      return supplierRateIdentityMatches(data, candidate);
+    };
+    const matchingCandidates = candidateRows.filter((candidate: any) => {
       if (!propertyMatches(candidate) || !rateMatches(candidate)) return false;
       const candidateRoomType = String(candidate.roomType || candidate.room_type || '').trim().toLowerCase();
       const candidateHotelName = String(candidate.hotelName || candidate.hotel_name || '').trim().toLowerCase();
@@ -1231,6 +1250,8 @@ export class ItinerarySelectionWorkflowService {
       if (requestedHotelName && candidateHotelName && requestedHotelName !== candidateHotelName) return false;
       return true;
     });
+    const matched = matchingCandidates
+      .sort((left: any, right: any) => Number(left.totalPrice ?? left.totalStayPrice ?? left.price ?? Infinity) - Number(right.totalPrice ?? right.totalStayPrice ?? right.price ?? Infinity))[0];
 
     if (!matched) {
       throw new BadRequestException('The selected hotel rate is stale or unavailable. Refresh hotel availability and select again.');

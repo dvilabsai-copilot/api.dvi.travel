@@ -603,18 +603,26 @@ export class HotelStayBlockValidationService {
     const nightlyRates: NightlyRate[] = [];
     let freshRows: Array<{ route_id: number; full_payload: any }> = [];
     try {
-      const fresh = await this.hotelDetails.getSelectedHotelRates(
-        String((plan as any)?.itinerary_quote_ID || ''),
-        Number(candidate.anchorRouteId || candidate.routeIds[0] || 0),
-        candidate.provider,
-        candidate.hotelCode,
-        0,
-      );
-      freshRows = (Array.isArray((fresh as any)?.hotels) ? (fresh as any).hotels : [])
-        .map((full_payload: any) => ({
-          route_id: Number(full_payload?.itineraryRouteId || full_payload?.routeId || 0),
-          full_payload,
-        }));
+      // A selected property can have a different rate response for every
+      // night. Refreshing only the anchor route makes every following night
+      // look like NO_RATE even when its supplier search has a valid rate.
+      // Fetch each logical-stay route and retain the route id supplied by the
+      // request because the provider payload may carry the anchor id.
+      const freshByRoute = await Promise.all(candidate.routeIds.map(async (routeId) => {
+        const fresh = await this.hotelDetails.getSelectedHotelRates(
+          String((plan as any)?.itinerary_quote_ID || ''),
+          Number(routeId),
+          candidate.provider,
+          candidate.hotelCode,
+          0,
+        );
+        return (Array.isArray((fresh as any)?.hotels) ? (fresh as any).hotels : [])
+          .map((full_payload: any) => ({
+            route_id: Number(routeId),
+            full_payload,
+          }));
+      }));
+      freshRows = freshByRoute.flat();
     } catch (error) {
       return this.buildValidationResult(candidate, [{
         type: 'UNKNOWN',
