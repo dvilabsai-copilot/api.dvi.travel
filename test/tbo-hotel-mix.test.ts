@@ -62,6 +62,15 @@ test('selects a 20/50/20/10 mix for 100 hotels', () => {
   });
 });
 
+test('uses the 1000-hotel default pool when enough candidates exist', () => {
+  assert.deepEqual(segmentCounts(selectMixed(balancedCandidates(10))), {
+    economy: 200,
+    threeStar: 500,
+    fourStar: 200,
+    fiveStar: 100,
+  });
+});
+
 test('selects a 20/50/20/10 mix for 50 hotels', async () => {
   await withHotelLimit('50', () => {
     assert.deepEqual(segmentCounts(selectMixed(balancedCandidates())), {
@@ -84,17 +93,19 @@ test('selects a 20/50/20/10 mix for 10 hotels', async () => {
   });
 });
 
-test('redistributes a three-star shortage and still returns 100 hotels', () => {
-  const selected = selectMixed([
-    ...candidatesFor('E', 2, 40),
-    ...candidatesFor('S3', 3, 30),
-    ...candidatesFor('S4', 4, 35),
-    ...candidatesFor('S5', 5, 20),
-  ]);
+test('redistributes a three-star shortage and still returns the requested 100 hotels', async () => {
+  await withHotelLimit('100', () => {
+    const selected = selectMixed([
+      ...candidatesFor('E', 2, 40),
+      ...candidatesFor('S3', 3, 30),
+      ...candidatesFor('S4', 4, 35),
+      ...candidatesFor('S5', 5, 20),
+    ]);
 
-  assert.equal(selected.length, 100);
-  assert.equal(segmentCounts(selected).threeStar, 30);
-  assert.equal(new Set(selected.map((item) => item.hotelCode)).size, 100);
+    assert.equal(selected.length, 100);
+    assert.equal(segmentCounts(selected).threeStar, 30);
+    assert.equal(new Set(selected.map((item) => item.hotelCode)).size, 100);
+  });
 });
 
 test('treats both one-star and two-star hotels as economy', async () => {
@@ -164,15 +175,18 @@ test('returns every valid unique hotel when a city has fewer than the limit', ()
   assert.equal(selected.length, 5);
 });
 
-test('invalid environment limit defaults to 100', async () => {
+test('invalid environment limit defaults to 1000', async () => {
   await withHotelLimit('invalid', () => {
-    assert.equal(createProvider().getMixedHotelLimit(), 100);
+    assert.equal(createProvider().getMixedHotelLimit(), 1000);
   });
 });
 
-test('environment limit above 500 is capped at 500', async () => {
+test('environment limit above 1000 is capped at 1000', async () => {
   await withHotelLimit('900', () => {
-    assert.equal(createProvider().getMixedHotelLimit(), 500);
+    assert.equal(createProvider().getMixedHotelLimit(), 900);
+  });
+  await withHotelLimit('1200', () => {
+    assert.equal(createProvider().getMixedHotelLimit(), 1000);
   });
 });
 
