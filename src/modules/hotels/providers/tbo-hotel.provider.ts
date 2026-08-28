@@ -525,6 +525,15 @@ export class TBOHotelProvider implements IHotelProvider {
         select: { tbo_city_code: true, name: true },
       });
       if (byId?.tbo_city_code) {
+        const masterByIdName = byId.name
+          ? await this.resolveTboCityCodeFromHotelMaster([byId.name])
+          : null;
+        if (masterByIdName) {
+          return {
+            tboCityCode: masterByIdName,
+            source: `tbo_hotel_master.city_name:${byId.name}`,
+          };
+        }
         return { tboCityCode: byId.tbo_city_code, source: 'dvi_cities.id' };
       }
 
@@ -535,6 +544,16 @@ export class TBOHotelProvider implements IHotelProvider {
           return { tboCityCode: fromStaticByIdName, source: 'static-citylist-from-dvi_cities.id-name' };
         }
       }
+    }
+
+    // Prefer an active master-inventory mapping over a possibly stale local
+    // dvi_cities mapping, including inactive local city rows.
+    const masterCityCode = await this.resolveTboCityCodeFromHotelMaster(cityNameCandidates);
+    if (masterCityCode) {
+      return {
+        tboCityCode: masterCityCode,
+        source: `tbo_hotel_master.city_name:${cityNameCandidates.join('|')}`,
+      };
     }
 
  // 3) Input might be city name in dvi_cities (case-insensitive where supported).
@@ -596,6 +615,67 @@ export class TBOHotelProvider implements IHotelProvider {
     }
 
     return { tboCityCode: null, source: null };
+  }
+
+  /**
+   * Reconcile a local city name with the TBO city code used by the active
+   * master inventory. A local mapping may be stale after a TBO city-code
+   * migration, so trusting dvi_cities alone can incorrectly reduce a city to
+   * the legacy dvi_hotel fallback.
+   *
+   * If TBO has more than one active code for the same city name, choose the
+   * code containing the largest active inventory. This is deterministic and
+   * avoids mixing unrelated city codes in one Search request.
+   */
+  private async resolveTboCityCodeFromHotelMaster(cityNames: string[]): Promise<string | null> {
+    try {
+      const rows: Array<{ tbo_city_code: string; city_name: string | null }> = [];
+
+      for (const cityName of cityNames) {
+        const matches = await this.prisma.tbo_hotel_master.findMany({
+          where: {
+            city_name: { equals: cityName } as any,
+            status: 1,
+            tbo_city_code: { not: '' },
+          },
+          select: { tbo_city_code: true, city_name: true },
+        });
+        rows.push(...matches);
+      }
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        const code = String(row.tbo_city_code || '').trim();
+        if (code) {
+          counts.set(code, (counts.get(code) || 0) + 1);
+        }
+      }
+
+      const rankedCodes = [...counts.entries()].sort(
+        ([codeA, countA], [codeB, countB]) => countB - countA || codeA.localeCompare(codeB),
+      );
+      const selected = rankedCodes[0]?.[0] || null;
+
+      if (selected) {
+        const alternatives = rankedCodes
+          .filter(([code]) => code !== selected)
+          .map(([code, count]) => `${code} (${count})`)
+          .join(', ');
+        this.logger.warn(
+          ` TBO master city reconciliation: ${cityNames.join('|')} -> ${selected} (${counts.get(selected)} active hotels)` +
+            (alternatives ? `; other active codes: ${alternatives}` : ''),
+        );
+      }
+
+      return selected;
+    } catch (error: any) {
+      this.logger.warn(` TBO master city-name lookup failed for ${cityNames.join('|')}: ${error?.message || error}`);
+      return null;
+    }
   }
 
   private async fetchTboCityCodeFromStaticCityList(cityName: string): Promise<string | null> {
