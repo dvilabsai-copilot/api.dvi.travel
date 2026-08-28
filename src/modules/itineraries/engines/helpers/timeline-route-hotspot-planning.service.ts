@@ -38,12 +38,14 @@ export class TimelineRouteHotspotPlanningService {
     isLastRoute: boolean;
     shouldDeferDay1Sightseeing: boolean;
     forceNoSightseeingOnThisRoute: boolean;
+    forceDirectDestinationSightseeing: boolean;
     verboseTimelineProofLogs: boolean;
   }): Promise<any> {
     const { tx, planId, route, plan, routes, scopedRoutes, routeIndex, previousRouteByRouteId,
       sourceCity, destinationCity, arrivalPoint, departurePoint, currentLocationName,
       filteredHotspots, hotspotRows, isFirstRoute, isLastRoute, shouldDeferDay1Sightseeing,
-      forceNoSightseeingOnThisRoute, verboseTimelineProofLogs } = input;
+      forceNoSightseeingOnThisRoute, forceDirectDestinationSightseeing,
+      verboseTimelineProofLogs } = input;
     let carryForwardHotspots = input.carryForwardHotspots;
       let selectedHotspots: any[] = [];
 
@@ -217,7 +219,19 @@ export class TimelineRouteHotspotPlanningService {
       }
 
       if (!forceNoSightseeingOnThisRoute) {
-        if (isDay1DifferentCities) {
+        if (forceDirectDestinationSightseeing && isFirstRoute) {
+          // Early check-in follows the Direct Destination hotspot pool while
+          // leaving the persisted route flag unchanged.
+          selectedHotspots = await this.callbacks.fetchSelectedHotspots(
+            tx,
+            planId,
+            route.itinerary_route_ID,
+            filteredHotspots,
+            undefined,
+            false,
+            true,
+          );
+        } else if (isDay1DifferentCities) {
         const directToNext = Number((route as any).direct_to_next_visiting_place || 0);
 
         if (directToNext === 1) {

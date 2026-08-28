@@ -33,6 +33,7 @@ export class TimelineRouteHotspotSelectionService {
     allHotspots: any[],
     maxSourceHotspots?: number,
     skipDestinationHotspots?: boolean,
+    forceDirectDestination?: boolean,
   ): Promise<any[]> {
     const fetchStart = Date.now();
     try {
@@ -213,7 +214,9 @@ export class TimelineRouteHotspotSelectionService {
 
       const targetLower = targetLocation.toLowerCase();
       const nextLower = nextLocation.toLowerCase();
-      const directToNextVisitingPlace = (route as any).direct_to_next_visiting_place || 0;
+      const directToNextVisitingPlace = forceDirectDestination
+        ? 1
+        : (route as any).direct_to_next_visiting_place || 0;
       const debugBucketIds = new Set<number>([245, 243, 241, 228, 357]);
 
       const viaRoutes =
