@@ -29,6 +29,11 @@ export class TBOHotelProvider implements IHotelProvider {
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
+  // Search the complete active master pool (up to this safety cap). TBO still
+  // receives these codes in batches of 100 below; this cap must not be used as
+  // a percentage/category mix because that can hide valid hotels from the UI.
+  private static readonly DEFAULT_HOTEL_CANDIDATE_LIMIT = 1000;
+  private static readonly MAX_HOTEL_CANDIDATE_LIMIT = 1000;
  // Production API Endpoints from Postman Collection
  private readonly SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
  private readonly BOOKING_API_URL = process.env.TBO_BOOKING_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10';
@@ -1571,7 +1576,8 @@ export class TBOHotelProvider implements IHotelProvider {
  */
   private async getHotelCodesForCityFromDb(tboCityCode: string): Promise<string> {
     try {
- this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
+      this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
+      const candidateLimit = this.getHotelCandidateLimit();
 
       if (!this.prisma) {
  this.logger.error(` CRITICAL: PrismaService is NULL/UNDEFINED`);
@@ -1596,6 +1602,7 @@ export class TBOHotelProvider implements IHotelProvider {
           { is_priority: 'desc' },
           { tbo_hotel_code: 'asc' },
         ],
+        take: candidateLimit,
       });
 
       if (!hotels || hotels.length === 0) {
@@ -1622,7 +1629,7 @@ export class TBOHotelProvider implements IHotelProvider {
           orderBy: {
             tbo_hotel_code: 'asc',
           },
-          take: 500, // Keep the historical candidate pool; requests are chunked into 100-code batches.
+          take: candidateLimit,
         });
 
         if (dviHotels && dviHotels.length > 0) {
@@ -1647,7 +1654,9 @@ export class TBOHotelProvider implements IHotelProvider {
         .filter(Boolean)
         .join(',');
 
- this.logger.log(` PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master`);
+      this.logger.log(
+        ` PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master (candidate limit ${candidateLimit}; no percentage mix)`,
+      );
 
       return hotelCodes;
     } catch (error: any) {
@@ -1657,6 +1666,18 @@ export class TBOHotelProvider implements IHotelProvider {
       );
       return '';
     }
+  }
+
+  private getHotelCandidateLimit(): number {
+    const configured = Number(process.env.TBO_HOTEL_CANDIDATE_LIMIT || '');
+    if (!Number.isFinite(configured) || configured <= 0) {
+      return TBOHotelProvider.DEFAULT_HOTEL_CANDIDATE_LIMIT;
+    }
+
+    return Math.min(
+      Math.max(Math.floor(configured), 100),
+      TBOHotelProvider.MAX_HOTEL_CANDIDATE_LIMIT,
+    );
   }
 
  /**
