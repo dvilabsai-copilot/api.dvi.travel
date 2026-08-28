@@ -119,6 +119,34 @@ test('every recommendation pane receives the same complete route inventory', () 
   ]);
 });
 
+test('group 3 reuses group 2 selected hotel when its route inventory is empty', () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  const selectedGroup2 = {
+    provider: 'tbo', hotelCode: 'ALLEPPEY-G2', hotelName: 'Lake Canopy',
+    roomType: 'The Creek', mealPlan: 'CP', price: 17250,
+    extraBedRate: 1000, childWithoutBedRate: 500, rateOptionId: 'g2-rate',
+  };
+  const packages = service.generateSharedAvailabilityPackages(
+    new Map([[10, []]]),
+    [{ itinerary_route_ID: 10, itinerary_route_date: '2026-08-19', next_visiting_location: 'Alleppey' }],
+    [
+      { groupType: 1, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+      { groupType: 2, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: selectedGroup2 }] },
+      { groupType: 3, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+      { groupType: 4, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+    ],
+  );
+
+  const group3Hotel = packages[2].hotels[0];
+  assert.equal(group3Hotel.hotelCode, 'ALLEPPEY-G2');
+  assert.equal(group3Hotel.price, 17250);
+  assert.equal(group3Hotel.extraBedRate, 1000);
+  assert.equal(group3Hotel.childWithoutBedRate, 500);
+  assert.equal(group3Hotel.autoSelectionStatus, 'AVAILABLE');
+  assert.equal(group3Hotel.autoSelectionCandidate, true);
+  assert.equal(group3Hotel.autoSelectionFallbackFromGroup, 2);
+});
+
 test('category filtering never removes a hotel from the shared inventory', async () => {
   const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
   service.prisma = {
