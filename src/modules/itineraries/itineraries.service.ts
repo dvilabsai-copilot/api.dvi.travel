@@ -1498,13 +1498,17 @@ private getGuideSlotLabel(slotId: number): string {
     }
 
     try {
-      const hotelSearch = await this.hotelAvailabilitySnapshotService.searchAndPersist(
+      // Fresh creation uses the same hotel snapshot lifecycle as Reset so
+      // supplier inventory, persistence, and the response consumed by the UI
+      // cannot diverge between the two flows.
+      const hotelSearch = await this.hotelAvailabilitySnapshotService.resetAndPersist(
         String(result.quoteId),
-        'CREATE',
         Number(req?.user?.userId || 0),
       );
       return {
         ...result,
+        hotelDetails: hotelSearch.response,
+        hotelChangeSummary: hotelSearch.changeSummary,
         hotelSearch: {
           status: Number(hotelSearch.response.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
             hotelSearch.response.hotelAvailability?.availabilityState === 'PARTIAL' ? 'PARTIAL' : 'COMPLETE',
