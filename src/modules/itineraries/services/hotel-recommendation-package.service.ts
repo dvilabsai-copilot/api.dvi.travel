@@ -342,10 +342,12 @@ export class HotelRecommendationPackageService {
 
   private selectCategoryOption(options: StayOption[], slot: CategorySlot, used: Set<string>): StayOption | undefined {
     const orderedCategories = this.categoryFallbackOrder(slot.category);
-    // Every eligible provider participates in category allocation. Provider
-    // class is not a category filter; AxisRooms is preferred only when two
-    // otherwise equivalent payable options have the same price.
-    const selectableOptions = options;
+    // Offline inventory is a fallback only. If any live offer is eligible for
+    // this stay, it must remain the source pool for automatic selection even
+    // when an offline offer is cheaper. Offline offers are still retained in
+    // the returned pane for manual review/selection when no live offer wins.
+    const liveOptions = options.filter((option) => !option.fallback);
+    const selectableOptions = liveOptions.length > 0 ? liveOptions : options;
 
     // Pass 1: exhaust every unused physical property before permitting reuse.
     // Category preference remains stronger than meal-plan preference: for each

@@ -508,7 +508,7 @@ test('falls back from requested 3-star to lower 2-star before higher 4-star', ()
   assert.equal(packages[0].hotels[0].categoryFallbackReason, '2* selected — 3* not available');
 });
 
-test('category fallback compares live and offline options by category before provider', () => {
+test('live inventory wins automatic selection over cheaper offline inventory', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -526,13 +526,13 @@ test('category fallback compares live and offline options by category before pro
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages[0].hotels[0].hotelName, 'Offline 2 Star');
-  assert.equal(packages[0].hotels[0].provider, 'offline');
-  assert.equal(packages[0].hotels[0].selectedCategory, 2);
+  assert.equal(packages[0].hotels[0].hotelName, 'Live 4 Star');
+  assert.equal(packages[0].hotels[0].provider, 'tbo');
+  assert.equal(packages[0].hotels[0].selectedCategory, 4);
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
-test('exact-category offline option wins over a higher-category live option', () => {
+test('live inventory wins automatic selection over exact-category offline inventory', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -550,10 +550,10 @@ test('exact-category offline option wins over a higher-category live option', ()
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages[0].hotels[0].hotelName, 'Offline 3 Star');
-  assert.equal(packages[0].hotels[0].provider, 'offline');
-  assert.equal(packages[0].hotels[0].selectedCategory, 3);
-  assert.equal(packages[0].hotels[0].categoryFallbackApplied, false);
+  assert.equal(packages[0].hotels[0].hotelName, 'Live 4 Star');
+  assert.equal(packages[0].hotels[0].provider, 'tbo');
+  assert.equal(packages[0].hotels[0].selectedCategory, 4);
+  assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
 test('AxisRooms wins a payable-price tie without excluding offline inventory', () => {
