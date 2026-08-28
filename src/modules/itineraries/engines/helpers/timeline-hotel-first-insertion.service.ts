@@ -127,7 +127,9 @@ export class TimelineHotelFirstInsertionService {
     result.rows.push(hotelCheckinRow);
     result.order++;
 
-    const restGap = input.isSpecialDay1OnePmHotelFirstFlow ? '01:00:00' : '02:00:00';
+    const restGap = input.isEarlyArrivalPrevDayConfirmed
+      ? '03:00:00'
+      : (input.isSpecialDay1OnePmHotelFirstFlow ? '01:00:00' : '02:00:00');
     const { row: restRow, nextTime: afterRestTime } = this.refreshmentBuilder.build(
       input.planId,
       input.routeId,
@@ -142,7 +144,9 @@ export class TimelineHotelFirstInsertionService {
       quoteId: input.plan?.quote_id ?? input.plan?.quoteId ?? input.plan?.quote_ID ?? null,
       planId: input.planId,
       routeId: input.routeId,
-      restMinutes: input.isSpecialDay1OnePmHotelFirstFlow ? 60 : 120,
+      restMinutes: input.isEarlyArrivalPrevDayConfirmed
+        ? 180
+        : (input.isSpecialDay1OnePmHotelFirstFlow ? 60 : 120),
       insertedAfter: 'hotel_checkin',
       hotelCoordsResolved: !!resolvedHotelCoords,
     });

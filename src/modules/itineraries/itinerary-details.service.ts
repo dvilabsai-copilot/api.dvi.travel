@@ -2573,7 +2573,9 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
 
  // Find item_type 1 (START/BREAK) to get actual start time
       const startHotspot = routeHotspots.find(
-        (rh) => Number((rh as any).item_type ?? 0) === 1,
+        (rh) =>
+          Number((rh as any).item_type ?? 0) === 1 &&
+          Number((rh as any).allow_break_hours ?? 0) !== 1,
       );
 
  // ====== SEMANTIC RECONSTRUCTION ALGORITHM ======
@@ -2812,6 +2814,27 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
 
  // ---------------- ITEM TYPE HANDLING (match PHP) ----------------
         if (itemType === 1) {
+          const allowBreakHours = Number((rh as any).allow_break_hours ?? 0);
+
+          if (allowBreakHours === 1) {
+            // Hotel-first rest rows use item_type=1 with allow_break_hours=1.
+            // They must be emitted as a real break; otherwise this row is
+            // mistaken for the generic journey-start marker and the UI shows
+            // the rest interval as a vehicle segment.
+            const breakLocation =
+              String((rh as any).via_location_name || '').trim() ||
+              getRouteHotelName() ||
+              'Hotel';
+            segments.push({
+              type: 'break' as const,
+              location: breakLocation,
+              duration: this.formatDuration(travelDuration),
+              timeRange: this.orderedTimeRange(startTimeText, endTimeText),
+            });
+            previousStopName = breakLocation;
+            continue;
+          }
+
  // PHP doesn't actually show a separate row here; we already pushed
  // the generic "Start your Journey" above, so just update previousStop.
           const newPreviousStopName =

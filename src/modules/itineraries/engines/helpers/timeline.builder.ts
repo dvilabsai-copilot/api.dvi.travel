@@ -995,6 +995,7 @@ export class TimelineBuilder {
         isLastRoute,
         shouldDeferDay1Sightseeing,
         forceNoSightseeingOnThisRoute,
+        forceDirectDestinationSightseeing: isEarlyArrivalPrevDayConfirmed,
         verboseTimelineProofLogs: this.verboseTimelineProofLogs,
       });
       let selectedHotspots = routeHotspotPlanning.selectedHotspots as SelectedHotspot[];
@@ -6396,6 +6397,7 @@ export class TimelineBuilder {
     allHotspots: any[],
     maxSourceHotspots?: number,
     skipDestinationHotspots?: boolean,
+    forceDirectDestination?: boolean,
   ): Promise<SelectedHotspot[]> {
     return (await this.routeHotspotSelectionService.fetch(
       tx,
@@ -6404,6 +6406,7 @@ export class TimelineBuilder {
       allHotspots,
       maxSourceHotspots,
       skipDestinationHotspots,
+      forceDirectDestination,
     )) as SelectedHotspot[];
   }
 
