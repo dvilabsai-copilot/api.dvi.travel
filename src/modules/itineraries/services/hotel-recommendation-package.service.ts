@@ -288,6 +288,33 @@ export class HotelRecommendationPackageService {
       });
     });
 
+    // A recommendation group is a complete itinerary package, not an
+    // independent inventory bucket. If a later category slot has no eligible
+    // option for a stay, carry forward the closest earlier group's selection
+    // for that same stay. This preserves the requested group ordering while
+    // allowing G3/G4 to reuse an eligible G2/G3 hotel when inventory is thin.
+    // The fallback is per logical stay, so one missing destination cannot be
+    // silently filled with a hotel from another destination.
+    for (let groupIndex = 1; groupIndex < slots.length; groupIndex += 1) {
+      evaluations.forEach((evaluation) => {
+        const stayKey = evaluation.stay.stayKey;
+        if (selectedByGroup[groupIndex].has(stayKey)) return;
+        for (let previousIndex = groupIndex - 1; previousIndex >= 0; previousIndex -= 1) {
+          const previousSelection = selectedByGroup[previousIndex].get(stayKey);
+          if (!previousSelection) continue;
+          selectedByGroup[groupIndex].set(stayKey, {
+            ...previousSelection,
+            hotel: {
+              ...previousSelection.hotel,
+              recommendationFallbackReason:
+                `Reused from recommendation group ${previousIndex + 1} because no distinct eligible hotel was available.`,
+            },
+          });
+          break;
+        }
+      });
+    }
+
     const packages = selectedByGroup.map((selection, index) =>
       this.packageFromSelections(evaluations, selection, index + 1),
     );
