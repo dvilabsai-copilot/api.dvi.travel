@@ -41,8 +41,10 @@ export class TBOHotelProvider implements IHotelProvider {
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
-  private static readonly DEFAULT_MIXED_HOTEL_LIMIT = 100;
-  private static readonly MAX_MIXED_HOTEL_LIMIT = 500;
+  // This is the total candidate pool. TBO requests must still be chunked
+  // into batches of 100 hotel codes by the search method below.
+  private static readonly DEFAULT_MIXED_HOTEL_LIMIT = 1000;
+  private static readonly MAX_MIXED_HOTEL_LIMIT = 1000;
   private static readonly HOTEL_MIX_PERCENTAGES = {
     economy: 20,
     threeStar: 50,
