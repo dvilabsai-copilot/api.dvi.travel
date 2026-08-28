@@ -4452,11 +4452,28 @@ this.logger.log(
       for (const route of routes) {
         const routeId = Number(route?.itinerary_route_ID || 0);
         const source = hotelsByRoute.get(routeId);
-        if (!routeId || !Array.isArray(source)) continue;
-        const stay = recommendation?.stayResults?.find((result: any) =>
+        if (!routeId) continue;
+
+        // A recommendation package can be incomplete for one destination even
+        // when an earlier package has a valid selection for that same stay.
+        // The pane must expose that earlier selection as the automatic choice;
+        // otherwise the UI shows an empty/unavailable Group 3 while Group 2
+        // visibly has a usable hotel. Keep this fallback route-scoped and only
+        // allow the documented chain: G3 -> G2, G4 -> G3 -> G2.
+        const packageIndexes = groupType === 3
+          ? [1]
+          : groupType === 4 ? [2, 1] : [];
+        const recommendationsToCheck = [recommendation, ...packageIndexes.map((index) => recommendationPackages[index])]
+          .filter((pkg): pkg is RecommendationPackage => Boolean(pkg));
+        const findStay = (pkg: RecommendationPackage | undefined): any => pkg?.stayResults?.find((result: any) =>
           Number(result.parentRouteId || 0) === routeId ||
           (Array.isArray(result.routeIds) && result.routeIds.map(Number).includes(routeId)),
         );
+        const selectedPackage = recommendationsToCheck.find((pkg) => {
+          const candidateStay = findStay(pkg);
+          return candidateStay && 'hotel' in candidateStay && candidateStay.hotel;
+        });
+        const stay = findStay(selectedPackage);
         const selected = stay && 'hotel' in stay ? (stay as any).hotel : null;
         const selectedIdentity = selected ? buildAutoSelectionIdentity(selected) : null;
         const sameSelectedRate = (candidate: any): boolean => {
@@ -4492,7 +4509,31 @@ this.logger.log(
             Number(result.parentRouteId || 0) === routeId && 'hotel' in result && result.hotel && selected &&
             strictAutoSelectionIdentityMatches(result.hotel, selectedIdentity),
           );
-        for (const hotel of source) {
+        const inventory = Array.isArray(source) ? source : [];
+        // If the current group has no route inventory, materialize the prior
+        // group's complete selected hotel in this pane. This is deliberately
+        // not a synthetic price: it copies the API-calculated rate payload.
+        if (inventory.length === 0 && selected) {
+          hotels.push({
+            ...selected,
+            routeId,
+            groupType,
+            authoritativeRecommendation: true,
+            autoSelectionStatus: 'AVAILABLE',
+            autoSelectionCandidate: true,
+            autoSelectionIdentity: selectedIdentity,
+            autoSelectionFallbackFromGroup: groupType === 3 ? 2 : 3,
+            recommendationFallbackReason: `Reused from recommendation group ${groupType === 3 ? 2 : 3} because no hotel was available for this destination.`,
+            authoritativeStayKey: stay?.stayKey,
+            authoritativeParentRouteId: Number(stay?.parentRouteId || 0) || undefined,
+            authoritativeRouteIds: Array.isArray(stay?.routeIds) ? stay.routeIds.map(Number) : undefined,
+            authoritativeCheckInDate: stay?.checkInDate,
+            authoritativeCheckOutDate: stay?.checkOutDate,
+          } as HotelSearchResult & { routeId: number });
+          continue;
+        }
+
+        for (const hotel of inventory) {
           hotels.push({
             ...hotel,
             routeId,
