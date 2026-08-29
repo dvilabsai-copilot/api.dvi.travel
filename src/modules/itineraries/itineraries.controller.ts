@@ -759,6 +759,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
       recommendationAlgorithm: _availabilityRecommendationAlgorithm,
       recommendationGeneration: _availabilityRecommendationGeneration,
       sharedHotelInventory,
+      authoritativeRecommendationRows,
       ...compactAvailability
     } = hotelAvailability || ({} as any);
 
@@ -810,6 +811,9 @@ private readonly itineraryAccessService: ItineraryAccessService,
         hotels: (result.response.hotels || []).map(toCompactHotelRow),
         hotelAvailability: {
           ...compactAvailability,
+          authoritativeRecommendationRows: Array.isArray(authoritativeRecommendationRows)
+            ? authoritativeRecommendationRows.map(toCompactHotelRow)
+            : [],
           sharedHotelInventory: Array.isArray(sharedHotelInventory)
             ? sharedHotelInventory.map(toCompactHotelRow)
             : [],
