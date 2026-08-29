@@ -4,6 +4,7 @@ export interface TimelineDay1CandidateGateInput {
   currentTime: string;
   isRouteSourceTerminal: boolean;
   hasLaterOvernightInSourceCity: boolean;
+  isShoppingHotspot?: boolean;
   isHotspotAlreadyPlanned: (hotspotId: number) => boolean;
   resolveTimelineBucket: (hotspot: any) => string;
   isRouteMovementBucket: (bucket: string) => boolean;
@@ -19,14 +20,39 @@ export class TimelineDay1CandidateGateService {
     const isManualSelection = Boolean(hotspot?.isManualSelection);
     const isRouteMovementBucket = input.isRouteMovementBucket(bucket);
     const isSourceBucket = input.isSourceBucket(bucket);
+    const isShoppingHotspot = Boolean(input.isShoppingHotspot);
 
-    if (!isManualSelection && !isRouteMovementBucket && priority === 0) {
-      this.logRejected(input, bucket, priority, currentTime, false, 'Rejected: Day1 strict pass skips non-movement priority=0 fillers');
+    if (
+      !isManualSelection &&
+      !isShoppingHotspot &&
+      !isRouteMovementBucket &&
+      priority === 0
+    ) {
+      this.logRejected(
+        input,
+        bucket,
+        priority,
+        currentTime,
+        false,
+        'Rejected: Day1 strict pass skips non-movement priority=0 fillers',
+      );
       return true;
     }
 
-    if (!isManualSelection && !isRouteMovementBucket && priority > 3) {
-      this.logRejected(input, bucket, priority, currentTime, false, 'Rejected: Day1 strict pass skips non-movement priority>3');
+    if (
+      !isManualSelection &&
+      !isShoppingHotspot &&
+      !isRouteMovementBucket &&
+      priority > 3
+    ) {
+      this.logRejected(
+        input,
+        bucket,
+        priority,
+        currentTime,
+        false,
+        'Rejected: Day1 strict pass skips non-movement priority>3',
+      );
       return true;
     }
 
