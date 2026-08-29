@@ -3821,7 +3821,7 @@ export class TimelineBuilder {
           isLastRoute,
           routeStartSeconds,
           routeEndSeconds,
-          currentTime,
+          currentTime: shoppingSchedulingStartTime,
           currentLocationName,
           currentCoords,
           destinationCoords: destCityCoords,
@@ -4003,7 +4003,7 @@ export class TimelineBuilder {
           });
         }
 
-        const timeAfterTravel = sharedFeasibility.timeAfterTravel || currentTime;
+        const timeAfterTravel = sharedFeasibility.timeAfterTravel || shoppingSchedulingStartTime;
         const timeAfterSightseeing = sharedFeasibility.timeAfterSightseeing || timeAfterTravel;
 
         if (hotspotId === 228 || hotspotId === 357) {
@@ -4043,7 +4043,7 @@ export class TimelineBuilder {
             Number(route.itinerary_route_ID || 0),
             routeStartSeconds,
             routeEndSeconds,
-            currentTime,
+            shoppingSchedulingStartTime,
             hotspotLocationName,
             destCoords,
             Number(sharedFeasibility.endSeconds || timeToSeconds(timeAfterSightseeing)),
@@ -4142,7 +4142,7 @@ export class TimelineBuilder {
         const isEarlyArrivalHotelDeparture =
           (isHotelPreferenceEarlyArrival || isVehicleHotelRestEarlyArrival) &&
           lastAddedHotspotId === null;
-        let travelStartTime = currentTime;
+        let travelStartTime = shoppingSchedulingStartTime;
         let alignedDepartureFromHotel = false;
 
         if (
@@ -4151,7 +4151,7 @@ export class TimelineBuilder {
           sharedFeasibility.travelTimeToHotspot
         ) {
           const travelDurationSeconds = timeToSeconds(sharedFeasibility.travelTimeToHotspot);
-          const currentAbsoluteSeconds = this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds);
+          const currentAbsoluteSeconds = this.toAbsoluteSecondsForRoute(shoppingSchedulingStartTime, routeStartSeconds);
           const desiredDepartureSeconds = sharedFeasibility.startSeconds - travelDurationSeconds;
 
           if (desiredDepartureSeconds > currentAbsoluteSeconds) {
