@@ -5746,47 +5746,77 @@ export class TimelineBuilder {
           );
         }
 
-        const trailingRemainingGapSeconds = trailingGapEndSeconds - currentSeconds;
+const trailingRemainingGapSeconds =
+  trailingGapEndSeconds - currentSeconds;
 
-        const canAddTrailingLeisure =
-          !isLastRoute &&
-          !forceNoSightseeingOnThisRoute &&
-          !isVehicleHotelRestEarlyArrival &&
-          (!didHotelFirstCheckin || shouldHotelLastByDistance) &&
-          (hasScheduledVisitOnRoute || selectedHotspots.length > 0);
+const canAddTrailingLeisure =
+  !isLastRoute &&
+  !forceNoSightseeingOnThisRoute &&
+  !isVehicleHotelRestEarlyArrival &&
+  (!didHotelFirstCheckin || shouldHotelLastByDistance) &&
+  (hasScheduledVisitOnRoute || selectedHotspots.length > 0);
 
-        if (
-          trailingRemainingGapSeconds >= FREE_TIME_THRESHOLD_SECONDS &&
-          canAddTrailingLeisure
-        ) {
-          const leisureEndTime = secondsToTime(wrapToDay(trailingGapEndSeconds));
-          const leisureRow = this.buildFreeTimeBreakRow({
-            planId,
-            routeId: route.itinerary_route_ID,
-            order: order++,
-            startTime: currentTime,
-            endTime: leisureEndTime,
-            userId: createdByUserId,
-          });
-          leisureRow.via_location_name = 'Leisure / Shopping Time';
-          hotspotRows.push(leisureRow);
-          currentTime = leisureEndTime;
+const trailingLeisureShoppingWindow =
+  resolveShoppingDayWindow(
+    'shopping_mall',
+    currentTime,
+    trailingGapEndSeconds,
+  );
 
-          this.logBookingRule({
-            rule: 'FREE_TIME_INSERTED_BEFORE_HOTEL',
-            quoteId:
-              (plan as any).quote_id ??
-              (plan as any).quoteId ??
-              (plan as any).quote_ID ??
-              null,
-            planId,
-            routeId: route.itinerary_route_ID,
-            gapStart: leisureRow.hotspot_start_time,
-            gapEnd: leisureRow.hotspot_end_time,
-            gapMinutes: Math.floor(trailingRemainingGapSeconds / 60),
-            routeEndTime,
-          });
-        }
+const canInsertTrailingLeisure =
+  trailingLeisureShoppingWindow.applies
+    ? trailingLeisureShoppingWindow.allowed
+    : trailingRemainingGapSeconds >= FREE_TIME_THRESHOLD_SECONDS;
+
+const trailingLeisureStartTime =
+  trailingLeisureShoppingWindow.applies
+    ? secondsToTime(
+        wrapToDay(
+          trailingLeisureShoppingWindow.schedulingStartSeconds,
+        ),
+      )
+    : currentTime;
+
+if (
+  canInsertTrailingLeisure &&
+  canAddTrailingLeisure
+) {
+  const leisureEndTime =
+    secondsToTime(wrapToDay(trailingGapEndSeconds));
+
+  const leisureRow = this.buildFreeTimeBreakRow({
+    planId,
+    routeId: route.itinerary_route_ID,
+    order: order++,
+    startTime: trailingLeisureStartTime,
+    endTime: leisureEndTime,
+    userId: createdByUserId,
+  });
+
+  leisureRow.via_location_name = 'Leisure / Shopping Time';
+  hotspotRows.push(leisureRow);
+  currentTime = leisureEndTime;
+
+  this.logBookingRule({
+    rule: 'FREE_TIME_INSERTED_BEFORE_HOTEL',
+    quoteId:
+      (plan as any).quote_id ??
+      (plan as any).quoteId ??
+      (plan as any).quote_ID ??
+      null,
+    planId,
+    routeId: route.itinerary_route_ID,
+    gapStart: leisureRow.hotspot_start_time,
+    gapEnd: leisureRow.hotspot_end_time,
+    gapMinutes: Math.floor(
+      (
+        trailingGapEndSeconds -
+        trailingLeisureShoppingWindow.schedulingStartSeconds
+      ) / 60,
+    ),
+    routeEndTime,
+  });
+}
       }
 
       this.logTimeline('[TIMELINE] Other days loop stats - Queries:', hotspotQueryCount, '| Distance calcs:', distanceCalcCount, '| Operating hours:', operatingHoursCount, '| Time:', Date.now() - routeLoopStart, 'ms');
@@ -6722,25 +6752,75 @@ export class TimelineBuilder {
           timeToSeconds(estimatedReturn.travelTime) +
           timeToSeconds(estimatedReturn.bufferTime);
         const anchoredReturnStartSeconds = Math.max(
-          timeToSeconds(currentTime),
-          lastRouteArrivalDeadlineSeconds - estimatedReturnSeconds,
-        );
-        const returnStartTime = secondsToTime(wrapToDay(anchoredReturnStartSeconds));
-        const preDepartureLeisureSeconds =
-          anchoredReturnStartSeconds - timeToSeconds(currentTime);
+  timeToSeconds(currentTime),
+  lastRouteArrivalDeadlineSeconds - estimatedReturnSeconds,
+);
 
-        if (preDepartureLeisureSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
-          const leisureRow = this.buildFreeTimeBreakRow({
-            planId,
-            routeId: route.itinerary_route_ID,
-            order: order++,
-            startTime: currentTime,
-            endTime: returnStartTime,
-            userId: createdByUserId,
-          });
-          leisureRow.via_location_name = 'Leisure / Shopping Time';
-          hotspotRows.push(leisureRow);
-        }
+const returnStartTime =
+  secondsToTime(wrapToDay(anchoredReturnStartSeconds));
+
+const departureLeisureShoppingWindow =
+  resolveShoppingDayWindow(
+    'shopping_mall',
+    currentTime,
+    anchoredReturnStartSeconds,
+  );
+
+if (
+  departureLeisureShoppingWindow.applies &&
+  departureLeisureShoppingWindow.allowed
+) {
+  const departureLeisureStartTime =
+    secondsToTime(
+      wrapToDay(
+        departureLeisureShoppingWindow.schedulingStartSeconds,
+      ),
+    );
+
+  const leisureRow = this.buildFreeTimeBreakRow({
+    planId,
+    routeId: route.itinerary_route_ID,
+    order: order++,
+    startTime: departureLeisureStartTime,
+    endTime: returnStartTime,
+    userId: createdByUserId,
+  });
+
+  leisureRow.via_location_name = 'Leisure / Shopping Time';
+  hotspotRows.push(leisureRow);
+
+  this.logBookingRule({
+    rule: 'DEPARTURE_LEISURE_SHOPPING_INSERTED',
+    quoteId:
+      (plan as any).quote_id ??
+      (plan as any).quoteId ??
+      (plan as any).quote_ID ??
+      null,
+    planId,
+    routeId: route.itinerary_route_ID,
+    gapStart: departureLeisureStartTime,
+    gapEnd: returnStartTime,
+    availableFreeTimeSeconds:
+      departureLeisureShoppingWindow.availableFreeTimeSeconds,
+  });
+} else {
+  this.logBookingRule({
+    rule: 'DEPARTURE_LEISURE_SHOPPING_REJECTED',
+    quoteId:
+      (plan as any).quote_id ??
+      (plan as any).quoteId ??
+      (plan as any).quote_ID ??
+      null,
+    planId,
+    routeId: route.itinerary_route_ID,
+    currentTime,
+    returnStartTime,
+    departureTimeSeconds: shoppingDepartureTimeSeconds,
+    availableFreeTimeSeconds:
+      departureLeisureShoppingWindow.availableFreeTimeSeconds,
+    reason: departureLeisureShoppingWindow.reason,
+  });
+}
 
         const { row: returnRow, nextTime: tAfterReturn } =
           await this.returnBuilder.buildReturnToDeparture(tx, {
