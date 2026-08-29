@@ -634,7 +634,17 @@ private readonly itineraryAccessService: ItineraryAccessService,
       undefined,
       req.user?.role,
     );
-    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
+    // Reset already has the complete persisted snapshot in result.response.
+    // Return it directly so the client does not issue a second /persisted
+    // request just to restore inventory and rate options for the hotel pane.
+    return {
+      hotelDetails: result.response,
+      changeSummary: result.changeSummary,
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
+    };
   }
 
   @Post('hotel_details/:quoteId/selected-hotel-refresh')
@@ -672,6 +682,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
     const result = await this.hotelAvailabilitySnapshotService.resetAndPersist(
       quoteId,
       Number(req.user?.userId || 0),
+    );
+    // Reset persists the authoritative selection snapshots. Read them again
+    // after the transaction so the response cannot reuse a stale in-memory
+    // availability row for room/supplement totals.
+    result.response = await this.hotelAvailabilitySnapshotService.readPersisted(
+      quoteId,
+      { page: 1, pageSize: 0 },
     );
     const itinerary = await this.detailsService.getItineraryDetails(
       quoteId,
@@ -712,36 +729,49 @@ private readonly itineraryAccessService: ItineraryAccessService,
       ...resetHotelDetails
     } = result.response;
     const {
-      sharedHotelInventory: _sharedHotelInventory,
       recommendationAlgorithm: _availabilityRecommendationAlgorithm,
       recommendationGeneration: _availabilityRecommendationGeneration,
+      sharedHotelInventory,
       ...compactAvailability
     } = hotelAvailability || ({} as any);
+
+    // Keep the complete route/day inventory in reset and offline-availability
+    // responses. The compact response intentionally removes rate internals,
+    // but removing this list also removes the alternative hotels needed by
+    // HotelListTable's per-day hotel editor. The selected `hotels` rows alone
+    // are not sufficient because they contain only the current recommendation.
+    const toCompactHotelRow = (row: any) => {
+      const {
+        rateOptions: _rateOptions,
+        roomTypes: _roomTypes,
+        nightlyRates: _nightlyRates,
+        supplementSummary: _supplementSummary,
+        selection: _selection,
+        selectedPriceSnapshot: _selectedPriceSnapshot,
+        selected_price_snapshot: _selectedPriceSnapshotLegacy,
+        itinerary_route_id: _itineraryRouteIdLegacy,
+        itinerary_route_date: _itineraryRouteDateLegacy,
+        check_in_date: _checkInDateLegacy,
+        check_out_date: _checkOutDateLegacy,
+        hotelCheckInDate: _hotelCheckInDateLegacy,
+        hotel_check_in_date: _hotelCheckInDateSnake,
+        hotelCheckOutDate: _hotelCheckOutDateLegacy,
+        hotel_check_out_date: _hotelCheckOutDateSnake,
+        ...summaryRow
+      } = row || {};
+      return summaryRow;
+    };
 
     return {
       hotelDetails: {
         ...resetHotelDetails,
-        hotels: (result.response.hotels || []).map((row: any) => {
-          const {
-            rateOptions: _rateOptions,
-            roomTypes: _roomTypes,
-            nightlyRates: _nightlyRates,
-            supplementSummary: _supplementSummary,
-            selection: _selection,
-            selectedPriceSnapshot: _selectedPriceSnapshot,
-            selected_price_snapshot: _selectedPriceSnapshotLegacy,
-            itinerary_route_id: _itineraryRouteIdLegacy,
-            itinerary_route_date: _itineraryRouteDateLegacy,
-            check_in_date: _checkInDateLegacy,
-            check_out_date: _checkOutDateLegacy,
-            hotelCheckInDate: _hotelCheckInDateLegacy,
-            hotel_check_in_date: _hotelCheckInDateSnake,
-            hotelCheckOutDate: _hotelCheckOutDateLegacy,
-            hotel_check_out_date: _hotelCheckOutDateSnake,
-            ...summaryRow
-          } = row;
-          return summaryRow;
-        }),
+        hotels: (result.response.hotels || []).map(toCompactHotelRow),
+        hotelAvailability: {
+          ...compactAvailability,
+          sharedHotelInventory: Array.isArray(sharedHotelInventory)
+            ? sharedHotelInventory.map(toCompactHotelRow)
+            : [],
+        },
         hotelTabs: (result.response.hotelTabs || []).map((tab: any) => ({
           groupType: tab.groupType,
           label: tab.label,
@@ -767,10 +797,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
               ? route.selected.selectedPriceSnapshot
               : {};
             const { selectedPriceSnapshot: _selectedPriceSnapshot, ...selected } = route.selected;
-            return { ...route, selected: { ...snapshot, ...selected } };
+            // The snapshot is the authoritative payable selection produced by
+            // the hotel availability rebuild. Legacy scalar columns can be
+            // stale (for example room count and supplement totals after a
+            // reset), so they must not overwrite the snapshot values.
+            return { ...route, selected: { ...selected, ...snapshot } };
           }),
         })),
-        hotelAvailability: compactAvailability,
       },
       changeSummary: result.changeSummary,
       financialSummary: {

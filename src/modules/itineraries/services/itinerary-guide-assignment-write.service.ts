@@ -122,23 +122,66 @@ export class ItineraryGuideAssignmentWriteService {
       throw new BadRequestException('guide_not_available');
     }
 
-    const guideLanguageCsv = String(guideLanguage);
-    const guideSlotCsv = guideSlots.join(',');
-    const savedGuide = await this.prisma.$transaction(async (tx) => {
-      let routeGuideRecord: any;
-      const commonData = {
+   const guideLanguageCsv = String(guideLanguage);
+const guideSlotCsv = guideSlots.join(',');
+
+const savedGuide = await this.prisma.$transaction(async (tx) => {
+  const oppositeGuideType = guideType === 1 ? 2 : 1;
+
+  const oppositeGuideRows =
+    await tx.dvi_itinerary_route_guide_details.findMany({
+      where: {
         itinerary_plan_ID: planId,
-        itinerary_route_ID: guideType === 2 ? routeId : 0,
-        guide_id: Number(guideResult.guideId),
-        guide_type: guideType,
-        guide_language: guideLanguageCsv,
-        guide_slot: guideSlotCsv,
-        guide_cost: Number(guideResult.totalGuideCost.toFixed(2)),
-        createdby: Number(userId || 1),
-        updatedon: new Date(),
-        status: 1 as any,
-        deleted: 0 as any,
-      };
+        guide_type: oppositeGuideType,
+      } as any,
+      select: {
+        route_guide_ID: true,
+      },
+    });
+
+  const oppositeGuideIds = oppositeGuideRows
+    .map((row: any) => Number(row.route_guide_ID || 0))
+    .filter(
+      (id: number) =>
+        id > 0 &&
+        id !== routeGuideId,
+    );
+
+  if (oppositeGuideIds.length > 0) {
+    await tx.dvi_itinerary_route_guide_slot_cost_details.deleteMany({
+      where: {
+        itinerary_plan_id: planId,
+        route_guide_id: {
+          in: oppositeGuideIds,
+        },
+      } as any,
+    });
+
+    await tx.dvi_itinerary_route_guide_details.deleteMany({
+      where: {
+        itinerary_plan_ID: planId,
+        route_guide_ID: {
+          in: oppositeGuideIds,
+        },
+      } as any,
+    });
+  }
+
+  let routeGuideRecord: any;
+
+  const commonData = {
+    itinerary_plan_ID: planId,
+    itinerary_route_ID: guideType === 2 ? routeId : 0,
+    guide_id: Number(guideResult.guideId),
+    guide_type: guideType,
+    guide_language: guideLanguageCsv,
+    guide_slot: guideSlotCsv,
+    guide_cost: Number(guideResult.totalGuideCost.toFixed(2)),
+    createdby: Number(userId || 1),
+    updatedon: new Date(),
+    status: 1 as any,
+    deleted: 0 as any,
+  };
 
       if (routeGuideId > 0) {
         routeGuideRecord = await tx.dvi_itinerary_route_guide_details.update({

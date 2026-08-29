@@ -77,7 +77,7 @@ export class PlanEngineService {
    *   We ADD +05:30   : 2025-12-10T11:00:00.000Z
    *   Prisma -> MySQL : '2025-12-10 11:00:00'
    *
-   * So phpMyAdmin shows 11:00 — PHP parity.
+   * So phpMyAdmin shows 11:00 â€” PHP parity.
  */
   private parseDate(value: string | undefined | null): Date {
     if (!value) return new Date();
@@ -170,7 +170,7 @@ export class PlanEngineService {
     };
   }
 
-    private isChildAgeFiveOrAbove(age: string | undefined | null): boolean {
+  private isChildAgeFiveOrAbove(age: string | undefined | null): boolean {
     const rawAge = String(age ?? "").trim();
 
     if (!rawAge) {
@@ -179,6 +179,70 @@ export class PlanEngineService {
 
     const numericAge = Number(rawAge);
     return Number.isFinite(numericAge) && numericAge >= 5;
+  }
+
+  private assertRoomOccupancyRules(
+    travellers: CreateTravellerDto[],
+  ): void {
+    const rooms = new Map<number, { adults: number; children: CreateTravellerDto[]; infants: number }>();
+
+    for (const traveller of travellers || []) {
+      const roomId = Number(traveller?.room_id || 0);
+      if (roomId <= 0) continue;
+
+      const room = rooms.get(roomId) || { adults: 0, children: [], infants: 0 };
+      const type = Number(traveller?.traveller_type);
+      if (type === 1) room.adults += 1;
+      if (type === 2) room.children.push(traveller);
+      if (type === 3) room.infants += 1;
+      rooms.set(roomId, room);
+    }
+
+    for (const [roomId, room] of rooms.entries()) {
+      if (room.adults < 1) {
+        throw new BadRequestException(`Room ${roomId} must contain at least one adult.`);
+      }
+      if (room.adults > 3) {
+        throw new BadRequestException(`Room ${roomId} allows a maximum of 3 adults.`);
+      }
+      if (room.adults + room.children.length > 4) {
+        throw new BadRequestException(
+          `Room ${roomId} allows a maximum of 4 adults and children combined.`,
+        );
+      }
+
+      const paidOccupants = room.adults + room.children.length;
+      const infantLimitReached =
+        (paidOccupants < 4 && paidOccupants + room.infants > 4) ||
+        (paidOccupants === 4 && room.infants > 1);
+      if (infantLimitReached) {
+        throw new BadRequestException(
+          paidOccupants === 4
+            ? `Room ${roomId} allows only one infant with 4 adults and children.`
+            : `Room ${roomId} allows a maximum of 4 total occupants.`,
+        );
+      }
+
+      const childrenWithBed = room.children.filter(
+        (child) => Number(child.child_bed_type ?? 0) === 2,
+      ).length;
+
+      if (room.children.length >= 2 && childrenWithBed < 1) {
+        throw new BadRequestException(
+          `Room ${roomId} has multiple children. At least one child must have a bed.`,
+        );
+      }
+      if (childrenWithBed > 1) {
+        throw new BadRequestException(
+          `Room ${roomId} allows only one child with bed.`,
+        );
+      }
+      if (room.adults > 2 && childrenWithBed > 0) {
+        throw new BadRequestException(
+          `Room ${roomId} has only one extra bed, already used by the third adult.`,
+        );
+      }
+    }
   }
 
   private assertChildExtraBedOccupancyRule(
@@ -387,8 +451,9 @@ export class PlanEngineService {
         const numericPart = quoteId.startsWith(prefix)
           ? quoteId.slice(prefix.length)
           : '';
-        if (!/^\d+$/.test(numericPart)) continue;
-        const sequence = Number.parseInt(numericPart, 10);
+        const sequenceMatch = numericPart.match(/^(\d+)(?:-R\d+)?$/i);
+        if (!sequenceMatch) continue;
+        const sequence = Number.parseInt(sequenceMatch[1], 10);
         if (Number.isFinite(sequence) && sequence > maxSequence) {
           maxSequence = sequence;
         }
@@ -519,7 +584,7 @@ export class PlanEngineService {
   }
 
  /* ------------------------------------------------------------------
-   * Public API – used from ItinerariesService
+   * Public API â€“ used from ItinerariesService
  * ------------------------------------------------------------------ */
 
   async upsertPlanHeader(
@@ -539,7 +604,7 @@ export class PlanEngineService {
     const totalChildren = Number(plan.child_count ?? 0);
     const totalInfants = Number(plan.infant_count ?? 0);
 
-    this.assertChildExtraBedOccupancyRule(travellers || []);
+    this.assertRoomOccupancyRules(travellers || []);
 
     const {
       totalExtraBed,

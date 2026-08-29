@@ -22,6 +22,9 @@ export type HotelSelectionSelectedView = {
   supplierBookingCode: string | null;
   pricePerNight: number;
   totalPrice: number;
+  hotelMarginBaseAmount?: number;
+  hotelMarginPercentage?: number;
+  hotelMarginAmount?: number;
   selectedPriceSnapshot: Record<string, unknown> | null;
   requestedCategory?: number;
   selectedCategory?: number;
@@ -117,6 +120,14 @@ const parseSnapshot = (value: unknown): Record<string, unknown> | null => {
 const rowRouteIds = (row: any): number[] => Array.from(new Set([
   Number(row?.itineraryRouteId || row?.routeId || row?.itinerary_route_id || 0),
   ...(Array.isArray(row?.routeIds) ? row.routeIds.map(Number) : []),
+  // A continuous-stay availability row is anchored to its first route, but
+  // completeStayRouteIds is the authoritative coverage for every night in
+  // that same-city block. Include those routes when projecting selection
+  // state; otherwise the last available night becomes UNRESOLVED even though
+  // the database has a valid rate for it.
+  ...(row?.completeStayBookable === true && Array.isArray(row?.completeStayRouteIds)
+    ? row.completeStayRouteIds.map(Number)
+    : []),
 ].filter((routeId) => Number.isFinite(routeId) && routeId > 0)));
 
 const isUnavailableSelection = (row: any): boolean =>
@@ -132,8 +143,75 @@ const selectionPriority = (row: any): number => {
   return 0;
 };
 
-const selectedView = (row: any): HotelSelectionSelectedView => {
-  const snapshot = parseSnapshot(row?.selectedPriceSnapshot ?? row?.selected_price_snapshot);
+const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
+  let snapshot = parseSnapshot(
+    row?.selectedPriceSnapshot ??
+    row?.selected_price_snapshot ??
+    row?.selection?.selectedPriceSnapshot ??
+    row?.selection?.selected_price_snapshot,
+  );
+  const nestedSelection = row?.selection && typeof row.selection === 'object' ? row.selection : {};
+  const normalizedProvider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+  const routeNight = normalizedProvider === 'offline' && Array.isArray(row?.nightlyRates)
+    ? row.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === String(routeDate || '').slice(0, 10))
+    : null;
+  // A continuous offline stay is persisted once at its anchor route. Its
+  // nightlyRates array is the authoritative price source for each covered
+  // route; never expose the anchor night's base total on a later night.
+  if (snapshot && routeNight && Number(routeNight.baseAmount || 0) > 0) {
+    const extraBedAmount = Number(snapshot.extraBedAmount ?? nestedSelection.extraBedAmount ?? row?.extraBedAmount ?? 0);
+    const childWithBedAmount = Number(snapshot.childWithBedAmount ?? nestedSelection.childWithBedAmount ?? row?.childWithBedAmount ?? 0);
+    const childWithoutBedAmount = Number(snapshot.childWithoutBedAmount ?? nestedSelection.childWithoutBedAmount ?? row?.childWithoutBedAmount ?? 0);
+    const supplementTotal = extraBedAmount + childWithBedAmount + childWithoutBedAmount;
+    const marginPercentage = Number(snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? routeNight.marginPercentage ?? 0);
+    const marginBase = Number((Number(routeNight.baseAmount) + supplementTotal).toFixed(2));
+    const marginAmount = Number((marginBase * marginPercentage / 100).toFixed(2));
+    const payableTotal = Number((marginBase + marginAmount).toFixed(2));
+    snapshot = {
+      ...snapshot,
+      basePricePerNight: Number((Number(routeNight.baseAmount) / Math.max(Number(snapshot.totalRooms ?? row?.noOfRooms ?? 1), 1)).toFixed(2)),
+      baseTotalPrice: Number(routeNight.baseAmount),
+      hotelMarginBaseAmount: marginBase,
+      hotelMarginAmount: marginAmount,
+      hotelMarginTotalAmount: marginAmount,
+      pricePerNight: payableTotal,
+      totalPrice: payableTotal,
+      totalStayPrice: payableTotal,
+      totalHotelCost: payableTotal,
+      totalAmount: payableTotal,
+      selectedPricePerNight: payableTotal,
+      selectedTotalPrice: payableTotal,
+    };
+  }
+  if (snapshot) {
+    const positiveOrNested = (value: unknown, nested: unknown): number =>
+      Number(value || 0) > 0 ? Number(value) : Number(nested || 0);
+    const extraBedAmount = positiveOrNested(snapshot.extraBedAmount, nestedSelection.extraBedAmount);
+    const childWithBedAmount = positiveOrNested(snapshot.childWithBedAmount, nestedSelection.childWithBedAmount);
+    const childWithoutBedAmount = positiveOrNested(snapshot.childWithoutBedAmount, nestedSelection.childWithoutBedAmount);
+    const supplementTotal = extraBedAmount + childWithBedAmount + childWithoutBedAmount;
+    const baseTotal = Number(snapshot.baseTotalPrice ?? snapshot.baseHotelCost ?? 0);
+    const marginAmount = Number(snapshot.hotelMarginAmount ?? snapshot.hotelMarginTotalAmount ?? 0);
+    if (baseTotal > 0 && supplementTotal > 0) {
+      const payableTotal = Number((baseTotal + supplementTotal + marginAmount).toFixed(2));
+      snapshot = {
+        ...snapshot,
+        extraBedCount: positiveOrNested(snapshot.extraBedCount, nestedSelection.extraBedCount),
+        extraBedAmount,
+        childWithBedCount: positiveOrNested(snapshot.childWithBedCount, nestedSelection.childWithBedCount),
+        childWithBedAmount,
+        childWithoutBedCount: positiveOrNested(snapshot.childWithoutBedCount, nestedSelection.childWithoutBedCount),
+        childWithoutBedAmount,
+        hotelMarginBaseAmount: Number((baseTotal + supplementTotal).toFixed(2)),
+        totalPrice: payableTotal,
+        totalStayPrice: payableTotal,
+        totalHotelCost: payableTotal,
+        selectedTotalPrice: payableTotal,
+        pricePerNight: payableTotal,
+        selectedPricePerNight: payableTotal,
+      };
+    }
+  }
   // Persisted selection snapshots may predate the payable-price contract and
   // still contain the supplier/base amount. Project the snapshot itself
   // before exposing it through hotelSelectionState; otherwise the tabs use
@@ -144,6 +222,15 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
         const projected: Record<string, any> = projectHotelPayablePricing(
           {
             ...snapshot,
+            noOfRooms: Number(
+              snapshot.noOfRooms ??
+              snapshot.total_no_of_rooms ??
+              snapshot.roomCount ??
+              row?.noOfRooms ??
+              row?.total_no_of_rooms ??
+              row?.roomCount ??
+              1,
+            ),
             isSelected: true,
             selectionOrigin: row?.selectionOrigin ?? row?.selection_origin ?? snapshot.selectionOrigin,
           },
@@ -156,6 +243,7 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
           ...snapshot,
           basePricePerNight: projected.basePricePerNight,
           baseTotalPrice: projected.baseTotalPrice,
+          hotelMarginBaseAmount: projected.hotelMarginBaseAmount,
           hotelMarginPercentage: projected.hotelMarginPercentage,
           hotelMarginAmount: projected.hotelMarginAmount,
           hotelMarginStayAmount: projected.hotelMarginStayAmount,
@@ -175,6 +263,11 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
   const selectedPriceSnapshot = snapshot
     ? { ...identity, hotelName: normalizeHotelDisplayName(identity.hotelName) || null }
     : null;
+  const roomSelections = Array.isArray(row?.roomSelections)
+    ? row.roomSelections
+    : Array.isArray(identity.roomSelections)
+      ? identity.roomSelections
+      : null;
   const providerHotelCode = String(
     row?.providerHotelCode ?? row?.provider_hotel_code ?? identity.providerHotelCode ?? '',
   ).trim() || null;
@@ -221,11 +314,15 @@ const selectedView = (row: any): HotelSelectionSelectedView => {
     ) || null,
     roomType: String(row?.roomType ?? row?.roomTypeName ?? row?.room_type ?? identity.roomType ?? '').trim() || null,
     mealPlan: String(row?.mealPlan ?? row?.mealPlanCode ?? row?.meal_plan ?? identity.mealPlan ?? '').trim() || null,
+    ...(roomSelections ? { roomSelections } : {}),
     selectionKey: supplierSelectionKey({ ...row, ...identity }) || null,
     rateOptionId,
     supplierBookingCode,
     pricePerNight: money(Number.isFinite(pricePerNight) ? pricePerNight : 0),
     totalPrice: money(Number.isFinite(totalPrice) ? totalPrice : payable),
+    hotelMarginBaseAmount: money(Number(identity.hotelMarginBaseAmount ?? 0)),
+    hotelMarginPercentage: money(Number(identity.hotelMarginPercentage ?? 0)),
+    hotelMarginAmount: money(Number(identity.hotelMarginAmount ?? 0)),
     selectedPriceSnapshot,
     ...(Number(row?.requestedCategory ?? row?.requested_category ?? identity.requestedCategory ?? 0) > 0
       ? { requestedCategory: Number(row?.requestedCategory ?? row?.requested_category ?? identity.requestedCategory) }
@@ -279,14 +376,26 @@ export function buildHotelSelectionState({
     const routes: HotelSelectionRouteView[] = routesToBuild.map((requiredRoute) => {
       const candidates = groupRows
         .filter((row) => rowRouteIds(row).includes(requiredRoute.routeId))
-        .sort((left, right) => selectionPriority(right) - selectionPriority(left));
+        .sort((left, right) => {
+          // Continuous-stay rows advertise every covered route through
+          // completeStayRouteIds, but their pricing snapshot belongs to the
+          // anchor night. When a route-specific persisted row exists, it must
+          // win for that night so date-specific rates are not copied from the
+          // first night. Keep the continuous-stay row as the fallback when no
+          // exact route row is available.
+          const leftRouteId = Number(left?.itineraryRouteId || left?.routeId || left?.itinerary_route_id || 0);
+          const rightRouteId = Number(right?.itineraryRouteId || right?.routeId || right?.itinerary_route_id || 0);
+          const leftExact = leftRouteId === requiredRoute.routeId ? 1 : 0;
+          const rightExact = rightRouteId === requiredRoute.routeId ? 1 : 0;
+          return rightExact - leftExact || selectionPriority(right) - selectionPriority(left);
+        });
       const selectedRow = candidates.find((row) => selectionPriority(row) >= 3 && !isUnavailableSelection(row));
       const unavailableRow = candidates.find(isUnavailableSelection);
       if (selectedRow) {
         return {
           ...requiredRoute,
           selectionStatus: 'SELECTED' as const,
-          selected: selectedView(selectedRow),
+          selected: selectedView(selectedRow, requiredRoute.routeDate),
         };
       }
       if (unavailableRow) {
@@ -308,7 +417,25 @@ export function buildHotelSelectionState({
       : statuses.length > 0 && statuses.every((status) => status === 'UNAVAILABLE')
         ? 'UNAVAILABLE'
         : 'UNRESOLVED';
-    const rawTotal = tab.totalAmount ?? tab.partialTotal;
+    // A persisted tab total can belong to an older recommendation package.
+    // Rebuild the amount from the currently selected commercial identity when
+    // route selections are present. A continuous stay repeats the same
+    // selection on each night, so count each selection key only once.
+    const selectedTotalByIdentity = new Map<string, number>();
+    routes.forEach((route) => {
+      if (!route.selected || !Number(route.selected.totalPrice || 0)) return;
+      const selected = route.selected;
+      const key = String(
+        selected.selectionKey || selected.rateOptionId ||
+        `${selected.provider || ''}|${selected.hotelCode || ''}|${selected.roomType || ''}|${selected.mealPlan || ''}`,
+      ).trim();
+      if (!selectedTotalByIdentity.has(key)) {
+        selectedTotalByIdentity.set(key, money(selected.totalPrice));
+      }
+    });
+    const selectedTotal = Array.from(selectedTotalByIdentity.values())
+      .reduce((sum, amount) => sum + amount, 0);
+    const rawTotal = selectedTotal > 0 ? selectedTotal : tab.totalAmount ?? tab.partialTotal;
     const totalAmount = rawTotal == null || !Number.isFinite(Number(rawTotal)) ? null : money(rawTotal);
 
     return {
@@ -317,6 +444,27 @@ export function buildHotelSelectionState({
       totalAmount,
       selectionStatus,
       routes,
+    };
+  });
+}
+
+/** Keep package totals aligned with the server-authoritative selected state. */
+export function synchronizeHotelTabTotals<T extends SelectionStateTab>(
+  tabs: T[],
+  selectionState: HotelSelectionGroupView[],
+): T[] {
+  return (tabs || []).map((tab) => {
+    const group = (selectionState || []).find(
+      (candidate) => Number(candidate.groupType) === Number(tab.groupType),
+    );
+    const authoritativeTotal = Number(group?.totalAmount ?? 0);
+    if (!group || !Number.isFinite(authoritativeTotal) || authoritativeTotal <= 0) {
+      return tab;
+    }
+    return {
+      ...tab,
+      totalAmount: money(authoritativeTotal),
+      ...(tab.partialTotal == null ? {} : { partialTotal: money(authoritativeTotal) }),
     };
   });
 }

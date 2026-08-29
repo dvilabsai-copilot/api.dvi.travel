@@ -508,7 +508,7 @@ test('falls back from requested 3-star to lower 2-star before higher 4-star', ()
   assert.equal(packages[0].hotels[0].categoryFallbackReason, '2* selected — 3* not available');
 });
 
-test('category fallback compares live and offline providers in one pool', () => {
+test('category fallback prefers live providers over offline options', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -526,13 +526,13 @@ test('category fallback compares live and offline providers in one pool', () => 
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages[0].hotels[0].hotelName, 'Offline 2 Star');
-  assert.equal(packages[0].hotels[0].provider, 'offline');
-  assert.equal(packages[0].hotels[0].selectedCategory, 2);
+  assert.equal(packages[0].hotels[0].hotelName, 'Live 4 Star');
+  assert.equal(packages[0].hotels[0].provider, 'tbo');
+  assert.equal(packages[0].hotels[0].selectedCategory, 4);
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
-test('valid local 3-star beats a live higher-category offer', () => {
+test('offline is used for category fallback only when no live option exists', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -550,9 +550,10 @@ test('valid local 3-star beats a live higher-category offer', () => {
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages[0].hotels[0].hotelName, 'Offline 3 Star');
-  assert.equal(packages[0].hotels[0].selectedCategory, 3);
-  assert.equal(packages[0].hotels[0].categoryFallbackApplied, false);
+  assert.equal(packages[0].hotels[0].hotelName, 'Live 4 Star');
+  assert.equal(packages[0].hotels[0].provider, 'tbo');
+  assert.equal(packages[0].hotels[0].selectedCategory, 4);
+  assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
 test('fallback selects the only usable lower-category hotel even when its multiplier is not met', () => {

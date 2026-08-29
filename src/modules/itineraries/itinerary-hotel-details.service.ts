@@ -54,8 +54,10 @@ export interface ItineraryHotelRowDto {
   mealPlan: string;
   baseHotelCost?: number;
   basePricePerNight?: number;
+  baseTotalPrice?: number;
   hotelMarginPercentage?: number;
   hotelMarginAmount?: number;
+  hotelMarginBaseAmount?: number;
   hotelMarginGstAmount?: number;
   hotelRoomGstAmount?: number;
   hotelMealPlanCost?: number;
@@ -67,8 +69,11 @@ export interface ItineraryHotelRowDto {
   totalChildWithoutBedCost?: number;
   totalChildWithoutBedCostGstAmount?: number;
   extraBedCount?: number;
+  extraBedRate?: number;
   childWithBedCount?: number;
+  childWithBedRate?: number;
   childWithoutBedCount?: number;
+  childWithoutBedRate?: number;
   totalRoomCost?: number;
   totalHotelCost: number;
   totalHotelTaxAmount: number;
@@ -948,13 +953,85 @@ async getHotelRoomDetailsByQuoteId(
       const storedTax = Number((h as any).total_hotel_tax_amount ?? 0);
       const storedMargin = Number((h as any).hotel_margin_rate ?? 0);
       const storedMarginPercentage = Number((h as any).hotel_margin_percentage ?? 0);
+      const snapshotMarginPercentage = Number(
+        selectedPriceSnapshot.hotelMarginPercentage ??
+        selectedPriceSnapshot.hotel_margin_percentage ??
+        0,
+      );
       const storedPricing = resolveStoredHotelPayablePricing({
         storedTotal,
         baseTotal: authoritativeBaseHotelCost,
         marginAmount: storedMargin,
         marginPercentage: storedMarginPercentage,
       });
-      const payableHotelCost = storedPricing.payableTotal * earlyCheckInBillingMultiplier;
+      const provider = String((h as any).hotel_provider || '').trim().toLowerCase();
+      const isOffline = provider === 'offline';
+      // Offline rate snapshots represent a continuous stay, while this API
+      // row represents one itinerary route/night. Return the route-night
+      // amount to the UI and retain the complete stay amount separately.
+      // This keeps API totals authoritative and prevents a two-night amount
+      // from being charged once on every daily row.
+      const offlinePricePerNight = Number(
+        selectedPriceSnapshot.pricePerNight ?? selectedPriceSnapshot.price_per_night ?? 0,
+      );
+      const offlineBasePerNight = Number(
+        selectedPriceSnapshot.basePricePerNight ?? selectedPriceSnapshot.base_price_per_night ?? 0,
+      );
+      // Offline snapshots may have stored the all-room one-night base in
+      // basePricePerNight. The response contract is explicit: expose the
+      // per-room rate in basePricePerNight and the all-room one-night base in
+      // baseTotalPrice. The payable row amount remains totalHotelCost.
+      const offlineBaseTotal = snapshotBaseTotal > 0
+        ? snapshotBaseTotal
+        : offlineBasePerNight > 0
+          ? Number((offlineBasePerNight * snapshotRoomCount).toFixed(2))
+          : 0;
+      const offlineBaseRoomRate = offlineBaseTotal > 0
+        ? Number((offlineBaseTotal / snapshotRoomCount).toFixed(2))
+        : offlineBasePerNight;
+      const offlineMarginPerNight = Number(
+        selectedPriceSnapshot.hotelMarginAmount ?? selectedPriceSnapshot.hotel_margin_amount ?? 0,
+      );
+      const payableHotelCost = (isOffline && offlinePricePerNight > 0
+        ? offlinePricePerNight
+        : storedPricing.payableTotal) * earlyCheckInBillingMultiplier;
+      const baseHotelCost = (isOffline && offlineBaseTotal > 0
+        ? offlineBaseRoomRate
+        : authoritativeBaseHotelCost) * earlyCheckInBillingMultiplier;
+      const storedHotelMarginAmount = (isOffline && offlineMarginPerNight > 0
+        ? offlineMarginPerNight
+        : storedPricing.marginAmount) * earlyCheckInBillingMultiplier;
+      const extraBedCount = Number((h as any).room_extra_bed_count ?? (h as any).total_extra_bed ?? (plan as any).total_extra_bed ?? 0);
+      const childWithBedCount = Number((h as any).room_cwb_count ?? (h as any).total_child_with_bed ?? (plan as any).total_child_with_bed ?? 0);
+      const childWithoutBedCount = Number((h as any).room_cnb_count ?? (h as any).total_child_without_bed ?? (plan as any).total_child_without_bed ?? 0);
+      const storedExtraBedCost = Number((h as any).total_extra_bed_cost ?? 0);
+      const storedChildWithBedCost = Number((h as any).total_childwith_bed_cost ?? 0);
+      const storedChildWithoutBedCost = Number((h as any).total_childwithout_bed_cost ?? 0);
+      const extraBedCost = (storedExtraBedCost > 0 ? storedExtraBedCost : Number(selectedPriceSnapshot.extraBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const childWithBedCost = (storedChildWithBedCost > 0 ? storedChildWithBedCost : Number(selectedPriceSnapshot.childWithBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const childWithoutBedCost = (storedChildWithoutBedCost > 0 ? storedChildWithoutBedCost : Number(selectedPriceSnapshot.childWithoutBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const roomCountForMargin = Math.max(
+        Number((h as any).total_no_of_rooms ?? 0),
+        Number((plan as any).preferred_room_count ?? 0),
+        1,
+      );
+      const marginRoomCost = Number((baseHotelCost * roomCountForMargin).toFixed(2));
+      const hotelMarginBaseAmount = Number((
+        marginRoomCost +
+        Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier +
+        extraBedCost +
+        childWithBedCost +
+        childWithoutBedCost
+      ).toFixed(2));
+      const effectiveMarginPercentage = storedPricing.marginPercentage > 0
+        ? storedPricing.marginPercentage
+        : snapshotMarginPercentage;
+      const hotelMarginAmount = effectiveMarginPercentage > 0
+        ? Number((hotelMarginBaseAmount * effectiveMarginPercentage / 100).toFixed(2))
+        : storedHotelMarginAmount;
+      const extraBedRate = Number((h as any).extra_bed_rate ?? selectedPriceSnapshot.extraBedRate ?? (extraBedCount > 0 ? extraBedCost / extraBedCount : 0));
+      const childWithBedRate = Number(selectedPriceSnapshot.childWithBedRate ?? (childWithBedCount > 0 ? childWithBedCost / childWithBedCount : 0));
+      const childWithoutBedRate = Number(selectedPriceSnapshot.childWithoutBedRate ?? (childWithoutBedCount > 0 ? childWithoutBedCost / childWithoutBedCount : 0));
 
       return {
         groupType: Number((h as any).group_type ?? 0) || 0,
@@ -979,23 +1056,38 @@ async getHotelRoomDetailsByQuoteId(
           '',
         ).trim(),
         totalHotelCost: payableHotelCost,
+        pricePerNight: payableHotelCost,
+        totalStayPrice: isOffline
+          ? Number(selectedPriceSnapshot.totalStayPrice ?? selectedPriceSnapshot.total_price ?? payableHotelCost)
+          : payableHotelCost,
+        numberOfNights: 1,
+        basePricePerNight: baseHotelCost,
+        baseTotalPrice: isOffline
+          ? Number((baseHotelCost * snapshotRoomCount).toFixed(2))
+          : authoritativeBaseHotelCost,
         totalHotelTaxAmount: storedTax * earlyCheckInBillingMultiplier,
-        baseHotelCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
-        totalRoomCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
+        baseHotelCost,
+        totalRoomCost: isOffline
+          ? Number((baseHotelCost * snapshotRoomCount).toFixed(2))
+          : baseHotelCost,
         hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanCost: Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanGstAmount: Number((h as any).total_hotel_meal_plan_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        totalExtraBedCost: Number((h as any).total_extra_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalExtraBedCost: extraBedCost,
         totalExtraBedCostGstAmount: Number((h as any).total_extra_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        totalChildWithBedCost: Number((h as any).total_childwith_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithBedCost: childWithBedCost,
         totalChildWithBedCostGstAmount: Number((h as any).total_childwith_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        totalChildWithoutBedCost: Number((h as any).total_childwithout_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithoutBedCost: childWithoutBedCost,
         totalChildWithoutBedCostGstAmount: Number((h as any).total_childwithout_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        extraBedCount: Number((h as any).room_extra_bed_count ?? (h as any).total_extra_bed ?? (plan as any).total_extra_bed ?? 0),
-        childWithBedCount: Number((h as any).room_cwb_count ?? (h as any).total_child_with_bed ?? (plan as any).total_child_with_bed ?? 0),
-        childWithoutBedCount: Number((h as any).room_cnb_count ?? (h as any).total_child_without_bed ?? (plan as any).total_child_without_bed ?? 0),
-        hotelMarginPercentage: storedPricing.marginPercentage,
-        hotelMarginAmount: storedPricing.marginAmount * earlyCheckInBillingMultiplier,
+        extraBedCount,
+        extraBedRate,
+        childWithBedCount,
+        childWithBedRate,
+        childWithoutBedCount,
+        childWithoutBedRate,
+        hotelMarginPercentage: effectiveMarginPercentage,
+        hotelMarginAmount,
+        hotelMarginBaseAmount,
         hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
@@ -1009,7 +1101,7 @@ async getHotelRoomDetailsByQuoteId(
         hotelierEarlyCheckInNote,
         previousDayBillingSynthetic: isSyntheticPreviousDayBilling,
         hotelDistance,
-        provider: String((h as any).hotel_provider || '').trim().toLowerCase() || undefined,
+        provider: provider || undefined,
         hotelCode: String((h as any).hotel_code || '').trim() || undefined,
         bookingCode: String((h as any).selected_rate_option_id || '').trim() || undefined,
         rateOptionId: String((h as any).selected_rate_option_id || '').trim() || undefined,

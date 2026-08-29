@@ -65,27 +65,47 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     option?.price,
     option?.pricePerNight,
   );
-  const baseTotal = positive(
+  const explicitBaseTotal = positive(
     option?.baseTotalPrice,
     option?.baseStayPrice,
     option?.baseHotelCost,
     option?.baseAmount,
-    option?.basePricePerNight,
-    alreadyProjected ? 0 : payableBeforeProjection,
   );
-  const basePerNight = positive(
+  const roomCount = Math.max(
+    Number(option?.total_no_of_rooms ?? option?.noOfRooms ?? option?.roomCount ?? 1),
+    1,
+  );
+  const baseTotal = explicitBaseTotal > 0
+    ? explicitBaseTotal
+    : positive(option?.basePricePerNight, alreadyProjected ? 0 : payableBeforeProjection);
+  const rawBasePerNight = positive(
     option?.basePricePerNight,
     option?.baseAmountPerNight,
     baseTotal,
   );
+  const basePerNight = explicitBaseTotal > 0 && roomCount > 1 &&
+    Math.abs(rawBasePerNight - explicitBaseTotal) < 0.01
+    ? money(explicitBaseTotal / roomCount)
+    : rawBasePerNight;
+  const supplementTotal = money(
+    positive(option?.extraBedAmount, option?.extraBedCost, option?.total_extra_bed_cost) +
+    positive(option?.childWithBedAmount, option?.childWithBedCost, option?.total_childwith_bed_cost) +
+    positive(option?.childWithoutBedAmount, option?.childWithoutBedCost, option?.total_childwithout_bed_cost),
+  );
+  const marginBaseTotal = money(baseTotal + supplementTotal);
+  const marginBasePerNight = money(basePerNight + supplementTotal);
   const marginTotal = alreadyProjected
-    ? positive(option?.hotelMarginTotalAmount, option?.hotelMarginStayAmount, option?.hotelMarginAmount)
-    : money((baseTotal * marginPercentage) / 100);
+    ? marginPercentage > 0
+      ? money((marginBaseTotal * marginPercentage) / 100)
+      : positive(option?.hotelMarginTotalAmount, option?.hotelMarginStayAmount, option?.hotelMarginAmount)
+    : money((marginBaseTotal * marginPercentage) / 100);
   const marginPerNight = alreadyProjected
-    ? positive(option?.hotelMarginAmount, marginTotal)
-    : money((basePerNight * marginPercentage) / 100);
-  const reconstructedPayableTotal = money(baseTotal + marginTotal);
-  const reconstructedPayablePerNight = money(basePerNight + marginPerNight);
+    ? marginPercentage > 0
+      ? money((marginBasePerNight * marginPercentage) / 100)
+      : positive(option?.hotelMarginAmount, marginTotal)
+    : money((marginBasePerNight * marginPercentage) / 100);
+  const reconstructedPayableTotal = money(marginBaseTotal + marginTotal);
+  const reconstructedPayablePerNight = money(marginBasePerNight + marginPerNight);
   const payableTotal = alreadyProjected
     ? Math.max(payableBeforeProjection, reconstructedPayableTotal)
     : reconstructedPayableTotal;
@@ -104,6 +124,7 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     hotelMarginAmount: marginPerNight,
     hotelMarginStayAmount: marginTotal,
     hotelMarginTotalAmount: marginTotal,
+    hotelMarginBaseAmount: marginBaseTotal,
     price: payablePerNight,
     pricePerNight: payablePerNight,
     totalPrice: payableTotal,

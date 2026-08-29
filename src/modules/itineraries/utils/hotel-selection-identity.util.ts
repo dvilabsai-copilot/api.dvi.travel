@@ -317,7 +317,7 @@ export function isProtectedHotelSelection(row: any): boolean {
 }
 
 export function parseHotelSelectionSnapshot(row: any): HotelSelectionSnapshot {
-  const raw = row?.selected_price_snapshot;
+  const raw = row?.selected_price_snapshot ?? row?.selectedPriceSnapshot;
   if (raw && typeof raw === 'object') return raw as HotelSelectionSnapshot;
   if (raw) {
     try {
@@ -391,7 +391,13 @@ export function selectionOriginFromRow(row: any): HotelSelectionOrigin {
   // Legacy offline rows predate explicit origin metadata and represented
   // manual choices. Preserve that compatibility only when the snapshot does
   // not state that the API created the selection.
-  return row?.hotel_provider === 'offline' ? 'USER_SELECTED' : 'AUTO_SELECTED';
+  if (String(row?.hotel_provider || '').trim().toLowerCase() === 'offline') {
+    const bookingMode = String(row?.hotel_booking_mode || '').trim().toUpperCase();
+    const priceSource = String(row?.price_source || '').trim().toUpperCase();
+    if (bookingMode === 'OFFLINE_MANUAL' || priceSource === 'OFFLINE_DB') return 'AUTO_SELECTED';
+    return 'USER_SELECTED';
+  }
+  return 'AUTO_SELECTED';
 }
 
 export function hotelOptionKey(row: HotelOptionIdentity): string {
@@ -513,6 +519,19 @@ export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
     mealPlan: row?.mealPlan ?? row?.meal_plan ?? null,
     totalPrice: Number(row?.totalPrice ?? row?.totalStayPrice ?? row?.totalHotelCost ?? row?.total_hotel_cost ?? row?.totalAmount ?? row?.selected_total_price ?? 0),
     pricePerNight: Number(row?.pricePerNight ?? row?.price_per_night ?? row?.price ?? row?.selected_price_per_night ?? 0),
+    baseTotalPrice: Number(row?.baseTotalPrice ?? row?.base_total_price ?? row?.baseHotelCost ?? row?.base_hotel_cost ?? 0),
+    extraBedCount: Number(row?.extraBedCount ?? row?.extra_bed_count ?? 0),
+    extraBedRate: Number(row?.extraBedRate ?? row?.extra_bed_rate ?? 0),
+    extraBedAmount: Number(row?.extraBedAmount ?? row?.extra_bed_amount ?? row?.extraBedCost ?? row?.total_extra_bed_cost ?? 0),
+    childWithBedCount: Number(row?.childWithBedCount ?? row?.child_with_bed_count ?? 0),
+    childWithBedRate: Number(row?.childWithBedRate ?? row?.child_with_bed_rate ?? 0),
+    childWithBedAmount: Number(row?.childWithBedAmount ?? row?.child_with_bed_amount ?? row?.childWithBedCost ?? row?.total_childwith_bed_cost ?? 0),
+    childWithoutBedCount: Number(row?.childWithoutBedCount ?? row?.child_without_bed_count ?? 0),
+    childWithoutBedRate: Number(row?.childWithoutBedRate ?? row?.child_without_bed_rate ?? 0),
+    childWithoutBedAmount: Number(row?.childWithoutBedAmount ?? row?.child_without_bed_amount ?? row?.childWithoutBedCost ?? row?.total_childwithout_bed_cost ?? 0),
+    hotelMarginBaseAmount: Number(row?.hotelMarginBaseAmount ?? row?.hotel_margin_base_amount ?? 0),
+    hotelMarginPercentage: Number(row?.hotelMarginPercentage ?? row?.hotel_margin_percentage ?? 0),
+    hotelMarginAmount: Number(row?.hotelMarginAmount ?? row?.hotel_margin_amount ?? row?.hotel_margin_rate ?? 0),
     currency: row?.currency ?? row?.selected_currency ?? null,
     optionKey: (row?.optionKey ?? selectedOptionKeyFromRow(row)) || null,
     rateOptionId: row?.rateOptionId ?? row?.selected_rate_option_id ?? null,

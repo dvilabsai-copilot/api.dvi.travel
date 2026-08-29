@@ -360,6 +360,15 @@ export class HotelsService {
     const limit = Math.max(1, Math.min(100, Number(q.limit ?? 10)));
     const skip = (page - 1) * limit;
 
+    const providerAlias: Record<string, 'axisrooms' | 'resavenue' | 'staah'> = {
+      AX: 'axisrooms',
+      RS: 'resavenue',
+      ST: 'staah',
+      axisrooms: 'axisrooms',
+      resavenue: 'resavenue',
+      staah: 'staah',
+    };
+    const provider = providerAlias[String(q.provider ?? '').trim()];
     const AND: Prisma.dvi_hotelWhereInput[] = [this.notDeletedBool as any];
 
     const rawStatus: any = (q as any).status;
@@ -375,6 +384,19 @@ export class HotelsService {
           ? ({ hotel_city: resolvedCity.cityId } as any)
           : ({ hotel_city: q.hotel_city } as any),
       );
+    }
+
+    if (provider === 'axisrooms') {
+      AND.push({ axisrooms_enabled: 1 } as any);
+      AND.push({ axisrooms_property_id: { not: null } } as any);
+      AND.push({ axisrooms_property_id: { not: '' } } as any);
+    } else if (provider === 'resavenue') {
+      AND.push({ resavenue_hotel_code: { not: null } } as any);
+      AND.push({ resavenue_hotel_code: { not: '' } } as any);
+    } else if (provider === 'staah') {
+      AND.push({ staah_enabled: 1 } as any);
+      AND.push({ staah_property_id: { not: null } } as any);
+      AND.push({ staah_property_id: { not: '' } } as any);
     }
 
     const term = (q.search ?? '').toString().trim();
@@ -2283,7 +2305,12 @@ export class HotelsService {
         (r: any) => new Date(r.start_date) <= dt && new Date(r.end_date) >= dt,
       );
       if (best) {
-        const occ = best.occupancy_rates as Record<string, number>;
+        const rawOcc = best.occupancy_rates as Record<string, number>;
+        const occ = rawOcc && typeof rawOcc === 'object' ? { ...rawOcc } : undefined;
+        if (occ && occ.ROOM_RATE === undefined && occ.DOUBLE !== undefined) {
+          occ.ROOM_RATE = occ.DOUBLE;
+        }
+        if (occ) delete occ.DOUBLE;
         if (occ && typeof occ === 'object') {
           bestByDate.set(date, occ);
         }
@@ -2791,49 +2818,6 @@ export class HotelsService {
     if (!Number.isFinite(hid) || hid <= 0) throw new Error('Invalid hotel_id');
     if (!body || !Array.isArray(body.items)) throw new Error('items array is required');
 
-    const mkTask = async (
-      roomId: number,
-      priceType: 1 | 2 | 3 | 4,
-      start: Date,
-      end: Date,
-      value: number | string,
-    ) => {
-      const buckets = this.splitRangeByMonth_forRoomsAndAmenities(start, end);
-      for (const b of buckets) {
-        const dayPatch = this.buildDayPatch_forRoomsAndAmenities(value, b.days, false);
-        const existing = await this.prisma.dvi_hotel_room_price_book.findFirst({
-          where: {
-            hotel_id: hid,
-            room_id: Number(roomId),
-            price_type: priceType,
-            year: b.year,
-            month: b.month,
-          } as any,
-          select: { hotel_price_book_id: true } as any,
-        });
-
-        if (!existing) {
-          await this.prisma.dvi_hotel_room_price_book.create({
-            data: {
-              hotel_id: hid,
-              room_id: Number(roomId),
-              price_type: priceType,
-              year: b.year,
-              month: b.month,
-              status: 1,
-              deleted: 0,
-              ...dayPatch,
-            } as any,
-          } as any);
-        } else {
-          await this.prisma.dvi_hotel_room_price_book.update({
-            where: { hotel_price_book_id: (existing as any).hotel_price_book_id } as any,
-            data: { ...dayPatch } as any,
-          } as any);
-        }
-      }
-    };
-
     const buildOccupancyRates = (item: any): Record<string, number> => {
       const rates: Record<string, number> = {};
       const raw = item?.occupancyRates && typeof item.occupancyRates === 'object'
@@ -2846,6 +2830,14 @@ export class HotelsService {
           const numericValue = this.toNumStrict(value);
           if (occupancyKey && numericValue !== undefined) rates[occupancyKey] = numericValue;
         }
+
+        // The admin form exposes DOUBLE as the room price field. Persist the
+        // canonical room-price key as ROOM_RATE, while accepting older payloads
+        // that already send ROOM_RATE. DOUBLE remains a read fallback below.
+        if (rates.ROOM_RATE === undefined && rates.DOUBLE !== undefined) {
+          rates.ROOM_RATE = rates.DOUBLE;
+        }
+        delete rates.DOUBLE;
       }
 
       // Compatibility payloads may only provide roomPrice and the three
@@ -2937,25 +2929,13 @@ export class HotelsService {
       if (!Number.isFinite(roomId) || roomId <= 0) continue;
       if (!start || !end) continue;
 
-      if (it.roomPrice !== undefined && it.roomPrice !== '' && it.roomPrice !== null) {
-        await mkTask(roomId, 1, start, end, it.roomPrice);
-      }
-      if (it.extraBed !== undefined && it.extraBed !== '' && it.extraBed !== null) {
-        await mkTask(roomId, 2, start, end, it.extraBed);
-      }
-      if (it.childWithBed !== undefined && it.childWithBed !== '' && it.childWithBed !== null) {
-        await mkTask(roomId, 3, start, end, it.childWithBed);
-      }
-      if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
-        await mkTask(roomId, 4, start, end, it.childWithoutBed);
-      }
-
       const rateplanId = this.toStr(it.rateplanId);
       if (!rateplanId) {
         continue;
       }
 
       const occupancyRates = buildOccupancyRates(it);
+      const mergedOccupancyRates = await saveOccupancyRates(roomId, rateplanId, start, end, occupancyRates);
 
       if (!axisroomsEnabled || !axisroomsPropertyId) {
         // Offline hotels use the same normalized occupancy table as supplier
@@ -2989,8 +2969,6 @@ export class HotelsService {
       }
 
       const ratePlanName = this.toStr(it.ratePlanName) || rateplanId;
-
-      const mergedOccupancyRates = await saveOccupancyRates(roomId, rateplanId, start, end, occupancyRates);
 
       await this.prisma.dvi_hotel_room_rate_plan.upsert({
         where: {

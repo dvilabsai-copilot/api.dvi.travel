@@ -218,6 +218,31 @@ test('complete persisted reads expose one hotel summary row per stay', () => {
   assert.equal(summary[0].hotelName, 'Hotel 3');
 });
 
+test('complete persisted reads prefer a live supplier over offline fallback per stay', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const summary = (service as any).buildClientStaySummaryRows([
+    {
+      itineraryRouteId: 10,
+      date: '2026-07-28',
+      provider: 'offline',
+      hotelName: 'Offline Hotel',
+      isBookable: true,
+      isSelectable: true,
+    },
+    {
+      itineraryRouteId: 10,
+      date: '2026-07-28',
+      provider: 'staah',
+      hotelName: 'Live Hotel',
+      isBookable: true,
+      isSelectable: true,
+    },
+  ]);
+
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].hotelName, 'Live Hotel');
+});
+
 test('canonical selected rate id never falls back to another nested option', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const selected = (service as any).selectedRateOption(
@@ -1561,6 +1586,16 @@ test('an explicitly auto-selected offline snapshot remains automatic', () => {
     hotel_provider: 'offline',
     selected_price_snapshot: JSON.stringify({ selectionOrigin: 'USER_SELECTED' }),
   }), 'USER_SELECTED');
+  assert.equal(selectionOriginFromRow({
+    hotel_provider: 'offline',
+    hotel_booking_mode: 'OFFLINE_MANUAL',
+    price_source: 'OFFLINE_DB',
+  }), 'AUTO_SELECTED');
+  assert.equal(selectionOriginFromRow({
+    hotel_provider: 'offline',
+    hotel_booking_mode: 'MANUAL_APPROVAL',
+    price_source: 'DATABASE',
+  }), 'USER_SELECTED');
 });
 
 test('auto-selection falls back to CP without relabelling it when MAP has no priced option', async () => {
@@ -1898,6 +1933,36 @@ test('reset clears editable selections before rebuilding the live snapshot', asy
   assert.equal(selectionReset.data.status, 0);
 });
 
+test('reset retries the live availability rebuild when the first snapshot has no hotels', async () => {
+  let offlineCacheCleared = 0;
+  const service = new HotelAvailabilitySnapshotService(
+    {} as any,
+    {} as any,
+    { clearCache: () => { offlineCacheCleared += 1; } } as any,
+  );
+  const calls: any[] = [];
+  (service as any).searchAndPersist = async (
+    quoteId: string,
+    requestType: string,
+    createdBy: number,
+    resetSelections: boolean,
+  ) => {
+    calls.push({ quoteId, requestType, createdBy, resetSelections });
+    return calls.length === 1
+      ? { searchRunId: 'empty-run', response: { hotels: [] }, changeSummary: { hasChanges: false, totalChanges: 0, changes: [] } }
+      : { searchRunId: 'live-run', response: { hotels: [{ hotelName: 'Live Hotel' }] }, changeSummary: { hasChanges: false, totalChanges: 0, changes: [] } };
+  };
+
+  const result = await service.resetAndPersist('DVI20260893', 7);
+
+  assert.equal(result.searchRunId, 'live-run');
+  assert.equal(offlineCacheCleared, 1);
+  assert.deepEqual(calls, [
+    { quoteId: 'DVI20260893', requestType: 'CREATE', createdBy: 7, resetSelections: true },
+    { quoteId: 'DVI20260893', requestType: 'CHECK_AVAILABILITY', createdBy: 7, resetSelections: true },
+  ]);
+});
+
 test('live reset rows exclude synthetic departure-route availability rows', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const searchableRouteIds = (service as any).getSearchableRouteIds([
@@ -2000,6 +2065,55 @@ test('AUTO_SELECTED chooses the cheapest eligible live provider before determini
   assert.equal(Number(createdSelections[0].selected_total_price), 2800);
 });
 
+test('refresh replaces a persisted AUTO_SELECTED offline row when live exists for the same day', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const { tx, selections } = makeReconciliationTx();
+  selections[0].hotel_id = 987;
+  selections[0].hotel_code = 'OFFLINE-987';
+  selections[0].hotel_provider = 'offline';
+  selections[0].selected_rate_option_id = 'offline-rate';
+  selections[0].selected_price_snapshot = JSON.stringify({
+    optionKey: 'offline|offline-987|room-1|offline-rate||||2026-07-28|',
+    selectionOrigin: 'AUTO_SELECTED',
+    hotelName: 'Offline Hotel',
+    roomType: 'Deluxe',
+    mealPlan: 'CP',
+  });
+
+  await (service as any).reconcileSelections(tx, 44, [{
+    groupType: 1,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 987,
+    hotelCode: 'OFFLINE-987',
+    hotelName: 'Offline Hotel',
+    roomId: 'room-1',
+    rateId: 'offline-rate',
+    rateOptionId: 'offline-rate',
+    totalStayPrice: 1200,
+    isBookable: true,
+    isSelectable: true,
+  }, {
+    groupType: 1,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    provider: 'staah',
+    hotelId: 988,
+    hotelCode: 'LIVE-988',
+    hotelName: 'Live Hotel',
+    roomId: 'room-2',
+    rateId: 'live-rate',
+    rateOptionId: 'live-rate',
+    totalStayPrice: 1800,
+    isBookable: true,
+    isSelectable: true,
+  }], 'live-refresh', 7, false);
+
+  assert.equal(selections[0].hotel_provider, 'staah');
+  assert.equal(selections[0].hotel_id, 988);
+});
+
 test('live reconciliation falls back to offline inventory only when live is absent', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
@@ -2034,7 +2148,53 @@ test('live reconciliation falls back to offline inventory only when live is abse
   assert.equal(createdSelections[0].hotel_provider, 'offline');
 });
 
-test('replacement compares live and offline providers by current valid price', async () => {
+test('stay-level live inventory prevents offline auto-selection across recommendation groups', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 903 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+      updateMany: async () => ({}),
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 987,
+    hotelCode: 'OFFLINE-987',
+    hotelName: 'Offline Hotel',
+    totalHotelCost: 1200,
+    isBookable: true,
+    isSelectable: true,
+  }, {
+    itineraryRouteId: 10,
+    groupType: 2,
+    date: '2026-07-28',
+    provider: 'staah',
+    hotelId: 988,
+    hotelCode: 'LIVE-988',
+    hotelName: 'Live Hotel',
+    totalHotelCost: 1800,
+    isBookable: true,
+    isSelectable: true,
+  }], 'stay-live-run', 7);
+
+  assert.equal(createdSelections.length, 2);
+  assert.equal(createdSelections.every((row: any) => row.hotel_provider === 'staah'), true);
+});
+
+test('automatic replacement prefers live providers even when offline is cheaper', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -2076,10 +2236,10 @@ test('replacement compares live and offline providers by current valid price', a
   }], 'live-run-with-offline', 7);
 
   assert.equal(createdSelections.length, 1);
-  assert.equal(createdSelections[0].hotel_provider, 'offline');
+  assert.equal(createdSelections[0].hotel_provider, 'staah');
 });
 
-test('a live rate with the wrong meal plan does not block a matching offline auto-selection', async () => {
+test('a live rate remains the automatic choice when offline has the requested meal plan', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -2123,9 +2283,9 @@ test('a live rate with the wrong meal plan does not block a matching offline aut
   }], 'live-ep-offline-cp', 7, false, undefined, 'CP');
 
   assert.equal(createdSelections.length, 1);
-  assert.equal(createdSelections[0].hotel_provider, 'offline');
-  assert.equal(createdSelections[0].hotel_id, 987);
-  assert.equal(JSON.parse(createdSelections[0].selected_price_snapshot).mealPlan, 'CP');
+  assert.equal(createdSelections[0].hotel_provider, 'resavenue');
+  assert.equal(createdSelections[0].hotel_id, 988);
+  assert.equal(JSON.parse(createdSelections[0].selected_price_snapshot).mealPlan, 'EP');
 });
 
 test('explicit offline fetch can auto-select only its requested stay group', async () => {
@@ -2277,6 +2437,63 @@ test('property reconciliation keeps the persisted payable total for the same pro
   assert.equal(decorated.selectedPricePerNight, 3990);
   assert.equal(decorated.hotelMarginPercentage, 7);
   assert.equal(decorated.provider, 'offline');
+});
+
+test('persisted selected rows expose per-room category assignments', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const roomSelections = [
+    { room_number: 1, room_type_title: 'Suite Room', room_qty: 1 },
+    { room_number: 2, room_type_title: 'Club Room', room_qty: 1 },
+    { room_number: 3, room_type_title: 'Club Room', room_qty: 1 },
+    { room_number: 4, room_type_title: 'Club Room', room_qty: 1 },
+    { room_number: 5, room_type_title: 'Club Room', room_qty: 1 },
+  ];
+  const row = {
+    provider: 'offline',
+    hotelId: 315,
+    hotelCode: '315',
+    hotelName: 'GREEN PALACE',
+    itineraryRouteId: 11048,
+    itineraryRouteDate: '2026-09-03',
+    groupType: 1,
+    roomType: 'Club Room',
+    mealPlan: 'CP',
+    totalHotelCost: 20900,
+    totalPrice: 20900,
+    pricePerNight: 20900,
+    isSelectable: true,
+    rateOptions: [{ roomType: 'Club Room', totalPrice: 20900, pricePerNight: 20900 }],
+  };
+  const selection = {
+    __roomCategorySelection: true,
+    itinerary_plan_hotel_details_ID: 19920,
+    hotel_id: 315,
+    hotel_code: '315',
+    hotel_provider: 'offline',
+    itinerary_route_id: 11048,
+    itinerary_route_date: '2026-09-03',
+    group_type: 1,
+    room_type: 'Club Room',
+    selected_total_price: 20900,
+    selected_price_per_night: 20900,
+    total_no_of_rooms: 5,
+    roomSelections,
+    selected_price_snapshot: JSON.stringify({
+      provider: 'offline',
+      roomType: 'Club Room',
+      totalPrice: 20900,
+      pricePerNight: 20900,
+    }),
+  };
+
+  const decorated = (service as any).decorateSelection(
+    row,
+    new Map([[hotelSelectionKeyFromRow(10039, row), selection]]),
+    10039,
+  );
+
+  assert.deepEqual(decorated.roomSelections, roomSelections);
+  assert.deepEqual(decorated.selection.roomSelections, roomSelections);
 });
 
 test('room-category reconciliation uses the current nested rate instead of a stale selected total', () => {

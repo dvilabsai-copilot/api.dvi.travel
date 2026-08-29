@@ -115,9 +115,10 @@ export class ItineraryConfirmationService {
       groupType,
       skippedExternalStayCount,
     } = hotelSelectionState;
-    if (this.hotelApprovalService) {
-      await this.hotelApprovalService.assertPlanCanFinalize(dto.itinerary_plan_ID);
-    }
+    // Offline hotels are manual requests. Confirm the itinerary and copy the
+    // selected hotel snapshot first; hotel approval/confirmation happens
+    // afterward through ItineraryHotelApprovalService. Live supplier hotels
+    // continue through the existing provider-bookable flow below.
  console.log('[CONFIRM_QUOTATION_HOTEL_SELECTION_SYNCED]', {
       planId: dto.itinerary_plan_ID,
       shouldConfirmHotels,

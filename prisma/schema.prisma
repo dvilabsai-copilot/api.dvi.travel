@@ -5957,11 +5957,15 @@ model tbo_hotel_master {
   status          Int?      @default(1) @db.TinyInt
   hotel_latitude  String    @default("") @db.VarChar(50)
   hotel_longitude String    @default("") @db.VarChar(50)
+  is_priority     Int       @default(0) @db.TinyInt
+  amenities       Json?
+  reviews         Json?
 
   @@index([tbo_city_code], map: "idx_tbo_hotel_master_city_code")
   @@index([star_rating], map: "idx_tbo_hotel_master_star_rating")
   @@index([created_at], map: "idx_tbo_hotel_master_created_at")
   @@index([hotel_name], map: "idx_tbo_hotel_master_hotel_name")
+  @@index([is_priority], map: "idx_tbo_hotel_master_priority")
 }
 
 /// TBO Hotel Booking Confirmations
