@@ -146,9 +146,25 @@ export function strictAutoSelectionIdentityMatches(option: any, identity: any): 
   if (expectedRateFields.length === 0) {
     return rateFields.every((field) => !clean(actual[field]));
   }
-  return expectedRateFields.every((field) => field === 'mealPlan'
-    ? canonicalMealPlanIdentity(actual[field]) === canonicalMealPlanIdentity(identity[field])
-    : clean(actual[field]) === clean(identity[field]));
+  // Some supplier projections (notably TBO) carry the opaque rate token in
+  // `searchReference` while the normalized recommendation carries the same
+  // token in `rateOptionId`. These are aliases for the same concrete rate,
+  // not different rates. Compare the effective rate token for that field,
+  // while keeping the other identity fields strict.
+  const effectiveRateToken = (row: any): string => clean(
+    row?.rateOptionId || row?.rate_option_id || row?.bookingCode ||
+    row?.booking_code || row?.searchReference || row?.search_reference ||
+    row?.optionKey || row?.option_key,
+  );
+  return expectedRateFields.every((field) => {
+    if (field === 'mealPlan') {
+      return canonicalMealPlanIdentity(actual[field]) === canonicalMealPlanIdentity(identity[field]);
+    }
+    if (field === 'rateOptionId') {
+      return effectiveRateToken(actual) === effectiveRateToken(identity);
+    }
+    return clean(actual[field]) === clean(identity[field]);
+  });
 }
 
 export function normalizeHotelDisplayName(value: unknown): string {
@@ -357,10 +373,18 @@ export function resolvePersistedHotelIdentity(row: any, master: any): PersistedH
   const snapshot = parseHotelSelectionSnapshot(row);
   const provider = clean(row?.hotel_provider || snapshot.provider);
   const hotelId = Number(row?.hotel_id || 0);
-  const hotelCode = String(row?.hotel_code || hotelId || '').trim();
+  // Supplier selections (TBO/AxisRooms/STAAH) are not guaranteed to have a
+  // local dvi_hotel row. Their selected snapshot is the authoritative display
+  // identity; using only dvi_hotel made valid persisted supplier rows render
+  // with blank name/category after reset.
+  const hotelCode = String(
+    row?.hotel_code || snapshot.providerHotelCode || snapshot.hotelCode || hotelId || '',
+  ).trim();
   const masterId = Number(master?.hotel_id || 0);
   const masterName = normalizeHotelDisplayName(master?.hotel_name);
+  const snapshotName = normalizeHotelDisplayName(snapshot.hotelName);
   const masterCategory = Number(master?.hotel_category || 0);
+  const snapshotCategory = Number(snapshot.category || 0);
   const mismatches: string[] = [];
 
   if (provider === 'offline') {
@@ -392,8 +416,8 @@ export function resolvePersistedHotelIdentity(row: any, master: any): PersistedH
     provider,
     hotelId,
     hotelCode,
-    hotelName: masterName,
-    category: masterCategory,
+    hotelName: masterName || snapshotName,
+    category: masterCategory || snapshotCategory,
     consistent: mismatches.length === 0,
     mismatches,
     snapshot,

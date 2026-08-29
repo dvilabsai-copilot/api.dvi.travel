@@ -230,6 +230,8 @@ export interface RecommendationGenerationDto {
 export interface HotelAvailabilityMetaDto {
   /** Complete route/day inventory shared by every recommendation pane. */
   sharedHotelInventory?: ItineraryHotelRowDto[];
+  /** Internal authoritative group candidates used by reset reconciliation. */
+  authoritativeRecommendationRows?: any[];
   hasSupplierHotels: boolean;
   supplierHotelCount: number;
   placeholderRowCount: number;
@@ -757,6 +759,7 @@ async getHotelRoomDetailsByQuoteId(
         itinerary_route_ID: true,
         itinerary_route_date: true,
         location_id: true,
+        location_name: true,
         no_of_days: true,
       },
     });
@@ -765,6 +768,12 @@ async getHotelRoomDetailsByQuoteId(
       routeDetails.map((r) => [
         Number((r as any).itinerary_route_ID),
         Number((r as any).location_id),
+      ]),
+    );
+    const routeDestinationMap = new Map(
+      routeDetails.map((r: any) => [
+        Number(r.itinerary_route_ID),
+        String(r.location_name ?? '').trim(),
       ]),
     );
     const routeDayNumberMap = new Map(
@@ -1039,20 +1048,23 @@ async getHotelRoomDetailsByQuoteId(
         day: isSyntheticPreviousDayBilling
           ? `Day ${routeDayNumber} (Previous Day) | ${dateLabel}`
           : `Day ${routeDayNumber || 0} | ${dateLabel}`,
-        destination: (h as any).itinerary_route_location ?? '',
+        destination:
+          String((h as any).itinerary_route_location ?? '').trim() ||
+          routeDestinationMap.get(routeId) ||
+          '',
         hotelId: Number((h as any).hotel_id ?? 0) || 0,
         hotelName: persistedIdentity.hotelName,
         category: persistedIdentity.category,
         roomType: String(
-          (persistedIdentity.consistent
-            ? selectedPriceSnapshot.roomType || selectedPriceSnapshot.roomTypeName
-            : '') ||
+          selectedPriceSnapshot.roomType ||
+          selectedPriceSnapshot.roomTypeName ||
+          (h as any).room_type ||
           '',
         ).trim(),
         mealPlan: String(
-          (persistedIdentity.consistent
-            ? selectedPriceSnapshot.mealPlan || selectedPriceSnapshot.mealPlanCode
-            : '') ||
+          selectedPriceSnapshot.mealPlan ||
+          selectedPriceSnapshot.mealPlanCode ||
+          (h as any).meal_plan ||
           '',
         ).trim(),
         totalHotelCost: payableHotelCost,
@@ -1102,7 +1114,7 @@ async getHotelRoomDetailsByQuoteId(
         previousDayBillingSynthetic: isSyntheticPreviousDayBilling,
         hotelDistance,
         provider: provider || undefined,
-        hotelCode: String((h as any).hotel_code || '').trim() || undefined,
+        hotelCode: persistedIdentity.hotelCode || undefined,
         bookingCode: String((h as any).selected_rate_option_id || '').trim() || undefined,
         rateOptionId: String((h as any).selected_rate_option_id || '').trim() || undefined,
         priceSource: (h as any).price_source || undefined,
@@ -1110,7 +1122,10 @@ async getHotelRoomDetailsByQuoteId(
         isLiveRate: (h as any).is_live_rate ?? undefined,
         approvalStatus: (h as any).hotel_approval_status || undefined,
         manualConfirmationStatus: (h as any).manual_confirmation_status || undefined,
-        isSelected: Number((h as any).hotel_id || 0) > 0,
+        isSelected:
+          Number((h as any).hotel_id || 0) > 0 ||
+          Boolean(String((h as any).selected_rate_option_id || '').trim()) ||
+          Boolean(String(selectedPriceSnapshot.rateOptionId || '').trim()),
         selectionOrigin: (String((h as any).selection_origin || '').trim().toUpperCase() ||
           (Number((h as any).hotel_id || 0) > 0 ? 'AUTO_SELECTED' : undefined)) as
           'AUTO_SELECTED' | 'USER_SELECTED' | undefined,

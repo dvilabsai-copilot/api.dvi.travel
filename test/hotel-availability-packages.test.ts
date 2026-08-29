@@ -2,6 +2,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ItineraryHotelDetailsTboService } from '../src/modules/itineraries/itinerary-hotel-details-tbo.service';
 
+test('route-scoped repair preserves populated Munnar input and repairs only empty Thekkady input', () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  const munnar = [{ hotelCode: 'MUNNAR-G1', provider: 'tbo', price: 1000 }];
+  const thekkady = [{ hotelCode: 'THEKKADY-G1', provider: 'axisrooms', price: 1200 }];
+  const repaired = service.buildRecommendationHotelsByRoute(
+    new Map([[11275, munnar], [11277, thekkady]]),
+    new Map([[11275, munnar], [11277, []]]),
+  );
+
+  assert.strictEqual(repaired.get(11275), munnar);
+  assert.strictEqual(repaired.get(11277), thekkady);
+  assert.deepEqual(repaired.get(11275), [{ hotelCode: 'MUNNAR-G1', provider: 'tbo', price: 1000 }]);
+});
+
 test('availability panes keep every eligible hotel in the matching recommendation group', () => {
   const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
   const route = {

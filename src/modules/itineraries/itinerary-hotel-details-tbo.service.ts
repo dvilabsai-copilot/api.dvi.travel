@@ -22,6 +22,7 @@ import {
   ItineraryHotelRoomDto,
 } from './itinerary-hotel-details.service';
 import { haversineKm } from './utils/distance-utils';
+import { normalizeHotelCategory } from './utils/hotel-category.util';
 import {
   HOTEL_RATE_PLAN_BY_CODE,
   inferCanonicalHotelRatePlanCode,
@@ -381,22 +382,14 @@ export class ItineraryHotelDetailsTboService {
   private getHotelCategoryCandidates(hotel: HotelSearchResult): number[] {
     const candidates = new Set<number>();
 
-    const ratingNum = Number((hotel as any).rating);
-    if (Number.isFinite(ratingNum) && ratingNum > 0) {
-      candidates.add(Math.trunc(ratingNum));
-    }
-
-    const categoryRaw = String((hotel as any).category ?? '').trim();
-    if (categoryRaw) {
-      const mappedCategory = mapHotelCategoryLabelToStar(categoryRaw);
-      if (mappedCategory) candidates.add(mappedCategory);
-      const match = categoryRaw.match(/\d+/);
-      if (match) {
-        const categoryNum = Number(match[0]);
-        if (Number.isFinite(categoryNum) && categoryNum > 0) {
-          candidates.add(Math.trunc(categoryNum));
-        }
-      }
+    for (const value of [
+      (hotel as any).rating,
+      (hotel as any).category,
+      (hotel as any).categoryName,
+      (hotel as any).starRating,
+    ]) {
+      const category = normalizeHotelCategory(value);
+      if (category !== null) candidates.add(category);
     }
 
     return Array.from(candidates);
@@ -2068,9 +2061,22 @@ this.logger.log(
     // v1/v2 are now compatibility labels only. Both execution paths use the
     // same category strategy so the persisted snapshot cannot diverge from
     // the recommendation tabs when an environment still says v1.
+    // A route with no preference-filtered rows is a repairable inventory
+    // gap, not proof that the supplier returned no hotels. Use the complete
+    // route snapshot only for those gaps; routes that already have a
+    // recommendation candidate retain their existing allocation unchanged.
+    const recommendationHotelsByRoute = this.buildRecommendationHotelsByRoute(
+      completeHotelsByRoute,
+      filteredHotelsByRoute,
+    );
     const packages = this.hotelRecommendationPackageService.generate({
       routes: routes as any,
-      hotelsByRoute: filteredHotelsByRoute,
+      // Recommendation eligibility must use the same current, complete,
+      // route-keyed inventory that is exposed to the shared picker.  The
+      // preference-filtered map is a presentation/recommendation projection;
+      // using it here can discard a usable route before the authoritative
+      // group candidate is created.
+      hotelsByRoute: recommendationHotelsByRoute,
       noOfNights,
       preferredMealPlanCode,
       preferredCategories,
@@ -2129,6 +2135,24 @@ this.logger.log(
           itineraryRouteId,
         )
       : response;
+  }
+
+  /**
+   * Keep an already-populated route's recommendation input byte-for-byte
+   * stable. Only a route emptied by preference filtering is repaired from the
+   * complete current inventory; this prevents a Thekkady repair from
+   * re-running allocation against Munnar's authoritative candidates.
+   */
+  private buildRecommendationHotelsByRoute(
+    completeHotelsByRoute: Map<number, HotelSearchResult[] | null>,
+    filteredHotelsByRoute: Map<number, HotelSearchResult[] | null>,
+  ): Map<number, HotelSearchResult[] | null> {
+    return new Map<number, HotelSearchResult[] | null>(
+      Array.from(completeHotelsByRoute.entries()).map(([routeId, completeRows]) => {
+        const filteredRows = filteredHotelsByRoute.get(routeId);
+        return [routeId, Array.isArray(filteredRows) && filteredRows.length > 0 ? filteredRows : completeRows];
+      }),
+    );
   }
 
  // Backward-compatible alias used by older controllers/callers.
@@ -5018,6 +5042,36 @@ this.logger.log(
       }),
     }));
 
+    // This is the only authoritative source used by the reset coordinator to
+    // persist automatic selections. Keep it alongside the shared inventory so
+    // a route can be repaired without treating a group-neutral pane row as a
+    // persisted recommendation.
+    const authoritativeRecommendationRows = pricedAvailabilityPackages.flatMap((pkg: any) =>
+      (pkg.hotels || []).filter((hotel: any) => hotel.autoSelectionCandidate === true),
+    );
+    if (String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim() === 'true') {
+      const targetRoutes = new Set([11275, 11276]);
+      const summarize = (row: any) => ({
+        provider: row?.provider,
+        hotelName: row?.hotelName,
+        hotelCode: row?.hotelCode || row?.providerHotelCode,
+        routeId: Number(row?.routeId || row?.itineraryRouteId || 0),
+        groupType: Number(row?.groupType || 0),
+        autoSelectionCandidate: row?.autoSelectionCandidate === true,
+        autoSelectionStatus: row?.autoSelectionStatus,
+        rateOptionId: row?.rateOptionId,
+      });
+      this.logger.log(`[HOTEL_RECOMMENDATION_TRACE] authoritativeRecommendationRows ${JSON.stringify({
+        packageCounts: pricedAvailabilityPackages.map((pkg: any) => ({
+          groupType: Number(pkg.groupType || 0),
+          hotels: Array.isArray(pkg.hotels) ? pkg.hotels.length : 0,
+          candidates: Array.isArray(pkg.hotels) ? pkg.hotels.filter((h: any) => h.autoSelectionCandidate === true).length : 0,
+        })),
+        targetRows: authoritativeRecommendationRows.filter((row: any) => targetRoutes.has(Number(row?.routeId || row?.itineraryRouteId || 0))).map(summarize),
+        total: authoritativeRecommendationRows.length,
+      })}`);
+    }
+
     // Group IDs remain semantic category slots for selection/persistence, but
     // the tab strip is a price presentation. Sort only this projection so a
     // cheaper Group 3 can appear before a costlier Group 2 without changing
@@ -6464,6 +6518,7 @@ this.logger.log(
       totalRoomCount: cleanedHotelRows.length,
       hotelAvailability: {
         sharedHotelInventory,
+        authoritativeRecommendationRows,
         hasSupplierHotels,
         supplierHotelCount: supplierHotelRows.length,
         placeholderRowCount: 0,

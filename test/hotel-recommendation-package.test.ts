@@ -123,6 +123,78 @@ test('rejects a child-route one-night rate when the logical stay needs multiple 
   assert.match(packages[0].stayResults[0].reason || '', /full logical stay/i);
 });
 
+test('aggregates verified route-night rows into one continuous stay at actual nightly totals', () => {
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 11275, itinerary_route_date: '2026-09-01', next_visiting_location: 'Munnar' },
+      { itinerary_route_ID: 11276, itinerary_route_date: '2026-09-02', next_visiting_location: 'Munnar' },
+    ],
+    hotelsByRoute: new Map([
+      [11275, [option('Clouds Valley', 3960, 'CP', {
+        canonicalHotelId: 95,
+        roomType: 'Deluxe',
+        itineraryRouteId: 11275,
+        routeId: 11275,
+        routeIds: [11275],
+        checkInDate: '2026-09-01',
+        checkOutDate: '2026-09-02',
+        rateId: 'CP_PLAN',
+        rateOptionId: 'clouds-cp-2026-09-01',
+        pricePerNight: 3960,
+      })]],
+      [11276, [option('Clouds Valley', 4180, 'CP', {
+        canonicalHotelId: 95,
+        roomType: 'Deluxe',
+        itineraryRouteId: 11276,
+        routeId: 11276,
+        routeIds: [11276],
+        checkInDate: '2026-09-02',
+        checkOutDate: '2026-09-03',
+        rateId: 'CP_PLAN',
+        rateOptionId: 'clouds-cp-2026-09-02',
+        pricePerNight: 4180,
+      })]],
+    ]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  const selected = packages[0].hotels[0];
+  assert.equal(packages[0].complete, true);
+  assert.equal(selected.hotelName, 'Clouds Valley');
+  assert.deepEqual(selected.routeIds, [11275, 11276]);
+  assert.equal(selected.exactFullStayTotal, 8140);
+  assert.equal(selected.totalStayPrice, 8140);
+  assert.deepEqual(selected.nightlyRates?.map((rate) => [rate.date, rate.sellAmount]), [
+    ['2026-09-01', 3960],
+    ['2026-09-02', 4180],
+  ]);
+});
+
+test('does not fabricate a continuous stay from a parent row copied across routes', () => {
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 11275, itinerary_route_date: '2026-09-01', next_visiting_location: 'Munnar' },
+      { itinerary_route_ID: 11276, itinerary_route_date: '2026-09-02', next_visiting_location: 'Munnar' },
+    ],
+    hotelsByRoute: new Map([
+      [11275, [option('Copied Coverage', 3960, 'CP', {
+        itineraryRouteId: 11275,
+        routeId: 11275,
+        routeIds: [11275, 11276],
+        checkInDate: '2026-09-01',
+        checkOutDate: '2026-09-03',
+        numberOfNights: 2,
+      })]],
+      [11276, []],
+    ]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].complete, false);
+  assert.equal(packages[0].hotels.length, 0);
+  assert.equal(packages[0].stayResults[0].state, 'UNAVAILABLE');
+});
+
 test('normalizes a stale itinerary-wide total to the route-specific one-night stay', () => {
   const hotel = option('Hablis Hotel Chennai', 7179.38, 'UNKNOWN', {
     numberOfNights: 2,
@@ -338,6 +410,9 @@ test('recommendations use target prices but exhaust unused properties before reu
 test('maps category master labels and codes to logical star buckets', () => {
   assert.equal(mapHotelCategoryLabelToStar('Budget'), 2);
   assert.equal(mapHotelCategoryLabelToStar('STD'), 2);
+  assert.equal(mapHotelCategoryLabelToStar(1), 2);
+  assert.equal(mapHotelCategoryLabelToStar('1*'), 2);
+  assert.equal(mapHotelCategoryLabelToStar('unknown'), null);
   assert.equal(mapHotelCategoryLabelToStar('3*'), 3);
   assert.equal(mapHotelCategoryLabelToStar('hotel_category_5_star'), 5);
 });

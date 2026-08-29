@@ -7,6 +7,7 @@ import {
 } from '../../hotels/hotel-rate-plans';
 import { HotelMealPlanPolicyService } from './hotel-meal-plan-policy.service';
 import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
+import { normalizeHotelCategoryLabel, normalizeHotelCategory } from '../utils/hotel-category.util';
 
 export type RecommendationAvailabilityState =
   | 'AVAILABLE'
@@ -154,11 +155,7 @@ type CategorySlot = { category: number; multiplier: number };
 const LABELS = ['Recommended #1', 'Recommended #2', 'Recommended #3', 'Recommended #4'];
 
 export function mapHotelCategoryLabelToStar(value: unknown): number | null {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return null;
-  if (/\b(budget|std|standard)\b/.test(text)) return 2;
-  const match = text.match(/(?:^|\D)([1-5])\s*(?:\*|[-_ ]?star|[-_ ]?stars)?\b/);
-  return match ? Number(match[1]) : null;
+  return normalizeHotelCategory(value);
 }
 
 export const resolveHotelRecommendationAlgorithm = (value = process.env.HOTEL_RECOMMENDATION_ALGORITHM): 'v1' | 'v2' =>
@@ -167,6 +164,13 @@ export const resolveHotelRecommendationAlgorithm = (value = process.env.HOTEL_RE
 @Injectable()
 export class HotelRecommendationPackageService {
   constructor(private readonly mealPlanPolicy: HotelMealPlanPolicyService) {}
+
+  private trace(stage: string, payload: Record<string, unknown>): void {
+    if (String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim().toLowerCase() !== 'true') return;
+    // Deliberately opt-in: recommendation responses can contain large hotel
+    // inventories and must not be logged in normal production traffic.
+    console.log(`[HOTEL_RECOMMENDATION_TRACE] ${stage} ${JSON.stringify(payload)}`);
+  }
 
   generate(input: RecommendationPackageInput): RecommendationPackage[] {
     return this.generateCategoryPackages(input);
@@ -263,8 +267,29 @@ export class HotelRecommendationPackageService {
    */
   private generateCategoryPackages(input: RecommendationPackageInput): RecommendationPackage[] {
     const stays = this.buildLogicalStays(input.routes, input.noOfNights);
+    this.trace('buildLogicalStays', {
+      stays: stays.map((stay) => ({ stayKey: stay.stayKey, destination: stay.destination, routeIds: stay.routeIds, nights: stay.nights })),
+    });
+    this.trace('completeHotelsByRoute', {
+      routes: Array.from(input.hotelsByRoute.entries()).map(([routeId, rows]) => ({ routeId, count: Array.isArray(rows) ? rows.length : 0 })),
+    });
     if (stays.length === 0) return [1, 2, 3, 4].map((group) => this.emptyRecommendationPackage(group));
     const evaluations = stays.map((stay) => this.buildOptions(stay, input));
+    this.trace('buildStayCandidates.aggregateNightlyStayCandidates.buildOptions', {
+      stays: evaluations.map((evaluation) => ({
+        stayKey: evaluation.stay.stayKey,
+        destination: evaluation.stay.destination,
+        eligibleOptionCount: evaluation.options.length,
+        rejectedCandidateCount: evaluation.rejectedCandidates.length,
+        rejectedCandidates: evaluation.rejectedCandidates.slice(0, 50),
+        candidates: evaluation.options.slice(0, 50).map((option) => ({
+          provider: option.hotel.provider,
+          hotelName: option.hotel.hotelName,
+          rateOptionId: option.hotel.rateOptionId,
+          totalPrice: option.hotel.totalStayPrice,
+        })),
+      })),
+    });
     let categories = Array.from(new Set((input.preferredCategories || [])
       .map(Number).filter((value) => value >= 1 && value <= 5))).sort((a, b) => a - b);
     if (categories.length === 0) {
@@ -318,6 +343,21 @@ export class HotelRecommendationPackageService {
     const packages = selectedByGroup.map((selection, index) =>
       this.packageFromSelections(evaluations, selection, index + 1),
     );
+    this.trace('package.stayResults', {
+      packages: packages.map((pkg) => ({
+        groupType: pkg.groupType,
+        totalPrice: pkg.totalPrice,
+        stayResults: pkg.stayResults.map((result) => ({
+          stayKey: result.stayKey,
+          state: result.state,
+          hotelName: result.hotel?.hotelName,
+          provider: result.hotel?.provider,
+          rateOptionId: result.hotel?.rateOptionId,
+          totalPrice: result.totalPrice,
+          reason: result.reason,
+        })),
+      })),
+    });
     const hasGenuineGroup4 = packages[3].stayResults.some((result) => result.state !== 'UNAVAILABLE');
     if (hasGenuineGroup4) {
       const group3 = packages[2];
@@ -576,7 +616,13 @@ export class HotelRecommendationPackageService {
 
       const destination = String(route.next_visiting_location || route.location_name || '').trim();
       const destinationId = this.firstText(route.destinationId, route.destination_id, route.location_id);
-      const destinationKey = destinationId || this.canonicalDestination(destination);
+      // A destination id is route metadata, not a logical-stay boundary. The
+      // same city can carry different destination/location ids on consecutive
+      // route rows (as happens for Munnar 11275/11276). Logical stays must be
+      // grouped by the canonical destination value; an explicit stay group
+      // remains the stronger override for providers that intentionally use
+      // different destination labels.
+      const destinationKey = this.canonicalDestination(destination);
       const stableGroup = this.firstText(route.stayGroupId, route.stay_group_id) || '';
       const parentRouteId = Number(route.parentStayRouteId || route.parent_stay_route_id || routeId);
       const explicitCheckIn = this.dateOnly(route.checkInDate || route.hotelCheckInDate);
@@ -620,22 +666,18 @@ export class HotelRecommendationPackageService {
   }
 
   private buildOptions(stay: LogicalHotelStay, input: RecommendationPackageInput): StayEvaluation {
-    const sources: HotelSearchResult[] = [];
-    const missingRoutes: number[] = [];
-    for (const routeId of stay.routeIds) {
-      const routeHotels = input.hotelsByRoute.get(routeId);
-      if (!Array.isArray(routeHotels)) {
-        missingRoutes.push(routeId);
-        continue;
-      }
-      sources.push(...routeHotels);
-    }
+    const missingRoutes = stay.routeIds.filter(
+      (routeId) => {
+        const rows = input.hotelsByRoute.get(routeId);
+        return !Array.isArray(rows) || rows.length === 0;
+      },
+    );
 
     const meal = this.normalizeMealPlan(input.preferredMealPlanCode);
     const categories = new Set((input.preferredCategories || []).map((value) => Number(value)).filter((value) => value > 0));
     const live: StayOption[] = [];
     const offline: StayOption[] = [];
-    const rejectedCandidates: Array<{ optionKey: string; reason: string }> = missingRoutes.map((routeId) => ({ optionKey: `route:${routeId}`, reason: 'No availability snapshot for route.' }));
+    const rejectedCandidates: Array<{ optionKey: string; reason: string }> = missingRoutes.map((routeId) => ({ optionKey: `route:${routeId}`, reason: 'No availability snapshot for route; full logical stay is unavailable.' }));
     const seen = new Set<string>();
     const permittedPlans = this.mealPlanPolicy.resolve({
       destination: stay.destination,
@@ -647,19 +689,19 @@ export class HotelRecommendationPackageService {
       return index >= 0 ? index : permittedPlans.length;
     };
 
-    for (const routeId of stay.routeIds) {
-      const routeHotels = input.hotelsByRoute.get(routeId);
-      if (!Array.isArray(routeHotels)) continue;
-      for (const source of routeHotels) {
-      for (const candidate of this.expandRateOptions(source, stay, routeId)) {
+    for (const candidate of this.buildStayCandidates(stay, input)) {
         const optionKey = this.optionKey(candidate);
-        if (seen.has(optionKey)) continue;
-        seen.add(optionKey);
 
         if (Number((candidate as any).totalStayPrice || 0) <= 0) {
           rejectedCandidates.push({ optionKey, reason: 'Rate does not cover the full logical stay.' });
           continue;
         }
+
+        // A rejected route-night representation must not prevent the verified
+        // aggregated representation of the same commercial rate from being
+        // evaluated.
+        if (seen.has(optionKey)) continue;
+        seen.add(optionKey);
 
         const eligibility = this.eligibility(candidate, stay, meal, categories, input);
         if (eligibility.ok === false) {
@@ -680,8 +722,6 @@ export class HotelRecommendationPackageService {
         };
         option.mealPlanRank = mealRank(option);
         (fallback ? offline : live).push(option);
-      }
-      }
     }
 
     // Provider availability is not a category preference. Keep live and
@@ -694,6 +734,220 @@ export class HotelRecommendationPackageService {
       a.optionKey.localeCompare(b.optionKey),
     );
     return { stay, options: selected, rejectedCandidates };
+  }
+
+  /**
+   * Build candidates at logical-stay scope. Provider responses are commonly
+   * one physical route-night per row, while recommendation selection requires
+   * one compatible rate covering every night in the stay.
+   */
+  private buildStayCandidates(
+    stay: LogicalHotelStay,
+    input: RecommendationPackageInput,
+  ): HotelSearchResult[] {
+    const directCandidates: HotelSearchResult[] = [];
+    const nightlyByRoute = new Map<number, HotelSearchResult[]>();
+    const routeDateById = new Map<number, string>(
+      (input.routes || [])
+        .map((route) => [
+          Number(route.itinerary_route_ID || 0),
+          this.dateOnly(route.itinerary_route_date),
+        ] as const)
+        .filter(([routeId, date]) => routeId > 0 && Boolean(date)),
+    );
+
+    for (const routeId of stay.routeIds) {
+      const routeHotels = input.hotelsByRoute.get(routeId);
+      if (!Array.isArray(routeHotels)) continue;
+
+      const routeDate = routeDateById.get(routeId);
+      if (!routeDate) continue;
+
+      // Keep genuine supplier full-stay candidates. Their normal validation
+      // still decides whether they really cover this complete stay.
+      for (const source of routeHotels) {
+        // A one-night row can incorrectly carry the complete logical stay in
+        // copied metadata. Only accept an explicit full-stay row from the
+        // anchor route; rows from later routes are aggregated below from
+        // their actual physical night instead.
+        const sourceCheckIn = this.dateOnly((source as any).checkInDate || (source as any).check_in_date);
+        const sourceCheckOut = this.dateOnly((source as any).checkOutDate || (source as any).check_out_date);
+        const hasExplicitFullStayDates = sourceCheckIn === stay.checkInDate && sourceCheckOut === stay.checkOutDate;
+        const declaresFullStay = Number((source as any).numberOfNights || (source as any).nights || 0) === stay.nights;
+        if (stay.nights > 1 && routeId !== stay.parentRouteId && hasExplicitFullStayDates) continue;
+        // Physical route-night rows must be aggregated for a multi-night
+        // stay. Copied check-in/check-out metadata is not proof of coverage.
+        if (stay.nights <= 1) {
+          directCandidates.push(...this.expandRateOptions(source, stay, routeId));
+        } else if (
+          (routeId === stay.parentRouteId && hasExplicitFullStayDates && this.hasFullStayNightlyRates(source, stay)) ||
+          (declaresFullStay && !Array.isArray((source as any).routeIds))
+        ) {
+          directCandidates.push(...this.expandRateOptions(source, stay, routeId));
+        }
+      }
+
+      if (stay.nights <= 1) continue;
+
+      const oneNightStay: LogicalHotelStay = {
+        stayKey: `${routeId}|${routeDate}|${this.addDays(routeDate, 1)}`,
+        parentRouteId: routeId,
+        routeIds: [routeId],
+        destination: stay.destination,
+        destinationId: stay.destinationId,
+        checkInDate: routeDate,
+        checkOutDate: this.addDays(routeDate, 1),
+        nights: 1,
+      };
+
+      const nightly = routeHotels.flatMap((source) => {
+        // A row can contain copied logical-stay dates/routeIds. Override the
+        // date boundary for this physical route-night before expansion so
+        // copied metadata cannot fabricate coverage.
+        const physicalSource: HotelSearchResult = {
+          ...source,
+          itineraryRouteId: routeId,
+          routeId,
+          routeIds: [routeId],
+          checkInDate: routeDate,
+          checkOutDate: this.addDays(routeDate, 1),
+          itineraryRouteDate: routeDate,
+          date: routeDate,
+          numberOfNights: 1,
+          ...(Array.isArray(source.rateOptions)
+            ? {
+                rateOptions: source.rateOptions.map((option: any) => ({
+                  ...option,
+                  checkInDate: routeDate,
+                  checkOutDate: this.addDays(routeDate, 1),
+                  numberOfNights: 1,
+                })),
+              }
+            : {}),
+        } as HotelSearchResult;
+
+        return this.expandRateOptions(physicalSource, oneNightStay, routeId)
+          .filter((candidate) => Number(candidate.totalStayPrice || 0) > 0)
+          .map((candidate) => ({
+            ...candidate,
+            itineraryRouteId: routeId,
+            routeId,
+            routeIds: [routeId],
+            itineraryRouteDate: routeDate,
+            date: routeDate,
+            checkInDate: routeDate,
+            checkOutDate: this.addDays(routeDate, 1),
+            numberOfNights: 1,
+          } as HotelSearchResult));
+      });
+
+      nightlyByRoute.set(routeId, [
+        ...(nightlyByRoute.get(routeId) || []),
+        ...nightly,
+      ]);
+    }
+
+    if (stay.nights <= 1) return directCandidates;
+
+    return [
+      ...directCandidates,
+      ...this.aggregateNightlyStayCandidates(stay, nightlyByRoute),
+    ];
+  }
+
+  /**
+   * Aggregate only physically present route-night rows. routeIds and
+   * completeStayRouteIds are metadata and are deliberately not used as proof.
+   */
+  private aggregateNightlyStayCandidates(
+    stay: LogicalHotelStay,
+    nightlyByRoute: Map<number, HotelSearchResult[]>,
+  ): HotelSearchResult[] {
+    const grouped = new Map<string, Map<number, HotelSearchResult[]>>();
+
+    for (const routeId of stay.routeIds) {
+      for (const candidate of nightlyByRoute.get(routeId) || []) {
+        const key = this.continuousStayRateKey(candidate);
+        if (!key) continue;
+        const byRoute = grouped.get(key) || new Map<number, HotelSearchResult[]>();
+        byRoute.set(routeId, [...(byRoute.get(routeId) || []), candidate]);
+        grouped.set(key, byRoute);
+      }
+    }
+
+    const aggregated: HotelSearchResult[] = [];
+    for (const byRoute of grouped.values()) {
+      if (!stay.routeIds.every((routeId) => (byRoute.get(routeId) || []).length > 0)) {
+        continue;
+      }
+
+      const selected = stay.routeIds.map((routeId) =>
+        [...(byRoute.get(routeId) || [])].sort(
+          (left, right) => Number(left.totalStayPrice || 0) - Number(right.totalStayPrice || 0),
+        )[0],
+      );
+      const nightlyRates = selected.map((candidate) => ({
+        date: this.dateOnly((candidate as any).checkInDate || (candidate as any).date),
+        baseAmount: Number((candidate as any).basePricePerNight ?? candidate.pricePerNight ?? candidate.price ?? 0),
+        sellAmount: Number(candidate.totalStayPrice || 0),
+      }));
+      const first = selected[0];
+      const total = this.money(nightlyRates.reduce((sum, rate) => sum + rate.sellAmount, 0));
+      aggregated.push({
+        ...first,
+        routeId: stay.parentRouteId,
+        itineraryRouteId: stay.parentRouteId,
+        routeIds: [...stay.routeIds],
+        checkInDate: stay.checkInDate,
+        checkOutDate: stay.checkOutDate,
+        numberOfNights: stay.nights,
+        nightlyRates,
+        totalStayPrice: total,
+        totalPrice: total,
+        // Keep the scalar field semantically per-night. The logical total is
+        // carried by totalStayPrice/totalPrice and nightlyRates; using the
+        // full total as pricePerNight makes hotelStayTotal multiply it again.
+        pricePerNight: Number(first.pricePerNight ?? first.price ?? nightlyRates[0]?.sellAmount ?? 0),
+      } as any as HotelSearchResult);
+    }
+    return aggregated;
+  }
+
+  private continuousStayRateKey(candidate: HotelSearchResult): string | null {
+    const provider = String(candidate.provider || '').trim().toLowerCase();
+    const hotel = this.physicalIdentity(candidate);
+    const room = String(
+      candidate.roomId ?? candidate.roomTypeId ?? candidate.roomType ?? '',
+    ).trim().toLowerCase();
+    const meal = this.exactMealPlan(candidate) || '';
+    const rateFamily = String(
+      (candidate as any).rateFamily ||
+      (candidate as any).ratePlanId ||
+      (candidate as any).rateId ||
+      (candidate as any).rateOptionId ||
+      '',
+    )
+      .toLowerCase()
+      .replace(/[:|_-]?\d{4}-\d{2}-\d{2}$/i, '')
+      .replace(/[:|_-]?\d{8}$/i, '')
+      .trim();
+    if (!provider || !hotel || !room || !meal || !rateFamily) return null;
+    return [provider, hotel, room, rateFamily, meal].join('|');
+  }
+
+  private hasFullStayNightlyRates(source: HotelSearchResult, stay: LogicalHotelStay): boolean {
+    const rates = Array.isArray((source as any).nightlyRates)
+      ? (source as any).nightlyRates
+      : Array.isArray((source as any).rateOptions)
+        ? (source as any).rateOptions.flatMap((option: any) => Array.isArray(option?.nightlyRates) ? option.nightlyRates : [])
+        : [];
+    const dates = new Set(
+      rates
+        .map((rate: any) => this.dateOnly(rate?.date || rate?.stayDate))
+        .filter(Boolean),
+    );
+    return Array.from({ length: stay.nights }, (_, index) => this.addDays(stay.checkInDate, index))
+      .every((date) => dates.has(date));
   }
 
   private expandRateOptions(base: HotelSearchResult, stay: LogicalHotelStay, sourceRouteId: number): HotelSearchResult[] {
@@ -718,6 +972,9 @@ export class HotelRecommendationPackageService {
         roomId: option.roomId ?? base.roomId,
         roomType: option.roomType || base.roomType,
         mealPlan: option.mealPlan ?? base.mealPlan,
+        mealPlanCode: option.mealPlanCode ?? (base as any).mealPlanCode,
+        rateFamily: option.rateFamily ?? (base as any).rateFamily,
+        ratePlanId: option.ratePlanId ?? (base as any).ratePlanId,
         bookingCode: option.bookingCode || base.bookingCode,
         searchReference: option.searchReference || base.searchReference,
         rateOptions: [option],
@@ -823,6 +1080,7 @@ export class HotelRecommendationPackageService {
   }
 
   private normalizeAvailability(candidate: HotelSearchResult): { ok: true } | { ok: false; reason: string } {
+    const provider = String(candidate.provider || '').trim().toLowerCase();
     const raw = String((candidate as any).availabilityStatus || '').trim().toUpperCase();
     if (['RESTRICTED'].includes(raw)) return { ok: false, reason: 'Rate is restricted for this stay.' };
     if (['STALE'].includes(raw)) return { ok: false, reason: 'Availability snapshot is stale.' };
@@ -833,7 +1091,12 @@ export class HotelRecommendationPackageService {
     const hasIdentity = Boolean(candidate.rateOptionId || (candidate as any).rateId || candidate.bookingCode || candidate.searchReference || candidate.hotelCode);
     const price = Number((candidate as any).totalStayPrice ?? 0);
     if (!hasIdentity || !Number.isFinite(price) || price <= 0) return { ok: false, reason: 'Missing valid booking identity or positive price.' };
-    if (candidate.expiresAt && new Date(candidate.expiresAt).getTime() <= Date.now()) return { ok: false, reason: 'Rate has expired.' };
+    const isDatabaseAuthoritativeAxisRate =
+      provider === 'axisrooms' &&
+      String((candidate as any).priceSource || '').trim().toUpperCase() === 'DATABASE';
+    if (!isDatabaseAuthoritativeAxisRate && candidate.expiresAt && new Date(candidate.expiresAt).getTime() <= Date.now()) {
+      return { ok: false, reason: 'Rate has expired.' };
+    }
 
     if (offline) {
       return { ok: true };
@@ -1040,19 +1303,15 @@ export class HotelRecommendationPackageService {
   }
 
   private exactMealPlan(candidate: HotelSearchResult): CanonicalHotelRatePlanCode | null {
-    const raw = String(candidate.mealPlan || '').trim();
+    const raw = String(candidate.mealPlan || (candidate as any).mealPlanCode || '').trim();
     return inferCanonicalHotelRatePlanCode(raw) || inferCanonicalHotelRatePlanCodeFromMealText(raw);
   }
 
   private normalizedCategory(candidate: HotelSearchResult): string {
     const values = [(candidate as any).category, (candidate as any).categoryName, (candidate as any).starRating, (candidate as any).rating];
     for (const value of values) {
-      if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5) return `STAR_${value}`;
-      const raw = String(value ?? '').trim();
-      if (/^(budget|std|standard)$/i.test(raw)) return 'STAR_2';
-      const match = raw.match(/^([1-5])\s*(?:\*|[- ]?star|[- ]?stars)(?:\s*[- ]?.*)?$/i);
-      if (match) return `STAR_${match[1]}`;
-      if (/^[1-5]$/.test(raw)) return `STAR_${raw}`;
+      const normalized = normalizeHotelCategoryLabel(value);
+      if (normalized !== 'UNKNOWN') return normalized;
     }
     return 'UNKNOWN';
   }
