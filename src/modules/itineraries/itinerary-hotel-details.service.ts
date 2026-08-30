@@ -962,6 +962,8 @@ async getHotelRoomDetailsByQuoteId(
       const storedTax = Number((h as any).total_hotel_tax_amount ?? 0);
       const storedMargin = Number((h as any).hotel_margin_rate ?? 0);
       const storedMarginPercentage = Number((h as any).hotel_margin_percentage ?? 0);
+      const provider = String((h as any).hotel_provider || '').trim().toLowerCase();
+      const isDatabaseOccupancyProvider = provider === 'offline' || provider === 'axisrooms';
       const snapshotMarginPercentage = Number(
         selectedPriceSnapshot.hotelMarginPercentage ??
         selectedPriceSnapshot.hotel_margin_percentage ??
@@ -973,7 +975,6 @@ async getHotelRoomDetailsByQuoteId(
         marginAmount: storedMargin,
         marginPercentage: storedMarginPercentage,
       });
-      const provider = String((h as any).hotel_provider || '').trim().toLowerCase();
       const isOffline = provider === 'offline';
       // Offline rate snapshots represent a continuous stay, while this API
       // row represents one itinerary route/night. Return the route-night
@@ -1016,9 +1017,19 @@ async getHotelRoomDetailsByQuoteId(
       const storedExtraBedCost = Number((h as any).total_extra_bed_cost ?? 0);
       const storedChildWithBedCost = Number((h as any).total_childwith_bed_cost ?? 0);
       const storedChildWithoutBedCost = Number((h as any).total_childwithout_bed_cost ?? 0);
-      const extraBedCost = (storedExtraBedCost > 0 ? storedExtraBedCost : Number(selectedPriceSnapshot.extraBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
-      const childWithBedCost = (storedChildWithBedCost > 0 ? storedChildWithBedCost : Number(selectedPriceSnapshot.childWithBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
-      const childWithoutBedCost = (storedChildWithoutBedCost > 0 ? storedChildWithoutBedCost : Number(selectedPriceSnapshot.childWithoutBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      // Offline/AxisRooms supplement values are database-authoritative. Do
+      // not revive an old selected_price_snapshot value when the current
+      // persisted DB amount is zero; zero means the required rate was not
+      // available and the option must not be priced as available.
+      const extraBedCost = (isDatabaseOccupancyProvider
+        ? storedExtraBedCost
+        : storedExtraBedCost > 0 ? storedExtraBedCost : Number(selectedPriceSnapshot.extraBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const childWithBedCost = (isDatabaseOccupancyProvider
+        ? storedChildWithBedCost
+        : storedChildWithBedCost > 0 ? storedChildWithBedCost : Number(selectedPriceSnapshot.childWithBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const childWithoutBedCost = (isDatabaseOccupancyProvider
+        ? storedChildWithoutBedCost
+        : storedChildWithoutBedCost > 0 ? storedChildWithoutBedCost : Number(selectedPriceSnapshot.childWithoutBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
       const roomCountForMargin = Math.max(
         Number((h as any).total_no_of_rooms ?? 0),
         Number((plan as any).preferred_room_count ?? 0),
@@ -1038,9 +1049,15 @@ async getHotelRoomDetailsByQuoteId(
       const hotelMarginAmount = effectiveMarginPercentage > 0
         ? Number((hotelMarginBaseAmount * effectiveMarginPercentage / 100).toFixed(2))
         : storedHotelMarginAmount;
-      const extraBedRate = Number((h as any).extra_bed_rate ?? selectedPriceSnapshot.extraBedRate ?? (extraBedCount > 0 ? extraBedCost / extraBedCount : 0));
-      const childWithBedRate = Number(selectedPriceSnapshot.childWithBedRate ?? (childWithBedCount > 0 ? childWithBedCost / childWithBedCount : 0));
-      const childWithoutBedRate = Number(selectedPriceSnapshot.childWithoutBedRate ?? (childWithoutBedCount > 0 ? childWithoutBedCost / childWithoutBedCount : 0));
+      const extraBedRate = isDatabaseOccupancyProvider
+        ? Number(extraBedCount > 0 ? extraBedCost / earlyCheckInBillingMultiplier / extraBedCount : 0)
+        : Number((h as any).extra_bed_rate ?? selectedPriceSnapshot.extraBedRate ?? (extraBedCount > 0 ? extraBedCost / extraBedCount : 0));
+      const childWithBedRate = isDatabaseOccupancyProvider
+        ? Number(childWithBedCount > 0 ? childWithBedCost / earlyCheckInBillingMultiplier / childWithBedCount : 0)
+        : Number(selectedPriceSnapshot.childWithBedRate ?? (childWithBedCount > 0 ? childWithBedCost / childWithBedCount : 0));
+      const childWithoutBedRate = isDatabaseOccupancyProvider
+        ? Number(childWithoutBedCount > 0 ? childWithoutBedCost / earlyCheckInBillingMultiplier / childWithoutBedCount : 0)
+        : Number(selectedPriceSnapshot.childWithoutBedRate ?? (childWithoutBedCount > 0 ? childWithoutBedCost / childWithoutBedCount : 0));
 
       return {
         groupType: Number((h as any).group_type ?? 0) || 0,

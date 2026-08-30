@@ -103,6 +103,84 @@ test('offline pricing does not reject a room because of configured capacity', as
   assert.equal(offers[0].totalStayPrice, 9000);
 });
 
+test('offline occupancy supplements come from DB rates and are included before margin', async () => {
+  const pricing = {
+    resolveEffectiveHotelMarginPercentage: async () => 7,
+    marginBreakdown: (value: number, marginPercentage: number) => ({
+      baseAmount: value,
+      marginPercentage,
+      marginAmount: Number((value * marginPercentage / 100).toFixed(2)),
+      sellAmount: Number((value * (1 + marginPercentage / 100)).toFixed(2)),
+    }),
+    money: (value: number) => Number(value.toFixed(2)),
+  } as any;
+  const service = new OfflineHotelCatalogService({} as any, pricing);
+  const catalogRows = {
+    roomsByHotel: new Map([[95, [{ room_ID: 951, room_type_id: 9, room_title: 'Deluxe' }]]]),
+    activeRoomTypeIds: new Set([9]),
+    ratePlansByRoom: new Map([[951, [{ room_id: 951, rateplan_id: 'CP', rateplan_name: 'CP' }]]]),
+    occupancyRatesByRoomPlan: new Map([['95|951|CP', [{
+      start_date: new Date('2099-01-01'),
+      end_date: new Date('2099-01-02'),
+      received_at: new Date('2098-01-01'),
+      occupancy_rates: {
+        DOUBLE: 3600,
+        EXTRABED: 5500,
+        CHILDWITHBED: 2200,
+        CHILDWITHOUTBED: 1600,
+      },
+    }]]]),
+  };
+  const offers = await (service as any).buildRoomOffersFromCatalogRows(
+    { hotel_id: 95 },
+    ['2099-01-01'],
+    1,
+    2,
+    2,
+    catalogRows,
+    7,
+    'CP',
+    { extraBedCount: 1, childWithBedCount: 1, childWithoutBedCount: 1 },
+  );
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].extraBedRate, 5500);
+  assert.equal(offers[0].childWithBedRate, 2200);
+  assert.equal(offers[0].childWithoutBedRate, 1600);
+  assert.equal(offers[0].nightlyBase[0], 12900);
+  assert.equal(offers[0].nightlySell[0], 13803);
+  assert.equal(offers[0].totalStayPrice, 13803);
+});
+
+test('offline option is omitted when a required DB supplement rate is missing', async () => {
+  const pricing = {
+    resolveEffectiveHotelMarginPercentage: async () => 0,
+    marginBreakdown: (value: number) => ({ baseAmount: value, marginPercentage: 0, marginAmount: 0, sellAmount: value }),
+    money: (value: number) => Number(value.toFixed(2)),
+  } as any;
+  const service = new OfflineHotelCatalogService({} as any, pricing);
+  const offers = await (service as any).buildRoomOffersFromCatalogRows(
+    { hotel_id: 95 },
+    ['2099-01-01'],
+    1,
+    2,
+    1,
+    {
+      roomsByHotel: new Map([[95, [{ room_ID: 951, room_type_id: 9, room_title: 'Deluxe' }]]]),
+      activeRoomTypeIds: new Set([9]),
+      ratePlansByRoom: new Map([[951, [{ room_id: 951, rateplan_id: 'CP', rateplan_name: 'CP' }]]]),
+      occupancyRatesByRoomPlan: new Map([['95|951|CP', [{
+        start_date: new Date('2099-01-01'),
+        end_date: new Date('2099-01-02'),
+        occupancy_rates: { DOUBLE: 3600, CHILDWITHBED: 2200 },
+      }]]]),
+    },
+    0,
+    'CP',
+    { childWithBedCount: 0, childWithoutBedCount: 1 },
+  );
+  assert.equal(offers.length, 0);
+});
+
 test('offline option uses the itinerary room count when the request omits or understates it', async () => {
   const prisma = {
     dvi_itinerary_plan_details: {
