@@ -57,6 +57,9 @@ export interface ItineraryHotelRowDto {
   baseTotalPrice?: number;
   hotelMarginPercentage?: number;
   hotelMarginAmount?: number;
+  // Canonical aggregate margin alias consumed by hotel price breakdowns.
+  // Keep this aligned with hotelMarginAmount for every provider.
+  hotelMarginTotalAmount?: number;
   hotelMarginBaseAmount?: number;
   hotelMarginGstAmount?: number;
   hotelRoomGstAmount?: number;
@@ -1035,7 +1038,21 @@ async getHotelRoomDetailsByQuoteId(
         Number((plan as any).preferred_room_count ?? 0),
         1,
       );
-      const marginRoomCost = Number((baseHotelCost * roomCountForMargin).toFixed(2));
+      // total_room_cost / snapshot.totalRoomCost is already the room-only
+      // amount for the requested room count. Do not multiply it by the room
+      // count again; doing so inflated the margin while totalHotelCost still
+      // came from the correctly persisted payable amount.
+      const persistedRoomTotal = Number(
+        selectedPriceSnapshot.totalRoomCost ??
+        selectedPriceSnapshot.total_room_cost ??
+        (h as any).total_room_cost ??
+        0,
+      );
+      const marginRoomCost = Number((
+        persistedRoomTotal > 0
+          ? persistedRoomTotal * earlyCheckInBillingMultiplier
+          : baseHotelCost * roomCountForMargin
+      ).toFixed(2));
       const hotelMarginBaseAmount = Number((
         marginRoomCost +
         Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier +
@@ -1116,6 +1133,7 @@ async getHotelRoomDetailsByQuoteId(
         childWithoutBedRate,
         hotelMarginPercentage: effectiveMarginPercentage,
         hotelMarginAmount,
+        hotelMarginTotalAmount: hotelMarginAmount,
         hotelMarginBaseAmount,
         hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
