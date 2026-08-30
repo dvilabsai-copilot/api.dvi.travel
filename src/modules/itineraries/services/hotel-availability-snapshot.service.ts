@@ -33,6 +33,7 @@ import {
   selectedOptionKeyFromRow,
   buildAutoSelectionIdentity,
   strictAutoSelectionIdentityMatches,
+  hasCommercialHotelIdentity,
 } from '../utils/hotel-selection-identity.util';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 import {
@@ -433,11 +434,89 @@ export class HotelAvailabilitySnapshotService {
       const provider = String(row?.provider || '').trim().toLowerCase();
       return row?.isBookable !== false && provider !== 'offline' && provider !== 'external';
     });
+    const effectiveCoveredRouteIds = this.buildEffectiveCoveredRouteIds(
+      routes,
+      freshRows,
+      (extraAvailability as any)?.authoritativeRecommendationRows,
+      noOfNights,
+    );
+    const emptyStayBlocks = this.buildEmptyStayBlocks(
+      routes,
+      freshRows,
+      noOfNights,
+      effectiveCoveredRouteIds,
+    );
     const providerErrors = Array.isArray((extraAvailability as any)?.providerErrors)
       ? (extraAvailability as any).providerErrors
       : [];
+    // The persisted `hotels` array contains only rows that survived selection
+    // reconciliation. After a destructive reset that can omit a complete
+    // stay's anchor row even though the fresh recommendation engine produced
+    // one in `authoritativeRecommendationRows` (for example, Pondicherry's
+    // parent route). Keep the full rate inventory in sharedHotelInventory,
+    // but expose only the missing authoritative anchors at the top level so
+    // the UI can create the day pane and then browse the shared options.
+    const authoritativeRows = Array.isArray((extraAvailability as any)?.authoritativeRecommendationRows)
+      ? (extraAvailability as any).authoritativeRecommendationRows
+      : [];
+    const routeById = new Map(
+      (routes || []).map((route: any) => [
+        Number(route?.itinerary_route_ID || 0),
+        route,
+      ]),
+    );
+    const routeDayById = new Map(
+      (routes || []).map((route: any, index: number) => [
+        Number(route?.itinerary_route_ID || 0),
+        Number(route?.day_number || route?.dayNumber || index + 1),
+      ]),
+    );
+    const normalizeAnchorRouteDate = (value: unknown): string => {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString().slice(0, 10);
+      }
+      const raw = String(value || '').trim();
+      const isoDate = raw.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+      if (isoDate) return isoDate;
+      const parsed = raw ? new Date(raw) : null;
+      return parsed && !Number.isNaN(parsed.getTime())
+        ? parsed.toISOString().slice(0, 10)
+        : '';
+    };
+    const authoritativeAnchorRows = authoritativeRows.flatMap((row: any) => {
+      const coveredRouteIds = Array.isArray(row?.routeIds)
+        ? row.routeIds.map(Number).filter((routeId: number) => routeId > 0)
+        : [Number(row?.itineraryRouteId || row?.routeId || 0)].filter((routeId) => routeId > 0);
+      return coveredRouteIds.map((routeId: number, index: number) => {
+        const route = routeById.get(routeId);
+        const routeDate = normalizeAnchorRouteDate(route?.itinerary_route_date);
+        const dayNumber = routeDayById.get(routeId) || index + 1;
+        return {
+          ...row,
+          itineraryRouteId: routeId,
+          routeId,
+          // Top-level hotel rows are day-pane anchors. Keep each projected
+          // anchor in its own route bucket so the UI renders both nights of
+          // a continuous stay; the complete multi-night identity remains in
+          // sharedHotelInventory and the original authoritative row.
+          routeIds: [routeId],
+          ...(routeDate
+            ? {
+                date: routeDate,
+                checkInDate: routeDate,
+                day: `Day ${dayNumber} | ${routeDate}`,
+              }
+            : {}),
+        };
+      });
+    });
+    const responseHotels = this.dedupeRows([
+      ...(Array.isArray((persisted as any).hotels) ? (persisted as any).hotels : []),
+      ...authoritativeAnchorRows,
+    ]);
     return {
       ...persisted,
+      hotels: responseHotels,
       hotelAvailability: {
         ...((persisted as any).hotelAvailability || {}),
         ...extraAvailability,
@@ -448,6 +527,9 @@ export class HotelAvailabilitySnapshotService {
         searchRunId,
         checkedAt: checkedAt.toISOString(),
         providerErrors,
+        totalSearchRoutes: resolveHotelRequiredRoutes(routes || [], noOfNights).length,
+        emptySearchRoutes: emptyStayBlocks.length,
+        emptyStayBlocks,
         message: providerErrors.length > 0
           ? 'Some hotel providers could not be verified. Saved selections were preserved and availability can be retried.'
           : sharedHotelInventory.length > 0
@@ -1228,27 +1310,17 @@ export class HotelAvailabilitySnapshotService {
       .filter((route: any): route is { routeId: number; dayNumber: number; date: string; destination: string } => Boolean(route));
     const hasSharedInventory = Array.isArray(availability.sharedHotelInventory);
     const sharedInventory = hasSharedInventory ? availability.sharedHotelInventory : [];
-    const legacyHotelRouteIds = new Set(
-      hotels.map((row: any) => Number(row?.itineraryRouteId || row?.routeId || 0)).filter((id: number) => id > 0),
+    const effectiveCoveredRouteIds = this.buildEffectiveCoveredRouteIds(
+      currentRoutes,
+      sharedInventory,
+      [],
+      noOfNights,
     );
-    const hasUsableInventoryForRoute = (routeId: number): boolean => sharedInventory.some((row: any) => {
-      const routeIds = Array.isArray(row?.routeIds)
-        ? row.routeIds.map((value: unknown) => Number(value)).filter((value: number) => value > 0)
-        : [Number(row?.itineraryRouteId || row?.routeId || 0)];
-      const name = String(row?.hotelName || row?.hotel_name || '').trim().toLowerCase();
-      const price = Number(row?.totalStayPrice ?? row?.totalPrice ?? row?.price ?? row?.pricePerNight ?? 0);
-      return routeIds.includes(routeId) &&
-        name && !name.includes('no hotel') && !name.includes('availability marker') &&
-        row?.isPlaceholder !== true && row?.isSelectable !== false &&
-        row?.isBookable !== false && Number.isFinite(price) && price > 0;
-    });
     // A persisted selected row is not availability evidence. Empty-state
     // blocks must be derived from the current shared supplier snapshot, or a
     // stale selection can hide a genuinely empty stay (and vice versa).
     const emptyStayBlocks = stayRoutes
-      .filter((route) => hasSharedInventory
-        ? !hasUsableInventoryForRoute(route.routeId)
-        : !legacyHotelRouteIds.has(route.routeId))
+      .filter((route) => !effectiveCoveredRouteIds.has(route.routeId))
       .map((route) => ({
         routeIds: [route.routeId],
         dayNumbers: [route.dayNumber],
@@ -2952,7 +3024,55 @@ export class HotelAvailabilitySnapshotService {
     return orderTabsForDisplay(derivedTabs);
   }
 
-  private buildEmptyStayBlocks(routes: any[], rows: any[], noOfNights: number): EmptyHotelStayBlock[] {
+  private buildEffectiveCoveredRouteIds(
+    routes: any[],
+    rows: any[],
+    authoritativeRows: any[] = [],
+    noOfNights: number,
+  ): Set<number> {
+    const covered = new Set<number>();
+    const requiredRouteIds = new Set(
+      resolveHotelRequiredRoutes(routes || [], noOfNights)
+        .map((route: any) => Number(route?.itinerary_route_ID || 0))
+        .filter((id: number) => id > 0),
+    );
+    const isCurrentUsable = (row: any): boolean => {
+      const provider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+      const amount = Number(
+        row?.totalStayPrice ?? row?.totalPrice ?? row?.totalHotelCost ??
+        row?.totalAmount ?? row?.pricePerNight ?? row?.price ?? 0,
+      );
+      return provider !== 'external' && provider !== 'system' &&
+        row?.isPlaceholder !== true && row?.isSelectable !== false &&
+        row?.isBookable !== false && Number.isFinite(amount) && amount > 0;
+    };
+    for (const row of [...(rows || []), ...(authoritativeRows || [])]) {
+      if (!isCurrentUsable(row)) continue;
+      const routeIds: number[] = Array.from(new Set(
+        (Array.isArray(row?.authoritativeRouteIds)
+          ? row.authoritativeRouteIds
+          : Array.isArray(row?.completeStayRouteIds)
+            ? row.completeStayRouteIds
+            : Array.isArray(row?.routeIds)
+              ? row.routeIds
+              : [row?.itineraryRouteId ?? row?.routeId]
+        ).map(Number).filter((id: number) => requiredRouteIds.has(id)) as number[],
+      ));
+      const isValidatedCompleteStay = row?.completeStayBookable === true ||
+        row?.hotelStayCompleteStayBookable === true ||
+        (Array.isArray(row?.authoritativeRouteIds) && row.authoritativeRecommendation === true);
+      if (isValidatedCompleteStay) routeIds.forEach((id) => covered.add(id));
+      else routeIds.slice(0, 1).forEach((id) => covered.add(id));
+    }
+    return covered;
+  }
+
+  private buildEmptyStayBlocks(
+    routes: any[],
+    rows: any[],
+    noOfNights: number,
+    effectiveCoveredRouteIds?: Set<number>,
+  ): EmptyHotelStayBlock[] {
     const eligibleRoutes = (routes || []).filter((route: any, index: number) =>
       !(index === routes.length - 1 && index >= noOfNights),
     );
@@ -2976,9 +3096,21 @@ export class HotelAvailabilitySnapshotService {
       else blocks.push({ routes: [route] });
     }
 
-    return blocks
+    const reportableBlocks = effectiveCoveredRouteIds
+      ? blocks.flatMap((block) => {
+          const uncoveredRoutes = block.routes.filter((route: any) =>
+            !effectiveCoveredRouteIds.has(Number(route.itinerary_route_ID || 0)),
+          );
+          return uncoveredRoutes.length > 0 ? [{ routes: uncoveredRoutes }] : [];
+        })
+      : blocks;
+
+    return reportableBlocks
       .filter((block) => {
         const routeIds = new Set(block.routes.map((route: any) => Number(route.itinerary_route_ID || 0)));
+        if (effectiveCoveredRouteIds) {
+          return block.routes.length > 0;
+        }
         const hasLive = rows.some((row: any) =>
           routeIds.has(Number(row.itineraryRouteId || row.routeId || 0)) &&
           String(row.provider || '').trim().toLowerCase() !== 'offline' &&
@@ -3513,6 +3645,8 @@ export class HotelAvailabilitySnapshotService {
               basePricePerNight: roomRate,
               baseHotelCost: roomRate * roomCount,
               baseTotalPrice: roomRate * roomCount,
+              roomRate,
+              totalRoomCost: roomRate * roomCount,
               extraBedCount,
               price: rawTotal,
               pricePerNight: rawTotal,
@@ -3556,6 +3690,8 @@ export class HotelAvailabilitySnapshotService {
         basePricePerNight: roomRate,
         baseHotelCost: roomRate * roomCount,
         baseTotalPrice: roomRate * roomCount,
+        roomRate,
+        totalRoomCost: roomRate * roomCount,
         extraBedCount,
         price: rawTotal,
         pricePerNight: rawTotal,
@@ -3590,17 +3726,29 @@ export class HotelAvailabilitySnapshotService {
       ? response.hotelAvailability.authoritativeRecommendationRows
       : [];
     const legacyRows = Array.isArray(response?.hotels) ? response.hotels : [];
-    const rows = [...nestedRows, ...legacyRows];
+    const isAuthoritativeRow = (row: any): boolean => {
+      const groupType = Number(row?.groupType || row?.group_type || 0);
+      return groupType >= 1 && groupType <= 4 && (
+        row?.authoritativeRecommendation === true ||
+        row?.autoSelectionCandidate === true
+      );
+    };
+    // `hotelAvailability.authoritativeRecommendationRows` is the grouped
+    // logical-stay output.  `response.hotels` is a legacy/shared-pane
+    // projection and can contain raw route-night rows with the same
+    // authoritative flags.  Merging both sources makes the reconciliation
+    // stage process unrelated candidates and can drop a valid group (most
+    // visibly, Group 2 on the second night of a continuous stay).
+    // Prefer the explicit logical rows as one source of truth; only use the
+    // legacy array when the response predates that field entirely.
+    const rows = nestedRows.some(isAuthoritativeRow) ? nestedRows : legacyRows;
     const seen = new Set<string>();
     return rows.filter((row: any) => {
       const groupType = Number(row?.groupType || row?.group_type || 0);
       const identity = `${groupType}|${row?.itineraryRouteId || row?.routeId || ''}|${row?.rateOptionId || row?.bookingCode || row?.searchReference || ''}`;
       if (seen.has(identity)) return false;
       seen.add(identity);
-      return groupType >= 1 && groupType <= 4 && (
-        row?.authoritativeRecommendation === true ||
-        row?.autoSelectionCandidate === true
-      );
+      return isAuthoritativeRow(row);
     });
   }
 
@@ -3875,10 +4023,10 @@ export class HotelAvailabilitySnapshotService {
         roomTypeName: option?.roomTypeName || option?.roomType || row?.roomTypeName,
         roomTypeId: option?.roomTypeId ?? option?.room_type_id ?? row?.roomTypeId,
         mealPlan: option?.mealPlan || option?.mealPlanCode || row?.mealPlan,
-        rateOptionId: option?.rateOptionId || option?.rate_option_id,
-        optionKey: option?.optionKey || option?.option_key,
+        rateOptionId: option?.rateOptionId || option?.rate_option_id || row?.rateOptionId || row?.rate_option_id || row?.rateId,
+        optionKey: option?.optionKey || option?.option_key || row?.optionKey || row?.option_key,
         roomId: option?.roomId || option?.room_id,
-        rateId: option?.rateId || option?.rate_id,
+        rateId: option?.rateId || option?.rate_id || row?.rateId || row?.rate_id,
         bookingCode: option?.bookingCode || row?.bookingCode,
         searchReference: option?.searchReference || row?.searchReference,
         };
@@ -3936,6 +4084,7 @@ export class HotelAvailabilitySnapshotService {
           where: { itinerary_plan_ID: Number(planId) },
           select: {
             total_adult: true,
+            preferred_room_count: true,
             total_child_with_bed: true,
             total_child_without_bed: true,
             total_extra_bed: true,
@@ -4019,14 +4168,11 @@ export class HotelAvailabilitySnapshotService {
       const authoritativeRouteIds = Array.isArray(rawRow?.authoritativeRouteIds)
         ? rawRow.authoritativeRouteIds.map(Number).filter((value: number) => value > 0)
         : [];
-      // `authoritativeParentRouteId` identifies the anchor of a validated
-      // logical stay; it is not the route on which this projection must be
-      // persisted. `generateSharedAvailabilityPackages()` emits one
-      // authoritative projection per route. Rebinding every projection to
-      // the anchor collapses the stay into the first night and prevents the
-      // second route from receiving the same logical winner.
-      const currentRouteId = Number(rawRow?.itineraryRouteId || rawRow?.routeId || 0);
-      const row = authoritativeParentRouteId > 0 && currentRouteId <= 0
+      // An authoritative recommendation represents one validated logical
+      // stay. Persist it once at its parent route with all covered routes
+      // retained in the snapshot; treating each projected route-night as an
+      // independent recommendation loses the continuous-stay selection.
+      const row = authoritativeParentRouteId > 0 && authoritativeRouteIds.length > 0
         ? {
             ...rawRow,
             itineraryRouteId: authoritativeParentRouteId,
@@ -4067,10 +4213,13 @@ export class HotelAvailabilitySnapshotService {
         String(routePricedRow.bookingMode || '').trim().toUpperCase() === 'MANUAL_APPROVAL';
       const approvalCandidate = routePricedRow.isBookable === false && approvalRequired && routePricedRow.isSelectable !== false;
       const candidate = routePricedRow?.autoSelectionCandidate === true || routePricedRow?.autoSelectionIdentity;
+      const authoritativeUnavailable = routePricedRow.authoritativeRecommendation === true &&
+        String(routePricedRow.autoSelectionStatus || routePricedRow.selectionStatus || '').trim().toUpperCase() === 'UNAVAILABLE';
       const rejectionReasons = [
         !canonicalHotelId && !this.hasSupplierIdentity(routePricedRow) ? 'missing-identity' : '',
         !routeId ? 'missing-route' : '',
         !groupType ? 'missing-group' : '',
+        authoritativeUnavailable ? 'authoritative-selection-unavailable' : '',
         routePricedRow.isBookable === false && !approvalCandidate ? 'not-bookable' : '',
         routePricedRow.isSelectable === false ? 'not-selectable' : '',
         ...missingRequiredSupplementReasons(routePricedRow),
@@ -4127,6 +4276,19 @@ export class HotelAvailabilitySnapshotService {
       });
     }
 
+    // Once the recommendation service has produced authoritative grouped
+    // candidates, this method is only a persistence guard. A missing
+    // route/date/group key means that the recommendation stage did not produce
+    // a winner for that key; copying an option from another group here would
+    // silently invent a recommendation and can break a continuous stay.
+    const hasAuthoritativeRecommendations = Array.from(optionsByKey.values()).some((bucket) =>
+      bucket.some((option: any) =>
+        option.authoritativeRecommendation === true &&
+        option.autoSelectionCandidate === true &&
+        this.autoSelectionIdentityMatches(option, option.autoSelectionIdentity),
+      ),
+    );
+
     // The inventory is shared by all recommendation groups, but automatic
     // selections must be distinct within a route. Existing manual/protected
     // selections are reserved first. Duplicate AUTO_SELECTED rows from an
@@ -4147,6 +4309,7 @@ export class HotelAvailabilitySnapshotService {
     const reserveExisting = (row: any): void => {
       const routeId = Number(row?.itinerary_route_id || 0);
       if (!routeId) return;
+      if (!hasCommercialHotelIdentity(row)) return;
       const bucket = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
       const identity = hotelIdentity(row);
       if (identity !== 'property::') bucket.add(identity);
@@ -4259,31 +4422,45 @@ export class HotelAvailabilitySnapshotService {
       // price and diversity rules. When its exact authoritative option is
       // present, persist that option unchanged; provider class must not replace
       // an exact-category offline recommendation with an unrelated live hotel.
-      const hasAuthoritativeOption = authoritativeOptions.length > 0;
+      // Never replace an authoritative result with a provider-based fallback.
+      // In particular, do not reuse a live option from another group or
+      // rebind a group-neutral row inside this persistence method. If the
+      // authoritative set is active, only its exact key may be persisted.
+      if (hasAuthoritativeRecommendations && authoritativeOptions.length === 0) {
+        if (isTargetPersistenceKey) targetPersistenceTrace.push({
+          key,
+          options: options.length,
+          authoritativeOptions: authoritativeOptions.length,
+          authoritativeGroup,
+          selectionPool: selectionPool.length,
+          skipped: 'missing-authoritative-recommendation',
+        });
+        continue;
+      }
+      // For non-authoritative legacy input, retain the existing provider
+      // precedence, but scope it to this exact route/date/group bucket. This
+      // keeps live inventory ahead of cheaper offline inventory without
+      // allowing another group's row to fill a missing key.
       const liveOptions = selectionPool.filter((option: any) =>
         String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
       );
-      const allLiveOptions = options.filter((option: any) =>
-        String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
+      // A live offer can be present in this exact route/date/group bucket
+      // under another meal plan while the offline copy is the only option
+      // matching the requested plan. Live inventory still has precedence,
+      // but the search must remain scoped to this bucket; never borrow from
+      // another recommendation group or another logical stay.
+      const scopedLiveOptions = options.filter((option: any) =>
+        String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline' &&
+        option?.isSelectable !== false &&
+        option?.isBookable !== false &&
+        option?.isPlaceholder !== true,
       );
-      const liveOptionsForStay = (optionsByRoute.get(optionRouteId) || []).filter((option: any) =>
-        String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
-      );
-      const eligibleLiveOptions = liveOptions.length > 0 ? liveOptions : allLiveOptions;
-      const liveStayFallback = liveOptionsForStay.length > 0 && eligibleLiveOptions.length === 0
-        ? liveOptionsForStay.map((option: any) => ({ ...option, groupType: options[0]?.groupType }))
-        : [];
-      // The offline fallback rule is scoped to the complete stay/day, not to
-      // one recommendation tab. If any live option exists for this route,
-      // never create an automatic offline selection for another group on the
-      // same stay. Rebind the live candidate to the current group so the
-      // recommendation package remains structurally valid.
-      const eligibleOptions = hasAuthoritativeOption
+      const eligibleOptions = authoritativeOptions.length > 0
         ? selectionPool
-        : liveStayFallback.length > 0
-          ? liveStayFallback
-          : selectionPool.length > 0 && allLiveOptions.length > 0
-            ? eligibleLiveOptions
+        : liveOptions.length > 0
+          ? liveOptions
+          : scopedLiveOptions.length > 0
+            ? scopedLiveOptions
             : selectionPool;
       if (eligibleOptions.length === 0) {
         if (isTargetPersistenceKey) targetPersistenceTrace.push({
@@ -4293,8 +4470,6 @@ export class HotelAvailabilitySnapshotService {
           authoritativeGroup,
           selectionPool: selectionPool.length,
           liveOptions: liveOptions.length,
-          allLiveOptions: allLiveOptions.length,
-          liveOptionsForStay: liveOptionsForStay.length,
           skipped: 'empty-eligible-pool',
         });
         continue;
@@ -4338,6 +4513,7 @@ export class HotelAvailabilitySnapshotService {
         authoritativeOptions: authoritativeOptions.length,
         authoritativeGroup,
         selectionPool: selectionPool.length,
+        liveOptions: liveOptions.length,
         eligibleOptions: eligibleOptions.length,
         chosen: {
           provider: option.provider,
@@ -4351,7 +4527,7 @@ export class HotelAvailabilitySnapshotService {
       reservedHotelIdsByRoute.set(routeId, reserved);
 
       const provider = String(option.provider || 'external').trim().toLowerCase();
-      const roomCount = Math.max(Number(option.roomCount || option.totalNoOfRooms || 1), 1);
+      const roomCount = Math.max(Number(option.roomCount || option.totalNoOfRooms || plan?.preferred_room_count || 1), 1);
       const persistedOptionHotelId = this.persistedHotelId(option);
       const hotelMaster = provider === 'axisrooms' && persistedOptionHotelId > 0 && tx?.dvi_hotel?.findUnique
         ? await tx.dvi_hotel.findUnique({
@@ -4360,8 +4536,23 @@ export class HotelAvailabilitySnapshotService {
           })
         : null;
       const hotelMasterMargin = Number(hotelMaster?.hotel_margin || 0);
-      const rawTotalPrice = hotelStayTotal(option, 1);
-      const rawPricePerNight = Number(option.pricePerNight ?? option.price_per_night ?? option.price ?? rawTotalPrice);
+      const authoritativeRouteIds = Array.isArray(option?.authoritativeRouteIds)
+        ? option.authoritativeRouteIds.map(Number).filter((id: number) => id > 0)
+        : [];
+      const authoritativeNightlyRates = authoritativeRouteIds.length > 1 && Array.isArray(option?.nightlyRates)
+        ? option.nightlyRates
+        : [];
+      const authoritativeNightlyPayables = authoritativeNightlyRates
+        .map((night: any) => Number(night?.sellAmount ?? night?.totalAmount ?? night?.pricePerNight ?? night?.price ?? 0))
+        .filter((amount: number) => Number.isFinite(amount) && amount > 0);
+      const hasAuthoritativeLogicalStayTotal = authoritativeRouteIds.length > 1 &&
+        authoritativeNightlyPayables.length >= authoritativeRouteIds.length;
+      const rawTotalPrice = hasAuthoritativeLogicalStayTotal
+        ? Number(authoritativeNightlyPayables.reduce((sum: number, amount: number) => sum + amount, 0).toFixed(2))
+        : hotelStayTotal(option, 1);
+      const rawPricePerNight = Number(
+        authoritativeNightlyPayables[0] || option.pricePerNight || option.price_per_night || option.price || rawTotalPrice,
+      );
       let baseTotalPrice = provider === 'staah'
         ? Math.max(Number(
             option.baseTotalPrice ??
@@ -4461,6 +4652,9 @@ export class HotelAvailabilitySnapshotService {
       let pricePerNight = baseTotalPrice > 0 && totalPrice > 0
         ? Number((totalPrice / roomCount).toFixed(2))
         : rawPricePerNight;
+      if (hasAuthoritativeLogicalStayTotal && authoritativeNightlyPayables.length > 0) {
+        pricePerNight = authoritativeNightlyPayables[0];
+      }
 
       if (provider !== 'staah' && provider !== 'axisrooms' && provider !== 'offline' && baseTotalPrice > 0) {
         totalPrice = Number((marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2));
@@ -4531,9 +4725,11 @@ export class HotelAvailabilitySnapshotService {
           roomTaxAmount = Math.max(Number(option.totalHotelTaxAmount ?? option.taxAmount ?? 0), 0);
           calculatedMargin = Number((marginBaseTotal * marginPercentage / 100).toFixed(2));
           totalPrice = Number((marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2));
-          pricePerNight = Number((totalPrice / roomCount).toFixed(2));
+          pricePerNight = totalPrice;
           option = {
             ...option,
+            roomRate: Number((baseTotalPrice / roomCount).toFixed(2)),
+            totalRoomCost: baseTotalPrice,
             basePricePerNight: Number((baseTotalPrice / roomCount).toFixed(2)),
             baseTotalPrice,
             baseHotelCost: baseTotalPrice,
@@ -4592,6 +4788,7 @@ export class HotelAvailabilitySnapshotService {
               authoritativeRouteIds: Array.isArray(option.authoritativeRouteIds) ? option.authoritativeRouteIds.map(Number) : undefined,
               authoritativeCheckInDate: option.authoritativeCheckInDate || option.checkInDate || option.date || null,
               authoritativeCheckOutDate: option.authoritativeCheckOutDate || option.checkOutDate || null,
+              nightlyRates: Array.isArray(option.nightlyRates) ? option.nightlyRates : undefined,
             } : {}),
             ...(option.itineraryMealPlanOverride === true ? {
               itineraryMealPlanOverride: true,
@@ -4812,6 +5009,7 @@ export class HotelAvailabilitySnapshotService {
           authoritativeRouteIds: Array.isArray(option.authoritativeRouteIds) ? option.authoritativeRouteIds.map(Number) : undefined,
           authoritativeCheckInDate: option.authoritativeCheckInDate || option.checkInDate || option.date || null,
           authoritativeCheckOutDate: option.authoritativeCheckOutDate || option.checkOutDate || null,
+          nightlyRates: Array.isArray(option.nightlyRates) ? option.nightlyRates : undefined,
         } : {}),
         rateOptionId: option.rateOptionId || option.optionKey || option.searchReference || option.bookingCode || null,
         extraBedCount: Number(option.extraBedCount || 0),
@@ -5027,11 +5225,8 @@ export class HotelAvailabilitySnapshotService {
     if (!rates) return 0;
     const roomRate = Number(rates[occupancyKey]);
 
-    const extraBeds = Math.max(Math.trunc(Number(plan?.total_extra_bed || 0)), 0);
-    const extraBedRate = Number(rates.EXTRABED ?? rates.EXTRAADULT ?? rates.EXTRACHILD ?? 0);
-    const total = roomRate * Math.max(roomCount, 1) +
-      (Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate * extraBeds : 0);
-    return Number.isFinite(total) && total > 0 ? Number(total.toFixed(2)) : 0;
+    const totalRoomCost = roomRate * Math.max(roomCount, 1);
+    return Number.isFinite(totalRoomCost) && totalRoomCost > 0 ? Number(totalRoomCost.toFixed(2)) : 0;
   }
 
   private async syncSelectedRoom(tx: any, selection: any, option: any, createdBy: number): Promise<void> {

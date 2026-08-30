@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { CreateItineraryDto } from '../dto/create-itinerary.dto';
 import { PlanEngineService } from '../engines/plan-engine.service';
@@ -339,6 +339,7 @@ export function shouldRebuildHotelData(result: {
 
 @Injectable()
 export class ItineraryPlanPersistenceService {
+  private readonly logger = new Logger(ItineraryPlanPersistenceService.name);
   private optimizeRouteOrderFn: ((routes: any[]) => Promise<any[]>) | null = null;
   private applySameCityOptimizerFn: ((planId: number, quoteId?: string | null) => Promise<void>) | null = null;
   private getPlanForEditFn: ((planId: number) => Promise<any>) | null = null;
@@ -1508,6 +1509,18 @@ if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
     };
     } catch (error: any) {
       const message = String(error?.message || error || 'Unknown createPlan failure');
+      this.logger.error('createPlan failed', {
+        stage: createPlanStage,
+        message,
+        errorName: error?.name,
+        planId: Number((dto as any)?.plan?.itinerary_plan_id || 0) || undefined,
+        quoteId: (dto as any)?.plan?.itinerary_quote_ID
+          ? String((dto as any).plan.itinerary_quote_ID)
+          : undefined,
+        providerStatus: error?.response?.data?.Status,
+        providerMessage: error?.response?.data?.Message,
+        stack: error?.stack,
+      });
       if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof ConflictException || error instanceof UnprocessableEntityException) {
         throw error;
       }
