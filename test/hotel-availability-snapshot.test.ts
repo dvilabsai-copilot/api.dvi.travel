@@ -474,6 +474,62 @@ test('continuous logical stay persists one parent selection and one full-stay to
   assert.equal(snapshot.rateOptionId, 'suite-map');
 });
 
+test('route-derived continuous stay keeps the online property across nights', async () => {
+  const created: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => { created.push(data); return data; },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+      updateMany: async () => ({}),
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const routes = [
+    { itinerary_route_ID: 101, itinerary_route_date: '2026-08-02', next_visiting_location: 'Thekkady' },
+    { itinerary_route_ID: 102, itinerary_route_date: '2026-08-03', next_visiting_location: 'Thekkady' },
+  ];
+  const rows = [101, 102].flatMap((routeId) => ([
+    {
+      itineraryRouteId: routeId,
+      groupType: 1,
+      provider: 'axisrooms',
+      hotelId: 501,
+      hotelCode: 'PATIO',
+      hotelName: 'The Patio',
+      rateOptionId: `patio-${routeId}`,
+      mealPlan: 'CP',
+      pricePerNight: 500,
+      totalHotelCost: 500,
+      isBookable: true,
+      isSelectable: true,
+    },
+    {
+      itineraryRouteId: routeId,
+      groupType: 1,
+      provider: 'offline',
+      hotelId: 601,
+      hotelCode: 'CHEAPER',
+      hotelName: 'Cheaper Offline Hotel',
+      rateOptionId: `offline-${routeId}`,
+      mealPlan: 'CP',
+      pricePerNight: 100,
+      totalHotelCost: 100,
+      isBookable: true,
+      isSelectable: true,
+    },
+  ]));
+
+  await (service as any).ensureAutoSelections(tx, 44, rows, 'route-derived-stay-run', 7, true, undefined, 'CP', undefined, routes);
+
+  assert.equal(created.length, 2);
+  assert.deepEqual(created.map((row) => row.hotel_provider), ['axisrooms', 'axisrooms']);
+  assert.deepEqual(created.map((row) => row.hotel_id), [501, 501]);
+});
+
 test('genuine G4 recommendation clears stale G3 fallback metadata', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const fallbackSelection: any = {

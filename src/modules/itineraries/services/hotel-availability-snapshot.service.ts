@@ -807,6 +807,7 @@ export class HotelAvailabilitySnapshotService {
           this.getPlanMealPlanCode(plan),
           this.getPlanMealPlanFlags(plan),
           failedProviders,
+          routes,
         );
       }, { maxWait: 15000, timeout: 120000 });
       logStage('selection-reconciliation', persistenceStartedAt);
@@ -3152,6 +3153,7 @@ export class HotelAvailabilitySnapshotService {
     preferredMealPlanCode?: string | null,
     preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
     failedProviders: Set<string> = new Set(),
+    routes: any[] = [],
   ): Promise<HotelAvailabilityChangeSummary> {
     const changes: HotelAvailabilityChange[] = [];
     await this.removeStaleSelectionVersions(tx, planId);
@@ -3403,6 +3405,7 @@ export class HotelAvailabilitySnapshotService {
       eligibleRouteIds,
       preferredMealPlanCode,
       preferredMealPlanFlags,
+      routes,
     );
 
     return { hasChanges: changes.length > 0, totalChanges: changes.length, changes };
@@ -4072,6 +4075,7 @@ export class HotelAvailabilitySnapshotService {
     eligibleRouteIds?: Set<number>,
     preferredMealPlanCode?: string | null,
     preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
+    routes: any[] = [],
   ): Promise<void> {
     if (!tx?.dvi_itinerary_plan_hotel_details?.findMany || !tx?.dvi_itinerary_plan_hotel_details?.create) return;
 
@@ -4305,6 +4309,45 @@ export class HotelAvailabilitySnapshotService {
     // older snapshot are retired so the next pass can fill that group with
     // the next unused hotel (or leave it unavailable when none remains).
     const reservedHotelIdsByRoute = new Map<number, Set<string>>();
+    // A continuous stay must keep the same property within a recommendation
+    // group when that property is available on every night. Route-level keys
+    // are still used for persistence, but this map prevents night 2 from
+    // switching to another property merely because its nightly price is lower.
+    const selectedPropertyByStayGroup = new Map<string, string>();
+    // Supplier rows can lose logical-stay metadata when flattened into
+    // route/night rows. Derive consecutive same-destination stays from the
+    // itinerary routes so a selected property is reused on every available
+    // night, while the group type continues to preserve recommendation
+    // diversity.
+    const stayRouteIdsByRoute = new Map<number, number[]>();
+    const orderedStayRoutes = (routes || [])
+      .map((route: any) => ({
+        id: Number(route?.itinerary_route_ID || route?.itineraryRouteId || 0),
+        date: this.toDateOnly(route?.itinerary_route_date || route?.date),
+        destination: String(route?.next_visiting_location || route?.nextVisitingLocation || route?.location_name || '')
+          .trim()
+          .toLowerCase(),
+      }))
+      .filter((route: any) => route.id > 0 && route.date && route.destination);
+    let currentStayRoutes: any[] = [];
+    for (const route of orderedStayRoutes) {
+      const previousRoute = currentStayRoutes[currentStayRoutes.length - 1];
+      const previousTime = previousRoute ? Date.parse(`${previousRoute.date}T00:00:00Z`) : NaN;
+      const routeTime = Date.parse(`${route.date}T00:00:00Z`);
+      const isConsecutiveSameDestination = Boolean(
+        previousRoute &&
+        previousRoute.destination === route.destination &&
+        Number.isFinite(previousTime) &&
+        Number.isFinite(routeTime) &&
+        routeTime - previousTime === 24 * 60 * 60 * 1000,
+      );
+      if (!isConsecutiveSameDestination) currentStayRoutes = [];
+      currentStayRoutes.push(route);
+      const stayRouteIds = currentStayRoutes.map((stayRoute: any) => stayRoute.id);
+      for (const stayRoute of currentStayRoutes) {
+        stayRouteIdsByRoute.set(stayRoute.id, stayRouteIds);
+      }
+    }
     const hotelIdentity = (option: any): string => {
       const canonicalId = Number(option?.canonicalHotelId || option?.hotelId || 0);
       if (canonicalId > 0) return `id:${canonicalId}`;
@@ -4314,6 +4357,18 @@ export class HotelAvailabilitySnapshotService {
       const provider = String(option?.provider || '').trim().toLowerCase();
       const code = String(option?.hotelCode || option?.providerHotelCode || option?.hotel_code || '').trim().toLowerCase();
       return `property:${provider}:${code}`;
+    };
+    const continuousStayGroupKey = (option: any): string => {
+      const routeIds = [
+        ...(Array.isArray(option?.authoritativeRouteIds) ? option.authoritativeRouteIds : []),
+        ...(Array.isArray(option?.completeStayRouteIds) ? option.completeStayRouteIds : []),
+        ...(Array.isArray(option?.hotelStayCompleteStayRouteIds) ? option.hotelStayCompleteStayRouteIds : []),
+      ].map(Number).filter((id: number) => id > 0);
+      const primaryRouteId = Number(option?.itineraryRouteId || option?.routeId || 0);
+      if (routeIds.length === 0 && primaryRouteId > 0) routeIds.push(primaryRouteId);
+      if (primaryRouteId > 0) routeIds.push(...(stayRouteIdsByRoute.get(primaryRouteId) || []));
+      const groupType = Number(option?.groupType || option?.group_type || 0);
+      return `${groupType}|${[...new Set(routeIds)].sort((a, b) => a - b).join(',')}`;
     };
     const existingKeys = new Set<string>();
     const reserveExisting = (row: any): void => {
@@ -4436,11 +4491,19 @@ export class HotelAvailabilitySnapshotService {
       // In particular, do not reuse a live option from another group or
       // rebind a group-neutral row inside this persistence method. If the
       // authoritative set is active, only its exact key may be persisted.
+      const hasValidOfflineFallback = options.some((option: any) =>
+        String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() === 'offline' &&
+        option?.isSelectable !== false &&
+        option?.isBookable !== false &&
+        option?.isPlaceholder !== true &&
+        missingRequiredSupplementReasons(option).length === 0,
+      );
       if (hasAuthoritativeRecommendations && authoritativeOptions.length === 0) {
         if (isTargetPersistenceKey) targetPersistenceTrace.push({
           key,
           options: options.length,
           authoritativeOptions: authoritativeOptions.length,
+          hasValidOfflineFallback,
           authoritativeGroup,
           selectionPool: selectionPool.length,
           skipped: 'missing-authoritative-recommendation',
@@ -4465,13 +4528,42 @@ export class HotelAvailabilitySnapshotService {
         option?.isBookable !== false &&
         option?.isPlaceholder !== true,
       );
+      // Provider priority is stronger than price: whenever this exact
+      // route/date/group bucket contains a selectable online offer, never
+      // auto-select a cheaper offline catalogue row. Offline is a fallback
+      // only when no online offer in the bucket can be selected.
+      const isSelectableForAutoSelection = (option: any): boolean =>
+        option?.isSelectable !== false &&
+        option?.isBookable !== false &&
+        option?.isPlaceholder !== true &&
+        missingRequiredSupplementReasons(option).length === 0;
+      const selectableOnlineOptions = selectionPool.filter((option: any) =>
+        String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline' &&
+        isSelectableForAutoSelection(option),
+      );
+      const routeScopedOnlineOptions = (optionsByRoute.get(optionRouteId) || [])
+        .filter((option: any) =>
+          String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline' &&
+          isSelectableForAutoSelection(option),
+        )
+        .map((option: any) => ({ ...option, groupType: options[0]?.groupType }));
+      // An authoritative recommendation is already the result of the
+      // category/meal-plan rules and must remain untouched. Otherwise prefer
+      // a selectable online option in this exact bucket, then an online
+      // fallback from the same continuous stay. Offline is considered only
+      // after those online pools are exhausted.
+      const hasMultiRouteStay = (stayRouteIdsByRoute.get(optionRouteId) || []).length > 1;
       const eligibleOptions = authoritativeOptions.length > 0
         ? selectionPool
-        : liveOptions.length > 0
-          ? liveOptions
-          : scopedLiveOptions.length > 0
-            ? scopedLiveOptions
-            : selectionPool;
+        : selectableOnlineOptions.length > 0
+          ? selectableOnlineOptions
+          : liveOptions.length > 0
+            ? liveOptions
+            : hasMultiRouteStay && routeScopedOnlineOptions.length > 0
+              ? routeScopedOnlineOptions
+              : scopedLiveOptions.length > 0
+                ? scopedLiveOptions
+                : selectionPool;
       if (eligibleOptions.length === 0) {
         if (isTargetPersistenceKey) targetPersistenceTrace.push({
           key,
@@ -4506,6 +4598,13 @@ export class HotelAvailabilitySnapshotService {
       });
       const routeId = Number(sortedOptions[0]?.itineraryRouteId || sortedOptions[0]?.routeId || 0);
       const reserved = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
+      const stayGroupKey = continuousStayGroupKey(sortedOptions[0]);
+      const preferredStayProperty = selectedPropertyByStayGroup.get(stayGroupKey);
+      const sameStayPropertyOptions = preferredStayProperty
+        ? sortedOptions.filter((candidate: any) => hotelIdentity(candidate) === preferredStayProperty)
+        : [];
+      const stayPropertyOption = sameStayPropertyOptions.find((candidate: any) => !reserved.has(hotelIdentity(candidate))) ||
+        sameStayPropertyOptions[0];
       const distinctOption = sortedOptions.find((candidate: any) => {
         if (!reserved.has(hotelIdentity(candidate))) return true;
         return Number(candidate.groupType || 0) === 4 &&
@@ -4515,7 +4614,7 @@ export class HotelAvailabilitySnapshotService {
       // availability requirement. Sparse routes (for example one valid
       // offline hotel for a requested category fallback) must still receive
       // an authoritative selection in every recommendation group.
-      let option = distinctOption || sortedOptions[0];
+      let option = stayPropertyOption || distinctOption || sortedOptions[0];
       if (!option) continue;
       if (isTargetPersistenceKey) targetPersistenceTrace.push({
         key,
@@ -4535,6 +4634,11 @@ export class HotelAvailabilitySnapshotService {
       });
       reserved.add(hotelIdentity(option));
       reservedHotelIdsByRoute.set(routeId, reserved);
+      const selectedStayGroupKey = continuousStayGroupKey(option);
+      const selectedStayRouteIds = selectedStayGroupKey.split('|')[1] || '';
+      if (selectedStayRouteIds.includes(',')) {
+        selectedPropertyByStayGroup.set(selectedStayGroupKey, hotelIdentity(option));
+      }
 
       const provider = String(option.provider || 'external').trim().toLowerCase();
       const roomCount = Math.max(Number(option.roomCount || option.totalNoOfRooms || plan?.preferred_room_count || 1), 1);
