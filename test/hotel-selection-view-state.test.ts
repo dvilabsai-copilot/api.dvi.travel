@@ -149,6 +149,125 @@ test('marks a partial legacy two-night group unresolved even when a numeric tota
   assert.equal(state[0].routes[1].selected, null);
 });
 
+test('keeps nightly route payable separate from the full logical-stay total', () => {
+  const nightly = (date: string) => ({
+    date,
+    baseAmount: 8008.17,
+    sellAmount: 8808.99,
+    pricePerNight: 8808.99,
+  });
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 17617.98 }],
+    rows: [{
+      ...selectedRow(10145, {
+        provider: 'tbo',
+        canonicalHotelId: 999,
+        hotelName: 'Hotel Surguru',
+        selectionOrigin: 'AUTO_SELECTED',
+        completeStayBookable: true,
+        completeStayRouteIds: [10145, 10146],
+        selectedPriceSnapshot: {
+          provider: 'tbo',
+          roomCount: 1,
+          baseTotalPrice: 8008.17,
+          hotelMarginPercentage: 10,
+          pricePerNight: 8808.99,
+          totalPrice: 8808.99,
+          nightlyRates: [nightly('2026-08-12'), nightly('2026-08-13')],
+        },
+      }),
+    }],
+    requiredRoutes: routes,
+  });
+
+  assert.deepEqual(state[0].routes.map((route) => route.selected?.pricePerNight), [8808.99, 8808.99]);
+  assert.equal(state[0].routes[0].selected?.selectedTotalPrice, 17617.98);
+  assert.equal(state[0].totalAmount, 17617.98);
+});
+
+test('does not treat an empty persisted placeholder as a selected hotel', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 2, label: 'Recommended #2', totalAmount: 100 }],
+    rows: [{
+      groupType: 2, itineraryRouteId: 10145, date: '2026-08-12', selectionId: 21918,
+      isSelected: false, hotelId: 0, hotelName: '', provider: null,
+    }],
+    requiredRoutes: [{ routeId: 10145, routeDate: '2026-08-12' }],
+  });
+
+  assert.equal(state[0].routes[0].selectionStatus, 'UNRESOLVED');
+  assert.equal(state[0].routes[0].selected, null);
+});
+
+test('canonical room pricing wins over stale nightly baseAmount', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 40068 }],
+    rows: [{
+      groupType: 1, itineraryRouteId: 11326, date: '2026-09-03', provider: 'axisrooms',
+      hotelId: 232, hotelCode: 'AURUM', hotelName: 'AURUM RESORT', roomType: 'Garden Cottage',
+      mealPlan: 'CP', isSelected: true, selectionOrigin: 'AUTO_SELECTED',
+      selectedPriceSnapshot: {
+        provider: 'axisrooms', roomRate: 6800, roomCount: 2, totalRoomCost: 13600,
+        baseTotalPrice: 12100, extraBedAmount: 3500, childWithBedAmount: 1000,
+        childWithoutBedAmount: 800, hotelMarginPercentage: 6,
+        nightlyRates: [{ date: '2026-09-03', baseAmount: 12100, sellAmount: 12100 }],
+      },
+    }],
+    requiredRoutes: [{ routeId: 11326, routeDate: '2026-09-03' }],
+  });
+
+  assert.equal(state[0].routes[0].selected?.totalPrice, 20034);
+  assert.equal(state[0].routes[0].selected?.selectedPriceSnapshot?.totalRoomCost, 13600);
+});
+
+test('projects one persisted continuous-stay selection to every authoritative route', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 8140 }],
+    rows: [{
+      groupType: 1,
+      itineraryRouteId: 11285,
+      date: '2026-09-01',
+      provider: 'axisrooms',
+      hotelCode: '435',
+      hotelName: 'CLOUDS VALLEY',
+      roomType: 'Valley View Double',
+      mealPlan: 'CP',
+      isSelected: true,
+      selectionOrigin: 'AUTO_SELECTED',
+      selectedPriceSnapshot: JSON.stringify({
+        provider: 'axisrooms',
+        hotelCode: '435',
+        hotelName: 'CLOUDS VALLEY',
+        roomType: 'Valley View Double',
+        mealPlan: 'CP',
+        authoritativeStayKey: '11285|2026-09-01|2026-09-03',
+        authoritativeParentRouteId: 11285,
+        authoritativeRouteIds: [11285, 11286],
+        authoritativeCheckInDate: '2026-09-01',
+        authoritativeCheckOutDate: '2026-09-03',
+        totalRooms: 1,
+        hotelMarginPercentage: 0,
+        nightlyRates: [
+          { date: '2026-09-01', baseAmount: 3960, sellAmount: 3960 },
+          { date: '2026-09-02', baseAmount: 4180, sellAmount: 4180 },
+        ],
+        baseTotalPrice: 3960,
+        pricePerNight: 3960,
+        totalPrice: 8140,
+      }),
+    }],
+    requiredRoutes: [
+      { routeId: 11285, routeDate: '2026-09-01' },
+      { routeId: 11286, routeDate: '2026-09-02' },
+    ],
+  });
+
+  assert.deepEqual(state[0].routes.map((route) => route.selectionStatus), ['SELECTED', 'SELECTED']);
+  assert.deepEqual(state[0].routes.map((route) => route.selected?.hotelName), ['CLOUDS VALLEY', 'CLOUDS VALLEY']);
+  assert.equal(state[0].routes[1].selected?.selectedPriceSnapshot?.baseTotalPrice, 4180);
+  assert.equal(state[0].routes[1].selected?.totalPrice, 4180);
+});
+
 test('returns explicit unavailable route state without exposing a fake selected object', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 0 }],
@@ -326,6 +445,7 @@ test('serializes the complete hard-reload selected-row contract', () => {
       'canonicalHotelId', 'hotelCode', 'hotelMarginAmount', 'hotelMarginBaseAmount', 'hotelMarginPercentage', 'hotelName', 'mealPlan', 'pricePerNight',
       'provider', 'providerHotelCode', 'rateOptionId', 'selectedPriceSnapshot',
       'selectionKey', 'supplierBookingCode', 'totalPrice', 'roomType',
+      'roomRate', 'totalRoomCost', 'selectedPricePerNight', 'selectedTotalPrice',
     ].sort(),
   );
 });

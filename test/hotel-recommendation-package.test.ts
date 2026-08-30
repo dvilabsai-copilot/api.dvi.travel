@@ -168,6 +168,11 @@ test('aggregates verified route-night rows into one continuous stay at actual ni
     ['2026-09-01', 3960],
     ['2026-09-02', 4180],
   ]);
+  assert.deepEqual(selected.nightlyRates?.map((rate) => (rate as any).rateOptionId), [
+    'clouds-cp-2026-09-01',
+    'clouds-cp-2026-09-02',
+  ]);
+  assert.deepEqual(selected.nightlyRates?.map((rate) => (rate as any).routeId), [11275, 11276]);
 });
 
 test('does not fabricate a continuous stay from a parent row copied across routes', () => {

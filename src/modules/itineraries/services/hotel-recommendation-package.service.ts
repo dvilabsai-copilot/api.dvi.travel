@@ -886,13 +886,9 @@ export class HotelRecommendationPackageService {
           (left, right) => Number(left.totalStayPrice || 0) - Number(right.totalStayPrice || 0),
         )[0],
       );
-      const nightlyRates = selected.map((candidate) => ({
-        date: this.dateOnly((candidate as any).checkInDate || (candidate as any).date),
-        baseAmount: Number((candidate as any).basePricePerNight ?? candidate.pricePerNight ?? candidate.price ?? 0),
-        sellAmount: Number(candidate.totalStayPrice || 0),
-      }));
+      const nightlyRates = selected.map((candidate) => this.projectNightlyRate(candidate));
       const first = selected[0];
-      const total = this.money(nightlyRates.reduce((sum, rate) => sum + rate.sellAmount, 0));
+      const total = this.money(nightlyRates.reduce((sum, rate) => sum + Number(rate.sellAmount || 0), 0));
       aggregated.push({
         ...first,
         routeId: stay.parentRouteId,
@@ -911,6 +907,80 @@ export class HotelRecommendationPackageService {
       } as any as HotelSearchResult);
     }
     return aggregated;
+  }
+
+  /**
+   * Preserve the complete commercial identity of each physical night. The
+   * recommendation algorithm selects one logical stay, but downstream reset
+   * persistence needs the exact rate option for every route in that stay.
+   * Keeping this data on nightlyRates prevents the anchor night's identity or
+   * totals from being reused for later route rows.
+   */
+  private projectNightlyRate(candidate: HotelSearchResult): Record<string, unknown> {
+    const source = candidate as any;
+    const snapshot: Record<string, unknown> = {
+      date: this.dateOnly(source.checkInDate || source.date),
+      routeId: Number(source.routeId || source.itineraryRouteId || 0) || undefined,
+      itineraryRouteId: Number(source.itineraryRouteId || source.routeId || 0) || undefined,
+      itineraryRouteDate: source.itineraryRouteDate,
+      provider: source.provider,
+      providerDisplayName: source.providerDisplayName,
+      canonicalHotelId: source.canonicalHotelId,
+      providerHotelCode: source.providerHotelCode,
+      hotelCode: source.hotelCode,
+      hotelName: source.hotelName,
+      roomId: source.roomId,
+      roomTypeId: source.roomTypeId,
+      roomType: source.roomType,
+      mealPlan: source.mealPlan,
+      mealPlanCode: source.mealPlanCode,
+      rateFamily: source.rateFamily,
+      ratePlanId: source.ratePlanId,
+      rateId: source.rateId,
+      rateOptionId: source.rateOptionId,
+      bookingCode: source.bookingCode,
+      searchReference: source.searchReference,
+      selectionKey: source.selectionKey,
+      bookingMode: source.bookingMode,
+      priceSource: source.priceSource,
+      pricePerNight: Number(source.pricePerNight ?? source.price ?? 0),
+      totalPrice: Number(source.totalStayPrice ?? source.totalPrice ?? source.pricePerNight ?? source.price ?? 0),
+      totalStayPrice: Number(source.totalStayPrice ?? source.totalPrice ?? source.pricePerNight ?? source.price ?? 0),
+      basePricePerNight: Number(source.basePricePerNight ?? source.pricePerNight ?? source.price ?? 0),
+      baseTotalPrice: Number(source.baseTotalPrice ?? source.basePricePerNight ?? source.pricePerNight ?? source.price ?? 0),
+      extraBedCount: source.extraBedCount,
+      extraBedRate: source.extraBedRate,
+      extraBedAmount: source.extraBedAmount,
+      childWithBedCount: source.childWithBedCount,
+      childWithBedRate: source.childWithBedRate,
+      childWithBedAmount: source.childWithBedAmount,
+      childWithoutBedCount: source.childWithoutBedCount,
+      childWithoutBedRate: source.childWithoutBedRate,
+      childWithoutBedAmount: source.childWithoutBedAmount,
+      extraChildCount: source.extraChildCount,
+      extraChildRate: source.extraChildRate,
+      extraChildAmount: source.extraChildAmount,
+      hotelMarginPercentage: source.hotelMarginPercentage,
+      hotelMarginAmount: source.hotelMarginAmount,
+      hotelMarginStayAmount: source.hotelMarginStayAmount,
+      hotelMarginTotalAmount: source.hotelMarginTotalAmount,
+      amountIncludesHotelMargin: source.amountIncludesHotelMargin,
+      pricingIncludesHotelMargin: source.pricingIncludesHotelMargin,
+      isLiveRate: source.isLiveRate,
+      isLiveBookable: source.isLiveBookable,
+      isSelectable: source.isSelectable,
+      isBookable: source.isBookable,
+      availabilityStatus: source.availabilityStatus,
+      availabilityMessage: source.availabilityMessage,
+      availableDates: source.availableDates,
+      unavailableDates: source.unavailableDates,
+    };
+
+    const baseAmount = Number(snapshot.basePricePerNight || 0);
+    const sellAmount = Number(snapshot.totalStayPrice || 0);
+    snapshot.baseAmount = baseAmount;
+    snapshot.sellAmount = sellAmount;
+    return Object.fromEntries(Object.entries(snapshot).filter(([, value]) => value !== undefined));
   }
 
   private continuousStayRateKey(candidate: HotelSearchResult): string | null {

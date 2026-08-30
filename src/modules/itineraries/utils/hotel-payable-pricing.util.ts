@@ -120,6 +120,13 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     ...option,
     basePricePerNight: basePerNight,
     baseTotalPrice: baseTotal,
+    // Canonical room pricing is provider-neutral: the room rate is one
+    // room's pure charge for one physical night, while totalRoomCost is the
+    // room-only amount for the requested room count.  Supplier-specific
+    // adapters may already provide these values, but legacy TBO/VSR rows do
+    // not, so normalize them here instead of making React infer them.
+    roomRate: positive(option?.roomRate, option?.room_rate, basePerNight),
+    totalRoomCost: positive(option?.totalRoomCost, option?.total_room_cost, baseTotal),
     hotelMarginPercentage: marginPercentage,
     hotelMarginAmount: marginPerNight,
     hotelMarginStayAmount: marginTotal,

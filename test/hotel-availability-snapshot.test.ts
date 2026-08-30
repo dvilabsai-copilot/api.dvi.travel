@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HotelAvailabilitySnapshotService } from '../src/modules/itineraries/services/hotel-availability-snapshot.service';
 import { autoSelectionIdentityMatches, hotelOptionKey, hotelSelectionKeyFromRow, selectionOriginFromRow } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
+import { projectHotelPayablePricing } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
 
 function makePrisma() {
   const persistedRow = {
@@ -96,6 +97,46 @@ test('AxisRooms DOUBLE price is resolved from the matching occupancy row', async
   );
 
   assert.equal(base, 3500);
+});
+
+test('AxisRooms base price is pure room cost and uses the plan room count', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const tx = {
+    dvi_hotel_occupancy_rate: {
+      findMany: async () => [{
+        occupancy_rates: JSON.stringify({ DOUBLE: 6800, EXTRABED: 3500 }),
+      }],
+    },
+  } as any;
+
+  const base = await (service as any).resolveAxisRoomsBasePrice(
+    tx,
+    { provider: 'axisrooms', canonicalHotelId: 231, roomId: 604,
+      rateOptionId: 'axisrooms:231:604:CP_PLAN:2026-09-01', date: '2026-09-01' },
+    { total_adult: 5, preferred_room_count: 2, total_extra_bed: 1 },
+    2,
+  );
+
+  assert.equal(base, 13600);
+});
+
+test('nested STAAH authoritative rate inherits only omitted parent identity fields', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const rows = (service as any).expandRateOptions([{
+    provider: 'staah', canonicalHotelId: 232, providerHotelCode: 'STAAHTESTHOTELPROD',
+    roomId: 'DELUXEROOM', rateId: 'CP_PLAN', mealPlan: 'CP',
+    rateOptionId: 'CP_PLAN', autoSelectionCandidate: true,
+    autoSelectionIdentity: {
+      provider: 'staah', canonicalHotelId: 232, providerHotelCode: 'STAAHTESTHOTELPROD',
+      rateOptionId: 'CP_PLAN', roomId: 'DELUXEROOM', rateId: 'CP_PLAN', mealPlan: 'CP',
+    },
+    rateOptions: [{ roomId: 'DELUXEROOM', rateId: 'CP_PLAN', searchReference: '2026-09-03-token' }],
+  }]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].rateOptionId, 'CP_PLAN');
+  assert.equal(rows[0].searchReference, '2026-09-03-token');
+  assert.equal(rows[0].autoSelectionCandidate, true);
 });
 
 test('persisted hotel read never invokes a live supplier', async () => {
@@ -316,7 +357,11 @@ test('authoritative unavailable groups do not invent a cheapest automatic select
       findMany: async () => [],
       create: async ({ data }: any) => { created.push(data); return data; },
     },
-    dvi_itinerary_plan_hotel_room_details: { updateMany: async () => ({}) },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async () => ({}),
+      updateMany: async () => ({}),
+    },
   };
 
   await (service as any).ensureAutoSelections(tx, 44, [{
@@ -408,6 +453,10 @@ test('continuous logical stay persists one parent selection and one full-stay to
     provider: 'tbo', hotelId: 501, hotelCode: 'H-501', hotelName: 'Hotel A',
     rateOptionId: 'suite-map', roomId: 'suite', roomType: 'Suite', rateId: 'map-rate', mealPlan: 'MAP',
     pricePerNight: 2500, totalStayPrice: 5000,
+    nightlyRates: [
+      { date: '2026-08-02', baseAmount: 2400, sellAmount: 2500 },
+      { date: '2026-08-03', baseAmount: 2400, sellAmount: 2500 },
+    ],
     checkInDate: '2026-08-02', checkOutDate: '2026-08-04',
     isBookable: true, isSelectable: true,
   }], 'logical-stay-run', 7);
@@ -418,6 +467,10 @@ test('continuous logical stay persists one parent selection and one full-stay to
   const snapshot = JSON.parse(created[0].selected_price_snapshot);
   assert.equal(snapshot.authoritativeStayKey, '101|2026-08-02|2026-08-04');
   assert.deepEqual(snapshot.authoritativeRouteIds, [101, 102]);
+  assert.deepEqual(snapshot.nightlyRates, [
+    { date: '2026-08-02', baseAmount: 2400, sellAmount: 2500 },
+    { date: '2026-08-03', baseAmount: 2400, sellAmount: 2500 },
+  ]);
   assert.equal(snapshot.rateOptionId, 'suite-map');
 });
 
@@ -1225,7 +1278,7 @@ test('persisted read omits missing-night placeholders and reports empty routes a
 
   assert.equal(response.hotels.length, 1);
   assert.equal(response.hotels.some((row: any) => row.hotelName === 'No Hotels Available'), false);
-  assert.equal((response.hotelAvailability as any)?.emptySearchRoutes, 1);
+  assert.equal((response.hotelAvailability as any)?.emptySearchRoutes, 2);
   assert.equal((response.hotelAvailability as any)?.placeholderRowCount, 0);
 });
 
@@ -1647,6 +1700,40 @@ test('initial availability creates one canonical auto-selection per missing stay
   assert.equal(createdRooms.length, 1);
   assert.equal(createdRooms[0].hotel_id, 987);
   assert.equal(createdRooms[0].room_id, 0);
+});
+
+test('empty persisted placeholder does not reserve an authoritative recommendation key', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ preferred_room_count: 2, total_adult: 5 }),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [{ itinerary_plan_hotel_details_ID: 21918, itinerary_route_id: 11326,
+        itinerary_route_date: '2026-09-03', group_type: 2, hotel_id: 0, hotel_code: null,
+        hotel_provider: null, selected_price_snapshot: null }],
+      create: async ({ data }: any) => { createdSelections.push(data); return { ...data, itinerary_plan_hotel_details_ID: 21919 }; },
+    },
+    dvi_itinerary_plan_hotel_room_details: { findMany: async () => [], create: async ({ data }: any) => data },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const option: any = {
+    itineraryRouteId: 11326, groupType: 2, date: '2026-09-03', provider: 'staah',
+    hotelId: 232, hotelCode: 'STAAH-232', hotelName: 'STAAH TEST HOTEL PROD',
+    roomType: 'Garden Cottage', mealPlan: 'CP', rateOptionId: 'rate-2026-09-03',
+    totalHotelCost: 20034, pricePerNight: 20034, isBookable: true, isSelectable: true,
+    authoritativeRecommendation: true, autoSelectionCandidate: true,
+    authoritativeParentRouteId: 11326, authoritativeRouteIds: [11326, 11327],
+    authoritativeCheckInDate: '2026-09-03', authoritativeCheckOutDate: '2026-09-05',
+  };
+  option.autoSelectionIdentity = { provider: 'staah', canonicalHotelId: 232,
+    providerHotelCode: 'STAAH-232', rateOptionId: 'rate-2026-09-03', mealPlan: 'CP' };
+
+  await (service as any).ensureAutoSelections(tx, 44, [option], 'placeholder-run', 7);
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_id, 232);
+  assert.equal(createdSelections[0].group_type, 2);
 });
 
 test('initial availability persists the authoritative offline category selection even when live inventory exists', async () => {
@@ -2338,7 +2425,7 @@ test('live reconciliation falls back to offline inventory only when live is abse
   assert.equal(createdSelections[0].hotel_provider, 'offline');
 });
 
-test('stay-level live inventory prevents offline auto-selection across recommendation groups', async () => {
+test('stay-level live inventory does not fabricate a missing recommendation group', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
     dvi_itinerary_plan_hotel_details: {
@@ -2375,13 +2462,23 @@ test('stay-level live inventory prevents offline auto-selection across recommend
     hotelId: 988,
     hotelCode: 'LIVE-988',
     hotelName: 'Live Hotel',
+    mealPlan: 'CP',
     totalHotelCost: 1800,
     isBookable: true,
     isSelectable: true,
+    authoritativeRecommendation: true,
+    autoSelectionCandidate: true,
+    autoSelectionIdentity: {
+      provider: 'staah',
+      canonicalHotelId: 988,
+      providerHotelCode: 'LIVE-988',
+      mealPlan: 'CP',
+    },
   }], 'stay-live-run', 7);
 
-  assert.equal(createdSelections.length, 2);
-  assert.equal(createdSelections.every((row: any) => row.hotel_provider === 'staah'), true);
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_provider, 'staah');
+  assert.equal(createdSelections[0].group_type, 2);
 });
 
 test('automatic replacement prefers live providers even when offline is cheaper', async () => {
@@ -2543,6 +2640,54 @@ test('empty availability is reported as one continuous destination stay block', 
     dates: ['2026-07-29', '2026-07-30'],
     destination: 'Kabini',
   }]);
+});
+
+test('validated complete logical child route is excluded from empty diagnostics', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const routes = [
+    { itinerary_route_ID: 101, itinerary_route_date: new Date('2026-09-04T00:00:00.000Z'), next_visiting_location: 'Pondicherry' },
+    { itinerary_route_ID: 102, itinerary_route_date: new Date('2026-09-05T00:00:00.000Z'), next_visiting_location: 'Pondicherry' },
+  ];
+  const rows = [{
+    itineraryRouteId: 101,
+    provider: 'staah',
+    hotelName: 'Hotel X',
+    totalPrice: 8808.99,
+    completeStayBookable: true,
+    completeStayRouteIds: [101, 102],
+  }];
+  const covered = (service as any).buildEffectiveCoveredRouteIds(routes, rows, [], 2);
+  const blocks = (service as any).buildEmptyStayBlocks(routes, rows, 2, covered);
+  assert.deepEqual([...covered].sort(), [101, 102]);
+  assert.deepEqual(blocks, []);
+});
+
+test('missing physical logical-stay route remains in empty diagnostics', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const routes = [
+    { itinerary_route_ID: 101, itinerary_route_date: new Date('2026-09-04T00:00:00.000Z'), next_visiting_location: 'Thekkady' },
+    { itinerary_route_ID: 102, itinerary_route_date: new Date('2026-09-05T00:00:00.000Z'), next_visiting_location: 'Thekkady' },
+  ];
+  const rows = [{ itineraryRouteId: 101, provider: 'staah', hotelName: 'Hotel X', totalPrice: 5000 }];
+  const covered = (service as any).buildEffectiveCoveredRouteIds(routes, rows, [], 2);
+  const blocks = (service as any).buildEmptyStayBlocks(routes, rows, 2, covered);
+  assert.deepEqual([...covered], [101]);
+  assert.deepEqual(blocks.map((block: any) => block.routeIds), [[102]]);
+});
+
+test('TBO selection normalization exposes canonical room pricing', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const projected = projectHotelPayablePricing({
+    provider: 'tbo',
+    totalStayPrice: 1562.37,
+    roomCount: 1,
+    isSelected: true,
+  }, 10);
+  assert.equal(projected.roomRate, 1562.37);
+  assert.equal(projected.totalRoomCost, 1562.37);
+  assert.equal(projected.hotelMarginBaseAmount, 1562.37);
+  assert.equal(projected.hotelMarginAmount, 156.24);
+  assert.equal(projected.totalPrice, 1718.61);
 });
 test('property reconciliation keeps the current availability price', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);

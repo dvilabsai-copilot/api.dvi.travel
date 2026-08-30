@@ -4952,11 +4952,22 @@ this.logger.log(
     // Do not use the itinerary-wide noOfNights here: that value belongs to
     // the complete itinerary and caused a two-night amount to be stored on
     // each individual route row.
-    const getRouteNightHotel = (hotel: any): { hotel: any; nights: number } => {
-      const routeId = Number(hotel?.routeId || hotel?.itineraryRouteId || 0);
+    const getRouteNightHotel = (hotel: any, projectedRouteId?: number): { hotel: any; nights: number } => {
+      const routeId = Number(projectedRouteId || hotel?.routeId || hotel?.itineraryRouteId || 0);
       const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === routeId);
+      const routeNight = Array.isArray(hotel?.nightlyRates)
+        ? hotel.nightlyRates.find((night: any) => {
+            const date = hotelDateOnly(
+              night?.date || night?.checkInDate || night?.hotelCheckInDate || night?.itineraryRouteDate,
+            );
+            const nightRouteId = Number(night?.routeId || night?.itineraryRouteId || 0);
+            return (routeId > 0 && nightRouteId > 0 && nightRouteId === routeId) ||
+              (date && date === hotelDateOnly(route?.itinerary_route_date));
+          })
+        : null;
       const checkInDate = hotelDateOnly(
-        hotel?.checkInDate || hotel?.check_in_date || hotel?.date || route?.itinerary_route_date,
+        routeNight?.date || routeNight?.checkInDate || routeNight?.hotelCheckInDate ||
+          hotel?.checkInDate || hotel?.check_in_date || hotel?.date || route?.itinerary_route_date,
       );
       const nextNightDate = checkInDate
         ? (() => {
@@ -4966,23 +4977,44 @@ this.logger.log(
           })()
         : null;
       const checkOutDate = hotelDateOnly(
-        hotel?.checkOutDate || hotel?.check_out_date ||
+        routeNight?.checkOutDate || routeNight?.hotelCheckOutDate || hotel?.checkOutDate || hotel?.check_out_date ||
           nextNightDate,
       );
-      const isOffline = String(hotel?.provider || '').trim().toLowerCase() === 'offline';
-      const routeNight = isOffline && Array.isArray(hotel?.nightlyRates)
-        ? hotel.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === checkInDate)
-        : null;
       const roomCount = Math.max(Number(hotel?.roomCount || hotel?.noOfRooms || hotel?.total_no_of_rooms || 1), 1);
+      const routeRateOptionId = String(
+        routeNight?.rateOptionId || routeNight?.rate_option_id || routeNight?.bookingCode ||
+          routeNight?.searchReference || '',
+      ).trim();
+      const routeRateOption = routeNight
+        ? {
+            ...hotel,
+            ...routeNight,
+            ...(checkInDate ? { checkInDate } : {}),
+            ...(checkOutDate ? { checkOutDate } : {}),
+            routeId,
+            itineraryRouteId: routeId,
+          }
+        : null;
       return {
         hotel: {
           ...hotel,
+          ...(routeId > 0 ? {
+            routeId,
+            itineraryRouteId: routeId,
+            routeIds: [routeId],
+          } : {}),
           ...(checkInDate ? { checkInDate } : {}),
           ...(checkOutDate ? { checkOutDate } : {}),
           ...(routeNight ? {
-            // The offer remains a continuous stay, but this package row is a
-            // single route/night. Project only the per-night fields here;
-            // totalStayPrice/price remain available for package totals.
+            // A selected logical stay carries one exact supplier option per
+            // night. Project that option before pricing/persistence so the
+            // second route cannot inherit the anchor night's rate.
+            ...routeNight,
+            ...(routeRateOptionId ? {
+              rateOptions: [routeRateOption],
+              selectedRateOptionId: routeRateOptionId,
+              selected_rate_option_id: routeRateOptionId,
+            } : {}),
             basePricePerNight: Number((Number(routeNight.baseAmount || 0) / roomCount).toFixed(2)),
             baseTotalPrice: Number(routeNight.baseAmount || 0),
             pricePerNight: Number(routeNight.sellAmount || 0),
@@ -5032,6 +5064,9 @@ this.logger.log(
       label: `Recommended #${Number(pkg.groupType || 0)}`,
     }));
 
+    // Keep the shared pane inventory separate from authoritative selections.
+    // The pane must show every fetched offer, while reset persistence must use
+     // only the grouped logical-stay rows built above.
     const pricedAvailabilityPackages = allAvailabilityPackages.map((pkg) => ({
       ...pkg,
       groupType: Number(pkg.groupType || 0),
@@ -5043,11 +5078,46 @@ this.logger.log(
     }));
 
     // This is the only authoritative source used by the reset coordinator to
-    // persist automatic selections. Keep it alongside the shared inventory so
-    // a route can be repaired without treating a group-neutral pane row as a
-    // persisted recommendation.
-    const authoritativeRecommendationRows = pricedAvailabilityPackages.flatMap((pkg: any) =>
-      (pkg.hotels || []).filter((hotel: any) => hotel.autoSelectionCandidate === true),
+    // persist automatic selections. It must come from the selected logical
+     // stays, never from group-neutral shared-pane inventory. One row is
+     // emitted per logical stay; its nightlyRates carries the exact supplier
+     // option for every covered route-night.
+    const authoritativeRecommendationRows = packages.flatMap((pkg: any) =>
+      (pkg.stayResults || [])
+        .filter((stay: any) => stay?.state !== 'UNAVAILABLE' && stay?.hotel)
+        .flatMap((stay: any) => {
+          const routeIds = Array.from(new Set(
+            (Array.isArray(stay.routeIds) ? stay.routeIds : [stay.parentRouteId])
+              .map(Number)
+              .filter((routeId: number) => routeId > 0),
+          ));
+           const parentRouteId = Number(stay.parentRouteId || routeIds[0] || 0);
+           const logicalHotel = {
+             ...stay.hotel,
+             routeId: parentRouteId,
+             itineraryRouteId: parentRouteId,
+             routeIds,
+             checkInDate: stay.checkInDate,
+             checkOutDate: stay.checkOutDate,
+           };
+           const pricedHotel = priceHotelStay(logicalHotel, stay.nights);
+           return [{
+             ...pricedHotel,
+             routeId: parentRouteId,
+             itineraryRouteId: parentRouteId,
+             routeIds,
+             groupType: Number(pkg.groupType || 0),
+             authoritativeRecommendation: true,
+             autoSelectionCandidate: true,
+             autoSelectionStatus: 'AVAILABLE',
+             authoritativeStayKey: stay.stayKey,
+             authoritativeParentRouteId: parentRouteId || undefined,
+             authoritativeRouteIds: routeIds,
+             authoritativeCheckInDate: stay.checkInDate,
+             authoritativeCheckOutDate: stay.checkOutDate,
+             autoSelectionIdentity: buildAutoSelectionIdentity(pricedHotel),
+           }];
+         }),
     );
     if (String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim() === 'true') {
       const targetRoutes = new Set([11275, 11276]);
@@ -5062,10 +5132,12 @@ this.logger.log(
         rateOptionId: row?.rateOptionId,
       });
       this.logger.log(`[HOTEL_RECOMMENDATION_TRACE] authoritativeRecommendationRows ${JSON.stringify({
-        packageCounts: pricedAvailabilityPackages.map((pkg: any) => ({
+        packageCounts: packages.map((pkg: any) => ({
           groupType: Number(pkg.groupType || 0),
-          hotels: Array.isArray(pkg.hotels) ? pkg.hotels.length : 0,
-          candidates: Array.isArray(pkg.hotels) ? pkg.hotels.filter((h: any) => h.autoSelectionCandidate === true).length : 0,
+          stays: Array.isArray(pkg.stayResults) ? pkg.stayResults.length : 0,
+          selectedStays: Array.isArray(pkg.stayResults)
+            ? pkg.stayResults.filter((stay: any) => stay?.state !== 'UNAVAILABLE' && stay?.hotel).length
+            : 0,
         })),
         targetRows: authoritativeRecommendationRows.filter((row: any) => targetRoutes.has(Number(row?.routeId || row?.itineraryRouteId || 0))).map(summarize),
         total: authoritativeRecommendationRows.length,

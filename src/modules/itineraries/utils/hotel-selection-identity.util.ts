@@ -178,6 +178,24 @@ export function normalizeHotelDisplayName(value: unknown): string {
     .trim();
 }
 
+/** A persistence id alone is not enough to make a row a selected hotel. */
+export function hasCommercialHotelIdentity(row: any): boolean {
+  const snapshot = parseHotelSelectionSnapshot(row);
+  const hotelId = Number(
+    row?.canonicalHotelId ?? row?.canonical_hotel_id ?? row?.hotelId ?? row?.hotel_id ??
+      snapshot.canonicalHotelId ?? snapshot.hotelId ?? 0,
+  );
+  if (Number.isInteger(hotelId) && hotelId > 0) return true;
+  const providerCode = String(
+    row?.providerHotelCode ?? row?.provider_hotel_code ?? row?.hotelCode ?? row?.hotel_code ??
+      snapshot.providerHotelCode ?? snapshot.hotelCode ?? '',
+  ).trim();
+  if (providerCode) return true;
+  const provider = clean(row?.provider ?? row?.hotel_provider ?? snapshot.provider);
+  const name = normalizeHotelDisplayName(row?.hotelName ?? row?.hotel_name ?? snapshot.hotelName);
+  return Boolean(provider && name);
+}
+
 export function isTboSupplierBookingCode(value: unknown): boolean {
   return String(value || '').trim().includes('!TB!');
 }
@@ -559,6 +577,8 @@ export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
     mealPlan: row?.mealPlan ?? row?.meal_plan ?? null,
     totalPrice: Number(row?.totalPrice ?? row?.totalStayPrice ?? row?.totalHotelCost ?? row?.total_hotel_cost ?? row?.totalAmount ?? row?.selected_total_price ?? 0),
     pricePerNight: Number(row?.pricePerNight ?? row?.price_per_night ?? row?.price ?? row?.selected_price_per_night ?? 0),
+    roomRate: Number(row?.roomRate ?? row?.room_rate ?? 0),
+    totalRoomCost: Number(row?.totalRoomCost ?? row?.total_room_cost ?? 0),
     baseTotalPrice: Number(row?.baseTotalPrice ?? row?.base_total_price ?? row?.baseHotelCost ?? row?.base_hotel_cost ?? 0),
     extraBedCount: Number(row?.extraBedCount ?? row?.extra_bed_count ?? 0),
     extraBedRate: Number(row?.extraBedRate ?? row?.extra_bed_rate ?? 0),
