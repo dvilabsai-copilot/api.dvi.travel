@@ -1130,22 +1130,44 @@ const [confirmedPlan, originalPlan, route, settings] =
           companyName,
       ).trim();
 
-    await transporter.sendMail({
-      from: {
-        name: fromName,
-        address: fromAddress,
-      },
+   const info = await transporter.sendMail({
+  from: {
+    name: fromName,
+    address: fromAddress,
+  },
+  to: recipientEmails,
+  subject,
+  text,
+  html,
+});
 
-      to: recipientEmails,
+this.logger.log(
+  `Daily Moment recipients: ${recipientEmails.join(', ')}`,
+);
 
-      subject,
-      text,
-      html,
-    });
+this.logger.log(
+  `Daily Moment accepted: ${
+    info.accepted?.join(', ') || 'none'
+  }`,
+);
 
-    this.logger.log(
-      `Daily Moment Trip Completed email sent. Plan: ${itineraryPlanId}, Route: ${itineraryRouteId}, Day: ${dayNumber}`,
-    );
+this.logger.log(
+  `Daily Moment rejected: ${
+    info.rejected?.join(', ') || 'none'
+  }`,
+);
+
+this.logger.log(
+  `Daily Moment Message ID: ${info.messageId || 'none'}`,
+);
+
+this.logger.log(
+  `Daily Moment SMTP response: ${info.response || 'none'}`,
+);
+
+this.logger.log(
+  `Daily Moment Trip Completed email sent. Plan: ${itineraryPlanId}, Route: ${itineraryRouteId}, Day: ${dayNumber}`,
+);
   } catch (error: any) {
     /*
      * Email failure must never undo
