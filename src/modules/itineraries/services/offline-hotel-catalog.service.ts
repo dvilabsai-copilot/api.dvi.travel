@@ -31,6 +31,15 @@ type OfflineRoomOffer = {
   extraBedRate: number;
   childWithBedRate: number;
   childWithoutBedRate: number;
+  extraBedAmount: number;
+  childWithBedAmount: number;
+  childWithoutBedAmount: number;
+};
+
+type SupplementCounts = {
+  extraBedCount: number;
+  childWithBedCount: number;
+  childWithoutBedCount: number;
 };
 
 export function selectOfflineRouteNightlyRate(
@@ -121,6 +130,7 @@ export type OfflineRateResolution = {
   extraBedAmount: number;
   childWithBedRate: number;
   childWithBedAmount: number;
+  childWithoutBedAmount: number;
   currency: string;
   nightlyRates: Array<{ date: string; baseAmount: number; marginPercentage: number; marginAmount: number; sellAmount: number }>;
 };
@@ -197,6 +207,7 @@ export class OfflineHotelCatalogService {
     childAges: number[] = [],
     requestedMealPlanCode = '',
     preferredCategories: number[] = [],
+    supplementCounts: Partial<SupplementCounts> = {},
   ): Promise<Map<number, HotelSearchResult[]>> {
     const startedAt = Date.now();
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
@@ -253,6 +264,7 @@ export class OfflineHotelCatalogService {
         catalogRows,
         hotelsByBlock.get(this.blockCacheKey(block, roomCount, occupancyKey)),
         requestedMealPlanCode,
+        supplementCounts,
       );
       const preferredCategorySet = new Set(
         (preferredCategories || [])
@@ -380,6 +392,7 @@ export class OfflineHotelCatalogService {
     catalogRows?: OfflineCatalogRows,
     prefetchedHotels?: any[],
     requestedMealPlanCode = '',
+    supplementCounts: Partial<SupplementCounts> = {},
   ): Promise<HotelSearchResult[]> {
     const dateList = this.getNightDates(block.checkInDate, block.checkOutDate);
     if (dateList.length === 0) {
@@ -419,7 +432,7 @@ export class OfflineHotelCatalogService {
 
     const results: HotelSearchResult[] = [];
     for (const hotel of hotels as any[]) {
-      const offers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount, catalogRows, requestedMealPlanCode);
+      const offers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount, catalogRows, requestedMealPlanCode, supplementCounts);
       if (offers.length === 0) {
         continue;
       }
@@ -477,8 +490,11 @@ export class OfflineHotelCatalogService {
         totalStayPrice: bestOffer.totalStayPrice,
         numberOfNights: dateList.length,
         extraBedRate: bestOffer.extraBedRate,
+        extraBedAmount: bestOffer.extraBedAmount,
         childWithBedRate: bestOffer.childWithBedRate,
+        childWithBedAmount: bestOffer.childWithBedAmount,
         childWithoutBedRate: bestOffer.childWithoutBedRate,
+        childWithoutBedAmount: bestOffer.childWithoutBedAmount,
         nightlyRates: dateList.map((date, index) => ({
           date,
           baseAmount: bestOffer.nightlyBase[index] || 0,
@@ -523,8 +539,11 @@ export class OfflineHotelCatalogService {
           totalStayPrice: offer.totalStayPrice,
           numberOfNights: dateList.length,
           extraBedRate: offer.extraBedRate,
+          extraBedAmount: offer.extraBedAmount,
           childWithBedRate: offer.childWithBedRate,
+          childWithBedAmount: offer.childWithBedAmount,
           childWithoutBedRate: offer.childWithoutBedRate,
+          childWithoutBedAmount: offer.childWithoutBedAmount,
           currency: 'INR',
           priceLabel: 'Price subject to hotel approval',
           isLiveRate: false,
@@ -749,9 +768,15 @@ export class OfflineHotelCatalogService {
     catalogRows: OfflineCatalogRows,
     marginPercentage: number,
     requestedMealPlanCode = '',
+    supplementCounts: Partial<SupplementCounts> = {},
   ): OfflineRoomOffer[] {
     const hotelId = Number(hotel.hotel_id || 0);
     const roomsNeeded = Math.max(Number(roomCount || 1), 1);
+    const counts: SupplementCounts = {
+      extraBedCount: Math.max(Number(supplementCounts.extraBedCount || 0), 0),
+      childWithBedCount: Math.max(Number(supplementCounts.childWithBedCount || 0), 0),
+      childWithoutBedCount: Math.max(Number(supplementCounts.childWithoutBedCount || 0), 0),
+    };
     // Offline hotels do not publish live inventory or availability. The room
     // master is used only to identify the room and its configured price; the
     // hotel confirms whether it can fulfil the request after itinerary
@@ -777,11 +802,15 @@ export class OfflineHotelCatalogService {
       const nightlyBase: number[] = [];
       const nightlyMargin: number[] = [];
       const nightlySell: number[] = [];
+      const nightlyExtraBed: number[] = [];
+      const nightlyChildWithBed: number[] = [];
+      const nightlyChildWithoutBed: number[] = [];
       let valid = true;
       for (const date of dateList) {
         const target = new Date(`${date}T00:00:00.000Z`).getTime();
         const selectedRateRow = selectAdminMatchingOccupancyRow(matchingRateRows, target);
         const rates = this.parseJsonObject(selectedRateRow?.occupancy_rates);
+        const supplements = this.resolveSupplementRatesFromOccupancyRows(matchingRateRows, date);
         // ROOM_RATE is the authoritative per-room nightly price used by the
         // itinerary. DOUBLE is the legacy/admin-form fallback only when the
         // pricebook row has no ROOM_RATE. Taking the minimum occupancy value
@@ -793,11 +822,25 @@ export class OfflineHotelCatalogService {
           break;
         }
 
-        const baseAmount = this.hotelPricingService.money(nightlyPrice * roomsNeeded);
+        if (counts.extraBedCount > 0 && supplements.extraBedRate <= 0 ||
+            counts.childWithBedCount > 0 && supplements.childWithBedRate <= 0 ||
+            counts.childWithoutBedCount > 0 && supplements.childWithoutBedRate <= 0) {
+          valid = false;
+          break;
+        }
+        const extraBedAmount = this.hotelPricingService.money(supplements.extraBedRate * counts.extraBedCount);
+        const childWithBedAmount = this.hotelPricingService.money(supplements.childWithBedRate * counts.childWithBedCount);
+        const childWithoutBedAmount = this.hotelPricingService.money(supplements.childWithoutBedRate * counts.childWithoutBedCount);
+        const baseAmount = this.hotelPricingService.money(
+          nightlyPrice * roomsNeeded + extraBedAmount + childWithBedAmount + childWithoutBedAmount,
+        );
         const breakdown = this.hotelPricingService.marginBreakdown(baseAmount, marginPercentage);
         nightlyBase.push(breakdown.baseAmount);
         nightlyMargin.push(breakdown.marginAmount);
         nightlySell.push(breakdown.sellAmount);
+        nightlyExtraBed.push(extraBedAmount);
+        nightlyChildWithBed.push(childWithBedAmount);
+        nightlyChildWithoutBed.push(childWithoutBedAmount);
       }
 
       if (!valid || nightlySell.length !== dateList.length) continue;
@@ -820,6 +863,9 @@ export class OfflineHotelCatalogService {
         extraBedRate: supplements.extraBedRate,
         childWithBedRate: supplements.childWithBedRate,
         childWithoutBedRate: supplements.childWithoutBedRate,
+        extraBedAmount: this.hotelPricingService.money(nightlyExtraBed.reduce((sum, amount) => sum + amount, 0)),
+        childWithBedAmount: this.hotelPricingService.money(nightlyChildWithBed.reduce((sum, amount) => sum + amount, 0)),
+        childWithoutBedAmount: this.hotelPricingService.money(nightlyChildWithoutBed.reduce((sum, amount) => sum + amount, 0)),
       });
     }
 
@@ -834,6 +880,7 @@ export class OfflineHotelCatalogService {
     childCount = 0,
     catalogRows?: OfflineCatalogRows,
     requestedMealPlanCode = '',
+    supplementCounts: Partial<SupplementCounts> = {},
   ): Promise<OfflineRoomOffer[]> {
     const marginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage(hotel);
     if (catalogRows) {
@@ -846,6 +893,7 @@ export class OfflineHotelCatalogService {
         catalogRows,
         marginPercentage,
         requestedMealPlanCode,
+        supplementCounts,
       );
     }
 
@@ -855,6 +903,7 @@ export class OfflineHotelCatalogService {
     return this.buildRoomOffersFromCatalogRows(
       hotel, dateList, roomCount, adultCount, childCount, canonicalRows,
       marginPercentage, requestedMealPlanCode,
+      supplementCounts,
     );
 
     const activeRooms = await this.prisma.dvi_hotel_rooms.findMany({
@@ -1027,6 +1076,9 @@ export class OfflineHotelCatalogService {
         extraBedRate: supplements.extraBedRate,
         childWithBedRate: supplements.childWithBedRate,
         childWithoutBedRate: supplements.childWithoutBedRate,
+        extraBedAmount: 0,
+        childWithBedAmount: 0,
+        childWithoutBedAmount: 0,
       });
     }
 
@@ -1041,6 +1093,9 @@ export class OfflineHotelCatalogService {
     canonicalHotelId: number;
     rateOptionId: string;
     roomCount?: number;
+    extraBedCount?: number;
+    childWithBedCount?: number;
+    childWithoutBedCount?: number;
   }): Promise<OfflineRateResolution> {
     const parts = String(input.rateOptionId || '').split(':');
     if (parts.length !== 6 || parts[0] !== 'offline') {
@@ -1145,6 +1200,13 @@ export class OfflineHotelCatalogService {
       ),
       Number((plan as any).total_adult || 0),
       Number((plan as any).total_children || 0),
+      undefined,
+      '',
+      {
+        extraBedCount: Number((plan as any).total_extra_bed || input.extraBedCount || 0),
+        childWithBedCount: Number((plan as any).total_child_with_bed || input.childWithBedCount || 0),
+        childWithoutBedCount: Number((plan as any).total_child_without_bed || input.childWithoutBedCount || 0),
+      },
     );
     const offer = offers.find((candidate) => candidate.roomId === roomId && candidate.roomTypeId === roomTypeId);
     if (!offer) {
@@ -1187,8 +1249,9 @@ export class OfflineHotelCatalogService {
       numberOfNights: dateList.length,
       extraBedRate: offer.extraBedRate,
       extraBedAmount: offer.extraBedRate * Math.max(Number(plan.total_extra_bed || 0), 0),
-      childWithBedRate: offer.childWithBedRate || offer.extraBedRate,
-      childWithBedAmount: (offer.childWithBedRate || offer.extraBedRate) * Math.max(Number(plan.total_child_with_bed || 0), 0),
+      childWithBedRate: offer.childWithBedRate,
+      childWithBedAmount: offer.childWithBedAmount,
+      childWithoutBedAmount: offer.childWithoutBedAmount,
       currency: 'INR',
       nightlyRates: dateList.map((date, index) => ({
         date,
@@ -1236,6 +1299,21 @@ export class OfflineHotelCatalogService {
       if (childWithout > 0) values.childWithoutBedRate = childWithout;
     }
     return values;
+  }
+
+  private resolveSupplementRatesFromOccupancyRows(rowSet: any[], date: string): { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } {
+    const row = selectAdminMatchingOccupancyRow(rowSet, new Date(`${date}T00:00:00.000Z`).getTime());
+    const rates = this.parseJsonObject(row?.occupancy_rates);
+    return {
+      extraBedRate: this.positiveRate(rates.EXTRABED ?? rates.EXTRA_BED ?? rates.EXTRAADULT),
+      childWithBedRate: this.positiveRate(rates.CHILDWITHBED ?? rates.CHILD_WITH_BED ?? rates.CWB),
+      childWithoutBedRate: this.positiveRate(rates.CHILDWITHOUTBED ?? rates.CHILD_WITHOUT_BED ?? rates.CWOB),
+    };
+  }
+
+  private positiveRate(value: unknown): number {
+    const rate = Number(value ?? 0);
+    return Number.isFinite(rate) && rate > 0 ? rate : 0;
   }
 
   private getRateOptionId(hotelId: number, offer: OfflineRoomOffer, checkInDate: string, lastNightDate: string): string {

@@ -705,6 +705,11 @@ export class HotelAvailabilitySnapshotService {
         [],
         String((plan as any).meal_plan_code || ''),
         [],
+        {
+          extraBedCount: Number((plan as any).total_extra_bed || 0),
+          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+        },
       );
       logStage('offline-fetch-in-reset-coordinator', offlineFetchStartedAt);
       const recommendationGroupTypes = await this.getRecommendationGroupTypes(plan.itinerary_plan_ID, [], sourceRows);
@@ -1117,6 +1122,11 @@ export class HotelAvailabilitySnapshotService {
       childAges,
       String((plan as any).meal_plan_code || ''),
       [],
+      {
+        extraBedCount: Number((plan as any).total_extra_bed || 0),
+        childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+        childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+      },
     );
 
     const recommendationGroupTypes = await this.getRecommendationGroupTypes(plan.itinerary_plan_ID);

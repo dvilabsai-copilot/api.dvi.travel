@@ -1242,6 +1242,14 @@ if (hotelMasterId) {
               roomCount,
               adultCount,
               childCount,
+              [],
+              '',
+              [],
+              {
+                extraBedCount,
+                childWithBedCount,
+                childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+              },
             )).get(Number(routeId)) || []).filter((hotel: any) =>
               String(
                 hotel?.hotelCode || hotel?.providerHotelCode || hotel?.canonicalHotelId || hotel?.hotelId || '',
@@ -1752,6 +1760,13 @@ this.logger.log(
           planAdultCount,
           planChildCount,
           planChildAges,
+          '',
+          [],
+          {
+            extraBedCount: Number((plan as any).total_extra_bed || 0),
+            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+          },
         );
         offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
@@ -1823,6 +1838,13 @@ this.logger.log(
             planAdultCount,
             planChildCount,
             planChildAges,
+            '',
+            [],
+            {
+              extraBedCount: Number((plan as any).total_extra_bed || 0),
+              childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+              childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+            },
           ));
           offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
             const existingHotels = hotelsByRoute.get(routeId) || [];
@@ -6729,6 +6751,13 @@ this.logger.log(
         planAdultCount2,
         planChildCount2,
         planChildAges2,
+        '',
+        [],
+        {
+          extraBedCount: Number((plan as any).total_extra_bed || 0),
+          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+        },
       );
       offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
         const existing = hotelsByRoute.get(routeId) || [];
@@ -6777,6 +6806,13 @@ this.logger.log(
           planAdultCount2,
           planChildCount2,
           planChildAges2,
+          '',
+          [],
+          {
+            extraBedCount: Number((plan as any).total_extra_bed || 0),
+            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+          },
         );
         offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
           const existing = hotelsByRoute.get(routeId) || [];
