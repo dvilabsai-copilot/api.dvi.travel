@@ -79,9 +79,33 @@ export class ItineraryRouteOptimizationService {
       return routes;
     }
 
-    const optimizedRoutes = this.buildOptimizedRouteDtos(routes, bestRouteLocations, log);
-    const finalChain = optimizedRoutes.map(r => `${r.location_name}->${r.next_visiting_location}`).join(' | ');
-    log(`[RouteOptimization] OK Completed. optimizedRouteCount=${optimizedRoutes.length}. chain=${finalChain}`);
+    const optimizedRoutes = this.buildOptimizedRouteDtos(
+      routes,
+      bestRouteLocations,
+      log,
+    );
+
+    // Route optimization may change the visiting order, but it must never
+    // remove itinerary days. Every incoming route row represents one day.
+    if (optimizedRoutes.length !== routes.length) {
+      log(
+        `[RouteOptimization] WARN Optimized route count mismatch. ` +
+        `expected=${routes.length}, actual=${optimizedRoutes.length}. ` +
+        `Returning original route order to preserve all itinerary days.`,
+      );
+
+      return routes;
+    }
+
+    const finalChain = optimizedRoutes
+      .map((r) => `${r.location_name}->${r.next_visiting_location}`)
+      .join(' | ');
+
+    log(
+      `[RouteOptimization] OK Completed. ` +
+      `optimizedRouteCount=${optimizedRoutes.length}. chain=${finalChain}`,
+    );
+
     return optimizedRoutes;
   }
 
@@ -166,15 +190,25 @@ export class ItineraryRouteOptimizationService {
       return routes;
     }
 
-    if (options?.phpParity && cleanedLocations.length !== routes.length + 1) {
-      log(`[RouteOptimization] WARN PHP parity route length mismatch. expected=${routes.length + 1}, actual=${cleanedLocations.length}. Returning original route order.`);
+    const expectedLocationCount = routes.length + 1;
+
+    // One route row represents one itinerary day, therefore an optimized
+    // location chain must always contain routeCount + 1 locations.
+    // Repeated/same-city stay days must never cause the route count to shrink.
+    if (cleanedLocations.length !== expectedLocationCount) {
+      log(
+        `[RouteOptimization] WARN Route length mismatch after optimization. ` +
+        `expectedLocations=${expectedLocationCount}, ` +
+        `actualLocations=${cleanedLocations.length}, ` +
+        `expectedRoutes=${routes.length}. ` +
+        `Returning original route order to preserve all itinerary days.`,
+      );
+
       return routes;
     }
 
     const optimizedRoutes: any[] = [];
-    const routeCount = options?.phpParity
-      ? routes.length
-      : cleanedLocations.length - 1;
+    const routeCount = routes.length;
 
     for (let i = 0; i < routeCount; i++) {
       const templateRoute = routes[Math.min(i, routes.length - 1)];

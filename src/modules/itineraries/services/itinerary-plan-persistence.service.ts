@@ -479,15 +479,69 @@ export class ItineraryPlanPersistenceService {
     let createPlanStage = 'route_optimization';
     try {
 
- // ROUTE OPTIMIZATION: If requested, optimize route order before saving
+     // ROUTE OPTIMIZATION: If requested, optimize route order before saving.
+    // Optimization may reorder routes, but it must never remove itinerary days.
     if (shouldOptimizeRoute && dto.routes && dto.routes.length > 0) {
- console.log('[ItinerariesService] Route optimization REQUESTED');
- console.log('[ItinerariesService] Original route order:', dto.routes.map((r: any) => `${r.location_name}${r.next_visiting_location}`).join(' | '));
-      dto.routes = await this.optimizeRouteOrder(dto.routes);
- console.log('[ItinerariesService] Routes optimized and reordered');
- console.log('[ItinerariesService] New route order:', dto.routes.map((r: any) => `${r.location_name}${r.next_visiting_location}`).join(' | '));
+      console.log('[ItinerariesService] Route optimization REQUESTED');
+
+      const originalRoutes = [...dto.routes];
+      const originalRouteCount = originalRoutes.length;
+
+      console.log(
+        '[ItinerariesService] Original route order:',
+        originalRoutes
+          .map(
+            (r: any) =>
+              `${r.location_name}->${r.next_visiting_location}`,
+          )
+          .join(' | '),
+      );
+
+      const optimizedRoutes = await this.optimizeRouteOrder(originalRoutes);
+
+      if (
+        !Array.isArray(optimizedRoutes) ||
+        optimizedRoutes.length !== originalRouteCount
+      ) {
+        console.warn('[ItinerariesService] Route optimization rejected', {
+          expectedRouteCount: originalRouteCount,
+          optimizedRouteCount: Array.isArray(optimizedRoutes)
+            ? optimizedRoutes.length
+            : 0,
+          noOfDays: Number(dto.plan?.no_of_days || 0),
+          reason: 'Optimization must preserve every itinerary day.',
+        });
+
+        dto.routes = originalRoutes;
+      } else {
+        dto.routes = optimizedRoutes;
+
+        console.log(
+          '[ItinerariesService] Routes optimized and reordered',
+        );
+      }
+
+      console.log(
+        '[ItinerariesService] Final route order:',
+        dto.routes
+          .map(
+            (r: any) =>
+              `${r.location_name}->${r.next_visiting_location}`,
+          )
+          .join(' | '),
+      );
+
+      console.log('[ItinerariesService] Final route count:', {
+        routeCount: dto.routes.length,
+        noOfDays: Number(dto.plan?.no_of_days || 0),
+      });
     } else {
- console.log('[ItinerariesService] Route optimization NOT triggered. shouldOptimizeRoute=', shouldOptimizeRoute, 'routeCount=', dto.routes?.length);
+      console.log(
+        '[ItinerariesService] Route optimization NOT triggered. shouldOptimizeRoute=',
+        shouldOptimizeRoute,
+        'routeCount=',
+        dto.routes?.length,
+      );
     }
 
     if (
