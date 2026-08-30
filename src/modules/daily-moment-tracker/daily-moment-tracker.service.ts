@@ -2,6 +2,7 @@
 
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { ItineraryBookingConfirmationEmailNotifierService } from '../itineraries/services/itinerary-booking-confirmation-email-notifier.service';
 import {
   DailyMomentRowDto,
   DailyMomentChargeRowDto,
@@ -28,7 +29,10 @@ export class DailyMomentTrackerService {
   private readonly legacyPhpDbName =
     process.env.LEGACY_PHP_DB_NAME?.trim() || 'dvi_travels';
 
-   constructor(private readonly prisma: PrismaService) {}
+  constructor(
+  private readonly prisma: PrismaService,
+  private readonly emailNotifier: ItineraryBookingConfirmationEmailNotifierService,
+) {}
 
  // ========= PUBLIC API METHODS =========
 
@@ -981,12 +985,17 @@ export class DailyMomentTrackerService {
         hotspot_name: (master?.hotspot_name ?? '').trim() || 'N/A',
         hotspot_location: (master?.hotspot_location ?? '').trim() || 'N/A',
 
-        start_time: this.formatTimeHHMM(startTime),
-        end_time: this.formatTimeHHMM(endTime),
-        duration_minutes: durationMinutes,
-        duration_label: durationLabel,
+       start_time: this.formatTimeHHMM(startTime),
+end_time: this.formatTimeHHMM(endTime),
+duration_minutes: durationMinutes,
+duration_label: durationLabel,
 
-        driver_hotspot_status: row.driver_hotspot_status ?? 0,
+travel_distance_km:
+  row.hotspot_travelling_distance == null
+    ? null
+    : Number(row.hotspot_travelling_distance),
+
+driver_hotspot_status: row.driver_hotspot_status ?? 0,
         driver_not_visited_description:
           row.driver_not_visited_description ?? null,
         guide_hotspot_status: row.guide_hotspot_status ?? 0,
@@ -1102,23 +1111,20 @@ export class DailyMomentTrackerService {
   async getDayView(planId: number): Promise<DayViewPlanDto> {
     if (!planId) throw new BadRequestException('planId is required');
 
-    let effectivePlanId = planId;
-    let plan =
-      await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
-        where: { itinerary_plan_ID: effectivePlanId, deleted: 0, status: 1 },
-      });
+  const effectivePlanId = planId;
 
-    if (!plan) {
-      const importedPlanId = await this.tryImportLegacyPhpPlan(planId);
-      if (importedPlanId) {
-        effectivePlanId = importedPlanId;
-        plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
-          where: { itinerary_plan_ID: effectivePlanId, deleted: 0, status: 1 },
-        });
-      }
-    }
+const plan =
+  await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+    where: {
+      itinerary_plan_ID: effectivePlanId,
+      deleted: 0,
+      status: 1,
+    },
+  });
 
-    if (!plan) throw new BadRequestException('Plan not found');
+if (!plan) {
+  throw new BadRequestException("Plan not found");
+}
 
  // Guest (primary customer)
     const guest =
@@ -1222,28 +1228,75 @@ export class DailyMomentTrackerService {
           )
         : [];
  // keyed by itinerary_route_id (first row wins)
-    const kmByRouteId = new Map<number, (typeof vehicleRows)[0]>();
-    vehicleRows.forEach((v) => {
-      if (!kmByRouteId.has(v.itinerary_route_id)) {
-        kmByRouteId.set(v.itinerary_route_id, v);
-      }
-    });
+const kmByRouteId = new Map<number, (typeof vehicleRows)[0]>();
+vehicleRows.forEach((v) => {
+  if (!kmByRouteId.has(v.itinerary_route_id)) {
+    kmByRouteId.set(v.itinerary_route_id, v);
+  }
+});
 
- // Hotspots per route
-    const hotspotRows =
-      routeIds.length
-        ? await this.prisma.dvi_confirmed_itinerary_route_hotspot_details.findMany(
-            {
-              where: {
-                itinerary_plan_ID: effectivePlanId,
-                itinerary_route_ID: { in: routes.map((r) => r.itinerary_route_ID) },
-                deleted: 0,
-                status: 1,
-              },
-              orderBy: { hotspot_order: 'asc' },
+// B2B parity: uploaded day images per route
+const dayImageRows =
+  routes.length
+    ? await this.prisma.dvi_confirmed_driver_uploadimage.findMany({
+        where: {
+          itinerary_plan_ID: effectivePlanId,
+          itinerary_route_ID: {
+            in: routes.map((r) => r.itinerary_route_ID),
+          },
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: {
+          driver_uploadimage_ID: "asc",
+        },
+      })
+    : [];
+
+const dayImagesByRouteId = new Map<number, string[]>();
+
+dayImageRows.forEach((row) => {
+  const fileName = String(
+    row.driver_upload_image ?? ""
+  ).trim();
+
+  if (!fileName) {
+    return;
+  }
+
+  const images =
+    dayImagesByRouteId.get(row.itinerary_route_ID) ?? [];
+
+  images.push(fileName);
+
+  dayImagesByRouteId.set(
+    row.itinerary_route_ID,
+    images
+  );
+});
+
+// Hotspots per route
+const hotspotRows =
+  routeIds.length
+    ? await this.prisma.dvi_confirmed_itinerary_route_hotspot_details.findMany(
+        {
+          where: {
+            itinerary_plan_ID: effectivePlanId,
+            itinerary_route_ID: {
+              in: routes.map((r) => r.itinerary_route_ID),
             },
-          )
-        : [];
+            item_type: {
+              in: [4, 6, 7],
+            },
+            deleted: 0,
+            status: 1,
+          },
+          orderBy: {
+            hotspot_order: 'asc',
+          },
+        },
+      )
+    : [];
 
     const hotspotMasterIds = [...new Set(hotspotRows.map((h) => h.hotspot_ID).filter(Boolean))];
     const hotspotMasters = hotspotMasterIds.length
@@ -1419,14 +1472,27 @@ export class DailyMomentTrackerService {
         ? Math.max(0, Number(closingKm) - Number(openingKm))
         : 0;
 
-      const dayHotspots: DailyMomentHotspotRowDto[] = hotspotRows
-        .filter((h) => h.itinerary_route_ID === routeId)
-        .map((h, hIdx) => {
-          const master = hotspotMasterById.get(h.hotspot_ID);
-          const { minutes, label } = this.calcDurationLabel(
-            h.hotspot_start_time,
-            h.hotspot_end_time,
-          );
+     const routeHotspots = hotspotRows
+  .filter((h) => h.itinerary_route_ID === routeId)
+  .filter((row, index, rows) => {
+    // B2B-style day view: show one active row for each planned
+    // sightseeing / hotel / travel item on the selected route.
+    const firstIndex = rows.findIndex(
+      (candidate) =>
+        candidate.hotspot_ID === row.hotspot_ID &&
+        candidate.item_type === row.item_type,
+    );
+
+    return firstIndex === index;
+  });
+
+const dayHotspots: DailyMomentHotspotRowDto[] = routeHotspots
+  .map((h, hIdx) => {
+    const master = hotspotMasterById.get(h.hotspot_ID);
+    const { minutes, label } = this.calcDurationLabel(
+      h.hotspot_start_time,
+      h.hotspot_end_time,
+    );
           const hk = `${routeId}:${h.route_hotspot_ID}`;
           const activities = (activitiesByRouteHotspot.get(hk) ?? []).map((a) => ({
             confirmed_route_activity_ID: a.confirmed_route_activity_ID,
@@ -1440,21 +1506,25 @@ export class DailyMomentTrackerService {
             guide_activity_status: a.guide_activity_status ?? 0,
             guide_not_visited_description: a.guide_not_visited_description ?? null,
           }));
-          return {
-            serial_no: h.hotspot_order || hIdx + 1,
-            confirmed_route_hotspot_ID: h.confirmed_route_hotspot_ID,
-            route_hotspot_ID: h.route_hotspot_ID,
-            itinerary_plan_ID: h.itinerary_plan_ID,
-            itinerary_route_ID: h.itinerary_route_ID,
-            hotspot_ID: h.hotspot_ID,
-            item_type: h.item_type,
-            hotspot_name: (master?.hotspot_name ?? '').trim() || 'N/A',
-            hotspot_location: (master?.hotspot_location ?? '').trim() || '',
-            start_time: this.formatTimeHHMM(h.hotspot_start_time),
-            end_time: this.formatTimeHHMM(h.hotspot_end_time),
-            duration_minutes: minutes,
-            duration_label: label,
-            driver_hotspot_status: h.driver_hotspot_status ?? 0,
+         return {
+  serial_no: h.hotspot_order || hIdx + 1,
+  confirmed_route_hotspot_ID: h.confirmed_route_hotspot_ID,
+  route_hotspot_ID: h.route_hotspot_ID,
+  itinerary_plan_ID: h.itinerary_plan_ID,
+  itinerary_route_ID: h.itinerary_route_ID,
+  hotspot_ID: h.hotspot_ID,
+  item_type: h.item_type,
+  hotspot_name: (master?.hotspot_name ?? '').trim() || 'N/A',
+  hotspot_location: (master?.hotspot_location ?? '').trim() || '',
+  start_time: this.formatTimeHHMM(h.hotspot_start_time),
+  end_time: this.formatTimeHHMM(h.hotspot_end_time),
+  duration_minutes: minutes,
+  duration_label: label,
+  travel_distance_km:
+    h.hotspot_travelling_distance == null
+      ? null
+      : Number(h.hotspot_travelling_distance),
+  driver_hotspot_status: h.driver_hotspot_status ?? 0,
             driver_not_visited_description: h.driver_not_visited_description ?? null,
             guide_hotspot_status: h.guide_hotspot_status ?? 0,
             guide_not_visited_description: h.guide_not_visited_description ?? null,
@@ -1543,17 +1613,23 @@ export class DailyMomentTrackerService {
         driver_mobile: this.fieldOrDash(driver?.driver_primary_mobile_number ?? ''),
         agent_name: this.fieldOrDash(agent?.agent_name ?? ''),
         special_remarks: this.fieldOrDash(specialRemarks),
-        km: {
-          opening_km: openingKm,
-          closing_km: closingKm,
-          opening_speedmeter_image: km?.opening_speedmeter_image ?? null,
-          closing_speedmeter_image: km?.closing_speedmeter_image ?? null,
-          running_km: runningKm,
-          completed,
-        },
-        wholeday_guide: wholedayGuide,
-        guides: dayGuides,
-        hotspots: dayHotspots,
+     km: {
+  opening_km: openingKm,
+  closing_km: closingKm,
+  opening_speedmeter_image:
+    km?.opening_speedmeter_image ?? null,
+  closing_speedmeter_image:
+    km?.closing_speedmeter_image ?? null,
+  running_km: runningKm,
+  completed,
+},
+
+day_images:
+  dayImagesByRouteId.get(routeId) ?? [],
+
+wholeday_guide: wholedayGuide,
+guides: dayGuides,
+hotspots: dayHotspots,
       } as unknown as DayViewDayDto;
     });
 
@@ -1968,6 +2044,53 @@ export class DailyMomentTrackerService {
       data: { deleted: 1, updatedon: new Date() },
     });
   }
+
+ async completeDriverTrip(
+  itineraryPlanId: number,
+  itineraryRouteId: number,
+): Promise<void> {
+  if (!itineraryPlanId || !itineraryRouteId) {
+    throw new BadRequestException(
+      'itineraryPlanId and itineraryRouteId are required',
+    );
+  }
+
+  const route =
+    await this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        itinerary_route_ID: itineraryRouteId,
+        deleted: 0,
+        status: 1,
+      },
+    });
+
+  if (!route) {
+    throw new BadRequestException(
+      'Itinerary route not found',
+    );
+  }
+
+  if (route.driver_trip_completed === 1) {
+    return;
+  }
+
+  await this.prisma.dvi_confirmed_itinerary_route_details.update({
+    where: {
+      confirmed_itinerary_route_ID:
+        route.confirmed_itinerary_route_ID,
+    },
+    data: {
+      driver_trip_completed: 1,
+      updatedon: new Date(),
+    },
+  });
+
+  await this.emailNotifier.sendDailyMomentTripCompletedNotification(
+    itineraryPlanId,
+    itineraryRouteId,
+  );
+}
 
  // ========= KILOMETER =========
 

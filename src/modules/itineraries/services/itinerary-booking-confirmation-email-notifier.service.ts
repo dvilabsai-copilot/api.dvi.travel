@@ -365,9 +365,803 @@ private getTransporter(): Transporter | null {
     return null;
   }
 
-  async sendBookingConfirmationNotifications(
-    itineraryPlanId: number,
-  ): Promise<void> {
+async sendDailyMomentTripCompletedNotification(
+  itineraryPlanId: number,
+  itineraryRouteId: number,
+): Promise<void> {
+  try {
+    if (
+      !Number.isInteger(itineraryPlanId) ||
+      itineraryPlanId <= 0 ||
+      !Number.isInteger(itineraryRouteId) ||
+      itineraryRouteId <= 0
+    ) {
+      this.logger.warn(
+        `Invalid Daily Moment trip completion IDs. Plan: ${itineraryPlanId}, Route: ${itineraryRouteId}`,
+      );
+
+      return;
+    }
+
+    const transporter = this.getTransporter();
+
+    if (!transporter) {
+      return;
+    }
+
+const [confirmedPlan, originalPlan, route, settings] =
+  await Promise.all([
+    this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_plan_ID: true,
+        itinerary_quote_ID: true,
+        agent_id: true,
+        staff_id: true,
+        arrival_location: true,
+        departure_location: true,
+      },
+    }),
+
+    this.prisma.dvi_itinerary_plan_details.findFirst({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        createdby: true,
+      },
+    }),
+
+    this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        itinerary_route_ID: itineraryRouteId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        itinerary_route_date: true,
+        no_of_days: true,
+        location_name: true,
+        next_visiting_location: true,
+        driver_trip_completed: true,
+      },
+    }),
+
+    this.prisma.dvi_global_settings.findFirst({
+      where: {
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        site_title: true,
+        company_name: true,
+        company_email_id: true,
+        cc_email_id: true,
+      },
+    }),
+  ]);
+
+    if (!confirmedPlan || !route) {
+      this.logger.warn(
+        `Daily Moment trip completion email data not found. Plan: ${itineraryPlanId}, Route: ${itineraryRouteId}`,
+      );
+
+      return;
+    }
+
+    if (route.driver_trip_completed !== 1) {
+      return;
+    }
+
+    /*
+     * Senior requirement:
+     *
+     * 1. Travel Agent who booked the itinerary
+     *    -> confirmedPlan.agent_id
+     *
+     * 2. Travel Expert of this itinerary
+     *    -> confirmedPlan.staff_id
+     */
+    const [agent, travelExpert, hotspotRows] =
+      await Promise.all([
+        Number(confirmedPlan.agent_id || 0) > 0
+          ? this.prisma.dvi_agent.findFirst({
+              where: {
+                agent_ID: Number(confirmedPlan.agent_id),
+                status: 1,
+                deleted: 0,
+              },
+              select: {
+                agent_email_id: true,
+              },
+            })
+          : Promise.resolve(null),
+
+      Number(originalPlan?.createdby || 0) > 0
+  ? this.prisma.dvi_users.findFirst({
+      where: {
+        userID: BigInt(
+          Number(originalPlan?.createdby || 0),
+        ),
+        roleID: 3,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        useremail: true,
+      },
+    })
+  : Promise.resolve(null),
+
+        this.prisma.dvi_confirmed_itinerary_route_hotspot_details.findMany({
+          where: {
+            itinerary_plan_ID: itineraryPlanId,
+            itinerary_route_ID: itineraryRouteId,
+            item_type: {
+              in: [4, 6, 7],
+            },
+            status: 1,
+            deleted: 0,
+          },
+          orderBy: {
+            hotspot_order: 'asc',
+          },
+          select: {
+            hotspot_ID: true,
+            hotspot_order: true,
+            item_type: true,
+            hotspot_start_time: true,
+            hotspot_end_time: true,
+            driver_hotspot_status: true,
+            driver_not_visited_description: true,
+          },
+        }),
+      ]);
+
+    /*
+     * Email goes ONLY to:
+     * - Agent who booked
+     * - Travel Expert of the itinerary
+     */
+    const agentEmails =
+      this.parseEmails(
+        agent?.agent_email_id,
+      );
+
+   const travelExpertEmails =
+  this.parseEmails(
+    travelExpert?.useremail,
+  );
+
+ const recipientEmails =
+  this.uniqueEmails([
+    ...agentEmails,
+    ...travelExpertEmails,
+    'sales@dvi.co.in',
+  ]);
+
+    if (recipientEmails.length === 0) {
+      this.logger.warn(
+        `No Agent or Travel Expert email found for Daily Moment. Plan: ${itineraryPlanId}`,
+      );
+
+      return;
+    }
+
+    /*
+     * Same duplicate handling as Daily Moment day view.
+     */
+    const visitRows =
+      hotspotRows.filter(
+        (row, index, rows) =>
+          rows.findIndex(
+            (candidate) =>
+              candidate.hotspot_ID === row.hotspot_ID &&
+              candidate.item_type === row.item_type,
+          ) === index,
+      );
+
+    const hotspotIds =
+      Array.from(
+        new Set(
+          visitRows
+            .map((row) =>
+              Number(row.hotspot_ID || 0),
+            )
+            .filter((id) => id > 0),
+        ),
+      );
+
+    const hotspotMasters =
+      hotspotIds.length > 0
+        ? await this.prisma.dvi_hotspot_place.findMany({
+            where: {
+              hotspot_ID: {
+                in: hotspotIds,
+              },
+              status: 1,
+              deleted: 0,
+            },
+            select: {
+              hotspot_ID: true,
+              hotspot_name: true,
+            },
+          })
+        : [];
+
+    const hotspotNameById =
+      new Map<number, string>();
+
+    hotspotMasters.forEach((hotspot) => {
+      hotspotNameById.set(
+        hotspot.hotspot_ID,
+        String(
+          hotspot.hotspot_name || 'N/A',
+        ).trim() || 'N/A',
+      );
+    });
+
+    const formatVisitTime = (
+      value?: Date | null,
+    ): string => {
+      if (!value) {
+        return '--';
+      }
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return '--';
+      }
+
+      let hours = date.getHours();
+
+      const minutes =
+        date.getMinutes();
+
+      const amPm =
+        hours >= 12
+          ? 'PM'
+          : 'AM';
+
+      hours = hours % 12;
+
+      if (hours === 0) {
+        hours = 12;
+      }
+
+      return `${String(hours).padStart(
+        2,
+        '0',
+      )}:${String(minutes).padStart(
+        2,
+        '0',
+      )} ${amPm}`;
+    };
+
+    const visitDetails =
+      visitRows.map((row, index) => {
+        const status =
+          Number(
+            row.driver_hotspot_status || 0,
+          );
+
+        const statusText =
+          status === 1
+            ? 'Visited'
+            : status === 2
+              ? 'Not Visited'
+              : 'Pending';
+
+        const reason =
+          status === 2
+            ? String(
+                row.driver_not_visited_description ||
+                  '--',
+              ).trim() || '--'
+            : '--';
+
+        return {
+          serialNo: index + 1,
+
+          name:
+            hotspotNameById.get(
+              Number(row.hotspot_ID),
+            ) || 'N/A',
+
+          time:
+            `${formatVisitTime(
+              row.hotspot_start_time,
+            )} - ${formatVisitTime(
+              row.hotspot_end_time,
+            )}`,
+
+          status,
+
+          statusText,
+
+          reason,
+        };
+      });
+
+    const frontendBaseUrl =
+      String(
+        process.env.FRONTEND_URL ||
+          process.env.DVI_FRONTEND_URL ||
+          'https://dvi.travel',
+      ).replace(/\/+$/, '');
+
+    const dailyMomentUrl =
+      `${frontendBaseUrl}/daily-moment/public/${itineraryPlanId}`;
+
+    const quotationNumber =
+      String(
+        confirmedPlan.itinerary_quote_ID ||
+          itineraryPlanId,
+      ).trim();
+
+    const dayNumber =
+      Number(route.no_of_days || 0);
+
+    const routeDate =
+      this.formatDate(
+        route.itinerary_route_date,
+      );
+
+    const fromLocation =
+      String(
+        route.location_name || '--',
+      ).trim();
+
+    const toLocation =
+      String(
+        route.next_visiting_location || '--',
+      ).trim();
+
+    const companyName =
+      String(
+        settings?.company_name ||
+          settings?.site_title ||
+          'DVI Travel',
+      ).trim() || 'DVI Travel';
+
+    const subject =
+      `DVI Holidays - Trip Update Day ${dayNumber} - #${quotationNumber}`;
+
+    const visitText =
+      visitDetails
+        .map((visit) => {
+          const reasonText =
+            visit.status === 2
+              ? ` | Reason: ${visit.reason}`
+              : '';
+
+          return (
+            `${visit.serialNo}. ${visit.name} | ` +
+            `${visit.time} | ` +
+            `${visit.statusText}${reasonText}`
+          );
+        })
+        .join('\n');
+
+    const text = [
+      'Trip Update!',
+      '',
+      `Day ${dayNumber} of Itinerary #${quotationNumber} has been successfully completed.`,
+      '',
+      'Visit Details:',
+      visitText || 'No visit details available.',
+      '',
+      `View Your Trip: ${dailyMomentUrl}`,
+    ].join('\n');
+
+    const visitDetailsHtml =
+      visitDetails.length > 0
+        ? visitDetails
+            .map((visit) => {
+              const statusColor =
+                visit.status === 1
+                  ? '#198754'
+                  : visit.status === 2
+                    ? '#dc3545'
+                    : '#6c757d';
+
+              const statusIcon =
+                visit.status === 1
+                  ? '&#10003;'
+                  : visit.status === 2
+                    ? '&#10005;'
+                    : '';
+
+              return `
+                <tr>
+                  <td
+                    style="
+                      padding:10px;
+                      border:1px solid #eadcfb;
+                      text-align:center;
+                    "
+                  >
+                    ${this.escapeHtml(
+                      visit.serialNo,
+                    )}
+                  </td>
+
+                  <td
+                    style="
+                      padding:10px;
+                      border:1px solid #eadcfb;
+                    "
+                  >
+                    ${this.escapeHtml(
+                      visit.name,
+                    )}
+                  </td>
+
+                  <td
+                    style="
+                      padding:10px;
+                      border:1px solid #eadcfb;
+                    "
+                  >
+                    ${this.escapeHtml(
+                      visit.time,
+                    )}
+                  </td>
+
+                  <td
+                    style="
+                      padding:10px;
+                      border:1px solid #eadcfb;
+                      font-weight:600;
+                      color:${statusColor};
+                      white-space:nowrap;
+                    "
+                  >
+                    ${statusIcon}
+                    ${this.escapeHtml(
+                      visit.statusText,
+                    )}
+                  </td>
+
+                  <td
+                    style="
+                      padding:10px;
+                      border:1px solid #eadcfb;
+                    "
+                  >
+                    ${this.escapeHtml(
+                      visit.reason,
+                    )}
+                  </td>
+                </tr>
+              `;
+            })
+            .join('')
+        : `
+            <tr>
+              <td
+                colspan="5"
+                style="
+                  padding:12px;
+                  border:1px solid #eadcfb;
+                  text-align:center;
+                  color:#777777;
+                "
+              >
+                No visit details available.
+              </td>
+            </tr>
+          `;
+
+    const html = `
+      <div
+        style="
+          font-family:Arial,sans-serif;
+          max-width:760px;
+          margin:0 auto;
+          color:#342d42;
+        "
+      >
+        <div
+          style="
+            padding:24px;
+            border:1px solid #eadcfb;
+            border-radius:14px;
+            background:#ffffff;
+          "
+        >
+          <h2
+            style="
+              margin:0 0 18px;
+              color:#4a4260;
+            "
+          >
+            Trip Completed
+          </h2>
+
+          <table
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              width:100%;
+              border-collapse:collapse;
+              margin-bottom:22px;
+            "
+          >
+            <tr>
+              <th
+                align="left"
+                style="
+                  padding:9px;
+                  border:1px solid #eadcfb;
+                  background:#faf7ff;
+                "
+              >
+                Quotation Number
+              </th>
+
+              <td
+                style="
+                  padding:9px;
+                  border:1px solid #eadcfb;
+                "
+              >
+                ${this.escapeHtml(
+                  quotationNumber,
+                )}
+              </td>
+            </tr>
+
+            <tr>
+              <th
+                align="left"
+                style="
+                  padding:9px;
+                  border:1px solid #eadcfb;
+                  background:#faf7ff;
+                "
+              >
+                Day
+              </th>
+
+              <td
+                style="
+                  padding:9px;
+                  border:1px solid #eadcfb;
+                "
+              >
+                Day ${this.escapeHtml(
+                  dayNumber,
+                )}
+              </td>
+            </tr>
+
+            <tr>
+              <th
+                align="left"
+                style="
+                  padding:9px;
+                  border:1px solid #eadcfb;
+                  background:#faf7ff;
+                "
+              >
+                Date
+              </th>
+
+              <td
+                style="
+                  padding:9px;
+                  border:1px solid #eadcfb;
+                "
+              >
+                ${this.escapeHtml(
+                  routeDate,
+                )}
+              </td>
+            </tr>
+
+            <tr>
+              <th
+                align="left"
+                style="
+                  padding:9px;
+                  border:1px solid #eadcfb;
+                  background:#faf7ff;
+                "
+              >
+                Route
+              </th>
+
+              <td
+                style="
+                  padding:9px;
+                  border:1px solid #eadcfb;
+                "
+              >
+                ${this.escapeHtml(
+                  fromLocation,
+                )}
+                to
+                ${this.escapeHtml(
+                  toLocation,
+                )}
+              </td>
+            </tr>
+          </table>
+
+          <h3
+            style="
+              margin:0 0 12px;
+              color:#4a4260;
+            "
+          >
+            Visit Details
+          </h3>
+
+          <table
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              width:100%;
+              border-collapse:collapse;
+              margin-bottom:22px;
+            "
+          >
+            <thead>
+              <tr
+                style="
+                  background:#faf7ff;
+                "
+              >
+                <th
+                  style="
+                    padding:10px;
+                    border:1px solid #eadcfb;
+                  "
+                >
+                  #
+                </th>
+
+                <th
+                  align="left"
+                  style="
+                    padding:10px;
+                    border:1px solid #eadcfb;
+                  "
+                >
+                  Visit
+                </th>
+
+                <th
+                  align="left"
+                  style="
+                    padding:10px;
+                    border:1px solid #eadcfb;
+                  "
+                >
+                  Time
+                </th>
+
+                <th
+                  align="left"
+                  style="
+                    padding:10px;
+                    border:1px solid #eadcfb;
+                  "
+                >
+                  Status
+                </th>
+
+                <th
+                  align="left"
+                  style="
+                    padding:10px;
+                    border:1px solid #eadcfb;
+                  "
+                >
+                  Reason
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${visitDetailsHtml}
+            </tbody>
+          </table>
+
+          <a
+            href="${this.escapeHtml(
+              dailyMomentUrl,
+            )}"
+            style="
+              display:inline-block;
+              padding:12px 20px;
+              border-radius:7px;
+              background:#28a745;
+              color:#ffffff;
+              text-decoration:none;
+              font-weight:600;
+            "
+          >
+            View Your Trip
+          </a>
+        </div>
+      </div>
+    `;
+
+    const smtpUser =
+      String(
+        process.env.BOOKING_CONFIRMATION_MAIL_USER ||
+          process.env.VEHICLE_VOUCHER_MAIL_USER ||
+          process.env.SMTP_USER ||
+          '',
+      ).trim();
+
+    const fromAddress =
+      String(
+        process.env.BOOKING_CONFIRMATION_MAIL_FROM ||
+          process.env.VEHICLE_VOUCHER_MAIL_FROM ||
+          process.env.SMTP_FROM ||
+          smtpUser ||
+          settings?.company_email_id ||
+          '',
+      ).trim();
+
+    if (!fromAddress) {
+      this.logger.warn(
+        'Daily Moment sender email is not configured.',
+      );
+
+      return;
+    }
+
+    const fromName =
+      String(
+        process.env.SMTP_FROM_NAME ||
+          companyName,
+      ).trim();
+
+    await transporter.sendMail({
+      from: {
+        name: fromName,
+        address: fromAddress,
+      },
+
+      to: recipientEmails,
+
+      subject,
+      text,
+      html,
+    });
+
+    this.logger.log(
+      `Daily Moment Trip Completed email sent. Plan: ${itineraryPlanId}, Route: ${itineraryRouteId}, Day: ${dayNumber}`,
+    );
+  } catch (error: any) {
+    /*
+     * Email failure must never undo
+     * driver_trip_completed = 1.
+     */
+    this.logger.error(
+      `Daily Moment Trip Completed email failed for plan ${itineraryPlanId}, route ${itineraryRouteId}: ${
+        error?.message || error
+      }`,
+    );
+  }
+}
+
+async sendBookingConfirmationNotifications(
+  itineraryPlanId: number,
+): Promise<void> {
     try {
       if (
         !Number.isInteger(itineraryPlanId) ||
