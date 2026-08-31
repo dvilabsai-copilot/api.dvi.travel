@@ -22,6 +22,10 @@ type OfflineRoomOffer = {
   nightlyBase: number[];
   nightlyMargin: number[];
   nightlySell: number[];
+  nightlyRoomCost: number[];
+  nightlyExtraBedCost: number[];
+  nightlyChildWithBedCost: number[];
+  nightlyChildWithoutBedCost: number[];
   hotelMarginPercentage: number;
   baseTotalPrice: number;
   hotelMarginTotalAmount: number;
@@ -43,7 +47,7 @@ type SupplementCounts = {
 };
 
 export function selectOfflineRouteNightlyRate(
-  offer: Pick<OfflineRoomOffer, 'nightlyBase' | 'nightlyMargin' | 'nightlySell' | 'roomCount'>,
+  offer: Pick<OfflineRoomOffer, 'nightlyBase' | 'nightlyMargin' | 'nightlySell' | 'nightlyRoomCost' | 'nightlyExtraBedCost' | 'nightlyChildWithBedCost' | 'nightlyChildWithoutBedCost' | 'roomCount'>,
   dates: string[],
   routeDate: string,
 ) {
@@ -59,6 +63,18 @@ export function selectOfflineRouteNightlyRate(
     baseAmount,
     marginAmount,
     sellAmount,
+    ...(Array.isArray(offer.nightlyRoomCost)
+      ? { roomCost: Number(offer.nightlyRoomCost[selectedIndex] || 0) }
+      : {}),
+    ...(Array.isArray(offer.nightlyExtraBedCost)
+      ? { extraBedCost: Number(offer.nightlyExtraBedCost[selectedIndex] || 0) }
+      : {}),
+    ...(Array.isArray(offer.nightlyChildWithBedCost)
+      ? { childWithBedCost: Number(offer.nightlyChildWithBedCost[selectedIndex] || 0) }
+      : {}),
+    ...(Array.isArray(offer.nightlyChildWithoutBedCost)
+      ? { childWithoutBedCost: Number(offer.nightlyChildWithoutBedCost[selectedIndex] || 0) }
+      : {}),
     basePricePerNight: Number((baseAmount / roomCount).toFixed(2)),
   };
 }
@@ -121,6 +137,14 @@ export type OfflineRateResolution = {
   pricePerNight: number;
   basePricePerNight: number;
   baseTotalPrice: number;
+  totalRoomCost: number;
+  totalExtraBedCost: number;
+  totalChildWithBedCost: number;
+  totalChildWithoutBedCost: number;
+  extraBedCount: number;
+  childWithBedCount: number;
+  childWithoutBedCount: number;
+  hotelMarginBaseAmount: number;
   hotelMarginPercentage: number;
   hotelMarginAmount: number;
   hotelMarginTotalAmount: number;
@@ -130,6 +154,7 @@ export type OfflineRateResolution = {
   extraBedAmount: number;
   childWithBedRate: number;
   childWithBedAmount: number;
+  childWithoutBedRate: number;
   childWithoutBedAmount: number;
   currency: string;
   nightlyRates: Array<{ date: string; baseAmount: number; marginPercentage: number; marginAmount: number; sellAmount: number }>;
@@ -481,6 +506,16 @@ export class OfflineHotelCatalogService {
           requiresReview: false,
         },
         canonicalHotelId: Number(hotel.hotel_id || 0) || null,
+        // Keep the complete stay context on the parent and every nested
+        // option. The itinerary pane may request the second route directly;
+        // without these fields the UI date filter only sees the first night
+        // and drops otherwise valid room variants.
+        routeIds: [...block.routeIds],
+        checkInDate: block.checkInDate,
+        checkOutDate: block.checkOutDate,
+        availableDates: [...dateList],
+        completeStayDates: [...dateList],
+        completeStayBookable: true,
         pricePerNight: bestOffer.pricePerNight,
         basePricePerNight: oneRoomNightBase(bestOffer),
         baseTotalPrice: oneNightRoomBase(bestOffer),
@@ -495,6 +530,10 @@ export class OfflineHotelCatalogService {
         childWithBedAmount: bestOffer.childWithBedAmount,
         childWithoutBedRate: bestOffer.childWithoutBedRate,
         childWithoutBedAmount: bestOffer.childWithoutBedAmount,
+        totalRoomCost: bestOffer.nightlyRoomCost[0] || 0,
+        totalExtraBedCost: bestOffer.nightlyExtraBedCost[0] || 0,
+        totalChildWithBedCost: bestOffer.nightlyChildWithBedCost[0] || 0,
+        totalChildWithoutBedCost: bestOffer.nightlyChildWithoutBedCost[0] || 0,
         nightlyRates: dateList.map((date, index) => ({
           date,
           baseAmount: bestOffer.nightlyBase[index] || 0,
@@ -521,6 +560,12 @@ export class OfflineHotelCatalogService {
         rateOptions: offers.map((offer) => ({
           rateOptionId: this.getRateOptionId(Number(hotel.hotel_id), offer, dateList[0], dateList[dateList.length - 1]),
           canonicalHotelId: Number(hotel.hotel_id),
+          routeIds: [...block.routeIds],
+          checkInDate: block.checkInDate,
+          checkOutDate: block.checkOutDate,
+          availableDates: [...dateList],
+          completeStayDates: [...dateList],
+          completeStayBookable: true,
           provider: 'offline',
           providerDisplayName: 'Offline',
           providerHotelCode: String(hotel.hotel_id),
@@ -544,6 +589,10 @@ export class OfflineHotelCatalogService {
           childWithBedAmount: offer.childWithBedAmount,
           childWithoutBedRate: offer.childWithoutBedRate,
           childWithoutBedAmount: offer.childWithoutBedAmount,
+          totalRoomCost: offer.nightlyRoomCost[0] || 0,
+          totalExtraBedCost: offer.nightlyExtraBedCost[0] || 0,
+          totalChildWithBedCost: offer.nightlyChildWithBedCost[0] || 0,
+          totalChildWithoutBedCost: offer.nightlyChildWithoutBedCost[0] || 0,
           currency: 'INR',
           priceLabel: 'Price subject to hotel approval',
           isLiveRate: false,
@@ -802,6 +851,7 @@ export class OfflineHotelCatalogService {
       const nightlyBase: number[] = [];
       const nightlyMargin: number[] = [];
       const nightlySell: number[] = [];
+      const nightlyRoomCost: number[] = [];
       const nightlyExtraBed: number[] = [];
       const nightlyChildWithBed: number[] = [];
       const nightlyChildWithoutBed: number[] = [];
@@ -831,6 +881,7 @@ export class OfflineHotelCatalogService {
         const extraBedAmount = this.hotelPricingService.money(supplements.extraBedRate * counts.extraBedCount);
         const childWithBedAmount = this.hotelPricingService.money(supplements.childWithBedRate * counts.childWithBedCount);
         const childWithoutBedAmount = this.hotelPricingService.money(supplements.childWithoutBedRate * counts.childWithoutBedCount);
+        const roomCost = this.hotelPricingService.money(nightlyPrice * roomsNeeded);
         const baseAmount = this.hotelPricingService.money(
           nightlyPrice * roomsNeeded + extraBedAmount + childWithBedAmount + childWithoutBedAmount,
         );
@@ -838,6 +889,7 @@ export class OfflineHotelCatalogService {
         nightlyBase.push(breakdown.baseAmount);
         nightlyMargin.push(breakdown.marginAmount);
         nightlySell.push(breakdown.sellAmount);
+        nightlyRoomCost.push(roomCost);
         nightlyExtraBed.push(extraBedAmount);
         nightlyChildWithBed.push(childWithBedAmount);
         nightlyChildWithoutBed.push(childWithoutBedAmount);
@@ -866,6 +918,10 @@ export class OfflineHotelCatalogService {
         extraBedAmount: this.hotelPricingService.money(nightlyExtraBed.reduce((sum, amount) => sum + amount, 0)),
         childWithBedAmount: this.hotelPricingService.money(nightlyChildWithBed.reduce((sum, amount) => sum + amount, 0)),
         childWithoutBedAmount: this.hotelPricingService.money(nightlyChildWithoutBed.reduce((sum, amount) => sum + amount, 0)),
+        nightlyRoomCost,
+        nightlyExtraBedCost: nightlyExtraBed,
+        nightlyChildWithBedCost: nightlyChildWithBed,
+        nightlyChildWithoutBedCost: nightlyChildWithoutBed,
       });
     }
 
@@ -1067,6 +1123,10 @@ export class OfflineHotelCatalogService {
         nightlyBase,
         nightlyMargin,
         nightlySell,
+        nightlyRoomCost: nightlyBase.map((amount) => this.hotelPricingService.money(amount / Math.max(roomCount, 1))),
+        nightlyExtraBedCost: nightlyBase.map(() => 0),
+        nightlyChildWithBedCost: nightlyBase.map(() => 0),
+        nightlyChildWithoutBedCost: nightlyBase.map(() => 0),
         hotelMarginPercentage: marginPercentage,
         baseTotalPrice: this.hotelPricingService.money(nightlyBase.reduce((sum, amount) => sum + amount, 0)),
         hotelMarginTotalAmount: this.hotelPricingService.money(nightlyMargin.reduce((sum, amount) => sum + amount, 0)),
@@ -1242,16 +1302,25 @@ export class OfflineHotelCatalogService {
       pricePerNight: routeSellAmount,
       basePricePerNight: routeNight.basePricePerNight || oneRoomNightBase(offer),
       baseTotalPrice: routeBaseAmount,
+      totalRoomCost: routeNight.roomCost,
+      hotelMarginBaseAmount: routeBaseAmount,
       hotelMarginPercentage: offer.hotelMarginPercentage,
       hotelMarginAmount: routeMarginAmount,
       hotelMarginTotalAmount: offer.hotelMarginTotalAmount,
       totalStayPrice: offer.totalStayPrice,
       numberOfNights: dateList.length,
       extraBedRate: offer.extraBedRate,
-      extraBedAmount: offer.extraBedRate * Math.max(Number(plan.total_extra_bed || 0), 0),
+      extraBedAmount: routeNight.extraBedCost,
       childWithBedRate: offer.childWithBedRate,
-      childWithBedAmount: offer.childWithBedAmount,
-      childWithoutBedAmount: offer.childWithoutBedAmount,
+      childWithBedAmount: routeNight.childWithBedCost,
+      childWithoutBedRate: offer.childWithoutBedRate,
+      childWithoutBedAmount: routeNight.childWithoutBedCost,
+      totalExtraBedCost: routeNight.extraBedCost,
+      totalChildWithBedCost: routeNight.childWithBedCost,
+      totalChildWithoutBedCost: routeNight.childWithoutBedCost,
+      extraBedCount: Number(plan.total_extra_bed || 0),
+      childWithBedCount: Number(plan.total_child_with_bed || 0),
+      childWithoutBedCount: Number(plan.total_child_without_bed || 0),
       currency: 'INR',
       nightlyRates: dateList.map((date, index) => ({
         date,

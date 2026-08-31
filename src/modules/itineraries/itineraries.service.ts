@@ -1785,6 +1785,7 @@ private getGuideSlotLabel(slotId: number): string {
 
     const requestedRoom = String(data.roomType || '').trim();
     const requestedRoomTypeId = Number(data.roomTypeId ?? data.room_type_id ?? 0);
+    const requestedRoomId = Number(data.roomId ?? data.room_id ?? 0);
     const requestedMeal = String(data.mealPlanCode || data.mealPlan || '').trim();
     const anchorRateOptionId = String(data.rateOptionId || data.optionKey || '').trim();
     const anchorSelectionKey = String(data.selectionKey || '').trim();
@@ -2009,6 +2010,19 @@ private getGuideSlotLabel(slotId: number): string {
       }
     }
     const normalize = (value: unknown) => String(value || '').trim().toLowerCase();
+    const roomLabelMatches = (candidate: unknown, requested: unknown): boolean => {
+      const candidateLabel = normalize(candidate);
+      const requestedLabel = normalize(requested);
+      if (!requestedLabel) return true;
+      if (candidateLabel === requestedLabel) return true;
+      // Legacy offline snapshots sometimes omit descriptive words from the
+      // room title (e.g. "Jungle Family" vs "Jungle View Family"). When no
+      // stable room ID was supplied, accept only a token-preserving extension
+      // of the requested label; this avoids matching unrelated room types.
+      const requestedTokens = requestedLabel.split(/[^a-z0-9]+/).filter(Boolean);
+      const candidateTokens = new Set(candidateLabel.split(/[^a-z0-9]+/).filter(Boolean));
+      return requestedTokens.length > 0 && requestedTokens.every((token) => candidateTokens.has(token));
+    };
     const normalizeMealPlan = (value: unknown) =>
       inferCanonicalHotelRatePlanCode(String(value || '')) ||
       inferCanonicalHotelRatePlanCodeFromMealText(String(value || '')) ||
@@ -2052,6 +2066,84 @@ private getGuideSlotLabel(slotId: number): string {
       return routeMatches && dateMatches && groupMatches && propertyMatches(option) && option.isSelectable !== false && option.isBookable !== false;
     });
     const selectedByRoute: any[] = [];
+    const repriceOfflineSelection = (option: any, routeDate: string): any => {
+      if (normalize(option?.provider) !== 'offline') return option;
+      const nightlyRate = Array.isArray(option?.nightlyRates)
+        ? option.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === routeDate)
+        : null;
+      const amount = (value: unknown): number => {
+        const parsed = Number(value ?? 0);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+      };
+      const baseTotalPrice = amount(
+        nightlyRate?.baseAmount ?? option.baseTotalPrice ?? option.baseHotelCost ?? option.roomRate,
+      );
+      if (baseTotalPrice <= 0) return option;
+      const extraBedAmount = amount(
+        nightlyRate?.extraBedAmount ?? option.extraBedAmount ??
+        amount(option.extraBedRate) * amount(option.extraBedCount),
+      );
+      const childWithBedAmount = amount(
+        nightlyRate?.childWithBedAmount ?? option.childWithBedAmount ??
+        amount(option.childWithBedRate) * amount(option.childWithBedCount),
+      );
+      const childWithoutBedAmount = amount(
+        nightlyRate?.childWithoutBedAmount ?? option.childWithoutBedAmount ??
+        amount(option.childWithoutBedRate) * amount(option.childWithoutBedCount),
+      );
+      const marginBaseAmount = Number((baseTotalPrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
+      const marginPercentage = amount(nightlyRate?.marginPercentage ?? option.hotelMarginPercentage);
+      const marginAmount = Number((marginBaseAmount * marginPercentage / 100).toFixed(2));
+      const totalPrice = Number((marginBaseAmount + marginAmount).toFixed(2));
+      const correctedNightlyRate = {
+        ...(nightlyRate || {}),
+        date: routeDate,
+        baseAmount: baseTotalPrice,
+        marginPercentage,
+        marginAmount,
+        sellAmount: totalPrice,
+        ...(amount(option.extraBedCount) > 0 || extraBedAmount > 0 ? {
+          extraBedCount: amount(option.extraBedCount),
+          extraBedRate: amount(option.extraBedRate),
+          extraBedAmount,
+        } : {}),
+        ...(amount(option.childWithBedCount) > 0 || childWithBedAmount > 0 ? {
+          childWithBedCount: amount(option.childWithBedCount),
+          childWithBedRate: amount(option.childWithBedRate),
+          childWithBedAmount,
+        } : {}),
+        ...(amount(option.childWithoutBedCount) > 0 || childWithoutBedAmount > 0 ? {
+          childWithoutBedCount: amount(option.childWithoutBedCount),
+          childWithoutBedRate: amount(option.childWithoutBedRate),
+          childWithoutBedAmount,
+        } : {}),
+      };
+      return {
+        ...option,
+        basePricePerNight: Number((baseTotalPrice / Math.max(Number(option.roomCount || 1), 1)).toFixed(2)),
+        baseTotalPrice,
+        baseHotelCost: baseTotalPrice,
+        totalRoomCost: baseTotalPrice,
+        hotelMarginBaseAmount: marginBaseAmount,
+        hotelMarginPercentage: marginPercentage,
+        hotelMarginAmount: marginAmount,
+        hotelMarginTotalAmount: marginAmount,
+        totalExtraBedCost: extraBedAmount,
+        totalChildWithBedCost: childWithBedAmount,
+        totalChildWithoutBedCost: childWithoutBedAmount,
+        totalPrice,
+        totalStayPrice: totalPrice,
+        totalHotelCost: totalPrice,
+        pricePerNight: totalPrice,
+        nightlyRates: Array.isArray(option.nightlyRates)
+          ? option.nightlyRates.map((night: any) =>
+              String(night?.date || '').slice(0, 10) === routeDate ? correctedNightlyRate : night,
+            )
+          : [correctedNightlyRate],
+        amountIncludesHotelMargin: true,
+        pricingIncludesHotelMargin: true,
+      };
+    };
     const anchorCandidates = routeOptions(Number(data.routeId), stay.stayDates[stay.routeIds.indexOf(Number(data.routeId))] || String(data.routeDate || '').slice(0, 10));
     // Prefer the exact supplier rate returned by preview. The TBO
     // selectionKey is deliberately session-agnostic and can otherwise match
@@ -2088,10 +2180,19 @@ private getGuideSlotLabel(slotId: number): string {
       const options = routeOptions(routeId, routeDate).filter((option: any) => {
         const room = String(option.roomType || option.roomTypeName || '').trim();
         const meal = String(option.mealPlan || option.mealPlanCode || '').trim();
-        if (intent === 'ROOM_TYPE' && requestedRoom && normalize(room) !== normalize(requestedRoom)) return false;
+        // Room IDs are the canonical identity for offline inventory.  The
+        // display title can legitimately differ between an old persisted
+        // snapshot and the current room master (for example "Jungle Deluxe"
+        // versus "Jungle View Deluxe").  Never reject a valid room by title
+        // when a concrete ID was supplied by the UI.
         if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
           const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
           if (candidateRoomTypeId !== requestedRoomTypeId) return false;
+        } else if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
+          const candidateRoomId = Number(option.roomId ?? option.room_id ?? 0);
+          if (candidateRoomId !== requestedRoomId) return false;
+        } else if (intent === 'ROOM_TYPE' && requestedRoom && !roomLabelMatches(room, requestedRoom)) {
+          return false;
         }
         if (intent === 'MEAL_PLAN' && requestedRoom && normalize(room) !== normalize(requestedRoom)) return false;
         // HOTEL and ROOM_TYPE actions preserve the itinerary's global meal
@@ -2102,7 +2203,15 @@ private getGuideSlotLabel(slotId: number): string {
           (intent === 'HOTEL' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') &&
           normalizeMealPlan(meal) !== normalizeMealPlan(requestedMeal)) return false;
         if ((intent === 'RATE_OPTION' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') && index !== stay.routeIds.indexOf(Number(data.routeId))) {
-          if (anchorRoom && normalize(room) !== normalize(anchorRoom)) return false;
+          if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
+            const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
+            if (candidateRoomTypeId !== requestedRoomTypeId) return false;
+          } else if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
+            const candidateRoomId = Number(option.roomId ?? option.room_id ?? 0);
+            if (candidateRoomId !== requestedRoomId) return false;
+          } else if (anchorRoom && !roomLabelMatches(room, anchorRoom)) {
+            return false;
+          }
           if (anchorMeal && normalizeMealPlan(meal) !== normalizeMealPlan(anchorMeal)) return false;
         }
         return true;
@@ -2114,7 +2223,7 @@ private getGuideSlotLabel(slotId: number): string {
       const eligibleAnchorOption = anchorOption && hasRequiredSupplementRates(anchorOption)
         ? anchorOption
         : null;
-      const selected = index === stay.routeIds.indexOf(Number(data.routeId)) && eligibleAnchorOption
+      let selected = index === stay.routeIds.indexOf(Number(data.routeId)) && eligibleAnchorOption
         ? eligibleAnchorOption
         : selectableOptions[0];
       if (!selected) {
@@ -2160,9 +2269,36 @@ private getGuideSlotLabel(slotId: number): string {
           canBookMultiNight: false,
         });
       }
-      const pricedSelected = provider === 'axisrooms'
+      let pricedSelected = provider === 'axisrooms'
         ? await this.resolveAxisRoomsSelectionPricing(selected, plan, routeDate)
-        : selected;
+        : repriceOfflineSelection(selected, routeDate);
+      // AxisRooms room/rate identity must exist in the ARI occupancy table.
+      // Supplier/search snapshots can contain stale room IDs; accepting one
+      // here makes the payable amount look valid while room/supplement fields
+      // are unavailable and later become zero in the persisted response.
+      if (provider === 'axisrooms' && pricedSelected.axisRoomsPricingResolved !== true) {
+        const resolvedCandidates: any[] = [];
+        for (const candidate of selectableOptions) {
+          const resolved = await this.resolveAxisRoomsSelectionPricing(candidate, plan, routeDate);
+          if (resolved.axisRoomsPricingResolved === true) {
+            resolvedCandidates.push(resolved);
+          }
+        }
+        if (resolvedCandidates.length > 0) {
+          pricedSelected = resolvedCandidates[0];
+          selected = pricedSelected;
+        } else {
+          throw new BadRequestException({
+            code: 'HOTEL_INTENT_UNAVAILABLE',
+            message: `No current AxisRooms occupancy rate is available for ${routeDate}.`,
+            selectionIntent: intent,
+            logicalStay: stay,
+            affectedRouteIds: stay.routeIds,
+            canBookSingleNight: stay.nights <= 1,
+            canBookMultiNight: false,
+          });
+        }
+      }
       selectedByRoute.push({ ...pricedSelected, itineraryRouteId: routeId, routeId, date: routeDate });
     }
 
@@ -2416,6 +2552,26 @@ private getGuideSlotLabel(slotId: number): string {
       where: { itinerary_plan_id: Number(data.planId), group_type: groupType, itinerary_route_id: { in: stay.routeIds }, hotel_required: 1, status: 1, deleted: 0 },
       orderBy: { itinerary_route_id: 'asc' },
     });
+    const persistedHotelDetailIds = persisted
+      .map((row: any) => Number(row.itinerary_plan_hotel_details_ID || 0))
+      .filter((id: number) => id > 0);
+    const persistedRoomDetails = persistedHotelDetailIds.length > 0
+      ? await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findMany({
+          where: {
+            itinerary_plan_hotel_details_id: { in: persistedHotelDetailIds },
+            status: 1,
+            deleted: 0,
+          },
+          orderBy: { itinerary_plan_hotel_room_details_ID: 'desc' },
+        })
+      : [];
+    const persistedRoomDetailByHotelDetailId = new Map<number, any>();
+    for (const roomDetail of persistedRoomDetails) {
+      const hotelDetailId = Number(roomDetail.itinerary_plan_hotel_details_id || 0);
+      if (hotelDetailId > 0 && !persistedRoomDetailByHotelDetailId.has(hotelDetailId)) {
+        persistedRoomDetailByHotelDetailId.set(hotelDetailId, roomDetail);
+      }
+    }
     const persistedHotelIds = Array.from(new Set(
       persisted.map((row: any) => Number(row.hotel_id || 0)).filter((hotelId: number) => hotelId > 0),
     ));
@@ -2429,6 +2585,9 @@ private getGuideSlotLabel(slotId: number): string {
       persistedHotelMasters.map((master: any) => [Number(master.hotel_id), master]),
     );
     const selections = persisted.map((row: any) => {
+      const roomDetail = persistedRoomDetailByHotelDetailId.get(
+        Number(row.itinerary_plan_hotel_details_ID || 0),
+      ) || {};
       let snapshot: any = {};
       try { snapshot = typeof row.selected_price_snapshot === 'string' ? JSON.parse(row.selected_price_snapshot) : (row.selected_price_snapshot || {}); } catch { snapshot = {}; }
       const persistedRouteDate = row.itinerary_route_date instanceof Date
@@ -2461,22 +2620,46 @@ private getGuideSlotLabel(slotId: number): string {
           ? identity.category
           : Number(snapshot.category || data.category || 0),
         selectedRateOptionId: row.selected_rate_option_id, rateOptionId: row.selected_rate_option_id,
-        roomId: snapshot.roomId, roomTypeId: snapshot.roomTypeId, roomType: snapshot.roomType,
+         roomId: snapshot.roomId ?? snapshot.room_id ?? roomDetail.room_id,
+         roomTypeId: snapshot.roomTypeId ?? snapshot.room_type_id ?? roomDetail.room_type_id,
+         roomType: snapshot.roomType,
         rateId: snapshot.rateId, mealPlan: snapshot.mealPlan, mealPlanCode: snapshot.mealPlan,
         bookingCode: snapshot.bookingCode, searchReference: snapshot.searchReference,
         pricePerNight: Number(row.selected_price_per_night || 0), totalPrice: Number(row.selected_total_price || 0), currency: row.selected_currency || 'INR',
         selectedPriceSnapshot: snapshot,
-        basePricePerNight: Number(snapshot.basePricePerNight ?? snapshot.base_price_per_night ?? 0),
-        baseTotalPrice: Number(snapshot.baseTotalPrice ?? snapshot.base_total_price ?? 0),
-        extraBedCount: Number(snapshot.extraBedCount ?? snapshot.extra_bed_count ?? 0),
-        extraBedRate: Number(snapshot.extraBedRate ?? snapshot.extra_bed_rate ?? 0),
-        extraBedAmount: Number(snapshot.extraBedAmount ?? snapshot.extra_bed_amount ?? 0),
-        childWithBedCount: Number(snapshot.childWithBedCount ?? snapshot.child_with_bed_count ?? 0),
-        childWithBedRate: Number(snapshot.childWithBedRate ?? snapshot.child_with_bed_rate ?? 0),
-        childWithBedAmount: Number(snapshot.childWithBedAmount ?? snapshot.child_with_bed_amount ?? 0),
-        childWithoutBedCount: Number(snapshot.childWithoutBedCount ?? snapshot.child_without_bed_count ?? 0),
-        childWithoutBedRate: Number(snapshot.childWithoutBedRate ?? snapshot.child_without_bed_rate ?? 0),
-        childWithoutBedAmount: Number(snapshot.childWithoutBedAmount ?? snapshot.child_without_bed_amount ?? 0),
+         basePricePerNight: Number(
+           snapshot.basePricePerNight ?? snapshot.base_price_per_night ??
+           snapshot.roomRate ?? roomDetail.room_rate ?? row.room_rate ?? 0,
+         ),
+         baseTotalPrice: Number(
+           snapshot.baseTotalPrice ?? snapshot.base_total_price ??
+           roomDetail.total_room_cost ?? row.total_room_cost ?? 0,
+         ),
+         // Room cost is the room-only base, never the stale legacy snapshot
+         // field that may contain a previous room's value or zero. The
+         // selection workflow persists this same authoritative base in the DB.
+         roomRate: Number(
+           snapshot.roomRate ?? snapshot.basePricePerNight ?? snapshot.base_price_per_night ??
+           roomDetail.room_rate ?? row.room_rate ?? 0,
+         ),
+         totalRoomCost: Number(
+           snapshot.baseTotalPrice ?? snapshot.base_total_price ??
+           snapshot.totalRoomCost ?? snapshot.total_room_cost ??
+           roomDetail.total_room_cost ?? row.total_room_cost ?? 0,
+         ),
+         extraBedCount: Number(snapshot.extraBedCount ?? snapshot.extra_bed_count ?? roomDetail.extra_bed_count ?? 0),
+         extraBedRate: Number(snapshot.extraBedRate ?? snapshot.extra_bed_rate ?? roomDetail.extra_bed_rate ?? 0),
+         extraBedAmount: Number(snapshot.extraBedAmount ?? snapshot.extra_bed_amount ?? row.total_extra_bed_cost ?? 0),
+         totalExtraBedCost: Number(snapshot.totalExtraBedCost ?? snapshot.total_extra_bed_cost ?? snapshot.extraBedAmount ?? snapshot.extra_bed_amount ?? row.total_extra_bed_cost ?? 0),
+         childWithBedCount: Number(snapshot.childWithBedCount ?? snapshot.child_with_bed_count ?? roomDetail.child_with_bed_count ?? 0),
+         childWithBedRate: Number(snapshot.childWithBedRate ?? snapshot.child_with_bed_rate ?? roomDetail.child_with_bed_charges ?? 0),
+         childWithBedAmount: Number(snapshot.childWithBedAmount ?? snapshot.child_with_bed_amount ?? row.total_childwith_bed_cost ?? 0),
+         totalChildWithBedCost: Number(snapshot.totalChildWithBedCost ?? snapshot.total_childwith_bed_cost ?? snapshot.childWithBedAmount ?? snapshot.child_with_bed_amount ?? row.total_childwith_bed_cost ?? 0),
+         childWithoutBedCount: Number(snapshot.childWithoutBedCount ?? snapshot.child_without_bed_count ?? roomDetail.child_without_bed_count ?? 0),
+         childWithoutBedRate: Number(snapshot.childWithoutBedRate ?? snapshot.child_without_bed_rate ?? roomDetail.child_without_bed_charges ?? 0),
+         childWithoutBedAmount: Number(snapshot.childWithoutBedAmount ?? snapshot.child_without_bed_amount ?? row.total_childwithout_bed_cost ?? 0),
+         totalChildWithoutBedCost: Number(snapshot.totalChildWithoutBedCost ?? snapshot.total_childwithout_bed_cost ?? snapshot.childWithoutBedAmount ?? snapshot.child_without_bed_amount ?? row.total_childwithout_bed_cost ?? 0),
+         hotelMarginBaseAmount: Number(snapshot.hotelMarginBaseAmount ?? snapshot.hotel_margin_base_amount ?? row.total_room_cost ?? 0),
         hotelMarginPercentage: Number(snapshot.hotelMarginPercentage ?? row.hotel_margin_percentage ?? 0),
         hotelMarginAmount: Number(snapshot.hotelMarginAmount ?? row.hotel_margin_rate ?? 0),
         hotelMarginTotalAmount: Number(
@@ -2505,7 +2688,7 @@ private getGuideSlotLabel(slotId: number): string {
       console.error('[HOTEL_INTENT] financial response enrichment failed', error);
     }
     return {
-      success: true, planId: Number(data.planId), groupType, selectionIntent: intent,
+      success: true, status: 'AVAILABLE', planId: Number(data.planId), groupType, selectionIntent: intent,
       logicalStay: stay,
       hotelDetails: selections,
       selections,
@@ -2527,7 +2710,7 @@ private getGuideSlotLabel(slotId: number): string {
     const reference = String(
       option?.rateOptionId || option?.rate_option_id || option?.bookingCode || option?.booking_code || '',
     ).trim();
-    const match = reference.match(/(?:axisrooms:|AX-)([^:|-]+)[:|-]([^:|-]+)[:|-]([^:|-]+)/i);
+    const match = reference.match(/(?:axisrooms:|AX-)([^:|-]+)[:|-]([^:|-]+)[:|-](?:(?:\d+)\|)?([^:|-]+)/i);
     const hotelId = Number(option?.canonicalHotelId || option?.hotelId || option?.hotel_id || match?.[1] || 0);
     const roomId = Number(option?.roomId || option?.room_id || match?.[2] || 0);
     const rateplanId = String(option?.rateplanId || option?.ratePlanId || option?.rateplan_id || match?.[3] || '').trim();
@@ -2551,7 +2734,7 @@ private getGuideSlotLabel(slotId: number): string {
         if (parsed && typeof parsed === 'object') { rates = parsed; break; }
       } catch { /* ignore malformed historical rows */ }
     }
-    if (!rates) return option;
+    if (!rates) return { ...option, axisRoomsPricingResolved: false };
 
     const roomCount = Math.max(Number(plan?.preferred_room_count || plan?.total_no_of_rooms || 1), 1);
     const adults = Math.max(Number(plan?.total_adult || 0), 0);
@@ -2572,11 +2755,21 @@ private getGuideSlotLabel(slotId: number): string {
       childWithoutBedCount: plan?.total_child_without_bed,
       marginPercentage,
     });
-    if (!(pricing.hotelMarginBaseAmount > 0)) return option;
+    if (!(pricing.hotelMarginBaseAmount > 0)) return { ...option, axisRoomsPricingResolved: false };
+    const roomMaster = await (this.prisma as any).dvi_hotel_rooms?.findUnique?.({
+      where: { room_ID: roomId },
+      select: { room_type_id: true },
+    });
     const marginAmount = pricing.hotelMarginAmount;
     const totalPrice = pricing.totalPrice;
     return {
       ...option,
+      roomId,
+      rateplanId,
+      rateId: rateplanId,
+      ...(Number(roomMaster?.room_type_id || 0) > 0
+        ? { roomTypeId: Number(roomMaster.room_type_id) }
+        : {}),
       basePricePerNight: pricing.roomRate,
       baseTotalPrice: pricing.baseTotalPrice,
       baseHotelCost: pricing.baseTotalPrice,
@@ -2593,6 +2786,7 @@ private getGuideSlotLabel(slotId: number): string {
       totalPrice,
       totalStayPrice: totalPrice,
       totalHotelCost: totalPrice,
+      axisRoomsPricingResolved: true,
     };
   }
 
@@ -2624,11 +2818,30 @@ private getGuideSlotLabel(slotId: number): string {
       Math.max(Number(plan?.preferred_room_count || 1), 1),
       Math.max(Number(plan?.total_adult || 0), 0),
       Math.max(Number(plan?.total_children || 0), 0),
+      [],
+      '',
+      [],
+      {
+        extraBedCount: Number(plan?.total_extra_bed || 0),
+        childWithBedCount: Number(plan?.total_child_with_bed || 0),
+        childWithoutBedCount: Number(plan?.total_child_without_bed || 0),
+      },
     );
     const normalize = (value: unknown) => String(value || '').trim().toLowerCase();
     const requestedCanonical = Number(data.canonicalHotelId || data.hotelId || 0);
     const requestedCode = normalize(data.hotelCode || data.providerHotelCode || data.hotelId);
     const requestedRoom = normalize(data.roomType);
+    const requestedRoomId = Number(data.roomId ?? data.room_id ?? 0);
+    const requestedRoomTypeId = Number(data.roomTypeId ?? data.room_type_id ?? 0);
+    const roomLabelMatches = (candidate: unknown, requested: unknown): boolean => {
+      const candidateLabel = normalize(candidate);
+      const requestedLabel = normalize(requested);
+      if (!requestedLabel) return true;
+      if (candidateLabel === requestedLabel) return true;
+      const requestedTokens = requestedLabel.split(/[^a-z0-9]+/).filter(Boolean);
+      const candidateTokens = new Set(candidateLabel.split(/[^a-z0-9]+/).filter(Boolean));
+      return requestedTokens.length > 0 && requestedTokens.every((token) => candidateTokens.has(token));
+    };
     const requestedMeal = normalize(data.mealPlanCode || data.mealPlan);
     const requestedRate = String(data.rateOptionId || data.optionKey || '').trim();
 
@@ -2653,7 +2866,9 @@ private getGuideSlotLabel(slotId: number): string {
           const room = normalize(option.roomType || option.roomTypeName || hotel?.roomType);
           const meal = normalize(option.mealPlan || option.mealPlanCode || hotel?.mealPlan);
           if (requestedRate && String(option.rateOptionId || option.optionKey || '').trim() !== requestedRate) return false;
-          if (requestedRoom && room !== requestedRoom) return false;
+          if (requestedRoomTypeId > 0 && Number(option.roomTypeId ?? option.room_type_id ?? 0) !== requestedRoomTypeId) return false;
+          if (requestedRoomId > 0 && Number(option.roomId ?? option.room_id ?? 0) !== requestedRoomId) return false;
+          if (!requestedRoomTypeId && !requestedRoomId && requestedRoom && !roomLabelMatches(room, requestedRoom)) return false;
           if (requestedMeal && meal !== requestedMeal) return false;
           return option.isSelectable !== false && option.isBookable !== false;
         })

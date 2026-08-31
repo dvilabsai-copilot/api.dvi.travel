@@ -47,8 +47,8 @@ test('compact reset response preserves complete per-day hotel inventory for the 
       'Radisson Blu Resort Temple Bay',
     ],
   );
-  assert.equal((inventory[0] as any).rateOptions, undefined);
-  assert.equal(result.hotelDetails.hotels[0].rateOptions, undefined);
+  assert.deepEqual((inventory[0] as any).rateOptions, [{ id: 'a' }]);
+  assert.deepEqual(result.hotelDetails.hotels[0].rateOptions, [{ id: 'selected-rate' }]);
   assert.equal(result.hotelDetails.hotels[0].hotelCheckInDate, '2026-08-31');
   assert.equal(result.hotelDetails.hotels[0].hotelCheckOutDate, '2026-09-02');
   assert.equal(result.hotelDetails.hotels[0].actualGuestArrivalAt, '2026-09-01T06:00:00.000Z');

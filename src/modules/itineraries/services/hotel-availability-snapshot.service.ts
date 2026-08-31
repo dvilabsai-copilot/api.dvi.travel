@@ -508,7 +508,19 @@ export class HotelAvailabilitySnapshotService {
               })();
           return selectionGroup === rowGroup && linkedRoutes.map(Number).includes(routeId);
         });
-        const anchorSource = persistedAnchor ? { ...row, ...persistedAnchor } : row;
+        const anchorSource = persistedAnchor
+          ? {
+              ...row,
+              ...persistedAnchor,
+              // A persisted selection is one concrete room. Keep the fresh
+              // inventory variants on the projected continuous-stay row so
+              // Day 2 can still browse every valid room type for the hotel.
+              rateOptions: this.canonicalizeRateOptions(row, [
+                ...(Array.isArray(row?.rateOptions) ? row.rateOptions : []),
+                ...(Array.isArray(persistedAnchor?.rateOptions) ? persistedAnchor.rateOptions : []),
+              ]),
+            }
+          : row;
         return {
           ...anchorSource,
           itineraryRouteId: routeId,
@@ -528,8 +540,130 @@ export class HotelAvailabilitySnapshotService {
         };
       });
     });
+    // A selected continuous stay is stored as one authoritative anchor row,
+    // but the Check Availability contract is route/night based.  Do not make
+    // the client reconstruct later nights from hotelSelectionState: materialize
+    // the persisted selection here, using the route ids and nightly snapshot
+    // that were saved with that selection.
+    const persistedRouteNightRows = (Array.isArray((persisted as any).hotels)
+      ? (persisted as any).hotels
+      : []).flatMap((row: any) => {
+        const snapshot = parseHotelSelectionSnapshot(row) as any;
+        const routeIds = Array.from(new Set<number>([
+          ...(Array.isArray(row?.authoritativeRouteIds) ? row.authoritativeRouteIds : []),
+          ...(Array.isArray(snapshot?.authoritativeRouteIds) ? snapshot.authoritativeRouteIds : []),
+          ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
+        ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
+        const nightlyRates = Array.isArray(row?.nightlyRates)
+          ? row.nightlyRates
+          : (Array.isArray(snapshot?.nightlyRates) ? snapshot.nightlyRates : []);
+        if (routeIds.length < 2) return [row];
+
+        return routeIds.map((routeId, index) => {
+          const route = routeById.get(routeId);
+          const routeDate = normalizeAnchorRouteDate(route?.itinerary_route_date) ||
+            normalizeAnchorRouteDate(nightlyRates[index]?.date);
+          const nightlyRate = nightlyRates.find((night: any) =>
+            Number(night?.routeId || night?.itineraryRouteId || night?.itinerary_route_id || 0) === routeId,
+          ) || nightlyRates[index] || {};
+          const dayNumber = routeDayById.get(routeId) || index + 1;
+          const routeNightBase = Number(
+            nightlyRate?.baseAmount ?? nightlyRate?.baseTotalPrice ?? NaN,
+          );
+          const amount = (value: unknown): number => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+          };
+          const count = (nightlyValue: unknown, rowValue: unknown): number =>
+            Math.max(amount(nightlyValue ?? rowValue), 0);
+          const rate = (nightlyValue: unknown, rowValue: unknown): number =>
+            amount(nightlyValue ?? rowValue);
+          const extraBedCount = count(nightlyRate?.extraBedCount, row?.extraBedCount);
+          const childWithBedCount = count(nightlyRate?.childWithBedCount, row?.childWithBedCount);
+          const childWithoutBedCount = count(nightlyRate?.childWithoutBedCount, row?.childWithoutBedCount);
+          const extraBedRate = rate(nightlyRate?.extraBedRate, row?.extraBedRate);
+          const childWithBedRate = rate(nightlyRate?.childWithBedRate, row?.childWithBedRate);
+          const childWithoutBedRate = rate(nightlyRate?.childWithoutBedRate, row?.childWithoutBedRate);
+          const extraBedAmount = amount(nightlyRate?.extraBedAmount ?? extraBedRate * extraBedCount);
+          const childWithBedAmount = amount(
+            nightlyRate?.childWithBedAmount ?? childWithBedRate * childWithBedCount,
+          );
+          const childWithoutBedAmount = amount(
+            nightlyRate?.childWithoutBedAmount > 0
+              ? nightlyRate.childWithoutBedAmount
+              : nightlyRate?.extraChildAmount > 0
+                ? nightlyRate.extraChildAmount
+                : childWithoutBedRate * childWithoutBedCount,
+          );
+          const mealPlanAmount = amount(
+            nightlyRate?.hotelMealPlanCost ?? nightlyRate?.mealPlanAmount ?? row?.hotelMealPlanCost,
+          );
+          const calculatedBase = Number.isFinite(routeNightBase)
+            ? routeNightBase
+            : amount(row?.baseTotalPrice ?? row?.baseHotelCost ?? row?.roomRate);
+          const supplementTotal = extraBedAmount + childWithBedAmount + childWithoutBedAmount;
+          const marginBase = calculatedBase + supplementTotal + mealPlanAmount;
+          const marginPercentage = amount(
+            nightlyRate?.marginPercentage ?? row?.hotelMarginPercentage,
+          );
+          const marginAmount = Number((marginBase * marginPercentage / 100).toFixed(2));
+          const taxAmount = amount(
+            nightlyRate?.totalHotelTaxAmount ?? nightlyRate?.hotelTaxAmount ?? 0,
+          );
+          const routeNightSell = Number((marginBase + marginAmount + taxAmount).toFixed(2));
+
+          return {
+            ...row,
+            itineraryRouteId: routeId,
+            routeId,
+            itinerary_route_id: routeId,
+            routeIds: [routeId],
+            ...(routeDate ? {
+              itineraryRouteDate: routeDate,
+              itinerary_route_date: routeDate,
+              date: routeDate,
+              checkInDate: routeDate,
+              check_in_date: routeDate,
+              day: `Day ${dayNumber} | ${routeDate}`,
+            } : {}),
+            ...(Number.isFinite(calculatedBase) && calculatedBase >= 0 ? {
+              baseTotalPrice: calculatedBase,
+              baseHotelCost: calculatedBase,
+              totalRoomCost: calculatedBase,
+              roomRate: Number((calculatedBase / Math.max(Number(row?.roomCount || 1), 1)).toFixed(2)),
+              basePricePerNight: Number((calculatedBase / Math.max(Number(row?.roomCount || 1), 1)).toFixed(2)),
+              totalExtraBedCost: extraBedAmount,
+              totalChildWithBedCost: childWithBedAmount,
+              totalChildWithoutBedCost: childWithoutBedAmount,
+              extraBedCount,
+              extraBedRate,
+              extraBedAmount,
+              childWithBedCount,
+              childWithBedRate,
+              childWithBedAmount,
+              childWithoutBedCount,
+              childWithoutBedRate,
+              childWithoutBedAmount,
+              hotelMealPlanCost: mealPlanAmount,
+              hotelMarginBaseAmount: marginBase,
+              hotelMarginPercentage: marginPercentage,
+              hotelMarginAmount: marginAmount,
+              hotelMarginTotalAmount: marginAmount,
+              totalHotelTaxAmount: taxAmount,
+            } : {}),
+            ...(Number.isFinite(routeNightSell) && routeNightSell >= 0 ? {
+              totalHotelCost: routeNightSell,
+              totalStayPrice: routeNightSell,
+              totalPrice: routeNightSell,
+              price: routeNightSell,
+              pricePerNight: routeNightSell,
+            } : {}),
+          };
+        });
+      });
+
     const responseHotels = this.dedupeRows([
-      ...(Array.isArray((persisted as any).hotels) ? (persisted as any).hotels : []),
+      ...persistedRouteNightRows,
       ...authoritativeAnchorRows,
     ]);
     return {
@@ -1618,11 +1752,13 @@ export class HotelAvailabilitySnapshotService {
         ...(completeStayBookable ? {} : {
           isSelectable: false,
           availabilityStatus: 'NO_AVAILABILITY',
+          availabilityState: 'UNAVAILABLE',
+          selectionStatus: 'UNAVAILABLE',
         }),
         availabilityMessage,
       };
     };
-    return (rows || []).map((row: any) => {
+    const decoratedRows = (rows || []).map((row: any) => {
       const block = rowRouteIds(row).map((id) => blockByRouteId.get(id)).find(Boolean);
       if (!block) return row;
       const decoratedRow = decorate(row, propertyCoverage.get(propertyIdentity(row)) || new Set<number>(), block);
@@ -1661,6 +1797,66 @@ export class HotelAvailabilitySnapshotService {
         }),
       };
     });
+
+    // A supplier response is route-oriented and can omit a property entirely
+    // on one night.  The hotel pane is stay-oriented: a property that covers
+    // only part of a continuous stay must still be visible on every linked
+    // night, but it must be UNAVAILABLE on every pane because the stay cannot
+    // be booked as one unit.  Create a route marker for an omitted night from
+    // the property's existing row and apply the same stay-level decoration.
+    const rowsByPropertyAndBlock = new Map<string, { block: { routeIds: number[]; dates: string[] }; rows: any[] }>();
+    for (const row of decoratedRows) {
+      const block = rowRouteIds(row).map((id) => blockByRouteId.get(id)).find(Boolean);
+      if (!block) continue;
+      const key = `${propertyIdentity(row)}|${block.routeIds.join(',')}`;
+      const entry = rowsByPropertyAndBlock.get(key) || { block, rows: [] };
+      entry.rows.push(row);
+      rowsByPropertyAndBlock.set(key, entry);
+    }
+    const generatedMarkers: any[] = [];
+    for (const { block, rows: propertyRows } of rowsByPropertyAndBlock.values()) {
+      const coveredRouteIds = new Set<number>(propertyRows.flatMap((row: any) => rowRouteIds(row)));
+      if (coveredRouteIds.size >= block.routeIds.length) continue;
+      const representative = propertyRows[0];
+      for (let index = 0; index < block.routeIds.length; index += 1) {
+        const missingRouteId = block.routeIds[index];
+        if (coveredRouteIds.has(missingRouteId)) continue;
+        const marker = {
+          ...representative,
+          itineraryRouteId: missingRouteId,
+          routeId: missingRouteId,
+          itinerary_route_id: missingRouteId,
+          routeIds: [missingRouteId],
+          date: block.dates[index],
+          itineraryRouteDate: block.dates[index],
+          checkInDate: block.dates[index],
+          day: representative.dayNumber ? `Day ${representative.dayNumber} | ${block.dates[index]}` : representative.day,
+          isSelected: false,
+          selectionId: undefined,
+          selectionStatus: 'UNAVAILABLE',
+          isSelectable: false,
+          availabilityStatus: 'NO_AVAILABILITY',
+          availabilityState: 'UNAVAILABLE',
+          availabilityMessage: `Not available on ${formatDate(block.dates[index])}. The continuous stay is unavailable because rates are missing for another linked night.`,
+        };
+        const decoratedMarker = decorate(marker, propertyRows.reduce((set: Set<number>, row: any) => {
+          rowRouteIds(row).forEach((id) => set.add(id));
+          return set;
+        }, new Set<number>()), block);
+        generatedMarkers.push({
+          ...decoratedMarker,
+          isSelected: false,
+          selectionId: undefined,
+          selectionStatus: 'UNAVAILABLE',
+          isSelectable: false,
+          availabilityStatus: 'NO_AVAILABILITY',
+          availabilityState: 'UNAVAILABLE',
+          hotelStayAvailabilityStatus: 'NO_AVAILABILITY',
+          hotelStayIsSelectable: false,
+        });
+      }
+    }
+    return [...decoratedRows, ...generatedMarkers];
   }
 
   private buildSharedHotelInventory(rows: any[], effectiveMarginPercentage: number): any[] {
@@ -4832,7 +5028,7 @@ export class HotelAvailabilitySnapshotService {
       );
       const childWithoutBedAmount = supplementAmount(
         option.childWithoutBedAmount ?? option.child_without_bed_amount,
-        option.childWithoutBedCost ?? option.totalChildWithoutBedCost ?? option.total_childwithout_bed_cost,
+        option.childWithoutBedCost ?? option.totalChildWithoutBedCost ?? option.total_childwithout_bed_cost ?? option.extraChildAmount ?? option.extra_child_amount,
         supplementCount(option.childWithoutBedCount ?? option.child_without_bed_count, plan?.total_child_without_bed),
         option.childWithoutBedRate ?? option.child_without_bed_rate,
       );
@@ -5391,7 +5587,8 @@ export class HotelAvailabilitySnapshotService {
       positive(option?.childWithBedRate, option?.child_with_bed_rate) * Math.max(Number(option?.childWithBedCount || selection?.room_cwb_count || 0), 0);
     const childWithoutBedAmount = positive(option?.childWithoutBedAmount, option?.child_without_bed_amount,
       option?.totalChildWithoutBedCost, option?.total_childwithout_bed_cost) ||
-      positive(option?.childWithoutBedRate, option?.child_without_bed_rate) * Math.max(Number(option?.childWithoutBedCount || selection?.room_cnb_count || 0), 0);
+      positive(option?.childWithoutBedRate, option?.child_without_bed_rate) * Math.max(Number(option?.childWithoutBedCount || selection?.room_cnb_count || 0), 0) ||
+      positive(option?.extraChildAmount, option?.extra_child_amount);
     const marginPercentage = Math.max(Number(
       option?.hotelMarginPercentage ?? option?.hotel_margin_percentage ??
       selection?.hotel_margin_percentage ?? process.env.HOTEL_MARGIN ?? 0,

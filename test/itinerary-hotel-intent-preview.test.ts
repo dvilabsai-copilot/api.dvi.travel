@@ -172,6 +172,40 @@ test('stale offline rate identity is rejected instead of reused', async () => {
   assert.equal(result.status, 'NO_AVAILABILITY');
 });
 
+test('offline room-type preview uses room ID when a legacy room label is supplied', async () => {
+  const { service } = createService(async () => candidates);
+
+  const result = await service.previewHotelIntent(payload({
+    selectionIntent: 'ROOM_TYPE',
+    roomType: 'Jungle Deluxe',
+    roomId: 540,
+    // Simulates the legacy browser payload that did not yet carry roomTypeId.
+    roomTypeId: undefined,
+  }));
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.deepEqual(result.selections.map((selection: any) => selection.roomId), [540, 540]);
+});
+
+test('offline room-type preview accepts a constrained legacy room label alias', async () => {
+  const legacyCandidates = candidates.map((candidate) => ({
+    ...candidate,
+    roomType: 'Jungle View Family',
+    roomId: 1262,
+  }));
+  const { service } = createService(async () => legacyCandidates);
+
+  const result = await service.previewHotelIntent(payload({
+    selectionIntent: 'ROOM_TYPE',
+    roomType: 'Jungle Family',
+    roomId: undefined,
+    roomTypeId: undefined,
+  }));
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Jungle View Family', 'Jungle View Family']);
+});
+
 test('preview from either night preserves the same continuous stay', async () => {
   const { service } = createService(async () => candidates);
 

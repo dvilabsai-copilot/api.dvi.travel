@@ -6380,10 +6380,15 @@ const hasRequiredVehicleSelection =
             snapshot?.childWithBedAmount ?? snapshot?.child_with_bed_amount ??
             snapshot?.childWithBedCost ?? snapshot?.total_childwith_bed_cost ?? 0,
           ) * rowMultiplier;
-          selectedChildWithoutBedAmount = Number(
-            snapshot?.childWithoutBedAmount ?? snapshot?.child_without_bed_amount ??
-            snapshot?.childWithoutBedCost ?? snapshot?.total_childwithout_bed_cost ?? 0,
-          ) * rowMultiplier;
+          selectedChildWithoutBedAmount = [
+            snapshot?.childWithoutBedAmount,
+            snapshot?.child_without_bed_amount,
+            snapshot?.childWithoutBedCost,
+            snapshot?.total_childwithout_bed_cost,
+            snapshot?.extraChildAmount,
+            snapshot?.extra_child_amount,
+          ].map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
+          selectedChildWithoutBedAmount *= rowMultiplier;
           const snapshotMargin = Number(
             snapshot?.hotelMarginStayAmount ??
             snapshot?.hotelMarginTotalAmount ??

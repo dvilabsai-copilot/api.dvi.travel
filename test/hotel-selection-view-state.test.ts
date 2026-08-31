@@ -220,6 +220,65 @@ test('canonical room pricing wins over stale nightly baseAmount', () => {
   assert.equal(state[0].routes[0].selected?.selectedPriceSnapshot?.totalRoomCost, 13600);
 });
 
+test('legacy continuous offline snapshot projects per-night room and supplement pricing', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 11440 }],
+    rows: [{
+      groupType: 1,
+      itineraryRouteId: 11322,
+      date: '2026-09-05',
+      provider: 'offline',
+      hotelId: 439,
+      hotelCode: '439',
+      hotelName: 'JUNGLE PARK RESORT',
+      roomType: 'Jungle View Deluxe',
+      mealPlan: 'CP',
+      isSelected: true,
+      selectionOrigin: 'AUTO_SELECTED',
+      completeStayBookable: true,
+      completeStayRouteIds: [11322, 11323],
+      selectedPriceSnapshot: {
+        provider: 'offline',
+        roomRate: 3600,
+        roomCount: 1,
+        totalRoomCost: 2000,
+        baseTotalPrice: 2000,
+        extraBedCount: 1,
+        extraBedRate: 1000,
+        extraBedAmount: 2000,
+        childWithBedCount: 0,
+        childWithBedRate: 1000,
+        childWithBedAmount: 0,
+        childWithoutBedCount: 1,
+        childWithoutBedRate: 600,
+        childWithoutBedAmount: 1200,
+        hotelMarginPercentage: 10,
+        pricePerNight: 7480,
+        totalPrice: 5720,
+        nightlyRates: [
+          { date: '2026-09-05', baseAmount: 3600, marginPercentage: 10, marginAmount: 360, sellAmount: 3960 },
+          { date: '2026-09-06', baseAmount: 3600, marginPercentage: 10, marginAmount: 360, sellAmount: 3960 },
+        ],
+      },
+    }],
+    requiredRoutes: [
+      { routeId: 11322, routeDate: '2026-09-05' },
+      { routeId: 11323, routeDate: '2026-09-06' },
+    ],
+  });
+
+  for (const route of state[0].routes) {
+    assert.equal(route.selected?.pricePerNight, 5720);
+    assert.equal(route.selected?.totalPrice, 5720);
+    assert.equal(route.selected?.selectedPriceSnapshot?.roomRate, 3600);
+    assert.equal(route.selected?.selectedPriceSnapshot?.totalRoomCost, 3600);
+    assert.equal(route.selected?.selectedPriceSnapshot?.extraBedAmount, 1000);
+    assert.equal(route.selected?.selectedPriceSnapshot?.childWithoutBedAmount, 600);
+    assert.equal(route.selected?.selectedPriceSnapshot?.hotelMarginBaseAmount, 5200);
+    assert.equal(route.selected?.selectedPriceSnapshot?.hotelMarginAmount, 520);
+  }
+});
+
 test('projects one persisted continuous-stay selection to every authoritative route', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 8140 }],

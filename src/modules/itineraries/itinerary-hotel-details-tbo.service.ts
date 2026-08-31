@@ -1208,6 +1208,7 @@ if (hotelMasterId) {
     const requestedProvider = String(provider || '').trim().toLowerCase();
     const normalizedProvider = requestedProvider === 'ax' ? 'axisrooms' : requestedProvider;
     const normalizedHotelCode = String(hotelCode || '').trim();
+    const axisRoomsPropertyId = normalizedHotelCode.match(/(?:^|[^0-9])(\d+)$/)?.[1] || normalizedHotelCode;
     if (!normalizedProvider || !normalizedHotelCode) {
       throw new BadRequestException('provider and hotelCode are required');
     }
@@ -1232,8 +1233,8 @@ if (hotelMasterId) {
               children: childCount,
               childWithBedCount,
               extraBedCount,
-            }, normalizedHotelCode,
-          )).get(Number(routeId)) || []
+             }, axisRoomsPropertyId,
+           )).get(Number(routeId)) || []
         : normalizedProvider === 'offline'
           ? ((await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
               [route],
@@ -1250,11 +1251,25 @@ if (hotelMasterId) {
                 childWithBedCount,
                 childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
               },
-            )).get(Number(routeId)) || []).filter((hotel: any) =>
-              String(
-                hotel?.hotelCode || hotel?.providerHotelCode || hotel?.canonicalHotelId || hotel?.hotelId || '',
-              ).trim() === normalizedHotelCode,
-            )
+          )).get(Number(routeId)) || []).filter((hotel: any) => {
+            // AxisRooms search rows expose our internal numeric hotel code in
+            // `hotelCode` and the provider property code in
+            // `providerHotelCode`. The selection request normally sends the
+            // provider code (AX_DVI_HOTEL_234), so checking only hotelCode
+            // incorrectly removed every valid DB-backed room option and left
+            // the stale supplier room as the apparent selection.
+            const targetPropertyId = normalizedHotelCode.match(/(?:^|[^0-9])(\d+)$/)?.[1] || '';
+            return [
+              hotel?.hotelCode,
+              hotel?.providerHotelCode,
+              hotel?.canonicalHotelId,
+              hotel?.hotelId,
+            ].some((value) => {
+              const candidate = String(value ?? '').trim();
+              return candidate === normalizedHotelCode ||
+                (targetPropertyId !== '' && candidate === targetPropertyId);
+            });
+          })
         : await this.hotelSearchService.searchHotels({
             cityCode: String((route as any).next_visiting_location || '').trim(),
             checkInDate, checkOutDate, roomCount,
@@ -3488,7 +3503,9 @@ this.logger.log(
           continue;
         }
 
- // Group occupancy rows by rateplan_id and extract rate from each plan
+        // Group occupancy rows by room_id + rateplan_id. A hotel can have
+        // several room categories on the same meal plan; keying only by the
+        // plan silently discarded every room after the first CP/AP/MAP row.
         const ratesByPlan = new Map<string, { rate: number; roomId: number; occupancyRates: unknown }>();
 
         for (const occ of occupancyRows as any[]) {
@@ -3499,8 +3516,9 @@ this.logger.log(
           const rateplanId = String((occ as any).rateplan_id || '').trim();
           if (!rateplanId) continue;
 
- // Only extract rate if we haven't found one for this rate plan yet
-          if (!ratesByPlan.has(rateplanId)) {
+          const roomPlanKey = `${rid}|${rateplanId}`;
+          // Only extract rate if we haven't found one for this room/plan yet.
+          if (!ratesByPlan.has(roomPlanKey)) {
             const extractedRate = this.extractAxisroomsRate((occ as any).occupancy_rates, {
               roomCount: requiredRoomCount,
               adults: Number(paxProfile?.adults || 0),
@@ -3509,7 +3527,7 @@ this.logger.log(
               extraBedCount: Number(paxProfile?.extraBedCount || 0),
             });
             if (extractedRate > 0) {
-              ratesByPlan.set(rateplanId, {
+              ratesByPlan.set(roomPlanKey, {
                 rate: extractedRate,
                 roomId: rid,
                 occupancyRates: (occ as any).occupancy_rates,

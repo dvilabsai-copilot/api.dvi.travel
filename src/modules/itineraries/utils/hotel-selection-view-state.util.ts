@@ -175,6 +175,11 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
   const routeNight = nightlyRates.find(
     (night: any) => String(night?.date || '').slice(0, 10) === String(routeDate || '').slice(0, 10),
   );
+  const pricingScope = String(snapshot?.pricingScope || '').trim().toUpperCase();
+  const isLegacyContinuousOfflineSnapshot =
+    String(snapshot?.provider ?? row?.provider ?? '').trim().toLowerCase() === 'offline' &&
+    pricingScope !== 'ROUTE_NIGHT' &&
+    nightlyRates.length > 1;
   const logicalStayTotal = Number(nightlyRates.length > 1
     ? nightlyRates
         .map((night: any) => Number(night?.sellAmount ?? night?.totalAmount ?? night?.pricePerNight ?? night?.price ?? 0))
@@ -188,16 +193,32 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
   if (snapshot && routeNight && Number(routeNight.baseAmount || 0) > 0) {
     const roomCount = Math.max(Number(snapshot.roomCount ?? snapshot.totalRooms ?? row?.roomCount ?? row?.noOfRooms ?? 1), 1);
     const canonicalRoomRate = Number(routeNight.roomRate ?? snapshot.roomRate ?? 0);
-    const canonicalRoomCost = Number(routeNight.totalRoomCost ?? snapshot.totalRoomCost ?? 0);
+    const canonicalRoomCost = Number(
+      routeNight.totalRoomCost ??
+      (isLegacyContinuousOfflineSnapshot ? routeNight.baseAmount : snapshot.totalRoomCost) ??
+      0,
+    );
     const roomRate = canonicalRoomRate > 0
       ? canonicalRoomRate
       : Number((Number(routeNight.baseAmount || 0) / roomCount).toFixed(2));
     const totalRoomCost = canonicalRoomCost > 0
       ? canonicalRoomCost
       : Number(routeNight.baseAmount || snapshot.baseTotalPrice || 0);
-    const extraBedAmount = Number(snapshot.extraBedAmount ?? nestedSelection.extraBedAmount ?? row?.extraBedAmount ?? 0);
-    const childWithBedAmount = Number(snapshot.childWithBedAmount ?? nestedSelection.childWithBedAmount ?? row?.childWithBedAmount ?? 0);
-    const childWithoutBedAmount = Number(snapshot.childWithoutBedAmount ?? nestedSelection.childWithoutBedAmount ?? row?.childWithoutBedAmount ?? 0);
+    const extraBedCount = Number(snapshot.extraBedCount ?? nestedSelection.extraBedCount ?? row?.extraBedCount ?? 0);
+    const extraBedRate = Number(snapshot.extraBedRate ?? nestedSelection.extraBedRate ?? row?.extraBedRate ?? 0);
+    const childWithBedCount = Number(snapshot.childWithBedCount ?? nestedSelection.childWithBedCount ?? row?.childWithBedCount ?? 0);
+    const childWithBedRate = Number(snapshot.childWithBedRate ?? nestedSelection.childWithBedRate ?? row?.childWithBedRate ?? 0);
+    const childWithoutBedCount = Number(snapshot.childWithoutBedCount ?? nestedSelection.childWithoutBedCount ?? row?.childWithoutBedCount ?? 0);
+    const childWithoutBedRate = Number(snapshot.childWithoutBedRate ?? nestedSelection.childWithoutBedRate ?? row?.childWithoutBedRate ?? 0);
+    const extraBedAmount = isLegacyContinuousOfflineSnapshot && extraBedRate > 0
+      ? Number((extraBedRate * extraBedCount).toFixed(2))
+      : Number(snapshot.extraBedAmount ?? nestedSelection.extraBedAmount ?? row?.extraBedAmount ?? 0);
+    const childWithBedAmount = isLegacyContinuousOfflineSnapshot && childWithBedRate > 0
+      ? Number((childWithBedRate * childWithBedCount).toFixed(2))
+      : Number(snapshot.childWithBedAmount ?? nestedSelection.childWithBedAmount ?? row?.childWithBedAmount ?? 0);
+    const childWithoutBedAmount = isLegacyContinuousOfflineSnapshot && childWithoutBedRate > 0
+      ? Number((childWithoutBedRate * childWithoutBedCount).toFixed(2))
+      : Number(snapshot.childWithoutBedAmount ?? nestedSelection.childWithoutBedAmount ?? row?.childWithoutBedAmount ?? 0);
     const supplementTotal = extraBedAmount + childWithBedAmount + childWithoutBedAmount;
     const marginPercentage = Number(snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? routeNight.marginPercentage ?? 0);
     const marginBase = Number((totalRoomCost + supplementTotal).toFixed(2));
@@ -210,6 +231,15 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       totalRoomCost,
       basePricePerNight: roomRate,
       baseTotalPrice: totalRoomCost,
+      extraBedCount,
+      extraBedRate,
+      extraBedAmount,
+      childWithBedCount,
+      childWithBedRate,
+      childWithBedAmount,
+      childWithoutBedCount,
+      childWithoutBedRate,
+      childWithoutBedAmount,
       hotelMarginBaseAmount: marginBase,
       hotelMarginAmount: marginAmount,
       hotelMarginTotalAmount: marginAmount,

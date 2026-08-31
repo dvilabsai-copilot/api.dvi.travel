@@ -2769,6 +2769,37 @@ test('missing physical logical-stay route remains in empty diagnostics', () => {
   assert.deepEqual(blocks.map((block: any) => block.routeIds), [[102]]);
 });
 
+test('partial continuous hotel coverage is unavailable on every linked route pane', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const routes = [
+    { itinerary_route_ID: 101, itinerary_route_date: new Date('2026-09-05T00:00:00.000Z'), next_visiting_location: 'Thekkady', day_number: 3 },
+    { itinerary_route_ID: 102, itinerary_route_date: new Date('2026-09-06T00:00:00.000Z'), next_visiting_location: 'Thekkady', day_number: 4 },
+  ];
+  const rows = [{
+    itineraryRouteId: 101,
+    routeId: 101,
+    date: '2026-09-05',
+    provider: 'axisrooms',
+    canonicalHotelId: 234,
+    hotelName: 'The Patio',
+    roomType: 'Deluxe Room NON AC',
+    mealPlan: 'CP',
+    totalPrice: 5100,
+    isBookable: true,
+    isSelectable: true,
+    rateOptions: [{ roomType: 'Deluxe Room NON AC', mealPlan: 'CP', totalPrice: 5100 }],
+  }];
+
+  const result = (service as any).applyCompleteStayAvailability(rows, routes, 2);
+  assert.equal(result.length, 2);
+  assert.deepEqual(result.map((row: any) => Number(row.itineraryRouteId)).sort(), [101, 102]);
+  assert.ok(result.every((row: any) => row.availabilityStatus === 'NO_AVAILABILITY'));
+  assert.ok(result.every((row: any) => row.availabilityState === 'UNAVAILABLE'));
+  assert.ok(result.every((row: any) => row.selectionStatus === 'UNAVAILABLE'));
+  assert.ok(result.every((row: any) => row.hotelStayCompleteStayBookable === false));
+  assert.ok(result.every((row: any) => row.hotelStayIsSelectable === false));
+});
+
 test('TBO selection normalization exposes canonical room pricing', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const projected = projectHotelPayablePricing({

@@ -147,8 +147,54 @@ test('offline occupancy supplements come from DB rates and are included before m
   assert.equal(offers[0].childWithBedRate, 2200);
   assert.equal(offers[0].childWithoutBedRate, 1600);
   assert.equal(offers[0].nightlyBase[0], 12900);
+  assert.equal(offers[0].nightlyRoomCost[0], 3600);
+  assert.equal(offers[0].nightlyExtraBedCost[0], 5500);
+  assert.equal(offers[0].nightlyChildWithBedCost[0], 2200);
+  assert.equal(offers[0].nightlyChildWithoutBedCost[0], 1600);
   assert.equal(offers[0].nightlySell[0], 13803);
   assert.equal(offers[0].totalStayPrice, 13803);
+});
+
+test('offline continuous stay keeps every room type as a rate option', async () => {
+  const pricing = {
+    resolveEffectiveHotelMarginPercentage: async () => 0,
+    marginBreakdown: (value: number) => ({ baseAmount: value, marginPercentage: 0, marginAmount: 0, sellAmount: value }),
+    money: (value: number) => Number(value.toFixed(2)),
+  } as any;
+  const service = new OfflineHotelCatalogService({} as any, pricing);
+  const rates = (double: number) => [{
+    start_date: new Date('2099-01-01'),
+    end_date: new Date('2099-01-03'),
+    occupancy_rates: { DOUBLE: double, EXTRABED: 4500, CHILDWITHOUTBED: 1800 },
+  }];
+  const offers = await (service as any).buildRoomOffersFromCatalogRows(
+    { hotel_id: 95 },
+    ['2099-01-01', '2099-01-02'],
+    1,
+    2,
+    1,
+    {
+      roomsByHotel: new Map([[95, [
+        { room_ID: 951, room_type_id: 9, room_title: 'Club Rooms Non AC' },
+        { room_ID: 952, room_type_id: 10, room_title: 'Club room A/C' },
+      ]]]),
+      activeRoomTypeIds: new Set([9, 10]),
+      ratePlansByRoom: new Map([
+        [951, [{ room_id: 951, rateplan_id: 'CP', rateplan_name: 'CP' }]],
+        [952, [{ room_id: 952, rateplan_id: 'CP', rateplan_name: 'CP' }]],
+      ]),
+      occupancyRatesByRoomPlan: new Map([
+        ['95|951|CP', rates(5000)],
+        ['95|952|CP', rates(6200)],
+      ]),
+    },
+    0,
+    'CP',
+    { childWithoutBedCount: 1 },
+  );
+
+  assert.deepEqual(offers.map((offer: any) => offer.roomTitle), ['Club Rooms Non AC', 'Club room A/C']);
+  assert.deepEqual(offers.map((offer: any) => offer.totalStayPrice), [13600, 16000]);
 });
 
 test('offline option is omitted when a required DB supplement rate is missing', async () => {

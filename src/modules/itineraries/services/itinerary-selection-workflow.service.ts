@@ -490,8 +490,13 @@ export class ItinerarySelectionWorkflowService {
             ? Math.max((selectionPricing.totalPrice * hotelMarginPercentage) / 100, 0)
             : 0;
     const hotelMarginRateTaxAmount = Math.max(Number(data.hotelMarginGstAmount || 0), 0);
-    const persistedRoomCost = providerForPricing === 'axisrooms' && axisRoomsBasePrice > 0
-      ? axisRoomsBasePrice
+    // `total_room_cost` is room-only.  Previously offline room changes stored
+    // the payable amount here, and the later read mixed that value with the
+    // snapshot's room fields (sometimes producing a zero room rate).  Use the
+    // server-resolved room base whenever it exists; supplements and margin are
+    // stored in their own columns and in the payable total.
+    const persistedRoomCost = authoritativeBaseTotal > 0
+      ? authoritativeBaseTotal
       : selectionPricing.totalPrice;
     const authoritativePricingSnapshot = {
       ...(authoritativeBasePricePerNight > 0 ? { basePricePerNight: authoritativeBasePricePerNight } : {}),
@@ -715,8 +720,10 @@ export class ItinerarySelectionWorkflowService {
           hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
           room_qty: selectionPricing.roomCount,
-          room_rate: selectionPricing.roomRate,
-          total_room_cost: selectionPricing.totalPrice,
+           room_rate: authoritativeBasePricePerNight > 0
+             ? authoritativeBasePricePerNight
+             : selectionPricing.roomRate,
+           total_room_cost: persistedRoomCost,
           extra_bed_count: extraBedCount,
           extra_bed_rate: extraBedRate,
           breakfast_required: mealBreakfast,
@@ -744,8 +751,10 @@ export class ItinerarySelectionWorkflowService {
           hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
           room_qty: selectionPricing.roomCount,
-          room_rate: selectionPricing.roomRate,
-          total_room_cost: selectionPricing.totalPrice,
+           room_rate: authoritativeBasePricePerNight > 0
+             ? authoritativeBasePricePerNight
+             : selectionPricing.roomRate,
+           total_room_cost: persistedRoomCost,
           extra_bed_count: extraBedCount,
           extra_bed_rate: extraBedRate,
           breakfast_required: mealBreakfast,
@@ -1384,7 +1393,7 @@ export class ItinerarySelectionWorkflowService {
     let date = '';
 
     for (const reference of references) {
-      const rateOption = reference.match(/^axisrooms:(\d+):(\d+):([^:|]+):(\d{4}-\d{2}-\d{2})$/i);
+      const rateOption = reference.match(/^axisrooms:(\d+):(\d+):(?:(?:\d+)\|)?([^:|]+):(\d{4}-\d{2}-\d{2})$/i);
       if (rateOption) {
         hotelId = Number(rateOption[1]) || hotelId;
         roomId = Number(rateOption[2]) || roomId;
@@ -1392,7 +1401,7 @@ export class ItinerarySelectionWorkflowService {
         date = rateOption[4];
         break;
       }
-      const optionRate = reference.match(/axisrooms[:|](\d+)[:|](\d+)[:|]([^:|]+)[:|](\d{4}-\d{2}-\d{2})/i);
+      const optionRate = reference.match(/axisrooms[:|](\d+)[:|](\d+)[:|](?:(?:\d+)\|)?([^:|]+)[:|](\d{4}-\d{2}-\d{2})/i);
       if (optionRate) {
         hotelId = Number(optionRate[1]) || hotelId;
         roomId = Number(optionRate[2]) || roomId;
