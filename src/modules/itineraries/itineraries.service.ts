@@ -39,6 +39,7 @@ import { normalizePassengerTitle } from "../../common/utils/passenger-title.util
 import { SupplementNormalizerService } from "../../modules/hotels/services/supplement-normalizer.service";
 import {
   inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealFlags,
   inferCanonicalHotelRatePlanCodeFromMealText,
 } from "../../modules/hotels/hotel-rate-plans";
 import { normalizeCityName } from "./utils/city-normalization.util";
@@ -2226,12 +2227,17 @@ private getGuideSlotLabel(slotId: number): string {
         // snapshot and the current room master (for example "Jungle Deluxe"
         // versus "Jungle View Deluxe").  Never reject a valid room by title
         // when a concrete ID was supplied by the UI.
-        if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
-          const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
-          if (candidateRoomTypeId !== requestedRoomTypeId) return false;
-        } else if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
+        // The normalized preview response exposes the internal master
+        // roomTypeId, while the refreshed supplier option is keyed by the
+        // concrete roomId. Once roomId is present it is the authoritative
+        // identity; comparing roomTypeId first rejects valid preview->commit
+        // selections (for example roomTypeId 2750 vs roomId 616).
+        if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
           const candidateRoomId = Number(option.roomId ?? option.room_id ?? 0);
           if (candidateRoomId !== requestedRoomId) return false;
+        } else if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
+          const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
+          if (candidateRoomTypeId !== requestedRoomTypeId) return false;
         } else if (intent === 'ROOM_TYPE' && requestedRoom && !roomLabelMatches(room, requestedRoom)) {
           return false;
         }
@@ -2244,12 +2250,12 @@ private getGuideSlotLabel(slotId: number): string {
           (intent === 'HOTEL' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') &&
           normalizeMealPlan(meal) !== normalizeMealPlan(requestedMeal)) return false;
         if ((intent === 'RATE_OPTION' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') && index !== stay.routeIds.indexOf(Number(data.routeId))) {
-          if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
-            const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
-            if (candidateRoomTypeId !== requestedRoomTypeId) return false;
-          } else if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
+          if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
             const candidateRoomId = Number(option.roomId ?? option.room_id ?? 0);
             if (candidateRoomId !== requestedRoomId) return false;
+          } else if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
+            const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
+            if (candidateRoomTypeId !== requestedRoomTypeId) return false;
           } else if (anchorRoom && !roomLabelMatches(room, anchorRoom)) {
             return false;
           }
@@ -2751,28 +2757,50 @@ private getGuideSlotLabel(slotId: number): string {
     const reference = String(
       option?.rateOptionId || option?.rate_option_id || option?.bookingCode || option?.booking_code || '',
     ).trim();
+    const rateReference = String(option?.rateId || option?.rate_id || '').trim();
     const match = reference.match(/(?:axisrooms:|AX-)([^:|-]+)[:|-]([^:|-]+)[:|-](?:(?:\d+)\|)?([^:|-]+)/i);
     const hotelId = Number(option?.canonicalHotelId || option?.hotelId || option?.hotel_id || match?.[1] || 0);
     const roomId = Number(option?.roomId || option?.room_id || match?.[2] || 0);
-    const rateplanId = String(option?.rateplanId || option?.ratePlanId || option?.rateplan_id || match?.[3] || '').trim();
-    if (!hotelId || !roomId || !rateplanId || !/^\d{4}-\d{2}-\d{2}$/.test(routeDate)) return option;
+    const rateReferencePlan = rateReference.match(/^(?:\d+\|)?(.+)$/)?.[1] || '';
+    const explicitRateplanId = String(option?.rateplanId || option?.ratePlanId || option?.rateplan_id || '').trim();
+    const suppliedRateplanId = explicitRateplanId || String(match?.[3] || rateReferencePlan).trim();
+    const requestedMealPlan = inferCanonicalHotelRatePlanCode(String(plan?.meal_plan_code || '')) ||
+      inferCanonicalHotelRatePlanCodeFromMealFlags(
+        Number(plan?.meal_plan_breakfast || 0),
+        Number(plan?.meal_plan_lunch || 0),
+        Number(plan?.meal_plan_dinner || 0),
+      ) || '';
+    const requestedRateplanId = requestedMealPlan ? `${requestedMealPlan}_PLAN` : '';
+    if (!hotelId || !roomId || !suppliedRateplanId || !/^\d{4}-\d{2}-\d{2}$/.test(routeDate)) return option;
+    const rateplanIds = [...new Set([requestedRateplanId, suppliedRateplanId].filter(Boolean))];
 
     const rows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
       where: {
         hotel_id: hotelId,
         room_id: roomId,
-        rateplan_id: rateplanId,
+        rateplan_id: { in: rateplanIds },
         start_date: { lte: new Date(`${routeDate}T00:00:00.000Z`) },
         end_date: { gte: new Date(`${routeDate}T00:00:00.000Z`) },
       },
-      select: { occupancy_rates: true, received_at: true, start_date: true },
+      select: { rateplan_id: true, occupancy_rates: true, received_at: true, start_date: true },
       orderBy: [{ received_at: 'desc' }, { start_date: 'desc' }],
     });
     let rates: Record<string, any> | null = null;
-    for (const row of Array.isArray(rows) ? rows : []) {
+    let rateplanId = suppliedRateplanId;
+    const orderedRows = [...(Array.isArray(rows) ? rows : [])].sort((left: any, right: any) => {
+      const leftRequested = String(left?.rateplan_id || '') === requestedRateplanId;
+      const rightRequested = String(right?.rateplan_id || '') === requestedRateplanId;
+      if (leftRequested !== rightRequested) return leftRequested ? -1 : 1;
+      return new Date(right?.received_at || 0).getTime() - new Date(left?.received_at || 0).getTime();
+    });
+    for (const row of orderedRows) {
       try {
         const parsed = typeof row.occupancy_rates === 'string' ? JSON.parse(row.occupancy_rates) : row.occupancy_rates;
-        if (parsed && typeof parsed === 'object') { rates = parsed; break; }
+        if (parsed && typeof parsed === 'object') {
+          rates = parsed;
+          rateplanId = String(row.rateplan_id || suppliedRateplanId);
+          break;
+        }
       } catch { /* ignore malformed historical rows */ }
     }
     if (!rates) return { ...option, axisRoomsPricingResolved: false };
