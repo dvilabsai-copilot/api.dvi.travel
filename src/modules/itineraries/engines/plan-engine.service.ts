@@ -451,8 +451,9 @@ export class PlanEngineService {
         const numericPart = quoteId.startsWith(prefix)
           ? quoteId.slice(prefix.length)
           : '';
-        if (!/^\d+$/.test(numericPart)) continue;
-        const sequence = Number.parseInt(numericPart, 10);
+        const sequenceMatch = numericPart.match(/^(\d+)(?:-R\d+)?$/i);
+        if (!sequenceMatch) continue;
+        const sequence = Number.parseInt(sequenceMatch[1], 10);
         if (Number.isFinite(sequence) && sequence > maxSequence) {
           maxSequence = sequence;
         }
