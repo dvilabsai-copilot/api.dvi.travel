@@ -449,8 +449,18 @@ export class HotelRecommendationPackageService {
 
   private withCategoryMetadata(selected: StayOption, slot: CategorySlot, category: number): StayOption {
     const applied = category !== slot.category;
+    const rawSelectedCategory = Number(
+      (selected.hotel as any).hotelCategory ??
+      (selected.hotel as any).hotel_category ??
+      (selected.hotel as any).rating ??
+      0,
+    );
+    // Supplier 1★ is normalized to the internal 2★ bucket for ranking, but
+    // the header must show the supplier's actual 1★ rating. Other ratings
+    // already share the logical bucket and should keep the established text.
+    const displayCategory = rawSelectedCategory === 1 && category === 2 ? 1 : category;
     const fallbackReason = applied
-      ? `${category}* selected — ${slot.category}* not available`
+      ? `${displayCategory}* selected — ${slot.category}* not available`
       : undefined;
     return {
       ...selected,
@@ -892,6 +902,23 @@ export class HotelRecommendationPackageService {
     for (const routeId of stay.routeIds) {
       for (const candidate of nightlyByRoute.get(routeId) || []) {
         const key = this.continuousStayRateKey(candidate);
+        if (!key && String(candidate.provider || '').toLowerCase() === 'axisrooms') {
+          this.trace('aggregateNightlyStayCandidates.axisroomsMissingStayKey', {
+            routeId,
+            hotelName: candidate.hotelName,
+            canonicalHotelId: candidate.canonicalHotelId,
+            providerHotelCode: candidate.providerHotelCode,
+            roomId: candidate.roomId,
+            roomTypeId: candidate.roomTypeId,
+            roomType: candidate.roomType,
+            mealPlan: candidate.mealPlan,
+            mealPlanCode: (candidate as any).mealPlanCode,
+            rateFamily: (candidate as any).rateFamily,
+            ratePlanId: (candidate as any).ratePlanId,
+            rateId: (candidate as any).rateId,
+            rateOptionId: candidate.rateOptionId,
+          });
+        }
         if (!key) continue;
         const byRoute = grouped.get(key) || new Map<number, HotelSearchResult[]>();
         byRoute.set(routeId, [...(byRoute.get(routeId) || []), candidate]);
@@ -1014,19 +1041,14 @@ export class HotelRecommendationPackageService {
       candidate.roomId ?? candidate.roomTypeId ?? candidate.roomType ?? '',
     ).trim().toLowerCase();
     const meal = this.exactMealPlan(candidate) || '';
-    const rateFamily = String(
-      (candidate as any).rateFamily ||
-      (candidate as any).ratePlanId ||
-      (candidate as any).rateId ||
-      (candidate as any).rateOptionId ||
-      '',
-    )
-      .toLowerCase()
-      .replace(/[:|_-]?\d{4}-\d{2}-\d{2}$/i, '')
-      .replace(/[:|_-]?\d{8}$/i, '')
-      .trim();
-    if (!provider || !hotel || !room || !meal || !rateFamily) return null;
-    return [provider, hotel, room, rateFamily, meal].join('|');
+    // Supplier rate-plan IDs are not a stable cross-night identity. In
+    // particular, AxisRooms can expose a date-qualified ID (and can label
+    // the underlying rate family differently from the canonical meal code)
+    // for the same room on adjacent nights. Keep rate-plan variants in the
+    // same stay bucket; the nightly price comparison below chooses the
+    // cheapest valid variant for each night.
+    if (!provider || !hotel || !room || !meal) return null;
+    return [provider, hotel, room, meal].join('|');
   }
 
   private hasFullStayNightlyRates(source: HotelSearchResult, stay: LogicalHotelStay): boolean {
@@ -1171,6 +1193,14 @@ export class HotelRecommendationPackageService {
     const supplementError = this.requiredSupplementError(candidate, input.occupancy);
     if (supplementError) return { ok: false, reason: supplementError };
 
+    // A room option is not usable merely because its supplements produce a
+    // positive total.  Supplier/catalog payloads can contain a room with
+    // extra-bed and child amounts but no SINGLE/DOUBLE base occupancy rate
+    // (for example, Patio's Suite Room).  Reject that concrete option here so
+    // it cannot become an automatic recommendation or a selectable rate.
+    const baseRateError = this.baseOccupancyRateError(candidate);
+    if (baseRateError) return { ok: false, reason: baseRateError };
+
     const distance = this.normalizeDistance(candidate);
     const maxDistance = Number(input.maxDistanceKm ?? 15);
     if (distance.distanceStatus === 'OUTSIDE_RADIUS' || (Number.isFinite(distance.distanceKm) && distance.distanceKm > maxDistance)) {
@@ -1214,6 +1244,27 @@ export class HotelRecommendationPackageService {
       if (Number.isFinite(value) && value > 0) return value;
     }
     return 0;
+  }
+
+  private baseOccupancyRateError(candidate: HotelSearchResult): string | null {
+    const option = candidate as any;
+    const nestedOptions = Array.isArray(option.rateOptions) ? option.rateOptions : [];
+    const sources = [option, ...nestedOptions];
+    const baseKeys = [
+      'basePricePerNight', 'baseTotalPrice', 'baseStayPrice',
+      'baseHotelCost', 'roomRate', 'totalRoomCost',
+      'singleRate', 'single_rate', 'single',
+      'doubleRate', 'double_rate', 'double',
+    ];
+    const hasExplicitBaseSignal = sources.some((source) =>
+      baseKeys.some((key) => Object.prototype.hasOwnProperty.call(source || {}, key)),
+    );
+    if (!hasExplicitBaseSignal) return null;
+
+    const hasPositiveBaseRate = sources.some((source) => this.firstPositive(source, baseKeys) > 0);
+    return hasPositiveBaseRate
+      ? null
+      : 'Base SINGLE/DOUBLE room rate is unavailable for this room option.';
   }
 
   private normalizeAvailability(candidate: HotelSearchResult): { ok: true } | { ok: false; reason: string } {

@@ -647,6 +647,80 @@ test('live inventory wins automatic selection over exact-category offline invent
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
+test('selects a complete live Patio room across a continuous stay and rejects supplement-only Suite', () => {
+  const patioRoom = (roomType: string, total: number, base: number) => option('THE PATIO', total, 'CP', {
+    provider: 'axisrooms',
+    canonicalHotelId: 234,
+    providerHotelCode: '234',
+    category: '1-star',
+    roomId: roomType,
+    roomType,
+    basePricePerNight: base,
+    baseTotalPrice: base,
+    pricePerNight: total,
+    totalStayPrice: total,
+    extraBedRate: 1000,
+    childWithoutBedRate: 600,
+    rateFamily: 'CP',
+    rateOptionId: `${roomType}-CP`,
+    rateId: `${roomType}-CP`,
+    isBookable: true,
+    isLiveBookable: true,
+    availabilityStatus: 'AVAILABLE',
+  });
+  const suite = patioRoom('Suite Room AC', 8000, 0);
+  suite.rateOptions = [{
+    roomId: 'suite', roomType: 'Suite Room AC', mealPlan: 'CP',
+    totalStayPrice: 8000, pricePerNight: 8000,
+    basePricePerNight: 0, baseTotalPrice: 0,
+    extraBedRate: 1000, childWithoutBedRate: 600,
+    rateOptionId: 'suite-cp', rateId: 'suite-cp',
+  }];
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 11322, itinerary_route_date: '2026-09-05', next_visiting_location: 'Thekkady' },
+      { itinerary_route_ID: 11323, itinerary_route_date: '2026-09-06', next_visiting_location: 'Thekkady' },
+    ],
+    hotelsByRoute: new Map([
+      [11322, [
+        patioRoom('Deluxe AC', 11440, 4400),
+        suite,
+        option('JUNGLE PARK RESORT', 7480, 'CP', {
+          provider: 'offline', category: '3-star', canonicalHotelId: 439,
+          bookingMode: 'MANUAL_APPROVAL', requiresHotelApproval: true,
+          isBookable: false, isLiveBookable: false,
+          extraBedRate: 1000, childWithoutBedRate: 600,
+        }),
+      ] as any],
+      [11323, [
+        patioRoom('Deluxe AC', 11440, 4400),
+        suite,
+        option('JUNGLE PARK RESORT', 5720, 'CP', {
+          provider: 'offline', category: '3-star', canonicalHotelId: 439,
+          bookingMode: 'MANUAL_APPROVAL', requiresHotelApproval: true,
+          isBookable: false, isLiveBookable: false,
+          extraBedRate: 1000, childWithoutBedRate: 600,
+        }),
+      ] as any],
+    ]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+    occupancy: { extraBedCount: 1, childWithoutBedCount: 1 },
+  });
+
+  const stay = packages[0].stayResults[0];
+  assert.equal(stay.hotel?.hotelName, 'THE PATIO');
+  assert.equal(stay.hotel?.provider, 'axisrooms');
+  assert.equal(stay.hotel?.roomType, 'Deluxe AC');
+  assert.deepEqual(stay.hotel?.routeIds, [11322, 11323]);
+  assert.equal(stay.hotel?.categoryFallbackApplied, true);
+  // The application intentionally normalizes supplier 1-star/Budget labels
+  // into its logical 2-star bucket.
+  assert.equal(stay.hotel?.selectedCategory, 2);
+  assert.equal(stay.hotel?.exactFullStayTotal, 22880);
+  assert.equal(stay.rejectedCandidates?.some((item) => /Base SINGLE\/DOUBLE/.test(item.reason)), true);
+});
+
 test('required supplement rates are part of recommendation eligibility', () => {
   const packages = service().generate({
     routes: oneRoute('Munnar'),

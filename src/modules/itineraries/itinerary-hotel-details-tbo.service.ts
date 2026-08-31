@@ -2102,10 +2102,11 @@ this.logger.log(
     // gap, not proof that the supplier returned no hotels. Use the complete
     // route snapshot only for those gaps; routes that already have a
     // recommendation candidate retain their existing allocation unchanged.
-    const recommendationHotelsByRoute = this.buildRecommendationHotelsByRoute(
-      completeHotelsByRoute,
-      filteredHotelsByRoute,
-    );
+    // Feed the recommendation engine the complete supplier inventory. The
+    // preference-filtered projection is only a UI compatibility artifact;
+    // using it for selection can hide a valid lower-category live hotel when
+    // an offline/category-matching row survives the projection.
+    const recommendationHotelsByRoute = completeHotelsByRoute;
     const packages = this.hotelRecommendationPackageService.generate({
       routes: routes as any,
       // Recommendation eligibility must use the same current, complete,
@@ -3574,7 +3575,11 @@ this.logger.log(
           };
           const rateConditions = Array.from(new Set(rateMeta.rateConditions));
           const inclusions = Array.from(new Set(rateMeta.inclusions));
-          const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
+          const selectedMealPlan =
+            mealPlanByRatePlan.get(selectedRateplanId) ||
+            inferCanonicalHotelRatePlanCode(selectedRateplanId) ||
+            inferCanonicalHotelRatePlanCodeFromMealText(selectedRateplanId) ||
+            '-';
           const rateIdentity = `${hid}:${selectedRoomId}:${selectedRateplanId}:${dateOnly.toISOString().slice(0, 10)}`;
 
           axisroomsRouteHotels.push({
@@ -3597,6 +3602,17 @@ this.logger.log(
             availabilityStatus: 'AVAILABLE',
             hotelCode: String(hid),
             hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
+            // Keep the commercial room/rate identity explicit. The
+            // continuous-stay aggregator must match the same room and rate
+            // plan across every route-night; relying on the dated
+            // rateOptionId made these AxisRooms rows fragile and could leave
+            // a valid live hotel only in groupType 0 inventory.
+            roomId: String(selectedRoomId),
+            roomTypeId: selectedRoomId,
+            rateId: selectedRateplanId,
+            ratePlanId: selectedRateplanId,
+            rateplanId: selectedRateplanId,
+            rateFamily: selectedRateplanId,
             cityCode: String((hotel as any).hotel_city || destinationRaw),
             address: String((hotel as any).hotel_address || ''),
             rating: Number((hotel as any).hotel_category || 0),
@@ -3607,6 +3623,11 @@ this.logger.log(
             cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
             images: [],
             price: rate,
+            basePricePerNight: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
+            baseTotalPrice: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
+            baseHotelCost: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
+            roomRate: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
+            totalRoomCost: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
             extraBedCount: occupancyBreakdown?.extraBedCount || 0,
             extraBedRate: occupancyBreakdown?.extraBedRate || 0,
             extraBedAmount: occupancyBreakdown?.extraBedAmount || 0,
@@ -3632,10 +3653,11 @@ this.logger.log(
             ],
             roomType: roomName,
             mealPlan: selectedMealPlan,
+            mealPlanCode: selectedMealPlan,
             bookingCode: `AX-${rateIdentity}`,
             searchReference: `AX-${rateIdentity}`,
             expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-          });
+          } as any);
         }
       }
 
