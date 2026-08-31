@@ -225,6 +225,27 @@ private readonly itineraryAccessService: ItineraryAccessService,
     );
   }
 
+  @Post('route-optimization/preview')
+  @ApiOperation({
+    summary:
+      'Preview the best route alternatives without saving the itinerary',
+
+    description:
+      'Keeps arrival and departure fixed, preserves every itinerary day, and returns up to three scored route alternatives.',
+  })
+  @ApiBody({
+    type: CreateItineraryDto,
+  })
+  async previewRouteOptimization(
+    @Body()
+    dto: CreateItineraryDto,
+  ) {
+    return this.svc
+      .previewRouteOptimization(
+        dto,
+      );
+  }
+
   @Post()
   @ApiOperation({
     summary:

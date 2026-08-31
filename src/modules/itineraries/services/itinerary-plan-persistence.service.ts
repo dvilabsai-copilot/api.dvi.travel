@@ -340,7 +340,8 @@ export function shouldRebuildHotelData(result: {
 @Injectable()
 export class ItineraryPlanPersistenceService {
   private readonly logger = new Logger(ItineraryPlanPersistenceService.name);
-  private optimizeRouteOrderFn: ((routes: any[]) => Promise<any[]>) | null = null;
+  private optimizeRouteOrderFn:
+    ((routes: any[], plan?: any) => Promise<any[]>) | null = null;
   private applySameCityOptimizerFn: ((planId: number, quoteId?: string | null) => Promise<void>) | null = null;
   private getPlanForEditFn: ((planId: number) => Promise<any>) | null = null;
 
@@ -359,18 +360,39 @@ export class ItineraryPlanPersistenceService {
   ) {}
 
   setCallbacks(callbacks: {
-    optimizeRouteOrder: (routes: any[]) => Promise<any[]>;
-    applySameCityOptimizer: (planId: number, quoteId?: string | null) => Promise<void>;
-    getPlanForEdit: (planId: number) => Promise<any>;
+    optimizeRouteOrder: (
+      routes: any[],
+      plan?: any,
+    ) => Promise<any[]>;
+
+    applySameCityOptimizer: (
+      planId: number,
+      quoteId?: string | null,
+    ) => Promise<void>;
+
+    getPlanForEdit: (
+      planId: number,
+    ) => Promise<any>;
   }): void {
     this.optimizeRouteOrderFn = callbacks.optimizeRouteOrder;
     this.applySameCityOptimizerFn = callbacks.applySameCityOptimizer;
     this.getPlanForEditFn = callbacks.getPlanForEdit;
   }
 
-  private async optimizeRouteOrder(routes: any[]): Promise<any[]> {
-    if (!this.optimizeRouteOrderFn) throw new Error('Route optimizer is not configured');
-    return this.optimizeRouteOrderFn(routes);
+  private async optimizeRouteOrder(
+    routes: any[],
+    plan?: any,
+  ): Promise<any[]> {
+    if (!this.optimizeRouteOrderFn) {
+      throw new Error(
+        'Route optimizer is not configured',
+      );
+    }
+
+    return this.optimizeRouteOrderFn(
+      routes,
+      plan,
+    );
   }
 
   private async applySameCityCrossDayOptimizerAfterSave(planId: number, quoteId?: string | null): Promise<void> {
@@ -497,7 +519,11 @@ export class ItineraryPlanPersistenceService {
           .join(' | '),
       );
 
-      const optimizedRoutes = await this.optimizeRouteOrder(originalRoutes);
+      const optimizedRoutes =
+  await this.optimizeRouteOrder(
+    originalRoutes,
+    dto.plan,
+  );
 
       if (
         !Array.isArray(optimizedRoutes) ||
