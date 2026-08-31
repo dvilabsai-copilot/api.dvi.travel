@@ -8,6 +8,7 @@ import {
   decorateHotelCardPricing,
   hotelCardPropertyKey,
 } from '../src/modules/itineraries/utils/hotel-card-pricing.util';
+import { buildHotelSelectionState } from '../src/modules/itineraries/utils/hotel-selection-view-state.util';
 
 test('Axis base 4200 projects once to the same payable 5040 used by preview and persistence', () => {
   const projected = projectHotelPayablePricing({
@@ -121,5 +122,41 @@ test('card starting amount and difference use payable nested options', () => {
 
   assert.equal(rows[0].startingFromAmount, 5040);
   assert.deepEqual(rows[0].rateOptions.map((option: any) => option.priceDifference), [0, 2880, 5760]);
+});
+
+test('mixed-room selected view ignores stale flattened total and recalculates margin from room breakdown', () => {
+  const [group] = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 25652 }],
+    requiredRoutes: [{ routeId: 11322, routeDate: '2026-09-05' }],
+    rows: [{
+      itineraryRouteId: 11322,
+      routeDate: '2026-09-05',
+      groupType: 1,
+      isSelected: true,
+      provider: 'offline',
+      hotelCode: '439',
+      hotelName: 'JUNGLE PARK RESORT',
+      selectedPriceSnapshot: {
+        provider: 'offline',
+        hotelName: 'JUNGLE PARK RESORT',
+        roomCount: 3,
+        hotelMarginPercentage: 6,
+        // This is the stale pre-edit aggregate that previously won.
+        totalPrice: 25652,
+        amountIncludesHotelMargin: true,
+        nightlyRates: [{ date: '2026-09-05', sellAmount: 25652 }],
+        roomTypeBreakdown: [
+          { roomType: 'Garden Cottage', roomCount: 1, roomCost: 6800, childWithBedCost: 1000 },
+          { roomType: 'Deluxe', roomCount: 2, roomCost: 8900, childWithBedCost: 2000, childWithoutBedCost: 800 },
+        ],
+      },
+    }],
+  });
+
+  assert.equal(group.totalAmount, 20670);
+  assert.equal(group.routes[0].selected?.totalPrice, 20670);
+  assert.equal(group.routes[0].selected?.selectedTotalPrice, 20670);
+  assert.equal(group.routes[0].selected?.hotelMarginBaseAmount, 19500);
+  assert.equal(group.routes[0].selected?.hotelMarginAmount, 1170);
 });
 

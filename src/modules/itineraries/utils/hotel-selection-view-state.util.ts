@@ -166,6 +166,9 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     row?.selection?.selectedPriceSnapshot ??
     row?.selection?.selected_price_snapshot,
   );
+  const roomTypeBreakdown = Array.isArray(snapshot?.roomTypeBreakdown)
+    ? snapshot.roomTypeBreakdown.filter((item: any) => item && typeof item === 'object')
+    : [];
   const nestedSelection = row?.selection && typeof row.selection === 'object' ? row.selection : {};
   const nightlyRates = Array.isArray(row?.nightlyRates)
     ? row.nightlyRates
@@ -281,6 +284,56 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       };
     }
   }
+  // Multi-room selections carry one pricing record per physical room. The
+  // legacy parent fields can still contain the pre-edit aggregate, so rebuild
+  // the public financial fields from the room breakdown before projecting the
+  // snapshot. Single-room snapshots do not enter this branch.
+  if (snapshot && roomTypeBreakdown.length > 0) {
+    const sum = (key: string) => roomTypeBreakdown.reduce(
+      (total: number, item: any) => total + Number(item?.[key] || 0),
+      0,
+    );
+    const roomCost = Number(sum('roomCost').toFixed(2));
+    const extraBedAmount = Number(sum('extraBedCost').toFixed(2));
+    const childWithBedAmount = Number(sum('childWithBedCost').toFixed(2));
+    const childWithoutBedAmount = Number(sum('childWithoutBedCost').toFixed(2));
+    const baseTotal = Number((roomCost + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
+    const marginPercentage = Number(snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? row?.marginPercentage ?? 0);
+    const marginAmount = Number((baseTotal * marginPercentage / 100).toFixed(2));
+    const payableTotal = Number((baseTotal + marginAmount).toFixed(2));
+    const roomCount = Math.max(Number(snapshot.roomCount ?? snapshot.totalRooms ?? row?.roomCount ?? row?.noOfRooms ?? roomTypeBreakdown.length), 1);
+    const totalExtraBeds = sum('extraBedCount');
+    const totalWithBed = sum('childWithBedCount');
+    const totalWithoutBed = sum('childWithoutBedCount');
+    snapshot = {
+      ...snapshot,
+      roomCount,
+      totalRooms: roomCount,
+      totalRoomCost: roomCost,
+      baseTotalPrice: roomCost,
+      roomRate: Number((roomCost / roomCount).toFixed(2)),
+      extraBedCount: totalExtraBeds,
+      extraBedAmount,
+      childWithBedCount: totalWithBed,
+      childWithBedAmount,
+      childWithoutBedCount: totalWithoutBed,
+      childWithoutBedAmount,
+      hotelMarginBaseAmount: baseTotal,
+      hotelMarginAmount: marginAmount,
+      hotelMarginTotalAmount: marginAmount,
+      totalPrice: payableTotal,
+      totalStayPrice: payableTotal,
+      totalHotelCost: payableTotal,
+      totalAmount: payableTotal,
+      selectedPricePerNight: payableTotal,
+      selectedTotalPrice: payableTotal,
+      pricePerNight: payableTotal,
+      // The parent snapshot may still carry the legacy margin-inclusive
+      // marker. Recalculate this multi-room aggregate from its breakdown.
+      amountIncludesHotelMargin: false,
+      pricingIncludesHotelMargin: false,
+    };
+  }
   // Persisted selection snapshots may predate the payable-price contract and
   // still contain the supplier/base amount. Project the snapshot itself
   // before exposing it through hotelSelectionState; otherwise the tabs use
@@ -292,13 +345,15 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
           {
             ...snapshot,
             noOfRooms: Number(
-              snapshot.noOfRooms ??
-              snapshot.total_no_of_rooms ??
-              snapshot.roomCount ??
-              row?.noOfRooms ??
-              row?.total_no_of_rooms ??
-              row?.roomCount ??
-              1,
+              roomTypeBreakdown.length > 0
+                ? 1
+                : snapshot.noOfRooms ??
+                  snapshot.total_no_of_rooms ??
+                  snapshot.roomCount ??
+                  row?.noOfRooms ??
+                  row?.total_no_of_rooms ??
+                  row?.roomCount ??
+                  1,
             ),
             isSelected: true,
             selectionOrigin: row?.selectionOrigin ?? row?.selection_origin ?? snapshot.selectionOrigin,
@@ -312,11 +367,13 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
           ...snapshot,
           basePricePerNight: projected.basePricePerNight,
           baseTotalPrice: projected.baseTotalPrice,
-          roomRate: projected.roomRate,
+          roomRate: roomTypeBreakdown.length > 0 ? snapshot.roomRate : projected.roomRate,
           totalRoomCost: projected.totalRoomCost,
           hotelMarginBaseAmount: projected.hotelMarginBaseAmount,
           hotelMarginPercentage: projected.hotelMarginPercentage,
-          hotelMarginAmount: projected.hotelMarginAmount,
+          hotelMarginAmount: roomTypeBreakdown.length > 0
+            ? projected.hotelMarginTotalAmount
+            : projected.hotelMarginAmount,
           hotelMarginStayAmount: projected.hotelMarginStayAmount,
           hotelMarginTotalAmount: projected.hotelMarginTotalAmount,
           price: projected.price,
@@ -327,7 +384,11 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
           totalAmount: projected.totalAmount,
           totalAmountAfterTax: projected.totalAmountAfterTax,
           selectedPricePerNight: projected.selectedPricePerNight,
-          selectedTotalPrice: logicalStayTotal > 0 ? logicalStayTotal : projected.selectedTotalPrice,
+          selectedTotalPrice: roomTypeBreakdown.length > 0
+            ? projected.selectedTotalPrice
+            : logicalStayTotal > 0
+              ? logicalStayTotal
+              : projected.selectedTotalPrice,
         };
       })()
     : {};
@@ -392,9 +453,11 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     pricePerNight: money(Number.isFinite(pricePerNight) ? pricePerNight : 0),
     totalPrice: money(Number.isFinite(totalPrice) ? totalPrice : payable),
     selectedPricePerNight: money(Number(identity.selectedPricePerNight ?? pricePerNight ?? 0)),
-    selectedTotalPrice: logicalStayTotal > 0
-      ? money(logicalStayTotal)
-      : money(Number(identity.selectedTotalPrice ?? totalPrice ?? 0)),
+    selectedTotalPrice: roomTypeBreakdown.length > 0
+      ? money(Number(identity.selectedTotalPrice ?? totalPrice ?? 0))
+      : logicalStayTotal > 0
+        ? money(logicalStayTotal)
+        : money(Number(identity.selectedTotalPrice ?? totalPrice ?? 0)),
     roomRate: money(Number(identity.roomRate ?? 0)),
     totalRoomCost: money(Number(identity.totalRoomCost ?? 0)),
     hotelMarginBaseAmount: money(Number(identity.hotelMarginBaseAmount ?? 0)),
@@ -454,6 +517,25 @@ export function buildHotelSelectionState({
       const candidates = groupRows
         .filter((row) => rowRouteIds(row).includes(requiredRoute.routeId))
         .sort((left, right) => {
+          // A continuous-stay recommendation is materialized on its anchor
+          // route and projected onto the linked nights. Prefer that
+          // authoritative projection over an older route-local selection;
+          // otherwise the second night can display a different room count or
+          // room allocation even though it belongs to the same stay.
+          const isAuthoritativeForRoute = (row: any): number => {
+            if (row?.authoritativeRecommendation === true || row?.autoSelectionCandidate === true) return 1;
+            const rawSnapshot = row?.selectedPriceSnapshot ?? row?.selected_price_snapshot;
+            let snapshot: any = rawSnapshot;
+            if (typeof rawSnapshot === 'string' && rawSnapshot.trim()) {
+              try { snapshot = JSON.parse(rawSnapshot); } catch { snapshot = null; }
+            }
+            const routeIds = Array.isArray(snapshot?.authoritativeRouteIds)
+              ? snapshot.authoritativeRouteIds.map(Number)
+              : [];
+            return routeIds.includes(requiredRoute.routeId) ? 1 : 0;
+          };
+          const leftAuthoritative = isAuthoritativeForRoute(left);
+          const rightAuthoritative = isAuthoritativeForRoute(right);
           // Continuous-stay rows advertise every covered route through
           // completeStayRouteIds, but their pricing snapshot belongs to the
           // anchor night. When a route-specific persisted row exists, it must
@@ -464,7 +546,9 @@ export function buildHotelSelectionState({
           const rightRouteId = Number(right?.itineraryRouteId || right?.routeId || right?.itinerary_route_id || 0);
           const leftExact = leftRouteId === requiredRoute.routeId ? 1 : 0;
           const rightExact = rightRouteId === requiredRoute.routeId ? 1 : 0;
-          return rightExact - leftExact || selectionPriority(right) - selectionPriority(left);
+          return rightAuthoritative - leftAuthoritative ||
+            rightExact - leftExact ||
+            selectionPriority(right) - selectionPriority(left);
         });
       const selectedRow = candidates.find((row) => selectionPriority(row) >= 3 && !isUnavailableSelection(row));
       const unavailableRow = candidates.find(isUnavailableSelection);
