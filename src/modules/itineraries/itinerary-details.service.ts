@@ -6543,18 +6543,46 @@ const hasRequiredVehicleSelection =
             return sum;
           }
           if (Number.isFinite(selectedDate)) lastSelectedStayDate.set(selectedKey, selectedDate);
+          const selectedRouteId = Number(
+            selected.routeId ?? selected.itineraryRouteId ?? selected.itinerary_route_id ?? 0,
+          );
+          const persistedRoute = (costHotelRows as any[]).find((row: any) =>
+            Number(row?.itinerary_route_id ?? row?.itineraryRouteId ?? 0) === selectedRouteId,
+          );
           const roomBase = readAmount(
-            selected.baseTotalPrice ?? selected.base_total_price ?? selected.basePricePerNight,
+            selected.totalRoomCost ?? selected.total_room_cost ??
+            selected.baseTotalPrice ?? selected.base_total_price ??
+            persistedRoute?.total_room_cost ?? selected.basePricePerNight,
           );
-          const extraBed = readAmount(selected.extraBedAmount ?? selected.extra_bed_amount ?? selected.extraBedCost);
-          const childWithBed = readAmount(selected.childWithBedAmount ?? selected.child_with_bed_amount ?? selected.childWithBedCost);
-          const childWithoutBed = readAmount(selected.childWithoutBedAmount ?? selected.child_without_bed_amount ?? selected.childWithoutBedCost);
+          const extraBed = readAmount(
+            selected.extraBedAmount ?? selected.extra_bed_amount ?? selected.extraBedCost ??
+            persistedRoute?.total_extra_bed_cost,
+          );
+          const childWithBed = readAmount(
+            selected.childWithBedAmount ?? selected.child_with_bed_amount ?? selected.childWithBedCost ??
+            persistedRoute?.total_childwith_bed_cost,
+          );
+          const childWithoutBed = readAmount(
+            selected.childWithoutBedAmount ?? selected.child_without_bed_amount ?? selected.childWithoutBedCost ??
+            persistedRoute?.total_childwithout_bed_cost,
+          );
           const payable = readAmount(
-            selected.totalPrice ?? selected.totalStayPrice ?? selected.selectedTotalPrice ?? selected.totalAmount,
+            selected.totalPrice ?? selected.totalStayPrice ?? selected.selectedTotalPrice ??
+            selected.totalAmount ?? persistedRoute?.total_hotel_cost,
           );
-          const margin = readAmount(
+          const storedMargin = readAmount(
             selected.hotelMarginAmount ?? selected.hotelMarginTotalAmount ?? selected.hotelMarginStayAmount,
           );
+          const componentTotal = roomBase + extraBed + childWithBed + childWithoutBed;
+          // A selection snapshot can carry a stale margin or omit supplements.
+          // When persisted route components are available, the payable amount
+          // is authoritative and the margin is the balancing component.
+          const derivedMargin = payable >= componentTotal
+            ? payable - componentTotal
+            : storedMargin;
+          const margin = Number.isFinite(derivedMargin) && derivedMargin >= 0
+            ? derivedMargin
+            : storedMargin;
           sum.hotelListTotal += payable;
           sum.hotelRoomBaseCost += roomBase;
           sum.extraBedCost += extraBed;

@@ -2486,13 +2486,37 @@ export class HotelAvailabilitySnapshotService {
         );
         const snapshotTotal = Number(snapshot?.totalPrice ?? snapshot?.totalStayPrice ?? snapshot?.totalHotelCost ?? 0);
         const snapshotPerNight = Number(snapshot?.pricePerNight ?? snapshot?.selectedPricePerNight ?? 0);
+        const selectedRoomBreakdown = Array.isArray(snapshot?.roomTypeBreakdown)
+          ? snapshot.roomTypeBreakdown.filter((item: any) => item && typeof item === 'object')
+          : [];
+        const breakdownSum = (key: string): number => selectedRoomBreakdown.reduce(
+          (total: number, item: any) => total + Number(item?.[key] || 0),
+          0,
+        );
+        const breakdownBaseTotal = selectedRoomBreakdown.length > 0
+          ? this.money(
+              breakdownSum('roomCost') +
+              breakdownSum('extraBedCost') +
+              breakdownSum('childWithBedCost') +
+              breakdownSum('childWithoutBedCost'),
+            )
+          : 0;
         const snapshotHasSupplement = [
           snapshot?.extraBedAmount, snapshot?.childWithBedAmount, snapshot?.childWithoutBedAmount,
         ].some((value) => Number(value || 0) > 0);
         // The room editor identifies a room category, not an old supplier
         // quote. A fresh matching rate is authoritative; the persisted amount
         // is only a fallback for legacy snapshots without current pricing.
-        const selectedTotal = snapshotHasSupplement && snapshotTotal > 0
+        const breakdownMarginPercentage = Number(snapshot?.hotelMarginPercentage ?? selection?.hotel_margin_percentage ?? 0);
+        const breakdownMarginAmount = selectedRoomBreakdown.length > 0
+          ? this.money(breakdownBaseTotal * breakdownMarginPercentage / 100)
+          : 0;
+        const breakdownPayableTotal = selectedRoomBreakdown.length > 0
+          ? this.money(breakdownBaseTotal + breakdownMarginAmount)
+          : 0;
+        const selectedTotal = breakdownPayableTotal > 0
+          ? breakdownPayableTotal
+          : snapshotHasSupplement && snapshotTotal > 0
           ? snapshotTotal : currentTotal > 0 ? currentTotal : persistedTotal;
         const selectedPerNight = snapshotHasSupplement && snapshotPerNight > 0
           ? snapshotPerNight
@@ -2532,7 +2556,9 @@ export class HotelAvailabilitySnapshotService {
           : persistedBaseTotal > 0 && inferredMarginAmount > 0
             ? Number(((inferredMarginAmount / persistedBaseTotal) * 100).toFixed(2))
             : 0;
-        const selectedMarginAmount = Number(
+        const selectedMarginAmount = selectedRoomBreakdown.length > 0
+          ? breakdownMarginAmount
+          : Number(
           snapshot?.hotelMarginTotalAmount ||
           snapshot?.hotelMarginAmount ||
           selection?.hotel_margin_rate ||
@@ -2545,6 +2571,7 @@ export class HotelAvailabilitySnapshotService {
           selection?.selected_rate_option_id || snapshot?.rateOptionId || null;
         const selectedOptionKey = this.selectedRateOptionKey(currentRateRow, selectedRateOptionId);
         const selectedSnapshot = {
+          ...(snapshot || {}),
           ...hotelDisplaySnapshot({
             ...currentRateRow,
             optionKey: selectedOptionKey,
@@ -2552,7 +2579,6 @@ export class HotelAvailabilitySnapshotService {
             totalPrice: selectedTotal,
             pricePerNight: selectedPerNight,
           }),
-          ...(snapshot || {}),
           ...(selectedBasePerNight > 0 ? {
             basePricePerNight: selectedBasePerNight,
             baseTotalPrice: this.money(selectedBasePerNight * roomCount),
@@ -3561,7 +3587,16 @@ export class HotelAvailabilitySnapshotService {
       // replacement is therefore a complete fresh auto-selection.
       const replacementWasUnavailable = !matched;
       const nextSelectionOrigin = replacementWasUnavailable ? 'AUTO_SELECTED' : origin;
-      const displayPriceDelta = Number(next.totalPrice || 0) - Number(previous.totalPrice || 0);
+      // A mixed-room selection cannot be compared with the supplier's single
+      // primary room option. The selected parent may contain Garden + Deluxe
+      // (or any other combination), while `replacement` represents only one
+      // room type multiplied by the total room count. Treat the persisted
+      // physical-room allocation as the comparison baseline until each room
+      // can be repriced independently.
+      const mixedRoomAllocation = this.hasMixedRoomAllocation(previousSnapshot);
+      const displayPriceDelta = mixedRoomAllocation
+        ? 0
+        : Number(next.totalPrice || 0) - Number(previous.totalPrice || 0);
 
       if (origin === 'USER_SELECTED' && replacementWasUnavailable) {
         const previousPersistedSnapshot = parseHotelSelectionSnapshot(selection) as any;
@@ -5559,6 +5594,8 @@ export class HotelAvailabilitySnapshotService {
    * a payable total on one night and a pre-margin subtotal on the next.
    */
   private async pricePendingSelectionOption(tx: any, selection: any, option: any): Promise<any> {
+    const mixedPricing = this.getMixedRoomPricing(selection, option);
+    if (mixedPricing) return mixedPricing;
     const provider = String(option?.provider || option?.hotel_provider || '').trim().toLowerCase();
     const roomCount = Math.max(Number(option?.roomCount || option?.totalNoOfRooms || selection?.total_no_of_rooms || 1), 1);
     const plan = tx?.dvi_itinerary_plan_details?.findUnique
@@ -5616,6 +5653,76 @@ export class HotelAvailabilitySnapshotService {
       totalStayPrice: totalPrice,
       totalHotelCost: totalPrice,
       totalHotelTaxAmount: tax,
+    };
+  }
+
+  private hasMixedRoomAllocation(selection: any): boolean {
+    const snapshot = parseHotelSelectionSnapshot(selection) as any;
+    const roomSelections = Array.isArray(snapshot?.roomSelections)
+      ? snapshot.roomSelections
+      : [];
+    const roomTypeIds = new Set(
+      roomSelections
+        .map((room: any) => Number(room?.roomTypeId ?? room?.room_type_id ?? 0))
+        .filter((roomTypeId: number) => roomTypeId > 0),
+    );
+    return roomSelections.length > 1 && roomTypeIds.size > 1;
+  }
+
+  /**
+   * Build pending pricing from the selected physical-room allocation. A
+   * supplier replacement option has one roomId, so applying it to roomCount
+   * would silently turn a mixed selection into a homogeneous one.
+   */
+  private getMixedRoomPricing(selection: any, option: any): any | null {
+    const snapshot = parseHotelSelectionSnapshot(selection) as any;
+    if (!this.hasMixedRoomAllocation(selection)) return null;
+    const roomSelections = Array.isArray(snapshot?.roomSelections)
+      ? snapshot.roomSelections
+      : [];
+    const breakdown = Array.isArray(snapshot?.roomTypeBreakdown)
+      ? snapshot.roomTypeBreakdown
+      : [];
+    const amount = (item: any, ...keys: string[]): number => {
+      for (const key of keys) {
+        const value = Number(item?.[key] ?? 0);
+        if (Number.isFinite(value) && value >= 0) return value;
+      }
+      return 0;
+    };
+    const baseTotalPrice = breakdown.reduce((sum: number, item: any) => sum + amount(item, 'roomCost', 'room_cost'), 0);
+    const extraBedAmount = breakdown.reduce((sum: number, item: any) => sum + amount(item, 'extraBedCost', 'extra_bed_cost'), 0);
+    const childWithBedAmount = breakdown.reduce((sum: number, item: any) => sum + amount(item, 'childWithBedCost', 'child_with_bed_cost'), 0);
+    const childWithoutBedAmount = breakdown.reduce((sum: number, item: any) => sum + amount(item, 'childWithoutBedCost', 'child_without_bed_cost'), 0);
+    const marginPercentage = Math.max(Number(
+      snapshot?.hotelMarginPercentage ?? selection?.hotel_margin_percentage ?? 0,
+    ), 0);
+    const marginBase = Number((baseTotalPrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
+    const marginAmount = Number((marginBase * marginPercentage / 100).toFixed(2));
+    const totalPrice = Number((marginBase + marginAmount).toFixed(2));
+    const persistedTotal = Number(snapshot?.totalPrice ?? selection?.selected_total_price ?? 0);
+    const authoritativeTotal = totalPrice > 0 ? totalPrice : persistedTotal;
+    return {
+      ...option,
+      roomCount: roomSelections.length,
+      roomSelections,
+      roomTypeBreakdown: breakdown,
+      basePricePerNight: Number((baseTotalPrice / Math.max(roomSelections.length, 1)).toFixed(2)),
+      baseTotalPrice,
+      baseHotelCost: baseTotalPrice,
+      totalRoomCost: baseTotalPrice,
+      extraBedAmount,
+      childWithBedAmount,
+      childWithoutBedAmount,
+      hotelMarginPercentage: marginPercentage,
+      hotelMarginBaseAmount: marginBase,
+      hotelMarginAmount: marginAmount,
+      hotelMarginTotalAmount: marginAmount,
+      pricePerNight: authoritativeTotal,
+      totalPrice: authoritativeTotal,
+      totalStayPrice: authoritativeTotal,
+      totalHotelCost: authoritativeTotal,
+      totalHotelTaxAmount: Number(snapshot?.totalHotelTaxAmount ?? 0),
     };
   }
 
