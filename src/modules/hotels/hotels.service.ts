@@ -2451,6 +2451,87 @@ export class HotelsService {
       rows,
     };
   }
+  async saveRoomAvailability(
+    hotel_id: number,
+    room_id: number,
+    items: Array<{ startDate?: string; endDate?: string; freeRooms?: number }>,
+  ) {
+    const hid = Number(hotel_id);
+    const rid = Number(room_id);
+
+    if (!Number.isFinite(hid) || hid <= 0 || !Number.isInteger(hid)) {
+      throw new BadRequestException('hotelId must be a valid number');
+    }
+    if (!Number.isFinite(rid) || rid <= 0 || !Number.isInteger(rid)) {
+      throw new BadRequestException('roomId must be a valid number');
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException('items array is required');
+    }
+
+    const [hotel, room] = await Promise.all([
+      (this.prisma as any).dvi_hotel.findFirst({
+        where: { hotel_id: hid, deleted: { not: true } },
+        select: { hotel_id: true },
+      }),
+      (this.prisma as any).dvi_hotel_rooms.findFirst({
+        where: { hotel_id: hid, room_ID: BigInt(rid), deleted: 0 },
+        select: { room_ID: true },
+      }),
+    ]);
+
+    if (!hotel) throw new BadRequestException('Hotel not found');
+    if (!room) throw new BadRequestException('Room not found for this hotel');
+
+    const normalized = items.map((item, index) => {
+      const start = this.parseRangeViewDate(String(item?.startDate || ''), `items[${index}].startDate`);
+      const end = this.parseRangeViewDate(String(item?.endDate || ''), `items[${index}].endDate`);
+      const free = Number(item?.freeRooms);
+      if (start.getTime() > end.getTime()) {
+        throw new BadRequestException(`items[${index}].startDate must be less than or equal to endDate`);
+      }
+      if (!Number.isInteger(free) || free < 0) {
+        throw new BadRequestException(`items[${index}].freeRooms must be a non-negative integer`);
+      }
+      return { start, end, free };
+    });
+
+    const saved = await (this.prisma as any).$transaction(
+      normalized.map(({ start, end, free }) =>
+        (this.prisma as any).dvi_hotel_room_availability.upsert({
+          where: {
+            hotel_id_room_id_start_date_end_date: {
+              hotel_id: hid,
+              room_id: rid,
+              start_date: start,
+              end_date: end,
+            },
+          },
+          update: { free, received_at: new Date(), source: 'manual' },
+          create: {
+            hotel_id: hid,
+            room_id: rid,
+            start_date: start,
+            end_date: end,
+            free,
+            source: 'manual',
+          },
+        }),
+      ),
+    );
+
+    return {
+      success: true,
+      message: 'Room availability saved successfully.',
+      items: saved.map((row: any) => ({
+        id: row.id,
+        startDate: new Date(row.start_date).toISOString().slice(0, 10),
+        endDate: new Date(row.end_date).toISOString().slice(0, 10),
+        freeRooms: row.free,
+      })),
+    };
+  }
+
   async getRoomAvailabilityRangeView(
     hotel_id: number,
     query: { startDate: string; endDate: string; roomId: number },
