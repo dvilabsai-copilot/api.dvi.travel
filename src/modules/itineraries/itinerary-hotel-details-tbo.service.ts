@@ -2102,6 +2102,11 @@ this.logger.log(
       noOfNights,
       preferredMealPlanCode,
       preferredCategories,
+      occupancy: {
+        extraBedCount: Number((plan as any).total_extra_bed || 0),
+        childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+        childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+      },
       maxDistanceKm: Number(process.env.MAX_RECOMMENDED_HOTEL_DISTANCE_KM || 15),
       requireKnownDistance: String(process.env.HOTEL_RECOMMENDATION_REQUIRE_DISTANCE || '').trim() === 'true',
     });

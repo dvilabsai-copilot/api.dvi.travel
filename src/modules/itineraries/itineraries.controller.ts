@@ -2657,6 +2657,7 @@ async confirmQuotation(
       provider: dto.provider,
       hotel_name: dto.hotel_name,
       room_type_id: dto.room_type_id,
+      room_number: dto.room_number,
       room_qty: dto.room_qty,
       all_meal_plan: dto.all_meal_plan,
       breakfast_meal_plan: dto.breakfast_meal_plan,

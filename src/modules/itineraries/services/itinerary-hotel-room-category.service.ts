@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
+import { resolveHotelOccupancyPricing } from '../utils/hotel-selection-pricing.util';
 
 @Injectable()
 export class ItineraryHotelRoomCategoryService {
@@ -207,7 +208,14 @@ export class ItineraryHotelRoomCategoryService {
     if (!route) throw new NotFoundException('Route not found');
     const planDetails = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_plan_ID: params.itinerary_plan_id, deleted: 0 },
-      select: { itinerary_quote_ID: true },
+      select: {
+        itinerary_quote_ID: true,
+        total_adult: true,
+        preferred_room_count: true,
+        total_extra_bed: true,
+        total_child_with_bed: true,
+        total_child_without_bed: true,
+      },
     });
     if (!planDetails) throw new NotFoundException('Itinerary plan details not found');
 
@@ -245,7 +253,28 @@ export class ItineraryHotelRoomCategoryService {
       Number(room.roomTypeId || 0) === Number(params.room_type_id || 0),
     ) || hotelRoom;
 
-    const roomRate = Number(selectedRoomType.pricePerNight || hotelRoom.pricePerNight || 0);
+    const canonicalProvider = ['offline', 'axisrooms', 'ax'].includes(
+      String(params.provider || hotelRoom.provider || '').trim().toLowerCase(),
+    );
+    const occupancyRates = canonicalProvider
+      ? await this.resolveOccupancyRates(
+        params.hotel_id,
+        Number(selectedRoomType.roomId || 0),
+        route.itinerary_route_date,
+      )
+      : null;
+    if (canonicalProvider && !occupancyRates) {
+      throw new NotFoundException('Selected room has no occupancy rate for this date');
+    }
+    const roomRate = Number(
+      occupancyRates
+        ? resolveHotelOccupancyPricing({
+          rates: occupancyRates,
+          roomCount: 1,
+          adultCount: Number((planDetails as any)?.total_adult || 0),
+        }).roomRate
+        : selectedRoomType.pricePerNight || hotelRoom.pricePerNight || 0,
+    );
     const now = new Date();
     const selectedRateOptionId =
       String(
@@ -254,7 +283,7 @@ export class ItineraryHotelRoomCategoryService {
         (selectedLiveRoomRow as any)?.bookingCode ||
         '',
       ).trim() || null;
-    const selectedPricePerNight = Number(
+    let selectedPricePerNight = Number(
       (selectedLiveRoomRow as any)?.pricePerNight ??
       (selectedLiveRoomRow as any)?.basePricePerNight ??
       roomRate ??
@@ -379,6 +408,24 @@ export class ItineraryHotelRoomCategoryService {
       activeRoomRows.reduce((sum: number, room: any) => sum + Math.max(Number(room.room_qty || 1), 1), 0),
       1,
     );
+    const occupancyPricing = occupancyRates
+      ? resolveHotelOccupancyPricing({
+        rates: occupancyRates,
+        roomCount: totalRooms,
+        adultCount: Number((planDetails as any)?.total_adult || 0),
+        extraBedCount: Number((planDetails as any)?.total_extra_bed || 0),
+        childWithBedCount: Number((planDetails as any)?.total_child_with_bed || 0),
+        childWithoutBedCount: Number((planDetails as any)?.total_child_without_bed || 0),
+        marginPercentage: Number(
+          (persistedSelectionParent as any)?.hotel_margin_percentage ||
+          (persistedSnapshot as any).hotelMarginPercentage ||
+          0,
+        ),
+      })
+      : null;
+    if (occupancyPricing) {
+      selectedPricePerNight = Number((occupancyPricing.totalPrice / totalRooms).toFixed(2));
+    }
     // Room-category edits must not recreate the selection from a partial
     // room-detail response. AxisRooms/STAAH cards often have no live room
     // detail row, and a room-only edit must preserve the selected meal/rate
@@ -438,6 +485,24 @@ export class ItineraryHotelRoomCategoryService {
         '',
       ).trim() || null,
       totalRooms,
+      ...(occupancyPricing ? {
+        roomRate: occupancyPricing.roomRate,
+        baseTotalPrice: occupancyPricing.baseTotalPrice,
+        hotelMarginBaseAmount: occupancyPricing.hotelMarginBaseAmount,
+        hotelMarginPercentage: occupancyPricing.hotelMarginPercentage,
+        hotelMarginAmount: occupancyPricing.hotelMarginAmount,
+        hotelMarginTotalAmount: occupancyPricing.hotelMarginAmount,
+        extraBedCount: occupancyPricing.extraBedCount,
+        extraBedRate: occupancyPricing.extraBedRate,
+        extraBedAmount: occupancyPricing.extraBedAmount,
+        childWithBedCount: occupancyPricing.childWithBedCount,
+        childWithBedRate: occupancyPricing.childWithBedRate,
+        childWithBedAmount: occupancyPricing.childWithBedAmount,
+        childWithoutBedCount: occupancyPricing.childWithoutBedCount,
+        childWithoutBedRate: occupancyPricing.childWithoutBedRate,
+        childWithoutBedAmount: occupancyPricing.childWithoutBedAmount,
+        totalPrice: occupancyPricing.totalPrice,
+      } : {}),
     });
     const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
     const persistedParent = hotelDetailsModel?.findFirst
@@ -447,6 +512,17 @@ export class ItineraryHotelRoomCategoryService {
       })
       : null;
     const persistedHotelId = Number(params.hotel_id || persistedParent?.hotel_id || 0);
+    const canonicalPricingData = occupancyPricing ? {
+      selected_price_per_night: selectedPricePerNight,
+      selected_total_price: occupancyPricing.totalPrice,
+      total_room_cost: occupancyPricing.baseTotalPrice,
+      total_extra_bed_cost: occupancyPricing.extraBedAmount,
+      total_childwith_bed_cost: occupancyPricing.childWithBedAmount,
+      total_childwithout_bed_cost: occupancyPricing.childWithoutBedAmount,
+      hotel_margin_percentage: occupancyPricing.hotelMarginPercentage,
+      hotel_margin_rate: occupancyPricing.hotelMarginAmount,
+      total_hotel_cost: occupancyPricing.totalPrice,
+    } : {};
     if (hotelDetailsModel?.update) await hotelDetailsModel.update({
       where: { itinerary_plan_hotel_details_ID: hotelDetailsId },
       data: {
@@ -455,10 +531,11 @@ export class ItineraryHotelRoomCategoryService {
         total_no_of_rooms: totalRooms,
         hotel_provider: String((selectedLiveRoomRow as any)?.provider || 'staah').trim().toLowerCase(),
         selected_rate_option_id: selectedRateOptionId,
-        selected_price_per_night: selectedPricePerNight,
-        selected_total_price: selectedTotalPrice,
+        selected_price_per_night: occupancyPricing ? selectedPricePerNight : selectedPricePerNight,
+        selected_total_price: occupancyPricing ? occupancyPricing.totalPrice : selectedTotalPrice,
         selected_currency: String((selectedLiveRoomRow as any)?.currency || 'INR').trim() || null,
         selected_price_snapshot: selectedSnapshot,
+        ...canonicalPricingData,
         updatedon: now,
       },
     });
@@ -467,7 +544,46 @@ export class ItineraryHotelRoomCategoryService {
       message: 'Room category updated successfully',
       roomTypeName: selectedRoomType.roomTypeTitle,
       itinerary_plan_hotel_details_ID: hotelDetailsId,
+      ...(occupancyPricing ? {
+        financialSummary: {
+          roomCost: occupancyPricing.baseTotalPrice,
+          extraBedCost: occupancyPricing.extraBedAmount,
+          childWithBedCost: occupancyPricing.childWithBedAmount,
+          childWithoutBedCost: occupancyPricing.childWithoutBedAmount,
+          subtotal: occupancyPricing.hotelMarginBaseAmount,
+          margin: occupancyPricing.hotelMarginAmount,
+          grandTotal: occupancyPricing.totalPrice,
+        },
+      } : {}),
     };
+  }
+
+  /**
+   * Occupancy rates are the sole database source for canonical/offline room
+   * pricing. Price-book rows are deliberately not consulted here.
+   */
+  private async resolveOccupancyRates(hotelId: number, roomId: number, routeDate?: Date | null) {
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!occupancyModel?.findMany || !hotelId || !roomId || !routeDate) return null;
+    const date = new Date(routeDate);
+    const rows = await occupancyModel.findMany({
+      where: {
+        hotel_id: hotelId,
+        room_id: roomId,
+        start_date: { lte: date },
+        end_date: { gte: date },
+      },
+      select: { occupancy_rates: true, start_date: true, received_at: true },
+      orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+    });
+    const row = (rows || []).find((candidate: any) => {
+      const rates = candidate?.occupancy_rates;
+      return rates && typeof rates === 'object' &&
+        Object.values(rates).some((value) => Number(value) > 0);
+    });
+    return row?.occupancy_rates && typeof row.occupancy_rates === 'object'
+      ? row.occupancy_rates as Record<string, unknown>
+      : null;
   }
 
   /**
@@ -775,36 +891,17 @@ export class ItineraryHotelRoomCategoryService {
       }
     }
 
-    // Offline/canonical room categories must carry their DB price into the
-    // update path; otherwise changing a room type silently writes a zero rate.
-    // Use the route date's price-book column so the API recalculates the
-    // persisted room rate and totals from DB data.
-    if (routeDate && availableRoomTypes.length > 0) {
-      const priceModel = (this.prisma as any).dvi_hotel_room_price_book;
-      if (priceModel?.findMany) {
-        const dayColumn = `day_${routeDate.getDate()}`;
-        const priceRows = await priceModel.findMany({
-          where: {
-            hotel_id: hotelId,
-            room_type_id: { in: availableRoomTypes.map((roomType) => roomType.roomTypeId) },
-            year: String(routeDate.getFullYear()),
-            month: routeDate.toLocaleString('en-US', { month: 'long' }),
-            price_type: 0,
-            status: 1,
-            deleted: 0,
-          },
-          select: { room_type_id: true, [dayColumn]: true } as any,
-        });
-        const pricesByRoomType = new Map<number, number>();
-        for (const row of priceRows as any[]) {
-          const price = Number(row[dayColumn] || 0);
-          if (price > 0 && !pricesByRoomType.has(Number(row.room_type_id))) {
-            pricesByRoomType.set(Number(row.room_type_id), price);
-          }
-        }
-        for (const roomType of availableRoomTypes) {
-          roomType.pricePerNight = pricesByRoomType.get(roomType.roomTypeId) || roomType.pricePerNight;
-        }
+    // Canonical/offline room categories use occupancy-rate rows. The legacy
+    // room price-book table is intentionally not part of itinerary pricing.
+    if (
+      routeDate &&
+      availableRoomTypes.length > 0 &&
+      ['offline', 'axisrooms', 'ax'].includes(providerName)
+    ) {
+      for (const roomType of availableRoomTypes) {
+        const rates = await this.resolveOccupancyRates(hotelId, roomType.roomId, routeDate);
+        if (!rates) continue;
+        roomType.pricePerNight = Number(rates.DOUBLE || rates.SINGLE || roomType.pricePerNight || 0);
       }
     }
 

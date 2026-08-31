@@ -1784,6 +1784,7 @@ private getGuideSlotLabel(slotId: number): string {
     }
 
     const requestedRoom = String(data.roomType || '').trim();
+    const requestedRoomTypeId = Number(data.roomTypeId ?? data.room_type_id ?? 0);
     const requestedMeal = String(data.mealPlanCode || data.mealPlan || '').trim();
     const anchorRateOptionId = String(data.rateOptionId || data.optionKey || '').trim();
     const anchorSelectionKey = String(data.selectionKey || '').trim();
@@ -2088,6 +2089,10 @@ private getGuideSlotLabel(slotId: number): string {
         const room = String(option.roomType || option.roomTypeName || '').trim();
         const meal = String(option.mealPlan || option.mealPlanCode || '').trim();
         if (intent === 'ROOM_TYPE' && requestedRoom && normalize(room) !== normalize(requestedRoom)) return false;
+        if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
+          const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
+          if (candidateRoomTypeId !== requestedRoomTypeId) return false;
+        }
         if (intent === 'MEAL_PLAN' && requestedRoom && normalize(room) !== normalize(requestedRoom)) return false;
         // HOTEL and ROOM_TYPE actions preserve the itinerary's global meal
         // plan just like MEAL_PLAN actions. Without this filter, a card that
@@ -2482,9 +2487,33 @@ private getGuideSlotLabel(slotId: number): string {
         selectionOrigin: 'USER_SELECTED', selectionStatus: 'SAVED',
       };
     });
+    // Return the same authoritative financial envelope used by availability
+    // and reset. The mutation has already committed the DB rows, so this is a
+    // read-after-write response and cannot be based on the browser's stale
+    // Garden/previous-room totals.
+    let itinerary: any = null;
+    try {
+      itinerary = await this.itineraryDetails.getItineraryDetails(
+        quoteId,
+        groupType,
+        undefined,
+      );
+    } catch (error) {
+      // Selection persistence remains successful even if response enrichment
+      // fails; the client still receives the persisted selections and can
+      // retry the normal itinerary read.
+      console.error('[HOTEL_INTENT] financial response enrichment failed', error);
+    }
     return {
       success: true, planId: Number(data.planId), groupType, selectionIntent: intent,
-      logicalStay: stay, selections, totals: { totalPrice: selections.reduce((sum: number, selection: any) => sum + Number(selection.totalPrice || 0), 0) },
+      logicalStay: stay,
+      hotelDetails: selections,
+      selections,
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
+      totals: { totalPrice: selections.reduce((sum: number, selection: any) => sum + Number(selection.totalPrice || 0), 0) },
     };
   }
 
@@ -5554,6 +5583,7 @@ private getGuideSlotLabel(slotId: number): string {
     provider?: string;
     hotel_name?: string;
     room_type_id: number;
+    room_number?: number;
     room_qty?: number;
     all_meal_plan?: number;
     breakfast_meal_plan?: number;

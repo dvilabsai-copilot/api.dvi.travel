@@ -477,6 +477,7 @@ test('continuous logical stay persists one parent selection and one full-stay to
 test('route-derived continuous stay keeps the online property across nights', async () => {
   const created: any[] = [];
   const tx: any = {
+    dvi_global_settings: { findFirst: async () => ({ hotel_margin: 6 }) },
     dvi_itinerary_plan_hotel_details: {
       findMany: async () => [],
       create: async ({ data }: any) => { created.push(data); return data; },
@@ -2393,6 +2394,43 @@ test('AUTO_SELECTED chooses the cheapest eligible live provider before determini
   assert.equal(createdSelections.length, 1);
   assert.equal(createdSelections[0].hotel_provider, 'staah');
   assert.equal(Number(createdSelections[0].selected_total_price), 2800);
+});
+
+test('selected totals include a positive supplement cost when the normalized amount is zero', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_global_settings: { findFirst: async () => ({ hotel_margin: 6 }) },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => { createdSelections.push(data); return { ...data, itinerary_plan_hotel_details_ID: 778 }; },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const row: any = {
+    itineraryRouteId: 10, groupType: 1, date: '2026-07-28', provider: 'offline',
+    hotelId: 301, hotelCode: 'axis-hotel', hotelName: 'Axis Hotel', roomId: 'room-1',
+    rateId: 'axis-rate', rateOptionId: 'axis-rate', totalStayPrice: 10000,
+    baseTotalPrice: 10000, totalRoomCost: 10000,
+    extraBedCount: 1, extraBedRate: 2000, extraBedAmount: 0, totalExtraBedCost: 2000,
+    childWithoutBedCount: 1, childWithoutBedRate: 1500, childWithoutBedAmount: 0,
+    totalChildWithoutBedCost: 1500,
+    isBookable: false, isLiveBookable: false, requiresHotelApproval: true,
+    bookingMode: 'MANUAL_APPROVAL', isSelectable: true,
+  };
+  row.optionKey = hotelOptionKey(row);
+
+  await (service as any).ensureAutoSelections(tx, 44, [row], 'run-supplement-normalization', 6);
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(Number(createdSelections[0].total_room_cost), 10000);
+  assert.equal(Number(createdSelections[0].total_extra_bed_cost), 2000);
+  assert.equal(Number(createdSelections[0].total_childwithout_bed_cost), 1500);
+  assert.equal(Number(createdSelections[0].hotel_margin_rate), 810);
+  assert.equal(Number(createdSelections[0].total_hotel_cost), 14310);
 });
 
 test('refresh replaces a persisted AUTO_SELECTED offline row when live exists for the same day', async () => {

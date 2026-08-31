@@ -303,6 +303,17 @@ test('uses stable stay group IDs when destination text differs', () => {
   assert.deepEqual(stays[0].routeIds, [20, 21]);
 });
 
+test('uses parent stay linkage when consecutive nights have different cities', () => {
+  const stays = service().buildLogicalStays([
+    { itinerary_route_ID: 30, itinerary_route_date: '2026-08-01', next_visiting_location: 'City A' },
+    { itinerary_route_ID: 31, itinerary_route_date: '2026-08-02', next_visiting_location: 'City B', parentStayRouteId: 30 },
+    { itinerary_route_ID: 32, itinerary_route_date: '2026-08-03', next_visiting_location: 'City C', parentStayRouteId: 30 },
+  ]);
+  assert.equal(stays.length, 1);
+  assert.deepEqual(stays[0].routeIds, [30, 31, 32]);
+  assert.equal(stays[0].nights, 3);
+});
+
 test('offline inventory may be selectable for approval without live bookability', () => {
   const packages = service().generate({
     routes: oneRoute(),
@@ -634,6 +645,32 @@ test('live inventory wins automatic selection over exact-category offline invent
   assert.equal(packages[0].hotels[0].provider, 'tbo');
   assert.equal(packages[0].hotels[0].selectedCategory, 4);
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
+});
+
+test('required supplement rates are part of recommendation eligibility', () => {
+  const packages = service().generate({
+    routes: oneRoute('Munnar'),
+    hotelsByRoute: new Map([[1, [
+      option('Missing Supplements', 3000, 'CP', {
+        provider: 'tbo',
+        category: '3-star',
+        canonicalHotelId: 901,
+      }),
+      option('Complete Axis Rate', 4200, 'CP', {
+        provider: 'axisrooms',
+        category: '3-star',
+        canonicalHotelId: 902,
+        extraBedRate: 1200,
+        childWithoutBedRate: 700,
+      }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+    occupancy: { extraBedCount: 1, childWithoutBedCount: 1 },
+  });
+
+  assert.equal(packages[0].stayResults[0].hotel?.hotelName, 'Complete Axis Rate');
+  assert.equal(packages[0].stayResults[0].hotel?.provider, 'axisrooms');
 });
 
 test('AxisRooms wins a payable-price tie without excluding offline inventory', () => {

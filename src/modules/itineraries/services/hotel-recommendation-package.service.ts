@@ -116,6 +116,12 @@ export type RecommendationPackageInput = {
   noOfNights?: number;
   preferredMealPlanCode?: string | null;
   preferredCategories?: number[];
+  /** Occupancy counts used to reject rates that cannot price the request. */
+  occupancy?: {
+    extraBedCount?: number;
+    childWithBedCount?: number;
+    childWithoutBedCount?: number;
+  };
   maxDistanceKm?: number;
   requireKnownDistance?: boolean;
   maxCandidatesPerStay?: number;
@@ -627,9 +633,27 @@ export class HotelRecommendationPackageService {
       const parentRouteId = Number(route.parentStayRouteId || route.parent_stay_route_id || routeId);
       const explicitCheckIn = this.dateOnly(route.checkInDate || route.hotelCheckInDate);
       const explicitCheckOut = this.dateOnly(route.checkOutDate || route.hotelCheckOutDate);
+      // Route metadata is the authoritative way to join a stay when the
+      // itinerary moves between labels/cities during one hotel booking. A
+      // shared check-in/check-out window is equally strong evidence. Only
+      // fall back to the legacy same-destination rule when neither is
+      // present, so ordinary route changes remain separate stays.
+      const linkedToCurrentStay = Boolean(
+        current && (
+          (parentRouteId > 0 && (
+            parentRouteId === current.parentRouteId ||
+            parentRouteId === current.routeIds[current.routeIds.length - 1]
+          )) ||
+          (explicitCheckIn && explicitCheckOut &&
+            explicitCheckIn === current.checkInDate &&
+            explicitCheckOut === current.checkOutDate)
+        ),
+      );
       const canMerge = Boolean(
         current &&
-        (stableGroup ? current.stableGroup === stableGroup : current.destinationKey === destinationKey) &&
+        (stableGroup
+          ? current.stableGroup === stableGroup
+          : linkedToCurrentStay || current.destinationKey === destinationKey) &&
         this.addDays(current.lastDate, 1) === date &&
         (!explicitCheckIn || explicitCheckIn === current.checkInDate || explicitCheckIn === date),
       );
@@ -1140,6 +1164,13 @@ export class HotelRecommendationPackageService {
       if (!category) return { ok: false, reason: `Category ${this.normalizedCategory(candidate)} is not a supported star category.` };
     }
 
+    // A recommendation is persisted only when every requested occupancy
+    // component can be priced. Keep this check in the recommendation stage
+    // as well; otherwise a rate can win here and then be discarded later by
+    // snapshot reconciliation, leaving an empty recommendation group.
+    const supplementError = this.requiredSupplementError(candidate, input.occupancy);
+    if (supplementError) return { ok: false, reason: supplementError };
+
     const distance = this.normalizeDistance(candidate);
     const maxDistance = Number(input.maxDistanceKm ?? 15);
     if (distance.distanceStatus === 'OUTSIDE_RADIUS' || (Number.isFinite(distance.distanceKm) && distance.distanceKm > maxDistance)) {
@@ -1147,6 +1178,42 @@ export class HotelRecommendationPackageService {
     }
     if (input.requireKnownDistance && distance.distanceStatus === 'UNKNOWN') return { ok: false, reason: 'Distance is unavailable.' };
     return { ok: true };
+  }
+
+  private requiredSupplementError(
+    candidate: HotelSearchResult,
+    occupancy?: RecommendationPackageInput['occupancy'],
+  ): string | null {
+    const required = [
+      {
+        count: Number(occupancy?.extraBedCount || 0),
+        rate: this.firstPositive(candidate, ['extraBedRate', 'extra_bed_rate']),
+        amount: this.firstPositive(candidate, ['extraBedAmount', 'extra_bed_amount', 'totalExtraBedCost', 'total_extra_bed_cost']),
+        label: 'extra bed',
+      },
+      {
+        count: Number(occupancy?.childWithBedCount || 0),
+        rate: this.firstPositive(candidate, ['childWithBedRate', 'child_with_bed_rate']),
+        amount: this.firstPositive(candidate, ['childWithBedAmount', 'child_with_bed_amount', 'totalChildWithBedCost', 'total_childwith_bed_cost']),
+        label: 'child with bed',
+      },
+      {
+        count: Number(occupancy?.childWithoutBedCount || 0),
+        rate: this.firstPositive(candidate, ['childWithoutBedRate', 'child_without_bed_rate']),
+        amount: this.firstPositive(candidate, ['childWithoutBedAmount', 'child_without_bed_amount', 'totalChildWithoutBedCost', 'total_childwithout_bed_cost']),
+        label: 'child without bed',
+      },
+    ];
+    const missing = required.find((item) => item.count > 0 && item.rate <= 0 && item.amount <= 0);
+    return missing ? `Required ${missing.label} rate is unavailable.` : null;
+  }
+
+  private firstPositive(source: any, keys: string[]): number {
+    for (const key of keys) {
+      const value = Number(source?.[key]);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+    return 0;
   }
 
   private normalizeAvailability(candidate: HotelSearchResult): { ok: true } | { ok: false; reason: string } {
