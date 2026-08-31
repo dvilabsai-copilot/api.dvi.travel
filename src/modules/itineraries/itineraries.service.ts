@@ -814,11 +814,32 @@ export class ItinerariesService {
     this.hotspotDeletionService.setForceRebuildVehiclePricingCallback(
       (planId, routeId) => this.forceRebuildVehiclePricingAfterHotspotChange(planId, routeId),
     );
-    this.planPersistenceService.setCallbacks({
-      optimizeRouteOrder: (routes) => this.optimizeRouteOrder(routes),
-      applySameCityOptimizer: (planId, quoteId) => this.applySameCityCrossDayOptimizerAfterSave(planId, quoteId),
-      getPlanForEdit: (planId) => this.getPlanForEdit(planId),
-    });
+this.planPersistenceService.setCallbacks({
+  optimizeRouteOrder: (
+    routes,
+    plan,
+  ) =>
+    this.optimizeRouteOrder(
+      routes,
+      plan,
+    ),
+
+  applySameCityOptimizer: (
+    planId,
+    quoteId,
+  ) =>
+    this.applySameCityCrossDayOptimizerAfterSave(
+      planId,
+      quoteId,
+    ),
+
+  getPlanForEdit: (
+    planId,
+  ) =>
+    this.getPlanForEdit(
+      planId,
+    ),
+});
     this.activityWorkflowService.setCallbacks({
       simulateActivityImpactBeforeAdd: (data) => this.simulateActivityImpactBeforeAdd(data),
       calculateActivityPlanPricing: (...args) => (this.calculateActivityPlanPricing as any)(...args),
@@ -1418,6 +1439,26 @@ private getGuideSlotLabel(slotId: number): string {
     if (haystack.includes('breakfast')) return 'Breakfast Included';
 
     return null;
+  }
+
+  async previewRouteOptimization(
+    dto: CreateItineraryDto,
+  ) {
+    if (
+      !Array.isArray(dto?.routes) ||
+      dto.routes.length === 0
+    ) {
+      throw new BadRequestException(
+        'At least one route is required for route optimization preview.',
+      );
+    }
+
+    return this
+      .routeOptimizationService
+      .previewRouteOptions(
+        dto.routes,
+        dto.plan,
+      );
   }
 
   async createPlan(
@@ -5817,8 +5858,16 @@ private getGuideSlotLabel(slotId: number): string {
    *
    * This finds the optimal or near-optimal route that minimizes total travel distance/time
  */
-  private async optimizeRouteOrder(routes: any[]): Promise<any[]> {
-    return this.routeOptimizationService.optimizeRouteOrder(routes);
+  private async optimizeRouteOrder(
+    routes: any[],
+    plan?: any,
+  ): Promise<any[]> {
+    return this
+      .routeOptimizationService
+      .optimizeRouteOrder(
+        routes,
+        plan,
+      );
   }
 
   private async legacyOptimizeRouteOrder(routes: any[]): Promise<any[]> {

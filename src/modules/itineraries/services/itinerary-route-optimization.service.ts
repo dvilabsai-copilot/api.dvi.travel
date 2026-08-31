@@ -1,201 +1,551 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
-import { ItineraryRouteNormalizationService } from './itinerary-route-normalization.service';
+import {
+  ItineraryRouteNormalizationService,
+  RouteOptimizationContext,
+} from './itinerary-route-normalization.service';
+import {
+  parseDurationToMinutes,
+} from '../engines/helpers/distance.helper';
+
+type RouteSegmentMetric = {
+  source: string;
+  destination: string;
+  distanceKm: number;
+  durationMinutes: number;
+  valid: boolean;
+};
+
+export type RouteOptimizationScoreBreakdown = {
+  totalDistanceKm: number;
+  totalTravelMinutes: number;
+  backtrackingKm: number;
+  comfortPenalty: number;
+
+  distanceCost: number;
+  timeCost: number;
+  backtrackingCost: number;
+  comfortCost: number;
+
+  totalCost: number;
+};
+
+export type RouteOptimizationCandidate = {
+  rank: number;
+
+  label:
+    | 'Best Overall'
+    | 'Least Driving'
+    | 'Relaxed Route'
+    | 'Alternative';
+
+  routeScore: number;
+
+  routeLocations: string[];
+
+  routes: any[];
+
+  metrics: RouteOptimizationScoreBreakdown;
+};
+
+export type RouteOptimizationPreview = {
+  optimized: boolean;
+
+  originalRouteCount: number;
+
+  originalRouteLocations: string[];
+
+  fixedArrival: string;
+
+  fixedDeparture: string;
+
+  candidates: RouteOptimizationCandidate[];
+
+  fallbackReason: string | null;
+};
+
+type EvaluatedCandidate = {
+  routeLocations: string[];
+  metrics: RouteOptimizationScoreBreakdown;
+};
 
 @Injectable()
 export class ItineraryRouteOptimizationService {
+  private readonly routeMetricCache =
+    new Map<
+      string,
+      Promise<RouteSegmentMetric>
+    >();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly routeNormalization: ItineraryRouteNormalizationService,
   ) {}
 
-  async optimizeRouteOrder(routes: any[]): Promise<any[]> {
-    if (!routes || routes.length <= 2) return routes;
+async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
+    const preview =
+      await this.previewRouteOptions(
+        routes,
+        plan,
+      );
 
-    const debugOptimization = process.env.DEBUG_ROUTE_OPTIMIZER === 'true';
-    const exhaustiveSafeLimit = 10;
- const log = (msg: string) => console.log(msg);
-    const logDebug = (msg: string) => {
+    if (
+      !preview.optimized ||
+      preview.candidates.length === 0
+    ) {
+      return routes;
+    }
+
+    // Existing Show Better Route behaviour remains automatic.
+    // The first candidate is always Best Overall.
+    return preview.candidates[0].routes;
+  }
+
+  async previewRouteOptions(
+    routes: any[],
+    plan?: any,
+  ): Promise<RouteOptimizationPreview> {
+    const safeRoutes =
+      Array.isArray(routes) ? routes : [];
+
+    const originalRouteLocations =
+      this.buildRawRouteLocations(safeRoutes);
+
+    if (safeRoutes.length <= 2) {
+      return this.buildFallbackPreview(
+        safeRoutes,
+        plan,
+        'Not enough movable itinerary days to optimize.',
+      );
+    }
+
+    // Never attempt optimization when itinerary header and route rows
+    // already disagree.
+    const planDayCount =
+      Number(plan?.no_of_days || 0);
+
+    if (
+      planDayCount > 0 &&
+      safeRoutes.length !== planDayCount
+    ) {
+      return this.buildFallbackPreview(
+        safeRoutes,
+        plan,
+        `Incoming route count (${safeRoutes.length}) does not match plan day count (${planDayCount}).`,
+      );
+    }
+
+    const debugOptimization =
+      process.env.DEBUG_ROUTE_OPTIMIZER ===
+      'true';
+
+    // 8 movable destinations = 40,320 permutations.
+    // Beyond this we retain heuristic candidate generation.
+    const exhaustiveMovableLimit = 8;
+
+    const log = (message: string) =>
+      console.log(message);
+
+    const logDebug = (message: string) => {
       if (debugOptimization) {
-        log(msg);
+        log(message);
       }
     };
 
-    const context = this.routeNormalization.extractRouteOptimizationContext(routes);
+    const context =
+      this.routeNormalization
+        .extractRouteOptimizationContext(
+          safeRoutes,
+        );
+
+    this.logOptimizationSummary(
+      context,
+      log,
+      debugOptimization,
+    );
 
     if (!context.start || !context.end) {
-      log('[RouteOptimization] WARN Missing start/end location. Returning original route order.');
-      return routes;
+      return this.buildFallbackPreview(
+        safeRoutes,
+        plan,
+        'Missing fixed arrival or departure location.',
+      );
     }
 
-    if (this.routeNormalization.hasBrokenChain(routes)) {
-      log('[RouteOptimization] WARN Broken route chain detected. Returning original route order.');
-      return routes;
-    }
-
- // Preserve a valid route whose only removable nodes are repeated terminal anchors.
- // Duplicate movable stops are still normalized even when only one unique stop remains.
     if (
-      context.movableStops.length <= 1 &&
-      context.removedDuplicates.length === 0 &&
-      context.removedInvalidTerminalNodes.length > 0
+      this.routeNormalization
+        .hasBrokenChain(safeRoutes)
     ) {
-      log('[RouteOptimization] Skipping optimization. Only terminal-anchor artifacts were found.');
-      return routes;
+      return this.buildFallbackPreview(
+        safeRoutes,
+        plan,
+        'Broken route chain detected.',
+      );
     }
 
-    const middleLocations = context.movableStops.map((stop) => stop.name);
-    log(`[RouteOptimization] Start optimization (normalized). routeCount=${routes.length}, start=${context.start}, end=${context.end}, middleCount=${middleLocations.length}`);
+    const validation =
+      this.validateOptimizationInputs(
+        context,
+      );
+
+    if (!validation.isValid) {
+      return this.buildFallbackPreview(
+        safeRoutes,
+        plan,
+        `Route normalization is not safe for optimization: ${
+          validation.reason || 'unknown'
+        }.`,
+      );
+    }
+
+    const middleLocations =
+      context.movableStops.map(
+        (stop) => stop.name,
+      );
 
     if (middleLocations.length === 0) {
-      log('[RouteOptimization] Skipping optimization. No movable stops remain.');
-      return routes;
-    }
-
-    let bestRouteLocations: string[] = [];
-
- // PHP parity: switch by total route count.
-    if (routes.length <= exhaustiveSafeLimit) {
-      log(`[RouteOptimization] Using exhaustive permutation (PHP parity). candidateCount=${middleLocations.length}`);
-      bestRouteLocations = await this.optimizeWith_ExhaustivePermutation(
-        context.start,
-        context.end,
-        middleLocations,
-        log,
-        logDebug,
-      );
-    } else {
-      log(`[RouteOptimization] Using nearest-neighbor + annealing (PHP parity). candidateCount=${middleLocations.length}`);
-      bestRouteLocations = await this.optimizeWith_NearestNeighborAndAnnealing(
-        context.start,
-        context.end,
-        middleLocations,
-        logDebug,
+      return this.buildFallbackPreview(
+        safeRoutes,
+        plan,
+        'No movable intermediate destinations remain after normalization.',
       );
     }
-
-    if (!bestRouteLocations.length) {
-      log('[RouteOptimization] WARN No optimized route generated. Returning original route order.');
-      return routes;
-    }
-
-    const optimizedRoutes = this.buildOptimizedRouteDtos(
-      routes,
-      bestRouteLocations,
-      log,
-    );
-
-    // Route optimization may change the visiting order, but it must never
-    // remove itinerary days. Every incoming route row represents one day.
-    if (optimizedRoutes.length !== routes.length) {
-      log(
-        `[RouteOptimization] WARN Optimized route count mismatch. ` +
-        `expected=${routes.length}, actual=${optimizedRoutes.length}. ` +
-        `Returning original route order to preserve all itinerary days.`,
-      );
-
-      return routes;
-    }
-
-    const finalChain = optimizedRoutes
-      .map((r) => `${r.location_name}->${r.next_visiting_location}`)
-      .join(' | ');
 
     log(
-      `[RouteOptimization] OK Completed. ` +
-      `optimizedRouteCount=${optimizedRoutes.length}. chain=${finalChain}`,
+      `[RouteOptimization] Start smart optimization. ` +
+      `routeCount=${safeRoutes.length}, ` +
+      `start=${context.start}, ` +
+      `end=${context.end}, ` +
+      `movableCount=${middleLocations.length}, ` +
+      `stayDayCount=${
+        context.stayDays.reduce(
+          (sum, item) =>
+            sum + item.count,
+          0,
+        )
+      }`,
     );
 
-    return optimizedRoutes;
+    // Load each unique road metric once before factorial candidate scoring.
+    await this.preloadRouteMetrics([
+      context.start,
+      ...middleLocations,
+      context.end,
+    ]);
+
+    let movableOrders: string[][];
+
+    if (
+      middleLocations.length <=
+      exhaustiveMovableLimit
+    ) {
+      movableOrders =
+        this.generatePermutations_PHP(
+          [...middleLocations],
+        );
+
+      log(
+        `[RouteOptimization] Smart exhaustive candidate generation. ` +
+        `movable=${middleLocations.length}, ` +
+        `candidates=${movableOrders.length}`,
+      );
+    } else {
+      // For very large destination sets retain the existing
+      // Nearest Neighbor + Simulated Annealing logic as a seed.
+      const distanceSeedChain =
+        await this
+          .optimizeWith_NearestNeighborAndAnnealing(
+            context.start,
+            context.end,
+            middleLocations,
+            logDebug,
+          );
+
+      const distanceSeedMiddle =
+        distanceSeedChain.slice(1, -1);
+
+      movableOrders =
+        this.buildHeuristicMovableOrders(
+          middleLocations,
+          distanceSeedMiddle,
+        );
+
+      log(
+        `[RouteOptimization] Smart heuristic candidate generation. ` +
+        `movable=${middleLocations.length}, ` +
+        `candidates=${movableOrders.length}`,
+      );
+    }
+
+    const evaluated =
+      await this.evaluateMovableOrders(
+        safeRoutes,
+        plan,
+        context,
+        movableOrders,
+        logDebug,
+      );
+
+    if (evaluated.length === 0) {
+      return this.buildFallbackPreview(
+        safeRoutes,
+        plan,
+        'No candidate had usable distance and travel-time data.',
+      );
+    }
+
+    const selected =
+      this.selectDisplayCandidates(
+        evaluated,
+      );
+
+    const bestCost =
+      Math.max(
+        0.0001,
+        evaluated[0].metrics.totalCost,
+      );
+
+    const candidates =
+      selected.map(
+        (selection, index) => {
+          const optimizedRoutes =
+            this.buildOptimizedRouteDtos(
+              safeRoutes,
+              selection
+                .candidate
+                .routeLocations,
+              log,
+            );
+
+          return {
+            rank: index + 1,
+
+            label:
+              selection.label,
+
+            routeScore:
+              this.calculateRelativeRouteScore(
+                selection
+                  .candidate
+                  .metrics
+                  .totalCost,
+                bestCost,
+              ),
+
+            routeLocations:
+              selection
+                .candidate
+                .routeLocations,
+
+            routes:
+              optimizedRoutes,
+
+            metrics:
+              selection
+                .candidate
+                .metrics,
+          } satisfies RouteOptimizationCandidate;
+        },
+      );
+
+    const best = candidates[0];
+
+    log(
+      `[RouteOptimization] OK Smart optimization completed. ` +
+      `bestScore=${best?.routeScore ?? 0}, ` +
+      `bestCost=${best?.metrics.totalCost ?? 0}, ` +
+      `bestRoute=[${
+        best?.routeLocations.join(' -> ') ||
+        ''
+      }]`,
+    );
+
+    return {
+      optimized: true,
+
+      originalRouteCount:
+        safeRoutes.length,
+
+      originalRouteLocations,
+
+      fixedArrival:
+        context.start,
+
+      fixedDeparture:
+        context.end,
+
+      candidates,
+
+      fallbackReason: null,
+    };
   }
 
-  private validateOptimizationInputs(context: {
-    start: string;
-    end: string;
-    movableStops: Array<{ name: string; normalizedName: string }>;
-  }): { isValid: boolean; reason?: string } {
-    const startNormalized = this.routeNormalization.normalizeLocationName(context.start);
-    const endNormalized = this.routeNormalization.normalizeLocationName(context.end);
-
-    if (!startNormalized || !endNormalized) {
-      return { isValid: false, reason: 'missing-start-or-end' };
+  private validateOptimizationInputs(
+    context: RouteOptimizationContext,
+  ): {
+    isValid: boolean;
+    reason?: string;
+  } {
+    if (!context.start || !context.end) {
+      return {
+        isValid: false,
+        reason: 'missing-start-or-end',
+      };
     }
 
     const seen = new Set<string>();
-    for (const stop of context.movableStops) {
-      if (!stop.name || !stop.normalizedName) {
-        return { isValid: false, reason: 'empty-movable-stop' };
+
+    for (
+      const stop of context.movableStops
+    ) {
+      if (
+        !stop.name ||
+        !stop.normalizedName
+      ) {
+        return {
+          isValid: false,
+          reason: 'empty-movable-stop',
+        };
       }
 
-      if (stop.normalizedName === startNormalized || stop.normalizedName === endNormalized) {
-        return { isValid: false, reason: 'anchor-found-in-movable-stops' };
+      // Do not reject a city only because it normalizes to the same value
+      // as its airport/station anchor. That case is handled safely by
+      // the normalization service.
+      if (
+        seen.has(stop.normalizedName)
+      ) {
+        return {
+          isValid: false,
+          reason: 'duplicate-movable-stop',
+        };
       }
 
-      if (seen.has(stop.normalizedName)) {
-        return { isValid: false, reason: 'duplicate-movable-stop' };
-      }
-      seen.add(stop.normalizedName);
+      seen.add(
+        stop.normalizedName,
+      );
     }
 
-    return { isValid: true };
+    return {
+      isValid: true,
+    };
   }
 
   private logOptimizationSummary(
-    context: {
-      start: string;
-      end: string;
-      sourceLocations: string[];
-      nextVisitingLocations: string[];
-      rawFullPath: string[];
-      cleanedFullPath: string[];
-      rawMiddleLocations: string[];
-      movableStops: Array<{ name: string; normalizedName: string }>;
-      removedDuplicates: Array<{ name: string; normalizedName: string }>;
-      removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
-    },
-    log: (msg: string) => void,
-    debug: boolean,
-  ): void {
-    log(`[RouteOptimization] Raw route chain: ${context.sourceLocations.map((s, i) => `${s} -> ${context.nextVisitingLocations[i] || ''}`).join(' | ')}`);
-    log(`[RouteOptimization] Full path raw=[${context.rawFullPath.join(', ')}], cleaned=[${context.cleanedFullPath.join(', ')}]`);
-    log(`[RouteOptimization] Extracted anchors and movable: start=${context.start}, end=${context.end}, movable=[${context.movableStops.map((s) => s.name).join(', ')}]`);
+  context: RouteOptimizationContext,
+  log: (msg: string) => void,
+  debug: boolean,
+): void {
+  log(
+    `[RouteOptimization] Raw route chain: ${
+      context.sourceLocations
+        .map(
+          (source, index) =>
+            `${source} -> ${
+              context.nextVisitingLocations[index] || ''
+            }`,
+        )
+        .join(' | ')
+    }`,
+  );
 
-    if (context.removedDuplicates.length > 0) {
-      log(`[RouteOptimization] Removed duplicate movable stops: [${context.removedDuplicates.map((d) => d.name).join(', ')}]`);
-    }
+  log(
+    `[RouteOptimization] Full path raw=[${
+      context.rawFullPath.join(', ')
+    }], cleaned=[${
+      context.cleanedFullPath.join(', ')
+    }]`,
+  );
 
-    if (context.removedInvalidTerminalNodes.length > 0) {
-      log(`[RouteOptimization] Removed invalid terminal or anchor-like nodes: ${context.removedInvalidTerminalNodes.map((n) => `${n.name}(${n.reason})`).join(', ')}`);
-    }
+  log(
+    `[RouteOptimization] Fixed anchors: ` +
+      `arrival=${context.start}, ` +
+      `departure=${context.end}. ` +
+      `Movable=[${
+        context.movableStops
+          .map((stop) => stop.name)
+          .join(', ')
+      }]`,
+  );
 
-    log(`[RouteOptimization] Candidate movable stop count: ${context.movableStops.length}`);
-
-    if (debug) {
-      log(`[RouteOptimization][DEBUG] Raw middle locations: [${context.rawMiddleLocations.join(', ')}]`);
-    }
+  if (context.stayDays.length > 0) {
+    log(
+      `[RouteOptimization] Preserved stay days: ${
+        context.stayDays
+          .map(
+            (item) =>
+              `${item.name}x${item.count}`,
+          )
+          .join(', ')
+      }`,
+    );
   }
+
+  if (context.removedDuplicates.length > 0) {
+    log(
+      `[RouteOptimization] Removed duplicate movable stops: [${
+        context.removedDuplicates
+          .map((item) => item.name)
+          .join(', ')
+      }]`,
+    );
+  }
+
+  if (
+    context.removedInvalidTerminalNodes.length > 0
+  ) {
+    log(
+      `[RouteOptimization] Removed invalid anchor-like nodes: ${
+        context.removedInvalidTerminalNodes
+          .map(
+            (item) =>
+              `${item.name}(${item.reason})`,
+          )
+          .join(', ')
+      }`,
+    );
+  }
+
+  if (debug) {
+    log(
+      `[RouteOptimization][DEBUG] Raw middle locations: [${
+        context.rawMiddleLocations.join(', ')
+      }]`,
+    );
+  }
+}
 
   private buildOptimizedRouteDtos(
     routes: any[],
     routeLocations: string[],
     log: (msg: string) => void,
-    options?: { phpParity?: boolean },
   ): any[] {
-    const cleanedLocations = options?.phpParity
-      ? routeLocations.map((loc) => String(loc || '').trim()).filter((loc) => !!loc)
-      : this.removeConsecutiveDuplicateLocations(routeLocations);
+    // IMPORTANT:
+    // Never remove consecutive duplicate locations here.
+    // They are explicit stay days reconstructed after optimization.
+    const cleanedLocations =
+      routeLocations
+        .map((location) =>
+          String(location || '').trim(),
+        )
+        .filter(Boolean);
 
-    if (cleanedLocations.length < 2) {
-      log('[RouteOptimization] WARN Optimized route locations are invalid after cleanup. Returning original route order.');
+    if (
+      cleanedLocations.length < 2
+    ) {
+      log(
+        '[RouteOptimization] WARN Optimized route locations are invalid. Returning original route order.',
+      );
+
       return routes;
     }
 
-    const expectedLocationCount = routes.length + 1;
+    const expectedLocationCount =
+      routes.length + 1;
 
-    // One route row represents one itinerary day, therefore an optimized
-    // location chain must always contain routeCount + 1 locations.
-    // Repeated/same-city stay days must never cause the route count to shrink.
-    if (cleanedLocations.length !== expectedLocationCount) {
+    if (
+      cleanedLocations.length !==
+      expectedLocationCount
+    ) {
       log(
         `[RouteOptimization] WARN Route length mismatch after optimization. ` +
         `expectedLocations=${expectedLocationCount}, ` +
@@ -208,48 +558,1382 @@ export class ItineraryRouteOptimizationService {
     }
 
     const optimizedRoutes: any[] = [];
-    const routeCount = routes.length;
 
-    for (let i = 0; i < routeCount; i++) {
-      const templateRoute = routes[Math.min(i, routes.length - 1)];
-      const newRoute = { ...templateRoute };
-      newRoute.location_name = cleanedLocations[i];
-      newRoute.next_visiting_location = cleanedLocations[i + 1];
-      optimizedRoutes.push(newRoute);
+    const usedPairTemplateIndexes =
+      new Set<number>();
+
+    for (
+      let index = 0;
+      index < routes.length;
+      index++
+    ) {
+      const source =
+        cleanedLocations[index];
+
+      const destination =
+        cleanedLocations[index + 1];
+
+      // Day-specific properties such as date/start/end remain associated
+      // with the itinerary day.
+      const dayTemplate =
+        routes[index] || {};
+
+      // Leg-specific properties such as via route and km should move only
+      // when the exact original source/destination pair still exists.
+      const pairTemplateIndex =
+        routes.findIndex(
+          (
+            candidate: any,
+            candidateIndex: number,
+          ) =>
+            !usedPairTemplateIndexes.has(
+              candidateIndex,
+            ) &&
+            this.sameLiteralLocation(
+              candidate?.location_name,
+              source,
+            ) &&
+            this.sameLiteralLocation(
+              candidate
+                ?.next_visiting_location,
+              destination,
+            ),
+        );
+
+      const pairTemplate =
+        pairTemplateIndex >= 0
+          ? routes[pairTemplateIndex]
+          : null;
+
+      if (
+        pairTemplateIndex >= 0
+      ) {
+        usedPairTemplateIndexes.add(
+          pairTemplateIndex,
+        );
+      }
+
+      const newRoute: any = {
+        ...dayTemplate,
+
+        location_name:
+          source,
+
+        next_visiting_location:
+          destination,
+      };
+
+      if (pairTemplate) {
+        // Exact road leg still exists; preserve its route-specific data.
+        newRoute.no_of_km =
+          pairTemplate.no_of_km ?? '';
+
+        newRoute
+          .direct_to_next_visiting_place =
+          pairTemplate
+            .direct_to_next_visiting_place ??
+          dayTemplate
+            .direct_to_next_visiting_place ??
+          1;
+
+        newRoute.via_route =
+          pairTemplate.via_route ?? '';
+
+        newRoute.via_routes =
+          Array.isArray(
+            pairTemplate.via_routes,
+          )
+            ? pairTemplate
+                .via_routes
+                .map(
+                  (item: any) => ({
+                    ...item,
+                  }),
+                )
+            : [];
+      } else {
+        // This is a NEW road leg produced by optimization.
+        //
+        // Never reuse distance/via information belonging to the old
+        // destination at this day index. RouteEngine will resolve the
+        // new source/destination distance from dvi_stored_locations.
+        newRoute.no_of_km = '';
+
+        newRoute.via_route = '';
+
+        newRoute.via_routes = [];
+      }
+
+      optimizedRoutes.push(
+        newRoute,
+      );
     }
 
-    const startDate = new Date(routes[0].itinerary_route_date);
-    optimizedRoutes.forEach((route, index) => {
-      const newDate = new Date(startDate);
-      newDate.setDate(newDate.getDate() + index);
-      route.itinerary_route_date = newDate.toISOString().split('T')[0];
-      route.no_of_days = index + 1;
-    });
+    const startDate =
+      new Date(
+        routes[0]
+          .itinerary_route_date,
+      );
+
+    optimizedRoutes.forEach(
+      (route, index) => {
+        const newDate =
+          new Date(startDate);
+
+        newDate.setDate(
+          newDate.getDate() + index,
+        );
+
+        route.itinerary_route_date =
+          newDate
+            .toISOString()
+            .split('T')[0];
+
+        route.no_of_days =
+          index + 1;
+      },
+    );
 
     return optimizedRoutes;
   }
 
-  private removeConsecutiveDuplicateLocations(locations: string[]): string[] {
-    const cleaned: string[] = [];
-    for (const location of locations) {
-      const name = String(location || '').trim();
-      if (!name) continue;
-      if (cleaned.length === 0) {
-        cleaned.push(name);
+  private async evaluateMovableOrders(
+    routes: any[],
+    plan: any,
+    context: RouteOptimizationContext,
+    movableOrders: string[][],
+    logDebug: (msg: string) => void,
+  ): Promise<EvaluatedCandidate[]> {
+    const expectedLocationCount =
+      routes.length + 1;
+
+    const byKey =
+      new Map<
+        string,
+        EvaluatedCandidate
+      >();
+
+    for (
+      let index = 0;
+      index < movableOrders.length;
+      index++
+    ) {
+      const order =
+        movableOrders[index];
+
+      const baseChain = [
+        context.start,
+        ...order,
+        context.end,
+      ];
+
+      const routeLocations =
+        this.expandStayDays(
+          baseChain,
+          context,
+        );
+
+      // Absolute rule:
+      // optimization cannot add or remove itinerary days.
+      if (
+        routeLocations.length !==
+        expectedLocationCount
+      ) {
+        logDebug(
+          `[RouteOptimization][DEBUG] Reject candidate because day count changed. ` +
+          `expectedLocations=${expectedLocationCount}, ` +
+          `actualLocations=${routeLocations.length}, ` +
+          `chain=[${routeLocations.join(' -> ')}]`,
+        );
+
         continue;
       }
 
-      const prev = cleaned[cleaned.length - 1];
-      if (this.routeNormalization.normalizeLocationName(prev) === this.routeNormalization.normalizeLocationName(name)) {
+      const key =
+        this.routeLocationsKey(
+          routeLocations,
+        );
+
+      if (byKey.has(key)) {
         continue;
       }
-      cleaned.push(name);
+
+      const metrics =
+        await this.scoreRouteLocations(
+          routeLocations,
+          routes,
+          plan,
+        );
+
+      // Missing road metric makes this candidate unsafe.
+      if (!metrics) {
+        continue;
+      }
+
+      byKey.set(key, {
+        routeLocations,
+        metrics,
+      });
     }
-    return cleaned;
+
+    return Array
+      .from(byKey.values())
+      .sort(
+        (left, right) =>
+          left.metrics.totalCost -
+            right.metrics.totalCost ||
+
+          left.metrics.totalTravelMinutes -
+            right.metrics.totalTravelMinutes ||
+
+          left.metrics.totalDistanceKm -
+            right.metrics.totalDistanceKm,
+      );
+  }
+
+  private expandStayDays(
+    baseChain: string[],
+    context: RouteOptimizationContext,
+  ): string[] {
+    const expanded: string[] = [];
+
+    const consumedStayKeys =
+      new Set<string>();
+
+    for (
+      const location of baseChain
+    ) {
+      expanded.push(location);
+
+      const identity =
+        this.routeLocationIdentity(
+          location,
+        );
+
+      if (
+        !identity ||
+        consumedStayKeys.has(identity)
+      ) {
+        continue;
+      }
+
+      const stay =
+        context.stayDays.find(
+          (item) =>
+            this.routeLocationIdentity(
+              item.name,
+            ) === identity,
+        );
+
+      if (
+        !stay ||
+        stay.count <= 0
+      ) {
+        continue;
+      }
+
+      consumedStayKeys.add(
+        identity,
+      );
+
+      for (
+        let count = 0;
+        count < stay.count;
+        count++
+      ) {
+        expanded.push(location);
+      }
+    }
+
+    return expanded;
+  }
+
+  private async scoreRouteLocations(
+    routeLocations: string[],
+    routes: any[],
+    plan: any,
+  ): Promise<
+    RouteOptimizationScoreBreakdown | null
+  > {
+    let totalDistanceKm = 0;
+
+    let totalTravelMinutes = 0;
+
+    let comfortPenalty = 0;
+
+    for (
+      let index = 0;
+      index <
+      routeLocations.length - 1;
+      index++
+    ) {
+      const source =
+        routeLocations[index];
+
+      const destination =
+        routeLocations[index + 1];
+
+      const metric =
+        await this.getRouteMetric(
+          source,
+          destination,
+        );
+
+      if (!metric.valid) {
+        return null;
+      }
+
+      totalDistanceKm +=
+        metric.distanceKm;
+
+      totalTravelMinutes +=
+        metric.durationMinutes;
+
+      comfortPenalty +=
+        this.calculateComfortPenalty(
+          metric.durationMinutes,
+          index,
+          routes,
+          plan,
+        );
+    }
+
+    const backtrackingKm =
+      await this.calculateBacktrackingKm(
+        routeLocations,
+      );
+
+    /*
+     * All weights are configurable without another code deployment.
+     *
+     * Defaults:
+     * distance       1 point per km
+     * travel time   20 points per driving hour
+     * backtracking   2 points per unnecessary km away from departure
+     * comfort        calculated penalty points
+     */
+    const distanceWeight =
+      this.readPositiveNumber(
+        process.env
+          .ROUTE_OPT_DISTANCE_WEIGHT,
+        1,
+      );
+
+    const timeWeight =
+      this.readPositiveNumber(
+        process.env
+          .ROUTE_OPT_TIME_WEIGHT,
+        20,
+      );
+
+    const backtrackingWeight =
+      this.readPositiveNumber(
+        process.env
+          .ROUTE_OPT_BACKTRACK_WEIGHT,
+        2,
+      );
+
+    const comfortWeight =
+      this.readPositiveNumber(
+        process.env
+          .ROUTE_OPT_COMFORT_WEIGHT,
+        1,
+      );
+
+    const distanceCost =
+      totalDistanceKm *
+      distanceWeight;
+
+    const timeCost =
+      (totalTravelMinutes / 60) *
+      timeWeight;
+
+    const backtrackingCost =
+      backtrackingKm *
+      backtrackingWeight;
+
+    const comfortCost =
+      comfortPenalty *
+      comfortWeight;
+
+    const totalCost =
+      distanceCost +
+      timeCost +
+      backtrackingCost +
+      comfortCost;
+
+    return {
+      totalDistanceKm:
+        this.round(
+          totalDistanceKm,
+        ),
+
+      totalTravelMinutes:
+        Math.round(
+          totalTravelMinutes,
+        ),
+
+      backtrackingKm:
+        this.round(
+          backtrackingKm,
+        ),
+
+      comfortPenalty:
+        this.round(
+          comfortPenalty,
+        ),
+
+      distanceCost:
+        this.round(
+          distanceCost,
+        ),
+
+      timeCost:
+        this.round(
+          timeCost,
+        ),
+
+      backtrackingCost:
+        this.round(
+          backtrackingCost,
+        ),
+
+      comfortCost:
+        this.round(
+          comfortCost,
+        ),
+
+      totalCost:
+        this.round(
+          totalCost,
+        ),
+    };
+  }
+
+  private calculateComfortPenalty(
+    durationMinutes: number,
+    dayIndex: number,
+    routes: any[],
+    plan: any,
+  ): number {
+    if (
+      !Number.isFinite(
+        durationMinutes,
+      ) ||
+      durationMinutes <= 0
+    ) {
+      return 0;
+    }
+
+    // Defaults can later be changed through environment values.
+    const comfortableDriveMinutes =
+      this.readPositiveNumber(
+        process.env
+          .ROUTE_OPT_COMFORT_DRIVE_MINUTES,
+        240, // 4 hours
+      );
+
+    const hardDriveMinutes =
+      Math.max(
+        comfortableDriveMinutes,
+
+        this.readPositiveNumber(
+          process.env
+            .ROUTE_OPT_HARD_DRIVE_MINUTES,
+          360, // 6 hours
+        ),
+      );
+
+    let penalty = 0;
+
+    // Gradual penalty after 4h of driving.
+    if (
+      durationMinutes >
+      comfortableDriveMinutes
+    ) {
+      penalty +=
+        Math.ceil(
+          (
+            durationMinutes -
+            comfortableDriveMinutes
+          ) / 30,
+        ) * 5;
+    }
+
+    // Additional strong penalty after 6h.
+    if (
+      durationMinutes >
+      hardDriveMinutes
+    ) {
+      penalty +=
+        Math.ceil(
+          (
+            durationMinutes -
+            hardDriveMinutes
+          ) / 30,
+        ) * 10;
+    }
+
+    // Arrival/departure days have smaller usable windows.
+    const availableMinutes =
+      this.resolveDayAvailableMinutes(
+        dayIndex,
+        routes,
+        plan,
+      );
+
+    if (
+      availableMinutes > 0 &&
+      durationMinutes >
+        availableMinutes
+    ) {
+      penalty +=
+        Math.ceil(
+          (
+            durationMinutes -
+            availableMinutes
+          ) / 30,
+        ) * 20;
+    }
+
+    return penalty;
+  }
+
+  private resolveDayAvailableMinutes(
+    dayIndex: number,
+    routes: any[],
+    plan: any,
+  ): number {
+    const isFirst =
+      dayIndex === 0;
+
+    const isLast =
+      dayIndex ===
+      routes.length - 1;
+
+    const route =
+      routes[dayIndex] || {};
+
+    let startMinutes =
+      this.parseWallClockMinutes(
+        route?.route_start_time,
+
+        isFirst
+          ? this.parseWallClockMinutes(
+              plan?.trip_start_date ||
+                plan
+                  ?.pick_up_date_and_time,
+              8 * 60,
+            )
+          : 8 * 60,
+      );
+
+    let endMinutes =
+      this.parseWallClockMinutes(
+        route?.route_end_time,
+
+        isLast
+          ? this.parseWallClockMinutes(
+              plan?.trip_end_date,
+              20 * 60,
+            )
+          : 20 * 60,
+      );
+
+    // Match the same departure concept already used by RouteEngine:
+    // Flight 2h buffer, Train 1h, Road 0.
+    if (
+      isLast &&
+      !route?.route_end_time
+    ) {
+      endMinutes =
+        Math.max(
+          startMinutes,
+
+          endMinutes -
+            this.getDepartureBufferMinutes(
+              plan?.departure_type,
+            ),
+        );
+    }
+
+    if (
+      endMinutes <
+      startMinutes
+    ) {
+      endMinutes +=
+        24 * 60;
+    }
+
+    return Math.max(
+      0,
+      endMinutes -
+        startMinutes,
+    );
+  }
+
+  private async calculateBacktrackingKm(
+    routeLocations: string[],
+  ): Promise<number> {
+    const departure =
+      routeLocations[
+        routeLocations.length - 1
+      ];
+
+    const toleranceKm =
+      this.readPositiveNumber(
+        process.env
+          .ROUTE_OPT_BACKTRACK_TOLERANCE_KM,
+        10,
+      );
+
+    let penaltyKm = 0;
+
+    for (
+      let index = 0;
+      index <
+      routeLocations.length - 2;
+      index++
+    ) {
+      const current =
+        routeLocations[index];
+
+      const next =
+        routeLocations[index + 1];
+
+      const [
+        currentToDeparture,
+        nextToDeparture,
+      ] =
+        await Promise.all([
+          this.getRouteMetric(
+            current,
+            departure,
+          ),
+
+          this.getRouteMetric(
+            next,
+            departure,
+          ),
+        ]);
+
+      if (
+        !currentToDeparture.valid ||
+        !nextToDeparture.valid
+      ) {
+        continue;
+      }
+
+      // If the next city is materially farther from final departure,
+      // the itinerary is geographically moving backwards.
+      const movedAwayByKm =
+        nextToDeparture.distanceKm -
+        currentToDeparture.distanceKm;
+
+      if (
+        movedAwayByKm >
+        toleranceKm
+      ) {
+        penaltyKm +=
+          movedAwayByKm;
+      }
+    }
+
+    return penaltyKm;
+  }
+
+  private selectDisplayCandidates(
+    ranked: EvaluatedCandidate[],
+  ): Array<{
+    label:
+      RouteOptimizationCandidate['label'];
+
+    candidate:
+      EvaluatedCandidate;
+  }> {
+    const selected: Array<{
+      label:
+        RouteOptimizationCandidate['label'];
+
+      candidate:
+        EvaluatedCandidate;
+    }> = [];
+
+    const used =
+      new Set<string>();
+
+    const add = (
+      label:
+        RouteOptimizationCandidate['label'],
+
+      candidate?:
+        EvaluatedCandidate,
+    ) => {
+      if (!candidate) {
+        return;
+      }
+
+      const key =
+        this.routeLocationsKey(
+          candidate.routeLocations,
+        );
+
+      if (used.has(key)) {
+        return;
+      }
+
+      used.add(key);
+
+      selected.push({
+        label,
+        candidate,
+      });
+    };
+
+    // Lowest combined cost.
+    add(
+      'Best Overall',
+      ranked[0],
+    );
+
+    // Lowest road distance among remaining unique alternatives.
+    add(
+      'Least Driving',
+
+      [...ranked]
+        .filter(
+          (candidate) =>
+            !used.has(
+              this.routeLocationsKey(
+                candidate
+                  .routeLocations,
+              ),
+            ),
+        )
+        .sort(
+          (left, right) =>
+            left.metrics
+              .totalDistanceKm -
+              right.metrics
+                .totalDistanceKm ||
+
+            left.metrics
+              .totalTravelMinutes -
+              right.metrics
+                .totalTravelMinutes ||
+
+            left.metrics.totalCost -
+              right.metrics.totalCost,
+        )[0],
+    );
+
+    // Smallest comfort penalty among remaining routes.
+    add(
+      'Relaxed Route',
+
+      [...ranked]
+        .filter(
+          (candidate) =>
+            !used.has(
+              this.routeLocationsKey(
+                candidate
+                  .routeLocations,
+              ),
+            ),
+        )
+        .sort(
+          (left, right) =>
+            left.metrics
+              .comfortPenalty -
+              right.metrics
+                .comfortPenalty ||
+
+            left.metrics
+              .totalTravelMinutes -
+              right.metrics
+                .totalTravelMinutes ||
+
+            left.metrics
+              .backtrackingKm -
+              right.metrics
+                .backtrackingKm ||
+
+            left.metrics.totalCost -
+              right.metrics.totalCost,
+        )[0],
+    );
+
+    // A small itinerary may not have three distinct permutations.
+    for (
+      const candidate of ranked
+    ) {
+      if (
+        selected.length >= 3
+      ) {
+        break;
+      }
+
+      add(
+        'Alternative',
+        candidate,
+      );
+    }
+
+    return selected.slice(0, 3);
+  }
+
+  private buildHeuristicMovableOrders(
+    original: string[],
+    distanceSeed: string[],
+  ): string[][] {
+    const orders: string[][] = [];
+
+    const seen =
+      new Set<string>();
+
+    const maxCandidates = 300;
+
+    const add = (
+      order: string[],
+    ) => {
+      if (
+        order.length !==
+          original.length ||
+        orders.length >=
+          maxCandidates
+      ) {
+        return;
+      }
+
+      const key =
+        order
+          .map((item) =>
+            this.routeLocationIdentity(
+              item,
+            ),
+          )
+          .join('>');
+
+      if (
+        !key ||
+        seen.has(key)
+      ) {
+        return;
+      }
+
+      seen.add(key);
+
+      orders.push([
+        ...order,
+      ]);
+    };
+
+    const validDistanceSeed =
+      distanceSeed.length ===
+      original.length
+        ? distanceSeed
+        : original;
+
+    add(original);
+
+    add(validDistanceSeed);
+
+    add(
+      [...original].reverse(),
+    );
+
+    const seeds = [
+      validDistanceSeed,
+      original,
+    ];
+
+    // Generate deterministic local alternatives around both original
+    // and distance-seeded order. Avoid factorial search for huge trips.
+    for (
+      const seed of seeds
+    ) {
+      for (
+        let left = 0;
+        left < seed.length;
+        left++
+      ) {
+        for (
+          let right = left + 1;
+          right < seed.length;
+          right++
+        ) {
+          const swapped =
+            [...seed];
+
+          [
+            swapped[left],
+            swapped[right],
+          ] = [
+            swapped[right],
+            swapped[left],
+          ];
+
+          add(swapped);
+
+          if (
+            orders.length >=
+            maxCandidates
+          ) {
+            return orders;
+          }
+        }
+      }
+    }
+
+    return orders;
+  }
+
+  private calculateRelativeRouteScore(
+    totalCost: number,
+    bestCost: number,
+  ): number {
+    if (
+      !Number.isFinite(totalCost) ||
+      totalCost < 0
+    ) {
+      return 0;
+    }
+
+    if (
+      !Number.isFinite(bestCost) ||
+      bestCost <= 0
+    ) {
+      return 100;
+    }
+
+    const relativeLoss =
+      Math.max(
+        0,
+        (
+          totalCost -
+          bestCost
+        ) / bestCost,
+      );
+
+    return Math.max(
+      1,
+      Math.min(
+        100,
+        Math.round(
+          100 -
+          relativeLoss * 100,
+        ),
+      ),
+    );
+  }
+  private async buildFallbackPreview(
+    routes: any[],
+    plan: any,
+    reason: string,
+  ): Promise<RouteOptimizationPreview> {
+    const routeLocations =
+      this.buildRawRouteLocations(routes);
+
+    const metrics =
+      routeLocations.length === routes.length + 1
+        ? await this.scoreRouteLocations(
+            routeLocations,
+            routes,
+            plan,
+          )
+        : null;
+
+    return {
+      optimized: false,
+
+      originalRouteCount: routes.length,
+
+      originalRouteLocations: routeLocations,
+
+      fixedArrival:
+        routeLocations[0] || '',
+
+      fixedDeparture:
+        routeLocations[
+          routeLocations.length - 1
+        ] || '',
+
+      candidates: metrics
+        ? [
+            {
+              rank: 1,
+
+              label: 'Best Overall',
+
+              routeScore: 100,
+
+              routeLocations,
+
+              routes,
+
+              metrics,
+            },
+          ]
+        : [],
+
+      fallbackReason: reason,
+    };
+  }
+
+  private buildRawRouteLocations(
+    routes: any[],
+  ): string[] {
+    if (
+      !Array.isArray(routes) ||
+      routes.length === 0
+    ) {
+      return [];
+    }
+
+    const first =
+      String(
+        routes[0]?.location_name || '',
+      ).trim();
+
+    return [
+      first,
+
+      ...routes.map(
+        (route) =>
+          String(
+            route?.next_visiting_location || '',
+          ).trim(),
+      ),
+    ].filter(Boolean);
+  }
+
+  private async preloadRouteMetrics(
+    locations: string[],
+  ): Promise<void> {
+    const unique =
+      Array.from(
+        new Set(
+          locations
+            .map((location) =>
+              String(location || '').trim(),
+            )
+            .filter(Boolean),
+        ),
+      );
+
+    const lookups: Array<
+      Promise<RouteSegmentMetric>
+    > = [];
+
+    for (const source of unique) {
+      for (const destination of unique) {
+        if (
+          this.sameLiteralLocation(
+            source,
+            destination,
+          )
+        ) {
+          continue;
+        }
+
+        lookups.push(
+          this.getRouteMetric(
+            source,
+            destination,
+          ),
+        );
+      }
+    }
+
+    await Promise.all(lookups);
+  }
+
+  private async getRouteMetric(
+    sourceLocation: string,
+    destinationLocation: string,
+  ): Promise<RouteSegmentMetric> {
+    const source =
+      String(sourceLocation || '').trim();
+
+    const destination =
+      String(destinationLocation || '').trim();
+
+    if (!source || !destination) {
+      return {
+        source,
+        destination,
+        distanceKm: Infinity,
+        durationMinutes: Infinity,
+        valid: false,
+      };
+    }
+
+    // Literal same-place route is an explicit stay day.
+    if (
+      this.sameLiteralLocation(
+        source,
+        destination,
+      )
+    ) {
+      return {
+        source,
+        destination,
+        distanceKm: 0,
+        durationMinutes: 0,
+        valid: true,
+      };
+    }
+
+    const cacheKey =
+      `${this.routeLocationIdentity(source)}|` +
+      `${this.routeLocationIdentity(destination)}`;
+
+    const cached =
+      this.routeMetricCache.get(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    const lookup =
+      this.loadRouteMetric(
+        source,
+        destination,
+      );
+
+    this.routeMetricCache.set(
+      cacheKey,
+      lookup,
+    );
+
+    return lookup;
+  }
+
+  private async loadRouteMetric(
+    source: string,
+    destination: string,
+  ): Promise<RouteSegmentMetric> {
+    try {
+      const record =
+        await (this.prisma as any)
+          .dvi_stored_locations
+          .findFirst({
+            where: {
+              source_location: source,
+              destination_location:
+                destination,
+              status: 1,
+              deleted: 0,
+            },
+
+            orderBy: {
+              location_ID: 'desc',
+            },
+
+            select: {
+              distance: true,
+              duration: true,
+            },
+          });
+
+      const distanceKm =
+        Number.parseFloat(
+          String(
+            record?.distance ?? '',
+          ),
+        );
+
+      const storedDurationMinutes =
+        parseDurationToMinutes(
+          record?.duration,
+        );
+
+      const fallbackAverageSpeedKmph =
+        this.readPositiveNumber(
+          process.env
+            .ROUTE_OPT_FALLBACK_SPEED_KMPH,
+          45,
+        );
+
+      const durationMinutes =
+        Number.isFinite(
+          Number(storedDurationMinutes),
+        ) &&
+        Number(storedDurationMinutes) > 0
+          ? Number(storedDurationMinutes)
+          : Number.isFinite(distanceKm) &&
+              distanceKm > 0 &&
+              fallbackAverageSpeedKmph > 0
+            ? Math.max(
+                5,
+                Math.round(
+                  (
+                    distanceKm /
+                    fallbackAverageSpeedKmph
+                  ) * 60,
+                ),
+              )
+            : Infinity;
+
+      const valid =
+        Number.isFinite(distanceKm) &&
+        distanceKm > 0 &&
+        Number.isFinite(durationMinutes) &&
+        durationMinutes > 0;
+
+      return {
+        source,
+        destination,
+
+        distanceKm:
+          valid
+            ? distanceKm
+            : Infinity,
+
+        durationMinutes:
+          valid
+            ? durationMinutes
+            : Infinity,
+
+        valid,
+      };
+    } catch (error) {
+      console.warn(
+        '[RouteOptimization] Route metric lookup failed',
+        {
+          source,
+          destination,
+          error:
+            error instanceof Error
+              ? error.message
+              : String(error),
+        },
+      );
+
+      return {
+        source,
+        destination,
+        distanceKm: Infinity,
+        durationMinutes: Infinity,
+        valid: false,
+      };
+    }
+  }
+
+  private routeLocationsKey(
+    routeLocations: string[],
+  ): string {
+    return routeLocations
+      .map((location) =>
+        this.routeLocationIdentity(location),
+      )
+      .join('>');
+  }
+
+  private routeLocationIdentity(
+    value: unknown,
+  ): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+  }
+
+  private sameLiteralLocation(
+    left: unknown,
+    right: unknown,
+  ): boolean {
+    return (
+      this.routeLocationIdentity(left) ===
+      this.routeLocationIdentity(right)
+    );
+  }
+
+  private parseWallClockMinutes(
+    value: unknown,
+    fallback: number,
+  ): number {
+    const raw =
+      String(value ?? '').trim();
+
+    const match =
+      raw.match(
+        /(?:T|\s|^)(\d{1,2}):(\d{2})(?::\d{2})?/,
+      );
+
+    if (!match) {
+      return fallback;
+    }
+
+    const hours =
+      Number(match[1] || 0);
+
+    const minutes =
+      Number(match[2] || 0);
+
+    if (
+      !Number.isFinite(hours) ||
+      !Number.isFinite(minutes) ||
+      hours < 0 ||
+      hours > 23 ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      return fallback;
+    }
+
+    return (
+      hours * 60 +
+      minutes
+    );
+  }
+
+  private getDepartureBufferMinutes(
+    departureType: unknown,
+  ): number {
+    switch (
+      Number(departureType || 0)
+    ) {
+      case 1:
+        // Flight
+        return 120;
+
+      case 2:
+        // Train
+        return 60;
+
+      default:
+        // Road / unknown
+        return 0;
+    }
+  }
+
+  private readPositiveNumber(
+    value: unknown,
+    fallback: number,
+  ): number {
+    const parsed =
+      Number(value);
+
+    return (
+      Number.isFinite(parsed) &&
+      parsed >= 0
+    )
+      ? parsed
+      : fallback;
+  }
+
+  private round(
+    value: number,
+  ): number {
+    return Number(
+      Number(value || 0)
+        .toFixed(2),
+    );
   }
 
  /**
-    * PHP-EXACT: small candidate sets only - EXHAUSTIVE PERMUTATION
+  * PHP-EXACT: small candidate sets only - EXHAUSTIVE PERMUTATION
    * Tries all permutations of middleLocations and finds the one with minimum total distance
  */
   private async optimizeWith_ExhaustivePermutation(
@@ -501,31 +2185,20 @@ export class ItineraryRouteOptimizationService {
    * Returns Infinity if distance not found (matching PHP's PHP_INT_MAX behavior)
    * NO reverse fallback, NO default 100, ONLY exact match
  */
-  private async getDistance_PHP(sourceLocation: string, destinationLocation: string): Promise<number> {
-    if (sourceLocation === destinationLocation) return 0;
+private async getDistance_PHP(
+  sourceLocation: string,
+  destinationLocation: string,
+): Promise<number> {
+  const metric =
+    await this.getRouteMetric(
+      sourceLocation,
+      destinationLocation,
+    );
 
-    try {
-      const record = await this.prisma.dvi_stored_locations.findFirst({
-        where: {
-          source_location: sourceLocation,
-          destination_location: destinationLocation,
-        },
-        select: {
-          distance: true,
-        },
-      });
-
-      if (record && record.distance) {
-        const dist = typeof record.distance === 'string'
-          ? parseFloat(record.distance)
-          : record.distance;
-        return isNaN(dist) ? Infinity : dist;
-      }
- return Infinity; // Missing distance = Infinity (marks permutation as invalid)
-    } catch (error) {
- return Infinity; // Error = Infinity (marks permutation as invalid)
-    }
-  }
+  return metric.valid
+    ? metric.distanceKm
+    : Infinity;
+}
 
  /**
    * PHP-EXACT: Generate all permutations of a location array (preserves duplicates)
