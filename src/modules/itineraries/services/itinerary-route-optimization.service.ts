@@ -162,7 +162,7 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
 
     // 8 movable destinations = 40,320 permutations.
     // Beyond this we retain heuristic candidate generation.
-    const exhaustiveMovableLimit = 100;
+    const exhaustiveMovableLimit = 8;
 
     const log = (message: string) =>
       console.log(message);
