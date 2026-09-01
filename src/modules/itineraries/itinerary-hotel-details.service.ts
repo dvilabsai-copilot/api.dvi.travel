@@ -1177,6 +1177,10 @@ async getHotelRoomDetailsByQuoteId(
         ).trim(),
         totalHotelCost: routeNightPayableHotelCost,
         pricePerNight: routeNightPayableHotelCost,
+        // The UI day-row contract is explicit: this is the complete payable
+        // amount for this itinerary night, including all rooms and supplements.
+        selectedPricePerNight: routeNightPayableHotelCost,
+        selectedTotalPrice: routeNightPayableHotelCost,
         totalStayPrice: isOffline
           ? Number(selectedPriceSnapshot.totalStayPrice ?? selectedPriceSnapshot.total_price ?? routeNightPayableHotelCost)
           : routeNightPayableHotelCost,

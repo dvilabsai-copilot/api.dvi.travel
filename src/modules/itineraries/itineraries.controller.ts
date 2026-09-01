@@ -728,22 +728,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
   })
   async resetItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
-    @Req() req: any,
   ) {
     await this.hotelAvailabilitySnapshotService.resetSelectionsOnly(quoteId);
-    const itinerary = await this.detailsService.getItineraryDetails(
-      quoteId,
-      undefined,
-      req.user?.role,
-    );
-    // Reset mutates selections and returns only the financial summary. Hotel
-    // rows are intentionally fetched by the separate check-availability
-    // endpoint, which is the authoritative hotel-pane response.
+    // Reset only mutates the persisted selections. The separate
+    // check-availability endpoint owns the fresh hotel data and financial
+    // summary, so this response must not read or serialize either one.
     return {
-      financialSummary: {
-        overallCost: itinerary?.overallCost ?? null,
-        costBreakdown: itinerary?.costBreakdown ?? null,
-      },
+      resetApplied: true,
     };
   }
 

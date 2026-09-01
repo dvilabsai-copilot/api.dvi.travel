@@ -9,6 +9,7 @@ import {
   decorateHotelCardPricing,
   hotelCardPropertyKey,
 } from '../src/modules/itineraries/utils/hotel-card-pricing.util';
+import { resolveHotelOccupancyPricing } from '../src/modules/itineraries/utils/hotel-selection-pricing.util';
 import { buildHotelSelectionState } from '../src/modules/itineraries/utils/hotel-selection-view-state.util';
 
 test('continuous-stay route-night payable uses room and supplement components', () => {
@@ -17,6 +18,23 @@ test('continuous-stay route-night payable uses room and supplement components', 
     marginPercentage: 6,
     taxAmount: 0,
   }), 11766);
+});
+
+test('multi-room day price is the complete occupancy-inclusive selected price', () => {
+  const pricing = resolveHotelOccupancyPricing({
+    rates: { SINGLE: 6800, DOUBLE: 6800, EXTRABED: 3500, CHILD_WITH_BED: 1000, CHILD_WITHOUT_BED: 800 },
+    roomCount: 3,
+    adultCount: 6,
+    extraBedCount: 0,
+    childWithBedCount: 3,
+    childWithoutBedCount: 1,
+    marginPercentage: 6,
+  });
+
+  assert.equal(pricing.baseTotalPrice, 20400);
+  assert.equal(pricing.hotelMarginBaseAmount, 24200);
+  assert.equal(pricing.hotelMarginAmount, 1452);
+  assert.equal(pricing.totalPrice, 25652);
 });
 
 test('Axis base 4200 projects once to the same payable 5040 used by preview and persistence', () => {

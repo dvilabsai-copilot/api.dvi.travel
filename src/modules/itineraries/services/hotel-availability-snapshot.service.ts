@@ -2287,8 +2287,8 @@ export class HotelAvailabilitySnapshotService {
       : currentTotal > 0
         ? currentTotal
         : persistedTotal;
-    const selectedPerNight = snapshotHasSupplement && Number(snapshot?.pricePerNight || 0) > 0
-      ? Number(snapshot.pricePerNight)
+    const selectedPerNight = snapshotHasSupplement && snapshotTotal > 0
+      ? snapshotTotal
       : selectedOption && currentPerNight > 0
       ? currentPerNight
       : hasPersistedSelection && providerMatches && persistedPerNight > 0
@@ -2389,8 +2389,13 @@ export class HotelAvailabilitySnapshotService {
       selectedTotalPrice: selectedTotal,
       selectedCurrency: currentRow.currency || selection.selected_currency || snapshot.currency || 'INR',
       selectedPriceSnapshot: JSON.stringify({
-        ...display,
         ...(snapshot || {}),
+        ...display,
+        // The public selected price is the complete payable amount for this
+        // itinerary day. Do not allow a legacy per-room snapshot field to
+        // overwrite it during response decoration.
+        pricePerNight: selectedPerNight || display.pricePerNight,
+        totalPrice: selectedTotal || display.totalPrice,
         ...(selectedBasePerNight > 0 ? {
           basePricePerNight: selectedBasePerNight,
           baseTotalPrice: this.money(selectedBasePerNight * roomCount),
@@ -5095,19 +5100,24 @@ export class HotelAvailabilitySnapshotService {
       let calculatedMargin = baseTotalPrice > 0
         ? Number((marginBaseTotal * marginPercentage / 100).toFixed(2))
         : 0;
+      // The persisted day price is calculated from the normalized cost
+      // components. A supplier/API total may be a stay total, a per-room
+      // amount, or an already-marked-up value, so it must not override the
+      // itinerary's room/supplement/margin calculation.
       let totalPrice = baseTotalPrice > 0
-        ? Number(Math.max(rawTotalPrice, marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2))
+        ? Number((marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2))
         : rawTotalPrice;
-      let pricePerNight = baseTotalPrice > 0 && totalPrice > 0
-        ? Number((totalPrice / roomCount).toFixed(2))
-        : rawPricePerNight;
+      // `selected_price_per_night` is the complete payable amount for one
+      // itinerary day. The room-only per-room rate is kept in
+      // basePricePerNight/roomRate and must never be written here.
+      let pricePerNight = totalPrice > 0 ? totalPrice : rawPricePerNight;
       if (hasAuthoritativeLogicalStayTotal && authoritativeNightlyPayables.length > 0) {
         pricePerNight = authoritativeNightlyPayables[0];
       }
 
       if (provider !== 'staah' && provider !== 'axisrooms' && provider !== 'offline' && baseTotalPrice > 0) {
         totalPrice = Number((marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2));
-        pricePerNight = Number((totalPrice / roomCount).toFixed(2));
+        pricePerNight = totalPrice;
         option = {
           ...option,
           basePricePerNight: Number((baseTotalPrice / roomCount).toFixed(2)),
@@ -5436,7 +5446,7 @@ export class HotelAvailabilitySnapshotService {
         : selection.hotel_check_out_date || null,
       is_live_rate: option.provider === 'offline' ? false : true,
       selected_rate_option_id: this.persistedRateOptionId(option, selection.selected_rate_option_id),
-      selected_price_per_night: pricePerNight,
+      selected_price_per_night: totalPrice > 0 ? totalPrice : pricePerNight,
       selected_total_price: totalPrice,
       selected_currency: option.currency || selection.selected_currency || null,
       selection_origin: origin,
