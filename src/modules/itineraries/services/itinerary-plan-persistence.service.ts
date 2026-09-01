@@ -304,17 +304,63 @@ export function hasItineraryRoomCountChanged(previousPlan: any, travellers: any[
   return previousRoomCount !== resolveItineraryRoomCount(travellers);
 }
 
-export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'MEAL_PLAN_CHANGED' | 'HOTEL_CATEGORY_CHANGED' | 'EARLY_ARRIVAL_CONFIRMED';
+function normalizedOccupancyRows(travellers: any[] = []): string[] {
+  return (Array.isArray(travellers) ? travellers : [])
+    // Infants do not change the hotel room/bed pricing contract. Keep them in
+    // the itinerary, but exclude them from the hotel-reset comparison.
+    .filter((traveller) => Number(traveller?.traveller_type || 0) !== 3)
+    .map((traveller) => ({
+      roomId: Number(traveller?.room_id || 0),
+      travellerType: Number(traveller?.traveller_type || 0),
+      age: String(traveller?.traveller_age ?? '').trim(),
+      childBedType: Number(traveller?.child_bed_type || 0),
+    }))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+    .map((traveller) => JSON.stringify(traveller));
+}
+
+function effectiveExtraBedCount(plan: any, travellers: any[] = []): number {
+  const explicit = Number(plan?.total_extra_bed);
+  if (Number.isFinite(explicit) && explicit >= 0) return Math.trunc(explicit);
+
+  const adultsByRoom = new Map<number, number>();
+  for (const traveller of Array.isArray(travellers) ? travellers : []) {
+    if (Number(traveller?.traveller_type || 0) !== 1) continue;
+    const roomId = Number(traveller?.room_id || 0);
+    if (roomId > 0) adultsByRoom.set(roomId, (adultsByRoom.get(roomId) || 0) + 1);
+  }
+  return Array.from(adultsByRoom.values()).filter((adultCount) => adultCount > 2).length;
+}
+
+export function hasItineraryOccupancyChanged(
+  previousPlan: any,
+  nextPlan: any,
+  previousTravellers: any[] = [],
+  nextTravellers: any[] = [],
+): boolean {
+  if (!previousPlan) return false;
+
+  const previousOccupancy = normalizedOccupancyRows(previousTravellers);
+  const nextOccupancy = normalizedOccupancyRows(nextTravellers);
+  if (JSON.stringify(previousOccupancy) !== JSON.stringify(nextOccupancy)) return true;
+
+  return effectiveExtraBedCount(previousPlan, previousTravellers) !==
+    effectiveExtraBedCount(nextPlan, nextTravellers);
+}
+
+export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'OCCUPANCY_CHANGED' | 'MEAL_PLAN_CHANGED' | 'HOTEL_CATEGORY_CHANGED' | 'EARLY_ARRIVAL_CONFIRMED';
 
 export function getHotelAvailabilityResetReason(result: {
   routeChanged?: boolean;
   roomCountChanged?: boolean;
+  occupancyChanged?: boolean;
   mealPlanChanged?: boolean;
   hotelCategoryChanged?: boolean;
   earlyArrivalChanged?: boolean;
 } | null | undefined): HotelAvailabilityResetReason | null {
   if (result?.routeChanged) return 'ROUTE_CHANGED';
   if (result?.roomCountChanged) return 'ROOM_COUNT_CHANGED';
+  if (result?.occupancyChanged) return 'OCCUPANCY_CHANGED';
   if (result?.mealPlanChanged) return 'MEAL_PLAN_CHANGED';
   if (result?.hotelCategoryChanged) return 'HOTEL_CATEGORY_CHANGED';
   if (result?.earlyArrivalChanged) return 'EARLY_ARRIVAL_CONFIRMED';
@@ -324,6 +370,7 @@ export function getHotelAvailabilityResetReason(result: {
 export function shouldRebuildHotelData(result: {
   routeChanged?: boolean;
   roomCountChanged?: boolean;
+  occupancyChanged?: boolean;
   mealPlanChanged?: boolean;
   hotelCategoryChanged?: boolean;
   earlyArrivalChanged?: boolean;
@@ -331,6 +378,7 @@ export function shouldRebuildHotelData(result: {
   return Boolean(
     result?.routeChanged ||
     result?.roomCountChanged ||
+    result?.occupancyChanged ||
     result?.mealPlanChanged ||
     result?.hotelCategoryChanged ||
     result?.earlyArrivalChanged,
@@ -685,10 +733,12 @@ export class ItineraryPlanPersistenceService {
     let routeChanged = false;
 let itineraryStartTimeChanged = false;
 let roomCountChanged = false;
+let occupancyChanged = false;
 let mealPlanChanged = false;
 let hotelCategoryChanged = false;
 let earlyArrivalChanged = false;
 let previousRoutePlan: any = null;
+let previousTravellers: any[] = [];
 
  // Increase interactive transaction timeout; hotspot rebuild + hotel lookups can exceed default 5s
     const result = await this.prisma.$transaction(async (tx) => {
@@ -704,6 +754,7 @@ let previousRoutePlan: any = null;
             no_of_nights: true,
             no_of_days: true,
             preferred_room_count: true,
+            total_extra_bed: true,
             arrival_location: true,
             departure_location: true,
             meal_plan_code: true,
@@ -714,6 +765,16 @@ let previousRoutePlan: any = null;
         });
         if (!currentPlan) throw new NotFoundException('Itinerary plan not found');
         previousRoutePlan = currentPlan;
+        previousTravellers = await tx.dvi_itinerary_traveller_details.findMany({
+          where: { itinerary_plan_ID: existingPlanId, deleted: 0 },
+          orderBy: { traveller_details_ID: 'asc' },
+          select: {
+            room_id: true,
+            traveller_type: true,
+            traveller_age: true,
+            child_bed_type: true,
+          },
+        });
         assertVehicleAgentUpdatePolicy(u, currentPlan, dto.plan);
       } else {
         assertVehicleAgentCreatePolicy(u, dto.plan);
@@ -812,6 +873,12 @@ stepStartedAt = this.logItineraryApiTiming({
       );
       mealPlanChanged = isPlanUpdate && hasItineraryMealPlanChanged(previousRoutePlan, dto.plan);
       roomCountChanged = isPlanUpdate && hasItineraryRoomCountChanged(previousRoutePlan, dto.travellers);
+      occupancyChanged = isPlanUpdate && hasItineraryOccupancyChanged(
+        previousRoutePlan,
+        dto.plan,
+        previousTravellers,
+        Array.isArray(dto.travellers) ? dto.travellers : [],
+      );
       hotelCategoryChanged = isPlanUpdate && hasItineraryHotelCategoryChanged(previousRoutePlan, dto.plan);
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
 
@@ -827,6 +894,7 @@ const shouldRebuildTimeline =
         hotelCategoryChanged,
         mealPlanChanged,
         roomCountChanged,
+        occupancyChanged,
       });
 
       if (routeChanged) {
@@ -851,6 +919,14 @@ const shouldRebuildTimeline =
           planId,
           previousRoomCount: Number(previousRoutePlan?.preferred_room_count || 1),
           nextRoomCount: resolveItineraryRoomCount(dto.travellers),
+        });
+      }
+
+      if (occupancyChanged && !roomCountChanged) {
+        console.log('[HOTEL_OCCUPANCY_CHANGE_RESET_REQUIRED]', {
+          planId,
+          previousTravellerCount: previousTravellers.length,
+          nextTravellerCount: Array.isArray(dto.travellers) ? dto.travellers.length : 0,
         });
       }
 
@@ -1492,6 +1568,7 @@ if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
   routeIds: routes.map((r: any) => r.itinerary_route_ID),
   routeChanged,
   roomCountChanged,
+  occupancyChanged,
   mealPlanChanged,
   hotelCategoryChanged,
   earlyArrivalChanged,

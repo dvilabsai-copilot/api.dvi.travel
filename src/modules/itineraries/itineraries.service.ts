@@ -1508,6 +1508,8 @@ private getGuideSlotLabel(slotId: number): string {
             ? 'Itinerary routes were updated, but hotel availability could not be reset. Open the saved itinerary to retry automatically.'
             : hotelResetReason === 'ROOM_COUNT_CHANGED'
               ? 'Itinerary room count was updated, but hotel availability could not be reset. Open the saved itinerary to retry automatically.'
+              : hotelResetReason === 'OCCUPANCY_CHANGED'
+                ? 'Itinerary occupancy was updated, but hotel availability could not be reset. Open the saved itinerary to retry automatically.'
               : hotelResetReason === 'MEAL_PLAN_CHANGED'
                 ? 'The itinerary meal plan was updated, but hotel availability could not be reset. Open the saved itinerary to retry automatically.'
               : hotelResetReason === 'EARLY_ARRIVAL_CONFIRMED'
@@ -1520,6 +1522,8 @@ private getGuideSlotLabel(slotId: number): string {
             ? 'HOTEL_AVAILABILITY_ROUTE_RESET_FAILED'
             : hotelResetReason === 'ROOM_COUNT_CHANGED'
               ? 'HOTEL_AVAILABILITY_ROOM_COUNT_RESET_FAILED'
+              : hotelResetReason === 'OCCUPANCY_CHANGED'
+                ? 'HOTEL_AVAILABILITY_OCCUPANCY_RESET_FAILED'
               : hotelResetReason === 'MEAL_PLAN_CHANGED'
                 ? 'HOTEL_AVAILABILITY_MEAL_PLAN_RESET_FAILED'
               : hotelResetReason === 'EARLY_ARRIVAL_CONFIRMED'
@@ -1527,6 +1531,7 @@ private getGuideSlotLabel(slotId: number): string {
                 : 'HOTEL_AVAILABILITY_CATEGORY_RESET_FAILED',
           routeChanged: Boolean(result?.routeChanged),
           roomCountChanged: Boolean(result?.roomCountChanged),
+          occupancyChanged: Boolean(result?.occupancyChanged),
           mealPlanChanged: Boolean(result?.mealPlanChanged),
           hotelCategoryChanged: Boolean(result?.hotelCategoryChanged),
           hotelSearch: { status: 'FAILED' },
@@ -5885,6 +5890,25 @@ private getGuideSlotLabel(slotId: number): string {
     dinner_meal_plan?: number;
   }) {
     return this.hotelRoomCategoryService.updateRoomCategory(params);
+  }
+
+  async updateRoomCategories(params: {
+    itinerary_plan_hotel_details_ID: number;
+    itinerary_plan_id: number;
+    itinerary_route_id: number;
+    hotel_id: number;
+    group_type: number;
+    hotel_code?: string;
+    provider?: string;
+    hotel_name?: string;
+    rooms: Array<{
+      itinerary_plan_hotel_room_details_ID?: number;
+      room_number: number;
+      room_type_id: number;
+      room_qty?: number;
+    }>;
+  }) {
+    return this.hotelRoomCategoryService.updateRoomCategories(params);
   }
 
 

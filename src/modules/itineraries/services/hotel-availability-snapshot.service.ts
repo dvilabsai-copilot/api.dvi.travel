@@ -567,9 +567,17 @@ export class HotelAvailabilitySnapshotService {
             Number(night?.routeId || night?.itineraryRouteId || night?.itinerary_route_id || 0) === routeId,
           ) || nightlyRates[index] || {};
           const dayNumber = routeDayById.get(routeId) || index + 1;
-          const routeNightBase = Number(
-            nightlyRate?.baseAmount ?? nightlyRate?.baseTotalPrice ?? NaN,
-          );
+          // For mixed-room selections, the persisted parent contains the
+          // authoritative aggregate room cost. A nightly supplier rate can
+          // describe only one room category and would understate the day
+          // total when it is used for the response projection.
+          const hasPersistedRoomBreakdown = Array.isArray(row?.roomTypeBreakdown) ||
+            Array.isArray(snapshot?.roomTypeBreakdown);
+          const routeNightBase = hasPersistedRoomBreakdown
+            ? Math.max(Number(row?.totalRoomCost ?? row?.total_room_cost ?? row?.baseTotalPrice ?? row?.baseHotelCost ?? 0), 0)
+            : Number(
+              nightlyRate?.baseAmount ?? nightlyRate?.baseTotalPrice ?? NaN,
+            );
           const amount = (value: unknown): number => {
             const parsed = Number(value);
             return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
@@ -655,6 +663,8 @@ export class HotelAvailabilitySnapshotService {
               totalHotelCost: routeNightSell,
               totalStayPrice: routeNightSell,
               totalPrice: routeNightSell,
+              selectedPricePerNight: routeNightSell,
+              selected_price_per_night: routeNightSell,
               price: routeNightSell,
               pricePerNight: routeNightSell,
             } : {}),
@@ -2543,9 +2553,11 @@ export class HotelAvailabilitySnapshotService {
           ? breakdownPayableTotal
           : snapshotHasSupplement && snapshotTotal > 0
           ? snapshotTotal : currentTotal > 0 ? currentTotal : persistedTotal;
-        const selectedPerNight = snapshotHasSupplement && snapshotPerNight > 0
-          ? snapshotPerNight
-          : currentPerNight > 0 ? currentPerNight : persistedPerNight;
+        const selectedPerNight = selectedRoomBreakdown.length > 0 && breakdownPayableTotal > 0
+          ? breakdownPayableTotal
+          : snapshotHasSupplement && snapshotPerNight > 0
+            ? snapshotPerNight
+            : currentPerNight > 0 ? currentPerNight : persistedPerNight;
         const persistedBaseTotal = Number(
           snapshot?.baseTotalPrice ?? snapshot?.base_total_price ??
           selection?.total_room_cost ?? 0,
