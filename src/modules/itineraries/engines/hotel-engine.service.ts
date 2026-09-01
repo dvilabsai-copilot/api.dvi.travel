@@ -375,10 +375,15 @@ export class HotelEngineService {
         }
 
         const hotelId = hotelDetail.hotel.hotel_id;
-        const roomRate = (hotelDetail.roomPrices && hotelDetail.roomPrices[0]?.rate) || 0;
-        const roomId = (hotelDetail.roomPrices && hotelDetail.roomPrices[0]?.room_id) || 0;
-        const roomTypeId = hotelDetail.roomTypeId || 0;
-        const breakfastCost = hotelDetail.mealPrices.breakfast.price || 0;
+        // `roomPrice` is the validated price selected above.  Using
+        // `roomPrices[0]` here could persist a different/zero-rate row than
+        // the one used for ranking.  It also made malformed provider data
+        // capable of crashing itinerary creation while reading mealPrices.
+        const selectedRoomPrice = hotelDetail.roomPrice ?? { room_id: 0, rate: 0 };
+        const roomRate = Number(selectedRoomPrice.rate || 0);
+        const roomId = Number(selectedRoomPrice.room_id || 0);
+        const roomTypeId = Number(hotelDetail.roomTypeId || 0);
+        const breakfastCost = Number(hotelDetail.mealPrices?.breakfast?.price || 0);
         const totalBreakfastCost = breakfastCost * totalPersons;
 
         await (tx as any).dvi_itinerary_plan_hotel_room_details.create({

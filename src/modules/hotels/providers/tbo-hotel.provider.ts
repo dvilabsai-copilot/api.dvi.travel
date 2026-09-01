@@ -29,7 +29,11 @@ export class TBOHotelProvider implements IHotelProvider {
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
-
+  // Search the complete active master pool (up to this safety cap). TBO still
+  // receives these codes in batches of 100 below; this cap must not be used as
+  // a percentage/category mix because that can hide valid hotels from the UI.
+  private static readonly DEFAULT_HOTEL_CANDIDATE_LIMIT = 1000;
+  private static readonly MAX_HOTEL_CANDIDATE_LIMIT = 1000;
  // Production API Endpoints from Postman Collection
  private readonly SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
  private readonly BOOKING_API_URL = process.env.TBO_BOOKING_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10';
@@ -198,7 +202,7 @@ export class TBOHotelProvider implements IHotelProvider {
         `${resolvedCity.source ? ` (source: ${resolvedCity.source})` : ''}`
       );
 
- // Ensure DB has city/hotel master data for this TBO city before searching.
+      // Ensure DB has city/hotel master data for this TBO city before searching.
       await this.ensureCityAndHotelsInDb(criteria.cityCode, resolvedTboCityCode);
 
  // Step 2: Get hotel codes from TBO SharedData API or master database
@@ -468,6 +472,20 @@ export class TBOHotelProvider implements IHotelProvider {
       return { tboCityCode: null, source: null };
     }
 
+    // Itinerary destinations can be stored as descriptive strings such as
+    // "Bandipur National Park, Karnataka, India", while dvi_cities stores
+    // the canonical city as "Bandipur". Try the useful city portion(s) as
+    // well as the original value before falling back to the supplier list.
+    const cityNameCandidates = Array.from(
+      new Set(
+        [
+          normalized,
+          normalized.split(',')[0]?.trim(),
+          normalized.split(',')[0]?.trim().replace(/\s+national park$/i, ''),
+        ].filter(Boolean),
+      ),
+    );
+
     const aliasMap: Record<string, string> = {
       cochin: 'Kochi',
       alleppey: 'Alappuzha',
@@ -512,6 +530,15 @@ export class TBOHotelProvider implements IHotelProvider {
         select: { tbo_city_code: true, name: true },
       });
       if (byId?.tbo_city_code) {
+        const masterByIdName = byId.name
+          ? await this.resolveTboCityCodeFromHotelMaster([byId.name])
+          : null;
+        if (masterByIdName) {
+          return {
+            tboCityCode: masterByIdName,
+            source: `tbo_hotel_master.city_name:${byId.name}`,
+          };
+        }
         return { tboCityCode: byId.tbo_city_code, source: 'dvi_cities.id' };
       }
 
@@ -524,23 +551,38 @@ export class TBOHotelProvider implements IHotelProvider {
       }
     }
 
- // 3) Input might be city name in dvi_cities (case-insensitive where supported).
-    const byName = await this.prisma.dvi_cities.findFirst({
-      where: {
-        name: {
-          equals: normalized,
-        } as any,
-      },
-      select: { tbo_city_code: true },
-    });
-    if (byName?.tbo_city_code) {
-      return { tboCityCode: byName.tbo_city_code, source: 'dvi_cities.name' };
+    // Prefer an active master-inventory mapping over a possibly stale local
+    // dvi_cities mapping, including inactive local city rows.
+    const masterCityCode = await this.resolveTboCityCodeFromHotelMaster(cityNameCandidates);
+    if (masterCityCode) {
+      return {
+        tboCityCode: masterCityCode,
+        source: `tbo_hotel_master.city_name:${cityNameCandidates.join('|')}`,
+      };
     }
 
- // 3b) Resolve by static CityList (Postman certification flow).
-    const fromStaticByName = await this.fetchTboCityCodeFromStaticCityList(normalized);
-    if (fromStaticByName) {
-      return { tboCityCode: fromStaticByName, source: 'static-citylist-by-name' };
+ // 3) Input might be city name in dvi_cities (case-insensitive where supported).
+    for (const cityName of cityNameCandidates) {
+      const byName = await this.prisma.dvi_cities.findFirst({
+        where: {
+          name: { equals: cityName } as any,
+          tbo_city_code: { not: null },
+          status: 1,
+        },
+        orderBy: { id: 'asc' },
+        select: { tbo_city_code: true },
+      });
+      if (byName?.tbo_city_code) {
+        return { tboCityCode: byName.tbo_city_code, source: `dvi_cities.name:${cityName}` };
+      }
+    }
+
+    // 3b) Resolve by static CityList (Postman certification flow).
+    for (const cityName of cityNameCandidates) {
+      const fromStaticByName = await this.fetchTboCityCodeFromStaticCityList(cityName);
+      if (fromStaticByName) {
+        return { tboCityCode: fromStaticByName, source: `static-citylist-by-name:${cityName}` };
+      }
     }
 
  // 4) Fallback to existing dvi_hotel.tbo_city_code usage (no schema changes).
@@ -557,19 +599,19 @@ export class TBOHotelProvider implements IHotelProvider {
     }
 
  // 5) If input is city name used in dvi_hotel.hotel_city, derive mapped tbo_city_code.
-    const hotelByCityName = await this.prisma.dvi_hotel.findFirst({
-      where: {
-        hotel_city: {
-          equals: normalized,
-        } as any,
-        tbo_city_code: { not: null },
-        deleted: false,
-      },
-      select: { tbo_city_code: true },
-      orderBy: { hotel_id: 'desc' },
-    });
-    if (hotelByCityName?.tbo_city_code) {
-      return { tboCityCode: hotelByCityName.tbo_city_code, source: 'dvi_hotel.hotel_city' };
+    for (const cityName of cityNameCandidates) {
+      const hotelByCityName = await this.prisma.dvi_hotel.findFirst({
+        where: {
+          hotel_city: { equals: cityName } as any,
+          tbo_city_code: { not: null },
+          deleted: false,
+        },
+        select: { tbo_city_code: true },
+        orderBy: { hotel_id: 'desc' },
+      });
+      if (hotelByCityName?.tbo_city_code) {
+        return { tboCityCode: hotelByCityName.tbo_city_code, source: `dvi_hotel.hotel_city:${cityName}` };
+      }
     }
 
  // 6) Last resort: treat numeric input as direct TBO code when no mapping exists locally.
@@ -578,6 +620,67 @@ export class TBOHotelProvider implements IHotelProvider {
     }
 
     return { tboCityCode: null, source: null };
+  }
+
+  /**
+   * Reconcile a local city name with the TBO city code used by the active
+   * master inventory. A local mapping may be stale after a TBO city-code
+   * migration, so trusting dvi_cities alone can incorrectly reduce a city to
+   * the legacy dvi_hotel fallback.
+   *
+   * If TBO has more than one active code for the same city name, choose the
+   * code containing the largest active inventory. This is deterministic and
+   * avoids mixing unrelated city codes in one Search request.
+   */
+  private async resolveTboCityCodeFromHotelMaster(cityNames: string[]): Promise<string | null> {
+    try {
+      const rows: Array<{ tbo_city_code: string; city_name: string | null }> = [];
+
+      for (const cityName of cityNames) {
+        const matches = await this.prisma.tbo_hotel_master.findMany({
+          where: {
+            city_name: { equals: cityName } as any,
+            status: 1,
+            tbo_city_code: { not: '' },
+          },
+          select: { tbo_city_code: true, city_name: true },
+        });
+        rows.push(...matches);
+      }
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        const code = String(row.tbo_city_code || '').trim();
+        if (code) {
+          counts.set(code, (counts.get(code) || 0) + 1);
+        }
+      }
+
+      const rankedCodes = [...counts.entries()].sort(
+        ([codeA, countA], [codeB, countB]) => countB - countA || codeA.localeCompare(codeB),
+      );
+      const selected = rankedCodes[0]?.[0] || null;
+
+      if (selected) {
+        const alternatives = rankedCodes
+          .filter(([code]) => code !== selected)
+          .map(([code, count]) => `${code} (${count})`)
+          .join(', ');
+        this.logger.warn(
+          ` TBO master city reconciliation: ${cityNames.join('|')} -> ${selected} (${counts.get(selected)} active hotels)` +
+            (alternatives ? `; other active codes: ${alternatives}` : ''),
+        );
+      }
+
+      return selected;
+    } catch (error: any) {
+      this.logger.warn(` TBO master city-name lookup failed for ${cityNames.join('|')}: ${error?.message || error}`);
+      return null;
+    }
   }
 
   private async fetchTboCityCodeFromStaticCityList(cityName: string): Promise<string | null> {
@@ -1473,7 +1576,8 @@ export class TBOHotelProvider implements IHotelProvider {
  */
   private async getHotelCodesForCityFromDb(tboCityCode: string): Promise<string> {
     try {
- this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
+      this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
+      const candidateLimit = this.getHotelCandidateLimit();
 
       if (!this.prisma) {
  this.logger.error(` CRITICAL: PrismaService is NULL/UNDEFINED`);
@@ -1484,12 +1588,21 @@ export class TBOHotelProvider implements IHotelProvider {
       const hotels = await this.prisma.tbo_hotel_master.findMany({
         where: {
           tbo_city_code: tboCityCode,
- status: 1, // Active hotels only
+          status: 1,
+          tbo_hotel_code: {
+            not: '',
+          },
         },
         select: {
           tbo_hotel_code: true,
+          star_rating: true,
+          is_priority: true,
         },
- // take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
+        orderBy: [
+          { is_priority: 'desc' },
+          { tbo_hotel_code: 'asc' },
+        ],
+        take: candidateLimit,
       });
 
       if (!hotels || hotels.length === 0) {
@@ -1504,21 +1617,28 @@ export class TBOHotelProvider implements IHotelProvider {
           where: {
             tbo_city_code: tboCityCode,
             deleted: false,
+            status: 1,
+            tbo_hotel_code: {
+              not: null,
+            },
           },
           select: {
             tbo_hotel_code: true,
+            hotel_category: true,
           },
- take: 500, // Allow up to 500 hotels
+          orderBy: {
+            tbo_hotel_code: 'asc',
+          },
+          take: candidateLimit,
         });
 
         if (dviHotels && dviHotels.length > 0) {
           const codes = dviHotels
-            .map((h) => h.tbo_hotel_code)
-            .filter((code) => code && code.trim() !== '')
+            .map((hotel) => String(hotel.tbo_hotel_code || '').trim())
+            .filter(Boolean)
             .join(',');
 
  this.logger.log(` FALLBACK: Found ${dviHotels.length} hotels in dvi_hotel`);
- this.logger.log(` Hotel codes: ${codes.substring(0, 100)}...`);
           return codes;
         }
 
@@ -1530,12 +1650,13 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
       const hotelCodes = hotels
-        .map((h) => h.tbo_hotel_code)
-        .filter((code) => code && code.trim() !== '')
+        .map((hotel) => String(hotel.tbo_hotel_code || '').trim())
+        .filter(Boolean)
         .join(',');
 
- this.logger.log(` PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master`);
- this.logger.log(` Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
+      this.logger.log(
+        ` PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master (candidate limit ${candidateLimit}; no percentage mix)`,
+      );
 
       return hotelCodes;
     } catch (error: any) {
@@ -1545,6 +1666,18 @@ export class TBOHotelProvider implements IHotelProvider {
       );
       return '';
     }
+  }
+
+  private getHotelCandidateLimit(): number {
+    const configured = Number(process.env.TBO_HOTEL_CANDIDATE_LIMIT || '');
+    if (!Number.isFinite(configured) || configured <= 0) {
+      return TBOHotelProvider.DEFAULT_HOTEL_CANDIDATE_LIMIT;
+    }
+
+    return Math.min(
+      Math.max(Math.floor(configured), 100),
+      TBOHotelProvider.MAX_HOTEL_CANDIDATE_LIMIT,
+    );
   }
 
  /**

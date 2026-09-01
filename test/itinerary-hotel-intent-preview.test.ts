@@ -172,6 +172,40 @@ test('stale offline rate identity is rejected instead of reused', async () => {
   assert.equal(result.status, 'NO_AVAILABILITY');
 });
 
+test('offline room-type preview uses room ID when a legacy room label is supplied', async () => {
+  const { service } = createService(async () => candidates);
+
+  const result = await service.previewHotelIntent(payload({
+    selectionIntent: 'ROOM_TYPE',
+    roomType: 'Jungle Deluxe',
+    roomId: 540,
+    // Simulates the legacy browser payload that did not yet carry roomTypeId.
+    roomTypeId: undefined,
+  }));
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.deepEqual(result.selections.map((selection: any) => selection.roomId), [540, 540]);
+});
+
+test('offline room-type preview accepts a constrained legacy room label alias', async () => {
+  const legacyCandidates = candidates.map((candidate) => ({
+    ...candidate,
+    roomType: 'Jungle View Family',
+    roomId: 1262,
+  }));
+  const { service } = createService(async () => legacyCandidates);
+
+  const result = await service.previewHotelIntent(payload({
+    selectionIntent: 'ROOM_TYPE',
+    roomType: 'Jungle Family',
+    roomId: undefined,
+    roomTypeId: undefined,
+  }));
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Jungle View Family', 'Jungle View Family']);
+});
+
 test('preview from either night preserves the same continuous stay', async () => {
   const { service } = createService(async () => candidates);
 
@@ -242,6 +276,9 @@ test('HOTEL intent does not pin a one-night card rate across a multi-night stay'
     dvi_itinerary_route_details: {
       findFirst: async () => ({ itinerary_route_date: new Date('2026-08-23T00:00:00.000Z') }),
     },
+    dvi_global_settings: {
+      findFirst: async () => ({ hotel_margin: 20 }),
+    },
   };
   service.hotelStayBlockValidationService = {
     buildContinuousStayCandidate: async () => axisStay,
@@ -278,6 +315,8 @@ test('HOTEL intent does not pin a one-night card rate across a multi-night stay'
   assert.equal(result.status, 'AVAILABLE');
   assert.deepEqual(result.selections.map((selection: any) => selection.routeDate), ['2026-08-22', '2026-08-23']);
   assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Room 607', 'Room 606']);
+  assert.deepEqual(result.selections.map((selection: any) => selection.pricePerNight), [6000, 5400]);
+  assert.deepEqual(result.selections.map((selection: any) => selection.hotelMarginPercentage), [20, 20]);
 });
 
 test('STAAH HOTEL preview resolves the canonical hotel id to the supplier property code', async () => {

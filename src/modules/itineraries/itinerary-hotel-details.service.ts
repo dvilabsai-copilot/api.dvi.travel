@@ -5,7 +5,10 @@ import { PrismaService } from '../../prisma.service';
 import { dvi_itinerary_plan_details, Prisma } from '@prisma/client';
 import { haversineKm } from './utils/distance-utils';
 import { resolvePersistedHotelIdentity } from './utils/hotel-selection-identity.util';
-import { resolveStoredHotelPayablePricing } from './utils/hotel-payable-pricing.util';
+import {
+  calculateHotelRouteNightPayable,
+  resolveStoredHotelPayablePricing,
+} from './utils/hotel-payable-pricing.util';
 import {
   buildHotelSelectionState,
   HotelSelectionGroupView,
@@ -54,8 +57,13 @@ export interface ItineraryHotelRowDto {
   mealPlan: string;
   baseHotelCost?: number;
   basePricePerNight?: number;
+  baseTotalPrice?: number;
   hotelMarginPercentage?: number;
   hotelMarginAmount?: number;
+  // Canonical aggregate margin alias consumed by hotel price breakdowns.
+  // Keep this aligned with hotelMarginAmount for every provider.
+  hotelMarginTotalAmount?: number;
+  hotelMarginBaseAmount?: number;
   hotelMarginGstAmount?: number;
   hotelRoomGstAmount?: number;
   hotelMealPlanCost?: number;
@@ -67,8 +75,11 @@ export interface ItineraryHotelRowDto {
   totalChildWithoutBedCost?: number;
   totalChildWithoutBedCostGstAmount?: number;
   extraBedCount?: number;
+  extraBedRate?: number;
   childWithBedCount?: number;
+  childWithBedRate?: number;
   childWithoutBedCount?: number;
+  childWithoutBedRate?: number;
   totalRoomCost?: number;
   totalHotelCost: number;
   totalHotelTaxAmount: number;
@@ -225,6 +236,8 @@ export interface RecommendationGenerationDto {
 export interface HotelAvailabilityMetaDto {
   /** Complete route/day inventory shared by every recommendation pane. */
   sharedHotelInventory?: ItineraryHotelRowDto[];
+  /** Internal authoritative group candidates used by reset reconciliation. */
+  authoritativeRecommendationRows?: any[];
   hasSupplierHotels: boolean;
   supplierHotelCount: number;
   placeholderRowCount: number;
@@ -752,6 +765,7 @@ async getHotelRoomDetailsByQuoteId(
         itinerary_route_ID: true,
         itinerary_route_date: true,
         location_id: true,
+        location_name: true,
         no_of_days: true,
       },
     });
@@ -760,6 +774,12 @@ async getHotelRoomDetailsByQuoteId(
       routeDetails.map((r) => [
         Number((r as any).itinerary_route_ID),
         Number((r as any).location_id),
+      ]),
+    );
+    const routeDestinationMap = new Map(
+      routeDetails.map((r: any) => [
+        Number(r.itinerary_route_ID),
+        String(r.location_name ?? '').trim(),
       ]),
     );
     const routeDayNumberMap = new Map(
@@ -948,13 +968,187 @@ async getHotelRoomDetailsByQuoteId(
       const storedTax = Number((h as any).total_hotel_tax_amount ?? 0);
       const storedMargin = Number((h as any).hotel_margin_rate ?? 0);
       const storedMarginPercentage = Number((h as any).hotel_margin_percentage ?? 0);
+      const provider = String((h as any).hotel_provider || '').trim().toLowerCase();
+      const isDatabaseOccupancyProvider = provider === 'offline' || provider === 'axisrooms';
+      const snapshotMarginPercentage = Number(
+        selectedPriceSnapshot.hotelMarginPercentage ??
+        selectedPriceSnapshot.hotel_margin_percentage ??
+        0,
+      );
       const storedPricing = resolveStoredHotelPayablePricing({
         storedTotal,
         baseTotal: authoritativeBaseHotelCost,
         marginAmount: storedMargin,
         marginPercentage: storedMarginPercentage,
       });
-      const payableHotelCost = storedPricing.payableTotal * earlyCheckInBillingMultiplier;
+      const isOffline = provider === 'offline';
+      const snapshotNightlyRates = Array.isArray(selectedPriceSnapshot.nightlyRates)
+        ? selectedPriceSnapshot.nightlyRates as Record<string, unknown>[]
+        : [];
+      const snapshotPricingScope = String(selectedPriceSnapshot.pricingScope || '').trim().toUpperCase();
+      const continuousStayRouteNight = snapshotNightlyRates.length > 1
+        ? snapshotNightlyRates.find(
+            (night) => String(night.date || '').slice(0, 10) === dateLabel,
+          )
+        : undefined;
+      const legacyOfflineRouteNight = isOffline && snapshotPricingScope !== 'ROUTE_NIGHT' && snapshotNightlyRates.length > 1
+        ? snapshotNightlyRates.find(
+            (night) => String(night.date || '').slice(0, 10) === dateLabel,
+          )
+        : undefined;
+      // Offline rate snapshots represent a continuous stay, while this API
+      // row represents one itinerary route/night. Return the route-night
+      // amount to the UI and retain the complete stay amount separately.
+      // This keeps API totals authoritative and prevents a two-night amount
+      // from being charged once on every daily row.
+      const offlinePricePerNight = Number(
+        selectedPriceSnapshot.pricePerNight ?? selectedPriceSnapshot.price_per_night ?? 0,
+      );
+      const offlineBasePerNight = Number(
+        selectedPriceSnapshot.basePricePerNight ?? selectedPriceSnapshot.base_price_per_night ?? 0,
+      );
+      // Offline snapshots may have stored the all-room one-night base in
+      // basePricePerNight. The response contract is explicit: expose the
+      // per-room rate in basePricePerNight and the all-room one-night base in
+      // baseTotalPrice. The payable row amount remains totalHotelCost.
+      const snapshotRoomTotal = Number(
+        selectedPriceSnapshot.totalRoomCost ??
+        selectedPriceSnapshot.total_room_cost ??
+        0,
+      );
+      const legacyOfflineNightBase = Number(legacyOfflineRouteNight?.baseAmount ?? 0);
+      const offlineBaseTotal = legacyOfflineNightBase > 0
+        ? legacyOfflineNightBase
+        : snapshotRoomTotal > 0
+          ? snapshotRoomTotal
+        : snapshotBaseTotal > 0
+          ? snapshotBaseTotal
+          : offlineBasePerNight > 0
+            ? Number((offlineBasePerNight * snapshotRoomCount).toFixed(2))
+            : 0;
+      const offlineBaseRoomRate = offlineBaseTotal > 0
+        ? Number((offlineBaseTotal / snapshotRoomCount).toFixed(2))
+        : offlineBasePerNight;
+      const offlineMarginPerNight = Number(
+        selectedPriceSnapshot.hotelMarginAmount ?? selectedPriceSnapshot.hotel_margin_amount ?? 0,
+      );
+      const payableHotelCost = (isOffline && offlinePricePerNight > 0
+        ? offlinePricePerNight
+        : storedPricing.payableTotal) * earlyCheckInBillingMultiplier;
+      const baseHotelCost = (isOffline && offlineBaseTotal > 0
+        ? offlineBaseRoomRate
+        : authoritativeBaseHotelCost) * earlyCheckInBillingMultiplier;
+      const storedHotelMarginAmount = (isOffline && offlineMarginPerNight > 0
+        ? offlineMarginPerNight
+        : storedPricing.marginAmount) * earlyCheckInBillingMultiplier;
+      const positiveOr = (...values: unknown[]) => values.map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
+      const extraBedCount = positiveOr(
+        selectedPriceSnapshot.extraBedCount,
+        selectedPriceSnapshot.extra_bed_count,
+        (h as any).room_extra_bed_count,
+        (h as any).total_extra_bed,
+        (plan as any).total_extra_bed,
+      );
+      const childWithBedCount = positiveOr(
+        selectedPriceSnapshot.childWithBedCount,
+        selectedPriceSnapshot.child_with_bed_count,
+        (h as any).room_cwb_count,
+        (h as any).total_child_with_bed,
+        (plan as any).total_child_with_bed,
+      );
+      const childWithoutBedCount = positiveOr(
+        selectedPriceSnapshot.childWithoutBedCount,
+        selectedPriceSnapshot.child_without_bed_count,
+        (h as any).room_cnb_count,
+        (h as any).total_child_without_bed,
+        (plan as any).total_child_without_bed,
+      );
+      const storedExtraBedCost = Number((h as any).total_extra_bed_cost ?? 0);
+      const storedChildWithBedCost = Number((h as any).total_childwith_bed_cost ?? 0);
+      const storedChildWithoutBedCost = Number((h as any).total_childwithout_bed_cost ?? 0);
+      // Offline/AxisRooms supplement values are database-authoritative. Do
+      // not revive an old selected_price_snapshot value when the current
+      // persisted DB amount is zero; zero means the required rate was not
+      // available and the option must not be priced as available.
+      const snapshotExtraBedCost = Number(selectedPriceSnapshot.totalExtraBedCost ?? selectedPriceSnapshot.extraBedAmount ?? 0);
+      const snapshotChildWithBedCost = Number(selectedPriceSnapshot.totalChildWithBedCost ?? selectedPriceSnapshot.childWithBedAmount ?? 0);
+      const snapshotChildWithoutBedCost = [
+        selectedPriceSnapshot.totalChildWithoutBedCost,
+        selectedPriceSnapshot.childWithoutBedAmount,
+        selectedPriceSnapshot.extraChildAmount,
+        selectedPriceSnapshot.extra_child_amount,
+      ].map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
+      const legacyExtraBedCost = Number(selectedPriceSnapshot.extraBedRate ?? 0) * extraBedCount;
+      const legacyChildWithBedCost = Number(selectedPriceSnapshot.childWithBedRate ?? 0) * childWithBedCount;
+      const legacyChildWithoutBedCost = Number(selectedPriceSnapshot.childWithoutBedRate ?? 0) * childWithoutBedCount;
+      const extraBedCost = (legacyOfflineRouteNight && legacyExtraBedCost > 0
+        ? legacyExtraBedCost
+        : isDatabaseOccupancyProvider
+          ? snapshotExtraBedCost > 0 ? snapshotExtraBedCost : storedExtraBedCost
+          : storedExtraBedCost > 0 ? storedExtraBedCost : Number(selectedPriceSnapshot.extraBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const childWithBedCost = (legacyOfflineRouteNight && legacyChildWithBedCost > 0
+        ? legacyChildWithBedCost
+        : isDatabaseOccupancyProvider
+          ? snapshotChildWithBedCost > 0 ? snapshotChildWithBedCost : storedChildWithBedCost
+          : storedChildWithBedCost > 0 ? storedChildWithBedCost : Number(selectedPriceSnapshot.childWithBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
+      const childWithoutBedCost = (legacyOfflineRouteNight && legacyChildWithoutBedCost > 0
+        ? legacyChildWithoutBedCost
+        : isDatabaseOccupancyProvider
+          ? snapshotChildWithoutBedCost > 0 ? snapshotChildWithoutBedCost : storedChildWithoutBedCost
+          : storedChildWithoutBedCost > 0 ? storedChildWithoutBedCost : snapshotChildWithoutBedCost) * earlyCheckInBillingMultiplier;
+      const roomCountForMargin = Math.max(
+        Number((h as any).total_no_of_rooms ?? 0),
+        Number((plan as any).preferred_room_count ?? 0),
+        1,
+      );
+      // total_room_cost / snapshot.totalRoomCost is already the room-only
+      // amount for the requested room count. Do not multiply it by the room
+      // count again; doing so inflated the margin while totalHotelCost still
+      // came from the correctly persisted payable amount.
+      const persistedRoomTotal = Number(
+        selectedPriceSnapshot.totalRoomCost ??
+        selectedPriceSnapshot.total_room_cost ??
+        (h as any).total_room_cost ??
+        0,
+      );
+      const marginRoomCost = Number((
+        Number(continuousStayRouteNight?.baseAmount ?? continuousStayRouteNight?.totalRoomCost ?? 0) > 0
+          ? Number(continuousStayRouteNight?.baseAmount ?? continuousStayRouteNight?.totalRoomCost) * earlyCheckInBillingMultiplier
+          : persistedRoomTotal > 0
+            ? persistedRoomTotal * earlyCheckInBillingMultiplier
+          : baseHotelCost * roomCountForMargin
+      ).toFixed(2));
+      const hotelMarginBaseAmount = Number((
+        marginRoomCost +
+        Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier +
+        extraBedCost +
+        childWithBedCost +
+        childWithoutBedCost
+      ).toFixed(2));
+      const effectiveMarginPercentage = storedPricing.marginPercentage > 0
+        ? storedPricing.marginPercentage
+        : snapshotMarginPercentage;
+      const hotelMarginAmount = effectiveMarginPercentage > 0
+        ? Number((hotelMarginBaseAmount * effectiveMarginPercentage / 100).toFixed(2))
+        : storedHotelMarginAmount;
+      const routeNightPayableHotelCost = continuousStayRouteNight
+        ? calculateHotelRouteNightPayable({
+            marginBaseAmount: hotelMarginBaseAmount,
+            marginPercentage: effectiveMarginPercentage,
+            fallbackMarginAmount: storedHotelMarginAmount,
+            taxAmount: storedTax,
+            billingMultiplier: earlyCheckInBillingMultiplier,
+          })
+        : payableHotelCost;
+      const extraBedRate = isDatabaseOccupancyProvider
+        ? Number(extraBedCount > 0 ? extraBedCost / earlyCheckInBillingMultiplier / extraBedCount : 0)
+        : Number((h as any).extra_bed_rate ?? selectedPriceSnapshot.extraBedRate ?? (extraBedCount > 0 ? extraBedCost / extraBedCount : 0));
+      const childWithBedRate = isDatabaseOccupancyProvider
+        ? Number(childWithBedCount > 0 ? childWithBedCost / earlyCheckInBillingMultiplier / childWithBedCount : 0)
+        : Number(selectedPriceSnapshot.childWithBedRate ?? (childWithBedCount > 0 ? childWithBedCost / childWithBedCount : 0));
+      const childWithoutBedRate = isDatabaseOccupancyProvider
+        ? Number(childWithoutBedCount > 0 ? childWithoutBedCost / earlyCheckInBillingMultiplier / childWithoutBedCount : 0)
+        : Number(selectedPriceSnapshot.childWithoutBedRate ?? (childWithoutBedCount > 0 ? childWithoutBedCost / childWithoutBedCount : 0));
 
       return {
         groupType: Number((h as any).group_type ?? 0) || 0,
@@ -962,40 +1156,68 @@ async getHotelRoomDetailsByQuoteId(
         day: isSyntheticPreviousDayBilling
           ? `Day ${routeDayNumber} (Previous Day) | ${dateLabel}`
           : `Day ${routeDayNumber || 0} | ${dateLabel}`,
-        destination: (h as any).itinerary_route_location ?? '',
+        destination:
+          String((h as any).itinerary_route_location ?? '').trim() ||
+          routeDestinationMap.get(routeId) ||
+          '',
         hotelId: Number((h as any).hotel_id ?? 0) || 0,
         hotelName: persistedIdentity.hotelName,
         category: persistedIdentity.category,
         roomType: String(
-          (persistedIdentity.consistent
-            ? selectedPriceSnapshot.roomType || selectedPriceSnapshot.roomTypeName
-            : '') ||
+          selectedPriceSnapshot.roomType ||
+          selectedPriceSnapshot.roomTypeName ||
+          (h as any).room_type ||
           '',
         ).trim(),
         mealPlan: String(
-          (persistedIdentity.consistent
-            ? selectedPriceSnapshot.mealPlan || selectedPriceSnapshot.mealPlanCode
-            : '') ||
+          selectedPriceSnapshot.mealPlan ||
+          selectedPriceSnapshot.mealPlanCode ||
+          (h as any).meal_plan ||
           '',
         ).trim(),
-        totalHotelCost: payableHotelCost,
+        totalHotelCost: routeNightPayableHotelCost,
+        pricePerNight: routeNightPayableHotelCost,
+        // The UI day-row contract is explicit: this is the complete payable
+        // amount for this itinerary night, including all rooms and supplements.
+        selectedPricePerNight: routeNightPayableHotelCost,
+        selectedTotalPrice: routeNightPayableHotelCost,
+        totalStayPrice: isOffline
+          ? Number(selectedPriceSnapshot.totalStayPrice ?? selectedPriceSnapshot.total_price ?? routeNightPayableHotelCost)
+          : routeNightPayableHotelCost,
+        numberOfNights: 1,
+        // Keep the rate shown beside the room-count multiplier explicit. The
+        // aggregate room amount above is authoritative, but omitting this
+        // field makes the tooltip render `0 × ...` even when totalRoomCost is
+        // present in the persisted snapshot.
+        roomRate: Number(baseHotelCost.toFixed(2)),
+        basePricePerNight: baseHotelCost,
+        baseTotalPrice: isOffline
+          ? Number((baseHotelCost * snapshotRoomCount).toFixed(2))
+          : authoritativeBaseHotelCost,
         totalHotelTaxAmount: storedTax * earlyCheckInBillingMultiplier,
-        baseHotelCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
-        totalRoomCost: authoritativeBaseHotelCost * earlyCheckInBillingMultiplier,
+        baseHotelCost,
+        totalRoomCost: isOffline
+          ? Number((baseHotelCost * snapshotRoomCount).toFixed(2))
+          : baseHotelCost,
         hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanCost: Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier,
         hotelMealPlanGstAmount: Number((h as any).total_hotel_meal_plan_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        totalExtraBedCost: Number((h as any).total_extra_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalExtraBedCost: extraBedCost,
         totalExtraBedCostGstAmount: Number((h as any).total_extra_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        totalChildWithBedCost: Number((h as any).total_childwith_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithBedCost: childWithBedCost,
         totalChildWithBedCostGstAmount: Number((h as any).total_childwith_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        totalChildWithoutBedCost: Number((h as any).total_childwithout_bed_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalChildWithoutBedCost: childWithoutBedCost,
         totalChildWithoutBedCostGstAmount: Number((h as any).total_childwithout_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        extraBedCount: Number((h as any).room_extra_bed_count ?? (h as any).total_extra_bed ?? (plan as any).total_extra_bed ?? 0),
-        childWithBedCount: Number((h as any).room_cwb_count ?? (h as any).total_child_with_bed ?? (plan as any).total_child_with_bed ?? 0),
-        childWithoutBedCount: Number((h as any).room_cnb_count ?? (h as any).total_child_without_bed ?? (plan as any).total_child_without_bed ?? 0),
-        hotelMarginPercentage: storedPricing.marginPercentage,
-        hotelMarginAmount: storedPricing.marginAmount * earlyCheckInBillingMultiplier,
+        extraBedCount,
+        extraBedRate,
+        childWithBedCount,
+        childWithBedRate,
+        childWithoutBedCount,
+        childWithoutBedRate,
+        hotelMarginPercentage: effectiveMarginPercentage,
+        hotelMarginAmount,
+        hotelMarginTotalAmount: hotelMarginAmount,
+        hotelMarginBaseAmount,
         hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
@@ -1009,8 +1231,8 @@ async getHotelRoomDetailsByQuoteId(
         hotelierEarlyCheckInNote,
         previousDayBillingSynthetic: isSyntheticPreviousDayBilling,
         hotelDistance,
-        provider: String((h as any).hotel_provider || '').trim().toLowerCase() || undefined,
-        hotelCode: String((h as any).hotel_code || '').trim() || undefined,
+        provider: provider || undefined,
+        hotelCode: persistedIdentity.hotelCode || undefined,
         bookingCode: String((h as any).selected_rate_option_id || '').trim() || undefined,
         rateOptionId: String((h as any).selected_rate_option_id || '').trim() || undefined,
         priceSource: (h as any).price_source || undefined,
@@ -1018,10 +1240,13 @@ async getHotelRoomDetailsByQuoteId(
         isLiveRate: (h as any).is_live_rate ?? undefined,
         approvalStatus: (h as any).hotel_approval_status || undefined,
         manualConfirmationStatus: (h as any).manual_confirmation_status || undefined,
-        isSelected: Number((h as any).hotel_id || 0) > 0,
-        selectionOrigin: String((h as any).selected_rate_option_id || '').trim()
-          ? 'USER_SELECTED'
-          : (Number((h as any).hotel_id || 0) > 0 ? 'AUTO_SELECTED' : undefined),
+        isSelected:
+          Number((h as any).hotel_id || 0) > 0 ||
+          Boolean(String((h as any).selected_rate_option_id || '').trim()) ||
+          Boolean(String(selectedPriceSnapshot.rateOptionId || '').trim()),
+        selectionOrigin: (String((h as any).selection_origin || '').trim().toUpperCase() ||
+          (Number((h as any).hotel_id || 0) > 0 ? 'AUTO_SELECTED' : undefined)) as
+          'AUTO_SELECTED' | 'USER_SELECTED' | undefined,
         selectionId: Number(hotelDetailsId || 0),
         requiresPriceReacceptance: Boolean((h as any).requires_price_reacceptance),
         selectedPriceSnapshot: rawSelectedPriceSnapshot || null,

@@ -69,7 +69,17 @@ export class ItineraryExportService {
         WHERE h.itinerary_plan_id = ${planId} AND h.group_type = ${Number(group.group_type)} AND h.deleted = 0 AND h.status = 1
         GROUP BY h.itinerary_plan_hotel_details_ID, h.itinerary_route_date ORDER BY h.itinerary_route_date ASC`;
       let overallCost = 0, overallSales = 0, overallPL = 0;
-      for (const d of details) {
+      const earlyArrivalMarkers = new Map<number, any>(
+        details
+          .filter((detail) => Number(detail.hotel_required) === 2 && Number(detail.hotel_id) === 0)
+          .map((detail) => [Number(detail.itinerary_route_id), detail]),
+      );
+      const payableDetails = details.filter(
+        (detail) => !(Number(detail.hotel_required) === 2 && Number(detail.hotel_id) === 0),
+      );
+      for (const d of payableDetails) {
+        const earlyArrivalMarker = earlyArrivalMarkers.get(Number(d.itinerary_route_id));
+        const earlyCheckIn = Number(d.early_checkin) === 1 || Boolean(earlyArrivalMarker);
         const extraBedCost = this.num(d.total_extra_bed_cost) || this.hotelExtraBedCost(d);
         const roomRent = this.num(d.total_room_cost) + this.num(d.total_room_gst_amount);
         const pricing = ItineraryPricingService.hotel({ ...d, total_extra_bed_cost: extraBedCost });
@@ -79,6 +89,25 @@ export class ItineraryExportService {
         const totalCost = pricing.cost;
         const pl = pricing.pl; overallCost += totalCost; overallSales += totalSales; overallPL += pl;
         const meals = [['B', d.breakfast_required, d.breakfast_cost_per_person], ['L', d.lunch_required, d.lunch_cost_per_person], ['D', d.dinner_required, d.dinner_cost_per_person]].filter(([, required, cost]) => Number(required) === 1 && this.num(cost) !== 0).map(([label]) => label).join(', ') || 'EP';
+        if (earlyCheckIn) {
+          // The marker owns the payable blocking night. The selected hotel
+          // row may retain the normal guest-arrival check-in date.
+          const blockedFromDate = this.date(earlyArrivalMarker?.itinerary_route_date || d.hotel_check_in_date);
+          const dayZeroValues = [
+            `Day 0 | ${blockedFromDate}`,
+            d.itinerary_route_location || earlyArrivalMarker?.itinerary_route_location || '',
+            `${this.hotelName(d)} (Early check-in room block)`,
+            this.roomTypeName(d),
+            meals,
+            this.num(d.total_no_of_rooms),
+            this.num(d.room_extra_bed_count),
+            this.num(d.room_cnb_count),
+            this.num(d.room_cwb_count),
+            ...Array(12).fill(''),
+          ];
+          this.writeRow(sheet, row, dayZeroValues, styles.data, 21);
+          row += 1;
+        }
         this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', this.hotelName(d), this.roomTypeName(d), meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), extraBedCost, this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), storedMargin, storedMarginTax, totalCost, totalSales, pl], styles.data, 21, 10);
         row += 1;
       }

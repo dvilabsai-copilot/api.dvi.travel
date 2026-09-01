@@ -225,6 +225,27 @@ private readonly itineraryAccessService: ItineraryAccessService,
     );
   }
 
+  @Post('route-optimization/preview')
+  @ApiOperation({
+    summary:
+      'Preview the best route alternatives without saving the itinerary',
+
+    description:
+      'Keeps arrival and departure fixed, preserves every itinerary day, and returns up to three scored route alternatives.',
+  })
+  @ApiBody({
+    type: CreateItineraryDto,
+  })
+  async previewRouteOptimization(
+    @Body()
+    dto: CreateItineraryDto,
+  ) {
+    return this.svc
+      .previewRouteOptimization(
+        dto,
+      );
+  }
+
   @Post()
   @ApiOperation({
     summary:
@@ -409,6 +430,53 @@ private readonly itineraryAccessService: ItineraryAccessService,
     return this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
   }
 
+  @Post('route-family/sync-selection')
+  @ApiOperation({
+    summary: 'Synchronize active Smart Booking route-family slots',
+  })
+  async syncRouteFamilySelection(
+    @Body() body: { planId?: number; desiredCount?: number },
+    @Req() req: Request,
+  ) {
+    const planId = Number(body?.planId || 0);
+    const desiredCount = Math.trunc(
+      Number(body?.desiredCount || 0),
+    );
+
+    if (!Number.isInteger(planId) || planId <= 0) {
+      throw new BadRequestException(
+        'A valid itinerary planId is required.',
+      );
+    }
+
+    if (
+      !Number.isInteger(desiredCount) ||
+      desiredCount < 1 ||
+      desiredCount > 5
+    ) {
+      throw new BadRequestException(
+        'Smart Booking supports between 1 and 5 selected routes.',
+      );
+    }
+
+    const access =
+      await this.itineraryAccessService.getPlanAccessDecision(
+        planId,
+        (req as any).user,
+      );
+
+    if (!access.exists || !access.allowed) {
+      return this.denyItineraryAccess(
+        access.redirectTo || '/latest-itinerary',
+      );
+    }
+
+    return this.svc.syncRouteFamilySelection(
+      planId,
+      desiredCount,
+    );
+  }
+
   @Get('details/:quoteId')
   @ApiOperation({
     summary: 'Get full itinerary details by Quote ID',
@@ -514,7 +582,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
   @ApiOperation({
     summary: 'Get persisted hotel availability snapshot',
     description:
-      'Database-only read of the latest persisted hotel availability snapshot. Live suppliers are called only by the explicit Check Availability command.',
+      'Database-only read of the latest persisted hotel availability snapshot. Live suppliers are called by automatic availability validation.',
   })
   @ApiParam({
     name: 'quoteId',
@@ -634,7 +702,47 @@ private readonly itineraryAccessService: ItineraryAccessService,
       undefined,
       req.user?.role,
     );
-    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
+    // Reset already has the complete persisted snapshot in result.response.
+    // Return it directly so the client does not issue a second /persisted
+    // request just to restore inventory and rate options for the hotel pane.
+    return {
+      hotelDetails: result.response,
+      changeSummary: result.changeSummary,
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
+    };
+  }
+
+  @Post('hotel_details/:quoteId/acknowledge-changes')
+  @ApiOperation({ summary: 'Accept staged hotel availability changes' })
+  async acknowledgeItineraryHotelAvailabilityChanges(
+    @Param('quoteId') quoteId: string,
+    @Body() body: { selectionIds?: number[] },
+    @Req() req: any,
+  ) {
+    const applied = await this.hotelAvailabilitySnapshotService.applyAcceptedSelectionChanges(
+      quoteId,
+      Array.isArray(body?.selectionIds) ? body.selectionIds : [],
+      Number(req.user?.userId || 0),
+    );
+    const [hotelDetails, itinerary] = await Promise.all([
+      this.hotelAvailabilitySnapshotService.readPersisted(
+        quoteId,
+        { page: 1, pageSize: 0 },
+        () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
+      ),
+      this.detailsService.getItineraryDetails(quoteId, undefined, req.user?.role),
+    ]);
+    return {
+      ...applied,
+      hotelDetails,
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
+    };
   }
 
   @Post('hotel_details/:quoteId/selected-hotel-refresh')
@@ -667,18 +775,14 @@ private readonly itineraryAccessService: ItineraryAccessService,
   })
   async resetItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
-    @Req() req: any,
   ) {
-    const result = await this.hotelAvailabilitySnapshotService.resetAndPersist(
-      quoteId,
-      Number(req.user?.userId || 0),
-    );
-    const itinerary = await this.detailsService.getItineraryDetails(
-      quoteId,
-      undefined,
-      req.user?.role,
-    );
-    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
+    await this.hotelAvailabilitySnapshotService.resetSelectionsOnly(quoteId);
+    // Reset only mutates the persisted selections. The separate
+    // check-availability endpoint owns the fresh hotel data and financial
+    // summary, so this response must not read or serialize either one.
+    return {
+      resetApplied: true,
+    };
   }
 
   @Post('hotel_details/:quoteId/offline-availability')
@@ -712,36 +816,68 @@ private readonly itineraryAccessService: ItineraryAccessService,
       ...resetHotelDetails
     } = result.response;
     const {
-      sharedHotelInventory: _sharedHotelInventory,
       recommendationAlgorithm: _availabilityRecommendationAlgorithm,
       recommendationGeneration: _availabilityRecommendationGeneration,
+      sharedHotelInventory,
+      authoritativeRecommendationRows,
       ...compactAvailability
     } = hotelAvailability || ({} as any);
+
+    // Keep the complete route/day inventory in reset and offline-availability
+    // responses. The compact response intentionally removes rate internals,
+    // but removing this list also removes the alternative hotels needed by
+    // HotelListTable's per-day hotel editor. The selected `hotels` rows alone
+    // are not sufficient because they contain only the current recommendation.
+    const toCompactHotelRow = (row: any) => {
+      const {
+        roomTypes: _roomTypes,
+        nightlyRates: _nightlyRates,
+        supplementSummary: _supplementSummary,
+        selection: _selection,
+        selectedPriceSnapshot: _selectedPriceSnapshot,
+        selected_price_snapshot: _selectedPriceSnapshotLegacy,
+        itinerary_route_id: _itineraryRouteIdLegacy,
+        itinerary_route_date: _itineraryRouteDateLegacy,
+        check_in_date: _checkInDateLegacy,
+        check_out_date: _checkOutDateLegacy,
+        ...summaryRow
+      } = row || {};
+      // Keep the concrete options needed by the hotel card. Availability and
+      // supplement rates are calculated per option by the API; removing this
+      // array makes the UI inspect the parent summary row, which can have no
+      // extra-bed/child rate and incorrectly render a valid hotel unavailable.
+      const compactRateOptions = Array.isArray(row?.rateOptions)
+        ? row.rateOptions.map((option: any) => {
+            const {
+              roomTypes: _optionRoomTypes,
+              nightlyRates: _optionNightlyRates,
+              supplementSummary: _optionSupplementSummary,
+              selectedPriceSnapshot: _optionSelectedPriceSnapshot,
+              selected_price_snapshot: _optionSelectedPriceSnapshotLegacy,
+              ...compactOption
+            } = option || {};
+            return compactOption;
+          })
+        : undefined;
+      return {
+        ...summaryRow,
+        ...(compactRateOptions ? { rateOptions: compactRateOptions } : {}),
+      };
+    };
 
     return {
       hotelDetails: {
         ...resetHotelDetails,
-        hotels: (result.response.hotels || []).map((row: any) => {
-          const {
-            rateOptions: _rateOptions,
-            roomTypes: _roomTypes,
-            nightlyRates: _nightlyRates,
-            supplementSummary: _supplementSummary,
-            selection: _selection,
-            selectedPriceSnapshot: _selectedPriceSnapshot,
-            selected_price_snapshot: _selectedPriceSnapshotLegacy,
-            itinerary_route_id: _itineraryRouteIdLegacy,
-            itinerary_route_date: _itineraryRouteDateLegacy,
-            check_in_date: _checkInDateLegacy,
-            check_out_date: _checkOutDateLegacy,
-            hotelCheckInDate: _hotelCheckInDateLegacy,
-            hotel_check_in_date: _hotelCheckInDateSnake,
-            hotelCheckOutDate: _hotelCheckOutDateLegacy,
-            hotel_check_out_date: _hotelCheckOutDateSnake,
-            ...summaryRow
-          } = row;
-          return summaryRow;
-        }),
+        hotels: (result.response.hotels || []).map(toCompactHotelRow),
+        hotelAvailability: {
+          ...compactAvailability,
+          authoritativeRecommendationRows: Array.isArray(authoritativeRecommendationRows)
+            ? authoritativeRecommendationRows.map(toCompactHotelRow)
+            : [],
+          sharedHotelInventory: Array.isArray(sharedHotelInventory)
+            ? sharedHotelInventory.map(toCompactHotelRow)
+            : [],
+        },
         hotelTabs: (result.response.hotelTabs || []).map((tab: any) => ({
           groupType: tab.groupType,
           label: tab.label,
@@ -767,10 +903,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
               ? route.selected.selectedPriceSnapshot
               : {};
             const { selectedPriceSnapshot: _selectedPriceSnapshot, ...selected } = route.selected;
-            return { ...route, selected: { ...snapshot, ...selected } };
+            // The snapshot is the authoritative payable selection produced by
+            // the hotel availability rebuild. Legacy scalar columns can be
+            // stale (for example room count and supplement totals after a
+            // reset), so they must not overwrite the snapshot values.
+            return { ...route, selected: { ...selected, ...snapshot } };
           }),
         })),
-        hotelAvailability: compactAvailability,
       },
       changeSummary: result.changeSummary,
       financialSummary: {
@@ -2578,6 +2717,7 @@ async confirmQuotation(
       provider: dto.provider,
       hotel_name: dto.hotel_name,
       room_type_id: dto.room_type_id,
+      room_number: dto.room_number,
       room_qty: dto.room_qty,
       all_meal_plan: dto.all_meal_plan,
       breakfast_meal_plan: dto.breakfast_meal_plan,

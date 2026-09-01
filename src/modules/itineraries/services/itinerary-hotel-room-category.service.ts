@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
+import { resolveHotelOccupancyPricing } from '../utils/hotel-selection-pricing.util';
 
 @Injectable()
 export class ItineraryHotelRoomCategoryService {
@@ -21,7 +22,15 @@ export class ItineraryHotelRoomCategoryService {
   }) {
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: params.itinerary_plan_id },
-      select: { preferred_room_count: true, itinerary_quote_ID: true },
+      select: {
+        preferred_room_count: true,
+        itinerary_quote_ID: true,
+        total_adult: true,
+        total_extra_bed: true,
+        total_child_with_bed: true,
+        total_child_without_bed: true,
+        meal_plan_code: true,
+      },
     });
     if (!plan) throw new NotFoundException('Itinerary plan not found');
     const route = await this.prisma.dvi_itinerary_route_details.findUnique({
@@ -56,6 +65,9 @@ export class ItineraryHotelRoomCategoryService {
       matchingHotelRooms,
       params.provider,
       route.itinerary_route_date,
+      plan,
+      params.itinerary_plan_id,
+      params.itinerary_route_id,
     );
     if (availableRoomTypes.length === 0) throw new NotFoundException('No room types available for this hotel');
 
@@ -148,15 +160,17 @@ export class ItineraryHotelRoomCategoryService {
         })
         : undefined;
       const selectedRoomType = persistedRoomType || snapshotRoomType;
-      const roomTypeId = persistedRoomTypeId > 0
-        ? persistedRoomTypeId
-        : Number(selectedRoomType?.roomTypeId || 0);
+      // A room child can retain a category ID from a previous hotel after the
+      // parent hotel changes. Never expose that stale ID to the selector: if
+      // it is not part of this hotel's current categories, resolve the room
+      // from the persisted selected snapshot instead.
+      const roomTypeId = Number(selectedRoomType?.roomTypeId || 0);
       return {
         room_number: index + 1,
         itinerary_plan_hotel_room_details_ID: room.itinerary_plan_hotel_room_details_ID,
         room_type_id: roomTypeId || null,
         room_type_title: selectedRoomType?.roomTypeTitle ||
-          (roomTypeId > 0 ? String(roomTypeId) : selectedSnapshotRoomType),
+          selectedSnapshotRoomType,
         room_qty: 1,
         available_room_types: available,
       };
@@ -197,6 +211,7 @@ export class ItineraryHotelRoomCategoryService {
     breakfast_meal_plan?: number;
     lunch_meal_plan?: number;
     dinner_meal_plan?: number;
+    propagateContinuous?: boolean;
   }) {
     const route = await this.prisma.dvi_itinerary_route_details.findUnique({
       where: { itinerary_route_ID: params.itinerary_route_id },
@@ -205,7 +220,15 @@ export class ItineraryHotelRoomCategoryService {
     if (!route) throw new NotFoundException('Route not found');
     const planDetails = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_plan_ID: params.itinerary_plan_id, deleted: 0 },
-      select: { itinerary_quote_ID: true },
+      select: {
+        itinerary_quote_ID: true,
+        total_adult: true,
+        preferred_room_count: true,
+        total_extra_bed: true,
+        total_child_with_bed: true,
+        total_child_without_bed: true,
+        meal_plan_code: true,
+      },
     });
     if (!planDetails) throw new NotFoundException('Itinerary plan details not found');
 
@@ -213,6 +236,30 @@ export class ItineraryHotelRoomCategoryService {
     const matchingHotelRooms = this.matchHotelRooms(tboRoomDetails.rooms || [], params);
     const persistedSelectionParent = await this.findPersistedHotelParent(params);
     const persistedSnapshot = this.parseSelectedSnapshot(persistedSelectionParent?.selected_price_snapshot);
+    const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
+    let selectionMarginPercentage = Number(
+      (persistedSelectionParent as any)?.hotel_margin_percentage ||
+      (persistedSnapshot as any).hotelMarginPercentage || 0,
+    );
+    // A continuous-night parent can be newly created for the edited route.
+    // In that case its margin columns are still zero; inherit the configured
+    // margin from another active parent of the same continuous hotel stay.
+    if (selectionMarginPercentage <= 0 && hotelDetailsModel?.findMany) {
+      const siblingParents = await hotelDetailsModel.findMany({
+        where: {
+          itinerary_plan_id: params.itinerary_plan_id,
+          hotel_id: params.hotel_id,
+          group_type: params.group_type,
+          deleted: 0,
+          status: 1,
+        },
+        select: { hotel_margin_percentage: true },
+      });
+      selectionMarginPercentage = Math.max(
+        0,
+        ...(siblingParents as any[]).map((row) => Number(row.hotel_margin_percentage || 0)),
+      );
+    }
     const hotelRoom = matchingHotelRooms[0] || {
       hotelId: params.hotel_id,
       hotelCode: params.hotel_code || persistedSnapshot.hotelCode,
@@ -234,6 +281,9 @@ export class ItineraryHotelRoomCategoryService {
       matchingHotelRooms,
       params.provider,
       route.itinerary_route_date,
+      planDetails,
+      params.itinerary_plan_id,
+      params.itinerary_route_id,
     );
     const selectedRoomType = availableRoomTypes.find((roomType: any) =>
       Number(roomType.roomTypeId) === Number(params.room_type_id));
@@ -243,7 +293,28 @@ export class ItineraryHotelRoomCategoryService {
       Number(room.roomTypeId || 0) === Number(params.room_type_id || 0),
     ) || hotelRoom;
 
-    const roomRate = Number(selectedRoomType.pricePerNight || hotelRoom.pricePerNight || 0);
+    const canonicalProvider = ['offline', 'axisrooms', 'ax'].includes(
+      String(params.provider || hotelRoom.provider || '').trim().toLowerCase(),
+    );
+    const occupancyRates = canonicalProvider
+      ? await this.resolveOccupancyRates(
+        params.hotel_id,
+        Number(selectedRoomType.roomId || 0),
+        route.itinerary_route_date,
+      )
+      : null;
+    if (canonicalProvider && !occupancyRates) {
+      throw new NotFoundException('Selected room has no occupancy rate for this date');
+    }
+    const roomRate = Number(
+      occupancyRates
+        ? resolveHotelOccupancyPricing({
+          rates: occupancyRates,
+          roomCount: 1,
+          adultCount: Number((planDetails as any)?.total_adult || 0),
+        }).roomRate
+        : selectedRoomType.pricePerNight || hotelRoom.pricePerNight || 0,
+    );
     const now = new Date();
     const selectedRateOptionId =
       String(
@@ -252,7 +323,7 @@ export class ItineraryHotelRoomCategoryService {
         (selectedLiveRoomRow as any)?.bookingCode ||
         '',
       ).trim() || null;
-    const selectedPricePerNight = Number(
+    let selectedPricePerNight = Number(
       (selectedLiveRoomRow as any)?.pricePerNight ??
       (selectedLiveRoomRow as any)?.basePricePerNight ??
       roomRate ??
@@ -377,6 +448,144 @@ export class ItineraryHotelRoomCategoryService {
       activeRoomRows.reduce((sum: number, room: any) => sum + Math.max(Number(room.room_qty || 1), 1), 0),
       1,
     );
+    let occupancyPricing = occupancyRates
+      ? resolveHotelOccupancyPricing({
+        rates: occupancyRates,
+        roomCount: totalRooms,
+        adultCount: Number((planDetails as any)?.total_adult || 0),
+        extraBedCount: Number((planDetails as any)?.total_extra_bed || 0),
+        childWithBedCount: Number((planDetails as any)?.total_child_with_bed || 0),
+        childWithoutBedCount: Number((planDetails as any)?.total_child_without_bed || 0),
+        marginPercentage: Number(
+        selectionMarginPercentage,
+        ),
+      })
+      : null;
+    let roomTypeBreakdown: Array<Record<string, unknown>> | undefined;
+    let roomSelections: Array<Record<string, unknown>> | undefined;
+    // A multi-room category edit is saved one child row at a time. The old
+    // code priced the parent with the itinerary-wide occupancy on every call,
+    // so the last edited room type became the rate for all rooms. Rebuild the
+    // parent from the persisted physical-room rows instead. This branch is
+    // intentionally limited to multi-room stays; single-room selections keep
+    // the existing pricing path unchanged.
+    if (canonicalProvider && activeRoomRows.length > 1) {
+      const travellerRows = await this.prisma.dvi_itinerary_traveller_details.findMany({
+        where: { itinerary_plan_ID: params.itinerary_plan_id, deleted: 0, status: 1 },
+        select: { room_id: true, traveller_type: true, child_bed_type: true },
+      });
+      const occupancyByRoom = new Map<number, { adults: number; withBed: number; withoutBed: number }>();
+      for (const traveller of travellerRows as any[]) {
+        const roomNumber = Number(traveller.room_id || 0);
+        if (roomNumber <= 0) continue;
+        const current = occupancyByRoom.get(roomNumber) || { adults: 0, withBed: 0, withoutBed: 0 };
+        if (Number(traveller.traveller_type) === 1) current.adults += 1;
+        if (Number(traveller.traveller_type) === 2) {
+          if (Number(traveller.child_bed_type) === 2) current.withBed += 1;
+          else current.withoutBed += 1;
+        }
+        occupancyByRoom.set(roomNumber, current);
+      }
+      const marginPercentage = selectionMarginPercentage;
+      const roomBreakdowns: Array<Record<string, unknown>> = [];
+      const selectionRows: Array<Record<string, unknown>> = [];
+      let aggregateBase = 0;
+      let aggregateExtra = 0;
+      let aggregateWithBed = 0;
+      let aggregateWithoutBed = 0;
+      let aggregateMargin = 0;
+      for (let index = 0; index < activeRoomRows.length; index += 1) {
+        const room = activeRoomRows[index] as any;
+        const roomNumber = index + 1;
+        const roomId = Number(room.room_id || 0);
+        const roomTypeId = Number(room.room_type_id || 0);
+        const roomType = availableRoomTypes.find((candidate: any) => Number(candidate.roomTypeId) === roomTypeId);
+        const roomTitle = String(roomType?.roomTypeTitle || room.room_type_title || `Room ${roomNumber}`).trim();
+        const occupancy = occupancyByRoom.get(roomNumber) || { adults: 0, withBed: 0, withoutBed: 0 };
+        const rates = await this.resolveOccupancyRates(params.hotel_id, roomId, route.itinerary_route_date);
+        const pricing = rates
+          ? resolveHotelOccupancyPricing({
+            rates,
+            roomCount: 1,
+            adultCount: occupancy.adults,
+            extraBedCount: Number(room.extra_bed_count || 0),
+            childWithBedCount: occupancy.withBed,
+            childWithoutBedCount: occupancy.withoutBed,
+            marginPercentage,
+          })
+          : null;
+        const roomRate = pricing?.roomRate ?? Number(room.room_rate || 0);
+        const extraBedRate = pricing?.extraBedRate ?? Number(room.extra_bed_rate || 0);
+        const childWithBedRate = pricing?.childWithBedRate ?? Number(room.child_with_bed_charges || 0);
+        const childWithoutBedRate = pricing?.childWithoutBedRate ?? Number(room.child_without_bed_charges || 0);
+        const roomCost = pricing?.baseTotalPrice ?? roomRate;
+        const extraCost = pricing?.extraBedAmount ?? extraBedRate * Number(room.extra_bed_count || 0);
+        const withBedCost = pricing?.childWithBedAmount ?? childWithBedRate * occupancy.withBed;
+        const withoutBedCost = pricing?.childWithoutBedAmount ?? childWithoutBedRate * occupancy.withoutBed;
+        const subtotal = Number((roomCost + extraCost + withBedCost + withoutBedCost).toFixed(2));
+        const margin = pricing?.hotelMarginAmount ?? Number((subtotal * marginPercentage / 100).toFixed(2));
+        aggregateBase += roomCost;
+        aggregateExtra += extraCost;
+        aggregateWithBed += withBedCost;
+        aggregateWithoutBed += withoutBedCost;
+        aggregateMargin += margin;
+        selectionRows.push({
+          roomIndex: index,
+          roomNumber,
+          roomTypeId,
+          roomType: roomTitle,
+          roomId,
+          mealPlan: selectedMealPlan,
+        });
+        roomBreakdowns.push({
+          roomNumber,
+          roomTypeId,
+          roomType: roomTitle,
+          roomCount: 1,
+          adultCount: occupancy.adults,
+          roomOccupancy: occupancy.adults <= 1 ? 'SINGLE' : 'DOUBLE',
+          roomRate,
+          roomCost,
+          extraBedCount: Number(room.extra_bed_count || 0),
+          extraBedRate,
+          extraBedCost: Number(extraCost.toFixed(2)),
+          childWithBedCount: occupancy.withBed,
+          childWithBedRate,
+          childWithBedCost: Number(withBedCost.toFixed(2)),
+          childWithoutBedCount: occupancy.withoutBed,
+          childWithoutBedRate,
+          childWithoutBedCost: Number(withoutBedCost.toFixed(2)),
+          subtotal,
+          marginAmount: Number(margin.toFixed(2)),
+        });
+      }
+      roomSelections = selectionRows;
+      roomTypeBreakdown = roomBreakdowns;
+      const baseTotal = Number((aggregateBase + aggregateExtra + aggregateWithBed + aggregateWithoutBed).toFixed(2));
+      occupancyPricing = {
+        roomOccupancy: 'DOUBLE',
+        roomRate: Number((aggregateBase / totalRooms).toFixed(2)),
+        baseTotalPrice: Number(aggregateBase.toFixed(2)),
+        extraBedCount: activeRoomRows.reduce((sum: number, room: any) => sum + Number(room.extra_bed_count || 0), 0),
+        extraBedRate: 0,
+        extraBedAmount: Number(aggregateExtra.toFixed(2)),
+        childWithBedCount: travellerRows.filter((row: any) => Number(row.traveller_type) === 2 && Number(row.child_bed_type) === 2).length,
+        childWithBedRate: 0,
+        childWithBedAmount: Number(aggregateWithBed.toFixed(2)),
+        childWithoutBedCount: travellerRows.filter((row: any) => Number(row.traveller_type) === 2 && Number(row.child_bed_type) !== 2).length,
+        childWithoutBedRate: 0,
+        childWithoutBedAmount: Number(aggregateWithoutBed.toFixed(2)),
+        hotelMarginBaseAmount: baseTotal,
+        hotelMarginPercentage: marginPercentage,
+        hotelMarginAmount: Number(aggregateMargin.toFixed(2)),
+        totalPrice: Number((baseTotal + aggregateMargin).toFixed(2)),
+      };
+    }
+    if (occupancyPricing) {
+      // This field is the complete payable amount for this itinerary day,
+      // not a per-room rate. The room rate remains available separately.
+      selectedPricePerNight = occupancyPricing.totalPrice;
+    }
     // Room-category edits must not recreate the selection from a partial
     // room-detail response. AxisRooms/STAAH cards often have no live room
     // detail row, and a room-only edit must preserve the selected meal/rate
@@ -436,8 +645,27 @@ export class ItineraryHotelRoomCategoryService {
         '',
       ).trim() || null,
       totalRooms,
+      ...(roomSelections ? { roomSelections } : {}),
+      ...(roomTypeBreakdown ? { roomTypeBreakdown } : {}),
+      ...(occupancyPricing ? {
+        roomRate: occupancyPricing.roomRate,
+        baseTotalPrice: occupancyPricing.baseTotalPrice,
+        hotelMarginBaseAmount: occupancyPricing.hotelMarginBaseAmount,
+        hotelMarginPercentage: occupancyPricing.hotelMarginPercentage,
+        hotelMarginAmount: occupancyPricing.hotelMarginAmount,
+        hotelMarginTotalAmount: occupancyPricing.hotelMarginAmount,
+        extraBedCount: occupancyPricing.extraBedCount,
+        extraBedRate: occupancyPricing.extraBedRate,
+        extraBedAmount: occupancyPricing.extraBedAmount,
+        childWithBedCount: occupancyPricing.childWithBedCount,
+        childWithBedRate: occupancyPricing.childWithBedRate,
+        childWithBedAmount: occupancyPricing.childWithBedAmount,
+        childWithoutBedCount: occupancyPricing.childWithoutBedCount,
+        childWithoutBedRate: occupancyPricing.childWithoutBedRate,
+        childWithoutBedAmount: occupancyPricing.childWithoutBedAmount,
+        totalPrice: occupancyPricing.totalPrice,
+      } : {}),
     });
-    const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
     const persistedParent = hotelDetailsModel?.findFirst
       ? await hotelDetailsModel.findFirst({
         where: { itinerary_plan_hotel_details_ID: hotelDetailsId },
@@ -445,6 +673,17 @@ export class ItineraryHotelRoomCategoryService {
       })
       : null;
     const persistedHotelId = Number(params.hotel_id || persistedParent?.hotel_id || 0);
+    const canonicalPricingData = occupancyPricing ? {
+      selected_price_per_night: selectedPricePerNight,
+      selected_total_price: occupancyPricing.totalPrice,
+      total_room_cost: occupancyPricing.baseTotalPrice,
+      total_extra_bed_cost: occupancyPricing.extraBedAmount,
+      total_childwith_bed_cost: occupancyPricing.childWithBedAmount,
+      total_childwithout_bed_cost: occupancyPricing.childWithoutBedAmount,
+      hotel_margin_percentage: occupancyPricing.hotelMarginPercentage,
+      hotel_margin_rate: occupancyPricing.hotelMarginAmount,
+      total_hotel_cost: occupancyPricing.totalPrice,
+    } : {};
     if (hotelDetailsModel?.update) await hotelDetailsModel.update({
       where: { itinerary_plan_hotel_details_ID: hotelDetailsId },
       data: {
@@ -453,19 +692,135 @@ export class ItineraryHotelRoomCategoryService {
         total_no_of_rooms: totalRooms,
         hotel_provider: String((selectedLiveRoomRow as any)?.provider || 'staah').trim().toLowerCase(),
         selected_rate_option_id: selectedRateOptionId,
-        selected_price_per_night: selectedPricePerNight,
-        selected_total_price: selectedTotalPrice,
+        selected_price_per_night: occupancyPricing ? selectedPricePerNight : selectedPricePerNight,
+        selected_total_price: occupancyPricing ? occupancyPricing.totalPrice : selectedTotalPrice,
         selected_currency: String((selectedLiveRoomRow as any)?.currency || 'INR').trim() || null,
         selected_price_snapshot: selectedSnapshot,
+        ...canonicalPricingData,
         updatedon: now,
       },
     });
+    if (params.propagateContinuous !== false) {
+      await this.propagateContinuousRoomCategory({
+        ...params,
+        itinerary_plan_hotel_details_ID: hotelDetailsId,
+        room_type_id: params.room_type_id,
+      });
+    }
     return {
       success: true,
       message: 'Room category updated successfully',
       roomTypeName: selectedRoomType.roomTypeTitle,
       itinerary_plan_hotel_details_ID: hotelDetailsId,
+      ...(occupancyPricing ? {
+        financialSummary: {
+          roomCost: occupancyPricing.baseTotalPrice,
+          extraBedCost: occupancyPricing.extraBedAmount,
+          childWithBedCost: occupancyPricing.childWithBedAmount,
+          childWithoutBedCost: occupancyPricing.childWithoutBedAmount,
+          subtotal: occupancyPricing.hotelMarginBaseAmount,
+          margin: occupancyPricing.hotelMarginAmount,
+          grandTotal: occupancyPricing.totalPrice,
+        },
+      } : {}),
     };
+  }
+
+  /**
+   * Room-category confirmation is submitted once per physical room, but a
+   * continuous stay has one room allocation across all linked nights. Mirror
+   * the same room number/category to adjacent active hotel parents, then let
+   * the normal update path calculate that night's own rate and supplements.
+   */
+  private async propagateContinuousRoomCategory(params: {
+    itinerary_plan_hotel_details_ID: number;
+    itinerary_plan_id: number;
+    itinerary_route_id: number;
+    hotel_id: number;
+    group_type: number;
+    hotel_code?: string;
+    provider?: string;
+    hotel_name?: string;
+    room_type_id: number;
+    room_number?: number;
+    room_qty?: number;
+    all_meal_plan?: number;
+    breakfast_meal_plan?: number;
+    lunch_meal_plan?: number;
+    dinner_meal_plan?: number;
+  }): Promise<void> {
+    const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
+    if (!hotelDetailsModel?.findMany) return;
+    const currentRoute = await this.prisma.dvi_itinerary_route_details.findUnique({
+      where: { itinerary_route_ID: params.itinerary_route_id },
+      select: { itinerary_route_date: true },
+    });
+    if (!currentRoute?.itinerary_route_date) return;
+    const parents = await hotelDetailsModel.findMany({
+      where: {
+        itinerary_plan_id: params.itinerary_plan_id,
+        hotel_id: params.hotel_id,
+        group_type: params.group_type,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        itinerary_plan_hotel_details_ID: true,
+        itinerary_route_id: true,
+        itinerary_route_date: true,
+        hotel_provider: true,
+        hotel_code: true,
+      },
+    });
+    const currentDate = new Date(currentRoute.itinerary_route_date).getTime();
+    const provider = String(params.provider || '').trim().toLowerCase();
+    const code = this.normalizeText(params.hotel_code);
+    for (const parent of parents as any[]) {
+      const routeId = Number(parent.itinerary_route_id || 0);
+      if (!routeId || routeId === Number(params.itinerary_route_id)) continue;
+      const parentDate = new Date(parent.itinerary_route_date).getTime();
+      const dayDistance = Math.abs(parentDate - currentDate) / 86400000;
+      if (!Number.isFinite(dayDistance) || dayDistance !== 1) continue;
+      const parentProvider = String(parent.hotel_provider || '').trim().toLowerCase();
+      const parentCode = this.normalizeText(parent.hotel_code);
+      if (provider && parentProvider && provider !== parentProvider) continue;
+      if (code && parentCode && code !== parentCode) continue;
+      await this.updateRoomCategory({
+        ...params,
+        itinerary_plan_hotel_details_ID: Number(parent.itinerary_plan_hotel_details_ID || 0),
+        itinerary_plan_hotel_room_details_ID: 0,
+        itinerary_route_id: routeId,
+        propagateContinuous: false,
+      });
+    }
+  }
+
+  /**
+   * Occupancy rates are the sole database source for canonical/offline room
+   * pricing. Price-book rows are deliberately not consulted here.
+   */
+  private async resolveOccupancyRates(hotelId: number, roomId: number, routeDate?: Date | null) {
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!occupancyModel?.findMany || !hotelId || !roomId || !routeDate) return null;
+    const date = new Date(routeDate);
+    const rows = await occupancyModel.findMany({
+      where: {
+        hotel_id: hotelId,
+        room_id: roomId,
+        start_date: { lte: date },
+        end_date: { gte: date },
+      },
+      select: { occupancy_rates: true, start_date: true, received_at: true },
+      orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+    });
+    const row = (rows || []).find((candidate: any) => {
+      const rates = candidate?.occupancy_rates;
+      return rates && typeof rates === 'object' &&
+        Object.values(rates).some((value) => Number(value) > 0);
+    });
+    return row?.occupancy_rates && typeof row.occupancy_rates === 'object'
+      ? row.occupancy_rates as Record<string, unknown>
+      : null;
   }
 
   /**
@@ -662,6 +1017,9 @@ export class ItineraryHotelRoomCategoryService {
     matchingHotelRooms: any[],
     provider?: string,
     routeDate?: Date | null,
+    plan?: any,
+    planId?: number,
+    routeId?: number,
   ) {
     const roomModel = (this.prisma as any).dvi_hotel_rooms;
     const hotelRooms = roomModel?.findMany ? await roomModel.findMany({
@@ -773,36 +1131,87 @@ export class ItineraryHotelRoomCategoryService {
       }
     }
 
-    // Offline/canonical room categories must carry their DB price into the
-    // update path; otherwise changing a room type silently writes a zero rate.
-    // Use the route date's price-book column so the API recalculates the
-    // persisted room rate and totals from DB data.
-    if (routeDate && availableRoomTypes.length > 0) {
-      const priceModel = (this.prisma as any).dvi_hotel_room_price_book;
-      if (priceModel?.findMany) {
-        const dayColumn = `day_${routeDate.getDate()}`;
-        const priceRows = await priceModel.findMany({
-          where: {
-            hotel_id: hotelId,
-            room_type_id: { in: availableRoomTypes.map((roomType) => roomType.roomTypeId) },
-            year: String(routeDate.getFullYear()),
-            month: routeDate.toLocaleString('en-US', { month: 'long' }),
-            price_type: 0,
-            status: 1,
-            deleted: 0,
-          },
-          select: { room_type_id: true, [dayColumn]: true } as any,
-        });
-        const pricesByRoomType = new Map<number, number>();
-        for (const row of priceRows as any[]) {
-          const price = Number(row[dayColumn] || 0);
-          if (price > 0 && !pricesByRoomType.has(Number(row.room_type_id))) {
-            pricesByRoomType.set(Number(row.room_type_id), price);
+    // Canonical/offline room categories use occupancy-rate rows. The legacy
+    // room price-book table is intentionally not part of itinerary pricing.
+    if (
+      routeDate &&
+      availableRoomTypes.length > 0 &&
+      ['offline', 'axisrooms', 'ax'].includes(providerName)
+    ) {
+      for (const roomType of availableRoomTypes) {
+        const rates = await this.resolveOccupancyRates(hotelId, roomType.roomId, routeDate);
+        if (!rates) continue;
+        roomType.pricePerNight = Number(rates.DOUBLE || rates.SINGLE || roomType.pricePerNight || 0);
+      }
+
+      // The modal edits every room in a continuous stay. A price-book rate
+      // alone is not enough: the concrete room must have a positive current
+      // inventory and all required occupancy rates on every linked night.
+      // Otherwise a room such as Deluxe can appear selectable even though its
+      // inventory is zero on the first night.
+      if (providerName === 'axisrooms' || providerName === 'ax') {
+        const routeModel = (this.prisma as any).dvi_itinerary_route_details;
+        const routes = routeModel?.findMany
+          ? await routeModel.findMany({
+            where: { itinerary_plan_ID: Number(planId || 0), deleted: 0, status: 1 },
+            select: { itinerary_route_ID: true, location_id: true, itinerary_route_date: true },
+            orderBy: { itinerary_route_date: 'asc' },
+          })
+          : [];
+        const anchorIndex = routes.findIndex((route: any) => Number(route.itinerary_route_ID) === Number(routeId));
+        const stayDates: Date[] = [new Date(routeDate)];
+        if (anchorIndex >= 0) {
+          const anchor = routes[anchorIndex];
+          for (let index = anchorIndex + 1; index < routes.length; index += 1) {
+            const previous = routes[index - 1];
+            const current = routes[index];
+            const previousDate = new Date(previous.itinerary_route_date).getTime();
+            const currentDate = new Date(current.itinerary_route_date).getTime();
+            if (Number(previous.location_id) !== Number(current.location_id) ||
+              currentDate - previousDate !== 24 * 60 * 60 * 1000) break;
+            stayDates.push(new Date(current.itinerary_route_date));
           }
         }
+        const roomCount = Math.max(Number(plan?.preferred_room_count || 1), 1);
+        const adultsPerRoom = Math.max(Math.ceil(Number(plan?.total_adult || 0) / roomCount), 1);
+        const baseOccupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : 'DOUBLE';
+        const requiredKeys = [
+          baseOccupancyKey,
+          ...(Number(plan?.total_extra_bed || 0) > 0 ? ['EXTRABED'] : []),
+          ...(Number(plan?.total_child_with_bed || 0) > 0 ? ['CHILD_WITH_BED'] : []),
+          ...(Number(plan?.total_child_without_bed || 0) > 0 ? ['CHILD_WITHOUT_BED'] : []),
+        ];
+        const mealPlan = String(plan?.meal_plan_code || 'CP').trim().toUpperCase();
+        const rateplanIds = [`${mealPlan}_PLAN`, 'CP_PLAN'];
+        const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+        const availabilityModel = (this.prisma as any).dvi_hotel_room_availability;
+        const eligible: typeof availableRoomTypes = [];
         for (const roomType of availableRoomTypes) {
-          roomType.pricePerNight = pricesByRoomType.get(roomType.roomTypeId) || roomType.pricePerNight;
+          let roomEligible = true;
+          for (const date of stayDates) {
+            const [rateRows, inventoryRows] = await Promise.all([
+              occupancyModel.findMany({
+                where: { hotel_id: hotelId, room_id: roomType.roomId, rateplan_id: { in: rateplanIds }, start_date: { lte: date }, end_date: { gte: date } },
+                select: { rateplan_id: true, occupancy_rates: true, received_at: true, start_date: true },
+                orderBy: [{ received_at: 'desc' }, { start_date: 'desc' }],
+              }),
+              availabilityModel.findMany({
+                where: { hotel_id: hotelId, room_id: roomType.roomId, start_date: { lte: date }, end_date: { gte: date } },
+                select: { free: true, received_at: true, start_date: true },
+                orderBy: [{ received_at: 'desc' }, { start_date: 'desc' }],
+              }),
+            ]);
+            const rates = rateRows.find((row: any) => String(row.rateplan_id) === `${mealPlan}_PLAN`) || rateRows[0];
+            const occupancyRates = rates?.occupancy_rates && typeof rates.occupancy_rates === 'object' ? rates.occupancy_rates : {};
+            const inventory = inventoryRows[0];
+            if (!rates || requiredKeys.some((key) => Number(occupancyRates[key]) <= 0) || !inventory || Number(inventory.free) < roomCount) {
+              roomEligible = false;
+              break;
+            }
+          }
+          if (roomEligible) eligible.push(roomType);
         }
+        availableRoomTypes.splice(0, availableRoomTypes.length, ...eligible);
       }
     }
 

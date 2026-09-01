@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildHotelSelectionState,
   resolveHotelRequiredRoutes,
+  synchronizeHotelTabTotals,
 } from '../src/modules/itineraries/utils/hotel-selection-view-state.util';
 
 const routes = [
@@ -56,6 +57,86 @@ test('builds a complete two-night authoritative group without recalculating its 
   assert.equal(state[0].routes[0].selected?.selectedPriceSnapshot?.hotelMarginAmount, 840);
 });
 
+test('DVI20260891 aligns hotelTabs with hotelSelectionState and deduplicates Day 1/2', () => {
+  const dviRoutes = [
+    { routeId: 1, routeDate: '2026-08-31' },
+    { routeId: 2, routeDate: '2026-09-01' },
+    { routeId: 3, routeDate: '2026-09-02' },
+    { routeId: 4, routeDate: '2026-09-03' },
+  ];
+  const rows = [
+    selectedRow(1, { canonicalHotelId: 10, hotelName: 'MAMALLA HERITAGE', selectionKey: 'offline:10:cp', totalPrice: 60637.5, selectedPriceSnapshot: { provider: 'offline', canonicalHotelId: 10, rateOptionId: 'offline:10:cp', totalPrice: 60637.5, pricePerNight: 60637.5 } }),
+    selectedRow(2, { canonicalHotelId: 10, hotelName: 'MAMALLA HERITAGE', selectionKey: 'offline:10:cp', totalPrice: 60637.5, selectedPriceSnapshot: { provider: 'offline', canonicalHotelId: 10, rateOptionId: 'offline:10:cp', totalPrice: 60637.5, pricePerNight: 60637.5 } }),
+    selectedRow(3, { canonicalHotelId: 20, hotelName: 'MGM Beach Resorts', selectionKey: 'tbo:mgm:deluxe:cp', totalPrice: 871765.73, selectedPriceSnapshot: { provider: 'tbo', canonicalHotelId: 20, providerHotelCode: 'mgm', rateOptionId: 'tbo:mgm:deluxe:cp', totalPrice: 871765.73, pricePerNight: 871765.73 } }),
+    selectedRow(4, { canonicalHotelId: 30, hotelName: 'GREEN PALACE', selectionKey: 'offline:30:cp', totalPrice: 20900, selectedPriceSnapshot: { provider: 'offline', canonicalHotelId: 30, rateOptionId: 'offline:30:cp', totalPrice: 20900, pricePerNight: 20900 } }),
+  ];
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 81537.5 }],
+    rows,
+    requiredRoutes: dviRoutes,
+  });
+  const tabs = synchronizeHotelTabTotals(
+    [{ groupType: 1, label: 'Recommended #1', totalAmount: 81537.5 }],
+    state,
+  );
+
+  assert.equal(state[0].routes[2].selected?.hotelName, 'MGM Beach Resorts');
+  assert.equal(state[0].totalAmount, 953303.23);
+  assert.equal(tabs[0].totalAmount, 953303.23);
+});
+
+test('DVI20260891 projects a complete MGM stay through Day 3 without double counting it', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 41112.5 }],
+    rows: [
+      selectedRow(11045, {
+        groupType: 1,
+        provider: 'offline',
+        canonicalHotelId: 277,
+        hotelName: 'MAMALLA HERITAGE',
+        completeStayBookable: true,
+        completeStayRouteIds: [11045, 11046, 11047],
+        selectionKey: 'offline:277:cp:2026-08-31:2026-09-03',
+        totalPrice: 20212.5,
+        selectedPriceSnapshot: {
+          provider: 'offline',
+          canonicalHotelId: 277,
+          hotelName: 'MAMALLA HERITAGE',
+          rateOptionId: 'offline:277:733:445:2026-08-31:2026-09-03',
+          totalPrice: 20212.5,
+          pricePerNight: 20212.5,
+        },
+      }),
+      selectedRow(11048, {
+        groupType: 1,
+        provider: 'offline',
+        canonicalHotelId: 315,
+        hotelName: 'GREEN PALACE',
+        selectionKey: 'offline:315:cp',
+        totalPrice: 20900,
+        selectedPriceSnapshot: {
+          provider: 'offline', canonicalHotelId: 315, hotelName: 'GREEN PALACE',
+          rateOptionId: 'offline:315:cp', totalPrice: 20900, pricePerNight: 20900,
+        },
+      }),
+    ],
+    requiredRoutes: [
+      { routeId: 11045, routeDate: '2026-08-31' },
+      { routeId: 11046, routeDate: '2026-09-01' },
+      { routeId: 11047, routeDate: '2026-09-02' },
+      { routeId: 11048, routeDate: '2026-09-03' },
+    ],
+  });
+
+  assert.deepEqual(state[0].routes.map((route) => route.selectionStatus), [
+    'SELECTED', 'SELECTED', 'SELECTED', 'SELECTED',
+  ]);
+  assert.deepEqual(state[0].routes.slice(0, 3).map((route) => route.selected?.hotelName), [
+    'MAMALLA HERITAGE', 'MAMALLA HERITAGE', 'MAMALLA HERITAGE',
+  ]);
+  assert.equal(state[0].totalAmount, 41112.5);
+});
+
 test('marks a partial legacy two-night group unresolved even when a numeric total exists', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 5040 }],
@@ -66,6 +147,184 @@ test('marks a partial legacy two-night group unresolved even when a numeric tota
   assert.equal(state[0].selectionStatus, 'UNRESOLVED');
   assert.deepEqual(state[0].routes.map((route) => route.selectionStatus), ['SELECTED', 'UNRESOLVED']);
   assert.equal(state[0].routes[1].selected, null);
+});
+
+test('keeps nightly route payable separate from the full logical-stay total', () => {
+  const nightly = (date: string) => ({
+    date,
+    baseAmount: 8008.17,
+    sellAmount: 8808.99,
+    pricePerNight: 8808.99,
+  });
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 17617.98 }],
+    rows: [{
+      ...selectedRow(10145, {
+        provider: 'tbo',
+        canonicalHotelId: 999,
+        hotelName: 'Hotel Surguru',
+        selectionOrigin: 'AUTO_SELECTED',
+        completeStayBookable: true,
+        completeStayRouteIds: [10145, 10146],
+        selectedPriceSnapshot: {
+          provider: 'tbo',
+          roomCount: 1,
+          baseTotalPrice: 8008.17,
+          hotelMarginPercentage: 10,
+          pricePerNight: 8808.99,
+          totalPrice: 8808.99,
+          nightlyRates: [nightly('2026-08-12'), nightly('2026-08-13')],
+        },
+      }),
+    }],
+    requiredRoutes: routes,
+  });
+
+  assert.deepEqual(state[0].routes.map((route) => route.selected?.pricePerNight), [8808.99, 8808.99]);
+  assert.equal(state[0].routes[0].selected?.selectedTotalPrice, 17617.98);
+  assert.equal(state[0].totalAmount, 17617.98);
+});
+
+test('does not treat an empty persisted placeholder as a selected hotel', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 2, label: 'Recommended #2', totalAmount: 100 }],
+    rows: [{
+      groupType: 2, itineraryRouteId: 10145, date: '2026-08-12', selectionId: 21918,
+      isSelected: false, hotelId: 0, hotelName: '', provider: null,
+    }],
+    requiredRoutes: [{ routeId: 10145, routeDate: '2026-08-12' }],
+  });
+
+  assert.equal(state[0].routes[0].selectionStatus, 'UNRESOLVED');
+  assert.equal(state[0].routes[0].selected, null);
+});
+
+test('canonical room pricing wins over stale nightly baseAmount', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 40068 }],
+    rows: [{
+      groupType: 1, itineraryRouteId: 11326, date: '2026-09-03', provider: 'axisrooms',
+      hotelId: 232, hotelCode: 'AURUM', hotelName: 'AURUM RESORT', roomType: 'Garden Cottage',
+      mealPlan: 'CP', isSelected: true, selectionOrigin: 'AUTO_SELECTED',
+      selectedPriceSnapshot: {
+        provider: 'axisrooms', roomRate: 6800, roomCount: 2, totalRoomCost: 13600,
+        baseTotalPrice: 12100, extraBedAmount: 3500, childWithBedAmount: 1000,
+        childWithoutBedAmount: 800, hotelMarginPercentage: 6,
+        nightlyRates: [{ date: '2026-09-03', baseAmount: 12100, sellAmount: 12100 }],
+      },
+    }],
+    requiredRoutes: [{ routeId: 11326, routeDate: '2026-09-03' }],
+  });
+
+  assert.equal(state[0].routes[0].selected?.totalPrice, 20034);
+  assert.equal(state[0].routes[0].selected?.selectedPriceSnapshot?.totalRoomCost, 13600);
+});
+
+test('legacy continuous offline snapshot projects per-night room and supplement pricing', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 11440 }],
+    rows: [{
+      groupType: 1,
+      itineraryRouteId: 11322,
+      date: '2026-09-05',
+      provider: 'offline',
+      hotelId: 439,
+      hotelCode: '439',
+      hotelName: 'JUNGLE PARK RESORT',
+      roomType: 'Jungle View Deluxe',
+      mealPlan: 'CP',
+      isSelected: true,
+      selectionOrigin: 'AUTO_SELECTED',
+      completeStayBookable: true,
+      completeStayRouteIds: [11322, 11323],
+      selectedPriceSnapshot: {
+        provider: 'offline',
+        roomRate: 3600,
+        roomCount: 1,
+        totalRoomCost: 2000,
+        baseTotalPrice: 2000,
+        extraBedCount: 1,
+        extraBedRate: 1000,
+        extraBedAmount: 2000,
+        childWithBedCount: 0,
+        childWithBedRate: 1000,
+        childWithBedAmount: 0,
+        childWithoutBedCount: 1,
+        childWithoutBedRate: 600,
+        childWithoutBedAmount: 1200,
+        hotelMarginPercentage: 10,
+        pricePerNight: 7480,
+        totalPrice: 5720,
+        nightlyRates: [
+          { date: '2026-09-05', baseAmount: 3600, marginPercentage: 10, marginAmount: 360, sellAmount: 3960 },
+          { date: '2026-09-06', baseAmount: 3600, marginPercentage: 10, marginAmount: 360, sellAmount: 3960 },
+        ],
+      },
+    }],
+    requiredRoutes: [
+      { routeId: 11322, routeDate: '2026-09-05' },
+      { routeId: 11323, routeDate: '2026-09-06' },
+    ],
+  });
+
+  for (const route of state[0].routes) {
+    assert.equal(route.selected?.pricePerNight, 5720);
+    assert.equal(route.selected?.totalPrice, 5720);
+    assert.equal(route.selected?.selectedPriceSnapshot?.roomRate, 3600);
+    assert.equal(route.selected?.selectedPriceSnapshot?.totalRoomCost, 3600);
+    assert.equal(route.selected?.selectedPriceSnapshot?.extraBedAmount, 1000);
+    assert.equal(route.selected?.selectedPriceSnapshot?.childWithoutBedAmount, 600);
+    assert.equal(route.selected?.selectedPriceSnapshot?.hotelMarginBaseAmount, 5200);
+    assert.equal(route.selected?.selectedPriceSnapshot?.hotelMarginAmount, 520);
+  }
+});
+
+test('projects one persisted continuous-stay selection to every authoritative route', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 8140 }],
+    rows: [{
+      groupType: 1,
+      itineraryRouteId: 11285,
+      date: '2026-09-01',
+      provider: 'axisrooms',
+      hotelCode: '435',
+      hotelName: 'CLOUDS VALLEY',
+      roomType: 'Valley View Double',
+      mealPlan: 'CP',
+      isSelected: true,
+      selectionOrigin: 'AUTO_SELECTED',
+      selectedPriceSnapshot: JSON.stringify({
+        provider: 'axisrooms',
+        hotelCode: '435',
+        hotelName: 'CLOUDS VALLEY',
+        roomType: 'Valley View Double',
+        mealPlan: 'CP',
+        authoritativeStayKey: '11285|2026-09-01|2026-09-03',
+        authoritativeParentRouteId: 11285,
+        authoritativeRouteIds: [11285, 11286],
+        authoritativeCheckInDate: '2026-09-01',
+        authoritativeCheckOutDate: '2026-09-03',
+        totalRooms: 1,
+        hotelMarginPercentage: 0,
+        nightlyRates: [
+          { date: '2026-09-01', baseAmount: 3960, sellAmount: 3960 },
+          { date: '2026-09-02', baseAmount: 4180, sellAmount: 4180 },
+        ],
+        baseTotalPrice: 3960,
+        pricePerNight: 3960,
+        totalPrice: 8140,
+      }),
+    }],
+    requiredRoutes: [
+      { routeId: 11285, routeDate: '2026-09-01' },
+      { routeId: 11286, routeDate: '2026-09-02' },
+    ],
+  });
+
+  assert.deepEqual(state[0].routes.map((route) => route.selectionStatus), ['SELECTED', 'SELECTED']);
+  assert.deepEqual(state[0].routes.map((route) => route.selected?.hotelName), ['CLOUDS VALLEY', 'CLOUDS VALLEY']);
+  assert.equal(state[0].routes[1].selected?.selectedPriceSnapshot?.baseTotalPrice, 4180);
+  assert.equal(state[0].routes[1].selected?.totalPrice, 4180);
 });
 
 test('returns explicit unavailable route state without exposing a fake selected object', () => {
@@ -242,9 +501,10 @@ test('serializes the complete hard-reload selected-row contract', () => {
   assert.deepEqual(
     Object.keys(restored.hotelSelectionState[0].routes[0].selected).sort(),
     [
-      'canonicalHotelId', 'hotelCode', 'hotelName', 'mealPlan', 'pricePerNight',
+      'canonicalHotelId', 'hotelCode', 'hotelMarginAmount', 'hotelMarginBaseAmount', 'hotelMarginPercentage', 'hotelName', 'mealPlan', 'pricePerNight',
       'provider', 'providerHotelCode', 'rateOptionId', 'selectedPriceSnapshot',
       'selectionKey', 'supplierBookingCode', 'totalPrice', 'roomType',
+      'roomRate', 'totalRoomCost', 'selectedPricePerNight', 'selectedTotalPrice',
     ].sort(),
   );
 });

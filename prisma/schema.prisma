@@ -3995,6 +3995,7 @@ model dvi_itinerary_plan_hotel_details {
   selected_price_per_night               Float?    @db.Float
   selected_total_price                   Float?    @db.Float
   selected_currency                      String?   @db.VarChar(8)
+  selection_origin                       String?   @db.VarChar(20)
   selected_price_snapshot                String?   @db.LongText
   hotel_approval_status                  String    @default("NOT_REQUESTED") @db.VarChar(32)
   hotel_approval_requested_at            DateTime? @db.DateTime(0)
@@ -4543,6 +4544,24 @@ model dvi_itinerary_route_details {
   @@index([updatedon], map: "idx_dvi_itinerary_route_details_updatedon")
   @@index([location_id], map: "idx_route_location")
   @@index([itinerary_plan_ID, itinerary_route_date], map: "idx_route_plan")
+}
+
+model dvi_itinerary_manual_hotspot_displacement {
+  displacement_ID          Int      @id @default(autoincrement())
+  itinerary_plan_ID        Int      @default(0)
+  itinerary_route_ID       Int      @default(0)
+  manual_hotspot_ID        Int      @default(0)
+  displaced_hotspot_ID     Int      @default(0)
+  createdby                Int      @default(0)
+  createdon                DateTime? @db.DateTime(0)
+  updatedon                DateTime? @db.DateTime(0)
+  status                   Int      @default(1) @db.TinyInt
+  deleted                  Int      @default(0) @db.TinyInt
+
+  @@unique([itinerary_plan_ID, itinerary_route_ID, manual_hotspot_ID, displaced_hotspot_ID], map: "uq_manual_hotspot_displacement")
+  @@index([itinerary_plan_ID, itinerary_route_ID], map: "idx_manual_hotspot_displacement_route")
+  @@index([manual_hotspot_ID], map: "idx_manual_hotspot_displacement_manual")
+  @@index([displaced_hotspot_ID], map: "idx_manual_hotspot_displacement_displaced")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -5957,11 +5976,15 @@ model tbo_hotel_master {
   status          Int?      @default(1) @db.TinyInt
   hotel_latitude  String    @default("") @db.VarChar(50)
   hotel_longitude String    @default("") @db.VarChar(50)
+  is_priority     Int       @default(0) @db.TinyInt
+  amenities       Json?
+  reviews         Json?
 
   @@index([tbo_city_code], map: "idx_tbo_hotel_master_city_code")
   @@index([star_rating], map: "idx_tbo_hotel_master_star_rating")
   @@index([created_at], map: "idx_tbo_hotel_master_created_at")
   @@index([hotel_name], map: "idx_tbo_hotel_master_hotel_name")
+  @@index([is_priority], map: "idx_tbo_hotel_master_priority")
 }
 
 /// TBO Hotel Booking Confirmations
@@ -6619,4 +6642,24 @@ model dvi_itinerary_plan_hotel_approval_history {
   @@index([itinerary_plan_hotel_details_id], map: "idx_hotel_approval_history_selection")
   @@index([new_approval_status], map: "idx_hotel_approval_history_status")
   @@map("dvi_itinerary_plan_hotel_approval_history")
+}
+
+model public_itinerary_links {
+  id               Int       @id @default(autoincrement())
+  tokenHash        String    @unique @db.VarChar(64)
+  itineraryPlanId  Int
+  groupType        Int
+  createdAt        DateTime  @default(now()) @db.DateTime(0)
+  expiresAt        DateTime  @db.DateTime(0)
+  revokedAt        DateTime? @db.DateTime(0)
+  createdByUserId  Int?
+  createdByAgentId Int?
+  firstAccessedAt  DateTime? @db.DateTime(0)
+  lastAccessedAt   DateTime? @db.DateTime(0)
+  accessCount      Int       @default(0)
+
+  @@index([itineraryPlanId], map: "idx_public_itinerary_plan")
+  @@index([expiresAt], map: "idx_public_itinerary_expires")
+  @@index([createdByAgentId], map: "idx_public_itinerary_created_by_agent")
+  @@map("public_itinerary_links")
 }

@@ -123,6 +123,83 @@ test('rejects a child-route one-night rate when the logical stay needs multiple 
   assert.match(packages[0].stayResults[0].reason || '', /full logical stay/i);
 });
 
+test('aggregates verified route-night rows into one continuous stay at actual nightly totals', () => {
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 11275, itinerary_route_date: '2026-09-01', next_visiting_location: 'Munnar' },
+      { itinerary_route_ID: 11276, itinerary_route_date: '2026-09-02', next_visiting_location: 'Munnar' },
+    ],
+    hotelsByRoute: new Map([
+      [11275, [option('Clouds Valley', 3960, 'CP', {
+        canonicalHotelId: 95,
+        roomType: 'Deluxe',
+        itineraryRouteId: 11275,
+        routeId: 11275,
+        routeIds: [11275],
+        checkInDate: '2026-09-01',
+        checkOutDate: '2026-09-02',
+        rateId: 'CP_PLAN',
+        rateOptionId: 'clouds-cp-2026-09-01',
+        pricePerNight: 3960,
+      })]],
+      [11276, [option('Clouds Valley', 4180, 'CP', {
+        canonicalHotelId: 95,
+        roomType: 'Deluxe',
+        itineraryRouteId: 11276,
+        routeId: 11276,
+        routeIds: [11276],
+        checkInDate: '2026-09-02',
+        checkOutDate: '2026-09-03',
+        rateId: 'CP_PLAN',
+        rateOptionId: 'clouds-cp-2026-09-02',
+        pricePerNight: 4180,
+      })]],
+    ]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  const selected = packages[0].hotels[0];
+  assert.equal(packages[0].complete, true);
+  assert.equal(selected.hotelName, 'Clouds Valley');
+  assert.deepEqual(selected.routeIds, [11275, 11276]);
+  assert.equal(selected.exactFullStayTotal, 8140);
+  assert.equal(selected.totalStayPrice, 8140);
+  assert.deepEqual(selected.nightlyRates?.map((rate) => [rate.date, rate.sellAmount]), [
+    ['2026-09-01', 3960],
+    ['2026-09-02', 4180],
+  ]);
+  assert.deepEqual(selected.nightlyRates?.map((rate) => (rate as any).rateOptionId), [
+    'clouds-cp-2026-09-01',
+    'clouds-cp-2026-09-02',
+  ]);
+  assert.deepEqual(selected.nightlyRates?.map((rate) => (rate as any).routeId), [11275, 11276]);
+});
+
+test('does not fabricate a continuous stay from a parent row copied across routes', () => {
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 11275, itinerary_route_date: '2026-09-01', next_visiting_location: 'Munnar' },
+      { itinerary_route_ID: 11276, itinerary_route_date: '2026-09-02', next_visiting_location: 'Munnar' },
+    ],
+    hotelsByRoute: new Map([
+      [11275, [option('Copied Coverage', 3960, 'CP', {
+        itineraryRouteId: 11275,
+        routeId: 11275,
+        routeIds: [11275, 11276],
+        checkInDate: '2026-09-01',
+        checkOutDate: '2026-09-03',
+        numberOfNights: 2,
+      })]],
+      [11276, []],
+    ]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].complete, false);
+  assert.equal(packages[0].hotels.length, 0);
+  assert.equal(packages[0].stayResults[0].state, 'UNAVAILABLE');
+});
+
 test('normalizes a stale itinerary-wide total to the route-specific one-night stay', () => {
   const hotel = option('Hablis Hotel Chennai', 7179.38, 'UNKNOWN', {
     numberOfNights: 2,
@@ -224,6 +301,17 @@ test('uses stable stay group IDs when destination text differs', () => {
   ]);
   assert.equal(stays.length, 1);
   assert.deepEqual(stays[0].routeIds, [20, 21]);
+});
+
+test('uses parent stay linkage when consecutive nights have different cities', () => {
+  const stays = service().buildLogicalStays([
+    { itinerary_route_ID: 30, itinerary_route_date: '2026-08-01', next_visiting_location: 'City A' },
+    { itinerary_route_ID: 31, itinerary_route_date: '2026-08-02', next_visiting_location: 'City B', parentStayRouteId: 30 },
+    { itinerary_route_ID: 32, itinerary_route_date: '2026-08-03', next_visiting_location: 'City C', parentStayRouteId: 30 },
+  ]);
+  assert.equal(stays.length, 1);
+  assert.deepEqual(stays[0].routeIds, [30, 31, 32]);
+  assert.equal(stays[0].nights, 3);
 });
 
 test('offline inventory may be selectable for approval without live bookability', () => {
@@ -338,6 +426,9 @@ test('recommendations use target prices but exhaust unused properties before reu
 test('maps category master labels and codes to logical star buckets', () => {
   assert.equal(mapHotelCategoryLabelToStar('Budget'), 2);
   assert.equal(mapHotelCategoryLabelToStar('STD'), 2);
+  assert.equal(mapHotelCategoryLabelToStar(1), 2);
+  assert.equal(mapHotelCategoryLabelToStar('1*'), 2);
+  assert.equal(mapHotelCategoryLabelToStar('unknown'), null);
   assert.equal(mapHotelCategoryLabelToStar('3*'), 3);
   assert.equal(mapHotelCategoryLabelToStar('hotel_category_5_star'), 5);
 });
@@ -508,7 +599,7 @@ test('falls back from requested 3-star to lower 2-star before higher 4-star', ()
   assert.equal(packages[0].hotels[0].categoryFallbackReason, '2* selected — 3* not available');
 });
 
-test('category fallback compares live and offline providers in one pool', () => {
+test('live inventory wins automatic selection over cheaper offline inventory', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -526,13 +617,13 @@ test('category fallback compares live and offline providers in one pool', () => 
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages[0].hotels[0].hotelName, 'Offline 2 Star');
-  assert.equal(packages[0].hotels[0].provider, 'offline');
-  assert.equal(packages[0].hotels[0].selectedCategory, 2);
+  assert.equal(packages[0].hotels[0].hotelName, 'Live 4 Star');
+  assert.equal(packages[0].hotels[0].provider, 'tbo');
+  assert.equal(packages[0].hotels[0].selectedCategory, 4);
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
-test('valid local 3-star beats a live higher-category offer', () => {
+test('live inventory wins automatic selection over exact-category offline inventory', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -550,9 +641,125 @@ test('valid local 3-star beats a live higher-category offer', () => {
     preferredMealPlanCode: 'CP',
   });
 
-  assert.equal(packages[0].hotels[0].hotelName, 'Offline 3 Star');
-  assert.equal(packages[0].hotels[0].selectedCategory, 3);
-  assert.equal(packages[0].hotels[0].categoryFallbackApplied, false);
+  assert.equal(packages[0].hotels[0].hotelName, 'Live 4 Star');
+  assert.equal(packages[0].hotels[0].provider, 'tbo');
+  assert.equal(packages[0].hotels[0].selectedCategory, 4);
+  assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
+});
+
+test('selects a complete live Patio room across a continuous stay and rejects supplement-only Suite', () => {
+  const patioRoom = (roomType: string, total: number, base: number) => option('THE PATIO', total, 'CP', {
+    provider: 'axisrooms',
+    canonicalHotelId: 234,
+    providerHotelCode: '234',
+    category: '1-star',
+    roomId: roomType,
+    roomType,
+    basePricePerNight: base,
+    baseTotalPrice: base,
+    pricePerNight: total,
+    totalStayPrice: total,
+    extraBedRate: 1000,
+    childWithoutBedRate: 600,
+    rateFamily: 'CP',
+    rateOptionId: `${roomType}-CP`,
+    rateId: `${roomType}-CP`,
+    isBookable: true,
+    isLiveBookable: true,
+    availabilityStatus: 'AVAILABLE',
+  });
+  const suite = patioRoom('Suite Room AC', 8000, 0);
+  suite.rateOptions = [{
+    roomId: 'suite', roomType: 'Suite Room AC', mealPlan: 'CP',
+    totalStayPrice: 8000, pricePerNight: 8000,
+    basePricePerNight: 0, baseTotalPrice: 0,
+    extraBedRate: 1000, childWithoutBedRate: 600,
+    rateOptionId: 'suite-cp', rateId: 'suite-cp',
+  }];
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 11322, itinerary_route_date: '2026-09-05', next_visiting_location: 'Thekkady' },
+      { itinerary_route_ID: 11323, itinerary_route_date: '2026-09-06', next_visiting_location: 'Thekkady' },
+    ],
+    hotelsByRoute: new Map([
+      [11322, [
+        patioRoom('Deluxe AC', 11440, 4400),
+        suite,
+        option('JUNGLE PARK RESORT', 7480, 'CP', {
+          provider: 'offline', category: '3-star', canonicalHotelId: 439,
+          bookingMode: 'MANUAL_APPROVAL', requiresHotelApproval: true,
+          isBookable: false, isLiveBookable: false,
+          extraBedRate: 1000, childWithoutBedRate: 600,
+        }),
+      ] as any],
+      [11323, [
+        patioRoom('Deluxe AC', 11440, 4400),
+        suite,
+        option('JUNGLE PARK RESORT', 5720, 'CP', {
+          provider: 'offline', category: '3-star', canonicalHotelId: 439,
+          bookingMode: 'MANUAL_APPROVAL', requiresHotelApproval: true,
+          isBookable: false, isLiveBookable: false,
+          extraBedRate: 1000, childWithoutBedRate: 600,
+        }),
+      ] as any],
+    ]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+    occupancy: { extraBedCount: 1, childWithoutBedCount: 1 },
+  });
+
+  const stay = packages[0].stayResults[0];
+  assert.equal(stay.hotel?.hotelName, 'THE PATIO');
+  assert.equal(stay.hotel?.provider, 'axisrooms');
+  assert.equal(stay.hotel?.roomType, 'Deluxe AC');
+  assert.deepEqual(stay.hotel?.routeIds, [11322, 11323]);
+  assert.equal(stay.hotel?.categoryFallbackApplied, true);
+  // The application intentionally normalizes supplier 1-star/Budget labels
+  // into its logical 2-star bucket.
+  assert.equal(stay.hotel?.selectedCategory, 2);
+  assert.equal(stay.hotel?.exactFullStayTotal, 22880);
+  assert.equal(stay.rejectedCandidates?.some((item) => /Base SINGLE\/DOUBLE/.test(item.reason)), true);
+});
+
+test('required supplement rates are part of recommendation eligibility', () => {
+  const packages = service().generate({
+    routes: oneRoute('Munnar'),
+    hotelsByRoute: new Map([[1, [
+      option('Missing Supplements', 3000, 'CP', {
+        provider: 'tbo',
+        category: '3-star',
+        canonicalHotelId: 901,
+      }),
+      option('Complete Axis Rate', 4200, 'CP', {
+        provider: 'axisrooms',
+        category: '3-star',
+        canonicalHotelId: 902,
+        extraBedRate: 1200,
+        childWithoutBedRate: 700,
+      }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+    occupancy: { extraBedCount: 1, childWithoutBedCount: 1 },
+  });
+
+  assert.equal(packages[0].stayResults[0].hotel?.hotelName, 'Complete Axis Rate');
+  assert.equal(packages[0].stayResults[0].hotel?.provider, 'axisrooms');
+});
+
+test('AxisRooms wins a payable-price tie without excluding offline inventory', () => {
+  const packages = service().generate({
+    routes: oneRoute('Munnar'),
+    hotelsByRoute: new Map([[1, [
+      option('Offline Tie', 5000, 'CP', { provider: 'offline', category: '3-star', canonicalHotelId: 801 }),
+      option('Axis Tie', 5000, 'CP', { provider: 'axisrooms', category: '3-star', canonicalHotelId: 802 }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].hotels[0].hotelName, 'Axis Tie');
+  assert.equal(packages[0].hotels[0].provider, 'axisrooms');
 });
 
 test('fallback selects the only usable lower-category hotel even when its multiplier is not met', () => {

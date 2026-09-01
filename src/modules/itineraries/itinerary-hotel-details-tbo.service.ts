@@ -22,6 +22,7 @@ import {
   ItineraryHotelRoomDto,
 } from './itinerary-hotel-details.service';
 import { haversineKm } from './utils/distance-utils';
+import { normalizeHotelCategory } from './utils/hotel-category.util';
 import {
   HOTEL_RATE_PLAN_BY_CODE,
   inferCanonicalHotelRatePlanCode,
@@ -47,6 +48,7 @@ import {
   hotelCardPropertyKey,
 } from './utils/hotel-card-pricing.util';
 import { resolveHotelRequiredRoutes } from './utils/hotel-selection-view-state.util';
+import { toDatabaseBusinessDate } from './utils/itinerary.utils';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -136,6 +138,13 @@ export class ItineraryHotelDetailsTboService {
    */
   private buildSharedHotelInventory(rows: any[]): any[] {
     const seen = new Set<string>();
+    const visibleOfferKey = (row: any): string => [
+      String(row?.provider || '').trim().toLowerCase(),
+      String(row?.canonicalHotelId || row?.hotelId || row?.providerHotelCode || row?.hotelCode || '').trim().toLowerCase(),
+      String(row?.roomType || row?.roomTypeName || '').trim().toLowerCase(),
+      String(row?.mealPlan || '').trim().toLowerCase(),
+      Number(row?.totalPrice ?? row?.totalStayPrice ?? row?.totalHotelCost ?? row?.pricePerNight ?? row?.price ?? 0).toFixed(2),
+    ].join('|');
     return (rows || [])
       .filter((row: any) => {
         const name = String(row?.hotelName || '').trim().toLowerCase();
@@ -155,7 +164,7 @@ export class ItineraryHotelDetailsTboService {
           row?.hotelCode || row?.providerHotelCode || '',
           row?.hotelName || row?.hotel_name || '',
         ].map((value) => String(value).trim().toLowerCase()).join('|');
-        const key = `${routeId}|${date}|${propertyIdentity}|${this.availabilityOptionKey(row)}`;
+        const key = `${routeId}|${date}|${propertyIdentity}|${visibleOfferKey(row)}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -225,8 +234,6 @@ export class ItineraryHotelDetailsTboService {
   }
 
   private static readonly HOTEL_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
-  private static readonly HOTEL_ROOM_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
-  private static readonly MAX_CACHE_ENTRIES = 200;
 
   private parseBooleanEnv(name: string): boolean {
     const raw = String(process.env[name] || '').trim().toLowerCase();
@@ -314,21 +321,8 @@ export class ItineraryHotelDetailsTboService {
 
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
- // The complete hotel-details response contains the full supplier inventory,
- // rate options, and recommendation payloads. It is intentionally not cached
- // in-process: the persisted snapshot is the authoritative read path and
- // retaining these responses caused the Node heap to grow across itineraries.
-  private hotelDetailsCache = new Map<string, {
-    data: ItineraryHotelDetailsResponseDto;
-    timestamp: number;
-  }>();
-
- // Cache structure: key = "quoteId:routeId" or "quoteId" (no route filter)
- // Stores the entire response to avoid re-fetching TBO data
-  private hotelRoomDetailsCache = new Map<string, {
-    data: ItineraryHotelRoomDetailsResponseDto;
-    timestamp: number;
-  }>();
+ // Supplier inventory is intentionally request-scoped. No full hotel or room
+ // response is retained by the NestJS process.
 
   private isTboOnlyFetchEnabled(): boolean {
     return this.parseBooleanEnv('HOTEL_FETCH_TBO_ONLY');
@@ -388,22 +382,14 @@ export class ItineraryHotelDetailsTboService {
   private getHotelCategoryCandidates(hotel: HotelSearchResult): number[] {
     const candidates = new Set<number>();
 
-    const ratingNum = Number((hotel as any).rating);
-    if (Number.isFinite(ratingNum) && ratingNum > 0) {
-      candidates.add(Math.trunc(ratingNum));
-    }
-
-    const categoryRaw = String((hotel as any).category ?? '').trim();
-    if (categoryRaw) {
-      const mappedCategory = mapHotelCategoryLabelToStar(categoryRaw);
-      if (mappedCategory) candidates.add(mappedCategory);
-      const match = categoryRaw.match(/\d+/);
-      if (match) {
-        const categoryNum = Number(match[0]);
-        if (Number.isFinite(categoryNum) && categoryNum > 0) {
-          candidates.add(Math.trunc(categoryNum));
-        }
-      }
+    for (const value of [
+      (hotel as any).rating,
+      (hotel as any).category,
+      (hotel as any).categoryName,
+      (hotel as any).starRating,
+    ]) {
+      const category = normalizeHotelCategory(value);
+      if (category !== null) candidates.add(category);
     }
 
     return Array.from(candidates);
@@ -1222,6 +1208,7 @@ if (hotelMasterId) {
     const requestedProvider = String(provider || '').trim().toLowerCase();
     const normalizedProvider = requestedProvider === 'ax' ? 'axisrooms' : requestedProvider;
     const normalizedHotelCode = String(hotelCode || '').trim();
+    const axisRoomsPropertyId = normalizedHotelCode.match(/(?:^|[^0-9])(\d+)$/)?.[1] || normalizedHotelCode;
     if (!normalizedProvider || !normalizedHotelCode) {
       throw new BadRequestException('provider and hotelCode are required');
     }
@@ -1246,8 +1233,8 @@ if (hotelMasterId) {
               children: childCount,
               childWithBedCount,
               extraBedCount,
-            }, normalizedHotelCode,
-          )).get(Number(routeId)) || []
+             }, axisRoomsPropertyId,
+           )).get(Number(routeId)) || []
         : normalizedProvider === 'offline'
           ? ((await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
               [route],
@@ -1256,11 +1243,33 @@ if (hotelMasterId) {
               roomCount,
               adultCount,
               childCount,
-            )).get(Number(routeId)) || []).filter((hotel: any) =>
-              String(
-                hotel?.hotelCode || hotel?.providerHotelCode || hotel?.canonicalHotelId || hotel?.hotelId || '',
-              ).trim() === normalizedHotelCode,
-            )
+              [],
+              '',
+              [],
+              {
+                extraBedCount,
+                childWithBedCount,
+                childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+              },
+          )).get(Number(routeId)) || []).filter((hotel: any) => {
+            // AxisRooms search rows expose our internal numeric hotel code in
+            // `hotelCode` and the provider property code in
+            // `providerHotelCode`. The selection request normally sends the
+            // provider code (AX_DVI_HOTEL_234), so checking only hotelCode
+            // incorrectly removed every valid DB-backed room option and left
+            // the stale supplier room as the apparent selection.
+            const targetPropertyId = normalizedHotelCode.match(/(?:^|[^0-9])(\d+)$/)?.[1] || '';
+            return [
+              hotel?.hotelCode,
+              hotel?.providerHotelCode,
+              hotel?.canonicalHotelId,
+              hotel?.hotelId,
+            ].some((value) => {
+              const candidate = String(value ?? '').trim();
+              return candidate === normalizedHotelCode ||
+                (targetPropertyId !== '' && candidate === targetPropertyId);
+            });
+          })
         : await this.hotelSearchService.searchHotels({
             cityCode: String((route as any).next_visiting_location || '').trim(),
             checkInDate, checkOutDate, roomCount,
@@ -1766,6 +1775,13 @@ this.logger.log(
           planAdultCount,
           planChildCount,
           planChildAges,
+          '',
+          [],
+          {
+            extraBedCount: Number((plan as any).total_extra_bed || 0),
+            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+          },
         );
         offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
@@ -1784,6 +1800,7 @@ this.logger.log(
           adults: planAdultCount,
           children: planChildCount,
           childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
           extraBedCount: Number((plan as any).total_extra_bed || 0),
         },
       );
@@ -1836,6 +1853,13 @@ this.logger.log(
             planAdultCount,
             planChildCount,
             planChildAges,
+            '',
+            [],
+            {
+              extraBedCount: Number((plan as any).total_extra_bed || 0),
+              childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+              childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+            },
           ));
           offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
             const existingHotels = hotelsByRoute.get(routeId) || [];
@@ -1934,6 +1958,7 @@ this.logger.log(
               adults: planAdultCount,
               children: planChildCount,
               childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+              childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
               extraBedCount: Number((plan as any).total_extra_bed || 0),
             },
           ));
@@ -2073,12 +2098,31 @@ this.logger.log(
     // v1/v2 are now compatibility labels only. Both execution paths use the
     // same category strategy so the persisted snapshot cannot diverge from
     // the recommendation tabs when an environment still says v1.
+    // A route with no preference-filtered rows is a repairable inventory
+    // gap, not proof that the supplier returned no hotels. Use the complete
+    // route snapshot only for those gaps; routes that already have a
+    // recommendation candidate retain their existing allocation unchanged.
+    // Feed the recommendation engine the complete supplier inventory. The
+    // preference-filtered projection is only a UI compatibility artifact;
+    // using it for selection can hide a valid lower-category live hotel when
+    // an offline/category-matching row survives the projection.
+    const recommendationHotelsByRoute = completeHotelsByRoute;
     const packages = this.hotelRecommendationPackageService.generate({
       routes: routes as any,
-      hotelsByRoute: filteredHotelsByRoute,
+      // Recommendation eligibility must use the same current, complete,
+      // route-keyed inventory that is exposed to the shared picker.  The
+      // preference-filtered map is a presentation/recommendation projection;
+      // using it here can discard a usable route before the authoritative
+      // group candidate is created.
+      hotelsByRoute: recommendationHotelsByRoute,
       noOfNights,
       preferredMealPlanCode,
       preferredCategories,
+      occupancy: {
+        extraBedCount: Number((plan as any).total_extra_bed || 0),
+        childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+        childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+      },
       maxDistanceKm: Number(process.env.MAX_RECOMMENDED_HOTEL_DISTANCE_KM || 15),
       requireKnownDistance: String(process.env.HOTEL_RECOMMENDATION_REQUIRE_DISTANCE || '').trim() === 'true',
     });
@@ -2134,6 +2178,24 @@ this.logger.log(
           itineraryRouteId,
         )
       : response;
+  }
+
+  /**
+   * Keep an already-populated route's recommendation input byte-for-byte
+   * stable. Only a route emptied by preference filtering is repaired from the
+   * complete current inventory; this prevents a Thekkady repair from
+   * re-running allocation against Munnar's authoritative candidates.
+   */
+  private buildRecommendationHotelsByRoute(
+    completeHotelsByRoute: Map<number, HotelSearchResult[] | null>,
+    filteredHotelsByRoute: Map<number, HotelSearchResult[] | null>,
+  ): Map<number, HotelSearchResult[] | null> {
+    return new Map<number, HotelSearchResult[] | null>(
+      Array.from(completeHotelsByRoute.entries()).map(([routeId, completeRows]) => {
+        const filteredRows = filteredHotelsByRoute.get(routeId);
+        return [routeId, Array.isArray(filteredRows) && filteredRows.length > 0 ? filteredRows : completeRows];
+      }),
+    );
   }
 
  // Backward-compatible alias used by older controllers/callers.
@@ -2347,6 +2409,33 @@ this.logger.log(
     });
  this.logger.log(` Loaded ${allCities.length} cities from database in single query`);
 
+    // A route's next_visiting_location is often a landmark/point name rather
+    // than a city (for example, "Chennai Koyembedu"). The saved route
+    // location points to dvi_stored_locations, which already carries the
+    // canonical destination city. Prefer that relationship before trying to
+    // resolve the display text as a city name.
+    const routeLocationIds = routes
+      .map((route) => {
+        const value = Number((route as any).location_id || 0);
+        return Number.isSafeInteger(value) && value > 0 ? BigInt(value) : null;
+      })
+      .filter((value): value is bigint => value !== null);
+    const storedLocations = routeLocationIds.length > 0
+      ? await this.prisma.dvi_stored_locations.findMany({
+        where: { location_ID: { in: routeLocationIds } },
+        select: { location_ID: true, destination_location_city: true },
+      })
+      : [];
+    const destinationCityByLocationId = new Map(
+      storedLocations.map((row: any) => [String(row.location_ID), String(row.destination_location_city || '').trim()]),
+    );
+    const destinationCityByName = new Map<string, string>();
+    routes.forEach((route) => {
+      const destination = String((route as any).next_visiting_location || '').trim();
+      const city = destinationCityByLocationId.get(String((route as any).location_id || ''));
+      if (destination && city) destinationCityByName.set(destination, city);
+    });
+
  // Build a map for fast lookup
     const cityNameMap: Record<string, string> = {};
     const cityPrefixMap: Record<string, string> = {};
@@ -2372,9 +2461,11 @@ this.logger.log(
       const firstPart = rawDestination.split(/[,\(\-]/)[0].trim();
       const normalizedToken = this.normalizeCityToken(rawDestination);
       const aliasTokens = cityAliases[normalizedToken] || [];
+      const mappedDestinationCity = destinationCityByName.get(rawDestination);
       const lookupTerms = Array.from(
         new Set(
           [
+            mappedDestinationCity?.toLowerCase(),
             normalizedToken,
             ...aliasTokens,
             rawDestination.toLowerCase(),
@@ -2776,7 +2867,7 @@ this.logger.log(
 
   private extractAxisroomsRate(
     occupancyRates: unknown,
-    pax?: { roomCount?: number; adults?: number; childWithBedCount?: number; extraBedCount?: number },
+    pax?: { roomCount?: number; adults?: number; childWithBedCount?: number; childWithoutBedCount?: number; extraBedCount?: number },
   ): number {
     try {
       const data = occupancyRates as Record<string, unknown>;
@@ -2788,16 +2879,10 @@ this.logger.log(
       const extraBedCount = Math.max(Math.trunc(Number(pax?.extraBedCount || 0)), 0);
       if (adults > 0) {
         const adultsPerRoom = Math.max(Math.ceil(adults / roomCount), 1);
-        const occupancyKey = adultsPerRoom <= 1
-          ? 'SINGLE'
-          : adultsPerRoom === 2
-            ? 'DOUBLE'
-            : adultsPerRoom === 3
-              ? 'TRIPLE'
-              : 'QUAD';
+        const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : 'DOUBLE';
         const roomRate = Number(data[occupancyKey]);
         if (Number.isFinite(roomRate) && roomRate > 0) {
-          const extraBeds = Math.max(childWithBedCount + extraBedCount, 0);
+          const extraBeds = Math.max(extraBedCount, 0);
           const extraBedRate = Number(data.EXTRABED ?? data.EXTRAADULT ?? data.EXTRACHILD ?? 0);
           return (roomRate * roomCount) + (Number.isFinite(extraBedRate) && extraBedRate > 0
             ? extraBedRate * extraBeds
@@ -2805,16 +2890,10 @@ this.logger.log(
         }
       }
 
-      const preferredKeys = ['SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'EXTRABED'];
-      for (const key of preferredKeys) {
-        const value = Number(data[key]);
-        if (Number.isFinite(value) && value > 0) return value;
-      }
-
-      for (const value of Object.values(data)) {
-        const num = Number(value);
-        if (Number.isFinite(num) && num > 0) return num;
-      }
+      // A supplement-only row is not a room rate. Do not select a hotel from
+      // EXTRABED/ROOM_RATE or an arbitrary numeric field when SINGLE/DOUBLE
+      // is missing.
+      return 0;
     } catch {
       return 0;
     }
@@ -3109,6 +3188,7 @@ this.logger.log(
       adults?: number;
       children?: number;
       childWithBedCount?: number;
+      childWithoutBedCount?: number;
       extraBedCount?: number;
     },
     targetHotelCode?: string,
@@ -3196,6 +3276,9 @@ this.logger.log(
     for (const { context, cityHotels } of routeHotels) {
       const { route, routeId, destinationRaw } = context;
       const dateOnly = this.toIstDateOnly((route as any).itinerary_route_date);
+      // ARI date columns are MySQL DATE values. Preserve the business date;
+      // do not shift it to the previous UTC day.
+      const databaseDateOnly = toDatabaseBusinessDate(dateOnly.toISOString().slice(0, 10));
       const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
 
       if (!cityHotels.length) {
@@ -3231,8 +3314,8 @@ this.logger.log(
       const availRows = await this.prisma.dvi_hotel_room_availability.findMany({
         where: {
           hotel_id: { in: hotelIds },
-          start_date: { lte: dateOnly },
-          end_date: { gte: dateOnly },
+          start_date: { lte: databaseDateOnly },
+          end_date: { gte: databaseDateOnly },
         },
         select: {
           hotel_id: true,
@@ -3351,8 +3434,8 @@ this.logger.log(
         where: {
           hotel_id: { in: hotelIds },
           room_id: { in: roomIds },
-          start_date: { lte: dateOnly },
-          end_date: { gte: dateOnly },
+          start_date: { lte: databaseDateOnly },
+          end_date: { gte: databaseDateOnly },
         },
         select: {
           hotel_id: true,
@@ -3366,23 +3449,23 @@ this.logger.log(
         },
       });
 
-      const validOccupancyRows = occupancyRowsRaw.filter((row: any) => {
+      let validOccupancyRows = occupancyRowsRaw.filter((row: any) => {
         const key = `${Number((row as any).hotel_id)}|${Number((row as any).room_id)}|${String((row as any).rateplan_id || '')}`;
         return validRatePlanKeySet.has(key);
       });
+
       const effectiveOccupancyByPlan = new Map<string, any>();
       for (const row of validOccupancyRows as any[]) {
-        const startTime = new Date(row.start_date).getTime();
-        const endTime = new Date(row.end_date).getTime();
-        const rangeDays = Math.max(0, Math.round((endTime - startTime) / ItineraryHotelDetailsTboService.ONE_DAY_MS));
         const key = `${Number(row.hotel_id)}|${Number(row.room_id)}|${String(row.rateplan_id || '')}`;
         const current = effectiveOccupancyByPlan.get(key);
-        const currentRangeDays = current
-          ? Math.max(0, Math.round((new Date(current.end_date).getTime() - new Date(current.start_date).getTime()) / ItineraryHotelDetailsTboService.ONE_DAY_MS))
-          : Number.MAX_SAFE_INTEGER;
-        const receivedAt = new Date(row.received_at).getTime();
-        const currentReceivedAt = current ? new Date(current.received_at).getTime() : Number.NaN;
-        if (!current || rangeDays < currentRangeDays || (rangeDays === currentRangeDays && receivedAt > currentReceivedAt)) {
+        const receivedAt = new Date(row.received_at || 0).getTime();
+        const currentReceivedAt = current ? new Date(current.received_at || 0).getTime() : Number.NEGATIVE_INFINITY;
+        const startTime = new Date(row.start_date || 0).getTime();
+        const currentStartTime = current ? new Date(current.start_date || 0).getTime() : Number.NEGATIVE_INFINITY;
+        // The newest received covering row is authoritative. A short,
+        // historical row containing only supplements must not override the
+        // current row containing SINGLE/DOUBLE.
+        if (!current || receivedAt > currentReceivedAt || (receivedAt === currentReceivedAt && startTime > currentStartTime)) {
           effectiveOccupancyByPlan.set(key, row);
         }
       }
@@ -3421,8 +3504,10 @@ this.logger.log(
           continue;
         }
 
- // Group occupancy rows by rateplan_id and extract rate from each plan
-        const ratesByPlan = new Map<string, { rate: number; roomId: number }>();
+        // Group occupancy rows by room_id + rateplan_id. A hotel can have
+        // several room categories on the same meal plan; keying only by the
+        // plan silently discarded every room after the first CP/AP/MAP row.
+        const ratesByPlan = new Map<string, { rate: number; roomId: number; occupancyRates: unknown }>();
 
         for (const occ of occupancyRows as any[]) {
           if (Number((occ as any).hotel_id) !== hid) continue;
@@ -3432,16 +3517,22 @@ this.logger.log(
           const rateplanId = String((occ as any).rateplan_id || '').trim();
           if (!rateplanId) continue;
 
- // Only extract rate if we haven't found one for this rate plan yet
-          if (!ratesByPlan.has(rateplanId)) {
+          const roomPlanKey = `${rid}|${rateplanId}`;
+          // Only extract rate if we haven't found one for this room/plan yet.
+          if (!ratesByPlan.has(roomPlanKey)) {
             const extractedRate = this.extractAxisroomsRate((occ as any).occupancy_rates, {
               roomCount: requiredRoomCount,
               adults: Number(paxProfile?.adults || 0),
               childWithBedCount: Number(paxProfile?.childWithBedCount || 0),
+              childWithoutBedCount: Number(paxProfile?.childWithoutBedCount || 0),
               extraBedCount: Number(paxProfile?.extraBedCount || 0),
             });
             if (extractedRate > 0) {
-              ratesByPlan.set(rateplanId, { rate: extractedRate, roomId: rid });
+              ratesByPlan.set(roomPlanKey, {
+                rate: extractedRate,
+                roomId: rid,
+                occupancyRates: (occ as any).occupancy_rates,
+              });
             }
           }
         }
@@ -3464,7 +3555,17 @@ this.logger.log(
         });
         for (const [selectedRateplanId, rateInfo] of sortedRates) {
           const selectedRoomId = Number(rateInfo.roomId);
-          const rate = Number(rateInfo.rate);
+          const occupancyBreakdown = paxProfile && Object.keys(paxProfile).length > 0
+            ? calculateStaahOccupancyAmount(rateInfo.occupancyRates, {
+                roomCount: requiredRoomCount,
+                adults: Number(paxProfile.adults || 0),
+                children: Number(paxProfile.children || 0),
+                childWithBedCount: Number(paxProfile.childWithBedCount || 0),
+                childWithoutBedCount: Number(paxProfile.childWithoutBedCount || 0),
+                extraBedCount: Number(paxProfile.extraBedCount || 0),
+              })
+            : null;
+          const rate = Number(occupancyBreakdown?.finalCalculatedAmount || rateInfo.rate);
           if (!selectedRateplanId || !Number.isFinite(rate) || rate <= 0 || !selectedRoomId) continue;
 
           const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
@@ -3474,7 +3575,11 @@ this.logger.log(
           };
           const rateConditions = Array.from(new Set(rateMeta.rateConditions));
           const inclusions = Array.from(new Set(rateMeta.inclusions));
-          const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
+          const selectedMealPlan =
+            mealPlanByRatePlan.get(selectedRateplanId) ||
+            inferCanonicalHotelRatePlanCode(selectedRateplanId) ||
+            inferCanonicalHotelRatePlanCodeFromMealText(selectedRateplanId) ||
+            '-';
           const rateIdentity = `${hid}:${selectedRoomId}:${selectedRateplanId}:${dateOnly.toISOString().slice(0, 10)}`;
 
           axisroomsRouteHotels.push({
@@ -3497,6 +3602,17 @@ this.logger.log(
             availabilityStatus: 'AVAILABLE',
             hotelCode: String(hid),
             hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
+            // Keep the commercial room/rate identity explicit. The
+            // continuous-stay aggregator must match the same room and rate
+            // plan across every route-night; relying on the dated
+            // rateOptionId made these AxisRooms rows fragile and could leave
+            // a valid live hotel only in groupType 0 inventory.
+            roomId: String(selectedRoomId),
+            roomTypeId: selectedRoomId,
+            rateId: selectedRateplanId,
+            ratePlanId: selectedRateplanId,
+            rateplanId: selectedRateplanId,
+            rateFamily: selectedRateplanId,
             cityCode: String((hotel as any).hotel_city || destinationRaw),
             address: String((hotel as any).hotel_address || ''),
             rating: Number((hotel as any).hotel_category || 0),
@@ -3507,6 +3623,23 @@ this.logger.log(
             cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
             images: [],
             price: rate,
+            basePricePerNight: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
+            baseTotalPrice: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
+            baseHotelCost: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
+            roomRate: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
+            totalRoomCost: Number(occupancyBreakdown?.baseOccupancyAmount || rateInfo.rate),
+            extraBedCount: occupancyBreakdown?.extraBedCount || 0,
+            extraBedRate: occupancyBreakdown?.extraBedRate || 0,
+            extraBedAmount: occupancyBreakdown?.extraBedAmount || 0,
+            childWithBedCount: occupancyBreakdown?.childWithBedCount || 0,
+            childWithBedRate: occupancyBreakdown?.childWithBedRate || 0,
+            childWithBedAmount: occupancyBreakdown?.childWithBedAmount || 0,
+            childWithoutBedCount: occupancyBreakdown?.childWithoutBedCount || 0,
+            childWithoutBedRate: occupancyBreakdown?.childWithoutBedRate || 0,
+            childWithoutBedAmount: occupancyBreakdown?.childWithoutBedAmount || 0,
+            extraChildCount: occupancyBreakdown?.extraChildCount || 0,
+            extraChildRate: occupancyBreakdown?.extraChildRate || 0,
+            extraChildAmount: occupancyBreakdown?.extraChildAmount || 0,
             currency: 'INR',
             roomTypes: [
               {
@@ -3520,10 +3653,11 @@ this.logger.log(
             ],
             roomType: roomName,
             mealPlan: selectedMealPlan,
+            mealPlanCode: selectedMealPlan,
             bookingCode: `AX-${rateIdentity}`,
             searchReference: `AX-${rateIdentity}`,
             expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-          });
+          } as any);
         }
       }
 
@@ -4409,11 +4543,28 @@ this.logger.log(
       for (const route of routes) {
         const routeId = Number(route?.itinerary_route_ID || 0);
         const source = hotelsByRoute.get(routeId);
-        if (!routeId || !Array.isArray(source)) continue;
-        const stay = recommendation?.stayResults?.find((result: any) =>
+        if (!routeId) continue;
+
+        // A recommendation package can be incomplete for one destination even
+        // when an earlier package has a valid selection for that same stay.
+        // The pane must expose that earlier selection as the automatic choice;
+        // otherwise the UI shows an empty/unavailable Group 3 while Group 2
+        // visibly has a usable hotel. Keep this fallback route-scoped and only
+        // allow the documented chain: G3 -> G2, G4 -> G3 -> G2.
+        const packageIndexes = groupType === 3
+          ? [1]
+          : groupType === 4 ? [2, 1] : [];
+        const recommendationsToCheck = [recommendation, ...packageIndexes.map((index) => recommendationPackages[index])]
+          .filter((pkg): pkg is RecommendationPackage => Boolean(pkg));
+        const findStay = (pkg: RecommendationPackage | undefined): any => pkg?.stayResults?.find((result: any) =>
           Number(result.parentRouteId || 0) === routeId ||
           (Array.isArray(result.routeIds) && result.routeIds.map(Number).includes(routeId)),
         );
+        const selectedPackage = recommendationsToCheck.find((pkg) => {
+          const candidateStay = findStay(pkg);
+          return candidateStay && 'hotel' in candidateStay && candidateStay.hotel;
+        });
+        const stay = findStay(selectedPackage);
         const selected = stay && 'hotel' in stay ? (stay as any).hotel : null;
         const selectedIdentity = selected ? buildAutoSelectionIdentity(selected) : null;
         const sameSelectedRate = (candidate: any): boolean => {
@@ -4449,7 +4600,31 @@ this.logger.log(
             Number(result.parentRouteId || 0) === routeId && 'hotel' in result && result.hotel && selected &&
             strictAutoSelectionIdentityMatches(result.hotel, selectedIdentity),
           );
-        for (const hotel of source) {
+        const inventory = Array.isArray(source) ? source : [];
+        // If the current group has no route inventory, materialize the prior
+        // group's complete selected hotel in this pane. This is deliberately
+        // not a synthetic price: it copies the API-calculated rate payload.
+        if (inventory.length === 0 && selected) {
+          hotels.push({
+            ...selected,
+            routeId,
+            groupType,
+            authoritativeRecommendation: true,
+            autoSelectionStatus: 'AVAILABLE',
+            autoSelectionCandidate: true,
+            autoSelectionIdentity: selectedIdentity,
+            autoSelectionFallbackFromGroup: groupType === 3 ? 2 : 3,
+            recommendationFallbackReason: `Reused from recommendation group ${groupType === 3 ? 2 : 3} because no hotel was available for this destination.`,
+            authoritativeStayKey: stay?.stayKey,
+            authoritativeParentRouteId: Number(stay?.parentRouteId || 0) || undefined,
+            authoritativeRouteIds: Array.isArray(stay?.routeIds) ? stay.routeIds.map(Number) : undefined,
+            authoritativeCheckInDate: stay?.checkInDate,
+            authoritativeCheckOutDate: stay?.checkOutDate,
+          } as HotelSearchResult & { routeId: number });
+          continue;
+        }
+
+        for (const hotel of inventory) {
           hotels.push({
             ...hotel,
             routeId,
@@ -4704,8 +4879,8 @@ this.logger.log(
         bookingCode: selectedRateOption.bookingCode ?? selectedRateOption.searchReference,
         basePricePerNight: selectedRateOption.basePricePerNight ?? selectedRateOption.basePrice ?? selectedRateOption.pricePerNight ?? selectedRateOption.price,
         pricePerNight: selectedRateOption.pricePerNight ?? selectedRateOption.price,
-        totalStayPrice: selectedRateOption.pricePerNight ?? selectedRateOption.price ?? selectedRateOption.totalStayPrice ?? selectedRateOption.totalPrice,
-        totalPrice: selectedRateOption.pricePerNight ?? selectedRateOption.price ?? selectedRateOption.totalPrice ?? selectedRateOption.totalStayPrice,
+        totalStayPrice: selectedRateOption.totalStayPrice ?? selectedRateOption.totalPrice ?? selectedRateOption.pricePerNight ?? selectedRateOption.price,
+        totalPrice: selectedRateOption.totalPrice ?? selectedRateOption.totalStayPrice ?? selectedRateOption.pricePerNight ?? selectedRateOption.price,
         selectedRateOptionId: hotel.selectedRateOptionId || hotel.selected_rate_option_id,
         selected_rate_option_id: hotel.selected_rate_option_id || hotel.selectedRateOptionId,
       };
@@ -4844,11 +5019,22 @@ this.logger.log(
     // Do not use the itinerary-wide noOfNights here: that value belongs to
     // the complete itinerary and caused a two-night amount to be stored on
     // each individual route row.
-    const getRouteNightHotel = (hotel: any): { hotel: any; nights: number } => {
-      const routeId = Number(hotel?.routeId || hotel?.itineraryRouteId || 0);
+    const getRouteNightHotel = (hotel: any, projectedRouteId?: number): { hotel: any; nights: number } => {
+      const routeId = Number(projectedRouteId || hotel?.routeId || hotel?.itineraryRouteId || 0);
       const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === routeId);
+      const routeNight = Array.isArray(hotel?.nightlyRates)
+        ? hotel.nightlyRates.find((night: any) => {
+            const date = hotelDateOnly(
+              night?.date || night?.checkInDate || night?.hotelCheckInDate || night?.itineraryRouteDate,
+            );
+            const nightRouteId = Number(night?.routeId || night?.itineraryRouteId || 0);
+            return (routeId > 0 && nightRouteId > 0 && nightRouteId === routeId) ||
+              (date && date === hotelDateOnly(route?.itinerary_route_date));
+          })
+        : null;
       const checkInDate = hotelDateOnly(
-        hotel?.checkInDate || hotel?.check_in_date || hotel?.date || route?.itinerary_route_date,
+        routeNight?.date || routeNight?.checkInDate || routeNight?.hotelCheckInDate ||
+          hotel?.checkInDate || hotel?.check_in_date || hotel?.date || route?.itinerary_route_date,
       );
       const nextNightDate = checkInDate
         ? (() => {
@@ -4858,14 +5044,50 @@ this.logger.log(
           })()
         : null;
       const checkOutDate = hotelDateOnly(
-        hotel?.checkOutDate || hotel?.check_out_date ||
+        routeNight?.checkOutDate || routeNight?.hotelCheckOutDate || hotel?.checkOutDate || hotel?.check_out_date ||
           nextNightDate,
       );
+      const roomCount = Math.max(Number(hotel?.roomCount || hotel?.noOfRooms || hotel?.total_no_of_rooms || 1), 1);
+      const routeRateOptionId = String(
+        routeNight?.rateOptionId || routeNight?.rate_option_id || routeNight?.bookingCode ||
+          routeNight?.searchReference || '',
+      ).trim();
+      const routeRateOption = routeNight
+        ? {
+            ...hotel,
+            ...routeNight,
+            ...(checkInDate ? { checkInDate } : {}),
+            ...(checkOutDate ? { checkOutDate } : {}),
+            routeId,
+            itineraryRouteId: routeId,
+          }
+        : null;
       return {
         hotel: {
           ...hotel,
+          ...(routeId > 0 ? {
+            routeId,
+            itineraryRouteId: routeId,
+            routeIds: [routeId],
+          } : {}),
           ...(checkInDate ? { checkInDate } : {}),
           ...(checkOutDate ? { checkOutDate } : {}),
+          ...(routeNight ? {
+            // A selected logical stay carries one exact supplier option per
+            // night. Project that option before pricing/persistence so the
+            // second route cannot inherit the anchor night's rate.
+            ...routeNight,
+            ...(routeRateOptionId ? {
+              rateOptions: [routeRateOption],
+              selectedRateOptionId: routeRateOptionId,
+              selected_rate_option_id: routeRateOptionId,
+            } : {}),
+            basePricePerNight: Number((Number(routeNight.baseAmount || 0) / roomCount).toFixed(2)),
+            baseTotalPrice: Number(routeNight.baseAmount || 0),
+            pricePerNight: Number(routeNight.sellAmount || 0),
+            price: Number(routeNight.sellAmount || 0),
+            hotelMarginAmount: Number(routeNight.marginAmount || 0),
+          } : {}),
         },
         nights: 1,
       };
@@ -4909,6 +5131,9 @@ this.logger.log(
       label: `Recommended #${Number(pkg.groupType || 0)}`,
     }));
 
+    // Keep the shared pane inventory separate from authoritative selections.
+    // The pane must show every fetched offer, while reset persistence must use
+     // only the grouped logical-stay rows built above.
     const pricedAvailabilityPackages = allAvailabilityPackages.map((pkg) => ({
       ...pkg,
       groupType: Number(pkg.groupType || 0),
@@ -4919,13 +5144,92 @@ this.logger.log(
       }),
     }));
 
-    const hotelTabs: ItineraryHotelTabDto[] = pricedPackages.map((pkg) => {
+    // This is the only authoritative source used by the reset coordinator to
+    // persist automatic selections. It must come from the selected logical
+     // stays, never from group-neutral shared-pane inventory. One row is
+     // emitted per logical stay; its nightlyRates carries the exact supplier
+     // option for every covered route-night.
+    const authoritativeRecommendationRows = packages.flatMap((pkg: any) =>
+      (pkg.stayResults || [])
+        .filter((stay: any) => stay?.state !== 'UNAVAILABLE' && stay?.hotel)
+        .flatMap((stay: any) => {
+          const routeIds = Array.from(new Set(
+            (Array.isArray(stay.routeIds) ? stay.routeIds : [stay.parentRouteId])
+              .map(Number)
+              .filter((routeId: number) => routeId > 0),
+          ));
+           const parentRouteId = Number(stay.parentRouteId || routeIds[0] || 0);
+           const logicalHotel = {
+             ...stay.hotel,
+             routeId: parentRouteId,
+             itineraryRouteId: parentRouteId,
+             routeIds,
+             checkInDate: stay.checkInDate,
+             checkOutDate: stay.checkOutDate,
+           };
+           const pricedHotel = priceHotelStay(logicalHotel, stay.nights);
+           return [{
+             ...pricedHotel,
+             routeId: parentRouteId,
+             itineraryRouteId: parentRouteId,
+             routeIds,
+             groupType: Number(pkg.groupType || 0),
+             authoritativeRecommendation: true,
+             autoSelectionCandidate: true,
+             autoSelectionStatus: 'AVAILABLE',
+             authoritativeStayKey: stay.stayKey,
+             authoritativeParentRouteId: parentRouteId || undefined,
+             authoritativeRouteIds: routeIds,
+             authoritativeCheckInDate: stay.checkInDate,
+             authoritativeCheckOutDate: stay.checkOutDate,
+             autoSelectionIdentity: buildAutoSelectionIdentity(pricedHotel),
+           }];
+         }),
+    );
+    if (String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim() === 'true') {
+      const targetRoutes = new Set([11275, 11276]);
+      const summarize = (row: any) => ({
+        provider: row?.provider,
+        hotelName: row?.hotelName,
+        hotelCode: row?.hotelCode || row?.providerHotelCode,
+        routeId: Number(row?.routeId || row?.itineraryRouteId || 0),
+        groupType: Number(row?.groupType || 0),
+        autoSelectionCandidate: row?.autoSelectionCandidate === true,
+        autoSelectionStatus: row?.autoSelectionStatus,
+        rateOptionId: row?.rateOptionId,
+      });
+      this.logger.log(`[HOTEL_RECOMMENDATION_TRACE] authoritativeRecommendationRows ${JSON.stringify({
+        packageCounts: packages.map((pkg: any) => ({
+          groupType: Number(pkg.groupType || 0),
+          stays: Array.isArray(pkg.stayResults) ? pkg.stayResults.length : 0,
+          selectedStays: Array.isArray(pkg.stayResults)
+            ? pkg.stayResults.filter((stay: any) => stay?.state !== 'UNAVAILABLE' && stay?.hotel).length
+            : 0,
+        })),
+        targetRows: authoritativeRecommendationRows.filter((row: any) => targetRoutes.has(Number(row?.routeId || row?.itineraryRouteId || 0))).map(summarize),
+        total: authoritativeRecommendationRows.length,
+      })}`);
+    }
+
+    // Group IDs remain semantic category slots for selection/persistence, but
+    // the tab strip is a price presentation. Sort only this projection so a
+    // cheaper Group 3 can appear before a costlier Group 2 without changing
+    // which package those group IDs refer to internally.
+    const orderedPackagesForDisplay = [...pricedPackages].sort((left, right) => {
+      const amount = (pkg: typeof left): number =>
+        pkg.complete && pkg.totalPrice !== null
+          ? Number(pkg.totalPrice)
+          : Number.POSITIVE_INFINITY;
+      return amount(left) - amount(right) || left.groupType - right.groupType;
+    });
+
+    const hotelTabs: ItineraryHotelTabDto[] = orderedPackagesForDisplay.map((pkg, index) => {
       const totalAmount = pkg.complete && pkg.totalPrice !== null
         ? this.money(pkg.totalPrice)
         : null;
       return {
         groupType: pkg.groupType,
-        label: pkg.label,
+        label: `Recommended #${index + 1}`,
         totalAmount,
         partialTotal: this.money(pkg.partialTotal || 0),
         targetAmount: pkg.targetPrice,
@@ -6074,6 +6378,19 @@ this.logger.log(
           externalStay: false,
           availabilityStatus: 'NOT_BOOKABLE',
           availabilityMessage: String((hotel as any).availabilityMessage || '').trim() || 'Restricted for the selected stay.',
+          // Restricted supplier rows are intentionally returned so the UI can
+          // explain why the option was rejected. Preserve the structured
+          // stay-state as well; otherwise the frontend treats a missing
+          // completeStayBookable flag as bookable and renders an amber
+          // "Restricted for this stay" notice instead of the red NOT
+          // AVAILABLE state.
+          availableDates: Array.isArray((hotel as any).availableDates)
+            ? (hotel as any).availableDates
+            : [],
+          unavailableDates: Array.isArray((hotel as any).unavailableDates)
+            ? (hotel as any).unavailableDates
+            : [],
+          completeStayBookable: false,
           availableAgainFrom: String((hotel as any).availableAgainFrom || '').trim() || null,
           voucherCancelled: false,
           itineraryPlanHotelDetailsId: 0,
@@ -6306,7 +6623,7 @@ this.logger.log(
     const hasSupplierHotels = supplierHotelRows.length > 0;
     const availabilityMessage = hasSupplierHotels
         ? 'Live supplier hotels are available for the current itinerary selection.'
-        : 'No live hotel options are available for one or more stays. Use Check Availability again after adjusting the itinerary.';
+        : 'No live hotel options are available for one or more stays. Adjust the itinerary and reopen it to validate availability automatically.';
     // The picker inventory must come from the complete supplier snapshot, not
     // from cleanedHotelRows. cleanedHotelRows is intentionally reduced to the
     // recommendation candidates and can therefore contain only the hotels
@@ -6340,6 +6657,7 @@ this.logger.log(
       totalRoomCount: cleanedHotelRows.length,
       hotelAvailability: {
         sharedHotelInventory,
+        authoritativeRecommendationRows,
         hasSupplierHotels,
         supplierHotelCount: supplierHotelRows.length,
         placeholderRowCount: 0,
@@ -6478,6 +6796,13 @@ this.logger.log(
         planAdultCount2,
         planChildCount2,
         planChildAges2,
+        '',
+        [],
+        {
+          extraBedCount: Number((plan as any).total_extra_bed || 0),
+          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+        },
       );
       offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
         const existing = hotelsByRoute.get(routeId) || [];
@@ -6494,6 +6819,7 @@ this.logger.log(
           adults: planAdultCount2,
           children: planChildCount2,
           childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
           extraBedCount: Number((plan as any).total_extra_bed || 0),
         },
       );
@@ -6525,6 +6851,13 @@ this.logger.log(
           planAdultCount2,
           planChildCount2,
           planChildAges2,
+          '',
+          [],
+          {
+            extraBedCount: Number((plan as any).total_extra_bed || 0),
+            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+          },
         );
         offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
           const existing = hotelsByRoute.get(routeId) || [];
@@ -6575,6 +6908,7 @@ this.logger.log(
             adults: planAdultCount2,
             children: planChildCount2,
             childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
             extraBedCount: Number((plan as any).total_extra_bed || 0),
           },
         );
@@ -6889,30 +7223,12 @@ this.logger.log(
    * Generate cache key for hotel room details
    * Format: "quoteId" or "quoteId:routeId" if filtered
  */
-  private getCacheKey(quoteId: string, routeId?: number): string {
-    if (routeId) {
-      return `${quoteId}:${routeId}`;
-    }
-    return quoteId;
-  }
-
  /**
    * Get cached hotel room details if available
  */
   private getCachedRoomDetails(quoteId: string, routeId?: number): ItineraryHotelRoomDetailsResponseDto | null {
-    const cacheKey = this.getCacheKey(quoteId, routeId);
-    const cached = this.hotelRoomDetailsCache.get(cacheKey);
-
-    if (cached) {
-      if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_ROOM_DETAILS_CACHE_TTL_MS)) {
-        this.hotelRoomDetailsCache.delete(cacheKey);
- this.logger.debug(` [CACHE EXPIRED] Removed stale room cache for ${cacheKey}`);
-        return null;
-      }
- this.logger.log(` [CACHE HIT] Using cached data for ${cacheKey}`);
-      return cached.data;
-    }
-
+    void quoteId;
+    void routeId;
     return null;
   }
 
@@ -6924,13 +7240,9 @@ this.logger.log(
     data: ItineraryHotelRoomDetailsResponseDto,
     routeId?: number,
   ): void {
-    const cacheKey = this.getCacheKey(quoteId, routeId);
-    this.evictOldestIfNeeded(this.hotelRoomDetailsCache);
-    this.hotelRoomDetailsCache.set(cacheKey, {
-      data,
-      timestamp: Date.now(),
-    });
- this.logger.log(` [CACHE SET] Cached data for ${cacheKey}`);
+    void quoteId;
+    void data;
+    void routeId;
   }
 
   private getCachedHotelDetails(quoteId: string): ItineraryHotelDetailsResponseDto | null {
@@ -6947,69 +7259,19 @@ this.logger.log(
     // supplier response. The persisted DB snapshot remains unchanged.
   }
 
-  private isCacheExpired(timestamp: number, ttlMs: number): boolean {
-    return Date.now() - timestamp > ttlMs;
-  }
-
-  private evictOldestIfNeeded<T extends { timestamp: number }>(cache: Map<string, T>): void {
-    if (cache.size < ItineraryHotelDetailsTboService.MAX_CACHE_ENTRIES) {
-      return;
-    }
-
-    let oldestKey: string | null = null;
-    let oldestTs = Number.MAX_SAFE_INTEGER;
-
-    cache.forEach((value, key) => {
-      if (value.timestamp < oldestTs) {
-        oldestTs = value.timestamp;
-        oldestKey = key;
-      }
-    });
-
-    if (oldestKey) {
-      cache.delete(oldestKey);
-    }
-  }
-
  /**
    * Clear cache for a specific quote (called on refresh/update)
    * Clears both general cache (quoteId) and route-specific caches (quoteId:routeId)
  */
   clearCacheForQuote(quoteId: string): void {
-    const keysToDelete: string[] = [];
-
-    this.hotelDetailsCache.delete(quoteId);
-
-    for (const key of this.hotelRoomDetailsCache.keys()) {
- if (key.startsWith(`${quoteId}:`)) { // Matches "quoteId:routeId"
-        keysToDelete.push(key);
-      }
-    }
-
- // Also delete the base key
-    keysToDelete.push(quoteId);
-
-    for (const key of keysToDelete) {
-      this.hotelRoomDetailsCache.delete(key);
- this.logger.log(` [CACHE CLEARED] Removed cache for ${key}`);
-    }
-    // The offline catalog has its own destination/date/occupancy cache with a
-    // bounded TTL. Clearing it here made every quote refresh reload all hotel
-    // masters, rooms, and price-book rows even though this method only needs to
-    // invalidate the supplier room-detail cache.
+    void quoteId;
   }
 
  /**
    * Get current cache size and stats (for debugging)
  */
   getCacheStats(): { size: number; entries: string[] } {
-    const detailEntries = Array.from(this.hotelDetailsCache.keys()).map((k) => `details:${k}`);
-    const roomEntries = Array.from(this.hotelRoomDetailsCache.keys()).map((k) => `rooms:${k}`);
-
-    return {
-      size: this.hotelDetailsCache.size + this.hotelRoomDetailsCache.size,
-      entries: [...detailEntries, ...roomEntries],
-    };
+    return { size: 0, entries: [] };
   }
 }
 

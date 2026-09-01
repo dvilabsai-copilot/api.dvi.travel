@@ -2,6 +2,14 @@ export function isValidDate(d: Date) {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
 
+/** Convert a YYYY-MM-DD business date to a Prisma/MySQL DATE boundary. */
+export function toDatabaseBusinessDate(value: unknown): Date {
+  const date = String(value ?? '').trim().slice(0, 10);
+  // These columns are DATE (not a timestamp). UTC midnight preserves the
+  // requested calendar date when Prisma serializes the Date parameter.
+  return new Date(`${date}T00:00:00.000Z`);
+}
+
 export function toBigInt(v: any): bigint {
   try {
     if (typeof v === "bigint") return v;

@@ -9,6 +9,7 @@ const cityRecords = [
   { id: 1582, name: 'Chikmagalur' },
   { id: 71173, name: 'Tiruchirappalli' },
   { id: 71090, name: 'Puducherry' },
+  { id: 3659, name: 'Chennai' },
   { id: 2045, name: 'Thiruvananthapuram' },
 ];
 
@@ -44,6 +45,14 @@ test('covers verified spelling and regional-name aliases', async () => {
     ['Trivandrum', '2045'],
   ] as const) {
     assert.ok((await candidates(destination)).includes(expectedId), destination);
+  }
+});
+
+test('maps Chennai landmark route destinations to the canonical Chennai city', async () => {
+  for (const destination of ['Chennai Koyembedu', 'ECR Beach, Chennai, Tamil Nadu']) {
+    const result = await candidates(destination);
+    assert.ok(result.includes('3659'), destination);
+    assert.ok(result.includes('Chennai'), destination);
   }
 });
 
