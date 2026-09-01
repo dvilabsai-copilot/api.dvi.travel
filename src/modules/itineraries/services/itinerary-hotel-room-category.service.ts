@@ -582,7 +582,9 @@ export class ItineraryHotelRoomCategoryService {
       };
     }
     if (occupancyPricing) {
-      selectedPricePerNight = Number((occupancyPricing.totalPrice / totalRooms).toFixed(2));
+      // This field is the complete payable amount for this itinerary day,
+      // not a per-room rate. The room rate remains available separately.
+      selectedPricePerNight = occupancyPricing.totalPrice;
     }
     // Room-category edits must not recreate the selection from a partial
     // room-detail response. AxisRooms/STAAH cards often have no live room

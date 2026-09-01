@@ -728,22 +728,14 @@ private readonly itineraryAccessService: ItineraryAccessService,
   })
   async resetItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
-    @Req() req: any,
   ) {
-    const result = await this.hotelAvailabilitySnapshotService.resetAndPersist(
-      quoteId,
-      Number(req.user?.userId || 0),
-    );
-    // The coordinator returns the fresh request-scoped inventory together
-    // with selections persisted during reconciliation. Do not replace it with
-    // a second database read: persisted reads intentionally contain selections
-    // only and never supplier search results.
-    const itinerary = await this.detailsService.getItineraryDetails(
-      quoteId,
-      undefined,
-      req.user?.role,
-    );
-    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
+    await this.hotelAvailabilitySnapshotService.resetSelectionsOnly(quoteId);
+    // Reset only mutates the persisted selections. The separate
+    // check-availability endpoint owns the fresh hotel data and financial
+    // summary, so this response must not read or serialize either one.
+    return {
+      resetApplied: true,
+    };
   }
 
   @Post('hotel_details/:quoteId/offline-availability')

@@ -5,7 +5,10 @@ import { PrismaService } from '../../prisma.service';
 import { dvi_itinerary_plan_details, Prisma } from '@prisma/client';
 import { haversineKm } from './utils/distance-utils';
 import { resolvePersistedHotelIdentity } from './utils/hotel-selection-identity.util';
-import { resolveStoredHotelPayablePricing } from './utils/hotel-payable-pricing.util';
+import {
+  calculateHotelRouteNightPayable,
+  resolveStoredHotelPayablePricing,
+} from './utils/hotel-payable-pricing.util';
 import {
   buildHotelSelectionState,
   HotelSelectionGroupView,
@@ -983,6 +986,11 @@ async getHotelRoomDetailsByQuoteId(
         ? selectedPriceSnapshot.nightlyRates as Record<string, unknown>[]
         : [];
       const snapshotPricingScope = String(selectedPriceSnapshot.pricingScope || '').trim().toUpperCase();
+      const continuousStayRouteNight = snapshotNightlyRates.length > 1
+        ? snapshotNightlyRates.find(
+            (night) => String(night.date || '').slice(0, 10) === dateLabel,
+          )
+        : undefined;
       const legacyOfflineRouteNight = isOffline && snapshotPricingScope !== 'ROUTE_NIGHT' && snapshotNightlyRates.length > 1
         ? snapshotNightlyRates.find(
             (night) => String(night.date || '').slice(0, 10) === dateLabel,
@@ -1104,8 +1112,10 @@ async getHotelRoomDetailsByQuoteId(
         0,
       );
       const marginRoomCost = Number((
-        persistedRoomTotal > 0
-          ? persistedRoomTotal * earlyCheckInBillingMultiplier
+        Number(continuousStayRouteNight?.baseAmount ?? continuousStayRouteNight?.totalRoomCost ?? 0) > 0
+          ? Number(continuousStayRouteNight?.baseAmount ?? continuousStayRouteNight?.totalRoomCost) * earlyCheckInBillingMultiplier
+          : persistedRoomTotal > 0
+            ? persistedRoomTotal * earlyCheckInBillingMultiplier
           : baseHotelCost * roomCountForMargin
       ).toFixed(2));
       const hotelMarginBaseAmount = Number((
@@ -1121,12 +1131,14 @@ async getHotelRoomDetailsByQuoteId(
       const hotelMarginAmount = effectiveMarginPercentage > 0
         ? Number((hotelMarginBaseAmount * effectiveMarginPercentage / 100).toFixed(2))
         : storedHotelMarginAmount;
-      const routeNightPayableHotelCost = legacyOfflineRouteNight
-        ? Number((
-            hotelMarginBaseAmount +
-            hotelMarginAmount +
-            storedTax * earlyCheckInBillingMultiplier
-          ).toFixed(2))
+      const routeNightPayableHotelCost = continuousStayRouteNight
+        ? calculateHotelRouteNightPayable({
+            marginBaseAmount: hotelMarginBaseAmount,
+            marginPercentage: effectiveMarginPercentage,
+            fallbackMarginAmount: storedHotelMarginAmount,
+            taxAmount: storedTax,
+            billingMultiplier: earlyCheckInBillingMultiplier,
+          })
         : payableHotelCost;
       const extraBedRate = isDatabaseOccupancyProvider
         ? Number(extraBedCount > 0 ? extraBedCost / earlyCheckInBillingMultiplier / extraBedCount : 0)
@@ -1165,6 +1177,10 @@ async getHotelRoomDetailsByQuoteId(
         ).trim(),
         totalHotelCost: routeNightPayableHotelCost,
         pricePerNight: routeNightPayableHotelCost,
+        // The UI day-row contract is explicit: this is the complete payable
+        // amount for this itinerary night, including all rooms and supplements.
+        selectedPricePerNight: routeNightPayableHotelCost,
+        selectedTotalPrice: routeNightPayableHotelCost,
         totalStayPrice: isOffline
           ? Number(selectedPriceSnapshot.totalStayPrice ?? selectedPriceSnapshot.total_price ?? routeNightPayableHotelCost)
           : routeNightPayableHotelCost,

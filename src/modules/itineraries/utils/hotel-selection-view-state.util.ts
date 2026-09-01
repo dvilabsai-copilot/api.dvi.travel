@@ -412,8 +412,9 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
   );
   const payable = hotelCardPayableAmount({ ...row, ...identity });
   const pricePerNight = Number(
-    identity.pricePerNight ?? identity.selectedPricePerNight ?? row?.pricePerNight ??
-      row?.selectedPricePerNight ?? row?.selected_price_per_night ?? payable,
+    row?.selectedPricePerNight ?? row?.selected_price_per_night ??
+      row?.totalHotelCost ?? row?.total_hotel_cost ??
+      identity.selectedPricePerNight ?? identity.pricePerNight ?? row?.pricePerNight ?? payable,
   );
   const totalPrice = Number(
     identity.totalPrice ?? identity.selectedTotalPrice ?? row?.totalPrice ??
@@ -452,7 +453,7 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     supplierBookingCode,
     pricePerNight: money(Number.isFinite(pricePerNight) ? pricePerNight : 0),
     totalPrice: money(Number.isFinite(totalPrice) ? totalPrice : payable),
-    selectedPricePerNight: money(Number(identity.selectedPricePerNight ?? pricePerNight ?? 0)),
+    selectedPricePerNight: money(Number(pricePerNight || 0)),
     selectedTotalPrice: roomTypeBreakdown.length > 0
       ? money(Number(identity.selectedTotalPrice ?? totalPrice ?? 0))
       : logicalStayTotal > 0

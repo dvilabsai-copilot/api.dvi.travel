@@ -421,8 +421,11 @@ export class ItinerarySelectionWorkflowService {
       ? Number((staahBaseTotal * hotelMarginPercentage / 100).toFixed(2))
       : 0;
     if (providerForPricing === 'staah' && staahBaseTotal > 0) {
-      data.pricePerNight = Number((staahBasePricePerNight * (1 + hotelMarginPercentage / 100)).toFixed(2));
       data.totalPrice = Number((staahBaseTotal + staahMarginRate).toFixed(2));
+      // The persisted selected price is the complete payable amount for this
+      // itinerary day, including every requested room. Keep the supplier's
+      // one-room rate only in the room-rate fields.
+      data.pricePerNight = data.totalPrice;
       selectionPricing = resolveHotelSelectionPricing({
         totalPrice: data.totalPrice,
         pricePerNight: data.pricePerNight,
@@ -437,7 +440,7 @@ export class ItinerarySelectionWorkflowService {
       const authoritativePayable = Number((axisRoomsMarginBase + axisRoomsMargin).toFixed(2));
       // AxisRooms selections must be priced from the matching ARI row, never
       // from a stale client payload that can combine another option's total.
-      data.pricePerNight = Number((authoritativePayable / Math.max(Number(data.roomCount || 1), 1)).toFixed(2));
+      data.pricePerNight = authoritativePayable;
       data.totalPrice = authoritativePayable;
       data.basePricePerNight = Number((axisRoomsBasePrice / Math.max(Number(data.roomCount || 1), 1)).toFixed(2));
       data.baseTotalPrice = axisRoomsBasePrice;
@@ -548,7 +551,7 @@ export class ItinerarySelectionWorkflowService {
           updatedon: new Date(),
           ...liveRateMetadata,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
-          selected_price_per_night: data.pricePerNight ?? null,
+          selected_price_per_night: selectionPricing.totalPrice || null,
           selected_total_price: selectionPricing.totalPrice,
           total_no_of_rooms: selectionPricing.roomCount,
             total_room_cost: persistedRoomCost,
@@ -594,7 +597,7 @@ export class ItinerarySelectionWorkflowService {
              childWithoutBedAmount,
             ...authoritativePricingSnapshot,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
-            pricePerNight: data.pricePerNight ?? null,
+            pricePerNight: selectionPricing.totalPrice || null,
             totalPrice: selectionPricing.totalPrice || null,
             ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
               basePricePerNight: staahBasePricePerNight,
@@ -642,7 +645,7 @@ export class ItinerarySelectionWorkflowService {
           deleted: 0,
           ...liveRateMetadata,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
-          selected_price_per_night: data.pricePerNight ?? null,
+          selected_price_per_night: selectionPricing.totalPrice || null,
           selected_total_price: selectionPricing.totalPrice,
           total_no_of_rooms: selectionPricing.roomCount,
            total_room_cost: persistedRoomCost,
@@ -688,7 +691,7 @@ export class ItinerarySelectionWorkflowService {
              childWithoutBedAmount,
             ...authoritativePricingSnapshot,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
-            pricePerNight: data.pricePerNight ?? null,
+            pricePerNight: selectionPricing.totalPrice || null,
             totalPrice: selectionPricing.totalPrice || null,
             ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
               basePricePerNight: staahBasePricePerNight,

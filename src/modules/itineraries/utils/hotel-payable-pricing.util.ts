@@ -19,6 +19,27 @@ export interface StoredHotelPayablePricingInput {
   marginPercentage?: unknown;
 }
 
+export interface HotelRouteNightPayableInput {
+  marginBaseAmount?: unknown;
+  marginPercentage?: unknown;
+  fallbackMarginAmount?: unknown;
+  taxAmount?: unknown;
+  billingMultiplier?: unknown;
+}
+
+/** Calculate the payable amount for one physical hotel night. */
+export function calculateHotelRouteNightPayable(input: HotelRouteNightPayableInput): number {
+  const marginBaseAmount = money(input.marginBaseAmount);
+  const marginPercentage = Math.max(Number(input.marginPercentage || 0), 0);
+  const marginAmount = marginPercentage > 0
+    ? money((marginBaseAmount * marginPercentage) / 100)
+    : money(input.fallbackMarginAmount);
+  const billingMultiplier = Math.max(Number(input.billingMultiplier || 1), 1);
+  const taxAmount = money(input.taxAmount) * billingMultiplier;
+
+  return money(marginBaseAmount + marginAmount + taxAmount);
+}
+
 /** Normalize legacy persisted rows to the margin-inclusive payable amount. */
 export function resolveStoredHotelPayablePricing(input: StoredHotelPayablePricingInput) {
   const storedTotal = money(input.storedTotal);

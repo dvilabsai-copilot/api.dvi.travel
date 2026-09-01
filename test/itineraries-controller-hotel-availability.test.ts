@@ -57,6 +57,29 @@ test('compact reset response preserves complete per-day hotel inventory for the 
   assert.equal(result.hotelDetails.hotels[0].previousDayBillingSynthetic, false);
 });
 
+test('reset endpoint returns only a reset acknowledgement', async () => {
+  const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  let resetQuoteId = '';
+  (controller as any).hotelAvailabilitySnapshotService = {
+    resetSelectionsOnly: async (quoteId: string) => {
+      resetQuoteId = quoteId;
+    },
+  };
+  (controller as any).detailsService = {
+    getItineraryDetails: async () => { throw new Error('reset must not read itinerary details'); },
+  };
+
+  const response = await controller.resetItineraryHotelAvailability(
+    'DVI-RESET',
+    { user: { userId: 7, role: 1 } },
+  );
+
+  assert.equal(resetQuoteId, 'DVI-RESET');
+  assert.deepEqual(response, { resetApplied: true });
+  assert.equal('hotelDetails' in response, false);
+  assert.equal('financialSummary' in response, false);
+});
+
 test('acknowledgement returns accepted selections and financial totals without another supplier search', async () => {
   const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
   let acceptedIds: number[] = [];
