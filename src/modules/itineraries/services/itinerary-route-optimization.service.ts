@@ -20,11 +20,32 @@ export type RouteOptimizationScoreBreakdown = {
   totalDistanceKm: number;
   totalTravelMinutes: number;
   backtrackingKm: number;
+
+  // Existing compatibility / relaxed-route metric.
   comfortPenalty: number;
+
+  // DVI Dynamic Tourism Route Optimisation metrics.
+  waitingMinutes: number;
+  trafficRiskMinutes: number;
+  futurePositionKm: number;
+  constraintPenalty: number;
+
+  // All weighted inputs are normalized to 0-100 before scoring.
+  normalizedTravelTime: number;
+  normalizedDistance: number;
+  normalizedBacktracking: number;
+  normalizedWaiting: number;
+  normalizedTrafficRisk: number;
+  normalizedFuturePosition: number;
 
   distanceCost: number;
   timeCost: number;
   backtrackingCost: number;
+  waitingCost: number;
+  trafficRiskCost: number;
+  futurePositionCost: number;
+
+  // Kept for existing Relaxed Route / response compatibility.
   comfortCost: number;
 
   totalCost: number;
@@ -776,19 +797,26 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
       });
     }
 
-    return Array
-      .from(byKey.values())
-      .sort(
-        (left, right) =>
-          left.metrics.totalCost -
-            right.metrics.totalCost ||
+   const scoredCandidates =
+  this.applyDynamicTourismScores(
+    Array.from(byKey.values()),
+  );
 
-          left.metrics.totalTravelMinutes -
-            right.metrics.totalTravelMinutes ||
+return scoredCandidates.sort(
+  (left, right) =>
+    // IMPORTANT:
+    // Preserve B2B/DVI requirement: actual road distance is priority #1.
+    left.metrics.totalDistanceKm -
+      right.metrics.totalDistanceKm ||
 
-          left.metrics.totalDistanceKm -
-            right.metrics.totalDistanceKm,
-      );
+    // When distance is equal/competitive, use the complete
+    // normalized DVI Dynamic Tourism score.
+    left.metrics.totalCost -
+      right.metrics.totalCost ||
+
+    left.metrics.totalTravelMinutes -
+      right.metrics.totalTravelMinutes,
+);
   }
 
   private expandStayDays(
@@ -849,166 +877,613 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
   }
 
   private async scoreRouteLocations(
-    routeLocations: string[],
-    routes: any[],
-    plan: any,
-  ): Promise<
-    RouteOptimizationScoreBreakdown | null
-  > {
-    let totalDistanceKm = 0;
+  routeLocations: string[],
+  routes: any[],
+  plan: any,
+): Promise<
+  RouteOptimizationScoreBreakdown | null
+> {
+  let totalDistanceKm = 0;
+  let totalTravelMinutes = 0;
+  let waitingMinutes = 0;
+  let trafficRiskMinutes = 0;
+  let constraintPenalty = 0;
 
-    let totalTravelMinutes = 0;
+  const segmentDistances: number[] = [];
 
-    let comfortPenalty = 0;
+  for (
+    let index = 0;
+    index < routeLocations.length - 1;
+    index++
+  ) {
+    const source =
+      routeLocations[index];
 
-    for (
-      let index = 0;
-      index <
-      routeLocations.length - 1;
-      index++
-    ) {
-      const source =
-        routeLocations[index];
+    const destination =
+      routeLocations[index + 1];
 
-      const destination =
-        routeLocations[index + 1];
+    const metric =
+      await this.getRouteMetric(
+        source,
+        destination,
+      );
 
-      const metric =
-        await this.getRouteMetric(
-          source,
-          destination,
-        );
-
-      if (!metric.valid) {
-        return null;
-      }
-
-      totalDistanceKm +=
-        metric.distanceKm;
-
-      totalTravelMinutes +=
-        metric.durationMinutes;
-
-      comfortPenalty +=
-        this.calculateComfortPenalty(
-          metric.durationMinutes,
-          index,
-          routes,
-          plan,
-        );
+    // Same safety behaviour as B2B:
+    // unusable road data = unusable candidate.
+    if (!metric.valid) {
+      return null;
     }
 
-    const backtrackingKm =
-      await this.calculateBacktrackingKm(
-        routeLocations,
+    const availableMinutes =
+      this.resolveDayAvailableMinutes(
+        index,
+        routes,
+        plan,
       );
 
-    /*
-     * All weights are configurable without another code deployment.
-     *
-     * Defaults:
-     * distance       1 point per km
-     * travel time   20 points per driving hour
-     * backtracking   2 points per unnecessary km away from departure
-     * comfort        calculated penalty points
-     */
-    const distanceWeight =
-      this.readPositiveNumber(
-        process.env
-          .ROUTE_OPT_DISTANCE_WEIGHT,
-        1,
+    // HARD CONSTRAINT:
+    // If the road transfer itself cannot fit inside the available
+    // itinerary window, reject the candidate instead of rewarding it
+    // with a lower mathematical score.
+    if (
+      availableMinutes > 0 &&
+      metric.durationMinutes >
+        availableMinutes
+    ) {
+      return null;
+    }
+
+    totalDistanceKm +=
+      metric.distanceKm;
+
+    totalTravelMinutes +=
+      metric.durationMinutes;
+
+    segmentDistances.push(
+      metric.distanceKm,
+    );
+
+    waitingMinutes +=
+      this.calculateKnownWaitingMinutes(
+        index,
+        routes,
+        plan,
       );
 
-    const timeWeight =
-      this.readPositiveNumber(
-        process.env
-          .ROUTE_OPT_TIME_WEIGHT,
-        20,
+    trafficRiskMinutes +=
+      this.calculateTrafficRiskMinutes(
+        metric,
       );
 
-    const backtrackingWeight =
-      this.readPositiveNumber(
-        process.env
-          .ROUTE_OPT_BACKTRACK_WEIGHT,
-        2,
+    constraintPenalty +=
+      this.calculateComfortPenalty(
+        metric.durationMinutes,
+        index,
+        routes,
+        plan,
       );
+  }
 
-    const comfortWeight =
-      this.readPositiveNumber(
-        process.env
-          .ROUTE_OPT_COMFORT_WEIGHT,
-        1,
-      );
+  const backtrackingKm =
+    await this.calculateBacktrackingKm(
+      routeLocations,
+    );
 
-    const distanceCost =
-      totalDistanceKm *
-      distanceWeight;
+  const futurePositionKm =
+    this.calculateFuturePositionPenalty(
+      segmentDistances,
+    );
 
-    const timeCost =
-      (totalTravelMinutes / 60) *
-      timeWeight;
+  /*
+   * Do NOT calculate the weighted score here.
+   *
+   * T, D, B, W, R and F must first be normalized
+   * against all valid candidate routes.
+   *
+   * applyDynamicTourismScores() performs that second pass.
+   */
+  return {
+    totalDistanceKm:
+      this.round(
+        totalDistanceKm,
+      ),
 
-    const backtrackingCost =
-      backtrackingKm *
-      backtrackingWeight;
+    totalTravelMinutes:
+      Math.round(
+        totalTravelMinutes,
+      ),
 
-    const comfortCost =
-      comfortPenalty *
-      comfortWeight;
+    backtrackingKm:
+      this.round(
+        backtrackingKm,
+      ),
 
-    const totalCost =
-      distanceCost +
-      timeCost +
-      backtrackingCost +
-      comfortCost;
+    comfortPenalty:
+      this.round(
+        constraintPenalty,
+      ),
 
+    waitingMinutes:
+      Math.round(
+        waitingMinutes,
+      ),
+
+    trafficRiskMinutes:
+      this.round(
+        trafficRiskMinutes,
+      ),
+
+    futurePositionKm:
+      this.round(
+        futurePositionKm,
+      ),
+
+    constraintPenalty:
+      this.round(
+        constraintPenalty,
+      ),
+
+    normalizedTravelTime: 0,
+    normalizedDistance: 0,
+    normalizedBacktracking: 0,
+    normalizedWaiting: 0,
+    normalizedTrafficRisk: 0,
+    normalizedFuturePosition: 0,
+
+    distanceCost: 0,
+    timeCost: 0,
+    backtrackingCost: 0,
+    waitingCost: 0,
+    trafficRiskCost: 0,
+    futurePositionCost: 0,
+
+    // Kept for Relaxed Route compatibility.
+    comfortCost:
+      this.round(
+        constraintPenalty,
+      ),
+
+    totalCost: 0,
+  };
+}
+
+private applyDynamicTourismScores(
+  candidates: EvaluatedCandidate[],
+): EvaluatedCandidate[] {
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const travelTimeRange =
+    this.getMetricRange(
+      candidates,
+      (candidate) =>
+        candidate.metrics
+          .totalTravelMinutes,
+    );
+
+  const distanceRange =
+    this.getMetricRange(
+      candidates,
+      (candidate) =>
+        candidate.metrics
+          .totalDistanceKm,
+    );
+
+  const backtrackingRange =
+    this.getMetricRange(
+      candidates,
+      (candidate) =>
+        candidate.metrics
+          .backtrackingKm,
+    );
+
+  const waitingRange =
+    this.getMetricRange(
+      candidates,
+      (candidate) =>
+        candidate.metrics
+          .waitingMinutes,
+    );
+
+  const trafficRiskRange =
+    this.getMetricRange(
+      candidates,
+      (candidate) =>
+        candidate.metrics
+          .trafficRiskMinutes,
+    );
+
+  const futurePositionRange =
+    this.getMetricRange(
+      candidates,
+      (candidate) =>
+        candidate.metrics
+          .futurePositionKm,
+    );
+
+  return candidates.map(
+    (candidate) => {
+      const metrics =
+        candidate.metrics;
+
+      const normalizedTravelTime =
+        this.normalizeLowerIsBetter(
+          metrics.totalTravelMinutes,
+          travelTimeRange.min,
+          travelTimeRange.max,
+        );
+
+      const normalizedDistance =
+        this.normalizeLowerIsBetter(
+          metrics.totalDistanceKm,
+          distanceRange.min,
+          distanceRange.max,
+        );
+
+      const normalizedBacktracking =
+        this.normalizeLowerIsBetter(
+          metrics.backtrackingKm,
+          backtrackingRange.min,
+          backtrackingRange.max,
+        );
+
+      const normalizedWaiting =
+        this.normalizeLowerIsBetter(
+          metrics.waitingMinutes,
+          waitingRange.min,
+          waitingRange.max,
+        );
+
+      const normalizedTrafficRisk =
+        this.normalizeLowerIsBetter(
+          metrics.trafficRiskMinutes,
+          trafficRiskRange.min,
+          trafficRiskRange.max,
+        );
+
+      const normalizedFuturePosition =
+        this.normalizeLowerIsBetter(
+          metrics.futurePositionKm,
+          futurePositionRange.min,
+          futurePositionRange.max,
+        );
+
+      /*
+       * DVI Dynamic Tourism Route Optimisation Formula
+       *
+       * Lower score = better.
+       *
+       * T = 40%
+       * D = 15%
+       * B = 15%
+       * W = 10%
+       * R = 10%
+       * F = 10%
+       *
+       * IMPORTANT:
+       * Road distance is still the primary B2B/DVI sort criterion.
+       * This formula is the smart secondary comparison.
+       */
+      const timeCost =
+        normalizedTravelTime * 0.40;
+
+      const distanceCost =
+        normalizedDistance * 0.15;
+
+      const backtrackingCost =
+        normalizedBacktracking * 0.15;
+
+      const waitingCost =
+        normalizedWaiting * 0.10;
+
+      const trafficRiskCost =
+        normalizedTrafficRisk * 0.10;
+
+      const futurePositionCost =
+        normalizedFuturePosition * 0.10;
+
+      const totalCost =
+        timeCost +
+        distanceCost +
+        backtrackingCost +
+        waitingCost +
+        trafficRiskCost +
+        futurePositionCost;
+
+      return {
+        ...candidate,
+
+        metrics: {
+          ...metrics,
+
+          normalizedTravelTime:
+            this.round(
+              normalizedTravelTime,
+            ),
+
+          normalizedDistance:
+            this.round(
+              normalizedDistance,
+            ),
+
+          normalizedBacktracking:
+            this.round(
+              normalizedBacktracking,
+            ),
+
+          normalizedWaiting:
+            this.round(
+              normalizedWaiting,
+            ),
+
+          normalizedTrafficRisk:
+            this.round(
+              normalizedTrafficRisk,
+            ),
+
+          normalizedFuturePosition:
+            this.round(
+              normalizedFuturePosition,
+            ),
+
+          timeCost:
+            this.round(
+              timeCost,
+            ),
+
+          distanceCost:
+            this.round(
+              distanceCost,
+            ),
+
+          backtrackingCost:
+            this.round(
+              backtrackingCost,
+            ),
+
+          waitingCost:
+            this.round(
+              waitingCost,
+            ),
+
+          trafficRiskCost:
+            this.round(
+              trafficRiskCost,
+            ),
+
+          futurePositionCost:
+            this.round(
+              futurePositionCost,
+            ),
+
+          totalCost:
+            this.round(
+              totalCost,
+            ),
+        },
+      };
+    },
+  );
+}
+
+private getMetricRange(
+  candidates: EvaluatedCandidate[],
+  selector: (
+    candidate: EvaluatedCandidate,
+  ) => number,
+): {
+  min: number;
+  max: number;
+} {
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (const candidate of candidates) {
+    const value =
+      Number(selector(candidate));
+
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+
+    if (value < min) {
+      min = value;
+    }
+
+    if (value > max) {
+      max = value;
+    }
+  }
+
+  if (
+    !Number.isFinite(min) ||
+    !Number.isFinite(max)
+  ) {
     return {
-      totalDistanceKm:
-        this.round(
-          totalDistanceKm,
-        ),
-
-      totalTravelMinutes:
-        Math.round(
-          totalTravelMinutes,
-        ),
-
-      backtrackingKm:
-        this.round(
-          backtrackingKm,
-        ),
-
-      comfortPenalty:
-        this.round(
-          comfortPenalty,
-        ),
-
-      distanceCost:
-        this.round(
-          distanceCost,
-        ),
-
-      timeCost:
-        this.round(
-          timeCost,
-        ),
-
-      backtrackingCost:
-        this.round(
-          backtrackingCost,
-        ),
-
-      comfortCost:
-        this.round(
-          comfortCost,
-        ),
-
-      totalCost:
-        this.round(
-          totalCost,
-        ),
+      min: 0,
+      max: 0,
     };
   }
+
+  return {
+    min,
+    max,
+  };
+}
+
+private normalizeLowerIsBetter(
+  value: number,
+  min: number,
+  max: number,
+): number {
+  if (!Number.isFinite(value)) {
+    return 100;
+  }
+
+  if (
+    !Number.isFinite(min) ||
+    !Number.isFinite(max) ||
+    max <= min
+  ) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      (
+        (value - min) /
+        (max - min)
+      ) * 100,
+    ),
+  );
+}
+
+private calculateKnownWaitingMinutes(
+  dayIndex: number,
+  routes: any[],
+  plan: any,
+): number {
+  const route =
+    routes[dayIndex] || {};
+
+  /*
+   * At Show Better Route stage the hotspot timeline has not
+   * been rebuilt yet, so do not invent attraction waiting time.
+   *
+   * Use only waiting that is already known from the route's
+   * planned start window.
+   */
+  if (!route?.route_start_time) {
+    return 0;
+  }
+
+  const isFirst =
+    dayIndex === 0;
+
+  const baselineStartMinutes =
+    isFirst
+      ? this.parseWallClockMinutes(
+          plan?.trip_start_date ||
+            plan
+              ?.pick_up_date_and_time,
+          8 * 60,
+        )
+      : 8 * 60;
+
+  const actualStartMinutes =
+    this.parseWallClockMinutes(
+      route.route_start_time,
+      baselineStartMinutes,
+    );
+
+  return Math.max(
+    0,
+    actualStartMinutes -
+      baselineStartMinutes,
+  );
+}
+
+private calculateTrafficRiskMinutes(
+  metric: RouteSegmentMetric,
+): number {
+  if (
+    !metric.valid ||
+    metric.distanceKm <= 0 ||
+    metric.durationMinutes <= 0
+  ) {
+    return 0;
+  }
+
+  /*
+   * No new Google/Mapbox dependency is introduced here.
+   *
+   * B2B/DVI already trusts stored road distance + duration.
+   * A route materially slower than the normal reference road
+   * speed naturally receives additional hill/congestion risk.
+   */
+  const referenceSpeedKmph =
+    this.readPositiveNumber(
+      process.env
+        .ROUTE_OPT_REFERENCE_SPEED_KMPH,
+      45,
+    );
+
+  if (referenceSpeedKmph <= 0) {
+    return 0;
+  }
+
+  const referenceMinutes =
+    (
+      metric.distanceKm /
+      referenceSpeedKmph
+    ) * 60;
+
+  return Math.max(
+    0,
+    metric.durationMinutes -
+      referenceMinutes,
+  );
+}
+
+private calculateFuturePositionPenalty(
+  segmentDistances: number[],
+): number {
+  if (
+    !Array.isArray(
+      segmentDistances,
+    ) ||
+    segmentDistances.length <= 1
+  ) {
+    return 0;
+  }
+
+  /*
+   * Penalise leaving large driving burdens for later days.
+   *
+   * Example:
+   * if one route leaves a 200 KM transfer for the final part
+   * of the itinerary while another progressively moves toward
+   * the departure side, the second route receives a better
+   * Future Position value.
+   */
+  let remainingDistance =
+    segmentDistances.reduce(
+      (sum, distance) =>
+        sum +
+        (
+          Number.isFinite(distance)
+            ? Math.max(0, distance)
+            : 0
+        ),
+      0,
+    );
+
+  let futurePositionPenalty = 0;
+
+  for (
+    let index = 0;
+    index <
+      segmentDistances.length - 1;
+    index++
+  ) {
+    remainingDistance -=
+      Math.max(
+        0,
+        segmentDistances[index] || 0,
+      );
+
+    futurePositionPenalty +=
+      Math.max(
+        0,
+        remainingDistance,
+      );
+  }
+
+  return futurePositionPenalty;
+}
 
   private calculateComfortPenalty(
     durationMinutes: number,
@@ -1534,15 +2009,27 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
     const routeLocations =
       this.buildRawRouteLocations(routes);
 
-    const metrics =
-      routeLocations.length === routes.length + 1
-        ? await this.scoreRouteLocations(
-            routeLocations,
-            routes,
-            plan,
-          )
-        : null;
+const rawMetrics =
+  routeLocations.length === routes.length + 1
+    ? await this.scoreRouteLocations(
+        routeLocations,
+        routes,
+        plan,
+      )
+    : null;
 
+const fallbackCandidate =
+  rawMetrics
+    ? this.applyDynamicTourismScores([
+        {
+          routeLocations,
+          metrics: rawMetrics,
+        },
+      ])[0]
+    : null;
+
+const metrics =
+  fallbackCandidate?.metrics || null;
     return {
       optimized: false,
 
