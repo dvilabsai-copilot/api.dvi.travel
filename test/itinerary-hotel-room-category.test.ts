@@ -79,12 +79,25 @@ test('prefills room category from the persisted selected snapshot when room row 
 
 test('updates a selected TBO room and preserves meal-plan flags', async () => {
   let updateQuery: any;
+  let supplierCalled = false;
   const service = new ItineraryHotelRoomCategoryService({
     dvi_itinerary_route_details: { findUnique: async () => ({ itinerary_route_date: '2026-07-16' }) },
     dvi_itinerary_plan_details: { findFirst: async () => ({ itinerary_quote_ID: 9 }) },
+    dvi_itinerary_plan_hotel_details: {
+      findFirst: async () => ({
+        selected_price_snapshot: JSON.stringify({
+          provider: 'tbo',
+          roomType: 'Deluxe',
+          availableRoomTypeOptions: [{ roomTypeId: 8, roomTypeTitle: 'Deluxe', roomId: 8, pricePerNight: 250 }],
+        }),
+      }),
+    },
     dvi_itinerary_plan_hotel_room_details: { update: async (query: any) => { updateQuery = query; } },
-  }, { getHotelRoomDetailsFromTbo: async () => ({ rooms: [{ hotelId: 3, groupType: 4, pricePerNight: 250, availableRoomTypes: [{ roomTypeId: 8, roomTypeTitle: 'Deluxe' }] }] }) });
+  }, {
+    getHotelRoomDetailsFromTbo: async () => { supplierCalled = true; throw new Error('supplier must not be called by update-categories'); },
+  });
   const result = await service.updateRoomCategory({ ...params, itinerary_plan_hotel_room_details_ID: 20, room_type_id: 8, all_meal_plan: 1 });
+  assert.equal(supplierCalled, false);
   assert.equal(result.roomTypeName, 'Deluxe');
   assert.equal(updateQuery.data.room_rate, 250);
   assert.equal(updateQuery.data.breakfast_required, 1);
@@ -96,8 +109,17 @@ test('does not overwrite an existing meal plan when only room category changes',
   const service = new ItineraryHotelRoomCategoryService({
     dvi_itinerary_route_details: { findUnique: async () => ({ itinerary_route_date: '2026-07-16' }) },
     dvi_itinerary_plan_details: { findFirst: async () => ({ itinerary_quote_ID: 9 }) },
+    dvi_itinerary_plan_hotel_details: {
+      findFirst: async () => ({
+        selected_price_snapshot: JSON.stringify({
+          provider: 'tbo',
+          roomType: 'Deluxe',
+          availableRoomTypeOptions: [{ roomTypeId: 8, roomTypeTitle: 'Deluxe', roomId: 8, pricePerNight: 250 }],
+        }),
+      }),
+    },
     dvi_itinerary_plan_hotel_room_details: { update: async (query: any) => { updateQuery = query; } },
-  }, { getHotelRoomDetailsFromTbo: async () => ({ rooms: [{ hotelId: 3, groupType: 4, pricePerNight: 250, availableRoomTypes: [{ roomTypeId: 8, roomTypeTitle: 'Deluxe' }] }] }) });
+  }, { getHotelRoomDetailsFromTbo: async () => { throw new Error('supplier must not be called by update-categories'); } });
 
   await service.updateRoomCategory({ ...params, itinerary_plan_hotel_room_details_ID: 20, room_type_id: 8 });
 

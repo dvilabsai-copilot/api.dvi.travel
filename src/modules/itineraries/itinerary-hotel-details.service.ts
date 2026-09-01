@@ -911,6 +911,21 @@ async getHotelRoomDetailsByQuoteId(
         Number((h as any).total_no_of_rooms ?? selectedPriceSnapshot.roomCount ?? 1),
         1,
       );
+      const persistedRoomTypeBreakdown = Array.isArray(selectedPriceSnapshot.roomTypeBreakdown)
+        ? selectedPriceSnapshot.roomTypeBreakdown
+          .map((room: any) => ({
+            roomNumber: Number(room?.roomNumber || 0),
+            roomTypeId: Number(room?.roomTypeId || 0),
+            roomType: String(room?.roomType || room?.roomTypeTitle || '').trim(),
+          }))
+          .filter((room: any) => room.roomNumber > 0 && room.roomType)
+        : [];
+      const persistedRoomTypeDisplay = persistedRoomTypeBreakdown.length > 0
+        ? persistedRoomTypeBreakdown
+          .sort((left: any, right: any) => left.roomNumber - right.roomNumber)
+          .map((room: any) => `${room.roomNumber} ${room.roomType}`)
+          .join('\n')
+        : '';
       const authoritativeBaseHotelCost = snapshotBaseTotal > 0
         ? snapshotBaseTotal
         : snapshotBasePerNight > 0
@@ -1163,12 +1178,15 @@ async getHotelRoomDetailsByQuoteId(
         hotelId: Number((h as any).hotel_id ?? 0) || 0,
         hotelName: persistedIdentity.hotelName,
         category: persistedIdentity.category,
-        roomType: String(
+        roomType: persistedRoomTypeDisplay || String(
           selectedPriceSnapshot.roomType ||
           selectedPriceSnapshot.roomTypeName ||
           (h as any).room_type ||
           '',
         ).trim(),
+        ...(persistedRoomTypeBreakdown.length > 0
+          ? { roomTypeBreakdown: persistedRoomTypeBreakdown }
+          : {}),
         mealPlan: String(
           selectedPriceSnapshot.mealPlan ||
           selectedPriceSnapshot.mealPlanCode ||

@@ -60,7 +60,7 @@ export class ItineraryHotelRoomCategoryService {
       totalPrice: 0,
       availableRoomTypes: [],
     };
-    const availableRoomTypes = await this.resolveAvailableRoomTypes(
+    let availableRoomTypes = await this.resolveAvailableRoomTypes(
       params.hotel_id,
       matchingHotelRooms,
       params.provider,
@@ -69,8 +69,93 @@ export class ItineraryHotelRoomCategoryService {
       params.itinerary_plan_id,
       params.itinerary_route_id,
     );
-    if (availableRoomTypes.length === 0) throw new NotFoundException('No room types available for this hotel');
 
+    // VSR is the UI label for TBO. The room-details endpoint can contain only
+    // the currently selected room, while the selected-hotel rate refresh
+    // exposes the complete room/rate inventory used by select-intent. Use the
+    // latter to populate this editor; otherwise a valid multi-category hotel
+    // incorrectly appears to have only one dropdown option.
+    let hasFreshBreakfastRoomTypes = false;
+    if (requiresLiveRoomDetails && ['tbo', 'vsr', 'vrs'].includes(providerName) &&
+      typeof this.hotelDetailsTboService.getSelectedHotelRates === 'function') {
+      try {
+        const routeModel = (this.prisma as any).dvi_itinerary_route_details;
+        const stayRoutes = routeModel?.findMany
+          ? await routeModel.findMany({
+            where: { itinerary_plan_ID: params.itinerary_plan_id, deleted: 0, status: 1 },
+            select: { itinerary_route_ID: true, location_id: true, itinerary_route_date: true },
+            orderBy: { itinerary_route_date: 'asc' },
+          })
+          : [];
+        const anchorIndex = stayRoutes.findIndex((route: any) =>
+          Number(route.itinerary_route_ID) === Number(params.itinerary_route_id),
+        );
+        const routeIds = [Number(params.itinerary_route_id)];
+        if (anchorIndex >= 0) {
+          for (let index = anchorIndex + 1; index < stayRoutes.length; index += 1) {
+            const previous = stayRoutes[index - 1];
+            const current = stayRoutes[index];
+            const previousDate = new Date(previous.itinerary_route_date).getTime();
+            const currentDate = new Date(current.itinerary_route_date).getTime();
+            if (Number(previous.location_id) !== Number(current.location_id) ||
+              currentDate - previousDate !== 24 * 60 * 60 * 1000) break;
+            routeIds.push(Number(current.itinerary_route_ID));
+          }
+        }
+        const refreshedRows = (await Promise.all(routeIds.map((routeId) =>
+          this.hotelDetailsTboService.getSelectedHotelRates(
+            plan.itinerary_quote_ID,
+            routeId,
+            'tbo',
+            String(params.hotel_code || params.hotel_id || '').trim(),
+            params.group_type,
+          ),
+        ))).flatMap((selectedRates) => selectedRates.hotels || []).filter((row: any) =>
+          String(row?.hotelCode || row?.providerHotelCode || '').trim() ===
+          String(params.hotel_code || params.hotel_id || '').trim(),
+        );
+        // TBO returns multiple rates for the same property. The editor is
+        // intentionally breakfast-only (CP); never expose the room-only EP
+        // rate as an alternative room category.
+        const breakfastRows = refreshedRows.filter((row: any) =>
+          String(row?.mealPlan || row?.mealPlanCode || '').trim().toUpperCase() === 'CP',
+        );
+        const refreshedTypes = breakfastRows.flatMap((row: any) => {
+          const options = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0
+            ? row.rateOptions
+            : [row];
+          return options.map((option: any) => ({
+            roomTypeId: Number(
+              option?.roomTypeId ?? option?.room_type_id ??
+              option?.roomId ?? option?.room_id ?? row?.roomTypeId ?? row?.roomId ??
+              Number(String(option?.selectionKey || option?.rateOptionId || option?.searchReference || row?.selectionKey || '').match(/:(\d+)$/)?.[1] || 0),
+            ),
+            roomTypeTitle: String(
+              option?.roomType || option?.roomTypeName || option?.room_name ||
+              row?.roomType || row?.roomTypeName || row?.room_name || '',
+            ).trim(),
+            roomId: Number(option?.roomId ?? option?.room_id ?? row?.roomId ?? 0),
+            pricePerNight: Number(option?.pricePerNight ?? row?.pricePerNight ?? option?.totalPrice ?? row?.totalPrice ?? 0),
+          }));
+        }).filter((roomType: any) => roomType.roomTypeId > 0 && roomType.roomTypeTitle);
+
+        if (refreshedTypes.length > 0) {
+          hasFreshBreakfastRoomTypes = true;
+          availableRoomTypes = refreshedTypes;
+        }
+        const merged = [...availableRoomTypes];
+        const uniqueByTitle = new Map<string, typeof availableRoomTypes[number]>();
+        for (const roomType of merged) {
+          const key = this.normalizeText(roomType.roomTypeTitle);
+          if (key && !uniqueByTitle.has(key)) uniqueByTitle.set(key, roomType);
+        }
+        availableRoomTypes = Array.from(uniqueByTitle.values());
+      } catch (error) {
+        // Keep the existing room-details result if the supplementary refresh
+        // fails. Opening the editor must not regress into a hard failure.
+        console.warn('[HOTEL_ROOM_CATEGORIES] selected-rate inventory refresh failed', error);
+      }
+    }
     const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
     const activeHotelDetails = hotelDetailsModel?.findFirst
       ? await hotelDetailsModel.findFirst({
@@ -124,6 +209,26 @@ export class ItineraryHotelRoomCategoryService {
       selectedSnapshot.room_type_title ||
       '',
     ).trim();
+    const snapshotRoomTypeOptions = Array.isArray(selectedSnapshot.availableRoomTypeOptions)
+      ? selectedSnapshot.availableRoomTypeOptions
+        .map((option: any) => ({
+          roomTypeId: Number(option?.roomTypeId || option?.room_type_id || 0),
+          roomTypeTitle: String(option?.roomTypeTitle || option?.room_type_title || '').trim(),
+          roomId: Number(option?.roomId || option?.room_id || option?.roomTypeId || 0),
+          pricePerNight: Number(option?.pricePerNight || 0),
+        }))
+        .filter((option: any) => option.roomTypeId > 0 && option.roomTypeTitle)
+      : [];
+    if (requiresLiveRoomDetails && !hasFreshBreakfastRoomTypes && snapshotRoomTypeOptions.length > 0) {
+      const merged = [...availableRoomTypes, ...snapshotRoomTypeOptions];
+      const uniqueByTitle = new Map<string, typeof availableRoomTypes[number]>();
+      for (const roomType of merged) {
+        const key = this.normalizeText(roomType.roomTypeTitle);
+        if (key && !uniqueByTitle.has(key)) uniqueByTitle.set(key, roomType);
+      }
+      availableRoomTypes = Array.from(uniqueByTitle.values());
+    }
+    if (availableRoomTypes.length === 0) throw new NotFoundException('No room types available for this hotel');
     // Orphan rows with parent ID 0 were produced by the old failing update
     // path. They must not inflate the configured room count or reappear as
     // valid persisted categories.
@@ -140,7 +245,11 @@ export class ItineraryHotelRoomCategoryService {
         orderBy: { itinerary_plan_hotel_room_details_ID: 'asc' },
       })
       : [];
-    const available = availableRoomTypes.map((roomType: any) => ({ room_type_id: roomType.roomTypeId, room_type_title: roomType.roomTypeTitle || '' }));
+    const available = availableRoomTypes.map((roomType: any) => ({
+      room_type_id: roomType.roomTypeId,
+      room_type_title: roomType.roomTypeTitle || '',
+      ...(Number(roomType.pricePerNight || 0) > 0 ? { price_per_night: Number(roomType.pricePerNight) } : {}),
+    }));
     const configuredRoomCount = Math.max(Number(plan.preferred_room_count || 1), 1);
     const rooms: any[] = existingRooms.map((room: any, index: number) => {
       const persistedRoomTypeId = Number(room.room_type_id || 0);
@@ -232,8 +341,11 @@ export class ItineraryHotelRoomCategoryService {
     });
     if (!planDetails) throw new NotFoundException('Itinerary plan details not found');
 
-    const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(planDetails.itinerary_quote_ID, params.itinerary_route_id);
-    const matchingHotelRooms = this.matchHotelRooms(tboRoomDetails.rooms || [], params);
+    // `update-categories` is a persistence mutation. It must not perform a
+    // supplier availability request: the selected category came from the
+    // already-rendered editor, and availability belongs to the explicit
+    // check/preview flow. Use the persisted snapshot/local room master below.
+    const matchingHotelRooms: any[] = [];
     const persistedSelectionParent = await this.findPersistedHotelParent(params);
     const persistedSnapshot = this.parseSelectedSnapshot(persistedSelectionParent?.selected_price_snapshot);
     const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
@@ -276,7 +388,7 @@ export class ItineraryHotelRoomCategoryService {
       totalPrice: Number(persistedSnapshot.totalPrice || persistedSnapshot.selectedTotalPrice || 0),
       availableRoomTypes: [],
     };
-    const availableRoomTypes = await this.resolveAvailableRoomTypes(
+    let availableRoomTypes = await this.resolveAvailableRoomTypes(
       params.hotel_id,
       matchingHotelRooms,
       params.provider,
@@ -285,13 +397,41 @@ export class ItineraryHotelRoomCategoryService {
       params.itinerary_plan_id,
       params.itinerary_route_id,
     );
+    // TBO/VSR room options are intentionally not refreshed here. If a live
+    // provider selection is edited, use the option inventory captured in the
+    // persisted selection snapshot. A fresh supplier check is an explicit
+    // availability operation, never a side effect of saving a room category.
+    const snapshotRoomTypeOptions = Array.isArray(persistedSnapshot.availableRoomTypeOptions)
+      ? persistedSnapshot.availableRoomTypeOptions
+        .map((option: any) => ({
+          roomTypeId: Number(option?.roomTypeId || option?.room_type_id || 0),
+          roomTypeTitle: String(option?.roomTypeTitle || option?.room_type_title || '').trim(),
+          roomId: Number(option?.roomId || option?.room_id || option?.roomTypeId || option?.room_type_id || 0),
+          pricePerNight: Number(option?.pricePerNight || option?.price_per_night || 0),
+        }))
+        .filter((option: any) => option.roomTypeId > 0 && option.roomTypeTitle)
+      : [];
+    if (availableRoomTypes.length === 0 && snapshotRoomTypeOptions.length > 0) {
+      availableRoomTypes = snapshotRoomTypeOptions;
+    }
+    const selectedSnapshotOption = snapshotRoomTypeOptions.find((option: any) =>
+      Number(option.roomTypeId) === Number(params.room_type_id),
+    );
     const selectedRoomType = availableRoomTypes.find((roomType: any) =>
-      Number(roomType.roomTypeId) === Number(params.room_type_id));
+      Number(roomType.roomTypeId) === Number(params.room_type_id)) || selectedSnapshotOption || (
+        Number(params.room_type_id) > 0 && String(persistedSnapshot.roomType || '').trim()
+          ? {
+            roomTypeId: Number(params.room_type_id),
+            roomTypeTitle: String(persistedSnapshot.roomType).trim(),
+            roomId: Number(persistedSnapshot.roomId || params.room_type_id),
+            pricePerNight: Number(persistedSnapshot.pricePerNight || persistedSnapshot.selectedPricePerNight || 0),
+          }
+          : null
+      );
     if (!selectedRoomType) throw new NotFoundException('Selected room type not available for this hotel');
-    const selectedLiveRoomRow = (tboRoomDetails.rooms || []).find((room: any) =>
-      this.matchesRoomIdentity(room, params) &&
-      Number(room.roomTypeId || 0) === Number(params.room_type_id || 0),
-    ) || hotelRoom;
+    const selectedLiveRoomRow = selectedSnapshotOption
+      ? { ...hotelRoom, ...selectedSnapshotOption }
+      : hotelRoom;
 
     const canonicalProvider = ['offline', 'axisrooms', 'ax'].includes(
       String(params.provider || hotelRoom.provider || '').trim().toLowerCase(),
@@ -784,15 +924,97 @@ export class ItineraryHotelRoomCategoryService {
         ...room,
         room_type_id: Number(room.room_type_id),
         room_qty: Number(room.room_qty || 1),
-        propagateContinuous: true,
+        // Propagate the complete submitted allocation below. Propagating
+        // inside this loop loses the physical room number for sibling nights
+        // and can create/reuse the wrong child row.
+        propagateContinuous: false,
       });
       batchParentId = Number(result?.itinerary_plan_hotel_details_ID || batchParentId || 0);
     }
+    await this.propagateContinuousRoomCategories({
+      ...params,
+      rooms: rooms.map((room) => ({
+        room_number: Number(room.room_number),
+        room_type_id: Number(room.room_type_id),
+        room_qty: Number(room.room_qty || 1),
+      })),
+    });
     return {
       ...result,
       batch: true,
       updatedRoomCount: rooms.length,
     };
+  }
+
+  /**
+   * A bulk modal submission represents one allocation shared by every night
+   * of the same continuous hotel stay. Mirror every submitted physical room
+   * to each adjacent matching parent, preserving room_number so Room 1 and
+   * Room 2 cannot be collapsed into one category.
+   */
+  private async propagateContinuousRoomCategories(params: {
+    itinerary_plan_hotel_details_ID: number;
+    itinerary_plan_id: number;
+    itinerary_route_id: number;
+    hotel_id: number;
+    group_type: number;
+    hotel_code?: string;
+    provider?: string;
+    hotel_name?: string;
+    rooms: Array<{ room_number: number; room_type_id: number; room_qty?: number }>;
+  }): Promise<void> {
+    const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
+    if (!hotelDetailsModel?.findMany) return;
+    const currentRoute = await this.prisma.dvi_itinerary_route_details.findUnique({
+      where: { itinerary_route_ID: params.itinerary_route_id },
+      select: { itinerary_route_date: true },
+    });
+    if (!currentRoute?.itinerary_route_date) return;
+
+    const parents = await hotelDetailsModel.findMany({
+      where: {
+        itinerary_plan_id: params.itinerary_plan_id,
+        hotel_id: params.hotel_id,
+        group_type: params.group_type,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        itinerary_plan_hotel_details_ID: true,
+        itinerary_route_id: true,
+        itinerary_route_date: true,
+        hotel_provider: true,
+        hotel_code: true,
+      },
+    });
+
+    const currentDate = new Date(currentRoute.itinerary_route_date).getTime();
+    const provider = String(params.provider || '').trim().toLowerCase();
+    const code = this.normalizeText(params.hotel_code);
+    for (const parent of parents as any[]) {
+      const routeId = Number(parent.itinerary_route_id || 0);
+      if (!routeId || routeId === Number(params.itinerary_route_id)) continue;
+      const parentDate = new Date(parent.itinerary_route_date).getTime();
+      const dayDistance = Math.abs(parentDate - currentDate) / 86400000;
+      if (!Number.isFinite(dayDistance) || dayDistance !== 1) continue;
+      const parentProvider = String(parent.hotel_provider || '').trim().toLowerCase();
+      const parentCode = this.normalizeText(parent.hotel_code);
+      if (provider && parentProvider && provider !== parentProvider) continue;
+      if (code && parentCode && code !== parentCode) continue;
+
+      for (const room of params.rooms) {
+        await this.updateRoomCategory({
+          ...params,
+          itinerary_plan_hotel_details_ID: Number(parent.itinerary_plan_hotel_details_ID || 0),
+          itinerary_route_id: routeId,
+          room_number: Number(room.room_number),
+          room_type_id: Number(room.room_type_id),
+          room_qty: Number(room.room_qty || 1),
+          itinerary_plan_hotel_room_details_ID: 0,
+          propagateContinuous: false,
+        });
+      }
+    }
   }
 
   /**
@@ -1258,6 +1480,7 @@ export class ItineraryHotelRoomCategoryService {
         for (const roomType of availableRoomTypes) {
           let roomEligible = true;
           for (const date of stayDates) {
+            if (!occupancyModel?.findMany || !availabilityModel?.findMany) continue;
             const [rateRows, inventoryRows] = await Promise.all([
               occupancyModel.findMany({
                 where: { hotel_id: hotelId, room_id: roomType.roomId, rateplan_id: { in: rateplanIds }, start_date: { lte: date }, end_date: { gte: date } },
