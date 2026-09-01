@@ -46,6 +46,7 @@ import { CancelHotelVouchersDto } from './dto/cancel-hotel-vouchers.dto';
 import {
   GetHotelRoomCategoriesDto,
   UpdateRoomCategoryDto,
+  UpdateRoomCategoriesDto,
   HotelRoomCategoriesListResponseDto,
 } from './dto/hotel-room-selection.dto';
 import { ItinerariesService } from './itineraries.service';
@@ -2723,6 +2724,18 @@ async confirmQuotation(
       breakfast_meal_plan: dto.breakfast_meal_plan,
       lunch_meal_plan: dto.lunch_meal_plan,
       dinner_meal_plan: dto.dinner_meal_plan,
+    });
+  }
+
+  @Post('hotel-rooms/update-categories')
+  @ApiOperation({ summary: 'Update all room category selections for one hotel night' })
+  @ApiBody({ type: UpdateRoomCategoriesDto })
+  async updateRoomCategories(@Body() dto: UpdateRoomCategoriesDto, @Req() req: Request) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_id), (req as any).user);
+    return this.svc.updateRoomCategories({
+      ...dto,
+      rooms: dto.rooms,
     });
   }
 

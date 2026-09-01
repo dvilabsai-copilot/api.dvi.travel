@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
 import { resolveHotelOccupancyPricing } from '../utils/hotel-selection-pricing.util';
@@ -360,7 +360,27 @@ export class ItineraryHotelRoomCategoryService {
     // A newly added room may not have a child-row ID yet. Resolve it by its
     // displayed room number before deciding to create, otherwise repeated
     // confirms can target the wrong child row and lose Room 2's selection.
+    const roomDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_room_details;
     let roomDetailsId = Number(params.itinerary_plan_hotel_room_details_ID || 0);
+    // The client can hold a child ID from a previous hotel-details parent
+    // after reset/rebuild. Never re-parent that stale row as a side effect of
+    // a room edit; only accept an ID that belongs to this active parent and
+    // route. Otherwise resolve the physical room by its submitted number.
+    if (roomDetailsId && roomDetailsModel?.findFirst) {
+      const matchingRoom = await roomDetailsModel.findFirst({
+        where: {
+          itinerary_plan_hotel_room_details_ID: roomDetailsId,
+          itinerary_plan_hotel_details_id: hotelDetailsId,
+          itinerary_plan_id: params.itinerary_plan_id,
+          itinerary_route_id: params.itinerary_route_id,
+          itinerary_route_date: route.itinerary_route_date,
+          deleted: 0,
+          status: 1,
+        },
+        select: { itinerary_plan_hotel_room_details_ID: true },
+      });
+      if (!matchingRoom) roomDetailsId = 0;
+    }
     if (!roomDetailsId && Number(params.room_number || 0) > 0) {
       const roomRows = await this.prisma.dvi_itinerary_plan_hotel_room_details.findMany({
         where: {
@@ -432,7 +452,6 @@ export class ItineraryHotelRoomCategoryService {
         },
       });
     }
-    const roomDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_room_details;
     const activeRoomRows = roomDetailsModel?.findMany ? await roomDetailsModel.findMany({
       where: {
         itinerary_plan_hotel_details_id: hotelDetailsId,
@@ -723,6 +742,56 @@ export class ItineraryHotelRoomCategoryService {
           grandTotal: occupancyPricing.totalPrice,
         },
       } : {}),
+    };
+  }
+
+  async updateRoomCategories(params: {
+    itinerary_plan_hotel_details_ID: number;
+    itinerary_plan_id: number;
+    itinerary_route_id: number;
+    hotel_id: number;
+    group_type: number;
+    hotel_code?: string;
+    provider?: string;
+    hotel_name?: string;
+    rooms: Array<{
+      itinerary_plan_hotel_room_details_ID?: number;
+      room_number: number;
+      room_type_id: number;
+      room_qty?: number;
+    }>;
+  }) {
+    const rooms = Array.isArray(params.rooms) ? params.rooms : [];
+    if (rooms.length === 0) throw new BadRequestException('At least one room selection is required');
+    const roomNumbers = rooms.map((room) => Number(room.room_number));
+    if (new Set(roomNumbers).size !== roomNumbers.length || roomNumbers.some((roomNumber) => roomNumber < 1)) {
+      throw new BadRequestException('Room numbers must be unique positive values');
+    }
+
+    // The existing calculation method rebuilds the parent from all persisted
+    // physical-room rows. Process the complete submitted set before returning
+    // the final result, so the caller receives the final parent total rather
+    // than an intermediate per-room total.
+    let result: any = null;
+    let batchParentId = Number(params.itinerary_plan_hotel_details_ID || 0);
+    for (const room of rooms.sort((left, right) => Number(left.room_number) - Number(right.room_number))) {
+      result = await this.updateRoomCategory({
+        ...params,
+        // The first room resolves an old/invalid parent if necessary. Reuse
+        // that exact parent for the remaining rooms so one confirmation can
+        // never create one hotel-details row per room.
+        ...(batchParentId > 0 ? { itinerary_plan_hotel_details_ID: batchParentId } : {}),
+        ...room,
+        room_type_id: Number(room.room_type_id),
+        room_qty: Number(room.room_qty || 1),
+        propagateContinuous: true,
+      });
+      batchParentId = Number(result?.itinerary_plan_hotel_details_ID || batchParentId || 0);
+    }
+    return {
+      ...result,
+      batch: true,
+      updatedRoomCount: rooms.length,
     };
   }
 

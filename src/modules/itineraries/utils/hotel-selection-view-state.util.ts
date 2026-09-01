@@ -412,9 +412,11 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
   );
   const payable = hotelCardPayableAmount({ ...row, ...identity });
   const pricePerNight = Number(
-    row?.selectedPricePerNight ?? row?.selected_price_per_night ??
-      row?.totalHotelCost ?? row?.total_hotel_cost ??
-      identity.selectedPricePerNight ?? identity.pricePerNight ?? row?.pricePerNight ?? payable,
+    roomTypeBreakdown.length > 0
+      ? snapshot?.selectedPricePerNight ?? snapshot?.pricePerNight ?? payable
+      : row?.selectedPricePerNight ?? row?.selected_price_per_night ??
+        row?.totalHotelCost ?? row?.total_hotel_cost ??
+        identity.selectedPricePerNight ?? identity.pricePerNight ?? row?.pricePerNight ?? payable,
   );
   const totalPrice = Number(
     identity.totalPrice ?? identity.selectedTotalPrice ?? row?.totalPrice ??
