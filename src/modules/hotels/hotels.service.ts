@@ -360,6 +360,15 @@ export class HotelsService {
     const limit = Math.max(1, Math.min(100, Number(q.limit ?? 10)));
     const skip = (page - 1) * limit;
 
+    const providerAlias: Record<string, 'axisrooms' | 'resavenue' | 'staah'> = {
+      AX: 'axisrooms',
+      RS: 'resavenue',
+      ST: 'staah',
+      axisrooms: 'axisrooms',
+      resavenue: 'resavenue',
+      staah: 'staah',
+    };
+    const provider = providerAlias[String(q.provider ?? '').trim()];
     const AND: Prisma.dvi_hotelWhereInput[] = [this.notDeletedBool as any];
 
     const rawStatus: any = (q as any).status;
@@ -375,6 +384,19 @@ export class HotelsService {
           ? ({ hotel_city: resolvedCity.cityId } as any)
           : ({ hotel_city: q.hotel_city } as any),
       );
+    }
+
+    if (provider === 'axisrooms') {
+      AND.push({ axisrooms_enabled: 1 } as any);
+      AND.push({ axisrooms_property_id: { not: null } } as any);
+      AND.push({ axisrooms_property_id: { not: '' } } as any);
+    } else if (provider === 'resavenue') {
+      AND.push({ resavenue_hotel_code: { not: null } } as any);
+      AND.push({ resavenue_hotel_code: { not: '' } } as any);
+    } else if (provider === 'staah') {
+      AND.push({ staah_enabled: 1 } as any);
+      AND.push({ staah_property_id: { not: null } } as any);
+      AND.push({ staah_property_id: { not: '' } } as any);
     }
 
     const term = (q.search ?? '').toString().trim();
@@ -2283,102 +2305,11 @@ export class HotelsService {
         (r: any) => new Date(r.start_date) <= dt && new Date(r.end_date) >= dt,
       );
       if (best) {
-        const occ = best.occupancy_rates as Record<string, number>;
+        const rawOcc = best.occupancy_rates as Record<string, number>;
+        const occ = rawOcc && typeof rawOcc === 'object' ? { ...rawOcc } : undefined;
         if (occ && typeof occ === 'object') {
+          delete occ.ROOM_RATE;
           bestByDate.set(date, occ);
-        }
-      }
-    }
-
-    // Older/manual hotel price books predate dvi_hotel_occupancy_rate.  They
-    // store one monthly row per price_type with day_1..day_31 columns.  Keep
-    // the normalized occupancy table authoritative, but fill dates for which
-    // it has no row from the legacy table so the admin price-book screen does
-    // not show an empty grid for existing manual hotels.
-    if (bestByDate.size < dates.length) {
-      const legacyRows = await (this.prisma as any).dvi_hotel_room_price_book.findMany({
-        where: {
-          hotel_id: hid,
-          room_id: rid,
-          status: 1,
-          deleted: 0,
-        },
-        select: {
-          price_type: true,
-          month: true,
-          year: true,
-          day_1: true,
-          day_2: true,
-          day_3: true,
-          day_4: true,
-          day_5: true,
-          day_6: true,
-          day_7: true,
-          day_8: true,
-          day_9: true,
-          day_10: true,
-          day_11: true,
-          day_12: true,
-          day_13: true,
-          day_14: true,
-          day_15: true,
-          day_16: true,
-          day_17: true,
-          day_18: true,
-          day_19: true,
-          day_20: true,
-          day_21: true,
-          day_22: true,
-          day_23: true,
-          day_24: true,
-          day_25: true,
-          day_26: true,
-          day_27: true,
-          day_28: true,
-          day_29: true,
-          day_30: true,
-          day_31: true,
-        },
-      });
-
-      const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December',
-      ];
-      const legacyKey = (year: unknown, month: unknown) =>
-        `${String(year ?? '').trim()}-${String(month ?? '').trim().toLowerCase()}`;
-      const priceTypeLabel = (priceType: number) => {
-        switch (priceType) {
-          case 0: return 'ROOM_RATE';
-          case 1: return 'EXTRA_BED';
-          case 2: return 'CHILD_WITH_BED';
-          case 3: return 'CHILD_WITHOUT_BED';
-          default: return `PRICE_TYPE_${priceType}`;
-        }
-      };
-      const legacyByMonth = new Map<string, any[]>();
-      for (const row of legacyRows as any[]) {
-        const key = legacyKey(row.year, row.month);
-        const bucket = legacyByMonth.get(key) || [];
-        bucket.push(row);
-        legacyByMonth.set(key, bucket);
-      }
-
-      for (const date of dates) {
-        if (bestByDate.has(date)) continue;
-        const dt = new Date(`${date}T00:00:00.000Z`);
-        const rowsForMonth = legacyByMonth.get(
-          legacyKey(dt.getUTCFullYear(), monthNames[dt.getUTCMonth()]),
-        ) || [];
-        const occupancy: Record<string, number> = {};
-        const dayColumn = `day_${dt.getUTCDate()}`;
-        for (const row of rowsForMonth) {
-          const value = Number(row[dayColumn]);
-          if (!Number.isFinite(value) || value <= 0) continue;
-          occupancy[priceTypeLabel(Number(row.price_type))] = value;
-        }
-        if (Object.keys(occupancy).length > 0) {
-          bestByDate.set(date, occupancy);
         }
       }
     }
@@ -2520,6 +2451,87 @@ export class HotelsService {
       rows,
     };
   }
+  async saveRoomAvailability(
+    hotel_id: number,
+    room_id: number,
+    items: Array<{ startDate?: string; endDate?: string; freeRooms?: number }>,
+  ) {
+    const hid = Number(hotel_id);
+    const rid = Number(room_id);
+
+    if (!Number.isFinite(hid) || hid <= 0 || !Number.isInteger(hid)) {
+      throw new BadRequestException('hotelId must be a valid number');
+    }
+    if (!Number.isFinite(rid) || rid <= 0 || !Number.isInteger(rid)) {
+      throw new BadRequestException('roomId must be a valid number');
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException('items array is required');
+    }
+
+    const [hotel, room] = await Promise.all([
+      (this.prisma as any).dvi_hotel.findFirst({
+        where: { hotel_id: hid, deleted: { not: true } },
+        select: { hotel_id: true },
+      }),
+      (this.prisma as any).dvi_hotel_rooms.findFirst({
+        where: { hotel_id: hid, room_ID: BigInt(rid), deleted: 0 },
+        select: { room_ID: true },
+      }),
+    ]);
+
+    if (!hotel) throw new BadRequestException('Hotel not found');
+    if (!room) throw new BadRequestException('Room not found for this hotel');
+
+    const normalized = items.map((item, index) => {
+      const start = this.parseRangeViewDate(String(item?.startDate || ''), `items[${index}].startDate`);
+      const end = this.parseRangeViewDate(String(item?.endDate || ''), `items[${index}].endDate`);
+      const free = Number(item?.freeRooms);
+      if (start.getTime() > end.getTime()) {
+        throw new BadRequestException(`items[${index}].startDate must be less than or equal to endDate`);
+      }
+      if (!Number.isInteger(free) || free < 0) {
+        throw new BadRequestException(`items[${index}].freeRooms must be a non-negative integer`);
+      }
+      return { start, end, free };
+    });
+
+    const saved = await (this.prisma as any).$transaction(
+      normalized.map(({ start, end, free }) =>
+        (this.prisma as any).dvi_hotel_room_availability.upsert({
+          where: {
+            hotel_id_room_id_start_date_end_date: {
+              hotel_id: hid,
+              room_id: rid,
+              start_date: start,
+              end_date: end,
+            },
+          },
+          update: { free, received_at: new Date(), source: 'manual' },
+          create: {
+            hotel_id: hid,
+            room_id: rid,
+            start_date: start,
+            end_date: end,
+            free,
+            source: 'manual',
+          },
+        }),
+      ),
+    );
+
+    return {
+      success: true,
+      message: 'Room availability saved successfully.',
+      items: saved.map((row: any) => ({
+        id: row.id,
+        startDate: new Date(row.start_date).toISOString().slice(0, 10),
+        endDate: new Date(row.end_date).toISOString().slice(0, 10),
+        freeRooms: row.free,
+      })),
+    };
+  }
+
   async getRoomAvailabilityRangeView(
     hotel_id: number,
     query: { startDate: string; endDate: string; roomId: number },
@@ -2791,49 +2803,6 @@ export class HotelsService {
     if (!Number.isFinite(hid) || hid <= 0) throw new Error('Invalid hotel_id');
     if (!body || !Array.isArray(body.items)) throw new Error('items array is required');
 
-    const mkTask = async (
-      roomId: number,
-      priceType: 1 | 2 | 3 | 4,
-      start: Date,
-      end: Date,
-      value: number | string,
-    ) => {
-      const buckets = this.splitRangeByMonth_forRoomsAndAmenities(start, end);
-      for (const b of buckets) {
-        const dayPatch = this.buildDayPatch_forRoomsAndAmenities(value, b.days, false);
-        const existing = await this.prisma.dvi_hotel_room_price_book.findFirst({
-          where: {
-            hotel_id: hid,
-            room_id: Number(roomId),
-            price_type: priceType,
-            year: b.year,
-            month: b.month,
-          } as any,
-          select: { hotel_price_book_id: true } as any,
-        });
-
-        if (!existing) {
-          await this.prisma.dvi_hotel_room_price_book.create({
-            data: {
-              hotel_id: hid,
-              room_id: Number(roomId),
-              price_type: priceType,
-              year: b.year,
-              month: b.month,
-              status: 1,
-              deleted: 0,
-              ...dayPatch,
-            } as any,
-          } as any);
-        } else {
-          await this.prisma.dvi_hotel_room_price_book.update({
-            where: { hotel_price_book_id: (existing as any).hotel_price_book_id } as any,
-            data: { ...dayPatch } as any,
-          } as any);
-        }
-      }
-    };
-
     const buildOccupancyRates = (item: any): Record<string, number> => {
       const rates: Record<string, number> = {};
       const raw = item?.occupancyRates && typeof item.occupancyRates === 'object'
@@ -2844,7 +2813,9 @@ export class HotelsService {
         for (const [key, value] of Object.entries(raw)) {
           const occupancyKey = this.toStr(key)?.toUpperCase();
           const numericValue = this.toNumStrict(value);
-          if (occupancyKey && numericValue !== undefined) rates[occupancyKey] = numericValue;
+          if (occupancyKey && occupancyKey !== 'ROOM_RATE' && numericValue !== undefined) {
+            rates[occupancyKey] = numericValue;
+          }
         }
       }
 
@@ -2893,6 +2864,7 @@ export class HotelsService {
         }
       }
       Object.assign(merged, rates);
+      delete merged.ROOM_RATE;
       if (!previous) {
         for (const key of PRICEBOOK_OCCUPANCY_KEYS) {
           if (merged[key] === undefined) merged[key] = 0;
@@ -2937,25 +2909,13 @@ export class HotelsService {
       if (!Number.isFinite(roomId) || roomId <= 0) continue;
       if (!start || !end) continue;
 
-      if (it.roomPrice !== undefined && it.roomPrice !== '' && it.roomPrice !== null) {
-        await mkTask(roomId, 1, start, end, it.roomPrice);
-      }
-      if (it.extraBed !== undefined && it.extraBed !== '' && it.extraBed !== null) {
-        await mkTask(roomId, 2, start, end, it.extraBed);
-      }
-      if (it.childWithBed !== undefined && it.childWithBed !== '' && it.childWithBed !== null) {
-        await mkTask(roomId, 3, start, end, it.childWithBed);
-      }
-      if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
-        await mkTask(roomId, 4, start, end, it.childWithoutBed);
-      }
-
       const rateplanId = this.toStr(it.rateplanId);
       if (!rateplanId) {
         continue;
       }
 
       const occupancyRates = buildOccupancyRates(it);
+      const mergedOccupancyRates = await saveOccupancyRates(roomId, rateplanId, start, end, occupancyRates);
 
       if (!axisroomsEnabled || !axisroomsPropertyId) {
         // Offline hotels use the same normalized occupancy table as supplier
@@ -2989,8 +2949,6 @@ export class HotelsService {
       }
 
       const ratePlanName = this.toStr(it.ratePlanName) || rateplanId;
-
-      const mergedOccupancyRates = await saveOccupancyRates(roomId, rateplanId, start, end, occupancyRates);
 
       await this.prisma.dvi_hotel_room_rate_plan.upsert({
         where: {

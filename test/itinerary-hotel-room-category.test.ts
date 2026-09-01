@@ -105,3 +105,51 @@ test('does not overwrite an existing meal plan when only room category changes',
   assert.equal('lunch_required' in updateQuery.data, false);
   assert.equal('dinner_required' in updateQuery.data, false);
 });
+
+test('uses occupancy rates for canonical room categories and never reads the legacy price book', async () => {
+  let priceBookRead = false;
+  const service = new ItineraryHotelRoomCategoryService({
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ preferred_room_count: 1, itinerary_quote_ID: 9 }),
+    },
+    dvi_itinerary_route_details: {
+      findUnique: async () => ({ itinerary_route_date: '2026-07-16' }),
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+    },
+    dvi_hotel_rooms: {
+      findMany: async () => [{
+        room_ID: 44,
+        room_type_id: 8,
+        room_title: 'Deluxe',
+        room_ref_code: 'DELUXE',
+      }],
+    },
+    dvi_hotel_occupancy_rate: {
+      findMany: async () => [{
+        occupancy_rates: {
+          SINGLE: 3200,
+          DOUBLE: 6400,
+          EXTRABED: 3500,
+          CHILD_WITH_BED: 2200,
+          CHILD_WITHOUT_BED: 1600,
+        },
+      }],
+    },
+    dvi_hotel_room_price_book: {
+      findMany: async () => {
+        priceBookRead = true;
+        throw new Error('legacy price book must not be queried');
+      },
+    },
+  }, { getHotelRoomDetailsFromTbo: async () => ({ rooms: [] }) });
+
+  const result = await service.getHotelRoomCategories({
+    ...params,
+    provider: 'axisrooms',
+  });
+
+  assert.equal(priceBookRead, false);
+  assert.equal(result.rooms[0].available_room_types[0].room_type_title, 'Deluxe');
+});

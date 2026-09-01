@@ -176,12 +176,14 @@ test('hotel reset reason triggers for meal-plan-only edits and preserves route p
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: true, roomCountChanged: true }), 'ROUTE_CHANGED');
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, mealPlanChanged: false }), null);
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, hotelCategoryChanged: true }), 'HOTEL_CATEGORY_CHANGED');
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, earlyArrivalChanged: true }), 'EARLY_ARRIVAL_CONFIRMED');
 });
 
 test('hotel rows rebuild when category changes without a route change', () => {
   assert.equal(shouldRebuildHotelData({ routeChanged: false, hotelCategoryChanged: true }), true);
   assert.equal(shouldRebuildHotelData({ routeChanged: false, mealPlanChanged: true }), true);
   assert.equal(shouldRebuildHotelData({ routeChanged: false, roomCountChanged: true }), true);
+  assert.equal(shouldRebuildHotelData({ routeChanged: false, earlyArrivalChanged: true }), true);
   assert.equal(shouldRebuildHotelData({ routeChanged: false }), false);
 });
 

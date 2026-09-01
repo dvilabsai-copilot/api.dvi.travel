@@ -23,6 +23,7 @@ import {
 } from '../../hotels/hotel-rate-plans';
 import { resolveHotelSelectionPricing } from '../utils/hotel-selection-pricing.util';
 import { HotelAvailabilitySnapshotService } from './hotel-availability-snapshot.service';
+import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 
 @Injectable()
 export class ItinerarySelectionWorkflowService {
@@ -143,6 +144,7 @@ export class ItinerarySelectionWorkflowService {
     routeId: number;
     hotelId: number | null;
     roomTypeId: number;
+    selectionIntent?: 'HOTEL' | 'ROOM_TYPE' | 'MEAL_PLAN' | 'RATE_OPTION';
  groupType?: number; // ADD groupType parameter
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean; };
     canonicalHotelId?: number | null;
@@ -323,17 +325,53 @@ export class ItinerarySelectionWorkflowService {
       pricePerNight: data.pricePerNight,
       roomCount: data.roomCount,
     });
+    const providerForPricing = String(data.provider || '').trim().toLowerCase();
     let axisRoomsBasePrice = 0;
+    let axisRoomsSupplementRates: { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } | null = null;
     if (String(data.provider || '').trim().toLowerCase() === 'axisrooms') {
       axisRoomsBasePrice = await this.resolveAxisRoomsSelectionBasePrice(data, route);
+      axisRoomsSupplementRates = await this.resolveAxisRoomsSelectionSupplementRates(data, route);
     }
-    const extraBedCount = Math.max(Math.trunc(Number(data.extraBedCount || 0)), 0);
-    const extraBedRate = Math.max(Number(data.extraBedRate || 0), 0);
+    // Selection requests intentionally contain identity, not occupancy
+    // quantities. When a client omits them, use the itinerary plan as the
+    // authoritative source instead of persisting zero supplements.
+    const extraBedCount = Math.max(Math.trunc(Number(
+      data.extraBedCount ?? (plan as any)?.total_extra_bed ?? 0,
+    )), 0);
+    const extraBedRate = Math.max(Number(
+      providerForPricing === 'axisrooms'
+        ? axisRoomsSupplementRates?.extraBedRate ?? data.extraBedRate ?? 0
+        : data.extraBedRate || 0,
+    ), 0);
     const extraBedAmount = Math.max(
       Number(data.extraBedAmount ?? (extraBedCount * extraBedRate)),
       0,
     );
     const extraBedGstAmount = Math.max(Number(data.extraBedGstAmount || 0), 0);
+    const childWithBedCount = Math.max(Math.trunc(Number(
+      (data as any).childWithBedCount ?? (plan as any)?.total_child_with_bed ?? 0,
+    )), 0);
+    const childWithBedRate = Math.max(Number(
+      providerForPricing === 'axisrooms'
+        ? axisRoomsSupplementRates?.childWithBedRate ?? (data as any).childWithBedRate ?? 0
+        : (data as any).childWithBedRate || 0,
+    ), 0);
+    const childWithBedAmount = Math.max(
+      Number((data as any).childWithBedAmount ?? (childWithBedCount * childWithBedRate)),
+      0,
+    );
+    const childWithoutBedCount = Math.max(Math.trunc(Number(
+      (data as any).childWithoutBedCount ?? (plan as any)?.total_child_without_bed ?? 0,
+    )), 0);
+    const childWithoutBedRate = Math.max(Number(
+      providerForPricing === 'axisrooms'
+        ? axisRoomsSupplementRates?.childWithoutBedRate ?? (data as any).childWithoutBedRate ?? 0
+        : (data as any).childWithoutBedRate || 0,
+    ), 0);
+    const childWithoutBedAmount = Math.max(
+      Number((data as any).childWithoutBedAmount ?? (childWithoutBedCount * childWithoutBedRate)),
+      0,
+    );
     const globalSettingsModel = (db as any).dvi_global_settings;
     const globalSettings = globalSettingsModel
       ? await globalSettingsModel.findFirst({
@@ -344,7 +382,6 @@ export class ItinerarySelectionWorkflowService {
       : null;
     const configuredMargin = globalSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0;
     const requestedHotelMargin = Number(data.hotelMarginPercentage);
-    const providerForPricing = String(data.provider || '').trim().toLowerCase();
     const hotelMaster = providerForPricing === 'axisrooms' && persistedHotelId
       ? await (db as any).dvi_hotel?.findUnique?.({
           where: { hotel_id: persistedHotelId },
@@ -352,12 +389,15 @@ export class ItinerarySelectionWorkflowService {
         })
       : null;
     const hotelMasterMargin = Number(hotelMaster?.hotel_margin || 0);
+    const suppliedHotelMargin = Number(data.hotelMarginPercentage || 0);
     const hotelMarginPercentage = Math.max(
       providerForPricing === 'axisrooms'
         ? hotelMasterMargin > 0
           ? hotelMasterMargin
           : Number(configuredMargin || requestedHotelMargin || 0)
-        : Number(data.hotelMarginPercentage ?? configuredMargin ?? 0),
+        : suppliedHotelMargin > 0
+          ? suppliedHotelMargin
+          : Number(configuredMargin || 0),
       0,
     );
     // STAAH's nightly occupancy amount is the supplier room cost before our
@@ -381,8 +421,11 @@ export class ItinerarySelectionWorkflowService {
       ? Number((staahBaseTotal * hotelMarginPercentage / 100).toFixed(2))
       : 0;
     if (providerForPricing === 'staah' && staahBaseTotal > 0) {
-      data.pricePerNight = Number((staahBasePricePerNight * (1 + hotelMarginPercentage / 100)).toFixed(2));
       data.totalPrice = Number((staahBaseTotal + staahMarginRate).toFixed(2));
+      // The persisted selected price is the complete payable amount for this
+      // itinerary day, including every requested room. Keep the supplier's
+      // one-room rate only in the room-rate fields.
+      data.pricePerNight = data.totalPrice;
       selectionPricing = resolveHotelSelectionPricing({
         totalPrice: data.totalPrice,
         pricePerNight: data.pricePerNight,
@@ -390,11 +433,20 @@ export class ItinerarySelectionWorkflowService {
       });
     }
     if (axisRoomsBasePrice > 0) {
-      const authoritativePayable = Number((axisRoomsBasePrice * (1 + hotelMarginPercentage / 100)).toFixed(2));
+      const axisRoomsMarginBase = Number((
+        axisRoomsBasePrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount
+      ).toFixed(2));
+      const axisRoomsMargin = Number((axisRoomsMarginBase * hotelMarginPercentage / 100).toFixed(2));
+      const authoritativePayable = Number((axisRoomsMarginBase + axisRoomsMargin).toFixed(2));
       // AxisRooms selections must be priced from the matching ARI row, never
       // from a stale client payload that can combine another option's total.
       data.pricePerNight = authoritativePayable;
       data.totalPrice = authoritativePayable;
+      data.basePricePerNight = Number((axisRoomsBasePrice / Math.max(Number(data.roomCount || 1), 1)).toFixed(2));
+      data.baseTotalPrice = axisRoomsBasePrice;
+      (data as any).hotelMarginBaseAmount = axisRoomsMarginBase;
+      data.hotelMarginAmount = axisRoomsMargin;
+      data.hotelMarginTotalAmount = axisRoomsMargin;
       selectionPricing = resolveHotelSelectionPricing({
         totalPrice: authoritativePayable,
         pricePerNight: authoritativePayable,
@@ -407,8 +459,9 @@ export class ItinerarySelectionWorkflowService {
         suppliedBasePricePerNight * Math.max(Number(data.roomCount || 1), 1),
       0,
     );
+    const effectiveRoomCount = Math.max(Number(data.roomCount || 1), 1);
     const authoritativeBasePricePerNight = axisRoomsBasePrice > 0
-      ? axisRoomsBasePrice
+      ? Number((axisRoomsBasePrice / effectiveRoomCount).toFixed(2))
       : staahBasePricePerNight > 0
         ? staahBasePricePerNight
         : suppliedBasePricePerNight;
@@ -420,7 +473,14 @@ export class ItinerarySelectionWorkflowService {
     const suppliedMarginAmount = Math.max(Number(
       data.hotelMarginStayAmount ?? data.hotelMarginTotalAmount ?? data.hotelMarginAmount ?? 0,
     ), 0);
-    const hotelMarginRate = providerForPricing === 'staah' && staahMarginRate > 0
+    const hotelMarginBaseAmount = providerForPricing === 'axisrooms' && axisRoomsBasePrice > 0
+      ? Number((axisRoomsBasePrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2))
+      : authoritativeBaseTotal;
+    const hotelMarginRate = providerForPricing === 'axisrooms'
+      ? hotelMarginBaseAmount > 0
+         ? Number((hotelMarginBaseAmount * hotelMarginPercentage / 100).toFixed(2))
+        : 0
+      : providerForPricing === 'staah' && staahMarginRate > 0
       ? staahMarginRate
       : suppliedMarginAmount > 0
         ? suppliedMarginAmount
@@ -433,9 +493,18 @@ export class ItinerarySelectionWorkflowService {
             ? Math.max((selectionPricing.totalPrice * hotelMarginPercentage) / 100, 0)
             : 0;
     const hotelMarginRateTaxAmount = Math.max(Number(data.hotelMarginGstAmount || 0), 0);
+    // `total_room_cost` is room-only.  Previously offline room changes stored
+    // the payable amount here, and the later read mixed that value with the
+    // snapshot's room fields (sometimes producing a zero room rate).  Use the
+    // server-resolved room base whenever it exists; supplements and margin are
+    // stored in their own columns and in the payable total.
+    const persistedRoomCost = authoritativeBaseTotal > 0
+      ? authoritativeBaseTotal
+      : selectionPricing.totalPrice;
     const authoritativePricingSnapshot = {
       ...(authoritativeBasePricePerNight > 0 ? { basePricePerNight: authoritativeBasePricePerNight } : {}),
       ...(authoritativeBaseTotal > 0 ? { baseTotalPrice: authoritativeBaseTotal } : {}),
+      ...(hotelMarginBaseAmount > 0 ? { hotelMarginBaseAmount } : {}),
       ...(hotelMarginPercentage > 0 ? { hotelMarginPercentage } : {}),
       ...(hotelMarginRate > 0 ? {
         hotelMarginAmount: hotelMarginRate,
@@ -482,19 +551,22 @@ export class ItinerarySelectionWorkflowService {
           updatedon: new Date(),
           ...liveRateMetadata,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
-          selected_price_per_night: data.pricePerNight ?? null,
+          selected_price_per_night: selectionPricing.totalPrice || null,
           selected_total_price: selectionPricing.totalPrice,
           total_no_of_rooms: selectionPricing.roomCount,
-          total_room_cost: selectionPricing.totalPrice,
+            total_room_cost: persistedRoomCost,
           // This column is non-nullable; zero is a valid margin amount.
           hotel_margin_percentage: hotelMarginPercentage,
           hotel_margin_rate: hotelMarginRate,
           // This column is non-nullable; zero is a valid tax amount.
           hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount,
           total_hotel_cost: selectionPricing.totalPrice,
-          total_extra_bed_cost: extraBedAmount,
+           total_extra_bed_cost: extraBedAmount,
+           total_childwith_bed_cost: childWithBedAmount,
+           total_childwithout_bed_cost: childWithoutBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
           selected_currency: data.currency || null,
+          selection_origin: 'USER_SELECTED',
             selected_price_snapshot: JSON.stringify({
               optionKey: data.optionKey || null,
               rateOptionId: data.rateOptionId || null,
@@ -515,11 +587,17 @@ export class ItinerarySelectionWorkflowService {
             rateId: data.rateId || null,
             extraBedCount,
             extraBedRate,
-            extraBedAmount,
-            extraBedGstAmount,
+             extraBedAmount,
+             extraBedGstAmount,
+             childWithBedCount,
+             childWithBedRate,
+             childWithBedAmount,
+             childWithoutBedCount,
+             childWithoutBedRate,
+             childWithoutBedAmount,
             ...authoritativePricingSnapshot,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
-            pricePerNight: data.pricePerNight ?? null,
+            pricePerNight: selectionPricing.totalPrice || null,
             totalPrice: selectionPricing.totalPrice || null,
             ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
               basePricePerNight: staahBasePricePerNight,
@@ -567,19 +645,22 @@ export class ItinerarySelectionWorkflowService {
           deleted: 0,
           ...liveRateMetadata,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
-          selected_price_per_night: data.pricePerNight ?? null,
+          selected_price_per_night: selectionPricing.totalPrice || null,
           selected_total_price: selectionPricing.totalPrice,
           total_no_of_rooms: selectionPricing.roomCount,
-          total_room_cost: selectionPricing.totalPrice,
+           total_room_cost: persistedRoomCost,
           // This column is non-nullable; zero is a valid margin amount.
           hotel_margin_percentage: hotelMarginPercentage,
           hotel_margin_rate: hotelMarginRate,
           // This column is non-nullable; zero is a valid tax amount.
           hotel_margin_rate_tax_amt: hotelMarginRateTaxAmount,
           total_hotel_cost: selectionPricing.totalPrice,
-          total_extra_bed_cost: extraBedAmount,
+           total_extra_bed_cost: extraBedAmount,
+           total_childwith_bed_cost: childWithBedAmount,
+           total_childwithout_bed_cost: childWithoutBedAmount,
           total_extra_bed_cost_gst_amount: extraBedGstAmount,
           selected_currency: data.currency || null,
+          selection_origin: 'USER_SELECTED',
           selected_price_snapshot: JSON.stringify({
             optionKey: data.optionKey || null,
             rateOptionId: data.rateOptionId || null,
@@ -600,11 +681,17 @@ export class ItinerarySelectionWorkflowService {
             rateId: data.rateId || null,
             extraBedCount,
             extraBedRate,
-            extraBedAmount,
-            extraBedGstAmount,
+             extraBedAmount,
+             extraBedGstAmount,
+             childWithBedCount,
+             childWithBedRate,
+             childWithBedAmount,
+             childWithoutBedCount,
+             childWithoutBedRate,
+             childWithoutBedAmount,
             ...authoritativePricingSnapshot,
             hotelMarginGstAmount: hotelMarginRateTaxAmount,
-            pricePerNight: data.pricePerNight ?? null,
+            pricePerNight: selectionPricing.totalPrice || null,
             totalPrice: selectionPricing.totalPrice || null,
             ...(providerForPricing === 'staah' && staahBasePricePerNight > 0 ? {
               basePricePerNight: staahBasePricePerNight,
@@ -636,8 +723,10 @@ export class ItinerarySelectionWorkflowService {
           hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
           room_qty: selectionPricing.roomCount,
-          room_rate: selectionPricing.roomRate,
-          total_room_cost: selectionPricing.totalPrice,
+           room_rate: authoritativeBasePricePerNight > 0
+             ? authoritativeBasePricePerNight
+             : selectionPricing.roomRate,
+           total_room_cost: persistedRoomCost,
           extra_bed_count: extraBedCount,
           extra_bed_rate: extraBedRate,
           breakfast_required: mealBreakfast,
@@ -665,8 +754,10 @@ export class ItinerarySelectionWorkflowService {
           hotel_id: persistedHotelId,
           room_type_id: data.roomTypeId,
           room_qty: selectionPricing.roomCount,
-          room_rate: selectionPricing.roomRate,
-          total_room_cost: selectionPricing.totalPrice,
+           room_rate: authoritativeBasePricePerNight > 0
+             ? authoritativeBasePricePerNight
+             : selectionPricing.roomRate,
+           total_room_cost: persistedRoomCost,
           extra_bed_count: extraBedCount,
           extra_bed_rate: extraBedRate,
           breakfast_required: mealBreakfast,
@@ -802,9 +893,16 @@ export class ItinerarySelectionWorkflowService {
     const snapshot = JSON.stringify(routeSnapshot);
     const checkInDate = resolvedRate.routeDate || routeNight.date || null;
     const checkOutDate = checkInDate
-      ? new Date(`${checkInDate}T00:00:00.000Z`)
+      ? toDatabaseBusinessDate(checkInDate)
       : null;
     if (checkOutDate) checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
+
+    // Load the plan before the transaction callback. The callback needs the
+    // itinerary occupancy counts when creating room details.
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: Number(data.planId) },
+      select: { total_extra_bed: true, total_child_with_bed: true, itinerary_quote_ID: true },
+    });
 
     const persist = async (tx: any) => {
       const existingHotelCandidates = await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
@@ -839,9 +937,12 @@ export class ItinerarySelectionWorkflowService {
         selected_price_per_night: routePayableAmount,
         selected_total_price: routePayableAmount,
         selected_currency: resolvedRate.currency,
+        selection_origin: 'USER_SELECTED',
         selected_price_snapshot: snapshot,
         total_no_of_rooms: effectiveRoomCount,
         total_room_cost: routeBaseAmount,
+        total_extra_bed_cost: Number(resolvedRate.extraBedAmount || 0),
+        total_childwith_bed_cost: Number(resolvedRate.childWithBedAmount || 0),
         hotel_margin_percentage: resolvedRate.hotelMarginPercentage,
         hotel_margin_rate: routeMarginAmount,
         hotel_margin_rate_tax_amt: 0,
@@ -863,7 +964,7 @@ export class ItinerarySelectionWorkflowService {
         updatedon: now,
         status: 1,
         deleted: 0,
-        ...(checkInDate ? { hotel_check_in_date: new Date(`${checkInDate}T00:00:00.000Z`) } : {}),
+        ...(checkInDate ? { hotel_check_in_date: toDatabaseBusinessDate(checkInDate) } : {}),
         ...(checkOutDate ? { hotel_check_out_date: checkOutDate } : {}),
       };
       const selection = existingHotel
@@ -878,7 +979,7 @@ export class ItinerarySelectionWorkflowService {
               group_type: Number(data.groupType || 1),
               createdby: requestedBy,
               createdon: now,
-              itinerary_route_date: checkInDate ? new Date(`${checkInDate}T00:00:00.000Z`) : null,
+              itinerary_route_date: checkInDate ? toDatabaseBusinessDate(checkInDate) : null,
               ...hotelData,
             },
           });
@@ -893,6 +994,10 @@ export class ItinerarySelectionWorkflowService {
         room_qty: effectiveRoomCount,
         room_rate: routePayableAmount,
         total_room_cost: routePayableAmount,
+        extra_bed_count: Math.max(Number(plan.total_extra_bed || 0), 0),
+        extra_bed_rate: Number(resolvedRate.extraBedRate || 0),
+        child_with_bed_count: Math.max(Number(plan.total_child_with_bed || 0), 0),
+        child_with_bed_charges: Number(resolvedRate.childWithBedAmount || 0),
         breakfast_required: data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0,
         lunch_required: data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0,
         dinner_required: data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0,
@@ -938,7 +1043,6 @@ export class ItinerarySelectionWorkflowService {
     if (data.transactionClient) await persist(data.transactionClient);
     else await this.prisma.$transaction(persist);
 
-    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({ where: { itinerary_plan_ID: Number(data.planId) } });
     if (plan?.itinerary_quote_ID && !data.transactionClient) this.hotelDetailsTboService.clearCacheForQuote(String(plan.itinerary_quote_ID));
     return {
       success: true,
@@ -1018,7 +1122,8 @@ export class ItinerarySelectionWorkflowService {
         for (const hotel of hotels) {
           await this.selectHotel({
             planId,
-            routeId: hotel.routeId,
+          routeId: hotel.routeId,
+            selectionIntent: hotel.selectionIntent,
             hotelId: hotel.hotelId,
             roomTypeId: hotel.roomTypeId || 1,
             groupType: hotel.groupType,
@@ -1030,8 +1135,12 @@ export class ItinerarySelectionWorkflowService {
             provider: hotel.provider,
             hotelCode: hotel.hotelCode,
             optionKey: hotel.optionKey,
-            pricePerNight: hotel.pricePerNight,
-            totalPrice: hotel.totalPrice,
+            pricePerNight: hotel.selectionPricingSource === 'SERVER_RESOLVED' || hotel.selectionIntent === 'RATE_OPTION'
+              ? hotel.pricePerNight
+              : undefined,
+            totalPrice: hotel.selectionPricingSource === 'SERVER_RESOLVED' || hotel.selectionIntent === 'RATE_OPTION'
+              ? hotel.totalPrice
+              : undefined,
             currency: hotel.currency,
             hotelName: hotel.hotelName,
             category: hotel.category,
@@ -1075,7 +1184,7 @@ export class ItinerarySelectionWorkflowService {
    * A selection must come from the latest persisted availability snapshot.
    * The fallback for test doubles/legacy installations is intentionally only
    for databases where the snapshot model is unavailable; production has this
-   table because Check Availability owns the durable search boundary.
+   table because automatic availability validation owns the durable search boundary.
    */
   private async validateLiveSelectionAgainstSnapshot(
     data: any,
@@ -1086,81 +1195,46 @@ export class ItinerarySelectionWorkflowService {
     const provider = String(data.provider || '').trim().toLowerCase();
     if (!provider || provider === 'offline') return;
 
-    if (provider === 'axisrooms') {
+    // A property/room/meal selection is intentionally not a concrete rate
+    // selection. It must be resolved by the current availability source
+    // (AxisRooms occupancy data for AX) rather than compared with a stale
+    // client/container price from the search cache. Exact RATE_OPTION
+    // selections continue through the strict snapshot identity/price check.
+    const selectionIntent = String(data.selectionIntent || '').trim().toUpperCase();
+    // selectHotelIntentUnlocked resolves a property-level intent into a
+    // concrete route option before persistence. Therefore checking for rate
+    // identity here is incorrect: those generated identities belong to the
+    // server's current selection, not to a client-supplied RATE_OPTION.
+    // Property/room/meal intents have already been resolved against current
+    // candidates and continuous-stay availability by the caller.
+    if (['HOTEL', 'ROOM_TYPE', 'MEAL_PLAN'].includes(selectionIntent)) {
+      return;
+    }
+
+    if (provider === 'axisrooms' || provider === 'ax') {
       this.assertAxisRoomsReferenceMatchesRoute(data, route);
 
       // AxisRooms is not a live-search snapshot provider in this flow. Its
       // availability and price are read from the ARI tables populated by the
       // daily inventory feed. Validate that source directly and do not require
-      // a row in dvi_itinerary_hotel_search_cache, which may be absent or
-      // belong to a different search run.
+      // a prior search-result row, which may be absent or belong to another
+      // request lifecycle.
       if (await this.isCurrentAxisRoomsDatabaseRate(data, route)) return;
+
     }
 
-    const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
-    if (!cache?.findFirst || !cache?.findMany) return;
-
-    const latest = await cache.findFirst({
-      where: { quote_id: String(quoteId), plan_id: Number(plan?.itinerary_plan_ID || data.planId), deleted: 0, status: 1 },
-      orderBy: [{ synced_at: 'desc' }, { id: 'desc' }],
-      select: { synced_at: true },
-    });
-    if (!latest?.synced_at) {
-      throw new BadRequestException('Hotel availability has not been checked yet. Refresh hotel availability and select a current rate.');
-    }
-
-    const routeWhere = {
-      quote_id: String(quoteId),
-      plan_id: Number(plan?.itinerary_plan_ID || data.planId),
-      route_id: Number(data.routeId),
-      deleted: 0,
-      status: 1,
-      synced_at: latest.synced_at,
-    };
-    let rows = await cache.findMany({
-      where: {
-        ...routeWhere,
-      },
-      select: { full_payload: true },
-    });
-    // A route rebuild can replace itinerary route IDs after availability was
-    // persisted. In that case the latest snapshot is still valid when its
-    // stay date/group matches the current route, but a route_id-only lookup
-    // returns no rows. Scope the fallback to the same latest snapshot and
-    // current route date/group; supplier identity and price remain exact below.
-    if (rows.length === 0 && route?.itinerary_route_date) {
-      const routeDate = new Date(route.itinerary_route_date);
-      const routeDateKey = Number.isNaN(routeDate.getTime())
-        ? ''
-        : routeDate.toISOString().slice(0, 10);
-      if (routeDateKey) {
-        const snapshotRows = await cache.findMany({
-          where: {
-            quote_id: String(quoteId),
-            plan_id: Number(plan?.itinerary_plan_ID || data.planId),
-            deleted: 0,
-            status: 1,
-            synced_at: latest.synced_at,
-          },
-          select: { full_payload: true },
-        });
-        rows = snapshotRows.filter((row: any) => {
-          try {
-            const payload = typeof row.full_payload === 'string'
-              ? JSON.parse(row.full_payload)
-              : row.full_payload;
-            const payloadDate = String(
-              payload?.date || payload?.checkInDate || payload?.check_in_date || '',
-            ).slice(0, 10);
-            const payloadGroup = Number(payload?.groupType ?? payload?.group_type ?? 0);
-            return payloadDate === routeDateKey &&
-              (!Number(data.groupType) || !payloadGroup || payloadGroup === Number(data.groupType));
-          } catch {
-            return false;
-          }
-        });
-      }
-    }
+    // A selection is validated against a fresh provider/local-source lookup
+    // for that property. Full inventory is never recovered from a database or
+    // process cache between the search response and this selection request.
+    const freshResult = await this.hotelDetailsTboService.getSelectedHotelRates(
+      quoteId,
+      Number(data.routeId),
+      provider,
+      String(data.hotelCode || data.providerHotelCode || data.hotelId || ''),
+      Number(data.groupType || 0),
+    );
+    const rows = (Array.isArray((freshResult as any)?.hotels) ? (freshResult as any).hotels : [])
+      .map((full_payload: any) => ({ full_payload }));
     const requestedRateIds = [data.selectionKey, data.rateOptionId, data.optionKey, data.searchReference, data.bookingCode]
       .map((value) => String(value || '').trim())
       .filter(Boolean);
@@ -1170,6 +1244,10 @@ export class ItinerarySelectionWorkflowService {
     ).trim().toLowerCase();
     const requestedRoomType = String(data.roomType || '').trim().toLowerCase();
     const requestedHotelName = String(data.hotelName || '').trim().toLowerCase();
+    const requestedMealPlan =
+      inferCanonicalHotelRatePlanCode(data.mealPlanCode) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(data.mealPlanCode) ||
+      '';
     const parsedRows = rows
       .map((row: any) => {
         try { return typeof row.full_payload === 'string' ? JSON.parse(row.full_payload) : row.full_payload; } catch { return null; }
@@ -1215,9 +1293,24 @@ export class ItinerarySelectionWorkflowService {
         if (!canonicalMatch && !codeMatch) return false;
         return true;
     };
-    const rateMatches = (candidate: any): boolean =>
-      requestedRateIds.length > 0 && supplierRateIdentityMatches(data, candidate);
-    const matched = candidateRows.find((candidate: any) => {
+    const candidateMealPlan = (candidate: any): string =>
+      inferCanonicalHotelRatePlanCode(candidate?.mealPlanCode) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(
+        candidate?.mealPlan || candidate?.meal_plan || candidate?.ratePlanName,
+      ) ||
+      '';
+    const rateMatches = (candidate: any): boolean => {
+      // A card-level HOTEL selection can intentionally omit a concrete rate
+      // identity. In that case select the current lowest rate for the
+      // requested property/meal plan; do not reject it as stale merely because
+      // the UI did not send a nested bookingCode.
+      if (requestedRateIds.length === 0) {
+        if (!requestedMealPlan) return true;
+        return candidateMealPlan(candidate) === requestedMealPlan;
+      }
+      return supplierRateIdentityMatches(data, candidate);
+    };
+    const matchingCandidates = candidateRows.filter((candidate: any) => {
       if (!propertyMatches(candidate) || !rateMatches(candidate)) return false;
       const candidateRoomType = String(candidate.roomType || candidate.room_type || '').trim().toLowerCase();
       const candidateHotelName = String(candidate.hotelName || candidate.hotel_name || '').trim().toLowerCase();
@@ -1225,6 +1318,8 @@ export class ItinerarySelectionWorkflowService {
       if (requestedHotelName && candidateHotelName && requestedHotelName !== candidateHotelName) return false;
       return true;
     });
+    const matched = matchingCandidates
+      .sort((left: any, right: any) => Number(left.totalPrice ?? left.totalStayPrice ?? left.price ?? Infinity) - Number(right.totalPrice ?? right.totalStayPrice ?? right.price ?? Infinity))[0];
 
     if (!matched) {
       throw new BadRequestException('The selected hotel rate is stale or unavailable. Refresh hotel availability and select again.');
@@ -1301,7 +1396,7 @@ export class ItinerarySelectionWorkflowService {
     let date = '';
 
     for (const reference of references) {
-      const rateOption = reference.match(/^axisrooms:(\d+):(\d+):([^:|]+):(\d{4}-\d{2}-\d{2})$/i);
+      const rateOption = reference.match(/^axisrooms:(\d+):(\d+):(?:(?:\d+)\|)?([^:|]+):(\d{4}-\d{2}-\d{2})$/i);
       if (rateOption) {
         hotelId = Number(rateOption[1]) || hotelId;
         roomId = Number(rateOption[2]) || roomId;
@@ -1309,7 +1404,7 @@ export class ItinerarySelectionWorkflowService {
         date = rateOption[4];
         break;
       }
-      const optionRate = reference.match(/axisrooms[:|](\d+)[:|](\d+)[:|]([^:|]+)[:|](\d{4}-\d{2}-\d{2})/i);
+      const optionRate = reference.match(/axisrooms[:|](\d+)[:|](\d+)[:|](?:(?:\d+)\|)?([^:|]+)[:|](\d{4}-\d{2}-\d{2})/i);
       if (optionRate) {
         hotelId = Number(optionRate[1]) || hotelId;
         roomId = Number(optionRate[2]) || roomId;
@@ -1356,7 +1451,7 @@ export class ItinerarySelectionWorkflowService {
     const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
     if (!availabilityModel?.findFirst || !ratePlanModel?.findFirst || !occupancyModel?.findMany) return false;
 
-    const date = new Date(`${routeDate}T00:00:00.000Z`);
+    const date = toDatabaseBusinessDate(routeDate);
     const requiredRooms = Math.max(Number(data?.roomCount || 1), 1);
     const [availability, ratePlan, occupancyRows] = await Promise.all([
       availabilityModel.findFirst({
@@ -1392,8 +1487,8 @@ export class ItinerarySelectionWorkflowService {
         hotel_id: identity.hotelId,
         room_id: identity.roomId,
         rateplan_id: identity.rateplanId,
-        start_date: { lte: new Date(`${routeDate}T00:00:00.000Z`) },
-        end_date: { gte: new Date(`${routeDate}T00:00:00.000Z`) },
+        start_date: { lte: toDatabaseBusinessDate(routeDate) },
+        end_date: { gte: toDatabaseBusinessDate(routeDate) },
       },
       select: { occupancy_rates: true, start_date: true, end_date: true, received_at: true },
       orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
@@ -1408,13 +1503,59 @@ export class ItinerarySelectionWorkflowService {
       } as any,
     });
     const roomCount = Math.max(Math.trunc(Number(data.roomCount || 1)), 1);
-    const amount = this.extractAxisroomsRate(rows[0].occupancy_rates, {
+    const rateContext = {
       roomCount,
       adults: Number((plan as any)?.total_adult || 0),
       childWithBedCount: Number((plan as any)?.total_child_with_bed || 0),
       extraBedCount: Number((plan as any)?.total_extra_bed || 0),
-    });
+    };
+    // A later-starting legacy row may contain only EXTRABED/child
+    // supplements. Do not let that row become the room price. Select the
+    // most recent matching row that actually contains SINGLE/DOUBLE.
+    const rateRow = rows.find((row: any) =>
+      this.extractAxisroomsRate(row.occupancy_rates, rateContext) > 0,
+    );
+    const amount = rateRow
+      ? this.extractAxisroomsRate(rateRow.occupancy_rates, rateContext)
+      : 0;
     return Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : 0;
+  }
+
+  private async resolveAxisRoomsSelectionSupplementRates(
+    data: any,
+    route?: any,
+  ): Promise<{ extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number }> {
+    const identity = this.parseAxisRoomsRateReference(data);
+    const routeDate = this.toDateOnly(route?.itinerary_route_date);
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    if (!identity.hotelId || !identity.roomId || !identity.rateplanId || !routeDate || !occupancyModel?.findMany) {
+      return { extraBedRate: 0, childWithBedRate: 0, childWithoutBedRate: 0 };
+    }
+    const rows = await occupancyModel.findMany({
+      where: {
+        hotel_id: identity.hotelId,
+        room_id: identity.roomId,
+        rateplan_id: identity.rateplanId,
+        start_date: { lte: toDatabaseBusinessDate(routeDate) },
+        end_date: { gte: toDatabaseBusinessDate(routeDate) },
+      },
+      select: { occupancy_rates: true, start_date: true, received_at: true },
+      orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+    });
+    const matchingRow = (rows || []).find((row: any) => {
+      const values = row?.occupancy_rates && typeof row.occupancy_rates === 'object'
+        ? row.occupancy_rates as Record<string, unknown>
+        : {};
+      return ['SINGLE', 'DOUBLE'].some((key) => Number(values[key]) > 0);
+    });
+    const values = matchingRow?.occupancy_rates && typeof matchingRow.occupancy_rates === 'object'
+      ? matchingRow.occupancy_rates as Record<string, unknown>
+      : {};
+    return {
+      extraBedRate: Math.max(Number(values.EXTRABED ?? values.EXTRAADULT ?? values.EXTRACHILD ?? 0), 0),
+      childWithBedRate: Math.max(Number(values.CHILD_WITH_BED ?? 0), 0),
+      childWithoutBedRate: Math.max(Number(values.CHILD_WITHOUT_BED ?? 0), 0),
+    };
   }
 
   private extractAxisroomsRate(
@@ -1428,18 +1569,22 @@ export class ItinerarySelectionWorkflowService {
     const adults = Math.max(Math.trunc(Number(pax?.adults || 0)), 0);
     if (adults > 0) {
       const adultsPerRoom = Math.max(Math.ceil(adults / roomCount), 1);
-      const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : adultsPerRoom === 2 ? 'DOUBLE' : adultsPerRoom === 3 ? 'TRIPLE' : 'QUAD';
+      const occupancyKey = adultsPerRoom <= 1 ? 'SINGLE' : 'DOUBLE';
       const roomRate = Number(values[occupancyKey]);
       if (Number.isFinite(roomRate) && roomRate > 0) {
         const extraBeds = Math.max(
-          Math.trunc(Number(pax?.childWithBedCount || 0)) + Math.trunc(Number(pax?.extraBedCount || 0)),
+          Math.trunc(Number(pax?.extraBedCount || 0)),
           0,
         );
         const extraBedRate = Number(values.EXTRABED ?? values.EXTRAADULT ?? values.EXTRACHILD ?? 0);
-        return roomRate * roomCount + (Number.isFinite(extraBedRate) && extraBedRate > 0 ? extraBedRate * extraBeds : 0);
+        // Return only the room occupancy amount. Supplements are persisted
+        // separately and must not be folded into the room base.
+        return roomRate * roomCount;
       }
     }
-    for (const key of ['SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'EXTRABED']) {
+    // Supplements are not room rates. In particular, never use EXTRABED as
+    // the room price when a legacy occupancy row has no SINGLE/DOUBLE value.
+    for (const key of ['SINGLE', 'DOUBLE']) {
       const value = Number(values[key]);
       if (Number.isFinite(value) && value > 0) return value;
     }

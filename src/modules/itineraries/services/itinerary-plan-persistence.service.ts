@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { CreateItineraryDto } from '../dto/create-itinerary.dto';
 import { PlanEngineService } from '../engines/plan-engine.service';
@@ -20,6 +20,7 @@ import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
+import { TimeConverter } from '../engines/helpers/time-converter';
 
 type RouteFamilyQuote = {
   baseQuoteId: string;
@@ -50,6 +51,138 @@ function normalizeRouteNumber(value: unknown): string {
   if (value === null || value === undefined || String(value).trim() === '') return '';
   const parsed = Number(value);
   return Number.isFinite(parsed) ? String(parsed) : String(value).trim();
+}
+
+function normalizeWallClockTime(value: unknown): string {
+  if (!value) return '';
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+
+    return [
+      String(value.getUTCHours()).padStart(2, '0'),
+      String(value.getUTCMinutes()).padStart(2, '0'),
+      String(value.getUTCSeconds()).padStart(2, '0'),
+    ].join(':');
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+
+  const timeMatch = raw.match(
+    /(?:T|\s|^)(\d{1,2}):(\d{2})(?::(\d{2}))?/,
+  );
+
+  if (timeMatch) {
+    return [
+      String(Number(timeMatch[1])).padStart(2, '0'),
+      timeMatch[2],
+      timeMatch[3] || '00',
+    ].join(':');
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+
+    return [
+    String(parsed.getUTCHours()).padStart(2, '0'),
+    String(parsed.getUTCMinutes()).padStart(2, '0'),
+    String(parsed.getUTCSeconds()).padStart(2, '0'),
+  ].join(':');
+}
+
+function normalizeComparableRouteLocation(value: unknown): string {
+  return normalizeRouteText(value)
+    .replace(/\s*\([^)]*\)\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shouldDisableEarlyMorningFirstRouteVia(
+  plan: any,
+  routes: any[] = [],
+): boolean {
+  if (!Array.isArray(routes) || routes.length === 0) {
+    return false;
+  }
+
+  const normalizedStartTime = normalizeWallClockTime(
+    plan?.trip_start_date ?? plan?.trip_start_date_and_time,
+  );
+
+  if (!normalizedStartTime) {
+    return false;
+  }
+
+  const [hours, minutes, seconds] = normalizedStartTime
+    .split(':')
+    .map((value) => Number(value || 0));
+
+  const arrivalSeconds =
+    (hours * 3600) +
+    (minutes * 60) +
+    seconds;
+
+  // Existing early-arrival cutoff: before 08:00 AM.
+  if (!Number.isFinite(arrivalSeconds) || arrivalSeconds >= 8 * 3600) {
+    return false;
+  }
+
+  const explicitDayOneIndex = routes.findIndex(
+    (route: any) =>
+      Number(route?.no_of_days ?? route?.day ?? 0) === 1,
+  );
+
+  const firstRouteIndex =
+    explicitDayOneIndex >= 0 ? explicitDayOneIndex : 0;
+
+  const firstRoute = routes[firstRouteIndex];
+
+  const source = normalizeComparableRouteLocation(
+    firstRoute?.location_name ?? firstRoute?.source,
+  );
+
+  const nextDestination = normalizeComparableRouteLocation(
+    firstRoute?.next_visiting_location ??
+    firstRoute?.destination ??
+    firstRoute?.next,
+  );
+
+  if (!source || !nextDestination) {
+    return false;
+  }
+
+  // Same place -> Via Routes remain available.
+  // Different place -> Via Routes must be disabled.
+  return source !== nextDestination;
+}
+
+function enforceEarlyMorningDirectFirstRoute(
+  plan: any,
+  routes: any[] = [],
+): any[] {
+  if (!shouldDisableEarlyMorningFirstRouteVia(plan, routes)) {
+    return routes;
+  }
+
+  const explicitDayOneIndex = routes.findIndex(
+    (route: any) =>
+      Number(route?.no_of_days ?? route?.day ?? 0) === 1,
+  );
+
+  const firstRouteIndex =
+    explicitDayOneIndex >= 0 ? explicitDayOneIndex : 0;
+
+  return routes.map((route: any, index: number) =>
+    index === firstRouteIndex
+      ? {
+          ...route,
+          via_route: '',
+          via: '',
+          via_routes: [],
+        }
+      : route,
+  );
 }
 
 function routeShapeSignature(route: any): string {
@@ -171,18 +304,20 @@ export function hasItineraryRoomCountChanged(previousPlan: any, travellers: any[
   return previousRoomCount !== resolveItineraryRoomCount(travellers);
 }
 
-export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'MEAL_PLAN_CHANGED' | 'HOTEL_CATEGORY_CHANGED';
+export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'MEAL_PLAN_CHANGED' | 'HOTEL_CATEGORY_CHANGED' | 'EARLY_ARRIVAL_CONFIRMED';
 
 export function getHotelAvailabilityResetReason(result: {
   routeChanged?: boolean;
   roomCountChanged?: boolean;
   mealPlanChanged?: boolean;
   hotelCategoryChanged?: boolean;
+  earlyArrivalChanged?: boolean;
 } | null | undefined): HotelAvailabilityResetReason | null {
   if (result?.routeChanged) return 'ROUTE_CHANGED';
   if (result?.roomCountChanged) return 'ROOM_COUNT_CHANGED';
   if (result?.mealPlanChanged) return 'MEAL_PLAN_CHANGED';
   if (result?.hotelCategoryChanged) return 'HOTEL_CATEGORY_CHANGED';
+  if (result?.earlyArrivalChanged) return 'EARLY_ARRIVAL_CONFIRMED';
   return null;
 }
 
@@ -191,18 +326,22 @@ export function shouldRebuildHotelData(result: {
   roomCountChanged?: boolean;
   mealPlanChanged?: boolean;
   hotelCategoryChanged?: boolean;
+  earlyArrivalChanged?: boolean;
 } | null | undefined): boolean {
   return Boolean(
     result?.routeChanged ||
     result?.roomCountChanged ||
     result?.mealPlanChanged ||
-    result?.hotelCategoryChanged,
+    result?.hotelCategoryChanged ||
+    result?.earlyArrivalChanged,
   );
 }
 
 @Injectable()
 export class ItineraryPlanPersistenceService {
-  private optimizeRouteOrderFn: ((routes: any[]) => Promise<any[]>) | null = null;
+  private readonly logger = new Logger(ItineraryPlanPersistenceService.name);
+  private optimizeRouteOrderFn:
+    ((routes: any[], plan?: any) => Promise<any[]>) | null = null;
   private applySameCityOptimizerFn: ((planId: number, quoteId?: string | null) => Promise<void>) | null = null;
   private getPlanForEditFn: ((planId: number) => Promise<any>) | null = null;
 
@@ -221,18 +360,39 @@ export class ItineraryPlanPersistenceService {
   ) {}
 
   setCallbacks(callbacks: {
-    optimizeRouteOrder: (routes: any[]) => Promise<any[]>;
-    applySameCityOptimizer: (planId: number, quoteId?: string | null) => Promise<void>;
-    getPlanForEdit: (planId: number) => Promise<any>;
+    optimizeRouteOrder: (
+      routes: any[],
+      plan?: any,
+    ) => Promise<any[]>;
+
+    applySameCityOptimizer: (
+      planId: number,
+      quoteId?: string | null,
+    ) => Promise<void>;
+
+    getPlanForEdit: (
+      planId: number,
+    ) => Promise<any>;
   }): void {
     this.optimizeRouteOrderFn = callbacks.optimizeRouteOrder;
     this.applySameCityOptimizerFn = callbacks.applySameCityOptimizer;
     this.getPlanForEditFn = callbacks.getPlanForEdit;
   }
 
-  private async optimizeRouteOrder(routes: any[]): Promise<any[]> {
-    if (!this.optimizeRouteOrderFn) throw new Error('Route optimizer is not configured');
-    return this.optimizeRouteOrderFn(routes);
+  private async optimizeRouteOrder(
+    routes: any[],
+    plan?: any,
+  ): Promise<any[]> {
+    if (!this.optimizeRouteOrderFn) {
+      throw new Error(
+        'Route optimizer is not configured',
+      );
+    }
+
+    return this.optimizeRouteOrderFn(
+      routes,
+      plan,
+    );
   }
 
   private async applySameCityCrossDayOptimizerAfterSave(planId: number, quoteId?: string | null): Promise<void> {
@@ -341,16 +501,122 @@ export class ItineraryPlanPersistenceService {
     let createPlanStage = 'route_optimization';
     try {
 
- // ROUTE OPTIMIZATION: If requested, optimize route order before saving
+     // ROUTE OPTIMIZATION: If requested, optimize route order before saving.
+    // Optimization may reorder routes, but it must never remove itinerary days.
     if (shouldOptimizeRoute && dto.routes && dto.routes.length > 0) {
- console.log('[ItinerariesService] Route optimization REQUESTED');
- console.log('[ItinerariesService] Original route order:', dto.routes.map((r: any) => `${r.location_name}${r.next_visiting_location}`).join(' | '));
-      dto.routes = await this.optimizeRouteOrder(dto.routes);
- console.log('[ItinerariesService] Routes optimized and reordered');
- console.log('[ItinerariesService] New route order:', dto.routes.map((r: any) => `${r.location_name}${r.next_visiting_location}`).join(' | '));
+      console.log('[ItinerariesService] Route optimization REQUESTED');
+
+      const originalRoutes = [...dto.routes];
+      const originalRouteCount = originalRoutes.length;
+
+      console.log(
+        '[ItinerariesService] Original route order:',
+        originalRoutes
+          .map(
+            (r: any) =>
+              `${r.location_name}->${r.next_visiting_location}`,
+          )
+          .join(' | '),
+      );
+
+      const optimizedRoutes =
+  await this.optimizeRouteOrder(
+    originalRoutes,
+    dto.plan,
+  );
+
+      if (
+        !Array.isArray(optimizedRoutes) ||
+        optimizedRoutes.length !== originalRouteCount
+      ) {
+        console.warn('[ItinerariesService] Route optimization rejected', {
+          expectedRouteCount: originalRouteCount,
+          optimizedRouteCount: Array.isArray(optimizedRoutes)
+            ? optimizedRoutes.length
+            : 0,
+          noOfDays: Number(dto.plan?.no_of_days || 0),
+          reason: 'Optimization must preserve every itinerary day.',
+        });
+
+        dto.routes = originalRoutes;
+      } else {
+        dto.routes = optimizedRoutes;
+
+        console.log(
+          '[ItinerariesService] Routes optimized and reordered',
+        );
+      }
+
+      console.log(
+        '[ItinerariesService] Final route order:',
+        dto.routes
+          .map(
+            (r: any) =>
+              `${r.location_name}->${r.next_visiting_location}`,
+          )
+          .join(' | '),
+      );
+
+      console.log('[ItinerariesService] Final route count:', {
+        routeCount: dto.routes.length,
+        noOfDays: Number(dto.plan?.no_of_days || 0),
+      });
     } else {
- console.log('[ItinerariesService] Route optimization NOT triggered. shouldOptimizeRoute=', shouldOptimizeRoute, 'routeCount=', dto.routes?.length);
+      console.log(
+        '[ItinerariesService] Route optimization NOT triggered. shouldOptimizeRoute=',
+        shouldOptimizeRoute,
+        'routeCount=',
+        dto.routes?.length,
+      );
     }
+
+    if (
+      Array.isArray(dto.routes) &&
+      dto.routes.length > 0 &&
+      shouldDisableEarlyMorningFirstRouteVia(dto.plan, dto.routes)
+    ) {
+      const explicitDayOneIndex = dto.routes.findIndex(
+        (route: any) =>
+          Number(route?.no_of_days ?? route?.day ?? 0) === 1,
+      );
+
+      const firstRouteIndex =
+        explicitDayOneIndex >= 0 ? explicitDayOneIndex : 0;
+
+      const firstRouteBeforeCleanup = dto.routes[firstRouteIndex] as any;
+
+      const hadViaRoute =
+        Boolean(
+          String(
+            firstRouteBeforeCleanup?.via_route ??
+            firstRouteBeforeCleanup?.via ??
+            '',
+          ).trim(),
+        ) ||
+        (
+          Array.isArray(firstRouteBeforeCleanup?.via_routes) &&
+          firstRouteBeforeCleanup.via_routes.length > 0
+        );
+
+      dto.routes = enforceEarlyMorningDirectFirstRoute(
+        dto.plan,
+        dto.routes,
+      );
+
+      console.log('[EARLY_MORNING_DAY1_DIRECT_ROUTE]', {
+        source:
+          firstRouteBeforeCleanup?.location_name ??
+          firstRouteBeforeCleanup?.source ??
+          '',
+        destination:
+          firstRouteBeforeCleanup?.next_visiting_location ??
+          firstRouteBeforeCleanup?.destination ??
+          firstRouteBeforeCleanup?.next ??
+          '',
+        viaRouteRemoved: hadViaRoute,
+      });
+    }
+
     stepStartedAt = this.logItineraryApiTiming({
       api: 'save_basic_info',
       step: 'route_optimization',
@@ -417,10 +683,12 @@ export class ItineraryPlanPersistenceService {
     const isPlanUpdate = Number((dto?.plan as any)?.itinerary_plan_id || 0) > 0;
     const shouldResetManualHotspotsForFullRebuild = isFullBasicInfoRebuildType && isPlanUpdate;
     let routeChanged = false;
-    let roomCountChanged = false;
-    let mealPlanChanged = false;
-    let hotelCategoryChanged = false;
-    let previousRoutePlan: any = null;
+let itineraryStartTimeChanged = false;
+let roomCountChanged = false;
+let mealPlanChanged = false;
+let hotelCategoryChanged = false;
+let earlyArrivalChanged = false;
+let previousRoutePlan: any = null;
 
  // Increase interactive transaction timeout; hotspot rebuild + hotel lookups can exceed default 5s
     const result = await this.prisma.$transaction(async (tx) => {
@@ -450,13 +718,40 @@ export class ItineraryPlanPersistenceService {
       } else {
         assertVehicleAgentCreatePolicy(u, dto.plan);
       }
-      const planId = await this.planEngine.upsertPlanHeader(
-        dto.plan,
-        dto.travellers,
-        tx,
-        userId,
-      );
-      stepStartedAt = this.logItineraryApiTiming({
+const previousStartTime =
+  isPlanUpdate && previousRoutePlan
+    ? normalizeWallClockTime(
+        previousRoutePlan.trip_start_date_and_time,
+      )
+    : '';
+
+const planId = await this.planEngine.upsertPlanHeader(
+  dto.plan,
+  dto.travellers,
+  tx,
+  userId,
+);
+
+const persistedPlanAfterUpsert =
+  await tx.dvi_itinerary_plan_details.findUnique({
+    where: {
+      itinerary_plan_ID: planId,
+    },
+    select: {
+      trip_start_date_and_time: true,
+    },
+  });
+
+const persistedStartTime = normalizeWallClockTime(
+  persistedPlanAfterUpsert?.trip_start_date_and_time,
+);
+
+itineraryStartTimeChanged =
+  Boolean(previousStartTime) &&
+  Boolean(persistedStartTime) &&
+  previousStartTime !== persistedStartTime;
+
+stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
         step: 'plan_lookup_upsert',
         startedAt: apiStartedAt,
@@ -519,6 +814,11 @@ export class ItineraryPlanPersistenceService {
       roomCountChanged = isPlanUpdate && hasItineraryRoomCountChanged(previousRoutePlan, dto.travellers);
       hotelCategoryChanged = isPlanUpdate && hasItineraryHotelCategoryChanged(previousRoutePlan, dto.plan);
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
+
+// A start-time-only edit must preserve the existing route structure/IDs,
+// but its persisted travel/hotspot timeline must be regenerated.
+const shouldRebuildTimeline =
+  shouldRebuildRouteData || itineraryStartTimeChanged;
       // Hotel selections are derived from these plan-level preferences. Keep
       // route rows/hotspots intact for a preference-only edit, but rebuild the
       // hotel rows so stale category/meal/room selections cannot survive.
@@ -656,6 +956,59 @@ export class ItineraryPlanPersistenceService {
             userId,
           )
         : oldRoutes;
+
+      // Confirming early check-in changes the effective hotel stay window even
+      // when routes, rooms, meal plan, and category are unchanged. Mark this
+      // edit so the existing post-save hotel reset rebuilds the snapshot with
+      // the persisted previous-day marker.
+      const firstHotelRouteForArrival = (routes || [])[0] as any;
+      const arrivalTimeForHotelReset = String(dto.plan.trip_start_date || '').match(
+        /T(\d{2}):(\d{2})(?::(\d{2}))?/,
+      );
+      const arrivalSecondsForHotelReset = arrivalTimeForHotelReset
+        ? (Number(arrivalTimeForHotelReset[1]) * 3600) +
+          (Number(arrivalTimeForHotelReset[2]) * 60) +
+          Number(arrivalTimeForHotelReset[3] || 0)
+        : -1;
+      earlyArrivalChanged = Boolean(
+        isPlanUpdate &&
+        (Number(dto.plan.itinerary_preference) === 1 ||
+          Number(dto.plan.itinerary_preference) === 3) &&
+        dto.previousDayBillingDecisionProvided &&
+        dto.previousDayBillingConfirmed &&
+        arrivalSecondsForHotelReset >= 3600 &&
+        arrivalSecondsForHotelReset < 28800 &&
+        Number(firstHotelRouteForArrival?.itinerary_route_ID || 0) > 0,
+      );
+if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
+  const firstRoute = await tx.dvi_itinerary_route_details.findFirst({
+    where: {
+      itinerary_plan_ID: planId,
+      deleted: 0,
+      status: 1,
+    },
+    orderBy: [
+      { no_of_days: 'asc' },
+      { itinerary_route_date: 'asc' },
+      { itinerary_route_ID: 'asc' },
+    ],
+    select: {
+      itinerary_route_ID: true,
+    },
+  });
+
+  if (firstRoute && persistedStartTime) {
+    await tx.dvi_itinerary_route_details.update({
+      where: {
+        itinerary_route_ID: firstRoute.itinerary_route_ID,
+      },
+      data: {
+        route_start_time: TimeConverter.toDate(persistedStartTime),
+        updatedon: new Date(),
+      },
+    });
+  }
+}
       stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
         step: 'routes_lookup_rebuild',
@@ -847,19 +1200,243 @@ export class ItineraryPlanPersistenceService {
             });
           }
         }
-        stepStartedAt = this.logItineraryApiTiming({
+           stepStartedAt = this.logItineraryApiTiming({
           api: 'save_basic_info',
           step: 'hotel_details_lookup_rebuild',
           startedAt: apiStartedAt,
           stepStartedAt,
           planId,
         });
- console.log('[PERF] rebuildPlanHotels:', Date.now() - opStart2, 'ms');
+        console.log('[PERF] rebuildPlanHotels:', Date.now() - opStart2, 'ms');
+      }
+
+      // A start-time-only edit must not rebuild the selected hotel rows.
+      // Only sync previous-day early-check-in billing markers/details.
+      if (
+        itineraryStartTimeChanged &&
+        !shouldRebuildHotelRows &&
+        (
+          Number(dto.plan.itinerary_preference) === 1 ||
+          Number(dto.plan.itinerary_preference) === 3
+        )
+      ) {
+        const firstHotelRoute = (routes || [])[0] as any;
+        const firstHotelRouteId = Number(
+          firstHotelRoute?.itinerary_route_ID || 0,
+        );
+
+        const requestedStartTime = normalizeWallClockTime(
+          dto.plan.trip_start_date,
+        );
+
+        if (firstHotelRouteId > 0 && requestedStartTime) {
+          const [arrivalHour, arrivalMinute, arrivalSecond] =
+            requestedStartTime.split(':').map((value) => Number(value || 0));
+
+          const arrivalSeconds =
+            (arrivalHour * 3600) +
+            (arrivalMinute * 60) +
+            arrivalSecond;
+
+          const existingMarkerRows =
+            await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
+              where: {
+                itinerary_plan_id: planId,
+                itinerary_route_id: firstHotelRouteId,
+                hotel_required: 2,
+                hotel_id: 0,
+                deleted: 0,
+              },
+              select: {
+                group_type: true,
+                itinerary_route_date: true,
+                itinerary_route_location: true,
+              },
+            });
+
+          const shouldApplyPreviousDayBilling =
+            Boolean(dto.previousDayBillingDecisionProvided) &&
+            Boolean(dto.previousDayBillingConfirmed) &&
+            arrivalSeconds >= 3600 &&
+            arrivalSeconds < 28800;
+
+          if (shouldApplyPreviousDayBilling) {
+            const firstRouteDate = new Date(
+              firstHotelRoute.itinerary_route_date,
+            );
+
+            if (!Number.isNaN(firstRouteDate.getTime())) {
+              const actualGuestArrivalAt = new Date(Date.UTC(
+                firstRouteDate.getUTCFullYear(),
+                firstRouteDate.getUTCMonth(),
+                firstRouteDate.getUTCDate(),
+                arrivalHour,
+                arrivalMinute,
+                arrivalSecond,
+              ));
+
+              const previousDayDate = new Date(Date.UTC(
+                firstRouteDate.getUTCFullYear(),
+                firstRouteDate.getUTCMonth(),
+                firstRouteDate.getUTCDate(),
+                0,
+                0,
+                0,
+              ));
+              previousDayDate.setUTCDate(
+                previousDayDate.getUTCDate() - 1,
+              );
+
+              const hotelCheckOutDate = new Date(Date.UTC(
+                firstRouteDate.getUTCFullYear(),
+                firstRouteDate.getUTCMonth(),
+                firstRouteDate.getUTCDate(),
+                0,
+                0,
+                0,
+              ));
+              hotelCheckOutDate.setUTCDate(
+                hotelCheckOutDate.getUTCDate() + 1,
+              );
+
+              const routeLocation = String(
+                firstHotelRoute.next_visiting_location ||
+                firstHotelRoute.location_name ||
+                '',
+              ).trim();
+
+              const expectedDateIso =
+                previousDayDate.toISOString().slice(0, 10);
+
+              const expectedGroups = new Set([1, 2, 3, 4]);
+
+              const markersAlreadyUpToDate =
+                existingMarkerRows.length === 4 &&
+                existingMarkerRows.every((row: any) => {
+                  const rowDateIso = new Date(
+                    row.itinerary_route_date,
+                  ).toISOString().slice(0, 10);
+
+                  const rowGroup = Number(row.group_type || 0);
+                  const rowLocation = String(
+                    row.itinerary_route_location || '',
+                  ).trim();
+
+                  return (
+                    expectedGroups.has(rowGroup) &&
+                    rowDateIso === expectedDateIso &&
+                    rowLocation === routeLocation
+                  );
+                });
+
+              if (!markersAlreadyUpToDate) {
+                if (existingMarkerRows.length > 0) {
+                  await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+                    where: {
+                      itinerary_plan_id: planId,
+                      itinerary_route_id: firstHotelRouteId,
+                      hotel_required: 2,
+                      hotel_id: 0,
+                      deleted: 0,
+                    },
+                  });
+                }
+
+                await (tx as any).dvi_itinerary_plan_hotel_details.createMany({
+                  data: [1, 2, 3, 4].map((groupType) => ({
+                    group_type: groupType,
+                    itinerary_plan_id: planId,
+                    itinerary_route_id: firstHotelRouteId,
+                    itinerary_route_date: previousDayDate,
+                    itinerary_route_location: routeLocation || null,
+                    hotel_required: 2,
+                    hotel_id: 0,
+                    total_no_of_rooms: 0,
+                    total_hotel_cost: 0,
+                    total_hotel_tax_amount: 0,
+                    createdby: userId,
+                    createdon: new Date(),
+                    status: 1,
+                    deleted: 0,
+                  })),
+                });
+              }
+
+              const actualArrivalDateIso =
+                actualGuestArrivalAt.toISOString().slice(0, 10);
+
+              const earlyCheckInNote =
+                `Guest has opted for early morning check-in with extra payment. ` +
+                `Room to be blocked from ${expectedDateIso}, with actual guest arrival/check-in ` +
+                `on ${actualArrivalDateIso} at ${requestedStartTime}.`;
+
+              await (tx as any).dvi_itinerary_plan_hotel_details.updateMany({
+                where: {
+                  itinerary_plan_id: planId,
+                  itinerary_route_id: firstHotelRouteId,
+                  hotel_required: 1,
+                  hotel_id: { gt: 0 },
+                  deleted: 0,
+                },
+                data: {
+                  hotel_check_in_date: previousDayDate,
+                  actual_guest_arrival_at: actualGuestArrivalAt,
+                  hotel_check_out_date: hotelCheckOutDate,
+                  early_checkin: 1,
+                  early_checkin_extra_payment_applicable: 1,
+                  early_checkin_payment_status:
+                    'EXTRA_PAYMENT_APPLICABLE',
+                  early_checkin_note: earlyCheckInNote,
+                  updatedon: new Date(),
+                },
+              });
+            }
+          } else {
+            // "No, keep same-day", or the new start time is outside the
+            // early-arrival window: remove any old previous-day billing state.
+            if (existingMarkerRows.length > 0) {
+              await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+                where: {
+                  itinerary_plan_id: planId,
+                  itinerary_route_id: firstHotelRouteId,
+                  hotel_required: 2,
+                  hotel_id: 0,
+                  deleted: 0,
+                },
+              });
+            }
+
+            await (tx as any).dvi_itinerary_plan_hotel_details.updateMany({
+              where: {
+                itinerary_plan_id: planId,
+                itinerary_route_id: firstHotelRouteId,
+                hotel_required: 1,
+                hotel_id: { gt: 0 },
+                deleted: 0,
+              },
+              data: {
+                hotel_check_in_date: null,
+                actual_guest_arrival_at: null,
+                hotel_check_out_date: null,
+                early_checkin: 0,
+                early_checkin_extra_payment_applicable: 0,
+                early_checkin_payment_status: null,
+                early_checkin_note: null,
+                updatedon: new Date(),
+              },
+            });
+          }
+        }
       }
 
       opStart2 = Date.now();
-      if (shouldRebuildRouteData) {
-        await this.hotspotEngine.rebuildRouteHotspots(tx, planId, existingHotspotsWithDates);
+
+      if (shouldRebuildTimeline) {
+        await this.hotspotEngine.rebuildRouteHotspots(
+          tx,
+          planId,
+          existingHotspotsWithDates,
+        );
       }
       await this.routeVehicleRestrictions.assertPersistedPlan(planId, 'create-itinerary-timeline', tx);
       stepStartedAt = this.logItineraryApiTiming({
@@ -909,17 +1486,18 @@ export class ItineraryPlanPersistenceService {
  console.log('[PERF] getPlanRow:', Date.now() - opStart2, 'ms');
  console.log('[PERF] TOTAL TRANSACTION:', Date.now() - txStart, 'ms');
 
-      return {
-        planId,
-        quoteId: planRow?.itinerary_quote_ID,
-        routeIds: routes.map((r: any) => r.itinerary_route_ID),
-        routeChanged,
-        roomCountChanged,
-        mealPlanChanged,
-        hotelCategoryChanged,
-        message:
-          "Plan created/updated with routes, travellers, hotspots, and hotels.",
-      };
+ return {
+  planId,
+  quoteId: planRow?.itinerary_quote_ID,
+  routeIds: routes.map((r: any) => r.itinerary_route_ID),
+  routeChanged,
+  roomCountChanged,
+  mealPlanChanged,
+  hotelCategoryChanged,
+  earlyArrivalChanged,
+  message:
+    "Plan created/updated with routes, travellers, hotspots, and hotels.",
+};
  }, { timeout: 120000, maxWait: 20000 }); // Increased to 120s while we optimize further
 
  // Rebuild parking charges AFTER routes and hotspots
@@ -1011,6 +1589,18 @@ export class ItineraryPlanPersistenceService {
     };
     } catch (error: any) {
       const message = String(error?.message || error || 'Unknown createPlan failure');
+      this.logger.error('createPlan failed', {
+        stage: createPlanStage,
+        message,
+        errorName: error?.name,
+        planId: Number((dto as any)?.plan?.itinerary_plan_id || 0) || undefined,
+        quoteId: (dto as any)?.plan?.itinerary_quote_ID
+          ? String((dto as any).plan.itinerary_quote_ID)
+          : undefined,
+        providerStatus: error?.response?.data?.Status,
+        providerMessage: error?.response?.data?.Message,
+        stack: error?.stack,
+      });
       if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof ConflictException || error instanceof UnprocessableEntityException) {
         throw error;
       }

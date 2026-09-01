@@ -116,3 +116,24 @@ test('does not select hotspots when the orchestration guard disables sightseeing
   assert.deepEqual(result.selectedHotspots, []);
   assert.equal(fetchCount, 0);
 });
+
+test('uses the destination-only pool for confirmed early check-in', async () => {
+  const calls: any[][] = [];
+  const { service } = createService(
+    async (...args) => {
+      calls.push(args);
+      return [{ hotspot_ID: 99 }];
+    },
+    async () => [],
+  );
+
+  const result = await service.select(input({
+    routeIndex: 0,
+    forceDirectDestinationSightseeing: true,
+  }));
+
+  assert.deepEqual(result.selectedHotspots, [{ hotspot_ID: 99 }]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][5], false);
+  assert.equal(calls[0][6], true);
+});

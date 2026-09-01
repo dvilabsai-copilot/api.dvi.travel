@@ -82,6 +82,13 @@ export interface HotelSearchResult {
     date: string;
     baseAmount: number;
     sellAmount: number;
+    /**
+     * The selected logical stay is projected back to each physical
+     * route-night before persistence. Keep the supplier identity and the
+     * already-calculated commercial fields on that night so the projection
+     * does not fall back to the anchor night's rate.
+     */
+    [key: string]: unknown;
   }>;
   priceLabel?: string;
   priceSource?: 'LIVE_API' | 'DATABASE' | 'LEGACY_UNKNOWN';
