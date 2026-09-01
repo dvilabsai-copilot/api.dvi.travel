@@ -22,8 +22,14 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
 import { resolveHotelSelectionPricing } from '../utils/hotel-selection-pricing.util';
+import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { HotelAvailabilitySnapshotService } from './hotel-availability-snapshot.service';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
+
+const canonicalHotelProvider = (provider: unknown): string => {
+  const normalized = String(provider ?? '').trim().toLowerCase();
+  return normalized === 'vsr' ? 'tbo' : normalized;
+};
 
 @Injectable()
 export class ItinerarySelectionWorkflowService {
@@ -165,6 +171,7 @@ export class ItinerarySelectionWorkflowService {
     searchReference?: string;
     roomId?: string | number;
     rateId?: string | number;
+    availableRoomTypeOptions?: Array<{ roomTypeId: number; roomTypeTitle: string; pricePerNight?: number }>;
     roomCount?: number;
     extraBedCount?: number;
     extraBedRate?: number;
@@ -325,7 +332,8 @@ export class ItinerarySelectionWorkflowService {
       pricePerNight: data.pricePerNight,
       roomCount: data.roomCount,
     });
-    const providerForPricing = String(data.provider || '').trim().toLowerCase();
+    // VSR is a UI representation of TBO, not a second supplier path.
+    const providerForPricing = canonicalHotelProvider(data.provider);
     let axisRoomsBasePrice = 0;
     let axisRoomsSupplementRates: { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } | null = null;
     if (String(data.provider || '').trim().toLowerCase() === 'axisrooms') {
@@ -492,6 +500,34 @@ export class ItinerarySelectionWorkflowService {
           : providerForPricing !== 'offline'
             ? Math.max((selectionPricing.totalPrice * hotelMarginPercentage) / 100, 0)
             : 0;
+    // VSR/TBO manual selections can arrive with the supplier/base aggregate
+    // in `totalPrice` while the margin is sent as a separate field. Normalize
+    // that legacy shape before writing the selected row so the API's total
+    // surfaces (tooltip, hotel total, and overall trip cost) are payable.
+    // The projection is idempotent and intentionally scoped to TBO/VSR;
+    // AxisRooms, Staah, and offline pricing retain their existing paths.
+    if (providerForPricing === 'tbo') {
+      const projectedVsr = projectHotelPayablePricing({
+        ...data,
+        baseTotalPrice: authoritativeBaseTotal || undefined,
+        totalPrice: selectionPricing.totalPrice,
+        pricePerNight: selectionPricing.totalPrice,
+        roomCount: effectiveRoomCount,
+        hotelMarginPercentage,
+        hotelMarginAmount: hotelMarginRate,
+        hotelMarginTotalAmount: hotelMarginRate,
+        extraBedAmount,
+        childWithBedAmount,
+        childWithoutBedAmount,
+      }, hotelMarginPercentage);
+      data.pricePerNight = Number(projectedVsr.totalPrice || selectionPricing.totalPrice);
+      data.totalPrice = data.pricePerNight;
+      selectionPricing = resolveHotelSelectionPricing({
+        totalPrice: data.totalPrice,
+        pricePerNight: data.pricePerNight,
+        roomCount: effectiveRoomCount,
+      });
+    }
     const hotelMarginRateTaxAmount = Math.max(Number(data.hotelMarginGstAmount || 0), 0);
     // `total_room_cost` is room-only.  Previously offline room changes stored
     // the payable amount here, and the later read mixed that value with the
@@ -576,6 +612,7 @@ export class ItinerarySelectionWorkflowService {
               selectionKey: data.selectionKey || null,
               provider: data.provider || null,
               selectionOrigin: 'USER_SELECTED',
+              availableRoomTypeOptions: data.availableRoomTypeOptions || [],
             hotelName: data.hotelName || null,
             category: data.category || null,
             roomTypeId: data.roomTypeId || null,
@@ -670,6 +707,7 @@ export class ItinerarySelectionWorkflowService {
             selectionKey: data.selectionKey || null,
             provider: data.provider || null,
             selectionOrigin: 'USER_SELECTED',
+            availableRoomTypeOptions: data.availableRoomTypeOptions || [],
             hotelName: data.hotelName || null,
             category: data.category || null,
             roomTypeId: data.roomTypeId || null,
@@ -1102,7 +1140,7 @@ export class ItinerarySelectionWorkflowService {
       // inside the plan/group lock. A late refresh from request A therefore
       // cannot overwrite a newer request B after B has committed.
       for (const hotel of skipSupplierRefresh ? [] : hotels) {
-        const provider = String(hotel.provider || '').trim().toLowerCase();
+        const provider = canonicalHotelProvider(hotel.provider);
         const hotelCode = String(hotel.providerHotelCode || hotel.hotelCode || hotel.hotelId || '').trim();
         if (!provider || provider === 'offline' || !hotelCode || !plan?.itinerary_quote_ID) continue;
         const refreshed = await this.hotelDetailsTboService.getSelectedHotelRates(
@@ -1135,10 +1173,12 @@ export class ItinerarySelectionWorkflowService {
             provider: hotel.provider,
             hotelCode: hotel.hotelCode,
             optionKey: hotel.optionKey,
-            pricePerNight: hotel.selectionPricingSource === 'SERVER_RESOLVED' || hotel.selectionIntent === 'RATE_OPTION'
+            pricePerNight: hotel.selectionPricingSource === 'SERVER_RESOLVED' || hotel.selectionIntent === 'RATE_OPTION' ||
+              (hotel.selectionIntent === 'HOTEL' && ['tbo', 'vsr'].includes(String(hotel.provider || '').trim().toLowerCase()))
               ? hotel.pricePerNight
               : undefined,
-            totalPrice: hotel.selectionPricingSource === 'SERVER_RESOLVED' || hotel.selectionIntent === 'RATE_OPTION'
+            totalPrice: hotel.selectionPricingSource === 'SERVER_RESOLVED' || hotel.selectionIntent === 'RATE_OPTION' ||
+              (hotel.selectionIntent === 'HOTEL' && ['tbo', 'vsr'].includes(String(hotel.provider || '').trim().toLowerCase()))
               ? hotel.totalPrice
               : undefined,
             currency: hotel.currency,
@@ -1192,7 +1232,7 @@ export class ItinerarySelectionWorkflowService {
     quoteId: string,
     route?: any,
   ): Promise<void> {
-    const provider = String(data.provider || '').trim().toLowerCase();
+    const provider = canonicalHotelProvider(data.provider);
     if (!provider || provider === 'offline') return;
 
     // A property/room/meal selection is intentionally not a concrete rate

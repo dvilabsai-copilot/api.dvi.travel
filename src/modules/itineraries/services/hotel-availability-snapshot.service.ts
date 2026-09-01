@@ -706,10 +706,12 @@ export class HotelAvailabilitySnapshotService {
     requestType: 'CREATE' | 'CHECK_AVAILABILITY',
     createdBy = 0,
     resetSelections = false,
+    reconciliation = false,
   ): Promise<{
     searchRunId: string;
     response: ItineraryHotelDetailsResponseDto;
     changeSummary: HotelAvailabilityChangeSummary;
+    previewId?: string;
   }> {
     // Every fresh availability operation compares against the durable
     // selection first. CREATE normally has no rows yet; if an edited/retried
@@ -717,26 +719,31 @@ export class HotelAvailabilitySnapshotService {
     // previous-state evidence before reconciliation.
     const shouldForceFreshSearch = resetSelections || requestType === 'CREATE';
     const plan = await this.findPlan(quoteId);
+    // Ordinary availability checks are read/compare operations. Only CREATE
+    // and the explicit Reset flow may mutate saved auto-selections.
+    const shouldPersist = requestType !== 'CHECK_AVAILABILITY' || resetSelections;
     const lockName = `itinerary_hotel_availability:${plan.itinerary_plan_ID}`;
     const databaseUrl = String(process.env.DATABASE_URL || '').trim();
-    if (!databaseUrl) throw new Error('DATABASE_URL is required for hotel availability coordination');
+    if (shouldPersist && !databaseUrl) throw new Error('DATABASE_URL is required for hotel availability coordination');
 
-    const connection = await createConnection(databaseUrl);
+    const connection = shouldPersist ? await createConnection(databaseUrl) : null;
     let acquired = false;
     const startedAt = Date.now();
     const checkedAt = new Date();
     const searchRunId = `hotel-${plan.itinerary_plan_ID}-${randomUUID()}`;
 
     try {
-      const [lockRows] = await connection.query<any[]>('SELECT GET_LOCK(?, 0) AS acquired', [lockName]);
-      acquired = Number(lockRows?.[0]?.acquired || 0) === 1;
-      if (!acquired) {
-        throw new ConflictException({
-          message: 'Hotel availability is already running for this itinerary.',
-          code: 'HOTEL_AVAILABILITY_IN_PROGRESS',
-          planId: plan.itinerary_plan_ID,
-          searchRunId,
-        });
+      if (shouldPersist) {
+        const [lockRows] = await connection!.query<any[]>('SELECT GET_LOCK(?, 0) AS acquired', [lockName]);
+        acquired = Number(lockRows?.[0]?.acquired || 0) === 1;
+        if (!acquired) {
+          throw new ConflictException({
+            message: 'Hotel availability is already running for this itinerary.',
+            code: 'HOTEL_AVAILABILITY_IN_PROGRESS',
+            planId: plan.itinerary_plan_ID,
+            searchRunId,
+          });
+        }
       }
 
       this.logger.log('[HOTEL_AVAILABILITY_START]', {
@@ -943,23 +950,14 @@ export class HotelAvailabilitySnapshotService {
         error?.provider || error?.providerName || error?.source || '',
       ).trim().toLowerCase()).filter(Boolean));
       const persistenceStartedAt = Date.now();
-      // Persist only selected itinerary rows. Fresh inventory remains scoped
-      // to this request and is returned directly to the mounted React page.
-      const changeSummary = await this.prisma.$transaction(async (tx) => {
-        if (resetSelections) {
-          await this.clearEditableHotelSelections(tx, plan.itinerary_plan_ID);
-          // This table is legacy inventory storage. The current response is
-          // built from the fresh request, but remove old rows so another read
-          // cannot fall back to stale rates from this quote.
-          await tx?.dvi_itinerary_hotel_search_cache?.deleteMany?.({
-            where: {
-              quote_id: String(quoteId).trim(),
-              plan_id: plan.itinerary_plan_ID,
-            },
-          });
-        }
-        return this.reconcileSelections(
-          tx,
+      let changeSummary: HotelAvailabilityChangeSummary;
+      let previewId: string | undefined;
+      if (!shouldPersist) {
+        // Reconciliation mode is read-only for itinerary data. The preview
+        // record stores the exact supplier result for the later acknowledgement
+        // so the server never trusts prices or hotel identities from the client.
+        changeSummary = await this.reconcileSelections(
+          this.prisma,
           plan.itinerary_plan_ID,
           rows,
           searchRunId,
@@ -970,8 +968,44 @@ export class HotelAvailabilitySnapshotService {
           this.getPlanMealPlanFlags(plan),
           failedProviders,
           routes,
+          true,
         );
-      }, { maxWait: 15000, timeout: 120000 });
+        if (reconciliation) {
+          previewId = await this.storeAvailabilityPreview(quoteId, plan.itinerary_plan_ID, {
+            rows,
+            searchRunId,
+            failedProviders: Array.from(failedProviders),
+            checkedAt: checkedAt.toISOString(),
+          });
+        }
+      } else {
+        // Persist only selected itinerary rows. Fresh inventory remains scoped
+        // to this request and is returned directly to the mounted React page.
+        changeSummary = await this.prisma.$transaction(async (tx) => {
+          if (resetSelections) {
+            await this.clearEditableHotelSelections(tx, plan.itinerary_plan_ID);
+            await tx?.dvi_itinerary_hotel_search_cache?.deleteMany?.({
+              where: {
+                quote_id: String(quoteId).trim(),
+                plan_id: plan.itinerary_plan_ID,
+              },
+            });
+          }
+          return this.reconcileSelections(
+            tx,
+            plan.itinerary_plan_ID,
+            rows,
+            searchRunId,
+            createdBy,
+            false,
+            undefined,
+            this.getPlanMealPlanCode(plan),
+            this.getPlanMealPlanFlags(plan),
+            failedProviders,
+            routes,
+          );
+        }, { maxWait: 15000, timeout: 120000 });
+      }
       logStage('selection-reconciliation', persistenceStartedAt);
 
       const readStartedAt = Date.now();
@@ -999,7 +1033,7 @@ export class HotelAvailabilitySnapshotService {
         optionCount: rows.length,
         durationMs: Date.now() - startedAt,
       });
-      return { searchRunId, response, changeSummary };
+      return { searchRunId, response, changeSummary, ...(previewId ? { previewId } : {}) };
     } catch (error) {
       this.logger.warn('[HOTEL_AVAILABILITY_FAILED]', {
         quoteId,
@@ -1032,11 +1066,11 @@ export class HotelAvailabilitySnapshotService {
       });
     } finally {
       if (acquired) {
-        try { await connection.query('SELECT RELEASE_LOCK(?) AS released', [lockName]); } catch (error) {
+        try { await connection!.query('SELECT RELEASE_LOCK(?) AS released', [lockName]); } catch (error) {
           this.logger.error('[HOTEL_AVAILABILITY_LOCK_RELEASE_FAILED]', String((error as any)?.message || error));
         }
       }
-      await connection.end();
+      await connection?.end();
     }
   }
 
@@ -1050,6 +1084,7 @@ export class HotelAvailabilitySnapshotService {
     quoteId: string,
     selectionIds: number[],
     createdBy = 0,
+    previewId?: string,
   ): Promise<{ appliedCount: number; selectionIds: number[] }> {
     const plan = await this.findPlan(quoteId);
     const requestedIds = Array.from(new Set(
@@ -1075,10 +1110,39 @@ export class HotelAvailabilitySnapshotService {
         });
       }
 
-      const appliedIds = await this.prisma.$transaction(
-        (tx) => this.applyPendingSelectionChanges(
+      const appliedIds = await this.prisma.$transaction(async (tx) => {
+        if (previewId) {
+          const preview = await this.readAvailabilityPreview(quoteId, previewId);
+          const routes = await this.prisma.dvi_itinerary_route_details.findMany({
+            where: { itinerary_plan_ID: plan.itinerary_plan_ID, deleted: 0 },
+            orderBy: { itinerary_route_date: 'asc' },
+          });
+          await this.reconcileSelections(
+            tx,
+            plan.itinerary_plan_ID,
+            preview.rows,
+            preview.searchRunId,
+            createdBy,
+            false,
+            undefined,
+            this.getPlanMealPlanCode(plan),
+            this.getPlanMealPlanFlags(plan),
+            preview.failedProviders,
+            routes,
+          );
+        }
+        const acceptedIds = await this.applyPendingSelectionChanges(
           tx, plan.itinerary_plan_ID, requestedIds, createdBy,
-        ),
+        );
+        if (previewId) {
+          const previewModel = (tx as any).dvi_itinerary_hotel_availability_preview;
+          await previewModel?.updateMany?.({
+            where: { preview_id: String(previewId).trim(), quote_id: String(quoteId).trim(), status: 1 },
+            data: { status: 0, updatedon: new Date() },
+          });
+        }
+        return acceptedIds;
+      },
         { maxWait: 15000, timeout: 120000 },
       );
 
@@ -1121,6 +1185,9 @@ export class HotelAvailabilitySnapshotService {
         where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
         data: {
           ...this.buildSelectionUpdate(selection, option, origin, searchRunId),
+          // Keep acknowledgement compatible with previews created before the
+          // category field was present on every supplier option.
+          hotel_category_id: Number(option.category ?? selection.hotel_category_id ?? 0),
           requires_price_reacceptance: false,
         },
       });
@@ -1158,6 +1225,68 @@ export class HotelAvailabilitySnapshotService {
     });
     if (!plan) throw new BadRequestException('Itinerary not found');
     return plan;
+  }
+
+  private async storeAvailabilityPreview(
+    quoteId: string,
+    planId: number,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    const previewId = `hotel-preview-${planId}-${randomUUID()}`;
+    const model = (this.prisma as any).dvi_itinerary_hotel_availability_preview;
+    if (!model?.create || !model?.updateMany) {
+      throw new ServiceUnavailableException('Hotel availability preview storage is not configured.');
+    }
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
+    await model.updateMany({
+      where: { quote_id: String(quoteId).trim(), plan_id: planId, status: 1 },
+      data: { status: 0, updatedon: now },
+    });
+    await model.create({
+      data: {
+        preview_id: previewId,
+        quote_id: String(quoteId).trim(),
+        plan_id: planId,
+        payload_json: JSON.stringify(payload),
+        expires_at: expiresAt,
+        status: 1,
+        createdon: now,
+        updatedon: now,
+      },
+    });
+    return previewId;
+  }
+
+  private async readAvailabilityPreview(
+    quoteId: string,
+    previewId: string,
+  ): Promise<{ rows: any[]; searchRunId: string; failedProviders: Set<string> }> {
+    const model = (this.prisma as any).dvi_itinerary_hotel_availability_preview;
+    const preview = await model?.findFirst?.({
+      where: {
+        preview_id: String(previewId).trim(),
+        quote_id: String(quoteId).trim(),
+        status: 1,
+        expires_at: { gt: new Date() },
+      },
+    });
+    if (!preview) throw new ConflictException({
+      message: 'This hotel availability preview has expired. Refresh availability and review it again.',
+      code: 'HOTEL_AVAILABILITY_PREVIEW_EXPIRED',
+    });
+    let payload: any;
+    try { payload = JSON.parse(String(preview.payload_json || '{}')); } catch { payload = null; }
+    if (!payload || !Array.isArray(payload.rows) || !String(payload.searchRunId || '').trim()) {
+      throw new ServiceUnavailableException('Hotel availability preview is invalid.');
+    }
+    return {
+      rows: payload.rows,
+      searchRunId: String(payload.searchRunId),
+      failedProviders: new Set(
+        (Array.isArray(payload.failedProviders) ? payload.failedProviders : []).map(String),
+      ),
+    };
   }
 
   private getSearchableRouteIds(routes: any[], noOfNights: number): Set<number> {
@@ -3463,9 +3592,10 @@ export class HotelAvailabilitySnapshotService {
     preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
     failedProviders: Set<string> = new Set(),
     routes: any[] = [],
+    dryRun = false,
   ): Promise<HotelAvailabilityChangeSummary> {
     const changes: HotelAvailabilityChange[] = [];
-    await this.removeStaleSelectionVersions(tx, planId);
+    if (!dryRun) await this.removeStaleSelectionVersions(tx, planId);
     const selections = await tx.dvi_itinerary_plan_hotel_details.findMany({
       where: { itinerary_plan_id: planId, deleted: 0, status: 1, hotel_required: 1 },
       orderBy: [{ itinerary_plan_hotel_details_ID: 'desc' }],
@@ -3482,11 +3612,11 @@ export class HotelAvailabilitySnapshotService {
       const selection = bucket[0];
       const duplicateRows = bucket.slice(1);
       for (const duplicate of duplicateRows) {
-        await tx.dvi_itinerary_plan_hotel_details.update({
+        if (!dryRun) await tx.dvi_itinerary_plan_hotel_details.update({
           where: { itinerary_plan_hotel_details_ID: duplicate.itinerary_plan_hotel_details_ID },
           data: { status: 0, deleted: 1, updatedon: new Date() },
         });
-        await tx.dvi_itinerary_plan_hotel_room_details.updateMany({
+        if (!dryRun) await tx.dvi_itinerary_plan_hotel_room_details.updateMany({
           where: { itinerary_plan_hotel_details_id: duplicate.itinerary_plan_hotel_details_ID, deleted: 0 },
           data: { status: 0, deleted: 1, updatedon: new Date() },
         });
@@ -3501,11 +3631,15 @@ export class HotelAvailabilitySnapshotService {
       if (allowOfflineAutoSelection && String(selection.hotel_provider || '').trim().toLowerCase() === 'offline') continue;
 
       const origin = selectionOriginFromRow(selection);
+      // Reload/reconciliation previews are intentionally limited to automatic
+      // selections. A manual choice is user-owned and must not generate a
+      // blocking replacement proposal during background validation.
+      if (dryRun && origin === 'USER_SELECTED') continue;
       const selectedProvider = String(selection.hotel_provider || '').trim().toLowerCase();
       if (selectedProvider && failedProviders.has(selectedProvider)) {
         const priorSnapshot = parseHotelSelectionSnapshot(selection) as any;
         const { pendingAvailabilityChange: _pending, ...snapshotWithoutPending } = priorSnapshot;
-        await tx.dvi_itinerary_plan_hotel_details.update({
+        if (!dryRun) await tx.dvi_itinerary_plan_hotel_details.update({
           where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
           data: {
             selected_price_snapshot: JSON.stringify({
@@ -3601,7 +3735,7 @@ export class HotelAvailabilitySnapshotService {
             : 'The auto-selected hotel is sold out and no comparable replacement is currently available.',
           searchRunId,
         };
-        await tx.dvi_itinerary_plan_hotel_details.update({
+        if (!dryRun) await tx.dvi_itinerary_plan_hotel_details.update({
           where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
           data: {
             selected_price_snapshot: JSON.stringify(snapshot),
@@ -3646,7 +3780,7 @@ export class HotelAvailabilitySnapshotService {
           availabilityMessage: 'The manually selected rate is unavailable. Review the suggested option or choose another hotel.',
           searchRunId,
         };
-        await tx.dvi_itinerary_plan_hotel_details.update({
+        if (!dryRun) await tx.dvi_itinerary_plan_hotel_details.update({
           where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
           data: {
             selected_price_snapshot: JSON.stringify(snapshot),
@@ -3666,7 +3800,7 @@ export class HotelAvailabilitySnapshotService {
       }
 
       if (replacementWasUnavailable) {
-        await this.stagePendingSelectionChange(
+        if (!dryRun) await this.stagePendingSelectionChange(
           tx, selection, replacement, nextSelectionOrigin, searchRunId, 'AUTO_SELECTION_CHANGED',
         );
         changes.push(this.buildChange('AUTO_SELECTION_CHANGED', selection, replacement, {
@@ -3677,7 +3811,7 @@ export class HotelAvailabilitySnapshotService {
           requiresAcceptance: true,
         }));
       } else if (matched && Math.abs(displayPriceDelta) > 0.009) {
-        await this.stagePendingSelectionChange(
+        if (!dryRun) await this.stagePendingSelectionChange(
           tx, selection, replacement, origin, searchRunId, 'PRICE_CHANGED',
         );
         changes.push(this.buildChange('PRICE_CHANGED', selection, replacement, {
@@ -3694,7 +3828,7 @@ export class HotelAvailabilitySnapshotService {
           previousPersistedSnapshot?.pendingAvailabilityChange
         ) {
           const { pendingAvailabilityChange: _pending, ...availableSnapshot } = previousPersistedSnapshot;
-          await tx.dvi_itinerary_plan_hotel_details.update({
+          if (!dryRun) await tx.dvi_itinerary_plan_hotel_details.update({
             where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
             data: {
               selected_price_snapshot: JSON.stringify({
@@ -3713,18 +3847,20 @@ export class HotelAvailabilitySnapshotService {
 
     // Existing rows are reconciled first. This invalidates stale automatic
     // selections after a category change before any new candidate is created.
-    await this.ensureAutoSelections(
-      tx,
-      planId,
-      rows,
-      searchRunId,
-      createdBy,
-      allowOfflineAutoSelection,
-      eligibleRouteIds,
-      preferredMealPlanCode,
-      preferredMealPlanFlags,
-      routes,
-    );
+    if (!dryRun) {
+      await this.ensureAutoSelections(
+        tx,
+        planId,
+        rows,
+        searchRunId,
+        createdBy,
+        allowOfflineAutoSelection,
+        eligibleRouteIds,
+        preferredMealPlanCode,
+        preferredMealPlanFlags,
+        routes,
+      );
+    }
 
     return { hasChanges: changes.length > 0, totalChanges: changes.length, changes };
   }
@@ -5458,7 +5594,7 @@ export class HotelAvailabilitySnapshotService {
         : selection.hotel_check_out_date || null,
       is_live_rate: option.provider === 'offline' ? false : true,
       selected_rate_option_id: this.persistedRateOptionId(option, selection.selected_rate_option_id),
-      selected_price_per_night: totalPrice > 0 ? totalPrice : pricePerNight,
+      selected_price_per_night: pricePerNight > 0 ? pricePerNight : totalPrice,
       selected_total_price: totalPrice,
       selected_currency: option.currency || selection.selected_currency || null,
       selection_origin: origin,

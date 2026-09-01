@@ -1805,7 +1805,10 @@ private getGuideSlotLabel(slotId: number): string {
     });
     if (!plan) throw new NotFoundException('Itinerary plan not found');
     const quoteId = String((plan as any).itinerary_quote_ID || '');
-    const provider = String(data.provider || '').trim().toLowerCase();
+    const requestedProvider = String(data.provider || '').trim().toLowerCase();
+    // VSR is the UI label for TBO. Canonicalize at the API boundary so all
+    // supplier checks continue to use one provider identity internally.
+    const provider = requestedProvider === 'vsr' ? 'tbo' : requestedProvider;
     const requestedCanonicalHotelId = Number(data.canonicalHotelId || data.hotelId || 0);
     let providerHotelCode = String(data.providerHotelCode || '').trim();
     if (!providerHotelCode && requestedCanonicalHotelId > 0 && provider !== 'offline') {
@@ -1855,6 +1858,14 @@ private getGuideSlotLabel(slotId: number): string {
       inferCanonicalHotelRatePlanCode(requestedMeal) ||
       inferCanonicalHotelRatePlanCodeFromMealText(requestedMeal) ||
       mealPlanFromReference(requestedMeal);
+    // TBO occasionally returns a valid hotel/room rate under a different
+    // meal-plan label than the itinerary's legacy preference (for example,
+    // the itinerary has CP while TBO returns Room_Only/EP).  This flag only
+    // relaxes TBO meal-plan matching; stay dates, hotel, room, and supplier
+    // availability checks remain mandatory. Other providers keep the current
+    // strict meal-plan behavior.
+    const ignoreTboMealType = provider === 'tbo' &&
+      String(process.env.IGNORE_TBO_MEALTYPE || '').trim().toLowerCase() === 'true';
     const referencedMealPlan = mealPlanFromReference(
       data.rateOptionId,
       data.optionKey,
@@ -1862,7 +1873,7 @@ private getGuideSlotLabel(slotId: number): string {
       data.bookingCode,
       data.searchReference,
     );
-    if (requestedMealPlan && referencedMealPlan && requestedMealPlan !== referencedMealPlan) {
+    if (!ignoreTboMealType && requestedMealPlan && referencedMealPlan && requestedMealPlan !== referencedMealPlan) {
       console.error('[HOTEL_INTENT_MEAL_PLAN_MISMATCH]', JSON.stringify({
         planId: Number(data.planId),
         routeId: Number(data.routeId),
@@ -2251,7 +2262,7 @@ private getGuideSlotLabel(slotId: number): string {
         // plan just like MEAL_PLAN actions. Without this filter, a card that
         // displays CP could still select the cheapest AP option when its
         // concrete rate identity is omitted intentionally.
-        if (requestedMeal &&
+        if (!ignoreTboMealType && requestedMeal &&
           (intent === 'HOTEL' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') &&
           normalizeMealPlan(meal) !== normalizeMealPlan(requestedMeal)) return false;
         if ((intent === 'RATE_OPTION' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') && index !== stay.routeIds.indexOf(Number(data.routeId))) {
@@ -2264,7 +2275,7 @@ private getGuideSlotLabel(slotId: number): string {
           } else if (anchorRoom && !roomLabelMatches(room, anchorRoom)) {
             return false;
           }
-          if (anchorMeal && normalizeMealPlan(meal) !== normalizeMealPlan(anchorMeal)) return false;
+          if (!ignoreTboMealType && anchorMeal && normalizeMealPlan(meal) !== normalizeMealPlan(anchorMeal)) return false;
         }
         return true;
       }).sort((left: any, right: any) => payableAmount(left) - payableAmount(right));
@@ -2411,6 +2422,15 @@ private getGuideSlotLabel(slotId: number): string {
           );
         }
       }
+      const availableRoomTypeCategories = provider === 'tbo'
+        ? Array.from(new Set(
+          candidates
+          .filter((candidate: any) => String(candidate?.hotelCode || candidate?.providerHotelCode || '').trim() === hotelCode)
+            .filter((candidate: any) => String(candidate?.mealPlan || candidate?.mealPlanCode || '').trim().toUpperCase() === 'CP')
+            .map((candidate: any) => String(candidate?.roomType || candidate?.roomTypeName || '').trim())
+            .filter(Boolean),
+        ))
+        : [];
       return {
         status: 'AVAILABLE',
         success: true,
@@ -2476,10 +2496,30 @@ private getGuideSlotLabel(slotId: number): string {
             ? true
             : selection.pricingIncludesHotelMargin === true,
           currency: selection.currency || 'INR',
+          availableRoomTypeCategories,
           };
         }),
       };
     }
+
+    const availableRoomTypeOptions: Array<{ roomTypeId: number; roomTypeTitle: string; pricePerNight?: number }> = provider === 'tbo'
+      ? Array.from(
+        candidates
+          .filter((candidate: any) => String(candidate?.hotelCode || candidate?.providerHotelCode || '').trim() === hotelCode)
+          .filter((candidate: any) => String(candidate?.mealPlan || candidate?.mealPlanCode || '').trim().toUpperCase() === 'CP')
+          .reduce((options: Map<string, { roomTypeId: number; roomTypeTitle: string; pricePerNight?: number }>, candidate: any) => {
+            const roomTypeTitle = String(candidate?.roomType || candidate?.roomTypeName || '').trim();
+            const selectionKey = String(candidate?.selectionKey || candidate?.rateOptionId || candidate?.searchReference || '').trim();
+            const selectionKeyId = Number(selectionKey.match(/:(\d+)$/)?.[1] || 0);
+            const roomTypeId = Number(candidate?.roomTypeId || candidate?.room_id || candidate?.roomId || selectionKeyId);
+            const pricePerNight = Number(candidate?.pricePerNight ?? candidate?.amountAfterTax ?? candidate?.price ?? 0);
+            const key = roomTypeTitle.toLowerCase();
+            if (key && roomTypeId > 0 && !options.has(key)) options.set(key, { roomTypeId, roomTypeTitle, ...(pricePerNight > 0 ? { pricePerNight } : {}) });
+            return options;
+          }, new Map<string, { roomTypeId: number; roomTypeTitle: string; pricePerNight?: number }>())
+          .values(),
+      )
+      : [];
 
     const persistencePayloads = selectedByRoute.map((rawSelected: any) => {
       const selected = normalizeSupplierRateIdentity(rawSelected);
@@ -2581,6 +2621,7 @@ private getGuideSlotLabel(slotId: number): string {
           ? selected.searchReference || selected.bookingCode
           : selected.searchReference || selected.rateOptionId || selected.optionKey,
         currency: selected.currency || 'INR', selectionOrigin: 'USER_SELECTED',
+        availableRoomTypeOptions,
         // This payload was resolved from the current supplier response above.
         // It is safe to persist its price; unlike a browser-supplied price,
         // it is not trusted merely because it came from the request body.
@@ -2739,11 +2780,19 @@ private getGuideSlotLabel(slotId: number): string {
       // retry the normal itinerary read.
       console.error('[HOTEL_INTENT] financial response enrichment failed', error);
     }
+    const availableRoomTypeCategories = provider === 'tbo'
+      ? Array.from(new Set(
+        candidates
+          .filter((candidate: any) => String(candidate?.hotelCode || candidate?.providerHotelCode || '').trim() === hotelCode)
+          .map((candidate: any) => String(candidate?.roomType || candidate?.roomTypeName || '').trim())
+          .filter(Boolean),
+      ))
+      : [];
     return {
       success: true, status: 'AVAILABLE', planId: Number(data.planId), groupType, selectionIntent: intent,
       logicalStay: stay,
-      hotelDetails: selections,
-      selections,
+      hotelDetails: selections.map((selection: any) => ({ ...selection, availableRoomTypeCategories })),
+      selections: selections.map((selection: any) => ({ ...selection, availableRoomTypeCategories })),
       financialSummary: {
         overallCost: itinerary?.overallCost ?? null,
         costBreakdown: itinerary?.costBreakdown ?? null,

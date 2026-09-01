@@ -6431,6 +6431,24 @@ model dvi_itinerary_hotel_search_cache {
   @@index([plan_id, recommendation_search_run_id], map: "idx_hotel_cache_recommendation_run")
 }
 
+/// Short-lived supplier availability preview. This is deliberately separate
+/// from itinerary hotel selections: refresh/check requests may create a
+/// preview, but they must not mutate the saved itinerary until acknowledgement.
+model dvi_itinerary_hotel_availability_preview {
+  id          Int      @id @default(autoincrement())
+  preview_id  String   @unique(map: "uq_hotel_availability_preview_id") @db.VarChar(100)
+  quote_id    String   @db.VarChar(50)
+  plan_id     Int
+  payload_json String  @db.LongText
+  expires_at  DateTime @db.DateTime(0)
+  status      Int      @default(1) @db.TinyInt
+  createdon   DateTime @default(now()) @db.DateTime(0)
+  updatedon   DateTime @default(now()) @db.DateTime(0)
+
+  @@index([quote_id, plan_id, status], map: "idx_hotel_availability_preview_scope")
+  @@index([expires_at], map: "idx_hotel_availability_preview_expiry")
+}
+
 model dvi_manual_fit_preview_attempts {
   id                  BigInt   @id @default(autoincrement())
   attempt_id          String   @unique(map: "uq_manual_fit_preview_attempt") @db.VarChar(64)

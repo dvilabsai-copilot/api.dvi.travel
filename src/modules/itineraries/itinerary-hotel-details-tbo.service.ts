@@ -1206,7 +1206,13 @@ if (hotelMasterId) {
     if (!plan || !route) throw new NotFoundException('Itinerary route not found');
 
     const requestedProvider = String(provider || '').trim().toLowerCase();
-    const normalizedProvider = requestedProvider === 'ax' ? 'axisrooms' : requestedProvider;
+    // VSR is the UI name for the TBO supplier. Keep one canonical supplier
+    // identity throughout refresh/search/merge paths.
+    const normalizedProvider = requestedProvider === 'ax'
+      ? 'axisrooms'
+      : requestedProvider === 'vsr'
+        ? 'tbo'
+        : requestedProvider;
     const normalizedHotelCode = String(hotelCode || '').trim();
     const axisRoomsPropertyId = normalizedHotelCode.match(/(?:^|[^0-9])(\d+)$/)?.[1] || normalizedHotelCode;
     if (!normalizedProvider || !normalizedHotelCode) {
@@ -4440,7 +4446,9 @@ this.logger.log(
     });
     if (!plan || !firstRoute) throw new NotFoundException('Itinerary route not found');
 
-    const provider = String(params.provider || '').trim().toLowerCase();
+    const requestedProvider = String(params.provider || '').trim().toLowerCase();
+    // VSR is a presentation label, not a separate supplier integration.
+    const provider = requestedProvider === 'vsr' ? 'tbo' : requestedProvider;
     const roomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
     const adultCount = Math.max(Number((plan as any).total_adult || 1), 1);
     const childCount = Math.max(Number((plan as any).total_children || 0), 0);

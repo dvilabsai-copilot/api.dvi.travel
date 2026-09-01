@@ -691,12 +691,19 @@ private readonly itineraryAccessService: ItineraryAccessService,
   })
   async checkItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
+    @Body() body: { reconciliation?: boolean; reset?: boolean },
     @Req() req: any,
   ) {
+    const reconciliationEnabled = ['1', 'true', 'yes'].includes(
+      String(process.env.HOTEL_RECONCILE || '').trim().toLowerCase(),
+    );
+    const reset = body?.reset === true;
     const result = await this.hotelAvailabilitySnapshotService.searchAndPersist(
       quoteId,
       'CHECK_AVAILABILITY',
       Number(req.user?.userId || 0),
+      reset,
+      reconciliationEnabled && !reset && body?.reconciliation === true,
     );
     const itinerary = await this.detailsService.getItineraryDetails(
       quoteId,
@@ -709,6 +716,8 @@ private readonly itineraryAccessService: ItineraryAccessService,
     return {
       hotelDetails: result.response,
       changeSummary: result.changeSummary,
+      previewId: result.previewId,
+      reconciliationEnabled,
       financialSummary: {
         overallCost: itinerary?.overallCost ?? null,
         costBreakdown: itinerary?.costBreakdown ?? null,
@@ -720,13 +729,14 @@ private readonly itineraryAccessService: ItineraryAccessService,
   @ApiOperation({ summary: 'Accept staged hotel availability changes' })
   async acknowledgeItineraryHotelAvailabilityChanges(
     @Param('quoteId') quoteId: string,
-    @Body() body: { selectionIds?: number[] },
+    @Body() body: { selectionIds?: number[]; previewId?: string },
     @Req() req: any,
   ) {
     const applied = await this.hotelAvailabilitySnapshotService.applyAcceptedSelectionChanges(
       quoteId,
       Array.isArray(body?.selectionIds) ? body.selectionIds : [],
       Number(req.user?.userId || 0),
+      String(body?.previewId || '').trim() || undefined,
     );
     const [hotelDetails, itinerary] = await Promise.all([
       this.hotelAvailabilitySnapshotService.readPersisted(

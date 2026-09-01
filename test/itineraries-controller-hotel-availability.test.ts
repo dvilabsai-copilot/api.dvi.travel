@@ -112,3 +112,35 @@ test('acknowledgement returns accepted selections and financial totals without a
   assert.equal(response.hotelDetails.hotels[0].hotelName, 'Accepted replacement');
   assert.equal(response.financialSummary.overallCost, 725);
 });
+
+test('reconciliation check forwards the preview flag without applying changes', async () => {
+  const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  const previousFlag = process.env.HOTEL_RECONCILE;
+  process.env.HOTEL_RECONCILE = 'true';
+  let received: unknown[] = [];
+  (controller as any).hotelAvailabilitySnapshotService = {
+    searchAndPersist: async (...args: unknown[]) => {
+      received = args;
+      return {
+        response: { hotels: [], hotelTabs: [], hotelSelectionState: [] },
+        changeSummary: { hasChanges: true, totalChanges: 1, changes: [] },
+        previewId: 'hotel-preview-test',
+      };
+    },
+  };
+  (controller as any).detailsService = {
+    getItineraryDetails: async () => ({ overallCost: 100, costBreakdown: { hotel: 100 } }),
+  };
+
+  const response = await controller.checkItineraryHotelAvailability(
+    'DVI-CHECK',
+    { reconciliation: true },
+    { user: { userId: 7, role: 1 } },
+  );
+
+  assert.deepEqual(received.slice(0, 5), ['DVI-CHECK', 'CHECK_AVAILABILITY', 7, false, true]);
+  assert.equal(response.previewId, 'hotel-preview-test');
+  assert.equal(response.changeSummary.hasChanges, true);
+  if (previousFlag === undefined) delete process.env.HOTEL_RECONCILE;
+  else process.env.HOTEL_RECONCILE = previousFlag;
+});
