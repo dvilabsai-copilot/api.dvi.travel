@@ -1199,6 +1199,26 @@ export class HotelAvailabilitySnapshotService {
   }
 
   /**
+   * Clear the editable hotel selections without fetching supplier inventory.
+   * The explicit check-availability endpoint owns the subsequent fresh search.
+   */
+  async resetSelectionsOnly(quoteId: string): Promise<void> {
+    const plan = await this.findPlan(quoteId);
+    this.tboHotelDetails.clearCacheForQuote?.(quoteId);
+    this.offlineHotelCatalog?.clearCache?.();
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.clearEditableHotelSelections(tx, plan.itinerary_plan_ID);
+      await tx?.dvi_itinerary_hotel_search_cache?.deleteMany?.({
+        where: {
+          quote_id: String(quoteId).trim(),
+          plan_id: plan.itinerary_plan_ID,
+        },
+      });
+    }, { maxWait: 15000, timeout: 120000 });
+  }
+
+  /**
    * Retire all editable hotel selections and their dependent room data for a
    * scoped plan reset. Previous-night billing marker rows use hotel_required=2
    * and are intentionally preserved because they are itinerary timeline data,

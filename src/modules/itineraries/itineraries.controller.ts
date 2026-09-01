@@ -730,20 +730,21 @@ private readonly itineraryAccessService: ItineraryAccessService,
     @Param('quoteId') quoteId: string,
     @Req() req: any,
   ) {
-    const result = await this.hotelAvailabilitySnapshotService.resetAndPersist(
-      quoteId,
-      Number(req.user?.userId || 0),
-    );
-    // The coordinator returns the fresh request-scoped inventory together
-    // with selections persisted during reconciliation. Do not replace it with
-    // a second database read: persisted reads intentionally contain selections
-    // only and never supplier search results.
+    await this.hotelAvailabilitySnapshotService.resetSelectionsOnly(quoteId);
     const itinerary = await this.detailsService.getItineraryDetails(
       quoteId,
       undefined,
       req.user?.role,
     );
-    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
+    // Reset mutates selections and returns only the financial summary. Hotel
+    // rows are intentionally fetched by the separate check-availability
+    // endpoint, which is the authoritative hotel-pane response.
+    return {
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
+    };
   }
 
   @Post('hotel_details/:quoteId/offline-availability')

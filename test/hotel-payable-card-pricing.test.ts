@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  calculateHotelRouteNightPayable,
   projectHotelPayablePricing,
   resolveStoredHotelPayablePricing,
 } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
@@ -9,6 +10,14 @@ import {
   hotelCardPropertyKey,
 } from '../src/modules/itineraries/utils/hotel-card-pricing.util';
 import { buildHotelSelectionState } from '../src/modules/itineraries/utils/hotel-selection-view-state.util';
+
+test('continuous-stay route-night payable uses room and supplement components', () => {
+  assert.equal(calculateHotelRouteNightPayable({
+    marginBaseAmount: 6800 + 3500 + 800,
+    marginPercentage: 6,
+    taxAmount: 0,
+  }), 11766);
+});
 
 test('Axis base 4200 projects once to the same payable 5040 used by preview and persistence', () => {
   const projected = projectHotelPayablePricing({
