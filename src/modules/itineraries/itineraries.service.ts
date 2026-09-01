@@ -2108,7 +2108,13 @@ private getGuideSlotLabel(slotId: number): string {
       const parsed = Number(value);
       return Number.isFinite(parsed) && parsed > 0;
     });
+    // VSR is the UI representation of TBO. TBO returns one complete fare for
+    // the requested occupancy rather than separately priced child/extra-bed
+    // supplements. Its main fare is authoritative, so those optional
+    // component fields must never make an otherwise available rate fail.
+    const isCompleteFareProvider = provider === 'tbo';
     const hasRequiredSupplementRates = (option: any) => {
+      if (isCompleteFareProvider) return true;
       const extraBedRequired = Number((plan as any).total_extra_bed || 0) > 0;
       const childWithBedRequired = Number((plan as any).total_child_with_bed || 0) > 0;
       const childWithoutBedRequired = Number((plan as any).total_child_without_bed || 0) > 0;
@@ -2495,6 +2501,17 @@ private getGuideSlotLabel(slotId: number): string {
           pricingIncludesHotelMargin: isBaseRate
             ? true
             : selection.pricingIncludesHotelMargin === true,
+          ...(isCompleteFareProvider ? {
+            extraBedCount: 0,
+            extraBedRate: 0,
+            extraBedAmount: 0,
+            childWithBedCount: 0,
+            childWithBedRate: 0,
+            childWithBedAmount: 0,
+            childWithoutBedCount: 0,
+            childWithoutBedRate: 0,
+            childWithoutBedAmount: 0,
+          } : {}),
           currency: selection.currency || 'INR',
           availableRoomTypeCategories,
           };
@@ -2597,15 +2614,29 @@ private getGuideSlotLabel(slotId: number): string {
         roomId: selected.roomId, rateId: selected.rateId, pricePerNight, totalPrice,
         basePricePerNight,
         baseTotalPrice,
-        extraBedCount: selected.extraBedCount,
-        extraBedRate: selected.extraBedRate,
-        extraBedAmount: selected.extraBedAmount,
-        childWithBedCount: selected.childWithBedCount,
-        childWithBedRate: selected.childWithBedRate,
-        childWithBedAmount: selected.childWithBedAmount,
-        childWithoutBedCount: selected.childWithoutBedCount,
-        childWithoutBedRate: selected.childWithoutBedRate,
-        childWithoutBedAmount: selected.childWithoutBedAmount,
+        ...(selectedProvider === 'tbo' ? {
+          // TBO/VSR supplies one complete occupancy fare. Do not persist or
+          // later display a fabricated child/extra-bed breakup.
+          extraBedCount: 0,
+          extraBedRate: 0,
+          extraBedAmount: 0,
+          childWithBedCount: 0,
+          childWithBedRate: 0,
+          childWithBedAmount: 0,
+          childWithoutBedCount: 0,
+          childWithoutBedRate: 0,
+          childWithoutBedAmount: 0,
+        } : {
+          extraBedCount: selected.extraBedCount,
+          extraBedRate: selected.extraBedRate,
+          extraBedAmount: selected.extraBedAmount,
+          childWithBedCount: selected.childWithBedCount,
+          childWithBedRate: selected.childWithBedRate,
+          childWithBedAmount: selected.childWithBedAmount,
+          childWithoutBedCount: selected.childWithoutBedCount,
+          childWithoutBedRate: selected.childWithoutBedRate,
+          childWithoutBedAmount: selected.childWithoutBedAmount,
+        }),
         hotelMarginPercentage,
         hotelMarginAmount,
         hotelMarginStayAmount: hotelMarginTotalAmount,
