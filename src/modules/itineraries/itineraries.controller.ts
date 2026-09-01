@@ -430,6 +430,53 @@ private readonly itineraryAccessService: ItineraryAccessService,
     return this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
   }
 
+  @Post('route-family/sync-selection')
+  @ApiOperation({
+    summary: 'Synchronize active Smart Booking route-family slots',
+  })
+  async syncRouteFamilySelection(
+    @Body() body: { planId?: number; desiredCount?: number },
+    @Req() req: Request,
+  ) {
+    const planId = Number(body?.planId || 0);
+    const desiredCount = Math.trunc(
+      Number(body?.desiredCount || 0),
+    );
+
+    if (!Number.isInteger(planId) || planId <= 0) {
+      throw new BadRequestException(
+        'A valid itinerary planId is required.',
+      );
+    }
+
+    if (
+      !Number.isInteger(desiredCount) ||
+      desiredCount < 1 ||
+      desiredCount > 5
+    ) {
+      throw new BadRequestException(
+        'Smart Booking supports between 1 and 5 selected routes.',
+      );
+    }
+
+    const access =
+      await this.itineraryAccessService.getPlanAccessDecision(
+        planId,
+        (req as any).user,
+      );
+
+    if (!access.exists || !access.allowed) {
+      return this.denyItineraryAccess(
+        access.redirectTo || '/latest-itinerary',
+      );
+    }
+
+    return this.svc.syncRouteFamilySelection(
+      planId,
+      desiredCount,
+    );
+  }
+
   @Get('details/:quoteId')
   @ApiOperation({
     summary: 'Get full itinerary details by Quote ID',

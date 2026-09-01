@@ -3040,6 +3040,16 @@ private getGuideSlotLabel(slotId: number): string {
     return this.quoteContextService.getPlanForEdit(planId);
   }
 
+  async syncRouteFamilySelection(
+    planId: number,
+    desiredCount: number,
+  ) {
+    return this.quoteContextService.syncRouteFamilySelection(
+      planId,
+      desiredCount,
+    );
+  }
+
   async getCustomerInfoForm(planId: number) {
     return this.quoteContextService.getCustomerInfoForm(planId);
   }
