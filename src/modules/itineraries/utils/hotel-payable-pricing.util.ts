@@ -96,9 +96,20 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     Number(option?.total_no_of_rooms ?? option?.noOfRooms ?? option?.roomCount ?? 1),
     1,
   );
+  // Legacy TBO/VSR snapshots can contain only the margin-inclusive payable
+  // amount. Once a row is marked as projected, treating that payable value as
+  // the base would calculate the margin twice and make the tooltip show an
+  // inconsistent Total/Margin/Grand Total. Recover the supplier base from
+  // the authoritative payable amount when the margin percentage is available.
+  const inferredProjectedBase = alreadyProjected && explicitBaseTotal <= 0 &&
+    marginPercentage > 0 && payableBeforeProjection > 0
+    ? money(payableBeforeProjection / (1 + marginPercentage / 100))
+    : 0;
   const baseTotal = explicitBaseTotal > 0
     ? explicitBaseTotal
-    : positive(option?.basePricePerNight, alreadyProjected ? 0 : payableBeforeProjection);
+    : inferredProjectedBase > 0
+      ? inferredProjectedBase
+      : positive(option?.basePricePerNight, alreadyProjected ? 0 : payableBeforeProjection);
   const rawBasePerNight = positive(
     option?.basePricePerNight,
     option?.baseAmountPerNight,
