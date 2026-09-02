@@ -6536,7 +6536,12 @@ const hasRequiredVehicleSelection =
           ).trim();
           const selectedDate = new Date(String(selected.routeDate || selected.date || '')).getTime();
           const previousDate = lastSelectedStayDate.get(selectedKey);
-          const isRepeatedNight = Number.isFinite(selectedDate) && Number.isFinite(previousDate) &&
+          // Route-level selections persist one payable amount per night. Only
+          // suppress consecutive rows when the snapshot explicitly declares
+          // that the amount is a multi-night stay total; otherwise Day 2 of a
+          // continuous TBO stay is incorrectly discarded as a duplicate.
+          const isFullStayAmount = Number(selected.numberOfNights ?? selected.nights ?? 1) > 1;
+          const isRepeatedNight = isFullStayAmount && Number.isFinite(selectedDate) && Number.isFinite(previousDate) &&
             selectedDate - Number(previousDate) === 24 * 60 * 60 * 1000;
           if (isRepeatedNight) {
             lastSelectedStayDate.set(selectedKey, selectedDate);
