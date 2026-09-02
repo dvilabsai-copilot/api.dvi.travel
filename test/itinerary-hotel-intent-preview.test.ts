@@ -681,6 +681,61 @@ test('offline confirm preserves route-night pricing in persistence payload and s
   assert.equal(result.totals.totalPrice, 11400);
 });
 
+test('TBO HOTEL intent keeps one room type across a continuous stay', async () => {
+  const tboStay = {
+    routeIds: [20101, 20102],
+    stayDates: ['2026-09-03', '2026-09-04'],
+    nights: 2,
+    checkInDate: '2026-09-03',
+    checkOutDate: '2026-09-05',
+    stayKey: 'tbo:1130403:2026-09-03_to_2026-09-05',
+  };
+  const tboCandidates = [
+    { routeId: 20101, itineraryRouteId: 20101, date: '2026-09-03', provider: 'tbo', hotelCode: '1130403', providerHotelCode: '1130403', hotelName: 'ELA', roomType: 'Deluxe Room', mealPlan: 'CP', pricePerNight: 100, totalPrice: 100, isSelectable: true, isBookable: true },
+    { routeId: 20102, itineraryRouteId: 20102, date: '2026-09-04', provider: 'tbo', hotelCode: '1130403', providerHotelCode: '1130403', hotelName: 'ELA', roomType: 'Deluxe Room', mealPlan: 'CP', pricePerNight: 120, totalPrice: 120, isSelectable: true, isBookable: true },
+    { routeId: 20102, itineraryRouteId: 20102, date: '2026-09-04', provider: 'tbo', hotelCode: '1130403', providerHotelCode: '1130403', hotelName: 'ELA', roomType: 'Suite Room', mealPlan: 'CP', pricePerNight: 90, totalPrice: 90, isSelectable: true, isBookable: true },
+  ];
+  const service = Object.create(ItinerariesService.prototype) as any;
+  service.prisma = {
+    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'DVI20260920', preferred_room_count: 1 }) },
+    dvi_itinerary_route_details: { findFirst: async () => ({ itinerary_route_date: new Date('2026-09-03T00:00:00.000Z') }) },
+    dvi_global_settings: { findFirst: async () => ({ hotel_margin: 10 }) },
+  };
+  service.hotelStayBlockValidationService = {
+    buildContinuousStayCandidate: async () => tboStay,
+    previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
+  };
+  service.hotelDetailsTboService = {
+    searchSelectedHotelForContinuousStay: async () => [tboCandidates[0]],
+    getSelectedHotelRates: async (_quoteId: string, routeId: number) => ({
+      hotels: tboCandidates.filter((candidate) => candidate.routeId === routeId),
+    }),
+  };
+  service.selectionWorkflowService = {
+    withHotelSelectionLock: async (_planId: number, _groupType: number, callback: () => Promise<any>) => callback(),
+  };
+  service.hotelAvailabilitySnapshotService = { getActiveRows: async () => tboCandidates };
+
+  const result = await service.previewHotelIntent({
+    planId: 10321,
+    routeId: 20101,
+    groupType: 1,
+    selectionIntent: 'HOTEL',
+    provider: 'vsr',
+    providerHotelCode: '1130403',
+    hotelCode: '1130403',
+    hotelName: 'ELA',
+    roomType: 'Deluxe Room',
+    mealPlanCode: 'CP',
+    routeDate: '2026-09-03',
+    hotelMarginPercentage: 10,
+  });
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Deluxe Room', 'Deluxe Room']);
+  assert.deepEqual(result.selections.map((selection: any) => selection.pricePerNight), [110, 132]);
+});
+
 test('wrong snapshot name cannot override the persisted offline master identity', () => {
   const identity = resolvePersistedHotelIdentity({
     hotel_id: 211,

@@ -468,12 +468,12 @@ export class ItinerarySelectionWorkflowService {
       0,
     );
     const effectiveRoomCount = Math.max(Number(data.roomCount || 1), 1);
-    const authoritativeBasePricePerNight = axisRoomsBasePrice > 0
+    let authoritativeBasePricePerNight = axisRoomsBasePrice > 0
       ? Number((axisRoomsBasePrice / effectiveRoomCount).toFixed(2))
       : staahBasePricePerNight > 0
         ? staahBasePricePerNight
         : suppliedBasePricePerNight;
-    const authoritativeBaseTotal = axisRoomsBasePrice > 0
+    let authoritativeBaseTotal = axisRoomsBasePrice > 0
       ? axisRoomsBasePrice
       : staahBaseTotal > 0
         ? staahBaseTotal
@@ -481,10 +481,10 @@ export class ItinerarySelectionWorkflowService {
     const suppliedMarginAmount = Math.max(Number(
       data.hotelMarginStayAmount ?? data.hotelMarginTotalAmount ?? data.hotelMarginAmount ?? 0,
     ), 0);
-    const hotelMarginBaseAmount = providerForPricing === 'axisrooms' && axisRoomsBasePrice > 0
+    let hotelMarginBaseAmount = providerForPricing === 'axisrooms' && axisRoomsBasePrice > 0
       ? Number((axisRoomsBasePrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2))
       : authoritativeBaseTotal;
-    const hotelMarginRate = providerForPricing === 'axisrooms'
+    let hotelMarginRate = providerForPricing === 'axisrooms'
       ? hotelMarginBaseAmount > 0
          ? Number((hotelMarginBaseAmount * hotelMarginPercentage / 100).toFixed(2))
         : 0
@@ -500,6 +500,28 @@ export class ItinerarySelectionWorkflowService {
           : providerForPricing !== 'offline'
             ? Math.max((selectionPricing.totalPrice * hotelMarginPercentage) / 100, 0)
             : 0;
+    // TBO/VSR marks its supplier fare as margin-inclusive. Some legacy
+    // selection payloads still repeat that payable amount in baseTotalPrice
+    // while sending the margin separately. Keep the payable amount unchanged,
+    // but recover the true base so every consumer can reconcile:
+    // base + margin = payable. Without this normalization the tooltip shows a
+    // margin line but its Grand Total remains equal to the base amount.
+    if (providerForPricing === 'tbo' &&
+      (data.amountIncludesHotelMargin === true || data.pricingIncludesHotelMargin === true) &&
+      authoritativeBaseTotal > 0 && hotelMarginRate > 0 &&
+      Math.abs((authoritativeBaseTotal + hotelMarginRate) - selectionPricing.totalPrice) > 0.01 &&
+      selectionPricing.totalPrice > hotelMarginRate) {
+      const normalizedPayable = selectionPricing.totalPrice;
+      const normalizedBase = hotelMarginPercentage > 0
+        ? Number((normalizedPayable / (1 + hotelMarginPercentage / 100)).toFixed(2))
+        : Number((normalizedPayable - hotelMarginRate).toFixed(2));
+      authoritativeBaseTotal = Math.max(normalizedBase, 0);
+      authoritativeBasePricePerNight = Number((authoritativeBaseTotal / effectiveRoomCount).toFixed(2));
+      hotelMarginRate = Number((normalizedPayable - authoritativeBaseTotal).toFixed(2));
+      hotelMarginBaseAmount = authoritativeBaseTotal;
+      (data as any).baseTotalPrice = authoritativeBaseTotal;
+      (data as any).basePricePerNight = authoritativeBasePricePerNight;
+    }
     // VSR/TBO manual selections can arrive with the supplier/base aggregate
     // in `totalPrice` while the margin is sent as a separate field. Normalize
     // that legacy shape before writing the selected row so the API's total
