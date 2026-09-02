@@ -169,18 +169,10 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
      * without changing or redeploying optimization logic.
      */
     const exhaustivePermutationBudget =
-      this.readRequiredPositiveInteger(
-        process.env
-          .ROUTE_OPT_EXHAUSTIVE_MAX_PERMUTATIONS,
-        'ROUTE_OPT_EXHAUSTIVE_MAX_PERMUTATIONS',
-      );
+      this.getExhaustivePermutationBudget();
 
     const heuristicCandidateBudget =
-      this.readRequiredPositiveInteger(
-        process.env
-          .ROUTE_OPT_HEURISTIC_MAX_CANDIDATES,
-        'ROUTE_OPT_HEURISTIC_MAX_CANDIDATES',
-      );
+      this.getHeuristicCandidateBudget();
 
     const log = (message: string) =>
       console.log(message);
@@ -2680,7 +2672,15 @@ const metrics =
     }
   }
 
-    private readPositiveNumber(
+    private getExhaustivePermutationBudget(): number {
+    return 100000;
+  }
+
+  private getHeuristicCandidateBudget(): number {
+    return 5000;
+  }
+
+  private readPositiveNumber(
     value: unknown,
     fallback: number,
   ): number {
@@ -2693,28 +2693,6 @@ const metrics =
     )
       ? parsed
       : fallback;
-  }
-
-  private readRequiredPositiveInteger(
-    value: unknown,
-    configName: string,
-  ): number {
-    const parsed =
-      Number(value);
-
-    if (
-      !Number.isFinite(parsed) ||
-      parsed < 1
-    ) {
-      throw new Error(
-        `[RouteOptimization] Missing or invalid ${configName}. ` +
-        `Configure a positive integer before enabling Show Better Route.`,
-      );
-    }
-
-    return Math.floor(
-      parsed,
-    );
   }
 
   private round(
