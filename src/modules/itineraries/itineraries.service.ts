@@ -2596,19 +2596,19 @@ private getGuideSlotLabel(slotId: number): string {
       // owns one route/night row, so project the authoritative matching night
       // instead of attaching the complete stay total to every route.
       const routeScopedOffline = selectedProvider === 'offline' && routeNight;
-      const basePricePerNight = Number(
+      let basePricePerNight = Number(
         routeScopedOffline?.baseAmount ?? selected.basePricePerNight ?? 0,
       );
-      const baseTotalPrice = Number(
+      let baseTotalPrice = Number(
         routeScopedOffline?.baseAmount ?? selected.baseTotalPrice ?? 0,
       );
       const hotelMarginPercentage = Number(
         routeScopedOffline?.marginPercentage ?? selected.hotelMarginPercentage ?? 0,
       );
-      const hotelMarginAmount = Number(
+      let hotelMarginAmount = Number(
         routeScopedOffline?.marginAmount ?? selected.hotelMarginAmount ?? 0,
       );
-      const hotelMarginTotalAmount = Number(
+      let hotelMarginTotalAmount = Number(
         routeScopedOffline?.marginAmount ??
         selected.hotelMarginTotalAmount ??
         selected.hotelMarginStayAmount ??
@@ -2642,6 +2642,19 @@ private getGuideSlotLabel(slotId: number): string {
           : pricePerNight > 0
             ? Number((pricePerNight * Math.max(Number(data.roomCount || 1), 1)).toFixed(2))
             : 0;
+      // TBO/VSR returns a complete payable fare. Older supplier rows can
+      // repeat that payable amount in the base fields, while still exposing a
+      // margin percentage/amount. Normalize the payload before persistence so
+      // the database and read-after-write response satisfy base + margin =
+      // payable for every route night.
+      if (selectedProvider === 'tbo' && hotelMarginPercentage > 0 && totalPrice > 0 &&
+        baseTotalPrice > 0 &&
+        Math.abs((baseTotalPrice + hotelMarginAmount) - totalPrice) > 0.01) {
+        baseTotalPrice = Number((totalPrice / (1 + hotelMarginPercentage / 100)).toFixed(2));
+        basePricePerNight = Number((baseTotalPrice / Math.max(Number(data.roomCount || selected.roomCount || 1), 1)).toFixed(2));
+        hotelMarginAmount = Number((totalPrice - baseTotalPrice).toFixed(2));
+        hotelMarginTotalAmount = hotelMarginAmount;
+      }
       return {
         ...data,
         selectionIntent: data.selectionIntent,
