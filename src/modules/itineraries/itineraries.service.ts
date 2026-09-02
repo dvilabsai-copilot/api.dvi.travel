@@ -1950,6 +1950,7 @@ private getGuideSlotLabel(slotId: number): string {
     // property again and keep those rates only in this request while building
     // the atomic stay selection.
     const requestScopedCandidates: any[] = [];
+    let continuousTboCandidates: any[] | null = null;
     if (provider !== 'offline') {
       if (['tbo', 'resavenue', 'hobse', 'axisrooms', 'staah'].includes(provider) &&
         typeof (this.hotelDetailsTboService as any).searchSelectedHotelForContinuousStay === 'function') {
@@ -1980,10 +1981,66 @@ private getGuideSlotLabel(slotId: number): string {
             canBookMultiNight: false,
           });
         }
+
+        if (provider === 'tbo' && stay.nights > 1) {
+          // The range search is the authoritative TBO offer for a continuous
+          // stay. Project each full-stay option to each itinerary night so
+          // the selection loop cannot replace it with independent one-night
+          // searches. Prefer supplier nightly data; only fall back to an
+          // equal nightly share when the response explicitly represents a
+          // complete stay total.
+          const fullStayOptions = continuousHotels.flatMap((hotel: any) => {
+            const options = Array.isArray(hotel?.rateOptions) && hotel.rateOptions.length > 0
+              ? hotel.rateOptions
+              : [hotel];
+            return options.map((option: any) => ({ ...hotel, ...option }));
+          });
+          continuousTboCandidates = fullStayOptions.flatMap((option: any) => {
+            const fullStayTotal = Number(
+              option.totalStayPrice ?? option.totalPrice ?? option.totalFare ?? 0,
+            );
+            const declaredNights = Math.max(
+              Number(option.numberOfNights ?? option.nights ?? stay.nights),
+              1,
+            );
+            const nightlyRates = Array.isArray(option.nightlyRates) ? option.nightlyRates : [];
+            return stay.routeIds.map((routeId: number, index: number) => {
+              const routeDate = String(stay.stayDates[index] || '').slice(0, 10);
+              const nightly = nightlyRates.find((rate: any) =>
+                String(rate?.date || rate?.stayDate || '').slice(0, 10) === routeDate,
+              );
+              const nightlyAmount = Number(
+                nightly?.sellAmount ?? nightly?.totalAmountAfterTax ?? nightly?.amountAfterTax ??
+                  nightly?.totalAmount ?? nightly?.price ?? 0,
+              );
+              const projectedAmount = nightlyAmount > 0
+                ? nightlyAmount
+                : fullStayTotal > 0
+                  ? Number((fullStayTotal / declaredNights).toFixed(2))
+                  : 0;
+              return {
+                ...option,
+                routeId,
+                itineraryRouteId: routeId,
+                routeIds: stay.routeIds,
+                date: routeDate,
+                checkInDate: routeDate,
+                // The selection/persistence loop operates on one itinerary
+                // row at a time. Keep the full-stay identity but expose the
+                // correctly projected nightly payable amount here.
+                pricePerNight: projectedAmount,
+                totalPrice: projectedAmount,
+                totalStayPrice: projectedAmount,
+                numberOfNights: 1,
+              };
+            });
+          });
+        }
       }
 
       const refreshTimeoutMs = Math.max(Number(process.env.HOTEL_INTENT_REFRESH_TIMEOUT_MS || 15000), 1000);
       for (const routeId of stay.routeIds.map(Number)) {
+        if (continuousTboCandidates) break;
         let refreshed: any;
         try {
           refreshed = await Promise.race([
@@ -2011,7 +2068,7 @@ private getGuideSlotLabel(slotId: number): string {
       }
     }
 
-    const snapshotRows = requestScopedCandidates;
+    const snapshotRows = continuousTboCandidates || requestScopedCandidates;
     let candidates = snapshotRows.flatMap((row: any) => {
       const options = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row];
       return options.map((option: any) => {
@@ -2264,7 +2321,30 @@ private getGuideSlotLabel(slotId: number): string {
           ? identities
           : new Set([...common].filter((identity) => identities.has(identity)));
       }, null);
-      continuousRoomIdentity = [...(commonRoomIdentities || new Set<string>())][0] || '';
+      // A continuous TBO booking must use one room type for every night. Do
+      // not choose the first identity returned by the supplier: supplier
+      // ordering is not a pricing contract and can change between requests.
+      // Instead, price every room type that exists on every night and choose
+      // the lowest total payable stay. The nightly option is still resolved
+      // independently below, so date-specific TBO prices are preserved.
+      const roomTotals = [...(commonRoomIdentities || new Set<string>())]
+        .map((identity) => {
+          const total = stay.routeIds.reduce((sum: number, candidateRouteId: number, candidateIndex: number) => {
+            const candidateDate = String(stay.stayDates[candidateIndex] || '').slice(0, 10);
+            const cheapestForNight = routeOptions(candidateRouteId, candidateDate)
+              .filter(hasRequiredSupplementRates)
+              .filter((option: any) => roomIdentity(option) === identity)
+              .sort((left: any, right: any) => payableAmount(left) - payableAmount(right))[0];
+            const amount = cheapestForNight ? payableAmount(cheapestForNight) : Number.MAX_SAFE_INTEGER;
+            return sum >= Number.MAX_SAFE_INTEGER || amount >= Number.MAX_SAFE_INTEGER
+              ? Number.MAX_SAFE_INTEGER
+              : sum + amount;
+          }, 0);
+          return { identity, total };
+        })
+        .filter(({ total }) => total < Number.MAX_SAFE_INTEGER)
+        .sort((left, right) => left.total - right.total || left.identity.localeCompare(right.identity));
+      continuousRoomIdentity = roomTotals[0]?.identity || '';
     }
     if (tboContinuousHotel && !continuousRoomIdentity) {
       throw new BadRequestException({
