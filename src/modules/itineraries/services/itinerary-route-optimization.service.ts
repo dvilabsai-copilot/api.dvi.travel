@@ -131,7 +131,6 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
 
     const originalRouteLocations =
       this.buildRawRouteLocations(safeRoutes);
-
     if (safeRoutes.length <= 2) {
       return this.buildFallbackPreview(
         safeRoutes,
@@ -156,13 +155,24 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
       );
     }
 
-    const debugOptimization =
+        const debugOptimization =
       process.env.DEBUG_ROUTE_OPTIMIZER ===
       'true';
 
-    // 8 movable destinations = 40,320 permutations.
-    // Beyond this we retain heuristic candidate generation.
-    const exhaustiveMovableLimit = 8;
+    /*
+     * Do not use a fixed movable-day boundary.
+     *
+     * Exhaustive search is controlled by the actual number of
+     * permutations the server is allowed to evaluate.
+     *
+     * Both limits are runtime configuration so they can be tuned
+     * without changing or redeploying optimization logic.
+     */
+    const exhaustivePermutationBudget =
+      this.getExhaustivePermutationBudget();
+
+    const heuristicCandidateBudget =
+      this.getHeuristicCandidateBudget();
 
     const log = (message: string) =>
       console.log(message);
@@ -256,10 +266,13 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
 
     let movableOrders: string[][];
 
-    if (
-      middleLocations.length <=
-      exhaustiveMovableLimit
-    ) {
+    const useExhaustiveSearch =
+      this.shouldUseExhaustiveSearch(
+        middleLocations.length,
+        exhaustivePermutationBudget,
+      );
+
+    if (useExhaustiveSearch) {
       movableOrders =
         this.generatePermutations_PHP(
           [...middleLocations],
@@ -268,11 +281,15 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
       log(
         `[RouteOptimization] Smart exhaustive candidate generation. ` +
         `movable=${middleLocations.length}, ` +
+        `permutationBudget=${exhaustivePermutationBudget}, ` +
         `candidates=${movableOrders.length}`,
       );
     } else {
-      // For very large destination sets retain the existing
-      // Nearest Neighbor + Simulated Annealing logic as a seed.
+      /*
+       * IMPORTANT:
+       * Existing Nearest Neighbor + Simulated Annealing logic remains
+       * completely untouched and is still used as the distance seed.
+       */
       const distanceSeedChain =
         await this
           .optimizeWith_NearestNeighborAndAnnealing(
@@ -289,11 +306,14 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
         this.buildHeuristicMovableOrders(
           middleLocations,
           distanceSeedMiddle,
+          heuristicCandidateBudget,
         );
 
       log(
         `[RouteOptimization] Smart heuristic candidate generation. ` +
         `movable=${middleLocations.length}, ` +
+        `permutationBudget=${exhaustivePermutationBudget}, ` +
+        `candidateBudget=${heuristicCandidateBudget}, ` +
         `candidates=${movableOrders.length}`,
       );
     }
@@ -690,7 +710,7 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
       );
     }
 
-    const startDate =
+        const startDate =
       new Date(
         routes[0]
           .itinerary_route_date,
@@ -1857,16 +1877,19 @@ private calculateFuturePositionPenalty(
     return selected.slice(0, 3);
   }
 
-  private buildHeuristicMovableOrders(
+    private buildHeuristicMovableOrders(
     original: string[],
     distanceSeed: string[],
+    maxCandidates: number,
   ): string[][] {
     const orders: string[][] = [];
 
     const seen =
       new Set<string>();
 
-    const maxCandidates = 300;
+    const hasCapacity = () =>
+      orders.length <
+      maxCandidates;
 
     const add = (
       order: string[],
@@ -1874,8 +1897,11 @@ private calculateFuturePositionPenalty(
       if (
         order.length !==
           original.length ||
-        orders.length >=
-          maxCandidates
+        !hasCapacity() ||
+        !this.hasSameLocationMultiset(
+          order,
+          original,
+        )
       ) {
         return;
       }
@@ -1903,40 +1929,100 @@ private calculateFuturePositionPenalty(
       ]);
     };
 
+    /*
+     * Do not trust the annealing seed only because its length matches.
+     * It must contain exactly the same movable destinations.
+     */
     const validDistanceSeed =
-      distanceSeed.length ===
-      original.length
+      this.hasSameLocationMultiset(
+        distanceSeed,
+        original,
+      )
         ? distanceSeed
         : original;
 
-    add(original);
-
-    add(validDistanceSeed);
-
-    add(
-      [...original].reverse(),
-    );
-
-    const seeds = [
-      validDistanceSeed,
+    const rawSeeds = [
       original,
+      validDistanceSeed,
+      [...original].reverse(),
+      [...validDistanceSeed].reverse(),
     ];
 
-    // Generate deterministic local alternatives around both original
-    // and distance-seeded order. Avoid factorial search for huge trips.
+    const seedMap =
+      new Map<string, string[]>();
+
+    for (
+      const seed of rawSeeds
+    ) {
+      if (
+        !this.hasSameLocationMultiset(
+          seed,
+          original,
+        )
+      ) {
+        continue;
+      }
+
+      const key =
+        seed
+          .map((item) =>
+            this.routeLocationIdentity(
+              item,
+            ),
+          )
+          .join('>');
+
+      if (
+        key &&
+        !seedMap.has(key)
+      ) {
+        seedMap.set(
+          key,
+          [...seed],
+        );
+      }
+    }
+
+    const seeds =
+      Array.from(
+        seedMap.values(),
+      );
+
     for (
       const seed of seeds
     ) {
+      add(seed);
+    }
+
+    /*
+     * Span-first traversal is important.
+     *
+     * Every itinerary position gets a chance to move before progressively
+     * wider changes are attempted. This prevents later itinerary days
+     * from being ignored when a candidate budget is reached.
+     *
+     * The existing scoring formula evaluates these candidates afterwards.
+     */
+    for (
+      let span = 1;
+      span < original.length;
+      span++
+    ) {
       for (
         let left = 0;
-        left < seed.length;
+        left + span <
+          original.length;
         left++
       ) {
+        const right =
+          left + span;
+
         for (
-          let right = left + 1;
-          right < seed.length;
-          right++
+          const seed of seeds
         ) {
+          /*
+           * 1. Existing pair-swap style candidate.
+           */
           const swapped =
             [...seed];
 
@@ -1950,10 +2036,88 @@ private calculateFuturePositionPenalty(
 
           add(swapped);
 
-          if (
-            orders.length >=
-            maxCandidates
-          ) {
+          if (!hasCapacity()) {
+            return orders;
+          }
+
+          /*
+           * 2. Segment reversal / 2-opt style candidate.
+           *
+           * This lets the optimizer investigate several connected
+           * itinerary positions instead of changing only one pair.
+           */
+          const segmentReversed =
+            [...seed];
+
+          const reversedSegment =
+            segmentReversed
+              .slice(
+                left,
+                right + 1,
+              )
+              .reverse();
+
+          segmentReversed.splice(
+            left,
+            reversedSegment.length,
+            ...reversedSegment,
+          );
+
+          add(segmentReversed);
+
+          if (!hasCapacity()) {
+            return orders;
+          }
+
+          /*
+           * 3. Relocate left destination to the right.
+           */
+          const moveLeftToRight =
+            [...seed];
+
+          const [
+            leftLocation,
+          ] =
+            moveLeftToRight.splice(
+              left,
+              1,
+            );
+
+          moveLeftToRight.splice(
+            right,
+            0,
+            leftLocation,
+          );
+
+          add(moveLeftToRight);
+
+          if (!hasCapacity()) {
+            return orders;
+          }
+
+          /*
+           * 4. Relocate right destination to the left.
+           */
+          const moveRightToLeft =
+            [...seed];
+
+          const [
+            rightLocation,
+          ] =
+            moveRightToLeft.splice(
+              right,
+              1,
+            );
+
+          moveRightToLeft.splice(
+            left,
+            0,
+            rightLocation,
+          );
+
+          add(moveRightToLeft);
+
+          if (!hasCapacity()) {
             return orders;
           }
         }
@@ -1961,6 +2125,119 @@ private calculateFuturePositionPenalty(
     }
 
     return orders;
+  }
+  private shouldUseExhaustiveSearch(
+    movableCount: number,
+    maxPermutations: number,
+  ): boolean {
+    if (
+      !Number.isInteger(
+        movableCount,
+      ) ||
+      movableCount < 0 ||
+      !Number.isFinite(
+        maxPermutations,
+      ) ||
+      maxPermutations < 1
+    ) {
+      return false;
+    }
+
+    /*
+     * Calculate factorial progressively without ever constructing
+     * the permutations first.
+     *
+     * Stop as soon as the configured workload would be exceeded.
+     * This prevents factorial memory/CPU explosions.
+     */
+    let permutationCount = 1;
+
+    for (
+      let factor = 2;
+      factor <= movableCount;
+      factor++
+    ) {
+      if (
+        permutationCount >
+        maxPermutations /
+          factor
+      ) {
+        return false;
+      }
+
+      permutationCount *=
+        factor;
+    }
+
+    return (
+      permutationCount <=
+      maxPermutations
+    );
+  }
+
+  private hasSameLocationMultiset(
+    candidate: string[],
+    expected: string[],
+  ): boolean {
+    if (
+      !Array.isArray(candidate) ||
+      candidate.length !==
+        expected.length
+    ) {
+      return false;
+    }
+
+    const counts =
+      new Map<string, number>();
+
+    for (
+      const location of expected
+    ) {
+      const identity =
+        this.routeLocationIdentity(
+          location,
+        );
+
+      if (!identity) {
+        return false;
+      }
+
+      counts.set(
+        identity,
+        (counts.get(identity) || 0) +
+          1,
+      );
+    }
+
+    for (
+      const location of candidate
+    ) {
+      const identity =
+        this.routeLocationIdentity(
+          location,
+        );
+
+      const remaining =
+        counts.get(identity) || 0;
+
+      if (
+        !identity ||
+        remaining <= 0
+      ) {
+        return false;
+      }
+
+      if (remaining === 1) {
+        counts.delete(identity);
+      } else {
+        counts.set(
+          identity,
+          remaining - 1,
+        );
+      }
+    }
+
+    return counts.size === 0;
   }
 
   private calculateRelativeRouteScore(
@@ -2395,6 +2672,14 @@ const metrics =
     }
   }
 
+    private getExhaustivePermutationBudget(): number {
+    return 100000;
+  }
+
+  private getHeuristicCandidateBudget(): number {
+    return 5000;
+  }
+
   private readPositiveNumber(
     value: unknown,
     fallback: number,
@@ -2488,7 +2773,7 @@ const metrics =
   }
 
  /**
-   * PHP-EXACT: >10 routes - NEAREST NEIGHBOR + SIMULATED ANNEALING
+   * PHP-EXACT: large candidate sets - NEAREST NEIGHBOR + SIMULATED ANNEALING
  */
   private async optimizeWith_NearestNeighborAndAnnealing(
     start: string,
@@ -2689,7 +2974,7 @@ private async getDistance_PHP(
 
  /**
    * PHP-EXACT: Generate all permutations of a location array (preserves duplicates)
-   * Used for exhaustive search on â‰¤10 routes
+   * Used only when the configured exhaustive permutation budget allows it.
  */
   private generatePermutations_PHP(arr: string[]): string[][] {
     if (arr.length <= 1) return [arr];
