@@ -2519,6 +2519,68 @@ test('live reconciliation falls back to offline inventory only when live is abse
   assert.equal(createdSelections[0].hotel_provider, 'offline');
 });
 
+test('TBO/VSR complete fare stays ahead of offline when supplements are requested', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({
+        preferred_room_count: 1,
+        total_adult: 2,
+        total_extra_bed: 1,
+        total_child_with_bed: 1,
+        total_child_without_bed: 1,
+      }),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 901 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'tbo',
+    hotelId: 988,
+    hotelCode: 'TBO-988',
+    hotelName: 'Live VSR Hotel',
+    roomType: 'Deluxe Room',
+    mealPlan: 'CP',
+    totalHotelCost: 1800,
+    isBookable: true,
+    isSelectable: true,
+  }, {
+    itineraryRouteId: 10,
+    groupType: 1,
+    date: '2026-07-28',
+    provider: 'offline',
+    hotelId: 987,
+    hotelCode: 'OFFLINE-987',
+    hotelName: 'Cheaper Offline Hotel',
+    roomType: 'Deluxe Room',
+    mealPlan: 'CP',
+    totalHotelCost: 1200,
+    extraBedRate: 200,
+    childWithBedRate: 150,
+    childWithoutBedRate: 100,
+    isBookable: true,
+    isSelectable: true,
+  }], 'tbo-complete-fare', 7);
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_provider, 'tbo');
+  assert.equal(createdSelections[0].hotel_id, 988);
+});
+
 test('stay-level live inventory does not fabricate a missing recommendation group', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
