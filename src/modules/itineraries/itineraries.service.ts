@@ -2238,6 +2238,48 @@ private getGuideSlotLabel(slotId: number): string {
     const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName || requestedRoom || '').trim();
     const anchorMeal = String(anchorOption?.mealPlan || anchorOption?.mealPlanCode || requestedMeal || '').trim();
 
+    // TBO/VSR exposes one property card, but the itinerary stores one row per
+    // night. A HOTEL intent must therefore resolve one room identity for the
+    // whole continuous stay before projecting those rows. Otherwise each
+    // independently refreshed night can select a different room type simply
+    // because it is cheaper on that date. If the card supplied a room label,
+    // use it as the requested identity; otherwise use the first room identity
+    // common to every refreshed night. A missing common identity must remain
+    // unavailable rather than silently creating a mixed-room stay.
+    const tboContinuousHotel = provider === 'tbo' && intent === 'HOTEL' && stay.nights > 1;
+    const roomIdentity = (option: any): string => normalize(
+      option?.roomType ?? option?.roomTypeName ?? option?.roomTypeId ?? option?.roomId,
+    );
+    let continuousRoomIdentity = tboContinuousHotel && requestedRoom
+      ? normalize(requestedRoom)
+      : '';
+    if (tboContinuousHotel && !continuousRoomIdentity) {
+      const commonRoomIdentities = stay.routeIds.reduce((common: Set<string> | null, routeId: number, index: number) => {
+        const routeDate = String(stay.stayDates[index] || '').slice(0, 10);
+        const identities = new Set(
+          routeOptions(routeId, routeDate)
+            .filter(hasRequiredSupplementRates)
+            .map(roomIdentity)
+            .filter(Boolean),
+        );
+        return common === null
+          ? identities
+          : new Set([...common].filter((identity) => identities.has(identity)));
+      }, null);
+      continuousRoomIdentity = [...(commonRoomIdentities || new Set<string>())][0] || '';
+    }
+    if (tboContinuousHotel && !continuousRoomIdentity) {
+      throw new BadRequestException({
+        code: 'HOTEL_CONTINUOUS_STAY_UNAVAILABLE',
+        message: 'The selected hotel has no common room type available for the complete stay.',
+        selectionIntent: intent,
+        logicalStay: stay,
+        affectedRouteIds: stay.routeIds,
+        canBookSingleNight: false,
+        canBookMultiNight: false,
+      });
+    }
+
     for (let index = 0; index < stay.routeIds.length; index += 1) {
       const routeId = Number(stay.routeIds[index]);
       const routeDate = String(stay.stayDates[index] || '').slice(0, 10);
@@ -2261,6 +2303,10 @@ private getGuideSlotLabel(slotId: number): string {
           const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
           if (candidateRoomTypeId !== requestedRoomTypeId) return false;
         } else if (intent === 'ROOM_TYPE' && requestedRoom && !roomLabelMatches(room, requestedRoom)) {
+          return false;
+        }
+        if (tboContinuousHotel && continuousRoomIdentity &&
+          !roomLabelMatches(room, continuousRoomIdentity) && roomIdentity(option) !== continuousRoomIdentity) {
           return false;
         }
         if (intent === 'MEAL_PLAN' && requestedRoom && normalize(room) !== normalize(requestedRoom)) return false;
