@@ -108,6 +108,22 @@ test('legacy persisted row exposes margin-inclusive payable total', () => {
   assert.equal(underProjected.totalPrice, 3025);
 });
 
+test('legacy projected TBO/VSR row without base recovers base before calculating margin', () => {
+  const projected = projectHotelPayablePricing({
+    provider: 'tbo',
+    amountIncludesHotelMargin: true,
+    pricingIncludesHotelMargin: true,
+    totalPrice: 2264.12,
+    hotelMarginPercentage: 10,
+    hotelMarginAmount: 205.83,
+  }, 10);
+
+  assert.equal(projected.baseTotalPrice, 2058.29);
+  assert.equal(projected.hotelMarginBaseAmount, 2058.29);
+  assert.equal(projected.hotelMarginTotalAmount, 205.83);
+  assert.equal(projected.totalPrice, 2264.12);
+});
+
 test('ResAvenue margin projection remains idempotent at 9499 -> 10448.90', () => {
   const projected = projectHotelPayablePricing({
     provider: 'resavenue', hotelCode: '20', baseTotalPrice: 9499, totalPrice: 9499,
