@@ -1213,6 +1213,17 @@ export class ItinerarySelectionWorkflowService {
             roomId: hotel.roomId,
             rateId: hotel.rateId,
             roomCount: hotel.roomCount,
+            // selectHotel owns the database write. Preserve the canonical
+            // server-resolved pricing calculated by selectHotelIntent instead
+            // of forcing it to reconstruct a TBO/VSR base from the payable
+            // amount after this handoff.
+            basePricePerNight: hotel.basePricePerNight,
+            baseTotalPrice: hotel.baseTotalPrice,
+            hotelMarginPercentage: hotel.hotelMarginPercentage,
+            hotelMarginAmount: hotel.hotelMarginAmount,
+            hotelMarginTotalAmount: hotel.hotelMarginTotalAmount,
+            amountIncludesHotelMargin: hotel.amountIncludesHotelMargin,
+            pricingIncludesHotelMargin: hotel.pricingIncludesHotelMargin,
             extraBedCount: hotel.extraBedCount,
             extraBedRate: hotel.extraBedRate,
             extraBedAmount: hotel.extraBedAmount,
