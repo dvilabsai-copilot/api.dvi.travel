@@ -2242,17 +2242,15 @@ private getGuideSlotLabel(slotId: number): string {
     // night. A HOTEL intent must therefore resolve one room identity for the
     // whole continuous stay before projecting those rows. Otherwise each
     // independently refreshed night can select a different room type simply
-    // because it is cheaper on that date. If the card supplied a room label,
-    // use it as the requested identity; otherwise use the first room identity
+    // because it is cheaper on that date. HOTEL intent chooses the property,
+    // not the room displayed on the clicked night, so resolve a room identity
     // common to every refreshed night. A missing common identity must remain
     // unavailable rather than silently creating a mixed-room stay.
     const tboContinuousHotel = provider === 'tbo' && intent === 'HOTEL' && stay.nights > 1;
     const roomIdentity = (option: any): string => normalize(
       option?.roomType ?? option?.roomTypeName ?? option?.roomTypeId ?? option?.roomId,
     );
-    let continuousRoomIdentity = tboContinuousHotel && requestedRoom
-      ? normalize(requestedRoom)
-      : '';
+    let continuousRoomIdentity = '';
     if (tboContinuousHotel && !continuousRoomIdentity) {
       const commonRoomIdentities = stay.routeIds.reduce((common: Set<string> | null, routeId: number, index: number) => {
         const routeDate = String(stay.stayDates[index] || '').slice(0, 10);
