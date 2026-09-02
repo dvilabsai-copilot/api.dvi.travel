@@ -4676,7 +4676,9 @@ this.logger.log(
       : unique.length === 2 ? [a, a, b, b]
         : unique.length === 3 ? [a, b, b, c]
           : [a, b, c, d];
-    const multipliers = unique.length <= 1 ? [1, 1.2, 1.4, 1.6] : unique.length === 2 ? [1, 1.5, 1, 1.5] : [1, 1, 1.5, 1];
+    // A single selected category is allocated strictly by ascending price;
+    // do not skip the next cheapest hotel because of a price multiplier.
+    const multipliers = unique.length === 1 ? [1, 1, 1, 1] : unique.length === 0 ? [1, 1.2, 1.4, 1.6] : unique.length === 2 ? [1, 1.5, 1, 1.5] : [1, 1, 1.5, 1];
     const packages = [1, 2, 3, 4].map((groupType) => ({ groupType, label: `Recommended #${groupType}`, hotels: [] as Array<HotelSearchResult & { routeId: number }> }));
     for (const route of routes) {
       const routeId = Number(route?.itinerary_route_ID || 0);
