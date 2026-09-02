@@ -4566,6 +4566,15 @@ export class HotelAvailabilitySnapshotService {
     // request. Keep this rule in the backend so reset/rebuild cannot persist
     // a restricted hotel merely because its base room price is lowest.
     const missingRequiredSupplementReasons = (row: any): string[] => {
+      // TBO is surfaced as VSR in the UI and returns one complete payable
+      // occupancy fare. It intentionally does not expose separate child or
+      // extra-bed supplement amounts, so absence of those fields must not
+      // disqualify a live TBO/VSR option in favour of offline inventory.
+      const provider = String(row?.provider || row?.hotel_provider || '')
+        .trim()
+        .toLowerCase();
+      if (provider === 'tbo' || provider === 'vsr') return [];
+
       const snapshot: any = parseHotelSelectionSnapshot(row);
       const hasRate = (...values: unknown[]): boolean =>
         values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
