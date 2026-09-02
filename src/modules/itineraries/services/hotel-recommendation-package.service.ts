@@ -303,7 +303,9 @@ export class HotelRecommendationPackageService {
         .map((option) => this.categoryNumber(option.hotel) || 0)
         .filter((value) => value > 0)))).sort((a, b) => a - b);
     }
-    const slots = this.categorySlots(categories);
+    const explicitCategories = Array.from(new Set((input.preferredCategories || [])
+      .map(Number).filter((value) => value >= 1 && value <= 5)));
+    const slots = this.categorySlots(categories, explicitCategories.length === 1);
     const selectedByGroup = slots.map((slot) => new Map<string, StayOption>());
 
     evaluations.forEach((evaluation) => {
@@ -479,9 +481,17 @@ export class HotelRecommendationPackageService {
     };
   }
 
-  private categorySlots(categories: number[]): CategorySlot[] {
+  private categorySlots(categories: number[], strictSingleCategory = false): CategorySlot[] {
     const [a, b, c, d] = categories;
-    if (categories.length <= 1) return [1, 1.2, 1.4, 1.6].map((multiplier) => ({ category: a || 0, multiplier }));
+    // With one explicitly selected category, groups are price alternatives
+    // within that category. Assign the cheapest distinct complete-stay hotel
+    // to Group 1, then the next cheapest to Groups 2-4. Price multipliers are
+    // reserved for the legacy/no-category targeting behavior and must not
+    // create gaps in a single-category ascending allocation.
+    if (categories.length <= 1) {
+      const multipliers = strictSingleCategory ? [1, 1, 1, 1] : [1, 1.2, 1.4, 1.6];
+      return multipliers.map((multiplier) => ({ category: a || 0, multiplier }));
+    }
     if (categories.length === 2) return [{ category: a, multiplier: 1 }, { category: a, multiplier: 1.5 }, { category: b, multiplier: 1 }, { category: b, multiplier: 1.5 }];
     if (categories.length === 3) return [{ category: a, multiplier: 1 }, { category: b, multiplier: 1 }, { category: b, multiplier: 1.5 }, { category: c, multiplier: 1 }];
     return [{ category: a, multiplier: 1 }, { category: b, multiplier: 1 }, { category: c, multiplier: 1 }, { category: d, multiplier: 1 }];

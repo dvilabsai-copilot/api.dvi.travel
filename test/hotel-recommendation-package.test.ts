@@ -558,12 +558,27 @@ test('shuffled source input produces deterministic recommendations', () => {
   assert.equal(first[0].totalPrice, second[0].totalPrice);
 });
 
-test('allocates one selected category with minimum thresholds and distinct properties', () => {
+test('allocates one selected category in ascending price order with distinct properties', () => {
   const hotels = [100, 120, 140, 160].map((price) => option(`A-${price}`, price, 'CP', { category: '5-star' }));
   const packages = service().generate({ routes: oneRoute(), hotelsByRoute: new Map([[1, hotels as any]]), preferredCategories: [5] });
   assert.deepEqual(packages.map((pkg) => pkg.hotels[0]?.price), [100, 120, 140, 160]);
   assert.equal(packages[0].groupType, 1);
   assert.equal(packages[3].complete, true);
+});
+
+test('applies ascending price allocation to each single selected category', () => {
+  for (const category of [3, 4, 5]) {
+    const hotels = [100, 110, 120, 130].map((price) => option(`${category}-star-${price}`, price, 'CP', {
+      category: `${category}-star`,
+    }));
+    const packages = service().generate({
+      routes: oneRoute(),
+      hotelsByRoute: new Map([[1, hotels as any]]),
+      preferredCategories: [category],
+      preferredMealPlanCode: 'CP',
+    });
+    assert.deepEqual(packages.map((pkg) => pkg.hotels[0]?.price), [100, 110, 120, 130]);
+  }
 });
 
 test('allocates two categories as A/A/B/B using each category base', () => {
