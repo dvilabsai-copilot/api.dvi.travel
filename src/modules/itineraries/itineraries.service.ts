@@ -2648,7 +2648,6 @@ private getGuideSlotLabel(slotId: number): string {
       // the database and read-after-write response satisfy base + margin =
       // payable for every route night.
       if (selectedProvider === 'tbo' && hotelMarginPercentage > 0 && totalPrice > 0 &&
-        baseTotalPrice > 0 &&
         Math.abs((baseTotalPrice + hotelMarginAmount) - totalPrice) > 0.01) {
         baseTotalPrice = Number((totalPrice / (1 + hotelMarginPercentage / 100)).toFixed(2));
         basePricePerNight = Number((baseTotalPrice / Math.max(Number(data.roomCount || selected.roomCount || 1), 1)).toFixed(2));
