@@ -918,20 +918,36 @@ export class ItineraryDetailsService {
           });
         }
 
+        // For a manual VSR selection, the request contains the authoritative
+        // rate returned by the supplier. The availability snapshot can still
+        // contain the previous recommendation (or a payable amount copied
+        // into its base field) until the next refresh. Prefer the submitted
+        // VSR base/payable pair so the immediate response remains balanced:
+        // base + margin = payable.
+        const submittedBaseAmount = provider === 'tbo'
+          ? Number(selection.basePricePerNight ?? selection.base_price_per_night ?? 0)
+          : 0;
+        const submittedPayableAmount = provider === 'tbo'
+          ? Number(selection.pricePerNight ?? selection.price_per_night ?? 0)
+          : 0;
         const baseAmount = roundCurrency(Number(
-          match.basePricePerNight ??
-          match.base_price_per_night ??
-          match.baseHotelCost ??
-          match.totalHotelCost ??
-          0,
+          submittedBaseAmount > 0
+            ? submittedBaseAmount
+            : match.basePricePerNight ??
+              match.base_price_per_night ??
+              match.baseHotelCost ??
+              match.totalHotelCost ??
+              0,
         ));
         const payableAmount = roundCurrency(Number(
-          match.pricePerNight ??
-          match.price_per_night ??
-          match.totalPrice ??
-          match.totalStayPrice ??
-          match.totalHotelCost ??
-          0,
+          submittedPayableAmount > 0
+            ? submittedPayableAmount
+            : match.pricePerNight ??
+              match.price_per_night ??
+              match.totalPrice ??
+              match.totalStayPrice ??
+              match.totalHotelCost ??
+              0,
         ));
         const marginAmount = roundCurrency(Number(
           match.hotelMarginAmount ??
@@ -1060,6 +1076,27 @@ export class ItineraryDetailsService {
       selectedHotelBreakdown: override.breakdown,
       itinerary,
     };
+  }
+
+  /**
+   * Build the details response from the just-persisted hotel selections.
+   * Selection-intent confirmation is a read-after-write operation; using the
+   * ordinary snapshot reconciliation here can reintroduce the previous
+   * availability selection before the next refresh updates that snapshot.
+   */
+  async getItineraryDetailsForSelectedHotelRates(
+    planId: number,
+    quoteId: string,
+    groupType: number,
+    selections: Record<string, any> | any[],
+  ): Promise<ItineraryDetailsResponseDto> {
+    const override = await this.buildSelectedHotelCostOverride({
+      planId,
+      quoteId,
+      selections,
+      groupType,
+    });
+    return this.getItineraryDetails(quoteId, groupType, undefined, override);
   }
 
   private parseRouteFamilyQuote(quoteId: string | undefined | null): {

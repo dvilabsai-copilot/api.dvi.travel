@@ -1486,6 +1486,11 @@ private getGuideSlotLabel(slotId: number): string {
         );
         return {
           ...result,
+          // The update path already performed the authoritative hotel rebuild.
+          // Return that exact response so the details page can hydrate from
+          // this request instead of issuing a second check-availability call.
+          hotelDetails: hotelSearch.response,
+          hotelChangeSummary: hotelSearch.changeSummary,
           hotelSearch: {
             status: Number(hotelSearch.response.hotelAvailability?.emptySearchRoutes || 0) > 0 ||
               hotelSearch.response.hotelAvailability?.availabilityState === 'PARTIAL' ? 'PARTIAL' : 'COMPLETE',
@@ -2669,6 +2674,8 @@ private getGuideSlotLabel(slotId: number): string {
       const requestedPricePerNight = Number(data.pricePerNight ?? 0);
       const requestedTotalPrice = Number(data.totalPrice ?? 0);
       const selectedProvider = String(selected.provider || provider).trim().toLowerCase();
+      const requestedBasePricePerNight = Number(data.basePricePerNight ?? data.base_price_per_night ?? 0);
+      const requestedPayablePricePerNight = Number(data.pricePerNight ?? data.price_per_night ?? 0);
       const routeNight = Array.isArray(selected.nightlyRates)
         ? selected.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === routeDate)
         : null;
@@ -2677,10 +2684,16 @@ private getGuideSlotLabel(slotId: number): string {
       // instead of attaching the complete stay total to every route.
       const routeScopedOffline = selectedProvider === 'offline' && routeNight;
       let basePricePerNight = Number(
-        routeScopedOffline?.baseAmount ?? selected.basePricePerNight ?? 0,
+        routeScopedOffline?.baseAmount ??
+        (selectedProvider === 'tbo' && requestedBasePricePerNight > 0
+          ? requestedBasePricePerNight
+          : selected.basePricePerNight ?? 0),
       );
       let baseTotalPrice = Number(
-        routeScopedOffline?.baseAmount ?? selected.baseTotalPrice ?? 0,
+        routeScopedOffline?.baseAmount ??
+        (selectedProvider === 'tbo' && requestedBasePricePerNight > 0
+          ? requestedBasePricePerNight
+          : selected.baseTotalPrice ?? 0),
       );
       const hotelMarginPercentage = Number(
         routeScopedOffline?.marginPercentage ?? selected.hotelMarginPercentage ?? 0,
@@ -2696,15 +2709,20 @@ private getGuideSlotLabel(slotId: number): string {
         0,
       );
       const selectedPricePerNight = Number(
-        routeScopedOffline?.sellAmount ?? selected.pricePerNight ?? selected.amountAfterTax ?? selected.price ?? 0,
+        routeScopedOffline?.sellAmount ??
+        (selectedProvider === 'tbo' && requestedPayablePricePerNight > 0
+          ? requestedPayablePricePerNight
+          : selected.pricePerNight ?? selected.amountAfterTax ?? selected.price ?? 0),
       );
       const selectedTotalPrice = Number(
         routeScopedOffline?.sellAmount ??
-        selected.totalStayPrice ??
-        selected.totalPrice ??
-        selected.amountAfterTax ??
-        selected.price ??
-        0,
+        (selectedProvider === 'tbo' && requestedPayablePricePerNight > 0
+          ? requestedPayablePricePerNight
+          : selected.totalStayPrice ??
+            selected.totalPrice ??
+            selected.amountAfterTax ??
+            selected.price ??
+            0),
       );
       // A preview snapshot can contain a zero-valued parent option even when
       // the browser has the exact selected rate and its payable amount. If
@@ -2936,10 +2954,11 @@ private getGuideSlotLabel(slotId: number): string {
     // Garden/previous-room totals.
     let itinerary: any = null;
     try {
-      itinerary = await this.itineraryDetails.getItineraryDetails(
+      itinerary = await this.itineraryDetails.getItineraryDetailsForSelectedHotelRates(
+        Number(data.planId),
         quoteId,
         groupType,
-        undefined,
+        persistencePayloads,
       );
     } catch (error) {
       // Selection persistence remains successful even if response enrichment
