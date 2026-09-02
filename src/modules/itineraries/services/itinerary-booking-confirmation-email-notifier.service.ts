@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
+import PDFDocument from 'pdfkit';
 import { PrismaService } from '../../../prisma.service';
 
 type VoucherInformation = {
@@ -8,6 +9,14 @@ type VoucherInformation = {
   opsEmails: string[];
 };
 
+type DailyMomentVisitDetail = {
+  serialNo: number;
+  name: string;
+  time: string;
+  status: number;
+  statusText: string;
+  reason: string;
+};
 @Injectable()
 export class ItineraryBookingConfirmationEmailNotifierService {
   private readonly logger = new Logger(
@@ -365,6 +374,114 @@ private getTransporter(): Transporter | null {
     return null;
   }
 
+  private async createDailyMomentPdfBuffer(params: {
+  quotationNumber: string;
+  dayNumber: number;
+  routeDate: string;
+  fromLocation: string;
+  toLocation: string;
+  visitDetails: DailyMomentVisitDetail[];
+}): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 40,
+    });
+
+    const chunks: Buffer[] = [];
+
+    doc.on('data', (chunk) => {
+      chunks.push(Buffer.from(chunk));
+    });
+
+    doc.on('end', () => {
+      resolve(Buffer.concat(chunks));
+    });
+
+    doc.on('error', reject);
+
+    const {
+      quotationNumber,
+      dayNumber,
+      routeDate,
+      fromLocation,
+      toLocation,
+      visitDetails,
+    } = params;
+
+    doc
+      .fontSize(20)
+      .font('Helvetica-Bold')
+      .text('DVI Holidays - Trip Update', {
+        align: 'center',
+      });
+
+    doc.moveDown(1);
+
+    doc
+      .fontSize(11)
+      .font('Helvetica-Bold')
+      .text(`Quotation Number: ${quotationNumber}`);
+
+    doc
+      .font('Helvetica')
+      .text(`Day: Day ${dayNumber}`)
+      .text(`Date: ${routeDate}`)
+      .text(`Route: ${fromLocation} to ${toLocation}`);
+
+    doc.moveDown(1.2);
+
+    doc
+      .fontSize(14)
+      .font('Helvetica-Bold')
+      .text('Visit Details');
+
+    doc.moveDown(0.5);
+
+    if (visitDetails.length === 0) {
+      doc
+        .fontSize(10)
+        .font('Helvetica')
+        .text('No visit details available.');
+    } else {
+      visitDetails.forEach((visit) => {
+        doc
+          .fontSize(11)
+          .font('Helvetica-Bold')
+          .text(`${visit.serialNo}. ${visit.name}`);
+
+        doc
+          .fontSize(10)
+          .font('Helvetica')
+          .text(`Time: ${visit.time}`)
+          .text(`Status: ${visit.statusText}`);
+
+        if (visit.status === 2) {
+          doc.text(
+            `Reason: ${visit.reason || '--'}`,
+          );
+        }
+
+        doc.moveDown(0.7);
+      });
+    }
+
+    doc.moveDown(1);
+
+    doc
+      .fontSize(9)
+      .font('Helvetica')
+      .text(
+        'This PDF was generated automatically when the Daily Moment trip was completed.',
+        {
+          align: 'center',
+        },
+      );
+
+    doc.end();
+  });
+}
+
 async sendDailyMomentTripCompletedNotification(
   itineraryPlanId: number,
   itineraryRouteId: number,
@@ -460,16 +577,20 @@ const [confirmedPlan, originalPlan, route, settings] =
     if (route.driver_trip_completed !== 1) {
       return;
     }
-
-    /*
-     * Senior requirement:
-     *
-     * 1. Travel Agent who booked the itinerary
-     *    -> confirmedPlan.agent_id
-     *
-     * 2. Travel Expert of this itinerary
-     *    -> confirmedPlan.staff_id
-     */
+/*
+ * Senior requirement:
+ *
+ * 1. Travel Agent who booked the itinerary
+ *    -> confirmedPlan.agent_id
+ *
+ * 2. Travel Expert who created the itinerary
+ *    -> originalPlan.createdby
+ *    -> dvi_users.userID
+ *    -> roleID = 3
+ *
+ * sales@dvi.co.in remains an additional
+ * operational recipient.
+ */
     const [agent, travelExpert, hotspotRows] =
       await Promise.all([
         Number(confirmedPlan.agent_id || 0) > 0
@@ -527,10 +648,11 @@ const [confirmedPlan, originalPlan, route, settings] =
       ]);
 
     /*
-     * Email goes ONLY to:
-     * - Agent who booked
-     * - Travel Expert of the itinerary
-     */
+ * Daily Moment recipients:
+ * - Travel Agent who booked the itinerary
+ * - Travel Expert who created the itinerary
+ * - sales@dvi.co.in operational copy
+ */
     const agentEmails =
       this.parseEmails(
         agent?.agent_email_id,
@@ -600,14 +722,14 @@ const [confirmedPlan, originalPlan, route, settings] =
     const hotspotNameById =
       new Map<number, string>();
 
-    hotspotMasters.forEach((hotspot) => {
-      hotspotNameById.set(
-        hotspot.hotspot_ID,
-        String(
-          hotspot.hotspot_name || 'N/A',
-        ).trim() || 'N/A',
-      );
-    });
+  hotspotMasters.forEach((hotspot) => {
+  hotspotNameById.set(
+    hotspot.hotspot_ID,
+    String(
+      hotspot.hotspot_name || '',
+    ).trim(),
+  );
+});
 
     const formatVisitTime = (
       value?: Date | null,
@@ -647,51 +769,66 @@ const [confirmedPlan, originalPlan, route, settings] =
       )} ${amPm}`;
     };
 
-    const visitDetails =
-      visitRows.map((row, index) => {
-        const status =
-          Number(
-            row.driver_hotspot_status || 0,
-          );
+const visitDetails: DailyMomentVisitDetail[] =
+  visitRows.map((row, index) => {
+    const status =
+      Number(
+        row.driver_hotspot_status || 0,
+      );
 
-        const statusText =
-          status === 1
-            ? 'Visited'
-            : status === 2
-              ? 'Not Visited'
-              : 'Pending';
+    const statusText =
+      status === 1
+        ? 'Visited'
+        : status === 2
+          ? 'Not Visited'
+          : 'Pending';
 
-        const reason =
-          status === 2
-            ? String(
-                row.driver_not_visited_description ||
-                  '--',
-              ).trim() || '--'
-            : '--';
+    const reason =
+      status === 2
+        ? String(
+            row.driver_not_visited_description ||
+              '--',
+          ).trim() || '--'
+        : '--';
 
-        return {
-          serialNo: index + 1,
+    const fallbackDestination =
+      [6, 7].includes(Number(row.item_type))
+        ? String(
+            route.next_visiting_location || '',
+          ).trim()
+        : '';
 
-          name:
-            hotspotNameById.get(
-              Number(row.hotspot_ID),
-            ) || 'N/A',
+    const masterVisitName =
+  String(
+    hotspotNameById.get(
+      Number(row.hotspot_ID),
+    ) || '',
+  ).trim();
 
-          time:
-            `${formatVisitTime(
-              row.hotspot_start_time,
-            )} - ${formatVisitTime(
-              row.hotspot_end_time,
-            )}`,
+const resolvedVisitName =
+  masterVisitName ||
+  fallbackDestination ||
+  'N/A';
 
-          status,
+    return {
+      serialNo: index + 1,
 
-          statusText,
+      name: resolvedVisitName,
 
-          reason,
-        };
-      });
+      time:
+        `${formatVisitTime(
+          row.hotspot_start_time,
+        )} - ${formatVisitTime(
+          row.hotspot_end_time,
+        )}`,
 
+      status,
+
+      statusText,
+
+      reason,
+    };
+  });
     const frontendBaseUrl =
       String(
         process.env.FRONTEND_URL ||
@@ -1129,16 +1266,64 @@ const [confirmedPlan, originalPlan, route, settings] =
         process.env.SMTP_FROM_NAME ||
           companyName,
       ).trim();
+const dailyMomentPdfFilename =
+  `Daily-Moment-${quotationNumber}-Day-${dayNumber}.pdf`;
 
-   const info = await transporter.sendMail({
+let dailyMomentAttachments:
+  | Array<{
+      filename: string;
+      content: Buffer;
+      contentType: string;
+    }>
+  | undefined;
+
+try {
+  const dailyMomentPdf =
+    await this.createDailyMomentPdfBuffer({
+      quotationNumber,
+      dayNumber,
+      routeDate,
+      fromLocation,
+      toLocation,
+      visitDetails,
+    });
+
+  dailyMomentAttachments = [
+    {
+      filename: dailyMomentPdfFilename,
+      content: dailyMomentPdf,
+      contentType: 'application/pdf',
+    },
+  ];
+
+  this.logger.log(
+    `Daily Moment PDF generated: ${dailyMomentPdfFilename}`,
+  );
+} catch (pdfError: any) {
+  /*
+   * PDF generation must not block the already-working
+   * detailed HTML Trip Completed email.
+   */
+  this.logger.error(
+    `Daily Moment PDF generation failed for plan ${itineraryPlanId}, route ${itineraryRouteId}: ${
+      pdfError?.message || pdfError
+    }`,
+  );
+}
+
+const info = await transporter.sendMail({
   from: {
     name: fromName,
     address: fromAddress,
   },
+
   to: recipientEmails,
+
   subject,
   text,
   html,
+
+  attachments: dailyMomentAttachments,
 });
 
 this.logger.log(

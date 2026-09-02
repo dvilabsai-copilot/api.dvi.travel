@@ -935,18 +935,40 @@ export class DailyMomentTrackerService {
       );
 
     if (!hotspotRows.length) {
-      return [];
-    }
+  return [];
+}
 
- // 2) Load hotspot master records (name / location)
-    const hotspotIds = Array.from(
-      new Set(
-        hotspotRows
-          .map((h) => h.hotspot_ID)
-          .filter((id) => typeof id === 'number' && id > 0),
-      ),
-    );
+/*
+ * Destination / hotel rows can have hotspot_ID = 0.
+ * In that case there is no dvi_hotspot_place master row,
+ * so use the route destination instead of showing N/A.
+ */
+const route =
+  await this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
+    where: {
+      itinerary_plan_ID: itineraryPlanId,
+      itinerary_route_ID: itineraryRouteId,
+      deleted: 0,
+      status: 1,
+    },
+    select: {
+      next_visiting_location: true,
+    },
+  });
 
+const routeDestination =
+  String(
+    route?.next_visiting_location || '',
+  ).trim();
+
+// 2) Load hotspot master records (name / location)
+const hotspotIds = Array.from(
+  new Set(
+    hotspotRows
+      .map((h) => h.hotspot_ID)
+      .filter((id) => typeof id === 'number' && id > 0),
+  ),
+);
     const hotspotMasters = hotspotIds.length
       ? await this.prisma.dvi_hotspot_place.findMany({
           where: {
@@ -966,15 +988,40 @@ export class DailyMomentTrackerService {
  // 3) Build DTO rows
     const rows: DailyMomentHotspotRowDto[] = [];
 
-    hotspotRows.forEach((row, index) => {
-      const master = hotspotMasterById.get(row.hotspot_ID);
+hotspotRows.forEach((row, index) => {
+  const master = hotspotMasterById.get(row.hotspot_ID);
 
-      const startTime = row.hotspot_start_time ?? null;
-      const endTime = row.hotspot_end_time ?? null;
-      const { minutes: durationMinutes, label: durationLabel } =
-        this.calcDurationLabel(startTime, endTime);
+  const fallbackDestination =
+    [6, 7].includes(Number(row.item_type))
+      ? routeDestination
+      : '';
 
-      rows.push({
+  const resolvedHotspotName =
+    String(
+      master?.hotspot_name ||
+        fallbackDestination ||
+        'N/A',
+    ).trim() || 'N/A';
+
+  const resolvedHotspotLocation =
+    String(
+      master?.hotspot_location ||
+        fallbackDestination ||
+        '',
+    ).trim();
+
+  const startTime = row.hotspot_start_time ?? null;
+  const endTime = row.hotspot_end_time ?? null;
+
+  const {
+    minutes: durationMinutes,
+    label: durationLabel,
+  } = this.calcDurationLabel(
+    startTime,
+    endTime,
+  );
+
+  rows.push({
         serial_no: row.hotspot_order || index + 1,
         confirmed_route_hotspot_ID: row.confirmed_route_hotspot_ID,
         route_hotspot_ID: row.route_hotspot_ID,
@@ -982,8 +1029,8 @@ export class DailyMomentTrackerService {
         itinerary_route_ID: row.itinerary_route_ID,
         hotspot_ID: row.hotspot_ID,
 
-        hotspot_name: (master?.hotspot_name ?? '').trim() || 'N/A',
-        hotspot_location: (master?.hotspot_location ?? '').trim() || 'N/A',
+       hotspot_name: resolvedHotspotName,
+hotspot_location: resolvedHotspotLocation,
 
        start_time: this.formatTimeHHMM(startTime),
 end_time: this.formatTimeHHMM(endTime),
@@ -1488,11 +1535,31 @@ const hotspotRows =
 
 const dayHotspots: DailyMomentHotspotRowDto[] = routeHotspots
   .map((h, hIdx) => {
-    const master = hotspotMasterById.get(h.hotspot_ID);
-    const { minutes, label } = this.calcDurationLabel(
-      h.hotspot_start_time,
-      h.hotspot_end_time,
-    );
+   const master = hotspotMasterById.get(h.hotspot_ID);
+
+const fallbackDestination =
+  [6, 7].includes(Number(h.item_type))
+    ? String(route.next_visiting_location || '').trim()
+    : '';
+
+const resolvedHotspotName =
+  String(
+    master?.hotspot_name ||
+      fallbackDestination ||
+      'N/A',
+  ).trim();
+
+const resolvedHotspotLocation =
+  String(
+    master?.hotspot_location ||
+      fallbackDestination ||
+      '',
+  ).trim();
+
+const { minutes, label } = this.calcDurationLabel(
+  h.hotspot_start_time,
+  h.hotspot_end_time,
+);
           const hk = `${routeId}:${h.route_hotspot_ID}`;
           const activities = (activitiesByRouteHotspot.get(hk) ?? []).map((a) => ({
             confirmed_route_activity_ID: a.confirmed_route_activity_ID,
@@ -1514,8 +1581,8 @@ const dayHotspots: DailyMomentHotspotRowDto[] = routeHotspots
   itinerary_route_ID: h.itinerary_route_ID,
   hotspot_ID: h.hotspot_ID,
   item_type: h.item_type,
-  hotspot_name: (master?.hotspot_name ?? '').trim() || 'N/A',
-  hotspot_location: (master?.hotspot_location ?? '').trim() || '',
+  hotspot_name: resolvedHotspotName,
+hotspot_location: resolvedHotspotLocation,
   start_time: this.formatTimeHHMM(h.hotspot_start_time),
   end_time: this.formatTimeHHMM(h.hotspot_end_time),
   duration_minutes: minutes,
@@ -2165,23 +2232,39 @@ hotspots: dayHotspots,
       },
     );
 
- // Mark route as completed
-    const route =
-      await this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
-        where: {
-          itinerary_plan_ID: itineraryPlanId,
-          itinerary_route_ID: itineraryRouteId,
-          deleted: 0,
-          status: 1,
-        },
-      });
-    if (route) {
-      await this.prisma.dvi_confirmed_itinerary_route_details.update({
-        where: { confirmed_itinerary_route_ID: route.confirmed_itinerary_route_ID },
-        data: { driver_trip_completed: 1, updatedon: new Date() },
-      });
-    }
-  }
+ // Mark route as completed and send the Daily Moment
+// email only on the first incomplete -> completed transition.
+const route =
+  await this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
+    where: {
+      itinerary_plan_ID: itineraryPlanId,
+      itinerary_route_ID: itineraryRouteId,
+      deleted: 0,
+      status: 1,
+    },
+  });
+
+if (
+  route &&
+  route.driver_trip_completed !== 1
+) {
+  await this.prisma.dvi_confirmed_itinerary_route_details.update({
+    where: {
+      confirmed_itinerary_route_ID:
+        route.confirmed_itinerary_route_ID,
+    },
+    data: {
+      driver_trip_completed: 1,
+      updatedon: new Date(),
+    },
+  });
+
+   await this.emailNotifier.sendDailyMomentTripCompletedNotification(
+    itineraryPlanId,
+    itineraryRouteId,
+  );
+}
+}
 
   async saveDayImages(
     itineraryPlanId: number,
