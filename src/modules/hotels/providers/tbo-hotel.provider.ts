@@ -63,6 +63,14 @@ export class TBOHotelProvider implements IHotelProvider {
   private tokenExpiry: Date | null = null;
   private http: AxiosInstance = axios;
 
+  /** Accept either the TBO API root or an already-resolved HotelService REST root. */
+  private bookingEndpoint(operation: string): string {
+    const base = this.BOOKING_API_URL.replace(/\/+$/, '');
+    return /\/hotelservice\.svc\/rest$/i.test(base)
+      ? `${base}/${operation}`
+      : `${base}/HotelService.svc/rest/${operation}`;
+  }
+
   /** Persist raw supplier responses for traceability; never include auth headers. */
   private async persistRawSearchResponse(metadata: Record<string, unknown>, responseData: unknown): Promise<void> {
     const enabled = String(process.env.TBO_RAW_RESPONSE_LOG || 'true').trim().toLowerCase() !== 'false';
@@ -1099,7 +1107,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
  // Step 6: Call Book API
       const bookResponse = await this.http
-        .post(`${this.BOOKING_API_URL}/HotelService.svc/rest/Book`, bookRequest, {
+        .post(this.bookingEndpoint('Book'), bookRequest, {
           timeout: 30000,
           headers: {
             'Content-Type': 'application/json',
@@ -1168,7 +1176,7 @@ export class TBOHotelProvider implements IHotelProvider {
  // Step 3: Call GetBookingDetail API
       const response = await this.http
         .post(
-          `${this.BOOKING_API_URL}/HotelService.svc/rest/Getbookingdetail`,
+          this.bookingEndpoint('Getbookingdetail'),
           request,
           {
             timeout: 30000,
@@ -1233,7 +1241,7 @@ export class TBOHotelProvider implements IHotelProvider {
  // Step 3: Call SendChangeRequest API
       const response = await this.http
         .post(
-          `${this.BOOKING_API_URL}/HotelService.svc/rest/SendChangeRequest`,
+          this.bookingEndpoint('SendChangeRequest'),
           request,
           {
             timeout: 30000,
