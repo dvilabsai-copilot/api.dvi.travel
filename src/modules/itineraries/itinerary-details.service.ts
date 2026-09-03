@@ -28,7 +28,10 @@ import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.s
 import { SystemRole } from '../auth/constants/system-role.constants';
 import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
 import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
-import { normalizeHotelDisplayName } from './utils/hotel-selection-identity.util';
+import {
+  normalizeHotelDisplayName,
+  parseHotelSelectionSnapshot,
+} from './utils/hotel-selection-identity.util';
 import { resolveStoredHotelPayablePricing } from './utils/hotel-payable-pricing.util';
 import { toDatabaseBusinessDate } from './utils/itinerary.utils';
 import {
@@ -705,6 +708,7 @@ export class ItineraryDetailsService {
         if (usedRouteIds.has(routeId)) continue;
 
         const provider = this.normalizeIdentity(selection.provider || selection.hotel_provider);
+        const selectionSnapshot = parseHotelSelectionSnapshot(selection) as any;
         const normalizeRateIdentity = (...values: unknown[]): string => {
           for (const value of values) {
             const normalized = this.normalizeIdentity(value);
@@ -738,15 +742,66 @@ export class ItineraryDetailsService {
           selection.booking_code,
         );
         const roomId = normalizeRateIdentity(selection.roomId, selection.room_id);
-        const rateOptionId = normalizeRateIdentity(selection.rateOptionId, selection.rate_option_id);
-        const rateId = normalizeRateIdentity(selection.rateId, selection.rate_id, selection.rateOptionId, selection.rate_option_id);
+        const rateOptionId = normalizeRateIdentity(
+          selection.rateOptionId,
+          selection.rate_option_id,
+          selection.selectedRateOptionId,
+          selection.selected_rate_option_id,
+          selectionSnapshot?.rateOptionId,
+          selectionSnapshot?.rate_option_id,
+        );
+        const rateId = normalizeRateIdentity(
+          selection.rateId,
+          selection.rate_id,
+          selection.selectedRateId,
+          selection.selected_rate_id,
+          selectionSnapshot?.rateId,
+          selectionSnapshot?.rate_id,
+          rateOptionId,
+        );
         const roomType = this.normalizeIdentity(selection.roomType || selection.room_type);
         const mealPlan = this.normalizeIdentity(selection.mealPlan || selection.meal_plan);
         const hotelName = this.normalizeHotelName(selection.hotelName || selection.hotel_name);
         const requestedOptionKey = normalizeRateIdentity(selection.optionKey, selection.option_key);
+        // STAAH uses the rate-plan code (for example CP_PLAN) as the
+        // bookingCode/searchReference sent by the confirmation form. The
+        // persisted snapshot keeps the same value as rateOptionId, while its
+        // supplier searchReference is date-specific. Treat the rate-plan
+        // identity as rateOptionId/rateId, not as a supplier booking token.
+        const isStaahRatePlanIdentity = provider === 'staah' && (
+          (Boolean(rateOptionId) && [rateOptionId, rateId].includes(bookingCode)) ||
+          // ConfirmQuotationDto historically received only CP_PLAN in both
+          // bookingCode and searchReference. That value is STAAH's rate-plan
+          // code, not a supplier booking token; the room/property/date fields
+          // remain the identity in this legacy payload shape.
+          (!rateOptionId && bookingCode === searchReference && /(?:^|[_-])PLAN$/i.test(bookingCode))
+        );
+        const effectiveBookingCode = isStaahRatePlanIdentity ? '' : bookingCode;
+        const effectiveSearchReference = provider === 'staah' &&
+          [rateOptionId, rateId].includes(searchReference)
+          ? ''
+          : searchReference;
         const requestedDate = String(
           selection.checkInDate || selection.check_in_date || selection.date || '',
         ).slice(0, 10);
+        const hotelIdentityAliases = (value: unknown): string[] => {
+          const normalized = this.normalizeIdentity(value);
+          if (!normalized) return [];
+          const aliases = new Set([normalized]);
+          if (provider === 'axisrooms' || provider === 'ax') {
+            const axisPropertyId = normalized.match(/^ax[_-]dvi[_-]hotel[_-](\d+)$/i)?.[1];
+            if (axisPropertyId) aliases.add(axisPropertyId);
+            if (/^\d+$/.test(normalized)) aliases.add(`ax_dvi_hotel_${normalized}`);
+          }
+          return Array.from(aliases);
+        };
+        const hotelIdentityMatches = (requested: string, candidateValues: unknown[]): boolean => {
+          if (!requested) return true;
+          const requestedAliases = new Set(hotelIdentityAliases(requested));
+          return candidateValues
+            .flatMap((value) => hotelIdentityAliases(value))
+            .some((value) => requestedAliases.has(value));
+        };
         const exactRouteCandidates = availableRows
           .filter((row: any) => Number(row.itineraryRouteId || 0) === routeId);
         const exactRouteAndDateCandidates = requestedDate
@@ -784,15 +839,15 @@ export class ItineraryDetailsService {
               row.hotel_code,
               row.hotelId,
               row.hotel_id,
-            ].map((value) => this.normalizeIdentity(value));
-            if (hotelCode && !rowCodes.includes(hotelCode)) return false;
+            ];
+            if (hotelCode && !hotelIdentityMatches(hotelCode, rowCodes)) return false;
             const rowBookingCode = this.normalizeIdentity(row.bookingCode);
             const rowSearchReference = this.normalizeIdentity(row.searchReference);
             const rowRoomId = this.normalizeIdentity(row.roomId);
             const rowRateId = this.normalizeIdentity(row.rateId);
             const hasDifferentBookingIdentity = Boolean(
-              (bookingCode && bookingCode !== rowBookingCode && bookingCode !== rowSearchReference) ||
-              (searchReference && searchReference !== rowSearchReference && searchReference !== rowBookingCode),
+              (effectiveBookingCode && effectiveBookingCode !== rowBookingCode && effectiveBookingCode !== rowSearchReference) ||
+              (effectiveSearchReference && effectiveSearchReference !== rowSearchReference && effectiveSearchReference !== rowBookingCode),
             );
             if (hasDifferentBookingIdentity && !allowPerNightRateIdentityFallback) return false;
             if (roomId && roomId !== rowRoomId) return false;
@@ -816,8 +871,8 @@ export class ItineraryDetailsService {
             const rowRoomType = this.normalizeIdentity(row.roomType);
             const rowMealPlan = this.normalizeIdentity(row.mealPlan);
             let score = 0;
-            if (bookingCode && bookingCode === rowBookingCode) score += 16;
-            if (searchReference && searchReference === rowSearchReference) score += 16;
+            if (effectiveBookingCode && effectiveBookingCode === rowBookingCode) score += 16;
+            if (effectiveSearchReference && effectiveSearchReference === rowSearchReference) score += 16;
             if (roomId && roomId === rowRoomId) score += 8;
             if (rateId && rateId === rowRateId) score += 8;
             if (roomType && roomType === rowRoomType) score += 4;
@@ -857,8 +912,8 @@ export class ItineraryDetailsService {
                   row.hotel_code,
                   row.hotelId,
                   row.hotel_id,
-                ].map((value) => this.normalizeIdentity(value));
-                if (hotelCode && !rowCodes.includes(hotelCode)) return false;
+                ];
+                if (hotelCode && !hotelIdentityMatches(hotelCode, rowCodes)) return false;
                 const rowIdentities = [
                   row.bookingCode,
                   row.searchReference,
@@ -887,8 +942,8 @@ export class ItineraryDetailsService {
                 row.hotel_code,
                 row.hotelId,
                 row.hotel_id,
-              ].map((value) => this.normalizeIdentity(value));
-              if (hotelCode && !rowCodes.includes(hotelCode)) return false;
+              ];
+              if (hotelCode && !hotelIdentityMatches(hotelCode, rowCodes)) return false;
               const rowRoomType = this.normalizeIdentity(row.roomType || row.room_type);
               const rowMealPlan = this.normalizeIdentity(row.mealPlan || row.meal_plan || row.mealPlanCode);
               const rowHotelName = this.normalizeHotelName(row.hotelName || row.hotel_name);

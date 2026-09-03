@@ -94,22 +94,17 @@ export class ItineraryHotelPrebookService {
         const hotelCode = String(hotel?.hotelCode || hotel?.hotelId || '').trim();
         const hotelName = String(hotel?.hotelName || '').trim().toLowerCase();
         const availabilityStatus = String(hotel?.availabilityStatus || '').trim().toUpperCase();
-        const netAmount = Number(
-          hotel?.netAmount ??
-          hotel?.totalAmount ??
-          hotel?.totalPrice ??
-          hotel?.price ??
-          0,
-        );
+        // The client amount is only a display/search value. TBO validates the
+        // booking code and returns the authoritative amount during PreBook, so
+        // a zero amount must not prevent a valid supplier selection from being
+        // prebooked.
         return hotel.externalStay !== true &&
           hotel.isBookable !== false &&
           availabilityStatus !== 'NO_SUPPLIER_AVAILABILITY' &&
           availabilityStatus !== 'NOT_BOOKABLE' &&
           hotelName !== 'no hotels available' &&
           hotelCode !== '' &&
-          hotelCode !== '0' &&
-          Number.isFinite(netAmount) &&
-          netAmount > 0;
+          hotelCode !== '0';
       }
       return this.getProviderBookableHotelBookings([hotel]).length > 0;
     });
