@@ -41,30 +41,165 @@ async function workbookFor(preference: number) {
   return { workbook, result };
 }
 
-test('preference 1 writes PHP header and hotel totals/styles', async () => {
-  const { workbook, result } = await workbookFor(1); const sheet = workbook.getWorksheet('Worksheet')!;
-  assert.equal(result.fileName, 'ITINERARY-DVI202608336.xlsx'); assert.equal(sheet.getCell('A1').value, null);
-  assert.equal(sheet.getCell('A2').value, 'Quote ID'); assert.equal(sheet.getCell('B2').value, 'DVI202608336');
-  assert.equal(sheet.getCell('A6').value, 'Day'); assert.ok(Number(sheet.getCell('U7').value) > 0);
-  assert.equal(sheet.getCell('C7').value, 'Saved Hotel List Name'); assert.equal(sheet.getCell('D7').value, 'Deluxe from snapshot');
-  assert.equal(sheet.getCell('G7').value, 1); assert.equal(sheet.getCell('N7').value, 10);
-  assert.equal(sheet.getCell('J7').numFmt, '0.00'); assert.equal(sheet.getCell('A5').fill.fgColor?.argb, 'FFFFA500');
+function rowsWithLabel(
+  sheet: ExcelJS.Worksheet,
+  label: string,
+): ExcelJS.Row[] {
+  const rows: ExcelJS.Row[] = [];
+
+  sheet.eachRow((row) => {
+    if (
+      String(row.getCell(1).value ?? '').trim() ===
+      label.trim()
+    ) {
+      rows.push(row);
+    }
+  });
+
+  return rows;
+}
+
+function valueForLabel(
+  sheet: ExcelJS.Worksheet,
+  label: string,
+  occurrence = 0,
+): any {
+  const rows = rowsWithLabel(sheet, label);
+
+  assert.ok(
+    rows.length > occurrence,
+    `Missing vertical export field: ${label} occurrence ${occurrence}`,
+  );
+
+  return rows[occurrence].getCell(2).value;
+}
+
+function valueCellForLabel(
+  sheet: ExcelJS.Worksheet,
+  label: string,
+  occurrence = 0,
+): ExcelJS.Cell {
+  const rows = rowsWithLabel(sheet, label);
+
+  assert.ok(
+    rows.length > occurrence,
+    `Missing vertical export field: ${label} occurrence ${occurrence}`,
+  );
+
+  return rows[occurrence].getCell(2);
+}
+
+function rowIndexContaining(
+  sheet: ExcelJS.Worksheet,
+  value: string,
+): number {
+  let found = 0;
+
+  sheet.eachRow((row, rowNumber) => {
+    row.eachCell((cell) => {
+      if (
+        found === 0 &&
+        cell.value === value
+      ) {
+        found = rowNumber;
+      }
+    });
+  });
+
+  return found;
+}
+
+test('preference 1 writes vertical itinerary and hotel details', async () => {
+  const { workbook, result } = await workbookFor(1);
+  const sheet = workbook.getWorksheet('Worksheet')!;
+
+  assert.equal(result.fileName, 'ITINERARY-DVI202608336.xlsx');
+  assert.equal(sheet.getCell('A1').value, null);
+  assert.equal(sheet.getCell('A2').value, 'Quote ID');
+  assert.equal(sheet.getCell('B2').value, 'DVI202608336');
+
+  assert.equal(valueForLabel(sheet, 'Source Location'), 'Delhi');
+  assert.equal(valueForLabel(sheet, 'Departure Location'), 'Mumbai');
+  assert.equal(valueForLabel(sheet, 'Hotel & Category'), 'Saved Hotel List Name');
+  assert.equal(valueForLabel(sheet, 'Room Type'), 'Deluxe from snapshot');
+  assert.equal(valueForLabel(sheet, 'Extra Bed Count'), 1);
+  assert.equal(valueForLabel(sheet, 'EB Cost'), 10);
+
+  assert.equal(
+    valueCellForLabel(sheet, 'Room Rent').numFmt,
+    '0.00',
+  );
+
+  assert.ok(
+    rowIndexContaining(
+      sheet,
+      'Hotel Recommendation - 1',
+    ) > 0,
+  );
+
+  assert.ok(sheet.actualColumnCount <= 2);
   assert.ok(Object.keys((sheet as any)._merges).length > 0);
 });
 
-test('preference 2 writes vehicle positional totals and route labels', async () => {
-  const { workbook } = await workbookFor(2); const sheet = workbook.getWorksheet('Worksheet')!;
-  assert.equal(sheet.getCell('A5').value, 'Vehicle Type: SUV | Total Required Vehicle Count: 2 ');
-  assert.equal(sheet.getCell('X7').value, 2000); assert.equal(sheet.getCell('Y7').value, 1953); assert.equal(sheet.getCell('Z7').value, 47);
-  assert.equal(sheet.getCell('B10').value, 'Delhi to Agra'); assert.equal(sheet.getCell('F10').value, 5); assert.equal(sheet.getCell('H10').value, 6);
-  assert.equal(sheet.getCell('E7').numFmt, '0.00'); assert.ok(Object.keys((sheet as any)._merges).length > 0);
+test('preference 2 writes vertical vehicle totals and route details', async () => {
+  const { workbook } = await workbookFor(2);
+  const sheet = workbook.getWorksheet('Worksheet')!;
+
+  assert.ok(
+    rowIndexContaining(
+      sheet,
+      'Vehicle Type: SUV | Total Required Vehicle Count: 2 ',
+    ) > 0,
+  );
+
+  assert.equal(valueForLabel(sheet, 'Total Sales'), 2000);
+  assert.equal(valueForLabel(sheet, 'Total Cost'), 1953);
+  assert.equal(valueForLabel(sheet, 'Total P&L'), 47);
+
+  assert.equal(
+    valueForLabel(sheet, 'Location'),
+    'Delhi to Agra',
+  );
+
+  assert.equal(
+    valueForLabel(sheet, 'Total Pickup KM'),
+    5,
+  );
+
+  assert.equal(
+    valueForLabel(sheet, 'Total Drop KM'),
+    6,
+  );
+
+  assert.equal(
+    valueCellForLabel(
+      sheet,
+      'Rental Charges',
+    ).numFmt,
+    '0.00',
+  );
+
+  assert.ok(sheet.actualColumnCount <= 2);
+  assert.ok(Object.keys((sheet as any)._merges).length > 0);
 });
 
-test('preference 3 preserves hotel-before-vehicle ordering and no duplicate flow', async () => {
-  const { workbook } = await workbookFor(3); const sheet = workbook.getWorksheet('Worksheet')!;
-  const values: string[] = []; sheet.eachRow((row) => row.eachCell((cell) => { if (typeof cell.value === 'string') values.push(cell.value); }));
-  assert.ok(values.indexOf('Hotel Recommendation - 1') < values.indexOf('Vehicle Type: SUV | Total Required Vehicle Count: 2 '));
-  assert.equal(sheet.getCell('A5').value, 'Hotel Recommendation - 1');
+test('preference 3 preserves hotel-before-vehicle ordering in vertical export', async () => {
+  const { workbook } = await workbookFor(3);
+  const sheet = workbook.getWorksheet('Worksheet')!;
+
+  const hotelRow = rowIndexContaining(
+    sheet,
+    'Hotel Recommendation - 1',
+  );
+
+  const vehicleRow = rowIndexContaining(
+    sheet,
+    'Vehicle Type: SUV | Total Required Vehicle Count: 2 ',
+  );
+
+  assert.ok(hotelRow > 0);
+  assert.ok(vehicleRow > hotelRow);
+  assert.ok(sheet.actualColumnCount <= 2);
 });
 
 test('early-arrival export includes a non-priced Day 0 hotel block row', async () => {
@@ -103,8 +238,30 @@ test('early-arrival export includes a non-priced Day 0 hotel block row', async (
     return { workbook };
   })();
   const sheet = workbook.getWorksheet('Worksheet')!;
-  assert.equal(sheet.getCell('A7').value, 'Day 0 | 30 Aug 2026');
-  assert.equal(sheet.getCell('C7').value, 'Saved Hotel List Name (Early check-in room block)');
-  assert.equal(sheet.getCell('J7').value, '');
-  assert.equal(sheet.getCell('A8').value, '31 Aug 2026');
+
+  assert.equal(
+    valueForLabel(sheet, 'Day', 0),
+    'Day 0 | 30 Aug 2026',
+  );
+
+  assert.equal(
+    valueForLabel(
+      sheet,
+      'Hotel & Category',
+      0,
+    ),
+    'Saved Hotel List Name (Early check-in room block)',
+  );
+
+  assert.equal(
+    valueForLabel(sheet, 'Room Rent', 0),
+    '',
+  );
+
+  assert.equal(
+    valueForLabel(sheet, 'Day', 1),
+    '31 Aug 2026',
+  );
+
+  assert.ok(sheet.actualColumnCount <= 2);
 });
