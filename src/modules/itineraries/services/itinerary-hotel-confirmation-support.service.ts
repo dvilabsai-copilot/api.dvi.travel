@@ -62,8 +62,52 @@ export class ItineraryHotelConfirmationSupportService {
  console.debug(
       `[CONFIRM_HOTELS] incoming hotel_bookings count=${dto.hotel_bookings?.length || 0}`,
     );
+    // A route on the itinerary's checkout date is a departure route, not an
+    // overnight hotel stay. Exclude it before selection sync/copy so a one
+    // night stay cannot become a second confirmed hotel row.
+    const planModel = (this.prisma as any)?.dvi_itinerary_plan_details;
+    const plan = planModel?.findUnique
+      ? await planModel.findUnique({
+          where: { itinerary_plan_ID: dto.itinerary_plan_ID },
+          select: { trip_end_date_and_time: true },
+        })
+      : null;
+    const eligibleHotelRouteIds = plan?.trip_end_date_and_time
+      ? new Set(
+          (
+            await (this.prisma as any).dvi_itinerary_route_details.findMany({
+              where: {
+                itinerary_plan_ID: dto.itinerary_plan_ID,
+                itinerary_route_date: { lt: plan.trip_end_date_and_time },
+                deleted: 0,
+                status: 1,
+              },
+              select: { itinerary_route_ID: true },
+            })
+          ).map((route) => Number(route.itinerary_route_ID)).filter((id) => id > 0),
+        )
+      : null;
+    const isEligibleRoute = (routeId: unknown) =>
+      !eligibleHotelRouteIds || eligibleHotelRouteIds.has(Number(routeId || 0));
+    const filteredHotelBookings = (dto.hotel_bookings || []).flatMap((booking: any) => {
+      const routeIds = Array.isArray(booking?.routeIds)
+        ? this.uniquePositiveNumbers(booking.routeIds).filter(isEligibleRoute)
+        : [];
+      const routeId = Number(booking?.routeId || 0);
+
+      if (routeIds.length > 0) {
+        return [{
+          ...booking,
+          routeId: isEligibleRoute(routeId) ? routeId : routeIds[0],
+          routeIds,
+          nights: routeIds.length,
+        }];
+      }
+
+      return isEligibleRoute(routeId) ? [booking] : [];
+    });
     const incomingHotelBookings = this.pruneHotelBookingsCoveredByMultiNight(
-      this.mergeConsecutiveSupplierHotelBookings(dto.hotel_bookings || []),
+      this.mergeConsecutiveSupplierHotelBookings(filteredHotelBookings),
     );
     (dto as any).hotel_bookings = incomingHotelBookings;
     const providerHotelBookings = this.getProviderBookableHotelBookings(incomingHotelBookings);
@@ -133,7 +177,7 @@ export class ItineraryHotelConfirmationSupportService {
 
         return routeIds;
       }),
-    ]);
+    ]).filter(isEligibleRoute);
 
     const externalRouteIds = this.uniquePositiveNumbers(
       (dto as any).external_stay_route_ids || [],
@@ -490,6 +534,41 @@ export class ItineraryHotelConfirmationSupportService {
 
       let selectedDraftHotelDetailsId = 0;
 
+      let selectedPriceSnapshot: any = {};
+      const rawSelectedPriceSnapshot = (booking as any).selectedPriceSnapshot;
+      if (rawSelectedPriceSnapshot && typeof rawSelectedPriceSnapshot === 'object') {
+        selectedPriceSnapshot = { ...rawSelectedPriceSnapshot };
+      } else if (typeof rawSelectedPriceSnapshot === 'string') {
+        try {
+          const parsed = JSON.parse(rawSelectedPriceSnapshot);
+          if (parsed && typeof parsed === 'object') selectedPriceSnapshot = { ...parsed };
+        } catch { /* preserve a clean object for the authoritative fields below */ }
+      }
+      // Store the supplier selection identity in the existing snapshot. TBO
+      // confirmation responses do not consistently echo RoomTypeName, while
+      // the copied legacy room-detail row may belong to a previous selection.
+      selectedPriceSnapshot = {
+        ...selectedPriceSnapshot,
+        ...((booking as any).roomType || selectedPriceSnapshot.roomType
+          ? { roomType: (booking as any).roomType || selectedPriceSnapshot.roomType }
+          : {}),
+        ...((booking as any).roomId || selectedPriceSnapshot.roomId
+          ? { roomId: (booking as any).roomId || selectedPriceSnapshot.roomId }
+          : {}),
+        ...((booking as any).rateId || selectedPriceSnapshot.rateId
+          ? { rateId: (booking as any).rateId || selectedPriceSnapshot.rateId }
+          : {}),
+        ...((booking as any).mealPlan || selectedPriceSnapshot.mealPlan
+          ? { mealPlan: (booking as any).mealPlan || selectedPriceSnapshot.mealPlan }
+          : {}),
+        ...((normalizedProvider || selectedPriceSnapshot.provider)
+          ? { provider: normalizedProvider || selectedPriceSnapshot.provider }
+          : {}),
+        ...((hotelCodeForSave || selectedPriceSnapshot.hotelCode)
+          ? { hotelCode: hotelCodeForSave || selectedPriceSnapshot.hotelCode }
+          : {}),
+      };
+
       const saveData: any = {
         group_type: groupType,
         itinerary_route_date: route?.itinerary_route_date || undefined,
@@ -526,7 +605,7 @@ export class ItineraryHotelConfirmationSupportService {
         selected_price_per_night: (booking as any).selectedPricePerNight || (booking as any).pricePerNight || null,
         selected_total_price: (booking as any).selectedTotalPrice || (booking as any).totalStayPrice || bookingAmount,
         selected_currency: (booking as any).selectedCurrency || (booking as any).currency || 'INR',
-        selected_price_snapshot: (booking as any).selectedPriceSnapshot || null,
+        selected_price_snapshot: JSON.stringify(selectedPriceSnapshot),
         hotel_approval_status: isManualApproval
           ? existing?.hotel_approval_status || (booking as any).approvalStatus || 'PENDING_APPROVAL'
           : 'NOT_REQUIRED',

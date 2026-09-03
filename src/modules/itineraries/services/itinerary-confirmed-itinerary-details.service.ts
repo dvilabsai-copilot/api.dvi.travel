@@ -474,12 +474,26 @@ export class ItineraryConfirmedItineraryDetailsService {
         });
       }
 
+      let selectedSnapshot: any = {};
+      const rawSelectedSnapshot = (matchedConfirmedHotel as any)?.selected_price_snapshot;
+      if (rawSelectedSnapshot && typeof rawSelectedSnapshot === 'object') {
+        selectedSnapshot = rawSelectedSnapshot;
+      } else if (typeof rawSelectedSnapshot === 'string') {
+        try {
+          const parsed = JSON.parse(rawSelectedSnapshot);
+          if (parsed && typeof parsed === 'object') selectedSnapshot = parsed;
+        } catch { /* use the room-detail fallback for malformed legacy data */ }
+      }
       const roomType = String(
         providerBooking?.roomType ||
+        selectedSnapshot.roomType ||
         roomTypeMap.get(Number((matchedRoom as any)?.room_type_id || 0)) ||
         '',
       ).trim() || 'Standard';
-      const mealPlan = matchedRoom ? deriveMealPlan(matchedRoom) : 'EP';
+      const mealPlan = String(
+        selectedSnapshot.mealPlan ||
+        (matchedRoom ? deriveMealPlan(matchedRoom) : 'EP'),
+      ).trim() || 'EP';
       const providerAmount = Number(providerBooking?.netAmount || 0);
       const confirmedAmount = Number((matchedConfirmedHotel as any)?.total_hotel_cost || 0);
       const confirmedTaxAmount = Number((matchedConfirmedHotel as any)?.total_hotel_tax_amount || 0);
