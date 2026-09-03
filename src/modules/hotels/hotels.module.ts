@@ -29,6 +29,7 @@ import { OfflineHotelCatalogService } from '../itineraries/services/offline-hote
 import { HotelPricingService } from '../itineraries/hotels/hotel-pricing.service';
 import { TboMasterHotelController } from './controllers/tbo-master-hotel.controller';
 import { TboMasterHotelService } from './services/tbo-master-hotel.service';
+import { ReferenceDataCacheService } from '../../common/cache/reference-data-cache.service';
 
 @Module({
   imports: [],
@@ -61,6 +62,7 @@ import { TboMasterHotelService } from './services/tbo-master-hotel.service';
     HotelPricingService,
     OfflineHotelCatalogService,
     TboMasterHotelService,
+    ReferenceDataCacheService,
   ],
   exports: [
     HotelsService,
@@ -74,6 +76,7 @@ import { TboMasterHotelService } from './services/tbo-master-hotel.service';
  HobseHotelMasterSyncService, // optional export
     HobseHotelCsvImportService,
     SupplementNormalizerService,
+    ReferenceDataCacheService,
   ],
 })
 export class HotelsModule {}

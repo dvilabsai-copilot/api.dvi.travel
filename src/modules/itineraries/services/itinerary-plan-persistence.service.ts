@@ -1141,6 +1141,13 @@ if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
 
         opStart2 = Date.now();
         await this.planEngine.updateNoOfRoutes(planId, tx);
+        stepStartedAt = this.logItineraryApiTiming({
+          api: 'save_basic_info',
+          step: 'route_count_update_after_permits',
+          startedAt: apiStartedAt,
+          stepStartedAt,
+          planId,
+        });
  console.log('[PERF] updateNoOfRoutes:', Date.now() - opStart2, 'ms');
       }
 

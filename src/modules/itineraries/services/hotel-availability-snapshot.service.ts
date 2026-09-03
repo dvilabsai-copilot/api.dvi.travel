@@ -805,9 +805,12 @@ export class HotelAvailabilitySnapshotService {
       // may already be reduced by category/meal rules. Reset persistence must
       // retain the complete group-neutral inventory returned by the supplier
       // search so every recommendation pane can display the same properties.
-      const liveInventoryRows = Array.isArray((liveResponse as any)?.hotelAvailability?.sharedHotelInventory)
-        ? (liveResponse as any).hotelAvailability.sharedHotelInventory
-        : (Array.isArray(liveResponse.hotels) ? liveResponse.hotels : []);
+      const sharedHotelInventory = (liveResponse as any)?.hotelAvailability?.sharedHotelInventory;
+      const liveInventoryRows = Array.isArray(sharedHotelInventory)
+        ? sharedHotelInventory
+        : sharedHotelInventory && typeof sharedHotelInventory === 'object'
+          ? Object.values(sharedHotelInventory)
+          : (Array.isArray(liveResponse.hotels) ? liveResponse.hotels : []);
       const currentDatedLiveRows = this.normalizeRowsToCurrentRouteDates(
         liveInventoryRows,
         routes,
@@ -863,8 +866,23 @@ export class HotelAvailabilitySnapshotService {
       // inventory snapshot. Live rows win automatically; offline rows are used
       // only for a stay where no live selectable row exists.
       const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
+      const offlineRowsFromLive = new Map<number, any[]>();
+      for (const row of (liveInventoryRows as any[])) {
+        if (String(row?.provider || row?.hotel_provider || '').trim().toLowerCase() !== 'offline') continue;
+        const routeId = Number(row?.itineraryRouteId || row?.routeId || row?.route_id || 0);
+        if (routeId <= 0) continue;
+        const rowsForRoute = offlineRowsFromLive.get(routeId) || [];
+        rowsForRoute.push(row);
+        offlineRowsFromLive.set(routeId, rowsForRoute);
+      }
+      const reusedOfflineByRoute = (liveResponse as any).__offlineHotelsByRoute as Map<number, any[]> | undefined;
+        // The shared inventory is already the exact offline result produced by
+        // the supplier service. Use it as a fallback hand-off even if a DTO or
+        // interceptor cloned away the non-enumerable internal map.
+      const offlineByRouteFromResponse = reusedOfflineByRoute ||
+        (offlineRowsFromLive.size > 0 ? offlineRowsFromLive : undefined);
       const offlineFetchStartedAt = Date.now();
-      const offlineByRoute = await this.offlineHotelCatalog.fetchOfflineHotelsForRoutes(
+      const offlineByRoute = offlineByRouteFromResponse || await this.offlineHotelCatalog.fetchOfflineHotelsForRoutes(
         routes,
         noOfNights,
         String((plan as any).guest_nationality || 'IN').trim().toUpperCase() || 'IN',
@@ -880,7 +898,11 @@ export class HotelAvailabilitySnapshotService {
           childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
         },
       );
-      logStage('offline-fetch-in-reset-coordinator', offlineFetchStartedAt);
+      if (offlineByRouteFromResponse) {
+        logStage('offline-fetch-reused-from-supplier-search', offlineFetchStartedAt);
+      } else {
+        logStage('offline-fetch-in-reset-coordinator', offlineFetchStartedAt);
+      }
       const recommendationGroupTypes = await this.getRecommendationGroupTypes(plan.itinerary_plan_ID, [], sourceRows);
       const offlineRows = this.materializeOfflineRows(offlineByRoute, routes, recommendationGroupTypes);
       // Apply the same route-date authority to every provider, including the

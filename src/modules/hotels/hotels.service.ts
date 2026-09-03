@@ -16,6 +16,7 @@ import {
   resolveCityNameById,
   resolveCityRecordByName,
 } from '../itineraries/utils/city-normalization.util';
+import { ReferenceDataCacheService } from '../../common/cache/reference-data-cache.service';
 
 const PRICEBOOK_OCCUPANCY_KEYS = [
   'SINGLE',
@@ -42,7 +43,7 @@ const PRICEBOOK_OCCUPANCY_KEYS = [
 
 @Injectable()
 export class HotelsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private readonly referenceCache?: ReferenceDataCacheService) {}
 
   private readonly basicInfoRequiredKeys = [
     'hotel_name',
@@ -1066,13 +1067,15 @@ export class HotelsService {
 
     const hotel = await this.prisma.dvi_hotel.create({ data } as any);
     const axisroomsPropertyId = `AX_DVI_HOTEL_${(hotel as any).hotel_id}`;
-    return this.prisma.dvi_hotel.update({
+    const result = await this.prisma.dvi_hotel.update({
       where: { hotel_id: (hotel as any).hotel_id },
       data: {
         axisrooms_property_id: axisroomsPropertyId,
         axisrooms_enabled: 1,
       } as any,
     });
+    await this.referenceCache?.invalidate();
+    return result;
   }
 
   async update(hotel_id: number, dto: UpdateHotelDto) {
@@ -1117,19 +1120,23 @@ export class HotelsService {
     const data = incoming;
     if ((data as any).deleted !== undefined) delete (data as any).deleted;
 
-    return this.prisma.dvi_hotel.update({
+    const result = await this.prisma.dvi_hotel.update({
       where: { hotel_id: id },
       data: data as any,
     });
+    await this.referenceCache?.invalidate();
+    return result;
   }
 
-  remove(hotel_id: number) {
+  async remove(hotel_id: number) {
     const id = Number(hotel_id);
     if (!Number.isFinite(id) || id <= 0) throw new Error('Invalid hotel_id');
-    return this.prisma.dvi_hotel.update({
+    const result = await this.prisma.dvi_hotel.update({
       where: { hotel_id: id },
       data: { deleted: true } as any,
     });
+    await this.referenceCache?.invalidate();
+    return result;
   }
 
  // =====================================================================================
@@ -1569,7 +1576,7 @@ export class HotelsService {
   }
 
  // >>> createdby default to 1, plus timestamps on create
-  addRoom(dto: CreateRoomDto) {
+  async addRoom(dto: CreateRoomDto) {
     const data = this.mapRoomDto(dto);
     if (data.hotel_id === undefined) {
       throw new Error('hotel_id is required to create a room');
@@ -1584,10 +1591,12 @@ export class HotelsService {
     if (data.createdon === undefined) data.createdon = now;
     if (data.updatedon === undefined) data.updatedon = now;
 
-    return this.prisma.dvi_hotel_rooms.create({
+    const result = await this.prisma.dvi_hotel_rooms.create({
       data: data as any,
       select: { room_ID: true, hotel_id: true } as any,
     });
+    await this.referenceCache?.invalidate();
+    return result;
   }
 
   async updateRoom(dto: Partial<CreateRoomDto> & { room_id?: number; room_ID?: number; hotel_id: number }) {
@@ -1611,11 +1620,13 @@ export class HotelsService {
  // always touch updatedon
     (data as any).updatedon = new Date();
 
-    return this.prisma.dvi_hotel_rooms.update({
+    const result = await this.prisma.dvi_hotel_rooms.update({
       where: { room_ID: Number(roomId) } as any,
       data: data as any,
       select: { room_ID: true } as any,
     });
+    await this.referenceCache?.invalidate();
+    return result;
   }
 
   async removeRoom(hotel_id: number, room_id: number) {
@@ -1686,6 +1697,7 @@ export class HotelsService {
       }),
     ]);
 
+    await this.referenceCache?.invalidate();
     return {
       success: true,
       room_ID: roomId,
@@ -2982,6 +2994,7 @@ export class HotelsService {
       axisroomsSyncedCount++;
     }
 
+    await this.referenceCache?.invalidate();
     return {
       success: true,
       axisroomsSync: {

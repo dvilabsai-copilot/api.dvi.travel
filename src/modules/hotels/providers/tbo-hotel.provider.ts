@@ -22,6 +22,7 @@ import {
   getNormalizedMealPlanLabelFromMealText,
 } from '../hotel-rate-plans';
 import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
+import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
@@ -73,7 +74,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
   /** Persist raw supplier responses for traceability; never include auth headers. */
   private async persistRawSearchResponse(metadata: Record<string, unknown>, responseData: unknown): Promise<void> {
-    const enabled = String(process.env.TBO_RAW_RESPONSE_LOG || 'true').trim().toLowerCase() !== 'false';
+    const enabled = String(process.env.TBO_RAW_RESPONSE_LOG || 'false').trim().toLowerCase() === 'true';
     if (!enabled) return;
 
     try {
@@ -96,6 +97,7 @@ export class TBOHotelProvider implements IHotelProvider {
   constructor(
     private readonly prisma: PrismaService,
     private readonly supplementNormalizer: SupplementNormalizerService,
+    private readonly referenceCache?: ReferenceDataCacheService,
   ) {
     if (!prisma) {
  this.logger.error(' PrismaService is NULL/UNDEFINED!');
@@ -1586,6 +1588,9 @@ export class TBOHotelProvider implements IHotelProvider {
     try {
       this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
       const candidateLimit = this.getHotelCandidateLimit();
+      const cacheKey = `tbo-master:${tboCityCode}:${candidateLimit}`;
+      const cachedCodes = await this.referenceCache?.get<string>(cacheKey);
+      if (cachedCodes !== null && cachedCodes !== undefined) return cachedCodes;
 
       if (!this.prisma) {
  this.logger.error(` CRITICAL: PrismaService is NULL/UNDEFINED`);
@@ -1666,6 +1671,7 @@ export class TBOHotelProvider implements IHotelProvider {
         ` PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master (candidate limit ${candidateLimit}; no percentage mix)`,
       );
 
+      await this.referenceCache?.set(cacheKey, hotelCodes);
       return hotelCodes;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);

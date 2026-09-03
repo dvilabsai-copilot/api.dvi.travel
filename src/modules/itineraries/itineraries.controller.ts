@@ -96,6 +96,20 @@ import { ItineraryAccessService } from './services/itinerary-access.service';
 export class ItinerariesController {
   private logger = new Logger('ItinerariesController');
 
+  private memorySnapshot() {
+    if (!['1', 'true', 'yes', 'on'].includes(String(process.env.PERF_MEMORY_LOG || '').trim().toLowerCase())) {
+      return undefined;
+    }
+
+    const memory = process.memoryUsage();
+    return {
+      rssMb: Math.round((memory.rss / 1024 / 1024) * 100) / 100,
+      heapUsedMb: Math.round((memory.heapUsed / 1024 / 1024) * 100) / 100,
+      heapTotalMb: Math.round((memory.heapTotal / 1024 / 1024) * 100) / 100,
+      externalMb: Math.round((memory.external / 1024 / 1024) * 100) / 100,
+    };
+  }
+
   constructor(
     private readonly svc: ItinerariesService,
     private readonly detailsService: ItineraryDetailsService,
@@ -425,10 +439,32 @@ private readonly itineraryAccessService: ItineraryAccessService,
     @Query('type') type?: string,
     @Req() req?: Request,
   ) {
- // Check if route optimization is requested
+    const startedAt = Date.now();
+    // Check if route optimization is requested
     const shouldOptimizeRoute = type === 'itineary_basic_info_with_optimized_route';
     const routeCount = Array.isArray((dto as any)?.routes) ? (dto as any).routes.length : 0;
-    return this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
+    this.logger.log(`[ITINERARY_CREATE_TIMING] start ${JSON.stringify({
+      routeCount,
+      type: type || null,
+      memory: this.memorySnapshot(),
+    })}`);
+    try {
+      const result = await this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
+      this.logger.log(`[ITINERARY_CREATE_TIMING] response ${JSON.stringify({
+        planId: (result as any)?.planId || null,
+        quoteId: (result as any)?.quoteId || null,
+        durationMs: Date.now() - startedAt,
+        memory: this.memorySnapshot(),
+      })}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`[ITINERARY_CREATE_TIMING] failed ${JSON.stringify({
+        durationMs: Date.now() - startedAt,
+        message: String((error as any)?.message || error),
+        memory: this.memorySnapshot(),
+      })}`);
+      throw error;
+    }
   }
 
   @Post('route-family/sync-selection')
@@ -694,6 +730,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
     @Body() body: { reconciliation?: boolean; reset?: boolean },
     @Req() req: any,
   ) {
+    const startedAt = Date.now();
     const reconciliationEnabled = ['1', 'true', 'yes'].includes(
       String(process.env.HOTEL_RECONCILE || '').trim().toLowerCase(),
     );
@@ -705,15 +742,25 @@ private readonly itineraryAccessService: ItineraryAccessService,
       reset,
       reconciliationEnabled && !reset && body?.reconciliation === true,
     );
+    this.logger.log(`[HOTEL_CHECK_TIMING] search-and-persist ${JSON.stringify({
+      quoteId,
+      durationMs: Date.now() - startedAt,
+    })}`);
+    const detailsStartedAt = Date.now();
     const itinerary = await this.detailsService.getItineraryDetails(
       quoteId,
       undefined,
       req.user?.role,
     );
+    this.logger.log(`[HOTEL_CHECK_TIMING] details ${JSON.stringify({
+      quoteId,
+      durationMs: Date.now() - detailsStartedAt,
+      totalElapsedMs: Date.now() - startedAt,
+    })}`);
     // Reset already has the complete persisted snapshot in result.response.
     // Return it directly so the client does not issue a second /persisted
     // request just to restore inventory and rate options for the hotel pane.
-    return {
+    const response = {
       hotelDetails: result.response,
       changeSummary: result.changeSummary,
       previewId: result.previewId,
@@ -723,6 +770,12 @@ private readonly itineraryAccessService: ItineraryAccessService,
         costBreakdown: itinerary?.costBreakdown ?? null,
       },
     };
+    this.logger.log(`[HOTEL_CHECK_TIMING] response-ready ${JSON.stringify({
+      quoteId,
+      durationMs: Date.now() - startedAt,
+      responseBytesEstimate: Buffer.byteLength(JSON.stringify(response), 'utf8'),
+    })}`);
+    return response;
   }
 
   @Post('hotel_details/:quoteId/acknowledge-changes')
