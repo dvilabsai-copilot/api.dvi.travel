@@ -422,55 +422,52 @@ async optimizeRouteOrder(routes: any[], plan?: any): Promise<any[]> {
   }
 
   private validateOptimizationInputs(
-    context: RouteOptimizationContext,
-  ): {
-    isValid: boolean;
-    reason?: string;
-  } {
-    if (!context.start || !context.end) {
-      return {
-        isValid: false,
-        reason: 'missing-start-or-end',
-      };
-    }
-
-    const seen = new Set<string>();
-
-    for (
-      const stop of context.movableStops
-    ) {
-      if (
-        !stop.name ||
-        !stop.normalizedName
-      ) {
-        return {
-          isValid: false,
-          reason: 'empty-movable-stop',
-        };
-      }
-
-      // Do not reject a city only because it normalizes to the same value
-      // as its airport/station anchor. That case is handled safely by
-      // the normalization service.
-      if (
-        seen.has(stop.normalizedName)
-      ) {
-        return {
-          isValid: false,
-          reason: 'duplicate-movable-stop',
-        };
-      }
-
-      seen.add(
-        stop.normalizedName,
-      );
-    }
-
+  context: RouteOptimizationContext,
+): {
+  isValid: boolean;
+  reason?: string;
+} {
+  if (
+    !context.start ||
+    !context.end
+  ) {
     return {
-      isValid: true,
+      isValid: false,
+      reason:
+        'missing-start-or-end',
     };
   }
 
+  for (
+    const stop of
+      context.movableStops
+  ) {
+    if (
+      !stop.name ||
+      !stop.normalizedName
+    ) {
+      return {
+        isValid: false,
+        reason:
+          'empty-movable-stop',
+      };
+    }
+  }
+
+  /*
+   * Repeated movable locations are valid.
+   *
+   * Example:
+   * A -> B -> C -> B -> D
+   *
+   * Both B occurrences must participate in optimization.
+   * Candidate integrity is already protected later by
+   * hasSameLocationMultiset().
+   */
+  return {
+    isValid: true,
+  };
+}
   private logOptimizationSummary(
   context: RouteOptimizationContext,
   log: (msg: string) => void,
