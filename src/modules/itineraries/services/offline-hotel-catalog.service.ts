@@ -5,6 +5,7 @@ import { HotelSearchResult, RoomType } from '../../hotels/interfaces/hotel-provi
 import { inferCanonicalHotelRatePlanCode } from '../../hotels/hotel-rate-plans';
 import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
 import { normalizeHotelDisplayName } from '../utils/hotel-selection-identity.util';
+import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
 
 type StayBlock = {
   destination: string;
@@ -201,6 +202,7 @@ export class OfflineHotelCatalogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hotelPricingService: HotelPricingService,
+    private readonly referenceCache?: ReferenceDataCacheService,
   ) {}
 
   async searchOfflineHotels(criteria: {
@@ -641,6 +643,9 @@ export class OfflineHotelCatalogService {
       const cityCandidates = cityCandidatesByDestination.get(block.destination) || [];
       if (cityCandidates.length === 0) return [cacheKey, [] as any[]] as const;
 
+      const cached = await this.referenceCache?.get<any[]>(`dvi-hotel:${cacheKey}`);
+      if (cached) return [cacheKey, cached] as const;
+
       const hotels = await this.prisma.dvi_hotel.findMany({
         where: {
           status: 1,
@@ -666,6 +671,7 @@ export class OfflineHotelCatalogService {
           hotel_cancel_policy: true,
         },
       });
+      await this.referenceCache?.set(`dvi-hotel:${cacheKey}`, hotels);
       return [cacheKey, hotels as any[]] as const;
     }));
 
@@ -683,6 +689,17 @@ export class OfflineHotelCatalogService {
         ratePlansByRoom: new Map(),
         activeRoomTypeIds: new Set(),
         occupancyRatesByRoomPlan: new Map(),
+      };
+    }
+
+    const catalogCacheKey = `catalog:${hotelIds.sort((a, b) => a - b).join(',')}:${requestedDates.slice().sort().join(',')}`;
+    const cachedCatalog = await this.referenceCache?.get<any>(catalogCacheKey);
+    if (cachedCatalog) {
+      return {
+        roomsByHotel: new Map(cachedCatalog.roomsByHotel || []),
+        ratePlansByRoom: new Map(cachedCatalog.ratePlansByRoom || []),
+        activeRoomTypeIds: new Set(cachedCatalog.activeRoomTypeIds || []),
+        occupancyRatesByRoomPlan: new Map(cachedCatalog.occupancyRatesByRoomPlan || []),
       };
     }
 
@@ -801,7 +818,14 @@ export class OfflineHotelCatalogService {
       }
     }
 
-    return { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan };
+    const result = { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan };
+    await this.referenceCache?.set(catalogCacheKey, {
+      roomsByHotel: Array.from(roomsByHotel.entries()),
+      ratePlansByRoom: Array.from(ratePlansByRoom.entries()),
+      activeRoomTypeIds: Array.from(activeRoomTypeIds),
+      occupancyRatesByRoomPlan: Array.from(occupancyRatesByRoomPlan.entries()),
+    });
+    return result;
   }
 
   clearCache(): void {

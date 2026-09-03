@@ -1757,6 +1757,10 @@ this.logger.log(
     }
 
     const restrictedHotelsByRoute = new Map<number, HotelSearchResult[]>();
+    // Internal request hand-off to the snapshot coordinator. This is
+    // deliberately non-serializable so the public response contract does not
+    // grow with a second copy of the offline catalog.
+    let offlineHotelsByRouteForSnapshot: Map<number, HotelSearchResult[]> | undefined;
     const fetchMode = this.resolveHotelFetchMode();
     let hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
@@ -1789,6 +1793,7 @@ this.logger.log(
             childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
           },
         );
+        offlineHotelsByRouteForSnapshot = offlineHotelsByRoute;
         offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
           hotelsByRoute.set(routeId, [...existingHotels, ...offlineHotels]);
@@ -1867,6 +1872,7 @@ this.logger.log(
               childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
             },
           ));
+          offlineHotelsByRouteForSnapshot = offlineHotelsByRoute;
           offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
             const existingHotels = hotelsByRoute.get(routeId) || [];
             const hotelKeys = new Set(
@@ -1903,21 +1909,22 @@ this.logger.log(
 
  // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
  this.logger.log(`\n STEP 3.6: Starting ResAvenue hotel fetch for ${routes.length} routes...`);
-        let resavenueHotelsByRoute = new Map<number, HotelSearchResult[]>();
-        try {
-          resavenueHotelsByRoute = await measureStage('resavenue-search', () => this.fetchResavenueHotelsForRoutes(
-            routes,
-            noOfNights,
-            guestNationality,
-            planRoomCount,
-            planAdultCount,
-            planChildCount,
-          ));
-        } catch (error) {
+        const resavenuePromise = measureStage('resavenue-search', () => this.fetchResavenueHotelsForRoutes(
+          routes, noOfNights, guestNationality, planRoomCount, planAdultCount, planChildCount,
+        )).catch((error) => {
           this.logger.warn(
             `[RESAVENUE] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
           );
-        }
+          return new Map<number, HotelSearchResult[]>();
+        });
+        // ResAvenue and the saved meal-plan lookup have no dependency on one
+        // another. Start both before merging so a slow optional provider does
+        // not delay the local-provider phase unnecessarily.
+        const savedMealPlansPromise = measureStage('saved-meal-plan-load', () => this.loadSavedMealPlansPerRoute(planId, routes));
+        const [resavenueHotelsByRoute, savedMealPlansByRoute] = await Promise.all([
+          resavenuePromise,
+          savedMealPlansPromise,
+        ]);
 
  // Debug: Check what ResAvenue returned
         let totalResavenueHotels = 0;
@@ -1948,10 +1955,31 @@ this.logger.log(
           hotelsByRoute.set(routeId, merged);
         });
 
- // Step 3.7: Load saved meal plans per route for AxisRooms filtering
-        const savedMealPlansByRoute = await measureStage('saved-meal-plan-load', () => this.loadSavedMealPlansPerRoute(planId, routes));
-
  // Step 3.8: Fetch AxisRooms-enabled hotels from local DB and merge with existing providers.
+        const staahPromise = (async () => {
+          try {
+            return await measureStage('staah-search', () => this.fetchStaahHotelsForRoutes(
+              routes,
+              noOfNights,
+              savedMealPlansByRoute,
+              preferredMealPlanCode,
+              true,
+              {
+                roomCount: planRoomCount,
+                adults: planAdultCount,
+                children: planChildCount,
+                extraBedCount: Number((plan as any).total_extra_bed || 0),
+                childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+                childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+              },
+            ));
+          } catch (error) {
+            this.logger.warn(
+              `[STAAH] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            return new Map<number, HotelSearchResult[]>();
+          }
+        })();
         let axisroomsHotelsByRoute = new Map<number, HotelSearchResult[]>();
         try {
           axisroomsHotelsByRoute = await measureStage('axisrooms-search', () => this.fetchAxisroomsHotelsForRoutes(
@@ -1985,28 +2013,7 @@ this.logger.log(
           hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
         });
 
-        let staahHotelsByRoute = new Map<number, HotelSearchResult[]>();
-        try {
-          staahHotelsByRoute = await measureStage('staah-search', () => this.fetchStaahHotelsForRoutes(
-            routes,
-            noOfNights,
-            savedMealPlansByRoute,
-            preferredMealPlanCode,
-            true,
-            {
-              roomCount: planRoomCount,
-              adults: planAdultCount,
-              children: planChildCount,
-              extraBedCount: Number((plan as any).total_extra_bed || 0),
-              childWithBedCount: Number((plan as any).total_child_with_bed || 0),
-              childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
-            },
-          ));
-        } catch (error) {
-          this.logger.warn(
-            `[STAAH] Optional provider search skipped: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
+        const staahHotelsByRoute = await staahPromise;
         staahHotelsByRoute.forEach((staahHotels, routeId) => {
           const existingHotels = hotelsByRoute.get(routeId) || [];
           const hotelStrs = existingHotels.map((h) =>
@@ -2170,8 +2177,15 @@ this.logger.log(
     const stageSummary = { quoteId, planId, totalDurationMs: duration, stageTimings };
     this.logger.log(`[HOTEL_AVAILABILITY_STAGE_SUMMARY] ${JSON.stringify(stageSummary)}`);
     HotelAvailabilityTimingLogger.log('HOTEL_AVAILABILITY_STAGE_SUMMARY', stageSummary);
- this.logger.log(` Generated ${packages.length} hotel packages`);
+    this.logger.log(` Generated ${packages.length} hotel packages`);
  this.logger.log(` Total TBO Service Time: ${duration}ms\n`);
+
+    if (offlineHotelsByRouteForSnapshot) {
+      Object.defineProperty(response, '__offlineHotelsByRoute', {
+        value: offlineHotelsByRouteForSnapshot,
+        enumerable: false,
+      });
+    }
 
     this.setCachedHotelDetails(quoteId, response);
 
@@ -2408,13 +2422,6 @@ this.logger.log(
 
     if (uniqueDestinations.length === 0) return cityCodeMap;
 
- // Load ALL cities from database in ONE query instead of per-route queries
-    const allCities = await this.prisma.dvi_cities.findMany({
-      select: { id: true, name: true, tbo_city_code: true, status: true },
-      orderBy: [{ status: 'desc' }, { id: 'asc' }],
-    });
- this.logger.log(` Loaded ${allCities.length} cities from database in single query`);
-
     // A route's next_visiting_location is often a landmark/point name rather
     // than a city (for example, "Chennai Koyembedu"). The saved route
     // location points to dvi_stored_locations, which already carries the
@@ -2441,6 +2448,42 @@ this.logger.log(
       const city = destinationCityByLocationId.get(String((route as any).location_id || ''));
       if (destination && city) destinationCityByName.set(destination, city);
     });
+
+    // Fetch only candidates for the destinations in this itinerary. Loading
+    // the complete city table here retained ~95k rows for every search.
+    const destinationLookupTerms = uniqueDestinations.flatMap((destination) => {
+      const rawDestination = String(destination || '').trim();
+      const firstPart = rawDestination.split(/[,\(\-]/)[0].trim();
+      const normalizedToken = this.normalizeCityToken(rawDestination);
+      const aliasTokens = cityAliases[normalizedToken] || [];
+      const mappedDestinationCity = destinationCityByName.get(rawDestination);
+      return [
+        mappedDestinationCity,
+        normalizedToken,
+        ...aliasTokens,
+        rawDestination,
+        firstPart,
+      ].filter(Boolean);
+    });
+    const exactLookupTerms = Array.from(new Set(destinationLookupTerms.map((term) => String(term).trim()).filter(Boolean)));
+    const prefixLookupTerms = Array.from(new Set(
+      exactLookupTerms
+        .map((term) => term.split(/[,\(\-]/)[0].trim())
+        .filter(Boolean),
+    ));
+    const allCities = exactLookupTerms.length > 0
+      ? await this.prisma.dvi_cities.findMany({
+        where: {
+          OR: [
+            ...exactLookupTerms.map((name) => ({ name: { equals: name } })),
+            ...prefixLookupTerms.map((name) => ({ name: { startsWith: name } })),
+          ],
+        },
+        select: { id: true, name: true, tbo_city_code: true, status: true },
+        orderBy: [{ status: 'desc' }, { id: 'asc' }],
+      })
+      : [];
+ this.logger.log(` Loaded ${allCities.length} candidate cities for ${uniqueDestinations.length} destinations`);
 
  // Build a map for fast lookup
     const cityNameMap: Record<string, string> = {};
@@ -2523,10 +2566,23 @@ this.logger.log(
  this.logger.log(` Loading HOBSE city codes for ${uniqueDestinations.length} unique destinations`);
       if (uniqueDestinations.length === 0) return cityCodeMap;
 
-      const allCities = await this.prisma.dvi_cities.findMany({
-        select: { name: true, hobse_city_code: true } as any,
-      });
- this.logger.log(` Loaded ${allCities.length} cities for HOBSE code lookup`);
+      const lookupTerms = Array.from(new Set(uniqueDestinations.flatMap((destination) => {
+        const rawDestination = String(destination || '').trim();
+        const firstPart = rawDestination.split(/[,\(\-]/)[0].trim();
+        return [rawDestination, firstPart].filter(Boolean);
+      })));
+      const allCities = lookupTerms.length > 0
+        ? await this.prisma.dvi_cities.findMany({
+          where: {
+            OR: [
+              ...lookupTerms.map((name) => ({ name: { equals: name } })),
+              ...lookupTerms.map((name) => ({ name: { startsWith: name } })),
+            ],
+          },
+          select: { name: true, hobse_city_code: true } as any,
+        })
+        : [];
+ this.logger.log(` Loaded ${allCities.length} candidate cities for HOBSE code lookup`);
 
       const cityNameMap: Record<string, string> = {};
       const cityPrefixMap: Record<string, string> = {};

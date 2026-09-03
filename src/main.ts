@@ -23,6 +23,7 @@ import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serial
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ensureUniqueOpenApiOperationIds } from './common/swagger/normalize-openapi';
 import * as express from 'express';
+import compression from 'compression';
 
 function resolveBackendRoot(): string {
  // Works for both src/main.ts (dev) and dist/main.js (prod).
@@ -48,6 +49,11 @@ try {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
+
+  // Compress large availability responses without changing their JSON shape.
+  // Browsers and Postman negotiate gzip automatically; small responses are
+  // left alone by the threshold.
+  app.use(compression({ threshold: 1024 }));
 
  // Allow large STAAH ARI inventory/rate/restriction payloads.
  // Default Express JSON limit is too small for multi-date ARI pushes.

@@ -36,6 +36,12 @@ import { timeStringToPrismaTime } from "../utils/itinerary.utils";
 
 type Tx = Prisma.TransactionClient;
 
+type ResolvedRouteLocation = {
+  locationId: bigint;
+  distanceKm: string;
+  travelSeconds: number | null;
+};
+
 type PermitLocationChainArgs = {
   routeCount: number;
   totalRoutes: number;
@@ -97,6 +103,141 @@ private normalizeKmValue(value: unknown): string {
 
   return numeric.toFixed(2);
 }
+
+  private normalizeRouteLookupText(value: unknown): string {
+    return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  private normalizeRouteLookupCity(value: string): string {
+    const normalized = normalizeCityName(value);
+    if (normalized) return this.normalizeRouteLookupText(normalized);
+
+    return this.normalizeRouteLookupText(value)
+      .replace(/\binternational\b/g, " ")
+      .replace(/\bdomestic\b/g, " ")
+      .replace(/\bair\s*port\b/g, " ")
+      .replace(/\bairport\b/g, " ")
+      .replace(/\brailway\b/g, " ")
+      .replace(/\bstation\b/g, " ")
+      .replace(/\bterminal\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private routePairLookupKey(sourceName: string, destName: string): string {
+    return `${this.normalizeRouteLookupText(sourceName)}\u0000${this.normalizeRouteLookupText(destName)}`;
+  }
+
+  private rowToResolvedRouteLocation(row: any): ResolvedRouteLocation {
+    const rawId = row?.location_ID ?? 0;
+    let locationId = BigInt(0);
+    try {
+      locationId = typeof rawId === "bigint"
+        ? rawId
+        : BigInt(typeof rawId === "number" ? Math.trunc(rawId) : String(rawId));
+    } catch {
+      locationId = BigInt(0);
+    }
+
+    return {
+      locationId,
+      distanceKm: this.normalizeKmValue(row?.distance),
+      travelSeconds: this.parseDurationToSeconds(row?.duration ?? null),
+    };
+  }
+
+  /**
+   * Resolve all exact route pairs with one query. The existing fuzzy resolver
+   * remains the fallback for pairs that have no exact/city match.
+   */
+  private async resolveExactRouteLocations(
+    tx: Tx,
+    pairs: Array<{ source: string; dest: string; requestedKm?: unknown }>,
+  ): Promise<Map<string, ResolvedRouteLocation>> {
+    const prepared = pairs
+      .map((pair) => {
+        const source = this.normalizeRouteLookupText(pair.source);
+        const dest = this.normalizeRouteLookupText(pair.dest);
+        if (!source || !dest) return null;
+        return {
+          key: this.routePairLookupKey(pair.source, pair.dest),
+          source,
+          dest,
+          sourceCity: this.normalizeRouteLookupCity(pair.source),
+          destCity: this.normalizeRouteLookupCity(pair.dest),
+          requestedKm: Number(this.normalizeKmValue(pair.requestedKm) || 0),
+        };
+      })
+      .filter((pair): pair is NonNullable<typeof pair> => Boolean(pair));
+
+    const unique = Array.from(new Map(prepared.map((pair) => [pair.key, pair])).values());
+    if (!unique.length) return new Map();
+
+    const pairPredicates: string[] = [];
+    const pairParams: string[] = [];
+    for (const pair of unique) {
+      pairPredicates.push(`(
+        (LOWER(TRIM(sl.source_location)) = ? AND LOWER(TRIM(sl.destination_location)) = ?)
+        OR (LOWER(TRIM(sl.source_location)) = ? AND LOWER(TRIM(sl.destination_location_city)) = ?)
+        OR (LOWER(TRIM(sl.source_location_city)) = ? AND LOWER(TRIM(sl.destination_location)) = ?)
+        OR (LOWER(TRIM(sl.source_location_city)) = ? AND LOWER(TRIM(sl.destination_location_city)) = ?)
+      )`);
+      pairParams.push(
+        pair.source, pair.dest,
+        pair.source, pair.destCity,
+        pair.sourceCity, pair.dest,
+        pair.sourceCity, pair.destCity,
+      );
+    }
+
+    const rows = (await (tx as any).$queryRawUnsafe(`
+      SELECT
+        sl.location_ID,
+        sl.source_location,
+        sl.source_location_city,
+        sl.destination_location,
+        sl.destination_location_city,
+        sl.distance,
+        sl.duration
+      FROM dvi_stored_locations sl
+      WHERE sl.deleted = 0
+        AND sl.status = 1
+        AND (${pairPredicates.join(" OR ")})
+    `, ...pairParams)) as any[];
+
+    const result = new Map<string, { row: any; rank: number; kmDiff: number }>();
+    for (const pair of unique) {
+      for (const row of rows) {
+        const source = this.normalizeRouteLookupText(row?.source_location);
+        const sourceCity = this.normalizeRouteLookupText(row?.source_location_city);
+        const dest = this.normalizeRouteLookupText(row?.destination_location);
+        const destCity = this.normalizeRouteLookupText(row?.destination_location_city);
+        let rank = 99;
+        if (source === pair.source && dest === pair.dest) rank = 0;
+        else if (source === pair.source && destCity === pair.destCity) rank = 1;
+        else if (sourceCity === pair.sourceCity && dest === pair.dest) rank = 2;
+        else if (sourceCity === pair.sourceCity && destCity === pair.destCity) rank = 3;
+        if (rank === 99) continue;
+
+        const distance = Number(this.normalizeKmValue(row?.distance) || 0);
+        const kmDiff = pair.requestedKm > 0 && distance > 0
+          ? Math.abs(distance - pair.requestedKm)
+          : 999999;
+        const current = result.get(pair.key);
+        if (!current || rank < current.rank ||
+            (rank === current.rank && kmDiff < current.kmDiff) ||
+            (rank === current.rank && kmDiff === current.kmDiff &&
+              BigInt(row?.location_ID ?? 0) > BigInt(current.row?.location_ID ?? 0))) {
+          result.set(pair.key, { row, rank, kmDiff });
+        }
+      }
+    }
+
+    return new Map(Array.from(result.entries()).map(([key, value]) => [
+      key,
+      this.rowToResolvedRouteLocation(value.row),
+    ]));
+  }
 
  /**
    * Parse dvi_stored_locations.duration into seconds.
@@ -270,31 +411,10 @@ private normalizeKmValue(value: unknown): string {
       return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
     }
 
-    const normalizeText = (value: string) =>
-      value.replace(/\s+/g, " ").trim().toLowerCase();
-
-    const normalizeCityKey = (value: string) => {
-      const normalized = normalizeCityName(value);
-      if (normalized) {
-        return normalizeText(normalized);
-      }
-
-      return normalizeText(value)
-        .replace(/\binternational\b/g, " ")
-        .replace(/\bdomestic\b/g, " ")
-        .replace(/\bair\s*port\b/g, " ")
-        .replace(/\bairport\b/g, " ")
-        .replace(/\brailway\b/g, " ")
-        .replace(/\bstation\b/g, " ")
-        .replace(/\bterminal\b/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    };
-
-    const normalizedSource = normalizeText(trimmedSource);
-    const normalizedDest = normalizeText(trimmedDest);
-    const sourceCityKey = normalizeCityKey(trimmedSource);
-    const destCityKey = normalizeCityKey(trimmedDest);
+    const normalizedSource = this.normalizeRouteLookupText(trimmedSource);
+    const normalizedDest = this.normalizeRouteLookupText(trimmedDest);
+    const sourceCityKey = this.normalizeRouteLookupCity(trimmedSource);
+    const destCityKey = this.normalizeRouteLookupCity(trimmedDest);
     const requestedKmNumber = Number(this.normalizeKmValue(requestedKm as any) || 0);
     const hasRequestedKm = Number.isFinite(requestedKmNumber) && requestedKmNumber > 0;
 
@@ -626,6 +746,16 @@ private normalizeKmValue(value: unknown): string {
     });
 
     const created: any[] = [];
+    const resolutionCache = new Map<string, ResolvedRouteLocation>();
+    const exactResolutions = await this.resolveExactRouteLocations(
+      tx,
+      normalizedRoutes.map((route: any) => ({
+        source: String(route?.location_name ?? "").trim(),
+        dest: String(route?.next_visiting_location ?? "").trim(),
+        requestedKm: route?.no_of_km,
+      })),
+    );
+    const routeRowsToInsert: any[] = [];
  let dayOffset = 0; // PHP increments $no_of_days by 1 per leg.
 
     for (let idx = 0; idx < totalRoutes; idx++) {
@@ -638,12 +768,14 @@ private normalizeKmValue(value: unknown): string {
 
  // location_id from master stored locations table
 // no_of_km should prefer request payload value, with master distance as fallback
-  const { locationId, distanceKm, travelSeconds } = await this.resolveSourceLocationAndKm(
-  tx,
-  sourceName,
-  destName,
-  r.no_of_km,
-);
+  const pairKey = this.routePairLookupKey(sourceName, destName);
+  let resolved = resolutionCache.get(pairKey);
+  if (!resolved) {
+    resolved = exactResolutions.get(pairKey) ||
+      await this.resolveSourceLocationAndKm(tx, sourceName, destName, r.no_of_km);
+    resolutionCache.set(pairKey, resolved);
+  }
+  const { locationId, distanceKm, travelSeconds } = resolved;
 
 const requestKm = this.normalizeKmValue(r.no_of_km);
 const pairChanged = Boolean((r as any).__normalizedPairChanged);
@@ -746,21 +878,22 @@ const finalKm = pairChanged
       if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
  console.log('[ROUTE_PRISMA_DATA]', prismaData);
       }
-      const row = await (tx as any).dvi_itinerary_route_details.create({ data: prismaData });
-      if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
- console.log('[ROUTE_SAVE_RESULT]', {
-          itinerary_route_ID: row?.itinerary_route_ID,
-          no_of_days: row?.no_of_days,
-          location_name: row?.location_name,
-          next_visiting_location: row?.next_visiting_location,
-          no_of_km: row?.no_of_km,
-        });
-      }
-
-      created.push(row);
+      routeRowsToInsert.push(prismaData);
 
  // keep variable referenced (avoid lint complaints if reused later)
       void departureLocation;
+    }
+
+    if (routeRowsToInsert.length) {
+      await (tx as any).dvi_itinerary_route_details.createMany({ data: routeRowsToInsert });
+      const persisted = await (tx as any).dvi_itinerary_route_details.findMany({
+        where: { itinerary_plan_ID: planId },
+        orderBy: [{ itinerary_route_date: "asc" }, { itinerary_route_ID: "asc" }],
+      });
+      if (persisted.length !== routeRowsToInsert.length) {
+        throw new Error(`[ROUTE_BATCH_INSERT_MISMATCH] expected ${routeRowsToInsert.length}, got ${persisted.length}`);
+      }
+      created.push(...persisted);
     }
 
     return created;

@@ -1468,8 +1468,26 @@ private getGuideSlotLabel(slotId: number): string {
     shouldOptimizeRoute: boolean = false,
     requestType?: string,
   ) {
+    const timingStartedAt = Date.now();
+    let timingStepStartedAt = timingStartedAt;
+    const timingPlanId = Number((dto?.plan as any)?.itinerary_plan_id || 0) || null;
+    this.logItineraryApiTiming({
+      api: 'save_basic_info',
+      step: 'create-plan-start',
+      startedAt: timingStartedAt,
+      stepStartedAt: timingStepStartedAt,
+      planId: timingPlanId,
+    });
     const isNewPlan = Number((dto?.plan as any)?.itinerary_plan_id || 0) <= 0;
     const result = await this.planPersistenceService.createPlan(dto, req, shouldOptimizeRoute, requestType);
+    timingStepStartedAt = this.logItineraryApiTiming({
+      api: 'save_basic_info',
+      step: 'plan-persistence',
+      startedAt: timingStartedAt,
+      stepStartedAt: timingStepStartedAt,
+      planId: result?.planId,
+      quoteId: result?.quoteId,
+    });
     const hotelsRequired = Number((dto?.plan as any)?.itinerary_preference || 0) === 1 ||
       Number((dto?.plan as any)?.itinerary_preference || 0) === 3;
 
@@ -1546,6 +1564,14 @@ private getGuideSlotLabel(slotId: number): string {
     }
 
     if (!isNewPlan || !hotelsRequired || !result?.quoteId) {
+      this.logItineraryApiTiming({
+        api: 'save_basic_info',
+        step: 'create-plan-complete-no-hotel-search',
+        startedAt: timingStartedAt,
+        stepStartedAt: timingStepStartedAt,
+        planId: result?.planId,
+        quoteId: result?.quoteId,
+      });
       return { ...result, hotelSearch: { status: hotelsRequired ? 'NOT_REQUIRED' : 'NOT_REQUIRED' } };
     }
 
@@ -1557,6 +1583,22 @@ private getGuideSlotLabel(slotId: number): string {
         String(result.quoteId),
         Number(req?.user?.userId || 0),
       );
+      timingStepStartedAt = this.logItineraryApiTiming({
+        api: 'save_basic_info',
+        step: 'hotel-availability-reset',
+        startedAt: timingStartedAt,
+        stepStartedAt: timingStepStartedAt,
+        planId: result?.planId,
+        quoteId: result?.quoteId,
+      });
+      this.logItineraryApiTiming({
+        api: 'save_basic_info',
+        step: 'create-plan-complete',
+        startedAt: timingStartedAt,
+        stepStartedAt: timingStepStartedAt,
+        planId: result?.planId,
+        quoteId: result?.quoteId,
+      });
       return {
         ...result,
         hotelDetails: hotelSearch.response,
