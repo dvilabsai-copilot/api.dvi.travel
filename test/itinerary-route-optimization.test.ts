@@ -88,14 +88,17 @@ const result = await service.optimizeRouteOrder([
   {
     location_name: 'A',
     next_visiting_location: 'B',
+    itinerary_route_date: '2026-09-03',
   },
   {
     location_name: 'B',
     next_visiting_location: 'C',
+    itinerary_route_date: '2026-09-04',
   },
   {
     location_name: 'C',
     next_visiting_location: 'D',
+    itinerary_route_date: '2026-09-05',
   },
 ]);
 
@@ -325,6 +328,113 @@ test(
 
     assert.equal(
       laterPositionChanged,
+      true,
+    );
+  },
+);
+
+test(
+  'accepts legitimate repeated movable destinations',
+  () => {
+    const service =
+      new ItineraryRouteOptimizationService(
+        {} as any,
+        {} as any,
+      );
+
+    const validation =
+      (
+        service as any
+      ).validateOptimizationInputs({
+        start: 'A',
+
+        end: 'D',
+
+        movableStops: [
+          {
+            name: 'B',
+            normalizedName: 'b',
+          },
+          {
+            name: 'C',
+            normalizedName: 'c',
+          },
+          {
+            name: 'B',
+            normalizedName: 'b',
+          },
+        ],
+      });
+
+    assert.deepEqual(
+      validation,
+      {
+        isValid: true,
+      },
+    );
+  },
+);
+
+test(
+  'can move a unique middle city before between or after repeated destinations',
+  () => {
+    const service =
+      new ItineraryRouteOptimizationService(
+        {} as any,
+        {} as any,
+      );
+
+    const movable = [
+      'Pondicherry',
+      'Chennai',
+      'Pondicherry',
+    ];
+
+    const permutations =
+      (
+        service as any
+      ).generatePermutations_PHP(
+        movable,
+      );
+
+    const uniqueOrders =
+      new Set(
+        permutations.map(
+          (order: string[]) =>
+            order.join('>'),
+        ),
+      );
+
+    assert.equal(
+      uniqueOrders.has(
+        [
+          'Chennai',
+          'Pondicherry',
+          'Pondicherry',
+        ].join('>'),
+      ),
+      true,
+    );
+
+    assert.equal(
+      uniqueOrders.has(
+        [
+          'Pondicherry',
+          'Chennai',
+          'Pondicherry',
+        ].join('>'),
+      ),
+      true,
+    );
+
+    assert.equal(
+      uniqueOrders.has(
+        [
+          'Pondicherry',
+          'Pondicherry',
+          'Chennai',
+        ].join('>'),
+      ),
       true,
     );
   },
