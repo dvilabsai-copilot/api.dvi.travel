@@ -5253,25 +5253,25 @@ export class HotelAvailabilitySnapshotService {
         const itineraryCount = Number(planValue ?? 0);
         return Number.isFinite(itineraryCount) && itineraryCount > 0 ? itineraryCount : 0;
       };
-      const extraBedAmount = supplementAmount(
+      let extraBedAmount = supplementAmount(
         option.extraBedAmount ?? option.extra_bed_amount,
         option.extraBedCost ?? option.totalExtraBedCost ?? option.total_extra_bed_cost,
         supplementCount(option.extraBedCount ?? option.extra_bed_count, plan?.total_extra_bed),
         option.extraBedRate ?? option.extra_bed_rate,
       );
-      const childWithBedAmount = supplementAmount(
+      let childWithBedAmount = supplementAmount(
         option.childWithBedAmount ?? option.child_with_bed_amount,
         option.childWithBedCost ?? option.totalChildWithBedCost ?? option.total_childwith_bed_cost,
         supplementCount(option.childWithBedCount ?? option.child_with_bed_count, plan?.total_child_with_bed),
         option.childWithBedRate ?? option.child_with_bed_rate,
       );
-      const childWithoutBedAmount = supplementAmount(
+      let childWithoutBedAmount = supplementAmount(
         option.childWithoutBedAmount ?? option.child_without_bed_amount,
         option.childWithoutBedCost ?? option.totalChildWithoutBedCost ?? option.total_childwithout_bed_cost ?? option.extraChildAmount ?? option.extra_child_amount,
         supplementCount(option.childWithoutBedCount ?? option.child_without_bed_count, plan?.total_child_without_bed),
         option.childWithoutBedRate ?? option.child_without_bed_rate,
       );
-      const supplementTotal = Number((extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
+      let supplementTotal = Number((extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
       let marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
       let roomTaxAmount = provider === 'staah'
         ? Math.max(Number(option.totalHotelTaxAmount ?? option.taxAmount ?? 0), 0)
@@ -5352,6 +5352,36 @@ export class HotelAvailabilitySnapshotService {
         // Do not revive the legacy cached/base price when no rate exists.
         const axisBase = await this.resolveAxisRoomsBasePrice(tx, option, plan, roomCount);
         if (axisBase > 0) {
+          // A persisted/normalized option can retain a stale flattened
+          // supplement (for example 5,000) while the matching occupancy row
+          // in the authoritative nightly rates contains the current DB value
+          // (for example 1,500). Resolve each route's supplement from its
+          // matching nightly rate before writing the selection snapshot.
+          const routeDate = String(option.date || option.checkInDate || '').slice(0, 10);
+          const matchingNightlyRate = authoritativeNightlyRates.find((night: any) =>
+            String(night?.date || night?.itineraryRouteDate || '').slice(0, 10) === routeDate,
+          );
+          const readNightlyAmount = (rate: any, ...keys: string[]): number | null => {
+            if (!rate || !keys.some((key) => Object.prototype.hasOwnProperty.call(rate, key))) return null;
+            const value = keys.map((key) => Number(rate[key])).find((amount) => Number.isFinite(amount));
+            return value === undefined ? null : Math.max(value, 0);
+          };
+          const nightlyExtraBedAmount = readNightlyAmount(
+            matchingNightlyRate,
+            'extraBedAmount', 'extra_bed_amount', 'extraBedCost', 'total_extra_bed_cost',
+          );
+          const nightlyChildWithBedAmount = readNightlyAmount(
+            matchingNightlyRate,
+            'childWithBedAmount', 'child_with_bed_amount', 'childWithBedCost', 'total_childwith_bed_cost',
+          );
+          const nightlyChildWithoutBedAmount = readNightlyAmount(
+            matchingNightlyRate,
+            'childWithoutBedAmount', 'child_without_bed_amount', 'childWithoutBedCost', 'total_childwithout_bed_cost',
+          );
+          if (nightlyExtraBedAmount !== null) extraBedAmount = nightlyExtraBedAmount;
+          if (nightlyChildWithBedAmount !== null) childWithBedAmount = nightlyChildWithBedAmount;
+          if (nightlyChildWithoutBedAmount !== null) childWithoutBedAmount = nightlyChildWithoutBedAmount;
+          supplementTotal = Number((extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
           baseTotalPrice = axisBase;
           marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
           marginPercentage = Math.max(
