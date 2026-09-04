@@ -11,6 +11,8 @@ const cityRecords = [
   { id: 71090, name: 'Puducherry' },
   { id: 3659, name: 'Chennai' },
   { id: 2045, name: 'Thiruvananthapuram' },
+  { id: 1848, name: 'Alappuzha' },
+  { id: 70761, name: 'Alleppey' },
 ];
 
 function service() {
@@ -53,6 +55,14 @@ test('maps Chennai landmark route destinations to the canonical Chennai city', a
     const result = await candidates(destination);
     assert.ok(result.includes('3659'), destination);
     assert.ok(result.includes('Chennai'), destination);
+  }
+});
+
+test('normalizes Alleppey spellings to the Alappuzha city master', async () => {
+  for (const destination of ['Alleppey', 'Allepe', 'Alappuzha']) {
+    const result = await candidates(destination);
+    assert.ok(result.includes('1848'), destination);
+    assert.ok(result.includes('Alappuzha'), destination);
   }
 });
 

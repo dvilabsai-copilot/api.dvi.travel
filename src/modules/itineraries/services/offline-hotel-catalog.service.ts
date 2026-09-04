@@ -174,6 +174,12 @@ type OfflineCatalogRows = {
  * search, so an unverified landmark must not silently become a city.
  */
 const OFFLINE_DESTINATION_ALIASES: Record<string, string[]> = {
+  // Alleppey and Alappuzha are the same destination in the city master.
+  // Keep both the canonical name and the legacy Alleppey spelling so hotels
+  // stored under either city code remain discoverable.
+  alleppey: ['Alappuzha'],
+  allepe: ['Alappuzha'],
+  alappuzha: ['Alleppey'],
   bangalore: ['Bengaluru'],
   bengaluru: ['Bangalore'],
   cochin: ['Kochi'],
