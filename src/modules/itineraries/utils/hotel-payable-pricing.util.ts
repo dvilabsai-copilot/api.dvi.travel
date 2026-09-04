@@ -97,11 +97,19 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     option?.price,
     option?.pricePerNight,
   );
+  const provider = String(option?.provider || option?.hotel_provider || '').trim().toLowerCase();
+  const isCompleteFareProvider = provider === 'tbo' || provider === 'vsr';
+  const componentRoomTotal = positive(option?.totalRoomCost, option?.total_room_cost);
   const explicitBaseTotal = positive(
+    // Component-priced providers expose totalRoomCost as the room-only DB
+    // amount. Prefer it over a stale aggregate baseTotalPrice, which may
+    // already contain supplements or a previous payable total.
+    !isCompleteFareProvider ? componentRoomTotal : 0,
     option?.baseTotalPrice,
     option?.baseStayPrice,
     option?.baseHotelCost,
     option?.baseAmount,
+    isCompleteFareProvider ? componentRoomTotal : 0,
   );
   const roomCount = Math.max(
     Number(option?.total_no_of_rooms ?? option?.noOfRooms ?? option?.roomCount ?? 1),

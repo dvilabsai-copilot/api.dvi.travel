@@ -6667,7 +6667,7 @@ const hasRequiredVehicleSelection =
             selected.childWithoutBedAmount ?? selected.child_without_bed_amount ?? selected.childWithoutBedCost ??
             persistedRoute?.total_childwithout_bed_cost,
           );
-          const payable = readAmount(
+          const storedPayable = readAmount(
             selected.totalPrice ?? selected.totalStayPrice ?? selected.selectedTotalPrice ??
             selected.totalAmount ?? persistedRoute?.total_hotel_cost,
           );
@@ -6675,6 +6675,23 @@ const hasRequiredVehicleSelection =
             selected.hotelMarginAmount ?? selected.hotelMarginTotalAmount ?? selected.hotelMarginStayAmount,
           );
           const componentTotal = roomBase + extraBed + childWithBed + childWithoutBed;
+          const selectedProvider = String(selected.provider || persistedRoute?.hotel_provider || '').trim().toLowerCase();
+          const selectedMarginPercentage = readAmount(
+            selected.hotelMarginPercentage ?? selected.hotel_margin_percentage ??
+            persistedRoute?.hotel_margin_percentage,
+          );
+          const selectedTax = readAmount(
+            selected.totalHotelTaxAmount ?? selected.total_hotel_tax_amount ??
+            persistedRoute?.total_hotel_tax_amount,
+          );
+          const componentPricingIsAuthoritative =
+            !['tbo', 'vsr'].includes(selectedProvider) && componentTotal > 0;
+          const payable = componentPricingIsAuthoritative
+            ? Number((componentTotal +
+              (selectedMarginPercentage > 0
+                ? componentTotal * selectedMarginPercentage / 100
+                : storedMargin) + selectedTax).toFixed(2))
+            : storedPayable;
           // A selection snapshot can carry a stale margin or omit supplements.
           // When persisted route components are available, the payable amount
           // is authoritative and the margin is the balancing component.
