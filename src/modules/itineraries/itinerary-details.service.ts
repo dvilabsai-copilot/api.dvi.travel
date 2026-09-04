@@ -6650,21 +6650,47 @@ const hasRequiredVehicleSelection =
           const persistedRoute = (costHotelRows as any[]).find((row: any) =>
             Number(row?.itinerary_route_id ?? row?.itineraryRouteId ?? 0) === selectedRouteId,
           );
+          const selectedSnapshot = (() => {
+            const raw = selected.selectedPriceSnapshot ?? selected.selected_price_snapshot;
+            if (raw && typeof raw === 'object') return raw as Record<string, unknown>;
+            if (typeof raw === 'string' && raw.trim()) {
+              try {
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+              } catch {
+                return {};
+              }
+            }
+            return {};
+          })();
+          const firstPositiveAmount = (...values: unknown[]): number => {
+            for (const value of values) {
+              const amount = readAmount(value);
+              if (amount > 0) return amount;
+            }
+            return 0;
+          };
           const roomBase = readAmount(
             selected.totalRoomCost ?? selected.total_room_cost ??
             selected.baseTotalPrice ?? selected.base_total_price ??
             persistedRoute?.total_room_cost ?? selected.basePricePerNight,
           );
-          const extraBed = readAmount(
-            selected.extraBedAmount ?? selected.extra_bed_amount ?? selected.extraBedCost ??
+          const extraBed = firstPositiveAmount(
+            selected.extraBedAmount, selected.extra_bed_amount, selected.extraBedCost,
+            selectedSnapshot.extraBedAmount, selectedSnapshot.extra_bed_amount,
+            selectedSnapshot.extraBedCost, selectedSnapshot.total_extra_bed_cost,
             persistedRoute?.total_extra_bed_cost,
           );
-          const childWithBed = readAmount(
-            selected.childWithBedAmount ?? selected.child_with_bed_amount ?? selected.childWithBedCost ??
+          const childWithBed = firstPositiveAmount(
+            selected.childWithBedAmount, selected.child_with_bed_amount, selected.childWithBedCost,
+            selectedSnapshot.childWithBedAmount, selectedSnapshot.child_with_bed_amount,
+            selectedSnapshot.childWithBedCost, selectedSnapshot.total_childwith_bed_cost,
             persistedRoute?.total_childwith_bed_cost,
           );
-          const childWithoutBed = readAmount(
-            selected.childWithoutBedAmount ?? selected.child_without_bed_amount ?? selected.childWithoutBedCost ??
+          const childWithoutBed = firstPositiveAmount(
+            selected.childWithoutBedAmount, selected.child_without_bed_amount, selected.childWithoutBedCost,
+            selectedSnapshot.childWithoutBedAmount, selectedSnapshot.child_without_bed_amount,
+            selectedSnapshot.childWithoutBedCost, selectedSnapshot.total_childwithout_bed_cost,
             persistedRoute?.total_childwithout_bed_cost,
           );
           const storedPayable = readAmount(
@@ -6678,10 +6704,12 @@ const hasRequiredVehicleSelection =
           const selectedProvider = String(selected.provider || persistedRoute?.hotel_provider || '').trim().toLowerCase();
           const selectedMarginPercentage = readAmount(
             selected.hotelMarginPercentage ?? selected.hotel_margin_percentage ??
+            selectedSnapshot.hotelMarginPercentage ?? selectedSnapshot.hotel_margin_percentage ??
             persistedRoute?.hotel_margin_percentage,
           );
           const selectedTax = readAmount(
             selected.totalHotelTaxAmount ?? selected.total_hotel_tax_amount ??
+            selectedSnapshot.totalHotelTaxAmount ?? selectedSnapshot.total_hotel_tax_amount ??
             persistedRoute?.total_hotel_tax_amount,
           );
           const componentPricingIsAuthoritative =
