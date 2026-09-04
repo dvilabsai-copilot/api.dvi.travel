@@ -95,6 +95,30 @@ test('legacy persisted row exposes margin-inclusive payable total', () => {
     marginPercentage: 10,
   }).payableTotal, 3025);
 
+  const correctedComponentPricing = resolveStoredHotelPayablePricing({
+    storedTotal: 8774,
+    baseTotal: 3200 + 1500,
+    marginPercentage: 7,
+    taxAmount: 0,
+    preferCalculatedTotal: true,
+  });
+  assert.equal(correctedComponentPricing.marginAmount, 329);
+  assert.equal(correctedComponentPricing.payableTotal, 5029);
+
+  assert.equal(resolveStoredHotelPayablePricing({
+    storedTotal: 8774,
+    baseTotal: 4700,
+    marginPercentage: 7,
+    taxAmount: 245,
+    preferCalculatedTotal: true,
+  }).payableTotal, 5274);
+
+  assert.equal(resolveStoredHotelPayablePricing({
+    storedTotal: 8774,
+    baseTotal: 4700,
+    marginPercentage: 7,
+  }).payableTotal, 8774);
+
   const underProjected = projectHotelPayablePricing({
     basePricePerNight: 2750,
     baseTotalPrice: 2750,
