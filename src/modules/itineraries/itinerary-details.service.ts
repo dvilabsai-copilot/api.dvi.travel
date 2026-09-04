@@ -6663,6 +6663,13 @@ const hasRequiredVehicleSelection =
             }
             return {};
           })();
+          const selectedNightlyRates = Array.isArray(selectedSnapshot.nightlyRates)
+            ? selectedSnapshot.nightlyRates
+            : [];
+          const selectedNightlyRate = selectedNightlyRates.find((rate: any) =>
+            String(rate?.date || rate?.itineraryRouteDate || '').slice(0, 10) ===
+            String(selected.routeDate || selected.date || '').slice(0, 10),
+          ) || (selectedNightlyRates.length === 1 ? selectedNightlyRates[0] : null);
           const firstPositiveAmount = (...values: unknown[]): number => {
             for (const value of values) {
               const amount = readAmount(value);
@@ -6671,23 +6678,30 @@ const hasRequiredVehicleSelection =
             return 0;
           };
           const roomBase = readAmount(
+            selectedNightlyRate?.baseTotalPrice ?? selectedNightlyRate?.baseAmount ??
             selected.totalRoomCost ?? selected.total_room_cost ??
             selected.baseTotalPrice ?? selected.base_total_price ??
             persistedRoute?.total_room_cost ?? selected.basePricePerNight,
           );
           const extraBed = firstPositiveAmount(
+            selectedNightlyRate?.extraBedAmount, selectedNightlyRate?.extra_bed_amount,
+            selectedNightlyRate?.extraBedCost, selectedNightlyRate?.total_extra_bed_cost,
             selected.extraBedAmount, selected.extra_bed_amount, selected.extraBedCost,
             selectedSnapshot.extraBedAmount, selectedSnapshot.extra_bed_amount,
             selectedSnapshot.extraBedCost, selectedSnapshot.total_extra_bed_cost,
             persistedRoute?.total_extra_bed_cost,
           );
           const childWithBed = firstPositiveAmount(
+            selectedNightlyRate?.childWithBedAmount, selectedNightlyRate?.child_with_bed_amount,
+            selectedNightlyRate?.childWithBedCost, selectedNightlyRate?.total_childwith_bed_cost,
             selected.childWithBedAmount, selected.child_with_bed_amount, selected.childWithBedCost,
             selectedSnapshot.childWithBedAmount, selectedSnapshot.child_with_bed_amount,
             selectedSnapshot.childWithBedCost, selectedSnapshot.total_childwith_bed_cost,
             persistedRoute?.total_childwith_bed_cost,
           );
           const childWithoutBed = firstPositiveAmount(
+            selectedNightlyRate?.childWithoutBedAmount, selectedNightlyRate?.child_without_bed_amount,
+            selectedNightlyRate?.childWithoutBedCost, selectedNightlyRate?.total_childwithout_bed_cost,
             selected.childWithoutBedAmount, selected.child_without_bed_amount, selected.childWithoutBedCost,
             selectedSnapshot.childWithoutBedAmount, selectedSnapshot.child_without_bed_amount,
             selectedSnapshot.childWithoutBedCost, selectedSnapshot.total_childwithout_bed_cost,
