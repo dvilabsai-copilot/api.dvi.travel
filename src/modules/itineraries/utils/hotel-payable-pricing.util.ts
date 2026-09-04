@@ -17,6 +17,9 @@ export interface StoredHotelPayablePricingInput {
   baseTotal?: unknown;
   marginAmount?: unknown;
   marginPercentage?: unknown;
+  taxAmount?: unknown;
+  /** Use the persisted component breakdown as the source of truth. */
+  preferCalculatedTotal?: boolean;
 }
 
 export interface HotelRouteNightPayableInput {
@@ -49,7 +52,15 @@ export function resolveStoredHotelPayablePricing(input: StoredHotelPayablePricin
   const calculatedMargin = explicitMargin > 0
     ? explicitMargin
     : money((baseTotal * marginPercentage) / 100);
-  const payableTotal = Math.max(storedTotal, money(baseTotal + calculatedMargin));
+  const taxAmount = money(input.taxAmount);
+  const calculatedTotal = money(baseTotal + calculatedMargin + taxAmount);
+  // Component-priced providers must not retain a stale, larger selected total;
+  // that makes the displayed room/supplement breakdown disagree with the
+  // amount used in the itinerary total. Complete-fare providers continue to
+  // use the stored supplier total through the default legacy behavior.
+  const payableTotal = input.preferCalculatedTotal
+    ? calculatedTotal
+    : Math.max(storedTotal, calculatedTotal);
 
   return {
     baseTotal,

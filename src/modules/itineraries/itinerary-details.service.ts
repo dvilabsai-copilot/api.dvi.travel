@@ -6525,6 +6525,10 @@ const hasRequiredVehicleSelection =
             ? selectedSnapshotMarginAmount
             : Number(h.hotel_margin_rate || 0) * rowMultiplier,
           marginPercentage: selectedMarginPercentage,
+          taxAmount: Number(h.total_hotel_tax_amount || 0) * rowMultiplier,
+          preferCalculatedTotal:
+            !['tbo', 'vsr'].includes(String((h as any).hotel_provider || '').trim().toLowerCase()) &&
+            selectedBaseAmount > 0,
         });
         const selectedBase = selectedPricing.baseTotal > 0
           ? Math.max(selectedPricing.baseTotal - selectedSupplementAmount, 0)
