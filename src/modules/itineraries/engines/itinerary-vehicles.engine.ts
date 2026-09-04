@@ -1299,7 +1299,31 @@ const manualVendorCandidates = exactManualCandidate
         ),
       );
 
-      for (const vendorId of uniqueVendorIds) {
+      const activeVendorRows = uniqueVendorIds.length
+        ? await tx.dvi_vendor_details.findMany({
+            where: {
+              vendor_id: { in: uniqueVendorIds },
+              status: 1,
+              deleted: 0,
+            },
+            select: { vendor_id: true },
+          })
+        : [];
+      const activeVendorIdSet = new Set(
+        activeVendorRows
+          .map((row) => Number(row.vendor_id ?? 0))
+          .filter((id) => id > 0),
+      );
+
+      mappings = mappings.filter((map) =>
+        activeVendorIdSet.has(Number(map.vendor_id ?? 0)),
+      );
+
+      const activeUniqueVendorIds = uniqueVendorIds.filter((vendorId) =>
+        activeVendorIdSet.has(vendorId),
+      );
+
+      for (const vendorId of activeUniqueVendorIds) {
         const branchCityRows = await tx.dvi_vendor_branches.findMany({
           where: {
             vendor_id: vendorId,
@@ -1441,8 +1465,8 @@ const manualVendorCandidates = exactManualCandidate
           { where: vendorDetailsWhere },
         );
 
-        const vendorDetails = await tx.dvi_vendor_details.findUnique({
-          where: { vendor_id: vendorId },
+        const vendorDetails = await tx.dvi_vendor_details.findFirst({
+          where: vendorDetailsWhere,
           select: {
             vendor_margin: true,
             vendor_margin_gst_type: true,
@@ -1450,7 +1474,15 @@ const manualVendorCandidates = exactManualCandidate
           },
         });
 
-        const vendorMarginPercentage = Number(vendorDetails?.vendor_margin ?? 10);
+        if (!vendorDetails) {
+          appendSkippedReason(
+            planVehicleTypeId,
+            `vendor ${vendorId}: inactive or deleted vendor`,
+          );
+          continue;
+        }
+
+        const vendorMarginPercentage = Number(vendorDetails.vendor_margin ?? 10);
         const vendorMarginGstType = Number(vendorDetails?.vendor_margin_gst_type ?? 2);
         const vendorMarginGstPercentage = Number(vendorDetails?.vendor_margin_gst_percentage ?? 5);
 
@@ -1476,9 +1508,10 @@ const manualVendorCandidates = exactManualCandidate
           ...(masterVehicleTypeId ? [{ vehicle_type_id: masterVehicleTypeId }] : []),
           { vehicle_type_id: planVehicleTypeId },
         ];
-        const cityOr = eligibleOwnerCityValues.length
-          ? [{ owner_city: { in: eligibleOwnerCityValues } }]
-          : [];
+        const cityOr =
+          hasAnyStrictBranchForType && eligibleOwnerCityValues.length
+            ? [{ owner_city: { in: eligibleOwnerCityValues } }]
+            : [];
 
         const vehicleWhere: any = {
           vendor_id: vendorId,
