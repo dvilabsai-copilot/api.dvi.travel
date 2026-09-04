@@ -3840,11 +3840,12 @@ export class HotelAvailabilitySnapshotService {
         }));
       } else if (matched && Math.abs(displayPriceDelta) > 0.009) {
         if (!dryRun && persistPriceChanges) {
+          const pricedReplacement = await this.pricePendingSelectionOption(tx, selection, replacement);
           await tx.dvi_itinerary_plan_hotel_details.update({
             where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
-            data: this.buildSelectionUpdate(selection, replacement, origin, searchRunId),
+            data: this.buildSelectionUpdate(selection, pricedReplacement, origin, searchRunId),
           });
-          await this.syncSelectedRoom(tx, selection, replacement, createdBy);
+          await this.syncSelectedRoom(tx, selection, pricedReplacement, createdBy);
         } else if (!dryRun) {
           await this.stagePendingSelectionChange(
             tx, selection, replacement, origin, searchRunId, 'PRICE_CHANGED',
@@ -3859,7 +3860,14 @@ export class HotelAvailabilitySnapshotService {
         }));
       } else {
         const previousPersistedSnapshot = parseHotelSelectionSnapshot(selection) as any;
-        if (
+        if (!dryRun && persistPriceChanges) {
+          const pricedReplacement = await this.pricePendingSelectionOption(tx, selection, replacement);
+          await tx.dvi_itinerary_plan_hotel_details.update({
+            where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
+            data: this.buildSelectionUpdate(selection, pricedReplacement, origin, searchRunId),
+          });
+          await this.syncSelectedRoom(tx, selection, pricedReplacement, createdBy);
+        } else if (
           String(previousPersistedSnapshot?.availabilityStatus || '').toUpperCase() === 'UNAVAILABLE' ||
           previousPersistedSnapshot?.pendingAvailabilityChange
         ) {
