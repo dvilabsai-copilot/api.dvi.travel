@@ -721,7 +721,10 @@ export class HotelAvailabilitySnapshotService {
     const plan = await this.findPlan(quoteId);
     // Ordinary availability checks are read/compare operations. Only CREATE
     // and the explicit Reset flow may mutate saved auto-selections.
-    const shouldPersist = requestType !== 'CHECK_AVAILABILITY' || resetSelections;
+    // With reconciliation disabled, an explicit availability check is the
+    // normal refresh flow and must persist refreshed automatic selections.
+    // Reconciliation mode remains a read-only preview until acknowledgement.
+    const shouldPersist = requestType !== 'CHECK_AVAILABILITY' || resetSelections || !reconciliation;
     const lockName = `itinerary_hotel_availability:${plan.itinerary_plan_ID}`;
     const databaseUrl = String(process.env.DATABASE_URL || '').trim();
     if (shouldPersist && !databaseUrl) throw new Error('DATABASE_URL is required for hotel availability coordination');
@@ -1025,6 +1028,8 @@ export class HotelAvailabilitySnapshotService {
             this.getPlanMealPlanFlags(plan),
             failedProviders,
             routes,
+            false,
+            true,
           );
         }, { maxWait: 15000, timeout: 120000 });
       }
@@ -3615,6 +3620,7 @@ export class HotelAvailabilitySnapshotService {
     failedProviders: Set<string> = new Set(),
     routes: any[] = [],
     dryRun = false,
+    persistPriceChanges = false,
   ): Promise<HotelAvailabilityChangeSummary> {
     const changes: HotelAvailabilityChange[] = [];
     if (!dryRun) await this.removeStaleSelectionVersions(tx, planId);
@@ -3833,9 +3839,17 @@ export class HotelAvailabilitySnapshotService {
           requiresAcceptance: true,
         }));
       } else if (matched && Math.abs(displayPriceDelta) > 0.009) {
-        if (!dryRun) await this.stagePendingSelectionChange(
-          tx, selection, replacement, origin, searchRunId, 'PRICE_CHANGED',
-        );
+        if (!dryRun && persistPriceChanges) {
+          await tx.dvi_itinerary_plan_hotel_details.update({
+            where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
+            data: this.buildSelectionUpdate(selection, replacement, origin, searchRunId),
+          });
+          await this.syncSelectedRoom(tx, selection, replacement, createdBy);
+        } else if (!dryRun) {
+          await this.stagePendingSelectionChange(
+            tx, selection, replacement, origin, searchRunId, 'PRICE_CHANGED',
+          );
+        }
         changes.push(this.buildChange('PRICE_CHANGED', selection, replacement, {
           previous,
           current: next,
