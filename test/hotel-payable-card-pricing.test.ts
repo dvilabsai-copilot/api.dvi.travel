@@ -119,6 +119,19 @@ test('legacy persisted row exposes margin-inclusive payable total', () => {
     marginPercentage: 7,
   }).payableTotal, 8774);
 
+  const staleComponentOption = projectHotelPayablePricing({
+    provider: 'axisrooms',
+    baseTotalPrice: 8200,
+    totalRoomCost: 3200,
+    extraBedCount: 1,
+    extraBedRate: 1500,
+    extraBedAmount: 1500,
+    totalPrice: 8774,
+  }, 7);
+  assert.equal(staleComponentOption.baseTotalPrice, 3200);
+  assert.equal(staleComponentOption.hotelMarginBaseAmount, 4700);
+  assert.equal(staleComponentOption.totalPrice, 5029);
+
   const underProjected = projectHotelPayablePricing({
     basePricePerNight: 2750,
     baseTotalPrice: 2750,
