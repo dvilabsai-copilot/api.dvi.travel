@@ -656,6 +656,16 @@ export class OfflineHotelCatalogService {
         where: {
           status: 1,
           deleted: false,
+          // Provider-mapped masters belong to live provider searches. Do not
+          // load the same property again as an offline catalogue option.
+          // Offline inventory is a master with no live provider mapping:
+          // AxisRooms/STAAH flags are off and ResAvenue/TBO codes are empty.
+          axisrooms_enabled: 0,
+          staah_enabled: 0,
+          AND: [
+            { OR: [{ resavenue_hotel_code: null }, { resavenue_hotel_code: '' }] },
+            { OR: [{ tbo_hotel_code: null }, { tbo_hotel_code: '' }] },
+          ],
           OR: [
             { hotel_city: { in: cityCandidates } },
             { hotel_state: { in: cityCandidates } },
@@ -671,6 +681,10 @@ export class OfflineHotelCatalogService {
           hotel_latitude: true,
           hotel_longitude: true,
           hotel_category: true,
+          axisrooms_enabled: true,
+          staah_enabled: true,
+          resavenue_hotel_code: true,
+          tbo_hotel_code: true,
           hotel_margin: true,
           hotel_margin_gst_type: true,
           hotel_margin_gst_percentage: true,
