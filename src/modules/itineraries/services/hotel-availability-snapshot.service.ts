@@ -394,11 +394,27 @@ export class HotelAvailabilitySnapshotService {
     // and return only one route/group page, so the browser never has to
     // download the full supplier payload again.
     const availability = (sanitized as any).hotelAvailability || {};
-    const inventory = Array.isArray(availability.sharedHotelInventory)
-      ? availability.sharedHotelInventory
-      : [];
     const requestedGroupType = Number(options.groupType || 0);
     const requestedRouteId = Number(options.itineraryRouteId || 0);
+    let inventory = Array.isArray(availability.sharedHotelInventory)
+      ? availability.sharedHotelInventory
+      : [];
+    if (inventory.length === 0) {
+      const cacheModel = (this.prisma as any).dvi_itinerary_hotel_search_cache;
+      const cachedRows = await cacheModel?.findMany?.({
+        where: {
+          quote_id: String(quoteId).trim(),
+          plan_id: Number(plan?.itinerary_plan_ID || 0),
+          status: 1,
+          deleted: 0,
+          ...(requestedRouteId ? { route_id: requestedRouteId } : {}),
+        },
+        orderBy: [{ sort_rank: 'asc' }, { id: 'asc' }],
+      }) || [];
+      inventory = cachedRows.map((row: any) => {
+        try { return JSON.parse(String(row.full_payload || '{}')); } catch { return null; }
+      }).filter(Boolean);
+    }
     const page = Math.max(1, Number(options.page || 1));
     const pageSize = Math.min(100, Math.max(1, Number(options.pageSize || 20)));
     const routeIdsOf = (row: any): number[] => Array.from(new Set<number>([
@@ -1088,16 +1104,23 @@ export class HotelAvailabilitySnapshotService {
       } else {
         // Persist only selected itinerary rows. Fresh inventory remains scoped
         // to this request and is returned directly to the mounted React page.
+        // Keep a compact server-side cache as well so the pane can request
+        // page 2+ after the initial response without re-running suppliers.
         changeSummary = await this.prisma.$transaction(async (tx) => {
           if (resetSelections) {
             await this.clearEditableHotelSelections(tx, plan.itinerary_plan_ID);
-            await tx?.dvi_itinerary_hotel_search_cache?.deleteMany?.({
-              where: {
-                quote_id: String(quoteId).trim(),
-                plan_id: plan.itinerary_plan_ID,
-              },
-            });
           }
+          await tx?.dvi_itinerary_hotel_search_cache?.deleteMany?.({
+            where: { quote_id: String(quoteId).trim(), plan_id: plan.itinerary_plan_ID },
+          });
+          await this.persistHotelSearchCache(
+            tx,
+            quoteId,
+            plan,
+            rows,
+            searchRunId,
+            checkedAt,
+          );
           return this.reconcileSelections(
             tx,
             plan.itinerary_plan_ID,
@@ -1334,6 +1357,57 @@ export class HotelAvailabilitySnapshotService {
     });
     if (!plan) throw new BadRequestException('Itinerary not found');
     return plan;
+  }
+
+  private async persistHotelSearchCache(
+    tx: any,
+    quoteId: string,
+    plan: any,
+    rows: any[],
+    searchRunId: string,
+    checkedAt: Date,
+  ): Promise<void> {
+    const model = tx?.dvi_itinerary_hotel_search_cache;
+    if (!model?.createMany) return;
+    const cacheRows = new Map<string, any>();
+    rows.forEach((row: any, index: number) => {
+      const routeId = Number(row?.itineraryRouteId || row?.routeId || row?.route_id || 0);
+      const groupType = Number(row?.groupType || row?.group_type || 0);
+      const provider = String(row?.provider || row?.hotel_provider || 'unknown').trim().toLowerCase();
+      const hotelCode = String(row?.hotelCode || row?.providerHotelCode || row?.hotelId || row?.hotelName || '').trim();
+      const checkIn = this.toDate(row?.checkInDate || row?.date);
+      if (!routeId || !hotelCode || !String(row?.hotelName || '').trim()) return;
+      const key = `${routeId}|${groupType}|${provider}|${hotelCode}`;
+      if (cacheRows.has(key)) return;
+      const checkOut = this.toDate(row?.checkOutDate || this.addDays(checkIn, 1));
+      cacheRows.set(key, {
+        quote_id: String(quoteId).trim(),
+        plan_id: Number(plan?.itinerary_plan_ID || 0),
+        route_id: routeId,
+        group_type: groupType,
+        hotel_code: hotelCode.slice(0, 100),
+        provider: provider.slice(0, 30),
+        hotel_name: String(row.hotelName).slice(0, 255),
+        rating: Number(row.category || row.rating || 0),
+        price: Number(row.totalPrice || row.price || row.totalHotelCost || 0),
+        room_type: String(row.roomType || row.roomTypeName || '').trim() || null,
+        meal_plan: String(row.mealPlan || row.mealPlanCode || '').trim() || null,
+        search_reference: String(row.searchReference || row.bookingCode || '').trim() || null,
+        full_payload: JSON.stringify(row),
+        check_in_date: checkIn,
+        check_out_date: checkOut,
+        sort_rank: index,
+        synced_at: checkedAt,
+        status: 1,
+        deleted: 0,
+        recommendation_algorithm_version: resolveHotelRecommendationAlgorithm(),
+        recommendation_search_run_id: searchRunId,
+        recommendation_generated_at: checkedAt,
+      });
+    });
+    if (cacheRows.size > 0) {
+      await model.createMany({ data: Array.from(cacheRows.values()) });
+    }
   }
 
   private async storeAvailabilityPreview(
