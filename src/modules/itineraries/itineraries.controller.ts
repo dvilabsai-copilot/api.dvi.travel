@@ -757,18 +757,16 @@ private readonly itineraryAccessService: ItineraryAccessService,
       durationMs: Date.now() - detailsStartedAt,
       totalElapsedMs: Date.now() - startedAt,
     })}`);
-    // Reset already has the complete persisted snapshot in result.response.
-    // Return it directly so the client does not issue a second /persisted
-    // request just to restore inventory and rate options for the hotel pane.
+    // Keep the complete snapshot server-side, but return the same client-safe
+    // projection used by persisted reads. Returning result.response directly
+    // serializes duplicated supplier inventory and raw rate internals into the
+    // initial page response, even though the UI only needs the client rows,
+    // selected state, tabs, and compact rate options.
+    const compactResponse = this.buildCompactHotelAvailabilityResponse(result, itinerary, false);
     const response = {
-      hotelDetails: result.response,
-      changeSummary: result.changeSummary,
+      ...compactResponse,
       previewId: result.previewId,
       reconciliationEnabled,
-      financialSummary: {
-        overallCost: itinerary?.overallCost ?? null,
-        costBreakdown: itinerary?.costBreakdown ?? null,
-      },
     };
     this.logger.log(`[HOTEL_CHECK_TIMING] response-ready ${JSON.stringify({
       quoteId,
@@ -872,7 +870,11 @@ private readonly itineraryAccessService: ItineraryAccessService,
     return this.buildCompactHotelAvailabilityResponse(result, itinerary);
   }
 
-  private buildCompactHotelAvailabilityResponse(result: any, itinerary: any) {
+  private buildCompactHotelAvailabilityResponse(
+    result: any,
+    itinerary: any,
+    includeInventory = true,
+  ) {
     const {
       recommendationAlgorithm: _recommendationAlgorithm,
       recommendationGeneration: _recommendationGeneration,
@@ -912,15 +914,56 @@ private readonly itineraryAccessService: ItineraryAccessService,
       // extra-bed/child rate and incorrectly render a valid hotel unavailable.
       const compactRateOptions = Array.isArray(row?.rateOptions)
         ? row.rateOptions.map((option: any) => {
-            const {
-              roomTypes: _optionRoomTypes,
-              nightlyRates: _optionNightlyRates,
-              supplementSummary: _optionSupplementSummary,
-              selectedPriceSnapshot: _optionSelectedPriceSnapshot,
-              selected_price_snapshot: _optionSelectedPriceSnapshotLegacy,
-              ...compactOption
-            } = option || {};
-            return compactOption;
+            // Rate options can themselves contain the original supplier
+            // rateOptions array. Never spread an option here: doing so
+            // recursively serializes the same inventory and is the source of
+            // the multi-hundred-thousand-line check response.
+            const source = option && typeof option === 'object' ? option : {};
+            const fields = [
+              // Selection identity used by room/meal changes and booking.
+              'id', 'rateOptionId', 'rate_option_id', 'optionKey', 'option_key',
+              'selectionKey', 'selection_key', 'bookingCode', 'booking_code',
+              'searchReference', 'search_reference', 'roomId', 'room_id',
+              'rateId', 'rate_id', 'roomTypeId', 'room_type_id',
+              // Display and provider identity.
+              'provider', 'providerDisplayName', 'providerHotelCode', 'hotelCode',
+              'hotelName', 'category', 'currency', 'roomType', 'roomTypeName',
+              'mealPlan', 'mealPlanCode', 'ratePlanName',
+              // Payable/base price and tooltip/supplement fields.
+              'price', 'netAmount', 'totalFare', 'pricePerNight',
+              'totalPrice', 'totalStayPrice', 'totalAmount', 'totalAmountAfterTax',
+              'totalHotelCost', 'totalHotelTaxAmount', 'taxAmount', 'roomRate',
+              'basePricePerNight', 'baseTotalPrice', 'startingFromAmount',
+              'startingFromBaseAmount', 'priceDifference',
+              'extraBedRate', 'extra_bed_rate', 'childWithBedRate',
+              'child_with_bed_rate', 'childWithoutBedRate',
+              'child_without_bed_rate', 'extraChildRate', 'extra_child_rate',
+              'extraBedCost', 'extra_bed_cost', 'childWithBedCost',
+              'child_with_bed_cost', 'childWithoutBedCost',
+              'child_without_bed_cost',
+              'hotelMarginPercentage', 'hotelMarginAmount', 'hotelMarginStayAmount',
+              'hotelMarginTotalAmount', 'amountIncludesHotelMargin',
+              'pricingIncludesHotelMargin',
+              // Availability and card display fields.
+              'isLiveRate', 'isLiveBookable', 'isBookable', 'isSelectable',
+              'bookingMode', 'priceSource', 'availabilityStatus',
+              'availabilityState', 'availabilityMessage', 'hotelStayAvailableDates',
+              'hotelStayUnavailableDates', 'hotelStayCompleteStayBookable',
+              'hotelStayCompleteStayRouteIds', 'hotelStayAvailabilityStatus',
+              'hotelStayAvailabilityMessage', 'hotelStayIsSelectable',
+              'availableDates', 'unavailableDates', 'completeStayBookable',
+              'completeStayRouteIds', 'requiresHotelApproval', 'approvalStatus',
+              'manualConfirmationStatus', 'expiresAt',
+              // The card renders these, but their nested supplier objects are
+              // deliberately not copied because only the supplied display
+              // values are needed by the current UI.
+              'rateConditions', 'cancellationPolicy', 'cancellationPoliciesText',
+              'inclusions', 'facilities', 'amenities', 'mandatorySupplements',
+            ];
+            return fields.reduce((compact: Record<string, unknown>, field: string) => {
+              if (source[field] !== undefined) compact[field] = source[field];
+              return compact;
+            }, {});
           })
         : undefined;
       return {
@@ -929,19 +972,83 @@ private readonly itineraryAccessService: ItineraryAccessService,
       };
     };
 
+    const inventoryRows = Array.isArray(sharedHotelInventory) ? sharedHotelInventory : [];
+    const compactAuthoritativeRows = Array.isArray(authoritativeRecommendationRows)
+      ? authoritativeRecommendationRows.map(toCompactHotelRow)
+      : [];
+    const hotelIndex = Array.from(
+      new Map(
+        inventoryRows.map((row: any) => {
+          const provider = String(row?.provider || '').trim().toLowerCase();
+          const hotelCode = String(row?.hotelCode || row?.providerHotelCode || '').trim();
+          const hotelName = String(row?.hotelName || '').trim();
+          const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
+          const groupType = Number(row?.groupType || 0);
+          const key = [provider, hotelCode, hotelName.toLowerCase(), groupType, routeId].join('|');
+          return [key, {
+            provider,
+            hotelId: row?.hotelId ?? row?.canonicalHotelId,
+            hotelCode: hotelCode || undefined,
+            hotelName,
+            category: row?.category,
+            groupType,
+            routeId,
+            date: row?.date || row?.checkInDate,
+          }];
+        }),
+      ).values(),
+    );
+    const routeIdsOf = (row: any): number[] => Array.from(new Set<number>([
+      row?.routeId,
+      row?.itineraryRouteId,
+      ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
+      ...(Array.isArray(row?.authoritativeRouteIds) ? row.authoritativeRouteIds : []),
+    ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
+    const isMissingHotelName = (value: unknown): boolean => {
+      const name = String(value || '').trim().toLowerCase();
+      return !name || name === '-' || name === '--' || name === 'no hotel available' || name === 'no hotels available';
+    };
+    const compactHotels = (result.response.hotels || []).map(toCompactHotelRow);
+    const initialHotels = compactHotels.map((row: any) => {
+      if (!isMissingHotelName(row?.hotelName)) return row;
+      const rowRouteIds = routeIdsOf(row);
+      const rowGroupType = Number(row?.groupType || row?.group_type || 0);
+      const authoritativeCandidate = authoritativeRecommendationRows.find((authoritative: any) => {
+        const candidateGroupType = Number(authoritative?.groupType || authoritative?.group_type || 0);
+        return (!rowGroupType || !candidateGroupType || rowGroupType === candidateGroupType) &&
+          rowRouteIds.some((routeId) => routeIdsOf(authoritative).includes(routeId));
+      });
+      if (!authoritativeCandidate) return row;
+      const candidate = toCompactHotelRow(authoritativeCandidate);
+      // The placeholder owns the route/date bucket; the authoritative row
+      // owns the live hotel identity, price, availability, and rate options.
+      return {
+        ...candidate,
+        ...row,
+        hotelName: candidate.hotelName,
+        hotelId: row.hotelId || candidate.hotelId,
+        canonicalHotelId: row.canonicalHotelId || candidate.canonicalHotelId,
+        hotelCode: row.hotelCode || candidate.hotelCode,
+        provider: row.provider || candidate.provider,
+        rateOptions: candidate.rateOptions || row.rateOptions,
+      };
+    });
+
     return {
       hotelDetails: {
         ...resetHotelDetails,
-        hotels: (result.response.hotels || []).map(toCompactHotelRow),
+        hotels: initialHotels,
         hotelAvailability: {
           ...compactAvailability,
-          authoritativeRecommendationRows: Array.isArray(authoritativeRecommendationRows)
-            ? authoritativeRecommendationRows.map(toCompactHotelRow)
-            : [],
-          sharedHotelInventory: Array.isArray(sharedHotelInventory)
-            ? sharedHotelInventory.map(toCompactHotelRow)
-            : [],
+          authoritativeRecommendationRows: compactAuthoritativeRows,
+          ...(includeInventory
+            ? { sharedHotelInventory: inventoryRows.map(toCompactHotelRow) }
+            : {}),
         },
+        // The initial response gives the client identity-only inventory for
+        // counts/lookup without transferring supplier rate payloads. The
+        // complete rows remain available through the persisted/pane contract.
+        hotelIndex,
         hotelTabs: (result.response.hotelTabs || []).map((tab: any) => ({
           groupType: tab.groupType,
           label: tab.label,
