@@ -1388,7 +1388,9 @@ export class HotelAvailabilitySnapshotService {
         hotel_code: hotelCode.slice(0, 100),
         provider: provider.slice(0, 30),
         hotel_name: String(row.hotelName).slice(0, 255),
-        rating: Number(row.category || row.rating || 0),
+        rating: Number.isFinite(Number(row.category || row.rating || 0))
+          ? Number(row.category || row.rating || 0)
+          : 0,
         price: Number(row.totalPrice || row.price || row.totalHotelCost || 0),
         room_type: String(row.roomType || row.roomTypeName || '').trim() || null,
         meal_plan: String(row.mealPlan || row.mealPlanCode || '').trim() || null,
