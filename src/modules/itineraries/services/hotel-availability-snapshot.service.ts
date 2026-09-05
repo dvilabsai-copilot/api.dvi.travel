@@ -503,7 +503,11 @@ export class HotelAvailabilitySnapshotService {
       return (!requestedGroupType || rowGroupType === 0 || rowGroupType === requestedGroupType) &&
         (!requestedRouteId || routeIdsOf(row).includes(requestedRouteId));
     };
-    const scopedInventory = inventory.filter(matchesScope);
+    // Page by unique hotel cards. Each returned row retains its nested room,
+    // meal-plan, and rate options, so the UI can render the card and its
+    // dropdowns without transferring duplicate supplier rows as separate
+    // hotels.
+    const scopedInventory = this.coalesceHotelCardRows(inventory.filter(matchesScope));
     const start = (page - 1) * pageSize;
     const pageRows = scopedInventory
       .slice(start, start + pageSize)
@@ -2613,6 +2617,51 @@ export class HotelAvailabilitySnapshotService {
         grouped.set(key, { ...row, rateOptions: existing.rateOptions });
       }
     }
+    return Array.from(grouped.values());
+  }
+
+  /**
+   * Pagination is a hotel-card contract, not a supplier-rate-row contract.
+   * Older snapshots can contain one row per room/rate for the same displayed
+   * property, which made the API counter decrease while the UI kept showing
+   * the same four cards. Coalesce by the identity used by the card renderer
+   * and retain every room/meal/rate as nested options.
+   */
+  private coalesceHotelCardRows(rows: any[]): any[] {
+    const grouped = new Map<string, any>();
+    const normalizeName = (value: unknown): string => String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+
+    for (const row of rows || []) {
+      const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
+      const groupType = Number(row?.groupType || row?.group_type || 0);
+      const provider = String(row?.provider || 'external').trim().toLowerCase();
+      const hotelName = String(row?.hotelName || row?.hotel_name || '').trim();
+      const hotelIdentity = normalizeName(hotelName) || String(
+        row?.hotelCode || row?.providerHotelCode || row?.hotelId || row?.canonicalHotelId || 'unknown',
+      ).trim().toLowerCase();
+      const key = [routeId, groupType, provider, hotelIdentity].join('|');
+      const existing = grouped.get(key);
+      const candidates = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0
+        ? row.rateOptions
+        : [row];
+
+      if (!existing) {
+        grouped.set(key, {
+          ...row,
+          rateOptions: this.canonicalizeRateOptions(row, candidates),
+        });
+        continue;
+      }
+
+      existing.rateOptions = this.canonicalizeRateOptions(existing, [
+        ...(Array.isArray(existing.rateOptions) ? existing.rateOptions : []),
+        ...candidates,
+      ]);
+    }
+
     return Array.from(grouped.values());
   }
 
