@@ -973,6 +973,11 @@ private readonly itineraryAccessService: ItineraryAccessService,
     };
 
     const inventoryRows = Array.isArray(sharedHotelInventory) ? sharedHotelInventory : [];
+    const normalizedHotelIdentity = (row: any): string => {
+      const name = String(row?.hotelName || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+      return name || String(row?.hotelCode || row?.providerHotelCode || row?.hotelId || row?.canonicalHotelId || 'unknown')
+        .trim().toLowerCase();
+    };
     const persistedHotelIndex = Array.isArray((result.response as any)?.hotelIndex)
       ? (result.response as any).hotelIndex
       : [];
@@ -991,7 +996,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
           const hotelName = String(row?.hotelName || '').trim();
           const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
           const groupType = Number(row?.groupType || 0);
-          const key = [provider, hotelCode, hotelName.toLowerCase(), groupType, routeId].join('|');
+          const key = [provider, normalizedHotelIdentity(row), groupType, routeId].join('|');
           return [key, {
             provider,
             hotelId: row?.hotelId ?? row?.canonicalHotelId,
@@ -1021,12 +1026,16 @@ private readonly itineraryAccessService: ItineraryAccessService,
       row?.itineraryRouteId,
       ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
     ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
+    const countedHotelKeys = new Set<string>();
     inventoryRows.forEach((row: any) => {
       const rowGroupType = Number(row?.groupType || row?.group_type || 0);
       const groups = rowGroupType > 0 ? [rowGroupType] : compactGroupTypes;
       compactRouteIdsOf(row).forEach((routeId) => {
         groups.forEach((groupType) => {
           const key = `${groupType}-${routeId}`;
+          const hotelKey = `${key}-${String(row?.provider || '').trim().toLowerCase()}-${normalizedHotelIdentity(row)}`;
+          if (countedHotelKeys.has(hotelKey)) return;
+          countedHotelKeys.add(hotelKey);
           const current = compactRouteCounts.get(key) || { groupType, total: 0 };
           current.total += 1;
           compactRouteCounts.set(key, current);
