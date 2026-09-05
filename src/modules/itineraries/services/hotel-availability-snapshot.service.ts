@@ -388,7 +388,14 @@ export class HotelAvailabilitySnapshotService {
     // enough identity metadata for the hotel row editor and its load-more
     // action.  The complete supplier rows live in the search cache; read only
     // scalar cache columns here so refresh never rehydrates the large payload.
-    if (!options.page && !options.groupType && !options.itineraryRouteId) {
+    // Controllers pass page=1 for the unfiltered read as a default, so page
+    // alone cannot distinguish a complete snapshot from a paginated request.
+    // pageSize=0 is the explicit complete-read contract and must still build
+    // the identity-only hotel directory from scalar cache columns.
+    const isCompleteSnapshotRead = options.pageSize === 0 &&
+      !options.groupType &&
+      !options.itineraryRouteId;
+    if (isCompleteSnapshotRead) {
       const cacheModel = (this.prisma as any).dvi_itinerary_hotel_search_cache;
       const cachedRows = await cacheModel?.findMany?.({
         where: {
