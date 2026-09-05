@@ -57,6 +57,40 @@ test('compact reset response preserves complete per-day hotel inventory for the 
   assert.equal(result.hotelDetails.hotels[0].previousDayBillingSynthetic, false);
 });
 
+test('initial compact response promotes an authoritative hotel over a blank route placeholder', () => {
+  const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  const result = (controller as any).buildCompactHotelAvailabilityResponse(
+    {
+      response: {
+        hotels: [{ routeId: 11531, itineraryRouteId: 11531, groupType: 1, date: '2026-09-07', hotelName: '-', roomType: 'Deluxe' }],
+        hotelTabs: [],
+        hotelSelectionState: [],
+        hotelAvailability: {
+          availabilityState: 'FRESH',
+          authoritativeRecommendationRows: [{
+            routeId: 11531,
+            authoritativeRouteIds: [11531],
+            groupType: 1,
+            date: '2026-09-07',
+            hotelName: 'Munnar Live Hotel',
+            provider: 'axisrooms',
+            rateOptions: [{ rateOptionId: 'live-rate', roomType: 'Deluxe', mealPlan: 'CP', totalPrice: 5000 }],
+          }],
+          sharedHotelInventory: [{ hotelName: 'unused alternative', routeId: 11531 }],
+        },
+      },
+      changeSummary: null,
+    },
+    null,
+    false,
+  );
+
+  assert.equal(result.hotelDetails.hotels[0].hotelName, 'Munnar Live Hotel');
+  assert.equal(result.hotelDetails.hotels[0].provider, 'axisrooms');
+  assert.equal(result.hotelDetails.hotels[0].rateOptions[0].rateOptionId, 'live-rate');
+  assert.equal(result.hotelDetails.hotelAvailability.sharedHotelInventory, undefined);
+});
+
 test('reset endpoint returns only a reset acknowledgement', async () => {
   const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
   let resetQuoteId = '';
@@ -128,6 +162,7 @@ test('reconciliation check forwards the preview flag without applying changes', 
       };
     },
   };
+  (controller as any).logger = { log: () => undefined, error: () => undefined };
   (controller as any).detailsService = {
     getItineraryDetails: async () => ({ overallCost: 100, costBreakdown: { hotel: 100 } }),
   };
@@ -141,6 +176,7 @@ test('reconciliation check forwards the preview flag without applying changes', 
   assert.deepEqual(received.slice(0, 5), ['DVI-CHECK', 'CHECK_AVAILABILITY', 7, false, true]);
   assert.equal(response.previewId, 'hotel-preview-test');
   assert.equal(response.changeSummary.hasChanges, true);
+  assert.equal(response.hotelDetails.hotelAvailability.sharedHotelInventory, undefined);
   if (previousFlag === undefined) delete process.env.HOTEL_RECONCILE;
   else process.env.HOTEL_RECONCILE = previousFlag;
 });

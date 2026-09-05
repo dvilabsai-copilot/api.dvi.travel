@@ -199,6 +199,27 @@ test('does not treat an empty persisted placeholder as a selected hotel', () => 
   assert.equal(state[0].routes[0].selected, null);
 });
 
+test('marks a selected row unavailable when only its persisted snapshot has the status', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 3710 }],
+    rows: [{
+      groupType: 1, itineraryRouteId: 10145, date: '2026-08-12',
+      provider: 'axisrooms', hotelId: 232, hotelCode: 'AX_DVI_HOTEL_232',
+      hotelName: 'THE ARBOUR RESORT', roomType: 'Club room A/C', mealPlan: 'CP',
+      selectionOrigin: 'USER_SELECTED', selectionId: 28929,
+      selectionStatus: 'AVAILABLE',
+      selectedPriceSnapshot: {
+        hotelName: 'THE ARBOUR RESORT',
+        availabilityStatus: 'UNAVAILABLE',
+      },
+    }],
+    requiredRoutes: [{ routeId: 10145, routeDate: '2026-08-12' }],
+  });
+
+  assert.equal(state[0].routes[0].selectionStatus, 'UNAVAILABLE');
+  assert.equal(state[0].routes[0].selected, null);
+});
+
 test('canonical room pricing wins over stale nightly baseAmount', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 40068 }],

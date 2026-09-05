@@ -145,8 +145,29 @@ const rowRouteIds = (row: any): number[] => {
   ].filter((routeId) => Number.isFinite(routeId) && routeId > 0)));
 };
 
-const isUnavailableSelection = (row: any): boolean =>
-  String(row?.selectionStatus || row?.selection_status || '').trim().toUpperCase() === 'UNAVAILABLE';
+const isUnavailableSelection = (row: any): boolean => {
+  const directStatus = String(row?.selectionStatus || row?.selection_status || '').trim().toUpperCase();
+  if (directStatus === 'UNAVAILABLE') return true;
+
+  // Availability reconciliation stores the current supplier result in the
+  // selected-price snapshot. A stale manual selection can therefore still
+  // have a legacy/selected row status while the snapshot says that its rate
+  // is no longer available. Treat that as unavailable for view-state
+  // construction; otherwise the frontend hydrates it, rejects it later, and
+  // renders an apparently empty stay with stale selection metadata.
+  const snapshot = parseSnapshot(
+    row?.selectedPriceSnapshot ??
+    row?.selected_price_snapshot ??
+    row?.selected?.selectedPriceSnapshot ??
+    row?.selected?.selected_price_snapshot,
+  );
+  const snapshotStatus = String(
+    snapshot?.availabilityStatus ?? snapshot?.availability_status ??
+    row?.availabilityStatus ?? row?.availability_status ?? '',
+  ).trim().toUpperCase();
+  return ['UNAVAILABLE', 'NO_SUPPLIER_AVAILABILITY', 'NOT_BOOKABLE', 'RESTRICTED', 'STALE', 'UNKNOWN']
+    .includes(snapshotStatus);
+};
 
 const selectionPriority = (row: any): number => {
   if (!hasCommercialHotelIdentity(row)) return 0;
