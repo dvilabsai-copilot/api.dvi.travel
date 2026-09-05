@@ -74,11 +74,27 @@ export class HotspotEngineService {
       });
     }
 
- // 1.5) EXTRACT MANUAL HOTSPOTS BEFORE DELETION
- // Manual hotspots (hotspot_plan_own_way=1) must be preserved and reinserted with proper timings
-    const manualHotspots = existingHotspots.filter((h: any) =>
-      Number(h.hotspot_plan_own_way || 0) === 1 && Number(h.deleted || 0) === 0
+// 1.5) EXTRACT MANUAL HOTSPOTS BEFORE DELETION
+// During a route-scoped rebuild, only manual hotspots from that route
+// must participate. Other days must remain untouched.
+const manualHotspots = existingHotspots.filter((h: any) => {
+  const isActiveManual =
+    Number(h.hotspot_plan_own_way || 0) === 1 &&
+    Number(h.deleted || 0) === 0;
+
+  if (!isActiveManual) {
+    return false;
+  }
+
+  if (options?.scopeToRouteId) {
+    return (
+      Number(h.itinerary_route_ID || 0) ===
+      Number(options.scopeToRouteId)
     );
+  }
+
+  return true;
+});
     manualHotspots.sort((a: any, b: any) => {
       const routeDiff = Number(a?.itinerary_route_ID || 0) - Number(b?.itinerary_route_ID || 0);
       if (routeDiff !== 0) return routeDiff;
@@ -198,12 +214,18 @@ export class HotspotEngineService {
       }
     }
 
-    const { hotspotRows, parkingRows, routeRejectionSummaryByRoute } =
-      await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots, {
-        manualPlacementByRoute,
-        sameCityAllocationPlan: options?.sameCityAllocationPlan || null,
-        scopeToRouteId: options?.scopeToRouteId,
-      });
+   const { hotspotRows, parkingRows, routeRejectionSummaryByRoute } =
+  await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots, {
+    manualPlacementByRoute,
+    sameCityAllocationPlan: options?.sameCityAllocationPlan || null,
+    scopeToRouteId: options?.scopeToRouteId,
+
+    // IMPORTANT:
+    // During a route-scoped rebuild, these are the sightseeing hotspots
+    // that already existed and must not disappear just because another
+    // hotspot was deleted.
+    protectedHotspotIds: options?.protectedHotspotIds || [],
+  });
 
  console.log('[ManualHotspot][rebuildRouteHotspots] start', {
       planId,
@@ -841,23 +863,41 @@ export class HotspotEngineService {
       filteredHotspotRows.push(...rebuiltRows);
     }
 
- // 5) CRITICAL: Delete old active manual placeholder rows before persisting final rebuilt timeline
- // This ensures no old order=999 placeholder/manual rows remain in DB
-    if (manualHotspotIds.size > 0) {
-      const manualIdArray = Array.from(manualHotspotIds);
-      await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
-        where: {
-          itinerary_plan_ID: planId,
-          hotspot_ID: { in: manualIdArray },
-          hotspot_plan_own_way: 1,
-          deleted: 0,
-        },
-      });
- console.log('[ManualHotspot][rebuildRouteHotspots] deleted old manual placeholder rows', {
-        planId,
-        manualHotspotIds: manualIdArray,
-      });
-    }
+// 5) CRITICAL: Delete old manual rows for the route being rebuilt
+// before persisting the rebuilt timeline.
+//
+// Route-scoped rebuild must never delete manual hotspots from sibling days.
+// Also remove the previous soft-deleted row on the scoped route so reusing
+// its route_hotspot_ID cannot cause a duplicate-primary-key failure.
+if (manualHotspotIds.size > 0) {
+  const manualIdArray = Array.from(manualHotspotIds);
+
+  const manualDeleteWhere: any = {
+    itinerary_plan_ID: planId,
+    hotspot_ID: { in: manualIdArray },
+    hotspot_plan_own_way: 1,
+  };
+
+  if (scopeRouteId) {
+    manualDeleteWhere.itinerary_route_ID = Number(scopeRouteId);
+  } else {
+    // Preserve existing full-rebuild behaviour.
+    manualDeleteWhere.deleted = 0;
+  }
+
+  await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
+    where: manualDeleteWhere,
+  });
+
+  console.log(
+    '[ManualHotspot][rebuildRouteHotspots] deleted old manual placeholder rows',
+    {
+      planId,
+      scopeRouteId,
+      manualHotspotIds: manualIdArray,
+    },
+  );
+}
 
  // 5.5) DEDUPE final timeline rows before persistence
  // Remove exact duplicates: same route + item_type + hotspot_id + same timing
@@ -1398,31 +1438,44 @@ export class HotspotEngineService {
  // 6.1) Post-persist safety repair:
  // If a visit row survived rebuild but its paired travel row did not, add a
  // lightweight travel segment directly against the persisted DB state.
-    const persistedVisitRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: planId,
-        item_type: 4,
-        deleted: 0,
-        status: 1,
-      },
-      orderBy: [
-        { itinerary_route_ID: "asc" },
-        { hotspot_start_time: "asc" },
-        { route_hotspot_ID: "asc" },
-      ],
-    });
-    const persistedTravelRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: planId,
-        item_type: 3,
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        itinerary_route_ID: true,
-        hotspot_ID: true,
-      },
-    });
+const persistedVisitRows =
+  await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+    where: {
+      itinerary_plan_ID: planId,
+      item_type: 4,
+      deleted: 0,
+      status: 1,
+      ...(scopeRouteId
+        ? {
+            itinerary_route_ID: Number(scopeRouteId),
+          }
+        : {}),
+    },
+    orderBy: [
+      { itinerary_route_ID: "asc" },
+      { hotspot_start_time: "asc" },
+      { route_hotspot_ID: "asc" },
+    ],
+  });
+
+const persistedTravelRows =
+  await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+    where: {
+      itinerary_plan_ID: planId,
+      item_type: 3,
+      deleted: 0,
+      status: 1,
+      ...(scopeRouteId
+        ? {
+            itinerary_route_ID: Number(scopeRouteId),
+          }
+        : {}),
+    },
+    select: {
+      itinerary_route_ID: true,
+      hotspot_ID: true,
+    },
+  });
     const persistedTravelKeys = new Set(
       (persistedTravelRows as any[]).map(
         (row: any) => `${Number(row.itinerary_route_ID || 0)}|${Number(row.hotspot_ID || 0)}`,
@@ -1523,13 +1576,18 @@ export class HotspotEngineService {
  // 7) VERIFY manual hotspots were properly persisted with real order and timing
     if (manualHotspotIds.size > 0) {
       const manualIds = Array.from(manualHotspotIds);
-      const persistedManualRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-        where: {
-          itinerary_plan_ID: planId,
-          item_type: 4,
-          hotspot_ID: { in: manualIds },
-          deleted: 0,
-        },
+     const persistedManualRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+  where: {
+    itinerary_plan_ID: planId,
+    item_type: 4,
+    hotspot_ID: { in: manualIds },
+    deleted: 0,
+    ...(scopeRouteId
+      ? {
+          itinerary_route_ID: Number(scopeRouteId),
+        }
+      : {}),
+  },
         select: {
           route_hotspot_ID: true,
           hotspot_ID: true,

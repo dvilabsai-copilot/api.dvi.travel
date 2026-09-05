@@ -58,6 +58,8 @@ export class ItineraryHotspotDeletionService {
 
       const actualHotspotId = Number(hotspotRecord.hotspot_ID || 0);
 
+      
+
       const displacementRows = actualHotspotId > 0
         ? await (tx as any).dvi_itinerary_manual_hotspot_displacement.findMany({
             where: {
@@ -93,29 +95,42 @@ export class ItineraryHotspotDeletionService {
         .map((r: any) => Number(r.route_hotspot_ID || 0))
         .filter((id: number) => Number.isFinite(id) && id > 0);
 
-      if (routeHotspotIdsToDelete.length > 0) {
-        await (tx as any).dvi_itinerary_route_activity_details.deleteMany({
-          where: {
-            itinerary_plan_ID: normalizedPlanId,
-            itinerary_route_ID: normalizedRouteId,
-            route_hotspot_ID: { in: routeHotspotIdsToDelete },
-          },
-        });
-      }
+    if (routeHotspotIdsToDelete.length > 0) {
+  await (tx as any).dvi_itinerary_route_activity_details.updateMany({
+    where: {
+      itinerary_plan_ID: normalizedPlanId,
+      itinerary_route_ID: normalizedRouteId,
+      route_hotspot_ID: { in: routeHotspotIdsToDelete },
+      deleted: 0,
+    },
+    data: {
+      deleted: 1,
+      status: 0,
+      updatedon: new Date(),
+    },
+  });
+}
 
-      const deleted = await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
-        where: routeHotspotIdsToDelete.length > 0
-          ? {
-              itinerary_plan_ID: normalizedPlanId,
-              itinerary_route_ID: normalizedRouteId,
-              route_hotspot_ID: { in: routeHotspotIdsToDelete },
-            }
-          : {
-              itinerary_plan_ID: normalizedPlanId,
-              itinerary_route_ID: normalizedRouteId,
-              route_hotspot_ID: normalizedHotspotParam,
-            },
-      });
+const deleted = await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+  where: routeHotspotIdsToDelete.length > 0
+    ? {
+        itinerary_plan_ID: normalizedPlanId,
+        itinerary_route_ID: normalizedRouteId,
+        route_hotspot_ID: { in: routeHotspotIdsToDelete },
+        deleted: 0,
+      }
+    : {
+        itinerary_plan_ID: normalizedPlanId,
+        itinerary_route_ID: normalizedRouteId,
+        route_hotspot_ID: normalizedHotspotParam,
+        deleted: 0,
+      },
+  data: {
+    deleted: 1,
+    status: 0,
+    updatedon: new Date(),
+  },
+});
 
       if (deleted.count === 0) {
         throw new BadRequestException('Hotspot not found');
@@ -203,19 +218,60 @@ export class ItineraryHotspotDeletionService {
 
  // Trigger a full rebuild of the hotspots for this plan
  // This ensures travel times and hotel arrival are recalculated after deletion
-     return {
-  rebuildResult: await this.hotspotEngine.rebuildRouteHotspots(
-    tx,
-    normalizedPlanId,
-    undefined,
-    {
-      scopeToRouteId: normalizedRouteId,
+ const existingHotspotsForRebuild: any[] =
+  await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+    where: {
+      itinerary_plan_ID: normalizedPlanId,
+      item_type: 4,
     },
+    orderBy: [
+      { itinerary_route_ID: 'asc' },
+      { hotspot_order: 'asc' },
+      { route_hotspot_ID: 'asc' },
+    ],
+  });
+
+const protectedExistingHotspotIds: number[] = Array.from(
+  new Set<number>(
+    existingHotspotsForRebuild
+      .filter(
+        (row: any) =>
+          Number(row?.itinerary_route_ID || 0) === normalizedRouteId &&
+          Number(row?.item_type || 0) === 4 &&
+          Number(row?.deleted || 0) === 0 &&
+          Number(row?.status || 0) === 1 &&
+          Number(row?.hotspot_ID || 0) > 0,
+      )
+      .map((row: any) => Number(row.hotspot_ID)),
   ),
+);
+
+console.log('[deleteHotspot][REBUILD_CONTEXT]', {
+  planId: normalizedPlanId,
+  routeId: normalizedRouteId,
+  deletedHotspotId: actualHotspotId,
+  protectedExistingHotspotIds,
+});
+
+const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(
+  tx,
+  normalizedPlanId,
+  existingHotspotsForRebuild,
+  {
+    scopeToRouteId: normalizedRouteId,
+    protectedHotspotIds: protectedExistingHotspotIds,
+  },
+);
+
+return {
+  rebuildResult,
   restoredHotspotIds,
   deletedHotspotWasFitManual: restoredHotspotIds.length > 0,
 };
-    }, { timeout: 60000 });
+   }, {
+  timeout: 180000,
+  maxWait: 30000,
+});
 
  // Rebuild parking charges after deletion
     await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, userId);

@@ -65,12 +65,36 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
             status: 1,
           },
         });
-        const existingHotspotsWithDates = oldHotspots.map((row: any) => ({
-          ...row,
-          route_date: oldRouteDateMap.get(Number(row.itinerary_route_ID || 0)),
-        }));
+      const existingHotspotsWithDates = oldHotspots.map((row: any) => ({
+  ...row,
+  route_date: oldRouteDateMap.get(
+    Number(row.itinerary_route_ID || 0),
+  ),
+}));
 
-        const planRow = await tx.dvi_itinerary_plan_details.findFirst({
+const protectedExistingHotspotIds: number[] = Array.from(
+  new Set<number>(
+    existingHotspotsWithDates
+      .filter(
+        (row: any) =>
+          Number(row?.itinerary_route_ID || 0) === normalizedRouteId &&
+          Number(row?.item_type || 0) === 4 &&
+          Number(row?.deleted || 0) === 0 &&
+          Number(row?.status || 0) === 1 &&
+          Number(row?.hotspot_plan_own_way || 0) !== 1 &&
+          Number(row?.hotspot_ID || 0) > 0,
+      )
+      .map((row: any) => Number(row.hotspot_ID)),
+  ),
+);
+
+console.log('[RouteRebuild][TRACE] protecting existing route hotspots', {
+  planId: normalizedPlanId,
+  routeId: normalizedRouteId,
+  protectedExistingHotspotIds,
+});
+
+const planRow = await tx.dvi_itinerary_plan_details.findFirst({
           where: { itinerary_plan_ID: normalizedPlanId, deleted: 0 },
           select: { itinerary_quote_ID: true },
         });
@@ -150,9 +174,15 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
           preRouteVisitCount,
         });
 
-        const engineResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId, existingHotspotsWithDates, {
-          scopeToRouteId: normalizedRouteId,
-        });
+       const engineResult = await this.hotspotEngine.rebuildRouteHotspots(
+  tx,
+  normalizedPlanId,
+  existingHotspotsWithDates,
+  {
+    scopeToRouteId: normalizedRouteId,
+    protectedHotspotIds: protectedExistingHotspotIds,
+  },
+);
         await this.routeVehicleRestrictions.assertPersistedPlan(
           normalizedPlanId,
           `hotspot-rebuild:${normalizedPlanId}:${normalizedRouteId}`,
