@@ -354,14 +354,22 @@ export class TimelineBuilder {
     tx: Tx,
     planId: number,
     existingHotspots?: any[],
-    options?: {
-      manualPlacementByRoute?: Record<number, {
-        hotspotOrder?: number;
-      }>;
-      sameCityAllocationPlan?: SameCityAllocationPlan | null;
- /** When set, only process/rebuild this route instead of the entire plan. */
-      scopeToRouteId?: number;
-    },
+  options?: {
+  manualPlacementByRoute?: Record<number, {
+    hotspotOrder?: number;
+  }>;
+  sameCityAllocationPlan?: SameCityAllocationPlan | null;
+
+  /** When set, only process/rebuild this route instead of the entire plan. */
+  scopeToRouteId?: number;
+
+  /**
+   * Existing active sightseeing hotspots that must survive a route-scoped
+   * rebuild. Used after deleting one hotspot so unrelated hotspots are not
+   * removed/replaced by normal candidate selection.
+   */
+  protectedHotspotIds?: number[];
+},
   ): Promise<{
     hotspotRows: HotspotDetailRow[];
     parkingRows: ParkingChargeRow[];
@@ -412,15 +420,40 @@ export class TimelineBuilder {
       );
     }
 
-    if (options?.scopeToRouteId && scopedRoutes.length === 0) {
-      return { hotspotRows: [], parkingRows: [], routeRejectionSummaryByRoute: {} };
-    }
+ if (options?.scopeToRouteId && scopedRoutes.length === 0) {
+  return {
+    hotspotRows: [],
+    parkingRows: [],
+    routeRejectionSummaryByRoute: {},
+  };
+}
 
-    const reservedSameCityHotspotIdsByRoute = this.buildReservedSameCityHotspotIdsByRoute(
-      routes,
-      existingHotspots,
-      options?.scopeToRouteId,
-    );
+const protectedScopedHotspotIds = new Set<number>(
+  (options?.protectedHotspotIds || [])
+    .map((id) => Number(id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0),
+);
+
+const isScopedProtectedHotspot = (value: any): boolean => {
+  if (!options?.scopeToRouteId) {
+    return false;
+  }
+
+  const hotspotId = Number(value || 0);
+
+  return (
+    Number.isFinite(hotspotId) &&
+    hotspotId > 0 &&
+    protectedScopedHotspotIds.has(hotspotId)
+  );
+};
+
+const reservedSameCityHotspotIdsByRoute =
+  this.buildReservedSameCityHotspotIdsByRoute(
+    routes,
+    existingHotspots,
+    options?.scopeToRouteId,
+  );
 
  // SCENARIO 2: Check if arrival city == departure city
  // If yes AND departure time > 4 PM, skip Day 1 local sightseeing and do it on last day
@@ -587,21 +620,39 @@ export class TimelineBuilder {
  // TODO (later): pass real user id from controller/service.
     const createdByUserId = 1;
 
- // Track first route for special Day 1 handling
-    let routeIndex = 0;
-    let carryForwardOrder = 0;
-    let carryForwardHotspots: CarryForwardHotspot[] = [];
+// Track route position for special Day 1 handling
+let routeIndex = 0;
+let carryForwardOrder = 0;
+let carryForwardHotspots: CarryForwardHotspot[] = [];
 
-    for (const route of scopedRoutes) {
-      const routeProcessStart = Date.now();
-      this.logTimeline('[TIMELINE] Processing route', routeIndex + 1, '/', routes.length, '- routeId:', route.itinerary_route_ID);
+for (const route of scopedRoutes) {
+  const actualRouteIndex = routes.findIndex(
+    (planRoute) =>
+      Number(planRoute.itinerary_route_ID || 0) ===
+      Number(route.itinerary_route_ID || 0),
+  );
 
- // PHP includeHotspotInItinerary checks duplicates at itinerary-plan scope.
- // Keep addedHotspotIds across routes, but reset chaining state per route.
-      lastAddedHotspotId = null;
+  const isFirstRoute = actualRouteIndex === 0;
 
-      const isFirstRoute = routeIndex === 0;
-      routeIndex++;
+  routeIndex =
+    actualRouteIndex >= 0
+      ? actualRouteIndex + 1
+      : routeIndex + 1;
+
+  const routeProcessStart = Date.now();
+
+  this.logTimeline(
+    '[TIMELINE] Processing route',
+    routeIndex,
+    '/',
+    routes.length,
+    '- routeId:',
+    route.itinerary_route_ID,
+  );
+
+  // PHP includeHotspotInItinerary checks duplicates at itinerary-plan scope.
+  // Keep addedHotspotIds across routes, but reset chaining state per route.
+  lastAddedHotspotId = null;
 
  // Determine if this is the last route BEFORE processing
       const isLastRoute = await this.isLastRouteOfPlan(
@@ -1273,22 +1324,202 @@ export class TimelineBuilder {
  // Re-order candidates: preserve manual selections and priority>0 first (protected),
  // then sort remaining candidates by matrix_score desc, then distance asc.
 
-      selectedHotspots = this.candidateReorderingService.reorder(
-        selectedHotspots,
-        (...args) => (this.logTimeline as any)(...args),
-      );
-      const routeLoopStart = Date.now();
-      let hotspotQueryCount = 0;
-      let distanceCalcCount = 0;
-      let operatingHoursCount = 0;
+    selectedHotspots = this.candidateReorderingService.reorder(
+  selectedHotspots,
+  (...args) => (this.logTimeline as any)(...args),
+);
 
-      if (isDay1DifferentCities) {
+/**
+ * IMPORTANT:
+ * For a route-scoped rebuild, the existing active sightseeing set is the
+ * source of truth.
+ *
+ * Example:
+ * Existing route: A -> B -> C -> D
+ * User deletes B
+ *
+ * Rebuild MUST operate on:
+ * A -> C -> D
+ *
+ * It must not:
+ * - replace C/D with newly selected candidates
+ * - remove C/D because candidate generation did not return them
+ * - reorder the remaining sightseeing unnecessarily
+ */
+if (
+  options?.scopeToRouteId &&
+  Array.isArray(existingHotspots)
+) {
+  const scopedRouteId = Number(options.scopeToRouteId || 0);
+
+  const existingScopedHotspotRows = existingHotspots
+    .filter(
+      (row: any) =>
+        Number(row?.itinerary_route_ID || 0) === scopedRouteId &&
+        Number(row?.item_type || 0) === 4 &&
+        Number(row?.deleted || 0) === 0 &&
+        Number(row?.status || 0) === 1 &&
+        Number(row?.hotspot_ID || 0) > 0 &&
+        (
+          protectedScopedHotspotIds.size === 0 ||
+          protectedScopedHotspotIds.has(
+            Number(row?.hotspot_ID || 0),
+          )
+        ),
+    )
+    .sort((a: any, b: any) => {
+      const orderDiff =
+        Number(a?.hotspot_order || 0) -
+        Number(b?.hotspot_order || 0);
+
+      if (orderDiff !== 0) {
+        return orderDiff;
+      }
+
+      return (
+        Number(a?.route_hotspot_ID || 0) -
+        Number(b?.route_hotspot_ID || 0)
+      );
+    });
+
+  const selectedByHotspotId = new Map<number, SelectedHotspot>();
+
+  for (const hotspot of selectedHotspots) {
+    const hotspotId = Number(
+      (hotspot as any)?.hotspot_ID || 0,
+    );
+
+    if (
+      hotspotId > 0 &&
+      !selectedByHotspotId.has(hotspotId)
+    ) {
+      selectedByHotspotId.set(hotspotId, hotspot);
+    }
+  }
+
+  const preservedScopedHotspots: SelectedHotspot[] = [];
+
+  for (let index = 0; index < existingScopedHotspotRows.length; index++) {
+    const existingRow = existingScopedHotspotRows[index];
+
+    const hotspotId = Number(
+      existingRow?.hotspot_ID || 0,
+    );
+
+    if (!hotspotId) {
+      continue;
+    }
+
+    const existingSelectedCandidate =
+      selectedByHotspotId.get(hotspotId);
+
+    const masterHotspot =
+      hotspotMap.get(hotspotId) as any;
+
+    /*
+     * Candidate generation may have dropped this hotspot completely.
+     * Re-create the candidate from master data + the old persisted route row.
+     */
+    const preservedCandidate: SelectedHotspot = {
+      ...(masterHotspot || {}),
+      ...(existingSelectedCandidate || {}),
+
+      hotspot_ID: hotspotId,
+
+      display_order:
+        Number(existingRow?.hotspot_order || 0) > 0
+          ? Number(existingRow.hotspot_order)
+          : index + 1,
+
+      hotspot_priority:
+        Number(
+          existingSelectedCandidate?.hotspot_priority ??
+          masterHotspot?.hotspot_priority ??
+          0,
+        ),
+
+      hotspot_name:
+        String(
+          existingSelectedCandidate?.hotspot_name ??
+          masterHotspot?.hotspot_name ??
+          '',
+        ),
+
+      hotspot_location:
+        String(
+          existingSelectedCandidate?.hotspot_location ??
+          masterHotspot?.hotspot_location ??
+          '',
+        ),
+
+      hotspot_to_location:
+        String(
+          existingSelectedCandidate?.hotspot_to_location ??
+          masterHotspot?.hotspot_to_location ??
+          masterHotspot?.hotspot_location ??
+          '',
+        ),
+
+      hotspot_type:
+        String(
+          existingSelectedCandidate?.hotspot_type ??
+          masterHotspot?.hotspot_type ??
+          '',
+        ),
+    };
+
+    preservedScopedHotspots.push(preservedCandidate);
+  }
+
+  const beforeScopedPreserveCount =
+    selectedHotspots.length;
+
+  /*
+   * CRITICAL:
+   * Do NOT filter the generated candidate list here.
+   * Replace it with the persisted remaining sightseeing set.
+   */
+  selectedHotspots = preservedScopedHotspots;
+
+  this.logBookingRule({
+    rule: 'SCOPED_REBUILD_EXISTING_HOTSPOTS_PRESERVED',
+    quoteId:
+      (plan as any).quote_id ??
+      (plan as any).quoteId ??
+      (plan as any).quote_ID ??
+      null,
+    planId,
+    routeId: scopedRouteId,
+    beforeCount: beforeScopedPreserveCount,
+    afterCount: selectedHotspots.length,
+    protectedHotspotIds: Array.from(
+      protectedScopedHotspotIds.values(),
+    ),
+    finalHotspotIds: selectedHotspots.map(
+      (hotspot: any) =>
+        Number(hotspot?.hotspot_ID || 0),
+    ),
+    reason:
+      'Route-scoped rebuild uses the remaining persisted sightseeing set as source of truth.',
+  });
+}
+
+const routeLoopStart = Date.now();
+let hotspotQueryCount = 0;
+let distanceCalcCount = 0;
+let operatingHoursCount = 0;
+
+if (isDay1DifferentCities) {
  // DAY-1 DIFFERENT CITIES: Strict priority walk with operating hour waiting
  // Process each hotspot in priority order, wait for next operating window if needed
 
         for (const sh of selectedHotspots) {
           const bucket = this.resolveTimelineBucket(sh);
           const hotspotPriority = Number((sh as any).hotspot_priority ?? 0);
+          const preserveScopedHotspot =
+  isScopedProtectedHotspot(
+    (sh as any).hotspot_ID,
+  );
           const isManualSelection = Boolean((sh as any).isManualSelection);
           const isRouteMovementBucket = this.isRouteMovementBucket(bucket);
           const isSourceBucket = this.isSourceBucket(bucket);
@@ -1305,7 +1536,9 @@ export class TimelineBuilder {
           ).trim().toLowerCase();
 
 
-          if (this.day1CandidateGateService.shouldSkip({
+         if (
+  !preserveScopedHotspot &&
+  this.day1CandidateGateService.shouldSkip({
             route,
             hotspot: sh,
             currentTime,
@@ -1323,17 +1556,19 @@ export class TimelineBuilder {
           }
 
 
-          const hotspotData = this.day1CutoffMasterService.resolve({
-            route,
-            hotspot: sh,
-            hotspotMap,
-            bucket,
-            currentTime,
-            shouldApplySourceHotspotCutoff:
-              shouldApplySourceHotspotCutoff &&
-              !this.isShoppingHotspotType(gateHotspotType),
-            logHotspotCandidateEvaluation: (...args) => (this.logHotspotCandidateEvaluation as any)(...args),
-          });
+         const hotspotData = this.day1CutoffMasterService.resolve({
+  route,
+  hotspot: sh,
+  hotspotMap,
+  bucket,
+  currentTime,
+  shouldApplySourceHotspotCutoff:
+    !preserveScopedHotspot &&
+    shouldApplySourceHotspotCutoff &&
+    !this.isShoppingHotspotType(gateHotspotType),
+  logHotspotCandidateEvaluation: (...args) =>
+    (this.logHotspotCandidateEvaluation as any)(...args),
+});
           if (!hotspotData) continue;
 
                     const hotspotLocationName =
@@ -1491,10 +1726,16 @@ export class TimelineBuilder {
  // If hotspot opens later today, wait and schedule in the opening window only
  // for wait-friendly hotspot types.
           if (
-            !operatingCheck.canVisitNow &&
-            operatingCheck.nextWindowStart &&
-            this.shouldAllowWaitUntilOpenForCandidate(Number((sh as any).hotspot_priority ?? 0), hotspotType)
-          ) {
+  !operatingCheck.canVisitNow &&
+  operatingCheck.nextWindowStart &&
+  (
+    preserveScopedHotspot ||
+    this.shouldAllowWaitUntilOpenForCandidate(
+      Number((sh as any).hotspot_priority ?? 0),
+      hotspotType,
+    )
+  )
+) {
             let nextWindowStartSeconds = timeToSeconds(operatingCheck.nextWindowStart);
             while (nextWindowStartSeconds < absoluteVisitStartSeconds) {
               nextWindowStartSeconds += 86400;
@@ -1598,18 +1839,25 @@ export class TimelineBuilder {
             }
           }
 
-          if (
-            rejectDuplicatePlanHotspot(sh.hotspot_ID, {
-              routeId: Number(route.itinerary_route_ID || 0),
-              routeDay: Number((route as any).no_of_days || routeIndex || 0),
-              sourceCity,
-              destinationCity,
-              branch: 'day1_open_window_fill',
-              hotspotName: String((hotspotData as any)?.hotspot_name || ''),
-            })
-          ) {
-            continue;
-          }
+         if (
+  !preserveScopedHotspot &&
+  rejectDuplicatePlanHotspot(sh.hotspot_ID, {
+    routeId: Number(route.itinerary_route_ID || 0),
+    routeDay: Number(
+      (route as any).no_of_days ||
+      routeIndex ||
+      0,
+    ),
+    sourceCity,
+    destinationCity,
+    branch: 'day1_open_window_fill',
+    hotspotName: String(
+      (hotspotData as any)?.hotspot_name || '',
+    ),
+  })
+) {
+  continue;
+}
 
           const isEarlyArrivalHotelDeparture =
             (isHotelPreferenceEarlyArrival || isVehicleHotelRestEarlyArrival) &&
@@ -1877,9 +2125,14 @@ export class TimelineBuilder {
 
             const gapBeforeFirst = firstHotspotStartSeconds - routeStartSeconds;
 
- // Try to fit skipped hotspots in this gap
-            for (const sh of skippedHotspots) {
-              const hotspotData = await tx.dvi_hotspot_place.findUnique({
+// Try to fit skipped hotspots in this gap
+for (const sh of skippedHotspots) {
+  const preserveScopedHotspot =
+    isScopedProtectedHotspot(
+      (sh as any).hotspot_ID,
+    );
+
+  const hotspotData = await tx.dvi_hotspot_place.findUnique({
                 where: { hotspot_ID: sh.hotspot_ID },
                 select: {
                   hotspot_location: true,
@@ -1935,18 +2188,27 @@ export class TimelineBuilder {
                 const projectedArrivalSeconds = timeToSeconds(visitEndTime) + travelToDestSeconds;
 
                 if (projectedArrivalSeconds <= routeEndSeconds) {
-                  if (
-                    rejectDuplicatePlanHotspot(sh.hotspot_ID, {
-                      routeId: Number(route.itinerary_route_ID || 0),
-                      routeDay: Number((route as any).no_of_days || routeIndex || 0),
-                      sourceCity,
-                      destinationCity,
-                      branch: 'legacy_prepend_gap_fill',
-                      hotspotName: String((hotspotData as any)?.hotspot_name || ''),
-                    })
-                  ) {
-                    continue;
-                  }
+                if (
+  !preserveScopedHotspot &&
+  rejectDuplicatePlanHotspot(sh.hotspot_ID, {
+    routeId: Number(
+      route.itinerary_route_ID || 0,
+    ),
+    routeDay: Number(
+      (route as any).no_of_days ||
+      routeIndex ||
+      0,
+    ),
+    sourceCity,
+    destinationCity,
+    branch: 'day1_open_window_fill',
+    hotspotName: String(
+      (hotspotData as any)?.hotspot_name || '',
+    ),
+  })
+) {
+  continue;
+}
 
  // It fits! Insert it before first hotspot
                   const insertOrder = Math.max(1, Number(firstHotspotRow.hotspot_order || 1));
@@ -2225,11 +2487,29 @@ export class TimelineBuilder {
           const explicitViaRouteExistsForThisRoute =
             String((route as any).via_route || '').trim() !== '' ||
             (Array.isArray((route as any).via_routes) && (route as any).via_routes.length > 0);
+selectedHotspots = (
+  selectedHotspots as Array<SelectedHotspot>
+).filter((hs: any) => {
+  const bucket = String(
+    hs?.matched_bucket ||
+    hs?.__bucket ||
+    '',
+  ).toLowerCase();
 
-          selectedHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs: any) => {
-            const bucket = String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
-            const hotspotId = Number(hs?.hotspot_ID || 0);
-            const master = getMasterHotspot(hotspotId);
+  const hotspotId = Number(
+    hs?.hotspot_ID || 0,
+  );
+
+  /*
+   * A previously persisted hotspot must survive a scoped rebuild even
+   * if today's normal direct-route candidate classification would not
+   * select it again.
+   */
+  if (isScopedProtectedHotspot(hotspotId)) {
+    return true;
+  }
+
+  const master = getMasterHotspot(hotspotId);
             const masterLocation = String(master?.hotspot_location || '');
             const masterToLocation = String(master?.hotspot_to_location || masterLocation || '');
 
@@ -2300,9 +2580,21 @@ export class TimelineBuilder {
             routeLegsForPhase,
           ).matches;
         };
-        selectedHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs: any) => {
-          const hotspotId = Number(hs?.hotspot_ID || 0);
-          if (isCorridorMasterHotspot(hotspotId) && !corridorBelongsToCurrentRoute(hotspotId)) {
+      selectedHotspots = (
+  selectedHotspots as Array<SelectedHotspot>
+).filter((hs: any) => {
+  const hotspotId = Number(
+    hs?.hotspot_ID || 0,
+  );
+
+  if (isScopedProtectedHotspot(hotspotId)) {
+    return true;
+  }
+
+  if (
+    isCorridorMasterHotspot(hotspotId) &&
+    !corridorBelongsToCurrentRoute(hotspotId)
+  ) {
             this.logBookingRule({
               rule: 'CORRIDOR_HOTSPOT_WRONG_ROUTE_BLOCKED',
               quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
@@ -2320,15 +2612,36 @@ export class TimelineBuilder {
           }
           return true;
         });
+const strictHotspots = (
+  selectedHotspots as Array<SelectedHotspot>
+).filter((hs: any) => {
+  const hotspotId = Number(
+    hs?.hotspot_ID || 0,
+  );
 
-        const strictHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs: any) => {
-          const priority = getCandidatePriority(hs);
-          const bucket = String((hs as any).matched_bucket || (hs as any).__bucket || '').toLowerCase();
-          const isExplicitViaStop = Boolean((hs as any).__explicit_via_stop);
+  const priority = getCandidatePriority(hs);
 
-          if (priority >= 1 && priority <= 3) {
-            return true;
-          }
+  const bucket = String(
+    (hs as any).matched_bucket ||
+    (hs as any).__bucket ||
+    '',
+  ).toLowerCase();
+
+  const isExplicitViaStop =
+    Boolean((hs as any).__explicit_via_stop);
+
+  /*
+   * Existing sightseeing on a scoped rebuild is mandatory.
+   * Its master priority must not decide whether it survives deletion
+   * of another hotspot.
+   */
+  if (isScopedProtectedHotspot(hotspotId)) {
+    return true;
+  }
+
+  if (priority >= 1 && priority <= 3) {
+    return true;
+  }
           if (
             isIntercityNonDirectRoute &&
             hasExplicitViaRouteForPhase &&
@@ -2574,7 +2887,44 @@ export class TimelineBuilder {
           }
         }
 
-        const PASS_STRICT = 1;
+        /*
+ * Normal intercity scheduling can reorder source/en-route/via/destination
+ * candidates.
+ *
+ * During a scoped rebuild we are not selecting a new itinerary.
+ * We are rebuilding the already-selected sightseeing after one deletion.
+ *
+ * Therefore preserve the persisted order.
+ */
+if (
+  options?.scopeToRouteId &&
+  protectedScopedHotspotIds.size > 0
+) {
+  strictPassHotspots = [
+    ...(selectedHotspots as Array<SelectedHotspot>),
+  ];
+
+  this.logBookingRule({
+    rule: 'SCOPED_REBUILD_STRICT_ORDER_PRESERVED',
+    quoteId:
+      (plan as any).quote_id ??
+      (plan as any).quoteId ??
+      (plan as any).quote_ID ??
+      null,
+    planId,
+    routeId: route.itinerary_route_ID,
+    protectedHotspotIds: Array.from(
+      protectedScopedHotspotIds.values(),
+    ),
+    finalOrder: strictPassHotspots.map(
+      (hotspot: any) =>
+        Number(hotspot?.hotspot_ID || 0),
+    ),
+  });
+}
+
+const PASS_STRICT = 1;
+        
         const PASS_FILLER_PRIMARY = 2;
         const PASS_DEFERRED_PRIMARY = 3;
         const PASS_REJECTED_RETRY = 4;
@@ -2656,11 +3006,29 @@ export class TimelineBuilder {
             ...extra,
           });
         };
-        const isSourcePhaseEligibleCandidate = (hs: any): boolean => {
-          const bucket = String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
-          const hotspotId = Number(hs?.hotspot_ID || 0);
-          const master = hotspotMap.get(hotspotId) as any;
+       const isSourcePhaseEligibleCandidate = (
+  hs: any,
+): boolean => {
+  const bucket = String(
+    hs?.matched_bucket ||
+    hs?.__bucket ||
+    '',
+  ).toLowerCase();
 
+  const hotspotId = Number(
+    hs?.hotspot_ID || 0,
+  );
+
+  /*
+   * Do not let normal source/en-route phase classification remove a
+   * sightseeing hotspot that already existed before this scoped rebuild.
+   */
+  if (isScopedProtectedHotspot(hotspotId)) {
+    return true;
+  }
+
+  const master =
+    hotspotMap.get(hotspotId) as any;
           const hotspotLocation = String(
             hs?.hotspot_location ||
               master?.hotspot_location ||
@@ -3302,19 +3670,32 @@ export class TimelineBuilder {
 
         const hotspotPriority = Number((sh as any).hotspot_priority ?? 0);
         const isStageAPriority = hotspotPriority >= 1 && hotspotPriority <= 3;
-        const bucket = (sh as any).matched_bucket as string | undefined;
-        const hotspotId = Number((sh as any).hotspot_ID || 0);
-        const normalizedBucket = String(bucket || '').toLowerCase();
+      const bucket =
+  (sh as any).matched_bucket as
+    | string
+    | undefined;
+
+const hotspotId = Number(
+  (sh as any).hotspot_ID || 0,
+);
+
+const preserveScopedHotspot =
+  isScopedProtectedHotspot(hotspotId);
+
+const normalizedBucket = String(
+  bucket || '',
+).toLowerCase();
         const isOptionalCorridorCandidate =
           isCorridorBucket(sh) && (hotspotPriority <= 0 || hotspotPriority >= 9999);
         const unresolvedPositiveCorridorIds = positiveCorridorHotspots
           .map((h: any) => Number(h?.hotspot_ID || 0))
           .filter((id: number) => id > 0 && !isHotspotAlreadyPlanned(id) && !resolvedPositiveCorridorIds.has(id));
-        if (
-          isIntercityNonDirectRoute &&
-          isOptionalCorridorCandidate &&
-          unresolvedPositiveCorridorIds.length > 0
-        ) {
+       if (
+  !preserveScopedHotspot &&
+  isIntercityNonDirectRoute &&
+  isOptionalCorridorCandidate &&
+  unresolvedPositiveCorridorIds.length > 0
+) {
           this.logBookingRule({
             rule: 'OPTIONAL_CORRIDOR_WAITING_FOR_POSITIVE',
             quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
@@ -3374,7 +3755,10 @@ export class TimelineBuilder {
 
  // PHP CHECK: Skip if hotspot already added to THIS PLAN (any previous route in this rebuild)
  // Line 15159 in sql_functions.php: check_hotspot_already_added_the_itineary_plan
-        if (isHotspotAlreadyPlanned(sh.hotspot_ID)) {
+     if (
+  !preserveScopedHotspot &&
+  isHotspotAlreadyPlanned(sh.hotspot_ID)
+) {
           logHotspotBucketTrace({
             hotspotId,
             hotspotName: String((sh as any).hotspot_name || ''),
@@ -3418,10 +3802,14 @@ export class TimelineBuilder {
           const sourcePhaseActive =
             !shouldBypassSourcePhaseForMovementTransfer &&
             currentSecs < sourcePhaseEndSeconds;
-          if (
-            enRoutePhaseStarted &&
-            (normalizedBucket === 'source' || normalizedBucket === 'source_fallback')
-          ) {
+        if (
+  !preserveScopedHotspot &&
+  enRoutePhaseStarted &&
+  (
+    normalizedBucket === 'source' ||
+    normalizedBucket === 'source_fallback'
+  )
+) {
             this.logBookingRule({
               rule: 'PHASE_GUARD_REJECTED',
               quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
@@ -3522,11 +3910,11 @@ export class TimelineBuilder {
           const isShoppingSpecialDayCandidate =
             (isArrivalDayRoute || isLastRoute) &&
             this.isShoppingHotspotType(cutoffHotspotType);
-
-          if (
-            isSourceLikeBucket &&
-            !isShoppingSpecialDayCandidate &&
-            shouldApplySourceHotspotCutoff &&
+if (
+  !preserveScopedHotspot &&
+  isSourceLikeBucket &&
+  !isShoppingSpecialDayCandidate &&
+  shouldApplySourceHotspotCutoff &&
             currentSecs >= sourceCutoffSecs &&
             !allowSourceCutoffRetryBypass &&
             String(sourceCity || '').trim().toLowerCase() !==
@@ -3536,16 +3924,21 @@ export class TimelineBuilder {
             cutoffHit = true;
           }
 
-          if (bucket === 'via' && currentSecs >= viaCutoffSecs) {
-            cutoffHit = true;
-          }
+         if (
+  !preserveScopedHotspot &&
+  bucket === 'via' &&
+  currentSecs >= viaCutoffSecs
+) {
+  cutoffHit = true;
+}
 
-          if (
-            bucket === 'destination' &&
-            currentSecs >= destCutoffSecs
-          ) {
-            cutoffHit = true;
-          }
+        if (
+  !preserveScopedHotspot &&
+  bucket === 'destination' &&
+  currentSecs >= destCutoffSecs
+) {
+  cutoffHit = true;
+}
           if (cutoffHit) {
             if (hotspotId === 228 || hotspotId === 357) {
               this.logBookingRule({
@@ -3835,7 +4228,9 @@ export class TimelineBuilder {
           plan,
           destinationCity,
           lastRouteArrivalDeadlineSeconds,
-          allowWaitUntilOpen: Number((sh as any).hotspot_priority ?? 0) > 0,
+         allowWaitUntilOpen:
+  preserveScopedHotspot ||
+  Number((sh as any).hotspot_priority ?? 0) > 0,
           rejectIfOutsideOperatingWindow: true,
           hotspotType,
         });
@@ -4122,19 +4517,29 @@ export class TimelineBuilder {
           }));
         }
 
-        if (
-          rejectDuplicatePlanHotspot(hotspotId, {
-            routeId: Number(route.itinerary_route_ID || 0),
-            routeDay: Number((route as any).no_of_days || routeIndex || 0),
-            sourceCity,
-            destinationCity,
-            branch: 'main_scheduling_loop',
-            hotspotName: String((hotspotData as any)?.hotspot_name || (sh as any)?.hotspot_name || ''),
-          })
-        ) {
-          continue;
-        }
-
+     if (
+  !preserveScopedHotspot &&
+  rejectDuplicatePlanHotspot(hotspotId, {
+    routeId: Number(
+      route.itinerary_route_ID || 0,
+    ),
+    routeDay: Number(
+      (route as any).no_of_days ||
+      routeIndex ||
+      0,
+    ),
+    sourceCity,
+    destinationCity,
+    branch: 'main_scheduling_loop',
+    hotspotName: String(
+      (hotspotData as any)?.hotspot_name ||
+      (sh as any)?.hotspot_name ||
+      '',
+    ),
+  })
+) {
+  continue;
+}
  // 2.c) Build TRAVEL SEGMENT (item_type = 3)
  // PHP BEHAVIOR: Travel and Visit segments share the SAME hotspot_order
         const currentOrder = order;
