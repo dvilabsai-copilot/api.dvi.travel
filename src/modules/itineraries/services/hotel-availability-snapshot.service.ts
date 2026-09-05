@@ -384,6 +384,82 @@ export class HotelAvailabilitySnapshotService {
       });
     }
     const sanitized = await this.sanitizeLegacyResponse(persistedResponse, plan);
+    // The unfiltered page-read is intentionally compact, but it still needs
+    // enough identity metadata for the hotel row editor and its load-more
+    // action.  The complete supplier rows live in the search cache; read only
+    // scalar cache columns here so refresh never rehydrates the large payload.
+    if (!options.page && !options.groupType && !options.itineraryRouteId) {
+      const cacheModel = (this.prisma as any).dvi_itinerary_hotel_search_cache;
+      const cachedRows = await cacheModel?.findMany?.({
+        where: {
+          quote_id: String(quoteId).trim(),
+          plan_id: Number(plan?.itinerary_plan_ID || 0),
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          route_id: true,
+          group_type: true,
+          hotel_code: true,
+          provider: true,
+          hotel_name: true,
+          rating: true,
+          check_in_date: true,
+        },
+        orderBy: [{ sort_rank: 'asc' }, { id: 'asc' }],
+      }) || [];
+      const compactGroups = Array.from(new Set<number>([
+        ...(Array.isArray((sanitized as any).hotelTabs)
+          ? (sanitized as any).hotelTabs.map((tab: any) => Number(tab?.groupType || 0))
+          : []),
+        ...(Array.isArray((sanitized as any).hotelSelectionState)
+          ? (sanitized as any).hotelSelectionState.map((group: any) => Number(group?.groupType || 0))
+          : []),
+      ].filter((groupType) => groupType > 0)));
+      if (compactGroups.length === 0) compactGroups.push(1);
+
+      const hotelIndex = new Map<string, any>();
+      const routeTotals = new Map<string, { groupType: number; total: number }>();
+      cachedRows.forEach((row: any) => {
+        const routeId = Number(row?.route_id || 0);
+        const rowGroupType = Number(row?.group_type || 0);
+        if (!routeId) return;
+        const provider = String(row?.provider || '').trim().toLowerCase();
+        const hotelCode = String(row?.hotel_code || '').trim();
+        const hotelName = String(row?.hotel_name || '').trim();
+        const groups = rowGroupType > 0 ? [rowGroupType] : compactGroups;
+        groups.forEach((groupType) => {
+          const indexKey = [provider, hotelCode, hotelName.toLowerCase(), groupType, routeId].join('|');
+          if (!hotelIndex.has(indexKey)) {
+            hotelIndex.set(indexKey, {
+              provider,
+              hotelCode: hotelCode || undefined,
+              hotelName,
+              category: row?.rating,
+              groupType,
+              routeId,
+              date: row?.check_in_date,
+            });
+          }
+          const routeKey = `${groupType}-${routeId}`;
+          const current = routeTotals.get(routeKey) || { groupType, total: 0 };
+          current.total += 1;
+          routeTotals.set(routeKey, current);
+        });
+      });
+      const routePagination: Record<string, any> = {};
+      routeTotals.forEach(({ groupType, total }, key) => {
+        routePagination[key] = {
+          page: 0,
+          pageSize: 20,
+          total,
+          hasMore: total > 0,
+          groupType,
+        };
+      });
+      (sanitized as any).hotelIndex = Array.from(hotelIndex.values());
+      (sanitized as any).routePagination = routePagination;
+    }
     const hasPaginationRequest = Boolean(
       options.page || options.groupType || options.itineraryRouteId,
     );

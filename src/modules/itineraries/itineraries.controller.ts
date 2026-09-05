@@ -973,6 +973,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
     };
 
     const inventoryRows = Array.isArray(sharedHotelInventory) ? sharedHotelInventory : [];
+    const persistedHotelIndex = Array.isArray((result.response as any)?.hotelIndex)
+      ? (result.response as any).hotelIndex
+      : [];
+    const persistedRoutePagination = (result.response as any)?.routePagination &&
+      typeof (result.response as any).routePagination === 'object'
+      ? (result.response as any).routePagination
+      : {};
     const compactAuthoritativeRows = Array.isArray(authoritativeRecommendationRows)
       ? authoritativeRecommendationRows.map(toCompactHotelRow)
       : [];
@@ -1087,8 +1094,10 @@ private readonly itineraryAccessService: ItineraryAccessService,
         // The initial response gives the client identity-only inventory for
         // counts/lookup without transferring supplier rate payloads. The
         // complete rows remain available through the persisted/pane contract.
-        hotelIndex,
-        routePagination: compactRoutePagination,
+        hotelIndex: hotelIndex.length > 0 ? hotelIndex : persistedHotelIndex,
+        routePagination: Object.keys(compactRoutePagination).length > 0
+          ? compactRoutePagination
+          : persistedRoutePagination,
         hotelTabs: (result.response.hotelTabs || []).map((tab: any) => ({
           groupType: tab.groupType,
           label: tab.label,
