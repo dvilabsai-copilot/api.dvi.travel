@@ -408,7 +408,7 @@ export class HotelAvailabilitySnapshotService {
     ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
     const matchesScope = (row: any): boolean => {
       const rowGroupType = Number(row?.groupType || row?.group_type || 0);
-      return (!requestedGroupType || rowGroupType === requestedGroupType) &&
+      return (!requestedGroupType || rowGroupType === 0 || rowGroupType === requestedGroupType) &&
         (!requestedRouteId || routeIdsOf(row).includes(requestedRouteId));
     };
     const scopedInventory = inventory.filter(matchesScope);
@@ -422,10 +422,16 @@ export class HotelAvailabilitySnapshotService {
     const routePagination: Record<string, { page: number; pageSize: number; total: number; hasMore: boolean; groupType: number }> = {};
     const pagination: Record<number, { page: number; pageSize: number; total: number; hasMore: boolean }> = {};
     const scopedGroups = Array.from(new Set<number>(
-      scopedInventory.map((row: any) => Number(row?.groupType || row?.group_type || requestedGroupType || 0)).filter(Boolean),
+      scopedInventory
+        .map((row: any) => Number(row?.groupType || row?.group_type || requestedGroupType || 0))
+        .map((groupType: number) => groupType || requestedGroupType)
+        .filter(Boolean),
     ));
     scopedGroups.forEach((groupType) => {
-      const groupRows = scopedInventory.filter((row: any) => Number(row?.groupType || row?.group_type || 0) === groupType);
+      const groupRows = scopedInventory.filter((row: any) => {
+        const rowGroupType = Number(row?.groupType || row?.group_type || 0);
+        return rowGroupType === 0 || rowGroupType === groupType;
+      });
       pagination[groupType] = {
         page,
         pageSize,
@@ -435,7 +441,7 @@ export class HotelAvailabilitySnapshotService {
     });
     const routeGroupPairs = new Map<string, { groupType: number; routeId: number; total: number }>();
     scopedInventory.forEach((row: any) => {
-      const groupType = Number(row?.groupType || row?.group_type || requestedGroupType || 0);
+      const groupType = Number(row?.groupType || row?.group_type || requestedGroupType || 0) || requestedGroupType || 1;
       routeIdsOf(row).forEach((routeId) => {
         if (requestedRouteId && routeId !== requestedRouteId) return;
         const key = `${groupType}-${routeId}`;

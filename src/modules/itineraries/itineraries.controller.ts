@@ -1000,18 +1000,30 @@ private readonly itineraryAccessService: ItineraryAccessService,
     );
     const compactRoutePagination: Record<string, { page: number; pageSize: number; total: number; hasMore: boolean; groupType: number }> = {};
     const compactRouteCounts = new Map<string, { groupType: number; total: number }>();
+    const compactGroupTypes = Array.from(new Set<number>([
+      ...(Array.isArray(result.response.hotelTabs)
+        ? result.response.hotelTabs.map((tab: any) => Number(tab?.groupType || 0))
+        : []),
+      ...(Array.isArray(result.response.hotelSelectionState)
+        ? result.response.hotelSelectionState.map((group: any) => Number(group?.groupType || 0))
+        : []),
+    ].filter((groupType) => groupType > 0)));
+    if (compactGroupTypes.length === 0) compactGroupTypes.push(1);
     const compactRouteIdsOf = (row: any): number[] => Array.from(new Set<number>([
       row?.routeId,
       row?.itineraryRouteId,
       ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
     ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
     inventoryRows.forEach((row: any) => {
-      const groupType = Number(row?.groupType || row?.group_type || 0);
+      const rowGroupType = Number(row?.groupType || row?.group_type || 0);
+      const groups = rowGroupType > 0 ? [rowGroupType] : compactGroupTypes;
       compactRouteIdsOf(row).forEach((routeId) => {
-        const key = `${groupType}-${routeId}`;
-        const current = compactRouteCounts.get(key) || { groupType, total: 0 };
-        current.total += 1;
-        compactRouteCounts.set(key, current);
+        groups.forEach((groupType) => {
+          const key = `${groupType}-${routeId}`;
+          const current = compactRouteCounts.get(key) || { groupType, total: 0 };
+          current.total += 1;
+          compactRouteCounts.set(key, current);
+        });
       });
     });
     compactRouteCounts.forEach(({ groupType, total }, key) => {
