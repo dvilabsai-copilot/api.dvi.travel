@@ -427,10 +427,12 @@ export class HotelAvailabilitySnapshotService {
 
       const hotelIndex = new Map<string, any>();
       const routeTotals = new Map<string, { groupType: number; total: number }>();
+      const cachedRouteIds = new Set<number>();
       cachedRows.forEach((row: any) => {
         const routeId = Number(row?.route_id || 0);
         const rowGroupType = Number(row?.group_type || 0);
         if (!routeId) return;
+        cachedRouteIds.add(routeId);
         const provider = String(row?.provider || '').trim().toLowerCase();
         const hotelCode = String(row?.hotel_code || '').trim();
         const hotelName = String(row?.hotel_name || '').trim();
@@ -454,6 +456,21 @@ export class HotelAvailabilitySnapshotService {
           routeTotals.set(routeKey, current);
         });
       });
+      // A previous response can retain empty-state metadata even after the
+      // search cache has been populated. Cache rows are authoritative for a
+      // database-only refresh, so stale blocks must not hide saved hotels.
+      const existingEmptyStayBlocks = (sanitized as any).hotelAvailability?.emptyStayBlocks;
+      if (Array.isArray(existingEmptyStayBlocks)) {
+        (sanitized as any).hotelAvailability = {
+          ...((sanitized as any).hotelAvailability || {}),
+          emptyStayBlocks: existingEmptyStayBlocks.filter((block: any) => {
+            const blockRouteIds = Array.isArray(block?.routeIds)
+              ? block.routeIds.map((value: unknown) => Number(value)).filter((value: number) => value > 0)
+              : [];
+            return !blockRouteIds.some((routeId: number) => cachedRouteIds.has(routeId));
+          }),
+        };
+      }
       const routePagination: Record<string, any> = {};
       routeTotals.forEach(({ groupType, total }, key) => {
         routePagination[key] = {
