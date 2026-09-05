@@ -467,7 +467,10 @@ export class HotelAvailabilitySnapshotService {
       (sanitized as any).hotelIndex = Array.from(hotelIndex.values());
       (sanitized as any).routePagination = routePagination;
     }
-    const hasPaginationRequest = Boolean(
+    // The unfiltered controller read supplies page=1 as a default, but it is
+    // still a complete snapshot read when pageSize=0. Do not replace the
+    // persisted selected summary with the first inventory page on refresh.
+    const hasPaginationRequest = !isCompleteSnapshotRead && Boolean(
       options.page || options.groupType || options.itineraryRouteId,
     );
     if (!hasPaginationRequest) return sanitized;
