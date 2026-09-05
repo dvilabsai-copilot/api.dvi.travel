@@ -217,7 +217,7 @@ test('marks a selected row unavailable when only its persisted snapshot has the 
   });
 
   assert.equal(state[0].routes[0].selectionStatus, 'UNAVAILABLE');
-  assert.equal(state[0].routes[0].selected, null);
+  assert.equal(state[0].routes[0].selected?.hotelName, 'THE ARBOUR RESORT');
 });
 
 test('canonical room pricing wins over stale nightly baseAmount', () => {
@@ -348,7 +348,7 @@ test('projects one persisted continuous-stay selection to every authoritative ro
   assert.equal(state[0].routes[1].selected?.totalPrice, 4180);
 });
 
-test('returns explicit unavailable route state without exposing a fake selected object', () => {
+test('returns explicit unavailable route state while exposing the persisted manual identity', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 0 }],
     rows: routes.map((route) => selectedRow(route.routeId, {
@@ -360,7 +360,7 @@ test('returns explicit unavailable route state without exposing a fake selected 
 
   assert.equal(state[0].selectionStatus, 'UNAVAILABLE');
   assert.ok(state[0].routes.every((route) => route.selectionStatus === 'UNAVAILABLE'));
-  assert.ok(state[0].routes.every((route) => route.selected === null));
+  assert.ok(state[0].routes.every((route) => route.selected?.hotelName === 'THE ARBOUR RESORT'));
 });
 
 test('returns TBO stable selection identity separately from the fresh supplier token', () => {

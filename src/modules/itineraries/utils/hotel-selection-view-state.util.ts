@@ -583,6 +583,21 @@ export function buildHotelSelectionState({
           selected: selectedView(selectedRow, requiredRoute.routeDate),
         };
       }
+      // Keep a persisted manual choice visible even when the latest supplier
+      // check marks its rate unavailable. The explicit route status prevents
+      // booking it, while showing the saved identity lets the user replace it
+      // from the hotel pane instead of seeing an unexplained empty cell.
+      const unavailableUserRow = unavailableRow &&
+        String(unavailableRow?.selectionOrigin || unavailableRow?.selection_origin || '').trim().toUpperCase() === 'USER_SELECTED'
+        ? unavailableRow
+        : null;
+      if (unavailableUserRow) {
+        return {
+          ...requiredRoute,
+          selectionStatus: 'UNAVAILABLE' as const,
+          selected: selectedView(unavailableUserRow, requiredRoute.routeDate),
+        };
+      }
       if (unavailableRow) {
         return {
           ...requiredRoute,
