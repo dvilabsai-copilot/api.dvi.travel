@@ -5784,7 +5784,10 @@ this.logger.log(
         totalStayPrice: totalPrice,
         pricePerNight,
         selectedRoomType: roomType,
-        numberOfNights: noOfNights,
+        // This is a route-level summary row. The itinerary-wide night count
+        // must not multiply a persisted daily selection when the exact fresh
+        // supplier rate is temporarily absent.
+        numberOfNights: 1,
         bookingCode: snapshot.bookingCode || undefined,
         searchReference: snapshot.searchReference || undefined,
         rateOptionId: rateOptionId || undefined,
@@ -5838,7 +5841,7 @@ this.logger.log(
       };
       // Persisted selections are display rows too. Normalize their amount at
       // the response boundary; the database value is not mutated here.
-      return priceHotelStay(selectedRow, noOfNights);
+      return priceHotelStay(selectedRow, 1);
     };
 
     const cleanIdentity = (value: unknown): string =>
@@ -6524,17 +6527,17 @@ this.logger.log(
           const route = routes.find((candidate: any) => Number(candidate?.itinerary_route_ID || 0) === routeId);
           if (!route) continue;
 
-          // Do not resurrect an old persisted selection into a category slot
+          // Do not resurrect an old automatic selection into a category slot
           // that the fresh recommendation snapshot now marks unavailable.
-          // This is especially important after changing the requested hotel
-          // categories: the old row may still exist for audit/history, but it
-          // must not turn a sold-out Group 3/4 into a stale lower-category
-          // hotel card.
+          // User-owned selections are different: the itinerary summary must
+          // continue to display the persisted choice even when the supplier
+          // no longer returns the exact rate. Rebuild that row from the DB
+          // snapshot so the UI can show the existing review/unavailable state.
           const currentPackage = pricedPackages.find((pkg) => Number(pkg.groupType || 0) === groupType);
           const currentStay = currentPackage?.stayResults?.find(
             (stay) => Number(stay.parentRouteId || 0) === routeId,
           );
-          if (currentStay) continue;
+          if (currentStay && selectionOriginFromRow(selection) !== 'USER_SELECTED') continue;
 
           cleanedHotelRows.push(buildPersistedSelectionRow(selection, route, groupType));
         }
