@@ -383,7 +383,83 @@ export class HotelAvailabilitySnapshotService {
         }, {}),
       });
     }
-    return this.sanitizeLegacyResponse(persistedResponse, plan);
+    const sanitized = await this.sanitizeLegacyResponse(persistedResponse, plan);
+    const hasPaginationRequest = Boolean(
+      options.page || options.groupType || options.itineraryRouteId,
+    );
+    if (!hasPaginationRequest) return sanitized;
+
+    // The compact initial check response deliberately omits the shared
+    // inventory. Load-more reads that inventory from the persisted snapshot
+    // and return only one route/group page, so the browser never has to
+    // download the full supplier payload again.
+    const availability = (sanitized as any).hotelAvailability || {};
+    const inventory = Array.isArray(availability.sharedHotelInventory)
+      ? availability.sharedHotelInventory
+      : [];
+    const requestedGroupType = Number(options.groupType || 0);
+    const requestedRouteId = Number(options.itineraryRouteId || 0);
+    const page = Math.max(1, Number(options.page || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(options.pageSize || 20)));
+    const routeIdsOf = (row: any): number[] => Array.from(new Set<number>([
+      row?.routeId,
+      row?.itineraryRouteId,
+      ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
+    ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
+    const matchesScope = (row: any): boolean => {
+      const rowGroupType = Number(row?.groupType || row?.group_type || 0);
+      return (!requestedGroupType || rowGroupType === requestedGroupType) &&
+        (!requestedRouteId || routeIdsOf(row).includes(requestedRouteId));
+    };
+    const scopedInventory = inventory.filter(matchesScope);
+    const start = (page - 1) * pageSize;
+    const pageRows = scopedInventory
+      .slice(start, start + pageSize)
+      .map((row: any) => this.toClientHotelRow(row));
+    const total = scopedInventory.length;
+    const responseAvailability = { ...availability };
+    delete responseAvailability.sharedHotelInventory;
+    const routePagination: Record<string, { page: number; pageSize: number; total: number; hasMore: boolean; groupType: number }> = {};
+    const pagination: Record<number, { page: number; pageSize: number; total: number; hasMore: boolean }> = {};
+    const scopedGroups = Array.from(new Set<number>(
+      scopedInventory.map((row: any) => Number(row?.groupType || row?.group_type || requestedGroupType || 0)).filter(Boolean),
+    ));
+    scopedGroups.forEach((groupType) => {
+      const groupRows = scopedInventory.filter((row: any) => Number(row?.groupType || row?.group_type || 0) === groupType);
+      pagination[groupType] = {
+        page,
+        pageSize,
+        total: groupRows.length,
+        hasMore: start + pageSize < groupRows.length,
+      };
+    });
+    const routeGroupPairs = new Map<string, { groupType: number; routeId: number; total: number }>();
+    scopedInventory.forEach((row: any) => {
+      const groupType = Number(row?.groupType || row?.group_type || requestedGroupType || 0);
+      routeIdsOf(row).forEach((routeId) => {
+        if (requestedRouteId && routeId !== requestedRouteId) return;
+        const key = `${groupType}-${routeId}`;
+        const current = routeGroupPairs.get(key) || { groupType, routeId, total: 0 };
+        current.total += 1;
+        routeGroupPairs.set(key, current);
+      });
+    });
+    routeGroupPairs.forEach(({ groupType, routeId, total: routeTotal }, key) => {
+      routePagination[key] = {
+        page,
+        pageSize,
+        total: routeTotal,
+        hasMore: start + pageSize < routeTotal,
+        groupType,
+      };
+    });
+    return {
+      ...sanitized,
+      hotels: pageRows,
+      pagination,
+      routePagination,
+      hotelAvailability: responseAvailability,
+    } as ItineraryHotelDetailsResponseDto;
   }
 
   private async buildFreshResponse(

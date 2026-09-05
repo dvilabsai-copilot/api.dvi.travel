@@ -998,6 +998,33 @@ private readonly itineraryAccessService: ItineraryAccessService,
         }),
       ).values(),
     );
+    const compactRoutePagination: Record<string, { page: number; pageSize: number; total: number; hasMore: boolean; groupType: number }> = {};
+    const compactRouteCounts = new Map<string, { groupType: number; total: number }>();
+    const compactRouteIdsOf = (row: any): number[] => Array.from(new Set<number>([
+      row?.routeId,
+      row?.itineraryRouteId,
+      ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
+    ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
+    inventoryRows.forEach((row: any) => {
+      const groupType = Number(row?.groupType || row?.group_type || 0);
+      compactRouteIdsOf(row).forEach((routeId) => {
+        const key = `${groupType}-${routeId}`;
+        const current = compactRouteCounts.get(key) || { groupType, total: 0 };
+        current.total += 1;
+        compactRouteCounts.set(key, current);
+      });
+    });
+    compactRouteCounts.forEach(({ groupType, total }, key) => {
+      compactRoutePagination[key] = {
+        // Zero means no candidate page has been transferred yet. The first
+        // click therefore requests page 1 from the persisted inventory API.
+        page: 0,
+        pageSize: 20,
+        total,
+        hasMore: total > 0,
+        groupType,
+      };
+    });
     const routeIdsOf = (row: any): number[] => Array.from(new Set<number>([
       row?.routeId,
       row?.itineraryRouteId,
@@ -1049,6 +1076,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
         // counts/lookup without transferring supplier rate payloads. The
         // complete rows remain available through the persisted/pane contract.
         hotelIndex,
+        routePagination: compactRoutePagination,
         hotelTabs: (result.response.hotelTabs || []).map((tab: any) => ({
           groupType: tab.groupType,
           label: tab.label,

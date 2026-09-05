@@ -91,6 +91,40 @@ test('initial compact response promotes an authoritative hotel over a blank rout
   assert.equal(result.hotelDetails.hotelAvailability.sharedHotelInventory, undefined);
 });
 
+test('initial compact response exposes per-route load-more metadata without inventory rows', () => {
+  const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  const result = (controller as any).buildCompactHotelAvailabilityResponse(
+    {
+      response: {
+        hotels: [{ routeId: 11531, itineraryRouteId: 11531, groupType: 1, date: '2026-09-07', hotelName: 'Selected Hotel' }],
+        hotelTabs: [],
+        hotelSelectionState: [],
+        hotelAvailability: {
+          sharedHotelInventory: Array.from({ length: 21 }, (_, index) => ({
+            routeId: 11531,
+            itineraryRouteId: 11531,
+            groupType: 1,
+            hotelName: `Hotel ${index + 1}`,
+            rateOptions: [{ rateOptionId: `rate-${index + 1}` }],
+          })),
+        },
+      },
+      changeSummary: null,
+    },
+    null,
+    false,
+  );
+
+  assert.equal(result.hotelDetails.hotelAvailability.sharedHotelInventory, undefined);
+  assert.deepEqual(result.hotelDetails.routePagination['1-11531'], {
+    page: 0,
+    pageSize: 20,
+    total: 21,
+    hasMore: true,
+    groupType: 1,
+  });
+});
+
 test('reset endpoint returns only a reset acknowledgement', async () => {
   const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
   let resetQuoteId = '';
