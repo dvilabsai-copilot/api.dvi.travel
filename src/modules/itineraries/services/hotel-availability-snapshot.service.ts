@@ -1858,6 +1858,38 @@ export class HotelAvailabilitySnapshotService {
         })
       .map((row: any) => this.toClientHotelRow(row));
     const availability = (response as any)?.hotelAvailability || {};
+    // The compact response intentionally contains only the first card page.
+    // Selection state is a separate contract, so it must not be derived from
+    // that page: a persisted selection can legitimately be outside page 1.
+    // Load only the scalar selection fields needed by hotelSelectionState;
+    // never append these rows to `hotels` or reintroduce the large payload.
+    const persistedSelectionRows = await (this.prisma as any).dvi_itinerary_plan_hotel_details
+      ?.findMany?.({
+        where: {
+          itinerary_plan_id: Number(plan?.itinerary_plan_ID || 0),
+          hotel_required: 1,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          itinerary_plan_hotel_details_ID: true,
+          group_type: true,
+          itinerary_plan_id: true,
+          itinerary_route_id: true,
+          itinerary_route_date: true,
+          hotel_id: true,
+          hotel_code: true,
+          hotel_provider: true,
+          hotel_booking_mode: true,
+          price_source: true,
+          selected_rate_option_id: true,
+          selected_price_per_night: true,
+          selected_total_price: true,
+          selected_currency: true,
+          selected_price_snapshot: true,
+          selection_origin: true,
+        },
+      }) || [];
     const routeDetailsModel = (this.prisma as any).dvi_itinerary_route_details;
     const currentRoutes = routeDetailsModel?.findMany
       ? await routeDetailsModel.findMany({
@@ -1922,7 +1954,7 @@ export class HotelAvailabilitySnapshotService {
       ...response,
       hotelSelectionState: buildHotelSelectionState({
         tabs: response.hotelTabs || [],
-        rows: hotels,
+        rows: [...hotels, ...persistedSelectionRows],
         requiredRoutes: searchableRoutes,
       }),
       hotels,
