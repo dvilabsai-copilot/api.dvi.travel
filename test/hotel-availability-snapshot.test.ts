@@ -1400,6 +1400,78 @@ function makeReconciliationTx() {
   return { tx, selections, rooms };
 }
 
+test('AxisRooms reconciliation compares the margin-inclusive payable price', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const { tx, selections } = makeReconciliationTx();
+  const selection = selections[0];
+  Object.assign(selection, {
+    hotel_provider: 'axisrooms',
+    hotel_code: '231',
+    hotel_id: 231,
+    selected_rate_option_id: 'axisrooms:231:604:CP_PLAN:2026-07-28',
+    selected_total_price: 10918,
+    selected_price_per_night: 10918,
+    hotel_margin_percentage: 6,
+    hotel_margin_rate: 618,
+    selected_price_snapshot: JSON.stringify({
+      provider: 'axisrooms',
+      hotelCode: '231',
+      canonicalHotelId: 231,
+      hotelName: 'AURUM RESORT',
+      roomType: 'Garden Cottage',
+      mealPlan: 'CP',
+      rateOptionId: 'axisrooms:231:604:CP_PLAN:2026-07-28',
+      totalPrice: 10918,
+      pricePerNight: 10918,
+      optionKey: 'axisrooms|231|604|604|cp_plan|axisrooms:231:604:cp_plan:2026-07-28',
+      selectionOrigin: 'AUTO_SELECTED',
+    }),
+  });
+  tx.dvi_itinerary_plan_details = {
+    findUnique: async () => ({ total_adult: 3, preferred_room_count: 1 }),
+  };
+  tx.dvi_hotel_occupancy_rate = {
+    findMany: async () => [{
+      occupancy_rates: JSON.stringify({ DOUBLE: 6800 }),
+      start_date: new Date('2026-07-01'),
+      received_at: new Date('2026-07-01'),
+    }],
+  };
+
+  const refreshed: any = {
+    groupType: 1,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    provider: 'axisrooms',
+    hotelCode: '231',
+    hotelId: 231,
+    canonicalHotelId: 231,
+    hotelName: 'AURUM RESORT',
+    roomId: 604,
+    roomType: 'Garden Cottage',
+    mealPlan: 'CP',
+    rateOptionId: 'axisrooms:231:604:CP_PLAN:2026-07-28',
+    baseTotalPrice: 6800,
+    extraBedAmount: 3500,
+    hotelMarginPercentage: 6,
+    pricePerNight: 10300,
+    totalPrice: 10300,
+  };
+  refreshed.optionKey = hotelOptionKey(refreshed);
+  selection.selected_price_snapshot = JSON.stringify({
+    ...JSON.parse(selection.selected_price_snapshot),
+    optionKey: refreshed.optionKey,
+  });
+
+  const summary = await (service as any).reconcileSelections(
+    tx, 44, [refreshed], 'run-axis-stable-price', 1,
+    false, undefined, undefined, undefined, new Set(), [], true,
+  );
+
+  assert.equal(summary.hasChanges, false);
+  assert.equal(selection.selected_total_price, 10918);
+});
+
 test('reconciliation is idempotent and updates the existing selected room in place', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections, rooms } = makeReconciliationTx();
@@ -1577,6 +1649,38 @@ test('price reconciliation stages the complete nested option until acknowledgeme
   assert.equal(acceptedSnapshot.roomType, 'Deluxe Room');
   assert.equal(acceptedSnapshot.mealPlan, 'CP');
   assert.equal(Object.prototype.hasOwnProperty.call(acceptedSnapshot, 'pendingAvailabilityChange'), false);
+});
+
+test('reconciliation preview checks USER_SELECTED price changes without mutating them', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const { tx, selections } = makeReconciliationTx();
+  const refreshed: any = {
+    groupType: 1,
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    provider: 'tbo',
+    hotelCode: 'H-1',
+    hotelId: 101,
+    hotelName: 'Stable Hotel',
+    roomType: 'Deluxe',
+    mealPlan: 'CP',
+    rateOptionId: 'rate-1',
+    pricePerNight: 125,
+    totalPrice: 125,
+  };
+  refreshed.optionKey = hotelOptionKey(refreshed);
+
+  const summary = await (service as any).reconcileSelections(
+    tx, 44, [refreshed], 'run-manual-preview', 1,
+    false, undefined, undefined, undefined, new Set(), [], true,
+  );
+
+  assert.equal(summary.hasChanges, true);
+  assert.equal(summary.changes.some((change: any) =>
+    change.changeType === 'PRICE_CHANGED' && change.selectionOrigin === 'USER_SELECTED',
+  ), true);
+  assert.equal(selections[0].selected_total_price, 100);
+  assert.equal(JSON.parse(selections[0].selected_price_snapshot).pendingAvailabilityChange, undefined);
 });
 
 test('unavailable exact USER_SELECTED rate is preserved and reports the fresh same-hotel proposal', async () => {

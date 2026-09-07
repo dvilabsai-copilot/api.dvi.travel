@@ -4001,10 +4001,10 @@ export class HotelAvailabilitySnapshotService {
       if (allowOfflineAutoSelection && String(selection.hotel_provider || '').trim().toLowerCase() === 'offline') continue;
 
       const origin = selectionOriginFromRow(selection);
-      // Reload/reconciliation previews are intentionally limited to automatic
-      // selections. A manual choice is user-owned and must not generate a
-      // blocking replacement proposal during background validation.
-      if (dryRun && origin === 'USER_SELECTED') continue;
+      // Manual choices are user-owned, so reconciliation must never replace
+      // them automatically. They still have to be checked in preview mode:
+      // the user needs to see a changed price or an unavailable rate and can
+      // then choose a replacement explicitly from the hotel pane.
       const selectedProvider = String(selection.hotel_provider || '').trim().toLowerCase();
       if (selectedProvider && failedProviders.has(selectedProvider)) {
         const priorSnapshot = parseHotelSelectionSnapshot(selection) as any;
@@ -4122,7 +4122,19 @@ export class HotelAvailabilitySnapshotService {
         continue;
       }
 
-      const next = hotelDisplaySnapshot(replacement);
+      // Persisted selections store the payable sell total (room cost plus
+      // supplements, margin, and tax), while fresh supplier rows can still
+      // carry the pre-margin amount. Price the fresh option before building
+      // the comparison snapshot so reconciliation compares sell-to-sell.
+      // The same canonical option is then used for the pending change and
+      // acknowledgement, preventing the dialog and persisted row from using
+      // different price bases.
+      const pricedReplacement = await this.pricePendingSelectionOption(
+        tx,
+        selection,
+        replacement,
+      );
+      const next = hotelDisplaySnapshot(pricedReplacement);
       // Any non-exact match means the old persisted rate is unavailable,
       // even when the same property has another fresh room/meal rate. The
       // replacement is therefore a complete fresh auto-selection.
@@ -4159,7 +4171,7 @@ export class HotelAvailabilitySnapshotService {
           },
         });
         if (!wasAlreadyUnavailable) {
-          changes.push(this.buildChange('SELECTION_UNAVAILABLE', selection, replacement, {
+          changes.push(this.buildChange('SELECTION_UNAVAILABLE', selection, pricedReplacement, {
             previous,
             current: next,
             priceDelta: displayPriceDelta,
@@ -4171,9 +4183,9 @@ export class HotelAvailabilitySnapshotService {
 
       if (replacementWasUnavailable) {
         if (!dryRun) await this.stagePendingSelectionChange(
-          tx, selection, replacement, nextSelectionOrigin, searchRunId, 'AUTO_SELECTION_CHANGED',
+          tx, selection, pricedReplacement, nextSelectionOrigin, searchRunId, 'AUTO_SELECTION_CHANGED',
         );
-        changes.push(this.buildChange('AUTO_SELECTION_CHANGED', selection, replacement, {
+        changes.push(this.buildChange('AUTO_SELECTION_CHANGED', selection, pricedReplacement, {
           previous,
           current: next,
           priceDelta: displayPriceDelta,
@@ -4182,7 +4194,6 @@ export class HotelAvailabilitySnapshotService {
         }));
       } else if (matched && Math.abs(displayPriceDelta) > 0.009) {
         if (!dryRun && persistPriceChanges) {
-          const pricedReplacement = await this.pricePendingSelectionOption(tx, selection, replacement);
           await tx.dvi_itinerary_plan_hotel_details.update({
             where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
             data: this.buildSelectionUpdate(selection, pricedReplacement, origin, searchRunId),
@@ -4190,10 +4201,10 @@ export class HotelAvailabilitySnapshotService {
           await this.syncSelectedRoom(tx, selection, pricedReplacement, createdBy);
         } else if (!dryRun) {
           await this.stagePendingSelectionChange(
-            tx, selection, replacement, origin, searchRunId, 'PRICE_CHANGED',
+            tx, selection, pricedReplacement, origin, searchRunId, 'PRICE_CHANGED',
           );
         }
-        changes.push(this.buildChange('PRICE_CHANGED', selection, replacement, {
+        changes.push(this.buildChange('PRICE_CHANGED', selection, pricedReplacement, {
           previous,
           current: next,
           priceDelta: displayPriceDelta,
@@ -4203,7 +4214,6 @@ export class HotelAvailabilitySnapshotService {
       } else {
         const previousPersistedSnapshot = parseHotelSelectionSnapshot(selection) as any;
         if (!dryRun && persistPriceChanges) {
-          const pricedReplacement = await this.pricePendingSelectionOption(tx, selection, replacement);
           await tx.dvi_itinerary_plan_hotel_details.update({
             where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
             data: this.buildSelectionUpdate(selection, pricedReplacement, origin, searchRunId),
