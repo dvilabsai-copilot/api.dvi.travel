@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { normalizeCityName } from '../utils/city-normalization.util';
 
-type ManualHotspotCityContext = 'SOURCE_CITY' | 'DESTINATION_CITY' | 'UNKNOWN';
+type ManualHotspotCityContext =
+  'SOURCE_CITY' |
+  'VIA_ROUTE' |
+  'DESTINATION_CITY' |
+  'UNKNOWN';
 
 @Injectable()
 export class ItineraryManualFitRoutePolicyService {
@@ -308,13 +312,20 @@ export class ItineraryManualFitRoutePolicyService {
       || (!!sourceKey && !!destinationKey && sourceKey === destinationKey)
     );
 
-    if (!sameCityRoute) {
-      const forwardRouteMovement = (matchesSource || toMatchesSource) && toMatchesDestination;
-      const reverseRouteMovement = (matchesDestination || toMatchesDestination) && toMatchesSource;
+  if (!sameCityRoute) {
+  const forwardRouteMovement =
+    (matchesSource || toMatchesSource) && toMatchesDestination;
 
-      if (forwardRouteMovement && !reverseRouteMovement) return 'DESTINATION_CITY';
-      if (reverseRouteMovement && !forwardRouteMovement) return 'SOURCE_CITY';
-    }
+  const reverseRouteMovement =
+    (matchesDestination || toMatchesDestination) && toMatchesSource;
+
+  if (
+    (forwardRouteMovement && !reverseRouteMovement) ||
+    (reverseRouteMovement && !forwardRouteMovement)
+  ) {
+    return 'VIA_ROUTE';
+  }
+}
 
     if (sameCityRoute && matchesSource && matchesDestination) return 'SOURCE_CITY';
     if (matchesDestination && !matchesSource) return 'DESTINATION_CITY';
