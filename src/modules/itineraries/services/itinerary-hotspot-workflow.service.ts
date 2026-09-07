@@ -360,12 +360,13 @@ export class ItineraryHotspotWorkflowService {
           || availabilityStatus === 'EXCLUDED_BY_ROUTE';
         const activeRouteRow = thisRouteAddedRowByHotspotId.get(hotspotId) || null;
         const cityContext = this.classifyManualHotspotCityContext({
-          location_name: sourceName,
-          next_visiting_location: destName,
-        }, {
-          hotspot_location: h.hotspot_location,
-          hotspot_name: h.hotspot_name,
-        });
+  location_name: sourceName,
+  next_visiting_location: destName,
+}, {
+  hotspot_location: h.hotspot_location,
+  hotspot_to_location: h.hotspot_to_location,
+  hotspot_name: h.hotspot_name,
+});
 
         return {
           id: hotspotId,
