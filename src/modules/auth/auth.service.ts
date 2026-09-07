@@ -445,31 +445,32 @@ export class AuthService {
       return null;
     }
 
-    const rows = await this.prisma.$queryRaw<
-      Array<{
-        agent_name: string | null;
-        agent_lastname: string | null;
-        company_name: string | null;
-        site_logo: string | null;
-      }>
-    >`
-      SELECT
-        A.agent_name,
-        A.agent_lastname,
-        C.company_name,
-        C.site_logo
-      FROM dvi_agent AS A
-      LEFT JOIN dvi_agent_configuration AS C
-        ON C.agent_id = A.agent_ID
-        AND C.status = 1
-        AND C.deleted = 0
-      WHERE A.agent_ID = ${agentId}
-        AND A.status = 1
-        AND A.deleted = 0
-      ORDER BY C.agent_config_id DESC
-      LIMIT 1
-    `;
-
+const rows = await this.prisma.$queryRaw<
+  Array<{
+    agent_name: string | null;
+    agent_lastname: string | null;
+    agent_primary_mobile_number: string | null;
+    company_name: string | null;
+    site_logo: string | null;
+  }>
+>`
+  SELECT
+    A.agent_name,
+    A.agent_lastname,
+    A.agent_primary_mobile_number,
+    C.company_name,
+    C.site_logo
+  FROM dvi_agent AS A
+  LEFT JOIN dvi_agent_configuration AS C
+    ON C.agent_id = A.agent_ID
+    AND C.status = 1
+    AND C.deleted = 0
+  WHERE A.agent_ID = ${agentId}
+    AND A.status = 1
+    AND A.deleted = 0
+  ORDER BY C.agent_config_id DESC
+  LIMIT 1
+`;
     const agent = rows[0];
 
     if (!agent) {
@@ -484,15 +485,18 @@ export class AuthService {
       .filter(Boolean)
       .join(" ");
 
-    return {
-      agentName,
-      companyName: String(
-        agent.company_name ?? "",
-      ).trim(),
-      siteLogo: String(
-        agent.site_logo ?? "",
-      ).trim(),
-    };
+return {
+  agentName,
+  companyName: String(
+    agent.company_name ?? "",
+  ).trim(),
+  siteLogo: String(
+    agent.site_logo ?? "",
+  ).trim(),
+  agentMobile: String(
+    agent.agent_primary_mobile_number ?? "",
+  ).trim(),
+};
   }
 
 private async buildLoginResponse(user: any) {
@@ -540,13 +544,14 @@ private async buildLoginResponse(user: any) {
     guideId,
     name: fullName,
 
-    ...(agentContext
-      ? {
-          agentName: agentContext.agentName,
-          companyName: agentContext.companyName,
-          siteLogo: agentContext.siteLogo,
-        }
-      : {}),
+...(agentContext
+  ? {
+      agentName: agentContext.agentName,
+      companyName: agentContext.companyName,
+      siteLogo: agentContext.siteLogo,
+      agentMobile: agentContext.agentMobile,
+    }
+  : {}),
 
     ...(staffContext
       ? {
@@ -580,13 +585,16 @@ private async buildLoginResponse(user: any) {
       fullName,
 
       agentName:
-        agentContext?.agentName ?? null,
+  agentContext?.agentName ?? null,
 
-      companyName:
-        agentContext?.companyName ?? null,
+companyName:
+  agentContext?.companyName ?? null,
 
-      siteLogo:
-        agentContext?.siteLogo ?? null,
+siteLogo:
+  agentContext?.siteLogo ?? null,
+
+agentMobile:
+  agentContext?.agentMobile ?? null,
 
       permissionRoleId:
         staffContext?.permissionRoleId ?? null,
