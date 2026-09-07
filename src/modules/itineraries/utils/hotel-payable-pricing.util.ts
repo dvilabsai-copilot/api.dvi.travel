@@ -17,6 +17,30 @@ export interface StoredHotelPayablePricingInput {
   baseTotal?: unknown;
   marginAmount?: unknown;
   marginPercentage?: unknown;
+  taxAmount?: unknown;
+  /** Use the persisted component breakdown as the source of truth. */
+  preferCalculatedTotal?: boolean;
+}
+
+export interface HotelRouteNightPayableInput {
+  marginBaseAmount?: unknown;
+  marginPercentage?: unknown;
+  fallbackMarginAmount?: unknown;
+  taxAmount?: unknown;
+  billingMultiplier?: unknown;
+}
+
+/** Calculate the payable amount for one physical hotel night. */
+export function calculateHotelRouteNightPayable(input: HotelRouteNightPayableInput): number {
+  const marginBaseAmount = money(input.marginBaseAmount);
+  const marginPercentage = Math.max(Number(input.marginPercentage || 0), 0);
+  const marginAmount = marginPercentage > 0
+    ? money((marginBaseAmount * marginPercentage) / 100)
+    : money(input.fallbackMarginAmount);
+  const billingMultiplier = Math.max(Number(input.billingMultiplier || 1), 1);
+  const taxAmount = money(input.taxAmount) * billingMultiplier;
+
+  return money(marginBaseAmount + marginAmount + taxAmount);
 }
 
 /** Normalize legacy persisted rows to the margin-inclusive payable amount. */
@@ -28,7 +52,15 @@ export function resolveStoredHotelPayablePricing(input: StoredHotelPayablePricin
   const calculatedMargin = explicitMargin > 0
     ? explicitMargin
     : money((baseTotal * marginPercentage) / 100);
-  const payableTotal = Math.max(storedTotal, money(baseTotal + calculatedMargin));
+  const taxAmount = money(input.taxAmount);
+  const calculatedTotal = money(baseTotal + calculatedMargin + taxAmount);
+  // Component-priced providers must not retain a stale, larger selected total;
+  // that makes the displayed room/supplement breakdown disagree with the
+  // amount used in the itinerary total. Complete-fare providers continue to
+  // use the stored supplier total through the default legacy behavior.
+  const payableTotal = input.preferCalculatedTotal
+    ? calculatedTotal
+    : Math.max(storedTotal, calculatedTotal);
 
   return {
     baseTotal,
@@ -65,27 +97,66 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     option?.price,
     option?.pricePerNight,
   );
-  const baseTotal = positive(
+  const provider = String(option?.provider || option?.hotel_provider || '').trim().toLowerCase();
+  const isCompleteFareProvider = provider === 'tbo' || provider === 'vsr';
+  const componentRoomTotal = positive(option?.totalRoomCost, option?.total_room_cost);
+  const explicitBaseTotal = positive(
+    // Component-priced providers expose totalRoomCost as the room-only DB
+    // amount. Prefer it over a stale aggregate baseTotalPrice, which may
+    // already contain supplements or a previous payable total.
+    !isCompleteFareProvider ? componentRoomTotal : 0,
     option?.baseTotalPrice,
     option?.baseStayPrice,
     option?.baseHotelCost,
     option?.baseAmount,
-    option?.basePricePerNight,
-    alreadyProjected ? 0 : payableBeforeProjection,
+    isCompleteFareProvider ? componentRoomTotal : 0,
   );
-  const basePerNight = positive(
+  const roomCount = Math.max(
+    Number(option?.total_no_of_rooms ?? option?.noOfRooms ?? option?.roomCount ?? 1),
+    1,
+  );
+  // Legacy TBO/VSR snapshots can contain only the margin-inclusive payable
+  // amount. Once a row is marked as projected, treating that payable value as
+  // the base would calculate the margin twice and make the tooltip show an
+  // inconsistent Total/Margin/Grand Total. Recover the supplier base from
+  // the authoritative payable amount when the margin percentage is available.
+  const inferredProjectedBase = alreadyProjected && explicitBaseTotal <= 0 &&
+    marginPercentage > 0 && payableBeforeProjection > 0
+    ? money(payableBeforeProjection / (1 + marginPercentage / 100))
+    : 0;
+  const baseTotal = explicitBaseTotal > 0
+    ? explicitBaseTotal
+    : inferredProjectedBase > 0
+      ? inferredProjectedBase
+      : positive(option?.basePricePerNight, alreadyProjected ? 0 : payableBeforeProjection);
+  const rawBasePerNight = positive(
     option?.basePricePerNight,
     option?.baseAmountPerNight,
     baseTotal,
   );
+  const basePerNight = explicitBaseTotal > 0 && roomCount > 1 &&
+    Math.abs(rawBasePerNight - explicitBaseTotal) < 0.01
+    ? money(explicitBaseTotal / roomCount)
+    : rawBasePerNight;
+  const supplementTotal = money(
+    positive(option?.extraBedAmount, option?.extraBedCost, option?.total_extra_bed_cost) +
+    positive(option?.childWithBedAmount, option?.childWithBedCost, option?.total_childwith_bed_cost) +
+    positive(option?.childWithoutBedAmount, option?.childWithoutBedCost, option?.total_childwithout_bed_cost),
+  );
+  const marginBaseTotal = money(baseTotal + supplementTotal);
+  const marginBasePerNight = money(basePerNight + supplementTotal);
   const marginTotal = alreadyProjected
-    ? positive(option?.hotelMarginTotalAmount, option?.hotelMarginStayAmount, option?.hotelMarginAmount)
-    : money((baseTotal * marginPercentage) / 100);
+    ? marginPercentage > 0
+      ? money((marginBaseTotal * marginPercentage) / 100)
+      : positive(option?.hotelMarginTotalAmount, option?.hotelMarginStayAmount, option?.hotelMarginAmount)
+    : money((marginBaseTotal * marginPercentage) / 100);
   const marginPerNight = alreadyProjected
-    ? positive(option?.hotelMarginAmount, marginTotal)
-    : money((basePerNight * marginPercentage) / 100);
-  const reconstructedPayableTotal = money(baseTotal + marginTotal);
-  const reconstructedPayablePerNight = money(basePerNight + marginPerNight);
+    ? marginPercentage > 0
+      ? money((marginBasePerNight * marginPercentage) / 100)
+      : positive(option?.hotelMarginAmount, marginTotal)
+    : money((marginBasePerNight * marginPercentage) / 100);
+  const reconstructedPayableTotal = money(marginBaseTotal + marginTotal);
+  const reconstructedPayablePerNight = money(marginBasePerNight + marginPerNight);
   const payableTotal = alreadyProjected
     ? Math.max(payableBeforeProjection, reconstructedPayableTotal)
     : reconstructedPayableTotal;
@@ -100,10 +171,18 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     ...option,
     basePricePerNight: basePerNight,
     baseTotalPrice: baseTotal,
+    // Canonical room pricing is provider-neutral: the room rate is one
+    // room's pure charge for one physical night, while totalRoomCost is the
+    // room-only amount for the requested room count.  Supplier-specific
+    // adapters may already provide these values, but legacy TBO/VSR rows do
+    // not, so normalize them here instead of making React infer them.
+    roomRate: positive(option?.roomRate, option?.room_rate, basePerNight),
+    totalRoomCost: positive(option?.totalRoomCost, option?.total_room_cost, baseTotal),
     hotelMarginPercentage: marginPercentage,
     hotelMarginAmount: marginPerNight,
     hotelMarginStayAmount: marginTotal,
     hotelMarginTotalAmount: marginTotal,
+    hotelMarginBaseAmount: marginBaseTotal,
     price: payablePerNight,
     pricePerNight: payablePerNight,
     totalPrice: payableTotal,

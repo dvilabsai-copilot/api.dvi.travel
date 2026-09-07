@@ -648,11 +648,6 @@ export class StaahService {
       }
     }
 
-    const extraAdult = this.toFiniteNumber(source.extraadult);
-    if (extraAdult !== null) {
-      occupancyRates.EXTRAADULT = extraAdult;
-    }
-
     const extraChild = this.toFiniteNumber(source.extrachild);
     if (extraChild !== null) {
       occupancyRates.EXTRACHILD = extraChild;
@@ -663,6 +658,13 @@ export class StaahService {
     );
     if (extraBed !== null) {
       occupancyRates.EXTRABED = extraBed;
+    } else {
+      // STAAH calls this supplement extraadult, but DVI's canonical
+      // occupancy key is EXTRABED (also used by the booking payload).
+      const extraAdult = this.toFiniteNumber(source.extraadult);
+      if (extraAdult !== null) {
+        occupancyRates.EXTRABED = extraAdult;
+      }
     }
 
     return Object.keys(occupancyRates).length > 0 ? occupancyRates : null;

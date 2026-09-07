@@ -1,6 +1,7 @@
 // DTO for hotel room selection modal
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsOptional, IsString, IsNumber, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsInt, IsNotEmpty, IsOptional, IsString, IsNumber, Min, ValidateNested } from 'class-validator';
 
 export class GetHotelRoomCategoriesDto {
   @ApiProperty({ description: 'Itinerary Plan Hotel Details ID' })
@@ -150,6 +151,78 @@ export class UpdateRoomCategoryDto {
   @IsInt()
   @IsOptional()
   dinner_meal_plan?: number;
+}
+
+export class UpdateRoomCategoryItemDto {
+  @ApiProperty({ required: false })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  itinerary_plan_hotel_room_details_ID?: number;
+
+  @ApiProperty({ description: 'Physical room number' })
+  @IsInt()
+  @Min(1)
+  room_number: number;
+
+  @ApiProperty({ description: 'Selected room type ID' })
+  @IsInt()
+  @Min(1)
+  room_type_id: number;
+
+  @ApiProperty({ required: false, default: 1 })
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  room_qty?: number;
+}
+
+export class UpdateRoomCategoriesDto {
+  @ApiProperty({ description: 'Itinerary Plan Hotel Details ID' })
+  @IsInt()
+  @IsNotEmpty()
+  itinerary_plan_hotel_details_ID: number;
+
+  @ApiProperty({ description: 'Itinerary Plan ID' })
+  @IsInt()
+  @IsNotEmpty()
+  itinerary_plan_id: number;
+
+  @ApiProperty({ description: 'Itinerary Route ID' })
+  @IsInt()
+  @IsNotEmpty()
+  itinerary_route_id: number;
+
+  @ApiProperty({ description: 'Hotel ID' })
+  @IsInt()
+  @IsNotEmpty()
+  hotel_id: number;
+
+  @ApiProperty({ description: 'Group Type' })
+  @IsInt()
+  @IsNotEmpty()
+  group_type: number;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  hotel_code?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  provider?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  hotel_name?: string;
+
+  @ApiProperty({ type: [UpdateRoomCategoryItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateRoomCategoryItemDto)
+  rooms: UpdateRoomCategoryItemDto[];
 }
 
 export class HotelRoomCategoryResponseDto {

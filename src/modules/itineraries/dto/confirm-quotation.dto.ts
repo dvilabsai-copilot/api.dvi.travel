@@ -172,6 +172,11 @@ export class HotelSelectionDto {
   @IsString()
   rateId?: string;
 
+  @ApiProperty({ example: 'CP_PLAN', required: false })
+  @IsOptional()
+  @IsString()
+  rateOptionId?: string;
+
   @ApiProperty({
     required: false,
     description: 'Independent supplier room/rate selection for each requested room',

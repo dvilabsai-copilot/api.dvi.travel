@@ -259,6 +259,20 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
     return { success: true };
   }
 
+  @Patch('trip-completed')
+  @ApiOperation({ summary: 'Mark driver route trip as completed' })
+  async completeDriverTrip(
+    @Body('itineraryPlanId', ParseIntPipe) itineraryPlanId: number,
+    @Body('itineraryRouteId', ParseIntPipe) itineraryRouteId: number,
+  ) {
+    await this.service.completeDriverTrip(
+      itineraryPlanId,
+      itineraryRouteId,
+    );
+
+    return { success: true };
+  }
+
  // Day Images
   @Post('day-images')
   @ApiOperation({ summary: 'Upload driver day images for a route' })

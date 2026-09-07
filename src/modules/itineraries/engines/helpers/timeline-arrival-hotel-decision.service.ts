@@ -171,17 +171,15 @@ export class TimelineArrivalHotelDecisionService {
         evaluatedArrivalPolicy.goToHotelImmediately === true ||
         evaluatedArrivalPolicy.deferHotelToEndOfDay !== true;
 
- // Only true early-arrival deferred-hotel flows should force the legacy
- // 08:00 AM -> 09:00 AM Day 1 buffer. Later arrivals (for example 10 AM)
- // still may defer hotel check-in, but they must retain the saved route start.
-      const enforceStrictDay1EarlyArrivalDeferredFlow =
-        isFirstRoute &&
-        (
-          isEarlyArrivalResolvedSameDayDeferredFlow ||
-          isEarlyArrivalAwaitingDecisionSameDayFlow
-        );
-      const firstSightseeingMovementTime =
-        enforceStrictDay1EarlyArrivalDeferredFlow ? '09:00:00' : null;
+// Keep the legacy 08:00 AM -> 09:00 AM buffer only while the
+// early-arrival hotel decision is still unresolved.
+// Once the guest chooses same-day/direct sightseeing, respect the saved route start time.
+const enforceStrictDay1EarlyArrivalDeferredFlow =
+  isFirstRoute &&
+  isEarlyArrivalAwaitingDecisionSameDayFlow;
+
+const firstSightseeingMovementTime =
+  enforceStrictDay1EarlyArrivalDeferredFlow ? '09:00:00' : null;
 
       const isEarlyArrivalPrevDayConfirmed =
         !!evaluatedArrivalPolicy &&

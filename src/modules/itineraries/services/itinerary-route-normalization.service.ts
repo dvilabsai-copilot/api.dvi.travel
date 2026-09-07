@@ -6,6 +6,12 @@ export type RouteOptimizationStop = {
   normalizedName: string;
 };
 
+export type RouteOptimizationStayDay = {
+  name: string;
+  normalizedName: string;
+  count: number;
+};
+
 export type RouteOptimizationContext = {
   start: string;
   end: string;
@@ -15,6 +21,7 @@ export type RouteOptimizationContext = {
   cleanedFullPath: string[];
   rawMiddleLocations: string[];
   movableStops: RouteOptimizationStop[];
+  stayDays: RouteOptimizationStayDay[];
   removedDuplicates: RouteOptimizationStop[];
   removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
 };
@@ -42,28 +49,74 @@ export class ItineraryRouteNormalizationService {
   }
 
   extractRouteOptimizationContext(routes: any[]): RouteOptimizationContext {
-    const sourceLocations = routes.map((r) => String(r?.location_name || '').trim());
-    const nextVisitingLocations = routes.map((r) => String(r?.next_visiting_location || '').trim());
-    const rawFullPath = sourceLocations.length > 0 ? [sourceLocations[0], ...nextVisitingLocations] : [];
-    const cleanedFullPath = this.buildCleanOptimizationPath(rawFullPath);
-    const start = cleanedFullPath[0] || '';
-    const end = cleanedFullPath[cleanedFullPath.length - 1] || '';
-    const rawMiddleLocations = cleanedFullPath.slice(1, -1);
-    const rawStops = this.buildMovableStops(rawMiddleLocations, start, end);
-    const dedupeResult = this.dedupeStops(rawStops);
+    const sourceLocations = routes.map((r) =>
+      String(r?.location_name || '').trim(),
+    );
 
-    return {
-      start,
-      end,
-      sourceLocations,
-      nextVisitingLocations,
-      rawFullPath,
-      cleanedFullPath,
-      rawMiddleLocations,
-      movableStops: dedupeResult.stops,
-      removedDuplicates: dedupeResult.removedDuplicates,
-      removedInvalidTerminalNodes: rawStops.removedInvalidTerminalNodes,
-    };
+    const nextVisitingLocations = routes.map((r) =>
+      String(r?.next_visiting_location || '').trim(),
+    );
+
+    const rawFullPath =
+      sourceLocations.length > 0
+        ? [sourceLocations[0], ...nextVisitingLocations]
+        : [];
+
+    const cleanedFullPath =
+      this.buildCleanOptimizationPath(rawFullPath);
+
+    // Arrival and departure are hard anchors.
+    // Prefer the literal incoming locations so an airport/station is not
+    // accidentally converted into only its normalized city name.
+    const start =
+      rawFullPath.find((value) =>
+        Boolean(String(value || '').trim()),
+      ) ||
+      cleanedFullPath[0] ||
+      '';
+
+    const end =
+      [...rawFullPath]
+        .reverse()
+        .find((value) =>
+          Boolean(String(value || '').trim()),
+        ) ||
+      cleanedFullPath[cleanedFullPath.length - 1] ||
+      '';
+
+    const rawMiddleLocations =
+      cleanedFullPath.slice(1, -1);
+
+const rawStops =
+  this.buildMovableStops(
+    rawMiddleLocations,
+  );
+
+return {
+  start,
+  end,
+  sourceLocations,
+  nextVisitingLocations,
+  rawFullPath,
+  cleanedFullPath,
+  rawMiddleLocations,
+
+  // Non-consecutive repeated destinations are genuine itinerary
+  // occurrences and must remain available to the optimizer.
+  movableStops: rawStops.stops,
+
+  // Literal A -> A rows continue to be handled separately
+  // as explicit stay days.
+  stayDays:
+    this.extractExplicitStayDays(routes),
+
+  // Kept for context/interface compatibility.
+  // Genuine revisits are no longer treated as duplicates.
+  removedDuplicates: [],
+
+  removedInvalidTerminalNodes:
+    rawStops.removedInvalidTerminalNodes,
+};
   }
 
   hasBrokenChain(routes: any[]): boolean {
@@ -79,116 +132,298 @@ export class ItineraryRouteNormalizationService {
   }
 
   private buildMovableStops(
-    rawMiddleLocations: string[],
-    start: string,
-    end: string,
-  ): {
-    stops: RouteOptimizationStop[];
-    removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
-  } {
-    const stops: RouteOptimizationStop[] = [];
-    const removedInvalidTerminalNodes: Array<{ name: string; reason: string }> = [];
-    const startNormalized = this.normalizeLocationName(start);
-    const endNormalized = this.normalizeLocationName(end);
+  rawMiddleLocations: string[],
+): {
+  stops: RouteOptimizationStop[];
+  removedInvalidTerminalNodes: Array<{
+    name: string;
+    reason: string;
+  }>;
+} {
+  const stops:
+    RouteOptimizationStop[] = [];
 
-    for (let idx = 0; idx < rawMiddleLocations.length; idx++) {
-      const name = String(rawMiddleLocations[idx] || '').trim();
-      const normalizedName = this.normalizeLocationName(name);
+  const removedInvalidTerminalNodes:
+    Array<{
+      name: string;
+      reason: string;
+    }> = [];
 
-      if (!name || !normalizedName) {
-        removedInvalidTerminalNodes.push({ name, reason: 'empty-name' });
-        continue;
-      }
+  /*
+   * The first arrival occurrence and final departure occurrence
+   * have already been removed from this collection by:
+   *
+   * cleanedFullPath.slice(1, -1)
+   *
+   * Therefore every valid occurrence remaining here is a genuine
+   * middle itinerary occurrence and must be movable.
+   *
+   * Do NOT remove a middle location merely because it normalizes
+   * to the same city as the arrival/departure anchor.
+   *
+   * Example:
+   *
+   * Chennai Domestic Airport
+   * -> Pondicherry
+   * -> Chennai
+   * -> Pondicherry
+   * -> Chennai Domestic Airport
+   *
+   * Movable occurrences must be:
+   *
+   * Pondicherry
+   * Chennai
+   * Pondicherry
+   */
+  for (
+    const rawLocation of
+      rawMiddleLocations
+  ) {
+    const name =
+      String(
+        rawLocation || '',
+      ).trim();
 
-      if (normalizedName === startNormalized || normalizedName === endNormalized) {
-        const preserveFirstTerminalToCityHop =
-          idx === 0 &&
-          normalizedName === startNormalized &&
-          this.isTerminalAnchorLocation(start) &&
-          !this.isTerminalAnchorLocation(name) &&
-          start.trim().toLowerCase() !== name.trim().toLowerCase();
+    const normalizedName =
+      this.normalizeLocationName(
+        name,
+      );
 
-        if (preserveFirstTerminalToCityHop) {
-          stops.push({ name, normalizedName });
+    if (
+      !name ||
+      !normalizedName
+    ) {
+      removedInvalidTerminalNodes.push({
+        name,
+        reason: 'empty-name',
+      });
+
+      continue;
+    }
+
+    stops.push({
+      name,
+      normalizedName,
+    });
+  }
+
+  return {
+    stops,
+    removedInvalidTerminalNodes,
+  };
+}
+private buildCleanOptimizationPath(
+  rawFullPath: string[],
+): string[] {
+  const cleaned: string[] = [];
+
+  for (
+    let i = 0;
+    i < rawFullPath.length;
+    i++
+  ) {
+    const name =
+      String(
+        rawFullPath[i] || '',
+      ).trim();
+
+    const normalizedName =
+      this.normalizeLocationName(
+        name,
+      );
+
+    if (
+      !name ||
+      !normalizedName
+    ) {
+      continue;
+    }
+
+    if (
+      cleaned.length > 0
+    ) {
+      const prevName =
+        cleaned[
+          cleaned.length - 1
+        ];
+
+      const prevNormalized =
+        this.normalizeLocationName(
+          prevName,
+        );
+
+      /*
+       * Consecutive locations which normalize to the same city
+       * need two different treatments:
+       *
+       * A -> A
+       * = explicit stay day
+       * = remove from movable sequence and reinsert later.
+       *
+       * City -> City Airport / Railway Station
+       * Airport / Station -> City
+       * = real transfer
+       * = preserve.
+       */
+      if (
+        normalizedName ===
+        prevNormalized
+      ) {
+        const previousLiteral =
+          prevName
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const currentLiteral =
+          name
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const literalsDiffer =
+          previousLiteral !==
+          currentLiteral;
+
+        const preserveSameCityTransfer =
+          literalsDiffer &&
+          (
+            this.isTerminalAnchorLocation(
+              prevName,
+            ) ||
+            this.isTerminalAnchorLocation(
+              name,
+            )
+          );
+
+        if (
+          !preserveSameCityTransfer
+        ) {
           continue;
         }
+      }
+    }
 
-        removedInvalidTerminalNodes.push({ name, reason: 'matches-anchor' });
+    /*
+     * IMPORTANT:
+     *
+     * Do NOT globally de-duplicate normalized locations.
+     *
+     * A -> B -> C -> B -> D
+     * contains two genuine B occurrences.
+     *
+     * Both must survive normalization so the optimizer can
+     * evaluate the complete itinerary without changing its
+     * number of days.
+     */
+    cleaned.push(name);
+  }
+
+  if (
+    cleaned.length >= 2
+  ) {
+    return cleaned;
+  }
+
+  const first =
+    rawFullPath.find(
+      (value) =>
+        this.normalizeLocationName(
+          value,
+        ),
+    );
+
+  const last =
+    [...rawFullPath]
+      .reverse()
+      .find(
+        (value) =>
+          this.normalizeLocationName(
+            value,
+          ),
+      );
+
+  const fallback: string[] = [];
+
+  if (first) {
+    fallback.push(
+      String(first).trim(),
+    );
+  }
+
+  if (
+    last &&
+    String(last)
+      .trim()
+      .toLowerCase() !==
+      String(first || '')
+        .trim()
+        .toLowerCase()
+  ) {
+    fallback.push(
+      String(last).trim(),
+    );
+  }
+
+  return fallback;
+}
+  private extractExplicitStayDays(
+    routes: any[],
+  ): RouteOptimizationStayDay[] {
+    const byIdentity =
+      new Map<string, RouteOptimizationStayDay>();
+
+    for (const route of routes || []) {
+      const source =
+        String(route?.location_name || '').trim();
+
+      const destination =
+        String(
+          route?.next_visiting_location || '',
+        ).trim();
+
+      if (!source || !destination) {
         continue;
       }
 
-      stops.push({ name, normalizedName });
-    }
+      // Only literal A -> A rows are treated as stay days.
+      //
+      // Airport -> City may normalize to the same city but must NOT
+      // be classified as a stay day.
+      const sourceIdentity =
+        source
+          .toLowerCase()
+          .replace(/\s+/g, ' ')
+          .trim();
 
-    return { stops, removedInvalidTerminalNodes };
-  }
+      const destinationIdentity =
+        destination
+          .toLowerCase()
+          .replace(/\s+/g, ' ')
+          .trim();
 
-  private buildCleanOptimizationPath(rawFullPath: string[]): string[] {
-    const cleaned: string[] = [];
-    const seen = new Set<string>();
-
-    for (let i = 0; i < rawFullPath.length; i++) {
-      const name = String(rawFullPath[i] || '').trim();
-      const normalizedName = this.normalizeLocationName(name);
-      if (!name || !normalizedName) continue;
-
-      let shouldPreserveTerminalToCityHop = false;
-      if (cleaned.length > 0) {
-        const prevName = cleaned[cleaned.length - 1];
-        const prevNormalized = this.normalizeLocationName(prevName);
-        if (normalizedName === prevNormalized) {
-          const isFirstHop = cleaned.length === 1;
-          shouldPreserveTerminalToCityHop =
-            isFirstHop &&
-            this.isTerminalAnchorLocation(prevName) &&
-            !this.isTerminalAnchorLocation(name) &&
-            prevNormalized === normalizedName &&
-            prevName.trim().toLowerCase() !== name.trim().toLowerCase();
-
-          if (!shouldPreserveTerminalToCityHop) continue;
-        }
-      }
-
-      const isLastNode = i === rawFullPath.length - 1;
-      if (seen.has(normalizedName) && !isLastNode && !shouldPreserveTerminalToCityHop) continue;
-
-      cleaned.push(name);
-      seen.add(normalizedName);
-    }
-
-    if (cleaned.length >= 2) return cleaned;
-
-    const first = rawFullPath.find((p) => this.normalizeLocationName(p));
-    const last = [...rawFullPath].reverse().find((p) => this.normalizeLocationName(p));
-    const fallback: string[] = [];
-    if (first) fallback.push(String(first).trim());
-    if (last && this.normalizeLocationName(last) !== this.normalizeLocationName(first || '')) {
-      fallback.push(String(last).trim());
-    }
-    return fallback;
-  }
-
-  private dedupeStops(stopsInput: {
-    stops: RouteOptimizationStop[];
-    removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
-  }): {
-    stops: RouteOptimizationStop[];
-    removedDuplicates: RouteOptimizationStop[];
-  } {
-    const seen = new Set<string>();
-    const stops: RouteOptimizationStop[] = [];
-    const removedDuplicates: RouteOptimizationStop[] = [];
-
-    for (const stop of stopsInput.stops) {
-      if (seen.has(stop.normalizedName)) {
-        removedDuplicates.push(stop);
+      if (
+        sourceIdentity !== destinationIdentity
+      ) {
         continue;
       }
 
-      seen.add(stop.normalizedName);
-      stops.push(stop);
+      const existing =
+        byIdentity.get(sourceIdentity);
+
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+
+      byIdentity.set(sourceIdentity, {
+        name: source,
+        normalizedName:
+          this.normalizeLocationName(source),
+        count: 1,
+      });
     }
 
-    return { stops, removedDuplicates };
+    return Array.from(byIdentity.values());
   }
 }

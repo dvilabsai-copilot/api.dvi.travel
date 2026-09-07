@@ -121,6 +121,22 @@ export class TimelineCandidatePolicyService {
     return this.slotPolicyService.getDayTimeSlot(timeValue);
   }
 
+  public isShoppingHotspotType(hotspotType?: string | null): boolean {
+    return this.slotPolicyService.isShoppingHotspotType(hotspotType);
+  }
+
+  public evaluateShoppingDayWindow(input: {
+    hotspotType?: string | null;
+    isArrivalDay: boolean;
+    isDepartureDay: boolean;
+    arrivalTimeSeconds?: number | null;
+    departureTimeSeconds?: number | null;
+    availableFromSeconds: number;
+    availableUntilSeconds: number;
+  }) {
+    return this.slotPolicyService.evaluateShoppingDayWindow(input);
+  }
+
   public resolveTimelineBucket(hotspot: any): string {
     return String(
       hotspot?.matched_bucket ||

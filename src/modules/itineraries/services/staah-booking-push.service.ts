@@ -808,7 +808,7 @@ export class StaahBookingPushService {
           baseAmount: Number(breakdown.baseOccupancyAmount.toFixed(2)),
           extraAdultCount,
           extraChildCount: Number(breakdown.extraChildCount || 0),
-          extraAdultRate: extraAdultCount > 0 ? Number(normalizedRates.EXTRAADULT || 0) : 0,
+          extraAdultRate: extraAdultCount > 0 ? Number(normalizedRates.EXTRABED || normalizedRates.EXTRAADULT || 0) : 0,
           extraChildRate: Number(breakdown.extraChildCount || 0) > 0 ? Number(breakdown.extraChildRate || 0) : 0,
         });
       }

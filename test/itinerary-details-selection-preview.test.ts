@@ -182,3 +182,111 @@ test('selection preview prefers the selected route date when a rebuilt route has
   assert.equal(override.breakdown[0].date, '2026-08-13');
   assert.equal(override.breakdown[0].totalAmount, 11000);
 });
+
+test('selection preview accepts STAAH rate-plan identity from confirmation payload', async () => {
+  const service = new ItineraryDetailsService(
+    {
+      dvi_itinerary_plan_details: {
+        findFirst: async () => ({ itinerary_quote_ID: 'DVI2026091' }),
+      },
+    } as any,
+    {} as any,
+    {
+      getActiveRows: async () => [{
+        itineraryRouteId: 11372,
+        groupType: 1,
+        provider: 'staah',
+        hotelCode: '44596',
+        providerHotelCode: 'STAAHTESTHOTELPROD',
+        bookingCode: undefined,
+        searchReference: 'STAAH-STAAHTESTHOTELPROD-DELUXEROOM-CP_PLAN-20260903',
+        rateOptionId: 'CP_PLAN',
+        rateId: 'CP_PLAN',
+        roomId: 'DELUXEROOM',
+        roomType: 'Deluxe Room',
+        mealPlan: 'Continental Plan',
+        totalHotelCost: 3960,
+        totalHotelTaxAmount: 0,
+        baseHotelCost: 3600,
+      }],
+      optionKey: (row: any) => `staah|${row.hotelCode}|${row.rateOptionId}`,
+    } as any,
+  );
+
+  const override = await (service as any).buildSelectedHotelCostOverride({
+    planId: 10234,
+    quoteId: 'DVI2026091',
+    selections: {
+      11372: {
+        routeId: 11372,
+        provider: 'staah',
+        hotelCode: 'STAAHTESTHOTELPROD',
+        bookingCode: 'CP_PLAN',
+        searchReference: 'CP_PLAN',
+        roomType: 'Deluxe Room',
+        mealPlan: 'Continental Plan',
+      },
+    },
+    groupType: 1,
+  });
+
+  assert.equal(override.rows.length, 1);
+  assert.equal(override.breakdown[0].hotelCode, '44596');
+  assert.equal(override.breakdown[0].totalAmount, 3960);
+});
+
+test('selection preview matches AxisRooms prefixed property code to numeric snapshot code', async () => {
+  const service = new ItineraryDetailsService(
+    {
+      dvi_itinerary_plan_details: {
+        findFirst: async () => ({ itinerary_quote_ID: 'DVI2026091' }),
+      },
+    } as any,
+    {} as any,
+    {
+      getActiveRows: async () => [{
+        itineraryRouteId: 11372,
+        groupType: 1,
+        provider: 'axisrooms',
+        hotelCode: '95',
+        providerHotelCode: undefined,
+        bookingCode: 'axisrooms:95:616:616|CP_PLAN:2026-09-03',
+        searchReference: 'axisrooms:95:616:616|CP_PLAN:2026-09-03',
+        rateOptionId: 'axisrooms:95:616:616|CP_PLAN:2026-09-03',
+        roomId: '616',
+        rateId: '616',
+        roomType: 'Deluxe AC',
+        mealPlan: 'CP',
+        totalHotelCost: 9328,
+        totalHotelTaxAmount: 0,
+        baseHotelCost: 9328,
+      }],
+      optionKey: (row: any) => row.rateOptionId,
+    } as any,
+  );
+
+  const override = await (service as any).buildSelectedHotelCostOverride({
+    planId: 10234,
+    quoteId: 'DVI2026091',
+    selections: {
+      11372: {
+        routeId: 11372,
+        provider: 'axisrooms',
+        hotelCode: 'AX_DVI_HOTEL_95',
+        bookingCode: 'axisrooms:95:616:616|CP_PLAN:2026-09-03',
+        searchReference: 'axisrooms:95:616:616|CP_PLAN:2026-09-03',
+        rateOptionId: 'axisrooms:95:616:616|CP_PLAN:2026-09-03',
+        roomId: '616',
+        rateId: '616',
+        roomType: 'Deluxe AC',
+        mealPlan: 'CP',
+        checkInDate: '2026-09-03',
+      },
+    },
+    groupType: 1,
+  });
+
+  assert.equal(override.rows.length, 1);
+  assert.equal(override.breakdown[0].hotelCode, '95');
+  assert.equal(override.breakdown[0].totalAmount, 9328);
+});

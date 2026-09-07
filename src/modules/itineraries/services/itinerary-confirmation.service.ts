@@ -115,9 +115,10 @@ export class ItineraryConfirmationService {
       groupType,
       skippedExternalStayCount,
     } = hotelSelectionState;
-    if (this.hotelApprovalService) {
-      await this.hotelApprovalService.assertPlanCanFinalize(dto.itinerary_plan_ID);
-    }
+    // Offline hotels are manual requests. Confirm the itinerary and copy the
+    // selected hotel snapshot first; hotel approval/confirmation happens
+    // afterward through ItineraryHotelApprovalService. Live supplier hotels
+    // continue through the existing provider-bookable flow below.
  console.log('[CONFIRM_QUOTATION_HOTEL_SELECTION_SYNCED]', {
       planId: dto.itinerary_plan_ID,
       shouldConfirmHotels,
@@ -594,28 +595,38 @@ export class ItineraryConfirmationService {
   }
 
   private getSupplierStayMergeKey(booking: any): string {
+    const provider = String(booking?.provider || booking?.__provider || '').trim().toLowerCase();
     return [
-      String(booking?.provider || booking?.__provider || '').trim().toLowerCase(),
+      provider,
       String(booking?.hotelCode || '').trim().toLowerCase(),
       String(booking?.roomId || '').trim().toLowerCase(),
       String(booking?.rateId || '').trim().toLowerCase(),
       String(booking?.roomType || '').trim().toLowerCase(),
       this.normalizeHotelSelectionIdentity(booking?.mealPlan),
+      // TBO booking codes identify the rate/session. Only merge adjacent
+      // nights when the supplier returned the same bookable rate; otherwise
+      // separate nightly selections must remain separate bookings.
+      provider === 'tbo' ? String(booking?.bookingCode || '').trim().toLowerCase() : '',
     ].join('|');
   }
 
   private canMergeSupplierStayBooking(booking: any): boolean {
     const provider = String(booking?.provider || booking?.__provider || '').trim().toLowerCase();
 
-    if (provider !== 'staah' && provider !== 'axisrooms') {
+    if (provider !== 'staah' && provider !== 'axisrooms' && provider !== 'tbo') {
       return false;
     }
 
-    return Boolean(
+    const hasBaseIdentity = Boolean(
       String(booking?.hotelCode || '').trim() &&
-      String(booking?.roomId || '').trim() &&
-      String(booking?.rateId || '').trim() &&
       String(booking?.checkInDate || '').trim(),
+    );
+    if (provider === 'tbo') {
+      return hasBaseIdentity && Boolean(String(booking?.roomType || '').trim());
+    }
+    return hasBaseIdentity && Boolean(
+      String(booking?.roomId || '').trim() &&
+      String(booking?.rateId || '').trim(),
     );
   }
 

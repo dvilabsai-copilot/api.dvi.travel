@@ -46,6 +46,7 @@ import { CancelHotelVouchersDto } from './dto/cancel-hotel-vouchers.dto';
 import {
   GetHotelRoomCategoriesDto,
   UpdateRoomCategoryDto,
+  UpdateRoomCategoriesDto,
   HotelRoomCategoriesListResponseDto,
 } from './dto/hotel-room-selection.dto';
 import { ItinerariesService } from './itineraries.service';
@@ -94,6 +95,20 @@ import { ItineraryAccessService } from './services/itinerary-access.service';
 @Controller('itineraries')
 export class ItinerariesController {
   private logger = new Logger('ItinerariesController');
+
+  private memorySnapshot() {
+    if (!['1', 'true', 'yes', 'on'].includes(String(process.env.PERF_MEMORY_LOG || '').trim().toLowerCase())) {
+      return undefined;
+    }
+
+    const memory = process.memoryUsage();
+    return {
+      rssMb: Math.round((memory.rss / 1024 / 1024) * 100) / 100,
+      heapUsedMb: Math.round((memory.heapUsed / 1024 / 1024) * 100) / 100,
+      heapTotalMb: Math.round((memory.heapTotal / 1024 / 1024) * 100) / 100,
+      externalMb: Math.round((memory.external / 1024 / 1024) * 100) / 100,
+    };
+  }
 
   constructor(
     private readonly svc: ItinerariesService,
@@ -223,6 +238,27 @@ private readonly itineraryAccessService: ItineraryAccessService,
       'para',
       groupTypes,
     );
+  }
+
+  @Post('route-optimization/preview')
+  @ApiOperation({
+    summary:
+      'Preview the best route alternatives without saving the itinerary',
+
+    description:
+      'Keeps arrival and departure fixed, preserves every itinerary day, and returns up to three scored route alternatives.',
+  })
+  @ApiBody({
+    type: CreateItineraryDto,
+  })
+  async previewRouteOptimization(
+    @Body()
+    dto: CreateItineraryDto,
+  ) {
+    return this.svc
+      .previewRouteOptimization(
+        dto,
+      );
   }
 
   @Post()
@@ -403,10 +439,79 @@ private readonly itineraryAccessService: ItineraryAccessService,
     @Query('type') type?: string,
     @Req() req?: Request,
   ) {
- // Check if route optimization is requested
+    const startedAt = Date.now();
+    // Check if route optimization is requested
     const shouldOptimizeRoute = type === 'itineary_basic_info_with_optimized_route';
     const routeCount = Array.isArray((dto as any)?.routes) ? (dto as any).routes.length : 0;
-    return this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
+    this.logger.log(`[ITINERARY_CREATE_TIMING] start ${JSON.stringify({
+      routeCount,
+      type: type || null,
+      memory: this.memorySnapshot(),
+    })}`);
+    try {
+      const result = await this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
+      this.logger.log(`[ITINERARY_CREATE_TIMING] response ${JSON.stringify({
+        planId: (result as any)?.planId || null,
+        quoteId: (result as any)?.quoteId || null,
+        durationMs: Date.now() - startedAt,
+        memory: this.memorySnapshot(),
+      })}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`[ITINERARY_CREATE_TIMING] failed ${JSON.stringify({
+        durationMs: Date.now() - startedAt,
+        message: String((error as any)?.message || error),
+        memory: this.memorySnapshot(),
+      })}`);
+      throw error;
+    }
+  }
+
+  @Post('route-family/sync-selection')
+  @ApiOperation({
+    summary: 'Synchronize active Smart Booking route-family slots',
+  })
+  async syncRouteFamilySelection(
+    @Body() body: { planId?: number; desiredCount?: number },
+    @Req() req: Request,
+  ) {
+    const planId = Number(body?.planId || 0);
+    const desiredCount = Math.trunc(
+      Number(body?.desiredCount || 0),
+    );
+
+    if (!Number.isInteger(planId) || planId <= 0) {
+      throw new BadRequestException(
+        'A valid itinerary planId is required.',
+      );
+    }
+
+    if (
+      !Number.isInteger(desiredCount) ||
+      desiredCount < 1 ||
+      desiredCount > 5
+    ) {
+      throw new BadRequestException(
+        'Smart Booking supports between 1 and 5 selected routes.',
+      );
+    }
+
+    const access =
+      await this.itineraryAccessService.getPlanAccessDecision(
+        planId,
+        (req as any).user,
+      );
+
+    if (!access.exists || !access.allowed) {
+      return this.denyItineraryAccess(
+        access.redirectTo || '/latest-itinerary',
+      );
+    }
+
+    return this.svc.syncRouteFamilySelection(
+      planId,
+      desiredCount,
+    );
   }
 
   @Get('details/:quoteId')
@@ -514,7 +619,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
   @ApiOperation({
     summary: 'Get persisted hotel availability snapshot',
     description:
-      'Database-only read of the latest persisted hotel availability snapshot. Live suppliers are called only by the explicit Check Availability command.',
+      'Database-only read of the latest persisted hotel availability snapshot. Live suppliers are called by automatic availability validation.',
   })
   @ApiParam({
     name: 'quoteId',
@@ -622,19 +727,84 @@ private readonly itineraryAccessService: ItineraryAccessService,
   })
   async checkItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
+    @Body() body: { reconciliation?: boolean; reset?: boolean },
     @Req() req: any,
   ) {
+    const startedAt = Date.now();
+    const reconciliationEnabled = ['1', 'true', 'yes'].includes(
+      String(process.env.HOTEL_RECONCILE || '').trim().toLowerCase(),
+    );
+    const reset = body?.reset === true;
     const result = await this.hotelAvailabilitySnapshotService.searchAndPersist(
       quoteId,
       'CHECK_AVAILABILITY',
       Number(req.user?.userId || 0),
+      reset,
+      reconciliationEnabled && !reset && body?.reconciliation === true,
     );
+    this.logger.log(`[HOTEL_CHECK_TIMING] search-and-persist ${JSON.stringify({
+      quoteId,
+      durationMs: Date.now() - startedAt,
+    })}`);
+    const detailsStartedAt = Date.now();
     const itinerary = await this.detailsService.getItineraryDetails(
       quoteId,
       undefined,
       req.user?.role,
     );
-    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
+    this.logger.log(`[HOTEL_CHECK_TIMING] details ${JSON.stringify({
+      quoteId,
+      durationMs: Date.now() - detailsStartedAt,
+      totalElapsedMs: Date.now() - startedAt,
+    })}`);
+    // Keep the complete snapshot server-side, but return the same client-safe
+    // projection used by persisted reads. Returning result.response directly
+    // serializes duplicated supplier inventory and raw rate internals into the
+    // initial page response, even though the UI only needs the client rows,
+    // selected state, tabs, and compact rate options.
+    const compactResponse = this.buildCompactHotelAvailabilityResponse(result, itinerary, false);
+    const response = {
+      ...compactResponse,
+      previewId: result.previewId,
+      reconciliationEnabled,
+    };
+    this.logger.log(`[HOTEL_CHECK_TIMING] response-ready ${JSON.stringify({
+      quoteId,
+      durationMs: Date.now() - startedAt,
+      responseBytesEstimate: Buffer.byteLength(JSON.stringify(response), 'utf8'),
+    })}`);
+    return response;
+  }
+
+  @Post('hotel_details/:quoteId/acknowledge-changes')
+  @ApiOperation({ summary: 'Accept staged hotel availability changes' })
+  async acknowledgeItineraryHotelAvailabilityChanges(
+    @Param('quoteId') quoteId: string,
+    @Body() body: { selectionIds?: number[]; previewId?: string },
+    @Req() req: any,
+  ) {
+    const applied = await this.hotelAvailabilitySnapshotService.applyAcceptedSelectionChanges(
+      quoteId,
+      Array.isArray(body?.selectionIds) ? body.selectionIds : [],
+      Number(req.user?.userId || 0),
+      String(body?.previewId || '').trim() || undefined,
+    );
+    const [hotelDetails, itinerary] = await Promise.all([
+      this.hotelAvailabilitySnapshotService.readPersisted(
+        quoteId,
+        { page: 1, pageSize: 0 },
+        () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
+      ),
+      this.detailsService.getItineraryDetails(quoteId, undefined, req.user?.role),
+    ]);
+    return {
+      ...applied,
+      hotelDetails,
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
+    };
   }
 
   @Post('hotel_details/:quoteId/selected-hotel-refresh')
@@ -667,18 +837,14 @@ private readonly itineraryAccessService: ItineraryAccessService,
   })
   async resetItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
-    @Req() req: any,
   ) {
-    const result = await this.hotelAvailabilitySnapshotService.resetAndPersist(
-      quoteId,
-      Number(req.user?.userId || 0),
-    );
-    const itinerary = await this.detailsService.getItineraryDetails(
-      quoteId,
-      undefined,
-      req.user?.role,
-    );
-    return this.buildCompactHotelAvailabilityResponse(result, itinerary);
+    await this.hotelAvailabilitySnapshotService.resetSelectionsOnly(quoteId);
+    // Reset only mutates the persisted selections. The separate
+    // check-availability endpoint owns the fresh hotel data and financial
+    // summary, so this response must not read or serialize either one.
+    return {
+      resetApplied: true,
+    };
   }
 
   @Post('hotel_details/:quoteId/offline-availability')
@@ -704,7 +870,11 @@ private readonly itineraryAccessService: ItineraryAccessService,
     return this.buildCompactHotelAvailabilityResponse(result, itinerary);
   }
 
-  private buildCompactHotelAvailabilityResponse(result: any, itinerary: any) {
+  private buildCompactHotelAvailabilityResponse(
+    result: any,
+    itinerary: any,
+    includeInventory = true,
+  ) {
     const {
       recommendationAlgorithm: _recommendationAlgorithm,
       recommendationGeneration: _recommendationGeneration,
@@ -712,36 +882,231 @@ private readonly itineraryAccessService: ItineraryAccessService,
       ...resetHotelDetails
     } = result.response;
     const {
-      sharedHotelInventory: _sharedHotelInventory,
       recommendationAlgorithm: _availabilityRecommendationAlgorithm,
       recommendationGeneration: _availabilityRecommendationGeneration,
+      sharedHotelInventory,
+      authoritativeRecommendationRows,
       ...compactAvailability
     } = hotelAvailability || ({} as any);
+
+    // Keep the complete route/day inventory in reset and offline-availability
+    // responses. The compact response intentionally removes rate internals,
+    // but removing this list also removes the alternative hotels needed by
+    // HotelListTable's per-day hotel editor. The selected `hotels` rows alone
+    // are not sufficient because they contain only the current recommendation.
+    const toCompactHotelRow = (row: any) => {
+      const {
+        roomTypes: _roomTypes,
+        nightlyRates: _nightlyRates,
+        supplementSummary: _supplementSummary,
+        selection: _selection,
+        selectedPriceSnapshot: _selectedPriceSnapshot,
+        selected_price_snapshot: _selectedPriceSnapshotLegacy,
+        itinerary_route_id: _itineraryRouteIdLegacy,
+        itinerary_route_date: _itineraryRouteDateLegacy,
+        check_in_date: _checkInDateLegacy,
+        check_out_date: _checkOutDateLegacy,
+        ...summaryRow
+      } = row || {};
+      // Keep the concrete options needed by the hotel card. Availability and
+      // supplement rates are calculated per option by the API; removing this
+      // array makes the UI inspect the parent summary row, which can have no
+      // extra-bed/child rate and incorrectly render a valid hotel unavailable.
+      const compactRateOptions = Array.isArray(row?.rateOptions)
+        ? row.rateOptions.map((option: any) => {
+            // Rate options can themselves contain the original supplier
+            // rateOptions array. Never spread an option here: doing so
+            // recursively serializes the same inventory and is the source of
+            // the multi-hundred-thousand-line check response.
+            const source = option && typeof option === 'object' ? option : {};
+            const fields = [
+              // Selection identity used by room/meal changes and booking.
+              'id', 'rateOptionId', 'rate_option_id', 'optionKey', 'option_key',
+              'selectionKey', 'selection_key', 'bookingCode', 'booking_code',
+              'searchReference', 'search_reference', 'roomId', 'room_id',
+              'rateId', 'rate_id', 'roomTypeId', 'room_type_id',
+              // Display and provider identity.
+              'provider', 'providerDisplayName', 'providerHotelCode', 'hotelCode',
+              'hotelName', 'category', 'currency', 'roomType', 'roomTypeName',
+              'mealPlan', 'mealPlanCode', 'ratePlanName',
+              // Payable/base price and tooltip/supplement fields.
+              'price', 'netAmount', 'totalFare', 'pricePerNight',
+              'totalPrice', 'totalStayPrice', 'totalAmount', 'totalAmountAfterTax',
+              'totalHotelCost', 'totalHotelTaxAmount', 'taxAmount', 'roomRate',
+              'basePricePerNight', 'baseTotalPrice', 'startingFromAmount',
+              'startingFromBaseAmount', 'priceDifference',
+              'extraBedRate', 'extra_bed_rate', 'childWithBedRate',
+              'child_with_bed_rate', 'childWithoutBedRate',
+              'child_without_bed_rate', 'extraChildRate', 'extra_child_rate',
+              'extraBedCost', 'extra_bed_cost', 'childWithBedCost',
+              'child_with_bed_cost', 'childWithoutBedCost',
+              'child_without_bed_cost',
+              'hotelMarginPercentage', 'hotelMarginAmount', 'hotelMarginStayAmount',
+              'hotelMarginTotalAmount', 'amountIncludesHotelMargin',
+              'pricingIncludesHotelMargin',
+              // Availability and card display fields.
+              'isLiveRate', 'isLiveBookable', 'isBookable', 'isSelectable',
+              'bookingMode', 'priceSource', 'availabilityStatus',
+              'availabilityState', 'availabilityMessage', 'hotelStayAvailableDates',
+              'hotelStayUnavailableDates', 'hotelStayCompleteStayBookable',
+              'hotelStayCompleteStayRouteIds', 'hotelStayAvailabilityStatus',
+              'hotelStayAvailabilityMessage', 'hotelStayIsSelectable',
+              'availableDates', 'unavailableDates', 'completeStayBookable',
+              'completeStayRouteIds', 'requiresHotelApproval', 'approvalStatus',
+              'manualConfirmationStatus', 'expiresAt',
+              // The card renders these, but their nested supplier objects are
+              // deliberately not copied because only the supplied display
+              // values are needed by the current UI.
+              'rateConditions', 'cancellationPolicy', 'cancellationPoliciesText',
+              'inclusions', 'facilities', 'amenities', 'mandatorySupplements',
+            ];
+            return fields.reduce((compact: Record<string, unknown>, field: string) => {
+              if (source[field] !== undefined) compact[field] = source[field];
+              return compact;
+            }, {});
+          })
+        : undefined;
+      return {
+        ...summaryRow,
+        ...(compactRateOptions ? { rateOptions: compactRateOptions } : {}),
+      };
+    };
+
+    const inventoryRows = Array.isArray(sharedHotelInventory) ? sharedHotelInventory : [];
+    const normalizedHotelIdentity = (row: any): string => {
+      const name = String(row?.hotelName || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+      return name || String(row?.hotelCode || row?.providerHotelCode || row?.hotelId || row?.canonicalHotelId || 'unknown')
+        .trim().toLowerCase();
+    };
+    const persistedHotelIndex = Array.isArray((result.response as any)?.hotelIndex)
+      ? (result.response as any).hotelIndex
+      : [];
+    const persistedRoutePagination = (result.response as any)?.routePagination &&
+      typeof (result.response as any).routePagination === 'object'
+      ? (result.response as any).routePagination
+      : {};
+    const compactAuthoritativeRows = Array.isArray(authoritativeRecommendationRows)
+      ? authoritativeRecommendationRows.map(toCompactHotelRow)
+      : [];
+    const hotelIndex = Array.from(
+      new Map(
+        inventoryRows.map((row: any) => {
+          const provider = String(row?.provider || '').trim().toLowerCase();
+          const hotelCode = String(row?.hotelCode || row?.providerHotelCode || '').trim();
+          const hotelName = String(row?.hotelName || '').trim();
+          const routeId = Number(row?.itineraryRouteId || row?.routeId || 0);
+          const groupType = Number(row?.groupType || 0);
+          const key = [provider, normalizedHotelIdentity(row), groupType, routeId].join('|');
+          return [key, {
+            provider,
+            hotelId: row?.hotelId ?? row?.canonicalHotelId,
+            hotelCode: hotelCode || undefined,
+            hotelName,
+            category: row?.category,
+            groupType,
+            routeId,
+            date: row?.date || row?.checkInDate,
+          }];
+        }),
+      ).values(),
+    );
+    const compactRoutePagination: Record<string, { page: number; pageSize: number; total: number; hasMore: boolean; groupType: number }> = {};
+    const compactRouteCounts = new Map<string, { groupType: number; total: number }>();
+    const compactGroupTypes = Array.from(new Set<number>([
+      ...(Array.isArray(result.response.hotelTabs)
+        ? result.response.hotelTabs.map((tab: any) => Number(tab?.groupType || 0))
+        : []),
+      ...(Array.isArray(result.response.hotelSelectionState)
+        ? result.response.hotelSelectionState.map((group: any) => Number(group?.groupType || 0))
+        : []),
+    ].filter((groupType) => groupType > 0)));
+    if (compactGroupTypes.length === 0) compactGroupTypes.push(1);
+    const compactRouteIdsOf = (row: any): number[] => Array.from(new Set<number>([
+      row?.routeId,
+      row?.itineraryRouteId,
+      ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
+    ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
+    const countedHotelKeys = new Set<string>();
+    inventoryRows.forEach((row: any) => {
+      const rowGroupType = Number(row?.groupType || row?.group_type || 0);
+      const groups = rowGroupType > 0 ? [rowGroupType] : compactGroupTypes;
+      compactRouteIdsOf(row).forEach((routeId) => {
+        groups.forEach((groupType) => {
+          const key = `${groupType}-${routeId}`;
+          const hotelKey = `${key}-${String(row?.provider || '').trim().toLowerCase()}-${normalizedHotelIdentity(row)}`;
+          if (countedHotelKeys.has(hotelKey)) return;
+          countedHotelKeys.add(hotelKey);
+          const current = compactRouteCounts.get(key) || { groupType, total: 0 };
+          current.total += 1;
+          compactRouteCounts.set(key, current);
+        });
+      });
+    });
+    compactRouteCounts.forEach(({ groupType, total }, key) => {
+      compactRoutePagination[key] = {
+        // Zero means no candidate page has been transferred yet. The first
+        // click therefore requests page 1 from the persisted inventory API.
+        page: 0,
+        pageSize: 20,
+        total,
+        hasMore: total > 0,
+        groupType,
+      };
+    });
+    const routeIdsOf = (row: any): number[] => Array.from(new Set<number>([
+      row?.routeId,
+      row?.itineraryRouteId,
+      ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
+      ...(Array.isArray(row?.authoritativeRouteIds) ? row.authoritativeRouteIds : []),
+    ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
+    const isMissingHotelName = (value: unknown): boolean => {
+      const name = String(value || '').trim().toLowerCase();
+      return !name || name === '-' || name === '--' || name === 'no hotel available' || name === 'no hotels available';
+    };
+    const compactHotels = (result.response.hotels || []).map(toCompactHotelRow);
+    const initialHotels = compactHotels.map((row: any) => {
+      if (!isMissingHotelName(row?.hotelName)) return row;
+      const rowRouteIds = routeIdsOf(row);
+      const rowGroupType = Number(row?.groupType || row?.group_type || 0);
+      const authoritativeCandidate = authoritativeRecommendationRows.find((authoritative: any) => {
+        const candidateGroupType = Number(authoritative?.groupType || authoritative?.group_type || 0);
+        return (!rowGroupType || !candidateGroupType || rowGroupType === candidateGroupType) &&
+          rowRouteIds.some((routeId) => routeIdsOf(authoritative).includes(routeId));
+      });
+      if (!authoritativeCandidate) return row;
+      const candidate = toCompactHotelRow(authoritativeCandidate);
+      // The placeholder owns the route/date bucket; the authoritative row
+      // owns the live hotel identity, price, availability, and rate options.
+      return {
+        ...candidate,
+        ...row,
+        hotelName: candidate.hotelName,
+        hotelId: row.hotelId || candidate.hotelId,
+        canonicalHotelId: row.canonicalHotelId || candidate.canonicalHotelId,
+        hotelCode: row.hotelCode || candidate.hotelCode,
+        provider: row.provider || candidate.provider,
+        rateOptions: candidate.rateOptions || row.rateOptions,
+      };
+    });
 
     return {
       hotelDetails: {
         ...resetHotelDetails,
-        hotels: (result.response.hotels || []).map((row: any) => {
-          const {
-            rateOptions: _rateOptions,
-            roomTypes: _roomTypes,
-            nightlyRates: _nightlyRates,
-            supplementSummary: _supplementSummary,
-            selection: _selection,
-            selectedPriceSnapshot: _selectedPriceSnapshot,
-            selected_price_snapshot: _selectedPriceSnapshotLegacy,
-            itinerary_route_id: _itineraryRouteIdLegacy,
-            itinerary_route_date: _itineraryRouteDateLegacy,
-            check_in_date: _checkInDateLegacy,
-            check_out_date: _checkOutDateLegacy,
-            hotelCheckInDate: _hotelCheckInDateLegacy,
-            hotel_check_in_date: _hotelCheckInDateSnake,
-            hotelCheckOutDate: _hotelCheckOutDateLegacy,
-            hotel_check_out_date: _hotelCheckOutDateSnake,
-            ...summaryRow
-          } = row;
-          return summaryRow;
-        }),
+        hotels: initialHotels,
+        hotelAvailability: {
+          ...compactAvailability,
+          authoritativeRecommendationRows: compactAuthoritativeRows,
+          ...(includeInventory
+            ? { sharedHotelInventory: inventoryRows.map(toCompactHotelRow) }
+            : {}),
+        },
+        // The initial response gives the client identity-only inventory for
+        // counts/lookup without transferring supplier rate payloads. The
+        // complete rows remain available through the persisted/pane contract.
+        hotelIndex: hotelIndex.length > 0 ? hotelIndex : persistedHotelIndex,
+        routePagination: Object.keys(compactRoutePagination).length > 0
+          ? compactRoutePagination
+          : persistedRoutePagination,
         hotelTabs: (result.response.hotelTabs || []).map((tab: any) => ({
           groupType: tab.groupType,
           label: tab.label,
@@ -767,10 +1132,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
               ? route.selected.selectedPriceSnapshot
               : {};
             const { selectedPriceSnapshot: _selectedPriceSnapshot, ...selected } = route.selected;
-            return { ...route, selected: { ...snapshot, ...selected } };
+            // The snapshot is the authoritative payable selection produced by
+            // the hotel availability rebuild. Legacy scalar columns can be
+            // stale (for example room count and supplement totals after a
+            // reset), so they must not overwrite the snapshot values.
+            return { ...route, selected: { ...selected, ...snapshot } };
           }),
         })),
-        hotelAvailability: compactAvailability,
       },
       changeSummary: result.changeSummary,
       financialSummary: {
@@ -2578,11 +2946,24 @@ async confirmQuotation(
       provider: dto.provider,
       hotel_name: dto.hotel_name,
       room_type_id: dto.room_type_id,
+      room_number: dto.room_number,
       room_qty: dto.room_qty,
       all_meal_plan: dto.all_meal_plan,
       breakfast_meal_plan: dto.breakfast_meal_plan,
       lunch_meal_plan: dto.lunch_meal_plan,
       dinner_meal_plan: dto.dinner_meal_plan,
+    });
+  }
+
+  @Post('hotel-rooms/update-categories')
+  @ApiOperation({ summary: 'Update all room category selections for one hotel night' })
+  @ApiBody({ type: UpdateRoomCategoriesDto })
+  async updateRoomCategories(@Body() dto: UpdateRoomCategoriesDto, @Req() req: Request) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_id), (req as any).user);
+    return this.svc.updateRoomCategories({
+      ...dto,
+      rooms: dto.rooms,
     });
   }
 

@@ -4,6 +4,7 @@ import {
   getHotelAvailabilityResetReason,
   hasItineraryHotelCategoryChanged,
   hasItineraryMealPlanChanged,
+  hasItineraryOccupancyChanged,
   hasItineraryRoomCountChanged,
   hasItineraryRouteChanged,
   ItineraryPlanPersistenceService,
@@ -176,12 +177,14 @@ test('hotel reset reason triggers for meal-plan-only edits and preserves route p
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: true, roomCountChanged: true }), 'ROUTE_CHANGED');
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, mealPlanChanged: false }), null);
   assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, hotelCategoryChanged: true }), 'HOTEL_CATEGORY_CHANGED');
+  assert.equal(getHotelAvailabilityResetReason({ routeChanged: false, earlyArrivalChanged: true }), 'EARLY_ARRIVAL_CONFIRMED');
 });
 
 test('hotel rows rebuild when category changes without a route change', () => {
   assert.equal(shouldRebuildHotelData({ routeChanged: false, hotelCategoryChanged: true }), true);
   assert.equal(shouldRebuildHotelData({ routeChanged: false, mealPlanChanged: true }), true);
   assert.equal(shouldRebuildHotelData({ routeChanged: false, roomCountChanged: true }), true);
+  assert.equal(shouldRebuildHotelData({ routeChanged: false, earlyArrivalChanged: true }), true);
   assert.equal(shouldRebuildHotelData({ routeChanged: false }), false);
 });
 
@@ -204,6 +207,64 @@ test('room-count reset detection follows traveller room ids', () => {
   assert.equal(resolveItineraryRoomCount(oneRoom), 1);
   assert.equal(hasItineraryRoomCountChanged({ preferred_room_count: 2 }, oneRoom), true);
   assert.equal(hasItineraryRoomCountChanged({ preferred_room_count: 1 }, oneRoom), false);
+});
+
+test('occupancy reset detection covers paid traveller and bed changes but ignores infants', () => {
+  const previousPlan = { total_extra_bed: 0 };
+  const previousTravellers = [
+    { room_id: 1, traveller_type: 1 },
+    { room_id: 1, traveller_type: 2, traveller_age: '7', child_bed_type: 1 },
+    { room_id: 1, traveller_type: 3 },
+  ];
+
+  assert.equal(hasItineraryOccupancyChanged(
+    previousPlan,
+    { total_extra_bed: 0 },
+    previousTravellers,
+    [...previousTravellers, { room_id: 1, traveller_type: 3 }],
+  ), false);
+
+  assert.equal(hasItineraryOccupancyChanged(
+    previousPlan,
+    { total_extra_bed: 0 },
+    previousTravellers,
+    [
+      ...previousTravellers,
+      { room_id: 1, traveller_type: 1 },
+    ],
+  ), true);
+
+  assert.equal(hasItineraryOccupancyChanged(
+    previousPlan,
+    { total_extra_bed: 0 },
+    previousTravellers,
+    [
+      { room_id: 1, traveller_type: 1 },
+      { room_id: 1, traveller_type: 2, traveller_age: '7', child_bed_type: 2 },
+      { room_id: 1, traveller_type: 3 },
+    ],
+  ), true);
+});
+
+test('occupancy reset reason has lower precedence than route and room-count resets', () => {
+  assert.equal(getHotelAvailabilityResetReason({ occupancyChanged: true }), 'OCCUPANCY_CHANGED');
+  assert.equal(getHotelAvailabilityResetReason({ occupancyChanged: true, roomCountChanged: true }), 'ROOM_COUNT_CHANGED');
+  assert.equal(shouldRebuildHotelData({ occupancyChanged: true }), true);
+});
+
+test('occupancy comparison uses the backend derived extra-bed count when the form omits it', () => {
+  const threeAdults = [
+    { room_id: 1, traveller_type: 1 },
+    { room_id: 1, traveller_type: 1 },
+    { room_id: 1, traveller_type: 1 },
+  ];
+
+  assert.equal(hasItineraryOccupancyChanged(
+    { total_extra_bed: 1 },
+    {},
+    threeAdults,
+    threeAdults,
+  ), false);
 });
 
 test('route reset detection fires when a destination or stay date changes', () => {

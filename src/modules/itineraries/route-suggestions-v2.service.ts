@@ -34,22 +34,74 @@ export class RouteSuggestionsV2Service {
   async getLocationIdFromSourceDestination(
     source: string,
     destination: string,
+    noOfNights?: number,
   ): Promise<number | null> {
     const trimmedSource = source?.trim() || '';
     const trimmedDest = destination?.trim() || '';
 
-    const location = await (this.prisma as any).dvi_stored_locations.findFirst({
+    const locations = await (this.prisma as any).dvi_stored_locations.findMany({
       where: {
         source_location: trimmedSource,
         destination_location: trimmedDest,
+        deleted: 0,
       },
       select: {
         location_ID: true,
       },
+      orderBy: {
+        location_ID: 'desc',
+      },
     });
 
- // Convert BigInt to number
-    return location?.location_ID ? Number(location.location_ID) : null;
+    if (!locations.length) {
+      return null;
+    }
+
+    // Prefer the duplicate location record that actually contains
+    // an active route for the requested number of nights.
+    if (Number.isFinite(noOfNights)) {
+      for (const location of locations) {
+        const matchingRoute = await (
+          this.prisma as any
+        ).dvi_stored_routes.findFirst({
+          where: {
+            location_id: Number(location.location_ID),
+            deleted: 0,
+            status: 1,
+            no_of_nights: Number(noOfNights),
+          },
+          select: {
+            stored_route_ID: true,
+          },
+        });
+
+        if (matchingRoute) {
+          return Number(location.location_ID);
+        }
+      }
+    }
+
+    // Otherwise prefer a duplicate that has any active suggested route.
+    for (const location of locations) {
+      const anyRoute = await (
+        this.prisma as any
+      ).dvi_stored_routes.findFirst({
+        where: {
+          location_id: Number(location.location_ID),
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          stored_route_ID: true,
+        },
+      });
+
+      if (anyRoute) {
+        return Number(location.location_ID);
+      }
+    }
+
+    return Number(locations[0].location_ID);
   }
 
  /**
@@ -187,7 +239,7 @@ export class RouteSuggestionsV2Service {
   ): Promise<RouteResponse> {
     try {
  console.log(
-        `[getDefaultRouteSuggestions] Called with: ${arrivalLocation} → ${departureLocation}, ${noOfRouteDays} days`,
+        `[getDefaultRouteSuggestions] Called with: ${arrivalLocation} -> ${departureLocation}, ${noOfRouteDays} days`,
       );
 
       const adjustedDays = noOfRouteDays - 1;
@@ -196,6 +248,7 @@ export class RouteSuggestionsV2Service {
       const locationId = await this.getLocationIdFromSourceDestination(
         arrivalLocation,
         departureLocation,
+        adjustedDays,
       );
 
  console.log(`[getDefaultRouteSuggestions] locationId=${locationId}`);

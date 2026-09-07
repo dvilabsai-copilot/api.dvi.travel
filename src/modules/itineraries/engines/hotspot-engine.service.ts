@@ -74,11 +74,27 @@ export class HotspotEngineService {
       });
     }
 
- // 1.5) EXTRACT MANUAL HOTSPOTS BEFORE DELETION
- // Manual hotspots (hotspot_plan_own_way=1) must be preserved and reinserted with proper timings
-    const manualHotspots = existingHotspots.filter((h: any) =>
-      Number(h.hotspot_plan_own_way || 0) === 1 && Number(h.deleted || 0) === 0
+// 1.5) EXTRACT MANUAL HOTSPOTS BEFORE DELETION
+// During a route-scoped rebuild, only manual hotspots from that route
+// must participate. Other days must remain untouched.
+const manualHotspots = existingHotspots.filter((h: any) => {
+  const isActiveManual =
+    Number(h.hotspot_plan_own_way || 0) === 1 &&
+    Number(h.deleted || 0) === 0;
+
+  if (!isActiveManual) {
+    return false;
+  }
+
+  if (options?.scopeToRouteId) {
+    return (
+      Number(h.itinerary_route_ID || 0) ===
+      Number(options.scopeToRouteId)
     );
+  }
+
+  return true;
+});
     manualHotspots.sort((a: any, b: any) => {
       const routeDiff = Number(a?.itinerary_route_ID || 0) - Number(b?.itinerary_route_ID || 0);
       if (routeDiff !== 0) return routeDiff;
@@ -198,12 +214,18 @@ export class HotspotEngineService {
       }
     }
 
-    const { hotspotRows, parkingRows, routeRejectionSummaryByRoute } =
-      await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots, {
-        manualPlacementByRoute,
-        sameCityAllocationPlan: options?.sameCityAllocationPlan || null,
-        scopeToRouteId: options?.scopeToRouteId,
-      });
+   const { hotspotRows, parkingRows, routeRejectionSummaryByRoute } =
+  await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots, {
+    manualPlacementByRoute,
+    sameCityAllocationPlan: options?.sameCityAllocationPlan || null,
+    scopeToRouteId: options?.scopeToRouteId,
+
+    // IMPORTANT:
+    // During a route-scoped rebuild, these are the sightseeing hotspots
+    // that already existed and must not disappear just because another
+    // hotspot was deleted.
+    protectedHotspotIds: options?.protectedHotspotIds || [],
+  });
 
  console.log('[ManualHotspot][rebuildRouteHotspots] start', {
       planId,
@@ -523,14 +545,32 @@ export class HotspotEngineService {
           return aStart - bStart;
         });
 
-        const preferredPlacement = (preferredManualPlacementByRoute as any)[routeId] || null;
-        const preferredPlacementOrder = Number(preferredPlacement?.hotspotOrder || 0);
-        const preferredPlacementStart = preferredPlacement?.hotspotStartTime
-          ? new Date(preferredPlacement.hotspotStartTime)
-          : null;
-        const preferredPlacementEnd = preferredPlacement?.hotspotEndTime
-          ? new Date(preferredPlacement.hotspotEndTime)
-          : null;
+     const preferredPlacement =
+  (preferredManualPlacementByRoute as any)[routeId] || null;
+
+const preferredPlacementOrder = Number(
+  preferredPlacement?.hotspotOrder ||
+  manualHotspot?.hotspot_order ||
+  0
+);
+
+const preferredPlacementStartValue =
+  preferredPlacement?.hotspotStartTime ||
+  manualHotspot?.hotspot_start_time ||
+  null;
+
+const preferredPlacementEndValue =
+  preferredPlacement?.hotspotEndTime ||
+  manualHotspot?.hotspot_end_time ||
+  null;
+
+const preferredPlacementStart = preferredPlacementStartValue
+  ? new Date(preferredPlacementStartValue)
+  : null;
+
+const preferredPlacementEnd = preferredPlacementEndValue
+  ? new Date(preferredPlacementEndValue)
+  : null;
         const preferredPlacementHasValidStart =
           !!preferredPlacementStart && Number.isFinite(preferredPlacementStart.getTime()) && preferredPlacementStart.getTime() !== placeholderEpoch;
         const preferredPlacementHasValidEnd =
@@ -841,23 +881,41 @@ export class HotspotEngineService {
       filteredHotspotRows.push(...rebuiltRows);
     }
 
- // 5) CRITICAL: Delete old active manual placeholder rows before persisting final rebuilt timeline
- // This ensures no old order=999 placeholder/manual rows remain in DB
-    if (manualHotspotIds.size > 0) {
-      const manualIdArray = Array.from(manualHotspotIds);
-      await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
-        where: {
-          itinerary_plan_ID: planId,
-          hotspot_ID: { in: manualIdArray },
-          hotspot_plan_own_way: 1,
-          deleted: 0,
-        },
-      });
- console.log('[ManualHotspot][rebuildRouteHotspots] deleted old manual placeholder rows', {
-        planId,
-        manualHotspotIds: manualIdArray,
-      });
-    }
+// 5) CRITICAL: Delete old manual rows for the route being rebuilt
+// before persisting the rebuilt timeline.
+//
+// Route-scoped rebuild must never delete manual hotspots from sibling days.
+// Also remove the previous soft-deleted row on the scoped route so reusing
+// its route_hotspot_ID cannot cause a duplicate-primary-key failure.
+if (manualHotspotIds.size > 0) {
+  const manualIdArray = Array.from(manualHotspotIds);
+
+  const manualDeleteWhere: any = {
+    itinerary_plan_ID: planId,
+    hotspot_ID: { in: manualIdArray },
+    hotspot_plan_own_way: 1,
+  };
+
+  if (scopeRouteId) {
+    manualDeleteWhere.itinerary_route_ID = Number(scopeRouteId);
+  } else {
+    // Preserve existing full-rebuild behaviour.
+    manualDeleteWhere.deleted = 0;
+  }
+
+  await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
+    where: manualDeleteWhere,
+  });
+
+  console.log(
+    '[ManualHotspot][rebuildRouteHotspots] deleted old manual placeholder rows',
+    {
+      planId,
+      scopeRouteId,
+      manualHotspotIds: manualIdArray,
+    },
+  );
+}
 
  // 5.5) DEDUPE final timeline rows before persistence
  // Remove exact duplicates: same route + item_type + hotspot_id + same timing
@@ -1189,68 +1247,470 @@ export class HotspotEngineService {
       return aPriority - bPriority;
     });
 
- // 5.8) REPAIR missing hotspot travel legs before persistence.
- // Some rebuild paths retain the visit row but lose the paired item_type=3
- // travel row for the same route/hotspot. Recreate a lightweight travel row
- // so the persisted timeline always has the companion leg.
-    const travelRepairRows: any[] = [];
-    const travelRepairKeys = new Set<string>();
-    for (const row of sortedRows as any[]) {
-      const itemType = Number(row?.item_type || 0);
-      const routeId = Number(row?.itinerary_route_ID || 0);
-      const hotspotId = Number(row?.hotspot_ID || 0);
-      if (itemType !== 4 || routeId <= 0 || hotspotId <= 0) {
-        travelRepairRows.push(row);
-        continue;
-      }
+// 5.8) REPAIR travel legs around preserved manual hotspots.
+//
+// A manual Fit Here hotspot changes the attraction chain:
+//
+//   previous -> next
+//
+// becomes:
+//
+//   previous -> manual -> next
+//
+// The normal rebuild can still contain the old previous -> next travel row.
+// Rebuild the affected travel legs from hotspot_route_matrix and shift the
+// downstream attraction timings sequentially. Routes without manual hotspots
+// keep the existing behaviour unchanged.
 
-      const hasTravelRow = (sortedRows as any[]).some(
-        (candidate: any) =>
-          Number(candidate?.itinerary_route_ID || 0) === routeId &&
-          Number(candidate?.item_type || 0) === 3 &&
-          Number(candidate?.hotspot_ID || 0) === hotspotId,
-      );
-      if (hasTravelRow) {
-        travelRepairRows.push(row);
-        continue;
-      }
+let travelRepairSourceRows: any[] = [...sortedRows];
 
-      const repairKey = `${routeId}|${hotspotId}|${Number(row?.hotspot_order || 0)}`;
-      if (!travelRepairKeys.has(repairKey)) {
-        travelRepairKeys.add(repairKey);
-        const { route_hotspot_ID: _routeHotspotId, ...rowWithoutPrimaryKey } = row as any;
-        const visitStart = row?.hotspot_start_time ? new Date(row.hotspot_start_time) : null;
-        const travelDurationMs = 5 * 60 * 1000;
-        const fallbackStart = visitStart && Number.isFinite(visitStart.getTime())
-          ? new Date(visitStart.getTime() - travelDurationMs)
-          : new Date();
+const toValidDate = (value: any): Date | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+};
 
-        travelRepairRows.push({
-          ...rowWithoutPrimaryKey,
-          item_type: 3,
-          hotspot_start_time: fallbackStart,
-          hotspot_end_time: visitStart && Number.isFinite(visitStart.getTime())
-            ? new Date(visitStart.getTime())
-            : new Date(fallbackStart.getTime() + travelDurationMs),
-          hotspot_traveling_time: new Date('1970-01-01T00:05:00.000Z'),
-          itinerary_travel_type_buffer_time: new Date('1970-01-01T00:00:00.000Z'),
-          hotspot_travelling_distance: row?.hotspot_travelling_distance || '0.10',
-          hotspot_plan_own_way: Number(row?.hotspot_plan_own_way || 0),
-          is_conflict: Number(row?.is_conflict || 0),
-          conflict_reason: row?.conflict_reason ?? null,
-        });
+const durationMinutesBetween = (startValue: any, endValue: any): number => {
+  const start = toValidDate(startValue);
+  const end = toValidDate(endValue);
 
- console.warn('[HotspotRebuild][travel_leg_repair]', {
-          planId,
-          routeId,
-          hotspotId,
-          hotspotOrder: Number(row?.hotspot_order || 0),
-        });
-      }
+  if (!start || !end) return 0;
 
-      travelRepairRows.push(row);
+  return Math.max(
+    0,
+    Math.round((end.getTime() - start.getTime()) / 60000),
+  );
+};
+
+const durationDateFromMinutes = (minutes: number): Date => {
+  const safeMinutes = Math.max(1, Math.round(Number(minutes || 0)));
+  return new Date(Date.UTC(1970, 0, 1, 0, safeMinutes, 0));
+};
+
+const getMatrixLeg = async (
+  fromHotspotId: number,
+  toHotspotId: number,
+): Promise<{
+  distanceKm: number | null;
+  durationMin: number | null;
+}> => {
+  if (
+    !fromHotspotId ||
+    !toHotspotId ||
+    fromHotspotId === toHotspotId
+  ) {
+    return {
+      distanceKm: null,
+      durationMin: null,
+    };
+  }
+
+  try {
+    const rows = await (tx as any).$queryRawUnsafe(
+      `
+        SELECT
+          from_hotspot_id,
+          to_hotspot_id,
+          osrm_distance_km,
+          osrm_duration_min
+        FROM hotspot_route_matrix
+        WHERE process_status = 'DONE'
+          AND (
+            (from_hotspot_id = ? AND to_hotspot_id = ?)
+            OR
+            (from_hotspot_id = ? AND to_hotspot_id = ?)
+          )
+        ORDER BY
+          CASE
+            WHEN from_hotspot_id = ? AND to_hotspot_id = ?
+            THEN 0
+            ELSE 1
+          END,
+          updated_at DESC
+        LIMIT 1
+      `,
+      Number(fromHotspotId),
+      Number(toHotspotId),
+      Number(toHotspotId),
+      Number(fromHotspotId),
+      Number(fromHotspotId),
+      Number(toHotspotId),
+    );
+
+    const row = Array.isArray(rows) ? rows[0] : null;
+
+    const distanceKm = Number(row?.osrm_distance_km);
+    const durationMin = Number(row?.osrm_duration_min);
+
+    return {
+      distanceKm:
+        Number.isFinite(distanceKm) && distanceKm > 0
+          ? distanceKm
+          : null,
+      durationMin:
+        Number.isFinite(durationMin) && durationMin > 0
+          ? durationMin
+          : null,
+    };
+  } catch (error: any) {
+    console.warn('[HotspotRebuild][manual_travel_matrix_lookup_failed]', {
+      planId,
+      fromHotspotId,
+      toHotspotId,
+      message: error?.message || String(error),
+    });
+
+    return {
+      distanceKm: null,
+      durationMin: null,
+    };
+  }
+};
+
+const manualRouteIds = new Set<number>(
+  manualHotspots
+    .map((row: any) => Number(row?.itinerary_route_ID || 0))
+    .filter((routeId: number) => routeId > 0),
+);
+
+for (const manualRouteId of manualRouteIds) {
+const routeVisits = travelRepairSourceRows
+  .filter(
+    (row: any) =>
+      Number(row?.itinerary_route_ID || 0) === manualRouteId &&
+      Number(row?.item_type || 0) === 4,
+  )
+  .sort((a: any, b: any) => {
+    const aStart =
+      toValidDate(a?.hotspot_start_time)?.getTime() ??
+      Number.MAX_SAFE_INTEGER;
+
+    const bStart =
+      toValidDate(b?.hotspot_start_time)?.getTime() ??
+      Number.MAX_SAFE_INTEGER;
+
+    // IMPORTANT:
+    // At this point hotspot_order may still be temporary.
+    // Actual timeline time must decide the attraction sequence.
+    if (aStart !== bStart) {
+      return aStart - bStart;
     }
 
+    return (
+      Number(a?.hotspot_order || 0) -
+      Number(b?.hotspot_order || 0)
+    );
+  });
+const isPersistedManualVisit = (row: any): boolean =>
+  manualHotspots.some(
+    (manual: any) =>
+      Number(manual?.itinerary_route_ID || 0) === manualRouteId &&
+      Number(manual?.hotspot_ID || 0) === Number(row?.hotspot_ID || 0),
+  );
+
+const firstManualVisitIndex = routeVisits.findIndex(
+  (row: any) =>
+    isPersistedManualVisit(row) ||
+    Number(row?.hotspot_plan_own_way || 0) === 1 ||
+    row?.isManual === true,
+);
+
+  // We can safely rebuild a manual insertion when it has a previous
+  // attraction. AFTER_START keeps the existing fallback behaviour.
+  if (firstManualVisitIndex <= 0) {
+    continue;
+  }
+
+  const affectedDestinationIds = new Set<number>(
+    routeVisits
+      .slice(firstManualVisitIndex)
+      .map((row: any) => Number(row?.hotspot_ID || 0))
+      .filter((hotspotId: number) => hotspotId > 0),
+  );
+
+  const originalTravelRows = travelRepairSourceRows.filter(
+    (row: any) =>
+      Number(row?.itinerary_route_ID || 0) === manualRouteId &&
+      Number(row?.item_type || 0) === 3,
+  );
+
+  // Remove only stale attraction travel rows beginning with the manual
+  // insertion. Break/free-time item_type=3 rows with hotspot_ID=0 remain.
+  travelRepairSourceRows = travelRepairSourceRows.filter((row: any) => {
+    const sameRoute =
+      Number(row?.itinerary_route_ID || 0) === manualRouteId;
+
+    const isTravel = Number(row?.item_type || 0) === 3;
+    const destinationHotspotId = Number(row?.hotspot_ID || 0);
+
+    if (!sameRoute || !isTravel) return true;
+    if (destinationHotspotId <= 0) return true;
+
+    return !affectedDestinationIds.has(destinationHotspotId);
+  });
+
+  let previousVisit = routeVisits[firstManualVisitIndex - 1];
+
+  for (
+    let visitIndex = firstManualVisitIndex;
+    visitIndex < routeVisits.length;
+    visitIndex += 1
+  ) {
+    const currentVisit = routeVisits[visitIndex];
+
+    const fromHotspotId = Number(previousVisit?.hotspot_ID || 0);
+    const toHotspotId = Number(currentVisit?.hotspot_ID || 0);
+
+    if (!fromHotspotId || !toHotspotId) {
+      previousVisit = currentVisit;
+      continue;
+    }
+
+    const previousVisitEnd = toValidDate(
+      previousVisit?.hotspot_end_time,
+    );
+
+    if (!previousVisitEnd) {
+      previousVisit = currentVisit;
+      continue;
+    }
+
+    const existingTravelRow =
+      originalTravelRows.find(
+        (row: any) =>
+          Number(row?.hotspot_ID || 0) === toHotspotId,
+      ) || null;
+
+    const matrixLeg = await getMatrixLeg(
+      fromHotspotId,
+      toHotspotId,
+    );
+
+    const existingTravelDuration =
+      existingTravelRow?.hotspot_traveling_time
+        ? (() => {
+            const value = new Date(
+              existingTravelRow.hotspot_traveling_time,
+            );
+
+            if (!Number.isFinite(value.getTime())) return 0;
+
+            return (
+              value.getUTCHours() * 60 +
+              value.getUTCMinutes() +
+              value.getUTCSeconds() / 60
+            );
+          })()
+        : 0;
+
+    const travelDurationMinutes =
+      matrixLeg.durationMin &&
+      Number.isFinite(matrixLeg.durationMin) &&
+      matrixLeg.durationMin > 0
+        ? Math.max(1, Math.round(matrixLeg.durationMin))
+        : existingTravelDuration > 0
+          ? Math.max(1, Math.round(existingTravelDuration))
+          : 5;
+
+    const existingVisitDuration = durationMinutesBetween(
+      currentVisit?.hotspot_start_time,
+      currentVisit?.hotspot_end_time,
+    );
+
+    const visitDurationMinutes = Math.max(
+      1,
+      existingVisitDuration,
+    );
+
+const currentIsManual =
+  isPersistedManualVisit(currentVisit) ||
+  Number(currentVisit?.hotspot_plan_own_way || 0) === 1 ||
+  currentVisit?.isManual === true;
+
+    let travelStart = new Date(previousVisitEnd);
+    let travelEnd = new Date(
+      travelStart.getTime() +
+        travelDurationMinutes * 60 * 1000,
+    );
+
+ // Rebuild the route continuously from the previous attraction.
+// The manual hotspot keeps its selected POSITION,
+// but its clock time may shift after route optimization.
+currentVisit.hotspot_start_time = new Date(travelEnd);
+currentVisit.hotspot_end_time = new Date(
+  travelEnd.getTime() +
+    visitDurationMinutes * 60 * 1000,
+);
+    const travelTemplate = existingTravelRow || currentVisit;
+
+    const {
+      route_hotspot_ID: _routeHotspotId,
+      ...travelWithoutPrimaryKey
+    } = travelTemplate as any;
+
+    travelRepairSourceRows.push({
+      ...travelWithoutPrimaryKey,
+
+      itinerary_plan_ID: Number(planId),
+      itinerary_route_ID: Number(manualRouteId),
+
+      item_type: 3,
+
+      // Travel rows store the destination hotspot.
+      hotspot_ID: Number(toHotspotId),
+
+      hotspot_order: Number(currentVisit?.hotspot_order || 0),
+
+      hotspot_start_time: travelStart,
+      hotspot_end_time: travelEnd,
+
+      hotspot_traveling_time:
+        durationDateFromMinutes(travelDurationMinutes),
+
+      itinerary_travel_type_buffer_time:
+        new Date('1970-01-01T00:00:00.000Z'),
+
+      hotspot_travelling_distance:
+        matrixLeg.distanceKm != null
+          ? Number(matrixLeg.distanceKm).toFixed(2)
+          : String(
+              existingTravelRow?.hotspot_travelling_distance ||
+                '0.10',
+            ),
+
+      hotspot_plan_own_way: currentIsManual ? 1 : 0,
+
+      is_conflict: 0,
+      conflict_reason: null,
+      updatedon: new Date(),
+    });
+
+    console.warn(
+      '[HotspotRebuild][manual_travel_leg_rebuilt]',
+      {
+        planId,
+        routeId: manualRouteId,
+        fromHotspotId,
+        toHotspotId,
+        travelStart,
+        travelEnd,
+        distanceKm: matrixLeg.distanceKm,
+        durationMin: travelDurationMinutes,
+        visitStart: currentVisit.hotspot_start_time,
+        visitEnd: currentVisit.hotspot_end_time,
+      },
+    );
+
+    previousVisit = currentVisit;
+  }
+}
+
+// Existing missing-leg safety remains for every route.
+const travelRepairRows: any[] = [];
+const travelRepairKeys = new Set<string>();
+
+for (const row of travelRepairSourceRows as any[]) {
+  const itemType = Number(row?.item_type || 0);
+  const routeId = Number(row?.itinerary_route_ID || 0);
+  const hotspotId = Number(row?.hotspot_ID || 0);
+
+  if (
+    itemType !== 4 ||
+    routeId <= 0 ||
+    hotspotId <= 0
+  ) {
+    travelRepairRows.push(row);
+    continue;
+  }
+
+  const hasTravelRow = (
+    travelRepairSourceRows as any[]
+  ).some(
+    (candidate: any) =>
+      Number(candidate?.itinerary_route_ID || 0) ===
+        routeId &&
+      Number(candidate?.item_type || 0) === 3 &&
+      Number(candidate?.hotspot_ID || 0) === hotspotId,
+  );
+
+  if (hasTravelRow) {
+    travelRepairRows.push(row);
+    continue;
+  }
+
+  const repairKey =
+    `${routeId}|${hotspotId}|${Number(
+      row?.hotspot_order || 0,
+    )}`;
+
+  if (!travelRepairKeys.has(repairKey)) {
+    travelRepairKeys.add(repairKey);
+
+    const {
+      route_hotspot_ID: _routeHotspotId,
+      ...rowWithoutPrimaryKey
+    } = row as any;
+
+    const visitStart = row?.hotspot_start_time
+      ? new Date(row.hotspot_start_time)
+      : null;
+
+    const travelDurationMs = 5 * 60 * 1000;
+
+    const fallbackStart =
+      visitStart &&
+      Number.isFinite(visitStart.getTime())
+        ? new Date(
+            visitStart.getTime() - travelDurationMs,
+          )
+        : new Date();
+
+    travelRepairRows.push({
+      ...rowWithoutPrimaryKey,
+      item_type: 3,
+      hotspot_start_time: fallbackStart,
+      hotspot_end_time:
+        visitStart &&
+        Number.isFinite(visitStart.getTime())
+          ? new Date(visitStart.getTime())
+          : new Date(
+              fallbackStart.getTime() +
+                travelDurationMs,
+            ),
+
+      hotspot_traveling_time:
+        new Date('1970-01-01T00:05:00.000Z'),
+
+      itinerary_travel_type_buffer_time:
+        new Date('1970-01-01T00:00:00.000Z'),
+
+      hotspot_travelling_distance:
+        row?.hotspot_travelling_distance || '0.10',
+
+      hotspot_plan_own_way: Number(
+        row?.hotspot_plan_own_way || 0,
+      ),
+
+      is_conflict: Number(row?.is_conflict || 0),
+      conflict_reason:
+        row?.conflict_reason ?? null,
+    });
+
+    console.warn(
+      '[HotspotRebuild][travel_leg_repair]',
+      {
+        planId,
+        routeId,
+        hotspotId,
+        hotspotOrder: Number(
+          row?.hotspot_order || 0,
+        ),
+      },
+    );
+  }
+
+  travelRepairRows.push(row);
+}
     const sortedRowsAfterTravelRepair = [...travelRepairRows].sort((a: any, b: any) => {
       const aTime = a.hotspot_start_time ? new Date(a.hotspot_start_time).getTime() : 0;
       const bTime = b.hotspot_start_time ? new Date(b.hotspot_start_time).getTime() : 0;
@@ -1398,31 +1858,44 @@ export class HotspotEngineService {
  // 6.1) Post-persist safety repair:
  // If a visit row survived rebuild but its paired travel row did not, add a
  // lightweight travel segment directly against the persisted DB state.
-    const persistedVisitRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: planId,
-        item_type: 4,
-        deleted: 0,
-        status: 1,
-      },
-      orderBy: [
-        { itinerary_route_ID: "asc" },
-        { hotspot_start_time: "asc" },
-        { route_hotspot_ID: "asc" },
-      ],
-    });
-    const persistedTravelRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: planId,
-        item_type: 3,
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        itinerary_route_ID: true,
-        hotspot_ID: true,
-      },
-    });
+const persistedVisitRows =
+  await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+    where: {
+      itinerary_plan_ID: planId,
+      item_type: 4,
+      deleted: 0,
+      status: 1,
+      ...(scopeRouteId
+        ? {
+            itinerary_route_ID: Number(scopeRouteId),
+          }
+        : {}),
+    },
+    orderBy: [
+      { itinerary_route_ID: "asc" },
+      { hotspot_start_time: "asc" },
+      { route_hotspot_ID: "asc" },
+    ],
+  });
+
+const persistedTravelRows =
+  await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+    where: {
+      itinerary_plan_ID: planId,
+      item_type: 3,
+      deleted: 0,
+      status: 1,
+      ...(scopeRouteId
+        ? {
+            itinerary_route_ID: Number(scopeRouteId),
+          }
+        : {}),
+    },
+    select: {
+      itinerary_route_ID: true,
+      hotspot_ID: true,
+    },
+  });
     const persistedTravelKeys = new Set(
       (persistedTravelRows as any[]).map(
         (row: any) => `${Number(row.itinerary_route_ID || 0)}|${Number(row.hotspot_ID || 0)}`,
@@ -1523,13 +1996,18 @@ export class HotspotEngineService {
  // 7) VERIFY manual hotspots were properly persisted with real order and timing
     if (manualHotspotIds.size > 0) {
       const manualIds = Array.from(manualHotspotIds);
-      const persistedManualRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-        where: {
-          itinerary_plan_ID: planId,
-          item_type: 4,
-          hotspot_ID: { in: manualIds },
-          deleted: 0,
-        },
+     const persistedManualRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+  where: {
+    itinerary_plan_ID: planId,
+    item_type: 4,
+    hotspot_ID: { in: manualIds },
+    deleted: 0,
+    ...(scopeRouteId
+      ? {
+          itinerary_route_ID: Number(scopeRouteId),
+        }
+      : {}),
+  },
         select: {
           route_hotspot_ID: true,
           hotspot_ID: true,

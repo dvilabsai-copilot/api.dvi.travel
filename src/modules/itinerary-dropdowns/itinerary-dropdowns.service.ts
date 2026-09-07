@@ -581,9 +581,84 @@ export class ItineraryDropdownsService {
           }
           return a.label.localeCompare(b.label);
         })
- .map(({ id, label }) => ({ id, label })); // remove capacity from response
+ .map(({ id, label, capacity }) => ({
+  id,
+  label,
+  capacity,
+}));  // remove capacity from response
 
- console.log('[getEligibleVehicleTypes] Returning vehicleTypes:', vehicleTypes.length, 'items');
+ const calculatedCostByVehicleType = new Map<number, number>();
+
+const normalizedItineraryPlanId = Number(
+  dto.itineraryPlanId ?? 0
+);
+
+if (
+  Number.isFinite(normalizedItineraryPlanId) &&
+  normalizedItineraryPlanId > 0
+) {
+  const calculatedCostRows = await (
+    this.prisma as any
+  ).$queryRawUnsafe(
+    `
+    SELECT
+      vehicle_type_id,
+      SUM(
+        CAST(vehicle_grand_total AS DECIMAL(18,2))
+      ) AS calculated_cost
+    FROM dvi_itinerary_plan_vendor_eligible_list
+    WHERE itinerary_plan_id = ?
+      AND status = 1
+      AND deleted = 0
+      AND itineary_plan_assigned_status = 1
+      AND vehicle_grand_total IS NOT NULL
+      AND vehicle_grand_total > 0
+    GROUP BY vehicle_type_id
+    `,
+    normalizedItineraryPlanId,
+  ) as Array<{
+    vehicle_type_id: number | string | bigint;
+    calculated_cost: number | string | null;
+  }>;
+
+  for (const row of calculatedCostRows) {
+    const vehicleTypeId = Number(
+      row.vehicle_type_id ?? 0
+    );
+
+    const calculatedCost = Number(
+      row.calculated_cost ?? 0
+    );
+
+    if (
+      Number.isFinite(vehicleTypeId) &&
+      vehicleTypeId > 0 &&
+      Number.isFinite(calculatedCost) &&
+      calculatedCost > 0
+    ) {
+      calculatedCostByVehicleType.set(
+        vehicleTypeId,
+        calculatedCost
+      );
+    }
+  }
+}
+
+const vehicleTypesWithCost = vehicleTypes.map(
+  (vehicleType) => ({
+    ...vehicleType,
+    calculatedCost:
+      calculatedCostByVehicleType.get(
+        Number(vehicleType.id)
+      ) ?? null,
+  })
+);
+
+console.log(
+  '[getEligibleVehicleTypes] Returning vehicleTypes:',
+  vehicleTypesWithCost.length,
+  'items',
+);
 
       if (vehicleTypes.length === 0) {
         const vehicleCounts = await this.getVehicleCountsByCity(eligibleCities);
@@ -651,10 +726,10 @@ export class ItineraryDropdownsService {
         }
       }
 
-      return {
-        vehicleTypes,
-        selectedVehicleIds,
-      };
+return {
+  vehicleTypes: vehicleTypesWithCost,
+  selectedVehicleIds,
+};
     } catch (error) {
  console.error('[getEligibleVehicleTypes] ERROR:', error.message, error);
       throw error;

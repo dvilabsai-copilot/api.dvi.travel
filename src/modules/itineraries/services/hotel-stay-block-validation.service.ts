@@ -1,9 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
+import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
 import {
   calculateStaahOccupancyAmount,
   type StaahPricingPaxInput,
 } from '../helpers/staah-occupancy-pricing';
+import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 
 export type ProviderCode = 'staah' | 'axisrooms' | 'tbo' | 'offline';
 
@@ -23,6 +25,7 @@ export interface StayBlockCandidate {
   stayDates: string[];
   stayKey: string;
   anchorRouteId?: number;
+  allowRoomTypeChanges?: boolean;
 }
 
 export interface RestrictionConflict {
@@ -86,7 +89,10 @@ export interface StayBlockValidationResult {
 
 @Injectable()
 export class HotelStayBlockValidationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hotelDetails: ItineraryHotelDetailsTboService,
+  ) {}
 
   async previewStayExtension(params: {
     planId: number;
@@ -100,6 +106,7 @@ export class HotelStayBlockValidationService {
     mealPlan?: string;
     checkInDate: string;
     groupType?: number;
+    allowRoomTypeChanges?: boolean;
   }): Promise<StayBlockValidationResult> {
     const candidate = await this.buildContinuousStayCandidate(params);
     let fullStayValidation = await this.validateCandidate(candidate);
@@ -225,6 +232,7 @@ export class HotelStayBlockValidationService {
     roomType?: string;
     mealPlan?: string;
     checkInDate: string;
+    allowRoomTypeChanges?: boolean;
   }): Promise<StayBlockCandidate> {
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
       where: {
@@ -328,6 +336,7 @@ export class HotelStayBlockValidationService {
       stayDates,
       stayKey,
       anchorRouteId: Number(params.routeId),
+      allowRoomTypeChanges: params.allowRoomTypeChanges,
     };
   }
 
@@ -412,6 +421,9 @@ export class HotelStayBlockValidationService {
     }
 
     const plan = await this.getPlan(candidate.planId);
+    if (candidate.allowRoomTypeChanges && !candidate.roomId && !candidate.roomType && !candidate.rateId) {
+      return this.validateAxisRoomsHotelStay(candidate, hotelId, plan);
+    }
     const roomRow = await this.resolveAxisRoom(hotelId, candidate.roomId, candidate.roomType);
     const ratePlan = await this.resolveAxisRatePlan(hotelId, Number(roomRow.room_ID), candidate.rateId, candidate.mealPlan);
 
@@ -420,8 +432,8 @@ export class HotelStayBlockValidationService {
         axisrooms_property_id: propertyId,
         room_id: String(roomRow.room_ref_code || ''),
         rateplan_id: ratePlan.ratePlanId,
-        start_date: { lte: new Date(candidate.checkOutDate) } as any,
-        end_date: { gte: new Date(candidate.checkInDate) } as any,
+        start_date: { lte: this.toDatabaseBusinessDate(candidate.checkOutDate) } as any,
+        end_date: { gte: this.toDatabaseBusinessDate(candidate.checkInDate) } as any,
       },
       orderBy: [{ received_at: 'desc' }, { start_date: 'asc' }] as any,
     });
@@ -441,8 +453,8 @@ export class HotelStayBlockValidationService {
         where: {
           hotel_id: hotelId,
           room_id: Number(roomRow.room_ID),
-          start_date: { lte: new Date(date) },
-          end_date: { gte: new Date(date) },
+          start_date: { lte: this.toDatabaseBusinessDate(date) },
+          end_date: { gte: this.toDatabaseBusinessDate(date) },
         },
         orderBy: { received_at: 'desc' },
       });
@@ -461,8 +473,8 @@ export class HotelStayBlockValidationService {
           hotel_id: hotelId,
           room_id: Number(roomRow.room_ID),
           rateplan_id: ratePlan.ratePlanId,
-          start_date: { lte: new Date(date) },
-          end_date: { gte: new Date(date) },
+          start_date: { lte: this.toDatabaseBusinessDate(date) },
+          end_date: { gte: this.toDatabaseBusinessDate(date) },
         },
         orderBy: { received_at: 'desc' },
       });
@@ -491,6 +503,89 @@ export class HotelStayBlockValidationService {
     return this.buildValidationResult(candidate, conflicts, nightlyRates);
   }
 
+  /** Validate a HOTEL intent against the cheapest available room per night. */
+  private async validateAxisRoomsHotelStay(
+    candidate: StayBlockCandidate,
+    hotelId: number,
+    plan: any,
+  ): Promise<StayBlockValidationResult> {
+    const rooms = await this.prisma.dvi_hotel_rooms.findMany({
+      where: { hotel_id: hotelId, deleted: 0 } as any,
+      select: { room_ID: true, room_ref_code: true, room_title: true },
+    });
+    const paxProfile = this.buildPaxProfile(plan);
+    const nightlyRates: NightlyRate[] = [];
+    const conflicts: RestrictionConflict[] = [];
+
+    for (const date of candidate.stayDates) {
+      const options: Array<{ room: any; ratePlanId: string; amount: number; breakdown: any }> = [];
+      let hasInventory = false;
+
+      for (const room of rooms as any[]) {
+        const inventory = await (this.prisma as any).dvi_hotel_room_availability.findFirst({
+          where: {
+            hotel_id: hotelId,
+            room_id: Number(room.room_ID),
+            start_date: { lte: this.toDatabaseBusinessDate(date) },
+            end_date: { gte: this.toDatabaseBusinessDate(date) },
+          },
+          orderBy: { received_at: 'desc' },
+        });
+        if (!inventory || Number(inventory.free || 0) <= 0) continue;
+        hasInventory = true;
+
+        const ratePlan = await this.resolveAxisRatePlan(
+          hotelId,
+          Number(room.room_ID),
+          undefined,
+          candidate.mealPlan,
+        );
+        const rateRow = await (this.prisma as any).dvi_hotel_occupancy_rate.findFirst({
+          where: {
+            hotel_id: hotelId,
+            room_id: Number(room.room_ID),
+            rateplan_id: ratePlan.ratePlanId,
+            start_date: { lte: this.toDatabaseBusinessDate(date) },
+            end_date: { gte: this.toDatabaseBusinessDate(date) },
+          },
+          orderBy: { received_at: 'desc' },
+        });
+        if (!rateRow) continue;
+
+        const breakdown = calculateStaahOccupancyAmount(rateRow.occupancy_rates, paxProfile);
+        options.push({
+          room,
+          ratePlanId: ratePlan.ratePlanId,
+          amount: Number(breakdown.finalCalculatedAmount || 0),
+          breakdown,
+        });
+      }
+
+      const selected = options.sort((left, right) => left.amount - right.amount)[0];
+      if (!selected) {
+        conflicts.push({
+          date,
+          type: hasInventory ? 'NO_RATE' : 'NO_INVENTORY',
+          message: hasInventory ? `No rate found on ${date}` : `No inventory available on ${date}`,
+        });
+        continue;
+      }
+
+      nightlyRates.push(this.buildNightlyRate(
+        date,
+        selected.breakdown,
+        Number(candidate.routeIds[candidate.stayDates.indexOf(date)] || 0),
+        String(selected.room.room_ref_code || selected.room.room_ID || ''),
+        selected.ratePlanId,
+        String(selected.room.room_title || ''),
+        candidate.mealPlan,
+        `axisrooms:${hotelId}:${Number(selected.room.room_ID)}:${selected.ratePlanId}:${date}`,
+      ));
+    }
+
+    return this.buildValidationResult(candidate, conflicts, nightlyRates);
+  }
+
   private async validateCandidate(candidate: StayBlockCandidate): Promise<StayBlockValidationResult> {
     if (candidate.provider === 'staah') {
       return this.validateStaahStayBlock(candidate);
@@ -498,48 +593,42 @@ export class HotelStayBlockValidationService {
     if (candidate.provider === 'axisrooms') {
       return this.validateAxisRoomsStayBlock(candidate);
     }
-    // TBO and offline do not expose the STAAH/AxisRooms restriction tables in
-    // this application. Their continuity decision must still be backend/API
-    // driven: validate every date against the latest persisted supplier
-    // snapshot and return the exact per-night option identities found there.
+    // TBO/offline continuity is validated from a fresh property-scoped lookup.
     return this.validateSnapshotStayBlock(candidate);
   }
 
   private async validateSnapshotStayBlock(candidate: StayBlockCandidate): Promise<StayBlockValidationResult> {
     const plan = await this.getPlan(candidate.planId);
-    const cache = (this.prisma as any).dvi_itinerary_hotel_search_cache;
-    const latest = cache?.findFirst
-      ? await cache.findFirst({
-          where: {
-            quote_id: String((plan as any)?.itinerary_quote_ID || ''),
-            plan_id: Number(candidate.planId),
-            deleted: 0,
-            status: 1,
-          },
-          orderBy: [{ synced_at: 'desc' }, { id: 'desc' }],
-          select: { synced_at: true },
-        })
-      : null;
     const conflicts: RestrictionConflict[] = [];
     const nightlyRates: NightlyRate[] = [];
-    if (!latest?.synced_at || !cache?.findMany) {
+    let freshRows: Array<{ route_id: number; full_payload: any }> = [];
+    try {
+      // A selected property can have a different rate response for every
+      // night. Refreshing only the anchor route makes every following night
+      // look like NO_RATE even when its supplier search has a valid rate.
+      // Fetch each logical-stay route and retain the route id supplied by the
+      // request because the provider payload may carry the anchor id.
+      const freshByRoute = await Promise.all(candidate.routeIds.map(async (routeId) => {
+        const fresh = await this.hotelDetails.getSelectedHotelRates(
+          String((plan as any)?.itinerary_quote_ID || ''),
+          Number(routeId),
+          candidate.provider,
+          candidate.hotelCode,
+          0,
+        );
+        return (Array.isArray((fresh as any)?.hotels) ? (fresh as any).hotels : [])
+          .map((full_payload: any) => ({
+            route_id: Number(routeId),
+            full_payload,
+          }));
+      }));
+      freshRows = freshByRoute.flat();
+    } catch (error) {
       return this.buildValidationResult(candidate, [{
-        type: 'NO_RATE',
-        message: 'No current availability snapshot exists for the requested continuous stay.',
+        type: 'UNKNOWN',
+        message: `The provider could not verify ${candidate.hotelName || candidate.hotelCode}. Please retry.`,
       }], []);
     }
-
-    const cachedRows = await cache.findMany({
-      where: {
-        quote_id: String((plan as any)?.itinerary_quote_ID || ''),
-        plan_id: Number(candidate.planId),
-        deleted: 0,
-        status: 1,
-        synced_at: latest.synced_at,
-        route_id: { in: candidate.routeIds },
-      },
-      select: { route_id: true, full_payload: true },
-    });
     const parse = (value: any) => {
       try { return typeof value === 'string' ? JSON.parse(value) : (value || {}); } catch { return {}; }
     };
@@ -572,7 +661,7 @@ export class HotelStayBlockValidationService {
     const property = normalize(candidate.hotelCode);
     const room = normalize(candidate.roomType);
     const meal = normalize(candidate.mealPlan);
-    const optionRows = (cachedRows || []).flatMap((row: any) => {
+    const optionRows = (freshRows || []).flatMap((row: any) => {
       const payload = parse(row.full_payload);
       const options = Array.isArray(payload.rateOptions) ? payload.rateOptions : [payload];
       return options.map((option: any) => ({
@@ -1045,9 +1134,11 @@ export class HotelStayBlockValidationService {
 
     const direct = this.normalizeText(directRateId || '');
     const meal = this.normalizeText(mealPlan || '');
-    const matched = rows.find((row: any) => this.normalizeText(row.rateplan_id) === direct)
-      || rows.find((row: any) => this.normalizeText(row.rate_plan_code) === direct)
+    const shortMealCode = this.axisRoomsMealPlanCode(directRateId || mealPlan || '');
+    const matched = rows.find((row: any) => !!direct && this.normalizeText(row.rateplan_id) === direct)
+      || rows.find((row: any) => !!direct && this.normalizeText(row.rate_plan_code) === direct)
       || rows.find((row: any) => this.normalizeText(row.rateplan_name) === meal || this.normalizeText(row.rate_plan_code) === meal)
+      || rows.find((row: any) => this.normalizeText(row.rateplan_id) === shortMealCode)
       || rows[0];
 
     if (!matched) {
@@ -1057,6 +1148,15 @@ export class HotelStayBlockValidationService {
     return {
       ratePlanId: String(matched.rateplan_id || '').trim(),
     };
+  }
+
+  /** Match UI meal codes (CP/MAP/AP) to the canonical AxisRooms plan IDs. */
+  private axisRoomsMealPlanCode(value: string): string {
+    const normalized = this.normalizeText(value);
+    if (normalized === 'CP') return 'CPPLAN';
+    if (normalized === 'MAP') return 'MAPPLAN';
+    if (normalized === 'AP') return 'APPLAN';
+    return normalized;
   }
 
   private buildNightlyRate(
@@ -1347,6 +1447,15 @@ export class HotelStayBlockValidationService {
     }
     const date = new Date(raw);
     return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+  }
+
+  /**
+   * Inventory and price-book dates are stored as India business-day midnight.
+   * MySQL returns that value as the previous UTC day at 18:30 (UTC+05:30).
+   * A bare `new Date('YYYY-MM-DD')` is UTC midnight and misses those rows.
+   */
+  private toDatabaseBusinessDate(value: unknown): Date {
+    return toDatabaseBusinessDate(value);
   }
 
   private addDays(date: string, days: number): string {

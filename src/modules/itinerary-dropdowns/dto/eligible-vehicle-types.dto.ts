@@ -40,9 +40,11 @@ export class EligibleVehicleTypesResponseDto {
    * List of eligible vehicle types
  */
   vehicleTypes: Array<{
-    id: string;
-    label: string;
-  }>;
+  id: string;
+  label: string;
+  capacity?: number;
+  calculatedCost?: number | null;
+}>;
 
  /**
    * Selected vehicle IDs for the itinerary plan (if itineraryPlanId was provided)

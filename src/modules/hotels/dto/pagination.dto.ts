@@ -38,4 +38,8 @@ export class PaginationQueryDto {
   @IsOptional()
   @IsIn(['asc', 'desc'])
   sortOrder?: 'asc' | 'desc' = 'asc';
+
+  @IsOptional()
+  @IsIn(['AX', 'RS', 'ST', 'axisrooms', 'resavenue', 'staah'])
+  provider?: 'AX' | 'RS' | 'ST' | 'axisrooms' | 'resavenue' | 'staah';
 }

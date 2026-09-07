@@ -65,6 +65,15 @@ export type HotelOptionIdentity = {
 
 const clean = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 
+const canonicalMealPlanIdentity = (value: unknown): string => {
+  const raw = String(value ?? '').trim();
+  return String(
+    inferCanonicalHotelRatePlanCode(raw) ||
+    inferCanonicalHotelRatePlanCodeFromMealText(raw) ||
+    raw,
+  ).trim().toLowerCase();
+};
+
 /** Rate-level identity for an authoritative automatic recommendation. */
 export function buildAutoSelectionIdentity(row: any): Record<string, unknown> {
   return {
@@ -78,7 +87,9 @@ export function buildAutoSelectionIdentity(row: any): Record<string, unknown> {
     roomTypeId: String(row?.roomTypeId || row?.room_type_id || '').trim(),
     roomType: String(row?.roomType || row?.room_type || row?.roomTypeName || '').trim(),
     rateId: String(row?.rateId || row?.rate_id || '').trim(),
-    mealPlan: String(row?.mealPlan || row?.meal_plan || row?.mealPlanCode || '').trim().toUpperCase(),
+    mealPlan: canonicalMealPlanIdentity(
+      row?.mealPlan || row?.meal_plan || row?.mealPlanCode || '',
+    ).toUpperCase(),
   };
 }
 
@@ -97,12 +108,15 @@ export function autoSelectionIdentityMatches(option: any, identity: any): boolea
     [actual.roomTypeId, identity.roomTypeId],
     [actual.roomType, identity.roomType],
     [actual.rateId, identity.rateId],
-    [actual.mealPlan, identity.mealPlan],
   ];
-  return checks.every(([actualValue, expectedValue]) => {
+  const fieldsMatch = checks.every(([actualValue, expectedValue]) => {
     const expected = clean(expectedValue);
     return !expected || clean(actualValue) === expected;
   });
+  const expectedMealPlan = canonicalMealPlanIdentity(identity.mealPlan);
+  return fieldsMatch && (
+    !expectedMealPlan || canonicalMealPlanIdentity(actual.mealPlan) === expectedMealPlan
+  );
 }
 
 /**
@@ -132,7 +146,25 @@ export function strictAutoSelectionIdentityMatches(option: any, identity: any): 
   if (expectedRateFields.length === 0) {
     return rateFields.every((field) => !clean(actual[field]));
   }
-  return expectedRateFields.every((field) => clean(actual[field]) === clean(identity[field]));
+  // Some supplier projections (notably TBO) carry the opaque rate token in
+  // `searchReference` while the normalized recommendation carries the same
+  // token in `rateOptionId`. These are aliases for the same concrete rate,
+  // not different rates. Compare the effective rate token for that field,
+  // while keeping the other identity fields strict.
+  const effectiveRateToken = (row: any): string => clean(
+    row?.rateOptionId || row?.rate_option_id || row?.bookingCode ||
+    row?.booking_code || row?.searchReference || row?.search_reference ||
+    row?.optionKey || row?.option_key,
+  );
+  return expectedRateFields.every((field) => {
+    if (field === 'mealPlan') {
+      return canonicalMealPlanIdentity(actual[field]) === canonicalMealPlanIdentity(identity[field]);
+    }
+    if (field === 'rateOptionId') {
+      return effectiveRateToken(actual) === effectiveRateToken(identity);
+    }
+    return clean(actual[field]) === clean(identity[field]);
+  });
 }
 
 export function normalizeHotelDisplayName(value: unknown): string {
@@ -144,6 +176,24 @@ export function normalizeHotelDisplayName(value: unknown): string {
     .replace(/&gt;/gi, '>')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** A persistence id alone is not enough to make a row a selected hotel. */
+export function hasCommercialHotelIdentity(row: any): boolean {
+  const snapshot = parseHotelSelectionSnapshot(row);
+  const hotelId = Number(
+    row?.canonicalHotelId ?? row?.canonical_hotel_id ?? row?.hotelId ?? row?.hotel_id ??
+      snapshot.canonicalHotelId ?? snapshot.hotelId ?? 0,
+  );
+  if (Number.isInteger(hotelId) && hotelId > 0) return true;
+  const providerCode = String(
+    row?.providerHotelCode ?? row?.provider_hotel_code ?? row?.hotelCode ?? row?.hotel_code ??
+      snapshot.providerHotelCode ?? snapshot.hotelCode ?? '',
+  ).trim();
+  if (providerCode) return true;
+  const provider = clean(row?.provider ?? row?.hotel_provider ?? snapshot.provider);
+  const name = normalizeHotelDisplayName(row?.hotelName ?? row?.hotel_name ?? snapshot.hotelName);
+  return Boolean(provider && name);
 }
 
 export function isTboSupplierBookingCode(value: unknown): boolean {
@@ -317,7 +367,7 @@ export function isProtectedHotelSelection(row: any): boolean {
 }
 
 export function parseHotelSelectionSnapshot(row: any): HotelSelectionSnapshot {
-  const raw = row?.selected_price_snapshot;
+  const raw = row?.selected_price_snapshot ?? row?.selectedPriceSnapshot;
   if (raw && typeof raw === 'object') return raw as HotelSelectionSnapshot;
   if (raw) {
     try {
@@ -341,10 +391,18 @@ export function resolvePersistedHotelIdentity(row: any, master: any): PersistedH
   const snapshot = parseHotelSelectionSnapshot(row);
   const provider = clean(row?.hotel_provider || snapshot.provider);
   const hotelId = Number(row?.hotel_id || 0);
-  const hotelCode = String(row?.hotel_code || hotelId || '').trim();
+  // Supplier selections (TBO/AxisRooms/STAAH) are not guaranteed to have a
+  // local dvi_hotel row. Their selected snapshot is the authoritative display
+  // identity; using only dvi_hotel made valid persisted supplier rows render
+  // with blank name/category after reset.
+  const hotelCode = String(
+    row?.hotel_code || snapshot.providerHotelCode || snapshot.hotelCode || hotelId || '',
+  ).trim();
   const masterId = Number(master?.hotel_id || 0);
   const masterName = normalizeHotelDisplayName(master?.hotel_name);
+  const snapshotName = normalizeHotelDisplayName(snapshot.hotelName);
   const masterCategory = Number(master?.hotel_category || 0);
+  const snapshotCategory = Number(snapshot.category || 0);
   const mismatches: string[] = [];
 
   if (provider === 'offline') {
@@ -376,8 +434,8 @@ export function resolvePersistedHotelIdentity(row: any, master: any): PersistedH
     provider,
     hotelId,
     hotelCode,
-    hotelName: masterName,
-    category: masterCategory,
+    hotelName: masterName || snapshotName,
+    category: masterCategory || snapshotCategory,
     consistent: mismatches.length === 0,
     mismatches,
     snapshot,
@@ -391,7 +449,13 @@ export function selectionOriginFromRow(row: any): HotelSelectionOrigin {
   // Legacy offline rows predate explicit origin metadata and represented
   // manual choices. Preserve that compatibility only when the snapshot does
   // not state that the API created the selection.
-  return row?.hotel_provider === 'offline' ? 'USER_SELECTED' : 'AUTO_SELECTED';
+  if (String(row?.hotel_provider || '').trim().toLowerCase() === 'offline') {
+    const bookingMode = String(row?.hotel_booking_mode || '').trim().toUpperCase();
+    const priceSource = String(row?.price_source || '').trim().toUpperCase();
+    if (bookingMode === 'OFFLINE_MANUAL' || priceSource === 'OFFLINE_DB') return 'AUTO_SELECTED';
+    return 'USER_SELECTED';
+  }
+  return 'AUTO_SELECTED';
 }
 
 export function hotelOptionKey(row: HotelOptionIdentity): string {
@@ -513,6 +577,21 @@ export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
     mealPlan: row?.mealPlan ?? row?.meal_plan ?? null,
     totalPrice: Number(row?.totalPrice ?? row?.totalStayPrice ?? row?.totalHotelCost ?? row?.total_hotel_cost ?? row?.totalAmount ?? row?.selected_total_price ?? 0),
     pricePerNight: Number(row?.pricePerNight ?? row?.price_per_night ?? row?.price ?? row?.selected_price_per_night ?? 0),
+    roomRate: Number(row?.roomRate ?? row?.room_rate ?? 0),
+    totalRoomCost: Number(row?.totalRoomCost ?? row?.total_room_cost ?? 0),
+    baseTotalPrice: Number(row?.baseTotalPrice ?? row?.base_total_price ?? row?.baseHotelCost ?? row?.base_hotel_cost ?? 0),
+    extraBedCount: Number(row?.extraBedCount ?? row?.extra_bed_count ?? 0),
+    extraBedRate: Number(row?.extraBedRate ?? row?.extra_bed_rate ?? 0),
+    extraBedAmount: Number(row?.extraBedAmount ?? row?.extra_bed_amount ?? row?.extraBedCost ?? row?.total_extra_bed_cost ?? 0),
+    childWithBedCount: Number(row?.childWithBedCount ?? row?.child_with_bed_count ?? 0),
+    childWithBedRate: Number(row?.childWithBedRate ?? row?.child_with_bed_rate ?? 0),
+    childWithBedAmount: Number(row?.childWithBedAmount ?? row?.child_with_bed_amount ?? row?.childWithBedCost ?? row?.total_childwith_bed_cost ?? 0),
+    childWithoutBedCount: Number(row?.childWithoutBedCount ?? row?.child_without_bed_count ?? 0),
+    childWithoutBedRate: Number(row?.childWithoutBedRate ?? row?.child_without_bed_rate ?? 0),
+    childWithoutBedAmount: Number(row?.childWithoutBedAmount ?? row?.child_without_bed_amount ?? row?.childWithoutBedCost ?? row?.total_childwithout_bed_cost ?? 0),
+    hotelMarginBaseAmount: Number(row?.hotelMarginBaseAmount ?? row?.hotel_margin_base_amount ?? 0),
+    hotelMarginPercentage: Number(row?.hotelMarginPercentage ?? row?.hotel_margin_percentage ?? 0),
+    hotelMarginAmount: Number(row?.hotelMarginAmount ?? row?.hotel_margin_amount ?? row?.hotel_margin_rate ?? 0),
     currency: row?.currency ?? row?.selected_currency ?? null,
     optionKey: (row?.optionKey ?? selectedOptionKeyFromRow(row)) || null,
     rateOptionId: row?.rateOptionId ?? row?.selected_rate_option_id ?? null,

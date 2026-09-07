@@ -77,6 +77,174 @@ export class ItineraryQuoteContextService {
     };
   }
 
+  async syncRouteFamilySelection(
+    planId: number,
+    desiredCount: number,
+  ) {
+    const normalizedPlanId = Math.trunc(Number(planId || 0));
+    const normalizedDesiredCount = Math.trunc(
+      Number(desiredCount || 0),
+    );
+
+    if (normalizedPlanId <= 0) {
+      throw new BadRequestException(
+        'A valid itinerary plan ID is required.',
+      );
+    }
+
+    if (
+      normalizedDesiredCount < 1 ||
+      normalizedDesiredCount > 5
+    ) {
+      throw new BadRequestException(
+        'Smart Booking supports between 1 and 5 selected routes.',
+      );
+    }
+
+    const anchorPlan =
+      await this.prisma.dvi_itinerary_plan_details.findUnique({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+        },
+        select: {
+          itinerary_plan_ID: true,
+          itinerary_quote_ID: true,
+        },
+      });
+
+    if (!anchorPlan) {
+      throw new BadRequestException(
+        `Plan ${normalizedPlanId} not found.`,
+      );
+    }
+
+    const anchorQuoteId = String(
+      anchorPlan.itinerary_quote_ID || '',
+    ).trim();
+
+    const familyMatch = anchorQuoteId.match(
+      /^(.*)-R(\d+)$/i,
+    );
+
+    if (!familyMatch?.[1]) {
+      throw new BadRequestException(
+        'This itinerary is not a Smart Booking route family.',
+      );
+    }
+
+    const baseQuoteId = String(familyMatch[1]).trim();
+
+    const familyRows =
+      await this.prisma.dvi_itinerary_plan_details.findMany({
+        where: {
+          itinerary_quote_ID: {
+            startsWith: `${baseQuoteId}-R`,
+          },
+        },
+        select: {
+          itinerary_plan_ID: true,
+          itinerary_quote_ID: true,
+          deleted: true,
+          createdon: true,
+        },
+        orderBy: [
+          { createdon: 'asc' },
+          { itinerary_plan_ID: 'asc' },
+        ],
+      });
+
+    const parsedRows = familyRows
+      .map((row) => {
+        const quoteId = String(
+          row.itinerary_quote_ID || '',
+        ).trim();
+
+        const match = quoteId.match(/-R(\d+)$/i);
+
+        return {
+          planId: Number(row.itinerary_plan_ID || 0),
+          quoteId,
+          routeIndex: match
+            ? Number.parseInt(match[1], 10)
+            : 0,
+          deleted: Number(row.deleted || 0),
+        };
+      })
+      .filter(
+        (row) =>
+          row.planId > 0 &&
+          row.routeIndex > 0,
+      );
+
+    const slotRows =
+      new Map<number, (typeof parsedRows)[number]>();
+
+    parsedRows.forEach((row) => {
+      if (!slotRows.has(row.routeIndex)) {
+        slotRows.set(row.routeIndex, row);
+      }
+    });
+
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const row of parsedRows) {
+        const canonical = slotRows.get(row.routeIndex);
+
+        const shouldBeActive =
+          canonical?.planId === row.planId &&
+          row.routeIndex <= normalizedDesiredCount;
+
+        const nextDeleted = shouldBeActive ? 0 : 1;
+
+        if (row.deleted === nextDeleted) {
+          continue;
+        }
+
+        await tx.dvi_itinerary_plan_details.update({
+          where: {
+            itinerary_plan_ID: row.planId,
+          },
+          data: {
+            deleted: nextDeleted,
+            updatedon: now,
+          },
+        });
+      }
+    });
+
+    const options = Array.from(slotRows.values())
+      .filter(
+        (row) =>
+          row.routeIndex <= normalizedDesiredCount,
+      )
+      .sort(
+        (a, b) =>
+          a.routeIndex - b.routeIndex,
+      )
+      .map((row) => ({
+        planId: row.planId,
+        quoteId: row.quoteId,
+        routeIndex: row.routeIndex,
+        label: `Route ${row.routeIndex}`,
+      }));
+
+    const missingRouteIndexes = Array.from(
+      { length: normalizedDesiredCount },
+      (_, index) => index + 1,
+    ).filter(
+      (routeIndex) =>
+        !slotRows.has(routeIndex),
+    );
+
+    return {
+      baseQuoteId,
+      desiredCount: normalizedDesiredCount,
+      options,
+      missingRouteIndexes,
+    };
+  }
+
   async getCustomerInfoForm(planId: number) {
  // Get plan details
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({

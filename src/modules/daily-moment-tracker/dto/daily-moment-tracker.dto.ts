@@ -153,11 +153,14 @@ export class DailyMomentHotspotRowDto {
   hotspot_name!: string;
   hotspot_location!: string;
 
- // timing & duration
- start_time!: string; // e.g. "01:56 PM"
- end_time!: string; // e.g. "03:26 PM"
- duration_minutes!: number; // total minutes
- duration_label!: string; // e.g. "1 Hour 30 Min"
+// timing & duration
+start_time!: string;
+end_time!: string;
+duration_minutes!: number;
+duration_label!: string;
+
+// B2B travel-card distance
+travel_distance_km!: number | null;
 
  // visit status (for buttons)
  driver_hotspot_status!: number; // 0=pending, 1=visited, 2=not-visited
@@ -202,29 +205,32 @@ export class DayViewGuideDto {
   driver_not_visited_description!: string | null;
 }
 
-export class DayViewDayDto {
-  day_number!: number;
-  itinerary_route_ID!: number;
-  confirmed_itinerary_route_ID?: number;
- route_date!: string; // DD-MM-YYYY
-  from_location!: string;
-  to_location!: string;
-  trip_type!: 'Arrival' | 'Departure' | 'Ongoing';
-  arrival_flight_details!: string;
-  departure_flight_details!: string;
-  hotel_name!: string;
-  vehicle_type_title!: string;
-  vendor_name!: string;
-  meal_plan!: string;
-  vehicle_no!: string;
-  driver_name!: string;
-  driver_mobile!: string;
-  agent_name!: string;
+export class DayViewDayDto { 
+  day_number!: number; 
+  itinerary_route_ID!: number; 
+  confirmed_itinerary_route_ID?: number; 
+  route_date!: string; // DD-MM-YYYY 
+  from_location!: string; 
+  to_location!: string; 
+  trip_type!: 'Arrival' | 'Departure' | 'Ongoing'; 
+  arrival_flight_details!: string; 
+  departure_flight_details!: string; 
+  hotel_name!: string; 
+  vehicle_type_title!: string; 
+  vendor_name!: string; 
+  meal_plan!: string; 
+  vehicle_no!: string; 
+  driver_name!: string; 
+  driver_mobile!: string; 
+  agent_name!: string; 
   special_remarks!: string;
-  km!: DayViewKmDto;
-  wholeday_guide!: DayViewGuideDto | null;
-  guides!: DayViewGuideDto[];
-  hotspots!: DailyMomentHotspotRowDto[];
+
+  day_images!: string[];
+
+  km!: DayViewKmDto; 
+  wholeday_guide!: DayViewGuideDto | null; 
+  guides!: DayViewGuideDto[]; 
+  hotspots!: DailyMomentHotspotRowDto[]; 
 }
 
 export class DayViewPlanDto {

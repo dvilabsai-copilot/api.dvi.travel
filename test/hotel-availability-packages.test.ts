@@ -2,6 +2,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ItineraryHotelDetailsTboService } from '../src/modules/itineraries/itinerary-hotel-details-tbo.service';
 
+test('route-scoped repair preserves populated Munnar input and repairs only empty Thekkady input', () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  const munnar = [{ hotelCode: 'MUNNAR-G1', provider: 'tbo', price: 1000 }];
+  const thekkady = [{ hotelCode: 'THEKKADY-G1', provider: 'axisrooms', price: 1200 }];
+  const repaired = service.buildRecommendationHotelsByRoute(
+    new Map([[11275, munnar], [11277, thekkady]]),
+    new Map([[11275, munnar], [11277, []]]),
+  );
+
+  assert.strictEqual(repaired.get(11275), munnar);
+  assert.strictEqual(repaired.get(11277), thekkady);
+  assert.deepEqual(repaired.get(11275), [{ hotelCode: 'MUNNAR-G1', provider: 'tbo', price: 1000 }]);
+});
+
 test('availability panes keep every eligible hotel in the matching recommendation group', () => {
   const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
   const route = {
@@ -45,6 +59,18 @@ test('shared hotel inventory unions every package without leaking group selectio
   assert.ok(inventory.every((hotel: any) => hotel.groupType === 0));
   assert.ok(inventory.every((hotel: any) => hotel.isSelected === false));
   assert.ok(inventory.every((hotel: any) => hotel.selectionStatus === 'AVAILABLE'));
+});
+
+test('shared hotel inventory collapses duplicate visible supplier offers', () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  const inventory = service.buildSharedHotelInventory([
+    { groupType: 1, itineraryRouteId: 11081, date: '2026-09-01', provider: 'tbo', hotelCode: '5004143', hotelName: 'Itsy Hotels Deluxe Inn', roomType: 'Economy Double Room,1 Queen Bed', mealPlan: 'CP', pricePerNight: 2916.7, rateOptionId: 'booking-a' },
+    { groupType: 2, itineraryRouteId: 11081, date: '2026-09-01', provider: 'tbo', hotelCode: '5004143', hotelName: 'Itsy Hotels Deluxe Inn', roomType: 'Economy Double Room,1 Queen Bed', mealPlan: 'CP', pricePerNight: 2916.7, rateOptionId: 'booking-b' },
+    { groupType: 3, itineraryRouteId: 11081, date: '2026-09-01', provider: 'tbo', hotelCode: '5004143', hotelName: 'Itsy Hotels Deluxe Inn', roomType: 'Economy Double Room,1 Queen Bed', mealPlan: 'CP', pricePerNight: 3000, rateOptionId: 'booking-c' },
+  ]);
+
+  assert.equal(inventory.length, 2);
+  assert.deepEqual(inventory.map((row: any) => row.pricePerNight), [2916.7, 3000]);
 });
 
 test('group-neutral shared inventory strips recommendation-only metadata', () => {
@@ -105,6 +131,34 @@ test('every recommendation pane receives the same complete route inventory', () 
   assert.deepEqual(packages.map((pkg: any) => pkg.hotels.filter((hotel: any) => hotel.autoSelectionCandidate).map((hotel: any) => hotel.hotelCode)), [
     ['H1'], ['H2'], ['H3'], ['H4'],
   ]);
+});
+
+test('group 3 reuses group 2 selected hotel when its route inventory is empty', () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  const selectedGroup2 = {
+    provider: 'tbo', hotelCode: 'ALLEPPEY-G2', hotelName: 'Lake Canopy',
+    roomType: 'The Creek', mealPlan: 'CP', price: 17250,
+    extraBedRate: 1000, childWithoutBedRate: 500, rateOptionId: 'g2-rate',
+  };
+  const packages = service.generateSharedAvailabilityPackages(
+    new Map([[10, []]]),
+    [{ itinerary_route_ID: 10, itinerary_route_date: '2026-08-19', next_visiting_location: 'Alleppey' }],
+    [
+      { groupType: 1, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+      { groupType: 2, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: selectedGroup2 }] },
+      { groupType: 3, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+      { groupType: 4, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+    ],
+  );
+
+  const group3Hotel = packages[2].hotels[0];
+  assert.equal(group3Hotel.hotelCode, 'ALLEPPEY-G2');
+  assert.equal(group3Hotel.price, 17250);
+  assert.equal(group3Hotel.extraBedRate, 1000);
+  assert.equal(group3Hotel.childWithoutBedRate, 500);
+  assert.equal(group3Hotel.autoSelectionStatus, 'AVAILABLE');
+  assert.equal(group3Hotel.autoSelectionCandidate, true);
+  assert.equal(group3Hotel.autoSelectionFallbackFromGroup, 2);
 });
 
 test('category filtering never removes a hotel from the shared inventory', async () => {

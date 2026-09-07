@@ -29,7 +29,7 @@ export class ItineraryExportService {
     const hotelMarginPercentage = Math.max(this.num(configuredMargin), 0);
 
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Worksheet');
+    const sheet = workbook.addWorksheet('__HorizontalSource');
     const styles = this.styles();
     let row = 2;
     this.writeHeaderRow(sheet, row, ['Quote ID', plan.itinerary_quote_ID || '', 'Source Location', plan.arrival_location || '', 'Departure Location', plan.departure_location || '', 'Trip Start Date', this.dateTime(plan.trip_start_date_and_time), 'Trip End Date', this.dateTime(plan.trip_end_date_and_time), 'No of Days', this.num(plan.no_of_days), 'No of Nights', this.num(plan.no_of_nights), 'No of Adults', this.num(plan.total_adult), 'No of Children', this.num(plan.total_children), 'No of Infants', this.num(plan.total_infants)], styles);
@@ -39,7 +39,9 @@ export class ItineraryExportService {
     if (preference === 1 || preference === 3) row = await this.writeHotels(sheet, row, planId, styles, hotelMarginPercentage);
     if (preference === 3) row += 1;
     if (preference === 2 || preference === 3) row = await this.writeVehicles(sheet, row, planId, this.num(plan.no_of_days), preference, styles);
-    this.autoSize(sheet);
+    const verticalSheet = this.buildVerticalSheet(workbook, sheet);
+    workbook.removeWorksheet(sheet.id);
+    this.autoSize(verticalSheet);
     return { workbook, fileName: `ITINERARY-${this.safeFilePart(plan.itinerary_quote_ID || `DVI${planId}`)}.xlsx` };
   }
 
@@ -69,7 +71,17 @@ export class ItineraryExportService {
         WHERE h.itinerary_plan_id = ${planId} AND h.group_type = ${Number(group.group_type)} AND h.deleted = 0 AND h.status = 1
         GROUP BY h.itinerary_plan_hotel_details_ID, h.itinerary_route_date ORDER BY h.itinerary_route_date ASC`;
       let overallCost = 0, overallSales = 0, overallPL = 0;
-      for (const d of details) {
+      const earlyArrivalMarkers = new Map<number, any>(
+        details
+          .filter((detail) => Number(detail.hotel_required) === 2 && Number(detail.hotel_id) === 0)
+          .map((detail) => [Number(detail.itinerary_route_id), detail]),
+      );
+      const payableDetails = details.filter(
+        (detail) => !(Number(detail.hotel_required) === 2 && Number(detail.hotel_id) === 0),
+      );
+      for (const d of payableDetails) {
+        const earlyArrivalMarker = earlyArrivalMarkers.get(Number(d.itinerary_route_id));
+        const earlyCheckIn = Number(d.early_checkin) === 1 || Boolean(earlyArrivalMarker);
         const extraBedCost = this.num(d.total_extra_bed_cost) || this.hotelExtraBedCost(d);
         const roomRent = this.num(d.total_room_cost) + this.num(d.total_room_gst_amount);
         const pricing = ItineraryPricingService.hotel({ ...d, total_extra_bed_cost: extraBedCost });
@@ -79,6 +91,25 @@ export class ItineraryExportService {
         const totalCost = pricing.cost;
         const pl = pricing.pl; overallCost += totalCost; overallSales += totalSales; overallPL += pl;
         const meals = [['B', d.breakfast_required, d.breakfast_cost_per_person], ['L', d.lunch_required, d.lunch_cost_per_person], ['D', d.dinner_required, d.dinner_cost_per_person]].filter(([, required, cost]) => Number(required) === 1 && this.num(cost) !== 0).map(([label]) => label).join(', ') || 'EP';
+        if (earlyCheckIn) {
+          // The marker owns the payable blocking night. The selected hotel
+          // row may retain the normal guest-arrival check-in date.
+          const blockedFromDate = this.date(earlyArrivalMarker?.itinerary_route_date || d.hotel_check_in_date);
+          const dayZeroValues = [
+            `Day 0 | ${blockedFromDate}`,
+            d.itinerary_route_location || earlyArrivalMarker?.itinerary_route_location || '',
+            `${this.hotelName(d)} (Early check-in room block)`,
+            this.roomTypeName(d),
+            meals,
+            this.num(d.total_no_of_rooms),
+            this.num(d.room_extra_bed_count),
+            this.num(d.room_cnb_count),
+            this.num(d.room_cwb_count),
+            ...Array(12).fill(''),
+          ];
+          this.writeRow(sheet, row, dayZeroValues, styles.data, 21);
+          row += 1;
+        }
         this.writeRow(sheet, row, [this.date(d.itinerary_route_date), d.itinerary_route_location || '', this.hotelName(d), this.roomTypeName(d), meals, this.num(d.total_no_of_rooms), this.num(d.room_extra_bed_count), this.num(d.room_cnb_count), this.num(d.room_cwb_count), roomRent, this.num(d.hotel_breakfast_cost), this.num(d.hotel_lunch_cost), this.num(d.hotel_dinner_cost), extraBedCost, this.num(d.total_childwith_bed_cost), this.num(d.total_childwithout_bed_cost), storedMargin, storedMarginTax, totalCost, totalSales, pl], styles.data, 21, 10);
         row += 1;
       }
@@ -114,6 +145,263 @@ export class ItineraryExportService {
       row += 1;
     }
     return row;
+  }
+
+  private buildVerticalSheet(
+    workbook: ExcelJS.Workbook,
+    source: ExcelJS.Worksheet,
+  ): ExcelJS.Worksheet {
+    const target = workbook.addWorksheet('Worksheet');
+    let targetRow = 2;
+
+    const writePair = (
+      labelSource: ExcelJS.Cell,
+      valueSource: ExcelJS.Cell,
+      label: any,
+      value: any,
+    ) => {
+      const row = target.getRow(targetRow);
+      const labelCell = row.getCell(1);
+      const valueCell = row.getCell(2);
+
+      labelCell.value = label;
+      valueCell.value = value;
+
+      this.copyExcelCellStyle(labelSource, labelCell);
+      this.copyExcelCellStyle(valueSource, valueCell);
+
+      targetRow += 1;
+    };
+
+    // Main itinerary information is currently stored as alternating
+    // label/value cells across one row. Turn those pairs into rows.
+    const sourceHeader = source.getRow(2);
+
+    for (
+      let column = 1;
+      column <= sourceHeader.cellCount;
+      column += 2
+    ) {
+      const labelSource = sourceHeader.getCell(column);
+      const valueSource = sourceHeader.getCell(column + 1);
+
+      if (
+        this.isBlankExcelValue(labelSource.value) &&
+        this.isBlankExcelValue(valueSource.value)
+      ) {
+        continue;
+      }
+
+      writePair(
+        labelSource,
+        valueSource,
+        labelSource.value,
+        valueSource.value,
+      );
+    }
+
+    targetRow += 2;
+
+    const mergedTitleRows = new Set<number>();
+
+    for (const range of source.model.merges || []) {
+      const match = String(range).match(
+        /^A(\d+):[A-Z]+(\d+)$/,
+      );
+
+      if (
+        match &&
+        Number(match[1]) === Number(match[2])
+      ) {
+        mergedTitleRows.add(Number(match[1]));
+      }
+    }
+
+    let currentHeaders: string[] | null = null;
+    let currentHeaderRow: ExcelJS.Row | null = null;
+
+    for (
+      let sourceRowNumber = 5;
+      sourceRowNumber <= source.rowCount;
+      sourceRowNumber += 1
+    ) {
+      const sourceRow = source.getRow(sourceRowNumber);
+      const populatedCells: ExcelJS.Cell[] = [];
+
+      sourceRow.eachCell(
+        { includeEmpty: false },
+        (cell) => {
+          if (!this.isBlankExcelValue(cell.value)) {
+            populatedCells.push(cell);
+          }
+        },
+      );
+
+      if (populatedCells.length === 0) {
+        continue;
+      }
+
+      // Hotel Recommendation / Vehicle Type title rows.
+      if (mergedTitleRows.has(sourceRowNumber)) {
+        const sourceCell = sourceRow.getCell(1);
+
+        target.mergeCells(
+          targetRow,
+          1,
+          targetRow,
+          2,
+        );
+
+        const titleCell =
+          target.getRow(targetRow).getCell(1);
+
+        titleCell.value = sourceCell.value;
+
+        this.copyExcelCellStyle(
+          sourceCell,
+          titleCell,
+        );
+
+        this.copyExcelCellStyle(
+          sourceCell,
+          target.getRow(targetRow).getCell(2),
+        );
+
+        targetRow += 1;
+        currentHeaders = null;
+        currentHeaderRow = null;
+        continue;
+      }
+
+      const matchedHeaders =
+        this.matchExportHeaders(sourceRow);
+
+      if (matchedHeaders) {
+        currentHeaders = matchedHeaders;
+        currentHeaderRow = sourceRow;
+        continue;
+      }
+
+      if (
+        currentHeaders &&
+        currentHeaderRow
+      ) {
+        const sparseSummary =
+          this.isBlankExcelValue(
+            sourceRow.getCell(1).value,
+          );
+
+        for (
+          let index = 0;
+          index < currentHeaders.length;
+          index += 1
+        ) {
+          const valueSource =
+            sourceRow.getCell(index + 1);
+
+          // Totals rows only contain the final calculated values.
+          // Avoid generating dozens of empty rows for those summaries.
+          if (
+            sparseSummary &&
+            this.isBlankExcelValue(
+              valueSource.value,
+            )
+          ) {
+            continue;
+          }
+
+          writePair(
+            currentHeaderRow.getCell(index + 1),
+            valueSource,
+            currentHeaders[index],
+            valueSource.value,
+          );
+        }
+
+        // Visual separation between hotel/day/vehicle records.
+        targetRow += 1;
+        continue;
+      }
+
+      // Defensive fallback: preserve any unexpected populated export
+      // cells instead of silently dropping data.
+      for (const sourceCell of populatedCells) {
+        const fallbackLabel =
+          target.getRow(targetRow).getCell(1);
+
+        fallbackLabel.value =
+          `Column ${sourceCell.col}`;
+
+        this.copyExcelCellStyle(
+          sourceCell,
+          fallbackLabel,
+        );
+
+        const fallbackValue =
+          target.getRow(targetRow).getCell(2);
+
+        fallbackValue.value = sourceCell.value;
+
+        this.copyExcelCellStyle(
+          sourceCell,
+          fallbackValue,
+        );
+
+        targetRow += 1;
+      }
+
+      targetRow += 1;
+    }
+
+    return target;
+  }
+
+  private matchExportHeaders(
+    row: ExcelJS.Row,
+  ): string[] | null {
+    const candidates = [
+      hotelHeaders,
+      vehicleHeaders,
+      dayHeaders,
+    ];
+
+    for (const headers of candidates) {
+      const matches = headers.every(
+        (header, index) =>
+          this.clean(
+            row.getCell(index + 1).value,
+          ) === this.clean(header),
+      );
+
+      if (matches) {
+        return headers;
+      }
+    }
+
+    return null;
+  }
+
+  private copyExcelCellStyle(
+    source: ExcelJS.Cell,
+    target: ExcelJS.Cell,
+  ) {
+    target.style = {
+      ...source.style,
+    };
+
+    if (source.numFmt) {
+      target.numFmt = source.numFmt;
+    }
+  }
+
+  private isBlankExcelValue(
+    value: any,
+  ): boolean {
+    return (
+      value === null ||
+      value === undefined ||
+      value === ''
+    );
   }
 
   private styles() { const border: Partial<ExcelJS.Borders> = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; const fill = (argb: string, bold = false): Partial<ExcelJS.Style> => ({ font: { bold }, alignment: { horizontal: 'left', vertical: 'middle', wrapText: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb } }, border }); return { yellow: fill('FFFFFF00', true), blue: fill('FF8DB4E2', true), orange: fill('FFFFA500', true), green: fill('FF90EE90', true), label: { font: { bold: true }, alignment: { horizontal: 'left' }, border } as Partial<ExcelJS.Style>, data: { font: { bold: true }, alignment: { vertical: 'middle', wrapText: true }, border } as Partial<ExcelJS.Style> }; }

@@ -158,11 +158,6 @@ export function normalizeStaahOccupancyRates(occupancyRates: unknown): Record<st
       normalized.SINGLE = baseRate;
     }
 
-    const extraAdult = toNonNegativeNumber(amountSource.extraadult);
-    if (extraAdult !== null && normalized.EXTRAADULT === undefined) {
-      normalized.EXTRAADULT = extraAdult;
-    }
-
     const extraChild = toNonNegativeNumber(amountSource.extrachild);
     if (extraChild !== null && normalized.EXTRACHILD === undefined) {
       normalized.EXTRACHILD = extraChild;
@@ -173,6 +168,12 @@ export function normalizeStaahOccupancyRates(occupancyRates: unknown): Record<st
     );
     if (extraBed !== null && normalized.EXTRABED === undefined) {
       normalized.EXTRABED = extraBed;
+    } else if (extraBed === null) {
+      // Legacy STAAH payloads use extraadult for the same supplement.
+      const extraAdult = toNonNegativeNumber(amountSource.extraadult);
+      if (extraAdult !== null && normalized.EXTRABED === undefined) {
+        normalized.EXTRABED = extraAdult;
+      }
     }
   }
 
@@ -239,7 +240,11 @@ export function calculateStaahOccupancyAmount(
   const extraBedCount = Math.max(Math.trunc(Number(pax.extraBedCount || 0)), 0);
 
   const extraBedRate = toPositiveNumber(normalizedRates.EXTRABED);
-  const extraAdultRate = toPositiveNumber(normalizedRates.EXTRAADULT);
+  // STAAH's extra-adult supplement is represented by the canonical
+  // EXTRABED rate. EXTRAADULT remains readable only for legacy stored rows.
+  const extraAdultRate = toPositiveNumber(
+    normalizedRates.EXTRABED || normalizedRates.EXTRAADULT,
+  );
   const childWithBedSpecificRate = toPositiveNumber(normalizedRates.CHILD_WITH_BED);
   const childWithoutBedSpecificRate = toPositiveNumber(normalizedRates.CHILD_WITHOUT_BED);
   const extraChildRate = toPositiveNumber(normalizedRates.EXTRACHILD);

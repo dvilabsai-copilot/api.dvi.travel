@@ -422,6 +422,15 @@ export class HotelsController {
     );
   }
 
+  @Post(':id/rooms/:roomId/availability')
+  saveRoomAvailability(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('roomId', ParseIntPipe) roomId: number,
+    @Body() body: { items?: Array<{ startDate?: string; endDate?: string; freeRooms?: number }> },
+  ) {
+    return this.hotels.saveRoomAvailability(id, roomId, body?.items || []);
+  }
+
   // NEW: bulk rooms endpoint used by React RoomsStep
   @Post(':id/rooms/bulk')
   async saveRoomsBulk(

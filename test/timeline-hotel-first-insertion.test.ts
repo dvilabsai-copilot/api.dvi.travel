@@ -68,3 +68,16 @@ test('does not insert when route policy suppresses hotel-first flow', async () =
   assert.equal(result.order, baseInput.order);
   assert.equal(result.didHotelFirstCheckin, false);
 });
+
+test('uses a three-hour break after confirmed early check-in', async () => {
+  const logs: any[] = [];
+  const result = await createService(logs).insert({
+    ...baseInput,
+    isEarlyArrivalPrevDayConfirmed: true,
+    shouldHotelFirstByDistance: false,
+    isArrivalAfterNoon: false,
+  });
+
+  assert.equal(result.rows[2].duration, '03:00:00');
+  assert.ok(logs.some((entry) => entry.rule === 'REST_GAP_INSERTED' && entry.restMinutes === 180));
+});

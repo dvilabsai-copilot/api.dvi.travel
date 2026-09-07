@@ -14,10 +14,16 @@ export function clearDistanceCache(): void {
 }
 
 export interface DistanceResult {
- distanceKm: number; // e.g. 8.42
- travelTime: string; // HH:MM:SS
- bufferTime: string; // HH:MM:SS
+  distanceKm: number;
+  travelTime: string;
+  bufferTime: string;
 }
+
+/**
+ * Minimum travel time in minutes accounts for vehicle loading/unloading.
+ * Keep this at module scope because DistanceHelper methods also use it.
+ */
+const MIN_TRAVEL_MINUTES = 5;
 
 /**
  * Parse dvi_stored_locations.duration into TOTAL MINUTES.
@@ -30,10 +36,7 @@ export interface DistanceResult {
  * - "1 day 2 hours 15 mins"
  * Also supports numeric durations (treated as minutes).
  */
-/** Minimum travel time in minutes accounts for vehicle loading/unloading */
-const MIN_TRAVEL_MINUTES = 5;
-
-function parseDurationToMinutes(duration: any): number | null {
+export function parseDurationToMinutes(duration: any): number | null {
   if (duration == null) return null;
 
   if (typeof duration === "number" && Number.isFinite(duration)) {

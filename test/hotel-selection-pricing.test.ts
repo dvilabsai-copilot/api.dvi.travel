@@ -1,17 +1,22 @@
-import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveHotelSelectionPricing } from '../src/modules/itineraries/utils/hotel-selection-pricing.util';
+import assert from 'node:assert/strict';
+import { resolveHotelOccupancyPricing } from '../src/modules/itineraries/utils/hotel-selection-pricing.util';
 
-test('persists an explicit occupancy total without multiplying it again', () => {
-  assert.deepEqual(
-    resolveHotelSelectionPricing({ totalPrice: 9680, pricePerNight: 4840, roomCount: 2 }),
-    { roomCount: 2, totalPrice: 9680, roomRate: 4840 },
-  );
-});
+test('uses DOUBLE plus supplements for three adults', () => {
+  const result = resolveHotelOccupancyPricing({
+    rates: { SINGLE: 5000, DOUBLE: 5000, EXTRABED: 4600, CHILD_WITHOUT_BED: 1800 },
+    roomCount: 1,
+    adultCount: 3,
+    extraBedCount: 1,
+    childWithoutBedCount: 1,
+    marginPercentage: 10,
+  });
 
-test('multiplies a per-room fallback rate by the requested room count', () => {
-  assert.deepEqual(
-    resolveHotelSelectionPricing({ pricePerNight: 4840, roomCount: 2 }),
-    { roomCount: 2, totalPrice: 9680, roomRate: 4840 },
-  );
+  assert.equal(result.roomOccupancy, 'DOUBLE');
+  assert.equal(result.baseTotalPrice, 5000);
+  assert.equal(result.extraBedAmount, 4600);
+  assert.equal(result.childWithoutBedAmount, 1800);
+  assert.equal(result.hotelMarginBaseAmount, 11400);
+  assert.equal(result.hotelMarginAmount, 1140);
+  assert.equal(result.totalPrice, 12540);
 });

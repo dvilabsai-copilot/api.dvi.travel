@@ -101,7 +101,10 @@ export class TimelineTravelDataService {
     if (citySafe > 0) {
       try {
         const location = await (tx as any).dvi_stored_locations?.findFirst({
-          where: { location_id: citySafe },
+          // Prisma exposes this legacy column as location_ID (capital ID).
+          // Using location_id throws a validation error during itinerary creation;
+          // keep the lookup best-effort, but query the actual schema field.
+          where: { location_ID: citySafe },
           select: { location_name: true },
         });
         hotelCity = (location?.location_name as string) ?? null;

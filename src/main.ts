@@ -20,14 +20,35 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { PrismaService } from './prisma.service';
 import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serializer.interceptor';
-import { RequestMethod, ValidationPipe } from '@nestjs/common';
+import { LogLevel, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ensureUniqueOpenApiOperationIds } from './common/swagger/normalize-openapi';
 import * as express from 'express';
+import compression from 'compression';
 
 function resolveBackendRoot(): string {
  // Works for both src/main.ts (dev) and dist/main.js (prod).
   const candidate = path.resolve(__dirname, '..');
   return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : process.cwd();
+}
+
+function resolveLogLevels(): LogLevel[] | undefined {
+  const raw = String(process.env.LOG_LEVELS || '').trim();
+  if (!raw) return undefined;
+
+  const validLevels = new Set<LogLevel>([
+    'log',
+    'error',
+    'warn',
+    'debug',
+    'verbose',
+    'fatal',
+  ]);
+  const levels = raw
+    .split(',')
+    .map((level) => level.trim().toLowerCase() as LogLevel)
+    .filter((level, index, all) => validLevels.has(level) && all.indexOf(level) === index);
+
+  return levels.length > 0 ? levels : undefined;
 }
 
 // ---- Safe JSON patches (do NOT change other app behavior) ----
@@ -47,7 +68,16 @@ try {
 // ---------------------------------------------------------------
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { cors: true });
+  const logLevels = resolveLogLevels();
+  const app = await NestFactory.create(AppModule, {
+    cors: true,
+    ...(logLevels ? { logger: logLevels } : {}),
+  });
+
+  // Compress large availability responses without changing their JSON shape.
+  // Browsers and Postman negotiate gzip automatically; small responses are
+  // left alone by the threshold.
+  app.use(compression({ threshold: 1024 }));
 
  // Allow large STAAH ARI inventory/rate/restriction payloads.
  // Default Express JSON limit is too small for multi-date ARI pushes.

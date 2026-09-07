@@ -23,7 +23,26 @@ export class AxisRoomsBookingPushService {
     return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
   }
 
-  private countGuests(passengers: any[] = []): { adults: number; children: number } {
+  private countGuests(
+    passengers: any[] = [],
+    occupancies: any[] = [],
+  ): { adults: number; children: number } {
+    const occupancyAdults = (occupancies || []).reduce(
+      (sum: number, occupancy: any) => sum + Math.max(Number(occupancy?.adults || 0), 0),
+      0,
+    );
+    const occupancyChildren = (occupancies || []).reduce(
+      (sum: number, occupancy: any) => sum + Math.max(Number(occupancy?.children || 0), 0),
+      0,
+    );
+
+    // Occupancy is the authoritative room booking count. Passenger details
+    // can be incomplete in legacy/client payloads (for example, three adults
+    // with only the lead passenger included), so use them only as a fallback.
+    if (occupancyAdults > 0 || occupancyChildren > 0) {
+      return { adults: occupancyAdults, children: occupancyChildren };
+    }
+
     let adults = 0;
     let children = 0;
     for (const p of passengers || []) {
@@ -131,7 +150,8 @@ export class AxisRoomsBookingPushService {
     const booking = input.hotel || {};
     const hotelCode = String(booking.hotelCode || '').trim();
     const passengers = Array.isArray(booking.passengers) ? booking.passengers : [];
-    const { adults, children } = this.countGuests(passengers);
+    const occupancies = Array.isArray(booking.occupancies) ? booking.occupancies : [];
+    const { adults, children } = this.countGuests(passengers, occupancies);
     const routeIds = Array.isArray(booking.routeIds) && booking.routeIds.length > 0
       ? booking.routeIds.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
       : [Number(booking.routeId || 0)].filter((id) => id > 0);
