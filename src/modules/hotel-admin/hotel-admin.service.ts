@@ -627,6 +627,56 @@ export class HotelAdminService {
     });
   }
 
+  async createHotel(
+    userIdValue: unknown,
+    body: any,
+  ) {
+    const actor =
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.HOTELS,
+        'create',
+      );
+
+    const created =
+      await this.hotelsService.create(
+        body as any,
+      );
+
+    const hotelId =
+      Number(
+        (created as any)?.hotel_id ??
+          (created as any)?.id ??
+          0,
+      );
+
+    if (
+      !Number.isInteger(hotelId) ||
+      hotelId <= 0
+    ) {
+      throw new BadRequestException(
+        'Hotel was created but hotel_id was not returned',
+      );
+    }
+
+    const now = new Date();
+
+    await this.prisma
+      .dvi_hotel_admin_user_hotel
+      .create({
+        data: {
+          user_id: actor.userID,
+          hotel_id: hotelId,
+          createdby: actor.userID,
+          createdon: now,
+          updatedon: now,
+          status: 1,
+          deleted: 0,
+        },
+      });
+
+    return created;
+  }
   async getHotel(
     userIdValue: unknown,
     hotelId: number,
@@ -669,6 +719,43 @@ export class HotelAdminService {
     );
   }
 
+  async deleteHotel(
+    userIdValue: unknown,
+    hotelId: number,
+  ) {
+    const actor =
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.HOTELS,
+        'delete',
+      );
+
+    await this.assertAssignedHotel(
+      actor.userID,
+      hotelId,
+    );
+
+    const result =
+      await this.hotelsService.remove(
+        hotelId,
+      );
+
+    await this.prisma
+      .dvi_hotel_admin_user_hotel
+      .updateMany({
+        where: {
+          hotel_id: hotelId,
+          deleted: 0,
+        },
+        data: {
+          status: 0,
+          deleted: 1,
+          updatedon: new Date(),
+        },
+      });
+
+    return result;
+  }
   async listRooms(
     userIdValue: unknown,
     hotelId: number,
@@ -792,7 +879,6 @@ export class HotelAdminService {
         },
         select: {
           room_ID: true,
-          room_title: true,
         },
       });
 
@@ -802,45 +888,22 @@ export class HotelAdminService {
       );
     }
 
-    const rows =
-      await this.prisma.dvi_hotel_room_rate_plan.findMany({
-        where: {
-          hotel_id: hotelId,
-          room_id: roomId,
-          status: 1,
-          deleted: 0,
-        },
-        select: {
-          hotel_room_rate_plan_id: true,
-          rateplan_id: true,
-          rateplan_name: true,
-          rate_plan_code: true,
-          meal_plan_description: true,
-          currency: true,
-          occupancy: true,
-        },
-        orderBy: {
-          hotel_room_rate_plan_id: 'asc',
-        },
-      });
-
-    return {
-      room: {
-        id: Number(room.room_ID),
-        name: room.room_title ?? '',
-      },
-      items: rows.map((row) => ({
-        id: row.hotel_room_rate_plan_id,
-        rateplanId: row.rateplan_id,
-        name: row.rateplan_name,
-        code: row.rate_plan_code,
-        mealPlan:
-          row.meal_plan_description,
-        currency: row.currency,
-        occupancy: row.occupancy,
-      })),
-    };
+    /*
+     * Important:
+     * Reuse the same Hotel rate-plan source used by
+     * the main Hotels / Price Book workflow.
+     *
+     * It returns persisted room plans when present
+     * and canonical CP / EP / MAP / AP fallback plans
+     * when the room has not stored plans yet.
+     */
+    return this.hotelsService
+      .getRoomRatePlans(
+        hotelId,
+        roomId,
+      );
   }
+
   async getRates(
     userIdValue: unknown,
     hotelId: number,
@@ -950,6 +1013,1159 @@ export class HotelAdminService {
       );
   }
 
+  async listRoomTypes(
+    userIdValue: unknown,
+    hotelId: number,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.ROOMS,
+      'view',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .roomTypesByHotel(
+        hotelId,
+      );
+  }
+
+  async saveRoomsBulk(
+    userIdValue: unknown,
+    hotelId: number,
+    body: any,
+  ) {
+    const items: any[] =
+      Array.isArray(body?.items)
+        ? body.items
+        : Array.isArray(body)
+          ? body
+          : [];
+
+    if (!items.length) {
+      throw new BadRequestException(
+        'items array is required',
+      );
+    }
+
+    const hasCreates =
+      items.some(
+        (item) =>
+          !Number(
+            item?.room_ID ??
+              item?.room_id ??
+              0,
+          ),
+      );
+
+    const hasUpdates =
+      items.some(
+        (item) =>
+          Number(
+            item?.room_ID ??
+              item?.room_id ??
+              0,
+          ) > 0,
+      );
+
+    if (hasCreates) {
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.ROOMS,
+        'create',
+      );
+    }
+
+    if (hasUpdates) {
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.ROOMS,
+        'edit',
+      );
+    }
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    const results: any[] = [];
+    const errors: any[] = [];
+
+    for (const raw of items) {
+      const payload = {
+        ...(raw ?? {}),
+        hotel_id: hotelId,
+      };
+
+      try {
+        const result =
+          await this.hotelsService
+            .saveRoom(
+              payload as any,
+            );
+
+        results.push(result);
+      } catch (error: any) {
+        errors.push({
+          room_id:
+            payload?.room_id ??
+            payload?.room_ID ??
+            null,
+          message:
+            error?.message ??
+            'Failed to save room row',
+        });
+      }
+    }
+
+    if (!results.length) {
+      throw new BadRequestException(
+        errors[0]?.message ??
+          'Failed to save rooms',
+      );
+    }
+
+    return {
+      success: true,
+      count: results.length,
+      items: results,
+      failedCount: errors.length,
+      errors,
+    };
+  }
+
+  async uploadRoomGallery(
+    userIdValue: unknown,
+    hotelId: number,
+    roomId: number,
+    roomRefCodeValue: unknown,
+    files: Express.Multer.File[],
+  ) {
+    const actor =
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.GALLERY,
+        'create',
+      );
+
+    await this.assertAssignedHotel(
+      actor.userID,
+      hotelId,
+    );
+
+    const roomRefCode =
+      String(
+        roomRefCodeValue ?? '',
+      ).trim();
+
+    if (!roomRefCode) {
+      throw new BadRequestException(
+        'roomRefCode (or room_ref_code) is required',
+      );
+    }
+
+    const room =
+      await this.prisma
+        .dvi_hotel_rooms
+        .findFirst({
+          where: {
+            hotel_id: hotelId,
+            room_ID: BigInt(roomId),
+            deleted: 0,
+          },
+          select: {
+            room_ID: true,
+          },
+        });
+
+    if (!room) {
+      throw new BadRequestException(
+        'Room not found for this hotel',
+      );
+    }
+
+    return this.hotelsService
+      .saveRoomGallery({
+        hotelId,
+        roomId,
+        roomRefCode,
+        files: files ?? [],
+        createdBy:
+          Number(actor.userID),
+      });
+  }
+
+  async listAmenities(
+    userIdValue: unknown,
+    hotelId: number,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.HOTEL_DETAILS,
+      'view',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .listAmenities(
+        hotelId,
+      );
+  }
+
+  async createAmenity(
+    userIdValue: unknown,
+    hotelId: number,
+    body: any,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.HOTEL_DETAILS,
+      'create',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    if (Array.isArray(body?.items)) {
+      return this.hotelsService
+        .addAmenitiesBulk(
+          hotelId,
+          body.items,
+        );
+    }
+
+    return this.hotelsService
+      .addAmenity({
+        ...(body ?? {}),
+        hotel_id: hotelId,
+      } as any);
+  }
+
+  async saveAmenitiesBulk(
+    userIdValue: unknown,
+    hotelId: number,
+    body: any,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.HOTEL_DETAILS,
+      'create',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    const items =
+      Array.isArray(body?.items)
+        ? body.items
+        : Array.isArray(body)
+          ? body
+          : [];
+
+    return this.hotelsService
+      .addAmenitiesBulk(
+        hotelId,
+        items,
+      );
+  }
+
+  async updateAmenity(
+    userIdValue: unknown,
+    hotelId: number,
+    amenityId: number,
+    body: any,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.HOTEL_DETAILS,
+      'edit',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .updateAmenity({
+        ...(body ?? {}),
+        hotel_id: hotelId,
+        amenity_id: amenityId,
+      } as any);
+  }
+
+  async deleteAmenity(
+    userIdValue: unknown,
+    hotelId: number,
+    amenityId: number,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.HOTEL_DETAILS,
+      'delete',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .removeAmenity(
+        hotelId,
+        amenityId,
+      );
+  }
+
+  async getAmenityDetail(
+    userIdValue: unknown,
+    hotelId: number,
+    amenityId: number,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.HOTEL_DETAILS,
+      'view',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    const rows =
+      (await this.hotelsService
+        .listAmenities(
+          hotelId,
+        )) as any[];
+
+    const found =
+      rows.find(
+        (row) =>
+          Number(
+            row?.hotel_amenities_id ??
+              row?.amenity_id ??
+              row?.id,
+          ) === amenityId,
+      );
+
+    if (!found) {
+      throw new BadRequestException(
+        'Amenity not found for this hotel',
+      );
+    }
+
+    return {
+      id: Number(
+        found.hotel_amenities_id ??
+          found.amenity_id ??
+          found.id,
+      ),
+      name:
+        found.amenities_title ??
+        found.amenities_code ??
+        'Amenity',
+      code:
+        found.amenities_code ??
+        null,
+    };
+  }
+
+  async upsertAmenityPricebook(
+    userIdValue: unknown,
+    hotelId: number,
+    amenityId: number,
+    body: any,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.RATES,
+      'edit',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .upsertAmenitiesPricebookRange(
+        hotelId,
+        {
+          hotel_amenities_id:
+            amenityId,
+          startDate:
+            body?.startDate,
+          endDate:
+            body?.endDate,
+          hoursCharge:
+            body?.hoursCharge,
+          dayCharge:
+            body?.dayCharge,
+        },
+      );
+  }
+
+  async getPricebook(
+    userIdValue: unknown,
+    hotelId: number,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.RATES,
+      'view',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .getPricebook(
+        hotelId,
+      );
+  }
+
+  async createPricebook(
+    userIdValue: unknown,
+    hotelId: number,
+    body: any,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.RATES,
+      'create',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .addPrice({
+        ...(body ?? {}),
+        hotel_id: hotelId,
+      } as any);
+  }
+
+  async updatePricebook(
+    userIdValue: unknown,
+    hotelId: number,
+    body: any,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.RATES,
+      'edit',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .upsertPricebook(
+        hotelId,
+        body ?? {},
+      );
+  }
+
+  async getMealPricebook(
+    userIdValue: unknown,
+    hotelId: number,
+    startDate: string,
+    endDate: string,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.RATES,
+      'view',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .getMealPricebookRangeView(
+        hotelId,
+        {
+          startDate,
+          endDate,
+        },
+      );
+  }
+
+  async saveMealPricebook(
+    userIdValue: unknown,
+    hotelId: number,
+    body: any,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.RATES,
+      'edit',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .upsertMealPricebook(
+        hotelId,
+        body,
+      );
+  }
+
+  async listReviews(
+    userIdValue: unknown,
+    hotelId: number,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.HOTEL_DETAILS,
+      'view',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .listReviews(
+        hotelId,
+      );
+  }
+
+  async createReview(
+    userIdValue: unknown,
+    hotelId: number,
+    body: any,
+  ) {
+    const actor =
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.HOTEL_DETAILS,
+        'create',
+      );
+
+    await this.assertAssignedHotel(
+      actor.userID,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .addReviewUnified(
+        {
+          ...(body ?? {}),
+          hotel_id: hotelId,
+          hotelId,
+        },
+        Number(actor.userID),
+      );
+  }
+
+  async updateReview(
+    userIdValue: unknown,
+    hotelId: number,
+    reviewId: number,
+    body: any,
+  ) {
+    const actor =
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.HOTEL_DETAILS,
+        'edit',
+      );
+
+    await this.assertAssignedHotel(
+      actor.userID,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .updateReviewUnified(
+        reviewId,
+        hotelId,
+        body,
+        Number(actor.userID),
+      );
+  }
+
+  async deleteReview(
+    userIdValue: unknown,
+    hotelId: number,
+    reviewId: number,
+  ) {
+    await this.assertPermission(
+      userIdValue,
+      HotelAdminPermissionKey.HOTEL_DETAILS,
+      'delete',
+    );
+
+    await this.assertAssignedHotel(
+      userIdValue,
+      hotelId,
+    );
+
+    return this.hotelsService
+      .removeReview(
+        hotelId,
+        reviewId,
+      );
+  }
+  async listPendingBookingApprovals(
+    userIdValue: unknown,
+  ) {
+    const actor =
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.BOOKINGS,
+        'view',
+      );
+
+    const hotelIds =
+      await this.getAssignedHotelIds(
+        actor.userID,
+      );
+
+    if (!hotelIds.length) {
+      return [];
+    }
+
+    const rows =
+      await (this.prisma as any)
+        .dvi_itinerary_plan_hotel_details
+        .findMany({
+          where: {
+            hotel_id: {
+              in: hotelIds,
+            },
+            deleted: 0,
+            status: 1,
+            hotel_provider: 'offline',
+            hotel_booking_mode:
+              'MANUAL_APPROVAL',
+            OR: [
+              {
+                hotel_approval_status:
+                  'PENDING_APPROVAL',
+              },
+              {
+                hotel_approval_status:
+                  'APPROVED',
+                manual_confirmation_status:
+                  'PENDING_CONFIRMATION',
+              },
+            ],
+          },
+          select: {
+            itinerary_plan_hotel_details_ID:
+              true,
+            itinerary_plan_id: true,
+            itinerary_route_id: true,
+            hotel_id: true,
+            hotel_check_in_date: true,
+            hotel_check_out_date: true,
+            total_no_of_rooms: true,
+            total_no_of_persons: true,
+            total_hotel_cost: true,
+            selected_total_price: true,
+            selected_currency: true,
+            hotel_provider: true,
+            hotel_booking_mode: true,
+            hotel_approval_status: true,
+            manual_confirmation_status:
+              true,
+            manual_confirmation_requested_at:
+              true,
+            requires_price_reacceptance:
+              true,
+            status: true,
+          },
+          orderBy: [
+            {
+              hotel_approval_requested_at:
+                'asc',
+            },
+            {
+              itinerary_plan_hotel_details_ID:
+                'asc',
+            },
+          ],
+          take: 500,
+        });
+
+    const bookingHotelIds: number[] =
+      Array.from(
+        new Set<number>(
+          (rows as any[])
+            .map(
+              (row: any) =>
+                Number(row.hotel_id),
+            )
+            .filter(
+              (hotelId: number) =>
+                Number.isInteger(hotelId) &&
+                hotelId > 0,
+            ),
+        ),
+      );
+
+    const hotels =
+      bookingHotelIds.length
+        ? await this.prisma.dvi_hotel
+            .findMany({
+              where: {
+                hotel_id: {
+                  in: bookingHotelIds,
+                },
+              },
+              select: {
+                hotel_id: true,
+                hotel_name: true,
+              },
+            })
+        : [];
+
+    const hotelNameById =
+      new Map<number, string | null>(
+        hotels.map(
+          (hotel) => [
+            Number(hotel.hotel_id),
+            hotel.hotel_name,
+          ],
+        ),
+      );
+
+    return (rows as any[]).map(
+      (row: any) => ({
+        bookingId:
+          Number(
+            row.itinerary_plan_hotel_details_ID,
+          ),
+        selectionId:
+          Number(
+            row.itinerary_plan_hotel_details_ID,
+          ),
+        reference:
+          `Manual ${row.itinerary_plan_hotel_details_ID}`,
+        itineraryPlanId:
+          row.itinerary_plan_id,
+        itineraryRouteId:
+          row.itinerary_route_id,
+        hotelId:
+          row.hotel_id,
+        hotel_name:
+          hotelNameById.get(
+            Number(row.hotel_id),
+          ) ?? null,
+        guest_name: null,
+        rooms:
+          row.total_no_of_rooms,
+        checkIn:
+          row.hotel_check_in_date,
+        checkOut:
+          row.hotel_check_out_date,
+        total:
+          row.selected_total_price ??
+          row.total_hotel_cost,
+        currency:
+          row.selected_currency,
+        approvalStatus:
+          row.hotel_approval_status,
+        confirmationStatus:
+          row.manual_confirmation_status,
+        status:
+          row.status,
+        manualApproval:
+          true,
+      }),
+    );
+  }
+
+  async bulkBookingAction(
+    userIdValue: unknown,
+    body: {
+      bookingIds?: Array<number | string>;
+      selectionIds?: Array<number | string>;
+      action?:
+        | 'approve'
+        | 'reject'
+        | 'confirm';
+      notes?: string;
+    },
+  ) {
+    const actor =
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.BOOKINGS,
+        'edit',
+      );
+
+    const action =
+      String(body?.action ?? '')
+        .trim()
+        .toLowerCase();
+
+    if (
+      ![
+        'approve',
+        'reject',
+        'confirm',
+      ].includes(action)
+    ) {
+      throw new BadRequestException(
+        'action must be approve, reject, or confirm',
+      );
+    }
+
+    const suppliedIds =
+      Array.isArray(body?.selectionIds)
+        ? body.selectionIds
+        : Array.isArray(body?.bookingIds)
+          ? body.bookingIds
+          : [];
+
+    const selectionIds: number[] =
+      Array.from(
+        new Set<number>(
+          suppliedIds
+            .map(
+              (value) => Number(value),
+            )
+            .filter(
+              (value) =>
+                Number.isInteger(value) &&
+                value > 0,
+            ),
+        ),
+      );
+
+    if (!selectionIds.length) {
+      throw new BadRequestException(
+        'At least one hotel selection is required',
+      );
+    }
+
+    if (selectionIds.length > 100) {
+      throw new BadRequestException(
+        'A maximum of 100 hotel selections can be processed at once',
+      );
+    }
+
+    const hotelIds =
+      await this.getAssignedHotelIds(
+        actor.userID,
+      );
+
+    if (!hotelIds.length) {
+      throw new ForbiddenException(
+        'No hotels are assigned to this Hotel Admin',
+      );
+    }
+
+    const rows =
+      await (this.prisma as any)
+        .dvi_itinerary_plan_hotel_details
+        .findMany({
+          where: {
+            itinerary_plan_hotel_details_ID:
+              {
+                in: selectionIds,
+              },
+            deleted: 0,
+            status: 1,
+          },
+          select: {
+            itinerary_plan_hotel_details_ID:
+              true,
+            hotel_id: true,
+            hotel_provider: true,
+            hotel_booking_mode: true,
+            hotel_approval_status: true,
+            manual_confirmation_status:
+              true,
+            manual_confirmation_requested_at:
+              true,
+            requires_price_reacceptance:
+              true,
+            selected_total_price: true,
+            selected_currency: true,
+            selected_price_snapshot: true,
+          },
+        });
+
+    if (
+      rows.length !==
+        selectionIds.length ||
+      rows.some(
+        (row: any) =>
+          !hotelIds.includes(
+            Number(row.hotel_id),
+          ),
+      )
+    ) {
+      throw new ForbiddenException(
+        'One or more hotel selections are outside your assigned hotels',
+      );
+    }
+
+    const actorId =
+      Number(actor.userID);
+
+    const notes =
+      String(body?.notes ?? '')
+        .trim() || null;
+
+    const results: any[] = [];
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        for (const row of rows as any[]) {
+          const selectionId =
+            Number(
+              row.itinerary_plan_hotel_details_ID,
+            );
+
+          const provider =
+            String(
+              row.hotel_provider ?? '',
+            ).toLowerCase();
+
+          const bookingMode =
+            String(
+              row.hotel_booking_mode ?? '',
+            ).toUpperCase();
+
+          if (
+            provider !== 'offline' ||
+            bookingMode !==
+              'MANUAL_APPROVAL'
+          ) {
+            throw new BadRequestException(
+              `Hotel selection ${selectionId} is not a manual-approval booking`,
+            );
+          }
+
+          const previousApproval =
+            String(
+              row.hotel_approval_status ??
+                'NOT_REQUESTED',
+            );
+
+          const previousConfirmation =
+            String(
+              row.manual_confirmation_status ??
+                'NOT_STARTED',
+            );
+
+          const now =
+            new Date();
+
+          let updated: any;
+
+          if (action === 'approve') {
+            if (
+              previousApproval !==
+              'PENDING_APPROVAL'
+            ) {
+              throw new BadRequestException(
+                `Hotel selection ${selectionId} is not pending approval`,
+              );
+            }
+
+            updated =
+              await (tx as any)
+                .dvi_itinerary_plan_hotel_details
+                .update({
+                  where: {
+                    itinerary_plan_hotel_details_ID:
+                      selectionId,
+                  },
+                  data: {
+                    hotel_approval_status:
+                      'APPROVED',
+                    hotel_approved_at:
+                      now,
+                    hotel_approved_by:
+                      actorId,
+                    hotel_approval_notes:
+                      notes,
+                    manual_confirmation_status:
+                      'PENDING_CONFIRMATION',
+                    updatedon:
+                      now,
+                  },
+                });
+          } else if (
+            action === 'reject'
+          ) {
+            if (
+              previousApproval !==
+              'PENDING_APPROVAL'
+            ) {
+              throw new BadRequestException(
+                `Hotel selection ${selectionId} is not pending approval`,
+              );
+            }
+
+            updated =
+              await (tx as any)
+                .dvi_itinerary_plan_hotel_details
+                .update({
+                  where: {
+                    itinerary_plan_hotel_details_ID:
+                      selectionId,
+                  },
+                  data: {
+                    hotel_approval_status:
+                      'REJECTED',
+                    hotel_rejected_at:
+                      now,
+                    hotel_rejected_by:
+                      actorId,
+                    hotel_approval_notes:
+                      notes,
+                    manual_confirmation_status:
+                      'CANCELLED',
+                    updatedon:
+                      now,
+                  },
+                });
+          } else {
+            if (
+              previousApproval !==
+              'APPROVED'
+            ) {
+              throw new BadRequestException(
+                `Hotel selection ${selectionId} must be approved before confirmation`,
+              );
+            }
+
+            if (
+              previousConfirmation !==
+              'PENDING_CONFIRMATION'
+            ) {
+              throw new BadRequestException(
+                `Hotel selection ${selectionId} is not pending confirmation`,
+              );
+            }
+
+            if (
+              Boolean(
+                row.requires_price_reacceptance,
+              )
+            ) {
+              throw new BadRequestException(
+                `Hotel selection ${selectionId} requires customer price reacceptance`,
+              );
+            }
+
+            updated =
+              await (tx as any)
+                .dvi_itinerary_plan_hotel_details
+                .update({
+                  where: {
+                    itinerary_plan_hotel_details_ID:
+                      selectionId,
+                  },
+                  data: {
+                    manual_confirmation_status:
+                      'CONFIRMED',
+                    manual_confirmation_requested_at:
+                      row.manual_confirmation_requested_at ??
+                      now,
+                    manually_confirmed_at:
+                      now,
+                    manually_confirmed_by:
+                      actorId,
+                    manual_confirmation_notes:
+                      notes,
+                    updatedon:
+                      now,
+                  },
+                });
+          }
+
+          await (tx as any)
+            .dvi_itinerary_plan_hotel_approval_history
+            .create({
+              data: {
+                itinerary_plan_hotel_details_id:
+                  selectionId,
+                previous_approval_status:
+                  previousApproval,
+                new_approval_status:
+                  updated.hotel_approval_status,
+                previous_confirmation_status:
+                  previousConfirmation,
+                new_confirmation_status:
+                  updated.manual_confirmation_status,
+                price:
+                  updated.selected_total_price ??
+                  row.selected_total_price,
+                currency:
+                  updated.selected_currency ??
+                  row.selected_currency,
+                notes:
+                  notes ??
+                  `Hotel ${action}`,
+                acted_by:
+                  actorId,
+                acted_at:
+                  now,
+                metadata:
+                  updated.selected_price_snapshot ??
+                  row.selected_price_snapshot ??
+                  null,
+              },
+            });
+
+          results.push({
+            bookingId:
+              selectionId,
+            selectionId,
+            success:
+              true,
+            approvalStatus:
+              updated.hotel_approval_status,
+            confirmationStatus:
+              updated.manual_confirmation_status,
+          });
+        }
+      },
+    );
+
+    return {
+      success: true,
+      action,
+      count:
+        results.length,
+      items:
+        results,
+    };
+  }
   async listBookings(
     userIdValue: unknown,
   ) {
@@ -1003,6 +2219,46 @@ export class HotelAdminService {
           take: 500,
         });
 
+    const bookingHotelIds =
+      Array.from(
+        new Set(
+          rows
+            .map(
+              (row) =>
+                Number(row.hotel_id),
+            )
+            .filter(
+              (hotelId) =>
+                Number.isInteger(hotelId) &&
+                hotelId > 0,
+            ),
+        ),
+      );
+
+    const bookingHotels =
+      bookingHotelIds.length
+        ? await this.prisma.dvi_hotel.findMany({
+            where: {
+              hotel_id: {
+                in: bookingHotelIds,
+              },
+            },
+            select: {
+              hotel_id: true,
+              hotel_name: true,
+            },
+          })
+        : [];
+
+    const hotelNameById =
+      new Map(
+        bookingHotels.map(
+          (hotel) => [
+            Number(hotel.hotel_id),
+            hotel.hotel_name,
+          ],
+        ),
+      );
     return rows.map((row) => ({
       bookingId:
         row.confirmed_itinerary_plan_hotel_details_ID,
@@ -1011,6 +2267,10 @@ export class HotelAdminService {
       itineraryRouteId:
         row.itinerary_route_id,
       hotelId: row.hotel_id,
+      hotel_name:
+        hotelNameById.get(
+          Number(row.hotel_id),
+        ) ?? null,
       hotelCode:
         row.hotel_code,
       routeDate:
