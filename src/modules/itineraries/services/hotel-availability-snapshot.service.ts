@@ -1420,15 +1420,21 @@ export class HotelAvailabilitySnapshotService {
 
       const origin = String(pending.origin || selectionOriginFromRow(selection) || 'AUTO_SELECTED');
       const searchRunId = String(pending.searchRunId || snapshot.searchRunId || 'accepted-change');
+      const rawCategory = option.category ?? selection.hotel_category_id ?? 0;
+      const numericCategory = Number(rawCategory);
+      const hotelCategoryId = Number.isFinite(numericCategory)
+        ? Math.trunc(numericCategory)
+        : 0;
+      const updateData = {
+        ...this.buildSelectionUpdate(selection, option, origin, searchRunId),
+        // Prisma requires this legacy scalar on acknowledgement updates.
+        // Normalize null/invalid supplier categories before sending the data.
+        hotel_category_id: hotelCategoryId,
+        requires_price_reacceptance: false,
+      };
       await tx.dvi_itinerary_plan_hotel_details.update({
         where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
-        data: {
-          ...this.buildSelectionUpdate(selection, option, origin, searchRunId),
-          // Keep acknowledgement compatible with previews created before the
-          // category field was present on every supplier option.
-          hotel_category_id: Number(option.category ?? selection.hotel_category_id ?? 0),
-          requires_price_reacceptance: false,
-        },
+        data: updateData,
       });
       await this.syncSelectedRoom(tx, selection, option, createdBy);
       accepted.push(Number(selection.itinerary_plan_hotel_details_ID));

@@ -1340,6 +1340,7 @@ test('persisted read omits missing-night placeholders and reports empty routes a
 });
 
 function makeReconciliationTx() {
+  let lastUpdateData: any = null;
   const selections: any[] = [{
     itinerary_plan_hotel_details_ID: 1,
     itinerary_plan_id: 44,
@@ -1372,12 +1373,13 @@ function makeReconciliationTx() {
     status: 1,
   }];
   const tx: any = {
-    dvi_itinerary_plan_hotel_details: {
+      dvi_itinerary_plan_hotel_details: {
       findMany: async () => selections.filter((row) => row.deleted === 0 && row.status === 1),
       update: async ({ where, data }: any) => {
+        lastUpdateData = data;
         const row = selections.find((entry) => entry.itinerary_plan_hotel_details_ID === where.itinerary_plan_hotel_details_ID);
-        Object.assign(row, data);
-        return row;
+          Object.assign(row, data);
+          return row;
       },
     },
     dvi_itinerary_plan_hotel_room_details: {
@@ -1397,7 +1399,7 @@ function makeReconciliationTx() {
       },
     },
   };
-  return { tx, selections, rooms };
+  return { tx, selections, rooms, getLastUpdateData: () => lastUpdateData };
 }
 
 test('AxisRooms reconciliation compares the margin-inclusive payable price', async () => {
@@ -1569,7 +1571,7 @@ test('persisted selection matches a nested supplier rate without marking the hot
 
 test('price reconciliation stages the complete nested option until acknowledgement', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
-  const { tx, selections } = makeReconciliationTx();
+  const { tx, selections, getLastUpdateData } = makeReconciliationTx();
   selections[0].selected_rate_option_id = 'rate-1';
   selections[0].selected_total_price = 2304;
   selections[0].selected_price_per_night = 1152;
@@ -1643,8 +1645,10 @@ test('price reconciliation stages the complete nested option until acknowledgeme
 
   const applied = await (service as any).applyPendingSelectionChanges(tx, 44, [1], 1);
   assert.deepEqual(applied, [1]);
+  assert.equal(Number.isInteger(getLastUpdateData().hotel_category_id), true);
   assert.equal(selections[0].selected_price_per_night, 1600);
   assert.equal(selections[0].selected_total_price, 3200);
+  assert.equal(selections[0].hotel_category_id, 0);
   const acceptedSnapshot = JSON.parse(selections[0].selected_price_snapshot);
   assert.equal(acceptedSnapshot.roomType, 'Deluxe Room');
   assert.equal(acceptedSnapshot.mealPlan, 'CP');

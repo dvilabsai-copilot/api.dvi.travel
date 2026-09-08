@@ -426,7 +426,7 @@ export class AuthService {
       }
     }
 
-    return {
+        return {
       staffId: Number(staff.staff_id),
       staffName:
         staff.staff_name ||
@@ -439,6 +439,66 @@ export class AuthService {
         Array.from(configuredKeys),
     };
   }
+
+  private async resolveAgentLoginContext(agentId: number) {
+    if (!Number.isFinite(agentId) || agentId <= 0) {
+      return null;
+    }
+
+const rows = await this.prisma.$queryRaw<
+  Array<{
+    agent_name: string | null;
+    agent_lastname: string | null;
+    agent_primary_mobile_number: string | null;
+    company_name: string | null;
+    site_logo: string | null;
+  }>
+>`
+  SELECT
+    A.agent_name,
+    A.agent_lastname,
+    A.agent_primary_mobile_number,
+    C.company_name,
+    C.site_logo
+  FROM dvi_agent AS A
+  LEFT JOIN dvi_agent_configuration AS C
+    ON C.agent_id = A.agent_ID
+    AND C.status = 1
+    AND C.deleted = 0
+  WHERE A.agent_ID = ${agentId}
+    AND A.status = 1
+    AND A.deleted = 0
+  ORDER BY C.agent_config_id DESC
+  LIMIT 1
+`;
+    const agent = rows[0];
+
+    if (!agent) {
+      return null;
+    }
+
+    const agentName = [
+      agent.agent_name,
+      agent.agent_lastname,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
+
+return {
+  agentName,
+  companyName: String(
+    agent.company_name ?? "",
+  ).trim(),
+  siteLogo: String(
+    agent.site_logo ?? "",
+  ).trim(),
+  agentMobile: String(
+    agent.agent_primary_mobile_number ?? "",
+  ).trim(),
+};
+  }
+
 private async buildLoginResponse(user: any) {
   const userId = user.userID.toString();
 
@@ -449,12 +509,17 @@ private async buildLoginResponse(user: any) {
   const roleID = Number(user.roleID || 0);
 
   const staffContext =
-    roleID === 3
+    roleID === SystemRole.STAFF
       ? await this.resolveStaffLoginContext(user)
       : null;
 
   const agentId = Number(user.agent_id || 0);
   const vendorId = Number(user.vendor_id || 0);
+
+  const agentContext =
+    roleID === SystemRole.AGENT && agentId > 0
+      ? await this.resolveAgentLoginContext(agentId)
+      : null;
 
   const staffId =
     staffContext?.staffId ??
@@ -464,6 +529,7 @@ private async buildLoginResponse(user: any) {
 
   const fullName =
     staffContext?.staffName ||
+    agentContext?.agentName ||
     user.username ||
     '';
 
@@ -477,6 +543,16 @@ private async buildLoginResponse(user: any) {
     staffId,
     guideId,
     name: fullName,
+
+...(agentContext
+  ? {
+      agentName: agentContext.agentName,
+      companyName: agentContext.companyName,
+      siteLogo: agentContext.siteLogo,
+      agentMobile: agentContext.agentMobile,
+    }
+  : {}),
+
     ...(staffContext
       ? {
           permissionRoleId:
@@ -507,10 +583,25 @@ private async buildLoginResponse(user: any) {
       staffId,
       guideId,
       fullName,
+
+      agentName:
+  agentContext?.agentName ?? null,
+
+companyName:
+  agentContext?.companyName ?? null,
+
+siteLogo:
+  agentContext?.siteLogo ?? null,
+
+agentMobile:
+  agentContext?.agentMobile ?? null,
+
       permissionRoleId:
         staffContext?.permissionRoleId ?? null,
+
       allowedAccessKeys:
         staffContext?.allowedAccessKeys ?? [],
+
       configuredAccessKeys:
         staffContext?.configuredAccessKeys ?? [],
     },

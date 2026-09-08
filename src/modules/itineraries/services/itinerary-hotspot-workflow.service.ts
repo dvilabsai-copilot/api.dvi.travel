@@ -68,10 +68,11 @@ export class ItineraryHotspotWorkflowService {
     const sourceName: string | null = (location as any).source_location ?? null;
     const destName: string | null = (location as any).destination_location ?? null;
 
-    const directDestination = Number(route.direct_to_next_visiting_place || 0) === 1;
+const directDestination =
+  Number(route.direct_to_next_visiting_place || 0) === 1;
 
- // 3) Already-added hotspots across the WHOLE PLAN (all routes) so we never
- // offer a hotspot that is already scheduled on another day.
+// 3) Already-added hotspots across the WHOLE PLAN (all routes) so we never
+// offer a hotspot that is already scheduled on another day.
  // We also track which ones are on THIS route specifically (for visitAgain).
     const planId = Number(route.itinerary_plan_ID);
     const allPlanAddedRowsRaw = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
@@ -169,8 +170,8 @@ export class ItineraryHotspotWorkflowService {
       });
     };
 
-    const sourcePool = await fetchPool(sourceName);
-    const destPool = await fetchPool(destName);
+ const sourcePool = await fetchPool(sourceName);
+const destPool = await fetchPool(destName);
 
  // 5) Build final ordered list
     const seen = new Set<number>();
@@ -213,17 +214,30 @@ export class ItineraryHotspotWorkflowService {
     if (directDestination) {
  // direct = true => destination only
       for (const h of destPool) pushUnique(h);
-    } else {
- // direct = false => interleave 3-by-3 source/dest
-      const CHUNK = 3;
-      let i = 0;
-      let j = 0;
+} else {
+  // direct = false => interleave 3-by-3 source/dest
+  const CHUNK = 3;
+  let i = 0;
+  let j = 0;
 
-      while (i < sourcePool.length || j < destPool.length) {
-        for (let k = 0; k < CHUNK && i < sourcePool.length; k++, i++) pushUnique(sourcePool[i]);
-        for (let k = 0; k < CHUNK && j < destPool.length; k++, j++) pushUnique(destPool[j]);
-      }
+  while (i < sourcePool.length || j < destPool.length) {
+    for (
+      let k = 0;
+      k < CHUNK && i < sourcePool.length;
+      k++, i++
+    ) {
+      pushUnique(sourcePool[i]);
     }
+
+    for (
+      let k = 0;
+      k < CHUNK && j < destPool.length;
+      k++, j++
+    ) {
+      pushUnique(destPool[j]);
+    }
+  }
+}
 
     if (ordered.length === 0) return [];
 
@@ -359,14 +373,17 @@ export class ItineraryHotspotWorkflowService {
           || availabilityStatus === 'ACTIVE_THIS_ROUTE'
           || availabilityStatus === 'EXCLUDED_BY_ROUTE';
         const activeRouteRow = thisRouteAddedRowByHotspotId.get(hotspotId) || null;
-        const cityContext = this.classifyManualHotspotCityContext({
-  location_name: sourceName,
-  next_visiting_location: destName,
-}, {
-  hotspot_location: h.hotspot_location,
-  hotspot_to_location: h.hotspot_to_location,
-  hotspot_name: h.hotspot_name,
-});
+   const cityContext = this.classifyManualHotspotCityContext(
+  {
+    location_name: sourceName,
+    next_visiting_location: destName,
+  },
+  {
+    hotspot_location: h.hotspot_location,
+    hotspot_to_location: h.hotspot_to_location,
+    hotspot_name: h.hotspot_name,
+  }
+);
 
         return {
           id: hotspotId,
@@ -466,9 +483,39 @@ export class ItineraryHotspotWorkflowService {
         },
       });
 
-      const sourceCityKey = this.deriveLooseCityKey(String(route?.location_name || ''));
-      const destinationCityKey = this.deriveLooseCityKey(String(route?.next_visiting_location || ''));
-      const directToggleOff = Number(route?.direct_to_next_visiting_place || 0) !== 1;
+    const sourceCityKey = this.deriveLooseCityKey(
+  String(route?.location_name || ''),
+);
+const destinationCityKey = this.deriveLooseCityKey(
+  String(route?.next_visiting_location || ''),
+);
+const directToggleOff =
+  Number(route?.direct_to_next_visiting_place || 0) !== 1;
+
+const configuredViaRows = directToggleOff
+  ? await (this.prisma as any).dvi_itinerary_via_route_details.findMany({
+      where: {
+        itinerary_route_ID: routeId,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        itinerary_via_location_name: true,
+      },
+    })
+  : [];
+
+const configuredViaCityKeys = Array.from(
+  new Set(
+    (configuredViaRows || [])
+      .map((row: any) =>
+        this.deriveLooseCityKey(
+          String(row?.itinerary_via_location_name || ''),
+        ),
+      )
+      .filter(Boolean),
+  ),
+);
 
       const routeRows = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
         where: {
@@ -756,13 +803,35 @@ export class ItineraryHotspotWorkflowService {
         );
       };
 
-      const anchorFromRaw = resolvedAnchorFrom;
-      const anchorToRaw = resolvedAnchorTo;
+     const anchorFromRaw = resolvedAnchorFrom;
+const anchorToRaw = resolvedAnchorTo;
 
-      const anchorFromMatchesSource = tokenMatchesCity(anchorFromRaw, sourceCityKey);
-      const anchorFromMatchesDestination = tokenMatchesCity(anchorFromRaw, destinationCityKey);
-      const anchorToMatchesSource = tokenMatchesCity(anchorToRaw, sourceCityKey);
-      const anchorToMatchesDestination = tokenMatchesCity(anchorToRaw, destinationCityKey);
+// When an anchor points to an attraction, its name may not contain the city
+// name (for example, "Kapaleeshwarar Temple" in Chennai). Use the hotspot
+// master location as an additional city signal for route-direction matching.
+const anchorFromLocationRaw = String(
+  previousVisitedMaster?.hotspot_location || ""
+).trim();
+
+const anchorToLocationRaw = String(
+  selectedAnchorMaster?.hotspot_location || ""
+).trim();
+
+const anchorFromMatchesSource =
+  tokenMatchesCity(anchorFromRaw, sourceCityKey) ||
+  tokenMatchesCity(anchorFromLocationRaw, sourceCityKey);
+
+const anchorFromMatchesDestination =
+  tokenMatchesCity(anchorFromRaw, destinationCityKey) ||
+  tokenMatchesCity(anchorFromLocationRaw, destinationCityKey);
+
+const anchorToMatchesSource =
+  tokenMatchesCity(anchorToRaw, sourceCityKey) ||
+  tokenMatchesCity(anchorToLocationRaw, sourceCityKey);
+
+const anchorToMatchesDestination =
+  tokenMatchesCity(anchorToRaw, destinationCityKey) ||
+  tokenMatchesCity(anchorToLocationRaw, destinationCityKey);
 
       const routeIsSameCity =
         !!sourceCityKey &&
@@ -771,14 +840,50 @@ export class ItineraryHotspotWorkflowService {
 
       const hasConcreteAnchorLeg = !!anchorFromRaw || !!anchorToRaw;
 
-      const anchorRepresentsRouteMovement =
-        !routeIsSameCity &&
-        hasConcreteAnchorLeg &&
-        (
-          (anchorFromMatchesSource && anchorToMatchesDestination) ||
-          (anchorFromMatchesDestination && anchorToMatchesSource)
-        );
+  const routeCityKeys = Array.from(
+  new Set(
+    [
+      sourceCityKey,
+      ...configuredViaCityKeys,
+      destinationCityKey,
+    ].filter(Boolean),
+  ),
+);
 
+const getMatchedRouteCityKeys = (
+  rawValue: string,
+  locationValue: string,
+): Set<string> => {
+  return new Set(
+    routeCityKeys.filter(
+      (cityKey) =>
+        tokenMatchesCity(rawValue, cityKey) ||
+        tokenMatchesCity(locationValue, cityKey),
+    ),
+  );
+};
+
+const anchorFromRouteCityKeys = getMatchedRouteCityKeys(
+  anchorFromRaw,
+  anchorFromLocationRaw,
+);
+
+const anchorToRouteCityKeys = getMatchedRouteCityKeys(
+  anchorToRaw,
+  anchorToLocationRaw,
+);
+
+const anchorCrossesRouteCities =
+  Array.from(anchorFromRouteCityKeys).some((fromCityKey) =>
+    Array.from(anchorToRouteCityKeys).some(
+      (toCityKey) => fromCityKey !== toCityKey,
+    ),
+  );
+
+const anchorRepresentsRouteMovement =
+  !routeIsSameCity &&
+  hasConcreteAnchorLeg &&
+  anchorCrossesRouteCities;
       const isHotspotAllowedForCurrentAnchor = (row: any): boolean => {
         if (!isRouteMovementHotspot(row)) return true;
 
