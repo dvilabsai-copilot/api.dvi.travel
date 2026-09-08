@@ -1490,13 +1490,18 @@ private getGuideSlotLabel(slotId: number): string {
     });
     const hotelsRequired = Number((dto?.plan as any)?.itinerary_preference || 0) === 1 ||
       Number((dto?.plan as any)?.itinerary_preference || 0) === 3;
+    // A same-day itinerary has no hotel-required stay blocks. Do not invoke
+    // the availability reset for these edits: the snapshot service correctly
+    // returns an empty inventory, but treating that expected result as a
+    // failed hotel reset turns a successful itinerary save into HTTP 422.
+    const hasHotelNights = Number((dto?.plan as any)?.no_of_nights || 0) > 0;
 
     // Route changes invalidate stay identities; itinerary meal-plan changes
     // invalidate the auto-selected hotel/rate choices. Reuse the same reset
     // path as the internal hotel reset operation after the plan transaction commits.
     // Meal-plan-only edits do not rebuild routes, hotspots, or transport data.
     const hotelResetReason = getHotelAvailabilityResetReason(result);
-    if (!isNewPlan && hotelsRequired && hotelResetReason && result?.quoteId) {
+    if (!isNewPlan && hotelsRequired && hasHotelNights && hotelResetReason && result?.quoteId) {
       try {
         const hotelSearch = await this.hotelAvailabilitySnapshotService.resetAndPersist(
           String(result.quoteId),
@@ -1563,7 +1568,7 @@ private getGuideSlotLabel(slotId: number): string {
       }
     }
 
-    if (!isNewPlan || !hotelsRequired || !result?.quoteId) {
+    if (!isNewPlan || !hotelsRequired || !hasHotelNights || !result?.quoteId) {
       this.logItineraryApiTiming({
         api: 'save_basic_info',
         step: 'create-plan-complete-no-hotel-search',
