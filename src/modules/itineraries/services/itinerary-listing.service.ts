@@ -214,18 +214,27 @@ if (role === SystemRole.VENDOR) {
       where.agent_id = agentId > 0 ? agentId : -1;
       where.itinerary_preference = 2;
     }
-    const plans = await this.prisma.dvi_itinerary_plan_details.findMany({
-      where,
-      select: {
-        arrival_location: true,
-        departure_location: true,
-      },
-    });
+    // This endpoint only needs unique filter values. Do the DISTINCT work in
+    // MySQL instead of materializing every itinerary plan in the API process.
+    const [arrivalPlans, departurePlans] = await Promise.all([
+      this.prisma.dvi_itinerary_plan_details.findMany({
+        where,
+        select: { arrival_location: true },
+        distinct: ['arrival_location'],
+      }),
+      this.prisma.dvi_itinerary_plan_details.findMany({
+        where,
+        select: { departure_location: true },
+        distinct: ['departure_location'],
+      }),
+    ]);
 
     const locationsSet = new Set<string>();
 
-    plans.forEach((plan) => {
+    arrivalPlans.forEach((plan) => {
       if (plan.arrival_location) locationsSet.add(plan.arrival_location);
+    });
+    departurePlans.forEach((plan) => {
       if (plan.departure_location) locationsSet.add(plan.departure_location);
     });
 

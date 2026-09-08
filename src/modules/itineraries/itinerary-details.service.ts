@@ -7376,10 +7376,41 @@ packageIncludes: {
     if (!vehicleAgent && filter_agent_id > 0) where.agent_id = filter_agent_id;
     if (!vehicleAgent && filter_staff_id > 0) where.staff_id = filter_staff_id;
 
-    const allPlans = await this.prisma.dvi_itinerary_plan_details.findMany({
-      where,
-      orderBy: { itinerary_plan_ID: 'desc' },
-      select: {
+    // The latest page contains draft plans only. The previous implementation
+    // loaded every non-deleted plan, loaded all related users/staff/agents,
+    // and only then sliced the array in memory. On staging this made a
+    // request for 10 rows consume the whole table and could keep the API
+    // process above 1 GB.
+    //
+    // Prisma has no relation between the draft and confirmed plan models, so
+    // fetch only the confirmed plan IDs and use them as a database predicate.
+    // The plan rows themselves are now paged by MySQL.
+    const confirmedPlanRows = await this.prisma.dvi_confirmed_itinerary_plan_details.findMany({
+      select: { itinerary_plan_ID: true },
+    });
+    const confirmedPlanIds = [
+      ...new Set(
+        confirmedPlanRows
+          .map((row: any) => Number(row.itinerary_plan_ID))
+          .filter((id: number) => id > 0),
+      ),
+    ];
+
+    const latestWhere = confirmedPlanIds.length
+      ? {
+          ...where,
+          NOT: { itinerary_plan_ID: { in: confirmedPlanIds } },
+        }
+      : where;
+
+    const [totalRecords, plans] = await Promise.all([
+      this.prisma.dvi_itinerary_plan_details.count({ where: latestWhere }),
+      this.prisma.dvi_itinerary_plan_details.findMany({
+        where: latestWhere,
+        skip: start,
+        take: limit,
+        orderBy: { itinerary_plan_ID: 'desc' },
+        select: {
         itinerary_plan_ID: true,
         arrival_location: true,
         departure_location: true,
@@ -7402,27 +7433,13 @@ packageIncludes: {
         createdby: true,
         staff_id: true,
         agent_id: true,
-      } as any,
-    });
+        } as any,
+      }),
+    ]);
 
-    const planIds = allPlans
-      .map((p: any) => Number(p.itinerary_plan_ID))
-      .filter((n) => n > 0);
-    const createdByUserIds = allPlans
+    const createdByUserIds = plans
       .map((p: any) => Number(p.createdby))
       .filter((n) => n > 0);
-
-    const confirmed = planIds.length
-      ? await this.prisma.dvi_confirmed_itinerary_plan_details.findMany({
-          where: { itinerary_plan_ID: { in: planIds }, deleted: 0 } as any,
-          select: { itinerary_plan_ID: true, itinerary_quote_ID: true },
-        })
-      : [];
-    const confirmedMap = new Map<number, string>();
-    for (const c of confirmed as any[]) {
-      const pid = Number(c.itinerary_plan_ID);
-      if (pid) confirmedMap.set(pid, String(c.itinerary_quote_ID ?? ''));
-    }
 
     const users = createdByUserIds.length
       ? await this.prisma.dvi_users.findMany({
@@ -7476,10 +7493,6 @@ packageIncludes: {
 
     let counter = start;
 
-    const unconfirmedPlans = allPlans.filter((p: any) => !confirmedMap.has(Number(p.itinerary_plan_ID)));
-    const totalRecords = unconfirmedPlans.length;
-    const plans = unconfirmedPlans.slice(start, start + limit);
-
     const data = (plans ?? []).map((p: any) => {
       counter++;
 
@@ -7516,7 +7529,7 @@ packageIncludes: {
         counter,
         modify: pid,
         itinerary_quote_ID: String(p.itinerary_quote_ID ?? '') || null,
-        itinerary_booking_ID: confirmedMap.get(pid) ?? null,
+        itinerary_booking_ID: null,
         arrival_location: p.arrival_location ?? '',
         departure_location: p.departure_location ?? '',
         itinerary_preference:
