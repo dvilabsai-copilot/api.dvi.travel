@@ -79,6 +79,8 @@ type LocationScope = {
   locationName: string;
 };
 
+type RoutePairSourceIndex = Map<string, BetweenRoutePairCandidateRow[]>;
+
 @Injectable()
 export class LocationsService {
 
@@ -387,6 +389,56 @@ const total = await this.prisma.dvi_stored_locations.count({ where });
     );
   }
 
+  /**
+   * Build a small index for the initial filter load. The previous implementation
+   * compared every stored location with every route pair, which made the page
+   * increasingly slow as the route map grew.
+   */
+  private buildRoutePairSourceIndex(
+    pairs: BetweenRoutePairCandidateRow[],
+  ): RoutePairSourceIndex {
+    const index: RoutePairSourceIndex = new Map();
+
+    for (const pair of pairs) {
+      const sourceParts = String(pair.from_hotspot_location || '')
+        .split('|')
+        .map((part) => this.canonicalCityKey(part))
+        .filter(Boolean);
+
+      for (const sourcePart of sourceParts) {
+        const bucket = index.get(sourcePart);
+        if (bucket) {
+          bucket.push(pair);
+        } else {
+          index.set(sourcePart, [pair]);
+        }
+      }
+    }
+
+    return index;
+  }
+
+  private locationMatchesIndexedRoutePair(
+    scope: LocationScope,
+    sourceIndex: RoutePairSourceIndex,
+  ): boolean {
+    for (const sourceKey of scope.sourceKeys) {
+      for (const [sourcePart, pairs] of sourceIndex) {
+        if (!this.hotspotLocationMatchesKeys(sourcePart, [sourceKey])) {
+          continue;
+        }
+
+        if (pairs.some((pair) =>
+          this.hotspotLocationMatchesKeys(pair.to_hotspot_location, scope.destinationKeys),
+        )) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   private async getBetweenRoutePairCandidates(
     onlyUsable: boolean,
     sourceHotspotId?: number,
@@ -494,9 +546,10 @@ const total = await this.prisma.dvi_stored_locations.count({ where });
 
     if (!locationId) {
       const locationRows = await this.getFilterLocationRows(search);
+      const routePairSourceIndex = this.buildRoutePairSourceIndex(pairCandidates);
       const locations = locationRows
         .map((row) => this.mapLocationScope(row))
-        .filter((scope) => pairCandidates.some((pair) => this.locationMatchesRoutePair(scope, pair)))
+        .filter((scope) => this.locationMatchesIndexedRoutePair(scope, routePairSourceIndex))
         .map((scope) => ({
           locationId: scope.locationId,
           locationName: scope.locationName,
