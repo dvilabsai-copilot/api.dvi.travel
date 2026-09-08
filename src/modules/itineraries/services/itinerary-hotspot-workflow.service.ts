@@ -483,9 +483,39 @@ const destPool = await fetchPool(destName);
         },
       });
 
-      const sourceCityKey = this.deriveLooseCityKey(String(route?.location_name || ''));
-      const destinationCityKey = this.deriveLooseCityKey(String(route?.next_visiting_location || ''));
-      const directToggleOff = Number(route?.direct_to_next_visiting_place || 0) !== 1;
+    const sourceCityKey = this.deriveLooseCityKey(
+  String(route?.location_name || ''),
+);
+const destinationCityKey = this.deriveLooseCityKey(
+  String(route?.next_visiting_location || ''),
+);
+const directToggleOff =
+  Number(route?.direct_to_next_visiting_place || 0) !== 1;
+
+const configuredViaRows = directToggleOff
+  ? await (this.prisma as any).dvi_itinerary_via_route_details.findMany({
+      where: {
+        itinerary_route_ID: routeId,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        itinerary_via_location_name: true,
+      },
+    })
+  : [];
+
+const configuredViaCityKeys = Array.from(
+  new Set(
+    (configuredViaRows || [])
+      .map((row: any) =>
+        this.deriveLooseCityKey(
+          String(row?.itinerary_via_location_name || ''),
+        ),
+      )
+      .filter(Boolean),
+  ),
+);
 
       const routeRows = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
         where: {
@@ -810,14 +840,50 @@ const anchorToMatchesDestination =
 
       const hasConcreteAnchorLeg = !!anchorFromRaw || !!anchorToRaw;
 
-      const anchorRepresentsRouteMovement =
-        !routeIsSameCity &&
-        hasConcreteAnchorLeg &&
-        (
-          (anchorFromMatchesSource && anchorToMatchesDestination) ||
-          (anchorFromMatchesDestination && anchorToMatchesSource)
-        );
+  const routeCityKeys = Array.from(
+  new Set(
+    [
+      sourceCityKey,
+      ...configuredViaCityKeys,
+      destinationCityKey,
+    ].filter(Boolean),
+  ),
+);
 
+const getMatchedRouteCityKeys = (
+  rawValue: string,
+  locationValue: string,
+): Set<string> => {
+  return new Set(
+    routeCityKeys.filter(
+      (cityKey) =>
+        tokenMatchesCity(rawValue, cityKey) ||
+        tokenMatchesCity(locationValue, cityKey),
+    ),
+  );
+};
+
+const anchorFromRouteCityKeys = getMatchedRouteCityKeys(
+  anchorFromRaw,
+  anchorFromLocationRaw,
+);
+
+const anchorToRouteCityKeys = getMatchedRouteCityKeys(
+  anchorToRaw,
+  anchorToLocationRaw,
+);
+
+const anchorCrossesRouteCities =
+  Array.from(anchorFromRouteCityKeys).some((fromCityKey) =>
+    Array.from(anchorToRouteCityKeys).some(
+      (toCityKey) => fromCityKey !== toCityKey,
+    ),
+  );
+
+const anchorRepresentsRouteMovement =
+  !routeIsSameCity &&
+  hasConcreteAnchorLeg &&
+  anchorCrossesRouteCities;
       const isHotspotAllowedForCurrentAnchor = (row: any): boolean => {
         if (!isRouteMovementHotspot(row)) return true;
 
