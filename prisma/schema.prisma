@@ -6681,3 +6681,41 @@ model public_itinerary_links {
   @@index([createdByAgentId], map: "idx_public_itinerary_created_by_agent")
   @@map("public_itinerary_links")
 }
+
+model dvi_hotel_admin_user_hotel {
+  hotel_admin_user_hotel_id BigInt   @id @default(autoincrement())
+  user_id                   BigInt
+  hotel_id                  Int
+  createdby                 BigInt   @default(0)
+  createdon                 DateTime @default(now()) @db.DateTime(0)
+  updatedon                 DateTime @default(now()) @updatedAt @db.DateTime(0)
+  status                    Int      @default(1) @db.TinyInt
+  deleted                   Int      @default(0) @db.TinyInt
+
+  @@unique([user_id, hotel_id], map: "uq_dvi_hotel_admin_user_hotel")
+  @@index([user_id], map: "idx_dvi_hotel_admin_user_hotel_user")
+  @@index([hotel_id], map: "idx_dvi_hotel_admin_user_hotel_hotel")
+  @@index([status], map: "idx_dvi_hotel_admin_user_hotel_status")
+  @@index([deleted], map: "idx_dvi_hotel_admin_user_hotel_deleted")
+}
+
+model dvi_hotel_admin_user_permission {
+  hotel_admin_user_permission_id BigInt   @id @default(autoincrement())
+  user_id                        BigInt
+  permission_key                 String   @db.VarChar(64)
+  can_view                       Int      @default(0) @db.TinyInt
+  can_create                     Int      @default(0) @db.TinyInt
+  can_edit                       Int      @default(0) @db.TinyInt
+  can_delete                     Int      @default(0) @db.TinyInt
+  createdby                      BigInt   @default(0)
+  createdon                      DateTime @default(now()) @db.DateTime(0)
+  updatedon                      DateTime @default(now()) @updatedAt @db.DateTime(0)
+  status                         Int      @default(1) @db.TinyInt
+  deleted                        Int      @default(0) @db.TinyInt
+
+  @@unique([user_id, permission_key], map: "uq_dvi_hotel_admin_user_permission")
+  @@index([user_id], map: "idx_dvi_hotel_admin_user_permission_user")
+  @@index([permission_key], map: "idx_dvi_hotel_admin_user_permission_key")
+  @@index([status], map: "idx_dvi_hotel_admin_user_permission_status")
+  @@index([deleted], map: "idx_dvi_hotel_admin_user_permission_deleted")
+}
