@@ -1526,6 +1526,36 @@ const supplierHotelEmails =
       }
 
       /*
+       * Travel Expert recipient comes from
+       * dvi_staff_details.staff_email via
+       * dvi_agent.travel_expert_id.
+       */
+      const travelExpertId = Number(
+        agent?.travel_expert_id || 0,
+      );
+
+      let travelExpertEmails: string[] = [];
+
+      if (travelExpertId > 0) {
+        const travelExpert =
+          await this.prisma.dvi_staff_details
+            .findFirst({
+              where: {
+                staff_id: travelExpertId,
+                deleted: 0,
+              },
+              select: {
+                staff_email: true,
+              },
+            });
+
+        travelExpertEmails =
+          this.parseEmails(
+            travelExpert?.staff_email,
+          );
+      }
+
+      /*
        * Agent recipient comes from
        * dvi_agent.agent_email_id.
        */
