@@ -732,6 +732,7 @@ export class ItineraryPlanPersistenceService {
     const shouldResetManualHotspotsForFullRebuild = isFullBasicInfoRebuildType && isPlanUpdate;
     let routeChanged = false;
 let itineraryStartTimeChanged = false;
+let itineraryEndTimeChanged = false;
 let roomCountChanged = false;
 let occupancyChanged = false;
 let mealPlanChanged = false;
@@ -786,6 +787,13 @@ const previousStartTime =
       )
     : '';
 
+const previousEndTime =
+  isPlanUpdate && previousRoutePlan
+    ? normalizeWallClockTime(
+        previousRoutePlan.trip_end_date_and_time,
+      )
+    : '';
+
 const planId = await this.planEngine.upsertPlanHeader(
   dto.plan,
   dto.travellers,
@@ -800,6 +808,7 @@ const persistedPlanAfterUpsert =
     },
     select: {
       trip_start_date_and_time: true,
+      trip_end_date_and_time: true,
     },
   });
 
@@ -807,10 +816,19 @@ const persistedStartTime = normalizeWallClockTime(
   persistedPlanAfterUpsert?.trip_start_date_and_time,
 );
 
+const persistedEndTime = normalizeWallClockTime(
+  persistedPlanAfterUpsert?.trip_end_date_and_time,
+);
+
 itineraryStartTimeChanged =
   Boolean(previousStartTime) &&
   Boolean(persistedStartTime) &&
   previousStartTime !== persistedStartTime;
+
+itineraryEndTimeChanged =
+  Boolean(previousEndTime) &&
+  Boolean(persistedEndTime) &&
+  previousEndTime !== persistedEndTime;
 
 stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
@@ -882,10 +900,12 @@ stepStartedAt = this.logItineraryApiTiming({
       hotelCategoryChanged = isPlanUpdate && hasItineraryHotelCategoryChanged(previousRoutePlan, dto.plan);
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
 
-// A start-time-only edit must preserve the existing route structure/IDs,
+// A time-only edit must preserve the existing route structure/IDs,
 // but its persisted travel/hotspot timeline must be regenerated.
 const shouldRebuildTimeline =
-  shouldRebuildRouteData || itineraryStartTimeChanged;
+  shouldRebuildRouteData ||
+  itineraryStartTimeChanged ||
+  itineraryEndTimeChanged;
       // Hotel selections are derived from these plan-level preferences. Keep
       // route rows/hotspots intact for a preference-only edit, but rebuild the
       // hotel rows so stale category/meal/room selections cannot survive.
@@ -1080,6 +1100,81 @@ if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
       },
       data: {
         route_start_time: TimeConverter.toDate(persistedStartTime),
+        updatedon: new Date(),
+      },
+    });
+  }
+}
+
+if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
+  const lastRoute = await tx.dvi_itinerary_route_details.findFirst({
+    where: {
+      itinerary_plan_ID: planId,
+      deleted: 0,
+      status: 1,
+    },
+    orderBy: [
+      { no_of_days: 'desc' },
+      { itinerary_route_date: 'desc' },
+      { itinerary_route_ID: 'desc' },
+    ],
+    select: {
+      itinerary_route_ID: true,
+      route_start_time: true,
+    },
+  });
+
+  if (lastRoute && persistedEndTime) {
+    const [endHour, endMinute, endSecond] =
+      persistedEndTime.split(':').map((value) => Number(value || 0));
+
+    const departureSeconds =
+      (endHour * 3600) +
+      (endMinute * 60) +
+      endSecond;
+
+    const departureBufferSeconds =
+      Number(dto.plan.departure_type || 0) === 1
+        ? 2 * 3600
+        : Number(dto.plan.departure_type || 0) === 2
+          ? 1 * 3600
+          : 0;
+
+    const routeStartTime = normalizeWallClockTime(
+      lastRoute.route_start_time,
+    );
+
+    const [startHour, startMinute, startSecond] =
+      routeStartTime.split(':').map((value) => Number(value || 0));
+
+    const routeStartSeconds =
+      (startHour * 3600) +
+      (startMinute * 60) +
+      startSecond;
+
+    let effectiveDepartureSeconds = departureSeconds;
+
+    if (effectiveDepartureSeconds < routeStartSeconds) {
+      effectiveDepartureSeconds += 24 * 3600;
+    }
+
+    const updatedRouteEndSeconds = Math.max(
+      routeStartSeconds,
+      effectiveDepartureSeconds - departureBufferSeconds,
+    );
+
+    const updatedRouteEndTime = [
+      String(Math.floor(updatedRouteEndSeconds / 3600) % 24).padStart(2, '0'),
+      String(Math.floor((updatedRouteEndSeconds % 3600) / 60)).padStart(2, '0'),
+      String(updatedRouteEndSeconds % 60).padStart(2, '0'),
+    ].join(':');
+
+    await tx.dvi_itinerary_route_details.update({
+      where: {
+        itinerary_route_ID: lastRoute.itinerary_route_ID,
+      },
+      data: {
+        route_end_time: TimeConverter.toDate(updatedRouteEndTime),
         updatedon: new Date(),
       },
     });
