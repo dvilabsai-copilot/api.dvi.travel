@@ -14,6 +14,7 @@ export const SystemRole = {
   ACCOUNTS: 6,
   TRAVEL_EXPERT: 8,
   VEHICLE_AGENT: 9,
+  HOTEL_ADMIN: 10,
 } as const;
 
 export type SystemRoleId = (typeof SystemRole)[keyof typeof SystemRole];
