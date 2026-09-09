@@ -58,6 +58,17 @@ export class ItineraryConfirmationService {
       throw new NotFoundException('Itinerary plan not found');
     }
 
+    const itineraryStartDate = this.formatDateOnly(plan.trip_start_date_and_time);
+    const todayDate = this.formatDateOnly(new Date());
+    if (itineraryStartDate && todayDate && itineraryStartDate < todayDate) {
+      throw new BadRequestException({
+        code: 'ITINERARY_EXPIRED',
+        message: `Cannot confirm quotation because the itinerary dates have expired (start date: ${itineraryStartDate}).`,
+        itineraryStartDate,
+        todayDate,
+      });
+    }
+
     if (plan.quotation_status === 1) {
       throw new BadRequestException('Quotation is already confirmed');
     }
