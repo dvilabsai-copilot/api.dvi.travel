@@ -2166,10 +2166,725 @@ export class HotelAdminService {
         results,
     };
   }
+  async listBookingQueue(
+    userIdValue: unknown,
+  ) {
+    return this.listConfirmedHotelBookingsForAdmin(
+      userIdValue,
+      false,
+    );
+  }
+
+  private pickHotelAdminFallbackGroup(
+    rows: any[],
+  ): any[] {
+    if (!rows.length) {
+      return [];
+    }
+
+    const groups = Array.from(
+      new Set(
+        rows
+          .map((row: any) =>
+            Number(row.group_type || 0),
+          )
+          .filter(
+            (value: number) =>
+              Number.isInteger(value) &&
+              value > 0,
+          ),
+      ),
+    ).sort(
+      (a: number, b: number) =>
+        a - b,
+    );
+
+    const userSelectedGroups =
+      Array.from(
+        new Set(
+          rows
+            .filter((row: any) =>
+              String(
+                row.selection_origin || '',
+              )
+                .trim()
+                .toUpperCase() ===
+              'USER_SELECTED',
+            )
+            .map((row: any) =>
+              Number(row.group_type || 0),
+            )
+            .filter(
+              (value: number) =>
+                Number.isInteger(value) &&
+                value > 0,
+            ),
+        ),
+      );
+
+    const selectedGroup =
+      userSelectedGroups.length === 1
+        ? userSelectedGroups[0]
+        : groups.length === 1
+          ? groups[0]
+          : groups.includes(1)
+            ? 1
+            : groups[0];
+
+    return rows.filter(
+      (row: any) =>
+        Number(row.group_type || 0) ===
+        Number(selectedGroup || 0),
+    );
+  }
+
+  private hotelAdminDateKey(
+    value: unknown,
+  ): string {
+    if (!value) {
+      return '';
+    }
+
+    const parsed =
+      value instanceof Date
+        ? value
+        : new Date(String(value));
+
+    if (
+      Number.isNaN(
+        parsed.getTime(),
+      )
+    ) {
+      return String(value);
+    }
+
+    return parsed
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  private hotelAdminNextDate(
+    value: unknown,
+  ): string | null {
+    const key =
+      this.hotelAdminDateKey(
+        value,
+      );
+
+    if (!key) {
+      return null;
+    }
+
+    const parsed =
+      new Date(
+        `${key}T00:00:00.000Z`,
+      );
+
+    if (
+      Number.isNaN(
+        parsed.getTime(),
+      )
+    ) {
+      return null;
+    }
+
+    parsed.setUTCDate(
+      parsed.getUTCDate() + 1,
+    );
+
+    return parsed
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  private async getHotelAdminBookingSourceRows(
+    planIds: number[],
+  ): Promise<Map<number, any[]>> {
+    const rowsByPlan =
+      new Map<number, any[]>();
+
+    if (!planIds.length) {
+      return rowsByPlan;
+    }
+
+    const confirmedRows =
+      await (this.prisma as any)
+        .dvi_confirmed_itinerary_plan_hotel_details
+        .findMany({
+          where: {
+            itinerary_plan_id: {
+              in: planIds,
+            },
+            hotel_required: 1,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            confirmed_itinerary_plan_hotel_details_ID:
+              true,
+            itinerary_plan_hotel_details_ID:
+              true,
+            group_type: true,
+            itinerary_plan_id: true,
+            itinerary_route_id: true,
+            itinerary_route_date: true,
+            itinerary_route_location:
+              true,
+            hotel_id: true,
+            hotel_code: true,
+            hotel_provider: true,
+            hotel_booking_mode: true,
+            hotel_check_in_date: true,
+            hotel_check_out_date: true,
+            total_no_of_rooms: true,
+            total_hotel_cost: true,
+            selected_total_price: true,
+            selected_currency: true,
+            hotel_approval_status:
+              true,
+            manual_confirmation_status:
+              true,
+            requires_price_reacceptance:
+              true,
+            status: true,
+          },
+        });
+
+    for (
+      const row of confirmedRows as any[]
+    ) {
+      const planId =
+        Number(
+          row.itinerary_plan_id,
+        );
+
+      const current =
+        rowsByPlan.get(planId) || [];
+
+      current.push({
+        ...row,
+        __source:
+          'confirmed',
+      });
+
+      rowsByPlan.set(
+        planId,
+        current,
+      );
+    }
+
+    const fallbackPlanIds =
+      planIds.filter(
+        (planId) =>
+          !(rowsByPlan.get(planId) || [])
+            .length,
+      );
+
+    if (!fallbackPlanIds.length) {
+      return rowsByPlan;
+    }
+
+    const draftRows =
+      await (this.prisma as any)
+        .dvi_itinerary_plan_hotel_details
+        .findMany({
+          where: {
+            itinerary_plan_id: {
+              in: fallbackPlanIds,
+            },
+            hotel_required: 1,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            itinerary_plan_hotel_details_ID:
+              true,
+            group_type: true,
+            itinerary_plan_id: true,
+            itinerary_route_id: true,
+            itinerary_route_date: true,
+            itinerary_route_location:
+              true,
+            hotel_id: true,
+            hotel_code: true,
+            hotel_provider: true,
+            hotel_booking_mode: true,
+            hotel_check_in_date: true,
+            hotel_check_out_date: true,
+            total_no_of_rooms: true,
+            total_hotel_cost: true,
+            selected_total_price: true,
+            selected_currency: true,
+            selection_origin: true,
+            hotel_approval_status:
+              true,
+            manual_confirmation_status:
+              true,
+            requires_price_reacceptance:
+              true,
+            status: true,
+          },
+        });
+
+    const draftByPlan =
+      new Map<number, any[]>();
+
+    for (
+      const row of draftRows as any[]
+    ) {
+      const planId =
+        Number(
+          row.itinerary_plan_id,
+        );
+
+      const current =
+        draftByPlan.get(planId) || [];
+
+      current.push(row);
+
+      draftByPlan.set(
+        planId,
+        current,
+      );
+    }
+
+    for (
+      const planId of fallbackPlanIds
+    ) {
+      const selected =
+        this.pickHotelAdminFallbackGroup(
+          draftByPlan.get(planId) || [],
+        );
+
+      rowsByPlan.set(
+        planId,
+        selected.map(
+          (row: any) => ({
+            ...row,
+            confirmed_itinerary_plan_hotel_details_ID:
+              null,
+            __source:
+              'draft-fallback',
+          }),
+        ),
+      );
+    }
+
+    return rowsByPlan;
+  }
+
+  async confirmItineraryBooking(
+    userIdValue: unknown,
+    body: {
+      itineraryPlanId?: number | string;
+      notes?: string;
+    },
+  ) {
+    const actor =
+      await this.assertPermission(
+        userIdValue,
+        HotelAdminPermissionKey.BOOKINGS,
+        'edit',
+      );
+
+    const itineraryPlanId =
+      Number(
+        body?.itineraryPlanId,
+      );
+
+    if (
+      !Number.isInteger(
+        itineraryPlanId,
+      ) ||
+      itineraryPlanId <= 0
+    ) {
+      throw new BadRequestException(
+        'A valid itineraryPlanId is required',
+      );
+    }
+
+    const hotelIds =
+      await this.getAssignedHotelIds(
+        actor.userID,
+      );
+
+    if (!hotelIds.length) {
+      throw new ForbiddenException(
+        'No hotels are assigned to this Hotel Admin',
+      );
+    }
+
+    const confirmedPlan =
+      await (this.prisma as any)
+        .dvi_confirmed_itinerary_plan_details
+        .findFirst({
+          where: {
+            itinerary_plan_ID:
+              itineraryPlanId,
+            status: 1,
+            deleted: 0,
+          },
+          orderBy: {
+            confirmed_itinerary_plan_ID:
+              'desc',
+          },
+          select: {
+            itinerary_plan_ID:
+              true,
+            itinerary_quote_ID:
+              true,
+          },
+        });
+
+    if (!confirmedPlan) {
+      throw new BadRequestException(
+        'This itinerary is not confirmed yet',
+      );
+    }
+
+    const sourceRowsByPlan =
+      await this.getHotelAdminBookingSourceRows(
+        [itineraryPlanId],
+      );
+
+    const rows =
+      (
+        sourceRowsByPlan.get(
+          itineraryPlanId,
+        ) || []
+      ).filter(
+        (row: any) =>
+          hotelIds.includes(
+            Number(
+              row.hotel_id,
+            ),
+          ),
+      );
+
+    if (!rows.length) {
+      throw new BadRequestException(
+        'No hotel stays from this itinerary are assigned to this Hotel Admin',
+      );
+    }
+
+    const selectionIds =
+      Array.from(
+        new Set<number>(
+          rows
+            .map((row: any) =>
+              Number(
+                row.itinerary_plan_hotel_details_ID,
+              ),
+            )
+            .filter(
+              (id: number) =>
+                Number.isInteger(id) &&
+                id > 0,
+            ),
+        ),
+      );
+
+    const markerPrefix =
+      'HOTEL_ADMIN_BOOKING_CONFIRMED:';
+
+    const existing =
+      selectionIds.length
+        ? await (this.prisma as any)
+            .dvi_itinerary_plan_hotel_approval_history
+            .findMany({
+              where: {
+                itinerary_plan_hotel_details_id:
+                  {
+                    in: selectionIds,
+                  },
+                notes: {
+                  startsWith:
+                    markerPrefix,
+                },
+              },
+              select: {
+                itinerary_plan_hotel_details_id:
+                  true,
+              },
+            })
+        : [];
+
+    const alreadyConfirmed =
+      new Set<number>(
+        (existing as any[])
+          .map((row: any) =>
+            Number(
+              row.itinerary_plan_hotel_details_id,
+            ),
+          )
+          .filter(
+            (id: number) =>
+              Number.isInteger(id) &&
+              id > 0,
+          ),
+      );
+
+    const pendingRows =
+      rows.filter(
+        (row: any) =>
+          !alreadyConfirmed.has(
+            Number(
+              row.itinerary_plan_hotel_details_ID,
+            ),
+          ),
+      );
+
+    if (!pendingRows.length) {
+      return {
+        success: true,
+        itineraryPlanId,
+        itineraryCode:
+          confirmedPlan.itinerary_quote_ID,
+        count: 0,
+        alreadyConfirmed: true,
+      };
+    }
+
+    const actorId =
+      Number(actor.userID);
+
+    const userNotes =
+      String(
+        body?.notes || '',
+      ).trim();
+
+    const marker =
+      `${markerPrefix}${itineraryPlanId}`;
+
+    const supplierProviders =
+      new Set([
+        'tbo',
+        'resavenue',
+        'hobse',
+        'axisrooms',
+        'staah',
+      ]);
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const now =
+          new Date();
+
+        for (
+          const row of pendingRows
+        ) {
+          const selectionId =
+            Number(
+              row.itinerary_plan_hotel_details_ID,
+            );
+
+          const rawProvider =
+            String(
+              row.hotel_provider || '',
+            )
+              .trim()
+              .toLowerCase();
+
+          const provider =
+            rawProvider === 'vsr'
+              ? 'tbo'
+              : rawProvider;
+
+          const bookingMode =
+            String(
+              row.hotel_booking_mode || '',
+            )
+              .trim()
+              .toUpperCase();
+
+          const manualHotel =
+            !supplierProviders.has(
+              provider,
+            ) ||
+            provider === 'offline' ||
+            bookingMode ===
+              'MANUAL_APPROVAL';
+
+          const previousApproval =
+            String(
+              row.hotel_approval_status ||
+                'NOT_REQUESTED',
+            );
+
+          const previousConfirmation =
+            String(
+              row.manual_confirmation_status ||
+                'NOT_STARTED',
+            );
+
+          let finalApproval =
+            previousApproval;
+
+          let finalConfirmation =
+            previousConfirmation;
+
+          if (manualHotel) {
+            if (
+              previousApproval ===
+              'REJECTED'
+            ) {
+              throw new BadRequestException(
+                `Hotel stay ${selectionId} was rejected and cannot be confirmed`,
+              );
+            }
+
+            if (
+              Boolean(
+                row.requires_price_reacceptance,
+              )
+            ) {
+              throw new BadRequestException(
+                `Hotel stay ${selectionId} requires customer price reacceptance`,
+              );
+            }
+
+            finalApproval =
+              'APPROVED';
+
+            finalConfirmation =
+              'CONFIRMED';
+
+            await (tx as any)
+              .dvi_itinerary_plan_hotel_details
+              .updateMany({
+                where: {
+                  itinerary_plan_hotel_details_ID:
+                    selectionId,
+                  deleted: 0,
+                },
+                data: {
+                  hotel_approval_status:
+                    finalApproval,
+                  hotel_approved_at:
+                    now,
+                  hotel_approved_by:
+                    actorId,
+                  manual_confirmation_status:
+                    finalConfirmation,
+                  manual_confirmation_requested_at:
+                    now,
+                  manually_confirmed_at:
+                    now,
+                  manually_confirmed_by:
+                    actorId,
+                  updatedon:
+                    now,
+                },
+              });
+
+            const confirmedRowId =
+              Number(
+                row.confirmed_itinerary_plan_hotel_details_ID ||
+                  0,
+              );
+
+            if (
+              confirmedRowId > 0
+            ) {
+              await (tx as any)
+                .dvi_confirmed_itinerary_plan_hotel_details
+                .updateMany({
+                  where: {
+                    confirmed_itinerary_plan_hotel_details_ID:
+                      confirmedRowId,
+                  },
+                  data: {
+                    hotel_approval_status:
+                      finalApproval,
+                    hotel_approved_at:
+                      now,
+                    hotel_approved_by:
+                      actorId,
+                    manual_confirmation_status:
+                      finalConfirmation,
+                    manual_confirmation_requested_at:
+                      now,
+                    manually_confirmed_at:
+                      now,
+                    manually_confirmed_by:
+                      actorId,
+                  },
+                });
+            }
+          }
+
+          await (tx as any)
+            .dvi_itinerary_plan_hotel_approval_history
+            .create({
+              data: {
+                itinerary_plan_hotel_details_id:
+                  selectionId,
+                previous_approval_status:
+                  previousApproval,
+                new_approval_status:
+                  finalApproval,
+                previous_confirmation_status:
+                  previousConfirmation,
+                new_confirmation_status:
+                  finalConfirmation,
+                price:
+                  row.selected_total_price ??
+                  row.total_hotel_cost ??
+                  null,
+                currency:
+                  row.selected_currency ??
+                  null,
+                notes:
+                  userNotes
+                    ? `${marker} | ${userNotes}`
+                    : marker,
+                acted_by:
+                  actorId,
+                acted_at:
+                  now,
+                metadata:
+                  JSON.stringify({
+                    source:
+                      'HOTEL_ADMIN',
+                    action:
+                      'CONFIRM_BOOKING',
+                    itineraryPlanId,
+                    itineraryCode:
+                      confirmedPlan.itinerary_quote_ID,
+                    rowSource:
+                      row.__source,
+                  }),
+              },
+            });
+        }
+      },
+    );
+
+    return {
+      success: true,
+      itineraryPlanId,
+      itineraryCode:
+        confirmedPlan.itinerary_quote_ID,
+      count:
+        pendingRows.length,
+      alreadyConfirmed: false,
+    };
+  }
+
   async listBookings(
     userIdValue: unknown,
   ) {
-    const user =
+    return this.listConfirmedHotelBookingsForAdmin(
+      userIdValue,
+      true,
+    );
+  }
+
+  private async listConfirmedHotelBookingsForAdmin(
+    userIdValue: unknown,
+    hotelAdminConfirmed: boolean,
+  ) {
+    const actor =
       await this.assertPermission(
         userIdValue,
         HotelAdminPermissionKey.BOOKINGS,
@@ -2178,120 +2893,520 @@ export class HotelAdminService {
 
     const hotelIds =
       await this.getAssignedHotelIds(
-        user.userID,
+        actor.userID,
       );
 
     if (!hotelIds.length) {
       return [];
     }
 
-    const rows =
-      await this.prisma
-        .dvi_confirmed_itinerary_plan_hotel_details
+    const confirmedPlans =
+      await (this.prisma as any)
+        .dvi_confirmed_itinerary_plan_details
         .findMany({
           where: {
-            hotel_id: {
-              in: hotelIds,
-            },
+            status: 1,
             deleted: 0,
           },
-          select: {
-            confirmed_itinerary_plan_hotel_details_ID:
-              true,
-            itinerary_plan_id: true,
-            itinerary_route_id: true,
-            hotel_id: true,
-            hotel_code: true,
-            itinerary_route_date: true,
-            hotel_check_in_date: true,
-            hotel_check_out_date: true,
-            total_no_of_rooms: true,
-            total_hotel_cost: true,
-            hotel_approval_status: true,
-            manual_confirmation_status:
-              true,
-            status: true,
-          },
           orderBy: {
-            itinerary_route_date:
+            confirmed_itinerary_plan_ID:
               'desc',
           },
           take: 500,
+          select: {
+            confirmed_itinerary_plan_ID:
+              true,
+            itinerary_plan_ID:
+              true,
+            itinerary_quote_ID:
+              true,
+          },
         });
 
-    const bookingHotelIds =
+    const planById =
+      new Map<number, any>();
+
+    for (
+      const plan of confirmedPlans as any[]
+    ) {
+      const planId =
+        Number(
+          plan.itinerary_plan_ID,
+        );
+
+      if (
+        planId > 0 &&
+        !planById.has(planId)
+      ) {
+        planById.set(
+          planId,
+          plan,
+        );
+      }
+    }
+
+    const planIds =
       Array.from(
-        new Set(
-          rows
-            .map(
-              (row) =>
-                Number(row.hotel_id),
+        planById.keys(),
+      );
+
+    if (!planIds.length) {
+      return [];
+    }
+
+    const sourceRowsByPlan =
+      await this.getHotelAdminBookingSourceRows(
+        planIds,
+      );
+
+    const allSourceRows =
+      planIds.flatMap(
+        (planId) =>
+          sourceRowsByPlan.get(
+            planId,
+          ) || [],
+      );
+
+    if (!allSourceRows.length) {
+      return [];
+    }
+
+    const routeIds =
+      Array.from(
+        new Set<number>(
+          allSourceRows
+            .map((row: any) =>
+              Number(
+                row.itinerary_route_id,
+              ),
             )
             .filter(
-              (hotelId) =>
-                Number.isInteger(hotelId) &&
-                hotelId > 0,
+              (id: number) =>
+                Number.isInteger(id) &&
+                id > 0,
             ),
         ),
       );
 
-    const bookingHotels =
-      bookingHotelIds.length
-        ? await this.prisma.dvi_hotel.findMany({
-            where: {
-              hotel_id: {
-                in: bookingHotelIds,
+    const routes =
+      routeIds.length
+        ? await (this.prisma as any)
+            .dvi_itinerary_route_details
+            .findMany({
+              where: {
+                itinerary_plan_ID: {
+                  in: planIds,
+                },
+                itinerary_route_ID: {
+                  in: routeIds,
+                },
+                deleted: 0,
+                status: 1,
               },
-            },
-            select: {
-              hotel_id: true,
-              hotel_name: true,
-            },
-          })
+              select: {
+                itinerary_plan_ID:
+                  true,
+                itinerary_route_ID:
+                  true,
+                location_name:
+                  true,
+                itinerary_route_date:
+                  true,
+              },
+            })
+        : [];
+
+    const routeByKey =
+      new Map<string, any>();
+
+    for (
+      const route of routes as any[]
+    ) {
+      routeByKey.set(
+        `${Number(
+          route.itinerary_plan_ID,
+        )}:${Number(
+          route.itinerary_route_ID,
+        )}`,
+        route,
+      );
+    }
+
+    const dayByRouteKey =
+      new Map<string, number>();
+
+    for (
+      const planId of planIds
+    ) {
+      const planRows =
+        sourceRowsByPlan.get(
+          planId,
+        ) || [];
+
+      const uniqueRoutes =
+        new Map<number, any>();
+
+      for (
+        const row of planRows
+      ) {
+        const routeId =
+          Number(
+            row.itinerary_route_id,
+          );
+
+        if (
+          routeId > 0 &&
+          !uniqueRoutes.has(routeId)
+        ) {
+          uniqueRoutes.set(
+            routeId,
+            row,
+          );
+        }
+      }
+
+      const ordered =
+        Array.from(
+          uniqueRoutes.entries(),
+        ).sort(
+          ([routeIdA, rowA], [routeIdB, rowB]) => {
+            const routeA =
+              routeByKey.get(
+                `${planId}:${routeIdA}`,
+              );
+
+            const routeB =
+              routeByKey.get(
+                `${planId}:${routeIdB}`,
+              );
+
+            const dateA =
+              this.hotelAdminDateKey(
+                rowA.itinerary_route_date ??
+                  routeA?.itinerary_route_date,
+              );
+
+            const dateB =
+              this.hotelAdminDateKey(
+                rowB.itinerary_route_date ??
+                  routeB?.itinerary_route_date,
+              );
+
+            if (
+              dateA !== dateB
+            ) {
+              return dateA.localeCompare(
+                dateB,
+              );
+            }
+
+            return routeIdA -
+              routeIdB;
+          },
+        );
+
+      ordered.forEach(
+        ([routeId], index) => {
+          dayByRouteKey.set(
+            `${planId}:${routeId}`,
+            index + 1,
+          );
+        },
+      );
+    }
+
+    const visibleRows =
+      allSourceRows.filter(
+        (row: any) =>
+          hotelIds.includes(
+            Number(
+              row.hotel_id,
+            ),
+          ),
+      );
+
+    if (!visibleRows.length) {
+      return [];
+    }
+
+    const selectionIds =
+      Array.from(
+        new Set<number>(
+          visibleRows
+            .map((row: any) =>
+              Number(
+                row.itinerary_plan_hotel_details_ID,
+              ),
+            )
+            .filter(
+              (id: number) =>
+                Number.isInteger(id) &&
+                id > 0,
+            ),
+        ),
+      );
+
+    const markerPrefix =
+      'HOTEL_ADMIN_BOOKING_CONFIRMED:';
+
+    const historyRows =
+      selectionIds.length
+        ? await (this.prisma as any)
+            .dvi_itinerary_plan_hotel_approval_history
+            .findMany({
+              where: {
+                itinerary_plan_hotel_details_id:
+                  {
+                    in: selectionIds,
+                  },
+                notes: {
+                  startsWith:
+                    markerPrefix,
+                },
+              },
+              select: {
+                itinerary_plan_hotel_details_id:
+                  true,
+              },
+            })
+        : [];
+
+    const confirmedIds =
+      new Set<number>(
+        (historyRows as any[])
+          .map((row: any) =>
+            Number(
+              row.itinerary_plan_hotel_details_id,
+            ),
+          )
+          .filter(
+            (id: number) =>
+              Number.isInteger(id) &&
+              id > 0,
+          ),
+      );
+
+    const rows =
+      visibleRows.filter(
+        (row: any) => {
+          const confirmed =
+            confirmedIds.has(
+              Number(
+                row.itinerary_plan_hotel_details_ID,
+              ),
+            );
+
+          return hotelAdminConfirmed
+            ? confirmed
+            : !confirmed;
+        },
+      );
+
+    if (!rows.length) {
+      return [];
+    }
+
+    const bookingHotelIds =
+      Array.from(
+        new Set<number>(
+          rows
+            .map((row: any) =>
+              Number(
+                row.hotel_id,
+              ),
+            )
+            .filter(
+              (id: number) =>
+                Number.isInteger(id) &&
+                id > 0,
+            ),
+        ),
+      );
+
+    const hotels =
+      bookingHotelIds.length
+        ? await this.prisma.dvi_hotel
+            .findMany({
+              where: {
+                hotel_id: {
+                  in: bookingHotelIds,
+                },
+              },
+              select: {
+                hotel_id: true,
+                hotel_name: true,
+              },
+            })
         : [];
 
     const hotelNameById =
-      new Map(
-        bookingHotels.map(
+      new Map<number, string | null>(
+        hotels.map(
           (hotel) => [
-            Number(hotel.hotel_id),
+            Number(
+              hotel.hotel_id,
+            ),
             hotel.hotel_name,
           ],
         ),
       );
-    return rows.map((row) => ({
-      bookingId:
-        row.confirmed_itinerary_plan_hotel_details_ID,
-      itineraryPlanId:
-        row.itinerary_plan_id,
-      itineraryRouteId:
-        row.itinerary_route_id,
-      hotelId: row.hotel_id,
-      hotel_name:
-        hotelNameById.get(
-          Number(row.hotel_id),
-        ) ?? null,
-      hotelCode:
-        row.hotel_code,
-      routeDate:
-        row.itinerary_route_date,
-      checkIn:
-        row.hotel_check_in_date,
-      checkOut:
-        row.hotel_check_out_date,
-      rooms:
-        row.total_no_of_rooms,
-      total:
-        row.total_hotel_cost,
-      approvalStatus:
-        row.hotel_approval_status,
-      confirmationStatus:
-        row.manual_confirmation_status,
-      status:
-        row.status,
-    }));
-  }
 
+    const supplierProviders =
+      new Set([
+        'tbo',
+        'resavenue',
+        'hobse',
+        'axisrooms',
+        'staah',
+      ]);
+
+    return rows.map(
+      (row: any) => {
+        const planId =
+          Number(
+            row.itinerary_plan_id,
+          );
+
+        const routeId =
+          Number(
+            row.itinerary_route_id,
+          );
+
+        const route =
+          routeByKey.get(
+            `${planId}:${routeId}`,
+          );
+
+        const itineraryCode =
+          String(
+            planById.get(planId)
+              ?.itinerary_quote_ID ||
+              '',
+          ).trim();
+
+        const rawProvider =
+          String(
+            row.hotel_provider ||
+              '',
+          )
+            .trim()
+            .toLowerCase();
+
+        const normalizedProvider =
+          rawProvider === 'vsr'
+            ? 'tbo'
+            : rawProvider;
+
+        const bookingMode =
+          String(
+            row.hotel_booking_mode ||
+              '',
+          )
+            .trim()
+            .toUpperCase();
+
+        const isOnline =
+          supplierProviders.has(
+            normalizedProvider,
+          ) &&
+          bookingMode !==
+            'MANUAL_APPROVAL';
+
+        const sourceType =
+          isOnline
+            ? 'Online'
+            : 'Offline';
+
+        const provider =
+          normalizedProvider
+            ? normalizedProvider
+                .toUpperCase()
+            : 'DVI';
+
+        const routeDate =
+          row.itinerary_route_date ??
+          route?.itinerary_route_date ??
+          null;
+
+        const checkIn =
+          row.hotel_check_in_date ??
+          routeDate;
+
+        const checkOut =
+          row.hotel_check_out_date ??
+          this.hotelAdminNextDate(
+            checkIn,
+          );
+
+        return {
+          bookingId:
+            Number(
+              row.confirmed_itinerary_plan_hotel_details_ID ||
+                row.itinerary_plan_hotel_details_ID,
+            ),
+          selectionId:
+            Number(
+              row.itinerary_plan_hotel_details_ID,
+            ),
+          itineraryPlanId:
+            planId,
+          itineraryCode,
+          reference:
+            itineraryCode ||
+            String(planId),
+          itineraryRouteId:
+            routeId,
+          itineraryDayNo:
+            dayByRouteKey.get(
+              `${planId}:${routeId}`,
+            ) ?? null,
+          dayStay:
+            dayByRouteKey.get(
+              `${planId}:${routeId}`,
+            ) ?? null,
+          routeLocation:
+            row.itinerary_route_location ??
+            route?.location_name ??
+            null,
+          routeDate,
+          hotelId:
+            row.hotel_id,
+          hotel_name:
+            hotelNameById.get(
+              Number(
+                row.hotel_id,
+              ),
+            ) ?? null,
+          hotelCode:
+            row.hotel_code,
+          provider,
+          bookingMode:
+            row.hotel_booking_mode,
+          sourceType,
+          checkIn,
+          checkOut,
+          rooms:
+            row.total_no_of_rooms,
+          total:
+            row.selected_total_price ??
+            row.total_hotel_cost,
+          currency:
+            row.selected_currency,
+          approvalStatus:
+            row.hotel_approval_status,
+          confirmationStatus:
+            row.manual_confirmation_status,
+          hotelAdminConfirmed,
+          rowSource:
+            row.__source,
+          status:
+            hotelAdminConfirmed
+              ? 'CONFIRMED'
+              : 'PENDING',
+        };
+      },
+    );
+  }
   private async findHotelAdminUser(
     userId: bigint,
   ) {
