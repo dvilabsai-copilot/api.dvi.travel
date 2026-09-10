@@ -3,14 +3,21 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
+  Delete,
   Body,
   Query,
+  Param,
   ParseIntPipe,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { GlobalSettingsService } from "./global-settings.service";
-import { UpdateGlobalSettingsDto } from "./dto/update-global-settings.dto";
+import {
+  CreateExtraMarginRuleDto,
+  UpdateExtraMarginRuleDto,
+  UpdateGlobalSettingsDto,
+} from "./dto/update-global-settings.dto";
 import { StateConfigUpdateDto } from "./dto/state-config.dto";
 
 @ApiTags("global-settings")
@@ -83,4 +90,47 @@ export class GlobalSettingsController {
   listCountries() {
     return this.service.listCountries();
   }
+
+@Get("cities")
+listCities(
+  @Query("search") search?: string,
+  @Query("limit") limit?: string,
+) {
+  const parsedLimit = limit
+    ? Number.parseInt(limit, 10)
+    : undefined;
+
+  return this.service.listCities(
+    search,
+    parsedLimit,
+  );
 }
+
+  @Get("extra-margin-rules")
+  listExtraMarginRules() {
+    return this.service.listExtraMarginRules();
+  }
+
+  @Post("extra-margin-rules")
+  createExtraMarginRule(
+    @Body() dto: CreateExtraMarginRuleDto,
+  ) {
+    return this.service.createExtraMarginRule(dto);
+  }
+
+  @Put("extra-margin-rules/:id")
+  updateExtraMarginRule(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: UpdateExtraMarginRuleDto,
+  ) {
+    return this.service.updateExtraMarginRule(id, dto);
+  }
+
+  @Delete("extra-margin-rules/:id")
+  deleteExtraMarginRule(
+    @Param("id", ParseIntPipe) id: number,
+  ) {
+    return this.service.deleteExtraMarginRule(id);
+  }
+}
+
