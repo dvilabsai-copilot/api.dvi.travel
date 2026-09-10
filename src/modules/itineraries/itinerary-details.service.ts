@@ -38,6 +38,9 @@ import {
   selectAdminMatchingOccupancyRow,
   selectOfflineRoomRate,
 } from './services/offline-hotel-catalog.service';
+import {
+  resolveItineraryExtraMarginConfig,
+} from './utils/itinerary-extra-margin.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -6914,9 +6917,22 @@ const hasRequiredVehicleSelection =
       totalGuideCost +
       totalHotspotCost +
       totalActivityCost;
-    const itineraryNoDays = Number(plan.no_of_days || 0);
+        const itineraryNoDays = Number(plan.no_of_days || 0);
+
+    const additionalMarginConfig =
+      await resolveItineraryExtraMarginConfig(
+        this.prisma,
+        {
+          plan,
+          routes,
+        },
+      );
+
     const vehicleMarginBase = selectedVehicleRows.reduce(
-      (sum: number, vehicle: any) => sum + Number(vehicle?.vendorMarginAmount || 0) * Number(vehicle?.totalQty || 1),
+      (sum: number, vehicle: any) =>
+        sum +
+        Number(vehicle?.vendorMarginAmount || 0) *
+          Number(vehicle?.totalQty || 1),
       0,
     );
     const pricing = ItineraryPricingService.overall({
@@ -6929,9 +6945,26 @@ const hasRequiredVehicleSelection =
       agentMarginRate: hasRequiredVehicleSelection ? Number(plan.agent_margin || 0) : 0,
       agentMarginGstType: (plan as any).agent_margin_gst_type,
       agentMarginGstRate: (plan as any).agent_margin_gst_percentage,
-      additionalMarginPercentage: Number(process.env.ITINERARY_ADDITIONAL_MARGIN_PERCENTAGE || 10),
-      additionalMarginDayLimit: Number(process.env.ITINERARY_ADDITIONAL_MARGIN_DAY_LIMIT || 3),
+      additionalMarginPercentage:
+        additionalMarginConfig.defaultPercentage,
+      additionalMarginDayLimit:
+        additionalMarginConfig.defaultDayLimit,
       noOfDays: itineraryNoDays,
+
+      destinationMarginMatched:
+        Boolean(additionalMarginConfig.matchedRule),
+
+      destinationAdjustmentType:
+        additionalMarginConfig.matchedRule
+          ?.adjustment_type,
+
+      destinationAdjustmentValue:
+        additionalMarginConfig.matchedRule
+          ?.adjustment_value,
+
+      destinationApplicationMode:
+        additionalMarginConfig.matchedRule
+          ?.application_mode,
       marginBase: money(
         (subtotal * Number(plan.agent_margin || 0)) / 100 + hotelMarginCost + vehicleMarginBase,
       ),

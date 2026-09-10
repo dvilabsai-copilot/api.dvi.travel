@@ -3,7 +3,11 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../../prisma.service";
 import { Prisma } from "@prisma/client";
-import { UpdateGlobalSettingsDto } from "./dto/update-global-settings.dto";
+import {
+  CreateExtraMarginRuleDto,
+  UpdateExtraMarginRuleDto,
+  UpdateGlobalSettingsDto,
+} from "./dto/update-global-settings.dto";
 import { StateConfigResultDto, StateConfigUpdateDto } from "./dto/state-config.dto";
 
 @Injectable()
@@ -238,6 +242,292 @@ export class GlobalSettingsService {
         country_id: true,
       },
     });
+  }
+
+    async listCities() {
+    return this.prisma.dvi_cities.findMany({
+      where: {
+        deleted: 0,
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+        state_id: true,
+      },
+    });
+  }
+
+  private validateExtraMarginRulePayload(
+    dto: CreateExtraMarginRuleDto | UpdateExtraMarginRuleDto,
+    existing?: any,
+  ) {
+    const sourceCityId = Number(
+      dto.source_city_id ?? existing?.source_city_id ?? 0,
+    );
+    const destinationCityId = Number(
+      dto.destination_city_id ?? existing?.destination_city_id ?? 0,
+    );
+    const minNights = Number(
+      dto.min_nights ?? existing?.min_nights ?? 1,
+    );
+    const maxNights = Number(
+      dto.max_nights ?? existing?.max_nights ?? 999,
+    );
+    const adjustmentType = String(
+      dto.adjustment_type ?? existing?.adjustment_type ?? "",
+    ).trim().toLowerCase();
+    const adjustmentValue = Number(
+      dto.adjustment_value ?? existing?.adjustment_value ?? 0,
+    );
+    const applicationMode = String(
+      dto.application_mode ?? existing?.application_mode ?? "",
+    ).trim().toLowerCase();
+    const priority = Number(
+      dto.priority ?? existing?.priority ?? 0,
+    );
+    const status =
+      Number(dto.status ?? existing?.status ?? 1) === 0 ? 0 : 1;
+
+    if (
+      !Number.isInteger(sourceCityId) ||
+      sourceCityId <= 0 ||
+      !Number.isInteger(destinationCityId) ||
+      destinationCityId <= 0
+    ) {
+      throw new BadRequestException(
+        "Source city and destination city are required",
+      );
+    }
+
+    if (sourceCityId === destinationCityId) {
+      throw new BadRequestException(
+        "Source city and destination city cannot be the same",
+      );
+    }
+
+    if (
+      !Number.isInteger(minNights) ||
+      !Number.isInteger(maxNights) ||
+      minNights < 1 ||
+      maxNights < minNights
+    ) {
+      throw new BadRequestException(
+        "Maximum nights must be greater than or equal to minimum nights",
+      );
+    }
+
+    if (!["percentage", "fixed_amount"].includes(adjustmentType)) {
+      throw new BadRequestException(
+        "Adjustment type must be percentage or fixed_amount",
+      );
+    }
+
+    if (
+      !Number.isFinite(adjustmentValue) ||
+      adjustmentValue < 0
+    ) {
+      throw new BadRequestException(
+        "Adjustment value must be zero or greater",
+      );
+    }
+
+    if (
+      adjustmentType === "percentage" &&
+      adjustmentValue > 100
+    ) {
+      throw new BadRequestException(
+        "Percentage adjustment cannot be greater than 100",
+      );
+    }
+
+    if (!["add", "override"].includes(applicationMode)) {
+      throw new BadRequestException(
+        "Application mode must be add or override",
+      );
+    }
+
+    if (!Number.isInteger(priority) || priority < 0) {
+      throw new BadRequestException(
+        "Priority must be zero or greater",
+      );
+    }
+
+    return {
+      source_city_id: sourceCityId,
+      destination_city_id: destinationCityId,
+      min_nights: minNights,
+      max_nights: maxNights,
+      adjustment_type: adjustmentType,
+      adjustment_value: adjustmentValue,
+      application_mode: applicationMode,
+      priority,
+      status,
+    };
+  }
+
+  private async assertExtraMarginCitiesExist(
+    sourceCityId: number,
+    destinationCityId: number,
+  ) {
+    const count = await this.prisma.dvi_cities.count({
+      where: {
+        id: {
+          in: [sourceCityId, destinationCityId],
+        },
+        deleted: 0,
+      },
+    });
+
+    if (count !== 2) {
+      throw new BadRequestException(
+        "Selected source or destination city is not available",
+      );
+    }
+  }
+
+  async listExtraMarginRules() {
+    const rules =
+      await this.prisma.dvi_itinerary_extra_margin_rules.findMany({
+        where: {
+          deleted: 0,
+        },
+        orderBy: [
+          { priority: "desc" },
+          { rule_id: "desc" },
+        ],
+      });
+
+    const cityIds: number[] = Array.from(
+  new Set<number>(
+    rules.flatMap((rule) => [
+      Number(rule.source_city_id),
+      Number(rule.destination_city_id),
+    ]),
+  ),
+);
+
+    const cities = cityIds.length
+      ? await this.prisma.dvi_cities.findMany({
+          where: {
+            id: {
+              in: cityIds,
+            },
+            deleted: 0,
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        })
+      : [];
+
+    const cityMap = new Map(
+      cities.map((city) => [Number(city.id), city.name]),
+    );
+
+    return rules.map((rule) => ({
+      ...rule,
+      source_city_name:
+        cityMap.get(Number(rule.source_city_id)) || "",
+      destination_city_name:
+        cityMap.get(Number(rule.destination_city_id)) || "",
+    }));
+  }
+
+  async createExtraMarginRule(
+    dto: CreateExtraMarginRuleDto,
+    userId?: number,
+  ) {
+    const data = this.validateExtraMarginRulePayload(dto);
+
+    await this.assertExtraMarginCitiesExist(
+      data.source_city_id,
+      data.destination_city_id,
+    );
+
+    return this.prisma.dvi_itinerary_extra_margin_rules.create({
+      data: {
+        ...data,
+        createdby:
+          typeof userId === "number" ? userId : 0,
+        createdon: new Date(),
+        updatedon: new Date(),
+        deleted: 0,
+      },
+    });
+  }
+
+  async updateExtraMarginRule(
+    ruleId: number,
+    dto: UpdateExtraMarginRuleDto,
+  ) {
+    const existing =
+      await this.prisma.dvi_itinerary_extra_margin_rules.findFirst({
+        where: {
+          rule_id: ruleId,
+          deleted: 0,
+        },
+      });
+
+    if (!existing) {
+      throw new NotFoundException(
+        "Extra margin rule not found",
+      );
+    }
+
+    const data = this.validateExtraMarginRulePayload(
+      dto,
+      existing,
+    );
+
+    await this.assertExtraMarginCitiesExist(
+      data.source_city_id,
+      data.destination_city_id,
+    );
+
+    return this.prisma.dvi_itinerary_extra_margin_rules.update({
+      where: {
+        rule_id: ruleId,
+      },
+      data: {
+        ...data,
+        updatedon: new Date(),
+      },
+    });
+  }
+
+  async deleteExtraMarginRule(ruleId: number) {
+    const existing =
+      await this.prisma.dvi_itinerary_extra_margin_rules.findFirst({
+        where: {
+          rule_id: ruleId,
+          deleted: 0,
+        },
+      });
+
+    if (!existing) {
+      throw new NotFoundException(
+        "Extra margin rule not found",
+      );
+    }
+
+    await this.prisma.dvi_itinerary_extra_margin_rules.update({
+      where: {
+        rule_id: ruleId,
+      },
+      data: {
+        status: 0,
+        deleted: 1,
+        updatedon: new Date(),
+      },
+    });
+
+    return {
+      ok: true,
+    };
   }
 
   async listCountries() {
