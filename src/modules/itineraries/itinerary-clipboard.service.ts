@@ -3,6 +3,10 @@ import { PrismaService } from '../../prisma.service';
 import { ItineraryDetailsService } from './itinerary-details.service';
 import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service';
 import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
+import {
+  getPercentageMarginForDisplay,
+  resolveItineraryExtraMarginConfig,
+} from './utils/itinerary-extra-margin.util';
 
 type ClipboardMode = 'recommended' | 'highlights' | 'para';
 
@@ -261,9 +265,7 @@ export class ItineraryClipboardService {
     routeMetadata?: any[];
     roomCount: number;
     showRates: boolean;
-    noOfDays: number;
     additionalMarginPct: number;
-    additionalMarginDayLimit: number;
   }): string {
     const {
       selectedGroupTypes,
@@ -274,9 +276,7 @@ export class ItineraryClipboardService {
       routeMetadata,
       roomCount,
       showRates,
-      noOfDays,
       additionalMarginPct,
-      additionalMarginDayLimit,
     } = args;
 
     let groupSections = '';
@@ -366,9 +366,8 @@ export class ItineraryClipboardService {
         ? clipboardRows
             .map((hotel, idx) => {
               const baseDayAmount = Number(hotel.totalHotelCost || 0) + Number(hotel.totalHotelTaxAmount || 0);
-              const addMargin = noOfDays <= additionalMarginDayLimit
-                ? (additionalMarginPct * baseDayAmount) / 100
-                : 0;
+              const addMargin =
+                (additionalMarginPct * baseDayAmount) / 100;
               const isDayZero =
                 hotel.__clipboardDayZero === true || hotel.previousDayBillingSynthetic === true;
               const dayNumber = this.getClipboardDayNumber(hotel, idx + 1);
@@ -1038,8 +1037,18 @@ export class ItineraryClipboardService {
     const selectedGroupTypes = this.normalizeGroupTypes(requestedGroupTypes);
     const showRates = Boolean(hotelDetails.hotelRatesVisible);
 
-    const additionalMarginPct = Number(process.env.ITINERARY_ADDITIONAL_MARGIN_PERCENTAGE || 0);
-    const additionalMarginDayLimit = Number(process.env.ITINERARY_ADDITIONAL_MARGIN_DAY_LIMIT || 0);
+        const additionalMarginConfig =
+      await resolveItineraryExtraMarginConfig(
+        this.prisma,
+        {
+          plan,
+        },
+      );
+
+    const additionalMarginPct =
+      getPercentageMarginForDisplay(
+        additionalMarginConfig,
+      );
 
     const summaryHtml = this.buildSummaryTable(summaryPlan);
     const hotelsHtml = this.buildHotelSection({
@@ -1049,11 +1058,13 @@ export class ItineraryClipboardService {
       hotelTabs: (hotelDetails as any).hotelTabs,
       sharedInventory: (hotelDetails as any).hotelAvailability?.sharedHotelInventory,
       routeMetadata: (hotelDetails as any).hotelAvailability?.stayRoutes,
-      roomCount: Number(plan.preferred_room_count || itinerary.roomCount || 0),
+           roomCount: Number(
+        plan.preferred_room_count ||
+          itinerary.roomCount ||
+          0,
+      ),
       showRates,
-      noOfDays: Number(plan.no_of_days || 0),
       additionalMarginPct,
-      additionalMarginDayLimit,
     });
     const allVehicles = Array.isArray(itinerary.vehicles) ? itinerary.vehicles : [];
     const assignedVehicles = allVehicles.filter((v: any) => Boolean(v?.isAssigned));

@@ -1,7 +1,16 @@
 // FILE: src/modules/global-settings/dto/update-global-settings.dto.ts
 
+import { PartialType } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { Allow, IsNumber, Max, Min } from "class-validator";
+import {
+  Allow,
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  Max,
+  Min,
+} from "class-validator";
 
 export class UpdateGlobalSettingsDto {
   // The application uses a global whitelist ValidationPipe. Keep every
@@ -135,3 +144,52 @@ export class UpdateGlobalSettingsDto {
   @Allow()
   branch_name?: string | null;
 }
+
+export class CreateExtraMarginRuleDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  source_city_id!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  destination_city_id!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  min_nights!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  max_nights!: number;
+
+  @IsIn(["percentage", "fixed_amount"])
+  adjustment_type!: "percentage" | "fixed_amount";
+
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  adjustment_value!: number;
+
+  @IsIn(["add", "override"])
+  application_mode!: "add" | "override";
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  priority?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([0, 1])
+  status?: number;
+}
+
+export class UpdateExtraMarginRuleDto extends PartialType(
+  CreateExtraMarginRuleDto,
+) {}

@@ -2989,6 +2989,26 @@ model dvi_global_settings {
   @@index([status], map: "idx_slcm_global_settings_status")
 }
 
+model dvi_itinerary_extra_margin_rules {
+  rule_id             Int       @id @default(autoincrement())
+  source_city_id      Int
+  destination_city_id Int
+  min_nights          Int       @default(1)
+  max_nights          Int       @default(999)
+  adjustment_type     String    @db.VarChar(20)
+  adjustment_value    Float     @default(0)
+  application_mode    String    @db.VarChar(20)
+  priority            Int       @default(0)
+  status              Int       @default(1) @db.TinyInt
+  deleted             Int       @default(0) @db.TinyInt
+  createdby           Int       @default(0)
+  createdon           DateTime? @db.DateTime(0)
+  updatedon           DateTime? @db.DateTime(0)
+
+  @@index([source_city_id, destination_city_id, min_nights, max_nights, status, deleted], map: "idx_itinerary_extra_margin_rules_city_night_range")
+  @@index([priority], map: "idx_itinerary_extra_margin_rules_priority")
+}
+
 model dvi_gst_setting {
   gst_setting_id Int       @id @default(autoincrement())
   gst_title      String?   @db.Text
@@ -4547,16 +4567,16 @@ model dvi_itinerary_route_details {
 }
 
 model dvi_itinerary_manual_hotspot_displacement {
-  displacement_ID          Int      @id @default(autoincrement())
-  itinerary_plan_ID        Int      @default(0)
-  itinerary_route_ID       Int      @default(0)
-  manual_hotspot_ID        Int      @default(0)
-  displaced_hotspot_ID     Int      @default(0)
-  createdby                Int      @default(0)
-  createdon                DateTime? @db.DateTime(0)
-  updatedon                DateTime? @db.DateTime(0)
-  status                   Int      @default(1) @db.TinyInt
-  deleted                  Int      @default(0) @db.TinyInt
+  displacement_ID      Int       @id @default(autoincrement())
+  itinerary_plan_ID    Int       @default(0)
+  itinerary_route_ID   Int       @default(0)
+  manual_hotspot_ID    Int       @default(0)
+  displaced_hotspot_ID Int       @default(0)
+  createdby            Int       @default(0)
+  createdon            DateTime? @db.DateTime(0)
+  updatedon            DateTime? @db.DateTime(0)
+  status               Int       @default(1) @db.TinyInt
+  deleted              Int       @default(0) @db.TinyInt
 
   @@unique([itinerary_plan_ID, itinerary_route_ID, manual_hotspot_ID, displaced_hotspot_ID], map: "uq_manual_hotspot_displacement")
   @@index([itinerary_plan_ID, itinerary_route_ID], map: "idx_manual_hotspot_displacement_route")
@@ -6400,29 +6420,29 @@ model dvi_itinerary_reusable_templates {
 /// Hotel search results cache - persists live TBO/HOBSE/ResAvenue results per quote+route+group
 /// Enables fast paginated reads without hitting provider APIs every time
 model dvi_itinerary_hotel_search_cache {
-  id               Int      @id @default(autoincrement())
-  quote_id         String   @db.VarChar(50)
-  plan_id          Int      @default(0)
-  route_id         Int      @default(0)
-  group_type       Int      @default(0) @db.TinyInt
-  hotel_code       String   @db.VarChar(100)
-  provider         String   @db.VarChar(30)
-  hotel_name       String   @db.VarChar(255)
-  rating           Float    @default(0) @db.Float
-  price            Float    @default(0)
-  room_type        String?  @db.VarChar(255)
-  meal_plan        String?  @db.VarChar(100)
-  search_reference String?  @db.Text
-  full_payload     String   @db.LongText
-  check_in_date    DateTime @db.Date
-  check_out_date   DateTime @db.Date
-  sort_rank        Int      @default(0)
-  synced_at        DateTime @default(now()) @db.DateTime(0)
-  status           Int      @default(1) @db.TinyInt
-  deleted          Int      @default(0) @db.TinyInt
-  recommendation_algorithm_version String? @db.VarChar(8)
-  recommendation_search_run_id    String? @db.VarChar(100)
-  recommendation_generated_at     DateTime? @db.DateTime(0)
+  id                               Int       @id @default(autoincrement())
+  quote_id                         String    @db.VarChar(50)
+  plan_id                          Int       @default(0)
+  route_id                         Int       @default(0)
+  group_type                       Int       @default(0) @db.TinyInt
+  hotel_code                       String    @db.VarChar(100)
+  provider                         String    @db.VarChar(30)
+  hotel_name                       String    @db.VarChar(255)
+  rating                           Float     @default(0) @db.Float
+  price                            Float     @default(0)
+  room_type                        String?   @db.VarChar(255)
+  meal_plan                        String?   @db.VarChar(100)
+  search_reference                 String?   @db.Text
+  full_payload                     String    @db.LongText
+  check_in_date                    DateTime  @db.Date
+  check_out_date                   DateTime  @db.Date
+  sort_rank                        Int       @default(0)
+  synced_at                        DateTime  @default(now()) @db.DateTime(0)
+  status                           Int       @default(1) @db.TinyInt
+  deleted                          Int       @default(0) @db.TinyInt
+  recommendation_algorithm_version String?   @db.VarChar(8)
+  recommendation_search_run_id     String?   @db.VarChar(100)
+  recommendation_generated_at      DateTime? @db.DateTime(0)
 
   @@unique([quote_id, route_id, group_type, hotel_code, provider], map: "uq_hotel_cache_key")
   @@index([quote_id, group_type, sort_rank], map: "idx_hotel_cache_pagination")
@@ -6435,15 +6455,15 @@ model dvi_itinerary_hotel_search_cache {
 /// from itinerary hotel selections: refresh/check requests may create a
 /// preview, but they must not mutate the saved itinerary until acknowledgement.
 model dvi_itinerary_hotel_availability_preview {
-  id          Int      @id @default(autoincrement())
-  preview_id  String   @unique(map: "uq_hotel_availability_preview_id") @db.VarChar(100)
-  quote_id    String   @db.VarChar(50)
-  plan_id     Int
-  payload_json String  @db.LongText
-  expires_at  DateTime @db.DateTime(0)
-  status      Int      @default(1) @db.TinyInt
-  createdon   DateTime @default(now()) @db.DateTime(0)
-  updatedon   DateTime @default(now()) @db.DateTime(0)
+  id           Int      @id @default(autoincrement())
+  preview_id   String   @unique(map: "uq_hotel_availability_preview_id") @db.VarChar(100)
+  quote_id     String   @db.VarChar(50)
+  plan_id      Int
+  payload_json String   @db.LongText
+  expires_at   DateTime @db.DateTime(0)
+  status       Int      @default(1) @db.TinyInt
+  createdon    DateTime @default(now()) @db.DateTime(0)
+  updatedon    DateTime @default(now()) @db.DateTime(0)
 
   @@index([quote_id, plan_id, status], map: "idx_hotel_availability_preview_scope")
   @@index([expires_at], map: "idx_hotel_availability_preview_expiry")

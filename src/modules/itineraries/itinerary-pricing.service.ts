@@ -68,9 +68,15 @@ export type OverallPricingInput = {
   agentMarginGstRate?: unknown;
   agentMarginGstType?: unknown;
   incidentalCount?: number;
-  additionalMarginPercentage?: unknown;
+    additionalMarginPercentage?: unknown;
   additionalMarginDayLimit?: unknown;
   noOfDays?: unknown;
+
+  destinationMarginMatched?: boolean;
+  destinationAdjustmentType?: "percentage" | "fixed_amount";
+  destinationAdjustmentValue?: unknown;
+  destinationApplicationMode?: "add" | "override";
+
   marginDiscountPercentage?: unknown;
   marginBase?: unknown;
   userLevel?: unknown;
@@ -148,10 +154,44 @@ export class ItineraryPricingService {
       ? amount(grossAgentMargin - agentMarginTax)
       : grossAgentMargin;
     const netWithAgent = sum(totalNetCharge, agentMargin, agentMarginTax);
-    const additionalMargin = Number(input.noOfDays || 0) <= Number(input.additionalMarginDayLimit || 0)
-      ? percent(netWithAgent, input.additionalMarginPercentage)
-      : 0;
-    const totalNetAmount = sum(netWithAgent, additionalMargin);
+        const defaultAdditionalMargin =
+      Number(input.noOfDays || 0) <=
+      Number(input.additionalMarginDayLimit || 0)
+        ? percent(
+            netWithAgent,
+            input.additionalMarginPercentage,
+          )
+        : 0;
+
+    let additionalMargin = defaultAdditionalMargin;
+
+    if (input.destinationMarginMatched === true) {
+      const destinationAdjustmentValue = Math.max(
+        Number(input.destinationAdjustmentValue || 0),
+        0,
+      );
+
+      const destinationAdditionalMargin =
+        input.destinationAdjustmentType === "fixed_amount"
+          ? amount(destinationAdjustmentValue)
+          : percent(
+              netWithAgent,
+              destinationAdjustmentValue,
+            );
+
+      additionalMargin =
+        input.destinationApplicationMode === "add"
+          ? sum(
+              defaultAdditionalMargin,
+              destinationAdditionalMargin,
+            )
+          : destinationAdditionalMargin;
+    }
+
+    const totalNetAmount = sum(
+      netWithAgent,
+      additionalMargin,
+    );
     const couponDiscount = percent(input.marginBase ?? sum(agentMargin), input.marginDiscountPercentage);
     const totalDiscountAmount = amount(scaled(totalNetAmount) - scaled(couponDiscount));
     const payableBeforeRoundoff = Number(input.userLevel) === 1
