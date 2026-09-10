@@ -2187,21 +2187,30 @@ export class HotelAdminService {
 
     const rows =
       await this.prisma
-        .dvi_confirmed_itinerary_plan_hotel_details
+        .dvi_itinerary_plan_hotel_details
         .findMany({
           where: {
             hotel_id: {
               in: hotelIds,
             },
+            hotel_required: 1,
+            status: 1,
             deleted: 0,
           },
           select: {
-            confirmed_itinerary_plan_hotel_details_ID:
+            itinerary_plan_hotel_details_ID:
               true,
             itinerary_plan_id: true,
             itinerary_route_id: true,
             hotel_id: true,
             hotel_code: true,
+            group_type: true,
+            hotel_provider: true,
+            hotel_booking_mode: true,
+            selection_origin: true,
+            itinerary_route_location: true,
+            selected_total_price: true,
+            selected_currency: true,
             itinerary_route_date: true,
             hotel_check_in_date: true,
             hotel_check_out_date: true,
@@ -2261,7 +2270,7 @@ export class HotelAdminService {
       );
     return rows.map((row) => ({
       bookingId:
-        row.confirmed_itinerary_plan_hotel_details_ID,
+        row.itinerary_plan_hotel_details_ID,
       itineraryPlanId:
         row.itinerary_plan_id,
       itineraryRouteId:
@@ -2273,6 +2282,25 @@ export class HotelAdminService {
         ) ?? null,
       hotelCode:
         row.hotel_code,
+      groupType:
+        row.group_type,
+      provider:
+        row.hotel_provider,
+      bookingMode:
+        row.hotel_booking_mode,
+      sourceType:
+        String(
+          row.hotel_provider ?? '',
+        ).trim().toLowerCase() === 'offline' ||
+        String(
+          row.hotel_booking_mode ?? '',
+        ).trim().toUpperCase() === 'MANUAL_APPROVAL'
+          ? 'Offline'
+          : 'Online',
+      selectionOrigin:
+        row.selection_origin,
+      routeLocation:
+        row.itinerary_route_location,
       routeDate:
         row.itinerary_route_date,
       checkIn:
@@ -2282,7 +2310,10 @@ export class HotelAdminService {
       rooms:
         row.total_no_of_rooms,
       total:
+        row.selected_total_price ??
         row.total_hotel_cost,
+      currency:
+        row.selected_currency,
       approvalStatus:
         row.hotel_approval_status,
       confirmationStatus:
