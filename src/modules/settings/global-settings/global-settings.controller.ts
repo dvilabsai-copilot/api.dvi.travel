@@ -91,10 +91,20 @@ export class GlobalSettingsController {
     return this.service.listCountries();
   }
 
-  @Get("cities")
-  listCities() {
-    return this.service.listCities();
-  }
+@Get("cities")
+listCities(
+  @Query("search") search?: string,
+  @Query("limit") limit?: string,
+) {
+  const parsedLimit = limit
+    ? Number.parseInt(limit, 10)
+    : undefined;
+
+  return this.service.listCities(
+    search,
+    parsedLimit,
+  );
+}
 
   @Get("extra-margin-rules")
   listExtraMarginRules() {
