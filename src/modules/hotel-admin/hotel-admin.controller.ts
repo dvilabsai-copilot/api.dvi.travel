@@ -817,6 +817,28 @@ export class HotelAdminController {
       body,
     );
   }
+  @Get('bookings/queue')
+  bookingQueue(@Req() req: any) {
+    return this.service.listBookingQueue(
+      req.user?.userId,
+    );
+  }
+
+  @Post('bookings/confirm-itinerary')
+  confirmItineraryBooking(
+    @Req() req: any,
+    @Body()
+    body: {
+      itineraryPlanId?: number | string;
+      notes?: string;
+    },
+  ) {
+    return this.service.confirmItineraryBooking(
+      req.user?.userId,
+      body,
+    );
+  }
+
   @Get('bookings')
   bookings(@Req() req: any) {
     return this.service.listBookings(
