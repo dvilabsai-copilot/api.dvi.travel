@@ -761,26 +761,65 @@ const total = await this.prisma.dvi_stored_locations.count({ where });
     };
   }
 
-  async searchCities(query: AutosuggestQuery) {
-    const phrase = String(query?.phrase ?? '').trim();
-    if (!phrase) return [];
+ async searchCities(query: AutosuggestQuery) {
+  const phrase = String(query?.phrase ?? '').trim();
+  if (!phrase) return [];
 
-    const rows = await this.prisma.dvi_cities.findMany({
-      where: {
-        deleted: 0,
-        name: { contains: phrase },
+  const rows = await this.prisma.dvi_cities.findMany({
+    where: {
+      deleted: 0,
+      name: {
+        contains: phrase,
       },
-      select: { name: true },
-      orderBy: { name: 'asc' },
-    });
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+    orderBy: {
+      name: 'asc',
+    },
+  });
 
-    const names = this.uniqueStringsCaseInsensitive(rows.map((r) => r.name));
-    if (!names.length) {
-      return [{ get_city: phrase }];
+  const uniqueCities = new Map<
+    string,
+    {
+      id: number;
+      get_city: string;
     }
+  >();
 
-    return names.map((name) => ({ get_city: name }));
+  for (const row of rows) {
+    const name = String(row.name ?? '').trim();
+
+    if (!name) continue;
+
+    const key = name.toLowerCase();
+
+    if (!uniqueCities.has(key)) {
+      uniqueCities.set(key, {
+        id: Number(row.id),
+        get_city: name,
+      });
+    }
   }
+
+  const cities = Array.from(
+    uniqueCities.values(),
+  );
+
+  if (!cities.length) {
+    // Preserve the existing legacy behaviour
+    // for screens that allow a new typed city.
+    return [
+      {
+        get_city: phrase,
+      },
+    ];
+  }
+
+  return cities;
+}
 
   async searchVehicleOrigins(query: VehicleOriginAutosuggestQuery) {
     const search = String(query?.search ?? '').trim();

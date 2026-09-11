@@ -86,30 +86,15 @@ export class GlobalSettingsController {
     return this.service.listStatesByCountry(normalized);
   }
 
-  @Get("countries")
-  listCountries() {
-    return this.service.listCountries();
-  }
-
-@Get("cities")
-listCities(
-  @Query("search") search?: string,
-  @Query("limit") limit?: string,
-) {
-  const parsedLimit = limit
-    ? Number.parseInt(limit, 10)
-    : undefined;
-
-  return this.service.listCities(
-    search,
-    parsedLimit,
-  );
+@Get("countries")
+listCountries() {
+  return this.service.listCountries();
 }
 
-  @Get("extra-margin-rules")
-  listExtraMarginRules() {
-    return this.service.listExtraMarginRules();
-  }
+@Get("extra-margin-rules")
+listExtraMarginRules() {
+  return this.service.listExtraMarginRules();
+}
 
   @Post("extra-margin-rules")
   createExtraMarginRule(
