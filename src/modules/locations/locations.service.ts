@@ -22,6 +22,12 @@ type ListQuery = {
   pageSize?: number;
 };
 
+type DropdownQuery = {
+  citySearch?: string;
+  countryId?: number | string;
+  limit?: number | string;
+};
+
 type SourceLocationSeed = {
   source_location: string;
   source_location_city: string;
@@ -199,50 +205,341 @@ const total = await this.prisma.dvi_stored_locations.count({ where });
   };
 }
 
-  async dropdowns() {
-  const [sourceRows, destinationRows] = await Promise.all([
-    this.prisma.dvi_stored_locations.findMany({
-      where: {
-        deleted: 0,
-        source_location: {
-          not: '',
-        },
-      },
-      select: {
-        source_location: true,
-      },
-      distinct: ['source_location'],
-      orderBy: {
-        source_location: 'asc',
-      },
-      take: 3000,
-    }),
+async dropdowns(query: DropdownQuery = {}) {
+  const citySearch = String(
+    query.citySearch ?? '',
+  ).trim();
 
-    this.prisma.dvi_stored_locations.findMany({
-      where: {
-        deleted: 0,
-        destination_location: {
-          not: '',
+  /*
+   * City search for Global Settings.
+   *
+   * Important:
+   * - Uses the existing Locations dropdown API.
+   * - Reads cities actually used by stored locations.
+   * - Restricts results to the requested country.
+   * - Existing source/destination dropdown behaviour
+   *   remains untouched when citySearch is absent.
+   */
+  if (citySearch.length >= 2) {
+    const requestedCountryId = Number(
+      query.countryId ?? 101,
+    );
+
+    const countryId =
+      Number.isInteger(requestedCountryId) &&
+      requestedCountryId > 0
+        ? requestedCountryId
+        : 101;
+
+    const requestedLimit = Number(
+      query.limit ?? 20,
+    );
+
+    const limit = Number.isFinite(
+      requestedLimit,
+    )
+      ? Math.min(
+          50,
+          Math.max(
+            1,
+            Math.trunc(requestedLimit),
+          ),
+        )
+      : 20;
+
+    const normalizedSearch =
+      citySearch.toLowerCase();
+
+    const [stateRows, storedCityRows] =
+      await Promise.all([
+        this.prisma.dvi_states.findMany({
+          where: {
+            deleted: 0,
+            country_id: countryId,
+          },
+          select: {
+            id: true,
+          },
+        }),
+
+        this.prisma.dvi_stored_locations.findMany({
+          where: {
+            deleted: 0,
+            OR: [
+              {
+                source_location_city: {
+                  contains: citySearch,
+                },
+              },
+              {
+                destination_location_city: {
+                  contains: citySearch,
+                },
+              },
+            ],
+          },
+          select: {
+            source_city_id: true,
+            source_location_city: true,
+            destination_city_id: true,
+            destination_location_city: true,
+          },
+          take: 1000,
+        }),
+      ]);
+
+    const stateIds = stateRows
+      .map((state) => Number(state.id))
+      .filter(
+        (id) =>
+          Number.isInteger(id) &&
+          id > 0,
+      );
+
+    if (!stateIds.length) {
+      return {
+        sources: [],
+        destinations: [],
+        cities: [],
+      };
+    }
+
+    const cityNameById =
+      new Map<number, string>();
+
+    const cityNamesWithoutId =
+      new Set<string>();
+
+    const collectCity = (
+      idValue: unknown,
+      nameValue: unknown,
+    ) => {
+      const name = String(
+        nameValue ?? '',
+      ).trim();
+
+      if (
+        !name ||
+        !name
+          .toLowerCase()
+          .includes(normalizedSearch)
+      ) {
+        return;
+      }
+
+      const id = Number(idValue);
+
+      if (
+        Number.isInteger(id) &&
+        id > 0
+      ) {
+        if (!cityNameById.has(id)) {
+          cityNameById.set(
+            id,
+            name,
+          );
+        }
+
+        return;
+      }
+
+      cityNamesWithoutId.add(name);
+    };
+
+    for (const row of storedCityRows) {
+      collectCity(
+        row.source_city_id,
+        row.source_location_city,
+      );
+
+      collectCity(
+        row.destination_city_id,
+        row.destination_location_city,
+      );
+    }
+
+    const cityIdentityFilters: any[] =
+      [];
+
+    const cityIds = Array.from(
+      cityNameById.keys(),
+    );
+
+    if (cityIds.length) {
+      cityIdentityFilters.push({
+        id: {
+          in: cityIds,
         },
-      },
-      select: {
-        destination_location: true,
-      },
-      distinct: ['destination_location'],
-      orderBy: {
-        destination_location: 'asc',
-      },
-      take: 3000,
-    }),
-  ]);
+      });
+    }
+
+    const cityNames = Array.from(
+      cityNamesWithoutId,
+    );
+
+    if (cityNames.length) {
+      cityIdentityFilters.push({
+        name: {
+          in: cityNames,
+        },
+      });
+    }
+
+    if (!cityIdentityFilters.length) {
+      return {
+        sources: [],
+        destinations: [],
+        cities: [],
+      };
+    }
+
+    const cityRows =
+      await this.prisma.dvi_cities.findMany({
+        where: {
+          deleted: 0,
+          state_id: {
+            in: stateIds,
+          },
+          OR: cityIdentityFilters,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+        orderBy: {
+          name: 'asc',
+        },
+        take: Math.min(
+          200,
+          limit * 10,
+        ),
+      });
+
+    const cities = cityRows
+      .map((city) => {
+        const id = Number(city.id);
+
+        return {
+          id,
+          name:
+            cityNameById.get(id) ||
+            String(
+              city.name ?? '',
+            ).trim(),
+        };
+      })
+      .filter(
+        (city) =>
+          city.id > 0 &&
+          Boolean(city.name),
+      )
+      .sort((a, b) => {
+        const aName =
+          a.name.toLowerCase();
+
+        const bName =
+          b.name.toLowerCase();
+
+        const aExact =
+          aName === normalizedSearch;
+
+        const bExact =
+          bName === normalizedSearch;
+
+        if (aExact !== bExact) {
+          return aExact ? -1 : 1;
+        }
+
+        const aStarts =
+          aName.startsWith(
+            normalizedSearch,
+          );
+
+        const bStarts =
+          bName.startsWith(
+            normalizedSearch,
+          );
+
+        if (aStarts !== bStarts) {
+          return aStarts ? -1 : 1;
+        }
+
+        return a.name.localeCompare(
+          b.name,
+        );
+      })
+      .slice(0, limit);
+
+    return {
+      sources: [],
+      destinations: [],
+      cities,
+    };
+  }
+
+  /*
+   * Existing Locations Page dropdown logic.
+   * Keep this block unchanged.
+   */
+  const [sourceRows, destinationRows] =
+    await Promise.all([
+      this.prisma.dvi_stored_locations.findMany({
+        where: {
+          deleted: 0,
+          source_location: {
+            not: '',
+          },
+        },
+        select: {
+          source_location: true,
+        },
+        distinct: ['source_location'],
+        orderBy: {
+          source_location: 'asc',
+        },
+        take: 3000,
+      }),
+
+      this.prisma.dvi_stored_locations.findMany({
+        where: {
+          deleted: 0,
+          destination_location: {
+            not: '',
+          },
+        },
+        select: {
+          destination_location: true,
+        },
+        distinct: [
+          'destination_location',
+        ],
+        orderBy: {
+          destination_location: 'asc',
+        },
+        take: 3000,
+      }),
+    ]);
 
   return {
-    sources: this.uniqueStringsCaseInsensitive(
-      sourceRows.map((x) => x.source_location).filter(Boolean),
-    ),
-    destinations: this.uniqueStringsCaseInsensitive(
-      destinationRows.map((x) => x.destination_location).filter(Boolean),
-    ),
+    sources:
+      this.uniqueStringsCaseInsensitive(
+        sourceRows
+          .map(
+            (x) =>
+              x.source_location,
+          )
+          .filter(Boolean),
+      ),
+
+    destinations:
+      this.uniqueStringsCaseInsensitive(
+        destinationRows
+          .map(
+            (x) =>
+              x.destination_location,
+          )
+          .filter(Boolean),
+      ),
   };
 }
 
