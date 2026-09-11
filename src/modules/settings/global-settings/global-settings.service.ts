@@ -244,55 +244,10 @@ export class GlobalSettingsService {
     });
   }
 
-async listCities(
-  search?: string,
-  limit?: number,
+private validateExtraMarginRulePayload(
+  dto: CreateExtraMarginRuleDto | UpdateExtraMarginRuleDto,
+  existing?: any,
 ) {
-  const normalizedSearch = String(
-    search ?? "",
-  ).trim();
-
-  // Do not load the complete city master.
-  // The frontend will search only after 2 characters.
-  if (normalizedSearch.length < 2) {
-    return [];
-  }
-
-  const requestedLimit = Number(limit);
-
-  const take = Number.isFinite(requestedLimit)
-    ? Math.min(
-        30,
-        Math.max(
-          1,
-          Math.trunc(requestedLimit),
-        ),
-      )
-    : 20;
-
-  return this.prisma.dvi_cities.findMany({
-    where: {
-      deleted: 0,
-      name: {
-        contains: normalizedSearch,
-      },
-    },
-    orderBy: {
-      name: "asc",
-    },
-    take,
-    select: {
-      id: true,
-      name: true,
-      state_id: true,
-    },
-  });
-}
-
-  private validateExtraMarginRulePayload(
-    dto: CreateExtraMarginRuleDto | UpdateExtraMarginRuleDto,
-    existing?: any,
-  ) {
     const sourceCityId = Number(
       dto.source_city_id ?? existing?.source_city_id ?? 0,
     );
