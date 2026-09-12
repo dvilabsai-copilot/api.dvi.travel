@@ -1501,6 +1501,53 @@ private getGuideSlotLabel(slotId: number): string {
     // path as the internal hotel reset operation after the plan transaction commits.
     // Meal-plan-only edits do not rebuild routes, hotspots, or transport data.
     const hotelResetReason = getHotelAvailabilityResetReason(result);
+        if (
+      !isNewPlan &&
+      hotelsRequired &&
+      !hasHotelNights &&
+      result?.quoteId
+    ) {
+      try {
+        await this.hotelAvailabilitySnapshotService.resetSelectionsOnly(
+          String(result.quoteId),
+        );
+      } catch (error) {
+        throw new UnprocessableEntityException({
+          message:
+            'Itinerary was updated, but the previous hotel selection could not be cleared.',
+          planId: result.planId,
+          quoteId: result.quoteId,
+          creationStatus: 'PARTIAL',
+          code: 'HOTEL_SELECTION_CLEAR_FAILED',
+          hotelSearch: {
+            status: 'FAILED',
+          },
+          cause: String(
+            (error as any)?.response?.message ||
+              (error as any)?.message ||
+              'Hotel selection cleanup failed',
+          ),
+        });
+      }
+
+      this.logItineraryApiTiming({
+        api: 'save_basic_info',
+        step: 'create-plan-complete-no-hotel-stay',
+        startedAt: timingStartedAt,
+        stepStartedAt: timingStepStartedAt,
+        planId: result?.planId,
+        quoteId: result?.quoteId,
+      });
+
+      return {
+        ...result,
+        hotelSearch: {
+          status: 'NOT_REQUIRED',
+          resetApplied: true,
+          resetReason: 'NO_STAY',
+        },
+      };
+    }
     if (!isNewPlan && hotelsRequired && hasHotelNights && hotelResetReason && result?.quoteId) {
       try {
         const hotelSearch = await this.hotelAvailabilitySnapshotService.resetAndPersist(
