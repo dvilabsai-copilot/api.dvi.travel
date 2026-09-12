@@ -6015,12 +6015,36 @@ export class HotelAvailabilitySnapshotService {
       ...priorSnapshotWithoutFallback
     } = priorSnapshot as any;
     const optionKey = String(option.optionKey || hotelOptionKey(option));
-    const pricePerNight = Number(option.pricePerNight || option.price_per_night || option.price || option.totalHotelCost || option.totalStayPrice || 0);
+    const pricePerNight = Number(
+      option.pricePerNight ||
+        option.price_per_night ||
+        option.price ||
+        option.totalHotelCost ||
+        option.totalStayPrice ||
+        0,
+    );
     const totalPrice = hotelStayTotal(option, 1);
+
+    const rawHotelCategoryId =
+      option.category ??
+      option.hotelCategory ??
+      option.hotel_category_id ??
+      option.selectedCategory ??
+      option.requestedCategory ??
+      selection.hotel_category_id ??
+      0;
+
+    const parsedHotelCategoryId = Number(rawHotelCategoryId);
+
+    const hotelCategoryId =
+      Number.isFinite(parsedHotelCategoryId) && parsedHotelCategoryId > 0
+        ? Math.trunc(parsedHotelCategoryId)
+        : 0;
+
     return {
       hotel_id: this.persistedHotelId(option, selection.hotel_id),
       hotel_code: String(option.hotelCode || option.providerHotelCode || option.hotel_code || option.hotelId || selection.hotel_code || '').trim() || null,
-      hotel_category_id: Number(option.category || selection.hotel_category_id || 0),
+      hotel_category_id: hotelCategoryId,
       hotel_provider: option.provider || selection.hotel_provider || null,
       hotel_booking_mode: option.bookingMode || selection.hotel_booking_mode || 'LIVE_API',
       price_source: option.priceSource || selection.price_source || 'LIVE_API',
