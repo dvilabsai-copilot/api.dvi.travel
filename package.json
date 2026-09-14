@@ -13,6 +13,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts",
+    "calendar-events:import": "tsx scripts/import-calendar-events.ts",
     "seed:vehicle-agent": "tsx scripts/seed-vehicle-agent.ts",
     "seed:ooty-ghat": "tsx scripts/seed-ooty-ghat-geofence.ts",
     "seed:vendor:php": "node scripts/seed-vendor-from-php.js",
