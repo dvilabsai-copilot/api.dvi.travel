@@ -76,17 +76,17 @@ export class ItineraryActivityWorkflowService {
       const userId = 1;
 
  // Get activity details
-      const activity = await (tx as any).dvi_activity.findUnique({
-        where: { activity_id: data.activityId },
-        select: {
-          activity_duration: true,
-        },
-      });
+const activity = await (tx as any).dvi_activity.findUnique({
+  where: { activity_id: data.activityId },
+  select: {
+    activity_title: true,
+    activity_duration: true,
+  },
+});
 
-      if (!activity) {
-        throw new NotFoundException('Activity not found');
-      }
-
+if (!activity) {
+  throw new NotFoundException('Activity not found');
+}
  // Get current hotspot timing
       const routeHotspot = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
         where: {
@@ -167,14 +167,37 @@ const computedActivityAmount =
       }
 
  // Calculate end time based on duration
-      const durationMinutes = activity.activity_duration
-        ? this.timeToMinutes(activity.activity_duration)
- : 30; // Default 30 mins
+const durationMinutes = activity.activity_duration
+  ? this.timeToMinutes(activity.activity_duration)
+  : 30; // Default 30 mins
 
-      const activityEndTime = this.addMinutesToTime(activityStartTime, durationMinutes);
+const activityEndTime = this.addMinutesToTime(activityStartTime, durationMinutes);
 
- // Insert the activity
-      const result = await (tx as any).dvi_itinerary_route_activity_details.create({
+// Validate the actual activity timing against its configured active time slots.
+const timeSlots = await (tx as any).dvi_activity_time_slot_details.findMany({
+  where: {
+    activity_id: data.activityId,
+    deleted: 0,
+    status: 1,
+  },
+});
+
+const timingConflicts = this.checkActivityTimingConflicts(
+  activity,
+  timeSlots,
+  activityStartTime,
+  activityEndTime,
+);
+
+if (timingConflicts.length > 0) {
+  throw new BadRequestException({
+    message: 'Activity not available at this time',
+    conflicts: timingConflicts,
+  });
+}
+
+// Insert the activity
+const result = await (tx as any).dvi_itinerary_route_activity_details.create({
         data: {
           itinerary_plan_ID: data.planId,
           itinerary_route_ID: data.routeId,
