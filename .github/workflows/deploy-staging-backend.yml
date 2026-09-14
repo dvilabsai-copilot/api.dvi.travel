@@ -77,6 +77,8 @@ jobs:
             npx prisma validate
             echo "Synchronizing staging database schema with Prisma..."
             npx prisma db push --skip-generate
+            echo "Importing seeded calendar events..."
+            npm run calendar-events:import
             npm run build
 
             if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
