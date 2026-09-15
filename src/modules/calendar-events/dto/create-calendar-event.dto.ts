@@ -4,10 +4,10 @@ const STRICT_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TRAVEL_IMPACTS = ['UNSPECIFIED', 'LOW', 'MEDIUM', 'HIGH'] as const;
 
 export class CreateCalendarEventDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(150)
-  eventKey!: string;
+  eventKey?: string;
 
   @IsString()
   @IsNotEmpty()
