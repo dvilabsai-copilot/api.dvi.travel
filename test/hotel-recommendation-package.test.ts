@@ -662,6 +662,41 @@ test('live inventory wins automatic selection over exact-category offline invent
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
+test('VSR complete fare remains live when occupancy supplements are requested', () => {
+  const packages = service().generate({
+    routes: oneRoute('Kovalam'),
+    hotelsByRoute: new Map([[1, [
+      option('Live VSR Complete Fare', 4000, 'CP', {
+        provider: 'tbo',
+        category: '4-star',
+      }),
+      option('Offline Component Fare', 2500, 'CP', {
+        provider: 'offline',
+        category: '3-star',
+        bookingMode: 'MANUAL_APPROVAL',
+        requiresHotelApproval: true,
+        isBookable: false,
+        isLiveBookable: false,
+        extraBedRate: 200,
+        childWithBedRate: 150,
+        childWithoutBedRate: 100,
+      }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+    occupancy: {
+      extraBedCount: 1,
+      childWithBedCount: 1,
+      childWithoutBedCount: 1,
+    },
+  });
+
+  assert.equal(packages[0].hotels[0].hotelName, 'Live VSR Complete Fare');
+  assert.equal(packages[0].hotels[0].provider, 'tbo');
+  assert.equal(packages[0].hotels[0].selectedCategory, 4);
+  assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
+});
+
 test('selects a complete live Patio room across a continuous stay and rejects supplement-only Suite', () => {
   const patioRoom = (roomType: string, total: number, base: number) => option('THE PATIO', total, 'CP', {
     provider: 'axisrooms',
@@ -741,7 +776,7 @@ test('required supplement rates are part of recommendation eligibility', () => {
     routes: oneRoute('Munnar'),
     hotelsByRoute: new Map([[1, [
       option('Missing Supplements', 3000, 'CP', {
-        provider: 'tbo',
+        provider: 'axisrooms',
         category: '3-star',
         canonicalHotelId: 901,
       }),
