@@ -226,6 +226,13 @@ export class PlanEngineService {
       const childrenWithBed = room.children.filter(
         (child) => Number(child.child_bed_type ?? 0) === 2,
       ).length;
+      const bedsUsed = room.adults + childrenWithBed;
+
+      if (bedsUsed > 3) {
+        throw new BadRequestException(
+          `Room ${roomId} exceeds the maximum of 3 beds. This request uses ${bedsUsed} beds.`,
+        );
+      }
 
       if (room.children.length >= 2 && childrenWithBed < 1) {
         throw new BadRequestException(
