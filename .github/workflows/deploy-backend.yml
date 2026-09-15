@@ -82,6 +82,9 @@ jobs:
               exit 1
             fi
 
+            echo "Importing seeded calendar events..."
+            npm run calendar-events:import
+
             echo "Building app..."
             NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
