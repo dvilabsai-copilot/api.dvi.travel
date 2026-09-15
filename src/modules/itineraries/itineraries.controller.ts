@@ -646,9 +646,9 @@ private readonly itineraryAccessService: ItineraryAccessService,
  // Read the persisted snapshot; the fallback is also database-only and
  // exposes legacy selected rows for itineraries created before snapshots.
       const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : 1;
-      // An unfiltered page load is the edit/reload contract: it must rebuild
-      // the hotel panel from the complete persisted snapshot. Pagination is
-      // still used for explicit group/stay requests and load-more calls.
+      // An unfiltered page load is the edit/reload contract: return selected
+      // hotel rows and lightweight inventory metadata only. Pagination is
+      // used for explicit group/stay requests and load-more calls.
       const isCompleteSnapshotRead = !page && !groupType && !itineraryRouteId;
       const pageSizeNum = isCompleteSnapshotRead
         ? 0
@@ -670,7 +670,13 @@ private readonly itineraryAccessService: ItineraryAccessService,
  this.logger.log(` Total Duration: ${duration}ms`);
  this.logger.log('\n');
 
-      return result;
+      return isCompleteSnapshotRead
+        ? this.buildCompactHotelAvailabilityResponse(
+            { response: result, changeSummary: null },
+            null,
+            false,
+          ).hotelDetails
+        : result;
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -717,6 +723,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
     return this.buildCompactHotelAvailabilityResponse(
       { response: persisted, changeSummary: null },
       null,
+      false,
     ).hotelDetails;
   }
 
@@ -789,7 +796,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
       Number(req.user?.userId || 0),
       String(body?.previewId || '').trim() || undefined,
     );
-    const [hotelDetails, itinerary] = await Promise.all([
+    const [persistedHotelDetails, itinerary] = await Promise.all([
       this.hotelAvailabilitySnapshotService.readPersisted(
         quoteId,
         { page: 1, pageSize: 0 },
@@ -797,6 +804,11 @@ private readonly itineraryAccessService: ItineraryAccessService,
       ),
       this.detailsService.getItineraryDetails(quoteId, undefined, req.user?.role),
     ]);
+    const hotelDetails = this.buildCompactHotelAvailabilityResponse(
+      { response: persistedHotelDetails, changeSummary: null },
+      itinerary,
+      false,
+    ).hotelDetails;
     return {
       ...applied,
       hotelDetails,
@@ -889,11 +901,10 @@ private readonly itineraryAccessService: ItineraryAccessService,
       ...compactAvailability
     } = hotelAvailability || ({} as any);
 
-    // Keep the complete route/day inventory in reset and offline-availability
-    // responses. The compact response intentionally removes rate internals,
-    // but removing this list also removes the alternative hotels needed by
-    // HotelListTable's per-day hotel editor. The selected `hotels` rows alone
-    // are not sufficient because they contain only the current recommendation.
+    // Include the complete route/day inventory only for explicit inventory
+    // responses. Normal refresh and live-check responses return selected rows
+    // plus lightweight index/pagination metadata; the hotel pane loads the
+    // cached inventory page-by-page.
     const toCompactHotelRow = (row: any) => {
       const {
         roomTypes: _roomTypes,
@@ -972,7 +983,9 @@ private readonly itineraryAccessService: ItineraryAccessService,
       };
     };
 
-    const inventoryRows = Array.isArray(sharedHotelInventory) ? sharedHotelInventory : [];
+    const inventoryRows = includeInventory && Array.isArray(sharedHotelInventory)
+      ? sharedHotelInventory
+      : [];
     const normalizedHotelIdentity = (row: any): string => {
       const name = String(row?.hotelName || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
       return name || String(row?.hotelCode || row?.providerHotelCode || row?.hotelId || row?.canonicalHotelId || 'unknown')

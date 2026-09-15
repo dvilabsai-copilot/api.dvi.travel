@@ -99,6 +99,16 @@ test('initial compact response exposes per-route load-more metadata without inve
         hotels: [{ routeId: 11531, itineraryRouteId: 11531, groupType: 1, date: '2026-09-07', hotelName: 'Selected Hotel' }],
         hotelTabs: [],
         hotelSelectionState: [],
+        hotelIndex: [{
+          provider: 'tbo',
+          hotelCode: 'H-1',
+          hotelName: 'Hotel 1',
+          groupType: 1,
+          routeId: 11531,
+        }],
+        routePagination: {
+          '1-11531': { page: 0, pageSize: 20, total: 21, hasMore: true, groupType: 1 },
+        },
         hotelAvailability: {
           sharedHotelInventory: Array.from({ length: 21 }, (_, index) => ({
             routeId: 11531,
@@ -120,6 +130,40 @@ test('initial compact response exposes per-route load-more metadata without inve
     page: 0,
     pageSize: 20,
     total: 21,
+    hasMore: true,
+    groupType: 1,
+  });
+});
+
+test('persisted refresh alias returns selected rows without shared inventory by default', async () => {
+  const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  (controller as any).hotelAvailabilitySnapshotService = {
+    readPersisted: async () => ({
+      hotels: [{ hotelName: 'Selected hotel', routeId: 11531 }],
+      hotelTabs: [{ groupType: 1, totalAmount: 500 }],
+      hotelSelectionState: [{ groupType: 1, routes: [] }],
+      hotelIndex: [{ hotelName: 'Cached alternative', routeId: 11531, groupType: 1 }],
+      routePagination: {
+        '1-11531': { page: 0, pageSize: 20, total: 100, hasMore: true, groupType: 1 },
+      },
+      hotelAvailability: {
+        sharedHotelInventory: Array.from({ length: 100 }, (_, index) => ({
+          hotelName: `Cached hotel ${index + 1}`,
+          routeId: 11531,
+        })),
+      },
+    }),
+  };
+
+  const response = await controller.getPersistedItineraryHotelDetails('DVI-REFRESH');
+
+  assert.deepEqual(response.hotels, [{ hotelName: 'Selected hotel', routeId: 11531 }]);
+  assert.equal(response.hotelAvailability.sharedHotelInventory, undefined);
+  assert.deepEqual(response.hotelIndex, [{ hotelName: 'Cached alternative', routeId: 11531, groupType: 1 }]);
+  assert.deepEqual(response.routePagination['1-11531'], {
+    page: 0,
+    pageSize: 20,
+    total: 100,
     hasMore: true,
     groupType: 1,
   });

@@ -1224,6 +1224,12 @@ export class HotelRecommendationPackageService {
     candidate: HotelSearchResult,
     occupancy?: RecommendationPackageInput['occupancy'],
   ): string | null {
+    // VSR is the UI label for TBO. Both return one complete fare for the
+    // requested occupancy, so missing component fields must not reject an
+    // otherwise selectable live rate.
+    const provider = String(candidate.provider || '').trim().toLowerCase();
+    if (provider === 'tbo' || provider === 'vsr') return null;
+
     const required = [
       {
         count: Number(occupancy?.extraBedCount || 0),
