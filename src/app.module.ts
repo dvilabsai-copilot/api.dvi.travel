@@ -42,12 +42,13 @@ import { AxisRoomsModule } from './modules/axisrooms/axisrooms.module';
 import { StaahModule } from './modules/staah/staah.module';
 import { GraphqlV2Module } from './graphql-v2/graphql-v2.module';
 import { HotelAdminModule } from './modules/hotel-admin/hotel-admin.module';
+import { CalendarEventsModule } from './modules/calendar-events/calendar-events.module';
 
 @Module({
   imports: [PrismaModule, AuthModule, UsersModule,VendorsModule,AgentsModule,ItineraryViaRoutesModule,HotelsModule,DailyMomentTrackerModule, ItineraryDropdownsModule,
 ItinerariesModule,
 PublicItineraryLinksModule,
-AccountsManagerModule, AccountsLedgerModule, DriversModule, VehicleAvailabilityModule, HotspotsModule, HotspotDistanceCacheModule, ActivitiesModule, LocationsModule, GuidesModule, StaffModule, AgentModule, DashboardModule, GstSettingsModule,InbuiltAmenitiesModule, VehicleTypesModule, CitiesModule, ExportPricebookModule, IncidentalExpensesModule, PaymentsModule, LanguageModule, RolePermissionModule, AgentSubscriptionPlanModule, HotelCategoryModule, GlobalSettingsModule, AccountsExportModule, AxisRoomsModule, StaahModule, GraphqlV2Module, HotelAdminModule],
+AccountsManagerModule, AccountsLedgerModule, DriversModule, VehicleAvailabilityModule, HotspotsModule, HotspotDistanceCacheModule, ActivitiesModule, LocationsModule, GuidesModule, StaffModule, AgentModule, DashboardModule, GstSettingsModule,InbuiltAmenitiesModule, VehicleTypesModule, CitiesModule, ExportPricebookModule, IncidentalExpensesModule, PaymentsModule, LanguageModule, RolePermissionModule, AgentSubscriptionPlanModule, HotelCategoryModule, GlobalSettingsModule, AccountsExportModule, AxisRoomsModule, StaahModule, GraphqlV2Module, HotelAdminModule, CalendarEventsModule],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

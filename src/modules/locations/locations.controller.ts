@@ -69,20 +69,66 @@ export class LocationsController {
   }
 
   @Get('dropdowns')
-  @ApiOperation({ summary: 'Fetch dropdown options for Source/Destination' })
-  @ApiResponse({
-    status: 200,
-    schema: {
-      type: 'object',
-      properties: {
-        sources: { type: 'array', items: { type: 'string' } },
-        destinations: { type: 'array', items: { type: 'string' } },
+@ApiOperation({
+  summary:
+    'Fetch dropdown options for Source/Destination and optional city search',
+})
+@ApiQuery({
+  name: 'citySearch',
+  required: false,
+  type: String,
+})
+@ApiQuery({
+  name: 'countryId',
+  required: false,
+  type: Number,
+})
+@ApiQuery({
+  name: 'limit',
+  required: false,
+  type: Number,
+})
+@ApiResponse({
+  status: 200,
+  schema: {
+    type: 'object',
+    properties: {
+      sources: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+      destinations: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+      cities: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'number',
+            },
+            name: {
+              type: 'string',
+            },
+          },
+        },
       },
     },
-  })
-  dropdowns() {
-    return this.svc.dropdowns();
-  }
+  },
+})
+dropdowns(
+  @Query('citySearch') citySearch?: string,
+  @Query('countryId') countryId?: string,
+  @Query('limit') limit?: string,
+) {
+  return this.svc.dropdowns({
+    citySearch,
+    countryId,
+    limit,
+  });
+}
 
   @Get('between-hotspots/filters')
   @ApiOperation({ summary: 'Read-only valid filter options for between-hotspots screen' })

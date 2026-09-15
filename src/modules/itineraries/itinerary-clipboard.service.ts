@@ -372,16 +372,22 @@ export class ItineraryClipboardService {
                 hotel.__clipboardDayZero === true || hotel.previousDayBillingSynthetic === true;
               const dayNumber = this.getClipboardDayNumber(hotel, idx + 1);
               const dayDate = isDayZero ? hotel.hotelCheckInDate : hotel.date || hotel.day;
-              const hotelName = isDayZero
+                            const hotelName = isDayZero
                 ? `${String(hotel.hotelName || '--')} (Early check-in room block)`
                 : String(hotel.hotelName || '--');
-              const displayPrice = `${this.formatCurrency(baseDayAmount + addMargin)}${isDayZero ? ' (included in Day 1 total)' : ''}`;
+              const displayPrice = `${this.formatCurrency(baseDayAmount + addMargin)}${isDayZero ? ' (included in Day 1total)' : ''}`;
+
+              const rawHotelCategory = String(hotel.category ?? '').trim();
+              const hotelCategorySuffix =
+                rawHotelCategory && Number(rawHotelCategory) !== 0
+                  ? ` - ${this.escapeHtml(rawHotelCategory)}`
+                  : '';
 
               return `
                 <tr>
                   <td style="text-align:left; width:15%; border:1px solid #b1b1b1; padding:3px;">Day- ${dayNumber} | ${this.escapeHtml(this.formatDate(dayDate))}</td>
                   <td style="text-align:left; width:15%; border:1px solid #b1b1b1; padding:3px;">${this.escapeHtml(hotel.destination || '')}</td>
-                  <td style="text-align:left; width:15%; border:1px solid #b1b1b1; padding:3px;">${this.escapeHtml(hotelName)} - ${this.escapeHtml(hotel.category ?? '')}</td>
+                  <td style="text-align:left; width:15%; border:1px solid #b1b1b1; padding:3px;">${this.escapeHtml(hotelName)}${hotelCategorySuffix}</td>
                   <td style="text-align:left; width:15%; border:1px solid #b1b1b1; padding:3px;">${this.escapeHtml(hotel.roomType || '')} - ${roomCount || '-'}</td>
                   ${showRates ? `<td style="text-align:left; width:15%; border:1px solid #b1b1b1; padding:3px;"><b>${this.escapeHtml(displayPrice)}</b></td>` : ''}
                   <td style="text-align:left; width:15%; border:1px solid #b1b1b1; padding:3px;">${this.escapeHtml(hotel.mealPlan || 'EP')}</td>
