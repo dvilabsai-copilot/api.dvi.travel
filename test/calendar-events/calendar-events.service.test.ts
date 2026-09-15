@@ -41,3 +41,42 @@ test('prefers stored-location city IDs and does not broaden unresolved locations
   assert.deepEqual(result.unresolvedLocations, ['Unknown terminal']);
   assert.deepEqual(eventQuery.where.scopes.some.OR, [{ scope_type: 'NATIONAL', scope_ref_id: 101 }]);
 });
+
+test('generates a readable unique key when an admin omits the internal event key', async () => {
+  let createdData: any;
+  const prisma: any = {
+    dvi_countries: { findFirst: async () => ({ id: 101 }) },
+    dvi_calendar_events: {
+      findUnique: async () => null,
+      create: async (args: any) => {
+        createdData = args.data;
+        return { ...eventRow(), ...createdData, scopes: [] };
+      },
+    },
+  };
+  const result = await new CalendarEventsService(prisma).create({
+    title: 'Holi / Festival of Colours', eventType: 'FESTIVAL', eventStartDate: '2027-03-22', eventEndDate: '2027-03-22',
+    travelWindowStartDate: '2027-03-22', travelWindowEndDate: '2027-03-22', isPublicHoliday: true,
+  } as any, 7);
+  assert.equal(createdData.event_key, 'india-holi-festival-of-colours-2027');
+  assert.equal(result.eventKey, 'india-holi-festival-of-colours-2027');
+});
+
+test('adds a suffix when the generated holiday key is already in use', async () => {
+  let createdData: any;
+  const prisma: any = {
+    dvi_countries: { findFirst: async () => ({ id: 101 }) },
+    dvi_calendar_events: {
+      findUnique: async ({ where }: any) => where.event_key === 'india-holi-2027' ? eventRow() : null,
+      create: async (args: any) => {
+        createdData = args.data;
+        return { ...eventRow(), ...createdData, scopes: [] };
+      },
+    },
+  };
+  await new CalendarEventsService(prisma).create({
+    title: 'Holi', eventType: 'FESTIVAL', eventStartDate: '2027-03-22', eventEndDate: '2027-03-22',
+    travelWindowStartDate: '2027-03-22', travelWindowEndDate: '2027-03-22', isPublicHoliday: true,
+  } as any, 7);
+  assert.equal(createdData.event_key, 'india-holi-2027-2');
+});

@@ -28,6 +28,16 @@ function uniqueStrings(values: string[]): string[] {
   return Array.from(new Map(values.map((value) => [locationKey(value), value.trim()])).values());
 }
 
+function eventKeySlug(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'holiday';
+}
+
 @Injectable()
 export class CalendarEventsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -42,7 +52,9 @@ export class CalendarEventsService {
   }
 
   async create(dto: CreateCalendarEventDto, userId: number) {
-    const data = this.toCreateData(dto, userId);
+    const requestedEventKey = dto.eventKey?.trim();
+    const eventKey = requestedEventKey || await this.generateEventKey(dto.title, dto.eventStartDate);
+    const data = this.toCreateData(dto, userId, eventKey);
     const existing = await this.prisma.dvi_calendar_events.findUnique({ where: { event_key: data.event_key } });
     if (existing) throw new BadRequestException('A holiday with this event key already exists.');
 
@@ -52,15 +64,22 @@ export class CalendarEventsService {
     });
     if (!india) throw new BadRequestException('India country master data is required for a new holiday.');
 
-    const row = await this.prisma.dvi_calendar_events.create({
-      data: {
-        ...data,
-        createdby: userId,
-        scopes: { create: [{ scope_type: 'NATIONAL', scope_ref_id: india.id }] },
-      },
-      include: { scopes: { where: { deleted: 0 } } },
-    });
-    return this.toAdminRow(row);
+    try {
+      const row = await this.prisma.dvi_calendar_events.create({
+        data: {
+          ...data,
+          createdby: userId,
+          scopes: { create: [{ scope_type: 'NATIONAL', scope_ref_id: india.id }] },
+        },
+        include: { scopes: { where: { deleted: 0 } } },
+      });
+      return this.toAdminRow(row);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new BadRequestException('A holiday with these details already exists.');
+      }
+      throw error;
+    }
   }
 
   async update(id: number, dto: UpdateCalendarEventDto) {
@@ -102,14 +121,27 @@ export class CalendarEventsService {
     await this.prisma.dvi_calendar_events.update({ where: { calendar_event_id: id }, data: { deleted: 1, status: 0 } });
   }
 
-  private toCreateData(dto: CreateCalendarEventDto, userId: number): Prisma.dvi_calendar_eventsCreateInput {
+  private async generateEventKey(title: string, eventStartDate: string): Promise<string> {
+    const year = eventStartDate.slice(0, 4);
+    const base = `india-${eventKeySlug(title)}-${year}`.slice(0, 150);
+    let candidate = base;
+    let suffix = 2;
+    while (await this.prisma.dvi_calendar_events.findUnique({ where: { event_key: candidate } })) {
+      const suffixText = `-${suffix}`;
+      candidate = `${base.slice(0, 150 - suffixText.length)}${suffixText}`;
+      suffix += 1;
+    }
+    return candidate;
+  }
+
+  private toCreateData(dto: CreateCalendarEventDto, userId: number, eventKey: string): Prisma.dvi_calendar_eventsCreateInput {
     const eventStart = parseDateOnly(dto.eventStartDate, 'eventStartDate');
     const eventEnd = parseDateOnly(dto.eventEndDate, 'eventEndDate');
     const windowStart = parseDateOnly(dto.travelWindowStartDate, 'travelWindowStartDate');
     const windowEnd = parseDateOnly(dto.travelWindowEndDate, 'travelWindowEndDate');
     this.validateEventRanges(eventStart, eventEnd, windowStart, windowEnd);
     return {
-      event_key: dto.eventKey.trim(), title: dto.title.trim(), short_title: dto.shortTitle?.trim() || null,
+      event_key: eventKey, title: dto.title.trim(), short_title: dto.shortTitle?.trim() || null,
       event_type: dto.eventType.trim(), event_start_date: eventStart, event_end_date: eventEnd,
       travel_window_start_date: windowStart, travel_window_end_date: windowEnd,
       is_public_holiday: dto.isPublicHoliday ? 1 : 0, travel_impact: dto.travelImpact || 'UNSPECIFIED',
