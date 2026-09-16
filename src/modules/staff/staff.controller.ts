@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   ParseIntPipe,
@@ -63,8 +64,13 @@ export class StaffController {
   }
 
   // STATIC ROUTE MUST COME BEFORE :id 
-  @Get('roles') 
-  async listRoleOptions() { 
+  @UseGuards(JwtAuthGuard)
+  @Get('roles')
+  async listRoleOptions(@Req() req: any) {
+    if (Number(req.user?.role ?? req.user?.roleID ?? 0) !== 1) {
+      throw new ForbiddenException('Only Super Admin can choose staff roles');
+    }
+
     return this.staffService.listRoleOptions(); 
   }
 
@@ -109,10 +115,11 @@ export class StaffController {
   @Post()
   async create(@Req() req: any, @Body() body: any) {
     const user = req.user;
+    const userRole = Number(user.role ?? user.roleID ?? 0);
     let finalAgentId = Number(body.agentId ?? 0);
 
  // Role 4 is Agent
-    if (user.role === 4) {
+    if (userRole === 4) {
       finalAgentId = Number(user.agentId);
     }
 
@@ -121,7 +128,7 @@ export class StaffController {
       staffName: body.staffName,
       staffMobile: body.staffMobile,
       staffEmail: body.staffEmail,
-      roleId: Number(body.roleId ?? 0),
+      roleId: userRole === 4 ? 4 : Number(body.roleId ?? 0),
       status: Number(body.status ?? 1),
       loginEmail: body.loginEmail,
       password: body.password,
