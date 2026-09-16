@@ -9,6 +9,7 @@ import { VerifyEmailLoginOtpDto } from './dto/verify-email-login-otp.dto';
 import { SendRegistrationEmailOtpDto } from './dto/send-registration-email-otp.dto';
 import { VerifyRegistrationEmailOtpDto } from './dto/verify-registration-email-otp.dto';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
+import { ActivatePartnerDto } from './dto/activate-partner.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -54,11 +55,58 @@ sendEmailLoginOtp(@Body() body: SendEmailLoginOtpDto) {
     return this.auth.verifyRegistrationEmailOtp(body.email, body.otp);
   }
 
-  @ApiOperation({ summary: 'Submit a verified new travel partner registration' })
-  @ApiBody({ type: RegisterPartnerDto })
+  @ApiOperation({
+    summary:
+      'Submit a verified new travel partner registration',
+  })
+  @ApiBody({
+    type: RegisterPartnerDto,
+  })
   @Public()
   @Post('registration')
-  registerPartner(@Body() body: RegisterPartnerDto) {
-    return this.auth.registerPartner(body);
+  registerPartner(
+    @Body() body: RegisterPartnerDto,
+  ) {
+    return this.auth.registerPartner(
+      body,
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      'Activate a registered partner and receive JWT',
+  })
+  @ApiBody({
+    type: ActivatePartnerDto,
+  })
+  @Public()
+  @Post('registration/activate')
+  activatePartner(
+    @Body() body: ActivatePartnerDto,
+  ) {
+    return this.auth.activatePartner(
+      body.token,
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      'Resend partner account activation email',
+  })
+  @ApiBody({
+    type: SendRegistrationEmailOtpDto,
+  })
+  @Public()
+  @Post(
+    'registration/resend-activation',
+  )
+  resendPartnerActivation(
+    @Body()
+    body: SendRegistrationEmailOtpDto,
+  ) {
+    return this.auth
+      .resendPartnerActivation(
+        body.email,
+      );
   }
 }

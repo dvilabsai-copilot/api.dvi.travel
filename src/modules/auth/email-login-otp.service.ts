@@ -204,8 +204,170 @@ export class EmailLoginOtpService {
       throw new UnauthorizedException('Invalid OTP.');
     }
 
-    await this.deleteOtpRecord(normalizedEmail, purpose);
+        await this.deleteOtpRecord(normalizedEmail, purpose);
     return true;
+  }
+
+  private escapeHtml(value: unknown) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  async sendPartnerActivationMail(
+    email: string,
+    activationUrl: string,
+    companyName?: string | null,
+    validForHours = 24,
+  ) {
+    const host =
+      process.env.SMTP_HOST ||
+      process.env.MAIL_HOST;
+
+    const port = Number(
+      process.env.SMTP_PORT ||
+        process.env.MAIL_PORT ||
+        587,
+    );
+
+    const secure =
+      String(
+        process.env.SMTP_SECURE ||
+          'false',
+      ) === 'true';
+
+    const user =
+      process.env.SMTP_USER ||
+      process.env.MAIL_USER;
+
+    const pass =
+      process.env.SMTP_PASS ||
+      process.env.MAIL_PASS;
+
+    const fromAddress =
+      process.env.SMTP_FROM ||
+      process.env.MAIL_FROM ||
+      user ||
+      'no-reply@dviholidays.com';
+
+    const fromName =
+      process.env.SMTP_FROM_NAME ||
+      process.env.MAIL_FROM_NAME ||
+      '';
+
+    const from = fromName.trim()
+      ? {
+          name: fromName.trim(),
+          address: fromAddress,
+        }
+      : fromAddress;
+
+    if (!host) {
+      if (
+        process.env.NODE_ENV !==
+        'production'
+      ) {
+        this.logger.warn(
+          `SMTP is not configured. DEV activation link for ${email}: ${activationUrl}`,
+        );
+        return;
+      }
+
+      throw new BadRequestException(
+        'Email service is not configured.',
+      );
+    }
+
+    const transporter =
+      nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth:
+          user && pass
+            ? {
+                user,
+                pass,
+              }
+            : undefined,
+      });
+
+    const safeCompanyName =
+      this.escapeHtml(
+        companyName ||
+          'Travel Partner',
+      );
+
+    const safeActivationUrl =
+      this.escapeHtml(
+        activationUrl,
+      );
+
+    await transporter.sendMail({
+      from,
+      to: email,
+      subject:
+        'Welcome to DVI Holidays - Activate Your Partner Account',
+      text: [
+        `Hello ${
+          companyName ||
+          'Travel Partner'
+        },`,
+        '',
+        'Your DVI Holidays partner account has been created successfully.',
+        'Activate your account using the link below:',
+        activationUrl,
+        '',
+        `This link is valid for ${validForHours} hours and can be used only once.`,
+      ].join('\n'),
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #11143f;">
+          <h2 style="color: #4424ff;">
+            Welcome to DVI Holidays
+          </h2>
+
+          <p>
+            Hello ${safeCompanyName},
+          </p>
+
+          <p>
+            Your DVI Holidays partner account has been created successfully.
+          </p>
+
+          <p>
+            Please activate your account to continue to your Agent Dashboard.
+          </p>
+
+          <p style="margin: 28px 0;">
+            <a
+              href="${safeActivationUrl}"
+              style="
+                display: inline-block;
+                padding: 12px 22px;
+                border-radius: 8px;
+                background: #4424ff;
+                color: #ffffff;
+                text-decoration: none;
+                font-weight: 700;
+              "
+            >
+              Activate Account
+            </a>
+          </p>
+
+          <p>
+            This activation link is valid for ${validForHours} hours and can be used only once.
+          </p>
+
+          <p>
+            If you did not create this account, please ignore this email.
+          </p>
+        </div>
+      `,
+    });
   }
 
   private async sendOtpMail(
