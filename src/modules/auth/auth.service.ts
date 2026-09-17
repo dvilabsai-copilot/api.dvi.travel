@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -12,17 +13,21 @@ import {
   verifyLegacyPhpPassword,
 } from '../../common/utils/password-migration.util';
 import { EmailLoginOtpService } from './email-login-otp.service';
+import { PartnerActivationService } from './partner-activation.service';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { SystemRole } from './constants/system-role.constants';
-
 const BCRYPT_ROUNDS = 10;
 
 @Injectable()
 export class AuthService {
+  private readonly logger =
+    new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly emailLoginOtp: EmailLoginOtpService,
+    private readonly partnerActivation: PartnerActivationService,
   ) {}
 
   private normalizeEmail(email: string) {
@@ -269,15 +274,162 @@ export class AuthService {
         },
       });
 
-      return { agentId: agent.agent_ID, userId: user.userID };
+           return {
+        agentId: agent.agent_ID,
+        userId: user.userID,
+      };
     });
+
+    let activationEmailSent = false;
+
+    try {
+      await this.partnerActivation
+        .createAndSendActivationLink({
+          userId: result.userId,
+          agentId: result.agentId,
+          email: normalizedEmail,
+          companyName,
+        });
+
+      activationEmailSent = true;
+    } catch (error: any) {
+      this.logger.error(
+        `Partner activation email could not be sent for agent ${result.agentId}: ${
+          error?.message || error
+        }`,
+      );
+    }
 
     return {
       ok: true,
-      status: 'pending_approval',
+      status: 'pending_activation',
       agentId: result.agentId,
-      message: 'Your partner registration was submitted and is pending approval.',
+      activationEmailSent,
+      message: activationEmailSent
+        ? 'Registration successful. An activation link has been sent to your registered email address.'
+        : 'Registration was created, but the activation email could not be sent. Please request a new activation email.',
     };
+  }
+
+  async resendPartnerActivation(
+    email: string,
+  ) {
+    const normalizedEmail =
+      this.normalizeEmail(email);
+
+    const user =
+      await this.findActiveUserByEmail(
+        normalizedEmail,
+      );
+
+    if (
+      !user ||
+      Number(user.roleID || 0) !==
+        SystemRole.AGENT ||
+      Number(user.agent_id || 0) <= 0
+    ) {
+      throw new UnauthorizedException(
+        'No pending partner registration was found for this email.',
+      );
+    }
+
+    if (
+      Number(user.status || 0) === 0 ||
+      Number(
+        user.userbanned || 0,
+      ) === 1
+    ) {
+      throw new UnauthorizedException(
+        'This account is inactive. Please contact support.',
+      );
+    }
+
+    if (
+      Number(
+        user.userapproved || 0,
+      ) === 1
+    ) {
+      throw new ConflictException(
+        'This partner account is already active. Please sign in instead.',
+      );
+    }
+
+    const agentId =
+      Number(user.agent_id);
+
+    const agent =
+      await this.prisma
+        .dvi_agent
+        .findFirst({
+          where: {
+            agent_ID: agentId,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            agent_name: true,
+            agent_email_id: true,
+          },
+        });
+
+    if (
+      !agent ||
+      this.normalizeEmail(
+        agent.agent_email_id ||
+          '',
+      ) !== normalizedEmail
+    ) {
+      throw new UnauthorizedException(
+        'No pending partner registration was found for this email.',
+      );
+    }
+
+    await this.partnerActivation
+      .createAndSendActivationLink({
+        userId: user.userID,
+        agentId,
+        email: normalizedEmail,
+        companyName:
+          agent.agent_name ||
+          user.username ||
+          null,
+      });
+
+    return {
+      message:
+        'A new activation link has been sent to your registered email address.',
+    };
+  }
+
+  async activatePartner(
+    token: string,
+  ) {
+    const userId =
+      await this.partnerActivation
+        .activatePartnerToken(
+          token,
+        );
+
+    const user =
+      await this.prisma
+        .dvi_users
+        .findUnique({
+          where: {
+            userID: userId,
+          },
+        });
+
+    if (!user) {
+      throw new UnauthorizedException(
+        'This partner account is no longer available.',
+      );
+    }
+
+    this.assertLoginAllowed(user);
+
+    return this.buildLoginResponse(
+      user,
+    );
   }
 
   private normalizeAccessKey(value: unknown) {
