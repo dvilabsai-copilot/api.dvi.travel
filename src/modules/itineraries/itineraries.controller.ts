@@ -1012,6 +1012,8 @@ private readonly itineraryAccessService: ItineraryAccessService,
           const key = [provider, normalizedHotelIdentity(row), groupType, routeId].join('|');
           return [key, {
             provider,
+            providerDisplayName: row?.providerDisplayName,
+            isPriority: Boolean(row?.isPriority) || Boolean(row?.rateOptions?.some?.((option: any) => option?.isPriority)),
             hotelId: row?.hotelId ?? row?.canonicalHotelId,
             hotelCode: hotelCode || undefined,
             hotelName,
