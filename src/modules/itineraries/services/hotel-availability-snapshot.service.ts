@@ -2898,7 +2898,11 @@ export class HotelAvailabilitySnapshotService {
     };
     const scopeKeyOf = (row: any): string => {
       const routeId = routeIdsOf(row)[0] || 0;
-      return `${groupTypeOf(row)}-${routeId}`;
+      // Shared inventory is group-neutral. A persisted page can therefore
+      // contain group-zero rows alongside the requested recommendation group;
+      // keeping groupType in this key would split one visible route into two
+      // independently sorted blocks and allow live rows after offline rows.
+      return String(routeId);
     };
 
     // Keep route/group blocks in their original order, but normalize each
