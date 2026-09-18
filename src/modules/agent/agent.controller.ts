@@ -1,27 +1,98 @@
 // FILE: src/modules/agent/agent.controller.ts
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
   Put,
   Query,
-  UseGuards,
   Req,
   UnauthorizedException,
-  HttpCode,
-  HttpStatus,
+  UploadedFiles,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+
+import {
+  FileFieldsInterceptor,
+} from '@nestjs/platform-express';
+
+import { diskStorage } from 'multer';
+import * as fs from 'fs';
+import * as path from 'path';
+import { randomBytes } from 'crypto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AgentService } from './agent.service';
 import { ListAgentQueryDto } from './dto/list-agent.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 import { UpdateAgentConfigDto } from './dto/update-agent-config.dto';
+import { UpdateAgentSelfProfileDto } from './dto/update-agent-self-profile.dto';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+
+function agentGalleryStorage() {
+  return diskStorage({
+    destination: (_req, _file, callback) => {
+      const directory = path.join(
+        process.cwd(),
+        'public',
+        'uploads',
+        'agent_gallery',
+      );
+
+      fs.mkdirSync(directory, {
+        recursive: true,
+      });
+
+      callback(null, directory);
+    },
+
+    filename: (_req, file, callback) => {
+      const extension =
+        path.extname(
+          file.originalname,
+        ).toLowerCase();
+
+      const filename =
+        `${Date.now()}-${randomBytes(6).toString('hex')}${extension}`;
+
+      callback(null, filename);
+    },
+  });
+}
+
+function agentImageFilter(
+  _req: any,
+  file: Express.Multer.File,
+  callback: any,
+) {
+  const allowedMimeTypes = [
+    'image/jpeg',
+    'image/png',
+  ];
+
+  if (
+    !allowedMimeTypes.includes(
+      file.mimetype,
+    )
+  ) {
+    return callback(
+      new BadRequestException(
+        'Only JPG, JPEG and PNG images are allowed',
+      ),
+      false,
+    );
+  }
+
+  callback(null, true);
+}
 
 @ApiTags('agents')
 @ApiBearerAuth()
@@ -35,7 +106,7 @@ getProfile(@Req() req: any) {
   const user = req.user;
 
   // Role 4 is Agent
-  if (user.role === 4) {
+  if (Number(user.role) === 4) {
     return this.service.getProfile(
       Number(user.agentId),
     );
@@ -43,6 +114,66 @@ getProfile(@Req() req: any) {
 
   throw new UnauthorizedException(
     'Only agents can access this profile',
+  );
+}
+
+@UseGuards(JwtAuthGuard)
+@Put('profile')
+@UseInterceptors(
+  FileFieldsInterceptor(
+    [
+      {
+        name: 'siteLogo',
+        maxCount: 1,
+      },
+      {
+        name: 'invoiceLogo',
+        maxCount: 1,
+      },
+    ],
+    {
+      storage: agentGalleryStorage(),
+      fileFilter: agentImageFilter,
+      limits: {
+        fileSize:
+          5 * 1024 * 1024,
+      },
+    },
+  ),
+)
+updateOwnProfile(
+  @Req() req: any,
+  @Body()
+  body: UpdateAgentSelfProfileDto,
+  @UploadedFiles()
+  files: {
+    siteLogo?: Express.Multer.File[];
+    invoiceLogo?: Express.Multer.File[];
+  },
+) {
+  const user = req.user;
+
+  if (
+    Number(user.role) !== 4 ||
+    !Number(user.agentId)
+  ) {
+    throw new ForbiddenException(
+      'Only agents can update their own profile',
+    );
+  }
+
+  return this.service.updateSelfProfile(
+    Number(user.agentId),
+    body,
+    {
+      siteLogo:
+        files?.siteLogo?.[0]
+          ?.filename ?? null,
+
+      invoiceLogo:
+        files?.invoiceLogo?.[0]
+          ?.filename ?? null,
+    },
   );
 }
 
@@ -73,9 +204,33 @@ getProfile(@Req() req: any) {
     return this.service.list(query);
   }
 
- /** Preview / read one */
-  @Get(':id')
-  preview(@Param('id', ParseIntPipe) id: number) {
+ @UseGuards(JwtAuthGuard)
+@Get('travel-experts')
+async listTravelExperts(
+  @Req() req: any,
+) {
+  const role = Number(
+    req.user?.roleID ??
+      req.user?.role ??
+      0,
+  );
+
+  if (role !== 1) {
+    throw new ForbiddenException(
+      'Only Admin can assign Travel Experts',
+    );
+  }
+
+  return this.service
+    .listTravelExperts();
+}
+
+/** Preview / read one */
+@Get(':id')
+preview(
+  @Param('id', ParseIntPipe)
+  id: number,
+) {
     return this.service.getById(id);
   }
 
@@ -147,11 +302,69 @@ create(@Body() body: CreateAgentDto) {
   return this.service.create(body);
 }
 
- /** Update */
-  @Put(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateAgentDto) {
-    return this.service.update(id, body);
+ @UseGuards(JwtAuthGuard)
+@Put(':id/travel-expert')
+assignTravelExpert(
+  @Req() req: any,
+  @Param(
+    'id',
+    ParseIntPipe,
+  )
+  id: number,
+  @Body()
+  body: {
+    travelExpertId: number;
+  },
+) {
+  const role = Number(
+    req.user?.roleID ??
+      req.user?.role ??
+      0,
+  );
+
+  if (role !== 1) {
+    throw new ForbiddenException(
+      'Only Admin can assign Travel Experts',
+    );
   }
+
+  const travelExpertId =
+    Number(
+      body.travelExpertId ??
+        0,
+    );
+
+  if (
+    !Number.isFinite(
+      travelExpertId,
+    ) ||
+    travelExpertId < 0
+  ) {
+    throw new BadRequestException(
+      'Invalid Travel Expert',
+    );
+  }
+
+  return this.service
+    .assignTravelExpert(
+      id,
+      travelExpertId,
+    );
+}
+
+/** Update */
+@Put(':id')
+update(
+  @Param('id', ParseIntPipe)
+  id: number,
+  @Body()
+  body: UpdateAgentDto,
+) {
+  return this.service.update(
+    id,
+    body,
+  );
+}
 
  /** Soft delete */
   @Delete(':id')
