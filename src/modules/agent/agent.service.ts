@@ -541,7 +541,49 @@ export class AgentService {
       travel_expert_label: null,
     };
 
-    return dto;
+        return dto;
+  }
+
+  async getProfile(
+    id: number,
+  ): Promise<
+    AgentPreviewDto & {
+      travel_expert_mobile: string | null;
+    }
+  > {
+    const profile = await this.getById(id);
+
+    const travelExpertId = Number(
+      profile.travel_expert_id || 0,
+    );
+
+    if (!travelExpertId) {
+      return {
+        ...profile,
+        travel_expert_label: null,
+        travel_expert_mobile: null,
+      };
+    }
+
+    const travelExpert =
+      await this.prisma.dvi_staff_details.findFirst({
+        where: {
+          staff_id: travelExpertId,
+          deleted: 0,
+        },
+        select: {
+          staff_name: true,
+          staff_mobile: true,
+        },
+      });
+
+    return {
+      ...profile,
+      travel_expert_label:
+        travelExpert?.staff_name?.trim() || null,
+      travel_expert_mobile:
+        travelExpert?.staff_mobile?.trim() || null,
+    };
   }
 
   async getEditPrefill(id: number) {

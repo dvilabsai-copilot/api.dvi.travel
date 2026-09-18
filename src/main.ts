@@ -109,7 +109,14 @@ async function bootstrap() {
   } catch {
  // no-op
   }
-  app.use('/uploads', express.static(uploadsRoot));
+  app.use(
+    '/uploads',
+    express.static(uploadsRoot, {
+      setHeaders: (response) => {
+        response.setHeader('Access-Control-Allow-Origin', '*');
+      },
+    }),
+  );
 
  // Keep existing REST prefix while allowing GraphQL v2 to live at /api/v2/graphql.
   app.setGlobalPrefix('api/v1', {
