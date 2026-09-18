@@ -93,6 +93,7 @@ export interface ItineraryHotelRowDto {
   provider?: string;
   providerDisplayName?: string;
   providerHotelCode?: string;
+  isPriority?: boolean;
   rateOptionId?: string;
   rateOptions?: Array<Record<string, unknown>>;
   bookingMode?: 'LIVE_API' | 'MANUAL_APPROVAL';
@@ -238,6 +239,7 @@ export interface HotelAvailabilityMetaDto {
   sharedHotelInventory?: ItineraryHotelRowDto[];
   /** Internal authoritative group candidates used by reset reconciliation. */
   authoritativeRecommendationRows?: any[];
+  vsrHotelCardLimit?: number;
   hasSupplierHotels: boolean;
   supplierHotelCount: number;
   placeholderRowCount: number;
