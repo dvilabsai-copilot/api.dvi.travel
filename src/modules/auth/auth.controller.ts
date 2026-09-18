@@ -1,5 +1,11 @@
 // FILE: src/modules/auth/auth.controller.ts
-import { Body, Controller, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { Public } from '../../auth/public.decorator';
@@ -100,7 +106,7 @@ sendEmailLoginOtp(@Body() body: SendEmailLoginOtpDto) {
   @Post(
     'registration/resend-activation',
   )
-  resendPartnerActivation(
+   resendPartnerActivation(
     @Body()
     body: SendRegistrationEmailOtpDto,
   ) {
@@ -108,5 +114,39 @@ sendEmailLoginOtp(@Body() body: SendEmailLoginOtpDto) {
       .resendPartnerActivation(
         body.email,
       );
+  }
+
+  @ApiOperation({
+    summary:
+      'Change password for the authenticated Agent',
+  })
+  @Post('change-password')
+  changePassword(
+    @Req() req: any,
+    @Body()
+    body: {
+      currentPassword: string;
+      newPassword: string;
+      confirmPassword: string;
+    },
+  ) {
+    const role = Number(
+      req.user?.roleID ??
+        req.user?.role ??
+        0,
+    );
+
+    if (role !== 4) {
+      throw new ForbiddenException(
+        'Only agents can change their password here',
+      );
+    }
+
+    return this.auth.changePassword(
+      req.user.userId,
+      body.currentPassword,
+      body.newPassword,
+      body.confirmPassword,
+    );
   }
 }

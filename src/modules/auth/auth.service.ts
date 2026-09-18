@@ -134,8 +134,125 @@ export class AuthService {
     return user;
   }
 
+   async changePassword(
+    userId: string | number,
+    currentPassword: string,
+    newPassword: string,
+    confirmPassword: string,
+  ) {
+    if (
+      !currentPassword ||
+      !newPassword ||
+      !confirmPassword
+    ) {
+      throw new BadRequestException(
+        'All password fields are required',
+      );
+    }
+
+    if (newPassword.length < 6) {
+      throw new BadRequestException(
+        'New password must be at least 6 characters',
+      );
+    }
+
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException(
+        'New password and confirm password do not match',
+      );
+    }
+
+    if (currentPassword === newPassword) {
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
+    }
+
+    let resolvedUserId: bigint;
+
+    try {
+      resolvedUserId =
+        BigInt(userId);
+    } catch {
+      throw new BadRequestException(
+        'Invalid user account',
+      );
+    }
+
+    const user =
+      await this.prisma.dvi_users.findFirst({
+        where: {
+          userID: resolvedUserId,
+          deleted: 0,
+        },
+      });
+
+    if (!user) {
+      throw new BadRequestException(
+        'User account not found',
+      );
+    }
+
+    const storedHash =
+      user.password ?? '';
+
+    let currentPasswordMatches = false;
+
+    if (
+      isBcryptPasswordHash(storedHash)
+    ) {
+      try {
+        currentPasswordMatches =
+          await bcrypt.compare(
+            currentPassword,
+            storedHash,
+          );
+      } catch {
+        currentPasswordMatches = false;
+      }
+    } else {
+      currentPasswordMatches =
+        verifyLegacyPhpPassword(
+          currentPassword,
+          storedHash,
+        );
+    }
+
+    if (!currentPasswordMatches) {
+      throw new BadRequestException(
+        'Current password is incorrect',
+      );
+    }
+
+    const passwordHash =
+      await bcrypt.hash(
+        newPassword,
+        BCRYPT_ROUNDS,
+      );
+
+    await this.prisma.dvi_users.update({
+      where: {
+        userID: resolvedUserId,
+      },
+      data: {
+        password: passwordHash,
+        updatedon: new Date(),
+      },
+    });
+
+    return {
+      message:
+        'Password changed successfully',
+    };
+  }
+
   async login(email: string, password: string) {
-    const user = await this.validateUser(email, password);
+    const user =
+      await this.validateUser(
+        email,
+        password,
+      );
+
     return this.buildLoginResponse(user);
   }
 
