@@ -29,16 +29,22 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 export class AgentController {
   constructor(private readonly service: AgentService) {}
 
-  @UseGuards(JwtAuthGuard)
-  @Get('profile')
-  getProfile(@Req() req: any) {
-    const user = req.user;
- // Role 4 is Agent
-    if (user.role === 4) {
-      return this.service.getById(Number(user.agentId));
-    }
-    throw new UnauthorizedException('Only agents can access this profile');
+@UseGuards(JwtAuthGuard)
+@Get('profile')
+getProfile(@Req() req: any) {
+  const user = req.user;
+
+  // Role 4 is Agent
+  if (user.role === 4) {
+    return this.service.getProfile(
+      Number(user.agentId),
+    );
   }
+
+  throw new UnauthorizedException(
+    'Only agents can access this profile',
+  );
+}
 
  /**
    * Lightweight list: [{ id, name }]
