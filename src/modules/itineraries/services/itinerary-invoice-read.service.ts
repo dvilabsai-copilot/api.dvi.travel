@@ -235,13 +235,44 @@ export class ItineraryInvoiceReadService {
       const buyerGst = String(agentConfig?.invoice_gstin_no || '');
       const isSameState = companyGst.slice(0, 2) === buyerGst.slice(0, 2);
       const gstLabel = isSameState ? 'CGST, SGST' : 'IGST';
-      const couponDiscount = Number(plan.itinerary_total_coupon_discount_amount || 0);
-      const totalAmount = Number(
-        accounts?.total_billed_amount ||
-          plan.itinerary_total_net_payable_amount ||
-          hotelBaseAmount + hotelMarginAmount + hotelMarginTaxAmount + vehicleMarginAmount + vehicleTaxAmount + serviceBaseAmount + serviceTaxAmount - couponDiscount,
-      );
+const couponDiscount =
+  Number(
+    plan.itinerary_total_coupon_discount_amount ||
+      0,
+  );
 
+const agentInvoiceLogo =
+  String(
+    agentConfig?.invoice_logo ||
+      '',
+  ).trim();
+
+const globalCompanyLogo =
+  String(
+    settings?.company_logo ||
+      '',
+  ).trim();
+
+const invoiceLogoUrl =
+  agentInvoiceLogo
+    ? `/uploads/agent_gallery/${agentInvoiceLogo}`
+    : globalCompanyLogo
+      ? `/uploads/logo/${globalCompanyLogo}`
+      : '';
+
+const totalAmount =
+  Number(
+    accounts?.total_billed_amount ||
+      plan.itinerary_total_net_payable_amount ||
+      hotelBaseAmount +
+        hotelMarginAmount +
+        hotelMarginTaxAmount +
+        vehicleMarginAmount +
+        vehicleTaxAmount +
+        serviceBaseAmount +
+        serviceTaxAmount -
+        couponDiscount,
+  );
       return {
         meta: {
           invoiceNo: String(plan.itinerary_quote_ID || ''),
@@ -261,7 +292,8 @@ export class ItineraryInvoiceReadService {
           cin: String(settings?.company_cin || ''),
           email: String(settings?.company_email_id || ''),
           contactNo: String(settings?.company_contact_no || ''),
-          logoUrl: settings?.company_logo ? `/uploads/logo/${String(settings.company_logo)}` : '',
+logoUrl:
+  invoiceLogoUrl,
           bank: {
             accountName: String(settings?.bank_acc_holder_name || ''),
             accountNo: String(settings?.bank_acc_no || ''),
