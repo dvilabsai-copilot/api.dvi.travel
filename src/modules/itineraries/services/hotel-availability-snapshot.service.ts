@@ -2784,10 +2784,11 @@ export class HotelAvailabilitySnapshotService {
   }
 
   /**
-   * Limit VSR by unique property card per route/group. Priority properties
-   * are admitted first, then low-priority properties fill the remaining
-   * capacity. Filtering the original rows preserves the provider ranking;
-   * the ranking contract places the retained buckets in their final order.
+   * Limit VSR by unique property card per route/group and apply the final
+   * inventory ordering contract. Priority properties are admitted first,
+   * then low-priority properties fill the remaining capacity. The completed
+   * inventory contains providers that are appended in separate fetches, so
+   * filtering alone cannot preserve the required live/VSR/offline buckets.
    */
   private async limitVsrHotelCards(rows: any[], limit: number): Promise<any[]> {
     if (!Array.isArray(rows) || rows.length === 0) return rows || [];
@@ -2870,13 +2871,54 @@ export class HotelAvailabilitySnapshotService {
       allowedByScope.set(scopeKey, new Set(selected.map(propertyKey)));
     });
 
-    return rows.filter((row) => {
+    const retained = rows.filter((row) => {
       if (!isVsr(row)) return true;
       const routeIds = routeIdsOf(row);
       const scopes = (routeIds.length > 0 ? routeIds : [0])
         .map((routeId) => `${groupTypeOf(row)}-${routeId}`);
       return scopes.some((scope) => allowedByScope.get(scope)?.has(propertyKey(row)));
     });
+
+    const amountOf = (row: any): number => {
+      const amount = Number(
+        row?.totalHotelCost ??
+        row?.totalStayPrice ??
+        row?.totalPrice ??
+        row?.totalAmount ??
+        row?.price ??
+        row?.pricePerNight,
+      );
+      return Number.isFinite(amount) ? amount : Number.MAX_SAFE_INTEGER;
+    };
+    const bucketOf = (row: any): number => {
+      const provider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+      if (provider === 'offline') return 2;
+      if (isVsr(row)) return isPriority(row) ? 0 : 1;
+      return 0;
+    };
+    const scopeKeyOf = (row: any): string => {
+      const routeId = routeIdsOf(row)[0] || 0;
+      return `${groupTypeOf(row)}-${routeId}`;
+    };
+
+    // Keep route/group blocks in their original order, but normalize each
+    // block so live inventory is price-ordered before non-priority VSR and
+    // offline inventory. The original index makes equal-price ordering stable.
+    const scopedRows = new Map<string, Array<{ row: any; index: number }>>();
+    retained.forEach((row, index) => {
+      const scope = scopeKeyOf(row);
+      const scoped = scopedRows.get(scope) || [];
+      scoped.push({ row, index });
+      scopedRows.set(scope, scoped);
+    });
+
+    return Array.from(scopedRows.values()).flatMap((scoped) => scoped
+      .sort((left, right) =>
+        bucketOf(left.row) - bucketOf(right.row) ||
+        amountOf(left.row) - amountOf(right.row) ||
+        left.index - right.index,
+      )
+      .map(({ row }) => row));
   }
 
   private decoratePropertySelection(row: any, selection: any, planId: number): any {
