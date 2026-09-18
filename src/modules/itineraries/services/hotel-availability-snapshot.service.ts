@@ -416,6 +416,28 @@ export class HotelAvailabilitySnapshotService {
         },
         orderBy: [{ sort_rank: 'asc' }, { id: 'asc' }],
       }) || [];
+      const priorityCodes = new Set<string>();
+      const masterCodes = Array.from(new Set(
+        cachedRows
+          .filter((row: any) => String(row?.provider || '').trim().toLowerCase() === 'tbo')
+          .map((row: any) => String(row?.hotel_code || '').trim())
+          .filter(Boolean),
+      ));
+      if (masterCodes.length > 0) {
+        try {
+          const masters = await (this.prisma as any).tbo_hotel_master?.findMany?.({
+            where: { tbo_hotel_code: { in: masterCodes } },
+            select: { tbo_hotel_code: true, is_priority: true },
+          }) || [];
+          masters.forEach((master: any) => {
+            if (Number(master?.is_priority) === 1) {
+              priorityCodes.add(String(master.tbo_hotel_code).trim().toLowerCase());
+            }
+          });
+        } catch {
+          // Legacy databases may not expose the priority column yet.
+        }
+      }
       const compactGroups = Array.from(new Set<number>([
         ...(Array.isArray((sanitized as any).hotelTabs)
           ? (sanitized as any).hotelTabs.map((tab: any) => Number(tab?.groupType || 0))
@@ -437,10 +459,12 @@ export class HotelAvailabilitySnapshotService {
         const provider = String(row?.provider || '').trim().toLowerCase();
         const hotelCode = String(row?.hotel_code || '').trim();
         const hotelName = String(row?.hotel_name || '').trim();
+        const isPriority = provider === 'tbo' && priorityCodes.has(hotelCode.toLowerCase());
         const groups = rowGroupType > 0 ? [rowGroupType] : compactGroups;
         return groups.map((groupType) => ({
           provider,
           providerDisplayName: provider === 'tbo' ? 'VSR' : provider,
+          isPriority,
           hotelCode: hotelCode || undefined,
           providerHotelCode: hotelCode || undefined,
           hotelName,
@@ -465,6 +489,8 @@ export class HotelAvailabilitySnapshotService {
         if (!hotelIndex.has(indexKey)) {
           hotelIndex.set(indexKey, {
             provider,
+            providerDisplayName: provider === 'tbo' ? 'VSR' : provider,
+            isPriority: Boolean(row?.isPriority),
             hotelCode: hotelCode || undefined,
             hotelName,
             category: row?.category,
