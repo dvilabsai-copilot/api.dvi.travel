@@ -494,7 +494,29 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
     preferences?: HotelPreferences,
   ): HotelSearchResult[] {
     return hotels.sort((a, b) => {
- // Priority 1: Rating (if preference set)
+      const bucketOf = (hotel: HotelSearchResult): number => {
+        const provider = String(hotel.provider || '').trim().toLowerCase();
+        const providerName = String(hotel.providerDisplayName || '').trim().toLowerCase();
+        const offline = provider === 'offline' || providerName === 'offline';
+        if (offline) return 2;
+        if (provider === 'tbo' || providerName === 'vsr') {
+          return hotel.isPriority ? 0 : 1;
+        }
+        return 0;
+      };
+      const bucketDifference = bucketOf(a) - bucketOf(b);
+      if (bucketDifference !== 0) {
+        return bucketDifference;
+      }
+
+      // The first bucket combines priority VSR with other live providers and
+      // is price ascending. Non-priority VSR follows, and offline is last.
+      if (a.price !== b.price) {
+        return a.price - b.price;
+      }
+
+      // Preserve the existing rating preference as the tie-breaker within a
+      // price bucket.
       if (preferences?.minRating) {
         const aRatingMatch = a.rating >= preferences.minRating ? 1 : 0;
         const bRatingMatch = b.rating >= preferences.minRating ? 1 : 0;

@@ -2886,6 +2886,7 @@ model dvi_driver_review_details {
 model dvi_global_settings {
   global_settings_ID                     Int       @id @default(autoincrement())
   eligibile_country_code                 String?   @db.Text
+  vsr_hotel_card_limit                   Int       @default(50)
   extrabed_rate_percentage               Float     @default(0) @db.Float
   childwithbed_rate_percentage           Float     @default(0) @db.Float
   childnobed_rate_percentage             Float     @default(0) @db.Float

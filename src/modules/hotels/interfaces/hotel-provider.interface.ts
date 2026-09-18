@@ -24,6 +24,7 @@ export interface HotelSearchResult {
   provider: string;
  /** User-facing provider label; keep provider unchanged for internal routing. */
   providerDisplayName?: string;
+  isPriority?: boolean;
   canonicalHotelId?: number | null;
   providerHotelCode?: string;
   /** Backend-issued stable commercial identity; never created by the client. */

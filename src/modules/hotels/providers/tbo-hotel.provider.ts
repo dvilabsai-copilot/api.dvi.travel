@@ -30,11 +30,6 @@ export class TBOHotelProvider implements IHotelProvider {
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
-  // Search the complete active master pool (up to this safety cap). TBO still
-  // receives these codes in batches of 100 below; this cap must not be used as
-  // a percentage/category mix because that can hide valid hotels from the UI.
-  private static readonly DEFAULT_HOTEL_CANDIDATE_LIMIT = 1000;
-  private static readonly MAX_HOTEL_CANDIDATE_LIMIT = 1000;
  // Production API Endpoints from Postman Collection
  private readonly SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
  private readonly BOOKING_API_URL = process.env.TBO_BOOKING_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10';
@@ -251,8 +246,13 @@ export class TBOHotelProvider implements IHotelProvider {
  // Real TBO codes are 7 digits starting with 10 (e.g., 1014829, 1089687, 1138045)
  // Note: All hotel codes in database are synced from TBO API, so they're already valid
       if (isUsingDatabaseCodes && hotelCodes) {
- this.logger.log(` Using ${hotelCodes.split(',').length} hotel codes from database`);
+        this.logger.log(` Using ${hotelCodes.split(',').length} hotel codes from database`);
       }
+
+      const priorityHotelCodes = await this.getPriorityHotelCodesForCity(
+        resolvedTboCityCode,
+        hotelCodes,
+      );
 
  // Step 3: Chunk hotel codes (TBO recommends 100 codes per request)
  // Per TBO API docs: "send parallel searches for 100 hotel codes chunks"
@@ -404,6 +404,7 @@ export class TBOHotelProvider implements IHotelProvider {
           results.push({
             provider: 'tbo',
             providerDisplayName: 'VSR',
+            isPriority: priorityHotelCodes.has(String(hotel.HotelCode || '').trim()),
             hotelCode: hotel.HotelCode,
             providerHotelCode: String(hotel.HotelCode || ''),
             selectionKey,
@@ -1587,7 +1588,7 @@ export class TBOHotelProvider implements IHotelProvider {
   private async getHotelCodesForCityFromDb(tboCityCode: string): Promise<string> {
     try {
       this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
-      const candidateLimit = this.getHotelCandidateLimit();
+      const candidateLimit = await this.getVsrHotelCardLimit();
       const cacheKey = `tbo-master:${tboCityCode}:${candidateLimit}`;
       const cachedCodes = await this.referenceCache?.get<string>(cacheKey);
       if (cachedCodes !== null && cachedCodes !== undefined) return cachedCodes;
@@ -1682,16 +1683,45 @@ export class TBOHotelProvider implements IHotelProvider {
     }
   }
 
-  private getHotelCandidateLimit(): number {
-    const configured = Number(process.env.TBO_HOTEL_CANDIDATE_LIMIT || '');
-    if (!Number.isFinite(configured) || configured <= 0) {
-      return TBOHotelProvider.DEFAULT_HOTEL_CANDIDATE_LIMIT;
+  private async getVsrHotelCardLimit(): Promise<number> {
+    try {
+      const settings = await (this.prisma as any).dvi_global_settings?.findFirst?.({
+        where: { deleted: 0, status: 1 },
+        orderBy: { global_settings_ID: 'asc' },
+        select: { vsr_hotel_card_limit: true },
+      });
+      const configured = Number(settings?.vsr_hotel_card_limit);
+      return Number.isInteger(configured) && configured > 0
+        ? Math.min(configured, 500)
+        : 50;
+    } catch {
+      return 50;
     }
+  }
 
-    return Math.min(
-      Math.max(Math.floor(configured), 100),
-      TBOHotelProvider.MAX_HOTEL_CANDIDATE_LIMIT,
-    );
+  private async getPriorityHotelCodesForCity(
+    tboCityCode: string,
+    selectedCodes?: string,
+  ): Promise<Set<string>> {
+    const codes = String(selectedCodes || '')
+      .split(',')
+      .map((code) => code.trim())
+      .filter(Boolean);
+    if (codes.length === 0) return new Set<string>();
+    try {
+      const rows = await (this.prisma as any).tbo_hotel_master?.findMany?.({
+        where: {
+          tbo_city_code: tboCityCode,
+          status: 1,
+          is_priority: 1,
+          tbo_hotel_code: { in: codes },
+        },
+        select: { tbo_hotel_code: true },
+      }) || [];
+      return new Set(rows.map((row: any) => String(row?.tbo_hotel_code || '').trim()).filter(Boolean));
+    } catch {
+      return new Set<string>();
+    }
   }
 
  /**
