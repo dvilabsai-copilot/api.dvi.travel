@@ -8,6 +8,7 @@ import { UpdateAgentDto } from './dto/update-agent.dto';
 import { AgentPreviewDto } from './dto/agent-preview.dto';
 import { mapAgentToListRow } from './agent.mapper';
 import { UpdateAgentConfigDto } from './dto/update-agent-config.dto';
+import { UpdateAgentSelfProfileDto } from './dto/update-agent-self-profile.dto';
 
 type SubRow = {
   id: number;
@@ -91,38 +92,80 @@ export class AgentService {
   }
 
   private async getCompanyNameMapByAgentIds(agentIds: number[]) {
-    if (agentIds.length === 0) return new Map<number, string>();
+  if (agentIds.length === 0) return new Map<number, string>();
 
-    const rows = await this.prisma.$queryRawUnsafe<
-      Array<{ agent_id: number; company_name: string | null }>
-    >(
-      `
-        SELECT agent_id, company_name
-        FROM dvi_agent_configuration
-        WHERE deleted = 0
-          AND agent_id IN (${agentIds.map(() => '?').join(',')})
-        ORDER BY agent_config_id DESC
-      `,
-      ...agentIds,
-    );
+  const rows = await this.prisma.$queryRawUnsafe<
+    Array<{ agent_id: number; company_name: string | null }>
+  >(
+    `
+      SELECT agent_id, company_name
+      FROM dvi_agent_configuration
+      WHERE deleted = 0
+        AND agent_id IN (${agentIds.map(() => '?').join(',')})
+      ORDER BY agent_config_id DESC
+    `,
+    ...agentIds,
+  );
 
-    const map = new Map<number, string>();
+  const map = new Map<number, string>();
 
-    for (const row of rows) {
-      const agentId = Number(row.agent_id || 0);
-      const companyName = String(row.company_name || '')
-        .replace(/\s+/g, ' ')
-        .trim();
+  for (const row of rows) {
+    const agentId = Number(row.agent_id || 0);
+    const companyName = String(row.company_name || '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-      if (agentId > 0 && companyName && !map.has(agentId)) {
-        map.set(agentId, companyName);
-      }
+    if (agentId > 0 && companyName && !map.has(agentId)) {
+      map.set(agentId, companyName);
     }
-
-    return map;
   }
 
-  private async getGeoNameMaps(opts: {
+  return map;
+}
+
+private async getTravelExpertNameMap(
+  staffIds: number[],
+): Promise<Map<number, string>> {
+  const ids = Array.from(
+    new Set(
+      staffIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  );
+
+  if (!ids.length) {
+    return new Map<number, string>();
+  }
+
+  const rows = await this.prisma.dvi_staff_details.findMany({
+    where: {
+      staff_id: {
+        in: ids,
+      },
+      deleted: 0,
+    },
+    select: {
+      staff_id: true,
+      staff_name: true,
+    },
+  });
+
+  const map = new Map<number, string>();
+
+  for (const row of rows) {
+    const staffId = Number(row.staff_id);
+    const staffName = String(row.staff_name ?? "").trim();
+
+    if (staffId > 0 && staffName) {
+      map.set(staffId, staffName);
+    }
+  }
+
+  return map;
+}
+
+private async getGeoNameMaps(opts: {
     countryIds: number[];
     stateIds: number[];
     cityIds: number[];
@@ -328,16 +371,76 @@ export class AgentService {
     const agentIds = rows.map((r) => r.agent_ID);
 
  // Batch helpers
-      const [usersMap, geoMaps, subsMap, companyNameMap] = await Promise.all([
-      this.getUsersMapByAgentIds(agentIds),
-      this.getGeoNameMaps({
-        countryIds: rows.map((r) => r.agent_country ?? 0).filter(Boolean) as number[],
-        stateIds: rows.map((r) => r.agent_state ?? 0).filter(Boolean) as number[],
-        cityIds: rows.map((r) => r.agent_city ?? 0).filter(Boolean) as number[],
-      }),
-      this.getLatestSubscriptionTitleMap(agentIds),
-      this.getCompanyNameMapByAgentIds(agentIds),
-    ]);
+const travelExpertIds =
+  rows
+    .map((row) =>
+      Number(
+        row.travel_expert_id ||
+          0,
+      ),
+    )
+    .filter(
+      (id) => id > 0,
+    );
+
+const [
+  usersMap,
+  geoMaps,
+  subsMap,
+  companyNameMap,
+  travelExpertNameMap,
+] = await Promise.all([
+  this.getUsersMapByAgentIds(
+    agentIds,
+  ),
+
+  this.getGeoNameMaps({
+    countryIds:
+      rows
+        .map(
+          (r) =>
+            r.agent_country ??
+            0,
+        )
+        .filter(
+          Boolean,
+        ) as number[],
+
+    stateIds:
+      rows
+        .map(
+          (r) =>
+            r.agent_state ??
+            0,
+        )
+        .filter(
+          Boolean,
+        ) as number[],
+
+    cityIds:
+      rows
+        .map(
+          (r) =>
+            r.agent_city ??
+            0,
+        )
+        .filter(
+          Boolean,
+        ) as number[],
+  }),
+
+  this.getLatestSubscriptionTitleMap(
+    agentIds,
+  ),
+
+  this.getCompanyNameMapByAgentIds(
+    agentIds,
+  ),
+
+  this.getTravelExpertNameMap(
+    travelExpertIds,
+  ),
+]);
 
     const { countryMap, stateMap, cityMap } = geoMaps;
 
@@ -380,7 +483,14 @@ export class AgentService {
  // Latest title, fallback "Free" to mirror your single-agent preview
         subscription_title: subsMap.get(a.agent_ID) ?? 'Free',
  // Until you wire experts table, keep null (matches your preview response)
-        travel_expert_label: null,
+        travel_expert_label:
+  a.travel_expert_id
+    ? travelExpertNameMap.get(
+        Number(
+          a.travel_expert_id,
+        ),
+      ) ?? null
+    : null,
       };
 
       return obj;
@@ -544,48 +654,446 @@ export class AgentService {
         return dto;
   }
 
-  async getProfile(
-    id: number,
-  ): Promise<
-    AgentPreviewDto & {
-      travel_expert_mobile: string | null;
-    }
-  > {
-    const profile = await this.getById(id);
-
-    const travelExpertId = Number(
-      profile.travel_expert_id || 0,
-    );
-
-    if (!travelExpertId) {
-      return {
-        ...profile,
-        travel_expert_label: null,
-        travel_expert_mobile: null,
-      };
-    }
-
-    const travelExpert =
-      await this.prisma.dvi_staff_details.findFirst({
+  async listTravelExperts() {
+  const travelExpertRoles =
+    await this.prisma
+      .dvi_rolemenu
+      .findMany({
         where: {
-          staff_id: travelExpertId,
           deleted: 0,
+          role_name: {
+            contains:
+              'Travel Expert',
+          },
         },
         select: {
-          staff_name: true,
-          staff_mobile: true,
+          role_ID: true,
         },
       });
 
-    return {
-      ...profile,
-      travel_expert_label:
-        travelExpert?.staff_name?.trim() || null,
-      travel_expert_mobile:
-        travelExpert?.staff_mobile?.trim() || null,
-    };
+  const roleIds =
+    travelExpertRoles
+      .map((row) =>
+        Number(row.role_ID),
+      )
+      .filter(
+        (id) => id > 0,
+      );
+
+  let staffIds:
+    | number[]
+    | null = null;
+
+  /*
+   * Compatibility fallback for the
+   * legacy B2B role model:
+   *
+   * B2B treats legacy role 3 as the
+   * Travel Expert account, while the
+   * newer system also contains role 8.
+   */
+  if (!roleIds.length) {
+    const loginRows =
+      await this.prisma
+        .dvi_users
+        .findMany({
+          where: {
+            deleted: 0,
+            status: 1,
+            userbanned: 0,
+            roleID: {
+              in: [3, 8],
+            },
+            staff_id: {
+              not: null,
+            },
+          },
+          select: {
+            staff_id: true,
+          },
+        });
+
+    staffIds = Array.from(
+      new Set(
+        loginRows
+          .map((row) =>
+            Number(
+              row.staff_id ||
+                0,
+            ),
+          )
+          .filter(
+            (id) => id > 0,
+          ),
+      ),
+    );
   }
 
+  const travelExperts =
+    await this.prisma
+      .dvi_staff_details
+      .findMany({
+        where: {
+          deleted: 0,
+          status: 1,
+
+          ...(roleIds.length
+            ? {
+                roleID: {
+                  in: roleIds,
+                },
+              }
+            : {
+                staff_id: {
+                  in:
+                    staffIds?.length
+                      ? staffIds
+                      : [-1],
+                },
+              }),
+        },
+
+        select: {
+          staff_id: true,
+          staff_name: true,
+          staff_mobile: true,
+          staff_email: true,
+        },
+
+        orderBy: {
+          staff_name: 'asc',
+        },
+      });
+
+  return travelExperts.map(
+    (staff) => ({
+      id: Number(
+        staff.staff_id,
+      ),
+
+      name:
+        String(
+          staff.staff_name ??
+            '',
+        ).trim(),
+
+      mobile:
+        String(
+          staff.staff_mobile ??
+            '',
+        ).trim(),
+
+      email:
+        String(
+          staff.staff_email ??
+            '',
+        ).trim(),
+    }),
+  );
+}
+
+async assignTravelExpert(
+  agentId: number,
+  travelExpertId: number,
+) {
+  await this.ensureAgentExists(
+    agentId,
+  );
+
+  if (
+    travelExpertId > 0
+  ) {
+    const available =
+      await this
+        .listTravelExperts();
+
+    const isValid =
+      available.some(
+        (expert) =>
+          expert.id ===
+          travelExpertId,
+      );
+
+    if (!isValid) {
+      throw new BadRequestException(
+        'Selected Travel Expert is not active or valid',
+      );
+    }
+  }
+
+  await this.prisma
+    .dvi_agent
+    .update({
+      where: {
+        agent_ID:
+          agentId,
+      },
+
+      data: {
+        travel_expert_id:
+          travelExpertId,
+        updatedon:
+          new Date(),
+      },
+    });
+
+  return {
+    agent_ID: agentId,
+    travel_expert_id:
+      travelExpertId,
+  };
+}
+
+async getProfile(
+  id: number,
+) {
+  const profile =
+    await this.getById(id);
+
+  const travelExpertId =
+    Number(
+      profile.travel_expert_id ||
+        0,
+    );
+
+  const [
+    travelExpert,
+    config,
+  ] = await Promise.all([
+    travelExpertId > 0
+      ? this.prisma
+          .dvi_staff_details
+          .findFirst({
+            where: {
+              staff_id:
+                travelExpertId,
+              deleted: 0,
+            },
+
+            select: {
+              staff_name: true,
+              staff_mobile: true,
+            },
+          })
+      : Promise.resolve(null),
+
+    this.getConfig(id),
+  ]);
+
+  return {
+    ...profile,
+
+    travel_expert_label:
+      travelExpert
+        ?.staff_name
+        ?.trim() ||
+      null,
+
+    travel_expert_mobile:
+      travelExpert
+        ?.staff_mobile
+        ?.trim() ||
+      null,
+
+    config,
+  };
+}
+
+async updateSelfProfile(
+  agentId: number,
+  payload:
+    UpdateAgentSelfProfileDto,
+  files: {
+    siteLogo:
+      string | null;
+    invoiceLogo:
+      string | null;
+  },
+) {
+  await this.ensureAgentExists(
+    agentId,
+  );
+
+  const now = new Date();
+
+  await this.prisma
+    .$transaction(
+      async (tx) => {
+        const agentData: any = {
+          updatedon: now,
+        };
+
+        if (
+          payload.firstName !==
+          undefined
+        ) {
+          agentData.agent_name =
+            payload.firstName.trim();
+        }
+
+        if (
+          payload.lastName !==
+          undefined
+        ) {
+          agentData.agent_lastname =
+            payload.lastName.trim();
+        }
+
+        if (
+          payload.primaryMobile !==
+          undefined
+        ) {
+          agentData.agent_primary_mobile_number =
+            payload.primaryMobile.trim();
+        }
+
+        if (
+          payload.alternativeMobile !==
+          undefined
+        ) {
+          agentData.agent_alternative_mobile_number =
+            payload.alternativeMobile.trim();
+        }
+
+        if (
+          payload.agentGstin !==
+          undefined
+        ) {
+          agentData.agent_gst_number =
+            payload.agentGstin.trim();
+        }
+
+        await tx.dvi_agent.update({
+          where: {
+            agent_ID:
+              agentId,
+          },
+
+          data: agentData,
+        });
+
+        const existing =
+          await tx
+            .dvi_agent_configuration
+            .findFirst({
+              where: {
+                agent_id:
+                  agentId,
+                deleted: 0,
+              },
+
+              orderBy: {
+                agent_config_id:
+                  'desc',
+              },
+            });
+
+        const configData: any = {
+          status: 1,
+          deleted: 0,
+          updatedon: now,
+        };
+
+        if (
+          payload.companyName !==
+          undefined
+        ) {
+          configData.company_name =
+            payload.companyName.trim();
+        }
+
+        if (
+          payload.address !==
+          undefined
+        ) {
+          configData.site_address =
+            payload.address.trim();
+        }
+
+        if (
+          payload.termsAndCondition !==
+          undefined
+        ) {
+          configData.terms_condition =
+            payload.termsAndCondition;
+        }
+
+        if (
+          payload.gstinNumber !==
+          undefined
+        ) {
+          configData.invoice_gstin_no =
+            payload.gstinNumber
+              .trim()
+              .toUpperCase();
+        }
+
+        if (
+          payload.panNo !==
+          undefined
+        ) {
+          configData.invoice_pan_no =
+            payload.panNo
+              .trim()
+              .toUpperCase();
+        }
+
+        if (
+          payload.invoiceAddress !==
+          undefined
+        ) {
+          configData.invoice_address =
+            payload.invoiceAddress
+              .trim();
+        }
+
+        if (files.siteLogo) {
+          configData.site_logo =
+            files.siteLogo;
+        }
+
+        if (
+          files.invoiceLogo
+        ) {
+          configData.invoice_logo =
+            files.invoiceLogo;
+        }
+
+        if (existing) {
+          await tx
+            .dvi_agent_configuration
+            .update({
+              where: {
+                agent_config_id:
+                  existing.agent_config_id,
+              },
+
+              data:
+                configData,
+            });
+        } else {
+          await tx
+            .dvi_agent_configuration
+            .create({
+              data: {
+                agent_id:
+                  agentId,
+
+                createdby: 0,
+                createdon:
+                  now,
+
+                ...configData,
+              },
+            });
+        }
+      },
+    );
+
+  return this.getProfile(
+    agentId,
+  );
+}
   async getEditPrefill(id: number) {
     return this.getById(id);
   }
@@ -672,17 +1180,71 @@ async getConfig(agentId: number) {
 
   const gstType = Number(agent.agent_margin_gst_type || 0);
   return {
-    itineraryDiscountMargin: Number(agent.itinerary_margin_discount_percentage || 0),
-    serviceCharge: Number(agent.agent_margin || 0),
-    agentMarginGstType: gstType === 1 ? 'Included' : gstType === 2 ? 'Excluded' : 'Not Applicable',
-    agentMarginGstPercentage: String(Number(agent.agent_margin_gst_percentage || 0)),
-    companyName: config?.company_name ?? [agent.agent_name ?? '', agent.agent_lastname ?? ''].join(' ').replace(/\s+/g, ' ').trim(),
-    address: config?.site_address ?? '',
-    termsAndCondition: config?.terms_condition ?? '',
-    gstinNumber: config?.invoice_gstin_no ?? '',
-    panNo: config?.invoice_pan_no ?? '',
-    invoiceAddress: config?.invoice_address ?? '',
-  };
+  itineraryDiscountMargin:
+    Number(
+      agent.itinerary_margin_discount_percentage ||
+        0,
+    ),
+
+  serviceCharge:
+    Number(
+      agent.agent_margin ||
+        0,
+    ),
+
+  agentMarginGstType:
+    gstType === 1
+      ? 'Included'
+      : gstType === 2
+        ? 'Excluded'
+        : 'Not Applicable',
+
+  agentMarginGstPercentage:
+    String(
+      Number(
+        agent.agent_margin_gst_percentage ||
+          0,
+      ),
+    ),
+
+  siteLogo:
+    config?.site_logo ??
+    '',
+
+  companyName:
+    config?.company_name ??
+    [
+      agent.agent_name ?? '',
+      agent.agent_lastname ?? '',
+    ]
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+
+  address:
+    config?.site_address ??
+    '',
+
+  termsAndCondition:
+    config?.terms_condition ??
+    '',
+
+  invoiceLogo:
+    config?.invoice_logo ??
+    '',
+
+  gstinNumber:
+    config?.invoice_gstin_no ??
+    '',
+
+  panNo:
+    config?.invoice_pan_no ??
+    '',
+
+  invoiceAddress:
+    config?.invoice_address ??
+    '',
+};
 }
 
 async updateConfig(agentId: number, payload: UpdateAgentConfigDto) {

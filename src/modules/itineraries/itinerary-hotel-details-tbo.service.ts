@@ -6096,6 +6096,7 @@ this.logger.log(
               ? parsedStaahReference?.rateId || undefined
               : undefined,
           provider: hasSupplierHotel ? normalizedProvider : 'external',
+          isPriority: Boolean((hotel as any).isPriority) || Boolean((hotel as any).rateOptions?.some?.((option: any) => option?.isPriority)),
           providerDisplayName: normalizedProvider === 'offline'
             ? 'Offline'
             : normalizedProvider === 'axisrooms'
@@ -6111,6 +6112,7 @@ this.logger.log(
                 rateOptionId: (hotel as any).rateOptionId || rawSearchReference || rawBookingCode || undefined,
                 canonicalHotelId: hotelId || null,
                 provider: normalizedProvider,
+                isPriority: Boolean((hotel as any).isPriority),
                 providerDisplayName: normalizedProvider === 'offline' ? 'Offline' : normalizedProvider === 'axisrooms' ? 'AxisRooms' : normalizedProvider === 'tbo' ? 'VSR' : undefined,
                 providerHotelCode: (hotel as any).providerHotelCode || rawHotelCode,
                 roomId: (hotel as any).roomId,
@@ -7164,6 +7166,10 @@ this.logger.log(
               ? 0
               : canonicalRoomHotelId,
           provider: roomProvider,
+          isPriority: roomProvider === 'tbo' && (
+            Boolean((hotel as any).isPriority) ||
+            Boolean((hotel as any).rateOptions?.some?.((option: any) => option?.isPriority))
+          ),
           canonicalHotelId: canonicalRoomHotelId || null,
           providerHotelCode: (hotel as any).providerHotelCode || String(hotel.hotelCode || '').trim(),
           providerDisplayName:

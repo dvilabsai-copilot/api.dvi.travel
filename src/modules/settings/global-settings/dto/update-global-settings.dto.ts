@@ -19,6 +19,12 @@ export class UpdateGlobalSettingsDto {
   @Allow()
   eligibile_country_code?: string | null;
 
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  vsr_hotel_card_limit?: number;
+
   @Allow()
   extrabed_rate_percentage?: number;
   @Allow()

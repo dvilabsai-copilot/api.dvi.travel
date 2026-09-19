@@ -384,6 +384,7 @@ export class HotelAvailabilitySnapshotService {
       });
     }
     const sanitized = await this.sanitizeLegacyResponse(persistedResponse, plan);
+    const vsrHotelCardLimit = await this.getVsrHotelCardLimit();
     // The unfiltered page-read is intentionally compact, but it still needs
     // enough identity metadata for the hotel row editor and its load-more
     // action.  The complete supplier rows live in the search cache; read only
@@ -415,6 +416,28 @@ export class HotelAvailabilitySnapshotService {
         },
         orderBy: [{ sort_rank: 'asc' }, { id: 'asc' }],
       }) || [];
+      const priorityCodes = new Set<string>();
+      const masterCodes = Array.from(new Set(
+        cachedRows
+          .filter((row: any) => String(row?.provider || '').trim().toLowerCase() === 'tbo')
+          .map((row: any) => String(row?.hotel_code || '').trim())
+          .filter(Boolean),
+      ));
+      if (masterCodes.length > 0) {
+        try {
+          const masters = await (this.prisma as any).tbo_hotel_master?.findMany?.({
+            where: { tbo_hotel_code: { in: masterCodes } },
+            select: { tbo_hotel_code: true, is_priority: true },
+          }) || [];
+          masters.forEach((master: any) => {
+            if (Number(master?.is_priority) === 1) {
+              priorityCodes.add(String(master.tbo_hotel_code).trim().toLowerCase());
+            }
+          });
+        } catch {
+          // Legacy databases may not expose the priority column yet.
+        }
+      }
       const compactGroups = Array.from(new Set<number>([
         ...(Array.isArray((sanitized as any).hotelTabs)
           ? (sanitized as any).hotelTabs.map((tab: any) => Number(tab?.groupType || 0))
@@ -428,34 +451,63 @@ export class HotelAvailabilitySnapshotService {
       const hotelIndex = new Map<string, any>();
       const routeTotals = new Map<string, { groupType: number; total: number }>();
       const cachedRouteIds = new Set<number>();
-      cachedRows.forEach((row: any) => {
+      const compactInventoryRows = cachedRows.flatMap((row: any) => {
         const routeId = Number(row?.route_id || 0);
         const rowGroupType = Number(row?.group_type || 0);
-        if (!routeId) return;
+        if (!routeId) return [];
         cachedRouteIds.add(routeId);
         const provider = String(row?.provider || '').trim().toLowerCase();
         const hotelCode = String(row?.hotel_code || '').trim();
         const hotelName = String(row?.hotel_name || '').trim();
+        const isPriority = provider === 'tbo' && priorityCodes.has(hotelCode.toLowerCase());
         const groups = rowGroupType > 0 ? [rowGroupType] : compactGroups;
-        groups.forEach((groupType) => {
-          const indexKey = [provider, hotelCode, hotelName.toLowerCase(), groupType, routeId].join('|');
-          if (!hotelIndex.has(indexKey)) {
-            hotelIndex.set(indexKey, {
-              provider,
-              hotelCode: hotelCode || undefined,
-              hotelName,
-              category: row?.rating,
-              groupType,
-              routeId,
-              date: row?.check_in_date,
-            });
-          }
-          const routeKey = `${groupType}-${routeId}`;
-          const current = routeTotals.get(routeKey) || { groupType, total: 0 };
-          current.total += 1;
-          routeTotals.set(routeKey, current);
-        });
+        return groups.map((groupType) => ({
+          provider,
+          providerDisplayName: provider === 'tbo' ? 'VSR' : provider,
+          isPriority,
+          hotelCode: hotelCode || undefined,
+          providerHotelCode: hotelCode || undefined,
+          hotelName,
+          category: row?.rating,
+          groupType,
+          routeId,
+          date: row?.check_in_date,
+        }));
       });
+      const limitedCompactInventoryRows = await this.limitVsrHotelCards(
+        this.coalesceHotelCardRows(compactInventoryRows),
+        vsrHotelCardLimit,
+      );
+      limitedCompactInventoryRows.forEach((row: any) => {
+        const routeId = Number(row?.routeId || 0);
+        const groupType = Number(row?.groupType || 0);
+        if (!routeId || !groupType) return;
+        const provider = String(row?.provider || '').trim().toLowerCase();
+        const hotelCode = String(row?.hotelCode || '').trim();
+        const hotelName = String(row?.hotelName || '').trim();
+        const indexKey = [provider, hotelCode, hotelName.toLowerCase(), groupType, routeId].join('|');
+        if (!hotelIndex.has(indexKey)) {
+          hotelIndex.set(indexKey, {
+            provider,
+            providerDisplayName: provider === 'tbo' ? 'VSR' : provider,
+            isPriority: Boolean(row?.isPriority),
+            hotelCode: hotelCode || undefined,
+            hotelName,
+            category: row?.category,
+            groupType,
+            routeId,
+            date: row?.date,
+          });
+        }
+        const routeKey = `${groupType}-${routeId}`;
+        const current = routeTotals.get(routeKey) || { groupType, total: 0 };
+        current.total += 1;
+        routeTotals.set(routeKey, current);
+      });
+      (sanitized as any).hotelAvailability = {
+        ...((sanitized as any).hotelAvailability || {}),
+        vsrHotelCardLimit,
+      };
       // A previous response can retain empty-state metadata even after the
       // search cache has been populated. Cache rows are authoritative for a
       // database-only refresh, so stale blocks must not hide saved hotels.
@@ -534,13 +586,16 @@ export class HotelAvailabilitySnapshotService {
     // meal-plan, and rate options, so the UI can render the card and its
     // dropdowns without transferring duplicate supplier rows as separate
     // hotels.
-    const scopedInventory = this.coalesceHotelCardRows(inventory.filter(matchesScope));
+    const scopedInventory = await this.limitVsrHotelCards(
+      this.coalesceHotelCardRows(inventory.filter(matchesScope)),
+      vsrHotelCardLimit,
+    );
     const start = (page - 1) * pageSize;
     const pageRows = scopedInventory
       .slice(start, start + pageSize)
       .map((row: any) => this.toClientHotelRow(row));
     const total = scopedInventory.length;
-    const responseAvailability = { ...availability };
+    const responseAvailability = { ...availability, vsrHotelCardLimit };
     delete responseAvailability.sharedHotelInventory;
     const routePagination: Record<string, { page: number; pageSize: number; total: number; hasMore: boolean; groupType: number }> = {};
     const pagination: Record<number, { page: number; pageSize: number; total: number; hasMore: boolean }> = {};
@@ -624,7 +679,7 @@ export class HotelAvailabilitySnapshotService {
     // nested rateOptions from different dates.  Without this final pass, the
     // pane can show Choose and the select-intent request can be the first
     // place that discovers a missing night.
-    const sharedHotelInventory = this.applyCompleteStayAvailability(
+    const sharedHotelInventoryBeforeVsrLimit = this.applyCompleteStayAvailability(
       this.buildSharedHotelInventory(
         normalizedRows,
         effectiveMarginPercentage,
@@ -635,6 +690,11 @@ export class HotelAvailabilitySnapshotService {
       ...row,
       rateOptions: this.canonicalizeRateOptions(row, row.rateOptions || []),
     }));
+    const vsrHotelCardLimit = await this.getVsrHotelCardLimit();
+    const sharedHotelInventory = await this.limitVsrHotelCards(
+      sharedHotelInventoryBeforeVsrLimit,
+      vsrHotelCardLimit,
+    );
     const supplierHotels = sharedHotelInventory.filter((row: any) => {
       const provider = String(row?.provider || '').trim().toLowerCase();
       return row?.isBookable !== false && provider !== 'offline' && provider !== 'external';
@@ -888,6 +948,7 @@ export class HotelAvailabilitySnapshotService {
         ...((persisted as any).hotelAvailability || {}),
         ...extraAvailability,
         sharedHotelInventory,
+        vsrHotelCardLimit,
         hasSupplierHotels: supplierHotels.length > 0,
         supplierHotelCount: supplierHotels.length,
         availabilityState,
@@ -2041,7 +2102,7 @@ export class HotelAvailabilitySnapshotService {
   private toClientRateOption(option: any): any {
     const source = option && typeof option === 'object' ? option : {};
     const fields = [
-      'rateOptionId', 'rate_option_id', 'optionKey', 'option_key', 'bookingCode', 'booking_code',
+      'rateOptionId', 'rate_option_id', 'optionKey', 'option_key', 'bookingCode', 'booking_code', 'isPriority',
       'searchReference', 'search_reference', 'roomId', 'room_id', 'rateId', 'rate_id',
       'roomTypeId', 'room_type_id', 'roomType', 'roomTypeName', 'mealPlan', 'mealPlanCode',
       'ratePlanName', 'provider', 'providerDisplayName', 'providerHotelCode', 'currency',
@@ -2728,6 +2789,166 @@ export class HotelAvailabilitySnapshotService {
     }
 
     return Array.from(grouped.values());
+  }
+
+  private async getVsrHotelCardLimit(): Promise<number> {
+    try {
+      const settings = await (this.prisma as any).dvi_global_settings?.findFirst?.({
+        where: { deleted: 0, status: 1 },
+        orderBy: { global_settings_ID: 'asc' },
+        select: { vsr_hotel_card_limit: true },
+      });
+      const configured = Number(settings?.vsr_hotel_card_limit);
+      return Number.isInteger(configured) && configured > 0
+        ? Math.min(configured, 500)
+        : 50;
+    } catch {
+      // The default keeps older databases safe while the additive column is
+      // being deployed or when a legacy snapshot is read.
+      return 50;
+    }
+  }
+
+  /**
+   * Limit VSR by unique property card per route/group and apply the final
+   * inventory ordering contract. Priority properties are admitted first,
+   * then low-priority properties fill the remaining capacity. The completed
+   * inventory contains providers that are appended in separate fetches, so
+   * filtering alone cannot preserve the required live/VSR/offline buckets.
+   */
+  private async limitVsrHotelCards(rows: any[], limit: number): Promise<any[]> {
+    if (!Array.isArray(rows) || rows.length === 0) return rows || [];
+
+    const isVsr = (row: any): boolean => {
+      const provider = String(row?.provider || '').trim().toLowerCase();
+      const providerName = String(row?.providerDisplayName || '').trim().toLowerCase();
+      const code = String(row?.providerHotelCode || row?.hotelCode || '').trim().toUpperCase();
+      return (provider === 'tbo' || providerName === 'vsr') && !code.startsWith('AX_');
+    };
+    const normalize = (value: unknown): string => String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+    const propertyKey = (row: any): string => {
+      const name = normalize(row?.hotelName || row?.hotel_name);
+      const code = normalize(row?.providerHotelCode || row?.hotelCode || row?.hotelId || row?.canonicalHotelId);
+      return name || code || 'unknown';
+    };
+    const routeIdsOf = (row: any): number[] => Array.from(new Set<number>([
+      row?.routeId,
+      row?.itineraryRouteId,
+      ...(Array.isArray(row?.routeIds) ? row.routeIds : []),
+    ].map((value: unknown) => Number(value)).filter((value: number) => value > 0)));
+    const groupTypeOf = (row: any): number => Number(row?.groupType || row?.group_type || 0);
+
+    // Legacy snapshots may not carry the priority flag. Recover it from the
+    // master table once for the codes present in this response.
+    const masterCodes = Array.from(new Set(
+      rows
+        .filter(isVsr)
+        .map((row: any) => String(row?.providerHotelCode || row?.hotelCode || '').trim())
+        .filter(Boolean),
+    ));
+    const priorityCodes = new Set<string>();
+    if (masterCodes.length > 0) {
+      try {
+        const masters = await (this.prisma as any).tbo_hotel_master?.findMany?.({
+          where: { tbo_hotel_code: { in: masterCodes } },
+          select: { tbo_hotel_code: true, is_priority: true },
+        }) || [];
+        masters.forEach((master: any) => {
+          if (Number(master?.is_priority) === 1) {
+            priorityCodes.add(String(master.tbo_hotel_code).trim());
+          }
+        });
+      } catch {
+        // Rows with an explicit isPriority flag still remain usable.
+      }
+    }
+    const isPriority = (row: any): boolean => Boolean(row?.isPriority) ||
+      (Number(row?.is_priority) === 1) ||
+      priorityCodes.has(String(row?.providerHotelCode || row?.hotelCode || '').trim());
+
+    const scopeRows = new Map<string, any[]>();
+    rows.forEach((row) => {
+      if (!isVsr(row)) return;
+      const routeIds = routeIdsOf(row);
+      const scopes = routeIds.length > 0 ? routeIds : [0];
+      const group = groupTypeOf(row);
+      scopes.forEach((routeId) => {
+        const key = `${group}-${routeId}`;
+        const scoped = scopeRows.get(key) || [];
+        scoped.push(row);
+        scopeRows.set(key, scoped);
+      });
+    });
+
+    const allowedByScope = new Map<string, Set<string>>();
+    scopeRows.forEach((scopedRows, scopeKey) => {
+      const unique = new Map<string, any>();
+      scopedRows.forEach((row) => {
+        if (!unique.has(propertyKey(row))) unique.set(propertyKey(row), row);
+      });
+      const priority = Array.from(unique.values()).filter(isPriority);
+      const lowPriority = Array.from(unique.values()).filter((row) => !isPriority(row));
+      const selected = priority.length >= limit
+        ? priority.slice(0, limit)
+        : [...priority, ...lowPriority.slice(0, Math.max(0, limit - priority.length))];
+      allowedByScope.set(scopeKey, new Set(selected.map(propertyKey)));
+    });
+
+    const retained = rows.filter((row) => {
+      if (!isVsr(row)) return true;
+      const routeIds = routeIdsOf(row);
+      const scopes = (routeIds.length > 0 ? routeIds : [0])
+        .map((routeId) => `${groupTypeOf(row)}-${routeId}`);
+      return scopes.some((scope) => allowedByScope.get(scope)?.has(propertyKey(row)));
+    });
+
+    const amountOf = (row: any): number => {
+      const amount = Number(
+        row?.totalHotelCost ??
+        row?.totalStayPrice ??
+        row?.totalPrice ??
+        row?.totalAmount ??
+        row?.price ??
+        row?.pricePerNight,
+      );
+      return Number.isFinite(amount) ? amount : Number.MAX_SAFE_INTEGER;
+    };
+    const bucketOf = (row: any): number => {
+      const provider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+      if (provider === 'offline') return 2;
+      if (isVsr(row)) return isPriority(row) ? 0 : 1;
+      return 0;
+    };
+    const scopeKeyOf = (row: any): string => {
+      const routeId = routeIdsOf(row)[0] || 0;
+      // Shared inventory is group-neutral. A persisted page can therefore
+      // contain group-zero rows alongside the requested recommendation group;
+      // keeping groupType in this key would split one visible route into two
+      // independently sorted blocks and allow live rows after offline rows.
+      return String(routeId);
+    };
+
+    // Keep route/group blocks in their original order, but normalize each
+    // block so live inventory is price-ordered before non-priority VSR and
+    // offline inventory. The original index makes equal-price ordering stable.
+    const scopedRows = new Map<string, Array<{ row: any; index: number }>>();
+    retained.forEach((row, index) => {
+      const scope = scopeKeyOf(row);
+      const scoped = scopedRows.get(scope) || [];
+      scoped.push({ row, index });
+      scopedRows.set(scope, scoped);
+    });
+
+    return Array.from(scopedRows.values()).flatMap((scoped) => scoped
+      .sort((left, right) =>
+        bucketOf(left.row) - bucketOf(right.row) ||
+        amountOf(left.row) - amountOf(right.row) ||
+        left.index - right.index,
+      )
+      .map(({ row }) => row));
   }
 
   private decoratePropertySelection(row: any, selection: any, planId: number): any {
