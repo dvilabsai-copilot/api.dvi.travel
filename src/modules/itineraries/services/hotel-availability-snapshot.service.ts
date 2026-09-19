@@ -629,11 +629,21 @@ export class HotelAvailabilitySnapshotService {
       });
     });
     routeGroupPairs.forEach(({ groupType, routeId, total: routeTotal }, key) => {
+      // `scopedInventory` is already filtered to the requested route/group and
+      // is the same deduplicated card set used to slice `pageRows`. Use that
+      // set as the authoritative total instead of recounting nested route IDs,
+      // which can drift for multi-night/shared inventory rows.
+      const scopedRouteTotal = requestedRouteId === routeId
+        ? scopedInventory.filter((row: any) => {
+            const rowGroupType = Number(row?.groupType || row?.group_type || requestedGroupType || 0);
+            return (!requestedGroupType || rowGroupType === 0 || rowGroupType === requestedGroupType);
+          }).length
+        : routeTotal;
       routePagination[key] = {
         page,
         pageSize,
-        total: routeTotal,
-        hasMore: start + pageSize < routeTotal,
+        total: scopedRouteTotal,
+        hasMore: start + pageSize < scopedRouteTotal,
         groupType,
       };
     });
