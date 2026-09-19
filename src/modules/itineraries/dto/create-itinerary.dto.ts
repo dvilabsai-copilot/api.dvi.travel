@@ -18,18 +18,32 @@ import { TransportEarlyArrivalOption } from '../transport-early-arrival';
 export { TransportEarlyArrivalOption } from '../transport-early-arrival';
 
 export class CreatePlanDto {
-  @ApiProperty({
-    example: 0,
-    required: false,
-    description:
-      'Optional. If >0, Nest will UPDATE that itinerary_plan_ID (PHP hidden_itinerary_plan_ID parity). If 0/absent, Nest will CREATE.',
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  itinerary_plan_id?: number;
+ @ApiProperty({
+  example: 0,
+  required: false,
+  description:
+    'Optional. If >0, Nest will UPDATE that itinerary_plan_ID (PHP hidden_itinerary_plan_ID parity). If 0/absent, Nest will CREATE.',
+})
+@IsOptional()
+@IsInt()
+@Min(0)
+itinerary_plan_id?: number;
 
-  @ApiProperty({ example: 126 }) @IsInt() @Min(0) agent_id!: number;
+@ApiProperty({
+  example: 10433,
+  required: false,
+  description:
+    'Previous itinerary plan ID when this itinerary is created through Continue Planning.',
+})
+@IsOptional()
+@IsInt()
+@Min(1)
+continue_from_plan_id?: number;
+
+@ApiProperty({ example: 126 })
+@IsInt()
+@Min(0)
+agent_id!: number;
   @ApiProperty({ example: 0 }) @IsInt() @Min(0) staff_id!: number;
 
   @ApiProperty({
