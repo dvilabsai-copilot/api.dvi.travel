@@ -420,6 +420,12 @@ export interface VehicleSelectionDto {
 export interface ItineraryDetailsResponseDto {
   quoteId: string;
   planId: number;
+
+  // Continue Planning chain
+  continuedFromPlanId?: number | null;
+  continuedFromQuoteId?: string | null;
+  continuationRootQuoteId?: string | null;
+
   routeFamilyBaseQuoteId?: string | null;
   routeVariantIndex?: number | null;
   routeOptions?: Array<{
@@ -2119,14 +2125,40 @@ const foodTypeMap: Record<string, string> = {
       orderBy: { itinerary_plan_ID: 'desc' },
     });
 
-    if (!plan) {
-      throw new NotFoundException('Itinerary not found');
-    }
-    const planId = plan.itinerary_plan_ID;
-    const parsedRouteFamilyQuote = this.parseRouteFamilyQuote(plan.itinerary_quote_ID);
-    const siblingRouteOptions = await this.buildSiblingRouteOptions(
-      String(plan.itinerary_quote_ID || ''),
-    );
+ if (!plan) {
+  throw new NotFoundException('Itinerary not found');
+}
+
+const planId = plan.itinerary_plan_ID;
+
+const continuedFromPlanId =
+  Number((plan as any).continued_from_plan_ID || 0);
+
+const continuedFromPlan =
+  continuedFromPlanId > 0
+    ? await this.prisma.dvi_itinerary_plan_details.findFirst({
+        where: {
+          itinerary_plan_ID: continuedFromPlanId,
+          deleted: 0,
+        },
+        select: {
+          itinerary_quote_ID: true,
+        },
+      })
+    : null;
+
+const continuedFromQuoteId =
+  String(
+    continuedFromPlan?.itinerary_quote_ID || '',
+  ).trim() || null;
+
+const parsedRouteFamilyQuote = this.parseRouteFamilyQuote(
+  plan.itinerary_quote_ID,
+);
+
+const siblingRouteOptions = await this.buildSiblingRouteOptions(
+  String(plan.itinerary_quote_ID || ''),
+);
     const itineraryPreference = Number((plan as any).itinerary_preference || 0);
     const isVehicleOnly = itineraryPreference === 2;
     const proofQuoteEnabled = false;
@@ -7141,8 +7173,22 @@ const visibleCostBreakdown = canViewCostBreakdown
 
 const response: ItineraryDetailsResponseDto = {
   quoteId: plan.itinerary_quote_ID ?? '',
-      planId: plan.itinerary_plan_ID,
-      routeFamilyBaseQuoteId: parsedRouteFamilyQuote?.baseQuoteId ?? null,
+  planId: plan.itinerary_plan_ID,
+
+  continuedFromPlanId:
+    continuedFromPlanId > 0
+      ? continuedFromPlanId
+      : null,
+
+  continuedFromQuoteId,
+
+  continuationRootQuoteId:
+    String(
+      (plan as any).continuation_root_quote_ID || '',
+    ).trim() || null,
+
+  routeFamilyBaseQuoteId:
+    parsedRouteFamilyQuote?.baseQuoteId ?? null,
       routeVariantIndex: parsedRouteFamilyQuote?.routeVariantIndex ?? null,
       routeOptions: siblingRouteOptions,
       siblingRoutes: siblingRouteOptions,
