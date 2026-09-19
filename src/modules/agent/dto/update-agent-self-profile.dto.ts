@@ -53,7 +53,15 @@ export class UpdateAgentSelfProfileDto {
   @MaxLength(10)
   panNo?: string;
 
-  @IsOptional()
-  @IsString()
-  invoiceAddress?: string;
+ @IsOptional()
+@IsString()
+invoiceAddress?: string;
+
+@IsOptional()
+@IsString()
+removeSiteLogo?: string;
+
+@IsOptional()
+@IsString()
+removeInvoiceLogo?: string;
 }
