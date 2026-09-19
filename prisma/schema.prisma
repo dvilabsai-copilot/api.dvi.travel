@@ -3868,13 +3868,18 @@ model dvi_inbuilt_amenities {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model dvi_itinerary_plan_details {
-  itinerary_plan_ID                    Int       @id @default(autoincrement())
-  agent_id                             Int       @default(0)
-  staff_id                             Int       @default(0)
-  location_id                          BigInt    @default(0)
-  arrival_location                     String?   @db.Text
-  departure_location                   String?   @db.Text
-  itinerary_quote_ID                   String?   @db.Text
+  itinerary_plan_ID  Int     @id @default(autoincrement())
+  agent_id           Int     @default(0)
+  staff_id           Int     @default(0)
+  location_id        BigInt  @default(0)
+  arrival_location   String? @db.Text
+  departure_location String? @db.Text
+  itinerary_quote_ID String? @db.Text
+
+  // Continue Planning chain
+  continued_from_plan_ID     Int     @default(0)
+  continuation_root_quote_ID String? @db.VarChar(100)
+
   trip_start_date_and_time             DateTime? @db.DateTime(0)
   trip_end_date_and_time               DateTime? @db.DateTime(0)
   arrival_type                         Int       @default(0)
@@ -3930,6 +3935,8 @@ model dvi_itinerary_plan_details {
   @@index([hotel_rates_visibility], map: "idx_itinerary_plan_hotel_rates_visibility")
   @@index([itinerary_preference], map: "idx_itinerary_plan_itinerary_preference")
   @@index([itinerary_quote_ID(length: 768)], map: "idx_itinerary_plan_itinerary_quote_ID")
+  @@index([continued_from_plan_ID], map: "idx_itinerary_plan_continued_from_plan_ID")
+  @@index([continuation_root_quote_ID], map: "idx_itinerary_plan_continuation_root_quote_ID")
   @@index([itinerary_type], map: "idx_itinerary_plan_itinerary_type")
   @@index([location_id], map: "idx_itinerary_plan_location_id")
   @@index([meal_plan_breakfast], map: "idx_itinerary_plan_meal_plan_breakfast")
@@ -6772,14 +6779,14 @@ model dvi_calendar_events {
 }
 
 model dvi_calendar_event_scopes {
-  calendar_event_scope_id BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
-  calendar_event_id       BigInt              @db.UnsignedBigInt
-  scope_type              String              @db.VarChar(20)
+  calendar_event_scope_id BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  calendar_event_id       BigInt   @db.UnsignedBigInt
+  scope_type              String   @db.VarChar(20)
   scope_ref_id            Int
-  status                  Int                 @default(1) @db.TinyInt
-  deleted                 Int                 @default(0) @db.TinyInt
-  createdon               DateTime            @default(now()) @db.DateTime(0)
-  updatedon               DateTime            @default(now()) @updatedAt @db.DateTime(0)
+  status                  Int      @default(1) @db.TinyInt
+  deleted                 Int      @default(0) @db.TinyInt
+  createdon               DateTime @default(now()) @db.DateTime(0)
+  updatedon               DateTime @default(now()) @updatedAt @db.DateTime(0)
 
   event dvi_calendar_events @relation(fields: [calendar_event_id], references: [calendar_event_id], onDelete: Cascade)
 

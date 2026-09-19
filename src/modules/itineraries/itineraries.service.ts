@@ -1478,9 +1478,84 @@ private getGuideSlotLabel(slotId: number): string {
       stepStartedAt: timingStepStartedAt,
       planId: timingPlanId,
     });
-    const isNewPlan = Number((dto?.plan as any)?.itinerary_plan_id || 0) <= 0;
-    const result = await this.planPersistenceService.createPlan(dto, req, shouldOptimizeRoute, requestType);
-    timingStepStartedAt = this.logItineraryApiTiming({
+const isNewPlan =
+  Number(
+    (dto?.plan as any)?.itinerary_plan_id || 0,
+  ) <= 0;
+
+const continueFromPlanId = Number(
+  (dto?.plan as any)?.continue_from_plan_id || 0,
+);
+
+let continuationRootQuoteId: string | null = null;
+
+// Validate Continue Planning parent before creating child.
+if (isNewPlan && continueFromPlanId > 0) {
+  const parentPlan =
+    await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: {
+        itinerary_plan_ID: continueFromPlanId,
+      },
+      select: {
+        itinerary_plan_ID: true,
+        itinerary_quote_ID: true,
+        continuation_root_quote_ID: true,
+      },
+    });
+
+  if (!parentPlan) {
+    throw new BadRequestException(
+      "Previous itinerary plan not found.",
+    );
+  }
+
+  continuationRootQuoteId = String(
+    parentPlan.continuation_root_quote_ID ||
+      parentPlan.itinerary_quote_ID ||
+      "",
+  ).trim();
+
+  if (!continuationRootQuoteId) {
+    throw new BadRequestException(
+      "Previous itinerary quote ID not found.",
+    );
+  }
+}
+
+const result =
+  await this.planPersistenceService.createPlan(
+    dto,
+    req,
+    shouldOptimizeRoute,
+    requestType,
+  );
+
+if (
+  isNewPlan &&
+  continueFromPlanId > 0 &&
+  Number(result?.planId || 0) > 0 &&
+  continuationRootQuoteId
+) {
+  await this.prisma.dvi_itinerary_plan_details.update({
+    where: {
+      itinerary_plan_ID: Number(result.planId),
+    },
+    data: {
+      continued_from_plan_ID: continueFromPlanId,
+      continuation_root_quote_ID:
+        continuationRootQuoteId,
+    },
+  });
+
+  (result as any).continuedFromPlanId =
+    continueFromPlanId;
+
+  (result as any).continuationRootQuoteId =
+    continuationRootQuoteId;
+}
+
+timingStepStartedAt =
+  this.logItineraryApiTiming({
       api: 'save_basic_info',
       step: 'plan-persistence',
       startedAt: timingStartedAt,

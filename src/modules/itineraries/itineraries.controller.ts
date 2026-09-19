@@ -448,9 +448,33 @@ private readonly itineraryAccessService: ItineraryAccessService,
       type: type || null,
       memory: this.memorySnapshot(),
     })}`);
-    try {
-      const result = await this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
-      this.logger.log(`[ITINERARY_CREATE_TIMING] response ${JSON.stringify({
+  try {
+  const continueFromPlanId = Number(
+    dto?.plan?.continue_from_plan_id || 0,
+  );
+
+  if (continueFromPlanId > 0) {
+    const access =
+      await this.itineraryAccessService.getPlanAccessDecision(
+        continueFromPlanId,
+        (req as any)?.user,
+      );
+
+    if (!access.exists || !access.allowed) {
+      return this.denyItineraryAccess(
+        access.redirectTo || "/latest-itinerary",
+      );
+    }
+  }
+
+  const result = await this.svc.createPlan(
+    dto,
+    req,
+    shouldOptimizeRoute,
+    type,
+  );
+
+  this.logger.log(`[ITINERARY_CREATE_TIMING] response ${JSON.stringify({
         planId: (result as any)?.planId || null,
         quoteId: (result as any)?.quoteId || null,
         durationMs: Date.now() - startedAt,
