@@ -1048,16 +1048,28 @@ async updateSelfProfile(
         }
 
         if (files.siteLogo) {
-          configData.site_logo =
-            files.siteLogo;
-        }
+  configData.site_logo =
+    files.siteLogo;
+} else if (
+  payload.removeSiteLogo ===
+  'true'
+) {
+  configData.site_logo =
+    null;
+}
 
-        if (
-          files.invoiceLogo
-        ) {
-          configData.invoice_logo =
-            files.invoiceLogo;
-        }
+if (
+  files.invoiceLogo
+) {
+  configData.invoice_logo =
+    files.invoiceLogo;
+} else if (
+  payload.removeInvoiceLogo ===
+  'true'
+) {
+  configData.invoice_logo =
+    null;
+}
 
         if (existing) {
           await tx
