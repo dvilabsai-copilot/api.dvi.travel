@@ -1072,9 +1072,97 @@ export class ItineraryClipboardService {
       showRates,
       additionalMarginPct,
     });
-    const allVehicles = Array.isArray(itinerary.vehicles) ? itinerary.vehicles : [];
-    const assignedVehicles = allVehicles.filter((v: any) => Boolean(v?.isAssigned));
-    const vehiclesForClipboard = assignedVehicles.length ? assignedVehicles : allVehicles;
+const allVehicles = Array.isArray(itinerary.vehicles)
+  ? itinerary.vehicles
+  : [];
+
+const vehicleSelections = Array.isArray(
+  itinerary.vehicleSelections,
+)
+  ? itinerary.vehicleSelections
+  : [];
+
+const selectedVehicleKeys = new Set<string>();
+const selectionBackedVehicleTypes = new Set<number>();
+
+vehicleSelections.forEach((selection: any) => {
+  const vehicleTypeId = Number(
+    selection?.vehicleTypeId || 0,
+  );
+
+  if (!vehicleTypeId) {
+    return;
+  }
+
+  const selectedVendorEligibleId = Number(
+    selection?.selectedVendorEligibleId || 0,
+  );
+
+  const assignedVendorEligibleIds = Array.isArray(
+    selection?.assignedVendorEligibleIds,
+  )
+    ? selection.assignedVendorEligibleIds
+        .map((id: unknown) => Number(id))
+        .filter((id: number) => id > 0)
+    : [];
+
+  const selectedIds = Array.from(
+    new Set([
+      ...assignedVendorEligibleIds,
+      ...(selectedVendorEligibleId > 0
+        ? [selectedVendorEligibleId]
+        : []),
+    ]),
+  );
+
+  if (!selectedIds.length) {
+    return;
+  }
+
+  selectionBackedVehicleTypes.add(vehicleTypeId);
+
+  selectedIds.forEach((vendorEligibleId) => {
+    selectedVehicleKeys.add(
+      `${vehicleTypeId}:${vendorEligibleId}`,
+    );
+  });
+});
+
+const vehiclesForClipboard = allVehicles.filter(
+  (vehicle: any) => {
+    const vehicleTypeId = Number(
+      vehicle?.vehicleTypeId || 0,
+    );
+
+    const vendorEligibleId = Number(
+      vehicle?.vendorEligibleId || 0,
+    );
+
+    /*
+     * Explicit vehicleSelections are authoritative
+     * whenever selected vendor IDs exist for this type.
+     */
+    if (
+      vehicleTypeId > 0 &&
+      selectionBackedVehicleTypes.has(vehicleTypeId)
+    ) {
+      return (
+        vendorEligibleId > 0 &&
+        selectedVehicleKeys.has(
+          `${vehicleTypeId}:${vendorEligibleId}`,
+        )
+      );
+    }
+
+    /*
+     * Legacy fallback:
+     * only accept rows explicitly marked assigned.
+     *
+     * Do NOT fall back to all vendor candidates.
+     */
+    return Boolean(vehicle?.isAssigned);
+  },
+);
 
     const selectedVehicleQty = vehiclesForClipboard.reduce((sum: number, v: any) => {
       return sum + Number(v?.totalQty || 0);
