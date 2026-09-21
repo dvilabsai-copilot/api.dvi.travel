@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Headers,
   Post,
   Req,
 } from '@nestjs/common';
@@ -16,6 +17,7 @@ import { SendRegistrationEmailOtpDto } from './dto/send-registration-email-otp.d
 import { VerifyRegistrationEmailOtpDto } from './dto/verify-registration-email-otp.dto';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { ActivatePartnerDto } from './dto/activate-partner.dto';
+import { RedeemLegacySsoTicketDto } from './dto/legacy-sso.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -28,6 +30,30 @@ export class AuthController {
   @Post('login')
   login(@Body() body: LoginDto) {
     return this.auth.login(body.email, body.password);
+  }
+
+  @ApiOperation({
+    summary: 'Create a short-lived ticket for legacy B2B sign-in',
+  })
+  @Post('legacy-sso/ticket')
+  createLegacySsoTicket(@Req() req: any) {
+    return this.auth.createLegacySsoTicket(req.user?.userId);
+  }
+
+  @ApiOperation({
+    summary: 'Redeem a legacy B2B sign-in ticket',
+  })
+  @ApiBody({ type: RedeemLegacySsoTicketDto })
+  @Public()
+  @Post('legacy-sso/redeem')
+  redeemLegacySsoTicket(
+    @Body() body: RedeemLegacySsoTicketDto,
+    @Headers('x-legacy-sso-secret') secret?: string,
+  ) {
+    return this.auth.redeemLegacySsoTicket(
+      body.ticket,
+      secret,
+    );
   }
   @ApiOperation({ summary: 'Send email OTP for login' })
 @ApiBody({ type: SendEmailLoginOtpDto })
