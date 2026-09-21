@@ -1296,9 +1296,16 @@ const vehiclesForClipboard = allVehicles.filter(
       companyName: incomingCost.companyName || 'Doview Holidays India Pvt ltd',
     };
 
-    const vehiclesHtml = this.buildVehicleSection(vehiclesForClipboard);
-    const costHtml = this.buildCostSection(costBreakdown);
-    const hotspotHtml = this.buildHotspotSection(mode, itinerary.days || [], {
+const isVehicleOnlyItinerary =
+  Number(plan.itinerary_preference || 0) === 2;
+
+const vehiclesHtml = this.buildVehicleSection(vehiclesForClipboard);
+
+const costHtml = isVehicleOnlyItinerary
+  ? ''
+  : this.buildCostSection(costBreakdown);
+
+const hotspotHtml = this.buildHotspotSection(mode, itinerary.days || [], {
       firstDayStartLabel:
         globalSettings?.itinerary_break_time || 'Start your Journey',
       otherDayStartLabel:
@@ -1311,11 +1318,11 @@ const vehiclesForClipboard = allVehicles.filter(
         <div id="contentToCopy" style="font-family:Calibri; font-size:11px !important; color:#302c6e; width:700px;">
           <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
             <tr><td>${summaryHtml}</td></tr>
-            <tr><td>${hotelsHtml}</td></tr>
-            <tr><td>${vehiclesHtml}</td></tr>
-            <tr><td>${costHtml}</td></tr>
-            <tr><td>${hotspotHtml}</td></tr>
-            <tr><td>${termsHtml}</td></tr>
+<tr><td>${hotelsHtml}</td></tr>
+<tr><td>${vehiclesHtml}</td></tr>
+${!isVehicleOnlyItinerary ? `<tr><td>${costHtml}</td></tr>` : ''}
+<tr><td>${hotspotHtml}</td></tr>
+<tr><td>${termsHtml}</td></tr>
           </table>
             <div style="clear:both; display:block; line-height:0; font-size:0; height:0;">&nbsp;</div>
         </div>
