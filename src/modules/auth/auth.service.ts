@@ -5,6 +5,11 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import {
+  createHash,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma.service';
@@ -17,6 +22,8 @@ import { PartnerActivationService } from './partner-activation.service';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { SystemRole } from './constants/system-role.constants';
 const BCRYPT_ROUNDS = 10;
+const LEGACY_SSO_AUDIENCE = 'legacy';
+const LEGACY_SSO_TTL_MS = 60_000;
 
 @Injectable()
 export class AuthService {
@@ -85,6 +92,159 @@ export class AuthService {
     ) {
       throw new UnauthorizedException('Your partner account is pending approval.');
     }
+  }
+
+  private assertLegacySsoSecret(providedSecret?: string) {
+    const expectedSecret = String(
+      process.env.LEGACY_SSO_SHARED_SECRET || '',
+    ).trim();
+    const candidateSecret = String(providedSecret || '').trim();
+
+    if (!expectedSecret || !candidateSecret) {
+      throw new UnauthorizedException(
+        'Legacy SSO is not configured.',
+      );
+    }
+
+    const expected = Buffer.from(expectedSecret, 'utf8');
+    const candidate = Buffer.from(candidateSecret, 'utf8');
+
+    if (
+      expected.length !== candidate.length ||
+      !timingSafeEqual(expected, candidate)
+    ) {
+      throw new UnauthorizedException(
+        'Invalid legacy SSO credentials.',
+      );
+    }
+  }
+
+  async createLegacySsoTicket(userId: string | number) {
+    let resolvedUserId: bigint;
+
+    try {
+      resolvedUserId = BigInt(userId);
+    } catch {
+      throw new UnauthorizedException(
+        'Invalid authenticated user.',
+      );
+    }
+
+    const user = await this.prisma.dvi_users.findUnique({
+      where: { userID: resolvedUserId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException(
+        'Authenticated user account was not found.',
+      );
+    }
+
+    this.assertLoginAllowed(user);
+
+    const email = this.normalizeEmail(user.useremail || '');
+
+    if (!email) {
+      throw new UnauthorizedException(
+        'A verified email is required for legacy sign-in.',
+      );
+    }
+
+    const ticket = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256')
+      .update(ticket)
+      .digest('hex');
+    const expiresAt = new Date(
+      Date.now() + LEGACY_SSO_TTL_MS,
+    );
+
+    await this.prisma.dvi_legacy_sso_tickets.create({
+      data: {
+        token_hash: tokenHash,
+        user_id: user.userID,
+        audience: LEGACY_SSO_AUDIENCE,
+        expires_at: expiresAt,
+      },
+    });
+
+    return {
+      ticket,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async redeemLegacySsoTicket(
+    ticket: string,
+    providedSecret?: string,
+  ) {
+    this.assertLegacySsoSecret(providedSecret);
+
+    const normalizedTicket = String(ticket || '').trim();
+
+    if (!/^[a-f0-9]{64}$/i.test(normalizedTicket)) {
+      throw new UnauthorizedException(
+        'Invalid or expired legacy sign-in ticket.',
+      );
+    }
+
+    const tokenHash = createHash('sha256')
+      .update(normalizedTicket)
+      .digest('hex');
+    const consumedAt = new Date();
+
+    const consumed =
+      await this.prisma.dvi_legacy_sso_tickets.updateMany({
+        where: {
+          token_hash: tokenHash,
+          audience: LEGACY_SSO_AUDIENCE,
+          consumed_at: null,
+          expires_at: { gt: consumedAt },
+        },
+        data: { consumed_at: consumedAt },
+      });
+
+    if (consumed.count !== 1) {
+      throw new UnauthorizedException(
+        'Invalid or expired legacy sign-in ticket.',
+      );
+    }
+
+    const ticketRow =
+      await this.prisma.dvi_legacy_sso_tickets.findUnique({
+        where: { token_hash: tokenHash },
+      });
+
+    const user = ticketRow
+      ? await this.prisma.dvi_users.findUnique({
+          where: { userID: ticketRow.user_id },
+        })
+      : null;
+
+    if (!user) {
+      throw new UnauthorizedException(
+        'Legacy user account was not found.',
+      );
+    }
+
+    this.assertLoginAllowed(user);
+
+    const email = this.normalizeEmail(user.useremail || '');
+
+    if (!email) {
+      throw new UnauthorizedException(
+        'Legacy user account has no email address.',
+      );
+    }
+
+    return {
+      email,
+      userID: user.userID.toString(),
+      agentId: Number(user.agent_id || 0),
+      vendorId: Number(user.vendor_id || 0),
+      staffId: Number(user.staff_id || 0),
+      guideId: Number(user.guide_id || 0),
+      roleID: Number(user.roleID || 0),
+    };
   }
 
  /**

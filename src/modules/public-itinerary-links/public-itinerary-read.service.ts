@@ -122,11 +122,11 @@ const [itinerary, hotelDetails, agentConfig] = await Promise.all([
     )
     .catch(() => null),
 
-Number(link.createdByAgentId || 0) > 0
+Number(plan.agent_id || 0) > 0
   ? this.prisma.dvi_agent_configuration.findMany({
       where: {
         agent_id: Number(
-          link.createdByAgentId,
+          plan.agent_id,
         ),
         status: 1,
         deleted: 0,
@@ -142,6 +142,12 @@ Number(link.createdByAgentId || 0) > 0
 ]);
 
 const source = itinerary as any;
+
+const vehicleCost = Number(
+  source.costBreakdown?.totalVehicleAmount ??
+    source.costBreakdown?.totalVehicleCost ??
+    0,
+);
 
 const agentLogo =
   agentConfig
@@ -440,97 +446,438 @@ const publicItinerary = {
     Number(link.groupType || 1),
 
   hotelGroups:
-    Array.isArray(
-      hotelDetails?.hotelTabs,
-    )
-      ? hotelDetails.hotelTabs.map(
-          (tab: any) => {
-            const groupType =
-              Number(
-                tab?.groupType || 0,
-              );
+  Array.isArray(
+    hotelDetails?.hotelTabs,
+  )
+    ? hotelDetails.hotelTabs.map(
+        (tab: any) => {
+          const groupType =
+            Number(
+              tab?.groupType || 0,
+            );
 
-            const hotels =
-              Array.isArray(
-                hotelDetails?.hotels,
-              )
-                ? hotelDetails.hotels
-                    .filter(
-                      (hotel: any) =>
+          /*
+           * IMPORTANT:
+           * Use hotelSelectionState as the source of truth.
+           *
+           * These routes represent the actual itinerary
+           * days on which a hotel stay is required.
+           *
+           * Example:
+           * 2 Nights / 3 Days
+           *
+           * Day 1 -> hotel
+           * Day 2 -> hotel
+           * Day 3 -> departure, no hotel
+           */
+          const selectionGroup =
+            Array.isArray(
+              hotelDetails
+                ?.hotelSelectionState,
+            )
+              ? hotelDetails
+                  .hotelSelectionState
+                  .find(
+                    (
+                      group: any,
+                    ) =>
+                      Number(
+                        group
+                          ?.groupType ||
+                          0,
+                      ) ===
+                      groupType,
+                  )
+              : null;
+
+          /*
+           * Same route metadata used by
+           * the normal Hotel List.
+           *
+           * Gives us:
+           * routeId
+           * dayNumber
+           * date
+           * destination
+           */
+          const stayRoutes =
+            Array.isArray(
+              hotelDetails
+                ?.hotelAvailability
+                ?.stayRoutes,
+            )
+              ? hotelDetails
+                  .hotelAvailability
+                  .stayRoutes
+              : [];
+
+          /*
+           * Raw group hotels are only a
+           * fallback for display identity.
+           *
+           * They are NOT used to decide
+           * how many hotel days exist.
+           */
+          const rawGroupHotels =
+            Array.isArray(
+              hotelDetails?.hotels,
+            )
+              ? hotelDetails.hotels.filter(
+                  (
+                    hotel: any,
+                  ) =>
+                    Number(
+                      hotel
+                        ?.groupType ||
+                        0,
+                    ) ===
+                    groupType,
+                )
+              : [];
+
+          /*
+           * Primary source:
+           * authoritative selected hotel routes.
+           */
+          const selectionRoutes =
+            Array.isArray(
+              selectionGroup?.routes,
+            )
+              ? selectionGroup.routes
+              : [];
+
+          /*
+           * Normally selectionRoutes will exist.
+           *
+           * Safe fallback:
+           * use only hotel stay routes and
+           * never exceed itinerary night count.
+           */
+          const hotelRoutes =
+            selectionRoutes.length > 0
+              ? selectionRoutes
+              : stayRoutes
+                  .slice(
+                    0,
+                    Math.max(
+                      0,
+                      Number(
+                        source
+                          .nightCount ||
+                          0,
+                      ),
+                    ),
+                  )
+                  .map(
+                    (
+                      route: any,
+                    ) => ({
+                      routeId:
                         Number(
-                          hotel
-                            ?.groupType ||
+                          route
+                            ?.routeId ||
                             0,
-                        ) ===
-                        groupType,
-                    )
-                    .map(
-                      (
-                        hotel: any,
-                      ) => ({
-                        day:
-                          hotel?.day ??
-                          null,
+                        ),
 
-                        date:
-                          hotel?.date ??
-                          null,
+                      routeDate:
+                        route
+                          ?.date ??
+                        route
+                          ?.routeDate ??
+                        null,
 
-                        destination:
-                          hotel
-                            ?.destination ??
-                          null,
+                      selected:
+                        null,
+                    }),
+                  );
 
-                        hotelName:
-                          hotel
-                            ?.hotelName ??
-                          null,
+          const hotels =
+            hotelRoutes.map(
+              (
+                route: any,
+                index: number,
+              ) => {
+                const routeId =
+                  Number(
+                    route
+                      ?.routeId ||
+                      0,
+                  );
 
-                        category:
-                          hotel
-                            ?.category ??
-                          null,
+                const routeMeta =
+                  stayRoutes.find(
+                    (
+                      item: any,
+                    ) =>
+                      Number(
+                        item
+                          ?.routeId ||
+                          0,
+                      ) ===
+                      routeId,
+                  );
 
-                        roomType:
-                          hotel
-                            ?.roomType ??
-                          null,
+                const routeDate =
+                  String(
+                    route
+                      ?.routeDate ??
+                      routeMeta
+                        ?.date ??
+                      routeMeta
+                        ?.routeDate ??
+                      "",
+                  ).slice(
+                    0,
+                    10,
+                  );
 
-                        mealPlan:
-                          hotel
-                            ?.mealPlan ??
-                          null,
+                /*
+                 * Find the matching itinerary
+                 * day only for metadata fallback.
+                 */
+                const itineraryDay =
+                  Array.isArray(
+                    source.days,
+                  )
+                    ? source.days.find(
+                        (
+                          day: any,
+                        ) =>
+                          (
+                            routeId >
+                              0 &&
+                            Number(
+                              day?.id ||
+                                0,
+                            ) ===
+                              routeId
+                          ) ||
+                          (
+                            Boolean(
+                              routeDate,
+                            ) &&
+                            String(
+                              day?.date ||
+                                "",
+                            ).slice(
+                              0,
+                              10,
+                            ) ===
+                              routeDate
+                          ),
+                      )
+                    : null;
 
-                        totalAmount:
+                /*
+                 * Raw hotel fallback.
+                 *
+                 * Important:
+                 * routeIds / completeStayRouteIds
+                 * may represent a multi-night stay.
+                 */
+                const rawHotel =
+                  rawGroupHotels.find(
+                    (
+                      hotel: any,
+                    ) => {
+                      const coveredRouteIds =
+                        [
                           Number(
                             hotel
-                              ?.totalStayPrice ??
+                              ?.itineraryRouteId ||
                               hotel
-                                ?.totalHotelCost ??
+                                ?.routeId ||
                               0,
                           ),
-                      }),
-                    )
-                : [];
 
-            return {
-              groupType,
+                          ...(
+                            Array.isArray(
+                              hotel
+                                ?.routeIds,
+                            )
+                              ? hotel.routeIds
+                              : []
+                          ).map(
+                            (
+                              id: unknown,
+                            ) =>
+                              Number(
+                                id,
+                              ),
+                          ),
 
-              label:
-                tab?.label ??
-                `Recommended #${groupType}`,
+                          ...(
+                            Array.isArray(
+                              hotel
+                                ?.completeStayRouteIds,
+                            )
+                              ? hotel
+                                  .completeStayRouteIds
+                              : []
+                          ).map(
+                            (
+                              id: unknown,
+                            ) =>
+                              Number(
+                                id,
+                              ),
+                          ),
+                        ].filter(
+                          (
+                            id: number,
+                          ) =>
+                            id > 0,
+                        );
 
-              totalAmount:
-                Number(
-                  tab?.totalAmount ??
+                      return coveredRouteIds.includes(
+                        routeId,
+                      );
+                    },
+                  );
+
+                /*
+                 * Prefer the authoritative selected
+                 * identity from hotelSelectionState.
+                 *
+                 * Fall back to raw hotel row only
+                 * when necessary.
+                 */
+                const selectedHotel =
+                  route?.selected ??
+                  rawHotel ??
+                  {};
+
+                const dayNumber =
+                  Number(
+                    routeMeta
+                      ?.dayNumber ??
+                      itineraryDay
+                        ?.dayNumber ??
+                      0,
+                  );
+
+                const date =
+                  String(
+                    route
+                      ?.routeDate ??
+                      routeMeta
+                        ?.date ??
+                      routeMeta
+                        ?.routeDate ??
+                      itineraryDay
+                        ?.date ??
+                      rawHotel
+                        ?.date ??
+                      "",
+                  ).slice(
                     0,
-                ),
+                    10,
+                  );
 
-              hotels,
-            };
-          },
-        )
-      : [],
+                const destination =
+                  String(
+                    routeMeta
+                      ?.destination ??
+                      rawHotel
+                        ?.destination ??
+                      itineraryDay
+                        ?.arrival ??
+                      "",
+                  ).trim();
+
+                return {
+                  day:
+                    dayNumber > 0
+                      ? `Day ${dayNumber}`
+                      : `Day ${
+                          index + 1
+                        }`,
+
+                  date:
+                    date ||
+                    null,
+
+                  destination:
+                    destination ||
+                    null,
+
+                  hotelName:
+                    selectedHotel
+                      ?.hotelName ??
+                    null,
+
+                  category:
+                    selectedHotel
+                      ?.selectedCategory ??
+                    selectedHotel
+                      ?.category ??
+                    null,
+
+                  roomType:
+                    selectedHotel
+                      ?.roomType ??
+                    null,
+
+                  mealPlan:
+                    selectedHotel
+                      ?.mealPlan ??
+                    null,
+
+                  totalAmount:
+                    Number(
+                      selectedHotel
+                        ?.selectedTotalPrice ??
+                        selectedHotel
+                          ?.totalPrice ??
+                        selectedHotel
+                          ?.totalStayPrice ??
+                        selectedHotel
+                          ?.totalHotelCost ??
+                        0,
+                    ),
+                };
+              },
+            );
+
+          /*
+           * Use the authoritative package total
+           * from the same hotel-selection state.
+           *
+           * Fallback to the recommendation tab
+           * total for old data.
+           */
+          const hotelTotal =
+            Number(
+              selectionGroup
+                ?.totalAmount ??
+                tab?.totalAmount ??
+                0,
+            );
+
+          return {
+            groupType,
+
+            label:
+              tab?.label ??
+              `Recommended #${groupType}`,
+
+            totalAmount:
+              hotelTotal,
+
+            vehicleCost,
+
+            hotelCost:
+              hotelTotal,
+
+            totalPackageCost:
+              vehicleCost +
+              hotelTotal,
+
+            hotels,
+          };
+        },
+      )
+    : [],
 
  /*
  * PACKAGE INCLUSIONS

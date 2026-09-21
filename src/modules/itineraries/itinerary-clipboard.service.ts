@@ -1072,9 +1072,97 @@ export class ItineraryClipboardService {
       showRates,
       additionalMarginPct,
     });
-    const allVehicles = Array.isArray(itinerary.vehicles) ? itinerary.vehicles : [];
-    const assignedVehicles = allVehicles.filter((v: any) => Boolean(v?.isAssigned));
-    const vehiclesForClipboard = assignedVehicles.length ? assignedVehicles : allVehicles;
+const allVehicles = Array.isArray(itinerary.vehicles)
+  ? itinerary.vehicles
+  : [];
+
+const vehicleSelections = Array.isArray(
+  itinerary.vehicleSelections,
+)
+  ? itinerary.vehicleSelections
+  : [];
+
+const selectedVehicleKeys = new Set<string>();
+const selectionBackedVehicleTypes = new Set<number>();
+
+vehicleSelections.forEach((selection: any) => {
+  const vehicleTypeId = Number(
+    selection?.vehicleTypeId || 0,
+  );
+
+  if (!vehicleTypeId) {
+    return;
+  }
+
+  const selectedVendorEligibleId = Number(
+    selection?.selectedVendorEligibleId || 0,
+  );
+
+  const assignedVendorEligibleIds = Array.isArray(
+    selection?.assignedVendorEligibleIds,
+  )
+    ? selection.assignedVendorEligibleIds
+        .map((id: unknown) => Number(id))
+        .filter((id: number) => id > 0)
+    : [];
+
+  const selectedIds = Array.from(
+    new Set([
+      ...assignedVendorEligibleIds,
+      ...(selectedVendorEligibleId > 0
+        ? [selectedVendorEligibleId]
+        : []),
+    ]),
+  );
+
+  if (!selectedIds.length) {
+    return;
+  }
+
+  selectionBackedVehicleTypes.add(vehicleTypeId);
+
+  selectedIds.forEach((vendorEligibleId) => {
+    selectedVehicleKeys.add(
+      `${vehicleTypeId}:${vendorEligibleId}`,
+    );
+  });
+});
+
+const vehiclesForClipboard = allVehicles.filter(
+  (vehicle: any) => {
+    const vehicleTypeId = Number(
+      vehicle?.vehicleTypeId || 0,
+    );
+
+    const vendorEligibleId = Number(
+      vehicle?.vendorEligibleId || 0,
+    );
+
+    /*
+     * Explicit vehicleSelections are authoritative
+     * whenever selected vendor IDs exist for this type.
+     */
+    if (
+      vehicleTypeId > 0 &&
+      selectionBackedVehicleTypes.has(vehicleTypeId)
+    ) {
+      return (
+        vendorEligibleId > 0 &&
+        selectedVehicleKeys.has(
+          `${vehicleTypeId}:${vendorEligibleId}`,
+        )
+      );
+    }
+
+    /*
+     * Legacy fallback:
+     * only accept rows explicitly marked assigned.
+     *
+     * Do NOT fall back to all vendor candidates.
+     */
+    return Boolean(vehicle?.isAssigned);
+  },
+);
 
     const selectedVehicleQty = vehiclesForClipboard.reduce((sum: number, v: any) => {
       return sum + Number(v?.totalQty || 0);
@@ -1208,9 +1296,16 @@ export class ItineraryClipboardService {
       companyName: incomingCost.companyName || 'Doview Holidays India Pvt ltd',
     };
 
-    const vehiclesHtml = this.buildVehicleSection(vehiclesForClipboard);
-    const costHtml = this.buildCostSection(costBreakdown);
-    const hotspotHtml = this.buildHotspotSection(mode, itinerary.days || [], {
+const isVehicleOnlyItinerary =
+  Number(plan.itinerary_preference || 0) === 2;
+
+const vehiclesHtml = this.buildVehicleSection(vehiclesForClipboard);
+
+const costHtml = isVehicleOnlyItinerary
+  ? ''
+  : this.buildCostSection(costBreakdown);
+
+const hotspotHtml = this.buildHotspotSection(mode, itinerary.days || [], {
       firstDayStartLabel:
         globalSettings?.itinerary_break_time || 'Start your Journey',
       otherDayStartLabel:
@@ -1223,11 +1318,11 @@ export class ItineraryClipboardService {
         <div id="contentToCopy" style="font-family:Calibri; font-size:11px !important; color:#302c6e; width:700px;">
           <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
             <tr><td>${summaryHtml}</td></tr>
-            <tr><td>${hotelsHtml}</td></tr>
-            <tr><td>${vehiclesHtml}</td></tr>
-            <tr><td>${costHtml}</td></tr>
-            <tr><td>${hotspotHtml}</td></tr>
-            <tr><td>${termsHtml}</td></tr>
+<tr><td>${hotelsHtml}</td></tr>
+<tr><td>${vehiclesHtml}</td></tr>
+${!isVehicleOnlyItinerary ? `<tr><td>${costHtml}</td></tr>` : ''}
+<tr><td>${hotspotHtml}</td></tr>
+<tr><td>${termsHtml}</td></tr>
           </table>
             <div style="clear:both; display:block; line-height:0; font-size:0; height:0;">&nbsp;</div>
         </div>
