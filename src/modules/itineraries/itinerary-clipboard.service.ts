@@ -1295,22 +1295,14 @@ const vehiclesForClipboard = allVehicles.filter(
       childWithoutBed: Number(itinerary.childWithoutBed || 0),
       companyName: incomingCost.companyName || 'Doview Holidays India Pvt ltd',
     };
-
-const isVehicleOnlyItinerary =
-  Number(plan.itinerary_preference || 0) === 2;
-
 const vehiclesHtml = this.buildVehicleSection(vehiclesForClipboard);
 
-const costHtml = isVehicleOnlyItinerary
-  ? ''
-  : this.buildCostSection(costBreakdown);
-
 const hotspotHtml = this.buildHotspotSection(mode, itinerary.days || [], {
-      firstDayStartLabel:
-        globalSettings?.itinerary_break_time || 'Start your Journey',
-      otherDayStartLabel:
-        globalSettings?.itinerary_hotel_start || 'Start Your Day',
-    });
+  firstDayStartLabel:
+    globalSettings?.itinerary_break_time || 'Start your Journey',
+  otherDayStartLabel:
+    globalSettings?.itinerary_hotel_start || 'Start Your Day',
+});
     const termsHtml = this.buildTermsSection(plan, globalSettings);
 
     const html = `
@@ -1320,7 +1312,6 @@ const hotspotHtml = this.buildHotspotSection(mode, itinerary.days || [], {
             <tr><td>${summaryHtml}</td></tr>
 <tr><td>${hotelsHtml}</td></tr>
 <tr><td>${vehiclesHtml}</td></tr>
-${!isVehicleOnlyItinerary ? `<tr><td>${costHtml}</td></tr>` : ''}
 <tr><td>${hotspotHtml}</td></tr>
 <tr><td>${termsHtml}</td></tr>
           </table>
