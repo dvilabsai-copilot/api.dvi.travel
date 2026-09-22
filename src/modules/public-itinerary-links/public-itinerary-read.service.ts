@@ -774,16 +774,73 @@ const publicItinerary = {
                     10,
                   );
 
-                const destination =
-                  String(
-                    routeMeta
-                      ?.destination ??
-                      rawHotel
-                        ?.destination ??
-                      itineraryDay
-                        ?.arrival ??
-                      "",
-                  ).trim();
+              /*
+ * Resolve the actual HOTEL STAY destination.
+ *
+ * Recommendation stayResults are authoritative
+ * because one stay can cover one or multiple
+ * itinerary route IDs.
+ */
+const matchingStay =
+  Array.isArray(
+    tab?.stayResults,
+  )
+    ? tab.stayResults.find(
+        (stay: any) => {
+          const coveredRouteIds =
+            [
+              Number(
+                stay?.parentRouteId ||
+                  0,
+              ),
+
+              ...(
+                Array.isArray(
+                  stay?.routeIds,
+                )
+                  ? stay.routeIds
+                  : []
+              ).map(
+                (
+                  id: unknown,
+                ) =>
+                  Number(id),
+              ),
+            ].filter(
+              (
+                id: number,
+              ) =>
+                id > 0,
+            );
+
+          return coveredRouteIds.includes(
+            routeId,
+          );
+        },
+      )
+    : null;
+
+const destination =
+  String(
+    matchingStay
+      ?.destination ??
+      "",
+  ).trim() ||
+  String(
+    itineraryDay
+      ?.arrival ??
+      "",
+  ).trim() ||
+  String(
+    rawHotel
+      ?.destination ??
+      "",
+  ).trim() ||
+  String(
+    routeMeta
+      ?.destination ??
+      "",
+  ).trim();
 
                 return {
                   day:
