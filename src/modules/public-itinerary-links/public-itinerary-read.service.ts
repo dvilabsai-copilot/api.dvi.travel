@@ -6,6 +6,7 @@ import {
 import { createHash } from 'crypto';
 
 import { PrismaService } from '../../prisma.service';
+import { SystemRole } from '../auth/constants/system-role.constants';
 import { ItineraryDetailsService } from '../itineraries/itinerary-details.service';
 import { ItineraryHotelDetailsService } from '../itineraries/itinerary-hotel-details.service';
 
@@ -110,7 +111,13 @@ const plan =
       );
     }
 
-const [itinerary, hotelDetails, agentConfig] = await Promise.all([
+const [
+  itinerary,
+  hotelDetails,
+  agentConfig,
+  agentDetails,
+  creatorUser,
+] = await Promise.all([
   this.itineraryDetailsService.getItineraryDetails(
     plan.itinerary_quote_ID,
     link.groupType,
@@ -128,20 +135,129 @@ Number(plan.agent_id || 0) > 0
         agent_id: Number(
           plan.agent_id,
         ),
-        status: 1,
         deleted: 0,
       },
       select: {
         site_logo: true,
+        company_name: true,
+        site_address: true,
+        invoice_address: true,
+        status: true,
       },
-      orderBy: {
-        agent_config_id: "desc",
-      },
+      orderBy: [
+        {
+          status: "desc",
+        },
+        {
+          agent_config_id: "desc",
+        },
+      ],
     })
   : Promise.resolve([]),
+
+Number(plan.agent_id || 0) > 0
+  ? this.prisma.dvi_agent.findFirst({
+      where: {
+        agent_ID: Number(
+          plan.agent_id,
+        ),
+        deleted: 0,
+      },
+      select: {
+        agent_name: true,
+        agent_lastname: true,
+        agent_email_id: true,
+        agent_primary_mobile_number: true,
+
+        agent_country: true,
+        agent_state: true,
+        agent_city: true,
+      },
+    })
+  : Promise.resolve(null),
+
+  Number(link.createdByUserId || 0) > 0
+    ? this.prisma.dvi_users.findUnique({
+        where: {
+          userID: Number(
+            link.createdByUserId,
+          ),
+        },
+        select: {
+          roleID: true,
+        },
+      })
+    : Promise.resolve(null),
 ]);
 
 const source = itinerary as any;
+const [
+  agentCountry,
+  agentState,
+  agentCity,
+] = await Promise.all([
+  Number(
+    agentDetails?.agent_country || 0,
+  ) > 0
+    ? this.prisma.dvi_countries.findFirst({
+        where: {
+          id: Number(
+            agentDetails?.agent_country,
+          ),
+        },
+        select: {
+          name: true,
+        },
+      })
+    : Promise.resolve(null),
+
+  Number(
+    agentDetails?.agent_state || 0,
+  ) > 0
+    ? this.prisma.dvi_states.findFirst({
+        where: {
+          id: Number(
+            agentDetails?.agent_state,
+          ),
+        },
+        select: {
+          name: true,
+        },
+      })
+    : Promise.resolve(null),
+
+  Number(
+    agentDetails?.agent_city || 0,
+  ) > 0
+    ? this.prisma.dvi_cities.findFirst({
+        where: {
+          id: Number(
+            agentDetails?.agent_city,
+          ),
+        },
+        select: {
+          name: true,
+        },
+      })
+    : Promise.resolve(null),
+]);
+
+const agentLocationAddress =
+  [
+    String(
+      agentCity?.name || "",
+    ).trim(),
+
+    String(
+      agentState?.name || "",
+    ).trim(),
+
+    String(
+      agentCountry?.name || "",
+    ).trim(),
+  ]
+    .filter(Boolean)
+    .join(", ");
 
 const vehicleCost = Number(
   source.costBreakdown?.totalVehicleAmount ??
@@ -157,6 +273,67 @@ const agentLogo =
       ).trim(),
     )
     .find(Boolean) || "";
+
+const activeAgentConfig =
+  agentConfig.find(
+    (config) =>
+      Number(
+        config?.status || 0,
+      ) === 1,
+  ) ??
+  agentConfig[0] ??
+  null;
+
+const agentCompanyName =
+  String(
+    activeAgentConfig?.company_name ||
+      "",
+  ).trim() ||
+  [
+    String(
+      agentDetails?.agent_name || "",
+    ).trim(),
+
+    String(
+      agentDetails?.agent_lastname || "",
+    ).trim(),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+const agentSiteAddress =
+  String(
+    activeAgentConfig?.site_address ||
+      "",
+  ).trim();
+
+const agentInvoiceAddress =
+  String(
+    activeAgentConfig?.invoice_address ||
+      "",
+  ).trim();
+
+const agentAddress =
+  agentSiteAddress ||
+  agentInvoiceAddress ||
+  agentLocationAddress;
+
+const creatorRoleId =
+  Number(
+    creatorUser?.roleID || 0,
+  );
+
+const showAgentFooter =
+  creatorRoleId ===
+    SystemRole.AGENT ||
+  creatorRoleId ===
+    SystemRole.TRAVEL_EXPERT ||
+  (
+    creatorRoleId === 0 &&
+    Number(
+      link.createdByAgentId || 0,
+    ) > 0
+  );
 const globalSettings =
   await this.prisma.dvi_global_settings.findFirst({
     where: {
@@ -183,6 +360,33 @@ const publicItinerary = {
 
   agentLogo:
     agentLogo || null,
+
+ agentDetails:
+  showAgentFooter
+    ? {
+        companyName:
+          agentCompanyName ||
+          null,
+
+        email:
+          String(
+            agentDetails
+              ?.agent_email_id ||
+              "",
+          ).trim() || null,
+
+        contactNo:
+          String(
+            agentDetails
+              ?.agent_primary_mobile_number ||
+              "",
+          ).trim() || null,
+
+        address:
+          agentAddress ||
+          null,
+      }
+    : null,
 
   dayCount: source.dayCount,
   nightCount: source.nightCount,
@@ -903,35 +1107,39 @@ const destination =
            * Fallback to the recommendation tab
            * total for old data.
            */
-          const hotelTotal =
-            Number(
-              selectionGroup
-                ?.totalAmount ??
-                tab?.totalAmount ??
-                0,
-            );
+        const hotelTotal =
+  Number(
+    tab?.totalAmount ??
+      selectionGroup
+        ?.totalAmount ??
+      0,
+  );
 
-          return {
-            groupType,
+return {
+  groupType,
 
-            label:
-              tab?.label ??
-              `Recommended #${groupType}`,
+  label:
+    tab?.label ??
+    `Recommended #${groupType}`,
 
-            totalAmount:
-              hotelTotal,
+  totalAmount:
+    hotelTotal,
 
-            vehicleCost,
+  vehicleCost,
 
-            hotelCost:
-              hotelTotal,
+  hotelCost:
+    hotelTotal,
 
-            totalPackageCost:
-              vehicleCost +
-              hotelTotal,
+  totalPackageCost:
+    Number(
+      (
+        hotelTotal +
+        vehicleCost
+      ).toFixed(2),
+    ),
 
-            hotels,
-          };
+  hotels,
+};
         },
       )
     : [],
