@@ -799,6 +799,7 @@ const planId = await this.planEngine.upsertPlanHeader(
   dto.travellers,
   tx,
   userId,
+  Number(u.roleID ?? u.roleId ?? u.role ?? 0),
 );
 
 const persistedPlanAfterUpsert =

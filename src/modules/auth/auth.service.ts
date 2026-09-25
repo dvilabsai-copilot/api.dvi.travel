@@ -21,6 +21,10 @@ import { EmailLoginOtpService } from './email-login-otp.service';
 import { PartnerActivationService } from './partner-activation.service';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { SystemRole } from './constants/system-role.constants';
+import {
+  generateUniqueAgentCode,
+  withAgentCodeGenerationLock,
+} from '../../common/utils/agent-code.util';
 const BCRYPT_ROUNDS = 10;
 const LEGACY_SSO_AUDIENCE = 'legacy';
 const LEGACY_SSO_TTL_MS = 60_000;
@@ -512,16 +516,21 @@ export class AuthService {
     const pan = input.pan.trim().toUpperCase();
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const agent = await tx.dvi_agent.create({
-        data: {
-          agent_name: companyName,
-          agent_primary_mobile_number: mobile,
-          agent_email_id: normalizedEmail,
-          status: 1,
-          deleted: 0,
-          createdon: now,
-          updatedon: now,
-        },
+      const agent = await withAgentCodeGenerationLock(tx as any, async () => {
+        const agentCode = await generateUniqueAgentCode(tx as any, companyName);
+
+        return tx.dvi_agent.create({
+          data: {
+            agent_name: companyName,
+            agent_code: agentCode,
+            agent_primary_mobile_number: mobile,
+            agent_email_id: normalizedEmail,
+            status: 1,
+            deleted: 0,
+            createdon: now,
+            updatedon: now,
+          },
+        });
       });
 
       await tx.dvi_agent_configuration.create({

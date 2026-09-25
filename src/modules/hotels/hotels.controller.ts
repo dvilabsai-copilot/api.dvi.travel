@@ -16,6 +16,7 @@ import {
   UploadedFiles,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -31,6 +32,7 @@ import {
 
 import { Express } from 'express';
 import { HotelsService } from './hotels.service';
+import { HotelGalleryService } from './services/hotel-gallery.service';
 import { PaginationQueryDto } from './dto/pagination.dto';
 import { CreateHotelDto } from './dto/create-hotel.dto';
 import { UpdateHotelDto } from './dto/update-hotel.dto';
@@ -147,7 +149,10 @@ class ReviewDto {
 @ApiBearerAuth()
 @Controller('hotels')
 export class HotelsController {
-  constructor(private readonly hotels: HotelsService) {}
+  constructor(
+    private readonly hotels: HotelsService,
+    private readonly hotelGallery: HotelGalleryService,
+  ) {}
 
   // =============================================================================
   // Listing & basic helpers
@@ -297,6 +302,46 @@ export class HotelsController {
   // =============================================================================
   // Core Hotel CRUD
   // =============================================================================
+
+  @Get(':id/gallery')
+  getGallery(@Param('id', ParseIntPipe) id: number) {
+    return this.hotelGallery.getHotelImages(id);
+  }
+
+  @Post(':id/gallery')
+  @UseInterceptors(FilesInterceptor('images', 12, {
+    storage: memoryStorage(),
+    limits: { files: 12, fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, callback) => {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+        return callback(new BadRequestException('Only JPEG, PNG, and WebP images are allowed') as any, false);
+      }
+      callback(null, true);
+    },
+  }))
+  uploadGallery(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req: any,
+  ) {
+    return this.hotelGallery.upload(id, files || [], Number(req.user?.id ?? req.user?.user_id ?? 0));
+  }
+
+  @Patch(':id/gallery/:imageId/primary')
+  setGalleryPrimary(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+  ) {
+    return this.hotelGallery.setPrimary(id, imageId);
+  }
+
+  @Delete(':id/gallery/:imageId')
+  deleteGalleryImage(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+  ) {
+    return this.hotelGallery.remove(id, imageId);
+  }
 
   @Get(':id')
   getOne(

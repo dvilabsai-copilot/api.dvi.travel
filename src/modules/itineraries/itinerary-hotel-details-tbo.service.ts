@@ -49,6 +49,7 @@ import {
 } from './utils/hotel-card-pricing.util';
 import { resolveHotelRequiredRoutes } from './utils/hotel-selection-view-state.util';
 import { toDatabaseBusinessDate } from './utils/itinerary.utils';
+import { HotelGalleryService } from '../hotels/services/hotel-gallery.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -1186,8 +1187,30 @@ if (hotelMasterId) {
     private readonly hobseProvider: HobseHotelProvider,
     private readonly offlineHotelCatalogService: OfflineHotelCatalogService,
     private readonly hotelRecommendationPackageService: HotelRecommendationPackageService,
+    private readonly hotelGallery: HotelGalleryService,
     private readonly hotelPricingService: HotelPricingService = new HotelPricingService(prisma),
   ) {}
+
+  private async attachDviGalleryImages(hotelsByRoute: Map<number, HotelSearchResult[]>) {
+    const ids = Array.from(new Set(
+      Array.from(hotelsByRoute.values()).flat().map((hotel: any) => Number(hotel.canonicalHotelId)).filter((id) => id > 0),
+    ));
+    if (ids.length === 0) return hotelsByRoute;
+    const galleryByHotel = await this.hotelGallery.getHotelImagesForHotels(ids);
+    for (const hotels of hotelsByRoute.values()) {
+      for (const hotel of hotels as any[]) {
+        const gallery = galleryByHotel.get(Number(hotel.canonicalHotelId)) || [];
+        if (gallery.length === 0) continue;
+        if (!Array.isArray(hotel.images) || hotel.images.length === 0) {
+          hotel.images = gallery.map((image) => image.url);
+        }
+        if (!hotel.primaryImageUrl) {
+          hotel.primaryImageUrl = gallery.find((image) => image.isPrimary)?.url || gallery[0]?.url || null;
+        }
+      }
+    }
+    return hotelsByRoute;
+  }
 
   /** Fetch the latest room/rate/meal options for one selected supplier hotel. */
   async getSelectedHotelRates(
@@ -3730,7 +3753,7 @@ this.logger.log(
       );
     }
 
-    return hotelsByRoute;
+    return this.attachDviGalleryImages(hotelsByRoute);
   }
 
   private async fetchStaahHotelsForRoutes(
@@ -4269,7 +4292,7 @@ this.logger.log(
         if (failedRouteId > 0) hotelsByRoute.set(failedRouteId, []);
       }
     }
-    return hotelsByRoute;
+    return this.attachDviGalleryImages(hotelsByRoute);
   }
 
 

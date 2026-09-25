@@ -1,6 +1,10 @@
 import 'dotenv/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaClient } from '@prisma/client';
+import {
+  generateUniqueAgentCode,
+  withAgentCodeGenerationLock,
+} from '../src/common/utils/agent-code.util';
 
 const prisma = new PrismaClient();
 const EMAIL = 'demo@dvi.travel';
@@ -21,7 +25,7 @@ async function main() {
   const now = new Date();
   const passwordHash = await bcrypt.hash(PASSWORD, 10);
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => withAgentCodeGenerationLock(tx as any, async () => {
     const agentRows = await tx.$queryRaw<Array<{ agent_ID: number }>>`
       SELECT agent_ID FROM dvi_agent
       WHERE LOWER(TRIM(agent_email_id)) = ${EMAIL} AND deleted = 0
@@ -29,11 +33,22 @@ async function main() {
     `;
     if (agentRows.length > 1) throw new Error(`Duplicate active agents found for ${EMAIL}.`);
 
+    const existingAgent = agentRows[0]
+      ? await tx.dvi_agent.findUnique({
+          where: { agent_ID: Number(agentRows[0].agent_ID) },
+          select: { agent_code: true },
+        })
+      : null;
+    const agentCode =
+      String(existingAgent?.agent_code || '').trim().toUpperCase() ||
+      await generateUniqueAgentCode(tx as any, DISPLAY_NAME);
+
     const agent = agentRows[0]
       ? await tx.dvi_agent.update({
           where: { agent_ID: Number(agentRows[0].agent_ID) },
           data: {
             agent_name: DISPLAY_NAME,
+            agent_code: agentCode,
             agent_email_id: EMAIL,
             status: 1,
             deleted: 0,
@@ -43,6 +58,7 @@ async function main() {
       : await tx.dvi_agent.create({
           data: {
             agent_name: DISPLAY_NAME,
+            agent_code: agentCode,
             agent_ref_no: 'DEMO-VEHICLE-AGENT',
             agent_email_id: EMAIL,
             status: 1,
@@ -93,7 +109,7 @@ async function main() {
         });
 
     return { agentId: agent.agent_ID, userId: String(user.userID) };
-  });
+  }));
 
   console.log(JSON.stringify({ email: EMAIL, roleId: ROLE_ID, ...result }, null, 2));
 }

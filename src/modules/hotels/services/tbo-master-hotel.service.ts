@@ -2,12 +2,14 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../../prisma.service';
 import { TBOHotelProvider } from '../providers/tbo-hotel.provider';
 import { TboMasterPricePreviewDto, UpdateTboMasterHotelDto } from '../dto/tbo-master.dto';
+import { TboMasterGalleryService } from './tbo-master-gallery.service';
 
 @Injectable()
 export class TboMasterHotelService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tboProvider: TBOHotelProvider,
+    private readonly gallery: TboMasterGalleryService,
   ) {}
 
   async list(query: { search?: string; cityCode?: string; page?: number; limit?: number; priority?: string }) {
@@ -39,13 +41,21 @@ export class TboMasterHotelService {
         take: limit,
       }),
     ]);
-    return { page, limit, total, items: items.map((item) => this.toResponse(item)) };
+    const galleryByCode = await this.gallery.getHotelImagesForCodes(items.map((item) => item.tbo_hotel_code));
+    const roomImages = await Promise.all(items.map((item) => this.gallery.getRoomImages(item.tbo_hotel_code)));
+    return {
+      page,
+      limit,
+      total,
+      items: items.map((item, index) => this.toResponse(item, galleryByCode.get(item.tbo_hotel_code) || [], roomImages[index] || [])),
+    };
   }
 
   async get(code: string) {
     const item = await this.prisma.tbo_hotel_master.findUnique({ where: { tbo_hotel_code: String(code).trim() } });
     if (!item) throw new NotFoundException('TBO master hotel not found');
-    return this.toResponse(item);
+    const [images, roomGallery] = await Promise.all([this.gallery.getHotelImages(item.tbo_hotel_code), this.gallery.getRoomImages(item.tbo_hotel_code)]);
+    return this.toResponse(item, images, roomGallery);
   }
 
   async update(code: string, dto: UpdateTboMasterHotelDto, userId?: number) {
@@ -68,7 +78,7 @@ export class TboMasterHotelService {
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.isPriority !== undefined) data.is_priority = dto.isPriority ? 1 : 0;
     const updated = await this.prisma.tbo_hotel_master.update({ where: { tbo_hotel_code: existing.tbo_hotel_code }, data });
-    return this.toResponse(updated);
+    return this.get(code);
   }
 
   async setPriority(code: string, isPriority: boolean) {
@@ -115,7 +125,7 @@ export class TboMasterHotelService {
     };
   }
 
-  private toResponse(item: any) {
+  private toResponse(item: any, images: any[] = [], roomGallery: any[] = []) {
     return {
       id: item.id,
       hotelCode: item.tbo_hotel_code,
@@ -124,7 +134,10 @@ export class TboMasterHotelService {
       city: item.city_name,
       address: item.hotel_address,
       rating: item.star_rating,
-      imageUrl: item.hotel_image_url,
+      imageUrl: item.hotel_image_url || images.find((image) => image.isPrimary)?.url || images[0]?.url || null,
+      images,
+      primaryImageUrl: images.find((image) => image.isPrimary)?.url || images[0]?.url || item.hotel_image_url || null,
+      roomGallery,
       description: item.description,
       checkInTime: item.check_in_time,
       checkOutTime: item.check_out_time,

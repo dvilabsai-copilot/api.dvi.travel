@@ -9,6 +9,10 @@ import { AgentPreviewDto } from './dto/agent-preview.dto';
 import { mapAgentToListRow } from './agent.mapper';
 import { UpdateAgentConfigDto } from './dto/update-agent-config.dto';
 import { UpdateAgentSelfProfileDto } from './dto/update-agent-self-profile.dto';
+import {
+  generateUniqueAgentCode,
+  withAgentCodeGenerationLock,
+} from '../../common/utils/agent-code.util';
 
 type SubRow = {
   id: number;
@@ -461,6 +465,7 @@ const [
 
       const obj: AgentPreviewDto = {
         agent_ID: a.agent_ID,
+        agent_code: a.agent_code ?? null,
         agent_name: displayName,
         agent_lastname: null,
         agent_email_id: a.agent_email_id ?? null,
@@ -520,6 +525,7 @@ const [
       where: { agent_ID: id, deleted: 0 },
       select: {
         agent_ID: true,
+        agent_code: true,
         agent_name: true,
         agent_lastname: true,
         agent_email_id: true,
@@ -626,6 +632,7 @@ const [
 
     const dto: AgentPreviewDto = {
       agent_ID: a.agent_ID,
+      agent_code: a.agent_code ?? null,
       agent_name: a.agent_name ?? null,
       agent_lastname: a.agent_lastname ?? null,
       agent_email_id: a.agent_email_id ?? null,
@@ -1185,10 +1192,20 @@ async getConfig(agentId: number) {
 
   if (!agent) throw new NotFoundException('Agent not found');
 
-  const config = await this.prisma.dvi_agent_configuration.findFirst({
+  let config = await this.prisma.dvi_agent_configuration.findFirst({
     where: { agent_id: agentId, deleted: 0, status: 1 },
     orderBy: { agent_config_id: 'desc' },
   });
+
+  // Older agent configuration rows can be non-deleted but have status = 0.
+  // They still contain the agent's saved company/invoice details, so use the
+  // latest non-deleted row before falling back to the agent's personal name.
+  if (!config) {
+    config = await this.prisma.dvi_agent_configuration.findFirst({
+      where: { agent_id: agentId, deleted: 0 },
+      orderBy: { agent_config_id: 'desc' },
+    });
+  }
 
   const gstType = Number(agent.agent_margin_gst_type || 0);
   return {
@@ -1696,16 +1713,33 @@ private async addWallet(
 
  /** ---------- MUTATIONS ---------- */
   async create(payload: CreateAgentDto) {
-    const created = await this.prisma.dvi_agent.create({
-      data: {
-        ...payload,
-        deleted: 0,
-        status: 1,
-        createdon: new Date(),
-        updatedon: new Date(),
-      },
+    const now = new Date();
+    const created = await this.prisma.$transaction(async (tx) => {
+      return withAgentCodeGenerationLock(tx as any, async () => {
+        const companyName = String(payload.agent_company_name ?? '').trim();
+        const agentCode = await generateUniqueAgentCode(
+          tx as any,
+          companyName || payload.agent_name,
+        );
+        const {
+          agent_code: _ignoredAgentCode,
+          agent_company_name: _ignoredCompanyName,
+          ...agentPayload
+        } = payload as any;
+
+        return tx.dvi_agent.create({
+          data: {
+            ...agentPayload,
+            agent_code: agentCode,
+            deleted: 0,
+            status: 1,
+            createdon: now,
+            updatedon: now,
+          },
+        });
+      });
     });
-    return { agent_ID: created.agent_ID };
+    return { agent_ID: created.agent_ID, agent_code: created.agent_code };
   }
 
   async update(id: number, payload: UpdateAgentDto) {
@@ -1715,10 +1749,11 @@ private async addWallet(
     });
     if (!exists) throw new NotFoundException('Agent not found');
 
+    const { agent_code: _ignoredAgentCode, ...agentPayload } = payload as any;
     await this.prisma.dvi_agent.update({
       where: { agent_ID: id },
       data: {
-        ...payload,
+        ...agentPayload,
         updatedon: new Date(),
       },
     });

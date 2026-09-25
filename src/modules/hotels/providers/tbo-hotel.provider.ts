@@ -23,6 +23,7 @@ import {
 } from '../hotel-rate-plans';
 import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
+import { TboMasterGalleryService } from '../services/tbo-master-gallery.service';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
@@ -92,6 +93,7 @@ export class TBOHotelProvider implements IHotelProvider {
   constructor(
     private readonly prisma: PrismaService,
     private readonly supplementNormalizer: SupplementNormalizerService,
+    private readonly tboMasterGallery: TboMasterGalleryService,
     private readonly referenceCache?: ReferenceDataCacheService,
   ) {
     if (!prisma) {
@@ -330,6 +332,9 @@ export class TBOHotelProvider implements IHotelProvider {
  // Step 7: Transform to standard format
  // TBO returns rooms within hotels, we need to flatten and deduplicate
  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min validity
+      const galleryByCode = await this.tboMasterGallery.getHotelImagesForCodes(
+        hotels.map((hotel: any) => String(hotel?.HotelCode || '').trim()),
+      );
 
       const results: HotelSearchResult[] = [];
 
@@ -341,6 +346,17 @@ export class TBOHotelProvider implements IHotelProvider {
           continue;
         }
         const hotelDisplayName = hotelMasterData?.hotel_name ?? `Hotel ${hotel.HotelCode}`;
+        const supplierImages = [
+          hotel?.Image,
+          ...(Array.isArray(hotel?.Images) ? hotel.Images : []),
+        ]
+          .map((image: unknown) => String(image || '').trim())
+          .filter(Boolean);
+        const masterGallery = galleryByCode.get(String(hotel.HotelCode || '').trim()) || [];
+        const images = Array.from(new Set(supplierImages.length
+          ? supplierImages
+          : [hotelMasterData?.hotel_image_url, ...masterGallery.map((image) => image.url)].filter(Boolean)));
+        const primaryImageUrl = images[0] || null;
 
  // Process each room as a separate offering with the SAME real hotel name
  // (One HotelCode = One real hotel, not fake variants)
@@ -423,7 +439,8 @@ export class TBOHotelProvider implements IHotelProvider {
             amenities,
             inclusions,
             rateConditions,
-            images: [],
+            images,
+            primaryImageUrl,
             price: formattedNetAmount,
             netAmount: formattedNetAmount,
             totalFare: formattedTotalFare,
@@ -1809,6 +1826,7 @@ export class TBOHotelProvider implements IHotelProvider {
           hotel_latitude: tboHotel.hotel_latitude ?? null,
           hotel_longitude: tboHotel.hotel_longitude ?? null,
           star_rating: tboHotel.star_rating || 0,
+          hotel_image_url: tboHotel.hotel_image_url || null,
         };
       }
 

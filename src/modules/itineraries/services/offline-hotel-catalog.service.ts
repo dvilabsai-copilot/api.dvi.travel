@@ -6,6 +6,7 @@ import { inferCanonicalHotelRatePlanCode } from '../../hotels/hotel-rate-plans';
 import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
 import { normalizeHotelDisplayName } from '../utils/hotel-selection-identity.util';
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
+import { HotelGalleryService } from '../../hotels/services/hotel-gallery.service';
 
 type StayBlock = {
   destination: string;
@@ -209,6 +210,7 @@ export class OfflineHotelCatalogService {
     private readonly prisma: PrismaService,
     private readonly hotelPricingService: HotelPricingService,
     private readonly referenceCache?: ReferenceDataCacheService,
+    private readonly hotelGallery?: HotelGalleryService,
   ) {}
 
   async searchOfflineHotels(criteria: {
@@ -463,8 +465,12 @@ export class OfflineHotelCatalogService {
       },
     });
 
+    const galleryByHotel = await this.hotelGallery?.getHotelImagesForHotels(
+      (hotels as any[]).map((hotel) => Number(hotel.hotel_id)),
+    );
     const results: HotelSearchResult[] = [];
     for (const hotel of hotels as any[]) {
+      const gallery = galleryByHotel?.get(Number(hotel.hotel_id)) || [];
       const offers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount, catalogRows, requestedMealPlanCode, supplementCounts);
       if (offers.length === 0) {
         continue;
@@ -496,7 +502,8 @@ export class OfflineHotelCatalogService {
         inclusions: [],
         rateConditions: [],
         cancellationPolicy: this.normalizeTextList(hotel.hotel_cancel_policy),
-        images: [],
+        images: gallery.map((image) => image.url),
+        primaryImageUrl: gallery.find((image) => image.isPrimary)?.url || null,
         price: bestOffer.totalStayPrice,
         netAmount: bestOffer.totalStayPrice,
         totalFare: bestOffer.totalStayPrice,
@@ -576,6 +583,8 @@ export class OfflineHotelCatalogService {
           completeStayBookable: true,
           provider: 'offline',
           providerDisplayName: 'Offline',
+          images: gallery.map((image) => image.url),
+          primaryImageUrl: gallery.find((image) => image.isPrimary)?.url || null,
           providerHotelCode: String(hotel.hotel_id),
           roomId: offer.roomId,
           roomTypeId: offer.roomTypeId,
