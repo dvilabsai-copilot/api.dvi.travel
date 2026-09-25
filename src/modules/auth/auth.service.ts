@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -20,6 +21,7 @@ import {
 import { EmailLoginOtpService } from './email-login-otp.service';
 import { PartnerActivationService } from './partner-activation.service';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
+import { QuickOnboardAgentDto } from './dto/quick-onboard-agent.dto';
 import { SystemRole } from './constants/system-role.constants';
 import {
   generateUniqueAgentCode,
@@ -481,6 +483,478 @@ export class AuthService {
     );
 
     return { verified: true, verificationToken };
+  }
+
+   async quickOnboardPartner(
+    input: QuickOnboardAgentDto,
+    authenticatedUser: any,
+  ) {
+    const role = Number(
+      authenticatedUser?.roleID ??
+        authenticatedUser?.role ??
+        0,
+    );
+
+    if (
+      role !== SystemRole.ADMIN &&
+      role !==
+        SystemRole.TRAVEL_EXPERT
+    ) {
+      throw new ForbiddenException(
+        'Only Admin or Travel Expert can quick-onboard an Agent.',
+      );
+    }
+
+    const travelExpertId =
+      role ===
+      SystemRole.TRAVEL_EXPERT
+        ? Number(
+            authenticatedUser
+              ?.staffId ??
+              authenticatedUser
+                ?.staff_id ??
+              0,
+          )
+        : 0;
+
+    if (
+      role ===
+        SystemRole.TRAVEL_EXPERT &&
+      travelExpertId <= 0
+    ) {
+      throw new ForbiddenException(
+        'This Travel Expert login is not linked to a valid staff record.',
+      );
+    }
+
+    const name =
+      String(input.name || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const companyName =
+      String(
+        input.companyName || '',
+      )
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const normalizedEmail =
+      this.normalizeEmail(
+        input.email,
+      );
+
+    const mobile =
+      String(input.mobile || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    /*
+     * Serialize quick-onboarding for the
+     * same email at the DATABASE level.
+     *
+     * This protects retries as well as
+     * simultaneous requests from creating
+     * duplicate Agent accounts.
+     */
+    const quickOnboardLock =
+      `quick-agent:${createHash(
+        'sha256',
+      )
+        .update(normalizedEmail)
+        .digest('hex')
+        .slice(0, 40)}`;
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const lockRows =
+          await tx.$queryRaw<
+            Array<{
+              acquired:
+                | number
+                | bigint
+                | null;
+            }>
+          >`
+            SELECT GET_LOCK(
+              ${quickOnboardLock},
+              5
+            ) AS acquired
+          `;
+
+        if (
+          Number(
+            lockRows[0]
+              ?.acquired ?? 0,
+          ) !== 1
+        ) {
+          throw new ConflictException(
+            'This Agent is already being created. Please retry the itinerary save.',
+          );
+        }
+
+        try {
+          /*
+           * Recheck inside the database lock.
+           * Do not rely on the frontend to
+           * provide idempotency.
+           */
+          const existingUsers =
+            await tx.$queryRaw<
+              Array<{
+                userID: bigint;
+                agent_id: number;
+                roleID: number;
+                userapproved: number;
+                userbanned: number;
+                status: number;
+              }>
+            >`
+              SELECT
+                userID,
+                agent_id,
+                roleID,
+                userapproved,
+                userbanned,
+                status
+              FROM dvi_users
+              WHERE
+                LOWER(
+                  TRIM(useremail)
+                ) =
+                  ${normalizedEmail}
+                AND deleted = 0
+              ORDER BY userID ASC
+              LIMIT 1
+            `;
+
+          const existingAgents =
+            await tx.$queryRaw<
+              Array<{
+                agent_ID: number;
+                agent_name:
+                  | string
+                  | null;
+                agent_email_id:
+                  | string
+                  | null;
+                agent_primary_mobile_number:
+                  | string
+                  | null;
+                travel_expert_id:
+                  number;
+                status: number;
+              }>
+            >`
+              SELECT
+                agent_ID,
+                agent_name,
+                agent_email_id,
+                agent_primary_mobile_number,
+                travel_expert_id,
+                status
+              FROM dvi_agent
+              WHERE
+                LOWER(
+                  TRIM(
+                    agent_email_id
+                  )
+                ) =
+                  ${normalizedEmail}
+                AND deleted = 0
+              ORDER BY agent_ID ASC
+              LIMIT 1
+            `;
+
+          const existingUser =
+            existingUsers[0] ??
+            null;
+
+          const existingAgent =
+            existingAgents[0] ??
+            null;
+
+          if (
+            existingUser ||
+            existingAgent
+          ) {
+            const existingAgentId =
+              Number(
+                existingAgent
+                  ?.agent_ID ??
+                  existingUser
+                    ?.agent_id ??
+                  0,
+              );
+
+            const existingConfig =
+              existingAgentId > 0
+                ? await tx
+                    .dvi_agent_configuration
+                    .findFirst({
+                      where: {
+                        agent_id:
+                          existingAgentId,
+                        status: 1,
+                        deleted: 0,
+                      },
+                      orderBy: {
+                        agent_config_id:
+                          'desc',
+                      },
+                      select: {
+                        company_name:
+                          true,
+                        invoice_pan_no:
+                          true,
+                      },
+                    })
+                : null;
+
+            /*
+             * A quick-onboard account is a
+             * pending AGENT linked through
+             * the same agent ID and has no
+             * registration PAN.
+             *
+             * If it matches, this is an
+             * idempotent retry: reuse it.
+             */
+            const reusablePendingAgent =
+              Boolean(
+                existingUser &&
+                  existingAgent &&
+                  existingConfig &&
+                  Number(
+                    existingUser
+                      .agent_id,
+                  ) ===
+                    Number(
+                      existingAgent
+                        .agent_ID,
+                    ) &&
+                  Number(
+                    existingUser
+                      .roleID,
+                  ) ===
+                    SystemRole.AGENT &&
+                  Number(
+                    existingUser
+                      .userapproved,
+                  ) === 0 &&
+                  Number(
+                    existingUser
+                      .userbanned,
+                  ) === 0 &&
+                  Number(
+                    existingUser
+                      .status,
+                  ) === 1 &&
+                  Number(
+                    existingAgent
+                      .status,
+                  ) === 1 &&
+                  !String(
+                    existingConfig
+                      .invoice_pan_no ||
+                      '',
+                  ).trim() &&
+                  (
+                    role !==
+                      SystemRole.TRAVEL_EXPERT ||
+                    Number(
+                      existingAgent
+                        .travel_expert_id ||
+                        0,
+                    ) ===
+                      travelExpertId
+                  ),
+              );
+
+            if (
+              !reusablePendingAgent
+            ) {
+              throw new ConflictException(
+                'An account or registration already exists for this email.',
+              );
+            }
+
+            return {
+              agentId:
+                Number(
+                  existingAgent!
+                    .agent_ID,
+                ),
+
+              name:
+                String(
+                  existingAgent!
+                    .agent_name ||
+                    name,
+                ).trim(),
+
+              companyName:
+                String(
+                  existingConfig!
+                    .company_name ||
+                    companyName,
+                ).trim(),
+
+              email:
+                normalizedEmail,
+
+              mobile:
+                String(
+                  existingAgent!
+                    .agent_primary_mobile_number ||
+                    mobile,
+                ).trim(),
+
+              status:
+                'pending_activation' as const,
+            };
+          }
+
+          const now =
+            new Date();
+
+          /*
+           * All three rows are created in
+           * ONE transaction.
+           *
+           * Failure in any one rolls back
+           * the account creation itself.
+           */
+          const agent =
+            await tx.dvi_agent.create({
+              data: {
+                agent_name:
+                  name,
+
+                agent_primary_mobile_number:
+                  mobile,
+
+                agent_email_id:
+                  normalizedEmail,
+
+                /*
+                 * Preserve existing
+                 * Travel Expert -> Agent
+                 * ownership.
+                 */
+                travel_expert_id:
+                  travelExpertId,
+
+                status: 1,
+                deleted: 0,
+                createdon: now,
+                updatedon: now,
+              },
+            });
+
+          await tx
+            .dvi_agent_configuration
+            .create({
+              data: {
+                agent_id:
+                  agent.agent_ID,
+
+                company_name:
+                  companyName,
+
+                /*
+                 * Do NOT add PAN here.
+                 * The schema field is
+                 * nullable, and normal
+                 * Partner Registration's
+                 * PAN rules remain intact.
+                 */
+
+                status: 1,
+                deleted: 0,
+                createdon: now,
+                updatedon: now,
+              },
+            });
+
+          await tx.dvi_users.create({
+            data: {
+              agent_id:
+                agent.agent_ID,
+
+              username:
+                name,
+
+              useremail:
+                normalizedEmail,
+
+              password:
+                null,
+
+              roleID:
+                SystemRole.AGENT,
+
+              userapproved:
+                0,
+
+              status: 1,
+              deleted: 0,
+
+              createdon: now,
+              updatedon: now,
+            },
+          });
+
+          /*
+           * IMPORTANT:
+           * No PartnerActivationService
+           * call here.
+           *
+           * The Agent is pending only.
+           * Activation is triggered by the
+           * frontend AFTER itinerary
+           * persistence through the existing
+           * resend-activation endpoint.
+           */
+          return {
+            agentId:
+              agent.agent_ID,
+
+            name,
+            companyName,
+            email:
+              normalizedEmail,
+            mobile,
+
+            status:
+              'pending_activation' as const,
+          };
+        } finally {
+          /*
+           * MySQL named locks are connection
+           * scoped rather than transaction
+           * scoped, so explicitly release it.
+           */
+          try {
+            await tx.$queryRaw`
+              SELECT RELEASE_LOCK(
+                ${quickOnboardLock}
+              )
+            `;
+          } catch (releaseError) {
+            this.logger.warn(
+              `Unable to release quick-onboard lock for ${normalizedEmail}: ${
+                releaseError instanceof Error
+                  ? releaseError.message
+                  : String(
+                      releaseError,
+                    )
+              }`,
+            );
+          }
+        }
+      },
+    );
   }
 
   async registerPartner(input: RegisterPartnerDto) {
