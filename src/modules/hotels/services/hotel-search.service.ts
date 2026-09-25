@@ -3,6 +3,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import {
@@ -17,6 +18,7 @@ import { ResAvenueHotelProvider } from '../providers/resavenue-hotel.provider';
 import { HobseHotelProvider } from '../providers/hobse-hotel.provider';
 import { OfflineHotelCatalogService } from '../../itineraries/services/offline-hotel-catalog.service';
 import { toDatabaseBusinessDate } from '../../itineraries/utils/itinerary.utils';
+import { HotelGalleryService } from './hotel-gallery.service';
 
 @Injectable()
 export class HotelSearchService {
@@ -38,6 +40,7 @@ export class HotelSearchService {
     private resavenueProvider: ResAvenueHotelProvider,
     private hobseProvider: HobseHotelProvider,
     private offlineHotelCatalog: OfflineHotelCatalogService,
+    @Optional() private readonly hotelGallery?: HotelGalleryService,
   ) {
     this.providers = new Map<string, any>([
       ['tbo', this.tboProvider],
@@ -366,12 +369,16 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
     const scopedMatching = requestedHotelCodes.size === 0
       ? matching
       : matching.filter((hotel: any) => requestedHotelCodes.has(String(hotel.axisrooms_property_id || hotel.hotel_id || '').trim()));
+    const galleryByHotel = await this.hotelGallery?.getHotelImagesForHotels(
+      scopedMatching.map((hotel: any) => Number(hotel.hotel_id)),
+    );
     const results: HotelSearchResult[] = [];
     for (const hotel of scopedMatching) {
       const availability = await (this.prisma as any).dvi_hotel_room_availability.findMany({
         where: { hotel_id: hotel.hotel_id, start_date: { lte: checkIn }, end_date: { gte: checkIn } },
         select: { room_id: true, free: true, start_date: true, end_date: true, received_at: true },
       });
+      const gallery = galleryByHotel?.get(Number(hotel.hotel_id)) || [];
       const effectiveAvailability = new Map<string, any>();
       for (const row of availability) {
         const key = String(row.room_id);
@@ -435,7 +442,7 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
         const mealPlan = String(plan.meal_plan_description || plan.rateplan_name || plan.rateplan_id || '-');
         results.push({
         provider: 'axisrooms', providerDisplayName: 'AxisRooms', canonicalHotelId: Number(hotel.hotel_id), providerHotelCode: String(hotel.axisrooms_property_id || hotel.hotel_id), rateOptionId: optionId,
-        hotelCode: String(hotel.hotel_id), hotelName: String(hotel.hotel_name || 'Hotel'), cityCode: String(hotel.hotel_city || criteria.cityCode), address: String(hotel.hotel_address || ''), rating: Number(hotel.hotel_category || 0), facilities: [], amenities: [], inclusions: [], rateConditions: [], cancellationPolicy: [], images: [], price: rate, currency: 'INR', roomTypes: [{ roomCode: String(plan.room_id), roomName: String(room?.room_title || 'Room'), bedType: '', capacity: 0, price: rate, cancellationPolicy: '' }], roomType: String(room?.room_title || 'Room'), mealPlan, searchReference: optionId, expiresAt: new Date(Date.now() + 15 * 60 * 1000), pricePerNight: rate, bookingMode: 'LIVE_API', priceSource: 'DATABASE', availabilityStatus: 'AVAILABLE', isLiveRate: false, isLiveBookable: true, isSelectable: true, requiresHotelApproval: false, approvalStatus: 'NOT_REQUIRED', manualConfirmationStatus: 'NOT_STARTED',
+        hotelCode: String(hotel.hotel_id), hotelName: String(hotel.hotel_name || 'Hotel'), cityCode: String(hotel.hotel_city || criteria.cityCode), address: String(hotel.hotel_address || ''), rating: Number(hotel.hotel_category || 0), facilities: [], amenities: [], inclusions: [], rateConditions: [], cancellationPolicy: [], images: gallery.map((image) => image.url), primaryImageUrl: gallery.find((image) => image.isPrimary)?.url || null, price: rate, currency: 'INR', roomTypes: [{ roomCode: String(plan.room_id), roomName: String(room?.room_title || 'Room'), bedType: '', capacity: 0, price: rate, cancellationPolicy: '' }], roomType: String(room?.room_title || 'Room'), mealPlan, searchReference: optionId, expiresAt: new Date(Date.now() + 15 * 60 * 1000), pricePerNight: rate, bookingMode: 'LIVE_API', priceSource: 'DATABASE', availabilityStatus: 'AVAILABLE', isLiveRate: false, isLiveBookable: true, isSelectable: true, requiresHotelApproval: false, approvalStatus: 'NOT_REQUIRED', manualConfirmationStatus: 'NOT_STARTED',
         });
       }
     }

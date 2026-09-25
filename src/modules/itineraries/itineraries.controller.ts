@@ -962,6 +962,7 @@ private readonly itineraryAccessService: ItineraryAccessService,
               'rateId', 'rate_id', 'roomTypeId', 'room_type_id',
               // Display and provider identity.
               'provider', 'providerDisplayName', 'providerHotelCode', 'isPriority', 'hotelCode',
+              'images', 'primaryImageUrl',
               'hotelName', 'category', 'currency', 'roomType', 'roomTypeName',
               'mealPlan', 'mealPlanCode', 'ratePlanName',
               // Payable/base price and tooltip/supplement fields.

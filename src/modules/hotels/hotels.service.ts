@@ -17,6 +17,7 @@ import {
   resolveCityRecordByName,
 } from '../itineraries/utils/city-normalization.util';
 import { ReferenceDataCacheService } from '../../common/cache/reference-data-cache.service';
+import { HotelGalleryService } from './services/hotel-gallery.service';
 
 const PRICEBOOK_OCCUPANCY_KEYS = [
   'SINGLE',
@@ -43,7 +44,11 @@ const PRICEBOOK_OCCUPANCY_KEYS = [
 
 @Injectable()
 export class HotelsService {
-  constructor(private prisma: PrismaService, private readonly referenceCache?: ReferenceDataCacheService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly referenceCache?: ReferenceDataCacheService,
+    private readonly hotelGallery?: HotelGalleryService,
+  ) {}
 
   private readonly basicInfoRequiredKeys = [
     'hotel_name',
@@ -460,6 +465,9 @@ export class HotelsService {
     ]);
 
     const hydratedItems = await this.hydrateHotelGeoNames(items as any[]);
+    const galleryByHotel = await this.hotelGallery?.getHotelImagesForHotels(
+      hydratedItems.map((hotel: any) => Number(hotel.hotel_id)),
+    );
 
     const rows = hydratedItems.map((h) => ({
       hotel_id: h.hotel_id,
@@ -475,6 +483,8 @@ export class HotelsService {
       hotel_mobile: h.hotel_mobile,
       status: h.status,
       axisrooms_property_id: (h as any).axisrooms_property_id ?? null,
+      images: galleryByHotel?.get(Number(h.hotel_id)) || [],
+      primaryImageUrl: (galleryByHotel?.get(Number(h.hotel_id)) || []).find((image) => image.isPrimary)?.url || null,
     }));
 
     return { page, limit, total, rows };
@@ -1043,9 +1053,12 @@ export class HotelsService {
     if (!hotel) return null;
 
     const [hydrated] = await this.hydrateHotelGeoNames([hotel as any]);
+    const images = await this.hotelGallery?.getHotelImages(id);
 
     return {
       ...hydrated,
+      images: images || [],
+      primaryImageUrl: (images || []).find((image) => image.isPrimary)?.url || null,
       hotel_country_id: hydrated.hotel_country,
       hotel_state_id: hydrated.hotel_state,
       hotel_city_id: hydrated.hotel_city,
@@ -1538,6 +1551,37 @@ export class HotelsService {
       },
     } as any);
 
+    const roomIds = rows.map((row: any) => Number(row.room_ID)).filter((roomId) => Number.isFinite(roomId));
+    const roomGalleryRows = roomIds.length
+      ? await this.prisma.dvi_hotel_room_gallery_details.findMany({
+          where: {
+            hotel_id: id,
+            room_id: { in: roomIds },
+            deleted: 0,
+            status: 1,
+          } as any,
+          orderBy: { hotel_room_gallery_details_id: 'asc' } as any,
+          select: {
+            hotel_room_gallery_details_id: true,
+            room_id: true,
+            room_gallery_name: true,
+          } as any,
+        })
+      : [];
+    const galleryByRoomId = new Map<number, Array<{ id: number; fileName: string; url: string }>>();
+    for (const image of roomGalleryRows as any[]) {
+      const roomId = Number(image.room_id);
+      const fileName = String(image.room_gallery_name || '').trim();
+      if (!Number.isFinite(roomId) || !fileName) continue;
+      const images = galleryByRoomId.get(roomId) || [];
+      images.push({
+        id: Number(image.hotel_room_gallery_details_id),
+        fileName,
+        url: `/uploads/room_gallery/${encodeURIComponent(fileName)}`,
+      });
+      galleryByRoomId.set(roomId, images);
+    }
+
     const roomRatePlanRows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
       where: {
         hotel_id: id,
@@ -1564,6 +1608,7 @@ export class HotelsService {
 
     return rows.map((r: any) => ({
       ...r,
+      galleryImages: galleryByRoomId.get(Number(r.room_ID)) || [],
       room_ref_code:
         String(r.room_ref_code || '').trim() ||
         axisroomsRoomIdByRoomId.get(Number(r.room_ID)) ||
@@ -1754,8 +1799,7 @@ export class HotelsService {
       return { success: true, count: 0 };
     }
 
- // ../../uploads/room_gallery relative to dist/modules/hotels
-    const finalDir = path.resolve(__dirname, '../../uploads/room_gallery');
+    const finalDir = path.resolve(process.cwd(), 'public', 'uploads', 'room_gallery');
 
     await fs.promises.mkdir(finalDir, { recursive: true });
 

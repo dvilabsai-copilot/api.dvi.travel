@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
@@ -57,6 +58,7 @@ import {
   decorateHotelCardPricing,
   hotelCardPayableAmount,
 } from '../utils/hotel-card-pricing.util';
+import { TboMasterGalleryService } from '../../hotels/services/tbo-master-gallery.service';
 
 type PersistedReadFallback = () => Promise<ItineraryHotelDetailsResponseDto>;
 
@@ -125,6 +127,7 @@ export class HotelAvailabilitySnapshotService {
     private readonly tboHotelDetails: ItineraryHotelDetailsTboService,
     private readonly offlineHotelCatalog: OfflineHotelCatalogService,
     private readonly persistedHotelDetails: ItineraryHotelDetailsService,
+    @Optional() private readonly tboMasterGallery?: TboMasterGalleryService,
     private readonly hotelPricingService: HotelPricingService = new HotelPricingService(prisma),
   ) {}
 
@@ -474,8 +477,11 @@ export class HotelAvailabilitySnapshotService {
           date: row?.check_in_date,
         }));
       });
+      const compactInventoryRowsWithImages = await this.attachDviGalleryImages(
+        await this.attachTboMasterGalleryImages(compactInventoryRows),
+      );
       const limitedCompactInventoryRows = await this.limitVsrHotelCards(
-        this.coalesceHotelCardRows(compactInventoryRows),
+        this.coalesceHotelCardRows(compactInventoryRowsWithImages),
         vsrHotelCardLimit,
       );
       limitedCompactInventoryRows.forEach((row: any) => {
@@ -494,6 +500,8 @@ export class HotelAvailabilitySnapshotService {
             hotelCode: hotelCode || undefined,
             hotelName,
             category: row?.category,
+            images: row?.images,
+            primaryImageUrl: row?.primaryImageUrl,
             groupType,
             routeId,
             date: row?.date,
@@ -570,6 +578,9 @@ export class HotelAvailabilitySnapshotService {
         try { return JSON.parse(String(row.full_payload || '{}')); } catch { return null; }
       }).filter(Boolean);
     }
+    inventory = await this.attachDviGalleryImages(
+      await this.attachTboMasterGalleryImages(inventory),
+    );
     const page = Math.max(1, Number(options.page || 1));
     const pageSize = Math.min(100, Math.max(1, Number(options.pageSize || 20)));
     const routeIdsOf = (row: any): number[] => Array.from(new Set<number>([
@@ -1952,7 +1963,8 @@ export class HotelAvailabilitySnapshotService {
     response: ItineraryHotelDetailsResponseDto,
     plan: any,
   ): Promise<ItineraryHotelDetailsResponseDto> {
-    const hotels = (Array.isArray(response?.hotels) ? response.hotels : [])
+    const hotels = await this.attachDviGalleryImages(await this.attachTboMasterGalleryImages(
+      (Array.isArray(response?.hotels) ? response.hotels : [])
       .filter((row: any) => {
         const name = String(row?.hotelName || '').trim().toLowerCase();
         if (row?.isPlaceholder === true || row?.synthetic === true) return false;
@@ -1960,7 +1972,8 @@ export class HotelAvailabilitySnapshotService {
         return Number(row?.itineraryRouteId || row?.routeId || 0) > 0 &&
           Boolean(String(row?.date || row?.checkInDate || '').trim());
         })
-      .map((row: any) => this.toClientHotelRow(row));
+      .map((row: any) => this.toClientHotelRow(row)),
+    ));
     const availability = (response as any)?.hotelAvailability || {};
     // The compact response intentionally contains only the first card page.
     // Selection state is a separate contract, so it must not be derived from
@@ -2032,7 +2045,9 @@ export class HotelAvailabilitySnapshotService {
       })
       .filter((route: any): route is { routeId: number; dayNumber: number; date: string; destination: string } => Boolean(route));
     const hasSharedInventory = Array.isArray(availability.sharedHotelInventory);
-    const sharedInventory = hasSharedInventory ? availability.sharedHotelInventory : [];
+    const sharedInventory = hasSharedInventory
+      ? await this.attachTboMasterGalleryImages(availability.sharedHotelInventory)
+      : [];
     const effectiveCoveredRouteIds = this.buildEffectiveCoveredRouteIds(
       currentRoutes,
       sharedInventory,
@@ -2065,6 +2080,7 @@ export class HotelAvailabilitySnapshotService {
       totalRoomCount: hotels.length,
       hotelAvailability: {
         ...availability,
+        ...(hasSharedInventory ? { sharedHotelInventory: sharedInventory } : {}),
         hasSupplierHotels: availability.hasSupplierHotels ?? supplierHotels.length > 0,
         supplierHotelCount: availability.supplierHotelCount ?? supplierHotels.length,
         placeholderRowCount: 0,
@@ -2084,6 +2100,101 @@ export class HotelAvailabilitySnapshotService {
   private parsePayload(payload: unknown): any | null {
     if (payload && typeof payload === 'object') return payload;
     try { return JSON.parse(String(payload || '')); } catch { return null; }
+  }
+
+  /**
+   * Persisted/cache rows must reflect the active TBO master gallery. Image
+   * fields are presentation data; pricing, selection, and rate identity stay
+   * unchanged.
+   */
+  private async attachTboMasterGalleryImages(rows: any[]): Promise<any[]> {
+    if (!Array.isArray(rows) || rows.length === 0) return rows || [];
+
+    const isTboRow = (row: any): boolean => {
+      const provider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+      const providerDisplayName = String(row?.providerDisplayName || '').trim().toLowerCase();
+      return provider === 'tbo' || providerDisplayName === 'vsr';
+    };
+    const getCode = (row: any): string => String(
+      row?.providerHotelCode || row?.provider_hotel_code || row?.hotelCode || row?.hotel_code || '',
+    ).trim();
+    const codes = Array.from(new Set(
+      rows
+        .filter(isTboRow)
+        .map(getCode)
+        .filter(Boolean),
+    ));
+    if (codes.length === 0 || !this.tboMasterGallery) return rows;
+
+    const galleries = await this.tboMasterGallery.getHotelImagesForCodes(codes);
+    if (galleries.size === 0) return rows;
+    const galleryForCode = (code: string) => galleries.get(code) || galleries.get(
+      codes.find((candidate) => candidate.toLowerCase() === code.toLowerCase()) || '',
+    ) || [];
+
+    return rows.map((row: any) => {
+      if (!isTboRow(row)) return row;
+      const gallery = galleryForCode(getCode(row));
+      if (gallery.length === 0) return row;
+      return {
+        ...row,
+        images: gallery.map((image) => image.url),
+        primaryImageUrl: gallery.find((image) => image.isPrimary)?.url || gallery[0]?.url || null,
+      };
+    });
+  }
+
+  /**
+   * Persisted/cache rows can contain stale one-image snapshots. Refresh AX and
+   * Offline image fields from the active DVI gallery; pricing, room identity,
+   * selection, and provider fields remain unchanged.
+   */
+  private async attachDviGalleryImages(rows: any[]): Promise<any[]> {
+    if (!Array.isArray(rows) || rows.length === 0) return rows || [];
+
+    const isDviRow = (row: any): boolean => {
+      const provider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
+      const providerDisplayName = String(row?.providerDisplayName || '').trim().toLowerCase();
+      return provider === 'offline' || provider === 'axisrooms' || provider === 'ax' ||
+        providerDisplayName === 'offline' || providerDisplayName === 'axisrooms';
+    };
+    const getHotelId = (row: any): number => Number(
+      row?.canonicalHotelId || row?.hotelId || row?.hotel_id || 0,
+    );
+    const ids = Array.from(new Set(
+      rows
+        .filter(isDviRow)
+        .map(getHotelId)
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ));
+    if (ids.length === 0 || !this.prisma?.dvi_hotel_gallery_details) return rows;
+
+    const galleryRows = await this.prisma.dvi_hotel_gallery_details.findMany({
+      where: { hotel_id: { in: ids }, status: 1, deleted: 0 },
+      orderBy: [{ hotel_id: 'asc' }, { sort_order: 'asc' }, { hotel_gallery_details_id: 'asc' }],
+      select: { hotel_id: true, hotel_gallery_name: true, is_primary: true },
+    });
+    const galleries = new Map<number, Array<{ url: string; isPrimary: boolean }>>();
+    for (const image of galleryRows) {
+      const id = Number(image.hotel_id);
+      const bucket = galleries.get(id) || [];
+      bucket.push({
+        url: `/uploads/hotel_gallery/${id}/${encodeURIComponent(String(image.hotel_gallery_name || ''))}`,
+        isPrimary: Number(image.is_primary) === 1,
+      });
+      galleries.set(id, bucket);
+    }
+
+    return rows.map((row: any) => {
+      if (!isDviRow(row)) return row;
+      const gallery = galleries.get(getHotelId(row)) || [];
+      if (gallery.length === 0) return row;
+      return {
+        ...row,
+        images: gallery.map((image) => image.url),
+        primaryImageUrl: gallery.find((image) => image.isPrimary)?.url || gallery[0]?.url || null,
+      };
+    });
   }
 
   private toClientHotelRow(row: any): any {

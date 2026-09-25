@@ -30,6 +30,8 @@ import { HotelPricingService } from '../itineraries/hotels/hotel-pricing.service
 import { TboMasterHotelController } from './controllers/tbo-master-hotel.controller';
 import { TboMasterHotelService } from './services/tbo-master-hotel.service';
 import { ReferenceDataCacheService } from '../../common/cache/reference-data-cache.service';
+import { HotelGalleryService } from './services/hotel-gallery.service';
+import { TboMasterGalleryService } from './services/tbo-master-gallery.service';
 
 @Module({
   imports: [],
@@ -63,6 +65,8 @@ import { ReferenceDataCacheService } from '../../common/cache/reference-data-cac
     OfflineHotelCatalogService,
     TboMasterHotelService,
     ReferenceDataCacheService,
+    HotelGalleryService,
+    TboMasterGalleryService,
   ],
   exports: [
     HotelsService,
@@ -77,6 +81,8 @@ import { ReferenceDataCacheService } from '../../common/cache/reference-data-cac
     HobseHotelCsvImportService,
     SupplementNormalizerService,
     ReferenceDataCacheService,
+    HotelGalleryService,
+    TboMasterGalleryService,
   ],
 })
 export class HotelsModule {}

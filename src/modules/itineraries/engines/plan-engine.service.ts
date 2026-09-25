@@ -15,6 +15,11 @@ import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from "../../hotels/hotel-rate-plans";
+import { SystemRole } from "../../auth/constants/system-role.constants";
+import {
+  generateUniqueAgentCode,
+  withAgentCodeGenerationLock,
+} from "../../../common/utils/agent-code.util";
 
 type Tx = Prisma.TransactionClient;
 
@@ -422,12 +427,9 @@ export class PlanEngineService {
   private async buildSafeQuoteId(
     tx: Tx,
     now: Date,
+    prefix: string,
     excludePlanId?: number,
   ): Promise<string> {
-    const year = now.getFullYear();
-    const monthIndex = now.getMonth();
-    const mm = String(monthIndex + 1).padStart(2, '0');
-    const prefix = `DVI${year}${mm}`;
     const lockName = `dvi_itinerary_quote_${prefix}`;
 
     const lockRows = await (tx as any).$queryRawUnsafe(
@@ -493,6 +495,69 @@ export class PlanEngineService {
         lockName,
       );
     }
+  }
+
+  private async resolveQuotePrefix(
+    tx: Tx,
+    now: Date,
+    plan: CreatePlanDto,
+    creatorRoleId: number,
+  ): Promise<string> {
+    const dviPrefix = `DVI${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    if (creatorRoleId === SystemRole.ADMIN) {
+      return dviPrefix;
+    }
+
+    const agentId = Number(plan.agent_id ?? 0);
+    if (agentId <= 0) {
+      throw new BadRequestException(
+        'An agent must be selected before creating an itinerary.',
+      );
+    }
+
+    const agent = await (tx as any).dvi_agent.findUnique({
+      where: { agent_ID: agentId },
+      select: { agent_ID: true, agent_name: true, agent_code: true },
+    });
+    if (!agent) {
+      throw new BadRequestException('The selected agent was not found.');
+    }
+
+    const agentConfig = await (tx as any).dvi_agent_configuration.findFirst({
+      where: { agent_id: agentId, deleted: 0 },
+      orderBy: { agent_config_id: 'desc' },
+      select: { company_name: true },
+    });
+    const codeSourceName =
+      String(agentConfig?.company_name ?? '').trim() || agent.agent_name;
+
+    const currentCode = String(agent.agent_code ?? '').trim().toUpperCase();
+    if (/^[A-Z]{3,4}$/.test(currentCode)) {
+      return `${currentCode}${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    return withAgentCodeGenerationLock(tx as any, async () => {
+      const current = await (tx as any).dvi_agent.findUnique({
+        where: { agent_ID: agentId },
+        select: { agent_name: true, agent_code: true },
+      });
+      const refreshedCode = String(current?.agent_code ?? '').trim().toUpperCase();
+      if (/^[A-Z]{3,4}$/.test(refreshedCode)) {
+        return `${refreshedCode}${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      }
+
+      const generated = await generateUniqueAgentCode(
+        tx as any,
+        codeSourceName,
+        agentId,
+      );
+      await (tx as any).dvi_agent.update({
+        where: { agent_ID: agentId },
+        data: { agent_code: generated, updatedon: new Date() },
+      });
+      return `${generated}${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    });
   }
 
   private parseRouteFamilyQuote(quoteId: string | undefined | null): {
@@ -599,6 +664,7 @@ export class PlanEngineService {
     travellers: CreateTravellerDto[],
     tx: Tx,
     userId: number,
+    creatorRoleId: number = SystemRole.ADMIN,
   ): Promise<number> {
     const now = new Date();
 
@@ -748,14 +814,16 @@ export class PlanEngineService {
       const currentQuoteId = String(existingPlan?.itinerary_quote_ID || '').trim();
       let safeQuoteId = currentQuoteId;
       if (!safeQuoteId) {
-        safeQuoteId = await this.buildSafeQuoteId(tx, now, existingId);
+        const quotePrefix = await this.resolveQuotePrefix(tx, now, plan, creatorRoleId);
+        safeQuoteId = await this.buildSafeQuoteId(tx, now, quotePrefix, existingId);
       } else {
         const owners = await this.getActiveQuoteOwners(tx, safeQuoteId);
         if (owners.length > 1) {
           const canonicalOwnerId = Number(owners[0]?.itinerary_plan_ID || 0);
           const shouldKeepCurrentQuote = canonicalOwnerId === existingId;
           if (!shouldKeepCurrentQuote) {
-            safeQuoteId = await this.buildSafeQuoteId(tx, now, existingId);
+            const quotePrefix = await this.resolveQuotePrefix(tx, now, plan, creatorRoleId);
+            safeQuoteId = await this.buildSafeQuoteId(tx, now, quotePrefix, existingId);
           }
  console.warn('[ITINERARY_QUOTE_DUPLICATE_GUARD]', {
             existingId,
@@ -790,7 +858,12 @@ export class PlanEngineService {
     let itinerary_quote_ID: string;
     if (normalizedRouteVariantIndex > 0) {
       const baseQuoteId =
-        normalizedRouteFamilyBaseQuoteId || await this.buildSafeQuoteId(tx, now);
+        normalizedRouteFamilyBaseQuoteId ||
+        await this.buildSafeQuoteId(
+          tx,
+          now,
+          await this.resolveQuotePrefix(tx, now, plan, creatorRoleId),
+        );
       itinerary_quote_ID = this.buildRouteFamilyVariantQuoteId(
         baseQuoteId,
         normalizedRouteVariantIndex,
@@ -812,7 +885,11 @@ export class PlanEngineService {
         );
       }
     } else {
-      itinerary_quote_ID = await this.buildSafeQuoteId(tx, now);
+      itinerary_quote_ID = await this.buildSafeQuoteId(
+        tx,
+        now,
+        await this.resolveQuotePrefix(tx, now, plan, creatorRoleId),
+      );
     }
 
     const createdRow = await (tx as any).dvi_itinerary_plan_details.create({

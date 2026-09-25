@@ -54,6 +54,7 @@ export interface HotelSearchResult {
   rateConditions?: any[];
   cancellationPolicy?: any[] | string;
   images: string[];
+  primaryImageUrl?: string | null;
   price: number;
   netAmount?: number;
   totalFare?: number;
