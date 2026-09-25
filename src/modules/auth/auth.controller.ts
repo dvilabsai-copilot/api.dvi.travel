@@ -16,6 +16,7 @@ import { VerifyEmailLoginOtpDto } from './dto/verify-email-login-otp.dto';
 import { SendRegistrationEmailOtpDto } from './dto/send-registration-email-otp.dto';
 import { VerifyRegistrationEmailOtpDto } from './dto/verify-registration-email-otp.dto';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
+import { QuickOnboardAgentDto } from './dto/quick-onboard-agent.dto';
 import { ActivatePartnerDto } from './dto/activate-partner.dto';
 import { RedeemLegacySsoTicketDto } from './dto/legacy-sso.dto';
 
@@ -102,6 +103,36 @@ sendEmailLoginOtp(@Body() body: SendEmailLoginOtpDto) {
     return this.auth.registerPartner(
       body,
     );
+  }
+  @ApiOperation({
+    summary:
+      'Quick-onboard a pending Agent from Create Itinerary',
+  })
+  @ApiBody({
+    type: QuickOnboardAgentDto,
+  })
+  @Post('partners/quick-onboard')
+  quickOnboardPartner(
+    @Req() req: any,
+    @Body()
+    body: QuickOnboardAgentDto,
+  ) {
+    /*
+     * IMPORTANT:
+     * No @Public() here.
+     *
+     * The global JwtAuthGuard therefore
+     * requires an authenticated user.
+     *
+     * AuthService independently validates
+     * that the authenticated role is only
+     * ADMIN or TRAVEL_EXPERT.
+     */
+    return this.auth
+      .quickOnboardPartner(
+        body,
+        req.user,
+      );
   }
 
   @ApiOperation({
