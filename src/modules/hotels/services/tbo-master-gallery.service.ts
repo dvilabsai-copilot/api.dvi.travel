@@ -1,8 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 export type TboMasterGalleryImage = {
   id: number;
@@ -30,8 +30,31 @@ const ALLOWED_MIME_TYPES = new Map<string, string>([
   ['image/webp', '.webp'],
 ]);
 
+export function extractTboHotelCodes(rows: unknown[]): string[] {
+  return Array.from(new Set(
+    (Array.isArray(rows) ? rows : [])
+      .filter((row: any) => ['tbo', 'vsr'].includes(String(row?.provider || row?.hotel_provider || '').trim().toLowerCase()))
+      .map((row: any) => String(
+        row?.providerHotelCode || row?.provider_hotel_code || row?.hotelCode || row?.hotel_code || '',
+      ).trim())
+      .filter(Boolean),
+  ));
+}
+
+export function extractTboImageUrls(detail: any): string[] {
+  return Array.from(new Set([
+    detail?.Image,
+    ...(Array.isArray(detail?.Images) ? detail.Images : []),
+  ].map((value) => String(value || '').trim()).filter(Boolean)));
+}
+
 @Injectable()
 export class TboMasterGalleryService {
+  private readonly logger = new Logger(TboMasterGalleryService.name);
+  private readonly queuedBackfillCodes = new Set<string>();
+  private readonly backfillBatchSize = 40;
+  private readonly maxBackfillCodesPerRequest = 100;
+
   constructor(private readonly prisma: PrismaService) {}
 
   private normalizeCode(code: string) {
@@ -46,6 +69,160 @@ export class TboMasterGalleryService {
 
   private roomUploadRoot(code: string) {
     return path.resolve(process.cwd(), 'public', 'uploads', 'tbo_room_gallery', code);
+  }
+
+  /**
+   * Queue one non-blocking gallery backfill for the TBO/VSR hotels in a live
+   * search response. The request path only schedules the work; all supplier
+   * calls, downloads, and writes happen on a later event-loop turn.
+   */
+  enqueueMissingFromSearchResults(rows: unknown[]): void {
+    const codes = extractTboHotelCodes(rows);
+    const scheduled = codes.filter((code) => {
+      if (this.queuedBackfillCodes.size >= this.maxBackfillCodesPerRequest) return false;
+      if (this.queuedBackfillCodes.has(code)) return false;
+      this.queuedBackfillCodes.add(code);
+      return true;
+    });
+    if (!scheduled.length) return;
+
+    setImmediate(() => {
+      void this.backfillCodes(scheduled).catch((error) => {
+        this.logger.warn(`[TBO_GALLERY_BACKFILL_FAILED] ${String(error?.message || error)}`);
+        scheduled.forEach((code) => this.queuedBackfillCodes.delete(code));
+      });
+    });
+  }
+
+  private async backfillCodes(codes: string[]): Promise<void> {
+    try {
+      for (let index = 0; index < codes.length; index += this.backfillBatchSize) {
+        const batch = codes.slice(index, index + this.backfillBatchSize);
+        const details = await this.fetchTboHotelDetails(batch);
+        for (const code of batch) {
+          try {
+            await this.createMissingPrimaryImage(code, details.get(code));
+          } catch (error) {
+            this.logger.warn(`[TBO_GALLERY_BACKFILL_HOTEL_FAILED] code=${code} ${String(error)}`);
+          }
+        }
+      }
+    } finally {
+      codes.forEach((code) => this.queuedBackfillCodes.delete(code));
+    }
+  }
+
+  private async fetchTboHotelDetails(codes: string[]): Promise<Map<string, any>> {
+    const username = process.env.TBO_GALLERY_USERNAME || process.env.TBO_STATIC_USERNAME || 'IXMD112';
+    const password = process.env.TBO_GALLERY_PASSWORD || process.env.TBO_STATIC_PASSWORD || 'api-11#M$new';
+    const base = (process.env.TBO_GALLERY_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI').replace(/\/+$/, '');
+    const response = await fetch(`${base}/HotelDetails`, {
+      method: 'POST',
+      headers: {
+        authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ HotelCodes: codes.join(','), Language: 'EN' }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) throw new Error(`TBO HotelDetails HTTP ${response.status}`);
+    const payload = await response.json() as any;
+    if (Number(payload?.Status?.Code || 0) !== 200) {
+      throw new Error(`TBO HotelDetails ${payload?.Status?.Description || 'failed'}`);
+    }
+    return new Map(
+      (Array.isArray(payload?.HotelDetails) ? payload.HotelDetails : [])
+        .map((detail: any) => [String(detail?.HotelCode || '').trim(), detail])
+        .filter(([code]) => Boolean(code)),
+    );
+  }
+
+  private async createMissingPrimaryImage(code: string, detail: any): Promise<void> {
+    const existing = await this.prisma.tbo_hotel_gallery_details.findFirst({
+      where: { tbo_hotel_code: code, status: 1, deleted: 0 },
+      select: { tbo_hotel_gallery_details_id: true },
+    });
+    if (existing) return;
+
+    const master = await this.prisma.tbo_hotel_master.findUnique({
+      where: { tbo_hotel_code: code },
+      select: { tbo_hotel_code: true },
+    });
+    if (!master) {
+      this.logger.warn(`[TBO_GALLERY_BACKFILL_MASTER_MISSING] code=${code}`);
+      return;
+    }
+
+    const imageUrl = extractTboImageUrls(detail)[0];
+    if (!imageUrl) {
+      this.logger.debug(`[TBO_GALLERY_BACKFILL_NO_IMAGE] code=${code}`);
+      return;
+    }
+
+    const image = await this.downloadImage(imageUrl);
+    const directory = this.hotelUploadRoot(code);
+    await fs.mkdir(directory, { recursive: true });
+    const fileName = `auto-${code}-${image.hash}${image.extension}`;
+    const target = path.join(directory, fileName);
+    const temporary = `${target}.part`;
+    try {
+      await fs.writeFile(temporary, image.buffer);
+      await fs.rename(temporary, target);
+      const active = await this.prisma.tbo_hotel_gallery_details.findFirst({
+        where: { tbo_hotel_code: code, status: 1, deleted: 0 },
+        select: { tbo_hotel_gallery_details_id: true },
+      });
+      if (active) {
+        await fs.rm(target, { force: true });
+        return;
+      }
+      await this.prisma.tbo_hotel_gallery_details.create({
+        data: {
+          tbo_hotel_code: code,
+          tbo_hotel_gallery_name: fileName,
+          is_primary: 1,
+          sort_order: 1,
+          source: 'tbo-hotel-details-auto',
+          source_url: imageUrl,
+          createdby: 0,
+          createdon: new Date(),
+          status: 1,
+          deleted: 0,
+        },
+      });
+      this.logger.log(`[TBO_GALLERY_BACKFILL_CREATED] code=${code} file=${fileName}`);
+    } catch (error) {
+      await fs.rm(temporary, { force: true });
+      await fs.rm(target, { force: true });
+      throw error;
+    }
+  }
+
+  private async downloadImage(url: string): Promise<{ buffer: Buffer; extension: string; hash: string }> {
+    const requestUrl = String(url).replace(/([?&]img=)([^&]*)/i, (_match, prefix, value) => `${prefix}${encodeURIComponent(decodeURIComponent(value).replace(/ /g, '+'))}`);
+    const isTboImage = /(?:^|\.)tboholidays\.com$/i.test(new URL(requestUrl).hostname);
+    const response = await fetch(requestUrl, {
+      headers: {
+        'user-agent': 'DVI-Travel-HotelGalleryBackfill/1.0',
+        ...(isTboImage ? { referer: 'https://www.tboholidays.com/' } : {}),
+      },
+      signal: AbortSignal.timeout(20_000),
+      redirect: 'follow',
+    });
+    if (!response.ok) throw new Error(`Image HTTP ${response.status}`);
+    const contentType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+    const extension = contentType === 'image/png'
+      ? '.png'
+      : contentType === 'image/webp'
+        ? '.webp'
+        : contentType === 'image/jpeg' || contentType === 'image/jpg'
+          ? '.jpg'
+          : '';
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!extension || buffer.length < 1024 || buffer.length > 10 * 1024 * 1024) {
+      throw new Error(`Unsupported or invalid image (${contentType || 'unknown'}, ${buffer.length} bytes)`);
+    }
+    return { buffer, extension, hash: createHash('sha256').update(buffer).digest('hex').slice(0, 12) };
   }
 
   private toImage(row: any): TboMasterGalleryImage {

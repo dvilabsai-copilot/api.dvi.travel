@@ -480,6 +480,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
  this.logger.log(` Successfully transformed ${results.length} hotels`);
  this.logger.debug(` Hotel search output size: ${results.length}`);
+      this.tboMasterGallery.enqueueMissingFromSearchResults(results);
 
       return results;
     } catch (error: any) {

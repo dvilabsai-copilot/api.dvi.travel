@@ -1347,6 +1347,9 @@ export class HotelAvailabilitySnapshotService {
         { providerErrors, authoritativeRecommendationRows },
       );
       logStage('build-fresh-response', readStartedAt);
+      if (shouldPersist) {
+        this.tboMasterGallery?.enqueueMissingFromSearchResults(rows);
+      }
       this.logger.log('[HOTEL_AVAILABILITY_COMPLETE]', {
         quoteId,
         planId: plan.itinerary_plan_ID,
