@@ -471,21 +471,45 @@ export class ItineraryHotelDetailsTboService {
     preferredMealPlanCode: string,
   ): HotelSearchResult {
     // TBO normally returns one display row with all room/rate variants under
-    // `rateOptions`.  The first variant is not guaranteed to be the package's
+    // `rateOptions`. The first variant is not guaranteed to be the package's
     // preferred meal plan (it is often EP/UNKNOWN), so changing only the
     // display label leaves the selected rate and booking reference pointing at
-    // the wrong meal plan.  Promote the matching rate option to the primary
-    // hotel row while retaining the complete variant list for UI filtering.
+    // the wrong meal plan. Promote the cheapest matching rate option to the
+    // primary hotel row while retaining the complete variant list for UI
+    // filtering.
     const rateOptions = Array.isArray((hotel as any).rateOptions)
       ? (hotel as any).rateOptions
       : [];
-    const matchedRateOption = rateOptions.find((rateOption: any) => {
-      const candidates = new Set<string>();
-      this.collectMealPlanValue(rateOption?.mealPlan, candidates);
-      this.collectMealPlanValue(rateOption?.mealPlanCode, candidates);
-      this.collectMealPlanValue(rateOption?.ratePlanName, candidates);
-      return candidates.has(preferredMealPlanCode);
-    });
+    const getRateOptionAmount = (rateOption: any): number => {
+      const values = [
+        rateOption?.pricePerNight,
+        rateOption?.price_per_night,
+        rateOption?.perNightAmount,
+        rateOption?.totalPrice,
+        rateOption?.totalStayPrice,
+        rateOption?.totalHotelCost,
+        rateOption?.price,
+      ];
+      for (const value of values) {
+        const amount = Number(value);
+        if (Number.isFinite(amount) && amount > 0) return amount;
+      }
+      return Number.POSITIVE_INFINITY;
+    };
+    const matchedRateOption = rateOptions
+      .map((rateOption: any, index: number) => ({ rateOption, index }))
+      .filter(({ rateOption }) => {
+        const candidates = new Set<string>();
+        this.collectMealPlanValue(rateOption?.mealPlan, candidates);
+        this.collectMealPlanValue(rateOption?.mealPlanCode, candidates);
+        this.collectMealPlanValue(rateOption?.ratePlanName, candidates);
+        return candidates.has(preferredMealPlanCode);
+      })
+      .sort((left, right) =>
+        getRateOptionAmount(left.rateOption) - getRateOptionAmount(right.rateOption) ||
+        left.index - right.index,
+      )
+      .map(({ rateOption }) => rateOption)[0];
 
     if (matchedRateOption) {
       return {
