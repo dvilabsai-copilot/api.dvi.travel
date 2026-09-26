@@ -3580,6 +3580,15 @@ timingStepStartedAt =
   async getTransportVoucherDetails(itineraryPlanId: number): Promise<TransportVoucherDetails> {
     return this.voucherReadService.getTransportVoucherDetails(itineraryPlanId);
   }
+
+  async getDviTransportVoucherDetails(
+    itineraryPlanId: number,
+  ): Promise<TransportVoucherDetails> {
+    return this.voucherReadService.getDviTransportVoucherDetails(
+      itineraryPlanId,
+    );
+  }
+
   private toDateOnly(value: Date | string | null | undefined): string {
     if (!value) return '';
     const date = value instanceof Date ? value : new Date(value);

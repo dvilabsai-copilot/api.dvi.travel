@@ -2272,6 +2272,24 @@ async confirmQuotation(
     await this.itineraryPdfService.downloadVehicleVoucherPdf(id, res);
   }
 
+
+  @Get(':id/dvi-vehicle-voucher-pdf')
+  @ApiOperation({
+    summary:
+      'Download DVI-branded Transport Voucher PDF for sharing',
+  })
+  async downloadDviVehicleVoucherPdf(
+    @Param('id', ParseIntPipe)
+    id: number,
+    @Res()
+    res: Response,
+  ) {
+    await this.itineraryPdfService.downloadDviVehicleVoucherPdf(
+      id,
+      res,
+    );
+  }
+
   @Get(':id/pluck-card-data')
   @ApiOperation({ summary: 'Get pluck card data for a confirmed itinerary' })
   async getPluckCardData(@Param('id', ParseIntPipe) id: number) {
