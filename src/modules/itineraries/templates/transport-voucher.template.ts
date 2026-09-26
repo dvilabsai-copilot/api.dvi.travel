@@ -83,11 +83,36 @@ export function renderTransportVoucherHtml(
   data: TransportVoucherDetails,
   assets: TransportVoucherRenderAssets = {},
 ): string {
-  const brandTitle = 'DVI Holidays';
-  const brandTagline = 'Travel Beyond Expectations';
-  const companyPhone = data.company.phone || '+91 8921 77 66 88';
-  const companyEmail = data.company.email || 'partner.support@dviholidays.com';
-  const companyWebsite = data.company.website || 'www.dviholidays.com';
+  const brandTitle =
+    String(
+      data.company.name ||
+        'DVI Holidays',
+    ).trim() ||
+    'DVI Holidays';
+
+  const brandTagline =
+    String(
+      data.company.tagline ||
+        '',
+    ).trim();
+
+  const companyPhone =
+    String(
+      data.company.phone ||
+        '',
+    ).trim();
+
+  const companyEmail =
+    String(
+      data.company.email ||
+        '',
+    ).trim();
+
+  const companyWebsite =
+    String(
+      data.company.website ||
+        '',
+    ).trim();
   const vehicleType = truncateWithEllipsis(data.vehicle.type || 'Vehicle', 44);
  const compactTravelRegion = shortLocationName(data.trip.travelRegion).replace(/\s*-\s*/g, ' - ');
   const vehicles = Array.isArray(data.vehicles) && data.vehicles.length
@@ -231,7 +256,7 @@ export function renderTransportVoucherHtml(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Transport Voucher - DVI Holidays</title>
+  <title>Transport Voucher - ${safeText(brandTitle)}</title>
   <style>${TRANSPORT_VOUCHER_STYLES}</style>
 </head>
 <body>
@@ -241,13 +266,21 @@ export function renderTransportVoucherHtml(
         <div class="logo-area">
         ${
           assets.logoDataUri
-            ? `<img src="${assets.logoDataUri}" alt="DVI Holidays Logo">`
-            : `<div class="dvi-logo-fallback"><div class="dvi-mark">D V i</div><div class="dvi-sub">holidays</div></div>`
+            ? `<img src="${assets.logoDataUri}" alt="${safeText(brandTitle)} Logo">`
+            : `<div class="dvi-logo-fallback"><div class="dvi-mark">${safeText(
+                brandTitle
+                  .slice(0, 3)
+                  .toUpperCase(),
+              )}</div></div>`
         }
         </div>
         <div class="brand-text">
-          <div class="brand-title">${brandTitle}</div>
-          <div class="brand-tagline">${brandTagline}</div>
+          <div class="brand-title">${safeText(brandTitle)}</div>
+          ${
+            brandTagline
+              ? `<div class="brand-tagline">${safeText(brandTagline)}</div>`
+              : ''
+          }
         </div>
       </div>
 
@@ -266,9 +299,21 @@ export function renderTransportVoucherHtml(
         <div class="qr-caption">Scan for Assistance</div>
       </div>
       <div class="contact-row">
-        <span class="contact-item">&#9742; ${safeText(companyPhone)}</span>
-        <span class="contact-item">&#9993; ${safeText(companyEmail)}</span>
-        <span class="contact-item">&#127760; ${safeText(companyWebsite)}</span>
+        ${
+          companyPhone
+            ? `<span class="contact-item">&#9742; ${safeText(companyPhone)}</span>`
+            : ''
+        }
+        ${
+          companyEmail
+            ? `<span class="contact-item">&#9993; ${safeText(companyEmail)}</span>`
+            : ''
+        }
+        ${
+          companyWebsite
+            ? `<span class="contact-item">&#127760; ${safeText(companyWebsite)}</span>`
+            : ''
+        }
       </div>
     </header>
 
@@ -283,7 +328,7 @@ export function renderTransportVoucherHtml(
       </div>
       <div class="trust-block align-right">
         <div class="trust-icon success">OK</div>
-        <div class="trust-copy"><strong>Verified &amp; Trusted</strong><br>Thank you for choosing DVI Holidays</div>
+        <div class="trust-copy"><strong>Verified &amp; Trusted</strong><br>Thank you for choosing ${safeText(brandTitle)}</div>
       </div>
     </section>
 
@@ -372,7 +417,7 @@ export function renderTransportVoucherHtml(
       </div>
     </section>
 
-    <div class="thank-you">Thank you for choosing DVI Holidays. We wish you a safe &amp; memorable journey!</div>
+    <div class="thank-you">Thank you for choosing ${safeText(brandTitle)}. We wish you a safe &amp; memorable journey!</div>
   </div>
 </body>
 </html>`;

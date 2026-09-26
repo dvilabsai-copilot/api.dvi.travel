@@ -164,6 +164,21 @@ private resolveLogoPath(raw?: string | null): string | null {
       backendRoot,
       'public',
       'uploads',
+      'agent_gallery',
+      fileName,
+    ),
+
+    path.resolve(
+      backendRoot,
+      'uploads',
+      'agent_gallery',
+      fileName,
+    ),
+
+    path.resolve(
+      backendRoot,
+      'public',
+      'uploads',
       'logo',
       fileName,
     ),
@@ -363,12 +378,6 @@ const logoPath =
     data?.companyLogoUrl,
   );
 
-if (!logoPath) {
-  throw new Error(
-    `Pluck Card logo not found. Expected the logo inside public/uploads/logo. Backend root: ${this.resolveBackendRoot()}`,
-  );
-}
-
 res.setHeader(
   'Content-Type',
   'application/pdf',
@@ -396,9 +405,83 @@ doc
   .rect(0, 0, pageWidth, pageHeight)
   .fill('#FFFFFF');
 
-doc.image(logoPath, 42.52, 42.52, {
-  fit: [127.56, 113.39],
-});
+if (logoPath) {
+  try {
+    doc.image(
+      logoPath,
+      42.52,
+      42.52,
+      {
+        fit: [127.56, 113.39],
+      },
+    );
+  } catch (error) {
+    console.warn(
+      '[PLUCK_CARD_LOGO_RENDER_FAILED]',
+      error,
+    );
+
+    doc
+      .fillColor('#405AAF')
+      .font('Helvetica-Bold')
+      .fontSize(24)
+      .text(
+        'DVi',
+        42.52,
+        55,
+        {
+          width: 127.56,
+          align: 'center',
+        },
+      );
+
+    doc
+      .fillColor('#000000')
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .text(
+        'holidays',
+        42.52,
+        84,
+        {
+          width: 127.56,
+          align: 'center',
+        },
+      );
+  }
+} else {
+  /*
+    Deployment logo missing:
+    use text fallback instead of failing the PDF.
+  */
+  doc
+    .fillColor('#405AAF')
+    .font('Helvetica-Bold')
+    .fontSize(24)
+    .text(
+      'DVi',
+      42.52,
+      55,
+      {
+        width: 127.56,
+        align: 'center',
+      },
+    );
+
+  doc
+    .fillColor('#000000')
+    .font('Helvetica-Bold')
+    .fontSize(12)
+    .text(
+      'holidays',
+      42.52,
+      84,
+      {
+        width: 127.56,
+        align: 'center',
+      },
+    );
+}
 
  // Large centred WELCOME heading.
 doc
@@ -520,6 +603,117 @@ doc
     res.end(pdfBuffer);
   }
 
+
+  async downloadDviVehicleVoucherPdf(
+    itineraryPlanId: number,
+    res: Response,
+  ) {
+    const data =
+      await this.itinerariesService.getDviTransportVoucherDetails(
+        itineraryPlanId,
+      );
+
+    const safeVoucherNo =
+      data?.voucher?.voucherNo ||
+      String(itineraryPlanId);
+
+    const safeName =
+      this.sanitizeFileName(
+        `dvi-transport-voucher-${safeVoucherNo}.pdf`,
+      );
+
+    const assets =
+      await this.buildTransportVoucherAssets(
+        data,
+        itineraryPlanId,
+      );
+
+    assets.qrDataUri =
+      await this.buildDviTransportVoucherQrDataUri(
+        data,
+        itineraryPlanId,
+      );
+
+    const html =
+      renderTransportVoucherHtml(
+        data,
+        assets,
+      );
+
+    const pdfBuffer =
+      await this.renderHtmlToPdfBuffer(
+        html,
+      );
+
+    res.setHeader(
+      'Content-Type',
+      'application/pdf',
+    );
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${safeName}"`,
+    );
+
+    res.setHeader(
+      'Content-Length',
+      pdfBuffer.length,
+    );
+
+    res.end(pdfBuffer);
+  }
+
+  private async buildDviTransportVoucherQrDataUri(
+    data: TransportVoucherDetails,
+    itineraryPlanId: number,
+  ): Promise<string | null> {
+    const baseUrl =
+      String(
+        process.env.BASE_URL || '',
+      ).replace(/\/+$/, '');
+
+    const assistanceUrl =
+      baseUrl
+        ? `${baseUrl}/api/v1/itineraries/${itineraryPlanId}/dvi-vehicle-voucher-pdf`
+        : '';
+
+    const qrPayload = [
+      `Transport Voucher: ${data.voucher.voucherNo || itineraryPlanId}`,
+      `Date: ${data.voucher.date || '--'}`,
+      `Guest: ${data.guest.name || '--'}`,
+      `Trip: ${data.voucher.title || 'Trip'}`,
+      assistanceUrl
+        ? `Link: ${assistanceUrl}`
+        : '',
+      data.footer.emergencyPhone
+        ? `Support: ${data.footer.emergencyPhone}`
+        : '',
+      data.company.website
+        ? `Web: ${data.company.website}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      return await QRCode.toDataURL(
+        qrPayload,
+        {
+          errorCorrectionLevel: 'M',
+          margin: 1,
+          width: 220,
+
+          color: {
+            dark: '#111111',
+            light: '#FFFFFF',
+          },
+        },
+      );
+    } catch {
+      return null;
+    }
+  }
+
   private fileToDataUri(filePath?: string | null): string | null {
     if (!filePath || !fs.existsSync(filePath)) {
       return null;
@@ -586,15 +780,42 @@ doc
     vehicleImageDataUri?: string | null;
     qrDataUri?: string | null;
   }> {
-    const logoPath = this.resolveLogoPath(data.company.logoPath || '');
+    /*
+      Logo selection is decided by
+      getTransportVoucherDetails().
+
+      Do not substitute the DVI logo here for an
+      external Agent that has no configured logo.
+    */
+    const logoPath =
+      this.resolveLogoPath(
+        data.company.logoPath || '',
+      );
+
     const vehicleImagePath =
-      this.resolveLogoPath(data.vehicle.imagePath || '')
-      || this.resolveTransportDefaultVehicleImage(data.vehicle.type);
+      this.resolveLogoPath(
+        data.vehicle.imagePath || '',
+      ) ||
+      this.resolveTransportDefaultVehicleImage(
+        data.vehicle.type,
+      );
 
     return {
-      logoDataUri: this.fileToDataUri(logoPath),
-      vehicleImageDataUri: this.fileToDataUri(vehicleImagePath),
-      qrDataUri: await this.buildTransportVoucherQrDataUri(data, itineraryPlanId),
+      logoDataUri:
+        this.fileToDataUri(
+          logoPath,
+        ),
+
+      vehicleImageDataUri:
+        this.fileToDataUri(
+          vehicleImagePath,
+        ),
+
+      qrDataUri:
+        await this.buildTransportVoucherQrDataUri(
+          data,
+          itineraryPlanId,
+        ),
     };
   }
 
