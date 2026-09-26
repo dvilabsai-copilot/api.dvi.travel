@@ -45,7 +45,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
     border-radius: 3mm;
     padding: 3mm 4mm;
     display: grid;
-    grid-template-columns: 1fr 62mm 24mm;
+    grid-template-columns: minmax(0, 1fr) 62mm 24mm;
     grid-template-rows: 1fr auto;
     column-gap: 4mm;
     background: linear-gradient(180deg, #ffffff 0%, #fbfaff 100%);
@@ -56,6 +56,14 @@ export const TRANSPORT_VOUCHER_STYLES = `
     display: flex;
     align-items: center;
     gap: 5mm;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .brand-text {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
   }
 
   .logo-area {
@@ -70,7 +78,11 @@ export const TRANSPORT_VOUCHER_STYLES = `
   .logo-area img {
     width: 100%;
     height: 100%;
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
+    object-position: center;
+    display: block;
   }
 
   .dvi-logo-fallback {
@@ -102,28 +114,45 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .brand-title {
-    font-size: 22px;
-    line-height: 0.98;
+    font-size: 25px;
+    line-height: 1.02;
     font-weight: 900;
     color: var(--primary-dark);
-    white-space: nowrap;
+
+    /*
+      DVI's short title remains visually the same.
+
+      Longer Agent company names can wrap to two lines
+      instead of expanding the CSS grid and pushing the
+      Transport Voucher / QR block outside the A4 page.
+    */
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+
+    max-width: 100%;
+    max-height: 46px;
+    overflow: hidden;
   }
 
   .brand-tagline {
     margin-top: 2mm;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--primary-dark);
   }
 
   .voucher-meta {
     align-self: start;
+    min-width: 0;
+    width: 100%;
+    overflow: hidden;
   }
 
   .voucher-title {
     background: var(--primary);
     color: #fff;
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1;
     font-weight: 800;
     padding: 2.8mm 4mm;
@@ -136,7 +165,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   .meta-row {
     display: grid;
     grid-template-columns: 22mm 1fr;
-    font-size: 8px;
+    font-size: 9.5px;
     margin-bottom: 1.5mm;
     color: var(--primary-dark);
     column-gap: 2mm;
@@ -152,6 +181,9 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .qr-box {
+    min-width: 0;
+    width: 100%;
+    overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 2mm;
     height: 26mm;
@@ -186,7 +218,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .qr-caption {
-    font-size: 6.5px;
+    font-size: 8px;
     font-weight: 700;
     color: var(--primary-dark);
   }
@@ -196,10 +228,14 @@ export const TRANSPORT_VOUCHER_STYLES = `
     margin-top: 1.5mm;
     display: flex;
     gap: 5.5mm;
-    font-size: 7.8px;
+    font-size: 9.5px;
     font-weight: 700;
     color: var(--primary-dark);
     flex-wrap: wrap;
+
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .contact-item {
@@ -238,7 +274,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 5.8px;
+    font-size: 7px;
     font-weight: 800;
     color: var(--primary);
     background: var(--soft);
@@ -250,7 +286,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .trust-copy {
-    font-size: 6.8px;
+    font-size: 8.6px;
     line-height: 1.2;
     color: var(--muted);
   }
@@ -261,7 +297,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .trip-title {
-    font-size: 12.5px;
+    font-size: 15px;
     font-weight: 800;
     color: var(--primary-dark);
     line-height: 1.1;
@@ -269,7 +305,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
 
   .trip-range {
     margin-top: 1.5mm;
-    font-size: 7.6px;
+    font-size: 9.5px;
     font-weight: 600;
     color: var(--primary);
   }
@@ -296,7 +332,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .section-heading {
-    font-size: 10.6px;
+    font-size: 13px;
     font-weight: 800;
     color: var(--primary);
     margin-bottom: 2mm;
@@ -306,7 +342,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
     display: grid;
     grid-template-columns: 32mm 3mm 1fr;
     gap: 1mm;
-    font-size: 7.6px;
+    font-size: 10px;
     line-height: 1.15;
     margin-bottom: 2mm;
   }
@@ -344,7 +380,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .flight-title {
-    font-size: 7.2px;
+    font-size: 9.5px;
     font-weight: 800;
     color: var(--primary-dark);
     margin-bottom: 1.2mm;
@@ -352,7 +388,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .flight-line {
-    font-size: 7px;
+    font-size: 8.8px;
     line-height: 1.2;
     color: var(--primary-dark);
     margin-bottom: 0.8mm;
@@ -462,7 +498,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
 
   .vehicle-placeholder-subtitle {
     margin-top: 4mm;
-    font-size: 8px;
+    font-size: 9.5px;
     font-weight: 700;
     color: var(--muted);
   }
@@ -475,14 +511,14 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .vehicle-name {
-    font-size: 8.5px;
+    font-size: 11px;
     font-weight: 900;
     color: var(--primary-dark);
     margin-bottom: 1.5mm;
   }
 
   .vehicle-mini-line {
-    font-size: 6.4px;
+    font-size: 8.8px;
     line-height: 1.2;
     margin-bottom: 0.7mm;
     color: var(--primary-dark);
@@ -490,7 +526,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
 
   .vehicle-extra-note {
     margin-top: 1mm;
-    font-size: 6.4px;
+    font-size: 8px;
     font-weight: 700;
     color: var(--muted);
   }
@@ -505,7 +541,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
 
   .itinerary-title {
     height: 5.5mm;
-    font-size: 11.4px;
+    font-size: 13.5px;
     font-weight: 800;
     color: var(--primary);
     margin: 0;
@@ -537,14 +573,14 @@ export const TRANSPORT_VOUCHER_STYLES = `
   .itinerary-table th {
     background: var(--primary);
     color: #fff;
-    font-size: 7px;
+    font-size: 9.2px;
     font-weight: 800;
     padding: 1.2mm 1mm;
     border: 1px solid var(--border);
   }
 
   .itinerary-table td {
-    font-size: 6.8px;
+    font-size: 9px;
     line-height: 1.15;
     padding: 1mm 1mm;
     border: 1px solid var(--border);
@@ -567,23 +603,23 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .day-label {
-    font-size: 4.6px;
+    font-size: 5.8px;
     line-height: 1;
   }
 
   .day-number {
-    font-size: 6.4px;
+    font-size: 7.8px;
     line-height: 1;
   }
 
   .date-cell strong {
     display: block;
-    font-size: 7px;
+    font-size: 9px;
     margin-bottom: 0.45mm;
   }
 
   .date-cell span {
-    font-size: 6.4px;
+    font-size: 8px;
     color: var(--muted);
   }
 
@@ -621,7 +657,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .footer-title {
-    font-size: 9.5px;
+    font-size: 11px;
     font-weight: 800;
     margin-bottom: 1.6mm;
     color: var(--primary);
@@ -633,7 +669,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .footer-list li {
-    font-size: 6.6px;
+    font-size: 8.4px;
     line-height: 1.18;
     margin-bottom: 1mm;
     color: var(--primary-dark);
@@ -673,10 +709,553 @@ export const TRANSPORT_VOUCHER_STYLES = `
     align-items: center;
     justify-content: center;
     text-align: center;
-    font-size: 7px;
+    font-size: 8.8px;
     font-style: italic;
     color: var(--primary-dark);
     position: static !important;
     z-index: 1;
   }
+
+
+  /*
+    TRANSPORT_VOUCHER_READABLE_TEXT_V2
+
+    Final readability pass.
+    Keep existing A4 layout and section dimensions,
+    but make printed text substantially easier to read.
+  */
+
+  .brand-title {
+    font-size: 25px !important;
+    line-height: 1.02 !important;
+  }
+
+  .brand-tagline {
+    font-size: 13px !important;
+    line-height: 1.15 !important;
+  }
+
+  .voucher-title {
+    font-size: 15px !important;
+  }
+
+  .meta-row {
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+  }
+
+  .qr-caption {
+    font-size: 8px !important;
+  }
+
+  .contact-row {
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+  }
+
+  .trust-icon {
+    font-size: 7px !important;
+  }
+
+  .trust-copy {
+    font-size: 8.8px !important;
+    line-height: 1.25 !important;
+  }
+
+  .trip-title {
+    font-size: 15px !important;
+    line-height: 1.12 !important;
+  }
+
+  .trip-range {
+    font-size: 9.5px !important;
+  }
+
+  .section-heading {
+    font-size: 13.5px !important;
+    line-height: 1.15 !important;
+  }
+
+  .detail-row {
+    font-size: 10.5px !important;
+    line-height: 1.18 !important;
+    margin-bottom: 1.7mm !important;
+  }
+
+  .detail-label,
+  .detail-value,
+  .detail-colon {
+    font-size: 10.5px !important;
+  }
+
+  .flight-title {
+    font-size: 10px !important;
+  }
+
+  .flight-line {
+    font-size: 9px !important;
+    line-height: 1.25 !important;
+  }
+
+  .vehicle-name {
+    font-size: 11.5px !important;
+    line-height: 1.1 !important;
+  }
+
+  .vehicle-mini-line {
+    font-size: 9px !important;
+    line-height: 1.22 !important;
+  }
+
+  .vehicle-extra-note {
+    font-size: 8.5px !important;
+  }
+
+  .itinerary-title {
+    font-size: 14px !important;
+    line-height: 1.1 !important;
+  }
+
+  .itinerary-table th {
+    font-size: 9px !important;
+    line-height: 1.15 !important;
+  }
+
+  .itinerary-table td {
+    font-size: 8.8px !important;
+    line-height: 1.18 !important;
+  }
+
+  .date-cell strong {
+    font-size: 9px !important;
+  }
+
+  .date-cell span {
+    font-size: 8px !important;
+  }
+
+  .day-label {
+    font-size: 5.5px !important;
+  }
+
+  .day-number {
+    font-size: 8px !important;
+  }
+
+  .footer-title {
+    font-size: 11.5px !important;
+    line-height: 1.1 !important;
+  }
+
+  .footer-list li {
+    font-size: 8.5px !important;
+    line-height: 1.25 !important;
+    margin-bottom: 0.8mm !important;
+  }
+
+  .thank-you {
+    font-size: 9px !important;
+    line-height: 1.15 !important;
+  }
+
+
+  /*
+   * TRANSPORT_VOUCHER_REFERENCE_UI_V3
+   *
+   * Final approved Transport Voucher presentation:
+   * - proper logo
+   * - readable bold typography
+   * - full-width single vehicle card
+   * - same A4 structure
+   */
+
+  html,
+  body {
+    font-weight: 600;
+  }
+
+
+  /* ========================================================
+     HEADER
+     ======================================================== */
+
+  .voucher-header {
+    grid-template-columns:
+      minmax(0, 1fr)
+      62mm
+      24mm !important;
+
+    column-gap: 3mm !important;
+  }
+
+  .brand-block {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    gap: 4mm !important;
+  }
+
+  .logo-area {
+    width: 31mm !important;
+    height: 23mm !important;
+    min-width: 31mm !important;
+    flex: 0 0 31mm !important;
+  }
+
+  .logo-area img {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+
+    object-fit: contain !important;
+    object-position: center !important;
+
+    display: block !important;
+  }
+
+  .brand-text {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    overflow: hidden !important;
+  }
+
+  .brand-title {
+    font-size: 22px !important;
+    line-height: 1.02 !important;
+    font-weight: 900 !important;
+
+    white-space: normal !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+
+    max-width: 100% !important;
+    max-height: 64px !important;
+    overflow: hidden !important;
+  }
+
+  .brand-tagline {
+    margin-top: 1.2mm !important;
+    font-size: 12px !important;
+    line-height: 1.1 !important;
+    font-weight: 800 !important;
+  }
+
+  .voucher-title {
+    font-size: 15px !important;
+    font-weight: 900 !important;
+  }
+
+  .meta-row {
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    font-weight: 700 !important;
+  }
+
+  .meta-row span,
+  .meta-row b {
+    font-weight: 800 !important;
+  }
+
+  .qr-caption {
+    font-size: 8px !important;
+    font-weight: 800 !important;
+  }
+
+  .contact-row {
+    font-size: 10px !important;
+    line-height: 1.15 !important;
+    font-weight: 800 !important;
+
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+
+
+  /* ========================================================
+     CONFIRMED / TRUST BAR
+     ======================================================== */
+
+  .trust-icon {
+    font-size: 7px !important;
+    font-weight: 900 !important;
+  }
+
+  .trust-copy {
+    font-size: 9px !important;
+    line-height: 1.18 !important;
+    font-weight: 700 !important;
+  }
+
+  .trust-copy strong {
+    font-weight: 900 !important;
+  }
+
+  .trip-title {
+    font-size: 15px !important;
+    line-height: 1.05 !important;
+    font-weight: 900 !important;
+  }
+
+  .trip-range {
+    font-size: 9.5px !important;
+    line-height: 1.1 !important;
+    font-weight: 800 !important;
+  }
+
+
+  /* ========================================================
+     GUEST / TRIP / FLIGHT
+     ======================================================== */
+
+  .section-heading {
+    font-size: 14px !important;
+    line-height: 1.1 !important;
+    font-weight: 900 !important;
+    margin-bottom: 2.2mm !important;
+  }
+
+  .info-card {
+    padding:
+      3mm
+      3.5mm !important;
+  }
+
+  .detail-row {
+    grid-template-columns:
+      31mm
+      3mm
+      minmax(0, 1fr) !important;
+
+    font-size: 11px !important;
+    line-height: 1.12 !important;
+
+    margin-bottom: 1.55mm !important;
+  }
+
+  .detail-label {
+    font-size: 11px !important;
+    font-weight: 900 !important;
+  }
+
+  .detail-colon {
+    font-size: 11px !important;
+    font-weight: 900 !important;
+  }
+
+  .detail-value {
+    font-size: 11px !important;
+    line-height: 1.12 !important;
+    font-weight: 800 !important;
+  }
+
+  .flight-box {
+    padding:
+      2.3mm
+      2.8mm !important;
+  }
+
+  .flight-title {
+    font-size: 10.5px !important;
+    line-height: 1.1 !important;
+    font-weight: 900 !important;
+  }
+
+  .flight-line {
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+    font-weight: 700 !important;
+  }
+
+
+  /* ========================================================
+     VEHICLE DETAILS
+     ======================================================== */
+
+  .vehicle-section {
+    padding:
+      3mm
+      4mm !important;
+  }
+
+  .vehicle-heading {
+    margin-bottom: 2mm !important;
+  }
+
+  /*
+   * One vehicle must use the entire available width,
+   * matching the approved reference.
+   *
+   * If there are two vehicles they can still sit side-by-side.
+   */
+  .vehicle-list {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+
+    gap: 2.5mm !important;
+  }
+
+  .vehicle-list > .vehicle-row:only-child {
+    grid-column:
+      1 / -1 !important;
+  }
+
+  /*
+   * Template has no vehicle image cell here.
+   * Remove the old 28mm phantom column which was squeezing
+   * all vehicle information into the tiny marked area.
+   */
+  .vehicle-row {
+    display: grid !important;
+
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+
+    width: 100% !important;
+
+    padding:
+      2.5mm
+      3mm !important;
+
+    min-height: 29mm !important;
+  }
+
+  .vehicle-summary-grid {
+    display: grid !important;
+
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(0, 1fr) !important;
+
+    gap:
+      1.5mm
+      8mm !important;
+
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .vehicle-summary {
+    min-width: 0 !important;
+  }
+
+  .vehicle-name {
+    font-size: 12.5px !important;
+    line-height: 1.05 !important;
+    font-weight: 900 !important;
+
+    margin-bottom:
+      1.5mm !important;
+  }
+
+  .vehicle-mini-line {
+    font-size: 10.2px !important;
+    line-height: 1.15 !important;
+    font-weight: 700 !important;
+
+    margin-bottom:
+      0.75mm !important;
+  }
+
+  .vehicle-extra-note {
+    font-size: 9px !important;
+    font-weight: 800 !important;
+  }
+
+
+  /* ========================================================
+     DAY-WISE TRANSPORT ITINERARY
+     ======================================================== */
+
+  .itinerary-title {
+    font-size: 14.5px !important;
+    line-height: 1.05 !important;
+    font-weight: 900 !important;
+  }
+
+  .itinerary-table th {
+    font-size: 9.8px !important;
+    line-height: 1.1 !important;
+    font-weight: 900 !important;
+
+    padding:
+      1mm
+      0.8mm !important;
+  }
+
+  .itinerary-table td {
+    font-size: 9.3px !important;
+    line-height: 1.12 !important;
+    font-weight: 700 !important;
+
+    padding:
+      0.9mm
+      0.9mm !important;
+  }
+
+  .day-label {
+    font-size: 5.8px !important;
+    font-weight: 900 !important;
+  }
+
+  .day-number {
+    font-size: 8px !important;
+    font-weight: 900 !important;
+  }
+
+  .date-cell strong {
+    font-size: 9.7px !important;
+    line-height: 1.05 !important;
+    font-weight: 900 !important;
+  }
+
+  .date-cell span {
+    font-size: 8.2px !important;
+    line-height: 1.05 !important;
+    font-weight: 700 !important;
+  }
+
+  .route-text {
+    font-size: 9.3px !important;
+    line-height: 1.12 !important;
+
+    max-height: 10.8mm !important;
+  }
+
+  .time-cell {
+    font-size: 9.5px !important;
+    font-weight: 900 !important;
+  }
+
+
+  /* ========================================================
+     FOOTER CARDS
+     ======================================================== */
+
+  .footer-card {
+    padding:
+      2.4mm
+      2.7mm !important;
+  }
+
+  .footer-title {
+    font-size: 11.5px !important;
+    line-height: 1.05 !important;
+    font-weight: 900 !important;
+  }
+
+  .footer-list li {
+    font-size: 9px !important;
+    line-height: 1.16 !important;
+    font-weight: 700 !important;
+
+    margin-bottom:
+      0.65mm !important;
+  }
+
+  .thank-you {
+    font-size: 9.5px !important;
+    line-height: 1.1 !important;
+    font-weight: 800 !important;
+  }
+
 `;
