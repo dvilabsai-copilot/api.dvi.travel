@@ -169,15 +169,22 @@ export function inferCanonicalHotelRatePlanCodeFromMealText(
 ): CanonicalHotelRatePlanCode | null {
   const raw = String(value || '').trim().toUpperCase();
   if (!raw || raw === '-') return null;
-  if (raw === 'ROOM ONLY') return 'EP';
+  const normalized = raw.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (normalized === 'ROOM ONLY') return 'EP';
 
  // Explicit supplier keywords should win over generic breakfast mentions.
-  if (raw.includes('ALL MEALS') || raw.includes('FULL BOARD') || raw.includes('FULLBOARD')) return 'AP';
-  if (raw.includes('HALF BOARD') || raw.includes('HALFBOARD')) return 'MAP';
+  if (normalized.includes('ALL MEALS') || normalized.includes('FULL BOARD') || normalized.includes('FULLBOARD')) return 'AP';
+  if (normalized.includes('HALF BOARD') || normalized.includes('HALFBOARD')) return 'MAP';
 
-  const hasBreakfast = raw.includes('BREAKFAST');
-  const hasLunch = raw.includes('LUNCH');
-  const hasDinner = raw.includes('DINNER');
+  const hasBreakfast = normalized.includes('BREAKFAST');
+  const hasLunch = normalized.includes('LUNCH');
+  const hasDinner = normalized.includes('DINNER');
+
+  // TBO uses `Lunch/Dinner` to mean one of those two major meals, not both.
+  if (
+    hasBreakfast &&
+    (normalized.includes('LUNCH/DINNER') || normalized.includes('LUNCH OR DINNER'))
+  ) return 'MAP';
 
   if (hasBreakfast && hasLunch && hasDinner) return 'AP';
   if ((hasBreakfast && hasLunch) || (hasBreakfast && hasDinner) || (hasLunch && hasDinner)) return 'MAP';
@@ -204,32 +211,35 @@ export function getNormalizedMealPlanLabelFromMealText(value?: string | null): s
   const raw = String(value || '').trim();
   if (!raw || raw === '-') return 'UNKNOWN';
 
-  const upper = raw.toUpperCase();
-  const normalizedUpper = upper.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const normalizedUpper = raw.toUpperCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-  // TBO sends the structured value as `Room_Only`. This is the canonical
-  // European Plan (EP), even when the inclusion text only contains parking
-  // or other non-meal inclusions.
-  if (normalizedUpper === 'ROOM ONLY') return 'EP';
-
-  // Canonical or known plan identifiers map directly to CP/EP/MAP/AP labels.
-  const directPlanCode =
-    inferCanonicalHotelRatePlanCode(upper) ||
-    inferCanonicalHotelRatePlanCode(normalizedUpper);
+  // Keep canonical codes and descriptive supplier text on the same parser so
+  // TBO values such as `Half_Board` and `Breakfast & Lunch/Dinner` follow the
+  // same rules.
+  const directPlanCode = inferCanonicalHotelRatePlanCode(normalizedUpper);
   if (directPlanCode) return directPlanCode;
 
- // Supplier meal keywords in inclusion text.
-  if (upper.includes('ALL MEALS') || upper.includes('FULL BOARD') || upper.includes('FULLBOARD')) return 'AP';
-  if (upper.includes('HALF BOARD') || upper.includes('HALFBOARD')) return 'MAP';
+  const mealTextPlanCode = inferCanonicalHotelRatePlanCodeFromMealText(normalizedUpper);
+  if (mealTextPlanCode) return mealTextPlanCode;
 
-  const hasBreakfast = upper.includes('BREAKFAST');
-  const hasLunch = upper.includes('LUNCH');
-  const hasDinner = upper.includes('DINNER');
-
-  if (hasBreakfast && hasLunch && hasDinner) return 'AP';
-  if ((hasBreakfast && hasLunch) || (hasBreakfast && hasDinner) || (hasLunch && hasDinner)) return 'MAP';
-  if (hasBreakfast) return 'CP';
-
- // For noisy/non-meal inclusions (e.g. parking/wifi), use a clean fallback.
+  // For noisy/non-meal inclusions (e.g. parking/wifi), use a clean fallback.
   return 'UNKNOWN';
+}
+
+/**
+ * Normalize TBO's meal plan using the human-readable inclusion first.
+ *
+ * TBO sometimes returns a structured MealType that disagrees with the meals
+ * listed in Inclusion (for example Room_Only with breakfast and dinner). The
+ * inclusion describes what the guest actually receives, so it is authoritative
+ * when it contains a recognizable meal plan. MealType is retained as a
+ * fallback for empty/noisy inclusion text.
+ */
+export function getNormalizedMealPlanLabelFromMealSources(
+  inclusion?: string | null,
+  mealType?: string | null,
+): string {
+  const inclusionLabel = getNormalizedMealPlanLabelFromMealText(inclusion);
+  if (inclusionLabel !== 'UNKNOWN') return inclusionLabel;
+  return getNormalizedMealPlanLabelFromMealText(mealType);
 }

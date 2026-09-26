@@ -366,15 +366,7 @@ export class HotelRecommendationPackageService {
         })),
       })),
     });
-    const hasGenuineGroup4 = packages[3].stayResults.some((result) => result.state !== 'UNAVAILABLE');
-    if (hasGenuineGroup4) {
-      const group3 = packages[2];
-      packages[3] = this.packageWithG4Fallback(packages[3], group3);
-    } else {
-      packages[3] = this.emptyRecommendationPackage(4);
-      packages[3].fallbackReasons = ['No eligible hotel is available for Group 4.'];
-    }
-    return packages;
+  return packages;
   }
 
   /** Exact category first, then lower categories, then higher categories. */
