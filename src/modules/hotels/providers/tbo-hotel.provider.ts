@@ -18,8 +18,7 @@ import {
 import { resolveProviderPassengerTitle } from '../../../common/utils/passenger-title.util';
 import { SupplementNormalizerService } from '../services/supplement-normalizer.service';
 import {
-  inferCanonicalHotelRatePlanCodeFromMealText,
-  getNormalizedMealPlanLabelFromMealText,
+  getNormalizedMealPlanLabelFromMealSources,
 } from '../hotel-rate-plans';
 import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
@@ -362,7 +361,11 @@ export class TBOHotelProvider implements IHotelProvider {
  // (One HotelCode = One real hotel, not fake variants)
         for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           const room = hotel.Rooms[idx];
-          const inferredMealPlanCode = inferCanonicalHotelRatePlanCodeFromMealText(room.Inclusion);
+          const mealPlan = getNormalizedMealPlanLabelFromMealSources(
+            room.Inclusion,
+            room.MealType,
+          );
+          const inferredMealPlanCode = mealPlan === 'UNKNOWN' ? null : mealPlan;
           if (selectedMealPlanCode && inferredMealPlanCode !== selectedMealPlanCode) {
             continue;
           }
@@ -446,11 +449,9 @@ export class TBOHotelProvider implements IHotelProvider {
             totalFare: formattedTotalFare,
             currency: hotel.Currency || 'INR',
  roomType: roomName, // Room type name for display
-            // Prefer TBO's structured MealType. Inclusion may contain only
-            // parking/wifi text, which cannot identify Room_Only as EP.
-            mealPlan: getNormalizedMealPlanLabelFromMealText(
-              room.MealType || room.Inclusion,
-            ),
+            // Inclusion describes the meals actually received. Fall back to
+            // TBO's structured MealType when inclusion text is empty/noisy.
+            mealPlan,
             roomTypes: [roomTypeObj],
  // Use REAL BookingCode from TBO as searchReference
             searchReference: realBookingCode,
