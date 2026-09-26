@@ -48,6 +48,11 @@ export function extractTboImageUrls(detail: any): string[] {
   ].map((value) => String(value || '').trim()).filter(Boolean)));
 }
 
+export function isAcceptableTboGalleryDimensions(dimensions: { width: number; height: number } | null): boolean {
+  if (!dimensions || dimensions.width <= 0 || dimensions.height <= 0) return false;
+  return dimensions.width >= dimensions.height;
+}
+
 @Injectable()
 export class TboMasterGalleryService {
   private readonly logger = new Logger(TboMasterGalleryService.name);
@@ -153,13 +158,11 @@ export class TboMasterGalleryService {
       return;
     }
 
-    const imageUrl = extractTboImageUrls(detail)[0];
-    if (!imageUrl) {
-      this.logger.debug(`[TBO_GALLERY_BACKFILL_NO_IMAGE] code=${code}`);
+    const image = await this.downloadPreferredImage(extractTboImageUrls(detail));
+    if (!image) {
+      this.logger.debug(`[TBO_GALLERY_BACKFILL_NO_ACCEPTABLE_IMAGE] code=${code}`);
       return;
     }
-
-    const image = await this.downloadImage(imageUrl);
     const directory = this.hotelUploadRoot(code);
     await fs.mkdir(directory, { recursive: true });
     const fileName = `auto-${code}-${image.hash}${image.extension}`;
@@ -183,7 +186,7 @@ export class TboMasterGalleryService {
           is_primary: 1,
           sort_order: 1,
           source: 'tbo-hotel-details-auto',
-          source_url: imageUrl,
+          source_url: image.url,
           createdby: 0,
           createdon: new Date(),
           status: 1,
@@ -198,7 +201,24 @@ export class TboMasterGalleryService {
     }
   }
 
-  private async downloadImage(url: string): Promise<{ buffer: Buffer; extension: string; hash: string }> {
+  private async downloadPreferredImage(urls: string[]): Promise<{ buffer: Buffer; extension: string; hash: string; url: string } | null> {
+    for (const url of urls.slice(0, 12)) {
+      try {
+        const image = await this.downloadImage(url);
+        if (isAcceptableTboGalleryDimensions(image.dimensions)) return { ...image, url };
+      } catch (error) {
+        this.logger.debug(`[TBO_GALLERY_BACKFILL_IMAGE_REJECTED] ${String(error)}`);
+      }
+    }
+    return null;
+  }
+
+  private async downloadImage(url: string): Promise<{
+    buffer: Buffer;
+    extension: string;
+    hash: string;
+    dimensions: { width: number; height: number } | null;
+  }> {
     const requestUrl = String(url).replace(/([?&]img=)([^&]*)/i, (_match, prefix, value) => `${prefix}${encodeURIComponent(decodeURIComponent(value).replace(/ /g, '+'))}`);
     const isTboImage = /(?:^|\.)tboholidays\.com$/i.test(new URL(requestUrl).hostname);
     const response = await fetch(requestUrl, {
@@ -222,7 +242,40 @@ export class TboMasterGalleryService {
     if (!extension || buffer.length < 1024 || buffer.length > 10 * 1024 * 1024) {
       throw new Error(`Unsupported or invalid image (${contentType || 'unknown'}, ${buffer.length} bytes)`);
     }
-    return { buffer, extension, hash: createHash('sha256').update(buffer).digest('hex').slice(0, 12) };
+    return {
+      buffer,
+      extension,
+      hash: createHash('sha256').update(buffer).digest('hex').slice(0, 12),
+      dimensions: this.readImageDimensions(buffer),
+    };
+  }
+
+  private readImageDimensions(buffer: Buffer): { width: number; height: number } | null {
+    if (buffer.length >= 24 && buffer.toString('ascii', 1, 4) === 'PNG') {
+      return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+    }
+    if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null;
+    let offset = 2;
+    while (offset + 9 < buffer.length) {
+      if (buffer[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      offset += 2;
+      if (marker === 0xd8 || marker === 0xd9) continue;
+      if (offset + 2 > buffer.length) return null;
+      const segmentLength = buffer.readUInt16BE(offset);
+      const isStartOfFrame = (marker >= 0xc0 && marker <= 0xc3) ||
+        (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) ||
+        (marker >= 0xcd && marker <= 0xcf);
+      if (isStartOfFrame && offset + 7 <= buffer.length) {
+        return { height: buffer.readUInt16BE(offset + 3), width: buffer.readUInt16BE(offset + 5) };
+      }
+      offset += segmentLength;
+    }
+    return null;
   }
 
   private toImage(row: any): TboMasterGalleryImage {
