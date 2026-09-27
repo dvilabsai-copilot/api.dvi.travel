@@ -77,6 +77,8 @@ jobs:
             npx prisma validate
             echo "Synchronizing staging database schema with Prisma..."
             npx prisma db push --skip-generate
+            echo "Applying one-time Cherai offline hotel city repair..."
+            npx tsx scripts/repair-cherai-hotel-city.ts --apply
             echo "Importing seeded calendar events..."
             npm run calendar-events:import
             npm run build
