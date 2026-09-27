@@ -1911,7 +1911,7 @@ this.logger.log(
             planAdultCount,
             planChildCount,
             planChildAges,
-            '',
+            preferredMealPlanCode,
             [],
             {
               extraBedCount: Number((plan as any).total_extra_bed || 0),
@@ -2461,6 +2461,8 @@ this.logger.log(
       trivandrum: ['thiruvananthapuram'],
       pondicherry: ['puducherry'],
       bangalore: ['bengaluru'],
+      cherai: ['cherai beach'],
+      'cherai beach': ['cherai'],
     };
 
  // Extract unique destinations from all routes
@@ -6914,7 +6916,7 @@ this.logger.log(
         planAdultCount2,
         planChildCount2,
         planChildAges2,
-        '',
+        preferredMealPlanCode2,
         [],
         {
           extraBedCount: Number((plan as any).total_extra_bed || 0),
@@ -6969,7 +6971,7 @@ this.logger.log(
           planAdultCount2,
           planChildCount2,
           planChildAges2,
-          '',
+          preferredMealPlanCode2,
           [],
           {
             extraBedCount: Number((plan as any).total_extra_bed || 0),
