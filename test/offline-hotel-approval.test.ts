@@ -371,3 +371,48 @@ test('offline selections are excluded from live supplier booking dispatch', () =
   assert.equal(selected.length, 1);
   assert.equal(selected[0].provider, 'axisrooms');
 });
+
+test('offline requested meal plan uses the rate-plan identity over room inclusion flags', async () => {
+  const pricing = {
+    resolveEffectiveHotelMarginPercentage: async () => 0,
+    marginBreakdown: (value: number) => ({ baseAmount: value, marginPercentage: 0, marginAmount: 0, sellAmount: value }),
+    money: (value: number) => Number(value.toFixed(2)),
+  } as any;
+  const service = new OfflineHotelCatalogService({} as any, pricing);
+  const offers = await (service as any).buildRoomOffersFromCatalogRows(
+    { hotel_id: 540 },
+    ['2099-01-01'],
+    1,
+    2,
+    0,
+    {
+      roomsByHotel: new Map([[540, [{
+        room_ID: 1625,
+        room_type_id: 1,
+        room_title: 'Pool Reserve',
+        // Legacy inclusion flags describe this room as MAP, while the
+        // selected price row is explicitly a Continental Plan rate.
+        breakfast_included: 1,
+        lunch_included: 0,
+        dinner_included: 1,
+      }]]]),
+      activeRoomTypeIds: new Set([1]),
+      ratePlansByRoom: new Map([[1625, [{
+        room_id: 1625,
+        rateplan_id: 'CP_PLAN',
+        rateplan_name: 'Continental Plan',
+        meal_plan_description: 'Breakfast only',
+      }]]]),
+      occupancyRatesByRoomPlan: new Map([['540|1625|CP_PLAN', [{
+        start_date: new Date('2099-01-01'),
+        end_date: new Date('2099-01-01'),
+        occupancy_rates: { DOUBLE: 4900 },
+      }]]]),
+    },
+    0,
+    'CP',
+  );
+
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].mealPlan, 'CP');
+});

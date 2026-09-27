@@ -11,6 +11,8 @@ const cityRecords = [
   { id: 71090, name: 'Puducherry' },
   { id: 3659, name: 'Chennai' },
   { id: 2045, name: 'Thiruvananthapuram' },
+  { id: 70846, name: 'Cherai' },
+  { id: 70847, name: 'Cherai Beach' },
   { id: 1848, name: 'Alappuzha' },
   { id: 70761, name: 'Alleppey' },
 ];
@@ -63,6 +65,14 @@ test('normalizes Alleppey spellings to the Alappuzha city master', async () => {
     const result = await candidates(destination);
     assert.ok(result.includes('1848'), destination);
     assert.ok(result.includes('Alappuzha'), destination);
+  }
+});
+
+test('maps Cherai routes to both Cherai city-master locality variants', async () => {
+  for (const destination of ['Cherai', 'Cherai Beach']) {
+    const result = await candidates(destination);
+    assert.ok(result.includes('70846'), destination);
+    assert.ok(result.includes('70847'), destination);
   }
 });
 

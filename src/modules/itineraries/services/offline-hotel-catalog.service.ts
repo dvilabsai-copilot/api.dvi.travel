@@ -200,6 +200,9 @@ const OFFLINE_DESTINATION_ALIASES: Record<string, string[]> = {
   'ecr beach': ['Chennai'],
   trivandrum: ['Thiruvananthapuram'],
   thiruvananthapuram: ['Trivandrum'],
+  // Cherai is also maintained as the more specific Cherai Beach locality.
+  cherai: ['Cherai Beach'],
+  'cherai beach': ['Cherai'],
 };
 
 @Injectable()
@@ -1469,7 +1472,7 @@ export class OfflineHotelCatalogService {
       const roomPlans = ratePlansByRoom.get(Number(room?.room_ID || 0)) || [];
       const hasRequestedPlan = roomPlans.some((plan: any) =>
         inferCanonicalHotelRatePlanCode(
-          plan?.meal_plan_description || plan?.rateplan_name || plan?.rateplan_id,
+          `${plan?.rateplan_id || ''} ${plan?.rateplan_name || ''} ${plan?.meal_plan_description || ''}`,
         ) === requested,
       );
       if (hasRequestedPlan) return requested;
