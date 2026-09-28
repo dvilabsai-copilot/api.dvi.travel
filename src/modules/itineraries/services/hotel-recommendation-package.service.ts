@@ -947,6 +947,21 @@ export class HotelRecommendationPackageService {
       );
       const nightlyRates = selected.map((candidate) => this.projectNightlyRate(candidate));
       const first = selected[0];
+      const rebalanceRoundedRates = (
+        rates: Array<Record<string, unknown>>,
+        amountKey: 'sellAmount' | 'baseAmount',
+        target: number,
+      ): void => {
+        if (target <= 0 || rates.length === 0) return;
+        const roundedSum = this.money(rates.reduce((sum, rate) => sum + Number(rate[amountKey] || 0), 0));
+        const remainder = this.money(target - roundedSum);
+        if (Math.abs(remainder) >= 0.01) {
+          const last = rates[rates.length - 1];
+          last[amountKey] = this.money(Number(last[amountKey] || 0) + remainder);
+        }
+      };
+      rebalanceRoundedRates(nightlyRates, 'sellAmount', Number((first as any).fullStayTotal || 0));
+      rebalanceRoundedRates(nightlyRates, 'baseAmount', Number((first as any).fullStayBaseTotal || 0));
       const total = this.money(nightlyRates.reduce((sum, rate) => sum + Number(rate.sellAmount || 0), 0));
       const baseTotal = this.money(nightlyRates.reduce((sum, rate) => sum + Number(rate.baseAmount || 0), 0));
       const firstNightlySell = Number(nightlyRates[0]?.sellAmount || 0);
@@ -1094,6 +1109,7 @@ export class HotelRecommendationPackageService {
               netAmount: projectedAmount,
             }
           : {}),
+        ...(fullStayTotal > 0 ? { fullStayTotal } : {}),
         ...(projectedBase > 0
           ? {
               basePricePerNight: projectedBase,
@@ -1102,6 +1118,7 @@ export class HotelRecommendationPackageService {
               totalRoomCost: projectedBase,
             }
           : {}),
+        ...(fullBaseTotal > 0 ? { fullStayBaseTotal: fullBaseTotal } : {}),
       };
     };
 

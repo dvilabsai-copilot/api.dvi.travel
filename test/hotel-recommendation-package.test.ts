@@ -222,6 +222,39 @@ test('projects a TBO full-stay fare once per night before aggregating the logica
   ]);
 });
 
+test('projects a full-stay row copied into every route bucket before aggregating', () => {
+  const fullStayFare = 16948.81;
+  const copiedBlockMetadata = {
+    routeIds: [11501, 11502],
+    completeStayRouteIds: [11501, 11502],
+    checkInDate: '2026-12-14',
+    checkOutDate: '2026-12-16',
+    numberOfNights: 2,
+    nights: 2,
+    totalFare: fullStayFare,
+    netAmount: fullStayFare,
+  };
+  const packages = service().generate({
+    routes: [
+      { itinerary_route_ID: 11501, itinerary_route_date: '2026-12-14', next_visiting_location: 'Ooty' },
+      { itinerary_route_ID: 11502, itinerary_route_date: '2026-12-15', next_visiting_location: 'Ooty' },
+    ],
+    hotelsByRoute: new Map([
+      [11501, [option('Copied TBO Full Stay', fullStayFare, 'MAP', copiedBlockMetadata)]],
+      [11502, [option('Copied TBO Full Stay', fullStayFare, 'MAP', copiedBlockMetadata)]],
+    ]),
+    preferredMealPlanCode: 'MAP',
+  });
+
+  const selected = packages[0].hotels[0] as any;
+  assert.equal(packages[0].complete, true);
+  assert.equal(selected.totalStayPrice, fullStayFare);
+  assert.deepEqual(selected.nightlyRates?.map((rate: any) => [rate.date, rate.sellAmount]), [
+    ['2026-12-14', 8474.41],
+    ['2026-12-15', 8474.4],
+  ]);
+});
+
 test('does not fabricate a continuous stay from a parent row copied across routes', () => {
   const packages = service().generate({
     routes: [
