@@ -164,6 +164,21 @@ private resolveLogoPath(raw?: string | null): string | null {
       backendRoot,
       'public',
       'uploads',
+      'agent_gallery',
+      fileName,
+    ),
+
+    path.resolve(
+      backendRoot,
+      'uploads',
+      'agent_gallery',
+      fileName,
+    ),
+
+    path.resolve(
+      backendRoot,
+      'public',
+      'uploads',
       'logo',
       fileName,
     ),
@@ -520,6 +535,67 @@ doc
     res.end(pdfBuffer);
   }
 
+  async downloadDviVehicleVoucherPdf(
+    itineraryPlanId: number,
+    res: Response,
+  ) {
+    const data =
+      await this.itinerariesService
+        .getDviTransportVoucherDetails(
+          itineraryPlanId,
+        );
+
+    const safeVoucherNo =
+      data?.voucher?.voucherNo ||
+      String(itineraryPlanId);
+
+    const safeName =
+      this.sanitizeFileName(
+        `dvi-transport-voucher-${safeVoucherNo}.pdf`,
+      );
+
+    const assets =
+      await this.buildTransportVoucherAssets(
+        data,
+        itineraryPlanId,
+      );
+
+    assets.qrDataUri =
+      await this.buildTransportVoucherQrDataUri(
+        data,
+        itineraryPlanId,
+        'dvi-vehicle-voucher-pdf',
+      );
+
+    const html =
+      renderTransportVoucherHtml(
+        data,
+        assets,
+      );
+
+    const pdfBuffer =
+      await this.renderHtmlToPdfBuffer(
+        html,
+      );
+
+    res.setHeader(
+      'Content-Type',
+      'application/pdf',
+    );
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${safeName}"`,
+    );
+
+    res.setHeader(
+      'Content-Length',
+      pdfBuffer.length,
+    );
+
+    res.end(pdfBuffer);
+  }
+
   private fileToDataUri(filePath?: string | null): string | null {
     if (!filePath || !fs.existsSync(filePath)) {
       return null;
@@ -546,10 +622,14 @@ doc
   private async buildTransportVoucherQrDataUri(
     data: TransportVoucherDetails,
     itineraryPlanId: number,
+    voucherEndpoint:
+      | 'vehicle-voucher-pdf'
+      | 'dvi-vehicle-voucher-pdf' =
+      'vehicle-voucher-pdf',
   ): Promise<string | null> {
     const baseUrl = String(process.env.BASE_URL || '').replace(/\/+$/, '');
     const assistanceUrl = baseUrl
-      ? `${baseUrl}/api/v1/itineraries/${itineraryPlanId}/vehicle-voucher-pdf`
+      ? `${baseUrl}/api/v1/itineraries/${itineraryPlanId}/${voucherEndpoint}`
       : '';
     const qrPayload = [
       `Transport Voucher: ${data.voucher.voucherNo || itineraryPlanId}`,
