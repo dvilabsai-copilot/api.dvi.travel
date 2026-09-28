@@ -408,11 +408,31 @@ export async function previewManualHotspotFitHereImpl(
     ))
     .filter((id: number) => Number.isFinite(id) && id > 0);
 
-  const selectedHotspotIdForPreview = Number(data.selectedHotspotId || 0);
-  const selectedAttractionIndex = timelineAttractionHotspotIds.indexOf(selectedHotspotIdForPreview);
+const selectedHotspotIdForPreview = Number(data.selectedHotspotId || 0);
 
-  let selectedHotspotPreservedInPreview =
-    selectedHotspotIdForPreview > 0 && selectedAttractionIndex >= 0;
+console.log('[FitHere][SELECTED_HOTSPOT_PRESERVATION_DEBUG]', {
+  selectedHotspotIdForPreview,
+  timelineAttractionHotspotIds,
+  finalizedTimelineRows: finalizedTimelineForAnchorValidation.map(
+    (row: any, index: number) => ({
+      index,
+      type: row?.type,
+      item_type: row?.item_type,
+      text: row?.text || row?.name,
+      hotspotId: row?.hotspotId,
+      hotspot_ID: row?.hotspot_ID,
+      locationId: row?.locationId,
+      hotspot_id: row?.hotspot_id,
+      id: row?.id,
+      timeRange: row?.timeRange,
+    }),
+  ),
+});
+
+const selectedAttractionIndex = timelineAttractionHotspotIds.indexOf(selectedHotspotIdForPreview);
+
+let selectedHotspotPreservedInPreview =
+  selectedHotspotIdForPreview > 0 && selectedAttractionIndex >= 0;
 
   if (resolvedAnchor.exactSelectedGap === true && selectedHotspotPreservedInPreview === true) {
     const beforeHotspotId = Number(resolvedAnchor.beforeHotspotId || 0);

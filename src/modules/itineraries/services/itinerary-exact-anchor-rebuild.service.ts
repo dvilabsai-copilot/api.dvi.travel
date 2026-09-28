@@ -58,13 +58,17 @@ export class ItineraryExactAnchorRebuildService {
     return this.callbacks.buildManualFitMainTimelineTravelReplicaMap?.(...args);
   }
 
-  private resolveSourceToHotspotLeg(...args: any[]): any {
-    return this.callbacks.resolveSourceToHotspotLeg?.(...args);
-  }
+private resolveSourceToHotspotLeg(...args: any[]): any {
+  return this.callbacks.resolveSourceToHotspotLeg?.(...args);
+}
 
-  private findManualFitMainTimelineTravelReplica(...args: any[]): any {
-    return this.callbacks.findManualFitMainTimelineTravelReplica?.(...args);
-  }
+private resolveSavedRuleHotspotToRouteHotelLeg(...args: any[]): any {
+  return this.callbacks.resolveSavedRuleHotspotToRouteHotelLeg?.(...args);
+}
+
+private findManualFitMainTimelineTravelReplica(...args: any[]): any {
+  return this.callbacks.findManualFitMainTimelineTravelReplica?.(...args);
+}
 
   private chooseReliableTravelDistanceKm(...args: any[]): any {
     return this.callbacks.chooseReliableTravelDistanceKm?.(...args);
@@ -890,25 +894,39 @@ export class ItineraryExactAnchorRebuildService {
       previousAttraction = currentAttraction;
     }
 
-    if (previousAttraction && hotelRows.length > 0) {
-      const hotelRow = hotelRows[0];
-      const fromLabel = getName(previousAttraction);
- const hotelName = getName(hotelRow).replace(/^Check-?in at\s*/i, '') || 'Hotel';
-      const fallbackHotelTravel = ordered.find((row: any) => {
-        const text = String(row?.text || row?.name || '').toLowerCase();
-        return isTravelRow(row) && text.includes('travel to hotel');
-      });
+   if (previousAttraction && hotelRows.length > 0) {
+  const hotelRow = hotelRows[0];
+  const fromLabel = getName(previousAttraction);
+  const hotelName = getName(hotelRow).replace(/^Check-?in at\s*/i, '') || 'Hotel';
 
-      const hotelTravelMinutes = Math.max(
-        1,
-        Math.round(
-          Number(
-            fallbackHotelTravel?.matrixDurationMin
-            || this.getPreviewRowDurationMinutes(fallbackHotelTravel)
-            || 10,
-          ),
-        ),
-      );
+  const previousHotspotId = getHotspotId(previousAttraction);
+
+  const savedHotelLeg =
+    previousHotspotId > 0
+      ? await this.resolveSavedRuleHotspotToRouteHotelLeg(
+          tx,
+          Number(params.planId),
+          Number(params.routeId),
+          previousHotspotId,
+        )
+      : null;
+
+  const fallbackHotelTravel = ordered.find((row: any) => {
+    const text = String(row?.text || row?.name || '').toLowerCase();
+    return isTravelRow(row) && text.includes('travel to hotel');
+  });
+
+  const hotelTravelMinutes = Math.max(
+    1,
+    Math.round(
+      Number(
+        savedHotelLeg?.durationMin
+        || fallbackHotelTravel?.matrixDurationMin
+        || this.getPreviewRowDurationMinutes(fallbackHotelTravel)
+        || 10,
+      ),
+    ),
+  );
 
       rebuilt.push({
         ...(fallbackHotelTravel || {}),

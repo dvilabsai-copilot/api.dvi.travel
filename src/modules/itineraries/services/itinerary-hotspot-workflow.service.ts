@@ -884,15 +884,24 @@ const anchorRepresentsRouteMovement =
   !routeIsSameCity &&
   hasConcreteAnchorLeg &&
   anchorCrossesRouteCities;
-      const isHotspotAllowedForCurrentAnchor = (row: any): boolean => {
-        if (!isRouteMovementHotspot(row)) return true;
+  const isHotspotAllowedForCurrentAnchor = (row: any): boolean => {
+  if (!isRouteMovementHotspot(row)) return true;
 
-        if (hasConcreteAnchorLeg && !anchorRepresentsRouteMovement) {
-          return false;
-        }
+  // Same-city routes do not represent inter-city route movement.
+  // Do not reject a valid same-city hotspot only because the selected
+  // anchor itself is not classified as route movement.
+  if (routeIsSameCity) {
+    return isHotspotForCurrentRoutePair(row);
+  }
 
-        return isHotspotForCurrentRoutePair(row);
-      };
+  // For genuine inter-city routes, preserve the existing protection:
+  // route-movement hotspots must only appear on an actual route-movement anchor.
+  if (hasConcreteAnchorLeg && !anchorRepresentsRouteMovement) {
+    return false;
+  }
+
+  return isHotspotForCurrentRoutePair(row);
+};
 
       let routeMovementHotspotsHidden = 0;
       const hotspots = safeBaseHotspots.filter((row: any) => {
