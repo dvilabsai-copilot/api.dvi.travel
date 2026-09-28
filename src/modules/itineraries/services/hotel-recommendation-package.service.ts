@@ -840,8 +840,14 @@ export class HotelRecommendationPackageService {
         // A row can contain copied logical-stay dates/routeIds. Override the
         // date boundary for this physical route-night before expansion so
         // copied metadata cannot fabricate coverage.
-        const physicalSource: HotelSearchResult = {
-          ...source,
+        const physicalSource: HotelSearchResult = this.projectFullStaySourceToNight(
+          source,
+          stay,
+          routeDate,
+        );
+
+        const routeNightSource: HotelSearchResult = {
+          ...physicalSource,
           itineraryRouteId: routeId,
           routeId,
           routeIds: [routeId],
@@ -850,9 +856,9 @@ export class HotelRecommendationPackageService {
           itineraryRouteDate: routeDate,
           date: routeDate,
           numberOfNights: 1,
-          ...(Array.isArray(source.rateOptions)
+          ...(Array.isArray(physicalSource.rateOptions)
             ? {
-                rateOptions: source.rateOptions.map((option: any) => ({
+                rateOptions: physicalSource.rateOptions.map((option: any) => ({
                   ...option,
                   checkInDate: routeDate,
                   checkOutDate: this.addDays(routeDate, 1),
@@ -862,7 +868,7 @@ export class HotelRecommendationPackageService {
             : {}),
         } as HotelSearchResult;
 
-        return this.expandRateOptions(physicalSource, oneNightStay, routeId)
+        return this.expandRateOptions(routeNightSource, oneNightStay, routeId)
           .filter((candidate) => Number(candidate.totalStayPrice || 0) > 0)
           .map((candidate) => ({
             ...candidate,
@@ -942,6 +948,8 @@ export class HotelRecommendationPackageService {
       const nightlyRates = selected.map((candidate) => this.projectNightlyRate(candidate));
       const first = selected[0];
       const total = this.money(nightlyRates.reduce((sum, rate) => sum + Number(rate.sellAmount || 0), 0));
+      const baseTotal = this.money(nightlyRates.reduce((sum, rate) => sum + Number(rate.baseAmount || 0), 0));
+      const firstNightlySell = Number(nightlyRates[0]?.sellAmount || 0);
       aggregated.push({
         ...first,
         routeId: stay.parentRouteId,
@@ -953,13 +961,157 @@ export class HotelRecommendationPackageService {
         nightlyRates,
         totalStayPrice: total,
         totalPrice: total,
+        ...(baseTotal > 0
+          ? {
+              basePricePerNight: Number(nightlyRates[0]?.baseAmount || 0),
+              baseTotalPrice: baseTotal,
+              baseHotelCost: baseTotal,
+              totalRoomCost: baseTotal,
+              ...(String(first.provider || '').toLowerCase() === 'tbo'
+                ? { netAmount: baseTotal, totalFare: total }
+                : {}),
+            }
+          : {}),
         // Keep the scalar field semantically per-night. The logical total is
         // carried by totalStayPrice/totalPrice and nightlyRates; using the
         // full total as pricePerNight makes hotelStayTotal multiply it again.
-        pricePerNight: Number(first.pricePerNight ?? first.price ?? nightlyRates[0]?.sellAmount ?? 0),
+        price: firstNightlySell || Number(first.price || 0),
+        pricePerNight: firstNightlySell || Number(first.pricePerNight ?? first.price ?? 0),
       } as any as HotelSearchResult);
     }
     return aggregated;
+  }
+
+  /**
+   * A supplier row can contain a complete multi-night fare even though it is
+   * being consumed once for each physical itinerary night. Project that row
+   * to the requested night before aggregation. Without this boundary, a TBO
+   * TotalFare is treated as a one-night amount and is added once per night.
+   */
+  private projectFullStaySourceToNight(
+    source: HotelSearchResult,
+    stay: LogicalHotelStay,
+    routeDate: string,
+  ): HotelSearchResult {
+    if (stay.nights <= 1) {
+      return { ...source };
+    }
+
+    const dateOnly = (value: unknown): string => this.dateOnly(value);
+    const sourceCheckIn = dateOnly((source as any).checkInDate || (source as any).check_in_date);
+    const sourceCheckOut = dateOnly((source as any).checkOutDate || (source as any).check_out_date);
+    const sourceNights = Number((source as any).numberOfNights ?? (source as any).nights ?? 0);
+    const sourceRepresentsFullStay = sourceNights === stay.nights ||
+      (sourceCheckIn === stay.checkInDate && sourceCheckOut === stay.checkOutDate);
+
+    const positive = (...values: unknown[]): number => {
+      for (const value of values) {
+        const parsed = Number(value ?? 0);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+      return 0;
+    };
+    const closeTo = (left: number, right: number): boolean =>
+      left > 0 && right > 0 && Math.abs(left - right) < 0.01;
+    const rateForDate = (candidate: any): any => {
+      const rates = Array.isArray(candidate?.nightlyRates) ? candidate.nightlyRates : [];
+      return rates.find((rate: any) => dateOnly(rate?.date || rate?.stayDate) === routeDate) || null;
+    };
+
+    const project = (candidate: any): any => {
+      const candidateCheckIn = dateOnly(candidate?.checkInDate || candidate?.check_in_date || sourceCheckIn);
+      const candidateCheckOut = dateOnly(candidate?.checkOutDate || candidate?.check_out_date || sourceCheckOut);
+      const candidateNights = Number(candidate?.numberOfNights ?? candidate?.nights ?? sourceNights);
+      const representsFullStay = sourceRepresentsFullStay ||
+        candidateNights === stay.nights ||
+        (candidateCheckIn === stay.checkInDate && candidateCheckOut === stay.checkOutDate);
+      if (!representsFullStay) return { ...candidate };
+
+      const nightly = rateForDate(candidate) || rateForDate(source);
+      const fullStayTotal = positive(
+        candidate?.totalStayPrice,
+        candidate?.totalPrice,
+        candidate?.totalFare,
+        candidate?.netAmount,
+        source.totalStayPrice,
+        (source as any).totalPrice,
+        source.totalFare,
+        source.netAmount,
+      );
+      const suppliedPerNight = positive(
+        candidate?.pricePerNight,
+        candidate?.price,
+        source.pricePerNight,
+        source.price,
+      );
+      const nightlyAmount = positive(
+        nightly?.sellAmount,
+        nightly?.totalAmountAfterTax,
+        nightly?.amountAfterTax,
+        nightly?.totalAmount,
+        nightly?.price,
+      );
+      const projectedAmount = nightlyAmount > 0
+        ? nightlyAmount
+        : closeTo(fullStayTotal, suppliedPerNight * stay.nights)
+          ? suppliedPerNight
+          : fullStayTotal > 0
+            ? this.money(fullStayTotal / stay.nights)
+            : suppliedPerNight;
+
+      const fullBaseTotal = positive(
+        candidate?.baseTotalPrice,
+        candidate?.baseHotelCost,
+        candidate?.totalRoomCost,
+        candidate?.netAmount,
+        (source as any).baseTotalPrice,
+        (source as any).baseHotelCost,
+        (source as any).totalRoomCost,
+        source.netAmount,
+      );
+      const suppliedBasePerNight = positive(
+        candidate?.basePricePerNight,
+        (source as any).basePricePerNight,
+      );
+      const nightlyBase = positive(nightly?.baseAmount, nightly?.basePricePerNight);
+      const projectedBase = nightlyBase > 0
+        ? nightlyBase
+        : closeTo(fullBaseTotal, suppliedBasePerNight * stay.nights)
+          ? suppliedBasePerNight
+          : fullBaseTotal > 0
+            ? this.money(fullBaseTotal / stay.nights)
+            : projectedAmount;
+
+      return {
+        ...candidate,
+        ...(projectedAmount > 0
+          ? {
+              price: projectedAmount,
+              pricePerNight: projectedAmount,
+              totalPrice: projectedAmount,
+              totalStayPrice: projectedAmount,
+              totalFare: projectedAmount,
+              netAmount: projectedAmount,
+            }
+          : {}),
+        ...(projectedBase > 0
+          ? {
+              basePricePerNight: projectedBase,
+              baseTotalPrice: projectedBase,
+              baseHotelCost: projectedBase,
+              totalRoomCost: projectedBase,
+            }
+          : {}),
+      };
+    };
+
+    const projected = project(source);
+    return {
+      ...projected,
+      ...(Array.isArray(source.rateOptions)
+        ? { rateOptions: source.rateOptions.map((option: any) => project({ ...source, ...option })) }
+        : {}),
+    } as HotelSearchResult;
   }
 
   /**
@@ -1077,6 +1229,43 @@ export class HotelRecommendationPackageService {
         ? option.nightlyRates
         : (isExpandedRateOption ? undefined : (base as any).nightlyRates);
       const total = this.resolveFullStayTotal(base, option, stay, nightlyRates, sourceRouteId, isExpandedRateOption);
+      const optionCheckIn = this.dateOnly(option.checkInDate || option.check_in_date || (base as any).checkInDate);
+      const optionCheckOut = this.dateOnly(option.checkOutDate || option.check_out_date || (base as any).checkOutDate);
+      const suppliedNights = Number(option.numberOfNights ?? (isExpandedRateOption ? 0 : base.numberOfNights) ?? 0);
+      const rawPricePerNight = Number(option.pricePerNight ?? option.price ?? (isExpandedRateOption ? 0 : base.pricePerNight ?? base.price) ?? 0);
+      const rawFullStayTotal = Number(
+        option.totalStayPrice ??
+        option.totalPrice ??
+        option.totalFare ??
+        (isExpandedRateOption ? 0 : base.totalStayPrice) ??
+        (isExpandedRateOption ? 0 : base.totalFare) ??
+        0,
+      );
+      const firstNightlyAmount = nightlyRates?.length
+        ? Number(
+            nightlyRates.find((rate: any) => this.dateOnly(rate?.date || rate?.stayDate) === stay.checkInDate)?.sellAmount ??
+            nightlyRates.find((rate: any) => this.dateOnly(rate?.date || rate?.stayDate) === stay.checkInDate)?.totalAmount ??
+            0,
+          )
+        : 0;
+      const sourceDeclaresFullStay = stay.nights > 1 && !nightlyRates?.length && (
+        suppliedNights === stay.nights ||
+        (optionCheckIn === stay.checkInDate && optionCheckOut === stay.checkOutDate)
+      );
+      const fullStayScalar = firstNightlyAmount > 0
+        ? firstNightlyAmount
+        : sourceDeclaresFullStay && total !== null && rawPricePerNight > 0 &&
+            Math.abs(rawFullStayTotal - rawPricePerNight) < 0.01
+          ? this.money(total / stay.nights)
+          : rawPricePerNight;
+      const projectedNightlyRates = sourceDeclaresFullStay && (!nightlyRates || nightlyRates.length === 0) &&
+        total !== null && fullStayScalar > 0 && Math.abs(rawFullStayTotal - rawPricePerNight) < 0.01
+        ? Array.from({ length: stay.nights }, (_, index) => ({
+            date: this.addDays(stay.checkInDate, index),
+            baseAmount: fullStayScalar,
+            sellAmount: fullStayScalar,
+          }))
+        : nightlyRates;
       return {
         ...base,
         ...option,
@@ -1096,11 +1285,19 @@ export class HotelRecommendationPackageService {
         bookingCode: option.bookingCode || base.bookingCode,
         searchReference: option.searchReference || base.searchReference,
         rateOptions: [option],
-        nightlyRates,
+        nightlyRates: projectedNightlyRates,
         numberOfNights: option.numberOfNights ?? base.numberOfNights,
         totalStayPrice: total === null ? undefined : total,
-        price: Number(option.price ?? option.pricePerNight ?? (isExpandedRateOption ? 0 : base.price) ?? 0),
-        pricePerNight: Number(option.pricePerNight ?? option.price ?? (isExpandedRateOption ? 0 : base.pricePerNight ?? base.price) ?? 0),
+        price: fullStayScalar,
+        pricePerNight: fullStayScalar,
+        ...(sourceDeclaresFullStay && projectedNightlyRates?.length
+          ? {
+              basePricePerNight: fullStayScalar,
+              baseTotalPrice: this.money(fullStayScalar * stay.nights),
+              baseHotelCost: this.money(fullStayScalar * stay.nights),
+              totalRoomCost: this.money(fullStayScalar * stay.nights),
+            }
+          : {}),
       } as HotelSearchResult;
     });
   }
@@ -1143,6 +1340,15 @@ export class HotelRecommendationPackageService {
       const staleMultiple = price > 0 && explicitTotal > 0 && Math.abs(explicitTotal / price - suppliedNights) < 0.01;
       if (!(staleMultiple && suppliedNights > stay.nights)) return null;
       return this.money(price * stay.nights);
+    }
+    const sourceCoversLogicalStay = suppliedNights === stay.nights ||
+      (optionCheckIn === stay.checkInDate && optionCheckOut === stay.checkOutDate);
+    // TBO's complete-stay TotalFare is often copied into both the total and
+    // the legacy price field. hotelStayTotal quite correctly treats a
+    // one-to-one total/price pair as a nightly amount when the date span is
+    // longer, but this particular shape is a known full-stay supplier row.
+    if (sourceCoversLogicalStay && explicitTotal > 0 && price > 0 && Math.abs(explicitTotal - price) < 0.01) {
+      return this.money(explicitTotal);
     }
     if (stay.nights > 1 && suppliedNights <= 0 && !nightlyRates?.length && sourceRouteId !== stay.parentRouteId) return null;
     if (explicitTotal > 0 || price > 0) {
