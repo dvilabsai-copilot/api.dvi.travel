@@ -282,28 +282,19 @@ export class ItineraryManualInsertionFitService {
           AND (from_hotspot_id = ? OR to_hotspot_id = ?)
       `, Number(candidateHotspotId), onlyRouteHotspotId, onlyRouteHotspotId);
 
-      if (!Array.isArray(citySlotRows) || citySlotRows.length === 0) {
-        return {
-          selectedHotspotId: candidateHotspotId,
-          selectedHotspotName: candidateHotspotName,
-          requestedSlot: null,
-          bestSlot: null,
-          chosenSlot: null,
-          allSlotResults: [],
-          chosenSlotSource: 'NO_MATRIX_DATA',
-          routeFitAvailable: false,
-          requiresMatrixBuild: true,
-          canAutoMove: false,
-          canApply: false,
-          code: 'MANUAL_HOTSPOT_MATRIX_DATA_MISSING',
-          previewBlockReason: 'MATRIX_MISSING',
-          warning: 'Route-fit matrix data is missing for the single-hotspot city endpoint slots.',
-          cityEndpointInsertionMode: true,
-          singleHotspotAnchorHotspotId: onlyRouteHotspotId,
-        };
-      }
-
-      const selectionRank = (type: string): number => {
+  if (!Array.isArray(citySlotRows) || citySlotRows.length === 0) {
+  console.log(
+    '[SingleHotspotCityMatrix] no_prebuilt_city_slot_fallback_to_normal_fit',
+    {
+      routeId: Number(routeId),
+      candidateHotspotId: Number(candidateHotspotId),
+      onlyRouteHotspotId,
+      onlyRouteHotspotOrder,
+      hotspotCityContext,
+    },
+  );
+} else {
+  const selectionRank = (type: string): number => {
         if (type === 'ON_ROUTE') return 1;
         if (type === 'MINOR_DETOUR') return 2;
         if (type === 'BACKTRACK') return 3;
@@ -388,41 +379,42 @@ export class ItineraryManualInsertionFitService {
         )
       ));
 
-      return {
-        selectedHotspotId: candidateHotspotId,
-        selectedHotspotName: candidateHotspotName,
-        requestedSlot: chosenSlot,
-        bestSlot: chosenSlot,
-        chosenSlot,
-        allSlotResults,
-        chosenSlotSource: 'BEST_FIT',
-        routeFitAvailable: true,
-        hasAnyMatrixData: true,
-        hasFeasibleMatrixSlot,
-        requiresMatrixBuild: false,
-        canAutoMove: hasFeasibleMatrixSlot,
-        canApply: hasFeasibleMatrixSlot,
-        selectedIncluded: hasFeasibleMatrixSlot,
-        warning: hasFeasibleMatrixSlot
-          ? (
-              manualRelaxedRouteFit
-              && chosenSlot
-              && !this.callbacks.isFeasibleFitType(String(chosenSlot?.routeFitType || '').toUpperCase())
-                ? `Manual add allows this route-fit as long as the rebuilt timeline finishes within ${manualTimingPolicy?.endTime || 'the manual day end'}.`
-                : null
-            )
-          : 'Matrix data exists, but no feasible city endpoint insertion slot is available.',
-        previewBlockReason: hasFeasibleMatrixSlot ? null : 'NO_FEASIBLE_ROUTE_SLOT',
-        code: hasFeasibleMatrixSlot ? 'SINGLE_HOTSPOT_CITY_MATRIX_READY' : 'MANUAL_HOTSPOT_NO_FEASIBLE_ROUTE_SLOT',
-        cityEndpointInsertionMode: true,
-        singleHotspotAnchorHotspotId: onlyRouteHotspotId,
-        singleHotspotAnchorHotspotName: String(chosenSlot?.toName || chosenSlot?.fromName || ''),
-        manualTimingPolicy,
-      };
-    }
+   return {
+  selectedHotspotId: candidateHotspotId,
+  selectedHotspotName: candidateHotspotName,
+  requestedSlot: chosenSlot,
+  bestSlot: chosenSlot,
+  chosenSlot,
+  allSlotResults,
+  chosenSlotSource: 'BEST_FIT',
+  routeFitAvailable: true,
+  hasAnyMatrixData: true,
+  hasFeasibleMatrixSlot,
+  requiresMatrixBuild: false,
+  canAutoMove: hasFeasibleMatrixSlot,
+  canApply: hasFeasibleMatrixSlot,
+  selectedIncluded: hasFeasibleMatrixSlot,
+  warning: hasFeasibleMatrixSlot
+    ? (
+        manualRelaxedRouteFit
+        && chosenSlot
+        && !this.callbacks.isFeasibleFitType(String(chosenSlot?.routeFitType || '').toUpperCase())
+          ? `Manual add allows this route-fit as long as the rebuilt timeline finishes within ${manualTimingPolicy?.endTime || 'the manual day end'}.`
+          : null
+      )
+    : 'Matrix data exists, but no feasible city endpoint insertion slot is available.',
+  previewBlockReason: hasFeasibleMatrixSlot ? null : 'NO_FEASIBLE_ROUTE_SLOT',
+  code: hasFeasibleMatrixSlot ? 'SINGLE_HOTSPOT_CITY_MATRIX_READY' : 'MANUAL_HOTSPOT_NO_FEASIBLE_ROUTE_SLOT',
+  cityEndpointInsertionMode: true,
+  singleHotspotAnchorHotspotId: onlyRouteHotspotId,
+  singleHotspotAnchorHotspotName: String(chosenSlot?.toName || chosenSlot?.fromName || ''),
+  manualTimingPolicy,
+};
+} // closes else
+} // closes if (routeAttractions.length === 1)
 
- // 2. Fetch all hotspot names in one query
-    const hotspotIds = routeAttractions.map((r: any) => Number(r.hotspot_ID));
+// 2. Fetch all hotspot names in one query
+const hotspotIds = routeAttractions.map((r: any) => Number(r.hotspot_ID));
     const hotspotMasters: any[] = await (tx as any).dvi_hotspot_place.findMany({
       where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
       select: {
