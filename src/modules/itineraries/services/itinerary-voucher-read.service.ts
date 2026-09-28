@@ -480,6 +480,240 @@ export class ItineraryVoucherReadService {
       }),
     ]);
 
+    /*
+      Transport Voucher branding belongs to the agent
+      assigned to the confirmed itinerary.
+
+      It does NOT depend on which DVI Admin/Staff user
+      clicked Create/Confirm.
+
+      No agent assigned -> preserve DVI Holidays branding.
+    */
+    const assignedAgentId =
+      Number(
+        (plan as any).agent_id || 0,
+      );
+
+    const agentContext =
+      assignedAgentId > 0
+        ? await Promise.all([
+            this.prisma.dvi_agent.findFirst({
+              where: {
+                agent_ID: assignedAgentId,
+                deleted: 0,
+              },
+              select: {
+                agent_name: true,
+                agent_lastname: true,
+                agent_email_id: true,
+                agent_primary_mobile_number: true,
+              },
+            }),
+
+            this.prisma.dvi_agent_configuration.findMany({
+              where: {
+                agent_id: assignedAgentId,
+                deleted: 0,
+              },
+              select: {
+                agent_config_id: true,
+                company_name: true,
+                site_logo: true,
+                invoice_logo: true,
+                status: true,
+              },
+              orderBy: [
+                {
+                  status: 'desc',
+                },
+                {
+                  agent_config_id: 'desc',
+                },
+              ],
+            }),
+          ])
+        : [null, []];
+
+    const assignedAgent =
+      agentContext[0] as any;
+
+    const agentConfigurations =
+      (agentContext[1] || []) as any[];
+
+    const activeAgentConfig =
+      agentConfigurations.find(
+        (config) =>
+          Number(
+            config?.status || 0,
+          ) === 1,
+      ) ??
+      agentConfigurations[0] ??
+      null;
+
+    const assignedAgentName =
+      [
+        String(
+          assignedAgent?.agent_name || '',
+        ).trim(),
+
+        String(
+          assignedAgent?.agent_lastname || '',
+        ).trim(),
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+    const useAssignedAgentBranding =
+      assignedAgentId > 0 &&
+      Boolean(assignedAgent);
+
+    const agentCompanyName =
+      String(
+        activeAgentConfig?.company_name ||
+          assignedAgentName ||
+          '',
+      ).trim();
+
+    const agentPhone =
+      String(
+        assignedAgent
+          ?.agent_primary_mobile_number ||
+          '',
+      ).trim();
+
+    const agentEmail =
+      String(
+        assignedAgent
+          ?.agent_email_id ||
+          '',
+      ).trim();
+
+    /*
+      Transport Voucher is a printable document:
+      prefer the Agent invoice logo.
+
+      If no invoice logo exists, use the Agent site logo.
+    */
+    const rawAgentLogo =
+      String(
+        activeAgentConfig?.invoice_logo ||
+          activeAgentConfig?.site_logo ||
+          '',
+      ).trim();
+
+    const agentLogoPath =
+      rawAgentLogo
+        ? (
+            rawAgentLogo.includes('/') ||
+            rawAgentLogo.includes('\\')
+              ? rawAgentLogo
+              : `/uploads/agent_gallery/${rawAgentLogo}`
+          )
+        : '';
+
+    /*
+      Do not mix DVI contact information into an
+      Agent-branded voucher.
+
+      For Agent itineraries, unavailable Agent fields
+      remain blank rather than falling back to DVI.
+    */
+    const voucherCompanyName =
+      useAssignedAgentBranding
+        ? (
+            agentCompanyName ||
+            assignedAgentName ||
+            'Agent'
+          )
+        : 'DVI Holidays';
+
+    const voucherTagline =
+      useAssignedAgentBranding
+        ? ''
+        : 'Travel Beyond Expectations';
+
+    const voucherPhone =
+      useAssignedAgentBranding
+        ? agentPhone
+        : (
+            String(
+              settings?.company_contact_no ||
+                '9919911948',
+            ).trim() ||
+            '9919911948'
+          );
+
+    const voucherEmail =
+      useAssignedAgentBranding
+        ? agentEmail
+        : (
+            String(
+              settings?.company_email_id ||
+                'vsr@dvi.co.in',
+            ).trim() ||
+            'vsr@dvi.co.in'
+          );
+
+    /*
+      Agent configuration currently has no dedicated
+      website field, so do not show the DVI website on
+      an Agent-branded voucher.
+    */
+    const voucherWebsite =
+      useAssignedAgentBranding
+        ? ''
+        : 'www.dvi.travel';
+
+    /*
+      Transport Voucher branding priority:
+
+      1. Agent invoice logo
+      2. Agent site logo
+      3. Real DVI voucher logo
+
+      This guarantees a real image in the PDF instead
+      of the text-initial fallback whenever an Agent
+      does not have a custom logo.
+    */
+    const dviFallbackLogoPath =
+      '/uploads/logo/dvi-voucher-logo.png';
+
+    const agentBrandText =
+      [
+        agentCompanyName,
+        assignedAgentName,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+        .toLowerCase();
+
+    /*
+      DVI-branded Agent examples:
+      - DVI Holidays
+      - Doview Holidays
+      - Nagappan DVI Holidays
+
+      External examples:
+      - MMT
+      - any other independent Agent company
+
+      Email domain is intentionally NOT used here.
+    */
+    const isDviAgentBrand =
+      agentBrandText.includes('dvi') ||
+      agentBrandText.includes('doview') ||
+      agentBrandText.includes('do view');
+
+    const voucherLogoPath =
+      useAssignedAgentBranding
+        ? (
+            isDviAgentBrand
+              ? dviFallbackLogoPath
+              : agentLogoPath
+          )
+        : dviFallbackLogoPath;
+
     const hotspotIds = Array.from(
       new Set(
         (routeHotspots as any[])
@@ -755,12 +989,12 @@ export class ItineraryVoucherReadService {
         dateRange: this.buildTransportDateRange(plan.trip_start_date_and_time, plan.trip_end_date_and_time),
       },
       company: {
-        name: String(settings?.company_name || 'Doview Holidays India Pvt Ltd').trim() || 'Doview Holidays India Pvt Ltd',
-        tagline: 'Travel Beyond Expectations',
-        phone: String(settings?.company_contact_no || '9919911948').trim() || '9919911948',
-        email: String(settings?.company_email_id || 'vsr@dvi.co.in').trim() || 'vsr@dvi.co.in',
-        website: 'www.dvi.travel',
-        logoPath: settings?.company_logo ? `/uploads/logo/${String(settings.company_logo).trim()}` : '/uploads/logo/logo.png',
+        name: voucherCompanyName,
+        tagline: voucherTagline,
+        phone: voucherPhone,
+        email: voucherEmail,
+        website: voucherWebsite,
+        logoPath: voucherLogoPath,
         qrText: `Transport Voucher ${voucherNo}`,
       },
       guest: {
@@ -805,8 +1039,77 @@ export class ItineraryVoucherReadService {
           'Please carry a valid ID proof during travel.',
           'Please be ready 10 minutes before the scheduled start time.',
         ],
-        emergencyPhone: String(settings?.company_contact_no || '9919911948').trim() || '9919911948',
-        emergencyEmail: String(settings?.company_email_id || 'vsr@dvi.co.in').trim() || 'vsr@dvi.co.in',
+        emergencyPhone: voucherPhone,
+        emergencyEmail: voucherEmail,
+      },
+    };
+  }
+
+
+  async getDviTransportVoucherDetails(
+    itineraryPlanId: number,
+  ): Promise<TransportVoucherDetails> {
+    const data =
+      await this.getTransportVoucherDetails(
+        itineraryPlanId,
+      );
+
+    const settings =
+      await this.prisma.dvi_global_settings.findFirst({
+        where: {
+          status: 1,
+          deleted: 0,
+        },
+      });
+
+    const companyName =
+      String(
+        settings?.company_name ||
+          'DVI Holidays',
+      ).trim() || 'DVI Holidays';
+
+    const phone =
+      String(
+        settings?.company_contact_no ||
+          '9919911948',
+      ).trim() || '9919911948';
+
+    const email =
+      String(
+        settings?.company_email_id ||
+          'vsr@dvi.co.in',
+      ).trim() || 'vsr@dvi.co.in';
+
+    return {
+      ...data,
+
+      company: {
+        ...data.company,
+
+        name: companyName,
+
+        tagline:
+          'Travel Beyond Expectations',
+
+        phone,
+
+        email,
+
+        website:
+          'www.dvi.travel',
+
+        logoPath:
+          '/uploads/logo/dvi-voucher-logo.png',
+      },
+
+      footer: {
+        ...data.footer,
+
+        emergencyPhone:
+          phone,
+
+        emergencyEmail:
+          email,
       },
     };
   }
