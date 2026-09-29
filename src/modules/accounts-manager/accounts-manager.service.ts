@@ -1,7 +1,12 @@
 // FILE: src/modules/accounts-manager/accounts-manager.service.ts
 
-import { Injectable, BadRequestException } from "@nestjs/common";
+import {
+  Injectable,
+  BadRequestException,
+} from "@nestjs/common";
+
 import { PrismaService } from "../../prisma.service";
+import { AccountsComponentSyncService } from "./accounts-component-sync.service";
 import {
   AccountsManagerQueryDto,
   AccountsManagerStatus,
@@ -21,11 +26,29 @@ import {
 
 @Injectable()
 export class AccountsManagerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+  private readonly prisma: PrismaService,
+  private readonly accountsComponentSync:
+    AccountsComponentSyncService,
+) {}
 
  // MAIN LIST now also exposes headerId, routeDate, vendorId, vehicleId
-  async list(query: AccountsManagerQueryDto): Promise<AccountsManagerRowDto[]> {
-    const status: AccountsManagerStatus = query.status || "all";
+async list(
+  query: AccountsManagerQueryDto,
+): Promise<AccountsManagerRowDto[]> {
+
+  if (
+    query.quoteId?.trim()
+  ) {
+    await this.accountsComponentSync
+      .ensureConfirmedQuote(
+        query.quoteId.trim(),
+      );
+  }
+
+  const status:
+    AccountsManagerStatus =
+    query.status || "all";
     const componentType: AccountsManagerComponentType =
       query.componentType || "all";
 
@@ -639,10 +662,26 @@ export class AccountsManagerService {
    * all visible component rows based on filters.
  */
   async getSummary(
-    query: AccountsManagerQueryDto,
-  ): Promise<AccountsManagerSummaryDto> {
-    const { headerIds, status, componentType } =
-      await this.getFilteredHeaderIds(query);
+  query: AccountsManagerQueryDto,
+): Promise<AccountsManagerSummaryDto> {
+
+  if (
+    query.quoteId?.trim()
+  ) {
+    await this.accountsComponentSync
+      .ensureConfirmedQuote(
+        query.quoteId.trim(),
+      );
+  }
+
+  const {
+    headerIds,
+    status,
+    componentType,
+  } =
+    await this.getFilteredHeaderIds(
+      query,
+    );
 
     if (!headerIds.length) {
       return {
