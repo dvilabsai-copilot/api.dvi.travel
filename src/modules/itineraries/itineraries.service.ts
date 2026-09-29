@@ -1075,7 +1075,7 @@ this.planPersistenceService.setCallbacks({
       classifyManualHotspotCityContext: (...args) => (this.classifyManualHotspotCityContext as any)(...args),
       estimateDurationFromDistance: (...args) => (this.estimateDurationFromDistance as any)(...args),
     });
-    const manualHotspotBatchCallbackNames = [
+     const manualHotspotBatchCallbackNames = [
       'normalizeManualHotspotIds',
       'getRouteManualHotspotIds',
       'getManualHotspotTimingPolicyInTx',
@@ -1089,6 +1089,7 @@ this.planPersistenceService.setCallbacks({
       'hasValidManualMatrixSlot',
       'isEmptyRouteSchedulerEligible',
       'buildMissingMatrixBuildSuggestion',
+      'buildMissingManualHotspotMatrix',
       'applyMatrixSafeManualHotspotInsertionInTx',
       'removeRouteHotspotFromExcludedList',
       'ensureManualHotspotRow',

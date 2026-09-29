@@ -296,7 +296,7 @@ export class ItineraryManualHotspotBatchService {
     const baselineTimelineForMatrix = await this.callbacks.getRouteTimelineForScoring(tx, Number(planId), Number(routeId));
     const preFocusHotspotId = this.callbacks.resolveManualHotspotFocusId(requestedHotspotIds, routeManualHotspotIds, options?.focusHotspotId);
     const preFocusCandidate = hotspotMasters.find((m: any) => Number(m.hotspot_ID) === Number(preFocusHotspotId));
-    const manualInsertionFit = await this.callbacks.buildManualInsertionFit(
+    let manualInsertionFit = await this.callbacks.buildManualInsertionFit(
       tx,
       Number(planId),
       Number(routeId),
@@ -315,16 +315,109 @@ export class ItineraryManualHotspotBatchService {
       manualInsertionFit.manualTimingPolicy = manualTimingPolicy;
     }
 
-    const hasValidMatrixSlot = this.callbacks.hasValidManualMatrixSlot(manualInsertionFit);
-    const emptyRouteSchedulerEligible = this.callbacks.isEmptyRouteSchedulerEligible(manualInsertionFit);
+    /**
+     * If preview requires route-fit matrix data which does not exist yet,
+     * build the missing matrix first and then recalculate the insertion fit.
+     */
+    const shouldAutoBuildMissingMatrix =
+      options?.previewOnly === true
+      && manualInsertionFit?.requiresMatrixBuild === true
+      && manualInsertionFit?.destinationInsertionMode !== true
+      && String(manualInsertionFit?.hotspotCityContext || '').toUpperCase() !== 'DESTINATION_CITY'
+      && String(manualInsertionFit?.reason || '').toUpperCase() !== 'OSRM_ROUTE_CHECK_FAILED'
+      && String(manualInsertionFit?.previewBlockReason || '').toUpperCase() !== 'OSRM_ROUTE_CHECK_FAILED'
+      && Number(preFocusHotspotId || requestedHotspotIds[0] || 0) > 0;
+
+    if (shouldAutoBuildMissingMatrix) {
+      const matrixBuildCandidateId = Number(
+        preFocusHotspotId || requestedHotspotIds[0] || 0,
+      );
+
+      console.log('[ManualHotspotBatch] building_missing_matrix_before_preview', {
+        planId: Number(planId),
+        routeId: Number(routeId),
+        candidateHotspotId: matrixBuildCandidateId,
+      });
+
+      const matrixBuildResult =
+        await this.callbacks.buildMissingManualHotspotMatrix({
+          planId: Number(planId),
+          routeId: Number(routeId),
+          candidateHotspotId: matrixBuildCandidateId,
+        });
+
+      console.log('[ManualHotspotBatch] missing_matrix_build_result', {
+        planId: Number(planId),
+        routeId: Number(routeId),
+        candidateHotspotId: matrixBuildCandidateId,
+        success: matrixBuildResult?.success === true,
+        code: matrixBuildResult?.code || null,
+        hasAnyMatrixData: matrixBuildResult?.hasAnyMatrixData === true,
+        hasFeasibleMatrixSlot:
+          matrixBuildResult?.hasFeasibleMatrixSlot === true,
+      });
+
+      const matrixBuildSucceeded =
+        matrixBuildResult?.success === true
+        || matrixBuildResult?.hasAnyMatrixData === true
+        || String(matrixBuildResult?.code || '').toUpperCase() ===
+          'SINGLE_HOTSPOT_CITY_MATRIX_BUILT'
+        || String(matrixBuildResult?.code || '').toUpperCase() ===
+          'DESTINATION_SIDE_MATRIX_NOT_REQUIRED';
+
+      if (matrixBuildSucceeded) {
+        manualInsertionFit = await this.callbacks.buildManualInsertionFit(
+          tx,
+          Number(planId),
+          Number(routeId),
+          Number(preFocusHotspotId),
+          String(preFocusCandidate?.hotspot_name || `Hotspot #${preFocusHotspotId}`),
+          options?.anchorIndex,
+          options?.anchorType,
+          baselineTimelineForMatrix,
+          options?.debug === true,
+          manualTimingPolicy,
+          options?.exactAnchorMode === true,
+          options?.matrixPreferredSlot,
+        );
+
+        if (manualInsertionFit && !manualInsertionFit.manualTimingPolicy) {
+          manualInsertionFit.manualTimingPolicy = manualTimingPolicy;
+        }
+
+        console.log('[ManualHotspotBatch] insertion_fit_recalculated_after_matrix_build', {
+          planId: Number(planId),
+          routeId: Number(routeId),
+          candidateHotspotId: matrixBuildCandidateId,
+          requiresMatrixBuild:
+            manualInsertionFit?.requiresMatrixBuild === true,
+          hasAnyMatrixData:
+            manualInsertionFit?.hasAnyMatrixData === true,
+          hasFeasibleMatrixSlot:
+            manualInsertionFit?.hasFeasibleMatrixSlot === true,
+          code: manualInsertionFit?.code || null,
+          previewBlockReason:
+            manualInsertionFit?.previewBlockReason || null,
+        });
+      }
+    }
+
+    const hasValidMatrixSlot =
+      this.callbacks.hasValidManualMatrixSlot(manualInsertionFit);
+
+    const emptyRouteSchedulerEligible =
+      this.callbacks.isEmptyRouteSchedulerEligible(manualInsertionFit);
+
     const destinationSlotNotFound = (
       manualInsertionFit?.destinationInsertionMode === true
       && String(manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'DESTINATION_SLOT_NOT_FOUND'
     );
+
     const destinationHotelSideReady = (
       manualInsertionFit?.destinationInsertionMode === true
       && String(manualInsertionFit?.code || '').toUpperCase() === 'MANUAL_HOTSPOT_DESTINATION_INSERT_PREVIEW_READY'
     );
+
     const manualRelaxedRouteFitForMatrixRequirement =
       manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
       && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
@@ -1835,28 +1928,38 @@ export class ItineraryManualHotspotBatchService {
         .map((row: any) => [Number(row?.hotspot_ID || 0), row] as const)
         .filter((entry: readonly [number, any]) => entry[0] > 0),
     );
-    const tryDirectClickedAnchorClosingRescue = async (): Promise<boolean> => {
-      if (!(directClickedAnchorRescueHotspotId > 0)) return false;
+const tryDirectClickedAnchorClosingRescue = async (): Promise<boolean> => {
+  const effectiveAnchorRescueHotspotId =
+    directClickedAnchorRescueHotspotId > 0
+      ? directClickedAnchorRescueHotspotId
+      : (
+          options?.exactAnchorMode === true &&
+          Number(focusHotspotId) > 0
+        )
+        ? Number(focusHotspotId)
+        : 0;
 
-      const attractionRows = adjustedPreviewTimeline.filter((row: any) => {
-        const rowType = String(row?.type || '').toLowerCase();
-        return rowType === 'attraction' || Number(row?.item_type || 0) === 4;
-      });
-      const selectedAttractionIndex = attractionRows.findIndex((row: any) => (
-        Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0) === Number(focusHotspotId)
-      ));
- console.log('[FitHere][DIRECT_CLOSING_RESCUE_PRECHECK]', {
-        routeId: Number(routeId),
-        selectedHotspotId: Number(focusHotspotId),
-        selectedAttractionIndex,
-        attractionRows: attractionRows.map((row: any) => ({
-          hotspotId: Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0),
-          text: String(row?.text || row?.name || ''),
-          timeRange: String(row?.timeRange || ''),
-          priority: Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0),
-        })),
-      });
-      if (selectedAttractionIndex <= 0) return false;
+  if (!(effectiveAnchorRescueHotspotId > 0)) return false;
+
+const attractionRows = adjustedPreviewTimeline.filter((row: any) => {
+  const rowType = String(row?.type || '').toLowerCase();
+  return rowType === 'attraction' || Number(row?.item_type || 0) === 4;
+});
+
+const selectedAttractionIndex = attractionRows.findIndex((row: any) => {
+  const hotspotId = Number(
+    row?.locationId ||
+    row?.hotspot_ID ||
+    row?.hotspotId ||
+    row?.hotspot_id ||
+    row?.id ||
+    0,
+  );
+
+  return hotspotId === Number(effectiveAnchorRescueHotspotId);
+});
+
+if (selectedAttractionIndex < 0) return false;
 
       const toRescuePriority = (row: any, candidate: any): number | null => {
         const normalized = this.callbacks.normalizeHotspotPriority(
@@ -1906,11 +2009,12 @@ export class ItineraryManualHotspotBatchService {
         .filter((entry: any) => entry.priority !== null);
 
       const orderedBeforeSelected = [...beforeSelectedRows].reverse();
- console.log('[FitHere][DIRECT_CLOSING_RESCUE_INPUT]', {
-        routeId: Number(routeId),
-        selectedHotspotId: Number(focusHotspotId),
-        directClickedAnchorRescueHotspotId,
-        selectedAttractionIndex,
+console.log('[FitHere][DIRECT_CLOSING_RESCUE_INPUT]', {
+  routeId: Number(routeId),
+  selectedHotspotId: Number(focusHotspotId),
+  directClickedAnchorRescueHotspotId,
+  effectiveAnchorRescueHotspotId,
+  selectedAttractionIndex,
         beforeSelectedRows: beforeSelectedRows.map((entry: any) => ({
           hotspotId: entry.hotspotId,
           name: String(
@@ -2149,13 +2253,19 @@ export class ItineraryManualHotspotBatchService {
       return false;
     };
 
-    const shouldTryDirectClickedAnchorClosingRescue =
-      directClickedAnchorRescueHotspotId > 0 &&
-      (
-        selectedClosingOverflow.hasClosingOverflow === true ||
-        (!!fallbackSelectedOpeningConflict && fallbackOverflowMinutes > 0)
-      ) &&
-      selectedLatestAllowedEndMinutesForResolver > 0;
+ const shouldTryDirectClickedAnchorClosingRescue =
+  (
+    directClickedAnchorRescueHotspotId > 0 ||
+    (
+      options?.exactAnchorMode === true &&
+      Number(focusHotspotId) > 0
+    )
+  ) &&
+  (
+    selectedClosingOverflow.hasClosingOverflow === true ||
+    !!fallbackSelectedOpeningConflict
+  ) &&
+  selectedLatestAllowedEndMinutesForResolver > 0;
  console.log('[FitHere][DIRECT_CLOSING_RESCUE_GATE]', {
       routeId: Number(routeId),
       selectedHotspotId: Number(focusHotspotId),
@@ -2384,13 +2494,22 @@ export class ItineraryManualHotspotBatchService {
       }
     }
 
-    let selectedOperatingValidation = this.callbacks.markSelectedManualOperatingHourConflicts(
-      adjustedPreviewTimeline,
-      requestedHotspotIds,
-    );
+  // Revalidate operating hours against the FINAL rebuilt/adjusted timeline.
+//
+// Important:
+// manualInsertionFit.selectedOpeningConflict may have been calculated against
+// an older pre-rebuild timeline. Exact-anchor/APJ rebuilds can legitimately
+// move the selected hotspot into a valid opening window (for example by
+// inserting a wait before opening).
+//
+// Therefore the final rebuilt timeline is authoritative here.
+let selectedOperatingValidation =
+  this.callbacks.markSelectedManualOperatingHourConflicts(
+    adjustedPreviewTimeline,
+    requestedHotspotIds,
+  );
 
-    adjustedPreviewTimeline = selectedOperatingValidation.timeline;
-
+adjustedPreviewTimeline = selectedOperatingValidation.timeline;
     const resolvedSelectedClosingAttempt = (manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview?.simulationAttempts || [])
       .find((attempt: any) =>
         attempt?.strategy === 'SELECTED_CLOSING_RESCUE_PLAN'

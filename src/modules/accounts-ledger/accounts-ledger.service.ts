@@ -1,7 +1,8 @@
 // FILE: src/modules/accounts-ledger/accounts-ledger.service.ts
 
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../prisma.service';
+import { PrismaService } from "../../prisma.service";
+import { AccountsComponentSyncService } from "../accounts-manager/accounts-component-sync.service";
 import {
   AccountsLedgerComponentType,
   AccountsLedgerQueryDto,
@@ -38,7 +39,11 @@ function parseDdMmYyyyPair(
 
 @Injectable()
 export class AccountsLedgerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+  private readonly prisma: PrismaService,
+  private readonly accountsComponentSync:
+    AccountsComponentSyncService,
+) {}
 
  /**
    * Main entry – mirrors PHP ledger split:
@@ -48,9 +53,19 @@ export class AccountsLedgerService {
    *   - AGENT: header rows from dvi_accounts_itinerary_details
    *   - others: { header, details, transactions[] }
  */
- async getLedger(
+async getLedger(
   query: AccountsLedgerQueryDto,
 ): Promise<any[]> {
+
+  if (
+    query.quoteId?.trim()
+  ) {
+    await this.accountsComponentSync
+      .ensureConfirmedQuote(
+        query.quoteId.trim(),
+      );
+  }
+
   switch (query.componentType) {
     case AccountsLedgerComponentType.AGENT:
       return this.getAgentLedger(query);

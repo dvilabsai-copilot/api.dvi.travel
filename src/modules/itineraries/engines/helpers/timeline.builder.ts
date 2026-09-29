@@ -6252,49 +6252,65 @@ if (
           continue;
         }
 
-        const hotelOrder = order;
-        const hotelInfo =
-          hotelInfoForRoute ??
-          (await this.getHotelDetailsForRoute(
-            tx,
-            planId,
-            route.itinerary_route_ID,
-          ));
+ const hotelOrder = order;
+const hotelInfo =
+  hotelInfoForRoute ??
+  (await this.getHotelDetailsForRoute(
+    tx,
+    planId,
+    route.itinerary_route_ID,
+  ));
 
- // ALWAYS use DESTINATION CITY for distance calculation (not hotel coordinates)
- // This ensures consistent distance regardless of hotel selection
- // Parse pipe-separated location to get first/main location only
-        const rawDestinationCity = (route.next_visiting_location as string) || currentLocationName;
-        const destinationCity = rawDestinationCity.split('|')[0].trim();
+const rawDestinationCity =
+  (route.next_visiting_location as string) || currentLocationName;
 
- // Parse source location to remove pipe-separated alternatives
-        const sourceCity = currentLocationName.split('|')[0].trim();
+const destinationCity = rawDestinationCity.split('|')[0].trim();
+const sourceCity = currentLocationName.split('|')[0].trim();
+
+// IMPORTANT:
+// The final "Travel to Hotel" leg must use the selected hotel's coordinates
+// when they are available. Using destination-city coordinates here can create
+// a false long-distance hotel leg in Fit Here / Auto-Preview.
+const hotelDestinationCoords =
+  hotelInfo?.coords &&
+  Number.isFinite(Number(hotelInfo.coords.lat)) &&
+  Number.isFinite(Number(hotelInfo.coords.lon)) &&
+  (Number(hotelInfo.coords.lat) !== 0 ||
+    Number(hotelInfo.coords.lon) !== 0)
+    ? {
+        lat: Number(hotelInfo.coords.lat),
+        lon: Number(hotelInfo.coords.lon),
+      }
+    : undefined;
 
  // RULE 2: Always show final travel segment to destination (outstation type=2)
  // For early-arrival declined same-day flow, force hotel movement near end-of-day.
         let hotelStartTime = currentTime;
 
-        if (suppressHotelInsertionUntilEndOfDay) {
-          const estimatedHotelTravel = await this.distanceHelper.fromSourceAndDestination(
-            tx,
-            sourceCity,
-            destinationCity,
-            2,
-            addedHotspotIds.size > 0 ? currentCoords : undefined,
-            addedHotspotIds.size > 0 ? destCityCoords : undefined,
-          );
+    if (suppressHotelInsertionUntilEndOfDay) {
+  const estimatedHotelTravel =
+    await this.distanceHelper.fromSourceAndDestination(
+      tx,
+      sourceCity,
+      destinationCity,
+      2,
+      currentCoords,
+      hotelDestinationCoords ?? destCityCoords,
+    );
 
-          const estimatedHotelSegmentSeconds =
-            timeToSeconds(estimatedHotelTravel.travelTime) +
-            timeToSeconds(estimatedHotelTravel.bufferTime);
+  const estimatedHotelSegmentSeconds =
+    timeToSeconds(estimatedHotelTravel.travelTime) +
+    timeToSeconds(estimatedHotelTravel.bufferTime);
 
-          const routeEndAnchoredStartSeconds = Math.max(
-            timeToSeconds(currentTime),
-            routeEndSeconds - estimatedHotelSegmentSeconds,
-          );
+  const routeEndAnchoredStartSeconds = Math.max(
+    timeToSeconds(currentTime),
+    routeEndSeconds - estimatedHotelSegmentSeconds,
+  );
 
-          hotelStartTime = secondsToTime(wrapToDay(routeEndAnchoredStartSeconds));
-        }
+  hotelStartTime = secondsToTime(
+    wrapToDay(routeEndAnchoredStartSeconds),
+  );
+}
 
         if (
           suppressHotelInsertionUntilEndOfDay &&
@@ -6315,21 +6331,62 @@ if (
           });
         }
 
-        const { row: toHotelRow, nextTime: tAfterHotel } =
-          await this.hotelBuilder.buildToHotel(tx, {
-            planId,
-            routeId: route.itinerary_route_ID,
-            order: hotelOrder,
-            startTime: hotelStartTime,
- travelLocationType: 2, // Outstation to destination city
-            userId: createdByUserId,
-            sourceLocationName: sourceCity,
-            destinationLocationName: destinationCity,
- // PHP PARITY: Only use coordinates (Haversine) if we actually visited hotspots.
- // If no hotspots were visited, PHP uses the direct city-to-city distance from DB.
-            sourceCoords: addedHotspotIds.size > 0 ? currentCoords : undefined,
-            destCoords: addedHotspotIds.size > 0 ? destCityCoords : undefined,
-          });
+const hasValidCurrentCoords =
+  currentCoords &&
+  Number.isFinite(Number(currentCoords.lat)) &&
+  Number.isFinite(Number(currentCoords.lon)) &&
+  (Number(currentCoords.lat) !== 0 ||
+    Number(currentCoords.lon) !== 0);
+
+const hasValidHotelCoords =
+  hotelDestinationCoords &&
+  Number.isFinite(Number(hotelDestinationCoords.lat)) &&
+  Number.isFinite(Number(hotelDestinationCoords.lon)) &&
+  (Number(hotelDestinationCoords.lat) !== 0 ||
+    Number(hotelDestinationCoords.lon) !== 0);
+
+const hasValidDestinationCityCoords =
+  destCityCoords &&
+  Number.isFinite(Number(destCityCoords.lat)) &&
+  Number.isFinite(Number(destCityCoords.lon)) &&
+  (Number(destCityCoords.lat) !== 0 ||
+    Number(destCityCoords.lon) !== 0);
+
+const { row: toHotelRow, nextTime: tAfterHotel } =
+  await this.hotelBuilder.buildToHotel(tx, {
+    planId,
+    routeId: route.itinerary_route_ID,
+    order: hotelOrder,
+    startTime: hotelStartTime,
+    travelLocationType: 2,
+    userId: createdByUserId,
+    sourceLocationName: sourceCity,
+    destinationLocationName: destinationCity,
+
+    // Use the actual current position whenever it is valid.
+    // Do not depend on addedHotspotIds because Fit Here preview can rebuild
+    // a scoped route while still having a valid current coordinate.
+    sourceCoords: hasValidCurrentCoords
+      ? {
+          lat: Number(currentCoords!.lat),
+          lon: Number(currentCoords!.lon),
+        }
+      : undefined,
+
+    // Prefer the selected hotel's real coordinates.
+    // Destination-city coordinates are only the fallback.
+    destCoords: hasValidHotelCoords
+      ? {
+          lat: Number(hotelDestinationCoords!.lat),
+          lon: Number(hotelDestinationCoords!.lon),
+        }
+      : hasValidDestinationCityCoords
+        ? {
+            lat: Number(destCityCoords!.lat),
+            lon: Number(destCityCoords!.lon),
+          }
+        : undefined,
+  });
 
  // RULE 3: Fix "06:58 AM" time bug using proper UTC date conversion
  // FIX: Hotel end time should be the actual arrival time from travel calculation,

@@ -2339,7 +2339,23 @@ this.logger.log(
           childAges,
         )
           .then((hotels) => {
-            block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, hotels || []));
+            // One provider search covers the complete logical stay block, but
+            // the recommendation pipeline consumes inventory per physical
+            // route-night. Preserve the block boundary while copying the
+            // result into each route bucket so a supplier TotalFare is not
+            // mistaken for a one-night amount during aggregation.
+            const blockHotels = (hotels || []).map((hotel) => block.routeIds.length > 1
+              ? {
+                  ...hotel,
+                  routeIds: [...block.routeIds],
+                  completeStayRouteIds: [...block.routeIds],
+                  checkInDate: block.checkInDate,
+                  checkOutDate: block.checkOutDate,
+                  numberOfNights: block.routeIds.length,
+                  nights: block.routeIds.length,
+                }
+              : hotel);
+            block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, blockHotels));
           })
           .catch((error) => {
             const errorMsg = error instanceof Error ? error.message : String(error);
