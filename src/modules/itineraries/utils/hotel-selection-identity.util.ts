@@ -2,6 +2,7 @@ import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealText,
 } from '../../hotels/hotel-rate-plans';
+import { normalizeHotelStarRating } from './hotel-category.util';
 
 export type HotelSelectionOrigin = 'USER_SELECTED' | 'AUTO_SELECTED';
 
@@ -387,7 +388,11 @@ export function parseHotelSelectionSnapshot(row: any): HotelSelectionSnapshot {
  * Missing fields are allowed for legacy snapshots; contradictory fields are
  * never allowed to override the canonical master identity.
  */
-export function resolvePersistedHotelIdentity(row: any, master: any): PersistedHotelIdentity {
+export function resolvePersistedHotelIdentity(
+  row: any,
+  master: any,
+  supplierMaster: any = null,
+): PersistedHotelIdentity {
   const snapshot = parseHotelSelectionSnapshot(row);
   const provider = clean(row?.hotel_provider || snapshot.provider);
   const hotelId = Number(row?.hotel_id || 0);
@@ -400,9 +405,16 @@ export function resolvePersistedHotelIdentity(row: any, master: any): PersistedH
   ).trim();
   const masterId = Number(master?.hotel_id || 0);
   const masterName = normalizeHotelDisplayName(master?.hotel_name);
+  const isTbo = provider === 'tbo' || provider === 'vsr';
+  const supplierMasterName = isTbo
+    ? normalizeHotelDisplayName(supplierMaster?.hotel_name)
+    : '';
   const snapshotName = normalizeHotelDisplayName(snapshot.hotelName);
-  const masterCategory = Number(master?.hotel_category || 0);
-  const snapshotCategory = Number(snapshot.category || 0);
+  const masterCategory = normalizeHotelStarRating(master?.hotel_category) ?? 0;
+  const supplierMasterCategory = isTbo
+    ? normalizeHotelStarRating(supplierMaster?.star_rating) ?? 0
+    : 0;
+  const snapshotCategory = normalizeHotelStarRating(snapshot.category) ?? 0;
   const mismatches: string[] = [];
 
   if (provider === 'offline') {
@@ -434,8 +446,11 @@ export function resolvePersistedHotelIdentity(row: any, master: any): PersistedH
     provider,
     hotelId,
     hotelCode,
-    hotelName: masterName || snapshotName,
-    category: masterCategory || snapshotCategory,
+    // TBO/VSR selections use the supplier master because they commonly have
+    // no local dvi_hotel row.  The persisted snapshot remains the final
+    // fallback for legacy rows whose supplier master is unavailable.
+    hotelName: supplierMasterName || masterName || snapshotName,
+    category: supplierMasterCategory || masterCategory || snapshotCategory,
     consistent: mismatches.length === 0,
     mismatches,
     snapshot,

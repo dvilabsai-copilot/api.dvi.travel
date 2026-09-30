@@ -4,7 +4,10 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { dvi_itinerary_plan_details, Prisma } from '@prisma/client';
 import { haversineKm } from './utils/distance-utils';
-import { resolvePersistedHotelIdentity } from './utils/hotel-selection-identity.util';
+import {
+  parseHotelSelectionSnapshot,
+  resolvePersistedHotelIdentity,
+} from './utils/hotel-selection-identity.util';
 import {
   calculateHotelRouteNightPayable,
   resolveStoredHotelPayablePricing,
@@ -462,6 +465,32 @@ export class ItineraryHotelDetailsService {
  * ENHANCED: Returns room details from TBO API hotels with proper pricing
  * Shows multiple hotel options per category (Budget, Mid-Range, Premium, Luxury)
  */
+  private async getTboHotelMasterMap(rows: any[]): Promise<Map<string, any>> {
+    const codes = Array.from(new Set(
+      (rows || [])
+        .filter((row: any) => ['tbo', 'vsr'].includes(String(row?.hotel_provider || '').trim().toLowerCase()))
+        .map((row: any) => {
+          const snapshot = parseHotelSelectionSnapshot(row);
+          return String(row?.hotel_code || snapshot.providerHotelCode || snapshot.hotelCode || '').trim();
+        })
+        .filter(Boolean),
+    ));
+    const model = (this.prisma as any).tbo_hotel_master;
+    if (codes.length === 0 || !model?.findMany) return new Map();
+    try {
+      const masters = await model.findMany({
+        where: { tbo_hotel_code: { in: codes }, status: 1 },
+        select: { tbo_hotel_code: true, hotel_name: true, star_rating: true },
+      });
+      return new Map(
+        (masters || []).map((master: any) => [String(master?.tbo_hotel_code || '').trim(), master]),
+      );
+    } catch (error) {
+      this.logger.warn(`Unable to load TBO hotel masters for persisted identity: ${error instanceof Error ? error.message : String(error)}`);
+      return new Map();
+    }
+  }
+
 async getHotelRoomDetailsByQuoteId(
   quoteId: string,
 ): Promise<ItineraryHotelRoomDetailsResponseDto> {
@@ -519,6 +548,7 @@ async getHotelRoomDetailsByQuoteId(
   const hotelMap = new Map(
     hotelMasters.map((h) => [Number((h as any).hotel_id), h]),
   );
+  const tboHotelMasterMap = await this.getTboHotelMasterMap(hotelRowsRaw);
 
  // 4) Build room details from hotel rows - RETURN UNIQUE HOTELS ONLY
  // Group by hotel_id and route_id to avoid duplicates per room type
@@ -558,7 +588,15 @@ async getHotelRoomDetailsByQuoteId(
 
  // Get hotel master data for actual hotel name
       const hotelMaster = hotelMap.get(hotelId) || null;
-      const identity = resolvePersistedHotelIdentity(hotelRow, hotelMaster);
+      const tboSnapshot = parseHotelSelectionSnapshot(hotelRow);
+      const tboCode = String(
+        (hotelRow as any).hotel_code || tboSnapshot.providerHotelCode || tboSnapshot.hotelCode || '',
+      ).trim();
+      const identity = resolvePersistedHotelIdentity(
+        hotelRow,
+        hotelMaster,
+        tboHotelMasterMap.get(tboCode) || null,
+      );
       const hotelName = identity.hotelName || 'Hotel';
       const hotelCategory = identity.category || 2;
 
@@ -723,6 +761,7 @@ async getHotelRoomDetailsByQuoteId(
     const hotelMap = new Map(
       hotelMasters.map((h) => [Number((h as any).hotel_id), h]),
     );
+    const tboHotelMasterMap = await this.getTboHotelMasterMap(hotelRowsExpanded);
 
  // 5) Per-row hotel list (with group_type & per-row cost)
  // Also check voucher cancellation status
@@ -840,7 +879,15 @@ async getHotelRoomDetailsByQuoteId(
           // not prevent the itinerary details response from loading.
         }
       }
-      const persistedIdentity = resolvePersistedHotelIdentity(h, master);
+      const tboSnapshot = parseHotelSelectionSnapshot(h);
+      const tboCode = String(
+        (h as any).hotel_code || tboSnapshot.providerHotelCode || tboSnapshot.hotelCode || '',
+      ).trim();
+      const persistedIdentity = resolvePersistedHotelIdentity(
+        h,
+        master,
+        tboHotelMasterMap.get(tboCode) || null,
+      );
       if (persistedIdentity.provider === 'offline' && !persistedIdentity.consistent) {
         this.logger.warn(JSON.stringify({
           event: 'PERSISTED_OFFLINE_HOTEL_IDENTITY_MISMATCH',

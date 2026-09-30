@@ -157,6 +157,33 @@ test('persisted hotel read never invokes a live supplier', async () => {
   assert.equal(response.hotelAvailability?.availabilityState, 'NOT_CHECKED');
 });
 
+test('persisted TBO cache stores a numeric category when the supplier sends a star label', async () => {
+  const createdRows: any[] = [];
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any, {} as any);
+  await (service as any).persistHotelSearchCache(
+    { dvi_itinerary_hotel_search_cache: {
+      createMany: async ({ data }: any) => createdRows.push(...data),
+    } },
+    'MMT20260962',
+    { itinerary_plan_ID: 10630 },
+    [{
+      itineraryRouteId: 14236,
+      groupType: 1,
+      provider: 'tbo',
+      hotelCode: '6347537',
+      hotelName: 'Hill Crest Resort Coorg',
+      category: '4-Star',
+      totalPrice: 9190.77,
+      date: '2026-10-26',
+    }],
+    'test-search-run',
+    new Date('2026-09-30T00:00:00.000Z'),
+  );
+
+  assert.equal(createdRows.length, 1);
+  assert.equal(createdRows[0].rating, 4);
+});
+
 test('client hotel payload strips recommendation internals and shared inventory deduplicates groups', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const rows = [1, 2, 3, 4].map((groupType) => ({

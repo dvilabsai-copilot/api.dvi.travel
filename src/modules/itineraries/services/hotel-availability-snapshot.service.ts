@@ -35,7 +35,9 @@ import {
   buildAutoSelectionIdentity,
   strictAutoSelectionIdentityMatches,
   hasCommercialHotelIdentity,
+  resolvePersistedHotelIdentity,
 } from '../utils/hotel-selection-identity.util';
+import { normalizeHotelStarRating } from '../utils/hotel-category.util';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 import {
   buildHotelSelectionState,
@@ -420,6 +422,7 @@ export class HotelAvailabilitySnapshotService {
         orderBy: [{ sort_rank: 'asc' }, { id: 'asc' }],
       }) || [];
       const priorityCodes = new Set<string>();
+      const tboMasterByCode = new Map<string, any>();
       const masterCodes = Array.from(new Set(
         cachedRows
           .filter((row: any) => String(row?.provider || '').trim().toLowerCase() === 'tbo')
@@ -430,9 +433,10 @@ export class HotelAvailabilitySnapshotService {
         try {
           const masters = await (this.prisma as any).tbo_hotel_master?.findMany?.({
             where: { tbo_hotel_code: { in: masterCodes } },
-            select: { tbo_hotel_code: true, is_priority: true },
+            select: { tbo_hotel_code: true, hotel_name: true, star_rating: true, is_priority: true },
           }) || [];
           masters.forEach((master: any) => {
+            tboMasterByCode.set(String(master?.tbo_hotel_code || '').trim().toLowerCase(), master);
             if (Number(master?.is_priority) === 1) {
               priorityCodes.add(String(master.tbo_hotel_code).trim().toLowerCase());
             }
@@ -461,7 +465,13 @@ export class HotelAvailabilitySnapshotService {
         cachedRouteIds.add(routeId);
         const provider = String(row?.provider || '').trim().toLowerCase();
         const hotelCode = String(row?.hotel_code || '').trim();
-        const hotelName = String(row?.hotel_name || '').trim();
+        const tboMaster = provider === 'tbo'
+          ? tboMasterByCode.get(hotelCode.toLowerCase())
+          : null;
+        const hotelName = String(tboMaster?.hotel_name || row?.hotel_name || '').trim();
+        const category = provider === 'tbo'
+          ? normalizeHotelStarRating(tboMaster?.star_rating) ?? normalizeHotelStarRating(row?.rating) ?? 0
+          : normalizeHotelStarRating(row?.rating) ?? 0;
         const isPriority = provider === 'tbo' && priorityCodes.has(hotelCode.toLowerCase());
         const groups = rowGroupType > 0 ? [rowGroupType] : compactGroups;
         return groups.map((groupType) => ({
@@ -471,7 +481,7 @@ export class HotelAvailabilitySnapshotService {
           hotelCode: hotelCode || undefined,
           providerHotelCode: hotelCode || undefined,
           hotelName,
-          category: row?.rating,
+          category,
           groupType,
           routeId,
           date: row?.check_in_date,
@@ -1586,9 +1596,9 @@ export class HotelAvailabilitySnapshotService {
         hotel_code: hotelCode.slice(0, 100),
         provider: provider.slice(0, 30),
         hotel_name: String(row.hotelName).slice(0, 255),
-        rating: Number.isFinite(Number(row.category || row.rating || 0))
-          ? Number(row.category || row.rating || 0)
-          : 0,
+        rating: [row.category, row.rating, row.starRating, row.hotelCategory]
+          .map((value: unknown) => normalizeHotelStarRating(value))
+          .find((value: number | null): value is number => value !== null) ?? 0,
         price: Number(row.totalPrice || row.price || row.totalHotelCost || 0),
         room_type: String(row.roomType || row.roomTypeName || '').trim() || null,
         meal_plan: String(row.mealPlan || row.mealPlanCode || '').trim() || null,
@@ -2010,6 +2020,41 @@ export class HotelAvailabilitySnapshotService {
           selection_origin: true,
         },
       }) || [];
+    const persistedTboCodes = Array.from(new Set(
+      persistedSelectionRows
+        .filter((row: any) => ['tbo', 'vsr'].includes(String(row?.hotel_provider || '').trim().toLowerCase()))
+        .map((row: any) => {
+          const snapshot = parseHotelSelectionSnapshot(row);
+          return String(row?.hotel_code || snapshot.providerHotelCode || snapshot.hotelCode || '').trim();
+        })
+        .filter(Boolean),
+    ));
+    let persistedTboMasters: any[] = [];
+    if (persistedTboCodes.length > 0) {
+      try {
+        persistedTboMasters = await (this.prisma as any).tbo_hotel_master?.findMany?.({
+          where: { tbo_hotel_code: { in: persistedTboCodes }, status: 1 },
+          select: { tbo_hotel_code: true, hotel_name: true, star_rating: true },
+        }) || [];
+      } catch (error) {
+        this.logger.warn(`Unable to enrich persisted TBO identities: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    const persistedTboMasterMap = new Map(
+      persistedTboMasters.map((master: any) => [String(master?.tbo_hotel_code || '').trim(), master]),
+    );
+    const persistedSelectionRowsWithIdentity = persistedSelectionRows.map((row: any) => {
+      const snapshot = parseHotelSelectionSnapshot(row);
+      const provider = String(row?.hotel_provider || snapshot.provider || '').trim().toLowerCase();
+      const code = String(row?.hotel_code || snapshot.providerHotelCode || snapshot.hotelCode || '').trim();
+      if (provider !== 'tbo' && provider !== 'vsr') return row;
+      const identity = resolvePersistedHotelIdentity(row, null, persistedTboMasterMap.get(code) || null);
+      return {
+        ...row,
+        ...(identity.hotelName ? { hotelName: identity.hotelName } : {}),
+        ...(identity.category > 0 ? { category: identity.category } : {}),
+      };
+    });
     const routeDetailsModel = (this.prisma as any).dvi_itinerary_route_details;
     const currentRoutes = routeDetailsModel?.findMany
       ? await routeDetailsModel.findMany({
@@ -2076,7 +2121,7 @@ export class HotelAvailabilitySnapshotService {
       ...response,
       hotelSelectionState: buildHotelSelectionState({
         tabs: response.hotelTabs || [],
-        rows: [...hotels, ...persistedSelectionRows],
+        rows: [...hotels, ...persistedSelectionRowsWithIdentity],
         requiredRoutes: searchableRoutes,
       }),
       hotels,
