@@ -75,6 +75,8 @@ jobs:
             npm ci --no-audit --no-fund
             npx prisma generate
             npx prisma validate
+            echo "Removing only temporary deployment backup tables..."
+            npx tsx scripts/cleanup-deployment-backup-tables.ts
             echo "Synchronizing staging database schema with Prisma..."
             npx prisma db push --skip-generate
             echo "Importing seeded calendar events..."
