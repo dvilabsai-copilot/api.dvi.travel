@@ -7,6 +7,11 @@ import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logge
 import { normalizeHotelDisplayName } from '../utils/hotel-selection-identity.util';
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
 import { HotelGalleryService } from '../../hotels/services/hotel-gallery.service';
+import { OfflineHotelMealPricingService } from './offline-hotel-meal-pricing.service';
+import {
+  mealFlagsFromRoom,
+  OfflineMealBreakdown,
+} from '../utils/offline-hotel-meal-plan.util';
 
 type StayBlock = {
   destination: string;
@@ -40,6 +45,8 @@ type OfflineRoomOffer = {
   extraBedAmount: number;
   childWithBedAmount: number;
   childWithoutBedAmount: number;
+  mealPlanBreakdown: OfflineMealBreakdown;
+  nightlyMealPlanBreakdown: OfflineMealBreakdown[];
 };
 
 type SupplementCounts = {
@@ -49,7 +56,9 @@ type SupplementCounts = {
 };
 
 export function selectOfflineRouteNightlyRate(
-  offer: Pick<OfflineRoomOffer, 'nightlyBase' | 'nightlyMargin' | 'nightlySell' | 'nightlyRoomCost' | 'nightlyExtraBedCost' | 'nightlyChildWithBedCost' | 'nightlyChildWithoutBedCost' | 'roomCount'>,
+  offer: Pick<OfflineRoomOffer, 'nightlyBase' | 'nightlyMargin' | 'nightlySell' | 'nightlyRoomCost' | 'nightlyExtraBedCost' | 'nightlyChildWithBedCost' | 'nightlyChildWithoutBedCost' | 'roomCount'> & {
+    nightlyMealPlanBreakdown?: OfflineMealBreakdown[];
+  },
   dates: string[],
   routeDate: string,
 ) {
@@ -76,6 +85,9 @@ export function selectOfflineRouteNightlyRate(
       : {}),
     ...(Array.isArray(offer.nightlyChildWithoutBedCost)
       ? { childWithoutBedCost: Number(offer.nightlyChildWithoutBedCost[selectedIndex] || 0) }
+      : {}),
+    ...(Array.isArray(offer.nightlyMealPlanBreakdown)
+      ? { mealPlanBreakdown: offer.nightlyMealPlanBreakdown[selectedIndex] }
       : {}),
     basePricePerNight: Number((baseAmount / roomCount).toFixed(2)),
   };
@@ -135,6 +147,7 @@ export type OfflineRateResolution = {
   roomTypeId: number;
   roomType: string;
   mealPlan: string;
+  mealPlanCode: string;
   roomCount: number;
   pricePerNight: number;
   basePricePerNight: number;
@@ -158,8 +171,17 @@ export type OfflineRateResolution = {
   childWithBedAmount: number;
   childWithoutBedRate: number;
   childWithoutBedAmount: number;
+  mealPlanBreakdown: OfflineMealBreakdown;
+  nightlyMealPlanBreakdown: OfflineMealBreakdown[];
   currency: string;
-  nightlyRates: Array<{ date: string; baseAmount: number; marginPercentage: number; marginAmount: number; sellAmount: number }>;
+  nightlyRates: Array<{
+    date: string;
+    baseAmount: number;
+    marginPercentage: number;
+    marginAmount: number;
+    sellAmount: number;
+    mealPlanBreakdown?: OfflineMealBreakdown;
+  }>;
 };
 
 type OfflineCatalogRows = {
@@ -167,6 +189,7 @@ type OfflineCatalogRows = {
   ratePlansByRoom: Map<number, any[]>;
   activeRoomTypeIds: Set<number>;
   occupancyRatesByRoomPlan: Map<string, any[]>;
+  mealPricebookByHotelDate: Map<number, Map<string, { breakfast: number; lunch: number; dinner: number }>>;
 };
 
 /**
@@ -214,6 +237,7 @@ export class OfflineHotelCatalogService {
     private readonly hotelPricingService: HotelPricingService,
     private readonly referenceCache?: ReferenceDataCacheService,
     private readonly hotelGallery?: HotelGalleryService,
+    private readonly offlineHotelMealPricingService?: OfflineHotelMealPricingService,
   ) {}
 
   async searchOfflineHotels(criteria: {
@@ -482,7 +506,7 @@ export class OfflineHotelCatalogService {
       const bestOffer = offers[0];
       const roomTypes: RoomType[] = offers.map((offer) => ({
         roomCode: this.getRateOptionId(Number(hotel.hotel_id), offer, dateList[0], dateList[dateList.length - 1]),
-        roomName: `${offer.roomTitle} - ${offer.mealPlan}`,
+        roomName: `${offer.roomTitle} - ${offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan}`,
         bedType: '',
         capacity: roomCount,
         price: offer.totalStayPrice,
@@ -513,7 +537,9 @@ export class OfflineHotelCatalogService {
         currency: 'INR',
         roomTypes,
         roomType: bestOffer.roomTitle,
-        mealPlan: bestOffer.mealPlan,
+        mealPlan: bestOffer.mealPlanBreakdown.mealPlanCode || bestOffer.mealPlan,
+        mealPlanCode: bestOffer.mealPlanBreakdown.mealPlanCode || bestOffer.mealPlan,
+        mealPlanBreakdown: bestOffer.mealPlanBreakdown,
         searchReference: this.getRateOptionId(Number(hotel.hotel_id), bestOffer, dateList[0], dateList[dateList.length - 1]),
         bookingCode: this.getRateOptionId(Number(hotel.hotel_id), bestOffer, dateList[0], dateList[dateList.length - 1]),
         expiresAt: new Date(Date.now() + 30 * 60 * 1000),
@@ -552,6 +578,7 @@ export class OfflineHotelCatalogService {
         totalExtraBedCost: bestOffer.nightlyExtraBedCost[0] || 0,
         totalChildWithBedCost: bestOffer.nightlyChildWithBedCost[0] || 0,
         totalChildWithoutBedCost: bestOffer.nightlyChildWithoutBedCost[0] || 0,
+        nightlyMealPlanBreakdown: bestOffer.nightlyMealPlanBreakdown,
         nightlyRates: dateList.map((date, index) => ({
           date,
           baseAmount: bestOffer.nightlyBase[index] || 0,
@@ -592,7 +619,10 @@ export class OfflineHotelCatalogService {
           roomId: offer.roomId,
           roomTypeId: offer.roomTypeId,
           roomType: offer.roomTitle,
-          mealPlan: offer.mealPlan,
+          mealPlan: offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan,
+          mealPlanCode: offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan,
+          mealPlanBreakdown: offer.mealPlanBreakdown,
+          nightlyMealPlanBreakdown: offer.nightlyMealPlanBreakdown,
           bookingMode: 'MANUAL_APPROVAL',
           priceSource: 'DATABASE',
           pricePerNight: offer.pricePerNight,
@@ -721,17 +751,27 @@ export class OfflineHotelCatalogService {
         ratePlansByRoom: new Map(),
         activeRoomTypeIds: new Set(),
         occupancyRatesByRoomPlan: new Map(),
+        mealPricebookByHotelDate: new Map(),
       };
     }
 
     const catalogCacheKey = `catalog:${hotelIds.sort((a, b) => a - b).join(',')}:${requestedDates.slice().sort().join(',')}`;
     const cachedCatalog = await this.referenceCache?.get<any>(catalogCacheKey);
-    if (cachedCatalog) {
+    // Older catalog-cache entries predate meal-pricebook parity. Rebuild those
+    // entries once so the new offline breakdown cannot remain empty until a
+    // long-lived cache expires. Live-provider caches are not involved here.
+    if (cachedCatalog && Array.isArray(cachedCatalog.mealPricebookByHotelDate)) {
       return {
         roomsByHotel: new Map(cachedCatalog.roomsByHotel || []),
         ratePlansByRoom: new Map(cachedCatalog.ratePlansByRoom || []),
         activeRoomTypeIds: new Set(cachedCatalog.activeRoomTypeIds || []),
         occupancyRatesByRoomPlan: new Map(cachedCatalog.occupancyRatesByRoomPlan || []),
+        mealPricebookByHotelDate: new Map(
+          (cachedCatalog.mealPricebookByHotelDate || []).map(([hotelId, entries]: [number, any[]]) => [
+            Number(hotelId),
+            new Map(entries || []),
+          ]),
+        ),
       };
     }
 
@@ -850,12 +890,20 @@ export class OfflineHotelCatalogService {
       }
     }
 
-    const result = { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan };
+    const mealPricebookByHotelDate = this.offlineHotelMealPricingService
+      ? await this.offlineHotelMealPricingService.loadPricebookByDate(hotelIds, requestedDates)
+      : new Map();
+
+    const result = { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan, mealPricebookByHotelDate };
     await this.referenceCache?.set(catalogCacheKey, {
       roomsByHotel: Array.from(roomsByHotel.entries()),
       ratePlansByRoom: Array.from(ratePlansByRoom.entries()),
       activeRoomTypeIds: Array.from(activeRoomTypeIds),
       occupancyRatesByRoomPlan: Array.from(occupancyRatesByRoomPlan.entries()),
+      mealPricebookByHotelDate: Array.from(mealPricebookByHotelDate.entries()).map(([hotelId, byDate]) => [
+        hotelId,
+        Array.from(byDate.entries()),
+      ]),
     });
     return result;
   }
@@ -911,7 +959,9 @@ export class OfflineHotelCatalogService {
       const nightlyExtraBed: number[] = [];
       const nightlyChildWithBed: number[] = [];
       const nightlyChildWithoutBed: number[] = [];
+      const nightlyMealPlanBreakdown: OfflineMealBreakdown[] = [];
       let valid = true;
+      const mealFlags = mealFlagsFromRoom(room, this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom));
       for (const date of dateList) {
         const target = new Date(`${date}T00:00:00.000Z`).getTime();
         const selectedRateRow = selectAdminMatchingOccupancyRow(matchingRateRows, target);
@@ -937,6 +987,33 @@ export class OfflineHotelCatalogService {
         const extraBedAmount = this.hotelPricingService.money(supplements.extraBedRate * counts.extraBedCount);
         const childWithBedAmount = this.hotelPricingService.money(supplements.childWithBedRate * counts.childWithBedCount);
         const childWithoutBedAmount = this.hotelPricingService.money(supplements.childWithoutBedRate * counts.childWithoutBedCount);
+        const mealPrices = catalogRows.mealPricebookByHotelDate.get(hotelId)?.get(date) || {
+          breakfast: 0,
+          lunch: 0,
+          dinner: 0,
+        };
+        const mealPlanBreakdown = this.offlineHotelMealPricingService?.calculate({
+          flags: mealFlags,
+          prices: mealPrices,
+          fallbackMealPlanCode: this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom),
+          adultCount,
+          childCount,
+          roomCount: roomsNeeded,
+          roomQuantity: roomsNeeded,
+        }) || {
+          ...mealFlags,
+          mealPlanCode: this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom),
+          breakfastCostPerPerson: 0,
+          lunchCostPerPerson: 0,
+          dinnerCostPerPerson: 0,
+          foodRequiredCount: 0,
+          roomQuantity: roomsNeeded,
+          totalBreakfastCost: 0,
+          totalLunchCost: 0,
+          totalDinnerCost: 0,
+          totalMealPlanCost: 0,
+        };
+        nightlyMealPlanBreakdown.push(mealPlanBreakdown);
         const roomCost = this.hotelPricingService.money(nightlyPrice * roomsNeeded);
         const baseAmount = this.hotelPricingService.money(
           nightlyPrice * roomsNeeded + extraBedAmount + childWithBedAmount + childWithoutBedAmount,
@@ -953,6 +1030,14 @@ export class OfflineHotelCatalogService {
 
       if (!valid || nightlySell.length !== dateList.length) continue;
       const supplements = this.resolveSupplementRatesFromOccupancy(matchingRateRows, dateList);
+      const mealPlanBreakdown = {
+        ...nightlyMealPlanBreakdown[0],
+        mealPlanCode: nightlyMealPlanBreakdown.find((meal) => meal.mealPlanCode)?.mealPlanCode || this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom),
+        totalBreakfastCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalBreakfastCost, 0)),
+        totalLunchCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalLunchCost, 0)),
+        totalDinnerCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalDinnerCost, 0)),
+        totalMealPlanCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalMealPlanCost, 0)),
+      };
       offers.push({
         roomId: Number(room.room_ID || 0),
         roomTypeId,
@@ -978,6 +1063,8 @@ export class OfflineHotelCatalogService {
         nightlyExtraBedCost: nightlyExtraBed,
         nightlyChildWithBedCost: nightlyChildWithBed,
         nightlyChildWithoutBedCost: nightlyChildWithoutBed,
+        mealPlanBreakdown,
+        nightlyMealPlanBreakdown,
       });
     }
 
@@ -1195,6 +1282,22 @@ export class OfflineHotelCatalogService {
         extraBedAmount: 0,
         childWithBedAmount: 0,
         childWithoutBedAmount: 0,
+        mealPlanBreakdown: {
+          breakfast: false,
+          lunch: false,
+          dinner: false,
+          mealPlanCode: this.resolveMealPlan(room, requestedMealPlanCode, ratePlansByRoom),
+          breakfastCostPerPerson: 0,
+          lunchCostPerPerson: 0,
+          dinnerCostPerPerson: 0,
+          foodRequiredCount: 0,
+          roomQuantity: Math.max(roomCount, 1),
+          totalBreakfastCost: 0,
+          totalLunchCost: 0,
+          totalDinnerCost: 0,
+          totalMealPlanCost: 0,
+        },
+        nightlyMealPlanBreakdown: [],
       });
     }
 
@@ -1209,6 +1312,7 @@ export class OfflineHotelCatalogService {
     canonicalHotelId: number;
     rateOptionId: string;
     roomCount?: number;
+    requestedMealPlanCode?: string;
     extraBedCount?: number;
     childWithBedCount?: number;
     childWithoutBedCount?: number;
@@ -1317,7 +1421,7 @@ export class OfflineHotelCatalogService {
       Number((plan as any).total_adult || 0),
       Number((plan as any).total_children || 0),
       undefined,
-      '',
+      String(input.requestedMealPlanCode || ''),
       {
         extraBedCount: Number((plan as any).total_extra_bed || input.extraBedCount || 0),
         childWithBedCount: Number((plan as any).total_child_with_bed || input.childWithBedCount || 0),
@@ -1350,7 +1454,10 @@ export class OfflineHotelCatalogService {
       roomId,
       roomTypeId,
       roomType: offer.roomTitle,
-      mealPlan: offer.mealPlan,
+      mealPlan: offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan,
+      mealPlanCode: offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan,
+      mealPlanBreakdown: offer.mealPlanBreakdown,
+      nightlyMealPlanBreakdown: offer.nightlyMealPlanBreakdown,
       roomCount: offer.roomCount,
       // The resolved option is consumed by a single itinerary route/night.
       // Keep totalStayPrice as the complete continuous-stay amount, but make
@@ -1384,6 +1491,7 @@ export class OfflineHotelCatalogService {
         marginPercentage: offer.hotelMarginPercentage,
         marginAmount: offer.nightlyMargin[index] || 0,
         sellAmount: offer.nightlySell[index] || 0,
+        mealPlanBreakdown: offer.nightlyMealPlanBreakdown[index],
       })),
     };
   }

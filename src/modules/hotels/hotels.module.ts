@@ -26,6 +26,7 @@ import { HobseHotelMasterSyncService } from './services/hobse-hotel-master-sync.
 import { HobseHotelCsvImportService } from './services/hobse-hotel-csv-import.service';
 import { SupplementNormalizerService } from './services/supplement-normalizer.service';
 import { OfflineHotelCatalogService } from '../itineraries/services/offline-hotel-catalog.service';
+import { OfflineHotelMealPricingService } from '../itineraries/services/offline-hotel-meal-pricing.service';
 import { HotelPricingService } from '../itineraries/hotels/hotel-pricing.service';
 import { TboMasterHotelController } from './controllers/tbo-master-hotel.controller';
 import { TboMasterHotelService } from './services/tbo-master-hotel.service';
@@ -62,6 +63,7 @@ import { TboMasterGalleryService } from './services/tbo-master-gallery.service';
     HobseHotelCsvImportService,
  SupplementNormalizerService, // NEW: For supplement normalization
     HotelPricingService,
+    OfflineHotelMealPricingService,
     OfflineHotelCatalogService,
     TboMasterHotelService,
     ReferenceDataCacheService,
@@ -80,6 +82,7 @@ import { TboMasterGalleryService } from './services/tbo-master-gallery.service';
  HobseHotelMasterSyncService, // optional export
     HobseHotelCsvImportService,
     SupplementNormalizerService,
+    OfflineHotelCatalogService,
     ReferenceDataCacheService,
     HotelGalleryService,
     TboMasterGalleryService,

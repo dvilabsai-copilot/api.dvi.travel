@@ -900,6 +900,7 @@ export class ItinerarySelectionWorkflowService {
     routeDate?: string;
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
+    mealPlanCode?: string;
     requestedBy?: number;
     transactionClient?: any;
   }) {
@@ -922,6 +923,7 @@ export class ItinerarySelectionWorkflowService {
         roomCount: Number(data.roomCount || 0) > 0
           ? Number(data.roomCount)
           : undefined,
+        requestedMealPlanCode: String(data.mealPlanCode || '').trim() || undefined,
       });
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : 'Offline hotel rate is stale or invalid');
@@ -941,6 +943,7 @@ export class ItinerarySelectionWorkflowService {
     const routeBaseAmount = Number(routeNight.baseAmount || 0);
     const routeMarginAmount = Number(routeNight.marginAmount || 0);
     const routePayableAmount = Number(routeNight.sellAmount || 0);
+    const routeMealPlan = routeNight.mealPlanBreakdown || resolvedRate.mealPlanBreakdown;
     if (Math.abs(routeBaseAmount + routeMarginAmount - routePayableAmount) > 0.01) {
       throw new BadRequestException({
         code: 'HOTEL_PRICING_INTEGRITY_ERROR',
@@ -965,6 +968,8 @@ export class ItinerarySelectionWorkflowService {
       totalStayPrice: routePayableAmount,
       numberOfNights: 1,
       nightlyRates: [routeNight],
+      mealPlanBreakdown: routeMealPlan,
+      nightlyMealPlanBreakdown: [routeMealPlan],
     };
     const snapshot = JSON.stringify(routeSnapshot);
     const checkInDate = resolvedRate.routeDate || routeNight.date || null;
@@ -977,7 +982,15 @@ export class ItinerarySelectionWorkflowService {
     // itinerary occupancy counts when creating room details.
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: Number(data.planId) },
-      select: { total_extra_bed: true, total_child_with_bed: true, itinerary_quote_ID: true },
+      select: {
+        total_adult: true,
+        total_children: true,
+        preferred_room_count: true,
+        total_extra_bed: true,
+        total_child_with_bed: true,
+        total_child_without_bed: true,
+        itinerary_quote_ID: true,
+      },
     });
 
     const persist = async (tx: any) => {
@@ -1017,6 +1030,14 @@ export class ItinerarySelectionWorkflowService {
         selected_price_snapshot: snapshot,
         total_no_of_rooms: effectiveRoomCount,
         total_room_cost: routeBaseAmount,
+        // The offline rate remains authoritative for the payable total. These
+        // fields are the persisted legacy meal breakdown for display/export;
+        // the occupancy rate may already include the selected package.
+        hotel_breakfast_cost: Number(routeMealPlan?.totalBreakfastCost || 0),
+        hotel_lunch_cost: Number(routeMealPlan?.totalLunchCost || 0),
+        hotel_dinner_cost: Number(routeMealPlan?.totalDinnerCost || 0),
+        total_hotel_meal_plan_cost: Number(routeMealPlan?.totalMealPlanCost || 0),
+        total_hotel_meal_plan_cost_gst_amount: 0,
         total_extra_bed_cost: Number(resolvedRate.extraBedAmount || 0),
         total_childwith_bed_cost: Number(resolvedRate.childWithBedAmount || 0),
         hotel_margin_percentage: resolvedRate.hotelMarginPercentage,
@@ -1074,9 +1095,15 @@ export class ItinerarySelectionWorkflowService {
         extra_bed_rate: Number(resolvedRate.extraBedRate || 0),
         child_with_bed_count: Math.max(Number(plan.total_child_with_bed || 0), 0),
         child_with_bed_charges: Number(resolvedRate.childWithBedAmount || 0),
-        breakfast_required: data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0,
-        lunch_required: data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0,
-        dinner_required: data.mealPlan?.dinner || data.mealPlan?.all ? 1 : 0,
+        breakfast_required: Number(routeMealPlan?.breakfast ? 1 : 0),
+        lunch_required: Number(routeMealPlan?.lunch ? 1 : 0),
+        dinner_required: Number(routeMealPlan?.dinner ? 1 : 0),
+        breakfast_cost_per_person: Number(routeMealPlan?.breakfastCostPerPerson || 0),
+        lunch_cost_per_person: Number(routeMealPlan?.lunchCostPerPerson || 0),
+        dinner_cost_per_person: Number(routeMealPlan?.dinnerCostPerPerson || 0),
+        total_breafast_cost: Number(routeMealPlan?.totalBreakfastCost || 0),
+        total_lunch_cost: Number(routeMealPlan?.totalLunchCost || 0),
+        total_dinner_cost: Number(routeMealPlan?.totalDinnerCost || 0),
         status: 1,
         deleted: 0,
         updatedon: now,

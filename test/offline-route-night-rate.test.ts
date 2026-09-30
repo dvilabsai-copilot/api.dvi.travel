@@ -50,6 +50,28 @@ test('DVI20260891 route rows use each date rate while retaining room-count seman
   );
 });
 
+test('continuous offline selection carries the matching night meal breakdown', () => {
+  const offer = {
+    nightlyBase: [9000, 7500],
+    nightlyMargin: [900, 750],
+    nightlySell: [9900, 8250],
+    nightlyRoomCost: [9000, 7500],
+    nightlyExtraBedCost: [0, 0],
+    nightlyChildWithBedCost: [0, 0],
+    nightlyChildWithoutBedCost: [0, 0],
+    nightlyMealPlanBreakdown: [
+      { breakfast: true, lunch: false, dinner: true, mealPlanCode: 'MAP', totalBreakfastCost: 200, totalLunchCost: 0, totalDinnerCost: 300 },
+      { breakfast: true, lunch: true, dinner: true, mealPlanCode: 'AP', totalBreakfastCost: 220, totalLunchCost: 240, totalDinnerCost: 320 },
+    ],
+    roomCount: 1,
+  } as any;
+
+  assert.equal(
+    selectOfflineRouteNightlyRate(offer, ['2026-08-31', '2026-09-01'], '2026-09-01').mealPlanBreakdown?.mealPlanCode,
+    'AP',
+  );
+});
+
 test('continuous offline selection projects the matching night for 2-Sep', () => {
   const nightlyRates = [
     { date: '2026-08-31', baseAmount: 9000, marginPercentage: 10, marginAmount: 900, sellAmount: 9900 },
