@@ -2084,70 +2084,126 @@ async autoSelectVehicleSlabs(data: {
     vehicleTypeId: vehicleTypeId || undefined,
   };
 }
-  async forceRebuildVehiclePricingAfterHotspotChange(
-    planId: number,
-    routeId?: number,
-  ) {
-    const normalizedPlanId = Number(planId || 0);
+ async forceRebuildVehiclePricingAfterHotspotChange(
+  planId: number,
+  routeId?: number,
+) {
+  const normalizedPlanId = Number(planId || 0);
 
-    if (!normalizedPlanId) {
-      return;
+  if (!normalizedPlanId) {
+    return;
+  }
+
+  const vehicleRowsBefore = await (
+    this.prisma as any
+  ).dvi_itinerary_plan_vendor_vehicle_details.findMany({
+    where: {
+      itinerary_plan_id: normalizedPlanId,
+      deleted: 0,
+      ...(routeId
+        ? {
+            itinerary_route_id: Number(routeId),
+          }
+        : {}),
+    },
+    select: {
+      itinerary_route_id: true,
+      itinerary_plan_vendor_eligible_ID: true,
+      vendor_id: true,
+      vendor_branch_id: true,
+      vendor_vehicle_type_id: true,
+      vehicle_id: true,
+      time_limit_id: true,
+      total_travelled_km: true,
+      total_vehicle_amount: true,
+    },
+  });
+
+  const beforeKm = vehicleRowsBefore.reduce(
+    (sum: number, row: any) =>
+      sum + Number(row?.total_travelled_km || 0),
+    0,
+  );
+
+  const beforeAmount = vehicleRowsBefore.reduce(
+    (sum: number, row: any) =>
+      sum + Number(row?.total_vehicle_amount || 0),
+    0,
+  );
+
+  const selectedTimeLimitByEligible: Record<string, number> = {};
+
+  for (const row of vehicleRowsBefore) {
+    const eligibleId = Number(
+      row?.itinerary_plan_vendor_eligible_ID || 0,
+    );
+
+    const timeLimitId = Number(
+      row?.time_limit_id || 0,
+    );
+
+    if (!timeLimitId) {
+      continue;
     }
 
-    const vehicleRowsBefore = await (
-      this.prisma as any
-    ).dvi_itinerary_plan_vendor_vehicle_details.findMany({
-      where: {
-        itinerary_plan_id: normalizedPlanId,
-        deleted: 0,
-        ...(routeId
-          ? {
-              itinerary_route_id: Number(routeId),
-            }
-          : {}),
-      },
-      select: {
-        itinerary_route_id: true,
-        total_travelled_km: true,
-        total_vehicle_amount: true,
-      },
-    });
+    if (eligibleId > 0) {
+      selectedTimeLimitByEligible[String(eligibleId)] =
+        timeLimitId;
+    }
 
-    const beforeKm = vehicleRowsBefore.reduce(
-      (sum: number, row: any) =>
-        sum + Number(row?.total_travelled_km || 0),
-      0,
+    const vendorId = Number(row?.vendor_id || 0);
+    const vendorBranchId = Number(
+      row?.vendor_branch_id || 0,
+    );
+    const vendorVehicleTypeId = Number(
+      row?.vendor_vehicle_type_id || 0,
+    );
+    const vehicleId = Number(
+      row?.vehicle_id || 0,
     );
 
-    const beforeAmount = vehicleRowsBefore.reduce(
-      (sum: number, row: any) =>
-        sum + Number(row?.total_vehicle_amount || 0),
-      0,
-    );
+    if (
+      vendorId > 0 &&
+      vendorBranchId > 0 &&
+      vendorVehicleTypeId > 0 &&
+      vehicleId > 0
+    ) {
+      const compositeKey = [
+        vendorId,
+        vendorBranchId,
+        vendorVehicleTypeId,
+        vehicleId,
+      ].join(':');
 
-    console.log(
-      '[HOTSPOT_CHANGE_VEHICLE_REBUILD_BEFORE]',
-      {
-        planId: normalizedPlanId,
-        routeId: routeId || null,
-        totalKms: Number(beforeKm.toFixed(2)),
-        totalAmount: Number(beforeAmount.toFixed(2)),
-      },
-    );
-
-    await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
-      planId: normalizedPlanId,
-      createdBy: 1,
-      beforeVehicleDetailsBuild: async ({
-        tx,
-        planId,
-      }) => {
-        await this.routeEngine.rebuildPermitCharges(
-          tx,
-          Number(planId),
-          1,
-        );
-      },
-    });
+      selectedTimeLimitByEligible[compositeKey] =
+        timeLimitId;
+    }
   }
+
+  console.log(
+    '[HOTSPOT_CHANGE_VEHICLE_REBUILD_BEFORE]',
+    {
+      planId: normalizedPlanId,
+      routeId: routeId || null,
+      totalKms: Number(beforeKm.toFixed(2)),
+      totalAmount: Number(beforeAmount.toFixed(2)),
+    },
+  );
+
+  await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+    planId: normalizedPlanId,
+    createdBy: 1,
+    selectedTimeLimitByEligible,
+    beforeVehicleDetailsBuild: async ({
+      tx,
+      planId,
+    }) => {
+      await this.routeEngine.rebuildPermitCharges(
+        tx,
+        Number(planId),
+        1,
+      );
+    },
+  });
+}
 }
