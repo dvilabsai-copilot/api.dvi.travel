@@ -58,6 +58,19 @@ export interface ItineraryHotelRowDto {
   category: number;
   roomType: string;
   mealPlan: string;
+  mealPlanCode?: string;
+  mealPlanBreakdown?: {
+    breakfast?: boolean;
+    lunch?: boolean;
+    dinner?: boolean;
+    breakfastCostPerPerson?: number;
+    lunchCostPerPerson?: number;
+    dinnerCostPerPerson?: number;
+    totalBreakfastCost?: number;
+    totalLunchCost?: number;
+    totalDinnerCost?: number;
+    totalMealPlanCost?: number;
+  };
   baseHotelCost?: number;
   basePricePerNight?: number;
   baseTotalPrice?: number;
@@ -1242,6 +1255,14 @@ async getHotelRoomDetailsByQuoteId(
           (h as any).meal_plan ||
           '',
         ).trim(),
+        ...(isOffline ? {
+          mealPlanCode: String(
+            selectedPriceSnapshot.mealPlanCode ||
+            selectedPriceSnapshot.mealPlan ||
+            '',
+          ).trim(),
+          mealPlanBreakdown: selectedPriceSnapshot.mealPlanBreakdown || undefined,
+        } : {}),
         totalHotelCost: routeNightPayableHotelCost,
         pricePerNight: routeNightPayableHotelCost,
         // The UI day-row contract is explicit: this is the complete payable

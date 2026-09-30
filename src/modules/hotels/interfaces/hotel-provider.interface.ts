@@ -62,6 +62,9 @@ export interface HotelSearchResult {
   roomTypes: RoomType[];
  roomType?: string; // Current room type name
  mealPlan?: string; // Meal plan info (if available)
+ mealPlanCode?: string;
+ mealPlanBreakdown?: Record<string, unknown>;
+ nightlyMealPlanBreakdown?: Array<Record<string, unknown>>;
  searchReference: string; // Used for confirmation
   bookingCode?: string;
  expiresAt: Date; // When search result expires

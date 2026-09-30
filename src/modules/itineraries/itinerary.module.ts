@@ -111,7 +111,6 @@ import { ItineraryActivityImpactService } from './services/itinerary-activity-im
 import { ItineraryTransportFormattingService } from './services/itinerary-transport-formatting.service';
 import { ItineraryActivityPricingService } from './services/itinerary-activity-pricing.service';
 import { ItineraryActivityTimingPolicyService } from './services/itinerary-activity-timing-policy.service';
-import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.service';
 import { ItineraryHotelApprovalService } from './services/itinerary-hotel-approval.service';
 import { ItineraryHotelApprovalController } from './itinerary-hotel-approval.controller';
 import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
@@ -209,7 +208,6 @@ ItineraryRouteNormalizationService,
     ItineraryTransportFormattingService,
     ItineraryActivityPricingService,
     ItineraryActivityTimingPolicyService,
-    OfflineHotelCatalogService,
     ItineraryHotelApprovalService,
     HotelAvailabilitySnapshotService,
     HotelRecommendationPackageService,
