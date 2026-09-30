@@ -18,6 +18,7 @@ import {
 } from '../itineraries/utils/city-normalization.util';
 import { ReferenceDataCacheService } from '../../common/cache/reference-data-cache.service';
 import { HotelGalleryService } from './services/hotel-gallery.service';
+import { normalizeHotelPricebookMonth } from './hotel-pricebook-month.util';
 
 const PRICEBOOK_OCCUPANCY_KEYS = [
   'SINGLE',
@@ -2444,7 +2445,8 @@ export class HotelsService {
     for (const row of savedRows as any[]) {
       const mealType = Number(row.meal_type);
       const year = String(row.year ?? '');
-      const month = String(row.month ?? '').padStart(2, '0');
+      const month = normalizeHotelPricebookMonth(row.month);
+      if (!month) continue;
 
       const key = `${mealType}:${year}:${month}`;
 

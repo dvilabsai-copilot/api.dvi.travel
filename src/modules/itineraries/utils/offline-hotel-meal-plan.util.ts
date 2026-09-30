@@ -106,9 +106,11 @@ export function calculateOfflineMealBreakdown(input: {
   const hasPricebookValue = prices.breakfast > 0 || prices.lunch > 0 || prices.dinner > 0;
   return {
     ...input.flags,
+    // A configured rate-plan label must not imply a meal when the date has no
+    // valid pricebook value. Treat an empty date as room-only (EP).
     mealPlanCode: hasPricebookValue
       ? resolveLegacyOfflineMealPlanCode(input.flags, prices)
-      : String(input.fallbackMealPlanCode || resolveLegacyOfflineMealPlanCode(input.flags, prices)),
+      : 'EP',
     breakfastCostPerPerson: money(prices.breakfast),
     lunchCostPerPerson: money(prices.lunch),
     dinnerCostPerPerson: money(prices.dinner),

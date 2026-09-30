@@ -46,7 +46,7 @@ describe('offline hotel meal-plan parity', () => {
     assert.equal(result.mealPlanCode, 'AP');
   });
 
-  it('preserves the selected offline rate-plan code when no pricebook value exists', () => {
+  it('uses EP when no pricebook value exists, even if the fallback plan is CP', () => {
     const result = calculateOfflineMealBreakdown({
       flags: { breakfast: true, lunch: false, dinner: false },
       prices: { breakfast: 0, lunch: 0, dinner: 0 },
@@ -56,7 +56,7 @@ describe('offline hotel meal-plan parity', () => {
       roomCount: 1,
     });
 
-    assert.equal(result.mealPlanCode, 'CP');
+    assert.equal(result.mealPlanCode, 'EP');
     assert.equal(result.totalMealPlanCost, 0);
   });
 });
