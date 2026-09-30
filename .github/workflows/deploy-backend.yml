@@ -71,9 +71,6 @@ jobs:
             echo "Generating Prisma client..."
             npx prisma generate
 
-            echo "Removing only temporary deployment backup tables..."
-            npx tsx scripts/cleanup-deployment-backup-tables.ts
-
             echo "Running Prisma DB push..."
             set +e
             npx prisma db push
