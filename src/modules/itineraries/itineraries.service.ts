@@ -50,6 +50,7 @@ import {
   resolvePersistedHotelIdentity,
   supplierSelectionKey,
 } from './utils/hotel-selection-identity.util';
+import { normalizeHotelStarRating } from './utils/hotel-category.util';
 import { resolveHotelOccupancyPricing } from './utils/hotel-selection-pricing.util';
 import {
   buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper,
@@ -3032,6 +3033,28 @@ timingStepStartedAt =
     const persistedHotelMasterMap = new Map(
       persistedHotelMasters.map((master: any) => [Number(master.hotel_id), master]),
     );
+    const persistedTboCodes = Array.from(new Set(
+      persisted
+        .filter((row: any) => ['tbo', 'vsr'].includes(String(row?.hotel_provider || '').trim().toLowerCase()))
+        .map((row: any) => String(row?.hotel_code || '').trim())
+        .filter(Boolean),
+    ));
+    const tboMasterModel = (this.prisma as any).tbo_hotel_master;
+    let persistedTboMasters: any[] = [];
+    if (persistedTboCodes.length > 0 && tboMasterModel?.findMany) {
+      try {
+        persistedTboMasters = await tboMasterModel.findMany({
+            where: { tbo_hotel_code: { in: persistedTboCodes }, status: 1 },
+            select: { tbo_hotel_code: true, hotel_name: true, star_rating: true },
+          }) || [];
+      } catch {
+        // A supplier-master lookup is optional enrichment; legacy snapshot
+        // identity remains usable if this table is temporarily unavailable.
+      }
+    }
+    const persistedTboMasterMap = new Map(
+      persistedTboMasters.map((master: any) => [String(master.tbo_hotel_code || '').trim(), master]),
+    );
     const selections = persisted.map((row: any) => {
       const roomDetail = persistedRoomDetailByHotelDetailId.get(
         Number(row.itinerary_plan_hotel_details_ID || 0),
@@ -3044,6 +3067,7 @@ timingStepStartedAt =
       const identity = resolvePersistedHotelIdentity(
         row,
         persistedHotelMasterMap.get(Number(row.hotel_id || 0)) || null,
+        persistedTboMasterMap.get(String(row.hotel_code || '').trim()) || null,
       );
       if (identity.provider === 'offline' && !identity.consistent) {
         console.error('[HOTEL_INTENT] persisted offline identity mismatch', {
@@ -3061,12 +3085,9 @@ timingStepStartedAt =
         providerHotelCode: snapshot.providerHotelCode || row.hotel_code || null,
         selectionKey: snapshot.selectionKey || supplierSelectionKey(snapshot) || undefined,
         provider: row.hotel_provider,
-        hotelName: identity.provider === 'offline'
-          ? identity.hotelName
-          : snapshot.hotelName || row.hotel_name || data.hotelName || hotelCode,
-        category: identity.provider === 'offline'
-          ? identity.category
-          : Number(snapshot.category || data.category || 0),
+        hotelName: identity.hotelName || snapshot.hotelName || row.hotel_name || data.hotelName || hotelCode,
+        category: identity.category || normalizeHotelStarRating(snapshot.category) ||
+          normalizeHotelStarRating(data.category) || 0,
         selectedRateOptionId: row.selected_rate_option_id, rateOptionId: row.selected_rate_option_id,
          roomId: snapshot.roomId ?? snapshot.room_id ?? roomDetail.room_id,
          roomTypeId: snapshot.roomTypeId ?? snapshot.room_type_id ?? roomDetail.room_type_id,

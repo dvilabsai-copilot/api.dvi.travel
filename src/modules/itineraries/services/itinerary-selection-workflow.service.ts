@@ -22,6 +22,7 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
 import { resolveHotelSelectionPricing } from '../utils/hotel-selection-pricing.util';
+import { normalizeHotelStarRating } from '../utils/hotel-category.util';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { HotelAvailabilitySnapshotService } from './hotel-availability-snapshot.service';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
@@ -334,6 +335,21 @@ export class ItinerarySelectionWorkflowService {
     });
     // VSR is a UI representation of TBO, not a second supplier path.
     const providerForPricing = canonicalHotelProvider(data.provider);
+    let tboMaster: any = null;
+    if (providerForPricing === 'tbo' && persistedHotelCode) {
+      try {
+        tboMaster = await (db as any).tbo_hotel_master?.findFirst?.({
+            where: { tbo_hotel_code: persistedHotelCode, status: 1 },
+            select: { hotel_name: true, star_rating: true },
+          }) || null;
+      } catch {
+        // Identity enrichment must not block a valid selection if the master
+        // table is temporarily unavailable; retain the client fallback.
+      }
+    }
+    const selectionHotelName = String(tboMaster?.hotel_name || data.hotelName || '').trim() || null;
+    const selectionCategory = normalizeHotelStarRating(tboMaster?.star_rating) ??
+      normalizeHotelStarRating((data as any).category) ?? null;
     let axisRoomsBasePrice = 0;
     let axisRoomsSupplementRates: { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } | null = null;
     if (String(data.provider || '').trim().toLowerCase() === 'axisrooms') {
@@ -635,8 +651,8 @@ export class ItinerarySelectionWorkflowService {
               provider: data.provider || null,
               selectionOrigin: 'USER_SELECTED',
               availableRoomTypeOptions: data.availableRoomTypeOptions || [],
-            hotelName: data.hotelName || null,
-            category: data.category || null,
+            hotelName: selectionHotelName,
+            category: selectionCategory,
             roomTypeId: data.roomTypeId || null,
             roomType: data.roomType || null,
             mealPlan: canonicalMealPlanCode || null,
@@ -730,8 +746,8 @@ export class ItinerarySelectionWorkflowService {
             provider: data.provider || null,
             selectionOrigin: 'USER_SELECTED',
             availableRoomTypeOptions: data.availableRoomTypeOptions || [],
-            hotelName: data.hotelName || null,
-            category: data.category || null,
+            hotelName: selectionHotelName,
+            category: selectionCategory,
             roomTypeId: data.roomTypeId || null,
             roomType: data.roomType || null,
             mealPlan: canonicalMealPlanCode || null,

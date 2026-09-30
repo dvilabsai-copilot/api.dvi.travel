@@ -784,3 +784,39 @@ test('offline persisted identity decodes HTML entities without creating a false 
   assert.equal(identity.hotelName, 'SPRISE MUNNAR RESORT & SPA');
   assert.deepEqual(identity.mismatches, []);
 });
+
+test('TBO persisted identity prefers the supplier master over a legacy snapshot fallback', () => {
+  const identity = resolvePersistedHotelIdentity({
+    hotel_id: null,
+    hotel_code: '6347537',
+    hotel_provider: 'tbo',
+    selected_price_snapshot: JSON.stringify({
+      provider: 'tbo',
+      providerHotelCode: '6347537',
+      hotelName: 'Hotel 6347537',
+      category: null,
+    }),
+  }, null, {
+    tbo_hotel_code: '6347537',
+    hotel_name: 'Hill Crest Resort Coorg',
+    star_rating: 4,
+  });
+
+  assert.equal(identity.hotelName, 'Hill Crest Resort Coorg');
+  assert.equal(identity.category, 4);
+});
+
+test('TBO persisted identity retains the legacy snapshot when the supplier master is unavailable', () => {
+  const identity = resolvePersistedHotelIdentity({
+    hotel_code: 'missing-code',
+    hotel_provider: 'tbo',
+    selected_price_snapshot: JSON.stringify({
+      provider: 'tbo',
+      hotelName: 'Legacy TBO Hotel',
+      category: '3-Star',
+    }),
+  }, null, null);
+
+  assert.equal(identity.hotelName, 'Legacy TBO Hotel');
+  assert.equal(identity.category, 3);
+});
