@@ -694,7 +694,7 @@ test('falls back from requested 3-star to lower 2-star before higher 4-star', ()
   assert.equal(packages[0].hotels[0].categoryFallbackReason, '2* selected — 3* not available');
 });
 
-test('live inventory wins automatic selection over cheaper offline inventory', () => {
+test('live inventory remains the first automatic selection over cheaper offline inventory', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -718,7 +718,7 @@ test('live inventory wins automatic selection over cheaper offline inventory', (
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
-test('live inventory wins automatic selection over exact-category offline inventory', () => {
+test('live inventory remains the first automatic selection over exact-category offline inventory', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -740,6 +740,55 @@ test('live inventory wins automatic selection over exact-category offline invent
   assert.equal(packages[0].hotels[0].provider, 'tbo');
   assert.equal(packages[0].hotels[0].selectedCategory, 4);
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
+});
+
+test('unused offline properties fill later groups after live properties are exhausted', () => {
+  const packages = service().generate({
+    routes: oneRoute('Kovalam'),
+    hotelsByRoute: new Map([[1, [
+      option('Live Hotel A', 1000, 'CP', {
+        provider: 'tbo',
+        category: '3-star',
+        canonicalHotelId: 801,
+      }),
+      option('Live Hotel B', 1100, 'CP', {
+        provider: 'axisrooms',
+        category: '3-star',
+        canonicalHotelId: 802,
+      }),
+      option('Offline Hotel C', 1200, 'CP', {
+        provider: 'offline',
+        category: '3-star',
+        canonicalHotelId: 803,
+        bookingMode: 'MANUAL_APPROVAL',
+        requiresHotelApproval: true,
+        isBookable: false,
+        isLiveBookable: false,
+      }),
+      option('Offline Hotel D', 1300, 'CP', {
+        provider: 'offline',
+        category: '3-star',
+        canonicalHotelId: 804,
+        bookingMode: 'MANUAL_APPROVAL',
+        requiresHotelApproval: true,
+        isBookable: false,
+        isLiveBookable: false,
+      }),
+    ] as any]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.deepEqual(
+    packages.map((pkg) => pkg.hotels[0]?.hotelName),
+    ['Live Hotel A', 'Live Hotel B', 'Offline Hotel C', 'Offline Hotel D'],
+  );
+  assert.deepEqual(
+    packages.map((pkg) => pkg.hotels[0]?.provider),
+    ['tbo', 'axisrooms', 'offline', 'offline'],
+  );
+  assert.equal(packages[2].hotels[0]?.requiresHotelApproval, true);
+  assert.equal(packages[3].hotels[0]?.requiresHotelApproval, true);
 });
 
 test('VSR complete fare remains live when occupancy supplements are requested', () => {

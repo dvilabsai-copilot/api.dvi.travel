@@ -1986,6 +1986,65 @@ test('initial availability persists the authoritative offline category selection
   assert.equal(createdSelections[0].hotel_id, 232);
 });
 
+test('persists authoritative offline selections used to fill later recommendation groups', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 512 + createdSelections.length };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+      updateMany: async () => ({}),
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const rows = [
+    { groupType: 1, provider: 'tbo', hotelId: 801, hotelCode: 'LIVE-801', hotelName: 'Live Hotel A' },
+    { groupType: 2, provider: 'axisrooms', hotelId: 802, hotelCode: 'LIVE-802', hotelName: 'Live Hotel B' },
+    { groupType: 3, provider: 'offline', hotelId: 803, hotelCode: 'OFFLINE-803', hotelName: 'Offline Hotel C' },
+    { groupType: 4, provider: 'offline', hotelId: 804, hotelCode: 'OFFLINE-804', hotelName: 'Offline Hotel D' },
+  ].map((row) => ({
+    itineraryRouteId: 10,
+    date: '2026-07-28',
+    mealPlan: 'CP',
+    totalHotelCost: 1200,
+    isBookable: true,
+    isSelectable: true,
+    authoritativeRecommendation: true,
+    autoSelectionCandidate: true,
+    autoSelectionIdentity: {
+      provider: row.provider,
+      canonicalHotelId: row.hotelId,
+      providerHotelCode: row.hotelCode,
+      rateOptionId: `${row.provider}-${row.hotelId}-cp`,
+      mealPlan: 'CP',
+    },
+    rateOptionId: `${row.provider}-${row.hotelId}-cp`,
+    ...row,
+  }));
+
+  await (service as any).ensureAutoSelections(
+    tx,
+    44,
+    rows,
+    'authoritative-live-then-offline-run',
+    7,
+    true,
+    undefined,
+    'CP',
+  );
+
+  assert.deepEqual(
+    createdSelections.map((selection) => [selection.group_type, selection.hotel_provider, selection.hotel_id]),
+    [[1, 'tbo', 801], [2, 'axisrooms', 802], [3, 'offline', 803], [4, 'offline', 804]],
+  );
+});
+
 test('MAP fallback auto-selects live CP without relabelling it as MAP', async () => {
   const createdSelections: any[] = [];
   const tx: any = {

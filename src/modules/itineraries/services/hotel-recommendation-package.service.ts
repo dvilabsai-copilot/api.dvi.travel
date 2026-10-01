@@ -382,40 +382,52 @@ export class HotelRecommendationPackageService {
 
   private selectCategoryOption(options: StayOption[], slot: CategorySlot, used: Set<string>): StayOption | undefined {
     const orderedCategories = this.categoryFallbackOrder(slot.category);
-    // Offline inventory is a fallback only. If any live offer is eligible for
-    // this stay, it must remain the source pool for automatic selection even
-    // when an offline offer is cheaper. Offline offers are still retained in
-    // the returned pane for manual review/selection when no live offer wins.
+    // Live inventory remains the preferred source for automatic selection, but
+    // it must not be reused merely because offline inventory was classified as
+    // a fallback. Once live physical properties are exhausted, unused offline
+    // properties fill the remaining recommendation slots.
     const liveOptions = options.filter((option) => !option.fallback);
-    const selectableOptions = liveOptions.length > 0 ? liveOptions : options;
+    const offlineOptions = options.filter((option) => option.fallback);
 
-    // Pass 1: exhaust every unused physical property before permitting reuse.
-    // Category preference remains stronger than meal-plan preference: for each
-    // category, first look only at unused properties, then rank their rates.
+    // Pass 1: use every unused live physical property before considering
+    // offline inventory. Category preference remains stronger than meal-plan
+    // preference: for each category, first look only at unused properties,
+    // then rank their rates.
+    const unusedLive = this.selectFromCategoryPool(liveOptions, orderedCategories, slot, used, false);
+    if (unusedLive) return unusedLive;
+
+    const unusedOffline = this.selectFromCategoryPool(offlineOptions, orderedCategories, slot, used, false);
+    if (unusedOffline) return unusedOffline;
+
+    // Pass 2: no unused live or offline property exists anywhere for this
+    // stay. Reuse is now allowed, retaining the live-before-offline rule.
+    const reusedLive = this.selectFromCategoryPool(liveOptions, orderedCategories, slot, used, true);
+    if (reusedLive) return reusedLive;
+
+    const reusedOffline = this.selectFromCategoryPool(offlineOptions, orderedCategories, slot, used, true);
+    if (reusedOffline) return reusedOffline;
+    return undefined;
+  }
+
+  private selectFromCategoryPool(
+    options: StayOption[],
+    orderedCategories: number[],
+    slot: CategorySlot,
+    used: Set<string>,
+    allowReuse: boolean,
+  ): StayOption | undefined {
     for (const category of orderedCategories) {
-      const categoryCandidates = selectableOptions
+      const categoryCandidates = options
         .filter((option) => this.categoryNumber(option.hotel) === category)
         .sort((a, b) => this.compareRecommendationOptions(a, b));
       if (categoryCandidates.length === 0) continue;
 
-      const unusedCandidates = categoryCandidates.filter(
-        (candidate) => !used.has(this.physicalIdentity(candidate.hotel)),
-      );
-      if (unusedCandidates.length === 0) continue;
+      const candidates = allowReuse
+        ? categoryCandidates
+        : categoryCandidates.filter((candidate) => !used.has(this.physicalIdentity(candidate.hotel)));
+      if (candidates.length === 0) continue;
 
-      const selected = this.rankCategoryCandidates(unusedCandidates, slot, categoryCandidates);
-      if (selected) return this.withCategoryMetadata(selected, slot, category);
-    }
-
-    // Pass 2: no unused usable property exists anywhere for this stay. Reuse
-    // is now allowed, using the same category/meal/target ordering.
-    for (const category of orderedCategories) {
-      const categoryCandidates = selectableOptions
-        .filter((option) => this.categoryNumber(option.hotel) === category)
-        .sort((a, b) => this.compareRecommendationOptions(a, b));
-      if (categoryCandidates.length === 0) continue;
-
-      const selected = this.rankCategoryCandidates(categoryCandidates, slot, categoryCandidates);
+      const selected = this.rankCategoryCandidates(candidates, slot, categoryCandidates);
       if (selected) return this.withCategoryMetadata(selected, slot, category);
     }
     return undefined;
