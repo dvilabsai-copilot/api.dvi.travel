@@ -165,6 +165,7 @@ travel_distance_km!: number | null;
  // visit status (for buttons)
  driver_hotspot_status!: number; // 0=pending, 1=visited, 2=not-visited
   driver_not_visited_description!: string | null;
+  driver_not_visited_voice_file?: string | null;
   guide_hotspot_status!: number;
   guide_not_visited_description!: string | null;
 

@@ -9,7 +9,10 @@ import * as crypto from 'crypto';
 import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../../prisma.service';
 
-export type EmailOtpPurpose = 'login' | 'registration';
+export type EmailOtpPurpose =
+  | 'login'
+  | 'registration'
+  | 'password-reset';
 
 type EmailOtpRecord = {
   otpHash: string;
@@ -29,11 +32,19 @@ export class EmailLoginOtpService {
     return String(email || '').trim().toLowerCase();
   }
 
-  private tableName(purpose: EmailOtpPurpose) {
-    return purpose === 'registration'
-      ? 'dvi_registration_email_otps'
-      : 'dvi_email_login_otps';
+private tableName(
+  purpose: EmailOtpPurpose,
+) {
+  if (purpose === 'registration') {
+    return 'dvi_registration_email_otps';
   }
+
+  if (purpose === 'password-reset') {
+    return 'dvi_password_reset_otps';
+  }
+
+  return 'dvi_email_login_otps';
+}
 
   private hashOtp(email: string, otp: string, purpose: EmailOtpPurpose) {
     const secret = process.env.JWT_SECRET || 'supersecretjwtkey';
@@ -52,7 +63,12 @@ export class EmailLoginOtpService {
     }
 
     const tableName = this.tableName(purpose);
-    const indexPrefix = purpose === 'registration' ? 'registration' : 'login';
+  const indexPrefix =
+  purpose === 'registration'
+    ? 'registration'
+    : purpose === 'password-reset'
+      ? 'password_reset'
+      : 'login';
     const createPromise = this.prisma
       .$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS ${tableName} (
@@ -163,12 +179,14 @@ export class EmailLoginOtpService {
       throw error;
     }
 
-    return {
-      message:
-        purpose === 'registration'
-          ? 'Verification code sent to your email.'
-          : 'OTP sent to your registered email.',
-    };
+   return {
+  message:
+    purpose === 'registration'
+      ? 'Verification code sent to your email.'
+      : purpose === 'password-reset'
+        ? 'Password reset code sent to your email.'
+        : 'OTP sent to your registered email.',
+};
   }
 
   async verifyOtp(
@@ -787,15 +805,25 @@ await transporter.sendMail({
     const from = fromName.trim()
       ? { name: fromName.trim(), address: fromAddress }
       : fromAddress;
-    const isRegistration = purpose === 'registration';
-    const subject = isRegistration
-      ? 'DVI Holidays Email Verification Code'
+   const subject =
+  purpose === 'registration'
+    ? 'DVI Holidays Email Verification Code'
+    : purpose === 'password-reset'
+      ? 'DVI Holidays Password Reset Code'
       : 'DVI Holidays Login OTP';
-    const title = isRegistration
-      ? 'DVI Holidays Email Verification'
+
+const title =
+  purpose === 'registration'
+    ? 'DVI Holidays Email Verification'
+    : purpose === 'password-reset'
+      ? 'Reset Your DVI Password'
       : 'DVI Holidays Login Verification';
-    const intro = isRegistration
-      ? 'Your email verification code is:'
+
+const intro =
+  purpose === 'registration'
+    ? 'Your email verification code is:'
+    : purpose === 'password-reset'
+      ? 'Your password reset code is:'
       : 'Your login OTP is:';
 
     if (!host) {

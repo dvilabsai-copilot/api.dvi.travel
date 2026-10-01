@@ -66,6 +66,364 @@ export class AuthService {
     });
   }
 
+  async getPasswordStatus(
+  userId: string | number,
+) {
+  let resolvedUserId: bigint;
+
+  try {
+    resolvedUserId =
+      BigInt(userId);
+  } catch {
+    throw new BadRequestException(
+      'Invalid user account',
+    );
+  }
+
+  const sessionUser =
+    await this.prisma.dvi_users.findFirst({
+      where: {
+        userID: resolvedUserId,
+        deleted: 0,
+      },
+    });
+
+  if (!sessionUser) {
+  throw new BadRequestException(
+    'User account not found',
+  );
+}
+
+this.assertLoginAllowed(
+  sessionUser,
+);
+
+if (
+  Number(sessionUser.roleID || 0) !==
+  SystemRole.AGENT
+) {
+    throw new ForbiddenException(
+      'Only agents can manage their password here',
+    );
+  }
+
+ const user =
+  await this.resolveCanonicalAgentUser(
+    sessionUser,
+  );
+
+this.assertLoginAllowed(
+  user,
+);
+
+const hasPassword =
+    String(
+      user?.password ?? '',
+    ).trim().length > 0;
+
+  return {
+    hasPassword,
+    mode:
+      hasPassword
+        ? 'change'
+        : 'set',
+  };
+}
+
+  /**
+ * Resolves the user row that should actually be used for authentication.
+ *
+ * Rules:
+ * 1. One active row -> use it.
+ * 2. Multiple rows for the SAME Agent -> use the newest row because
+ *    Agent management also treats the newest dvi_users row as current.
+ * 3. Multiple rows belonging to different accounts -> do NOT guess.
+ */
+private async findAuthenticationUserByEmail(
+  email: string,
+) {
+  const normalizedEmail =
+    this.normalizeEmail(email);
+
+  const rows =
+    await this.prisma.$queryRaw<
+      Array<{
+  userID: bigint;
+  roleID: number | null;
+  agent_id: number | null;
+  userapproved: number | null;
+  userbanned: number | null;
+  status: number | null;
+}>
+    >`
+     SELECT
+  userID,
+  roleID,
+  agent_id,
+  userapproved,
+  userbanned,
+  status
+FROM dvi_users
+      WHERE LOWER(TRIM(useremail)) = ${normalizedEmail}
+        AND deleted = 0
+      ORDER BY userID ASC
+    `;
+
+  if (!rows.length) {
+    return null;
+  }
+
+  if (rows.length === 1) {
+    return this.prisma.dvi_users.findUnique({
+      where: {
+        userID: rows[0].userID,
+      },
+    });
+  }
+
+  const firstAgentId =
+    Number(
+      rows[0].agent_id || 0,
+    );
+
+  const sameAgentDuplicates =
+  firstAgentId > 0 &&
+  rows.every(
+    (row) =>
+      Number(row.roleID || 0) ===
+        SystemRole.AGENT &&
+      Number(row.agent_id || 0) ===
+        firstAgentId,
+  );
+
+if (sameAgentDuplicates) {
+  const usableRows =
+    rows.filter(
+      (row) =>
+        Number(
+          row.status ?? 1,
+        ) !== 0 &&
+        Number(
+          row.userbanned ?? 0,
+        ) !== 1 &&
+        Number(
+          row.userapproved ?? 0,
+        ) === 1,
+    );
+
+  const selectedRow =
+    usableRows.length > 0
+      ? usableRows[
+          usableRows.length - 1
+        ]
+      : rows[
+          rows.length - 1
+        ];
+
+  this.logger.warn(
+    `Duplicate active dvi_users rows found for Agent email ${normalizedEmail}. ` +
+      `Using userID ${String(
+        selectedRow.userID,
+      )}.`,
+  );
+
+  return this.prisma.dvi_users.findUnique({
+    where: {
+      userID:
+        selectedRow.userID,
+    },
+  });
+}
+
+/*
+ * IMPORTANT:
+ * Preserve the existing authentication behaviour
+ * for non-Agent or mixed-role duplicate records.
+ *
+ * Before this fix, authentication used:
+ * ORDER BY userID ASC LIMIT 1.
+ *
+ * Do not change that behaviour as part of an
+ * Agent-password fix.
+ */
+const legacyUser =
+  rows[0];
+
+this.logger.warn(
+  `Multiple active dvi_users rows found for ${normalizedEmail}, ` +
+    `but they are not duplicate rows for the same Agent. ` +
+    `Preserving legacy authentication with userID ${String(
+      legacyUser.userID,
+    )}.`,
+);
+
+return this.prisma.dvi_users.findUnique({
+  where: {
+    userID:
+      legacyUser.userID,
+  },
+});
+}
+
+private async resolveCanonicalAgentUser(
+  user: any,
+) {
+  if (
+    !user ||
+    Number(user.roleID || 0) !==
+      SystemRole.AGENT ||
+    Number(user.agent_id || 0) <= 0 ||
+    !user.useremail
+  ) {
+    return user;
+  }
+
+  const agentId =
+    Number(user.agent_id);
+
+  const normalizedEmail =
+    this.normalizeEmail(
+      user.useremail,
+    );
+
+  /*
+   * IMPORTANT:
+   * This resolver is ONLY for Agent password
+   * operations.
+   *
+   * Do not use the general authentication
+   * fallback here because an email can exist
+   * against another legacy role/account.
+   */
+  const rows =
+    await this.prisma.$queryRaw<
+      Array<{
+        userID: bigint;
+        userapproved: number | null;
+        userbanned: number | null;
+        status: number | null;
+      }>
+    >`
+      SELECT
+        userID,
+        userapproved,
+        userbanned,
+        status
+      FROM dvi_users
+      WHERE agent_id = ${agentId}
+        AND roleID = ${SystemRole.AGENT}
+        AND deleted = 0
+        AND LOWER(TRIM(useremail)) =
+          ${normalizedEmail}
+      ORDER BY userID ASC
+    `;
+
+  if (!rows.length) {
+    return user;
+  }
+
+  const usableRows =
+    rows.filter(
+      (row) =>
+        Number(
+          row.status ?? 1,
+        ) !== 0 &&
+        Number(
+          row.userbanned ?? 0,
+        ) !== 1 &&
+        Number(
+          row.userapproved ?? 0,
+        ) === 1,
+    );
+
+  /*
+   * Prefer newest usable Agent login.
+   *
+   * If none are usable, return the newest
+   * matching Agent row and allow
+   * assertLoginAllowed() to reject it.
+   */
+  const selectedRow =
+    usableRows.length > 0
+      ? usableRows[
+          usableRows.length - 1
+        ]
+      : rows[
+          rows.length - 1
+        ];
+
+  const canonicalUser =
+    await this.prisma.dvi_users.findUnique({
+      where: {
+        userID:
+          selectedRow.userID,
+      },
+    });
+
+  return canonicalUser ?? user;
+}
+/**
+ * Password writes for an Agent are synchronized
+ * across active duplicate user rows belonging
+ * to the same Agent.
+ *
+ * We DO NOT delete historical user rows.
+ */
+private async savePasswordForUser(
+  user: any,
+  passwordHash: string,
+) {
+  const agentId =
+    Number(user.agent_id || 0);
+
+  const normalizedEmail =
+    this.normalizeEmail(
+      user.useremail || '',
+    );
+
+  if (
+    Number(user.roleID || 0) ===
+      SystemRole.AGENT &&
+    agentId > 0 &&
+    normalizedEmail
+  ) {
+    const now =
+      new Date();
+
+    /*
+     * Synchronize only duplicate login rows
+     * belonging to the SAME Agent AND the
+     * SAME normalized email.
+     *
+     * Do not change passwords of other users
+     * attached to the same Agent/company.
+     */
+    await this.prisma.$executeRaw`
+      UPDATE dvi_users
+      SET
+        password = ${passwordHash},
+        updatedon = ${now}
+      WHERE agent_id = ${agentId}
+        AND roleID = ${SystemRole.AGENT}
+        AND deleted = 0
+        AND LOWER(TRIM(useremail)) =
+          ${normalizedEmail}
+    `;
+
+    return;
+  }
+
+  await this.prisma.dvi_users.update({
+    where: {
+      userID: user.userID,
+    },
+    data: {
+      password: passwordHash,
+      updatedon: new Date(),
+    },
+  });
+}
+
   private async findActiveAgentByEmail(email: string) {
     const normalizedEmail = this.normalizeEmail(email);
     const rows = await this.prisma.$queryRaw<Array<{ agent_ID: number }>>`
@@ -257,8 +615,14 @@ export class AuthService {
    * Validate an existing user against dvi_users.
    * Supports bcrypt and the legacy PHP PwdHash format during migration.
  */
-  async validateUser(email: string, password: string) {
-    const user = await this.findActiveUserByEmail(email);
+async validateUser(
+  email: string,
+  password: string,
+) {
+  const user =
+    await this.findAuthenticationUserByEmail(
+      email,
+    );
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -285,87 +649,131 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    if (shouldUpgradeLegacyHash) {
-      const upgradedHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+   if (shouldUpgradeLegacyHash) {
+  const upgradedHash =
+    await bcrypt.hash(
+      password,
+      BCRYPT_ROUNDS,
+    );
 
-      await this.prisma.dvi_users.updateMany({
-        where: {
-          userID: user.userID,
-          password: storedHash,
-        },
-        data: { password: upgradedHash },
-      });
-    }
+  await this.savePasswordForUser(
+    user,
+    upgradedHash,
+  );
+}
 
     return user;
   }
 
-   async changePassword(
-    userId: string | number,
-    currentPassword: string,
-    newPassword: string,
-    confirmPassword: string,
+async changePassword(
+  userId: string | number,
+  currentPassword: string | undefined,
+  newPassword: string,
+  confirmPassword: string,
+) {
+  if (
+    !newPassword ||
+    !confirmPassword
   ) {
+    throw new BadRequestException(
+      'New password and confirm password are required',
+    );
+  }
+
+  if (newPassword.length < 6) {
+    throw new BadRequestException(
+      'New password must be at least 6 characters',
+    );
+  }
+
+  if (
+    newPassword !== confirmPassword
+  ) {
+    throw new BadRequestException(
+      'New password and confirm password do not match',
+    );
+  }
+
+  let resolvedUserId: bigint;
+
+  try {
+    resolvedUserId =
+      BigInt(userId);
+  } catch {
+    throw new BadRequestException(
+      'Invalid user account',
+    );
+  }
+
+  const sessionUser =
+    await this.prisma.dvi_users.findFirst({
+      where: {
+        userID: resolvedUserId,
+        deleted: 0,
+      },
+    });
+
+  if (!sessionUser) {
+  throw new BadRequestException(
+    'User account not found',
+  );
+}
+
+this.assertLoginAllowed(
+  sessionUser,
+);
+
+if (
+  Number(sessionUser.roleID || 0) !==
+  SystemRole.AGENT
+) {
+    throw new ForbiddenException(
+      'Only agents can manage their password here',
+    );
+  }
+
+ const user =
+  await this.resolveCanonicalAgentUser(
+    sessionUser,
+  );
+
+this.assertLoginAllowed(
+  user,
+);
+
+const storedHash =
+  String(user.password ?? '');
+
+  const hasExistingPassword =
+    storedHash.trim().length > 0;
+
+  /*
+   * Existing password:
+   * normal Change Password rules apply.
+   */
+  if (hasExistingPassword) {
+    if (!currentPassword) {
+      throw new BadRequestException(
+        'Current password is required',
+      );
+    }
+
     if (
-      !currentPassword ||
-      !newPassword ||
-      !confirmPassword
+      currentPassword ===
+      newPassword
     ) {
-      throw new BadRequestException(
-        'All password fields are required',
-      );
-    }
-
-    if (newPassword.length < 6) {
-      throw new BadRequestException(
-        'New password must be at least 6 characters',
-      );
-    }
-
-    if (newPassword !== confirmPassword) {
-      throw new BadRequestException(
-        'New password and confirm password do not match',
-      );
-    }
-
-    if (currentPassword === newPassword) {
       throw new BadRequestException(
         'New password must be different from current password',
       );
     }
 
-    let resolvedUserId: bigint;
-
-    try {
-      resolvedUserId =
-        BigInt(userId);
-    } catch {
-      throw new BadRequestException(
-        'Invalid user account',
-      );
-    }
-
-    const user =
-      await this.prisma.dvi_users.findFirst({
-        where: {
-          userID: resolvedUserId,
-          deleted: 0,
-        },
-      });
-
-    if (!user) {
-      throw new BadRequestException(
-        'User account not found',
-      );
-    }
-
-    const storedHash =
-      user.password ?? '';
-
-    let currentPasswordMatches = false;
+    let currentPasswordMatches =
+      false;
 
     if (
-      isBcryptPasswordHash(storedHash)
+      isBcryptPasswordHash(
+        storedHash,
+      )
     ) {
       try {
         currentPasswordMatches =
@@ -374,7 +782,8 @@ export class AuthService {
             storedHash,
           );
       } catch {
-        currentPasswordMatches = false;
+        currentPasswordMatches =
+          false;
       }
     } else {
       currentPasswordMatches =
@@ -389,30 +798,175 @@ export class AuthService {
         'Current password is incorrect',
       );
     }
-
-    const passwordHash =
-      await bcrypt.hash(
-        newPassword,
-        BCRYPT_ROUNDS,
-      );
-
-    await this.prisma.dvi_users.update({
-      where: {
-        userID: resolvedUserId,
-      },
-      data: {
-        password: passwordHash,
-        updatedon: new Date(),
-      },
-    });
-
-    return {
-      message:
-        'Password changed successfully',
-    };
   }
 
-  async login(email: string, password: string) {
+  /*
+   * No stored password:
+   * authenticated Agent may establish
+   * the first password without a fake
+   * "current password".
+   */
+  const passwordHash =
+    await bcrypt.hash(
+      newPassword,
+      BCRYPT_ROUNDS,
+    );
+
+  await this.savePasswordForUser(
+    user,
+    passwordHash,
+  );
+
+  return {
+  message:
+    hasExistingPassword
+      ? 'Password changed successfully'
+      : 'Password set successfully',
+};
+}
+
+async sendPasswordResetOtp(
+  email: string,
+) {
+  const normalizedEmail =
+    this.normalizeEmail(email);
+
+  const user =
+    await this.findAuthenticationUserByEmail(
+      normalizedEmail,
+    );
+
+  /*
+   * Forgot Password is deliberately limited
+   * to Agent accounts for this task.
+   *
+   * Do not change Admin / Staff / Vendor
+   * password behaviour here.
+   */
+  if (
+    !user ||
+    Number(user.roleID || 0) !==
+      SystemRole.AGENT
+  ) {
+    throw new UnauthorizedException(
+      'No active Agent account was found for this email.',
+    );
+  }
+
+  /*
+   * Pending/unapproved Agents must still
+   * activate their account first.
+   */
+  this.assertLoginAllowed(user);
+
+  return this.emailLoginOtp
+    .createAndSendOtp(
+      user.useremail ||
+        normalizedEmail,
+      'password-reset',
+    );
+}
+
+async resetPasswordWithOtp(
+  email: string,
+  otp: string,
+  newPassword: string,
+  confirmPassword: string,
+) {
+  if (
+    !email ||
+    !otp ||
+    !newPassword ||
+    !confirmPassword
+  ) {
+    throw new BadRequestException(
+      'Email, OTP and password fields are required',
+    );
+  }
+
+  if (newPassword.length < 6) {
+    throw new BadRequestException(
+      'New password must be at least 6 characters',
+    );
+  }
+
+  if (
+    newPassword !==
+    confirmPassword
+  ) {
+    throw new BadRequestException(
+      'New password and confirm password do not match',
+    );
+  }
+
+  const normalizedEmail =
+    this.normalizeEmail(email);
+
+  const sessionUser =
+    await this.findAuthenticationUserByEmail(
+      normalizedEmail,
+    );
+
+  if (
+    !sessionUser ||
+    Number(sessionUser.roleID || 0) !==
+      SystemRole.AGENT
+  ) {
+    throw new UnauthorizedException(
+      'No active Agent account was found for this email.',
+    );
+  }
+
+  this.assertLoginAllowed(
+    sessionUser,
+  );
+
+  const user =
+    await this.resolveCanonicalAgentUser(
+      sessionUser,
+    );
+
+  this.assertLoginAllowed(
+    user,
+  );
+
+  /*
+   * Password-reset OTP has its own purpose
+   * and its own table, so Login OTP and
+   * Registration OTP cannot be consumed here.
+   */
+  await this.emailLoginOtp.verifyOtp(
+    user.useremail ||
+      normalizedEmail,
+    otp,
+    'password-reset',
+  );
+
+  const passwordHash =
+    await bcrypt.hash(
+      newPassword,
+      BCRYPT_ROUNDS,
+    );
+
+  /*
+   * Uses the same safe duplicate synchronization
+   * as Change Password.
+   */
+  await this.savePasswordForUser(
+    user,
+    passwordHash,
+  );
+
+  return {
+    message:
+      'Password reset successfully',
+  };
+}
+
+async login(
+  email: string,
+  password: string,
+) {
     const user =
       await this.validateUser(
         email,
@@ -422,31 +976,52 @@ export class AuthService {
     return this.buildLoginResponse(user);
   }
 
-  async sendEmailLoginOtp(email: string) {
-    const user = await this.findActiveUserByEmail(email);
+async sendEmailLoginOtp(email: string) {
+  const user =
+    await this.findAuthenticationUserByEmail(
+      email,
+    );
 
-    if (!user) {
-      throw new UnauthorizedException('No active partner account was found for this email.');
-    }
-
-    this.assertLoginAllowed(user);
-
-    return this.emailLoginOtp.createAndSendOtp(user.useremail || email, 'login');
+  if (!user) {
+    throw new UnauthorizedException(
+      'No active partner account was found for this email.',
+    );
   }
 
-  async verifyEmailLoginOtp(email: string, otp: string) {
-    const user = await this.findActiveUserByEmail(email);
+  this.assertLoginAllowed(user);
 
-    if (!user) {
-      throw new UnauthorizedException('No active partner account was found for this email.');
-    }
+  return this.emailLoginOtp
+    .createAndSendOtp(
+      user.useremail || email,
+      'login',
+    );
+}
 
-    this.assertLoginAllowed(user);
+ async verifyEmailLoginOtp(
+  email: string,
+  otp: string,
+) {
+  const user =
+    await this.findAuthenticationUserByEmail(
+      email,
+    );
 
-    await this.emailLoginOtp.verifyOtp(user.useremail || email, otp, 'login');
-
-    return this.buildLoginResponse(user);
+  if (!user) {
+    throw new UnauthorizedException(
+      'No active partner account was found for this email.',
+    );
   }
+
+  this.assertLoginAllowed(user);
+
+  await this.emailLoginOtp.verifyOtp(
+    user.useremail || email,
+    otp,
+    'login',
+  );
+
+  return this.buildLoginResponse(user);
+}
 
   async sendRegistrationEmailOtp(email: string) {
     const existingUser = await this.findActiveUserByEmail(email);

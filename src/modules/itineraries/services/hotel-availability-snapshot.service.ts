@@ -1163,8 +1163,9 @@ export class HotelAvailabilitySnapshotService {
         });
       }
       // CREATE, RESET, and CHECK AVAILABILITY all need the same complete
-      // inventory snapshot. Live rows win automatically; offline rows are used
-      // only for a stay where no live selectable row exists.
+      // inventory snapshot. The recommendation package prefers unused live
+      // properties, then uses unused offline properties to fill later groups;
+      // this merge must retain both pools for that decision.
       const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
       const offlineRowsFromLive = new Map<number, any[]>();
       for (const row of (liveInventoryRows as any[])) {
@@ -2686,9 +2687,9 @@ export class HotelAvailabilitySnapshotService {
 
       // The compact `hotels` response is also used for the itinerary header.
       // Live and offline rows can exist for the same stay, but offline must
-      // never win merely because it was inserted first. Reset clears the
-      // selection, so a live supplier row must be the visible fallback when
-      // one exists; offline is only the fallback when no live row exists.
+      // not win merely because it was inserted first. Authoritative package
+      // selections are ranked first; this provider rank only orders remaining
+      // unselected display rows.
       const provider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
       if (provider === 'offline') return 2;
       if (row?.isBookable !== false && row?.isSelectable !== false) return 1;
@@ -5776,9 +5777,9 @@ export class HotelAvailabilitySnapshotService {
         continue;
       }
       // For non-authoritative legacy input, retain the existing provider
-      // precedence, but scope it to this exact route/date/group bucket. This
-      // keeps live inventory ahead of cheaper offline inventory without
-      // allowing another group's row to fill a missing key.
+      // precedence, but scope it to this exact route/date/group bucket. The
+      // recommendation package handles cross-group diversity; this branch
+      // must not invent an offline group from generic inventory.
       const liveOptions = selectionPool.filter((option: any) =>
         String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
       );

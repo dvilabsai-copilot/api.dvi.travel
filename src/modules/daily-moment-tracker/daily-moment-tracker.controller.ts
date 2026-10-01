@@ -1,6 +1,7 @@
 // FILE: src/modules/daily-moment-tracker/daily-moment-tracker.controller.ts
 
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -38,6 +39,49 @@ function dmRandomName(original: string) {
   const id = randomBytes(8).toString('hex');
   const ext = extname(original || '');
   return `${Date.now()}-${id}${ext}`;
+}
+
+
+function dmAttendanceName(
+  kind: "daily" | "final" | "car",
+  original: string,
+) {
+  const id =
+    randomBytes(8).toString("hex");
+
+  const ext =
+    extname(original || "");
+
+  return `attendance-${kind}-${Date.now()}-${id}${ext}`;
+}
+
+
+function dmHotspotPhotoName(
+  confirmedRouteHotspotId: number,
+  original: string,
+) {
+  const id =
+    randomBytes(8).toString("hex");
+
+  const ext =
+    extname(original || "");
+
+  return `hotspot-${confirmedRouteHotspotId}-${Date.now()}-${id}${ext}`;
+}
+
+
+function dmHotspotVoiceName(
+  confirmedRouteHotspotId: number,
+  original: string,
+) {
+  const id =
+    randomBytes(8).toString("hex");
+
+  const ext =
+    extname(original || "") ||
+    ".webm";
+
+  return `hotspot-voice-${confirmedRouteHotspotId}-${Date.now()}-${id}${ext}`;
 }
 
 function resolveDmSpeedometerDir(): string {
@@ -98,6 +142,594 @@ async getDriverAssignmentShareDetails(
 async getDayView(@Param('planId', ParseIntPipe) planId: number) {
   return this.service.getDayView(planId);
 }
+
+
+ // Driver share attendance / trip evidence
+
+  @Post(
+    'driver-assignment/:driverAssignmentId/attendance-photo/:kind',
+  )
+  @Public()
+  @ApiOperation({
+    summary:
+      'Upload daily/final driver attendance photo from shared driver link',
+  })
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination:
+          (_req, _file, cb) =>
+            cb(
+              null,
+              resolveDmGalleryDir(),
+            ),
+
+        filename:
+          (req, file, cb) => {
+            const requestedKind =
+              String(
+                req.params?.kind || '',
+              );
+
+            const kind =
+              requestedKind === 'final'
+                ? 'final'
+                : requestedKind === 'car'
+                  ? 'car'
+                  : 'daily';
+
+            cb(
+              null,
+              dmAttendanceName(
+                kind,
+                file.originalname,
+              ),
+            );
+          },
+      }),
+
+      limits: {
+        fileSize:
+          10 * 1024 * 1024,
+      },
+
+      fileFilter:
+        (_req, file, cb) => {
+          const ok =
+            /^image\//.test(
+              file.mimetype,
+            );
+
+          cb(
+            ok
+              ? null
+              : new Error(
+                  'Only image/* files are allowed',
+                ),
+            ok,
+          );
+        },
+    }),
+  )
+  async uploadPublicDriverAttendancePhoto(
+    @Param(
+      'driverAssignmentId',
+      ParseIntPipe,
+    )
+    driverAssignmentId: number,
+
+    @Param('kind')
+    kind: string,
+
+    @UploadedFile()
+    file: Express.Multer.File,
+
+    @Body('itineraryPlanId')
+    itineraryPlanId: string,
+
+    @Body('itineraryRouteId')
+    itineraryRouteId: string,
+  ) {
+    if (
+      kind !== 'daily' &&
+      kind !== 'final' &&
+      kind !== 'car'
+    ) {
+      throw new BadRequestException(
+        'kind must be daily, final or car',
+      );
+    }
+
+    return this.service
+      .savePublicDriverAttendancePhoto(
+        driverAssignmentId,
+        Number(itineraryPlanId),
+        Number(itineraryRouteId),
+        file,
+        kind,
+      );
+  }
+
+
+  @Post(
+    'driver-assignment/:driverAssignmentId/kilometer/opening-image',
+  )
+  @Public()
+  @ApiOperation({
+    summary:
+      'Upload opening KM image from shared driver link',
+  })
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination:
+          (_req, _file, cb) =>
+            cb(
+              null,
+              resolveDmSpeedometerDir(),
+            ),
+
+        filename:
+          (_req, file, cb) =>
+            cb(
+              null,
+              dmRandomName(
+                file.originalname,
+              ),
+            ),
+      }),
+
+      limits: {
+        fileSize:
+          10 * 1024 * 1024,
+      },
+
+      fileFilter:
+        (_req, file, cb) => {
+          const ok =
+            /^image\//.test(
+              file.mimetype,
+            );
+
+          cb(
+            ok
+              ? null
+              : new Error(
+                  'Only image/* files are allowed',
+                ),
+            ok,
+          );
+        },
+    }),
+  )
+  async uploadPublicDriverOpeningKmImage(
+    @Param(
+      'driverAssignmentId',
+      ParseIntPipe,
+    )
+    driverAssignmentId: number,
+
+    @UploadedFile()
+    file: Express.Multer.File,
+
+    @Body('itineraryPlanId')
+    itineraryPlanId: string,
+
+    @Body('itineraryRouteId')
+    itineraryRouteId: string,
+  ) {
+    return this.service
+      .savePublicDriverOpeningKmImage(
+        driverAssignmentId,
+        Number(itineraryPlanId),
+        Number(itineraryRouteId),
+        file,
+      );
+  }
+
+
+  @Post(
+    'driver-assignment/:driverAssignmentId/kilometer/closing-image',
+  )
+  @Public()
+  @ApiOperation({
+    summary:
+      'Upload closing/final KM image from shared driver link',
+  })
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination:
+          (_req, _file, cb) =>
+            cb(
+              null,
+              resolveDmSpeedometerDir(),
+            ),
+
+        filename:
+          (_req, file, cb) =>
+            cb(
+              null,
+              dmRandomName(
+                file.originalname,
+              ),
+            ),
+      }),
+
+      limits: {
+        fileSize:
+          10 * 1024 * 1024,
+      },
+
+      fileFilter:
+        (_req, file, cb) => {
+          const ok =
+            /^image\//.test(
+              file.mimetype,
+            );
+
+          cb(
+            ok
+              ? null
+              : new Error(
+                  'Only image/* files are allowed',
+                ),
+            ok,
+          );
+        },
+    }),
+  )
+  async uploadPublicDriverClosingKmImage(
+    @Param(
+      'driverAssignmentId',
+      ParseIntPipe,
+    )
+    driverAssignmentId: number,
+
+    @UploadedFile()
+    file: Express.Multer.File,
+
+    @Body('itineraryPlanId')
+    itineraryPlanId: string,
+
+    @Body('itineraryRouteId')
+    itineraryRouteId: string,
+  ) {
+    return this.service
+      .savePublicDriverClosingKmImage(
+        driverAssignmentId,
+        Number(itineraryPlanId),
+        Number(itineraryRouteId),
+        file,
+      );
+  }
+
+
+  @Post(
+    'driver-assignment/:driverAssignmentId/kilometer/opening',
+  )
+  @Public()
+  @ApiOperation({
+    summary:
+      'Start driver attendance day with opening KM',
+  })
+  async savePublicDriverOpeningKm(
+    @Param(
+      'driverAssignmentId',
+      ParseIntPipe,
+    )
+    driverAssignmentId: number,
+
+    @Body('itineraryPlanId')
+    itineraryPlanId: number,
+
+    @Body('itineraryRouteId')
+    itineraryRouteId: number,
+
+    @Body('startingKilometer')
+    startingKilometer: string,
+  ) {
+    return this.service
+      .savePublicDriverOpeningKm(
+        driverAssignmentId,
+        Number(itineraryPlanId),
+        Number(itineraryRouteId),
+        String(
+          startingKilometer || '',
+        ),
+      );
+  }
+
+
+  @Post(
+    'driver-assignment/:driverAssignmentId/kilometer/closing',
+  )
+  @Public()
+  @ApiOperation({
+    summary:
+      'Complete driver attendance day/trip with closing KM',
+  })
+  async savePublicDriverClosingKm(
+    @Param(
+      'driverAssignmentId',
+      ParseIntPipe,
+    )
+    driverAssignmentId: number,
+
+    @Body('itineraryPlanId')
+    itineraryPlanId: number,
+
+    @Body('itineraryRouteId')
+    itineraryRouteId: number,
+
+    @Body('closingKilometer')
+    closingKilometer: string,
+  ) {
+    return this.service
+      .savePublicDriverClosingKm(
+        driverAssignmentId,
+        Number(itineraryPlanId),
+        Number(itineraryRouteId),
+        String(
+          closingKilometer || '',
+        ),
+      );
+  }
+
+
+
+
+  @Post(
+    'driver-assignment/:driverAssignmentId/hotspot/:confirmedRouteHotspotId/photo',
+  )
+  @Public()
+  @ApiOperation({
+    summary:
+      'Upload sightseeing photo from driver share link',
+  })
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination:
+          (_req, _file, cb) =>
+            cb(
+              null,
+              resolveDmGalleryDir(),
+            ),
+
+        filename:
+          (req, file, cb) => {
+            const hotspotId =
+              Number(
+                req.params
+                  ?.confirmedRouteHotspotId ||
+                0,
+              );
+
+            cb(
+              null,
+              dmHotspotPhotoName(
+                hotspotId,
+                file.originalname,
+              ),
+            );
+          },
+      }),
+
+      limits: {
+        fileSize:
+          10 * 1024 * 1024,
+      },
+
+      fileFilter:
+        (_req, file, cb) => {
+          const ok =
+            /^image\//.test(
+              file.mimetype,
+            );
+
+          cb(
+            ok
+              ? null
+              : new Error(
+                  'Only image/* files are allowed',
+                ),
+            ok,
+          );
+        },
+    }),
+  )
+  async uploadPublicDriverHotspotPhoto(
+    @Param(
+      'driverAssignmentId',
+      ParseIntPipe,
+    )
+    driverAssignmentId: number,
+
+    @Param(
+      'confirmedRouteHotspotId',
+      ParseIntPipe,
+    )
+    confirmedRouteHotspotId: number,
+
+    @UploadedFile()
+    file: Express.Multer.File,
+
+    @Body('itineraryPlanId')
+    itineraryPlanId: string,
+
+    @Body('itineraryRouteId')
+    itineraryRouteId: string,
+  ) {
+    return this.service
+      .savePublicDriverHotspotPhoto(
+        driverAssignmentId,
+        Number(
+          itineraryPlanId,
+        ),
+        Number(
+          itineraryRouteId,
+        ),
+        confirmedRouteHotspotId,
+        file,
+      );
+  }
+
+
+  @Post(
+    'driver-assignment/:driverAssignmentId/hotspot/:confirmedRouteHotspotId/voice',
+  )
+  @Public()
+  @ApiOperation({
+    summary:
+      'Upload Not Completed voice message from driver share link',
+  })
+  @UseInterceptors(
+    FileInterceptor('audio', {
+      storage: diskStorage({
+        destination:
+          (_req, _file, cb) =>
+            cb(
+              null,
+              resolveDmGalleryDir(),
+            ),
+
+        filename:
+          (req, file, cb) => {
+            const hotspotId =
+              Number(
+                req.params
+                  ?.confirmedRouteHotspotId ||
+                0,
+              );
+
+            cb(
+              null,
+              dmHotspotVoiceName(
+                hotspotId,
+                file.originalname,
+              ),
+            );
+          },
+      }),
+
+      limits: {
+        fileSize:
+          15 * 1024 * 1024,
+      },
+
+      fileFilter:
+        (_req, file, cb) => {
+          const mime =
+            String(
+              file.mimetype || "",
+            ).toLowerCase();
+
+          const ok =
+            mime.startsWith("audio/") ||
+            mime === "video/webm";
+
+          cb(
+            ok
+              ? null
+              : new Error(
+                  "Only recorded audio files are allowed",
+                ),
+            ok,
+          );
+        },
+    }),
+  )
+  async uploadPublicDriverHotspotVoice(
+    @Param(
+      'driverAssignmentId',
+      ParseIntPipe,
+    )
+    driverAssignmentId: number,
+
+    @Param(
+      'confirmedRouteHotspotId',
+      ParseIntPipe,
+    )
+    confirmedRouteHotspotId: number,
+
+    @UploadedFile()
+    file: Express.Multer.File,
+
+    @Body('itineraryPlanId')
+    itineraryPlanId: string,
+
+    @Body('itineraryRouteId')
+    itineraryRouteId: string,
+  ) {
+    return this.service
+      .savePublicDriverHotspotVoice(
+        driverAssignmentId,
+        Number(
+          itineraryPlanId,
+        ),
+        Number(
+          itineraryRouteId,
+        ),
+        confirmedRouteHotspotId,
+        file,
+      );
+  }
+
+
+  @Patch(
+    'driver-assignment/:driverAssignmentId/hotspot-status',
+  )
+  @Public()
+  @ApiOperation({
+    summary:
+      'Update sightseeing Completed / Not Completed from driver share link',
+  })
+  async updatePublicDriverHotspotStatus(
+    @Param(
+      'driverAssignmentId',
+      ParseIntPipe,
+    )
+    driverAssignmentId: number,
+
+    @Body('itineraryPlanId')
+    itineraryPlanId: number,
+
+    @Body('itineraryRouteId')
+    itineraryRouteId: number,
+
+    @Body('confirmedRouteHotspotId')
+    confirmedRouteHotspotId: number,
+
+    @Body('status')
+    status: number,
+
+    @Body('description')
+    description?: string,
+  ) {
+    await this.service
+      .updatePublicDriverHotspotStatus(
+        driverAssignmentId,
+        Number(
+          itineraryPlanId,
+        ),
+        Number(
+          itineraryRouteId,
+        ),
+        Number(
+          confirmedRouteHotspotId,
+        ),
+        Number(
+          status,
+        ),
+        description,
+      );
+
+    return {
+      success: true,
+    };
+  }
+
 
  // Charges
   @Get('charges')

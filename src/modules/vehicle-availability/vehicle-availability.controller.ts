@@ -108,6 +108,55 @@ export class VehicleAvailabilityController {
     );
   }
 
+
+  // ---------------------------------------------------------------------------
+  // TRANSPORT ALLOCATION
+  // ---------------------------------------------------------------------------
+
+  @Get('allocation-vehicles')
+  @ApiOperation({
+    summary:
+      'Real vehicle availability for Transport Allocation by itinerary plan',
+  })
+  async allocationVehicles(
+    @Query('itineraryPlanId')
+    itineraryPlanId?: string,
+  ) {
+    return this.service.listAllocationVehicles(
+      itineraryPlanId
+        ? Number(itineraryPlanId)
+        : 0,
+    );
+  }
+
+  @Get('allocation-drivers')
+  @ApiOperation({
+    summary:
+      'Real driver availability for Transport Allocation',
+  })
+  async allocationDrivers(
+    @Query('itineraryPlanId')
+    itineraryPlanId?: string,
+    @Query('vendorId')
+    vendorId?: string,
+    @Query('vendorVehicleTypeId')
+    vendorVehicleTypeId?: string,
+  ) {
+    return this.service.listAllocationDrivers({
+      itineraryPlanId:
+        itineraryPlanId
+          ? Number(itineraryPlanId)
+          : 0,
+      vendorId:
+        vendorId
+          ? Number(vendorId)
+          : 0,
+      vendorVehicleTypeId:
+        vendorVehicleTypeId
+          ? Number(vendorVehicleTypeId)
+          : 0,
+    });
+  }
   @Get('check-vehicle-duplication')
   @ApiOperation({ summary: 'PHP parity: duplicate checks for registration/engine/chassis/insurance' })
   async checkVehicleDuplication(

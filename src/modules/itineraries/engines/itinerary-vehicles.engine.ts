@@ -145,10 +145,9 @@ private async applyFinalVehicleAssignments(
     );
   }
 
-  for (const [
-    vehicleTypeId,
-    requestedVehicleCount,
-  ] of requiredCountByType.entries()) {
+ for (const [
+  vehicleTypeId,
+] of requiredCountByType.entries()) {
     await (
       tx as any
     ).dvi_itinerary_plan_vendor_eligible_list.updateMany({
@@ -322,16 +321,13 @@ const manualVendorCandidates = exactManualCandidate
         ? [...manualVendorCandidates, ...otherCandidates]
         : [...otherCandidates];
 
-    const assignedRows = orderedCandidates.slice(
-      0,
-      Math.max(1, Number(requestedVehicleCount || 1)),
-    );
+const assignedRows = orderedCandidates.slice(0, 1);
 
-    const assignedIds = assignedRows
-      .map((row: any) =>
-        Number(row.itinerary_plan_vendor_eligible_ID || 0),
-      )
-      .filter((id: number) => id > 0);
+const assignedIds = assignedRows
+  .map((row: any) =>
+    Number(row.itinerary_plan_vendor_eligible_ID || 0),
+  )
+  .filter((id: number) => id > 0);
 
     if (!assignedIds.length) {
       continue;
@@ -1854,87 +1850,88 @@ const manualVendorCandidates = exactManualCandidate
             vehicleTotalAmount + vehicleGstAmount + vendorMarginAmount + vendorMarginGstAmount,
           );
 
-          const baseData: any = {
-            itinerary_plan_id: planId,
-            itineary_plan_assigned_status: 0,
-            vehicle_type_id: planVehicleTypeId,
-            vendor_id: vendorId,
-            vendor_vehicle_type_id: vendorVehicleTypeId,
-            total_vehicle_qty: 1,
-            vehicle_count: 1,
-            vehicle_id: vehicleId,
-            vendor_branch_id: vendorBranchId,
-            vehicle_orign: vehicleOrigin,
-            outstation_allowed_km_per_day: String(allowedKmPerDayNum),
-            total_kms: String(totalKmsNum),
-            total_outstation_km: String(totalOutstationKmNum),
-            total_time: String(totalTimeStr),
-            total_rental_charges: totalRentalNum,
-            total_toll_charges: totalTollCharges,
-            total_parking_charges: totalParkingCharges,
-            total_driver_charges: totalDriverCharges,
-            total_permit_charges: totalPermitCharges,
-            extra_km_rate: String(extraKmRateNum),
-            total_allowed_kms: String(totalAllowedKmsNum),
-            total_extra_kms: String(totalExtraKmsNum),
-            total_extra_kms_charge: totalExtraKmsChargeNum,
-            vehicle_gst_type: vehicleGstType,
-            vehicle_gst_percentage: vehicleGstPercentage,
-            vehicle_gst_amount: vehicleGstAmount,
-            vehicle_total_amount: vehicleTotalAmount,
-            vendor_margin_percentage: vendorMarginPercentage,
-            vendor_margin_gst_type: vendorMarginGstType,
-            vendor_margin_gst_percentage: vendorMarginGstPercentage,
-            vendor_margin_amount: vendorMarginAmount,
-            vendor_margin_gst_amount: vendorMarginGstAmount,
-            vehicle_grand_total: vehicleGrandTotalNum,
-            createdby: createdBy,
-            createdon: new Date(),
-            updatedon: new Date(),
-            status: 1,
-            deleted: 0,
-          };
+      const baseData: any = {
+  itinerary_plan_id: planId,
+  itineary_plan_assigned_status: 0,
+  vehicle_type_id: planVehicleTypeId,
+  vendor_id: vendorId,
+  vendor_vehicle_type_id: vendorVehicleTypeId,
+  total_vehicle_qty: requiredCount,
+  vehicle_count: requiredCount,
+  vehicle_id: vehicleId,
+  vendor_branch_id: vendorBranchId,
+  vehicle_orign: vehicleOrigin,
+  outstation_allowed_km_per_day: String(allowedKmPerDayNum),
+  total_kms: String(totalKmsNum),
+  total_outstation_km: String(totalOutstationKmNum),
+  total_time: String(totalTimeStr),
+  total_rental_charges: totalRentalNum,
+  total_toll_charges: totalTollCharges,
+  total_parking_charges: totalParkingCharges,
+  total_driver_charges: totalDriverCharges,
+  total_permit_charges: totalPermitCharges,
+  extra_km_rate: String(extraKmRateNum),
+  total_allowed_kms: String(totalAllowedKmsNum),
+  total_extra_kms: String(totalExtraKmsNum),
+  total_extra_kms_charge: totalExtraKmsChargeNum,
+  vehicle_gst_type: vehicleGstType,
+  vehicle_gst_percentage: vehicleGstPercentage,
+  vehicle_gst_amount: vehicleGstAmount,
+  vehicle_total_amount: vehicleTotalAmount,
+  vendor_margin_percentage: vendorMarginPercentage,
+  vendor_margin_gst_type: vendorMarginGstType,
+  vendor_margin_gst_percentage: vendorMarginGstPercentage,
+  vendor_margin_amount: vendorMarginAmount,
+  vendor_margin_gst_amount: vendorMarginGstAmount,
+  vehicle_grand_total: vehicleGrandTotalNum,
+  createdby: createdBy,
+  createdon: new Date(),
+  updatedon: new Date(),
+  status: 1,
+  deleted: 0,
+};
 
-          if (currentQty < requiredCount) {
-            this.logSql(
-              "ELIGIBLE_INSERT",
-              this.buildInsertSql(
-                "dvi_itinerary_plan_vendor_eligible_list",
-                baseData,
-              ),
-              { data: baseData },
-            );
+if (currentQty < requiredCount) {
+  this.logSql(
+    "ELIGIBLE_INSERT",
+    this.buildInsertSql(
+      "dvi_itinerary_plan_vendor_eligible_list",
+      baseData,
+    ),
+    { data: baseData },
+  );
 
-            pendingEligibleCreates.push(baseData);
-            vendorIdsUsed.add(vendorId);
+  pendingEligibleCreates.push(baseData);
+  vendorIdsUsed.add(vendorId);
 
-            currentQty += 1;
-            existingQtyCache.set(comboKey, currentQty);
-          } else {
-            const updateWhere = {
-              itinerary_plan_id: planId,
-              vendor_vehicle_type_id: vendorVehicleTypeId,
-              vehicle_id: vehicleId,
-              vendor_branch_id: vendorBranchId,
-            };
+  currentQty = requiredCount;
+  existingQtyCache.set(comboKey, currentQty);
+} else {
+  const updateWhere = {
+    itinerary_plan_id: planId,
+    vendor_vehicle_type_id: vendorVehicleTypeId,
+    vehicle_id: vehicleId,
+    vendor_branch_id: vendorBranchId,
+  };
 
-            const updateData = { ...baseData, createdon: undefined };
-            this.logSql(
-              "ELIGIBLE_UPDATE_MANY",
-              this.buildUpdateSql(
-                "dvi_itinerary_plan_vendor_eligible_list",
-                updateData,
-                updateWhere,
-              ),
-              { where: updateWhere, data: updateData },
-            );
+  const updateData = { ...baseData, createdon: undefined };
 
-            const updRes =
-              await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
-                where: updateWhere,
-                data: updateData,
-              });
-          }
+  this.logSql(
+    "ELIGIBLE_UPDATE_MANY",
+    this.buildUpdateSql(
+      "dvi_itinerary_plan_vendor_eligible_list",
+      updateData,
+      updateWhere,
+    ),
+    { where: updateWhere, data: updateData },
+  );
+
+const updRes =
+  await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
+    where: updateWhere,
+    data: updateData,
+  });
+}
         }
       }
     }

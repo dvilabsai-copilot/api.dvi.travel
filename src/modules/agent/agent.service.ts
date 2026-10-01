@@ -1321,19 +1321,56 @@ async updateConfig(agentId: number, payload: UpdateAgentConfigDto) {
       await tx.dvi_agent_configuration.create({ data: { agent_id: agentId, createdby: 0, createdon: now, ...configData } });
     }
 
-    if (payload.password?.trim()) {
-      const user = await tx.dvi_users.findFirst({
-        where: { agent_id: agentId, deleted: 0 },
-        orderBy: { userID: 'desc' },
-        select: { userID: true },
-      });
-      if (user) {
-        await tx.dvi_users.update({
-          where: { userID: user.userID },
-          data: { password: await bcrypt.hash(payload.password.trim(), 10), updatedon: now },
-        });
-      }
-    }
+ if (payload.password?.trim()) {
+  const passwordHash =
+    await bcrypt.hash(
+      payload.password.trim(),
+      10,
+    );
+
+  /*
+   * Preserve the existing Agent-management rule:
+   * the newest Agent login row is treated as current.
+   *
+   * Then synchronize only true duplicate rows having
+   * the same Agent + same email.
+   */
+  const targetUser =
+    await tx.dvi_users.findFirst({
+      where: {
+        agent_id: agentId,
+        roleID: 4,
+        deleted: 0,
+      },
+      orderBy: {
+        userID: "desc",
+      },
+      select: {
+        useremail: true,
+      },
+    });
+
+  const normalizedEmail =
+    String(
+      targetUser?.useremail || "",
+    )
+      .trim()
+      .toLowerCase();
+
+  if (normalizedEmail) {
+    await tx.$executeRaw`
+      UPDATE dvi_users
+      SET
+        password = ${passwordHash},
+        updatedon = ${now}
+      WHERE agent_id = ${agentId}
+        AND roleID = 4
+        AND deleted = 0
+        AND LOWER(TRIM(useremail)) =
+          ${normalizedEmail}
+    `;
+  }
+}
   });
 
   return this.getConfig(agentId);
