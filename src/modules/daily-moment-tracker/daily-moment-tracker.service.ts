@@ -70,6 +70,667 @@ export class DailyMomentTrackerService {
     };
   }
 
+
+  private async requirePublicDriverRouteAccess(
+    driverAssignmentId: number,
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+  ) {
+    if (
+      !driverAssignmentId ||
+      !itineraryPlanId ||
+      !itineraryRouteId
+    ) {
+      throw new BadRequestException(
+        "Driver assignment, itinerary plan and route are required",
+      );
+    }
+
+    const assignment =
+      await this.prisma
+        .dvi_confirmed_itinerary_vendor_driver_assigned
+        .findFirst({
+          where: {
+            driver_assigned_ID:
+              driverAssignmentId,
+
+            itinerary_plan_id:
+              itineraryPlanId,
+
+            status: 1,
+            deleted: 0,
+            assigned_driver_status: 1,
+          },
+
+          select: {
+            driver_assigned_ID: true,
+            itinerary_plan_id: true,
+            driver_id: true,
+            vehicle_id: true,
+            vendor_id: true,
+          },
+        });
+
+    if (!assignment) {
+      throw new BadRequestException(
+        "Driver assignment is not valid for this itinerary",
+      );
+    }
+
+    const route =
+      await this.prisma
+        .dvi_confirmed_itinerary_route_details
+        .findFirst({
+          where: {
+            itinerary_plan_ID:
+              itineraryPlanId,
+
+            itinerary_route_ID:
+              itineraryRouteId,
+
+            status: 1,
+            deleted: 0,
+          },
+
+          select: {
+            itinerary_route_ID: true,
+            driver_trip_completed: true,
+            no_of_days: true,
+          },
+        });
+
+    if (!route) {
+      throw new BadRequestException(
+        "Itinerary route was not found",
+      );
+    }
+
+    return {
+      assignment,
+      route,
+    };
+  }
+
+
+  async savePublicDriverAttendancePhoto(
+    driverAssignmentId: number,
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    file: Express.Multer.File | undefined,
+    kind: "daily" | "final" | "car",
+  ) {
+    if (!file) {
+      throw new BadRequestException(
+        "Driver photo is required",
+      );
+    }
+
+    const { assignment, route } =
+      await this.requirePublicDriverRouteAccess(
+        driverAssignmentId,
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (
+      route.driver_trip_completed === 1
+    ) {
+      throw new BadRequestException(
+        "This day is already completed",
+      );
+    }
+
+    return this.saveDayImages(
+      itineraryPlanId,
+      itineraryRouteId,
+      [file],
+      Number(
+        assignment.driver_id || 0,
+      ),
+    );
+  }
+
+
+  async savePublicDriverOpeningKmImage(
+    driverAssignmentId: number,
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    file?: Express.Multer.File,
+  ) {
+    const { route } =
+      await this.requirePublicDriverRouteAccess(
+        driverAssignmentId,
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (
+      route.driver_trip_completed === 1
+    ) {
+      throw new BadRequestException(
+        "This day is already completed",
+      );
+    }
+
+    return this.saveOpeningKmImage(
+      itineraryPlanId,
+      itineraryRouteId,
+      file,
+    );
+  }
+
+
+  async savePublicDriverClosingKmImage(
+    driverAssignmentId: number,
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    file?: Express.Multer.File,
+  ) {
+    const { route } =
+      await this.requirePublicDriverRouteAccess(
+        driverAssignmentId,
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (
+      route.driver_trip_completed === 1
+    ) {
+      throw new BadRequestException(
+        "This day is already completed",
+      );
+    }
+
+    return this.saveClosingKmImage(
+      itineraryPlanId,
+      itineraryRouteId,
+      file,
+    );
+  }
+
+
+  private async getPublicDriverAttendanceEvidence(
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+  ) {
+    const vehicleRow =
+      await this.prisma
+        .dvi_confirmed_itinerary_plan_vendor_vehicle_details
+        .findFirst({
+          where: {
+            itinerary_plan_id:
+              itineraryPlanId,
+
+            itinerary_route_id:
+              itineraryRouteId,
+
+            deleted: 0,
+            status: 1,
+          },
+
+          orderBy: {
+            confirmed_itinerary_plan_vendor_vehicle_details_ID:
+              "asc",
+          },
+
+          select: {
+            driver_opening_km: true,
+            driver_closing_km: true,
+            opening_speedmeter_image:
+              true,
+            closing_speedmeter_image:
+              true,
+          },
+        });
+
+    if (!vehicleRow) {
+      throw new BadRequestException(
+        "Vehicle row not found for this route",
+      );
+    }
+
+    const photoRows =
+      await this.prisma
+        .dvi_confirmed_driver_uploadimage
+        .findMany({
+          where: {
+            itinerary_plan_ID:
+              itineraryPlanId,
+
+            itinerary_route_ID:
+              itineraryRouteId,
+
+            deleted: 0,
+            status: 1,
+          },
+
+          select: {
+            driver_upload_image: true,
+          },
+        });
+
+    const photoNames =
+      photoRows
+        .map((row) =>
+          String(
+            row.driver_upload_image || "",
+          ),
+        )
+        .filter(Boolean);
+
+    return {
+      vehicleRow,
+
+      hasDailyPhoto:
+        photoNames.some((name) =>
+          name.startsWith(
+            "attendance-daily-",
+          ),
+        ),
+
+      hasFinalPhoto:
+        photoNames.some((name) =>
+          name.startsWith(
+            "attendance-final-",
+          ),
+        ),
+
+      hasCarPhoto:
+        photoNames.some((name) =>
+          name.startsWith(
+            "attendance-car-",
+          ),
+        ),
+    };
+  }
+
+
+  async savePublicDriverOpeningKm(
+    driverAssignmentId: number,
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    startingKilometer: string,
+  ) {
+    const { route } =
+      await this.requirePublicDriverRouteAccess(
+        driverAssignmentId,
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (
+      route.driver_trip_completed === 1
+    ) {
+      throw new BadRequestException(
+        "This day is already completed",
+      );
+    }
+
+    const evidence =
+      await this.getPublicDriverAttendanceEvidence(
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (!evidence.hasDailyPhoto) {
+      throw new BadRequestException(
+        "Upload the driver photo before starting the day",
+      );
+    }
+
+    if (!evidence.hasCarPhoto) {
+      throw new BadRequestException(
+        "Upload the car photo before starting the day",
+      );
+    }
+
+    if (
+      !evidence.vehicleRow
+        .opening_speedmeter_image
+    ) {
+      throw new BadRequestException(
+        "Upload the opening KM image before starting the day",
+      );
+    }
+
+    await this.saveOpeningKm({
+      itineraryPlanId,
+      itineraryRouteId,
+      startingKilometer,
+    });
+
+    return {
+      success: true,
+    };
+  }
+
+
+  async savePublicDriverClosingKm(
+    driverAssignmentId: number,
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    closingKilometer: string,
+  ) {
+    const { route } =
+      await this.requirePublicDriverRouteAccess(
+        driverAssignmentId,
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (
+      route.driver_trip_completed === 1
+    ) {
+      return {
+        success: true,
+        completed: true,
+      };
+    }
+
+    const evidence =
+      await this.getPublicDriverAttendanceEvidence(
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (!evidence.hasDailyPhoto) {
+      throw new BadRequestException(
+        "Driver photo is required before completing the day",
+      );
+    }
+
+    if (
+      Number(
+        evidence.vehicleRow
+          .driver_opening_km || 0,
+      ) <= 0
+    ) {
+      throw new BadRequestException(
+        "Opening KM must be saved before completing the day",
+      );
+    }
+
+    if (
+      !evidence.vehicleRow
+        .opening_speedmeter_image
+    ) {
+      throw new BadRequestException(
+        "Opening KM image is required",
+      );
+    }
+
+    if (
+      !evidence.vehicleRow
+        .closing_speedmeter_image
+    ) {
+      throw new BadRequestException(
+        "Closing KM image is required before completing the day",
+      );
+    }
+
+    const routes =
+      await this.prisma
+        .dvi_confirmed_itinerary_route_details
+        .findMany({
+          where: {
+            itinerary_plan_ID:
+              itineraryPlanId,
+
+            status: 1,
+            deleted: 0,
+          },
+
+          orderBy: {
+            no_of_days: "asc",
+          },
+
+          select: {
+            itinerary_route_ID: true,
+          },
+        });
+
+    const finalRouteId =
+      Number(
+        routes[
+          routes.length - 1
+        ]?.itinerary_route_ID || 0,
+      );
+
+    const isFinalDay =
+      finalRouteId ===
+      Number(itineraryRouteId);
+
+    if (
+      isFinalDay &&
+      !evidence.hasFinalPhoto
+    ) {
+      throw new BadRequestException(
+        "Final driver photo is required before completing the trip",
+      );
+    }
+
+    /*
+     * IMPORTANT:
+     * saveClosingKm is deliberately called LAST.
+     *
+     * Existing DVI behavior marks the route completed
+     * when closing KM is saved, so all required images
+     * have already been validated before this call.
+     */
+    await this.saveClosingKm({
+      itineraryPlanId,
+      itineraryRouteId,
+      closingKilometer,
+    });
+
+    return {
+      success: true,
+      completed: true,
+      tripCompleted: isFinalDay,
+    };
+  }
+
+
+
+
+  async savePublicDriverHotspotPhoto(
+    driverAssignmentId: number,
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    confirmedRouteHotspotId: number,
+    file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException(
+        "Sightseeing photo is required",
+      );
+    }
+
+    const { assignment, route } =
+      await this.requirePublicDriverRouteAccess(
+        driverAssignmentId,
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (
+      route.driver_trip_completed === 1
+    ) {
+      throw new BadRequestException(
+        "This day is already completed",
+      );
+    }
+
+    const hotspot =
+      await this.prisma
+        .dvi_confirmed_itinerary_route_hotspot_details
+        .findFirst({
+          where: {
+            confirmed_route_hotspot_ID:
+              confirmedRouteHotspotId,
+
+            itinerary_plan_ID:
+              itineraryPlanId,
+
+            itinerary_route_ID:
+              itineraryRouteId,
+
+            item_type: 4,
+            deleted: 0,
+            status: 1,
+          },
+
+          select: {
+            confirmed_route_hotspot_ID:
+              true,
+          },
+        });
+
+    if (!hotspot) {
+      throw new BadRequestException(
+        "Sightseeing was not found for this driver day",
+      );
+    }
+
+    return this.saveDayImages(
+      itineraryPlanId,
+      itineraryRouteId,
+      [file],
+      Number(
+        assignment.driver_id || 0,
+      ),
+    );
+  }
+
+
+  async updatePublicDriverHotspotStatus(
+    driverAssignmentId: number,
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    confirmedRouteHotspotId: number,
+    status: number,
+    description?: string,
+  ): Promise<void> {
+    const { route } =
+      await this.requirePublicDriverRouteAccess(
+        driverAssignmentId,
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (
+      route.driver_trip_completed === 1
+    ) {
+      throw new BadRequestException(
+        "This day is already completed",
+      );
+    }
+
+    if (
+      status !== 1 &&
+      status !== 2
+    ) {
+      throw new BadRequestException(
+        "Sightseeing status must be Completed or Not Completed",
+      );
+    }
+
+    const hotspot =
+      await this.prisma
+        .dvi_confirmed_itinerary_route_hotspot_details
+        .findFirst({
+          where: {
+            confirmed_route_hotspot_ID:
+              confirmedRouteHotspotId,
+
+            itinerary_plan_ID:
+              itineraryPlanId,
+
+            itinerary_route_ID:
+              itineraryRouteId,
+
+            item_type: 4,
+            deleted: 0,
+            status: 1,
+          },
+
+          select: {
+            confirmed_route_hotspot_ID:
+              true,
+          },
+        });
+
+    if (!hotspot) {
+      throw new BadRequestException(
+        "Sightseeing was not found for this driver day",
+      );
+    }
+
+    if (status === 1) {
+      const photo =
+        await this.prisma
+          .dvi_confirmed_driver_uploadimage
+          .findFirst({
+            where: {
+              itinerary_plan_ID:
+                itineraryPlanId,
+
+              itinerary_route_ID:
+                itineraryRouteId,
+
+              driver_upload_image: {
+                startsWith:
+                  `hotspot-${confirmedRouteHotspotId}-`,
+              },
+
+              deleted: 0,
+              status: 1,
+            },
+
+            orderBy: {
+              driver_uploadimage_ID:
+                "desc",
+            },
+
+            select: {
+              driver_uploadimage_ID:
+                true,
+            },
+          });
+
+      if (!photo) {
+        throw new BadRequestException(
+          "Sightseeing photo is required before marking Completed",
+        );
+      }
+    }
+
+    if (
+      status === 2 &&
+      !String(
+        description || "",
+      ).trim()
+    ) {
+      throw new BadRequestException(
+        "Reason is required when sightseeing is marked Not Completed",
+      );
+    }
+
+    await this.updateHotspotStatus({
+      confirmedRouteHotspotId:
+        hotspot.confirmed_route_hotspot_ID,
+
+      status,
+
+      description:
+        description ?? "",
+
+      perspective:
+        "driver",
+    });
+  }
+
+
   async listDailyMoments(
     query: ListDailyMomentQueryDto,
   ): Promise<DailyMomentRowDto[]> {

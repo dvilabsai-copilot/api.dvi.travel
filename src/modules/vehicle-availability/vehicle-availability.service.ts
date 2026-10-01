@@ -614,6 +614,855 @@ routeSegments: [],
  // ===========================================================================
  // DROPDOWNS for MODALS (mirror PHP)
  // ===========================================================================
+
+  /**
+   * Transport Allocation vehicle picker.
+   *
+   * IMPORTANT:
+   * This deliberately does NOT use the availability-chart cells to decide
+   * whether a vehicle is busy.
+   *
+   * A vehicle is "on_trip" only when that exact vehicle_id has a real,
+   * active assignment whose date range overlaps the selected itinerary.
+   */
+  async listAllocationVehicles(
+    itineraryPlanId: number,
+  ) {
+    const itinerary_plan_id =
+      this.reqInt(
+        itineraryPlanId,
+        'itineraryPlanId',
+      );
+
+    const plan =
+      await this.prisma
+        .dvi_confirmed_itinerary_plan_details
+        .findFirst({
+          where: {
+            itinerary_plan_ID:
+              itinerary_plan_id,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            trip_start_date_and_time:
+              true,
+            trip_end_date_and_time:
+              true,
+          },
+        });
+
+    if (!plan) {
+      throw new NotFoundException(
+        'Confirmed itinerary plan not found',
+      );
+    }
+
+    if (
+      !plan.trip_start_date_and_time ||
+      !plan.trip_end_date_and_time
+    ) {
+      throw new BadRequestException(
+        'Itinerary travel dates are not available',
+      );
+    }
+
+    const tripStart =
+      plan.trip_start_date_and_time;
+
+    const tripEnd =
+      plan.trip_end_date_and_time;
+
+    /*
+     * These rows define which vendor + vendor vehicle type
+     * combinations belong to this confirmed booking.
+     */
+    const requirementRows =
+      await this.prisma
+        .dvi_confirmed_itinerary_plan_vendor_vehicle_details
+        .findMany({
+          where: {
+            itinerary_plan_id:
+              itinerary_plan_id,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            vendor_id: true,
+            vendor_vehicle_type_id:
+              true,
+            vehicle_id: true,
+          },
+        });
+
+    const requirementMap =
+      new Map<
+        string,
+        {
+          vendorId: number;
+          vendorVehicleTypeId: number;
+        }
+      >();
+
+    for (
+      const row of requirementRows as any[]
+    ) {
+      const vendorId =
+        Number(row.vendor_id ?? 0);
+
+      const vendorVehicleTypeId =
+        Number(
+          row.vendor_vehicle_type_id ??
+            0,
+        );
+
+      if (
+        vendorId <= 0 ||
+        vendorVehicleTypeId <= 0
+      ) {
+        continue;
+      }
+
+      requirementMap.set(
+        `${vendorId}:${vendorVehicleTypeId}`,
+        {
+          vendorId,
+          vendorVehicleTypeId,
+        },
+      );
+    }
+
+    const requirements =
+      Array.from(
+        requirementMap.values(),
+      );
+
+    if (!requirements.length) {
+      return [];
+    }
+
+    /*
+     * Only vehicles actually eligible for the booking.
+     */
+    const vehicles =
+      await this.prisma.dvi_vehicle
+        .findMany({
+          where: {
+            status: 1,
+            deleted: 0,
+            OR: requirements.map(
+              (requirement) => ({
+                vendor_id:
+                  requirement.vendorId,
+                vehicle_type_id:
+                  requirement
+                    .vendorVehicleTypeId,
+              }),
+            ),
+          },
+          select: {
+            vehicle_id: true,
+            vendor_id: true,
+            vehicle_type_id: true,
+            registration_number: true,
+          },
+          orderBy: {
+            registration_number: 'asc',
+          },
+        });
+
+    const vehicleIds =
+      (vehicles as any[])
+        .map((vehicle) =>
+          Number(
+            vehicle.vehicle_id ?? 0,
+          ),
+        )
+        .filter((id) => id > 0);
+
+    if (!vehicleIds.length) {
+      return [];
+    }
+
+    /*
+     * REAL BUSY CHECK.
+     *
+     * Exclude the booking currently being edited.
+     * Only an actual active assignment for the SAME
+     * vehicle can make it unavailable.
+     */
+    const busyAssignments =
+      await this.prisma
+        .dvi_confirmed_itinerary_vendor_vehicle_assigned
+        .findMany({
+          where: {
+            vehicle_id: {
+              in: vehicleIds,
+            },
+
+            itinerary_plan_id: {
+              not: itinerary_plan_id,
+            },
+
+            status: 1,
+            deleted: 0,
+            assigned_vehicle_status: 1,
+
+            trip_start_date_and_time: {
+              lte: tripEnd,
+            },
+
+            trip_end_date_and_time: {
+              gte: tripStart,
+            },
+          },
+          select: {
+            vehicle_id: true,
+            itinerary_plan_id: true,
+          },
+        });
+
+    const busyByVehicle =
+      new Map<number, number>();
+
+    for (
+      const assignment of
+        busyAssignments as any[]
+    ) {
+      const vehicleId =
+        Number(
+          assignment.vehicle_id ?? 0,
+        );
+
+      const busyPlanId =
+        Number(
+          assignment.itinerary_plan_id ??
+            0,
+        );
+
+      if (
+        vehicleId > 0 &&
+        busyPlanId > 0
+      ) {
+        busyByVehicle.set(
+          vehicleId,
+          busyPlanId,
+        );
+      }
+    }
+
+    /*
+     * Existing assignment for this booking is not "busy";
+     * it should remain selectable and appear selected in UI.
+     */
+    const currentAssignments =
+      await this.prisma
+        .dvi_confirmed_itinerary_vendor_vehicle_assigned
+        .findMany({
+          where: {
+            itinerary_plan_id:
+              itinerary_plan_id,
+            vehicle_id: {
+              in: vehicleIds,
+            },
+            status: 1,
+            deleted: 0,
+            assigned_vehicle_status: 1,
+          },
+          select: {
+            vehicle_id: true,
+          },
+        });
+
+    const currentVehicleIds =
+      new Set(
+        (
+          currentAssignments as any[]
+        ).map((assignment) =>
+          Number(
+            assignment.vehicle_id ?? 0,
+          ),
+        ),
+      );
+
+    const vendorIds =
+      Array.from(
+        new Set(
+          (vehicles as any[])
+            .map((vehicle) =>
+              Number(
+                vehicle.vendor_id ?? 0,
+              ),
+            )
+            .filter((id) => id > 0),
+        ),
+      );
+
+    const vendorVehicleTypeIds =
+      Array.from(
+        new Set(
+          (vehicles as any[])
+            .map((vehicle) =>
+              Number(
+                vehicle.vehicle_type_id ??
+                  0,
+              ),
+            )
+            .filter((id) => id > 0),
+        ),
+      );
+
+    const [
+      vendors,
+      vendorVehicleTypes,
+    ] = await Promise.all([
+      this.prisma
+        .dvi_vendor_details
+        .findMany({
+          where: {
+            vendor_id: {
+              in: vendorIds,
+            },
+          },
+          select: {
+            vendor_id: true,
+            vendor_name: true,
+          },
+        }),
+
+      this.prisma
+        .dvi_vendor_vehicle_types
+        .findMany({
+          where: {
+            vendor_vehicle_type_ID: {
+              in:
+                vendorVehicleTypeIds,
+            },
+          },
+          select: {
+            vendor_vehicle_type_ID:
+              true,
+            vehicle_type_id: true,
+          },
+        }),
+    ]);
+
+    const masterVehicleTypeIds =
+      Array.from(
+        new Set(
+          (
+            vendorVehicleTypes as any[]
+          )
+            .map((row) =>
+              Number(
+                row.vehicle_type_id ?? 0,
+              ),
+            )
+            .filter((id) => id > 0),
+        ),
+      );
+
+    const masterVehicleTypes =
+      masterVehicleTypeIds.length
+        ? await this.prisma
+            .dvi_vehicle_type
+            .findMany({
+              where: {
+                vehicle_type_id: {
+                  in:
+                    masterVehicleTypeIds,
+                },
+              },
+              select: {
+                vehicle_type_id: true,
+                vehicle_type_title:
+                  true,
+              },
+            })
+        : [];
+
+    const vendorNameById =
+      new Map<number, string>();
+
+    for (
+      const vendor of vendors as any[]
+    ) {
+      vendorNameById.set(
+        Number(
+          vendor.vendor_id ?? 0,
+        ),
+        String(
+          vendor.vendor_name ?? '',
+        ),
+      );
+    }
+
+    const titleByMasterType =
+      new Map<number, string>();
+
+    for (
+      const row of
+        masterVehicleTypes as any[]
+    ) {
+      titleByMasterType.set(
+        Number(
+          row.vehicle_type_id ?? 0,
+        ),
+        String(
+          row.vehicle_type_title ??
+            '',
+        ),
+      );
+    }
+
+    const titleByVendorType =
+      new Map<number, string>();
+
+    for (
+      const row of
+        vendorVehicleTypes as any[]
+    ) {
+      titleByVendorType.set(
+        Number(
+          row.vendor_vehicle_type_ID ??
+            0,
+        ),
+        titleByMasterType.get(
+          Number(
+            row.vehicle_type_id ?? 0,
+          ),
+        ) ?? '',
+      );
+    }
+
+    return (
+      vehicles as any[]
+    )
+      .map((vehicle) => {
+        const vehicleId =
+          Number(
+            vehicle.vehicle_id ?? 0,
+          );
+
+        const vendorId =
+          Number(
+            vehicle.vendor_id ?? 0,
+          );
+
+        const vendorVehicleTypeId =
+          Number(
+            vehicle.vehicle_type_id ??
+              0,
+          );
+
+        const busyPlanId =
+          busyByVehicle.get(
+            vehicleId,
+          );
+
+        const isAvailable =
+          !busyPlanId;
+
+        return {
+          id: vehicleId,
+
+          vehicleId,
+
+          registrationNumber:
+            String(
+              vehicle.registration_number ??
+                '',
+            ),
+
+          vendorId,
+
+          vendorName:
+            vendorNameById.get(
+              vendorId,
+            ) ?? '',
+
+          vendorVehicleTypeId,
+
+          vehicleTypeTitle:
+            titleByVendorType.get(
+              vendorVehicleTypeId,
+            ) ?? '',
+
+          availability:
+            isAvailable
+              ? 'available'
+              : 'on_trip',
+
+          isAvailable,
+
+          isAssignedToCurrent:
+            currentVehicleIds.has(
+              vehicleId,
+            ),
+
+          busyItineraryPlanId:
+            busyPlanId ?? null,
+        };
+      })
+      .sort((a, b) => {
+        if (
+          a.isAvailable !==
+          b.isAvailable
+        ) {
+          return a.isAvailable
+            ? -1
+            : 1;
+        }
+
+        return a.registrationNumber
+          .localeCompare(
+            b.registrationNumber,
+          );
+      });
+  }
+
+  /**
+   * Transport Allocation driver picker.
+   *
+   * Drivers are marked unavailable only when that exact driver has
+   * an overlapping ACTIVE driver assignment on another itinerary.
+   */
+  async listAllocationDrivers(
+    input: {
+      itineraryPlanId: number;
+      vendorId: number;
+      vendorVehicleTypeId?: number;
+    },
+  ) {
+    const itineraryPlanId =
+      this.reqInt(
+        input.itineraryPlanId,
+        'itineraryPlanId',
+      );
+
+    const vendorId =
+      this.reqInt(
+        input.vendorId,
+        'vendorId',
+      );
+
+    const vendorVehicleTypeId =
+      this.toInt(
+        input.vendorVehicleTypeId,
+      );
+
+    const plan =
+      await this.prisma
+        .dvi_confirmed_itinerary_plan_details
+        .findFirst({
+          where: {
+            itinerary_plan_ID:
+              itineraryPlanId,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            trip_start_date_and_time:
+              true,
+            trip_end_date_and_time:
+              true,
+          },
+        });
+
+    if (!plan) {
+      throw new NotFoundException(
+        'Confirmed itinerary plan not found',
+      );
+    }
+
+    const prismaAny =
+      this.prisma as any;
+
+    const driverClient =
+      prismaAny.dvi_driver_details ??
+      prismaAny.dvi_vendor_driver_details ??
+      prismaAny.dvi_vendor_driver_list_details ??
+      prismaAny.dvi_driver ??
+      prismaAny.dvi_driver_list_details;
+
+    if (!driverClient?.findMany) {
+      return [];
+    }
+
+    const readRows =
+      async (where: any) => {
+        try {
+          return await driverClient
+            .findMany({
+              where,
+              select: {
+                driver_id: true,
+                driver_name: true,
+                driver_primary_mobile_number:
+                  true,
+              },
+              orderBy: {
+                driver_name: 'asc',
+              },
+            });
+        } catch {
+          try {
+            return await driverClient
+              .findMany({
+                where,
+                select: {
+                  driver_id: true,
+                  driver_name: true,
+                  driver_mobile_number:
+                    true,
+                },
+                orderBy: {
+                  driver_name: 'asc',
+                },
+              });
+          } catch {
+            return await driverClient
+              .findMany({
+                where,
+                select: {
+                  driver_id: true,
+                  driver_name: true,
+                },
+                orderBy: {
+                  driver_name: 'asc',
+                },
+              });
+          }
+        }
+      };
+
+    const baseWhere = {
+      vendor_id: vendorId,
+      status: 1,
+      deleted: {
+        in: [0, 1],
+      },
+    };
+
+    let rows: any[] = [];
+
+    /*
+     * Try vehicle-type constrained drivers first.
+     * Different legacy schemas use different field names,
+     * so fall back safely to all active drivers for the vendor.
+     */
+    if (vendorVehicleTypeId) {
+      try {
+        rows =
+          await readRows({
+            ...baseWhere,
+            vehicle_type_id:
+              vendorVehicleTypeId,
+          });
+      } catch {
+        try {
+          rows =
+            await readRows({
+              ...baseWhere,
+              vendor_vehicle_type_id:
+                vendorVehicleTypeId,
+            });
+        } catch {
+          rows =
+            await readRows(
+              baseWhere,
+            );
+        }
+      }
+    }
+    else {
+      rows =
+        await readRows(
+          baseWhere,
+        );
+    }
+
+    /*
+     * If the type-specific lookup legitimately returned no rows,
+     * fall back to the vendor's active driver pool.
+     */
+    if (
+      rows.length === 0 &&
+      vendorVehicleTypeId
+    ) {
+      rows =
+        await readRows(
+          baseWhere,
+        );
+    }
+
+    const driverIds =
+      rows
+        .map((row) =>
+          Number(
+            row.driver_id ??
+              row.id ??
+              0,
+          ),
+        )
+        .filter((id) => id > 0);
+
+    if (!driverIds.length) {
+      return [];
+    }
+
+    const busyAssignments =
+      await this.prisma
+        .dvi_confirmed_itinerary_vendor_driver_assigned
+        .findMany({
+          where: {
+            driver_id: {
+              in: driverIds,
+            },
+
+            itinerary_plan_id: {
+              not:
+                itineraryPlanId,
+            },
+
+            status: 1,
+            deleted: 0,
+            assigned_driver_status: 1,
+
+            trip_start_date_and_time: {
+              lte:
+                plan
+                  .trip_end_date_and_time,
+            },
+
+            trip_end_date_and_time: {
+              gte:
+                plan
+                  .trip_start_date_and_time,
+            },
+          },
+          select: {
+            driver_id: true,
+            itinerary_plan_id: true,
+          },
+        });
+
+    const busyByDriver =
+      new Map<number, number>();
+
+    for (
+      const assignment of
+        busyAssignments as any[]
+    ) {
+      const driverId =
+        Number(
+          assignment.driver_id ?? 0,
+        );
+
+      if (driverId <= 0) {
+        continue;
+      }
+
+      busyByDriver.set(
+        driverId,
+        Number(
+          assignment.itinerary_plan_id ??
+            0,
+        ),
+      );
+    }
+
+    const currentAssignments =
+      await this.prisma
+        .dvi_confirmed_itinerary_vendor_driver_assigned
+        .findMany({
+          where: {
+            itinerary_plan_id:
+              itineraryPlanId,
+            driver_id: {
+              in: driverIds,
+            },
+            status: 1,
+            deleted: 0,
+            assigned_driver_status: 1,
+          },
+          select: {
+            driver_id: true,
+          },
+        });
+
+    const currentDriverIds =
+      new Set(
+        (
+          currentAssignments as any[]
+        ).map((assignment) =>
+          Number(
+            assignment.driver_id ?? 0,
+          ),
+        ),
+      );
+
+    return rows.map(
+      (row: any) => {
+        const driverId =
+          Number(
+            row.driver_id ??
+              row.id ??
+              0,
+          );
+
+        const mobile =
+          String(
+            row.driver_primary_mobile_number ??
+              row.driver_mobile_number ??
+              '',
+          );
+
+        const name =
+          String(
+            row.driver_name ??
+              `Driver ${driverId}`,
+          );
+
+        const busyPlanId =
+          busyByDriver.get(
+            driverId,
+          );
+
+        const isAvailable =
+          !busyPlanId;
+
+        return {
+          id: driverId,
+          driverId,
+
+          name,
+
+          mobile,
+
+          label:
+            mobile
+              ? `${name} — ${mobile}`
+              : name,
+
+          availability:
+            isAvailable
+              ? 'available'
+              : 'on_trip',
+
+          isAvailable,
+
+          isAssignedToCurrent:
+            currentDriverIds.has(
+              driverId,
+            ),
+
+          busyItineraryPlanId:
+            busyPlanId ?? null,
+        };
+      },
+    );
+  }
   async listVendors() {
     const vendors = await this.prisma.dvi_vendor_details.findMany({
       where: { deleted: { in: [0, 1] } },
@@ -1133,69 +1982,380 @@ async createVehicle(dto: any) {
     driver_id?: number | null;
     createdby?: number | null;
   }) {
-    const itinerary_plan_id = this.reqInt(dto.itineraryPlanId, 'itineraryPlanId');
-    const vendor_id = this.reqInt(dto.vendor_id, 'vendor_id');
-    const vehicle_type_id = this.reqInt(dto.vehicle_type_id, 'vehicle_type_id');
-    const vehicle_id = this.reqInt(dto.vehicle_id, 'vehicle_id');
-    const driver_id = this.toInt(dto.driver_id);
-    const createdby = this.toInt(dto.createdby);
+    const itinerary_plan_id =
+      this.reqInt(
+        dto.itineraryPlanId,
+        'itineraryPlanId',
+      );
 
-    const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
-      where: { itinerary_plan_ID: itinerary_plan_id, deleted: 0 },
-      select: { trip_start_date_and_time: true, trip_end_date_and_time: true },
-    });
-    if (!plan) throw new NotFoundException('Itinerary plan not found');
+    const vendor_id =
+      this.reqInt(
+        dto.vendor_id,
+        'vendor_id',
+      );
 
-    const trip_start_date_and_time = plan.trip_start_date_and_time as Date;
-    const trip_end_date_and_time = plan.trip_end_date_and_time as Date;
+    const vehicle_type_id =
+      this.reqInt(
+        dto.vehicle_type_id,
+        'vehicle_type_id',
+      );
 
-    await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.updateMany({
-      where: { itinerary_plan_id, vendor_id, vendor_vehicle_type_id: vehicle_type_id, deleted: 0 },
-      data: this.cleanUndefined({
-        vehicle_id,
-        createdby: createdby ?? undefined,
-        updatedon: this.nowSql(),
-      }),
-    });
+    const vehicle_id =
+      this.reqInt(
+        dto.vehicle_id,
+        'vehicle_id',
+      );
 
-    await this.prisma.dvi_confirmed_itinerary_vendor_vehicle_assigned.create({
-      data: this.cleanUndefined({
-        itinerary_plan_id,
-        vendor_id,
-        vendor_vehicle_type_id: vehicle_type_id,
-        vehicle_id,
-        trip_start_date_and_time,
-        trip_end_date_and_time,
-        assigned_vehicle_status: 1,
-        assigned_on: this.nowSql(),
-        createdby: createdby ?? undefined,
-        status: 1,
-        deleted: 0,
-      }),
-    });
+    const driver_id =
+      this.toInt(dto.driver_id);
 
-    if (driver_id) {
-      await this.prisma.dvi_confirmed_itinerary_vendor_driver_assigned.create({
-        data: this.cleanUndefined({
-          itinerary_plan_id,
-          vendor_id,
-          vendor_vehicle_type_id: vehicle_type_id,
-          vehicle_id,
-          driver_id,
-          trip_start_date_and_time,
-          trip_end_date_and_time,
-          assigned_driver_status: 1,
-          driver_assigned_on: this.nowSql(),
-          createdby: createdby ?? undefined,
-          status: 1,
-          deleted: 0,
-        }),
-      });
+    const createdby =
+      this.toInt(dto.createdby);
+
+    const plan =
+      await this.prisma
+        .dvi_confirmed_itinerary_plan_details
+        .findFirst({
+          where: {
+            itinerary_plan_ID:
+              itinerary_plan_id,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            trip_start_date_and_time:
+              true,
+            trip_end_date_and_time:
+              true,
+          },
+        });
+
+    if (!plan) {
+      throw new NotFoundException(
+        'Confirmed itinerary plan not found',
+      );
     }
 
-    return { success: true, result_success: 'Vehicle (and driver if provided) assigned' };
-  }
+    if (
+      !plan.trip_start_date_and_time ||
+      !plan.trip_end_date_and_time
+    ) {
+      throw new BadRequestException(
+        'Confirmed itinerary travel dates are missing',
+      );
+    }
 
+    const trip_start_date_and_time =
+      plan.trip_start_date_and_time;
+
+    const trip_end_date_and_time =
+      plan.trip_end_date_and_time;
+
+    /*
+     * Validate that the selected real vehicle belongs to
+     * the selected vendor + vendor vehicle type.
+     */
+    const vehicle =
+      await this.prisma.dvi_vehicle
+        .findFirst({
+          where: {
+            vehicle_id,
+            vendor_id,
+            vehicle_type_id,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            vehicle_id: true,
+            registration_number: true,
+          },
+        });
+
+    if (!vehicle) {
+      throw new BadRequestException(
+        'Selected vehicle is not available for this vendor/vehicle type',
+      );
+    }
+
+    /*
+     * Real overlapping VEHICLE assignment check.
+     * The current itinerary is deliberately excluded.
+     */
+    const vehicleConflict =
+      await this.prisma
+        .dvi_confirmed_itinerary_vendor_vehicle_assigned
+        .findFirst({
+          where: {
+            vehicle_id,
+
+            itinerary_plan_id: {
+              not: itinerary_plan_id,
+            },
+
+            status: 1,
+            deleted: 0,
+            assigned_vehicle_status: 1,
+
+            trip_start_date_and_time: {
+              lte:
+                trip_end_date_and_time,
+            },
+
+            trip_end_date_and_time: {
+              gte:
+                trip_start_date_and_time,
+            },
+          },
+          select: {
+            itinerary_plan_id: true,
+          },
+        });
+
+    if (vehicleConflict) {
+      throw new BadRequestException(
+        'Selected vehicle is already assigned to another overlapping itinerary',
+      );
+    }
+
+    /*
+     * Real overlapping DRIVER assignment check.
+     */
+    if (driver_id) {
+      const driverConflict =
+        await this.prisma
+          .dvi_confirmed_itinerary_vendor_driver_assigned
+          .findFirst({
+            where: {
+              driver_id,
+
+              itinerary_plan_id: {
+                not: itinerary_plan_id,
+              },
+
+              status: 1,
+              deleted: 0,
+              assigned_driver_status: 1,
+
+              trip_start_date_and_time: {
+                lte:
+                  trip_end_date_and_time,
+              },
+
+              trip_end_date_and_time: {
+                gte:
+                  trip_start_date_and_time,
+              },
+            },
+            select: {
+              itinerary_plan_id: true,
+            },
+          });
+
+      if (driverConflict) {
+        throw new BadRequestException(
+          'Selected driver is already assigned to another overlapping itinerary',
+        );
+      }
+    }
+
+    /*
+     * Keep the confirmed vendor/vehicle requirement in sync.
+     */
+    await this.prisma
+      .dvi_confirmed_itinerary_plan_vendor_vehicle_details
+      .updateMany({
+        where: {
+          itinerary_plan_id,
+          vendor_id,
+          vendor_vehicle_type_id:
+            vehicle_type_id,
+          deleted: 0,
+        },
+        data: this.cleanUndefined({
+          vehicle_id,
+          createdby:
+            createdby ?? undefined,
+          updatedon:
+            this.nowSql(),
+        }),
+      });
+
+    /*
+     * Idempotent vehicle assignment:
+     * update current active assignment instead of inserting
+     * duplicates when Confirm is clicked twice.
+     */
+    const existingVehicleAssignment =
+      await this.prisma
+        .dvi_confirmed_itinerary_vendor_vehicle_assigned
+        .findFirst({
+          where: {
+            itinerary_plan_id,
+            vendor_id,
+            vendor_vehicle_type_id:
+              vehicle_type_id,
+            status: 1,
+            deleted: 0,
+            assigned_vehicle_status: 1,
+          },
+          select: {
+            vehicle_id: true,
+          },
+        });
+
+    if (existingVehicleAssignment) {
+      await this.prisma
+        .dvi_confirmed_itinerary_vendor_vehicle_assigned
+        .updateMany({
+          where: {
+            itinerary_plan_id,
+            vendor_id,
+            vendor_vehicle_type_id:
+              vehicle_type_id,
+            status: 1,
+            deleted: 0,
+            assigned_vehicle_status: 1,
+          },
+          data: this.cleanUndefined({
+            vehicle_id,
+            trip_start_date_and_time,
+            trip_end_date_and_time,
+            assigned_on:
+              this.nowSql(),
+            createdby:
+              createdby ?? undefined,
+          }),
+        });
+    }
+    else {
+      await this.prisma
+        .dvi_confirmed_itinerary_vendor_vehicle_assigned
+        .create({
+          data: this.cleanUndefined({
+            itinerary_plan_id,
+            vendor_id,
+            vendor_vehicle_type_id:
+              vehicle_type_id,
+            vehicle_id,
+            trip_start_date_and_time,
+            trip_end_date_and_time,
+            assigned_vehicle_status: 1,
+            assigned_on:
+              this.nowSql(),
+            createdby:
+              createdby ?? undefined,
+            status: 1,
+            deleted: 0,
+          }),
+        });
+    }
+
+    let driverAssignmentId:
+      number | null = null;
+
+    if (driver_id) {
+      const existingDriverAssignment =
+        await this.prisma
+          .dvi_confirmed_itinerary_vendor_driver_assigned
+          .findFirst({
+            where: {
+              itinerary_plan_id,
+              vendor_id,
+              status: 1,
+              deleted: 0,
+              assigned_driver_status: 1,
+            },
+            orderBy: {
+              driver_assigned_on: 'desc',
+            },
+            select: {
+              driver_assigned_ID: true,
+            },
+          });
+
+      if (existingDriverAssignment) {
+        await this.prisma
+          .dvi_confirmed_itinerary_vendor_driver_assigned
+          .updateMany({
+            where: {
+              driver_assigned_ID:
+                existingDriverAssignment
+                  .driver_assigned_ID,
+            },
+            data:
+              this.cleanUndefined({
+                vendor_vehicle_type_id:
+                  vehicle_type_id,
+                vehicle_id,
+                driver_id,
+                trip_start_date_and_time,
+                trip_end_date_and_time,
+                assigned_driver_status: 1,
+                driver_assigned_on:
+                  this.nowSql(),
+                createdby:
+                  createdby ??
+                  undefined,
+              }),
+          });
+
+        driverAssignmentId =
+          Number(
+            existingDriverAssignment
+              .driver_assigned_ID,
+          ) || null;
+      }
+      else {
+        const createdDriverAssignment =
+          await this.prisma
+            .dvi_confirmed_itinerary_vendor_driver_assigned
+            .create({
+              data:
+                this.cleanUndefined({
+                  itinerary_plan_id,
+                  vendor_id,
+                  vendor_vehicle_type_id:
+                    vehicle_type_id,
+                  vehicle_id,
+                  driver_id,
+                  trip_start_date_and_time,
+                  trip_end_date_and_time,
+                  assigned_driver_status: 1,
+                  driver_assigned_on:
+                    this.nowSql(),
+                  createdby:
+                    createdby ??
+                    undefined,
+                  status: 1,
+                  deleted: 0,
+                }),
+            });
+        driverAssignmentId =
+          Number(
+            createdDriverAssignment
+              .driver_assigned_ID ?? 0,
+          ) || null;
+      }
+    }
+
+    return {
+      success: true,
+
+      result_success:
+        'Vehicle and driver assigned successfully',
+
+      itineraryPlanId:
+        itinerary_plan_id,
+
+      vehicleId:
+        vehicle_id,
+
+      driverId:
+        driver_id || null,
+
+      driverAssignmentId,
+    };
+  }
   async reassignDriver(dto: {
     itineraryPlanId: number;
     vendor_id: number;
