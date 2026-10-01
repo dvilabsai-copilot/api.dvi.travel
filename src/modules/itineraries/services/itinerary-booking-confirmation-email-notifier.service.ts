@@ -602,6 +602,7 @@ const [confirmedPlan, originalPlan, route, settings] =
               },
               select: {
                 agent_email_id: true,
+                travel_expert_id: true,
               },
             })
           : Promise.resolve(null),
@@ -658,10 +659,48 @@ const [confirmedPlan, originalPlan, route, settings] =
         agent?.agent_email_id,
       );
 
-   const travelExpertEmails =
-  this.parseEmails(
-    travelExpert?.useremail,
-  );
+   let travelExpertEmails =
+      this.parseEmails(
+        travelExpert?.useremail,
+      );
+
+    if (
+      travelExpertEmails.length === 0
+    ) {
+      const fallbackTravelExpertId =
+        Number(
+          confirmedPlan.staff_id ||
+            agent?.travel_expert_id ||
+            0,
+        );
+
+      if (
+        fallbackTravelExpertId > 0
+      ) {
+        const fallbackTravelExpert =
+          await this.prisma
+            .dvi_staff_details
+            .findFirst({
+              where: {
+                staff_id:
+                  fallbackTravelExpertId,
+
+                status: 1,
+                deleted: 0,
+              },
+
+              select: {
+                staff_email: true,
+              },
+            });
+
+        travelExpertEmails =
+          this.parseEmails(
+            fallbackTravelExpert
+              ?.staff_email,
+          );
+      }
+    }
 
  const recipientEmails =
   this.uniqueEmails([
@@ -870,8 +909,537 @@ const resolvedVisitName =
           'DVI Travel',
       ).trim() || 'DVI Travel';
 
+
+    /*
+     * DAILY MOMENT DAY EVIDENCE + FINAL TRIP SUMMARY
+     */
+
+    const [
+      currentKmRow,
+      currentDayImages,
+      tripRoutes,
+    ] =
+      await Promise.all([
+        this.prisma
+          .dvi_confirmed_itinerary_plan_vendor_vehicle_details
+          .findFirst({
+            where: {
+              itinerary_plan_id:
+                itineraryPlanId,
+
+              itinerary_route_id:
+                itineraryRouteId,
+
+              status: 1,
+              deleted: 0,
+            },
+
+            select: {
+              driver_opening_km: true,
+              driver_closing_km: true,
+              opening_speedmeter_image:
+                true,
+              closing_speedmeter_image:
+                true,
+            },
+          }),
+
+        this.prisma
+          .dvi_confirmed_driver_uploadimage
+          .findMany({
+            where: {
+              itinerary_plan_ID:
+                itineraryPlanId,
+
+              itinerary_route_ID:
+                itineraryRouteId,
+
+              status: 1,
+              deleted: 0,
+            },
+
+            select: {
+              driver_upload_image:
+                true,
+            },
+          }),
+
+        this.prisma
+          .dvi_confirmed_itinerary_route_details
+          .findMany({
+            where: {
+              itinerary_plan_ID:
+                itineraryPlanId,
+
+              status: 1,
+              deleted: 0,
+            },
+
+            orderBy: [
+              {
+                no_of_days: 'asc',
+              },
+              {
+                itinerary_route_ID:
+                  'asc',
+              },
+            ],
+
+            select: {
+              itinerary_route_ID:
+                true,
+
+              no_of_days: true,
+
+              itinerary_route_date:
+                true,
+
+              location_name:
+                true,
+
+              next_visiting_location:
+                true,
+
+              driver_trip_completed:
+                true,
+            },
+          }),
+      ]);
+
+    const tripRouteIds =
+      tripRoutes
+        .map(
+          (tripRoute) =>
+            Number(
+              tripRoute
+                .itinerary_route_ID ||
+                0,
+            ),
+        )
+        .filter(
+          (routeId) =>
+            routeId > 0,
+        );
+
+    const tripKmRows =
+      tripRouteIds.length > 0
+        ? await this.prisma
+            .dvi_confirmed_itinerary_plan_vendor_vehicle_details
+            .findMany({
+              where: {
+                itinerary_plan_id:
+                  itineraryPlanId,
+
+                itinerary_route_id: {
+                  in: tripRouteIds,
+                },
+
+                status: 1,
+                deleted: 0,
+              },
+
+              select: {
+                itinerary_route_id:
+                  true,
+
+                driver_opening_km:
+                  true,
+
+                driver_closing_km:
+                  true,
+
+                opening_speedmeter_image:
+                  true,
+
+                closing_speedmeter_image:
+                  true,
+              },
+            })
+        : [];
+
+    const tripKmByRoute =
+      new Map<
+        number,
+        (typeof tripKmRows)[number]
+      >();
+
+    for (
+      const kmRow of tripKmRows
+    ) {
+      const routeId =
+        Number(
+          kmRow.itinerary_route_id ||
+            0,
+        );
+
+      if (
+        routeId > 0 &&
+        !tripKmByRoute.has(
+          routeId,
+        )
+      ) {
+        tripKmByRoute.set(
+          routeId,
+          kmRow,
+        );
+      }
+    }
+
+    const finalTripRoute =
+      tripRoutes.length > 0
+        ? tripRoutes[
+            tripRoutes.length - 1
+          ]
+        : null;
+
+    const isFinalTripDay =
+      Number(
+        finalTripRoute
+          ?.itinerary_route_ID ||
+          0,
+      ) ===
+      Number(
+        itineraryRouteId,
+      );
+
+    const currentImageNames =
+      currentDayImages
+        .map(
+          (imageRow) =>
+            String(
+              imageRow
+                .driver_upload_image ||
+                '',
+            ).trim(),
+        )
+        .filter(Boolean);
+
+    const hasDriverPhoto =
+      currentImageNames.some(
+        (name) =>
+          name.startsWith(
+            'attendance-daily-',
+          ),
+      );
+
+    const hasCarPhoto =
+      currentImageNames.some(
+        (name) =>
+          name.startsWith(
+            'attendance-car-',
+          ),
+      );
+
+    const hasFinalDriverPhoto =
+      currentImageNames.some(
+        (name) =>
+          name.startsWith(
+            'attendance-final-',
+          ),
+      );
+
+    const sightseeingPhotoCount =
+      currentImageNames.filter(
+        (name) =>
+          name.startsWith(
+            'hotspot-',
+          ),
+      ).length;
+
+    const openingKm =
+      String(
+        currentKmRow
+          ?.driver_opening_km ||
+          '--',
+      ).trim() || '--';
+
+    const closingKm =
+      String(
+        currentKmRow
+          ?.driver_closing_km ||
+          '--',
+      ).trim() || '--';
+
+    const openingKmPhotoUploaded =
+      Boolean(
+        currentKmRow
+          ?.opening_speedmeter_image,
+      );
+
+    const closingKmPhotoUploaded =
+      Boolean(
+        currentKmRow
+          ?.closing_speedmeter_image,
+      );
+
+    const evidenceYesNo =
+      (value: boolean) =>
+        value
+          ? 'Uploaded'
+          : 'Not Uploaded';
+
+    const dayEvidenceText =
+      [
+        `Opening KM: ${openingKm}`,
+        `Closing KM: ${closingKm}`,
+        `Driver Photo: ${evidenceYesNo(
+          hasDriverPhoto,
+        )}`,
+        `Car Photo: ${evidenceYesNo(
+          hasCarPhoto,
+        )}`,
+        `Opening KM Photo: ${evidenceYesNo(
+          openingKmPhotoUploaded,
+        )}`,
+        `Closing KM Photo: ${evidenceYesNo(
+          closingKmPhotoUploaded,
+        )}`,
+        `Sightseeing Photos: ${sightseeingPhotoCount}`,
+        ...(isFinalTripDay
+          ? [
+              `Final Driver Photo: ${evidenceYesNo(
+                hasFinalDriverPhoto,
+              )}`,
+            ]
+          : []),
+      ].join('\n');
+
+    const dayEvidenceHtml =
+      `
+        <div
+          style="
+            margin:0 0 22px;
+            padding:16px;
+            border:1px solid #d7eadf;
+            border-radius:10px;
+            background:#f1fbf5;
+          "
+        >
+          <div
+            style="
+              margin-bottom:10px;
+              font-size:16px;
+              font-weight:700;
+              color:#177245;
+            "
+          >
+            Day ${this.escapeHtml(
+              dayNumber,
+            )} Driver Evidence
+          </div>
+
+          <table
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              width:100%;
+              border-collapse:collapse;
+              font-size:14px;
+            "
+          >
+            <tr>
+              <td style="padding:5px 0;"><b>Opening KM</b></td>
+              <td style="padding:5px 0;">${this.escapeHtml(openingKm)}</td>
+            </tr>
+            <tr>
+              <td style="padding:5px 0;"><b>Closing KM</b></td>
+              <td style="padding:5px 0;">${this.escapeHtml(closingKm)}</td>
+            </tr>
+            <tr>
+              <td style="padding:5px 0;"><b>Driver Photo</b></td>
+              <td style="padding:5px 0;">${evidenceYesNo(hasDriverPhoto)}</td>
+            </tr>
+            <tr>
+              <td style="padding:5px 0;"><b>Car Photo</b></td>
+              <td style="padding:5px 0;">${evidenceYesNo(hasCarPhoto)}</td>
+            </tr>
+            <tr>
+              <td style="padding:5px 0;"><b>Opening KM Photo</b></td>
+              <td style="padding:5px 0;">${evidenceYesNo(openingKmPhotoUploaded)}</td>
+            </tr>
+            <tr>
+              <td style="padding:5px 0;"><b>Closing KM Photo</b></td>
+              <td style="padding:5px 0;">${evidenceYesNo(closingKmPhotoUploaded)}</td>
+            </tr>
+            <tr>
+              <td style="padding:5px 0;"><b>Sightseeing Photos</b></td>
+              <td style="padding:5px 0;">${sightseeingPhotoCount}</td>
+            </tr>
+
+            ${
+              isFinalTripDay
+                ? `
+                  <tr>
+                    <td style="padding:5px 0;"><b>Final Driver Photo</b></td>
+                    <td style="padding:5px 0;">${evidenceYesNo(hasFinalDriverPhoto)}</td>
+                  </tr>
+                `
+                : ''
+            }
+          </table>
+        </div>
+      `;
+
+    const tripSummaryRows =
+      tripRoutes.map(
+        (tripRoute) => {
+          const routeId =
+            Number(
+              tripRoute
+                .itinerary_route_ID ||
+                0,
+            );
+
+          const routeKm =
+            tripKmByRoute.get(
+              routeId,
+            );
+
+          const routeOpeningKm =
+            String(
+              routeKm
+                ?.driver_opening_km ||
+                '--',
+            ).trim() || '--';
+
+          const routeClosingKm =
+            String(
+              routeKm
+                ?.driver_closing_km ||
+                '--',
+            ).trim() || '--';
+
+          const completed =
+            Number(
+              tripRoute
+                .driver_trip_completed ||
+                0,
+            ) === 1;
+
+          return {
+            day:
+              Number(
+                tripRoute.no_of_days ||
+                  0,
+              ),
+
+            date:
+              this.formatDate(
+                tripRoute
+                  .itinerary_route_date,
+              ),
+
+            from:
+              String(
+                tripRoute
+                  .location_name ||
+                  '--',
+              ).trim(),
+
+            to:
+              String(
+                tripRoute
+                  .next_visiting_location ||
+                  '--',
+              ).trim(),
+
+            openingKm:
+              routeOpeningKm,
+
+            closingKm:
+              routeClosingKm,
+
+            completed,
+          };
+        },
+      );
+
+    const tripSummaryText =
+      tripSummaryRows
+        .map(
+          (tripDay) =>
+            `Day ${tripDay.day}: ${tripDay.date} | ${tripDay.from} -> ${tripDay.to} | Opening KM: ${tripDay.openingKm} | Closing KM: ${tripDay.closingKm} | ${tripDay.completed ? 'Completed' : 'Pending'}`,
+        )
+        .join('\n');
+
+    const tripSummaryHtml =
+      isFinalTripDay
+        ? `
+          <div
+            style="
+              margin:0 0 22px;
+            "
+          >
+            <h3
+              style="
+                margin:0 0 10px;
+                color:#4a4260;
+              "
+            >
+              Final Trip Summary
+            </h3>
+
+            <table
+              cellpadding="0"
+              cellspacing="0"
+              style="
+                width:100%;
+                border-collapse:collapse;
+                font-size:13px;
+              "
+            >
+              <thead>
+                <tr style="background:#f4ecff;">
+                  <th style="padding:8px;border:1px solid #eadcfb;">Day</th>
+                  <th style="padding:8px;border:1px solid #eadcfb;">Date</th>
+                  <th style="padding:8px;border:1px solid #eadcfb;">Route</th>
+                  <th style="padding:8px;border:1px solid #eadcfb;">Opening KM</th>
+                  <th style="padding:8px;border:1px solid #eadcfb;">Closing KM</th>
+                  <th style="padding:8px;border:1px solid #eadcfb;">Status</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${tripSummaryRows
+                  .map(
+                    (tripDay) => `
+                      <tr>
+                        <td style="padding:8px;border:1px solid #eadcfb;text-align:center;">
+                          ${this.escapeHtml(tripDay.day)}
+                        </td>
+                        <td style="padding:8px;border:1px solid #eadcfb;">
+                          ${this.escapeHtml(tripDay.date)}
+                        </td>
+                        <td style="padding:8px;border:1px solid #eadcfb;">
+                          ${this.escapeHtml(tripDay.from)}
+                          &rarr;
+                          ${this.escapeHtml(tripDay.to)}
+                        </td>
+                        <td style="padding:8px;border:1px solid #eadcfb;text-align:center;">
+                          ${this.escapeHtml(tripDay.openingKm)}
+                        </td>
+                        <td style="padding:8px;border:1px solid #eadcfb;text-align:center;">
+                          ${this.escapeHtml(tripDay.closingKm)}
+                        </td>
+                        <td style="padding:8px;border:1px solid #eadcfb;text-align:center;font-weight:600;color:${tripDay.completed ? '#198754' : '#dc3545'};">
+                          ${tripDay.completed ? 'Completed' : 'Pending'}
+                        </td>
+                      </tr>
+                    `,
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+        `
+        : '';
+
+    /* FINAL TRIP SUMMARY */
+
     const subject =
-      `DVI Holidays - Trip Update Day ${dayNumber} - #${quotationNumber}`;
+      isFinalTripDay
+        ? `DVI Holidays - Trip Completed - #${quotationNumber}`
+        : `DVI Holidays - Day ${dayNumber} Completed - #${quotationNumber}`;
 
     const visitText =
       visitDetails
@@ -889,7 +1457,7 @@ const resolvedVisitName =
         })
         .join('\n');
 
-    const text = [
+    let text = [
       'Trip Update!',
       '',
       `Day ${dayNumber} of Itinerary #${quotationNumber} has been successfully completed.`,
@@ -899,6 +1467,17 @@ const resolvedVisitName =
       '',
       `View Your Trip: ${dailyMomentUrl}`,
     ].join('\n');
+
+    text +=
+      '\n\nDriver Evidence:\n' +
+      dayEvidenceText;
+
+    if (isFinalTripDay) {
+      text +=
+        '\n\nFINAL TRIP SUMMARY:\n' +
+        (tripSummaryText ||
+          'No trip day details available.');
+    }
 
     const visitDetailsHtml =
       visitDetails.length > 0
@@ -1022,8 +1601,16 @@ const resolvedVisitName =
               color:#4a4260;
             "
           >
-            Trip Completed
+            ${
+              isFinalTripDay
+                ? 'Trip Completed'
+                : `Day ${dayNumber} Completed`
+            }
           </h2>
+
+          ${dayEvidenceHtml}
+
+          ${tripSummaryHtml}
 
           <table
             cellpadding="0"
