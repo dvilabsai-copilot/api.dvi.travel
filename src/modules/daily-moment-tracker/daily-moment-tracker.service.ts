@@ -603,6 +603,76 @@ export class DailyMomentTrackerService {
   }
 
 
+  async savePublicDriverHotspotVoice(
+    driverAssignmentId: number,
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    confirmedRouteHotspotId: number,
+    file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException(
+        "Voice message is required",
+      );
+    }
+
+    const { assignment, route } =
+      await this.requirePublicDriverRouteAccess(
+        driverAssignmentId,
+        itineraryPlanId,
+        itineraryRouteId,
+      );
+
+    if (
+      route.driver_trip_completed === 1
+    ) {
+      throw new BadRequestException(
+        "This day is already completed",
+      );
+    }
+
+    const hotspot =
+      await this.prisma
+        .dvi_confirmed_itinerary_route_hotspot_details
+        .findFirst({
+          where: {
+            confirmed_route_hotspot_ID:
+              confirmedRouteHotspotId,
+
+            itinerary_plan_ID:
+              itineraryPlanId,
+
+            itinerary_route_ID:
+              itineraryRouteId,
+
+            item_type: 4,
+            deleted: 0,
+            status: 1,
+          },
+
+          select: {
+            confirmed_route_hotspot_ID:
+              true,
+          },
+        });
+
+    if (!hotspot) {
+      throw new BadRequestException(
+        "Sightseeing was not found for this driver day",
+      );
+    }
+
+    return this.saveDayImages(
+      itineraryPlanId,
+      itineraryRouteId,
+      [file],
+      Number(
+        assignment.driver_id || 0,
+      ),
+    );
+  }
+
+
   async updatePublicDriverHotspotStatus(
     driverAssignmentId: number,
     itineraryPlanId: number,
@@ -705,15 +775,60 @@ export class DailyMomentTrackerService {
       }
     }
 
-    if (
-      status === 2 &&
-      !String(
-        description || "",
-      ).trim()
-    ) {
-      throw new BadRequestException(
-        "Reason is required when sightseeing is marked Not Completed",
-      );
+    if (status === 2) {
+      const typedReason =
+        String(
+          description || "",
+        ).trim();
+
+      let hasVoiceMessage = false;
+
+      if (!typedReason) {
+        const voiceMessage =
+          await this.prisma
+            .dvi_confirmed_driver_uploadimage
+            .findFirst({
+              where: {
+                itinerary_plan_ID:
+                  itineraryPlanId,
+
+                itinerary_route_ID:
+                  itineraryRouteId,
+
+                driver_upload_image: {
+                  startsWith:
+                    `hotspot-voice-${confirmedRouteHotspotId}-`,
+                },
+
+                deleted: 0,
+                status: 1,
+              },
+
+              orderBy: {
+                driver_uploadimage_ID:
+                  "desc",
+              },
+
+              select: {
+                driver_uploadimage_ID:
+                  true,
+              },
+            });
+
+        hasVoiceMessage =
+          Boolean(
+            voiceMessage,
+          );
+      }
+
+      if (
+        !typedReason &&
+        !hasVoiceMessage
+      ) {
+        throw new BadRequestException(
+          "Reason or voice message is required when sightseeing is marked Not Completed",
+        );
+      }
     }
 
     await this.updateHotspotStatus({
@@ -1963,12 +2078,40 @@ const dayImageRows =
 
 const dayImagesByRouteId = new Map<number, string[]>();
 
+const voiceByHotspotId =
+  new Map<number, string>();
+
 dayImageRows.forEach((row) => {
   const fileName = String(
     row.driver_upload_image ?? ""
   ).trim();
 
   if (!fileName) {
+    return;
+  }
+
+  const voiceMatch =
+    fileName.match(
+      /^hotspot-voice-(\d+)-/,
+    );
+
+  if (voiceMatch) {
+    const hotspotId =
+      Number(
+        voiceMatch[1] || 0,
+      );
+
+    if (hotspotId > 0) {
+      /*
+       * Rows are ascending by upload ID.
+       * Last matching voice becomes the current recording.
+       */
+      voiceByHotspotId.set(
+        hotspotId,
+        fileName,
+      );
+    }
+
     return;
   }
 
@@ -2254,6 +2397,12 @@ hotspot_location: resolvedHotspotLocation,
       : Number(h.hotspot_travelling_distance),
   driver_hotspot_status: h.driver_hotspot_status ?? 0,
             driver_not_visited_description: h.driver_not_visited_description ?? null,
+            driver_not_visited_voice_file:
+              voiceByHotspotId.get(
+                Number(
+                  h.confirmed_route_hotspot_ID,
+                ),
+              ) ?? null,
             guide_hotspot_status: h.guide_hotspot_status ?? 0,
             guide_not_visited_description: h.guide_not_visited_description ?? null,
             activities,
