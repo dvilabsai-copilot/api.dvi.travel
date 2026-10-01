@@ -69,6 +69,21 @@ function dmHotspotPhotoName(
   return `hotspot-${confirmedRouteHotspotId}-${Date.now()}-${id}${ext}`;
 }
 
+
+function dmHotspotVoiceName(
+  confirmedRouteHotspotId: number,
+  original: string,
+) {
+  const id =
+    randomBytes(8).toString("hex");
+
+  const ext =
+    extname(original || "") ||
+    ".webm";
+
+  return `hotspot-voice-${confirmedRouteHotspotId}-${Date.now()}-${id}${ext}`;
+}
+
 function resolveDmSpeedometerDir(): string {
   let dir = __dirname;
   while (dir !== join(dir, '..')) {
@@ -548,6 +563,107 @@ async getDayView(@Param('planId', ParseIntPipe) planId: number) {
   ) {
     return this.service
       .savePublicDriverHotspotPhoto(
+        driverAssignmentId,
+        Number(
+          itineraryPlanId,
+        ),
+        Number(
+          itineraryRouteId,
+        ),
+        confirmedRouteHotspotId,
+        file,
+      );
+  }
+
+
+  @Post(
+    'driver-assignment/:driverAssignmentId/hotspot/:confirmedRouteHotspotId/voice',
+  )
+  @Public()
+  @ApiOperation({
+    summary:
+      'Upload Not Completed voice message from driver share link',
+  })
+  @UseInterceptors(
+    FileInterceptor('audio', {
+      storage: diskStorage({
+        destination:
+          (_req, _file, cb) =>
+            cb(
+              null,
+              resolveDmGalleryDir(),
+            ),
+
+        filename:
+          (req, file, cb) => {
+            const hotspotId =
+              Number(
+                req.params
+                  ?.confirmedRouteHotspotId ||
+                0,
+              );
+
+            cb(
+              null,
+              dmHotspotVoiceName(
+                hotspotId,
+                file.originalname,
+              ),
+            );
+          },
+      }),
+
+      limits: {
+        fileSize:
+          15 * 1024 * 1024,
+      },
+
+      fileFilter:
+        (_req, file, cb) => {
+          const mime =
+            String(
+              file.mimetype || "",
+            ).toLowerCase();
+
+          const ok =
+            mime.startsWith("audio/") ||
+            mime === "video/webm";
+
+          cb(
+            ok
+              ? null
+              : new Error(
+                  "Only recorded audio files are allowed",
+                ),
+            ok,
+          );
+        },
+    }),
+  )
+  async uploadPublicDriverHotspotVoice(
+    @Param(
+      'driverAssignmentId',
+      ParseIntPipe,
+    )
+    driverAssignmentId: number,
+
+    @Param(
+      'confirmedRouteHotspotId',
+      ParseIntPipe,
+    )
+    confirmedRouteHotspotId: number,
+
+    @UploadedFile()
+    file: Express.Multer.File,
+
+    @Body('itineraryPlanId')
+    itineraryPlanId: string,
+
+    @Body('itineraryRouteId')
+    itineraryRouteId: string,
+  ) {
+    return this.service
+      .savePublicDriverHotspotVoice(
         driverAssignmentId,
         Number(
           itineraryPlanId,
