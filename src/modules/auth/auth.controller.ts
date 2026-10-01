@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   Headers,
   Post,
   Req,
@@ -19,6 +20,7 @@ import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { QuickOnboardAgentDto } from './dto/quick-onboard-agent.dto';
 import { ActivatePartnerDto } from './dto/activate-partner.dto';
 import { RedeemLegacySsoTicketDto } from './dto/legacy-sso.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -174,18 +176,72 @@ sendEmailLoginOtp(@Body() body: SendEmailLoginOtpDto) {
   }
 
   @ApiOperation({
-    summary:
-      'Change password for the authenticated Agent',
-  })
-  @Post('change-password')
-  changePassword(
+  summary:
+    'Get password state for the authenticated Agent',
+})
+@Get('password-status')
+getPasswordStatus(
+  @Req() req: any,
+) {
+  return this.auth.getPasswordStatus(
+    req.user?.userId,
+  );
+}
+
+@ApiOperation({
+  summary:
+    'Send password reset OTP',
+})
+@ApiBody({
+  type: SendEmailLoginOtpDto,
+})
+@Public()
+@Post('password-reset/send-otp')
+sendPasswordResetOtp(
+  @Body()
+  body: SendEmailLoginOtpDto,
+) {
+  return this.auth
+    .sendPasswordResetOtp(
+      body.email,
+    );
+}
+
+@ApiOperation({
+  summary:
+    'Reset Agent password using email OTP',
+})
+@ApiBody({
+  type: ResetPasswordDto,
+})
+@Public()
+@Post('password-reset/confirm')
+resetPasswordWithOtp(
+  @Body()
+  body: ResetPasswordDto,
+) {
+  return this.auth
+    .resetPasswordWithOtp(
+      body.email,
+      body.otp,
+      body.newPassword,
+      body.confirmPassword,
+    );
+}
+
+@ApiOperation({
+  summary:
+    'Change password for the authenticated Agent',
+})
+@Post('change-password')
+changePassword(
     @Req() req: any,
     @Body()
-    body: {
-      currentPassword: string;
-      newPassword: string;
-      confirmPassword: string;
-    },
+   body: {
+  currentPassword?: string;
+  newPassword: string;
+  confirmPassword: string;
+},
   ) {
     const role = Number(
       req.user?.roleID ??
