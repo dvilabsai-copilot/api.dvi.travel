@@ -9,6 +9,9 @@ import {
   VehicleBuildStatus,
 } from './itinerary-vehicle-build-status.service';
 
+const VEHICLE_PRICING_UNAVAILABLE_MESSAGE =
+  'Vehicle is not available at the moment. Please choose a different vehicle.';
+
 export type VehicleBuildStageTiming = {
   stage: string;
   durationMs: number;
@@ -150,6 +153,11 @@ export class ItineraryVehicleBuildService {
             ? 'Vehicle build completed without usable vehicle pricing rows'
             : 'Vehicle build completed without requested vehicle rows';
         await this.finishRecord(planId, buildRunId, 'FAILED', failureMessage);
+
+        if (finalStatus.requestedVehicleCount > 0) {
+          throw new BadRequestException(VEHICLE_PRICING_UNAVAILABLE_MESSAGE);
+        }
+
         throw new Error(failureMessage);
       }
 
