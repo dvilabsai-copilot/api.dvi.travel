@@ -3,7 +3,11 @@
 import {
   Injectable,
   BadRequestException,
+  NotFoundException,
 } from "@nestjs/common";
+
+import { Response } from "express";
+import PDFDocument from "pdfkit";
 
 import { PrismaService } from "../../prisma.service";
 import { AccountsComponentSyncService } from "./accounts-component-sync.service";
@@ -2028,21 +2032,1654 @@ rows.sort((a, b) => {
       rowCount += filtered.length;
     }
 
-    return {
-      totalPayable,
-      totalPaid,
-      totalBalance,
-      rowCount,
-    };
+   return {
+  totalPayable,
+  totalPaid,
+  totalBalance,
+  rowCount,
+};
+}
+
+
+/**
+ * Download a complete internal Purchase Cost PDF
+ * for one confirmed itinerary / Accounts header.
+ *
+ * The PDF uses the SAME component calculations
+ * as Accounts Overview:
+ *
+ * Selling  = receivableFromAgentAmount ?? amount
+ * Purchase = payout + payable
+ * Profit   = Selling - Purchase
+ */
+async downloadPurchaseCostPdf(
+  headerId: number,
+  res: Response,
+  scope: AccountsManagerQueryDto,
+): Promise<void> {
+  /*
+   * ============================================================
+   * 1. RESOLVE ACCOUNTS HEADER
+   * ============================================================
+   */
+
+  const header =
+    await this.prisma
+      .dvi_accounts_itinerary_details
+      .findFirst({
+        where: {
+          accounts_itinerary_details_ID:
+            headerId,
+
+          deleted: 0,
+        },
+
+        select: {
+          accounts_itinerary_details_ID:
+            true,
+
+          itinerary_plan_ID:
+            true,
+
+          itinerary_quote_ID:
+            true,
+
+          agent_id:
+            true,
+
+          trip_start_date_and_time:
+            true,
+
+          trip_end_date_and_time:
+            true,
+
+          total_billed_amount:
+            true,
+
+          total_received_amount:
+            true,
+
+          total_receivable_amount:
+            true,
+
+          total_payout_amount:
+            true,
+        },
+      });
+
+
+  if (!header) {
+    throw new NotFoundException(
+      "Accounts booking not found.",
+    );
   }
 
- /**
-   * 🔹 GET /accounts-manager/quotes?q=...
-   * Quote autocomplete – distinct itinerary_quote_ID values.
+
+  const planId =
+    Number(
+      header.itinerary_plan_ID ||
+        0,
+    );
+
+
+  if (!planId) {
+    throw new NotFoundException(
+      "Itinerary plan is not available for this Accounts booking.",
+    );
+  }
+
+
+  /*
+   * ============================================================
+   * 2. CONFIRM THAT THIS IS A CONFIRMED ITINERARY
+   * ============================================================
+   */
+
+  const confirmedPlan =
+    await this.prisma
+      .dvi_confirmed_itinerary_plan_details
+      .findFirst({
+        where: {
+          itinerary_plan_ID:
+            planId,
+
+          status: 1,
+          deleted: 0,
+        },
+
+        select: {
+          itinerary_plan_ID:
+            true,
+
+          itinerary_quote_ID:
+            true,
+        },
+      });
+
+
+  if (!confirmedPlan) {
+    throw new NotFoundException(
+      "Purchase Cost PDF is available only for a confirmed itinerary.",
+    );
+  }
+
+
+  const quoteId =
+    String(
+      header.itinerary_quote_ID ||
+        confirmedPlan.itinerary_quote_ID ||
+        "",
+    ).trim();
+
+
+  /*
+   * Repair Accounts components first if this
+   * confirmed booking is an older booking.
+   */
+  if (quoteId) {
+    await this.accountsComponentSync
+      .ensureConfirmedQuote(
+        quoteId,
+      );
+  }
+
+
+  /*
+   * ============================================================
+   * 3. LOAD COMPONENTS THROUGH EXISTING ACCOUNTS LOGIC
+   * ============================================================
+   *
+   * This is important:
+   * do NOT create a second cost formula for the PDF.
+   */
+
+  const scopedRows =
+    await this.list({
+      ...scope,
+
+      quoteId:
+        quoteId ||
+        undefined,
+
+      search:
+        undefined,
+
+      status:
+        "all",
+
+      componentType:
+        "all",
+    });
+
+
+  /*
+   * quoteId can theoretically have more than one
+   * Accounts header, so use the exact header ID.
+   */
+  const componentRows =
+    scopedRows.filter(
+      (row) =>
+        Number(
+          row.headerId,
+        ) === headerId,
+    );
+
+
+  /*
+   * This also protects Agent / Travel Expert access:
+   * their normal Accounts scope is applied above.
+   */
+  if (
+    componentRows.length === 0
+  ) {
+    throw new NotFoundException(
+      "Purchase Cost data is not available for this booking.",
+    );
+  }
+
+
+  /*
+   * ============================================================
+   * 4. CONFIRMED ITINERARY INFORMATION
+   * ============================================================
+   */
+
+  const [
+    plan,
+    agent,
+    customer,
+  ] =
+    await Promise.all([
+      this.prisma
+        .dvi_itinerary_plan_details
+        .findUnique({
+          where: {
+            itinerary_plan_ID:
+              planId,
+          },
+
+          select: {
+            itinerary_plan_ID:
+              true,
+
+            itinerary_quote_ID:
+              true,
+
+            arrival_location:
+              true,
+
+            departure_location:
+              true,
+
+            total_adult:
+              true,
+
+            total_children:
+              true,
+
+            total_infants:
+              true,
+
+            trip_start_date_and_time:
+              true,
+
+            trip_end_date_and_time:
+              true,
+          },
+        }),
+
+      Number(
+        header.agent_id ||
+          0,
+      ) > 0
+        ? this.prisma
+            .dvi_agent
+            .findUnique({
+              where: {
+                agent_ID:
+                  Number(
+                    header.agent_id,
+                  ),
+              },
+
+              select: {
+                agent_name:
+                  true,
+
+                agent_lastname:
+                  true,
+              },
+            })
+        : Promise.resolve(
+            null,
+          ),
+
+      this.prisma
+        .dvi_confirmed_itinerary_customer_details
+        .findFirst({
+          where: {
+            itinerary_plan_ID:
+              planId,
+
+            primary_customer:
+              1,
+
+            status:
+              1,
+
+            deleted:
+              0,
+          },
+
+          select: {
+            customer_salutation:
+              true,
+
+            customer_name:
+              true,
+
+            primary_contact_no:
+              true,
+          },
+        }),
+    ]);
+
+
+  /*
+   * ============================================================
+   * 5. SAME COST CALCULATIONS AS ACCOUNTS OVERVIEW
+   * ============================================================
+   */
+
+  const toSafeNumber = (
+    value: unknown,
+  ) => {
+    const parsed =
+      Number(
+        value ?? 0,
+      );
+
+    return Number.isFinite(
+      parsed,
+    )
+      ? parsed
+      : 0;
+  };
+
+
+  const componentSellingAmount = (
+    row: AccountsManagerRowDto,
+  ) =>
+    toSafeNumber(
+      row.receivableFromAgentAmount ??
+        row.amount,
+    );
+
+
+  const componentPurchaseAmount = (
+    row: AccountsManagerRowDto,
+  ) =>
+    toSafeNumber(
+      row.payout,
+    ) +
+    toSafeNumber(
+      row.payable,
+    );
+
+
+  const sellingFromRows =
+    componentRows.reduce(
+      (total, row) =>
+        total +
+        componentSellingAmount(
+          row,
+        ),
+      0,
+    );
+
+
+  const totalSelling =
+    toSafeNumber(
+      header
+        .total_billed_amount,
+    ) ||
+    sellingFromRows;
+
+
+  const totalPurchase =
+    componentRows.reduce(
+      (total, row) =>
+        total +
+        componentPurchaseAmount(
+          row,
+        ),
+      0,
+    );
+
+
+  const grossProfit =
+    totalSelling -
+    totalPurchase;
+
+
+  const totalReceived =
+    toSafeNumber(
+      header
+        .total_received_amount,
+    );
+
+
+  const pendingFromAgent =
+    toSafeNumber(
+      header
+        .total_receivable_amount,
+    );
+
+
+  const vendorPayments =
+    toSafeNumber(
+      header
+        .total_payout_amount,
+    );
+
+
+  const formatMoney = (
+    value: unknown,
+  ) =>
+    `INR ${toSafeNumber(
+      value,
+    ).toLocaleString(
+      "en-IN",
+      {
+        minimumFractionDigits:
+          2,
+
+        maximumFractionDigits:
+          2,
+      },
+    )}`;
+
+
+  const agentName =
+    [
+      agent?.agent_name,
+      agent?.agent_lastname,
+    ]
+      .map((value) =>
+        String(
+          value || "",
+        ).trim(),
+      )
+      .filter(Boolean)
+      .join(" ") ||
+    "-";
+
+
+  const guestName =
+    [
+      customer
+        ?.customer_salutation,
+
+      customer
+        ?.customer_name,
+    ]
+      .map((value) =>
+        String(
+          value || "",
+        ).trim(),
+      )
+      .filter(Boolean)
+      .join(" ") ||
+    "-";
+
+
+  const travelStart =
+    formatToDDMMYYYY(
+      header
+        .trip_start_date_and_time ||
+        plan
+          ?.trip_start_date_and_time,
+    ) ||
+    "-";
+
+
+  const travelEnd =
+    formatToDDMMYYYY(
+      header
+        .trip_end_date_and_time ||
+        plan
+          ?.trip_end_date_and_time,
+    ) ||
+    "-";
+
+
+  const route =
+    `${String(
+      plan?.arrival_location ||
+        "-",
+    )} - ${String(
+      plan?.departure_location ||
+        "-",
+    )}`;
+
+
+  const passengers =
+    `Adults: ${Number(
+      plan?.total_adult ||
+        0,
+    )} | Children: ${Number(
+      plan?.total_children ||
+        0,
+    )} | Infants: ${Number(
+      plan?.total_infants ||
+        0,
+    )}`;
+
+
+  /*
+   * ============================================================
+   * 6. PDF RESPONSE
+   * ============================================================
+   */
+
+  const safeQuoteId =
+    String(
+      quoteId ||
+        `booking-${headerId}`,
+    )
+      .replace(
+        /[^a-zA-Z0-9_-]+/g,
+        "-",
+      )
+      .replace(
+        /-+/g,
+        "-",
+      );
+
+
+  res.setHeader(
+    "Content-Type",
+    "application/pdf",
+  );
+
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="purchase-cost-${safeQuoteId}.pdf"`,
+  );
+
+
+  /*
+   * Landscape is intentional because the
+   * Service Components table has 10 columns.
+   */
+  const doc =
+    new PDFDocument({
+      size: "A4",
+      layout:
+        "landscape",
+
+      margin:
+        28,
+
+      compress:
+        true,
+    });
+
+
+  doc.pipe(
+    res,
+  );
+
+
+  const left =
+    28;
+
+  const pageWidth =
+    doc.page.width;
+
+  const contentWidth =
+    pageWidth -
+    left * 2;
+
+
+  /*
+   * ============================================================
+   * DOCUMENT HEADER
+   * ============================================================
+   */
+
+  doc
+    .roundedRect(
+      left,
+      28,
+      contentWidth,
+      72,
+      10,
+    )
+    .fill(
+      "#17233D",
+    );
+
+
+  doc
+    .fillColor(
+      "#FFFFFF",
+    )
+    .font(
+      "Helvetica-Bold",
+    )
+    .fontSize(
+      19,
+    )
+    .text(
+      "PURCHASE COST & PACKAGE SUMMARY",
+      left + 18,
+      45,
+    );
+
+
+  doc
+    .font(
+      "Helvetica",
+    )
+    .fontSize(
+      8,
+    )
+    .fillColor(
+      "#DCE6F7",
+    )
+    .text(
+      "Confirmed Itinerary - Internal Accounts & Finance Document",
+      left + 18,
+      72,
+    );
+
+
+  doc
+    .font(
+      "Helvetica-Bold",
+    )
+    .fontSize(
+      12,
+    )
+    .fillColor(
+      "#FFFFFF",
+    )
+    .text(
+      quoteId ||
+        "-",
+      pageWidth - 245,
+      49,
+      {
+        width:
+          190,
+
+        align:
+          "right",
+      },
+    );
+
+
+  let y =
+    120;
+
+
+  /*
+   * ============================================================
+   * CONFIRMED ITINERARY DETAILS
+   * ============================================================
+   */
+
+  doc
+    .font(
+      "Helvetica-Bold",
+    )
+    .fontSize(
+      12,
+    )
+    .fillColor(
+      "#17233D",
+    )
+    .text(
+      "Confirmed Itinerary Details",
+      left,
+      y,
+    );
+
+
+  y +=
+    20;
+
+
+  const infoItems = [
+    [
+      "Booking / Quote ID",
+      quoteId || "-",
+    ],
+
+    [
+      "Agent",
+      agentName,
+    ],
+
+    [
+      "Guest",
+      guestName,
+    ],
+
+    [
+      "Travel Date",
+      `${travelStart} - ${travelEnd}`,
+    ],
+
+    [
+      "Route",
+      route,
+    ],
+
+    [
+      "Passengers",
+      passengers,
+    ],
+  ];
+
+
+  const infoGap =
+    8;
+
+  const infoWidth =
+    (
+      contentWidth -
+      infoGap * 2
+    ) /
+    3;
+
+
+  infoItems.forEach(
+    (
+      [
+        label,
+        value,
+      ],
+      index,
+    ) => {
+      const rowIndex =
+        Math.floor(
+          index / 3,
+        );
+
+      const columnIndex =
+        index % 3;
+
+      const boxX =
+        left +
+        columnIndex *
+          (
+            infoWidth +
+            infoGap
+          );
+
+      const boxY =
+        y +
+        rowIndex *
+          45;
+
+
+      doc
+        .roundedRect(
+          boxX,
+          boxY,
+          infoWidth,
+          38,
+          6,
+        )
+        .fillAndStroke(
+          "#F8FAFD",
+          "#DFE7F2",
+        );
+
+
+      doc
+        .font(
+          "Helvetica-Bold",
+        )
+        .fontSize(
+          7,
+        )
+        .fillColor(
+          "#71809A",
+        )
+        .text(
+          String(
+            label,
+          ),
+          boxX + 8,
+          boxY + 7,
+          {
+            width:
+              infoWidth -
+              16,
+          },
+        );
+
+
+      doc
+        .font(
+          "Helvetica",
+        )
+        .fontSize(
+          8,
+        )
+        .fillColor(
+          "#17233D",
+        )
+        .text(
+          String(
+            value ||
+              "-",
+          ),
+          boxX + 8,
+          boxY + 19,
+          {
+            width:
+              infoWidth -
+              16,
+
+            ellipsis:
+              true,
+          },
+        );
+    },
+  );
+
+
+  y +=
+    100;
+
+
+  /*
+   * ============================================================
+   * PACKAGE FINANCIAL SUMMARY
+   * ============================================================
+   */
+
+  doc
+    .font(
+      "Helvetica-Bold",
+    )
+    .fontSize(
+      12,
+    )
+    .fillColor(
+      "#17233D",
+    )
+    .text(
+      "Package Financial Summary",
+      left,
+      y,
+    );
+
+
+  y +=
+    20;
+
+
+  const summaryItems = [
+    [
+      "Total Selling",
+      totalSelling,
+    ],
+
+    [
+      "Total Purchase",
+      totalPurchase,
+    ],
+
+    [
+      "Gross Profit",
+      grossProfit,
+    ],
+
+    [
+      "Received",
+      totalReceived,
+    ],
+
+    [
+      "Pending from Agent",
+      pendingFromAgent,
+    ],
+
+    [
+      "Vendor Payments",
+      vendorPayments,
+    ],
+  ];
+
+
+  const cardGap =
+    6;
+
+  const cardWidth =
+    (
+      contentWidth -
+      cardGap * 5
+    ) /
+    6;
+
+
+  summaryItems.forEach(
+    (
+      [
+        label,
+        value,
+      ],
+      index,
+    ) => {
+      const cardX =
+        left +
+        index *
+          (
+            cardWidth +
+            cardGap
+          );
+
+
+      doc
+        .roundedRect(
+          cardX,
+          y,
+          cardWidth,
+          52,
+          7,
+        )
+        .fillAndStroke(
+          "#F5F8FC",
+          "#DFE7F2",
+        );
+
+
+      doc
+        .font(
+          "Helvetica",
+        )
+        .fontSize(
+          7,
+        )
+        .fillColor(
+          "#71809A",
+        )
+        .text(
+          String(
+            label,
+          ),
+          cardX + 7,
+          y + 8,
+          {
+            width:
+              cardWidth -
+              14,
+          },
+        );
+
+
+      doc
+        .font(
+          "Helvetica-Bold",
+        )
+        .fontSize(
+          9,
+        )
+        .fillColor(
+          "#17233D",
+        )
+        .text(
+          formatMoney(
+            value,
+          ),
+          cardX + 7,
+          y + 26,
+          {
+            width:
+              cardWidth -
+              14,
+          },
+        );
+    },
+  );
+
+
+  y +=
+    72;
+
+
+  /*
+   * ============================================================
+   * SERVICE COMPONENTS TABLE
+   * ============================================================
+   */
+
+  doc
+    .font(
+      "Helvetica-Bold",
+    )
+    .fontSize(
+      12,
+    )
+    .fillColor(
+      "#17233D",
+    )
+    .text(
+      `Service Components (${componentRows.length})`,
+      left,
+      y,
+    );
+
+
+  y +=
+    19;
+
+
+  const columns = [
+    {
+      label:
+        "#",
+
+      width:
+        24,
+    },
+
+    {
+      label:
+        "Type",
+
+      width:
+        55,
+    },
+
+    {
+      label:
+        "Supplier / Vendor",
+
+      width:
+        118,
+    },
+
+    {
+      label:
+        "Details",
+
+      width:
+        130,
+    },
+
+    {
+      label:
+        "Travel Date",
+
+      width:
+        70,
+    },
+
+    {
+      label:
+        "Selling",
+
+      width:
+        76,
+    },
+
+    {
+      label:
+        "Purchase",
+
+      width:
+        76,
+    },
+
+    {
+      label:
+        "Profit",
+
+      width:
+        76,
+    },
+
+    {
+      label:
+        "Status",
+
+      width:
+        56,
+    },
+
+    {
+      label:
+        "Payment",
+
+      width:
+        80,
+    },
+  ];
+
+
+  const tableWidth =
+    columns.reduce(
+      (
+        total,
+        column,
+      ) =>
+        total +
+        column.width,
+      0,
+    );
+
+
+  const drawTableHeader =
+    () => {
+      let x =
+        left;
+
+
+      doc
+        .rect(
+          left,
+          y,
+          tableWidth,
+          25,
+        )
+        .fill(
+          "#EEF3FB",
+        );
+
+
+      columns.forEach(
+        (column) => {
+          doc
+            .font(
+              "Helvetica-Bold",
+            )
+            .fontSize(
+              7,
+            )
+            .fillColor(
+              "#596985",
+            )
+            .text(
+              column.label,
+              x + 4,
+              y + 8,
+              {
+                width:
+                  column.width -
+                  8,
+              },
+            );
+
+
+          x +=
+            column.width;
+        },
+      );
+
+
+      y +=
+        25;
+    };
+
+
+  const drawContinuationHeader =
+    () => {
+      doc
+        .font(
+          "Helvetica-Bold",
+        )
+        .fontSize(
+          11,
+        )
+        .fillColor(
+          "#17233D",
+        )
+        .text(
+          "Purchase Cost & Package Summary",
+          left,
+          27,
+        );
+
+
+      doc
+        .font(
+          "Helvetica",
+        )
+        .fontSize(
+          8,
+        )
+        .fillColor(
+          "#71809A",
+        )
+        .text(
+          quoteId ||
+            "-",
+          pageWidth - 230,
+          28,
+          {
+            width:
+              180,
+
+            align:
+              "right",
+          },
+        );
+    };
+
+
+  drawTableHeader();
+
+
+  componentRows.forEach(
+    (
+      row,
+      index,
+    ) => {
+      const selling =
+        componentSellingAmount(
+          row,
+        );
+
+      const purchase =
+        componentPurchaseAmount(
+          row,
+        );
+
+      const profit =
+        selling -
+        purchase;
+
+
+      const supplier =
+        String(
+          row.componentType ===
+            "vehicle"
+            ? (
+                row.vendorName ||
+                row.hotelName ||
+                "Vehicle Vendor"
+              )
+            : (
+                row.hotelName ||
+                row.componentType ||
+                "-"
+              ),
+        );
+
+
+      const vehicleDetails =
+        [
+          row.vehicleTypeName,
+          row.vehicleName,
+          row.vendorBranchName,
+        ]
+          .map((value) =>
+            String(
+              value ||
+                "",
+            ).trim(),
+          )
+          .filter(Boolean)
+          .join(
+            " / ",
+          );
+
+
+      const details =
+        row.componentType ===
+        "vehicle"
+          ? (
+              vehicleDetails ||
+              "Vehicle"
+            )
+          : String(
+              row.componentType ||
+                "Component",
+            );
+
+
+      const statusText =
+        row.status ===
+        "paid"
+          ? "Paid"
+          : "Due";
+
+
+      const paymentText =
+        row.status ===
+        "paid"
+          ? "Paid"
+          : `Due ${formatMoney(
+              row.payable,
+            )}`;
+
+
+      const values = [
+        String(
+          index + 1,
+        ),
+
+        String(
+          row.componentType ||
+            "-",
+        ),
+
+        supplier,
+
+        details,
+
+        String(
+          row.routeDate ||
+            row.startDate ||
+            "-",
+        ),
+
+        formatMoney(
+          selling,
+        ),
+
+        formatMoney(
+          purchase,
+        ),
+
+        formatMoney(
+          profit,
+        ),
+
+        statusText,
+
+        paymentText,
+      ];
+
+
+      /*
+       * Calculate row height from the longest
+       * text columns so data is not clipped.
+       */
+      doc
+        .font(
+          "Helvetica",
+        )
+        .fontSize(
+          7,
+        );
+
+
+      const supplierHeight =
+        doc.heightOfString(
+          supplier,
+          {
+            width:
+              columns[2]
+                .width -
+              8,
+          },
+        );
+
+
+      const detailsHeight =
+        doc.heightOfString(
+          details,
+          {
+            width:
+              columns[3]
+                .width -
+              8,
+          },
+        );
+
+
+      const paymentHeight =
+        doc.heightOfString(
+          paymentText,
+          {
+            width:
+              columns[9]
+                .width -
+              8,
+          },
+        );
+
+
+      const rowHeight =
+        Math.max(
+          30,
+          supplierHeight +
+            14,
+          detailsHeight +
+            14,
+          paymentHeight +
+            14,
+        );
+
+
+      if (
+        y +
+          rowHeight >
+        doc.page.height -
+          42
+      ) {
+        doc.addPage();
+
+        drawContinuationHeader();
+
+        y =
+          52;
+
+        drawTableHeader();
+      }
+
+
+      if (
+        index % 2 ===
+        0
+      ) {
+        doc
+          .rect(
+            left,
+            y,
+            tableWidth,
+            rowHeight,
+          )
+          .fill(
+            "#FBFCFE",
+          );
+      }
+
+
+      let x =
+        left;
+
+
+      values.forEach(
+        (
+          value,
+          columnIndex,
+        ) => {
+          const column =
+            columns[
+              columnIndex
+            ];
+
+
+          const isAmount =
+            columnIndex >=
+              5 &&
+            columnIndex <=
+              7;
+
+
+          doc
+            .font(
+              isAmount
+                ? "Helvetica-Bold"
+                : "Helvetica",
+            )
+            .fontSize(
+              7,
+            )
+            .fillColor(
+              columnIndex ===
+                7
+                ? (
+                    profit >=
+                    0
+                      ? "#12945F"
+                      : "#D14343"
+                  )
+                : "#17233D",
+            )
+            .text(
+              value,
+              x + 4,
+              y + 8,
+              {
+                width:
+                  column.width -
+                  8,
+
+                height:
+                  rowHeight -
+                  12,
+
+                ellipsis:
+                  true,
+              },
+            );
+
+
+          x +=
+            column.width;
+        },
+      );
+
+
+      doc
+        .moveTo(
+          left,
+          y +
+            rowHeight,
+        )
+        .lineTo(
+          left +
+            tableWidth,
+          y +
+            rowHeight,
+        )
+        .lineWidth(
+          0.5,
+        )
+        .strokeColor(
+          "#E5EBF3",
+        )
+        .stroke();
+
+
+      y +=
+        rowHeight;
+    },
+  );
+
+
+  /*
+   * ============================================================
+   * FINAL PACKAGE TOTAL
+   * ============================================================
+   */
+
+  if (
+    y + 78 >
+    doc.page.height -
+      35
+  ) {
+    doc.addPage();
+
+    drawContinuationHeader();
+
+    y =
+      62;
+  }
+
+
+  y +=
+    16;
+
+
+  const totalBoxWidth =
+    280;
+
+
+  doc
+    .roundedRect(
+      pageWidth -
+        left -
+        totalBoxWidth,
+      y,
+      totalBoxWidth,
+      58,
+      8,
+    )
+    .fillAndStroke(
+      "#F1F6FF",
+      "#CFDDF1",
+    );
+
+
+  doc
+    .font(
+      "Helvetica-Bold",
+    )
+    .fontSize(
+      8,
+    )
+    .fillColor(
+      "#71809A",
+    )
+    .text(
+      "TOTAL PACKAGE SELLING PRICE",
+      pageWidth -
+        left -
+        totalBoxWidth +
+        12,
+      y + 10,
+      {
+        width:
+          totalBoxWidth -
+          24,
+      },
+    );
+
+
+  doc
+    .font(
+      "Helvetica-Bold",
+    )
+    .fontSize(
+      16,
+    )
+    .fillColor(
+      "#17233D",
+    )
+    .text(
+      formatMoney(
+        totalSelling,
+      ),
+      pageWidth -
+        left -
+        totalBoxWidth +
+        12,
+      y + 28,
+      {
+        width:
+          totalBoxWidth -
+          24,
+
+        align:
+          "right",
+      },
+    );
+
+
+  doc
+    .font(
+      "Helvetica",
+    )
+    .fontSize(
+      7,
+    )
+    .fillColor(
+      "#71809A",
+    )
+    .text(
+      `Generated from confirmed itinerary and Accounts & Finance data on ${new Date().toLocaleString(
+        "en-IN",
+      )}.`,
+      left,
+      y + 22,
+      {
+        width:
+          430,
+      },
+    );
+
+
+  doc.end();
+}
+
+
+/**
+ * 🔹 GET /accounts-manager/quotes?q=...
+ * Quote autocomplete – distinct itinerary_quote_ID values.
  */
-  async searchQuotes(
-    phrase: string,
-  ): Promise<AccountsManagerQuoteDto[]> {
+async searchQuotes(
+  phrase: string,
+): Promise<AccountsManagerQuoteDto[]> {
     const where: any = {};
 
     if (phrase) {
