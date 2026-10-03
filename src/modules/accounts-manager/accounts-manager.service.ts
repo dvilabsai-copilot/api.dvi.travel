@@ -183,14 +183,26 @@ if (quoteCandidate) {
     const rows: AccountsManagerRowDto[] = [];
 
  // Shared helper to build base row from header
-    const buildBaseRow = (
-      detailHeaderId: number,
-      vendorName: string,
-      amount: number,
-      paid: number,
-      balance: number,
-      component: AccountsManagerRowComponentType,
-    ): AccountsManagerRowDto | null => {
+   const buildBaseRow = (
+  detailHeaderId: number,
+  vendorName: string,
+  amount: number,
+  paid: number,
+  balance: number,
+  component: AccountsManagerRowComponentType,
+
+  /*
+   * Optional additional values that should
+   * participate in the general search.
+   *
+   * Vehicle uses this for:
+   * - Vendor Code
+   * - Vehicle Type
+   * - Registration Number
+   * - Vendor Branch
+   */
+  searchAliases: string[] = [],
+): AccountsManagerRowDto | null => {
       if (!shouldIncludeByStatus(balance)) return null;
 
       const header = headersById.get(detailHeaderId);
@@ -201,21 +213,35 @@ if (quoteCandidate) {
       const agentName = agentMap.get(header.agent_id) || "";
 
 // Free search:
-// Quote / Booking + Vendor / Supplier + Agent
+// Quote / Booking
+// Vendor / Supplier
+// Agent
+// + component-specific aliases
 if (query.search?.trim()) {
   const s =
     query.search
       .trim()
       .toLowerCase();
 
+  const searchableValues = [
+    quoteId,
+    vendorName,
+    agentName,
+    ...searchAliases,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
   if (
-    !quoteId.toLowerCase().includes(s) &&
-    !vendorName.toLowerCase().includes(s) &&
-    !agentName.toLowerCase().includes(s)
+    !searchableValues.includes(
+      s,
+    )
   ) {
     return null;
   }
 }
+
 
       const rowStatus: "paid" | "due" = balance === 0 ? "paid" : "due";
 
@@ -505,9 +531,7 @@ inhandAmount:
       }
     }
 
- // 7 VEHICLE component
-    if (componentType === "all" || componentType === "vehicle") {
-    // 7 VEHICLE component
+// 7 VEHICLE component
 if (
   componentType === "all" ||
   componentType === "vehicle"
@@ -716,10 +740,11 @@ if (
               },
             },
 
-            select: {
-              vendor_id: true,
-              vendor_name: true,
-            },
+           select: {
+  vendor_id: true,
+  vendor_name: true,
+  vendor_code: true,
+},
           })
         : [],
 
@@ -754,17 +779,31 @@ if (
         : [],
     ]);
 
-  const vendorMap =
-    new Map<number, string>();
+ const vendorMap =
+  new Map<
+    number,
+    {
+      name: string;
+      code: string;
+    }
+  >();
 
-  for (const vendor of vendors) {
-    vendorMap.set(
-      vendor.vendor_id,
-      String(
-        vendor.vendor_name || "",
-      ).trim(),
-    );
-  }
+for (const vendor of vendors) {
+  vendorMap.set(
+    vendor.vendor_id,
+    {
+      name:
+        String(
+          vendor.vendor_name || "",
+        ).trim(),
+
+      code:
+        String(
+          vendor.vendor_code || "",
+        ).trim(),
+    },
+  );
+}
 
   const vehicleTypeMap =
     new Map<number, string>();
@@ -822,17 +861,23 @@ if (
           0,
       );
 
-    const vendorName =
-      vendorMap.get(
-        vendorId,
-      ) ||
-      vehicle?.ownerName ||
-      "Vehicle Vendor";
+  const vendor =
+  vendorMap.get(
+    vendorId,
+  );
 
-    const vehicleTypeName =
-      vehicleTypeMap.get(
-        vehicleTypeId,
-      ) || "Vehicle";
+const vendorName =
+  vendor?.name ||
+  vehicle?.ownerName ||
+  "Vehicle Vendor";
+
+const vendorCode =
+  vendor?.code || "";
+
+const vehicleTypeName =
+  vehicleTypeMap.get(
+    vehicleTypeId,
+  ) || "Vehicle";
 
     const vehicleName =
       vehicle?.registrationNumber ||
@@ -848,15 +893,22 @@ if (
         vendorBranchId,
       ) || "";
 
-    const base =
-      buildBaseRow(
-        vd.accounts_itinerary_details_ID,
-        vendorName,
-        vd.total_payable,
-        vd.total_paid,
-        vd.total_balance,
-        "vehicle",
-      );
+ const base =
+  buildBaseRow(
+    vd.accounts_itinerary_details_ID,
+    vendorName,
+    vd.total_payable,
+    vd.total_paid,
+    vd.total_balance,
+    "vehicle",
+
+    [
+      vendorCode,
+      vehicleTypeName,
+      vehicleName,
+      vendorBranchName,
+    ],
+  );
 
     if (!base) {
       continue;
@@ -907,15 +959,14 @@ if (
         vd.total_purchase || 0,
       );
 
-    base.tax = 0;
+   base.tax = 0;
 
-    rows.push(base);
+rows.push(base);
   }
 }
-    }
 
- // 8 Sort by start date desc + quoteId as fallback
-    rows.sort((a, b) => {
+// 8 Sort by start date desc + quoteId as fallback
+rows.sort((a, b) => {
       const da = toComparable(a.startDate);
       const db = toComparable(b.startDate);
       if (da === db) {
