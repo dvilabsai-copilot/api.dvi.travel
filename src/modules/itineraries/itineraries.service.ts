@@ -3701,7 +3701,33 @@ timingStepStartedAt =
   }
 
   async confirmManualHotspotFitHere(planId: number, payload: any, userId: number = 1) {
-    return this.manualHotspotPreviewService.confirmManualHotspotFitHere(planId, payload, userId);
+    const result = await this.manualHotspotPreviewService.confirmManualHotspotFitHere(
+      planId,
+      payload,
+      userId,
+    );
+
+    if (result?.success === true && result?.inserted === true) {
+      const confirmedRouteId = Number(result?.routeId || 0);
+
+      await this.hotspotEngine.rebuildParkingCharges(
+        Number(planId),
+        Number(userId || 1),
+      );
+
+      await this.forceRebuildVehiclePricingAfterHotspotChange(
+        Number(planId),
+        confirmedRouteId > 0 ? confirmedRouteId : undefined,
+      );
+
+      return {
+        ...result,
+        parkingChargesRebuilt: true,
+        vehiclePricingRebuilt: true,
+      };
+    }
+
+    return result;
   }
 
   private buildExactAnchorSequentialTimelineCacheKey(...args: any[]) {
