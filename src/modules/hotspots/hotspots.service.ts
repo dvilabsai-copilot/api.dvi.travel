@@ -1238,11 +1238,30 @@ if (lineNo === 1) {
     pageSize?: number;
     hotspotId?: number;
     vehicleTypeId?: number;
+    hotspotIds?: number[];
+    vehicleTypeIds?: number[];
   }) {
     const requestedPage = Math.max(1, Number(params.page || 1));
     const pageSize = Math.max(1, Math.min(100, Number(params.pageSize || 25)));
-    const hotspotId = Number(params.hotspotId || 0);
-    const vehicleTypeId = Number(params.vehicleTypeId || 0);
+    const normalizeIds = (
+      plural: number[] | undefined,
+      singular: number | undefined,
+      label: string,
+    ): number[] => {
+      const values = plural ?? (singular === undefined ? [] : [singular]);
+      if (
+        !Array.isArray(values) ||
+        values.length > 5 ||
+        values.some((id) => !Number.isSafeInteger(id) || id <= 0)
+      ) {
+        throw new BadRequestException(label + ' allows up to five positive integer IDs');
+      }
+      return [...new Set(values)];
+    };
+    const hotspotIds = normalizeIds(params.hotspotIds, params.hotspotId, 'hotspotIds');
+    const vehicleTypeIds = normalizeIds(
+      params.vehicleTypeIds, params.vehicleTypeId, 'vehicleTypeIds',
+    );
 
     const [allHotspots, allVehicleTypes] = await Promise.all([
       this.prisma.dvi_hotspot_place.findMany({
@@ -1264,11 +1283,13 @@ if (lineNo === 1) {
       }),
     ]);
 
-    const hotspots = hotspotId
-      ? allHotspots.filter((row) => Number(row.hotspot_ID) === hotspotId)
+    const hotspots = hotspotIds.length
+      ? allHotspots.filter((row) => hotspotIds.includes(Number(row.hotspot_ID)))
       : allHotspots;
-    const vehicleTypes = vehicleTypeId
-      ? allVehicleTypes.filter((row) => Number(row.vehicle_type_id) === vehicleTypeId)
+    const vehicleTypes = vehicleTypeIds.length
+      ? allVehicleTypes.filter((row) =>
+          vehicleTypeIds.includes(Number(row.vehicle_type_id)),
+        )
       : allVehicleTypes;
 
     const total = hotspots.length * vehicleTypes.length;
