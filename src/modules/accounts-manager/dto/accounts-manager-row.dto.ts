@@ -68,17 +68,35 @@ export class AccountsManagerRowDto {
  /** Optional per-route date (itinerary_route_date / confirmed route date) in DD/MM/YYYY */
   routeDate?: string;
 
- /** Optional IDs used by future Pay Now / drill-down flows */
-  vehicleId?: number;
-  vendorId?: number;
+ /** Optional IDs used by Pay Now / drill-down flows */
+vehicleId?: number;
+vehicleTypeId?: number;
+vendorId?: number;
+vendorBranchId?: number;
 
- // --- NEW FIELDS FOR PARITY ---
-  receivableFromAgentAmount?: number;
-  inhandAmount?: number;
-  marginAmount?: number;
-  tax?: number;
-  guestName?: string;
-  arrivalLocation?: string;
-  departureLocation?: string;
-  roomCount?: number;
+/** Vehicle component display data */
+vendorName?: string;
+vendorBranchName?: string;
+vehicleTypeName?: string;
+vehicleName?: string;
+
+/**
+ * Header-level financial values.
+ * These let Overview aggregate Agent/Vendor searches
+ * without counting the same booking more than once.
+ */
+headerTotalBilled?: number;
+headerTotalReceived?: number;
+headerTotalReceivable?: number;
+headerTotalPayout?: number;
+
+// --- EXISTING PARITY FIELDS ---
+receivableFromAgentAmount?: number;
+inhandAmount?: number;
+marginAmount?: number;
+tax?: number;
+guestName?: string;
+arrivalLocation?: string;
+departureLocation?: string;
+roomCount?: number;
 }
