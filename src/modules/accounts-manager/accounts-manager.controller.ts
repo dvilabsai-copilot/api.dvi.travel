@@ -1,6 +1,23 @@
 // FILE: src/modules/accounts-manager/accounts-manager.controller.ts
 
-import { Body, Controller, Get, Post, Query, UseGuards, Req, UploadedFile, UseInterceptors } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+  Req,
+  UploadedFile,
+  UseInterceptors,
+  Param,
+  ParseIntPipe,
+  Res,
+} from "@nestjs/common";
+
+import {
+  Response,
+} from "express";
 import { AccountsManagerService } from "./accounts-manager.service";
 import { AccountsManagerQueryDto } from "./dto/accounts-manager-query.dto";
 import { AccountsManagerRowDto } from "./dto/accounts-manager-row.dto";
@@ -151,14 +168,103 @@ export class AccountsManagerController {
   })
   @ApiOkResponse({ type: AccountsManagerPaymentModeDto, isArray: true })
   async paymentModes(): Promise<AccountsManagerPaymentModeDto[]> {
-    return this.service.listPaymentModes();
+  return this.service.listPaymentModes();
+}
+
+
+/**
+ * Download the complete Purchase Cost / Package PDF
+ * for one Accounts booking.
+ *
+ * headerId = accounts_itinerary_details_ID
+ */
+@UseGuards(
+  JwtAuthGuard,
+)
+@Get(
+  "purchase-cost-pdf/:headerId",
+)
+@ApiOperation({
+  summary:
+    "Download confirmed itinerary purchase cost PDF",
+})
+async purchaseCostPdf(
+  @Req()
+  req: any,
+
+  @Param(
+    "headerId",
+    ParseIntPipe,
+  )
+  headerId: number,
+
+  @Res()
+  res: Response,
+): Promise<void> {
+  const scope:
+    AccountsManagerQueryDto =
+    {
+      status:
+        "all",
+
+      componentType:
+        "all",
+    };
+
+
+  const user =
+    req.user;
+
+
+  /*
+   * Same access rules already used by
+   * Accounts Manager list / summary.
+   */
+  if (
+    user.role === 4
+  ) {
+    scope.agentId =
+      Number(
+        user.agentId,
+      );
+  } else if (
+    user.role === 6
+  ) {
+    /*
+     * Accounts role:
+     * no Agent restriction.
+     */
+  } else if (
+    user.role === 3 ||
+    user.role === 8 ||
+    (
+      user.staffId &&
+      user.staffId > 0
+    )
+  ) {
+    (
+      scope as any
+    ).travelExpertId =
+      Number(
+        user.staffId,
+      );
   }
 
- /**
-   * Pay Now – updates total_paid and total_balance for a component row.
-   * POST /accounts-manager/pay
+
+  await this.service
+    .downloadPurchaseCostPdf(
+      headerId,
+      res,
+      scope,
+    );
+}
+
+
+/**
+ * Pay Now – updates total_paid and total_balance for a component row.
+ * POST /accounts-manager/pay
  */
-  @Post("pay")
+@Post("pay")
   @ApiOperation({
     summary: "Record a payment against a component row",
     description:
