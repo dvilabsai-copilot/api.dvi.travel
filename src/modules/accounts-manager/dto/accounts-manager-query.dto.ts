@@ -40,8 +40,9 @@ export class AccountsManagerQueryDto {
   @IsOptional()
   agentId?: number;
 
- // Free text search on quoteId + hotel/vendor name
-  @IsOptional()
-  @IsString()
-  search?: string;
+ // General Accounts search:
+// Booking/Quote ID + Agent + Vendor/Supplier
+@IsOptional()
+@IsString()
+search?: string;
 }

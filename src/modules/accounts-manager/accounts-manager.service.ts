@@ -32,20 +32,653 @@ export class AccountsManagerService {
     AccountsComponentSyncService,
 ) {}
 
- // MAIN LIST now also exposes headerId, routeDate, vendorId, vehicleId
+
+/**
+ * Resolve the Accounts Overview search against the
+ * real confirmed-itinerary sources BEFORE reading
+ * flattened Accounts rows.
+ *
+ * Supported:
+ * - confirmed Booking ID
+ * - original Quote ID
+ * - Agent
+ * - Vehicle Vendor
+ * - Vendor Code
+ * - Vendor Branch
+ * - Hotel / Supplier
+ */
+private async ensureConfirmedAccountsForSearch(
+  query: AccountsManagerQueryDto,
+): Promise<void> {
+  /*
+   * Existing explicit quoteId filters remain
+   * exact-quote repair requests.
+   */
+  const explicitQuote =
+    String(
+      query.quoteId || "",
+    ).trim();
+
+  if (explicitQuote) {
+    await this.accountsComponentSync
+      .ensureConfirmedQuote(
+        explicitQuote,
+      );
+
+    return;
+  }
+
+
+  const search =
+    String(
+      query.search || "",
+    ).trim();
+
+  if (!search) {
+    return;
+  }
+
+
+  /*
+   * ============================================================
+   * ACCESS SCOPE
+   * ============================================================
+   *
+   * Agent login:
+   *   only that Agent's itineraries.
+   *
+   * Travel Expert / Staff:
+   *   only Agents assigned to that Travel Expert.
+   *
+   * Admin / Accounts:
+   *   no Agent restriction here.
+   */
+  let allowedAgentIds:
+    number[] | null = null;
+
+
+  if (query.agentId) {
+    const agentId =
+      Number(
+        query.agentId,
+      );
+
+    allowedAgentIds =
+      agentId > 0
+        ? [agentId]
+        : [];
+  } else if (
+    Number(
+      (query as any)
+        .travelExpertId || 0,
+    ) > 0
+  ) {
+    const travelExpertId =
+      Number(
+        (query as any)
+          .travelExpertId,
+      );
+
+    const allowedAgents =
+      await this.prisma
+        .dvi_agent
+        .findMany({
+          where: {
+            travel_expert_id:
+              travelExpertId,
+
+            deleted: 0,
+          },
+
+          select: {
+            agent_ID: true,
+          },
+        });
+
+    allowedAgentIds =
+      allowedAgents
+        .map((row) =>
+          Number(
+            row.agent_ID,
+          ),
+        )
+        .filter(
+          (id) => id > 0,
+        );
+  }
+
+
+  if (
+    allowedAgentIds &&
+    allowedAgentIds.length === 0
+  ) {
+    return;
+  }
+
+
+  /*
+   * ============================================================
+   * 1. AGENT SEARCH
+   * ============================================================
+   */
+  const agentWhere: any = {
+    deleted: 0,
+
+    OR: [
+      {
+        agent_name: {
+          contains: search,
+        },
+      },
+
+      {
+        agent_lastname: {
+          contains: search,
+        },
+      },
+    ],
+  };
+
+
+  if (allowedAgentIds) {
+    agentWhere.agent_ID = {
+      in: allowedAgentIds,
+    };
+  }
+
+
+  /*
+   * ============================================================
+   * 2. VENDOR SEARCH
+   * ============================================================
+   *
+   * Vendor master gives us:
+   * - vendor name
+   * - vendor code
+   *
+   * Branch table gives us:
+   * - branch name
+   * - branch location
+   */
+  const [
+    matchingAgents,
+    matchingVendors,
+    matchingVendorBranches,
+    matchingHotels,
+    matchingOriginalQuotes,
+  ] =
+    await Promise.all([
+      this.prisma
+        .dvi_agent
+        .findMany({
+          where: agentWhere,
+
+          select: {
+            agent_ID: true,
+          },
+        }),
+
+      this.prisma
+        .dvi_vendor_details
+        .findMany({
+          where: {
+            deleted: 0,
+
+            OR: [
+              {
+                vendor_name: {
+                  contains: search,
+                },
+              },
+
+              {
+                vendor_code: {
+                  contains: search,
+                },
+              },
+            ],
+          },
+
+          select: {
+            vendor_id: true,
+          },
+        }),
+
+      this.prisma
+        .dvi_vendor_branches
+        .findMany({
+          where: {
+            deleted: 0,
+
+            OR: [
+              {
+                vendor_branch_name: {
+                  contains: search,
+                },
+              },
+
+              {
+                vendor_branch_location: {
+                  contains: search,
+                },
+              },
+            ],
+          },
+
+          select: {
+            vendor_branch_id: true,
+            vendor_id: true,
+          },
+        }),
+
+      /*
+       * Hotel rows are also Suppliers in
+       * Service Components.
+       */
+      this.prisma
+  .dvi_hotel
+  .findMany({
+    where: {
+      deleted: false,
+
+      hotel_name: {
+        contains: search,
+      },
+    },
+
+    select: {
+      hotel_id: true,
+    },
+  }),
+
+      /*
+       * Original Quote ID.
+       *
+       * The confirmed listing can conceptually have
+       * both the original Quote ID and confirmed
+       * Booking ID, so preserve both search paths.
+       */
+      this.prisma
+        .dvi_itinerary_plan_details
+        .findMany({
+          where: {
+            deleted: 0,
+
+            itinerary_quote_ID: {
+              contains: search,
+            },
+
+            ...(allowedAgentIds
+              ? {
+                  agent_id: {
+                    in:
+                      allowedAgentIds,
+                  },
+                }
+              : {}),
+          },
+
+          select: {
+            itinerary_plan_ID:
+              true,
+          },
+        }),
+    ]);
+
+
+  const matchingAgentIds =
+    matchingAgents
+      .map((row) =>
+        Number(
+          row.agent_ID,
+        ),
+      )
+      .filter(
+        (id) => id > 0,
+      );
+
+
+  const vendorIds =
+    new Set<number>();
+
+
+  for (
+    const vendor
+    of matchingVendors
+  ) {
+    const id =
+      Number(
+        vendor.vendor_id,
+      );
+
+    if (id > 0) {
+      vendorIds.add(id);
+    }
+  }
+
+
+  for (
+    const branch
+    of matchingVendorBranches
+  ) {
+    const id =
+      Number(
+        branch.vendor_id,
+      );
+
+    if (id > 0) {
+      vendorIds.add(id);
+    }
+  }
+
+
+  const vendorBranchIds =
+    matchingVendorBranches
+      .map((row) =>
+        Number(
+          row.vendor_branch_id,
+        ),
+      )
+      .filter(
+        (id) => id > 0,
+      );
+
+
+  const hotelIds =
+    matchingHotels
+      .map((row) =>
+        Number(
+          row.hotel_id,
+        ),
+      )
+      .filter(
+        (id) => id > 0,
+      );
+
+
+  /*
+   * ============================================================
+   * 3. FIND CONFIRMED ITINERARIES USING THOSE VENDORS
+   * ============================================================
+   */
+  const [
+    vehicleVendorRows,
+    hotelSupplierRows,
+  ] =
+    await Promise.all([
+      (
+        vendorIds.size ||
+        vendorBranchIds.length
+      )
+        ? this.prisma
+            .dvi_confirmed_itinerary_plan_vendor_eligible_list
+            .findMany({
+              where: {
+                deleted: 0,
+                status: 1,
+
+                itineary_plan_assigned_status:
+                  1,
+
+                OR: [
+                  ...(vendorIds.size
+                    ? [
+                        {
+                          vendor_id: {
+                            in: Array.from(
+                              vendorIds,
+                            ),
+                          },
+                        },
+                      ]
+                    : []),
+
+                  ...(vendorBranchIds.length
+                    ? [
+                        {
+                          vendor_branch_id:
+                            {
+                              in:
+                                vendorBranchIds,
+                            },
+                        },
+                      ]
+                    : []),
+                ],
+              },
+
+              select: {
+                itinerary_plan_id:
+                  true,
+              },
+            })
+        : Promise.resolve([]),
+
+      hotelIds.length
+        ? this.prisma
+            .dvi_confirmed_itinerary_plan_hotel_details
+            .findMany({
+              where: {
+                deleted: 0,
+                status: 1,
+
+                hotel_id: {
+                  in: hotelIds,
+                },
+              },
+
+              select: {
+                itinerary_plan_id:
+                  true,
+              },
+            })
+        : Promise.resolve([]),
+    ]);
+
+
+  /*
+   * All plan IDs discovered from:
+   *
+   * - original Quote ID
+   * - Vendor
+   * - Vendor branch
+   * - Hotel supplier
+   */
+  const matchingPlanIds =
+    new Set<number>();
+
+
+  for (
+    const row
+    of matchingOriginalQuotes
+  ) {
+    const id =
+      Number(
+        row.itinerary_plan_ID,
+      );
+
+    if (id > 0) {
+      matchingPlanIds.add(id);
+    }
+  }
+
+
+  for (
+    const row
+    of vehicleVendorRows
+  ) {
+    const id =
+      Number(
+        row.itinerary_plan_id,
+      );
+
+    if (id > 0) {
+      matchingPlanIds.add(id);
+    }
+  }
+
+
+  for (
+    const row
+    of hotelSupplierRows
+  ) {
+    const id =
+      Number(
+        row.itinerary_plan_id,
+      );
+
+    if (id > 0) {
+      matchingPlanIds.add(id);
+    }
+  }
+
+
+  /*
+   * ============================================================
+   * 4. FIND THE ACTUAL CONFIRMED BOOKINGS
+   * ============================================================
+   *
+   * This covers:
+   *
+   * A) confirmed Booking ID
+   * B) Agent
+   * C) original Quote ID
+   * D) Vendor
+   */
+  const searchOr: any[] = [
+    /*
+     * Confirmed Booking ID / confirmed quote.
+     */
+    {
+      itinerary_quote_ID: {
+        contains: search,
+      },
+    },
+  ];
+
+
+  if (
+    matchingAgentIds.length
+  ) {
+    searchOr.push({
+      agent_id: {
+        in:
+          matchingAgentIds,
+      },
+    });
+  }
+
+
+  if (
+    matchingPlanIds.size
+  ) {
+    searchOr.push({
+      itinerary_plan_ID: {
+        in:
+          Array.from(
+            matchingPlanIds,
+          ),
+      },
+    });
+  }
+
+
+  const confirmedWhere: any = {
+    deleted: 0,
+    status: 1,
+
+    OR: searchOr,
+  };
+
+
+  /*
+   * Preserve role/access restrictions even
+   * while doing Vendor/Quote discovery.
+   */
+  if (allowedAgentIds) {
+    confirmedWhere.agent_id = {
+      in:
+        allowedAgentIds,
+    };
+  }
+
+
+  const matchingConfirmedPlans =
+    await this.prisma
+      .dvi_confirmed_itinerary_plan_details
+      .findMany({
+        where:
+          confirmedWhere,
+
+        select: {
+          itinerary_quote_ID:
+            true,
+        },
+      });
+
+
+  const confirmedQuoteIds =
+    Array.from(
+      new Set(
+        matchingConfirmedPlans
+          .map((row) =>
+            String(
+              row
+                .itinerary_quote_ID ||
+              "",
+            ).trim(),
+          )
+          .filter(Boolean),
+      ),
+    );
+
+
+  /*
+   * Sync in small batches.
+   *
+   * Do not fire hundreds of DB repair
+   * transactions simultaneously.
+   */
+  const BATCH_SIZE = 10;
+
+
+  for (
+    let index = 0;
+    index < confirmedQuoteIds.length;
+    index += BATCH_SIZE
+  ) {
+    const batch =
+      confirmedQuoteIds.slice(
+        index,
+        index + BATCH_SIZE,
+      );
+
+    await Promise.all(
+      batch.map(
+        (quoteId) =>
+          this.accountsComponentSync
+            .ensureConfirmedQuote(
+              quoteId,
+            ),
+      ),
+    );
+  }
+}
+
+
+// MAIN LIST
 async list(
   query: AccountsManagerQueryDto,
 ): Promise<AccountsManagerRowDto[]> {
-const quoteCandidate =
-  query.quoteId?.trim() ||
-  query.search?.trim();
-
-if (quoteCandidate) {
-  await this.accountsComponentSync
-    .ensureConfirmedQuote(
-      quoteCandidate,
-    );
-}
+  /*
+   * Before reading Accounts rows, make sure all
+   * CONFIRMED itineraries matching the current
+   * Quote / Agent / Vendor search have Accounts
+   * records.
+   */
+  await this.ensureConfirmedAccountsForSearch(
+    query,
+  );
 
   const status:
     AccountsManagerStatus =
@@ -120,14 +753,20 @@ if (quoteCandidate) {
     const plans = planIds.length
       ? await this.prisma.dvi_itinerary_plan_details.findMany({
           where: { itinerary_plan_ID: { in: planIds } },
-          select: {
-            itinerary_plan_ID: true,
-            arrival_location: true,
-            departure_location: true,
-            total_adult: true,
-            total_children: true,
-            total_infants: true,
-          }
+        select: {
+  itinerary_plan_ID: true,
+
+  /*
+   * Original quote ID.
+   */
+  itinerary_quote_ID: true,
+
+  arrival_location: true,
+  departure_location: true,
+  total_adult: true,
+  total_children: true,
+  total_infants: true,
+},
         })
       : [];
 
@@ -141,23 +780,44 @@ if (quoteCandidate) {
       new Set(headers.map((h) => h.agent_id).filter((x) => x && x > 0)),
     );
 
-    const agents = agentIds.length
-      ? await this.prisma.dvi_agent.findMany({
-          where: {
-            agent_ID: { in: agentIds },
-          },
-          select: {
-            agent_ID: true,
-            agent_name: true,
-          },
-        })
-      : [];
+const agents = agentIds.length
+  ? await this.prisma.dvi_agent.findMany({
+      where: {
+        agent_ID: {
+          in: agentIds,
+        },
+      },
 
-    const agentMap = new Map<number, string>();
-    for (const a of agents) {
-      agentMap.set(a.agent_ID, a.agent_name || "");
-    }
+      select: {
+        agent_ID: true,
+        agent_name: true,
+        agent_lastname: true,
+      },
+    })
+  : [];
 
+const agentMap =
+  new Map<number, string>();
+
+for (const a of agents) {
+  const agentName =
+    [
+      a.agent_name,
+      a.agent_lastname,
+    ]
+      .map((value) =>
+        String(
+          value || "",
+        ).trim(),
+      )
+      .filter(Boolean)
+      .join(" ");
+
+  agentMap.set(
+    a.agent_ID,
+    agentName,
+  );
+}
  // If agent name filter is provided, restrict headers here
     let filteredHeaderIds = headerIds;
     if (query.agent) {
@@ -208,9 +868,33 @@ if (quoteCandidate) {
       const header = headersById.get(detailHeaderId);
       if (!header) return null;
 
-      const plan = planMap.get(header.itinerary_plan_ID);
-      const quoteId = header.itinerary_quote_ID || "";
-      const agentName = agentMap.get(header.agent_id) || "";
+     const plan =
+  planMap.get(
+    header.itinerary_plan_ID,
+  );
+
+/*
+ * Accounts / confirmed booking ID.
+ */
+const quoteId =
+  String(
+    header.itinerary_quote_ID ||
+    "",
+  ).trim();
+
+/*
+ * Original itinerary Quote ID.
+ */
+const originalQuoteId =
+  String(
+    plan?.itinerary_quote_ID ||
+    "",
+  ).trim();
+
+const agentName =
+  agentMap.get(
+    header.agent_id,
+  ) || "";
 
 // Free search:
 // Quote / Booking
@@ -223,15 +907,43 @@ if (query.search?.trim()) {
       .trim()
       .toLowerCase();
 
-  const searchableValues = [
-    quoteId,
-    vendorName,
-    agentName,
-    ...searchAliases,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+ const searchableValues = [
+  /*
+   * Confirmed Booking ID
+   */
+  quoteId,
+
+  /*
+   * Original Quote ID
+   */
+  originalQuoteId,
+
+  /*
+   * Agent
+   */
+  agentName,
+
+  /*
+   * Component supplier.
+   *
+   * Hotel = hotel name
+   * Vehicle = resolved vendor
+   * Guide etc = component name
+   */
+  vendorName,
+
+  /*
+   * Vehicle-specific aliases:
+   * vendor code,
+   * vehicle type,
+   * registration,
+   * vendor branch.
+   */
+  ...searchAliases,
+]
+  .filter(Boolean)
+  .join(" ")
+  .toLowerCase();
 
   if (
     !searchableValues.includes(
