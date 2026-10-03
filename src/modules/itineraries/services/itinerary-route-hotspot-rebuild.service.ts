@@ -63,6 +63,10 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
             item_type: 4,
             deleted: 0,
             status: 1,
+            // Route reset removes manual hotspots explicitly below. Do not pass
+            // them to the engine, which is responsible for preserving manual
+            // hotspots for other rebuild workflows.
+            hotspot_plan_own_way: { not: 1 },
           },
         });
       const existingHotspotsWithDates = oldHotspots.map((row: any) => ({
@@ -154,12 +158,10 @@ const planRow = await tx.dvi_itinerary_plan_details.findFirst({
           data: { deleted: 1, status: 0, updatedon: new Date() },
         });
 
-   await tx.dvi_itinerary_route_details.update({
-  where: { itinerary_route_ID: normalizedRouteId },
- data: {
-  updatedon: new Date(),
-},
-});
+        await tx.dvi_itinerary_route_details.update({
+          where: { itinerary_route_ID: normalizedRouteId },
+          data: { excluded_hotspot_ids: [], updatedon: new Date() },
+        });
         const preRouteVisitCount = await tx.dvi_itinerary_route_hotspot_details.count({
           where: {
             itinerary_plan_ID: normalizedPlanId,

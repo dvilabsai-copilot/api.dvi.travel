@@ -30,14 +30,18 @@ test('deletes dependent rows, records route exclusion and rebuilds pricing', asy
         ? null
         : { hotspot_ID: 9, route_hotspot_ID: 100 },
       findMany: async () => [{ route_hotspot_ID: 100 }],
-      deleteMany: async () => { calls.push('hotspot.delete'); return { count: 1 }; },
+      updateMany: async () => { calls.push('hotspot.delete'); return { count: 1 }; },
     },
     dvi_itinerary_route_activity_details: {
-      deleteMany: async () => { calls.push('activity.delete'); },
+      updateMany: async () => { calls.push('activity.delete'); },
     },
     dvi_itinerary_route_details: {
       findFirst: async () => ({ itinerary_route_ID: 7, excluded_hotspot_ids: [] }),
       update: async () => { calls.push('route.exclude'); },
+    },
+    dvi_itinerary_manual_hotspot_displacement: {
+      findMany: async () => [],
+      updateMany: async () => undefined,
     },
   };
   const prisma: any = {
