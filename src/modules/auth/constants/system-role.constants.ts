@@ -21,16 +21,19 @@ export type SystemRoleId =
   (typeof SystemRole)[keyof typeof SystemRole];
 
 /*
- * Roles an existing Agent may be changed to
- * from the Admin → Agent page.
+ * Roles available from Admin → Agent →
+ * Change Role.
  *
  * ADMIN is deliberately excluded.
- * AGENT is also excluded because it is the
- * source/current role and would be a no-op.
+ *
+ * AGENT remains available because an account
+ * that was previously changed to another role
+ * may later be changed back to Agent.
  */
 export const AGENT_ROLE_CHANGE_TARGETS = [
   SystemRole.VENDOR,
   SystemRole.STAFF,
+  SystemRole.AGENT,
   SystemRole.GUIDE,
   SystemRole.ACCOUNTS,
   SystemRole.TRAVEL_EXPERT,
