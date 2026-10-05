@@ -157,72 +157,43 @@ export class AgentConversionService {
                * been changed to the requested
                * role, do not process it again.
                */
-              const existingTargetUser =
-                await tx.dvi_users
-                  .findFirst({
-                    where: {
-                      agent_id:
-                        agentId,
+              
+/*
+ * Find the SAME account originally
+ * belonging to this Agent.
+ *
+ * Do not require roleID = AGENT or
+ * staff_id = 0 here because this same
+ * dvi_users row may already have been
+ * changed to Staff, Travel Expert,
+ * Accounts, etc.
+ *
+ * The Agent email below is used to
+ * identify the primary account safely.
+ */
+const ownerLogins =
+  await tx.dvi_users
+    .findMany({
+      where: {
+        agent_id:
+          agentId,
 
-                      roleID:
-                        roleId,
+        deleted: 0,
+      },
 
-                      deleted: 0,
-                    },
+      orderBy: {
+        userID:
+          'desc',
+      },
+    });
 
-                    orderBy: {
-                      userID:
-                        'desc',
-                    },
-                  });
-
-              if (
-                existingTargetUser
-              ) {
-                throw new ConflictException(
-                  `This Agent has already been changed to ${this.getRoleLabel(
-                    roleId,
-                  )}.`,
-                );
-              }
-
-              /*
-               * Find the actual primary
-               * Agent login.
-               *
-               * Agent staff users may share
-               * the same agent_id, therefore
-               * staff_id = 0 is important.
-               */
-              const ownerLogins =
-                await tx.dvi_users
-                  .findMany({
-                    where: {
-                      agent_id:
-                        agentId,
-
-                      staff_id: 0,
-
-                      roleID:
-                        SystemRole.AGENT,
-
-                      deleted: 0,
-                    },
-
-                    orderBy: {
-                      userID:
-                        'desc',
-                    },
-                  });
-
-              if (
-                !ownerLogins.length
-              ) {
-                throw new NotFoundException(
-                  'Active Agent login not found. The account may already have been changed to another role.',
-                );
-              }
-
+if (
+  !ownerLogins.length
+) {
+  throw new NotFoundException(
+    'Active login for this Agent was not found.',
+  );
+}
               const normalizedAgentEmail =
                 this.normalizeEmail(
                   agent.agent_email_id,
@@ -263,6 +234,21 @@ export class AgentConversionService {
 
               const user =
                 candidates[0];
+
+                /*
+ * Do not perform a no-op role change.
+ */
+if (
+  Number(
+    user.roleID ?? 0,
+  ) === roleId
+) {
+  throw new ConflictException(
+    `This account is already ${this.getRoleLabel(
+      roleId,
+    )}.`,
+  );
+}
 
               const normalizedLoginEmail =
                 this.normalizeEmail(
@@ -482,15 +468,12 @@ export class AgentConversionService {
                      * Other roles keep the
                      * existing value.
                      */
-                    staff_id:
-                      STAFF_BACKED_ROLES.has(
-                        roleId,
-                      )
-                        ? staffId
-                        : Number(
-                            user.staff_id ??
-                              0,
-                          ),
+                   staff_id:
+  STAFF_BACKED_ROLES.has(
+    roleId,
+  )
+    ? staffId
+    : 0,
 
                     updatedon:
                       now as any,
