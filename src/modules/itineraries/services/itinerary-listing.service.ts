@@ -111,13 +111,57 @@ export class ItineraryListingService {
     }));
   }
 
-  const where: any = { deleted: 0 };
+  const where: any = {
+  deleted: 0,
+};
 
-  if (agentId > 0) {
-    where.agent_ID = agentId;
-  } else if (staffId > 0) {
-    where.travel_expert_id = staffId;
-  }
+if (
+  role ===
+    SystemRole.AGENT &&
+  agentId > 0
+) {
+  /*
+   * Normal Agent:
+   * only themselves.
+   */
+  where.agent_ID =
+    agentId;
+} else if (
+  (
+    role ===
+      SystemRole.STAFF ||
+    role ===
+      SystemRole.TRAVEL_EXPERT
+  ) &&
+  staffId > 0
+) {
+  /*
+   * Normal assigned Agents.
+   *
+   * For a converted role-8 Travel Expert,
+   * also include the preserved historical
+   * Agent identity.
+   */
+  where.OR = [
+    {
+      travel_expert_id:
+        staffId,
+    },
+
+    ...(
+      role ===
+        SystemRole.TRAVEL_EXPERT &&
+      agentId > 0
+        ? [
+            {
+              agent_ID:
+                agentId,
+            },
+          ]
+        : []
+    ),
+  ];
+}
 
   const agents = await this.prisma.dvi_agent.findMany({
     where,
@@ -311,30 +355,126 @@ if (vendorUser) {
       : [-1],
   };
 } else if (vehicleAgent) {
-      where.agent_id = input_agent_id > 0 ? input_agent_id : -1;
-      where.itinerary_preference = 2;
-    } else if (input_agent_id > 0) {
-      where.agent_id = input_agent_id;
-    } else if (input_guide_id > 0) {
- // Guide logic: find itineraries where this guide is assigned
-      const guideAssignments = await this.prisma.dvi_confirmed_itinerary_route_guide_details.findMany({
-        where: { guide_id: input_guide_id, deleted: 0 },
-        select: { itinerary_plan_ID: true },
+  where.agent_id =
+    input_agent_id > 0
+      ? input_agent_id
+      : -1;
+
+  where.itinerary_preference =
+    2;
+} else if (
+  logged_user_level ===
+    SystemRole.AGENT &&
+  input_agent_id > 0
+) {
+  /*
+   * Only a real Role-4 Agent should
+   * enter the Agent-only branch.
+   */
+  where.agent_id =
+    input_agent_id;
+} else if (
+  input_guide_id > 0
+) {
+  const guideAssignments =
+    await this.prisma
+      .dvi_confirmed_itinerary_route_guide_details
+      .findMany({
+        where: {
+          guide_id:
+            input_guide_id,
+
+          deleted: 0,
+        },
+
+        select: {
+          itinerary_plan_ID:
+            true,
+        },
       });
-      const assignedPlanIds = [...new Set(guideAssignments.map(a => a.itinerary_plan_ID))];
-      where.itinerary_plan_ID = { in: assignedPlanIds };
-    } else if (input_staff_id > 0 && logged_user_level !== 6) {
- // Travel Expert logic
-      const teAgents = await this.prisma.dvi_agent.findMany({
-        where: { travel_expert_id: input_staff_id } as any,
-        select: { agent_ID: true },
+
+  const assignedPlanIds = [
+    ...new Set(
+      guideAssignments.map(
+        (a) =>
+          a.itinerary_plan_ID,
+      ),
+    ),
+  ];
+
+  where.itinerary_plan_ID = {
+    in: assignedPlanIds,
+  };
+} else if (
+  (
+    logged_user_level ===
+      SystemRole.STAFF ||
+    logged_user_level ===
+      SystemRole.TRAVEL_EXPERT
+  ) &&
+  input_staff_id > 0
+) {
+  const teAgents =
+    await this.prisma
+      .dvi_agent
+      .findMany({
+        where: {
+          travel_expert_id:
+            input_staff_id,
+
+          deleted: 0,
+        },
+
+        select: {
+          agent_ID: true,
+        },
       });
-      const teAgentIds = teAgents.map((a) => Number(a.agent_ID)).filter((n) => n > 0);
-      where.OR = [
-        { staff_id: input_staff_id },
-        ...(teAgentIds.length ? [{ agent_id: { in: teAgentIds } }] : []),
-      ];
-    } else {
+
+  const teAgentIds =
+    teAgents
+      .map((a) =>
+        Number(
+          a.agent_ID,
+        ),
+      )
+      .filter(
+        (n) => n > 0,
+      );
+
+  const accessibleAgentIds = [
+    ...new Set([
+      ...teAgentIds,
+
+      ...(
+        logged_user_level ===
+          SystemRole.TRAVEL_EXPERT &&
+        input_agent_id > 0
+          ? [
+              input_agent_id,
+            ]
+          : []
+      ),
+    ]),
+  ];
+
+  where.OR = [
+    {
+      staff_id:
+        input_staff_id,
+    },
+
+    ...(accessibleAgentIds.length
+      ? [
+          {
+            agent_id: {
+              in:
+                accessibleAgentIds,
+            },
+          },
+        ]
+      : []),
+  ];
+} else {
       if (agent_id) where.agent_id = agent_id;
       if (staff_id) where.staff_id = staff_id;
     }
@@ -640,37 +780,119 @@ if (vendorUser) {
       };
     }
 
-    if (vehicleAgent) {
-      const vehiclePlans = await this.prisma.dvi_itinerary_plan_details.findMany({
+   if (vehicleAgent) {
+  const vehiclePlans =
+    await this.prisma
+      .dvi_itinerary_plan_details
+      .findMany({
         where: {
-          agent_id: input_agent_id > 0 ? input_agent_id : -1,
-          itinerary_preference: 2,
+          agent_id:
+            input_agent_id > 0
+              ? input_agent_id
+              : -1,
+
+          itinerary_preference:
+            2,
         },
-        select: { itinerary_plan_ID: true },
+
+        select: {
+          itinerary_plan_ID:
+            true,
+        },
       });
-      where.itinerary_plan_id = { in: vehiclePlans.map((p) => p.itinerary_plan_ID) };
-    } else if (input_agent_id > 0) {
-      const agentPlans = await this.prisma.dvi_itinerary_plan_details.findMany({
-        where: { agent_id: input_agent_id },
-        select: { itinerary_plan_ID: true },
+
+  where.itinerary_plan_id = {
+    in: vehiclePlans.map(
+      (p) =>
+        p.itinerary_plan_ID,
+    ),
+  };
+} else if (
+  logged_user_level ===
+    SystemRole.AGENT &&
+  input_agent_id > 0
+) {
+  const agentPlans =
+    await this.prisma
+      .dvi_itinerary_plan_details
+      .findMany({
+        where: {
+          agent_id:
+            input_agent_id,
+        },
+
+        select: {
+          itinerary_plan_ID:
+            true,
+        },
       });
-      where.itinerary_plan_id = { in: agentPlans.map((p) => p.itinerary_plan_ID) };
-    } else if (input_staff_id > 0 && logged_user_level !== 6) {
+
+  where.itinerary_plan_id = {
+    in: agentPlans.map(
+      (p) =>
+        p.itinerary_plan_ID,
+    ),
+  };
+} else if (
+  (
+    logged_user_level ===
+      SystemRole.STAFF ||
+    logged_user_level ===
+      SystemRole.TRAVEL_EXPERT
+  ) &&
+  input_staff_id > 0
+) {
       const teAgents = await this.prisma.dvi_agent.findMany({
         where: { travel_expert_id: input_staff_id } as any,
         select: { agent_ID: true },
       });
       const teAgentIds = teAgents.map((a) => Number(a.agent_ID)).filter((n) => n > 0);
 
-      const tePlans = await this.prisma.dvi_itinerary_plan_details.findMany({
-        where: {
-          OR: [
-            { staff_id: input_staff_id },
-            ...(teAgentIds.length ? [{ agent_id: { in: teAgentIds } }] : []),
-          ],
-        },
-        select: { itinerary_plan_ID: true },
-      });
+      const accessibleAgentIds = [
+  ...new Set([
+    ...teAgentIds,
+
+    ...(
+      logged_user_level ===
+        SystemRole.TRAVEL_EXPERT &&
+      input_agent_id > 0
+        ? [
+            input_agent_id,
+          ]
+        : []
+    ),
+  ]),
+];
+
+const tePlans =
+  await this.prisma
+    .dvi_itinerary_plan_details
+    .findMany({
+      where: {
+        OR: [
+          {
+            staff_id:
+              input_staff_id,
+          },
+
+          ...(accessibleAgentIds.length
+            ? [
+                {
+                  agent_id: {
+                    in:
+                      accessibleAgentIds,
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
+
+      select: {
+        itinerary_plan_ID:
+          true,
+      },
+    });
       where.itinerary_plan_id = { in: tePlans.map((p) => p.itinerary_plan_ID) };
     } else if (agent_id) {
       const agentPlans = await this.prisma.dvi_itinerary_plan_details.findMany({
@@ -746,21 +968,86 @@ if (vendorUser) {
       deleted: 0,
     };
 
-    if (input_agent_id > 0) {
-      where.agent_id = input_agent_id;
-    } else if (input_staff_id > 0 && logged_user_level !== 6) {
-      const teAgents = await this.prisma.dvi_agent.findMany({
-        where: { travel_expert_id: input_staff_id } as any,
-        select: { agent_ID: true },
+    if (
+  logged_user_level ===
+    SystemRole.AGENT &&
+  input_agent_id > 0
+) {
+  where.agent_id =
+    input_agent_id;
+} else if (
+  (
+    logged_user_level ===
+      SystemRole.STAFF ||
+    logged_user_level ===
+      SystemRole.TRAVEL_EXPERT
+  ) &&
+  input_staff_id > 0
+) {
+  const teAgents =
+    await this.prisma
+      .dvi_agent
+      .findMany({
+        where: {
+          travel_expert_id:
+            input_staff_id,
+
+          deleted: 0,
+        },
+
+        select: {
+          agent_ID: true,
+        },
       });
-      const teAgentIds = teAgents.map((a) => Number(a.agent_ID)).filter((n) => n > 0);
-      where.OR = [
-        { staff_id: input_staff_id },
-        ...(teAgentIds.length ? [{ agent_id: { in: teAgentIds } }] : []),
-      ];
-    } else if (agent_id) {
-      where.agent_id = agent_id;
-    }
+
+  const teAgentIds =
+    teAgents
+      .map((a) =>
+        Number(
+          a.agent_ID,
+        ),
+      )
+      .filter(
+        (n) => n > 0,
+      );
+
+  const accessibleAgentIds = [
+    ...new Set([
+      ...teAgentIds,
+
+      ...(
+        logged_user_level ===
+          SystemRole.TRAVEL_EXPERT &&
+        input_agent_id > 0
+          ? [
+              input_agent_id,
+            ]
+          : []
+      ),
+    ]),
+  ];
+
+  where.OR = [
+    {
+      staff_id:
+        input_staff_id,
+    },
+
+    ...(accessibleAgentIds.length
+      ? [
+          {
+            agent_id: {
+              in:
+                accessibleAgentIds,
+            },
+          },
+        ]
+      : []),
+  ];
+} else if (agent_id) {
+  where.agent_id =
+    agent_id;
+}
 
     const [total, filtered, data] = await Promise.all([
       this.prisma.dvi_accounts_itinerary_details.count({

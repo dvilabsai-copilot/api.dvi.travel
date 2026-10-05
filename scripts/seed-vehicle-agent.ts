@@ -26,47 +26,109 @@ async function main() {
   const passwordHash = await bcrypt.hash(PASSWORD, 10);
 
   const result = await prisma.$transaction(async (tx) => withAgentCodeGenerationLock(tx as any, async () => {
-    const agentRows = await tx.$queryRaw<Array<{ agent_ID: number }>>`
-      SELECT agent_ID FROM dvi_agent
-      WHERE LOWER(TRIM(agent_email_id)) = ${EMAIL} AND deleted = 0
-      ORDER BY agent_ID ASC
-    `;
-    if (agentRows.length > 1) throw new Error(`Duplicate active agents found for ${EMAIL}.`);
+    const agentRows =
+  await tx.$queryRaw<
+    Array<{
+      agent_ID: number;
+      agent_code:
+        string | null;
+    }>
+  >`
+    SELECT
+      agent_ID,
+      agent_code
+    FROM dvi_agent
+    WHERE LOWER(TRIM(agent_email_id)) = ${EMAIL}
+      AND deleted = 0
+    ORDER BY agent_ID ASC
+  `;
 
-    const existingAgent = agentRows[0]
-      ? await tx.dvi_agent.findUnique({
-          where: { agent_ID: Number(agentRows[0].agent_ID) },
-          select: { agent_code: true },
-        })
-      : null;
-    const agentCode =
-      String(existingAgent?.agent_code || '').trim().toUpperCase() ||
-      await generateUniqueAgentCode(tx as any, DISPLAY_NAME);
+if (agentRows.length > 1) {
+  throw new Error(
+    `Duplicate active agents found for ${EMAIL}.`,
+  );
+}
 
-    const agent = agentRows[0]
-      ? await tx.dvi_agent.update({
-          where: { agent_ID: Number(agentRows[0].agent_ID) },
-          data: {
-            agent_name: DISPLAY_NAME,
-            agent_code: agentCode,
-            agent_email_id: EMAIL,
-            status: 1,
-            deleted: 0,
-            updatedon: now,
-          },
-        })
-      : await tx.dvi_agent.create({
-          data: {
-            agent_name: DISPLAY_NAME,
-            agent_code: agentCode,
-            agent_ref_no: 'DEMO-VEHICLE-AGENT',
-            agent_email_id: EMAIL,
-            status: 1,
-            deleted: 0,
-            createdon: now,
-            updatedon: now,
-          },
-        });
+/*
+ * agent_code exists in the DB flow but
+ * is not currently exposed by the
+ * generated Prisma dvi_agent type.
+ *
+ * Read it through SQL instead.
+ */
+const existingAgentCode =
+  String(
+    agentRows[0]
+      ?.agent_code ??
+      '',
+  )
+    .trim()
+    .toUpperCase();
+
+const agentCode =
+  existingAgentCode ||
+  await generateUniqueAgentCode(
+    tx as any,
+    DISPLAY_NAME,
+  );
+
+/*
+ * Do not send agent_code through the
+ * Prisma dvi_agent model while the
+ * generated client does not expose it.
+ */
+const agent =
+  agentRows[0]
+    ? await tx.dvi_agent.update({
+        where: {
+          agent_ID:
+            Number(
+              agentRows[0].agent_ID,
+            ),
+        },
+
+        data: {
+          agent_name:
+            DISPLAY_NAME,
+
+          agent_email_id:
+            EMAIL,
+
+          status: 1,
+          deleted: 0,
+          updatedon: now,
+        },
+      })
+    : await tx.dvi_agent.create({
+        data: {
+          agent_name:
+            DISPLAY_NAME,
+
+          agent_ref_no:
+            'DEMO-VEHICLE-AGENT',
+
+          agent_email_id:
+            EMAIL,
+
+          status: 1,
+          deleted: 0,
+          createdon: now,
+          updatedon: now,
+        },
+      });
+
+/*
+ * Persist agent_code directly because
+ * the database column is being used by
+ * the existing Agent-code flow while
+ * Prisma's generated type is currently
+ * missing it.
+ */
+await tx.$executeRaw`
+  UPDATE dvi_agent
+  SET agent_code = ${agentCode}
+  WHERE agent_ID = ${agent.agent_ID}
+`;
 
     const userRows = await tx.$queryRaw<Array<{ userID: bigint }>>`
       SELECT userID FROM dvi_users

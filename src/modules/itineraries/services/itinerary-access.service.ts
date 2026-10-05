@@ -161,21 +161,100 @@ if (role === SystemRole.VENDOR) {
   return Boolean(assignment);
 }
 
-if (role === SystemRole.ADMIN || role === SystemRole.ACCOUNTS) return true;
-    if (agentId > 0) return Number(plan.agent_id) === agentId;
+if (
+  role === SystemRole.ADMIN ||
+  role === SystemRole.ACCOUNTS
+) {
+  return true;
+}
 
-    if ((role === SystemRole.STAFF || role === SystemRole.TRAVEL_EXPERT) && staffId > 0) {
-      if (Number(plan.staff_id) === staffId) return true;
+/*
+ * IMPORTANT:
+ *
+ * A converted Travel Expert still has
+ * their historical agentId.
+ *
+ * Therefore agentId by itself must NOT
+ * mean "treat this login as an Agent".
+ */
+if (
+  role ===
+    SystemRole.AGENT &&
+  agentId > 0
+) {
+  return (
+    Number(plan.agent_id) ===
+    agentId
+  );
+}
 
-      const assignedAgents = await this.prisma.dvi_agent.findMany({
-        where: { travel_expert_id: staffId } as any,
-        select: { agent_ID: true },
+if (
+  (
+    role ===
+      SystemRole.STAFF ||
+    role ===
+      SystemRole.TRAVEL_EXPERT
+  ) &&
+  staffId > 0
+) {
+  /*
+   * Normal Travel Expert itinerary.
+   */
+  if (
+    Number(plan.staff_id) ===
+    staffId
+  ) {
+    return true;
+  }
+
+  /*
+   * Converted Travel Expert:
+   *
+   * Allow access to itineraries
+   * historically belonging to their
+   * original Agent identity.
+   *
+   * We do NOT rewrite old itinerary rows.
+   */
+  if (
+    role ===
+      SystemRole.TRAVEL_EXPERT &&
+    agentId > 0 &&
+    Number(plan.agent_id) ===
+      agentId
+  ) {
+    return true;
+  }
+
+  /*
+   * Normal assigned-Agent access.
+   */
+  const assignedAgents =
+    await this.prisma
+      .dvi_agent
+      .findMany({
+        where: {
+          travel_expert_id:
+            staffId,
+
+          deleted: 0,
+        },
+
+        select: {
+          agent_ID: true,
+        },
       });
 
-      return assignedAgents.some(
-        (agent) => Number(agent.agent_ID) === Number(plan.agent_id),
-      );
-    }
+  return assignedAgents.some(
+    (agent) =>
+      Number(
+        agent.agent_ID,
+      ) ===
+      Number(
+        plan.agent_id,
+      ),
+  );
+}
 
     if (role === SystemRole.GUIDE && guideId > 0 && Number(plan.quotation_status) === 1) {
       const assignment =

@@ -448,18 +448,80 @@ export class StaffService {
 
     const now = new Date();
 
-    const updated = await this.prisma.dvi_staff_details.update({
-      where: { staff_id: staffId },
-      data: {
-        agent_id: agentId,
-        staff_name: input.staffName ?? existing.staff_name,
-        staff_mobile: staffMobile,
-        staff_email: staffEmail,
-        roleID: input.roleId ?? existing.roleID,
-        status: typeof input.status === 'number' ? input.status : existing.status,
- updatedon: now as any, // stamp on edit
+   const updated =
+  await this.prisma
+    .$transaction(
+      async (tx: Tx) => {
+        const staff =
+          await tx
+            .dvi_staff_details
+            .update({
+              where: {
+                staff_id:
+                  staffId,
+              },
+
+              data: {
+                agent_id:
+                  agentId,
+
+                staff_name:
+                  input.staffName ??
+                  existing.staff_name,
+
+                staff_mobile:
+                  staffMobile,
+
+                staff_email:
+                  staffEmail,
+
+                roleID:
+                  input.roleId ??
+                  existing.roleID,
+
+                status:
+                  typeof input.status ===
+                  'number'
+                    ? input.status
+                    : existing.status,
+
+                updatedon:
+                  now as any,
+              },
+            });
+
+        /*
+         * Keep authenticated role and
+         * Staff role synchronized.
+         */
+        await tx
+          .dvi_users
+          .updateMany({
+            where: {
+              staff_id:
+                staffId,
+
+              deleted: 0,
+            },
+
+            data: {
+              agent_id:
+                agentId,
+
+              roleID:
+                staff.roleID,
+
+              status:
+                staff.status,
+
+              updatedon:
+                now as any,
+            },
+          });
+
+        return staff;
       },
-    });
+    );
 
  // upsert-like behavior for login if loginEmail/password provided
     let login = await this.prisma.dvi_users.findFirst({

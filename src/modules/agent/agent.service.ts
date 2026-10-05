@@ -127,6 +127,87 @@ export class AgentService {
   return map;
 }
 
+
+private async getAgentCodeMapByAgentIds(
+  agentIds: number[],
+): Promise<Map<number, string>> {
+  const ids =
+    Array.from(
+      new Set(
+        agentIds
+          .map(Number)
+          .filter(
+            (id) =>
+              Number.isFinite(id) &&
+              id > 0,
+          ),
+      ),
+    );
+
+  if (!ids.length) {
+    return new Map<
+      number,
+      string
+    >();
+  }
+
+  const placeholders =
+    ids
+      .map(() => '?')
+      .join(',');
+
+  const rows =
+    await this.prisma
+      .$queryRawUnsafe<
+        Array<{
+          agent_ID: number;
+          agent_code:
+            string | null;
+        }>
+      >(
+        `
+          SELECT
+            agent_ID,
+            agent_code
+          FROM dvi_agent
+          WHERE agent_ID IN (${placeholders})
+        `,
+        ...ids,
+      );
+
+  const map =
+    new Map<
+      number,
+      string
+    >();
+
+  for (const row of rows) {
+    const id =
+      Number(
+        row.agent_ID,
+      );
+
+    const code =
+      String(
+        row.agent_code ??
+          '',
+      ).trim();
+
+    if (
+      id > 0 &&
+      code
+    ) {
+      map.set(
+        id,
+        code,
+      );
+    }
+  }
+
+  return map;
+}
+
+
 private async getTravelExpertNameMap(
   staffIds: number[],
 ): Promise<Map<number, string>> {
@@ -393,6 +474,7 @@ const [
   subsMap,
   companyNameMap,
   travelExpertNameMap,
+  agentCodeMap,
 ] = await Promise.all([
   this.getUsersMapByAgentIds(
     agentIds,
@@ -444,8 +526,11 @@ const [
   this.getTravelExpertNameMap(
     travelExpertIds,
   ),
-]);
 
+  this.getAgentCodeMapByAgentIds(
+    agentIds,
+  ),
+]);
     const { countryMap, stateMap, cityMap } = geoMaps;
 
  // Build the EXACT object you requested per agent
@@ -463,10 +548,17 @@ const [
         cityLabel,
       );
 
-      const obj: AgentPreviewDto = {
-        agent_ID: a.agent_ID,
-        agent_code: a.agent_code ?? null,
-        agent_name: displayName,
+     const obj: AgentPreviewDto = {
+  agent_ID:
+    a.agent_ID,
+
+  agent_code:
+    agentCodeMap.get(
+      a.agent_ID,
+    ) ?? null,
+
+  agent_name:
+    displayName,
         agent_lastname: null,
         agent_email_id: a.agent_email_id ?? null,
         agent_primary_mobile_number: a.agent_primary_mobile_number ?? null,
@@ -521,11 +613,17 @@ const [
 
  /** ---------- PREVIEW / EDIT PREFILL (single) ---------- */
   async getById(id: number): Promise<AgentPreviewDto> {
-    const a = await this.prisma.dvi_agent.findFirst({
-      where: { agent_ID: id, deleted: 0 },
+    const a =
+  await this.prisma
+    .dvi_agent
+    .findFirst({
+      where: {
+        agent_ID: id,
+        deleted: 0,
+      },
+
       select: {
         agent_ID: true,
-        agent_code: true,
         agent_name: true,
         agent_lastname: true,
         agent_email_id: true,
@@ -542,7 +640,22 @@ const [
         total_coupon_wallet: true,
       },
     });
-    if (!a) throw new NotFoundException('Agent not found');
+
+if (!a) {
+  throw new NotFoundException(
+    'Agent not found',
+  );
+}
+
+const agentCodeMap =
+  await this
+    .getAgentCodeMapByAgentIds(
+      [id],
+    );
+
+const agentCode =
+  agentCodeMap.get(id) ??
+  null;
 
     const user = await this.prisma.dvi_users.findFirst({
       where: { deleted: 0, agent_id: id },
@@ -630,10 +743,17 @@ const [
         ? Number(a.total_coupon_wallet ?? 0)
         : await resolveCouponWalletBalanceFromHistory();
 
-    const dto: AgentPreviewDto = {
-      agent_ID: a.agent_ID,
-      agent_code: a.agent_code ?? null,
-      agent_name: a.agent_name ?? null,
+const dto:
+  AgentPreviewDto = {
+  agent_ID:
+    a.agent_ID,
+
+  agent_code:
+    agentCode,
+
+  agent_name:
+    a.agent_name ??
+    null,
       agent_lastname: a.agent_lastname ?? null,
       agent_email_id: a.agent_email_id ?? null,
       agent_primary_mobile_number: a.agent_primary_mobile_number ?? null,
@@ -1749,36 +1869,85 @@ private async addWallet(
   }
 
  /** ---------- MUTATIONS ---------- */
-  async create(payload: CreateAgentDto) {
-    const now = new Date();
-    const created = await this.prisma.$transaction(async (tx) => {
-      return withAgentCodeGenerationLock(tx as any, async () => {
-        const companyName = String(payload.agent_company_name ?? '').trim();
-        const agentCode = await generateUniqueAgentCode(
-          tx as any,
-          companyName || payload.agent_name,
-        );
-        const {
-          agent_code: _ignoredAgentCode,
-          agent_company_name: _ignoredCompanyName,
-          ...agentPayload
-        } = payload as any;
+  async create(
+  payload: CreateAgentDto,
+) {
+  const now =
+    new Date();
 
-        return tx.dvi_agent.create({
-          data: {
-            ...agentPayload,
-            agent_code: agentCode,
-            deleted: 0,
-            status: 1,
-            createdon: now,
-            updatedon: now,
-          },
-        });
-      });
-    });
-    return { agent_ID: created.agent_ID, agent_code: created.agent_code };
-  }
+  const created =
+    await this.prisma
+      .$transaction(
+        async (tx) => {
+          return withAgentCodeGenerationLock(
+            tx as any,
+            async () => {
+              const companyName =
+                String(
+                  payload.agent_company_name ??
+                    '',
+                ).trim();
 
+              const agentCode =
+                await generateUniqueAgentCode(
+                  tx as any,
+                  companyName ||
+                    payload.agent_name,
+                );
+
+              const {
+                agent_code:
+                  _ignoredAgentCode,
+
+                agent_company_name:
+                  _ignoredCompanyName,
+
+                ...agentPayload
+              } =
+                payload as any;
+
+              /*
+               * Prisma's generated dvi_agent
+               * model currently does not expose
+               * agent_code.
+               */
+              const agent =
+                await tx.dvi_agent
+                  .create({
+                    data: {
+                      ...agentPayload,
+
+                      deleted: 0,
+                      status: 1,
+                      createdon: now,
+                      updatedon: now,
+                    },
+                  });
+
+              /*
+               * Preserve the generated Agent code
+               * directly in the DB.
+               */
+              await tx.$executeRaw`
+                UPDATE dvi_agent
+                SET agent_code = ${agentCode}
+                WHERE agent_ID = ${agent.agent_ID}
+              `;
+
+              return {
+                agent_ID:
+                  agent.agent_ID,
+
+                agent_code:
+                  agentCode,
+              };
+            },
+          );
+        },
+      );
+
+  return created;
+}
   async update(id: number, payload: UpdateAgentDto) {
     const exists = await this.prisma.dvi_agent.findFirst({
       where: { agent_ID: id, deleted: 0 },

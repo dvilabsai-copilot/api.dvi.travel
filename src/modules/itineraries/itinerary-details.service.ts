@@ -7314,28 +7314,105 @@ packageIncludes: {
     let roleOr: any | null = null;
 
     if (vehicleAgent) {
-      roleOr = {
-        agent_id: input_agent_id > 0 ? input_agent_id : -1,
-        itinerary_preference: 2,
-      };
-    } else if (input_staff_id > 0 && logged_user_level !== 6) {
-      const teAgents = await this.prisma.dvi_agent.findMany({
-        where: {
-          travel_expert_id: input_staff_id,
-        } as any,
-        select: { agent_ID: true },
-      });
-      const teAgentIds = teAgents
-        .map((a) => Number(a.agent_ID))
-        .filter((n) => n > 0);
+  roleOr = {
+    agent_id:
+      input_agent_id > 0
+        ? input_agent_id
+        : -1,
 
-      roleOr = {
-        OR: [
-          { staff_id: input_staff_id },
-          ...(teAgentIds.length ? [{ agent_id: { in: teAgentIds } }] : []),
-        ],
-      };
-    } else if (input_agent_id > 0) {
+    itinerary_preference:
+      2,
+  };
+} else if (
+  (
+    logged_user_level ===
+      SystemRole.STAFF ||
+    logged_user_level ===
+      SystemRole.TRAVEL_EXPERT
+  ) &&
+  input_staff_id > 0
+) {
+  const teAgents =
+    await this.prisma
+      .dvi_agent
+      .findMany({
+        where: {
+          travel_expert_id:
+            input_staff_id,
+
+          deleted: 0,
+        },
+
+        select: {
+          agent_ID: true,
+        },
+      });
+
+  const teAgentIds =
+    teAgents
+      .map((a) =>
+        Number(
+          a.agent_ID,
+        ),
+      )
+      .filter(
+        (n) => n > 0,
+      );
+
+  /*
+   * Converted Travel Expert keeps
+   * their former Agent ID only for
+   * historical access.
+   */
+  const accessibleAgentIds = [
+    ...new Set([
+      ...teAgentIds,
+
+      ...(
+        logged_user_level ===
+          SystemRole.TRAVEL_EXPERT &&
+        input_agent_id > 0
+          ? [
+              input_agent_id,
+            ]
+          : []
+      ),
+    ]),
+  ];
+
+  roleOr = {
+    OR: [
+      /*
+       * Travel Expert's own
+       * staff-created itineraries.
+       */
+      {
+        staff_id:
+          input_staff_id,
+      },
+
+      /*
+       * Assigned Agents +
+       * converted account's
+       * historical Agent data.
+       */
+      ...(accessibleAgentIds.length
+        ? [
+            {
+              agent_id: {
+                in:
+                  accessibleAgentIds,
+              },
+            },
+          ]
+        : []),
+    ],
+  };
+} else if (
+  logged_user_level ===
+    SystemRole.AGENT &&
+  input_agent_id > 0
+) {
       const agentStaff = await this.prisma.dvi_staff_details.findMany({
         where: {
           agent_id: input_agent_id,
