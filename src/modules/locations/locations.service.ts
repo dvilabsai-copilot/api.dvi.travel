@@ -3074,6 +3074,75 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
   }
 
  // ------ TOLL CHARGES ------
+
+  async getBulkTollExport() {
+    type SavedToll = {
+      locationId: string;
+      source: string | null;
+      destination: string | null;
+      vehicleTypeId: number;
+      vehicleName: string | null;
+      amount: number;
+    };
+
+    // One read of saved charges. No route generation or database writes.
+    const records = await this.prisma.$queryRaw<SavedToll[]>(Prisma.sql`
+      SELECT
+        CAST(t.location_id AS CHAR) AS locationId,
+        l.source_location AS source,
+        l.destination_location AS destination,
+        t.vehicle_type_id AS vehicleTypeId,
+        v.vehicle_type_title AS vehicleName,
+        t.toll_charge AS amount
+      FROM dvi_vehicle_toll_charges t
+      INNER JOIN dvi_stored_locations l
+        ON l.location_ID = t.location_id
+      INNER JOIN dvi_vehicle_type v
+        ON v.vehicle_type_id = t.vehicle_type_id
+      WHERE t.deleted = 0
+        AND l.deleted = 0
+        AND v.deleted = 0
+      ORDER BY t.location_id ASC, t.vehicle_type_id ASC,
+               t.vehicle_toll_charge_ID DESC
+    `);
+
+    const seen = new Set<string>();
+    let duplicatesSkipped = 0;
+    const newestRecords = records.filter((record) => {
+      const key = String(record.locationId) + ':' + String(record.vehicleTypeId);
+      if (seen.has(key)) {
+        duplicatesSkipped++;
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+
+    const rows = newestRecords.map((record) => {
+      const locationId = Number(record.locationId);
+      const vehicleTypeId = Number(record.vehicleTypeId);
+      const amount = Number(record.amount);
+      if (
+        !Number.isSafeInteger(locationId) || locationId <= 0 ||
+        !Number.isSafeInteger(vehicleTypeId) || vehicleTypeId <= 0 ||
+        record.amount == null || !Number.isFinite(amount) || amount < 0
+      ) {
+        throw new BadRequestException('Invalid saved toll record. Export stopped.');
+      }
+
+      return {
+        locationId,
+        source: record.source ?? '',
+        destination: record.destination ?? '',
+        vehicleTypeId,
+        vehicleName: record.vehicleName || ('Vehicle ' + vehicleTypeId),
+        amount,
+      };
+    });
+
+    return { rows, total: rows.length, duplicatesSkipped };
+  }
+
   async getTolls(locationId: number) {
  // Verify location exists
     await this.get(locationId);
@@ -3091,6 +3160,7 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
  // 2) Get existing tolls for this location
     const existing = await this.prisma.dvi_vehicle_toll_charges.findMany({
       where: { location_id: BigInt(locationId), deleted: 0 },
+      orderBy: { vehicle_toll_charge_ID: 'asc' },
       select: {
         vehicle_type_id: true,
         toll_charge: true,
@@ -3119,29 +3189,56 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
     items: { vehicle_type_id: number; toll_charge: number }[],
     userId: number
   ) {
+    if (!Number.isSafeInteger(locationId) || locationId <= 0) {
+      throw new BadRequestException('Invalid location ID.');
+    }
+    if (!Array.isArray(items)) {
+      throw new BadRequestException('Toll items must be an array.');
+    }
+    const vehicleIds = new Set<number>();
+    for (const item of items) {
+      const charge = Number(item.toll_charge);
+      if (!Number.isSafeInteger(item.vehicle_type_id) ||
+          item.vehicle_type_id <= 0 ||
+          !Number.isFinite(charge) || charge < 0 ||
+          vehicleIds.has(item.vehicle_type_id)) {
+        throw new BadRequestException(
+          'Each vehicle needs one valid non-negative toll charge.'
+        );
+      }
+      vehicleIds.add(item.vehicle_type_id);
+    }
+
     const idBig = BigInt(locationId);
-    await this.get(locationId);
+    await this.prisma.$transaction(async (tx) => {
+      // Lock this route so concurrent saves cannot interleave.
+      const locked = await tx.$queryRaw<Array<{ location_ID: bigint }>>`
+        SELECT location_ID FROM dvi_stored_locations
+        WHERE location_ID = ${idBig} AND deleted = 0
+        FOR UPDATE
+      `;
+      if (!locked.length) {
+        throw new NotFoundException('Location not found.');
+      }
 
- // Delete all existing tolls for this location
-    await this.prisma.dvi_vehicle_toll_charges.deleteMany({
-      where: { location_id: idBig },
-    });
-
- // Insert new items if provided
-    if (!items?.length) return { ok: true };
-
-    await this.prisma.dvi_vehicle_toll_charges.createMany({
-      data: items.map((it) => ({
-        location_id: idBig,
-        vehicle_type_id: it.vehicle_type_id,
-        toll_charge: Number(it.toll_charge) || 0,
-        createdby: Number(userId ?? 0),
-        status: 1,
-        deleted: 0,
-        createdon: new Date(),
-      })),
-      skipDuplicates: true,
-    });
+      // Preserve older rows archived by the duplicate cleanup.
+      await tx.dvi_vehicle_toll_charges.deleteMany({
+        where: { location_id: idBig, deleted: 0 },
+      });
+      if (items.length) {
+        await tx.dvi_vehicle_toll_charges.createMany({
+          data: items.map((item) => ({
+            location_id: idBig,
+            vehicle_type_id: item.vehicle_type_id,
+            toll_charge: Number(item.toll_charge),
+            createdby: Number(userId ?? 0) || 0,
+            status: 1,
+            deleted: 0,
+            createdon: new Date(),
+          })),
+        });
+      }
+    }, { maxWait: 20000, timeout: 120000 });
 
     return { ok: true };
   }
