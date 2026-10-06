@@ -17,12 +17,55 @@ export const SystemRole = {
   HOTEL_ADMIN: 10,
 } as const;
 
-export type SystemRoleId = (typeof SystemRole)[keyof typeof SystemRole];
+export type SystemRoleId =
+  (typeof SystemRole)[keyof typeof SystemRole];
+
+/*
+ * Roles available from Admin → Agent →
+ * Change Role.
+ *
+ * ADMIN is deliberately excluded.
+ *
+ * AGENT remains available because an account
+ * that was previously changed to another role
+ * may later be changed back to Agent.
+ */
+export const AGENT_ROLE_CHANGE_TARGETS = [
+  SystemRole.VENDOR,
+  SystemRole.STAFF,
+  SystemRole.AGENT,
+  SystemRole.GUIDE,
+  SystemRole.ACCOUNTS,
+  SystemRole.TRAVEL_EXPERT,
+  SystemRole.VEHICLE_AGENT,
+  SystemRole.HOTEL_ADMIN,
+] as const;
+
+export function isAgentRoleChangeTarget(
+  roleId: number,
+): boolean {
+  return (
+    AGENT_ROLE_CHANGE_TARGETS as readonly number[]
+  ).includes(Number(roleId));
+}
 
 export function getRoleId(user: any): number {
-  return Number(user?.roleID ?? user?.roleId ?? user?.role ?? 0) || 0;
+  return (
+    Number(
+      user?.roleID ??
+        user?.roleId ??
+        user?.role ??
+        0,
+    ) || 0
+  );
 }
 
-export function isVehicleAgentUser(user: any): boolean {
-  return getRoleId(user) === SystemRole.VEHICLE_AGENT;
+export function isVehicleAgentUser(
+  user: any,
+): boolean {
+  return (
+    getRoleId(user) ===
+    SystemRole.VEHICLE_AGENT
+  );
 }
+
