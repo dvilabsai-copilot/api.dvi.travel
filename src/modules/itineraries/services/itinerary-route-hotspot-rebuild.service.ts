@@ -57,18 +57,14 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
         const oldRouteDateMap = new Map(
           oldRoutes.map((row: any) => [Number(row.itinerary_route_ID || 0), row.itinerary_route_date]),
         );
-        const oldHotspots = await tx.dvi_itinerary_route_hotspot_details.findMany({
-          where: {
-            itinerary_plan_ID: normalizedPlanId,
-            item_type: 4,
-            deleted: 0,
-            status: 1,
-            // Route reset removes manual hotspots explicitly below. Do not pass
-            // them to the engine, which is responsible for preserving manual
-            // hotspots for other rebuild workflows.
-            hotspot_plan_own_way: { not: 1 },
-          },
-        });
+    const oldHotspots = await tx.dvi_itinerary_route_hotspot_details.findMany({
+  where: {
+    itinerary_plan_ID: normalizedPlanId,
+    item_type: 4,
+    deleted: 0,
+    status: 1,
+  },
+});
       const existingHotspotsWithDates = oldHotspots.map((row: any) => ({
   ...row,
   route_date: oldRouteDateMap.get(
@@ -85,7 +81,6 @@ const protectedExistingHotspotIds: number[] = Array.from(
           Number(row?.item_type || 0) === 4 &&
           Number(row?.deleted || 0) === 0 &&
           Number(row?.status || 0) === 1 &&
-          Number(row?.hotspot_plan_own_way || 0) !== 1 &&
           Number(row?.hotspot_ID || 0) > 0,
       )
       .map((row: any) => Number(row.hotspot_ID)),
@@ -131,32 +126,6 @@ const planRow = await tx.dvi_itinerary_plan_details.findFirst({
             skipped: true,
           };
         }
-
-        const manualRouteHotspotIds = manualHotspotRows
-          .map((row: any) => Number(row.route_hotspot_ID || 0))
-          .filter((id: number) => Number.isFinite(id) && id > 0);
-        if (manualRouteHotspotIds.length > 0) {
-          await tx.dvi_itinerary_route_activity_details.updateMany({
-            where: {
-              itinerary_plan_ID: normalizedPlanId,
-              itinerary_route_ID: normalizedRouteId,
-              route_hotspot_ID: { in: manualRouteHotspotIds },
-              deleted: 0,
-            },
-            data: { deleted: 1, status: 0, updatedon: new Date() },
-          });
-        }
-
-        await tx.dvi_itinerary_route_hotspot_details.updateMany({
-          where: {
-            itinerary_plan_ID: normalizedPlanId,
-            itinerary_route_ID: normalizedRouteId,
-            hotspot_plan_own_way: 1,
-            item_type: 4,
-            deleted: 0,
-          },
-          data: { deleted: 1, status: 0, updatedon: new Date() },
-        });
 
         await tx.dvi_itinerary_route_details.update({
           where: { itinerary_route_ID: normalizedRouteId },
