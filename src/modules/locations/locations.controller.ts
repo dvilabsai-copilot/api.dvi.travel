@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   NotFoundException,
   Param,
@@ -262,6 +263,14 @@ create(@Body() dto: CreateLocationDto) {
   })
   updateLocationName(@Body() dto: RenameLocationNameDto) {
     return this.svc.updateLocationName(dto.old_name, dto.new_name, dto.scope || 'both');
+  }
+
+
+  @Get('tolls/bulk-export')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Export all saved toll charges' })
+  getBulkTollExport() {
+    return this.svc.getBulkTollExport();
   }
 
   @Get(':id')
