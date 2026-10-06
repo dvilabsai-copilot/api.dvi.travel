@@ -1064,43 +1064,58 @@ async sendEmailLoginOtp(email: string) {
     input: QuickOnboardAgentDto,
     authenticatedUser: any,
   ) {
-    const role = Number(
-      authenticatedUser?.roleID ??
-        authenticatedUser?.role ??
-        0,
-    );
+const role = Number(
+  authenticatedUser?.roleID ??
+    authenticatedUser?.role ??
+    0,
+);
 
-    if (
-      role !== SystemRole.ADMIN &&
-      role !==
-        SystemRole.TRAVEL_EXPERT
-    ) {
-      throw new ForbiddenException(
-        'Only Admin or Travel Expert can quick-onboard an Agent.',
-      );
-    }
+const permissionRoleId =
+  Number(
+    authenticatedUser
+      ?.permissionRoleId ??
+      0,
+  );
 
-    const travelExpertId =
-      role ===
-      SystemRole.TRAVEL_EXPERT
-        ? Number(
-            authenticatedUser
-              ?.staffId ??
-              authenticatedUser
-                ?.staff_id ??
-              0,
-          )
-        : 0;
+const isLegacyTravelExpertStaff =
+  role === SystemRole.STAFF &&
+  permissionRoleId ===
+    SystemRole.TRAVEL_EXPERT;
 
-    if (
-      role ===
-        SystemRole.TRAVEL_EXPERT &&
-      travelExpertId <= 0
-    ) {
-      throw new ForbiddenException(
-        'This Travel Expert login is not linked to a valid staff record.',
-      );
-    }
+if (
+  role !== SystemRole.ADMIN &&
+  role !==
+    SystemRole.TRAVEL_EXPERT &&
+  !isLegacyTravelExpertStaff
+) {
+  throw new ForbiddenException(
+    'Only Admin or Travel Expert can quick-onboard an Agent.',
+  );
+}
+
+  const isTravelExpertContext =
+  role ===
+    SystemRole.TRAVEL_EXPERT ||
+  isLegacyTravelExpertStaff;
+
+const travelExpertId =
+  isTravelExpertContext
+    ? Number(
+        authenticatedUser
+          ?.staffId ??
+          authenticatedUser
+            ?.staff_id ??
+          0,
+      )
+    : 0;
+   if (
+  isTravelExpertContext &&
+  travelExpertId <= 0
+) {
+  throw new ForbiddenException(
+    'This Travel Expert login is not linked to a valid staff record.',
+  );
+}
 
     const name =
       String(input.name || '')
@@ -1334,16 +1349,15 @@ async sendEmailLoginOtp(email: string) {
                       .invoice_pan_no ||
                       '',
                   ).trim() &&
-                  (
-                    role !==
-                      SystemRole.TRAVEL_EXPERT ||
-                    Number(
-                      existingAgent
-                        .travel_expert_id ||
-                        0,
-                    ) ===
-                      travelExpertId
-                  ),
+                 (
+  !isTravelExpertContext ||
+  Number(
+    existingAgent
+      .travel_expert_id ||
+      0,
+  ) ===
+    travelExpertId
+)
               );
 
             if (
