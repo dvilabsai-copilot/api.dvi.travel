@@ -22,7 +22,11 @@ import { EmailLoginOtpService } from './email-login-otp.service';
 import { PartnerActivationService } from './partner-activation.service';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { QuickOnboardAgentDto } from './dto/quick-onboard-agent.dto';
-import { SystemRole } from './constants/system-role.constants';
+import {
+  canQuickOnboardAgent,
+  isLegacyTravelExpertUser,
+  SystemRole,
+} from './constants/system-role.constants';
 import {
   generateUniqueAgentCode,
   withAgentCodeGenerationLock,
@@ -1070,24 +1074,10 @@ const role = Number(
     0,
 );
 
-const permissionRoleId =
-  Number(
-    authenticatedUser
-      ?.permissionRoleId ??
-      0,
-  );
-
 const isLegacyTravelExpertStaff =
-  role === SystemRole.STAFF &&
-  permissionRoleId ===
-    SystemRole.TRAVEL_EXPERT;
+  isLegacyTravelExpertUser(authenticatedUser);
 
-if (
-  role !== SystemRole.ADMIN &&
-  role !==
-    SystemRole.TRAVEL_EXPERT &&
-  !isLegacyTravelExpertStaff
-) {
+if (!canQuickOnboardAgent(authenticatedUser)) {
   throw new ForbiddenException(
     'Only Admin or Travel Expert can quick-onboard an Agent.',
   );
