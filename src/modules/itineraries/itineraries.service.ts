@@ -801,10 +801,13 @@ export class ItinerariesService {
       computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
       minutesToUtcTimeDate: (...args) => (this.minutesToUtcTimeDate as any)(...args),
     });
-    this.routeHotspotRebuildService.setCallbacks({
-      applySameCityCrossDayOptimizerAfterSave: (...args) => (this.applySameCityCrossDayOptimizerAfterSave as any)(...args),
-      forceRebuildVehiclePricingAfterHotspotChange: (...args) => (this.forceRebuildVehiclePricingAfterHotspotChange as any)(...args),
-    });
+  this.routeHotspotRebuildService.setCallbacks({
+  applySameCityCrossDayOptimizerAfterSave: (...args) =>
+    (this.applySameCityCrossDayOptimizerAfterSave as any)(...args),
+
+  forceRebuildVehiclePricingAfterHotspotChange: (...args) =>
+    (this.forceRebuildVehiclePricingAfterHotspotChange as any)(...args),
+});
     this.activityImpactService.setCallbacks({
       timeToMinutes: (...args) => (this.timeToMinutes as any)(...args),
       addMinutesToTime: (...args) => (this.addMinutesToTime as any)(...args),
@@ -907,42 +910,155 @@ this.planPersistenceService.setCallbacks({
       parseTransportFlightDetails: (...args) => (this.parseTransportFlightDetails as any)(...args),
       formatTime: (...args) => (this.formatTime as any)(...args),
     });
-    this.manualHotspotMatrixService.setCallbacks({
-      deriveLooseCityKey: (value) => this.deriveLooseCityKey(value),
-      normalizeLocationText: (value) => this.normalizeLocationText(value),
-    });
-    this.manualHotspotPreviewService.setCallbacks({
-      ensureManualFitAttemptStoreTable: (...args) => (this.manualFitAttemptStoreService.ensureTable as any)(...args),
-      normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
-      isRetryableManualPreviewTransactionError: (...args) => (this.isRetryableManualPreviewTransactionError as any)(...args),
-      runManualHotspotBatchWithinTransaction: (...args) => (this.manualHotspotBatchService.runManualHotspotBatchWithinTransaction as any)(...args),
-      activateManualHotspotRowWithTimes: (...args) => (this.activateManualHotspotRowWithTimes as any)(...args),
-      applyMatrixSafeManualHotspotInsertionInTx: (...args) => (this.applyMatrixSafeManualHotspotInsertionInTx as any)(...args),
-      buildManualFitTravelReplicaDisplayFields: (...args) => (this.manualFitTravelReplicaService.buildManualFitTravelReplicaDisplayFields as any)(...args),
-      cleanupStaleManualHotspotRows: (...args) => (this.cleanupStaleManualHotspotRows as any)(...args),
-      deleteManualFitAttemptEntry: (...args) => (this.deleteManualFitAttemptEntry as any)(...args),
-      getActiveRouteManualFitRemovalEvidence: (...args) => (this.getActiveRouteManualFitRemovalEvidence as any)(...args),
-      getPreviewRowDurationMinutes: (...args) => (this.getPreviewRowDurationMinutes as any)(...args),
-      getRouteTimelineForScoring: (...args) => (this.getRouteTimelineForScoring as any)(...args),
-      loadManualFitAttemptEntry: (...args) => (this.loadManualFitAttemptEntry as any)(...args),
-      manualFitTimelinePreservesSelectedAnchor: (...args) => (this.manualFitTimelinePreservesSelectedAnchor as any)(...args),
-      buildExactAnchorSequentialTimelineAfterRemoval: (...args) => (this.buildExactAnchorSequentialTimelineAfterRemoval as any)(...args),
-      buildManualFitChangesRequiredDisplay: (...args) => (this.buildManualFitChangesRequiredDisplay as any)(...args),
-      buildManualFitFinalizedPreviewTimeline: (...args) => (this.buildManualFitFinalizedPreviewTimeline as any)(...args),
-      buildRemovedPrioritySummary: (...args) => (this.buildRemovedPrioritySummary as any)(...args),
-      enrichManualFitPreviewTimelineWithOperatingHours: (...args) => (this.enrichManualFitPreviewTimelineWithOperatingHours as any)(...args),
-      formatManualDurationMinutes: (...args) => (this.formatManualDurationMinutes as any)(...args),
-      formatTime: (...args) => (this.formatTime as any)(...args),
-      getManualFitRemovalHotspotId: (...args) => (this.getManualFitRemovalHotspotId as any)(...args),
-      markSelectedManualOperatingHourConflicts: (...args) => (this.markSelectedManualOperatingHourConflicts as any)(...args),
-      minutesToUtcTimeDate: (...args) => (this.minutesToUtcTimeDate as any)(...args),
-      normalizeExactAnchorManualInsertionFit: (...args) => (this.normalizeExactAnchorManualInsertionFit as any)(...args),
-      parseManualHotspotLatestClosingMinute: (...args) => (this.parseManualHotspotLatestClosingMinute as any)(...args),
-      parsePreviewTimeToMinutes: (...args) => (this.parsePreviewTimeToMinutes as any)(...args),
-      parsePreviewTimeRangeToUtcDates: (...args) => (this.parsePreviewTimeRangeToUtcDates as any)(...args),
-      sanitizeUserFacingManualFitRemovals: (...args) => (this.sanitizeUserFacingManualFitRemovals as any)(...args),
-      saveManualFitAttemptEntry: (...args) => (this.saveManualFitAttemptEntry as any)(...args),
-    });
+   this.manualHotspotPreviewService.setCallbacks({
+    rebuildRouteAfterManualFitConfirm: (
+  planId: number,
+  routeId: number,
+  userId: number,
+) =>
+  this.routeHotspotRebuildService.rebuildRouteHotspotsForDay(
+    Number(planId),
+    Number(routeId),
+    Number(userId || 1),
+  ),
+  ensureManualFitAttemptStoreTable: (...args) =>
+    (this.manualFitAttemptStoreService.ensureTable as any)(...args),
+
+  normalizeManualHotspotIds: (...args) =>
+    (this.normalizeManualHotspotIds as any)(...args),
+
+  isRetryableManualPreviewTransactionError: (...args) =>
+    (this.isRetryableManualPreviewTransactionError as any)(...args),
+
+  runManualHotspotBatchWithinTransaction: (...args) =>
+    (
+      this.manualHotspotBatchService
+        .runManualHotspotBatchWithinTransaction as any
+    )(...args),
+
+  activateManualHotspotRowWithTimes: (...args) =>
+    (this.activateManualHotspotRowWithTimes as any)(...args),
+
+  applyMatrixSafeManualHotspotInsertionInTx: (...args) =>
+    (this.applyMatrixSafeManualHotspotInsertionInTx as any)(
+      ...args,
+    ),
+
+  buildManualFitTravelReplicaDisplayFields: (...args) =>
+    (
+      this.manualFitTravelReplicaService
+        .buildManualFitTravelReplicaDisplayFields as any
+    )(...args),
+
+  cleanupStaleManualHotspotRows: (...args) =>
+    (this.cleanupStaleManualHotspotRows as any)(...args),
+
+  deleteManualFitAttemptEntry: (...args) =>
+    (this.deleteManualFitAttemptEntry as any)(...args),
+
+  getActiveRouteManualFitRemovalEvidence: (...args) =>
+    (this.getActiveRouteManualFitRemovalEvidence as any)(
+      ...args,
+    ),
+
+  getPreviewRowDurationMinutes: (...args) =>
+    (this.getPreviewRowDurationMinutes as any)(...args),
+
+  getRouteTimelineForScoring: (...args) =>
+    (this.getRouteTimelineForScoring as any)(...args),
+
+  loadManualFitAttemptEntry: (...args) =>
+    (this.loadManualFitAttemptEntry as any)(...args),
+
+  manualFitTimelinePreservesSelectedAnchor: (...args) =>
+    (this.manualFitTimelinePreservesSelectedAnchor as any)(
+      ...args,
+    ),
+
+  buildExactAnchorSequentialTimelineAfterRemoval: (...args) =>
+    (
+      this.buildExactAnchorSequentialTimelineAfterRemoval as any
+    )(...args),
+
+  buildManualFitChangesRequiredDisplay: (...args) =>
+    (this.buildManualFitChangesRequiredDisplay as any)(
+      ...args,
+    ),
+
+  buildManualFitFinalizedPreviewTimeline: (...args) =>
+    (this.buildManualFitFinalizedPreviewTimeline as any)(
+      ...args,
+    ),
+
+  buildRemovedPrioritySummary: (...args) =>
+    (this.buildRemovedPrioritySummary as any)(...args),
+
+  enrichManualFitPreviewTimelineWithOperatingHours: (...args) =>
+    (
+      this.enrichManualFitPreviewTimelineWithOperatingHours as any
+    )(...args),
+
+  formatManualDurationMinutes: (...args) =>
+    (this.formatManualDurationMinutes as any)(...args),
+
+  formatTime: (...args) =>
+    (this.formatTime as any)(...args),
+
+  getManualFitRemovalHotspotId: (...args) =>
+    (this.getManualFitRemovalHotspotId as any)(...args),
+
+  markSelectedManualOperatingHourConflicts: (...args) =>
+    (
+      this.markSelectedManualOperatingHourConflicts as any
+    )(...args),
+
+  minutesToUtcTimeDate: (...args) =>
+    (this.minutesToUtcTimeDate as any)(...args),
+
+  normalizeExactAnchorManualInsertionFit: (...args) =>
+    (this.normalizeExactAnchorManualInsertionFit as any)(
+      ...args,
+    ),
+
+  parseManualHotspotLatestClosingMinute: (...args) =>
+    (
+      this.parseManualHotspotLatestClosingMinute as any
+    )(...args),
+
+  parsePreviewTimeToMinutes: (...args) =>
+    (this.parsePreviewTimeToMinutes as any)(...args),
+
+  parsePreviewTimeRangeToUtcDates: (...args) =>
+    (this.parsePreviewTimeRangeToUtcDates as any)(...args),
+
+  sanitizeUserFacingManualFitRemovals: (...args) =>
+    (this.sanitizeUserFacingManualFitRemovals as any)(
+      ...args,
+    ),
+
+  saveManualFitAttemptEntry: (...args) =>
+    (this.saveManualFitAttemptEntry as any)(...args),
+
+  // Run the same post-hotspot processing after Fit Here confirmation.
+  applySameCityCrossDayOptimizerAfterSave: (...args) =>
+    (
+      this.applySameCityCrossDayOptimizerAfterSave as any
+    )(...args),
+
+  rebuildParkingChargesAfterHotspotChange: (
+    planId: number,
+    userId: number,
+  ) =>
+    this.hotspotEngine.rebuildParkingCharges(
+      Number(planId),
+      Number(userId || 1),
+    ),
+
+  forceRebuildVehiclePricingAfterHotspotChange: (...args) =>
+    (
+      this.forceRebuildVehiclePricingAfterHotspotChange as any
+    )(...args),
+});
     const manualInsertionFitCallbackNames = [
       'timeToMinutes',
       'classifyManualHotspotCityContext',
@@ -1150,11 +1266,18 @@ this.planPersistenceService.setCallbacks({
       buildMatrixRescheduledPreviewTimeline: (...args) => (this.matrixRescheduledPreviewService.buildMatrixRescheduledPreviewTimeline as any)(...args),
       ensurePreviewTimelineHasComputedHotelTravel: (...args) => (this.manualFitTravelReplicaService.ensurePreviewTimelineHasComputedHotelTravel as any)(...args),
     });
-    this.manualHotspotMutationService.setCallbacks({
-      timeToMinutes: (...args) => (this.timeToMinutes as any)(...args),
-      runManualHotspotBatchWithinTransaction: (...args) => (this.manualHotspotBatchService.runManualHotspotBatchWithinTransaction as any)(...args),
-      cleanupStaleManualHotspotRows: (...args) => (this.cleanupStaleManualHotspotRows as any)(...args),
-      forceRebuildVehiclePricingAfterHotspotChange: (...args) => (this.forceRebuildVehiclePricingAfterHotspotChange as any)(...args),
+ this.manualHotspotMutationService.setCallbacks({
+  timeToMinutes: (...args) => (this.timeToMinutes as any)(...args),
+  runManualHotspotBatchWithinTransaction: (...args) =>
+    (this.manualHotspotBatchService.runManualHotspotBatchWithinTransaction as any)(...args),
+  cleanupStaleManualHotspotRows: (...args) =>
+    (this.cleanupStaleManualHotspotRows as any)(...args),
+
+  applySameCityCrossDayOptimizerAfterSave: (...args) =>
+    (this.applySameCityCrossDayOptimizerAfterSave as any)(...args),
+
+  forceRebuildVehiclePricingAfterHotspotChange: (...args) =>
+    (this.forceRebuildVehiclePricingAfterHotspotChange as any)(...args),
       estimateDurationFromDistance: (...args) => (this.estimateDurationFromDistance as any)(...args),
       computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
       parsePreviewTimeRangeToUtcDates: (...args) => (this.parsePreviewTimeRangeToUtcDates as any)(...args),

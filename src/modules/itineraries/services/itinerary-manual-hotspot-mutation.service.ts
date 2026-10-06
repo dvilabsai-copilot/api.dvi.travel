@@ -9,6 +9,7 @@ type ManualHotspotMutationCallbacks = Partial<Record<
   'timeToMinutes'
   | 'runManualHotspotBatchWithinTransaction'
   | 'cleanupStaleManualHotspotRows'
+  | 'applySameCityCrossDayOptimizerAfterSave'
   | 'forceRebuildVehiclePricingAfterHotspotChange'
   | 'estimateDurationFromDistance'
   | 'computeRowDurationMinutes'
@@ -45,8 +46,16 @@ export class ItineraryManualHotspotMutationService {
 
   private timeToMinutes(...args: any[]) { return this.call('timeToMinutes', ...args); }
   private runManualHotspotBatchWithinTransaction(...args: any[]) { return this.call('runManualHotspotBatchWithinTransaction', ...args); }
-  private cleanupStaleManualHotspotRows(...args: any[]) { return this.call('cleanupStaleManualHotspotRows', ...args); }
-  private forceRebuildVehiclePricingAfterHotspotChange(...args: any[]) { return this.call('forceRebuildVehiclePricingAfterHotspotChange', ...args); }
+private cleanupStaleManualHotspotRows(...args: any[]) {
+  return this.call('cleanupStaleManualHotspotRows', ...args);
+}
+private applySameCityCrossDayOptimizerAfterSave(...args: any[]) {
+  return this.call('applySameCityCrossDayOptimizerAfterSave', ...args);
+}
+private forceRebuildVehiclePricingAfterHotspotChange(...args: any[]) {
+  return this.call('forceRebuildVehiclePricingAfterHotspotChange', ...args);
+}
+
   private estimateDurationFromDistance(...args: any[]) { return this.call('estimateDurationFromDistance', ...args); }
   private computeRowDurationMinutes(...args: any[]) { return this.call('computeRowDurationMinutes', ...args); }
   private parsePreviewTimeRangeToUtcDates(...args: any[]) { return this.call('parsePreviewTimeRangeToUtcDates', ...args); }
@@ -436,20 +445,157 @@ export class ItineraryManualHotspotMutationService {
       }
     }
 
-    if (applyResult?.success === true && applyResult?.inserted === true) {
-      await this.hotspotEngine.rebuildParkingCharges(Number(planId), Number(userId || 1));
+if (applyResult?.success === true && applyResult?.inserted === true) {
+  const routeRebuildResult = await this.prisma.$transaction(
+    async (tx) => {
+      const targetRoute =
+        await tx.dvi_itinerary_route_details.findUnique({
+          where: {
+            itinerary_route_ID: Number(routeId),
+          },
+          select: {
+            excluded_hotspot_ids: true,
+          },
+        });
 
-      await this.forceRebuildVehiclePricingAfterHotspotChange(
-        Number(planId),
-        Number(routeId),
+      const existingExcludedHotspotIds = Array.isArray(
+        targetRoute?.excluded_hotspot_ids,
+      )
+        ? targetRoute.excluded_hotspot_ids
+            .map((id: any) => Number(id))
+            .filter(
+              (id: number) =>
+                Number.isFinite(id) && id > 0,
+            )
+        : [];
+
+      const updatedExcludedHotspotIds =
+        existingExcludedHotspotIds.filter(
+          (id: number) =>
+            !normalizedApplyHotspotIds.includes(id),
+        );
+
+      await tx.dvi_itinerary_route_details.update({
+        where: {
+          itinerary_route_ID: Number(routeId),
+        },
+        data: {
+          excluded_hotspot_ids:
+            updatedExcludedHotspotIds,
+          updatedon: new Date(),
+        },
+      });
+
+      console.log(
+        '[ManualHotspotApply] removed selected hotspot from excluded list before route rebuild',
+        {
+          planId: Number(planId),
+          routeId: Number(routeId),
+          appliedHotspotIds:
+            normalizedApplyHotspotIds,
+          excludedBefore:
+            existingExcludedHotspotIds,
+          excludedAfter:
+            updatedExcludedHotspotIds,
+        },
       );
 
-      return {
-        ...applyResult,
-        parkingChargesRebuilt: true,
-        vehiclePricingRebuilt: true,
-      };
-    }
+      const oldRoutes =
+        await tx.dvi_itinerary_route_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(planId),
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        itinerary_route_ID: true,
+        itinerary_route_date: true,
+      },
+    });
+
+    const oldRouteDateMap = new Map(
+      oldRoutes.map((row: any) => [
+        Number(row.itinerary_route_ID || 0),
+        row.itinerary_route_date,
+      ]),
+    );
+
+    const oldHotspots =
+      await tx.dvi_itinerary_route_hotspot_details.findMany({
+        where: {
+          itinerary_plan_ID: Number(planId),
+          item_type: 4,
+          deleted: 0,
+          status: 1,
+        },
+      });
+
+    const existingHotspotsWithDates = oldHotspots.map((row: any) => ({
+      ...row,
+      route_date: oldRouteDateMap.get(
+        Number(row.itinerary_route_ID || 0),
+      ),
+    }));
+
+    const protectedExistingHotspotIds: number[] = Array.from(
+      new Set<number>(
+        existingHotspotsWithDates
+          .filter(
+            (row: any) =>
+              Number(row?.itinerary_route_ID || 0) === Number(routeId) &&
+              Number(row?.item_type || 0) === 4 &&
+              Number(row?.deleted || 0) === 0 &&
+              Number(row?.status || 0) === 1 &&
+              Number(row?.hotspot_ID || 0) > 0,
+          )
+          .map((row: any) => Number(row.hotspot_ID)),
+      ),
+    );
+
+    return this.hotspotEngine.rebuildRouteHotspots(
+      tx,
+      Number(planId),
+      existingHotspotsWithDates,
+      {
+        scopeToRouteId: Number(routeId),
+        protectedHotspotIds: protectedExistingHotspotIds,
+      },
+    );
+  },
+  { timeout: 120000 },
+);
+const planRow = await this.prisma.dvi_itinerary_plan_details.findFirst({
+  where: {
+    itinerary_plan_ID: Number(planId),
+    deleted: 0,
+  },
+  select: {
+    itinerary_quote_ID: true,
+  },
+});
+
+await this.applySameCityCrossDayOptimizerAfterSave(
+  Number(planId),
+  String(planRow?.itinerary_quote_ID || ''),
+);
+  await this.hotspotEngine.rebuildParkingCharges(
+    Number(planId),
+    Number(userId || 1),
+  );
+
+  await this.forceRebuildVehiclePricingAfterHotspotChange(
+    Number(planId),
+    Number(routeId),
+  );
+
+  return {
+    ...applyResult,
+    routeHotspotsRebuilt: true,
+    routeRebuildSummary: routeRebuildResult?.rebuildSummary,
+    parkingChargesRebuilt: true,
+    vehiclePricingRebuilt: true,
+  };
+}
 
     return applyResult;
   }
