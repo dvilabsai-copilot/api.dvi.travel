@@ -1,0 +1,48 @@
+name: Sync main to staging
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: sync-main-to-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward staging to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main staging
+
+          MAIN_SHA="$(git rev-parse origin/main)"
+          STAGING_SHA="$(git rev-parse origin/staging)"
+
+          if ! git merge-base --is-ancestor "$STAGING_SHA" "$MAIN_SHA"; then
+            echo "Refusing to overwrite staging: it contains commits not in main."
+            echo "main:    $MAIN_SHA"
+            echo "staging: $STAGING_SHA"
+            exit 1
+          fi
+
+          git push origin "$MAIN_SHA:refs/heads/staging"
+
+      - name: Start staging API deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-staging-backend.yml --repo "$GITHUB_REPOSITORY" --ref staging
+
