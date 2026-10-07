@@ -53,6 +53,11 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealFlags,
   inferCanonicalHotelRatePlanCodeFromMealText,
 } from '../../hotels/hotel-rate-plans';
+import {
+  applyMapDinnerFallbackToRows,
+  filterEpRows,
+  type TboMapFallbackConfig,
+} from '../utils/tbo-map-fallback.util';
 import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
@@ -389,6 +394,13 @@ export class HotelAvailabilitySnapshotService {
       });
     }
     const sanitized = await this.sanitizeLegacyResponse(persistedResponse, plan);
+    const persistedInventory = (sanitized as any)?.hotelAvailability?.sharedHotelInventory;
+    if (Array.isArray(persistedInventory)) {
+      (sanitized as any).hotelAvailability = {
+        ...((sanitized as any).hotelAvailability || {}),
+        sharedHotelInventory: await this.normalizePersistedMealPlanInventory(plan, persistedInventory),
+      };
+    }
     const vsrHotelCardLimit = await this.getVsrHotelCardLimit();
     // The unfiltered page-read is intentionally compact, but it still needs
     // enough identity metadata for the hotel row editor and its load-more
@@ -589,7 +601,9 @@ export class HotelAvailabilitySnapshotService {
       }).filter(Boolean);
     }
     inventory = await this.attachDviGalleryImages(
-      await this.attachTboMasterGalleryImages(inventory),
+      await this.attachTboMasterGalleryImages(
+        await this.normalizePersistedMealPlanInventory(plan, inventory),
+      ),
     );
     const page = Math.max(1, Number(options.page || 1));
     const pageSize = Math.min(100, Math.max(1, Number(options.pageSize || 20)));
@@ -5114,6 +5128,42 @@ export class HotelAvailabilitySnapshotService {
       Number(plan?.meal_plan_lunch || 0),
       Number(plan?.meal_plan_dinner || 0),
     );
+  }
+
+  private async getMapDinnerFallbackConfig(): Promise<TboMapFallbackConfig> {
+    const row = await (this.prisma as any).dvi_global_settings.findFirst({
+      where: { deleted: 0, status: 1 },
+      orderBy: { global_settings_ID: 'asc' },
+      select: {
+        show_ep_hotels: true,
+        tbo_map_fallback_enabled: true,
+        tbo_map_dinner_rate_3_star: true,
+        tbo_map_dinner_rate_4_star: true,
+        tbo_map_dinner_rate_5_star: true,
+      },
+    });
+    return {
+      showEpHotels: Number(row?.show_ep_hotels ?? 0) === 1,
+      enabled: Number(row?.tbo_map_fallback_enabled ?? 1) === 1,
+      dinnerRate3Star: Math.max(Number(row?.tbo_map_dinner_rate_3_star ?? 900), 0),
+      dinnerRate4Star: Math.max(Number(row?.tbo_map_dinner_rate_4_star ?? 1500), 0),
+      dinnerRate5Star: Math.max(Number(row?.tbo_map_dinner_rate_5_star ?? 2500), 0),
+    };
+  }
+
+  private async normalizePersistedMealPlanInventory(plan: any, rows: any[]): Promise<any[]> {
+    const config = await this.getMapDinnerFallbackConfig();
+    const preferredMealPlanCode = this.getPlanMealPlanCode(plan);
+    const normalized = preferredMealPlanCode === 'MAP'
+      ? applyMapDinnerFallbackToRows(rows, {
+          preferredMealPlanCode,
+          adultCount: Math.max(Number(plan?.total_adult || 0), 0),
+          childCount: Math.max(Number(plan?.total_children || 0), 0),
+          roomCount: Math.max(Number(plan?.preferred_room_count || 1), 1),
+          numberOfNights: Math.max(Number(plan?.no_of_nights || 1), 1),
+        }, config)
+      : rows;
+    return filterEpRows(normalized, Boolean(config.showEpHotels));
   }
 
   private getPlanMealPlanFlags(plan: any): { breakfast: number; lunch: number; dinner: number } {

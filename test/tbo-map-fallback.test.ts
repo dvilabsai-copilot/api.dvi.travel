@@ -29,8 +29,8 @@ test('adds a synthetic MAP option from TBO CP with the configured dinner supplem
     },
   ], { preferredMealPlanCode: 'MAP', adultCount: 2, childCount: 0, roomCount: 1, numberOfNights: 1 }, config);
 
-  assert.equal(rows.length, 2);
-  const fallback = rows.find((row) => row.tboMapFallbackApplied === true);
+  assert.equal(rows.length, 1);
+  const fallback = rows[0];
   assert.ok(fallback);
   assert.equal(fallback.mealPlan, 'MAP');
   assert.equal(fallback.supplierMealPlan, 'CP');
@@ -46,8 +46,9 @@ test('keeps a real MAP unchanged when CP and MAP both exist for the property', (
     { provider: 'tbo', hotelCode: 'TBO-4STAR', hotelName: 'Hotel', rating: 4, mealPlan: 'MAP', price: 12000, bookingCode: 'MAP-BOOKING' },
   ], { preferredMealPlanCode: 'MAP', adultCount: 2, childCount: 0, roomCount: 1 }, config);
 
-  assert.equal(rows.length, 2);
+  assert.equal(rows.length, 1);
   assert.equal(rows.some((row) => row.tboMapFallbackApplied === true), false);
+  assert.equal(rows.some((row) => row.mealPlan === 'CP'), false);
   assert.equal(rows.find((row) => row.bookingCode === 'MAP-BOOKING')?.price, 12000);
 });
 
@@ -67,8 +68,49 @@ test('applies the same CP-only fallback to Offline providers', () => {
     { provider: 'offline', hotelCode: 'OFFLINE', hotelName: 'Offline', rating: 3, mealPlan: 'CP', price: 10000 },
   ], { preferredMealPlanCode: 'MAP', adultCount: 2, childCount: 0, roomCount: 1 }, config);
 
-  assert.equal(rows.length, 2);
-  assert.equal(rows.find((row) => row.tboMapFallbackApplied === true)?.tboMapFallbackDinnerTotal, 1800);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].tboMapFallbackApplied, true);
+  assert.equal(rows[0].tboMapFallbackDinnerTotal, 1800);
+});
+
+test('replaces nested CP options with MAP fallback options', () => {
+  const rows = applyMapDinnerFallbackToRows([
+    {
+      provider: 'tbo',
+      hotelCode: 'TBO-NESTED',
+      hotelName: 'Nested Hotel',
+      rating: 3,
+      rateOptions: [
+        { mealPlan: 'CP', price: 10000, bookingCode: 'CP-1' },
+        { mealPlan: 'CP', price: 11000, bookingCode: 'CP-2' },
+      ],
+    },
+  ], { preferredMealPlanCode: 'MAP', adultCount: 2, childCount: 0, roomCount: 1 }, config);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].rateOptions.length, 2);
+  assert.equal(rows[0].rateOptions.every((option: any) => option.mealPlan === 'MAP'), true);
+  assert.equal(rows[0].rateOptions.every((option: any) => option.tboMapFallbackApplied === true), true);
+});
+
+test('keeps only nested real MAP options when CP and MAP share a property', () => {
+  const rows = applyMapDinnerFallbackToRows([
+    {
+      provider: 'tbo',
+      hotelCode: 'TBO-NESTED-MIXED',
+      hotelName: 'Nested Mixed Hotel',
+      rating: 4,
+      rateOptions: [
+        { mealPlan: 'CP', price: 10000, bookingCode: 'CP-1' },
+        { mealPlan: 'MAP', price: 12000, bookingCode: 'MAP-1' },
+      ],
+    },
+  ], { preferredMealPlanCode: 'MAP', adultCount: 2, childCount: 0, roomCount: 1 }, config);
+
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0].rateOptions, [
+    { mealPlan: 'MAP', price: 12000, bookingCode: 'MAP-1' },
+  ]);
 });
 
 test('does not change non-MAP requests', () => {
