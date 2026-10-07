@@ -77,6 +77,7 @@
     "sync:tbo:missing-city": "node scripts/sync-missing-tbo-hotels-by-city.js",
     "sync:tbo:missing-city:dry": "node scripts/sync-missing-tbo-hotels-by-city.js --dry-run",
     "sync:hotel-galleries": "node scripts/sync-hotel-galleries.mjs",
+    "delete:user-data": "node scripts/delete-user-data-by-email.js",
     "cleanup:vendor-outstation-duplicates": "tsx scripts/cleanup-vendor-outstation-duplicates.ts",
     "postinstall": "npx playwright install chromium"
   },

@@ -50,6 +50,11 @@ import {
 import { resolveHotelRequiredRoutes } from './utils/hotel-selection-view-state.util';
 import { toDatabaseBusinessDate } from './utils/itinerary.utils';
 import { HotelGalleryService } from '../hotels/services/hotel-gallery.service';
+import {
+  applyMapDinnerFallbackToRows,
+  filterEpRows,
+  type TboMapFallbackConfig,
+} from './utils/tbo-map-fallback.util';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -1215,6 +1220,54 @@ if (hotelMasterId) {
     private readonly hotelPricingService: HotelPricingService = new HotelPricingService(prisma),
   ) {}
 
+  private async getTboMapFallbackConfig(): Promise<TboMapFallbackConfig> {
+    const row = await (this.prisma as any).dvi_global_settings.findFirst({
+      where: { deleted: 0, status: 1 },
+      orderBy: { global_settings_ID: 'asc' },
+      select: {
+        show_ep_hotels: true,
+        tbo_map_fallback_enabled: true,
+        tbo_map_dinner_rate_3_star: true,
+        tbo_map_dinner_rate_4_star: true,
+        tbo_map_dinner_rate_5_star: true,
+      },
+    });
+    return {
+      showEpHotels: Number(row?.show_ep_hotels ?? 0) === 1,
+      enabled: Number(row?.tbo_map_fallback_enabled ?? 1) === 1,
+      dinnerRate3Star: Math.max(Number(row?.tbo_map_dinner_rate_3_star ?? 900), 0),
+      dinnerRate4Star: Math.max(Number(row?.tbo_map_dinner_rate_4_star ?? 1500), 0),
+      dinnerRate5Star: Math.max(Number(row?.tbo_map_dinner_rate_5_star ?? 2500), 0),
+    };
+  }
+
+  private applyTboMapFallback(
+    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
+    preferredMealPlanCode: string | null,
+    adultCount: number,
+    childCount: number,
+    roomCount: number,
+    config: TboMapFallbackConfig,
+  ): Map<number, HotelSearchResult[] | null> {
+    return new Map(
+      Array.from(hotelsByRoute.entries()).map(([routeId, hotels]) => [
+        routeId,
+        Array.isArray(hotels)
+          ? filterEpRows(applyMapDinnerFallbackToRows(hotels as any[], {
+              preferredMealPlanCode,
+              adultCount,
+              childCount,
+              roomCount,
+              numberOfNights: Math.max(
+                ...hotels.map((hotel: any) => Number(hotel?.numberOfNights || hotel?.nights || 0)),
+                1,
+              ),
+            }, config), Boolean(config.showEpHotels)) as HotelSearchResult[]
+          : hotels,
+      ]),
+    );
+  }
+
   private async attachDviGalleryImages(hotelsByRoute: Map<number, HotelSearchResult[]>) {
     const ids = Array.from(new Set(
       Array.from(hotelsByRoute.values()).flat().map((hotel: any) => Number(hotel.canonicalHotelId)).filter((id) => id > 0),
@@ -1331,10 +1384,34 @@ if (hotelMasterId) {
             providers: [normalizedProvider], hotelCodes: normalizedHotelCode,
           });
 
+    const explicitMealPlanCode = inferCanonicalHotelRatePlanCode(String((plan as any).meal_plan_code || ''));
+    const mealPlanBreakfast = Number((plan as any).meal_plan_breakfast || 0) ? 1 : 0;
+    const mealPlanLunch = Number((plan as any).meal_plan_lunch || 0) ? 1 : 0;
+    const mealPlanDinner = Number((plan as any).meal_plan_dinner || 0) ? 1 : 0;
+    const preferredMealPlanCode = explicitMealPlanCode || (
+      mealPlanBreakfast || mealPlanLunch || mealPlanDinner
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(mealPlanBreakfast, mealPlanLunch, mealPlanDinner)
+        : null
+    );
+    const selectedHotelMapConfig = await this.getTboMapFallbackConfig();
+    const currentHotels = filterEpRows(
+      applyMapDinnerFallbackToRows(
+        hotels as any[],
+        {
+          preferredMealPlanCode,
+          adultCount,
+          childCount,
+          roomCount,
+          numberOfNights: 1,
+        },
+        selectedHotelMapConfig,
+      ),
+      Boolean(selectedHotelMapConfig.showEpHotels),
+    );
     const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
     return {
       quoteId, routeId: Number(routeId), provider: normalizedProvider, hotelCode: normalizedHotelCode,
-      hotels: (hotels || []).map((rawHotel: any) => {
+      hotels: (currentHotels || []).map((rawHotel: any) => {
         const hotel = projectHotelPayablePricing(rawHotel, effectiveMarginPercentage);
         const totalAmount = Number(
           hotel.totalHotelCost ?? hotel.totalAmountAfterTax ?? hotel.totalPrice ?? hotel.price ?? 0,
@@ -1885,6 +1962,16 @@ this.logger.log(
         planChildAges,
       ));
 
+      const tboMapFallbackConfig = await this.getTboMapFallbackConfig();
+      hotelsByRoute = this.applyTboMapFallback(
+        hotelsByRoute,
+        preferredMealPlanCode,
+        planAdultCount,
+        planChildCount,
+        planRoomCount,
+        tboMapFallbackConfig,
+      );
+
       // A failed supplier stay block is deliberately represented as null by
       // the retry layer so it can be retried/compared.  Downstream merging and
       // preference filtering operate on route hotel arrays; keep the failed
@@ -2088,6 +2175,22 @@ this.logger.log(
         });
       }
     }
+
+ this.logger.log(`[STAAH DEBUG] Counts before preference filters:`);
+    Array.from(hotelsByRoute.entries()).forEach(([routeId, hotels]) => {
+      const staahCount = Array.isArray(hotels) ? hotels.filter((h) => h.provider === 'staah').length : 0;
+ this.logger.log(` Route ${routeId}: STAAH before filter = ${staahCount}`);
+    });
+
+      const mergedMapRulesConfig = await this.getTboMapFallbackConfig();
+      hotelsByRoute = this.applyTboMapFallback(
+        hotelsByRoute,
+        preferredMealPlanCode,
+        planAdultCount,
+        planChildCount,
+        planRoomCount,
+        mergedMapRulesConfig,
+      );
 
  this.logger.log(`[STAAH DEBUG] Counts before preference filters:`);
     Array.from(hotelsByRoute.entries()).forEach(([routeId, hotels]) => {
@@ -4575,6 +4678,17 @@ this.logger.log(
     const childCount = Math.max(Number((plan as any).total_children || 0), 0);
     const guestNationality = String((plan as any).guest_nationality || 'IN').trim().toUpperCase();
     const city = String((firstRoute as any).next_visiting_location || (firstRoute as any).location_name || '').trim();
+    const preferredMealPlanCode = inferCanonicalHotelRatePlanCode(String((plan as any).meal_plan_code || '')) || (
+      Number((plan as any).meal_plan_breakfast || 0) ||
+      Number((plan as any).meal_plan_lunch || 0) ||
+      Number((plan as any).meal_plan_dinner || 0)
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+            Number((plan as any).meal_plan_breakfast || 0) ? 1 : 0,
+            Number((plan as any).meal_plan_lunch || 0) ? 1 : 0,
+            Number((plan as any).meal_plan_dinner || 0) ? 1 : 0,
+          )
+        : null
+    );
 
     this.logger.log(
       `[CONTINUOUS_SELECTION_SEARCH] provider=${provider} hotel=${params.hotelCode} ` +
@@ -4582,7 +4696,7 @@ this.logger.log(
     );
 
     if (provider === 'tbo' || provider === 'resavenue') {
-      return this.hotelSearchService.searchHotels({
+      const hotels = await this.hotelSearchService.searchHotels({
         cityCode: city,
         checkInDate: params.checkInDate,
         checkOutDate: params.checkOutDate,
@@ -4594,6 +4708,19 @@ this.logger.log(
         providers: [provider],
         hotelCodes: params.hotelCode,
       });
+      return provider === 'tbo'
+        ? applyMapDinnerFallbackToRows(
+            hotels as any[],
+            {
+              preferredMealPlanCode,
+              adultCount,
+              childCount,
+              roomCount,
+              numberOfNights: Math.max(Number(params.routeIds.length || 1), 1),
+            },
+            await this.getTboMapFallbackConfig(),
+          ) as HotelSearchResult[]
+        : hotels;
     }
 
     if (provider === 'hobse') {
@@ -5705,10 +5832,25 @@ this.logger.log(
       selectionRowsByRouteAndGroup.set(key, existing);
     }
 
+    const getTboMapFallbackMetadata = (source: any): Record<string, unknown> => {
+      if (source?.tboMapFallbackApplied !== true) return {};
+      return {
+        tboMapFallbackApplied: true,
+        tboMapFallbackSourceMealPlan: source.tboMapFallbackSourceMealPlan || 'CP',
+        tboMapFallbackDinnerRate: Number(source.tboMapFallbackDinnerRate || source.tboMapFallbackDinnerPerPerson || 0),
+        tboMapFallbackDinnerPerPerson: Number(source.tboMapFallbackDinnerPerPerson || source.tboMapFallbackDinnerRate || 0),
+        tboMapFallbackDinnerPerNight: Number(source.tboMapFallbackDinnerPerNight || source.tboMapFallbackDinnerTotal || source.hotelMealPlanCost || 0),
+        tboMapFallbackDinnerTotal: Number(source.tboMapFallbackDinnerTotal || source.totalHotelMealPlanCost || source.hotelMealPlanCost || 0),
+        hotelMealPlanCost: Number(source.hotelMealPlanCost || source.tboMapFallbackDinnerPerNight || source.tboMapFallbackDinnerTotal || 0),
+        totalHotelMealPlanCost: Number(source.totalHotelMealPlanCost || source.tboMapFallbackDinnerTotal || source.hotelMealPlanCost || 0),
+      };
+    };
+
     const decorateLiveSelection = (row: any, selection: any): any => {
       const snapshot = parseHotelSelectionSnapshot(selection) as any;
       const selectionOrigin = selectionOriginFromRow(selection);
       const display = hotelDisplaySnapshot({ ...selection, ...snapshot });
+      const tboMapFallbackMetadata = getTboMapFallbackMetadata(display);
       const selectedRoomType =
         snapshot.roomType ||
         (snapshot as any).roomTypeName ||
@@ -5738,6 +5880,7 @@ this.logger.log(
         hotelCode: display.hotelCode || row.hotelCode,
         roomType: selectedRoomType,
         mealPlan: selectedMealPlan,
+        ...tboMapFallbackMetadata,
         pricePerNight: Number(display.pricePerNight || row.pricePerNight || 0),
         totalHotelCost: Number(display.totalPrice || row.totalHotelCost || 0),
         totalStayPrice: Number(display.totalPrice || row.totalStayPrice || 0),
@@ -5758,6 +5901,7 @@ this.logger.log(
         selectionStatus: 'AVAILABLE',
         selection: {
           ...display,
+          ...tboMapFallbackMetadata,
           roomType: selectedRoomType,
           mealPlan: selectedMealPlan,
           status: 'AVAILABLE',
@@ -5806,6 +5950,8 @@ this.logger.log(
 
     const buildPersistedSelectionRow = (selection: any, route: any, groupType: number): any => {
       const snapshot = parseHotelSelectionSnapshot(selection) as any;
+      const displaySnapshot = hotelDisplaySnapshot({ ...selection, ...snapshot });
+      const tboMapFallbackMetadata = getTboMapFallbackMetadata(displaySnapshot);
       const provider = cleanIdentity(snapshot.provider || selection?.hotel_provider || 'external') || 'external';
       const hotelId = Number(snapshot.hotelId || selection?.hotel_id || 0) || 0;
       const hotelCode = String(snapshot.hotelCode || selection?.hotel_code || hotelId || '').trim();
@@ -5845,6 +5991,7 @@ this.logger.log(
         categoryFallbackReason: snapshot.categoryFallbackReason || null,
         roomType,
         mealPlan,
+        ...tboMapFallbackMetadata,
         totalHotelCost: totalPrice,
         totalStayPrice: totalPrice,
         pricePerNight,
@@ -5870,6 +6017,7 @@ this.logger.log(
           totalStayPrice: totalPrice,
           totalPrice,
           currency: snapshot.currency || selection?.selected_currency || 'INR',
+          ...tboMapFallbackMetadata,
           isSelectable: true,
           isLiveRate: provider !== 'offline' && provider !== 'axisrooms',
         }],
@@ -5892,7 +6040,8 @@ this.logger.log(
         bookingMode: selection?.hotel_booking_mode || (provider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
         priceSource: selection?.price_source || (provider === 'offline' || provider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
         selection: {
-          ...hotelDisplaySnapshot({ ...selection, ...snapshot }),
+          ...displaySnapshot,
+          ...tboMapFallbackMetadata,
           hotelName,
           hotelCode,
           roomType,
@@ -6133,7 +6282,18 @@ this.logger.log(
           ),
           hotelMarginGstAmount: 0,
           hotelRoomGstAmount: 0,
-          hotelMealPlanCost: 0,
+          hotelMealPlanCost: (hotel as any).tboMapFallbackApplied === true
+            ? Number((hotel as any).tboMapFallbackDinnerPerNight || (hotel as any).tboMapFallbackDinnerTotal || 0)
+            : 0,
+          totalHotelMealPlanCost: (hotel as any).tboMapFallbackApplied === true
+            ? Number((hotel as any).tboMapFallbackDinnerTotal || (hotel as any).hotelMealPlanCost || 0)
+            : 0,
+          tboMapFallbackApplied: (hotel as any).tboMapFallbackApplied === true,
+          tboMapFallbackSourceMealPlan: (hotel as any).tboMapFallbackSourceMealPlan || null,
+          tboMapFallbackDinnerRate: Number((hotel as any).tboMapFallbackDinnerRate || 0),
+          tboMapFallbackDinnerPerPerson: Number((hotel as any).tboMapFallbackDinnerPerPerson || 0),
+          tboMapFallbackDinnerPerNight: Number((hotel as any).tboMapFallbackDinnerPerNight || 0),
+          tboMapFallbackDinnerTotal: Number((hotel as any).tboMapFallbackDinnerTotal || 0),
           hotelMealPlanGstAmount: 0,
           extraBedCount: Number((hotel as any).extraBedCount || 0),
           extraBedRate: Number((hotel as any).extraBedRate || 0),
@@ -6188,6 +6348,7 @@ this.logger.log(
                 searchReference: rawSearchReference || undefined,
                 bookingMode: (hotel as any).bookingMode || (normalizedProvider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
                 priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' || normalizedProvider === 'axisrooms' ? 'DATABASE' : 'LIVE_API'),
+                ...getTboMapFallbackMetadata(hotel),
                 pricePerNight: Number((hotel as any).pricePerNight ?? totalHotelCost),
                 totalStayPrice: Number((hotel as any).totalStayPrice ?? billableHotelCost * numberOfNights),
                 totalPrice: Number((hotel as any).totalPrice ?? (hotel as any).totalStayPrice ?? billableHotelCost * numberOfNights),
@@ -7088,6 +7249,16 @@ this.logger.log(
           hotelsByRoute.set(routeId, [...existing, ...newHotels]);
         });
       }
+
+      const refreshedMapRulesConfig = await this.getTboMapFallbackConfig();
+      hotelsByRoute = this.applyTboMapFallback(
+        hotelsByRoute,
+        preferredMealPlanCode2,
+        planAdultCount2,
+        planChildCount2,
+        planRoomCount2,
+        refreshedMapRulesConfig,
+      );
 
  // Step 4: Transform fresh data into room details format
     const roomDetailsList: ItineraryHotelRoomDto[] = [];

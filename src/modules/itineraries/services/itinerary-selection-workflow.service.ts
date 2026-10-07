@@ -187,6 +187,14 @@ export class ItinerarySelectionWorkflowService {
     hotelMarginGstAmount?: number;
     amountIncludesHotelMargin?: boolean;
     pricingIncludesHotelMargin?: boolean;
+    tboMapFallbackApplied?: boolean;
+    tboMapFallbackSourceMealPlan?: string;
+    tboMapFallbackDinnerRate?: number;
+    tboMapFallbackDinnerPerPerson?: number;
+    tboMapFallbackDinnerPerNight?: number;
+    tboMapFallbackDinnerTotal?: number;
+    hotelMealPlanCost?: number;
+    totalHotelMealPlanCost?: number;
     numberOfNights?: number;
     nightlyRates?: Array<Record<string, unknown>>;
     routeDate?: string;
@@ -484,6 +492,16 @@ export class ItinerarySelectionWorkflowService {
       0,
     );
     const effectiveRoomCount = Math.max(Number(data.roomCount || 1), 1);
+    const tboMapFallbackApplied = data.tboMapFallbackApplied === true;
+    const tboMapFallbackDinnerRate = tboMapFallbackApplied
+      ? Math.max(Number(data.tboMapFallbackDinnerRate || data.tboMapFallbackDinnerPerPerson || 0), 0)
+      : 0;
+    const tboMapFallbackDinnerPerNight = tboMapFallbackApplied
+      ? Math.max(Number(data.tboMapFallbackDinnerPerNight || data.tboMapFallbackDinnerTotal || data.hotelMealPlanCost || 0), 0)
+      : 0;
+    const tboMapFallbackDinnerTotal = tboMapFallbackApplied
+      ? Math.max(Number(data.tboMapFallbackDinnerTotal || data.totalHotelMealPlanCost || data.hotelMealPlanCost || tboMapFallbackDinnerPerNight), 0)
+      : 0;
     let authoritativeBasePricePerNight = axisRoomsBasePrice > 0
       ? Number((axisRoomsBasePrice / effectiveRoomCount).toFixed(2))
       : staahBasePricePerNight > 0
@@ -499,17 +517,19 @@ export class ItinerarySelectionWorkflowService {
     ), 0);
     let hotelMarginBaseAmount = providerForPricing === 'axisrooms' && axisRoomsBasePrice > 0
       ? Number((axisRoomsBasePrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2))
-      : authoritativeBaseTotal;
+      : Number((authoritativeBaseTotal + (tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0)).toFixed(2));
     let hotelMarginRate = providerForPricing === 'axisrooms'
       ? hotelMarginBaseAmount > 0
          ? Number((hotelMarginBaseAmount * hotelMarginPercentage / 100).toFixed(2))
         : 0
       : providerForPricing === 'staah' && staahMarginRate > 0
       ? staahMarginRate
-      : suppliedMarginAmount > 0
+      : tboMapFallbackApplied
+        ? Number((hotelMarginBaseAmount * hotelMarginPercentage / 100).toFixed(2))
+        : suppliedMarginAmount > 0
         ? suppliedMarginAmount
-        : authoritativeBaseTotal > 0 && hotelMarginPercentage > 0
-          ? Number((authoritativeBaseTotal * hotelMarginPercentage / 100).toFixed(2))
+        : hotelMarginBaseAmount > 0 && hotelMarginPercentage > 0
+          ? Number((hotelMarginBaseAmount * hotelMarginPercentage / 100).toFixed(2))
           // Preserve legacy live-provider behavior in this surgical fix. An
           // Offline rate is never allowed to derive markup from payable; its
           // catalog path supplies authoritative base and margin explicitly.
@@ -523,6 +543,7 @@ export class ItinerarySelectionWorkflowService {
     // base + margin = payable. Without this normalization the tooltip shows a
     // margin line but its Grand Total remains equal to the base amount.
     if (providerForPricing === 'tbo' &&
+      !tboMapFallbackApplied &&
       (data.amountIncludesHotelMargin === true || data.pricingIncludesHotelMargin === true) &&
       authoritativeBaseTotal > 0 && hotelMarginRate > 0 &&
       Math.abs((authoritativeBaseTotal + hotelMarginRate) - selectionPricing.totalPrice) > 0.01 &&
@@ -538,14 +559,15 @@ export class ItinerarySelectionWorkflowService {
       (data as any).baseTotalPrice = authoritativeBaseTotal;
       (data as any).basePricePerNight = authoritativeBasePricePerNight;
     }
-    // VSR/TBO manual selections can arrive with the supplier/base aggregate
+    // Supplier manual selections can arrive with the supplier/base aggregate
     // in `totalPrice` while the margin is sent as a separate field. Normalize
     // that legacy shape before writing the selected row so the API's total
     // surfaces (tooltip, hotel total, and overall trip cost) are payable.
-    // The projection is idempotent and intentionally scoped to TBO/VSR;
-    // AxisRooms, Staah, and offline pricing retain their existing paths.
-    if (providerForPricing === 'tbo') {
-      const projectedVsr = projectHotelPayablePricing({
+    // The projection is idempotent. Apply it to a MAP dinner fallback from
+    // any provider as well, so the supplement reaches the persisted payable
+    // total and margin calculation consistently.
+    if (providerForPricing === 'tbo' || tboMapFallbackApplied) {
+      const projectedHotel = projectHotelPayablePricing({
         ...data,
         baseTotalPrice: authoritativeBaseTotal || undefined,
         totalPrice: selectionPricing.totalPrice,
@@ -557,9 +579,19 @@ export class ItinerarySelectionWorkflowService {
         extraBedAmount,
         childWithBedAmount,
         childWithoutBedAmount,
+        tboMapFallbackApplied,
+        tboMapFallbackDinnerRate,
+        tboMapFallbackDinnerPerNight,
+        tboMapFallbackDinnerTotal,
+        hotelMealPlanCost: tboMapFallbackDinnerTotal,
+        totalHotelMealPlanCost: tboMapFallbackDinnerTotal,
       }, hotelMarginPercentage);
-      data.pricePerNight = Number(projectedVsr.totalPrice || selectionPricing.totalPrice);
+      data.pricePerNight = Number(projectedHotel.totalPrice || selectionPricing.totalPrice);
       data.totalPrice = data.pricePerNight;
+      if (tboMapFallbackApplied) {
+        hotelMarginBaseAmount = Number((projectedHotel as any).hotelMarginBaseAmount || hotelMarginBaseAmount);
+        hotelMarginRate = Number((projectedHotel as any).hotelMarginTotalAmount || hotelMarginRate);
+      }
       selectionPricing = resolveHotelSelectionPricing({
         totalPrice: data.totalPrice,
         pricePerNight: data.pricePerNight,
@@ -586,7 +618,31 @@ export class ItinerarySelectionWorkflowService {
       } : {}),
       ...(Number(data.numberOfNights || 0) > 0 ? { numberOfNights: Number(data.numberOfNights) } : {}),
       ...(Array.isArray(data.nightlyRates) ? { nightlyRates: data.nightlyRates } : {}),
+      ...(tboMapFallbackApplied ? {
+        tboMapFallbackApplied: true,
+        tboMapFallbackSourceMealPlan: data.tboMapFallbackSourceMealPlan || 'CP',
+        tboMapFallbackDinnerRate,
+        tboMapFallbackDinnerPerPerson: Math.max(Number(data.tboMapFallbackDinnerPerPerson || tboMapFallbackDinnerRate), 0),
+        tboMapFallbackDinnerPerNight,
+        tboMapFallbackDinnerTotal,
+        hotelMealPlanCost: tboMapFallbackDinnerTotal,
+        totalHotelMealPlanCost: tboMapFallbackDinnerTotal,
+      } : {}),
     };
+
+    const tboMapMealPersistence = providerForPricing === 'tbo'
+      ? {
+          // TBO meal supplements are represented in the selected price
+          // snapshot. Clear the legacy meal columns when a later selection is
+          // a genuine supplier MAP/CP rate, otherwise an old fallback dinner
+          // amount survives the hotel change and appears in Overall Cost.
+          hotel_breakfast_cost: 0,
+          hotel_lunch_cost: 0,
+          hotel_dinner_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
+          total_hotel_meal_plan_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
+          total_hotel_meal_plan_cost_gst_amount: 0,
+        }
+      : {};
 
     const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
     const rawMealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
@@ -624,6 +680,7 @@ export class ItinerarySelectionWorkflowService {
  group_type: data.groupType || 1, // Save groupType
           updatedon: new Date(),
           ...liveRateMetadata,
+          ...tboMapMealPersistence,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
           selected_price_per_night: selectionPricing.totalPrice || null,
           selected_total_price: selectionPricing.totalPrice,
@@ -719,6 +776,7 @@ export class ItinerarySelectionWorkflowService {
           status: 1,
           deleted: 0,
           ...liveRateMetadata,
+          ...tboMapMealPersistence,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
           selected_price_per_night: selectionPricing.totalPrice || null,
           selected_total_price: selectionPricing.totalPrice,
@@ -808,6 +866,12 @@ export class ItinerarySelectionWorkflowService {
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
           dinner_required: mealDinner,
+          breakfast_cost_per_person: 0,
+          lunch_cost_per_person: 0,
+          dinner_cost_per_person: tboMapFallbackApplied ? tboMapFallbackDinnerRate : 0,
+          total_breafast_cost: 0,
+          total_lunch_cost: 0,
+          total_dinner_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
           updatedon: new Date(),
         },
       });
@@ -839,6 +903,12 @@ export class ItinerarySelectionWorkflowService {
           breakfast_required: mealBreakfast,
           lunch_required: mealLunch,
           dinner_required: mealDinner,
+          breakfast_cost_per_person: 0,
+          lunch_cost_per_person: 0,
+          dinner_cost_per_person: tboMapFallbackApplied ? tboMapFallbackDinnerRate : 0,
+          total_breafast_cost: 0,
+          total_lunch_cost: 0,
+          total_dinner_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
           createdby: userId,
           createdon: new Date(),
           status: 1,
@@ -1264,10 +1334,22 @@ export class ItinerarySelectionWorkflowService {
             baseTotalPrice: hotel.baseTotalPrice,
             hotelMarginPercentage: hotel.hotelMarginPercentage,
             hotelMarginAmount: hotel.hotelMarginAmount,
-            hotelMarginTotalAmount: hotel.hotelMarginTotalAmount,
-            amountIncludesHotelMargin: hotel.amountIncludesHotelMargin,
-            pricingIncludesHotelMargin: hotel.pricingIncludesHotelMargin,
-            extraBedCount: hotel.extraBedCount,
+             hotelMarginTotalAmount: hotel.hotelMarginTotalAmount,
+             amountIncludesHotelMargin: hotel.amountIncludesHotelMargin,
+             pricingIncludesHotelMargin: hotel.pricingIncludesHotelMargin,
+             // Preserve the server-resolved CP -> MAP dinner fallback through
+             // the bulk confirmation handoff. Without these fields the
+             // payable MAP amount is saved, but the saved itinerary cannot
+             // explain the dinner supplement after reload.
+             tboMapFallbackApplied: hotel.tboMapFallbackApplied,
+             tboMapFallbackSourceMealPlan: hotel.tboMapFallbackSourceMealPlan,
+             tboMapFallbackDinnerRate: hotel.tboMapFallbackDinnerRate,
+             tboMapFallbackDinnerPerPerson: hotel.tboMapFallbackDinnerPerPerson,
+             tboMapFallbackDinnerPerNight: hotel.tboMapFallbackDinnerPerNight,
+             tboMapFallbackDinnerTotal: hotel.tboMapFallbackDinnerTotal,
+             hotelMealPlanCost: hotel.hotelMealPlanCost,
+             totalHotelMealPlanCost: hotel.totalHotelMealPlanCost,
+             extraBedCount: hotel.extraBedCount,
             extraBedRate: hotel.extraBedRate,
             extraBedAmount: hotel.extraBedAmount,
             extraBedGstAmount: hotel.extraBedGstAmount,
