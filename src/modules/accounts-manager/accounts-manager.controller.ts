@@ -1,6 +1,7 @@
 // FILE: src/modules/accounts-manager/accounts-manager.controller.ts
 
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -27,7 +28,14 @@ import {
   AccountsManagerAgentDto,
   AccountsManagerPaymentModeDto,
   AccountsManagerPayDto,
+  AccountsManagerBulkPayDto,
 } from "./dto/accounts-manager-extra.dto";
+
+import {
+  AccountsBulkPaymentService,
+} from "./accounts-bulk-payment.service";
+
+
 import {
   ApiBearerAuth,
   ApiBody,
@@ -64,9 +72,13 @@ const paymentScreenshotStorage = diskStorage({
 @ApiBearerAuth() // uses default bearer auth from main.ts
 @Controller("accounts-manager")
 export class AccountsManagerController {
-  constructor(
-    private readonly service: AccountsManagerService,
-  ) {}
+constructor(
+  private readonly service:
+    AccountsManagerService,
+
+  private readonly bulkPaymentService:
+    AccountsBulkPaymentService,
+) {}
 
  /**
    * Main list endpoint.
@@ -80,22 +92,50 @@ export class AccountsManagerController {
       "Returns the flattened component rows (hotel/vehicle/guide/hotspot/activity) filtered by status, quote, date range, component type, agent, and search.",
   })
   @ApiOkResponse({ type: AccountsManagerRowDto, isArray: true })
-  async list(
-    @Req() req: any,
-    @Query() query: AccountsManagerQueryDto,
-  ): Promise<AccountsManagerRowDto[]> {
-    const user = req.user;
- // Role 4 is Agent
-    if (user.role === 4) {
-      query.agentId = Number(user.agentId);
-    } else if (user.role === 6) {
- // Accounts role - see everything
-    } else if (user.role === 3 || user.role === 8 || (user.staffId && user.staffId > 0)) {
- // Travel Expert logic
-      (query as any).travelExpertId = Number(user.staffId);
-    }
-    return this.service.list(query);
+ async list(
+  @Req() req: any,
+  @Query() query: AccountsManagerQueryDto,
+): Promise<AccountsManagerRowDto[]> {
+  const user = req.user;
+
+  /*
+   * Agent:
+   * restrict Accounts rows to that Agent.
+   */
+  if (user.role === 4) {
+    query.agentId =
+      Number(
+        user.agentId,
+      );
   }
+
+  /*
+   * Staff / Travel Expert:
+   * restrict rows to Agents assigned to that Staff / TE.
+   *
+   * IMPORTANT:
+   * Do not use the existence of staffId alone here.
+   * Admin users can also carry a staffId in the JWT.
+   */
+  else if (
+    user.role === 3 ||
+    user.role === 8
+  ) {
+    (query as any).travelExpertId =
+      Number(
+        user.staffId,
+      );
+  }
+
+  /*
+   * Admin (1) and Accounts (6):
+   * no Agent / Travel Expert restriction.
+   */
+
+  return this.service.list(
+    query,
+  );
+}
 
  /**
    * Summary cards (payable / paid / balance) based on same filters
@@ -110,22 +150,46 @@ export class AccountsManagerController {
       "Returns aggregated totals (totalPayable, totalPaid, totalBalance, rowCount) using the same filters as the list endpoint.",
   })
   @ApiOkResponse({ type: AccountsManagerSummaryDto })
-  async summary(
-    @Req() req: any,
-    @Query() query: AccountsManagerQueryDto,
-  ): Promise<AccountsManagerSummaryDto> {
-    const user = req.user;
- // Role 4 is Agent
-    if (user.role === 4) {
-      query.agentId = Number(user.agentId);
-    } else if (user.role === 6) {
- // Accounts role - see everything
-    } else if (user.role === 3 || user.role === 8 || (user.staffId && user.staffId > 0)) {
-      (query as any).travelExpertId = Number(user.staffId);
-    }
-    return this.service.getSummary(query);
+async summary(
+  @Req() req: any,
+  @Query() query: AccountsManagerQueryDto,
+): Promise<AccountsManagerSummaryDto> {
+  const user = req.user;
+
+  /*
+   * Agent:
+   * only that Agent's Accounts totals.
+   */
+  if (user.role === 4) {
+    query.agentId =
+      Number(
+        user.agentId,
+      );
   }
 
+  /*
+   * Staff / Travel Expert:
+   * only their assigned Agents.
+   */
+  else if (
+    user.role === 3 ||
+    user.role === 8
+  ) {
+    (query as any).travelExpertId =
+      Number(
+        user.staffId,
+      );
+  }
+
+  /*
+   * Admin (1) and Accounts (6):
+   * unrestricted Accounts summary.
+   */
+
+  return this.service.getSummary(
+    query,
+  );
+}
  /**
    * Quote ID autocomplete – distinct itinerary_quote_ID values.
    * GET /accounts-manager/quotes?q=ABC
@@ -213,42 +277,44 @@ async purchaseCostPdf(
 
 
   const user =
-    req.user;
+  req.user;
 
 
+/*
+ * Keep the same role scope as the Accounts
+ * list and summary endpoints.
+ */
+if (
+  user.role === 4
+) {
   /*
-   * Same access rules already used by
-   * Accounts Manager list / summary.
+   * Agent:
+   * only their own Accounts booking.
    */
-  if (
-    user.role === 4
-  ) {
-    scope.agentId =
-      Number(
-        user.agentId,
-      );
-  } else if (
-    user.role === 6
-  ) {
-    /*
-     * Accounts role:
-     * no Agent restriction.
-     */
-  } else if (
-    user.role === 3 ||
-    user.role === 8 ||
-    (
-      user.staffId &&
-      user.staffId > 0
-    )
-  ) {
-    (
-      scope as any
-    ).travelExpertId =
-      Number(
-        user.staffId,
-      );
-  }
+  scope.agentId =
+    Number(
+      user.agentId,
+    );
+} else if (
+  user.role === 3 ||
+  user.role === 8
+) {
+  /*
+   * Staff / Travel Expert:
+   * only bookings belonging to their Agents.
+   */
+  (
+    scope as any
+  ).travelExpertId =
+    Number(
+      user.staffId,
+    );
+}
+
+/*
+ * Admin (1) and Accounts (6):
+ * no Agent / Travel Expert restriction.
+ */
 
 
   await this.service
@@ -297,4 +363,209 @@ async purchaseCostPdf(
     };
     return this.service.recordPayment(normalizedBody);
   }
+
+
+/*
+ * ============================================================
+ * BULK PAYMENT
+ * ============================================================
+ *
+ * One shared Payment Mode / UTR / Processed By / Screenshot,
+ * but every selected task keeps its own balance and history row.
+ */
+@UseGuards(
+  JwtAuthGuard,
+)
+@Post(
+  "pay-bulk",
+)
+@ApiBearerAuth()
+@ApiOperation({
+  summary:
+    "Record one payment across multiple payment tasks",
+  description:
+    "Records one shared payment reference across multiple due component rows belonging to the same supplier/vendor.",
+})
+@ApiBody({
+  type:
+    AccountsManagerBulkPayDto,
+})
+@ApiOkResponse({
+  description:
+    "Bulk payment recorded",
+})
+@UseInterceptors(
+  FileInterceptor(
+    "paymentScreenshot",
+    {
+      storage:
+        paymentScreenshotStorage,
+    },
+  ),
+)
+async payBulk(
+  @Body()
+  body:
+    AccountsManagerBulkPayDto,
+
+  @UploadedFile()
+  paymentScreenshot?:
+    Express.Multer.File,
+): Promise<void> {
+  let rawPayments:
+    any =
+    (
+      body as any
+    ).payments;
+
+
+  /*
+   * multipart/form-data sends payments as JSON text.
+   */
+  if (
+    typeof rawPayments ===
+    "string"
+  ) {
+    try {
+      rawPayments =
+        JSON.parse(
+          rawPayments,
+        );
+    } catch {
+      throw new BadRequestException(
+        "Invalid bulk payments payload.",
+      );
+    }
+  }
+
+
+  if (
+    !Array.isArray(
+      rawPayments,
+    )
+  ) {
+    throw new BadRequestException(
+      "Payments must be an array.",
+    );
+  }
+
+
+  if (
+    rawPayments.length ===
+    0
+  ) {
+    throw new BadRequestException(
+      "Select at least one payment task.",
+    );
+  }
+
+
+  const normalizedBody:
+    AccountsManagerBulkPayDto =
+    {
+      ...body,
+
+
+      payments:
+        rawPayments.map(
+          (
+            payment:
+              any,
+          ) => ({
+            ...payment,
+
+
+            accountsItineraryDetailsId:
+              Number(
+                payment
+                  .accountsItineraryDetailsId ||
+                  0,
+              ),
+
+
+            componentDetailId:
+              Number(
+                payment
+                  .componentDetailId ||
+                  0,
+              ),
+
+
+            amount:
+              Number(
+                payment
+                  .amount ||
+                  0,
+              ),
+
+
+            routeDate:
+              String(
+                payment
+                  .routeDate ||
+                  "",
+              ).trim() ||
+              undefined,
+          }),
+        ),
+
+
+      modeOfPaymentId:
+        (
+          body as any
+        ).modeOfPaymentId !==
+          undefined &&
+        (
+          body as any
+        ).modeOfPaymentId !==
+          ""
+          ? Number(
+              (
+                body as any
+              ).modeOfPaymentId,
+            )
+          : undefined,
+
+
+      utrNumber:
+        String(
+          (
+            body as any
+          ).utrNumber ||
+            "",
+        ).trim() ||
+        undefined,
+
+
+      processedBy:
+        String(
+          (
+            body as any
+          ).processedBy ||
+            "",
+        ).trim() ||
+        undefined,
+
+
+      paymentScreenshotPath:
+        paymentScreenshot
+          ? `/uploads/accounts_payment_screenshots/${paymentScreenshot.filename}`
+          : String(
+              (
+                body as any
+              )
+                .paymentScreenshotPath ||
+                "",
+            ).trim() ||
+            undefined,
+    };
+
+
+  return this
+    .bulkPaymentService
+    .recordBulkPayment(
+      normalizedBody,
+    );
+}
+
 }

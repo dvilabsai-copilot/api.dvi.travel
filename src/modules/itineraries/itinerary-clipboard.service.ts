@@ -849,33 +849,39 @@ export class ItineraryClipboardService {
       }
     }
 
-    /*
-     * Fallback for a last day that does not contain
-     * a start or return segment.
-     */
-    addCheckoutDepartureLine();
-
-    if (!lines.length) {
-      continue;
-    }
-
- /*
-     * Recommended mode receives a light-grey day heading,
-     * matching the B2B copied table appearance.
-     *
-     * Highlights and Para retain the existing day heading.
+/*
+ * Fallback for a last day that does not contain
+ * a start or return segment.
  */
-    const dayHeaderStyle =
-      mode === 'recommended'
-        ? `
-          padding:3px;
-          border:1px solid #b1b1b1;
-          background-color:#f2f2f2;
-        `
-        : `
-          padding:3px;
-          border:1px solid #b1b1b1;
-        `;
+addCheckoutDepartureLine();
+
+/*
+ * IMPORTANT:
+ * Never skip an itinerary day only because that day has
+ * no hotspot/attraction content.
+ *
+ * Hotel + Vehicle itineraries can contain transfer-only
+ * or hotel-only days with no sightseeing hotspots.
+ *
+ * Every itinerary day must still appear in:
+ * - Copy Recommended
+ * - Copy to Highlights
+ * - Copy to Para
+ *
+ * When lines is empty, we keep the day heading and render
+ * an empty body row instead of dropping the entire day.
+ */
+const dayHeaderStyle =
+  mode === 'recommended'
+    ? `
+      padding:3px;
+      border:1px solid #b1b1b1;
+      background-color:#f2f2f2;
+    `
+    : `
+      padding:3px;
+      border:1px solid #b1b1b1;
+    `;
 
  /*
      * Recommended:
@@ -884,16 +890,26 @@ export class ItineraryClipboardService {
      * Highlights and Para:
      * keep all paragraph lines inside the existing single table cell.
  */
-    const dayBody =
-      mode === 'recommended'
-        ? lines.join('')
-        : `
-          <tr>
-            <td style="padding:3px; border:1px solid #b1b1b1;">
-              ${lines.join('')}
-            </td>
-          </tr>
-        `;
+  const dayBody =
+  mode === 'recommended'
+    ? (
+        lines.length
+          ? lines.join('')
+          : `
+            <tr>
+              <td style="padding:3px; border:1px solid #b1b1b1;">
+                &nbsp;
+              </td>
+            </tr>
+          `
+      )
+    : `
+      <tr>
+        <td style="padding:3px; border:1px solid #b1b1b1;">
+          ${lines.length ? lines.join('') : '&nbsp;'}
+        </td>
+      </tr>
+    `;
 
     html += `
       <table

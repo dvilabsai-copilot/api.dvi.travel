@@ -2137,31 +2137,25 @@ async autoSelectVehicleSlabs(data: {
     return;
   }
 
-  const vehicleRowsBefore = await (
-    this.prisma as any
-  ).dvi_itinerary_plan_vendor_vehicle_details.findMany({
-    where: {
-      itinerary_plan_id: normalizedPlanId,
-      deleted: 0,
-      ...(routeId
-        ? {
-            itinerary_route_id: Number(routeId),
-          }
-        : {}),
-    },
-    select: {
-      itinerary_route_id: true,
-      itinerary_plan_vendor_eligible_ID: true,
-      vendor_id: true,
-      vendor_branch_id: true,
-      vendor_vehicle_type_id: true,
-      vehicle_id: true,
-      time_limit_id: true,
-      total_travelled_km: true,
-      total_vehicle_amount: true,
-    },
-  });
-
+const vehicleRowsBefore = await (
+  this.prisma as any
+).dvi_itinerary_plan_vendor_vehicle_details.findMany({
+  where: {
+    itinerary_plan_id: normalizedPlanId,
+    deleted: 0,
+  },
+  select: {
+    itinerary_route_id: true,
+    itinerary_plan_vendor_eligible_ID: true,
+    vendor_id: true,
+    vendor_branch_id: true,
+    vendor_vehicle_type_id: true,
+    vehicle_id: true,
+    time_limit_id: true,
+    total_travelled_km: true,
+    total_vehicle_amount: true,
+  },
+});
   const beforeKm = vehicleRowsBefore.reduce(
     (sum: number, row: any) =>
       sum + Number(row?.total_travelled_km || 0),
@@ -2248,5 +2242,47 @@ async autoSelectVehicleSlabs(data: {
       );
     },
   });
+  const vehicleRowsAfter = await (
+  this.prisma as any
+).dvi_itinerary_plan_vendor_vehicle_details.findMany({
+  where: {
+    itinerary_plan_id: normalizedPlanId,
+    deleted: 0,
+  },
+  select: {
+    total_travelled_km: true,
+    total_vehicle_amount: true,
+  },
+});
+
+const afterKm = vehicleRowsAfter.reduce(
+  (sum: number, row: any) =>
+    sum + Number(row?.total_travelled_km || 0),
+  0,
+);
+
+const afterAmount = vehicleRowsAfter.reduce(
+  (sum: number, row: any) =>
+    sum + Number(row?.total_vehicle_amount || 0),
+  0,
+);
+
+console.log(
+  '[HOTSPOT_CHANGE_VEHICLE_REBUILD_AFTER]',
+  {
+    planId: normalizedPlanId,
+    routeId: routeId || null,
+
+    beforeKm: Number(beforeKm.toFixed(2)),
+    afterKm: Number(afterKm.toFixed(2)),
+    kmDelta: Number((afterKm - beforeKm).toFixed(2)),
+
+    beforeAmount: Number(beforeAmount.toFixed(2)),
+    afterAmount: Number(afterAmount.toFixed(2)),
+    amountDelta: Number(
+      (afterAmount - beforeAmount).toFixed(2),
+    ),
+  },
+);
 }
 }

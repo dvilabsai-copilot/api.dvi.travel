@@ -17,6 +17,11 @@ export const SystemRole = {
   HOTEL_ADMIN: 10,
 } as const;
 
+/** Legacy dvi_rolemenu role used for Travel Expert permissions. */
+export const LegacyPermissionRole = {
+  TRAVEL_EXPERT: 3,
+} as const;
+
 export type SystemRoleId =
   (typeof SystemRole)[keyof typeof SystemRole];
 
@@ -57,6 +62,25 @@ export function getRoleId(user: any): number {
         user?.role ??
         0,
     ) || 0
+  );
+}
+
+export function isLegacyTravelExpertUser(user: any): boolean {
+  return (
+    getRoleId(user) === SystemRole.STAFF &&
+    Number(user?.permissionRoleId ?? 0) ===
+      LegacyPermissionRole.TRAVEL_EXPERT &&
+    Number(user?.staffId ?? user?.staff_id ?? 0) > 0
+  );
+}
+
+export function canQuickOnboardAgent(user: any): boolean {
+  const roleId = getRoleId(user);
+
+  return (
+    roleId === SystemRole.ADMIN ||
+    roleId === SystemRole.TRAVEL_EXPERT ||
+    isLegacyTravelExpertUser(user)
   );
 }
 
