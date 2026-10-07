@@ -4,6 +4,9 @@ import { PartialType } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
   Allow,
+  ArrayNotEmpty,
+  ArrayUnique,
+  IsArray,
   IsIn,
   IsInt,
   IsNumber,
@@ -11,6 +14,7 @@ import {
   Max,
   Min,
 } from "class-validator";
+
 
 export class UpdateGlobalSettingsDto {
   // The application uses a global whitelist ValidationPipe. Keep every
@@ -152,15 +156,13 @@ export class UpdateGlobalSettingsDto {
 }
 
 export class CreateExtraMarginRuleDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayUnique()
   @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  source_city_id!: number;
-
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  destination_city_id!: number;
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  vendor_ids!: number[];
 
   @Type(() => Number)
   @IsInt()
@@ -172,11 +174,19 @@ export class CreateExtraMarginRuleDto {
   @Min(1)
   max_nights!: number;
 
-  @IsIn(["percentage", "fixed_amount"])
-  adjustment_type!: "percentage" | "fixed_amount";
+  @IsIn([
+    "percentage",
+    "fixed_amount",
+  ])
+  adjustment_type!:
+    | "percentage"
+    | "fixed_amount";
 
   @Type(() => Number)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @IsNumber({
+    allowNaN: false,
+    allowInfinity: false,
+  })
   @Min(0)
   adjustment_value!: number;
 
@@ -192,7 +202,8 @@ export class CreateExtraMarginRuleDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @IsIn([0, 1])
+  @Min(0)
+  @Max(1)
   status?: number;
 }
 
