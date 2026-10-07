@@ -252,9 +252,185 @@ export type HotspotGalleryItemDto = { id?: number | bigint; name: string; delete
 export type HotspotFormSaveDto = HotspotCreateDto | HotspotUpdateDto;
 
 // ------------------------------- service --------------------------------
+
+function positionHotspots(
+  rows: {
+    hotspot_ID: number;
+    hotspot_priority: number;
+    hotspot_name: string | null;
+  }[],
+  id: number,
+  position: number,
+) {
+  const ordered = [...rows].sort((a, b) => {
+    const ap = a.hotspot_priority > 0 ? a.hotspot_priority : Infinity;
+    const bp = b.hotspot_priority > 0 ? b.hotspot_priority : Infinity;
+    if (ap !== bp) return ap < bp ? -1 : 1;
+    return (a.hotspot_name || "").localeCompare(
+      b.hotspot_name || "", "en", { sensitivity: "base" }
+    ) || a.hotspot_ID - b.hotspot_ID;
+  });
+
+  const index = ordered.findIndex(row => row.hotspot_ID === id);
+  if (index < 0) throw new Error("Active hotspot not found");
+  if (!Number.isSafeInteger(position) ||
+      position < 1 || position > ordered.length) {
+    throw new Error("Invalid hotspot position");
+  }
+
+  const [selected] = ordered.splice(index, 1);
+  ordered.splice(position - 1, 0, selected);
+
+  return ordered.map((row, index) => ({
+    id: row.hotspot_ID,
+    previous: row.hotspot_priority,
+    priority: index + 1,
+  }));
+}
+
 @Injectable()
 export class HotspotsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async saveOpeningHoursOnly(id: number, input: unknown) {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new BadRequestException('Invalid hotspot id');
+    }
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new BadRequestException('openingHours must be a day map');
+    }
+
+    const allowed = [
+      'monday', 'tuesday', 'wednesday', 'thursday',
+      'friday', 'saturday', 'sunday',
+    ];
+    const entries = Object.entries(input);
+    if (!entries.length || entries.length > 7) {
+      throw new BadRequestException('Provide between one and seven days');
+    }
+
+    const parseTime = (value: unknown): string => {
+      if (typeof value !== 'string') {
+        throw new BadRequestException('Opening and closing times are required');
+      }
+      const text = value.trim();
+      const twelve = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(text);
+      let hour: number;
+      let minute: number;
+
+      if (twelve) {
+        const h = Number(twelve[1]);
+        minute = Number(twelve[2]);
+        if (h < 1 || h > 12 || minute > 59) {
+          throw new BadRequestException('Invalid time: ' + text);
+        }
+        hour = h % 12 + (twelve[3].toUpperCase() === 'PM' ? 12 : 0);
+      } else {
+        const match = /^(\d{1,2}):(\d{2})(?::00)?$/.exec(text);
+        if (!match) throw new BadRequestException('Invalid time: ' + text);
+        hour = Number(match[1]);
+        minute = Number(match[2]);
+        if (hour > 23 || minute > 59) {
+          throw new BadRequestException('Invalid time: ' + text);
+        }
+      }
+
+      return String(hour).padStart(2, '0') + ':' +
+        String(minute).padStart(2, '0');
+    };
+
+    const normalized: Record<string, {
+      is24Hours: boolean;
+      closed24Hours: boolean;
+      timeSlots: { start: string; end: string }[];
+    }> = {};
+
+    for (const [day, raw] of entries) {
+      if (!allowed.includes(day) ||
+          !raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new BadRequestException('Invalid opening-hours day');
+      }
+
+      const def = raw as any;
+      if (typeof def.is24Hours !== 'boolean' ||
+          typeof def.closed24Hours !== 'boolean' ||
+          !Array.isArray(def.timeSlots)) {
+        throw new BadRequestException('Invalid schedule for ' + day);
+      }
+      if (def.is24Hours && def.closed24Hours) {
+        throw new BadRequestException('A day cannot be both open and closed');
+      }
+
+      const slots = def.is24Hours || def.closed24Hours
+        ? []
+        : def.timeSlots.map((slot: any) => ({
+            start: parseTime(slot?.start),
+            end: parseTime(slot?.end),
+          }));
+
+      if (!def.is24Hours && !def.closed24Hours && !slots.length) {
+        throw new BadRequestException(
+          'Enter time slots or select open/closed all day for ' + day
+        );
+      }
+
+      normalized[day] = {
+        is24Hours: def.is24Hours,
+        closed24Hours: def.closed24Hours,
+        timeSlots: slots,
+      };
+    }
+
+    await this.prisma.$transaction(async tx => {
+      const locked = await tx.$queryRaw<{ hotspot_ID: number }[]>(
+        Prisma.sql([
+          "SELECT hotspot_ID FROM dvi_hotspot_place WHERE hotspot_ID = ",
+          " AND deleted = 0 FOR UPDATE"
+        ], id)
+      );
+      if (!locked.length) throw new NotFoundException('Hotspot not found');
+
+      for (const [day, def] of Object.entries(normalized)) {
+        const dayInt = DAY_NAME_TO_INT[day];
+        if (!Number.isInteger(dayInt)) {
+          throw new BadRequestException('Invalid day mapping');
+        }
+
+        await tx.dvi_hotspot_timing.deleteMany({
+          where: { hotspot_ID: id, hotspot_timing_day: dayInt },
+        });
+
+        const slots = def.is24Hours || def.closed24Hours
+          ? [{ start: '00:00', end: '23:59' }]
+          : def.timeSlots;
+
+        for (const slot of slots) {
+          const start = hhmmToUTCDate(slot.start);
+          const end = hhmmToUTCDate(slot.end);
+          if (!start || !end) {
+            throw new BadRequestException('Invalid opening or closing time');
+          }
+
+          await tx.dvi_hotspot_timing.create({
+            data: {
+              hotspot_ID: id,
+              hotspot_timing_day: dayInt,
+              hotspot_start_time: start,
+              hotspot_end_time: end,
+              hotspot_open_all_time: def.is24Hours ? 1 : 0,
+              hotspot_closed: def.closed24Hours ? 1 : 0,
+              status: 1,
+              deleted: 0,
+            },
+          });
+        }
+      }
+    }, { maxWait: 10000, timeout: 30000 });
+
+    return { ok: true, openingHours: normalized };
+  }
+
+
 
  // --------------------------- List ------------------------------
   async list(q: HotspotListQueryDto): Promise<HotspotListResponseDto> {
@@ -749,27 +925,62 @@ export class HotspotsService {
   }
 
  // --------------------------- Inline priority ------------------------------
-  async updatePriority(id: number, priority: number): Promise<{ ok: true }> {
-    if (!Number.isFinite(id) || id <= 0) {
+async updatePriority(id: number, priority: number): Promise<{ ok: true }> {
+    if (!Number.isSafeInteger(id) || id <= 0) {
       throw new BadRequestException('Invalid hotspot id');
     }
-    if (!Number.isFinite(priority) || priority < 0) {
-      throw new BadRequestException('Invalid priority');
+    if (!Number.isSafeInteger(priority) || priority < 1) {
+      throw new BadRequestException(
+        'Position must be a whole number starting from 1'
+      );
     }
 
-    const exists = await this.prisma.dvi_hotspot_place.findUnique({
-      where: { hotspot_ID: id },
-      select: { hotspot_ID: true },
-    });
-    if (!exists) throw new NotFoundException('Hotspot not found');
+    await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{
+        hotspot_ID: number;
+        hotspot_priority: number;
+        hotspot_name: string | null;
+      }[]>(Prisma.sql`
+        SELECT hotspot_ID, hotspot_priority, hotspot_name
+        FROM dvi_hotspot_place
+        WHERE deleted = 0 AND status = 1
+        ORDER BY hotspot_ID ASC
+        FOR UPDATE
+      `);
 
-    await this.prisma.dvi_hotspot_place.update({
-      where: { hotspot_ID: id },
-      data: { hotspot_priority: priority },
-    });
+      if (!rows.some(row => row.hotspot_ID === id)) {
+        throw new NotFoundException('Active hotspot not found');
+      }
+      if (priority > rows.length) {
+        throw new BadRequestException(
+          'Position must be between 1 and ' + rows.length
+        );
+      }
+
+      const changes = positionHotspots(rows, id, priority)
+        .filter(row => row.previous !== row.priority);
+
+      for (let offset = 0; offset < changes.length; offset += 200) {
+        const batch = changes.slice(offset, offset + 200);
+        const cases = batch.map(row =>
+          Prisma.sql`WHEN ${row.id} THEN ${row.priority}`
+        );
+
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE dvi_hotspot_place
+          SET hotspot_priority = CASE hotspot_ID
+            ${Prisma.join(cases, ' ')}
+            ELSE hotspot_priority
+          END
+          WHERE deleted = 0 AND status = 1
+            AND hotspot_ID IN (${Prisma.join(batch.map(row => row.id))})
+        `);
+      }
+    }, { maxWait: 20000, timeout: 120000 });
 
     return { ok: true };
   }
+
 
  // --------------------------- Soft delete ----------------------------------
   async softDelete(id: number): Promise<{ ok: true }> {
