@@ -1,6 +1,8 @@
 // FILE: src/modules/accounts-manager/dto/accounts-manager-extra.dto.ts
 
 import {
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsInt,
   IsNumber,
@@ -8,7 +10,13 @@ import {
   IsPositive,
   IsString,
   Min,
+  ValidateNested,
 } from "class-validator";
+
+import {
+  Transform,
+  Type,
+} from "class-transformer";
 import { AccountsManagerRowComponentType } from "./accounts-manager-row.dto";
 
 /**
@@ -103,4 +111,134 @@ export class AccountsManagerPayDto {
   @IsOptional()
   @IsString()
   paymentScreenshotPath?: string;
+}
+
+
+/*
+ * One component/task inside a bulk payment.
+ */
+export class AccountsManagerBulkPayItemDto {
+  @IsIn([
+    "guide",
+    "hotspot",
+    "activity",
+    "hotel",
+    "vehicle",
+  ])
+  componentType!:
+    AccountsManagerRowComponentType;
+
+
+  @IsInt()
+  @Min(1)
+  @Type(
+    () => Number,
+  )
+  accountsItineraryDetailsId!:
+    number;
+
+
+  @IsInt()
+  @Min(1)
+  @Type(
+    () => Number,
+  )
+  componentDetailId!:
+    number;
+
+
+  @IsOptional()
+  @IsString()
+  routeDate?:
+    string;
+
+
+  @IsNumber()
+  @IsPositive()
+  @Type(
+    () => Number,
+  )
+  amount!:
+    number;
+}
+
+
+/*
+ * One shared payment/UTR can contain
+ * several component payment tasks.
+ */
+export class AccountsManagerBulkPayDto {
+  @Transform(
+    ({
+      value,
+    }) => {
+      /*
+       * multipart/form-data sends the payments array
+       * as JSON text.
+       */
+      if (
+        Array.isArray(
+          value,
+        )
+      ) {
+        return value;
+      }
+
+
+      if (
+        typeof value ===
+        "string"
+      ) {
+        try {
+          return JSON.parse(
+            value,
+          );
+        } catch {
+          return value;
+        }
+      }
+
+
+      return value;
+    },
+  )
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({
+    each: true,
+  })
+  @Type(
+    () =>
+      AccountsManagerBulkPayItemDto,
+  )
+  payments!:
+    AccountsManagerBulkPayItemDto[];
+
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(
+    () => Number,
+  )
+  modeOfPaymentId?:
+    number;
+
+
+  @IsOptional()
+  @IsString()
+  utrNumber?:
+    string;
+
+
+  @IsOptional()
+  @IsString()
+  processedBy?:
+    string;
+
+
+  @IsOptional()
+  @IsString()
+  paymentScreenshotPath?:
+    string;
 }
