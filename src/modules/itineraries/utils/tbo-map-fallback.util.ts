@@ -179,9 +179,10 @@ export function filterEpRows<T extends Record<string, any>>(
 }
 
 /**
- * Add a selectable MAP representation for CP-only rates when the itinerary
- * requests MAP. A supplier's real MAP rate is always retained unchanged and
- * wins over the fallback, including when the same property also returned CP.
+ * Normalize the visible options for a MAP request. A supplier's real MAP rate
+ * is retained unchanged. A CP-only property remains visible, but its CP rate
+ * is replaced by a synthetic MAP option with the configured dinner supplement.
+ * This keeps raw CP/AP/EP options out of a MAP selection flow.
  *
  * The returned option retains the supplier's CP booking/search identity. The
  * synthetic identity is only used to distinguish the commercial MAP option
@@ -202,11 +203,17 @@ export function applyMapDinnerFallbackToRows<T extends Record<string, any>>(
 
   return rows.flatMap((row) => {
     const key = propertyKey(row);
-    if (!cpProperties.has(key) || realMapProperties.has(key)) return [row];
-
     const options = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
     if (options.length > 0) {
+      if (realMapProperties.has(key)) {
+        const mapOptions = options.filter(isMap);
+        return mapOptions.length > 0 ? [{ ...row, rateOptions: mapOptions }] : [];
+      }
+
+      if (!cpProperties.has(key)) return [];
+
       const fallbackOptions = options
+        .filter(isCp)
         .map((option: any) => createFallbackOption({ ...row, ...option }, context, config))
         .filter(Boolean)
         .map((option: any) => ({
@@ -217,12 +224,15 @@ export function applyMapDinnerFallbackToRows<T extends Record<string, any>>(
           providerHotelCode: option.providerHotelCode || row.providerHotelCode,
         }));
       return fallbackOptions.length > 0
-        ? [{ ...row, rateOptions: [...options, ...fallbackOptions] }]
-        : [row];
+        ? [{ ...row, rateOptions: fallbackOptions }]
+        : [];
     }
 
+    if (realMapProperties.has(key)) return isMap(row) ? [row] : [];
+    if (!cpProperties.has(key)) return [];
+
     const fallback = createFallbackOption(row, context, config);
-    return fallback ? [row, fallback] : [row];
+    return fallback ? [fallback] : [];
   });
 }
 
