@@ -128,7 +128,7 @@ sendEmailLoginOtp(@Body() body: SendEmailLoginOtpDto) {
      *
      * AuthService independently validates
      * that the authenticated role is only
-     * ADMIN or TRAVEL_EXPERT.
+     * ADMIN, current TRAVEL_EXPERT, or a legacy PHP Travel Expert.
      */
     return this.auth
       .quickOnboardPartner(

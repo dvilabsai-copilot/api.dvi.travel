@@ -1415,47 +1415,107 @@ const firstManualVisitIndex = routeVisits.findIndex(
     row?.isManual === true,
 );
 
-  // We can safely rebuild a manual insertion when it has a previous
-  // attraction. AFTER_START keeps the existing fallback behaviour.
-  if (firstManualVisitIndex <= 0) {
-    continue;
-  }
+// No manual hotspot exists on this route.
+if (firstManualVisitIndex < 0) {
+  continue;
+}
 
-  const affectedDestinationIds = new Set<number>(
-    routeVisits
-      .slice(firstManualVisitIndex)
-      .map((row: any) => Number(row?.hotspot_ID || 0))
-      .filter((hotspotId: number) => hotspotId > 0),
-  );
+/*
+ * If the manual hotspot is the FIRST attraction of the day,
+ * there is no previous attraction available for rebuilding the
+ * incoming leg.
+ *
+ * Keep the existing incoming travel row for that first manual
+ * hotspot and rebuild the attraction-to-attraction chain AFTER it.
+ *
+ * Example:
+ *   Hotel -> Manual -> A -> B
+ *
+ * Keep:
+ *   Hotel -> Manual
+ *
+ * Rebuild:
+ *   Manual -> A
+ *   A -> B
+ *
+ * When the manual hotspot is not first, preserve the existing
+ * behaviour:
+ *   Previous -> Manual -> Next...
+ */
+const rebuildStartIndex =
+  firstManualVisitIndex === 0
+    ? 1
+    : firstManualVisitIndex;
 
-  const originalTravelRows = travelRepairSourceRows.filter(
+const affectedDestinationIds = new Set<number>(
+  routeVisits
+    .slice(rebuildStartIndex)
+    .map((row: any) =>
+      Number(row?.hotspot_ID || 0),
+    )
+    .filter(
+      (hotspotId: number) =>
+        hotspotId > 0,
+    ),
+);
+
+const originalTravelRows =
+  travelRepairSourceRows.filter(
     (row: any) =>
-      Number(row?.itinerary_route_ID || 0) === manualRouteId &&
+      Number(row?.itinerary_route_ID || 0) ===
+        manualRouteId &&
       Number(row?.item_type || 0) === 3,
   );
 
-  // Remove only stale attraction travel rows beginning with the manual
-  // insertion. Break/free-time item_type=3 rows with hotspot_ID=0 remain.
-  travelRepairSourceRows = travelRepairSourceRows.filter((row: any) => {
+// Remove only stale attraction-to-attraction travel rows
+// that are going to be rebuilt below.
+//
+// IMPORTANT:
+// When the manual hotspot is the first visit, its existing
+// incoming Hotel/Start -> Manual travel row is intentionally
+// preserved.
+travelRepairSourceRows =
+  travelRepairSourceRows.filter((row: any) => {
     const sameRoute =
-      Number(row?.itinerary_route_ID || 0) === manualRouteId;
+      Number(row?.itinerary_route_ID || 0) ===
+      manualRouteId;
 
-    const isTravel = Number(row?.item_type || 0) === 3;
-    const destinationHotspotId = Number(row?.hotspot_ID || 0);
+    const isTravel =
+      Number(row?.item_type || 0) === 3;
 
-    if (!sameRoute || !isTravel) return true;
-    if (destinationHotspotId <= 0) return true;
+    const destinationHotspotId =
+      Number(row?.hotspot_ID || 0);
 
-    return !affectedDestinationIds.has(destinationHotspotId);
+    if (!sameRoute || !isTravel) {
+      return true;
+    }
+
+    if (destinationHotspotId <= 0) {
+      return true;
+    }
+
+    return !affectedDestinationIds.has(
+      destinationHotspotId,
+    );
   });
 
-  let previousVisit = routeVisits[firstManualVisitIndex - 1];
+/*
+ * For a first-position manual hotspot, the manual visit itself
+ * becomes the starting point for rebuilding its downstream legs.
+ *
+ * Otherwise start from the visit immediately before the manual
+ * hotspot, as before.
+ */
+let previousVisit =
+  firstManualVisitIndex === 0
+    ? routeVisits[0]
+    : routeVisits[firstManualVisitIndex - 1];
 
-  for (
-    let visitIndex = firstManualVisitIndex;
-    visitIndex < routeVisits.length;
-    visitIndex += 1
-  ) {
+for (
+  let visitIndex = rebuildStartIndex;
+  visitIndex < routeVisits.length;
+  visitIndex += 1
+) {
     const currentVisit = routeVisits[visitIndex];
 
     const fromHotspotId = Number(previousVisit?.hotspot_ID || 0);
@@ -1646,56 +1706,73 @@ for (const row of travelRepairSourceRows as any[]) {
   if (!travelRepairKeys.has(repairKey)) {
     travelRepairKeys.add(repairKey);
 
-    const {
-      route_hotspot_ID: _routeHotspotId,
-      ...rowWithoutPrimaryKey
-    } = row as any;
+   const {
+  route_hotspot_ID: _routeHotspotId,
 
-    const visitStart = row?.hotspot_start_time
-      ? new Date(row.hotspot_start_time)
-      : null;
+  // Never inherit travel/cost fields from a sightseeing visit row.
+  hotspot_travelling_distance: _visitDistance,
+  hotspot_traveling_time: _visitTravelTime,
+  itinerary_travel_type_buffer_time: _visitBufferTime,
 
-    const travelDurationMs = 5 * 60 * 1000;
+  ...rowWithoutPrimaryKey
+} = row as any;
 
-    const fallbackStart =
-      visitStart &&
-      Number.isFinite(visitStart.getTime())
-        ? new Date(
-            visitStart.getTime() - travelDurationMs,
-          )
-        : new Date();
+const visitStart = row?.hotspot_start_time
+  ? new Date(row.hotspot_start_time)
+  : null;
 
-    travelRepairRows.push({
-      ...rowWithoutPrimaryKey,
-      item_type: 3,
-      hotspot_start_time: fallbackStart,
-      hotspot_end_time:
-        visitStart &&
-        Number.isFinite(visitStart.getTime())
-          ? new Date(visitStart.getTime())
-          : new Date(
-              fallbackStart.getTime() +
-                travelDurationMs,
-            ),
+const travelDurationMs = 5 * 60 * 1000;
 
-      hotspot_traveling_time:
-        new Date('1970-01-01T00:05:00.000Z'),
+const fallbackStart =
+  visitStart &&
+  Number.isFinite(visitStart.getTime())
+    ? new Date(
+        visitStart.getTime() - travelDurationMs,
+      )
+    : new Date();
 
-      itinerary_travel_type_buffer_time:
-        new Date('1970-01-01T00:00:00.000Z'),
+travelRepairRows.push({
+  ...rowWithoutPrimaryKey,
 
-      hotspot_travelling_distance:
-        row?.hotspot_travelling_distance || '0.10',
+  item_type: 3,
 
-      hotspot_plan_own_way: Number(
-        row?.hotspot_plan_own_way || 0,
-      ),
+  hotspot_start_time: fallbackStart,
 
-      is_conflict: Number(row?.is_conflict || 0),
-      conflict_reason:
-        row?.conflict_reason ?? null,
-    });
+  hotspot_end_time:
+    visitStart &&
+    Number.isFinite(visitStart.getTime())
+      ? new Date(visitStart.getTime())
+      : new Date(
+          fallbackStart.getTime() +
+            travelDurationMs,
+        ),
 
+  hotspot_traveling_time:
+    new Date('1970-01-01T00:05:00.000Z'),
+
+  itinerary_travel_type_buffer_time:
+    new Date('1970-01-01T00:00:00.000Z'),
+
+  /*
+   * This row exists only to keep timeline continuity.
+   * It is NOT a matrix-calculated travel leg.
+   *
+   * Never copy distance from item_type=4 because the
+   * vehicle repricing flow can interpret it as extra KM.
+   */
+  hotspot_travelling_distance: '0.10',
+
+  hotspot_plan_own_way: Number(
+    row?.hotspot_plan_own_way || 0,
+  ),
+
+  is_conflict: Number(
+    row?.is_conflict || 0,
+  ),
+
+  conflict_reason:
+    row?.conflict_reason ?? null,
+});
     console.warn(
       '[HotspotRebuild][travel_leg_repair]',
       {
@@ -1901,42 +1978,110 @@ const persistedTravelRows =
         (row: any) => `${Number(row.itinerary_route_ID || 0)}|${Number(row.hotspot_ID || 0)}`,
       ),
     );
-    const missingTravelLegRows = persistedVisitRows
-      .filter((row: any) => {
-        const routeId = Number(row?.itinerary_route_ID || 0);
-        const hotspotId = Number(row?.hotspot_ID || 0);
-        return routeId > 0 && hotspotId > 0 && !persistedTravelKeys.has(`${routeId}|${hotspotId}`);
-      })
-      .map((row: any) => {
-        const { route_hotspot_ID: _routeHotspotId, ...rowWithoutPrimaryKey } = row as any;
-        const visitStart = row?.hotspot_start_time ? new Date(row.hotspot_start_time) : new Date();
-        const travelDurationMs = 5 * 60 * 1000;
-        const syntheticStart = new Date(visitStart.getTime() - travelDurationMs);
-        return {
-          ...rowWithoutPrimaryKey,
-          item_type: 3,
-          hotspot_start_time: syntheticStart,
-          hotspot_end_time: visitStart,
-          hotspot_traveling_time: new Date("1970-01-01T00:05:00.000Z"),
-          itinerary_travel_type_buffer_time: new Date("1970-01-01T00:00:00.000Z"),
-          hotspot_travelling_distance: row?.hotspot_travelling_distance || "0.10",
-          hotspot_order: Number(row?.hotspot_order || 0),
-          is_conflict: 0,
-          conflict_reason: null,
-          updatedon: new Date(),
-        };
-      });
+   const missingTravelLegRows = persistedVisitRows
+  .filter((row: any) => {
+    const routeId = Number(row?.itinerary_route_ID || 0);
+    const hotspotId = Number(row?.hotspot_ID || 0);
 
-    if (missingTravelLegRows.length > 0) {
-      await (tx as any).dvi_itinerary_route_hotspot_details.createMany({
-        data: missingTravelLegRows,
-      });
- console.warn("[HotspotRebuild][post_persist_travel_leg_repair]", {
-        planId,
-        repairedCount: missingTravelLegRows.length,
-        repairedHotspotIds: missingTravelLegRows.map((row: any) => Number(row.hotspot_ID || 0)),
-      });
-    }
+    return (
+      routeId > 0 &&
+      hotspotId > 0 &&
+      !persistedTravelKeys.has(`${routeId}|${hotspotId}`)
+    );
+  })
+  .map((row: any) => {
+    const {
+      route_hotspot_ID: _routeHotspotId,
+      hotspot_travelling_distance: _visitDistance,
+      hotspot_traveling_time: _visitTravelTime,
+      itinerary_travel_type_buffer_time: _visitBufferTime,
+      ...rowWithoutPrimaryKey
+    } = row as any;
+
+    const visitStart = row?.hotspot_start_time
+      ? new Date(row.hotspot_start_time)
+      : new Date();
+
+    const travelDurationMs = 5 * 60 * 1000;
+
+    const syntheticStart = new Date(
+      visitStart.getTime() - travelDurationMs,
+    );
+
+    return {
+      ...rowWithoutPrimaryKey,
+
+      item_type: 3,
+
+      hotspot_start_time: syntheticStart,
+      hotspot_end_time: visitStart,
+
+      /*
+       * IMPORTANT:
+       * This is only a timeline safety row.
+       *
+       * Do NOT copy distance/travel costing values from the
+       * sightseeing row because vehicle pricing is rebuilt
+       * after hotspot amendments and could treat this synthetic
+       * row as additional billable travel.
+       */
+      hotspot_traveling_time: new Date(
+        "1970-01-01T00:05:00.000Z",
+      ),
+
+      itinerary_travel_type_buffer_time: new Date(
+        "1970-01-01T00:00:00.000Z",
+      ),
+
+      /*
+       * Synthetic repair rows do not have a verified route/matrix
+       * distance. Keep them non-billable instead of copying the
+       * sightseeing row's previous distance.
+       */
+      hotspot_travelling_distance: "0.10",
+
+      hotspot_order: Number(
+        row?.hotspot_order || 0,
+      ),
+
+      is_conflict: 0,
+      conflict_reason: null,
+
+      updatedon: new Date(),
+    };
+  });
+
+if (missingTravelLegRows.length > 0) {
+  console.warn(
+    "[HotspotRebuild][post_persist_travel_leg_repair]",
+    {
+      planId,
+      repairedCount: missingTravelLegRows.length,
+
+      repairedRows: missingTravelLegRows.map(
+        (row: any) => ({
+          routeId: Number(
+            row.itinerary_route_ID || 0,
+          ),
+          hotspotId: Number(
+            row.hotspot_ID || 0,
+          ),
+          distance:
+            row.hotspot_travelling_distance,
+          travelTime:
+            row.hotspot_traveling_time,
+        }),
+      ),
+
+      note:
+        "Synthetic travel rows use non-billable fallback distance and must not inherit sightseeing distance.",
+    },
+  );
+
+  await (tx as any).dvi_itinerary_route_hotspot_details.createMany({
+    data: missingTravelLegRows,
+  });
+}
 
     const postCreatePlanRows = await countActiveRows();
     const postCreatePlanVisitRows = await countActiveRows(4);

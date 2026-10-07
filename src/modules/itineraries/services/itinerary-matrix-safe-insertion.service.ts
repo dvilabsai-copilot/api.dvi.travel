@@ -357,49 +357,107 @@ export class ItineraryMatrixSafeInsertionService {
     const baseIds = baseAttractions.map((row: any) => Number(row?.hotspot_ID || 0));
     let newOrderIds = [...baseIds];
 
-    if (isCityToCitySlot) {
-      newOrderIds = [selectedHotspotId];
-    } else if (isSingleHotspotBeforeSlot || isCityEndpointBeforeSlot) {
-      const anchorIndex = baseIds.findIndex((id: number) => id === bestTo);
+  if (isCityToCitySlot) {
+  newOrderIds = [selectedHotspotId];
+} else if (
+  exactAnchorSelected
+  && bestFrom > 0
+  && bestTo <= 0
+) {
+  const anchorIndex = baseIds.findIndex(
+    (id: number) => id === bestFrom,
+  );
 
-      if (anchorIndex < 0) {
-        throw new ConflictException({
-          success: false,
-          inserted: false,
-          code: 'SINGLE_HOTSPOT_SLOT_INVALID',
-          message: 'Single-hotspot before slot anchor was not found in this route.',
-        });
-      }
+  if (anchorIndex < 0) {
+    throw new ConflictException({
+      success: false,
+      inserted: false,
+      code: 'SINGLE_HOTSPOT_SLOT_INVALID',
+      message: 'Single-hotspot after slot anchor was not found in this route.',
+    });
+  }
 
-      newOrderIds.splice(anchorIndex, 0, selectedHotspotId);
-    } else if (isSingleHotspotAfterSlot || isDestinationSideSlot || isCityEndpointAfterSlot) {
-      const anchorIndex = baseIds.findIndex((id: number) => id === bestFrom);
+  newOrderIds.splice(anchorIndex + 1, 0, selectedHotspotId);
+} else if (
+  exactAnchorSelected
+  && bestTo > 0
+  && bestFrom <= 0
+) {
+  const anchorIndex = baseIds.findIndex(
+    (id: number) => id === bestTo,
+  );
 
-      if (anchorIndex < 0) {
-        throw new ConflictException({
-          success: false,
-          inserted: false,
-          code: 'SINGLE_HOTSPOT_SLOT_INVALID',
-          message: 'Single-hotspot after slot anchor was not found in this route.',
-        });
-      }
+  if (anchorIndex < 0) {
+    throw new ConflictException({
+      success: false,
+      inserted: false,
+      code: 'SINGLE_HOTSPOT_SLOT_INVALID',
+      message: 'Single-hotspot before slot anchor was not found in this route.',
+    });
+  }
 
-      newOrderIds.splice(anchorIndex + 1, 0, selectedHotspotId);
-    } else {
-      const fromIndex = baseIds.findIndex((id: number) => id === bestFrom);
-      const toIndex = fromIndex >= 0 ? fromIndex + 1 : -1;
+  newOrderIds.splice(anchorIndex, 0, selectedHotspotId);
+} else if (
+  isSingleHotspotBeforeSlot
+  || isCityEndpointBeforeSlot
+) {
+  const anchorIndex = baseIds.findIndex(
+    (id: number) => id === bestTo,
+  );
 
-      if (fromIndex < 0 || toIndex >= baseIds.length || baseIds[toIndex] !== bestTo) {
-        throw new ConflictException({
-          success: false,
-          inserted: false,
-          code: 'MATRIX_SAFE_SLOT_INVALID',
-          message: 'Matrix slot endpoints are not consecutive in this route.',
-        });
-      }
+  if (anchorIndex < 0) {
+    throw new ConflictException({
+      success: false,
+      inserted: false,
+      code: 'SINGLE_HOTSPOT_SLOT_INVALID',
+      message: 'Single-hotspot before slot anchor was not found in this route.',
+    });
+  }
 
-      newOrderIds.splice(fromIndex + 1, 0, selectedHotspotId);
-    }
+  newOrderIds.splice(anchorIndex, 0, selectedHotspotId);
+} else if (
+  isSingleHotspotAfterSlot
+  || isDestinationSideSlot
+  || isCityEndpointAfterSlot
+) {
+  const anchorIndex = baseIds.findIndex(
+    (id: number) => id === bestFrom,
+  );
+
+  if (anchorIndex < 0) {
+    throw new ConflictException({
+      success: false,
+      inserted: false,
+      code: 'SINGLE_HOTSPOT_SLOT_INVALID',
+      message: 'Single-hotspot after slot anchor was not found in this route.',
+    });
+  }
+
+  newOrderIds.splice(anchorIndex + 1, 0, selectedHotspotId);
+} else {
+  const fromIndex = baseIds.findIndex(
+    (id: number) => id === bestFrom,
+  );
+
+  const toIndex = fromIndex >= 0
+    ? fromIndex + 1
+    : -1;
+
+  if (
+    fromIndex < 0
+    || toIndex >= baseIds.length
+    || baseIds[toIndex] !== bestTo
+  ) {
+    throw new ConflictException({
+      success: false,
+      inserted: false,
+      code: 'MATRIX_SAFE_SLOT_INVALID',
+      message: 'Matrix slot endpoints are not consecutive in this route.',
+    });
+  }
+
+  newOrderIds.splice(fromIndex + 1, 0, selectedHotspotId);
+}
 
     const rowByHotspotId = new Map<number, number>();
     for (const row of routeAttractions) {
@@ -1211,16 +1269,50 @@ export class ItineraryMatrixSafeInsertionService {
         break;
       }
     }
-    const assertionFailed =
-      missingBeforeTargetIds.length > 0
-      || !afterTargetIds.includes(selectedHotspotId)
-      || !(fromPos >= 0 && cPos === fromPos + 1 && toPos === cPos + 1)
-      || otherRoutesChanged
-      || removedHigherOrEqualPriority
-      || !hotelIsLast
-      || finalOverflow > 0;
+ const exactAfterAnchor =
+  exactAnchorSelected
+  && bestFrom > 0
+  && bestTo <= 0;
 
-    if (assertionFailed && !skipPostApplyAssertions) {
+const exactBeforeAnchor =
+  exactAnchorSelected
+  && bestTo > 0
+  && bestFrom <= 0;
+
+const insertionOrderValid =
+  isCityToCitySlot
+    ? cPos >= 0
+    : exactAfterAnchor
+      ? fromPos >= 0 && cPos === fromPos + 1
+      : exactBeforeAnchor
+        ? cPos >= 0 && toPos === cPos + 1
+        : (
+            isSingleHotspotBeforeSlot
+            || isCityEndpointBeforeSlot
+          )
+          ? cPos >= 0 && toPos === cPos + 1
+          : (
+              isSingleHotspotAfterSlot
+              || isDestinationSideSlot
+              || isCityEndpointAfterSlot
+            )
+            ? fromPos >= 0 && cPos === fromPos + 1
+            : (
+                fromPos >= 0
+                && cPos === fromPos + 1
+                && toPos === cPos + 1
+              );
+
+const assertionFailed =
+  missingBeforeTargetIds.length > 0
+  || !afterTargetIds.includes(selectedHotspotId)
+  || !insertionOrderValid
+  || otherRoutesChanged
+  || removedHigherOrEqualPriority
+  || !hotelIsLast
+  || finalOverflow > 0;
+
+if (assertionFailed && !skipPostApplyAssertions) {
       throw new ConflictException({
         success: false,
         inserted: false,

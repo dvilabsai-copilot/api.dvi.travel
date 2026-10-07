@@ -7,11 +7,23 @@ import { CreateActivityBookingDto } from './dto/create-activity-booking.dto';
 // helpers
 function toTimeDate(hhmmss?: string | null): Date | null {
   if (!hhmmss) return null;
- // Expect "HH:MM" or "HH:MM:SS"
-  const parts = String(hhmmss).split(':').map((x) => parseInt(x, 10));
+
+  // Expect "HH:MM" or "HH:MM:SS"
+  const parts = String(hhmmss)
+    .split(':')
+    .map((x) => parseInt(x, 10));
+
   if (!parts.length || Number.isNaN(parts[0])) return null;
+
   const d = new Date();
-  d.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
+
+  d.setUTCHours(
+    parts[0] || 0,
+    parts[1] || 0,
+    parts[2] || 0,
+    0,
+  );
+
   return d;
 }
 

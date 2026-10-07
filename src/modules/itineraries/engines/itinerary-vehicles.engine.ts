@@ -3048,7 +3048,60 @@ const updRes =
       );
 
  // Update eligible_list record with correct toll/permit charges and recalculated totals
-      await tx.dvi_itinerary_plan_vendor_eligible_list.update({
+
+if (process.env.DEBUG_VEHICLE_CALC === 'true') {
+  console.log('[ELIGIBLE_RECALC_DEBUG]', {
+    planId,
+
+    eligibleId:
+      eligible.itinerary_plan_vendor_eligible_ID,
+
+    vendorId:
+      Number(eligible.vendor_id || 0),
+
+    vendorBranchId:
+      Number(eligible.vendor_branch_id || 0),
+
+    vendorVehicleTypeId:
+      Number(eligible.vendor_vehicle_type_id || 0),
+
+    vehicleId:
+      Number(eligible.vehicle_id || 0),
+
+    timeLimitId:
+      Number(eligible.time_limit_id || 0),
+
+    totalKms,
+    totalOutstationKm,
+    totalAllowedKms,
+    totalExtraOutstationKms,
+    totalExtraOutstationKmsCharge,
+
+    totalAllowedLocalKms,
+    totalExtraLocalKms,
+    totalExtraLocalKmsCharge,
+
+    totalRentalCharges,
+    totalTollCharges,
+    totalParkingCharges,
+    totalDriverCharges,
+    totalPermitCharges,
+
+    totalBefore6amDriver,
+    totalBefore6amVehicle,
+    totalAfter8pmDriver,
+    totalAfter8pmVehicle,
+
+    vehicleTotalAmount,
+    vehicleGstAmount,
+    vendorMarginAmount,
+    vendorMarginGstAmount,
+
+    vehicleGrandTotalNum,
+  });
+}
+
+await tx.dvi_itinerary_plan_vendor_eligible_list.update({
         where: {
           itinerary_plan_vendor_eligible_ID: eligible.itinerary_plan_vendor_eligible_ID,
         },

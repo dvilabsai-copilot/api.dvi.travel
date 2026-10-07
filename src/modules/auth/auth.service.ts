@@ -22,7 +22,11 @@ import { EmailLoginOtpService } from './email-login-otp.service';
 import { PartnerActivationService } from './partner-activation.service';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { QuickOnboardAgentDto } from './dto/quick-onboard-agent.dto';
-import { SystemRole } from './constants/system-role.constants';
+import {
+  canQuickOnboardAgent,
+  isLegacyTravelExpertUser,
+  SystemRole,
+} from './constants/system-role.constants';
 import {
   generateUniqueAgentCode,
   withAgentCodeGenerationLock,
@@ -1064,43 +1068,44 @@ async sendEmailLoginOtp(email: string) {
     input: QuickOnboardAgentDto,
     authenticatedUser: any,
   ) {
-    const role = Number(
-      authenticatedUser?.roleID ??
-        authenticatedUser?.role ??
-        0,
-    );
+const role = Number(
+  authenticatedUser?.roleID ??
+    authenticatedUser?.role ??
+    0,
+);
 
-    if (
-      role !== SystemRole.ADMIN &&
-      role !==
-        SystemRole.TRAVEL_EXPERT
-    ) {
-      throw new ForbiddenException(
-        'Only Admin or Travel Expert can quick-onboard an Agent.',
-      );
-    }
+const isLegacyTravelExpertStaff =
+  isLegacyTravelExpertUser(authenticatedUser);
 
-    const travelExpertId =
-      role ===
-      SystemRole.TRAVEL_EXPERT
-        ? Number(
-            authenticatedUser
-              ?.staffId ??
-              authenticatedUser
-                ?.staff_id ??
-              0,
-          )
-        : 0;
+if (!canQuickOnboardAgent(authenticatedUser)) {
+  throw new ForbiddenException(
+    'Only Admin or Travel Expert can quick-onboard an Agent.',
+  );
+}
 
-    if (
-      role ===
-        SystemRole.TRAVEL_EXPERT &&
-      travelExpertId <= 0
-    ) {
-      throw new ForbiddenException(
-        'This Travel Expert login is not linked to a valid staff record.',
-      );
-    }
+  const isTravelExpertContext =
+  role ===
+    SystemRole.TRAVEL_EXPERT ||
+  isLegacyTravelExpertStaff;
+
+const travelExpertId =
+  isTravelExpertContext
+    ? Number(
+        authenticatedUser
+          ?.staffId ??
+          authenticatedUser
+            ?.staff_id ??
+          0,
+      )
+    : 0;
+   if (
+  isTravelExpertContext &&
+  travelExpertId <= 0
+) {
+  throw new ForbiddenException(
+    'This Travel Expert login is not linked to a valid staff record.',
+  );
+}
 
     const name =
       String(input.name || '')
@@ -1334,16 +1339,15 @@ async sendEmailLoginOtp(email: string) {
                       .invoice_pan_no ||
                       '',
                   ).trim() &&
-                  (
-                    role !==
-                      SystemRole.TRAVEL_EXPERT ||
-                    Number(
-                      existingAgent
-                        .travel_expert_id ||
-                        0,
-                    ) ===
-                      travelExpertId
-                  ),
+                 (
+  !isTravelExpertContext ||
+  Number(
+    existingAgent
+      .travel_expert_id ||
+      0,
+  ) ===
+    travelExpertId
+)
               );
 
             if (

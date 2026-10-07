@@ -219,12 +219,46 @@ async downloadParkingChargeSample(@Res() res: Response) {
     @Query('pageSize') pageSize?: string,
     @Query('hotspotId') hotspotId?: string,
     @Query('vehicleTypeId') vehicleTypeId?: string,
+    @Query('hotspotIds') hotspotIds?: string,
+    @Query('vehicleTypeIds') vehicleTypeIds?: string,
   ) {
+    const parseIds = (
+      plural: unknown,
+      singular: unknown,
+      label: string,
+    ): number[] => {
+      const raw = plural !== undefined ? plural : singular;
+      if (raw === undefined || raw === '') return [];
+      if (typeof raw !== 'string') {
+        throw new BadRequestException(label + ' must be comma-separated IDs');
+      }
+      const tokens = raw.split(',').map((token) => token.trim());
+      if (tokens.length > 5 || tokens.some((token) => !/^[1-9][0-9]*$/.test(token))) {
+        throw new BadRequestException(label + ' requires one to five positive integer IDs');
+      }
+      const ids = tokens.map(Number);
+      if (ids.some((id) => !Number.isSafeInteger(id))) {
+        throw new BadRequestException(label + ' contains an invalid ID');
+      }
+      return [...new Set(ids)];
+    };
+    const parsePage = (raw: unknown, fallback: number, label: string): number => {
+      if (raw === undefined || raw === '') return fallback;
+      if (typeof raw !== 'string' || !/^[1-9][0-9]*$/.test(raw)) {
+        throw new BadRequestException(label + ' must be a positive integer');
+      }
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value)) {
+        throw new BadRequestException(label + ' is invalid');
+      }
+      return value;
+    };
+
     return this.svc.getParkingChargeRecords({
-      page: Number(page || 1),
-      pageSize: Number(pageSize || 25),
-      hotspotId: hotspotId ? Number(hotspotId) : undefined,
-      vehicleTypeId: vehicleTypeId ? Number(vehicleTypeId) : undefined,
+      page: parsePage(page, 1, 'page'),
+      pageSize: parsePage(pageSize, 25, 'pageSize'),
+      hotspotIds: parseIds(hotspotIds, hotspotId, 'hotspotIds'),
+      vehicleTypeIds: parseIds(vehicleTypeIds, vehicleTypeId, 'vehicleTypeIds'),
     });
   }
 

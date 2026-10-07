@@ -30,7 +30,13 @@ import * as path from 'path';
 import { randomBytes } from 'crypto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AgentService } from './agent.service';
+import {
+  AgentConversionService,
+} from './agent-conversion.service';
 import { ListAgentQueryDto } from './dto/list-agent.dto';
+import {
+  SystemRole,
+} from '../auth/constants/system-role.constants';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 import { UpdateAgentConfigDto } from './dto/update-agent-config.dto';
@@ -98,7 +104,13 @@ function agentImageFilter(
 @ApiBearerAuth()
 @Controller('agents')
 export class AgentController {
-  constructor(private readonly service: AgentService) {}
+  constructor(
+    private readonly service:
+      AgentService,
+
+    private readonly conversionService:
+      AgentConversionService,
+  ) {}
 
 @UseGuards(JwtAuthGuard)
 @Get('profile')
@@ -224,15 +236,139 @@ async listTravelExperts(
   return this.service
     .listTravelExperts();
 }
+/*
+ * Generic Agent → Role conversion.
+ *
+ * Admin only.
+ */
+@UseGuards(JwtAuthGuard)
+@Post(':id/change-role')
+async changeAgentRole(
+  @Req() req: any,
+
+  @Param(
+    'id',
+    ParseIntPipe,
+  )
+  id: number,
+
+  @Body()
+  body: {
+    roleId: number;
+  },
+) {
+  const requesterRole =
+    Number(
+      req.user?.roleID ??
+        req.user?.role ??
+        0,
+    );
+
+  if (
+    requesterRole !==
+    SystemRole.ADMIN
+  ) {
+    throw new ForbiddenException(
+      'Only Admin can change an Agent role',
+    );
+  }
+
+  const targetRoleId =
+    Number(
+      body?.roleId ??
+        0,
+    );
+
+  if (
+    !Number.isInteger(
+      targetRoleId,
+    ) ||
+    targetRoleId <= 0
+  ) {
+    throw new BadRequestException(
+      'Invalid target role',
+    );
+  }
+
+  if (
+    targetRoleId ===
+    SystemRole.ADMIN
+  ) {
+    throw new ForbiddenException(
+      'An Agent cannot be changed to Admin',
+    );
+  }
+
+  return this
+    .conversionService
+    .changeRole(
+      id,
+      targetRoleId,
+      Number(
+        req.user?.userId ??
+          0,
+      ),
+    );
+}
+
+/*
+ * Keep the old endpoint temporarily
+ * for compatibility with any existing
+ * frontend or API client.
+ */
+@UseGuards(JwtAuthGuard)
+@Post(
+  ':id/convert-to-travel-expert',
+)
+async convertToTravelExpert(
+  @Req() req: any,
+
+  @Param(
+    'id',
+    ParseIntPipe,
+  )
+  id: number,
+) {
+  const requesterRole =
+    Number(
+      req.user?.roleID ??
+        req.user?.role ??
+        0,
+    );
+
+  if (
+    requesterRole !==
+    SystemRole.ADMIN
+  ) {
+    throw new ForbiddenException(
+      'Only Admin can change an Agent role',
+    );
+  }
+
+  return this
+    .conversionService
+    .changeRole(
+      id,
+      SystemRole.TRAVEL_EXPERT,
+      Number(
+        req.user?.userId ??
+          0,
+      ),
+    );
+}
 
 /** Preview / read one */
 @Get(':id')
 preview(
-  @Param('id', ParseIntPipe)
+  @Param(
+    'id',
+    ParseIntPipe,
+  )
   id: number,
 ) {
-    return this.service.getById(id);
-  }
+  return this.service
+    .getById(id);
+}
 
  /** Edit prefill (same as preview for now) */
   @Get(':id/edit')
