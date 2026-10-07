@@ -362,6 +362,9 @@ export interface CostBreakdownDto {
     extraChildCount?: number;
     extraChildRate?: number;
     extraChildAmount?: number;
+    tboMapFallbackApplied?: boolean;
+    tboMapFallbackDinnerRate?: number;
+    tboMapFallbackDinnerTotal?: number;
   }>;
   hotelRoomBaseCost?: number;
   hotelRoomGstCost?: number;
@@ -370,6 +373,9 @@ export interface CostBreakdownDto {
   hotelMealPlanCost?: number;
   hotelMealPlanGstCost?: number;
   hotelMealPlanAllocatedCost?: number;
+  tboMapFallbackDinnerRate?: number;
+  /** TBO MAP dinner fallback only; already included in totalHotelAmount. */
+  tboMapFallbackDinnerCost?: number;
   totalHotelAmount?: number;
 
  // Vehicle costs
@@ -1023,6 +1029,22 @@ export class ItineraryDetailsService {
         const marginGstAmount = roundCurrency(Number(match.hotelMarginGstAmount ?? 0));
         const mealPlanAmount = roundCurrency(Number(match.hotelMealPlanCost ?? 0));
         const mealPlanGstAmount = roundCurrency(Number(match.hotelMealPlanGstAmount ?? 0));
+        const tboMapFallbackApplied = match.tboMapFallbackApplied === true;
+        const tboMapFallbackDinnerTotal = tboMapFallbackApplied
+          ? roundCurrency(Number(
+              match.tboMapFallbackDinnerTotal ??
+              match.totalHotelMealPlanCost ??
+              match.hotelMealPlanCost ??
+              0,
+            ))
+          : 0;
+        const tboMapFallbackDinnerRate = tboMapFallbackApplied
+          ? roundCurrency(Number(
+              match.tboMapFallbackDinnerRate ??
+              match.tboMapFallbackDinnerPerPerson ??
+              0,
+            ))
+          : 0;
         const totalAmount = roundCurrency(
           payableAmount + Number(match.totalHotelTaxAmount || 0),
         );
@@ -1043,6 +1065,10 @@ export class ItineraryDetailsService {
           hotel_margin_rate_tax_amt: marginGstAmount,
           total_hotel_meal_plan_cost: mealPlanAmount,
           total_hotel_meal_plan_cost_gst_amount: mealPlanGstAmount,
+          hotel_dinner_cost: tboMapFallbackDinnerTotal,
+          tboMapFallbackApplied,
+          tboMapFallbackDinnerRate,
+          tboMapFallbackDinnerTotal,
           total_extra_bed_cost: Number(match.extraBedAmount ?? match.extraBedCost ?? 0),
           total_extra_bed_cost_gst_amount: Number(match.extraBedGstAmount ?? 0),
           total_amenities_cost: 0,
@@ -1073,6 +1099,9 @@ export class ItineraryDetailsService {
           marginAmount,
           marginGstAmount,
           totalAmount,
+          tboMapFallbackApplied,
+          tboMapFallbackDinnerRate,
+          tboMapFallbackDinnerTotal,
           extraBedCount: Number(match.extraBedCount ?? 0),
           extraBedRate: Number(match.extraBedRate ?? 0),
           extraBedAmount: Number(match.extraBedAmount ?? match.extraBedCost ?? 0),
@@ -6434,8 +6463,64 @@ const hasRequiredVehicleSelection =
     let hotelMarginGstCost = 0;
     let hotelMealPlanCost = 0;
     let hotelMealPlanGstCost = 0;
+    let tboMapFallbackDinnerCost = 0;
+    let tboMapFallbackDinnerRates = new Set<number>();
     let roomRatePerNight = 0;
     let oneNightRoomCost = 0;
+
+    const parseHotelSnapshot = (row: any): Record<string, any> => {
+      const raw = row?.selected_price_snapshot;
+      if (raw && typeof raw === 'object') return raw;
+      if (typeof raw === 'string' && raw.trim()) {
+        try {
+          const parsed = JSON.parse(raw);
+          return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch {
+          return {};
+        }
+      }
+      return {};
+    };
+    const readTboMapFallbackDinnerCost = (row: any): number => {
+      const snapshot = parseHotelSnapshot(row);
+      const provider = String(
+        row?.hotel_provider ?? row?.provider ?? snapshot?.provider ?? '',
+      ).trim().toLowerCase();
+      const applied = (
+        row?.tboMapFallbackApplied === true ||
+        snapshot?.tboMapFallbackApplied === true
+      );
+      if (!applied) return 0;
+      const amount = Number(
+        row?.tboMapFallbackDinnerTotal ??
+        snapshot?.tboMapFallbackDinnerTotal ??
+        row?.hotel_dinner_cost ??
+        row?.total_hotel_meal_plan_cost ??
+        snapshot?.totalHotelMealPlanCost ??
+        snapshot?.hotelMealPlanCost ??
+        0,
+      );
+      return Number.isFinite(amount) && amount > 0 ? amount : 0;
+    };
+    const readTboMapFallbackDinnerRate = (row: any): number => {
+      const snapshot = parseHotelSnapshot(row);
+      const provider = String(
+        row?.hotel_provider ?? row?.provider ?? snapshot?.provider ?? '',
+      ).trim().toLowerCase();
+      const applied = (
+        row?.tboMapFallbackApplied === true ||
+        snapshot?.tboMapFallbackApplied === true
+      );
+      if (!applied) return 0;
+      const rate = Number(
+        row?.tboMapFallbackDinnerRate ??
+        row?.tboMapFallbackDinnerPerPerson ??
+        snapshot?.tboMapFallbackDinnerRate ??
+        snapshot?.tboMapFallbackDinnerPerPerson ??
+        0,
+      );
+      return Number.isFinite(rate) && rate > 0 ? rate : 0;
+    };
 
     costHotelRows.forEach(h => {
  // An early-morning hotel check-in blocks the room from the previous
@@ -6571,6 +6656,9 @@ const hasRequiredVehicleSelection =
         const selectedPayable = selectedPricing.payableTotal;
         hotelListTotal += selectedPayable;
         hotelRoomBaseCost += selectedBase;
+        tboMapFallbackDinnerCost += readTboMapFallbackDinnerCost(h) * rowMultiplier;
+        const selectedDinnerRate = readTboMapFallbackDinnerRate(h);
+        if (selectedDinnerRate > 0) tboMapFallbackDinnerRates.add(selectedDinnerRate);
         extraBedCost += selectedExtraBedAmount;
         childWithBedCost += selectedChildWithBedAmount;
         childWithoutBedCost += selectedChildWithoutBedAmount;
@@ -6588,6 +6676,9 @@ const hasRequiredVehicleSelection =
       hotelMarginGstCost += Number(h.hotel_margin_rate_tax_amt || 0) * rowMultiplier;
       hotelMealPlanCost += Number(h.total_hotel_meal_plan_cost || 0) * rowMultiplier;
       hotelMealPlanGstCost += Number(h.total_hotel_meal_plan_cost_gst_amount || 0) * rowMultiplier;
+      tboMapFallbackDinnerCost += readTboMapFallbackDinnerCost(h) * rowMultiplier;
+      const dinnerRate = readTboMapFallbackDinnerRate(h);
+      if (dinnerRate > 0) tboMapFallbackDinnerRates.add(dinnerRate);
  // TBO/cache rows often populate only total_hotel_cost; fallback keeps room totals non-zero.
       totalRoomCost += (detailedRoomCost > 0 ? detailedRoomCost : fallbackRoomCost) * rowMultiplier;
       totalAmenitiesCost += Number(h.total_amenities_cost || 0) * rowMultiplier;
@@ -6761,6 +6852,35 @@ const hasRequiredVehicleSelection =
             selectedSnapshot.totalHotelTaxAmount ?? selectedSnapshot.total_hotel_tax_amount ??
             persistedRoute?.total_hotel_tax_amount,
           );
+          const selectedTboMapFallbackDinnerCost = (
+            selected.tboMapFallbackApplied === true ||
+            selectedSnapshot.tboMapFallbackApplied === true ||
+            selectedNightlyRate?.tboMapFallbackApplied === true
+          )
+            ? firstPositiveAmount(
+                selectedNightlyRate?.tboMapFallbackDinnerTotal,
+                selected.tboMapFallbackDinnerTotal,
+                selectedSnapshot.tboMapFallbackDinnerTotal,
+                persistedRoute?.hotel_dinner_cost,
+                persistedRoute?.total_hotel_meal_plan_cost,
+              )
+            : 0;
+          const selectedTboMapFallbackDinnerRate = (
+            selected.tboMapFallbackApplied === true ||
+            selectedSnapshot.tboMapFallbackApplied === true ||
+            selectedNightlyRate?.tboMapFallbackApplied === true
+          )
+            ? firstPositiveAmount(
+                selectedNightlyRate?.tboMapFallbackDinnerRate,
+                selectedNightlyRate?.tboMapFallbackDinnerPerPerson,
+                selected.tboMapFallbackDinnerRate,
+                selected.tboMapFallbackDinnerPerPerson,
+                selectedSnapshot.tboMapFallbackDinnerRate,
+                selectedSnapshot.tboMapFallbackDinnerPerPerson,
+                parseHotelSnapshot(persistedRoute)?.tboMapFallbackDinnerRate,
+                parseHotelSnapshot(persistedRoute)?.tboMapFallbackDinnerPerPerson,
+              )
+            : 0;
           const componentPricingIsAuthoritative =
             !['tbo', 'vsr'].includes(selectedProvider) && componentTotal > 0;
           const payable = componentPricingIsAuthoritative
@@ -6780,6 +6900,10 @@ const hasRequiredVehicleSelection =
             : storedMargin;
           sum.hotelListTotal += payable;
           sum.hotelRoomBaseCost += roomBase;
+          sum.tboMapFallbackDinnerCost += selectedTboMapFallbackDinnerCost;
+          if (selectedTboMapFallbackDinnerRate > 0) {
+            sum.tboMapFallbackDinnerRates.add(selectedTboMapFallbackDinnerRate);
+          }
           sum.extraBedCost += extraBed;
           sum.childWithBedCost += childWithBed;
           sum.childWithoutBedCost += childWithoutBed;
@@ -6788,6 +6912,8 @@ const hasRequiredVehicleSelection =
         }, {
           hotelListTotal: 0,
           hotelRoomBaseCost: 0,
+          tboMapFallbackDinnerCost: 0,
+          tboMapFallbackDinnerRates: new Set<number>(),
           extraBedCost: 0,
           childWithBedCost: 0,
           childWithoutBedCost: 0,
@@ -6797,6 +6923,8 @@ const hasRequiredVehicleSelection =
         if (selectedSummary.hotelListTotal > 0) {
           hotelListTotal = Number(selectedSummary.hotelListTotal.toFixed(2));
           hotelRoomBaseCost = Number(selectedSummary.hotelRoomBaseCost.toFixed(2));
+          tboMapFallbackDinnerCost = Number(selectedSummary.tboMapFallbackDinnerCost.toFixed(2));
+          tboMapFallbackDinnerRates = selectedSummary.tboMapFallbackDinnerRates;
           extraBedCost = Number(selectedSummary.extraBedCost.toFixed(2));
           childWithBedCost = Number(selectedSummary.childWithBedCost.toFixed(2));
           childWithoutBedCost = Number(selectedSummary.childWithoutBedCost.toFixed(2));
@@ -7035,6 +7163,12 @@ const hasRequiredVehicleSelection =
       hotelMealPlanCost: shouldIncludeHotels && hotelMealPlanCost > 0 ? Number(hotelMealPlanCost.toFixed(2)) : undefined,
       hotelMealPlanGstCost: shouldIncludeHotels && hotelMealPlanGstCost > 0 ? Number(hotelMealPlanGstCost.toFixed(2)) : undefined,
       hotelMealPlanAllocatedCost: shouldIncludeHotels && hotelMealPlanAllocatedCost > 0 ? Number(hotelMealPlanAllocatedCost.toFixed(2)) : undefined,
+      tboMapFallbackDinnerCost: shouldIncludeHotels && tboMapFallbackDinnerCost > 0
+        ? Number(tboMapFallbackDinnerCost.toFixed(2))
+        : undefined,
+      tboMapFallbackDinnerRate: shouldIncludeHotels && tboMapFallbackDinnerCost > 0 && tboMapFallbackDinnerRates.size === 1
+        ? Number(Array.from(tboMapFallbackDinnerRates)[0].toFixed(2))
+        : undefined,
       totalHotelAmount: shouldIncludeHotels && effectiveHotelAmount > 0 ? effectiveHotelAmount : undefined,
       hotelPresentation: shouldIncludeHotels && effectiveHotelAmount > 0
         ? {
