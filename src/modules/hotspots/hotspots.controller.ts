@@ -101,6 +101,11 @@ function csvTempStorage() {
 export class HotspotsController {
   constructor(private readonly svc: HotspotsService) {}
 
+  @Patch(':id/opening-hours')
+  saveOpeningHoursOnly(@Param('id') id: string, @Body() body: any) {
+    return this.svc.saveOpeningHoursOnly(Number(id), body?.openingHours);
+  }
+
  // -------------------- LIST & FORM --------------------
  // List JSON (DataTable)
   @Get()
