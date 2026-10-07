@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { HotelSearchResult, RoomType } from '../../hotels/interfaces/hotel-provider.interface';
@@ -189,6 +189,7 @@ type OfflineCatalogRows = {
   ratePlansByRoom: Map<number, any[]>;
   activeRoomTypeIds: Set<number>;
   occupancyRatesByRoomPlan: Map<string, any[]>;
+  inventoryByHotelRoom: Map<string, any[]>;
   mealPricebookByHotelDate: Map<number, Map<string, { breakfast: number; lunch: number; dinner: number }>>;
 };
 
@@ -470,6 +471,12 @@ export class OfflineHotelCatalogService {
       where: {
         status: 1,
         deleted: false,
+        axisrooms_enabled: 0,
+        staah_enabled: 0,
+        AND: [
+          { OR: [{ resavenue_hotel_code: null }, { resavenue_hotel_code: '' }] },
+          { OR: [{ tbo_hotel_code: null }, { tbo_hotel_code: '' }] },
+        ],
         OR: [
           { hotel_city: { in: cityCandidates } },
           { hotel_state: { in: cityCandidates } },
@@ -516,7 +523,7 @@ export class OfflineHotelCatalogService {
       results.push({
         provider: 'offline',
         providerDisplayName: 'Offline',
-        hotelCode: String(hotel.hotel_id),
+        hotelCode: String(hotel.hotel_code || '').trim(),
         hotelName: normalizeHotelDisplayName(hotel.hotel_name) || 'Hotel',
         cityCode: String(hotel.hotel_city || ''),
         address: String(hotel.hotel_address || ''),
@@ -600,6 +607,7 @@ export class OfflineHotelCatalogService {
         isBookable: true,
         externalStay: false,
         rateOptionId: this.getRateOptionId(Number(hotel.hotel_id), bestOffer, dateList[0], dateList[dateList.length - 1]),
+        selectionKey: this.getRateOptionId(Number(hotel.hotel_id), bestOffer, dateList[0], dateList[dateList.length - 1]),
         roomId: bestOffer.roomId,
         roomTypeId: bestOffer.roomTypeId,
         rateOptions: offers.map((offer) => ({
@@ -615,9 +623,11 @@ export class OfflineHotelCatalogService {
           providerDisplayName: 'Offline',
           images: gallery.map((image) => image.url),
           primaryImageUrl: gallery.find((image) => image.isPrimary)?.url || null,
-          providerHotelCode: String(hotel.hotel_id),
+          providerHotelCode: String(hotel.hotel_code || '').trim(),
+          hotelCode: String(hotel.hotel_code || '').trim(),
           roomId: offer.roomId,
           roomTypeId: offer.roomTypeId,
+          selectionKey: this.getRateOptionId(Number(hotel.hotel_id), offer, dateList[0], dateList[dateList.length - 1]),
           roomType: offer.roomTitle,
           mealPlan: offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan,
           mealPlanCode: offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan,
@@ -751,6 +761,7 @@ export class OfflineHotelCatalogService {
         ratePlansByRoom: new Map(),
         activeRoomTypeIds: new Set(),
         occupancyRatesByRoomPlan: new Map(),
+        inventoryByHotelRoom: new Map(),
         mealPricebookByHotelDate: new Map(),
       };
     }
@@ -760,12 +771,13 @@ export class OfflineHotelCatalogService {
     // Older catalog-cache entries predate meal-pricebook parity. Rebuild those
     // entries once so the new offline breakdown cannot remain empty until a
     // long-lived cache expires. Live-provider caches are not involved here.
-    if (cachedCatalog && Array.isArray(cachedCatalog.mealPricebookByHotelDate)) {
+    if (cachedCatalog && Array.isArray(cachedCatalog.mealPricebookByHotelDate) && Array.isArray(cachedCatalog.inventoryByHotelRoom)) {
       return {
         roomsByHotel: new Map(cachedCatalog.roomsByHotel || []),
         ratePlansByRoom: new Map(cachedCatalog.ratePlansByRoom || []),
         activeRoomTypeIds: new Set(cachedCatalog.activeRoomTypeIds || []),
         occupancyRatesByRoomPlan: new Map(cachedCatalog.occupancyRatesByRoomPlan || []),
+        inventoryByHotelRoom: new Map(cachedCatalog.inventoryByHotelRoom || []),
         mealPricebookByHotelDate: new Map(
           (cachedCatalog.mealPricebookByHotelDate || []).map(([hotelId, entries]: [number, any[]]) => [
             Number(hotelId),
@@ -847,7 +859,8 @@ export class OfflineHotelCatalogService {
     );
 
     const occupancyRowsStartedAt = Date.now();
-    const occupancyRows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
+    const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
+    const occupancyRows = occupancyModel?.findMany ? await occupancyModel.findMany({
       where: {
         hotel_id: { in: hotelIds },
         // Fetch every rate interval intersecting the stay. Daily migrated
@@ -856,7 +869,7 @@ export class OfflineHotelCatalogService {
         end_date: { gte: new Date(`${requestedDates[0] || '1900-01-01'}T00:00:00.000Z`) },
       },
       select: { hotel_id: true, room_id: true, rateplan_id: true, start_date: true, end_date: true, occupancy_rates: true, received_at: true },
-    });
+    }) : [];
     HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_QUERY', {
       query: 'occupancy-rates', durationMs: Date.now() - occupancyRowsStartedAt,
       hotelCount: hotelIds.length, rowCount: occupancyRows.length,
@@ -890,16 +903,36 @@ export class OfflineHotelCatalogService {
       }
     }
 
+    const inventoryByHotelRoom = new Map<string, any[]>();
+    const availabilityModel = (this.prisma as any).dvi_hotel_room_availability;
+    if (availabilityModel?.findMany && requestedDates.length > 0) {
+      const inventoryRows = await availabilityModel.findMany({
+        where: {
+          hotel_id: { in: hotelIds },
+          start_date: { lte: new Date(`${requestedDates[requestedDates.length - 1]}T00:00:00.000Z`) },
+          end_date: { gte: new Date(`${requestedDates[0]}T00:00:00.000Z`) },
+        },
+        select: { hotel_id: true, room_id: true, start_date: true, end_date: true, free: true, received_at: true },
+      });
+      for (const row of inventoryRows as any[]) {
+        const key = `${Number(row.hotel_id || 0)}|${Number(row.room_id || 0)}`;
+        const rows = inventoryByHotelRoom.get(key) || [];
+        rows.push(row);
+        inventoryByHotelRoom.set(key, rows);
+      }
+    }
+
     const mealPricebookByHotelDate = this.offlineHotelMealPricingService
       ? await this.offlineHotelMealPricingService.loadPricebookByDate(hotelIds, requestedDates)
       : new Map();
 
-    const result = { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan, mealPricebookByHotelDate };
+    const result = { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan, inventoryByHotelRoom, mealPricebookByHotelDate };
     await this.referenceCache?.set(catalogCacheKey, {
       roomsByHotel: Array.from(roomsByHotel.entries()),
       ratePlansByRoom: Array.from(ratePlansByRoom.entries()),
       activeRoomTypeIds: Array.from(activeRoomTypeIds),
       occupancyRatesByRoomPlan: Array.from(occupancyRatesByRoomPlan.entries()),
+      inventoryByHotelRoom: Array.from(inventoryByHotelRoom.entries()),
       mealPricebookByHotelDate: Array.from(mealPricebookByHotelDate.entries()).map(([hotelId, byDate]) => [
         hotelId,
         Array.from(byDate.entries()),
@@ -930,11 +963,6 @@ export class OfflineHotelCatalogService {
       childWithBedCount: Math.max(Number(supplementCounts.childWithBedCount || 0), 0),
       childWithoutBedCount: Math.max(Number(supplementCounts.childWithoutBedCount || 0), 0),
     };
-    // Offline hotels do not publish live inventory or availability. The room
-    // master is used only to identify the room and its configured price; the
-    // hotel confirms whether it can fulfil the request after itinerary
-    // confirmation. Do not use occupancy/capacity fields as an availability
-    // gate here.
     const activeRooms = (catalogRows.roomsByHotel.get(hotelId) || []).filter((room: any) =>
       catalogRows.activeRoomTypeIds.has(Number(room.room_type_id || 0)),
     );
@@ -947,7 +975,8 @@ export class OfflineHotelCatalogService {
         const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
         return !requested || inferCanonicalHotelRatePlanCode(`${plan.rateplan_id || ''} ${plan.rateplan_name || ''} ${plan.meal_plan_description || ''}`) === requested;
       });
-      const plan = matchingPlans[0] || roomPlans[0];
+      const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
+      const plan = requested ? matchingPlans[0] : roomPlans[0];
       if (!plan) continue;
       const matchingRateRows = catalogRows.occupancyRatesByRoomPlan.get(`${hotelId}|${Number(room.room_ID || 0)}|${String(plan.rateplan_id || '')}`) || [];
       if (matchingRateRows.length === 0) continue;
@@ -964,6 +993,12 @@ export class OfflineHotelCatalogService {
       const mealFlags = mealFlagsFromRoom(room, this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom));
       for (const date of dateList) {
         const target = new Date(`${date}T00:00:00.000Z`).getTime();
+        const inventoryRows = catalogRows.inventoryByHotelRoom?.get(`${hotelId}|${Number(room.room_ID || 0)}`) || [];
+        const inventory = selectAdminMatchingOccupancyRow(inventoryRows, target);
+        if (!inventory || Number(inventory.free || 0) < roomsNeeded) {
+          valid = false;
+          break;
+        }
         const selectedRateRow = selectAdminMatchingOccupancyRow(matchingRateRows, target);
         const rates = this.parseJsonObject(selectedRateRow?.occupancy_rates);
         const supplements = this.resolveSupplementRatesFromOccupancyRows(matchingRateRows, date);
@@ -1344,6 +1379,7 @@ export class OfflineHotelCatalogService {
         where: { hotel_id: hotelId, status: 1, deleted: false },
         select: {
           hotel_id: true,
+          hotel_code: true,
           hotel_name: true,
           hotel_category: true,
           hotel_margin: true,
@@ -1354,6 +1390,14 @@ export class OfflineHotelCatalogService {
     ]);
     if (!plan || !hotel) {
       throw new Error('Offline rate option is no longer available for this itinerary');
+    }
+    if (!requestedRoute) {
+      throw new ConflictException({
+        code: 'HOTEL_ROUTE_PLAN_MISMATCH',
+        message: `Route ${Number(input.routeId)} does not belong to itinerary plan ${Number(input.planId)}.`,
+        routeId: Number(input.routeId),
+        planId: Number(input.planId),
+      });
     }
 
     const dateList = this.getNightDates(checkInDate, checkOutDate);
@@ -1369,33 +1413,7 @@ export class OfflineHotelCatalogService {
     // browser still has the old route ID, but it does have the current route
     // date on the selected card. Reconcile that date to the current plan
     // before persisting instead of rejecting a valid offline option.
-    let route = requestedRoute;
-    if (requestedRoute && routeDateOnly && (() => {
-      const parsed = new Date(requestedRoute.itinerary_route_date);
-      return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== routeDateOnly;
-    })()) {
-      route = await (this.prisma as any).dvi_itinerary_route_details.findFirst({
-        where: {
-          itinerary_plan_ID: Number(input.planId),
-          deleted: 0,
-          itinerary_route_date: new Date(`${routeDateOnly}T00:00:00.000Z`),
-        },
-        orderBy: { itinerary_route_ID: 'asc' },
-      });
-    }
-    if (!route && routeDateOnly) {
-      route = await (this.prisma as any).dvi_itinerary_route_details.findFirst({
-        where: {
-          itinerary_plan_ID: Number(input.planId),
-          deleted: 0,
-          itinerary_route_date: new Date(`${routeDateOnly}T00:00:00.000Z`),
-        },
-        orderBy: { itinerary_route_ID: 'asc' },
-      });
-    }
-    if (!route) {
-      throw new Error('Offline rate option is no longer available for this itinerary');
-    }
+    const route = requestedRoute;
 
     const routeDate = new Date(route.itinerary_route_date);
     const resolvedRouteDateOnly = Number.isNaN(routeDate.getTime()) ? '' : routeDate.toISOString().slice(0, 10);
@@ -1442,8 +1460,8 @@ export class OfflineHotelCatalogService {
       provider: 'offline',
       hotelId,
       canonicalHotelId: hotelId,
-      hotelCode: String(hotelId),
-      providerHotelCode: String(hotelId),
+      hotelCode: String((hotel as any).hotel_code || '').trim(),
+      providerHotelCode: String((hotel as any).hotel_code || '').trim(),
       hotelName: normalizeHotelDisplayName(hotel.hotel_name),
       category: Number(hotel.hotel_category || 0),
       routeId: Number(route.itinerary_route_ID),
