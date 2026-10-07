@@ -2247,6 +2247,20 @@ export class HotelAvailabilitySnapshotService {
   }
 
   private toClientHotelRow(row: any): any {
+    const snapshot = parseHotelSelectionSnapshot(row) as any;
+    const fallbackSource = row?.tboMapFallbackApplied === true ? row : snapshot;
+    const tboMapFallbackMetadata = fallbackSource?.tboMapFallbackApplied === true
+      ? {
+          tboMapFallbackApplied: true,
+          tboMapFallbackSourceMealPlan: fallbackSource.tboMapFallbackSourceMealPlan || 'CP',
+          tboMapFallbackDinnerRate: Number(fallbackSource.tboMapFallbackDinnerRate || fallbackSource.tboMapFallbackDinnerPerPerson || 0),
+          tboMapFallbackDinnerPerPerson: Number(fallbackSource.tboMapFallbackDinnerPerPerson || fallbackSource.tboMapFallbackDinnerRate || 0),
+          tboMapFallbackDinnerPerNight: Number(fallbackSource.tboMapFallbackDinnerPerNight || fallbackSource.tboMapFallbackDinnerTotal || fallbackSource.hotelMealPlanCost || 0),
+          tboMapFallbackDinnerTotal: Number(fallbackSource.tboMapFallbackDinnerTotal || fallbackSource.totalHotelMealPlanCost || fallbackSource.hotelMealPlanCost || 0),
+          hotelMealPlanCost: Number(fallbackSource.hotelMealPlanCost || fallbackSource.tboMapFallbackDinnerPerNight || fallbackSource.tboMapFallbackDinnerTotal || 0),
+          totalHotelMealPlanCost: Number(fallbackSource.totalHotelMealPlanCost || fallbackSource.tboMapFallbackDinnerTotal || fallbackSource.hotelMealPlanCost || 0),
+        }
+      : {};
     const {
       recommendationTabs: _recommendationTabs,
       offlineFetch: _offlineFetch,
@@ -2266,7 +2280,7 @@ export class HotelAvailabilitySnapshotService {
       clientRow.rateOptions = this.canonicalizeRateOptions(clientRow, clientRow.rateOptions)
         .map((option: any) => this.toClientRateOption(option));
     }
-    return clientRow;
+    return { ...clientRow, ...tboMapFallbackMetadata };
   }
 
   private toClientRateOption(option: any): any {
@@ -2286,6 +2300,10 @@ export class HotelAvailabilitySnapshotService {
       'supplementSummary',
       'hotelMarginPercentage', 'hotelMarginAmount', 'hotelMarginStayAmount',
       'hotelMarginTotalAmount', 'amountIncludesHotelMargin', 'pricingIncludesHotelMargin',
+      'hotelMealPlanCost', 'totalHotelMealPlanCost',
+      'tboMapFallbackApplied', 'tboMapFallbackSourceMealPlan',
+      'tboMapFallbackDinnerRate', 'tboMapFallbackDinnerPerPerson',
+      'tboMapFallbackDinnerPerNight', 'tboMapFallbackDinnerTotal',
     ];
     return fields.reduce((result: any, field: string) => {
       if (source[field] !== undefined) result[field] = source[field];
@@ -6043,6 +6061,19 @@ export class HotelAvailabilitySnapshotService {
         option.childWithoutBedRate ?? option.child_without_bed_rate,
       );
       let supplementTotal = Number((extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
+      const tboMapFallbackApplied = option.tboMapFallbackApplied === true;
+      const tboMapFallbackDinnerRate = tboMapFallbackApplied
+        ? Math.max(Number(option.tboMapFallbackDinnerRate || option.tboMapFallbackDinnerPerPerson || 0), 0)
+        : 0;
+      const tboMapFallbackDinnerPerNight = tboMapFallbackApplied
+        ? Math.max(Number(option.tboMapFallbackDinnerPerNight || 0), 0)
+        : 0;
+      const tboMapFallbackDinnerTotal = tboMapFallbackApplied
+        ? Math.max(Number(option.tboMapFallbackDinnerTotal || option.totalHotelMealPlanCost || option.hotelMealPlanCost || tboMapFallbackDinnerPerNight || 0), 0)
+        : 0;
+      if (tboMapFallbackApplied && tboMapFallbackDinnerTotal > 0) {
+        supplementTotal = Number((supplementTotal + tboMapFallbackDinnerTotal).toFixed(2));
+      }
       let marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
       let roomTaxAmount = provider === 'staah'
         ? Math.max(Number(option.totalHotelTaxAmount ?? option.taxAmount ?? 0), 0)
@@ -6077,6 +6108,12 @@ export class HotelAvailabilitySnapshotService {
           hotelMarginAmount: calculatedMargin,
           hotelMarginBaseAmount: marginBaseTotal,
           hotelMarginTotalAmount: calculatedMargin,
+          tboMapFallbackApplied,
+          tboMapFallbackDinnerRate,
+          tboMapFallbackDinnerPerNight,
+          tboMapFallbackDinnerTotal,
+          hotelMealPlanCost: tboMapFallbackDinnerTotal,
+          totalHotelMealPlanCost: tboMapFallbackDinnerTotal,
           pricePerNight,
           totalPrice,
           totalStayPrice: totalPrice,
@@ -6274,6 +6311,8 @@ export class HotelAvailabilitySnapshotService {
           hotel_margin_rate: calculatedMargin,
           total_room_gst_amount: roomTaxAmount,
           total_hotel_cost: totalPrice,
+          hotel_dinner_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
+          total_hotel_meal_plan_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
           total_hotel_tax_amount: roomTaxAmount,
           hotel_check_in_date: this.toDate(option.checkInDate || option.date),
           hotel_check_out_date: this.toDate(option.checkOutDate || this.addDays(this.toDate(option.checkInDate || option.date), 1)),
@@ -6406,6 +6445,17 @@ export class HotelAvailabilitySnapshotService {
       ...priorSnapshotWithoutFallback
     } = priorSnapshot as any;
     const optionKey = String(option.optionKey || hotelOptionKey(option));
+    const provider = String(option.provider || selection.hotel_provider || '').trim().toLowerCase();
+    const tboMapFallbackApplied = option.tboMapFallbackApplied === true;
+    const tboMapFallbackDinnerRate = tboMapFallbackApplied
+      ? Math.max(Number(option.tboMapFallbackDinnerRate || option.tboMapFallbackDinnerPerPerson || 0), 0)
+      : 0;
+    const tboMapFallbackDinnerPerNight = tboMapFallbackApplied
+      ? Math.max(Number(option.tboMapFallbackDinnerPerNight || 0), 0)
+      : 0;
+    const tboMapFallbackDinnerTotal = tboMapFallbackApplied
+      ? Math.max(Number(option.tboMapFallbackDinnerTotal || option.totalHotelMealPlanCost || option.hotelMealPlanCost || tboMapFallbackDinnerPerNight || 0), 0)
+      : 0;
     const pricePerNight = Number(
       option.pricePerNight ||
         option.price_per_night ||
@@ -6461,6 +6511,8 @@ export class HotelAvailabilitySnapshotService {
       total_childwithout_bed_cost: Number(option.childWithoutBedAmount || 0),
       hotel_margin_percentage: Number(option.hotelMarginPercentage ?? selection.hotel_margin_percentage ?? 0),
       hotel_margin_rate: Number(option.hotelMarginAmount ?? option.hotelMarginTotalAmount ?? selection.hotel_margin_rate ?? 0),
+      hotel_dinner_cost: tboMapFallbackDinnerTotal,
+      total_hotel_meal_plan_cost: tboMapFallbackDinnerTotal,
       total_hotel_cost: totalPrice,
       total_hotel_tax_amount: Number(option.totalHotelTaxAmount || selection.total_hotel_tax_amount || 0),
       selected_price_snapshot: JSON.stringify({

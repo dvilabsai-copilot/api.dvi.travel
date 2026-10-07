@@ -2165,6 +2165,11 @@ timingStepStartedAt =
     // strict meal-plan behavior.
     const ignoreTboMealType = provider === 'tbo' &&
       String(process.env.IGNORE_TBO_MEALTYPE || '').trim().toLowerCase() === 'true';
+    // MAP is a commercial itinerary requirement, not a supplier-label hint.
+    // Even when the legacy TBO compatibility switch is enabled, a requested
+    // MAP must resolve to the real MAP row or the synthetic CP+ dinner row.
+    // Otherwise the cheapest CP row can leak into manual hotel selection.
+    const ignoreTboMealTypeForSelection = ignoreTboMealType && requestedMealPlan !== 'MAP';
     const referencedMealPlan = mealPlanFromReference(
       data.rateOptionId,
       data.optionKey,
@@ -2172,7 +2177,7 @@ timingStepStartedAt =
       data.bookingCode,
       data.searchReference,
     );
-    if (!ignoreTboMealType && requestedMealPlan && referencedMealPlan && requestedMealPlan !== referencedMealPlan) {
+    if (!ignoreTboMealTypeForSelection && requestedMealPlan && referencedMealPlan && requestedMealPlan !== referencedMealPlan) {
       console.error('[HOTEL_INTENT_MEAL_PLAN_MISMATCH]', JSON.stringify({
         planId: Number(data.planId),
         routeId: Number(data.routeId),
@@ -2313,10 +2318,19 @@ timingStepStartedAt =
                   nightly?.totalAmount ?? nightly?.price ?? 0,
               );
               const projectedAmount = nightlyAmount > 0
-                ? nightlyAmount
+                ? Number((nightlyAmount + Number(option.tboMapFallbackApplied ? option.tboMapFallbackDinnerPerNight || 0 : 0)).toFixed(2))
                 : fullStayTotal > 0
                   ? Number((fullStayTotal / declaredNights).toFixed(2))
                   : 0;
+              const fallbackDinnerPerNight = Number(option.tboMapFallbackApplied
+                ? option.tboMapFallbackDinnerPerNight ||
+                  (Number(option.tboMapFallbackDinnerTotal || 0) / declaredNights)
+                : 0);
+              const baseNightly = Number(option.basePricePerNight || 0) > 0
+                ? Number(option.basePricePerNight)
+                : Number(option.baseTotalPrice || 0) > 0
+                  ? Number((Number(option.baseTotalPrice) / declaredNights).toFixed(2))
+                  : Math.max(projectedAmount - fallbackDinnerPerNight, 0);
               return {
                 ...option,
                 routeId,
@@ -2330,6 +2344,14 @@ timingStepStartedAt =
                 pricePerNight: projectedAmount,
                 totalPrice: projectedAmount,
                 totalStayPrice: projectedAmount,
+                basePricePerNight: baseNightly,
+                baseTotalPrice: baseNightly,
+                ...(option.tboMapFallbackApplied ? {
+                  hotelMealPlanCost: fallbackDinnerPerNight,
+                  totalHotelMealPlanCost: fallbackDinnerPerNight,
+                  tboMapFallbackDinnerTotal: fallbackDinnerPerNight,
+                  tboMapFallbackDinnerPerNight: fallbackDinnerPerNight,
+                } : {}),
                 numberOfNights: 1,
               };
             });
@@ -2691,7 +2713,7 @@ timingStepStartedAt =
         // plan just like MEAL_PLAN actions. Without this filter, a card that
         // displays CP could still select the cheapest AP option when its
         // concrete rate identity is omitted intentionally.
-        if (!ignoreTboMealType && requestedMeal &&
+        if (!ignoreTboMealTypeForSelection && requestedMeal &&
           (intent === 'HOTEL' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') &&
           normalizeMealPlan(meal) !== normalizeMealPlan(requestedMeal)) return false;
         if ((intent === 'RATE_OPTION' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') && index !== stay.routeIds.indexOf(Number(data.routeId))) {
@@ -2704,7 +2726,7 @@ timingStepStartedAt =
           } else if (anchorRoom && !roomLabelMatches(room, anchorRoom)) {
             return false;
           }
-          if (!ignoreTboMealType && anchorMeal && normalizeMealPlan(meal) !== normalizeMealPlan(anchorMeal)) return false;
+          if (!ignoreTboMealTypeForSelection && anchorMeal && normalizeMealPlan(meal) !== normalizeMealPlan(anchorMeal)) return false;
         }
         return true;
       }).sort((left: any, right: any) => payableAmount(left) - payableAmount(right));
@@ -3062,6 +3084,16 @@ timingStepStartedAt =
         roomId: selected.roomId, rateId: selected.rateId, pricePerNight, totalPrice,
         basePricePerNight,
         baseTotalPrice,
+        ...(selected.tboMapFallbackApplied === true ? {
+          tboMapFallbackApplied: true,
+          tboMapFallbackSourceMealPlan: selected.tboMapFallbackSourceMealPlan || 'CP',
+          tboMapFallbackDinnerRate: Number(selected.tboMapFallbackDinnerRate || 0),
+          tboMapFallbackDinnerPerPerson: Number(selected.tboMapFallbackDinnerPerPerson || 0),
+          tboMapFallbackDinnerPerNight: Number(selected.tboMapFallbackDinnerPerNight || selected.tboMapFallbackDinnerTotal || 0),
+          tboMapFallbackDinnerTotal: Number(selected.tboMapFallbackDinnerTotal || selected.tboMapFallbackDinnerPerNight || 0),
+          hotelMealPlanCost: Number(selected.hotelMealPlanCost || selected.tboMapFallbackDinnerPerNight || selected.tboMapFallbackDinnerTotal || 0),
+          totalHotelMealPlanCost: Number(selected.totalHotelMealPlanCost || selected.tboMapFallbackDinnerPerNight || selected.tboMapFallbackDinnerTotal || 0),
+        } : {}),
         ...(selectedProvider === 'tbo' ? {
           // TBO/VSR supplies one complete occupancy fare. Do not persist or
           // later display a fabricated child/extra-bed breakup.
@@ -3216,6 +3248,14 @@ timingStepStartedAt =
          roomTypeId: snapshot.roomTypeId ?? snapshot.room_type_id ?? roomDetail.room_type_id,
          roomType: snapshot.roomType,
         rateId: snapshot.rateId, mealPlan: snapshot.mealPlan, mealPlanCode: snapshot.mealPlan,
+        tboMapFallbackApplied: snapshot.tboMapFallbackApplied === true,
+        tboMapFallbackSourceMealPlan: snapshot.tboMapFallbackSourceMealPlan || null,
+        tboMapFallbackDinnerRate: Number(snapshot.tboMapFallbackDinnerRate || 0),
+        tboMapFallbackDinnerPerPerson: Number(snapshot.tboMapFallbackDinnerPerPerson || 0),
+        tboMapFallbackDinnerPerNight: Number(snapshot.tboMapFallbackDinnerPerNight || 0),
+        tboMapFallbackDinnerTotal: Number(snapshot.tboMapFallbackDinnerTotal || row.hotel_dinner_cost || 0),
+        hotelMealPlanCost: Number(snapshot.hotelMealPlanCost || row.hotel_dinner_cost || 0),
+        totalHotelMealPlanCost: Number(snapshot.totalHotelMealPlanCost || row.total_hotel_meal_plan_cost || 0),
         bookingCode: snapshot.bookingCode, searchReference: snapshot.searchReference,
         pricePerNight: Number(row.selected_price_per_night || 0), totalPrice: Number(row.selected_total_price || 0), currency: row.selected_currency || 'INR',
         selectedPriceSnapshot: snapshot,

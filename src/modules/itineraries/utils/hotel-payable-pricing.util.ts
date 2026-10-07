@@ -138,13 +138,25 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     Math.abs(rawBasePerNight - explicitBaseTotal) < 0.01
     ? money(explicitBaseTotal / roomCount)
     : rawBasePerNight;
-  const supplementTotal = money(
+  const extraSupplementTotal = money(
     positive(option?.extraBedAmount, option?.extraBedCost, option?.total_extra_bed_cost) +
     positive(option?.childWithBedAmount, option?.childWithBedCost, option?.total_childwith_bed_cost) +
     positive(option?.childWithoutBedAmount, option?.childWithoutBedCost, option?.total_childwithout_bed_cost),
   );
+  const numberOfNights = Math.max(Number(option?.numberOfNights ?? option?.nights ?? 1), 1);
+  const tboMapFallbackDinnerTotal = option?.tboMapFallbackApplied === true
+    ? positive(option?.tboMapFallbackDinnerTotal, option?.hotelMealPlanCost, option?.totalHotelMealPlanCost)
+    : 0;
+  const tboMapFallbackDinnerPerNight = option?.tboMapFallbackApplied === true
+    ? positive(
+        option?.tboMapFallbackDinnerPerNight,
+        tboMapFallbackDinnerTotal > 0 ? tboMapFallbackDinnerTotal / numberOfNights : 0,
+      )
+    : 0;
+  const supplementTotal = money(extraSupplementTotal + tboMapFallbackDinnerTotal);
+  const supplementPerNight = money(extraSupplementTotal + tboMapFallbackDinnerPerNight);
   const marginBaseTotal = money(baseTotal + supplementTotal);
-  const marginBasePerNight = money(basePerNight + supplementTotal);
+  const marginBasePerNight = money(basePerNight + supplementPerNight);
   const marginTotal = alreadyProjected
     ? marginPercentage > 0
       ? money((marginBaseTotal * marginPercentage) / 100)
@@ -190,6 +202,10 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     totalHotelCost: payableTotal,
     totalAmount: payableTotal,
     totalAmountAfterTax: payableTotal,
+    hotelMealPlanCost: tboMapFallbackDinnerTotal,
+    totalHotelMealPlanCost: tboMapFallbackDinnerTotal,
+    tboMapFallbackDinnerTotal,
+    tboMapFallbackDinnerPerNight,
     amountIncludesHotelMargin: true,
     pricingIncludesHotelMargin: true,
   } as T;

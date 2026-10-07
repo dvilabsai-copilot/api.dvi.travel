@@ -19,6 +19,11 @@ import { HobseHotelProvider } from '../providers/hobse-hotel.provider';
 import { OfflineHotelCatalogService } from '../../itineraries/services/offline-hotel-catalog.service';
 import { toDatabaseBusinessDate } from '../../itineraries/utils/itinerary.utils';
 import { HotelGalleryService } from './hotel-gallery.service';
+import {
+  applyMapDinnerFallbackToRows,
+  filterEpRows,
+  type TboMapFallbackConfig,
+} from '../../itineraries/utils/tbo-map-fallback.util';
 
 @Injectable()
 export class HotelSearchService {
@@ -73,6 +78,49 @@ export class HotelSearchService {
     return new Date(year, month, day, 0, 0, 0, 0);
   }
 
+  private async getMapDinnerConfig(): Promise<TboMapFallbackConfig> {
+    const row = await (this.prisma as any).dvi_global_settings.findFirst({
+      where: { deleted: 0, status: 1 },
+      orderBy: { global_settings_ID: 'asc' },
+      select: {
+        show_ep_hotels: true,
+        tbo_map_fallback_enabled: true,
+        tbo_map_dinner_rate_3_star: true,
+        tbo_map_dinner_rate_4_star: true,
+        tbo_map_dinner_rate_5_star: true,
+      },
+    });
+    return {
+      showEpHotels: Number(row?.show_ep_hotels ?? 0) === 1,
+      enabled: Number(row?.tbo_map_fallback_enabled ?? 1) === 1,
+      dinnerRate3Star: Math.max(Number(row?.tbo_map_dinner_rate_3_star ?? 900), 0),
+      dinnerRate4Star: Math.max(Number(row?.tbo_map_dinner_rate_4_star ?? 1500), 0),
+      dinnerRate5Star: Math.max(Number(row?.tbo_map_dinner_rate_5_star ?? 2500), 0),
+    };
+  }
+
+  private async normalizeMealPlanRows(
+    rows: HotelSearchResult[],
+    criteria: Pick<HotelSearchDTO, 'adultCount' | 'childCount' | 'roomCount' | 'checkInDate' | 'checkOutDate'>,
+    preferredMealPlanCode?: string | null,
+  ): Promise<HotelSearchResult[]> {
+    const config = await this.getMapDinnerConfig();
+    const nights = Math.max(
+      Math.round((this.parseDateOnly(criteria.checkOutDate).getTime() - this.parseDateOnly(criteria.checkInDate).getTime()) / 86_400_000),
+      1,
+    );
+    return filterEpRows(
+      applyMapDinnerFallbackToRows(rows, {
+        preferredMealPlanCode: preferredMealPlanCode || null,
+        adultCount: Number(criteria.adultCount ?? 0),
+        childCount: Number(criteria.childCount ?? 0),
+        roomCount: Number(criteria.roomCount || 1),
+        numberOfNights: nights,
+      }, config),
+      Boolean(config.showEpHotels),
+    );
+  }
+
   async searchHotels(searchCriteria: HotelSearchDTO): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
     try {
@@ -95,7 +143,11 @@ export class HotelSearchService {
           }),
           this.searchAxisRoomsHotels(searchCriteria),
         ]);
-        return [...axisRoomsHotels, ...offlineHotels];
+        return this.normalizeMealPlanRows(
+          [...axisRoomsHotels, ...offlineHotels],
+          searchCriteria,
+          searchCriteria.preferences?.mealPlanCode,
+        );
       }
 
       if ((searchCriteria.providers || []).some((provider) => String(provider).trim().toLowerCase() === 'axisrooms')) {
@@ -317,7 +369,11 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
         Promise.all(searchPromises),
         offlineSearchPromise,
       ]);
-      const allHotels = [...providerResults.flat(), ...offlineHotels];
+      const allHotels = await this.normalizeMealPlanRows(
+        [...providerResults.flat(), ...offlineHotels],
+        searchCriteria,
+        searchCriteria.preferences?.mealPlanCode,
+      );
 
       const hotelNameQuery = String(searchCriteria.hotelName || '').trim().toLowerCase();
       const filteredHotels = hotelNameQuery
