@@ -3029,6 +3029,18 @@ model dvi_itinerary_extra_margin_rules {
   @@index([priority], map: "idx_itinerary_extra_margin_rules_priority")
 }
 
+model dvi_itinerary_extra_margin_rule_vendors {
+  rule_vendor_id Int       @id @default(autoincrement())
+  rule_id        Int
+  vendor_id      Int
+  createdon      DateTime? @db.DateTime(0)
+  updatedon      DateTime? @db.DateTime(0)
+
+  @@unique([rule_id, vendor_id], map: "uq_itinerary_extra_margin_rule_vendor")
+  @@index([rule_id], map: "idx_itinerary_extra_margin_rule_vendor_rule")
+  @@index([vendor_id], map: "idx_itinerary_extra_margin_rule_vendor_vendor")
+}
+
 model dvi_gst_setting {
   gst_setting_id Int       @id @default(autoincrement())
   gst_title      String?   @db.Text
@@ -3304,7 +3316,7 @@ model dvi_hotel {
 model dvi_hotel_gallery_details {
   hotel_gallery_details_id Int       @id @default(autoincrement())
   hotel_id                 Int       @default(0)
-  hotel_gallery_name      String    @db.VarChar(255)
+  hotel_gallery_name       String    @db.VarChar(255)
   is_primary               Int       @default(0) @db.TinyInt
   sort_order               Int       @default(0)
   source                   String    @default("manual") @db.VarChar(50)
@@ -6059,17 +6071,17 @@ model tbo_hotel_master {
 
 model tbo_hotel_gallery_details {
   tbo_hotel_gallery_details_id Int       @id @default(autoincrement())
-  tbo_hotel_code              String    @db.VarChar(50)
-  tbo_hotel_gallery_name      String    @db.VarChar(255)
-  is_primary                  Int       @default(0) @db.TinyInt
-  sort_order                  Int       @default(0)
-  source                      String    @default("manual") @db.VarChar(50)
-  source_url                  String?   @db.Text
-  createdby                   Int       @default(0)
-  createdon                   DateTime? @default(now()) @db.DateTime(0)
-  updatedon                   DateTime? @updatedAt @db.DateTime(0)
-  status                      Int       @default(1) @db.TinyInt
-  deleted                     Int       @default(0) @db.TinyInt
+  tbo_hotel_code               String    @db.VarChar(50)
+  tbo_hotel_gallery_name       String    @db.VarChar(255)
+  is_primary                   Int       @default(0) @db.TinyInt
+  sort_order                   Int       @default(0)
+  source                       String    @default("manual") @db.VarChar(50)
+  source_url                   String?   @db.Text
+  createdby                    Int       @default(0)
+  createdon                    DateTime? @default(now()) @db.DateTime(0)
+  updatedon                    DateTime? @updatedAt @db.DateTime(0)
+  status                       Int       @default(1) @db.TinyInt
+  deleted                      Int       @default(0) @db.TinyInt
 
   @@index([tbo_hotel_code], map: "idx_tbo_hotel_gallery_code")
   @@index([tbo_hotel_code, status, deleted], map: "idx_tbo_hotel_gallery_active")
@@ -6766,13 +6778,13 @@ model dvi_password_reset_otps {
 }
 
 model dvi_legacy_sso_tickets {
-  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  token_hash String    @unique(map: "uq_dvi_legacy_sso_tickets_token_hash") @db.Char(64)
-  user_id    BigInt
-  audience   String    @db.VarChar(32)
-  expires_at DateTime  @db.DateTime(3)
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  token_hash  String    @unique(map: "uq_dvi_legacy_sso_tickets_token_hash") @db.Char(64)
+  user_id     BigInt
+  audience    String    @db.VarChar(32)
+  expires_at  DateTime  @db.DateTime(3)
   consumed_at DateTime? @db.DateTime(3)
-  created_at DateTime  @default(now()) @db.DateTime(3)
+  created_at  DateTime  @default(now()) @db.DateTime(3)
 
   @@index([user_id], map: "idx_dvi_legacy_sso_tickets_user_id")
   @@index([expires_at], map: "idx_dvi_legacy_sso_tickets_expires_at")
