@@ -2048,6 +2048,10 @@ timingStepStartedAt =
         } catch (error: any) {
           const response = error?.response;
           const code = String(response?.code || error?.code || '').trim();
+          if (error?.status === 409 || error?.statusCode === 409 || response?.statusCode === 409 ||
+            code === 'HOTEL_ROUTE_PLAN_MISMATCH' || code === 'HOTEL_PROVIDER_IDENTITY_MISMATCH') {
+            throw error;
+          }
           console.error('[HOTEL_INTENT_PREVIEW_FAILED]', {
             code,
             message: String(error?.message || response?.message || error || 'Unknown hotel preview failure'),
@@ -2107,23 +2111,79 @@ timingStepStartedAt =
     const requestedProvider = String(data.provider || '').trim().toLowerCase();
     // VSR is the UI label for TBO. Canonicalize at the API boundary so all
     // supplier checks continue to use one provider identity internally.
-    const provider = requestedProvider === 'vsr' ? 'tbo' : requestedProvider;
-    const requestedCanonicalHotelId = Number(data.canonicalHotelId || data.hotelId || 0);
-    let providerHotelCode = String(data.providerHotelCode || '').trim();
-    if (!providerHotelCode && requestedCanonicalHotelId > 0 && provider !== 'offline') {
-      const master = await this.prisma.dvi_hotel.findUnique({
+    let provider = requestedProvider === 'vsr' ? 'tbo' : requestedProvider;
+    let requestedCanonicalHotelId = Number(data.canonicalHotelId || data.hotelId || 0);
+    let hotelMaster: any = null;
+    if (requestedCanonicalHotelId > 0 && typeof (this.prisma.dvi_hotel as any)?.findUnique === 'function') {
+      hotelMaster = await (this.prisma.dvi_hotel as any).findUnique({
         where: { hotel_id: requestedCanonicalHotelId },
-        select: { hotel_id: true, staah_property_id: true, axisrooms_property_id: true },
+        select: {
+          hotel_id: true,
+          hotel_code: true,
+          tbo_hotel_code: true,
+          resavenue_hotel_code: true,
+          axisrooms_enabled: true,
+          axisrooms_property_id: true,
+          staah_enabled: true,
+          staah_property_id: true,
+        },
       });
+    }
+    if (!hotelMaster && typeof (this.prisma.dvi_hotel as any)?.findFirst === 'function') {
+      const requestedLocalCode = String(data.hotelCode || data.providerHotelCode || '').trim();
+      if (requestedLocalCode) {
+        hotelMaster = await (this.prisma.dvi_hotel as any).findFirst({
+          where: { hotel_code: requestedLocalCode, status: 1, deleted: false },
+          select: {
+            hotel_id: true,
+            hotel_code: true,
+            tbo_hotel_code: true,
+            resavenue_hotel_code: true,
+            axisrooms_enabled: true,
+            axisrooms_property_id: true,
+            staah_enabled: true,
+            staah_property_id: true,
+          },
+        });
+        requestedCanonicalHotelId = Number(hotelMaster?.hotel_id || requestedCanonicalHotelId);
+      }
+    }
+    const isOfflineCatalogHotel = Boolean(
+      hotelMaster &&
+      !String(hotelMaster.tbo_hotel_code || '').trim() &&
+      !String(hotelMaster.resavenue_hotel_code || '').trim() &&
+      Number(hotelMaster.axisrooms_enabled || 0) !== 1 &&
+      Number(hotelMaster.staah_enabled || 0) !== 1,
+    );
+    // The canonical local master is authoritative for offline identity. This
+    // repairs old/stale UI rows that carried a supplier label for a local
+    // hotel, while never turning a provider-mapped master into an offline row.
+    if (isOfflineCatalogHotel) provider = 'offline';
+    if (provider === 'offline' && hotelMaster && !isOfflineCatalogHotel) {
+      throw new ConflictException({
+        code: 'HOTEL_PROVIDER_IDENTITY_MISMATCH',
+        message: 'The selected hotel is provider-managed and cannot be checked against the offline catalog. Refresh the hotel search and select the current provider rate.',
+        planId: Number(data.planId),
+        routeId: Number(data.routeId),
+        provider: requestedProvider || 'offline',
+        canonicalHotelId: requestedCanonicalHotelId,
+      });
+    }
+    let providerHotelCode = String(data.providerHotelCode || '').trim();
+    if (provider === 'offline') {
+      providerHotelCode = String(hotelMaster?.hotel_code || data.hotelCode || '').trim();
+    } else if (!providerHotelCode && requestedCanonicalHotelId > 0 && hotelMaster) {
       providerHotelCode = provider === 'staah'
-        ? String(master?.staah_property_id || '').trim()
+        ? String(hotelMaster?.staah_property_id || '').trim()
         : provider === 'axisrooms' || provider === 'ax'
-          ? String(master?.axisrooms_property_id || '').trim()
-          : provider === 'offline'
-            ? String(master?.hotel_id || requestedCanonicalHotelId)
+          ? String(hotelMaster?.axisrooms_property_id || '').trim()
+          : provider === 'tbo'
+            ? String(hotelMaster?.tbo_hotel_code || '').trim()
             : '';
     }
-    const hotelCode = providerHotelCode || String(data.hotelCode || data.hotelId || '').trim();
+    const hotelCode = provider === 'offline'
+      ? providerHotelCode
+      : providerHotelCode || String(data.hotelCode || data.hotelId || '').trim();
     const groupType = Number(data.groupType || 0);
     if (!Number.isInteger(groupType) || groupType < 1 || groupType > 4) {
       throw new BadRequestException('Hotel selection requires a valid target groupType between 1 and 4');
@@ -2202,6 +2262,14 @@ timingStepStartedAt =
       where: { itinerary_route_ID: Number(data.routeId), itinerary_plan_ID: Number(data.planId), deleted: 0 },
       select: { itinerary_route_date: true },
     });
+    if (!anchorRoute) {
+      throw new ConflictException({
+        code: 'HOTEL_ROUTE_PLAN_MISMATCH',
+        message: `Route ${Number(data.routeId)} does not belong to itinerary plan ${Number(data.planId)}. Refresh the itinerary and select the hotel again.`,
+        routeId: Number(data.routeId),
+        planId: Number(data.planId),
+      });
+    }
     const intentCheckInDate = data.routeDate
       ? String(data.routeDate).slice(0, 10)
       : anchorRoute?.itinerary_route_date instanceof Date
@@ -3477,7 +3545,7 @@ timingStepStartedAt =
     const offlineByRoute = await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
       routeRows,
       Number(stay.nights || 1),
-      '',
+      String(data.mealPlanCode || data.mealPlan || ''),
       Math.max(Number(plan?.preferred_room_count || 1), 1),
       Math.max(Number(plan?.total_adult || 0), 0),
       Math.max(Number(plan?.total_children || 0), 0),
@@ -3515,7 +3583,9 @@ timingStepStartedAt =
       const hotels = offlineByRoute.get(routeId) || [];
       const hotel = hotels.find((candidate: any) => {
         const candidateId = Number(candidate.canonicalHotelId || candidate.hotelId || candidate.hotelCode || 0);
-        return candidateId === requestedCanonical || (
+        const candidateCode = normalize(candidate.hotelCode || candidate.providerHotelCode);
+        const codeMatches = !requestedCode || candidateCode === requestedCode;
+        return candidateId === requestedCanonical && codeMatches || (
           requestedCanonical <= 0 && normalize(candidate.hotelCode) === requestedCode
         );
       });
@@ -3549,7 +3619,8 @@ timingStepStartedAt =
         ...hotel,
         ...selected,
         provider: 'offline',
-        hotelCode: String(selected.providerHotelCode || selected.hotelCode || hotel?.hotelCode || requestedCode),
+        hotelCode: String(hotel?.hotelCode || selected.hotelCode || selected.providerHotelCode || requestedCode),
+        providerHotelCode: String(hotel?.hotelCode || selected.providerHotelCode || selected.hotelCode || requestedCode),
         canonicalHotelId: Number(selected.canonicalHotelId || hotel?.canonicalHotelId || requestedCanonical || 0),
         hotelId: Number(selected.hotelId || selected.canonicalHotelId || (hotel as any)?.hotelId || (hotel as any)?.canonicalHotelId || requestedCanonical || 0),
         hotelName: selected.hotelName || hotel?.hotelName || data.hotelName,
