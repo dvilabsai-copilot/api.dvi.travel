@@ -62,6 +62,13 @@ import {
  */
 @Injectable()
 export class ItineraryHotelDetailsTboService {
+  private readonly hobseCityCodeCache = new Map<string, { code: string | null; expiresAt: number }>();
+  private readonly hobseCityCodeCacheTtlMs = 30 * 60 * 1000;
+
+  private hobseCityCacheKey(destination: unknown): string {
+    return String(destination ?? '').trim().toLowerCase();
+  }
+
   private availabilityOptionKey(hotel: any): string {
     const provider = String(hotel?.provider || '').trim().toLowerCase();
     const hotelCode = String(hotel?.hotelCode || hotel?.providerHotelCode || hotel?.hotelId || '').trim();
@@ -2731,10 +2738,20 @@ this.logger.log(
       const cityCodeMap: Record<string, string> = {};
       const uniqueDestinations = [...new Set(routes.map(r => (r as any).next_visiting_location))] as string[];
 
- this.logger.log(` Loading HOBSE city codes for ${uniqueDestinations.length} unique destinations`);
+      this.logger.log(` Loading HOBSE city codes for ${uniqueDestinations.length} unique destinations`);
       if (uniqueDestinations.length === 0) return cityCodeMap;
 
-      const lookupTerms = Array.from(new Set(uniqueDestinations.flatMap((destination) => {
+      const now = Date.now();
+      const uncachedDestinations = uniqueDestinations.filter((destination) => {
+        if (!destination) return false;
+        const cached = this.hobseCityCodeCache.get(this.hobseCityCacheKey(destination));
+        if (!cached || cached.expiresAt <= now) return true;
+        if (cached.code) cityCodeMap[destination] = cached.code;
+        return false;
+      });
+      if (uncachedDestinations.length === 0) return cityCodeMap;
+
+      const lookupTerms = Array.from(new Set(uncachedDestinations.flatMap((destination) => {
         const rawDestination = String(destination || '').trim();
         const firstPart = rawDestination.split(/[,\(\-]/)[0].trim();
         return [rawDestination, firstPart].filter(Boolean);
@@ -2742,9 +2759,14 @@ this.logger.log(
       const allCities = lookupTerms.length > 0
         ? await this.prisma.dvi_cities.findMany({
           where: {
-            OR: [
-              ...lookupTerms.map((name) => ({ name: { equals: name } })),
-              ...lookupTerms.map((name) => ({ name: { startsWith: name } })),
+            AND: [
+              { hobse_city_code: { not: null } },
+              {
+                OR: [
+                  ...lookupTerms.map((name) => ({ name: { equals: name } })),
+                  ...lookupTerms.map((name) => ({ name: { startsWith: name } })),
+                ],
+              },
             ],
           },
           select: { name: true, hobse_city_code: true } as any,
@@ -2763,7 +2785,7 @@ this.logger.log(
         }
       });
 
-      uniqueDestinations.forEach(destination => {
+      uncachedDestinations.forEach(destination => {
         if (!destination) return;
         const lower = destination.toLowerCase();
         let code = cityNameMap[lower];
@@ -2773,6 +2795,10 @@ this.logger.log(
           code = cityNameMap[firstPart] || cityPrefixMap[firstPart];
         }
 
+        this.hobseCityCodeCache.set(this.hobseCityCacheKey(destination), {
+          code: code || null,
+          expiresAt: Date.now() + this.hobseCityCodeCacheTtlMs,
+        });
         if (code) {
  this.logger.log(` HOBSE "${destination}" -> code: ${code}`);
           cityCodeMap[destination] = code;
@@ -3031,9 +3057,6 @@ this.logger.log(
     const result = new Map<string, string[]>();
     if (uniqueDestinations.length === 0) return result;
 
-    const cityRows = await this.prisma.dvi_cities.findMany({
-      select: { id: true, name: true },
-    });
     const aliases: Record<string, string[]> = {
       cochin: ['kochi'],
       alleppey: ['alappuzha'],
@@ -3043,6 +3066,31 @@ this.logger.log(
       pondicherry: ['puducherry'],
       bangalore: ['bengaluru'],
     };
+
+    // Keep the existing token matching below, but only fetch rows whose names
+    // can match one of the requested destination tokens. The previous query
+    // loaded the complete city master for every AxisRooms/STAAH request,
+    // retaining roughly 95k rows in application memory.
+    const cityLookupTerms = Array.from(new Set(
+      uniqueDestinations.flatMap((destination) => {
+        const firstPart = destination.split(/[,(\-]/)[0].trim();
+        const normalized = this.normalizeCityToken(destination);
+        return [
+          destination.toLowerCase(),
+          firstPart.toLowerCase(),
+          normalized,
+          ...(aliases[normalized] || []),
+        ];
+      }).filter(Boolean),
+    ));
+    const cityRows = cityLookupTerms.length > 0
+      ? await this.prisma.dvi_cities.findMany({
+          where: {
+            OR: cityLookupTerms.map((name) => ({ name: { startsWith: name } })),
+          },
+          select: { id: true, name: true },
+        })
+      : [];
 
     for (const destination of uniqueDestinations) {
       const firstPart = destination.split(/[,(\-]/)[0].trim();
