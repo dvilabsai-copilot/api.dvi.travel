@@ -868,7 +868,50 @@ async getHotelRoomDetailsByQuoteId(
       }
     });
 
-    const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
+  // Load the actual room selected for each hotel recommendation.
+const persistedRoomRows = await (this.prisma as any)
+  .dvi_itinerary_plan_hotel_room_details.findMany({
+    where: {
+      itinerary_plan_id: planId,
+      deleted: 0,
+      status: 1,
+    },
+  });
+
+const roomTypeIds = [
+  ...new Set(
+    persistedRoomRows
+      .map((room: any) => Number(room.room_type_id || 0))
+      .filter((id: number) => id > 0),
+  ),
+];
+
+const roomTypeRows = roomTypeIds.length
+  ? await (this.prisma as any).dvi_hotel_roomtype.findMany({
+      where: {
+        room_type_id: { in: roomTypeIds },
+      },
+    })
+  : [];
+
+const roomTypeNameMap = new Map<number, string>(
+  roomTypeRows.map((room: any) => [
+    Number(room.room_type_id),
+    String(room.room_type_title || '').trim(),
+  ]),
+);
+
+const persistedRoomByHotelDetailsId = new Map<number, any>();
+
+for (const room of persistedRoomRows) {
+  const hotelDetailsId = Number(room.itinerary_plan_hotel_details_id || 0);
+
+  if (hotelDetailsId > 0 && !persistedRoomByHotelDetailsId.has(hotelDetailsId)) {
+    persistedRoomByHotelDetailsId.set(hotelDetailsId, room);
+  }
+}
+
+const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
       const master = hotelMap.get(Number((h as any).hotel_id)) || null;
       const dateLabel = h.itinerary_route_date
         ? h.itinerary_route_date.toISOString().slice(0, 10)
@@ -1240,21 +1283,29 @@ async getHotelRoomDetailsByQuoteId(
         hotelId: Number((h as any).hotel_id ?? 0) || 0,
         hotelName: persistedIdentity.hotelName,
         category: persistedIdentity.category,
-        roomType: persistedRoomTypeDisplay || String(
+              roomType: persistedRoomTypeDisplay || String(
           selectedPriceSnapshot.roomType ||
           selectedPriceSnapshot.roomTypeName ||
           (h as any).room_type ||
+          roomTypeNameMap.get(
+            Number(
+              persistedRoomByHotelDetailsId
+                .get(Number((h as any).itinerary_plan_hotel_details_ID || 0))
+                ?.room_type_id || 0
+            )
+          ) ||
           '',
         ).trim(),
         ...(persistedRoomTypeBreakdown.length > 0
           ? { roomTypeBreakdown: persistedRoomTypeBreakdown }
           : {}),
-        mealPlan: String(
+                mealPlan: String(
           selectedPriceSnapshot.mealPlan ||
           selectedPriceSnapshot.mealPlanCode ||
           (h as any).meal_plan ||
+          (plan as any).meal_plan_code ||
           '',
-        ).trim(),
+        ).trim().toUpperCase(),
         ...(isOffline ? {
           mealPlanCode: String(
             selectedPriceSnapshot.mealPlanCode ||

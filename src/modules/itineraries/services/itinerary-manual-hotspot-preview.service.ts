@@ -25,6 +25,7 @@ import {
 type ManualHotspotPreviewCallbacks = Partial<Record<
   | 'ensureManualFitAttemptStoreTable'
   | 'normalizeManualHotspotIds'
+  | 'buildMissingManualHotspotMatrix'
   | 'isRetryableManualPreviewTransactionError'
   | 'runManualHotspotBatchWithinTransaction'
   | 'activateManualHotspotRowWithTimes'
@@ -329,6 +330,45 @@ private forceRebuildVehiclePricingAfterHotspotChange(
           Number(requestedHotspotId),
           status,
         );
+      }
+    }
+
+    // Prepare the first-hotspot matrix outside the preview transaction.
+    // Otherwise a MySQL REPEATABLE READ snapshot may not see matrix
+    // records created through the main Prisma connection.
+    if (options?.previewOnly !== false) {
+      const activeAttractionCount =
+        await this.prisma.dvi_itinerary_route_hotspot_details.count({
+          where: {
+            itinerary_plan_ID: Number(planId),
+            itinerary_route_ID: Number(routeId),
+            item_type: 4,
+            deleted: 0,
+            status: 1,
+          },
+        });
+
+      if (activeAttractionCount === 0) {
+        for (const candidateHotspotId of normalizedRequestedHotspotIds) {
+          const matrixResult = await this.call(
+            'buildMissingManualHotspotMatrix',
+            {
+              planId: Number(planId),
+              routeId: Number(routeId),
+              candidateHotspotId: Number(candidateHotspotId),
+            },
+          );
+
+          console.log('[ManualHotspotPreview] empty_route_matrix_preflight', {
+            planId: Number(planId),
+            routeId: Number(routeId),
+            candidateHotspotId: Number(candidateHotspotId),
+            success: matrixResult?.success === true,
+            code: matrixResult?.code || null,
+            message: matrixResult?.message || null,
+            hasAnyMatrixData: matrixResult?.hasAnyMatrixData === true,
+          });
+        }
       }
     }
 
