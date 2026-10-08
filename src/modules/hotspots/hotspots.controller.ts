@@ -132,6 +132,16 @@ export class HotspotsController {
   }
 
  // Inline priority update
+  @Patch(':id/priority-value')
+  updatePriorityValue(
+    @Param('id') id: string,
+    @Body() body: { priority?: unknown },
+  ) {
+    return this.svc.updatePriorityValue(
+      Number(id), typeof body?.priority === 'number' ? body.priority : Number.NaN
+    );
+  }
+
   @Patch(':id/priority-in-results')
   updatePriorityInResults(
     @Param('id') id: string,

@@ -972,7 +972,25 @@ export class HotspotsService {
   }
 
  // --------------------------- Inline priority ------------------------------
-async updatePriority(id: number, priority: number, scope?: unknown): Promise<{ ok: true }> {
+  async updatePriorityValue(id: number, priority: number): Promise<{ ok: true }> {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new BadRequestException('Invalid hotspot id');
+    }
+    if (!Number.isSafeInteger(priority) || priority < 1 || priority > 2147483647) {
+      throw new BadRequestException('Priority must be a whole number from 1 to 2147483647');
+    }
+
+    const result = await this.prisma.dvi_hotspot_place.updateMany({
+      where: { hotspot_ID: id, deleted: 0, status: 1 },
+      data: { hotspot_priority: priority },
+    });
+    if (result.count !== 1) {
+      throw new NotFoundException('Active hotspot not found');
+    }
+    return { ok: true };
+  }
+
+  async updatePriority(id: number, priority: number, scope?: unknown): Promise<{ ok: true }> {
     if (!Number.isSafeInteger(id) || id <= 0) {
       throw new BadRequestException('Invalid hotspot id');
     }
