@@ -84,6 +84,7 @@ export class HotelSearchService {
       orderBy: { global_settings_ID: 'asc' },
       select: {
         show_ep_hotels: true,
+        show_hobse_ep_hotels: true,
         tbo_map_fallback_enabled: true,
         tbo_map_dinner_rate_3_star: true,
         tbo_map_dinner_rate_4_star: true,
@@ -92,6 +93,7 @@ export class HotelSearchService {
     });
     return {
       showEpHotels: Number(row?.show_ep_hotels ?? 0) === 1,
+      showHobseEpHotels: Number(row?.show_hobse_ep_hotels ?? 1) === 1,
       enabled: Number(row?.tbo_map_fallback_enabled ?? 1) === 1,
       dinnerRate3Star: Math.max(Number(row?.tbo_map_dinner_rate_3_star ?? 900), 0),
       dinnerRate4Star: Math.max(Number(row?.tbo_map_dinner_rate_4_star ?? 1500), 0),
@@ -109,16 +111,33 @@ export class HotelSearchService {
       Math.round((this.parseDateOnly(criteria.checkOutDate).getTime() - this.parseDateOnly(criteria.checkInDate).getTime()) / 86_400_000),
       1,
     );
-    return filterEpRows(
-      applyMapDinnerFallbackToRows(rows, {
-        preferredMealPlanCode: preferredMealPlanCode || null,
-        adultCount: Number(criteria.adultCount ?? 0),
-        childCount: Number(criteria.childCount ?? 0),
-        roomCount: Number(criteria.roomCount || 1),
-        numberOfNights: nights,
-      }, config),
-      Boolean(config.showEpHotels),
-    );
+    const normalizedRows = applyMapDinnerFallbackToRows(rows, {
+      preferredMealPlanCode: preferredMealPlanCode || null,
+      adultCount: Number(criteria.adultCount ?? 0),
+      childCount: Number(criteria.childCount ?? 0),
+      roomCount: Number(criteria.roomCount || 1),
+      numberOfNights: nights,
+    }, config);
+
+    // The inline hotel-name search is an explicit HOBSE catalogue lookup.
+    // HOBSE commonly exposes EP-only tariffs (for example, juSTa in
+    // Rameswaram). Its dedicated global setting controls whether that
+    // explicit result is shown; normal itinerary inventory and every other
+    // provider continue to honor show_ep_hotels.
+    const requestedProviders = Array.isArray((criteria as any).providers)
+      ? (criteria as any).providers
+        .map((provider: unknown) => String(provider || '').trim().toLowerCase())
+        .filter(Boolean)
+      : [];
+    const bypassEpFilterForExplicitHobseSearch =
+      requestedProviders.length === 1 &&
+      requestedProviders[0] === 'hobse' &&
+      Boolean(String((criteria as any).hotelName || '').trim()) &&
+      config.showHobseEpHotels === true;
+
+    return bypassEpFilterForExplicitHobseSearch
+      ? normalizedRows
+      : filterEpRows(normalizedRows, Boolean(config.showEpHotels));
   }
 
   async searchHotels(searchCriteria: HotelSearchDTO): Promise<HotelSearchResult[]> {
@@ -338,6 +357,7 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
             cityCode,
             checkInDate,
             checkOutDate,
+            hotelName: searchCriteria.hotelName,
             roomCount,
             guestCount,
             guestNationality,

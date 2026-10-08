@@ -68,6 +68,44 @@ test('HOBSE city lookup uses the indexed HOBSE code before other identity fields
   assert.deepEqual(queries[0].where, { hobse_city_code: '320' });
 });
 
+test('HOBSE hotel-name search filters the catalog before tariff lookups', async () => {
+  const tariffHotelIds: string[] = [];
+  const provider = new HobseHotelProvider({
+    dvi_cities: {
+      findFirst: async () => ({ name: 'Kochi', hobse_city_code: '320' }),
+    },
+  } as any);
+  (provider as any).fileLog = () => {};
+  (provider as any).postForm = async (method: string) => {
+    assert.equal(method, 'GetHotelList');
+    return {
+      hobse: {
+        response: {
+          data: [
+            { hotelId: '1', hotelName: 'Alpha Residency', cityName: 'Kochi' },
+            { hotelId: '2', hotelName: 'Beta Palace', cityName: 'Kochi' },
+          ],
+        },
+      },
+    };
+  };
+  (provider as any).getHotelTariffAsSearchResult = async (args: { hotelId: string }) => {
+    tariffHotelIds.push(args.hotelId);
+    return null;
+  };
+
+  await provider.search({
+    cityCode: '320',
+    checkInDate: '2026-10-01',
+    checkOutDate: '2026-10-02',
+    roomCount: 1,
+    guestCount: 2,
+    hotelName: 'Alpha',
+  } as any);
+
+  assert.deepEqual(tariffHotelIds, ['1']);
+});
+
 test('HOBSE itinerary city mapping caches mapped and unmapped destinations', async () => {
   const queries: any[] = [];
   const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;

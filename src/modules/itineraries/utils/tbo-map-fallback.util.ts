@@ -6,6 +6,7 @@ import {
 export type TboMapFallbackConfig = {
   enabled: boolean;
   showEpHotels?: boolean;
+  showHobseEpHotels?: boolean;
   dinnerRate3Star: number;
   dinnerRate4Star: number;
   dinnerRate5Star: number;

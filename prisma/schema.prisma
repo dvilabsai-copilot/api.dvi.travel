@@ -2968,6 +2968,7 @@ model dvi_global_settings {
   deleted                                Int       @default(0) @db.TinyInt
   meal_plan_search_enabled               Int       @default(0) @db.TinyInt
   show_ep_hotels                         Int       @default(0) @db.TinyInt
+  show_hobse_ep_hotels                   Int       @default(1) @db.TinyInt
   tbo_map_fallback_enabled               Int       @default(1) @db.TinyInt
   tbo_map_dinner_rate_3_star             Float     @default(900) @db.Float
   tbo_map_dinner_rate_4_star             Float     @default(1500) @db.Float
