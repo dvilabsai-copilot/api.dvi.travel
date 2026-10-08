@@ -297,12 +297,36 @@ export class HobseHotelProvider implements IHotelProvider {
         return [];
       }
 
+      // Interactive hotel search must narrow the HOBSE catalog before any
+      // per-hotel tariff calls. The old flow fetched tariffs for every hotel
+      // in the city and only then applied hotelName filtering in the generic
+      // search service, which made a search take as long as a full city load.
+      const hotelNameQuery = String(criteria.hotelName || '').trim().toLowerCase();
+      const hotelsForTariffLookup = hotelNameQuery
+        ? cityHotels
+            .filter((hotel) => String(hotel?.hotelName || '').trim().toLowerCase().includes(hotelNameQuery))
+            .sort((left, right) => {
+              const leftName = String(left?.hotelName || '').trim().toLowerCase();
+              const rightName = String(right?.hotelName || '').trim().toLowerCase();
+              const leftRank = leftName === hotelNameQuery ? 0 : leftName.startsWith(hotelNameQuery) ? 1 : 2;
+              const rightRank = rightName === hotelNameQuery ? 0 : rightName.startsWith(hotelNameQuery) ? 1 : 2;
+              return leftRank - rightRank || leftName.localeCompare(rightName);
+            })
+            .slice(0, 50)
+        : cityHotels;
+
+      if (hotelNameQuery && hotelsForTariffLookup.length === 0) {
+        this.logger.log(` HOBSE: no city hotels matched hotelName="${criteria.hotelName}"`);
+        this.fileLog(`SEARCH_NO_NAME_MATCH city=${cityRow.name} query=${criteria.hotelName}`);
+        return [];
+      }
+
       const results: HotelSearchResult[] = [];
 
  // limited concurrency
       const concurrency = 5;
-      for (let i = 0; i < cityHotels.length; i += concurrency) {
-        const slice = cityHotels.slice(i, i + concurrency);
+      for (let i = 0; i < hotelsForTariffLookup.length; i += concurrency) {
+        const slice = hotelsForTariffLookup.slice(i, i + concurrency);
 
         const chunk = await Promise.all(
           slice.map((h) =>
@@ -323,8 +347,8 @@ export class HobseHotelProvider implements IHotelProvider {
         chunk.filter(Boolean).forEach((x) => results.push(x as HotelSearchResult));
       }
 
- this.logger.log(` HOBSE: returning ${results.length}/${cityHotels.length} hotels with tariffs`);
-      this.fileLog(`SEARCH_DONE city=${cityRow.name} results=${results.length}/${cityHotels.length}`);
+ this.logger.log(` HOBSE: returning ${results.length}/${hotelsForTariffLookup.length} hotels with tariffs`);
+      this.fileLog(`SEARCH_DONE city=${cityRow.name} results=${results.length}/${hotelsForTariffLookup.length}`);
       return results;
     } catch (error: any) {
  this.logger.error(` HOBSE search error: ${error?.message || error}`);
