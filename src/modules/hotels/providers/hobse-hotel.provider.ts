@@ -251,19 +251,24 @@ export class HobseHotelProvider implements IHotelProvider {
  // Convert cityCode to string for database lookup (Prisma expects string)
       const cityCodeAsString = String(criteria.cityCode);
 
- // Build where conditions with proper string values
-      const orConditions: any[] = [
-        { tbo_city_code: cityCodeAsString },
-        { hobse_city_code: cityCodeAsString },
- { name: cityCodeAsString }, // Also support lookup by city name directly
-      ];
-
-      const cityRow = await this.prisma.dvi_cities.findFirst({
-        where: {
-          OR: orConditions,
-        },
-        select: { name: true, hobse_city_code: true },
-      });
+      // Resolve the HOBSE mapping through indexed exact lookups. The previous
+      // OR query mixed indexed and unindexed columns and could force MySQL to
+      // scan the complete city master. Preserve all accepted input forms,
+      // while prioritizing an explicit HOBSE code over TBO code and name.
+      const citySelect = { name: true, hobse_city_code: true } as const;
+      const cityRow =
+        (await this.prisma.dvi_cities.findFirst({
+          where: { hobse_city_code: cityCodeAsString },
+          select: citySelect,
+        })) ||
+        (await this.prisma.dvi_cities.findFirst({
+          where: { tbo_city_code: cityCodeAsString, hobse_city_code: { not: null } },
+          select: citySelect,
+        })) ||
+        (await this.prisma.dvi_cities.findFirst({
+          where: { name: cityCodeAsString, hobse_city_code: { not: null } },
+          select: citySelect,
+        }));
 
         if (!cityRow?.hobse_city_code || !cityRow?.name) {
  this.logger.warn(` No HOBSE mapping for cityCode: ${criteria.cityCode}`);

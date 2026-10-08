@@ -1292,6 +1292,8 @@ model dvi_cities {
   @@index([createdon], map: "idx_city_createdon")
   @@index([deleted], map: "idx_city_deleted")
   @@index([name], map: "idx_city_name")
+  @@index([tbo_city_code], map: "idx_city_tbo_code")
+  @@index([hobse_city_code], map: "idx_city_hobse_code")
   @@index([status], map: "idx_city_status")
   @@index([updatedon], map: "idx_city_updatedon")
 }
@@ -6770,7 +6772,7 @@ model dvi_registration_email_otps {
 
 model dvi_password_reset_otps {
   id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  email        String   @unique(map: "uq_dvi_password_reset_email_otps_email") @db.VarChar(320)
+  email        String   @unique(length: 191, map: "uq_dvi_password_reset_email_otps_email") @db.VarChar(320)
   otp_hash     String   @db.Char(64)
   expires_at   DateTime @db.DateTime(3)
   resend_after DateTime @db.DateTime(3)
