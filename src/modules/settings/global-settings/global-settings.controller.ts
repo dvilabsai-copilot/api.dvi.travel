@@ -91,6 +91,11 @@ listCountries() {
   return this.service.listCountries();
 }
 
+@Get("extra-margin-vendors")
+listExtraMarginVendors() {
+  return this.service.listExtraMarginVendors();
+}
+
 @Get("extra-margin-rules")
 listExtraMarginRules() {
   return this.service.listExtraMarginRules();

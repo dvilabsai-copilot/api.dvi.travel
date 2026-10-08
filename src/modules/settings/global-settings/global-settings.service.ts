@@ -567,7 +567,37 @@ private async hydrateExtraMarginRules(
     };
   });
 }
-  async listExtraMarginRules() {
+
+async listExtraMarginVendors() {
+  const vendors =
+    await this.prisma.dvi_vendor_details.findMany({
+      where: {
+        deleted: 0,
+      },
+      select: {
+        vendor_id: true,
+        vendor_name: true,
+      },
+      orderBy: {
+        vendor_name: "asc",
+      },
+    });
+
+  return vendors
+    .map((vendor) => ({
+      id: Number(vendor.vendor_id),
+      label: String(
+        vendor.vendor_name ?? "",
+      ).trim(),
+    }))
+    .filter(
+      (vendor) =>
+        vendor.id > 0 &&
+        vendor.label.length > 0,
+    );
+}
+
+async listExtraMarginRules() {
   const rules =
     await this.prisma.dvi_itinerary_extra_margin_rules.findMany({
       where: {
