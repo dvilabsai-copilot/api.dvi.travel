@@ -37,6 +37,11 @@ export class UpdateGlobalSettingsDto {
   @Type(() => Number)
   @IsInt()
   @IsIn([0, 1])
+  hobse_search_enabled?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([0, 1])
   show_ep_hotels?: number;
 
   @Type(() => Number)
