@@ -23,17 +23,19 @@ The controller forwards the request to `ItineraryHotelDetailsTboService`.
 The service builds hotel packages in this order:
 
 1. TBO search
-2. HOBSE search if `HOBSE_SEARCH_ENABLED=1`
+2. HOBSE search when `dvi_global_settings.hobse_search_enabled = 1`
 3. ResAvenue search
 4. AxisRooms merge
 5. STAAH merge
 
-Relevant environment flags from local `.env`:
+Relevant provider flags from local `.env`:
 
 - `HOTEL_FETCH_AXIS_ONLY=false`
 - `HOTEL_FETCH_TBO_ONLY=false`
-- `HOBSE_SEARCH_ENABLED=1`
 - `SHOW_HOTEL_MARGINS=false`
+
+HOBSE is controlled from the Global Settings page through
+`dvi_global_settings.hobse_search_enabled` (default `1`).
 
 ## 3. What Happened For `DVI20260793`
 

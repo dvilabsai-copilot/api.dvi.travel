@@ -2967,6 +2967,7 @@ model dvi_global_settings {
   status                                 Int       @default(0) @db.TinyInt
   deleted                                Int       @default(0) @db.TinyInt
   meal_plan_search_enabled               Int       @default(0) @db.TinyInt
+  hobse_search_enabled                   Int       @default(1) @db.TinyInt
   show_ep_hotels                         Int       @default(0) @db.TinyInt
   show_hobse_ep_hotels                   Int       @default(1) @db.TinyInt
   tbo_map_fallback_enabled               Int       @default(1) @db.TinyInt
