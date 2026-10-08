@@ -111,10 +111,13 @@ const CITY_ALIAS_MAP: Record<string, string> = {
 };
 
 const CITY_CACHE_TTL_MS = 30 * 60 * 1000;
-let cityCacheLoadedAt = 0;
-let cityCachePromise: Promise<void> | null = null;
-const cityCacheByNormalizedName = new Map<string, CachedCityRecord>();
-const cityCacheById = new Map<number, CachedCityRecord>();
+type CityCacheEntry = {
+  record: CachedCityRecord;
+  expiresAt: number;
+};
+
+const cityCacheByNormalizedName = new Map<string, CityCacheEntry>();
+const cityCacheById = new Map<number, CityCacheEntry>();
 
 function normalizeAliasKey(value: string): string {
   return value.replace(/\s+/g, '').trim();
@@ -177,25 +180,8 @@ function normalizeCityCacheKey(value?: string | null): string {
   return normalizeCityName(value).trim().toLowerCase();
 }
 
-async function warmCityCache(prisma: any): Promise<void> {
-  const rows = await prisma.dvi_cities.findMany({
-    where: {
-      status: 1,
-      deleted: { in: [0, 1] },
-    },
-    select: {
-      id: true,
-      name: true,
-      state_id: true,
-      tbo_city_code: true,
-      hobse_city_code: true,
-    },
-    orderBy: [{ name: 'asc' }, { id: 'asc' }],
-  });
-
-  cityCacheByNormalizedName.clear();
-  cityCacheById.clear();
-
+function cacheCityRows(rows: any[]): void {
+  const expiresAt = Date.now() + CITY_CACHE_TTL_MS;
   for (const row of rows as any[]) {
     const record: CachedCityRecord = {
       id: Number(row.id ?? 0),
@@ -207,35 +193,47 @@ async function warmCityCache(prisma: any): Promise<void> {
 
     if (!record.id || !record.name) continue;
 
-    cityCacheById.set(record.id, record);
+    const entry = { record, expiresAt };
+    cityCacheById.set(record.id, entry);
 
     const normalizedName = normalizeCityCacheKey(record.name);
-    if (normalizedName && !cityCacheByNormalizedName.has(normalizedName)) {
-      cityCacheByNormalizedName.set(normalizedName, record);
+    const existing = normalizedName ? cityCacheByNormalizedName.get(normalizedName) : undefined;
+    if (normalizedName && (
+      !existing ||
+      existing.expiresAt <= Date.now() ||
+      record.id < existing.record.id
+    )) {
+      cityCacheByNormalizedName.set(normalizedName, entry);
     }
   }
-
-  cityCacheLoadedAt = Date.now();
 }
 
-async function ensureCityCache(prisma: any): Promise<void> {
-  const cacheAge = Date.now() - cityCacheLoadedAt;
-  const cacheFresh = cityCacheLoadedAt > 0 && cacheAge < CITY_CACHE_TTL_MS;
-  if (cacheFresh && cityCacheByNormalizedName.size > 0 && cityCacheById.size > 0) {
-    return;
+function getCachedCityByName(key: string): CachedCityRecord | null {
+  const entry = cityCacheByNormalizedName.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    cityCacheByNormalizedName.delete(key);
+    if (cityCacheById.get(entry.record.id) === entry) cityCacheById.delete(entry.record.id);
+    return null;
   }
+  return entry.record;
+}
 
-  if (!cityCachePromise) {
-    cityCachePromise = warmCityCache(prisma).finally(() => {
-      cityCachePromise = null;
-    });
+function getCachedCityById(id: number): CachedCityRecord | null {
+  const entry = cityCacheById.get(id);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    cityCacheById.delete(id);
+    const normalizedName = normalizeCityCacheKey(entry.record.name);
+    if (cityCacheByNormalizedName.get(normalizedName) === entry) {
+      cityCacheByNormalizedName.delete(normalizedName);
+    }
+    return null;
   }
-
-  await cityCachePromise;
+  return entry.record;
 }
 
 export function clearCityLookupCache(): void {
-  cityCacheLoadedAt = 0;
   cityCacheByNormalizedName.clear();
   cityCacheById.clear();
 }
@@ -247,16 +245,48 @@ export async function resolveCityRecordByName(
   const candidates = buildCityLookupCandidates(value);
   if (!candidates.length) return null;
 
-  await ensureCityCache(prisma);
-
   for (const candidate of candidates) {
     const normalizedCandidate = normalizeCityCacheKey(candidate);
     if (!normalizedCandidate) continue;
 
-    const cached = cityCacheByNormalizedName.get(normalizedCandidate);
+    const cached = getCachedCityByName(normalizedCandidate);
     if (cached) {
       return cached;
     }
+  }
+
+  const lookupTerms = Array.from(new Set(
+    candidates.flatMap((candidate) => [
+      String(candidate).trim(),
+      normalizeCityCacheKey(candidate),
+    ]).filter(Boolean),
+  ));
+  const rows = lookupTerms.length > 0
+    ? await prisma.dvi_cities.findMany({
+        where: {
+          AND: [
+            { status: 1 },
+            { deleted: { in: [0, 1] } },
+            { OR: lookupTerms.map((term) => ({ name: { startsWith: term } })) },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          state_id: true,
+          tbo_city_code: true,
+          hobse_city_code: true,
+        },
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      })
+    : [];
+  cacheCityRows(rows);
+
+  for (const candidate of candidates) {
+    const normalizedCandidate = normalizeCityCacheKey(candidate);
+    if (!normalizedCandidate) continue;
+    const cached = getCachedCityByName(normalizedCandidate);
+    if (cached) return cached;
   }
 
   return null;
@@ -269,6 +299,23 @@ export async function resolveCityNameById(
   const id = Number(cityId || 0);
   if (!id) return '';
 
-  await ensureCityCache(prisma);
-  return String(cityCacheById.get(id)?.name ?? '').trim();
+  const cached = getCachedCityById(id);
+  if (cached) return cached.name;
+
+  const row = await prisma.dvi_cities.findFirst({
+    where: {
+      id,
+      status: 1,
+      deleted: { in: [0, 1] },
+    },
+    select: {
+      id: true,
+      name: true,
+      state_id: true,
+      tbo_city_code: true,
+      hobse_city_code: true,
+    },
+  });
+  if (row) cacheCityRows([row]);
+  return String(row?.name ?? '').trim();
 }
