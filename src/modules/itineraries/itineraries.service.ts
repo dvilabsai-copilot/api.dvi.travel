@@ -2670,16 +2670,30 @@ timingStepStartedAt =
     if (!anchorOption && !anchorRateOptionId && anchorSelectionKey) {
       anchorOption = anchorCandidates.find((option: any) => supplierSelectionKey(option) === anchorSelectionKey) || null;
     }
-    if ((intent === 'RATE_OPTION' || Boolean(anchorRateOptionId)) && !anchorOption) {
-      throw new BadRequestException({
-        code: 'HOTEL_RATE_STALE',
-        message: 'The selected hotel rate is stale or unavailable. No nights were changed.',
-        selectionIntent: intent,
-        logicalStay: stay,
-        affectedRouteIds: stay.routeIds,
-        canBookSingleNight: false,
-        canBookMultiNight: false,
-      });
+    // A supplier rate identity is a snapshot reference, not the property's
+    // availability. TBO booking codes contain a search-session token and can
+    // legitimately change between the pane search and this preview. When the
+    // exact reference is gone, continue with the current matching property,
+    // room, and meal-plan candidates; the resolved current option is returned
+    // to the confirmation UI. Reject only if the current stay has no valid
+    // candidate, which is handled by the per-night/continuous-stay checks
+    // below.
+    if (anchorRateOptionId && !anchorOption) {
+      anchorOption = anchorCandidates
+        .filter((option: any) => {
+          const optionRoom = String(option?.roomType || option?.roomTypeName || '').trim();
+          const optionRoomId = Number(option?.roomId ?? option?.room_id ?? 0);
+          const optionRoomTypeId = Number(option?.roomTypeId ?? option?.room_type_id ?? 0);
+          const optionMeal = String(option?.mealPlan || option?.mealPlanCode || '').trim();
+          const roomMatches = requestedRoomTypeId > 0
+            ? optionRoomTypeId === requestedRoomTypeId
+            : requestedRoomId > 0
+              ? optionRoomId === requestedRoomId
+              : !requestedRoom || optionRoom.toLowerCase() === requestedRoom.toLowerCase();
+          const mealMatches = !requestedMeal || optionMeal.toLowerCase() === requestedMeal.toLowerCase();
+          return roomMatches && mealMatches;
+        })
+        .sort((left: any, right: any) => payableAmount(left) - payableAmount(right))[0] || null;
     }
     const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName || requestedRoom || '').trim();
     const anchorMeal = String(anchorOption?.mealPlan || anchorOption?.mealPlanCode || requestedMeal || '').trim();
@@ -3594,11 +3608,18 @@ timingStepStartedAt =
           ? (hotel as any).rateOptions
           : [hotel])
         : [];
+      // A browser rate ID can be stale while the same local hotel/room/meal
+      // remains bookable. Prefer the requested rate when it is still present
+      // for this night; otherwise resolve the current valid rate instead of
+      // rejecting the hotel solely because the old ID disappeared.
+      const hasExactRequestedRate = Boolean(requestedRate) && options.some(
+        (option: any) => String(option.rateOptionId || option.optionKey || '').trim() === requestedRate,
+      );
       const matching = options
         .filter((option: any) => {
           const room = normalize(option.roomType || option.roomTypeName || hotel?.roomType);
           const meal = normalize(option.mealPlan || option.mealPlanCode || hotel?.mealPlan);
-          if (requestedRate && String(option.rateOptionId || option.optionKey || '').trim() !== requestedRate) return false;
+          if (hasExactRequestedRate && String(option.rateOptionId || option.optionKey || '').trim() !== requestedRate) return false;
           if (requestedRoomTypeId > 0 && Number(option.roomTypeId ?? option.room_type_id ?? 0) !== requestedRoomTypeId) return false;
           if (requestedRoomId > 0 && Number(option.roomId ?? option.room_id ?? 0) !== requestedRoomId) return false;
           if (!requestedRoomTypeId && !requestedRoomId && requestedRoom && !roomLabelMatches(room, requestedRoom)) return false;
