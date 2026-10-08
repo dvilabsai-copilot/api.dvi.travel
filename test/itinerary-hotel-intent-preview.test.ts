@@ -161,7 +161,7 @@ test('database duplicate-key failure is retryable refresh failure, not supplier 
   assert.equal(result.code, 'P2002');
 });
 
-test('stale offline rate identity is rejected instead of reused', async () => {
+test('stale offline rate identity is replaced when the hotel remains available', async () => {
   const { service } = createService(async () => candidates);
 
   const result = await service.previewHotelIntent(payload({
@@ -169,7 +169,8 @@ test('stale offline rate identity is rejected instead of reused', async () => {
     rateOptionId: 'offline:211:540:3:2026-08-11:2026-08-12',
   }));
 
-  assert.equal(result.status, 'NO_AVAILABILITY');
+  assert.equal(result.status, 'AVAILABLE');
+  assert.equal(result.selections[0].selectedRateOptionId, candidates[0].rateOptionId);
 });
 
 test('offline room-type preview uses room ID when a legacy room label is supplied', async () => {
