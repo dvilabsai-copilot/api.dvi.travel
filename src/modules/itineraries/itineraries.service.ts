@@ -708,6 +708,23 @@ export class ItinerariesService {
     this.confirmedGuideCancellationService.setLogCancellationActionCallback(
       (...args) => (this.cancellationService.logCancellationAction as any)(...args),
     );
+
+    // Connect city-name helpers required by manual hotspot matrix generation.
+    this.manualHotspotMatrixService.setCallbacks({
+      deriveLooseCityKey: (value: string) =>
+        this.deriveLooseCityKey(value),
+      normalizeLocationText: (value: string) =>
+        this.normalizeLocationText(value),
+    });
+
+    this.manualHotspotPreviewService.setCallbacks({
+      buildMissingManualHotspotMatrix: (params: {
+        planId: number;
+        routeId: number;
+        candidateHotspotId: number;
+      }) => this.manualHotspotMatrixService.buildMissingManualHotspotMatrix(params),
+    });
+
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
     });

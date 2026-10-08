@@ -478,8 +478,17 @@ export class ItineraryHotelRoomCategoryService {
     const selectedMealPlan = String(
       (selectedLiveRoomRow as any)?.mealPlan ||
       persistedSnapshot.mealPlan ||
+      planDetails.meal_plan_code ||
       '',
-    ).trim() || null;
+    ).trim().toUpperCase() || null;
+
+    const selectedProvider = String(
+      params.provider ||
+      (selectedLiveRoomRow as any)?.provider ||
+      persistedSnapshot.provider ||
+      (persistedSelectionParent as any)?.hotel_provider ||
+      '',
+    ).trim().toLowerCase();
     const selectedRoomTypeName = String(
       selectedRoomType.roomTypeTitle ||
       (selectedLiveRoomRow as any)?.roomTypeName ||
@@ -759,11 +768,7 @@ export class ItineraryHotelRoomCategoryService {
         params.hotel_id ||
         '',
       ).trim() || null,
-      provider: String(
-        (selectedLiveRoomRow as any)?.provider ||
-        persistedSnapshot.provider ||
-        'staah',
-      ).trim().toLowerCase() || null,
+         provider: selectedProvider || null,
       selectionOrigin: persistedSnapshot.selectionOrigin || 'USER_SELECTED',
       hotelName: String(
         (selectedLiveRoomRow as any)?.hotelName ||
@@ -849,7 +854,7 @@ export class ItineraryHotelRoomCategoryService {
         hotel_id: persistedHotelId,
         hotel_required: 1,
         total_no_of_rooms: totalRooms,
-        hotel_provider: String((selectedLiveRoomRow as any)?.provider || 'staah').trim().toLowerCase(),
+        ...(selectedProvider ? { hotel_provider: selectedProvider } : {}),
         selected_rate_option_id: selectedRateOptionId,
         selected_price_per_night: occupancyPricing ? selectedPricePerNight : selectedPricePerNight,
         selected_total_price: occupancyPricing ? occupancyPricing.totalPrice : selectedTotalPrice,

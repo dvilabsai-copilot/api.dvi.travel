@@ -352,6 +352,8 @@ export class ItineraryManualHotspotBatchService {
         candidateHotspotId: matrixBuildCandidateId,
         success: matrixBuildResult?.success === true,
         code: matrixBuildResult?.code || null,
+        message: matrixBuildResult?.message || null,
+        rows: matrixBuildResult?.rows || [],
         hasAnyMatrixData: matrixBuildResult?.hasAnyMatrixData === true,
         hasFeasibleMatrixSlot:
           matrixBuildResult?.hasFeasibleMatrixSlot === true,

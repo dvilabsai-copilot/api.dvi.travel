@@ -160,10 +160,24 @@ export class ItineraryManualHotspotMatrixService {
           || resultCode === 'SINGLE_HOTSPOT_CITY_MATRIX_BUILT',
       };
     } catch (error: any) {
+      const errorMessage = String(
+        error?.message || 'Matrix build failed.',
+      );
+
+      console.error('[ManualHotspotMatrix] build_failed', {
+        planId,
+        routeId,
+        candidateHotspotId,
+        errorName: error?.name || null,
+        errorCode: error?.code || null,
+        errorMessage,
+        stack: error?.stack || null,
+      });
+
       return {
         success: false,
         code: 'MATRIX_BUILD_FAILED',
-        message: String(error?.message || 'Matrix build failed.'),
+        message: errorMessage,
         planId,
         routeId,
         candidateHotspotId,

@@ -1087,15 +1087,36 @@ async function buildEmptyRouteCityEndpointMatrix(params: {
   const rows: SlotResultRow[] = [];
 
   try {
-    const ab = await fetchEndpointRoute({
-      from: slot.from,
-      to: slot.to,
-      osrmBaseUrl: params.osrmBaseUrl,
-      osrmTimeoutMs: params.osrmTimeoutMs,
-      logger: params.logger,
-    });
+    // An empty same-city route can have identical source and
+    // destination coordinates. Its baseline travel distance is zero.
+    const sameCityCoordinates =
+      Number.isFinite(slot.from.lat) &&
+      Number.isFinite(slot.from.lng) &&
+      Number.isFinite(slot.to.lat) &&
+      Number.isFinite(slot.to.lng) &&
+      slot.from.lat === slot.to.lat &&
+      slot.from.lng === slot.to.lng;
 
-    await sleep(params.osrmDelayMs);
+    const ab: RouteLeg = sameCityCoordinates
+      ? {
+          distanceKm: 0,
+          durationMin: 0,
+          coordinates: [
+            [slot.from.lng, slot.from.lat],
+            [slot.to.lng, slot.to.lat],
+          ],
+        }
+      : await fetchEndpointRoute({
+          from: slot.from,
+          to: slot.to,
+          osrmBaseUrl: params.osrmBaseUrl,
+          osrmTimeoutMs: params.osrmTimeoutMs,
+          logger: params.logger,
+        });
+
+    if (!sameCityCoordinates) {
+      await sleep(params.osrmDelayMs);
+    }
 
     const ac = await fetchEndpointRoute({
       from: slot.from,
