@@ -357,9 +357,16 @@ export class ItineraryHotelDetailsTboService {
     return { axisOnly, tboOnly };
   }
 
-  private isHobseSearchEnabled(): boolean {
-    const raw = String(process.env.HOBSE_SEARCH_ENABLED || '0').trim().toLowerCase();
-    return raw === 'true' || raw === '1' || raw === 'yes';
+  private async isHobseSearchEnabled(): Promise<boolean> {
+    const row = await (this.prisma as any).dvi_global_settings.findFirst({
+      where: { deleted: 0, status: 1 },
+      orderBy: { global_settings_ID: 'asc' },
+      select: { hobse_search_enabled: true },
+    });
+
+    // Keep HOBSE enabled when the active settings row is temporarily absent.
+    // Once present, the database setting is authoritative.
+    return Number(row?.hobse_search_enabled ?? 1) === 1;
   }
 
   private normalizeNumberList(value: unknown): number[] {
@@ -2026,7 +2033,7 @@ this.logger.log(
           });
         }
 
-        if (this.isHobseSearchEnabled()) {
+        if (await this.isHobseSearchEnabled()) {
  // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
  // First, create a HOBSE-specific city code map using hobse_city_code
           let hobseHotelsByRoute = new Map<number, HotelSearchResult[]>();
@@ -2045,7 +2052,7 @@ this.logger.log(
             hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
           });
         } else {
-          this.logger.warn('[WARN] HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
+          this.logger.warn('[WARN] HOBSE search disabled by global settings; skipping HOBSE hotel search results');
         }
 
  // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
@@ -7215,7 +7222,7 @@ this.logger.log(
           hotelsByRoute.set(routeId, [...existing, ...newHotels]);
         });
 
-        if (this.isHobseSearchEnabled()) {
+        if (await this.isHobseSearchEnabled()) {
           const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routesToProcess);
           const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routesToProcess, noOfNights, hobseCityCodeMap);
           hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
@@ -7223,7 +7230,7 @@ this.logger.log(
             hotelsByRoute.set(routeId, [...existing, ...hobseHotels]);
           });
         } else {
-          this.logger.warn('[WARN] HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
+          this.logger.warn('[WARN] HOBSE search disabled by global settings; skipping HOBSE hotel search results');
         }
 
  // ResAvenue
