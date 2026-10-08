@@ -142,6 +142,8 @@ export interface HotelSearchCriteria {
   cityCode: string;
  checkInDate: string; // YYYY-MM-DD
   checkOutDate: string;
+  /** Optional property-name filter for interactive, provider-scoped search. */
+  hotelName?: string;
   roomCount: number;
   guestCount: number;
   guestNationality?: string;

@@ -40,6 +40,11 @@ export class UpdateGlobalSettingsDto {
   show_ep_hotels?: number;
 
   @Type(() => Number)
+  @IsInt()
+  @IsIn([0, 1])
+  show_hobse_ep_hotels?: number;
+
+  @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   tbo_map_dinner_rate_3_star?: number;
