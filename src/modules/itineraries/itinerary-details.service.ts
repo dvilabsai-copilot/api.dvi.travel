@@ -6522,6 +6522,62 @@ const hasRequiredVehicleSelection =
       return Number.isFinite(rate) && rate > 0 ? rate : 0;
     };
 
+    // Fallback rows carry both a per-night supplement and a full logical-stay
+    // supplement. Hotel details can contain one row per route night, so do
+    // not add a full-stay amount once for every route row.
+    const readTboMapFallbackDinnerPerNight = (row: any): number => {
+      const snapshot = parseHotelSnapshot(row);
+      const applied = row?.tboMapFallbackApplied === true || snapshot?.tboMapFallbackApplied === true;
+      if (!applied) return 0;
+      const amount = Number(row?.tboMapFallbackDinnerPerNight ?? snapshot?.tboMapFallbackDinnerPerNight ?? 0);
+      return Number.isFinite(amount) && amount > 0 ? amount : 0;
+    };
+    const fallbackDinnerIdentity = (row: any): string => {
+      const snapshot = parseHotelSnapshot(row);
+      return String(
+        row?.authoritativeStayKey ?? snapshot?.authoritativeStayKey ??
+        row?.selectionKey ?? row?.selected_rate_option_id ??
+        [
+          row?.hotel_provider ?? row?.provider ?? snapshot?.provider ?? '',
+          row?.hotel_code ?? row?.hotelCode ?? snapshot?.hotelCode ?? '',
+          row?.room_type ?? row?.roomType ?? snapshot?.roomType ?? '',
+          row?.meal_plan ?? row?.mealPlan ?? snapshot?.mealPlan ?? '',
+          row?.hotel_check_in_date ?? row?.checkInDate ?? snapshot?.checkInDate ?? '',
+          row?.hotel_check_out_date ?? row?.checkOutDate ?? snapshot?.checkOutDate ?? '',
+        ].join('|'),
+      ).trim();
+    };
+    const fallbackDinnerDate = (row: any): string => {
+      const snapshot = parseHotelSnapshot(row);
+      return String(row?.itinerary_route_date ?? row?.routeDate ?? row?.date ?? snapshot?.date ?? '').slice(0, 10);
+    };
+    const addTboMapFallbackDinnerCost = (
+      current: number,
+      row: any,
+      rowMultiplier: number,
+      seenStayKeys: Set<string>,
+      seenNightKeys: Set<string>,
+    ): number => {
+      const snapshot = parseHotelSnapshot(row);
+      const applied = row?.tboMapFallbackApplied === true || snapshot?.tboMapFallbackApplied === true;
+      if (!applied) return current;
+      const perNight = readTboMapFallbackDinnerPerNight(row);
+      const total = readTboMapFallbackDinnerCost(row);
+      const identity = fallbackDinnerIdentity(row);
+      const date = fallbackDinnerDate(row);
+      if (perNight > 0 && date) {
+        const nightKey = `${identity}|${date}`;
+        if (seenNightKeys.has(nightKey)) return current;
+        seenNightKeys.add(nightKey);
+        return current + perNight * rowMultiplier;
+      }
+      if (seenStayKeys.has(identity)) return current;
+      seenStayKeys.add(identity);
+      return current + (total > 0 ? total : perNight) * rowMultiplier;
+    };
+    const legacyFallbackDinnerStayKeys = new Set<string>();
+    const legacyFallbackDinnerNightKeys = new Set<string>();
+
     costHotelRows.forEach(h => {
  // An early-morning hotel check-in blocks the room from the previous
  // night. The stored hotel amount is the normal stay amount, so the
@@ -6656,7 +6712,13 @@ const hasRequiredVehicleSelection =
         const selectedPayable = selectedPricing.payableTotal;
         hotelListTotal += selectedPayable;
         hotelRoomBaseCost += selectedBase;
-        tboMapFallbackDinnerCost += readTboMapFallbackDinnerCost(h) * rowMultiplier;
+        tboMapFallbackDinnerCost = addTboMapFallbackDinnerCost(
+          tboMapFallbackDinnerCost,
+          h,
+          rowMultiplier,
+          legacyFallbackDinnerStayKeys,
+          legacyFallbackDinnerNightKeys,
+        );
         const selectedDinnerRate = readTboMapFallbackDinnerRate(h);
         if (selectedDinnerRate > 0) tboMapFallbackDinnerRates.add(selectedDinnerRate);
         extraBedCost += selectedExtraBedAmount;
@@ -6676,7 +6738,13 @@ const hasRequiredVehicleSelection =
       hotelMarginGstCost += Number(h.hotel_margin_rate_tax_amt || 0) * rowMultiplier;
       hotelMealPlanCost += Number(h.total_hotel_meal_plan_cost || 0) * rowMultiplier;
       hotelMealPlanGstCost += Number(h.total_hotel_meal_plan_cost_gst_amount || 0) * rowMultiplier;
-      tboMapFallbackDinnerCost += readTboMapFallbackDinnerCost(h) * rowMultiplier;
+      tboMapFallbackDinnerCost = addTboMapFallbackDinnerCost(
+        tboMapFallbackDinnerCost,
+        h,
+        rowMultiplier,
+        legacyFallbackDinnerStayKeys,
+        legacyFallbackDinnerNightKeys,
+      );
       const dinnerRate = readTboMapFallbackDinnerRate(h);
       if (dinnerRate > 0) tboMapFallbackDinnerRates.add(dinnerRate);
  // TBO/cache rows often populate only total_hotel_cost; fallback keeps room totals non-zero.
@@ -6751,6 +6819,8 @@ const hasRequiredVehicleSelection =
           return Number.isFinite(parsed) ? parsed : 0;
         };
         const lastSelectedStayDate = new Map<string, number>();
+        const selectedFallbackDinnerStayKeys = new Set<string>();
+        const selectedFallbackDinnerNightKeys = new Set<string>();
         const selectedSummary = selectedRoutes.reduce((sum: any, selected: any) => {
           const selectedKey = String(
             selected.selectionKey || selected.rateOptionId ||
@@ -6852,19 +6922,20 @@ const hasRequiredVehicleSelection =
             selectedSnapshot.totalHotelTaxAmount ?? selectedSnapshot.total_hotel_tax_amount ??
             persistedRoute?.total_hotel_tax_amount,
           );
-          const selectedTboMapFallbackDinnerCost = (
-            selected.tboMapFallbackApplied === true ||
-            selectedSnapshot.tboMapFallbackApplied === true ||
-            selectedNightlyRate?.tboMapFallbackApplied === true
-          )
-            ? firstPositiveAmount(
-                selectedNightlyRate?.tboMapFallbackDinnerTotal,
-                selected.tboMapFallbackDinnerTotal,
-                selectedSnapshot.tboMapFallbackDinnerTotal,
-                persistedRoute?.hotel_dinner_cost,
-                persistedRoute?.total_hotel_meal_plan_cost,
-              )
-            : 0;
+          const selectedDinnerSource = {
+            ...(persistedRoute || {}),
+            ...selected,
+            ...selectedSnapshot,
+            ...(selectedNightlyRate || {}),
+            routeDate: selected.routeDate || selected.date,
+          };
+          const selectedTboMapFallbackDinnerCost = addTboMapFallbackDinnerCost(
+            0,
+            selectedDinnerSource,
+            1,
+            selectedFallbackDinnerStayKeys,
+            selectedFallbackDinnerNightKeys,
+          );
           const selectedTboMapFallbackDinnerRate = (
             selected.tboMapFallbackApplied === true ||
             selectedSnapshot.tboMapFallbackApplied === true ||
