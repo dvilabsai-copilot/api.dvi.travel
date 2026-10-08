@@ -132,6 +132,26 @@ export class HotspotsController {
   }
 
  // Inline priority update
+  @Patch(':id/priority-value')
+  updatePriorityValue(
+    @Param('id') id: string,
+    @Body() body: { priority?: unknown },
+  ) {
+    return this.svc.updatePriorityValue(
+      Number(id), typeof body?.priority === 'number' ? body.priority : Number.NaN
+    );
+  }
+
+  @Patch(':id/priority-in-results')
+  updatePriorityInResults(
+    @Param('id') id: string,
+    @Body() body: { priority: number; scope?: unknown },
+  ) {
+    return this.svc.updatePriority(
+      Number(id), Number(body?.priority), body?.scope ?? null
+    );
+  }
+
   @Patch(':id/priority')
   updatePriority(@Param('id') id: string, @Body() body: { priority: number }) {
     const priority = Number(body?.priority);

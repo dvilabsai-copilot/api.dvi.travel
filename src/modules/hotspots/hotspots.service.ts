@@ -288,6 +288,53 @@ function positionHotspots(
   }));
 }
 
+function positionHotspotsInResults(
+  rows: Parameters<typeof positionHotspots>[0],
+  id: number,
+  position: number,
+  scope: unknown,
+) {
+  if (!Array.isArray(scope) || !scope.length || scope.length > rows.length) {
+    throw new BadRequestException('Invalid search results. Reload hotspots.');
+  }
+
+  const expected = new Map<number, number>();
+  for (const entry of scope) {
+    if (!entry || !Number.isSafeInteger(entry.id) || entry.id < 1 ||
+        !Number.isSafeInteger(entry.priority) || expected.has(entry.id)) {
+      throw new BadRequestException('Invalid search results. Reload hotspots.');
+    }
+    expected.set(entry.id, entry.priority);
+  }
+
+  if (!expected.has(id) || !Number.isSafeInteger(position) ||
+      position < 1 || position > expected.size) {
+    throw new BadRequestException('Position must be between 1 and ' + expected.size);
+  }
+
+  const matching = rows.filter(row => expected.has(row.hotspot_ID));
+  if (matching.length !== expected.size || matching.some(row =>
+      row.hotspot_priority !== expected.get(row.hotspot_ID))) {
+    throw new BadRequestException(
+      'These results changed. Reload hotspots before saving again.'
+    );
+  }
+
+  const slots = matching.map(row => row.hotspot_priority).sort((a, b) => a - b);
+  if (slots.some(value => !Number.isSafeInteger(value) || value < 1) ||
+      new Set(slots).size !== slots.length) {
+    throw new BadRequestException(
+      'These results contain duplicate or unassigned priorities. No priorities were changed.'
+    );
+  }
+
+  // Reorder within this group's saved priority slots.
+  return positionHotspots(matching, id, position).map((row, index) => ({
+    ...row,
+    priority: slots[index],
+  }));
+}
+
 @Injectable()
 export class HotspotsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -925,7 +972,25 @@ export class HotspotsService {
   }
 
  // --------------------------- Inline priority ------------------------------
-async updatePriority(id: number, priority: number): Promise<{ ok: true }> {
+  async updatePriorityValue(id: number, priority: number): Promise<{ ok: true }> {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new BadRequestException('Invalid hotspot id');
+    }
+    if (!Number.isSafeInteger(priority) || priority < 1 || priority > 2147483647) {
+      throw new BadRequestException('Priority must be a whole number from 1 to 2147483647');
+    }
+
+    const result = await this.prisma.dvi_hotspot_place.updateMany({
+      where: { hotspot_ID: id, deleted: 0, status: 1 },
+      data: { hotspot_priority: priority },
+    });
+    if (result.count !== 1) {
+      throw new NotFoundException('Active hotspot not found');
+    }
+    return { ok: true };
+  }
+
+  async updatePriority(id: number, priority: number, scope?: unknown): Promise<{ ok: true }> {
     if (!Number.isSafeInteger(id) || id <= 0) {
       throw new BadRequestException('Invalid hotspot id');
     }
@@ -957,7 +1022,9 @@ async updatePriority(id: number, priority: number): Promise<{ ok: true }> {
         );
       }
 
-      const changes = positionHotspots(rows, id, priority)
+      const changes = (scope === undefined
+        ? positionHotspots(rows, id, priority)
+        : positionHotspotsInResults(rows, id, priority, scope))
         .filter(row => row.previous !== row.priority);
 
       for (let offset = 0; offset < changes.length; offset += 200) {
