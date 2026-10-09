@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 
 const CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const AGENT_CODE_LOCK = 'dvi_agent_code_generation';
+const MAX_AGENT_CODE_LENGTH = 6;
 
 type AgentCodeTransaction = {
   $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<any>;
@@ -47,11 +48,14 @@ export function getAgentCodePrefix(agentName: unknown): string {
 
 export function getRandomAgentCodeCandidates(
   prefix: string,
-  targetLength: 3 | 4,
+  targetLength: number,
 ): string[] {
   const normalizedPrefix = String(prefix ?? '').toUpperCase();
   const suffixLength = targetLength - normalizedPrefix.length;
-  if (suffixLength < 1 || suffixLength > 2) return [];
+  if (
+    suffixLength < 1 ||
+    targetLength > MAX_AGENT_CODE_LENGTH
+  ) return [];
 
   const total = CODE_ALPHABET.length ** suffixLength;
   const candidates = Array.from({ length: total }, (_, index) => {
@@ -108,7 +112,8 @@ export async function withAgentCodeGenerationLock<T>(
 /**
  * Generate a unique agent code without relying on a database UNIQUE
  * constraint. A unique name gets its first three letters; a duplicate name
- * (or a three-letter collision) gets one random fourth letter.
+ * (or a collision) expands the code one character at a time until a free
+ * value is found, up to six characters.
  * Callers should invoke this while holding withAgentCodeGenerationLock().
  */
 export async function generateUniqueAgentCode(
@@ -155,13 +160,23 @@ export async function generateUniqueAgentCode(
     (row) => normalizeAgentName(sourceNameFor(row)) === normalizedName,
   );
   const base = getAgentCodePrefix(agentName);
-  const targetLength: 3 | 4 = duplicateName || used.has(base) ? 4 : 3;
+  const firstCandidateLength = duplicateName || used.has(base) ? 4 : 3;
 
-  if (targetLength === 3 && base.length === 3) return base;
+  for (
+    let targetLength = firstCandidateLength;
+    targetLength <= MAX_AGENT_CODE_LENGTH;
+    targetLength += 1
+  ) {
+    if (targetLength === 3 && base.length === 3 && !used.has(base)) {
+      return base;
+    }
 
-  for (const candidate of getRandomAgentCodeCandidates(base, targetLength)) {
-    if (!used.has(candidate)) return candidate;
+    for (const candidate of getRandomAgentCodeCandidates(base, targetLength)) {
+      if (!used.has(candidate)) return candidate;
+    }
   }
 
-  throw new Error(`No available agent code remains for prefix ${base}`);
+  throw new Error(
+    `No available agent code remains for prefix ${base} through ${MAX_AGENT_CODE_LENGTH} characters`,
+  );
 }

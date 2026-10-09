@@ -480,7 +480,7 @@ model dvi_agent {
   sponsor_id                           Int       @default(0)
   agent_ip_address                     String?   @db.VarChar(100)
   agent_ref_no                         String?   @db.VarChar(50)
-  agent_code                           String?   @db.VarChar(4)
+  agent_code                           String?   @db.VarChar(6)
   itinerary_margin_discount_percentage Float     @default(0) @db.Float
   agent_margin                         Float     @default(0) @db.Float
   agent_margin_gst_type                Int       @default(0)
