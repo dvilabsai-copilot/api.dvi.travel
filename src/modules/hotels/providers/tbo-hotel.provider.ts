@@ -315,6 +315,17 @@ export class TBOHotelProvider implements IHotelProvider {
       const chunkResponses = await Promise.all(chunkPromises);
       const allHotels = chunkResponses.flat();
 
+      this.logger.log(`[TBO_SEARCH_RESULT] ${JSON.stringify({
+        requestedCityCode: String(criteria.cityCode),
+        resolvedTboCityCode,
+        checkInDate: criteria.checkInDate,
+        checkOutDate: criteria.checkOutDate,
+        hotelCodeCount: hotelCodes ? hotelCodes.split(',').filter((code) => code.trim()).length : 0,
+        requestCount: requestChunks.length,
+        tboHotelResultCount: allHotels.length,
+        result: allHotels.length > 0 ? 'AVAILABLE' : 'NO_AVAILABILITY',
+      })}`);
+
       if (allHotels.length === 0) {
  this.logger.warn(` No hotels found for city: ${criteria.cityCode}`);
         return [];
@@ -1954,6 +1965,20 @@ export class TBOHotelProvider implements IHotelProvider {
           ? response.data.HotelResult.length
           : 0,
       });
+      this.logger.log(`[TBO_SEARCH_HTTP] ${JSON.stringify({
+        ...requestDetails,
+        durationMs: responseTime,
+        httpStatus: response.status,
+        providerStatus: typeof response.data?.Status === 'object'
+          ? response.data?.Status?.Code
+          : response.data?.Status,
+        providerStatusDescription: typeof response.data?.Status === 'object'
+          ? response.data?.Status?.Description
+          : undefined,
+        hotelResultCount: Array.isArray(response.data?.HotelResult)
+          ? response.data.HotelResult.length
+          : 0,
+      })}`);
  this.logger.log(` TBO API Response Time ${description}: ${responseTime}ms`);
       await this.persistRawSearchResponse({
         endpoint: requestUrl,
@@ -1997,6 +2022,15 @@ export class TBOHotelProvider implements IHotelProvider {
         httpStatus: error?.response?.status,
         providerStatus: error?.response?.data?.Status,
       });
+      this.logger.error(`[TBO_SEARCH_HTTP_ERROR] ${JSON.stringify({
+        ...requestDetails,
+        durationMs: Date.now() - requestStartedAt,
+        errorName: error?.name,
+        errorCode: error?.code,
+        errorMessage: errorMsg,
+        httpStatus: error?.response?.status,
+        providerStatus: error?.response?.data?.Status,
+      })}`);
       this.logger.error(` TBO Search Error ${description}: ${errorMsg}`);
 
       return [];
