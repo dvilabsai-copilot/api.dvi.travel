@@ -367,15 +367,14 @@ export class TBOHotelProvider implements IHotelProvider {
           ? supplierImages
           : [hotelMasterData?.hotel_image_url, ...masterGallery.map((image) => image.url)].filter(Boolean)));
         const primaryImageUrl = images[0] || null;
-
- // Process each room as a separate offering with the SAME real hotel name
- // (One HotelCode = One real hotel, not fake variants)
-        for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
-          const room = hotel.Rooms[idx];
-          const mealPlan = getNormalizedMealPlanLabelFromMealSources(
-            room.Inclusion,
-            room.MealType,
-          );
+// Process each room as a separate offering with the SAME real hotel name
+// (One HotelCode = One real hotel, not fake variants)
+for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
+  const room = hotel.Rooms[idx];
+  const mealPlan = getNormalizedMealPlanLabelFromMealSources(
+    room.Inclusion,
+    room.MealType,
+  );
           const inferredMealPlanCode = mealPlan === 'UNKNOWN' ? null : mealPlan;
           if (selectedMealPlanCode && inferredMealPlanCode !== selectedMealPlanCode) {
             continue;

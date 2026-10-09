@@ -193,6 +193,7 @@ export function applyMapDinnerFallbackToRows<T extends Record<string, any>>(
   rows: T[],
   context: TboMapFallbackContext,
   config: TboMapFallbackConfig,
+  preserveSupplierOptions = false,
 ): T[] {
   const preferred = mealPlanCode(context.preferredMealPlanCode);
   if (!config.enabled || preferred !== 'MAP') return rows;
@@ -202,11 +203,56 @@ export function applyMapDinnerFallbackToRows<T extends Record<string, any>>(
   );
   const realMapProperties = new Set(rows.filter(containsRealMap).map(propertyKey));
 
-  return rows.flatMap((row) => {
-    const key = propertyKey(row);
-    const options = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
+return rows.flatMap((row) => {
+  const key = propertyKey(row);
+  const options = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
+
+  // Editing an existing hotel must expose the supplier's original rate
+  // options. The regular recommendation flow must remain unchanged.
+  if (preserveSupplierOptions) {
+    // Real supplier MAP rates and other supplier plans are already present.
+    if (realMapProperties.has(key) || !cpProperties.has(key)) {
+      return [row];
+    }
+
+    // CP-only property with nested room/rate options:
+    // keep the original CP options and add the existing MAP fallback.
     if (options.length > 0) {
-      if (realMapProperties.has(key)) {
+      const fallbackOptions = options
+        .filter(isCp)
+        .map((option: any) =>
+          createFallbackOption(
+            { ...row, ...option },
+            context,
+            config,
+          ),
+        )
+        .filter(Boolean)
+        .map((option: any) => ({
+          ...option,
+          hotelCode: option.hotelCode || row.hotelCode,
+          providerHotelCode:
+            option.providerHotelCode || row.providerHotelCode,
+        }));
+
+      return [{
+        ...row,
+        rateOptions: [
+          ...options,
+          ...fallbackOptions,
+        ],
+      }];
+    }
+
+    // CP-only property represented as a flat supplier row.
+    const fallback = createFallbackOption(row, context, config);
+
+    return fallback ? [row, fallback] : [row];
+  }
+
+  // Existing MAP recommendation behavior remains unchanged.
+  if (options.length > 0) {
+    if (realMapProperties.has(key)) {
         const mapOptions = options.filter(isMap);
         return mapOptions.length > 0 ? [{ ...row, rateOptions: mapOptions }] : [];
       }

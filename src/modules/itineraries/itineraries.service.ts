@@ -2294,17 +2294,17 @@ timingStepStartedAt =
         : String(anchorRoute?.itinerary_route_date || '').slice(0, 10);
     let stay: any;
     try {
-      stay = await this.hotelStayBlockValidationService.buildContinuousStayCandidate({
-        planId: Number(data.planId),
-        routeId: Number(data.routeId),
-        provider: provider as any,
-        hotelCode,
-        hotelName: String(data.hotelName || '').trim() || undefined,
-        roomType: requestedRoom || undefined,
-        mealPlan: requestedMeal || undefined,
-        checkInDate: intentCheckInDate,
-        allowRoomTypeChanges: intent === 'HOTEL',
-      });
+    stay = await this.hotelStayBlockValidationService.buildContinuousStayCandidate({
+  planId: Number(data.planId),
+  routeId: Number(data.routeId),
+  provider: provider as any,
+  hotelCode,
+  hotelName: String(data.hotelName || '').trim() || undefined,
+  roomType: requestedRoom || undefined,
+  mealPlan: requestedMeal || undefined,
+  checkInDate: intentCheckInDate,
+  allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
+});
     } catch (error) {
       console.error('[HOTEL_INTENT] continuous stay resolution failed', error);
       throw new BadRequestException({
@@ -2550,20 +2550,48 @@ timingStepStartedAt =
       normalize(value);
     const routeIdOf = (option: any) => Number(option.itineraryRouteId || option.routeId || option.route_id || 0);
     const dateOf = (option: any) => String(option.date || option.checkInDate || option.routeDate || '').slice(0, 10);
-    const propertyMatches = (option: any) => {
-      const requestedCanonical = requestedCanonicalHotelId;
-      const optionProvider = normalize(option.provider || option.hotelProvider || option.supplier);
-      const requestedProvider = normalize(provider);
-      const providerMatches = optionProvider === requestedProvider ||
-        (requestedProvider === 'axisrooms' && optionProvider === 'ax');
-      const optionCanonical = Number(option.canonicalHotelId || option.hotelId || 0);
-      const optionProviderCode = normalize(option.providerHotelCode || option.provider_hotel_code || option.hotelCode);
-      const providerCodeMatches = optionProviderCode === normalize(hotelCode);
-      // Fresh supplier responses may not carry our internal canonical ID.
-      // Once provider and provider hotel code match, allow that authoritative
-      // supplier identity to match the persisted canonical selection too.
-      return providerMatches && (providerCodeMatches || (requestedCanonical > 0 && optionCanonical === requestedCanonical));
-    };
+  const propertyMatches = (option: any) => {
+  const requestedCanonical = requestedCanonicalHotelId;
+  const optionProvider = normalize(
+    option.provider || option.hotelProvider || option.supplier
+  );
+  const requestedProvider = normalize(provider);
+
+  const providerMatches =
+    optionProvider === requestedProvider ||
+    (requestedProvider === 'axisrooms' && optionProvider === 'ax');
+
+  const optionCanonical = Number(
+    option.canonicalHotelId || option.hotelId || 0
+  );
+
+  const optionProviderCode = normalize(
+    option.providerHotelCode ||
+    option.provider_hotel_code ||
+    option.hotelCode
+  );
+
+  const providerCodeMatches =
+    optionProviderCode === normalize(hotelCode);
+
+  const requestedHotelName = normalize(data.hotelName);
+  const candidateHotelName = normalize(option.hotelName);
+
+  // For TBO, when both names are known, they must identify the same
+  // property. Do not silently treat another property's room as a match.
+  const hotelNameMatches =
+    provider !== 'tbo' ||
+    !requestedHotelName ||
+    !candidateHotelName ||
+    requestedHotelName === candidateHotelName;
+
+  return providerMatches &&
+    hotelNameMatches &&
+    (
+      providerCodeMatches ||
+      (requestedCanonical > 0 && optionCanonical === requestedCanonical)
+    );
+};
     const payableAmount = (option: any) => Number(
       option.totalStayPrice ?? option.totalPrice ?? option.totalAmountAfterTax ?? option.pricePerNight ?? option.price ?? Number.MAX_SAFE_INTEGER,
     );
@@ -2687,32 +2715,62 @@ timingStepStartedAt =
     if (!anchorOption && !anchorRateOptionId && anchorSelectionKey) {
       anchorOption = anchorCandidates.find((option: any) => supplierSelectionKey(option) === anchorSelectionKey) || null;
     }
-    // A supplier rate identity is a snapshot reference, not the property's
-    // availability. TBO booking codes contain a search-session token and can
-    // legitimately change between the pane search and this preview. When the
-    // exact reference is gone, continue with the current matching property,
-    // room, and meal-plan candidates; the resolved current option is returned
-    // to the confirmation UI. Reject only if the current stay has no valid
-    // candidate, which is handled by the per-night/continuous-stay checks
-    // below.
+    // A supplier rate reference can change between availability searches.
+    // Resolve the current matching room and meal-plan option when the old
+    // rate identity is no longer available.
     if (anchorRateOptionId && !anchorOption) {
       anchorOption = anchorCandidates
         .filter((option: any) => {
-          const optionRoom = String(option?.roomType || option?.roomTypeName || '').trim();
-          const optionRoomId = Number(option?.roomId ?? option?.room_id ?? 0);
-          const optionRoomTypeId = Number(option?.roomTypeId ?? option?.room_type_id ?? 0);
-          const optionMeal = String(option?.mealPlan || option?.mealPlanCode || '').trim();
+          const optionRoom = String(
+            option?.roomType || option?.roomTypeName || '',
+          ).trim();
+
+          const optionRoomId = Number(
+            option?.roomId ?? option?.room_id ?? 0,
+          );
+
+          const optionRoomTypeId = Number(
+            option?.roomTypeId ?? option?.room_type_id ?? 0,
+          );
+
+          const optionMeal = String(
+            option?.mealPlan || option?.mealPlanCode || '',
+          ).trim();
+
           const roomMatches = requestedRoomTypeId > 0
             ? optionRoomTypeId === requestedRoomTypeId
             : requestedRoomId > 0
               ? optionRoomId === requestedRoomId
-              : !requestedRoom || optionRoom.toLowerCase() === requestedRoom.toLowerCase();
-          const mealMatches = !requestedMeal || optionMeal.toLowerCase() === requestedMeal.toLowerCase();
+              : !requestedRoom ||
+                optionRoom.toLowerCase() === requestedRoom.toLowerCase();
+
+          const mealMatches =
+            !requestedMeal ||
+            optionMeal.toLowerCase() === requestedMeal.toLowerCase();
+
           return roomMatches && mealMatches;
         })
-        .sort((left: any, right: any) => payableAmount(left) - payableAmount(right))[0] || null;
+        .sort(
+          (left: any, right: any) =>
+            payableAmount(left) - payableAmount(right),
+        )[0] || null;
     }
-    const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName || requestedRoom || '').trim();
+
+    // Explicit RATE_OPTION selections must still resolve to an eligible
+    // current supplier rate. Never commit an unavailable rate.
+    if (intent === 'RATE_OPTION' && !anchorOption) {
+      throw new BadRequestException({
+        code: 'HOTEL_RATE_STALE',
+        message:
+          'The selected hotel rate is stale or unavailable. No nights were changed.',
+        selectionIntent: intent,
+        logicalStay: stay,
+        affectedRouteIds: stay.routeIds,
+        canBookSingleNight: false,
+        canBookMultiNight: false,
+      });
+    }
+const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName || requestedRoom || '').trim();
     const anchorMeal = String(anchorOption?.mealPlan || anchorOption?.mealPlanCode || requestedMeal || '').trim();
 
     // TBO/VSR exposes one property card, but the itinerary stores one row per
@@ -2794,15 +2852,19 @@ timingStepStartedAt =
         // concrete roomId. Once roomId is present it is the authoritative
         // identity; comparing roomTypeId first rejects valid preview->commit
         // selections (for example roomTypeId 2750 vs roomId 616).
-        if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
-          const candidateRoomId = Number(option.roomId ?? option.room_id ?? 0);
-          if (candidateRoomId !== requestedRoomId) return false;
-        } else if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
-          const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
-          if (candidateRoomTypeId !== requestedRoomTypeId) return false;
-        } else if (intent === 'ROOM_TYPE' && requestedRoom && !roomLabelMatches(room, requestedRoom)) {
-          return false;
-        }
+      if (intent === 'ROOM_TYPE' && provider === 'tbo') {
+  if (!requestedRoom || !roomLabelMatches(room, requestedRoom)) {
+    return false;
+  }
+} else if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
+  const candidateRoomId = Number(option.roomId ?? option.room_id ?? 0);
+  if (candidateRoomId !== requestedRoomId) return false;
+} else if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
+  const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
+  if (candidateRoomTypeId !== requestedRoomTypeId) return false;
+} else if (intent === 'ROOM_TYPE' && requestedRoom && !roomLabelMatches(room, requestedRoom)) {
+  return false;
+}
         if (tboContinuousHotel && continuousRoomIdentity &&
           !roomLabelMatches(room, continuousRoomIdentity) && roomIdentity(option) !== continuousRoomIdentity) {
           return false;
@@ -2816,15 +2878,19 @@ timingStepStartedAt =
           (intent === 'HOTEL' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') &&
           normalizeMealPlan(meal) !== normalizeMealPlan(requestedMeal)) return false;
         if ((intent === 'RATE_OPTION' || intent === 'ROOM_TYPE' || intent === 'MEAL_PLAN') && index !== stay.routeIds.indexOf(Number(data.routeId))) {
-          if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
-            const candidateRoomId = Number(option.roomId ?? option.room_id ?? 0);
-            if (candidateRoomId !== requestedRoomId) return false;
-          } else if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
-            const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
-            if (candidateRoomTypeId !== requestedRoomTypeId) return false;
-          } else if (anchorRoom && !roomLabelMatches(room, anchorRoom)) {
-            return false;
-          }
+         if (intent === 'ROOM_TYPE' && provider === 'tbo') {
+  if (!requestedRoom || !roomLabelMatches(room, requestedRoom)) {
+    return false;
+  }
+} else if (intent === 'ROOM_TYPE' && requestedRoomId > 0) {
+  const candidateRoomId = Number(option.roomId ?? option.room_id ?? 0);
+  if (candidateRoomId !== requestedRoomId) return false;
+} else if (intent === 'ROOM_TYPE' && requestedRoomTypeId > 0) {
+  const candidateRoomTypeId = Number(option.roomTypeId ?? option.room_type_id ?? 0);
+  if (candidateRoomTypeId !== requestedRoomTypeId) return false;
+} else if (anchorRoom && !roomLabelMatches(room, anchorRoom)) {
+  return false;
+}
           if (!ignoreTboMealTypeForSelection && anchorMeal && normalizeMealPlan(meal) !== normalizeMealPlan(anchorMeal)) return false;
         }
         return true;
@@ -2928,9 +2994,9 @@ timingStepStartedAt =
         hotelName: String(continuityAnchor?.hotelName || data.hotelName || '').trim() || undefined,
          roomId: intent === 'HOTEL' ? undefined : String(continuityAnchor?.roomId || continuityAnchor?.providerRoomId || data.roomId || '').trim() || undefined,
          rateId: intent === 'HOTEL' ? undefined : String(continuityAnchor?.rateId || continuityAnchor?.ratePlanId || data.rateId || '').trim() || undefined,
-         roomType: intent === 'HOTEL' ? undefined : String(continuityAnchor?.roomType || continuityAnchor?.roomTypeName || anchorRoom || '').trim() || undefined,
-         mealPlan: String(continuityAnchor?.mealPlan || continuityAnchor?.mealPlanCode || anchorMeal || '').trim() || undefined,
-         allowRoomTypeChanges: intent === 'HOTEL',
+       roomType: intent === 'HOTEL' ? undefined : String(continuityAnchor?.roomType || continuityAnchor?.roomTypeName || anchorRoom || '').trim() || undefined,
+mealPlan: String(continuityAnchor?.mealPlan || continuityAnchor?.mealPlanCode || anchorMeal || '').trim() || undefined,
+allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         // The validator is anchored to the clicked route. Passing the
         // overall stay start here made a later route (for example 10702 on
         // 2026-08-23) validate as 2026-08-22 and collapse to a false
