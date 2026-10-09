@@ -65,6 +65,12 @@ export class ItineraryHotelDetailsTboService {
   private readonly hobseCityCodeCache = new Map<string, { code: string | null; expiresAt: number }>();
   private readonly hobseCityCodeCacheTtlMs = 30 * 60 * 1000;
 
+  private readonly hotelSearchLogContext = (quoteId: string, planId: number, attempt = 1) => ({
+    quoteId,
+    planId,
+    attempt,
+  });
+
   private hobseCityCacheKey(destination: unknown): string {
     return String(destination ?? '').trim().toLowerCase();
   }
@@ -268,6 +274,7 @@ export class ItineraryHotelDetailsTboService {
       adultCount: number = 2,
       childCount: number = 0,
       childAges: number[] = [],
+      searchLogContext?: { quoteId: string; planId: number; attempt?: number },
     ): Promise<Map<number, HotelSearchResult[] | null>> {
       let hotelsByRoute = await this.fetchHotelsForRoutes(
         routes,
@@ -277,6 +284,7 @@ export class ItineraryHotelDetailsTboService {
         adultCount,
         childCount,
         childAges,
+        searchLogContext,
       );
 
       const hasProviderFailure = Array.from(hotelsByRoute.values()).some(
@@ -299,6 +307,9 @@ export class ItineraryHotelDetailsTboService {
           adultCount,
           childCount,
           childAges,
+          searchLogContext
+            ? { ...searchLogContext, attempt: (searchLogContext.attempt || 1) + 1 }
+            : undefined,
         );
 
         const retryStillFailed = Array.from(retryResult.values()).some(
@@ -1757,7 +1768,10 @@ if (hotelMasterId) {
  // window so the card and preview cannot price different live searches.
     if (!hasCompatibilityFilters) {
       const cached = this.getCachedHotelDetails(quoteId);
-      if (cached) return cached;
+      if (cached) {
+        this.logger.log(`[HOTEL_AVAILABILITY_CACHE_HIT] ${JSON.stringify({ quoteId, planId: cached.planId })}`);
+        return cached;
+      }
     }
 
  const planId = plan.itinerary_plan_ID;
@@ -1974,6 +1988,7 @@ this.logger.log(
         planAdultCount,
         planChildCount,
         planChildAges,
+        this.hotelSearchLogContext(quoteId, planId),
       ));
 
       const tboMapFallbackConfig = await this.getTboMapFallbackConfig();
@@ -2429,6 +2444,7 @@ this.logger.log(
     adultCount: number = 2,
     childCount: number = 0,
     childAges: number[] = [],
+    searchLogContext?: { quoteId: string; planId: number; attempt?: number },
   ): Promise<Map<number, HotelSearchResult[] | null>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
@@ -2454,6 +2470,7 @@ this.logger.log(
           adultCount,
           childCount,
           childAges,
+          searchLogContext,
         )
           .then((hotels) => {
             // One provider search covers the complete logical stay block, but
@@ -2833,6 +2850,7 @@ this.logger.log(
     adultCount: number = 2,
     childCount: number = 0,
     childAges: number[] = [],
+    searchLogContext?: { quoteId: string; planId: number; attempt?: number },
   ): Promise<HotelSearchResult[]> {
     const destination = block.destination;
 
@@ -2843,8 +2861,18 @@ this.logger.log(
  // Get city code from pre-loaded map (no database query!)
     const cityCode = cityCodeMap[destination];
 
- // Fallback: if dvi_cities mapping is missing, use destination text directly.
+    // Fallback: if dvi_cities mapping is missing, use destination text directly.
     const effectiveCityCode = cityCode || destination;
+    const logContext = {
+      ...(searchLogContext || {}),
+      attempt: searchLogContext?.attempt || 1,
+      routeIds: block.routeIds,
+      destination,
+      checkInDate: block.checkInDate,
+      checkOutDate: block.checkOutDate,
+      requestedCityCode: effectiveCityCode,
+    };
+    this.logger.log(`[HOTEL_STAY_BLOCK_SEARCH] ${JSON.stringify(logContext)}`);
     if (!cityCode) {
       this.logger.warn(
         `[WARN] Stay block (${block.routeIds.join(',')}): No mapped TBO city code for "${destination}". Falling back to destination text lookup.`,
@@ -2882,7 +2910,18 @@ this.logger.log(
       `   ðŸ¨ Searching hotels with cityCode: ${effectiveCityCode}, checkIn: ${block.checkInDate}, checkOut: ${block.checkOutDate}`,
     );
     const hotels = await this.hotelSearchService.searchHotels(searchCriteria);
- this.logger.log(
+    const byProvider = (hotels || []).reduce<Record<string, number>>((counts, hotel: any) => {
+      const provider = String(hotel?.provider || 'unknown').trim().toLowerCase() || 'unknown';
+      counts[provider] = (counts[provider] || 0) + 1;
+      return counts;
+    }, {});
+    this.logger.log(`[HOTEL_STAY_BLOCK_RESULT] ${JSON.stringify({
+      ...logContext,
+      result: hotels && hotels.length > 0 ? 'AVAILABLE' : 'NO_AVAILABILITY',
+      totalResultCount: hotels ? hotels.length : 0,
+      byProvider,
+    })}`);
+    this.logger.log(
       `[OK] Found ${hotels ? hotels.length : 0} hotels for stay block (${block.routeIds.join(',')}) (TBO only at this stage)`,
     );
 
