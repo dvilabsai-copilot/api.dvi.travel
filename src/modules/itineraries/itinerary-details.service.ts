@@ -1498,6 +1498,7 @@ const foodTypeMap: Record<string, string> = {
   "3": "Jain",
   "4": "Vegan",
   "5": "Eggetarian",
+  "6": "Both Veg and Non-Veg",
 };
 
   return foodTypeMap[raw] || raw;
