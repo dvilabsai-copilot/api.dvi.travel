@@ -973,6 +973,7 @@ return mergedLocations.map((loc) => ({
       { id: 'veg', label: 'Vegetarian' },
       { id: 'non-veg', label: 'Non-Vegetarian' },
       { id: 'egg', label: 'Eggetarian' },
+      { id: '6', label: 'Both Veg and Non-Veg' },
     ];
   }
 
