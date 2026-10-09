@@ -1258,4 +1258,119 @@ export const TRANSPORT_VOUCHER_STYLES = `
     font-weight: 800 !important;
   }
 
+
+  /* DVI_TRANSPORT_MULTIPAGE_V1 */
+  @page {
+    size: A4;
+    margin: 5mm;
+  }
+
+  .voucher-page {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  .voucher-page > * + * {
+    margin-top: 0.45mm;
+  }
+
+  .voucher-header, .trust-strip, .info-grid, .vehicle-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .itinerary-section, .itinerary-table-wrap, .itinerary-table {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .itinerary-title {
+    height: auto !important;
+    margin-bottom: 1.2mm;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .itinerary-table thead {
+    display: table-header-group;
+  }
+
+  .itinerary-table tbody {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .itinerary-table tbody tr {
+    height: auto !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .itinerary-table td, .route-text {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+
+  .footer-grid {
+    height: auto !important;
+    max-height: none !important;
+    margin-top: 3mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .footer-card, .footer-list, .footer-list li {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
+  .thank-you {
+    height: auto !important;
+    min-height: 5mm;
+    padding: 1mm 2mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+
+  /* DVI_COMPACT_VEHICLE_BOX_V1 */
+  .voucher-page .vehicle-section {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 2mm 3mm !important;
+    overflow: visible !important;
+  }
+
+  .vehicle-section .vehicle-heading {
+    margin-bottom: 1.2mm !important;
+  }
+
+  .vehicle-section .vehicle-row {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 1.5mm 2mm !important;
+    align-content: start !important;
+    overflow: visible !important;
+  }
+
+  .vehicle-section .vehicle-summary-grid {
+    align-items: start !important;
+  }
+
 `;
