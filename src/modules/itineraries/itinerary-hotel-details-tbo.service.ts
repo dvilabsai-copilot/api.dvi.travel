@@ -1344,12 +1344,42 @@ if (hotelMasterId) {
       throw new BadRequestException('provider and hotelCode are required');
     }
 
-    const checkInDate = new Date(route.itinerary_route_date).toISOString().slice(0, 10);
-    const checkOutDate = new Date(new Date(route.itinerary_route_date).getTime() + ItineraryHotelDetailsTboService.ONE_DAY_MS)
-      .toISOString().slice(0, 10);
-    const roomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
-    const adultCount = Math.max(Number((plan as any).total_adult || 1), 1);
-    const childCount = Math.max(Number((plan as any).total_children || 0), 0);
+
+const itineraryRoutes = await this.prisma.dvi_itinerary_route_details.findMany({
+  where: {
+    itinerary_plan_ID: plan.itinerary_plan_ID,
+    deleted: 0,
+  },
+  orderBy: { itinerary_route_date: 'asc' },
+});
+
+const stayBlock = this.buildStayBlocks(
+  itineraryRoutes,
+  Number((plan as any).no_of_nights || 0),
+).find((block) => block.routeIds.includes(Number(routeId)));
+
+if (!stayBlock) {
+  throw new BadRequestException('No hotel stay found for this route');
+}
+
+const checkInDate = stayBlock.checkInDate;
+const checkOutDate = stayBlock.checkOutDate;
+
+const numberOfNights = stayBlock.routeIds.length;
+
+// Resolve the destination using the existing TBO city-mapping logic.
+const destination = String(
+  (route as any).next_visiting_location || ''
+).trim();
+
+const cityCodeMap = await this.batchMapDestinationsToCityCodes([route]);
+
+const effectiveCityCode = cityCodeMap[destination] || destination;
+
+const roomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
+const adultCount = Math.max(Number((plan as any).total_adult || 1), 1);
+const childCount = Math.max(Number((plan as any).total_children || 0), 0);
+
     const childWithBedCount = Math.max(Number((plan as any).total_child_with_bed || 0), 0);
     const extraBedCount = Math.max(Number((plan as any).total_extra_bed || 0), 0);
     const hotels = normalizedProvider === 'staah'
@@ -1402,14 +1432,71 @@ if (hotelMasterId) {
             });
           })
         : await this.hotelSearchService.searchHotels({
-            cityCode: String((route as any).next_visiting_location || '').trim(),
+           cityCode: effectiveCityCode,
             checkInDate, checkOutDate, roomCount,
             guestCount: adultCount + childCount, adultCount, childCount,
             guestNationality: String((plan as any).guest_nationality || 'IN').trim().toUpperCase(),
             providers: [normalizedProvider], hotelCodes: normalizedHotelCode,
           });
 
+    // Scope the TBO selected-hotel refresh to the requested property.
+    // Keep all genuine room/rate variants belonging to that property.
+   const selectedHotelRows = normalizedProvider === 'tbo'
+  ? (hotels || []).filter((hotel: any) =>
+      String(hotel?.provider || '').trim().toLowerCase() === 'tbo' &&
+      String(hotel?.providerHotelCode || hotel?.hotelCode || '').trim() === normalizedHotelCode
+    )
+  : hotels;
+
+this.logger.log(
+  `[SELECTED_HOTEL_RATE_DEBUG] ${JSON.stringify({
+    quoteId,
+    routeId,
+    provider: normalizedProvider,
+    requestedHotelCode: normalizedHotelCode,
+    fetchedHotelCount: (hotels || []).length,
+    matchedHotelCount: selectedHotelRows.length,
+matchedHotels: selectedHotelRows.map((hotel: any) => ({
+  hotelCode: hotel.providerHotelCode || hotel.hotelCode,
+  hotelName: hotel.hotelName,
+  roomType: hotel.roomType,
+  mealPlan: hotel.mealPlan,
+
+  roomTypes: Array.isArray(hotel.roomTypes)
+    ? hotel.roomTypes.map((room: any) => ({
+        roomName: room.roomName,
+        roomCode: room.roomCode,
+      }))
+    : [],
+
+  nestedRateCount: Array.isArray(hotel.rateOptions)
+    ? hotel.rateOptions.length
+    : 0,
+
+  nestedRoomTypes: Array.from(new Set(
+    (hotel.rateOptions || [])
+      .map((rate: any) =>
+        String(
+          rate.roomType ||
+          rate.roomTypeName ||
+          rate.roomName ||
+          '',
+        ).trim(),
+      )
+      .filter(Boolean),
+  )),
+
+  nestedMealPlans: Array.from(new Set(
+    (hotel.rateOptions || [])
+      .map((rate: any) => rate.mealPlan || rate.mealPlanCode)
+      .filter(Boolean),
+  )),
+})),
+  })}`,
+);
+
     const explicitMealPlanCode = inferCanonicalHotelRatePlanCode(String((plan as any).meal_plan_code || ''));
+
     const mealPlanBreakfast = Number((plan as any).meal_plan_breakfast || 0) ? 1 : 0;
     const mealPlanLunch = Number((plan as any).meal_plan_lunch || 0) ? 1 : 0;
     const mealPlanDinner = Number((plan as any).meal_plan_dinner || 0) ? 1 : 0;
@@ -1419,20 +1506,22 @@ if (hotelMasterId) {
         : null
     );
     const selectedHotelMapConfig = await this.getTboMapFallbackConfig();
-    const currentHotels = filterEpRows(
-      applyMapDinnerFallbackToRows(
-        hotels as any[],
-        {
-          preferredMealPlanCode,
-          adultCount,
-          childCount,
-          roomCount,
-          numberOfNights: 1,
-        },
-        selectedHotelMapConfig,
-      ),
-      Boolean(selectedHotelMapConfig.showEpHotels),
-    );
+
+ const currentHotels = filterEpRows(
+  applyMapDinnerFallbackToRows(
+    selectedHotelRows as any[],
+    {
+      preferredMealPlanCode,
+      adultCount,
+      childCount,
+      roomCount,
+      numberOfNights,
+    },
+    selectedHotelMapConfig,
+    true, // Preserve supplier rates for the hotel editor only.
+  ),
+  Boolean(selectedHotelMapConfig.showEpHotels),
+);
     const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
     return {
       quoteId, routeId: Number(routeId), provider: normalizedProvider, hotelCode: normalizedHotelCode,
@@ -4802,19 +4891,20 @@ this.logger.log(
         providers: [provider],
         hotelCodes: params.hotelCode,
       });
-      return provider === 'tbo'
-        ? applyMapDinnerFallbackToRows(
-            hotels as any[],
-            {
-              preferredMealPlanCode,
-              adultCount,
-              childCount,
-              roomCount,
-              numberOfNights: Math.max(Number(params.routeIds.length || 1), 1),
-            },
-            await this.getTboMapFallbackConfig(),
-          ) as HotelSearchResult[]
-        : hotels;
+    return provider === 'tbo'
+  ? applyMapDinnerFallbackToRows(
+      hotels as any[],
+      {
+        preferredMealPlanCode,
+        adultCount,
+        childCount,
+        roomCount,
+        numberOfNights: Math.max(Number(params.routeIds.length || 1), 1),
+      },
+      await this.getTboMapFallbackConfig(),
+      true, // Preserve CP supplier rates alongside MAP fallback.
+    ) as HotelSearchResult[]
+  : hotels;
     }
 
     if (provider === 'hobse') {

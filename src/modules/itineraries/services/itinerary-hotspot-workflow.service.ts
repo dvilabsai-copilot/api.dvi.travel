@@ -147,32 +147,63 @@ const directDestination =
     );
 
  // 4) Pool fetcher (priority DESC + stable tie-break)
-    const fetchPool = async (cityName: string | null) => {
-      if (!cityName) return [];
-      return await (this.prisma as any).dvi_hotspot_place.findMany({
-        where: {
-          status: 1,
-          deleted: 0,
-          hotspot_location: { contains: cityName },
-        },
-        select: {
-          hotspot_ID: true,
-          hotspot_name: true,
-          hotspot_adult_entry_cost: true,
-          hotspot_description: true,
-          hotspot_duration: true,
-          hotspot_location: true,
-          hotspot_to_location: true,
-          hotspot_priority: true,
-          hotspot_video_url: true,
-        },
-        orderBy: [{ hotspot_priority: "asc" }, { hotspot_ID: "asc" }],
-      });
-    };
+ const fetchPool = async (cityName: string | null) => {
+  const name = String(cityName ?? "").trim();
 
- const sourcePool = await fetchPool(sourceName);
+  if (!name) return [];
+
+  const cityNames = new Set<string>([name]);
+
+  // Support both recorded spellings of Tirupati.
+  if (/tirupathi/i.test(name)) {
+    cityNames.add(name.replace(/tirupathi/gi, "Tirupati"));
+  }
+
+  if (/tirupati/i.test(name)) {
+    cityNames.add(name.replace(/tirupati/gi, "Tirupathi"));
+  }
+
+  return await (this.prisma as any).dvi_hotspot_place.findMany({
+    where: {
+      status: 1,
+      deleted: 0,
+      OR: Array.from(cityNames).map((city) => ({
+        hotspot_location: { contains: city },
+      })),
+    },
+    select: {
+      hotspot_ID: true,
+      hotspot_name: true,
+      hotspot_adult_entry_cost: true,
+      hotspot_description: true,
+      hotspot_duration: true,
+      hotspot_location: true,
+      hotspot_to_location: true,
+      hotspot_priority: true,
+      hotspot_video_url: true,
+    },
+    orderBy: [
+      { hotspot_priority: "asc" },
+      { hotspot_ID: "asc" },
+    ],
+  });
+};
+
+const sourcePool = await fetchPool(sourceName);
 const destPool = await fetchPool(destName);
 
+console.log('[HOTSPOT_LOCATION_DEBUG]', {
+  routeId,
+  planId,
+  locationId: Number(route.location_id),
+  routeSourceName: route.location_name ?? null,
+  routeDestinationName: route.next_visiting_location ?? null,
+  sourceName,
+  destName,
+  sourcePoolCount: sourcePool.length,
+  destPoolCount: destPool.length,
+  directDestination,
+});
  // 5) Build final ordered list
     const seen = new Set<number>();
     const ordered: any[] = [];
