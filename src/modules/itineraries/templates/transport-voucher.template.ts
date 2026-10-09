@@ -134,8 +134,8 @@ export function renderTransportVoucherHtml(
           <strong>${safeText(day.date)}</strong>
           <span>(${safeText(day.weekday)})</span>
         </td>
-        <td><div class="route-text">${safeText(truncateWithEllipsis(day.routeAndPlaces, 145))}</div></td>
-        <td><div class="route-text">${safeText(truncateWithEllipsis(shortLocationName(day.travelRoute), 95))}</div></td>
+        <td><div class="route-text">${safeText(day.routeAndPlaces || '--')}</div></td>
+        <td><div class="route-text">${safeText(day.travelRoute || '--')}</div></td>
         <td class="time-cell">${safeText(day.startTime || '--')}</td>
         <td class="time-cell">${safeText(day.endTime || '--')}</td>
       </tr>
@@ -144,7 +144,7 @@ export function renderTransportVoucherHtml(
 
   const renderFooterList = (items: string[]) =>
     items
-      .map((item) => `<li>${safeText(truncateWithEllipsis(item, 62))}</li>`)
+      .map((item) => `<li>${safeText(item)}</li>`)
       .join('');
 
   const renderVehicleCard = (
