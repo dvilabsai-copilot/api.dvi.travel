@@ -46,6 +46,58 @@ test('duplicate agent names receive a fourth random letter', async () => {
   assert.notEqual(code, 'TRP');
 });
 
+test('agent code generation expands from four to five characters', async () => {
+  const tx = {
+    dvi_agent: {
+      findMany: async () => [
+        { agent_ID: 1, agent_name: 'MMT', agent_code: 'MMT' },
+        ...Array.from({ length: 26 }, (_, index) => ({
+          agent_ID: index + 2,
+          agent_name: `Existing ${index}`,
+          agent_code: `MMT${String.fromCharCode(65 + index)}`,
+        })),
+      ],
+    },
+  };
+
+  const code = await generateUniqueAgentCode(tx as any, 'MMT');
+  assert.equal(code.length, 5);
+  assert.match(code, /^MMT[A-Z]{2}$/);
+});
+
+test('agent code generation expands from five to six characters', async () => {
+  const fourLetterCodes = Array.from({ length: 26 }, (_, index) =>
+    `MMT${String.fromCharCode(65 + index)}`,
+  );
+  const fiveLetterCodes = Array.from({ length: 26 ** 2 }, (_, index) => {
+    const first = Math.floor(index / 26);
+    const second = index % 26;
+    return `MMT${String.fromCharCode(65 + first)}${String.fromCharCode(65 + second)}`;
+  });
+
+  const tx = {
+    dvi_agent: {
+      findMany: async () => [
+        { agent_ID: 1, agent_name: 'MMT', agent_code: 'MMT' },
+        ...fourLetterCodes.map((agent_code, index) => ({
+          agent_ID: index + 2,
+          agent_name: `Four ${index}`,
+          agent_code,
+        })),
+        ...fiveLetterCodes.map((agent_code, index) => ({
+          agent_ID: index + 28,
+          agent_name: `Five ${index}`,
+          agent_code,
+        })),
+      ],
+    },
+  };
+
+  const code = await generateUniqueAgentCode(tx as any, 'MMT');
+  assert.equal(code.length, 6);
+  assert.match(code, /^MMT[A-Z]{3}$/);
+});
+
 test('admin quotes retain DVI while non-admin quotes use the agent code', async () => {
   const service = new PlanEngineService();
   const tx = {
@@ -94,6 +146,27 @@ test('non-admin quotes accept four-letter duplicate-name codes', async () => {
   );
 
   assert.equal(prefix, 'TRPA202609');
+});
+
+test('non-admin quotes accept five- and six-letter agent codes', async () => {
+  const service = new PlanEngineService();
+  const tx = {
+    dvi_agent: {
+      findUnique: async () => ({ agent_ID: 310, agent_name: 'MMT', agent_code: 'MMTAA' }),
+    },
+    dvi_agent_configuration: {
+      findFirst: async () => ({ company_name: 'MMT' }),
+    },
+  };
+
+  const prefix = await (service as any).resolveQuotePrefix(
+    tx,
+    new Date(2026, 8, 24),
+    { agent_id: 310 },
+    4,
+  );
+
+  assert.equal(prefix, 'MMTAA202609');
 });
 
 test('non-admin quote IDs keep the date/month and continue the sequence', async () => {

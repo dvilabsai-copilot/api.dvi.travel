@@ -533,7 +533,7 @@ export class PlanEngineService {
       String(agentConfig?.company_name ?? '').trim() || agent.agent_name;
 
     const currentCode = String(agent.agent_code ?? '').trim().toUpperCase();
-    if (/^[A-Z]{3,4}$/.test(currentCode)) {
+    if (/^[A-Z]{3,6}$/.test(currentCode)) {
       return `${currentCode}${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
 
@@ -543,7 +543,7 @@ export class PlanEngineService {
         select: { agent_name: true, agent_code: true },
       });
       const refreshedCode = String(current?.agent_code ?? '').trim().toUpperCase();
-      if (/^[A-Z]{3,4}$/.test(refreshedCode)) {
+      if (/^[A-Z]{3,6}$/.test(refreshedCode)) {
         return `${refreshedCode}${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
       }
 
