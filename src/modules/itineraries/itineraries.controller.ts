@@ -766,6 +766,12 @@ private readonly itineraryAccessService: ItineraryAccessService,
       String(process.env.HOTEL_RECONCILE || '').trim().toLowerCase(),
     );
     const reset = body?.reset === true;
+    this.logger.log(`[HOTEL_CHECK_REQUEST] ${JSON.stringify({
+      quoteId,
+      reset,
+      reconciliation: body?.reconciliation === true,
+      reconciliationEnabled,
+    })}`);
     const result = await this.hotelAvailabilitySnapshotService.searchAndPersist(
       quoteId,
       'CHECK_AVAILABILITY',
