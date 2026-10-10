@@ -2,6 +2,10 @@ export type AgentPreviewDto = {
   agent_ID: number;
   agent_code: string | null;
   agent_name: string | null;
+
+  agent_person_name?: string | null;
+  company_name?: string | null;
+
   agent_lastname: string | null;
   agent_email_id: string | null;
   agent_primary_mobile_number: string | null;

@@ -548,7 +548,7 @@ const [
         cityLabel,
       );
 
-     const obj: AgentPreviewDto = {
+const obj: AgentPreviewDto = {
   agent_ID:
     a.agent_ID,
 
@@ -559,8 +559,15 @@ const [
 
   agent_name:
     displayName,
-        agent_lastname: null,
-        agent_email_id: a.agent_email_id ?? null,
+
+  agent_person_name:
+    a.agent_name ?? null,
+
+  company_name:
+    companyName,
+
+  agent_lastname: null,
+  agent_email_id: a.agent_email_id ?? null,
         agent_primary_mobile_number: a.agent_primary_mobile_number ?? null,
         agent_alternative_mobile_number: a.agent_alternative_mobile_number ?? null,
         agent_country: a.agent_country ?? null,
