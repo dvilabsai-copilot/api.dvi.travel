@@ -602,12 +602,21 @@ private findManualFitMainTimelineTravelReplica(...args: any[]): any {
       );
     }) || null;
 
-    const leadingStaticRows = keptRows.filter((row: any) => {
-      if (isHotelLikeRow(row)) return false;
-      if (isTravelRow(row)) return false;
-      if (isAttractionRow(row)) return false;
-      return true;
-    });
+   const leadingStaticRows = keptRows.filter((row: any) => {
+  if (isHotelLikeRow(row)) return false;
+  if (isTravelRow(row)) return false;
+  if (isAttractionRow(row)) return false;
+
+  // Waiting periods must be recalculated for the rebuilt route.
+  if (
+    String(row?.type || '').toLowerCase() === 'waiting' ||
+    row?.isSyntheticWaiting === true
+  ) {
+    return false;
+  }
+
+  return true;
+});
 
     for (const row of leadingStaticRows) {
       const duration = getDurationMinutes(row, 0);

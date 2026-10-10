@@ -1110,17 +1110,34 @@ return mergedLocations.map((loc) => ({
     }
 
  // 1) Find location_ID from dvi_stored_locations (same as PHP)
-    const location = await this.prisma.dvi_stored_locations.findFirst({
-      where: {
-        deleted: 0,
-        status: 1,
-        source_location: src,
-        destination_location: dest,
-      } as any,
-      select: {
-        location_ID: true,
-      },
-    } as any);
+ const cityVariants = (value: string): string[] => {
+  const full = value.trim();
+  const city = full.split(",")[0].trim();
+
+  return Array.from(new Set([full, city].filter(Boolean)));
+};
+
+const sourceVariants = cityVariants(src);
+const destinationVariants = cityVariants(dest);
+
+const matchingLocations =
+  await this.prisma.dvi_stored_locations.findMany({
+    where: {
+      deleted: 0,
+      status: 1,
+      source_location: { in: sourceVariants },
+      destination_location: { in: destinationVariants },
+    },
+    select: {
+      location_ID: true,
+    },
+    take: 2,
+  });
+
+const location =
+  matchingLocations.length === 1
+    ? matchingLocations[0]
+    : null;
 
     if (!location) {
  console.warn(

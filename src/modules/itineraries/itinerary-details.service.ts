@@ -7735,8 +7735,15 @@ packageIncludes: {
     if (source_location) where.arrival_location = source_location;
     if (destination_location) where.departure_location = destination_location;
 
-    if (!vehicleAgent && filter_agent_id > 0) where.agent_id = filter_agent_id;
-    if (!vehicleAgent && filter_staff_id > 0) where.staff_id = filter_staff_id;
+if (!vehicleAgent && filter_agent_id > 0) where.agent_id = filter_agent_id;
+if (!vehicleAgent && filter_staff_id > 0) where.staff_id = filter_staff_id;
+
+where.AND.push({
+  OR: [
+    { continuation_root_quote_ID: null },
+    { continuation_root_quote_ID: '' },
+  ],
+});
 
     // The latest page contains draft plans only. The previous implementation
     // loaded every non-deleted plan, loaded all related users/staff/agents,
@@ -7773,14 +7780,15 @@ packageIncludes: {
         take: limit,
         orderBy: { itinerary_plan_ID: 'desc' },
         select: {
-        itinerary_plan_ID: true,
-        arrival_location: true,
-        departure_location: true,
-        trip_start_date_and_time: true,
-        trip_end_date_and_time: true,
-        expecting_budget: true,
-        itinerary_quote_ID: true,
-        no_of_routes: true,
+  itinerary_plan_ID: true,
+  arrival_location: true,
+  departure_location: true,
+  trip_start_date_and_time: true,
+  trip_end_date_and_time: true,
+  expecting_budget: true,
+  itinerary_quote_ID: true,
+  continuation_root_quote_ID: true,
+  no_of_routes: true,
         no_of_days: true,
         no_of_nights: true,
         total_adult: true,
@@ -7796,8 +7804,61 @@ packageIncludes: {
         staff_id: true,
         agent_id: true,
         } as any,
-      }),
+          }),
     ]);
+
+    const rootQuoteIds = plans
+      .map((p: any) => String(p.itinerary_quote_ID || '').trim())
+      .filter(Boolean);
+
+    const continuationRows = rootQuoteIds.length
+      ? await this.prisma.dvi_itinerary_plan_details.findMany({
+          where: {
+            deleted: 0,
+            continuation_root_quote_ID: {
+              in: rootQuoteIds,
+            },
+            ...(roleOr ? { AND: [roleOr] } : {}),
+            ...(confirmedPlanIds.length
+              ? {
+                  NOT: {
+                    itinerary_plan_ID: {
+                      in: confirmedPlanIds,
+                    },
+                  },
+                }
+              : {}),
+          },
+          select: {
+            itinerary_plan_ID: true,
+            itinerary_quote_ID: true,
+            continuation_root_quote_ID: true,
+          },
+          orderBy: {
+            itinerary_plan_ID: 'desc',
+          },
+        })
+      : [];
+
+    const latestContinuationByRoot = new Map<string, string>();
+
+    for (const row of continuationRows) {
+      const rootQuoteId = String(
+        row.continuation_root_quote_ID || '',
+      ).trim();
+
+      const childQuoteId = String(
+        row.itinerary_quote_ID || '',
+      ).trim();
+
+      if (
+        rootQuoteId &&
+        childQuoteId &&
+        !latestContinuationByRoot.has(rootQuoteId)
+      ) {
+        latestContinuationByRoot.set(rootQuoteId, childQuoteId);
+      }
+    }
 
     const createdByUserIds = plans
       .map((p: any) => Number(p.createdby))
@@ -7887,11 +7948,17 @@ packageIncludes: {
 
       const total_members = `<span>Adult - ${total_adult}</br>Children - ${total_children}</br>Infants - ${total_infants}</span>`;
 
-      return {
-        counter,
-        modify: pid,
-        itinerary_quote_ID: String(p.itinerary_quote_ID ?? '') || null,
-        itinerary_booking_ID: null,
+    return {
+  counter,
+  modify: pid,
+  itinerary_quote_ID: String(p.itinerary_quote_ID ?? '') || null,
+  continuation_root_quote_ID:
+    String(p.continuation_root_quote_ID ?? '').trim() || null,
+  latest_continuation_quote_ID:
+    latestContinuationByRoot.get(
+      String(p.itinerary_quote_ID || '').trim(),
+    ) || null,
+  itinerary_booking_ID: null,
         arrival_location: p.arrival_location ?? '',
         departure_location: p.departure_location ?? '',
         itinerary_preference:
