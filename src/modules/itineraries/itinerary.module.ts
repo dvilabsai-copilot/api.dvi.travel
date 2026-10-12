@@ -40,6 +40,7 @@ import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day
 import { ItineraryRouteNormalizationService } from './services/itinerary-route-normalization.service';
 import { HotelsModule } from '../hotels/hotels.module';
 import { RouteVehicleRestrictionsModule } from '../route-vehicle-restrictions/route-vehicle-restrictions.module';
+import { AccountsManagerModule } from '../accounts-manager/accounts-manager.module';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
 import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryScenarioSourceController } from './itinerary-scenario-source.controller';
@@ -120,7 +121,11 @@ import { HotelMealPlanPolicyService } from './services/hotel-meal-plan-policy.se
 import { ItineraryPricingService } from './itinerary-pricing.service';
 
 @Module({
-  imports: [HotelsModule, RouteVehicleRestrictionsModule],
+  imports: [
+    HotelsModule,
+    RouteVehicleRestrictionsModule,
+    AccountsManagerModule,
+  ],
   controllers: [ItinerariesController, ItineraryHotelApprovalController, ResAvenueTestController, ItineraryScenarioSourceController],
   providers: [
  // core services
