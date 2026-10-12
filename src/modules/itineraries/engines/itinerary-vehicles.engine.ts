@@ -1504,21 +1504,33 @@ const assignedIds = assignedRows
           ...(masterVehicleTypeId ? [{ vehicle_type_id: masterVehicleTypeId }] : []),
           { vehicle_type_id: planVehicleTypeId },
         ];
-        const cityOr =
-          hasAnyStrictBranchForType && eligibleOwnerCityValues.length
-            ? [{ owner_city: { in: eligibleOwnerCityValues } }]
-            : [];
+    // When this vendor has a strictly matching branch,
+// that branch already establishes the vehicle's
+// eligible operating location.
+//
+// Do not reject a vehicle at that branch only because
+// its owner_city uses another name (Calicut/Kozhikode).
+const hasMatchingBranch =
+  hasAnyStrictBranchForType &&
+  (cachedBranchData?.strictBranchIds?.length ?? 0) > 0;
 
-        const vehicleWhere: any = {
-          vendor_id: vendorId,
-          vendor_branch_id: { in: allowedBranchIds },
-          status: 1,
-          deleted: 0,
-          AND: [
-            ...(cityOr.length ? [{ OR: cityOr }] : []),
-            { OR: vehicleTypeOr },
-          ],
-        };
+const cityOr =
+  !hasMatchingBranch &&
+  hasAnyStrictBranchForType &&
+  eligibleOwnerCityValues.length
+    ? [{ owner_city: { in: eligibleOwnerCityValues } }]
+    : [];
+
+const vehicleWhere: any = {
+  vendor_id: vendorId,
+  vendor_branch_id: { in: allowedBranchIds },
+  status: 1,
+  deleted: 0,
+  AND: [
+    ...(cityOr.length ? [{ OR: cityOr }] : []),
+    { OR: vehicleTypeOr },
+  ],
+};
 
         this.logSql(
           "VEHICLE_FIND_MANY",
@@ -3162,8 +3174,11 @@ stageStartedAt = logStageTiming(
         durationMs: Date.now() - rebuildStartedAt,
       });
     }
-    if (inserted === 0) {
- console.warn("[VEHICLE_BUILD_ZERO_ELIGIBLE_ROWS]", {
+if (inserted === 0) {
+  console.warn(
+    "[VEHICLE_BUILD_ZERO_ELIGIBLE_ROWS]",
+    JSON.stringify(
+      {
         planId,
         routeLocations: routes.map((route: any) => ({
           itinerary_route_ID: Number(route.itinerary_route_ID ?? 0),
@@ -3182,8 +3197,12 @@ stageStartedAt = logStageTiming(
           vehicleTypeId,
           reasons,
         })),
-      });
-    }
+      },
+      null,
+      2,
+    ),
+  );
+}
     stageStartedAt = logStageTiming('total', stageStartedAt, {
       insertedEligibleRows: inserted,
       insertedVehicleDetailRows: insertSuccessCount,

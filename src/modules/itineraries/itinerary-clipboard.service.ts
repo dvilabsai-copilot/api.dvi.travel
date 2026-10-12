@@ -263,6 +263,7 @@ export class ItineraryClipboardService {
     hotelTabs?: any[];
     sharedInventory?: any[];
     routeMetadata?: any[];
+    itineraryDays?: any[];
     roomCount: number;
     showRates: boolean;
     additionalMarginPct: number;
@@ -274,6 +275,7 @@ export class ItineraryClipboardService {
       hotelTabs,
       sharedInventory,
       routeMetadata,
+      itineraryDays,
       roomCount,
       showRates,
       additionalMarginPct,
@@ -290,7 +292,61 @@ export class ItineraryClipboardService {
       }
     }
     const routeById = new Map(
-      (routeMetadata || []).map((route: any) => [Number(route?.routeId), route] as const),
+      (routeMetadata || []).map(
+        (route: any) => [Number(route?.routeId), route] as const,
+      ),
+    );
+
+    const normalizeDayDate = (value: any): string => {
+      if (!value) return '';
+
+      if (value instanceof Date) {
+        return Number.isNaN(value.getTime())
+          ? ''
+          : value.toISOString().slice(0, 10);
+      }
+
+      const text = String(value).trim();
+      const match = text.match(/^\d{4}-\d{2}-\d{2}/);
+
+      return match ? match[0] : '';
+    };
+
+    const itineraryDayByDate = new Map<
+      string,
+      { dayNumber: number; destination: string }
+    >();
+
+    for (const [index, day] of (itineraryDays || []).entries()) {
+      const date = normalizeDayDate(day?.date);
+      if (!date) continue;
+
+      itineraryDayByDate.set(date, {
+        dayNumber: index + 1,
+        destination: String(day?.arrival || '').trim(),
+      });
+    }
+
+    const routeIdsInOrder = Array.from(
+      new Set(
+        [
+          ...hotels.map((row: any) =>
+            Number(row?.itineraryRouteId || row?.routeId || 0),
+          ),
+          ...(hotelSelectionState || []).flatMap((group: any) =>
+            (group?.routes || []).map((route: any) =>
+              Number(route?.routeId || 0),
+            ),
+          ),
+        ].filter((id) => id > 0),
+      ),
+    ).sort((a, b) => a - b);
+
+    const dayNumberByRouteId = new Map<number, number>(
+      routeIdsInOrder.map((routeId, index) => [
+        routeId,
+        index + 1,
+      ]),
     );
 
     for (const groupType of selectedGroupTypes) {
@@ -299,15 +355,34 @@ export class ItineraryClipboardService {
         .map((row) => {
           const routeId = Number(row?.itineraryRouteId || 0);
           const route = routeById.get(routeId);
+
+          const date =
+            row?.date ||
+            route?.date ||
+            route?.routeDate ||
+            '';
+
+          const itineraryDay = itineraryDayByDate.get(
+            normalizeDayDate(date),
+          );
+
           return {
             ...row,
-            destination: String(row?.destination || '').trim()
-              || destinationByRouteId.get(routeId)
-              || '',
-            date: row?.date || route?.date || '',
-            ...(route?.dayNumber ? { dayNumber: route.dayNumber } : {}),
+            destination:
+              itineraryDay?.destination ||
+              String(row?.destination || '').trim() ||
+              destinationByRouteId.get(routeId) ||
+              '',
+            date,
+            dayNumber:
+              itineraryDay?.dayNumber ||
+              dayNumberByRouteId.get(routeId) ||
+              route?.dayNumber ||
+              row?.dayNumber ||
+              0,
           };
         })
+
         .sort((a, b) => Number(a.itineraryRouteId || 0) - Number(b.itineraryRouteId || 0));
 
       const selectionGroup = (hotelSelectionState || []).find(
@@ -339,10 +414,26 @@ export class ItineraryClipboardService {
           itineraryRouteId: routeId,
           routeIds: [routeId],
           stayKey: `clipboard-selection-${groupType}-${routeId}`,
-          day: `Day ${routeId}`,
-          dayNumber: 0,
+          day: `Day ${dayNumberByRouteId.get(routeId) || 0}`,
+          dayNumber:
+            itineraryDayByDate.get(
+              normalizeDayDate(
+                route?.routeDate || stay?.checkInDate,
+              ),
+            )?.dayNumber ||
+            dayNumberByRouteId.get(routeId) ||
+            0,
           date: route?.routeDate || stay?.checkInDate || '',
-          destination: stay?.destination || destinationByRouteId.get(routeId) || '',
+          destination:
+            itineraryDayByDate.get(
+              normalizeDayDate(
+                route?.routeDate || stay?.checkInDate,
+              ),
+            )?.destination ||
+            stay?.destination ||
+            destinationByRouteId.get(routeId) ||
+            '',
+
           hotelId: Number(selected?.canonicalHotelId || 0),
           hotelName: available ? hotelName : 'No hotel available',
           category: selected?.category ?? '',
@@ -1080,11 +1171,13 @@ const dayHeaderStyle =
       hotelTabs: (hotelDetails as any).hotelTabs,
       sharedInventory: (hotelDetails as any).hotelAvailability?.sharedHotelInventory,
       routeMetadata: (hotelDetails as any).hotelAvailability?.stayRoutes,
-           roomCount: Number(
-        plan.preferred_room_count ||
-          itinerary.roomCount ||
-          0,
-      ),
+      itineraryDays: itinerary.days || [],
+       roomCount: Number(
+          plan.preferred_room_count ||
+            itinerary.roomCount ||
+            0,
+        ),
+
       showRates,
       additionalMarginPct,
     });

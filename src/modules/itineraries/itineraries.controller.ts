@@ -172,13 +172,12 @@ private readonly itineraryAccessService: ItineraryAccessService,
     @Query() query: Record<string, any>,
     @Req() req: Request,
   ) {
-    const access = await this.itineraryAccessService.getQuoteAccessDecision(
-      quoteId,
-      (req as any).user,
-    );
-    if (!access.exists || !access.allowed) {
-      return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
-    }
+const access = await this.itineraryAccessService.getQuoteAccessDecision(
+  quoteId,
+  (req as any).user,
+  true, // Allow shared draft viewing for Staff and Travel Experts
+);
+if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
 
     const groupTypes = this.parseClipboardGroupTypes(query);
     return this.clipboardService.generateClipboardByQuoteId(
@@ -198,10 +197,11 @@ private readonly itineraryAccessService: ItineraryAccessService,
     @Query() query: Record<string, any>,
     @Req() req: Request,
   ) {
-    const access = await this.itineraryAccessService.getQuoteAccessDecision(
-      quoteId,
-      (req as any).user,
-    );
+  const access = await this.itineraryAccessService.getQuoteAccessDecision(
+  quoteId,
+  (req as any).user,
+  true, // Allow shared draft viewing for Travel Experts
+);
     if (!access.exists || !access.allowed) {
       return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
     }
@@ -564,11 +564,12 @@ private readonly itineraryAccessService: ItineraryAccessService,
     @Req() req: Request,
     @Query('groupType') groupType?: string,
   ) {
-    const access = await this.itineraryAccessService.getQuoteAccessDecision(
-      quoteId,
-      (req as any).user,
-    );
-    if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
+   const access = await this.itineraryAccessService.getQuoteAccessDecision(
+  quoteId,
+  (req as any).user,
+  true, // Allow Travel Experts to view shared draft itineraries
+);
+if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
 
     const groupTypeNum = groupType !== undefined ? Number(groupType) : undefined;
     return this.detailsService.getItineraryDetails(
