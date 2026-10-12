@@ -69,8 +69,20 @@ try {
 
 async function bootstrap() {
   const logLevels = resolveLogLevels();
+  const corsOrigins = [
+    ...String(process.env.CORS_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean),
+    String(process.env.IMPERSONATION_FRONTEND_ORIGIN || '').trim(),
+  ].filter(Boolean);
   const app = await NestFactory.create(AppModule, {
-    cors: true,
+    cors: corsOrigins.length
+      ? {
+          origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
+            if (!origin || corsOrigins.includes(origin)) return callback(null, true);
+            return callback(new Error('Origin is not allowed by CORS policy'), false);
+          },
+          credentials: true,
+        }
+      : true,
     ...(logLevels ? { logger: logLevels } : {}),
   });
 

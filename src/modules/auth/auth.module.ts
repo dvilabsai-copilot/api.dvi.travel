@@ -7,6 +7,8 @@ import { EmailLoginOtpService } from './email-login-otp.service';
 import { PartnerActivationService } from './partner-activation.service';
 import { PrismaService } from '../../prisma.service';
 import { JwtStrategy } from '../../auth/jwt.strategy';
+import { ImpersonationController } from './impersonation.controller';
+import { ImpersonationService } from './impersonation.service';
 
 @Module({
   imports: [
@@ -22,14 +24,15 @@ import { JwtStrategy } from '../../auth/jwt.strategy';
       },
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, ImpersonationController],
   providers: [
     AuthService,
     EmailLoginOtpService,
     PartnerActivationService,
     PrismaService,
     JwtStrategy,
+    ImpersonationService,
   ],
-  exports: [AuthService],
+  exports: [AuthService, ImpersonationService],
 })
 export class AuthModule {}
