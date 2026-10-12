@@ -4,6 +4,8 @@
 import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException, UnprocessableEntityException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
+import { Optional } from "@nestjs/common";
+import { AccountsComponentSyncService } from "../accounts-manager/accounts-component-sync.service";
 import {
   CreateItineraryDto,
 } from "./dto/create-itinerary.dto";
@@ -703,8 +705,11 @@ export class ItinerariesService {
     private readonly activityImpactService: ItineraryActivityImpactService = new ItineraryActivityImpactService(prisma, hotspotEngine),
     private readonly transportFormattingService: ItineraryTransportFormattingService = new ItineraryTransportFormattingService(),
     private readonly activityPricingService: ItineraryActivityPricingService = new ItineraryActivityPricingService(prisma),
-    private readonly activityTimingPolicyService: ItineraryActivityTimingPolicyService = new ItineraryActivityTimingPolicyService(),
-  ) {
+private readonly activityTimingPolicyService: ItineraryActivityTimingPolicyService = new ItineraryActivityTimingPolicyService(),
+
+@Optional()
+private readonly accountsComponentSync?: AccountsComponentSyncService,
+) {
     this.confirmedGuideCancellationService.setLogCancellationActionCallback(
       (...args) => (this.cancellationService.logCancellationAction as any)(...args),
     );
@@ -3764,9 +3769,79 @@ timingStepStartedAt =
   async getAgentWalletBalance(agentId: number) {
     return this.quoteContextService.getAgentWalletBalance(agentId);
   }
-  async confirmQuotation(dto: ConfirmQuotationDto) {
-    return this.confirmationService.confirmQuotation(dto);
+ /**
+ * Synchronize component Accounts records only after
+ * an itinerary has become fully confirmed.
+ *
+ * This must run outside the confirmation transaction.
+ * A synchronization failure must not reverse a
+ * successfully confirmed booking or wallet transaction.
+ */
+private async syncAccountsAfterConfirmation(
+  confirmedPlanId: number,
+): Promise<void> {
+  if (
+    !this.accountsComponentSync ||
+    !Number.isInteger(confirmedPlanId) ||
+    confirmedPlanId <= 0
+  ) {
+    return;
   }
+
+  try {
+    const confirmedPlan =
+      await this.prisma
+        .dvi_confirmed_itinerary_plan_details
+        .findFirst({
+          where: {
+            confirmed_itinerary_plan_ID:
+              confirmedPlanId,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            itinerary_quote_ID: true,
+          },
+        });
+
+    // Provisional or cancelled itineraries are excluded.
+    if (!confirmedPlan?.itinerary_quote_ID) {
+      return;
+    }
+
+    await this.accountsComponentSync
+      .ensureConfirmedQuote(
+        confirmedPlan.itinerary_quote_ID,
+      );
+  } catch (error) {
+    console.error(
+      "[ACCOUNTS_COMPONENT_SYNC_FAILED]",
+      {
+        confirmedPlanId,
+        error,
+      },
+    );
+
+    // Booking remains confirmed.
+    // Accounts can be repaired using the backfill.
+  }
+}
+
+async confirmQuotation(dto: ConfirmQuotationDto) {
+  const result =
+    await this.confirmationService
+      .confirmQuotation(dto);
+
+  if (result?.success === true) {
+    await this.syncAccountsAfterConfirmation(
+      Number(
+        result.confirmed_itinerary_plan_ID || 0,
+      ),
+    );
+  }
+
+  return result;
+}
   private isBookingResultSuccess(result: any): boolean {
     return this.confirmationService.isBookingResultSuccess(result);
   }
@@ -3808,13 +3883,33 @@ timingStepStartedAt =
   async prebookHotels(payload: any) {
     return this.hotelPrebookService.prebookHotels(payload);
   }
-  async processConfirmationWithTboBookings(
-    baseResult: any,
-    dto: ConfirmQuotationDto,
-    endUserIp: string = process.env.TBO_END_USER_IP || '134.209.145.185',
-  ) {
-    return this.hotelBookingFulfillmentService.processConfirmationWithTboBookings(baseResult, dto, endUserIp);
+async processConfirmationWithTboBookings(
+  baseResult: any,
+  dto: ConfirmQuotationDto,
+  endUserIp: string =
+    process.env.TBO_END_USER_IP ||
+    "134.209.145.185",
+) {
+  const result =
+    await this.hotelBookingFulfillmentService
+      .processConfirmationWithTboBookings(
+        baseResult,
+        dto,
+        endUserIp,
+      );
+
+  if (result?.success === true) {
+    await this.syncAccountsAfterConfirmation(
+      Number(
+        result.confirmed_itinerary_plan_ID ||
+        baseResult?.confirmed_itinerary_plan_ID ||
+        0,
+      ),
+    );
   }
+
+  return result;
+}
   private async copyDraftToConfirmed(
     tx: any,
     draftPlanId: number,
