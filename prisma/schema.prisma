@@ -6878,6 +6878,46 @@ model dvi_hotel_admin_user_permission {
   @@index([deleted], map: "idx_dvi_hotel_admin_user_permission_deleted")
 }
 
+model admin_impersonation_sessions {
+  session_id             String    @id @db.Char(36)
+  original_admin_user_id BigInt
+  target_user_id         BigInt
+  target_role_id         Int
+  entity_type            String    @db.VarChar(32)
+  entity_id              BigInt
+  reason                 String    @db.VarChar(500)
+  created_at             DateTime  @default(now()) @db.DateTime(0)
+  expires_at             DateTime  @db.DateTime(0)
+  ended_at               DateTime? @db.DateTime(0)
+  revoked_at             DateTime? @db.DateTime(0)
+  status                 String    @default("ACTIVE") @db.VarChar(16)
+  handoff_token_hash     String    @unique(map: "uq_admin_impersonation_handoff") @db.Char(64)
+  handoff_expires_at     DateTime  @db.DateTime(0)
+  handoff_used_at        DateTime? @db.DateTime(0)
+
+  @@index([original_admin_user_id, created_at], map: "idx_admin_impersonation_admin_created")
+  @@index([target_user_id, status], map: "idx_admin_impersonation_target_status")
+  @@index([status, expires_at], map: "idx_admin_impersonation_status_expires")
+  @@map("admin_impersonation_sessions")
+}
+
+model admin_impersonation_audit_events {
+  event_id               BigInt   @id @default(autoincrement())
+  session_id             String   @db.Char(36)
+  original_admin_user_id BigInt
+  target_user_id         BigInt
+  target_role_id         Int
+  method                 String   @db.VarChar(16)
+  path                   String   @db.VarChar(500)
+  status_code            Int
+  created_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@index([session_id, created_at], map: "idx_admin_impersonation_audit_session_created")
+  @@index([original_admin_user_id, created_at], map: "idx_admin_impersonation_audit_admin_created")
+  @@index([target_user_id, created_at], map: "idx_admin_impersonation_audit_target_created")
+  @@map("admin_impersonation_audit_events")
+}
+
 model dvi_calendar_events {
   calendar_event_id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   event_key                String   @unique(map: "uq_dvi_calendar_events_event_key") @db.VarChar(150)
