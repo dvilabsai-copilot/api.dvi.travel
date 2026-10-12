@@ -9,6 +9,10 @@ import {
   resolveCityRecordByName,
 } from '../utils/city-normalization.util';
 import { getCachedStoredLocationPair } from '../../locations/stored-location-cache.helper';
+import {
+  resolveTollCityPair,
+  resolveTollLocationPair,
+} from '../../locations/toll-city-alias.util';
 
 function toNum(v: any): number {
   const n = typeof v === 'number' ? v : Number(String(v ?? '').trim());
@@ -907,15 +911,32 @@ export async function getLocationIdFromSourceDest(
 export async function calculateVehicleTollCharges(
   prisma: any,
   vehicle_type_id: number,
-  location_id: bigint
+  source_city: string,
+  destination_city: string,
 ): Promise<number> {
-  if (!location_id) return 0;
+  const toll = await findVehicleTollCharge(
+    prisma,
+    vehicle_type_id,
+    source_city,
+    destination_city,
+  );
+  return toll ?? 0;
+}
+
+async function findVehicleTollCharge(
+  prisma: any,
+  vehicle_type_id: number,
+  source_city: string,
+  destination_city: string,
+): Promise<number | null> {
+  if (!source_city || !destination_city) return null;
 
   try {
     const row = await prisma.dvi_vehicle_toll_charges.findFirst({
       where: {
         vehicle_type_id,
-        location_id,
+        source_city,
+        destination_city,
         status: 1,
         deleted: 0,
       },
@@ -923,10 +944,10 @@ export async function calculateVehicleTollCharges(
       select: { toll_charge: true },
     });
 
-    return Number(row?.toll_charge ?? 0);
+    return row ? Number(row.toll_charge ?? 0) : null;
   } catch (error) {
  console.error('[calculateVehicleTollCharges] Error:', error);
-    return 0;
+    return null;
   }
 }
 
@@ -944,33 +965,42 @@ export async function calculateRouteTollCharges(
   let totalToll = 0;
   const breakup: Array<{ label: string; charge: number }> = [];
 
-  const getTollForLocationPair = async (from: string, to: string): Promise<{ locationId: number; toll: number; label: string }> => {
-    const locationId = await getExactStoredLocationId(prisma, from, to);
-    if (!locationId) {
-      return { locationId: 0, toll: 0, label: `${from} → ${to}` };
+  const getTollForLocationPair = async (from: string, to: string): Promise<{ toll: number; label: string }> => {
+    const [cityRoute, locationRoute] = await Promise.all([
+      resolveTollCityPair(prisma, from, to),
+      resolveTollLocationPair(prisma, from, to),
+    ]);
+
+    // Airport aliases are distinct toll locations only for same-city routes.
+    // Cross-city routes continue to use the canonical city-to-city charge,
+    // such as Chennai (including its airport) to Mahabalipuram.
+    const isSameCityRoute = Boolean(
+      cityRoute && cityRoute.source === cityRoute.destination,
+    );
+    const preferredRoute = isSameCityRoute ? (locationRoute || cityRoute) : cityRoute;
+    const fallbackRoute = isSameCityRoute && preferredRoute !== cityRoute ? cityRoute : null;
+    let route = preferredRoute;
+    if (!route) {
+      return { toll: 0, label: `${from} → ${to}` };
     }
 
-    const toll = await calculateVehicleTollCharges(prisma, vehicle_type_id, BigInt(locationId));
-    let label = `${from} → ${to}`;
-    if (toll > 0) {
-      try {
-        const labelRows = await prisma.$queryRaw<any[]>`
-          SELECT source_location, destination_location
-          FROM dvi_stored_locations
-          WHERE location_ID = ${BigInt(locationId)}
-          LIMIT 1
-        `;
-        const sourceLabel = String(labelRows?.[0]?.source_location || '').trim();
-        const destinationLabel = String(labelRows?.[0]?.destination_location || '').trim();
-        if (sourceLabel && destinationLabel) {
-          label = `${sourceLabel} → ${destinationLabel}`;
-        }
-      } catch (error) {
- console.error('[calculateRouteTollCharges] Label lookup error:', error);
-      }
+    let toll = await findVehicleTollCharge(
+      prisma,
+      vehicle_type_id,
+      route.source,
+      route.destination,
+    );
+    if (toll === null && fallbackRoute) {
+      route = fallbackRoute;
+      toll = await findVehicleTollCharge(
+        prisma,
+        vehicle_type_id,
+        route.source,
+        route.destination,
+      );
     }
 
-    return { locationId, toll, label };
+    return { toll, label: `${route.source} → ${route.destination}` };
   };
 
   try {

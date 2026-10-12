@@ -5743,7 +5743,10 @@ model dvi_vehicle_review_details {
 
 model dvi_vehicle_toll_charges {
   vehicle_toll_charge_ID Int       @id @default(autoincrement())
-  location_id            BigInt    @default(0)
+  /// Legacy bridge for the city migration. New toll writes must not populate it.
+  location_id            BigInt?
+  source_city            String?   @db.VarChar(150)
+  destination_city       String?   @db.VarChar(150)
   vehicle_type_id        Int       @default(0)
   toll_charge            Float     @default(0) @db.Float
   createdon              DateTime? @db.DateTime(0)
@@ -5756,10 +5759,26 @@ model dvi_vehicle_toll_charges {
   @@index([createdon], map: "idx_dvi_vehicle_toll_charges_createdon")
   @@index([deleted], map: "idx_dvi_vehicle_toll_charges_deleted")
   @@index([location_id], map: "idx_dvi_vehicle_toll_charges_location_id")
+  @@index([source_city, destination_city], map: "idx_dvi_vehicle_toll_charges_city_route")
+  @@index([source_city, destination_city, vehicle_type_id], map: "idx_dvi_vehicle_toll_charges_city_vehicle")
   @@index([status], map: "idx_dvi_vehicle_toll_charges_status")
   @@index([toll_charge], map: "idx_dvi_vehicle_toll_charges_toll_charge")
   @@index([updatedon], map: "idx_dvi_vehicle_toll_charges_updatedon")
   @@index([vehicle_type_id], map: "idx_dvi_vehicle_toll_charges_vehicle_type_id")
+}
+
+model dvi_toll_city_aliases {
+  toll_city_alias_id Int      @id @default(autoincrement())
+  alias_name         String   @db.VarChar(255)
+  alias_key          String   @unique(map: "uq_dvi_toll_city_aliases_alias_key") @db.VarChar(191)
+  canonical_city     String   @db.VarChar(150)
+  status             Int      @default(1) @db.TinyInt
+  deleted            Int      @default(0) @db.TinyInt
+  createdon          DateTime @default(now()) @db.DateTime(0)
+  updatedon          DateTime @updatedAt @db.DateTime(0)
+
+  @@index([canonical_city, status, deleted], map: "idx_dvi_toll_city_aliases_canonical")
+  @@index([status, deleted], map: "idx_dvi_toll_city_aliases_active")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

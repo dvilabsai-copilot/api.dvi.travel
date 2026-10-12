@@ -794,27 +794,17 @@ export class ExportPricebookService {
       orderBy: [{ vehicle_toll_charge_ID: 'asc' }],
     });
 
-    const locationIds = [...new Set(tollRows.map((r) => r.location_id))];
-    const [locations, vehicleType] = await Promise.all([
-      this.prisma.dvi_stored_locations.findMany({
-        where: { location_ID: { in: locationIds as any } },
-        select: { location_ID: true, source_location: true, destination_location: true },
-      }),
-      this.prisma.dvi_vehicle_type.findFirst({
-        where: { vehicle_type_id: q.vehicleTypeId },
-        select: { vehicle_type_title: true },
-      }),
-    ]);
-
-    const locMap = new Map(locations.map((l) => [String(l.location_ID), l]));
+    const vehicleType = await this.prisma.dvi_vehicle_type.findFirst({
+      where: { vehicle_type_id: q.vehicleTypeId },
+      select: { vehicle_type_title: true },
+    });
     const vehicleTypeTitle = vehicleType?.vehicle_type_title ?? '';
 
     const rows = tollRows.map((r) => {
-      const loc = locMap.get(String(r.location_id));
       return {
         id: r.vehicle_toll_charge_ID,
-        sourceLocation: loc?.source_location ?? '',
-        destinationLocation: loc?.destination_location ?? '',
+        sourceLocation: r.source_city ?? '',
+        destinationLocation: r.destination_city ?? '',
         vehicleTypeId: r.vehicle_type_id,
         vehicleTypeTitle,
         tollCharge: r.toll_charge ?? 0,

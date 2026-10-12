@@ -273,6 +273,41 @@ create(@Body() dto: CreateLocationDto) {
     return this.svc.getBulkTollExport();
   }
 
+  @Get('tolls/cities')
+  @ApiOperation({ summary: 'List canonical cities available for toll routes' })
+  getTollCities() {
+    return this.svc.getTollCities();
+  }
+
+  @Get('tolls')
+  @ApiOperation({ summary: 'Get toll charges for a source/destination city route' })
+  @ApiQuery({ name: 'source', required: true })
+  @ApiQuery({ name: 'destination', required: true })
+  @ApiResponse({
+    status: 200,
+    type: [TollResponseDto],
+  })
+  getTolls(@Query('source') source: string, @Query('destination') destination: string) {
+    return this.svc.getTolls(source, destination);
+  }
+
+  @Post('tolls')
+  @ApiOperation({ summary: 'Save/update toll charges for a source/destination city route' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean' } },
+    },
+  })
+  upsertTolls(
+    @Body() body: BulkTollPayloadDto,
+    @Req() req: any,
+  ) {
+    const userId = Number(req?.user?.id) || 0;
+    return this.svc.upsertTolls(body.source, body.destination, body.items || [], userId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a single Location by ID' })
   @ApiResponse({ status: 200, type: LocationResponseDto })
@@ -525,33 +560,4 @@ deleteLocationName(@Query('location') location: string) {
     return this.svc.deleteSuggestedRoute(Number(id), Number(suggestedRouteId));
   }
 
-  @Get(':id/tolls')
-  @ApiOperation({ summary: 'Get toll charges for this location' })
-  @ApiResponse({
-    status: 200,
-    type: [TollResponseDto],
-  })
-  @ApiResponse({ status: 404, description: 'Location not found' })
-  getTolls(@Param('id') id: string) {
-    return this.svc.getTolls(Number(id));
-  }
-
-  @Post(':id/tolls')
-  @ApiOperation({ summary: 'Save/update toll charges for location' })
-  @ApiResponse({
-    status: 200,
-    schema: {
-      type: 'object',
-      properties: { ok: { type: 'boolean' } },
-    },
-  })
-  @ApiResponse({ status: 404, description: 'Location not found' })
-  upsertTolls(
-    @Param('id') id: string,
-    @Body() body: BulkTollPayloadDto,
-    @Req() req: any,
-  ) {
-    const userId = Number(req?.user?.id) || 0;
-    return this.svc.upsertTolls(Number(id), body.items || [], userId);
-  }
 }

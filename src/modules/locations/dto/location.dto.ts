@@ -267,6 +267,16 @@ export class TollChargeUpsertDto {
 
 // Toll Bulk Payload DTO: array of items
 export class BulkTollPayloadDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  source!: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  destination!: string;
+
   @ApiProperty({ type: [TollChargeUpsertDto] })
   @IsArray()
   @ValidateNested({ each: true })

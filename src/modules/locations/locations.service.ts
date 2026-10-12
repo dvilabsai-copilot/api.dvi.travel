@@ -13,6 +13,10 @@ import {
   LocationResponseDto,
 } from './dto/location.dto';
 import { LocationGeoPolicyService } from './services/location-geo-policy.service';
+import {
+  isTollAirportLocation,
+  resolveTollLocationPair,
+} from './toll-city-alias.util';
 
 type ListQuery = {
   search?: string;
@@ -3077,7 +3081,6 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
 
   async getBulkTollExport() {
     type SavedToll = {
-      locationId: string;
       source: string | null;
       destination: string | null;
       vehicleTypeId: number;
@@ -3088,28 +3091,27 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
     // One read of saved charges. No route generation or database writes.
     const records = await this.prisma.$queryRaw<SavedToll[]>(Prisma.sql`
       SELECT
-        CAST(t.location_id AS CHAR) AS locationId,
-        l.source_location AS source,
-        l.destination_location AS destination,
+        t.source_city AS source,
+        t.destination_city AS destination,
         t.vehicle_type_id AS vehicleTypeId,
         v.vehicle_type_title AS vehicleName,
         t.toll_charge AS amount
       FROM dvi_vehicle_toll_charges t
-      INNER JOIN dvi_stored_locations l
-        ON l.location_ID = t.location_id
       INNER JOIN dvi_vehicle_type v
         ON v.vehicle_type_id = t.vehicle_type_id
       WHERE t.deleted = 0
-        AND l.deleted = 0
+        AND t.source_city IS NOT NULL
+        AND t.destination_city IS NOT NULL
         AND v.deleted = 0
-      ORDER BY t.location_id ASC, t.vehicle_type_id ASC,
+      ORDER BY t.source_city ASC, t.destination_city ASC,
+               t.vehicle_type_id ASC,
                t.vehicle_toll_charge_ID DESC
     `);
 
     const seen = new Set<string>();
     let duplicatesSkipped = 0;
     const newestRecords = records.filter((record) => {
-      const key = String(record.locationId) + ':' + String(record.vehicleTypeId);
+      const key = `${String(record.source ?? '').trim()}::${String(record.destination ?? '').trim()}:${String(record.vehicleTypeId)}`;
       if (seen.has(key)) {
         duplicatesSkipped++;
         return false;
@@ -3119,11 +3121,11 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
     });
 
     const rows = newestRecords.map((record) => {
-      const locationId = Number(record.locationId);
       const vehicleTypeId = Number(record.vehicleTypeId);
       const amount = Number(record.amount);
       if (
-        !Number.isSafeInteger(locationId) || locationId <= 0 ||
+        !String(record.source ?? '').trim() ||
+        !String(record.destination ?? '').trim() ||
         !Number.isSafeInteger(vehicleTypeId) || vehicleTypeId <= 0 ||
         record.amount == null || !Number.isFinite(amount) || amount < 0
       ) {
@@ -3131,7 +3133,6 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
       }
 
       return {
-        locationId,
         source: record.source ?? '',
         destination: record.destination ?? '',
         vehicleTypeId,
@@ -3143,9 +3144,29 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
     return { rows, total: rows.length, duplicatesSkipped };
   }
 
-  async getTolls(locationId: number) {
- // Verify location exists
-    await this.get(locationId);
+  async getTollCities() {
+    const aliases = await this.prisma.dvi_toll_city_aliases.findMany({
+      where: { status: 1, deleted: 0 },
+      select: { alias_name: true, canonical_city: true },
+      orderBy: [{ canonical_city: 'asc' }, { alias_name: 'asc' }],
+    });
+    const cities = Array.from(new Set(
+      aliases
+        .flatMap((row) => [
+          row.canonical_city,
+          isTollAirportLocation(row.alias_name) ? row.alias_name : null,
+        ])
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean),
+    )).sort((left, right) => left.localeCompare(right, 'en-IN'));
+    return { sources: cities, destinations: cities };
+  }
+
+  async getTolls(source: string, destination: string) {
+    const route = await resolveTollLocationPair(this.prisma, source, destination);
+    if (!route) {
+      throw new NotFoundException('No toll city alias exists for this source/destination route.');
+    }
 
  // 1) Get all vehicle types (to render full grid)
     const vehicleTypes = await this.prisma.dvi_vehicle_type.findMany({
@@ -3159,7 +3180,11 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
 
  // 2) Get existing tolls for this location
     const existing = await this.prisma.dvi_vehicle_toll_charges.findMany({
-      where: { location_id: BigInt(locationId), deleted: 0 },
+      where: {
+        source_city: route.source,
+        destination_city: route.destination,
+        deleted: 0,
+      },
       orderBy: { vehicle_toll_charge_ID: 'asc' },
       select: {
         vehicle_type_id: true,
@@ -3185,12 +3210,14 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
    * Deletes all existing and inserts new items from request
  */
   async upsertTolls(
-    locationId: number,
+    source: string,
+    destination: string,
     items: { vehicle_type_id: number; toll_charge: number }[],
     userId: number
   ) {
-    if (!Number.isSafeInteger(locationId) || locationId <= 0) {
-      throw new BadRequestException('Invalid location ID.');
+    const route = await resolveTollLocationPair(this.prisma, source, destination);
+    if (!route) {
+      throw new BadRequestException('Source and destination must be mapped toll cities.');
     }
     if (!Array.isArray(items)) {
       throw new BadRequestException('Toll items must be an array.');
@@ -3209,26 +3236,41 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
       vehicleIds.add(item.vehicle_type_id);
     }
 
-    const idBig = BigInt(locationId);
     await this.prisma.$transaction(async (tx) => {
-      // Lock this route so concurrent saves cannot interleave.
-      const locked = await tx.$queryRaw<Array<{ location_ID: bigint }>>`
-        SELECT location_ID FROM dvi_stored_locations
-        WHERE location_ID = ${idBig} AND deleted = 0
+      // Lock canonical alias rows as the route mutex. This also serializes the
+      // first save for a route when no toll rows exist yet.
+      await tx.$queryRaw`
+        SELECT toll_city_alias_id
+        FROM dvi_toll_city_aliases
+        WHERE canonical_city IN (${route.source}, ${route.destination})
+          AND status = 1
+          AND deleted = 0
+        ORDER BY toll_city_alias_id
         FOR UPDATE
       `;
-      if (!locked.length) {
-        throw new NotFoundException('Location not found.');
-      }
 
-      // Preserve older rows archived by the duplicate cleanup.
+      // Lock the existing canonical route rows so concurrent saves do not interleave.
+      await tx.$queryRaw`
+        SELECT vehicle_toll_charge_ID
+        FROM dvi_vehicle_toll_charges
+        WHERE source_city = ${route.source}
+          AND destination_city = ${route.destination}
+          AND deleted = 0
+        FOR UPDATE
+      `;
+
       await tx.dvi_vehicle_toll_charges.deleteMany({
-        where: { location_id: idBig, deleted: 0 },
+        where: {
+          source_city: route.source,
+          destination_city: route.destination,
+          deleted: 0,
+        },
       });
       if (items.length) {
         await tx.dvi_vehicle_toll_charges.createMany({
           data: items.map((item) => ({
-            location_id: idBig,
+            source_city: route.source,
+            destination_city: route.destination,
             vehicle_type_id: item.vehicle_type_id,
             toll_charge: Number(item.toll_charge),
             createdby: Number(userId ?? 0) || 0,
