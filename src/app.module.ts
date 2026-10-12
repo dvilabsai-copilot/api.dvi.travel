@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { RolesGuard } from './auth/roles.guard';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { PrismaModule } from './prisma.module';
@@ -43,6 +43,8 @@ import { StaahModule } from './modules/staah/staah.module';
 import { GraphqlV2Module } from './graphql-v2/graphql-v2.module';
 import { HotelAdminModule } from './modules/hotel-admin/hotel-admin.module';
 import { CalendarEventsModule } from './modules/calendar-events/calendar-events.module';
+import { ImpersonationSafetyGuard } from './auth/impersonation-safety.guard';
+import { ImpersonationAuditInterceptor } from './common/interceptors/impersonation-audit.interceptor';
 
 @Module({
   imports: [PrismaModule, AuthModule, UsersModule,VendorsModule,AgentsModule,ItineraryViaRoutesModule,HotelsModule,DailyMomentTrackerModule, ItineraryDropdownsModule,
@@ -52,6 +54,8 @@ AccountsManagerModule, AccountsLedgerModule, DriversModule, VehicleAvailabilityM
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: ImpersonationSafetyGuard },
+    { provide: APP_INTERCEPTOR, useClass: ImpersonationAuditInterceptor },
   ],
 })
 export class AppModule {}
