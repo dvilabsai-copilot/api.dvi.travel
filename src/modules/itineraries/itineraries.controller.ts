@@ -1119,11 +1119,15 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
       if (!isMissingHotelName(row?.hotelName)) return row;
       const rowRouteIds = routeIdsOf(row);
       const rowGroupType = Number(row?.groupType || row?.group_type || 0);
-      const authoritativeCandidate = authoritativeRecommendationRows.find((authoritative: any) => {
-        const candidateGroupType = Number(authoritative?.groupType || authoritative?.group_type || 0);
-        return (!rowGroupType || !candidateGroupType || rowGroupType === candidateGroupType) &&
-          rowRouteIds.some((routeId) => routeIdsOf(authoritative).includes(routeId));
-      });
+     const authoritativeCandidate = (
+  Array.isArray(authoritativeRecommendationRows)
+    ? authoritativeRecommendationRows
+    : []
+).find((authoritative: any) => {
+  const candidateGroupType = Number(authoritative?.groupType || authoritative?.group_type || 0);
+  return (!rowGroupType || !candidateGroupType || rowGroupType === candidateGroupType) &&
+    rowRouteIds.some((routeId) => routeIdsOf(authoritative).includes(routeId));
+});
       if (!authoritativeCandidate) return row;
       const candidate = toCompactHotelRow(authoritativeCandidate);
       // The placeholder owns the route/date bucket; the authoritative row
