@@ -61,25 +61,46 @@ export class ItineraryAccessService {
     return this.decidePlanAccess(plan, viewer);
   }
 
-  async getQuoteAccessDecision(
-    quoteId: string,
-    viewer?: ItineraryViewer,
-  ): Promise<ItineraryAccessDecision> {
-    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
-      where: { itinerary_quote_ID: String(quoteId).trim(), deleted: 0 },
-      select: {
-        itinerary_plan_ID: true,
-        agent_id: true,
-        staff_id: true,
-        quotation_status: true,
-        itinerary_preference: true,
-      },
-      orderBy: { itinerary_plan_ID: 'desc' },
-    });
+async getQuoteAccessDecision(
+  quoteId: string,
+  viewer?: ItineraryViewer,
+  allowSharedTravelExpertRead = false,
+): Promise<ItineraryAccessDecision> {
+  const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+    where: { itinerary_quote_ID: String(quoteId).trim(), deleted: 0 },
+    select: {
+      itinerary_plan_ID: true,
+      agent_id: true,
+      staff_id: true,
+      quotation_status: true,
+      itinerary_preference: true,
+    },
+    orderBy: { itinerary_plan_ID: 'desc' },
+  });
 
-    if (!plan) return { exists: false, allowed: false, redirectTo: null };
-    return this.decidePlanAccess(plan, viewer);
+  if (!plan) return { exists: false, allowed: false, redirectTo: null };
+
+  const role = getRoleId(viewer);
+  const staffId = Number(viewer?.staffId ?? viewer?.staff_id ?? 0) || 0;
+
+const isSharedTravelExpert =
+  staffId > 0 &&
+  role === SystemRole.TRAVEL_EXPERT;
+
+  if (
+    allowSharedTravelExpertRead &&
+    isSharedTravelExpert &&
+    Number(plan.quotation_status) !== 1
+  ) {
+    return {
+      exists: true,
+      allowed: true,
+      redirectTo: null,
+    };
   }
+
+  return this.decidePlanAccess(plan, viewer);
+}
 
   async getConfirmedPlanAccessDecision(
     confirmedPlanId: number,

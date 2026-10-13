@@ -192,6 +192,41 @@ const directDestination =
 const sourcePool = await fetchPool(sourceName);
 const destPool = await fetchPool(destName);
 
+// Include configured via destinations only for non-direct routes.
+const configuredViaRows = !directDestination
+  ? await (this.prisma as any).dvi_itinerary_via_route_details.findMany({
+      where: {
+        itinerary_route_ID: routeId,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        itinerary_via_location_name: true,
+      },
+    })
+  : [];
+
+const viaCityNames = Array.from(
+  new Set<string>(
+    (configuredViaRows || [])
+      .map((row: any) =>
+        String(row?.itinerary_via_location_name || "").trim(),
+      )
+      .filter(Boolean),
+  ),
+);
+
+const viaPools = await Promise.all(
+  viaCityNames.map((city) => fetchPool(city)),
+);
+
+const viaPool = viaPools.flat();
+
+const viaCityKeys = new Set(
+  viaCityNames
+    .map((city) => String(this.deriveLooseCityKey(city) || ""))
+    .filter(Boolean),
+);
 console.log('[HOTSPOT_LOCATION_DEBUG]', {
   routeId,
   planId,
@@ -242,11 +277,11 @@ console.log('[HOTSPOT_LOCATION_DEBUG]', {
       ordered.push(h);
     };
 
-    if (directDestination) {
- // direct = true => destination only
-      for (const h of destPool) pushUnique(h);
+if (directDestination) {
+  // Preserve existing direct-route behavior.
+  for (const h of destPool) pushUnique(h);
 } else {
-  // direct = false => interleave 3-by-3 source/dest
+  // Preserve existing source/destination ordering.
   const CHUNK = 3;
   let i = 0;
   let j = 0;
@@ -267,6 +302,12 @@ console.log('[HOTSPOT_LOCATION_DEBUG]', {
     ) {
       pushUnique(destPool[j]);
     }
+  }
+
+  // Add hotspots from configured via destinations.
+  // pushUnique prevents duplicate hotspot IDs.
+  for (const h of viaPool) {
+    pushUnique(h);
   }
 }
 
@@ -404,7 +445,7 @@ console.log('[HOTSPOT_LOCATION_DEBUG]', {
           || availabilityStatus === 'ACTIVE_THIS_ROUTE'
           || availabilityStatus === 'EXCLUDED_BY_ROUTE';
         const activeRouteRow = thisRouteAddedRowByHotspotId.get(hotspotId) || null;
-   const cityContext = this.classifyManualHotspotCityContext(
+const originalCityContext = this.classifyManualHotspotCityContext(
   {
     location_name: sourceName,
     next_visiting_location: destName,
@@ -415,6 +456,21 @@ console.log('[HOTSPOT_LOCATION_DEBUG]', {
     hotspot_name: h.hotspot_name,
   }
 );
+
+const hotspotCityKeys = String(h.hotspot_location || "")
+  .split("|")
+  .map((locationName) =>
+    String(this.deriveLooseCityKey(locationName.trim()) || ""),
+  )
+  .filter(Boolean);
+
+const isViaCityHotspot = hotspotCityKeys.some((key) =>
+  viaCityKeys.has(key),
+);
+
+const cityContext = isViaCityHotspot
+  ? "VIA_ROUTE"
+  : originalCityContext;
 
         return {
           id: hotspotId,
@@ -480,8 +536,8 @@ console.log('[HOTSPOT_LOCATION_DEBUG]', {
   }) {
     const routeId = Number(data?.routeId || 0);
     const anchorIndex = Number(data?.anchorIndex || 0);
-    const baseHotspots = await this.getAvailableHotspots(routeId);
-    const safeBaseHotspots = Array.isArray(baseHotspots) ? baseHotspots : [];
+const baseHotspots = await this.getAvailableHotspots(routeId);
+const safeBaseHotspots = Array.isArray(baseHotspots) ? baseHotspots : [];
 
     const fallbackMeta = {
       directToggleOff: false,
@@ -961,9 +1017,8 @@ const anchorRepresentsRouteMovement =
  // Route-movement hotspots are still filtered above when the anchor is wrong.
         return true;
       });
-
-      const hotspotFilterMeta = {
-        directToggleOff,
+const hotspotFilterMeta = {
+  directToggleOff,
         sourceCityKey,
         destinationCityKey,
         destinationReachedTime,

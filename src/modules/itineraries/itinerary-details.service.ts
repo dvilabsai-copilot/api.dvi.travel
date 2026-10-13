@@ -7517,9 +7517,17 @@ packageIncludes: {
 
     const s = String(searchValue ?? '').trim();
 
-    let roleOr: any | null = null;
+let roleOr: any | null = null;
 
-    if (vehicleAgent) {
+// Only Travel Experts can view all Latest Itineraries.
+const canViewAllLatestItineraries =
+  input_staff_id > 0 &&
+  logged_user_level === SystemRole.TRAVEL_EXPERT;
+
+if (canViewAllLatestItineraries) {
+  // No creator or assigned-Agent restriction.
+  roleOr = null;
+} else if (vehicleAgent) {
   roleOr = {
     agent_id:
       input_agent_id > 0
