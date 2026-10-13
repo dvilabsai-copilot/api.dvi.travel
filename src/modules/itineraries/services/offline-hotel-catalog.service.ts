@@ -23,10 +23,12 @@ type StayBlock = {
 type OfflineRoomOffer = {
   roomId: number;
   roomTypeId: number;
-  roomTitle: string;
-  bookingCode: string;
-  mealPlan: string;
-  nightlyBase: number[];
+roomTitle: string;
+bookingCode: string;
+ratePlanId?: string;
+isDefaultRatePlan?: boolean;
+mealPlan: string;
+nightlyBase: number[];
   nightlyMargin: number[];
   nightlySell: number[];
   nightlyRoomCost: number[];
@@ -509,8 +511,13 @@ export class OfflineHotelCatalogService {
       if (offers.length === 0) {
         continue;
       }
-
-      const bestOffer = offers[0];
+// Keep the original default-plan preference for automatic selection.
+// Other valid plans remain available for manual selection.
+const bestOffer = (
+  !inferCanonicalHotelRatePlanCode(requestedMealPlanCode)
+    ? offers.find((offer) => offer.isDefaultRatePlan)
+    : undefined
+) || offers[0];
       const roomTypes: RoomType[] = offers.map((offer) => ({
         roomCode: this.getRateOptionId(Number(hotel.hotel_id), offer, dateList[0], dateList[dateList.length - 1]),
         roomName: `${offer.roomTitle} - ${offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan}`,
@@ -975,13 +982,40 @@ export class OfflineHotelCatalogService {
         const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
         return !requested || inferCanonicalHotelRatePlanCode(`${plan.rateplan_id || ''} ${plan.rateplan_name || ''} ${plan.meal_plan_description || ''}`) === requested;
       });
-      const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
-      const plan = requested ? matchingPlans[0] : roomPlans[0];
-      if (!plan) continue;
-      const matchingRateRows = catalogRows.occupancyRatesByRoomPlan.get(`${hotelId}|${Number(room.room_ID || 0)}|${String(plan.rateplan_id || '')}`) || [];
-      if (matchingRateRows.length === 0) continue;
+const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
 
-      const nightlyBase: number[] = [];
+// Explicit meal-plan searches retain their original first-match behavior.
+// Unfiltered refreshes expose all separately configured rate plans.
+const plansToOffer = requested ? matchingPlans.slice(0, 1) : roomPlans;
+const seenRatePlanIds = new Set<string>();
+
+for (const plan of plansToOffer) {
+  const ratePlanId = String(plan.rateplan_id || '');
+
+  if (seenRatePlanIds.has(ratePlanId)) continue;
+  seenRatePlanIds.add(ratePlanId);
+
+  const isDefaultRatePlan = plan === roomPlans[0];
+
+  // An alternative cannot be selected safely without its own identity.
+  if (!isDefaultRatePlan && !ratePlanId.trim()) continue;
+
+  const planMealCode = inferCanonicalHotelRatePlanCode(
+    `${plan.rateplan_id || ''} ${plan.rateplan_name || ''} ${plan.meal_plan_description || ''}`,
+  ) || this.resolveMealPlan(
+    room,
+    requestedMealPlanCode,
+    catalogRows.ratePlansByRoom,
+  );
+
+  const matchingRateRows =
+    catalogRows.occupancyRatesByRoomPlan.get(
+      `${hotelId}|${Number(room.room_ID || 0)}|${ratePlanId}`
+    ) || [];
+
+  if (matchingRateRows.length === 0) continue;
+
+  const nightlyBase: number[] = [];
       const nightlyMargin: number[] = [];
       const nightlySell: number[] = [];
       const nightlyRoomCost: number[] = [];
@@ -990,7 +1024,7 @@ export class OfflineHotelCatalogService {
       const nightlyChildWithoutBed: number[] = [];
       const nightlyMealPlanBreakdown: OfflineMealBreakdown[] = [];
       let valid = true;
-      const mealFlags = mealFlagsFromRoom(room, this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom));
+const mealFlags = mealFlagsFromRoom(room, planMealCode);
       for (const date of dateList) {
         const target = new Date(`${date}T00:00:00.000Z`).getTime();
         const inventoryRows = catalogRows.inventoryByHotelRoom?.get(`${hotelId}|${Number(room.room_ID || 0)}`) || [];
@@ -1030,14 +1064,14 @@ export class OfflineHotelCatalogService {
         const mealPlanBreakdown = this.offlineHotelMealPricingService?.calculate({
           flags: mealFlags,
           prices: mealPrices,
-          fallbackMealPlanCode: this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom),
+fallbackMealPlanCode: planMealCode,
           adultCount,
           childCount,
           roomCount: roomsNeeded,
           roomQuantity: roomsNeeded,
         }) || {
           ...mealFlags,
-          mealPlanCode: this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom),
+mealPlanCode: planMealCode,
           breakfastCostPerPerson: 0,
           lunchCostPerPerson: 0,
           dinnerCostPerPerson: 0,
@@ -1067,7 +1101,9 @@ export class OfflineHotelCatalogService {
       const supplements = this.resolveSupplementRatesFromOccupancy(matchingRateRows, dateList);
       const mealPlanBreakdown = {
         ...nightlyMealPlanBreakdown[0],
-        mealPlanCode: nightlyMealPlanBreakdown.find((meal) => meal.mealPlanCode)?.mealPlanCode || this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom),
+       mealPlanCode: nightlyMealPlanBreakdown.find(
+  (meal) => meal.mealPlanCode
+)?.mealPlanCode || planMealCode,
         totalBreakfastCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalBreakfastCost, 0)),
         totalLunchCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalLunchCost, 0)),
         totalDinnerCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalDinnerCost, 0)),
@@ -1077,9 +1113,11 @@ export class OfflineHotelCatalogService {
         roomId: Number(room.room_ID || 0),
         roomTypeId,
         roomTitle: String(room.room_title || room.room_ref_code || `Room ${roomTypeId}`),
-        bookingCode: `OFFLINE-${hotelId}-${room.room_ID}-${roomTypeId}`,
-        mealPlan: this.resolveMealPlan(room, requestedMealPlanCode, catalogRows.ratePlansByRoom),
-        nightlyBase,
+bookingCode: `OFFLINE-${hotelId}-${room.room_ID}-${roomTypeId}`,
+ratePlanId,
+isDefaultRatePlan,
+mealPlan: planMealCode,
+nightlyBase,
         nightlyMargin,
         nightlySell,
         hotelMarginPercentage: marginPercentage,
@@ -1100,8 +1138,9 @@ export class OfflineHotelCatalogService {
         nightlyChildWithoutBedCost: nightlyChildWithoutBed,
         mealPlanBreakdown,
         nightlyMealPlanBreakdown,
-      });
-    }
+              });
+      } // End of rate-plan loop
+    } // End of room loop
 
     return offers.sort((a, b) => a.totalStayPrice - b.totalStayPrice);
   }
@@ -1353,9 +1392,13 @@ export class OfflineHotelCatalogService {
     childWithoutBedCount?: number;
   }): Promise<OfflineRateResolution> {
     const parts = String(input.rateOptionId || '').split(':');
-    if (parts.length !== 6 || parts[0] !== 'offline') {
-      throw new Error('Offline rate option identifier is invalid or expired');
-    }
+   if (
+  ![6, 7].includes(parts.length) ||
+  parts[0] !== 'offline' ||
+  (parts.length === 7 && !parts[6])
+) {
+  throw new Error('Offline rate option identifier is invalid or expired');
+}
 
     const [, hotelIdText, roomIdText, roomTypeIdText, checkInDate, checkOutDate] = parts;
     const hotelId = Number(hotelIdText);
@@ -1439,17 +1482,52 @@ export class OfflineHotelCatalogService {
       Number((plan as any).total_adult || 0),
       Number((plan as any).total_children || 0),
       undefined,
-      String(input.requestedMealPlanCode || ''),
-      {
-        extraBedCount: Number((plan as any).total_extra_bed || input.extraBedCount || 0),
+parts.length === 7 ? '' : String(input.requestedMealPlanCode || ''),
+{
+  extraBedCount: Number((plan as any).total_extra_bed || input.extraBedCount || 0),
         childWithBedCount: Number((plan as any).total_child_with_bed || input.childWithBedCount || 0),
         childWithoutBedCount: Number((plan as any).total_child_without_bed || input.childWithoutBedCount || 0),
       },
     );
-    const offer = offers.find((candidate) => candidate.roomId === roomId && candidate.roomTypeId === roomTypeId);
-    if (!offer) {
-      throw new Error('Offline rate option is no longer priced for every requested night');
-    }
+    const matchingOffers = offers.filter(
+  (candidate) =>
+    candidate.roomId === roomId &&
+    candidate.roomTypeId === roomTypeId
+);
+
+const offer = parts.length === 7
+  ? matchingOffers.find(
+      (candidate) =>
+        this.getRateOptionId(
+          hotelId,
+          candidate,
+          checkInDate,
+          dateList[dateList.length - 1],
+        ) === input.rateOptionId
+    )
+  : inferCanonicalHotelRatePlanCode(input.requestedMealPlanCode)
+    ? matchingOffers[0]
+    : matchingOffers.find(
+        (candidate) => candidate.isDefaultRatePlan !== false
+      );
+
+if (!offer) {
+  throw new Error('Offline rate option is no longer priced for every requested night');
+}
+
+const requestedPlan = inferCanonicalHotelRatePlanCode(
+  input.requestedMealPlanCode
+);
+
+if (
+  parts.length === 7 &&
+  requestedPlan &&
+  offer.mealPlan !== requestedPlan
+) {
+  throw new Error(
+    'Offline rate option does not match the requested meal plan'
+  );
+}
 
     const routeNight = selectOfflineRouteNightlyRate(offer, dateList, resolvedRouteDateOnly);
     const routeBaseAmount = routeNight.baseAmount || oneNightRoomBase(offer);
@@ -1570,7 +1648,14 @@ export class OfflineHotelCatalogService {
   private getRateOptionId(hotelId: number, offer: OfflineRoomOffer, checkInDate: string, lastNightDate: string): string {
     const checkOutDate = new Date(`${lastNightDate}T00:00:00.000Z`);
     checkOutDate.setUTCDate(checkOutDate.getUTCDate() + 1);
-    return `offline:${hotelId}:${offer.roomId}:${offer.roomTypeId}:${checkInDate}:${checkOutDate.toISOString().slice(0, 10)}`;
+const legacyId =
+  `offline:${hotelId}:${offer.roomId}:${offer.roomTypeId}:${checkInDate}:${checkOutDate.toISOString().slice(0, 10)}`;
+
+// Preserve the existing ID for the default plan.
+// Give additional plans their own identity.
+return offer.isDefaultRatePlan === false && offer.ratePlanId
+  ? `${legacyId}:${encodeURIComponent(offer.ratePlanId)}`
+  : legacyId;
   }
 
   /**
