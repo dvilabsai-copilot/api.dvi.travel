@@ -1027,12 +1027,10 @@ for (const plan of plansToOffer) {
 const mealFlags = mealFlagsFromRoom(room, planMealCode);
       for (const date of dateList) {
         const target = new Date(`${date}T00:00:00.000Z`).getTime();
-        const inventoryRows = catalogRows.inventoryByHotelRoom?.get(`${hotelId}|${Number(room.room_ID || 0)}`) || [];
-        const inventory = selectAdminMatchingOccupancyRow(inventoryRows, target);
-        if (!inventory || Number(inventory.free || 0) < roomsNeeded) {
-          valid = false;
-          break;
-        }
+        // Offline hotels do not publish live inventory or availability. The
+        // room master and configured rates identify the offer; fulfillment is
+        // confirmed after itinerary selection. Do not use occupancy/capacity
+        // fields as an availability gate for offline catalogue offers.
         const selectedRateRow = selectAdminMatchingOccupancyRow(matchingRateRows, target);
         const rates = this.parseJsonObject(selectedRateRow?.occupancy_rates);
         const supplements = this.resolveSupplementRatesFromOccupancyRows(matchingRateRows, date);

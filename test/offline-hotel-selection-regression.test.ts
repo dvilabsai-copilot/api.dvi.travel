@@ -32,7 +32,7 @@ const catalog = (dates: string[], ratePlan = 'MAP_PLAN', includeRate = true, inc
   mealPricebookByHotelDate: new Map(),
 });
 
-test('offline catalog requires a matching meal-plan rate and inventory for every night', async () => {
+test('offline catalog requires a matching meal-plan rate and price for every night', async () => {
   const service = new OfflineHotelCatalogService({} as any, pricing);
 
   const valid = await (service as any).buildRoomOffersFromCatalogRows(
@@ -59,7 +59,8 @@ test('offline catalog requires a matching meal-plan rate and inventory for every
     0,
     'MAP',
   );
-  assert.deepEqual(missingInventory, []);
+  assert.equal(missingInventory.length, 1);
+  assert.deepEqual(missingInventory[0].nightlySell, [4200, 4200]);
 
   const missingMapRate = await (service as any).buildRoomOffersFromCatalogRows(
     { hotel_id: 700 },
