@@ -159,7 +159,9 @@ test('persisted refresh alias returns selected rows without shared inventory by 
 
   assert.deepEqual(response.hotels, [{ hotelName: 'Selected hotel', routeId: 11531 }]);
   assert.equal(response.hotelAvailability.sharedHotelInventory, undefined);
-  assert.deepEqual(response.hotelIndex, [{ hotelName: 'Cached alternative', routeId: 11531, groupType: 1 }]);
+assert.deepEqual((response as any).hotelIndex, [
+  { hotelName: 'Cached alternative', routeId: 11531, groupType: 1 }
+]);
   assert.deepEqual(response.routePagination['1-11531'], {
     page: 0,
     pageSize: 20,
@@ -167,6 +169,43 @@ test('persisted refresh alias returns selected rows without shared inventory by 
     hasMore: true,
     groupType: 1,
   });
+});
+
+test('persisted refresh handles unnamed hotels without authoritative rows', async () => {
+  const controller = Object.create(
+    ItinerariesController.prototype
+  ) as ItinerariesController;
+
+  (controller as any).hotelAvailabilitySnapshotService = {
+    readPersisted: async () => ({
+      hotels: [
+        {
+          routeId: 101,
+          groupType: 1,
+          date: '2026-10-17',
+          hotelName: 'Selected Hotel',
+        },
+        {
+          routeId: 102,
+          groupType: 1,
+          date: '2026-10-18',
+          hotelName: '',
+        },
+      ],
+      hotelTabs: [
+        { groupType: 1, label: 'Recommended #1', totalAmount: 500 },
+      ],
+      hotelSelectionState: [],
+    }),
+  };
+
+  const response =
+    await controller.getPersistedItineraryHotelDetails('SPB2026102');
+
+ assert.equal(response.hotels.length, 2);
+assert.equal(response.hotels[0].hotelName, 'Selected Hotel');
+assert.equal(response.hotels[1].hotelName, '');
+assert.equal(response.hotelTabs[0].totalAmount, 500);
 });
 
 test('reset endpoint returns only a reset acknowledgement', async () => {
@@ -181,10 +220,9 @@ test('reset endpoint returns only a reset acknowledgement', async () => {
     getItineraryDetails: async () => { throw new Error('reset must not read itinerary details'); },
   };
 
-  const response = await controller.resetItineraryHotelAvailability(
-    'DVI-RESET',
-    { user: { userId: 7, role: 1 } },
-  );
+const response = await controller.resetItineraryHotelAvailability(
+  'DVI-RESET',
+);
 
   assert.equal(resetQuoteId, 'DVI-RESET');
   assert.deepEqual(response, { resetApplied: true });
