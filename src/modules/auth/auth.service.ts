@@ -51,6 +51,27 @@ export class AuthService {
     return String(email || '').trim().toLowerCase();
   }
 
+  /**
+   * Serialize account creation by normalized email until the surrounding
+   * transaction commits. Unlike a MySQL named lock, this row lock is released
+   * by the transaction itself, so a waiting request cannot pass its recheck
+   * before the first account is committed.
+   */
+  private async lockAccountCreation(
+    tx: any,
+    normalizedEmail: string,
+  ) {
+    const lockKey = createHash('sha256')
+      .update(normalizedEmail)
+      .digest('hex');
+
+    await tx.$executeRaw`
+      INSERT INTO dvi_account_creation_locks (lock_key, updatedon)
+      VALUES (${lockKey}, CURRENT_TIMESTAMP)
+      ON DUPLICATE KEY UPDATE updatedon = CURRENT_TIMESTAMP
+    `;
+  }
+
  /** Finds legacy rows as well as new rows with normalized email matching. */
   private async findActiveUserByEmail(email: string) {
     const normalizedEmail = this.normalizeEmail(email);
@@ -1129,56 +1150,14 @@ const travelExpertId =
         .replace(/\s+/g, ' ')
         .trim();
 
-    /*
-     * Serialize quick-onboarding for the
-     * same email at the DATABASE level.
-     *
-     * This protects retries as well as
-     * simultaneous requests from creating
-     * duplicate Agent accounts.
-     */
-    const quickOnboardLock =
-      `quick-agent:${createHash(
-        'sha256',
-      )
-        .update(normalizedEmail)
-        .digest('hex')
-        .slice(0, 40)}`;
-
     return this.prisma.$transaction(
       async (tx) => {
-        const lockRows =
-          await tx.$queryRaw<
-            Array<{
-              acquired:
-                | number
-                | bigint
-                | null;
-            }>
-          >`
-            SELECT GET_LOCK(
-              ${quickOnboardLock},
-              5
-            ) AS acquired
-          `;
+        await this.lockAccountCreation(tx, normalizedEmail);
 
-        if (
-          Number(
-            lockRows[0]
-              ?.acquired ?? 0,
-          ) !== 1
-        ) {
-          throw new ConflictException(
-            'This Agent is already being created. Please retry the itinerary save.',
-          );
-        }
-
-        try {
-          /*
-           * Recheck inside the database lock.
-           * Do not rely on the frontend to
-           * provide idempotency.
-           */
+        /*
+         * Recheck inside the transaction row lock.
+         * Do not rely on the frontend to provide idempotency.
+         */
           const existingUsers =
             await tx.$queryRaw<
               Array<{
@@ -1508,29 +1487,6 @@ const travelExpertId =
             status:
               'pending_activation' as const,
           };
-        } finally {
-          /*
-           * MySQL named locks are connection
-           * scoped rather than transaction
-           * scoped, so explicitly release it.
-           */
-          try {
-            await tx.$queryRaw`
-              SELECT RELEASE_LOCK(
-                ${quickOnboardLock}
-              )
-            `;
-          } catch (releaseError) {
-            this.logger.warn(
-              `Unable to release quick-onboard lock for ${normalizedEmail}: ${
-                releaseError instanceof Error
-                  ? releaseError.message
-                  : String(
-                      releaseError,
-                    )
-              }`,
-            );
-          }
         }
       },
     );
@@ -1557,66 +1513,86 @@ const travelExpertId =
       throw new UnauthorizedException('Email verification does not match this registration.');
     }
 
-    const existingUser = await this.findActiveUserByEmail(normalizedEmail);
-    const existingAgent = await this.findActiveAgentByEmail(normalizedEmail);
-    if (existingUser || existingAgent) {
-      throw new ConflictException('An account or registration already exists for this email.');
-    }
-
-    const now = new Date();
     const companyName = input.companyName.trim();
     const mobile = input.mobile.trim();
     const pan = input.pan.trim().toUpperCase();
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const agent = await withAgentCodeGenerationLock(tx as any, async () => {
-        const agentCode = await generateUniqueAgentCode(tx as any, companyName);
+      await this.lockAccountCreation(tx, normalizedEmail);
 
-        return tx.dvi_agent.create({
+      // Recheck after acquiring the transaction row lock so concurrent
+      // registrations cannot both pass the pre-insert existence check.
+        const existingUserRows = await tx.$queryRaw<Array<{ userID: bigint }>>`
+          SELECT userID
+          FROM dvi_users
+          WHERE LOWER(TRIM(useremail)) = ${normalizedEmail}
+            AND deleted = 0
+          LIMIT 1
+        `;
+        const existingAgentRows = await tx.$queryRaw<Array<{ agent_ID: number }>>`
+          SELECT agent_ID
+          FROM dvi_agent
+          WHERE LOWER(TRIM(agent_email_id)) = ${normalizedEmail}
+            AND deleted = 0
+          LIMIT 1
+        `;
+
+        if (existingUserRows[0] || existingAgentRows[0]) {
+          throw new ConflictException(
+            'An account or registration already exists for this email.',
+          );
+        }
+
+        const now = new Date();
+        const agent = await withAgentCodeGenerationLock(tx as any, async () => {
+          const agentCode = await generateUniqueAgentCode(tx as any, companyName);
+
+          return tx.dvi_agent.create({
+            data: {
+              agent_name: companyName,
+              agent_code: agentCode,
+              agent_primary_mobile_number: mobile,
+              agent_email_id: normalizedEmail,
+              status: 1,
+              deleted: 0,
+              createdon: now,
+              updatedon: now,
+            },
+          });
+        });
+
+        await tx.dvi_agent_configuration.create({
           data: {
-            agent_name: companyName,
-            agent_code: agentCode,
-            agent_primary_mobile_number: mobile,
-            agent_email_id: normalizedEmail,
+            agent_id: agent.agent_ID,
+            company_name: companyName,
+            invoice_pan_no: pan,
             status: 1,
             deleted: 0,
             createdon: now,
             updatedon: now,
           },
         });
-      });
 
-      await tx.dvi_agent_configuration.create({
-        data: {
-          agent_id: agent.agent_ID,
-          company_name: companyName,
-          invoice_pan_no: pan,
-          status: 1,
-          deleted: 0,
-          createdon: now,
-          updatedon: now,
-        },
-      });
+        const user = await tx.dvi_users.create({
+          data: {
+            agent_id: agent.agent_ID,
+            username: companyName,
+            useremail: normalizedEmail,
+            password: null,
+            roleID: 4,
+            userapproved: 0,
+            status: 1,
+            deleted: 0,
+            createdon: now,
+            updatedon: now,
+          },
+        });
 
-      const user = await tx.dvi_users.create({
-        data: {
-          agent_id: agent.agent_ID,
-          username: companyName,
-          useremail: normalizedEmail,
-          password: null,
-          roleID: 4,
-          userapproved: 0,
-          status: 1,
-          deleted: 0,
-          createdon: now,
-          updatedon: now,
-        },
-      });
-
-           return {
-        agentId: agent.agent_ID,
-        userId: user.userID,
-      };
+        return {
+          agentId: agent.agent_ID,
+          userId: user.userID,
+        };
+      }
     });
 
     let activationEmailSent = false;
