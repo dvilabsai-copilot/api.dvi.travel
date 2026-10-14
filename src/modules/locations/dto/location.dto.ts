@@ -24,6 +24,18 @@ export class BetweenHotspotFiltersQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiProperty({ required: false, default: 1, description: 'Location search page number' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number;
+
+  @ApiProperty({ required: false, default: 50, description: 'Location search page size (maximum 100)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  pageSize?: number;
 }
 
 export class BetweenHotspotQueryDto {

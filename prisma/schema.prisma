@@ -5419,6 +5419,13 @@ model dvi_users {
   @@index([vendor_id], map: "idx_dvi_users_vendor_id")
 }
 
+model dvi_account_creation_locks {
+  lock_key  String   @id @db.Char(64)
+  updatedon DateTime @default(now()) @db.DateTime(0)
+
+  @@map("dvi_account_creation_locks")
+}
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model dvi_vehicle {
   vehicle_id              Int       @id @default(autoincrement())
