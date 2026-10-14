@@ -2301,49 +2301,7 @@ if (scope === 'both') {
       data: { destination_location: newName, updatedon: now },
     });
 
-    // Update only existing hotspots associated with this location.
-    const hotspots = await tx.dvi_hotspot_place.findMany({
-      where: {
-        deleted: 0,
-        OR: [
-          { hotspot_location: { contains: oldName } },
-          { hotspot_to_location: { contains: oldName } },
-        ],
-      },
-      select: {
-        hotspot_ID: true,
-        hotspot_location: true,
-        hotspot_to_location: true,
-      },
-    });
-
-const renameTokens = (value: string | null) =>
-  String(value ?? '')
-    .split('|')
-    .map((part) =>
-      part.trim().toLowerCase() === oldName.toLowerCase()
-        ? newName
-        : part,
-    )
-    .join('|');
-
-    for (const hotspot of hotspots) {
-      const nextLocation = renameTokens(hotspot.hotspot_location);
-      const nextToLocation = renameTokens(hotspot.hotspot_to_location);
-
-      if (
-        nextLocation !== String(hotspot.hotspot_location ?? '') ||
-        nextToLocation !== String(hotspot.hotspot_to_location ?? '')
-      ) {
-        await tx.dvi_hotspot_place.update({
-          where: { hotspot_ID: hotspot.hotspot_ID },
-          data: {
-            hotspot_location: nextLocation,
-            hotspot_to_location: nextToLocation,
-          },
-        });
-      }
-    }
+    await this.renameAssociatedHotspots(tx, oldName, newName);
 
     return {
       count: sourceResult.count + destinationResult.count,
@@ -2369,6 +2327,58 @@ const renameTokens = (value: string | null) =>
     scope,
     updatedCount: result.count,
   };
+}
+
+private async renameAssociatedHotspots(
+  tx: any,
+  oldName: string,
+  newName: string,
+) {
+  const hotspots = await tx.dvi_hotspot_place.findMany({
+    where: {
+      deleted: 0,
+      OR: [
+        { hotspot_location: { contains: oldName } },
+        { hotspot_to_location: { contains: oldName } },
+      ],
+    },
+    select: {
+      hotspot_ID: true,
+      hotspot_location: true,
+      hotspot_to_location: true,
+    },
+  });
+
+  const oldNameKey = oldName.toLowerCase();
+  const renameTokens = (value: string | null) =>
+    String(value ?? '')
+      .split('|')
+      .map((part) =>
+        part.trim().toLowerCase() === oldNameKey ? newName : part,
+      )
+      .join('|');
+
+  let updatedCount = 0;
+  for (const hotspot of hotspots) {
+    const nextLocation = renameTokens(hotspot.hotspot_location);
+    const nextToLocation = renameTokens(hotspot.hotspot_to_location);
+
+    if (
+      nextLocation !== String(hotspot.hotspot_location ?? '') ||
+      nextToLocation !== String(hotspot.hotspot_to_location ?? '')
+    ) {
+      await tx.dvi_hotspot_place.update({
+        where: { hotspot_ID: hotspot.hotspot_ID },
+        data: {
+          hotspot_location: nextLocation,
+          hotspot_to_location: nextToLocation,
+        },
+      });
+      updatedCount += 1;
+    }
+  }
+
+  return updatedCount;
 }
 
     async softDelete(id: number) {
@@ -3108,15 +3118,41 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
 
  // ------ Modify Location Name (quick rename) ------
   async modifyName(id: number, scope: 'source' | 'destination', newName: string) {
-    await this.get(id);
-    const data =
-      scope === 'source'
-        ? { source_location: newName }
-        : { destination_location: newName };
-    const updated = await this.prisma.dvi_stored_locations.update({
+    const current = await this.prisma.dvi_stored_locations.findFirst({
       where: { location_ID: BigInt(id) },
-      data: { ...data, updatedon: new Date() },
     });
+
+    if (!current) {
+      throw new NotFoundException('Location not found');
+    }
+
+    const oldName = this.normalizeLocationName(
+      scope === 'source' ? current.source_location : current.destination_location,
+    );
+    const normalizedNewName = this.normalizeLocationName(newName);
+
+    if (!oldName) {
+      throw new BadRequestException('Location name is required');
+    }
+
+    if (!normalizedNewName) {
+      throw new BadRequestException('New location name is required');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const data =
+        scope === 'source'
+          ? { source_location: normalizedNewName }
+          : { destination_location: normalizedNewName };
+      const row = await tx.dvi_stored_locations.update({
+        where: { location_ID: BigInt(id) },
+        data: { ...data, updatedon: new Date() },
+      });
+
+      await this.renameAssociatedHotspots(tx, oldName, normalizedNewName);
+      return row;
+    });
+
     this.clearStoredLocationCache(`locations.modifyName:${id}:${scope}`);
     return this.mapRowToResponse(updated);
   }

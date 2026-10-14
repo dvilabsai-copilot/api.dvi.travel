@@ -1487,7 +1487,6 @@ const travelExpertId =
             status:
               'pending_activation' as const,
           };
-        }
       },
     );
   }
@@ -1592,7 +1591,6 @@ const travelExpertId =
           agentId: agent.agent_ID,
           userId: user.userID,
         };
-      }
     });
 
     let activationEmailSent = false;
