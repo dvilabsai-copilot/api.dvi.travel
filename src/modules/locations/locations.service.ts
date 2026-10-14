@@ -85,7 +85,10 @@ type LocationScope = {
   locationName: string;
 };
 
-type RoutePairSourceIndex = Map<string, BetweenRoutePairCandidateRow[]>;
+type FilterLocationPage = {
+  rows: StoredLocationContextRow[];
+  hasMore: boolean;
+};
 
 @Injectable()
 export class LocationsService {
@@ -686,59 +689,10 @@ async dropdowns(query: DropdownQuery = {}) {
     );
   }
 
-  /**
-   * Build a small index for the initial filter load. The previous implementation
-   * compared every stored location with every route pair, which made the page
-   * increasingly slow as the route map grew.
-   */
-  private buildRoutePairSourceIndex(
-    pairs: BetweenRoutePairCandidateRow[],
-  ): RoutePairSourceIndex {
-    const index: RoutePairSourceIndex = new Map();
-
-    for (const pair of pairs) {
-      const sourceParts = String(pair.from_hotspot_location || '')
-        .split('|')
-        .map((part) => this.canonicalCityKey(part))
-        .filter(Boolean);
-
-      for (const sourcePart of sourceParts) {
-        const bucket = index.get(sourcePart);
-        if (bucket) {
-          bucket.push(pair);
-        } else {
-          index.set(sourcePart, [pair]);
-        }
-      }
-    }
-
-    return index;
-  }
-
-  private locationMatchesIndexedRoutePair(
-    scope: LocationScope,
-    sourceIndex: RoutePairSourceIndex,
-  ): boolean {
-    for (const sourceKey of scope.sourceKeys) {
-      for (const [sourcePart, pairs] of sourceIndex) {
-        if (!this.hotspotLocationMatchesKeys(sourcePart, [sourceKey])) {
-          continue;
-        }
-
-        if (pairs.some((pair) =>
-          this.hotspotLocationMatchesKeys(pair.to_hotspot_location, scope.destinationKeys),
-        )) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
   private async getBetweenRoutePairCandidates(
     onlyUsable: boolean,
     sourceHotspotId?: number,
+    scope?: Pick<LocationScope, 'sourceKeys' | 'destinationKeys'>,
   ): Promise<BetweenRoutePairCandidateRow[]> {
     const whereConditions: Prisma.Sql[] = [];
 
@@ -748,6 +702,22 @@ async dropdowns(query: DropdownQuery = {}) {
 
     if (sourceHotspotId) {
       whereConditions.push(Prisma.sql`bm.from_hotspot_id = ${sourceHotspotId}`);
+    }
+
+    if (scope) {
+      if (!scope.sourceKeys.length || !scope.destinationKeys.length) {
+        return [];
+      }
+
+      const sourceLocationConditions = scope.sourceKeys.map((key) =>
+        Prisma.sql`LOWER(COALESCE(hs.hotspot_location, '')) LIKE ${`%${key.toLowerCase()}%`}`,
+      );
+      const destinationLocationConditions = scope.destinationKeys.map((key) =>
+        Prisma.sql`LOWER(COALESCE(hd.hotspot_location, '')) LIKE ${`%${key.toLowerCase()}%`}`,
+      );
+
+      whereConditions.push(Prisma.sql`(${Prisma.join(sourceLocationConditions, ' OR ')})`);
+      whereConditions.push(Prisma.sql`(${Prisma.join(destinationLocationConditions, ' OR ')})`);
     }
 
     const whereSql = whereConditions.length
@@ -771,25 +741,16 @@ async dropdowns(query: DropdownQuery = {}) {
        AND hd.deleted = 0
       ${whereSql}
       ORDER BY hs.hotspot_name ASC, hd.hotspot_name ASC
+      LIMIT 10000
     `);
   }
 
-  private async getFilterLocationRows(search: string): Promise<StoredLocationContextRow[]> {
-    if (!search) {
-      return this.prisma.dvi_stored_locations.findMany({
-        where: { deleted: 0 },
-        select: {
-          location_ID: true,
-          source_location: true,
-          source_location_city: true,
-          destination_location: true,
-          destination_location_city: true,
-        },
-        orderBy: { location_ID: 'desc' },
-      });
-    }
-
-    return this.prisma.dvi_stored_locations.findMany({
+  private async getFilterLocationRows(
+    search: string,
+    page: number,
+    pageSize: number,
+  ): Promise<FilterLocationPage> {
+    const rows = await this.prisma.dvi_stored_locations.findMany({
       where: {
         deleted: 0,
         OR: [
@@ -807,7 +768,14 @@ async dropdowns(query: DropdownQuery = {}) {
         destination_location_city: true,
       },
       orderBy: { location_ID: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize + 1,
     });
+
+    return {
+      hasMore: rows.length > pageSize,
+      rows: rows.slice(0, pageSize),
+    };
   }
 
   private mapHotspotOption(
@@ -838,15 +806,33 @@ async dropdowns(query: DropdownQuery = {}) {
     const sourceHotspotId = Number(q.sourceHotspotId || 0);
     const onlyUsable = this.parseBooleanQuery(q.onlyUsable);
     const search = String(q.search ?? '').trim().toLowerCase();
-
-    const pairCandidates = await this.getBetweenRoutePairCandidates(onlyUsable, sourceHotspotId || undefined);
+    const page = Math.max(1, Number(q.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(q.pageSize) || 50));
 
     if (!locationId) {
-      const locationRows = await this.getFilterLocationRows(search);
-      const routePairSourceIndex = this.buildRoutePairSourceIndex(pairCandidates);
-      const locations = locationRows
-        .map((row) => this.mapLocationScope(row))
-        .filter((scope) => this.locationMatchesIndexedRoutePair(scope, routePairSourceIndex))
+      if (search.length < 2) {
+        return {
+          locations: [],
+          sourceHotspots: [],
+          destinationHotspots: [],
+          page,
+          pageSize,
+          hasMore: false,
+          requiresSearch: true,
+        };
+      }
+
+      const locationPage = await this.getFilterLocationRows(search, page, pageSize);
+      const locationScopes = locationPage.rows.map((row) => this.mapLocationScope(row));
+      const lookupScope = {
+        sourceKeys: Array.from(new Set(locationScopes.flatMap((scope) => scope.sourceKeys))),
+        destinationKeys: Array.from(new Set(locationScopes.flatMap((scope) => scope.destinationKeys))),
+      };
+      const pairCandidates = locationScopes.length
+        ? await this.getBetweenRoutePairCandidates(onlyUsable, undefined, lookupScope)
+        : [];
+      const locations = locationScopes
+        .filter((scope) => pairCandidates.some((pair) => this.locationMatchesRoutePair(scope, pair)))
         .map((scope) => ({
           locationId: scope.locationId,
           locationName: scope.locationName,
@@ -857,6 +843,10 @@ async dropdowns(query: DropdownQuery = {}) {
         locations,
         sourceHotspots: [],
         destinationHotspots: [],
+        page,
+        pageSize,
+        hasMore: locationPage.hasMore,
+        requiresSearch: false,
       };
     }
 
@@ -866,6 +856,11 @@ async dropdowns(query: DropdownQuery = {}) {
     }
 
     const scope = this.mapLocationScope(locationRow);
+    const pairCandidates = await this.getBetweenRoutePairCandidates(
+      onlyUsable,
+      sourceHotspotId || undefined,
+      scope,
+    );
     const matchingPairs = pairCandidates.filter((pair) => this.locationMatchesRoutePair(scope, pair));
 
     const locations = matchingPairs.length
@@ -930,6 +925,10 @@ async dropdowns(query: DropdownQuery = {}) {
       locations,
       sourceHotspots,
       destinationHotspots,
+      page: 1,
+      pageSize,
+      hasMore: false,
+      requiresSearch: false,
     };
   }
 
@@ -2302,49 +2301,7 @@ if (scope === 'both') {
       data: { destination_location: newName, updatedon: now },
     });
 
-    // Update only existing hotspots associated with this location.
-    const hotspots = await tx.dvi_hotspot_place.findMany({
-      where: {
-        deleted: 0,
-        OR: [
-          { hotspot_location: { contains: oldName } },
-          { hotspot_to_location: { contains: oldName } },
-        ],
-      },
-      select: {
-        hotspot_ID: true,
-        hotspot_location: true,
-        hotspot_to_location: true,
-      },
-    });
-
-const renameTokens = (value: string | null) =>
-  String(value ?? '')
-    .split('|')
-    .map((part) =>
-      part.trim().toLowerCase() === oldName.toLowerCase()
-        ? newName
-        : part,
-    )
-    .join('|');
-
-    for (const hotspot of hotspots) {
-      const nextLocation = renameTokens(hotspot.hotspot_location);
-      const nextToLocation = renameTokens(hotspot.hotspot_to_location);
-
-      if (
-        nextLocation !== String(hotspot.hotspot_location ?? '') ||
-        nextToLocation !== String(hotspot.hotspot_to_location ?? '')
-      ) {
-        await tx.dvi_hotspot_place.update({
-          where: { hotspot_ID: hotspot.hotspot_ID },
-          data: {
-            hotspot_location: nextLocation,
-            hotspot_to_location: nextToLocation,
-          },
-        });
-      }
-    }
+    await this.renameAssociatedHotspots(tx, oldName, newName);
 
     return {
       count: sourceResult.count + destinationResult.count,
@@ -2370,6 +2327,58 @@ const renameTokens = (value: string | null) =>
     scope,
     updatedCount: result.count,
   };
+}
+
+private async renameAssociatedHotspots(
+  tx: any,
+  oldName: string,
+  newName: string,
+) {
+  const hotspots = await tx.dvi_hotspot_place.findMany({
+    where: {
+      deleted: 0,
+      OR: [
+        { hotspot_location: { contains: oldName } },
+        { hotspot_to_location: { contains: oldName } },
+      ],
+    },
+    select: {
+      hotspot_ID: true,
+      hotspot_location: true,
+      hotspot_to_location: true,
+    },
+  });
+
+  const oldNameKey = oldName.toLowerCase();
+  const renameTokens = (value: string | null) =>
+    String(value ?? '')
+      .split('|')
+      .map((part) =>
+        part.trim().toLowerCase() === oldNameKey ? newName : part,
+      )
+      .join('|');
+
+  let updatedCount = 0;
+  for (const hotspot of hotspots) {
+    const nextLocation = renameTokens(hotspot.hotspot_location);
+    const nextToLocation = renameTokens(hotspot.hotspot_to_location);
+
+    if (
+      nextLocation !== String(hotspot.hotspot_location ?? '') ||
+      nextToLocation !== String(hotspot.hotspot_to_location ?? '')
+    ) {
+      await tx.dvi_hotspot_place.update({
+        where: { hotspot_ID: hotspot.hotspot_ID },
+        data: {
+          hotspot_location: nextLocation,
+          hotspot_to_location: nextToLocation,
+        },
+      });
+      updatedCount += 1;
+    }
+  }
+
+  return updatedCount;
 }
 
     async softDelete(id: number) {
@@ -3109,15 +3118,41 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
 
  // ------ Modify Location Name (quick rename) ------
   async modifyName(id: number, scope: 'source' | 'destination', newName: string) {
-    await this.get(id);
-    const data =
-      scope === 'source'
-        ? { source_location: newName }
-        : { destination_location: newName };
-    const updated = await this.prisma.dvi_stored_locations.update({
+    const current = await this.prisma.dvi_stored_locations.findFirst({
       where: { location_ID: BigInt(id) },
-      data: { ...data, updatedon: new Date() },
     });
+
+    if (!current) {
+      throw new NotFoundException('Location not found');
+    }
+
+    const oldName = this.normalizeLocationName(
+      scope === 'source' ? current.source_location : current.destination_location,
+    );
+    const normalizedNewName = this.normalizeLocationName(newName);
+
+    if (!oldName) {
+      throw new BadRequestException('Location name is required');
+    }
+
+    if (!normalizedNewName) {
+      throw new BadRequestException('New location name is required');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const data =
+        scope === 'source'
+          ? { source_location: normalizedNewName }
+          : { destination_location: normalizedNewName };
+      const row = await tx.dvi_stored_locations.update({
+        where: { location_ID: BigInt(id) },
+        data: { ...data, updatedon: new Date() },
+      });
+
+      await this.renameAssociatedHotspots(tx, oldName, normalizedNewName);
+      return row;
+    });
+
     this.clearStoredLocationCache(`locations.modifyName:${id}:${scope}`);
     return this.mapRowToResponse(updated);
   }
