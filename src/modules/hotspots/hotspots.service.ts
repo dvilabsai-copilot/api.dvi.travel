@@ -573,23 +573,35 @@ export class HotspotsService {
 
  // --------------------- Dynamic dropdowns / options ------------------------
   async formOptions() {
-    const [typesRaw, locationsRaw, vehicleTypesRaw] = await Promise.all([
-      this.prisma.dvi_hotspot_place.findMany({
-        where: { deleted: 0 },
-        select: { hotspot_type: true },
-        distinct: ['hotspot_type'],
-        orderBy: { hotspot_type: 'asc' },
-      }),
-      this.prisma.dvi_hotspot_place.findMany({
-        where: { deleted: 0, hotspot_location: { not: null } },
-        select: { hotspot_location: true },
-      }),
-      this.prisma.dvi_vehicle_type.findMany({
-        where: { deleted: 0, status: 1 },
-        orderBy: { vehicle_type_id: 'asc' },
-        select: { vehicle_type_id: true, vehicle_type_title: true },
-      }),
-    ]);
+   const [typesRaw, locationsRaw, storedLocationsRaw, vehicleTypesRaw] =
+  await Promise.all([
+    this.prisma.dvi_hotspot_place.findMany({
+      where: { deleted: 0 },
+      select: { hotspot_type: true },
+      distinct: ['hotspot_type'],
+      orderBy: { hotspot_type: 'asc' },
+    }),
+
+    this.prisma.dvi_hotspot_place.findMany({
+      where: { deleted: 0, hotspot_location: { not: null } },
+      select: { hotspot_location: true },
+    }),
+
+    this.prisma.dvi_stored_locations.findMany({
+      where: { deleted: 0 },
+      select: {
+        source_location: true,
+        destination_location: true,
+      },
+      distinct: ['source_location', 'destination_location'],
+    }),
+
+    this.prisma.dvi_vehicle_type.findMany({
+      where: { deleted: 0, status: 1 },
+      orderBy: { vehicle_type_id: 'asc' },
+      select: { vehicle_type_id: true, vehicle_type_title: true },
+    }),
+  ]);
 
     const hotspotTypes = Array.from(
       new Set(
@@ -599,14 +611,27 @@ export class HotspotsService {
       ),
     ).sort((a, b) => a.localeCompare(b));
 
-    const locSet = new Set<string>();
-    for (const r of locationsRaw) {
-      splitPipeToArray(r.hotspot_location).forEach((x) => {
-        const s = (x ?? '').toString().trim();
-        if (s) locSet.add(s);
-      });
-    }
-    const locations = Array.from(locSet).sort((a, b) => a.localeCompare(b));
+const locMap = new Map<string, string>();
+
+const addLocation = (value: string | null | undefined) => {
+  const name = String(value ?? '').trim();
+  if (name && !locMap.has(name.toLowerCase())) {
+    locMap.set(name.toLowerCase(), name);
+  }
+};
+
+for (const row of locationsRaw) {
+  splitPipeToArray(row.hotspot_location).forEach(addLocation);
+}
+
+for (const row of storedLocationsRaw) {
+  addLocation(row.source_location);
+  addLocation(row.destination_location);
+}
+
+const locations = Array.from(locMap.values()).sort(
+  (a, b) => a.localeCompare(b),
+);
 
     const vehicleTypes = vehicleTypesRaw.map((v) => ({
       id: Number(v.vehicle_type_id),

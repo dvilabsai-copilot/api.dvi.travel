@@ -2274,34 +2274,83 @@ async updateLocationName(
 
   let result: { count: number };
 
-  if (scope === 'both') {
-    const [sourceResult, destinationResult] = await this.prisma.$transaction([
-      this.prisma.dvi_stored_locations.updateMany({
-        where: {
-          deleted: 0,
-          source_location: oldName,
-        },
-        data: {
-          source_location: newName,
-          updatedon: new Date(),
-        },
-      }),
-      this.prisma.dvi_stored_locations.updateMany({
-        where: {
-          deleted: 0,
-          destination_location: oldName,
-        },
-        data: {
-          destination_location: newName,
-          updatedon: new Date(),
-        },
-      }),
-    ]);
+if (scope === 'both') {
+  result = await this.prisma.$transaction(async (tx) => {
+    const now = new Date();
 
-    result = {
+    const existingCount = await tx.dvi_stored_locations.count({
+      where: {
+        deleted: 0,
+        OR: [
+          { source_location: oldName },
+          { destination_location: oldName },
+        ],
+      },
+    });
+
+    if (!existingCount) {
+      throw new NotFoundException('Location name not found');
+    }
+
+    const sourceResult = await tx.dvi_stored_locations.updateMany({
+      where: { deleted: 0, source_location: oldName },
+      data: { source_location: newName, updatedon: now },
+    });
+
+    const destinationResult = await tx.dvi_stored_locations.updateMany({
+      where: { deleted: 0, destination_location: oldName },
+      data: { destination_location: newName, updatedon: now },
+    });
+
+    // Update only existing hotspots associated with this location.
+    const hotspots = await tx.dvi_hotspot_place.findMany({
+      where: {
+        deleted: 0,
+        OR: [
+          { hotspot_location: { contains: oldName } },
+          { hotspot_to_location: { contains: oldName } },
+        ],
+      },
+      select: {
+        hotspot_ID: true,
+        hotspot_location: true,
+        hotspot_to_location: true,
+      },
+    });
+
+const renameTokens = (value: string | null) =>
+  String(value ?? '')
+    .split('|')
+    .map((part) =>
+      part.trim().toLowerCase() === oldName.toLowerCase()
+        ? newName
+        : part,
+    )
+    .join('|');
+
+    for (const hotspot of hotspots) {
+      const nextLocation = renameTokens(hotspot.hotspot_location);
+      const nextToLocation = renameTokens(hotspot.hotspot_to_location);
+
+      if (
+        nextLocation !== String(hotspot.hotspot_location ?? '') ||
+        nextToLocation !== String(hotspot.hotspot_to_location ?? '')
+      ) {
+        await tx.dvi_hotspot_place.update({
+          where: { hotspot_ID: hotspot.hotspot_ID },
+          data: {
+            hotspot_location: nextLocation,
+            hotspot_to_location: nextToLocation,
+          },
+        });
+      }
+    }
+
+    return {
       count: sourceResult.count + destinationResult.count,
     };
-  } else {
+  });
+} else {
     result = await this.prisma.dvi_stored_locations.updateMany({
       where,
       data,
