@@ -1102,6 +1102,12 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
         marginPercentage: storedMarginPercentage,
       });
       const isOffline = provider === 'offline';
+      const persistedCancellationPolicy = isOffline
+        ? String((master as any)?.hotel_cancel_policy || '')
+            .split(/[\n,|;]/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [];
       const snapshotNightlyRates = Array.isArray(selectedPriceSnapshot.nightlyRates)
         ? selectedPriceSnapshot.nightlyRates as Record<string, unknown>[]
         : [];
@@ -1372,6 +1378,9 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
         hotelDistance,
         provider: provider || undefined,
         hotelCode: persistedIdentity.hotelCode || undefined,
+        ...(persistedCancellationPolicy.length > 0
+          ? { cancellationPolicy: persistedCancellationPolicy }
+          : {}),
         bookingCode: String((h as any).selected_rate_option_id || '').trim() || undefined,
         rateOptionId: String((h as any).selected_rate_option_id || '').trim() || undefined,
         priceSource: (h as any).price_source || undefined,
