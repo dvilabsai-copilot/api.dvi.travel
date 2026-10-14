@@ -209,6 +209,8 @@ export class HotelsService {
 
  // persist selected category id
       hotel_category: this.toNumStrict(dto.hotel_category),
+      hotel_cancel_policy: this.toStr(dto.hotel_cancel_policy),
+      hotel_cancel_policy_percentage: this.toNumStrict(dto.hotel_cancel_policy_percentage),
 
       hotel_margin: this.toNumStrict(dto.hotel_margin),
       hotel_margin_gst_type: this.toNumStrict(dto.hotel_margin_gst_type),
@@ -1039,6 +1041,8 @@ export class HotelsService {
         hotel_place: true,
         hotel_address: true,
         hotel_pincode: true,
+        hotel_cancel_policy: true,
+        hotel_cancel_policy_percentage: true,
         hotel_margin: true,
         hotel_margin_gst_type: true,
         hotel_margin_gst_percentage: true,

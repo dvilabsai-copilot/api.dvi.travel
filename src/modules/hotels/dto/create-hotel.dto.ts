@@ -30,6 +30,12 @@ export class CreateHotelDto {
   @IsOptional() @Type(() => Number) @IsInt()
   hotel_category?: number;
 
+  @IsOptional() @IsString()
+  hotel_cancel_policy?: string;
+
+  @IsOptional() @Type(() => Number) @IsNumber()
+  hotel_cancel_policy_percentage?: number;
+
   @IsOptional() @Type(() => Number) @IsNumber()
   hotel_margin?: number;
 
