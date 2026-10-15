@@ -183,12 +183,126 @@ Number(plan.agent_id || 0) > 0
             link.createdByUserId,
           ),
         },
-        select: {
-          roleID: true,
-        },
+select: {
+  roleID: true,
+  staff_id: true,
+  agent_id: true,
+  useremail: true,
+},
       })
     : Promise.resolve(null),
 ]);
+
+const creatorStaffId = Number(
+  creatorUser?.staff_id || 0,
+);
+
+const creatorAgentId = Number(
+  creatorUser?.agent_id || 0,
+);
+
+const creatorRole = Number(
+  creatorUser?.roleID || 0,
+);
+
+const [creatorStaff, creatorLegacyStaff, creatorAgent] =
+  await Promise.all([
+    creatorStaffId > 0
+      ? this.prisma.dvi_staff_details.findFirst({
+          where: {
+            staff_id: creatorStaffId,
+            deleted: 0,
+          },
+          select: {
+            staff_mobile: true,
+            agent_id: true,
+          },
+        })
+      : Promise.resolve(null),
+
+    creatorStaffId > 0
+      ? this.prisma.dvi_staff.findFirst({
+          where: {
+            staff_id: creatorStaffId,
+            deleted: 0,
+          },
+          select: {
+            staff_mobile_number: true,
+          },
+        })
+      : Promise.resolve(null),
+
+    creatorAgentId > 0
+      ? this.prisma.dvi_agent.findFirst({
+          where: {
+            agent_ID: creatorAgentId,
+            deleted: 0,
+          },
+          select: {
+            agent_email_id: true,
+            agent_primary_mobile_number: true,
+          },
+        })
+      : Promise.resolve(null),
+  ]);
+
+const pdfCompanyAgentId =
+  creatorRole === SystemRole.ADMIN
+    ? 0
+    : creatorRole === SystemRole.STAFF ||
+        creatorRole === SystemRole.TRAVEL_EXPERT
+      ? Number(
+          creatorStaff?.agent_id ||
+            creatorAgentId ||
+            0,
+        )
+      : creatorRole === SystemRole.AGENT
+        ? creatorAgentId
+        : 0;
+
+const pdfCompanyConfig =
+  pdfCompanyAgentId > 0
+    ? await this.prisma.dvi_agent_configuration.findFirst({
+        where: {
+          agent_id: pdfCompanyAgentId,
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: {
+          agent_config_id: "desc",
+        },
+        select: {
+          site_logo: true,
+        },
+      })
+    : null;
+
+const pdfHeaderEmail =
+  creatorRole === SystemRole.AGENT
+    ? String(
+        creatorUser?.useremail ||
+          creatorAgent?.agent_email_id ||
+          "",
+      ).trim()
+    : String(
+        creatorUser?.useremail || "",
+      ).trim();
+
+const pdfHeaderPhone =
+  creatorRole === SystemRole.AGENT
+    ? String(
+        creatorAgent?.agent_primary_mobile_number ||
+          "",
+      ).trim()
+    : String(
+        creatorStaff?.staff_mobile ||
+          creatorLegacyStaff?.staff_mobile_number ||
+          "",
+      ).trim();
+
+const pdfHeaderLogo = String(
+  pdfCompanyConfig?.site_logo || "",
+).trim();
 
 const source = itinerary as any;
 const [
@@ -357,6 +471,27 @@ const packageTerms = this.richTextToPlainText(
 const publicItinerary = {
   quoteId: source.quoteId,
   dateRange: source.dateRange,
+
+  staffContact:
+    creatorStaffId > 0
+      ? {
+          email:
+            String(
+              creatorUser?.useremail || "",
+            ).trim() || null,
+
+          phone:
+            String(
+              creatorStaff?.staff_mobile || "",
+            ).trim() || null,
+        }
+      : null,
+
+  pdfHeaderContact: {
+    email: pdfHeaderEmail || null,
+    phone: pdfHeaderPhone || null,
+    logo: pdfHeaderLogo || null,
+  },
 
   agentLogo:
     agentLogo || null,

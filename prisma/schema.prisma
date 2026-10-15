@@ -5960,6 +5960,32 @@ model dvi_vendor_details {
   @@index([vendor_state], map: "idx_dvi_vendor_details_vendor_state")
 }
 
+
+model dvi_vendor_bank_accounts {
+  vendor_id           Int      @id
+  encrypted_payload   String   @db.Text
+  account_last4       String   @db.VarChar(4)
+  approved_by_user_id BigInt
+  approved_at         DateTime @default(now()) @db.DateTime(3)
+  updated_at          DateTime @default(now()) @db.DateTime(3)
+}
+
+model dvi_vendor_bank_change_requests {
+  request_id          Int       @id @default(autoincrement())
+  vendor_id           Int
+  encrypted_payload   String    @db.Text
+  account_last4       String    @db.VarChar(4)
+  status              String    @default("PENDING") @db.VarChar(20)
+  created_by_user_id  BigInt
+  reviewed_by_user_id BigInt?
+  requested_at        DateTime  @default(now()) @db.DateTime(3)
+  reviewed_at         DateTime? @db.DateTime(3)
+  rejection_reason    String?   @db.VarChar(255)
+
+  @@index([vendor_id, status, request_id], map: "idx_vendor_bank_request_status")
+}
+
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model dvi_vendor_vehicle_types {
   vendor_vehicle_type_ID       Int       @id @default(autoincrement())

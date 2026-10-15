@@ -846,20 +846,40 @@ const configuredViaCityKeys = Array.from(
         || row?.locationMap
         || '',
       ).trim();
+const isRouteMovementHotspot = (row: any): boolean => {
+  const fromRaw = hotspotLocationRaw(row);
+  const toRaw = hotspotToLocationRaw(row);
 
-      const isRouteMovementHotspot = (row: any): boolean => {
-        const fromRaw = hotspotLocationRaw(row);
-        const toRaw = hotspotToLocationRaw(row);
+  if (!fromRaw || !toRaw) return false;
 
-        if (!fromRaw || !toRaw) return false;
+  const fromTokens = splitLocationTokens(fromRaw);
+  const toTokens = splitLocationTokens(toRaw);
 
-        const fromTokens = splitLocationTokens(fromRaw);
-        const toTokens = splitLocationTokens(toRaw);
+  if (!fromTokens.length || !toTokens.length) return false;
 
-        if (!fromTokens.length || !toTokens.length) return false;
+  const fromSet = new Set(fromTokens);
+  const toSet = new Set(toTokens);
 
-        return fromTokens.join('|') !== toTokens.join('|');
-      };
+  // A smaller location list contained entirely within the
+  // other list does not establish an intercity movement.
+  // This also handles the same locations in different orders.
+  const fromContainedInTo = [...fromSet].every(
+    (token) => toSet.has(token),
+  );
+
+  const toContainedInFrom = [...toSet].every(
+    (token) => fromSet.has(token),
+  );
+
+  if (fromContainedInTo || toContainedInFrom) {
+    return false;
+  }
+
+  // Preserve movement filtering for genuinely distinct
+  // location lists.
+  return true;
+};
+
 
       const isHotspotForCurrentRoutePair = (row: any): boolean => {
         const fromRaw = hotspotLocationRaw(row);
