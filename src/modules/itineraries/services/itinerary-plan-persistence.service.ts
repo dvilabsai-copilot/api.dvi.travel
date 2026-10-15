@@ -348,6 +348,29 @@ export function hasItineraryOccupancyChanged(
     effectiveExtraBedCount(nextPlan, nextTravellers);
 }
 
+function normalizedVehicleSelectionRows(vehicles: any[] = []): string[] {
+  return (Array.isArray(vehicles) ? vehicles : [])
+    .map((vehicle) => ({
+      vehicleTypeId: Number(vehicle?.vehicle_type_id ?? vehicle?.type ?? 0),
+      vehicleCount: Number(vehicle?.vehicle_count ?? vehicle?.count ?? 0),
+    }))
+    .filter((vehicle) => vehicle.vehicleTypeId > 0 && vehicle.vehicleCount > 0)
+    .sort((left, right) =>
+      left.vehicleTypeId - right.vehicleTypeId ||
+      left.vehicleCount - right.vehicleCount,
+    )
+    .map((vehicle) => JSON.stringify(vehicle));
+}
+
+/** Vehicle price rows must only be rebuilt when the vehicle inputs changed. */
+export function hasItineraryVehicleSelectionChanged(
+  previousVehicles: any[] = [],
+  nextVehicles: any[] = [],
+): boolean {
+  return JSON.stringify(normalizedVehicleSelectionRows(previousVehicles)) !==
+    JSON.stringify(normalizedVehicleSelectionRows(nextVehicles));
+}
+
 export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'OCCUPANCY_CHANGED' | 'MEAL_PLAN_CHANGED' | 'HOTEL_CATEGORY_CHANGED' | 'EARLY_ARRIVAL_CONFIRMED';
 
 export function getHotelAvailabilityResetReason(result: {
@@ -738,8 +761,10 @@ let occupancyChanged = false;
 let mealPlanChanged = false;
 let hotelCategoryChanged = false;
 let earlyArrivalChanged = false;
+let vehicleSelectionChanged = false;
 let previousRoutePlan: any = null;
 let previousTravellers: any[] = [];
+let previousVehicleSelections: any[] = [];
 
  // Increase interactive transaction timeout; hotspot rebuild + hotel lookups can exceed default 5s
     const result = await this.prisma.$transaction(async (tx) => {
@@ -775,6 +800,10 @@ let previousTravellers: any[] = [];
             traveller_age: true,
             child_bed_type: true,
           },
+        });
+        previousVehicleSelections = await tx.dvi_itinerary_plan_vehicle_details.findMany({
+          where: { itinerary_plan_id: existingPlanId, status: 1, deleted: 0 },
+          select: { vehicle_type_id: true, vehicle_count: true },
         });
         assertVehicleAgentUpdatePolicy(u, currentPlan, dto.plan);
       } else {
@@ -899,6 +928,10 @@ stepStartedAt = this.logItineraryApiTiming({
         Array.isArray(dto.travellers) ? dto.travellers : [],
       );
       hotelCategoryChanged = isPlanUpdate && hasItineraryHotelCategoryChanged(previousRoutePlan, dto.plan);
+      vehicleSelectionChanged = !isPlanUpdate || hasItineraryVehicleSelectionChanged(
+        previousVehicleSelections,
+        Array.isArray(dto.vehicles) ? dto.vehicles : [],
+      );
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
 
 // A time-only edit must preserve the existing route structure/IDs,
@@ -1670,6 +1703,7 @@ if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
   quoteId: planRow?.itinerary_quote_ID,
   routeIds: routes.map((r: any) => r.itinerary_route_ID),
   routeChanged,
+  vehicleSelectionChanged,
   roomCountChanged,
   occupancyChanged,
   mealPlanChanged,
@@ -1704,8 +1738,15 @@ if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
     const shouldBuildVehicles =
       Number(dto?.plan?.itinerary_preference || 0) === 2 ||
       Number(dto?.plan?.itinerary_preference || 0) === 3;
+    const shouldRebuildVehicleRates = shouldBuildVehicles && (
+      !isPlanUpdate ||
+      result.routeChanged ||
+      itineraryStartTimeChanged ||
+      itineraryEndTimeChanged ||
+      result.vehicleSelectionChanged
+    );
 
-    if (shouldBuildVehicles) {
+    if (shouldRebuildVehicleRates) {
       createPlanStage = 'post_transaction_vehicle_build_sync';
       const buildRunId = this.vehicleBuildService.createBuildRunId(result.planId);
       await this.vehicleBuildService.startRecord(result.planId, buildRunId, userId);
