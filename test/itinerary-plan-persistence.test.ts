@@ -7,6 +7,7 @@ import {
   hasItineraryOccupancyChanged,
   hasItineraryRoomCountChanged,
   hasItineraryRouteChanged,
+  hasItineraryVehicleSelectionChanged,
   ItineraryPlanPersistenceService,
   resolveItineraryMealPlanCode,
   resolveItineraryRoomCount,
@@ -121,6 +122,30 @@ test('route reset detection ignores non-route plan edits', () => {
     plan,
     { ...plan, budget: 30000, guide_for_itinerary: 1, meal_plan_code: 'MAP' },
   ), false);
+});
+
+test('vehicle price rebuild detection ignores reordered unchanged vehicle rows', () => {
+  assert.equal(hasItineraryVehicleSelectionChanged(
+    [
+      { vehicle_type_id: 20, vehicle_count: 1 },
+      { vehicle_type_id: 10, vehicle_count: 2 },
+    ],
+    [
+      { type: '10', count: 2 },
+      { vehicle_type_id: 20, vehicle_count: 1 },
+    ],
+  ), false);
+});
+
+test('vehicle price rebuild detection fires when type or count changes', () => {
+  assert.equal(hasItineraryVehicleSelectionChanged(
+    [{ vehicle_type_id: 10, vehicle_count: 1 }],
+    [{ vehicle_type_id: 10, vehicle_count: 2 }],
+  ), true);
+  assert.equal(hasItineraryVehicleSelectionChanged(
+    [{ vehicle_type_id: 10, vehicle_count: 1 }],
+    [{ vehicle_type_id: 20, vehicle_count: 1 }],
+  ), true);
 });
 
 test('meal-plan reset detection fires for a canonical CP to MAP change', () => {

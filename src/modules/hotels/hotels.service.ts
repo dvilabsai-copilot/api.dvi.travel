@@ -25,6 +25,7 @@ const PRICEBOOK_OCCUPANCY_KEYS = [
   'DOUBLE',
   'TRIPLE',
   'QUAD',
+  'QUADRA',
   'PENTA',
   'HEXA',
   'HEPTA',
@@ -126,6 +127,32 @@ export class HotelsService {
     if (v === undefined || v === null) return undefined;
     const s = String(v).trim();
     return s.length ? s : undefined;
+  }
+
+  private hasLiveHotelProvider(hotel: any): boolean {
+    return Boolean(
+      this.toStr(hotel?.tbo_hotel_code) ||
+      this.toStr(hotel?.resavenue_hotel_code) ||
+      (Number(hotel?.axisrooms_enabled || 0) === 1 &&
+        this.toStr(hotel?.axisrooms_property_id)) ||
+      (Number(hotel?.staah_enabled || 0) === 1 &&
+        this.toStr(hotel?.staah_property_id)),
+    );
+  }
+
+  private async isOfflineHotel(hotelId: number): Promise<boolean> {
+    const hotel = await (this.prisma as any).dvi_hotel.findFirst({
+      where: { hotel_id: hotelId },
+      select: {
+        tbo_hotel_code: true,
+        resavenue_hotel_code: true,
+        axisrooms_enabled: true,
+        axisrooms_property_id: true,
+        staah_enabled: true,
+        staah_property_id: true,
+      },
+    });
+    return !this.hasLiveHotelProvider(hotel);
   }
 
   private parseRangeViewDate(value: string, fieldName: string): Date {
@@ -1052,6 +1079,10 @@ export class HotelsService {
         hotel_power_backup: true,
         hotel_hotspot_status: true,
         axisrooms_property_id: true,
+        tbo_hotel_code: true,
+        axisrooms_enabled: true,
+        staah_enabled: true,
+        staah_property_id: true,
       },
     });
 
@@ -1064,6 +1095,7 @@ export class HotelsService {
       ...hydrated,
       images: images || [],
       primaryImageUrl: (images || []).find((image) => image.isPrimary)?.url || null,
+      is_offline: !this.hasLiveHotelProvider(hotel),
       hotel_country_id: hydrated.hotel_country,
       hotel_state_id: hydrated.hotel_state,
       hotel_city_id: hydrated.hotel_city,
@@ -1448,6 +1480,11 @@ export class HotelsService {
     const hid = Number(hotel_id);
     const rid = Number(room_id);
     if (!Number.isFinite(hid) || !Number.isFinite(rid)) return { items: [] };
+
+    // Legacy/PHP offline hotels do not have AxisRooms rate plans. Returning
+    // canonical fallback plans here makes the offline UI save into the wrong
+    // normalized table, so keep this endpoint empty for offline hotels.
+    if (await this.isOfflineHotel(hid)) return { items: [] };
 
     const rows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
       where: { hotel_id: hid, room_id: rid, deleted: 0 } as any,
@@ -2308,7 +2345,12 @@ export class HotelsService {
     const start = new Date(`${query.startDate}T00:00:00.000Z`);
     const end = new Date(`${query.endDate}T00:00:00.000Z`);
 
-    if (!Number.isFinite(hid) || !Number.isFinite(rid) || !rateplanId || isNaN(start.getTime()) || isNaN(end.getTime())) {
+    if (!Number.isFinite(hid) || !Number.isFinite(rid) || isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return { dates: [], rooms: [], occupancies: [] };
+    }
+
+    const isOffline = await this.isOfflineHotel(hid);
+    if (!isOffline && !rateplanId) {
       return { dates: [], rooms: [], occupancies: [] };
     }
 
@@ -2338,6 +2380,80 @@ export class HotelsService {
     const roomName = String(roomMetadata?.room_title || '').trim();
     const roomType = String(roomTypeMetadata?.room_type_title || '').trim();
 
+    // Offline hotels use the legacy PHP price book. It stores one row per
+    // room/price_type/month, not one normalized row per rate plan.
+    const dates: string[] = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    if (isOffline) {
+      const yearMonthPairs = Array.from(
+        new Set(
+          dates.map((date) => {
+            const parsed = new Date(`${date}T00:00:00.000Z`);
+            return `${parsed.getUTCFullYear()}|${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+          }),
+        ),
+      );
+      const priceRows = await (this.prisma as any).dvi_hotel_room_price_book.findMany({
+        where: {
+          hotel_id: hid,
+          room_id: rid,
+          price_type: { in: [0, 1, 2, 3] },
+          status: 1,
+          deleted: 0,
+          OR: yearMonthPairs.map((pair) => {
+            const [year, month] = pair.split('|');
+            return {
+              year,
+              month: { in: [month, String(Number(month)), new Date(Date.UTC(Number(year), Number(month) - 1, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })] },
+            };
+          }),
+        },
+        orderBy: { hotel_price_book_id: 'desc' },
+      });
+      const rowsByKey = new Map<string, any>();
+      for (const row of priceRows as any[]) {
+        const month = normalizeHotelPricebookMonth(row.month);
+        if (!month) continue;
+        const key = `${Number(row.price_type)}:${String(row.year)}:${month}`;
+        if (!rowsByKey.has(key)) rowsByKey.set(key, row);
+      }
+      const priceTypes = [
+        { id: 0, name: 'ROOM_PRICE' },
+        { id: 1, name: 'EXTRABED' },
+        { id: 2, name: 'CHILD_WITH_BED' },
+        { id: 3, name: 'CHILD_WITHOUT_BED' },
+      ];
+      const occupancies = priceTypes
+        .map((priceType) => {
+          const values: Record<string, number> = {};
+          for (const date of dates) {
+            const parsed = new Date(`${date}T00:00:00.000Z`);
+            const year = String(parsed.getUTCFullYear());
+            const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+            const row = rowsByKey.get(`${priceType.id}:${year}:${month}`);
+            if (!row) continue;
+            const value = Number(row[`day_${parsed.getUTCDate()}`]);
+            if (Number.isFinite(value)) values[date] = value;
+          }
+          return {
+            roomId: rid,
+            roomName,
+            roomType,
+            rateplanId: 'OFFLINE',
+            occupancyType: priceType.name,
+            values,
+          };
+        })
+        .filter((row) => Object.keys(row.values).length > 0);
+
+      return { dates, rooms: [], occupancies };
+    }
+
  // All rows that overlap the requested range, latest received_at first
     const rows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
       where: {
@@ -2350,14 +2466,6 @@ export class HotelsService {
       orderBy: { received_at: 'desc' },
     });
 
- // Build a date spine
-    const dates: string[] = [];
-    const cur = new Date(start);
-    while (cur <= end) {
-      dates.push(cur.toISOString().slice(0, 10));
-      cur.setUTCDate(cur.getUTCDate() + 1);
-    }
-
  // For each date, find the latest row that covers it; collect its occupancy keys
     const bestByDate = new Map<string, Record<string, number>>();
     for (const date of dates) {
@@ -2367,9 +2475,20 @@ export class HotelsService {
       );
       if (best) {
         const rawOcc = best.occupancy_rates as Record<string, number>;
-        const occ = rawOcc && typeof rawOcc === 'object' ? { ...rawOcc } : undefined;
-        if (occ && typeof occ === 'object') {
-          delete occ.ROOM_RATE;
+        const occ: Record<string, number> = {};
+        if (rawOcc && typeof rawOcc === 'object' && !Array.isArray(rawOcc)) {
+          for (const [key, value] of Object.entries(rawOcc)) {
+            const occupancyKey = String(key || '').trim().toUpperCase();
+            const numericValue = Number(value);
+            if (
+              PRICEBOOK_OCCUPANCY_KEYS.includes(
+                occupancyKey as (typeof PRICEBOOK_OCCUPANCY_KEYS)[number],
+              ) &&
+              Number.isFinite(numericValue)
+            ) {
+              occ[occupancyKey] = numericValue;
+            }
+          }
           bestByDate.set(date, occ);
         }
       }
@@ -2378,7 +2497,7 @@ export class HotelsService {
  // Collect all occupancy keys that appear in at least one effective row
     const allOccKeys = new Set<string>();
     for (const occ of bestByDate.values()) {
-      Object.keys(occ).forEach((k) => allOccKeys.add(k));
+      Object.keys(occ).forEach((key) => allOccKeys.add(key));
     }
 
  // Build pivoted occupancy rows
@@ -2842,6 +2961,125 @@ export class HotelsService {
     return { dates, items };
   }
 
+  /**
+   * Persist the PHP-compatible offline room price book. Offline rows are
+   * stored by price_type (0=room, 1=extra bed, 2=child with bed,
+   * 3=child without bed) and by legacy month name/day column.
+   */
+  private async upsertLegacyOfflineRoomPricebook(
+    hotelId: number,
+    items: Array<any>,
+  ) {
+    let rows = 0;
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+
+    for (const item of items) {
+      const roomId = Number(item?.room_id);
+      if (!Number.isFinite(roomId) || roomId <= 0) continue;
+      const start = this.parseRangeViewDate(String(item?.startDate || ''), 'startDate');
+      const end = this.parseRangeViewDate(String(item?.endDate || ''), 'endDate');
+      if (start.getTime() > end.getTime()) {
+        throw new BadRequestException('startDate must be less than or equal to endDate');
+      }
+
+      const room = await (this.prisma as any).dvi_hotel_rooms.findFirst({
+        where: { hotel_id: hotelId, room_ID: BigInt(roomId), deleted: 0 },
+        select: { room_type_id: true, gst_type: true, gst_percentage: true },
+      });
+      if (!room) continue;
+      const roomTypeId = Number(item?.roomTypeId ?? room.room_type_id ?? 0);
+
+      const gstType = this.toNumStrict(item?.gstType);
+      const gstPercentage = this.toNumStrict(item?.gstPercentage);
+      if (gstType !== undefined || gstPercentage !== undefined) {
+        await (this.prisma as any).dvi_hotel_rooms.update({
+          where: { room_ID: BigInt(roomId) },
+          data: {
+            ...(gstType !== undefined ? { gst_type: gstType } : {}),
+            ...(gstPercentage !== undefined ? { gst_percentage: String(gstPercentage) } : {}),
+            updatedon: new Date(),
+          },
+        });
+      }
+
+      const rawOccupancy = item?.occupancyRates && typeof item.occupancyRates === 'object'
+        ? item.occupancyRates
+        : {};
+      const priceTypeRates: Array<{ priceType: number; value: number | undefined }> = [
+        {
+          priceType: 0,
+          value: this.toNumStrict(item?.roomPrice) ??
+            this.toNumStrict(rawOccupancy.DOUBLE) ??
+            this.toNumStrict(rawOccupancy.SINGLE),
+        },
+        { priceType: 1, value: this.toNumStrict(item?.extraBed) ?? this.toNumStrict(rawOccupancy.EXTRABED) },
+        { priceType: 2, value: this.toNumStrict(item?.childWithBed) ?? this.toNumStrict(rawOccupancy.CHILD_WITH_BED) },
+        { priceType: 3, value: this.toNumStrict(item?.childWithoutBed) ?? this.toNumStrict(rawOccupancy.CHILD_WITHOUT_BED) },
+      ].filter((entry) => entry.value !== undefined) as Array<{ priceType: number; value: number }>;
+
+      const buckets = new Map<string, { year: string; month: string; days: number[] }>();
+      const cursor = new Date(start);
+      while (cursor <= end) {
+        const year = String(cursor.getUTCFullYear());
+        const monthNumber = cursor.getUTCMonth();
+        const month = monthNames[monthNumber];
+        const key = `${year}-${month}`;
+        if (!buckets.has(key)) buckets.set(key, { year, month, days: [] });
+        buckets.get(key)!.days.push(cursor.getUTCDate());
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+
+      for (const bucket of buckets.values()) {
+        for (const priceType of priceTypeRates) {
+          const existing = await (this.prisma as any).dvi_hotel_room_price_book.findFirst({
+            where: {
+              hotel_id: hotelId,
+              room_id: roomId,
+              room_type_id: roomTypeId,
+              price_type: priceType.priceType,
+              year: bucket.year,
+              month: { in: [bucket.month, String(monthNames.indexOf(bucket.month) + 1).padStart(2, '0'), String(monthNames.indexOf(bucket.month) + 1)] },
+              deleted: 0,
+            },
+            orderBy: { hotel_price_book_id: 'desc' },
+          });
+          const dayPatch = this.buildDayPatch_forRoomsAndAmenities(priceType.value, bucket.days);
+          if (existing) {
+            await (this.prisma as any).dvi_hotel_room_price_book.update({
+              where: { hotel_price_book_id: existing.hotel_price_book_id },
+              data: { ...dayPatch, updatedon: new Date(), status: 1, deleted: 0 },
+            });
+          } else {
+            const zeroDays: Record<string, number> = {};
+            for (let day = 1; day <= 31; day += 1) zeroDays[`day_${day}`] = 0;
+            await (this.prisma as any).dvi_hotel_room_price_book.create({
+              data: {
+                hotel_id: hotelId,
+                room_type_id: roomTypeId,
+                room_id: roomId,
+                price_type: priceType.priceType,
+                year: bucket.year,
+                month: bucket.month,
+                status: 1,
+                deleted: 0,
+                createdon: new Date(),
+                updatedon: new Date(),
+                ...zeroDays,
+                ...dayPatch,
+              },
+            });
+          }
+          rows += 1;
+        }
+      }
+    }
+
+    return { success: true, offline: true, rows };
+  }
+
  /** ROOMS: Bulk upsert price rows for date ranges. */
   async bulkUpsertRoomPricebook(
     hotel_id: number,
@@ -2855,6 +3093,9 @@ export class HotelsService {
         extraBed?: number | string;
         childWithBed?: number | string;
         childWithoutBed?: number | string;
+        roomTypeId?: number;
+        gstType?: number;
+        gstPercentage?: number | string;
         axisroomsRoomId?: string;
         rateplanId?: string;
         ratePlanName?: string;
@@ -2864,6 +3105,10 @@ export class HotelsService {
     const hid = Number(hotel_id);
     if (!Number.isFinite(hid) || hid <= 0) throw new Error('Invalid hotel_id');
     if (!body || !Array.isArray(body.items)) throw new Error('items array is required');
+
+    if (await this.isOfflineHotel(hid)) {
+      return this.upsertLegacyOfflineRoomPricebook(hid, body.items);
+    }
 
     const buildOccupancyRates = (item: any): Record<string, number> => {
       const rates: Record<string, number> = {};

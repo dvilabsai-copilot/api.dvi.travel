@@ -192,7 +192,37 @@ type OfflineCatalogRows = {
   activeRoomTypeIds: Set<number>;
   occupancyRatesByRoomPlan: Map<string, any[]>;
   inventoryByHotelRoom: Map<string, any[]>;
+  legacyPricebookByRoom: Map<string, any[]>;
   mealPricebookByHotelDate: Map<number, Map<string, { breakfast: number; lunch: number; dinner: number }>>;
+};
+
+const PRICEBOOK_MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+];
+
+const pricebookMonthMatches = (value: unknown, month: number): boolean => {
+  const normalized = String(value || '').trim().toLowerCase();
+  const monthName = PRICEBOOK_MONTH_NAMES[month - 1];
+  return normalized === String(month) ||
+    normalized === String(month).padStart(2, '0') ||
+    normalized === monthName ||
+    normalized === monthName?.slice(0, 3);
+};
+
+const selectPricebookRate = (rows: any[], priceType: number, date: string): number => {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  const year = String(parsed.getUTCFullYear());
+  const month = parsed.getUTCMonth() + 1;
+  const dayKey = `day_${parsed.getUTCDate()}`;
+  const candidates = rows
+    .filter((row) => Number(row.price_type || 0) === priceType &&
+      String(row.year || '').trim() === year &&
+      pricebookMonthMatches(row.month, month) &&
+      Number(row[dayKey] || 0) > 0)
+    .sort((a, b) => new Date(b.updatedon || b.createdon || 0).getTime() - new Date(a.updatedon || a.createdon || 0).getTime());
+  return Number(candidates[0]?.[dayKey] || 0);
 };
 
 /**
@@ -769,6 +799,7 @@ const bestOffer = (
         activeRoomTypeIds: new Set(),
         occupancyRatesByRoomPlan: new Map(),
         inventoryByHotelRoom: new Map(),
+        legacyPricebookByRoom: new Map(),
         mealPricebookByHotelDate: new Map(),
       };
     }
@@ -778,13 +809,14 @@ const bestOffer = (
     // Older catalog-cache entries predate meal-pricebook parity. Rebuild those
     // entries once so the new offline breakdown cannot remain empty until a
     // long-lived cache expires. Live-provider caches are not involved here.
-    if (cachedCatalog && Array.isArray(cachedCatalog.mealPricebookByHotelDate) && Array.isArray(cachedCatalog.inventoryByHotelRoom)) {
+    if (cachedCatalog && Array.isArray(cachedCatalog.mealPricebookByHotelDate) && Array.isArray(cachedCatalog.inventoryByHotelRoom) && Array.isArray(cachedCatalog.legacyPricebookByRoom)) {
       return {
         roomsByHotel: new Map(cachedCatalog.roomsByHotel || []),
         ratePlansByRoom: new Map(cachedCatalog.ratePlansByRoom || []),
         activeRoomTypeIds: new Set(cachedCatalog.activeRoomTypeIds || []),
         occupancyRatesByRoomPlan: new Map(cachedCatalog.occupancyRatesByRoomPlan || []),
         inventoryByHotelRoom: new Map(cachedCatalog.inventoryByHotelRoom || []),
+        legacyPricebookByRoom: new Map(cachedCatalog.legacyPricebookByRoom || []),
         mealPricebookByHotelDate: new Map(
           (cachedCatalog.mealPricebookByHotelDate || []).map(([hotelId, entries]: [number, any[]]) => [
             Number(hotelId),
@@ -819,10 +851,39 @@ const bestOffer = (
     });
     const roomsByHotel = new Map<number, any[]>();
     for (const room of activeRooms as any[]) {
-      const hotelId = Number(room.hotel_id || 0);
+      const hotelId = Number(room.hotel_id || 0) || (hotelIds.length === 1 ? hotelIds[0] : 0);
       const rows = roomsByHotel.get(hotelId) || [];
       rows.push(room);
       roomsByHotel.set(hotelId, rows);
+    }
+
+    const activeRoomIds = Array.from(new Set(
+      (activeRooms as any[]).map((room) => Number(room.room_ID || 0)).filter((id) => id > 0),
+    ));
+    const activeRoomTypeIdsForPricebook = Array.from(new Set(
+      (activeRooms as any[]).map((room) => Number(room.room_type_id || 0)).filter((id) => id > 0),
+    ));
+    const legacyPricebookRows = activeRoomIds.length > 0 || activeRoomTypeIdsForPricebook.length > 0
+      ? await this.prisma.dvi_hotel_room_price_book.findMany({
+          where: {
+            hotel_id: { in: hotelIds },
+            room_id: { in: [...activeRoomIds, 0] },
+            room_type_id: { in: activeRoomTypeIdsForPricebook },
+            price_type: { in: [0, 1, 2, 3] },
+            status: 1,
+            deleted: 0,
+          },
+        })
+      : [];
+    const legacyPricebookByRoom = new Map<string, any[]>();
+    for (const row of legacyPricebookRows as any[]) {
+      // Real rows always carry hotel_id. Keep the single-hotel fallback for
+      // older test/import adapters that return only the scoped price columns.
+      const rowHotelId = Number(row.hotel_id || 0) || (hotelIds.length === 1 ? hotelIds[0] : 0);
+      const key = `${rowHotelId}|${Number(row.room_id || 0)}|${Number(row.room_type_id || 0)}`;
+      const rows = legacyPricebookByRoom.get(key) || [];
+      rows.push(row);
+      legacyPricebookByRoom.set(key, rows);
     }
 
     const ratePlansByRoom = new Map<number, any[]>();
@@ -933,13 +994,14 @@ const bestOffer = (
       ? await this.offlineHotelMealPricingService.loadPricebookByDate(hotelIds, requestedDates)
       : new Map();
 
-    const result = { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan, inventoryByHotelRoom, mealPricebookByHotelDate };
+    const result = { roomsByHotel, ratePlansByRoom, activeRoomTypeIds, occupancyRatesByRoomPlan, inventoryByHotelRoom, legacyPricebookByRoom, mealPricebookByHotelDate };
     await this.referenceCache?.set(catalogCacheKey, {
       roomsByHotel: Array.from(roomsByHotel.entries()),
       ratePlansByRoom: Array.from(ratePlansByRoom.entries()),
       activeRoomTypeIds: Array.from(activeRoomTypeIds),
       occupancyRatesByRoomPlan: Array.from(occupancyRatesByRoomPlan.entries()),
       inventoryByHotelRoom: Array.from(inventoryByHotelRoom.entries()),
+      legacyPricebookByRoom: Array.from(legacyPricebookByRoom.entries()),
       mealPricebookByHotelDate: Array.from(mealPricebookByHotelDate.entries()).map(([hotelId, byDate]) => [
         hotelId,
         Array.from(byDate.entries()),
@@ -1054,7 +1116,7 @@ const mealFlags = mealFlagsFromRoom(room, planMealCode);
         const extraBedAmount = this.hotelPricingService.money(supplements.extraBedRate * counts.extraBedCount);
         const childWithBedAmount = this.hotelPricingService.money(supplements.childWithBedRate * counts.childWithBedCount);
         const childWithoutBedAmount = this.hotelPricingService.money(supplements.childWithoutBedRate * counts.childWithoutBedCount);
-        const mealPrices = catalogRows.mealPricebookByHotelDate.get(hotelId)?.get(date) || {
+        const mealPrices = catalogRows.mealPricebookByHotelDate?.get(hotelId)?.get(date) || {
           breakfast: 0,
           lunch: 0,
           dinner: 0,
@@ -1143,6 +1205,157 @@ nightlyBase,
     return offers.sort((a, b) => a.totalStayPrice - b.totalStayPrice);
   }
 
+  private buildRoomOffersFromLegacyPricebook(
+    hotel: any,
+    dateList: string[],
+    roomCount: number,
+    adultCount: number,
+    childCount: number,
+    catalogRows: OfflineCatalogRows,
+    marginPercentage: number,
+    requestedMealPlanCode = '',
+    supplementCounts: Partial<SupplementCounts> = {},
+  ): OfflineRoomOffer[] {
+    const hotelId = Number(hotel.hotel_id || 0);
+    const roomsNeeded = Math.max(Number(roomCount || 1), 1);
+    const counts: SupplementCounts = {
+      extraBedCount: Math.max(Number(supplementCounts.extraBedCount || 0), 0),
+      childWithBedCount: Math.max(Number(supplementCounts.childWithBedCount || 0), 0),
+      childWithoutBedCount: Math.max(Number(supplementCounts.childWithoutBedCount || 0), 0),
+    };
+    const requestedMealPlan = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
+    const activeRooms = (catalogRows.roomsByHotel.get(hotelId) || []).filter((room: any) =>
+      catalogRows.activeRoomTypeIds.has(Number(room.room_type_id || 0)),
+    );
+    const offers: OfflineRoomOffer[] = [];
+
+    for (const room of activeRooms) {
+      const roomId = Number(room.room_ID || 0);
+      const roomTypeId = Number(room.room_type_id || 0);
+      const directRows = catalogRows.legacyPricebookByRoom.get(`${hotelId}|${roomId}|${roomTypeId}`) || [];
+      const typeRows = catalogRows.legacyPricebookByRoom.get(`${hotelId}|0|${roomTypeId}`) || [];
+      const priceRows = [...directRows, ...typeRows];
+      if (priceRows.length === 0) continue;
+
+      const nightlyBase: number[] = [];
+      const nightlyMargin: number[] = [];
+      const nightlySell: number[] = [];
+      const nightlyRoomCost: number[] = [];
+      const nightlyExtraBed: number[] = [];
+      const nightlyChildWithBed: number[] = [];
+      const nightlyChildWithoutBed: number[] = [];
+      const nightlyMealPlanBreakdown: OfflineMealBreakdown[] = [];
+      let valid = true;
+
+      const mealFlags = mealFlagsFromRoom(room, requestedMealPlanCode);
+      for (const date of dateList) {
+        const baseRate = selectPricebookRate(priceRows, 0, date);
+        const extraBedRate = selectPricebookRate(priceRows, 1, date);
+        const childWithBedRate = selectPricebookRate(priceRows, 2, date);
+        const childWithoutBedRate = selectPricebookRate(priceRows, 3, date);
+        if (!(baseRate > 0) ||
+            (counts.extraBedCount > 0 && !(extraBedRate > 0)) ||
+            (counts.childWithBedCount > 0 && !(childWithBedRate > 0)) ||
+            (counts.childWithoutBedCount > 0 && !(childWithoutBedRate > 0))) {
+          valid = false;
+          break;
+        }
+
+        const mealPrices = catalogRows.mealPricebookByHotelDate.get(hotelId)?.get(date) || {
+          breakfast: 0,
+          lunch: 0,
+          dinner: 0,
+        };
+        const mealPlanBreakdown = this.offlineHotelMealPricingService?.calculate({
+          flags: mealFlags,
+          prices: mealPrices,
+          fallbackMealPlanCode: requestedMealPlanCode,
+          adultCount,
+          childCount,
+          roomCount: roomsNeeded,
+          roomQuantity: roomsNeeded,
+        }) || {
+          ...mealFlags,
+          mealPlanCode: requestedMealPlanCode || 'EP',
+          breakfastCostPerPerson: 0,
+          lunchCostPerPerson: 0,
+          dinnerCostPerPerson: 0,
+          foodRequiredCount: 0,
+          roomQuantity: roomsNeeded,
+          totalBreakfastCost: 0,
+          totalLunchCost: 0,
+          totalDinnerCost: 0,
+          totalMealPlanCost: 0,
+        };
+        if (requestedMealPlan && mealPlanBreakdown.mealPlanCode !== requestedMealPlan) {
+          valid = false;
+          break;
+        }
+
+        nightlyMealPlanBreakdown.push(mealPlanBreakdown);
+        const extraBedAmount = this.hotelPricingService.money(extraBedRate * counts.extraBedCount);
+        const childWithBedAmount = this.hotelPricingService.money(childWithBedRate * counts.childWithBedCount);
+        const childWithoutBedAmount = this.hotelPricingService.money(childWithoutBedRate * counts.childWithoutBedCount);
+        const roomCost = this.hotelPricingService.money(baseRate * roomsNeeded);
+        const baseAmount = this.hotelPricingService.money(roomCost + extraBedAmount + childWithBedAmount + childWithoutBedAmount);
+        const breakdown = this.hotelPricingService.marginBreakdown(baseAmount, marginPercentage);
+        nightlyBase.push(breakdown.baseAmount);
+        nightlyMargin.push(breakdown.marginAmount);
+        nightlySell.push(breakdown.sellAmount);
+        nightlyRoomCost.push(roomCost);
+        nightlyExtraBed.push(extraBedAmount);
+        nightlyChildWithBed.push(childWithBedAmount);
+        nightlyChildWithoutBed.push(childWithoutBedAmount);
+      }
+
+      if (!valid || nightlySell.length !== dateList.length) continue;
+      const mealPlanBreakdown = {
+        ...nightlyMealPlanBreakdown[0],
+        mealPlanCode: nightlyMealPlanBreakdown.find((meal) => meal.mealPlanCode)?.mealPlanCode || requestedMealPlanCode || 'EP',
+        totalBreakfastCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalBreakfastCost, 0)),
+        totalLunchCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalLunchCost, 0)),
+        totalDinnerCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalDinnerCost, 0)),
+        totalMealPlanCost: this.hotelPricingService.money(nightlyMealPlanBreakdown.reduce((sum, meal) => sum + meal.totalMealPlanCost, 0)),
+      };
+      const rateForType = (priceType: number): number => {
+        const rates = dateList.map((date) => selectPricebookRate(priceRows, priceType, date)).filter((rate) => rate > 0);
+        return rates.length > 0 ? rates[0] : 0;
+      };
+      offers.push({
+        roomId,
+        roomTypeId,
+        roomTitle: String(room.room_title || room.room_ref_code || `Room ${roomTypeId}`),
+        bookingCode: `OFFLINE-${hotelId}-${roomId}-${roomTypeId}`,
+        ratePlanId: 'OFFLINE',
+        isDefaultRatePlan: true,
+        mealPlan: mealPlanBreakdown.mealPlanCode,
+        nightlyBase,
+        nightlyMargin,
+        nightlySell,
+        nightlyRoomCost,
+        nightlyExtraBedCost: nightlyExtraBed,
+        nightlyChildWithBedCost: nightlyChildWithBed,
+        nightlyChildWithoutBedCost: nightlyChildWithoutBed,
+        hotelMarginPercentage: marginPercentage,
+        baseTotalPrice: this.hotelPricingService.money(nightlyBase.reduce((sum, amount) => sum + amount, 0)),
+        hotelMarginTotalAmount: this.hotelPricingService.money(nightlyMargin.reduce((sum, amount) => sum + amount, 0)),
+        totalStayPrice: this.hotelPricingService.money(nightlySell.reduce((sum, amount) => sum + amount, 0)),
+        pricePerNight: this.hotelPricingService.money(Math.min(...nightlySell)),
+        roomCount: roomsNeeded,
+        extraBedRate: rateForType(1),
+        childWithBedRate: rateForType(2),
+        childWithoutBedRate: rateForType(3),
+        extraBedAmount: this.hotelPricingService.money(nightlyExtraBed.reduce((sum, amount) => sum + amount, 0)),
+        childWithBedAmount: this.hotelPricingService.money(nightlyChildWithBed.reduce((sum, amount) => sum + amount, 0)),
+        childWithoutBedAmount: this.hotelPricingService.money(nightlyChildWithoutBed.reduce((sum, amount) => sum + amount, 0)),
+        mealPlanBreakdown,
+        nightlyMealPlanBreakdown,
+      });
+    }
+
+    return offers.sort((a, b) => a.totalStayPrice - b.totalStayPrice);
+  }
+
   private async buildRoomOffers(
     hotel: any,
     dateList: string[],
@@ -1154,227 +1367,21 @@ nightlyBase,
     supplementCounts: Partial<SupplementCounts> = {},
   ): Promise<OfflineRoomOffer[]> {
     const marginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage(hotel);
-    if (catalogRows) {
-      return this.buildRoomOffersFromCatalogRows(
-        hotel,
-        dateList,
-        roomCount,
-        adultCount,
-        childCount,
-        catalogRows,
-        marginPercentage,
-        requestedMealPlanCode,
-        supplementCounts,
-      );
-    }
+    const rows = catalogRows || await this.loadCatalogRows([hotel], dateList);
 
-    // Occupancy-rate rows are the canonical Offline price source. The legacy
-    // monthly room-price table is intentionally not consulted during search.
-    const canonicalRows = await this.loadCatalogRows([hotel], dateList);
+    // PHP-style offline hotels are priced from the monthly room price book and
+    // have no supplier rate-plan identity. Existing migrated hotels that only
+    // have occupancy rows continue through the canonical fallback below.
+    const legacyOffers = this.buildRoomOffersFromLegacyPricebook(
+      hotel, dateList, roomCount, adultCount, childCount, rows,
+      marginPercentage, requestedMealPlanCode, supplementCounts,
+    );
+    if (legacyOffers.length > 0) return legacyOffers;
+
     return this.buildRoomOffersFromCatalogRows(
-      hotel, dateList, roomCount, adultCount, childCount, canonicalRows,
-      marginPercentage, requestedMealPlanCode,
-      supplementCounts,
+      hotel, dateList, roomCount, adultCount, childCount, rows,
+      marginPercentage, requestedMealPlanCode, supplementCounts,
     );
-
-    const activeRooms = await this.prisma.dvi_hotel_rooms.findMany({
-      where: {
-        hotel_id: Number(hotel.hotel_id || 0),
-        status: 1,
-        deleted: 0,
-      },
-      select: {
-        room_ID: true,
-        room_type_id: true,
-        room_title: true,
-        room_ref_code: true,
-        total_max_adults: true,
-        total_max_childrens: true,
-        breakfast_included: true,
-        lunch_included: true,
-        dinner_included: true,
-      },
-      orderBy: [{ room_type_id: 'asc' }, { room_ID: 'asc' }],
-    });
-
-    if (activeRooms.length === 0) {
-      return [];
-    }
-
-    const roomsNeeded = Math.max(Number(roomCount || 1), 1);
-    const ratePlansByRoom = new Map<number, any[]>();
-    const ratePlanModel = (this.prisma as any).dvi_hotel_room_rate_plan;
-    if (ratePlanModel?.findMany) {
-      const ratePlans = await ratePlanModel.findMany({
-        where: { hotel_id: Number(hotel.hotel_id || 0), status: 1, deleted: 0 },
-        select: { room_id: true, rateplan_id: true, rateplan_name: true, meal_plan_description: true, occupancy: true },
-      });
-      for (const plan of ratePlans as any[]) {
-        const roomId = Number(plan.room_id || 0);
-        if (roomId <= 0) continue;
-        const rows = ratePlansByRoom.get(roomId) || [];
-        rows.push(plan);
-        ratePlansByRoom.set(roomId, rows);
-      }
-    }
-
-    const roomTypeIds = Array.from(
-      new Set(
-        activeRooms
-          .map((room) => Number((room as any).room_type_id || 0))
-          .filter((roomTypeId) => roomTypeId > 0),
-      ),
-    );
-
-    if (roomTypeIds.length === 0) {
-      return [];
-    }
-
-    // A room row is usable only when its master room type is active too.
-    // Otherwise deactivated room types can leak back into offline search.
-    const roomTypeModel = (this.prisma as any).dvi_hotel_roomtype;
-    if (roomTypeModel?.findMany) {
-      const activeRoomTypes = await roomTypeModel.findMany({
-        where: { room_type_id: { in: roomTypeIds }, status: 1, deleted: 0 },
-        select: { room_type_id: true },
-      });
-      const activeRoomTypeIds = new Set(
-        (activeRoomTypes as any[]).map((row) => Number(row.room_type_id)).filter((id) => id > 0),
-      );
-      if (activeRoomTypeIds.size === 0) return [];
-      for (let index = activeRooms.length - 1; index >= 0; index -= 1) {
-        if (!activeRoomTypeIds.has(Number((activeRooms[index] as any).room_type_id || 0))) {
-          activeRooms.splice(index, 1);
-        }
-      }
-      if (activeRooms.length === 0) return [];
-    }
-
-    const yearMonthPairs = Array.from(
-      new Set(
-        dateList.map((value) => {
-          const parsed = new Date(`${value}T00:00:00.000Z`);
-          return `${parsed.getUTCFullYear()}|${parsed.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })}`;
-        }),
-      ),
-    );
-
-    const priceRows = await this.prisma.dvi_hotel_room_price_book.findMany({
-      where: {
-        hotel_id: Number(hotel.hotel_id || 0),
-        room_type_id: { in: roomTypeIds },
-        price_type: 0,
-        status: 1,
-        deleted: 0,
-        OR: yearMonthPairs.map((pair) => {
-          const [year, month] = pair.split('|');
-          return { year, month };
-        }),
-      },
-    });
-
-    const priceRowsByRoomType = new Map<number, any[]>();
-    for (const row of priceRows as any[]) {
-      const roomTypeId = Number(row.room_type_id || 0);
-      const rows = priceRowsByRoomType.get(roomTypeId) || [];
-      rows.push(row);
-      priceRowsByRoomType.set(roomTypeId, rows);
-    }
-
-    const offers: OfflineRoomOffer[] = [];
-
-    for (const room of activeRooms as any[]) {
-      const roomTypeId = Number(room.room_type_id || 0);
-      const matchingPriceRows = priceRowsByRoomType.get(roomTypeId) || [];
-      if (matchingPriceRows.length === 0) {
-        continue;
-      }
-
-      const nightlyBase: number[] = [];
-      const nightlyMargin: number[] = [];
-      const nightlySell: number[] = [];
-      let valid = true;
-
-      for (const date of dateList) {
-        const parsed = new Date(`${date}T00:00:00.000Z`);
-        const dayKey = `day_${parsed.getUTCDate()}` as const;
-        const year = String(parsed.getUTCFullYear());
-        const month = parsed.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
-        const nightlyCandidates = matchingPriceRows.filter((row) => String(row.year || '') === year && String(row.month || '') === month);
-        const nightlyPrices = nightlyCandidates
-          .map((row) => Number((row as any)[dayKey] || 0))
-          .filter((price) => Number.isFinite(price) && price > 0);
-
-        if (nightlyPrices.length === 0) {
-          valid = false;
-          break;
-        }
-
-        const baseAmount = this.hotelPricingService.money(Math.min(...nightlyPrices) * Math.max(roomCount, 1));
-        const breakdown = this.hotelPricingService.marginBreakdown(baseAmount, marginPercentage);
-        nightlyBase.push(breakdown.baseAmount);
-        nightlyMargin.push(breakdown.marginAmount);
-        nightlySell.push(breakdown.sellAmount);
-      }
-
-      if (!valid || nightlySell.length !== dateList.length) {
-        continue;
-      }
-
-      const totalStayPrice = this.hotelPricingService.money(
-        nightlySell.reduce((sum, amount) => sum + amount, 0),
-      );
-      const pricePerNight = this.hotelPricingService.money(
-        Math.min(...nightlySell),
-      );
-
-      const supplements = this.resolveSupplementRates(room, requestedMealPlanCode, ratePlansByRoom);
-      offers.push({
-        roomId: Number(room.room_ID || 0),
-        roomTypeId,
-        roomTitle: String(room.room_title || room.room_ref_code || `Room ${roomTypeId}`),
-        bookingCode: `OFFLINE-${hotel.hotel_id}-${room.room_ID}-${roomTypeId}`,
-        mealPlan: this.resolveMealPlan(room, requestedMealPlanCode, ratePlansByRoom),
-        nightlyBase,
-        nightlyMargin,
-        nightlySell,
-        nightlyRoomCost: nightlyBase.map((amount) => this.hotelPricingService.money(amount / Math.max(roomCount, 1))),
-        nightlyExtraBedCost: nightlyBase.map(() => 0),
-        nightlyChildWithBedCost: nightlyBase.map(() => 0),
-        nightlyChildWithoutBedCost: nightlyBase.map(() => 0),
-        hotelMarginPercentage: marginPercentage,
-        baseTotalPrice: this.hotelPricingService.money(nightlyBase.reduce((sum, amount) => sum + amount, 0)),
-        hotelMarginTotalAmount: this.hotelPricingService.money(nightlyMargin.reduce((sum, amount) => sum + amount, 0)),
-        totalStayPrice,
-        pricePerNight,
-        roomCount,
-        extraBedRate: supplements.extraBedRate,
-        childWithBedRate: supplements.childWithBedRate,
-        childWithoutBedRate: supplements.childWithoutBedRate,
-        extraBedAmount: 0,
-        childWithBedAmount: 0,
-        childWithoutBedAmount: 0,
-        mealPlanBreakdown: {
-          breakfast: false,
-          lunch: false,
-          dinner: false,
-          mealPlanCode: this.resolveMealPlan(room, requestedMealPlanCode, ratePlansByRoom),
-          breakfastCostPerPerson: 0,
-          lunchCostPerPerson: 0,
-          dinnerCostPerPerson: 0,
-          foodRequiredCount: 0,
-          roomQuantity: Math.max(roomCount, 1),
-          totalBreakfastCost: 0,
-          totalLunchCost: 0,
-          totalDinnerCost: 0,
-          totalMealPlanCost: 0,
-        },
-        nightlyMealPlanBreakdown: [],
-      });
-    }
-
-    offers.sort((a, b) => a.totalStayPrice - b.totalStayPrice);
-    return offers;
   }
 
   async resolveOfflineRateOption(input: {

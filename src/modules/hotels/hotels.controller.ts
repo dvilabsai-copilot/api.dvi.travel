@@ -115,6 +115,21 @@ class BulkRoomPricebookItemDto {
   childWithoutBed?: number | string;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  roomTypeId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  gstType?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  gstPercentage?: number | string;
+
+  @IsOptional()
   @IsObject()
   occupancyRates?: Record<string, number | string>;
 
