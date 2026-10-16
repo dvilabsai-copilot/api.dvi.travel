@@ -165,8 +165,12 @@ updateOwnProfile(
 ) {
   const user = req.user;
 
+  const roleId = Number(user.role ?? user.roleID ?? 0);
+  const staffId = Number(user.staffId ?? user.staff_id ?? 0);
+
   if (
-    Number(user.role) !== 4 ||
+    roleId !== SystemRole.AGENT ||
+    staffId > 0 ||
     !Number(user.agentId)
   ) {
     throw new ForbiddenException(
