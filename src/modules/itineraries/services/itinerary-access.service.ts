@@ -189,6 +189,15 @@ if (
   return true;
 }
 
+// Allow Travel Experts to open shared unconfirmed itineraries for editing.
+if (
+  role === SystemRole.TRAVEL_EXPERT &&
+  staffId > 0 &&
+  Number(plan.quotation_status) !== 1
+) {
+  return true;
+}
+
 /*
  * IMPORTANT:
  *
