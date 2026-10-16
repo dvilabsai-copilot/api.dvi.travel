@@ -16,6 +16,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { StaffService } from './staff.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { SystemRole } from '../auth/constants/system-role.constants';
 
 @ApiTags('staff')
 @ApiBearerAuth()
@@ -118,8 +119,8 @@ export class StaffController {
     const userRole = Number(user.role ?? user.roleID ?? 0);
     let finalAgentId = Number(body.agentId ?? 0);
 
- // Role 4 is Agent
-    if (userRole === 4) {
+ // Agents may create staff only for their own agent account.
+    if (userRole === SystemRole.AGENT) {
       finalAgentId = Number(user.agentId);
     }
 
@@ -128,7 +129,11 @@ export class StaffController {
       staffName: body.staffName,
       staffMobile: body.staffMobile,
       staffEmail: body.staffEmail,
-      roleId: userRole === 4 ? 4 : Number(body.roleId ?? 0),
+      // A staff login must remain a staff login.  Using the Agent role here
+      // gives the new account access to the parent agent's profile endpoints.
+      roleId: userRole === SystemRole.AGENT
+        ? SystemRole.STAFF
+        : Number(body.roleId ?? 0),
       status: Number(body.status ?? 1),
       loginEmail: body.loginEmail,
       password: body.password,
