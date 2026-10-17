@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -55,6 +57,30 @@ private tableName(
       .digest('hex');
   }
 
+    private logOtpFailure(
+    stage: string,
+    purpose: EmailOtpPurpose,
+    error: unknown,
+  ) {
+    const details = error as {
+      code?: unknown;
+      responseCode?: unknown;
+      meta?: { code?: unknown };
+    } | null;
+
+    const safeCode = (value: unknown) =>
+      String(value ?? 'unknown')
+        .replace(/[^a-zA-Z0-9_.-]/g, '')
+        .slice(0, 64) || 'unknown';
+
+    this.logger.error(
+      `OTP ${stage} failed; purpose=${purpose}; ` +
+        `code=${safeCode(details?.code)}; ` +
+        `smtpStatus=${safeCode(details?.responseCode)}; ` +
+        `dbCode=${safeCode(details?.meta?.code)}`,
+    );
+  }
+
   private async ensureOtpTable(purpose: EmailOtpPurpose) {
     const ready = this.otpTableReady.get(purpose);
     if (ready) {
@@ -63,14 +89,39 @@ private tableName(
     }
 
     const tableName = this.tableName(purpose);
-  const indexPrefix =
-  purpose === 'registration'
-    ? 'registration'
-    : purpose === 'password-reset'
-      ? 'password_reset'
-      : 'login';
-    const createPromise = this.prisma
-      .$executeRawUnsafe(`
+    const indexPrefix =
+      purpose === 'registration'
+        ? 'registration'
+        : purpose === 'password-reset'
+          ? 'password_reset'
+          : 'login';
+
+    const createPromise = (async () => {
+      try {
+        const table = this.table(purpose);
+
+        await this.prisma.$queryRaw(Prisma.sql`
+          SELECT id FROM ${table} LIMIT 0
+        `);
+
+        return;
+      } catch (error) {
+        const databaseError = error as {
+          code?: string;
+          meta?: { code?: string | number };
+        } | null;
+
+        const missingTable =
+          databaseError?.code === 'P2021' ||
+          (databaseError?.code === 'P2010' &&
+            String(databaseError.meta?.code) === '1146');
+
+        if (!missingTable) {
+          throw error;
+        }
+      }
+
+      await this.prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS ${tableName} (
           id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
           email VARCHAR(320) NOT NULL,
@@ -84,17 +135,19 @@ private tableName(
           UNIQUE KEY uq_dvi_${indexPrefix}_email_otps_email (email),
           KEY idx_dvi_${indexPrefix}_email_otps_expires_at (expires_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin
-      `)
-      .then(() => undefined)
-      .catch((error) => {
-        this.otpTableReady.delete(purpose);
-        throw error;
-      });
+      `);
+    })().catch((error) => {
+      this.otpTableReady.delete(purpose);
+      this.logOtpFailure('table-initialization', purpose, error);
+
+      throw new ServiceUnavailableException(
+        'OTP storage is temporarily unavailable. Please try again later.',
+      );
+    });
 
     this.otpTableReady.set(purpose, createPromise);
     await createPromise;
   }
-
   private table(purpose: EmailOtpPurpose) {
     return Prisma.raw(this.tableName(purpose));
   }
@@ -145,50 +198,76 @@ private tableName(
 
   async createAndSendOtp(email: string, purpose: EmailOtpPurpose = 'login') {
     const normalizedEmail = this.normalizeEmail(email);
-    const existing = await this.getOtpRecord(normalizedEmail, purpose);
-    const now = Date.now();
-
-    if (existing && existing.resendAfter.getTime() > now) {
-      const waitSeconds = Math.ceil((existing.resendAfter.getTime() - now) / 1000);
-      throw new BadRequestException(
-        `Please wait ${waitSeconds} seconds before requesting another OTP.`,
-      );
-    }
-
-    const otp = crypto.randomInt(100000, 1000000).toString();
-    const table = this.table(purpose);
-
-    await this.prisma.$executeRaw(Prisma.sql`
-      INSERT INTO ${table}
-        (email, otp_hash, expires_at, resend_after, attempts)
-      VALUES
-        (${normalizedEmail}, ${this.hashOtp(normalizedEmail, otp, purpose)},
-         ${new Date(now + 10 * 60 * 1000)}, ${new Date(now + 60 * 1000)}, 0)
-      ON DUPLICATE KEY UPDATE
-        otp_hash = VALUES(otp_hash),
-        expires_at = VALUES(expires_at),
-        resend_after = VALUES(resend_after),
-        attempts = 0,
-        updated_at = CURRENT_TIMESTAMP(3)
-    `);
+    let mailAttempted = false;
 
     try {
+      const existing = await this.getOtpRecord(normalizedEmail, purpose);
+      const now = Date.now();
+
+      if (existing && existing.resendAfter.getTime() > now) {
+        const waitSeconds = Math.ceil(
+          (existing.resendAfter.getTime() - now) / 1000,
+        );
+
+        throw new BadRequestException(
+          `Please wait ${waitSeconds} seconds before requesting another OTP.`,
+        );
+      }
+
+      const otp = crypto.randomInt(100000, 1000000).toString();
+      const table = this.table(purpose);
+
+      await this.prisma.$executeRaw(Prisma.sql`
+        INSERT INTO ${table}
+          (email, otp_hash, expires_at, resend_after, attempts)
+        VALUES
+          (${normalizedEmail}, ${this.hashOtp(normalizedEmail, otp, purpose)},
+           ${new Date(now + 10 * 60 * 1000)}, ${new Date(now + 60 * 1000)}, 0)
+        ON DUPLICATE KEY UPDATE
+          otp_hash = VALUES(otp_hash),
+          expires_at = VALUES(expires_at),
+          resend_after = VALUES(resend_after),
+          attempts = 0,
+          updated_at = CURRENT_TIMESTAMP(3)
+      `);
+
+      mailAttempted = true;
       await this.sendOtpMail(normalizedEmail, otp, purpose);
+
+      return {
+        message:
+          purpose === 'registration'
+            ? 'Verification code sent to your email.'
+            : purpose === 'password-reset'
+              ? 'Password reset code sent to your email.'
+              : 'OTP sent to your registered email.',
+      };
     } catch (error) {
-      await this.deleteOtpRecord(normalizedEmail, purpose);
-      throw error;
+      if (mailAttempted) {
+        this.logOtpFailure('email', purpose, error);
+
+        try {
+          await this.deleteOtpRecord(normalizedEmail, purpose);
+        } catch (cleanupError) {
+          this.logOtpFailure('cleanup', purpose, cleanupError);
+        }
+      }
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      if (!mailAttempted) {
+        this.logOtpFailure('storage', purpose, error);
+      }
+
+      throw new ServiceUnavailableException(
+        mailAttempted
+          ? 'Unable to send OTP right now. Please try again shortly.'
+          : 'OTP storage is temporarily unavailable. Please try again later.',
+      );
     }
-
-   return {
-  message:
-    purpose === 'registration'
-      ? 'Verification code sent to your email.'
-      : purpose === 'password-reset'
-        ? 'Password reset code sent to your email.'
-        : 'OTP sent to your registered email.',
-};
   }
-
   async verifyOtp(
     email: string,
     otp: string,
@@ -790,10 +869,26 @@ await transporter.sendMail({
     otp: string,
     purpose: EmailOtpPurpose,
   ) {
-    const host = process.env.SMTP_HOST || process.env.MAIL_HOST;
-    const port = Number(process.env.SMTP_PORT || process.env.MAIL_PORT || 587);
-    const secure = String(process.env.SMTP_SECURE || 'false') === 'true';
-    const user = process.env.SMTP_USER || process.env.MAIL_USER;
+      const host = String(
+      process.env.SMTP_HOST || process.env.MAIL_HOST || '',
+    ).trim();
+
+    const port = Number(
+      process.env.SMTP_PORT || process.env.MAIL_PORT || 587,
+    );
+
+    const secureSetting = String(
+      process.env.SMTP_SECURE || process.env.MAIL_SECURE || '',
+    ).trim().toLowerCase();
+
+    const secure = secureSetting
+      ? secureSetting === 'true'
+      : port === 465;
+
+    const user = String(
+      process.env.SMTP_USER || process.env.MAIL_USER || '',
+    ).trim();
+
     const pass = process.env.SMTP_PASS || process.env.MAIL_PASS;
     const fromAddress =
       process.env.SMTP_FROM ||
@@ -828,13 +923,35 @@ const intro =
 
     if (!host) {
       if (process.env.NODE_ENV !== 'production') {
- this.logger.warn(
+        this.logger.warn(
           `SMTP is not configured. DEV OTP for ${email}: ${otp}`,
         );
         return;
       }
 
-      throw new BadRequestException('Email service is not configured.');
+      this.logger.error('OTP SMTP configuration is missing its host.');
+
+      throw new ServiceUnavailableException(
+        'Email service is not configured. Please contact support.',
+      );
+    }
+
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      this.logger.error('OTP SMTP configuration has an invalid port.');
+
+      throw new ServiceUnavailableException(
+        'Email service is not configured correctly. Please contact support.',
+      );
+    }
+
+    if (Boolean(user) !== Boolean(pass)) {
+      this.logger.error(
+        'OTP SMTP configuration has incomplete authentication credentials.',
+      );
+
+      throw new ServiceUnavailableException(
+        'Email service is not configured correctly. Please contact support.',
+      );
     }
 
     const transporter = nodemailer.createTransport({
