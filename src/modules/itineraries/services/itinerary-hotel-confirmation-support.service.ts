@@ -89,22 +89,54 @@ export class ItineraryHotelConfirmationSupportService {
       : null;
     const isEligibleRoute = (routeId: unknown) =>
       !eligibleHotelRouteIds || eligibleHotelRouteIds.has(Number(routeId || 0));
+    const removedRouteIds = new Set<number>();
+    const removedRows = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
+      where: {
+        itinerary_plan_id: Number(dto.itinerary_plan_ID),
+        selection_origin: 'USER_REMOVED',
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_id: true,
+        selected_price_snapshot: true,
+      },
+    });
+    removedRows.forEach((row: any) => {
+      const snapshot = (() => {
+        try {
+          const parsed = typeof row?.selected_price_snapshot === 'string'
+            ? JSON.parse(row.selected_price_snapshot)
+            : row?.selected_price_snapshot;
+          return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch {
+          return {};
+        }
+      })();
+      [
+        Number(row?.itinerary_route_id || 0),
+        ...(Array.isArray(snapshot?.removedRouteIds) ? snapshot.removedRouteIds : []),
+      ].map(Number).filter((routeId) => routeId > 0).forEach((routeId) => removedRouteIds.add(routeId));
+    });
     const filteredHotelBookings = (dto.hotel_bookings || []).flatMap((booking: any) => {
       const routeIds = Array.isArray(booking?.routeIds)
-        ? this.uniquePositiveNumbers(booking.routeIds).filter(isEligibleRoute)
+        ? this.uniquePositiveNumbers(booking.routeIds)
+          .filter(isEligibleRoute)
+          .filter((routeId) => !removedRouteIds.has(Number(routeId)))
         : [];
       const routeId = Number(booking?.routeId || 0);
+      const normalizedRouteId = removedRouteIds.has(routeId) ? 0 : routeId;
 
       if (routeIds.length > 0) {
         return [{
           ...booking,
-          routeId: isEligibleRoute(routeId) ? routeId : routeIds[0],
+          routeId: isEligibleRoute(normalizedRouteId) && normalizedRouteId > 0 ? normalizedRouteId : routeIds[0],
           routeIds,
           nights: routeIds.length,
         }];
       }
 
-      return isEligibleRoute(routeId) ? [booking] : [];
+      return isEligibleRoute(normalizedRouteId) && normalizedRouteId > 0 ? [booking] : [];
     });
     const incomingHotelBookings = this.pruneHotelBookingsCoveredByMultiNight(
       this.mergeConsecutiveSupplierHotelBookings(filteredHotelBookings),
