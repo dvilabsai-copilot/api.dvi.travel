@@ -77,6 +77,7 @@ type SnapshotReadOptions = {
 };
 
 const EMPTY_AVAILABILITY_MARKER = '__EMPTY_HOTEL_AVAILABILITY__';
+const USER_REMOVED_SELECTION_ORIGIN = 'USER_REMOVED';
 
 export type HotelAvailabilityChangeType =
   | 'AUTO_SELECTION_CHANGED'
@@ -1763,6 +1764,138 @@ export class HotelAvailabilitySnapshotService {
         },
       });
     }, { maxWait: 15000, timeout: 120000 });
+  }
+
+  /**
+   * Mark a selected stay as intentionally arranged externally by the traveler.
+   * Keep the route/group row active so reads and later resets retain the user's
+   * decision, but clear all commercial hotel identity and pricing fields.
+   */
+  async removeHotelSelection(
+    quoteId: string,
+    hotelDetailsId: number,
+    removedBy = 0,
+  ): Promise<{ removed: boolean; hotelDetailsId: number; routeIds: number[]; groupType: number }> {
+    const plan = await this.findPlan(quoteId);
+    const selectionId = Number(hotelDetailsId || 0);
+    if (!selectionId) {
+      throw new BadRequestException('Hotel selection ID is required');
+    }
+
+    const selection = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findFirst({
+      where: {
+        itinerary_plan_hotel_details_ID: selectionId,
+        itinerary_plan_id: Number(plan.itinerary_plan_ID),
+        status: 1,
+        deleted: 0,
+      },
+    });
+    if (!selection) {
+      throw new BadRequestException('The selected hotel is no longer active');
+    }
+    if (Number(selection.hotel_required || 0) === 2) {
+      throw new ConflictException('Previous-night billing markers cannot be removed as hotel selections');
+    }
+    if (isProtectedHotelSelection(selection)) {
+      throw new ConflictException('A confirmed hotel selection cannot be removed here');
+    }
+
+    const snapshot = parseHotelSelectionSnapshot(selection) as Record<string, any>;
+    const routeIds = Array.from(new Set([
+      Number(selection.itinerary_route_id || 0),
+      ...(Array.isArray(snapshot.removedRouteIds) ? snapshot.removedRouteIds : []),
+      ...(Array.isArray(snapshot.authoritativeRouteIds) ? snapshot.authoritativeRouteIds : []),
+      ...(Array.isArray(snapshot.completeStayRouteIds) ? snapshot.completeStayRouteIds : []),
+      ...(Array.isArray(snapshot.hotelStayCompleteStayRouteIds) ? snapshot.hotelStayCompleteStayRouteIds : []),
+      ...(Array.isArray(snapshot.routeIds) ? snapshot.routeIds : []),
+    ].map(Number).filter((routeId) => routeId > 0)));
+    const groupType = Number(selection.group_type || 0);
+    const removedSnapshot = JSON.stringify({
+      selectionOrigin: USER_REMOVED_SELECTION_ORIGIN,
+      removedRouteIds: routeIds,
+      availabilityStatus: 'NO_SUPPLIER_AVAILABILITY',
+      availabilityMessage: 'Hotel removed; traveler will arrange this stay independently.',
+      removedAt: new Date().toISOString(),
+      removedBy: Number(removedBy || 0) || null,
+    });
+    const emptySelectionData = {
+      hotel_required: 0,
+      hotel_category_id: 0,
+      hotel_id: null,
+      hotel_margin_percentage: 0,
+      hotel_margin_gst_type: 0,
+      hotel_margin_gst_percentage: 0,
+      hotel_margin_rate: 0,
+      hotel_margin_rate_tax_amt: 0,
+      hotel_code: null,
+      hotel_provider: null,
+      hotel_booking_mode: null,
+      price_source: null,
+      is_live_rate: false,
+      selected_rate_option_id: null,
+      selected_price_per_night: null,
+      selected_total_price: null,
+      selected_currency: null,
+      selection_origin: USER_REMOVED_SELECTION_ORIGIN,
+      selected_price_snapshot: removedSnapshot,
+      hotel_breakfast_cost: 0,
+      hotel_breakfast_cost_gst_amount: 0,
+      hotel_lunch_cost: 0,
+      hotel_lunch_cost_gst_amount: 0,
+      hotel_dinner_cost: 0,
+      hotel_dinner_cost_gst_amount: 0,
+      total_hotel_meal_plan_cost: 0,
+      total_hotel_meal_plan_cost_gst_amount: 0,
+      total_extra_bed_cost: 0,
+      total_extra_bed_cost_gst_amount: 0,
+      total_childwith_bed_cost: 0,
+      total_childwith_bed_cost_gst_amount: 0,
+      total_childwithout_bed_cost: 0,
+      total_childwithout_bed_cost_gst_amount: 0,
+      total_no_of_rooms: 0,
+      total_room_cost: 0,
+      total_room_gst_amount: 0,
+      total_hotel_cost: 0,
+      total_amenities_cost: 0,
+      total_amenities_gst_amount: 0,
+      total_hotel_tax_amount: 0,
+      hotel_approval_status: 'NOT_REQUESTED',
+      manual_confirmation_status: 'NOT_STARTED',
+      requires_price_reacceptance: false,
+      updatedon: new Date(),
+      status: 1,
+      deleted: 0,
+    };
+
+    await this.prisma.$transaction(async (tx: any) => {
+      await tx.dvi_itinerary_plan_hotel_details.update({
+        where: { itinerary_plan_hotel_details_ID: selectionId },
+        data: emptySelectionData,
+      });
+      await tx?.dvi_itinerary_plan_hotel_room_details?.updateMany?.({
+        where: {
+          itinerary_plan_hotel_details_id: selectionId,
+          status: 1,
+          deleted: 0,
+        },
+        data: { status: 0, deleted: 1, updatedon: new Date() },
+      });
+      await tx?.dvi_itinerary_plan_hotel_room_amenities?.updateMany?.({
+        where: {
+          itinerary_plan_hotel_details_id: selectionId,
+          status: 1,
+          deleted: 0,
+        },
+        data: { status: 0, deleted: 1, updatedon: new Date() },
+      });
+    }, { maxWait: 15000, timeout: 120000 });
+
+    return {
+      removed: true,
+      hotelDetailsId: selectionId,
+      routeIds,
+      groupType,
+    };
   }
 
   /**
@@ -5494,6 +5627,31 @@ export class HotelAvailabilitySnapshotService {
         selected_price_snapshot: true,
       },
     });
+    const removedRows = await tx.dvi_itinerary_plan_hotel_details.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        deleted: 0,
+        status: 1,
+        selection_origin: USER_REMOVED_SELECTION_ORIGIN,
+      },
+      select: {
+        itinerary_route_id: true,
+        group_type: true,
+        selected_price_snapshot: true,
+      },
+    });
+    const removedRouteGroups = new Set<string>();
+    removedRows.forEach((row: any) => {
+      const groupType = Number(row?.group_type || 0);
+      const snapshot = parseHotelSelectionSnapshot(row) as Record<string, any>;
+      const routeIds = Array.from(new Set([
+        Number(row?.itinerary_route_id || 0),
+        ...(Array.isArray(snapshot.removedRouteIds) ? snapshot.removedRouteIds : []),
+      ].map(Number).filter((routeId) => routeId > 0)));
+      routeIds.forEach((routeId) => {
+        removedRouteGroups.add(`${groupType}|${routeId}`);
+      });
+    });
     const optionsByKey = new Map<string, any[]>();
     const traceEnabled = String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim() === 'true';
     const traceCandidateRejections: any[] = [];
@@ -5545,6 +5703,7 @@ export class HotelAvailabilitySnapshotService {
       const routeId = Number(routePricedRow.itineraryRouteId || routePricedRow.routeId || 0);
       const groupType = Number(routePricedRow.groupType || 0);
       if (eligibleRouteIds && !eligibleRouteIds.has(routeId)) continue;
+      if (removedRouteGroups.has(`${groupType}|${routeId}`) || removedRouteGroups.has(`0|${routeId}`)) continue;
       const approvalRequired = routePricedRow.requiresHotelApproval === true ||
         String(routePricedRow.requiresHotelApproval || '').trim().toLowerCase() === 'true' ||
         String(routePricedRow.availabilityStatus || '').trim().toUpperCase() === 'OFFLINE_APPROVAL_REQUIRED' ||
@@ -5778,6 +5937,11 @@ export class HotelAvailabilitySnapshotService {
         continue;
       }
       const optionRouteId = Number(options[0]?.itineraryRouteId || options[0]?.routeId || 0);
+      const optionGroupType = Number(options[0]?.groupType || options[0]?.group_type || 0);
+      if (removedRouteGroups.has(`${optionGroupType}|${optionRouteId}`) || removedRouteGroups.has(`0|${optionRouteId}`)) {
+        if (isTargetPersistenceKey) targetPersistenceTrace.push({ key, options: options.length, skipped: 'user-removed' });
+        continue;
+      }
       const authoritativeGroup = options.some((option: any) => option.authoritativeRecommendation === true);
       const authoritativeOptions = options.filter((option: any) =>
         option.autoSelectionCandidate === true &&

@@ -4,7 +4,7 @@ import {
 } from '../../hotels/hotel-rate-plans';
 import { normalizeHotelStarRating } from './hotel-category.util';
 
-export type HotelSelectionOrigin = 'USER_SELECTED' | 'AUTO_SELECTED';
+export type HotelSelectionOrigin = 'USER_SELECTED' | 'AUTO_SELECTED' | 'USER_REMOVED';
 
 export type HotelSelectionSnapshot = {
   optionKey?: string;
@@ -459,6 +459,7 @@ export function resolvePersistedHotelIdentity(
 
 export function selectionOriginFromRow(row: any): HotelSelectionOrigin {
   const snapshot = parseHotelSelectionSnapshot(row);
+  if (String(row?.selection_origin || snapshot.selectionOrigin || '').trim().toUpperCase() === 'USER_REMOVED') return 'USER_REMOVED';
   if (snapshot.selectionOrigin === 'USER_SELECTED') return 'USER_SELECTED';
   if (snapshot.selectionOrigin === 'AUTO_SELECTED') return 'AUTO_SELECTED';
   // Legacy offline rows predate explicit origin metadata and represented

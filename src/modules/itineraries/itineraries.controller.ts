@@ -890,6 +890,23 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     };
   }
 
+  @Post('hotel_details/:quoteId/remove')
+  @ApiOperation({
+    summary: 'Remove a selected hotel and mark the stay as arranged externally',
+    description: 'Keeps the itinerary stay visible without hotel pricing. The marked stay is preserved through hotel reset and is excluded from automatic selection and confirmation booking flows.',
+  })
+  async removeItineraryHotelSelection(
+    @Param('quoteId') quoteId: string,
+    @Body() body: { hotelDetailsId?: number },
+    @Req() req: any,
+  ) {
+    return this.hotelAvailabilitySnapshotService.removeHotelSelection(
+      quoteId,
+      Number(body?.hotelDetailsId || 0),
+      Number(req.user?.userId || 0),
+    );
+  }
+
   @Post('hotel_details/:quoteId/offline-availability')
   @ApiOperation({
     summary: 'Fetch offline hotels for one stay group or all stay groups',

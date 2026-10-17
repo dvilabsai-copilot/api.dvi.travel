@@ -166,7 +166,7 @@ export interface ItineraryHotelRowDto {
   };
   optionKey?: string;
   isSelected?: boolean;
-  selectionOrigin?: 'AUTO_SELECTED' | 'USER_SELECTED';
+  selectionOrigin?: 'AUTO_SELECTED' | 'USER_SELECTED' | 'USER_REMOVED';
   selectionStatus?: 'AVAILABLE' | 'UNAVAILABLE' | 'REVIEW_REQUIRED';
   selectionReason?: string | null;
   distanceKm?: number | null;
@@ -1394,7 +1394,7 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
           Boolean(String(selectedPriceSnapshot.rateOptionId || '').trim()),
         selectionOrigin: (String((h as any).selection_origin || '').trim().toUpperCase() ||
           (Number((h as any).hotel_id || 0) > 0 ? 'AUTO_SELECTED' : undefined)) as
-          'AUTO_SELECTED' | 'USER_SELECTED' | undefined,
+          'AUTO_SELECTED' | 'USER_SELECTED' | 'USER_REMOVED' | undefined,
         selectionId: Number(hotelDetailsId || 0),
         requiresPriceReacceptance: Boolean((h as any).requires_price_reacceptance),
         selectedPriceSnapshot: rawSelectedPriceSnapshot || null,
