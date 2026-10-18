@@ -2031,7 +2031,12 @@ timingStepStartedAt =
     groupType?: number;
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
   }) {
-    return this.selectionWorkflowService.selectHotel(data);
+    const groupType = Number(data.groupType || 0);
+    return this.selectionWorkflowService.withHotelSelectionLock(
+      Number(data.planId),
+      groupType,
+      () => this.selectionWorkflowService.selectHotel(data),
+    );
   }
 
   /**
@@ -2103,6 +2108,10 @@ timingStepStartedAt =
               ? 'Hotel availability could not be checked right now. Please try again.'
               : String(response?.message || error?.message || 'The selected hotel is not available for the requested stay.'),
             code: code || (status === 'REFRESH_FAILED' ? 'HOTEL_REFRESH_FAILED' : 'HOTEL_NO_AVAILABILITY'),
+            reason: response?.reason,
+            failedDates: response?.failedDates || [],
+            failedIdentity: response?.failedIdentity,
+            searchRunId: response?.searchRunId || data.searchRunId,
              affectedRouteIds: response?.affectedRouteIds || response?.logicalStay?.routeIds || [],
             logicalStay: response?.logicalStay,
             // Multi-night itinerary selection is all-or-nothing. Even when
@@ -2338,6 +2347,60 @@ timingStepStartedAt =
       };
     }
 
+    // The logical stay is known before any supplier work. When the browser
+    // supplies the search run that produced the visible card, reuse that
+    // exact persisted snapshot for candidate resolution. This prevents the
+    // preview request from silently switching to a second AxisRooms response
+    // between Reset Hotels and Choose. The final occupancy/rate validation
+    // below still runs against the current database state.
+    const requestedSearchRunId = String(data.searchRunId || '').trim();
+    let snapshotCandidates: any[] | null = null;
+    if (requestedSearchRunId && (provider === 'axisrooms' || provider === 'staah')) {
+      const cacheModel = (this.prisma as any).dvi_itinerary_hotel_search_cache;
+      const cachedRows = await cacheModel?.findMany?.({
+        where: {
+          quote_id: quoteId,
+          plan_id: Number(data.planId),
+          recommendation_search_run_id: requestedSearchRunId,
+          status: 1,
+          deleted: 0,
+        },
+        select: { route_id: true, group_type: true, full_payload: true },
+      }) || [];
+      if (cachedRows.length === 0) {
+        throw new ConflictException({
+          code: 'HOTEL_AVAILABILITY_SNAPSHOT_MISMATCH',
+          message: 'The hotel availability snapshot has changed. Refresh hotel availability and select the current option.',
+          planId: Number(data.planId),
+          routeId: Number(data.routeId),
+          searchRunId: requestedSearchRunId,
+        });
+      }
+      snapshotCandidates = cachedRows.flatMap((row: any) => {
+        let payload: any = {};
+        try {
+          payload = typeof row.full_payload === 'string'
+            ? JSON.parse(row.full_payload)
+            : (row.full_payload || {});
+        } catch {
+          payload = {};
+        }
+        const options = Array.isArray(payload?.rateOptions) && payload.rateOptions.length > 0
+          ? payload.rateOptions
+          : [payload];
+        return options
+          .filter((option: any) => option && typeof option === 'object')
+          .map((option: any) => ({
+            ...payload,
+            ...option,
+            routeId: Number(option.routeId || option.itineraryRouteId || payload.routeId || row.route_id || 0),
+            itineraryRouteId: Number(option.itineraryRouteId || option.routeId || payload.itineraryRouteId || payload.routeId || row.route_id || 0),
+            groupType: Number(option.groupType || option.group_type || payload.groupType || row.group_type || 0),
+            searchRunId: requestedSearchRunId,
+          }));
+      });
+    }
+
     // The logical stay is known before any supplier work. Refresh every
     // affected route so no night is silently filled from an anchor-only rate.
     // Search results are never retained between requests. Resolve the selected
@@ -2345,7 +2408,7 @@ timingStepStartedAt =
     // the atomic stay selection.
     const requestScopedCandidates: any[] = [];
     let continuousTboCandidates: any[] | null = null;
-    if (provider !== 'offline') {
+    if (provider !== 'offline' && !snapshotCandidates) {
       if (['tbo', 'resavenue', 'hobse', 'axisrooms', 'staah'].includes(provider) &&
         typeof (this.hotelDetailsTboService as any).searchSelectedHotelForContinuousStay === 'function') {
         const continuousHotels = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
@@ -2479,7 +2542,7 @@ timingStepStartedAt =
       }
     }
 
-    const snapshotRows = continuousTboCandidates || requestScopedCandidates;
+    const snapshotRows = continuousTboCandidates || snapshotCandidates || requestScopedCandidates;
     let candidates = snapshotRows.flatMap((row: any) => {
       const options = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row];
       return options.map((option: any) => {
@@ -2949,6 +3012,19 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
           selectionIntent: intent,
           logicalStay: stay,
           affectedRouteIds: stay.routeIds,
+          failedDates: [routeDate],
+          reason: requestedSearchRunId ? 'SNAPSHOT_OPTION_NOT_FOUND' : 'NO_SELECTABLE_OPTION',
+          failedIdentity: {
+            provider,
+            hotelCode,
+            providerHotelCode,
+            canonicalHotelId: requestedCanonicalHotelId || null,
+            roomId: requestedRoomId || null,
+            roomTypeId: requestedRoomTypeId || null,
+            rateId: String(data.rateId || '').trim() || null,
+            mealPlanCode: requestedMeal || null,
+            searchRunId: requestedSearchRunId || null,
+          },
           canBookSingleNight: stay.nights <= 1,
           canBookMultiNight: false,
         });
@@ -2978,6 +3054,19 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
             selectionIntent: intent,
             logicalStay: stay,
             affectedRouteIds: stay.routeIds,
+            failedDates: [routeDate],
+            reason: 'NO_OCCUPANCY_RATE',
+            failedIdentity: {
+              provider,
+              hotelCode,
+              providerHotelCode,
+              canonicalHotelId: requestedCanonicalHotelId || null,
+              roomId: requestedRoomId || null,
+              roomTypeId: requestedRoomTypeId || null,
+              rateId: String(data.rateId || '').trim() || null,
+              mealPlanCode: requestedMeal || null,
+              searchRunId: requestedSearchRunId || null,
+            },
             canBookSingleNight: stay.nights <= 1,
             canBookMultiNight: false,
           });
@@ -3313,6 +3402,9 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       await this.selectionWorkflowService.bulkSaveHotels(Number(data.planId), persistencePayloads, Number(data.requestedBy || 1), true, true);
     } catch (error) {
       console.error('[HOTEL_INTENT] atomic persistence failed', error);
+      if (error?.status === 409 || error?.statusCode === 409 || error?.response?.statusCode === 409) {
+        throw error;
+      }
       throw new BadRequestException({
         code: 'HOTEL_INTENT_PERSIST_FAILED',
         message: error instanceof Error ? error.message : 'Hotel intent persistence failed',

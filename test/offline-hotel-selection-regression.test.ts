@@ -49,6 +49,24 @@ test('offline catalog requires a matching meal-plan rate and price for every nig
   assert.equal(valid[0].mealPlan, 'MAP');
   assert.deepEqual(valid[0].nightlySell, [4200, 4200]);
 
+  const partialCatalog = catalog(['2026-12-27', '2026-12-28']);
+  partialCatalog.occupancyRatesByRoomPlan.get('700|701|MAP_PLAN')!.pop();
+  const partial = await (service as any).buildRoomOffersFromCatalogRows(
+    { hotel_id: 700 },
+    ['2026-12-27', '2026-12-28'],
+    1,
+    2,
+    0,
+    partialCatalog,
+    0,
+    'MAP',
+  );
+  assert.equal(partial.length, 1);
+  assert.equal(partial[0].completeStayBookable, false);
+  assert.deepEqual(partial[0].availableDates, ['2026-12-27']);
+  assert.deepEqual(partial[0].unavailableDates, ['2026-12-28']);
+  assert.deepEqual(partial[0].nightlySell, [4200, 0]);
+
   const missingInventory = await (service as any).buildRoomOffersFromCatalogRows(
     { hotel_id: 700 },
     ['2026-12-27', '2026-12-28'],
@@ -73,6 +91,42 @@ test('offline catalog requires a matching meal-plan rate and price for every nig
     'MAP',
   );
   assert.deepEqual(missingMapRate, []);
+});
+
+test('legacy offline pricebook retains a partial stay with the missing night', () => {
+  const service = new OfflineHotelCatalogService({} as any, pricing);
+  const offers = (service as any).buildRoomOffersFromLegacyPricebook(
+    { hotel_id: 200 },
+    ['2026-11-26', '2026-11-27'],
+    1,
+    2,
+    0,
+    {
+      roomsByHotel: new Map([[200, [{ room_ID: 518, room_type_id: 274, room_title: 'Executive Room' }]]]),
+      activeRoomTypeIds: new Set([274]),
+      legacyPricebookByRoom: new Map([['200|518|274', [{
+        hotel_id: 200,
+        room_id: 518,
+        room_type_id: 274,
+        price_type: 0,
+        year: '2026',
+        month: 'November',
+        day_26: '3700',
+        day_27: '0',
+      }]]]),
+      ratePlansByRoom: new Map(),
+      occupancyRatesByRoomPlan: new Map(),
+      mealPricebookByHotelDate: new Map(),
+    },
+    5,
+    'CP',
+  );
+
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].completeStayBookable, false);
+  assert.deepEqual(offers[0].availableDates, ['2026-11-26']);
+  assert.deepEqual(offers[0].unavailableDates, ['2026-11-27']);
+  assert.deepEqual(offers[0].nightlySell, [3700, 0]);
 });
 
 const offlineCandidates = [{

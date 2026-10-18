@@ -49,6 +49,9 @@ nightlyBase: number[];
   childWithoutBedAmount: number;
   mealPlanBreakdown: OfflineMealBreakdown;
   nightlyMealPlanBreakdown: OfflineMealBreakdown[];
+  availableDates: string[];
+  unavailableDates: string[];
+  completeStayBookable: boolean;
 };
 
 type SupplementCounts = {
@@ -548,6 +551,12 @@ const bestOffer = (
     ? offers.find((offer) => offer.isDefaultRatePlan)
     : undefined
 ) || offers[0];
+      const completeStayBookable = bestOffer.completeStayBookable;
+      const availableDates = [...bestOffer.availableDates];
+      const unavailableDates = [...bestOffer.unavailableDates];
+      const availabilityMessage = completeStayBookable
+        ? 'Price subject to hotel approval'
+        : `Not available on ${unavailableDates.join(', ')}. The continuous stay is unavailable because rates are missing for another linked night.`;
       const roomTypes: RoomType[] = offers.map((offer) => ({
         roomCode: this.getRateOptionId(Number(hotel.hotel_id), offer, dateList[0], dateList[dateList.length - 1]),
         roomName: `${offer.roomTitle} - ${offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan}`,
@@ -601,9 +610,10 @@ const bestOffer = (
         routeIds: [...block.routeIds],
         checkInDate: block.checkInDate,
         checkOutDate: block.checkOutDate,
-        availableDates: [...dateList],
+        availableDates,
+        unavailableDates,
         completeStayDates: [...dateList],
-        completeStayBookable: true,
+        completeStayBookable,
         pricePerNight: bestOffer.pricePerNight,
         basePricePerNight: oneRoomNightBase(bestOffer),
         baseTotalPrice: oneNightRoomBase(bestOffer),
@@ -633,15 +643,15 @@ const bestOffer = (
         priceLabel: 'Price subject to hotel approval',
         priceSource: 'DATABASE',
         bookingMode: 'MANUAL_APPROVAL',
-        availabilityStatus: 'OFFLINE_APPROVAL_REQUIRED',
-        availabilityMessage: 'Price subject to hotel approval',
+        availabilityStatus: completeStayBookable ? 'OFFLINE_APPROVAL_REQUIRED' : 'NO_AVAILABILITY',
+        availabilityMessage,
         requiresHotelApproval: true,
         isLiveRate: false,
         isLiveBookable: false,
-        isSelectable: true,
+        isSelectable: completeStayBookable,
         approvalStatus: 'NOT_REQUESTED',
         manualConfirmationStatus: 'NOT_STARTED',
-        isBookable: true,
+        isBookable: completeStayBookable,
         externalStay: false,
         rateOptionId: this.getRateOptionId(Number(hotel.hotel_id), bestOffer, dateList[0], dateList[dateList.length - 1]),
         selectionKey: this.getRateOptionId(Number(hotel.hotel_id), bestOffer, dateList[0], dateList[dateList.length - 1]),
@@ -653,9 +663,10 @@ const bestOffer = (
           routeIds: [...block.routeIds],
           checkInDate: block.checkInDate,
           checkOutDate: block.checkOutDate,
-          availableDates: [...dateList],
+          availableDates: [...offer.availableDates],
+          unavailableDates: [...offer.unavailableDates],
           completeStayDates: [...dateList],
-          completeStayBookable: true,
+          completeStayBookable: offer.completeStayBookable,
           provider: 'offline',
           providerDisplayName: 'Offline',
           images: gallery.map((image) => image.url),
@@ -694,9 +705,12 @@ const bestOffer = (
           priceLabel: 'Price subject to hotel approval',
           isLiveRate: false,
           isLiveBookable: false,
-          isSelectable: true,
+          isSelectable: offer.completeStayBookable,
           requiresHotelApproval: true,
-          availabilityStatus: 'OFFLINE_APPROVAL_REQUIRED',
+          availabilityStatus: offer.completeStayBookable ? 'OFFLINE_APPROVAL_REQUIRED' : 'NO_AVAILABILITY',
+          availabilityMessage: offer.completeStayBookable
+            ? 'Price subject to hotel approval'
+            : `Not available on ${offer.unavailableDates.join(', ')}. The continuous stay is unavailable because rates are missing for another linked night.`,
           approvalStatus: 'NOT_REQUESTED',
           manualConfirmationStatus: 'NOT_STARTED',
           nightlyRates: dateList.map((date, index) => ({
@@ -1085,8 +1099,31 @@ for (const plan of plansToOffer) {
       const nightlyChildWithBed: number[] = [];
       const nightlyChildWithoutBed: number[] = [];
       const nightlyMealPlanBreakdown: OfflineMealBreakdown[] = [];
-      let valid = true;
+      const unavailableDates: string[] = [];
 const mealFlags = mealFlagsFromRoom(room, planMealCode);
+      const appendUnavailableNight = (date: string): void => {
+        unavailableDates.push(date);
+        nightlyBase.push(0);
+        nightlyMargin.push(0);
+        nightlySell.push(0);
+        nightlyRoomCost.push(0);
+        nightlyExtraBed.push(0);
+        nightlyChildWithBed.push(0);
+        nightlyChildWithoutBed.push(0);
+        nightlyMealPlanBreakdown.push({
+          ...mealFlags,
+          mealPlanCode: planMealCode,
+          breakfastCostPerPerson: 0,
+          lunchCostPerPerson: 0,
+          dinnerCostPerPerson: 0,
+          foodRequiredCount: 0,
+          roomQuantity: roomsNeeded,
+          totalBreakfastCost: 0,
+          totalLunchCost: 0,
+          totalDinnerCost: 0,
+          totalMealPlanCost: 0,
+        });
+      };
       for (const date of dateList) {
         const target = new Date(`${date}T00:00:00.000Z`).getTime();
         // Offline hotels do not publish live inventory or availability. The
@@ -1103,15 +1140,15 @@ const mealFlags = mealFlagsFromRoom(room, planMealCode);
         // higher (for example 02-Sep: ₹3,675 instead of the stale lower value).
         const nightlyPrice = selectOfflineRoomRate(rates, adultCount, roomsNeeded);
         if (!(nightlyPrice > 0)) {
-          valid = false;
-          break;
+          appendUnavailableNight(date);
+          continue;
         }
 
         if (counts.extraBedCount > 0 && supplements.extraBedRate <= 0 ||
             counts.childWithBedCount > 0 && supplements.childWithBedRate <= 0 ||
             counts.childWithoutBedCount > 0 && supplements.childWithoutBedRate <= 0) {
-          valid = false;
-          break;
+          appendUnavailableNight(date);
+          continue;
         }
         const extraBedAmount = this.hotelPricingService.money(supplements.extraBedRate * counts.extraBedCount);
         const childWithBedAmount = this.hotelPricingService.money(supplements.childWithBedRate * counts.childWithBedCount);
@@ -1157,8 +1194,9 @@ mealPlanCode: planMealCode,
         nightlyChildWithoutBed.push(childWithoutBedAmount);
       }
 
-      if (!valid || nightlySell.length !== dateList.length) continue;
+      if (unavailableDates.length === dateList.length || nightlySell.length !== dateList.length) continue;
       const supplements = this.resolveSupplementRatesFromOccupancy(matchingRateRows, dateList);
+      const pricedNightlySell = nightlySell.filter((amount) => amount > 0);
       const mealPlanBreakdown = {
         ...nightlyMealPlanBreakdown[0],
        mealPlanCode: nightlyMealPlanBreakdown.find(
@@ -1184,7 +1222,7 @@ nightlyBase,
         baseTotalPrice: this.hotelPricingService.money(nightlyBase.reduce((sum, amount) => sum + amount, 0)),
         hotelMarginTotalAmount: this.hotelPricingService.money(nightlyMargin.reduce((sum, amount) => sum + amount, 0)),
         totalStayPrice: this.hotelPricingService.money(nightlySell.reduce((sum, amount) => sum + amount, 0)),
-        pricePerNight: this.hotelPricingService.money(Math.min(...nightlySell)),
+        pricePerNight: this.hotelPricingService.money(Math.min(...pricedNightlySell)),
         roomCount,
         extraBedRate: supplements.extraBedRate,
         childWithBedRate: supplements.childWithBedRate,
@@ -1198,6 +1236,9 @@ nightlyBase,
         nightlyChildWithoutBedCost: nightlyChildWithoutBed,
         mealPlanBreakdown,
         nightlyMealPlanBreakdown,
+        availableDates: dateList.filter((date) => !unavailableDates.includes(date)),
+        unavailableDates: [...unavailableDates],
+        completeStayBookable: unavailableDates.length === 0,
               });
       } // End of rate-plan loop
     } // End of room loop
@@ -1245,9 +1286,32 @@ nightlyBase,
       const nightlyChildWithBed: number[] = [];
       const nightlyChildWithoutBed: number[] = [];
       const nightlyMealPlanBreakdown: OfflineMealBreakdown[] = [];
-      let valid = true;
+      const unavailableDates: string[] = [];
 
       const mealFlags = mealFlagsFromRoom(room, requestedMealPlanCode);
+      const appendUnavailableNight = (date: string): void => {
+        unavailableDates.push(date);
+        nightlyBase.push(0);
+        nightlyMargin.push(0);
+        nightlySell.push(0);
+        nightlyRoomCost.push(0);
+        nightlyExtraBed.push(0);
+        nightlyChildWithBed.push(0);
+        nightlyChildWithoutBed.push(0);
+        nightlyMealPlanBreakdown.push({
+          ...mealFlags,
+          mealPlanCode: requestedMealPlan || requestedMealPlanCode || 'EP',
+          breakfastCostPerPerson: 0,
+          lunchCostPerPerson: 0,
+          dinnerCostPerPerson: 0,
+          foodRequiredCount: 0,
+          roomQuantity: roomsNeeded,
+          totalBreakfastCost: 0,
+          totalLunchCost: 0,
+          totalDinnerCost: 0,
+          totalMealPlanCost: 0,
+        });
+      };
       for (const date of dateList) {
         const baseRate = selectPricebookRate(priceRows, 0, date);
         const extraBedRate = selectPricebookRate(priceRows, 1, date);
@@ -1257,8 +1321,8 @@ nightlyBase,
             (counts.extraBedCount > 0 && !(extraBedRate > 0)) ||
             (counts.childWithBedCount > 0 && !(childWithBedRate > 0)) ||
             (counts.childWithoutBedCount > 0 && !(childWithoutBedRate > 0))) {
-          valid = false;
-          break;
+          appendUnavailableNight(date);
+          continue;
         }
 
         const mealPrices = catalogRows.mealPricebookByHotelDate.get(hotelId)?.get(date) || {
@@ -1288,8 +1352,8 @@ nightlyBase,
           totalMealPlanCost: 0,
         };
         if (requestedMealPlan && mealPlanBreakdown.mealPlanCode !== requestedMealPlan) {
-          valid = false;
-          break;
+          appendUnavailableNight(date);
+          continue;
         }
 
         nightlyMealPlanBreakdown.push(mealPlanBreakdown);
@@ -1308,7 +1372,8 @@ nightlyBase,
         nightlyChildWithoutBed.push(childWithoutBedAmount);
       }
 
-      if (!valid || nightlySell.length !== dateList.length) continue;
+      if (unavailableDates.length === dateList.length || nightlySell.length !== dateList.length) continue;
+      const pricedNightlySell = nightlySell.filter((amount) => amount > 0);
       const mealPlanBreakdown = {
         ...nightlyMealPlanBreakdown[0],
         mealPlanCode: nightlyMealPlanBreakdown.find((meal) => meal.mealPlanCode)?.mealPlanCode || requestedMealPlanCode || 'EP',
@@ -1340,7 +1405,7 @@ nightlyBase,
         baseTotalPrice: this.hotelPricingService.money(nightlyBase.reduce((sum, amount) => sum + amount, 0)),
         hotelMarginTotalAmount: this.hotelPricingService.money(nightlyMargin.reduce((sum, amount) => sum + amount, 0)),
         totalStayPrice: this.hotelPricingService.money(nightlySell.reduce((sum, amount) => sum + amount, 0)),
-        pricePerNight: this.hotelPricingService.money(Math.min(...nightlySell)),
+        pricePerNight: this.hotelPricingService.money(Math.min(...pricedNightlySell)),
         roomCount: roomsNeeded,
         extraBedRate: rateForType(1),
         childWithBedRate: rateForType(2),
@@ -1350,6 +1415,9 @@ nightlyBase,
         childWithoutBedAmount: this.hotelPricingService.money(nightlyChildWithoutBed.reduce((sum, amount) => sum + amount, 0)),
         mealPlanBreakdown,
         nightlyMealPlanBreakdown,
+        availableDates: dateList.filter((date) => !unavailableDates.includes(date)),
+        unavailableDates: [...unavailableDates],
+        completeStayBookable: unavailableDates.length === 0,
       });
     }
 
@@ -1516,7 +1584,7 @@ const offer = parts.length === 7
         (candidate) => candidate.isDefaultRatePlan !== false
       );
 
-if (!offer) {
+if (!offer || !offer.completeStayBookable) {
   throw new Error('Offline rate option is no longer priced for every requested night');
 }
 

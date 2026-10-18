@@ -714,6 +714,7 @@ export class HotelAvailabilitySnapshotService {
     const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
     const normalizedRows = this.dedupeRows(freshRows || [])
       .map((row: any) => this.normalizeRatePlanLabels(row))
+      .map((row: any) => ({ ...row, searchRunId }))
       .map((row: any) => this.decorateSelection(
         row,
         selectedByRouteGroup,
@@ -1266,6 +1267,10 @@ export class HotelAvailabilitySnapshotService {
         });
       }
       rows = this.dedupeRows(rows);
+      // Keep the exact supplier search run on the persisted payload as well as
+      // on the top-level response. Choose/preview uses this value to resolve
+      // the same snapshot that Reset Hotels displayed.
+      rows = rows.map((row: any) => ({ ...row, searchRunId }));
       if (String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim() === 'true') {
         this.logger.log('[HOTEL_RECOMMENDATION_TRACE] snapshot-persistence-input', {
           rows: rows.length,
@@ -1619,7 +1624,7 @@ export class HotelAvailabilitySnapshotService {
         room_type: String(row.roomType || row.roomTypeName || '').trim() || null,
         meal_plan: String(row.mealPlan || row.mealPlanCode || '').trim() || null,
         search_reference: String(row.searchReference || row.bookingCode || '').trim() || null,
-        full_payload: JSON.stringify(row),
+        full_payload: JSON.stringify({ ...row, searchRunId }),
         check_in_date: checkIn,
         check_out_date: checkOut,
         sort_rank: index,
@@ -2071,6 +2076,13 @@ export class HotelAvailabilitySnapshotService {
               pricePerNight: Number(routeNight.sellAmount || 0),
               hotelMarginAmount: Number(routeNight.marginAmount || 0),
               offlineRouteNightApplied: true,
+              // Keep route-level catalog coverage separate from the final
+              // complete-stay selection decision. A partial offline offer
+              // must remain visible so the stay decorator can report the
+              // exact missing night, but it must never become selectable.
+              stayCoverageAvailable: Array.isArray(row?.availableDates) && row.availableDates.length > 0
+                ? row.availableDates.map(String).includes(routeDate)
+                : true,
             }
           : {};
         return groupTypes.map((groupType) => ({
@@ -2421,6 +2433,7 @@ export class HotelAvailabilitySnapshotService {
       authoritativeRouteIds: _authoritativeRouteIds,
       authoritativeCheckInDate: _authoritativeCheckInDate,
       authoritativeCheckOutDate: _authoritativeCheckOutDate,
+      stayCoverageAvailable: _stayCoverageAvailable,
       ...clientRow
     } = row || {};
     if (Array.isArray(clientRow.rateOptions)) {
@@ -2596,11 +2609,17 @@ export class HotelAvailabilitySnapshotService {
       if (!approvalRequired && row?.isBookable === false) return false;
       return row?.isPlaceholder !== true;
     };
+    const isCoverageEligible = (row: any): boolean => {
+      if (typeof row?.stayCoverageAvailable === 'boolean') {
+        return row.stayCoverageAvailable && row?.isPlaceholder !== true;
+      }
+      return isAvailabilityEligible(row);
+    };
     const propertyCoverage = new Map<string, Set<number>>();
     const optionCoverage = new Map<string, Set<number>>();
     for (const row of rows || []) {
       const routeIds = rowRouteIds(row);
-      if (isAvailabilityEligible(row)) {
+      if (isCoverageEligible(row)) {
         const key = propertyIdentity(row);
         const covered = propertyCoverage.get(key) || new Set<number>();
         routeIds.forEach((id) => covered.add(id));
@@ -2609,7 +2628,7 @@ export class HotelAvailabilitySnapshotService {
       const rateOptions = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row];
       for (const option of rateOptions) {
         const mergedOption = { ...row, ...option };
-        if (!isAvailabilityEligible(mergedOption)) continue;
+        if (!isCoverageEligible(mergedOption)) continue;
         const key = optionIdentity(mergedOption);
         const covered = optionCoverage.get(key) || new Set<number>();
         routeIds.forEach((id) => covered.add(id));
@@ -2624,10 +2643,13 @@ export class HotelAvailabilitySnapshotService {
       const availableDates = block.routeIds.map((id, index) => coverage.has(id) ? block.dates[index] : null).filter(Boolean) as string[];
       const unavailableDates = block.routeIds.map((id, index) => !coverage.has(id) ? block.dates[index] : null).filter(Boolean) as string[];
       const completeStayBookable = unavailableDates.length === 0;
-      const availabilityMessage = completeStayBookable ? row?.availabilityMessage : [
-        availableDates.length > 0 ? `Available on ${availableDates.map(formatDate).join(', ')}.` : null,
-        unavailableDates.length > 0 ? `Not available on ${unavailableDates.map(formatDate).join(', ')}.` : null,
-      ].filter(Boolean).join(' ');
+      const isOffline = normalizeIdentity(row?.provider || row?.hotel_provider) === 'offline';
+      const availabilityMessage = completeStayBookable ? row?.availabilityMessage : isOffline
+        ? `Not available on ${unavailableDates.join(', ')}. The continuous stay is unavailable because rates are missing for another linked night.`
+        : [
+          availableDates.length > 0 ? `Available on ${availableDates.map(formatDate).join(', ')}.` : null,
+          unavailableDates.length > 0 ? `Not available on ${unavailableDates.map(formatDate).join(', ')}.` : null,
+        ].filter(Boolean).join(' ');
       return {
         ...row,
         availableDates,

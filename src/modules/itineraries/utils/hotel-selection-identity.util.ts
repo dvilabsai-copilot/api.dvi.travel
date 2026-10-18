@@ -354,6 +354,26 @@ export function hotelSelectionKeyFromRow(planId: number, row: any): string {
   );
 }
 
+/**
+ * Stable physical-property identity used by cross-recommendation-group
+ * selection validation. Rate, room and meal-plan fields are deliberately not
+ * part of this key: the restriction is about choosing the same hotel, not the
+ * same offer.
+ */
+export function hotelPropertyIdentityKey(row: any): string {
+  const provider = clean(row?.provider ?? row?.hotel_provider);
+  if (!provider) return '';
+  const canonicalProvider = provider === 'vsr' ? 'tbo' : provider;
+  const canonicalHotelId = Number(row?.canonicalHotelId ?? row?.canonical_hotel_id ?? row?.hotelId ?? row?.hotel_id ?? 0);
+  if (Number.isFinite(canonicalHotelId) && canonicalHotelId > 0) {
+    return `${canonicalProvider}|canonical:${canonicalHotelId}`;
+  }
+  const providerCode = clean(
+    row?.providerHotelCode ?? row?.provider_hotel_code ?? row?.hotelCode ?? row?.hotel_code,
+  );
+  return providerCode ? `${canonicalProvider}|code:${providerCode}` : '';
+}
+
 export function isSpecialHotelPlanRow(row: any): boolean {
   return Number(row?.hotel_required ?? 0) === 2;
 }

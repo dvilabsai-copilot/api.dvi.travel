@@ -182,6 +182,7 @@ test('persisted TBO cache stores a numeric category when the supplier sends a st
 
   assert.equal(createdRows.length, 1);
   assert.equal(createdRows[0].rating, 4);
+  assert.equal(JSON.parse(createdRows[0].full_payload).searchRunId, 'test-search-run');
 });
 
 test('client hotel payload strips recommendation internals and shared inventory deduplicates groups', () => {
@@ -3054,6 +3055,51 @@ test('partial continuous hotel coverage is unavailable on every linked route pan
   assert.ok(result.every((row: any) => row.selectionStatus === 'UNAVAILABLE'));
   assert.ok(result.every((row: any) => row.hotelStayCompleteStayBookable === false));
   assert.ok(result.every((row: any) => row.hotelStayIsSelectable === false));
+});
+
+test('partial offline catalog coverage keeps both route rows and reports the exact missing night', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const routes = [
+    { itinerary_route_ID: 201, itinerary_route_date: new Date('2026-09-05T00:00:00.000Z'), next_visiting_location: 'Thekkady' },
+    { itinerary_route_ID: 202, itinerary_route_date: new Date('2026-09-06T00:00:00.000Z'), next_visiting_location: 'Thekkady' },
+  ];
+  const rows = [
+    {
+      itineraryRouteId: 201,
+      routeId: 201,
+      date: '2026-09-05',
+      provider: 'offline',
+      canonicalHotelId: 734,
+      hotelName: 'Offline Hotel',
+      roomType: 'Deluxe',
+      mealPlan: 'CP',
+      completeStayBookable: false,
+      isSelectable: false,
+      stayCoverageAvailable: true,
+      rateOptions: [{ roomType: 'Deluxe', mealPlan: 'CP' }],
+    },
+    {
+      itineraryRouteId: 202,
+      routeId: 202,
+      date: '2026-09-06',
+      provider: 'offline',
+      canonicalHotelId: 734,
+      hotelName: 'Offline Hotel',
+      roomType: 'Deluxe',
+      mealPlan: 'CP',
+      completeStayBookable: false,
+      isSelectable: false,
+      stayCoverageAvailable: false,
+      rateOptions: [{ roomType: 'Deluxe', mealPlan: 'CP' }],
+    },
+  ];
+
+  const result = (service as any).applyCompleteStayAvailability(rows, routes, 2);
+  assert.equal(result.length, 2);
+  assert.ok(result.every((row: any) => row.hotelStayCompleteStayBookable === false));
+  assert.ok(result.every((row: any) => row.hotelStayIsSelectable === false));
+  assert.ok(result.every((row: any) => row.hotelStayAvailabilityMessage ===
+    'Not available on 2026-09-06. The continuous stay is unavailable because rates are missing for another linked night.'));
 });
 
 test('TBO selection normalization exposes canonical room pricing', () => {
