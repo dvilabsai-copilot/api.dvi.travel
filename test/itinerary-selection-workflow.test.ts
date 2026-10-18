@@ -87,6 +87,34 @@ test('manual hotel persistence rejects a missing target group instead of default
   );
 });
 
+test('manual hotel persistence rejects a property already selected by another group', async () => {
+  const service = createService({
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [{
+        group_type: 1,
+        hotel_id: 42,
+        hotel_code: 'AX-42',
+        hotel_provider: 'axisrooms',
+      }],
+    },
+  });
+
+  await assert.rejects(
+    () => service.selectHotel({
+      planId: 100,
+      routeId: 10,
+      hotelId: 42,
+      canonicalHotelId: 42,
+      provider: 'axisrooms',
+      providerHotelCode: 'AX-42',
+      groupType: 2,
+      roomTypeId: 1,
+    } as any),
+    (error: any) => error?.status === 409 &&
+      error?.response?.code === 'HOTEL_ALREADY_SELECTED_IN_ANOTHER_GROUP',
+  );
+});
+
 test('live multi-night selection rejects a stale primary rate reference even when another alias is current', async () => {
   const syncedAt = new Date('2026-07-31T15:25:00.000Z');
   const currentRoutePayload = {
