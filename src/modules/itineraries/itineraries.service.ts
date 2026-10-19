@@ -6700,16 +6700,12 @@ async processConfirmationWithTboBookings(
 
     await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
 
-    if (result.affectedRouteIds.length > 0) {
-      for (const affectedRouteId of result.affectedRouteIds) {
-        await this.forceRebuildVehiclePricingAfterHotspotChange(
-          normalizedPlanId,
-          Number(affectedRouteId),
-        );
-      }
-    } else {
-      await this.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId);
-    }
+   await this.forceRebuildVehiclePricingAfterHotspotChange(
+  normalizedPlanId,
+  result.affectedRouteIds.length === 1
+    ? Number(result.affectedRouteIds[0])
+    : undefined,
+);
 
     return {
       ...result,
