@@ -70,6 +70,7 @@ export type RecommendationHotel = HotelSearchResult & {
   distanceReference: 'HOTSPOT' | 'DESTINATION_CENTRE' | 'ROUTE_DESTINATION' | 'UNKNOWN';
   normalizedCategory: string;
   recommendationFallbackReason?: string;
+  autoSelectionFallbackFromGroup?: number;
   requestedCategory?: number;
   selectedCategory?: number;
   categoryFallbackApplied?: boolean;
@@ -321,11 +322,33 @@ export class HotelRecommendationPackageService {
       });
     });
 
+    // Group 1 is the base recommendation, but it must still be a complete
+    // package when a later category/meal-plan allocation found a valid hotel
+    // for the same logical stay. Reuse Group 2's exact stay/rate only when
+    // Group 1 has no selection; never borrow across destinations or invent a
+    // price. The copied option remains authoritative for persistence.
+    evaluations.forEach((evaluation) => {
+      const stayKey = evaluation.stay.stayKey;
+      if (selectedByGroup[0].has(stayKey)) return;
+      const groupTwoSelection = selectedByGroup[1]?.get(stayKey);
+      if (!groupTwoSelection) return;
+      selectedByGroup[0].set(stayKey, {
+        ...groupTwoSelection,
+        hotel: {
+          ...this.cloneRecommendationHotel(groupTwoSelection.hotel),
+          autoSelectionFallbackFromGroup: 2,
+          recommendationFallbackReason:
+            'Reused from recommendation group 2 because no eligible Group 1 hotel was available for this stay.',
+        },
+      });
+    });
+
     // A recommendation group is a complete itinerary package, not an
     // independent inventory bucket. If a later category slot has no eligible
     // option for a stay, carry forward the closest earlier group's selection
     // for that same stay. This preserves the requested group ordering while
-    // allowing G3/G4 to reuse an eligible G2/G3 hotel when inventory is thin.
+    // allowing G2/G3/G4 to reuse an eligible earlier hotel when inventory is
+    // thin.
     // The fallback is per logical stay, so one missing destination cannot be
     // silently filled with a hotel from another destination.
     for (let groupIndex = 1; groupIndex < slots.length; groupIndex += 1) {
@@ -339,6 +362,7 @@ export class HotelRecommendationPackageService {
             ...previousSelection,
             hotel: {
               ...previousSelection.hotel,
+              autoSelectionFallbackFromGroup: previousIndex + 1,
               recommendationFallbackReason:
                 `Reused from recommendation group ${previousIndex + 1} because no distinct eligible hotel was available.`,
             },
