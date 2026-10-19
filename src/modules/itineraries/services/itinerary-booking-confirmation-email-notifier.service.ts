@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import nodemailer, { Transporter } from 'nodemailer';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../../../prisma.service';
+import { ItineraryPdfService } from '../itinerary-pdf.service';
 
 type VoucherInformation = {
   label: string;
@@ -27,9 +29,10 @@ export class ItineraryBookingConfirmationEmailNotifierService {
   private warnedDisabled = false;
   private warnedMissingConfig = false;
 
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+constructor(
+  private readonly prisma: PrismaService,
+  private readonly moduleRef: ModuleRef,
+) {}
 
   private isEnabled(): boolean {
     const value = String(
@@ -2544,6 +2547,63 @@ if (
           companyName,
       ).trim();
 
+      const voucherAttachments: Array<{
+  filename: string;
+  content: Buffer;
+  contentType: string;
+}> = [];
+
+const itineraryPdfService = this.moduleRef.get(
+  ItineraryPdfService,
+  { strict: false },
+);
+
+      /*
+       * Avoid attaching a combined internal voucher when
+       * supplier hotels are BCC recipients. Such a PDF may
+       * expose other suppliers' or internal booking details.
+       */
+      if (bccEmails.length === 0) {
+        try {
+          let voucherPdf: Buffer;
+
+          if (itineraryPreference === 1) {
+            voucherPdf =
+              await itineraryPdfService.createVoucherPdfBuffer(
+                itineraryPlanId,
+                'hotel',
+              );
+    } else if (itineraryPreference === 2) {
+  voucherPdf =
+    await itineraryPdfService.createVehicleVoucherPdfBuffer(
+      itineraryPlanId,
+    );
+} else {
+            voucherPdf =
+              await itineraryPdfService.createVoucherPdfBuffer(
+                itineraryPlanId,
+                'all',
+              );
+          }
+
+          voucherAttachments.push({
+            filename: `voucher-${quotationNumber}.pdf`,
+            content: voucherPdf,
+            contentType: 'application/pdf',
+          });
+        } catch (error: any) {
+          this.logger.error(
+            `Booking voucher PDF attachment failed for itinerary ${itineraryPlanId}: ${
+              error?.message || error
+            }`,
+          );
+        }
+      } else {
+        this.logger.warn(
+          `Skipping combined voucher attachment for itinerary ${itineraryPlanId} because supplier hotel BCC recipients are present.`,
+        );
+      }
+
       await transporter.sendMail({
   from: {
     name: fromName,
@@ -2570,6 +2630,11 @@ if (
   subject,
   text,
   html,
+
+  attachments:
+    voucherAttachments.length > 0
+      ? voucherAttachments
+      : undefined,
 });
 
 this.logger.log(

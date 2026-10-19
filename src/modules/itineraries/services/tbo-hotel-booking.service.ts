@@ -151,9 +151,18 @@ export class TboHotelBookingService {
   private tokenExpiry: Date | null = null;
   private readonly authTokenTtlMs = 10 * 60 * 1000;
 
-  private readonly TBO_USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
-  private readonly TBO_PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
-  private readonly TBO_CLIENT_ID = process.env.TBO_CLIENT_ID || 'tboprod';
+private readonly TBO_USERNAME =
+  process.env.TBO_API_USERNAME ||
+  process.env.TBO_USERNAME ||
+  '';
+
+private readonly TBO_PASSWORD =
+  process.env.TBO_API_PASSWORD ||
+  process.env.TBO_PASSWORD ||
+  '';
+
+private readonly TBO_CLIENT_ID =
+  process.env.TBO_CLIENT_ID || '';
  private readonly AUTH_URL = process.env.TBO_AUTH_URL || 'https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate';
  private readonly PREBOOK_URL = process.env.TBO_PREBOOK_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook';
  private readonly BOOK_URL = process.env.TBO_BOOK_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book';
@@ -1203,18 +1212,29 @@ export class TboHotelBookingService {
     };
   }
 
-  private async authenticate(endUserIp: string): Promise<string> {
-    const now = new Date();
-    if (this.tokenId && this.tokenExpiry && this.tokenExpiry.getTime() > now.getTime()) {
-      return this.tokenId;
-    }
+private async authenticate(endUserIp: string): Promise<string> {
+  if (
+    !this.TBO_USERNAME.trim() ||
+    !this.TBO_PASSWORD.trim() ||
+    !this.TBO_CLIENT_ID.trim()
+  ) {
+    throw new InternalServerErrorException(
+      'TBO booking credentials are not configured. Set TBO_API_USERNAME, TBO_API_PASSWORD and TBO_CLIENT_ID.',
+    );
+  }
 
-    const authPayload = {
-      ClientId: this.TBO_CLIENT_ID,
-      UserName: this.TBO_USERNAME,
-      Password: this.TBO_PASSWORD,
-      EndUserIp: endUserIp,
-    };
+  const now = new Date();
+
+  if (this.tokenId && this.tokenExpiry && this.tokenExpiry.getTime() > now.getTime()) {
+    return this.tokenId;
+  }
+
+  const authPayload = {
+    ClientId: this.TBO_CLIENT_ID,
+    UserName: this.TBO_USERNAME,
+    Password: this.TBO_PASSWORD,
+    EndUserIp: endUserIp,
+  };
 
     try {
       const response = await axios.post<TboAuthResponse>(this.AUTH_URL, authPayload, {
