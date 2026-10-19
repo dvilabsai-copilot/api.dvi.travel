@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Response } from 'express';
+import { PassThrough } from 'stream';
 import PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -515,25 +516,94 @@ doc
     return this.downloadVoucherPdfByScope(itineraryPlanId, 'all', res);
   }
 
+  async createVoucherPdfBuffer(
+    itineraryPlanId: number,
+    scope: 'all' | 'hotel',
+  ): Promise<Buffer> {
+    const output = new PassThrough();
+    const chunks: Buffer[] = [];
+
+    // The existing PDF renderer sets response headers.
+    // The in-memory stream only needs to accept those calls.
+    (output as any).setHeader = () => output;
+
+    const completed = new Promise<Buffer>((resolve, reject) => {
+      output.on('data', (chunk: Buffer) => {
+        chunks.push(Buffer.from(chunk));
+      });
+
+      output.once('end', () => {
+        resolve(Buffer.concat(chunks));
+      });
+
+      output.once('error', reject);
+    });
+
+    try {
+      await this.downloadVoucherPdfByScope(
+        itineraryPlanId,
+        scope,
+        output as unknown as Response,
+      );
+
+      return await completed;
+    } catch (error) {
+      output.destroy();
+      // Observe a possible stream rejection before propagating.
+      await completed.catch(() => undefined);
+      throw error;
+    }
+  }
+
   async downloadHotelVoucherPdf(itineraryPlanId: number, res: Response) {
     return this.downloadVoucherPdfByScope(itineraryPlanId, 'hotel', res);
   }
 
-  async downloadVehicleVoucherPdf(itineraryPlanId: number, res: Response) {
-    const data = await this.itinerariesService.getTransportVoucherDetails(itineraryPlanId);
-    const safeVoucherNo = data?.voucher?.voucherNo || String(itineraryPlanId);
-    const safeName = this.sanitizeFileName(`transport-voucher-${safeVoucherNo}.pdf`);
-    const html = renderTransportVoucherHtml(
-      data,
-      await this.buildTransportVoucherAssets(data, itineraryPlanId),
-    );
-    const pdfBuffer = await this.renderHtmlToPdfBuffer(html);
+async createVehicleVoucherPdfBuffer(
+  itineraryPlanId: number,
+): Promise<Buffer> {
+  const data = await this.itinerariesService.getTransportVoucherDetails(
+    itineraryPlanId,
+  );
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
-    res.end(pdfBuffer);
-  }
+  const html = renderTransportVoucherHtml(
+    data,
+    await this.buildTransportVoucherAssets(data, itineraryPlanId),
+  );
+
+  return this.renderHtmlToPdfBuffer(html);
+}
+
+async downloadVehicleVoucherPdf(
+  itineraryPlanId: number,
+  res: Response,
+) {
+  const data = await this.itinerariesService.getTransportVoucherDetails(
+    itineraryPlanId,
+  );
+
+  const safeVoucherNo =
+    data?.voucher?.voucherNo || String(itineraryPlanId);
+
+  const safeName = this.sanitizeFileName(
+    `transport-voucher-${safeVoucherNo}.pdf`,
+  );
+
+  const html = renderTransportVoucherHtml(
+    data,
+    await this.buildTransportVoucherAssets(data, itineraryPlanId),
+  );
+
+  const pdfBuffer = await this.renderHtmlToPdfBuffer(html);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${safeName}"`,
+  );
+  res.setHeader('Content-Length', pdfBuffer.length);
+  res.end(pdfBuffer);
+}
 
   async downloadDviVehicleVoucherPdf(
     itineraryPlanId: number,

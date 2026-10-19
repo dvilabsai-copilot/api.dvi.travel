@@ -216,10 +216,18 @@ export class ItineraryVoucherReadService {
       roomsByConfirmedHotelId.get(confirmedHotelId)!.push(room);
     }
 
-    const hotelGroupMap = new Map<number, any>();
-    for (const hotel of hotels as any[]) {
-      const hotelId = Number(hotel.hotel_id || 0);
-      if (!hotelId) continue;
+const hotelGroupMap = new Map<string, any>();
+
+for (const hotel of hotels as any[]) {
+  const hotelId = Number(hotel.hotel_id || 0);
+  const hotelCode = String(hotel.hotel_code || '').trim();
+  const provider = String(hotel.hotel_provider || '').trim().toLowerCase();
+
+  if (hotelId <= 0 && (!provider || !hotelCode)) continue;
+
+  const groupKey = hotelId > 0
+    ? `local:${hotelId}`
+    : `supplier:${provider}:${hotelCode}`;
 
       const dateKey = this.toDateOnly(hotel.itinerary_route_date);
       const hotelMaster = hotelById.get(hotelId);
@@ -232,11 +240,24 @@ export class ItineraryVoucherReadService {
         ),
       );
 
-      if (!hotelGroupMap.has(hotelId)) {
-        hotelGroupMap.set(hotelId, {
-          routeId: Number(hotel.itinerary_route_id || 0),
-          hotelId,
-          hotelName: String(hotelMaster?.hotel_name || 'N/A'),
+ if (!hotelGroupMap.has(groupKey)) {
+  const snapshot = (hotel as any).selected_price_snapshot;
+  const priceSnapshot =
+    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+      ? snapshot
+      : {};
+
+  hotelGroupMap.set(groupKey, {
+    routeId: Number(hotel.itinerary_route_id || 0),
+    hotelId,
+    hotelCode,
+    provider,
+    hotelName: String(
+      hotelMaster?.hotel_name ||
+      priceSnapshot.hotelName ||
+      priceSnapshot.hotel_name ||
+      `${provider.toUpperCase()} Hotel ${hotelCode}`
+    ),
           hotelEmail: String(hotelMaster?.hotel_email || ''),
           hotelStateCity: [hotelMaster?.hotel_state, hotelMaster?.hotel_city].filter(Boolean).join(', '),
           routeDates: [] as string[],
@@ -250,7 +271,7 @@ export class ItineraryVoucherReadService {
         });
       }
 
-      const group = hotelGroupMap.get(hotelId)!;
+      const group = hotelGroupMap.get(groupKey)!;
       if (dateKey && !group.routeDates.includes(dateKey)) {
         group.routeDates.push(dateKey);
       }
@@ -283,11 +304,20 @@ export class ItineraryVoucherReadService {
         const matchedVouchers = hotelVouchers.filter((voucher: any) => {
           const hotelDetailsId = Number(voucher.itinerary_plan_hotel_details_ID || 0);
           const confirmedHotelDetailsId = Number(voucher.confirmed_itinerary_plan_hotel_details_ID || 0);
-          return (
-            Number(voucher.hotel_id || 0) === Number(group.hotelId) ||
-            group.hotelDetailsIds.includes(hotelDetailsId) ||
-            group.confirmedHotelDetailsIds.includes(confirmedHotelDetailsId)
-          );
+        return (
+  (
+    Number(group.hotelId) > 0 &&
+    Number(voucher.hotel_id || 0) === Number(group.hotelId)
+  ) ||
+  (
+    hotelDetailsId > 0 &&
+    group.hotelDetailsIds.includes(hotelDetailsId)
+  ) ||
+  (
+    confirmedHotelDetailsId > 0 &&
+    group.confirmedHotelDetailsIds.includes(confirmedHotelDetailsId)
+  )
+);
         });
         const latestVoucher = matchedVouchers[0] || null;
         const policyCount = hotelCancellationPolicies.filter((policy: any) => Number(policy.hotel_id || 0) === Number(group.hotelId)).length;
