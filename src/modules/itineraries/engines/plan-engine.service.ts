@@ -752,11 +752,15 @@ export class PlanEngineService {
       meal_plan_lunch,
       meal_plan_dinner,
 
- // Room / bed totals
-      preferred_room_count: preferredRoomCount,
-      total_extra_bed: totalExtraBed,
-      total_child_with_bed: totalChildWithBed,
-      total_child_without_bed: totalChildWithoutBed,
+    // Room / bed totals
+    preferred_room_count: preferredRoomCount,
+    total_extra_bed:
+      Number(plan.itinerary_preference ?? 0) === 2
+        ? 0
+        : totalExtraBed,
+    total_child_with_bed: totalChildWithBed,
+    total_child_without_bed: totalChildWithoutBed,
+
 
  // Guide / food
       guide_for_itinerary: Number(plan.guide_for_itinerary ?? 0),

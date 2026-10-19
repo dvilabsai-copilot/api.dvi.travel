@@ -7422,7 +7422,7 @@ const response: ItineraryDetailsResponseDto = {
       dayCount: Number((plan as any).no_of_days || days.length || 0),
       nightCount: Number((plan as any).no_of_nights || 0),
       roomCount,
-      extraBed: plan.total_extra_bed ?? 0,
+      extraBed: isVehicleOnly ? 0 : (plan.total_extra_bed ?? 0),
       childWithBed: plan.total_child_with_bed ?? 0,
       childWithoutBed: plan.total_child_without_bed ?? 0,
       adults: plan.total_adult ?? 0,

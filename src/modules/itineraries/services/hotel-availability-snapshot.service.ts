@@ -6243,7 +6243,7 @@ export class HotelAvailabilitySnapshotService {
               option.price_per_night ??
               option.price ??
               0,
-            ), 0) * (tboAmountIncludesRooms ? 1 : roomCount);
+           ), 0) * (provider === 'tbo' || provider === 'vsr' ? 1 : roomCount);
       const suppliedMarginPercentage = Number(
         option.hotelMarginPercentage ?? option.hotel_margin_percentage ?? 0,
       );
