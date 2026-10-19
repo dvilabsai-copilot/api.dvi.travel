@@ -978,6 +978,36 @@ test('falls back to G3 only for missing G4 stays when another stay has genuine G
   assert.equal(packages[3].stayResults.find((stay) => stay.destination === 'B')?.hotel?.hotelName, 'B4');
 });
 
+test('completes a missing Group 1 stay from Group 2 using the exact rate', () => {
+  const recommendationService = service() as any;
+  const originalSelectCategoryOption = recommendationService.selectCategoryOption;
+  let selectionCalls = 0;
+  recommendationService.selectCategoryOption = (...args: any[]) => {
+    selectionCalls += 1;
+    // Simulate the upstream category/meal-plan allocation producing no G1
+    // candidate while still producing a valid G2 candidate for this stay.
+    if (selectionCalls === 1) return undefined;
+    return originalSelectCategoryOption.apply(recommendationService, args);
+  };
+
+  const packages = recommendationService.generate({
+    routes: oneRoute('Alleppey'),
+    hotelsByRoute: new Map([[1, [
+      option('Group 2 Hotel', 8200, 'MAP'),
+      option('Group 3 Hotel', 9400, 'MAP'),
+    ]]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'MAP',
+  });
+
+  assert.equal(packages[0].complete, true);
+  assert.equal(packages[0].stayResults[0].hotel?.hotelName, packages[1].stayResults[0].hotel?.hotelName);
+  assert.equal(packages[0].stayResults[0].hotel?.rateOptionId, packages[1].stayResults[0].hotel?.rateOptionId);
+  assert.equal(packages[0].stayResults[0].totalPrice, packages[1].stayResults[0].totalPrice);
+  assert.equal(packages[0].stayResults[0].hotel?.autoSelectionFallbackFromGroup, 2);
+  assert.match(packages[0].stayResults[0].hotel?.recommendationFallbackReason || '', /recommendation group 2/i);
+});
+
 test('requested MAP wins over a cheaper CP rate within the same category', () => {
   const packages = service().generate({
     routes: oneRoute(),
