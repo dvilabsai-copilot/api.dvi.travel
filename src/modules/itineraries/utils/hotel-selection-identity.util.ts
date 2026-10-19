@@ -613,6 +613,7 @@ export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
     mealPlan: row?.mealPlan ?? row?.meal_plan ?? null,
     totalPrice: Number(row?.totalPrice ?? row?.totalStayPrice ?? row?.totalHotelCost ?? row?.total_hotel_cost ?? row?.totalAmount ?? row?.selected_total_price ?? 0),
     pricePerNight: Number(row?.pricePerNight ?? row?.price_per_night ?? row?.price ?? row?.selected_price_per_night ?? 0),
+    totalRooms: Number(row?.totalRooms ?? row?.total_no_of_rooms ?? row?.totalNoOfRooms ?? row?.roomCount ?? row?.noOfRooms ?? 0) || null,
     roomRate: Number(row?.roomRate ?? row?.room_rate ?? 0),
     totalRoomCost: Number(row?.totalRoomCost ?? row?.total_room_cost ?? 0),
     baseTotalPrice: Number(row?.baseTotalPrice ?? row?.base_total_price ?? row?.baseHotelCost ?? row?.base_hotel_cost ?? 0),

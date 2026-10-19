@@ -6180,6 +6180,7 @@ export class HotelAvailabilitySnapshotService {
 
       const provider = String(option.provider || 'external').trim().toLowerCase();
       const roomCount = Math.max(Number(option.roomCount || option.totalNoOfRooms || plan?.preferred_room_count || 1), 1);
+      const tboAmountIncludesRooms = provider === 'tbo' && option.amountIncludesRoomCount === true;
       const persistedOptionHotelId = this.persistedHotelId(option);
       const hotelMaster = provider === 'axisrooms' && persistedOptionHotelId > 0 && tx?.dvi_hotel?.findUnique
         ? await tx.dvi_hotel.findUnique({
@@ -6242,7 +6243,7 @@ export class HotelAvailabilitySnapshotService {
               option.price_per_night ??
               option.price ??
               0,
-            ), 0) * roomCount;
+            ), 0) * (tboAmountIncludesRooms ? 1 : roomCount);
       const suppliedMarginPercentage = Number(
         option.hotelMarginPercentage ?? option.hotel_margin_percentage ?? 0,
       );
@@ -6337,6 +6338,10 @@ export class HotelAvailabilitySnapshotService {
         pricePerNight = totalPrice;
         option = {
           ...option,
+          roomCount,
+          totalNoOfRooms: roomCount,
+          roomRate: Number((baseTotalPrice / roomCount).toFixed(2)),
+          totalRoomCost: baseTotalPrice,
           basePricePerNight: Number((baseTotalPrice / roomCount).toFixed(2)),
           baseTotalPrice,
           baseHotelCost: baseTotalPrice,
