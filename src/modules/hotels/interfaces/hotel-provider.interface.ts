@@ -70,6 +70,11 @@ export interface HotelSearchResult {
  expiresAt: Date; // When search result expires
   pricePerNight?: number;
   totalStayPrice?: number;
+  /** Requested room count used to obtain the supplier amount. */
+  roomCount?: number;
+  totalNoOfRooms?: number;
+  /** TBO Search returned an aggregate amount for the requested rooms. */
+  amountIncludesRoomCount?: boolean;
   numberOfNights?: number;
   extraBedCount?: number;
   extraBedRate?: number;
@@ -165,6 +170,8 @@ export interface HotelPreferences {
   starRatings?: number[];
   mealPlanCode?: string;
   tboMealType?: string;
+  /** Optional TBO Search room-count override for flows that require an exact room quote. */
+  tboNoOfRooms?: number;
 }
 
 export interface HotelConfirmationDTO {

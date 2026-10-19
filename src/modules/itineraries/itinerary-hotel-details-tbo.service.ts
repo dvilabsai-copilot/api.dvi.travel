@@ -2993,6 +2993,9 @@ this.logger.log(
       childAges: childAges.length > 0 ? childAges : undefined,
       guestNationality,
       providers: searchProviders,
+      // TBO returns an aggregate fare when NoOfRooms is supplied. Keep the
+      // normal itinerary search aligned with the VSR master quote flow.
+      preferences: { tboNoOfRooms: safeRoomCount },
     };
 
  this.logger.log(
