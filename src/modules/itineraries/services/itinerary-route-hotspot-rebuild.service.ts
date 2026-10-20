@@ -76,28 +76,6 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
   ),
 }));
 
-const protectedExistingHotspotIds: number[] = Array.from(
-  new Set<number>(
-    existingHotspotsWithDates
-      .filter(
-        (row: any) =>
-          Number(row?.itinerary_route_ID || 0) === normalizedRouteId &&
-          Number(row?.item_type || 0) === 4 &&
-          Number(row?.deleted || 0) === 0 &&
-          Number(row?.status || 0) === 1 &&
-          Number(row?.hotspot_plan_own_way || 0) !== 1 &&
-          Number(row?.hotspot_ID || 0) > 0,
-      )
-      .map((row: any) => Number(row.hotspot_ID)),
-  ),
-);
-
-console.log('[RouteRebuild][TRACE] protecting existing route hotspots', {
-  planId: normalizedPlanId,
-  routeId: normalizedRouteId,
-  protectedExistingHotspotIds,
-});
-
 const planRow = await tx.dvi_itinerary_plan_details.findFirst({
           where: { itinerary_plan_ID: normalizedPlanId, deleted: 0 },
           select: { itinerary_quote_ID: true },
@@ -183,7 +161,10 @@ const planRow = await tx.dvi_itinerary_plan_details.findFirst({
   existingHotspotsWithDates,
   {
     scopeToRouteId: normalizedRouteId,
-    protectedHotspotIds: protectedExistingHotspotIds,
+    // Explicit Rebuild Route is a fresh automatic rebuild. The DELETE flow
+    // supplies protection separately because it must preserve other current
+    // hotspots while recalculating the affected route.
+    preserveExistingHotspots: false,
   },
 );
         await this.routeVehicleRestrictions.assertPersistedPlan(

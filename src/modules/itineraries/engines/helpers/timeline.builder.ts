@@ -365,10 +365,16 @@ export class TimelineBuilder {
 
   /**
    * Existing active sightseeing hotspots that must survive a route-scoped
-   * rebuild. Used after deleting one hotspot so unrelated hotspots are not
-   * removed/replaced by normal candidate selection.
+   * preservation rebuild. Used after deleting one hotspot so unrelated
+   * hotspots are not removed/replaced by normal candidate selection.
    */
   protectedHotspotIds?: number[];
+
+  /**
+   * When false, a scoped route is rebuilt from the automatic candidate pool
+   * instead of reusing its persisted sightseeing set.
+   */
+  preserveExistingHotspots?: boolean;
 },
   ): Promise<{
     hotspotRows: HotspotDetailRow[];
@@ -1336,9 +1342,9 @@ for (const route of scopedRoutes) {
  *
  * Example:
  * Existing route: A -> B -> C -> D
- * User deletes B
+ * User deletes B during a preservation rebuild
  *
- * Rebuild MUST operate on:
+ * Preservation rebuild MUST operate on:
  * A -> C -> D
  *
  * It must not:
@@ -1348,7 +1354,8 @@ for (const route of scopedRoutes) {
  */
 if (
   options?.scopeToRouteId &&
-  Array.isArray(existingHotspots)
+  Array.isArray(existingHotspots) &&
+  options?.preserveExistingHotspots !== false
 ) {
   const scopedRouteId = Number(options.scopeToRouteId || 0);
 

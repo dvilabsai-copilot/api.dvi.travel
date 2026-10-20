@@ -40,6 +40,8 @@ export class HotspotEngineService {
     options?: {
       protectedRouteHotspotIds?: number[];
       protectedHotspotIds?: number[];
+      /** Preserve the current selected sightseeing set during a scoped rebuild. */
+      preserveExistingHotspots?: boolean;
       anchorOrderByRoute?: Record<number, number>;
       preferredManualPlacementByRoute?: Record<number, {
         hotspotOrder?: number;
@@ -60,9 +62,9 @@ export class HotspotEngineService {
     warnings: RebuildWarning[];
     routeRejectionSummaryByRoute: Record<number, RouteRejectionSummary>;
   }> {
- // 1) Fetch ALL current hotspots (manual and auto) INCLUDING soft-deleted ones for reference
- // Note: We include deleted:1 records, but the timeline builder/selector will exclude them
- // This ensures deleted hotspots are NOT re-added during rebuild
+ // 1) Fetch current hotspots for the rebuild context. Full route reset callers
+ // may intentionally provide active-only rows so cleared user exclusions can
+ // be reconsidered by the automatic candidate selector.
     let existingHotspots = existingHotspotsFromService;
 
     if (!existingHotspots) {
@@ -219,9 +221,10 @@ const manualHotspots = existingHotspots.filter((h: any) => {
     manualPlacementByRoute,
     sameCityAllocationPlan: options?.sameCityAllocationPlan || null,
     scopeToRouteId: options?.scopeToRouteId,
+    preserveExistingHotspots: options?.preserveExistingHotspots !== false,
 
     // IMPORTANT:
-    // During a route-scoped rebuild, these are the sightseeing hotspots
+    // During a preservation rebuild, these are the sightseeing hotspots
     // that already existed and must not disappear just because another
     // hotspot was deleted.
     protectedHotspotIds: options?.protectedHotspotIds || [],
