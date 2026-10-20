@@ -2544,7 +2544,12 @@ timingStepStartedAt =
 
     const snapshotRows = continuousTboCandidates || snapshotCandidates || requestScopedCandidates;
     let candidates = snapshotRows.flatMap((row: any) => {
-      const options = Array.isArray(row?.rateOptions) && row.rateOptions.length > 0 ? row.rateOptions : [row];
+      const options = continuousTboCandidates
+        ? [row]
+        : Array.isArray(row?.rateOptions) && row.rateOptions.length > 0
+          ? row.rateOptions
+          : [row];
+
       return options.map((option: any) => {
         // Nested supplier options are independent selectable rates. Do not
         // inherit the parent row's rateOptionId/optionKey: the parent is often

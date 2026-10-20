@@ -937,6 +937,7 @@ export class ItinerarySelectionWorkflowService {
     };
   }
 
+
   private getLiveRateMetadata(provider?: string) {
     const normalizedProvider = String(provider || '').trim().toLowerCase();
     if (!['tbo', 'axisrooms', 'staah', 'resavenue', 'hobse'].includes(normalizedProvider)) return {};

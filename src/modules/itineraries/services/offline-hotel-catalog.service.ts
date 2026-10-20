@@ -721,7 +721,103 @@ const bestOffer = (
             sellAmount: offer.nightlySell[index] || 0,
           })),
         })),
-      } as HotelSearchResult & Record<string, unknown>);
+        } as HotelSearchResult & Record<string, unknown>);
+
+      // Alleppey only: expose existing, fully priced AP offers
+      // as individual candidates for automatic recommendations.
+      // Keep the original hotel result and manual rate options.
+      const isAlleppey =
+        /^(alleppey|alappuzha|allepe)$/i.test(
+          String(block.destination || '').trim()
+        );
+
+      const isHouseboat =
+        /\bhouse[\s-]*boats?\b/i.test(
+          String(hotel.hotel_name || '')
+        );
+
+      if (isAlleppey && isHouseboat) {
+        const parentHotel = results[results.length - 1];
+
+        const apRateOptions = (
+          Array.isArray(parentHotel.rateOptions)
+            ? parentHotel.rateOptions
+            : []
+        ).filter((rate: any) => {
+          const mealCode = inferCanonicalHotelRatePlanCode(
+            String(rate.mealPlanCode || rate.mealPlan || '')
+          );
+
+          return (
+            mealCode === 'AP' &&
+            rate.completeStayBookable === true &&
+            Number(rate.totalStayPrice || 0) > 0 &&
+            Array.isArray(rate.nightlyRates) &&
+            rate.nightlyRates.length === dateList.length &&
+            rate.nightlyRates.every(
+              (night: any, index: number) =>
+                String(night.date || '').slice(0, 10) ===
+                  dateList[index] &&
+                Number(night.sellAmount || 0) > 0
+            )
+          );
+        });
+
+        for (const rate of apRateOptions) {
+          const apTotal = Number(rate.totalStayPrice);
+
+          results.push({
+            ...parentHotel,
+            ...rate,
+
+            provider: 'offline',
+            providerDisplayName: 'Offline',
+
+            hotelName: parentHotel.hotelName,
+            hotelCode: parentHotel.hotelCode,
+            canonicalHotelId: Number(hotel.hotel_id),
+
+            mealPlan: 'AP',
+            mealPlanCode: 'AP',
+
+            price: apTotal,
+            netAmount: apTotal,
+            totalFare: apTotal,
+            totalStayPrice: apTotal,
+
+            roomTypes: [
+              {
+                roomCode: String(rate.rateOptionId),
+                roomName: String(rate.roomType || 'Room'),
+                bedType: '',
+                capacity: roomCount,
+                price: apTotal,
+                cancellationPolicy: '',
+              },
+            ],
+
+            rateOptions: parentHotel.rateOptions,
+
+            bookingMode: 'MANUAL_APPROVAL',
+            priceSource: 'DATABASE',
+            availabilityStatus: 'OFFLINE_APPROVAL_REQUIRED',
+            availabilityMessage: 'Price subject to hotel approval',
+            priceLabel: 'Price subject to hotel approval',
+
+            requiresHotelApproval: true,
+            isLiveRate: false,
+            isLiveBookable: false,
+            isSelectable: true,
+            isBookable: true,
+
+            routeIds: [...block.routeIds],
+            checkInDate: block.checkInDate,
+            checkOutDate: block.checkOutDate,
+            numberOfNights: dateList.length,
+            completeStayBookable: true,
+          } as HotelSearchResult & Record<string, unknown>);
+        }
+      }
     }
 
     results.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
@@ -1060,9 +1156,9 @@ const bestOffer = (
       });
 const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
 
-// Explicit meal-plan searches retain their original first-match behavior.
-// Unfiltered refreshes expose all separately configured rate plans.
-const plansToOffer = requested ? matchingPlans.slice(0, 1) : roomPlans;
+// Check every configured rate plan matching the requested meal plan.
+// Existing per-plan pricing and full-stay validation remain unchanged.
+const plansToOffer = requested ? matchingPlans : roomPlans;
 const seenRatePlanIds = new Set<string>();
 
 for (const plan of plansToOffer) {
