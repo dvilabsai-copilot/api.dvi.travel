@@ -40,6 +40,38 @@ function toInt(v: any, def = 0) {
   return Number.isFinite(n) ? Math.trunc(n) : def;
 }
 
+function timeValueToMinutes(value: unknown): number | null {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    const minutes = value.getUTCHours() * 60 + value.getUTCMinutes();
+    return minutes > 0 ? minutes : null;
+  }
+
+  const raw = String(value).trim();
+  const hms = raw.match(/^(\d{1,3}):(\d{2})(?::\d{2})?$/);
+  if (hms) {
+    const minutes = Number(hms[1]) * 60 + Number(hms[2]);
+    return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const minutes = parsed.getUTCHours() * 60 + parsed.getUTCMinutes();
+  return minutes > 0 ? minutes : null;
+}
+
+function addMinutesToTime(value: Date, minutes: number): Date {
+  return new Date(value.getTime() + minutes * 60 * 1000);
+}
+
+function sameTime(a: unknown, b: unknown): boolean {
+  if (!a || !b) return a === b;
+  const aTime = a instanceof Date ? a.getTime() : new Date(String(a)).getTime();
+  const bTime = b instanceof Date ? b.getTime() : new Date(String(b)).getTime();
+  return Number.isFinite(aTime) && Number.isFinite(bTime) && aTime === bTime;
+}
+
 function toFloat(v: any, def = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : def;
@@ -2034,6 +2066,219 @@ image:
   }
 
  // ====== UPDATE BASIC INFO ======
+  private async synchronizeUnconfirmedItineraryActivityDuration(
+    tx: any,
+    activityId: number,
+    durationMinutes: number,
+    durationValue: Date | null,
+  ): Promise<void> {
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return;
+
+    const affectedRows = await tx.dvi_itinerary_route_activity_details.findMany({
+      where: {
+        activity_ID: activityId,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        itinerary_plan_ID: true,
+        itinerary_route_ID: true,
+        route_hotspot_ID: true,
+      },
+    });
+
+    const planIds = Array.from(new Set(
+      affectedRows.map((row: any) => Number(row.itinerary_plan_ID || 0)).filter((id: number) => id > 0),
+    ));
+    if (planIds.length === 0) return;
+
+    // Confirmed itineraries have their own copied activity tables. Only repair
+    // editable quote plans here so changing the activity master cannot alter a
+    // confirmed itinerary.
+    const editablePlans = await tx.dvi_itinerary_plan_details.findMany({
+      where: {
+        itinerary_plan_ID: { in: planIds },
+        quotation_status: 0,
+        deleted: 0,
+        status: 1,
+      },
+      select: { itinerary_plan_ID: true },
+    });
+    const editablePlanIds = new Set(
+      editablePlans.map((plan: any) => Number(plan.itinerary_plan_ID || 0)),
+    );
+
+    const groupKeys = new Set<string>();
+    for (const row of affectedRows) {
+      const planId = Number(row.itinerary_plan_ID || 0);
+      const routeId = Number(row.itinerary_route_ID || 0);
+      const routeHotspotId = Number(row.route_hotspot_ID || 0);
+      if (!editablePlanIds.has(planId) || !routeId || !routeHotspotId) continue;
+      groupKeys.add(`${planId}:${routeId}:${routeHotspotId}`);
+    }
+
+    for (const key of groupKeys) {
+      const [planId, routeId, routeHotspotId] = key.split(':').map(Number);
+      const hotspot = await tx.dvi_itinerary_route_hotspot_details.findFirst({
+        where: {
+          itinerary_plan_ID: planId,
+          itinerary_route_ID: routeId,
+          route_hotspot_ID: routeHotspotId,
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          route_hotspot_ID: true,
+          hotspot_order: true,
+          hotspot_start_time: true,
+          hotspot_end_time: true,
+        },
+      });
+      if (!hotspot) continue;
+
+      const activities = await tx.dvi_itinerary_route_activity_details.findMany({
+        where: {
+          itinerary_plan_ID: planId,
+          itinerary_route_ID: routeId,
+          route_hotspot_ID: routeHotspotId,
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: { activity_order: 'asc' },
+      });
+      if (activities.length === 0) continue;
+
+      const oldLastEnd = activities.reduce((latest: Date | null, row: any) => {
+        if (!row.activity_end_time) return latest;
+        const end = new Date(row.activity_end_time);
+        if (Number.isNaN(end.getTime())) return latest;
+        return !latest || end > latest ? end : latest;
+      }, null);
+      const oldHotspotEnd = hotspot.hotspot_end_time
+        ? new Date(hotspot.hotspot_end_time)
+        : null;
+      const firstStart = activities.find((row: any) => row.activity_start_time)?.activity_start_time
+        || hotspot.hotspot_start_time;
+      if (!firstStart) continue;
+
+      let cursor = new Date(firstStart);
+      if (Number.isNaN(cursor.getTime())) continue;
+
+      for (const row of activities) {
+        const storedDuration = timeValueToMinutes(row.activity_traveling_time);
+        const storedRangeDuration = row.activity_start_time && row.activity_end_time
+          ? Math.max(1, Math.round(
+            (new Date(row.activity_end_time).getTime() - new Date(row.activity_start_time).getTime()) / 60000,
+          ))
+          : null;
+        const rowDuration = Number(row.activity_ID) === activityId
+          ? durationMinutes
+          : (storedDuration || storedRangeDuration || 30);
+        const nextEnd = addMinutesToTime(cursor, rowDuration);
+        const isTargetActivity = Number(row.activity_ID) === activityId;
+
+        const updateData: Record<string, unknown> = {};
+        if (!sameTime(row.activity_start_time, cursor)) updateData.activity_start_time = cursor;
+        if (!sameTime(row.activity_end_time, nextEnd)) updateData.activity_end_time = nextEnd;
+        if (isTargetActivity && durationValue && !sameTime(row.activity_traveling_time, durationValue)) {
+          updateData.activity_traveling_time = durationValue;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          updateData.updatedon = new Date();
+          await tx.dvi_itinerary_route_activity_details.update({
+            where: { route_activity_ID: row.route_activity_ID },
+            data: updateData,
+          });
+        }
+
+        cursor = nextEnd;
+      }
+
+      if (!oldHotspotEnd) continue;
+
+      const hotspotWasBoundToActivities = oldLastEnd && sameTime(oldHotspotEnd, oldLastEnd);
+      const targetHotspotEnd = cursor > oldHotspotEnd || hotspotWasBoundToActivities
+        ? cursor
+        : oldHotspotEnd;
+      const shiftMinutes = Math.round((targetHotspotEnd.getTime() - oldHotspotEnd.getTime()) / 60000);
+
+      if (shiftMinutes === 0) continue;
+
+      await tx.dvi_itinerary_route_hotspot_details.update({
+        where: { route_hotspot_ID: routeHotspotId },
+        data: {
+          hotspot_end_time: targetHotspotEnd,
+          updatedon: new Date(),
+        },
+      });
+
+      const subsequentRows = await tx.dvi_itinerary_route_hotspot_details.findMany({
+        where: {
+          itinerary_plan_ID: planId,
+          itinerary_route_ID: routeId,
+          hotspot_order: { gt: hotspot.hotspot_order },
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          route_hotspot_ID: true,
+          hotspot_start_time: true,
+          hotspot_end_time: true,
+        },
+        orderBy: { hotspot_order: 'asc' },
+      });
+
+      for (const row of subsequentRows) {
+        const shiftedStart = row.hotspot_start_time
+          ? addMinutesToTime(new Date(row.hotspot_start_time), shiftMinutes)
+          : null;
+        const shiftedEnd = row.hotspot_end_time
+          ? addMinutesToTime(new Date(row.hotspot_end_time), shiftMinutes)
+          : null;
+
+        await tx.dvi_itinerary_route_hotspot_details.update({
+          where: { route_hotspot_ID: row.route_hotspot_ID },
+          data: {
+            hotspot_start_time: shiftedStart,
+            hotspot_end_time: shiftedEnd,
+            updatedon: new Date(),
+          },
+        });
+
+        const downstreamActivities = await tx.dvi_itinerary_route_activity_details.findMany({
+          where: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: routeId,
+            route_hotspot_ID: row.route_hotspot_ID,
+            deleted: 0,
+            status: 1,
+          },
+          select: {
+            route_activity_ID: true,
+            activity_start_time: true,
+            activity_end_time: true,
+          },
+        });
+
+        for (const activity of downstreamActivities) {
+          await tx.dvi_itinerary_route_activity_details.update({
+            where: { route_activity_ID: activity.route_activity_ID },
+            data: {
+              activity_start_time: activity.activity_start_time
+                ? addMinutesToTime(new Date(activity.activity_start_time), shiftMinutes)
+                : null,
+              activity_end_time: activity.activity_end_time
+                ? addMinutesToTime(new Date(activity.activity_end_time), shiftMinutes)
+                : null,
+              updatedon: new Date(),
+            },
+          });
+        }
+      }
+    }
+  }
+
   async updateActivity(
     id: number,
     dto: {
@@ -2048,17 +2293,36 @@ image:
     const existing = await this.prisma.dvi_activity.findFirst({ where: { activity_id: id, deleted: 0 } });
     if (!existing) throw new NotFoundException('Activity not found');
 
-    return this.prisma.dvi_activity.update({
-      where: { activity_id: id },
-      data: {
-        activity_title: dto.activity_title ?? existing.activity_title,
-        hotspot_id: dto.hotspot_id != null ? toInt(dto.hotspot_id) : existing.hotspot_id,
-        max_allowed_person_count:
-          dto.max_allowed_person_count != null ? toInt(dto.max_allowed_person_count) : existing.max_allowed_person_count,
-        activity_duration: dto.activity_duration != null ? toTimeDate(dto.activity_duration) : existing.activity_duration,
-        activity_description: dto.activity_description ?? existing.activity_description,
-        updatedon: new Date(),
-      },
+    const durationWasProvided = dto.activity_duration !== undefined;
+    const nextDurationValue = durationWasProvided
+      ? toTimeDate(dto.activity_duration)
+      : existing.activity_duration;
+    const nextDurationMinutes = timeValueToMinutes(nextDurationValue);
+
+    return this.prisma.$transaction(async (tx: any) => {
+      const updated = await tx.dvi_activity.update({
+        where: { activity_id: id },
+        data: {
+          activity_title: dto.activity_title ?? existing.activity_title,
+          hotspot_id: dto.hotspot_id != null ? toInt(dto.hotspot_id) : existing.hotspot_id,
+          max_allowed_person_count:
+            dto.max_allowed_person_count != null ? toInt(dto.max_allowed_person_count) : existing.max_allowed_person_count,
+          activity_duration: nextDurationValue,
+          activity_description: dto.activity_description ?? existing.activity_description,
+          updatedon: new Date(),
+        },
+      });
+
+      if (durationWasProvided && nextDurationMinutes) {
+        await this.synchronizeUnconfirmedItineraryActivityDuration(
+          tx,
+          id,
+          nextDurationMinutes,
+          nextDurationValue,
+        );
+      }
+
+      return updated;
     });
   }
 
