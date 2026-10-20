@@ -6,25 +6,40 @@ const routeVehicleRestrictions = {
   assertPersistedPlan: async () => undefined,
 };
 
-test('keeps an already-clean route as a skipped no-op', async () => {
-  let transactionCount = 0;
+test('rebuilds an already-clean route from automatic candidates', async () => {
+  let engineCallCount = 0;
   let parkingCount = 0;
   const service = new ItineraryRouteHotspotRebuildService({
-    $transaction: async (callback: any) => { transactionCount += 1; return callback({
+    $transaction: async (callback: any) => callback({
       dvi_itinerary_route_details: {
         findFirst: async () => ({ itinerary_route_ID: 2, excluded_hotspot_ids: [] }),
-        findMany: async () => [],
+        findMany: async () => [{ itinerary_route_ID: 2, itinerary_route_date: '2026-10-02' }],
+        update: async () => undefined,
       },
-      dvi_itinerary_route_hotspot_details: { findMany: async () => [] },
+      dvi_itinerary_route_hotspot_details: {
+        findMany: async () => [],
+        updateMany: async () => undefined,
+        count: async () => 1,
+      },
       dvi_itinerary_plan_details: { findFirst: async () => ({ itinerary_quote_ID: 3 }) },
-    }); },
-  }, { rebuildParkingCharges: async () => { parkingCount += 1; } }, routeVehicleRestrictions);
+    }),
+  }, {
+    rebuildRouteHotspots: async () => {
+      engineCallCount += 1;
+      return {
+        rebuildSummary: { totalRoutesProcessed: 1, totalHotspotsScheduled: 1, totalParkingRowsScheduled: 0 },
+        warnings: [],
+        routeRejectionSummaryByRoute: {},
+      };
+    },
+    rebuildParkingCharges: async () => { parkingCount += 1; },
+  }, routeVehicleRestrictions);
 
   const result = await service.rebuildRouteHotspotsForDay(1, 2, 4);
-  assert.equal(result.skipped, true);
-  assert.equal(result.parkingChargesRebuilt, false);
-  assert.equal(transactionCount, 1);
-  assert.equal(parkingCount, 0);
+  assert.equal(result.skipped, undefined);
+  assert.equal(result.parkingChargesRebuilt, true);
+  assert.equal(engineCallCount, 1);
+  assert.equal(parkingCount, 1);
 });
 
 test('rejects a route that is not active in the requested plan', async () => {
@@ -80,7 +95,15 @@ test('removes manual hotspots from a reset route before rebuilding auto hotspots
           findMany: async ({ where }: any) => {
             if (where.hotspot_plan_own_way?.not === 1) {
               oldHotspotQuery = where;
-              return [autoHotspot];
+            return [
+              autoHotspot,
+              {
+                ...autoHotspot,
+                route_hotspot_ID: 92,
+                hotspot_ID: 902,
+                itinerary_route_ID: 3,
+              },
+            ];
             }
             return [manualHotspot];
           },
@@ -114,7 +137,7 @@ test('removes manual hotspots from a reset route before rebuilding auto hotspots
 
   assert.equal(result.skipped, undefined);
   assert.deepEqual(oldHotspotQuery.hotspot_plan_own_way, { not: 1 });
-  assert.deepEqual(engineInput.map((row) => row.hotspot_ID), [901]);
+  assert.deepEqual(engineInput.map((row) => row.hotspot_ID), [902]);
   assert.deepEqual(engineOptions, { scopeToRouteId: 2, preserveExistingHotspots: false });
   assert.deepEqual(routeUpdateData.excluded_hotspot_ids, []);
   assert.equal(activityUpdates.length, 1);
