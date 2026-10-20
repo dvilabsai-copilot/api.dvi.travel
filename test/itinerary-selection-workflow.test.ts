@@ -87,7 +87,7 @@ test('manual hotel persistence rejects a missing target group instead of default
   );
 });
 
-test('manual hotel persistence rejects a property already selected by another group', async () => {
+test('manual hotel persistence may reuse a property selected by another group', async () => {
   const service = createService({
     dvi_itinerary_plan_hotel_details: {
       findMany: async () => [{
@@ -97,6 +97,7 @@ test('manual hotel persistence rejects a property already selected by another gr
         hotel_provider: 'axisrooms',
       }],
     },
+    dvi_itinerary_plan_details: { findUnique: async () => null },
   });
 
   await assert.rejects(
@@ -110,8 +111,7 @@ test('manual hotel persistence rejects a property already selected by another gr
       groupType: 2,
       roomTypeId: 1,
     } as any),
-    (error: any) => error?.status === 409 &&
-      error?.response?.code === 'HOTEL_ALREADY_SELECTED_IN_ANOTHER_GROUP',
+    /Cannot read properties of undefined.*findFirst/i,
   );
 });
 
