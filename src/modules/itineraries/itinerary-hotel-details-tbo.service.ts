@@ -1536,9 +1536,10 @@ matchedHotels: selectedHotelRows.map((hotel: any) => ({
           itineraryRouteId: Number(routeId),
           routeId: Number(routeId),
           groupType: Number(groupType || 1),
-          date: checkInDate,
+          date: new Date(route.itinerary_route_date).toISOString().slice(0, 10),
           checkInDate,
           checkOutDate,
+
           totalHotelCost: Number.isFinite(totalAmount) ? totalAmount : 0,
           totalAmount: Number.isFinite(totalAmount) ? totalAmount : 0,
           totalAmountAfterTax: Number.isFinite(totalAmount) ? totalAmount : 0,

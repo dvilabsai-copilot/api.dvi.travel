@@ -43,10 +43,11 @@ export class HotelMealPlanPolicyService {
     }
     if (isAlleppey && this.isHouseboat(providerType)) {
       return this.houseboat('HOUSEBOAT_PROVIDER');
-    }
-    if (isAlleppey && this.isHouseboat(hotelName) && !structured && !providerType && tags.length === 0) {
+      }
+    if (isAlleppey && this.isHouseboat(hotelName)) {
       return this.houseboat('HOUSEBOAT_LEGACY_NAME');
     }
+
 
     const permittedPlans = requested === 'MAP'
       ? ['MAP', 'CP', 'EP'] as CanonicalHotelRatePlanCode[]

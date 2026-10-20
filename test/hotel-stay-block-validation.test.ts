@@ -7,6 +7,9 @@ function serviceWithRoutes(routes: any[]) {
     dvi_itinerary_route_details: {
       findMany: async () => routes,
     },
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ no_of_nights: routes.length }),
+    },
   } as any);
 }
 

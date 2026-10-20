@@ -234,6 +234,7 @@ export class HotelStayBlockValidationService {
     checkInDate: string;
     allowRoomTypeChanges?: boolean;
   }): Promise<StayBlockCandidate> {
+
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
       where: {
         itinerary_plan_ID: params.planId,
@@ -249,12 +250,27 @@ export class HotelStayBlockValidationService {
       },
     });
 
-    const index = routes.findIndex((route: any) => Number(route.itinerary_route_ID) === Number(params.routeId));
+    // Match the existing hotel-rate service: the final departure
+    // route is not an accommodation night.
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: params.planId },
+      select: { no_of_nights: true },
+    });
+
+    const noOfNights = Number(plan?.no_of_nights ?? 0);
+    const hotelRoutes = routes.filter((route, routeIndex) =>
+      !(routeIndex === routes.length - 1 && routeIndex >= noOfNights)
+    );
+
+    const index = hotelRoutes.findIndex((route: any) =>
+      Number(route.itinerary_route_ID) === Number(params.routeId)
+    );
+
     if (index < 0) {
       throw new BadRequestException(`Route ${params.routeId} not found for plan ${params.planId}`);
     }
 
-    const currentRoute: any = routes[index];
+    const currentRoute: any = hotelRoutes[index];
     // The route table is authoritative for the selected night. Callers may
     // carry the logical stay start date (for example 2026-08-22) while the
     // selected route is a later night (for example route 10702 on
@@ -274,7 +290,7 @@ export class HotelStayBlockValidationService {
     // either direction. This is important when the user edits Day 2: Day 1
     // must be checked as well as any following night.
     for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
-      const previousRoute: any = routes[previousIndex];
+      const previousRoute: any = hotelRoutes[previousIndex];
       const expectedDate = this.addDays(checkInDate, -((index - previousIndex)));
       const previousRouteDate = this.toDateOnly(previousRoute.itinerary_route_date);
       if (!previousRouteDate || previousRouteDate !== expectedDate) break;
@@ -287,9 +303,8 @@ export class HotelStayBlockValidationService {
       routeIds.unshift(Number(previousRoute.itinerary_route_ID));
       stayDates.unshift(previousRouteDate);
     }
-
-    for (let nextIndex = index + 1; nextIndex < routes.length; nextIndex += 1) {
-      const nextRoute: any = routes[nextIndex];
+    for (let nextIndex = index + 1; nextIndex < hotelRoutes.length; nextIndex += 1) {
+      const nextRoute: any = hotelRoutes[nextIndex];
       const expectedDate = this.addDays(checkInDate, nextIndex - index);
       const nextRouteDate = this.toDateOnly(nextRoute.itinerary_route_date);
       if (!nextRouteDate || nextRouteDate !== expectedDate) break;
@@ -623,8 +638,9 @@ export class HotelStayBlockValidationService {
           }));
       }));
       freshRows = freshByRoute.flat();
-    } catch (error) {
-      return this.buildValidationResult(candidate, [{
+      } catch (error) {
+        return this.buildValidationResult(candidate, [{
+
         type: 'UNKNOWN',
         message: `The provider could not verify ${candidate.hotelName || candidate.hotelCode}. Please retry.`,
       }], []);
