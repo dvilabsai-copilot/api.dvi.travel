@@ -115,7 +115,7 @@ test('removes manual hotspots from a reset route before rebuilding auto hotspots
   assert.equal(result.skipped, undefined);
   assert.deepEqual(oldHotspotQuery.hotspot_plan_own_way, { not: 1 });
   assert.deepEqual(engineInput.map((row) => row.hotspot_ID), [901]);
-  assert.deepEqual(engineOptions, { scopeToRouteId: 2, protectedHotspotIds: [901] });
+  assert.deepEqual(engineOptions, { scopeToRouteId: 2, preserveExistingHotspots: false });
   assert.deepEqual(routeUpdateData.excluded_hotspot_ids, []);
   assert.equal(activityUpdates.length, 1);
   assert.equal(hotspotUpdates.length, 1);
