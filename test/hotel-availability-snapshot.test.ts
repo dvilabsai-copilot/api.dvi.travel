@@ -216,6 +216,34 @@ test('client hotel payload strips recommendation internals and shared inventory 
   assert.equal(Object.prototype.hasOwnProperty.call(clientRow, 'autoSelectionIdentity'), false);
 });
 
+test('reset preserves explicit USER_REMOVED own-stay rows', async () => {
+  const calls: Array<{ where: any; data: any }> = [];
+  const tx = {
+    dvi_itinerary_plan_hotel_room_details: {
+      updateMany: async (args: any) => { calls.push(args); },
+    },
+    dvi_itinerary_plan_hotel_room_amenities: {
+      updateMany: async (args: any) => { calls.push(args); },
+    },
+    dvi_itinerary_plan_hotel_details: {
+      updateMany: async (args: any) => { calls.push(args); },
+      count: async () => 0,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).clearEditableHotelSelections(tx, 42);
+
+  const selectionUpdate = calls.find((call) =>
+    call.where?.itinerary_plan_id === 42 && call.where?.hotel_required === 1,
+  );
+  assert.ok(selectionUpdate);
+  assert.deepEqual(selectionUpdate.where.OR, [
+    { selection_origin: null },
+    { selection_origin: { not: 'USER_REMOVED' } },
+  ]);
+});
+
 test('reset keeps authoritative group rows separate from shared inventory rows', () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const rows = (service as any).extractAuthoritativeRecommendationRows({

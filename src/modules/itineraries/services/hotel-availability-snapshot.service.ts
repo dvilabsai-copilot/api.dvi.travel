@@ -1916,6 +1916,13 @@ export class HotelAvailabilitySnapshotService {
       hotel_required: 1,
       status: 1,
       deleted: 0,
+      // An explicit USER_REMOVED row is the user's Own Stay decision. Reset
+      // clears editable supplier choices, but must not resurrect a hotel on a
+      // route the user intentionally left for self-arrangement.
+      OR: [
+        { selection_origin: null },
+        { selection_origin: { not: USER_REMOVED_SELECTION_ORIGIN } },
+      ],
     };
 
     await tx?.dvi_itinerary_plan_hotel_room_details?.updateMany?.({
@@ -4585,6 +4592,10 @@ export class HotelAvailabilitySnapshotService {
       if (allowOfflineAutoSelection && String(selection.hotel_provider || '').trim().toLowerCase() === 'offline') continue;
 
       const origin = selectionOriginFromRow(selection);
+      // USER_REMOVED is an explicit Own Stay decision, not an availability
+      // candidate. Keep its marker and zero-cost state untouched while the
+      // remaining routes are auto-selected from the fresh snapshot.
+      if (origin === USER_REMOVED_SELECTION_ORIGIN) continue;
       // Manual choices are user-owned, so reconciliation must never replace
       // them automatically. They still have to be checked in preview mode:
       // the user needs to see a changed price or an unavailable rate and can
