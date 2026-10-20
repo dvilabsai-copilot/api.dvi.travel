@@ -6199,22 +6199,22 @@ const isAlleppey = options.some((row: any) =>
   )
 );
 
-const eligibleOptions = isAlleppey
+const isHouseboatOption = (row: any): boolean => {
+  const accommodation = String(
+    row?.accommodationType ||
+    row?.propertyType ||
+    ''
+  );
+  const hotelName = String(row?.hotelName || '');
+  return /\bhouse[\s-]*boats?\b/i.test(`${accommodation} ${hotelName}`);
+};
+
+const isAlleppeyHouseboatStay = isAlleppey && options.some(isHouseboatOption);
+
+const eligibleOptions = isAlleppeyHouseboatStay
   ? eligibleOptionsBeforeAlleppey.filter((row: any) => {
-      const accommodation = String(
-        row?.accommodationType ||
-        row?.propertyType ||
-        ''
-      );
-
-      const hotelName = String(row?.hotelName || '');
-
-      const isHouseboat = /\bhouse[\s-]*boats?\b/i.test(
-        `${accommodation} ${hotelName}`
-      );
-
       return (
-        isHouseboat &&
+        isHouseboatOption(row) &&
         this.getRowMealPlanCode(row) === 'AP'
       );
     })

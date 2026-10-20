@@ -339,15 +339,18 @@ export class HotelRecommendationPackageService {
       // For Alleppey, do not automatically recommend a
       // houseboat whose actual supplier rate is not AP.
 
-  const houseboatOptions = isAlleppey
-  ? evaluation.options.filter(
-      (option) =>
-        isHouseboatOption(option) &&
-        this.exactMealPlan(option.hotel) === 'AP'
-    )
-  : [];
+      const isAlleppeyHouseboatStay =
+        isAlleppey && evaluation.options.some(isHouseboatOption);
 
-      if (isAlleppey) {
+      const houseboatOptions = isAlleppeyHouseboatStay
+        ? evaluation.options.filter(
+            (option) =>
+              isHouseboatOption(option) &&
+              this.exactMealPlan(option.hotel) === 'AP',
+          )
+        : [];
+
+      if (isAlleppeyHouseboatStay) {
         const distinctHouseboats = new Set(
           houseboatOptions.map((option) =>
             this.physicalIdentity(option.hotel)
@@ -389,67 +392,65 @@ export class HotelRecommendationPackageService {
         });
       }
 
-slots.forEach((slot, groupIndex) => {
-  const orderedCategories = this.categoryFallbackOrder(slot.category);
+      slots.forEach((slot, groupIndex) => {
+        const orderedCategories = this.categoryFallbackOrder(slot.category);
 
-  const unusedOptions = evaluation.options.filter(
-    (option) => !used.has(this.physicalIdentity(option.hotel))
-  );
+        const unusedOptions = evaluation.options.filter(
+          (option) => !used.has(this.physicalIdentity(option.hotel)),
+        );
 
-  const selectUnused = (options: StayOption[]): StayOption | undefined =>
-    this.selectFromCategoryPool(
-      options,
-      orderedCategories,
-      slot,
-      used,
-      false,
-    );
+        const selectUnused = (options: StayOption[]): StayOption | undefined =>
+          this.selectFromCategoryPool(
+            options,
+            orderedCategories,
+            slot,
+            used,
+            false,
+          );
 
-  const selectOnlineThenOffline = (
-    options: StayOption[],
-  ): StayOption | undefined =>
-    selectUnused(options.filter((option) => !option.fallback)) ||
-    selectUnused(options.filter((option) => option.fallback));
+        const selectOnlineThenOffline = (
+          options: StayOption[],
+        ): StayOption | undefined =>
+          selectUnused(options.filter((option) => !option.fallback)) ||
+          selectUnused(options.filter((option) => option.fallback));
 
-  const selected = isAlleppey
-    ? (
-        // Priority 1: Different genuine AP Houseboats.
-        selectOnlineThenOffline(
-          unusedOptions.filter(
-            (option) =>
-              isHouseboatOption(option) &&
-              this.exactMealPlan(option.hotel) === 'AP',
-          ),
-        ) ||
+        const selected = isAlleppeyHouseboatStay
+          ? (
+              // Priority 1: Different genuine AP Houseboats.
+              selectOnlineThenOffline(
+                unusedOptions.filter(
+                  (option) =>
+                    isHouseboatOption(option) &&
+                    this.exactMealPlan(option.hotel) === 'AP',
+                ),
+              ) ||
 
-        // Priority 2: Other hotels with genuine AP rates.
-        selectOnlineThenOffline(
-          unusedOptions.filter(
-            (option) =>
-              !isHouseboatOption(option) &&
-              this.exactMealPlan(option.hotel) === 'AP',
-          ),
-        ) ||
+              // Priority 2: Other hotels with genuine AP rates.
+              selectOnlineThenOffline(
+                unusedOptions.filter(
+                  (option) =>
+                    !isHouseboatOption(option) &&
+                    this.exactMealPlan(option.hotel) === 'AP',
+                ),
+              ) ||
 
-        // Priority 3: Other eligible hotels with their actual
-        // supplier meal plans, prices and booking identities.
-        selectOnlineThenOffline(
-          unusedOptions.filter(
-            (option) => !isHouseboatOption(option),
-          ),
-        )
-      )
-    : this.selectCategoryOption(evaluation.options, slot, used);
+              // Priority 3: Other eligible hotels with their actual
+              // supplier meal plans, prices and booking identities.
+              selectOnlineThenOffline(
+                unusedOptions.filter((option) => !isHouseboatOption(option)),
+              )
+            )
+          : this.selectCategoryOption(evaluation.options, slot, used);
 
-  if (!selected) return;
+        if (!selected) return;
 
-  selectedByGroup[groupIndex].set(
-    evaluation.stay.stayKey,
-    selected,
-  );
+        selectedByGroup[groupIndex].set(
+          evaluation.stay.stayKey,
+          selected,
+        );
 
-  used.add(this.physicalIdentity(selected.hotel));
-});
+        used.add(this.physicalIdentity(selected.hotel));
+      });
 
 
     });
@@ -484,15 +485,8 @@ slots.forEach((slot, groupIndex) => {
     // thin.
     // The fallback is per logical stay, so one missing destination cannot be
     // silently filled with a hotel from another destination.
-for (let groupIndex = 1; groupIndex < slots.length; groupIndex += 1) {
-    evaluations.forEach((evaluation) => {
-        if (
-          this.canonicalDestination(evaluation.stay.destination) ===
-          'alleppey'
-        ) {
-          return;
-        }
-
+    for (let groupIndex = 1; groupIndex < slots.length; groupIndex += 1) {
+      evaluations.forEach((evaluation) => {
         const stayKey = evaluation.stay.stayKey;
         if (selectedByGroup[groupIndex].has(stayKey)) return;
         for (let previousIndex = groupIndex - 1; previousIndex >= 0; previousIndex -= 1) {

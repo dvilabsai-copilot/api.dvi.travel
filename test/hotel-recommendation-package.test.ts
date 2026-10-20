@@ -1008,6 +1008,21 @@ test('completes a missing Group 1 stay from Group 2 using the exact rate', () =>
   assert.match(packages[0].stayResults[0].hotel?.recommendationFallbackReason || '', /recommendation group 2/i);
 });
 
+test('Alleppey houseboat recommendations prioritize a genuine AP rate', () => {
+  const packages = service().generate({
+    routes: oneRoute('Alleppey'),
+    hotelsByRoute: new Map([[1, [
+      option('Houseboat CP', 5000, 'CP', { accommodationType: 'Houseboat' }),
+      option('Houseboat AP', 7000, 'AP', { accommodationType: 'Houseboat' }),
+    ]]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].stayResults[0].hotel?.hotelName, 'Houseboat AP');
+  assert.equal(packages[0].stayResults[0].hotel?.mealPlan, 'AP');
+});
+
 test('requested MAP wins over a cheaper CP rate within the same category', () => {
   const packages = service().generate({
     routes: oneRoute(),
