@@ -138,6 +138,38 @@ function hhmmToUTCDate(hhmm?: string | null): Date | null {
   return new Date(Date.UTC(1970, 0, 1, h, mi, 0, 0));
 }
 
+function timeValueToMinutes(value: unknown): number | null {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    const minutes = value.getUTCHours() * 60 + value.getUTCMinutes();
+    return minutes > 0 ? minutes : null;
+  }
+
+  const raw = String(value).trim();
+  const hms = raw.match(/^(\d{1,3}):(\d{2})(?::\d{2})?$/);
+  if (hms) {
+    const minutes = Number(hms[1]) * 60 + Number(hms[2]);
+    return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const minutes = parsed.getUTCHours() * 60 + parsed.getUTCMinutes();
+  return minutes > 0 ? minutes : null;
+}
+
+function addMinutesToTime(value: Date, minutes: number): Date {
+  return new Date(value.getTime() + minutes * 60 * 1000);
+}
+
+function sameTime(a: unknown, b: unknown): boolean {
+  if (!a || !b) return a === b;
+  const aTime = a instanceof Date ? a.getTime() : new Date(String(a)).getTime();
+  const bTime = b instanceof Date ? b.getTime() : new Date(String(b)).getTime();
+  return Number.isFinite(aTime) && Number.isFinite(bTime) && aTime === bTime;
+}
+
 // Weekday ordering (Mon..Sun)
 const WEEKDAY_ORDER = [
   'monday',
@@ -763,6 +795,119 @@ const locations = Array.from(locMap.values()).sort(
     return { payload, options };
   }
 
+  /**
+   * Keep editable itinerary timelines aligned with the hotspot master stay
+   * duration. Confirmed plans are intentionally excluded because they contain
+   * a historical, customer-facing copy of the itinerary.
+   */
+  private async synchronizeEditableItineraryHotspotDuration(
+    tx: any,
+    hotspotId: number,
+    durationMinutes: number,
+  ): Promise<void> {
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return;
+
+    const affectedRows = await tx.dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        hotspot_ID: hotspotId,
+        item_type: 4,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        itinerary_plan_ID: true,
+        itinerary_route_ID: true,
+      },
+    });
+
+    const routeKeys: string[] = Array.from(new Set<string>(
+      affectedRows
+        .map((row: any) => `${Number(row.itinerary_plan_ID || 0)}:${Number(row.itinerary_route_ID || 0)}`)
+        .filter((key: string) => key !== '0:0'),
+    ));
+    if (routeKeys.length === 0) return;
+
+    const planIds = Array.from(new Set(
+      routeKeys.map((key) => Number(key.split(':')[0])).filter((id) => id > 0),
+    ));
+    const editablePlans = await tx.dvi_itinerary_plan_details.findMany({
+      where: {
+        itinerary_plan_ID: { in: planIds },
+        quotation_status: 0,
+        deleted: 0,
+        status: 1,
+      },
+      select: { itinerary_plan_ID: true },
+    });
+    const editablePlanIds = new Set(
+      editablePlans.map((plan: any) => Number(plan.itinerary_plan_ID || 0)),
+    );
+
+    for (const key of routeKeys) {
+      const [planId, routeId] = key.split(':').map(Number);
+      if (!editablePlanIds.has(planId)) continue;
+
+      const rows = await tx.dvi_itinerary_route_hotspot_details.findMany({
+        where: {
+          itinerary_plan_ID: planId,
+          itinerary_route_ID: routeId,
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: [
+          { hotspot_start_time: 'asc' },
+          { hotspot_order: 'asc' },
+          { route_hotspot_ID: 'asc' },
+        ],
+      });
+
+      let cumulativeShiftMinutes = 0;
+      for (const row of rows) {
+        if (!row.hotspot_start_time || !row.hotspot_end_time) continue;
+
+        const originalStart = new Date(row.hotspot_start_time);
+        const originalEnd = new Date(row.hotspot_end_time);
+        if (Number.isNaN(originalStart.getTime()) || Number.isNaN(originalEnd.getTime())) continue;
+
+        const shiftedStart = addMinutesToTime(originalStart, cumulativeShiftMinutes);
+        let shiftedEnd = addMinutesToTime(originalEnd, cumulativeShiftMinutes);
+        const isTargetHotspot =
+          Number(row.hotspot_ID) === hotspotId && Number(row.item_type) === 4;
+
+        if (isTargetHotspot) {
+          const targetEnd = addMinutesToTime(shiftedStart, durationMinutes);
+          cumulativeShiftMinutes += Math.round(
+            (targetEnd.getTime() - shiftedEnd.getTime()) / 60000,
+          );
+          shiftedEnd = targetEnd;
+        }
+
+        const updateData: Record<string, unknown> = {};
+        if (!sameTime(row.hotspot_start_time, shiftedStart)) {
+          updateData.hotspot_start_time = shiftedStart;
+        }
+        if (!sameTime(row.hotspot_end_time, shiftedEnd)) {
+          updateData.hotspot_end_time = shiftedEnd;
+        }
+        if (isTargetHotspot) {
+          const durationValue = hhmmToUTCDate(
+            `${String(Math.floor(durationMinutes / 60)).padStart(2, '0')}:${String(durationMinutes % 60).padStart(2, '0')}`,
+          );
+          if (durationValue && !sameTime(row.hotspot_traveling_time, durationValue)) {
+            updateData.hotspot_traveling_time = durationValue;
+          }
+        }
+
+        if (Object.keys(updateData).length === 0) continue;
+        updateData.updatedon = new Date();
+        await tx.dvi_itinerary_route_hotspot_details.update({
+          where: { route_hotspot_ID: row.route_hotspot_ID },
+          data: updateData,
+        });
+      }
+    }
+  }
+
  // -------------------------- Form: Save (add/update) -----------------------
   async saveForm(input: HotspotFormSaveDto) {
     if (!input.hotspot_name?.trim()) {
@@ -812,6 +957,17 @@ const locations = Array.from(locMap.values()).sort(
 
       const hotspotIdNumber = hotspot.hotspot_ID as unknown as number;
       const hotspotIdBig = toBig(hotspotIdNumber);
+
+      if ((input as any).id && Number((input as any).id) > 0) {
+        const durationMinutes = timeValueToMinutes(masterData.hotspot_duration);
+        if (durationMinutes) {
+          await this.synchronizeEditableItineraryHotspotDuration(
+            tx,
+            hotspotIdNumber,
+            durationMinutes,
+          );
+        }
+      }
 
  // --------------------- Parking Charges upsert ----------------------
       const incomingParking = ((input as any).parkingCharges ?? []) as HotspotParkingChargeDto[];
