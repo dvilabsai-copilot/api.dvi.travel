@@ -1240,6 +1240,10 @@ export class HotelsService {
 
   async getCategories() {
     const rows = await this.prisma.dvi_hotel_category.findMany({
+      where: {
+        status: 1,
+        deleted: 0,
+      } as any,
       select: {
         hotel_category_id: true,
         hotel_category_title: true,
