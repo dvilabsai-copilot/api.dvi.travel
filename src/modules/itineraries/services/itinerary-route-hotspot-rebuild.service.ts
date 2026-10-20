@@ -69,12 +69,19 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
             hotspot_plan_own_way: { not: 1 },
   },
 });
-      const existingHotspotsWithDates = oldHotspots.map((row: any) => ({
-  ...row,
-  route_date: oldRouteDateMap.get(
-    Number(row.itinerary_route_ID || 0),
-  ),
-}));
+// Explicit "Rebuild Route" is a fresh automatic selection. Do not pass the
+// target route's previous automatic rows back to the scoped builder: those
+// rows are used by the builder as the route's allowed/preserved set and would
+// prevent a deleted hotspot from becoming eligible again. Keep sibling-route
+// rows so plan-wide duplicate and same-city protections still apply.
+const existingHotspotsWithDates = oldHotspots
+  .filter((row: any) => Number(row.itinerary_route_ID || 0) !== normalizedRouteId)
+  .map((row: any) => ({
+    ...row,
+    route_date: oldRouteDateMap.get(
+      Number(row.itinerary_route_ID || 0),
+    ),
+  }));
 
 const planRow = await tx.dvi_itinerary_plan_details.findFirst({
           where: { itinerary_plan_ID: normalizedPlanId, deleted: 0 },
@@ -96,19 +103,6 @@ const planRow = await tx.dvi_itinerary_plan_details.findFirst({
         const existingExcludedHotspotIds = Array.isArray(route?.excluded_hotspot_ids)
           ? route.excluded_hotspot_ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
           : [];
-
-        if (manualHotspotRows.length === 0 && existingExcludedHotspotIds.length === 0) {
-          return {
-            success: true,
-            planId: normalizedPlanId,
-            routeId: normalizedRouteId,
-            message: 'Day route is already clean; no rebuild was needed',
-            rebuildSummary: { totalRoutesProcessed: 0, totalHotspotsScheduled: 0, totalParkingRowsScheduled: 0 },
-            warnings: [],
-            routeRejectionSummaryByRoute: {},
-            skipped: true,
-          };
-        }
 
         const manualRouteHotspotIds = manualHotspotRows
           .map((row: any) => Number(row.route_hotspot_ID || 0))
