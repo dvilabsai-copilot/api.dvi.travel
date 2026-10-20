@@ -511,6 +511,7 @@ export class HotelsService {
       state_name: h.hotel_state_name,
       city_name: h.hotel_city_name,
       hotel_mobile: h.hotel_mobile,
+      hotel_category: (h as any).hotel_category ?? null,
       status: h.status,
       axisrooms_property_id: (h as any).axisrooms_property_id ?? null,
       images: galleryByHotel?.get(Number(h.hotel_id)) || [],
