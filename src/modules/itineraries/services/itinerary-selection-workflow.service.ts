@@ -1,6 +1,6 @@
 // FILE: src/modules/itineraries/services/itinerary-selection-workflow.service.ts
 
-import { Injectable, BadRequestException, ConflictException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { createConnection } from 'mysql2/promise';
 import { PrismaService } from '../../../prisma.service';
 import { RouteEngineService } from '../engines/route-engine.service';
@@ -12,7 +12,6 @@ import { getVehicleRateAvailability } from '../utils/vehicle-rate-availability.u
 import {
   hotelSelectionKey,
   hotelSelectionKeyFromRow,
-  hotelPropertyIdentityKey,
   normalizeSupplierRateIdentity,
   supplierRateIdentityMatches,
 } from '../utils/hotel-selection-identity.util';
@@ -210,7 +209,9 @@ export class ItinerarySelectionWorkflowService {
     // explicit; never infer it from the selected inventory row or default it
     // to Group 1 because that can overwrite a different package's row.
     data = { ...data, groupType: this.requireTargetGroupType(data.groupType) };
-    await this.assertNoCrossGroupManualHotelReuse(data.transactionClient || this.prisma, data);
+    // Manual choices are explicit overrides: the same physical property may
+    // be saved in more than one recommendation group. Automatic package
+    // diversity is enforced by the recommendation engine before this path.
     if (String(data.provider || '').trim().toLowerCase() === 'offline' || String(data.rateOptionId || '').startsWith('offline:')) {
       return this.selectOfflineHotel(data);
     }
@@ -934,63 +935,6 @@ export class ItinerarySelectionWorkflowService {
       success: true,
       message: 'Hotel selected successfully',
     };
-  }
-
-  /**
-   * A property may be reused by automatic recommendation fallback, but a
-   * manual selection must not move the same physical property into a second
-   * recommendation group for the same route/stay. This check runs inside the
-   * persistence path so it also protects requests that bypass the UI.
-   */
-  private async assertNoCrossGroupManualHotelReuse(db: any, data: any): Promise<void> {
-    const selectionOrigin = String(data?.selectionOrigin || '').trim().toUpperCase();
-    if (selectionOrigin === 'AUTO_SELECTED') return;
-
-    const requestedProperty = hotelPropertyIdentityKey(data);
-    if (!requestedProperty) return;
-
-    const routeId = Number(data?.routeId || 0);
-    const planId = Number(data?.planId || 0);
-    const groupType = Number(data?.groupType || 0);
-    if (!planId || !routeId || !groupType) return;
-
-    const rows = await (db as any).dvi_itinerary_plan_hotel_details.findMany({
-      where: {
-        itinerary_plan_id: planId,
-        itinerary_route_id: routeId,
-        hotel_required: 1,
-        status: 1,
-        deleted: 0,
-      },
-      select: {
-        group_type: true,
-        hotel_id: true,
-        hotel_code: true,
-        hotel_provider: true,
-        selected_price_snapshot: true,
-      },
-    });
-
-    const currentGroupRow = rows.find((row: any) => Number(row?.group_type || 0) === groupType);
-    const currentProperty = hotelPropertyIdentityKey(currentGroupRow);
-    // Editing a room, meal plan or rate for the current property's own row is
-    // not a new property selection and must remain valid.
-    if (currentProperty && currentProperty === requestedProperty) return;
-
-    const conflictingRow = rows.find((row: any) =>
-      Number(row?.group_type || 0) !== groupType &&
-      hotelPropertyIdentityKey(row) === requestedProperty,
-    );
-    if (!conflictingRow) return;
-
-    throw new ConflictException({
-      code: 'HOTEL_ALREADY_SELECTED_IN_ANOTHER_GROUP',
-      message: 'This hotel is already selected in another recommendation group for this stay. Choose a different hotel.',
-      planId,
-      routeId,
-      groupType,
-      conflictingGroupType: Number(conflictingRow.group_type || 0),
-    });
   }
 
   private getLiveRateMetadata(provider?: string) {
