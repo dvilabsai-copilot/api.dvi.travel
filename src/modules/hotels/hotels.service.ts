@@ -387,6 +387,27 @@ export class HotelsService {
     return this.basicInfoRequiredKeys.some((k) => Object.prototype.hasOwnProperty.call(dto, k));
   }
 
+  private isCategoryOnlyUpdate(dto: Record<string, any>): boolean {
+    const categoryKeys = new Set([
+      'hotel_category',
+      'hotel_category_id',
+      'categoryId',
+      'hotelCategoryId',
+    ]);
+    const keys = Object.keys(dto ?? {});
+    return keys.length > 0 && keys.every((key) => categoryKeys.has(key));
+  }
+
+  private validateCategoryOnlyUpdate(mapped: Record<string, any>) {
+    const category = mapped.hotel_category;
+    if (!Number.isInteger(category) || category <= 0) {
+      throw new BadRequestException({
+        success: false,
+        errors: { hotel_category_required: true },
+      });
+    }
+  }
+
  // =====================================================================================
  // Hotels: list / options / derived cities / getOne / create / update / remove
  // =====================================================================================
@@ -1134,7 +1155,10 @@ export class HotelsService {
     if (!Number.isFinite(id) || id <= 0) throw new Error('Invalid hotel_id');
 
     const incoming = await this.mapHotelDto(dto);
-    if (this.isBasicInfoAttempt(dto as any)) {
+    const categoryOnlyUpdate = this.isCategoryOnlyUpdate(dto as any);
+    if (categoryOnlyUpdate) {
+      this.validateCategoryOnlyUpdate(incoming);
+    } else if (this.isBasicInfoAttempt(dto as any)) {
       const current = await this.prisma.dvi_hotel.findUnique({
         where: { hotel_id: id },
         select: {
