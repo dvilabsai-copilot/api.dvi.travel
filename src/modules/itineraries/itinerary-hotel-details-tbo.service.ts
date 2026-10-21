@@ -5123,6 +5123,7 @@ this.logger.log(
           recommendationPackages.find((pkg) => Number(pkg.groupType) === targetGroupType);
         const recommendationsToCheck = [recommendation, ...fallbackGroupTypes.map(packageForGroup)]
           .filter((pkg): pkg is RecommendationPackage => Boolean(pkg));
+        const inventory = Array.isArray(source) ? source : [];
         const findStay = (pkg: RecommendationPackage | undefined): any => pkg?.stayResults?.find((result: any) =>
           Number(result.parentRouteId || 0) === routeId ||
           (Array.isArray(result.routeIds) && result.routeIds.map(Number).includes(routeId)),
@@ -5159,9 +5160,36 @@ this.logger.log(
           ];
           return payableAmounts.some((amount) => Number.isFinite(Number(amount)) && Number(amount) > 0);
         };
+        const candidateMatchesInventory = (candidateStay: any): boolean => {
+          const candidateHotel = candidateStay?.hotel;
+          if (!candidateHotel || inventory.length === 0) return inventory.length === 0;
+          const candidateIdentity = buildAutoSelectionIdentity(candidateHotel);
+          const candidateProvider = String(candidateIdentity.provider || '').trim().toLowerCase();
+          const candidateCode = String(candidateIdentity.providerHotelCode || '').trim().toLowerCase();
+          const candidateRoom = String(candidateIdentity.roomType || '').trim().toLowerCase();
+          const candidateMeal = String(candidateIdentity.mealPlan || '').trim().toLowerCase();
+          return inventory.some((hotel: any) => {
+            const hotelIdentity = buildAutoSelectionIdentity(hotel);
+            const exactMatch = strictAutoSelectionIdentityMatches(hotel, candidateIdentity) ||
+              (Array.isArray(hotel?.rateOptions) && hotel.rateOptions.some((rateOption: any) =>
+                strictAutoSelectionIdentityMatches({ ...hotel, ...rateOption }, candidateIdentity),
+              ));
+            const propertyMatch = candidateProvider && candidateCode &&
+              candidateProvider === String(hotelIdentity.provider || '').trim().toLowerCase() &&
+              candidateCode === String(hotelIdentity.providerHotelCode || '').trim().toLowerCase();
+            const roomMealMatch = propertyMatch &&
+              (!candidateRoom || candidateRoom === String(hotelIdentity.roomType || '').trim().toLowerCase()) &&
+              (!candidateMeal || candidateMeal === String(hotelIdentity.mealPlan || '').trim().toLowerCase());
+            return (exactMatch || roomMealMatch) && isUsableSelectedStay({ hotel });
+          });
+        };
         const selectedPackage = recommendationsToCheck.find((pkg) => {
           const candidateStay = findStay(pkg);
-          return isUsableSelectedStay(candidateStay);
+          if (!isUsableSelectedStay(candidateStay)) return false;
+          // A later group's recommendation may have a payable object while its
+          // shared inventory row is stale/zero-priced. Treat that as unusable
+          // so the documented previous-group fallback can take over.
+          return Number(pkg.groupType) !== groupType || candidateMatchesInventory(candidateStay);
         });
         const stay = findStay(selectedPackage);
         const selected = stay && 'hotel' in stay ? (stay as any).hotel : null;
@@ -5205,11 +5233,13 @@ this.logger.log(
             sameSelectedRate({ ...hotel, ...rateOption }),
           ))
         ));
-        const inventory = Array.isArray(source) ? source : [];
         // If the current group has no route inventory, materialize the prior
         // group's complete selected hotel in this pane. This is deliberately
         // not a synthetic price: it copies the API-calculated rate payload.
-        if (inventory.length === 0 && selected) {
+        const selectedInventoryIsUsable = selected && inventory.some((hotel: any) =>
+          containsSelectedRate(hotel) && isUsableSelectedStay({ hotel }),
+        );
+        if ((!selectedInventoryIsUsable || inventory.length === 0) && selected && fallbackFromGroup > 0) {
           hotels.push({
             ...selected,
             routeId,
