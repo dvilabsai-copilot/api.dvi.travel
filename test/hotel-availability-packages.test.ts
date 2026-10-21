@@ -493,3 +493,37 @@ test('response DTO preserves authoritative nested-rate metadata', async () => {
   assert.equal(liveRow.autoSelectionIdentity.roomId, 'suite');
   assert.equal(liveRow.authoritativeStayKey, '10|2026-08-19|2026-08-20');
 });
+
+test('response repair materializes a missing later-group stay from the prior group', async () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  const fallbackModel = new Proxy({}, { get: () => async () => [] });
+  service.prisma = new Proxy({
+    dvi_itinerary_plan_details: { findFirst: async () => ({ hotel_rates_visibility: 1 }) },
+    dvi_global_settings: { findFirst: async () => ({ hotel_margin: 0 }) },
+    dvi_itinerary_plan_hotel_details: { findMany: async () => [] },
+  }, { get: (target: any, property: string) => target[property] || fallbackModel });
+  service.logger = { log: () => undefined, debug: () => undefined, warn: () => undefined };
+
+  const route = { itinerary_route_ID: 10, itinerary_route_date: '2026-08-19', next_visiting_location: 'Cochin' };
+  const hotel = (hotelCode: string, price: number) => ({
+    provider: 'axisrooms', hotelCode, hotelName: hotelCode, roomType: 'Deluxe Room', mealPlan: 'MAP',
+    price, totalPrice: price, totalStayPrice: price, isBookable: true, isSelectable: true,
+  });
+  const recommendationPackages: any[] = [
+    { groupType: 1, complete: true, hotels: [], stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: hotel('G1', 100), totalPrice: 100 }] },
+    { groupType: 2, complete: true, hotels: [], stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: hotel('G2', 200), totalPrice: 200 }] },
+    { groupType: 3, complete: false, hotels: [], stayResults: [] },
+    { groupType: 4, complete: true, hotels: [], stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: hotel('G4', 400), totalPrice: 400 }] },
+  ];
+
+  const response = await service.buildHotelDetailsResponse(
+    'quote-1', 44, recommendationPackages, new Map([[10, [hotel('G1', 100), hotel('G2', 200)]]]), new Map(),
+    [route], 1, [], false,
+  );
+  const group3Row = response.hotelAvailability?.authoritativeRecommendationRows?.find(
+    (row: any) => row.groupType === 3 && Number(row.routeId || row.itineraryRouteId) === 10,
+  );
+  assert.ok(group3Row);
+  assert.equal(group3Row.hotelCode, 'G2');
+  assert.equal(group3Row.autoSelectionFallbackFromGroup, 2);
+});
