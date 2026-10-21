@@ -82,7 +82,7 @@ export class PlanEngineService {
    *   We ADD +05:30   : 2025-12-10T11:00:00.000Z
    *   Prisma -> MySQL : '2025-12-10 11:00:00'
    *
-   * So phpMyAdmin shows 11:00 — PHP parity.
+   * So phpMyAdmin shows 11:00 â€” PHP parity.
  */
   private parseDate(value: string | undefined | null): Date {
     if (!value) return new Date();
@@ -656,7 +656,7 @@ export class PlanEngineService {
   }
 
  /* ------------------------------------------------------------------
-   * Public API – used from ItinerariesService
+   * Public API â€“ used from ItinerariesService
  * ------------------------------------------------------------------ */
 
   async upsertPlanHeader(
