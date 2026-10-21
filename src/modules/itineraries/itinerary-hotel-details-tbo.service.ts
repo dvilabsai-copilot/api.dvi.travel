@@ -5114,20 +5114,34 @@ this.logger.log(
         // visibly has a usable hotel. Keep this fallback route-scoped and only
         // allow the documented chain: G2 -> G1, G3 -> G2 -> G1,
         // and G4 -> G3 -> G2 -> G1.
-        const packageIndexes = groupType === 2
-          ? [0]
+        const fallbackGroupTypes = groupType === 2
+          ? [1]
           : groupType === 3
-            ? [1, 0]
-            : groupType === 4 ? [2, 1, 0] : [];
-        const recommendationsToCheck = [recommendation, ...packageIndexes.map((index) => recommendationPackages[index])]
+            ? [2, 1]
+            : groupType === 4 ? [3, 2, 1] : [];
+        const packageForGroup = (targetGroupType: number): RecommendationPackage | undefined =>
+          recommendationPackages.find((pkg) => Number(pkg.groupType) === targetGroupType);
+        const recommendationsToCheck = [recommendation, ...fallbackGroupTypes.map(packageForGroup)]
           .filter((pkg): pkg is RecommendationPackage => Boolean(pkg));
         const findStay = (pkg: RecommendationPackage | undefined): any => pkg?.stayResults?.find((result: any) =>
           Number(result.parentRouteId || 0) === routeId ||
           (Array.isArray(result.routeIds) && result.routeIds.map(Number).includes(routeId)),
         );
+        const isUsableSelectedStay = (candidateStay: any): boolean => {
+          const candidateHotel = candidateStay?.hotel;
+          if (!candidateHotel) return false;
+          const state = String(candidateStay?.state || '').trim().toUpperCase();
+          if (['UNAVAILABLE', 'UNRESOLVED', 'NO_AVAILABILITY'].includes(state)) return false;
+          const availability = String(
+            candidateHotel.availabilityStatus || candidateHotel.availabilityState || '',
+          ).trim().toUpperCase();
+          if (['UNAVAILABLE', 'NO_SUPPLIER_AVAILABILITY', 'NO_AVAILABILITY', 'STALE', 'RESTRICTED', 'NOT_BOOKABLE']
+            .includes(availability)) return false;
+          return candidateHotel.isSelectable !== false && candidateHotel.isBookable !== false;
+        };
         const selectedPackage = recommendationsToCheck.find((pkg) => {
           const candidateStay = findStay(pkg);
-          return candidateStay && 'hotel' in candidateStay && candidateStay.hotel;
+          return isUsableSelectedStay(candidateStay);
         });
         const stay = findStay(selectedPackage);
         const selected = stay && 'hotel' in stay ? (stay as any).hotel : null;
