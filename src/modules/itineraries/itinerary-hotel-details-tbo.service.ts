@@ -5831,6 +5831,113 @@ this.logger.log(
       };
     };
 
+    const isUsablePricedStay = (stay: any): boolean => {
+      const hotel = stay?.hotel;
+      if (!hotel || String(stay?.state || '').trim().toUpperCase() === 'UNAVAILABLE') return false;
+      const availability = String(
+        hotel?.availabilityStatus || hotel?.availabilityState || '',
+      ).trim().toUpperCase();
+      if (['UNAVAILABLE', 'NO_SUPPLIER_AVAILABILITY', 'NO_AVAILABILITY', 'STALE', 'RESTRICTED', 'NOT_BOOKABLE']
+        .includes(availability)) return false;
+      if (hotel?.isSelectable === false || hotel?.isBookable === false) return false;
+      return [
+        hotel?.exactFullStayTotal,
+        hotel?.totalStayPrice,
+        hotel?.totalPrice,
+        hotel?.pricePerNight,
+        hotel?.price,
+      ].some((amount) => Number.isFinite(Number(amount)) && Number(amount) > 0);
+    };
+
+    const sameLogicalStay = (left: any, right: any): boolean => {
+      if (!left || !right) return false;
+      if (String(left.stayKey || '') && String(left.stayKey) === String(right.stayKey || '')) return true;
+      const leftRoutes = Array.isArray(left.routeIds) ? left.routeIds.map(Number) : [Number(left.parentRouteId || 0)];
+      const rightRoutes = Array.isArray(right.routeIds) ? right.routeIds.map(Number) : [Number(right.parentRouteId || 0)];
+      return leftRoutes.some((routeId: number) => routeId > 0 && rightRoutes.includes(routeId));
+    };
+
+    const repairPricedRecommendationFallbacks = (inputPackages: any[]): any[] => {
+      const packages = inputPackages.map((pkg: any) => ({
+        ...pkg,
+        stayResults: Array.isArray(pkg?.stayResults) ? pkg.stayResults.map((stay: any) => ({ ...stay })) : [],
+      }));
+      const packageForGroup = (groupType: number): any =>
+        packages.find((pkg: any) => Number(pkg?.groupType || 0) === groupType);
+      const findStay = (pkg: any, target: any): any =>
+        (pkg?.stayResults || []).find((candidate: any) => sameLogicalStay(candidate, target));
+      const copyFallback = (target: any, fallback: any, fallbackGroup: number): any => ({
+        ...target,
+        state: 'SELECTED',
+        reason: undefined,
+        hotel: {
+          ...fallback.hotel,
+          autoSelectionFallbackFromGroup: fallbackGroup,
+          recommendationFallbackReason:
+            `Reused from recommendation group ${fallbackGroup} because the selected rate became unavailable after pricing.`,
+        },
+        totalPrice: fallback.totalPrice,
+        recommendationFallbackFromGroup: fallbackGroup,
+      });
+
+      // Preserve the existing creation rule for Group 1: when its own
+      // priced result is unusable, reuse a valid Group 2 result for the same
+      // logical stay. Do this before the forward fallback chain so Group 2
+      // itself can still fall back to the original Group 1 result.
+      const group1 = packageForGroup(1);
+      const group2 = packageForGroup(2);
+      if (group1 && group2) {
+        group1.stayResults = group1.stayResults.map((stay: any) => {
+          if (isUsablePricedStay(stay)) return stay;
+          const fallback = findStay(group2, stay);
+          return isUsablePricedStay(fallback) ? copyFallback(stay, fallback, 2) : {
+            ...stay,
+            state: 'UNAVAILABLE',
+            hotel: undefined,
+            totalPrice: 0,
+            reason: 'No usable hotel rate remained after pricing.',
+          };
+        });
+      }
+
+      for (const groupType of [2, 3, 4]) {
+        const current = packageForGroup(groupType);
+        if (!current) continue;
+        current.stayResults = current.stayResults.map((stay: any) => {
+          if (isUsablePricedStay(stay)) return stay;
+          for (const fallbackGroup of [groupType - 1, groupType - 2, groupType - 3].filter((value) => value > 0)) {
+            const fallback = findStay(packageForGroup(fallbackGroup), stay);
+            if (isUsablePricedStay(fallback)) return copyFallback(stay, fallback, fallbackGroup);
+          }
+          return {
+            ...stay,
+            state: 'UNAVAILABLE',
+            hotel: undefined,
+            totalPrice: 0,
+            reason: 'No usable hotel rate remained after pricing.',
+          };
+        });
+      }
+
+      return packages.map((pkg: any) => {
+        const stayResults = pkg.stayResults || [];
+        const hotels = stayResults.flatMap((stay: any) => stay?.hotel ? [stay.hotel] : []);
+        const partialTotal = this.money(stayResults.reduce(
+          (sum: number, stay: any) => sum + (Number(stay?.totalPrice) > 0 ? Number(stay.totalPrice) : 0),
+          0,
+        ));
+        const complete = stayResults.length > 0 && stayResults.every((stay: any) => isUsablePricedStay(stay));
+        return {
+          ...pkg,
+          hotels,
+          stayResults,
+          partialTotal,
+          totalPrice: complete ? partialTotal : null,
+          complete,
+        };
+      });
+    };
+
     const pricedPackagesUnordered = packages.map((pkg) => {
       const stayResults = (pkg.stayResults || []).map((stay) => {
         const pricedHotel = stay.hotel
@@ -5861,9 +5968,11 @@ this.logger.log(
       };
     });
 
+    const repairedPricedPackages = repairPricedRecommendationFallbacks(pricedPackagesUnordered);
+
     // Group numbers are semantic category slots. Pricing must never reorder
     // or remap them (Group 1 remains Group 1 even when it costs more).
-    const pricedPackages = pricedPackagesUnordered.map((pkg) => ({
+    const pricedPackages = repairedPricedPackages.map((pkg) => ({
       ...pkg,
       groupType: Number(pkg.groupType || 0),
       label: `Recommended #${Number(pkg.groupType || 0)}`,
@@ -5887,7 +5996,7 @@ this.logger.log(
      // stays, never from group-neutral shared-pane inventory. One row is
      // emitted per logical stay; its nightlyRates carries the exact supplier
      // option for every covered route-night.
-    const authoritativeRecommendationRows = packages.flatMap((pkg: any) =>
+    const authoritativeRecommendationRows = pricedPackages.flatMap((pkg: any) =>
       (pkg.stayResults || [])
         .filter((stay: any) => stay?.state !== 'UNAVAILABLE' && stay?.hotel)
         .flatMap((stay: any) => {
