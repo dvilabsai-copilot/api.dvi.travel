@@ -5818,6 +5818,104 @@ export class HotelAvailabilitySnapshotService {
       optionsByKey.set(key, bucket);
     }
 
+    const isValidAuthoritativeOption = (option: any): boolean => {
+      const payableAmount = Number(
+        option?.totalStayPrice ??
+        option?.totalPrice ??
+        option?.totalHotelCost ??
+        option?.totalAmountAfterTax ??
+        option?.totalAmount ??
+        option?.price ??
+        option?.pricePerNight ??
+        0,
+      );
+      return option?.authoritativeRecommendation === true &&
+      option?.autoSelectionCandidate === true &&
+      option?.isSelectable !== false &&
+      option?.isBookable !== false &&
+      Number.isFinite(payableAmount) &&
+      payableAmount > 0 &&
+      this.autoSelectionIdentityMatches(option, option.autoSelectionIdentity);
+    };
+    const fallbackGroupsFor = (groupType: number): number[] => groupType === 1
+      ? [2]
+      : groupType === 2
+        ? [1]
+        : groupType === 3
+          ? [2, 1]
+          : [3, 2, 1];
+    const optionsForRouteAndGroup = (routeId: number, groupType: number): any[] =>
+      Array.from(optionsByKey.values()).flat().filter((option: any) =>
+        Number(option?.groupType || option?.group_type || 0) === groupType &&
+        Number(option?.itineraryRouteId || option?.routeId || 0) === routeId,
+      );
+    const attemptedAuthoritativeRouteIdsByGroup = new Map<number, Set<number>>();
+    for (const rawRow of rows || []) {
+      const groupType = Number(rawRow?.groupType || rawRow?.group_type || 0);
+      const isAuthoritativeAttempt = rawRow?.authoritativeRecommendation === true ||
+        rawRow?.autoSelectionCandidate === true ||
+        Boolean(rawRow?.autoSelectionIdentity);
+      const routeId = Number(
+        rawRow?.authoritativeParentRouteId ||
+        rawRow?.itineraryRouteId ||
+        rawRow?.routeId ||
+        0,
+      );
+      if (!isAuthoritativeAttempt || groupType <= 0 || routeId <= 0) continue;
+      const routeIds = attemptedAuthoritativeRouteIdsByGroup.get(groupType) || new Set<number>();
+      routeIds.add(routeId);
+      attemptedAuthoritativeRouteIdsByGroup.set(groupType, routeIds);
+    }
+
+    // Recommendation generation normally emits every group. When a provider
+    // candidate is rejected after pricing, however, it can leave no usable
+    // row for a later group at all. Materialize only the documented prior
+    // group fallback from another authoritative option for the same route;
+    // never copy generic shared inventory here.
+    for (const targetGroup of [1, 2, 3, 4]) {
+      const attemptedRouteIds = attemptedAuthoritativeRouteIdsByGroup.get(targetGroup);
+      if (!attemptedRouteIds || attemptedRouteIds.size === 0) continue;
+      const fallbackGroups = fallbackGroupsFor(targetGroup);
+      const sourceOptions = fallbackGroups.flatMap((sourceGroup) =>
+        Array.from(optionsByKey.values()).flat().filter((option: any) =>
+          Number(option?.groupType || option?.group_type || 0) === sourceGroup &&
+          isValidAuthoritativeOption(option),
+        ),
+      );
+      const sourceRouteIds = Array.from(new Set(sourceOptions.map((option: any) =>
+        Number(option?.itineraryRouteId || option?.routeId || 0),
+      ).filter((routeId: number) => routeId > 0)));
+
+      for (const routeId of sourceRouteIds) {
+        if (!attemptedRouteIds.has(routeId)) continue;
+        if (removedRouteGroups.has(`${targetGroup}|${routeId}`) || removedRouteGroups.has(`0|${routeId}`)) continue;
+        if (optionsForRouteAndGroup(routeId, targetGroup).some(isValidAuthoritativeOption)) continue;
+        const fallback = fallbackGroups
+          .map((sourceGroup) => sourceOptions.find((option: any) =>
+            Number(option?.groupType || option?.group_type || 0) === sourceGroup &&
+            Number(option?.itineraryRouteId || option?.routeId || 0) === routeId,
+          ))
+          .find(Boolean);
+        if (!fallback) continue;
+
+        const fallbackGroup = Number(fallback.groupType || fallback.group_type || 0);
+        const repaired = {
+          ...fallback,
+          groupType: targetGroup,
+          group_type: targetGroup,
+          itineraryRouteId: routeId,
+          routeId,
+          autoSelectionFallbackFromGroup: fallbackGroup,
+          recommendationFallbackReason:
+            `Reused from recommendation group ${fallbackGroup} because no usable authoritative hotel remained for this stay.`,
+        };
+        const key = hotelSelectionKeyFromRow(planId, repaired);
+        const bucket = optionsByKey.get(key) || [];
+        bucket.push(repaired);
+        optionsByKey.set(key, bucket);
+      }
+    }
+
     if (traceEnabled) {
       const targetRows = rows.filter((row: any) =>
         [11275, 11276].includes(Number(row?.routeId || row?.itineraryRouteId || 0)),
@@ -5850,10 +5948,9 @@ export class HotelAvailabilitySnapshotService {
     }
 
     // Once the recommendation service has produced authoritative grouped
-    // candidates, this method is only a persistence guard. A missing
-    // route/date/group key means that the recommendation stage did not produce
-    // a winner for that key; copying an option from another group here would
-    // silently invent a recommendation and can break a continuous stay.
+    // candidates, this method is only a persistence guard. The explicit
+    // prior-group repair above is the sole permitted cross-group fallback;
+    // generic shared inventory is never promoted automatically.
     const hasAuthoritativeRecommendations = Array.from(optionsByKey.values()).some((bucket) =>
       bucket.some((option: any) =>
         option.authoritativeRecommendation === true &&
@@ -5979,6 +6076,20 @@ export class HotelAvailabilitySnapshotService {
         });
       }
     };
+    const isUnusableAutomaticRow = (row: any): boolean => {
+      const snapshot = parseHotelSelectionSnapshot(row) as Record<string, any>;
+      const amount = [
+        row?.selected_total_price,
+        row?.total_hotel_cost,
+        snapshot.totalPrice,
+        snapshot.totalStayPrice,
+        snapshot.totalHotelCost,
+      ].map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
+      const availability = String(snapshot.availabilityStatus || row?.availability_status || '').trim().toUpperCase();
+      return amount <= 0 || snapshot.isSelectable === false ||
+        ['UNAVAILABLE', 'NO_AVAILABILITY', 'NO_SUPPLIER_AVAILABILITY', 'STALE', 'RESTRICTED', 'NOT_BOOKABLE']
+          .includes(availability);
+    };
 
     const protectedExisting = existing.filter((row: any) =>
       isProtectedHotelSelection(row) || selectionOriginFromRow(row) === 'USER_SELECTED',
@@ -5993,6 +6104,10 @@ export class HotelAvailabilitySnapshotService {
       const identity = hotelIdentity(row);
       const bucket = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
       if (isLegacyHotelEnginePlaceholder(row)) {
+        await retireExisting(row);
+        continue;
+      }
+      if (selectionOriginFromRow(row) === 'AUTO_SELECTED' && isUnusableAutomaticRow(row)) {
         await retireExisting(row);
         continue;
       }
