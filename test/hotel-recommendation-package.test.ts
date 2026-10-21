@@ -509,6 +509,28 @@ test('explicit Houseboat category is provider-agnostic and does not require a st
   assert.equal(packages[0].hotels[0].normalizedCategory, 'HOUSEBOAT');
 });
 
+test('category-only Alleppey Houseboats are selected across all recommendation groups', () => {
+  const packages = service().generate({
+    routes: oneRoute('Alleppey'),
+    hotelsByRoute: new Map([[1, [
+      option('Coco Houseboat', 100, 'AP', { hotelCategoryName: 'Houseboat', category: null, rating: 0, canonicalHotelId: 601 }),
+      option('Southern Panorama Cruise', 200, 'AP', { hotelCategoryCode: 'HOUSEBOAT', category: null, rating: 0, canonicalHotelId: 602 }),
+      option('Xandari Riverscapes', 300, 'AP', { hotelCategoryName: 'Houseboat', category: null, rating: 0, canonicalHotelId: 603 }),
+      option('Kumarakom Houseboat', 400, 'AP', { isHouseboat: true, category: null, rating: 0, canonicalHotelId: 604 }),
+    ]]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.deepEqual(packages.map((pkg) => pkg.stayResults[0]?.hotel?.hotelName), [
+    'Coco Houseboat',
+    'Southern Panorama Cruise',
+    'Xandari Riverscapes',
+    'Kumarakom Houseboat',
+  ]);
+  assert.ok(packages.every((pkg) => pkg.stayResults[0]?.hotel?.normalizedCategory === 'HOUSEBOAT'));
+});
+
 test('normal hotels remain available when no houseboat is returned', () => {
   const packages = service().generate({
     routes: [{ itinerary_route_ID: 203, itinerary_route_date: '2026-08-02', next_visiting_location: 'Calicut' }],

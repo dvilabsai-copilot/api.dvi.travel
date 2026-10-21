@@ -7,7 +7,7 @@ import {
 } from '../../hotels/hotel-rate-plans';
 import { HotelMealPlanPolicyService } from './hotel-meal-plan-policy.service';
 import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
-import { isHouseboatCategory, normalizeHotelCategoryLabel, normalizeHotelCategory } from '../utils/hotel-category.util';
+import { isHouseboatHotel, normalizeHotelCategoryLabel, normalizeHotelCategory } from '../utils/hotel-category.util';
 
 export type RecommendationAvailabilityState =
   | 'AVAILABLE'
@@ -323,17 +323,7 @@ export class HotelRecommendationPackageService {
 
 
       const isHouseboatOption = (option: StayOption): boolean => {
-        const hotel = option.hotel as Record<string, any>;
-        const accommodationType = String(
-          hotel.accommodationType ||
-          hotel.propertyType ||
-          ''
-        );
-        const hotelName = String(hotel.hotelName || '');
-
-        return /\bhouse[\s-]*boats?\b/i.test(
-          `${accommodationType} ${hotelName}`
-        );
+        return isHouseboatHotel(option.hotel);
       };
 
       // For Alleppey, do not automatically recommend a
@@ -1944,18 +1934,7 @@ export class HotelRecommendationPackageService {
   }
 
   private isHouseboatCandidate(candidate: HotelSearchResult): boolean {
-    const values = [
-      (candidate as any).hotelCategoryName,
-      (candidate as any).hotelCategoryCode,
-      (candidate as any).category,
-      (candidate as any).accommodationType,
-      (candidate as any).propertyType,
-      (candidate as any).hotelName,
-      ...((Array.isArray((candidate as any).tags) ? (candidate as any).tags : [])),
-    ];
-    return candidate.isHouseboat === true || values.some((value) =>
-      isHouseboatCategory(value) || /house\s*-?\s*boat/i.test(String(value ?? '')),
-    );
+    return isHouseboatHotel(candidate);
   }
 
   private normalizeDistance(candidate: HotelSearchResult): {
