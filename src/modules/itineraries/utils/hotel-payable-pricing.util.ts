@@ -30,6 +30,28 @@ export interface HotelRouteNightPayableInput {
   billingMultiplier?: unknown;
 }
 
+export interface HotelRouteNightPayableSourceInput {
+  provider?: unknown;
+  hasContinuousStayRouteNight?: boolean;
+  marginBaseAmount?: unknown;
+}
+
+/**
+ * Decide whether a route-night payable should be rebuilt from the API's
+ * component breakdown. Database-priced rows can be route-night snapshots
+ * without a nightlyRates array, so continuousStayRouteNight alone is not a
+ * sufficient signal for them.
+ */
+export function shouldReconcileHotelRouteNightPayable(
+  input: HotelRouteNightPayableSourceInput,
+): boolean {
+  if (input.hasContinuousStayRouteNight === true) return true;
+
+  const provider = String(input.provider ?? '').trim().toLowerCase();
+  const isDatabasePricedProvider = provider === 'offline' || provider === 'axisrooms';
+  return isDatabasePricedProvider && money(input.marginBaseAmount) > 0;
+}
+
 /** Calculate the payable amount for one physical hotel night. */
 export function calculateHotelRouteNightPayable(input: HotelRouteNightPayableInput): number {
   const marginBaseAmount = money(input.marginBaseAmount);
