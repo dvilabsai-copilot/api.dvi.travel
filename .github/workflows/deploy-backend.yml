@@ -82,6 +82,9 @@ jobs:
               exit 1
             fi
 
+            echo "Seeding Houseboat category and assignments..."
+            npm run seed:houseboat
+
             echo "Importing seeded calendar events..."
             npm run calendar-events:import
 
