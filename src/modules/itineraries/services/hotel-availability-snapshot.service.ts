@@ -37,7 +37,7 @@ import {
   hasCommercialHotelIdentity,
   resolvePersistedHotelIdentity,
 } from '../utils/hotel-selection-identity.util';
-import { isHouseboatHotel, normalizeHotelStarRating } from '../utils/hotel-category.util';
+import { normalizeHotelStarRating } from '../utils/hotel-category.util';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 import {
   buildHotelSelectionState,
@@ -2284,51 +2284,10 @@ export class HotelAvailabilitySnapshotService {
       const provider = String(row?.provider || row?.hotel_provider || '').trim().toLowerCase();
       return row?.isBookable !== false && provider !== 'offline' && provider !== 'external';
     });
-     // Alleppey Houseboat recommendations must retain four tab slots
-    // even when fewer than four distinct AP Houseboats are available.
-    const isAlleppeyStay = stayRoutes.some((route) =>
-      /^(alleppey|alappuzha|allepe)$/i.test(
-        String(route.destination || '').trim()
-      )
-    );
-
     const existingTabs = Array.isArray(response.hotelTabs)
       ? response.hotelTabs
       : [];
-
-    const tabsByGroup = new Map<number, any>(
-      existingTabs
-        .map((tab: any) => [
-          Number(tab.groupType || 0),
-          tab,
-        ] as const)
-        .filter(([groupType]) =>
-          groupType >= 1 && groupType <= 4
-        )
-    );
-
-    const recommendationTabs = isAlleppeyStay
-      ? [1, 2, 3, 4].map((groupType) =>
-          tabsByGroup.get(groupType) || {
-            groupType,
-            label: `Recommended #${groupType}`,
-            hotels: [],
-            stayResults: [],
-            totalAmount: null,
-            partialTotal: 0,
-            complete: false,
-            distinctFromPrevious: false,
-            diversityScore: 0,
-            repeatedAcrossGroupsHotelIds: [],
-            sameOptionAcrossGroups: [],
-            duplicateWithinPackageHotelIds: [],
-            repeatedFromGroups: [],
-            fallbackReasons: [
-              'No distinct AP Houseboat is available for this recommendation.',
-            ],
-          }
-        )
-      : existingTabs;
+    const recommendationTabs = existingTabs;
 
     const hotelSelectionState = buildHotelSelectionState({
       tabs: recommendationTabs,
@@ -4463,42 +4422,7 @@ export class HotelAvailabilitySnapshotService {
       })
       .filter((tab) => !requestedGroup || tab.groupType === requestedGroup);
 
-    const isAlleppeyStay = (routes || []).some((route: any) =>
-      /^(alleppey|alappuzha|allepe)$/i.test(
-        String(
-          route?.next_visiting_location ||
-          route?.location_name ||
-          ''
-        ).trim()
-      )
-    );
-
-    if (!isAlleppeyStay || requestedGroup) {
-      return orderTabsForDisplay(derivedTabs);
-    }
-
-    const tabsByGroup = new Map(
-      derivedTabs.map((tab) => [tab.groupType, tab])
-    );
-
-    return orderTabsForDisplay(
-      [1, 2, 3, 4].map((groupType) =>
-        tabsByGroup.get(groupType) || {
-          groupType,
-          label: `Recommended #${groupType}`,
-          hotels: [],
-          stayResults: [],
-          totalAmount: null,
-          partialTotal: 0,
-          complete: false,
-          distinctFromPrevious: false,
-          diversityScore: 0,
-          fallbackReasons: [
-            'No distinct AP Houseboat is available for this recommendation.',
-          ],
-        }
-      )
-    );
+    return orderTabsForDisplay(derivedTabs);
   }
 
   private buildEffectiveCoveredRouteIds(
@@ -6240,47 +6164,19 @@ export class HotelAvailabilitySnapshotService {
       // fallback from the same continuous stay. Offline is considered only
       // after those online pools are exhausted.
       const hasMultiRouteStay = (stayRouteIdsByRoute.get(optionRouteId) || []).length > 1;
-  const eligibleOptionsBeforeAlleppey =
-  authoritativeOptions.length > 0
-    ? selectionPool
-    : providerPreferredOnlineOptions.length > 0
-      ? providerPreferredOnlineOptions
-      : selectableOfflineOptions.length > 0
-        ? selectableOfflineOptions
-        : liveOptions.length > 0
-          ? liveOptions
-          : hasMultiRouteStay && routeScopedOnlineOptions.length > 0
-            ? routeScopedOnlineOptions
-            : scopedLiveOptions.length > 0
-              ? scopedLiveOptions
-              : selectionPool;
-
-// Only apply the Houseboat + AP requirement to Alleppey.
-const isAlleppey = options.some((row: any) =>
-  /^(alleppey|alappuzha|allepe)$/i.test(
-    String(
-      row?.destination ||
-      row?.itineraryRouteLocation ||
-      row?.itinerary_route_location ||
-      ''
-    ).trim()
-  )
-);
-
-const isHouseboatOption = (row: any): boolean => {
-  return isHouseboatHotel(row);
-};
-
-const isAlleppeyHouseboatStay = isAlleppey && options.some(isHouseboatOption);
-
-const eligibleOptions = isAlleppeyHouseboatStay
-  ? eligibleOptionsBeforeAlleppey.filter((row: any) => {
-      return (
-        isHouseboatOption(row) &&
-        this.getRowMealPlanCode(row) === 'AP'
-      );
-    })
-  : eligibleOptionsBeforeAlleppey;
+      const eligibleOptions = authoritativeOptions.length > 0
+        ? selectionPool
+        : providerPreferredOnlineOptions.length > 0
+          ? providerPreferredOnlineOptions
+          : selectableOfflineOptions.length > 0
+            ? selectableOfflineOptions
+            : liveOptions.length > 0
+              ? liveOptions
+              : hasMultiRouteStay && routeScopedOnlineOptions.length > 0
+                ? routeScopedOnlineOptions
+                : scopedLiveOptions.length > 0
+                  ? scopedLiveOptions
+                  : selectionPool;
       if (eligibleOptions.length === 0) {
         if (isTargetPersistenceKey) targetPersistenceTrace.push({
           key,

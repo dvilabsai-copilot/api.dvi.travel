@@ -315,24 +315,16 @@ export class HotelRecommendationPackageService {
       // different destination/stay has its own independent inventory.
       const used = new Set<string>();
 
-      // Alleppey: prioritise a houseboat for the first
-      // automatic recommendation when an eligible rate exists.
-      const isAlleppey =
-        this.canonicalDestination(evaluation.stay.destination) ===
-        'alleppey';
-
-
       const isHouseboatOption = (option: StayOption): boolean => {
         return isHouseboatHotel(option.hotel);
       };
 
-      // For Alleppey, do not automatically recommend a
-      // houseboat whose actual supplier rate is not AP.
+      // A houseboat is a property category, not a destination-specific rule.
+      // The meal-plan policy already limits eligible houseboat rates to AP;
+      // this flag only controls the ordering of eligible options.
+      const isHouseboatStay = evaluation.options.some(isHouseboatOption);
 
-      const isAlleppeyHouseboatStay =
-        isAlleppey && evaluation.options.some(isHouseboatOption);
-
-      const houseboatOptions = isAlleppeyHouseboatStay
+      const houseboatOptions = isHouseboatStay
         ? evaluation.options.filter(
             (option) =>
               isHouseboatOption(option) &&
@@ -340,7 +332,7 @@ export class HotelRecommendationPackageService {
           )
         : [];
 
-      if (isAlleppeyHouseboatStay) {
+      if (isHouseboatStay) {
         const distinctHouseboats = new Set(
           houseboatOptions.map((option) =>
             this.physicalIdentity(option.hotel)
@@ -348,7 +340,7 @@ export class HotelRecommendationPackageService {
         );
 
 
-        this.trace('alleppey-ap-houseboat-inventory', {
+        this.trace('houseboat-ap-inventory', {
           stayKey: evaluation.stay.stayKey,
           routeIds: evaluation.stay.routeIds,
           checkInDate: evaluation.stay.checkInDate,
@@ -404,7 +396,7 @@ export class HotelRecommendationPackageService {
           selectUnused(options.filter((option) => !option.fallback)) ||
           selectUnused(options.filter((option) => option.fallback));
 
-        const selected = isAlleppeyHouseboatStay
+        const selected = isHouseboatStay
           ? (
               // Priority 1: Different genuine AP Houseboats.
               selectOnlineThenOffline(
