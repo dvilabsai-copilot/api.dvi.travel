@@ -11,6 +11,7 @@ import {
 import {
   calculateHotelRouteNightPayable,
   resolveStoredHotelPayablePricing,
+  shouldReconcileHotelRouteNightPayable,
 } from './utils/hotel-payable-pricing.util';
 import {
   buildHotelSelectionState,
@@ -1260,7 +1261,11 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
       const hotelMarginAmount = effectiveMarginPercentage > 0
         ? Number((hotelMarginBaseAmount * effectiveMarginPercentage / 100).toFixed(2))
         : storedHotelMarginAmount;
-      const routeNightPayableHotelCost = continuousStayRouteNight
+      const routeNightPayableHotelCost = shouldReconcileHotelRouteNightPayable({
+        provider,
+        hasContinuousStayRouteNight: Boolean(continuousStayRouteNight),
+        marginBaseAmount: hotelMarginBaseAmount,
+      })
         ? calculateHotelRouteNightPayable({
             marginBaseAmount: hotelMarginBaseAmount,
             marginPercentage: effectiveMarginPercentage,

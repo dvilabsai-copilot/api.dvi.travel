@@ -3,6 +3,36 @@ import test from 'node:test';
 import { HotelPricingService } from '../src/modules/itineraries/hotels/hotel-pricing.service';
 import { OfflineHotelCatalogService } from '../src/modules/itineraries/services/offline-hotel-catalog.service';
 import { ItinerarySelectionWorkflowService } from '../src/modules/itineraries/services/itinerary-selection-workflow.service';
+import {
+  calculateHotelRouteNightPayable,
+  shouldReconcileHotelRouteNightPayable,
+} from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
+
+test('database-priced route nights reconcile aggregate room totals without nightly rates', () => {
+  assert.equal(shouldReconcileHotelRouteNightPayable({
+    provider: 'offline',
+    hasContinuousStayRouteNight: false,
+    marginBaseAmount: 5244.8,
+  }), true);
+  assert.equal(calculateHotelRouteNightPayable({
+    marginBaseAmount: 5244.8,
+    marginPercentage: 5,
+    taxAmount: 0,
+  }), 5507.04);
+});
+
+test('complete-fare supplier rows keep stored payable when no route-night breakdown exists', () => {
+  assert.equal(shouldReconcileHotelRouteNightPayable({
+    provider: 'tbo',
+    hasContinuousStayRouteNight: false,
+    marginBaseAmount: 5244.8,
+  }), false);
+  assert.equal(shouldReconcileHotelRouteNightPayable({
+    provider: 'vsr',
+    hasContinuousStayRouteNight: false,
+    marginBaseAmount: 5244.8,
+  }), false);
+});
 
 test('effective margin precedence is hotel, global DB, then environment', async () => {
   let globalReads = 0;
