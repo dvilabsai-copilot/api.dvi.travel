@@ -5862,6 +5862,19 @@ this.logger.log(
         ...pkg,
         stayResults: Array.isArray(pkg?.stayResults) ? pkg.stayResults.map((stay: any) => ({ ...stay })) : [],
       }));
+      // A recommendation package can omit a logical stay entirely when no
+      // candidate survived its category/availability pass. Keep the union of
+      // logical stays as the repair set so a later group can inherit a prior
+      // group's exact selected rate even when the later package has no stub
+      // stay to replace.
+      const logicalStayTemplates: any[] = [];
+      for (const pkg of packages) {
+        for (const stay of pkg.stayResults || []) {
+          if (!logicalStayTemplates.some((template) => sameLogicalStay(template, stay))) {
+            logicalStayTemplates.push(stay);
+          }
+        }
+      }
       const packageForGroup = (groupType: number): any =>
         packages.find((pkg: any) => Number(pkg?.groupType || 0) === groupType);
       const findStay = (pkg: any, target: any): any =>
@@ -5880,43 +5893,46 @@ this.logger.log(
         recommendationFallbackFromGroup: fallbackGroup,
       });
 
-      // Preserve the existing creation rule for Group 1: when its own
-      // priced result is unusable, reuse a valid Group 2 result for the same
-      // logical stay. Do this before the forward fallback chain so Group 2
-      // itself can still fall back to the original Group 1 result.
-      const group1 = packageForGroup(1);
-      const group2 = packageForGroup(2);
-      if (group1 && group2) {
-        group1.stayResults = group1.stayResults.map((stay: any) => {
-          if (isUsablePricedStay(stay)) return stay;
-          const fallback = findStay(group2, stay);
-          return isUsablePricedStay(fallback) ? copyFallback(stay, fallback, 2) : {
-            ...stay,
-            state: 'UNAVAILABLE',
-            hotel: undefined,
-            totalPrice: 0,
-            reason: 'No usable hotel rate remained after pricing.',
-          };
-        });
-      }
+      const fallbackGroupsFor = (groupType: number): number[] => groupType === 1
+        ? [2]
+        : groupType === 2
+          ? [1]
+          : groupType === 3
+            ? [2, 1]
+            : [3, 2, 1];
 
-      for (const groupType of [2, 3, 4]) {
+      for (const groupType of [1, 2, 3, 4]) {
         const current = packageForGroup(groupType);
         if (!current) continue;
-        current.stayResults = current.stayResults.map((stay: any) => {
-          if (isUsablePricedStay(stay)) return stay;
-          for (const fallbackGroup of [groupType - 1, groupType - 2, groupType - 3].filter((value) => value > 0)) {
-            const fallback = findStay(packageForGroup(fallbackGroup), stay);
-            if (isUsablePricedStay(fallback)) return copyFallback(stay, fallback, fallbackGroup);
+
+        const repairedStays = [...(current.stayResults || [])];
+        for (const template of logicalStayTemplates) {
+          const existing = findStay({ stayResults: repairedStays }, template);
+          if (existing && isUsablePricedStay(existing)) continue;
+
+          for (const fallbackGroup of fallbackGroupsFor(groupType)) {
+            const fallback = findStay(packageForGroup(fallbackGroup), template);
+            if (!isUsablePricedStay(fallback)) continue;
+            const repaired = copyFallback(existing || template, fallback, fallbackGroup);
+            if (existing) {
+              repairedStays[repairedStays.indexOf(existing)] = repaired;
+            } else {
+              repairedStays.push(repaired);
+            }
+            break;
           }
-          return {
-            ...stay,
+
+          if (!existing || findStay({ stayResults: repairedStays }, template)?.state === 'SELECTED') continue;
+          const existingIndex = repairedStays.indexOf(existing);
+          repairedStays[existingIndex] = {
+            ...existing,
             state: 'UNAVAILABLE',
             hotel: undefined,
             totalPrice: 0,
             reason: 'No usable hotel rate remained after pricing.',
           };
-        });
+        }
+        current.stayResults = repairedStays;
       }
 
       return packages.map((pkg: any) => {
