@@ -17,6 +17,7 @@ import {
   buildHotelSelectionState,
   HotelSelectionGroupView,
   resolveHotelRequiredRoutes,
+  synchronizeHotelTabTotals,
 } from './utils/hotel-selection-view-state.util';
 
 export interface ItineraryHotelTabDto {
@@ -1437,13 +1438,14 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
       rows: hotels,
       requiredRoutes: requiredHotelRoutes,
     });
+    const synchronizedHotelTabs = synchronizeHotelTabTotals(hotelTabs, hotelSelectionState);
 
     return {
       quoteId: plan.itinerary_quote_ID ?? '',
       planId,
       hotelRatesVisible,
       showHotelMargins: this.shouldShowHotelMargins(),
-      hotelTabs,
+      hotelTabs: synchronizedHotelTabs,
       hotelSelectionState,
       hotels,
       totalRoomCount,

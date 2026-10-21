@@ -204,57 +204,37 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     String(snapshot?.provider ?? row?.provider ?? '').trim().toLowerCase() === 'offline' &&
     pricingScope !== 'ROUTE_NIGHT' &&
     nightlyRates.length > 1;
-  const logicalStayTotal = Number(nightlyRates.length > 1
-    ? nightlyRates
-        .map((night: any) => Number(night?.sellAmount ?? night?.totalAmount ?? night?.pricePerNight ?? night?.price ?? 0))
-        .filter((amount: number) => Number.isFinite(amount) && amount > 0)
-        .reduce((sum: number, amount: number) => sum + amount, 0)
-        .toFixed(2)
-    : 0);
-  // A continuous stay is persisted once at its anchor route. Its nightlyRates
-  // array is the authoritative price source for each covered route; never
-  // expose the anchor night's base total on a later night.
-  if (snapshot && routeNight && Number(routeNight.baseAmount || 0) > 0) {
-    const roomCount = Math.max(Number(snapshot.roomCount ?? snapshot.totalRooms ?? row?.roomCount ?? row?.noOfRooms ?? 1), 1);
-    const canonicalRoomRate = Number(routeNight.roomRate ?? snapshot.roomRate ?? 0);
-    const canonicalRoomCost = Number(
-      routeNight.totalRoomCost ??
-      (isLegacyContinuousOfflineSnapshot ? routeNight.baseAmount : snapshot.totalRoomCost) ??
-      0,
-    );
-    const roomRate = canonicalRoomRate > 0
-      ? canonicalRoomRate
-      : Number((Number(routeNight.baseAmount || 0) / roomCount).toFixed(2));
-    const totalRoomCost = canonicalRoomCost > 0
-      ? canonicalRoomCost
-      : Number(routeNight.baseAmount || snapshot.baseTotalPrice || 0);
-    const extraBedCount = Number(snapshot.extraBedCount ?? nestedSelection.extraBedCount ?? row?.extraBedCount ?? 0);
-    const extraBedRate = Number(snapshot.extraBedRate ?? nestedSelection.extraBedRate ?? row?.extraBedRate ?? 0);
-    const childWithBedCount = Number(snapshot.childWithBedCount ?? nestedSelection.childWithBedCount ?? row?.childWithBedCount ?? 0);
-    const childWithBedRate = Number(snapshot.childWithBedRate ?? nestedSelection.childWithBedRate ?? row?.childWithBedRate ?? 0);
-    const childWithoutBedCount = Number(snapshot.childWithoutBedCount ?? nestedSelection.childWithoutBedCount ?? row?.childWithoutBedCount ?? 0);
-    const childWithoutBedRate = Number(snapshot.childWithoutBedRate ?? nestedSelection.childWithoutBedRate ?? row?.childWithoutBedRate ?? 0);
+  const projectRouteNight = (night: any) => {
+    const roomCount = Math.max(Number(snapshot?.roomCount ?? snapshot?.totalRooms ?? row?.roomCount ?? row?.noOfRooms ?? 1), 1);
+    const roomRate = Number(night?.roomRate ?? snapshot?.roomRate ?? 0) > 0
+      ? Number(night?.roomRate ?? snapshot?.roomRate)
+      : Number((Number(night?.baseAmount ?? night?.totalRoomCost ?? 0) / roomCount).toFixed(2));
+    const totalRoomCost = Number(night?.totalRoomCost ?? (isLegacyContinuousOfflineSnapshot ? night?.baseAmount : snapshot?.totalRoomCost) ?? 0) > 0
+      ? Number(night?.totalRoomCost ?? (isLegacyContinuousOfflineSnapshot ? night?.baseAmount : snapshot?.totalRoomCost))
+      : Number(night?.baseAmount ?? snapshot?.baseTotalPrice ?? 0);
+    const extraBedCount = Number(snapshot?.extraBedCount ?? nestedSelection.extraBedCount ?? row?.extraBedCount ?? 0);
+    const extraBedRate = Number(snapshot?.extraBedRate ?? nestedSelection.extraBedRate ?? row?.extraBedRate ?? 0);
+    const childWithBedCount = Number(snapshot?.childWithBedCount ?? nestedSelection.childWithBedCount ?? row?.childWithBedCount ?? 0);
+    const childWithBedRate = Number(snapshot?.childWithBedRate ?? nestedSelection.childWithBedRate ?? row?.childWithBedRate ?? 0);
+    const childWithoutBedCount = Number(snapshot?.childWithoutBedCount ?? nestedSelection.childWithoutBedCount ?? row?.childWithoutBedCount ?? 0);
+    const childWithoutBedRate = Number(snapshot?.childWithoutBedRate ?? nestedSelection.childWithoutBedRate ?? row?.childWithoutBedRate ?? 0);
     const extraBedAmount = isLegacyContinuousOfflineSnapshot && extraBedRate > 0
       ? Number((extraBedRate * extraBedCount).toFixed(2))
-      : Number(snapshot.extraBedAmount ?? nestedSelection.extraBedAmount ?? row?.extraBedAmount ?? 0);
+      : Number(night?.extraBedAmount ?? nestedSelection.extraBedAmount ?? snapshot?.extraBedAmount ?? row?.extraBedAmount ?? 0);
     const childWithBedAmount = isLegacyContinuousOfflineSnapshot && childWithBedRate > 0
       ? Number((childWithBedRate * childWithBedCount).toFixed(2))
-      : Number(snapshot.childWithBedAmount ?? nestedSelection.childWithBedAmount ?? row?.childWithBedAmount ?? 0);
+      : Number(night?.childWithBedAmount ?? nestedSelection.childWithBedAmount ?? snapshot?.childWithBedAmount ?? row?.childWithBedAmount ?? 0);
     const childWithoutBedAmount = isLegacyContinuousOfflineSnapshot && childWithoutBedRate > 0
       ? Number((childWithoutBedRate * childWithoutBedCount).toFixed(2))
-      : Number(snapshot.childWithoutBedAmount ?? nestedSelection.childWithoutBedAmount ?? row?.childWithoutBedAmount ?? 0);
-    const supplementTotal = extraBedAmount + childWithBedAmount + childWithoutBedAmount;
-    const marginPercentage = Number(snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? routeNight.marginPercentage ?? 0);
-    const marginBase = Number((totalRoomCost + supplementTotal).toFixed(2));
+      : Number(night?.childWithoutBedAmount ?? nestedSelection.childWithoutBedAmount ?? snapshot?.childWithoutBedAmount ?? row?.childWithoutBedAmount ?? 0);
+    const marginPercentage = Number(snapshot?.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? night?.marginPercentage ?? 0);
+    const marginBase = Number((totalRoomCost + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
     const marginAmount = Number((marginBase * marginPercentage / 100).toFixed(2));
     const payableTotal = Number((marginBase + marginAmount).toFixed(2));
-    snapshot = {
-      ...snapshot,
+    return {
       roomRate,
       roomCount,
       totalRoomCost,
-      basePricePerNight: roomRate,
-      baseTotalPrice: totalRoomCost,
       extraBedCount,
       extraBedRate,
       extraBedAmount,
@@ -265,6 +245,7 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       childWithoutBedRate,
       childWithoutBedAmount,
       hotelMarginBaseAmount: marginBase,
+      hotelMarginPercentage: marginPercentage,
       hotelMarginAmount: marginAmount,
       hotelMarginTotalAmount: marginAmount,
       pricePerNight: payableTotal,
@@ -274,6 +255,23 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       totalAmount: payableTotal,
       selectedPricePerNight: payableTotal,
       selectedTotalPrice: payableTotal,
+    };
+  };
+  const logicalStayPayableTotal = roomTypeBreakdown.length === 0 && nightlyRates.length > 1
+    ? Number(nightlyRates.reduce((sum: number, night: any) => sum + Number(projectRouteNight(night).totalPrice || 0), 0).toFixed(2))
+    : 0;
+  const routeNightProjection = roomTypeBreakdown.length === 0 && routeNight && Number(routeNight.baseAmount || 0) > 0
+    ? projectRouteNight(routeNight)
+    : null;
+  // A continuous stay is persisted once at its anchor route. Its nightlyRates
+  // array is the authoritative price source for each covered route; never
+  // expose the anchor night's base total on a later night.
+  if (snapshot && routeNight && Number(routeNight.baseAmount || 0) > 0) {
+    snapshot = {
+      ...snapshot,
+      ...routeNightProjection,
+      basePricePerNight: routeNightProjection?.roomRate,
+      baseTotalPrice: routeNightProjection?.totalRoomCost,
     };
   }
   if (snapshot) {
@@ -381,6 +379,13 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
           },
           Number(snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? row?.marginPercentage ?? 0),
         );
+        if (routeNightProjection) {
+          Object.assign(projected, {
+            ...routeNightProjection,
+            basePricePerNight: routeNightProjection.roomRate,
+            baseTotalPrice: routeNightProjection.totalRoomCost,
+          });
+        }
         // Keep the public selected-view shape stable. Only replace pricing
         // fields in the existing snapshot; do not leak internal projection
         // markers or derived aliases into hotelSelectionState.
@@ -407,8 +412,8 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
           selectedPricePerNight: projected.selectedPricePerNight,
           selectedTotalPrice: roomTypeBreakdown.length > 0
             ? projected.selectedTotalPrice
-            : logicalStayTotal > 0
-              ? logicalStayTotal
+            : logicalStayPayableTotal > 0
+              ? logicalStayPayableTotal
               : projected.selectedTotalPrice,
         };
       })()
@@ -479,8 +484,8 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     selectedPricePerNight: money(Number(pricePerNight || 0)),
     selectedTotalPrice: roomTypeBreakdown.length > 0
       ? money(Number(identity.selectedTotalPrice ?? totalPrice ?? 0))
-      : logicalStayTotal > 0
-        ? money(logicalStayTotal)
+      : logicalStayPayableTotal > 0
+        ? money(logicalStayPayableTotal)
         : money(Number(identity.selectedTotalPrice ?? totalPrice ?? 0)),
     roomRate: money(Number(identity.roomRate ?? 0)),
     totalRoomCost: money(Number(identity.totalRoomCost ?? 0)),
