@@ -263,20 +263,24 @@ test('stale zero-priced inventory cannot block a usable previous-group fallback'
   const payableGroup3Recommendation = {
     ...staleGroup3Inventory, price: 9100, availabilityStatus: 'AVAILABLE',
   };
+  const recommendationPackages = [
+    { groupType: 1, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+    { groupType: 2, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: group2Hotel }] },
+    { groupType: 3, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: payableGroup3Recommendation }] },
+    { groupType: 4, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+  ];
   const packages = service.generateSharedAvailabilityPackages(
     new Map([[10, [group2Hotel, staleGroup3Inventory]]]),
     [{ itinerary_route_ID: 10, itinerary_route_date: '2026-08-19', next_visiting_location: 'Cochin' }],
-    [
-      { groupType: 1, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
-      { groupType: 2, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: group2Hotel }] },
-      { groupType: 3, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: payableGroup3Recommendation }] },
-      { groupType: 4, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
-    ],
+    recommendationPackages,
   );
 
   const automatic = packages[2].hotels.find((hotel: any) => hotel.autoSelectionCandidate);
   assert.equal(automatic.hotelCode, 'COCHIN-G2');
   assert.equal(automatic.autoSelectionFallbackFromGroup, 2);
+  service.applyAutomaticFallbacksToRecommendationPackages(recommendationPackages, packages);
+  assert.equal(recommendationPackages[2].stayResults[0].hotel.hotelCode, 'COCHIN-G2');
+  assert.equal(recommendationPackages[2].stayResults[0].state, 'SELECTED');
 });
 
 test('category filtering never removes a hotel from the shared inventory', async () => {

@@ -2545,6 +2545,7 @@ this.logger.log(
       routes,
       packages,
     );
+    this.applyAutomaticFallbacksToRecommendationPackages(packages, allAvailabilityPackages);
     this.logger.log(`[HOTEL_RECOMMENDATION] algorithm=${algorithm} planId=${planId} groups=${packages.length}`);
 
  // Step 5: Build response
@@ -5170,17 +5171,19 @@ this.logger.log(
           const candidateMeal = String(candidateIdentity.mealPlan || '').trim().toLowerCase();
           return inventory.some((hotel: any) => {
             const hotelIdentity = buildAutoSelectionIdentity(hotel);
-            const exactMatch = strictAutoSelectionIdentityMatches(hotel, candidateIdentity) ||
-              (Array.isArray(hotel?.rateOptions) && hotel.rateOptions.some((rateOption: any) =>
-                strictAutoSelectionIdentityMatches({ ...hotel, ...rateOption }, candidateIdentity),
-              ));
             const propertyMatch = candidateProvider && candidateCode &&
               candidateProvider === String(hotelIdentity.provider || '').trim().toLowerCase() &&
               candidateCode === String(hotelIdentity.providerHotelCode || '').trim().toLowerCase();
             const roomMealMatch = propertyMatch &&
               (!candidateRoom || candidateRoom === String(hotelIdentity.roomType || '').trim().toLowerCase()) &&
               (!candidateMeal || candidateMeal === String(hotelIdentity.mealPlan || '').trim().toLowerCase());
-            return (exactMatch || roomMealMatch) && isUsableSelectedStay({ hotel });
+            const matches = (option: any): boolean =>
+              strictAutoSelectionIdentityMatches(option, candidateIdentity) || roomMealMatch;
+            if (matches(hotel) && isUsableSelectedStay({ hotel })) return true;
+            return Array.isArray(hotel?.rateOptions) && hotel.rateOptions.some((rateOption: any) => {
+              const option = { ...hotel, ...rateOption };
+              return matches(option) && isUsableSelectedStay({ hotel: option });
+            });
           });
         };
         const selectedPackage = recommendationsToCheck.find((pkg) => {
@@ -5290,6 +5293,70 @@ this.logger.log(
       }
       return { groupType, label: `Recommended #${groupType}`, hotels };
     });
+  }
+
+  /**
+   * The shared picker and the authoritative recommendation tabs must agree on
+   * automatic fallback selections. The picker can identify a usable prior
+   * group even when the original recommendation package still contains a
+   * stale/zero-priced stay; copy that exact prior stay into the package used
+   * for persistence and hotelSelectionState as well.
+   */
+  private applyAutomaticFallbacksToRecommendationPackages(
+    recommendationPackages: RecommendationPackage[],
+    availabilityPackages: Array<{ groupType: number; hotels: any[] }>,
+  ): void {
+    const findStay = (pkg: RecommendationPackage | undefined, routeIds: number[]): any =>
+      pkg?.stayResults?.find((stay: any) =>
+        routeIds.includes(Number(stay.parentRouteId || 0)) ||
+        (Array.isArray(stay.routeIds) && stay.routeIds.some((routeId: any) => routeIds.includes(Number(routeId)))),
+      );
+
+    for (const pkg of recommendationPackages) {
+      const groupType = Number(pkg.groupType || 0);
+      if (groupType <= 1) continue;
+      let changed = false;
+      for (const stay of pkg.stayResults || []) {
+        const routeIds = Array.from(new Set(
+          (Array.isArray(stay.routeIds) ? stay.routeIds : [stay.parentRouteId])
+            .map(Number)
+            .filter((routeId: number) => routeId > 0),
+        ));
+        const fallbackRow = availabilityPackages
+          .find((candidate) => Number(candidate.groupType) === groupType)
+          ?.hotels?.find((hotel: any) =>
+            hotel?.autoSelectionCandidate === true &&
+            Number(hotel?.autoSelectionFallbackFromGroup || 0) > 0 &&
+            routeIds.includes(Number(hotel?.routeId || 0)),
+          );
+        if (!fallbackRow) continue;
+
+        const fallbackGroupType = Number(fallbackRow.autoSelectionFallbackFromGroup || 0);
+        const fallbackPackage = recommendationPackages.find(
+          (candidate) => Number(candidate.groupType) === fallbackGroupType,
+        );
+        const fallbackStay = findStay(fallbackPackage, routeIds);
+        if (!fallbackStay?.hotel) continue;
+
+        stay.hotel = { ...fallbackStay.hotel };
+        stay.state = 'SELECTED';
+        stay.reason = undefined;
+        stay.totalPrice = fallbackStay.totalPrice;
+        (stay as any).recommendationFallbackFromGroup = fallbackGroupType;
+        changed = true;
+      }
+
+      if (!changed) continue;
+      const packageTotal = (pkg.stayResults || []).reduce(
+        (sum: number, stay: any) => sum + (Number(stay.totalPrice) > 0 ? Number(stay.totalPrice) : 0),
+        0,
+      );
+      pkg.partialTotal = this.money(packageTotal);
+      pkg.complete = (pkg.stayResults || []).every((stay: any) =>
+        stay?.state !== 'UNAVAILABLE' && Boolean(stay?.hotel),
+      );
+      pkg.totalPrice = pkg.complete ? this.money(packageTotal) : null;
+    }
   }
 
   private generateCategoryAvailabilityPackages(
