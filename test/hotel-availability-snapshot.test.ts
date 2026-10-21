@@ -1923,6 +1923,80 @@ test('initial availability creates one canonical auto-selection per missing stay
   assert.equal(createdRooms[0].room_id, 0);
 });
 
+test('authoritative normal hotel is not discarded by an unrelated houseboat in the same stay bucket', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ preferred_room_count: 1, total_adult: 2 }),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async ({ where }: any) => where?.selection_origin === 'USER_REMOVED' ? [] : [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return data;
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const normalHotel: any = {
+    itineraryRouteId: 24804,
+    groupType: 1,
+    date: '2026-12-29',
+    destination: 'Alleppey',
+    provider: 'tbo',
+    hotelId: 801,
+    hotelCode: 'NORMAL-801',
+    providerHotelCode: 'NORMAL-801',
+    hotelName: 'Alleppey Lakeside Hotel',
+    roomType: 'Deluxe Room',
+    mealPlan: 'CP',
+    rateOptionId: 'normal-cp-801',
+    totalHotelCost: 12000,
+    pricePerNight: 12000,
+    isBookable: true,
+    isSelectable: true,
+    authoritativeRecommendation: true,
+    autoSelectionCandidate: true,
+  };
+  normalHotel.autoSelectionIdentity = {
+    provider: 'tbo',
+    canonicalHotelId: 801,
+    providerHotelCode: 'NORMAL-801',
+    rateOptionId: 'normal-cp-801',
+    mealPlan: 'CP',
+  };
+  const houseboat = {
+    ...normalHotel,
+    hotelId: 802,
+    hotelCode: 'HOUSEBOAT-802',
+    providerHotelCode: 'HOUSEBOAT-802',
+    hotelName: 'Alleppey Houseboat',
+    rateOptionId: 'houseboat-ap-802',
+    mealPlan: 'AP',
+    hotelCategoryName: 'Houseboat',
+    canonicalHotelId: 802,
+    authoritativeRecommendation: false,
+    autoSelectionCandidate: false,
+    autoSelectionIdentity: undefined,
+  };
+
+  await (service as any).ensureAutoSelections(
+    tx,
+    44,
+    [normalHotel, houseboat],
+    'universal-category-run',
+    7,
+  );
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_id, 801);
+  assert.equal(createdSelections[0].hotel_provider, 'tbo');
+});
+
 test('empty persisted placeholder does not reserve an authoritative recommendation key', async () => {
   const createdSelections: any[] = [];
   const tx: any = {

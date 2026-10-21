@@ -509,6 +509,26 @@ test('explicit Houseboat category is provider-agnostic and does not require a st
   assert.equal(packages[0].hotels[0].normalizedCategory, 'HOUSEBOAT');
 });
 
+test('houseboat priority is category-driven for every destination', () => {
+  const packages = service().generate({
+    routes: oneRoute('Calicut'),
+    hotelsByRoute: new Map([[1, [
+      option('Calicut Beach Hotel', 120, 'CP', { category: '3-star', canonicalHotelId: 701 }),
+      option('Calicut Houseboat', 180, 'AP', {
+        hotelCategoryName: 'Houseboat',
+        category: null,
+        rating: 0,
+        canonicalHotelId: 702,
+      }),
+    ]]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].stayResults[0]?.hotel?.hotelName, 'Calicut Houseboat');
+  assert.equal(packages[0].stayResults[0]?.hotel?.normalizedCategory, 'HOUSEBOAT');
+});
+
 test('category-only Alleppey Houseboats are selected across all recommendation groups', () => {
   const packages = service().generate({
     routes: oneRoute('Alleppey'),
@@ -540,6 +560,29 @@ test('normal hotels remain available when no houseboat is returned', () => {
 
   assert.equal(packages[0].hotels[0].hotelName, 'Calicut Beach Hotel');
   assert.equal(packages[0].hotels[0].normalizedCategory, 'STAR_3');
+});
+
+test('normal hotel fallback remains available when a houseboat rate is not eligible', () => {
+  const packages = service().generate({
+    routes: oneRoute('Calicut'),
+    hotelsByRoute: new Map([[1, [
+      option('Calicut Houseboat without AP', 180, 'CP', {
+        hotelCategoryName: 'Houseboat',
+        category: null,
+        rating: 0,
+        canonicalHotelId: 703,
+      }),
+      option('Calicut Beach Hotel', 120, 'CP', {
+        category: '3-star',
+        canonicalHotelId: 704,
+      }),
+    ]]]),
+    preferredCategories: [3],
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].stayResults[0]?.hotel?.hotelName, 'Calicut Beach Hotel');
+  assert.equal(packages[0].stayResults[0]?.hotel?.normalizedCategory, 'STAR_3');
 });
 
 test('recommendations use target prices but exhaust unused properties before reuse', () => {
