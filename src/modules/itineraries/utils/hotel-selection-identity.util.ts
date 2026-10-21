@@ -479,7 +479,11 @@ export function resolvePersistedHotelIdentity(
 
 export function selectionOriginFromRow(row: any): HotelSelectionOrigin {
   const snapshot = parseHotelSelectionSnapshot(row);
-  if (String(row?.selection_origin || snapshot.selectionOrigin || '').trim().toUpperCase() === 'USER_REMOVED') return 'USER_REMOVED';
+  const persistedOrigin = String(row?.selection_origin || '').trim().toUpperCase();
+  if (persistedOrigin === 'USER_REMOVED') return 'USER_REMOVED';
+  if (persistedOrigin === 'USER_SELECTED') return 'USER_SELECTED';
+  if (persistedOrigin === 'AUTO_SELECTED') return 'AUTO_SELECTED';
+  if (String(snapshot.selectionOrigin || '').trim().toUpperCase() === 'USER_REMOVED') return 'USER_REMOVED';
   if (snapshot.selectionOrigin === 'USER_SELECTED') return 'USER_SELECTED';
   if (snapshot.selectionOrigin === 'AUTO_SELECTED') return 'AUTO_SELECTED';
   // Legacy offline rows predate explicit origin metadata and represented

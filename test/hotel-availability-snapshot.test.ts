@@ -1930,9 +1930,11 @@ test('empty persisted placeholder does not reserve an authoritative recommendati
       findUnique: async () => ({ preferred_room_count: 2, total_adult: 5 }),
     },
     dvi_itinerary_plan_hotel_details: {
-      findMany: async () => [{ itinerary_plan_hotel_details_ID: 21918, itinerary_route_id: 11326,
-        itinerary_route_date: '2026-09-03', group_type: 2, hotel_id: 0, hotel_code: null,
-        hotel_provider: null, selected_price_snapshot: null }],
+      findMany: async ({ where }: any) => where?.selection_origin === 'USER_REMOVED'
+        ? []
+        : [{ itinerary_plan_hotel_details_ID: 21918, itinerary_route_id: 11326,
+            itinerary_route_date: '2026-09-03', group_type: 2, hotel_id: 0, hotel_code: null,
+            hotel_provider: null, selected_price_snapshot: null }],
       create: async ({ data }: any) => { createdSelections.push(data); return { ...data, itinerary_plan_hotel_details_ID: 21919 }; },
     },
     dvi_itinerary_plan_hotel_room_details: { findMany: async () => [], create: async ({ data }: any) => data },
@@ -1955,6 +1957,119 @@ test('empty persisted placeholder does not reserve an authoritative recommendati
   assert.equal(createdSelections.length, 1);
   assert.equal(createdSelections[0].hotel_id, 232);
   assert.equal(createdSelections[0].group_type, 2);
+});
+
+test('legacy hotel-engine rows do not block a fresh automatic selection', async () => {
+  const createdSelections: any[] = [];
+  const retiredSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ preferred_room_count: 1, total_adult: 2 }),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async ({ where }: any) => where?.selection_origin === 'USER_REMOVED'
+        ? []
+        : [{
+            itinerary_plan_hotel_details_ID: 21920,
+            itinerary_route_id: 24803,
+            itinerary_route_date: '2026-12-28',
+            group_type: 1,
+            hotel_id: 45355,
+            hotel_code: null,
+            hotel_provider: null,
+            selection_origin: null,
+            selected_price_snapshot: null,
+          }],
+      update: async ({ where, data }: any) => { retiredSelections.push({ where, data }); },
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 21921 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+      updateMany: async () => ({}),
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 24803,
+    groupType: 1,
+    date: '2026-12-28',
+    provider: 'axisrooms',
+    hotelId: 234,
+    hotelCode: '234',
+    providerHotelCode: 'AX_DVI_HOTEL_234',
+    hotelName: 'THE PATIO',
+    roomType: 'Deluxe Room',
+    mealPlan: 'CP',
+    rateOptionId: 'axisrooms:234:616:616|CP_PLAN:2026-12-28',
+    totalHotelCost: 24840,
+    pricePerNight: 24840,
+    isBookable: true,
+    isSelectable: true,
+    authoritativeRecommendation: true,
+    autoSelectionCandidate: true,
+    autoSelectionIdentity: {
+      provider: 'axisrooms',
+      canonicalHotelId: 234,
+      providerHotelCode: 'AX_DVI_HOTEL_234',
+      rateOptionId: 'axisrooms:234:616:616|CP_PLAN:2026-12-28',
+      mealPlan: 'CP',
+    },
+  }], 'legacy-placeholder-run', 7);
+
+  assert.equal(retiredSelections.length, 1);
+  assert.equal(retiredSelections[0].where.itinerary_plan_hotel_details_ID, 21920);
+  assert.equal(retiredSelections[0].data.deleted, 1);
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_id, 234);
+  assert.equal(createdSelections[0].hotel_provider, 'axisrooms');
+  assert.equal(createdSelections[0].group_type, 1);
+});
+
+test('explicit legacy USER_SELECTED rows remain protected from automatic replacement', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: { findUnique: async () => ({ preferred_room_count: 1, total_adult: 2 }) },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async ({ where }: any) => where?.selection_origin === 'USER_REMOVED'
+        ? []
+        : [{
+            itinerary_plan_hotel_details_ID: 21922,
+            itinerary_route_id: 24803,
+            itinerary_route_date: '2026-12-28',
+            group_type: 1,
+            hotel_id: 45355,
+            hotel_code: null,
+            hotel_provider: null,
+            selection_origin: 'USER_SELECTED',
+            selected_price_snapshot: null,
+          }],
+      create: async ({ data }: any) => { createdSelections.push(data); return data; },
+    },
+    dvi_itinerary_plan_hotel_room_details: { findMany: async () => [], create: async ({ data }: any) => data },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 24803,
+    groupType: 1,
+    date: '2026-12-28',
+    provider: 'axisrooms',
+    hotelId: 234,
+    hotelCode: '234',
+    hotelName: 'THE PATIO',
+    mealPlan: 'CP',
+    rateOptionId: 'axisrooms:234:cp',
+    totalHotelCost: 24840,
+    isBookable: true,
+    isSelectable: true,
+  }], 'protected-legacy-run', 7);
+
+  assert.equal(createdSelections.length, 0);
 });
 
 test('initial availability persists the authoritative offline category selection even when live inventory exists', async () => {
@@ -2155,6 +2270,8 @@ test('MAP fallback auto-selects EP when CP is unavailable without relabelling it
 });
 
 test('an explicitly auto-selected offline snapshot remains automatic', () => {
+  assert.equal(selectionOriginFromRow({ selection_origin: 'AUTO_SELECTED' }), 'AUTO_SELECTED');
+  assert.equal(selectionOriginFromRow({ selection_origin: 'USER_SELECTED' }), 'USER_SELECTED');
   assert.equal(selectionOriginFromRow({
     hotel_provider: 'offline',
     selected_price_snapshot: JSON.stringify({ selectionOrigin: 'AUTO_SELECTED' }),
