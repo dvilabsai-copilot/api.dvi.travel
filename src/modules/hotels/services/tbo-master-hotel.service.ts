@@ -95,16 +95,23 @@ export class TboMasterHotelService {
     const hotel = await this.prisma.tbo_hotel_master.findUnique({ where: { tbo_hotel_code: String(code).trim() } });
     if (!hotel) throw new NotFoundException('TBO master hotel not found');
     if (new Date(dto.checkOut) <= new Date(dto.checkIn)) throw new BadRequestException('Check-out must be after check-in');
+    // The master preview form treats adults/children as the occupancy for each
+    // requested room. TBO requires one PaxRooms entry per room; passing one
+    // entry while changing only roomCount silently quotes a single room.
+    const occupancies = Array.from({ length: dto.rooms }, () => ({
+      adults: dto.adults,
+      children: dto.children || 0,
+    }));
     const results = await this.tboProvider.search({
       cityCode: hotel.tbo_city_code,
       hotelCodes: hotel.tbo_hotel_code,
       checkInDate: dto.checkIn,
       checkOutDate: dto.checkOut,
       roomCount: dto.rooms,
-      guestCount: dto.adults + (dto.children || 0),
+      guestCount: (dto.adults + (dto.children || 0)) * dto.rooms,
       guestNationality: 'IN',
-      occupancies: [{ adults: dto.adults, children: dto.children || 0 }],
-    }, { mealPlanCode: dto.mealPlanCode });
+      occupancies,
+    }, { mealPlanCode: dto.mealPlanCode, tboNoOfRooms: dto.rooms });
     const matches = results.filter((result) => String(result.providerHotelCode || result.hotelCode) === hotel.tbo_hotel_code);
     if (!matches.length) return { status: 'NO_AVAILABILITY', hotelCode: hotel.tbo_hotel_code, options: [] };
     return {

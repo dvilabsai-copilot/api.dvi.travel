@@ -282,8 +282,13 @@ export class TBOHotelProvider implements IHotelProvider {
           `   ⭐ Star filter requested: [${selectedStarRatings.join(', ')}] (TBO request StarRating=${tboStarRatingFilter})`,
         );
       }
- // Certification flow expects NoOfRooms=0 in search to fetch all available room options.
-      const noOfRooms = 0;
+      // Exact room-count searches are used by both the normal itinerary flow
+      // and the TBO master price preview. Keep the legacy 0 fallback only for
+      // callers that do not provide a room-count preference.
+      const requestedNoOfRooms = Number(preferences?.tboNoOfRooms);
+      const noOfRooms = Number.isInteger(requestedNoOfRooms) && requestedNoOfRooms > 0
+        ? Math.min(requestedNoOfRooms, TBOHotelProvider.MAX_ROOMS)
+        : 0;
 
  // Step 4: Make parallel searches for each chunk
       const basicAuth = Buffer.from(`${this.SEARCH_USERNAME}:${this.SEARCH_PASSWORD}`).toString('base64');
@@ -457,6 +462,9 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
             price: formattedNetAmount,
             netAmount: formattedNetAmount,
             totalFare: formattedTotalFare,
+            roomCount: criteria.roomCount,
+            totalNoOfRooms: noOfRooms > 0 ? noOfRooms : undefined,
+            amountIncludesRoomCount: noOfRooms > 0,
             currency: hotel.Currency || 'INR',
  roomType: roomName, // Room type name for display
             // Inclusion describes the meals actually received. Fall back to

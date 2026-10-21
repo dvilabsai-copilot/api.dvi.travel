@@ -550,22 +550,37 @@ export class StaffService {
             createdon: now as any,
  updatedon: now as any, // stamp on creation during update
           },
-        });
-      } else {
- // update existing login
-        if (input.loginEmail) {
-          await this.assertUniqueLoginEmail(input.loginEmail, login.userID as unknown as bigint);
-        }
-        const hash = input.password ? await bcrypt.hash(input.password, 10) : undefined;
-        await this.prisma.dvi_users.update({
-          where: { userID: login.userID as any },
-          data: {
-            useremail: input.loginEmail ?? login.useremail ?? undefined,
-            ...(hash ? { password: hash } : {}),
- updatedon: now as any, // stamp on edit
-          },
-        });
-      }
+      });
+} else {
+  // Check uniqueness only when the login email changes.
+  const emailChanged =
+    input.loginEmail !== undefined &&
+    input.loginEmail.trim().toLowerCase() !==
+      (login.useremail ?? "").trim().toLowerCase();
+
+  if (emailChanged) {
+    await this.assertUniqueLoginEmail(
+      input.loginEmail!,
+      login.userID as unknown as bigint
+    );
+  }
+
+  const hash = input.password
+    ? await bcrypt.hash(input.password, 10)
+    : undefined;
+
+  await this.prisma.dvi_users.update({
+    where: { userID: login.userID as any },
+    data: {
+      ...(emailChanged
+        ? { useremail: input.loginEmail!.trim() }
+        : {}),
+      ...(hash ? { password: hash } : {}),
+      updatedon: now as any, // stamp on edit
+    },
+  });
+}
+
     }
 
     const loginOut = await this.prisma.dvi_users.findFirst({

@@ -1653,9 +1653,10 @@ matchedHotels: selectedHotelRows.map((hotel: any) => ({
           itineraryRouteId: Number(routeId),
           routeId: Number(routeId),
           groupType: Number(groupType || 1),
-          date: checkInDate,
+          date: new Date(route.itinerary_route_date).toISOString().slice(0, 10),
           checkInDate,
           checkOutDate,
+
           totalHotelCost: Number.isFinite(totalAmount) ? totalAmount : 0,
           totalAmount: Number.isFinite(totalAmount) ? totalAmount : 0,
           totalAmountAfterTax: Number.isFinite(totalAmount) ? totalAmount : 0,
@@ -3111,6 +3112,9 @@ this.logger.log(
       childAges: childAges.length > 0 ? childAges : undefined,
       guestNationality,
       providers: searchProviders,
+      // TBO returns an aggregate fare when NoOfRooms is supplied. Keep the
+      // normal itinerary search aligned with the VSR master quote flow.
+      preferences: { tboNoOfRooms: safeRoomCount },
     };
 
  this.logger.log(
@@ -5163,6 +5167,10 @@ this.logger.log(
         // group's complete selected hotel in this pane. This is deliberately
         // not a synthetic price: it copies the API-calculated rate payload.
         if (inventory.length === 0 && selected) {
+          const selectedFallbackFromGroup = Number((selected as any).autoSelectionFallbackFromGroup || 0);
+          const fallbackFromGroup = selectedFallbackFromGroup > 0
+            ? selectedFallbackFromGroup
+            : groupType === 3 ? 2 : groupType === 4 ? 3 : 0;
           hotels.push({
             ...selected,
             routeId,
@@ -5171,8 +5179,12 @@ this.logger.log(
             autoSelectionStatus: 'AVAILABLE',
             autoSelectionCandidate: true,
             autoSelectionIdentity: selectedIdentity,
-            autoSelectionFallbackFromGroup: groupType === 3 ? 2 : 3,
-            recommendationFallbackReason: `Reused from recommendation group ${groupType === 3 ? 2 : 3} because no hotel was available for this destination.`,
+            ...(fallbackFromGroup > 0 ? { autoSelectionFallbackFromGroup: fallbackFromGroup } : {}),
+            ...(String((selected as any).recommendationFallbackReason || '').trim()
+              ? { recommendationFallbackReason: (selected as any).recommendationFallbackReason }
+              : fallbackFromGroup > 0
+                ? { recommendationFallbackReason: `Reused from recommendation group ${fallbackFromGroup} because no hotel was available for this destination.` }
+                : {}),
             authoritativeStayKey: stay?.stayKey,
             authoritativeParentRouteId: Number(stay?.parentRouteId || 0) || undefined,
             authoritativeRouteIds: Array.isArray(stay?.routeIds) ? stay.routeIds.map(Number) : undefined,
@@ -5204,6 +5216,12 @@ this.logger.log(
                   selectedCategory: selected.selectedCategory,
                   categoryFallbackApplied: selected.categoryFallbackApplied,
                   categoryFallbackReason: selected.categoryFallbackReason,
+                  ...(Number((selected as any).autoSelectionFallbackFromGroup || 0) > 0
+                    ? { autoSelectionFallbackFromGroup: Number((selected as any).autoSelectionFallbackFromGroup) }
+                    : {}),
+                  ...(String((selected as any).recommendationFallbackReason || '').trim()
+                    ? { recommendationFallbackReason: (selected as any).recommendationFallbackReason }
+                    : {}),
                   ...(isFallback ? { autoSelectionFallbackFromGroup: 3 } : {}),
                 }
               : {}),

@@ -2068,18 +2068,19 @@ async confirmQuotation(
     dto.hotel_bookings &&
     dto.hotel_bookings.length > 0
   ) {
-    const forwardedFor =
-      req.headers['x-forwarded-for'];
+const forwardedFor =
+  req.headers['x-forwarded-for'];
 
-    const clientIp = String(
-      req.ip ||
-        (
-          Array.isArray(forwardedFor)
-            ? forwardedFor[0]
-            : forwardedFor
-        ) ||
-        '192.168.1.1',
-    );
+const clientIp = String(
+  process.env.TBO_END_USER_IP ||
+    req.ip ||
+    (
+      Array.isArray(forwardedFor)
+        ? forwardedFor[0]
+        : forwardedFor
+    ) ||
+    '192.168.1.1',
+);
 
     /*
      * This returns successfully only after

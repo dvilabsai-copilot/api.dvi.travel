@@ -70,6 +70,7 @@ export type RecommendationHotel = HotelSearchResult & {
   distanceReference: 'HOTSPOT' | 'DESTINATION_CENTRE' | 'ROUTE_DESTINATION' | 'UNKNOWN';
   normalizedCategory: string;
   recommendationFallbackReason?: string;
+  autoSelectionFallbackFromGroup?: number;
   requestedCategory?: number;
   selectedCategory?: number;
   categoryFallbackApplied?: boolean;
@@ -313,11 +314,166 @@ export class HotelRecommendationPackageService {
       // must consume distinct physical properties across G1..G4, while a
       // different destination/stay has its own independent inventory.
       const used = new Set<string>();
+
+      // Alleppey: prioritise a houseboat for the first
+      // automatic recommendation when an eligible rate exists.
+      const isAlleppey =
+        this.canonicalDestination(evaluation.stay.destination) ===
+        'alleppey';
+
+
+      const isHouseboatOption = (option: StayOption): boolean => {
+        const hotel = option.hotel as Record<string, any>;
+        const accommodationType = String(
+          hotel.accommodationType ||
+          hotel.propertyType ||
+          ''
+        );
+        const hotelName = String(hotel.hotelName || '');
+
+        return /\bhouse[\s-]*boats?\b/i.test(
+          `${accommodationType} ${hotelName}`
+        );
+      };
+
+      // For Alleppey, do not automatically recommend a
+      // houseboat whose actual supplier rate is not AP.
+
+      const isAlleppeyHouseboatStay =
+        isAlleppey && evaluation.options.some(isHouseboatOption);
+
+      const houseboatOptions = isAlleppeyHouseboatStay
+        ? evaluation.options.filter(
+            (option) =>
+              isHouseboatOption(option) &&
+              this.exactMealPlan(option.hotel) === 'AP',
+          )
+        : [];
+
+      if (isAlleppeyHouseboatStay) {
+        const distinctHouseboats = new Set(
+          houseboatOptions.map((option) =>
+            this.physicalIdentity(option.hotel)
+          )
+        );
+
+
+        this.trace('alleppey-ap-houseboat-inventory', {
+          stayKey: evaluation.stay.stayKey,
+          routeIds: evaluation.stay.routeIds,
+          checkInDate: evaluation.stay.checkInDate,
+          checkOutDate: evaluation.stay.checkOutDate,
+          totalEligibleHotels: evaluation.options.length,
+          totalApHouseboatRates: houseboatOptions.length,
+          distinctApHouseboats: distinctHouseboats.size,
+          onlineApHouseboats: new Set(
+            houseboatOptions
+              .filter((option) => !option.fallback)
+              .map((option) =>
+                this.physicalIdentity(option.hotel)
+              )
+          ).size,
+          offlineApHouseboats: new Set(
+            houseboatOptions
+              .filter((option) => option.fallback)
+              .map((option) =>
+                this.physicalIdentity(option.hotel)
+              )
+          ).size,
+          houseboats: houseboatOptions.map((option) => ({
+            name: option.hotel.hotelName,
+            provider: option.hotel.provider,
+            mealPlan: this.exactMealPlan(option.hotel),
+            total: option.hotel.exactFullStayTotal,
+            offline: option.fallback,
+            propertyId: this.physicalIdentity(option.hotel),
+          })),
+          rejectedCandidates: evaluation.rejectedCandidates,
+        });
+      }
+
       slots.forEach((slot, groupIndex) => {
-        const selected = this.selectCategoryOption(evaluation.options, slot, used);
+        const orderedCategories = this.categoryFallbackOrder(slot.category);
+
+        const unusedOptions = evaluation.options.filter(
+          (option) => !used.has(this.physicalIdentity(option.hotel)),
+        );
+
+        const selectUnused = (options: StayOption[]): StayOption | undefined =>
+          this.selectFromCategoryPool(
+            options,
+            orderedCategories,
+            slot,
+            used,
+            false,
+          );
+
+        const selectOnlineThenOffline = (
+          options: StayOption[],
+        ): StayOption | undefined =>
+          selectUnused(options.filter((option) => !option.fallback)) ||
+          selectUnused(options.filter((option) => option.fallback));
+
+        const selected = isAlleppeyHouseboatStay
+          ? (
+              // Priority 1: Different genuine AP Houseboats.
+              selectOnlineThenOffline(
+                unusedOptions.filter(
+                  (option) =>
+                    isHouseboatOption(option) &&
+                    this.exactMealPlan(option.hotel) === 'AP',
+                ),
+              ) ||
+
+              // Priority 2: Other hotels with genuine AP rates.
+              selectOnlineThenOffline(
+                unusedOptions.filter(
+                  (option) =>
+                    !isHouseboatOption(option) &&
+                    this.exactMealPlan(option.hotel) === 'AP',
+                ),
+              ) ||
+
+              // Priority 3: Other eligible hotels with their actual
+              // supplier meal plans, prices and booking identities.
+              selectOnlineThenOffline(
+                unusedOptions.filter((option) => !isHouseboatOption(option)),
+              )
+            )
+          : this.selectCategoryOption(evaluation.options, slot, used);
+
         if (!selected) return;
-        selectedByGroup[groupIndex].set(evaluation.stay.stayKey, selected);
+
+        selectedByGroup[groupIndex].set(
+          evaluation.stay.stayKey,
+          selected,
+        );
+
         used.add(this.physicalIdentity(selected.hotel));
+      });
+
+
+    });
+
+
+    // Group 1 is the base recommendation, but it must still be a complete
+    // package when a later category/meal-plan allocation found a valid hotel
+    // for the same logical stay. Reuse Group 2's exact stay/rate only when
+    // Group 1 has no selection; never borrow across destinations or invent a
+    // price. The copied option remains authoritative for persistence.
+    evaluations.forEach((evaluation) => {
+      const stayKey = evaluation.stay.stayKey;
+      if (selectedByGroup[0].has(stayKey)) return;
+      const groupTwoSelection = selectedByGroup[1]?.get(stayKey);
+      if (!groupTwoSelection) return;
+      selectedByGroup[0].set(stayKey, {
+        ...groupTwoSelection,
+        hotel: {
+          ...this.cloneRecommendationHotel(groupTwoSelection.hotel),
+          autoSelectionFallbackFromGroup: 2,
+          recommendationFallbackReason:
+            'Reused from recommendation group 2 because no eligible Group 1 hotel was available for this stay.',
+        },
       });
     });
 
@@ -325,7 +481,8 @@ export class HotelRecommendationPackageService {
     // independent inventory bucket. If a later category slot has no eligible
     // option for a stay, carry forward the closest earlier group's selection
     // for that same stay. This preserves the requested group ordering while
-    // allowing G3/G4 to reuse an eligible G2/G3 hotel when inventory is thin.
+    // allowing G2/G3/G4 to reuse an eligible earlier hotel when inventory is
+    // thin.
     // The fallback is per logical stay, so one missing destination cannot be
     // silently filled with a hotel from another destination.
     for (let groupIndex = 1; groupIndex < slots.length; groupIndex += 1) {
@@ -339,6 +496,7 @@ export class HotelRecommendationPackageService {
             ...previousSelection,
             hotel: {
               ...previousSelection.hotel,
+              autoSelectionFallbackFromGroup: previousIndex + 1,
               recommendationFallbackReason:
                 `Reused from recommendation group ${previousIndex + 1} because no distinct eligible hotel was available.`,
             },

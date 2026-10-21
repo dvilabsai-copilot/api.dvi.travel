@@ -114,6 +114,7 @@ export class HotelSearchDTO {
     starRatings?: number[];
     mealPlanCode?: string;
     tboMealType?: string;
+    tboNoOfRooms?: number;
   };
 }
 

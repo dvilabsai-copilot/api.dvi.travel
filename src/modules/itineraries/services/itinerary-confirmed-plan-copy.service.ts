@@ -108,18 +108,23 @@ export class ItineraryConfirmedPlanCopyService {
       });
       const confirmedHotelIdByDraftHotelId = new Map<number, number>();
       for (const h of hotels) {
-        const confirmedHotel = await tx.dvi_confirmed_itinerary_plan_hotel_details.create({
-          data: {
-            itinerary_plan_hotel_details_ID: h.itinerary_plan_hotel_details_ID,
-            group_type: h.group_type,
-            itinerary_plan_id: draftPlanId,
-            itinerary_route_id: h.itinerary_route_id,
-            itinerary_route_date: h.itinerary_route_date,
-            itinerary_route_location: h.itinerary_route_location,
-            hotel_required: h.hotel_required,
-            hotel_category_id: h.hotel_category_id,
-            hotel_id: h.hotel_id,
-            hotel_margin_percentage: h.hotel_margin_percentage,
+       const confirmedHotel =
+  await tx.dvi_confirmed_itinerary_plan_hotel_details.create({
+    data: {
+      itinerary_plan_hotel_details_ID:
+        h.itinerary_plan_hotel_details_ID,
+      group_type: h.group_type,
+      itinerary_plan_id: draftPlanId,
+      itinerary_route_id: h.itinerary_route_id,
+      itinerary_route_date: h.itinerary_route_date,
+      itinerary_route_location: h.itinerary_route_location,
+      hotel_required: h.hotel_required,
+      hotel_category_id: h.hotel_category_id,
+      hotel_id: h.hotel_id,
+
+      status: 1,
+
+      hotel_margin_percentage: h.hotel_margin_percentage,
             hotel_margin_gst_type: h.hotel_margin_gst_type,
             hotel_margin_gst_percentage: h.hotel_margin_gst_percentage,
             hotel_margin_rate: h.hotel_margin_rate,

@@ -50,6 +50,7 @@ export class HotelMealPlanPolicyService {
       return this.houseboat('HOUSEBOAT_LEGACY_NAME');
     }
 
+
     const permittedPlans = requested === 'MAP'
       ? ['MAP', 'CP', 'EP'] as CanonicalHotelRatePlanCode[]
       : requested ? [requested] : [];
