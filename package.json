@@ -15,6 +15,7 @@
     "prisma:push": "prisma db push",
     "seed": "ts-node prisma/seed.ts",
     "calendar-events:import": "tsx scripts/import-calendar-events.ts",
+    "seed:houseboat": "tsx scripts/seed-houseboat-category.ts",
     "seed:vehicle-agent": "tsx scripts/seed-vehicle-agent.ts",
     "backfill:agent-codes": "tsx scripts/backfill-agent-codes.ts",
     "backfill:agent-codes:apply": "tsx scripts/backfill-agent-codes.ts --apply",
