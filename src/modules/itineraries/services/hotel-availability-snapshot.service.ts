@@ -5742,6 +5742,8 @@ export class HotelAvailabilitySnapshotService {
         hotel_provider: true,
         hotel_booking_mode: true,
         price_source: true,
+        selection_origin: true,
+        selected_rate_option_id: true,
         selected_price_snapshot: true,
       },
     });
@@ -5972,6 +5974,31 @@ export class HotelAvailabilitySnapshotService {
       return `${groupType}|${[...new Set(routeIds)].sort((a, b) => a - b).join(',')}`;
     };
     const existingKeys = new Set<string>();
+    const isLegacyHotelEnginePlaceholder = (row: any): boolean => {
+      const snapshot = parseHotelSelectionSnapshot(row);
+      const provider = String(row?.hotel_provider || snapshot.provider || '').trim();
+      const providerCode = String(
+        row?.hotel_code || snapshot.providerHotelCode || snapshot.hotelCode || '',
+      ).trim();
+      const hasRateIdentity = Boolean(
+        row?.selected_rate_option_id ||
+        row?.rate_option_id ||
+        snapshot.rateOptionId ||
+        snapshot.rateId ||
+        snapshot.bookingCode ||
+        snapshot.searchReference,
+      );
+
+      // hotel-engine creates legacy local rows as scaffolding while it
+      // rebuilds the supplier snapshot. They have only a local hotel_id and
+      // no supplier/rate identity, so they must not reserve a recommendation
+      // key or prevent the fresh availability result from being persisted.
+      return Number(row?.hotel_id || 0) > 0 &&
+        !provider &&
+        !providerCode &&
+        !hasRateIdentity &&
+        !row?.selected_price_snapshot;
+    };
     const reserveExisting = (row: any): void => {
       const routeId = Number(row?.itinerary_route_id || 0);
       if (!routeId) return;
@@ -5981,6 +6008,20 @@ export class HotelAvailabilitySnapshotService {
       if (identity !== 'property::') bucket.add(identity);
       reservedHotelIdsByRoute.set(routeId, bucket);
       existingKeys.add(hotelSelectionKeyFromRow(planId, row));
+    };
+    const retireExisting = async (row: any): Promise<void> => {
+      if (tx.dvi_itinerary_plan_hotel_details?.update) {
+        await tx.dvi_itinerary_plan_hotel_details.update({
+          where: { itinerary_plan_hotel_details_ID: row.itinerary_plan_hotel_details_ID },
+          data: { status: 0, deleted: 1, updatedon: new Date() },
+        });
+      }
+      if (tx.dvi_itinerary_plan_hotel_room_details?.updateMany) {
+        await tx.dvi_itinerary_plan_hotel_room_details.updateMany({
+          where: { itinerary_plan_hotel_details_id: row.itinerary_plan_hotel_details_ID, deleted: 0 },
+          data: { status: 0, deleted: 1, updatedon: new Date() },
+        });
+      }
     };
 
     const protectedExisting = existing.filter((row: any) =>
@@ -5995,36 +6036,18 @@ export class HotelAvailabilitySnapshotService {
       const routeId = Number(row?.itinerary_route_id || 0);
       const identity = hotelIdentity(row);
       const bucket = reservedHotelIdsByRoute.get(routeId) || new Set<string>();
+      if (isLegacyHotelEnginePlaceholder(row)) {
+        await retireExisting(row);
+        continue;
+      }
       if (missingRequiredSupplementReasons(row).length > 0) {
-        if (tx.dvi_itinerary_plan_hotel_details?.update) {
-          await tx.dvi_itinerary_plan_hotel_details.update({
-            where: { itinerary_plan_hotel_details_ID: row.itinerary_plan_hotel_details_ID },
-            data: { status: 0, deleted: 1, updatedon: new Date() },
-          });
-        }
-        if (tx.dvi_itinerary_plan_hotel_room_details?.updateMany) {
-          await tx.dvi_itinerary_plan_hotel_room_details.updateMany({
-            where: { itinerary_plan_hotel_details_id: row.itinerary_plan_hotel_details_ID, deleted: 0 },
-            data: { status: 0, deleted: 1, updatedon: new Date() },
-          });
-        }
+        await retireExisting(row);
         continue;
       }
       const fallbackFromGroup = Number((parseHotelSelectionSnapshot(row) as any)?.autoSelectionFallbackFromGroup || 0);
       const allowsFallbackDuplicate = Number(row?.group_type || 0) === 4 && fallbackFromGroup === 3;
       if (identity !== 'property::' && bucket.has(identity) && !allowsFallbackDuplicate) {
-        if (tx.dvi_itinerary_plan_hotel_details?.update) {
-          await tx.dvi_itinerary_plan_hotel_details.update({
-            where: { itinerary_plan_hotel_details_ID: row.itinerary_plan_hotel_details_ID },
-            data: { status: 0, deleted: 1, updatedon: new Date() },
-          });
-        }
-        if (tx.dvi_itinerary_plan_hotel_room_details?.updateMany) {
-          await tx.dvi_itinerary_plan_hotel_room_details.updateMany({
-            where: { itinerary_plan_hotel_details_id: row.itinerary_plan_hotel_details_ID, deleted: 0 },
-            data: { status: 0, deleted: 1, updatedon: new Date() },
-          });
-        }
+        await retireExisting(row);
         continue;
       }
       reserveExisting(row);
