@@ -2921,6 +2921,101 @@ test('TBO/VSR complete fare stays ahead of offline when supplements are requeste
   assert.equal(createdSelections[0].hotel_id, 988);
 });
 
+test('authoritative live recommendation may include an explicitly free child-with-bed supplement', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({
+        preferred_room_count: 3,
+        total_adult: 6,
+        total_child_with_bed: 3,
+        total_child_without_bed: 0,
+        total_extra_bed: 0,
+      }),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async ({ where }: any) => where?.selection_origin === 'USER_REMOVED' ? [] : [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 904 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const option: any = {
+    itineraryRouteId: 24803,
+    groupType: 1,
+    date: '2026-12-28',
+    provider: 'axisrooms',
+    hotelId: 234,
+    hotelCode: '234',
+    providerHotelCode: 'AX_DVI_HOTEL_234',
+    hotelName: 'THE PATIO',
+    roomType: 'Deluxe AC',
+    mealPlan: 'CP',
+    rateOptionId: 'axisrooms:234:616:616|CP_PLAN:2026-12-28',
+    totalHotelCost: 24840,
+    childWithBedCount: 3,
+    childWithBedRate: 0,
+    childWithBedAmount: 0,
+    isBookable: true,
+    isSelectable: true,
+    authoritativeRecommendation: true,
+    autoSelectionCandidate: true,
+  };
+  option.autoSelectionIdentity = {
+    provider: 'axisrooms',
+    canonicalHotelId: 234,
+    providerHotelCode: 'AX_DVI_HOTEL_234',
+    rateOptionId: option.rateOptionId,
+    mealPlan: 'CP',
+  };
+
+  await (service as any).ensureAutoSelections(tx, 44, [option], 'free-child-run', 7);
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(createdSelections[0].hotel_id, 234);
+  assert.equal(createdSelections[0].hotel_provider, 'axisrooms');
+});
+
+test('ordinary live inventory with a missing child-with-bed supplement remains rejected', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ preferred_room_count: 3, total_child_with_bed: 3 }),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => { createdSelections.push(data); return data; },
+    },
+    dvi_itinerary_plan_hotel_room_details: { findMany: async () => [], create: async ({ data }: any) => data },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+
+  await (service as any).ensureAutoSelections(tx, 44, [{
+    itineraryRouteId: 24803,
+    groupType: 1,
+    date: '2026-12-28',
+    provider: 'axisrooms',
+    hotelId: 234,
+    hotelCode: '234',
+    hotelName: 'THE PATIO',
+    mealPlan: 'CP',
+    rateOptionId: 'axisrooms:234:cp',
+    childWithBedCount: 3,
+    childWithBedRate: 0,
+    childWithBedAmount: 0,
+    isBookable: true,
+    isSelectable: true,
+  }], 'missing-child-run', 7);
+
+  assert.equal(createdSelections.length, 0);
+});
+
 test('stay-level live inventory does not fabricate a missing recommendation group', async () => {
   const createdSelections: any[] = [];
   const tx: any = {

@@ -5677,6 +5677,21 @@ export class HotelAvailabilitySnapshotService {
     // that case the hotel may have rooms, but it cannot fulfil this booking
     // request. Keep this rule in the backend so reset/rebuild cannot persist
     // a restricted hotel merely because its base room price is lowest.
+    const isAuthoritativeAutoSelectionCandidate = (row: any): boolean => {
+      const snapshot = parseHotelSelectionSnapshot(row) as any;
+      const identity = row?.autoSelectionIdentity || snapshot?.autoSelectionIdentity;
+      const candidateRow = {
+        ...snapshot,
+        ...row,
+        rateOptionId: row?.rateOptionId || row?.selected_rate_option_id || snapshot?.rateOptionId,
+      };
+      const authoritative = row?.authoritativeRecommendation === true ||
+        snapshot?.authoritativeRecommendation === true;
+      const candidate = row?.autoSelectionCandidate === true ||
+        snapshot?.autoSelectionCandidate === true;
+      return authoritative && candidate && this.autoSelectionIdentityMatches(candidateRow, identity);
+    };
+
     const missingRequiredSupplementReasons = (row: any): string[] => {
       // TBO is surfaced as VSR in the UI and returns one complete payable
       // occupancy fare. It intentionally does not expose separate child or
@@ -5690,8 +5705,16 @@ export class HotelAvailabilitySnapshotService {
       const snapshot: any = parseHotelSelectionSnapshot(row);
       const hasRate = (...values: unknown[]): boolean =>
         values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+      // The recommendation package can deliberately return a free supplement
+      // as part of a complete, bookable authoritative offer. Preserve that
+      // offer instead of treating its explicit zero as missing. Ordinary
+      // inventory keeps the existing positive-rate requirement.
+      const hasExplicitValue = (...values: unknown[]): boolean =>
+        values.some((value) => value !== null && value !== undefined && value !== '' &&
+          Number.isFinite(Number(value)));
+      const authoritativeFreeSupplement = isAuthoritativeAutoSelectionCandidate(row);
       const reasons: string[] = [];
-      if (Number(plan?.total_extra_bed || 0) > 0 && !hasRate(
+      const extraBedValues = [
         row?.extraBedRate,
         row?.extra_bed_rate,
         row?.extraBedAmount,
@@ -5699,10 +5722,13 @@ export class HotelAvailabilitySnapshotService {
         snapshot?.extraBedRate,
         snapshot?.extra_bed_rate,
         snapshot?.extraBedAmount,
-      )) {
+      ];
+      if (Number(plan?.total_extra_bed || 0) > 0 &&
+        !hasRate(...extraBedValues) &&
+        !(authoritativeFreeSupplement && hasExplicitValue(...extraBedValues))) {
         reasons.push('Extra bed not available');
       }
-      if (Number(plan?.total_child_with_bed || 0) > 0 && !hasRate(
+      const childWithBedValues = [
         row?.childWithBedRate,
         row?.child_with_bed_rate,
         row?.childWithBedAmount,
@@ -5710,17 +5736,23 @@ export class HotelAvailabilitySnapshotService {
         snapshot?.childWithBedRate,
         snapshot?.child_with_bed_rate,
         snapshot?.childWithBedAmount,
-      )) {
+      ];
+      if (Number(plan?.total_child_with_bed || 0) > 0 &&
+        !hasRate(...childWithBedValues) &&
+        !(authoritativeFreeSupplement && hasExplicitValue(...childWithBedValues))) {
         reasons.push('Child with bed not available');
       }
-      if (Number(plan?.total_child_without_bed || 0) > 0 && !hasRate(
+      const childWithoutBedValues = [
         row?.childWithoutBedRate,
         row?.child_without_bed_rate,
         row?.childWithoutBedAmount,
         snapshot?.childWithoutBedRate,
         snapshot?.child_without_bed_rate,
         snapshot?.childWithoutBedAmount,
-      )) {
+      ];
+      if (Number(plan?.total_child_without_bed || 0) > 0 &&
+        !hasRate(...childWithoutBedValues) &&
+        !(authoritativeFreeSupplement && hasExplicitValue(...childWithoutBedValues))) {
         reasons.push('Child without bed not available');
       }
       return reasons;
