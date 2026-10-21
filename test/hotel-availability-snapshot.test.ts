@@ -1923,6 +1923,211 @@ test('initial availability creates one canonical auto-selection per missing stay
   assert.equal(createdRooms[0].room_id, 0);
 });
 
+test('materializes a missing recommendation group from the nearest valid prior group', async () => {
+  const createdSelections: any[] = [];
+  const retiredSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ preferred_room_count: 1, total_adult: 2 }),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async ({ where }: any) => where?.selection_origin === 'USER_REMOVED'
+        ? []
+        : [{
+            itinerary_plan_hotel_details_ID: 599,
+            itinerary_route_id: 24868,
+            itinerary_route_date: '2026-12-21',
+            group_type: 3,
+            hotel_id: 303,
+            hotel_code: 'TBO-303',
+            hotel_provider: 'tbo',
+            selected_total_price: 0,
+            total_hotel_cost: 0,
+            selection_origin: 'AUTO_SELECTED',
+            selected_price_snapshot: JSON.stringify({
+              totalPrice: 0,
+              availabilityStatus: 'UNAVAILABLE',
+              isSelectable: false,
+              selectionOrigin: 'AUTO_SELECTED',
+            }),
+          }],
+      update: async ({ where }: any) => {
+        retiredSelections.push(where);
+        return {};
+      },
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 600 + createdSelections.length };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const makeOption = (groupType: number, hotelId: number, totalHotelCost: number, overrides: any = {}) => {
+    const option: any = {
+      itineraryRouteId: 24868,
+      groupType,
+      date: '2026-12-21',
+      provider: 'tbo',
+      hotelId,
+      hotelCode: `TBO-${hotelId}`,
+      hotelName: `Cochin Hotel ${hotelId}`,
+      roomType: 'Deluxe Room',
+      mealPlan: 'MAP',
+      rateOptionId: `rate-${hotelId}`,
+      totalHotelCost,
+      pricePerNight: totalHotelCost,
+      isBookable: true,
+      isSelectable: true,
+      authoritativeRecommendation: true,
+      autoSelectionCandidate: true,
+      ...overrides,
+    };
+    option.autoSelectionIdentity = {
+      provider: 'tbo',
+      canonicalHotelId: hotelId,
+      providerHotelCode: `TBO-${hotelId}`,
+      rateOptionId: `rate-${hotelId}`,
+      mealPlan: 'MAP',
+    };
+    return option;
+  };
+
+  await (service as any).ensureAutoSelections(tx, 44, [
+    makeOption(1, 101, 1000),
+    makeOption(2, 202, 2000),
+    makeOption(3, 303, 0, { isSelectable: false }),
+    makeOption(4, 404, 4000),
+  ], 'group-fallback-run', 7);
+
+  const group3 = createdSelections.find((row) => row.group_type === 3);
+  assert.ok(group3, 'Group 3 should receive an automatic hotel');
+  assert.equal(group3.hotel_id, 202);
+  assert.equal(group3.hotel_provider, 'tbo');
+  assert.equal(JSON.parse(group3.selected_price_snapshot).autoSelectionFallbackFromGroup, 2);
+  assert.deepEqual(retiredSelections, [{ itinerary_plan_hotel_details_ID: 599 }]);
+});
+
+test('does not materialize a fallback for a user-removed recommendation group', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ preferred_room_count: 1, total_adult: 2 }),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async ({ where }: any) => where?.selection_origin === 'USER_REMOVED'
+        ? [{ itinerary_route_id: 24868, group_type: 3, selected_price_snapshot: null }]
+        : [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 700 + createdSelections.length };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const makeOption = (groupType: number, hotelId: number) => ({
+    itineraryRouteId: 24868,
+    groupType,
+    date: '2026-12-21',
+    provider: 'tbo',
+    hotelId,
+    hotelCode: `TBO-${hotelId}`,
+    hotelName: `Cochin Hotel ${hotelId}`,
+    mealPlan: 'MAP',
+    rateOptionId: `rate-${hotelId}`,
+    totalHotelCost: 1000,
+    pricePerNight: 1000,
+    isBookable: true,
+    isSelectable: true,
+    authoritativeRecommendation: true,
+    autoSelectionCandidate: true,
+    autoSelectionIdentity: {
+      provider: 'tbo',
+      canonicalHotelId: hotelId,
+      providerHotelCode: `TBO-${hotelId}`,
+      rateOptionId: `rate-${hotelId}`,
+      mealPlan: 'MAP',
+    },
+  });
+
+  await (service as any).ensureAutoSelections(tx, 44, [makeOption(2, 202)], 'removed-group-run', 7);
+
+  assert.equal(createdSelections.some((row) => row.group_type === 3), false);
+});
+
+test('uses Group 1 when Group 2 has no usable authoritative hotel', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ preferred_room_count: 1, total_adult: 2 }),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        createdSelections.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 800 + createdSelections.length };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const groupOne: any = {
+    itineraryRouteId: 24868,
+    groupType: 1,
+    date: '2026-12-21',
+    provider: 'tbo',
+    hotelId: 101,
+    hotelCode: 'TBO-101',
+    hotelName: 'Cochin Hotel 101',
+    mealPlan: 'MAP',
+    rateOptionId: 'rate-101',
+    totalHotelCost: 1000,
+    pricePerNight: 1000,
+    isBookable: true,
+    isSelectable: true,
+    authoritativeRecommendation: true,
+    autoSelectionCandidate: true,
+    autoSelectionIdentity: {
+      provider: 'tbo', canonicalHotelId: 101,
+      providerHotelCode: 'TBO-101', rateOptionId: 'rate-101', mealPlan: 'MAP',
+    },
+  };
+  const unusableGroupTwo = {
+    ...groupOne,
+    groupType: 2,
+    hotelId: 202,
+    hotelCode: 'TBO-202',
+    hotelName: 'Cochin Hotel 202',
+    rateOptionId: 'rate-202',
+    totalHotelCost: 0,
+    pricePerNight: 0,
+    isSelectable: false,
+    autoSelectionIdentity: {
+      ...groupOne.autoSelectionIdentity,
+      canonicalHotelId: 202,
+      providerHotelCode: 'TBO-202',
+      rateOptionId: 'rate-202',
+    },
+  };
+
+  await (service as any).ensureAutoSelections(tx, 44, [groupOne, unusableGroupTwo], 'group-two-fallback-run', 7);
+
+  const groupTwo = createdSelections.find((row) => row.group_type === 2);
+  assert.ok(groupTwo, 'Group 2 should receive the Group 1 fallback');
+  assert.equal(groupTwo.hotel_id, 101);
+  assert.equal(JSON.parse(groupTwo.selected_price_snapshot).autoSelectionFallbackFromGroup, 1);
+});
+
 test('authoritative normal hotel is not discarded by an unrelated houseboat in the same stay bucket', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
