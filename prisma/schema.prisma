@@ -6090,6 +6090,7 @@ model tbo_hotel_master {
   hotel_address   String?   @db.VarChar(500)
   city_name       String?   @db.VarChar(100)
   star_rating     Int?      @default(0)
+  hotel_category_id Int     @default(0)
   hotel_image_url String?   @db.VarChar(500)
   description     String?   @db.Text
   check_in_time   String?   @db.VarChar(10)
@@ -6106,6 +6107,7 @@ model tbo_hotel_master {
 
   @@index([tbo_city_code], map: "idx_tbo_hotel_master_city_code")
   @@index([star_rating], map: "idx_tbo_hotel_master_star_rating")
+  @@index([hotel_category_id], map: "idx_tbo_hotel_master_category_id")
   @@index([created_at], map: "idx_tbo_hotel_master_created_at")
   @@index([hotel_name], map: "idx_tbo_hotel_master_hotel_name")
   @@index([is_priority], map: "idx_tbo_hotel_master_priority")

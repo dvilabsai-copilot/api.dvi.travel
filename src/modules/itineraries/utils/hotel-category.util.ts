@@ -1,4 +1,14 @@
 /** Map supplier/master category values to the application's logical buckets. */
+export const HOUSEBOAT_CATEGORY_CODE = 'HOUSEBOAT';
+
+export function isHouseboatCategory(value: unknown): boolean {
+  const text = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+  return text === 'houseboat' || text === 'houseboats';
+}
+
 export function normalizeHotelCategory(value: unknown): number | null {
   const text = String(value ?? '').trim().toLowerCase();
   if (!text) return null;
@@ -18,6 +28,7 @@ export function normalizeHotelStarRating(value: unknown): number | null {
 }
 
 export function normalizeHotelCategoryLabel(value: unknown): string {
+  if (isHouseboatCategory(value)) return HOUSEBOAT_CATEGORY_CODE;
   const category = normalizeHotelCategory(value);
   return category === null ? 'UNKNOWN' : `STAR_${category}`;
 }

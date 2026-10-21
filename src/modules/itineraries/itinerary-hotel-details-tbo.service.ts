@@ -22,7 +22,7 @@ import {
   ItineraryHotelRoomDto,
 } from './itinerary-hotel-details.service';
 import { haversineKm } from './utils/distance-utils';
-import { normalizeHotelCategory } from './utils/hotel-category.util';
+import { isHouseboatCategory, normalizeHotelCategory } from './utils/hotel-category.util';
 import {
   HOTEL_RATE_PLAN_BY_CODE,
   inferCanonicalHotelRatePlanCode,
@@ -1048,6 +1048,7 @@ export class ItineraryHotelDetailsTboService {
           this.getHotelCategoryCandidates(hotel);
 
         const categoryMatch =
+          Boolean((hotel as any).isHouseboat) ||
           categoryCandidates.some((category) =>
             preferredCategorySet.has(category),
           );
@@ -1312,6 +1313,122 @@ if (hotelMasterId) {
       }
     }
     return hotelsByRoute;
+  }
+
+  /** Apply the canonical category to all provider rows at the shared boundary. */
+  private async enrichHotelCategoryMetadata(
+    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
+  ): Promise<Map<number, HotelSearchResult[] | null>> {
+    const rows = Array.from(hotelsByRoute.values()).flatMap((value) => Array.isArray(value) ? value : []);
+    if (rows.length === 0) return hotelsByRoute;
+
+    const providers = new Map<string, Set<string>>();
+    const add = (provider: string, value: unknown) => {
+      const code = String(value ?? '').trim();
+      if (!code) return;
+      const values = providers.get(provider) || new Set<string>();
+      values.add(code);
+      providers.set(provider, values);
+    };
+    rows.forEach((row: any) => add(
+      String(row?.provider || '').trim().toLowerCase(),
+      row?.hotelCode || row?.providerHotelCode || row?.hotelId,
+    ));
+
+    const tboCodes = Array.from(providers.get('tbo') || []);
+    const axisCodes = Array.from(providers.get('axisrooms') || []);
+    const staahCodes = Array.from(providers.get('staah') || []);
+    const resavenueCodes = Array.from(providers.get('resavenue') || []);
+    const axisAndStaahIds = Array.from(new Set([
+      ...axisCodes.map(Number),
+      ...staahCodes.map(Number),
+    ].filter((value) => Number.isFinite(value) && value > 0)));
+    const offlineCodes = Array.from(providers.get('offline') || []);
+    const lookupConditions: any[] = [];
+    if (tboCodes.length) lookupConditions.push({ tbo_hotel_code: { in: tboCodes } });
+    if (axisAndStaahIds.length) lookupConditions.push({ hotel_id: { in: axisAndStaahIds } });
+    if (axisCodes.length) lookupConditions.push({ axisrooms_property_id: { in: axisCodes } });
+    if (staahCodes.length) lookupConditions.push({ staah_property_id: { in: staahCodes } });
+    if (resavenueCodes.length) lookupConditions.push({ resavenue_hotel_code: { in: resavenueCodes } });
+    if (offlineCodes.length) lookupConditions.push({ hotel_code: { in: offlineCodes } });
+
+    const dviRows = lookupConditions.length > 0
+      ? await this.prisma.dvi_hotel.findMany({
+          where: { status: 1, deleted: false, OR: lookupConditions } as any,
+          select: {
+            hotel_id: true,
+            hotel_code: true,
+            tbo_hotel_code: true,
+            resavenue_hotel_code: true,
+            axisrooms_property_id: true,
+            staah_property_id: true,
+            hotel_category: true,
+          } as any,
+        })
+      : [];
+    const tboRows = tboCodes.length > 0
+      ? await (this.prisma as any).tbo_hotel_master.findMany({
+          where: { tbo_hotel_code: { in: tboCodes } },
+          select: { tbo_hotel_code: true, hotel_category_id: true },
+        })
+      : [];
+    const categoryIds = Array.from(new Set([
+      ...dviRows.map((row: any) => Number(row.hotel_category || 0)),
+      ...tboRows.map((row: any) => Number(row.hotel_category_id || 0)),
+    ].filter((value) => value > 0)));
+    const categoryRows = categoryIds.length > 0
+      ? await this.prisma.dvi_hotel_category.findMany({
+          where: { hotel_category_id: { in: categoryIds }, deleted: 0 } as any,
+          select: { hotel_category_id: true, hotel_category_title: true, hotel_category_code: true },
+        })
+      : [];
+
+    const categoriesById = new Map<number, { name: string; code: string }>(
+      categoryRows.map((row: any) => [Number(row.hotel_category_id), {
+        name: String(row.hotel_category_title || '').trim(),
+        code: String(row.hotel_category_code || '').trim(),
+      }]),
+    );
+    const dviByKey = new Map<string, any>();
+    dviRows.forEach((row: any) => {
+      for (const key of [
+        row.hotel_id,
+        row.hotel_code,
+        row.tbo_hotel_code,
+        row.resavenue_hotel_code,
+        row.axisrooms_property_id,
+        row.staah_property_id,
+      ]) {
+        const value = String(key ?? '').trim();
+        if (value) dviByKey.set(value, row);
+      }
+    });
+    const tboByCode = new Map<string, any>(tboRows.map((row: any) => [String(row.tbo_hotel_code), row]));
+
+    return new Map(Array.from(hotelsByRoute.entries()).map(([routeId, routeRows]) => [
+      routeId,
+      Array.isArray(routeRows)
+        ? routeRows.map((row: any) => {
+            const provider = String(row?.provider || '').trim().toLowerCase();
+            const code = String(row?.hotelCode || row?.providerHotelCode || row?.hotelId || '').trim();
+            const dvi = dviByKey.get(code);
+            const tbo = provider === 'tbo' ? tboByCode.get(code) : null;
+            const categoryId = Number(tbo?.hotel_category_id || dvi?.hotel_category || 0) || null;
+            const category = categoryId ? categoriesById.get(categoryId) : undefined;
+            const isHouseboat = Boolean(row?.isHouseboat) || Boolean(
+              isHouseboatCategory(category?.name) || isHouseboatCategory(category?.code),
+            );
+            return {
+              ...row,
+              hotelCategoryId: categoryId,
+              hotelCategoryName: category?.name || null,
+              hotelCategoryCode: category?.code || null,
+              isHouseboat,
+              category: isHouseboat ? 'Houseboat' : row.category,
+            };
+          })
+        : routeRows,
+    ]));
   }
 
   /** Fetch the latest room/rate/meal options for one selected supplier hotel. */
@@ -2321,7 +2438,7 @@ this.logger.log(
   // Keep an independent snapshot before applying recommendation-only
   // category/meal/facility filters. The filter pipeline may mutate its input
   // arrays; aliasing this map would silently shrink the shared picker too.
-  const completeHotelsByRoute = new Map<number, HotelSearchResult[] | null>(
+  let completeHotelsByRoute = new Map<number, HotelSearchResult[] | null>(
     Array.from(hotelsByRoute.entries()).map(([routeId, rows]) => [
       routeId,
       Array.isArray(rows)
@@ -2334,6 +2451,7 @@ this.logger.log(
         : rows,
     ]),
   );
+  completeHotelsByRoute = await this.enrichHotelCategoryMetadata(completeHotelsByRoute);
   const filteredHotelsByRoute =
   await this.applyPlanPreferenceFilters(
     completeHotelsByRoute,
@@ -7578,6 +7696,16 @@ this.logger.log(
           hotelCode: String(hotel.hotelCode || '').trim(),
           hotelName: hotel.hotelName || 'Hotel',
           hotelCategory: this.getCategoryFromRating(hotel.category || hotel.rating),
+          hotelCategoryName: (hotel as any).hotelCategoryName || (hotel as any).category || null,
+          hotelCategoryCode: (hotel as any).hotelCategoryCode || null,
+          isHouseboat: Boolean((hotel as any).isHouseboat) || [
+            (hotel as any).hotelCategoryName,
+            (hotel as any).hotelCategoryCode,
+            (hotel as any).category,
+            (hotel as any).accommodationType,
+            (hotel as any).propertyType,
+            (hotel as any).hotelName,
+          ].some((value) => isHouseboatCategory(value) || /house\s*-?\s*boat/i.test(String(value ?? ''))),
  groupType: hotel.groupType || 1, // ADD: Include groupType (tier: 1-4)
  roomTypeId: actualRoomTypeId, // FIXED: Use actual TBO room type ID
  roomTypeName: actualRoomTypeName, // FIXED: Use actual TBO room type name
