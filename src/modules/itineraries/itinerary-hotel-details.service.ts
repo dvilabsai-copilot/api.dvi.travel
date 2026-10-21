@@ -325,6 +325,9 @@ export interface ItineraryHotelRoomDto {
   canonicalHotelId?: number | null;
   hotelName: string;
   hotelCategory: number | null;
+  hotelCategoryName?: string | null;
+  hotelCategoryCode?: string | null;
+  isHouseboat?: boolean;
   groupType: number;
   roomTypeId: number;
   roomTypeName: string;

@@ -3,11 +3,12 @@ import {
   inferCanonicalHotelRatePlanCode,
   type CanonicalHotelRatePlanCode,
 } from '../../hotels/hotel-rate-plans';
+import { isHouseboatCategory } from '../utils/hotel-category.util';
 
 export type HotelMealPlanPolicyResult = {
   effectiveRequiredPlan: CanonicalHotelRatePlanCode | null;
   permittedPlans: CanonicalHotelRatePlanCode[];
-  policySource: 'ITINERARY' | 'HOUSEBOAT_STRUCTURED' | 'HOUSEBOAT_TAG' | 'HOUSEBOAT_PROVIDER' | 'HOUSEBOAT_LEGACY_NAME' | 'NONE';
+  policySource: 'ITINERARY' | 'HOUSEBOAT_CATEGORY' | 'HOUSEBOAT_STRUCTURED' | 'HOUSEBOAT_TAG' | 'HOUSEBOAT_PROVIDER' | 'HOUSEBOAT_LEGACY_NAME' | 'NONE';
   fallbackAllowed: boolean;
   reason: string;
 };
@@ -20,6 +21,7 @@ export class HotelMealPlanPolicyService {
     hotelName?: string | null;
     hotelTags?: unknown;
     providerPropertyType?: string | null;
+    hotelCategory?: unknown;
     itineraryMealPlan?: string | null;
     transportOnly?: boolean;
   }): HotelMealPlanPolicyResult {
@@ -31,20 +33,20 @@ export class HotelMealPlanPolicyService {
     const structured = this.normalize(input.accommodationType);
     const tags = this.flatten(input.hotelTags);
     const providerType = this.normalize(input.providerPropertyType);
-    const destination = this.normalize(input.destination);
     const hotelName = this.normalize(input.hotelName);
-    const isAlleppey = /alleppey|alappuzha/.test(destination);
-
-    if (isAlleppey && this.isHouseboat(structured)) {
+    if (isHouseboatCategory(input.hotelCategory)) {
+      return this.houseboat('HOUSEBOAT_CATEGORY');
+    }
+    if (this.isHouseboat(structured)) {
       return this.houseboat('HOUSEBOAT_STRUCTURED');
     }
-    if (isAlleppey && tags.some((tag) => this.isHouseboat(tag))) {
+    if (tags.some((tag) => this.isHouseboat(tag))) {
       return this.houseboat('HOUSEBOAT_TAG');
     }
-    if (isAlleppey && this.isHouseboat(providerType)) {
+    if (this.isHouseboat(providerType)) {
       return this.houseboat('HOUSEBOAT_PROVIDER');
-      }
-    if (isAlleppey && this.isHouseboat(hotelName)) {
+    }
+    if (this.isHouseboat(hotelName) && !structured && !providerType && tags.length === 0) {
       return this.houseboat('HOUSEBOAT_LEGACY_NAME');
     }
 
@@ -69,7 +71,7 @@ export class HotelMealPlanPolicyService {
       permittedPlans: ['AP'],
       policySource: source,
       fallbackAllowed: false,
-      reason: 'Alleppey houseboats require AP unless an explicit business override is introduced.',
+      reason: 'Houseboat category requires AP unless an explicit business override is introduced.',
     };
   }
 

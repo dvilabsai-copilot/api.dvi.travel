@@ -66,6 +66,7 @@ export class TboMasterHotelService {
     if (dto.address !== undefined) data.hotel_address = dto.address;
     if (dto.city !== undefined) data.city_name = dto.city;
     if (dto.rating !== undefined) data.star_rating = dto.rating;
+    if (dto.categoryId !== undefined) data.hotel_category_id = dto.categoryId || 0;
     if (dto.imageUrl !== undefined) data.hotel_image_url = dto.imageUrl;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.checkInTime !== undefined) data.check_in_time = dto.checkInTime;
@@ -141,6 +142,7 @@ export class TboMasterHotelService {
       city: item.city_name,
       address: item.hotel_address,
       rating: item.star_rating,
+      categoryId: Number(item.hotel_category_id || 0),
       imageUrl: item.hotel_image_url || images.find((image) => image.isPrimary)?.url || images[0]?.url || null,
       images,
       primaryImageUrl: images.find((image) => image.isPrimary)?.url || images[0]?.url || item.hotel_image_url || null,

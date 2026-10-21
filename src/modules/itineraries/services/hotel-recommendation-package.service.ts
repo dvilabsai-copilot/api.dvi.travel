@@ -7,7 +7,7 @@ import {
 } from '../../hotels/hotel-rate-plans';
 import { HotelMealPlanPolicyService } from './hotel-meal-plan-policy.service';
 import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
-import { normalizeHotelCategoryLabel, normalizeHotelCategory } from '../utils/hotel-category.util';
+import { isHouseboatCategory, normalizeHotelCategoryLabel, normalizeHotelCategory } from '../utils/hotel-category.util';
 
 export type RecommendationAvailabilityState =
   | 'AVAILABLE'
@@ -574,6 +574,17 @@ export class HotelRecommendationPackageService {
     used: Set<string>,
     allowReuse: boolean,
   ): StayOption | undefined {
+    const houseboatCandidates = options
+      .filter((option) => this.isHouseboatCandidate(option.hotel))
+      .sort((a, b) => this.compareRecommendationOptions(a, b));
+    const availableHouseboats = allowReuse
+      ? houseboatCandidates
+      : houseboatCandidates.filter((candidate) => !used.has(this.physicalIdentity(candidate.hotel)));
+    if (availableHouseboats.length > 0) {
+      const selected = this.rankCategoryCandidates(availableHouseboats, slot, houseboatCandidates);
+      if (selected) return this.withHouseboatMetadata(selected);
+    }
+
     for (const category of orderedCategories) {
       const categoryCandidates = options
         .filter((option) => this.categoryNumber(option.hotel) === category)
@@ -639,6 +650,19 @@ export class HotelRecommendationPackageService {
         categoryFallbackApplied: applied,
         categoryFallbackReason: fallbackReason,
         recommendationFallbackReason: fallbackReason || selected.hotel.recommendationFallbackReason,
+      },
+    };
+  }
+
+  private withHouseboatMetadata(selected: StayOption): StayOption {
+    return {
+      ...selected,
+      hotel: {
+        ...selected.hotel,
+        normalizedCategory: 'HOUSEBOAT',
+        selectedCategory: undefined,
+        categoryFallbackApplied: false,
+        categoryFallbackReason: undefined,
       },
     };
   }
@@ -1567,6 +1591,7 @@ export class HotelRecommendationPackageService {
       accommodationType: (candidate as any).accommodationType,
       providerPropertyType: (candidate as any).propertyType,
       hotelTags: (candidate as any).tags,
+      hotelCategory: (candidate as any).hotelCategoryName || (candidate as any).hotelCategoryCode || (candidate as any).category,
       hotelName: candidate.hotelName,
       itineraryMealPlan: preferredMeal,
     });
@@ -1576,7 +1601,7 @@ export class HotelRecommendationPackageService {
       return { ok: false, reason: `Meal plan mismatch: required ${requiredMeal}, option is ${exactMeal || 'UNKNOWN'}.` };
     }
 
-    if (categories.size > 0) {
+    if (categories.size > 0 && !this.isHouseboatCandidate(candidate)) {
       const category = this.categoryNumber(candidate);
       if (!category) return { ok: false, reason: `Category ${this.normalizedCategory(candidate)} is not a supported star category.` };
     }
@@ -1897,7 +1922,15 @@ export class HotelRecommendationPackageService {
   }
 
   private normalizedCategory(candidate: HotelSearchResult): string {
-    const values = [(candidate as any).category, (candidate as any).categoryName, (candidate as any).starRating, (candidate as any).rating];
+    if (candidate.isHouseboat === true) return 'HOUSEBOAT';
+    const values = [
+      (candidate as any).hotelCategoryName,
+      (candidate as any).hotelCategoryCode,
+      (candidate as any).category,
+      (candidate as any).categoryName,
+      (candidate as any).starRating,
+      (candidate as any).rating,
+    ];
     for (const value of values) {
       const normalized = normalizeHotelCategoryLabel(value);
       if (normalized !== 'UNKNOWN') return normalized;
@@ -1908,6 +1941,21 @@ export class HotelRecommendationPackageService {
   private categoryNumber(candidate: HotelSearchResult): number | null {
     const value = this.normalizedCategory(candidate).match(/^STAR_([1-5])$/);
     return value ? Number(value[1]) : null;
+  }
+
+  private isHouseboatCandidate(candidate: HotelSearchResult): boolean {
+    const values = [
+      (candidate as any).hotelCategoryName,
+      (candidate as any).hotelCategoryCode,
+      (candidate as any).category,
+      (candidate as any).accommodationType,
+      (candidate as any).propertyType,
+      (candidate as any).hotelName,
+      ...((Array.isArray((candidate as any).tags) ? (candidate as any).tags : [])),
+    ];
+    return candidate.isHouseboat === true || values.some((value) =>
+      isHouseboatCategory(value) || /house\s*-?\s*boat/i.test(String(value ?? '')),
+    );
   }
 
   private normalizeDistance(candidate: HotelSearchResult): {

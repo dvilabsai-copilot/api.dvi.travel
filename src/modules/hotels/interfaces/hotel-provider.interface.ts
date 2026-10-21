@@ -48,6 +48,10 @@ export interface HotelSearchResult {
   tags?: string[];
   rating: number;
  category?: string; // Hotel category/star rating
+  hotelCategoryId?: number | null;
+  hotelCategoryName?: string | null;
+  hotelCategoryCode?: string | null;
+  isHouseboat?: boolean;
   facilities: string[];
   amenities?: string[];
   inclusions?: string[];

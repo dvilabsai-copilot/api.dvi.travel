@@ -490,6 +490,36 @@ test('houseboat policy requires AP', () => {
   assert.equal(packages[0].hotels[0].hotelName, 'Houseboat AP');
 });
 
+test('explicit Houseboat category is provider-agnostic and does not require a star category', () => {
+  const packages = service().generate({
+    routes: [{ itinerary_route_ID: 202, itinerary_route_date: '2026-08-02', next_visiting_location: 'Kumarakom' }],
+    hotelsByRoute: new Map([[202, [
+      option('Xandari Riverscapes Southern Panorama Cruise', 240, 'AP', {
+        provider: 'tbo',
+        hotelCategoryName: 'Houseboat',
+        category: null,
+        rating: 0,
+      }),
+      option('Kumarakom Lake Resort', 300, 'CP', { category: '4-star' }),
+    ]]]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].hotels[0].hotelName, 'Xandari Riverscapes Southern Panorama Cruise');
+  assert.equal(packages[0].hotels[0].normalizedCategory, 'HOUSEBOAT');
+});
+
+test('normal hotels remain available when no houseboat is returned', () => {
+  const packages = service().generate({
+    routes: [{ itinerary_route_ID: 203, itinerary_route_date: '2026-08-02', next_visiting_location: 'Calicut' }],
+    hotelsByRoute: new Map([[203, [option('Calicut Beach Hotel', 240, 'CP', { category: '3-star' })]]]),
+    preferredMealPlanCode: 'CP',
+  });
+
+  assert.equal(packages[0].hotels[0].hotelName, 'Calicut Beach Hotel');
+  assert.equal(packages[0].hotels[0].normalizedCategory, 'STAR_3');
+});
+
 test('recommendations use target prices but exhaust unused properties before reuse', () => {
   const packages = service().generate({
     routes: oneRoute(),

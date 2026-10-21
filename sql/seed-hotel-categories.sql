@@ -41,3 +41,12 @@ WHERE hotel_category_id IN (1,2,3,4,5)
 ORDER BY hotel_category_id;
 
 COMMIT;
+
+-- Houseboats are a non-star category and must not consume a star-rating ID.
+INSERT INTO dvi_hotel_category
+  (hotel_category_title, hotel_category_code, createdon, updatedon, createdby, status, deleted)
+SELECT 'Houseboat', 'HOUSEBOAT', NOW(), NOW(), 0, 1, 0
+WHERE NOT EXISTS (
+  SELECT 1 FROM dvi_hotel_category
+  WHERE hotel_category_code = 'HOUSEBOAT' OR LOWER(hotel_category_title) = 'houseboat'
+);
