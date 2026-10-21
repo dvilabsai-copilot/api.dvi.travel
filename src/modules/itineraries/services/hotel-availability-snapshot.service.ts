@@ -37,7 +37,7 @@ import {
   hasCommercialHotelIdentity,
   resolvePersistedHotelIdentity,
 } from '../utils/hotel-selection-identity.util';
-import { normalizeHotelStarRating } from '../utils/hotel-category.util';
+import { isHouseboatHotel, normalizeHotelStarRating } from '../utils/hotel-category.util';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 import {
   buildHotelSelectionState,
@@ -6211,13 +6211,7 @@ const isAlleppey = options.some((row: any) =>
 );
 
 const isHouseboatOption = (row: any): boolean => {
-  const accommodation = String(
-    row?.accommodationType ||
-    row?.propertyType ||
-    ''
-  );
-  const hotelName = String(row?.hotelName || '');
-  return /\bhouse[\s-]*boats?\b/i.test(`${accommodation} ${hotelName}`);
+  return isHouseboatHotel(row);
 };
 
 const isAlleppeyHouseboatStay = isAlleppey && options.some(isHouseboatOption);

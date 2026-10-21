@@ -9,6 +9,28 @@ export function isHouseboatCategory(value: unknown): boolean {
   return text === 'houseboat' || text === 'houseboats';
 }
 
+/**
+ * Detect a Houseboat without depending on a particular supplier's naming.
+ * Category metadata is authoritative when present; the legacy text fields
+ * remain supported for older VSR/AX/offline rows.
+ */
+export function isHouseboatHotel(candidate: unknown): boolean {
+  const hotel = (candidate || {}) as Record<string, unknown>;
+  const values = [
+    hotel.hotelCategoryName,
+    hotel.hotelCategoryCode,
+    hotel.category,
+    hotel.accommodationType,
+    hotel.propertyType,
+    hotel.hotelName,
+    ...(Array.isArray(hotel.tags) ? hotel.tags : []),
+  ];
+
+  return hotel.isHouseboat === true || values.some((value) =>
+    isHouseboatCategory(value) || /house\s*-?\s*boat/i.test(String(value ?? '')),
+  );
+}
+
 export function normalizeHotelCategory(value: unknown): number | null {
   const text = String(value ?? '').trim().toLowerCase();
   if (!text) return null;
