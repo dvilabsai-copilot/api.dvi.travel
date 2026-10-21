@@ -5137,7 +5137,27 @@ this.logger.log(
           ).trim().toUpperCase();
           if (['UNAVAILABLE', 'NO_SUPPLIER_AVAILABILITY', 'NO_AVAILABILITY', 'STALE', 'RESTRICTED', 'NOT_BOOKABLE']
             .includes(availability)) return false;
-          return candidateHotel.isSelectable !== false && candidateHotel.isBookable !== false;
+          if (candidateHotel.isSelectable === false || candidateHotel.isBookable === false) return false;
+          // Group 1 is the source recommendation and legacy callers may omit
+          // price fields until the response pricing stage. Later groups must
+          // not block fallback on a nominal zero-priced/non-bookable option.
+          if (groupType === 1) return true;
+          const payableAmounts = [
+            candidateHotel.price,
+            candidateHotel.pricePerNight,
+            candidateHotel.totalPrice,
+            candidateHotel.totalStayPrice,
+            candidateHotel.exactFullStayTotal,
+            ...(Array.isArray(candidateHotel.rateOptions)
+              ? candidateHotel.rateOptions.flatMap((rateOption: any) => [
+                rateOption?.price,
+                rateOption?.pricePerNight,
+                rateOption?.totalPrice,
+                rateOption?.totalStayPrice,
+              ])
+              : []),
+          ];
+          return payableAmounts.some((amount) => Number.isFinite(Number(amount)) && Number(amount) > 0);
         };
         const selectedPackage = recommendationsToCheck.find((pkg) => {
           const candidateStay = findStay(pkg);
