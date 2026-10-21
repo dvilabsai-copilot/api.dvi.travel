@@ -249,6 +249,36 @@ test('zero-priced current group selection falls back to the previous payable gro
   assert.equal(automatic.autoSelectionFallbackFromGroup, 2);
 });
 
+test('stale zero-priced inventory cannot block a usable previous-group fallback', () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  const group2Hotel = {
+    provider: 'axisrooms', hotelCode: 'COCHIN-G2', hotelName: 'Cochin Group 2 Hotel',
+    roomType: 'Royal', mealPlan: 'MAP', price: 5200, rateOptionId: 'cochin-g2-rate',
+  };
+  const staleGroup3Inventory = {
+    provider: 'axisrooms', hotelCode: 'COCHIN-G3', hotelName: 'Dutch Manor',
+    roomType: 'Premium Room', mealPlan: 'MAP', price: 0,
+    availabilityStatus: 'UNAVAILABLE', isSelectable: true,
+  };
+  const payableGroup3Recommendation = {
+    ...staleGroup3Inventory, price: 9100, availabilityStatus: 'AVAILABLE',
+  };
+  const packages = service.generateSharedAvailabilityPackages(
+    new Map([[10, [group2Hotel, staleGroup3Inventory]]]),
+    [{ itinerary_route_ID: 10, itinerary_route_date: '2026-08-19', next_visiting_location: 'Cochin' }],
+    [
+      { groupType: 1, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+      { groupType: 2, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: group2Hotel }] },
+      { groupType: 3, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: payableGroup3Recommendation }] },
+      { groupType: 4, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+    ],
+  );
+
+  const automatic = packages[2].hotels.find((hotel: any) => hotel.autoSelectionCandidate);
+  assert.equal(automatic.hotelCode, 'COCHIN-G2');
+  assert.equal(automatic.autoSelectionFallbackFromGroup, 2);
+});
+
 test('category filtering never removes a hotel from the shared inventory', async () => {
   const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
   service.prisma = {
