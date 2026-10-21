@@ -5159,6 +5159,32 @@ this.logger.log(
               ])
               : []),
           ];
+          const rateOptions = Array.isArray(candidateHotel.rateOptions) ? candidateHotel.rateOptions : [];
+          if (rateOptions.length > 0) {
+            const selectedRateIdentity = String(
+              candidateHotel.selectedRateOptionId || candidateHotel.selected_rate_option_id ||
+              candidateHotel.rateOptionId || candidateHotel.rate_option_id || candidateHotel.bookingCode ||
+              candidateHotel.searchReference || '',
+            ).trim().toLowerCase();
+            const selectedRateOptions = selectedRateIdentity
+              ? rateOptions.filter((rateOption: any) => [
+                rateOption?.rateOptionId,
+                rateOption?.rate_option_id,
+                rateOption?.bookingCode,
+                rateOption?.booking_code,
+                rateOption?.searchReference,
+                rateOption?.search_reference,
+              ].some((value) => String(value ?? '').trim().toLowerCase() === selectedRateIdentity))
+              : rateOptions;
+            const optionsToCheck = selectedRateOptions.length > 0 ? selectedRateOptions : rateOptions;
+            const hasPayableRateOption = optionsToCheck.some((rateOption: any) => [
+              rateOption?.price,
+              rateOption?.pricePerNight,
+              rateOption?.totalPrice,
+              rateOption?.totalStayPrice,
+            ].some((amount) => Number.isFinite(Number(amount)) && Number(amount) > 0));
+            if (!hasPayableRateOption) return false;
+          }
           return payableAmounts.some((amount) => Number.isFinite(Number(amount)) && Number(amount) > 0);
         };
         const candidateMatchesInventory = (candidateStay: any): boolean => {
