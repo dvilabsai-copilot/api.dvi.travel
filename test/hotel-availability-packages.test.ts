@@ -161,6 +161,38 @@ test('group 3 reuses group 2 selected hotel when its route inventory is empty', 
   assert.equal(group3Hotel.autoSelectionFallbackFromGroup, 2);
 });
 
+test('missing group 2 selection reuses group 1 without hiding route inventory', () => {
+  const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
+  const group1Hotel = {
+    provider: 'tbo', hotelCode: 'COCHIN-G1', hotelName: 'Cochin Hotel',
+    roomType: 'Deluxe Room', mealPlan: 'MAP', price: 5000,
+    rateOptionId: 'cochin-g1-rate',
+  };
+  const alternateHotel = {
+    provider: 'tbo', hotelCode: 'COCHIN-OTHER', hotelName: 'Other Cochin Hotel',
+    roomType: 'Deluxe Room', mealPlan: 'MAP', price: 6500,
+    rateOptionId: 'cochin-other-rate',
+  };
+  const packages = service.generateSharedAvailabilityPackages(
+    new Map([[10, [group1Hotel, alternateHotel]]]),
+    [{ itinerary_route_ID: 10, itinerary_route_date: '2026-08-19', next_visiting_location: 'Cochin' }],
+    [
+      { groupType: 1, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: group1Hotel }] },
+      { groupType: 2, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+      { groupType: 3, stayResults: [{ parentRouteId: 10, state: 'SELECTED', hotel: alternateHotel }] },
+      { groupType: 4, stayResults: [{ parentRouteId: 10, state: 'UNAVAILABLE' }] },
+    ],
+  );
+
+  assert.deepEqual(packages[1].hotels.map((hotel: any) => hotel.hotelCode), [
+    'COCHIN-G1', 'COCHIN-OTHER',
+  ]);
+  const automatic = packages[1].hotels.find((hotel: any) => hotel.autoSelectionCandidate);
+  assert.equal(automatic.hotelCode, 'COCHIN-G1');
+  assert.equal(automatic.autoSelectionFallbackFromGroup, 1);
+  assert.match(automatic.recommendationFallbackReason, /group 1/i);
+});
+
 test('category filtering never removes a hotel from the shared inventory', async () => {
   const service = Object.create(ItineraryHotelDetailsTboService.prototype) as any;
   service.prisma = {
