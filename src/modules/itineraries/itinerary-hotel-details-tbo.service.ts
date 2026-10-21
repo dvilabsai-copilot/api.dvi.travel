@@ -5161,6 +5161,13 @@ this.logger.log(
           ];
           const rateOptions = Array.isArray(candidateHotel.rateOptions) ? candidateHotel.rateOptions : [];
           if (rateOptions.length > 0) {
+            const hasAnyPayableRateOption = rateOptions.some((rateOption: any) => [
+              rateOption?.price,
+              rateOption?.pricePerNight,
+              rateOption?.totalPrice,
+              rateOption?.totalStayPrice,
+            ].some((amount) => Number.isFinite(Number(amount)) && Number(amount) > 0));
+            if (!hasAnyPayableRateOption) return false;
             const selectedRateIdentity = String(
               candidateHotel.selectedRateOptionId || candidateHotel.selected_rate_option_id ||
               candidateHotel.rateOptionId || candidateHotel.rate_option_id || candidateHotel.bookingCode ||
