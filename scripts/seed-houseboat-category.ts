@@ -4,6 +4,10 @@ const prisma = new PrismaClient();
 
 const HOUSEBOAT_CATEGORY_CODE = 'HOUSEBOAT';
 const HOUSEBOAT_HOTEL_CODES = ['1674220', '5110229'];
+const HOUSEBOAT_OPERATIONAL_NAME_PATTERNS = [
+  'southern panorama cruise%',
+  'xandari riverscapes%',
+];
 
 type CategoryRow = { hotel_category_id: number };
 
@@ -59,6 +63,8 @@ async function main(): Promise<void> {
       UPDATE dvi_hotel
       SET hotel_category = ${categoryId}
       WHERE tbo_hotel_code IN (${HOUSEBOAT_HOTEL_CODES[0]}, ${HOUSEBOAT_HOTEL_CODES[1]})
+         OR LOWER(TRIM(hotel_name)) LIKE ${HOUSEBOAT_OPERATIONAL_NAME_PATTERNS[0]}
+         OR LOWER(TRIM(hotel_name)) LIKE ${HOUSEBOAT_OPERATIONAL_NAME_PATTERNS[1]}
     `;
 
     return {
@@ -72,6 +78,7 @@ async function main(): Promise<void> {
     success: true,
     category: { id: result.categoryId, title: 'Houseboat', code: HOUSEBOAT_CATEGORY_CODE },
     hotelCodes: HOUSEBOAT_HOTEL_CODES,
+    operationalNamePatterns: HOUSEBOAT_OPERATIONAL_NAME_PATTERNS,
     ...result,
   }));
 }
