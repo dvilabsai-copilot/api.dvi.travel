@@ -185,6 +185,61 @@ test('keeps nightly route payable separate from the full logical-stay total', ()
   assert.equal(state[0].totalAmount, 17617.98);
 });
 
+test('rebuilds a continuous TBO package total from payable nightly room totals', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 11807.04 }],
+    rows: [{
+      groupType: 1,
+      itineraryRouteId: 24774,
+      date: '2026-10-22',
+      provider: 'tbo',
+      providerHotelCode: '1092990',
+      hotelCode: '1092990',
+      hotelName: 'Taj Mahal Hotel Abids',
+      roomType: 'Executive Room',
+      mealPlan: 'CP',
+      isSelected: true,
+      selectionOrigin: 'AUTO_SELECTED',
+      authoritativeRouteIds: [24774, 24775],
+      selectedPriceSnapshot: {
+        provider: 'tbo',
+        roomCount: 2,
+        totalRoomCost: 5244.8,
+        baseTotalPrice: 5244.8,
+        hotelMarginPercentage: 5,
+        nightlyRates: [
+          { date: '2026-10-22', baseAmount: 5244.8 },
+          { date: '2026-10-23', baseAmount: 5244.8 },
+        ],
+      },
+    }, {
+      groupType: 1,
+      itineraryRouteId: 24776,
+      date: '2026-10-24',
+      provider: 'offline',
+      hotelId: 523,
+      hotelCode: 'DVIHTL418426',
+      hotelName: 'Raghavendra Grand',
+      roomType: 'Deluxe double',
+      mealPlan: 'CP',
+      isSelected: true,
+      selectionOrigin: 'AUTO_SELECTED',
+      totalPrice: 6300,
+      selectedPriceSnapshot: { provider: 'offline', totalRoomCost: 6000, hotelMarginPercentage: 5 },
+    }],
+    requiredRoutes: [
+      { routeId: 24774, routeDate: '2026-10-22' },
+      { routeId: 24775, routeDate: '2026-10-23' },
+      { routeId: 24776, routeDate: '2026-10-24' },
+    ],
+  });
+
+  assert.equal(state[0].totalAmount, 17314.08);
+  assert.equal(state[0].routes[0].selected?.pricePerNight, 5507.04);
+  assert.equal(state[0].routes[1].selected?.pricePerNight, 5507.04);
+  assert.equal(state[0].routes[0].selected?.selectedTotalPrice, 11014.08);
+});
+
 test('does not treat an empty persisted placeholder as a selected hotel', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 2, label: 'Recommended #2', totalAmount: 100 }],

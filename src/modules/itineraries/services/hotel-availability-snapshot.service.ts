@@ -2330,14 +2330,16 @@ export class HotelAvailabilitySnapshotService {
         )
       : existingTabs;
 
+    const hotelSelectionState = buildHotelSelectionState({
+      tabs: recommendationTabs,
+      rows: [...hotels, ...persistedSelectionRowsWithIdentity],
+      requiredRoutes: searchableRoutes,
+    });
+
     return {
       ...response,
-      hotelTabs: recommendationTabs,
-      hotelSelectionState: buildHotelSelectionState({
-        tabs: recommendationTabs,
-        rows: [...hotels, ...persistedSelectionRowsWithIdentity],
-        requiredRoutes: searchableRoutes,
-      }),
+      hotelTabs: synchronizeHotelTabTotals(recommendationTabs, hotelSelectionState),
+      hotelSelectionState,
       hotels,
       totalRoomCount: hotels.length,
       hotelAvailability: {
