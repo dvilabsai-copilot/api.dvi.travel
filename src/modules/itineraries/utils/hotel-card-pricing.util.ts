@@ -31,15 +31,44 @@ export function hotelCardPropertyKey(row: any): string {
 export function hotelCardPayableAmount(row: any): number {
   return positive(
     row?.pricePerNight,
+    row?.price_per_night,
     row?.selectedPricePerNight,
     row?.selected_price_per_night,
+    row?.perNightAmount,
     row?.totalPrice,
+    row?.total_price,
     row?.totalStayPrice,
+    row?.exactFullStayTotal,
+    row?.selectedTotalPrice,
+    row?.selected_total_price,
     row?.totalHotelCost,
     row?.total_hotel_cost,
     row?.totalAmountAfterTax,
     row?.price,
   );
+}
+
+/** Preserve selected-row precedence when a persisted row has both values. */
+export function hotelCardSelectedPayableAmount(row: any): number {
+  return positive(
+    row?.selected_price_per_night,
+    row?.selectedPricePerNight,
+    row?.pricePerNight,
+    row?.price_per_night,
+    row?.selectedTotalPrice,
+    row?.selected_total_price,
+    row?.totalPrice,
+    row?.total_price,
+    row?.totalHotelCost,
+    row?.total_hotel_cost,
+  );
+}
+
+/** Compare two already-normalized payable amounts in the same route scope. */
+export function hotelCardPriceDifference(candidate: any, selected: any): number {
+  const candidateAmount = hotelCardPayableAmount(candidate);
+  const selectedAmount = hotelCardPayableAmount(selected);
+  return selectedAmount > 0 ? money(candidateAmount - selectedAmount) : 0;
 }
 
 const hotelCardBaseAmount = (row: any): number => positive(
@@ -80,7 +109,9 @@ export function decorateHotelCardPricing(
       ...option,
       startingFromAmount: card.payable,
       startingFromBaseAmount: card.base,
-      priceDifference: selectedPayable > 0 ? money(hotelCardPayableAmount(option) - selectedPayable) : 0,
+      priceDifference: selectedPayable > 0
+        ? hotelCardPriceDifference(option, { pricePerNight: selectedPayable })
+        : 0,
     });
     return {
       ...decorate(row),

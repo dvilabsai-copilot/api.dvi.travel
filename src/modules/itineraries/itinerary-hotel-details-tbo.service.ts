@@ -45,7 +45,9 @@ import { hotelDateOnly, hotelStayTotal } from './utils/hotel-stay-pricing.util';
 import { HotelPricingService } from './hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from './utils/hotel-payable-pricing.util';
 import {
+  hotelCardPayableAmount,
   hotelCardPropertyKey,
+  hotelCardSelectedPayableAmount,
 } from './utils/hotel-card-pricing.util';
 import { resolveHotelRequiredRoutes } from './utils/hotel-selection-view-state.util';
 import { toDatabaseBusinessDate } from './utils/itinerary.utils';
@@ -7381,40 +7383,15 @@ this.logger.log(
     // non-zero room rate as the card's "starting from" value, but compares
     // each candidate's calculated payable total with the selected row total.
     // Return both values with the row/option so the frontend only renders them.
-    const toPositiveAmount = (...values: unknown[]): number => {
-      for (const value of values) {
+    const getSelectionAmount = (selection: any): number => hotelCardSelectedPayableAmount(selection);
+    const getCandidateAmount = (row: any): number => hotelCardPayableAmount(row);
+    const getCandidateBaseAmount = (row: any): number => {
+      for (const value of [row?.basePricePerNight, row?.baseHotelCost, row?.baseAmount]) {
         const amount = Number(value);
         if (Number.isFinite(amount) && amount > 0) return this.money(amount);
       }
       return 0;
     };
-    const getSelectionAmount = (selection: any): number => toPositiveAmount(
-      selection?.selected_price_per_night,
-      selection?.selectedPricePerNight,
-      selection?.pricePerNight,
-      selection?.selectedTotalPrice,
-      selection?.selected_total_price,
-      selection?.totalPrice,
-      selection?.total_price,
-      selection?.totalHotelCost,
-      selection?.total_hotel_cost,
-    );
-    const getCandidateAmount = (row: any): number => toPositiveAmount(
-      row?.pricePerNight,
-      row?.price_per_night,
-      row?.perNightAmount,
-      row?.totalPrice,
-      row?.totalStayPrice,
-      row?.exactFullStayTotal,
-      row?.totalHotelCost,
-      row?.price,
-      row?.pricePerNight,
-    );
-    const getCandidateBaseAmount = (row: any): number => toPositiveAmount(
-      row?.basePricePerNight,
-      row?.baseHotelCost,
-      row?.baseAmount,
-    );
     const getPropertyKey = hotelCardPropertyKey;
 
     const selectedTotalByRouteGroup = new Map<string, number>();

@@ -7,6 +7,9 @@ import {
 } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
 import {
   decorateHotelCardPricing,
+  hotelCardPayableAmount,
+  hotelCardPriceDifference,
+  hotelCardSelectedPayableAmount,
   hotelCardPropertyKey,
 } from '../src/modules/itineraries/utils/hotel-card-pricing.util';
 import { resolveHotelOccupancyPricing } from '../src/modules/itineraries/utils/hotel-selection-pricing.util';
@@ -213,6 +216,25 @@ test('card starting amount and difference use payable nested options', () => {
 
   assert.equal(rows[0].startingFromAmount, 5040);
   assert.deepEqual(rows[0].rateOptions.map((option: any) => option.priceDifference), [0, 2880, 5760]);
+});
+
+test('card comparison uses the normalized payable amount and preserves API aliases', () => {
+  const candidate = {
+    total_price: 27611.09,
+    pricePerNight: 0,
+  };
+  const selected = {
+    selected_total_price: 17161.32,
+    pricePerNight: 0,
+  };
+
+  assert.equal(hotelCardPayableAmount(candidate), 27611.09);
+  assert.equal(hotelCardPayableAmount(selected), 17161.32);
+  assert.equal(hotelCardSelectedPayableAmount({
+    selected_price_per_night: 17161.32,
+    pricePerNight: 99999,
+  }), 17161.32);
+  assert.equal(hotelCardPriceDifference(candidate, selected), 10449.77);
 });
 
 test('mixed-room selected view ignores stale flattened total and recalculates margin from room breakdown', () => {
