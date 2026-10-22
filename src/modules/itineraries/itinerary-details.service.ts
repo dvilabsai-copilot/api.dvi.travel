@@ -6490,6 +6490,7 @@ const hasRequiredVehicleSelection =
       const provider = String(
         row?.hotel_provider ?? row?.provider ?? snapshot?.provider ?? '',
       ).trim().toLowerCase();
+      if (provider && provider !== 'tbo') return 0;
       const applied = (
         row?.tboMapFallbackApplied === true ||
         snapshot?.tboMapFallbackApplied === true
@@ -6511,6 +6512,7 @@ const hasRequiredVehicleSelection =
       const provider = String(
         row?.hotel_provider ?? row?.provider ?? snapshot?.provider ?? '',
       ).trim().toLowerCase();
+      if (provider && provider !== 'tbo') return 0;
       const applied = (
         row?.tboMapFallbackApplied === true ||
         snapshot?.tboMapFallbackApplied === true
@@ -6531,6 +6533,10 @@ const hasRequiredVehicleSelection =
     // not add a full-stay amount once for every route row.
     const readTboMapFallbackDinnerPerNight = (row: any): number => {
       const snapshot = parseHotelSnapshot(row);
+      const provider = String(
+        row?.hotel_provider ?? row?.provider ?? snapshot?.provider ?? '',
+      ).trim().toLowerCase();
+      if (provider && provider !== 'tbo') return 0;
       const applied = row?.tboMapFallbackApplied === true || snapshot?.tboMapFallbackApplied === true;
       if (!applied) return 0;
       const amount = Number(row?.tboMapFallbackDinnerPerNight ?? snapshot?.tboMapFallbackDinnerPerNight ?? 0);
@@ -6955,9 +6961,11 @@ const hasRequiredVehicleSelection =
             selectedFallbackDinnerNightKeys,
           );
           const selectedTboMapFallbackDinnerRate = (
-            selected.tboMapFallbackApplied === true ||
-            selectedSnapshot.tboMapFallbackApplied === true ||
-            selectedNightlyRate?.tboMapFallbackApplied === true
+            (!selectedProvider || selectedProvider === 'tbo') && (
+              selected.tboMapFallbackApplied === true ||
+              selectedSnapshot.tboMapFallbackApplied === true ||
+              selectedNightlyRate?.tboMapFallbackApplied === true
+            )
           )
             ? firstPositiveAmount(
                 selectedNightlyRate?.tboMapFallbackDinnerRate,
