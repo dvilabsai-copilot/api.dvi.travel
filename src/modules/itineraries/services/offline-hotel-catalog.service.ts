@@ -1240,12 +1240,11 @@ const mealFlags = mealFlagsFromRoom(room, planMealCode);
           continue;
         }
 
-        if (counts.extraBedCount > 0 && supplements.extraBedRate <= 0 ||
-            counts.childWithBedCount > 0 && supplements.childWithBedRate <= 0 ||
-            counts.childWithoutBedCount > 0 && supplements.childWithoutBedRate <= 0) {
-          appendUnavailableNight(date);
-          continue;
-        }
+        // Offline stays are confirmed manually with the hotel. Supplement
+        // rates are pricing inputs, not supplier availability, so a missing
+        // extra-bed/child supplement must not make an otherwise priced room
+        // unavailable. Keep any configured supplement amount; an absent one
+        // remains zero and can be confirmed offline.
         const extraBedAmount = this.hotelPricingService.money(supplements.extraBedRate * counts.extraBedCount);
         const childWithBedAmount = this.hotelPricingService.money(supplements.childWithBedRate * counts.childWithBedCount);
         const childWithoutBedAmount = this.hotelPricingService.money(supplements.childWithoutBedRate * counts.childWithoutBedCount);
@@ -1413,10 +1412,11 @@ nightlyBase,
         const extraBedRate = selectPricebookRate(priceRows, 1, date);
         const childWithBedRate = selectPricebookRate(priceRows, 2, date);
         const childWithoutBedRate = selectPricebookRate(priceRows, 3, date);
-        if (!(baseRate > 0) ||
-            (counts.extraBedCount > 0 && !(extraBedRate > 0)) ||
-            (counts.childWithBedCount > 0 && !(childWithBedRate > 0)) ||
-            (counts.childWithoutBedCount > 0 && !(childWithoutBedRate > 0))) {
+        // For offline pricebook stays, the base room rate and meal-plan
+        // coverage determine whether the room can be selected. Extra-bed and
+        // child rates may be confirmed manually over the phone and therefore
+        // are not an availability gate.
+        if (!(baseRate > 0)) {
           appendUnavailableNight(date);
           continue;
         }
