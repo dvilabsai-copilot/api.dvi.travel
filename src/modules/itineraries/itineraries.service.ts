@@ -3169,8 +3169,19 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
           const payablePricePerNight = isBaseRate && rawPricePerNight > 0
             ? Number((rawPricePerNight * (1 + selectionMarginPercentage / 100)).toFixed(2))
             : rawPricePerNight;
+          // TBO/VSR normally returns a complete occupancy fare, but older
+          // snapshots may omit the occupancy metadata and still contain a
+          // single-room rate. Only suppress room-count scaling when the rate
+          // explicitly declares the same occupancy as the itinerary.
+          const declaredRoomCount = Number(
+            selection.roomCount ?? selection.totalRooms ?? selection.numberOfRooms ??
+              selection.room_count ?? selection.total_rooms ?? selection.number_of_rooms ?? 0,
+          );
+          const tboOccupancyFare = provider === 'tbo' &&
+            Number.isFinite(declaredRoomCount) &&
+            declaredRoomCount === previewRoomCount;
           const payableTotal = isBaseRate && rawPricePerNight > 0
-            ? Number((payablePricePerNight * previewRoomCount).toFixed(2))
+            ? Number((payablePricePerNight * (tboOccupancyFare ? 1 : previewRoomCount)).toFixed(2))
             : Number(
               selection.totalStayPrice ?? selection.totalPrice ?? selection.amountAfterTax ?? selection.price ?? 0,
             );

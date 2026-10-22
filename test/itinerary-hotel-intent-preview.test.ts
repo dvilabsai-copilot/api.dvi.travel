@@ -575,6 +575,81 @@ test('TBO RATE_OPTION preview keeps the commercial room while replacing an expir
   assert.equal(result.selections[0].supplierBookingCode, freshBookingCode);
 });
 
+test('TBO preview does not multiply an occupancy fare by room count twice', async () => {
+  const service = Object.create(ItinerariesService.prototype) as any;
+  const tboStay = {
+    routeIds: [10145],
+    stayDates: ['2026-08-12'],
+    nights: 1,
+    checkInDate: '2026-08-12',
+    checkOutDate: '2026-08-13',
+    stayKey: 'tbo:1313362:2026-08-12_to_2026-08-13',
+  };
+  const occupancyFare = {
+    routeId: 10145,
+    itineraryRouteId: 10145,
+    date: '2026-08-12',
+    provider: 'tbo',
+    hotelCode: '1313362',
+    providerHotelCode: '1313362',
+    hotelName: 'SAGARA BEACH RESORT',
+    roomType: 'Standard Non Sea View',
+    mealPlan: 'MAP',
+    rateOptionId: 'sagara-map',
+    optionKey: 'sagara-map',
+    roomCount: 4,
+    pricePerNight: 26129,
+    totalPrice: 26129,
+    hotelMarginPercentage: 5,
+    isSelectable: true,
+    isBookable: true,
+  };
+
+  service.prisma = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ itinerary_quote_ID: 'DVI2026082', preferred_room_count: 4 }),
+    },
+    dvi_itinerary_route_details: {
+      findFirst: async () => ({ itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') }),
+    },
+    dvi_global_settings: {
+      findFirst: async () => ({ hotel_margin: 5 }),
+    },
+  };
+  service.selectionWorkflowService = {
+    withHotelSelectionLock: async (_planId: number, _groupType: number, callback: () => Promise<any>) => callback(),
+  };
+  service.hotelStayBlockValidationService = {
+    buildContinuousStayCandidate: async () => tboStay,
+    previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
+  };
+  service.hotelDetailsTboService = {
+    searchSelectedHotelForContinuousStay: async () => [occupancyFare],
+    getSelectedHotelRates: async () => ({ hotels: [occupancyFare] }),
+  };
+  service.hotelAvailabilitySnapshotService = {
+    mergeSelectedHotelRates: async () => undefined,
+    getActiveRows: async () => [occupancyFare],
+  };
+
+  const result = await service.previewHotelIntent({
+    planId: 10040,
+    routeId: 10145,
+    groupType: 1,
+    selectionIntent: 'HOTEL',
+    provider: 'tbo',
+    hotelCode: '1313362',
+    providerHotelCode: '1313362',
+    hotelName: 'SAGARA BEACH RESORT',
+    routeDate: '2026-08-12',
+    previewOnly: true,
+  });
+
+  assert.equal(result.status, 'AVAILABLE');
+  assert.equal(result.selections[0].pricePerNight, 27435.45);
+  assert.equal(result.selections[0].totalPrice, 27435.45);
+});
+
 test('offline confirm returns DB-verified identity even when request name is contradictory', async () => {
   const { service } = createService(async () => candidates);
 
