@@ -6916,6 +6916,20 @@ const hasRequiredVehicleSelection =
           );
           const componentTotal = roomBase + extraBed + childWithBed + childWithoutBed;
           const selectedProvider = String(selected.provider || persistedRoute?.hotel_provider || '').trim().toLowerCase();
+          const selectedSnapshotMealPlanBreakdown = selectedSnapshot.mealPlanBreakdown as Record<string, unknown> | undefined;
+          const selectedMealPlanCost = ['tbo', 'vsr'].includes(selectedProvider)
+            ? 0
+            : firstPositiveAmount(
+                selectedNightlyRate?.mealPlanBreakdown?.totalMealPlanCost,
+                selectedNightlyRate?.mealPlanBreakdown?.totalDinnerCost,
+                selected.mealPlanBreakdown?.totalMealPlanCost,
+                selected.mealPlanBreakdown?.totalDinnerCost,
+                selectedSnapshotMealPlanBreakdown?.totalMealPlanCost,
+                selectedSnapshotMealPlanBreakdown?.totalDinnerCost,
+                selected.mealPlanCost,
+                selected.totalMealPlanCost,
+                persistedRoute?.total_hotel_meal_plan_cost,
+              );
           const selectedMarginPercentage = readAmount(
             selected.hotelMarginPercentage ?? selected.hotel_margin_percentage ??
             selectedSnapshot.hotelMarginPercentage ?? selectedSnapshot.hotel_margin_percentage ??
@@ -6982,6 +6996,7 @@ const hasRequiredVehicleSelection =
           sum.extraBedCost += extraBed;
           sum.childWithBedCost += childWithBed;
           sum.childWithoutBedCost += childWithoutBed;
+          sum.selectedMealPlanCost += selectedMealPlanCost;
           sum.hotelMarginCost += margin;
           return sum;
         }, {
@@ -6992,6 +7007,7 @@ const hasRequiredVehicleSelection =
           extraBedCost: 0,
           childWithBedCost: 0,
           childWithoutBedCost: 0,
+          selectedMealPlanCost: 0,
           hotelMarginCost: 0,
         });
 
@@ -7003,6 +7019,7 @@ const hasRequiredVehicleSelection =
           extraBedCost = Number(selectedSummary.extraBedCost.toFixed(2));
           childWithBedCost = Number(selectedSummary.childWithBedCost.toFixed(2));
           childWithoutBedCost = Number(selectedSummary.childWithoutBedCost.toFixed(2));
+          hotelMealPlanCost = Number(selectedSummary.selectedMealPlanCost.toFixed(2));
           hotelMarginCost = Number(selectedSummary.hotelMarginCost.toFixed(2));
           totalRoomCost = Number((hotelRoomBaseCost + extraBedCost + childWithBedCost + childWithoutBedCost).toFixed(2));
         }
@@ -7124,6 +7141,7 @@ const hasRequiredVehicleSelection =
       selectedRateTotal: hotelListTotal,
       fallbackHotelAmount: totalHotelAmount,
       mealPlanCost: totalMealCost,
+      selectedMealPlanCost: hotelMealPlanCost,
       tboMapFallbackDinnerCost,
     });
     const effectiveHotelAmount = shouldIncludeHotels ? selectedHotelAmount : 0;

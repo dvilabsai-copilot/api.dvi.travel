@@ -40,6 +40,7 @@ export interface SelectedHotelAmountInput {
   selectedRateTotal?: unknown;
   fallbackHotelAmount?: unknown;
   mealPlanCost?: unknown;
+  selectedMealPlanCost?: unknown;
   tboMapFallbackDinnerCost?: unknown;
 }
 
@@ -55,10 +56,13 @@ export function resolveSelectedHotelAmount(input: SelectedHotelAmountInput): num
   const selectedRateTotal = money(input.selectedRateTotal);
   if (selectedRateTotal <= 0) return money(input.fallbackHotelAmount);
 
-  const ordinaryMealPlanCost = Math.max(
-    money(input.mealPlanCost) - money(input.tboMapFallbackDinnerCost),
-    0,
-  );
+  const selectedMealPlanCost = money(input.selectedMealPlanCost);
+  const ordinaryMealPlanCost = selectedMealPlanCost > 0
+    ? selectedMealPlanCost
+    : Math.max(
+        money(input.mealPlanCost) - money(input.tboMapFallbackDinnerCost),
+        0,
+      );
   return money(selectedRateTotal + ordinaryMealPlanCost);
 }
 
