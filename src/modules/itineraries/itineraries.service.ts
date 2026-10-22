@@ -3741,15 +3741,19 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
     }
 
     this.offlineHotelCatalogService.clearCache();
+    const guestNationality = String(plan?.guest_nationality || 'IN').trim().toUpperCase() || 'IN';
+    const requestedMealPlanCode = String(
+      data.mealPlanCode || data.mealPlan || plan?.meal_plan_code || '',
+    ).trim();
     const offlineByRoute = await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
       routeRows,
       Number(stay.nights || 1),
-      String(data.mealPlanCode || data.mealPlan || ''),
+      guestNationality,
       Math.max(Number(plan?.preferred_room_count || 1), 1),
       Math.max(Number(plan?.total_adult || 0), 0),
       Math.max(Number(plan?.total_children || 0), 0),
       [],
-      '',
+      requestedMealPlanCode,
       [],
       {
         extraBedCount: Number(plan?.total_extra_bed || 0),
