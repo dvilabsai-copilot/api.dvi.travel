@@ -3052,6 +3052,77 @@ test('selected totals include a positive supplement cost when the normalized amo
   assert.equal(Number(createdSelections[0].total_hotel_cost), 14310);
 });
 
+test('automatic offline MAP selection persists meal breakdown and aggregate meal costs', async () => {
+  const createdSelections: any[] = [];
+  const tx: any = {
+    dvi_global_settings: { findFirst: async () => ({ hotel_margin: 5 }) },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => { createdSelections.push(data); return { ...data, itinerary_plan_hotel_details_ID: 779 }; },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const row: any = {
+    itineraryRouteId: 25603,
+    groupType: 4,
+    date: '2026-10-25',
+    checkInDate: '2026-10-25',
+    checkOutDate: '2026-10-28',
+    provider: 'offline',
+    hotelId: 148,
+    hotelCode: '148',
+    hotelName: 'SHOLA CROWN RESORT',
+    roomId: 208,
+    roomTypeId: 7,
+    roomType: 'King Bed',
+    rateOptionId: 'offline:148:208:7:2026-10-25:2026-10-28',
+    mealPlan: 'MAP',
+    baseTotalPrice: 13500,
+    totalRoomCost: 13500,
+    totalStayPrice: 13500,
+    roomCount: 2,
+    isBookable: true,
+    isSelectable: true,
+    bookingMode: 'MANUAL_APPROVAL',
+    mealPlanBreakdown: {
+      breakfast: true,
+      lunch: false,
+      dinner: true,
+      mealPlanCode: 'MAP',
+      totalBreakfastCost: 1.8,
+      totalLunchCost: 0,
+      totalDinnerCost: 14400,
+      totalMealPlanCost: 14401.8,
+    },
+    nightlyMealPlanBreakdown: [
+      { mealPlanCode: 'MAP', totalBreakfastCost: 0.6, totalLunchCost: 0, totalDinnerCost: 4800, totalMealPlanCost: 4800.6 },
+      { mealPlanCode: 'MAP', totalBreakfastCost: 0.6, totalLunchCost: 0, totalDinnerCost: 4800, totalMealPlanCost: 4800.6 },
+      { mealPlanCode: 'MAP', totalBreakfastCost: 0.6, totalLunchCost: 0, totalDinnerCost: 4800, totalMealPlanCost: 4800.6 },
+    ],
+  };
+  row.optionKey = hotelOptionKey(row);
+
+  await (service as any).ensureAutoSelections(tx, 44, [row], 'run-offline-map-meals', 7);
+
+  assert.equal(createdSelections.length, 1);
+  assert.equal(Number(createdSelections[0].hotel_breakfast_cost), 1.8);
+  assert.equal(Number(createdSelections[0].hotel_lunch_cost), 0);
+  assert.equal(Number(createdSelections[0].hotel_dinner_cost), 14400);
+  assert.equal(Number(createdSelections[0].total_hotel_meal_plan_cost), 14401.8);
+  assert.equal(Number(createdSelections[0].hotel_margin_rate), 675);
+  assert.equal(Number(createdSelections[0].total_hotel_cost), 28576.8);
+  const snapshot = JSON.parse(createdSelections[0].selected_price_snapshot);
+  assert.equal(snapshot.mealPlan, 'MAP');
+  assert.equal(snapshot.mealPlanBreakdown.totalMealPlanCost, 14401.8);
+  assert.equal(snapshot.hotelMarginBaseAmount, 27901.8);
+  assert.equal(snapshot.totalPrice, 28576.8);
+  assert.equal(snapshot.nightlyMealPlanBreakdown.length, 3);
+});
+
 test('refresh replaces a persisted AUTO_SELECTED offline row when live exists for the same day', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const { tx, selections } = makeReconciliationTx();

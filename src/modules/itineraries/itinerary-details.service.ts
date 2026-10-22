@@ -33,6 +33,7 @@ import {
   parseHotelSelectionSnapshot,
 } from './utils/hotel-selection-identity.util';
 import {
+  projectHotelPayablePricing,
   resolveSelectedHotelAmount,
   resolveStoredHotelPayablePricing,
 } from './utils/hotel-payable-pricing.util';
@@ -6575,6 +6576,14 @@ const hasRequiredVehicleSelection =
       const total = readTboMapFallbackDinnerCost(row);
       const identity = fallbackDinnerIdentity(row);
       const date = fallbackDinnerDate(row);
+      const pricingScope = String(snapshot?.pricingScope || '').trim().toUpperCase();
+      const hasLogicalStaySnapshot = pricingScope !== 'ROUTE_NIGHT' &&
+        Array.isArray(snapshot?.nightlyRates) && snapshot.nightlyRates.length > 1;
+      if (hasLogicalStaySnapshot && total > 0) {
+        if (seenStayKeys.has(identity)) return current;
+        seenStayKeys.add(identity);
+        return current + total * rowMultiplier;
+      }
       if (perNight > 0 && date) {
         const nightKey = `${identity}|${date}`;
         if (seenNightKeys.has(nightKey)) return current;
@@ -6920,7 +6929,6 @@ const hasRequiredVehicleSelection =
           const storedMargin = readAmount(
             selected.hotelMarginAmount ?? selected.hotelMarginTotalAmount ?? selected.hotelMarginStayAmount,
           );
-          const componentTotal = roomBase + extraBed + childWithBed + childWithoutBed;
           const selectedProvider = String(selected.provider || persistedRoute?.hotel_provider || '').trim().toLowerCase();
           const selectedSnapshotMealPlanBreakdown = selectedSnapshot.mealPlanBreakdown as Record<string, unknown> | undefined;
           const selectedMealPlanCost = ['tbo', 'vsr'].includes(selectedProvider)
@@ -6936,6 +6944,8 @@ const hasRequiredVehicleSelection =
                 selected.totalMealPlanCost,
                 persistedRoute?.total_hotel_meal_plan_cost,
               );
+          const marginableComponentTotal = roomBase + extraBed + childWithBed + childWithoutBed;
+          const componentTotal = marginableComponentTotal + selectedMealPlanCost;
           const selectedMarginPercentage = readAmount(
             selected.hotelMarginPercentage ?? selected.hotel_margin_percentage ??
             selectedSnapshot.hotelMarginPercentage ?? selectedSnapshot.hotel_margin_percentage ??
@@ -6947,6 +6957,11 @@ const hasRequiredVehicleSelection =
             persistedRoute?.total_hotel_tax_amount,
           );
           const selectedDinnerSource = {
+            // The compact selected view may expose the selected price without
+            // flattening every persisted pricing field. Include the saved
+            // snapshot explicitly so TBO MAP fallback metadata remains
+            // available to the overall-cost breakdown after refresh/reset.
+            ...parseHotelSnapshot(persistedRoute),
             ...(persistedRoute || {}),
             ...selected,
             ...selectedSnapshot,
@@ -6978,14 +6993,43 @@ const hasRequiredVehicleSelection =
                 parseHotelSnapshot(persistedRoute)?.tboMapFallbackDinnerPerPerson,
               )
             : 0;
+          // Some persisted TBO selections contain the room amount plus its
+          // margin in totalPrice, while the MAP fallback dinner is kept in
+          // separate metadata. Re-project that row from its API components
+          // so the dinner supplement is included exactly once before the
+          // margin is calculated. Already-complete rows remain unchanged
+          // because projectHotelPayablePricing is idempotent and preserves
+          // the larger authoritative payable amount.
+          const fallbackProjectedPayable = selectedTboMapFallbackDinnerCost > 0
+            ? projectHotelPayablePricing({
+                ...selectedSnapshot,
+                ...selected,
+                provider: selectedProvider || 'tbo',
+                ...(roomBase > 0 ? {
+                  baseTotalPrice: roomBase,
+                  totalRoomCost: roomBase,
+                } : {}),
+                extraBedAmount: extraBed,
+                childWithBedAmount: childWithBed,
+                childWithoutBedAmount: childWithoutBed,
+                hotelMarginPercentage: selectedMarginPercentage,
+                hotelMarginAmount: storedMargin,
+                totalHotelTaxAmount: selectedTax,
+                tboMapFallbackApplied: true,
+                tboMapFallbackDinnerTotal: selectedTboMapFallbackDinnerCost,
+                tboMapFallbackDinnerPerNight: selectedTboMapFallbackDinnerCost,
+                hotelMealPlanCost: selectedTboMapFallbackDinnerCost,
+                totalHotelMealPlanCost: selectedTboMapFallbackDinnerCost,
+              }, selectedMarginPercentage).totalPrice
+            : 0;
           const componentPricingIsAuthoritative =
             !['tbo', 'vsr'].includes(selectedProvider) && componentTotal > 0;
           const payable = componentPricingIsAuthoritative
             ? Number((componentTotal +
               (selectedMarginPercentage > 0
-                ? componentTotal * selectedMarginPercentage / 100
+                ? marginableComponentTotal * selectedMarginPercentage / 100
                 : storedMargin) + selectedTax).toFixed(2))
-            : storedPayable;
+            : Math.max(storedPayable, fallbackProjectedPayable);
           // A selection snapshot can carry a stale margin or omit supplements.
           // When persisted route components are available, the payable amount
           // is authoritative and the margin is the balancing component.
@@ -6995,7 +7039,11 @@ const hasRequiredVehicleSelection =
           const margin = Number.isFinite(derivedMargin) && derivedMargin >= 0
             ? derivedMargin
             : storedMargin;
-          sum.hotelListTotal += payable;
+          // Ordinary offline/AxisRooms meal plans are stored separately from
+          // the selected rate total. Add them later in
+          // resolveSelectedHotelAmount so the supplement is included exactly
+          // once in the overall hotel amount.
+          sum.hotelListTotal += Math.max(payable - selectedMealPlanCost, 0);
           sum.hotelRoomBaseCost += roomBase;
           sum.tboMapFallbackDinnerCost += selectedTboMapFallbackDinnerCost;
           if (selectedTboMapFallbackDinnerRate > 0) {
@@ -7022,8 +7070,15 @@ const hasRequiredVehicleSelection =
         if (selectedSummary.hotelListTotal > 0) {
           hotelListTotal = Number(selectedSummary.hotelListTotal.toFixed(2));
           hotelRoomBaseCost = Number(selectedSummary.hotelRoomBaseCost.toFixed(2));
-          tboMapFallbackDinnerCost = Number(selectedSummary.tboMapFallbackDinnerCost.toFixed(2));
-          tboMapFallbackDinnerRates = selectedSummary.tboMapFallbackDinnerRates;
+          // A compact selected view can omit the fallback marker even though
+          // the persisted hotel row still contains it. Do not replace valid
+          // persisted MAP metadata with an empty summary.
+          if (selectedSummary.tboMapFallbackDinnerCost > 0) {
+            tboMapFallbackDinnerCost = Number(selectedSummary.tboMapFallbackDinnerCost.toFixed(2));
+          }
+          if (selectedSummary.tboMapFallbackDinnerRates.size > 0) {
+            tboMapFallbackDinnerRates = selectedSummary.tboMapFallbackDinnerRates;
+          }
           extraBedCost = Number(selectedSummary.extraBedCost.toFixed(2));
           childWithBedCost = Number(selectedSummary.childWithBedCost.toFixed(2));
           childWithoutBedCost = Number(selectedSummary.childWithoutBedCost.toFixed(2));

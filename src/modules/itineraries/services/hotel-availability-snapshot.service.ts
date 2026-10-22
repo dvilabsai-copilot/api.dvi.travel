@@ -61,6 +61,7 @@ import {
 import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
+import { resolveOfflineHotelPayablePricing } from '../utils/hotel-selection-pricing.util';
 import {
   decorateHotelCardPricing,
   hotelCardPayableAmount,
@@ -915,9 +916,35 @@ export class HotelAvailabilitySnapshotService {
                 ? nightlyRate.extraChildAmount
                 : childWithoutBedRate * childWithoutBedCount,
           );
-          const mealPlanAmount = amount(
-            nightlyRate?.hotelMealPlanCost ?? nightlyRate?.mealPlanAmount ?? row?.hotelMealPlanCost,
+          const provider = String(row?.provider || row?.hotel_provider || snapshot?.provider || '').trim().toLowerCase();
+          const tboMapFallbackApplied = provider === 'tbo' && (
+            row?.tboMapFallbackApplied === true ||
+            snapshot?.tboMapFallbackApplied === true ||
+            nightlyRate?.tboMapFallbackApplied === true
           );
+          const tboMapFallbackDinnerTotal = tboMapFallbackApplied
+            ? amount(
+                nightlyRate?.tboMapFallbackDinnerTotal ??
+                snapshot?.tboMapFallbackDinnerTotal ??
+                row?.tboMapFallbackDinnerTotal,
+              )
+            : 0;
+          const tboMapFallbackDinnerPerNight = tboMapFallbackApplied
+            ? amount(
+                nightlyRate?.tboMapFallbackDinnerPerNight ??
+                snapshot?.tboMapFallbackDinnerPerNight ??
+                row?.tboMapFallbackDinnerPerNight,
+              ) || Number((tboMapFallbackDinnerTotal / Math.max(nightlyRates.length, routeIds.length, 1)).toFixed(2))
+            : 0;
+          // TBO fallback metadata stores the dinner amount for the complete
+          // stay, while this response is one route/night. Use the per-night
+          // amount here so margin and payable totals are not multiplied once
+          // per displayed night.
+          const mealPlanAmount = tboMapFallbackApplied
+            ? tboMapFallbackDinnerPerNight
+            : amount(
+                nightlyRate?.hotelMealPlanCost ?? nightlyRate?.mealPlanAmount ?? row?.hotelMealPlanCost,
+              );
           const calculatedBase = Number.isFinite(routeNightBase)
             ? routeNightBase
             : amount(row?.baseTotalPrice ?? row?.baseHotelCost ?? row?.roomRate);
@@ -965,6 +992,28 @@ export class HotelAvailabilitySnapshotService {
               childWithoutBedRate,
               childWithoutBedAmount,
               hotelMealPlanCost: mealPlanAmount,
+              totalHotelMealPlanCost: mealPlanAmount,
+              ...(tboMapFallbackApplied ? {
+                tboMapFallbackApplied: true,
+                tboMapFallbackSourceMealPlan: String(
+                  nightlyRate?.tboMapFallbackSourceMealPlan ??
+                  snapshot?.tboMapFallbackSourceMealPlan ??
+                  row?.tboMapFallbackSourceMealPlan ??
+                  'CP',
+                ),
+                tboMapFallbackDinnerRate: amount(
+                  nightlyRate?.tboMapFallbackDinnerRate ??
+                  snapshot?.tboMapFallbackDinnerRate ??
+                  row?.tboMapFallbackDinnerRate,
+                ),
+                tboMapFallbackDinnerPerPerson: amount(
+                  nightlyRate?.tboMapFallbackDinnerPerPerson ??
+                  snapshot?.tboMapFallbackDinnerPerPerson ??
+                  row?.tboMapFallbackDinnerPerPerson,
+                ),
+                tboMapFallbackDinnerPerNight,
+                tboMapFallbackDinnerTotal: mealPlanAmount,
+              } : {}),
               hotelMarginBaseAmount: marginBase,
               hotelMarginPercentage: marginPercentage,
               hotelMarginAmount: marginAmount,
@@ -6502,20 +6551,41 @@ export class HotelAvailabilitySnapshotService {
       if (tboMapFallbackApplied && tboMapFallbackDinnerTotal > 0) {
         supplementTotal = Number((supplementTotal + tboMapFallbackDinnerTotal).toFixed(2));
       }
-      let marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
+      const offlineMealPlanCost = provider === 'offline'
+        ? Math.max(Number(
+            option.mealPlanBreakdown?.totalMealPlanCost ??
+            option.totalHotelMealPlanCost ??
+            option.hotelMealPlanCost ??
+            0,
+          ), 0)
+        : 0;
+      const offlinePricing = provider === 'offline'
+        ? resolveOfflineHotelPayablePricing({
+            baseTotalPrice,
+            extraBedAmount,
+            childWithBedAmount,
+            childWithoutBedAmount,
+            mealPlanCost: offlineMealPlanCost,
+            marginPercentage,
+          })
+        : null;
+      let marginBaseTotal = offlinePricing?.marginableBaseAmount ??
+        Number((baseTotalPrice + supplementTotal).toFixed(2));
       let roomTaxAmount = provider === 'staah'
         ? Math.max(Number(option.totalHotelTaxAmount ?? option.taxAmount ?? 0), 0)
         : 0;
-      let calculatedMargin = baseTotalPrice > 0
+      let calculatedMargin = offlinePricing?.marginAmount ?? (baseTotalPrice > 0
         ? Number((marginBaseTotal * marginPercentage / 100).toFixed(2))
-        : 0;
+        : 0);
       // The persisted day price is calculated from the normalized cost
       // components. A supplier/API total may be a stay total, a per-room
       // amount, or an already-marked-up value, so it must not override the
       // itinerary's room/supplement/margin calculation.
-      let totalPrice = baseTotalPrice > 0
-        ? Number((marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2))
-        : rawTotalPrice;
+      let totalPrice = offlinePricing
+        ? offlinePricing.totalPrice
+        : baseTotalPrice > 0
+          ? Number((marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2))
+          : rawTotalPrice;
       // `selected_price_per_night` is the complete payable amount for one
       // itinerary day. The room-only per-room rate is kept in
       // basePricePerNight/roomRate and must never be written here.
@@ -6554,9 +6624,17 @@ export class HotelAvailabilitySnapshotService {
       }
 
       if (provider === 'offline' && baseTotalPrice > 0) {
-        marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
-        calculatedMargin = Number((marginBaseTotal * marginPercentage / 100).toFixed(2));
-        totalPrice = Number((marginBaseTotal + calculatedMargin).toFixed(2));
+        const pricing = offlinePricing || resolveOfflineHotelPayablePricing({
+          baseTotalPrice,
+          extraBedAmount,
+          childWithBedAmount,
+          childWithoutBedAmount,
+          mealPlanCost: offlineMealPlanCost,
+          marginPercentage,
+        });
+        marginBaseTotal = pricing.marginableBaseAmount;
+        calculatedMargin = pricing.marginAmount;
+        totalPrice = pricing.totalPrice;
         pricePerNight = totalPrice;
         option = {
           ...option,
@@ -6574,8 +6652,10 @@ export class HotelAvailabilitySnapshotService {
           childWithoutBedAmount,
           hotelMarginPercentage: marginPercentage,
           hotelMarginAmount: calculatedMargin,
-          hotelMarginBaseAmount: marginBaseTotal,
+          hotelMarginBaseAmount: pricing.subtotal,
           hotelMarginTotalAmount: calculatedMargin,
+          hotelMealPlanCost: pricing.mealPlanCost,
+          totalHotelMealPlanCost: pricing.mealPlanCost,
           pricePerNight,
           totalPrice,
           totalStayPrice: totalPrice,
@@ -6656,6 +6736,7 @@ export class HotelAvailabilitySnapshotService {
         }
       }
       const optionKey = this.optionKey(option);
+      const offlineMealPlanPersistence = this.getOfflineMealPlanPersistence(option, provider);
       // Supplier recommendation rows (especially TBO) may not carry a
       // numeric `category`; the recommendation service already resolved the
       // logical category into selectedCategory/requestedCategory. Prisma
@@ -6689,6 +6770,7 @@ export class HotelAvailabilitySnapshotService {
           selection_origin: 'AUTO_SELECTED',
           selected_price_snapshot: JSON.stringify({
             ...hotelDisplaySnapshot(option),
+            ...offlineMealPlanPersistence.snapshot,
             optionKey,
             ...(option.authoritativeStayKey ? {
               authoritativeStayKey: option.authoritativeStayKey,
@@ -6743,8 +6825,11 @@ export class HotelAvailabilitySnapshotService {
           hotel_margin_rate: calculatedMargin,
           total_room_gst_amount: roomTaxAmount,
           total_hotel_cost: totalPrice,
-          hotel_dinner_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
-          total_hotel_meal_plan_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
+          ...offlineMealPlanPersistence.columns,
+          hotel_dinner_cost: offlineMealPlanPersistence.columns.hotel_dinner_cost ??
+            (tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0),
+          total_hotel_meal_plan_cost: offlineMealPlanPersistence.columns.total_hotel_meal_plan_cost ??
+            (tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0),
           total_hotel_tax_amount: roomTaxAmount,
           hotel_check_in_date: this.toDate(option.checkInDate || option.date),
           hotel_check_out_date: this.toDate(option.checkOutDate || this.addDays(this.toDate(option.checkInDate || option.date), 1)),
@@ -6878,6 +6963,7 @@ export class HotelAvailabilitySnapshotService {
     } = priorSnapshot as any;
     const optionKey = String(option.optionKey || hotelOptionKey(option));
     const provider = String(option.provider || selection.hotel_provider || '').trim().toLowerCase();
+    const offlineMealPlanPersistence = this.getOfflineMealPlanPersistence(option, provider);
     const tboMapFallbackApplied = option.tboMapFallbackApplied === true;
     const tboMapFallbackDinnerRate = tboMapFallbackApplied
       ? Math.max(Number(option.tboMapFallbackDinnerRate || option.tboMapFallbackDinnerPerPerson || 0), 0)
@@ -6896,7 +6982,31 @@ export class HotelAvailabilitySnapshotService {
         option.totalStayPrice ||
         0,
     );
-    const totalPrice = hotelStayTotal(option, 1);
+    let totalPrice = hotelStayTotal(option, 1);
+    if (provider === 'offline') {
+      const offlinePricing = resolveOfflineHotelPayablePricing({
+        baseTotalPrice: option.baseTotalPrice ?? option.baseHotelCost ?? option.totalRoomCost ?? option.total_hotel_cost,
+        extraBedAmount: option.extraBedAmount ?? option.totalExtraBedCost ?? option.total_extra_bed_cost,
+        childWithBedAmount: option.childWithBedAmount ?? option.totalChildWithBedCost ?? option.total_childwith_bed_cost,
+        childWithoutBedAmount: option.childWithoutBedAmount ?? option.totalChildWithoutBedCost ?? option.total_childwithout_bed_cost,
+        mealPlanCost: option.mealPlanBreakdown?.totalMealPlanCost ?? option.totalHotelMealPlanCost ?? option.hotelMealPlanCost,
+        marginPercentage: option.hotelMarginPercentage ?? selection.hotel_margin_percentage ?? 0,
+        taxAmount: option.totalHotelTaxAmount ?? option.total_hotel_tax_amount ?? 0,
+      });
+      totalPrice = offlinePricing.totalPrice;
+      option = {
+        ...option,
+        hotelMarginBaseAmount: offlinePricing.subtotal,
+        hotelMarginAmount: offlinePricing.marginAmount,
+        hotelMarginTotalAmount: offlinePricing.marginAmount,
+        hotelMealPlanCost: offlinePricing.mealPlanCost,
+        totalHotelMealPlanCost: offlinePricing.mealPlanCost,
+        pricePerNight: totalPrice,
+        totalPrice,
+        totalStayPrice: totalPrice,
+        totalHotelCost: totalPrice,
+      };
+    }
 
     const rawHotelCategoryId =
       option.category ??
@@ -6943,13 +7053,15 @@ export class HotelAvailabilitySnapshotService {
       total_childwithout_bed_cost: Number(option.childWithoutBedAmount || 0),
       hotel_margin_percentage: Number(option.hotelMarginPercentage ?? selection.hotel_margin_percentage ?? 0),
       hotel_margin_rate: Number(option.hotelMarginAmount ?? option.hotelMarginTotalAmount ?? selection.hotel_margin_rate ?? 0),
-      hotel_dinner_cost: tboMapFallbackDinnerTotal,
-      total_hotel_meal_plan_cost: tboMapFallbackDinnerTotal,
+      ...offlineMealPlanPersistence.columns,
+      hotel_dinner_cost: offlineMealPlanPersistence.columns.hotel_dinner_cost ?? tboMapFallbackDinnerTotal,
+      total_hotel_meal_plan_cost: offlineMealPlanPersistence.columns.total_hotel_meal_plan_cost ?? tboMapFallbackDinnerTotal,
       total_hotel_cost: totalPrice,
       total_hotel_tax_amount: Number(option.totalHotelTaxAmount || selection.total_hotel_tax_amount || 0),
       selected_price_snapshot: JSON.stringify({
         ...priorSnapshotWithoutFallback,
         ...hotelDisplaySnapshot(option),
+        ...offlineMealPlanPersistence.snapshot,
         optionKey,
         ...(option.authoritativeStayKey ? {
           authoritativeStayKey: option.authoritativeStayKey,
@@ -6977,6 +7089,36 @@ export class HotelAvailabilitySnapshotService {
         Number(selection.selected_total_price || selection.total_hotel_cost || 0) > 0 &&
         Math.abs(Number(selection.selected_total_price || selection.total_hotel_cost || 0) - totalPrice) > 0.009,
       updatedon: new Date(),
+    };
+  }
+
+  private getOfflineMealPlanPersistence(option: any, provider: string): {
+    snapshot: Record<string, unknown>;
+    columns: Record<string, number>;
+  } {
+    if (provider !== 'offline' || !option?.mealPlanBreakdown || typeof option.mealPlanBreakdown !== 'object') {
+      return { snapshot: {}, columns: {} };
+    }
+
+    const amount = (value: unknown): number => {
+      const numeric = Number(value ?? 0);
+      return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : 0;
+    };
+    const breakdown = option.mealPlanBreakdown as Record<string, unknown>;
+
+    return {
+      snapshot: {
+        mealPlanBreakdown: breakdown,
+        ...(Array.isArray(option.nightlyMealPlanBreakdown)
+          ? { nightlyMealPlanBreakdown: option.nightlyMealPlanBreakdown }
+          : {}),
+      },
+      columns: {
+        hotel_breakfast_cost: amount(breakdown.totalBreakfastCost),
+        hotel_lunch_cost: amount(breakdown.totalLunchCost),
+        hotel_dinner_cost: amount(breakdown.totalDinnerCost),
+        total_hotel_meal_plan_cost: amount(breakdown.totalMealPlanCost),
+      },
     };
   }
 

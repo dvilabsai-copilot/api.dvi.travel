@@ -85,6 +85,99 @@ test('DVI20260891 aligns hotelTabs with hotelSelectionState and deduplicates Day
   assert.equal(tabs[0].totalAmount, 953303.23);
 });
 
+test('route-night offline MAP is included for each physical night', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 4, label: 'Recommended #4', totalAmount: 9607.5 }],
+    rows: [1, 2, 3].map((routeId) => selectedRow(routeId, {
+      groupType: 4,
+      provider: 'offline',
+      selectionKey: 'offline:lake-forest:deluxe:map',
+      totalPrice: 9607.5,
+      selectedPriceSnapshot: {
+        provider: 'offline',
+        pricingScope: 'ROUTE_NIGHT',
+        selectionKey: 'offline:lake-forest:deluxe:map',
+        baseTotalPrice: 9150,
+        hotelMarginPercentage: 5,
+        mealPlanBreakdown: { totalMealPlanCost: 3900.6 },
+        nightlyRates: [{
+          date: routeId === 1 ? '2026-08-12' : routeId === 2 ? '2026-08-13' : '2026-08-14',
+          mealPlanBreakdown: { totalMealPlanCost: 3900.6 },
+        }],
+      },
+    })),
+    requiredRoutes: [
+      { routeId: 1, routeDate: '2026-08-12' },
+      { routeId: 2, routeDate: '2026-08-13' },
+      { routeId: 3, routeDate: '2026-08-14' },
+    ],
+  });
+
+  assert.deepEqual(
+    state[0].routes.map((route) => route.selected?.selectedTotalPrice),
+    [13508.1, 13508.1, 13508.1],
+  );
+  assert.equal(state[0].totalAmount, 40524.3);
+});
+
+test('TBO MAP fallback dinner is included in each projected route night', () => {
+  const tboSnapshot = {
+    provider: 'tbo',
+    providerHotelCode: '1089728',
+    hotelCode: '1089728',
+    hotelName: 'Ambady Estate',
+    roomType: 'Luxury Cottage',
+    mealPlan: 'MAP',
+    roomCount: 2,
+    totalRoomCost: 28200.62,
+    baseTotalPrice: 28200.62,
+    hotelMarginPercentage: 5,
+    tboMapFallbackApplied: true,
+    tboMapFallbackDinnerRate: 900,
+    tboMapFallbackDinnerPerNight: 5400,
+    tboMapFallbackDinnerTotal: 16200,
+    nightlyRates: [
+      { date: '2026-08-12', baseAmount: 28200.62 },
+      { date: '2026-08-13', baseAmount: 28200.62 },
+      { date: '2026-08-14', baseAmount: 28200.62 },
+    ],
+  };
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 2, label: 'Recommended #2', totalAmount: 88831.95 }],
+    rows: [{
+      groupType: 2,
+      itineraryRouteId: 10145,
+      date: '2026-08-12',
+      provider: 'tbo',
+      providerHotelCode: '1089728',
+      hotelCode: '1089728',
+      hotelName: 'Ambady Estate',
+      roomType: 'Luxury Cottage',
+      mealPlan: 'MAP',
+      selectionId: 1,
+      selectionOrigin: 'AUTO_SELECTED',
+      isSelected: true,
+      completeStayBookable: true,
+      completeStayRouteIds: [10145, 10146, 10147],
+      selectedPriceSnapshot: tboSnapshot,
+    }],
+    requiredRoutes: [
+      { routeId: 10145, routeDate: '2026-08-12' },
+      { routeId: 10146, routeDate: '2026-08-13' },
+      { routeId: 10147, routeDate: '2026-08-14' },
+    ],
+  });
+
+  assert.deepEqual(
+    state[0].routes.map((route) => route.selected?.pricePerNight),
+    [35010.65, 35010.65, 35010.65],
+  );
+  assert.equal(state[0].routes[0].selected?.selectedPriceSnapshot?.hotelMealPlanCost, 5400);
+  assert.equal(state[0].routes[0].selected?.selectedPriceSnapshot?.hotelMarginBaseAmount, 33600.62);
+  assert.equal(state[0].routes[0].selected?.selectedPriceSnapshot?.hotelMarginAmount, 1410.03);
+  assert.equal(state[0].totalAmount, 105031.95);
+});
+
 test('DVI20260891 projects a complete MGM stay through Day 3 without double counting it', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 41112.5 }],
@@ -353,6 +446,66 @@ test('legacy continuous offline snapshot projects per-night room and supplement 
     assert.equal(route.selected?.selectedPriceSnapshot?.hotelMarginBaseAmount, 5200);
     assert.equal(route.selected?.selectedPriceSnapshot?.hotelMarginAmount, 520);
   }
+});
+
+test('legacy continuous offline MAP keeps the canonical stay meal total', () => {
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 4, label: 'Recommended #4', totalAmount: 31201.8 }],
+    rows: [{
+      groupType: 4,
+      itineraryRouteId: 25603,
+      date: '2026-10-25',
+      provider: 'offline',
+      canonicalHotelId: 148,
+      providerHotelCode: '148',
+      hotelCode: '148',
+      hotelName: 'SHOLA CROWN RESORT',
+      roomType: 'King Bed',
+      mealPlan: 'MAP',
+      mealPlanBreakdown: { totalMealPlanCost: 14401.8 },
+      hotelMealPlanCost: 14401.8,
+      totalHotelMealPlanCost: 14401.8,
+      isSelected: true,
+      selectionOrigin: 'AUTO_SELECTED',
+      completeStayBookable: true,
+      completeStayRouteIds: [25603, 25604, 25605],
+      selectionKey: 'offline:148:208:7:2026-10-25:2026-10-28',
+      selectedPriceSnapshot: {
+        provider: 'offline',
+        roomCount: 2,
+        totalRoomCost: 13500,
+        baseTotalPrice: 13500,
+        extraBedCount: 1,
+        extraBedRate: 1500,
+        extraBedAmount: 1500,
+        childWithoutBedCount: 1,
+        childWithoutBedRate: 1000,
+        childWithoutBedAmount: 1000,
+        hotelMealPlanCost: 14401.8,
+        totalHotelMealPlanCost: 14401.8,
+        hotelMarginPercentage: 5,
+        totalPrice: 16800,
+        nightlyRates: [
+          { date: '2026-10-25', baseAmount: 13500, marginAmount: 675, sellAmount: 14175 },
+          { date: '2026-10-26', baseAmount: 13500, marginAmount: 675, sellAmount: 14175 },
+          { date: '2026-10-27', baseAmount: 13500, marginAmount: 675, sellAmount: 14175 },
+        ],
+      },
+    }],
+    requiredRoutes: [
+      { routeId: 25603, routeDate: '2026-10-25' },
+      { routeId: 25604, routeDate: '2026-10-26' },
+      { routeId: 25605, routeDate: '2026-10-27' },
+    ],
+  });
+
+  assert.deepEqual(
+    state[0].routes.map((route) => route.selected?.selectedTotalPrice),
+    [31201.8, 31201.8, 31201.8],
+  );
+  assert.equal(state[0].totalAmount, 31201.8);
+  assert.equal(state[0].routes[0].selected?.hotelMarginBaseAmount, 30401.8);
+  assert.equal(state[0].routes[0].selected?.hotelMarginAmount, 800);
 });
 
 test('projects one persisted continuous-stay selection to every authoritative route', () => {

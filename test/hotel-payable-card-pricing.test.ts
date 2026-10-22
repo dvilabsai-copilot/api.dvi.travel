@@ -23,6 +23,31 @@ test('continuous-stay route-night payable uses room and supplement components', 
   }), 11766);
 });
 
+test('TBO MAP fallback dinner is included before the final payable total', () => {
+  const projected = projectHotelPayablePricing({
+    provider: 'tbo',
+    amountIncludesHotelMargin: true,
+    pricingIncludesHotelMargin: true,
+    basePricePerNight: 28200.62,
+    baseTotalPrice: 28200.62,
+    totalRoomCost: 28200.62,
+    totalPrice: 29610.65,
+    hotelMarginPercentage: 5,
+    hotelMarginAmount: 1410.03,
+    tboMapFallbackApplied: true,
+    tboMapFallbackDinnerRate: 900,
+    tboMapFallbackDinnerPerNight: 5400,
+    tboMapFallbackDinnerTotal: 5400,
+    hotelMealPlanCost: 5400,
+    totalHotelMealPlanCost: 5400,
+  }, 5);
+
+  assert.equal(projected.hotelMarginBaseAmount, 33600.62);
+  assert.equal(projected.hotelMarginTotalAmount, 1410.03);
+  assert.equal(projected.totalPrice, 35010.65);
+  assert.equal(projected.hotelMealPlanCost, 5400);
+});
+
 test('multi-room day price is the complete occupancy-inclusive selected price', () => {
   const pricing = resolveHotelOccupancyPricing({
     rates: { SINGLE: 6800, DOUBLE: 6800, EXTRABED: 3500, CHILD_WITH_BED: 1000, CHILD_WITHOUT_BED: 800 },
