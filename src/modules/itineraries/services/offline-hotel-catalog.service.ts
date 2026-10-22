@@ -124,10 +124,10 @@ export function selectAdminMatchingOccupancyRow(rows: any[], target: number): an
     .sort((a: any, b: any) => new Date(b.received_at || 0).getTime() - new Date(a.received_at || 0).getTime())[0];
 }
 
-// Offline availability exposes the room base for the selected occupancy as a
-// one-night amount. The complete continuous-stay amount remains available in
-// totalStayPrice and nightlyBase, but must not be sent as baseTotalPrice for a
-// single room/night response field.
+// Offline availability exposes both route-night amounts and complete-stay
+// amounts. The route-night fields are used when persisting one itinerary row;
+// the explicit stay fields remain complete-stay values for callers that price
+// or validate the continuous selection.
 const oneNightRoomBase = (offer: OfflineRoomOffer): number =>
   Number((offer.nightlyBase[0] || 0).toFixed(2));
 
@@ -1729,9 +1729,9 @@ if (
       // the route-night fields date-specific instead of reusing night one.
       pricePerNight: routeSellAmount,
       basePricePerNight: routeNight.basePricePerNight || oneRoomNightBase(offer),
-      baseTotalPrice: routeBaseAmount,
+      baseTotalPrice: offer.baseTotalPrice,
       totalRoomCost: routeNight.roomCost,
-      hotelMarginBaseAmount: routeBaseAmount,
+      hotelMarginBaseAmount: offer.baseTotalPrice,
       hotelMarginPercentage: offer.hotelMarginPercentage,
       hotelMarginAmount: routeMarginAmount,
       hotelMarginTotalAmount: offer.hotelMarginTotalAmount,

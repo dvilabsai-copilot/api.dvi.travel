@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveHotelOccupancyPricing } from '../src/modules/itineraries/utils/hotel-selection-pricing.util';
+import {
+  resolveHotelOccupancyPricing,
+  resolveOfflineHotelPayablePricing,
+} from '../src/modules/itineraries/utils/hotel-selection-pricing.util';
 
 test('uses DOUBLE plus supplements for three adults', () => {
   const result = resolveHotelOccupancyPricing({
@@ -19,4 +22,19 @@ test('uses DOUBLE plus supplements for three adults', () => {
   assert.equal(result.hotelMarginBaseAmount, 11400);
   assert.equal(result.hotelMarginAmount, 1140);
   assert.equal(result.totalPrice, 12540);
+});
+
+test('adds offline MAP to the subtotal without applying hotel margin to food', () => {
+  const result = resolveOfflineHotelPayablePricing({
+    baseTotalPrice: 8100,
+    extraBedAmount: 750,
+    childWithoutBedAmount: 300,
+    mealPlanCost: 3900.6,
+    marginPercentage: 5,
+  });
+
+  assert.equal(result.marginableBaseAmount, 9150);
+  assert.equal(result.subtotal, 13050.6);
+  assert.equal(result.marginAmount, 457.5);
+  assert.equal(result.totalPrice, 13508.1);
 });

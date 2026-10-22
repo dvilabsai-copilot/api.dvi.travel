@@ -1,3 +1,5 @@
+import { resolveOfflineHotelPayablePricing } from './hotel-selection-pricing.util';
+
 const money = (value: unknown): number => {
   const amount = Number(value ?? 0);
   if (!Number.isFinite(amount)) return 0;
@@ -42,6 +44,28 @@ export interface SelectedHotelAmountInput {
   mealPlanCost?: unknown;
   selectedMealPlanCost?: unknown;
   tboMapFallbackDinnerCost?: unknown;
+}
+
+/**
+ * Read an ordinary MAP/meal-plan amount from a component-priced hotel row.
+ * TBO/VSR fares already include their supplier meal amount, so only the
+ * database-priced providers may contribute this separate supplement.
+ */
+export function resolveOrdinaryMealPlanCost(option: Record<string, any> | null | undefined): number {
+  const provider = String(
+    option?.provider ?? option?.hotel_provider ?? '',
+  ).trim().toLowerCase();
+  if (!['offline', 'axisrooms'].includes(provider)) return 0;
+  if (option?.tboMapFallbackApplied === true) return 0;
+  const breakdown = option?.mealPlanBreakdown;
+  return positive(
+    option?.total_hotel_meal_plan_cost,
+    option?.totalHotelMealPlanCost,
+    option?.hotelMealPlanCost,
+    option?.mealPlanCost,
+    breakdown?.totalMealPlanCost,
+    breakdown?.totalDinnerCost,
+  );
 }
 
 /**
@@ -205,22 +229,52 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
         tboMapFallbackDinnerTotal > 0 ? tboMapFallbackDinnerTotal / numberOfNights : 0,
       )
     : 0;
-  const supplementTotal = money(extraSupplementTotal + tboMapFallbackDinnerTotal);
-  const supplementPerNight = money(extraSupplementTotal + tboMapFallbackDinnerPerNight);
-  const marginBaseTotal = money(baseTotal + supplementTotal);
-  const marginBasePerNight = money(basePerNight + supplementPerNight);
-  const marginTotal = alreadyProjected
+  const ordinaryMealPlanTotal = resolveOrdinaryMealPlanCost(option);
+  const offlinePricing = ['offline', 'axisrooms'].includes(provider)
+    ? resolveOfflineHotelPayablePricing({
+        baseTotalPrice: baseTotal,
+        extraBedAmount: option?.extraBedAmount ?? option?.extraBedCost ?? option?.total_extra_bed_cost,
+        childWithBedAmount: option?.childWithBedAmount ?? option?.childWithBedCost ?? option?.total_childwith_bed_cost,
+        childWithoutBedAmount: option?.childWithoutBedAmount ?? option?.childWithoutBedCost ?? option?.total_childwithout_bed_cost,
+        mealPlanCost: ordinaryMealPlanTotal,
+        marginPercentage,
+        taxAmount: option?.totalHotelTaxAmount ?? option?.total_hotel_tax_amount,
+      })
+    : null;
+  const supplementTotal = money(extraSupplementTotal + tboMapFallbackDinnerTotal + ordinaryMealPlanTotal);
+  // MAP/meal-plan food is a payable supplement, not a hotel-marginable
+  // occupancy charge. Keep it in the displayed subtotal and final payable,
+  // but calculate the margin from room and occupancy components only.
+  const marginableSupplementTotal = money(extraSupplementTotal + ordinaryMealPlanTotal);
+  const marginableSupplementPerNight = money(
+    (extraSupplementTotal + ordinaryMealPlanTotal) / numberOfNights,
+  );
+  const marginableBaseTotal = money(baseTotal + marginableSupplementTotal);
+  const subtotalTotal = offlinePricing
+    ? offlinePricing.subtotal
+    : money(marginableBaseTotal + tboMapFallbackDinnerTotal);
+  const marginBaseTotal = subtotalTotal;
+  const marginBasePerNight = money(basePerNight + marginableSupplementPerNight);
+  const marginTotal = offlinePricing
+    ? offlinePricing.marginAmount
+    : alreadyProjected
     ? marginPercentage > 0
-      ? money((marginBaseTotal * marginPercentage) / 100)
+      ? money((marginableBaseTotal * marginPercentage) / 100)
       : positive(option?.hotelMarginTotalAmount, option?.hotelMarginStayAmount, option?.hotelMarginAmount)
-    : money((marginBaseTotal * marginPercentage) / 100);
-  const marginPerNight = alreadyProjected
+    : money((marginableBaseTotal * marginPercentage) / 100);
+  const marginPerNight = offlinePricing
+    ? money(offlinePricing.marginAmount / numberOfNights)
+    : alreadyProjected
     ? marginPercentage > 0
       ? money((marginBasePerNight * marginPercentage) / 100)
       : positive(option?.hotelMarginAmount, marginTotal)
     : money((marginBasePerNight * marginPercentage) / 100);
-  const reconstructedPayableTotal = money(marginBaseTotal + marginTotal);
-  const reconstructedPayablePerNight = money(marginBasePerNight + marginPerNight);
+  const reconstructedPayableTotal = offlinePricing
+    ? offlinePricing.totalPrice
+    : money(subtotalTotal + marginTotal);
+  const reconstructedPayablePerNight = offlinePricing
+    ? money(offlinePricing.totalPrice / numberOfNights)
+    : money(marginBasePerNight + marginPerNight);
   const payableTotal = alreadyProjected
     ? Math.max(payableBeforeProjection, reconstructedPayableTotal)
     : reconstructedPayableTotal;
@@ -246,7 +300,7 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     hotelMarginAmount: marginPerNight,
     hotelMarginStayAmount: marginTotal,
     hotelMarginTotalAmount: marginTotal,
-    hotelMarginBaseAmount: marginBaseTotal,
+    hotelMarginBaseAmount: offlinePricing?.subtotal ?? marginBaseTotal,
     price: payablePerNight,
     pricePerNight: payablePerNight,
     totalPrice: payableTotal,
@@ -254,8 +308,12 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     totalHotelCost: payableTotal,
     totalAmount: payableTotal,
     totalAmountAfterTax: payableTotal,
-    hotelMealPlanCost: tboMapFallbackDinnerTotal,
-    totalHotelMealPlanCost: tboMapFallbackDinnerTotal,
+    hotelMealPlanCost: tboMapFallbackDinnerTotal > 0
+      ? tboMapFallbackDinnerTotal
+      : ordinaryMealPlanTotal,
+    totalHotelMealPlanCost: tboMapFallbackDinnerTotal > 0
+      ? tboMapFallbackDinnerTotal
+      : ordinaryMealPlanTotal,
     tboMapFallbackDinnerTotal,
     tboMapFallbackDinnerPerNight,
     amountIncludesHotelMargin: true,

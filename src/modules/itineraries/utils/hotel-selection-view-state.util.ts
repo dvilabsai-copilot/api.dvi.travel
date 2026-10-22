@@ -1,5 +1,9 @@
 import { hotelCardPayableAmount } from './hotel-card-pricing.util';
-import { projectHotelPayablePricing } from './hotel-payable-pricing.util';
+import {
+  projectHotelPayablePricing,
+  resolveOrdinaryMealPlanCost,
+} from './hotel-payable-pricing.util';
+import { resolveOfflineHotelPayablePricing } from './hotel-selection-pricing.util';
 import {
   isTboSupplierBookingCode,
   normalizeHotelDisplayName,
@@ -227,10 +231,37 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     const childWithoutBedAmount = isLegacyContinuousOfflineSnapshot && childWithoutBedRate > 0
       ? Number((childWithoutBedRate * childWithoutBedCount).toFixed(2))
       : Number(night?.childWithoutBedAmount ?? nestedSelection.childWithoutBedAmount ?? snapshot?.childWithoutBedAmount ?? row?.childWithoutBedAmount ?? 0);
+    const tboMapFallbackApplied = [night, snapshot, row].some((source: any) =>
+      source?.tboMapFallbackApplied === true,
+    );
+    const tboMapFallbackDinnerPerNight = tboMapFallbackApplied
+      ? Number(
+          night?.tboMapFallbackDinnerPerNight ??
+          snapshot?.tboMapFallbackDinnerPerNight ??
+          row?.tboMapFallbackDinnerPerNight ??
+          0,
+        )
+      : 0;
+    const mealPlanCost = tboMapFallbackApplied
+      ? tboMapFallbackDinnerPerNight
+      : resolveOrdinaryMealPlanCost({
+          provider: snapshot?.provider ?? row?.provider,
+          mealPlanBreakdown: night?.mealPlanBreakdown ?? row?.mealPlanBreakdown ?? snapshot?.mealPlanBreakdown,
+          totalHotelMealPlanCost: night?.totalHotelMealPlanCost ?? row?.totalHotelMealPlanCost ?? snapshot?.totalHotelMealPlanCost,
+          hotelMealPlanCost: night?.hotelMealPlanCost ?? row?.hotelMealPlanCost ?? snapshot?.hotelMealPlanCost,
+        });
     const marginPercentage = Number(snapshot?.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? night?.marginPercentage ?? 0);
-    const marginBase = Number((totalRoomCost + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
-    const marginAmount = Number((marginBase * marginPercentage / 100).toFixed(2));
-    const payableTotal = Number((marginBase + marginAmount).toFixed(2));
+    const offlinePricing = resolveOfflineHotelPayablePricing({
+      baseTotalPrice: totalRoomCost,
+      extraBedAmount,
+      childWithBedAmount,
+      childWithoutBedAmount,
+      mealPlanCost,
+      marginPercentage,
+    });
+    const marginBase = offlinePricing.subtotal;
+    const marginAmount = offlinePricing.marginAmount;
+    const payableTotal = offlinePricing.totalPrice;
     return {
       roomRate,
       roomCount,
@@ -244,10 +275,19 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       childWithoutBedCount,
       childWithoutBedRate,
       childWithoutBedAmount,
+      hotelMealPlanCost: mealPlanCost,
+      totalHotelMealPlanCost: mealPlanCost,
       hotelMarginBaseAmount: marginBase,
       hotelMarginPercentage: marginPercentage,
       hotelMarginAmount: marginAmount,
       hotelMarginTotalAmount: marginAmount,
+      tboMapFallbackApplied,
+      ...(tboMapFallbackApplied
+        ? {
+            tboMapFallbackDinnerPerNight,
+            tboMapFallbackDinnerTotal: tboMapFallbackDinnerPerNight,
+          }
+        : {}),
       pricePerNight: payableTotal,
       totalPrice: payableTotal,
       totalStayPrice: payableTotal,
@@ -257,7 +297,7 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       selectedTotalPrice: payableTotal,
     };
   };
-  const logicalStayPayableTotal = roomTypeBreakdown.length === 0 && nightlyRates.length > 1
+  const logicalStayPayableTotal = roomTypeBreakdown.length === 0 && nightlyRates.length > 1 && !isLegacyContinuousOfflineSnapshot
     ? Number(nightlyRates.reduce((sum: number, night: any) => sum + Number(projectRouteNight(night).totalPrice || 0), 0).toFixed(2))
     : 0;
   const routeNightProjection = roomTypeBreakdown.length === 0 && routeNight && Number(routeNight.baseAmount || 0) > 0
@@ -283,7 +323,40 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     const supplementTotal = extraBedAmount + childWithBedAmount + childWithoutBedAmount;
     const baseTotal = Number(snapshot.baseTotalPrice ?? snapshot.baseHotelCost ?? 0);
     const marginAmount = Number(snapshot.hotelMarginAmount ?? snapshot.hotelMarginTotalAmount ?? 0);
-    if (baseTotal > 0 && supplementTotal > 0) {
+    const provider = String(snapshot.provider ?? row?.provider ?? '').trim().toLowerCase();
+    const ordinaryMealPlanCost = resolveOrdinaryMealPlanCost({ ...row, ...nestedSelection, ...snapshot, provider });
+    const ordinaryPricing = ['offline', 'axisrooms'].includes(provider)
+      ? resolveOfflineHotelPayablePricing({
+          baseTotalPrice: baseTotal,
+          extraBedAmount,
+          childWithBedAmount,
+          childWithoutBedAmount,
+          mealPlanCost: ordinaryMealPlanCost,
+          marginPercentage: Number(snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? 0),
+          taxAmount: snapshot.totalHotelTaxAmount ?? snapshot.total_hotel_tax_amount,
+        })
+      : null;
+    if (ordinaryPricing && baseTotal > 0) {
+      snapshot = {
+        ...snapshot,
+        extraBedCount: positiveOrNested(snapshot.extraBedCount, nestedSelection.extraBedCount),
+        extraBedAmount,
+        childWithBedCount: positiveOrNested(snapshot.childWithBedCount, nestedSelection.childWithBedCount),
+        childWithBedAmount,
+        childWithoutBedCount: positiveOrNested(snapshot.childWithoutBedCount, nestedSelection.childWithoutBedCount),
+        childWithoutBedAmount,
+        hotelMealPlanCost: ordinaryPricing.mealPlanCost,
+        totalHotelMealPlanCost: ordinaryPricing.mealPlanCost,
+        hotelMarginBaseAmount: ordinaryPricing.subtotal,
+        hotelMarginAmount: ordinaryPricing.marginAmount,
+        totalPrice: ordinaryPricing.totalPrice,
+        totalStayPrice: ordinaryPricing.totalPrice,
+        totalHotelCost: ordinaryPricing.totalPrice,
+        selectedTotalPrice: ordinaryPricing.totalPrice,
+        pricePerNight: ordinaryPricing.totalPrice,
+        selectedPricePerNight: ordinaryPricing.totalPrice,
+      };
+    } else if (baseTotal > 0 && supplementTotal > 0) {
       const payableTotal = Number((baseTotal + supplementTotal + marginAmount).toFixed(2));
       snapshot = {
         ...snapshot,
@@ -318,8 +391,18 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     const childWithoutBedAmount = Number(sum('childWithoutBedCost').toFixed(2));
     const baseTotal = Number((roomCost + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
     const marginPercentage = Number(snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? row?.marginPercentage ?? 0);
-    const marginAmount = Number((baseTotal * marginPercentage / 100).toFixed(2));
-    const payableTotal = Number((baseTotal + marginAmount).toFixed(2));
+    const provider = String(snapshot.provider ?? row?.provider ?? '').trim().toLowerCase();
+    const mealPlanCost = resolveOrdinaryMealPlanCost({ ...row, ...snapshot, provider });
+    const ordinaryPricing = ['offline', 'axisrooms'].includes(provider)
+      ? resolveOfflineHotelPayablePricing({
+          baseTotalPrice: baseTotal,
+          mealPlanCost,
+          marginPercentage,
+          taxAmount: snapshot.totalHotelTaxAmount ?? snapshot.total_hotel_tax_amount,
+        })
+      : null;
+    const marginAmount = ordinaryPricing?.marginAmount ?? Number((baseTotal * marginPercentage / 100).toFixed(2));
+    const payableTotal = ordinaryPricing?.totalPrice ?? Number((baseTotal + marginAmount).toFixed(2));
     const roomCount = Math.max(Number(snapshot.roomCount ?? snapshot.totalRooms ?? row?.roomCount ?? row?.noOfRooms ?? roomTypeBreakdown.length), 1);
     const totalExtraBeds = sum('extraBedCount');
     const totalWithBed = sum('childWithBedCount');
@@ -337,7 +420,9 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       childWithBedAmount,
       childWithoutBedCount: totalWithoutBed,
       childWithoutBedAmount,
-      hotelMarginBaseAmount: baseTotal,
+      hotelMealPlanCost: ordinaryPricing?.mealPlanCost ?? mealPlanCost,
+      totalHotelMealPlanCost: ordinaryPricing?.mealPlanCost ?? mealPlanCost,
+      hotelMarginBaseAmount: ordinaryPricing?.subtotal ?? baseTotal,
       hotelMarginAmount: marginAmount,
       hotelMarginTotalAmount: marginAmount,
       totalPrice: payableTotal,
@@ -625,15 +710,24 @@ export function buildHotelSelectionState({
     // A persisted tab total can belong to an older recommendation package.
     // Rebuild the amount from the currently selected commercial identity when
     // route selections are present. A continuous stay repeats the same
-    // selection on each night, so count each selection key only once.
+    // selection on each night, so count its logical stay once. Route-night
+    // snapshots are already one physical night each, even when their
+    // room/meal identity is the same; include the route in that key.
     const selectedTotalByIdentity = new Map<string, number>();
     routes.forEach((route) => {
       if (!route.selected || !Number((route.selected as any).selectedTotalPrice ?? route.selected.totalPrice ?? 0)) return;
       const selected = route.selected;
-      const key = String(
+      const identityKey = String(
         selected.selectionKey || selected.rateOptionId ||
         `${selected.provider || ''}|${selected.hotelCode || ''}|${selected.roomType || ''}|${selected.mealPlan || ''}`,
       ).trim();
+      const selectedSnapshot = selected.selectedPriceSnapshot as Record<string, unknown> | null;
+      const isRouteNightSnapshot = String(
+        selectedSnapshot?.pricingScope ?? '',
+      ).trim().toUpperCase() === 'ROUTE_NIGHT';
+      const key = isRouteNightSnapshot
+        ? `${identityKey}|route:${route.routeId}`
+        : identityKey;
       if (!selectedTotalByIdentity.has(key)) {
         selectedTotalByIdentity.set(key, money(Number((selected as any).selectedTotalPrice ?? selected.totalPrice)));
       }

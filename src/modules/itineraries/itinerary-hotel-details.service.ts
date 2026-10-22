@@ -10,9 +10,11 @@ import {
 } from './utils/hotel-selection-identity.util';
 import {
   calculateHotelRouteNightPayable,
+  resolveOrdinaryMealPlanCost,
   resolveStoredHotelPayablePricing,
   shouldReconcileHotelRouteNightPayable,
 } from './utils/hotel-payable-pricing.util';
+import { resolveOfflineHotelPayablePricing } from './utils/hotel-selection-pricing.util';
 import {
   buildHotelSelectionState,
   HotelSelectionGroupView,
@@ -1201,8 +1203,8 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
       // not revive an old selected_price_snapshot value when the current
       // persisted DB amount is zero; zero means the required rate was not
       // available and the option must not be priced as available.
-      const snapshotExtraBedCost = Number(selectedPriceSnapshot.totalExtraBedCost ?? selectedPriceSnapshot.extraBedAmount ?? 0);
-      const snapshotChildWithBedCost = Number(selectedPriceSnapshot.totalChildWithBedCost ?? selectedPriceSnapshot.childWithBedAmount ?? 0);
+      const snapshotExtraBedCost = Number(selectedPriceSnapshot.extraBedAmount ?? selectedPriceSnapshot.extra_bed_amount ?? selectedPriceSnapshot.totalExtraBedCost ?? selectedPriceSnapshot.total_extra_bed_cost ?? 0);
+      const snapshotChildWithBedCost = Number(selectedPriceSnapshot.childWithBedAmount ?? selectedPriceSnapshot.child_with_bed_amount ?? selectedPriceSnapshot.totalChildWithBedCost ?? selectedPriceSnapshot.total_childwith_bed_cost ?? 0);
       const snapshotChildWithoutBedCost = [
         selectedPriceSnapshot.totalChildWithoutBedCost,
         selectedPriceSnapshot.childWithoutBedAmount,
@@ -1227,6 +1229,12 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
         : isDatabaseOccupancyProvider
           ? snapshotChildWithoutBedCost > 0 ? snapshotChildWithoutBedCost : storedChildWithoutBedCost
           : storedChildWithoutBedCost > 0 ? storedChildWithoutBedCost : snapshotChildWithoutBedCost) * earlyCheckInBillingMultiplier;
+      const hotelMealPlanCost = resolveOrdinaryMealPlanCost({
+        provider,
+        totalHotelMealPlanCost: (h as any).total_hotel_meal_plan_cost,
+        hotelMealPlanCost: (h as any).hotel_meal_plan_cost,
+        mealPlanBreakdown: selectedPriceSnapshot.mealPlanBreakdown,
+      }) * earlyCheckInBillingMultiplier;
       const roomCountForMargin = Math.max(
         Number((h as any).total_no_of_rooms ?? 0),
         Number((plan as any).preferred_room_count ?? 0),
@@ -1251,7 +1259,7 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
       ).toFixed(2));
       const hotelMarginBaseAmount = Number((
         marginRoomCost +
-        Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier +
+        hotelMealPlanCost +
         extraBedCost +
         childWithBedCost +
         childWithoutBedCost
@@ -1259,22 +1267,38 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
       const effectiveMarginPercentage = storedPricing.marginPercentage > 0
         ? storedPricing.marginPercentage
         : snapshotMarginPercentage;
-      const hotelMarginAmount = effectiveMarginPercentage > 0
-        ? Number((hotelMarginBaseAmount * effectiveMarginPercentage / 100).toFixed(2))
-        : storedHotelMarginAmount;
-      const routeNightPayableHotelCost = shouldReconcileHotelRouteNightPayable({
-        provider,
-        hasContinuousStayRouteNight: Boolean(continuousStayRouteNight),
-        marginBaseAmount: hotelMarginBaseAmount,
-      })
-        ? calculateHotelRouteNightPayable({
-            marginBaseAmount: hotelMarginBaseAmount,
+      const offlinePayablePricing = isDatabaseOccupancyProvider
+        ? resolveOfflineHotelPayablePricing({
+            baseTotalPrice: marginRoomCost,
+            extraBedAmount: extraBedCost,
+            childWithBedAmount: childWithBedCost,
+            childWithoutBedAmount: childWithoutBedCost,
+            mealPlanCost: hotelMealPlanCost,
             marginPercentage: effectiveMarginPercentage,
-            fallbackMarginAmount: storedHotelMarginAmount,
-            taxAmount: storedTax,
-            billingMultiplier: earlyCheckInBillingMultiplier,
+            taxAmount: storedTax * earlyCheckInBillingMultiplier,
           })
-        : payableHotelCost;
+        : null;
+      const displayHotelMarginBaseAmount = offlinePayablePricing?.subtotal ?? hotelMarginBaseAmount;
+      const hotelMarginAmount = offlinePayablePricing?.marginAmount ?? (
+        effectiveMarginPercentage > 0
+          ? Number((hotelMarginBaseAmount * effectiveMarginPercentage / 100).toFixed(2))
+          : storedHotelMarginAmount
+      );
+      const routeNightPayableHotelCost = offlinePayablePricing
+        ? offlinePayablePricing.totalPrice
+        : shouldReconcileHotelRouteNightPayable({
+            provider,
+            hasContinuousStayRouteNight: Boolean(continuousStayRouteNight),
+            marginBaseAmount: hotelMarginBaseAmount,
+          })
+            ? calculateHotelRouteNightPayable({
+                marginBaseAmount: hotelMarginBaseAmount,
+                marginPercentage: effectiveMarginPercentage,
+                fallbackMarginAmount: storedHotelMarginAmount,
+                taxAmount: storedTax,
+                billingMultiplier: earlyCheckInBillingMultiplier,
+              })
+            : payableHotelCost;
       const extraBedRate = isDatabaseOccupancyProvider
         ? Number(extraBedCount > 0 ? extraBedCost / earlyCheckInBillingMultiplier / extraBedCount : 0)
         : Number((h as any).extra_bed_rate ?? selectedPriceSnapshot.extraBedRate ?? (extraBedCount > 0 ? extraBedCost / extraBedCount : 0));
@@ -1354,7 +1378,7 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
           ? Number((baseHotelCost * snapshotRoomCount).toFixed(2))
           : baseHotelCost,
         hotelRoomGstAmount: Number((h as any).total_room_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
-        hotelMealPlanCost: Number((h as any).total_hotel_meal_plan_cost ?? 0) * earlyCheckInBillingMultiplier,
+        hotelMealPlanCost,
         hotelMealPlanGstAmount: Number((h as any).total_hotel_meal_plan_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
         totalExtraBedCost: extraBedCost,
         totalExtraBedCostGstAmount: Number((h as any).total_extra_bed_cost_gst_amount ?? 0) * earlyCheckInBillingMultiplier,
@@ -1371,7 +1395,7 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
         hotelMarginPercentage: effectiveMarginPercentage,
         hotelMarginAmount,
         hotelMarginTotalAmount: hotelMarginAmount,
-        hotelMarginBaseAmount,
+        hotelMarginBaseAmount: displayHotelMarginBaseAmount,
         hotelMarginGstAmount: Number((h as any).hotel_margin_rate_tax_amt ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,

@@ -21,7 +21,7 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealText,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
-import { resolveHotelSelectionPricing } from '../utils/hotel-selection-pricing.util';
+import { resolveHotelSelectionPricing, resolveOfflineHotelPayablePricing } from '../utils/hotel-selection-pricing.util';
 import { normalizeHotelStarRating } from '../utils/hotel-category.util';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { HotelAvailabilitySnapshotService } from './hotel-availability-snapshot.service';
@@ -1020,7 +1020,13 @@ export class ItinerarySelectionWorkflowService {
     const routeBaseAmount = Number(routeNight.baseAmount || 0);
     const routeMarginAmount = Number(routeNight.marginAmount || 0);
     const routePayableAmount = Number(routeNight.sellAmount || 0);
-    const routeMealPlan = routeNight.mealPlanBreakdown || resolvedRate.mealPlanBreakdown;
+    const routeMealPlan = routeNight.mealPlanBreakdown || resolvedRate.mealPlanBreakdown || null;
+    const routeMealPlanTotal = Number(routeMealPlan?.totalMealPlanCost || 0);
+    const routePayableWithMealPlan = resolveOfflineHotelPayablePricing({
+      baseTotalPrice: routeBaseAmount,
+      mealPlanCost: routeMealPlan?.totalMealPlanCost,
+      marginPercentage: resolvedRate.hotelMarginPercentage,
+    });
     if (Math.abs(routeBaseAmount + routeMarginAmount - routePayableAmount) > 0.01) {
       throw new BadRequestException({
         code: 'HOTEL_PRICING_INTEGRITY_ERROR',
@@ -1035,18 +1041,21 @@ export class ItinerarySelectionWorkflowService {
       pricingScope: 'ROUTE_NIGHT',
       stayBaseTotalPrice: resolvedRate.baseTotalPrice,
       stayHotelMarginTotalAmount: resolvedRate.hotelMarginTotalAmount,
-      stayTotalPrice: resolvedRate.totalStayPrice,
+      stayTotalPrice: Number((resolvedRate.totalStayPrice + routeMealPlanTotal).toFixed(2)),
       basePricePerNight: routeBaseAmount,
       baseTotalPrice: routeBaseAmount,
+      hotelMarginBaseAmount: routePayableWithMealPlan.subtotal,
       hotelMarginAmount: routeMarginAmount,
       hotelMarginTotalAmount: routeMarginAmount,
-      pricePerNight: routePayableAmount,
-      totalPrice: routePayableAmount,
-      totalStayPrice: routePayableAmount,
+      hotelMealPlanCost: routePayableWithMealPlan.mealPlanCost,
+      totalHotelMealPlanCost: routePayableWithMealPlan.mealPlanCost,
+      pricePerNight: routePayableWithMealPlan.totalPrice,
+      totalPrice: routePayableWithMealPlan.totalPrice,
+      totalStayPrice: routePayableWithMealPlan.totalPrice,
       numberOfNights: 1,
       nightlyRates: [routeNight],
       mealPlanBreakdown: routeMealPlan,
-      nightlyMealPlanBreakdown: [routeMealPlan],
+      nightlyMealPlanBreakdown: routeMealPlan ? [routeMealPlan] : [],
     };
     const snapshot = JSON.stringify(routeSnapshot);
     const checkInDate = resolvedRate.routeDate || routeNight.date || null;
@@ -1100,8 +1109,8 @@ export class ItinerarySelectionWorkflowService {
         price_source: 'DATABASE',
         is_live_rate: false,
         selected_rate_option_id: rateOptionId,
-        selected_price_per_night: routePayableAmount,
-        selected_total_price: routePayableAmount,
+        selected_price_per_night: routePayableWithMealPlan.totalPrice,
+        selected_total_price: routePayableWithMealPlan.totalPrice,
         selected_currency: resolvedRate.currency,
         selection_origin: 'USER_SELECTED',
         selected_price_snapshot: snapshot,
@@ -1120,7 +1129,7 @@ export class ItinerarySelectionWorkflowService {
         hotel_margin_percentage: resolvedRate.hotelMarginPercentage,
         hotel_margin_rate: routeMarginAmount,
         hotel_margin_rate_tax_amt: 0,
-        total_hotel_cost: routePayableAmount,
+        total_hotel_cost: routePayableWithMealPlan.totalPrice,
         hotel_approval_status: 'PENDING_APPROVAL',
         hotel_approval_requested_at: now,
         hotel_approval_requested_by: requestedBy,
@@ -1211,7 +1220,7 @@ export class ItinerarySelectionWorkflowService {
           new_approval_status: 'PENDING_APPROVAL',
           previous_confirmation_status: existingHotel?.manual_confirmation_status || 'NOT_STARTED',
           new_confirmation_status: 'NOT_STARTED',
-          price: routePayableAmount,
+          price: routePayableWithMealPlan.totalPrice,
           currency: resolvedRate.currency,
           notes: 'Offline hotel selection requested',
           acted_by: requestedBy,
