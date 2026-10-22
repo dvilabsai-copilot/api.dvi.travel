@@ -10,6 +10,26 @@ export interface HotelSelectionPricing {
   roomRate: number;
 }
 
+export interface OfflineHotelPayablePricingInput {
+  baseTotalPrice?: unknown;
+  extraBedAmount?: unknown;
+  childWithBedAmount?: unknown;
+  childWithoutBedAmount?: unknown;
+  mealPlanCost?: unknown;
+  marginPercentage?: unknown;
+  taxAmount?: unknown;
+}
+
+export interface OfflineHotelPayablePricing {
+  marginableBaseAmount: number;
+  subtotal: number;
+  mealPlanCost: number;
+  marginPercentage: number;
+  marginAmount: number;
+  taxAmount: number;
+  totalPrice: number;
+}
+
 export interface HotelOccupancyPricingInput {
   rates?: Record<string, unknown> | null;
   roomCount?: unknown;
@@ -75,6 +95,40 @@ export function resolveHotelOccupancyPricing(input: HotelOccupancyPricingInput):
     childWithoutBedCount, childWithoutBedRate: money(childWithoutBedRate), childWithoutBedAmount,
     hotelMarginBaseAmount, hotelMarginPercentage, hotelMarginAmount,
     totalPrice: money(hotelMarginBaseAmount + hotelMarginAmount),
+  };
+}
+
+/**
+ * Price an offline hotel selection with an ordinary meal-plan supplement.
+ *
+ * Room and occupancy supplements are marginable. Offline MAP/AP/CP food is a
+ * separate customer charge: it belongs in the subtotal and payable total, but
+ * must not receive hotel margin. Keeping this rule here lets auto-selection,
+ * manual selection, and the details reconciliation use the same calculation.
+ */
+export function resolveOfflineHotelPayablePricing(
+  input: OfflineHotelPayablePricingInput,
+): OfflineHotelPayablePricing {
+  const marginableBaseAmount = money(
+    Number(input.baseTotalPrice ?? 0) +
+      Number(input.extraBedAmount ?? 0) +
+      Number(input.childWithBedAmount ?? 0) +
+      Number(input.childWithoutBedAmount ?? 0),
+  );
+  const mealPlanCost = money(input.mealPlanCost);
+  const marginPercentage = Math.max(Number(input.marginPercentage || 0), 0);
+  const marginAmount = money((marginableBaseAmount * marginPercentage) / 100);
+  const taxAmount = money(input.taxAmount);
+  const subtotal = money(marginableBaseAmount + mealPlanCost);
+
+  return {
+    marginableBaseAmount,
+    subtotal,
+    mealPlanCost,
+    marginPercentage,
+    marginAmount,
+    taxAmount,
+    totalPrice: money(subtotal + marginAmount + taxAmount),
   };
 }
 
