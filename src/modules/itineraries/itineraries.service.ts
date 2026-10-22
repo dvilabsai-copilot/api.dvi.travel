@@ -2672,11 +2672,11 @@ timingStepStartedAt =
       const parsed = Number(value);
       return Number.isFinite(parsed) && parsed > 0;
     });
-    // VSR is the UI representation of TBO. TBO returns one complete fare for
-    // the requested occupancy rather than separately priced child/extra-bed
-    // supplements. Its main fare is authoritative, so those optional
-    // component fields must never make an otherwise available rate fail.
-    const isCompleteFareProvider = provider === 'tbo';
+    // TBO/VSR returns one complete fare for the requested occupancy. Offline
+    // is confirmed manually over the phone, while AxisRooms resolves
+    // occupancy pricing from its ARI rows. Do not reject those providers
+    // merely because the generic card fields omit separate supplements.
+    const isCompleteFareProvider = ['tbo', 'offline', 'axisrooms', 'ax'].includes(provider);
     const hasRequiredSupplementRates = (option: any) => {
       if (isCompleteFareProvider) return true;
       const extraBedRequired = Number((plan as any).total_extra_bed || 0) > 0;

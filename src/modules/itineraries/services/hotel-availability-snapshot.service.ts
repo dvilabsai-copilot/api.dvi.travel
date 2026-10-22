@@ -5618,13 +5618,14 @@ export class HotelAvailabilitySnapshotService {
 
     const missingRequiredSupplementReasons = (row: any): string[] => {
       // TBO is surfaced as VSR in the UI and returns one complete payable
-      // occupancy fare. It intentionally does not expose separate child or
-      // extra-bed supplement amounts, so absence of those fields must not
-      // disqualify a live TBO/VSR option in favour of offline inventory.
+      // occupancy fare. Offline is manually confirmed over the phone, and
+      // AxisRooms returns occupancy pricing from its ARI rows. These
+      // providers must not be rejected by this generic separate-supplement
+      // check; their base/date/ARI rate validation remains authoritative.
       const provider = String(row?.provider || row?.hotel_provider || '')
         .trim()
         .toLowerCase();
-      if (provider === 'tbo' || provider === 'vsr') return [];
+      if (['tbo', 'vsr', 'offline', 'axisrooms', 'ax'].includes(provider)) return [];
 
       const snapshot: any = parseHotelSelectionSnapshot(row);
       const hasRate = (...values: unknown[]): boolean =>
