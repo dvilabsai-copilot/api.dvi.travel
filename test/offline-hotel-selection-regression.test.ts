@@ -151,6 +151,56 @@ const offlineCandidates = [{
   isBookable: true,
 }];
 
+test('offline intent preview uses nationality and meal plan in the catalog contract', async () => {
+  const service = Object.create(ItinerariesService.prototype) as any;
+  const calls: any[][] = [];
+  service.prisma = {
+    dvi_itinerary_route_details: {
+      findMany: async () => [{
+        itinerary_route_ID: 17019,
+        itinerary_route_date: new Date('2026-12-27T00:00:00.000Z'),
+      }],
+    },
+  };
+  service.offlineHotelCatalogService = {
+    clearCache: () => undefined,
+    fetchOfflineHotelsForRoutes: async (...args: any[]) => {
+      calls.push(args);
+      return new Map([[17019, offlineCandidates]]);
+    },
+  };
+
+  const result = await (service as any).resolveOfflineIntentCandidates(
+    {
+      guest_nationality: 'in',
+      meal_plan_code: 'MAP',
+      preferred_room_count: 1,
+      total_adult: 2,
+      total_children: 0,
+      total_extra_bed: 0,
+      total_child_with_bed: 0,
+      total_child_without_bed: 0,
+    },
+    {
+      routeIds: [17019],
+      stayDates: ['2026-12-27'],
+      nights: 1,
+    },
+    {
+      planId: 10966,
+      canonicalHotelId: 700,
+      hotelCode: 'LOCAL-700',
+      mealPlanCode: 'MAP',
+    },
+    1,
+  );
+
+  assert.equal(result.length, 1);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][2], 'IN');
+  assert.equal(calls[0][7], 'MAP');
+});
+
 function createIntentService(options: { routeExists?: boolean; provider: 'offline' | 'tbo' }) {
   const service = Object.create(ItinerariesService.prototype) as any;
   let supplierCalls = 0;
