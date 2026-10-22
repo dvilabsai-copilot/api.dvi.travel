@@ -2,8 +2,40 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   resolveHotelOccupancyPricing,
+  resolveHotelSupplementPricing,
   resolveOfflineHotelPayablePricing,
 } from '../src/modules/itineraries/utils/hotel-selection-pricing.util';
+
+test('normalizes an amount-only supplement into a matching unit rate', () => {
+  const result = resolveHotelSupplementPricing({
+    count: 1,
+    rate: 0,
+    amount: 2125,
+  });
+
+  assert.deepEqual(result, { count: 1, rate: 2125, amount: 2125 });
+});
+
+test('preserves the authoritative supplement amount for multiple occupants', () => {
+  const result = resolveHotelSupplementPricing({
+    count: 2,
+    rate: 900,
+    amount: 2125,
+  });
+
+  assert.deepEqual(result, { count: 2, rate: 1062.5, amount: 2125 });
+});
+
+test('uses the legacy cost field when the normalized amount is zero', () => {
+  const result = resolveHotelSupplementPricing({
+    count: 1,
+    rate: 0,
+    amount: 0,
+    cost: 1500,
+  });
+
+  assert.deepEqual(result, { count: 1, rate: 1500, amount: 1500 });
+});
 
 test('uses DOUBLE plus supplements for three adults', () => {
   const result = resolveHotelOccupancyPricing({

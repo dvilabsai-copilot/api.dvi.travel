@@ -21,7 +21,11 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealText,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
-import { resolveHotelSelectionPricing, resolveOfflineHotelPayablePricing } from '../utils/hotel-selection-pricing.util';
+import {
+  resolveHotelSelectionPricing,
+  resolveHotelSupplementPricing,
+  resolveOfflineHotelPayablePricing,
+} from '../utils/hotel-selection-pricing.util';
 import { normalizeHotelStarRating } from '../utils/hotel-category.util';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { HotelAvailabilitySnapshotService } from './hotel-availability-snapshot.service';
@@ -376,40 +380,41 @@ export class ItinerarySelectionWorkflowService {
     const extraBedCount = Math.max(Math.trunc(Number(
       data.extraBedCount ?? (plan as any)?.total_extra_bed ?? 0,
     )), 0);
-    const extraBedRate = Math.max(Number(
-      providerForPricing === 'axisrooms'
+    const extraBed = resolveHotelSupplementPricing({
+      count: extraBedCount,
+      rate: providerForPricing === 'axisrooms'
         ? axisRoomsSupplementRates?.extraBedRate ?? data.extraBedRate ?? 0
         : data.extraBedRate || 0,
-    ), 0);
-    const extraBedAmount = Math.max(
-      Number(data.extraBedAmount ?? (extraBedCount * extraBedRate)),
-      0,
-    );
+      amount: data.extraBedAmount,
+    });
+    const extraBedRate = extraBed.rate;
+    const extraBedAmount = extraBed.amount;
     const extraBedGstAmount = Math.max(Number(data.extraBedGstAmount || 0), 0);
     const childWithBedCount = Math.max(Math.trunc(Number(
       (data as any).childWithBedCount ?? (plan as any)?.total_child_with_bed ?? 0,
     )), 0);
-    const childWithBedRate = Math.max(Number(
-      providerForPricing === 'axisrooms'
+    const childWithBed = resolveHotelSupplementPricing({
+      count: childWithBedCount,
+      rate: providerForPricing === 'axisrooms'
         ? axisRoomsSupplementRates?.childWithBedRate ?? (data as any).childWithBedRate ?? 0
         : (data as any).childWithBedRate || 0,
-    ), 0);
-    const childWithBedAmount = Math.max(
-      Number((data as any).childWithBedAmount ?? (childWithBedCount * childWithBedRate)),
-      0,
-    );
+      amount: (data as any).childWithBedAmount,
+    });
+    const childWithBedRate = childWithBed.rate;
+    const childWithBedAmount = childWithBed.amount;
     const childWithoutBedCount = Math.max(Math.trunc(Number(
       (data as any).childWithoutBedCount ?? (plan as any)?.total_child_without_bed ?? 0,
     )), 0);
-    const childWithoutBedRate = Math.max(Number(
-      providerForPricing === 'axisrooms'
+    const childWithoutBed = resolveHotelSupplementPricing({
+      count: childWithoutBedCount,
+      rate: providerForPricing === 'axisrooms'
         ? axisRoomsSupplementRates?.childWithoutBedRate ?? (data as any).childWithoutBedRate ?? 0
         : (data as any).childWithoutBedRate || 0,
-    ), 0);
-    const childWithoutBedAmount = Math.max(
-      Number((data as any).childWithoutBedAmount ?? (childWithoutBedCount * childWithoutBedRate)),
-      0,
-    );
+      amount: (data as any).childWithoutBedAmount,
+      cost: (data as any).extraChildAmount,
+    });
+    const childWithoutBedRate = childWithoutBed.rate;
+    const childWithoutBedAmount = childWithoutBed.amount;
     const globalSettingsModel = (db as any).dvi_global_settings;
     const globalSettings = globalSettingsModel
       ? await globalSettingsModel.findFirst({

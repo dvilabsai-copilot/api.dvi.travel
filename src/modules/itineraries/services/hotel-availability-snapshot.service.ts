@@ -61,7 +61,10 @@ import {
 import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
-import { resolveOfflineHotelPayablePricing } from '../utils/hotel-selection-pricing.util';
+import {
+  resolveHotelSupplementPricing,
+  resolveOfflineHotelPayablePricing,
+} from '../utils/hotel-selection-pricing.util';
 import {
   decorateHotelCardPricing,
   hotelCardPayableAmount,
@@ -899,23 +902,25 @@ export class HotelAvailabilitySnapshotService {
             Math.max(amount(nightlyValue ?? rowValue), 0);
           const rate = (nightlyValue: unknown, rowValue: unknown): number =>
             amount(nightlyValue ?? rowValue);
-          const extraBedCount = count(nightlyRate?.extraBedCount, row?.extraBedCount);
-          const childWithBedCount = count(nightlyRate?.childWithBedCount, row?.childWithBedCount);
-          const childWithoutBedCount = count(nightlyRate?.childWithoutBedCount, row?.childWithoutBedCount);
-          const extraBedRate = rate(nightlyRate?.extraBedRate, row?.extraBedRate);
-          const childWithBedRate = rate(nightlyRate?.childWithBedRate, row?.childWithBedRate);
-          const childWithoutBedRate = rate(nightlyRate?.childWithoutBedRate, row?.childWithoutBedRate);
-          const extraBedAmount = amount(nightlyRate?.extraBedAmount ?? extraBedRate * extraBedCount);
-          const childWithBedAmount = amount(
-            nightlyRate?.childWithBedAmount ?? childWithBedRate * childWithBedCount,
-          );
-          const childWithoutBedAmount = amount(
-            nightlyRate?.childWithoutBedAmount > 0
-              ? nightlyRate.childWithoutBedAmount
-              : nightlyRate?.extraChildAmount > 0
-                ? nightlyRate.extraChildAmount
-                : childWithoutBedRate * childWithoutBedCount,
-          );
+          const extraBed = resolveHotelSupplementPricing({
+            count: count(nightlyRate?.extraBedCount, row?.extraBedCount),
+            rate: rate(nightlyRate?.extraBedRate, row?.extraBedRate),
+            amount: nightlyRate?.extraBedAmount,
+          });
+          const childWithBed = resolveHotelSupplementPricing({
+            count: count(nightlyRate?.childWithBedCount, row?.childWithBedCount),
+            rate: rate(nightlyRate?.childWithBedRate, row?.childWithBedRate),
+            amount: nightlyRate?.childWithBedAmount,
+          });
+          const childWithoutBed = resolveHotelSupplementPricing({
+            count: count(nightlyRate?.childWithoutBedCount, row?.childWithoutBedCount),
+            rate: rate(nightlyRate?.childWithoutBedRate, row?.childWithoutBedRate),
+            amount: nightlyRate?.childWithoutBedAmount,
+            cost: nightlyRate?.extraChildAmount,
+          });
+          const { count: extraBedCount, rate: extraBedRate, amount: extraBedAmount } = extraBed;
+          const { count: childWithBedCount, rate: childWithBedRate, amount: childWithBedAmount } = childWithBed;
+          const { count: childWithoutBedCount, rate: childWithoutBedRate, amount: childWithoutBedAmount } = childWithoutBed;
           const provider = String(row?.provider || row?.hotel_provider || snapshot?.provider || '').trim().toLowerCase();
           const tboMapFallbackApplied = provider === 'tbo' && (
             row?.tboMapFallbackApplied === true ||
@@ -6498,45 +6503,33 @@ export class HotelAvailabilitySnapshotService {
               : defaultHotelMarginPercentage,
             0,
           );
-      const supplementAmount = (amount: unknown, cost: unknown, count: unknown, rate: unknown): number => {
-        // A normalized row may contain a zero-valued `*Amount` field while
-        // the provider-specific `*Cost` field has the actual DB value. Do
-        // not let the zero amount mask that positive value; the same rule
-        // must be used for every provider and every supplement type.
-        const explicitCandidates = [amount, cost]
-          .map((value) => Number(value))
-          .filter((value) => Number.isFinite(value) && value > 0);
-        if (explicitCandidates.length > 0) return explicitCandidates[0];
-        const quantity = Number(count ?? 0);
-        const unitRate = Number(rate ?? 0);
-        return Number.isFinite(quantity) && Number.isFinite(unitRate) && quantity > 0 && unitRate > 0
-          ? quantity * unitRate
-          : 0;
-      };
       const supplementCount = (value: unknown, planValue: unknown): number => {
         const selectedCount = Number(value ?? 0);
         if (Number.isFinite(selectedCount) && selectedCount > 0) return selectedCount;
         const itineraryCount = Number(planValue ?? 0);
         return Number.isFinite(itineraryCount) && itineraryCount > 0 ? itineraryCount : 0;
       };
-      let extraBedAmount = supplementAmount(
-        option.extraBedAmount ?? option.extra_bed_amount,
-        option.extraBedCost ?? option.totalExtraBedCost ?? option.total_extra_bed_cost,
-        supplementCount(option.extraBedCount ?? option.extra_bed_count, plan?.total_extra_bed),
-        option.extraBedRate ?? option.extra_bed_rate,
-      );
-      let childWithBedAmount = supplementAmount(
-        option.childWithBedAmount ?? option.child_with_bed_amount,
-        option.childWithBedCost ?? option.totalChildWithBedCost ?? option.total_childwith_bed_cost,
-        supplementCount(option.childWithBedCount ?? option.child_with_bed_count, plan?.total_child_with_bed),
-        option.childWithBedRate ?? option.child_with_bed_rate,
-      );
-      let childWithoutBedAmount = supplementAmount(
-        option.childWithoutBedAmount ?? option.child_without_bed_amount,
-        option.childWithoutBedCost ?? option.totalChildWithoutBedCost ?? option.total_childwithout_bed_cost ?? option.extraChildAmount ?? option.extra_child_amount,
-        supplementCount(option.childWithoutBedCount ?? option.child_without_bed_count, plan?.total_child_without_bed),
-        option.childWithoutBedRate ?? option.child_without_bed_rate,
-      );
+      let extraBed = resolveHotelSupplementPricing({
+        count: supplementCount(option.extraBedCount ?? option.extra_bed_count, plan?.total_extra_bed),
+        rate: option.extraBedRate ?? option.extra_bed_rate,
+        amount: option.extraBedAmount ?? option.extra_bed_amount,
+        cost: option.extraBedCost ?? option.totalExtraBedCost ?? option.total_extra_bed_cost,
+      });
+      let childWithBed = resolveHotelSupplementPricing({
+        count: supplementCount(option.childWithBedCount ?? option.child_with_bed_count, plan?.total_child_with_bed),
+        rate: option.childWithBedRate ?? option.child_with_bed_rate,
+        amount: option.childWithBedAmount ?? option.child_with_bed_amount,
+        cost: option.childWithBedCost ?? option.totalChildWithBedCost ?? option.total_childwith_bed_cost,
+      });
+      let childWithoutBed = resolveHotelSupplementPricing({
+        count: supplementCount(option.childWithoutBedCount ?? option.child_without_bed_count, plan?.total_child_without_bed),
+        rate: option.childWithoutBedRate ?? option.child_without_bed_rate,
+        amount: option.childWithoutBedAmount ?? option.child_without_bed_amount,
+        cost: option.childWithoutBedCost ?? option.totalChildWithoutBedCost ?? option.total_childwithout_bed_cost ?? option.extraChildAmount ?? option.extra_child_amount,
+      });
+      let extraBedAmount = extraBed.amount;
+      let childWithBedAmount = childWithBed.amount;
+      let childWithoutBedAmount = childWithoutBed.amount;
       let supplementTotal = Number((extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
       const tboMapFallbackApplied = option.tboMapFallbackApplied === true;
       const tboMapFallbackDinnerRate = tboMapFallbackApplied
@@ -6701,6 +6694,24 @@ export class HotelAvailabilitySnapshotService {
           if (nightlyExtraBedAmount !== null) extraBedAmount = nightlyExtraBedAmount;
           if (nightlyChildWithBedAmount !== null) childWithBedAmount = nightlyChildWithBedAmount;
           if (nightlyChildWithoutBedAmount !== null) childWithoutBedAmount = nightlyChildWithoutBedAmount;
+          extraBed = resolveHotelSupplementPricing({
+            count: extraBed.count,
+            rate: extraBed.rate,
+            amount: extraBedAmount,
+          });
+          childWithBed = resolveHotelSupplementPricing({
+            count: childWithBed.count,
+            rate: childWithBed.rate,
+            amount: childWithBedAmount,
+          });
+          childWithoutBed = resolveHotelSupplementPricing({
+            count: childWithoutBed.count,
+            rate: childWithoutBed.rate,
+            amount: childWithoutBedAmount,
+          });
+          extraBedAmount = extraBed.amount;
+          childWithBedAmount = childWithBed.amount;
+          childWithoutBedAmount = childWithoutBed.amount;
           supplementTotal = Number((extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
           baseTotalPrice = axisBase;
           marginBaseTotal = Number((baseTotalPrice + supplementTotal).toFixed(2));
@@ -6735,6 +6746,18 @@ export class HotelAvailabilitySnapshotService {
           };
         }
       }
+      option = {
+        ...option,
+        extraBedCount: extraBed.count,
+        extraBedRate: extraBed.rate,
+        extraBedAmount,
+        childWithBedCount: childWithBed.count,
+        childWithBedRate: childWithBed.rate,
+        childWithBedAmount,
+        childWithoutBedCount: childWithoutBed.count,
+        childWithoutBedRate: childWithoutBed.rate,
+        childWithoutBedAmount,
+      };
       const optionKey = this.optionKey(option);
       const offlineMealPlanPersistence = this.getOfflineMealPlanPersistence(option, provider);
       // Supplier recommendation rows (especially TBO) may not carry a
