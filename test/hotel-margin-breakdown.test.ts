@@ -23,6 +23,13 @@ test('selected hotel totals include ordinary MAP without double-counting TBO fal
     tboMapFallbackDinnerCost: 5400,
   }), 129071.89);
   assert.equal(resolveSelectedHotelAmount({
+    selectedRateTotal: 129071.89,
+    fallbackHotelAmount: 0,
+    mealPlanCost: 5400,
+    selectedMealPlanCost: 5400,
+    tboMapFallbackDinnerCost: 0,
+  }), 134471.89);
+  assert.equal(resolveSelectedHotelAmount({
     selectedRateTotal: 0,
     fallbackHotelAmount: 9150,
     mealPlanCost: 5400,
