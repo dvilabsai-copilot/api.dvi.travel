@@ -32,7 +32,10 @@ import {
   normalizeHotelDisplayName,
   parseHotelSelectionSnapshot,
 } from './utils/hotel-selection-identity.util';
-import { resolveStoredHotelPayablePricing } from './utils/hotel-payable-pricing.util';
+import {
+  resolveSelectedHotelAmount,
+  resolveStoredHotelPayablePricing,
+} from './utils/hotel-payable-pricing.util';
 import { toDatabaseBusinessDate } from './utils/itinerary.utils';
 import {
   selectAdminMatchingOccupancyRow,
@@ -7115,8 +7118,14 @@ const hasRequiredVehicleSelection =
 
     const shouldIncludeHotels = itineraryPreference === 1 || itineraryPreference === 3;
     // `hotelListTotal` is the selected recommendation total (room + taxes +
-    // margin). Do not add its component costs a second time.
-    const selectedHotelAmount = hotelListTotal > 0 ? Number(hotelListTotal.toFixed(2)) : totalHotelAmount;
+    // margin). Ordinary meal-plan cost is stored separately on legacy rows,
+    // while the TBO fallback is already part of the selected payable total.
+    const selectedHotelAmount = resolveSelectedHotelAmount({
+      selectedRateTotal: hotelListTotal,
+      fallbackHotelAmount: totalHotelAmount,
+      mealPlanCost: totalMealCost,
+      tboMapFallbackDinnerCost,
+    });
     const effectiveHotelAmount = shouldIncludeHotels ? selectedHotelAmount : 0;
     const displayExtraBedCost = updatedExtraBedCost;
     // For selected hotel rows, hotelRoomBaseCost is derived from the matched
