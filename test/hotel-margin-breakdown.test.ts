@@ -5,8 +5,30 @@ import { OfflineHotelCatalogService } from '../src/modules/itineraries/services/
 import { ItinerarySelectionWorkflowService } from '../src/modules/itineraries/services/itinerary-selection-workflow.service';
 import {
   calculateHotelRouteNightPayable,
+  resolveSelectedHotelAmount,
   shouldReconcileHotelRouteNightPayable,
 } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
+
+test('selected hotel totals include ordinary MAP without double-counting TBO fallback dinner', () => {
+  assert.equal(resolveSelectedHotelAmount({
+    selectedRateTotal: 129071.89,
+    fallbackHotelAmount: 0,
+    mealPlanCost: 5400,
+    tboMapFallbackDinnerCost: 0,
+  }), 134471.89);
+  assert.equal(resolveSelectedHotelAmount({
+    selectedRateTotal: 129071.89,
+    fallbackHotelAmount: 0,
+    mealPlanCost: 5400,
+    tboMapFallbackDinnerCost: 5400,
+  }), 129071.89);
+  assert.equal(resolveSelectedHotelAmount({
+    selectedRateTotal: 0,
+    fallbackHotelAmount: 9150,
+    mealPlanCost: 5400,
+    tboMapFallbackDinnerCost: 0,
+  }), 9150);
+});
 
 test('database-priced route nights reconcile aggregate room totals without nightly rates', () => {
   assert.equal(shouldReconcileHotelRouteNightPayable({

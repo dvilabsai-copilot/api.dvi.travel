@@ -36,6 +36,32 @@ export interface HotelRouteNightPayableSourceInput {
   marginBaseAmount?: unknown;
 }
 
+export interface SelectedHotelAmountInput {
+  selectedRateTotal?: unknown;
+  fallbackHotelAmount?: unknown;
+  mealPlanCost?: unknown;
+  tboMapFallbackDinnerCost?: unknown;
+}
+
+/**
+ * Reconcile a selected snapshot total with ordinary meal-plan charges.
+ *
+ * Selected snapshot totals contain the room/tax/margin components. Ordinary
+ * MAP is persisted separately on the legacy hotel rows, while the TBO MAP
+ * fallback is already part of the supplier payable total and must not be
+ * added a second time.
+ */
+export function resolveSelectedHotelAmount(input: SelectedHotelAmountInput): number {
+  const selectedRateTotal = money(input.selectedRateTotal);
+  if (selectedRateTotal <= 0) return money(input.fallbackHotelAmount);
+
+  const ordinaryMealPlanCost = Math.max(
+    money(input.mealPlanCost) - money(input.tboMapFallbackDinnerCost),
+    0,
+  );
+  return money(selectedRateTotal + ordinaryMealPlanCost);
+}
+
 /**
  * Decide whether a route-night payable should be rebuilt from the API's
  * component breakdown. Database-priced rows can be route-night snapshots
