@@ -3035,7 +3035,7 @@ test('selected totals include a positive supplement cost when the normalized amo
     rateId: 'axis-rate', rateOptionId: 'axis-rate', totalStayPrice: 10000,
     baseTotalPrice: 10000, totalRoomCost: 10000,
     extraBedCount: 1, extraBedRate: 2000, extraBedAmount: 0, totalExtraBedCost: 2000,
-    childWithoutBedCount: 1, childWithoutBedRate: 1500, childWithoutBedAmount: 0,
+    childWithoutBedCount: 1, childWithoutBedRate: 0, childWithoutBedAmount: 0,
     totalChildWithoutBedCost: 1500,
     isBookable: false, isLiveBookable: false, requiresHotelApproval: true,
     bookingMode: 'MANUAL_APPROVAL', isSelectable: true,
@@ -3048,6 +3048,10 @@ test('selected totals include a positive supplement cost when the normalized amo
   assert.equal(Number(createdSelections[0].total_room_cost), 10000);
   assert.equal(Number(createdSelections[0].total_extra_bed_cost), 2000);
   assert.equal(Number(createdSelections[0].total_childwithout_bed_cost), 1500);
+  const snapshot = JSON.parse(createdSelections[0].selected_price_snapshot);
+  assert.equal(Number(snapshot.childWithoutBedRate), 1500);
+  assert.equal(Number(snapshot.childWithoutBedCount), 1);
+  assert.equal(Number(snapshot.childWithoutBedAmount), 1500);
   assert.equal(Number(createdSelections[0].hotel_margin_rate), 810);
   assert.equal(Number(createdSelections[0].total_hotel_cost), 14310);
 });

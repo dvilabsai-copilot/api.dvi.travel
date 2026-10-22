@@ -40,6 +40,19 @@ export interface HotelOccupancyPricingInput {
   marginPercentage?: unknown;
 }
 
+export interface HotelSupplementPricingInput {
+  count?: unknown;
+  rate?: unknown;
+  amount?: unknown;
+  cost?: unknown;
+}
+
+export interface HotelSupplementPricing {
+  count: number;
+  rate: number;
+  amount: number;
+}
+
 export interface HotelOccupancyPricing {
   roomOccupancy: 'SINGLE' | 'DOUBLE';
   roomRate: number;
@@ -64,6 +77,35 @@ const money = (value: unknown): number => {
   return Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0;
 };
 
+const nonNegative = (value: unknown): number => {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+};
+
+/**
+ * Normalize one occupancy supplement for every selection flow.
+ *
+ * Supplier rows sometimes provide the aggregate supplement amount while the
+ * matching unit-rate field is empty or belongs to an older row. The amount is
+ * the payable source of truth; when it is present, expose a unit rate that
+ * satisfies `unit rate * count = amount` so persisted snapshots and tooltips
+ * cannot contradict the total.
+ */
+export function resolveHotelSupplementPricing(
+  input: HotelSupplementPricingInput,
+): HotelSupplementPricing {
+  const count = Math.max(Math.trunc(nonNegative(input.count)), 0);
+  const suppliedRate = nonNegative(input.rate);
+  const amountValue = nonNegative(input.amount);
+  const explicitAmount = amountValue > 0 ? amountValue : nonNegative(input.cost);
+  const amount = money(explicitAmount > 0 ? explicitAmount : suppliedRate * count);
+  const rate = count > 0 && amount > 0
+    ? money(amount / count)
+    : money(suppliedRate);
+
+  return { count, rate, amount };
+}
+
 /**
  * Single source of truth for occupancy pricing. Callers provide the already
  * resolved database rate row; this function performs the same calculation
@@ -75,15 +117,21 @@ export function resolveHotelOccupancyPricing(input: HotelOccupancyPricingInput):
   const adults = Math.max(Math.trunc(Number(input.adultCount || 0)), 0);
   const roomOccupancy: 'SINGLE' | 'DOUBLE' = adults <= roomCount ? 'SINGLE' : 'DOUBLE';
   const roomRate = Math.max(Number(rates[roomOccupancy] || 0), 0);
-  const extraBedCount = Math.max(Number(input.extraBedCount || 0), 0);
-  const childWithBedCount = Math.max(Number(input.childWithBedCount || 0), 0);
-  const childWithoutBedCount = Math.max(Number(input.childWithoutBedCount || 0), 0);
-  const extraBedRate = Math.max(Number(rates.EXTRABED ?? rates.EXTRAADULT ?? 0), 0);
-  const childWithBedRate = Math.max(Number(rates.CHILD_WITH_BED || 0), 0);
-  const childWithoutBedRate = Math.max(Number(rates.CHILD_WITHOUT_BED || 0), 0);
-  const extraBedAmount = money(extraBedRate * extraBedCount);
-  const childWithBedAmount = money(childWithBedRate * childWithBedCount);
-  const childWithoutBedAmount = money(childWithoutBedRate * childWithoutBedCount);
+  const extraBed = resolveHotelSupplementPricing({
+    count: input.extraBedCount,
+    rate: rates.EXTRABED ?? rates.EXTRAADULT,
+  });
+  const childWithBed = resolveHotelSupplementPricing({
+    count: input.childWithBedCount,
+    rate: rates.CHILD_WITH_BED,
+  });
+  const childWithoutBed = resolveHotelSupplementPricing({
+    count: input.childWithoutBedCount,
+    rate: rates.CHILD_WITHOUT_BED,
+  });
+  const { count: extraBedCount, rate: extraBedRate, amount: extraBedAmount } = extraBed;
+  const { count: childWithBedCount, rate: childWithBedRate, amount: childWithBedAmount } = childWithBed;
+  const { count: childWithoutBedCount, rate: childWithoutBedRate, amount: childWithoutBedAmount } = childWithoutBed;
   const baseTotalPrice = money(roomRate * roomCount);
   const hotelMarginBaseAmount = money(baseTotalPrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount);
   const hotelMarginPercentage = Math.max(Number(input.marginPercentage || 0), 0);
