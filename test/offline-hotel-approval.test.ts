@@ -197,7 +197,7 @@ test('offline continuous stay keeps every room type as a rate option', async () 
   assert.deepEqual(offers.map((offer: any) => offer.totalStayPrice), [13600, 16000]);
 });
 
-test('offline option is omitted when a required DB supplement rate is missing', async () => {
+test('offline option remains selectable when a DB supplement rate is missing', async () => {
   const pricing = {
     resolveEffectiveHotelMarginPercentage: async () => 0,
     marginBreakdown: (value: number) => ({ baseAmount: value, marginPercentage: 0, marginAmount: 0, sellAmount: value }),
@@ -213,7 +213,7 @@ test('offline option is omitted when a required DB supplement rate is missing', 
     {
       roomsByHotel: new Map([[95, [{ room_ID: 951, room_type_id: 9, room_title: 'Deluxe' }]]]),
       activeRoomTypeIds: new Set([9]),
-      ratePlansByRoom: new Map([[951, [{ room_id: 951, rateplan_id: 'CP', rateplan_name: 'CP' }]]]),
+      ratePlansByRoom: new Map([[951, [{ room_id: 951, rateplan_id: 'CP' }]]]),
       occupancyRatesByRoomPlan: new Map([['95|951|CP', [{
         start_date: new Date('2099-01-01'),
         end_date: new Date('2099-01-02'),
@@ -224,7 +224,51 @@ test('offline option is omitted when a required DB supplement rate is missing', 
     'CP',
     { childWithBedCount: 0, childWithoutBedCount: 1 },
   );
-  assert.equal(offers.length, 0);
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].completeStayBookable, true);
+  assert.equal(offers[0].nightlySell[0], 3600);
+  assert.equal(offers[0].childWithoutBedRate, 0);
+  assert.equal(offers[0].childWithoutBedAmount, 0);
+});
+
+test('legacy offline pricebook uses the base room rate as the availability gate', () => {
+  const pricing = {
+    resolveEffectiveHotelMarginPercentage: async () => 0,
+    marginBreakdown: (value: number) => ({ baseAmount: value, marginPercentage: 0, marginAmount: 0, sellAmount: value }),
+    money: (value: number) => Number(value.toFixed(2)),
+  } as any;
+  const service = new OfflineHotelCatalogService({} as any, pricing);
+  const offers = (service as any).buildRoomOffersFromLegacyPricebook(
+    { hotel_id: 96 },
+    ['2099-01-01'],
+    1,
+    2,
+    1,
+    {
+      roomsByHotel: new Map([[96, [{ room_ID: 961, room_type_id: 9, room_title: 'Deluxe' }]]]),
+      activeRoomTypeIds: new Set([9]),
+      ratePlansByRoom: new Map(),
+      occupancyRatesByRoomPlan: new Map(),
+      legacyPricebookByRoom: new Map([['96|961|9', [{
+        hotel_id: 96,
+        room_id: 961,
+        room_type_id: 9,
+        price_type: 0,
+        year: '2099',
+        month: 'January',
+        day_1: '3600',
+      }]]]),
+      mealPricebookByHotelDate: new Map(),
+    },
+    0,
+    'CP',
+    { childWithBedCount: 0, childWithoutBedCount: 1 },
+  );
+
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].completeStayBookable, true);
+  assert.equal(offers[0].totalStayPrice, 3600);
+  assert.equal(offers[0].childWithoutBedRate, 0);
 });
 
 test('offline option uses the itinerary room count when the request omits or understates it', async () => {
