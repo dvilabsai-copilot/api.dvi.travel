@@ -1289,11 +1289,13 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
         0,
       );
       const marginRoomCost = Number((
-        Number(continuousStayRouteNight?.baseAmount ?? continuousStayRouteNight?.totalRoomCost ?? 0) > 0
-          ? Number(continuousStayRouteNight?.baseAmount ?? continuousStayRouteNight?.totalRoomCost) * earlyCheckInBillingMultiplier
-          : persistedRoomTotal > 0
-            ? persistedRoomTotal * earlyCheckInBillingMultiplier
-          : baseHotelCost * roomCountForMargin
+        isDatabaseOccupancyProvider && offlineBaseTotal > 0
+          ? offlineBaseTotal * earlyCheckInBillingMultiplier
+          : Number(continuousStayRouteNight?.baseAmount ?? continuousStayRouteNight?.totalRoomCost ?? 0) > 0
+            ? Number(continuousStayRouteNight?.baseAmount ?? continuousStayRouteNight?.totalRoomCost) * earlyCheckInBillingMultiplier
+            : persistedRoomTotal > 0
+              ? persistedRoomTotal * earlyCheckInBillingMultiplier
+              : baseHotelCost * roomCountForMargin
       ).toFixed(2));
       const hotelMarginBaseAmount = Number((
         marginRoomCost +
