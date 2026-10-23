@@ -234,6 +234,135 @@ export class HotelAvailabilitySnapshotService {
     return Math.round(Number(amount || 0) * 100) / 100;
   }
 
+  /**
+   * Rebuild component-priced selection amounts from the current row and the
+   * persisted selection snapshot. Both automatic and explicit selections pass
+   * through this decorator, so the tooltip and itinerary totals use one source
+   * of truth even when a legacy row stored a zero aggregate supplement amount.
+   */
+  private normalizeSelectedComponentPricing(
+    selection: any,
+    row: any,
+    snapshot: Record<string, any> | null | undefined,
+    baseTotal: number,
+    marginPercentage: number,
+  ): Record<string, number> | null {
+    const provider = String(
+      selection?.hotel_provider || selection?.provider ||
+      snapshot?.provider || snapshot?.hotel_provider ||
+      row?.provider || row?.hotel_provider || '',
+    ).trim().toLowerCase();
+    if (!['offline', 'axisrooms'].includes(provider) || baseTotal <= 0) return null;
+
+    const positive = (...values: unknown[]): number => {
+      for (const value of values) {
+        const amount = Number(value ?? 0);
+        if (Number.isFinite(amount) && amount > 0) return amount;
+      }
+      return 0;
+    };
+    const count = (...values: unknown[]): number => Math.max(
+      Math.trunc(positive(...values)),
+      0,
+    );
+
+    const extraBedCount = count(
+      snapshot?.extraBedCount, snapshot?.extra_bed_count,
+      selection?.room_extra_bed_count, selection?.total_extra_bed,
+      row?.extraBedCount, row?.extra_bed_count, row?.total_extra_bed,
+    );
+    const extraBedRate = positive(
+      snapshot?.extraBedRate, snapshot?.extra_bed_rate,
+      selection?.room_extra_bed_rate,
+      row?.extraBedRate, row?.extra_bed_rate,
+    );
+    const extraBedAmount = positive(
+      snapshot?.extraBedAmount, snapshot?.extra_bed_amount,
+      snapshot?.extraBedCost, snapshot?.total_extra_bed_cost,
+      selection?.total_extra_bed_cost,
+      row?.extraBedAmount, row?.extra_bed_amount,
+      row?.extraBedCost, row?.total_extra_bed_cost,
+    );
+
+    const childWithBedCount = count(
+      snapshot?.childWithBedCount, snapshot?.child_with_bed_count,
+      selection?.room_cwb_count, selection?.total_child_with_bed,
+      row?.childWithBedCount, row?.child_with_bed_count, row?.total_child_with_bed,
+    );
+    const childWithBedRate = positive(
+      snapshot?.childWithBedRate, snapshot?.child_with_bed_rate,
+      row?.childWithBedRate, row?.child_with_bed_rate,
+    );
+    const childWithBedAmount = positive(
+      snapshot?.childWithBedAmount, snapshot?.child_with_bed_amount,
+      snapshot?.childWithBedCost, snapshot?.total_childwith_bed_cost,
+      selection?.total_childwith_bed_cost,
+      row?.childWithBedAmount, row?.child_with_bed_amount,
+      row?.childWithBedCost, row?.total_childwith_bed_cost,
+    );
+
+    const childWithoutBedCount = count(
+      snapshot?.childWithoutBedCount, snapshot?.child_without_bed_count,
+      selection?.room_cnb_count, selection?.total_child_without_bed,
+      row?.childWithoutBedCount, row?.child_without_bed_count, row?.total_child_without_bed,
+    );
+    const childWithoutBedRate = positive(
+      snapshot?.childWithoutBedRate, snapshot?.child_without_bed_rate,
+      row?.childWithoutBedRate, row?.child_without_bed_rate,
+    );
+    const childWithoutBedAmount = positive(
+      snapshot?.childWithoutBedAmount, snapshot?.child_without_bed_amount,
+      snapshot?.childWithoutBedCost, snapshot?.total_childwithout_bed_cost,
+      snapshot?.extraChildAmount, snapshot?.extra_child_amount,
+      selection?.total_childwithout_bed_cost,
+      row?.childWithoutBedAmount, row?.child_without_bed_amount,
+      row?.childWithoutBedCost, row?.total_childwithout_bed_cost,
+      row?.extraChildAmount, row?.extra_child_amount,
+    );
+
+    const source = {
+      ...row,
+      ...(snapshot || {}),
+      ...selection,
+      provider,
+      hotel_provider: provider,
+      baseTotalPrice: baseTotal,
+      totalRoomCost: baseTotal,
+      extraBedCount,
+      extraBedRate,
+      extraBedAmount,
+      childWithBedCount,
+      childWithBedRate,
+      childWithBedAmount,
+      childWithoutBedCount,
+      childWithoutBedRate,
+      childWithoutBedAmount,
+      hotelMarginPercentage: marginPercentage,
+    };
+    const projected = projectHotelPayablePricing(source, marginPercentage);
+    return {
+      extraBedCount: Number(projected.extraBedCount || 0),
+      extraBedRate: Number(projected.extraBedRate || 0),
+      extraBedAmount: Number(projected.extraBedAmount || 0),
+      childWithBedCount: Number(projected.childWithBedCount || 0),
+      childWithBedRate: Number(projected.childWithBedRate || 0),
+      childWithBedAmount: Number(projected.childWithBedAmount || 0),
+      childWithoutBedCount: Number(projected.childWithoutBedCount || 0),
+      childWithoutBedRate: Number(projected.childWithoutBedRate || 0),
+      childWithoutBedAmount: Number(projected.childWithoutBedAmount || 0),
+      hotelMealPlanCost: Number(projected.hotelMealPlanCost || 0),
+      totalHotelMealPlanCost: Number(projected.totalHotelMealPlanCost || 0),
+      hotelMarginBaseAmount: Number(projected.hotelMarginBaseAmount || 0),
+      hotelMarginPercentage: Number(projected.hotelMarginPercentage || 0),
+      hotelMarginAmount: Number(projected.hotelMarginAmount || 0),
+      hotelMarginTotalAmount: Number(projected.hotelMarginTotalAmount || 0),
+      totalPrice: Number(projected.totalPrice || 0),
+      totalHotelCost: Number(projected.totalHotelCost || 0),
+      totalStayPrice: Number(projected.totalStayPrice || 0),
+      pricePerNight: Number(projected.pricePerNight || 0),
+    };
+  }
+
   private persistedRateOptionId(option: any, fallback?: unknown): string | null {
     const value = option?.rateOptionId || option?.optionKey || option?.searchReference || option?.bookingCode || fallback;
     const normalized = String(value || '').trim();
@@ -3439,7 +3568,7 @@ export class HotelAvailabilitySnapshotService {
     // selection from another provider is rejected by hotelPropertyMatchesSelection
     // before this method is called, so this does not resurrect old TBO money
     // on a new offline/live row.
-    const selectedTotal = snapshotHasSupplement && snapshotTotal > 0
+    let selectedTotal = snapshotHasSupplement && snapshotTotal > 0
       ? snapshotTotal
       : selectedOption && currentTotal > 0
       ? currentTotal
@@ -3448,7 +3577,7 @@ export class HotelAvailabilitySnapshotService {
       : currentTotal > 0
         ? currentTotal
         : persistedTotal;
-    const selectedPerNight = snapshotHasSupplement && snapshotTotal > 0
+    let selectedPerNight = snapshotHasSupplement && snapshotTotal > 0
       ? snapshotTotal
       : selectedOption && currentPerNight > 0
       ? currentPerNight
@@ -3488,7 +3617,7 @@ export class HotelAvailabilitySnapshotService {
       : persistedBaseTotal > 0 && inferredMarginAmount > 0
         ? Number(((inferredMarginAmount / persistedBaseTotal) * 100).toFixed(2))
         : 0;
-    const selectedMarginAmount = Number(
+    let selectedMarginAmount = Number(
       snapshot?.hotelMarginTotalAmount ||
       snapshot?.hotelMarginAmount ||
       selection?.hotel_margin_rate ||
@@ -3496,8 +3625,21 @@ export class HotelAvailabilitySnapshotService {
       inferredMarginAmount ||
       0,
     );
+    const normalizedComponentPricing = this.normalizeSelectedComponentPricing(
+      selection,
+      currentRow,
+      snapshot,
+      persistedBaseTotal,
+      selectedMarginPercentage,
+    );
+    if (normalizedComponentPricing) {
+      selectedTotal = normalizedComponentPricing.totalPrice;
+      selectedPerNight = normalizedComponentPricing.totalPrice;
+      selectedMarginAmount = normalizedComponentPricing.hotelMarginAmount;
+    }
     const display = hotelDisplaySnapshot({
       ...currentRow,
+      ...(normalizedComponentPricing || {}),
       totalPrice: selectedTotal,
       pricePerNight: selectedPerNight,
     });
@@ -3526,6 +3668,7 @@ export class HotelAvailabilitySnapshotService {
       totalHotelCost: selectedTotal || currentRow.totalHotelCost,
       totalStayPrice: selectedTotal || currentRow.totalStayPrice,
       pricePerNight: selectedPerNight || currentRow.pricePerNight,
+      ...(normalizedComponentPricing || {}),
       ...(selectedBasePerNight > 0 ? {
         basePricePerNight: selectedBasePerNight,
         baseHotelCost: this.money(selectedBasePerNight * roomCount),
@@ -3552,6 +3695,7 @@ export class HotelAvailabilitySnapshotService {
       selectedPriceSnapshot: JSON.stringify({
         ...(snapshot || {}),
         ...display,
+        ...(normalizedComponentPricing || {}),
         // The public selected price is the complete payable amount for this
         // itinerary day. Do not allow a legacy per-room snapshot field to
         // overwrite it during response decoration.
@@ -3700,11 +3844,11 @@ export class HotelAvailabilitySnapshotService {
         const breakdownPayableTotal = selectedRoomBreakdown.length > 0
           ? this.money(breakdownBaseTotal + breakdownMarginAmount)
           : 0;
-        const selectedTotal = breakdownPayableTotal > 0
+        let selectedTotal = breakdownPayableTotal > 0
           ? breakdownPayableTotal
           : snapshotHasSupplement && snapshotTotal > 0
           ? snapshotTotal : currentTotal > 0 ? currentTotal : persistedTotal;
-        const selectedPerNight = selectedRoomBreakdown.length > 0 && breakdownPayableTotal > 0
+        let selectedPerNight = selectedRoomBreakdown.length > 0 && breakdownPayableTotal > 0
           ? breakdownPayableTotal
           : snapshotHasSupplement && snapshotPerNight > 0
             ? snapshotPerNight
@@ -3744,7 +3888,7 @@ export class HotelAvailabilitySnapshotService {
           : persistedBaseTotal > 0 && inferredMarginAmount > 0
             ? Number(((inferredMarginAmount / persistedBaseTotal) * 100).toFixed(2))
             : 0;
-        const selectedMarginAmount = selectedRoomBreakdown.length > 0
+        let selectedMarginAmount = selectedRoomBreakdown.length > 0
           ? breakdownMarginAmount
           : Number(
           snapshot?.hotelMarginTotalAmount ||
@@ -3754,6 +3898,18 @@ export class HotelAvailabilitySnapshotService {
           inferredMarginAmount ||
           0,
         );
+        const normalizedComponentPricing = this.normalizeSelectedComponentPricing(
+          selection,
+          currentRateRow,
+          snapshot,
+          persistedBaseTotal,
+          selectedMarginPercentage,
+        );
+        if (normalizedComponentPricing) {
+          selectedTotal = normalizedComponentPricing.totalPrice;
+          selectedPerNight = normalizedComponentPricing.totalPrice;
+          selectedMarginAmount = normalizedComponentPricing.hotelMarginAmount;
+        }
         const selectedRateOptionId = currentRateRow.rateOptionId || currentRateRow.optionKey ||
           currentRateRow.searchReference || currentRateRow.bookingCode ||
           selection?.selected_rate_option_id || snapshot?.rateOptionId || null;
@@ -3762,11 +3918,13 @@ export class HotelAvailabilitySnapshotService {
           ...(snapshot || {}),
           ...hotelDisplaySnapshot({
             ...currentRateRow,
+            ...(normalizedComponentPricing || {}),
             optionKey: selectedOptionKey,
             rateOptionId: selectedRateOptionId,
             totalPrice: selectedTotal,
             pricePerNight: selectedPerNight,
           }),
+          ...(normalizedComponentPricing || {}),
           ...(selectedBasePerNight > 0 ? {
             basePricePerNight: selectedBasePerNight,
             baseTotalPrice: this.money(selectedBasePerNight * roomCount),
@@ -3796,17 +3954,7 @@ export class HotelAvailabilitySnapshotService {
                 price: selectedPerNight,
               }
             : {}),
-          ...(snapshotTotal > 0 ? {
-            extraBedCount: Number(snapshot?.extraBedCount ?? snapshot?.extra_bed_count ?? 0),
-            extraBedRate: Number(snapshot?.extraBedRate ?? snapshot?.extra_bed_rate ?? 0),
-            extraBedAmount: Number(snapshot?.extraBedAmount ?? snapshot?.extra_bed_amount ?? 0),
-            childWithBedCount: Number(snapshot?.childWithBedCount ?? snapshot?.child_with_bed_count ?? 0),
-            childWithBedRate: Number(snapshot?.childWithBedRate ?? snapshot?.child_with_bed_rate ?? 0),
-            childWithBedAmount: Number(snapshot?.childWithBedAmount ?? snapshot?.child_with_bed_amount ?? 0),
-            childWithoutBedCount: Number(snapshot?.childWithoutBedCount ?? snapshot?.child_without_bed_count ?? 0),
-            childWithoutBedRate: Number(snapshot?.childWithoutBedRate ?? snapshot?.child_without_bed_rate ?? 0),
-            childWithoutBedAmount: Number(snapshot?.childWithoutBedAmount ?? snapshot?.child_without_bed_amount ?? 0),
-          } : {}),
+          ...(normalizedComponentPricing || {}),
           ...(selectedBasePerNight > 0 ? {
             basePricePerNight: selectedBasePerNight,
             baseTotalPrice: this.money(persistedBaseTotal > 0 ? persistedBaseTotal : selectedBasePerNight * roomCount),
@@ -3834,6 +3982,7 @@ export class HotelAvailabilitySnapshotService {
             ...hotelDisplaySnapshot({
               ...normalized,
               ...currentRateRow,
+              ...(normalizedComponentPricing || {}),
               ...this.earlyArrivalDisplayFields(selection),
               optionKey: selectedOptionKey,
               rateOptionId: selectedRateOptionId,
@@ -3888,12 +4037,12 @@ export class HotelAvailabilitySnapshotService {
     // downgrade a persisted selected rate on reload.
     const hasPersistedUserPrice = selectionOriginFromRow(selection) === 'USER_SELECTED' &&
       persistedTotal > 0 && persistedPerNight > 0;
-    const selectedTotal = hasPersistedUserPrice
+    let selectedTotal = hasPersistedUserPrice
       ? persistedTotal
       : nestedOption
         ? (currentTotal > 0 ? currentTotal : persistedTotal)
         : (persistedTotal > 0 ? persistedTotal : currentTotal);
-    const selectedPerNight = hasPersistedUserPrice
+    let selectedPerNight = hasPersistedUserPrice
       ? persistedPerNight
       : nestedOption
         ? (currentPerNight > 0 ? currentPerNight : persistedPerNight)
@@ -3935,13 +4084,25 @@ export class HotelAvailabilitySnapshotService {
       : selectedBaseTotal > 0 && inferredSelectedMarginAmount > 0
         ? Number(((inferredSelectedMarginAmount / selectedBaseTotal) * 100).toFixed(2))
         : 0;
-    const selectedMarginAmount = Number(
+    let selectedMarginAmount = Number(
       selectedFinancialSnapshot?.hotelMarginTotalAmount ||
       selectedFinancialSnapshot?.hotelMarginAmount ||
       selection?.hotel_margin_rate ||
       inferredSelectedMarginAmount ||
       0,
     );
+    const normalizedComponentPricing = this.normalizeSelectedComponentPricing(
+      selection,
+      currentRateRow,
+      selectedFinancialSnapshot,
+      selectedBaseTotal,
+      selectedMarginPercentage,
+    );
+    if (normalizedComponentPricing) {
+      selectedTotal = normalizedComponentPricing.totalPrice;
+      selectedPerNight = normalizedComponentPricing.totalPrice;
+      selectedMarginAmount = normalizedComponentPricing.hotelMarginAmount;
+    }
     const selectedRateOptionId = String(
       selection?.selected_rate_option_id ||
       selectedSnapshot?.rateOptionId ||
@@ -3954,6 +4115,7 @@ export class HotelAvailabilitySnapshotService {
     const selectedOptionKey = this.selectedRateOptionKey(currentRateRow, selectedRateOptionId);
     const effectiveSelectionDisplay = hotelDisplaySnapshot({
         ...currentRateRow,
+        ...(normalizedComponentPricing || {}),
         requestedCategory: currentRateRow?.requestedCategory ?? selection?.requestedCategory ?? (selectedSnapshot as any)?.requestedCategory,
         selectedCategory: currentRateRow?.selectedCategory ?? selection?.selectedCategory ?? (selectedSnapshot as any)?.selectedCategory,
         categoryFallbackApplied: currentRateRow?.categoryFallbackApplied ?? selection?.categoryFallbackApplied ?? (selectedSnapshot as any)?.categoryFallbackApplied,
@@ -3965,6 +4127,7 @@ export class HotelAvailabilitySnapshotService {
       });
     const freshSelectedSnapshot = {
       ...effectiveSelectionDisplay,
+      ...(normalizedComponentPricing || {}),
       selectionOrigin,
       selectionId: Number(selection.itinerary_plan_hotel_details_ID || 0),
         rateOptionId: selectedRateOptionId,
@@ -3979,6 +4142,7 @@ export class HotelAvailabilitySnapshotService {
     return {
       ...normalized,
       ...(nestedOption || {}),
+      ...(normalizedComponentPricing || {}),
       ...this.earlyArrivalDisplayFields(selection),
       rateOptions: normalized.rateOptions,
       ...(selectedTotal > 0
