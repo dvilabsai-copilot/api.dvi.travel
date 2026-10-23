@@ -14,7 +14,10 @@ import {
   resolveStoredHotelPayablePricing,
   shouldReconcileHotelRouteNightPayable,
 } from './utils/hotel-payable-pricing.util';
-import { resolveOfflineHotelPayablePricing } from './utils/hotel-selection-pricing.util';
+import {
+  resolveHotelSupplementPricing,
+  resolveOfflineHotelPayablePricing,
+} from './utils/hotel-selection-pricing.util';
 import {
   buildHotelSelectionState,
   HotelSelectionGroupView,
@@ -1214,21 +1217,56 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
       const legacyExtraBedCost = Number(selectedPriceSnapshot.extraBedRate ?? 0) * extraBedCount;
       const legacyChildWithBedCost = Number(selectedPriceSnapshot.childWithBedRate ?? 0) * childWithBedCount;
       const legacyChildWithoutBedCost = Number(selectedPriceSnapshot.childWithoutBedRate ?? 0) * childWithoutBedCount;
-      const extraBedCost = (legacyOfflineRouteNight && legacyExtraBedCost > 0
-        ? legacyExtraBedCost
-        : isDatabaseOccupancyProvider
-          ? snapshotExtraBedCost > 0 ? snapshotExtraBedCost : storedExtraBedCost
-          : storedExtraBedCost > 0 ? storedExtraBedCost : Number(selectedPriceSnapshot.extraBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
-      const childWithBedCost = (legacyOfflineRouteNight && legacyChildWithBedCost > 0
-        ? legacyChildWithBedCost
-        : isDatabaseOccupancyProvider
-          ? snapshotChildWithBedCost > 0 ? snapshotChildWithBedCost : storedChildWithBedCost
-          : storedChildWithBedCost > 0 ? storedChildWithBedCost : Number(selectedPriceSnapshot.childWithBedAmount ?? 0)) * earlyCheckInBillingMultiplier;
-      const childWithoutBedCost = (legacyOfflineRouteNight && legacyChildWithoutBedCost > 0
-        ? legacyChildWithoutBedCost
-        : isDatabaseOccupancyProvider
-          ? snapshotChildWithoutBedCost > 0 ? snapshotChildWithoutBedCost : storedChildWithoutBedCost
-          : storedChildWithoutBedCost > 0 ? storedChildWithoutBedCost : snapshotChildWithoutBedCost) * earlyCheckInBillingMultiplier;
+      const extraBedPricing = resolveHotelSupplementPricing({
+        count: extraBedCount,
+        rate: selectedPriceSnapshot.extraBedRate ?? selectedPriceSnapshot.extra_bed_rate ??
+          (h as any).extra_bed_rate ?? (h as any).extraBedRate,
+        amount: legacyOfflineRouteNight && legacyExtraBedCost > 0
+          ? legacyExtraBedCost
+          : isDatabaseOccupancyProvider
+            ? snapshotExtraBedCost > 0 ? snapshotExtraBedCost : storedExtraBedCost
+            : storedExtraBedCost > 0 ? storedExtraBedCost : selectedPriceSnapshot.extraBedAmount,
+      });
+      const childWithBedPricing = resolveHotelSupplementPricing({
+        count: childWithBedCount,
+        rate: selectedPriceSnapshot.childWithBedRate ?? selectedPriceSnapshot.child_with_bed_rate ??
+          (h as any).child_with_bed_rate ?? (h as any).childWithBedRate,
+        amount: legacyOfflineRouteNight && legacyChildWithBedCost > 0
+          ? legacyChildWithBedCost
+          : isDatabaseOccupancyProvider
+            ? snapshotChildWithBedCost > 0 ? snapshotChildWithBedCost : storedChildWithBedCost
+            : storedChildWithBedCost > 0 ? storedChildWithBedCost : selectedPriceSnapshot.childWithBedAmount,
+      });
+      const childWithoutBedPricing = resolveHotelSupplementPricing({
+        count: childWithoutBedCount,
+        rate: selectedPriceSnapshot.childWithoutBedRate ?? selectedPriceSnapshot.child_without_bed_rate ??
+          (h as any).child_without_bed_rate ?? (h as any).childWithoutBedRate,
+        amount: legacyOfflineRouteNight && legacyChildWithoutBedCost > 0
+          ? legacyChildWithoutBedCost
+          : isDatabaseOccupancyProvider
+            ? snapshotChildWithoutBedCost > 0 ? snapshotChildWithoutBedCost : storedChildWithoutBedCost
+            : storedChildWithoutBedCost > 0 ? storedChildWithoutBedCost : snapshotChildWithoutBedCost,
+      });
+      const extraBedCost = extraBedPricing.amount * earlyCheckInBillingMultiplier;
+      const childWithBedCost = childWithBedPricing.amount * earlyCheckInBillingMultiplier;
+      const childWithoutBedCost = childWithoutBedPricing.amount * earlyCheckInBillingMultiplier;
+      const displaySelectedPriceSnapshot = isDatabaseOccupancyProvider
+        ? {
+            ...selectedPriceSnapshot,
+            extraBedCount: extraBedPricing.count,
+            extraBedRate: extraBedPricing.rate,
+            extraBedAmount: extraBedPricing.amount,
+            totalExtraBedCost: extraBedPricing.amount,
+            childWithBedCount: childWithBedPricing.count,
+            childWithBedRate: childWithBedPricing.rate,
+            childWithBedAmount: childWithBedPricing.amount,
+            totalChildWithBedCost: childWithBedPricing.amount,
+            childWithoutBedCount: childWithoutBedPricing.count,
+            childWithoutBedRate: childWithoutBedPricing.rate,
+            childWithoutBedAmount: childWithoutBedPricing.amount,
+            totalChildWithoutBedCost: childWithoutBedPricing.amount,
+          }
+        : selectedPriceSnapshot;
       const hotelMealPlanCost = resolveOrdinaryMealPlanCost({
         provider,
         totalHotelMealPlanCost: (h as any).total_hotel_meal_plan_cost,
@@ -1430,7 +1468,9 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
           'AUTO_SELECTED' | 'USER_SELECTED' | 'USER_REMOVED' | undefined,
         selectionId: Number(hotelDetailsId || 0),
         requiresPriceReacceptance: Boolean((h as any).requires_price_reacceptance),
-        selectedPriceSnapshot: rawSelectedPriceSnapshot || null,
+        selectedPriceSnapshot: Object.keys(displaySelectedPriceSnapshot).length > 0
+          ? displaySelectedPriceSnapshot
+          : rawSelectedPriceSnapshot || null,
         identityMismatch: !persistedIdentity.consistent,
       };
     });
