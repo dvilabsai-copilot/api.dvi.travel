@@ -99,6 +99,37 @@ test('AxisRooms DOUBLE price is resolved from the matching occupancy row', async
   assert.equal(base, 3500);
 });
 
+test('selected component pricing derives a missing child-without-bed amount from its rate', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const pricing = (service as any).normalizeSelectedComponentPricing(
+    {
+      hotel_provider: 'axisrooms',
+      room_extra_bed_count: 1,
+      room_cnb_count: 1,
+    },
+    {
+      provider: 'axisrooms',
+      childWithoutBedRate: 2250,
+    },
+    {
+      baseTotalPrice: 20200,
+      extraBedCount: 1,
+      extraBedRate: 1600,
+      extraBedAmount: 1600,
+      childWithoutBedCount: 1,
+      childWithoutBedRate: 2250,
+      childWithoutBedAmount: 0,
+    },
+    20200,
+    6,
+  );
+
+  assert.equal(pricing.childWithoutBedAmount, 2250);
+  assert.equal(pricing.hotelMarginBaseAmount, 24050);
+  assert.equal(pricing.hotelMarginAmount, 1443);
+  assert.equal(pricing.totalPrice, 25493);
+});
+
 test('AxisRooms base price is pure room cost and uses the plan room count', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const tx = {
