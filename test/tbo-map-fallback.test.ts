@@ -10,6 +10,9 @@ const config = {
   dinnerRate3Star: 900,
   dinnerRate4Star: 1500,
   dinnerRate5Star: 2500,
+  lunchRate3Star: 900,
+  lunchRate4Star: 1500,
+  lunchRate5Star: 2500,
 };
 
 test('adds a synthetic MAP option from TBO CP with the configured dinner supplement', () => {
@@ -61,6 +64,62 @@ test('keeps a MAP-only TBO rate unchanged without a dinner supplement', () => {
   assert.equal(rows[0].mealPlan, 'MAP');
   assert.equal(rows[0].price, 12000);
   assert.equal(rows[0].tboMapFallbackApplied, undefined);
+});
+
+test('adds lunch and dinner when AP is requested but TBO exposes CP only', () => {
+  const rows = applyMapDinnerFallbackToRows([
+    {
+      provider: 'tbo',
+      hotelCode: 'TBO-4STAR-CP',
+      hotelName: 'Four Star CP Hotel',
+      rating: 4,
+      mealPlan: 'CP',
+      price: 10000,
+      totalFare: 10000,
+    },
+  ], { preferredMealPlanCode: 'AP', adultCount: 2, childCount: 1, roomCount: 1, numberOfNights: 2 }, config);
+
+  assert.equal(rows.length, 1);
+  const fallback = rows[0];
+  assert.equal(fallback.mealPlan, 'AP');
+  assert.equal(fallback.tboMapFallbackTargetMealPlan, 'AP');
+  assert.equal(fallback.tboMapFallbackLunchRate, 1500);
+  assert.equal(fallback.tboMapFallbackDinnerRate, 1500);
+  assert.equal(fallback.tboMapFallbackLunchTotal, 9000);
+  assert.equal(fallback.tboMapFallbackDinnerComponentTotal, 9000);
+  assert.equal(fallback.tboMapFallbackMealPlanTotal, 18000);
+  assert.equal(fallback.totalPrice, 28000);
+});
+
+test('uses the separate configured lunch rate for AP', () => {
+  const rows = applyMapDinnerFallbackToRows([
+    {
+      provider: 'tbo',
+      hotelCode: 'TBO-4STAR-CUSTOM-LUNCH',
+      hotelName: 'Four Star CP Hotel',
+      rating: 4,
+      mealPlan: 'CP',
+      price: 10000,
+    },
+  ], { preferredMealPlanCode: 'AP', adultCount: 2, childCount: 0, roomCount: 1, numberOfNights: 2 }, {
+    ...config,
+    lunchRate4Star: 1200,
+  });
+
+  const fallback = rows[0];
+  assert.equal(fallback.tboMapFallbackLunchRate, 1200);
+  assert.equal(fallback.tboMapFallbackLunchTotal, 4800);
+  assert.equal(fallback.tboMapFallbackDinnerComponentTotal, 6000);
+  assert.equal(fallback.tboMapFallbackMealPlanTotal, 10800);
+  assert.equal(fallback.totalPrice, 20800);
+});
+
+test('does not synthesize AP from an Offline CP rate', () => {
+  const rows = applyMapDinnerFallbackToRows([
+    { provider: 'offline', hotelCode: 'OFFLINE-AP', hotelName: 'Offline', rating: 4, mealPlan: 'CP', price: 10000 },
+  ], { preferredMealPlanCode: 'AP', adultCount: 2, childCount: 0, roomCount: 1 }, config);
+
+  assert.equal(rows.length, 0);
 });
 
 test('applies the same CP-only fallback to Offline providers', () => {

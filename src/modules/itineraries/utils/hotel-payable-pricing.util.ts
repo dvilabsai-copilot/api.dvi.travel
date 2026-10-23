@@ -2,6 +2,7 @@ import {
   resolveHotelSupplementPricing,
   resolveOfflineHotelPayablePricing,
 } from './hotel-selection-pricing.util';
+import { normalizeOfflineMealBreakdown } from './offline-hotel-meal-plan.util';
 
 const money = (value: unknown): number => {
   const amount = Number(value ?? 0);
@@ -60,13 +61,13 @@ export function resolveOrdinaryMealPlanCost(option: Record<string, any> | null |
   ).trim().toLowerCase();
   if (!['offline', 'axisrooms'].includes(provider)) return 0;
   if (option?.tboMapFallbackApplied === true) return 0;
-  const breakdown = option?.mealPlanBreakdown;
+  const breakdown = normalizeOfflineMealBreakdown(option?.mealPlanBreakdown);
   return positive(
+    breakdown?.totalMealPlanCost,
     option?.total_hotel_meal_plan_cost,
     option?.totalHotelMealPlanCost,
     option?.hotelMealPlanCost,
     option?.mealPlanCost,
-    breakdown?.totalMealPlanCost,
     breakdown?.totalDinnerCost,
   );
 }

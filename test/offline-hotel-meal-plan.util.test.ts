@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   calculateOfflineMealBreakdown,
+  normalizeOfflineMealBreakdown,
   resolveLegacyOfflineMealPlanCode,
 } from '../src/modules/itineraries/utils/offline-hotel-meal-plan.util';
 
@@ -58,5 +59,38 @@ describe('offline hotel meal-plan parity', () => {
 
     assert.equal(result.mealPlanCode, 'EP');
     assert.equal(result.totalMealPlanCost, 0);
+  });
+
+  it('treats meal rates below ₹1 as included and excludes them from payable totals', () => {
+    const result = calculateOfflineMealBreakdown({
+      flags: { breakfast: true, lunch: true, dinner: true },
+      prices: { breakfast: 0.1, lunch: 1000, dinner: 900 },
+      adultCount: 5,
+      childCount: 1,
+      roomCount: 2,
+      roomQuantity: 2,
+    });
+
+    assert.equal(result.mealPlanCode, 'AP');
+    assert.equal(result.totalBreakfastCost, 0);
+    assert.equal(result.totalLunchCost, 6000);
+    assert.equal(result.totalDinnerCost, 5400);
+    assert.equal(result.totalMealPlanCost, 11400);
+  });
+
+  it('normalizes persisted MAP data by removing included breakfast and lunch', () => {
+    const result = normalizeOfflineMealBreakdown({
+      mealPlanCode: 'MAP',
+      breakfastCostPerPerson: 0.1,
+      totalBreakfastCost: 6,
+      totalLunchCost: 6000,
+      totalDinnerCost: 5400,
+      totalMealPlanCost: 11406,
+    });
+
+    assert.equal(result.totalBreakfastCost, 0);
+    assert.equal(result.totalLunchCost, 0);
+    assert.equal(result.totalDinnerCost, 5400);
+    assert.equal(result.totalMealPlanCost, 5400);
   });
 });

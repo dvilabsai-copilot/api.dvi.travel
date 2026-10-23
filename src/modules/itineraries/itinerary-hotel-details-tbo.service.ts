@@ -1258,6 +1258,9 @@ if (hotelMasterId) {
         tbo_map_dinner_rate_3_star: true,
         tbo_map_dinner_rate_4_star: true,
         tbo_map_dinner_rate_5_star: true,
+        tbo_map_lunch_rate_3_star: true,
+        tbo_map_lunch_rate_4_star: true,
+        tbo_map_lunch_rate_5_star: true,
       },
     });
     return {
@@ -1266,6 +1269,9 @@ if (hotelMasterId) {
       dinnerRate3Star: Math.max(Number(row?.tbo_map_dinner_rate_3_star ?? 900), 0),
       dinnerRate4Star: Math.max(Number(row?.tbo_map_dinner_rate_4_star ?? 1500), 0),
       dinnerRate5Star: Math.max(Number(row?.tbo_map_dinner_rate_5_star ?? 2500), 0),
+       lunchRate3Star: Math.max(Number(row?.tbo_map_lunch_rate_3_star ?? 900), 0),
+      lunchRate4Star: Math.max(Number(row?.tbo_map_lunch_rate_4_star ?? 1500), 0),
+      lunchRate5Star: Math.max(Number(row?.tbo_map_lunch_rate_5_star ?? 2500), 0),
     };
   }
 
@@ -6444,10 +6450,18 @@ this.logger.log(
       return {
         tboMapFallbackApplied: true,
         tboMapFallbackSourceMealPlan: source.tboMapFallbackSourceMealPlan || 'CP',
+        tboMapFallbackTargetMealPlan: source.tboMapFallbackTargetMealPlan || source.mealPlanCode || source.mealPlan || 'MAP',
+        tboMapFallbackLunchRate: Number(source.tboMapFallbackLunchRate || 0),
+        tboMapFallbackLunchPerPerson: Number(source.tboMapFallbackLunchPerPerson || source.tboMapFallbackLunchRate || 0),
+        tboMapFallbackLunchPerNight: Number(source.tboMapFallbackLunchPerNight || 0),
+        tboMapFallbackLunchTotal: Number(source.tboMapFallbackLunchTotal || 0),
+        tboMapFallbackDinnerComponentPerNight: Number(source.tboMapFallbackDinnerComponentPerNight || source.tboMapFallbackDinnerPerNight || 0),
+        tboMapFallbackDinnerComponentTotal: Number(source.tboMapFallbackDinnerComponentTotal || 0),
         tboMapFallbackDinnerRate: Number(source.tboMapFallbackDinnerRate || source.tboMapFallbackDinnerPerPerson || 0),
         tboMapFallbackDinnerPerPerson: Number(source.tboMapFallbackDinnerPerPerson || source.tboMapFallbackDinnerRate || 0),
         tboMapFallbackDinnerPerNight: Number(source.tboMapFallbackDinnerPerNight || source.tboMapFallbackDinnerTotal || source.hotelMealPlanCost || 0),
         tboMapFallbackDinnerTotal: Number(source.tboMapFallbackDinnerTotal || source.totalHotelMealPlanCost || source.hotelMealPlanCost || 0),
+        tboMapFallbackMealPlanTotal: Number(source.tboMapFallbackMealPlanTotal || source.totalHotelMealPlanCost || source.hotelMealPlanCost || 0),
         hotelMealPlanCost: Number(source.hotelMealPlanCost || source.tboMapFallbackDinnerPerNight || source.tboMapFallbackDinnerTotal || 0),
         totalHotelMealPlanCost: Number(source.totalHotelMealPlanCost || source.tboMapFallbackDinnerTotal || source.hotelMealPlanCost || 0),
       };
@@ -6897,10 +6911,18 @@ this.logger.log(
             : 0,
           tboMapFallbackApplied: (hotel as any).tboMapFallbackApplied === true,
           tboMapFallbackSourceMealPlan: (hotel as any).tboMapFallbackSourceMealPlan || null,
+          tboMapFallbackTargetMealPlan: (hotel as any).tboMapFallbackTargetMealPlan || null,
+          tboMapFallbackLunchRate: Number((hotel as any).tboMapFallbackLunchRate || 0),
+          tboMapFallbackLunchPerPerson: Number((hotel as any).tboMapFallbackLunchPerPerson || 0),
+          tboMapFallbackLunchPerNight: Number((hotel as any).tboMapFallbackLunchPerNight || 0),
+          tboMapFallbackLunchTotal: Number((hotel as any).tboMapFallbackLunchTotal || 0),
+          tboMapFallbackDinnerComponentPerNight: Number((hotel as any).tboMapFallbackDinnerComponentPerNight || 0),
+          tboMapFallbackDinnerComponentTotal: Number((hotel as any).tboMapFallbackDinnerComponentTotal || 0),
           tboMapFallbackDinnerRate: Number((hotel as any).tboMapFallbackDinnerRate || 0),
           tboMapFallbackDinnerPerPerson: Number((hotel as any).tboMapFallbackDinnerPerPerson || 0),
           tboMapFallbackDinnerPerNight: Number((hotel as any).tboMapFallbackDinnerPerNight || 0),
           tboMapFallbackDinnerTotal: Number((hotel as any).tboMapFallbackDinnerTotal || 0),
+          tboMapFallbackMealPlanTotal: Number((hotel as any).tboMapFallbackMealPlanTotal || (hotel as any).totalHotelMealPlanCost || 0),
           hotelMealPlanGstAmount: 0,
           extraBedCount: Number((hotel as any).extraBedCount || 0),
           extraBedRate: Number((hotel as any).extraBedRate || 0),

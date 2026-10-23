@@ -10,6 +10,9 @@ export type TboMapFallbackConfig = {
   dinnerRate3Star: number;
   dinnerRate4Star: number;
   dinnerRate5Star: number;
+  lunchRate3Star: number;
+  lunchRate4Star: number;
+  lunchRate5Star: number;
 };
 
 export type TboMapFallbackContext = {
@@ -19,6 +22,8 @@ export type TboMapFallbackContext = {
   roomCount: number;
   numberOfNights?: number;
 };
+
+type TboFallbackMealPlan = 'MAP' | 'AP';
 
 const positive = (...values: unknown[]): number => {
   for (const value of values) {
@@ -37,6 +42,9 @@ const mealPlanCode = (value: unknown): string =>
 
 const isMap = (option: any): boolean =>
   mealPlanCode(option?.mealPlanCode || option?.mealPlan || option?.ratePlanName) === 'MAP';
+
+const isAp = (option: any): boolean =>
+  mealPlanCode(option?.mealPlanCode || option?.mealPlan || option?.ratePlanName) === 'AP';
 
 const isCp = (option: any): boolean =>
   mealPlanCode(option?.mealPlanCode || option?.mealPlan || option?.ratePlanName) === 'CP';
@@ -67,6 +75,19 @@ export const getTboMapFallbackDinnerRate = (
   return 0;
 };
 
+export const getTboMapFallbackLunchRate = (
+  starRating: unknown,
+  config: TboMapFallbackConfig,
+): number => {
+  if (!config.enabled) return 0;
+  const stars = Number(starRating);
+  if (!Number.isFinite(stars)) return 0;
+  if (stars >= 5) return Math.max(Number(config.lunchRate5Star || 0), 0);
+  if (stars >= 4) return Math.max(Number(config.lunchRate4Star || 0), 0);
+  if (stars >= 3) return Math.max(Number(config.lunchRate3Star || 0), 0);
+  return 0;
+};
+
 const nightsFor = (option: any, context: TboMapFallbackContext): number => Math.max(
   Number(option?.numberOfNights || option?.nights || option?.stayNights || 0),
   Number(Array.isArray(option?.routeIds) ? option.routeIds.length : 0),
@@ -80,7 +101,16 @@ const createFallbackOption = (
   config: TboMapFallbackConfig,
 ): any => {
   const dinnerRate = getTboMapFallbackDinnerRate(source?.rating ?? source?.category, config);
-  if (!dinnerRate || !isCp(source) || source?.tboMapFallbackApplied === true) return null;
+  const configuredLunchRate = getTboMapFallbackLunchRate(source?.rating ?? source?.category, config);
+  const targetMealPlan = mealPlanCode(context.preferredMealPlanCode) as TboFallbackMealPlan;
+  const provider = String(source?.provider || source?.hotel_provider || '').trim().toLowerCase();
+  if (
+    !dinnerRate ||
+    !isCp(source) ||
+    source?.tboMapFallbackApplied === true ||
+    !['MAP', 'AP'].includes(targetMealPlan) ||
+    (targetMealPlan === 'AP' && !['tbo', 'vsr'].includes(provider))
+  ) return null;
 
   const guests = Math.max(Number(context.adultCount || 0), 0) + Math.max(Number(context.childCount || 0), 0);
   const chargeableGuests = Math.max(guests, 1);
@@ -102,28 +132,46 @@ const createFallbackOption = (
   ) || money(baseTotal / nights);
   const dinnerPerNight = money(chargeableGuests * dinnerRate);
   const dinnerTotal = money(dinnerPerNight * nights);
-  const total = money(baseTotal + dinnerTotal);
-  const perNight = money(basePerNight + dinnerPerNight);
+  const lunchRate = targetMealPlan === 'AP' ? configuredLunchRate : 0;
+  const lunchPerNight = targetMealPlan === 'AP' ? money(chargeableGuests * lunchRate) : 0;
+  const lunchTotal = targetMealPlan === 'AP' ? money(lunchPerNight * nights) : 0;
+  const mealPlanTotal = money(lunchTotal + dinnerTotal);
+  const total = money(baseTotal + mealPlanTotal);
+  const perNight = money(basePerNight + money(lunchPerNight + dinnerPerNight));
   const identity = optionIdentity(source);
-  const fallbackIdentity = `${identity}:MAP_FALLBACK`;
+  const fallbackIdentity = `${identity}:${targetMealPlan}_FALLBACK`;
 
   return {
     ...source,
     rateOptionId: fallbackIdentity,
     optionKey: fallbackIdentity,
-    selectionKey: `${String(source?.selectionKey || identity)}:MAP_FALLBACK`,
-    mealPlan: 'MAP',
-    mealPlanCode: 'MAP',
-    ratePlanName: 'MAP',
+    selectionKey: `${String(source?.selectionKey || identity)}:${targetMealPlan}_FALLBACK`,
+    mealPlan: targetMealPlan,
+    mealPlanCode: targetMealPlan,
+    ratePlanName: targetMealPlan,
     supplierMealPlan: 'CP',
     tboMapFallbackApplied: true,
     tboMapFallbackSourceMealPlan: 'CP',
+    tboMapFallbackTargetMealPlan: targetMealPlan,
+    tboMapFallbackLunchRate: lunchRate,
+    tboMapFallbackLunchPerPerson: lunchRate,
+    tboMapFallbackLunchPerNight: lunchPerNight,
+    tboMapFallbackLunchTotal: lunchTotal,
+    tboMapFallbackDinnerComponentPerNight: dinnerPerNight,
+    tboMapFallbackDinnerComponentTotal: dinnerTotal,
     tboMapFallbackDinnerRate: dinnerRate,
     tboMapFallbackDinnerPerPerson: dinnerRate,
-    tboMapFallbackDinnerPerNight: dinnerPerNight,
-    tboMapFallbackDinnerTotal: dinnerTotal,
-    hotelMealPlanCost: dinnerTotal,
-    totalHotelMealPlanCost: dinnerTotal,
+    // Existing payable-price consumers use these legacy fields as the total
+    // fallback supplement. Keep that contract for MAP and AP alike; AP's
+    // actual dinner component remains available in the explicit component
+    // fields below for the tooltip and overall-cost explanation.
+    tboMapFallbackDinnerPerNight: targetMealPlan === 'AP'
+      ? money(lunchPerNight + dinnerPerNight)
+      : dinnerPerNight,
+    tboMapFallbackDinnerTotal: mealPlanTotal,
+    tboMapFallbackMealPlanTotal: mealPlanTotal,
+    hotelMealPlanCost: mealPlanTotal,
+    totalHotelMealPlanCost: mealPlanTotal,
     basePricePerNight: basePerNight,
     baseTotalPrice: baseTotal,
     price: total,
@@ -139,6 +187,7 @@ const createFallbackOption = (
       : source?.roomTypes,
     inclusions: Array.from(new Set([
       ...(Array.isArray(source?.inclusions) ? source.inclusions : []),
+      ...(targetMealPlan === 'AP' ? ['Lunch'] : []),
       'Dinner',
     ])),
   };
@@ -180,9 +229,11 @@ export function filterEpRows<T extends Record<string, any>>(
 }
 
 /**
- * Normalize the visible options for a MAP request. A supplier's real MAP rate
- * is retained unchanged. A CP-only property remains visible, but its CP rate
- * is replaced by a synthetic MAP option with the configured dinner supplement.
+ * Normalize the visible options for a MAP/AP request. A supplier's real
+ * requested-plan rate is retained unchanged. A CP-only property remains
+ * visible, but its CP rate is replaced by a synthetic option with the
+ * configured meal supplement. AP uses the configured lunch rate once and the
+ * configured dinner rate once.
  * This keeps raw CP/AP/EP options out of a MAP selection flow.
  *
  * The returned option retains the supplier's CP booking/search identity. The
@@ -196,12 +247,16 @@ export function applyMapDinnerFallbackToRows<T extends Record<string, any>>(
   preserveSupplierOptions = false,
 ): T[] {
   const preferred = mealPlanCode(context.preferredMealPlanCode);
-  if (!config.enabled || preferred !== 'MAP') return rows;
+  if (!config.enabled || !['MAP', 'AP'].includes(preferred)) return rows;
 
   const cpProperties = new Set(
     rows.filter(containsCp).map(propertyKey),
   );
-  const realMapProperties = new Set(rows.filter(containsRealMap).map(propertyKey));
+  const realPlanProperties = new Set(rows.filter((row) => preferred === 'MAP'
+    ? containsRealMap(row)
+    : Array.isArray(row?.rateOptions)
+      ? row.rateOptions.some(isAp)
+      : isAp(row)).map(propertyKey));
 
 return rows.flatMap((row) => {
   const key = propertyKey(row);
@@ -211,7 +266,7 @@ return rows.flatMap((row) => {
   // options. The regular recommendation flow must remain unchanged.
   if (preserveSupplierOptions) {
     // Real supplier MAP rates and other supplier plans are already present.
-    if (realMapProperties.has(key) || !cpProperties.has(key)) {
+    if (realPlanProperties.has(key) || !cpProperties.has(key)) {
       return [row];
     }
 
@@ -252,9 +307,9 @@ return rows.flatMap((row) => {
 
   // Existing MAP recommendation behavior remains unchanged.
   if (options.length > 0) {
-    if (realMapProperties.has(key)) {
-        const mapOptions = options.filter(isMap);
-        return mapOptions.length > 0 ? [{ ...row, rateOptions: mapOptions }] : [];
+      if (realPlanProperties.has(key)) {
+        const planOptions = options.filter(preferred === 'MAP' ? isMap : isAp);
+        return planOptions.length > 0 ? [{ ...row, rateOptions: planOptions }] : [];
       }
 
       if (!cpProperties.has(key)) return [];
@@ -275,7 +330,7 @@ return rows.flatMap((row) => {
         : [];
     }
 
-    if (realMapProperties.has(key)) return isMap(row) ? [row] : [];
+    if (realPlanProperties.has(key)) return (preferred === 'MAP' ? isMap(row) : isAp(row)) ? [row] : [];
     if (!cpProperties.has(key)) return [];
 
     const fallback = createFallbackOption(row, context, config);

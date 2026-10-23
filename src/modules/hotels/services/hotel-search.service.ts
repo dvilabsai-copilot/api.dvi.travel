@@ -89,6 +89,9 @@ export class HotelSearchService {
         tbo_map_dinner_rate_3_star: true,
         tbo_map_dinner_rate_4_star: true,
         tbo_map_dinner_rate_5_star: true,
+        tbo_map_lunch_rate_3_star: true,
+        tbo_map_lunch_rate_4_star: true,
+        tbo_map_lunch_rate_5_star: true,
       },
     });
     return {
@@ -98,6 +101,9 @@ export class HotelSearchService {
       dinnerRate3Star: Math.max(Number(row?.tbo_map_dinner_rate_3_star ?? 900), 0),
       dinnerRate4Star: Math.max(Number(row?.tbo_map_dinner_rate_4_star ?? 1500), 0),
       dinnerRate5Star: Math.max(Number(row?.tbo_map_dinner_rate_5_star ?? 2500), 0),
+       lunchRate3Star: Math.max(Number(row?.tbo_map_lunch_rate_3_star ?? 900), 0),
+      lunchRate4Star: Math.max(Number(row?.tbo_map_lunch_rate_4_star ?? 1500), 0),
+      lunchRate5Star: Math.max(Number(row?.tbo_map_lunch_rate_5_star ?? 2500), 0),
     };
   }
 

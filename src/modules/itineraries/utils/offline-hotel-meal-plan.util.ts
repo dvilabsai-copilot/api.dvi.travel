@@ -25,11 +25,67 @@ export type OfflineMealBreakdown = OfflineMealFlags & {
   totalMealPlanCost: number;
 };
 
+const MEAL_PLAN_MEAL_KEYS = ['breakfast', 'lunch', 'dinner'] as const;
+type MealKey = typeof MEAL_PLAN_MEAL_KEYS[number];
+
 const money = (value: number): number => Number((Number(value || 0)).toFixed(2));
+const CHARGEABLE_MEAL_RATE_THRESHOLD = 1;
 
 /**
- * Resolve the legacy offline label from persisted flags and positive prices.
- * This deliberately requires breakfast for MAP/AP, matching the PHP output.
+ * Normalize persisted meal components as well as newly calculated ones. Old
+ * itinerary snapshots can contain an included value such as ₹0.60; keeping
+ * that value in the subtotal makes the tooltip and payable total disagree.
+ */
+export function normalizeOfflineMealBreakdown(
+  value: Partial<OfflineMealBreakdown> | null | undefined,
+): Partial<OfflineMealBreakdown> {
+  const hasComponentValues = MEAL_PLAN_MEAL_KEYS.some((meal) => {
+    const suffix = `${meal[0].toUpperCase()}${meal.slice(1)}Cost` as keyof OfflineMealBreakdown;
+    return value?.[`total${suffix}` as keyof OfflineMealBreakdown] !== undefined;
+  });
+  // Older snapshots stored only the already-calculated subtotal. There is no
+  // component value to classify in that shape, so preserve it for backward
+  // compatibility instead of silently removing a valid meal amount.
+  if (!hasComponentValues) {
+    return {
+      ...value,
+      totalMealPlanCost: money(Number(value?.totalMealPlanCost || 0)),
+    };
+  }
+  const mealPlanCode = String(value?.mealPlanCode || '').trim().toUpperCase();
+  const allowedMeals: MealKey[] = mealPlanCode === 'MAP'
+    ? ['breakfast', 'dinner']
+    : mealPlanCode === 'CP'
+      ? ['breakfast']
+      : mealPlanCode === 'AP'
+        ? [...MEAL_PLAN_MEAL_KEYS]
+        : [...MEAL_PLAN_MEAL_KEYS];
+  const totalFor = (meal: MealKey) => {
+    const amount = Number(value?.[`total${meal[0].toUpperCase()}${meal.slice(1)}Cost` as keyof OfflineMealBreakdown] || 0);
+    const rateKey = `${meal}CostPerPerson` as keyof OfflineMealBreakdown;
+    const hasRate = value?.[rateKey] !== undefined && value?.[rateKey] !== null;
+    const rate = Number(value?.[rateKey] || 0);
+    const isChargeable = hasRate
+      ? rate >= CHARGEABLE_MEAL_RATE_THRESHOLD
+      : amount >= CHARGEABLE_MEAL_RATE_THRESHOLD;
+    return allowedMeals.includes(meal) && isChargeable ? money(amount) : 0;
+  };
+  const totalBreakfastCost = totalFor('breakfast');
+  const totalLunchCost = totalFor('lunch');
+  const totalDinnerCost = totalFor('dinner');
+  return {
+    ...value,
+    totalBreakfastCost,
+    totalLunchCost,
+    totalDinnerCost,
+    totalMealPlanCost: money(totalBreakfastCost + totalLunchCost + totalDinnerCost),
+  };
+}
+
+/**
+ * Resolve the legacy offline label from persisted flags and available prices.
+ * A positive rate below ₹1 means the meal is included, so it still identifies
+ * the plan but must not become a payable meal amount.
  */
 export function resolveLegacyOfflineMealPlanCode(
   flags: OfflineMealFlags,
@@ -93,13 +149,13 @@ export function calculateOfflineMealBreakdown(input: {
     lunch: Math.max(Number(input.prices.lunch || 0), 0),
     dinner: Math.max(Number(input.prices.dinner || 0), 0),
   };
-  const totalBreakfastCost = input.flags.breakfast
+  const totalBreakfastCost = input.flags.breakfast && prices.breakfast >= CHARGEABLE_MEAL_RATE_THRESHOLD
     ? money(foodRequiredCount * prices.breakfast * roomQuantity)
     : 0;
-  const totalLunchCost = input.flags.lunch
+  const totalLunchCost = input.flags.lunch && prices.lunch >= CHARGEABLE_MEAL_RATE_THRESHOLD
     ? money(foodRequiredCount * prices.lunch * roomQuantity)
     : 0;
-  const totalDinnerCost = input.flags.dinner
+  const totalDinnerCost = input.flags.dinner && prices.dinner >= CHARGEABLE_MEAL_RATE_THRESHOLD
     ? money(foodRequiredCount * prices.dinner * roomQuantity)
     : 0;
 
