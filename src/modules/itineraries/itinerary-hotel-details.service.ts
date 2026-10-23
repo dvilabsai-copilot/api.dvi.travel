@@ -18,6 +18,7 @@ import {
   resolveHotelSupplementPricing,
   resolveOfflineHotelPayablePricing,
 } from './utils/hotel-selection-pricing.util';
+import { normalizeOfflineMealBreakdown } from './utils/offline-hotel-meal-plan.util';
 import {
   buildHotelSelectionState,
   HotelSelectionGroupView,
@@ -1250,9 +1251,13 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
       const extraBedCost = extraBedPricing.amount * earlyCheckInBillingMultiplier;
       const childWithBedCost = childWithBedPricing.amount * earlyCheckInBillingMultiplier;
       const childWithoutBedCost = childWithoutBedPricing.amount * earlyCheckInBillingMultiplier;
+      const normalizedMealPlanBreakdown = isDatabaseOccupancyProvider
+        ? normalizeOfflineMealBreakdown(selectedPriceSnapshot.mealPlanBreakdown)
+        : selectedPriceSnapshot.mealPlanBreakdown;
       const displaySelectedPriceSnapshot = isDatabaseOccupancyProvider
         ? {
             ...selectedPriceSnapshot,
+            ...(normalizedMealPlanBreakdown ? { mealPlanBreakdown: normalizedMealPlanBreakdown } : {}),
             extraBedCount: extraBedPricing.count,
             extraBedRate: extraBedPricing.rate,
             extraBedAmount: extraBedPricing.amount,
@@ -1271,7 +1276,7 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
         provider,
         totalHotelMealPlanCost: (h as any).total_hotel_meal_plan_cost,
         hotelMealPlanCost: (h as any).hotel_meal_plan_cost,
-        mealPlanBreakdown: selectedPriceSnapshot.mealPlanBreakdown,
+        mealPlanBreakdown: normalizedMealPlanBreakdown,
       }) * earlyCheckInBillingMultiplier;
       const roomCountForMargin = Math.max(
         Number((h as any).total_no_of_rooms ?? 0),
@@ -1391,7 +1396,7 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
             selectedPriceSnapshot.mealPlan ||
             '',
           ).trim(),
-          mealPlanBreakdown: selectedPriceSnapshot.mealPlanBreakdown || undefined,
+          mealPlanBreakdown: normalizedMealPlanBreakdown || undefined,
         } : {}),
         totalHotelCost: routeNightPayableHotelCost,
         pricePerNight: routeNightPayableHotelCost,

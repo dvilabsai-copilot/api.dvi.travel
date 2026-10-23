@@ -64,6 +64,21 @@ export class UpdateGlobalSettingsDto {
   @Min(0)
   tbo_map_dinner_rate_5_star?: number;
 
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  tbo_map_lunch_rate_3_star?: number;
+
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  tbo_map_lunch_rate_4_star?: number;
+
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  tbo_map_lunch_rate_5_star?: number;
+
   @Allow()
   extrabed_rate_percentage?: number;
   @Allow()

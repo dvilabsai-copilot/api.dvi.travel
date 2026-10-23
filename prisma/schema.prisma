@@ -2974,6 +2974,9 @@ model dvi_global_settings {
   tbo_map_dinner_rate_3_star             Float     @default(900) @db.Float
   tbo_map_dinner_rate_4_star             Float     @default(1500) @db.Float
   tbo_map_dinner_rate_5_star             Float     @default(2500) @db.Float
+   tbo_map_lunch_rate_3_star              Float     @default(900) @db.Float
+  tbo_map_lunch_rate_4_star              Float     @default(1500) @db.Float
+  tbo_map_lunch_rate_5_star              Float     @default(2500) @db.Float
 
   @@index([accommodation_return(length: 768)], map: "idx_cnf_global_settings_accommodation_return")
   @@index([agent_referral_bonus_credit], map: "idx_cnf_global_settings_agent_referral_bonus_credit")

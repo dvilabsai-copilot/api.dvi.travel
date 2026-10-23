@@ -1006,6 +1006,10 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
               'pricingIncludesHotelMargin',
               'hotelMealPlanCost', 'totalHotelMealPlanCost',
               'tboMapFallbackApplied', 'tboMapFallbackSourceMealPlan',
+              'tboMapFallbackTargetMealPlan', 'tboMapFallbackLunchRate',
+              'tboMapFallbackLunchPerPerson', 'tboMapFallbackLunchPerNight',
+              'tboMapFallbackLunchTotal', 'tboMapFallbackMealPlanTotal',
+              'tboMapFallbackDinnerComponentPerNight', 'tboMapFallbackDinnerComponentTotal',
               'tboMapFallbackDinnerRate', 'tboMapFallbackDinnerPerPerson',
               'tboMapFallbackDinnerPerNight', 'tboMapFallbackDinnerTotal',
               // Availability and card display fields.

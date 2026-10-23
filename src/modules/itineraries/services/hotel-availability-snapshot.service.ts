@@ -5533,6 +5533,9 @@ export class HotelAvailabilitySnapshotService {
         tbo_map_dinner_rate_3_star: true,
         tbo_map_dinner_rate_4_star: true,
         tbo_map_dinner_rate_5_star: true,
+        tbo_map_lunch_rate_3_star: true,
+        tbo_map_lunch_rate_4_star: true,
+        tbo_map_lunch_rate_5_star: true,
       },
     });
     return {
@@ -5541,13 +5544,16 @@ export class HotelAvailabilitySnapshotService {
       dinnerRate3Star: Math.max(Number(row?.tbo_map_dinner_rate_3_star ?? 900), 0),
       dinnerRate4Star: Math.max(Number(row?.tbo_map_dinner_rate_4_star ?? 1500), 0),
       dinnerRate5Star: Math.max(Number(row?.tbo_map_dinner_rate_5_star ?? 2500), 0),
+       lunchRate3Star: Math.max(Number(row?.tbo_map_lunch_rate_3_star ?? 900), 0),
+      lunchRate4Star: Math.max(Number(row?.tbo_map_lunch_rate_4_star ?? 1500), 0),
+      lunchRate5Star: Math.max(Number(row?.tbo_map_lunch_rate_5_star ?? 2500), 0),
     };
   }
 
   private async normalizePersistedMealPlanInventory(plan: any, rows: any[]): Promise<any[]> {
     const config = await this.getMapDinnerFallbackConfig();
     const preferredMealPlanCode = this.getPlanMealPlanCode(plan);
-    const normalized = preferredMealPlanCode === 'MAP'
+    const normalized = ['MAP', 'AP'].includes(preferredMealPlanCode || '')
       ? applyMapDinnerFallbackToRows(rows, {
           preferredMealPlanCode,
           adultCount: Math.max(Number(plan?.total_adult || 0), 0),

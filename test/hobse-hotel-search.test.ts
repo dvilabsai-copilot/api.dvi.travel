@@ -32,6 +32,9 @@ function createService(showHobseEpHotels = 1) {
         tbo_map_dinner_rate_3_star: 900,
         tbo_map_dinner_rate_4_star: 1500,
         tbo_map_dinner_rate_5_star: 2500,
+        tbo_map_lunch_rate_3_star: 900,
+        tbo_map_lunch_rate_4_star: 1500,
+        tbo_map_lunch_rate_5_star: 2500,
       }),
     },
   } as any;
