@@ -5,6 +5,7 @@ import {
   resolveHotelSupplementPricing,
   resolveOfflineHotelPayablePricing,
 } from '../src/modules/itineraries/utils/hotel-selection-pricing.util';
+import { projectHotelPayablePricing } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
 
 test('normalizes an amount-only supplement into a matching unit rate', () => {
   const result = resolveHotelSupplementPricing({
@@ -35,6 +36,27 @@ test('uses the legacy cost field when the normalized amount is zero', () => {
   });
 
   assert.deepEqual(result, { count: 1, rate: 1500, amount: 1500 });
+});
+
+test('projects an automatic option with a positive supplement rate and zero amount consistently', () => {
+  const result = projectHotelPayablePricing({
+    provider: 'axisrooms',
+    roomCount: 2,
+    baseTotalPrice: 20200,
+    totalRoomCost: 20200,
+    extraBedCount: 1,
+    extraBedRate: 1600,
+    extraBedAmount: 1600,
+    childWithoutBedCount: 1,
+    childWithoutBedRate: 2250,
+    childWithoutBedAmount: 0,
+    hotelMarginPercentage: 6,
+  }, 6);
+
+  assert.equal(result.childWithoutBedRate, 2250);
+  assert.equal(result.childWithoutBedAmount, 2250);
+  assert.equal(result.totalChildWithoutBedCost, 2250);
+  assert.equal(result.totalPrice, 25493);
 });
 
 test('uses DOUBLE plus supplements for three adults', () => {

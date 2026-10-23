@@ -1,4 +1,7 @@
-import { resolveOfflineHotelPayablePricing } from './hotel-selection-pricing.util';
+import {
+  resolveHotelSupplementPricing,
+  resolveOfflineHotelPayablePricing,
+} from './hotel-selection-pricing.util';
 
 const money = (value: unknown): number => {
   const amount = Number(value ?? 0);
@@ -214,10 +217,26 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     Math.abs(rawBasePerNight - explicitBaseTotal) < 0.01
     ? money(explicitBaseTotal / roomCount)
     : rawBasePerNight;
+  const extraBedPricing = resolveHotelSupplementPricing({
+    count: option?.extraBedCount ?? option?.extra_bed_count ?? option?.total_extra_bed ?? option?.room_extra_bed_count,
+    rate: option?.extraBedRate ?? option?.extra_bed_rate ?? option?.room_extra_bed_rate,
+    amount: option?.extraBedAmount ?? option?.extra_bed_amount,
+    cost: option?.extraBedCost ?? option?.totalExtraBedCost ?? option?.total_extra_bed_cost,
+  });
+  const childWithBedPricing = resolveHotelSupplementPricing({
+    count: option?.childWithBedCount ?? option?.child_with_bed_count ?? option?.total_child_with_bed ?? option?.room_cwb_count,
+    rate: option?.childWithBedRate ?? option?.child_with_bed_rate,
+    amount: option?.childWithBedAmount ?? option?.child_with_bed_amount,
+    cost: option?.childWithBedCost ?? option?.totalChildWithBedCost ?? option?.total_childwith_bed_cost,
+  });
+  const childWithoutBedPricing = resolveHotelSupplementPricing({
+    count: option?.childWithoutBedCount ?? option?.child_without_bed_count ?? option?.total_child_without_bed ?? option?.room_cnb_count,
+    rate: option?.childWithoutBedRate ?? option?.child_without_bed_rate,
+    amount: option?.childWithoutBedAmount ?? option?.child_without_bed_amount,
+    cost: option?.childWithoutBedCost ?? option?.totalChildWithoutBedCost ?? option?.total_childwithout_bed_cost ?? option?.extraChildAmount ?? option?.extra_child_amount,
+  });
   const extraSupplementTotal = money(
-    positive(option?.extraBedAmount, option?.extraBedCost, option?.total_extra_bed_cost) +
-    positive(option?.childWithBedAmount, option?.childWithBedCost, option?.total_childwith_bed_cost) +
-    positive(option?.childWithoutBedAmount, option?.childWithoutBedCost, option?.total_childwithout_bed_cost),
+    extraBedPricing.amount + childWithBedPricing.amount + childWithoutBedPricing.amount,
   );
   const numberOfNights = Math.max(Number(option?.numberOfNights ?? option?.nights ?? 1), 1);
   const tboMapFallbackDinnerTotal = option?.tboMapFallbackApplied === true
@@ -233,9 +252,9 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
   const offlinePricing = ['offline', 'axisrooms'].includes(provider)
     ? resolveOfflineHotelPayablePricing({
         baseTotalPrice: baseTotal,
-        extraBedAmount: option?.extraBedAmount ?? option?.extraBedCost ?? option?.total_extra_bed_cost,
-        childWithBedAmount: option?.childWithBedAmount ?? option?.childWithBedCost ?? option?.total_childwith_bed_cost,
-        childWithoutBedAmount: option?.childWithoutBedAmount ?? option?.childWithoutBedCost ?? option?.total_childwithout_bed_cost,
+        extraBedAmount: extraBedPricing.amount,
+        childWithBedAmount: childWithBedPricing.amount,
+        childWithoutBedAmount: childWithoutBedPricing.amount,
         mealPlanCost: ordinaryMealPlanTotal,
         marginPercentage,
         taxAmount: option?.totalHotelTaxAmount ?? option?.total_hotel_tax_amount,
@@ -296,6 +315,18 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     // not, so normalize them here instead of making React infer them.
     roomRate: positive(option?.roomRate, option?.room_rate, basePerNight),
     totalRoomCost: positive(option?.totalRoomCost, option?.total_room_cost, baseTotal),
+    extraBedCount: extraBedPricing.count,
+    extraBedRate: extraBedPricing.rate,
+    extraBedAmount: extraBedPricing.amount,
+    totalExtraBedCost: extraBedPricing.amount,
+    childWithBedCount: childWithBedPricing.count,
+    childWithBedRate: childWithBedPricing.rate,
+    childWithBedAmount: childWithBedPricing.amount,
+    totalChildWithBedCost: childWithBedPricing.amount,
+    childWithoutBedCount: childWithoutBedPricing.count,
+    childWithoutBedRate: childWithoutBedPricing.rate,
+    childWithoutBedAmount: childWithoutBedPricing.amount,
+    totalChildWithoutBedCost: childWithoutBedPricing.amount,
     hotelMarginPercentage: marginPercentage,
     hotelMarginAmount: marginPerNight,
     hotelMarginStayAmount: marginTotal,
