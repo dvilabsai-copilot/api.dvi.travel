@@ -130,3 +130,42 @@ test('freshly reselects automatic hotspots after the last manual hotspot is dele
     preserveExistingHotspots: false,
   });
 });
+
+test('does not reprice after the cross-day optimizer fails', async () => {
+  const calls: string[] = [];
+  const tx: any = {
+    dvi_itinerary_route_hotspot_details: {
+      findFirst: async () => ({ hotspot_ID: 9, route_hotspot_ID: 100 }),
+      findMany: async () => [],
+      count: async () => 0,
+      updateMany: async () => ({ count: 1 }),
+    },
+    dvi_itinerary_route_activity_details: {
+      updateMany: async () => undefined,
+    },
+    dvi_itinerary_route_details: {
+      findFirst: async () => ({ itinerary_route_ID: 7, excluded_hotspot_ids: [] }),
+      update: async () => undefined,
+    },
+    dvi_itinerary_manual_hotspot_displacement: {
+      findMany: async () => [],
+      updateMany: async () => undefined,
+    },
+  };
+  const prisma: any = {
+    $transaction: async (callback: (client: any) => Promise<any>) => callback(tx),
+  };
+  const hotspotEngine: any = {
+    rebuildRouteHotspots: async () => ({ rebuildSummary: { routes: 1 }, warnings: [] }),
+    rebuildParkingCharges: async () => calls.push('parking.rebuild'),
+  };
+  const service = new ItineraryHotspotDeletionService(prisma, hotspotEngine);
+  service.setApplySameCityCrossDayOptimizerCallback(async () => {
+    calls.push('same-city.optimize');
+    throw new Error('[SameCityCrossDayOptimizer] rebuilt target route but did not materialize hotspot');
+  });
+  service.setForceRebuildVehiclePricingCallback(async () => calls.push('vehicle.rebuild'));
+
+  await assert.rejects(() => service.deleteHotspot(42, 7, 100));
+  assert.deepEqual(calls, ['same-city.optimize']);
+});

@@ -57,7 +57,7 @@ if (!route) {
 // Transportation Only, Day 1. Other routes retain existing matching.
 let isTransportOnlyDay1 = false;
 
-const plan = await tx.dvi_itinerary_plan_details.findFirst({
+const plan = await (tx as any).dvi_itinerary_plan_details?.findFirst({
   where: {
     itinerary_plan_ID: planId,
     deleted: 0,
@@ -68,7 +68,7 @@ const plan = await tx.dvi_itinerary_plan_details.findFirst({
 });
 
 if (Number(plan?.itinerary_preference) === 2) {
-  const firstRoute = await tx.dvi_itinerary_route_details.findFirst({
+  const firstRoute = await (tx as any).dvi_itinerary_route_details?.findFirst({
     where: {
       itinerary_plan_ID: planId,
       deleted: 0,

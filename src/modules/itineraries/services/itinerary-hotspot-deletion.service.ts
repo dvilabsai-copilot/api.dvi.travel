@@ -320,27 +320,8 @@ return {
     // Deletion must use the same ordering, otherwise the vehicle route can
     // remain priced from the pre-optimizer timeline until the user clicks
     // Rebuild Route again.
-    try {
-  await this.applySameCityCrossDayOptimizerAfterHotspotChange(normalizedPlanId);
-} catch (error: any) {
-  const message = String(error?.message || error || '');
-
-  if (
-    !message.includes(
-      '[SameCityCrossDayOptimizer] rebuilt target route',
-    ) ||
-    !message.includes('did not materialize hotspot')
-  ) {
-    throw error;
-  }
-
-  console.warn(
-    '[HotspotDelete] Optional cross-day move failed; retaining current route allocation',
-    { planId: normalizedPlanId, message },
-  );
-}
-
-await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, userId);
+    await this.applySameCityCrossDayOptimizerAfterHotspotChange(normalizedPlanId);
+    await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, userId);
 
  // Force full vehicle pricing rebuild from current rebuilt hotspot timeline.
     await this.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId);
