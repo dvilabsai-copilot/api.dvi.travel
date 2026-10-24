@@ -512,7 +512,9 @@ export class HotelBlockingService {
       guest: input.guest || null,
       selectionIds,
     };
-    const status = email ? HOTEL_BLOCK_STATUS.REQUESTED : HOTEL_BLOCK_STATUS.CONTACT_REQUIRED;
+    // A submitted block request represents a blocked room until the hotelier
+    // responds with Confirmed, Waitlisted, or Unavailable.
+    const status = email ? HOTEL_BLOCK_STATUS.BLOCKED : HOTEL_BLOCK_STATUS.CONTACT_REQUIRED;
     const candidates = await (this.prisma as any).dvi_hotel_block_request.findMany({
       where: {
         itinerary_plan_id: input.planId,
