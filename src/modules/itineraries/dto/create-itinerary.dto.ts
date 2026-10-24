@@ -11,6 +11,7 @@ import {
   Min,
   Matches,
   Max,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TransportEarlyArrivalOption } from '../transport-early-arrival';
@@ -149,10 +150,33 @@ agent_id!: number;
   @IsEnum(TransportEarlyArrivalOption)
   transport_early_arrival_option?: TransportEarlyArrivalOption;
 
+  @ApiProperty({
+    required: false,
+    maxLength: 255,
+    description:
+      'Guest Day 1 overnight accommodation/location for Transport Only. Does not create a hotel booking.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  transport_overnight_location_name?: string;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
   transport_early_arrival_hotel_name?: string;
+
+  @ApiProperty({
+    required: false,
+    example: 'Airport Lounge',
+    maxLength: 255,
+    description:
+      'Optional resting location for Transport Only early arrivals.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  transport_early_arrival_location_name?: string;
 
   @ApiProperty({ required: false, example: 180, minimum: 30, maximum: 720 })
   @IsOptional()

@@ -2851,6 +2851,7 @@ const clientIp = String(
       previousDayBillingConfirmed?: boolean;
       transportEarlyArrivalOption?: TransportEarlyArrivalOption | null;
       transportEarlyArrivalHotelName?: string | null;
+      transportEarlyArrivalLocationName?: string | null;
       transportEarlyArrivalRestMinutes?: number | null;
       changeType?: 'ROUTE_START' | 'ROUTE_END' | 'FINAL_DAY_DEPARTURE';
     },
@@ -2866,6 +2867,7 @@ const clientIp = String(
       body.previousDayBillingConfirmed,
       body.transportEarlyArrivalOption,
       body.transportEarlyArrivalHotelName,
+      body.transportEarlyArrivalLocationName,
       body.transportEarlyArrivalRestMinutes,
       body.changeType,
       userId,

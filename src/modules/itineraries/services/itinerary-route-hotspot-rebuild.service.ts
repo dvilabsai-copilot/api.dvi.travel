@@ -75,13 +75,36 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
 // prevent a deleted hotspot from becoming eligible again. Keep sibling-route
 // rows so plan-wide duplicate and same-city protections still apply.
 const existingHotspotsWithDates = oldHotspots
-  .filter((row: any) => Number(row.itinerary_route_ID || 0) !== normalizedRouteId)
   .map((row: any) => ({
     ...row,
     route_date: oldRouteDateMap.get(
       Number(row.itinerary_route_ID || 0),
     ),
   }));
+
+// Preserve manually approved hotspots on this route.
+const savedManualHotspots =
+  await tx.dvi_itinerary_route_hotspot_details.findMany({
+    where: {
+      itinerary_plan_ID: normalizedPlanId,
+      itinerary_route_ID: normalizedRouteId,
+      hotspot_plan_own_way: 1,
+      item_type: 4,
+      deleted: 0,
+      status: 1,
+    },
+    orderBy: [
+      { hotspot_order: 'asc' },
+      { route_hotspot_ID: 'asc' },
+    ],
+  });
+
+existingHotspotsWithDates.push(
+  ...savedManualHotspots.map((row: any) => ({
+    ...row,
+    route_date: oldRouteDateMap.get(normalizedRouteId),
+  })),
+);
 
 const planRow = await tx.dvi_itinerary_plan_details.findFirst({
           where: { itinerary_plan_ID: normalizedPlanId, deleted: 0 },
@@ -120,21 +143,8 @@ const planRow = await tx.dvi_itinerary_plan_details.findFirst({
           });
         }
 
-        await tx.dvi_itinerary_route_hotspot_details.updateMany({
-          where: {
-            itinerary_plan_ID: normalizedPlanId,
-            itinerary_route_ID: normalizedRouteId,
-            hotspot_plan_own_way: 1,
-            item_type: 4,
-            deleted: 0,
-          },
-          data: { deleted: 1, status: 0, updatedon: new Date() },
-        });
-
-        await tx.dvi_itinerary_route_details.update({
-          where: { itinerary_route_ID: normalizedRouteId },
-          data: { excluded_hotspot_ids: [], updatedon: new Date() },
-        });
+       // Keep the user's excluded hotspot IDs unchanged during preservation rebuild.
+// Do not reset excluded_hotspot_ids here.
         const preRouteVisitCount = await tx.dvi_itinerary_route_hotspot_details.count({
           where: {
             itinerary_plan_ID: normalizedPlanId,
@@ -148,17 +158,35 @@ const planRow = await tx.dvi_itinerary_plan_details.findFirst({
           routeId: normalizedRouteId,
           preRouteVisitCount,
         });
+// Protect existing active sightseeing hotspots on this route.
+const excludedIds = new Set<number>(
+  existingExcludedHotspotIds,
+);
 
-       const engineResult = await this.hotspotEngine.rebuildRouteHotspots(
+const protectedHotspotIds = Array.from(
+  new Set<number>(
+    existingHotspotsWithDates
+      .filter(
+        (row: any) =>
+          Number(row.itinerary_route_ID || 0) === normalizedRouteId &&
+          Number(row.item_type || 0) === 4 &&
+          Number(row.deleted || 0) === 0 &&
+          Number(row.status || 0) === 1 &&
+          Number(row.hotspot_ID || 0) > 0 &&
+          !excludedIds.has(Number(row.hotspot_ID || 0)),
+      )
+      .map((row: any) => Number(row.hotspot_ID)),
+  ),
+);
+
+const engineResult = await this.hotspotEngine.rebuildRouteHotspots(
   tx,
   normalizedPlanId,
   existingHotspotsWithDates,
   {
     scopeToRouteId: normalizedRouteId,
-    // Explicit Rebuild Route is a fresh automatic rebuild. The DELETE flow
-    // supplies protection separately because it must preserve other current
-    // hotspots while recalculating the affected route.
-    preserveExistingHotspots: false,
+    preserveExistingHotspots: true,
+    protectedHotspotIds,
   },
 );
         await this.routeVehicleRestrictions.assertPersistedPlan(

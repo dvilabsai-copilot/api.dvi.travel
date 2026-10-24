@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import {
+  DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF,
   DEFAULT_TRANSPORT_EARLIEST_SIGHTSEEING_TIME,
   DEFAULT_TRANSPORT_HOTEL_REST_MINUTES,
   DEFAULT_TRANSPORT_REFRESHMENT_MINUTES,
@@ -41,9 +42,12 @@ export class TransportEarlyArrivalTimelineService {
     );
     const earliestSightseeingSeconds = timeToSeconds(earliestSightseeingTime);
     const arrivalSeconds = this.planArrivalSeconds(options.plan, options.currentTime);
-    const cutoffSeconds = (wallClockMinutes(
-      getTransportEarlyArrivalSetting('TRANSPORT_EARLY_ARRIVAL_CUTOFF', '08:00'),
-    ) ?? 8 * 60) * 60;
+ const cutoffSeconds = (wallClockMinutes(
+  getTransportEarlyArrivalSetting(
+    'TRANSPORT_EARLY_ARRIVAL_CUTOFF',
+    DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF,
+  ),
+) ?? 7 * 60) * 60;
     const option = options.plan?.transport_early_arrival_option;
 
     if (
@@ -63,12 +67,23 @@ export class TransportEarlyArrivalTimelineService {
       };
     }
 
-    const configuredMinutes = option === TransportEarlyArrivalOption.HOTEL_REST
-      ? Number(options.plan?.transport_early_arrival_rest_minutes || DEFAULT_TRANSPORT_HOTEL_REST_MINUTES)
-      : Number(getTransportEarlyArrivalSetting(
-          'TRANSPORT_DEFAULT_REFRESHMENT_MINUTES',
-          String(DEFAULT_TRANSPORT_REFRESHMENT_MINUTES),
-        ));
+    const configuredMinutes =
+      option === TransportEarlyArrivalOption.HOTEL_REST
+        ? Number(
+            options.plan?.transport_early_arrival_rest_minutes ||
+            DEFAULT_TRANSPORT_HOTEL_REST_MINUTES,
+          )
+        : option === TransportEarlyArrivalOption.REFRESHMENT_BEFORE_SIGHTSEEING
+          ? Number(
+              getTransportEarlyArrivalSetting(
+                'TRANSPORT_DEFAULT_REFRESHMENT_MINUTES',
+                String(DEFAULT_TRANSPORT_REFRESHMENT_MINUTES),
+              ),
+            )
+          : Number(
+              options.plan?.transport_early_arrival_rest_minutes ||
+              DEFAULT_TRANSPORT_REFRESHMENT_MINUTES,
+            );
     const breakEndSeconds = Math.max(
       arrivalSeconds + Math.max(30, configuredMinutes) * 60,
       earliestSightseeingSeconds,
@@ -78,6 +93,43 @@ export class TransportEarlyArrivalTimelineService {
     const endTime = secondsToTime(boundedBreakEndSeconds);
     const isHotelRest = option === TransportEarlyArrivalOption.HOTEL_REST;
     const hotelName = String(options.plan?.transport_early_arrival_hotel_name || '').trim();
+    const locationName = String(
+      options.plan?.transport_early_arrival_location_name || '',
+    ).trim();
+
+    const actualRestMinutes = Math.max(
+      0,
+      Math.min(
+        Math.max(30, configuredMinutes),
+        Math.floor((boundedBreakEndSeconds - arrivalSeconds) / 60),
+      ),
+    );
+
+    const additionalWaitingMinutes = Math.max(
+      0,
+      Math.floor((boundedBreakEndSeconds - arrivalSeconds) / 60) -
+        actualRestMinutes,
+    );
+
+    const breakDescription =
+      isHotelRest
+        ? hotelName
+          ? `Visit to ${hotelName} for rest and refreshment`
+          : 'Visit to Hotel for rest and refreshment'
+        : option === TransportEarlyArrivalOption.AIRPORT_LOUNGE
+          ? `Airport lounge rest${locationName ? ` at ${locationName}` : ''}`
+          : option === TransportEarlyArrivalOption.RESTAURANT_REST
+            ? `Restaurant refreshment break${locationName ? ` at ${locationName}` : ''}`
+            : option === TransportEarlyArrivalOption.OTHER_LOCATION
+              ? `Rest at ${locationName || 'preferred location'}`
+              : 'Refreshment / waiting break before sightseeing';
+
+    const detailedBreakDescription =
+      !isHotelRest &&
+      option !== TransportEarlyArrivalOption.REFRESHMENT_BEFORE_SIGHTSEEING &&
+      additionalWaitingMinutes > 0
+        ? `${breakDescription} (${actualRestMinutes} min rest + ${additionalWaitingMinutes} min waiting before sightseeing)`
+        : breakDescription;
 
     return {
       handled: true,
@@ -95,11 +147,7 @@ export class TransportEarlyArrivalTimelineService {
         hotspot_travelling_distance: null,
         allow_break_hours: 1,
         allow_via_route: 0,
-        via_location_name: isHotelRest
-          ? hotelName
-            ? `Visit to ${hotelName} for rest and refreshment`
-            : 'Visit to Hotel for rest and refreshment'
-          : 'Refreshment / waiting break before sightseeing',
+        via_location_name: detailedBreakDescription,
         hotspot_plan_own_way: 0,
         createdby: options.createdByUserId,
         createdon: new Date(),

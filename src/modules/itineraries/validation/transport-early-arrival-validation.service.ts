@@ -9,12 +9,12 @@ import {
 @Injectable()
 export class TransportEarlyArrivalValidationService {
   validate(plan: CreatePlanDto): void {
-    const cutoff = wallClockMinutes(
-      getTransportEarlyArrivalSetting(
-        'TRANSPORT_EARLY_ARRIVAL_CUTOFF',
-        DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF,
-      ),
-    ) ?? 8 * 60;
+  const cutoff = wallClockMinutes(
+  getTransportEarlyArrivalSetting(
+    'TRANSPORT_EARLY_ARRIVAL_CUTOFF',
+    DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF,
+  ),
+) ?? 7 * 60;
     const arrivalMinutes = wallClockMinutes(plan.trip_start_date);
     const requiresDecision =
       Number(plan.itinerary_preference) === 2 &&

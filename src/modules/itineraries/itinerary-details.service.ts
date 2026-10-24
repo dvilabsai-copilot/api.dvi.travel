@@ -471,6 +471,8 @@ export interface ItineraryDetailsResponseDto {
   specialInstruction?: string | null;
   transport_early_arrival_option?: string | null;
   transport_early_arrival_hotel_name?: string | null;
+transport_overnight_location_name?: string | null;
+transport_early_arrival_location_name?: string | null;
   transport_early_arrival_rest_minutes?: number | null;
   earlyArrivalPreferenceMessage?: string | null;
   dateRange: string;
@@ -7503,7 +7505,9 @@ const response: ItineraryDetailsResponseDto = {
       special_instruction: specialInstructions,
       specialInstruction: specialInstructions,
       transport_early_arrival_option: (plan as any).transport_early_arrival_option ?? null,
-      transport_early_arrival_hotel_name: (plan as any).transport_early_arrival_hotel_name ?? null,
+    transport_early_arrival_hotel_name: (plan as any).transport_early_arrival_hotel_name ?? null,
+transport_overnight_location_name: (plan as any).transport_overnight_location_name ?? null,
+transport_early_arrival_location_name: (plan as any).transport_early_arrival_location_name ?? null,
       transport_early_arrival_rest_minutes: (plan as any).transport_early_arrival_rest_minutes ?? null,
       earlyArrivalPreferenceMessage: getTransportEarlyArrivalMessage(
         (plan as any).transport_early_arrival_option,

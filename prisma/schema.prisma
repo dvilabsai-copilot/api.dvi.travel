@@ -1523,7 +1523,9 @@ model dvi_confirmed_itinerary_plan_details {
   food_type                              Int       @default(0)
   special_instructions                   String?   @db.Text
   transport_early_arrival_option         String?   @db.VarChar(50)
-  transport_early_arrival_hotel_name     String?   @db.VarChar(255)
+transport_early_arrival_hotel_name     String?   @db.VarChar(255)
+transport_overnight_location_name     String?   @db.VarChar(255)
+transport_early_arrival_location_name  String?   @db.VarChar(255)
   transport_early_arrival_rest_minutes   Int?
   pick_up_date_and_time                  DateTime? @db.DateTime(0)
   hotel_terms_condition                  String?   @db.Text
@@ -3974,7 +3976,9 @@ model dvi_itinerary_plan_details {
   food_type                            Int       @default(0)
   special_instructions                 String?   @db.Text
   transport_early_arrival_option       String?   @db.VarChar(50)
-  transport_early_arrival_hotel_name   String?   @db.VarChar(255)
+transport_early_arrival_hotel_name    String? @db.VarChar(255)
+transport_overnight_location_name    String? @db.VarChar(255)
+transport_early_arrival_location_name String? @db.VarChar(255)
   transport_early_arrival_rest_minutes Int?
   pick_up_date_and_time                DateTime? @db.DateTime(0)
   hotel_rates_visibility               Int       @default(0)

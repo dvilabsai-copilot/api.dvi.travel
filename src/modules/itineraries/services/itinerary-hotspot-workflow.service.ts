@@ -75,6 +75,19 @@ const directDestination =
 // offer a hotspot that is already scheduled on another day.
  // We also track which ones are on THIS route specifically (for visitAgain).
     const planId = Number(route.itinerary_plan_ID);
+    const itineraryPlan = await (this.prisma as any)
+  .dvi_itinerary_plan_details.findFirst({
+    where: {
+      itinerary_plan_ID: planId,
+      deleted: 0,
+    },
+    select: {
+      itinerary_preference: true,
+    },
+  });
+
+const isTransportOnly =
+  Number(itineraryPlan?.itinerary_preference) === 2;
     const allPlanAddedRowsRaw = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
         itinerary_plan_ID: planId,
@@ -162,6 +175,17 @@ const directDestination =
   if (/tirupati/i.test(name)) {
     cityNames.add(name.replace(/tirupati/gi, "Tirupathi"));
   }
+
+
+  // Transport Only: support the Kochi/Cochin naming
+  // used by the existing hotspot master.
+  if (
+    isTransportOnly &&
+    /(?:^|,)\s*(?:kochi|cochin)\s*(?:,|$)/i.test(name)
+  ) {
+    cityNames.add("Cochin");
+  }
+
 
   return await (this.prisma as any).dvi_hotspot_place.findMany({
     where: {

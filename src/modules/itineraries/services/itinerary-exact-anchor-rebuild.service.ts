@@ -860,13 +860,12 @@ private findManualFitMainTimelineTravelReplica(...args: any[]): any {
 
         cursor += travelMinutes;
       }
-
-      const visitMinutes = getDurationMinutes(currentAttraction, 60);
-      const operatingAdjustment = this.adjustManualFitVisitStartToOperatingWindow(
-        currentAttraction,
-        cursor,
-        visitMinutes,
-      );
+const visitMinutes = getDurationMinutes(currentAttraction, 60);
+const operatingAdjustment = this.adjustManualFitVisitStartToOperatingWindow(
+  currentAttraction,
+  cursor,
+  visitMinutes,
+);
 
       if (!operatingAdjustment.valid && getHotspotId(currentAttraction) !== Number(params.targetHotspotId || 0)) {
  console.warn('[FitHere][APJ_PIVOT_DECISION]', {

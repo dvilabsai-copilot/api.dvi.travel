@@ -768,11 +768,26 @@ export class PlanEngineService {
 
  // Misc
       special_instructions: plan.special_instructions ?? "",
+
+      transport_overnight_location_name:
+        Number(plan.itinerary_preference ?? 0) === 2
+          ? String(plan.transport_overnight_location_name ?? "").trim() || null
+          : null,
+
       transport_early_arrival_option: plan.transport_early_arrival_option ?? null,
+
       transport_early_arrival_hotel_name:
         plan.transport_early_arrival_option === TransportEarlyArrivalOption.HOTEL_REST
           ? String(plan.transport_early_arrival_hotel_name || '').trim()
           : null,
+
+      transport_early_arrival_location_name:
+        plan.transport_early_arrival_option &&
+        plan.transport_early_arrival_option !== TransportEarlyArrivalOption.HOTEL_REST &&
+        plan.transport_early_arrival_option !== TransportEarlyArrivalOption.REFRESHMENT_BEFORE_SIGHTSEEING
+          ? String(plan.transport_early_arrival_location_name || '').trim() || null
+          : null,
+
       transport_early_arrival_rest_minutes: plan.transport_early_arrival_option
         ? Number(
             plan.transport_early_arrival_rest_minutes ||

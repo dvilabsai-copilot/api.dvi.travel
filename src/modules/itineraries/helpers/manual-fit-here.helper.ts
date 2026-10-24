@@ -589,16 +589,17 @@ let selectedHotspotPreservedInPreview =
     (response as any).selectedHotspotPreserved = false;
   }
 
-  if (
-    resolvedAnchor.exactSelectedGap === true &&
-    (response as any).canConfirm !== true &&
-    selectedHotspotPreservedInPreview === true &&
-    !(
-      (response as any).selectedOpeningConflict ||
-      String((response as any).resultType || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' ||
-      String((response as any).manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
-    )
-  ) {
+if (
+  resolvedAnchor.exactSelectedGap === true &&
+  selectedAnchorPreserved === true &&
+  (response as any).canConfirm !== true &&
+  selectedHotspotPreservedInPreview === true &&
+  !(
+    (response as any).selectedOpeningConflict ||
+    String((response as any).resultType || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' ||
+    String((response as any).manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
+  )
+) {
     (response as any).resultType = Array.isArray((response as any).removedHotspots) && (response as any).removedHotspots.length > 0
       ? 'FITS_WITH_OPTIONAL_REMOVAL'
       : 'FITS_DIRECTLY';
@@ -742,17 +743,18 @@ let selectedHotspotPreservedInPreview =
     }
   }
 
-  if (
-    resolvedAnchor.exactSelectedGap === true &&
-    selectedHotspotPreservedInPreview === true &&
-    (response as any).canConfirm !== true &&
-    !(
-      (response as any).selectedOpeningConflict ||
-      String((response as any).resultType || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' ||
-      String((response as any).manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
-    )
-  ) {
-    (response as any).canConfirm = true;
+ if (
+  resolvedAnchor.exactSelectedGap === true &&
+  selectedAnchorPreserved === true &&
+  selectedHotspotPreservedInPreview === true &&
+  (response as any).canConfirm !== true &&
+  !(
+    (response as any).selectedOpeningConflict ||
+    String((response as any).resultType || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' ||
+    String((response as any).manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
+  )
+) {
+  (response as any).canConfirm = true;
     (response as any).resultType = Array.isArray((response as any).removedHotspots) && (response as any).removedHotspots.length > 0
       ? 'FITS_WITH_OPTIONAL_REMOVAL'
       : 'FITS_DIRECTLY';
@@ -789,10 +791,150 @@ let selectedHotspotPreservedInPreview =
           anchorIntent: resolvedAnchor.anchorIntent,
         });
 
-  (response as any).selectedAnchorPreserved = normalizedSelectedAnchorPreserved;
-  cacheEntry.canConfirm = (response as any).canConfirm === true;
-  cacheEntry.requiresTimingRiskConfirmation = (response as any).requiresTimingRiskConfirmation === true;
-  cacheEntry.requiresPriorityRemovalConfirmation = (response as any).requiresPriorityRemovalConfirmation === true;
+(response as any).selectedAnchorPreserved = normalizedSelectedAnchorPreserved;
+
+// Final safety check: an exact-anchor insertion cannot be confirmed
+// if the selected hotspot was moved elsewhere in the route.
+if (
+  resolvedAnchor.exactSelectedGap === true &&
+  normalizedSelectedAnchorPreserved !== true
+) {
+  (response as any).canConfirm = false;
+  (response as any).resultType = 'CANNOT_FIT';
+  (response as any).acceptedReason = null;
+  (response as any).rejectedReasons = [
+    'The selected hotspot could not be placed at the exact requested position.',
+  ];
+  (response as any).confirmButtonVariant = 'default';
+
+  (response as any).requiresTimingRiskConfirmation = false;
+  (response as any).requiresPriorityRemovalConfirmation = false;
+  (response as any).requiresRemovalAcknowledgementHotspotIds = [];
+
+  if (
+    (response as any).resolution &&
+    typeof (response as any).resolution === 'object'
+  ) {
+    (response as any).resolution.canConfirm = false;
+    (response as any).resolution.requiresTimingRiskConfirmation = false;
+    (response as any).resolution.requiresPriorityRemovalConfirmation = false;
+  }
+}
+
+// Transport Only / Day 1 only.
+// Recheck the FINAL preview before saving confirmation requirements.
+if ((response as any).canConfirm === true && normalizedSelectedAnchorPreserved) {
+const planForTiming = await this.prisma.dvi_itinerary_plan_details.findFirst({
+  where: {
+    itinerary_plan_ID: Number(planId),
+    deleted: 0,
+  },
+  select: {
+    itinerary_preference: true,
+  },
+});
+
+  if (Number(planForTiming?.itinerary_preference) === 2) {
+ const firstRouteForTiming = await this.prisma.dvi_itinerary_route_details.findFirst({
+  where: {
+    itinerary_plan_ID: Number(planId),
+    deleted: 0,
+    status: 1,
+  },
+      orderBy: [
+        { itinerary_route_date: 'asc' },
+        { itinerary_route_ID: 'asc' },
+      ],
+      select: {
+        itinerary_route_ID: true,
+      },
+    });
+
+    if (Number(firstRouteForTiming?.itinerary_route_ID) === Number(data.routeId)) {
+      const finalizedRows = Array.isArray((response as any).finalizedTimeline)
+        ? (response as any).finalizedTimeline
+        : [];
+
+      const attractionRows = finalizedRows.filter((row: any) =>
+        String(row?.type || '').toLowerCase() === 'attraction' ||
+        Number(row?.item_type || 0) === 4
+      );
+
+      const selectedIsPresent = attractionRows.some((row: any) =>
+        Number(
+          row?.hotspotId ||
+          row?.hotspot_ID ||
+          row?.locationId ||
+          row?.hotspot_id ||
+          0
+        ) === Number((response as any).selectedHotspotId)
+      );
+
+      const endMinutes = attractionRows
+        .map((row: any) => {
+          const parts = String(row?.timeRange || '').split(/\s+-\s+/);
+
+          return parts.length === 2
+            ? this.parsePreviewTimeToMinutes(parts[1])
+            : null;
+        })
+        .filter((value: number | null): value is number =>
+          value != null && Number.isFinite(value)
+        );
+
+      if (selectedIsPresent && endMinutes.length === attractionRows.length) {
+        const latestEnd = Math.max(...endMinutes);
+
+        if (latestEnd > 17 * 60) {
+          const overflowMinutes = latestEnd - 17 * 60;
+
+          const warning = {
+            type: 'MANUAL_SIGHTSEEING_AFTER_5PM',
+            severity: 'warning',
+            cutoffTime: '5:00 PM',
+            overflowMinutes,
+            message:
+              `Manual sightseeing extends ${overflowMinutes} minutes beyond ` +
+              `5:00 PM. Review attraction operating hours, travel ` +
+              `feasibility and hotel arrival time before confirming.`,
+            canForceConfirm: true,
+          };
+
+          // Preserve an existing operating-hours warning if present.
+          (response as any).timingRisk =
+            (response as any).timingRisk || warning;
+
+          (response as any).requiresTimingRiskConfirmation = true;
+          (response as any).confirmButtonVariant = 'danger';
+
+          if ((response as any).resultType === 'FITS_DIRECTLY') {
+            (response as any).resultType = 'FITS_WITH_OPTIONAL_REMOVAL';
+          }
+
+          (response as any).resolution = {
+            ...((response as any).resolution || {}),
+            timingRisk:
+              (response as any).resolution?.timingRisk ||
+              (response as any).timingRisk,
+            requiresTimingRiskConfirmation: true,
+          };
+
+        console.log('[ManualFit][AFTER_5PM_WARNING]', {
+  planId: Number(planId),
+  routeId: Number(data.routeId),
+  selectedHotspotId: Number(data.selectedHotspotId),
+  overflowMinutes,
+});
+        }
+      }
+    }
+  }
+}
+
+cacheEntry.canConfirm = (response as any).canConfirm === true;
+cacheEntry.requiresTimingRiskConfirmation = (response as any).requiresTimingRiskConfirmation === true;
+cacheEntry.timingRisk = (response as any).timingRisk || null;
+cacheEntry.requiresPriorityRemovalConfirmation = (response as any).requiresPriorityRemovalConfirmation === true;
   cacheEntry.selectedAnchorPreserved = (response as any).selectedAnchorPreserved === true;
   cacheEntry.selectedHotspotPreserved = (response as any).selectedHotspotPreserved === true;
   cacheEntry.selectedOpeningConflict = (response as any).selectedOpeningConflict || null;
@@ -1337,14 +1479,29 @@ export async function confirmManualHotspotFitHereImpl(
     }
   }
 
-  if (entry.canConfirm !== true && !canForceClosedHotspotConflict) {
-    throw new ConflictException('This Fit Here attempt cannot be confirmed as a clean fit.');
-  }
+if (entry.canConfirm !== true && !canForceClosedHotspotConflict) {
+  throw new ConflictException('This Fit Here attempt cannot be confirmed as a clean fit.');
+}
 
-  const freshActiveRemovalEvidence = await this.getActiveRouteManualFitRemovalEvidence(
-    Number(planId),
-    Number(entry.routeId),
-  );
+// Reject stale or malformed exact-anchor preview attempts.
+// A hotspot merely existing somewhere in the timeline is not enough.
+if (
+  entry.exactSelectedGap === true &&
+  entry.selectedAnchorPreserved !== true
+) {
+  throw new ConflictException({
+    success: false,
+    inserted: false,
+    code: 'FIT_HERE_EXACT_ANCHOR_NOT_PRESERVED',
+    message:
+      'The selected hotspot could not be placed at the exact requested position. Please preview again.',
+  });
+}
+
+const freshActiveRemovalEvidence = await this.getActiveRouteManualFitRemovalEvidence(
+  Number(planId),
+  Number(entry.routeId),
+);
   const cachedRemovedHotspots = Array.isArray(entry.removedHotspotsSnapshot)
     ? entry.removedHotspotsSnapshot
     : [];
