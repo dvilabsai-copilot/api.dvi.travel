@@ -6,6 +6,7 @@ import { HotspotEngineService } from '../engines/hotspot-engine.service';
 @Injectable()
 export class ItineraryHotspotDeletionService {
   private forceRebuildVehiclePricingCallback: ((planId: number, routeId?: number) => Promise<any>) | null = null;
+  private applySameCityCrossDayOptimizerCallback: ((planId: number) => Promise<any>) | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -16,11 +17,19 @@ export class ItineraryHotspotDeletionService {
     this.forceRebuildVehiclePricingCallback = callback;
   }
 
+  setApplySameCityCrossDayOptimizerCallback(callback: (planId: number) => Promise<any>): void {
+    this.applySameCityCrossDayOptimizerCallback = callback;
+  }
+
   private forceRebuildVehiclePricingAfterHotspotChange(planId: number, routeId?: number) {
     if (!this.forceRebuildVehiclePricingCallback) {
       throw new Error('Hotspot deletion pricing callback is not configured');
     }
     return this.forceRebuildVehiclePricingCallback(planId, routeId);
+  }
+
+  private applySameCityCrossDayOptimizerAfterHotspotChange(planId: number) {
+    return this.applySameCityCrossDayOptimizerCallback?.(planId);
   }
   async deleteHotspot(planId: number, routeId: number, hotspotId: number) {
     const userId = 1;
@@ -57,6 +66,7 @@ export class ItineraryHotspotDeletionService {
       }
 
       const actualHotspotId = Number(hotspotRecord.hotspot_ID || 0);
+      const deletedHotspotWasManual = Number(hotspotRecord.hotspot_plan_own_way || 0) === 1;
 
       
 
@@ -136,7 +146,7 @@ const deleted = await (tx as any).dvi_itinerary_route_hotspot_details.updateMany
         throw new BadRequestException('Hotspot not found');
       }
 
-      if (actualHotspotId > 0 && restoredHotspotIds.length === 0) {
+      if (actualHotspotId > 0 && !deletedHotspotWasManual && restoredHotspotIds.length === 0) {
  console.log(`[deleteHotspot] Excluding hotspotId ${actualHotspotId} only for route ${normalizedRouteId}`);
 
         const targetRoute = await (tx as any).dvi_itinerary_route_details.findFirst({
@@ -216,6 +226,20 @@ const deleted = await (tx as any).dvi_itinerary_route_hotspot_details.updateMany
         });
       }
 
+      const remainingManualHotspotCount = deletedHotspotWasManual
+        ? await (tx as any).dvi_itinerary_route_hotspot_details.count({
+            where: {
+              itinerary_plan_ID: normalizedPlanId,
+              itinerary_route_ID: normalizedRouteId,
+              hotspot_plan_own_way: 1,
+              item_type: 4,
+              deleted: 0,
+              status: 1,
+            },
+          })
+        : 0;
+      const shouldFreshSelectAutomaticHotspots = deletedHotspotWasManual && remainingManualHotspotCount === 0;
+
  // Trigger a full rebuild of the hotspots for this plan
  // This ensures travel times and hotel arrival are recalculated after deletion
  const existingHotspotsForRebuild: any[] =
@@ -246,21 +270,39 @@ const protectedExistingHotspotIds: number[] = Array.from(
   ),
 );
 
+const rebuildExistingHotspots = shouldFreshSelectAutomaticHotspots
+  ? existingHotspotsForRebuild.filter(
+      (row: any) => Number(row?.itinerary_route_ID || 0) !== normalizedRouteId,
+    )
+  : existingHotspotsForRebuild;
+
+const rebuildOptions: any = {
+  scopeToRouteId: normalizedRouteId,
+};
+if (shouldFreshSelectAutomaticHotspots) {
+  // Once the final manual row is gone, rebuild the route's automatic set
+  // from scratch. Keep route exclusions in the database so explicit user
+  // removals remain excluded, unlike the explicit Reset/Rebuild action.
+  rebuildOptions.preserveExistingHotspots = false;
+} else {
+  rebuildOptions.protectedHotspotIds = protectedExistingHotspotIds;
+}
+
 console.log('[deleteHotspot][REBUILD_CONTEXT]', {
   planId: normalizedPlanId,
   routeId: normalizedRouteId,
   deletedHotspotId: actualHotspotId,
+  deletedHotspotWasManual,
+  remainingManualHotspotCount,
+  shouldFreshSelectAutomaticHotspots,
   protectedExistingHotspotIds,
 });
 
 const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(
   tx,
   normalizedPlanId,
-  existingHotspotsForRebuild,
-  {
-    scopeToRouteId: normalizedRouteId,
-    protectedHotspotIds: protectedExistingHotspotIds,
-  },
+  rebuildExistingHotspots,
+  rebuildOptions,
 );
 
 return {
@@ -274,6 +316,11 @@ return {
 });
 
  // Rebuild parking charges after deletion
+    // Route rebuild runs the same-city cross-day optimizer before pricing.
+    // Deletion must use the same ordering, otherwise the vehicle route can
+    // remain priced from the pre-optimizer timeline until the user clicks
+    // Rebuild Route again.
+    await this.applySameCityCrossDayOptimizerAfterHotspotChange(normalizedPlanId);
     await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, userId);
 
  // Force full vehicle pricing rebuild from current rebuilt hotspot timeline.

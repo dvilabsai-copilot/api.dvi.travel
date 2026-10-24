@@ -53,15 +53,7 @@ type ManualHotspotPreviewCallbacks = Partial<Record<
   | 'parsePreviewTimeToMinutes'
   | 'parsePreviewTimeRangeToUtcDates'
   | 'sanitizeUserFacingManualFitRemovals'
-  | 'saveManualFitAttemptEntry'
-
-  // After confirmed Fit Here insertion, keep all dependent
-  // itinerary costs/data synchronized.
-| 'rebuildRouteAfterManualFitConfirm'
-| 'applySameCityCrossDayOptimizerAfterSave'
-| 'rebuildParkingChargesAfterHotspotChange'
-| 'forceRebuildVehiclePricingAfterHotspotChange',
-
+  | 'saveManualFitAttemptEntry',
   (...args: any[]) => any
 >>;
 
@@ -225,42 +217,6 @@ private sanitizeUserFacingManualFitRemovals(...args: any[]) {
 
 private saveManualFitAttemptEntry(...args: any[]) {
   return this.call('saveManualFitAttemptEntry', ...args);
-}
-
-private rebuildRouteAfterManualFitConfirm(
-  ...args: any[]
-) {
-  return this.call(
-    'rebuildRouteAfterManualFitConfirm',
-    ...args,
-  );
-}
-
-private applySameCityCrossDayOptimizerAfterSave(
-  ...args: any[]
-) {
-  return this.call(
-    'applySameCityCrossDayOptimizerAfterSave',
-    ...args,
-  );
-}
-
-private rebuildParkingChargesAfterHotspotChange(
-  ...args: any[]
-) {
-  return this.call(
-    'rebuildParkingChargesAfterHotspotChange',
-    ...args,
-  );
-}
-
-private forceRebuildVehiclePricingAfterHotspotChange(
-  ...args: any[]
-) {
-  return this.call(
-    'forceRebuildVehiclePricingAfterHotspotChange',
-    ...args,
-  );
 }
 
   async previewManualHotspot(
@@ -890,27 +846,17 @@ async confirmManualHotspotFitHere(planId: number, payload: {
   allowClosedHotspotConflict?: boolean;
   acknowledgedRemovedHotspotIds?: number[];
 }, userId: number) {
-  const normalizedPlanId = Number(planId);
-
-  const entry = await this.loadManualFitAttemptEntry(
-    String(payload?.attemptId || '').trim(),
-  );
-
-  if (
-    entry &&
-    Number(entry.planId) === normalizedPlanId
-  ) {
-    const status =
-      await this.getRouteHotspotOperatingStatus(
-        normalizedPlanId,
-        Number(entry.routeId),
-        Number(entry.selectedHotspotId),
-      );
-
+  const entry = await this.loadManualFitAttemptEntry(String(payload?.attemptId || '').trim());
+  if (entry && Number(entry.planId) === Number(planId)) {
+    const status = await this.getRouteHotspotOperatingStatus(
+      Number(planId),
+      Number(entry.routeId),
+      Number(entry.selectedHotspotId),
+    );
     if (status.isClosedOnRouteDate) {
       throw new ConflictException({
         ...this.buildClosedPreviewResponse(
-          normalizedPlanId,
+          Number(planId),
           Number(entry.routeId),
           Number(entry.selectedHotspotId),
           status,
@@ -920,145 +866,10 @@ async confirmManualHotspotFitHere(planId: number, payload: {
     }
   }
 
-  /*
-   * First persist exactly the Fit Here result chosen
-   * by the user.
-   */
-  const result =
-    await confirmManualHotspotFitHereImpl.call(
-      this,
-      normalizedPlanId,
-      payload,
-      userId,
-    );
-
-  /*
-   * Do not run pricing rebuild for failed /
-   * non-confirmed responses.
-   */
-  if (result?.success !== true) {
-    return result;
-  }
-
-  /*
-   * The current confirm API receives only attemptId.
-   * routeId / selectedHotspotId belong to the stored
-   * preview attempt entry.
-   */
-  const normalizedRouteId = Number(
-    entry?.routeId || 0,
-  );
-
-  const selectedHotspotId = Number(
-    entry?.selectedHotspotId || 0,
-  );
-
-  if (!normalizedRouteId) {
-    console.warn(
-      '[ManualFitConfirm][POST_REBUILD_SKIPPED]',
-      {
-        planId: normalizedPlanId,
-        attemptId: String(
-          payload?.attemptId || '',
-        ),
-        reason:
-          'Confirmed Fit Here attempt has no valid routeId.',
-      },
-    );
-
-    return result;
-  }
-
-  const planRow =
-    await this.prisma.dvi_itinerary_plan_details.findFirst({
-      where: {
-        itinerary_plan_ID: normalizedPlanId,
-        deleted: 0,
-      },
-      select: {
-        itinerary_quote_ID: true,
-      },
-    });
-
-  console.log(
-    '[ManualFitConfirm][POST_REBUILD_START]',
-    {
-      planId: normalizedPlanId,
-      routeId: normalizedRouteId,
-      hotspotId: selectedHotspotId || null,
-      attemptId: String(
-        payload?.attemptId || '',
-      ),
-    },
-  );
-
-  /*
-   * Keep the same post-hotspot flow used by the
-   * normal manual-hotspot mutation path:
-   *
-   * 1. same-city route optimizer
-   * 2. parking charge rebuild
-   * 3. vehicle pricing rebuild
-   */
-/*
- * IMPORTANT:
- * Fit Here confirmation must materialize the exact same
- * persisted travel-row structure used by the normal
- * Rebuild Route flow before vehicle pricing is recalculated.
- */
-await this.rebuildRouteAfterManualFitConfirm(
-  normalizedPlanId,
-  normalizedRouteId,
-  Number(userId || 1),
-);
-
-try {
-  await this.applySameCityCrossDayOptimizerAfterSave(
-    normalizedPlanId,
-    String(
-      planRow?.itinerary_quote_ID || '',
-    ),
-  );
-} catch (error: any) {
-  console.warn(
-    '[ManualFitConfirm][POST_OPTIMIZER_FAILED_CONTINUING]',
-    {
-      planId: normalizedPlanId,
-      routeId: normalizedRouteId,
-      hotspotId: selectedHotspotId || null,
-      message: String(
-        error?.message ||
-        error ||
-        'Same-city cross-day optimizer failed',
-      ),
-    },
-  );
-}
-
-await this.rebuildParkingChargesAfterHotspotChange(
-  normalizedPlanId,
-  Number(userId || 1),
-);
-
-await this.forceRebuildVehiclePricingAfterHotspotChange(
-  normalizedPlanId,
-  normalizedRouteId,
-);
-
-  console.log(
-    '[ManualFitConfirm][POST_REBUILD_DONE]',
-    {
-      planId: normalizedPlanId,
-      routeId: normalizedRouteId,
-      hotspotId: selectedHotspotId || null,
-    },
-  );
-
-  return {
-    ...result,
-    parkingChargesRebuilt: true,
-    vehiclePricingRebuilt: true,
-  };
+  // Fit-confirm persists the selected manual hotspot. The outer itinerary
+  // service rebuilds parking and vehicle pricing; do not invoke the explicit
+  // route-reset workflow here because it deletes manual hotspot rows.
+  return confirmManualHotspotFitHereImpl.call(this, planId, payload, userId);
 }
 
   private async assertConfirmedManualHotspotPersisted(params: {
