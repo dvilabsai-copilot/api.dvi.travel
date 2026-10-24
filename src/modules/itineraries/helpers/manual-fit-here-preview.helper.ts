@@ -267,7 +267,7 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
       Number(candidate?.id || candidate?.hotspotId || candidate?.hotspot_ID || 0) === id
     )) === index;
   });
-  const timingRisk = resolution?.timingRisk || params.previewResult?.timingRisk || null;
+  let timingRisk = resolution?.timingRisk || params.previewResult?.timingRisk || null;
   let removedPrioritySummary = this.buildRemovedPrioritySummary(removedHotspots);
   let changesRequiredDisplay = this.buildManualFitChangesRequiredDisplay({
     removedHotspots,
@@ -329,10 +329,10 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
     removedHotspots.length > 0 ||
     safeSequentialRemovals.length > 0;
 
-  const requiresTimingRiskConfirmation =
-    resolution?.requiresTimingRiskConfirmation === true
-    || params.previewResult?.requiresTimingRiskConfirmation === true
-    || !!timingRisk;
+let requiresTimingRiskConfirmation =
+  resolution?.requiresTimingRiskConfirmation === true
+  || params.previewResult?.requiresTimingRiskConfirmation === true
+  || !!timingRisk;
   const requiresPriorityRemovalConfirmation =
     removedPrioritySummary.requiresPriorityRemovalConfirmation === true;
   const allowClosedHotspotForceConflict = true;
@@ -490,17 +490,405 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
     && exactAnchorAttempt.previewTimeline.length > 0
       ? exactAnchorAttempt.previewTimeline
       : proposedTimelineBase;
-  const proposedTimelineRaw = await this.enrichManualFitPreviewTimelineWithOperatingHours(
-    params.planId,
-    params.routeId,
-    timelineBaseForEnvelope,
+
+const proposedTimelineRaw = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+  params.planId,
+  params.routeId,
+  timelineBaseForEnvelope,
+);
+let finalizedTimeline = this.buildManualFitFinalizedPreviewTimeline(
+  proposedTimelineRaw,
+  removedHotspots,
+);
+
+const selectedHotspotIdNum = Number(params.selectedHotspotId || 0);
+
+// Transport Only, Day 1, before-first-attraction manual insertion.
+// Rebuild the full existing route to prevent stale matrix travel/wait rows.
+if (
+  selectedAnchor?.exactSelectedGap === true &&
+  selectedAnchor?.anchorIntent === 'AFTER_START' &&
+  removedHotspots.length === 0 &&
+  selectedHotspotIdNum > 0
+) {
+  const day1Plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+    where: {
+      itinerary_plan_ID: Number(params.planId),
+      deleted: 0,
+    },
+    select: {
+      itinerary_preference: true,
+    },
+  });
+
+  if (Number(day1Plan?.itinerary_preference) === 2) {
+    const firstRoute = await this.prisma.dvi_itinerary_route_details.findFirst({
+      where: {
+        itinerary_plan_ID: Number(params.planId),
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: [
+        { itinerary_route_date: 'asc' },
+        { itinerary_route_ID: 'asc' },
+      ],
+      select: {
+        itinerary_route_ID: true,
+      },
+    });
+
+    if (
+      Number(firstRoute?.itinerary_route_ID) ===
+      Number(params.routeId)
+    ) {
+      try {
+        const baseline = await this.getRouteTimelineForScoring(
+          this.prisma,
+          Number(params.planId),
+          Number(params.routeId),
+        );
+
+        const getAttractionIds = (rows: any[]): number[] =>
+          (Array.isArray(rows) ? rows : [])
+            .filter((row: any) =>
+              String(row?.type || '').toLowerCase() === 'attraction' ||
+              Number(row?.item_type || 0) === 4
+            )
+            .map((row: any) =>
+              Number(
+                row?.hotspotId ??
+                row?.hotspot_ID ??
+                row?.locationId ??
+                row?.hotspot_id ??
+                0
+              )
+            )
+            .filter((id: number) => id > 0);
+
+        const originalIds = getAttractionIds(baseline);
+
+        if (originalIds.length > 0) {
+          const rebuilt = await this.buildExactAnchorSequentialTimelineAfterRemoval(
+            this.prisma,
+            baseline,
+            {
+              removedHotspotIds: [],
+              targetHotspotId: selectedHotspotIdNum,
+              routeId: Number(params.routeId),
+              planId: Number(params.planId),
+              anchorIntent: selectedAnchor.anchorIntent,
+              afterHotspotId: selectedAnchor.afterHotspotId,
+              beforeHotspotId: selectedAnchor.beforeHotspotId,
+            },
+          );
+
+          const enriched = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+            params.planId,
+            params.routeId,
+            rebuilt,
+          );
+
+          const candidate = Array.isArray(enriched) ? enriched : [];
+          const rebuiltIds = getAttractionIds(candidate);
+
+          const expectedIds = [
+            selectedHotspotIdNum,
+            ...originalIds,
+          ];
+
+          const preservesAllAttractions =
+            rebuiltIds.length === expectedIds.length &&
+            rebuiltIds.every(
+              (id: number, index: number) => id === expectedIds[index],
+            );
+
+          const preservesAnchor =
+            this.manualFitTimelinePreservesSelectedAnchor({
+              timeline: candidate,
+              selectedHotspotId: selectedHotspotIdNum,
+              afterHotspotId: selectedAnchor.afterHotspotId ?? null,
+              beforeHotspotId: selectedAnchor.beforeHotspotId ?? null,
+              anchorIntent: selectedAnchor.anchorIntent,
+            });
+
+          const validChronology = candidate.length > 0 &&
+            candidate.every((row: any, index: number) => {
+              const range = String(row?.timeRange || '');
+              const parts = range.split(/\s+-\s+/);
+
+              if (parts.length !== 2) return false;
+
+              const start = this.parsePreviewTimeToMinutes(parts[0]);
+              const end = this.parsePreviewTimeToMinutes(parts[1]);
+
+              if (
+                start == null ||
+                end == null ||
+                end < start
+              ) {
+                return false;
+              }
+
+              if (index === 0) return true;
+
+              const previousRange = String(
+                candidate[index - 1]?.timeRange || '',
+              ).split(/\s+-\s+/);
+
+              const previousEnd =
+                previousRange.length === 2
+                  ? this.parsePreviewTimeToMinutes(previousRange[1])
+                  : null;
+
+              return previousEnd != null && start >= previousEnd;
+            });
+
+          if (
+            preservesAllAttractions &&
+            preservesAnchor &&
+            validChronology
+          ) {
+            // Preserve genuine waiting rows produced by the rebuild.
+            finalizedTimeline = candidate;
+
+            console.log('[DAY1_MANUAL_EXACT_REBUILD_ACCEPTED]', {
+              planId: params.planId,
+              routeId: params.routeId,
+              selectedHotspotId: selectedHotspotIdNum,
+              attractionIds: rebuiltIds,
+              rows: candidate.map((row: any) => ({
+                type: row?.type,
+                text: row?.text || row?.name,
+                timeRange: row?.timeRange,
+              })),
+            });
+          } else {
+            // Do not approve a malformed or incomplete preview.
+            resultType = 'CANNOT_FIT';
+            canConfirm = false;
+
+            console.warn('[DAY1_MANUAL_EXACT_REBUILD_REJECTED]', {
+              planId: params.planId,
+              routeId: params.routeId,
+              preservesAllAttractions,
+              preservesAnchor,
+              validChronology,
+              originalIds,
+              rebuiltIds,
+            });
+          }
+        }
+      } catch (error) {
+        resultType = 'CANNOT_FIT';
+        canConfirm = false;
+
+        console.warn('[DAY1_MANUAL_EXACT_REBUILD_FAILED]', {
+          planId: params.planId,
+          routeId: params.routeId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+}
+
+// Preference 2 / Day 1:
+// Rebuild an empty route sequentially instead of displaying
+// overlapping travel rows from the matrix preview.
+if (
+  selectedAnchor?.exactSelectedGap === true &&
+  selectedAnchor?.anchorIntent === 'AFTER_START' &&
+  removedHotspots.length === 0 &&
+  selectedHotspotIdNum > 0
+) {
+  try {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+      where: {
+        itinerary_plan_ID: Number(params.planId),
+        deleted: 0,
+      },
+      select: {
+        itinerary_preference: true,
+      },
+    });
+
+    if (Number(plan?.itinerary_preference) === 2) {
+      const firstRoute = await this.prisma.dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: Number(params.planId),
+          deleted: 0,
+        },
+        orderBy: [
+          { itinerary_route_date: 'asc' },
+          { itinerary_route_ID: 'asc' },
+        ],
+        select: {
+          itinerary_route_ID: true,
+        },
+      });
+
+      if (
+        Number(firstRoute?.itinerary_route_ID) ===
+        Number(params.routeId)
+      ) {
+        const baselineTimeline = await this.getRouteTimelineForScoring(
+          this.prisma,
+          Number(params.planId),
+          Number(params.routeId),
+        );
+
+        const baselineHasAttractions = (
+          Array.isArray(baselineTimeline) ? baselineTimeline : []
+        ).some((row: any) =>
+          String(row?.type || '').toLowerCase() === 'attraction' ||
+          Number(row?.item_type || 0) === 4
+        );
+
+        if (!baselineHasAttractions) {
+          const rebuiltTimeline =
+            await this.buildExactAnchorSequentialTimelineAfterRemoval(
+              this.prisma,
+              baselineTimeline,
+              {
+                removedHotspotIds: [],
+                targetHotspotId: selectedHotspotIdNum,
+                routeId: Number(params.routeId),
+                planId: Number(params.planId),
+                anchorIntent: selectedAnchor.anchorIntent,
+                afterHotspotId: selectedAnchor.afterHotspotId,
+                beforeHotspotId: selectedAnchor.beforeHotspotId,
+              },
+            );
+
+          const enrichedTimeline =
+            await this.enrichManualFitPreviewTimelineWithOperatingHours(
+              params.planId,
+              params.routeId,
+              rebuiltTimeline,
+            );
+
+          const rows = Array.isArray(enrichedTimeline)
+            ? enrichedTimeline
+            : [];
+
+          const selectedVisits = rows.filter((row: any) =>
+            (
+              String(row?.type || '').toLowerCase() === 'attraction' ||
+              Number(row?.item_type || 0) === 4
+            ) &&
+            Number(
+              row?.hotspotId ||
+              row?.hotspot_ID ||
+              row?.locationId ||
+              0
+            ) === selectedHotspotIdNum
+          );
+
+const parsePreviewRange = (
+  row: any,
+): { start: number; end: number } | null => {
+  const value = String(row?.timeRange || '').trim();
+
+  const match = value.match(
+    /^(\d{1,2}):(\d{2})\s*(AM|PM)\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)$/i,
   );
-  let finalizedTimeline = this.buildManualFitFinalizedPreviewTimeline(
-    proposedTimelineRaw,
-    removedHotspots,
-  );
-  const selectedHotspotIdNum = Number(params.selectedHotspotId || 0);
-  const finalizedAttractionRows = (Array.isArray(finalizedTimeline) ? finalizedTimeline : []).filter((row: any) => (
+
+  if (!match) return null;
+
+  const toMinutes = (
+    hourValue: string,
+    minuteValue: string,
+    period: string,
+  ): number => {
+    let hour = Number(hourValue) % 12;
+    if (period.toUpperCase() === 'PM') hour += 12;
+    return hour * 60 + Number(minuteValue);
+  };
+
+  return {
+    start: toMinutes(match[1], match[2], match[3]),
+    end: toMinutes(match[4], match[5], match[6]),
+  };
+};
+
+const timesAreSequential = rows.every(
+  (row: any, index: number) => {
+    const current = parsePreviewRange(row);
+
+    if (!current || current.end < current.start) {
+      return false;
+    }
+
+    if (index === 0) return true;
+
+    const previous = parsePreviewRange(rows[index - 1]);
+
+    return previous !== null &&
+      current.start >= previous.end;
+  },
+);
+
+const attractionStartsAfterNine = selectedVisits.every(
+  (row: any) => {
+    const range = parsePreviewRange(row);
+    return range !== null && range.start >= 9 * 60;
+  },
+);
+
+          if (
+            selectedVisits.length === 1 &&
+            timesAreSequential &&
+            attractionStartsAfterNine
+          ) {
+            // No removals are allowed in this special case.
+            // Keep genuine waiting/refreshment rows instead of
+            // passing them through the global waiting-row filter.
+            finalizedTimeline = rows;
+
+            console.log('[DAY1_TRANSPORT_PREVIEW_REBUILT]', {
+              planId: params.planId,
+              routeId: params.routeId,
+              selectedHotspotId: selectedHotspotIdNum,
+              rows: rows.map((row: any) => ({
+                type: row?.type,
+                text: row?.text || row?.name,
+                timeRange: row?.timeRange,
+              })),
+            });
+          } else {
+            // Never approve the original overlapping timeline
+            // just because the manual insertion itself succeeded.
+            canConfirm = false;
+            resultType = 'CANNOT_FIT';
+
+            console.warn('[DAY1_TRANSPORT_PREVIEW_INVALID]', {
+              planId: params.planId,
+              routeId: params.routeId,
+              selectedVisits: selectedVisits.length,
+              timesAreSequential,
+              attractionStartsAfterNine,
+            });
+          }
+        }
+      }
+    }
+  } catch (error) {
+    canConfirm = false;
+    resultType = 'CANNOT_FIT';
+
+  console.warn('[DAY1_TRANSPORT_PREVIEW_REBUILD_FAILED]', {
+  planId: params.planId,
+  routeId: params.routeId,
+  error: error instanceof Error ? error.message : String(error),
+});
+  }
+}
+// Never allow a rejected preview to remain confirmable.
+if (resultType === 'CANNOT_FIT') {
+  canConfirm = false;
+}
+
+const finalizedAttractionRows = (Array.isArray(finalizedTimeline) ? finalizedTimeline : []).filter((row: any) => (
     String(row?.type || '').toLowerCase() === 'attraction'
     || Number(row?.item_type || 0) === 4
   ));
@@ -688,15 +1076,189 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
     canConfirm = false;
   }
 
-  const rejectedReasons = canConfirm
-    ? []
-    : [
+// Final timeline guard for Transportation Only, Day 1.
+// Do not change the original scheduler or remove travel rows here.
+let finalizedDay1TimingError: string | null = null;
+
+const previewPlan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+  where: {
+    itinerary_plan_ID: Number(params.planId),
+    deleted: 0,
+  },
+  select: {
+    itinerary_preference: true,
+  },
+});
+
+if (Number(previewPlan?.itinerary_preference) === 2) {
+  const firstRoute = await this.prisma.dvi_itinerary_route_details.findFirst({
+    where: {
+      itinerary_plan_ID: Number(params.planId),
+      deleted: 0,
+      status: 1,
+    },
+    orderBy: [
+      { itinerary_route_date: 'asc' },
+      { itinerary_route_ID: 'asc' },
+    ],
+    select: {
+      itinerary_route_ID: true,
+    },
+  });
+
+  if (Number(firstRoute?.itinerary_route_ID) === Number(params.routeId)) {
+    const parseTime = (value: string): number | null => {
+      const match = String(value || '').match(
+        /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i,
+      );
+
+      if (!match) return null;
+
+      const hour = Number(match[1]);
+      const minute = Number(match[2]);
+
+      if (hour < 1 || hour > 12 || minute > 59) return null;
+
+      return (
+        (hour % 12) * 60 +
+        minute +
+        (match[3].toUpperCase() === 'PM' ? 720 : 0)
+      );
+    };
+
+    const rows = Array.isArray(finalizedTimeline)
+      ? finalizedTimeline
+      : [];
+
+    let previousEnd: number | null = null;
+
+    for (const row of rows) {
+      const range = String(row?.timeRange || '').split(/\s+-\s+/);
+
+      if (range.length !== 2) {
+        finalizedDay1TimingError =
+          'The finalized timeline contains an unreadable time range.';
+        break;
+      }
+
+      const start = parseTime(range[0]);
+      const end = parseTime(range[1]);
+
+      if (start === null || end === null || end < start) {
+        finalizedDay1TimingError =
+          'The finalized timeline contains an invalid time range.';
+        break;
+      }
+
+      if (previousEnd !== null && start < previousEnd) {
+        finalizedDay1TimingError =
+          'The finalized timeline contains overlapping travel or sightseeing.';
+        break;
+      }
+
+      previousEnd = end;
+    }
+
+    if (finalizedDay1TimingError) {
+      resultType = 'CANNOT_FIT';
+      canConfirm = false;
+
+      console.warn('[TRANSPORT_DAY1_FINAL_TIMELINE_INVALID]', {
+        planId: params.planId,
+        routeId: params.routeId,
+        reason: finalizedDay1TimingError,
+      });
+    }
+  }
+}
+
+// Transport Only / Day 1: manual sightseeing may continue
+// beyond 5 PM, but it requires explicit timing-risk approval.
+// This does not change attraction times or the automatic cutoff.
+if (
+  Number(previewPlan?.itinerary_preference) === 2 &&
+  Number(params.selectedHotspotId || 0) > 0 &&
+  selectedExistsInFinalizedTimeline
+) {
+  const firstRoute = await this.prisma.dvi_itinerary_route_details.findFirst({
+    where: {
+      itinerary_plan_ID: Number(params.planId),
+      deleted: 0,
+      status: 1,
+    },
+    orderBy: [
+      { itinerary_route_date: 'asc' },
+      { itinerary_route_ID: 'asc' },
+    ],
+    select: {
+      itinerary_route_ID: true,
+    },
+  });
+
+  if (Number(firstRoute?.itinerary_route_ID) === Number(params.routeId)) {
+    const sightseeingEndMinutes = (finalizedTimeline || [])
+      .filter((row: any) =>
+        String(row?.type || '').toLowerCase() === 'attraction' ||
+        Number(row?.item_type || 0) === 4
+      )
+      .map((row: any) => {
+        const parts = String(row?.timeRange || '').split(/\s+-\s+/);
+        return parts.length === 2
+          ? this.parsePreviewTimeToMinutes(parts[1])
+          : null;
+      })
+      .filter((minutes: number | null): minutes is number =>
+        minutes !== null && Number.isFinite(minutes)
+      );
+
+    if (sightseeingEndMinutes.length > 0) {
+      const lastSightseeingEnd = Math.max(...sightseeingEndMinutes);
+      const cutoffMinutes = 17 * 60;
+
+      if (lastSightseeingEnd > cutoffMinutes) {
+        const extraMinutes = lastSightseeingEnd - cutoffMinutes;
+
+        const afterFiveRisk = {
+          type: 'MANUAL_SIGHTSEEING_AFTER_5PM',
+          severity: 'warning',
+          selectedHotspotId: Number(params.selectedHotspotId),
+          cutoffTime: '5:00 PM',
+          overflowMinutes: extraMinutes,
+          message:
+            `This manual insertion extends Day 1 sightseeing ` +
+            `${extraMinutes} minute(s) beyond 5:00 PM. ` +
+            `Review attraction operating hours, travel feasibility ` +
+            `and hotel arrival time before confirming.`,
+          canForceConfirm: true,
+        };
+
+        // Preserve any existing closing-hours conflict instead
+        // of replacing it with the less severe 5 PM warning.
+        timingRisk = timingRisk || afterFiveRisk;
+        requiresTimingRiskConfirmation = true;
+
+        if (resultType === 'FITS_DIRECTLY') {
+          resultType = 'FITS_WITH_OPTIONAL_REMOVAL';
+        }
+      }
+    }
+  }
+}
+
+const rejectedReasons = canConfirm
+  ? []
+  : [
         hasSelectedOpeningConflict
           ? String(
               selectedOpeningConflict?.reason ||
               `${selectedOpeningConflict?.hotspotName || 'Selected hotspot'} cannot be inserted here because attempted visit time is ${selectedOpeningConflict?.attemptedVisitTime || 'outside operating hours'}, but operating hours are ${selectedOpeningConflict?.operatingHours || 'not available'}.`,
             )
-          : String(validation?.reason || params.previewResult?.message || 'Selected hotspot cannot fit at this anchor.'),
+          : String(
+    finalizedDay1TimingError ||
+    validation?.reason ||
+    params.previewResult?.message ||
+    'Selected hotspot cannot fit at this anchor.',
+  ),
       ];
 
   if (hasUnprovenProtectedRemoval) {

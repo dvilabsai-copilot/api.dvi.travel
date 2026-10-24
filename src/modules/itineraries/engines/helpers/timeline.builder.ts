@@ -1077,9 +1077,34 @@ for (const route of scopedRoutes) {
         destinationCity,
         destCityCoords,
       });
-      let latestNonHotelEndSeconds = nonHotelCutoff.latestNonHotelEndSeconds;
-      let latestNonHotelEndTime = nonHotelCutoff.latestNonHotelEndTime;
+let latestNonHotelEndSeconds = nonHotelCutoff.latestNonHotelEndSeconds;
+let latestNonHotelEndTime = nonHotelCutoff.latestNonHotelEndTime;
 
+// Transport Only - Day 1 local sightseeing.
+// Keep the route and hotel travel end times unchanged.
+const enforceTransportDay1LocalSightseeingCutoff =
+  Number(plan.itinerary_preference || 0) === 2 &&
+  isFirstRoute &&
+  isArrivalCityStayRoute === true;
+
+const transportDay1AutoSightseeingEndSeconds = 17 * 3600;
+
+// Limit automatic sightseeing feasibility, not the route or hotel end time.
+const getTransportDay1CandidateEndSeconds = (
+  isManualSelection: boolean,
+): number => {
+  if (
+    enforceTransportDay1LocalSightseeingCutoff &&
+    !isManualSelection
+  ) {
+    return Math.min(
+      routeEndSeconds,
+      transportDay1AutoSightseeingEndSeconds,
+    );
+  }
+
+  return routeEndSeconds;
+};
 
  // 2) SELECTED HOTSPOTS FOR THIS ROUTE
  // DAY-1 DIFFERENT CITIES: If Day 1 and source city != destination city, enforce max 3 priority hotspots
@@ -1799,6 +1824,30 @@ if (isDay1DifferentCities) {
                       ),
               ],
             });
+              continue;
+          }
+
+          // Transport Only, Day 1, local arrival-city stay:
+          // Automatically selected sightseeing must finish by 5:00 PM.
+          // Preserve existing scoped hotspots and manually selected visits.
+          if (
+            enforceTransportDay1LocalSightseeingCutoff &&
+            !preserveScopedHotspot &&
+            !isManualSelection &&
+            absoluteVisitEndSeconds > transportDay1AutoSightseeingEndSeconds
+          ) {
+            this.logBookingRule({
+              rule: 'TRANSPORT_DAY1_AUTO_SIGHTSEEING_5PM_REJECTED',
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId: Number(sh.hotspot_ID || 0),
+              visitEndTime: secondsToTime(
+                wrapToDay(absoluteVisitEndSeconds),
+              ),
+              cutoffTime: '17:00:00',
+              reason: 'automatic_sightseeing_exceeds_5pm',
+            });
+
             continue;
           }
 
@@ -4219,9 +4268,11 @@ if (
           tx,
           route,
           isLastRoute,
-          routeStartSeconds,
-          routeEndSeconds,
-          currentTime: shoppingSchedulingStartTime,
+routeStartSeconds,
+routeEndSeconds: getTransportDay1CandidateEndSeconds(
+  Boolean((sh as any).isManualSelection),
+),
+currentTime: shoppingSchedulingStartTime,
           currentLocationName,
           currentCoords,
           destinationCoords: destCityCoords,
@@ -4242,7 +4293,33 @@ if (
           hotspotType,
         });
 
-        if (!sharedFeasibility.feasible) {
+if (
+  enforceTransportDay1LocalSightseeingCutoff &&
+  !(sh as any).isManualSelection &&
+  sharedFeasibility.feasible &&
+  (
+    sharedFeasibility.endSeconds === undefined ||
+    sharedFeasibility.endSeconds > transportDay1AutoSightseeingEndSeconds
+  )
+) {
+  this.logBookingRule({
+    rule: 'TRANSPORT_DAY1_AUTO_SIGHTSEEING_5PM_REJECTED',
+    planId,
+    routeId: route.itinerary_route_ID,
+    hotspotId,
+    hotspotName: String(
+      hotspotData.hotspot_name || (sh as any).hotspot_name || '',
+    ),
+    calculatedVisitEndSeconds: sharedFeasibility.endSeconds ?? null,
+    cutoffSeconds: transportDay1AutoSightseeingEndSeconds,
+    branch: 'main_scheduling_loop',
+    reason: 'Automatically selected Day 1 sightseeing must finish by 5 PM.',
+  });
+
+  continue;
+}
+
+if (!sharedFeasibility.feasible) {
           if (hotspotId === 228 || hotspotId === 357) {
             this.logBookingRule({
               rule: 'CHEEYAPPARA_REJECTED_BEFORE_VALARA',
@@ -5220,19 +5297,21 @@ if (
                 )
               : currentTime;
 
-          const sharedCycle4Feasibility =
-            await this.evaluateCandidateInsertion({
-              tx,
-              route,
-              isLastRoute,
-              routeStartSeconds,
-              routeEndSeconds,
-              currentTime:
-                cycle4ShoppingSchedulingStartTime,
-              currentLocationName,
-              currentCoords,
-              destinationCoords: destCityCoords,
-              dayOfWeek: dayOfWeekForGapFill,
+ const sharedCycle4Feasibility =
+  await this.evaluateCandidateInsertion({
+    tx,
+    route,
+    isLastRoute,
+    routeStartSeconds,
+    routeEndSeconds: getTransportDay1CandidateEndSeconds(
+      Boolean((sh as any).isManualSelection),
+    ),
+    currentTime:
+      cycle4ShoppingSchedulingStartTime,
+    currentLocationName,
+    currentCoords,
+    destinationCoords: destCityCoords,
+    dayOfWeek: dayOfWeekForGapFill,
               hotspotId: Number(
                 (sh as any).hotspot_ID || 0,
               ),
@@ -5253,8 +5332,34 @@ if (
               rejectIfOutsideOperatingWindow: true,
               hotspotType,
             });
+if (
+  enforceTransportDay1LocalSightseeingCutoff &&
+  !(sh as any).isManualSelection &&
+  sharedCycle4Feasibility.feasible &&
+  (
+    sharedCycle4Feasibility.endSeconds === undefined ||
+    sharedCycle4Feasibility.endSeconds > transportDay1AutoSightseeingEndSeconds
+  )
+) {
+  this.logBookingRule({
+    rule: 'TRANSPORT_DAY1_AUTO_SIGHTSEEING_5PM_REJECTED',
+    planId,
+    routeId: route.itinerary_route_ID,
+    hotspotId: Number((sh as any).hotspot_ID || 0),
+    hotspotName: String(
+      hotspotData.hotspot_name || (sh as any).hotspot_name || '',
+    ),
+    calculatedVisitEndSeconds:
+      sharedCycle4Feasibility.endSeconds ?? null,
+    cutoffSeconds: transportDay1AutoSightseeingEndSeconds,
+    branch: 'cycle4_gap_fill',
+    reason: 'Automatically selected Day 1 sightseeing must finish by 5 PM.',
+  });
 
-          if (!sharedCycle4Feasibility.feasible) {
+  continue;
+}
+
+if (!sharedCycle4Feasibility.feasible) {
             if (sharedCycle4Feasibility.rejectedByDayEndReturnCheck) {
               this.logBookingRule({
                 rule: 'DAY_END_RETURN_CHECK_FAILED',

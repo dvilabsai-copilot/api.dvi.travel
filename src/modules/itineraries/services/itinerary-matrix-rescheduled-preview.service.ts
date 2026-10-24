@@ -12,13 +12,14 @@ export class ItineraryMatrixRescheduledPreviewService {
     this.callbacks = { ...this.callbacks, ...callbacks };
   }
 
-  public buildMatrixMergedPreviewTimeline(params: {
-    baselineTimeline: any[];
-    enginePreviewTimeline: any[];
-    manualInsertionFit: any;
-    selectedHotspotId: number;
-    hotspotMasters: any[];
-  }): any[] {
+public buildMatrixMergedPreviewTimeline(params: {
+  baselineTimeline: any[];
+  enginePreviewTimeline: any[];
+  manualInsertionFit: any;
+  selectedHotspotId: number;
+  hotspotMasters: any[];
+  isTransportOnlyDay1?: boolean;
+}): any[] {
     const {
       baselineTimeline,
       enginePreviewTimeline,
@@ -93,7 +94,34 @@ export class ItineraryMatrixRescheduledPreviewService {
         && String(row?.text || row?.name || '').trim() === String(bestSlot.fromName || '').trim()
       ));
     }
-    if (insertAfterIndex < 0) insertAfterIndex = Math.max(0, normalizedBaseline.length - 1);
+    if (insertAfterIndex < 0) {
+  const isTransportDay1EmptyCityRoute =
+    params.isTransportOnlyDay1 === true &&
+    !normalizedBaseline.some(isAttractionRow) &&
+    (
+      manualInsertionFit?.emptyRouteCityEndpointMode === true ||
+      bestSlot?.emptyRouteCityEndpointMode === true ||
+      String(bestSlot?.slotContext || '').toUpperCase() === 'CITY_TO_CITY'
+    );
+
+  if (isTransportDay1EmptyCityRoute) {
+    const waitingBreakIndex = normalizedBaseline.findIndex((row: any) => {
+      const text = String(row?.text || row?.name || '').toLowerCase();
+
+      return (
+        text.includes('refreshment') ||
+        text.includes('waiting break') ||
+        text.includes('rest before sightseeing')
+      );
+    });
+
+    insertAfterIndex = waitingBreakIndex >= 0
+      ? waitingBreakIndex
+      : 0;
+  } else {
+    insertAfterIndex = Math.max(0, normalizedBaseline.length - 1);
+  }
+}
 
     const toRowIndex = normalizedBaseline.findIndex((row: any, index: number) =>
       index > insertAfterIndex
@@ -335,13 +363,61 @@ export class ItineraryMatrixRescheduledPreviewService {
       routeId,
     } = params;
 
-    const baseMerged = this.buildMatrixMergedPreviewTimeline({
-      baselineTimeline,
-      enginePreviewTimeline,
-      manualInsertionFit,
-      selectedHotspotId,
-      hotspotMasters,
+  let isTransportOnlyDay1 = false;
+
+if (tx && Number(routeId || 0) > 0) {
+  const currentRoute = await tx.dvi_itinerary_route_details.findFirst({
+    where: {
+      itinerary_route_ID: Number(routeId),
+      deleted: 0,
+    },
+    select: {
+      itinerary_plan_ID: true,
+    },
+  });
+
+  if (currentRoute) {
+    const planId = Number(currentRoute.itinerary_plan_ID);
+
+    const plan = await tx.dvi_itinerary_plan_details.findFirst({
+      where: {
+        itinerary_plan_ID: planId,
+        deleted: 0,
+      },
+      select: {
+        itinerary_preference: true,
+      },
     });
+
+    if (Number(plan?.itinerary_preference) === 2) {
+      const firstRoute = await tx.dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: planId,
+          deleted: 0,
+        },
+        orderBy: [
+          { itinerary_route_date: 'asc' },
+          { itinerary_route_ID: 'asc' },
+        ],
+        select: {
+          itinerary_route_ID: true,
+        },
+      });
+
+      isTransportOnlyDay1 =
+        Number(firstRoute?.itinerary_route_ID) === Number(routeId);
+    }
+  }
+}
+
+const baseMerged = this.buildMatrixMergedPreviewTimeline({
+  baselineTimeline,
+  enginePreviewTimeline,
+  manualInsertionFit,
+  selectedHotspotId,
+  hotspotMasters,
+  isTransportOnlyDay1,
+});
 
     if (!manualInsertionFit || baseMerged.length === 0 || !tx) {
       return this.callbacks.finalizeMatrixPreviewTimeline(baseMerged);
@@ -920,10 +996,29 @@ export class ItineraryMatrixRescheduledPreviewService {
     const bodyRows = [aToCRow, insertedRow, cToBRow, ...tailRows];
 
  // 4) Reschedule body rows with one forward cursor.
-    const rescheduledBody: any[] = [];
-    const pendingHotelTravelRows: any[] = [];
-    const pendingHotelRows: any[] = [];
+  // TEMPORARY DEBUG: identify duplicated travel before rescheduling.
+if (isTransportOnlyDay1) {
+  console.log(
+    '[DAY1_MANUAL_BEFORE_FIRST_BODY_ROWS]',
+    bodyRows.map((row: any, index: number) => ({
+      index,
+      type: row?.type,
+      text: row?.text || row?.name,
+      fromHotspotId: row?.fromHotspotId ?? null,
+      toHotspotId: row?.toHotspotId ?? null,
+      fromName: row?.fromName ?? null,
+      toName: row?.toName ?? null,
+      distanceKm: row?.matrixDistanceKm ?? row?.distanceKm ?? null,
+      durationMinutes: row?.matrixDurationMin ?? row?.durationMinutes ?? null,
+      timeRange: row?.timeRange ?? null,
+      isMatrixSplitTravel: row?.isMatrixSplitTravel === true,
+    })),
+  );
+}
 
+const rescheduledBody: any[] = [];
+const pendingHotelTravelRows: any[] = [];
+const pendingHotelRows: any[] = [];
     for (const row of bodyRows) {
       if (isTravelToHotelRow(row)) {
         pendingHotelTravelRows.push({ ...row });
