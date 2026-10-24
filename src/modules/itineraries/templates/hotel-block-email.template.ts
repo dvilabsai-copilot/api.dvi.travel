@@ -10,6 +10,9 @@ export type HotelBlockEmailTemplateInput = {
   responseUrl: string;
   demoMode: boolean;
   intendedRecipient: string;
+  emailKind?: 'REQUEST' | 'EXTENSION';
+  previousCutoffAt?: string;
+  cutoffAt?: string;
 };
 
 const escapeHtml = (value: unknown) => String(value ?? '')
@@ -26,6 +29,7 @@ const detailRow = (label: string, value: string) => `
   </tr>`;
 
 export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
+  const isExtension = input.emailKind === 'EXTENSION';
   const demoNotice = input.demoMode
     ? `
       <div style="margin:0 0 20px;padding:14px 16px;border:1px solid #f4c46b;border-radius:10px;background:#fff8e8;color:#795400;font-size:13px;line-height:1.6;">
@@ -40,7 +44,7 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
     ? `
       <div style="margin:24px 0 4px;text-align:center;">
         <a href="${escapeHtml(input.responseUrl)}" style="display:inline-block;padding:12px 22px;border-radius:8px;background:#5c24e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;">
-          Review &amp; Respond to Hotel Request
+          ${isExtension ? 'Review Updated Hold' : 'Review &amp; Respond to Hotel Request'}
         </a>
       </div>
       <p style="margin:12px 0 0;text-align:center;font-size:12px;color:#888888;line-height:1.5;">
@@ -56,9 +60,9 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
         DVi Travel · Holidays for Everyone
       </div>
       <div style="padding:26px;border:1px solid #eadcfb;border-radius:16px;background:#ffffff;box-shadow:0 4px 14px rgba(92,36,229,.08);">
-        <h1 style="margin:0 0 8px;color:#1e1b4b;font-size:22px;">Hotel Blocking Request</h1>
+        <h1 style="margin:0 0 8px;color:#1e1b4b;font-size:22px;">${isExtension ? 'Hotel Hold Extended' : 'Hotel Blocking Request'}</h1>
         <p style="margin:0 0 22px;color:#6c6c6c;font-size:14px;line-height:1.6;">
-          Please review the requested stay and confirm whether the rooms can be blocked.
+          ${isExtension ? 'The hotel hold has been extended. Please retain the rooms until the updated hold time below.' : 'Please review the requested stay and confirm whether the rooms can be blocked.'}
         </p>
         ${demoNotice}
         <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:22px;">
@@ -70,6 +74,8 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
           ${detailRow('Rooms', String(input.roomCount || 0))}
           ${detailRow('Room category', input.roomType)}
           ${detailRow('Meal plan', input.mealPlan)}
+          ${isExtension ? detailRow('Previous hold until', input.previousCutoffAt || '--') : ''}
+          ${isExtension ? detailRow('New hold until', input.cutoffAt || '--') : ''}
         </table>
         ${responseAction}
         <div style="margin-top:26px;padding-top:16px;border-top:1px solid #eee6fa;color:#777;font-size:12px;line-height:1.6;">

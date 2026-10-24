@@ -295,7 +295,68 @@ export class HotelBlockingService {
     }
     const recipient = firstEmail(request.contact_email);
     if (!recipient) throw new BadRequestException('A verified hotel reservation email is required before resending.');
+    return this.queueAndSendEmail({
+      request,
+      recipient,
+      actor,
+      eventType: 'REQUEST_EMAIL_RESENT',
+      notes: 'Hotel blocking email queued again by staff.',
+    });
+  }
 
+  async updateCutoff(requestId: number, cutoffAt: string, actor: Actor) {
+    const request = await (this.prisma as any).dvi_hotel_block_request.findUnique({ where: { id: Number(requestId) } });
+    if (!request) throw new NotFoundException('Hotel hold request not found.');
+    if (![HOTEL_BLOCK_STATUS.BLOCKED, HOTEL_BLOCK_STATUS.CONFIRMED].includes(request.status)) {
+      throw new BadRequestException('Only an existing held hotel can be extended.');
+    }
+    const cutoff = new Date(String(cutoffAt || ''));
+    if (Number.isNaN(cutoff.getTime())) throw new BadRequestException('A valid cutoff date and time is required.');
+    const previousCutoff = dateOnly(request.cutoff_at);
+    if (!previousCutoff) throw new BadRequestException('This hotel hold does not have an existing hold-until time.');
+    if (cutoff.getTime() <= previousCutoff.getTime()) {
+      throw new BadRequestException('The new hold-until time must be later than the current hold-until time.');
+    }
+    const updated = await (this.prisma as any).$transaction(async (tx: any) => {
+      const result = await tx.dvi_hotel_block_request.update({ where: { id: request.id }, data: { cutoff_at: cutoff } });
+      await tx.dvi_hotel_block_event.create({
+        data: {
+          request_id: request.id,
+          previous_status: request.status,
+          new_status: request.status,
+          event_type: 'HOLD_EXTENDED',
+          actor_type: actor.type || 'STAFF',
+          actor_id: Number(actor.id || 0) || null,
+          actor_name: actor.name || null,
+          notes: 'Hotel hold extended by staff.',
+          metadata: JSON.stringify({ previousCutoffAt: previousCutoff.toISOString(), cutoffAt: cutoff.toISOString() }),
+        },
+      });
+      return result;
+    });
+    const recipient = firstEmail(updated.contact_email);
+    if (!recipient) return { success: true, request: this.publicStaffView(updated), emailDeliveryStatus: 'SKIPPED' };
+    return this.queueAndSendEmail({
+      request: updated,
+      recipient,
+      actor,
+      eventType: 'HOLD_EXTENSION_EMAIL_QUEUED',
+      notes: 'Hotel hold extension email queued by staff.',
+      emailKind: 'EXTENSION',
+      previousCutoffAt: previousCutoff,
+    });
+  }
+
+  private async queueAndSendEmail(input: {
+    request: BlockRow;
+    recipient: string;
+    actor: Actor;
+    eventType: string;
+    notes: string;
+    emailKind?: 'REQUEST' | 'EXTENSION';
+    previousCutoffAt?: Date | string | null;
+  }) {
+    const { request, recipient, actor, eventType, notes, emailKind = 'REQUEST', previousCutoffAt = null } = input;
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const now = new Date();
@@ -308,19 +369,19 @@ export class HotelBlockingService {
         },
       });
       await tx.dvi_hotel_block_message.create({
-          data: { request_id: request.id, recipient: this.hotelBlockEmail.deliveryRecipient(recipient), delivery_status: 'QUEUED', attempt_count: 0 },
+        data: { request_id: request.id, recipient: this.hotelBlockEmail.deliveryRecipient(recipient), delivery_status: 'QUEUED', attempt_count: 0 },
       });
       await tx.dvi_hotel_block_event.create({
         data: {
           request_id: request.id,
           previous_status: request.status,
           new_status: request.status,
-          event_type: 'REQUEST_EMAIL_RESENT',
+          event_type: eventType,
           actor_type: actor.type || 'STAFF',
           actor_id: Number(actor.id || 0) || null,
           actor_name: actor.name || null,
-          notes: 'Hotel blocking email queued again by staff.',
-          metadata: JSON.stringify({ recipient }),
+          notes,
+          metadata: JSON.stringify({ recipient, emailKind }),
         },
       });
     });
@@ -332,7 +393,13 @@ export class HotelBlockingService {
       const delivery = await this.hotelBlockEmail.dispatch({
         recipient,
         quotationReference: String(request.itinerary_plan_id),
-        request: { ...this.publicStaffView(request), responseUrl },
+        request: {
+          ...this.publicStaffView(request),
+          responseUrl,
+          emailKind,
+          previousCutoffAt,
+          cutoffAt: request.cutoff_at,
+        },
       });
       deliveryStatus = delivery.status;
       providerMessageId = delivery.providerMessageId || null;
@@ -350,35 +417,7 @@ export class HotelBlockingService {
         data: { delivery_status: 'FAILED', attempt_count: { increment: 1 }, last_error: lastError },
       });
     }
-    return { success: true, request: this.publicStaffView(request), recipient, deliveryStatus, providerMessageId };
-  }
-
-  async updateCutoff(requestId: number, cutoffAt: string, actor: Actor) {
-    const request = await (this.prisma as any).dvi_hotel_block_request.findUnique({ where: { id: Number(requestId) } });
-    if (!request) throw new NotFoundException('Hotel hold request not found.');
-    if ([HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED, HOTEL_BLOCK_STATUS.UNAVAILABLE].includes(request.status)) {
-      throw new BadRequestException('This hotel hold request is no longer active.');
-    }
-    const cutoff = new Date(String(cutoffAt || ''));
-    if (Number.isNaN(cutoff.getTime())) throw new BadRequestException('A valid cutoff date and time is required.');
-    const updated = await (this.prisma as any).$transaction(async (tx: any) => {
-      const result = await tx.dvi_hotel_block_request.update({ where: { id: request.id }, data: { cutoff_at: cutoff } });
-      await tx.dvi_hotel_block_event.create({
-        data: {
-          request_id: request.id,
-          previous_status: request.status,
-          new_status: request.status,
-          event_type: 'CUTOFF_UPDATED',
-          actor_type: actor.type || 'STAFF',
-          actor_id: Number(actor.id || 0) || null,
-          actor_name: actor.name || null,
-          notes: 'Hotel hold cutoff updated by staff.',
-          metadata: JSON.stringify({ cutoffAt: cutoff.toISOString() }),
-        },
-      });
-      return result;
-    });
-    return { success: true, request: this.publicStaffView(updated) };
+    return { success: true, request: this.publicStaffView(request), recipient, deliveryStatus, emailDeliveryStatus: deliveryStatus, providerMessageId };
   }
 
   async assertPlanReady(planId: number, groupType?: number) {

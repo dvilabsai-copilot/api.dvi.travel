@@ -112,7 +112,7 @@ export class HotelBlockingController {
   }
 
   @Post(':id/update-cutoff')
-  @ApiOperation({ summary: 'Update a hotel-provided hold cutoff' })
+  @ApiOperation({ summary: 'Extend an existing hotel hold and notify the hotel' })
   async updateCutoff(@Param('id', ParseIntPipe) id: number, @Body() body: any, @Req() request: Request) {
     this.assertStaff(request);
     const result = await this.hotelBlocking.getById(id);

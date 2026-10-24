@@ -12,6 +12,9 @@ type HoldRequest = {
   roomCount?: number | null;
   status?: string | null;
   responseUrl?: string | null;
+  emailKind?: 'REQUEST' | 'EXTENSION';
+  previousCutoffAt?: Date | string | null;
+  cutoffAt?: Date | string | null;
 };
 
 @Injectable()
@@ -39,6 +42,13 @@ export class HotelBlockEmailService {
       : '--';
   }
 
+  private formatDateTime(value: unknown) {
+    const date = value ? new Date(String(value)) : null;
+    return date && !Number.isNaN(date.getTime())
+      ? date.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+      : '--';
+  }
+
   private getTransporter() {
     if (this.transporter) return this.transporter;
     const host = String(process.env.SMTP_HOST || '').trim();
@@ -63,7 +73,8 @@ export class HotelBlockEmailService {
     const { recipient, quotationReference, request } = input;
     const deliveryRecipient = this.deliveryRecipient(recipient);
     const responseUrl = String(request.responseUrl || '').trim();
-    const subject = `DVi Travel | Hotel Blocking Request | ${quotationReference}`;
+    const isExtension = request.emailKind === 'EXTENSION';
+    const subject = `DVi Travel | ${isExtension ? 'Hotel Hold Extended' : 'Hotel Blocking Request'} | ${quotationReference}`;
     const text = [
       'Dear Hotel Team,',
       '',
@@ -75,7 +86,14 @@ export class HotelBlockEmailService {
             '',
           ]
         : []),
-      `Please confirm availability and block the requested room for quotation ${quotationReference}.`,
+      ...(isExtension
+        ? [
+            `The hotel hold for quotation ${quotationReference} has been extended.`,
+            `Previous hold until: ${this.formatDateTime(request.previousCutoffAt)}`,
+            `New hold until: ${this.formatDateTime(request.cutoffAt)}`,
+            'Please retain the blocked rooms until the new hold time.',
+          ]
+        : [`Please confirm availability and block the requested room for quotation ${quotationReference}.`]),
       `Hotel: ${request.hotelName || '--'}`,
       `Check-in: ${this.formatDate(request.checkIn)}`,
       `Check-out: ${this.formatDate(request.checkOut)}`,
@@ -101,6 +119,9 @@ export class HotelBlockEmailService {
       responseUrl,
       demoMode: this.demoMode(),
       intendedRecipient: recipient,
+      emailKind: request.emailKind,
+      previousCutoffAt: this.formatDateTime(request.previousCutoffAt),
+      cutoffAt: this.formatDateTime(request.cutoffAt),
     });
     const info = await this.getTransporter().sendMail({
       from: String(process.env.SMTP_FROM),
