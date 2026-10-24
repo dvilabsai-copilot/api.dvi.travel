@@ -119,6 +119,9 @@ import { HotelAvailabilitySnapshotService } from './services/hotel-availability-
 import { HotelRecommendationPackageService } from './services/hotel-recommendation-package.service';
 import { HotelMealPlanPolicyService } from './services/hotel-meal-plan-policy.service';
 import { ItineraryPricingService } from './itinerary-pricing.service';
+import { HotelBlockingController, HotelBlockingPublicController } from './hotel-blocking.controller';
+import { HotelBlockingService } from './services/hotel-blocking.service';
+import { HotelBlockEmailService } from './services/hotel-block-email.service';
 
 @Module({
   imports: [
@@ -126,7 +129,7 @@ import { ItineraryPricingService } from './itinerary-pricing.service';
     RouteVehicleRestrictionsModule,
     AccountsManagerModule,
   ],
-  controllers: [ItinerariesController, ItineraryHotelApprovalController, ResAvenueTestController, ItineraryScenarioSourceController],
+  controllers: [ItinerariesController, ItineraryHotelApprovalController, HotelBlockingController, HotelBlockingPublicController, ResAvenueTestController, ItineraryScenarioSourceController],
   providers: [
  // core services
     ItinerariesService,
@@ -135,6 +138,8 @@ import { ItineraryPricingService } from './itinerary-pricing.service';
     ItineraryHotelDetailsTboService,
     ItineraryExportService,
     ItineraryPricingService,
+    HotelBlockingService,
+    HotelBlockEmailService,
     TboHotelBookingService,
     ResAvenueHotelBookingService,
     HobseHotelBookingService,

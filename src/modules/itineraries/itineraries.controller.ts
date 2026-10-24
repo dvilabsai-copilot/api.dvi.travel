@@ -82,6 +82,7 @@ import { ItineraryBookingConfirmationEmailNotifierService } from './services/iti
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
 import { ItineraryAccessService } from './services/itinerary-access.service';
+import { HotelBlockingService } from './services/hotel-blocking.service';
 
 @ApiTags('Itineraries')
 @ApiBearerAuth()
@@ -128,6 +129,7 @@ private readonly bookingConfirmationEmailNotifier: ItineraryBookingConfirmationE
 private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
 private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
 private readonly itineraryAccessService: ItineraryAccessService,
+private readonly hotelBlockingService: HotelBlockingService,
   ) {}
 
   private parseClipboardGroupTypes(query: Record<string, any>): number[] {
@@ -2141,6 +2143,36 @@ const clientIp = String(
 
   return finalResult;
 }
+
+  @Post('manual-confirm-quotation')
+  @ApiOperation({ summary: 'Confirm a manually held package without supplier booking APIs' })
+  async manualConfirmQuotation(@Body() dto: ConfirmQuotationDto, @Req() req: Request) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_ID), (req as any).user);
+    await this.hotelBlockingService.assertPlanReady(
+      Number(dto.itinerary_plan_ID),
+      Number((dto as any).selectedGroupType || 0),
+    );
+
+    // This path deliberately strips all supplier booking rows. The existing
+    // confirmation service then performs only DVi persistence and wallet work;
+    // the legacy confirm-quotation endpoint remains unchanged for supplier flows.
+    const baseResult = await this.svc.confirmQuotation({
+      ...dto,
+      hotel_bookings: [],
+      manualHotelHoldWorkflow: true,
+    } as ConfirmQuotationDto);
+    const confirmedPlanId = Number(baseResult?.confirmed_itinerary_plan_ID || 0);
+    const confirmedHotelDetails = confirmedPlanId > 0
+      ? await this.svc.getConfirmedItineraryDetails(confirmedPlanId)
+      : null;
+    const finalResult = { ...baseResult, confirmedHotelDetails, supplierBookingCalls: 0 };
+    const itineraryPlanId = Number(finalResult?.itinerary_plan_ID || dto.itinerary_plan_ID || 0);
+    if (itineraryPlanId > 0) {
+      await this.bookingConfirmationEmailNotifier.sendBookingConfirmationNotifications(itineraryPlanId);
+    }
+    return finalResult;
+  }
 
   @Post(':planId/hotels/selection-cost-preview')
   @ApiOperation({ summary: 'Preview temporary hotel selection costs without saving draft rows' })

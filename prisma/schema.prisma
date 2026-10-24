@@ -2976,7 +2976,7 @@ model dvi_global_settings {
   tbo_map_dinner_rate_3_star             Float     @default(900) @db.Float
   tbo_map_dinner_rate_4_star             Float     @default(1500) @db.Float
   tbo_map_dinner_rate_5_star             Float     @default(2500) @db.Float
-   tbo_map_lunch_rate_3_star              Float     @default(900) @db.Float
+  tbo_map_lunch_rate_3_star              Float     @default(900) @db.Float
   tbo_map_lunch_rate_4_star              Float     @default(1500) @db.Float
   tbo_map_lunch_rate_5_star              Float     @default(2500) @db.Float
 
@@ -5967,7 +5967,6 @@ model dvi_vendor_details {
   @@index([vendor_state], map: "idx_dvi_vendor_details_vendor_state")
 }
 
-
 model dvi_vendor_bank_accounts {
   vendor_id           Int      @id
   encrypted_payload   String   @db.Text
@@ -5991,7 +5990,6 @@ model dvi_vendor_bank_change_requests {
 
   @@index([vendor_id, status, request_id], map: "idx_vendor_bank_request_status")
 }
-
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model dvi_vendor_vehicle_types {
@@ -6090,27 +6088,27 @@ model tbo_city_master {
 }
 
 model tbo_hotel_master {
-  id              Int       @id @default(autoincrement())
-  tbo_hotel_code  String    @unique @db.VarChar(50)
-  tbo_city_code   String    @db.VarChar(10)
-  hotel_name      String?   @db.VarChar(255)
-  hotel_address   String?   @db.VarChar(500)
-  city_name       String?   @db.VarChar(100)
-  star_rating     Int?      @default(0)
-  hotel_category_id Int     @default(0)
-  hotel_image_url String?   @db.VarChar(500)
-  description     String?   @db.Text
-  check_in_time   String?   @db.VarChar(10)
-  check_out_time  String?   @db.VarChar(10)
-  facilities      Json?
-  created_at      DateTime? @default(now()) @db.DateTime(0)
-  updated_at      DateTime? @default(now()) @updatedAt @db.DateTime(0)
-  status          Int?      @default(1) @db.TinyInt
-  hotel_latitude  String    @default("") @db.VarChar(50)
-  hotel_longitude String    @default("") @db.VarChar(50)
-  is_priority     Int       @default(0) @db.TinyInt
-  amenities       Json?
-  reviews         Json?
+  id                Int       @id @default(autoincrement())
+  tbo_hotel_code    String    @unique @db.VarChar(50)
+  tbo_city_code     String    @db.VarChar(10)
+  hotel_name        String?   @db.VarChar(255)
+  hotel_address     String?   @db.VarChar(500)
+  city_name         String?   @db.VarChar(100)
+  star_rating       Int?      @default(0)
+  hotel_category_id Int       @default(0)
+  hotel_image_url   String?   @db.VarChar(500)
+  description       String?   @db.Text
+  check_in_time     String?   @db.VarChar(10)
+  check_out_time    String?   @db.VarChar(10)
+  facilities        Json?
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @updatedAt @db.DateTime(0)
+  status            Int?      @default(1) @db.TinyInt
+  hotel_latitude    String    @default("") @db.VarChar(50)
+  hotel_longitude   String    @default("") @db.VarChar(50)
+  is_priority       Int       @default(0) @db.TinyInt
+  amenities         Json?
+  reviews           Json?
 
   @@index([tbo_city_code], map: "idx_tbo_hotel_master_city_code")
   @@index([star_rating], map: "idx_tbo_hotel_master_star_rating")
@@ -6860,6 +6858,108 @@ model dvi_itinerary_plan_hotel_approval_history {
   @@index([itinerary_plan_hotel_details_id], map: "idx_hotel_approval_history_selection")
   @@index([new_approval_status], map: "idx_hotel_approval_history_status")
   @@map("dvi_itinerary_plan_hotel_approval_history")
+}
+
+model dvi_hotel_block_request {
+  id                     Int       @id @default(autoincrement())
+  itinerary_plan_id      Int
+  group_type             Int       @default(0)
+  reservation_key        String    @unique @db.VarChar(191)
+  selection_ids          String    @db.LongText
+  provider               String    @db.VarChar(32)
+  hotel_id               Int?
+  hotel_code             String?   @db.VarChar(100)
+  hotel_name             String    @db.VarChar(255)
+  check_in               DateTime? @db.Date
+  check_out              DateTime? @db.Date
+  room_type              String?   @db.Text
+  meal_plan              String?   @db.VarChar(100)
+  room_count             Int       @default(0)
+  occupancy_snapshot     String?   @db.LongText
+  request_payload        String?   @db.LongText
+  status                 String    @default("CONTACT_REQUIRED") @db.VarChar(32)
+  contact_email          String?   @db.VarChar(320)
+  contact_phone          String?   @db.VarChar(200)
+  contact_source         String?   @db.VarChar(50)
+  requested_at           DateTime? @db.DateTime(0)
+  responded_at           DateTime? @db.DateTime(0)
+  confirmed_at           DateTime? @db.DateTime(0)
+  cutoff_at              DateTime? @db.DateTime(0)
+  confirmation_reference String?   @db.VarChar(255)
+  confirmation_channel   String?   @db.VarChar(32)
+  respondent_name        String?   @db.VarChar(255)
+  created_by             Int?
+  responded_by           Int?
+  version                Int       @default(1)
+  created_at             DateTime  @default(now()) @db.DateTime(0)
+  updated_at             DateTime  @updatedAt @db.DateTime(0)
+
+  @@index([itinerary_plan_id, group_type], map: "idx_hotel_block_request_plan_group")
+  @@index([status], map: "idx_hotel_block_request_status")
+  @@index([cutoff_at], map: "idx_hotel_block_request_cutoff")
+  @@map("dvi_hotel_block_requests")
+}
+
+model dvi_hotel_block_event {
+  id                    Int      @id @default(autoincrement())
+  request_id            Int
+  previous_status       String?  @db.VarChar(32)
+  new_status            String   @db.VarChar(32)
+  event_type            String   @db.VarChar(50)
+  actor_type            String   @db.VarChar(32)
+  actor_id              Int?
+  actor_name            String?  @db.VarChar(255)
+  communication_channel String?  @db.VarChar(32)
+  notes                 String?  @db.Text
+  metadata              String?  @db.LongText
+  created_at            DateTime @default(now()) @db.DateTime(0)
+
+  @@index([request_id, created_at], map: "idx_hotel_block_event_request_time")
+  @@index([new_status], map: "idx_hotel_block_event_status")
+  @@map("dvi_hotel_block_events")
+}
+
+model dvi_hotel_block_token {
+  id         Int       @id @default(autoincrement())
+  request_id Int
+  token_hash String    @unique @db.VarChar(64)
+  expires_at DateTime  @db.DateTime(0)
+  revoked_at DateTime? @db.DateTime(0)
+  used_at    DateTime? @db.DateTime(0)
+  created_at DateTime  @default(now()) @db.DateTime(0)
+
+  @@index([request_id], map: "idx_hotel_block_token_request")
+  @@index([expires_at], map: "idx_hotel_block_token_expiry")
+  @@map("dvi_hotel_block_tokens")
+}
+
+model dvi_hotel_block_message {
+  id                  Int       @id @default(autoincrement())
+  request_id          Int
+  recipient           String?   @db.VarChar(320)
+  delivery_status     String    @default("QUEUED") @db.VarChar(32)
+  attempt_count       Int       @default(0)
+  provider_message_id String?   @db.VarChar(255)
+  last_error          String?   @db.Text
+  sent_at             DateTime? @db.DateTime(0)
+  created_at          DateTime  @default(now()) @db.DateTime(0)
+  updated_at          DateTime  @updatedAt @db.DateTime(0)
+
+  @@index([request_id], map: "idx_hotel_block_message_request")
+  @@index([delivery_status], map: "idx_hotel_block_message_status")
+  @@map("dvi_hotel_block_messages")
+}
+
+model dvi_hotel_block_guest_detail {
+  id                 Int      @id @default(autoincrement())
+  itinerary_plan_id  Int      @unique(map: "uniq_dvi_hotel_block_guest_plan")
+  guest_payload      String   @db.LongText
+  created_by         Int?
+  created_at         DateTime @default(now()) @db.DateTime(0)
+  updated_at         DateTime @updatedAt @db.DateTime(0)
+
+  @@index([itinerary_plan_id], map: "idx_dvi_hotel_block_guest_plan")
+  @@map("dvi_hotel_block_guest_details")
 }
 
 model public_itinerary_links {

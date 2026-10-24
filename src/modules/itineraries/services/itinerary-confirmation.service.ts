@@ -48,6 +48,7 @@ export class ItineraryConfirmationService {
 
   async confirmQuotation(dto: ConfirmQuotationDto) {
  const userId = 1; // TODO: Get from authenticated user
+    const manualHotelHoldWorkflow = Boolean((dto as any).manualHotelHoldWorkflow);
 
  // 1. Get plan details and cost breakdown
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
@@ -126,6 +127,10 @@ export class ItineraryConfirmationService {
       groupType,
       skippedExternalStayCount,
     } = hotelSelectionState;
+    // The manual hotel-block workflow still needs the selected draft rows
+    // copied into DVi's confirmation context, but it must never carry those
+    // rows into the supplier-booking branch of this legacy service.
+    const effectiveProviderHotelBookings = manualHotelHoldWorkflow ? [] : providerHotelBookings;
     // Offline hotels are manual requests. Confirm the itinerary and copy the
     // selected hotel snapshot first; hotel approval/confirmation happens
     // afterward through ItineraryHotelApprovalService. Live supplier hotels
@@ -134,12 +139,12 @@ export class ItineraryConfirmationService {
       planId: dto.itinerary_plan_ID,
       shouldConfirmHotels,
       groupType,
-      supplierBookableHotels: providerHotelBookings.length,
+      supplierBookableHotels: effectiveProviderHotelBookings.length,
       selectedRouteIds,
       externalRouteIds,
       skippedExternalStayCount,
     });
- console.log('[CONFIRM_QUOTATION_HOTELS_RECEIVED]', providerHotelBookings.map((h: any) => ({
+    console.log('[CONFIRM_QUOTATION_HOTELS_RECEIVED]', effectiveProviderHotelBookings.map((h: any) => ({
       routeId: h.routeId,
       provider: h.provider,
       hotelCode: h.hotelCode,
@@ -152,8 +157,8 @@ export class ItineraryConfirmationService {
       prebookNetAmount: h?.prebookContext?.prebookNetAmount,
     })));
 
-    if (shouldConfirmHotels && providerHotelBookings.length > 0) {
-      for (const hotel of providerHotelBookings) {
+    if (shouldConfirmHotels && effectiveProviderHotelBookings.length > 0) {
+      for (const hotel of effectiveProviderHotelBookings) {
         const provider = String(hotel?.provider || hotel?.__provider || '').trim().toLowerCase();
         if (!['staah', 'axisrooms'].includes(provider)) {
           continue;
@@ -265,7 +270,7 @@ export class ItineraryConfirmationService {
     const arrivalDateTime = parseDateTime(dto.arrival_date_time);
     const departureDateTime = parseDateTime(dto.departure_date_time);
 
-    const hasHotelBookings = shouldConfirmHotels && providerHotelBookings.length > 0;
+    const hasHotelBookings = shouldConfirmHotels && effectiveProviderHotelBookings.length > 0;
 
  // 3. Start Transaction
     return await this.prisma.$transaction(async (tx) => {
@@ -381,7 +386,7 @@ transport_early_arrival_rest_minutes: (plan as any).transport_early_arrival_rest
       const primaryCustomerSalutation =
         normalizePassengerTitle(dto.primary_guest_salutation) || dto.primary_guest_salutation || '';
       const additionalAdultPassengerTitles =
-        providerHotelBookings?.[0]?.passengers
+        effectiveProviderHotelBookings?.[0]?.passengers
           ?.filter((passenger) => Number(passenger.paxType) === 1 && !passenger.leadPassenger)
           .map((passenger) => normalizePassengerTitle(passenger.title) || '') || [];
 
