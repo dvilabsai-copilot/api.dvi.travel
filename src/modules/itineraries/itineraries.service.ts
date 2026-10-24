@@ -841,6 +841,9 @@ private readonly accountsComponentSync?: AccountsComponentSyncService,
     this.hotspotDeletionService.setForceRebuildVehiclePricingCallback(
       (planId, routeId) => this.forceRebuildVehiclePricingAfterHotspotChange(planId, routeId),
     );
+    this.hotspotDeletionService.setApplySameCityCrossDayOptimizerCallback(
+      (planId) => this.applySameCityCrossDayOptimizerAfterSave(planId),
+    );
 this.planPersistenceService.setCallbacks({
   optimizeRouteOrder: (
     routes,
@@ -933,16 +936,6 @@ this.planPersistenceService.setCallbacks({
       formatTime: (...args) => (this.formatTime as any)(...args),
     });
    this.manualHotspotPreviewService.setCallbacks({
-    rebuildRouteAfterManualFitConfirm: (
-  planId: number,
-  routeId: number,
-  userId: number,
-) =>
-  this.routeHotspotRebuildService.rebuildRouteHotspotsForDay(
-    Number(planId),
-    Number(routeId),
-    Number(userId || 1),
-  ),
   ensureManualFitAttemptStoreTable: (...args) =>
     (this.manualFitAttemptStoreService.ensureTable as any)(...args),
 
@@ -1061,25 +1054,6 @@ this.planPersistenceService.setCallbacks({
   saveManualFitAttemptEntry: (...args) =>
     (this.saveManualFitAttemptEntry as any)(...args),
 
-  // Run the same post-hotspot processing after Fit Here confirmation.
-  applySameCityCrossDayOptimizerAfterSave: (...args) =>
-    (
-      this.applySameCityCrossDayOptimizerAfterSave as any
-    )(...args),
-
-  rebuildParkingChargesAfterHotspotChange: (
-    planId: number,
-    userId: number,
-  ) =>
-    this.hotspotEngine.rebuildParkingCharges(
-      Number(planId),
-      Number(userId || 1),
-    ),
-
-  forceRebuildVehiclePricingAfterHotspotChange: (...args) =>
-    (
-      this.forceRebuildVehiclePricingAfterHotspotChange as any
-    )(...args),
 });
     const manualInsertionFitCallbackNames = [
       'timeToMinutes',
@@ -6718,6 +6692,7 @@ async processConfirmationWithTboBookings(
       };
        }, { timeout: 120000 });
 
+    await this.applySameCityCrossDayOptimizerAfterSave(normalizedPlanId);
     await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
 
    await this.forceRebuildVehiclePricingAfterHotspotChange(
