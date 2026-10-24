@@ -62,6 +62,12 @@ const dateOnly = (value: unknown): Date | null => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const publicItineraryBaseUrl = () => {
+  const baseUrl = String(process.env.PUBLIC_ITINERARY_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (!baseUrl) throw new Error('PUBLIC_ITINERARY_BASE_URL is not configured.');
+  return baseUrl;
+};
+
 @Injectable()
 export class HotelBlockingService {
   constructor(
@@ -319,7 +325,7 @@ export class HotelBlockingService {
       });
     });
 
-    const responseUrl = `${String(process.env.PUBLIC_APP_ORIGIN || process.env.FRONTEND_ORIGIN || 'http://localhost:8080').replace(/\/$/, '')}/hotel/block-response/${rawToken}`;
+    const responseUrl = `${publicItineraryBaseUrl()}/hotel/block-response/${rawToken}`;
     let deliveryStatus: 'QUEUED' | 'SENT' | 'FAILED' = 'QUEUED';
     let providerMessageId: string | null = null;
     try {
@@ -607,7 +613,7 @@ export class HotelBlockingService {
       ...this.publicStaffView(created),
       created: !existing,
       emailQueued: Boolean(email),
-      responseUrl: `${String(process.env.PUBLIC_APP_ORIGIN || process.env.FRONTEND_ORIGIN || 'http://localhost:8080').replace(/\/$/, '')}/hotel/block-response/${rawToken}`,
+      responseUrl: `${publicItineraryBaseUrl()}/hotel/block-response/${rawToken}`,
     };
   }
 
