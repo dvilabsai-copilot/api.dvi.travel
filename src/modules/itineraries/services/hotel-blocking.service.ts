@@ -475,6 +475,15 @@ export class HotelBlockingService {
   }
 
   async assertPlanReady(planId: number, groupType?: number) {
+    const plan = await (this.prisma as any).dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: Number(planId) },
+      select: { itinerary_preference: true },
+    });
+    const isVehicleOnlyPlan = Number(plan?.itinerary_preference || 0) === 2;
+    if (isVehicleOnlyPlan) {
+      return { ready: true, requestCount: 0 };
+    }
+
     const selectedRows = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
       where: {
         itinerary_plan_id: Number(planId),
