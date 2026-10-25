@@ -358,20 +358,36 @@ private saveManualFitAttemptEntry(...args: any[]) {
           break;
         }
 
-        if (!this.isRetryableManualPreviewTransactionError(error) || attempt >= maxPreviewAttempts) {
+        const errorMessage = String(error?.message || '');
+
+        const transactionExpired =
+          error?.code === 'P2028' ||
+          /transaction already closed|expired transaction|transaction timeout|timeout for this transaction/i.test(
+            errorMessage,
+          );
+
+        if (
+          transactionExpired ||
+          !this.isRetryableManualPreviewTransactionError(error) ||
+          attempt >= maxPreviewAttempts
+        ) {
           throw error;
         }
 
         lastError = error;
- console.warn('[ManualFit][preview_tx_retry]', {
+
+        console.warn('[ManualFit][preview_tx_retry]', {
           planId: Number(planId),
           routeId: Number(routeId),
           hotspotIds: this.normalizeManualHotspotIds(hotspotIds),
           attempt,
           maxPreviewAttempts,
-          message: String(error?.message || ''),
+          message: errorMessage,
         });
-        await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, attempt * 100),
+        );
       }
     }
 

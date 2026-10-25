@@ -1791,7 +1791,150 @@ travelRepairRows.push({
 
   travelRepairRows.push(row);
 }
-    const sortedRowsAfterTravelRepair = [...travelRepairRows].sort((a: any, b: any) => {
+// SCRUM-440: Detect stale terminal rows from the actual rebuilt timeline.
+// Manual route flags alone are not sufficient to identify affected routes.
+const terminalRepairRouteIds = new Set<number>(
+  travelRepairRows
+    .map((row: any) => Number(row?.itinerary_route_ID || 0))
+    .filter((routeId: number) => routeId > 0),
+);
+
+for (const routeId of terminalRepairRouteIds) {
+  const rows = travelRepairRows.filter(
+    (row: any) =>
+      Number(row?.itinerary_route_ID || 0) === routeId,
+  );
+
+  const when = (value: any): number =>
+    value ? new Date(value).getTime() : NaN;
+
+  const visits = rows.filter(
+    (row: any) => Number(row?.item_type) === 4,
+  );
+
+  if (!visits.length) continue;
+
+  const lastVisit = [...visits].sort(
+    (left: any, right: any) =>
+      when(right.hotspot_end_time) - when(left.hotspot_end_time),
+  )[0];
+
+  const visitStart = when(lastVisit.hotspot_start_time);
+  const visitEnd = when(lastVisit.hotspot_end_time);
+
+  if (!Number.isFinite(visitStart) || !Number.isFinite(visitEnd)) {
+    continue;
+  }
+
+  const terminalLegs = rows.filter(
+    (row: any) => Number(row?.item_type) === 5,
+  );
+
+  const markers = rows.filter(
+    (row: any) => Number(row?.item_type) === 6,
+  );
+
+if (markers.length !== 1) {
+  continue;
+}
+
+// A route with one final journey can still have a stale overnight marker.
+if (terminalLegs.length === 1) {
+  const finalLeg = terminalLegs[0];
+  const finalStart = when(finalLeg.hotspot_start_time);
+  const finalEnd = when(finalLeg.hotspot_end_time);
+
+  if (
+    Number.isFinite(finalStart) &&
+    Number.isFinite(finalEnd) &&
+    finalStart >= visitEnd &&
+    finalEnd > finalStart
+  ) {
+    const marker = markers[0];
+    const markerStart = when(marker.hotspot_start_time);
+    const markerEnd = when(marker.hotspot_end_time);
+
+    if (
+      Number.isFinite(markerStart) &&
+      Number.isFinite(markerEnd) &&
+      (markerStart !== finalEnd || markerEnd !== finalEnd)
+    ) {
+      marker.hotspot_start_time = new Date(finalEnd);
+      marker.hotspot_end_time = new Date(finalEnd);
+
+      console.warn('[SCRUM-440][single_terminal_arrival_repaired]', {
+        planId,
+        routeId,
+        finalArrival: new Date(finalEnd),
+      });
+    }
+  }
+
+  continue;
+}
+
+// Existing two-terminal-leg reconciliation remains below.
+if (terminalLegs.length !== 2) {
+  continue;
+}
+
+  const terminalAfter = terminalLegs.filter((row: any) =>
+    Number.isFinite(when(row?.hotspot_start_time)) &&
+    Number.isFinite(when(row?.hotspot_end_time)) &&
+    when(row.hotspot_start_time) >= visitEnd &&
+    when(row.hotspot_end_time) > when(row.hotspot_start_time),
+  );
+
+  const obsoleteBefore = terminalLegs.filter((row: any) =>
+    Number.isFinite(when(row?.hotspot_start_time)) &&
+    Number.isFinite(when(row?.hotspot_end_time)) &&
+    when(row.hotspot_start_time) < visitStart &&
+    when(row.hotspot_end_time) <= visitStart,
+  );
+
+  if (terminalAfter.length !== 1 || obsoleteBefore.length !== 1) {
+    continue;
+  }
+
+  const finalLeg = terminalAfter[0];
+  const obsoleteLeg = obsoleteBefore[0];
+  const marker = markers[0];
+
+const finalArrival = when(finalLeg.hotspot_end_time);
+const previousArrival = when(marker.hotspot_start_time);
+const previousArrivalEnd = when(marker.hotspot_end_time);
+
+if (
+  !Number.isFinite(finalArrival) ||
+  !Number.isFinite(previousArrival) ||
+  !Number.isFinite(previousArrivalEnd) ||
+  !Number.isFinite(visitStart) ||
+  !Number.isFinite(visitEnd) ||
+  previousArrival >= finalArrival ||
+  previousArrivalEnd >= finalArrival ||
+  previousArrival > visitEnd ||
+  when(finalLeg.hotspot_start_time) < visitEnd
+) {
+  continue;
+}
+
+  const obsoleteIndex = travelRepairRows.indexOf(obsoleteLeg);
+  if (obsoleteIndex < 0) continue;
+
+  travelRepairRows.splice(obsoleteIndex, 1);
+
+  marker.hotspot_start_time = new Date(finalArrival);
+  marker.hotspot_end_time = new Date(finalArrival);
+
+  console.warn('[SCRUM-440][terminal_leg_and_overnight_reconciled]', {
+    planId,
+    routeId,
+    obsoleteTravelStart: obsoleteLeg.hotspot_start_time,
+    finalTravelEnd: finalLeg.hotspot_end_time,
+    previousArrival: new Date(previousArrival),
+  });
+}
+const sortedRowsAfterTravelRepair = [...travelRepairRows].sort((a: any, b: any) => {
       const aTime = a.hotspot_start_time ? new Date(a.hotspot_start_time).getTime() : 0;
       const bTime = b.hotspot_start_time ? new Date(b.hotspot_start_time).getTime() : 0;
 
@@ -1928,9 +2071,101 @@ travelRepairRows.push({
       });
     }
 
-    const createManyResult = await (tx as any).dvi_itinerary_route_hotspot_details.createMany({
-      data: dbHotspotRows,
-    });
+   // SCRUM-440: Validate rebuilt terminal routes before database persistence.
+// Limit strict SCRUM-440 validation to routes involved in a
+// manual-hotspot rebuild. Other itinerary flows remain unchanged.
+const terminalRouteIds = new Set<number>(
+  dbHotspotRows
+    .filter(
+      (row: any) =>
+        Number(row.item_type) === 6 &&
+        manualRouteIds.has(Number(row.itinerary_route_ID)),
+    )
+    .map((row: any) => Number(row.itinerary_route_ID)),
+);
+
+for (const routeId of terminalRouteIds) {
+  const rows = dbHotspotRows.filter(
+    (row: any) => Number(row.itinerary_route_ID) === routeId,
+  );
+
+  const visits = rows.filter(
+    (row: any) => Number(row.item_type) === 4,
+  );
+
+  const finalTravels = rows.filter(
+    (row: any) => Number(row.item_type) === 5,
+  );
+
+  const overnightMarkers = rows.filter(
+    (row: any) => Number(row.item_type) === 6,
+  );
+
+  // Apply strict validation to multi-attraction routes.
+  if (visits.length < 2) continue;
+
+  const timestamp = (value: any): number =>
+    value ? new Date(value).getTime() : NaN;
+
+  const lastVisitEnd = Math.max(
+    ...visits.map((row: any) => timestamp(row.hotspot_end_time)),
+  );
+
+  if (
+    !Number.isFinite(lastVisitEnd) ||
+    finalTravels.length !== 1 ||
+    overnightMarkers.length !== 1
+  ) {
+    throw new Error(
+      `[SCRUM-440] Invalid terminal route structure: route ${routeId}`,
+    );
+  }
+
+  const finalTravel = finalTravels[0];
+  const overnight = overnightMarkers[0];
+
+  const travelStart = timestamp(finalTravel.hotspot_start_time);
+  const travelEnd = timestamp(finalTravel.hotspot_end_time);
+  const arrivalStart = timestamp(overnight.hotspot_start_time);
+  const arrivalEnd = timestamp(overnight.hotspot_end_time);
+
+  if (
+    !Number.isFinite(travelStart) ||
+    !Number.isFinite(travelEnd) ||
+    travelStart < lastVisitEnd ||
+    travelEnd <= travelStart ||
+    arrivalStart !== travelEnd ||
+    arrivalEnd !== travelEnd
+  ) {
+    throw new Error(
+      `[SCRUM-440] Final travel or overnight timing invalid: route ${routeId}`,
+    );
+  }
+
+ const rawDistance = finalTravel.hotspot_travelling_distance;
+const distance =
+  rawDistance == null || String(rawDistance).trim() === ''
+    ? NaN
+    : Number(rawDistance);
+
+if (!Number.isFinite(distance) || distance <= 0) {
+  console.error('[SCRUM-440][terminal_distance_missing]', {
+    planId,
+    routeId,
+    lastHotspotId: visits[visits.length - 1]?.hotspot_ID,
+    rawDistance,
+  });
+
+  throw new Error(
+    `[SCRUM-440] Valid terminal travel distance required for route ${routeId}`,
+  );
+}
+}
+
+const createManyResult =
+  await (tx as any).dvi_itinerary_route_hotspot_details.createMany({
+    data: dbHotspotRows,
+  });
     logPersistence("create_many_result", {
       createdCount: Number(createManyResult?.count || 0),
     });
