@@ -75,6 +75,23 @@ export class HotelBlockingService {
     private readonly hotelBlockEmail: HotelBlockEmailService,
   ) {}
 
+  private async getDefaultHotelHoldCutoff(now = new Date()) {
+    let durationHours = 1;
+    try {
+      const settings = await (this.prisma as any).dvi_global_settings.findFirst({
+        where: { deleted: 0, status: 1 },
+        orderBy: { global_settings_ID: 'asc' },
+        select: { hotel_blocked_cutoff_time: true },
+      });
+      const configuredHours = Number(settings?.hotel_blocked_cutoff_time);
+      if (Number.isFinite(configuredHours) && configuredHours >= 0) durationHours = configuredHours;
+    } catch {
+      // Keep the one-hour compatibility default if an older database has not
+      // received the global-settings column yet.
+    }
+    return new Date(now.getTime() + durationHours * 60 * 60 * 1000);
+  }
+
   async holdGroup(input: {
     itineraryPlanId: number;
     groupType: number;
@@ -295,8 +312,39 @@ export class HotelBlockingService {
     }
     const recipient = firstEmail(request.contact_email);
     if (!recipient) throw new BadRequestException('A verified hotel reservation email is required before resending.');
+    let requestForEmail = request;
+    const shouldMarkBlocked = request.status === HOTEL_BLOCK_STATUS.REQUESTED;
+    const shouldSeedDefaultCutoff = [HOTEL_BLOCK_STATUS.REQUESTED, HOTEL_BLOCK_STATUS.BLOCKED].includes(request.status)
+      && !request.cutoff_at;
+    if (shouldMarkBlocked || shouldSeedDefaultCutoff) {
+      const defaultCutoff = request.cutoff_at || await this.getDefaultHotelHoldCutoff();
+      requestForEmail = await (this.prisma as any).$transaction(async (tx: any) => {
+        const updated = await tx.dvi_hotel_block_request.update({
+          where: { id: request.id },
+          data: {
+            status: HOTEL_BLOCK_STATUS.BLOCKED,
+            cutoff_at: defaultCutoff,
+          },
+        });
+        await tx.dvi_hotel_block_event.create({
+          data: {
+            request_id: request.id,
+            previous_status: request.status,
+            new_status: HOTEL_BLOCK_STATUS.BLOCKED,
+            event_type: shouldMarkBlocked ? 'REQUEST_MARKED_BLOCKED' : 'HOLD_CUTOFF_DEFAULTED',
+            actor_type: actor.type || 'STAFF',
+            actor_id: Number(actor.id || 0) || null,
+            actor_name: actor.name || null,
+            notes: shouldMarkBlocked
+              ? 'Existing hotel block request marked blocked before email resend.'
+              : 'Default one-hour hold cutoff applied before email resend.',
+          },
+        });
+        return updated;
+      });
+    }
     return this.queueAndSendEmail({
-      request,
+      request: requestForEmail,
       recipient,
       actor,
       eventType: 'REQUEST_EMAIL_RESENT',
@@ -515,6 +563,7 @@ export class HotelBlockingService {
     // A submitted block request represents a blocked room until the hotelier
     // responds with Confirmed, Waitlisted, or Unavailable.
     const status = email ? HOTEL_BLOCK_STATUS.BLOCKED : HOTEL_BLOCK_STATUS.CONTACT_REQUIRED;
+    const defaultCutoff = email ? await this.getDefaultHotelHoldCutoff() : null;
     const candidates = await (this.prisma as any).dvi_hotel_block_request.findMany({
       where: {
         itinerary_plan_id: input.planId,
@@ -594,6 +643,7 @@ export class HotelBlockingService {
               requested_at: now,
               responded_at: null,
               confirmed_at: null,
+              cutoff_at: defaultCutoff,
               confirmation_reference: null,
               confirmation_channel: null,
               respondent_name: null,
@@ -624,6 +674,7 @@ export class HotelBlockingService {
               contact_phone: phone,
               contact_source: contactSource,
               requested_at: now,
+              cutoff_at: defaultCutoff,
               created_by: Number(input.actor?.id || 0) || null,
             },
           });

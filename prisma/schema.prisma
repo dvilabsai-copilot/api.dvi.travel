@@ -2979,6 +2979,7 @@ model dvi_global_settings {
   tbo_map_lunch_rate_3_star              Float     @default(900) @db.Float
   tbo_map_lunch_rate_4_star              Float     @default(1500) @db.Float
   tbo_map_lunch_rate_5_star              Float     @default(2500) @db.Float
+  hotel_blocked_cutoff_time              Float     @default(1) @db.Float
 
   @@index([accommodation_return(length: 768)], map: "idx_cnf_global_settings_accommodation_return")
   @@index([agent_referral_bonus_credit], map: "idx_cnf_global_settings_agent_referral_bonus_credit")
@@ -7105,4 +7106,18 @@ model dvi_calendar_event_scopes {
   @@unique([calendar_event_id, scope_type, scope_ref_id], map: "uq_dvi_calendar_event_scope")
   @@index([scope_type, scope_ref_id, status, deleted], map: "idx_dvi_calendar_event_scope_lookup")
   @@index([calendar_event_id], map: "idx_dvi_calendar_event_scope_event")
+}
+
+model dvi_toll_city_aliases {
+  toll_city_alias_id Int      @id @default(autoincrement())
+  alias_name         String   @db.VarChar(255)
+  alias_key          String   @unique(map: "uq_dvi_toll_city_aliases_alias_key")
+  canonical_city     String   @db.VarChar(150)
+  status             Int      @default(1) @db.TinyInt
+  deleted            Int      @default(0) @db.TinyInt
+  createdon          DateTime @default(now()) @db.DateTime(0)
+  updatedon          DateTime @default(now()) @db.DateTime(0)
+
+  @@index([status, deleted], map: "idx_dvi_toll_city_aliases_active")
+  @@index([canonical_city, status, deleted], map: "idx_dvi_toll_city_aliases_canonical")
 }
