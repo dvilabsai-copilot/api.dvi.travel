@@ -719,8 +719,17 @@ export class HotelBlockingService {
   }
 
   private async recordResponse(requestId: number, input: any) {
-    const status = normalizeText(input.status).toUpperCase();
+    const requestedStatus = normalizeText(input.status).toUpperCase().replace(/\s+/g, '_');
+    const status = ({
+      HOLD: HOTEL_BLOCK_STATUS.BLOCKED,
+      CONFIRM: HOTEL_BLOCK_STATUS.CONFIRMED,
+      WAIT_LIST: HOTEL_BLOCK_STATUS.WAITLISTED,
+    } as Record<string, string>)[requestedStatus] || requestedStatus;
     if (!RESPONSE_STATUSES.has(status)) throw new BadRequestException('A valid hotel response status is required.');
+    const responseCutoff = input.cutoffAt ? new Date(input.cutoffAt) : null;
+    if (responseCutoff && Number.isNaN(responseCutoff.getTime())) {
+      throw new BadRequestException('A valid cutoff date and time is required.');
+    }
     return this.transition(requestId, status, {
       actor: input.actor,
       eventType: 'HOTEL_RESPONSE_RECORDED',
@@ -728,7 +737,7 @@ export class HotelBlockingService {
       notes: normalizeText(input.notes) || null,
       confirmationReference: normalizeText(input.confirmationReference) || null,
       respondentName: normalizeText(input.respondentName) || null,
-      cutoffAt: input.cutoffAt ? new Date(input.cutoffAt) : null,
+      cutoffAt: responseCutoff,
       tokenId: input.tokenId,
     });
   }
@@ -739,6 +748,8 @@ export class HotelBlockingService {
     if ([HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED].includes(request.status)) throw new BadRequestException('This hotel hold request is no longer active.');
     if (request.status === HOTEL_BLOCK_STATUS.CONFIRMED && status !== HOTEL_BLOCK_STATUS.CONFIRMED) throw new BadRequestException('A confirmed hotel hold cannot be downgraded.');
     const now = new Date();
+    const keepsHoldCutoff = status === HOTEL_BLOCK_STATUS.BLOCKED || status === HOTEL_BLOCK_STATUS.CONFIRMED;
+    const cutoffAt = input.cutoffAt || (keepsHoldCutoff && !request.cutoff_at ? await this.getDefaultHotelHoldCutoff() : undefined);
     const updated = await (this.prisma as any).$transaction(async (tx: any) => {
       const result = await tx.dvi_hotel_block_request.update({
         where: { id: request.id },
@@ -746,7 +757,9 @@ export class HotelBlockingService {
           status,
           responded_at: now,
           confirmed_at: status === HOTEL_BLOCK_STATUS.CONFIRMED ? now : null,
-          cutoff_at: input.cutoffAt || undefined,
+          // A wait-list or unavailable response ends the hold, so do not
+          // leave the previous hold-until time visible in the booking modal.
+          cutoff_at: keepsHoldCutoff ? cutoffAt : null,
           confirmation_reference: input.confirmationReference || undefined,
           confirmation_channel: input.communicationChannel || undefined,
           respondent_name: input.respondentName || undefined,
@@ -809,6 +822,8 @@ export class HotelBlockingService {
       mealPlan: row.meal_plan,
       roomCount: row.room_count,
       status: row.status,
+      cutoffAt: row.cutoff_at,
+      respondedAt: row.responded_at,
     };
   }
 

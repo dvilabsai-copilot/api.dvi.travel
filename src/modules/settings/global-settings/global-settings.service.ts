@@ -10,6 +10,75 @@ import {
 } from "./dto/update-global-settings.dto";
 import { StateConfigResultDto, StateConfigUpdateDto } from "./dto/state-config.dto";
 
+const GLOBAL_SETTINGS_UPDATE_FIELDS = [
+  "eligibile_country_code",
+  "vsr_hotel_card_limit",
+  "tbo_map_fallback_enabled",
+  "hobse_search_enabled",
+  "show_ep_hotels",
+  "show_hobse_ep_hotels",
+  "tbo_map_dinner_rate_3_star",
+  "tbo_map_dinner_rate_4_star",
+  "tbo_map_dinner_rate_5_star",
+  "tbo_map_lunch_rate_3_star",
+  "tbo_map_lunch_rate_4_star",
+  "tbo_map_lunch_rate_5_star",
+  "hotel_blocked_cutoff_time",
+  "extrabed_rate_percentage",
+  "childwithbed_rate_percentage",
+  "childnobed_rate_percentage",
+  "hotel_margin",
+  "hotel_margin_gst_type",
+  "hotel_margin_gst_percentage",
+  "itinerary_distance_limit",
+  "allowed_km_limit_per_day",
+  "itinerary_common_buffer_time",
+  "itinerary_travel_by_flight_buffer_time",
+  "itinerary_travel_by_train_buffer_time",
+  "itinerary_travel_by_road_buffer_time",
+  "itinerary_break_time",
+  "itinerary_hotel_start",
+  "itinerary_hotel_return",
+  "itinerary_additional_margin_percentage",
+  "itinerary_additional_margin_day_limit",
+  "custom_hotspot_or_activity",
+  "accommodation_return",
+  "vehicle_terms_condition",
+  "itinerary_local_speed_limit",
+  "itinerary_outstation_speed_limit",
+  "agent_referral_bonus_credit",
+  "hotel_terms_condition",
+  "hotel_voucher_terms_condition",
+  "vehicle_voucher_terms_condition",
+  "site_title",
+  "company_name",
+  "company_address",
+  "company_pincode",
+  "company_gstin_no",
+  "company_pan_no",
+  "company_contact_no",
+  "company_email_id",
+  "company_logo",
+  "hotel_hsn",
+  "vehicle_hsn",
+  "service_component_hsn",
+  "site_seeing_restriction_km_limit",
+  "youtube_link",
+  "facebook_link",
+  "instagram_link",
+  "linkedin_link",
+  "cc_email_id",
+  "default_hotel_voucher_email_id",
+  "default_vehicle_voucher_email_id",
+  "default_accounts_email_id",
+  "company_cin",
+  "bank_acc_holder_name",
+  "bank_acc_no",
+  "bank_ifsc_code",
+  "bank_name",
+  "branch_name",
+] as const;
+
 @Injectable()
 export class GlobalSettingsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -47,6 +116,41 @@ export class GlobalSettingsService {
       return ["1", "true", "yes"].includes(value.trim().toLowerCase());
     }
     return Boolean(value);
+  }
+
+  private normalizeGlobalSettingsData(dto: UpdateGlobalSettingsDto): Record<string, unknown> {
+    const data: Record<string, unknown> = {};
+
+    for (const field of GLOBAL_SETTINGS_UPDATE_FIELDS) {
+      if (field in dto) {
+        data[field] = dto[field];
+      }
+    }
+
+    for (const field of [
+      "itinerary_common_buffer_time",
+      "itinerary_travel_by_flight_buffer_time",
+      "itinerary_travel_by_train_buffer_time",
+      "itinerary_travel_by_road_buffer_time",
+    ] as const) {
+      if (field in dto) {
+        data[field] = this.toTimeDate(dto[field]);
+      }
+    }
+
+    if ("hotel_margin_gst_type" in dto) {
+      data.hotel_margin_gst_type = this.normalizeBoolean(dto.hotel_margin_gst_type);
+    }
+
+    return data;
+  }
+
+  private valuesEqual(left: unknown, right: unknown): boolean {
+    if (left instanceof Date || right instanceof Date) {
+      return left instanceof Date && right instanceof Date && left.getTime() === right.getTime();
+    }
+
+    return left === right;
   }
 
  /**
@@ -99,26 +203,7 @@ export class GlobalSettingsService {
    * all be changed accidentally.
  */
   async updateGlobalSettings(dto: UpdateGlobalSettingsDto, userId?: number) {
-    const data: Prisma.dvi_global_settingsUpdateInput = {
-      ...(dto as any),
-      updatedon: new Date(),
-      ...(typeof userId === "number" ? { createdby: userId } : {}),
-    };
-
-    for (const field of [
-      "itinerary_common_buffer_time",
-      "itinerary_travel_by_flight_buffer_time",
-      "itinerary_travel_by_train_buffer_time",
-      "itinerary_travel_by_road_buffer_time",
-    ] as const) {
-      if (field in dto) {
-        (data as any)[field] = this.toTimeDate(dto[field]);
-      }
-    }
-
-    if ("hotel_margin_gst_type" in dto) {
-      (data as any).hotel_margin_gst_type = this.normalizeBoolean(dto.hotel_margin_gst_type);
-    }
+    const normalizedData = this.normalizeGlobalSettingsData(dto);
 
  // If there is no row yet, create one first.
     const existing = await this.prisma.dvi_global_settings.findFirst({
@@ -128,7 +213,7 @@ export class GlobalSettingsService {
     if (!existing) {
       await this.prisma.dvi_global_settings.create({
         data: {
-          ...(data as any),
+          ...normalizedData,
           createdby: typeof userId === "number" ? userId : 0,
           createdon: new Date(),
           updatedon: new Date(),
@@ -140,9 +225,37 @@ export class GlobalSettingsService {
       return this.getGlobalSettings();
     }
 
+    const changedData: Record<string, unknown> = {};
+
+    for (const field of Object.keys(normalizedData)) {
+      const nextValue = normalizedData[field];
+
+      // Prisma treats undefined as an omitted field. Preserve that behavior
+      // and do not turn it into a spurious full-row update.
+      if (nextValue === undefined) continue;
+
+      const previousValue = existing[field as keyof typeof existing];
+      if (!this.valuesEqual(nextValue, previousValue)) {
+        changedData[field] = nextValue;
+      }
+    }
+
+    if (typeof userId === "number" && existing.createdby !== userId) {
+      changedData.createdby = userId;
+    }
+
+    // A full settings form is allowed to submit unchanged values. Avoid an
+    // UPDATE in that case so MySQL does not create a large undo record for a
+    // row containing several TEXT columns.
+    if (Object.keys(changedData).length === 0) {
+      return this.getGlobalSettings();
+    }
+
+    changedData.updatedon = new Date();
+
     await this.prisma.dvi_global_settings.update({
       where: { global_settings_ID: existing.global_settings_ID },
-      data,
+      data: changedData as Prisma.dvi_global_settingsUpdateInput,
     });
 
     return this.getGlobalSettings();
