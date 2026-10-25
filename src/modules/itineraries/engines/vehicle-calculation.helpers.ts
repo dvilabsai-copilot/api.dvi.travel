@@ -2582,11 +2582,34 @@ export async function calculateRouteVehicleDetails(
     calculationSource: 'unknown',
   };
 
- // Operational rule: pickup applies per route rules; local routes can include a daily shed return drop.
-  if (applyPickupForThisRoute) {
-    if (travel_type === 1 && route_count > 1) {
-      const localPoint = await resolveLocalHotelOrCityPoint(prisma, itinerary_plan_ID, route, cache);
-      if (
+// Only suppress generic same-city pickup fallbacks when
+// the city fallback point matches the vehicle origin.
+// Preserve actual hotel-to-vehicle-origin distances.
+let suppressSyntheticLocalPickup = false;
+
+// Operational rule: pickup applies per route rules; local routes can include a daily shed return drop.
+if (applyPickupForThisRoute) {
+  if (travel_type === 1 && route_count > 1) {
+    const localPoint = await resolveLocalHotelOrCityPoint(
+      prisma, itinerary_plan_ID, route, cache
+    );
+
+const originCity = normalizeCityToken(ctx.vehicle_origin_city);
+const routeCity = normalizeCityToken(route.location_name);
+const destinationCity = normalizeCityToken(route.next_visiting_location);
+
+const isSameVehicleOriginCity =
+  originCity.length > 0 &&
+  routeCity === originCity &&
+  destinationCity === originCity;
+
+suppressSyntheticLocalPickup =
+  travel_type === 1 &&
+  route_count > 1 &&
+  isSameVehicleOriginCity &&
+  localPoint.source === 'city_fallback';
+
+    if (
         localPoint.lat !== null &&
         localPoint.lng !== null &&
         Number(ctx.vehicle_origin_latitude || 0) &&
@@ -2647,7 +2670,12 @@ export async function calculateRouteVehicleDetails(
         }),
       });
 
-      if (toNum(TOTAL_PICKUP_KM) <= 0 && localSelfPickup && Number(localSelfPickup.distance || 0) > 0) {
+      if (
+        !suppressSyntheticLocalPickup &&
+        toNum(TOTAL_PICKUP_KM) <= 0 &&
+        localSelfPickup &&
+        Number(localSelfPickup.distance || 0) > 0
+      ) {
         const pickupKm = Number(localSelfPickup.distance || 0);
         const storedHms = parseStoredDurationToHms(localSelfPickup.duration);
         const storedSeconds = parseHmsToSeconds(storedHms);
@@ -2703,7 +2731,10 @@ export async function calculateRouteVehicleDetails(
         ...pickupDebug,
         calculationSource: 'haversine',
       };
-    } else if (toNum(TOTAL_PICKUP_KM) <= 0) {
+    } else if (
+      toNum(TOTAL_PICKUP_KM) <= 0 &&
+      !suppressSyntheticLocalPickup
+    ) {
       if (
         pickupTargetCoords &&
         pickupFromCoords &&
@@ -2741,6 +2772,11 @@ export async function calculateRouteVehicleDetails(
         };
       }
     }
+  }
+
+  if (suppressSyntheticLocalPickup) {
+    TOTAL_PICKUP_KM = '0.00';
+    TOTAL_PICKUP_DURATION = '00:00:00';
   }
 
   if (applyDropForThisRoute) {
@@ -2935,22 +2971,23 @@ export async function calculateRouteVehicleDetails(
     isItineraryEdgeTransferRoute &&
     toNum(SIGHT_SEEING_TRAVELLING_KM) > 0;
 
- // Total KM includes pickup + running + sightseeing + drop.
-  const totalKmNum =
-    toNum(TOTAL_PICKUP_KM) +
-    toNum(TOTAL_RUNNING_KM) +
-    toNum(SIGHT_SEEING_TRAVELLING_KM) +
-    toNum(TOTAL_DROP_KM);
-  const TOTAL_KM = totalKmNum.toFixed(2);
-  if (debugInsert) {
- console.log('[CALC_RESULT]', {
-      TOTAL_PICKUP_KM,
-      TOTAL_RUNNING_KM,
-      SIGHT_SEEING_TRAVELLING_KM,
-      TOTAL_DROP_KM,
-      TOTAL_KM,
-    });
-  }
+// Total KM includes pickup + running + sightseeing + drop.
+const totalKmNum =
+  toNum(TOTAL_PICKUP_KM) +
+  toNum(TOTAL_RUNNING_KM) +
+  toNum(SIGHT_SEEING_TRAVELLING_KM) +
+  toNum(TOTAL_DROP_KM);
+const TOTAL_KM = totalKmNum.toFixed(2);
+
+if (debugInsert) {
+  console.log('[CALC_RESULT]', {
+    TOTAL_PICKUP_KM,
+    TOTAL_RUNNING_KM,
+    SIGHT_SEEING_TRAVELLING_KM,
+    TOTAL_DROP_KM,
+    TOTAL_KM,
+  });
+}
 
   if (travel_type === 1 && isItineraryEdgeTransferRoute) {
     const hotspotRows = await prisma.dvi_itinerary_route_hotspot_details.findMany({

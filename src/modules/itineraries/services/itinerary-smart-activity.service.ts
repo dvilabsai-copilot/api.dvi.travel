@@ -489,7 +489,78 @@ export class ItinerarySmartActivityService {
       });
     }
   }
+  private async shiftAttachedActivitiesInTx(
+    tx: any,
+    planId: number,
+    routeId: number,
+    routeHotspotId: number,
+    oldHotspotStart: Date | null,
+    newHotspotStart: Date,
+    newHotspotEnd: Date,
+  ): Promise<void> {
+    if (!oldHotspotStart) {
+      return;
+    }
 
+    const shiftMs =
+      newHotspotStart.getTime() - oldHotspotStart.getTime();
+
+    if (shiftMs === 0) {
+      return;
+    }
+
+    const activities =
+      await tx.dvi_itinerary_route_activity_details.findMany({
+        where: {
+          itinerary_plan_ID: Number(planId),
+          itinerary_route_ID: Number(routeId),
+          route_hotspot_ID: Number(routeHotspotId),
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          route_activity_ID: true,
+          activity_start_time: true,
+          activity_end_time: true,
+        },
+      });
+
+    for (const activity of activities) {
+      if (!activity.activity_start_time || !activity.activity_end_time) {
+        throw new BadRequestException(
+          'Cannot reschedule an activity with missing timing.',
+        );
+      }
+
+      const newStart = new Date(
+        new Date(activity.activity_start_time).getTime() + shiftMs,
+      );
+
+      const newEnd = new Date(
+        new Date(activity.activity_end_time).getTime() + shiftMs,
+      );
+
+      if (
+        newStart < newHotspotStart ||
+        newEnd > newHotspotEnd
+      ) {
+        throw new BadRequestException(
+          'An attached activity cannot fit inside the rescheduled hotspot.',
+        );
+      }
+
+      await tx.dvi_itinerary_route_activity_details.update({
+        where: {
+          route_activity_ID: Number(activity.route_activity_ID),
+        },
+        data: {
+          activity_start_time: newStart,
+          activity_end_time: newEnd,
+          updatedon: new Date(),
+        },
+      });
+    }
+  }
   private async applyAnchoredLocalRebuildInTx(
     tx: any,
     planId: number,
@@ -604,6 +675,16 @@ export class ItinerarySmartActivityService {
       },
     });
 
+    await this.shiftAttachedActivitiesInTx(
+      tx,
+      planId,
+      routeId,
+      Number(moved.route_hotspot_ID),
+      moved.hotspot_start_time,
+      movedStart,
+      movedEnd,
+    );
+
     cursor = new Date(movedEnd);
 
     const downstream = hotspots.slice(movedIndex + 1);
@@ -620,6 +701,16 @@ export class ItinerarySmartActivityService {
           updatedon: new Date(),
         },
       });
+
+      await this.shiftAttachedActivitiesInTx(
+        tx,
+        planId,
+        routeId,
+        Number(row.route_hotspot_ID),
+        row.hotspot_start_time,
+        nextStart,
+        nextEnd,
+      );
 
       cursor = new Date(nextEnd);
     }
