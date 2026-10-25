@@ -92,6 +92,12 @@ export class HotelBlockingService {
     return new Date(now.getTime() + durationHours * 60 * 60 * 1000);
   }
 
+  private minimumHotelHoldCutoff(request: BlockRow, now = new Date()) {
+    const checkIn = dateOnly(request.check_in);
+    if (!checkIn || checkIn.getTime() <= now.getTime()) return now;
+    return checkIn;
+  }
+
   async holdGroup(input: {
     itineraryPlanId: number;
     groupType: number;
@@ -748,8 +754,18 @@ export class HotelBlockingService {
     if ([HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED].includes(request.status)) throw new BadRequestException('This hotel hold request is no longer active.');
     if (request.status === HOTEL_BLOCK_STATUS.CONFIRMED && status !== HOTEL_BLOCK_STATUS.CONFIRMED) throw new BadRequestException('A confirmed hotel hold cannot be downgraded.');
     const now = new Date();
+    const checkIn = dateOnly(request.check_in);
+    const checkOut = dateOnly(request.check_out);
+    if (checkIn && checkOut && checkOut.getTime() <= checkIn.getTime()) {
+      throw new BadRequestException('Hotel checkout must be later than check-in.');
+    }
     const keepsHoldCutoff = status === HOTEL_BLOCK_STATUS.BLOCKED || status === HOTEL_BLOCK_STATUS.CONFIRMED;
-    const cutoffAt = input.cutoffAt || (keepsHoldCutoff && !request.cutoff_at ? await this.getDefaultHotelHoldCutoff() : undefined);
+    const minimumCutoff = this.minimumHotelHoldCutoff(request, now);
+    if (keepsHoldCutoff && input.cutoffAt && input.cutoffAt.getTime() < minimumCutoff.getTime()) {
+      throw new BadRequestException('Hold cutoff cannot be before today or before the hotel check-in date and time.');
+    }
+    const defaultCutoff = keepsHoldCutoff && !request.cutoff_at ? await this.getDefaultHotelHoldCutoff(now) : null;
+    const cutoffAt = input.cutoffAt || (defaultCutoff && defaultCutoff.getTime() < minimumCutoff.getTime() ? minimumCutoff : defaultCutoff);
     const updated = await (this.prisma as any).$transaction(async (tx: any) => {
       const result = await tx.dvi_hotel_block_request.update({
         where: { id: request.id },
