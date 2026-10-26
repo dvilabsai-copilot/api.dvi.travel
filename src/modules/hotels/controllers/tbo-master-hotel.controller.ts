@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFiles, UseInterceptors } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { Response } from 'express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { TboMasterPricePreviewDto, UpdateTboMasterHotelDto } from '../dto/tbo-master.dto';
 import { TboMasterHotelService } from '../services/tbo-master-hotel.service';
@@ -18,6 +19,31 @@ export class TboMasterHotelController {
   @Get()
   list(@Query() query: { search?: string; cityCode?: string; page?: string; limit?: string; priority?: string }) {
     return this.service.list({ ...query, page: Number(query.page || 1), limit: Number(query.limit || 20) });
+  }
+
+  @Get('bulk/export')
+  async exportBulk(@Res() res: Response) {
+    const result = await this.service.exportBulk();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
+    res.setHeader('Content-Length', result.buffer.length);
+    res.send(result.buffer);
+  }
+
+  @Post('bulk/import')
+  @UseInterceptors(FileInterceptor('file', {
+    storage: memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 },
+    fileFilter: (_req, file, callback) => {
+      const allowed = file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        || /\.xlsx$/i.test(file.originalname || '');
+      if (!allowed) return callback(new BadRequestException('Only .xlsx files are allowed') as any, false);
+      callback(null, true);
+    },
+  }))
+  importBulk(@UploadedFile() file: Express.Multer.File) {
+    if (!file?.buffer?.length) throw new BadRequestException('An .xlsx file is required');
+    return this.service.importBulk(file.buffer);
   }
 
   @Get(':code/gallery')
