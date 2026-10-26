@@ -1,9 +1,12 @@
 export enum TransportEarlyArrivalOption {
   HOTEL_REST = 'HOTEL_REST',
   REFRESHMENT_BEFORE_SIGHTSEEING = 'REFRESHMENT_BEFORE_SIGHTSEEING',
+  AIRPORT_LOUNGE = 'AIRPORT_LOUNGE',
+  RESTAURANT_REST = 'RESTAURANT_REST',
+  OTHER_LOCATION = 'OTHER_LOCATION',
 }
 
-export const DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF = '08:00';
+export const DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF = '07:00';
 export const DEFAULT_TRANSPORT_EARLIEST_SIGHTSEEING_TIME = '09:00';
 export const DEFAULT_TRANSPORT_REFRESHMENT_MINUTES = 60;
 export const DEFAULT_TRANSPORT_HOTEL_REST_MINUTES = 180;
@@ -31,6 +34,15 @@ export function getTransportEarlyArrivalMessage(option?: string | null): string 
   }
   if (option === TransportEarlyArrivalOption.REFRESHMENT_BEFORE_SIGHTSEEING) {
     return 'Guest has opted to take a refreshment or waiting break after arrival and commence sightseeing at the earliest practical time.';
+  }
+  if (option === TransportEarlyArrivalOption.AIRPORT_LOUNGE) {
+    return 'Guest has opted to rest at an airport lounge before commencing sightseeing.';
+  }
+  if (option === TransportEarlyArrivalOption.RESTAURANT_REST) {
+    return 'Guest has opted to take a rest or refreshment break at a nearby restaurant before commencing sightseeing.';
+  }
+  if (option === TransportEarlyArrivalOption.OTHER_LOCATION) {
+    return 'Guest has opted to rest at another preferred location before commencing sightseeing.';
   }
   return null;
 }

@@ -81,22 +81,37 @@ export class TravelSegmentBuilder {
         sourceCoords,
         destCoords,
       );
-    } else if (locationId != null) {
-      distanceResult = await this.distanceHelper.fromLocationId(
-        tx,
-        locationId,
-        travelLocationType,
-      );
-    } else if (sourceLocationName && destinationLocationName) {
-      distanceResult = await this.distanceHelper.fromSourceAndDestination(
-        tx,
-        sourceLocationName,
-        destinationLocationName,
-        travelLocationType,
-        sourceCoords,
-        destCoords,
-      );
-    } else {
+  } else if (
+  item_type === 5 &&
+  sourceLocationName?.trim() &&
+  destinationLocationName?.trim()
+) {
+  // Final hotel journey must use the latest source and destination,
+  // not a potentially stale route-level locationId.
+  distanceResult = await this.distanceHelper.fromSourceAndDestination(
+    tx,
+    sourceLocationName,
+    destinationLocationName,
+    travelLocationType,
+    sourceCoords,
+    destCoords,
+  );
+} else if (locationId != null) {
+  distanceResult = await this.distanceHelper.fromLocationId(
+    tx,
+    locationId,
+    travelLocationType,
+  );
+} else if (sourceLocationName && destinationLocationName) {
+  distanceResult = await this.distanceHelper.fromSourceAndDestination(
+    tx,
+    sourceLocationName,
+    destinationLocationName,
+    travelLocationType,
+    sourceCoords,
+    destCoords,
+  );
+} else {
       distanceResult = {
         distanceKm: 0,
         travelTime: "00:00:00",
@@ -104,15 +119,34 @@ export class TravelSegmentBuilder {
       };
     }
 
-    const normalizeTravelName = (value: string) =>
-      String(value || '')
-        .split('|')[0]
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase();
+const normalizeTravelName = (value: string) =>
+  String(value || '')
+    .split('|')[0]
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 
-    const namesDiffer =
-      normalizeTravelName(sourceLocationName || '') !== normalizeTravelName(destinationLocationName || '');
+const namesDiffer =
+  normalizeTravelName(sourceLocationName || '') !==
+  normalizeTravelName(destinationLocationName || '');
+
+// SCRUM-440: Trace suspicious final-travel distance.
+// The DistanceHelper may produce a minimum-distance fallback.
+if (
+  item_type === 5 &&
+  namesDiffer &&
+  Number(distanceResult.distanceKm) === 0.1
+) {
+  console.warn('[SCRUM-440][FINAL_TRAVEL_MIN_DISTANCE]', {
+    planId,
+    routeId,
+    sourceLocationName,
+    destinationLocationName,
+    sourceCoords,
+    destCoords,
+    distanceKm: distanceResult.distanceKm,
+  });
+}
 
     if (
       item_type === 3 &&
@@ -126,7 +160,32 @@ export class TravelSegmentBuilder {
         travelTime: '00:05:00',
       };
     }
+// SCRUM-440: Final hotel travel must not silently lose a required KM.
+if (item_type === 5 && namesDiffer) {
+  const rawDistance = distanceResult.distanceKm;
+  const distanceKm =
+    rawDistance == null || String(rawDistance).trim() === ""
+      ? NaN
+      : Number(rawDistance);
 
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
+    console.error("[SCRUM-440][FINAL_TRAVEL_KM_UNRESOLVED]", {
+      planId,
+      routeId,
+      sourceLocationName,
+      destinationLocationName,
+      locationId,
+      sourceCoords,
+      destCoords,
+      rawDistance,
+    });
+
+    throw new Error(
+      `[SCRUM-440] Unable to calculate final travel KM for route ${routeId}: ` +
+      `${sourceLocationName} -> ${destinationLocationName}`,
+    );
+  }
+}
  // PHP parity:
  // - sightseeing travel segments (item_type=3) use travel time only
  // - final return/drop rows (item_type=7) are already anchored against the
@@ -162,9 +221,11 @@ export class TravelSegmentBuilder {
 
       hotspot_traveling_time: TimeConverter.toDate(distanceResult.travelTime),
       itinerary_travel_type_buffer_time: TimeConverter.toDate(effectiveBufferTime),
-      hotspot_travelling_distance: distanceResult.distanceKm
-        ? distanceResult.distanceKm.toFixed(2)
-        : null,
+     hotspot_travelling_distance:
+  Number.isFinite(Number(distanceResult.distanceKm)) &&
+  Number(distanceResult.distanceKm) > 0
+    ? Number(distanceResult.distanceKm).toFixed(2)
+    : null,
 
       hotspot_start_time: TimeConverter.toDate(startTime),
       hotspot_end_time: TimeConverter.toDate(endTime),

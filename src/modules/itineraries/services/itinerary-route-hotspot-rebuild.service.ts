@@ -148,8 +148,7 @@ const planRow = await tx.dvi_itinerary_plan_details.findFirst({
           routeId: normalizedRouteId,
           preRouteVisitCount,
         });
-
-       const engineResult = await this.hotspotEngine.rebuildRouteHotspots(
+const engineResult = await this.hotspotEngine.rebuildRouteHotspots(
   tx,
   normalizedPlanId,
   existingHotspotsWithDates,

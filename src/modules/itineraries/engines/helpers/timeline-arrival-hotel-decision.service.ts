@@ -82,11 +82,133 @@ export class TimelineArrivalHotelDecisionService {
         route.itinerary_route_ID,
       );
 
-      const normalizedArrivalCity = this.callbacks.canonicalCityKey(arrivalPoint);
-      const isArrivalCityStayRoute =
-        isFirstRoute &&
-        this.callbacks.canonicalCityKey(sourceCity) === normalizedArrivalCity &&
-        this.callbacks.canonicalCityKey(destinationCity) === normalizedArrivalCity;
+const normalizedArrivalCity =
+  this.callbacks.canonicalCityKey(arrivalPoint);
+
+const normalizedSourceCity =
+  this.callbacks.canonicalCityKey(sourceCity);
+
+const normalizedDestinationCity =
+  this.callbacks.canonicalCityKey(destinationCity);
+
+const isTransportOnly =
+  Number(plan.itinerary_preference || 0) === 2;
+
+const overnightLocationName = isTransportOnly
+  ? String(
+      (plan as any).transport_overnight_location_name ?? ""
+    ).trim()
+  : "";
+
+const isCochinAirportArrival =
+  /cochin international airport|koch[i]? international airport/i.test(
+    String(arrivalPoint || "")
+  );
+
+const isCochinLocalDestination =
+  /^(cochin|kochi)$/.test(normalizedDestinationCity);
+
+// Preserve the existing classification for older itineraries.
+const legacyArrivalCityStayRoute =
+  (
+    normalizedSourceCity === normalizedArrivalCity &&
+    normalizedDestinationCity === normalizedArrivalCity
+  ) ||
+  (
+    isTransportOnly &&
+    isCochinAirportArrival &&
+    isCochinLocalDestination
+  );
+
+// An explicitly saved overnight location takes precedence.
+// Legacy Transport Only Cochin-local itineraries may have NULL overnight
+// location even though their Day 1 route ends in Cochin. Permit a narrowly
+// scoped CITY-LEVEL fallback, only with a verified stored road route.
+// This is NOT proof of travel to a specific booked hotel.
+const useVerifiedCochinCityFallback =
+  isFirstRoute &&
+  isTransportOnly &&
+  !overnightLocationName &&
+  isCochinAirportArrival &&
+  isCochinLocalDestination &&
+  this.callbacks.canonicalCityKey(String(sourceCity || "")) !== "";
+
+const localStayLookupDestination = overnightLocationName ||
+  (useVerifiedCochinCityFallback ? String(destinationCity || "").trim() : "");
+
+let verifiedTransportLocalStay = false;
+
+if (isFirstRoute && isTransportOnly && localStayLookupDestination) {
+  const pickupName = String(arrivalPoint || "").trim();
+
+  const storedRoute = pickupName
+    ? await (tx as any).dvi_stored_locations.findFirst({
+        where: {
+          deleted: 0,
+          source_location: pickupName,
+          destination_location: localStayLookupDestination,
+        },
+        orderBy: {
+          location_ID: "desc",
+        },
+        select: {
+          distance: true,
+          duration: true,
+        },
+      })
+    : null;
+
+  if (storedRoute) {
+    const rawDistance = storedRoute.distance;
+
+    const distanceKm =
+      rawDistance !== null &&
+      rawDistance !== undefined &&
+      String(rawDistance).trim() !== "" &&
+      Number.isFinite(Number(rawDistance)) &&
+      Number(rawDistance) > 0
+        ? Number(rawDistance)
+        : null;
+
+    const durationText = String(storedRoute.duration ?? "")
+      .trim()
+      .toLowerCase();
+
+    const hoursMatch = durationText.match(
+      /(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/,
+    );
+
+    const minutesMatch = durationText.match(
+      /(\d+(?:\.\d+)?)\s*(?:minutes?|mins?)/,
+    );
+
+    const hasValidDuration =
+      !/\bdays?\b/.test(durationText) &&
+      (hoursMatch !== null || minutesMatch !== null);
+
+    const drivingMinutes = hasValidDuration
+      ? Number(hoursMatch?.[1] ?? 0) * 60 +
+        Number(minutesMatch?.[1] ?? 0)
+      : null;
+
+    verifiedTransportLocalStay =
+      (distanceKm !== null && distanceKm <= 75) ||
+      (drivingMinutes !== null &&
+        drivingMinutes > 0 &&
+        drivingMinutes <= 120);
+  }
+}
+
+const isArrivalCityStayRoute =
+  isFirstRoute &&
+  (
+    isTransportOnly
+      // A Transport Only local stay must be verified against the supplied
+      // overnight destination; matching city labels alone do not prove
+      // the document's 75 km OR 2-hour road-route condition.
+      ? Boolean(localStayLookupDestination) && verifiedTransportLocalStay
+      : legacyArrivalCityStayRoute
+  );
 
       const routeDateForPolicy = route.itinerary_route_date
         ? this.callbacks.toDateOnly(new Date(route.itinerary_route_date))

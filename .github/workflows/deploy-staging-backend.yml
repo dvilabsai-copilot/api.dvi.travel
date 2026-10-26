@@ -76,7 +76,9 @@ jobs:
             npx prisma generate
             npx prisma validate
             echo "Synchronizing staging database schema with Prisma..."
-            npx prisma db push --skip-generate --accept-data-loss
+            npx prisma db push --skip-generate
+            echo "Seeding hotel hold policy settings..."
+            npm run seed:hotel-hold-policy
             echo "Seeding Houseboat category and assignments..."
             npm run seed:houseboat
             echo "Importing seeded calendar events..."

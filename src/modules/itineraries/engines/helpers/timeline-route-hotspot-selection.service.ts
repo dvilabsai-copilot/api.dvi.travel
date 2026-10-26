@@ -49,11 +49,45 @@ export class TimelineRouteHotspotSelectionService {
       })) as any | null;
       this.callbacks.logTimeline('[TIMELINE] fetchSelectedHotspotsForRoute - fetch route:', Date.now() - opStart, 'ms');
 
-      if (!route) {
-        return [];
-      }
+if (!route) {
+  return [];
+}
 
- // Route fields are the source of truth for hotspot candidate matching.
+// Apply the Kochi/Cherai local sightseeing alias only to
+// Transportation Only, Day 1. Other routes retain existing matching.
+let isTransportOnlyDay1 = false;
+
+const plan = await (tx as any).dvi_itinerary_plan_details?.findFirst({
+  where: {
+    itinerary_plan_ID: planId,
+    deleted: 0,
+  },
+  select: {
+    itinerary_preference: true,
+  },
+});
+
+if (Number(plan?.itinerary_preference) === 2) {
+  const firstRoute = await (tx as any).dvi_itinerary_route_details?.findFirst({
+    where: {
+      itinerary_plan_ID: planId,
+      deleted: 0,
+      status: 1,
+    },
+    orderBy: [
+      { itinerary_route_date: 'asc' },
+      { itinerary_route_ID: 'asc' },
+    ],
+    select: {
+      itinerary_route_ID: true,
+    },
+  });
+
+  isTransportOnlyDay1 =
+    Number(firstRoute?.itinerary_route_ID) === Number(routeId);
+}
+
+// Route fields are the source of truth for hotspot candidate matching.
  // Do not classify hotspots using dvi_stored_locations source/destination,
  // because location_id can point to stale/reused rows and contaminate routes.
  // stored_locations should only support coordinates later.
@@ -262,9 +296,14 @@ export class TimelineRouteHotspotSelectionService {
       const shouldSuppressSourceHotspotsForViaTransfer =
         hasExplicitViaRoutes && isIntercityRouteForBucket;
 
+      // Transport Only Day 1 intercity transfers should use route-corridor
+      // and destination candidates, never ordinary pickup-city sightseeing.
+      // Local overnight stays and other itinerary preferences are unchanged.
+      const transportDay1IntercityTransfer =
+        isTransportOnlyDay1 && isIntercityRouteForBucket;
       const shouldSuppressSourceHotspotsForMovementTransfer =
         isIntercityRouteForBucket &&
-        (hasExplicitViaRoutes || isDirectDestinationRouteForBucket);
+        (transportDay1IntercityTransfer || hasExplicitViaRoutes || isDirectDestinationRouteForBucket);
 
       const routeLegCoordsCache = new Map<number, { lat: number; lon: number } | null>();
       const getRouteLegCoords = async (legIndex: number): Promise<{ lat: number; lon: number } | undefined> => {
@@ -375,8 +414,36 @@ export class TimelineRouteHotspotSelectionService {
         const isRouteSpecificHotspot =
           hotspotFromLocation.toLowerCase() !== hotspotToLocation.toLowerCase();
 
-        const matchesSource = containsLocation(hotspotFromLocation, targetLocation);
-        const matchesDestination = containsLocation(hotspotFromLocation, nextLocation);
+const isCheraiKochiLocalRoute =
+  isTransportOnlyDay1 &&
+  /cherai/i.test(targetLocation) &&
+  /kochi/i.test(targetLocation) &&
+  /cherai/i.test(nextLocation) &&
+  /kochi/i.test(nextLocation) &&
+  this.callbacks.canonicalCityKey(targetLocation) ===
+    this.callbacks.canonicalCityKey(nextLocation);
+
+const matchesKochiLocalHotspot = (location: string): boolean => {
+  if (!isCheraiKochiLocalRoute) return false;
+
+  return location
+    .split('|')
+    .map((value) => value.trim().toLowerCase())
+    .some((value) =>
+      value === 'cochin' ||
+      value === 'kochi' ||
+      value === 'kochi, kerala, india' ||
+      value === 'cochin, kerala, india'
+    );
+};
+
+const matchesSource =
+  containsLocation(hotspotFromLocation, targetLocation) ||
+  matchesKochiLocalHotspot(hotspotFromLocation);
+
+const matchesDestination =
+  containsLocation(hotspotFromLocation, nextLocation) ||
+  matchesKochiLocalHotspot(hotspotFromLocation);
 
         const routeChainMatch = isRouteSpecificHotspot
           ? this.callbacks.routeSpecificHotspotMatchesRouteChain(
@@ -790,7 +857,7 @@ export class TimelineRouteHotspotSelectionService {
         matchingHotspots = skipDestinationHotspots
           ? routeMovementHotspots
           : [...routeMovementHotspots, ...destinationHotspots];
-      } else if (hasExplicitViaRoutes && isIntercityRouteForBucket) {
+      } else if ((hasExplicitViaRoutes && isIntercityRouteForBucket) || transportDay1IntercityTransfer) {
         matchingHotspots = skipDestinationHotspots
           ? routeMovementHotspots
           : [...routeMovementHotspots, ...destinationHotspots];

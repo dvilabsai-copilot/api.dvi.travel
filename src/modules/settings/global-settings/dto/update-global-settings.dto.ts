@@ -79,6 +79,46 @@ export class UpdateGlobalSettingsDto {
   @Min(0)
   tbo_map_lunch_rate_5_star?: number;
 
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  hotel_blocked_cutoff_time?: number;
+
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  hotel_hold_no_block_before_hours?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  hotel_hold_min_lead_days?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  hotel_hold_short_lead_days?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  hotel_hold_medium_lead_days?: number;
+
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  hotel_hold_short_duration_hours?: number;
+
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  hotel_hold_medium_duration_hours?: number;
+
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  hotel_hold_long_duration_hours?: number;
+
   @Allow()
   extrabed_rate_percentage?: number;
   @Allow()

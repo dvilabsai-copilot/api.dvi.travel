@@ -37,6 +37,7 @@ export class ItineraryRouteTimingService {
     previousDayBillingConfirmed?: boolean,
     transportEarlyArrivalOption?: TransportEarlyArrivalOption | null,
     transportEarlyArrivalHotelName?: string | null,
+transportEarlyArrivalLocationName?: string | null,
     transportEarlyArrivalRestMinutes?: number | null,
     changeType?: 'ROUTE_START' | 'ROUTE_END' | 'FINAL_DAY_DEPARTURE',
     userId: number = 1,
@@ -96,9 +97,9 @@ export class ItineraryRouteTimingService {
     })();
  const isEarlyArrivalWindow = startTimeSeconds >= 3600 && startTimeSeconds < 28800; // 01:00:0007:59:59
 
-    const transportCutoffMinutes = wallClockMinutes(
-      getTransportEarlyArrivalSetting('TRANSPORT_EARLY_ARRIVAL_CUTOFF', DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF),
-    ) ?? 8 * 60;
+ const transportCutoffMinutes = wallClockMinutes(
+  getTransportEarlyArrivalSetting('TRANSPORT_EARLY_ARRIVAL_CUTOFF', DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF),
+) ?? 7 * 60;
     const isTransportEarlyArrival = startTimeSeconds < transportCutoffMinutes * 60;
 
     const transactionResult = await this.prisma.$transaction(async (tx) => {
@@ -139,6 +140,7 @@ export class ItineraryRouteTimingService {
           departure_type: true,
           transport_early_arrival_option: true,
           transport_early_arrival_hotel_name: true,
+          transport_early_arrival_location_name: true,
           transport_early_arrival_rest_minutes: true,
         },
       });
@@ -494,19 +496,55 @@ export class ItineraryRouteTimingService {
           }
 
           planUpdateData.transport_early_arrival_option = nextOption;
+
           planUpdateData.transport_early_arrival_hotel_name =
             nextOption === TransportEarlyArrivalOption.HOTEL_REST
-              ? String(transportEarlyArrivalHotelName ?? plan.transport_early_arrival_hotel_name ?? '').trim() || null
+              ? String(
+                  transportEarlyArrivalHotelName ??
+                  (nextOption === plan.transport_early_arrival_option
+                    ? plan.transport_early_arrival_hotel_name
+                    : '') ??
+                  '',
+                ).trim() || null
               : null;
+
+planUpdateData.transport_early_arrival_location_name =
+  nextOption === TransportEarlyArrivalOption.AIRPORT_LOUNGE ||
+  nextOption === TransportEarlyArrivalOption.RESTAURANT_REST ||
+  nextOption === TransportEarlyArrivalOption.OTHER_LOCATION
+    ? String(
+        transportEarlyArrivalLocationName ??
+          (nextOption === plan.transport_early_arrival_option
+            ? plan.transport_early_arrival_location_name
+            : '') ??
+          '',
+      ).trim() || null
+    : null;
+
           planUpdateData.transport_early_arrival_rest_minutes =
             nextOption === TransportEarlyArrivalOption.HOTEL_REST
-              ? Number(transportEarlyArrivalRestMinutes ?? plan.transport_early_arrival_rest_minutes ?? 180)
-              : 60;
-        } else if (!isTransportEarlyArrival) {
-          planUpdateData.transport_early_arrival_option = null;
-          planUpdateData.transport_early_arrival_hotel_name = null;
-          planUpdateData.transport_early_arrival_rest_minutes = null;
-        }
+              ? Number(
+                  transportEarlyArrivalRestMinutes ??
+                  (nextOption === plan.transport_early_arrival_option
+                    ? plan.transport_early_arrival_rest_minutes
+                    : null) ??
+                  180,
+                )
+              : nextOption === TransportEarlyArrivalOption.REFRESHMENT_BEFORE_SIGHTSEEING
+                ? 60
+                : Number(
+                    transportEarlyArrivalRestMinutes ??
+                    (nextOption === plan.transport_early_arrival_option
+                      ? plan.transport_early_arrival_rest_minutes
+                      : null) ??
+                    60,
+                  );
+      } else if (isTransportOnly && !isTransportEarlyArrival) {
+  planUpdateData.transport_early_arrival_option = null;
+  planUpdateData.transport_early_arrival_hotel_name = null;
+  planUpdateData.transport_early_arrival_location_name = null;
+  planUpdateData.transport_early_arrival_rest_minutes = null;
+}
       }
 
       await (tx as any).dvi_itinerary_plan_details.updateMany({

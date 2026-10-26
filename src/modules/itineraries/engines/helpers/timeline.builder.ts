@@ -487,6 +487,12 @@ const reservedSameCityHotspotIdsByRoute =
  // dvi_global_settings.findFirst query that is 774+ serial queries just for hotspot scoring.
     const globalSettingsForBuilder = await (tx as any).dvi_global_settings?.findFirst({
       where: { status: 1, deleted: 0 },
+      select: {
+        itinerary_local_speed_limit: true,
+        itinerary_outstation_speed_limit: true,
+        itinerary_travel_by_road_buffer_time: true,
+        itinerary_common_buffer_time: true,
+      },
     });
     if (globalSettingsForBuilder) {
       this.distanceHelper.setGlobalSettings(globalSettingsForBuilder);
@@ -1077,9 +1083,44 @@ for (const route of scopedRoutes) {
         destinationCity,
         destCityCoords,
       });
-      let latestNonHotelEndSeconds = nonHotelCutoff.latestNonHotelEndSeconds;
-      let latestNonHotelEndTime = nonHotelCutoff.latestNonHotelEndTime;
+let latestNonHotelEndSeconds = nonHotelCutoff.latestNonHotelEndSeconds;
+let latestNonHotelEndTime = nonHotelCutoff.latestNonHotelEndTime;
 
+// Transport Only - Day 1 local sightseeing.
+// Keep the route and hotel travel end times unchanged.
+const enforceTransportDay1LocalSightseeingCutoff =
+  Number(plan.itinerary_preference || 0) === 2 &&
+  isFirstRoute &&
+  isArrivalCityStayRoute === true;
+
+const transportDay1AutoSightseeingEndSeconds = 17 * 3600;
+
+// All automatic hotspot passes must share the local-stay sightseeing deadline.
+// Hotel travel/check-in still uses routeEndSeconds, not this candidate cutoff.
+if (enforceTransportDay1LocalSightseeingCutoff) {
+  latestNonHotelEndSeconds = Math.min(
+    latestNonHotelEndSeconds,
+    transportDay1AutoSightseeingEndSeconds,
+  );
+  latestNonHotelEndTime = secondsToTime(latestNonHotelEndSeconds);
+}
+
+// Limit automatic sightseeing feasibility, not the route or hotel end time.
+const getTransportDay1CandidateEndSeconds = (
+  isManualSelection: boolean,
+): number => {
+  if (
+    enforceTransportDay1LocalSightseeingCutoff &&
+    !isManualSelection
+  ) {
+    return Math.min(
+      latestNonHotelEndSeconds,
+      transportDay1AutoSightseeingEndSeconds,
+    );
+  }
+
+  return routeEndSeconds;
+};
 
  // 2) SELECTED HOTSPOTS FOR THIS ROUTE
  // DAY-1 DIFFERENT CITIES: If Day 1 and source city != destination city, enforce max 3 priority hotspots
@@ -1799,6 +1840,30 @@ if (isDay1DifferentCities) {
                       ),
               ],
             });
+              continue;
+          }
+
+          // Transport Only, Day 1, local arrival-city stay:
+          // Automatically selected sightseeing must finish by 5:00 PM.
+          // Preserve existing scoped hotspots and manually selected visits.
+          if (
+            enforceTransportDay1LocalSightseeingCutoff &&
+            !preserveScopedHotspot &&
+            !isManualSelection &&
+            absoluteVisitEndSeconds > transportDay1AutoSightseeingEndSeconds
+          ) {
+            this.logBookingRule({
+              rule: 'TRANSPORT_DAY1_AUTO_SIGHTSEEING_5PM_REJECTED',
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId: Number(sh.hotspot_ID || 0),
+              visitEndTime: secondsToTime(
+                wrapToDay(absoluteVisitEndSeconds),
+              ),
+              cutoffTime: '17:00:00',
+              reason: 'automatic_sightseeing_exceeds_5pm',
+            });
+
             continue;
           }
 
@@ -2410,9 +2475,14 @@ for (const sh of skippedHotspots) {
           (directToNextForPhase !== 1 || hasExplicitViaRouteForPhase);
         const shouldBypassSourcePhaseForViaTransfer =
           isIntercityRoute && hasExplicitViaRouteForPhase;
+        // Prevent pickup-city sightseeing from entering a Transport Only
+        // Day 1 intercity transfer through the scheduler's source fallback.
+        const transportDay1IntercityTransferForPhase =
+          Number(plan.itinerary_preference || 0) === 2 &&
+          isFirstRoute && isIntercityRoute;
         const shouldBypassSourcePhaseForMovementTransfer =
           isIntercityRoute &&
-          (hasExplicitViaRouteForPhase || directToNextForPhase === 1);
+          (transportDay1IntercityTransferForPhase || hasExplicitViaRouteForPhase || directToNextForPhase === 1);
 
         const candidateKey = (hs: any): string =>
           `${Number(hs?.hotspot_ID || 0)}:${getCandidateBucket(hs)}`;
@@ -2831,7 +2901,7 @@ const strictHotspots = (
               ];
             } else {
               strictPassHotspots = isIntercityNonDirectRoute
-                ? shouldBypassSourcePhaseForViaTransfer
+                ? (shouldBypassSourcePhaseForViaTransfer || transportDay1IntercityTransferForPhase)
                   ? [
                       ...routeMovementStrict,
                       ...destinationOnlyStrict,
@@ -4219,9 +4289,11 @@ if (
           tx,
           route,
           isLastRoute,
-          routeStartSeconds,
-          routeEndSeconds,
-          currentTime: shoppingSchedulingStartTime,
+routeStartSeconds,
+routeEndSeconds: getTransportDay1CandidateEndSeconds(
+  Boolean((sh as any).isManualSelection),
+),
+currentTime: shoppingSchedulingStartTime,
           currentLocationName,
           currentCoords,
           destinationCoords: destCityCoords,
@@ -4242,7 +4314,33 @@ if (
           hotspotType,
         });
 
-        if (!sharedFeasibility.feasible) {
+if (
+  enforceTransportDay1LocalSightseeingCutoff &&
+  !(sh as any).isManualSelection &&
+  sharedFeasibility.feasible &&
+  (
+    sharedFeasibility.endSeconds === undefined ||
+    sharedFeasibility.endSeconds > transportDay1AutoSightseeingEndSeconds
+  )
+) {
+  this.logBookingRule({
+    rule: 'TRANSPORT_DAY1_AUTO_SIGHTSEEING_5PM_REJECTED',
+    planId,
+    routeId: route.itinerary_route_ID,
+    hotspotId,
+    hotspotName: String(
+      hotspotData.hotspot_name || (sh as any).hotspot_name || '',
+    ),
+    calculatedVisitEndSeconds: sharedFeasibility.endSeconds ?? null,
+    cutoffSeconds: transportDay1AutoSightseeingEndSeconds,
+    branch: 'main_scheduling_loop',
+    reason: 'Automatically selected Day 1 sightseeing must finish by 5 PM.',
+  });
+
+  continue;
+}
+
+if (!sharedFeasibility.feasible) {
           if (hotspotId === 228 || hotspotId === 357) {
             this.logBookingRule({
               rule: 'CHEEYAPPARA_REJECTED_BEFORE_VALARA',
@@ -5220,19 +5318,21 @@ if (
                 )
               : currentTime;
 
-          const sharedCycle4Feasibility =
-            await this.evaluateCandidateInsertion({
-              tx,
-              route,
-              isLastRoute,
-              routeStartSeconds,
-              routeEndSeconds,
-              currentTime:
-                cycle4ShoppingSchedulingStartTime,
-              currentLocationName,
-              currentCoords,
-              destinationCoords: destCityCoords,
-              dayOfWeek: dayOfWeekForGapFill,
+ const sharedCycle4Feasibility =
+  await this.evaluateCandidateInsertion({
+    tx,
+    route,
+    isLastRoute,
+    routeStartSeconds,
+    routeEndSeconds: getTransportDay1CandidateEndSeconds(
+      Boolean((sh as any).isManualSelection),
+    ),
+    currentTime:
+      cycle4ShoppingSchedulingStartTime,
+    currentLocationName,
+    currentCoords,
+    destinationCoords: destCityCoords,
+    dayOfWeek: dayOfWeekForGapFill,
               hotspotId: Number(
                 (sh as any).hotspot_ID || 0,
               ),
@@ -5253,8 +5353,34 @@ if (
               rejectIfOutsideOperatingWindow: true,
               hotspotType,
             });
+if (
+  enforceTransportDay1LocalSightseeingCutoff &&
+  !(sh as any).isManualSelection &&
+  sharedCycle4Feasibility.feasible &&
+  (
+    sharedCycle4Feasibility.endSeconds === undefined ||
+    sharedCycle4Feasibility.endSeconds > transportDay1AutoSightseeingEndSeconds
+  )
+) {
+  this.logBookingRule({
+    rule: 'TRANSPORT_DAY1_AUTO_SIGHTSEEING_5PM_REJECTED',
+    planId,
+    routeId: route.itinerary_route_ID,
+    hotspotId: Number((sh as any).hotspot_ID || 0),
+    hotspotName: String(
+      hotspotData.hotspot_name || (sh as any).hotspot_name || '',
+    ),
+    calculatedVisitEndSeconds:
+      sharedCycle4Feasibility.endSeconds ?? null,
+    cutoffSeconds: transportDay1AutoSightseeingEndSeconds,
+    branch: 'cycle4_gap_fill',
+    reason: 'Automatically selected Day 1 sightseeing must finish by 5 PM.',
+  });
 
-          if (!sharedCycle4Feasibility.feasible) {
+  continue;
+}
+
+if (!sharedCycle4Feasibility.feasible) {
             if (sharedCycle4Feasibility.rejectedByDayEndReturnCheck) {
               this.logBookingRule({
                 rule: 'DAY_END_RETURN_CHECK_FAILED',
@@ -6274,6 +6400,15 @@ const rawDestinationCity =
 const destinationCity = rawDestinationCity.split('|')[0].trim();
 const sourceCity = currentLocationName.split('|')[0].trim();
 
+// Transport Only carries a guest-provided overnight *location*, not a hotel
+// booking. On Day 1, use its name as the destination of the final travel leg.
+// When absent, retain the existing route destination for legacy itineraries.
+const transportOvernightDestination =
+  Number(plan.itinerary_preference || 0) === 2 && isFirstRoute
+    ? String((plan as any).transport_overnight_location_name ?? '').trim()
+    : '';
+const finalTravelDestinationName = transportOvernightDestination || destinationCity;
+
 // IMPORTANT:
 // The final "Travel to Hotel" leg must use the selected hotel's coordinates
 // when they are available. Using destination-city coordinates here can create
@@ -6290,19 +6425,39 @@ const hotelDestinationCoords =
       }
     : undefined;
 
+// Resolve a specific overnight location independently of the city-centre.
+// Do not pretend a city-coordinate fallback identifies an actual hotel.
+const overnightDestinationCoords =
+  transportOvernightDestination &&
+  this.normalizePlaceLookupKey(transportOvernightDestination) !==
+    this.normalizePlaceLookupKey(destinationCity)
+    ? await this.resolvePlaceCoords(tx, transportOvernightDestination, 'destination')
+    : undefined;
+
  // RULE 2: Always show final travel segment to destination (outstation type=2)
  // For early-arrival declined same-day flow, force hotel movement near end-of-day.
         let hotelStartTime = currentTime;
 
-    if (suppressHotelInsertionUntilEndOfDay) {
+        // Intercity Transport Only Day 1: leave for the overnight destination
+        // after the last scheduled visit instead of introducing an invisible
+        // wait until route_end_time. Keep local-stay deferred-check-in policy.
+        // Transport Only Day 1 must not create an invisible wait simply to
+        // force the guest's hotel arrival to match the route-end deadline.
+        // Applies to both verified local stays and intercity transfers.
+        // Other preferences retain their existing hotel-defer policy.
+        const shouldAnchorHotelTravelToRouteEnd =
+          suppressHotelInsertionUntilEndOfDay &&
+          !(Number(plan.itinerary_preference || 0) === 2 && isFirstRoute);
+
+    if (shouldAnchorHotelTravelToRouteEnd) {
   const estimatedHotelTravel =
     await this.distanceHelper.fromSourceAndDestination(
       tx,
       sourceCity,
-      destinationCity,
+      finalTravelDestinationName,
       2,
       currentCoords,
-      hotelDestinationCoords ?? destCityCoords,
+      hotelDestinationCoords ?? overnightDestinationCoords ?? destCityCoords,
     );
 
   const estimatedHotelSegmentSeconds =
@@ -6320,7 +6475,7 @@ const hotelDestinationCoords =
 }
 
         if (
-          suppressHotelInsertionUntilEndOfDay &&
+          shouldAnchorHotelTravelToRouteEnd &&
           hotelStartTime !== currentTime
         ) {
           this.logBookingRule({
@@ -6368,7 +6523,7 @@ const { row: toHotelRow, nextTime: tAfterHotel } =
     travelLocationType: 2,
     userId: createdByUserId,
     sourceLocationName: sourceCity,
-    destinationLocationName: destinationCity,
+    destinationLocationName: finalTravelDestinationName,
 
     // Use the actual current position whenever it is valid.
     // Do not depend on addedHotspotIds because Fit Here preview can rebuild
@@ -6380,14 +6535,16 @@ const { row: toHotelRow, nextTime: tAfterHotel } =
         }
       : undefined,
 
-    // Prefer the selected hotel's real coordinates.
-    // Destination-city coordinates are only the fallback.
+    // Prefer actual selected-hotel coordinates, then a resolvable guest
+    // overnight location. City coordinates are the legacy fallback.
     destCoords: hasValidHotelCoords
       ? {
           lat: Number(hotelDestinationCoords!.lat),
           lon: Number(hotelDestinationCoords!.lon),
         }
-      : hasValidDestinationCityCoords
+      : this.hasUsableCoords(overnightDestinationCoords)
+        ? overnightDestinationCoords
+        : hasValidDestinationCityCoords
         ? {
             lat: Number(destCityCoords!.lat),
             lon: Number(destCityCoords!.lon),

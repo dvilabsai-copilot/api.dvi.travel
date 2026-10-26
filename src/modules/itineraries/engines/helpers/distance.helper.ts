@@ -153,6 +153,12 @@ export class DistanceHelper {
 
     const gs = this.globalSettings || await (tx as any).dvi_global_settings.findFirst({
       where: { deleted: 0, status: 1 },
+      select: {
+        itinerary_local_speed_limit: true,
+        itinerary_outstation_speed_limit: true,
+        itinerary_travel_by_road_buffer_time: true,
+        itinerary_common_buffer_time: true,
+      },
     });
 
     let avgSpeedKmPerHr =
@@ -429,6 +435,12 @@ export class DistanceHelper {
   private async getBufferTime(tx: Tx, travelLocationType: 1 | 2): Promise<string> {
     const gs = this.globalSettings || await (tx as any).dvi_global_settings.findFirst({
       where: { deleted: 0, status: 1 },
+      select: {
+        itinerary_local_speed_limit: true,
+        itinerary_outstation_speed_limit: true,
+        itinerary_travel_by_road_buffer_time: true,
+        itinerary_common_buffer_time: true,
+      },
     });
 
     if (!gs) return "00:00:00";

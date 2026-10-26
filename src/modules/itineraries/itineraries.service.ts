@@ -112,6 +112,7 @@ import { ItineraryActivityImpactService } from './services/itinerary-activity-im
 import { ItineraryTransportFormattingService } from './services/itinerary-transport-formatting.service';
 import { ItineraryActivityPricingService } from './services/itinerary-activity-pricing.service';
 import { ItineraryActivityTimingPolicyService } from './services/itinerary-activity-timing-policy.service';
+import { HotelBlockingService } from './services/hotel-blocking.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import {
@@ -565,6 +566,7 @@ export class ItinerariesService {
     private readonly axisroomsBookingPushService: AxisRoomsBookingPushService,
     private readonly staahBookingPushService: StaahBookingPushService,
     private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
+    private readonly hotelBlockingService: HotelBlockingService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly hotelAvailabilitySnapshotService: HotelAvailabilitySnapshotService,
     private readonly offlineHotelCatalogService: OfflineHotelCatalogService,
@@ -2006,11 +2008,18 @@ timingStepStartedAt =
     mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean };
   }) {
     const groupType = Number(data.groupType || 0);
-    return this.selectionWorkflowService.withHotelSelectionLock(
+    const result = await this.selectionWorkflowService.withHotelSelectionLock(
       Number(data.planId),
       groupType,
       () => this.selectionWorkflowService.selectHotel(data),
     );
+    await this.hotelBlockingService.cancelHoldsAfterHotelChange({
+      itineraryPlanId: Number(data.planId),
+      groupType,
+      routeIds: [Number(data.routeId)],
+      actor: { id: Number((data as any).requestedBy || 0) || undefined, type: 'STAFF' },
+    });
+    return result;
   }
 
   /**
@@ -3403,6 +3412,13 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         affectedRouteIds: stay.routeIds,
       });
     }
+
+    await this.hotelBlockingService.cancelHoldsAfterHotelChange({
+      itineraryPlanId: Number(data.planId),
+      groupType,
+      routeIds: stay.routeIds,
+      actor: { id: Number(data.requestedBy || 0) || undefined, type: 'STAFF' },
+    });
 
     const persisted = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
       where: { itinerary_plan_id: Number(data.planId), group_type: groupType, itinerary_route_id: { in: stay.routeIds }, hotel_required: 1, status: 1, deleted: 0 },
@@ -6734,6 +6750,7 @@ async processConfirmationWithTboBookings(
     previousDayBillingConfirmed?: boolean,
     transportEarlyArrivalOption?: TransportEarlyArrivalOption | null,
     transportEarlyArrivalHotelName?: string | null,
+transportEarlyArrivalLocationName?: string | null,
     transportEarlyArrivalRestMinutes?: number | null,
     changeType?: 'ROUTE_START' | 'ROUTE_END' | 'FINAL_DAY_DEPARTURE',
     userId: number = 1,
@@ -6747,6 +6764,7 @@ async processConfirmationWithTboBookings(
       previousDayBillingConfirmed,
       transportEarlyArrivalOption,
       transportEarlyArrivalHotelName,
+transportEarlyArrivalLocationName,
       transportEarlyArrivalRestMinutes,
       changeType,
       userId,
