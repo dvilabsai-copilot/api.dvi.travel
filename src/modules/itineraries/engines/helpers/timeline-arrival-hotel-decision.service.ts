@@ -120,11 +120,25 @@ const legacyArrivalCityStayRoute =
     isCochinLocalDestination
   );
 
-// Only trust an actual stored pickup -> overnight-location pair.
-// Do not substitute the route destination city for the accommodation.
+// An explicitly saved overnight location takes precedence.
+// Legacy Transport Only Cochin-local itineraries may have NULL overnight
+// location even though their Day 1 route ends in Cochin. Permit a narrowly
+// scoped CITY-LEVEL fallback, only with a verified stored road route.
+// This is NOT proof of travel to a specific booked hotel.
+const useVerifiedCochinCityFallback =
+  isFirstRoute &&
+  isTransportOnly &&
+  !overnightLocationName &&
+  isCochinAirportArrival &&
+  isCochinLocalDestination &&
+  this.callbacks.canonicalCityKey(String(sourceCity || "")) !== "";
+
+const localStayLookupDestination = overnightLocationName ||
+  (useVerifiedCochinCityFallback ? String(destinationCity || "").trim() : "");
+
 let verifiedTransportLocalStay = false;
 
-if (isFirstRoute && isTransportOnly && overnightLocationName) {
+if (isFirstRoute && isTransportOnly && localStayLookupDestination) {
   const pickupName = String(arrivalPoint || "").trim();
 
   const storedRoute = pickupName
@@ -132,7 +146,7 @@ if (isFirstRoute && isTransportOnly && overnightLocationName) {
         where: {
           deleted: 0,
           source_location: pickupName,
-          destination_location: overnightLocationName,
+          destination_location: localStayLookupDestination,
         },
         orderBy: {
           location_ID: "desc",
@@ -188,14 +202,11 @@ if (isFirstRoute && isTransportOnly && overnightLocationName) {
 const isArrivalCityStayRoute =
   isFirstRoute &&
   (
-    isTransportOnly && overnightLocationName
-      ? (
-          verifiedTransportLocalStay ||
-          (
-            normalizedSourceCity === normalizedArrivalCity &&
-            normalizedDestinationCity === normalizedArrivalCity
-          )
-        )
+    isTransportOnly
+      // A Transport Only local stay must be verified against the supplied
+      // overnight destination; matching city labels alone do not prove
+      // the document's 75 km OR 2-hour road-route condition.
+      ? Boolean(localStayLookupDestination) && verifiedTransportLocalStay
       : legacyArrivalCityStayRoute
   );
 

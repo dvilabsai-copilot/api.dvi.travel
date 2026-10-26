@@ -953,7 +953,27 @@ const hotspotIds = routeAttractions.map((r: any) => Number(r.hotspot_ID));
           }
         }
       } catch (err) {
- console.error('[buildManualInsertionFit] matrix query error:', err);
+        console.error(
+          '[buildManualInsertionFit] matrix query error:',
+          err,
+        );
+
+        const error = err as {
+          code?: string;
+          message?: string;
+        };
+
+        const message = String(error?.message || '');
+
+        // An expired transaction must stop the entire preview.
+        if (
+          error?.code === 'P2028' ||
+          /transaction already closed|expired transaction|transaction timeout|timeout for this transaction/i.test(
+            message,
+          )
+        ) {
+          throw err;
+        }
       }
     }
 
