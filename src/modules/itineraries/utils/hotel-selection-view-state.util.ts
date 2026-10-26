@@ -2,6 +2,7 @@ import { hotelCardPayableAmount } from './hotel-card-pricing.util';
 import {
   projectHotelPayablePricing,
   resolveOrdinaryMealPlanCost,
+  resolveOrdinaryMealPlanCostForNight,
 } from './hotel-payable-pricing.util';
 import { resolveOfflineHotelPayablePricing } from './hotel-selection-pricing.util';
 import { isFullStayHotelSelection } from './hotel-route-total.util';
@@ -210,6 +211,7 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     pricingScope !== 'ROUTE_NIGHT' &&
     nightlyRates.length > 1;
   const projectRouteNight = (night: any) => {
+    const nightIndex = nightlyRates.indexOf(night);
     const roomCount = Math.max(Number(snapshot?.roomCount ?? snapshot?.totalRooms ?? row?.roomCount ?? row?.noOfRooms ?? 1), 1);
     const roomRate = Number(night?.roomRate ?? snapshot?.roomRate ?? 0) > 0
       ? Number(night?.roomRate ?? snapshot?.roomRate)
@@ -245,11 +247,16 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       : 0;
     const mealPlanCost = tboMapFallbackApplied
       ? tboMapFallbackDinnerPerNight
-      : resolveOrdinaryMealPlanCost({
+      : resolveOrdinaryMealPlanCostForNight({
           provider: snapshot?.provider ?? row?.provider,
           mealPlanBreakdown: night?.mealPlanBreakdown ?? row?.mealPlanBreakdown ?? snapshot?.mealPlanBreakdown,
+          nightlyMealPlanBreakdown: snapshot?.nightlyMealPlanBreakdown ?? row?.nightlyMealPlanBreakdown,
+          nightlyRates,
+          nightIndex,
+          routeDate,
           totalHotelMealPlanCost: night?.totalHotelMealPlanCost ?? row?.totalHotelMealPlanCost ?? snapshot?.totalHotelMealPlanCost,
           hotelMealPlanCost: night?.hotelMealPlanCost ?? row?.hotelMealPlanCost ?? snapshot?.hotelMealPlanCost,
+          divideAggregateAcrossNights: isLegacyContinuousOfflineSnapshot,
         });
     const marginPercentage = Number(snapshot?.hotelMarginPercentage ?? row?.hotelMarginPercentage ?? night?.marginPercentage ?? 0);
     const offlinePricing = resolveOfflineHotelPayablePricing({
@@ -325,7 +332,13 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     const baseTotal = Number(snapshot.baseTotalPrice ?? snapshot.baseHotelCost ?? 0);
     const marginAmount = Number(snapshot.hotelMarginAmount ?? snapshot.hotelMarginTotalAmount ?? 0);
     const provider = String(snapshot.provider ?? row?.provider ?? '').trim().toLowerCase();
-    const ordinaryMealPlanCost = resolveOrdinaryMealPlanCost({ ...row, ...nestedSelection, ...snapshot, provider });
+    // A legacy continuous offline snapshot stores the meal breakdown for the
+    // whole stay. Once the route-night projection has selected the matching
+    // nightly amount, keep that value instead of re-reading the aggregate
+    // snapshot and putting the full stay charge back on every row.
+    const ordinaryMealPlanCost = isLegacyContinuousOfflineSnapshot && routeNightProjection
+      ? Number(routeNightProjection.hotelMealPlanCost || 0)
+      : resolveOrdinaryMealPlanCost({ ...row, ...nestedSelection, ...snapshot, provider });
     const ordinaryPricing = ['offline', 'axisrooms'].includes(provider)
       ? resolveOfflineHotelPayablePricing({
           baseTotalPrice: baseTotal,

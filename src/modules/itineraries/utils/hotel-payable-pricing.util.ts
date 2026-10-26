@@ -73,6 +73,56 @@ export function resolveOrdinaryMealPlanCost(option: Record<string, any> | null |
 }
 
 /**
+ * Resolve the ordinary meal-plan amount for one physical itinerary night.
+ * Continuous offline stays can persist both an aggregate meal breakdown and
+ * a per-night breakdown; row totals must use the matching nightly amount.
+ */
+export function resolveOrdinaryMealPlanCostForNight(input: {
+  provider?: unknown;
+  mealPlanBreakdown?: unknown;
+  nightlyMealPlanBreakdown?: unknown;
+  nightlyRates?: unknown;
+  nightIndex?: number;
+  routeDate?: unknown;
+  totalHotelMealPlanCost?: unknown;
+  hotelMealPlanCost?: unknown;
+  mealPlanCost?: unknown;
+  divideAggregateAcrossNights?: boolean;
+  tboMapFallbackApplied?: boolean;
+}): number {
+  const nightlyMealPlanBreakdown = Array.isArray(input.nightlyMealPlanBreakdown)
+    ? input.nightlyMealPlanBreakdown
+    : [];
+  const nightlyRates = Array.isArray(input.nightlyRates) ? input.nightlyRates : [];
+  const routeDate = String(input.routeDate ?? '').slice(0, 10);
+  const rateIndex = nightlyRates.findIndex((rate: any) =>
+    String(rate?.date || rate?.itineraryRouteDate || '').slice(0, 10) === routeDate,
+  );
+  const nightIndex = Number.isInteger(input.nightIndex) && Number(input.nightIndex) >= 0
+    ? Number(input.nightIndex)
+    : rateIndex >= 0
+      ? rateIndex
+      : nightlyMealPlanBreakdown.length === 1
+        ? 0
+        : -1;
+  const nightlyBreakdown = nightIndex >= 0
+    ? nightlyMealPlanBreakdown[nightIndex]
+    : undefined;
+
+  if (nightlyBreakdown && typeof nightlyBreakdown === 'object') {
+    return resolveOrdinaryMealPlanCost({
+      ...input,
+      mealPlanBreakdown: nightlyBreakdown,
+    });
+  }
+
+  const aggregate = resolveOrdinaryMealPlanCost(input);
+  return input.divideAggregateAcrossNights && nightlyRates.length > 1
+    ? money(aggregate / nightlyRates.length)
+    : aggregate;
+}
+
+/**
  * Reconcile a selected snapshot total with ordinary meal-plan charges.
  *
  * Selected snapshot totals contain the room/tax/margin components. Ordinary

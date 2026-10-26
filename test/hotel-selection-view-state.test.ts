@@ -448,7 +448,7 @@ test('legacy continuous offline snapshot projects per-night room and supplement 
   }
 });
 
-test('legacy continuous offline MAP keeps the canonical stay meal total', () => {
+test('legacy continuous offline MAP projects the meal total per physical night', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 4, label: 'Recommended #4', totalAmount: 31201.8 }],
     rows: [{
@@ -501,11 +501,64 @@ test('legacy continuous offline MAP keeps the canonical stay meal total', () => 
 
   assert.deepEqual(
     state[0].routes.map((route) => route.selected?.selectedTotalPrice),
-    [31201.8, 31201.8, 31201.8],
+    [21600.6, 21600.6, 21600.6],
   );
-  assert.equal(state[0].totalAmount, 31201.8);
-  assert.equal(state[0].routes[0].selected?.hotelMarginBaseAmount, 30401.8);
+  assert.equal(state[0].totalAmount, 64801.8);
+  assert.equal(state[0].routes[0].selected?.hotelMarginBaseAmount, 20800.6);
   assert.equal(state[0].routes[0].selected?.hotelMarginAmount, 800);
+});
+
+test('uses nightly offline MAP charges for rows and recommendation totals', () => {
+  const nightlyMealPlanBreakdown = ['2026-12-31', '2027-01-01', '2027-01-02'].map((date) => ({
+    date,
+    totalMealPlanCost: 6000,
+    totalDinnerCost: 6000,
+  }));
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 2, label: 'Recommended #2', totalAmount: 136080 }],
+    rows: [{
+      groupType: 2,
+      itineraryRouteId: 25689,
+      date: '2026-12-31',
+      provider: 'offline',
+      hotelCode: '405',
+      hotelName: 'KISHKINDA HERITAGE RESORT',
+      roomType: 'COTTAGE',
+      mealPlan: 'MAP',
+      isSelected: true,
+      selectionOrigin: 'AUTO_SELECTED',
+      completeStayBookable: true,
+      completeStayRouteIds: [25689, 25690, 25691],
+      selectionKey: 'offline:405:cottage:map:2026-12-31:2027-01-03',
+      selectedPriceSnapshot: {
+        provider: 'offline',
+        roomCount: 5,
+        totalRoomCost: 27000,
+        baseTotalPrice: 27000,
+        hotelMealPlanCost: 18000,
+        totalHotelMealPlanCost: 18000,
+        mealPlanBreakdown: { totalMealPlanCost: 18000, totalDinnerCost: 18000 },
+        nightlyMealPlanBreakdown,
+        hotelMarginPercentage: 8,
+        nightlyRates: [
+          { date: '2026-12-31', baseAmount: 27000 },
+          { date: '2027-01-01', baseAmount: 24500 },
+          { date: '2027-01-02', baseAmount: 24500 },
+        ],
+      },
+    }],
+    requiredRoutes: [
+      { routeId: 25689, routeDate: '2026-12-31' },
+      { routeId: 25690, routeDate: '2027-01-01' },
+      { routeId: 25691, routeDate: '2027-01-02' },
+    ],
+  });
+
+  assert.deepEqual(
+    state[0].routes.map((route) => route.selected?.selectedTotalPrice),
+    [35160, 32460, 32460],
+  );
+  assert.equal(state[0].totalAmount, 100080);
 });
 
 test('projects one persisted continuous-stay selection to every authoritative route', () => {
