@@ -711,7 +711,13 @@ const assignedIds = assignedRows
     }>();
     const routeLocationIdCache = new Map<string, number>();
     const viaRouteNamesCache = new Map<number, string[]>();
-    const localPointCache = new Map<number, { name: string; lat: number | null; lng: number | null; source: string }>();
+    const localPointCache = new Map<number, {
+      name: string;
+      lat: number | null;
+      lng: number | null;
+      source: string;
+      hasSelectedHotel: boolean;
+    }>();
     const permitChargesCache = new Map<string, number>();
     const buildCache: VehicleCalcRunCache = {
       storedLocationCity: storedLocationCityCache,

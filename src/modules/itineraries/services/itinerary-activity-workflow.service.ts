@@ -239,8 +239,9 @@ activity_traveling_time: activity.activity_duration,
               hotspot_order: { gt: routeHotspot.hotspot_order },
               deleted: 0,
             },
-            select: {
+                     select: {
               route_hotspot_ID: true,
+              item_type: true,
               hotspot_start_time: true,
               hotspot_end_time: true,
             },
@@ -269,8 +270,85 @@ activity_traveling_time: activity.activity_duration,
                   updatedon: updatedOn,
                 },
               });
-            }),
+                 }),
           );
+
+          // Move activities attached to shifted downstream attractions.
+          // Run once per activity, using the same extension as its parent.
+          for (const row of subsequentRows) {
+            if (Number(row.item_type) !== 4) {
+              continue;
+            }
+
+            const attachedActivities =
+              await (tx as any).dvi_itinerary_route_activity_details.findMany({
+                where: {
+                  itinerary_plan_ID: data.planId,
+                  itinerary_route_ID: data.routeId,
+                  route_hotspot_ID: row.route_hotspot_ID,
+                  deleted: 0,
+                  status: 1,
+                },
+                select: {
+                  route_activity_ID: true,
+                  activity_start_time: true,
+                  activity_end_time: true,
+                },
+              });
+
+            for (const attached of attachedActivities) {
+              if (
+                !attached.activity_start_time ||
+                !attached.activity_end_time ||
+                !row.hotspot_start_time ||
+                !row.hotspot_end_time
+              ) {
+                throw new BadRequestException(
+                  'Cannot shift an attached activity with missing timing.',
+                );
+              }
+
+              const shiftedStart = this.addMinutesToTime(
+                attached.activity_start_time,
+                extensionMinutes,
+              );
+
+              const shiftedEnd = this.addMinutesToTime(
+                attached.activity_end_time,
+                extensionMinutes,
+              );
+
+              const newParentStart = this.addMinutesToTime(
+                row.hotspot_start_time,
+                extensionMinutes,
+              );
+
+              const newParentEnd = this.addMinutesToTime(
+                row.hotspot_end_time,
+                extensionMinutes,
+              );
+
+              if (
+                shiftedStart < newParentStart ||
+                shiftedEnd > newParentEnd
+              ) {
+                throw new BadRequestException(
+                  'An attached activity cannot fit inside its shifted hotspot.',
+                );
+              }
+
+              await (tx as any).dvi_itinerary_route_activity_details.update({
+                where: {
+                  route_activity_ID: attached.route_activity_ID,
+                },
+                data: {
+                  activity_start_time: shiftedStart,
+                  activity_end_time: shiftedEnd,
+                  updatedon: updatedOn,
+                },
+              });
+            }
+          }
         }
       }
 
@@ -420,10 +498,17 @@ pricing: {
     );
 
  // 6. Compute day cascade how many minutes does the hotspot extend?
-    const hotspotExtensionMinutes =
-      proposedEndTime > routeHotspot.hotspot_end_time
-        ? this.timeToMinutes(proposedEndTime) - this.timeToMinutes(routeHotspot.hotspot_end_time)
-        : 0;
+  // Use the same timestamp-based extension calculation
+// in preview and save to prevent inconsistent timing.
+    const hotspotExtensionMinutes = Math.max(
+      0,
+      Math.round(
+        (
+          proposedEndTime.getTime() -
+          routeHotspot.hotspot_end_time.getTime()
+        ) / 60000,
+      ),
+    );
 
     let cascade: {
       shiftMinutes: number;

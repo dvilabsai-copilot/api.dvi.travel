@@ -296,9 +296,14 @@ if (Number(plan?.itinerary_preference) === 2) {
       const shouldSuppressSourceHotspotsForViaTransfer =
         hasExplicitViaRoutes && isIntercityRouteForBucket;
 
+      // Transport Only Day 1 intercity transfers should use route-corridor
+      // and destination candidates, never ordinary pickup-city sightseeing.
+      // Local overnight stays and other itinerary preferences are unchanged.
+      const transportDay1IntercityTransfer =
+        isTransportOnlyDay1 && isIntercityRouteForBucket;
       const shouldSuppressSourceHotspotsForMovementTransfer =
         isIntercityRouteForBucket &&
-        (hasExplicitViaRoutes || isDirectDestinationRouteForBucket);
+        (transportDay1IntercityTransfer || hasExplicitViaRoutes || isDirectDestinationRouteForBucket);
 
       const routeLegCoordsCache = new Map<number, { lat: number; lon: number } | null>();
       const getRouteLegCoords = async (legIndex: number): Promise<{ lat: number; lon: number } | undefined> => {
@@ -852,7 +857,7 @@ const matchesDestination =
         matchingHotspots = skipDestinationHotspots
           ? routeMovementHotspots
           : [...routeMovementHotspots, ...destinationHotspots];
-      } else if (hasExplicitViaRoutes && isIntercityRouteForBucket) {
+      } else if ((hasExplicitViaRoutes && isIntercityRouteForBucket) || transportDay1IntercityTransfer) {
         matchingHotspots = skipDestinationHotspots
           ? routeMovementHotspots
           : [...routeMovementHotspots, ...destinationHotspots];

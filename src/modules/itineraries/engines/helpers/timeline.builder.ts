@@ -1095,6 +1095,16 @@ const enforceTransportDay1LocalSightseeingCutoff =
 
 const transportDay1AutoSightseeingEndSeconds = 17 * 3600;
 
+// All automatic hotspot passes must share the local-stay sightseeing deadline.
+// Hotel travel/check-in still uses routeEndSeconds, not this candidate cutoff.
+if (enforceTransportDay1LocalSightseeingCutoff) {
+  latestNonHotelEndSeconds = Math.min(
+    latestNonHotelEndSeconds,
+    transportDay1AutoSightseeingEndSeconds,
+  );
+  latestNonHotelEndTime = secondsToTime(latestNonHotelEndSeconds);
+}
+
 // Limit automatic sightseeing feasibility, not the route or hotel end time.
 const getTransportDay1CandidateEndSeconds = (
   isManualSelection: boolean,
@@ -1104,7 +1114,7 @@ const getTransportDay1CandidateEndSeconds = (
     !isManualSelection
   ) {
     return Math.min(
-      routeEndSeconds,
+      latestNonHotelEndSeconds,
       transportDay1AutoSightseeingEndSeconds,
     );
   }
@@ -2465,9 +2475,14 @@ for (const sh of skippedHotspots) {
           (directToNextForPhase !== 1 || hasExplicitViaRouteForPhase);
         const shouldBypassSourcePhaseForViaTransfer =
           isIntercityRoute && hasExplicitViaRouteForPhase;
+        // Prevent pickup-city sightseeing from entering a Transport Only
+        // Day 1 intercity transfer through the scheduler's source fallback.
+        const transportDay1IntercityTransferForPhase =
+          Number(plan.itinerary_preference || 0) === 2 &&
+          isFirstRoute && isIntercityRoute;
         const shouldBypassSourcePhaseForMovementTransfer =
           isIntercityRoute &&
-          (hasExplicitViaRouteForPhase || directToNextForPhase === 1);
+          (transportDay1IntercityTransferForPhase || hasExplicitViaRouteForPhase || directToNextForPhase === 1);
 
         const candidateKey = (hs: any): string =>
           `${Number(hs?.hotspot_ID || 0)}:${getCandidateBucket(hs)}`;
@@ -2886,7 +2901,7 @@ const strictHotspots = (
               ];
             } else {
               strictPassHotspots = isIntercityNonDirectRoute
-                ? shouldBypassSourcePhaseForViaTransfer
+                ? (shouldBypassSourcePhaseForViaTransfer || transportDay1IntercityTransferForPhase)
                   ? [
                       ...routeMovementStrict,
                       ...destinationOnlyStrict,
@@ -6385,6 +6400,15 @@ const rawDestinationCity =
 const destinationCity = rawDestinationCity.split('|')[0].trim();
 const sourceCity = currentLocationName.split('|')[0].trim();
 
+// Transport Only carries a guest-provided overnight *location*, not a hotel
+// booking. On Day 1, use its name as the destination of the final travel leg.
+// When absent, retain the existing route destination for legacy itineraries.
+const transportOvernightDestination =
+  Number(plan.itinerary_preference || 0) === 2 && isFirstRoute
+    ? String((plan as any).transport_overnight_location_name ?? '').trim()
+    : '';
+const finalTravelDestinationName = transportOvernightDestination || destinationCity;
+
 // IMPORTANT:
 // The final "Travel to Hotel" leg must use the selected hotel's coordinates
 // when they are available. Using destination-city coordinates here can create
@@ -6401,19 +6425,39 @@ const hotelDestinationCoords =
       }
     : undefined;
 
+// Resolve a specific overnight location independently of the city-centre.
+// Do not pretend a city-coordinate fallback identifies an actual hotel.
+const overnightDestinationCoords =
+  transportOvernightDestination &&
+  this.normalizePlaceLookupKey(transportOvernightDestination) !==
+    this.normalizePlaceLookupKey(destinationCity)
+    ? await this.resolvePlaceCoords(tx, transportOvernightDestination, 'destination')
+    : undefined;
+
  // RULE 2: Always show final travel segment to destination (outstation type=2)
  // For early-arrival declined same-day flow, force hotel movement near end-of-day.
         let hotelStartTime = currentTime;
 
-    if (suppressHotelInsertionUntilEndOfDay) {
+        // Intercity Transport Only Day 1: leave for the overnight destination
+        // after the last scheduled visit instead of introducing an invisible
+        // wait until route_end_time. Keep local-stay deferred-check-in policy.
+        // Transport Only Day 1 must not create an invisible wait simply to
+        // force the guest's hotel arrival to match the route-end deadline.
+        // Applies to both verified local stays and intercity transfers.
+        // Other preferences retain their existing hotel-defer policy.
+        const shouldAnchorHotelTravelToRouteEnd =
+          suppressHotelInsertionUntilEndOfDay &&
+          !(Number(plan.itinerary_preference || 0) === 2 && isFirstRoute);
+
+    if (shouldAnchorHotelTravelToRouteEnd) {
   const estimatedHotelTravel =
     await this.distanceHelper.fromSourceAndDestination(
       tx,
       sourceCity,
-      destinationCity,
+      finalTravelDestinationName,
       2,
       currentCoords,
-      hotelDestinationCoords ?? destCityCoords,
+      hotelDestinationCoords ?? overnightDestinationCoords ?? destCityCoords,
     );
 
   const estimatedHotelSegmentSeconds =
@@ -6431,7 +6475,7 @@ const hotelDestinationCoords =
 }
 
         if (
-          suppressHotelInsertionUntilEndOfDay &&
+          shouldAnchorHotelTravelToRouteEnd &&
           hotelStartTime !== currentTime
         ) {
           this.logBookingRule({
@@ -6479,7 +6523,7 @@ const { row: toHotelRow, nextTime: tAfterHotel } =
     travelLocationType: 2,
     userId: createdByUserId,
     sourceLocationName: sourceCity,
-    destinationLocationName: destinationCity,
+    destinationLocationName: finalTravelDestinationName,
 
     // Use the actual current position whenever it is valid.
     // Do not depend on addedHotspotIds because Fit Here preview can rebuild
@@ -6491,14 +6535,16 @@ const { row: toHotelRow, nextTime: tAfterHotel } =
         }
       : undefined,
 
-    // Prefer the selected hotel's real coordinates.
-    // Destination-city coordinates are only the fallback.
+    // Prefer actual selected-hotel coordinates, then a resolvable guest
+    // overnight location. City coordinates are the legacy fallback.
     destCoords: hasValidHotelCoords
       ? {
           lat: Number(hotelDestinationCoords!.lat),
           lon: Number(hotelDestinationCoords!.lon),
         }
-      : hasValidDestinationCityCoords
+      : this.hasUsableCoords(overnightDestinationCoords)
+        ? overnightDestinationCoords
+        : hasValidDestinationCityCoords
         ? {
             lat: Number(destCityCoords!.lat),
             lon: Number(destCityCoords!.lon),

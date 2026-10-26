@@ -161,9 +161,78 @@ private forceRebuildVehiclePricingAfterHotspotChange(...args: any[]) {
       };
     },
   ) {
-    const normalizedApplyHotspotIds = this.normalizeManualHotspotIds(hotspotIds);
+const normalizedApplyHotspotIds = this.normalizeManualHotspotIds(hotspotIds);
 
-    for (const normalizedHotspotId of normalizedApplyHotspotIds) {
+// SCRUM-440: Track the actual database state across post-save stages.
+const verifySavedRoute = async (stage: string) => {
+  const rows =
+    await this.prisma.dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(planId),
+        itinerary_route_ID: Number(routeId),
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: [
+        { hotspot_start_time: 'asc' },
+        { route_hotspot_ID: 'asc' },
+      ],
+      select: {
+        route_hotspot_ID: true,
+        item_type: true,
+        hotspot_ID: true,
+        hotspot_start_time: true,
+        hotspot_end_time: true,
+        hotspot_travelling_distance: true,
+      },
+    });
+
+  const relevantRows = rows.filter(
+    (row) => [4, 5, 6].includes(Number(row.item_type)),
+  );
+
+  const lastVisitEnd = Math.max(
+    ...relevantRows
+      .filter((row) => Number(row.item_type) === 4)
+      .map((row) => new Date(row.hotspot_end_time as any).getTime()),
+  );
+
+  const terminalLegs = relevantRows.filter(
+    (row) => Number(row.item_type) === 5,
+  );
+
+  const overnightMarkers = relevantRows.filter(
+    (row) => Number(row.item_type) === 6,
+  );
+
+  const finalLeg = terminalLegs[0];
+  const overnight = overnightMarkers[0];
+
+  const structurallyValid =
+    terminalLegs.length === 1 &&
+    overnightMarkers.length === 1 &&
+    Number.isFinite(lastVisitEnd) &&
+    new Date(finalLeg.hotspot_start_time as any).getTime() >= lastVisitEnd &&
+    new Date(finalLeg.hotspot_end_time as any).getTime() ===
+      new Date(overnight.hotspot_start_time as any).getTime();
+
+  console.log('[SCRUM-440][PERSISTENCE_STAGE]', {
+    planId,
+    routeId,
+    stage,
+    structurallyValid,
+    rows: relevantRows.map((row) => ({
+      id: row.route_hotspot_ID,
+      type: row.item_type,
+      hotspotId: row.hotspot_ID,
+      start: row.hotspot_start_time,
+      end: row.hotspot_end_time,
+      km: row.hotspot_travelling_distance,
+    })),
+  });
+};
+
+for (const normalizedHotspotId of normalizedApplyHotspotIds) {
       const operatingStatus = await getRouteHotspotOperatingStatus(
         this.prisma,
         Number(planId),
@@ -373,31 +442,59 @@ private forceRebuildVehiclePricingAfterHotspotChange(...args: any[]) {
         const finalDurationMinutes = Math.round((parsedRange.end.getTime() - parsedRange.start.getTime()) / 60000);
         if (finalDurationMinutes <= 0) continue;
 
-        const persistedRow = await this.prisma.dvi_itinerary_route_hotspot_details.findFirst({
-          where: {
-            itinerary_plan_ID: Number(planId),
-            itinerary_route_ID: Number(routeId),
-            hotspot_ID: Number(hotspotId),
-            item_type: 4,
-            deleted: 0,
-            status: 1,
-          },
-          select: { route_hotspot_ID: true },
-        });
+      const persistedRow =
+  await this.prisma.dvi_itinerary_route_hotspot_details.findFirst({
+    where: {
+      itinerary_plan_ID: Number(planId),
+      itinerary_route_ID: Number(routeId),
+      hotspot_ID: Number(hotspotId),
+      item_type: 4,
+      deleted: 0,
+      status: 1,
+    },
+    select: {
+      route_hotspot_ID: true,
+      hotspot_start_time: true,
+      hotspot_end_time: true,
+    },
+  });
+       if (!persistedRow?.route_hotspot_ID) continue;
 
-        if (!persistedRow?.route_hotspot_ID) continue;
+const savedStart = persistedRow.hotspot_start_time
+  ? new Date(persistedRow.hotspot_start_time)
+  : null;
 
-        await this.prisma.dvi_itinerary_route_hotspot_details.update({
-          where: { route_hotspot_ID: Number(persistedRow.route_hotspot_ID) },
-          data: {
-            hotspot_start_time: parsedRange.start,
-            hotspot_end_time: parsedRange.end,
-            hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(1, finalDurationMinutes)),
-            updatedon: new Date(),
-            is_conflict: 0,
-            conflict_reason: null,
-          },
-        });
+const savedEnd = persistedRow.hotspot_end_time
+  ? new Date(persistedRow.hotspot_end_time)
+  : null;
+
+const hasValidPersistedTiming =
+  savedStart !== null &&
+  savedEnd !== null &&
+  Number.isFinite(savedStart.getTime()) &&
+  Number.isFinite(savedEnd.getTime()) &&
+  savedEnd.getTime() > savedStart.getTime();
+
+// Preserve valid timings already persisted by the insertion engine.
+// Do not overwrite one hotspot without recalculating its route.
+if (hasValidPersistedTiming) {
+  continue;
+}
+
+await this.prisma.dvi_itinerary_route_hotspot_details.update({
+  where: {
+    route_hotspot_ID: Number(persistedRow.route_hotspot_ID),
+  },
+  data: {
+    hotspot_start_time: parsedRange.start,
+    hotspot_end_time: parsedRange.end,
+    hotspot_traveling_time:
+      this.minutesToUtcTimeDate(Math.max(1, finalDurationMinutes)),
+    updatedon: new Date(),
+    is_conflict: 0,
+    conflict_reason: null,
+  },
+});
       }
 
       if (applyResult?.success === true && applyResult?.inserted === true) {
@@ -564,6 +661,8 @@ if (applyResult?.success === true && applyResult?.inserted === true) {
   },
   { timeout: 120000 },
 );
+await verifySavedRoute('AFTER_SECOND_REBUILD');
+
 const planRow = await this.prisma.dvi_itinerary_plan_details.findFirst({
   where: {
     itinerary_plan_ID: Number(planId),
@@ -578,18 +677,22 @@ await this.applySameCityCrossDayOptimizerAfterSave(
   Number(planId),
   String(planRow?.itinerary_quote_ID || ''),
 );
+
+await verifySavedRoute('AFTER_CROSS_DAY_OPTIMIZER');
   await this.hotspotEngine.rebuildParkingCharges(
     Number(planId),
     Number(userId || 1),
   );
 
-  await this.forceRebuildVehiclePricingAfterHotspotChange(
-    Number(planId),
-    Number(routeId),
-  );
+await this.forceRebuildVehiclePricingAfterHotspotChange(
+  Number(planId),
+  Number(routeId),
+);
 
-  return {
-    ...applyResult,
+await verifySavedRoute('AFTER_VEHICLE_PRICING');
+
+return {
+  ...applyResult,
     routeHotspotsRebuilt: true,
     routeRebuildSummary: routeRebuildResult?.rebuildSummary,
     parkingChargesRebuilt: true,
