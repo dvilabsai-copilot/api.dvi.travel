@@ -28,6 +28,9 @@ export class HotelBlockingController {
     return this.hotelBlocking.holdGroup({
       itineraryPlanId: planId,
       groupType: Number(body?.groupType ?? body?.group_type),
+      hotelDetailsIds: Array.isArray(body?.hotelDetailsIds ?? body?.hotel_details_ids)
+        ? (body?.hotelDetailsIds ?? body?.hotel_details_ids).map(Number).filter((id: number) => Number.isInteger(id) && id > 0)
+        : undefined,
       actor: { id: Number(user.userId || 0), name: String(user.name || user.email || ''), type: 'STAFF' },
       guest: { name: body?.guest?.name, email: body?.guest?.email, phone: body?.guest?.phone },
     });

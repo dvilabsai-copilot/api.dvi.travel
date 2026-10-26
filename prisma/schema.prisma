@@ -2980,6 +2980,13 @@ model dvi_global_settings {
   tbo_map_lunch_rate_4_star              Float     @default(1500) @db.Float
   tbo_map_lunch_rate_5_star              Float     @default(2500) @db.Float
   hotel_blocked_cutoff_time              Float     @default(1) @db.Float
+  hotel_hold_no_block_before_hours       Float     @default(48) @db.Float
+  hotel_hold_min_lead_days               Int       @default(3)
+  hotel_hold_short_lead_days             Int       @default(15)
+  hotel_hold_medium_lead_days            Int       @default(30)
+  hotel_hold_short_duration_hours        Float     @default(4) @db.Float
+  hotel_hold_medium_duration_hours       Float     @default(12) @db.Float
+  hotel_hold_long_duration_hours         Float     @default(48) @db.Float
 
   @@index([accommodation_return(length: 768)], map: "idx_cnf_global_settings_accommodation_return")
   @@index([agent_referral_bonus_credit], map: "idx_cnf_global_settings_agent_referral_bonus_credit")
@@ -6098,6 +6105,8 @@ model tbo_hotel_master {
   star_rating       Int?      @default(0)
   hotel_category_id Int       @default(0)
   hotel_image_url   String?   @db.VarChar(500)
+  hotel_email       String?   @db.VarChar(255)
+  hotel_mobile      String?   @db.VarChar(50)
   description       String?   @db.Text
   check_in_time     String?   @db.VarChar(10)
   check_out_time    String?   @db.VarChar(10)
@@ -6886,6 +6895,7 @@ model dvi_hotel_block_request {
   responded_at           DateTime? @db.DateTime(0)
   confirmed_at           DateTime? @db.DateTime(0)
   cutoff_at              DateTime? @db.DateTime(0)
+  cutoff_reminder_sent_at DateTime? @db.DateTime(0)
   confirmation_reference String?   @db.VarChar(255)
   confirmation_channel   String?   @db.VarChar(32)
   respondent_name        String?   @db.VarChar(255)
@@ -6898,6 +6908,7 @@ model dvi_hotel_block_request {
   @@index([itinerary_plan_id, group_type], map: "idx_hotel_block_request_plan_group")
   @@index([status], map: "idx_hotel_block_request_status")
   @@index([cutoff_at], map: "idx_hotel_block_request_cutoff")
+  @@index([cutoff_reminder_sent_at], map: "idx_hotel_block_request_cutoff_reminder")
   @@map("dvi_hotel_block_requests")
 }
 

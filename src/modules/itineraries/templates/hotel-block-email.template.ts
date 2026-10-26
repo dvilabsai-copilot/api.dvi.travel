@@ -10,9 +10,10 @@ export type HotelBlockEmailTemplateInput = {
   responseUrl: string;
   demoMode: boolean;
   intendedRecipient: string;
-  emailKind?: 'REQUEST' | 'EXTENSION';
+  emailKind?: 'REQUEST' | 'EXTENSION' | 'CANCELLATION' | 'REMINDER';
   previousCutoffAt?: string;
   cutoffAt?: string;
+  itineraryUrl?: string;
   stayDetails?: Array<{
     checkIn: string;
     checkOut: string;
@@ -45,18 +46,20 @@ const stayDetailRow = (detail: NonNullable<HotelBlockEmailTemplateInput['stayDet
 
 export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
   const isExtension = input.emailKind === 'EXTENSION';
+  const isCancellation = input.emailKind === 'CANCELLATION';
+  const isReminder = input.emailKind === 'REMINDER';
   const stayDetails = input.stayDetails || [];
   const demoNotice = input.demoMode
     ? `
       <div style="margin:0 0 20px;padding:14px 16px;border:1px solid #f4c46b;border-radius:10px;background:#fff8e8;color:#795400;font-size:13px;line-height:1.6;">
         <strong>Demo delivery</strong><br>
-        This email is being delivered to the configured demo inbox instead of the hotelier.<br>
-        Intended hotelier email: <a href="mailto:${escapeHtml(input.intendedRecipient)}" style="color:#5c24e5;">${escapeHtml(input.intendedRecipient)}</a><br>
-        The real hotelier has not been contacted while demo mode is enabled.
+        This email is being delivered to the configured demo inbox instead of the ${isReminder ? 'intended recipient' : 'hotelier'}.<br>
+        Intended ${isReminder ? 'recipient' : 'hotelier email'}: <a href="mailto:${escapeHtml(input.intendedRecipient)}" style="color:#5c24e5;">${escapeHtml(input.intendedRecipient)}</a><br>
+        The intended ${isReminder ? 'recipient' : 'hotelier'} has not been contacted while demo mode is enabled.
       </div>`
     : '';
 
-  const responseAction = input.responseUrl
+  const responseAction = input.responseUrl && !isCancellation && !isReminder
     ? `
       <div style="margin:24px 0 4px;text-align:center;">
         <a href="${escapeHtml(input.responseUrl)}" style="display:inline-block;padding:12px 22px;border-radius:8px;background:#5c24e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;">
@@ -68,6 +71,33 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
       </p>`
     : '';
 
+  const itineraryAction = input.itineraryUrl && isReminder
+    ? `
+      <div style="margin:24px 0 4px;text-align:center;">
+        <a href="${escapeHtml(input.itineraryUrl)}" style="display:inline-block;padding:12px 22px;border-radius:8px;background:#5c24e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;">
+          Open Itinerary &amp; Confirm Hotel
+        </a>
+      </div>
+      <p style="margin:12px 0 0;text-align:center;font-size:12px;color:#888888;line-height:1.5;">
+        The itinerary opens the hotel confirmation window.
+      </p>`
+    : '';
+
+  const heading = isReminder
+    ? 'Hotel Hold Expires in 24 Hours'
+    : isCancellation
+      ? 'Hotel Hold No Longer Required'
+      : isExtension
+        ? 'Hotel Hold Extended'
+        : 'Hotel Blocking Request';
+  const intro = isReminder
+    ? 'This blocked hotel hold will expire in 24 hours. Please review the itinerary and confirm the hotel before the cutoff.'
+    : isCancellation
+      ? 'The hotel selection for this quotation has changed. Please release or ignore any rooms associated with the previous hold; no further blocking action is required for this request.'
+      : isExtension
+        ? 'The hotel hold has been extended. Please retain the rooms until the updated hold time below.'
+        : 'Please review the requested stay and confirm whether the rooms can be blocked.';
+
   return `<!doctype html>
 <html lang="en">
   <body style="margin:0;padding:24px 12px;background:#f5f3ff;font-family:Arial,sans-serif;color:#342d42;">
@@ -76,9 +106,9 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
         DVi Travel · Holidays for Everyone
       </div>
       <div style="padding:26px;border:1px solid #eadcfb;border-radius:16px;background:#ffffff;box-shadow:0 4px 14px rgba(92,36,229,.08);">
-        <h1 style="margin:0 0 8px;color:#1e1b4b;font-size:22px;">${isExtension ? 'Hotel Hold Extended' : 'Hotel Blocking Request'}</h1>
+        <h1 style="margin:0 0 8px;color:#1e1b4b;font-size:22px;">${heading}</h1>
         <p style="margin:0 0 22px;color:#6c6c6c;font-size:14px;line-height:1.6;">
-          ${isExtension ? 'The hotel hold has been extended. Please retain the rooms until the updated hold time below.' : 'Please review the requested stay and confirm whether the rooms can be blocked.'}
+          ${intro}
         </p>
         ${demoNotice}
         <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:22px;">
@@ -92,6 +122,7 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
           ${detailRow('Meal plan', input.mealPlan)}
           ${isExtension ? detailRow('Previous hold until', input.previousCutoffAt || '--') : ''}
           ${isExtension ? detailRow('New hold until', input.cutoffAt || '--') : ''}
+          ${isReminder ? detailRow('Hold expires', input.cutoffAt || '--') : ''}
         </table>
         ${stayDetails.length > 1 ? `
           <h2 style="margin:0 0 10px;color:#1e1b4b;font-size:15px;">Nightly stay details</h2>
@@ -105,10 +136,11 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
             ${stayDetails.map(stayDetailRow).join('')}
           </table>` : ''}
         ${responseAction}
+        ${itineraryAction}
         <div style="margin-top:26px;padding-top:16px;border-top:1px solid #eee6fa;color:#777;font-size:12px;line-height:1.6;">
           Regards,<br>
           <strong style="color:#4a4260;">DVi Travel Operations</strong><br>
-          This is an automated hotel blocking request.
+          ${isReminder ? 'This is an automated hotel hold expiry reminder.' : isCancellation ? 'This is an automated hotel hold cancellation notice.' : 'This is an automated hotel blocking request.'}
         </div>
       </div>
     </div>

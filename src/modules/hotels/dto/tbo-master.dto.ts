@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsDateString, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class UpdateTboMasterHotelDto {
   @IsOptional() @IsString() name?: string | null;
@@ -7,6 +7,8 @@ export class UpdateTboMasterHotelDto {
   @IsOptional() @IsInt() @Min(0) @Max(5) rating?: number | null;
   @IsOptional() @IsInt() @Min(0) categoryId?: number | null;
   @IsOptional() @IsString() imageUrl?: string | null;
+  @IsOptional() @IsEmail() hotelEmail?: string | null;
+  @IsOptional() @IsString() hotelMobile?: string | null;
   @IsOptional()
   @IsString()
   description?: string | null;

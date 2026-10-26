@@ -68,6 +68,8 @@ export class TboMasterHotelService {
     if (dto.rating !== undefined) data.star_rating = dto.rating;
     if (dto.categoryId !== undefined) data.hotel_category_id = dto.categoryId || 0;
     if (dto.imageUrl !== undefined) data.hotel_image_url = dto.imageUrl;
+    if (dto.hotelEmail !== undefined) data.hotel_email = dto.hotelEmail?.trim() || null;
+    if (dto.hotelMobile !== undefined) data.hotel_mobile = dto.hotelMobile?.trim() || null;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.checkInTime !== undefined) data.check_in_time = dto.checkInTime;
     if (dto.checkOutTime !== undefined) data.check_out_time = dto.checkOutTime;
@@ -144,6 +146,8 @@ export class TboMasterHotelService {
       rating: item.star_rating,
       categoryId: Number(item.hotel_category_id || 0),
       imageUrl: item.hotel_image_url || images.find((image) => image.isPrimary)?.url || images[0]?.url || null,
+      hotelEmail: item.hotel_email,
+      hotelMobile: item.hotel_mobile,
       images,
       primaryImageUrl: images.find((image) => image.isPrimary)?.url || images[0]?.url || item.hotel_image_url || null,
       roomGallery,

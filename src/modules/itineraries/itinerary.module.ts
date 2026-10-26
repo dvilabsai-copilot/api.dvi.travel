@@ -122,6 +122,7 @@ import { ItineraryPricingService } from './itinerary-pricing.service';
 import { HotelBlockingController, HotelBlockingPublicController } from './hotel-blocking.controller';
 import { HotelBlockingService } from './services/hotel-blocking.service';
 import { HotelBlockEmailService } from './services/hotel-block-email.service';
+import { HotelHoldCutoffReminderScheduler } from './services/hotel-hold-cutoff-reminder.scheduler';
 
 @Module({
   imports: [
@@ -140,6 +141,7 @@ import { HotelBlockEmailService } from './services/hotel-block-email.service';
     ItineraryPricingService,
     HotelBlockingService,
     HotelBlockEmailService,
+    HotelHoldCutoffReminderScheduler,
     TboHotelBookingService,
     ResAvenueHotelBookingService,
     HobseHotelBookingService,

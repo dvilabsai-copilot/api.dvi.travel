@@ -31,6 +31,8 @@ const ACTIVE_REQUEST_STATUSES = [
   HOTEL_BLOCK_STATUS.WAITLISTED,
 ];
 
+const HOTEL_BLOCK_RESEND_WAIT_MS = 60 * 60 * 1000;
+
 const RESPONSE_STATUSES = new Set<string>([
   HOTEL_BLOCK_STATUS.BLOCKED,
   HOTEL_BLOCK_STATUS.CONFIRMED,
@@ -68,6 +70,83 @@ const dateDayNumber = (value: unknown): number | null => {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86_400_000;
 };
 
+export type HotelHoldPolicy = {
+  noBlockBeforeHours: number;
+  minimumLeadDays: number;
+  shortLeadDays: number;
+  mediumLeadDays: number;
+  shortDurationHours: number;
+  mediumDurationHours: number;
+  longDurationHours: number;
+};
+
+export const DEFAULT_HOTEL_HOLD_POLICY: HotelHoldPolicy = {
+  noBlockBeforeHours: 48,
+  minimumLeadDays: 3,
+  shortLeadDays: 15,
+  mediumLeadDays: 30,
+  shortDurationHours: 4,
+  mediumDurationHours: 12,
+  longDurationHours: 48,
+};
+
+const finiteNumber = (value: unknown, fallback: number, minimum = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(parsed, minimum) : fallback;
+};
+
+const integerNumber = (value: unknown, fallback: number, minimum = 0) => Math.trunc(finiteNumber(value, fallback, minimum));
+
+export const hotelHoldDecision = (
+  checkIn: unknown,
+  requestedAt: unknown = new Date(),
+  policy: HotelHoldPolicy = DEFAULT_HOTEL_HOLD_POLICY,
+) => {
+  const arrival = dateOnly(checkIn);
+  const requested = dateOnly(requestedAt);
+  if (!arrival || !requested) {
+    return { allowed: true, durationHours: policy.shortDurationHours, leadDays: null, leadHours: null };
+  }
+
+  const leadHours = (arrival.getTime() - requested.getTime()) / (60 * 60 * 1000);
+  const leadDays = (dateDayNumber(arrival) ?? 0) - (dateDayNumber(requested) ?? 0);
+  if (leadHours < policy.noBlockBeforeHours) {
+    return { allowed: false, durationHours: null, leadDays, leadHours, reason: 'within the no-block window' };
+  }
+  if (leadDays < policy.minimumLeadDays) {
+    return { allowed: false, durationHours: null, leadDays, leadHours, reason: 'before the minimum lead-time band' };
+  }
+  if (leadDays <= policy.shortLeadDays) {
+    return { allowed: true, durationHours: policy.shortDurationHours, leadDays, leadHours };
+  }
+  if (leadDays <= policy.mediumLeadDays) {
+    return { allowed: true, durationHours: policy.mediumDurationHours, leadDays, leadHours };
+  }
+  return { allowed: true, durationHours: policy.longDurationHours, leadDays, leadHours };
+};
+
+/**
+ * Hotel hold duration is based on the calendar-day lead time at the moment
+ * the hold request is created. Hold eligibility is evaluated separately by
+ * hotelHoldDecision so callers can show a policy-specific alert.
+ */
+export const hotelHoldDurationHours = (
+  checkIn: unknown,
+  requestedAt: unknown = new Date(),
+  policy: HotelHoldPolicy = DEFAULT_HOTEL_HOLD_POLICY,
+): number => {
+  return hotelHoldDecision(checkIn, requestedAt, policy).durationHours ?? policy.shortDurationHours;
+};
+
+export const hotelHoldCutoffAt = (
+  checkIn: unknown,
+  requestedAt: unknown = new Date(),
+  policy: HotelHoldPolicy = DEFAULT_HOTEL_HOLD_POLICY,
+): Date => {
+  const anchor = dateOnly(requestedAt) || new Date();
+  return new Date(anchor.getTime() + hotelHoldDurationHours(checkIn, anchor, policy) * 60 * 60 * 1000);
+};
+
 const rowSnapshot = (row: BlockRow) => row.__snapshot || parseJson(row.selected_price_snapshot) || {};
 
 const rowCheckIn = (row: BlockRow): Date | null => dateOnly(
@@ -77,6 +156,23 @@ const rowCheckIn = (row: BlockRow): Date | null => dateOnly(
 const rowCheckOut = (row: BlockRow): Date | null => dateOnly(
   row.hotel_check_out_date || rowSnapshot(row).authoritativeCheckOutDate || row.hotel_check_in_date || row.itinerary_route_date || rowSnapshot(row).authoritativeCheckInDate,
 );
+
+const hotelIdentity = (value: BlockRow) => ({
+  provider: normalizeText(value.hotel_provider || value.provider).toLowerCase(),
+  hotelId: Number(value.hotel_id || value.hotelId || 0),
+  hotelCode: normalizeText(value.hotel_code || value.hotelCode).toLowerCase(),
+  hotelName: normalizeText(value.hotel_name || value.hotelName || rowSnapshot(value).hotelName).toLowerCase(),
+});
+
+const isSameHotel = (request: BlockRow, row: BlockRow) => {
+  const previous = hotelIdentity(request);
+  const current = hotelIdentity(row);
+  if (previous.hotelCode && current.hotelCode) {
+    return previous.provider === current.provider && previous.hotelCode === current.hotelCode;
+  }
+  if (previous.hotelId > 0 && current.hotelId > 0) return previous.hotelId === current.hotelId;
+  return Boolean(previous.hotelName && current.hotelName && previous.hotelName === current.hotelName);
+};
 
 /** Groups rows for one hotel into continuous date runs without merging gaps. */
 export const groupContinuousHotelRows = <T>(
@@ -127,27 +223,63 @@ export class HotelBlockingService {
     private readonly hotelBlockEmail: HotelBlockEmailService,
   ) {}
 
-  private async getDefaultHotelHoldCutoff(now = new Date()) {
-    let durationHours = 1;
+  private async getHotelHoldPolicy(): Promise<HotelHoldPolicy> {
+    let settings: BlockRow | null = null;
     try {
-      const settings = await (this.prisma as any).dvi_global_settings.findFirst({
+      settings = await (this.prisma as any).dvi_global_settings.findFirst({
         where: { deleted: 0, status: 1 },
         orderBy: { global_settings_ID: 'asc' },
-        select: { hotel_blocked_cutoff_time: true },
+        select: {
+          hotel_hold_no_block_before_hours: true,
+          hotel_hold_min_lead_days: true,
+          hotel_hold_short_lead_days: true,
+          hotel_hold_medium_lead_days: true,
+          hotel_hold_short_duration_hours: true,
+          hotel_hold_medium_duration_hours: true,
+          hotel_hold_long_duration_hours: true,
+        },
       });
-      const configuredHours = Number(settings?.hotel_blocked_cutoff_time);
-      if (Number.isFinite(configuredHours) && configuredHours >= 0) durationHours = configuredHours;
     } catch {
-      // Keep the one-hour compatibility default if an older database has not
-      // received the global-settings column yet.
+      // Older databases may not have the additive policy columns yet. The
+      // migration applies the same defaults, so this remains safe during rollout.
     }
-    return new Date(now.getTime() + durationHours * 60 * 60 * 1000);
+
+    const minimumLeadDays = integerNumber(settings?.hotel_hold_min_lead_days, DEFAULT_HOTEL_HOLD_POLICY.minimumLeadDays);
+    const shortLeadDays = Math.max(minimumLeadDays, integerNumber(settings?.hotel_hold_short_lead_days, DEFAULT_HOTEL_HOLD_POLICY.shortLeadDays));
+    const mediumLeadDays = Math.max(shortLeadDays, integerNumber(settings?.hotel_hold_medium_lead_days, DEFAULT_HOTEL_HOLD_POLICY.mediumLeadDays));
+    return {
+      noBlockBeforeHours: finiteNumber(settings?.hotel_hold_no_block_before_hours, DEFAULT_HOTEL_HOLD_POLICY.noBlockBeforeHours),
+      minimumLeadDays,
+      shortLeadDays,
+      mediumLeadDays,
+      shortDurationHours: finiteNumber(settings?.hotel_hold_short_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.shortDurationHours),
+      mediumDurationHours: finiteNumber(settings?.hotel_hold_medium_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.mediumDurationHours),
+      longDurationHours: finiteNumber(settings?.hotel_hold_long_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.longDurationHours),
+    };
+  }
+
+  private getDefaultHotelHoldCutoff(checkIn: unknown, requestedAt = new Date(), policy = DEFAULT_HOTEL_HOLD_POLICY) {
+    return hotelHoldCutoffAt(checkIn, requestedAt, policy);
+  }
+
+  private maxHotelHoldCutoff(request: BlockRow, now = new Date(), policy = DEFAULT_HOTEL_HOLD_POLICY) {
+    const policyCutoff = this.getDefaultHotelHoldCutoff(
+      request.check_in,
+      dateOnly(request.requested_at) || now,
+      policy,
+    );
+    // Preserve an already stored legacy cutoff as a valid ceiling. New
+    // requests are always created within the lead-time policy above.
+    const existingCutoff = dateOnly(request.cutoff_at);
+    return existingCutoff && existingCutoff.getTime() > policyCutoff.getTime()
+      ? existingCutoff
+      : policyCutoff;
   }
 
   private minimumHotelHoldCutoff(request: BlockRow, now = new Date()) {
-    const checkIn = dateOnly(request.check_in);
-    if (!checkIn || checkIn.getTime() <= now.getTime()) return now;
-    return checkIn;
+    const existingCutoff = dateOnly(request.cutoff_at);
+    if (existingCutoff && existingCutoff.getTime() > now.getTime()) return existingCutoff;
+    return now;
   }
 
   async holdGroup(input: {
@@ -155,6 +287,7 @@ export class HotelBlockingService {
     groupType: number;
     actor?: Actor;
     guest?: { name?: string; email?: string; phone?: string };
+    hotelDetailsIds?: number[];
   }) {
     const planId = Number(input.itineraryPlanId);
     const groupType = Number(input.groupType || 0);
@@ -163,6 +296,14 @@ export class HotelBlockingService {
     if (!normalizeText(input.guest?.name)) throw new BadRequestException('Primary guest name is required before holding hotels.');
     if (!normalizeText(input.guest?.phone)) throw new BadRequestException('Primary guest contact number is required before holding hotels.');
     if (!firstEmail(input.guest?.email)) throw new BadRequestException('Primary guest email is required before holding hotels.');
+    const scopedHotelDetailsIds = Array.isArray(input.hotelDetailsIds)
+      ? Array.from(new Set(input.hotelDetailsIds.map(Number).filter((id) => Number.isInteger(id) && id > 0)))
+      : null;
+    if (scopedHotelDetailsIds && scopedHotelDetailsIds.length === 0) {
+      throw new BadRequestException('A valid selected hotel stay is required.');
+    }
+    const requestedAt = new Date();
+    const policy = await this.getHotelHoldPolicy();
 
     const rows = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
       where: {
@@ -172,10 +313,17 @@ export class HotelBlockingService {
         status: 1,
         hotel_required: { not: 2 },
         NOT: { selection_origin: 'USER_REMOVED' },
+        ...(scopedHotelDetailsIds
+          ? { itinerary_plan_hotel_details_ID: { in: scopedHotelDetailsIds } }
+          : {}),
       },
       orderBy: [{ itinerary_route_date: 'asc' }, { itinerary_plan_hotel_details_ID: 'asc' }],
     });
-    if (!rows.length) throw new BadRequestException('No selected hotel stays were found for this recommendation group.');
+    if (!rows.length) throw new BadRequestException(
+      scopedHotelDetailsIds
+        ? 'The selected hotel stay is no longer available. Refresh the itinerary and try again.'
+        : 'No selected hotel stays were found for this recommendation group.',
+    );
 
     const hotelIds = Array.from(new Set(rows.map((row: BlockRow) => Number(row.hotel_id || 0)).filter((id) => id > 0)));
     const hotels = hotelIds.length
@@ -236,6 +384,15 @@ export class HotelBlockingService {
       rowCheckOut,
     );
     for (const groupedRows of groups) {
+      const checkIn = rowCheckIn(groupedRows[0]);
+      const decision = hotelHoldDecision(checkIn, requestedAt, policy);
+      if (!decision.allowed) {
+        throw new BadRequestException(
+          `HOTEL_HOLD_NOT_ALLOWED: Hotel blocking is not allowed for this stay. Check-in must be at least ${policy.minimumLeadDays} days away and outside the ${policy.noBlockBeforeHours}-hour no-block window.`,
+        );
+      }
+    }
+    for (const groupedRows of groups) {
       const first = groupedRows[0];
       results.push(await this.upsertRequest({
         planId,
@@ -244,6 +401,9 @@ export class HotelBlockingService {
         hotel: first.__hotel,
         actor: input.actor,
         guest: input.guest,
+        policy,
+        requestedAt,
+        scopedSelection: Boolean(scopedHotelDetailsIds),
       }));
     }
 
@@ -291,6 +451,7 @@ export class HotelBlockingService {
   }
 
   async listForItinerary(planId: number, groupType?: number) {
+    const policy = await this.getHotelHoldPolicy();
     const rows = await (this.prisma as any).dvi_hotel_block_request.findMany({
       where: {
         itinerary_plan_id: Number(planId),
@@ -298,15 +459,18 @@ export class HotelBlockingService {
       },
       orderBy: [{ check_in: 'asc' }, { id: 'asc' }],
     });
-    return rows.map((row: BlockRow) => this.publicStaffView(row));
+    const latestMessages = await this.latestMessagesByRequest(rows.map((row: BlockRow) => Number(row.id)));
+    return rows.map((row: BlockRow) => this.publicStaffView(row, policy, latestMessages.get(Number(row.id))));
   }
 
   async getById(requestId: number) {
+    const policy = await this.getHotelHoldPolicy();
     const row = await (this.prisma as any).dvi_hotel_block_request.findUnique({
       where: { id: Number(requestId) },
     });
     if (!row) throw new NotFoundException('Hotel hold request not found.');
-    return this.publicStaffView(row);
+    const latestMessages = await this.latestMessagesByRequest([Number(row.id)]);
+    return this.publicStaffView(row, policy, latestMessages.get(Number(row.id)));
   }
 
   async getGuestDetails(planId: number) {
@@ -345,7 +509,8 @@ export class HotelBlockingService {
 
   async getPublic(token: string) {
     const request = await this.findByToken(token);
-    return this.publicSupplierView(request);
+    const policy = await this.getHotelHoldPolicy();
+    return this.publicSupplierView(request, policy);
   }
 
   async respondPublic(token: string, input: any) {
@@ -369,6 +534,165 @@ export class HotelBlockingService {
     });
   }
 
+  /**
+   * A hotel selection replaces the itinerary row but does not go through the
+   * hold endpoints. Reconcile active requests after the selection is saved so
+   * the previous hotelier is told that their hold is no longer required.
+   */
+  async cancelHoldsAfterHotelChange(input: {
+    itineraryPlanId: number;
+    groupType: number;
+    routeIds: number[];
+    actor?: Actor;
+  }) {
+    const planId = Number(input.itineraryPlanId);
+    const groupType = Number(input.groupType || 0);
+    const routeIds = Array.from(new Set((input.routeIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0)));
+    if (!Number.isInteger(planId) || planId <= 0 || !routeIds.length) {
+      return { cancelled: 0, emailsQueued: 0, requests: [] };
+    }
+
+    const requests = await (this.prisma as any).dvi_hotel_block_request.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        ...(groupType > 0 ? { group_type: groupType } : {}),
+        status: { in: ACTIVE_REQUEST_STATUSES },
+      },
+    });
+    const selectionIds = Array.from(new Set((requests as BlockRow[])
+      .flatMap((request) => parseJson(request.selection_ids, []) as unknown[])
+      .map(Number)
+      .filter((id) => Number.isInteger(id) && id > 0)));
+    const [currentRows, previousRows] = await Promise.all([
+      (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
+        where: {
+          itinerary_plan_id: planId,
+          ...(groupType > 0 ? { group_type: groupType } : {}),
+          itinerary_route_id: { in: routeIds },
+          hotel_required: 1,
+          status: 1,
+          deleted: 0,
+        },
+      }),
+      selectionIds.length
+        ? (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
+            where: {
+              itinerary_plan_id: planId,
+              ...(groupType > 0 ? { group_type: groupType } : {}),
+              itinerary_plan_hotel_details_ID: { in: selectionIds },
+            },
+          })
+        : [],
+    ]);
+
+    const currentByRoute = new Map<number, BlockRow>();
+    for (const row of currentRows as BlockRow[]) {
+      const routeId = Number(row.itinerary_route_id || 0);
+      if (routeId > 0) currentByRoute.set(routeId, row);
+    }
+    const previousById = new Map<number, BlockRow>(
+      (previousRows as BlockRow[]).map((row) => [Number(row.itinerary_plan_hotel_details_ID || 0), row]),
+    );
+    const cancelled: any[] = [];
+    for (const request of requests as BlockRow[]) {
+      const requestSelectionIds = (parseJson(request.selection_ids, []) as unknown[])
+        .map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0);
+      const affectedSelections = requestSelectionIds
+        .map((id) => previousById.get(id))
+        .filter((row): row is BlockRow => Boolean(row))
+        .filter((row) => routeIds.includes(Number(row.itinerary_route_id || 0)))
+        .map((previousRow) => ({
+          previousRow,
+          currentRow: currentByRoute.get(Number(previousRow.itinerary_route_id || 0)),
+        }));
+      if (!affectedSelections.length || affectedSelections.every(({ currentRow }) => currentRow && isSameHotel(request, currentRow))) continue;
+      cancelled.push(await this.cancelAfterHotelChange(request, input.actor || { type: 'STAFF' }));
+    }
+
+    return {
+      cancelled: cancelled.length,
+      emailsQueued: cancelled.filter((item) => item.emailQueued).length,
+      requests: cancelled,
+    };
+  }
+
+  private async cancelAfterHotelChange(request: BlockRow, actor: Actor) {
+    const recipient = firstEmail(request.contact_email);
+    const updated = await (this.prisma as any).$transaction(async (tx: any) => {
+      const result = await tx.dvi_hotel_block_request.update({
+        where: { id: request.id },
+        data: {
+          status: HOTEL_BLOCK_STATUS.CANCELLED,
+          cutoff_at: null,
+        },
+      });
+      await tx.dvi_hotel_block_event.create({
+        data: {
+          request_id: request.id,
+          previous_status: request.status,
+          new_status: HOTEL_BLOCK_STATUS.CANCELLED,
+          event_type: 'HOTEL_CHANGE_HOLD_CANCELLED',
+          actor_type: actor.type || 'STAFF',
+          actor_id: Number(actor.id || 0) || null,
+          actor_name: actor.name || null,
+          notes: 'Previous hotel hold cancelled because the itinerary hotel was changed.',
+        },
+      });
+      const message = recipient
+        ? await tx.dvi_hotel_block_message.create({
+            data: {
+              request_id: request.id,
+              recipient: this.hotelBlockEmail.deliveryRecipient(recipient),
+              delivery_status: 'QUEUED',
+              attempt_count: 0,
+            },
+          })
+        : null;
+      return { result, message };
+    });
+
+    if (!recipient || !updated.message) {
+      return { id: request.id, status: HOTEL_BLOCK_STATUS.CANCELLED, emailQueued: false, emailDeliveryStatus: 'SKIPPED' };
+    }
+
+    let deliveryStatus: 'QUEUED' | 'SENT' | 'FAILED' = 'QUEUED';
+    let providerMessageId: string | null = null;
+    try {
+      const delivery = await this.hotelBlockEmail.dispatch({
+        recipient,
+        quotationReference: String(request.itinerary_plan_id),
+        request: {
+          ...this.publicStaffView(updated.result),
+          responseUrl: '',
+          emailKind: 'CANCELLATION',
+        },
+      });
+      deliveryStatus = delivery.status;
+      providerMessageId = delivery.providerMessageId || null;
+      if (delivery.status === 'SENT') {
+        await (this.prisma as any).dvi_hotel_block_message.update({
+          where: { id: updated.message.id },
+          data: { delivery_status: 'SENT', attempt_count: { increment: 1 }, provider_message_id: providerMessageId, sent_at: new Date() },
+        });
+      }
+    } catch (error) {
+      deliveryStatus = 'FAILED';
+      const lastError = this.hotelBlockEmail.logFailure(error, recipient);
+      await (this.prisma as any).dvi_hotel_block_message.update({
+        where: { id: updated.message.id },
+        data: { delivery_status: 'FAILED', attempt_count: { increment: 1 }, last_error: lastError },
+      });
+    }
+    return {
+      id: request.id,
+      status: HOTEL_BLOCK_STATUS.CANCELLED,
+      emailQueued: true,
+      emailDeliveryStatus: deliveryStatus,
+      providerMessageId,
+    };
+  }
+
   async resendEmail(requestId: number, actor: Actor) {
     const request = await (this.prisma as any).dvi_hotel_block_request.findUnique({
       where: { id: Number(requestId) },
@@ -377,11 +701,24 @@ export class HotelBlockingService {
     if ([HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED, HOTEL_BLOCK_STATUS.UNAVAILABLE].includes(request.status)) {
       throw new BadRequestException('This hotel hold request is no longer active.');
     }
+    if (![HOTEL_BLOCK_STATUS.REQUESTED, HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED].includes(request.status) || request.responded_at) {
+      throw new BadRequestException('Resend is available only while the hotelier is still awaiting response.');
+    }
+    const latestMessage = (await this.latestMessagesByRequest([Number(request.id)])).get(Number(request.id));
+    const lastEmailAt = dateOnly(latestMessage?.sent_at || latestMessage?.created_at || request.requested_at);
+    const resendAvailableAt = lastEmailAt ? new Date(lastEmailAt.getTime() + HOTEL_BLOCK_RESEND_WAIT_MS) : null;
+    if (resendAvailableAt && resendAvailableAt.getTime() > Date.now()) {
+      throw new BadRequestException({
+        code: 'HOTEL_RESEND_NOT_READY',
+        message: `Resend is available after ${resendAvailableAt.toISOString()}.`,
+        resendAvailableAt: resendAvailableAt.toISOString(),
+      });
+    }
     const recipient = firstEmail(request.contact_email);
     if (!recipient) throw new BadRequestException('A verified hotel reservation email is required before resending.');
+    const policy = await this.getHotelHoldPolicy();
     let requestForEmail = request;
-    const shouldMarkAwaiting = !request.responded_at
-      && [HOTEL_BLOCK_STATUS.REQUESTED, HOTEL_BLOCK_STATUS.BLOCKED].includes(request.status);
+    const shouldMarkAwaiting = !request.responded_at && request.status === HOTEL_BLOCK_STATUS.REQUESTED;
     const shouldSeedDefaultCutoff = [
       HOTEL_BLOCK_STATUS.REQUESTED,
       HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED,
@@ -389,7 +726,7 @@ export class HotelBlockingService {
     ].includes(request.status)
       && !request.cutoff_at;
     if (shouldMarkAwaiting || shouldSeedDefaultCutoff) {
-      const defaultCutoff = request.cutoff_at || await this.getDefaultHotelHoldCutoff();
+      const defaultCutoff = request.cutoff_at || this.getDefaultHotelHoldCutoff(request.check_in, request.requested_at, policy);
       requestForEmail = await (this.prisma as any).$transaction(async (tx: any) => {
         const nextStatus = shouldMarkAwaiting
           ? HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED
@@ -412,7 +749,7 @@ export class HotelBlockingService {
             actor_name: actor.name || null,
             notes: shouldMarkAwaiting
               ? 'Unanswered hotel block request moved to awaiting confirmation before email resend.'
-              : 'Default one-hour hold cutoff applied before email resend.',
+              : 'Lead-time hotel hold cutoff applied before email resend.',
           },
         });
         return updated;
@@ -424,6 +761,7 @@ export class HotelBlockingService {
       actor,
       eventType: 'REQUEST_EMAIL_RESENT',
       notes: 'Hotel blocking email queued again by staff.',
+      policy,
     });
   }
 
@@ -439,6 +777,11 @@ export class HotelBlockingService {
     if (!previousCutoff) throw new BadRequestException('This hotel hold does not have an existing hold-until time.');
     if (cutoff.getTime() <= previousCutoff.getTime()) {
       throw new BadRequestException('The new hold-until time must be later than the current hold-until time.');
+    }
+    const policy = await this.getHotelHoldPolicy();
+    const maximumCutoff = this.maxHotelHoldCutoff(request, new Date(), policy);
+    if (cutoff.getTime() > maximumCutoff.getTime()) {
+      throw new BadRequestException(`The hold cutoff cannot be later than ${maximumCutoff.toISOString()}.`);
     }
     const updated = await (this.prisma as any).$transaction(async (tx: any) => {
       const result = await tx.dvi_hotel_block_request.update({ where: { id: request.id }, data: { cutoff_at: cutoff } });
@@ -458,13 +801,14 @@ export class HotelBlockingService {
       return result;
     });
     const recipient = firstEmail(updated.contact_email);
-    if (!recipient) return { success: true, request: this.publicStaffView(updated), emailDeliveryStatus: 'SKIPPED' };
+    if (!recipient) return { success: true, request: this.publicStaffView(updated, policy), emailDeliveryStatus: 'SKIPPED' };
     return this.queueAndSendEmail({
       request: updated,
       recipient,
       actor,
       eventType: 'HOLD_EXTENSION_EMAIL_QUEUED',
       notes: 'Hotel hold extension email queued by staff.',
+      policy,
       emailKind: 'EXTENSION',
       previousCutoffAt: previousCutoff,
     });
@@ -476,10 +820,11 @@ export class HotelBlockingService {
     actor: Actor;
     eventType: string;
     notes: string;
+    policy?: HotelHoldPolicy;
     emailKind?: 'REQUEST' | 'EXTENSION';
     previousCutoffAt?: Date | string | null;
   }) {
-    const { request, recipient, actor, eventType, notes, emailKind = 'REQUEST', previousCutoffAt = null } = input;
+    const { request, recipient, actor, eventType, notes, policy = DEFAULT_HOTEL_HOLD_POLICY, emailKind = 'REQUEST', previousCutoffAt = null } = input;
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const now = new Date();
@@ -517,7 +862,7 @@ export class HotelBlockingService {
         recipient,
         quotationReference: String(request.itinerary_plan_id),
         request: {
-          ...this.publicStaffView(request),
+          ...this.publicStaffView(request, policy),
           responseUrl,
           emailKind,
           previousCutoffAt,
@@ -540,7 +885,7 @@ export class HotelBlockingService {
         data: { delivery_status: 'FAILED', attempt_count: { increment: 1 }, last_error: lastError },
       });
     }
-    return { success: true, request: this.publicStaffView(request), recipient, deliveryStatus, emailDeliveryStatus: deliveryStatus, providerMessageId };
+    return { success: true, request: this.publicStaffView(request, policy), recipient, deliveryStatus, emailDeliveryStatus: deliveryStatus, providerMessageId };
   }
 
   async assertPlanReady(planId: number, groupType?: number) {
@@ -602,6 +947,9 @@ export class HotelBlockingService {
     hotel?: BlockRow;
     actor?: Actor;
     guest?: { name?: string; email?: string; phone?: string };
+    policy?: HotelHoldPolicy;
+    requestedAt?: Date;
+    scopedSelection?: boolean;
   }) {
     const first = input.rows[0];
     const room = first.__room || {};
@@ -630,13 +978,21 @@ export class HotelBlockingService {
     const uniqueMealPlans = Array.from(new Set(stayDetails.map((detail) => detail.mealPlan).filter(Boolean)));
     const roomType = uniqueRoomTypes.length === 1 ? uniqueRoomTypes[0] : 'Multiple room categories';
     const mealPlan = uniqueMealPlans.length === 1 ? uniqueMealPlans[0] : 'Multiple meal plans';
-    const reservationKey = [input.planId, input.groupType, provider, hotelCode || normalizeText(hotel.hotel_name).toLowerCase(), start?.toISOString().slice(0, 10), end?.toISOString().slice(0, 10)].join('|');
-    const email = firstEmail(hotel.hotel_email);
-    const phone = normalizeText(hotel.hotel_mobile) || null;
-    const contactSource = email || phone ? 'HOTEL_MASTER' : null;
     const selectionIds = input.rows
       .map((row) => Number(row.itinerary_plan_hotel_details_ID))
       .sort((a, b) => a - b);
+    const reservationKey = [
+      input.planId,
+      input.groupType,
+      provider,
+      hotelCode || normalizeText(hotel.hotel_name).toLowerCase(),
+      start?.toISOString().slice(0, 10),
+      end?.toISOString().slice(0, 10),
+      ...(input.scopedSelection ? [`selection:${selectionIds.join(',')}`] : []),
+    ].join('|');
+    const email = firstEmail(hotel.hotel_email);
+    const phone = normalizeText(hotel.hotel_mobile) || null;
+    const contactSource = email || phone ? 'HOTEL_MASTER' : null;
     const payload = {
       quotationPlanId: input.planId,
       groupType: input.groupType,
@@ -656,7 +1012,9 @@ export class HotelBlockingService {
     // response link is the authoritative transition to Blocked, Waitlisted,
     // Confirmed, or Unavailable.
     const status = email ? HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED : HOTEL_BLOCK_STATUS.CONTACT_REQUIRED;
-    const defaultCutoff = email ? await this.getDefaultHotelHoldCutoff() : null;
+    const requestedAt = input.requestedAt || new Date();
+    const policy = input.policy || DEFAULT_HOTEL_HOLD_POLICY;
+    const defaultCutoff = email ? this.getDefaultHotelHoldCutoff(start, requestedAt, policy) : null;
     const candidates = await (this.prisma as any).dvi_hotel_block_request.findMany({
       where: {
         itinerary_plan_id: input.planId,
@@ -672,7 +1030,13 @@ export class HotelBlockingService {
         .sort((a, b) => a - b);
       return candidateIds.length === selectionIds.length && candidateIds.every((id, index) => id === selectionIds[index]);
     });
-    const existing = matchingSelectionRequest || await (this.prisma as any).dvi_hotel_block_request.findUnique({ where: { reservation_key: reservationKey } });
+    // An individual row hold is scoped by its exact selection ID. Do not fall
+    // back to a reservation-key match here: an older request for the same
+    // hotel/date can otherwise be treated as a resend even when this visible
+    // row is still Not Started.
+    const existing = matchingSelectionRequest || (input.scopedSelection
+      ? null
+      : await (this.prisma as any).dvi_hotel_block_request.findUnique({ where: { reservation_key: reservationKey } }));
     if (existing && ACTIVE_REQUEST_STATUSES.includes(existing.status)) {
       const sameSnapshot = existing.hotel_name === payload.hotelName
         && existing.provider === payload.provider
@@ -686,14 +1050,14 @@ export class HotelBlockingService {
         if (email) {
           const delivery = await this.resendEmail(existing.id, input.actor || { type: 'STAFF' });
           return {
-            ...(delivery.request || this.publicStaffView(existing)),
+            ...(delivery.request || this.publicStaffView(existing, policy)),
             created: false,
             emailQueued: true,
             emailDeliveryStatus: delivery.deliveryStatus,
             responseUrl: undefined,
           };
         }
-        return { ...this.publicStaffView(existing), created: false, emailQueued: false, responseUrl: undefined };
+        return { ...this.publicStaffView(existing, policy), created: false, emailQueued: false, responseUrl: undefined };
       }
 
       // An older request can have been created from an incomplete supplier row.
@@ -717,12 +1081,11 @@ export class HotelBlockingService {
           contact_source: contactSource,
         },
       });
-      return { ...this.publicStaffView(refreshed), created: false, emailQueued: false, responseUrl: undefined };
+      return { ...this.publicStaffView(refreshed, policy), created: false, emailQueued: false, responseUrl: undefined };
     }
 
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-    const now = new Date();
     const created = await (this.prisma as any).$transaction(async (tx: any) => {
       const request = existing
         ? await tx.dvi_hotel_block_request.update({
@@ -733,7 +1096,7 @@ export class HotelBlockingService {
               contact_email: email,
               contact_phone: phone,
               contact_source: contactSource,
-              requested_at: now,
+              requested_at: requestedAt,
               responded_at: null,
               confirmed_at: null,
               cutoff_at: defaultCutoff,
@@ -766,7 +1129,7 @@ export class HotelBlockingService {
               contact_email: email,
               contact_phone: phone,
               contact_source: contactSource,
-              requested_at: now,
+              requested_at: requestedAt,
               cutoff_at: defaultCutoff,
               created_by: Number(input.actor?.id || 0) || null,
             },
@@ -785,7 +1148,7 @@ export class HotelBlockingService {
         },
       });
       await tx.dvi_hotel_block_token.create({
-        data: { request_id: request.id, token_hash: tokenHash, expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) },
+        data: { request_id: request.id, token_hash: tokenHash, expires_at: new Date(requestedAt.getTime() + 7 * 24 * 60 * 60 * 1000) },
       });
       if (email) {
         await tx.dvi_hotel_block_message.create({
@@ -795,7 +1158,7 @@ export class HotelBlockingService {
       return request;
     });
     return {
-      ...this.publicStaffView(created),
+      ...this.publicStaffView(created, policy),
       created: !existing,
       emailQueued: Boolean(email),
       responseUrl: `${publicItineraryBaseUrl()}/hotel/block-response/${rawToken}`,
@@ -846,13 +1209,28 @@ export class HotelBlockingService {
     if (checkIn && checkOut && checkOut.getTime() <= checkIn.getTime()) {
       throw new BadRequestException('Hotel checkout must be later than check-in.');
     }
+    const policy = await this.getHotelHoldPolicy();
     const keepsHoldCutoff = status === HOTEL_BLOCK_STATUS.BLOCKED || status === HOTEL_BLOCK_STATUS.CONFIRMED;
-    const minimumCutoff = this.minimumHotelHoldCutoff(request, now);
+    // A hotelier response may shorten the default hold, but it cannot set a
+    // cutoff in the past. Staff extensions retain the existing hold as their
+    // lower bound and therefore can only move the cutoff later.
+    const isHotelLinkResponse = input.actor?.type === 'HOTEL_LINK';
+    const minimumCutoff = isHotelLinkResponse ? now : this.minimumHotelHoldCutoff(request, now);
     if (keepsHoldCutoff && input.cutoffAt && input.cutoffAt.getTime() < minimumCutoff.getTime()) {
-      throw new BadRequestException('Hold cutoff cannot be before today or before the hotel check-in date and time.');
+      throw new BadRequestException(isHotelLinkResponse
+        ? 'Hold cutoff cannot be in the past.'
+        : 'Hold cutoff cannot be before the current hold cutoff or the current time.');
     }
-    const defaultCutoff = keepsHoldCutoff && !request.cutoff_at ? await this.getDefaultHotelHoldCutoff(now) : null;
-    const cutoffAt = input.cutoffAt || (defaultCutoff && defaultCutoff.getTime() < minimumCutoff.getTime() ? minimumCutoff : defaultCutoff);
+    const defaultCutoff = keepsHoldCutoff && !request.cutoff_at
+      ? this.getDefaultHotelHoldCutoff(request.check_in, request.requested_at || now, policy)
+      : null;
+    const cutoffAt = input.cutoffAt
+      || request.cutoff_at
+      || (defaultCutoff && defaultCutoff.getTime() < minimumCutoff.getTime() ? minimumCutoff : defaultCutoff);
+    const maximumCutoff = this.maxHotelHoldCutoff(request, now, policy);
+    if (keepsHoldCutoff && cutoffAt && cutoffAt.getTime() > maximumCutoff.getTime()) {
+      throw new BadRequestException(`The hold cutoff cannot be later than ${maximumCutoff.toISOString()}.`);
+    }
     const updated = await (this.prisma as any).$transaction(async (tx: any) => {
       const result = await tx.dvi_hotel_block_request.update({
         where: { id: request.id },
@@ -886,11 +1264,37 @@ export class HotelBlockingService {
       if (input.tokenId) await tx.dvi_hotel_block_token.update({ where: { id: input.tokenId }, data: { used_at: now } });
       return result;
     });
-    return { success: true, request: this.publicStaffView(updated) };
+    return { success: true, request: this.publicStaffView(updated, policy) };
   }
 
-  private publicStaffView(row: BlockRow) {
+  private async latestMessagesByRequest(requestIds: number[]) {
+    const ids = Array.from(new Set(requestIds.map(Number).filter((id) => id > 0)));
+    const messagesByRequest = new Map<number, BlockRow>();
+    const messagesModel = (this.prisma as any).dvi_hotel_block_message;
+    if (!ids.length || !messagesModel?.findMany) return messagesByRequest;
+    try {
+      const messages = await messagesModel.findMany({
+        where: { request_id: { in: ids } },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      });
+      for (const message of messages || []) {
+        const requestId = Number(message.request_id || 0);
+        if (requestId > 0 && !messagesByRequest.has(requestId)) messagesByRequest.set(requestId, message);
+      }
+    } catch {
+      // Keep the request list available while older deployments are missing
+      // the message query surface during rollout.
+    }
+    return messagesByRequest;
+  }
+
+  private publicStaffView(row: BlockRow, policy = DEFAULT_HOTEL_HOLD_POLICY, latestMessage?: BlockRow) {
     const payload = parseJson(row.request_payload, {}) as BlockRow;
+    const lastEmailAt = dateOnly(latestMessage?.sent_at || latestMessage?.created_at || row.requested_at);
+    const resendAvailableAt = lastEmailAt && !row.responded_at
+      && [HOTEL_BLOCK_STATUS.REQUESTED, HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED].includes(row.status)
+      ? new Date(lastEmailAt.getTime() + HOTEL_BLOCK_RESEND_WAIT_MS)
+      : null;
     return {
       id: row.id,
       itineraryPlanId: row.itinerary_plan_id,
@@ -909,14 +1313,22 @@ export class HotelBlockingService {
       requestedAt: row.requested_at,
       respondedAt: row.responded_at,
       cutoffAt: row.cutoff_at,
+      maxCutoffAt: this.maxHotelHoldCutoff(row, new Date(), policy),
+      holdDurationHours: hotelHoldDurationHours(row.check_in, row.requested_at, policy),
       confirmationReference: row.confirmation_reference,
       confirmationChannel: row.confirmation_channel,
       version: row.version,
+      selectionIds: (Array.isArray(parseJson(row.selection_ids, [])) ? parseJson(row.selection_ids, []) : [])
+        .map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0),
+      lastEmailAt,
+      resendAvailableAt,
+      canResendEmail: Boolean(resendAvailableAt && resendAvailableAt.getTime() <= Date.now()),
       stayDetails: Array.isArray(payload.stayDetails) ? payload.stayDetails : [],
     };
   }
 
-  private publicSupplierView(row: BlockRow) {
+  private publicSupplierView(row: BlockRow, policy = DEFAULT_HOTEL_HOLD_POLICY) {
     const payload = parseJson(row.request_payload, {}) as BlockRow;
     return {
       bookingReference: row.request_payload ? parseJson(row.request_payload)?.quotationPlanId : row.itinerary_plan_id,
@@ -928,7 +1340,10 @@ export class HotelBlockingService {
       mealPlan: row.meal_plan,
       roomCount: row.room_count,
       status: row.status,
+      requestedAt: row.requested_at,
       cutoffAt: row.cutoff_at,
+      maxCutoffAt: this.maxHotelHoldCutoff(row, new Date(), policy),
+      holdDurationHours: hotelHoldDurationHours(row.check_in, row.requested_at, policy),
       respondedAt: row.responded_at,
       stayDetails: Array.isArray(payload.stayDetails) ? payload.stayDetails : [],
     };

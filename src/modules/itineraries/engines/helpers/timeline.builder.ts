@@ -487,6 +487,12 @@ const reservedSameCityHotspotIdsByRoute =
  // dvi_global_settings.findFirst query that is 774+ serial queries just for hotspot scoring.
     const globalSettingsForBuilder = await (tx as any).dvi_global_settings?.findFirst({
       where: { status: 1, deleted: 0 },
+      select: {
+        itinerary_local_speed_limit: true,
+        itinerary_outstation_speed_limit: true,
+        itinerary_travel_by_road_buffer_time: true,
+        itinerary_common_buffer_time: true,
+      },
     });
     if (globalSettingsForBuilder) {
       this.distanceHelper.setGlobalSettings(globalSettingsForBuilder);
