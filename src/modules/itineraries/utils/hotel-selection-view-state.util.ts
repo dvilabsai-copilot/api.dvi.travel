@@ -4,6 +4,7 @@ import {
   resolveOrdinaryMealPlanCost,
 } from './hotel-payable-pricing.util';
 import { resolveOfflineHotelPayablePricing } from './hotel-selection-pricing.util';
+import { isFullStayHotelSelection } from './hotel-route-total.util';
 import {
   isTboSupplierBookingCode,
   normalizeHotelDisplayName,
@@ -721,13 +722,9 @@ export function buildHotelSelectionState({
         selected.selectionKey || selected.rateOptionId ||
         `${selected.provider || ''}|${selected.hotelCode || ''}|${selected.roomType || ''}|${selected.mealPlan || ''}`,
       ).trim();
-      const selectedSnapshot = selected.selectedPriceSnapshot as Record<string, unknown> | null;
-      const isRouteNightSnapshot = String(
-        selectedSnapshot?.pricingScope ?? '',
-      ).trim().toUpperCase() === 'ROUTE_NIGHT';
-      const key = isRouteNightSnapshot
-        ? `${identityKey}|route:${route.routeId}`
-        : identityKey;
+      const key = isFullStayHotelSelection(selected)
+        ? identityKey
+        : `${identityKey}|route:${route.routeId}`;
       if (!selectedTotalByIdentity.has(key)) {
         selectedTotalByIdentity.set(key, money(Number((selected as any).selectedTotalPrice ?? selected.totalPrice)));
       }

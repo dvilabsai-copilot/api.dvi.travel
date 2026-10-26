@@ -4,6 +4,11 @@ type HotelSelectionLike = {
   pricingScope?: unknown;
   numberOfNights?: unknown;
   nights?: unknown;
+  pricePerNight?: unknown;
+  selectedPricePerNight?: unknown;
+  totalPrice?: unknown;
+  selectedTotalPrice?: unknown;
+  totalStayPrice?: unknown;
 };
 
 const parseSnapshot = (value: unknown): Record<string, unknown> => {
@@ -24,6 +29,23 @@ export function isRouteNightHotelSelection(selection: HotelSelectionLike): boole
   return String(snapshot.pricingScope ?? selection.pricingScope ?? '').trim().toUpperCase() === 'ROUTE_NIGHT';
 }
 
+/** A selection is a full-stay amount only when the saved data says so. */
+export function isFullStayHotelSelection(selection: HotelSelectionLike): boolean {
+  if (isRouteNightHotelSelection(selection)) return false;
+
+  const numberOfNights = Number(selection.numberOfNights ?? selection.nights ?? 1);
+  if (numberOfNights > 1) return true;
+
+  const perNight = Number(selection.pricePerNight ?? selection.selectedPricePerNight ?? 0);
+  const stayTotal = Number(
+    selection.totalStayPrice ??
+    selection.selectedTotalPrice ??
+    selection.totalPrice ??
+    0,
+  );
+  return perNight > 0 && stayTotal > perNight + 0.009;
+}
+
 /**
  * A repeated date should be ignored only when the saved amount is explicitly
  * a continuous-stay amount. Route-night snapshots must keep every night even
@@ -34,9 +56,7 @@ export function shouldSkipRepeatedHotelNight(
   previousDate: number | undefined,
   selectedDate: number,
 ): boolean {
-  const numberOfNights = Number(selection.numberOfNights ?? selection.nights ?? 1);
-  return numberOfNights > 1 &&
-    !isRouteNightHotelSelection(selection) &&
+  return isFullStayHotelSelection(selection) &&
     Number.isFinite(selectedDate) &&
     Number.isFinite(previousDate) &&
     selectedDate - Number(previousDate) === 24 * 60 * 60 * 1000;
