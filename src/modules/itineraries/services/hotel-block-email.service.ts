@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
-import { renderHotelBlockEmailHtml } from '../templates/hotel-block-email.template';
+import { renderHotelBlockEmailHtml, type HotelBlockEmailTemplateInput } from '../templates/hotel-block-email.template';
 
 type HoldRequest = {
   hotelName?: string | null;
@@ -15,6 +15,7 @@ type HoldRequest = {
   emailKind?: 'REQUEST' | 'EXTENSION';
   previousCutoffAt?: Date | string | null;
   cutoffAt?: Date | string | null;
+  stayDetails?: HotelBlockEmailTemplateInput['stayDetails'];
 };
 
 @Injectable()
@@ -73,6 +74,7 @@ export class HotelBlockEmailService {
     const { recipient, quotationReference, request } = input;
     const deliveryRecipient = this.deliveryRecipient(recipient);
     const responseUrl = String(request.responseUrl || '').trim();
+    const stayDetails = Array.isArray(request.stayDetails) ? request.stayDetails : [];
     const isExtension = request.emailKind === 'EXTENSION';
     const subject = `DVi Travel | ${isExtension ? 'Hotel Hold Extended' : 'Hotel Blocking Request'} | ${quotationReference}`;
     const text = [
@@ -100,6 +102,13 @@ export class HotelBlockEmailService {
       `Rooms: ${request.roomCount || 0}`,
       `Room category: ${request.roomType || '--'}`,
       `Meal plan: ${request.mealPlan || '--'}`,
+      ...(stayDetails.length > 1
+        ? [
+            '',
+            'Nightly stay details:',
+            ...stayDetails.map((detail) => `- ${this.formatDate(detail.checkIn)}${detail.checkOut && this.formatDate(detail.checkOut) !== this.formatDate(detail.checkIn) ? ` to ${this.formatDate(detail.checkOut)}` : ''} | ${detail.roomType || '--'} | ${detail.mealPlan || '--'} | Rooms: ${Number(detail.roomCount || 0)}`),
+          ]
+        : []),
       '',
       'Please use this secure response link to confirm availability, cutoff and booking status:',
       responseUrl,
@@ -122,6 +131,13 @@ export class HotelBlockEmailService {
       emailKind: request.emailKind,
       previousCutoffAt: this.formatDateTime(request.previousCutoffAt),
       cutoffAt: this.formatDateTime(request.cutoffAt),
+      stayDetails: stayDetails.map((detail) => ({
+        checkIn: this.formatDate(detail.checkIn),
+        checkOut: this.formatDate(detail.checkOut),
+        roomType: String(detail.roomType || '--'),
+        mealPlan: String(detail.mealPlan || '--'),
+        roomCount: Number(detail.roomCount || 0),
+      })),
     });
     const info = await this.getTransporter().sendMail({
       from: String(process.env.SMTP_FROM),

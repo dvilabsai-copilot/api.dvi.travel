@@ -13,6 +13,13 @@ export type HotelBlockEmailTemplateInput = {
   emailKind?: 'REQUEST' | 'EXTENSION';
   previousCutoffAt?: string;
   cutoffAt?: string;
+  stayDetails?: Array<{
+    checkIn: string;
+    checkOut: string;
+    roomType: string;
+    mealPlan: string;
+    roomCount: number;
+  }>;
 };
 
 const escapeHtml = (value: unknown) => String(value ?? '')
@@ -28,8 +35,17 @@ const detailRow = (label: string, value: string) => `
     <td style="padding:10px;border:1px solid #eadcfb;color:#342d42;font-size:13px;">${escapeHtml(value)}</td>
   </tr>`;
 
+const stayDetailRow = (detail: NonNullable<HotelBlockEmailTemplateInput['stayDetails']>[number]) => `
+  <tr>
+    <td style="padding:9px;border:1px solid #eadcfb;color:#342d42;font-size:12px;">${escapeHtml(detail.checkIn)}${detail.checkOut && detail.checkOut !== detail.checkIn ? ` – ${escapeHtml(detail.checkOut)}` : ''}</td>
+    <td style="padding:9px;border:1px solid #eadcfb;color:#342d42;font-size:12px;">${escapeHtml(detail.roomType)}</td>
+    <td style="padding:9px;border:1px solid #eadcfb;color:#342d42;font-size:12px;">${escapeHtml(detail.mealPlan)}</td>
+    <td style="padding:9px;border:1px solid #eadcfb;color:#342d42;font-size:12px;text-align:center;">${escapeHtml(String(detail.roomCount || 0))}</td>
+  </tr>`;
+
 export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
   const isExtension = input.emailKind === 'EXTENSION';
+  const stayDetails = input.stayDetails || [];
   const demoNotice = input.demoMode
     ? `
       <div style="margin:0 0 20px;padding:14px 16px;border:1px solid #f4c46b;border-radius:10px;background:#fff8e8;color:#795400;font-size:13px;line-height:1.6;">
@@ -77,6 +93,17 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
           ${isExtension ? detailRow('Previous hold until', input.previousCutoffAt || '--') : ''}
           ${isExtension ? detailRow('New hold until', input.cutoffAt || '--') : ''}
         </table>
+        ${stayDetails.length > 1 ? `
+          <h2 style="margin:0 0 10px;color:#1e1b4b;font-size:15px;">Nightly stay details</h2>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:22px;">
+            <tr>
+              <th align="left" style="padding:9px;border:1px solid #eadcfb;background:#faf7ff;color:#4a4260;font-size:12px;">Stay dates</th>
+              <th align="left" style="padding:9px;border:1px solid #eadcfb;background:#faf7ff;color:#4a4260;font-size:12px;">Room category</th>
+              <th align="left" style="padding:9px;border:1px solid #eadcfb;background:#faf7ff;color:#4a4260;font-size:12px;">Meal plan</th>
+              <th align="center" style="padding:9px;border:1px solid #eadcfb;background:#faf7ff;color:#4a4260;font-size:12px;">Rooms</th>
+            </tr>
+            ${stayDetails.map(stayDetailRow).join('')}
+          </table>` : ''}
         ${responseAction}
         <div style="margin-top:26px;padding-top:16px;border-top:1px solid #eee6fa;color:#777;font-size:12px;line-height:1.6;">
           Regards,<br>

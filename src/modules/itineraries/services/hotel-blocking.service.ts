@@ -62,6 +62,58 @@ const dateOnly = (value: unknown): Date | null => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const dateDayNumber = (value: unknown): number | null => {
+  const date = dateOnly(value);
+  if (!date) return null;
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86_400_000;
+};
+
+const rowSnapshot = (row: BlockRow) => row.__snapshot || parseJson(row.selected_price_snapshot) || {};
+
+const rowCheckIn = (row: BlockRow): Date | null => dateOnly(
+  row.hotel_check_in_date || row.itinerary_route_date || rowSnapshot(row).authoritativeCheckInDate,
+);
+
+const rowCheckOut = (row: BlockRow): Date | null => dateOnly(
+  row.hotel_check_out_date || rowSnapshot(row).authoritativeCheckOutDate || row.hotel_check_in_date || row.itinerary_route_date || rowSnapshot(row).authoritativeCheckInDate,
+);
+
+/** Groups rows for one hotel into continuous date runs without merging gaps. */
+export const groupContinuousHotelRows = <T>(
+  rows: readonly T[],
+  getGroupKey: (row: T) => string,
+  getCheckIn: (row: T) => unknown,
+  getCheckOut: (row: T) => unknown,
+): T[][] => {
+  const sorted = rows
+    .map((row, index) => ({ row, index, day: dateDayNumber(getCheckIn(row)) }))
+    .sort((left, right) => (left.day ?? Number.MAX_SAFE_INTEGER) - (right.day ?? Number.MAX_SAFE_INTEGER) || left.index - right.index);
+  const latestByKey = new Map<string, { rows: T[]; endDay: number | null }>();
+  const output: T[][] = [];
+
+  for (const item of sorted) {
+    const key = getGroupKey(item.row);
+    const startDay = item.day;
+    const endDay = dateDayNumber(getCheckOut(item.row)) ?? startDay;
+    const previous = latestByKey.get(key);
+    const isContinuous = Boolean(
+      previous
+      && startDay !== null
+      && previous.endDay !== null
+      && startDay - previous.endDay <= 1,
+    );
+    if (!isContinuous) {
+      const next = { rows: [item.row], endDay: endDay === null ? null : Math.max(startDay ?? endDay, endDay) };
+      latestByKey.set(key, next);
+      output.push(next.rows);
+      continue;
+    }
+    previous.rows.push(item.row);
+    if (endDay !== null) previous.endDay = Math.max(previous.endDay ?? endDay, endDay);
+  }
+  return output;
+};
+
 const publicItineraryBaseUrl = () => {
   const baseUrl = String(process.env.PUBLIC_ITINERARY_BASE_URL || '').trim().replace(/\/+$/, '');
   if (!baseUrl) throw new Error('PUBLIC_ITINERARY_BASE_URL is not configured.');
@@ -158,23 +210,32 @@ export class HotelBlockingService {
       if (!roomsBySelection.has(selectionId)) roomsBySelection.set(selectionId, room);
     }
 
-    const groups = new Map<string, BlockRow[]>();
+    const preparedRows: BlockRow[] = [];
     for (const row of rows) {
       const room = roomsBySelection.get(Number(row.itinerary_plan_hotel_details_ID));
       const snapshot = parseJson(row.selected_price_snapshot) || {};
       const hotel = hotelById.get(Number(row.hotel_id || 0)) || hotelByName.get(normalizeText(snapshot.hotelName).toLowerCase());
       const provider = this.normalizeProvider(row.hotel_provider, row.hotel_booking_mode);
-      const hotelCode = normalizeText(row.hotel_code) || String(row.hotel_id || '');
-      const roomType = normalizeText(row.selected_price_snapshot && parseJson(row.selected_price_snapshot)?.roomType)
-        || String(room?.room_type_id || '');
-      const mealPlan = this.resolveMealPlan(room);
-      const key = [provider, hotelCode, roomType, mealPlan].join('|').toLowerCase();
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push({ ...row, __room: room, __hotel: hotel, __snapshot: snapshot });
+      const hotelCode = normalizeText(row.hotel_code) || normalizeText(snapshot.hotelCode) || String(row.hotel_id || '');
+      const hotelRecord = hotel as BlockRow | undefined;
+      const hotelIdentity = hotelCode || `name:${normalizeText(hotelRecord?.hotel_name || snapshot.hotelName || row.hotel_name).toLowerCase()}`;
+      preparedRows.push({
+        ...row,
+        __room: room,
+        __hotel: hotel,
+        __snapshot: snapshot,
+        __hotelGroupKey: `${provider}|${hotelIdentity.toLowerCase()}`,
+      });
     }
 
     const results: any[] = [];
-    for (const groupedRows of groups.values()) {
+    const groups = groupContinuousHotelRows(
+      preparedRows,
+      (row) => String(row.__hotelGroupKey || ''),
+      rowCheckIn,
+      rowCheckOut,
+    );
+    for (const groupedRows of groups) {
       const first = groupedRows[0];
       results.push(await this.upsertRequest({
         planId,
@@ -319,16 +380,24 @@ export class HotelBlockingService {
     const recipient = firstEmail(request.contact_email);
     if (!recipient) throw new BadRequestException('A verified hotel reservation email is required before resending.');
     let requestForEmail = request;
-    const shouldMarkBlocked = request.status === HOTEL_BLOCK_STATUS.REQUESTED;
-    const shouldSeedDefaultCutoff = [HOTEL_BLOCK_STATUS.REQUESTED, HOTEL_BLOCK_STATUS.BLOCKED].includes(request.status)
+    const shouldMarkAwaiting = !request.responded_at
+      && [HOTEL_BLOCK_STATUS.REQUESTED, HOTEL_BLOCK_STATUS.BLOCKED].includes(request.status);
+    const shouldSeedDefaultCutoff = [
+      HOTEL_BLOCK_STATUS.REQUESTED,
+      HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED,
+      HOTEL_BLOCK_STATUS.BLOCKED,
+    ].includes(request.status)
       && !request.cutoff_at;
-    if (shouldMarkBlocked || shouldSeedDefaultCutoff) {
+    if (shouldMarkAwaiting || shouldSeedDefaultCutoff) {
       const defaultCutoff = request.cutoff_at || await this.getDefaultHotelHoldCutoff();
       requestForEmail = await (this.prisma as any).$transaction(async (tx: any) => {
+        const nextStatus = shouldMarkAwaiting
+          ? HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED
+          : request.status;
         const updated = await tx.dvi_hotel_block_request.update({
           where: { id: request.id },
           data: {
-            status: HOTEL_BLOCK_STATUS.BLOCKED,
+            status: nextStatus,
             cutoff_at: defaultCutoff,
           },
         });
@@ -336,13 +405,13 @@ export class HotelBlockingService {
           data: {
             request_id: request.id,
             previous_status: request.status,
-            new_status: HOTEL_BLOCK_STATUS.BLOCKED,
-            event_type: shouldMarkBlocked ? 'REQUEST_MARKED_BLOCKED' : 'HOLD_CUTOFF_DEFAULTED',
+            new_status: nextStatus,
+            event_type: shouldMarkAwaiting ? 'REQUEST_MARKED_CONFIRMATION_AWAITED' : 'HOLD_CUTOFF_DEFAULTED',
             actor_type: actor.type || 'STAFF',
             actor_id: Number(actor.id || 0) || null,
             actor_name: actor.name || null,
-            notes: shouldMarkBlocked
-              ? 'Existing hotel block request marked blocked before email resend.'
+            notes: shouldMarkAwaiting
+              ? 'Unanswered hotel block request moved to awaiting confirmation before email resend.'
               : 'Default one-hour hold cutoff applied before email resend.',
           },
         });
@@ -536,25 +605,32 @@ export class HotelBlockingService {
   }) {
     const first = input.rows[0];
     const room = first.__room || {};
-    const snapshot = first.__snapshot || parseJson(first.selected_price_snapshot) || {};
+    const snapshot = rowSnapshot(first);
     const hotel = input.hotel || {};
     const provider = this.normalizeProvider(first.hotel_provider, first.hotel_booking_mode);
     const hotelCode = normalizeText(first.hotel_code) || String(first.hotel_id || '');
-    const roomType = normalizeText(snapshot.roomType) || String(room.room_type_id || 'Room');
-    const mealPlan = normalizeText(snapshot.mealPlan) || this.resolveMealPlan(room);
-    const checkIn = input.rows.map((row) => dateOnly(row.hotel_check_in_date || row.itinerary_route_date || row.__snapshot?.authoritativeCheckInDate)).filter(Boolean) as Date[];
-    const checkOut = input.rows.map((row) => dateOnly(row.hotel_check_out_date || row.__snapshot?.authoritativeCheckOutDate)).filter(Boolean) as Date[];
-    if (!checkIn.length && snapshot.authoritativeCheckInDate) {
-      const parsed = dateOnly(snapshot.authoritativeCheckInDate);
-      if (parsed) checkIn.push(parsed);
-    }
-    if (!checkOut.length && snapshot.authoritativeCheckOutDate) {
-      const parsed = dateOnly(snapshot.authoritativeCheckOutDate);
-      if (parsed) checkOut.push(parsed);
-    }
+    const stayDetails = input.rows.map((row) => {
+      const rowRoom = row.__room || {};
+      const rowData = rowSnapshot(row);
+      const checkIn = rowCheckIn(row);
+      const checkOut = rowCheckOut(row) || checkIn;
+      return {
+        checkIn,
+        checkOut,
+        roomType: normalizeText(rowData.roomType) || String(rowRoom.room_type_name || rowRoom.room_type_id || 'Room'),
+        mealPlan: normalizeText(rowData.mealPlan) || this.resolveMealPlan(rowRoom),
+        roomCount: Math.max(Number(row.total_no_of_rooms || rowRoom.room_qty || 0), 0),
+      };
+    });
+    const checkIn = stayDetails.map((detail) => detail.checkIn).filter(Boolean) as Date[];
+    const checkOut = stayDetails.map((detail) => detail.checkOut).filter(Boolean) as Date[];
     const start = checkIn.sort((a, b) => a.getTime() - b.getTime())[0] || null;
     const end = checkOut.sort((a, b) => b.getTime() - a.getTime())[0] || start;
-    const reservationKey = [input.planId, input.groupType, provider, hotelCode, roomType, mealPlan, start?.toISOString().slice(0, 10), end?.toISOString().slice(0, 10)].join('|');
+    const uniqueRoomTypes = Array.from(new Set(stayDetails.map((detail) => detail.roomType).filter(Boolean)));
+    const uniqueMealPlans = Array.from(new Set(stayDetails.map((detail) => detail.mealPlan).filter(Boolean)));
+    const roomType = uniqueRoomTypes.length === 1 ? uniqueRoomTypes[0] : 'Multiple room categories';
+    const mealPlan = uniqueMealPlans.length === 1 ? uniqueMealPlans[0] : 'Multiple meal plans';
+    const reservationKey = [input.planId, input.groupType, provider, hotelCode || normalizeText(hotel.hotel_name).toLowerCase(), start?.toISOString().slice(0, 10), end?.toISOString().slice(0, 10)].join('|');
     const email = firstEmail(hotel.hotel_email);
     const phone = normalizeText(hotel.hotel_mobile) || null;
     const contactSource = email || phone ? 'HOTEL_MASTER' : null;
@@ -574,10 +650,12 @@ export class HotelBlockingService {
       roomCount: Math.max(...input.rows.map((row) => Number(row.total_no_of_rooms || room.room_qty || 0)), 0),
       guest: input.guest || null,
       selectionIds,
+      stayDetails,
     };
-    // A submitted block request represents a blocked room until the hotelier
-    // responds with Confirmed, Waitlisted, or Unavailable.
-    const status = email ? HOTEL_BLOCK_STATUS.BLOCKED : HOTEL_BLOCK_STATUS.CONTACT_REQUIRED;
+    // A submitted request is awaiting the hotelier's response. The hotelier
+    // response link is the authoritative transition to Blocked, Waitlisted,
+    // Confirmed, or Unavailable.
+    const status = email ? HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED : HOTEL_BLOCK_STATUS.CONTACT_REQUIRED;
     const defaultCutoff = email ? await this.getDefaultHotelHoldCutoff() : null;
     const candidates = await (this.prisma as any).dvi_hotel_block_request.findMany({
       where: {
@@ -608,7 +686,7 @@ export class HotelBlockingService {
         if (email) {
           const delivery = await this.resendEmail(existing.id, input.actor || { type: 'STAFF' });
           return {
-            ...this.publicStaffView(existing),
+            ...(delivery.request || this.publicStaffView(existing)),
             created: false,
             emailQueued: true,
             emailDeliveryStatus: delivery.deliveryStatus,
@@ -812,6 +890,7 @@ export class HotelBlockingService {
   }
 
   private publicStaffView(row: BlockRow) {
+    const payload = parseJson(row.request_payload, {}) as BlockRow;
     return {
       id: row.id,
       itineraryPlanId: row.itinerary_plan_id,
@@ -833,10 +912,12 @@ export class HotelBlockingService {
       confirmationReference: row.confirmation_reference,
       confirmationChannel: row.confirmation_channel,
       version: row.version,
+      stayDetails: Array.isArray(payload.stayDetails) ? payload.stayDetails : [],
     };
   }
 
   private publicSupplierView(row: BlockRow) {
+    const payload = parseJson(row.request_payload, {}) as BlockRow;
     return {
       bookingReference: row.request_payload ? parseJson(row.request_payload)?.quotationPlanId : row.itinerary_plan_id,
       hotelName: row.hotel_name,
@@ -849,6 +930,7 @@ export class HotelBlockingService {
       status: row.status,
       cutoffAt: row.cutoff_at,
       respondedAt: row.responded_at,
+      stayDetails: Array.isArray(payload.stayDetails) ? payload.stayDetails : [],
     };
   }
 
