@@ -45,6 +45,7 @@ import {
 import {
   resolveItineraryExtraMarginConfig,
 } from './utils/itinerary-extra-margin.util';
+import { shouldSkipRepeatedHotelNight } from './utils/hotel-route-total.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -6853,9 +6854,7 @@ const hasRequiredVehicleSelection =
           // suppress consecutive rows when the snapshot explicitly declares
           // that the amount is a multi-night stay total; otherwise Day 2 of a
           // continuous TBO stay is incorrectly discarded as a duplicate.
-          const isFullStayAmount = Number(selected.numberOfNights ?? selected.nights ?? 1) > 1;
-          const isRepeatedNight = isFullStayAmount && Number.isFinite(selectedDate) && Number.isFinite(previousDate) &&
-            selectedDate - Number(previousDate) === 24 * 60 * 60 * 1000;
+          const isRepeatedNight = shouldSkipRepeatedHotelNight(selected, previousDate, selectedDate);
           if (isRepeatedNight) {
             lastSelectedStayDate.set(selectedKey, selectedDate);
             return sum;
