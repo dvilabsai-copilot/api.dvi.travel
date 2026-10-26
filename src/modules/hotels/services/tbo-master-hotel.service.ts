@@ -23,6 +23,26 @@ export const parseTboMasterListCell = (value: unknown): string[] => {
   return text.split(/[,;\n]/).map((item) => item.trim()).filter(Boolean);
 };
 
+const SOUTH_INDIAN_STATE_NAMES = [
+  'Andhra Pradesh',
+  'Karnataka',
+  'Kerala',
+  'Tamil Nadu',
+  'Telangana',
+  'Puducherry',
+  'Pondicherry',
+];
+
+const SOUTH_INDIAN_REGION_STATE_NAMES: Record<string, string[]> = {
+  'south-india': SOUTH_INDIAN_STATE_NAMES,
+  'andhra-pradesh': ['Andhra Pradesh'],
+  karnataka: ['Karnataka'],
+  kerala: ['Kerala'],
+  'tamil-nadu': ['Tamil Nadu'],
+  telangana: ['Telangana'],
+  puducherry: ['Puducherry', 'Pondicherry'],
+};
+
 const excelCellText = (value: unknown): string => {
   if (value === null || value === undefined) return '';
   if (value instanceof Date) return value.toISOString();
@@ -45,6 +65,13 @@ const toExcelJson = (value: unknown) => {
   try { return JSON.stringify(value); } catch { return String(value); }
 };
 
+const toFileNamePart = (value: unknown) => String(value ?? '')
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '')
+  .slice(0, 60);
+
 @Injectable()
 export class TboMasterHotelService {
   constructor(
@@ -53,9 +80,10 @@ export class TboMasterHotelService {
     private readonly gallery: TboMasterGalleryService,
   ) {}
 
-  async exportBulk() {
+  async exportBulk(query: { search?: string; cityCode?: string; priority?: string; region?: string } = {}) {
+    const where = await this.buildListWhere(query);
     const [items, categories] = await Promise.all([
-      this.prisma.tbo_hotel_master.findMany({ orderBy: { id: 'asc' } }),
+      this.prisma.tbo_hotel_master.findMany({ where, orderBy: { id: 'asc' } }),
       this.prisma.dvi_hotel_category.findMany({
         where: { deleted: 0 },
         select: { hotel_category_id: true, hotel_category_title: true, hotel_category_code: true },
@@ -81,11 +109,8 @@ export class TboMasterHotelService {
       'Star rating',
       'Hotel category ID',
       'Hotel image URL',
-      'Description',
       'Check-in time',
       'Check-out time',
-      'Created at',
-      'Updated at',
       'Status',
       'Hotel latitude',
       'Hotel longitude',
@@ -118,11 +143,8 @@ export class TboMasterHotelService {
         item.star_rating ?? '',
         item.hotel_category_id ?? 0,
         item.hotel_image_url || '',
-        item.description || '',
         item.check_in_time || '',
         item.check_out_time || '',
-        item.created_at || '',
-        item.updated_at || '',
         item.status ?? '',
         item.hotel_latitude || '',
         item.hotel_longitude || '',
@@ -131,15 +153,21 @@ export class TboMasterHotelService {
       ]);
     }
 
-    const widths = [32, 22, 32, 20, 36, 36, 12, 18, 16, 40, 20, 12, 18, 40, 50, 16, 16, 22, 22, 10, 18, 18, 12, 50];
+    const widths = [32, 22, 32, 20, 36, 36, 12, 18, 16, 40, 20, 12, 18, 40, 16, 16, 10, 18, 18, 12, 50];
     widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber > 1) row.alignment = { vertical: 'top', wrapText: true };
     });
     const buffer = await workbook.xlsx.writeBuffer();
+    const filterParts = [
+      query.region,
+      query.priority === '1' ? 'priority-only' : query.priority === '0' ? 'non-priority' : '',
+      query.search ? `search-${query.search}` : '',
+    ].map(toFileNamePart).filter(Boolean);
+    const filterSuffix = filterParts.length ? `-${filterParts.join('-')}` : '';
     return {
       buffer: Buffer.from(buffer as any),
-      fileName: `vsr-master-hotels-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      fileName: `vsr-master-hotels${filterSuffix}-${new Date().toISOString().slice(0, 10)}.xlsx`,
       count: items.length,
     };
   }
@@ -247,26 +275,57 @@ export class TboMasterHotelService {
     return { success: true, updated: rows.length };
   }
 
-  async list(query: { search?: string; cityCode?: string; page?: number; limit?: number; priority?: string }) {
-    const page = Math.max(1, Number(query.page || 1));
-    const limit = Math.min(100, Math.max(1, Number(query.limit || 20)));
+  private async buildListWhere(query: { search?: string; cityCode?: string; priority?: string; region?: string }) {
     const search = String(query.search || '').trim();
     const cityCode = String(query.cityCode || '').trim();
     const priority = query.priority === undefined || query.priority === '' ? undefined : Number(query.priority) ? 1 : 0;
-    const where: any = {
+    const region = String(query.region || '').trim().toLowerCase();
+    const filters: Record<string, unknown>[] = [];
+    const selectedStateNames = SOUTH_INDIAN_REGION_STATE_NAMES[region];
+    if (selectedStateNames) {
+      const states = await this.prisma.dvi_states.findMany({
+        where: { deleted: 0, name: { in: selectedStateNames } },
+        select: { id: true },
+      });
+      const stateIds = states.map((state) => state.id);
+      const cities = stateIds.length
+        ? await this.prisma.dvi_cities.findMany({
+            where: { deleted: 0, state_id: { in: stateIds } },
+            select: { name: true, tbo_city_code: true },
+          })
+        : [];
+      const cityCodes = cities.map((city) => String(city.tbo_city_code || '').trim()).filter(Boolean);
+      const cityNames = cities.map((city) => String(city.name || '').trim()).filter(Boolean);
+      const regionWhere = {
+        OR: [
+          ...(cityCodes.length ? [{ tbo_city_code: { in: cityCodes } }] : []),
+          ...(cityNames.length ? [{ city_name: { in: cityNames } }] : []),
+        ],
+      };
+      filters.push(regionWhere);
+    }
+    if (search) {
+      filters.push({
+        OR: [
+          { hotel_name: { contains: search } },
+          { tbo_hotel_code: { contains: search } },
+          { city_name: { contains: search } },
+        ],
+      });
+    }
+    const where = {
       status: 1,
       ...(cityCode ? { tbo_city_code: cityCode } : {}),
       ...(priority === undefined ? {} : { is_priority: priority }),
-      ...(search
-        ? {
-            OR: [
-              { hotel_name: { contains: search } },
-              { tbo_hotel_code: { contains: search } },
-              { city_name: { contains: search } },
-            ],
-          }
-        : {}),
+      ...(filters.length ? { AND: filters } : {}),
     };
+    return where;
+  }
+
+  async list(query: { search?: string; cityCode?: string; page?: number; limit?: number; priority?: string; region?: string }) {
+    const page = Math.max(1, Number(query.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(query.limit || 20)));
+    const where = await this.buildListWhere(query);
     const [total, items] = await Promise.all([
       this.prisma.tbo_hotel_master.count({ where }),
       this.prisma.tbo_hotel_master.findMany({

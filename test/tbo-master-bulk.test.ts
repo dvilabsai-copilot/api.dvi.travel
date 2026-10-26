@@ -13,9 +13,10 @@ test('normalizes bulk import headers and list cells', () => {
   assert.deepEqual(parseTboMasterListCell('["Pool","Wi-Fi"]'), ['Pool', 'Wi-Fi']);
 });
 test('exports editable fields first and identifies rows by hotel_id', async () => {
+  let exportArgs: any;
   const prisma = {
     tbo_hotel_master: {
-      findMany: async () => [{
+      findMany: async (args: any) => { exportArgs = args; return [{
         id: 42,
         hotel_name: 'Example Hotel',
         hotel_category_id: 7,
@@ -39,20 +40,54 @@ test('exports editable fields first and identifies rows by hotel_id', async () =
         is_priority: 0,
         amenities: ['Wi-Fi'],
         reviews: [],
-      }],
+      }]; },
     },
     dvi_hotel_category: {
       findMany: async () => [{ hotel_category_id: 7, hotel_category_title: 'Premium', hotel_category_code: 'PREMIUM' }],
     },
   };
   const service = new TboMasterHotelService(prisma as any, null as any, null as any);
-  const result = await service.exportBulk();
+  const result = await service.exportBulk({ search: 'Example', priority: '1' });
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(result.buffer as any);
   const row = workbook.worksheets[0].getRow(1).values as unknown[];
   assert.deepEqual(row.slice(1, 7), ['Hotel name', 'Hotel category', 'Hotel email', 'Hotel phone', 'Facilities', 'Amenities']);
+  assert.equal(row.includes('Description'), false);
+  assert.equal(row.includes('Created at'), false);
+  assert.equal(row.includes('Updated at'), false);
+  assert.deepEqual(exportArgs.where, {
+    status: 1,
+    is_priority: 1,
+    AND: [{
+      OR: [
+        { hotel_name: { contains: 'Example' } },
+        { tbo_hotel_code: { contains: 'Example' } },
+        { city_name: { contains: 'Example' } },
+      ],
+    }],
+  });
   assert.equal(workbook.worksheets[0].getRow(2).getCell(7).value, 42);
   assert.equal(workbook.worksheets[0].getRow(2).getCell(2).value, 'Premium');
+  assert.match(result.fileName, /^vsr-master-hotels-priority-only-search-example-\d{4}-\d{2}-\d{2}\.xlsx$/);
+});
+
+test('applies the South India region to the bulk export', async () => {
+  let exportArgs: any;
+  let stateArgs: any;
+  const prisma = {
+    tbo_hotel_master: { findMany: async (args: any) => { exportArgs = args; return []; } },
+    dvi_hotel_category: { findMany: async () => [] },
+    dvi_states: { findMany: async (args: any) => { stateArgs = args; return [{ id: 10 }] } },
+    dvi_cities: { findMany: async () => [{ name: 'Munnar', tbo_city_code: 'MUN' }] },
+  };
+  const service = new TboMasterHotelService(prisma as any, null as any, null as any);
+  await service.exportBulk({ region: 'south-india' });
+  assert.deepEqual(exportArgs.where, {
+    status: 1,
+    AND: [{ OR: [{ tbo_city_code: { in: ['MUN'] } }, { city_name: { in: ['Munnar'] } }] }],
+  });
+  await service.exportBulk({ region: 'kerala' });
+  assert.deepEqual(stateArgs.where.name, { in: ['Kerala'] });
 });
 
 test('imports only the six editable fields by hotel_id', async () => {
