@@ -9,6 +9,7 @@ import {
   resolveCityRecordByName,
 } from '../utils/city-normalization.util';
 import { getCachedStoredLocationPair } from '../../locations/stored-location-cache.helper';
+import { shouldSuppressSyntheticLocalPickup } from './helpers/local-pickup-policy.helper';
 
 function toNum(v: any): number {
   const n = typeof v === 'number' ? v : Number(String(v ?? '').trim());
@@ -326,7 +327,13 @@ export type VehicleCalcRunCache = {
     sightseeingSeconds: number;
   }>;
   routeLocationId: Map<string, number>;
-  localPoint: Map<number, { name: string; lat: number | null; lng: number | null; source: string }>;
+  localPoint: Map<number, {
+    name: string;
+    lat: number | null;
+    lng: number | null;
+    source: string;
+    hasSelectedHotel: boolean;
+  }>;
   permitCharges: Map<string, number>;
   globalSettings?: {
     localSpeed: number;
@@ -1916,7 +1923,13 @@ async function resolveLocalHotelOrCityPoint(
   itinerary_plan_ID: number,
   route: RouteData,
   cache?: VehicleCalcRunCache,
-): Promise<{ name: string; lat: number | null; lng: number | null; source: string }> {
+): Promise<{
+  name: string;
+  lat: number | null;
+  lng: number | null;
+  source: string;
+  hasSelectedHotel: boolean;
+}> {
   const cacheKey = Number(route.itinerary_route_ID || 0);
   const cached = cache?.localPoint.get(cacheKey);
   if (cached) {
@@ -1932,6 +1945,10 @@ async function resolveLocalHotelOrCityPoint(
     orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
     select: { hotel_id: true, hotel_code: true, itinerary_route_location: true },
   });
+  const tboCode = String(planHotel?.hotel_code || '').trim();
+  const hasSelectedHotel =
+    Boolean(planHotel) &&
+    (Number(planHotel?.hotel_id || 0) > 0 || tboCode.length > 0);
 
   if (planHotel?.hotel_id && Number(planHotel.hotel_id) > 0) {
     const dviHotel = await prisma.dvi_hotel.findFirst({
@@ -1941,13 +1958,18 @@ async function resolveLocalHotelOrCityPoint(
     const lat = toFiniteCoord(dviHotel?.hotel_latitude);
     const lng = toFiniteCoord(dviHotel?.hotel_longitude);
     if (lat !== null && lng !== null) {
-      const value = { name: String(dviHotel?.hotel_name || route.location_name), lat, lng, source: 'dvi_hotel' };
+      const value = {
+        name: String(dviHotel?.hotel_name || route.location_name),
+        lat,
+        lng,
+        source: 'dvi_hotel',
+        hasSelectedHotel,
+      };
       cache?.localPoint.set(cacheKey, value);
       return value;
     }
   }
 
-  const tboCode = String(planHotel?.hotel_code || '').trim();
   if (tboCode) {
     const tboHotel = await prisma.tbo_hotel_master.findFirst({
       where: { tbo_hotel_code: tboCode, status: 1 },
@@ -1956,7 +1978,13 @@ async function resolveLocalHotelOrCityPoint(
     const lat = toFiniteCoord(tboHotel?.hotel_latitude);
     const lng = toFiniteCoord(tboHotel?.hotel_longitude);
     if (lat !== null && lng !== null) {
-      const value = { name: String(tboHotel?.hotel_name || route.location_name), lat, lng, source: 'tbo_hotel_master' };
+      const value = {
+        name: String(tboHotel?.hotel_name || route.location_name),
+        lat,
+        lng,
+        source: 'tbo_hotel_master',
+        hasSelectedHotel,
+      };
       cache?.localPoint.set(cacheKey, value);
       return value;
     }
@@ -1984,12 +2012,19 @@ async function resolveLocalHotelOrCityPoint(
       lat: cityLat,
       lng: cityLng,
       source: 'city_fallback',
+      hasSelectedHotel,
     };
     cache?.localPoint.set(cacheKey, value);
     return value;
   }
 
-  const value = { name: route.location_name, lat: null, lng: null, source: 'old_fallback' };
+  const value = {
+    name: route.location_name,
+    lat: null,
+    lng: null,
+    source: 'old_fallback',
+    hasSelectedHotel,
+  };
   cache?.localPoint.set(cacheKey, value);
   return value;
 }
@@ -2603,11 +2638,13 @@ const isSameVehicleOriginCity =
   routeCity === originCity &&
   destinationCity === originCity;
 
-suppressSyntheticLocalPickup =
-  travel_type === 1 &&
-  route_count > 1 &&
-  isSameVehicleOriginCity &&
-  localPoint.source === 'city_fallback';
+suppressSyntheticLocalPickup = shouldSuppressSyntheticLocalPickup({
+  travelType: travel_type,
+  routeCount: route_count,
+  isSameVehicleOriginCity,
+  localPointSource: localPoint.source,
+  hasSelectedHotel: localPoint.hasSelectedHotel,
+});
 
     if (
         localPoint.lat !== null &&

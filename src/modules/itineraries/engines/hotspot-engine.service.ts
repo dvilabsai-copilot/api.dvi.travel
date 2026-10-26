@@ -15,6 +15,7 @@ import {
   RebuildWarning,
 } from "./helpers/types";
 import { buildRebuildReport } from "./helpers/rebuild-report.helper";
+import { findTerminalTravelAndOvernightRows } from "./helpers/terminal-route-pair.helper";
 import type { SameCityAllocationPlan } from "../services/same-city-cross-day-optimizer.service";
 
 type Tx = Prisma.TransactionClient;
@@ -2093,14 +2094,6 @@ for (const routeId of terminalRouteIds) {
     (row: any) => Number(row.item_type) === 4,
   );
 
-  const finalTravels = rows.filter(
-    (row: any) => Number(row.item_type) === 5,
-  );
-
-  const overnightMarkers = rows.filter(
-    (row: any) => Number(row.item_type) === 6,
-  );
-
   // Apply strict validation to multi-attraction routes.
   if (visits.length < 2) continue;
 
@@ -2111,18 +2104,15 @@ for (const routeId of terminalRouteIds) {
     ...visits.map((row: any) => timestamp(row.hotspot_end_time)),
   );
 
-  if (
-    !Number.isFinite(lastVisitEnd) ||
-    finalTravels.length !== 1 ||
-    overnightMarkers.length !== 1
-  ) {
+  const terminalPair = findTerminalTravelAndOvernightRows(rows, lastVisitEnd);
+
+  if (!terminalPair) {
     throw new Error(
       `[SCRUM-440] Invalid terminal route structure: route ${routeId}`,
     );
   }
 
-  const finalTravel = finalTravels[0];
-  const overnight = overnightMarkers[0];
+  const { finalTravel, overnight } = terminalPair;
 
   const travelStart = timestamp(finalTravel.hotspot_start_time);
   const travelEnd = timestamp(finalTravel.hotspot_end_time);
