@@ -6,6 +6,7 @@ import {
   hotelHoldDecision,
   hotelHoldDurationHours,
   HotelBlockingService,
+  resolveHotelContact,
 } from '../src/modules/itineraries/services/hotel-blocking.service';
 import { renderHotelBlockEmailHtml } from '../src/modules/itineraries/templates/hotel-block-email.template';
 
@@ -42,6 +43,13 @@ test('blocks holds inside the minimum lead band and the 48-hour no-block window'
   assert.equal(hotelHoldDecision('2026-01-16T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 4);
   assert.equal(hotelHoldDecision('2026-01-31T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 12);
   assert.equal(hotelHoldDecision('2026-02-01T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 48);
+});
+
+test('uses the TBO master hotel email only when the primary hotel email is empty', () => {
+  const tboMaster = { hotel_name: 'TBO HOTEL', hotel_email: 'tbo@example.test', hotel_mobile: '+911111111111' };
+  assert.equal(resolveHotelContact({ hotel_name: 'TBO HOTEL', hotel_email: null }, tboMaster).hotel_email, 'tbo@example.test');
+  assert.equal(resolveHotelContact({ hotel_name: 'TBO HOTEL', hotel_email: 'primary@example.test' }, tboMaster).hotel_email, 'primary@example.test');
+  assert.equal(resolveHotelContact(undefined, tboMaster).hotel_mobile, '+911111111111');
 });
 
 test('groups consecutive dates for the same hotel even when room categories differ', () => {

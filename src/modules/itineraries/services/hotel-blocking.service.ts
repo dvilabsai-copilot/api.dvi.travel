@@ -58,6 +58,19 @@ const firstEmail = (value: unknown) => {
   return email || null;
 };
 
+export const resolveHotelContact = (hotel?: BlockRow, tboMaster?: BlockRow): BlockRow => {
+  const primaryEmail = firstEmail(hotel?.hotel_email);
+  const fallbackEmail = firstEmail(tboMaster?.hotel_email);
+  const primaryPhone = normalizeText(hotel?.hotel_mobile);
+  const fallbackPhone = normalizeText(tboMaster?.hotel_mobile);
+  return {
+    ...(hotel || {}),
+    hotel_name: normalizeText(hotel?.hotel_name) || normalizeText(tboMaster?.hotel_name) || null,
+    hotel_email: primaryEmail || fallbackEmail || null,
+    hotel_mobile: primaryPhone || fallbackPhone || null,
+  };
+};
+
 const dateOnly = (value: unknown): Date | null => {
   if (!value) return null;
   const date = new Date(String(value));
@@ -343,6 +356,22 @@ export class HotelBlockingService {
       : [];
     const hotelById = new Map(hotels.concat(namedHotels).map((hotel: BlockRow) => [Number(hotel.hotel_id), hotel]));
     const hotelByName = new Map(namedHotels.map((hotel: BlockRow) => [normalizeText(hotel.hotel_name).toLowerCase(), hotel]));
+    const tboHotelCodes = Array.from(new Set(rows.flatMap((row: BlockRow) => {
+      const snapshot = parseJson(row.selected_price_snapshot) || {};
+      return [row.hotel_code, snapshot.hotelCode, row.provider_hotel_code]
+        .map(normalizeText)
+        .filter(Boolean);
+    })));
+    const tboMasterModel = (this.prisma as any).tbo_hotel_master;
+    const tboMasters = tboHotelCodes.length && tboMasterModel?.findMany
+      ? await tboMasterModel.findMany({
+          where: { tbo_hotel_code: { in: tboHotelCodes } },
+          select: { tbo_hotel_code: true, hotel_name: true, hotel_email: true, hotel_mobile: true },
+        })
+      : [];
+    const tboMasterByCode = new Map(
+      tboMasters.map((hotel: BlockRow) => [normalizeText(hotel.tbo_hotel_code), hotel]),
+    );
     const roomRows = await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findMany({
       where: {
         itinerary_plan_id: planId,
@@ -362,15 +391,24 @@ export class HotelBlockingService {
     for (const row of rows) {
       const room = roomsBySelection.get(Number(row.itinerary_plan_hotel_details_ID));
       const snapshot = parseJson(row.selected_price_snapshot) || {};
-      const hotel = hotelById.get(Number(row.hotel_id || 0)) || hotelByName.get(normalizeText(snapshot.hotelName).toLowerCase());
+      const hotel = (
+        hotelById.get(Number(row.hotel_id || 0))
+        || hotelByName.get(normalizeText(snapshot.hotelName).toLowerCase())
+      ) as BlockRow | undefined;
       const provider = this.normalizeProvider(row.hotel_provider, row.hotel_booking_mode);
       const hotelCode = normalizeText(row.hotel_code) || normalizeText(snapshot.hotelCode) || String(row.hotel_id || '');
-      const hotelRecord = hotel as BlockRow | undefined;
+      const tboMaster = provider === 'VSR'
+        ? tboMasterByCode.get(hotelCode) as BlockRow | undefined
+        : undefined;
+      const hotelRecord = hotel || tboMaster
+        ? resolveHotelContact(hotel, tboMaster)
+        : undefined;
       const hotelIdentity = hotelCode || `name:${normalizeText(hotelRecord?.hotel_name || snapshot.hotelName || row.hotel_name).toLowerCase()}`;
       preparedRows.push({
         ...row,
+        hotel_code: normalizeText(row.hotel_code) || hotelCode || null,
         __room: room,
-        __hotel: hotel,
+        __hotel: hotelRecord,
         __snapshot: snapshot,
         __hotelGroupKey: `${provider}|${hotelIdentity.toLowerCase()}`,
       });
