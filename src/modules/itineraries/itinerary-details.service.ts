@@ -34,6 +34,7 @@ import {
 } from './utils/hotel-selection-identity.util';
 import {
   projectHotelPayablePricing,
+  resolveOrdinaryMealPlanCostForNight,
   resolveSelectedHotelAmount,
   resolveStoredHotelPayablePricing,
 } from './utils/hotel-payable-pricing.util';
@@ -45,6 +46,7 @@ import {
 import {
   resolveItineraryExtraMarginConfig,
 } from './utils/itinerary-extra-margin.util';
+import { shouldSkipRepeatedHotelNight } from './utils/hotel-route-total.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -6853,9 +6855,7 @@ const hasRequiredVehicleSelection =
           // suppress consecutive rows when the snapshot explicitly declares
           // that the amount is a multi-night stay total; otherwise Day 2 of a
           // continuous TBO stay is incorrectly discarded as a duplicate.
-          const isFullStayAmount = Number(selected.numberOfNights ?? selected.nights ?? 1) > 1;
-          const isRepeatedNight = isFullStayAmount && Number.isFinite(selectedDate) && Number.isFinite(previousDate) &&
-            selectedDate - Number(previousDate) === 24 * 60 * 60 * 1000;
+          const isRepeatedNight = shouldSkipRepeatedHotelNight(selected, previousDate, selectedDate);
           if (isRepeatedNight) {
             lastSelectedStayDate.set(selectedKey, selectedDate);
             return sum;
@@ -6932,20 +6932,35 @@ const hasRequiredVehicleSelection =
             selected.hotelMarginAmount ?? selected.hotelMarginTotalAmount ?? selected.hotelMarginStayAmount,
           );
           const selectedProvider = String(selected.provider || persistedRoute?.hotel_provider || '').trim().toLowerCase();
-          const selectedSnapshotMealPlanBreakdown = selectedSnapshot.mealPlanBreakdown as Record<string, unknown> | undefined;
           const selectedMealPlanCost = ['tbo', 'vsr'].includes(selectedProvider)
             ? 0
-            : firstPositiveAmount(
-                selectedNightlyRate?.mealPlanBreakdown?.totalMealPlanCost,
-                selectedNightlyRate?.mealPlanBreakdown?.totalDinnerCost,
-                selected.mealPlanBreakdown?.totalMealPlanCost,
-                selected.mealPlanBreakdown?.totalDinnerCost,
-                selectedSnapshotMealPlanBreakdown?.totalMealPlanCost,
-                selectedSnapshotMealPlanBreakdown?.totalDinnerCost,
-                selected.mealPlanCost,
-                selected.totalMealPlanCost,
-                persistedRoute?.total_hotel_meal_plan_cost,
-              );
+            : resolveOrdinaryMealPlanCostForNight({
+                provider: selectedProvider,
+                mealPlanBreakdown:
+                  selectedNightlyRate?.mealPlanBreakdown ??
+                  selected.mealPlanBreakdown ??
+                  selectedSnapshot.mealPlanBreakdown,
+                nightlyMealPlanBreakdown:
+                  selected.nightlyMealPlanBreakdown ??
+                  selectedSnapshot.nightlyMealPlanBreakdown,
+                nightlyRates: selectedNightlyRates,
+                routeDate: selected.routeDate || selected.date,
+                totalHotelMealPlanCost:
+                  selectedNightlyRate?.totalHotelMealPlanCost ??
+                  selected.totalHotelMealPlanCost ??
+                  selectedSnapshot.totalHotelMealPlanCost ??
+                  persistedRoute?.total_hotel_meal_plan_cost,
+                hotelMealPlanCost:
+                  selectedNightlyRate?.hotelMealPlanCost ??
+                  selected.hotelMealPlanCost ??
+                  selectedSnapshot.hotelMealPlanCost,
+                mealPlanCost:
+                  selectedNightlyRate?.mealPlanCost ??
+                  selected.mealPlanCost,
+                divideAggregateAcrossNights:
+                  String(selectedSnapshot.pricingScope || '').trim().toUpperCase() !== 'ROUTE_NIGHT' &&
+                  selectedNightlyRates.length > 1,
+              });
           const marginableComponentTotal = roomBase + extraBed + childWithBed + childWithoutBed;
           const componentTotal = marginableComponentTotal + selectedMealPlanCost;
           const selectedMarginPercentage = readAmount(
@@ -7085,6 +7100,10 @@ const hasRequiredVehicleSelection =
           childWithBedCost = Number(selectedSummary.childWithBedCost.toFixed(2));
           childWithoutBedCost = Number(selectedSummary.childWithoutBedCost.toFixed(2));
           hotelMealPlanCost = Number(selectedSummary.selectedMealPlanCost.toFixed(2));
+          // Replace any legacy aggregate meal total accumulated from route rows
+          // with the canonical selected-summary total. This prevents a
+          // multi-night meal aggregate from being counted once per row.
+          totalMealCost = hotelMealPlanCost;
           hotelMarginCost = Number(selectedSummary.hotelMarginCost.toFixed(2));
           totalRoomCost = Number((hotelRoomBaseCost + extraBedCost + childWithBedCost + childWithoutBedCost).toFixed(2));
         }
