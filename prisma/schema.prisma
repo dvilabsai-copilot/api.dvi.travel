@@ -6099,6 +6099,7 @@ model tbo_hotel_master {
   id                Int       @id @default(autoincrement())
   tbo_hotel_code    String    @unique @db.VarChar(50)
   tbo_city_code     String    @db.VarChar(10)
+  dvi_city_id       Int?
   hotel_name        String?   @db.VarChar(255)
   hotel_address     String?   @db.VarChar(500)
   city_name         String?   @db.VarChar(100)
@@ -6121,6 +6122,7 @@ model tbo_hotel_master {
   reviews           Json?
 
   @@index([tbo_city_code], map: "idx_tbo_hotel_master_city_code")
+  @@index([dvi_city_id], map: "idx_tbo_hotel_master_dvi_city_id")
   @@index([star_rating], map: "idx_tbo_hotel_master_star_rating")
   @@index([hotel_category_id], map: "idx_tbo_hotel_master_category_id")
   @@index([created_at], map: "idx_tbo_hotel_master_created_at")

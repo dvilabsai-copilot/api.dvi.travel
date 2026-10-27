@@ -337,19 +337,24 @@ export class TboMasterHotelService {
     ]);
     const galleryByCode = await this.gallery.getHotelImagesForCodes(items.map((item) => item.tbo_hotel_code));
     const roomImages = await Promise.all(items.map((item) => this.gallery.getRoomImages(item.tbo_hotel_code)));
+    const cityIds = await this.resolveDviCityIds(items);
     return {
       page,
       limit,
       total,
-      items: items.map((item, index) => this.toResponse(item, galleryByCode.get(item.tbo_hotel_code) || [], roomImages[index] || [])),
+      items: items.map((item, index) => this.toResponse(item, galleryByCode.get(item.tbo_hotel_code) || [], roomImages[index] || [], cityIds.get(Number(item.id)) ?? null)),
     };
   }
 
   async get(code: string) {
     const item = await this.prisma.tbo_hotel_master.findUnique({ where: { tbo_hotel_code: String(code).trim() } });
     if (!item) throw new NotFoundException('TBO master hotel not found');
-    const [images, roomGallery] = await Promise.all([this.gallery.getHotelImages(item.tbo_hotel_code), this.gallery.getRoomImages(item.tbo_hotel_code)]);
-    return this.toResponse(item, images, roomGallery);
+    const [images, roomGallery, cityIds] = await Promise.all([
+      this.gallery.getHotelImages(item.tbo_hotel_code),
+      this.gallery.getRoomImages(item.tbo_hotel_code),
+      this.resolveDviCityIds([item]),
+    ]);
+    return this.toResponse(item, images, roomGallery, cityIds.get(Number(item.id)) ?? null);
   }
 
   async update(code: string, dto: UpdateTboMasterHotelDto, userId?: number) {
@@ -359,6 +364,18 @@ export class TboMasterHotelService {
     if (dto.name !== undefined) data.hotel_name = dto.name;
     if (dto.address !== undefined) data.hotel_address = dto.address;
     if (dto.city !== undefined) data.city_name = dto.city;
+    if (dto.cityId !== undefined) {
+      if (dto.cityId === null) {
+        data.dvi_city_id = null;
+      } else {
+        const city = await this.prisma.dvi_cities.findFirst({
+          where: { id: dto.cityId, deleted: 0 },
+          select: { id: true },
+        });
+        if (!city) throw new BadRequestException('The selected DVI city does not exist or is deleted');
+        data.dvi_city_id = city.id;
+      }
+    }
     if (dto.rating !== undefined) data.star_rating = dto.rating;
     if (dto.categoryId !== undefined) data.hotel_category_id = dto.categoryId || 0;
     if (dto.imageUrl !== undefined) data.hotel_image_url = dto.imageUrl;
@@ -429,11 +446,37 @@ export class TboMasterHotelService {
     };
   }
 
-  private toResponse(item: any, images: any[] = [], roomGallery: any[] = []) {
+  private async resolveDviCityIds(items: any[]) {
+    const explicitIds = [...new Set(items.map((item) => Number(item.dvi_city_id)).filter((id) => Number.isInteger(id) && id > 0))];
+    const codes = [...new Set(items.map((item) => String(item.tbo_city_code || '').trim()).filter(Boolean))];
+    const names = [...new Set(items.map((item) => String(item.city_name || '').trim()).filter(Boolean))];
+    const [explicitCities, byCode, byName] = await Promise.all([
+      explicitIds.length
+        ? this.prisma.dvi_cities.findMany({ where: { id: { in: explicitIds }, deleted: 0 }, select: { id: true } })
+        : [],
+      codes.length ? this.prisma.dvi_cities.findMany({ where: { deleted: 0, tbo_city_code: { in: codes } }, select: { id: true, tbo_city_code: true } }) : [],
+      names.length ? this.prisma.dvi_cities.findMany({ where: { deleted: 0, name: { in: names } }, select: { id: true, name: true } }) : [],
+    ]);
+    const validExplicitIds = new Set(explicitCities.map((city) => Number(city.id)));
+    const idByCode = new Map<string, number>(byCode.map((city): [string, number] => [String(city.tbo_city_code || '').trim(), Number(city.id)]));
+    const idByName = new Map<string, number>(byName.map((city): [string, number] => [String(city.name || '').trim().toLowerCase(), Number(city.id)]));
+    return new Map<number, number | null>(items.map((item): [number, number | null] => {
+      const explicitId = Number(item.dvi_city_id);
+      const resolvedId = validExplicitIds.has(explicitId)
+        ? explicitId
+        : idByCode.get(String(item.tbo_city_code || '').trim())
+          ?? idByName.get(String(item.city_name || '').trim().toLowerCase())
+          ?? null;
+      return [Number(item.id), resolvedId];
+    }));
+  }
+
+  private toResponse(item: any, images: any[] = [], roomGallery: any[] = [], cityId: number | null = null) {
     return {
       id: item.id,
       hotelCode: item.tbo_hotel_code,
       cityCode: item.tbo_city_code,
+      cityId,
       name: item.hotel_name,
       city: item.city_name,
       address: item.hotel_address,
