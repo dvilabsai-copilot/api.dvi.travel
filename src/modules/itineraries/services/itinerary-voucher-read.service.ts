@@ -223,11 +223,49 @@ for (const hotel of hotels as any[]) {
   const hotelCode = String(hotel.hotel_code || '').trim();
   const provider = String(hotel.hotel_provider || '').trim().toLowerCase();
 
-  if (hotelId <= 0 && (!provider || !hotelCode)) continue;
+  const rawSnapshot = hotel.selected_price_snapshot;
+
+  let priceSnapshot: Record<string, any> = {};
+
+  if (rawSnapshot && typeof rawSnapshot === 'object' && !Array.isArray(rawSnapshot)) {
+    priceSnapshot = rawSnapshot;
+  } else if (typeof rawSnapshot === 'string' && rawSnapshot.trim()) {
+    try {
+      const parsed = JSON.parse(rawSnapshot);
+
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        priceSnapshot = parsed;
+      }
+    } catch {
+      priceSnapshot = {};
+    }
+  }
+
+  const snapshotHotelName = String(
+    priceSnapshot.hotelName ||
+    priceSnapshot.hotel_name ||
+    '',
+  ).trim();
+
+  const hasHotelIdentity =
+    hotelId > 0 ||
+    Boolean(provider && hotelCode);
+
+  const hasSelectedHotelSnapshot =
+    Number(hotel.hotel_required || 0) === 1 &&
+    Boolean(snapshotHotelName);
+
+  if (!hasHotelIdentity && !hasSelectedHotelSnapshot) {
+    continue;
+  }
 
   const groupKey = hotelId > 0
     ? `local:${hotelId}`
-    : `supplier:${provider}:${hotelCode}`;
+    : provider && hotelCode
+      ? `supplier:${provider}:${hotelCode}`
+      : `snapshot:${snapshotHotelName.toLowerCase()}:${String(
+          hotel.itinerary_route_location || '',
+        ).trim().toLowerCase()}`;
 
       const dateKey = this.toDateOnly(hotel.itinerary_route_date);
       const hotelMaster = hotelById.get(hotelId);
@@ -240,13 +278,7 @@ for (const hotel of hotels as any[]) {
         ),
       );
 
- if (!hotelGroupMap.has(groupKey)) {
-  const snapshot = (hotel as any).selected_price_snapshot;
-  const priceSnapshot =
-    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
-      ? snapshot
-      : {};
-
+if (!hotelGroupMap.has(groupKey)) {
   hotelGroupMap.set(groupKey, {
     routeId: Number(hotel.itinerary_route_id || 0),
     hotelId,
