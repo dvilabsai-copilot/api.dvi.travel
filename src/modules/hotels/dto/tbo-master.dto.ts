@@ -4,6 +4,7 @@ export class UpdateTboMasterHotelDto {
   @IsOptional() @IsString() name?: string | null;
   @IsOptional() @IsString() address?: string | null;
   @IsOptional() @IsString() city?: string | null;
+  @IsOptional() @IsInt() @Min(1) cityId?: number | null;
   @IsOptional() @IsInt() @Min(0) @Max(5) rating?: number | null;
   @IsOptional() @IsInt() @Min(0) categoryId?: number | null;
   @IsOptional() @IsString() imageUrl?: string | null;
