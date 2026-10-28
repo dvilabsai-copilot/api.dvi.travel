@@ -1670,9 +1670,17 @@ async downloadVehicleVoucherPdf(
     res: Response,
   ) {
     const data: any = await this.itinerariesService.getVoucherDetails(itineraryPlanId);
-    const settings = await this.prisma.dvi_global_settings.findFirst({
-      where: { status: 1, deleted: 0 },
-    });
+   const settings = await this.prisma.dvi_global_settings.findFirst({
+  where: { status: 1, deleted: 0 },
+  select: {
+    company_name: true,
+    company_address: true,
+    company_pincode: true,
+    company_logo: true,
+    company_contact_no: true,
+    company_email_id: true,
+  },
+});
     const quoteId = String(data?.summary?.quotationNo || itineraryPlanId);
     const fileName =
       scope === 'hotel'
@@ -1796,10 +1804,28 @@ async downloadVehicleVoucherPdf(
       this.drawSectionBand(doc, 'Hotel Voucher Details', doc.y);
       doc.y += 34;
 
-      if (hotelGroups.length === 0) {
-        doc.font('Helvetica').fontSize(10).fillColor('#5A5268').text('No hotel voucher rows found for this itinerary.', 40, doc.y + 10);
-        doc.y += 34;
-      } else {
+if (hotelGroups.length === 0) {
+  doc.font('Helvetica-Bold')
+    .fontSize(11)
+    .fillColor('#9A3412')
+    .text(
+      'NO CONFIRMED HOTEL BOOKING AVAILABLE',
+      40,
+      doc.y + 10,
+    );
+
+  doc.font('Helvetica')
+    .fontSize(9)
+    .fillColor('#5A5268')
+    .text(
+      'This document is for itinerary reference only. It is not a valid hotel booking confirmation or accommodation voucher.',
+      40,
+      doc.y + 32,
+      { width: doc.page.width - 80 },
+    );
+
+  doc.y += 75;
+} else {
         const hotelHeaderY = doc.y;
         doc.rect(40, hotelHeaderY, doc.page.width - 80, 22).fillAndStroke('#FBF8FF', '#E7DFF0');
         doc.font('Helvetica-Bold').fontSize(9).fillColor('#3F3654');

@@ -79,7 +79,14 @@ export class ItineraryVoucherReadService {
     ] = await Promise.all([
       shouldShowHotels
         ? this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
-            where: { itinerary_plan_id: itineraryPlanId, deleted: 0, status: 1 },
+            where: {
+              itinerary_plan_id: itineraryPlanId,
+              deleted: 0,
+              OR: [
+                { status: 1 },
+                { hotel_required: 1, hotel_cancellation_status: 1 },
+              ],
+            },
             orderBy: [{ itinerary_route_date: 'asc' }, { confirmed_itinerary_plan_hotel_details_ID: 'asc' }],
           })
         : Promise.resolve([] as any[]),
@@ -188,13 +195,58 @@ export class ItineraryVoucherReadService {
     for (const branch of vendorBranches as any[]) {
       vendorBranchById.set(Number(branch.vendor_branch_id), branch);
     }
+const vehicleTypeById = new Map<number, string>();
+for (const vehicleType of vehicleTypes) {
+  vehicleTypeById.set(Number(vehicleType.vehicle_type_id), String(vehicleType.vehicle_type_title || ''));
+}
 
-    const vehicleTypeById = new Map<number, string>();
-    for (const vehicleType of vehicleTypes as any[]) {
-      vehicleTypeById.set(Number(vehicleType.vehicle_type_id), String(vehicleType.vehicle_type_title || ''));
+const staahBookingByRouteAndCode = new Map<
+  string,
+  { hotelName: string; roomName: string }
+>();
+
+if (shouldShowHotels && hotels.some(
+  (hotel: any) => String(hotel.hotel_provider || '').trim().toLowerCase() === 'staah',
+)) {
+  const staahBookings = await this.prisma.staah_hotel_booking_confirmation.findMany({
+    where: {
+      confirmed_itinerary_plan_ID: Number(plan.confirmed_itinerary_plan_ID),
+      status: 1,
+      deleted: 0,
+    },
+    orderBy: { staah_hotel_booking_confirmation_ID: 'desc' },
+  });
+
+  for (const booking of staahBookings) {
+    const routeId = Number(booking.itinerary_route_ID || 0);
+    const hotelCode = String(booking.staah_hotel_code || '').trim();
+    const key = `${routeId}:${hotelCode}`;
+
+    if (!routeId || !hotelCode || staahBookingByRouteAndCode.has(key)) {
+      continue;
     }
 
-    const itineraryDates = Array.from(
+    let response: any = booking.api_response;
+
+    if (typeof response === 'string') {
+      try {
+        response = JSON.parse(response);
+      } catch {
+        response = {};
+      }
+    }
+
+    const reservation =
+      response?.confirm?.request?.reservations?.reservation?.[0];
+
+    staahBookingByRouteAndCode.set(key, {
+      hotelName: String(reservation?.propertyname || '').trim(),
+      roomName: String(reservation?.room?.[0]?.room_name || '').trim(),
+    });
+  }
+}
+
+const itineraryDates = Array.from(
       new Set(
         hotels
           .map((hotel: any) => this.toDateOnly(hotel.itinerary_route_date))
@@ -267,13 +319,30 @@ for (const hotel of hotels as any[]) {
           hotel.itinerary_route_location || '',
         ).trim().toLowerCase()}`;
 
-      const dateKey = this.toDateOnly(hotel.itinerary_route_date);
-      const hotelMaster = hotelById.get(hotelId);
-      const hotelRoomsForRow = roomsByConfirmedHotelId.get(Number(hotel.confirmed_itinerary_plan_hotel_details_ID || 0)) || [];
-      const roomTypesForRow = Array.from(
+ const dateKey = this.toDateOnly(hotel.itinerary_route_date);
+const hotelMaster = hotelById.get(hotelId);
+
+const staahBooking =
+  provider === 'staah'
+    ? staahBookingByRouteAndCode.get(
+        `${Number(hotel.itinerary_route_id || 0)}:${hotelCode}`,
+      )
+    : undefined;
+
+const hotelRoomsForRow =
+  roomsByConfirmedHotelId.get(
+    Number(hotel.confirmed_itinerary_plan_hotel_details_ID || 0),
+  ) || [];
+
+const roomTypesForRow =
+  provider === 'staah'
+    ? (staahBooking?.roomName ? [staahBooking.roomName] : [])
+    : Array.from(
         new Set(
           hotelRoomsForRow
-            .map((room: any) => roomTypeById.get(Number(room.room_type_id || 0)) || '')
+            .map((room: any) =>
+              roomTypeById.get(Number(room.room_type_id || 0)) || '',
+            )
             .filter(Boolean),
         ),
       );
@@ -284,12 +353,13 @@ if (!hotelGroupMap.has(groupKey)) {
     hotelId,
     hotelCode,
     provider,
-    hotelName: String(
-      hotelMaster?.hotel_name ||
-      priceSnapshot.hotelName ||
-      priceSnapshot.hotel_name ||
-      `${provider.toUpperCase()} Hotel ${hotelCode}`
-    ),
+hotelName: String(
+  staahBooking?.hotelName ||
+  hotelMaster?.hotel_name ||
+  priceSnapshot.hotelName ||
+  priceSnapshot.hotel_name ||
+  `${provider.toUpperCase()} Hotel ${hotelCode}`
+),
           hotelEmail: String(hotelMaster?.hotel_email || ''),
           hotelStateCity: [hotelMaster?.hotel_state, hotelMaster?.hotel_city].filter(Boolean).join(', '),
           routeDates: [] as string[],
@@ -362,11 +432,30 @@ if (!hotelGroupMap.has(groupKey)) {
           routeDates: [...group.routeDates].sort(),
           dayNumbers: [...group.dayNumbers].sort((a: number, b: number) => a - b),
           roomTypes: [...group.roomTypes].sort(),
-          hasVoucher: matchedVouchers.length > 0,
-          voucherCount: matchedVouchers.length,
-          cancellationPolicyCount: policyCount,
-          voucherCancelled,
-          bookingStatusCode: Number(latestVoucher?.hotel_booking_status || 0),
+hasVoucher: matchedVouchers.length > 0,
+voucherCount: matchedVouchers.length,
+cancellationPolicyCount: policyCount,
+voucherCancelled,
+canCreateVoucher:
+  !voucherCancelled &&
+  hotels.some((hotel: any) =>
+    group.confirmedHotelDetailsIds.includes(
+      Number(hotel.confirmed_itinerary_plan_hotel_details_ID || 0),
+    )
+  ) &&
+  hotels
+    .filter((hotel: any) =>
+      group.confirmedHotelDetailsIds.includes(
+        Number(hotel.confirmed_itinerary_plan_hotel_details_ID || 0),
+      ),
+    )
+    .every((hotel: any) =>
+      Number(hotel.status || 0) === 1 &&
+      Number(hotel.hotel_cancellation_status || 0) !== 1 &&
+      Number(hotel.hotel_required || 0) === 1,
+    ),
+bookingStatusCode: Number(latestVoucher?.hotel_booking_status || 0),
+
           bookingStatusLabel: this.getVoucherStatusLabel(
             Number(latestVoucher?.hotel_booking_status || 0),
             voucherCancelled,
@@ -498,9 +587,13 @@ if (!hotelGroupMap.has(groupKey)) {
       this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
         where: { itinerary_plan_ID: itineraryPlanId, primary_customer: 1, deleted: 0 },
       }),
-      this.prisma.dvi_global_settings.findFirst({
-        where: { status: 1, deleted: 0 },
-      }),
+     this.prisma.dvi_global_settings.findFirst({
+  where: { status: 1, deleted: 0 },
+  select: {
+    company_contact_no: true,
+    company_email_id: true,
+  },
+}),
       this.prisma.dvi_confirmed_itinerary_route_details.findMany({
         where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
         orderBy: [{ itinerary_route_date: 'asc' }, { itinerary_route_ID: 'asc' }],
@@ -1116,13 +1209,18 @@ if (!hotelGroupMap.has(groupKey)) {
         itineraryPlanId,
       );
 
-    const settings =
-      await this.prisma.dvi_global_settings.findFirst({
-        where: {
-          status: 1,
-          deleted: 0,
-        },
-      });
+   const settings =
+  await this.prisma.dvi_global_settings.findFirst({
+    where: {
+      status: 1,
+      deleted: 0,
+    },
+    select: {
+      company_name: true,
+      company_contact_no: true,
+      company_email_id: true,
+    },
+  });
 
     const companyName =
       String(
