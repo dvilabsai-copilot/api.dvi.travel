@@ -233,10 +233,78 @@ export class HotelVoucherService {
  /**
    * Create hotel vouchers
  */
+
   async createHotelVouchers(dto: CreateVoucherDto, userId: number = 1) {
     this.logger.log(`Creating ${dto.vouchers.length} hotel vouchers for plan ${dto.itineraryPlanId}`);
-    const selectionIds = dto.vouchers.flatMap((voucher) => voucher.hotelDetailsIds || []).map(Number).filter((id) => id > 0);
-    const selectionModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
+
+  for (const voucher of dto.vouchers) {
+    const routeId = Number(voucher.routeId || 0);
+    const hotelId = Number(voucher.hotelId || 0);
+    const rawIds = voucher.hotelDetailsIds;
+    const requestedIds = Array.isArray(rawIds) ? rawIds.map(Number) : [];
+
+    if (
+      !Number.isInteger(routeId) ||
+      routeId <= 0 ||
+      !Number.isInteger(hotelId) ||
+      hotelId < 0 ||
+      (rawIds !== undefined && rawIds !== null && !Array.isArray(rawIds)) ||
+      requestedIds.some((id) => !Number.isInteger(id) || id <= 0)
+    ) {
+      throw new BadRequestException('Invalid hotel voucher selection.');
+    }
+
+    const confirmedHotels =
+      await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
+        where: {
+          itinerary_plan_id: Number(dto.itineraryPlanId),
+          deleted: 0,
+          ...(requestedIds.length > 0
+            ? {
+                itinerary_plan_hotel_details_ID: {
+                  in: requestedIds,
+                },
+              }
+            : {
+                itinerary_route_id: routeId,
+                hotel_id: hotelId,
+              }),
+        },
+      });
+
+    const foundIds = new Set(
+      confirmedHotels.map((hotel) =>
+        Number(hotel.itinerary_plan_hotel_details_ID),
+      ),
+    );
+
+    if (
+      confirmedHotels.length === 0 ||
+      requestedIds.some((id) => !foundIds.has(id))
+    ) {
+      throw new BadRequestException(
+        'Hotel voucher selection could not be uniquely verified.',
+      );
+    }
+
+    if (
+      confirmedHotels.some(
+        (hotel) =>
+          Number(hotel.hotel_id || 0) !== hotelId ||
+          Number(hotel.status || 0) !== 1 ||
+          Number(hotel.hotel_cancellation_status || 0) === 1 ||
+          Number(hotel.hotel_required || 0) !== 1,
+      )
+    ) {
+      throw new BadRequestException(
+        'Voucher action is unavailable for an inactive, cancelled, or mismatched hotel.',
+      );
+    }
+  }
+
+  const selectionIds = dto.vouchers.flatMap((voucher) => voucher.hotelDetailsIds || []).map(Number).filter((id) => id > 0);
+  const selectionModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
+
     if (selectionIds.length === 0 && selectionModel?.findMany) {
       const resolvedRows = await selectionModel.findMany({
         where: {
