@@ -71,6 +71,18 @@ function fmtHMS(v: unknown): string | null {
   return `${hh.padStart(2, '0')}:${mm.padStart(2, '0')}:${(ss ?? '00').padStart(2, '0')}`;
 }
 
+// Activity time slots are stored as UTC clock values by toTimeDate().
+// Read UTC clock hours to prevent a server-timezone offset in previews.
+function fmtActivitySlotHMS(v: unknown): string | null {
+  if (v instanceof Date) {
+    const hh = String(v.getUTCHours()).padStart(2, '0');
+    const mm = String(v.getUTCMinutes()).padStart(2, '0');
+    const ss = String(v.getUTCSeconds()).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+  }
+  return fmtHMS(v);
+}
+
 function fmtDateISO(d: unknown): string | null {
   if (!d) return null;
   if (d instanceof Date) return d.toISOString().slice(0, 10);
@@ -2553,8 +2565,8 @@ image:
       .filter((s) => s.time_slot_type === 1)
       .map((s) => ({
         ...s,
-        start_time: fmtHMS(s.start_time),
-        end_time: fmtHMS(s.end_time),
+        start_time: fmtActivitySlotHMS(s.start_time),
+        end_time: fmtActivitySlotHMS(s.end_time),
         special_date: null,
         createdon: fmtDateTimeISO(s.createdon),
         updatedon: fmtDateTimeISO(s.updatedon),
@@ -2564,8 +2576,8 @@ image:
       .filter((s) => s.time_slot_type === 2)
       .map((s) => ({
         ...s,
-        start_time: fmtHMS(s.start_time),
-        end_time: fmtHMS(s.end_time),
+        start_time: fmtActivitySlotHMS(s.start_time),
+        end_time: fmtActivitySlotHMS(s.end_time),
         special_date: fmtDateISO(s.special_date),
         createdon: fmtDateTimeISO(s.createdon),
         updatedon: fmtDateTimeISO(s.updatedon),
