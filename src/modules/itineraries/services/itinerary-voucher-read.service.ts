@@ -202,7 +202,7 @@ for (const vehicleType of vehicleTypes) {
 
 const staahBookingByRouteAndCode = new Map<
   string,
-  { hotelName: string; roomName: string }
+  { hotelName: string; roomTypes: string[] }
 >();
 
 if (shouldShowHotels && hotels.some(
@@ -239,9 +239,15 @@ if (shouldShowHotels && hotels.some(
     const reservation =
       response?.confirm?.request?.reservations?.reservation?.[0];
 
+    const roomTypes = Array.isArray(reservation?.room)
+      ? reservation.room
+          .map((room: any) => String(room?.room_name || '').trim())
+          .filter(Boolean)
+      : [];
+
     staahBookingByRouteAndCode.set(key, {
       hotelName: String(reservation?.propertyname || '').trim(),
-      roomName: String(reservation?.room?.[0]?.room_name || '').trim(),
+      roomTypes: Array.from(new Set(roomTypes)),
     });
   }
 }
@@ -335,8 +341,8 @@ const hotelRoomsForRow =
   ) || [];
 
 const roomTypesForRow =
-  provider === 'staah'
-    ? (staahBooking?.roomName ? [staahBooking.roomName] : [])
+  provider === 'staah' && staahBooking?.roomTypes?.length
+    ? staahBooking.roomTypes
     : Array.from(
         new Set(
           hotelRoomsForRow

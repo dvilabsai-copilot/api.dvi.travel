@@ -240,15 +240,15 @@ export class HotelVoucherService {
   for (const voucher of dto.vouchers) {
     const routeId = Number(voucher.routeId || 0);
     const hotelId = Number(voucher.hotelId || 0);
-    const rawIds = voucher.hotelDetailsIds || [];
-    const requestedIds = rawIds.map(Number);
+    const rawIds = voucher.hotelDetailsIds;
+    const requestedIds = Array.isArray(rawIds) ? rawIds.map(Number) : [];
 
     if (
       !Number.isInteger(routeId) ||
       routeId <= 0 ||
       !Number.isInteger(hotelId) ||
       hotelId < 0 ||
-      !Array.isArray(rawIds) ||
+      (rawIds !== undefined && rawIds !== null && !Array.isArray(rawIds)) ||
       requestedIds.some((id) => !Number.isInteger(id) || id <= 0)
     ) {
       throw new BadRequestException('Invalid hotel voucher selection.');
@@ -280,8 +280,7 @@ export class HotelVoucherService {
 
     if (
       confirmedHotels.length === 0 ||
-      requestedIds.some((id) => !foundIds.has(id)) ||
-      (requestedIds.length === 0 && confirmedHotels.length !== 1)
+      requestedIds.some((id) => !foundIds.has(id))
     ) {
       throw new BadRequestException(
         'Hotel voucher selection could not be uniquely verified.',
