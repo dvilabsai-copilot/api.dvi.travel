@@ -46,6 +46,12 @@ export class TboMasterPricePreviewDto {
   children?: number;
 
   @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  childAges?: number[];
+
+  @IsOptional()
   @IsString()
   mealPlanCode?: string;
 }
