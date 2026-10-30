@@ -177,6 +177,24 @@ export class GlobalSettingsService {
     return row;
   }
 
+  async getItineraryTextSettings() {
+    const row = await this.prisma.dvi_global_settings.findFirst({
+      where: { deleted: 0, status: 1 },
+      orderBy: { global_settings_ID: "asc" },
+      select: {
+        itinerary_break_time: true,
+        itinerary_hotel_start: true,
+        itinerary_hotel_return: true,
+      },
+    });
+
+    return {
+      firstDayStartLabel: row?.itinerary_break_time?.trim() || null,
+      otherDayStartLabel: row?.itinerary_hotel_start?.trim() || null,
+      returnLabel: row?.itinerary_hotel_return?.trim() || null,
+    };
+  }
+
   /**
    * Return the active global hotel margin. The database setting is
    * authoritative; HOTEL_MARGIN is retained only for installations that have

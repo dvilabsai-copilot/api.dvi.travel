@@ -27,6 +27,7 @@ import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { SystemRole } from '../auth/constants/system-role.constants';
 import { HotelAvailabilitySnapshotService } from './services/hotel-availability-snapshot.service';
+import { GlobalSettingsService } from '../settings/global-settings/global-settings.service';
 import { hotelStayTotal } from './utils/hotel-stay-pricing.util';
 import {
   normalizeHotelDisplayName,
@@ -550,6 +551,7 @@ export class ItineraryDetailsService {
     private readonly prisma: PrismaService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly hotelAvailabilitySnapshotService: HotelAvailabilitySnapshotService,
+    private readonly globalSettingsService: GlobalSettingsService,
   ) {}
 
   private normalizeHotelSelectionEntries(
@@ -2169,6 +2171,8 @@ const foodTypeMap: Record<string, string> = {
 
 const planId = plan.itinerary_plan_ID;
 
+const itineraryTextSettings = await this.globalSettingsService.getItineraryTextSettings();
+
 const continuedFromPlanId =
   Number((plan as any).continued_from_plan_ID || 0);
 
@@ -2930,7 +2934,10 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         if (startTimeRange) {
           segments.push({
             type: 'start' as const,
-            title: index === 0 ? 'Start your Journey' : 'Start Your Day',
+            title:
+              index === 0
+                ? itineraryTextSettings.firstDayStartLabel || 'Start your Journey'
+                : itineraryTextSettings.otherDayStartLabel || 'Start Your Day',
             timeRange: startTimeRange,
           });
         }
@@ -4121,6 +4128,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         } else {
           segments.push({
             type: 'return' as const,
+            title: itineraryTextSettings.returnLabel || 'Return to Origin and Relax',
             time: dayEndTimeText,
             note: null,
           });
