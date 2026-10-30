@@ -300,7 +300,9 @@ if (Number(plan?.itinerary_preference) === 2) {
       // and destination candidates, never ordinary pickup-city sightseeing.
       // Local overnight stays and other itinerary preferences are unchanged.
       const transportDay1IntercityTransfer =
-        isTransportOnlyDay1 && isIntercityRouteForBucket;
+        isTransportOnlyDay1 &&
+        isIntercityRouteForBucket &&
+        (hasExplicitViaRoutes || Number(directToNextVisitingPlace || 0) === 1);
       const shouldSuppressSourceHotspotsForMovementTransfer =
         isIntercityRouteForBucket &&
         (transportDay1IntercityTransfer || hasExplicitViaRoutes || isDirectDestinationRouteForBucket);
