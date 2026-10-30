@@ -41,6 +41,7 @@ import { ItineraryRouteNormalizationService } from './services/itinerary-route-n
 import { HotelsModule } from '../hotels/hotels.module';
 import { RouteVehicleRestrictionsModule } from '../route-vehicle-restrictions/route-vehicle-restrictions.module';
 import { AccountsManagerModule } from '../accounts-manager/accounts-manager.module';
+import { GlobalSettingsModule } from '../settings/global-settings/global-settings.module';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
 import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryScenarioSourceController } from './itinerary-scenario-source.controller';
@@ -129,6 +130,7 @@ import { HotelHoldCutoffReminderScheduler } from './services/hotel-hold-cutoff-r
     HotelsModule,
     RouteVehicleRestrictionsModule,
     AccountsManagerModule,
+    GlobalSettingsModule,
   ],
   controllers: [ItinerariesController, ItineraryHotelApprovalController, HotelBlockingController, HotelBlockingPublicController, ResAvenueTestController, ItineraryScenarioSourceController],
   providers: [

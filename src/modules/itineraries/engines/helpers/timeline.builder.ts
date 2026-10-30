@@ -2479,7 +2479,9 @@ for (const sh of skippedHotspots) {
         // Day 1 intercity transfer through the scheduler's source fallback.
         const transportDay1IntercityTransferForPhase =
           Number(plan.itinerary_preference || 0) === 2 &&
-          isFirstRoute && isIntercityRoute;
+          isFirstRoute &&
+          isIntercityRoute &&
+          (hasExplicitViaRouteForPhase || directToNextForPhase === 1);
         const shouldBypassSourcePhaseForMovementTransfer =
           isIntercityRoute &&
           (transportDay1IntercityTransferForPhase || hasExplicitViaRouteForPhase || directToNextForPhase === 1);
@@ -6289,10 +6291,12 @@ const trailingRemainingGapSeconds =
 
 const canAddTrailingLeisure =
   !isLastRoute &&
+  !isIntercityRoute &&
   !forceNoSightseeingOnThisRoute &&
   !isVehicleHotelRestEarlyArrival &&
   (!didHotelFirstCheckin || shouldHotelLastByDistance) &&
   (hasScheduledVisitOnRoute || selectedHotspots.length > 0);
+
 
 const trailingLeisureShoppingWindow =
   resolveShoppingDayWindow(
