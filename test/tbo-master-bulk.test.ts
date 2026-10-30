@@ -90,6 +90,45 @@ test('applies the South India region to the bulk export', async () => {
   assert.deepEqual(stateArgs.where.name, { in: ['Kerala'] });
 });
 
+test('uses age 10 for each child in master price preview occupancy', async () => {
+  let searchCriteria: any;
+  const prisma = {
+    tbo_hotel_master: {
+      findUnique: async () => ({ tbo_hotel_code: '1073922', tbo_city_code: '128698' }),
+    },
+  };
+  const tboProvider = {
+    search: async (criteria: any) => {
+      searchCriteria = criteria;
+      return [{
+        providerHotelCode: '1073922',
+        hotelName: 'Test Hotel',
+        roomType: 'Standard Room',
+        mealPlan: 'MAP',
+        price: 8894.26,
+        totalStayPrice: 8894.26,
+        currency: 'INR',
+      }];
+    },
+  };
+  const service = new TboMasterHotelService(prisma as any, tboProvider as any, null as any);
+
+  await service.pricePreview('1073922', {
+    checkIn: '2027-04-22',
+    checkOut: '2027-04-23',
+    rooms: 2,
+    adults: 2,
+    children: 2,
+    mealPlanCode: '',
+  });
+
+  assert.deepEqual(searchCriteria.occupancies, [
+    { adults: 2, children: 2, childrenAges: [10, 10] },
+    { adults: 2, children: 2, childrenAges: [10, 10] },
+  ]);
+  assert.equal(searchCriteria.guestCount, 8);
+});
+
 test('imports only the six editable fields by hotel_id', async () => {
   const updates: Array<{ id: number; data: Record<string, unknown> }> = [];
   const prisma = {

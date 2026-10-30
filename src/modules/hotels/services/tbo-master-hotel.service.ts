@@ -411,9 +411,15 @@ export class TboMasterHotelService {
     // The master preview form treats adults/children as the occupancy for each
     // requested room. TBO requires one PaxRooms entry per room; passing one
     // entry while changing only roomCount silently quotes a single room.
+    const childCount = dto.children || 0;
     const occupancies = Array.from({ length: dto.rooms }, () => ({
       adults: dto.adults,
-      children: dto.children || 0,
+      children: childCount,
+      // The master-preview form intentionally does not ask for child ages.
+      // TBO requires one age for every child, so use the agreed default age
+      // for this preview-only request while leaving itinerary searches to use
+      // their saved traveller ages.
+      childrenAges: childCount > 0 ? Array.from({ length: childCount }, () => 10) : [],
     }));
     const results = await this.tboProvider.search({
       cityCode: hotel.tbo_city_code,
@@ -421,7 +427,7 @@ export class TboMasterHotelService {
       checkInDate: dto.checkIn,
       checkOutDate: dto.checkOut,
       roomCount: dto.rooms,
-      guestCount: (dto.adults + (dto.children || 0)) * dto.rooms,
+      guestCount: (dto.adults + childCount) * dto.rooms,
       guestNationality: 'IN',
       occupancies,
     }, { mealPlanCode: dto.mealPlanCode, tboNoOfRooms: dto.rooms });
