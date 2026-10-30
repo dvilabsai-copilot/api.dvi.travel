@@ -119,6 +119,7 @@ test('uses age 10 for each child in master price preview occupancy', async () =>
     rooms: 2,
     adults: 2,
     children: 2,
+    childAges: [10, 10],
     mealPlanCode: '',
   });
 

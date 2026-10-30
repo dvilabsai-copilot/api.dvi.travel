@@ -412,14 +412,15 @@ export class TboMasterHotelService {
     // requested room. TBO requires one PaxRooms entry per room; passing one
     // entry while changing only roomCount silently quotes a single room.
     const childCount = dto.children || 0;
+    const childAges = childCount > 0 && dto.childAges?.length === childCount
+      ? dto.childAges
+      : childCount > 0 ? Array.from({ length: childCount }, () => 10) : [];
     const occupancies = Array.from({ length: dto.rooms }, () => ({
       adults: dto.adults,
       children: childCount,
-      // The master-preview form intentionally does not ask for child ages.
-      // TBO requires one age for every child, so use the agreed default age
-      // for this preview-only request while leaving itinerary searches to use
-      // their saved traveller ages.
-      childrenAges: childCount > 0 ? Array.from({ length: childCount }, () => 10) : [],
+      // The master-preview form sends one agreed default age for every child.
+      // Keep the fallback for older API callers that only send a child count.
+      childrenAges: childAges,
     }));
     const results = await this.tboProvider.search({
       cityCode: hotel.tbo_city_code,
