@@ -6438,65 +6438,16 @@ const overnightDestinationCoords =
     ? await this.resolvePlaceCoords(tx, transportOvernightDestination, 'destination')
     : undefined;
 
- // RULE 2: Always show final travel segment to destination (outstation type=2)
- // For early-arrival declined same-day flow, force hotel movement near end-of-day.
-        let hotelStartTime = currentTime;
+ // RULE 2: Always show final travel segment to destination (outstation type=2).
+ // Start from the end of the actual preceding timeline item. The travel
+ // duration must determine the hotel arrival; anchoring the start backwards
+ // from route_end_time creates an artificial wait and makes every arrival look
+ // like the route cutoff (for example, 02:28 PM + 5h32m = 08:00 PM).
+        const hotelStartTime = currentTime;
 
-        // Intercity Transport Only Day 1: leave for the overnight destination
-        // after the last scheduled visit instead of introducing an invisible
-        // wait until route_end_time. Keep local-stay deferred-check-in policy.
-        // Transport Only Day 1 must not create an invisible wait simply to
-        // force the guest's hotel arrival to match the route-end deadline.
-        // Applies to both verified local stays and intercity transfers.
-        // Other preferences retain their existing hotel-defer policy.
-        const shouldAnchorHotelTravelToRouteEnd =
-          suppressHotelInsertionUntilEndOfDay &&
-          !(Number(plan.itinerary_preference || 0) === 2 && isFirstRoute);
-
-    if (shouldAnchorHotelTravelToRouteEnd) {
-  const estimatedHotelTravel =
-    await this.distanceHelper.fromSourceAndDestination(
-      tx,
-      sourceCity,
-      finalTravelDestinationName,
-      2,
-      currentCoords,
-      hotelDestinationCoords ?? overnightDestinationCoords ?? destCityCoords,
-    );
-
-  const estimatedHotelSegmentSeconds =
-    timeToSeconds(estimatedHotelTravel.travelTime) +
-    timeToSeconds(estimatedHotelTravel.bufferTime);
-
-  const routeEndAnchoredStartSeconds = Math.max(
-    timeToSeconds(currentTime),
-    routeEndSeconds - estimatedHotelSegmentSeconds,
-  );
-
-  hotelStartTime = secondsToTime(
-    wrapToDay(routeEndAnchoredStartSeconds),
-  );
-}
-
-        if (
-          shouldAnchorHotelTravelToRouteEnd &&
-          hotelStartTime !== currentTime
-        ) {
-          this.logBookingRule({
-            rule: 'HOTEL_SEGMENT_ANCHORED_TO_END_OF_DAY',
-            quoteId:
-              (plan as any).quote_id ??
-              (plan as any).quoteId ??
-              (plan as any).quote_ID ??
-              null,
-            planId,
-            routeId: route.itinerary_route_ID,
-            previousCurrentTime: currentTime,
-            anchoredStartTime: hotelStartTime,
-            routeEndTime,
-          });
-        }
-
+        // Intercity Transport Only Day 1 and local-stay deferred-check-in
+        // flows both use the same rule here: travel starts after the actual
+        // preceding timeline item, with no invisible wait to route_end_time.
 const hasValidCurrentCoords =
   currentCoords &&
   Number.isFinite(Number(currentCoords.lat)) &&
