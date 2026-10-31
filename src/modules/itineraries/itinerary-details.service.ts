@@ -8,6 +8,7 @@ import {
   redactVehicleCostBreakdowns,
 } from './utils/itinerary-cost-visibility.util';
 import { resolveItineraryPreference } from './utils/itinerary-preference.util';
+import { resolveIntercityDisplayDistanceKm } from './utils/itinerary-distance.util';
 import { ItineraryPricingService, money } from './itinerary-pricing.service';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
@@ -4244,16 +4245,17 @@ const travelSegmentDistanceNum = segments.reduce((sum, segment: any) => {
   return sum + distanceNum;
 }, 0);
 
-// FINAL intercity distance priority:
-// 1. VIA-chain distance
-// 2. stored route.no_of_km
-// 3. visible travel segment total
-const intercityDistanceNum =
-  viaRouteDistanceNum > 0
-    ? viaRouteDistanceNum
-    : storedIntercityDistanceNum > 0
-      ? storedIntercityDistanceNum
-      : travelSegmentDistanceNum;
+// Direct non-sightseeing days use the visible travel rows so the day header
+// and the detailed route agree even when a persisted route distance is stale.
+// Hotspot days retain the existing via/stored-route precedence because their
+// travel rows also include sightseeing movement.
+const intercityDistanceNum = resolveIntercityDisplayDistanceKm({
+  viaRouteDistanceKm: viaRouteDistanceNum,
+  storedIntercityDistanceKm: storedIntercityDistanceNum,
+  travelSegmentDistanceKm: travelSegmentDistanceNum,
+  sightseeingDistanceKm: sightseeingDistanceNum,
+  hasHotspotSegments: routeHotspots.length > 0,
+});
 
 // Total day distance = intercity + sightseeing
 const totalDistanceNum = intercityDistanceNum + sightseeingDistanceNum;
@@ -4262,14 +4264,6 @@ const intercityDistance = this.formatKm(intercityDistanceNum);
 const sightseeingDistance = this.formatKm(sightseeingDistanceNum);
 const dayDistance = this.formatKm(totalDistanceNum);
 
-
-// DEBUG (keep this for testing)
-console.log('[FINAL_DISTANCE_DEBUG]', {
-  routeChain: cleanedRouteChain,
-  viaRouteDistanceNum,
-  storedIntercityDistanceNum,
-  finalUsed: intercityDistanceNum,
-});
 
 // ================= END FIX =================
 
