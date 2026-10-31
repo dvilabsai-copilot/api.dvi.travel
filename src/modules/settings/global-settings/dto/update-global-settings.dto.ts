@@ -119,6 +119,24 @@ export class UpdateGlobalSettingsDto {
   @Min(0)
   hotel_hold_long_duration_hours?: number;
 
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([0, 1])
+  same_city_hotspot_rank_enabled?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  same_city_hotspot_max_rank?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  same_city_hotspot_base_increment?: number;
+
+  @IsIn(["BALANCED"])
+  same_city_hotspot_distribution_mode?: string;
+
   @Allow()
   extrabed_rate_percentage?: number;
   @Allow()

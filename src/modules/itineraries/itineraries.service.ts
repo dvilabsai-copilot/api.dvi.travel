@@ -531,7 +531,36 @@ export class ItinerariesService {
     };
   }
 
-  private async applySameCityCrossDayOptimizerAfterSave(planId: number, quoteId?: string | null): Promise<void> {
+  private async applySameCityCrossDayOptimizerAfterSave(
+    planId: number,
+    quoteId?: string | null,
+    options?: { scopeToRouteId?: number },
+  ): Promise<void> {
+    if (options?.scopeToRouteId) {
+      const settings = await this.prisma.dvi_global_settings.findFirst({
+        where: { deleted: 0 },
+        select: { same_city_hotspot_rank_enabled: true },
+      });
+
+      if (Number(settings?.same_city_hotspot_rank_enabled || 0) === 1) {
+        console.log('[BOOKING_RULE]', {
+          rule: 'SAME_CITY_SCOPED_REBUILD',
+          planId,
+          quoteId: quoteId || null,
+          scopeToRouteId: options.scopeToRouteId,
+          skippedOptimizer: true,
+          reason: 'same_city_priority_policy_scoped_rebuild_guard',
+        });
+        console.log('[SAME_CITY_SCOPED_REBUILD][SameCityCrossDayOptimizerAfterSave]', {
+          planId,
+          quoteId: quoteId || null,
+          scopeToRouteId: options.scopeToRouteId,
+          skippedReason: 'same_city_priority_policy_scoped_rebuild_guard',
+        });
+        return;
+      }
+    }
+
     const result = await this.sameCityCrossDayOptimizerService.analyzePlanId(planId, {
       quoteId: quoteId || undefined,
       dryRun: false,
