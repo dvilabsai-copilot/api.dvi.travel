@@ -969,6 +969,15 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
         check_out_date: _checkOutDateLegacy,
         ...summaryRow
       } = row || {};
+      const nestedRefundableValue = Array.isArray(row?.roomTypes)
+        ? row.roomTypes
+            .map((roomType: any) => roomType?.isRefundable ?? roomType?.IsRefundable)
+            .find((value: unknown) => value !== undefined && value !== null)
+        : undefined;
+      const refundableValue = row?.isRefundable ?? row?.IsRefundable ?? nestedRefundableValue;
+      const summaryRowWithRefundability = refundableValue === undefined
+        ? summaryRow
+        : { ...summaryRow, isRefundable: refundableValue };
       // Keep the concrete options needed by the hotel card. Availability and
       // supplement rates are calculated per option by the API; removing this
       // array makes the UI inspect the parent summary row, which can have no
@@ -1038,7 +1047,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
           })
         : undefined;
       return {
-        ...summaryRow,
+        ...summaryRowWithRefundability,
         ...(compactRateOptions ? { rateOptions: compactRateOptions } : {}),
       };
     };

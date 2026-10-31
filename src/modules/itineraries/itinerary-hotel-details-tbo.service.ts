@@ -6858,6 +6858,14 @@ this.logger.log(
           normalizedProvider !== 'tbo' || rawBookingCode.includes('!TB!');
         const isPrebookReady = hasSupplierHotel && hasLiveBookingCode;
 
+        const hotelRefundability = (hotel as any).isRefundable ??
+          (hotel as any).IsRefundable ??
+          (Array.isArray((hotel as any).roomTypes)
+            ? (hotel as any).roomTypes
+                .map((roomType: any) => roomType?.isRefundable ?? roomType?.IsRefundable)
+                .find((value: unknown) => value !== undefined && value !== null)
+            : undefined);
+
         let hotelRow: ItineraryHotelRowDto & Record<string, any> = {
           groupType: pkg.groupType,
           authoritativeRecommendation: (hotel as any).authoritativeRecommendation === true,
@@ -6952,7 +6960,7 @@ this.logger.log(
               ? parsedStaahReference?.rateId || undefined
               : undefined,
           provider: hasSupplierHotel ? normalizedProvider : 'external',
-          isRefundable: (hotel as any).isRefundable ?? (hotel as any).IsRefundable,
+          isRefundable: hotelRefundability,
           isPriority: Boolean((hotel as any).isPriority) || Boolean((hotel as any).rateOptions?.some?.((option: any) => option?.isPriority)),
           providerDisplayName: normalizedProvider === 'offline'
             ? 'Offline'
@@ -6970,7 +6978,7 @@ this.logger.log(
                 canonicalHotelId: hotelId || null,
                 provider: normalizedProvider,
                 isPriority: Boolean((hotel as any).isPriority),
-                isRefundable: (hotel as any).isRefundable ?? (hotel as any).IsRefundable,
+                isRefundable: hotelRefundability,
                 providerDisplayName: normalizedProvider === 'offline' ? 'Offline' : normalizedProvider === 'axisrooms' ? 'AxisRooms' : normalizedProvider === 'tbo' ? 'VSR' : undefined,
                 providerHotelCode: (hotel as any).providerHotelCode || rawHotelCode,
                 roomId: (hotel as any).roomId,
