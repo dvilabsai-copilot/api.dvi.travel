@@ -4254,7 +4254,9 @@ const intercityDistanceNum = resolveIntercityDisplayDistanceKm({
   storedIntercityDistanceKm: storedIntercityDistanceNum,
   travelSegmentDistanceKm: travelSegmentDistanceNum,
   sightseeingDistanceKm: sightseeingDistanceNum,
-  hasHotspotSegments: routeHotspots.length > 0,
+  hasHotspotSegments: segments.some((segment: any) => (
+    segment?.type === 'attraction' || segment?.type === 'hotspot'
+  )),
 });
 
 // Total day distance = intercity + sightseeing
