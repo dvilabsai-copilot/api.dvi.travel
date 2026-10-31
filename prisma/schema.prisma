@@ -2987,6 +2987,10 @@ model dvi_global_settings {
   hotel_hold_short_duration_hours        Float     @default(4) @db.Float
   hotel_hold_medium_duration_hours       Float     @default(12) @db.Float
   hotel_hold_long_duration_hours         Float     @default(48) @db.Float
+  same_city_hotspot_rank_enabled         Int       @default(0) @db.TinyInt
+  same_city_hotspot_max_rank             Int       @default(30)
+  same_city_hotspot_base_increment       Int       @default(10)
+  same_city_hotspot_distribution_mode    String    @default("BALANCED") @db.VarChar(20)
 
   @@index([accommodation_return(length: 768)], map: "idx_cnf_global_settings_accommodation_return")
   @@index([agent_referral_bonus_credit], map: "idx_cnf_global_settings_agent_referral_bonus_credit")

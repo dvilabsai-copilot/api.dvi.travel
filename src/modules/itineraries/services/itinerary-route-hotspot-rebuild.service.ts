@@ -29,6 +29,9 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
     const normalizedPlanId = Number(planId);
     const normalizedRouteId = Number(routeId);
     let planQuoteId = '';
+    let sameCityPolicyEnabled = false;
+    let siblingHotspotSnapshot = '';
+    let siblingSnapshotCaptured = false;
 
     let rebuildResult;
     try {
@@ -69,6 +72,40 @@ async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number
             hotspot_plan_own_way: { not: 1 },
   },
 });
+
+        const sameCitySettings = await tx.dvi_global_settings?.findFirst({
+          where: { status: 1, deleted: 0 },
+          select: { same_city_hotspot_rank_enabled: true },
+        });
+        sameCityPolicyEnabled = Number(sameCitySettings?.same_city_hotspot_rank_enabled || 0) === 1;
+
+        if (sameCityPolicyEnabled) {
+          siblingSnapshotCaptured = true;
+          const siblingRows = await tx.dvi_itinerary_route_hotspot_details.findMany({
+            where: {
+              itinerary_plan_ID: normalizedPlanId,
+              itinerary_route_ID: { not: normalizedRouteId },
+              deleted: 0,
+              status: 1,
+            },
+            select: {
+              itinerary_route_ID: true,
+              item_type: true,
+              hotspot_ID: true,
+              hotspot_order: true,
+              hotspot_plan_own_way: true,
+              hotspot_traveling_time: true,
+              itinerary_travel_type_buffer_time: true,
+              hotspot_start_time: true,
+              hotspot_end_time: true,
+              allow_break_hours: true,
+              allow_via_route: true,
+              via_location_name: true,
+              hotspot_travelling_distance: true,
+            },
+          });
+          siblingHotspotSnapshot = this.serializeSiblingHotspotSnapshot(siblingRows);
+        }
 // Explicit "Rebuild Route" is a fresh automatic selection. Do not pass the
 // target route's previous automatic rows back to the scoped builder: those
 // rows are used by the builder as the route's allowed/preserved set and would
@@ -180,6 +217,40 @@ const engineResult = await this.hotspotEngine.rebuildRouteHotspots(
           rebuildSummaryScheduledCount: Number(engineResult?.rebuildSummary?.totalHotspotsScheduled || 0),
         });
 
+        // Validate inside the transaction so an engine-side sibling mutation
+        // is rolled back instead of merely reported after commit.
+        if (siblingSnapshotCaptured) {
+          const siblingRowsAfterEngine = await tx.dvi_itinerary_route_hotspot_details.findMany({
+            where: {
+              itinerary_plan_ID: normalizedPlanId,
+              itinerary_route_ID: { not: normalizedRouteId },
+              deleted: 0,
+              status: 1,
+            },
+            select: {
+              itinerary_route_ID: true,
+              item_type: true,
+              hotspot_ID: true,
+              hotspot_order: true,
+              hotspot_plan_own_way: true,
+              hotspot_traveling_time: true,
+              itinerary_travel_type_buffer_time: true,
+              hotspot_start_time: true,
+              hotspot_end_time: true,
+              allow_break_hours: true,
+              allow_via_route: true,
+              via_location_name: true,
+              hotspot_travelling_distance: true,
+            },
+          });
+          const afterEngineSnapshot = this.serializeSiblingHotspotSnapshot(siblingRowsAfterEngine);
+          if (afterEngineSnapshot !== siblingHotspotSnapshot) {
+            throw new BadRequestException(
+              'Same-city scoped rebuild changed a sibling route hotspot, order, or timing; the rebuild was rolled back.',
+            );
+          }
+        }
+
         return {
           success: true,
           planId: normalizedPlanId,
@@ -223,11 +294,45 @@ const engineResult = await this.hotspotEngine.rebuildRouteHotspots(
 
     if (!rebuildResult?.skipped) {
       await runPostRebuildStep('sameCityCrossDayOptimizer', () =>
-        this.callbacks.applySameCityCrossDayOptimizerAfterSave(normalizedPlanId, planQuoteId));
+        this.callbacks.applySameCityCrossDayOptimizerAfterSave(normalizedPlanId, planQuoteId, {
+          scopeToRouteId: normalizedRouteId,
+        }));
       await runPostRebuildStep('parkingCharges', () =>
         this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1)));
       await runPostRebuildStep('vehiclePricing', () =>
         this.callbacks.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId));
+    }
+
+    if (siblingSnapshotCaptured) {
+      const siblingRowsAfter = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          itinerary_route_ID: { not: normalizedRouteId },
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          itinerary_route_ID: true,
+          item_type: true,
+          hotspot_ID: true,
+          hotspot_order: true,
+          hotspot_plan_own_way: true,
+          hotspot_traveling_time: true,
+          itinerary_travel_type_buffer_time: true,
+          hotspot_start_time: true,
+          hotspot_end_time: true,
+          allow_break_hours: true,
+          allow_via_route: true,
+          via_location_name: true,
+          hotspot_travelling_distance: true,
+        },
+      });
+      const afterSnapshot = this.serializeSiblingHotspotSnapshot(siblingRowsAfter);
+      if (afterSnapshot !== siblingHotspotSnapshot) {
+        throw new BadRequestException(
+          'Same-city scoped rebuild changed a sibling route hotspot, order, or timing; the rebuild was rejected as a regression.',
+        );
+      }
     }
 
     const failedStages = new Set(postProcessErrors.map((e) => e.stage));
@@ -238,5 +343,33 @@ const engineResult = await this.hotspotEngine.rebuildRouteHotspots(
       vehiclePricingRebuilt: !rebuildResult?.skipped && !failedStages.has('vehiclePricing'),
       postProcessErrors: postProcessErrors.length > 0 ? postProcessErrors : undefined,
     };
+  }
+
+  private serializeSiblingHotspotSnapshot(rows: any[]): string {
+    return (rows || [])
+      .map((row: any) => [
+        Number(row?.itinerary_route_ID || 0),
+        Number(row?.item_type || 0),
+        Number(row?.hotspot_ID || 0),
+        Number(row?.hotspot_order || 0),
+        Number(row?.hotspot_plan_own_way || 0),
+        this.serializeSnapshotTime(row?.hotspot_traveling_time),
+        this.serializeSnapshotTime(row?.itinerary_travel_type_buffer_time),
+        this.serializeSnapshotTime(row?.hotspot_start_time),
+        this.serializeSnapshotTime(row?.hotspot_end_time),
+        Number(row?.allow_break_hours || 0),
+        Number(row?.allow_via_route || 0),
+        String(row?.via_location_name || ''),
+        String(row?.hotspot_travelling_distance || ''),
+      ].join(':'))
+      .sort()
+      .join('|');
+  }
+
+  private serializeSnapshotTime(value: unknown): string {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value.toISOString().slice(11, 19);
+    }
+    return String(value ?? '').trim();
   }
 }

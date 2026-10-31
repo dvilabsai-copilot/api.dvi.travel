@@ -31,6 +31,10 @@ const GLOBAL_SETTINGS_UPDATE_FIELDS = [
   "hotel_hold_short_duration_hours",
   "hotel_hold_medium_duration_hours",
   "hotel_hold_long_duration_hours",
+  "same_city_hotspot_rank_enabled",
+  "same_city_hotspot_max_rank",
+  "same_city_hotspot_base_increment",
+  "same_city_hotspot_distribution_mode",
   "extrabed_rate_percentage",
   "childwithbed_rate_percentage",
   "childnobed_rate_percentage",
@@ -149,7 +153,29 @@ export class GlobalSettingsService {
       data.hotel_margin_gst_type = this.normalizeBoolean(dto.hotel_margin_gst_type);
     }
 
+    if ("same_city_hotspot_distribution_mode" in dto && dto.same_city_hotspot_distribution_mode) {
+      data.same_city_hotspot_distribution_mode = String(dto.same_city_hotspot_distribution_mode).trim().toUpperCase();
+    }
+
     return data;
+  }
+
+  private validateSameCityHotspotSettings(
+    data: Record<string, unknown>,
+    existing?: { same_city_hotspot_max_rank?: number | null; same_city_hotspot_base_increment?: number | null } | null,
+  ): void {
+    const maxRank = Number(data.same_city_hotspot_max_rank ?? existing?.same_city_hotspot_max_rank ?? 30);
+    const baseIncrement = Number(data.same_city_hotspot_base_increment ?? existing?.same_city_hotspot_base_increment ?? 10);
+
+    if (!Number.isInteger(maxRank) || maxRank < 1) {
+      throw new BadRequestException("same_city_hotspot_max_rank must be a positive integer");
+    }
+    if (!Number.isInteger(baseIncrement) || baseIncrement < 1) {
+      throw new BadRequestException("same_city_hotspot_base_increment must be a positive integer");
+    }
+    if (baseIncrement > maxRank) {
+      throw new BadRequestException("same_city_hotspot_base_increment cannot exceed same_city_hotspot_max_rank");
+    }
   }
 
   private valuesEqual(left: unknown, right: unknown): boolean {
@@ -234,6 +260,8 @@ export class GlobalSettingsService {
     const existing = await this.prisma.dvi_global_settings.findFirst({
       where: { deleted: 0 },
     });
+
+    this.validateSameCityHotspotSettings(normalizedData, existing);
 
     if (!existing) {
       await this.prisma.dvi_global_settings.create({
