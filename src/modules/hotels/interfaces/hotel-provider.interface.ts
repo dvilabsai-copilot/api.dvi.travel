@@ -67,6 +67,8 @@ export interface HotelSearchResult {
  roomType?: string; // Current room type name
  mealPlan?: string; // Meal plan info (if available)
  mealPlanCode?: string;
+  /** Whether the selected supplier room/rate can be held. */
+  isRefundable?: boolean;
  mealPlanBreakdown?: Record<string, unknown>;
  nightlyMealPlanBreakdown?: Array<Record<string, unknown>>;
  searchReference: string; // Used for confirmation
@@ -136,6 +138,8 @@ export interface RoomType {
   capacity: number;
   price: number;
   cancellationPolicy: string;
+  /** Whether this supplier room/rate can be held. */
+  isRefundable?: boolean;
  // Supplements (optional - from search response)
   supplements?: Array<{
  type: string; // "AtProperty", etc

@@ -389,6 +389,9 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           const formattedNetAmount = parseFloat(netAmount.toString());
           const formattedTotalFare = parseFloat(totalFare.toString());
           const roomName = room.Name?.[0] || 'Standard Room';
+          const isRefundable = room.IsRefundable === true ||
+            Number(room.IsRefundable) === 1 ||
+            String(room.IsRefundable || '').trim().toLowerCase() === 'true';
           const inclusionText = String(room.Inclusion || '').trim();
           const inclusions = inclusionText
             ? inclusionText
@@ -427,6 +430,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
             capacity: 2,
             price: formattedNetAmount,
             cancellationPolicy: room.CancelPolicies?.[0]?.ChargeType || 'Non-refundable',
+            isRefundable,
  // Add supplements to room type
             supplements: rawSupplements.length > 0 ? rawSupplements : undefined,
           };
@@ -467,6 +471,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
             amountIncludesRoomCount: noOfRooms > 0,
             currency: hotel.Currency || 'INR',
  roomType: roomName, // Room type name for display
+            isRefundable,
             // Inclusion describes the meals actually received. Fall back to
             // TBO's structured MealType when inclusion text is empty/noisy.
             mealPlan,

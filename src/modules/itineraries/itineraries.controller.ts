@@ -988,6 +988,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
               'rateId', 'rate_id', 'roomTypeId', 'room_type_id',
               // Display and provider identity.
               'provider', 'providerDisplayName', 'providerHotelCode', 'isPriority', 'hotelCode',
+              'isRefundable', 'IsRefundable',
               'images', 'primaryImageUrl',
               'hotelName', 'category', 'currency', 'roomType', 'roomTypeName',
               'mealPlan', 'mealPlanCode', 'ratePlanName',
