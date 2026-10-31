@@ -28,6 +28,12 @@ interface TboHotelSelection {
   passengers: TboHotelPassenger[];
   occupancies?: TboRoomOccupancy[];
   prebookContext?: Record<string, any>;
+  /**
+   * TBO uses false for a supplier hold and true for immediate voucher booking.
+   * Existing confirmation callers omit this field and therefore retain the
+   * current voucher-booking behavior.
+   */
+  isVoucherBooking?: boolean;
 }
 
 interface TboRoomOccupancy {
@@ -353,7 +359,7 @@ private readonly TBO_CLIENT_ID =
       const bookingPayload = {
         BookingCode: prebookBookingCode,
         TokenId: tokenId,
-        IsVoucherBooking: true,
+        IsVoucherBooking: selection.isVoucherBooking ?? true,
         GuestNationality: this.normalizeNationality(selection.guestNationality),
         EndUserIp: endUserIp,
         RequestedBookingMode: 1,
@@ -435,6 +441,23 @@ private readonly TBO_CLIENT_ID =
         `Booking failed for hotel ${selection.hotelCode}: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Place a refundable TBO/VSR rate on supplier hold without issuing a
+   * voucher. This is intentionally separate from final confirmation, which
+   * continues to use the default voucher-booking mode.
+   */
+  async holdHotel(
+    preBookResponse: PreBookResponse,
+    selection: TboHotelSelection,
+    endUserIp: string = process.env.TBO_END_USER_IP || '134.209.145.185',
+  ): Promise<BookResponse> {
+    return this.bookHotel(
+      preBookResponse,
+      { ...selection, isVoucherBooking: false },
+      endUserIp,
+    );
   }
 
  /**

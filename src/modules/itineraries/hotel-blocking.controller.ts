@@ -31,6 +31,9 @@ export class HotelBlockingController {
       hotelDetailsIds: Array.isArray(body?.hotelDetailsIds ?? body?.hotel_details_ids)
         ? (body?.hotelDetailsIds ?? body?.hotel_details_ids).map(Number).filter((id: number) => Number.isInteger(id) && id > 0)
         : undefined,
+      tboHoldBookings: Array.isArray(body?.tboHoldBookings ?? body?.tbo_hold_bookings)
+        ? (body?.tboHoldBookings ?? body?.tbo_hold_bookings)
+        : undefined,
       actor: { id: Number(user.userId || 0), name: String(user.name || user.email || ''), type: 'STAFF' },
       guest: { name: body?.guest?.name, email: body?.guest?.email, phone: body?.guest?.phone },
     });

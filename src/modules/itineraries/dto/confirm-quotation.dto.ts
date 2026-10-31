@@ -264,6 +264,15 @@ export class HotelSelectionDto {
   @IsObject()
   prebookContext?: Record<string, any>;
 
+  @ApiProperty({
+    example: true,
+    required: false,
+    description: 'TBO Book API mode. False holds the supplier booking without issuing a voucher.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isVoucherBooking?: boolean;
+
   @ApiProperty({ example: true, required: false })
   @IsOptional()
   @IsBoolean()
