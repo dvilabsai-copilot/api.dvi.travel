@@ -605,10 +605,18 @@ export function optionMatchesSelection(selection: any, option: any): boolean {
 }
 
 export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
+  const nestedRefundableValue = Array.isArray(row?.roomTypes)
+    ? row.roomTypes
+        .map((roomType: any) => roomType?.isRefundable ?? roomType?.IsRefundable)
+        .find((value: unknown) => value !== undefined && value !== null)
+    : undefined;
+  const refundableValue = row?.isRefundable ?? row?.IsRefundable ?? nestedRefundableValue;
+
   return {
     hotelName: row?.hotelName ?? row?.hotel_name ?? null,
     category: Number(row?.category ?? row?.hotel_category_id ?? 0) || null,
     provider: row?.provider ?? row?.hotel_provider ?? null,
+    ...(refundableValue === undefined ? {} : { isRefundable: refundableValue }),
     hotelCode: row?.hotelCode ?? row?.hotel_code ?? row?.hotelId ?? row?.hotel_id ?? null,
     canonicalHotelId: row?.canonicalHotelId ?? row?.canonical_hotel_id ?? row?.hotelId ?? row?.hotel_id ?? null,
     providerHotelCode: row?.providerHotelCode ?? row?.provider_hotel_code ?? null,

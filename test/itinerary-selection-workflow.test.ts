@@ -4,6 +4,7 @@ import { ItinerarySelectionWorkflowService } from '../src/modules/itineraries/se
 import {
   normalizeSupplierRateIdentity,
   supplierRateIdentityMatches,
+  hotelDisplaySnapshot,
 } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
 
 function createService(prisma: any = {}) {
@@ -69,6 +70,19 @@ test('TBO identity preserves a real booking code while accepting a fresh session
   assert.equal(supplierRateIdentityMatches(normalized, {
     ...normalized, rateOptionId: differentCommercialRoom, bookingCode: differentCommercialRoom, searchReference: differentCommercialRoom,
   }), false);
+});
+
+test('hotel snapshots retain refundable VSR status for the card label', () => {
+  assert.equal(hotelDisplaySnapshot({ provider: 'tbo', isRefundable: true }).isRefundable, true);
+  assert.equal(hotelDisplaySnapshot({
+    provider: 'tbo',
+    roomTypes: [{ roomName: 'Executive Room', IsRefundable: true }],
+  }).isRefundable, true);
+  assert.equal(hotelDisplaySnapshot({ provider: 'tbo', isRefundable: false }).isRefundable, false);
+  assert.equal(Object.prototype.hasOwnProperty.call(
+    hotelDisplaySnapshot({ provider: 'tbo' }),
+    'isRefundable',
+  ), false);
 });
 
 test('manual hotel persistence rejects a missing target group instead of defaulting to Group 1', async () => {
