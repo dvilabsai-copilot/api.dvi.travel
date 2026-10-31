@@ -118,6 +118,8 @@ export interface ItineraryHotelRowDto {
   providerDisplayName?: string;
   providerHotelCode?: string;
   isPriority?: boolean;
+  /** Whether the selected supplier room/rate can be held. */
+  isRefundable?: boolean;
   rateOptionId?: string;
   rateOptions?: Array<Record<string, unknown>>;
   bookingMode?: 'LIVE_API' | 'MANUAL_APPROVAL';

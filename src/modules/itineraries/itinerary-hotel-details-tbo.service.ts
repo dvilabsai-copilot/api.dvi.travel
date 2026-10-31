@@ -6604,6 +6604,7 @@ this.logger.log(
         provider,
         providerDisplayName: provider === 'offline' ? 'Offline' : provider === 'axisrooms' ? 'AxisRooms' : provider === 'tbo' ? 'VSR' : undefined,
         providerHotelCode: hotelCode,
+        isRefundable: snapshot.isRefundable ?? snapshot.IsRefundable,
         hotelName,
         category: Number(selection?.hotel_category_id || snapshot.category || 0) || 0,
         requestedCategory: Number(snapshot.requestedCategory || 0) || null,
@@ -6629,6 +6630,7 @@ this.logger.log(
           canonicalHotelId: hotelId || null,
           provider,
           providerHotelCode: hotelCode,
+          isRefundable: snapshot.isRefundable ?? snapshot.IsRefundable,
           roomId: snapshot.roomId,
           roomType,
           mealPlan,
@@ -6950,6 +6952,7 @@ this.logger.log(
               ? parsedStaahReference?.rateId || undefined
               : undefined,
           provider: hasSupplierHotel ? normalizedProvider : 'external',
+          isRefundable: (hotel as any).isRefundable ?? (hotel as any).IsRefundable,
           isPriority: Boolean((hotel as any).isPriority) || Boolean((hotel as any).rateOptions?.some?.((option: any) => option?.isPriority)),
           providerDisplayName: normalizedProvider === 'offline'
             ? 'Offline'
@@ -6967,6 +6970,7 @@ this.logger.log(
                 canonicalHotelId: hotelId || null,
                 provider: normalizedProvider,
                 isPriority: Boolean((hotel as any).isPriority),
+                isRefundable: (hotel as any).isRefundable ?? (hotel as any).IsRefundable,
                 providerDisplayName: normalizedProvider === 'offline' ? 'Offline' : normalizedProvider === 'axisrooms' ? 'AxisRooms' : normalizedProvider === 'tbo' ? 'VSR' : undefined,
                 providerHotelCode: (hotel as any).providerHotelCode || rawHotelCode,
                 roomId: (hotel as any).roomId,
