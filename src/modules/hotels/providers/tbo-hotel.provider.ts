@@ -44,8 +44,8 @@ export class TBOHotelProvider implements IHotelProvider {
   private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
   /** Maximum time allowed for one TBO hotel availability Search request. */
   private readonly SEARCH_TIMEOUT_MS = (() => {
-    const configured = Number(process.env.TBO_SEARCH_TIMEOUT_MS || 5000);
-    return Number.isFinite(configured) && configured > 0 ? configured : 5000;
+    const configured = Number(process.env.TBO_SEARCH_TIMEOUT_MS || 20000);
+    return Number.isFinite(configured) && configured > 0 ? configured : 20000;
   })();
 
  // Real Production Credentials (From Postman - Verified Working)
