@@ -3214,6 +3214,8 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
           optionKey: selection.optionKey || selection.rateOptionId,
           selectionKey: supplierSelectionKey(selection) || undefined,
           supplierBookingCode: selection.bookingCode || selection.searchReference || undefined,
+          isRefundable: selection.isRefundable ?? selection.IsRefundable ?? data.isRefundable ?? data.IsRefundable,
+          IsRefundable: selection.IsRefundable ?? selection.isRefundable ?? data.IsRefundable ?? data.isRefundable,
           pricePerNight: payablePricePerNight,
           totalPrice: payableTotal,
           basePricePerNight: isBaseRate ? rawPricePerNight : Number(selection.basePricePerNight ?? 0),
@@ -3369,6 +3371,7 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         optionKey: selected.optionKey || selected.rateOptionId, hotelName: selected.hotelName,
         roomType: selected.roomType || selected.roomTypeName, mealPlanCode: selected.mealPlanCode || selected.mealPlan,
         roomId: selected.roomId, rateId: selected.rateId, pricePerNight, totalPrice,
+        isRefundable: selected.isRefundable ?? selected.IsRefundable,
         basePricePerNight,
         baseTotalPrice,
         ...(selected.tboMapFallbackApplied === true ? {
@@ -3532,6 +3535,8 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       }
       return {
         routeId: Number(row.itinerary_route_id), routeDate: persistedRouteDate,
+        itineraryPlanHotelDetailsId: Number(row.itinerary_plan_hotel_details_ID || 0) || undefined,
+        itinerary_plan_hotel_details_ID: Number(row.itinerary_plan_hotel_details_ID || 0) || undefined,
         hotelId: row.hotel_id, canonicalHotelId: row.hotel_id,
         hotelCode: row.hotel_code || snapshot.providerHotelCode || snapshot.hotelCode,
         providerHotelCode: snapshot.providerHotelCode || row.hotel_code || null,
@@ -3556,6 +3561,12 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         bookingCode: snapshot.bookingCode, searchReference: snapshot.searchReference,
         pricePerNight: Number(row.selected_price_per_night || 0), totalPrice: Number(row.selected_total_price || 0), currency: row.selected_currency || 'INR',
         selectedPriceSnapshot: snapshot,
+        ...(snapshot.isRefundable !== undefined || snapshot.IsRefundable !== undefined
+          ? {
+              isRefundable: snapshot.isRefundable ?? snapshot.IsRefundable,
+              IsRefundable: snapshot.IsRefundable ?? snapshot.isRefundable,
+            }
+          : {}),
          basePricePerNight: Number(
            snapshot.basePricePerNight ?? snapshot.base_price_per_night ??
            snapshot.roomRate ?? roomDetail.room_rate ?? row.room_rate ?? 0,

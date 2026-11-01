@@ -211,6 +211,8 @@ export class ItinerarySelectionWorkflowService {
     totalHotelMealPlanCost?: number;
     numberOfNights?: number;
     nightlyRates?: Array<Record<string, unknown>>;
+    isRefundable?: boolean | number | string;
+    IsRefundable?: boolean | number | string;
     routeDate?: string;
      requestedBy?: number;
     /** Internal transaction client used by atomic multi-route saves. */
@@ -715,6 +717,7 @@ export class ItinerarySelectionWorkflowService {
     const mealBreakfast = canonicalMealFlags.breakfast ? 1 : 0;
     const mealLunch = canonicalMealFlags.lunch ? 1 : 0;
     const mealDinner = canonicalMealFlags.dinner ? 1 : 0;
+    const selectedRateIsRefundable = data.isRefundable ?? data.IsRefundable;
 
     let hotelDetailsId: number;
 
@@ -768,6 +771,9 @@ export class ItinerarySelectionWorkflowService {
             searchReference: data.searchReference || null,
             roomId: data.roomId || null,
             rateId: data.rateId || null,
+            ...(selectedRateIsRefundable !== undefined
+              ? { isRefundable: selectedRateIsRefundable, IsRefundable: selectedRateIsRefundable }
+              : {}),
             extraBedCount,
             extraBedRate,
              extraBedAmount,
@@ -864,6 +870,9 @@ export class ItinerarySelectionWorkflowService {
             searchReference: data.searchReference || null,
             roomId: data.roomId || null,
             rateId: data.rateId || null,
+            ...(selectedRateIsRefundable !== undefined
+              ? { isRefundable: selectedRateIsRefundable, IsRefundable: selectedRateIsRefundable }
+              : {}),
             extraBedCount,
             extraBedRate,
              extraBedAmount,
@@ -1390,6 +1399,7 @@ export class ItinerarySelectionWorkflowService {
             searchReference: hotel.searchReference,
             roomId: hotel.roomId,
             rateId: hotel.rateId,
+            isRefundable: hotel.isRefundable ?? hotel.IsRefundable,
             roomCount: hotel.roomCount,
             // selectHotel owns the database write. Preserve the canonical
             // server-resolved pricing calculated by selectHotelIntent instead
