@@ -1630,18 +1630,42 @@ const getTransportDay1CandidateEndSeconds = (
 
 
 
+      // Preserve staging's same-city priority selection after matrix auto-build.
       selectedHotspots = applySameCityPriorityPolicy(
         selectedHotspots,
         'post-matrix-autobuild',
       ) as SelectedHotspot[];
 
- // Re-order candidates: preserve manual selections and priority>0 first (protected),
- // then sort remaining candidates by matrix_score desc, then distance asc.
+      // Apply day-wise priority limits to fresh automatic candidates only.
+  // Day 1: 1-10, Day 2: 1-20, Day 3: 1-30, etc.
+  // Keep manual, carry-forward and priority-0 fallback candidates.
+  // Do not alter route-scoped rebuild candidate preservation.
+  if (!options?.scopeToRouteId) {
+    const maxPriorityForDay = routeIndex * 10;
 
-    selectedHotspots = this.candidateReorderingService.reorder(
-  selectedHotspots,
-  (...args) => (this.logTimeline as any)(...args),
-);
+    selectedHotspots = selectedHotspots.filter((hotspot: any) => {
+      const priority = Number(hotspot.hotspot_priority ?? 0);
+      const bucket = String(
+        hotspot.matched_bucket ?? hotspot.__bucket ?? '',
+      ).toLowerCase();
+
+      if (hotspot.isManualSelection === true) return true;
+      if (bucket === 'manual' || bucket === 'carry_forward') return true;
+      if (hotspot.carriedFromRouteId != null) return true;
+
+      // Keep the existing optional fallback behaviour.
+      if (priority <= 0 || !Number.isFinite(priority)) return true;
+
+      return priority <= maxPriorityForDay;
+    });
+  }
+
+  // Preserve the existing candidate reordering logic.
+  selectedHotspots = this.candidateReorderingService.reorder(
+    selectedHotspots,
+    (...args) => (this.logTimeline as any)(...args),
+  );
+
 
     selectedHotspots = applySameCityPriorityPolicy(
       selectedHotspots,
@@ -1866,9 +1890,16 @@ if (isDay1DifferentCities) {
   this.day1CandidateGateService.shouldSkip({
             route,
             hotspot: sh,
-            currentTime,
+                   currentTime,
             isRouteSourceTerminal,
             hasLaterOvernightInSourceCity,
+            skipTerminalSourceSightseeing:
+              Number(plan.itinerary_preference || 0) === 2 &&
+              isFirstRoute &&
+              isRouteSourceTerminal &&
+              day1SourceCompare !== '' &&
+              day1DestinationCompare !== '' &&
+              day1SourceCompare !== day1DestinationCompare,
             isShoppingHotspot:
               this.isShoppingHotspotType(gateHotspotType),
             isHotspotAlreadyPlanned,
@@ -3490,8 +3521,15 @@ const PASS_STRICT = 1;
           })
             ? 2000
             : 0;
+          // Lower positive priority numbers receive a higher score.
+          // Priority 0 remains an optional fallback candidate.
+          const priorityScore =
+            Number.isFinite(priority) && priority > 0
+              ? Math.max(0, (routeIndex * 10 + 1 - priority) * 10)
+              : 0;
 
-          return (priority * 10) + bucketBias + distanceScore + waitScore + windowFitScore + desiredMovableScore + adjacencyScore;
+          return priorityScore + bucketBias + distanceScore + waitScore + windowFitScore + desiredMovableScore + adjacencyScore;
+
         };
         const getPhaseRank = (bucketRaw: string): number => {
           const bucket = String(bucketRaw || '').toLowerCase();
@@ -6390,7 +6428,7 @@ if (!sharedCycle4Feasibility.feasible) {
               });
 
  // Recalculate timing for manual hotspot after eviction
-              const reevaluatedManualFeasibility = await this.evaluateCandidateInsertion({
+                const reevaluatedManualFeasibility = await this.evaluateCandidateInsertion({
                 tx,
                 route,
                 isLastRoute,
@@ -6400,9 +6438,13 @@ if (!sharedCycle4Feasibility.feasible) {
                 currentLocationName,
                 currentCoords,
                 destinationCoords: destCityCoords,
-                dayOfWeek: (route.itinerary_route_date
-                  ? new Date(route.itinerary_route_date).getDay()
-                  : 0 + 6) % 7,
+                dayOfWeek: (
+                  (
+                    route.itinerary_route_date
+                      ? new Date(route.itinerary_route_date).getDay()
+                      : 0
+                  ) + 6
+                ) % 7,
                 hotspotId: manualHotspotId,
                 hotspotLocationName,
                 hotspotDuration,
@@ -7604,25 +7646,35 @@ const { row: toHotelRow, nextTime: tAfterHotel } =
             ? { lat: routeStartCoords.lat, lon: routeStartCoords.lon }
             : currentCoords;
 
-          for (const row of hotspotRows) {
-            const rowEndTime = this.toStoredTimeString((row as any).hotspot_end_time);
-            if (rowEndTime) {
-              currentTime = rowEndTime;
-            }
 
-            if (Number(row.item_type ?? 0) === 4 && Number(row.hotspot_ID ?? 0) > 0) {
-              const rowHotspotData = hotspotMap.get(Number(row.hotspot_ID));
-              if (rowHotspotData) {
-                currentLocationName = String(rowHotspotData.hotspot_location || currentLocationName)
-                  .split('|')[0]
-                  .trim();
-                currentCoords = {
-                  lat: Number(rowHotspotData.hotspot_latitude ?? 0),
-                  lon: Number(rowHotspotData.hotspot_longitude ?? 0),
-                };
-              }
-            }
-          }
+for (const row of hotspotRows) {
+  // Only current-route rows may update the scheduling clock.
+  if (
+    Number((row as any).itinerary_route_ID || 0) !==
+    Number(route.itinerary_route_ID || 0)
+  ) {
+    continue;
+  }
+
+  const rowEndTime = this.toStoredTimeString((row as any).hotspot_end_time);
+  if (rowEndTime) {
+    currentTime = rowEndTime;
+  }
+
+  if (Number(row.item_type ?? 0) === 4 && Number(row.hotspot_ID ?? 0) > 0) {
+    const rowHotspotData = hotspotMap.get(Number(row.hotspot_ID));
+    if (rowHotspotData) {
+      currentLocationName = String(rowHotspotData.hotspot_location || currentLocationName)
+        .split('|')[0]
+        .trim();
+      currentCoords = {
+        lat: Number(rowHotspotData.hotspot_latitude ?? 0),
+        lon: Number(rowHotspotData.hotspot_longitude ?? 0),
+      };
+    }
+  }
+}
+
 
           returnTrimGuard += 1;
         }
@@ -7636,16 +7688,35 @@ const { row: toHotelRow, nextTime: tAfterHotel } =
           addedHotspotIds.size > 0 ? currentCoords : undefined,
           addedHotspotIds.size > 0 ? destCityCoords : undefined,
         );
-        const estimatedReturnSeconds =
-          timeToSeconds(estimatedReturn.travelTime) +
-          timeToSeconds(estimatedReturn.bufferTime);
-        const anchoredReturnStartSeconds = Math.max(
-  timeToSeconds(currentTime),
-  lastRouteArrivalDeadlineSeconds - estimatedReturnSeconds,
+
+const estimatedReturnSeconds =
+  timeToSeconds(estimatedReturn.travelTime) +
+  timeToSeconds(estimatedReturn.bufferTime);
+
+// Keep the final return departure within the route's time window.
+let currentReturnSeconds = timeToSeconds(currentTime);
+
+// A time before route start should not become an early departure
+// on a normal same-day route. Preserve genuine overnight routes.
+if (currentReturnSeconds < routeStartSeconds) {
+  currentReturnSeconds =
+    routeEndSeconds > 86400
+      ? currentReturnSeconds + 86400
+      : routeStartSeconds;
+}
+
+const earliestReturnStartSeconds = Math.max(
+  routeStartSeconds,
+  currentReturnSeconds,
 );
 
+const anchoredReturnStartSeconds = Math.max(
+  earliestReturnStartSeconds,
+  lastRouteArrivalDeadlineSeconds - estimatedReturnSeconds,
+);
 const returnStartTime =
   secondsToTime(wrapToDay(anchoredReturnStartSeconds));
+
 
 const departureLeisureShoppingWindow =
   resolveShoppingDayWindow(

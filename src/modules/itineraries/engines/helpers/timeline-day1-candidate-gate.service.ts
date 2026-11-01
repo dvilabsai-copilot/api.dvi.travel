@@ -4,6 +4,7 @@ export interface TimelineDay1CandidateGateInput {
   currentTime: string;
   isRouteSourceTerminal: boolean;
   hasLaterOvernightInSourceCity: boolean;
+  skipTerminalSourceSightseeing?: boolean;
   isShoppingHotspot?: boolean;
   isHotspotAlreadyPlanned: (hotspotId: number) => boolean;
   resolveTimelineBucket: (hotspot: any) => string;
@@ -21,6 +22,28 @@ export class TimelineDay1CandidateGateService {
     const isRouteMovementBucket = input.isRouteMovementBucket(bucket);
     const isSourceBucket = input.isSourceBucket(bucket);
     const isShoppingHotspot = Boolean(input.isShoppingHotspot);
+
+    // SCRUM-446:
+    // On a transport-only intercity arrival day, do not
+    // automatically visit pickup-city hotspots before
+    // travelling to the overnight destination.
+    //
+    // Preserve manually selected stops and route/via stops.
+    if (
+      input.skipTerminalSourceSightseeing === true &&
+      !isManualSelection &&
+      isSourceBucket
+    ) {
+      this.logRejected(
+        input,
+        bucket,
+        priority,
+        currentTime,
+        priority > 0,
+        'Rejected: pickup-city sightseeing on transport-only intercity arrival day',
+      );
+      return true;
+    }
 
     if (
       !isManualSelection &&
