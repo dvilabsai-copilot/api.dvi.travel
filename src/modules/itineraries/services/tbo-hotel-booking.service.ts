@@ -460,6 +460,13 @@ private readonly TBO_CLIENT_ID =
     );
   }
 
+  /** Read the current supplier state of a VSR hold without changing it. */
+  async getHoldStatus(confirmationReference: string, bookingId?: string | number) {
+    const reference = String(confirmationReference || '').trim();
+    if (!reference) throw new BadRequestException('A VSR booking reference is required.');
+    return this.tboProvider.getConfirmation(reference, bookingId);
+  }
+
  /**
    * Map passengers to TBO hotel rooms format
    * Each room contains the passengers assigned to it

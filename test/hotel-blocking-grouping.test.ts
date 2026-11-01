@@ -183,6 +183,198 @@ test('holdGroup dispatches one email for a continuous hotel and one for another 
   assert.deepEqual(aurumEmail?.request.stayDetails.map((detail: any) => detail.roomType), ['Deluxe', 'Garden Cottage']);
 });
 
+test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the same active rate', async () => {
+  const selectedRow = {
+    itinerary_plan_hotel_details_ID: 601,
+    itinerary_route_date: '2026-12-15',
+    hotel_check_in_date: '2026-12-15',
+    hotel_check_out_date: '2026-12-16',
+    hotel_id: 61,
+    hotel_code: 'VSR-TEA-CASTLE',
+    hotel_provider: 'VSR',
+    total_no_of_rooms: 1,
+    selected_price_snapshot: JSON.stringify({
+      hotelName: 'Tea Castle',
+      roomType: 'Executive Room',
+      mealPlan: 'CP',
+      isRefundable: true,
+    }),
+  };
+  let persisted: any = null;
+  let prebookCalls = 0;
+  let holdCalls = 0;
+  let holdSelection: any = null;
+  let statusCalls = 0;
+  let statusReference: string | undefined;
+  let statusBookingId: string | number | undefined;
+  const sent: any[] = [];
+  const prisma: any = {
+    dvi_itinerary_plan_hotel_details: { findMany: async () => [selectedRow] },
+    dvi_hotel: { findMany: async () => [{ hotel_id: 61, hotel_name: 'Tea Castle', hotel_email: 'hotel@example.test' }] },
+    dvi_itinerary_plan_hotel_room_details: { findMany: async () => [] },
+    dvi_global_settings: { findFirst: async () => ({}) },
+    dvi_hotel_block_request: {
+      findMany: async () => (persisted ? [persisted] : []),
+      findUnique: async () => null,
+    },
+    dvi_hotel_block_message: { findMany: async () => [] },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: {
+        create: async ({ data }: any) => {
+          persisted = { id: 700, ...data };
+          return persisted;
+        },
+        update: async ({ data }: any) => {
+          persisted = { ...persisted, ...data };
+          return persisted;
+        },
+      },
+      dvi_hotel_block_event: { create: async () => undefined },
+      dvi_hotel_block_token: { create: async () => undefined },
+      dvi_hotel_block_message: { create: async () => undefined },
+    }),
+  };
+  const emailService = {
+    dispatch: async (input: any) => { sent.push(input); return { status: 'QUEUED' as const }; },
+    deliveryRecipient: (recipient: string) => recipient,
+    logFailure: (error: unknown) => String(error),
+  };
+  const tboBooking = {
+    preBookHotel: async () => { prebookCalls += 1; return { NetAmount: 3255.35 }; },
+    holdHotel: async (_preBookResponse: any, selection: any) => {
+      holdCalls += 1;
+      holdSelection = selection;
+      return { BookResult: { BookingRefNo: 'TBO-HOLD-700', BookingId: 700 } };
+    },
+    getHoldStatus: async (reference: string, bookingId: string | number) => {
+      statusCalls += 1;
+      statusReference = reference;
+      statusBookingId = bookingId;
+      return { status: 'Confirmed', bookingDeadline: '2026-12-15T18:00:00.000Z' };
+    },
+  };
+  const service = new (HotelBlockingService as any)(prisma, emailService, tboBooking);
+  const input = {
+    itineraryPlanId: 12042,
+    groupType: 1,
+    guest: { name: 'Guest', email: 'guest@example.test', phone: '9999999999' },
+    tboHoldBookings: [{
+      hotelDetailsIds: [601],
+      selection: {
+        hotelCode: 'VSR-TEA-CASTLE', hotelName: 'Tea Castle', bookingCode: 'RATE-1',
+        roomType: 'Executive Room', numberOfRooms: 1, netAmount: 3255.35,
+      },
+    }],
+  };
+
+  const first = await service.holdGroup(input);
+  const second = await service.holdGroup(input);
+  const refreshed = await service.listForItinerary(12042, 1);
+
+  assert.equal(first.requests[0].status, 'HOLD');
+  assert.equal(second.requests[0].status, 'HOLD');
+  assert.equal(prebookCalls, 1);
+  assert.equal(holdCalls, 1);
+  assert.equal(holdSelection?.isVoucherBooking, false);
+  assert.equal(sent.length, 0);
+  assert.equal(refreshed[0].status, 'HOLD');
+  assert.equal(statusCalls, 1);
+  assert.equal(statusReference, 'TBO-HOLD-700');
+  assert.equal(statusBookingId, 700);
+});
+
+test('an expired supplier status is exposed as HOLD expired', async () => {
+  const service = new (HotelBlockingService as any)({}, {}, {
+    getHoldStatus: async () => ({
+      status: 'Cancelled',
+      bookingDeadline: '2026-12-15T18:00:00.000Z',
+    }),
+  });
+  const refreshed = await service.refreshSupplierHold({
+    provider: 'VSR',
+    confirmation_channel: 'TBO_BOOK_HOLD',
+    confirmation_reference: 'TBO-HOLD-EXPIRED',
+    cutoff_at: new Date('2026-12-15T18:00:00.000Z'),
+  });
+
+  assert.equal(refreshed.statusOverride, 'HOLD_EXPIRED');
+});
+
+test('changing a VSR hotel retires the local request without emailing the hotelier', async () => {
+  const request: any = {
+    id: 78,
+    itinerary_plan_id: 12042,
+    group_type: 1,
+    status: 'BLOCKED',
+    selection_ids: JSON.stringify([601]),
+    hotel_id: 61,
+    hotel_code: 'VSR-TEA-CASTLE',
+    hotel_name: 'Tea Castle',
+    provider: 'VSR',
+    confirmation_channel: 'TBO_BOOK_HOLD',
+    confirmation_reference: 'TBO-HOLD-700',
+    check_in: '2026-12-15',
+    check_out: '2026-12-16',
+    requested_at: new Date('2026-11-01T10:00:00.000Z'),
+    cutoff_at: new Date('2026-11-01T14:00:00.000Z'),
+    request_payload: JSON.stringify({ supplierHold: { bookingCode: 'RATE-1' } }),
+    version: 1,
+  };
+  const events: any[] = [];
+  const sent: any[] = [];
+  const prisma: any = {
+    dvi_hotel_block_request: {
+      findMany: async () => (request.status === 'BLOCKED' ? [request] : []),
+    },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async ({ where }: any) => where.itinerary_plan_hotel_details_ID?.in
+        ? [{
+            itinerary_plan_hotel_details_ID: 601,
+            itinerary_route_id: 9001,
+            hotel_id: 61,
+            hotel_code: 'VSR-TEA-CASTLE',
+            hotel_provider: 'VSR',
+            selected_price_snapshot: JSON.stringify({ hotelName: 'Tea Castle' }),
+          }]
+        : [{
+            itinerary_plan_hotel_details_ID: 602,
+            itinerary_route_id: 9001,
+            hotel_id: 62,
+            hotel_code: 'VSR-SNOW-LINE',
+            hotel_provider: 'VSR',
+            selected_price_snapshot: JSON.stringify({ hotelName: 'Snow Line Resort' }),
+          }],
+    },
+    dvi_hotel_block_message: { update: async ({ data }: any) => data },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: {
+        update: async ({ data }: any) => { Object.assign(request, data); return request; },
+      },
+      dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
+      dvi_hotel_block_message: { create: async () => undefined },
+    }),
+  };
+  const emailService: any = {
+    deliveryRecipient: (recipient: string) => recipient,
+    dispatch: async (input: any) => { sent.push(input); return { status: 'SENT' }; },
+    logFailure: (error: unknown) => String(error),
+  };
+  const service = new (HotelBlockingService as any)(prisma, emailService, {});
+
+  const result = await service.cancelHoldsAfterHotelChange({
+    itineraryPlanId: 12042,
+    groupType: 1,
+    routeIds: [9001],
+    actor: { id: 1, type: 'STAFF' },
+  });
+
+  assert.equal(result.cancelled, 1);
+  assert.equal(result.emailsQueued, 0);
+  assert.equal(sent.length, 0);
+  assert.equal(request.status, 'CANCELLED');
+  assert.match(events[0].notes, /TBO auto-cancels/);
+});
+
 test('allows a hotelier to shorten the hold but keeps staff extensions one-way', async () => {
   const now = new Date();
   const requestedAt = new Date(now.getTime() - 60 * 60 * 1000);
