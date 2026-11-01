@@ -229,6 +229,27 @@ export class TimelineTravelDataService {
       lon: Number(row.destination_location_longitude ?? 0),
     };
 
+    // A stored route row can match the requested city on either side. The
+    // preferred side is only a fallback; selecting it unconditionally can
+    // return the opposite city's coordinates (for example, resolving
+    // "Mysore" from the Mysore -> Hyderabad side of a route).
+    const requestedKey = this.normalizePlaceLookupKey(city);
+    const matchesRequestedCity = (value: unknown): boolean =>
+      this.normalizePlaceLookupKey(String(value || '')) === requestedKey;
+    const sourceMatches =
+      matchesRequestedCity(row.source_location) ||
+      matchesRequestedCity(row.source_location_city);
+    const destinationMatches =
+      matchesRequestedCity(row.destination_location) ||
+      matchesRequestedCity(row.destination_location_city);
+
+    if (sourceMatches && this.hasUsableCoords(sourceCoords)) {
+      return sourceCoords;
+    }
+    if (destinationMatches && this.hasUsableCoords(destinationCoords)) {
+      return destinationCoords;
+    }
+
     if (preferredSide === 'destination') {
       if (this.hasUsableCoords(destinationCoords)) return destinationCoords;
       if (this.hasUsableCoords(sourceCoords)) return sourceCoords;
