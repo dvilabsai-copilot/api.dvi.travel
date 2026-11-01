@@ -3357,6 +3357,7 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         hotelMarginAmount = Number((totalPrice - baseTotalPrice).toFixed(2));
         hotelMarginTotalAmount = hotelMarginAmount;
       }
+      const requestedRateIsRefundable = data.isRefundable ?? data.IsRefundable;
       return {
         ...data,
         selectionIntent: data.selectionIntent,
@@ -3371,7 +3372,13 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         optionKey: selected.optionKey || selected.rateOptionId, hotelName: selected.hotelName,
         roomType: selected.roomType || selected.roomTypeName, mealPlanCode: selected.mealPlanCode || selected.mealPlan,
         roomId: selected.roomId, rateId: selected.rateId, pricePerNight, totalPrice,
-        isRefundable: selected.isRefundable ?? selected.IsRefundable,
+        // Preserve the holdability flag from the rate selected by the user.
+        // A refreshed supplier candidate can still carry the previous
+        // persisted rate's false value after switching away and back. The
+        // client-provided value is taken from the live selected option and is
+        // already part of the selection intent payload.
+        isRefundable: requestedRateIsRefundable ?? selected.isRefundable ?? selected.IsRefundable,
+        IsRefundable: requestedRateIsRefundable ?? selected.IsRefundable ?? selected.isRefundable,
         basePricePerNight,
         baseTotalPrice,
         ...(selected.tboMapFallbackApplied === true ? {
