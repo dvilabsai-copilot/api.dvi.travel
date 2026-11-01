@@ -61,6 +61,10 @@ import { TimelineDay1CutoffMasterService } from './timeline-day1-cutoff-master.s
 import { TimelineDay1TravelProjectionService } from './timeline-day1-travel-projection.service';
 import { TransportEarlyArrivalTimelineService } from './transport-early-arrival-timeline.service';
 import {
+  buildIntercityPhaseCandidateQueue,
+  shouldAdvanceToPostSourceCandidate,
+} from './timeline-intercity-phase.service';
+import {
   buildSameCityRoutePolicyContexts,
   calculateSameCityPriorityLimit,
   filterSameCityAutomaticCandidates,
@@ -3120,6 +3124,7 @@ const strictHotspots = (
 
         let strictPassHotspots = [...strictHotspots];
         const sourcePhaseEndSeconds = timeToSeconds('12:00:00');
+        let priorityDestinationPreemption: SelectedHotspot | null = null;
         if (isIntercityNonDirectRoute) {
           const destinationStrict = strictPassHotspots.filter((hs) => {
             const bucket = String((hs as any).matched_bucket || '').toLowerCase();
@@ -3149,6 +3154,10 @@ const strictHotspots = (
               const bucket = String((hs as any).matched_bucket || '').toLowerCase();
               return bucket === 'destination' || bucket === 'dest';
             });
+
+            priorityDestinationPreemption = [...destinationOnlyStrict]
+              .filter((hs: any) => Number(hs?.hotspot_priority ?? 0) === 1)
+              .sort((a: any, b: any) => Number(a?.hotspot_ID ?? 0) - Number(b?.hotspot_ID ?? 0))[0] || null;
 
             const compareSchedulerRouteMovementCandidates = (a: any, b: any) => {
               const ao = Number(a.__route_movement_order ?? 999999);
@@ -3431,6 +3440,18 @@ const PASS_STRICT = 1;
               hotspotId > 0 &&
               !isHotspotAlreadyPlanned(hotspotId) &&
               isSourcePhaseEligibleCandidate(hs)
+            );
+          });
+        };
+        const getPendingPostSourcePhaseCandidates = (
+          candidates: Array<SelectedHotspot>,
+        ): Array<SelectedHotspot> => {
+          return (Array.isArray(candidates) ? candidates : []).filter((hs: any) => {
+            const hotspotId = Number(hs?.hotspot_ID || 0);
+            return (
+              hotspotId > 0 &&
+              !isHotspotAlreadyPlanned(hotspotId) &&
+              !isSourcePhaseEligibleCandidate(hs)
             );
           });
         };
@@ -3806,7 +3827,10 @@ const PASS_STRICT = 1;
               });
 
               if (remainingSourceCandidates.length > 0) {
-                hotspotsToTry = remainingSourceCandidates;
+                hotspotsToTry = [
+                  ...remainingSourceCandidates,
+                  ...getPendingPostSourcePhaseCandidates(strictPassHotspots),
+                ];
                 this.logBookingRule({
                   rule: 'SOURCE_PHASE_CLOCK_PRESERVED_FOR_NON_STRICT_SOURCE_CANDIDATES',
                   quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
@@ -3824,9 +3848,7 @@ const PASS_STRICT = 1;
                 });
               } else {
                 currentTime = secondsToTime(sourcePhaseEndSeconds);
-                hotspotsToTry = corridorHotspots.filter(
-                  (hs: any) => !isHotspotAlreadyPlanned(Number(hs?.hotspot_ID || 0)),
-                );
+                hotspotsToTry = getPendingPostSourcePhaseCandidates(strictPassHotspots);
                 this.logBookingRule({
                   rule: 'SOURCE_PHASE_ADVANCED_TO_CORRIDOR_PHASE',
                   quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
@@ -3891,7 +3913,15 @@ const PASS_STRICT = 1;
             const sourceOnlyCandidates = hotspotsToTry.filter((hs: any) => isSourcePhaseEligibleCandidate(hs));
 
             if (sourceOnlyCandidates.length > 0) {
-              hotspotsToTry = sourceOnlyCandidates;
+              hotspotsToTry = pass === PASS_STRICT
+                ? buildIntercityPhaseCandidateQueue(
+                    hotspotsToTry,
+                    isSourcePhaseEligibleCandidate,
+                    priorityDestinationPreemption && !isHotspotAlreadyPlanned(Number(priorityDestinationPreemption.hotspot_ID || 0))
+                      ? priorityDestinationPreemption
+                      : null,
+                  )
+                : sourceOnlyCandidates;
             } else if (timeToSeconds(currentTime) < sourcePhaseEndSeconds) {
               this.logBookingRule({
                 rule: 'SOURCE_PHASE_ADVANCE_TO_NOON',
@@ -4155,7 +4185,7 @@ const normalizedBucket = String(
 
         if (isIntercityNonDirectRoute) {
           const currentSecs = timeToSeconds(currentTime);
-          const sourcePhaseActive =
+          let sourcePhaseActive =
             !shouldBypassSourcePhaseForMovementTransfer &&
             currentSecs < sourcePhaseEndSeconds;
         if (
@@ -4192,50 +4222,93 @@ const normalizedBucket = String(
             continue;
           }
           if (sourcePhaseActive && !isSourcePhaseEligibleCandidate(sh)) {
-            if (hotspotId === 228 || hotspotId === 357) {
+            const isPriorityDestinationPreemption =
+              pass === PASS_STRICT &&
+              priorityDestinationPreemption !== null &&
+              Number(priorityDestinationPreemption.hotspot_ID || 0) === hotspotId &&
+              !isHotspotAlreadyPlanned(hotspotId) &&
+              hotspotRows.filter((row: any) =>
+                Number(row?.itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) &&
+                Number(row?.item_type || 0) === 4,
+              ).length === 0;
+
+            if (isPriorityDestinationPreemption) {
+              sourcePhaseActive = false;
               this.logBookingRule({
-                rule: 'CHEEYAPPARA_REJECTED_BEFORE_VALARA',
+                rule: 'PRIORITY_DESTINATION_PREEMPTED_SOURCE_PHASE',
+                quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                hotspotId,
+                priority: hotspotPriority,
+                reason: 'Unplanned priority-1 destination hotspot is tried before lower-priority source sightseeing so its operating window is preserved.',
+              });
+            } else if (pass === PASS_STRICT && shouldAdvanceToPostSourceCandidate(
+              hotspotsToTry,
+              hsIdx,
+              isSourcePhaseEligibleCandidate,
+              (candidate: any) => isHotspotAlreadyPlanned(Number(candidate?.hotspot_ID || 0)),
+            )) {
+              currentTime = secondsToTime(sourcePhaseEndSeconds);
+              sourcePhaseActive = false;
+              this.logBookingRule({
+                rule: 'SOURCE_PHASE_ADVANCED_TO_POST_SOURCE_CANDIDATE',
                 quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
                 planId,
                 routeId: route.itinerary_route_ID,
                 cycle: optimizationCycle,
                 pass,
-                passType:
-                  pass === PASS_STRICT
-                    ? 'strict'
-                    : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
-                      ? 'filler'
-                      : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
-                        ? 'deferred'
-                        : 'retry',
-                currentTime,
+                hotspotId,
+                bucket: normalizedBucket,
+                sourcePhaseEndTime: secondsToTime(sourcePhaseEndSeconds),
+                reason: 'Strict source candidates are exhausted; continue with ordered movement/destination candidates.',
+              });
+            } else {
+              if (hotspotId === 228 || hotspotId === 357) {
+                this.logBookingRule({
+                  rule: 'CHEEYAPPARA_REJECTED_BEFORE_VALARA',
+                  quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                  planId,
+                  routeId: route.itinerary_route_ID,
+                  cycle: optimizationCycle,
+                  pass,
+                  passType:
+                    pass === PASS_STRICT
+                      ? 'strict'
+                      : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                        ? 'filler'
+                        : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                          ? 'deferred'
+                          : 'retry',
+                  currentTime,
+                  bucket: normalizedBucket,
+                  priority: hotspotPriority,
+                  reason: 'source_phase_gate_non_source_bucket',
+                  rejectionSource: 'source_phase_gate',
+                  valaraAlreadyAdded: isHotspotAlreadyPlanned(357),
+                });
+              }
+              logHotspotBucketTrace({
+                hotspotId,
+                hotspotName: String((sh as any).hotspot_name || ''),
                 bucket: normalizedBucket,
                 priority: hotspotPriority,
-                reason: 'source_phase_gate_non_source_bucket',
-                rejectionSource: 'source_phase_gate',
-                valaraAlreadyAdded: isHotspotAlreadyPlanned(357),
-              });
-            }
-            logHotspotBucketTrace({
-              hotspotId,
-              hotspotName: String((sh as any).hotspot_name || ''),
-              bucket: normalizedBucket,
-              priority: hotspotPriority,
-              currentTime,
-              sourcePhaseActive,
-              accepted: false,
-              rejectionReason: 'source_phase_gate_non_source_bucket',
-            });
-            if (hotspotId === 241) {
-              traceHotspot241('rejected_source_phase_gate', {
-                pass,
                 currentTime,
-                sourcePhaseEnd: '12:00:00',
-                bucket: normalizedBucket || null,
-                priority: hotspotPriority,
+                sourcePhaseActive,
+                accepted: false,
+                rejectionReason: 'source_phase_gate_non_source_bucket',
               });
+              if (hotspotId === 241) {
+                traceHotspot241('rejected_source_phase_gate', {
+                  pass,
+                  currentTime,
+                  sourcePhaseEnd: '12:00:00',
+                  bucket: normalizedBucket || null,
+                  priority: hotspotPriority,
+                });
+              }
+              continue;
             }
-            continue;
           }
         }
 
