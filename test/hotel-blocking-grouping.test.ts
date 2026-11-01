@@ -205,6 +205,8 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
   let holdCalls = 0;
   let holdSelection: any = null;
   let statusCalls = 0;
+  let statusReference: string | undefined;
+  let statusBookingId: string | number | undefined;
   const sent: any[] = [];
   const prisma: any = {
     dvi_itinerary_plan_hotel_details: { findMany: async () => [selectedRow] },
@@ -242,10 +244,12 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
     holdHotel: async (_preBookResponse: any, selection: any) => {
       holdCalls += 1;
       holdSelection = selection;
-      return { BookResult: { BookingRefNo: 'TBO-HOLD-700' } };
+      return { BookResult: { BookingRefNo: 'TBO-HOLD-700', BookingId: 700 } };
     },
-    getHoldStatus: async () => {
+    getHoldStatus: async (reference: string, bookingId: string | number) => {
       statusCalls += 1;
+      statusReference = reference;
+      statusBookingId = bookingId;
       return { status: 'Confirmed', bookingDeadline: '2026-12-15T18:00:00.000Z' };
     },
   };
@@ -275,6 +279,8 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
   assert.equal(sent.length, 0);
   assert.equal(refreshed[0].status, 'HOLD');
   assert.equal(statusCalls, 1);
+  assert.equal(statusReference, 'TBO-HOLD-700');
+  assert.equal(statusBookingId, 700);
 });
 
 test('an expired supplier status is exposed as HOLD expired', async () => {

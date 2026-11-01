@@ -533,6 +533,7 @@ export class HotelBlockingService {
             || bookResponse?.BookResult?.BookingId
             || '',
         ).trim();
+        const bookingId = Number(bookResponse?.BookResult?.BookingId || 0) || undefined;
         results.push(await this.upsertRequest({
           planId,
           groupType,
@@ -543,7 +544,7 @@ export class HotelBlockingService {
           policy,
           requestedAt,
           scopedSelection: Boolean(scopedHotelDetailsIds),
-          supplierHold: { bookingReference, bookResponse, selection: selectionWithHoldMode },
+          supplierHold: { bookingReference, bookingId, bookResponse, selection: selectionWithHoldMode },
         }));
         continue;
       }
@@ -1122,7 +1123,7 @@ export class HotelBlockingService {
     policy?: HotelHoldPolicy;
     requestedAt?: Date;
     scopedSelection?: boolean;
-    supplierHold?: { bookingReference?: string; bookResponse?: unknown; selection?: Record<string, any> };
+    supplierHold?: { bookingReference?: string; bookingId?: string | number; bookResponse?: unknown; selection?: Record<string, any> };
   }) {
     const first = input.rows[0];
     const room = first.__room || {};
@@ -1183,6 +1184,7 @@ export class HotelBlockingService {
       supplierHold: input.supplierHold
         ? {
             bookingReference: input.supplierHold.bookingReference || null,
+            bookingId: input.supplierHold.bookingId || null,
             bookingCode: input.supplierHold.selection?.bookingCode || null,
           }
         : null,
@@ -1538,7 +1540,10 @@ export class HotelBlockingService {
     if (!isTboSupplierHoldRequest(row)) return { row, statusOverride: undefined as string | undefined, cutoffAt: undefined as Date | undefined };
     const localCutoff = dateOnly(row.cutoff_at);
     try {
-      const detail = await this.tboHotelBooking.getHoldStatus(String(row.confirmation_reference));
+      const payload = parseJson(row.request_payload, {}) as BlockRow;
+      const supplierHold = (payload?.supplierHold || {}) as BlockRow;
+      const bookingId = supplierHold.bookingId || supplierHold.BookingId;
+      const detail = await this.tboHotelBooking.getHoldStatus(String(row.confirmation_reference), bookingId);
       const supplierCutoff = dateOnly(detail.bookingDeadline);
       const cutoffAt = supplierCutoff || localCutoff || undefined;
       const expired = isSupplierExpiredStatus(detail.status)

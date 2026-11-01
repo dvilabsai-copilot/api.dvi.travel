@@ -1203,6 +1203,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
   async getConfirmation(
     confirmationRef: string,
+    bookingId?: string | number,
   ): Promise<HotelConfirmationDetails> {
     try {
  this.logger.log(` Getting confirmation status for: ${confirmationRef}`);
@@ -1212,7 +1213,9 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
  // Step 2: Build GetBookingDetail request (from Postman collection)
       const request = {
+        ...(Number(bookingId) > 0 ? { BookingId: Number(bookingId) } : {}),
         BookingRefId: confirmationRef,
+        EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
         TokenId: tokenId,
       };
 
@@ -1231,10 +1234,12 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           }
         );
 
-      const status = response.data?.Status;
-      if (!status || status.Code !== 200) {
+      const result = response.data?.GetBookingDetailResult || response.data;
+      const envelopeStatusCode = Number(response.data?.Status?.Code || response.data?.Status || 0);
+      const resultStatus = Number(result?.Status || result?.ResponseStatus || 0);
+      if (![200, 1].includes(envelopeStatusCode) && resultStatus !== 1) {
         throw new Error(
-          `Failed to fetch booking: ${status?.Description || 'Unknown error'}`
+          `Failed to fetch booking: ${result?.Error?.ErrorMessage || response.data?.Status?.Description || 'Unknown error'}`
         );
       }
 
@@ -1242,21 +1247,22 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
       return {
         confirmationRef: confirmationRef,
-        hotelName: response.data.HotelName || '',
-        checkIn: response.data.CheckInDate,
-        checkOut: response.data.CheckOutDate,
-        roomCount: response.data.RoomCount || 1,
-        totalPrice: parseFloat(response.data.TotalPrice) || 0,
-        status: response.data.BookingStatus || 'confirmed',
+        hotelName: result.HotelName || '',
+        checkIn: result.CheckInDate,
+        checkOut: result.CheckOutDate,
+        roomCount: result.RoomCount || result.NoOfRooms || 1,
+        totalPrice: parseFloat(result.TotalPrice || result.TotalAmount) || 0,
+        status: result.BookingStatus || result.HotelBookingStatus || 'confirmed',
         bookingDeadline:
-          response.data.HoldUntil
-          || response.data.HoldExpiryDate
-          || response.data.HoldExpiry
-          || response.data.BookingDeadline
-          || response.data.LastCancellationDeadline
-          || response.data.CutoffDate
+          result.HoldUntil
+          || result.HoldExpiryDate
+          || result.HoldExpiry
+          || result.BookingDeadline
+          || result.LastCancellationDate
+          || result.LastCancellationDeadline
+          || result.CutoffDate
           || null,
-        cancellationPolicy: response.data.CancellationPolicy || 'As per VSR',
+        cancellationPolicy: result.CancellationPolicy || 'As per VSR',
       };
     } catch (error) {
  this.logger.error(

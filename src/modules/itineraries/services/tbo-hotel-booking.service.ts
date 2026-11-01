@@ -195,13 +195,6 @@ private readonly TBO_CLIENT_ID =
     }
   }
 
-  /** Read the current supplier state of a VSR hold without changing it. */
-  async getHoldStatus(confirmationReference: string) {
-    const reference = String(confirmationReference || '').trim();
-    if (!reference) throw new BadRequestException('A VSR booking reference is required.');
-    return this.tboProvider.getConfirmation(reference);
-  }
-
  /**
    * Execute PreBook API call for TBO hotel
    * This confirms the room availability and locks the price
@@ -465,6 +458,13 @@ private readonly TBO_CLIENT_ID =
       { ...selection, isVoucherBooking: false },
       endUserIp,
     );
+  }
+
+  /** Read the current supplier state of a VSR hold without changing it. */
+  async getHoldStatus(confirmationReference: string, bookingId?: string | number) {
+    const reference = String(confirmationReference || '').trim();
+    if (!reference) throw new BadRequestException('A VSR booking reference is required.');
+    return this.tboProvider.getConfirmation(reference, bookingId);
   }
 
  /**
