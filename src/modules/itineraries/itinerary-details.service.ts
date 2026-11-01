@@ -49,6 +49,7 @@ import {
   resolveItineraryExtraMarginConfig,
 } from './utils/itinerary-extra-margin.util';
 import { shouldSkipRepeatedHotelNight } from './utils/hotel-route-total.util';
+import { resolveVehicleTermsCondition } from './utils/vehicle-terms.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -534,6 +535,7 @@ vehicleRateAvailability?: Array<{
     description: string;
     houseBoatNote: string;
     rateNote: string;
+    vehicleTermsCondition: string;
   };
   costBreakdown: CostBreakdownDto;
 }
@@ -7474,6 +7476,11 @@ const normalizedItineraryPreference = resolveItineraryPreference({
   hasHotelRows,
   hasVehicleRows,
 });
+const vehicleTermsCondition = resolveVehicleTermsCondition({
+  itineraryPreference: normalizedItineraryPreference,
+  plan,
+  globalSettings: itineraryTextSettings,
+});
 
 // Calls made internally by clipboard/document builders do not carry an HTTP
 // user. Preserve their existing full-detail behavior; authenticated controller
@@ -7568,6 +7575,7 @@ packageIncludes: {
         description: '',
         houseBoatNote: '',
         rateNote: '',
+        vehicleTermsCondition,
       },
       costBreakdown: visibleCostBreakdown,
     };

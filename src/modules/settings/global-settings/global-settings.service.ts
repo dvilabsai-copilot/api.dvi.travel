@@ -211,6 +211,7 @@ export class GlobalSettingsService {
         itinerary_break_time: true,
         itinerary_hotel_start: true,
         itinerary_hotel_return: true,
+        vehicle_terms_condition: true,
       },
     });
 
@@ -218,6 +219,7 @@ export class GlobalSettingsService {
       firstDayStartLabel: row?.itinerary_break_time?.trim() || null,
       otherDayStartLabel: row?.itinerary_hotel_start?.trim() || null,
       returnLabel: row?.itinerary_hotel_return?.trim() || null,
+      vehicleTermsCondition: row?.vehicle_terms_condition?.trim() || null,
     };
   }
 

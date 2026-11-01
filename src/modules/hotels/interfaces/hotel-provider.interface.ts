@@ -245,6 +245,8 @@ export interface HotelConfirmationDetails {
   roomCount: number;
   totalPrice: number;
   status: string;
+  /** Supplier-provided deadline for an active hold, when available. */
+  bookingDeadline?: string | null;
   cancellationPolicy: string;
 }
 

@@ -1248,6 +1248,14 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
         roomCount: response.data.RoomCount || 1,
         totalPrice: parseFloat(response.data.TotalPrice) || 0,
         status: response.data.BookingStatus || 'confirmed',
+        bookingDeadline:
+          response.data.HoldUntil
+          || response.data.HoldExpiryDate
+          || response.data.HoldExpiry
+          || response.data.BookingDeadline
+          || response.data.LastCancellationDeadline
+          || response.data.CutoffDate
+          || null,
         cancellationPolicy: response.data.CancellationPolicy || 'As per VSR',
       };
     } catch (error) {

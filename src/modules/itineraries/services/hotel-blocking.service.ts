@@ -47,6 +47,24 @@ const RESPONSE_STATUSES = new Set<string>([
 
 const normalizeText = (value: unknown) => String(value ?? '').trim();
 
+export const isTboSupplierHoldRequest = (row: BlockRow): boolean => (
+  normalizeText(row.confirmation_channel).toUpperCase() === 'TBO_BOOK_HOLD'
+  && normalizeText(row.provider).toUpperCase() === 'VSR'
+  && Boolean(normalizeText(row.confirmation_reference))
+);
+
+const isSupplierExpiredStatus = (value: unknown): boolean => {
+  const status = normalizeText(value).toLowerCase();
+  return Boolean(status) && [
+    'cancelled', 'canceled', 'expired', 'void', 'rejected', 'failed', 'unavailable',
+  ].some((term) => status.includes(term));
+};
+
+const isFutureDate = (value: unknown, now = new Date()): boolean => {
+  const date = dateOnly(value);
+  return Boolean(date && date.getTime() > now.getTime());
+};
+
 const parseJson = (value: unknown, fallback: unknown = null) => {
   if (typeof value !== 'string' || !value.trim()) return fallback;
   try {
@@ -404,6 +422,19 @@ export class HotelBlockingService {
       }
     }
 
+    // Reopening the modal or retrying the same action must not issue another
+    // supplier hold for the same selected hotel/rate while the existing hold
+    // is still active.
+    const existingSupplierHolds = await (this.prisma as any).dvi_hotel_block_request.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        group_type: groupType,
+        status: { in: ACTIVE_REQUEST_STATUSES },
+        confirmation_channel: 'TBO_BOOK_HOLD',
+      },
+      orderBy: { id: 'asc' },
+    });
+
     const preparedRows: BlockRow[] = [];
     for (const row of rows) {
       const room = roomsBySelection.get(Number(row.itinerary_plan_hotel_details_ID));
@@ -471,6 +502,20 @@ export class HotelBlockingService {
         }
 
         const selection = tboHoldBooking.selection as any;
+        const reusable = (existingSupplierHolds as BlockRow[]).find((candidate) => (
+          this.isReusableSupplierHold(candidate, groupedRows, selection, requestedAt)
+        ));
+        if (reusable) {
+          results.push({
+            ...this.publicStaffView(reusable, policy, undefined, 'HOLD'),
+            created: false,
+            emailQueued: false,
+            supplierBookingReference: reusable.confirmation_reference,
+            responseUrl: undefined,
+          });
+          continue;
+        }
+        const selectionWithHoldMode = { ...selection, isVoucherBooking: false };
         const preBookResponse = await this.tboHotelBooking.preBookHotel(selection);
         const prebookNetAmount = Number(
           preBookResponse?.NetAmount
@@ -480,7 +525,7 @@ export class HotelBlockingService {
         );
         const bookResponse = await this.tboHotelBooking.holdHotel(
           preBookResponse,
-          { ...selection, netAmount: prebookNetAmount },
+          { ...selectionWithHoldMode, netAmount: prebookNetAmount },
         );
         const bookingReference = String(
           bookResponse?.BookResult?.BookingRefNo
@@ -498,7 +543,7 @@ export class HotelBlockingService {
           policy,
           requestedAt,
           scopedSelection: Boolean(scopedHotelDetailsIds),
-          supplierHold: { bookingReference, bookResponse },
+          supplierHold: { bookingReference, bookResponse, selection: selectionWithHoldMode },
         }));
         continue;
       }
@@ -569,7 +614,13 @@ export class HotelBlockingService {
       orderBy: [{ check_in: 'asc' }, { id: 'asc' }],
     });
     const latestMessages = await this.latestMessagesByRequest(rows.map((row: BlockRow) => Number(row.id)));
-    return rows.map((row: BlockRow) => this.publicStaffView(row, policy, latestMessages.get(Number(row.id))));
+    const refreshed = await Promise.all(rows.map((row: BlockRow) => this.refreshSupplierHold(row)));
+    return refreshed.map(({ row, statusOverride, cutoffAt }) => this.publicStaffView(
+      cutoffAt ? { ...row, cutoff_at: cutoffAt } : row,
+      policy,
+      latestMessages.get(Number(row.id)),
+      statusOverride,
+    ));
   }
 
   async getById(requestId: number) {
@@ -579,7 +630,13 @@ export class HotelBlockingService {
     });
     if (!row) throw new NotFoundException('Hotel hold request not found.');
     const latestMessages = await this.latestMessagesByRequest([Number(row.id)]);
-    return this.publicStaffView(row, policy, latestMessages.get(Number(row.id)));
+    const refreshed = await this.refreshSupplierHold(row);
+    return this.publicStaffView(
+      refreshed.cutoffAt ? { ...row, cutoff_at: refreshed.cutoffAt } : row,
+      policy,
+      latestMessages.get(Number(row.id)),
+      refreshed.statusOverride,
+    );
   }
 
   async getGuestDetails(planId: number) {
@@ -727,7 +784,11 @@ export class HotelBlockingService {
   }
 
   private async cancelAfterHotelChange(request: BlockRow, actor: Actor) {
-    const recipient = firstEmail(request.contact_email);
+    const supplierHold = isTboSupplierHoldRequest(request);
+    // TBO/VSR releases the old supplier hold when the selected itinerary
+    // hotel changes. Retire our local row, but never send the manual hotelier
+    // cancellation email for this provider.
+    const recipient = supplierHold ? null : firstEmail(request.contact_email);
     const updated = await (this.prisma as any).$transaction(async (tx: any) => {
       const result = await tx.dvi_hotel_block_request.update({
         where: { id: request.id },
@@ -745,7 +806,9 @@ export class HotelBlockingService {
           actor_type: actor.type || 'STAFF',
           actor_id: Number(actor.id || 0) || null,
           actor_name: actor.name || null,
-          notes: 'Previous hotel hold cancelled because the itinerary hotel was changed.',
+          notes: supplierHold
+            ? 'Previous VSR supplier hold retired because the itinerary hotel changed; TBO auto-cancels it.'
+            : 'Previous hotel hold cancelled because the itinerary hotel was changed.',
         },
       });
       const message = recipient
@@ -1059,7 +1122,7 @@ export class HotelBlockingService {
     policy?: HotelHoldPolicy;
     requestedAt?: Date;
     scopedSelection?: boolean;
-    supplierHold?: { bookingReference?: string; bookResponse?: unknown };
+    supplierHold?: { bookingReference?: string; bookResponse?: unknown; selection?: Record<string, any> };
   }) {
     const first = input.rows[0];
     const room = first.__room || {};
@@ -1118,7 +1181,10 @@ export class HotelBlockingService {
       selectionIds,
       stayDetails,
       supplierHold: input.supplierHold
-        ? { bookingReference: input.supplierHold.bookingReference || null }
+        ? {
+            bookingReference: input.supplierHold.bookingReference || null,
+            bookingCode: input.supplierHold.selection?.bookingCode || null,
+          }
         : null,
     };
     // A submitted request is awaiting the hotelier's response. The hotelier
@@ -1153,7 +1219,9 @@ export class HotelBlockingService {
     const existing = matchingSelectionRequest || (input.scopedSelection
       ? null
       : await (this.prisma as any).dvi_hotel_block_request.findUnique({ where: { reservation_key: reservationKey } }));
-    if (existing && ACTIVE_REQUEST_STATUSES.includes(existing.status)) {
+    const existingSupplierHoldExpired = isTboSupplierHoldRequest(existing || {})
+      && !isFutureDate(existing?.cutoff_at, requestedAt);
+    if (existing && ACTIVE_REQUEST_STATUSES.includes(existing.status) && !existingSupplierHoldExpired) {
       const sameSnapshot = existing.hotel_name === payload.hotelName
         && existing.provider === payload.provider
         && existing.hotel_code === payload.hotelCode
@@ -1162,7 +1230,10 @@ export class HotelBlockingService {
         && Number(existing.room_count || 0) === payload.roomCount
         && (existing.contact_email || null) === email
         && (existing.contact_phone || null) === phone
-        && (!input.supplierHold || existing.confirmation_channel === 'TBO_BOOK_HOLD');
+        && (!input.supplierHold || existing.confirmation_channel === 'TBO_BOOK_HOLD')
+        && (!input.supplierHold
+          || !input.supplierHold.selection?.bookingCode
+          || String(parseJson(existing.request_payload, {})?.supplierHold?.bookingCode || '') === String(input.supplierHold.selection.bookingCode));
       if (sameSnapshot) {
         if (input.supplierHold) {
           return {
@@ -1437,7 +1508,59 @@ export class HotelBlockingService {
     return messagesByRequest;
   }
 
-  private publicStaffView(row: BlockRow, policy = DEFAULT_HOTEL_HOLD_POLICY, latestMessage?: BlockRow) {
+  private isReusableSupplierHold(
+    request: BlockRow,
+    rows: BlockRow[],
+    selection: Record<string, any>,
+    now: Date,
+  ) {
+    if (!isTboSupplierHoldRequest(request) || !isFutureDate(request.cutoff_at, now)) return false;
+    const requestIds = (parseJson(request.selection_ids, []) as unknown[])
+      .map(Number)
+      .filter((id) => Number.isInteger(id) && id > 0)
+      .sort((a, b) => a - b);
+    const rowIds = rows
+      .map((row) => Number(row.itinerary_plan_hotel_details_ID || 0))
+      .filter((id) => Number.isInteger(id) && id > 0)
+      .sort((a, b) => a - b);
+    if (requestIds.length !== rowIds.length || requestIds.some((id, index) => id !== rowIds[index])) return false;
+
+    const payload = parseJson(request.request_payload, {}) as BlockRow;
+    const existingBookingCode = normalizeText(payload?.supplierHold?.bookingCode);
+    const bookingCode = normalizeText(selection.bookingCode || selection.BookingCode);
+    if (existingBookingCode && bookingCode && existingBookingCode !== bookingCode) return false;
+    if (normalizeText(request.hotel_code) !== normalizeText(selection.hotelCode)) return false;
+    if (normalizeText(request.room_type) !== normalizeText(selection.roomType)) return false;
+    return Number(request.room_count || 0) === Number(selection.numberOfRooms || 0);
+  }
+
+  private async refreshSupplierHold(row: BlockRow) {
+    if (!isTboSupplierHoldRequest(row)) return { row, statusOverride: undefined as string | undefined, cutoffAt: undefined as Date | undefined };
+    const localCutoff = dateOnly(row.cutoff_at);
+    try {
+      const detail = await this.tboHotelBooking.getHoldStatus(String(row.confirmation_reference));
+      const supplierCutoff = dateOnly(detail.bookingDeadline);
+      const cutoffAt = supplierCutoff || localCutoff || undefined;
+      const expired = isSupplierExpiredStatus(detail.status)
+        || Boolean(cutoffAt && cutoffAt.getTime() <= Date.now());
+      return {
+        row,
+        cutoffAt,
+        statusOverride: expired ? 'HOLD_EXPIRED' : 'HOLD',
+      };
+    } catch {
+      // A supplier status outage must not turn a locally active hold into an
+      // expired hold. Keep the last known local cutoff and active HOLD label.
+      return { row, cutoffAt: localCutoff || undefined, statusOverride: 'HOLD' };
+    }
+  }
+
+  private publicStaffView(
+    row: BlockRow,
+    policy = DEFAULT_HOTEL_HOLD_POLICY,
+    latestMessage?: BlockRow,
+    statusOverride?: string,
+  ) {
     const payload = parseJson(row.request_payload, {}) as BlockRow;
     const lastEmailAt = dateOnly(latestMessage?.sent_at || latestMessage?.created_at || row.requested_at);
     const resendAvailableAt = lastEmailAt && !row.responded_at
@@ -1456,7 +1579,7 @@ export class HotelBlockingService {
       roomType: row.room_type,
       mealPlan: row.meal_plan,
       roomCount: row.room_count,
-      status: row.status,
+      status: statusOverride || (isTboSupplierHoldRequest(row) && row.status === HOTEL_BLOCK_STATUS.BLOCKED ? 'HOLD' : row.status),
       contactEmail: row.contact_email,
       contactPhone: row.contact_phone,
       requestedAt: row.requested_at,
