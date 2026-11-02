@@ -3932,6 +3932,11 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             normalizeLabel(toName) === normalizeLabel(destinationCityName);
 
           const travelStartMins = startTimeText ? this.timeToMinutes(startTimeText) : null;
+          const previousNightHotelInfo = index > 0
+            ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)
+            : null;
+          let bestAttractionName: string | null = null;
+          let hasPriorAttraction = false;
 
  // Find the chronologically last attraction that actually happened before this row.
  // Fallback: use previous day's hotel name (if any), otherwise city name.
@@ -3947,7 +3952,6 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
  ""; // Safe fallback
 
           if (travelStartMins !== null) {
-            let bestAttractionName: string | null = null;
             let bestAttractionEnd = -1;
 
             for (const candidate of routeHotspots) {
@@ -3957,6 +3961,10 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               const candidateEndText = this.formatTime((candidate as any).hotspot_end_time ?? null);
               if (!candidateEndText) continue;
               const candidateEndMins = this.timeToMinutes(candidateEndText);
+
+              if (candidateEndMins <= travelStartMins) {
+                hasPriorAttraction = true;
+              }
 
               if (candidateEndMins <= travelStartMins && candidateEndMins >= bestAttractionEnd) {
                 const candidateMaster = hotspotMap.get(candidate.hotspot_ID as number);
@@ -3970,6 +3978,51 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             if (bestAttractionName) {
               fromName = bestAttractionName;
             }
+          }
+
+          // This item_type=5 row can represent the first hotel-to-sightseeing leg
+          // on a later day. Its persisted distance may be based on the city center,
+          // while normalizeConfirmedTravelLabelsFromSequence labels it hotel-to-attraction.
+          // Recalculate that one leg from the previous night's selected hotel.
+          const nextAttraction = travelStartMins === null
+            ? null
+            : routeHotspots
+              .filter((candidate: any) => {
+                if (Number(candidate?.item_type ?? 0) !== 4 || Number(candidate?.hotspot_ID ?? 0) <= 0) {
+                  return false;
+                }
+                const candidateStart = this.formatTime(candidate?.hotspot_start_time ?? null);
+                return candidateStart !== null && this.timeToMinutes(candidateStart) >= travelStartMins;
+              })
+              .sort((left: any, right: any) => {
+                const leftStart = this.timeToMinutes(this.formatTime(left?.hotspot_start_time ?? null) ?? '00:00');
+                const rightStart = this.timeToMinutes(this.formatTime(right?.hotspot_start_time ?? null) ?? '00:00');
+                return leftStart - rightStart;
+              })[0] ?? null;
+          const isFirstSightseeingTransfer =
+            !hasPriorAttraction
+            && !bestAttractionName
+            && Boolean(previousNightHotelInfo)
+            && Boolean(nextAttraction);
+
+          if (isFirstSightseeingTransfer && nextAttraction) {
+            const resolvedDistanceKm = await this.resolveTravelDistanceKm({
+              row: rh,
+              itemType,
+              location,
+              route,
+              preferFromCoordinates: true,
+              preferredFromCoordinates: {
+                latitude: previousNightHotelInfo.hotel_latitude,
+                longitude: previousNightHotelInfo.hotel_longitude,
+              },
+              semanticToHotspotId: Number(nextAttraction.hotspot_ID),
+              fromName,
+              toName: hotspotMap.get(Number(nextAttraction.hotspot_ID))?.hotspot_name ?? null,
+              hotspotMap,
+            });
+            distanceNum = resolvedDistanceKm ?? 0;
+            travelDistance = this.formatTravelDistance(resolvedDistanceKm);
           }
 
  // Only suppress same-city hotel travel when the segment collapses into a redundant
