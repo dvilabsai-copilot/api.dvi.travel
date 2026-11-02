@@ -528,4 +528,3 @@ export function findSameCityPolicyViolations<T extends CandidateLike>({
 
   return violations;
 }
-
