@@ -24,6 +24,7 @@ import {
   type EntryTicketBreakdownDto,
 } from './utils/entry-ticket-breakdown.util';
 import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-vehicle-km.service';
+import { getFinalTerminalDepartureText } from './utils/final-terminal-departure-text.util';
 import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { SystemRole } from '../auth/constants/system-role.constants';
@@ -2490,6 +2491,14 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
 
     for (let index = 0; index < routes.length; index++) {
       const route = routes[index];
+      const finalTerminalDepartureText = getFinalTerminalDepartureText({
+        routeIndex: index,
+        routeCount: routes.length,
+        destination: String(
+          route.next_visiting_location ?? plan.departure_location ?? '',
+        ).trim(),
+        configuredText: itineraryTextSettings.returnLabel,
+      });
 
  // from/to locations (dvi_stored_locations)
       const location =
@@ -4158,6 +4167,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             distance: travelDistance,
             duration: this.formatDuration(travelDuration),
             note: 'This may vary due to traffic conditions',
+            departureText: finalTerminalDepartureText,
             isConflict: (rh as any).isConflict === true,
             conflictReason: (rh as any).conflictReason ?? null,
           });
@@ -4198,6 +4208,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
                   this.formatDuration('00:00:00')
                 : this.formatDuration('00:00:00'),
             note: 'Airport transfer',
+            departureText: finalTerminalDepartureText,
             isConflict: false,
             conflictReason: null,
           });
