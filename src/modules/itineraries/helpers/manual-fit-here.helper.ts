@@ -747,7 +747,9 @@ if (
   resolvedAnchor.exactSelectedGap === true &&
   selectedAnchorPreserved === true &&
   selectedHotspotPreservedInPreview === true &&
+  (response as any).success === true &&
   (response as any).canConfirm !== true &&
+  Number((response as any).validation?.routeEndOverflowMinutes || (response as any).routeEndOverflowMinutes || 0) <= 0 &&
   !(
     (response as any).selectedOpeningConflict ||
     String((response as any).resultType || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' ||
@@ -1679,6 +1681,49 @@ const freshActiveRemovalEvidence = await this.getActiveRouteManualFitRemovalEvid
           });
           rollbackReason = 'TIMELINE_MISMATCH';
           throw applyRollbackError;
+        }
+
+        // Fit Here can move the hotel travel/check-in to after the selected
+        // attraction in its finalized timeline. Persist that check-in time as
+        // well; otherwise the generated route rows keep the old hotel-first
+        // check-in timestamp even though the confirmed timeline places the
+        // visit first.
+        const timelineCheckins = persistedTimeline.filter((row: any) => {
+          const type = String(row?.type || '').toLowerCase();
+          return type === 'checkin' || type === 'hotel' || Number(row?.item_type || 0) === 6;
+        });
+        const finalCheckin = timelineCheckins[timelineCheckins.length - 1];
+        const checkinRange = finalCheckin?.timeRange || finalCheckin?.time || '';
+        const checkinTimes = checkinRange
+          ? this.parsePreviewTimeRangeToUtcDates(checkinRange)
+          : { start: null, end: null };
+        if (checkinTimes.start && checkinTimes.end) {
+          const routeCheckinRows = await tx.dvi_itinerary_route_hotspot_details.findMany({
+            where: {
+              itinerary_plan_ID: Number(planId),
+              itinerary_route_ID: Number(entry.routeId),
+              item_type: 6,
+              deleted: 0,
+              status: 1,
+            },
+            select: { route_hotspot_ID: true },
+          });
+          const timelineRouteHotspotId = Number(
+            finalCheckin?.route_hotspot_ID || finalCheckin?.routeHotspotId || 0,
+          );
+          const matchingCheckin = timelineRouteHotspotId > 0
+            ? routeCheckinRows.find((row: any) => Number(row?.route_hotspot_ID || 0) === timelineRouteHotspotId)
+            : (routeCheckinRows.length === 1 ? routeCheckinRows[0] : null);
+          if (matchingCheckin) {
+            await tx.dvi_itinerary_route_hotspot_details.update({
+              where: { route_hotspot_ID: Number(matchingCheckin.route_hotspot_ID) },
+              data: {
+                hotspot_start_time: checkinTimes.start,
+                hotspot_end_time: checkinTimes.end,
+                updatedon: new Date(),
+              },
+            });
+          }
         }
       }, { timeout: manualHotspotTxTimeoutMs });
       break;

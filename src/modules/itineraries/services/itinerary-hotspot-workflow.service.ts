@@ -3,6 +3,7 @@ import { PrismaService } from '../../../prisma.service';
 import { HotspotEngineService } from '../engines/hotspot-engine.service';
 import { TimeConverter } from '../engines/helpers/time-converter';
 import { formatClosedDaysLabel, getClosedDays } from '../utils/route-hotspot-operating-hours.util';
+import { hotspotDurationToMinutes } from '../utils/hotspot-duration.util';
 
 type HotspotWorkflowCallbacks = {
   classifyManualHotspotCityContext: (...args: any[]) => any;
@@ -503,6 +504,7 @@ const cityContext = isViaCityHotspot
           amount: h.hotspot_adult_entry_cost || 0,
           description: h.hotspot_description || "",
           timeSpend: h.hotspot_duration ? new Date(h.hotspot_duration).getUTCHours() : 0,
+          durationMinutes: hotspotDurationToMinutes(h.hotspot_duration),
           locationMap: h.hotspot_location || null,
           hotspot_location: h.hotspot_location || null,
           hotspot_to_location: h.hotspot_to_location || h.hotspot_location || null,

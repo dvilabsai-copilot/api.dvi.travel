@@ -50,6 +50,7 @@ import {
 } from './utils/itinerary-extra-margin.util';
 import { shouldSkipRepeatedHotelNight } from './utils/hotel-route-total.util';
 import { resolveVehicleTermsCondition } from './utils/vehicle-terms.util';
+import { getHotspotClosingGraceMinutes } from './utils/hotspot-closing-grace.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -1479,8 +1480,8 @@ private async resolveTravelDistanceKm(params: {
     if (straightLineKm !== null && Number.isFinite(straightLineKm)) return straightLineKm;
   }
 
-  // Do not show a city-origin distance when this leg starts at a selected hotel
-  // whose coordinates (or the destination's coordinates) are unavailable.
+  // When this leg is known to start at the selected hotel, never fall back to
+  // a stored city-origin distance if the hotel's coordinates are unavailable.
   if (params.preferFromCoordinates) return null;
 
   const baseDistanceKm = this.parseStoredDistanceKm(params.row?.hotspot_travelling_distance);
@@ -3764,7 +3765,16 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
                 const fitsInAnyWindow = todayTimings.some(t => {
                   const opStart = this.timeToMinutes(this.formatTime(t.hotspot_start_time as any));
                   const opEnd = this.timeToMinutes(this.formatTime(t.hotspot_end_time as any));
-                  return arrivalMins >= opStart && departureMins <= opEnd;
+                  const normalizedDepartureMins = departureMins < arrivalMins
+                    ? departureMins + (24 * 60)
+                    : departureMins;
+                  const normalizedOpEnd = opEnd < opStart ? opEnd + (24 * 60) : opEnd;
+                  const closingGraceMinutes = getHotspotClosingGraceMinutes(
+                    arrivalMins,
+                    normalizedDepartureMins,
+                  );
+                  return arrivalMins >= opStart
+                    && normalizedDepartureMins <= normalizedOpEnd + closingGraceMinutes;
                 });
 
                 if (!fitsInAnyWindow) {

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
+import { getHotspotClosingGraceMinutes } from '../utils/hotspot-closing-grace.util';
 
 type ManualFitOperatingHoursCallbacks = {
   formatTime?: (...args: any[]) => string;
@@ -22,6 +23,14 @@ export class ItineraryManualFitOperatingHoursService {
 
   private parsePreviewTimeToMinutes(...args: any[]): number | null {
     return this.callbacks.parsePreviewTimeToMinutes?.(...args) ?? null;
+  }
+
+  private getAttemptedEndMinutes(startMinutes: number, endMinutes: number): number {
+    return endMinutes < startMinutes ? endMinutes + (24 * 60) : endMinutes;
+  }
+
+  private getLongVisitClosingGraceMinutes(startMinutes: number, endMinutes: number): number {
+    return getHotspotClosingGraceMinutes(startMinutes, endMinutes);
   }
 
 
@@ -271,20 +280,24 @@ export class ItineraryManualFitOperatingHoursService {
       };
     }
 
+    const attemptedEndMinutes = this.getAttemptedEndMinutes(attempted.startMinutes, attempted.endMinutes);
     const fitsAnyWindow = operatingWindows.some((window) => {
+      const closingGraceMinutes = this.getLongVisitClosingGraceMinutes(
+        attempted.startMinutes,
+        attempted.endMinutes,
+      );
       if (window.endMinutes >= window.startMinutes) {
-        return attempted.startMinutes >= window.startMinutes && attempted.endMinutes <= window.endMinutes;
+        return attempted.startMinutes >= window.startMinutes
+          && attemptedEndMinutes <= window.endMinutes + closingGraceMinutes;
       }
 
-      const attemptedStart = attempted.startMinutes < window.startMinutes
-        ? attempted.startMinutes + (24 * 60)
-        : attempted.startMinutes;
-      const attemptedEnd = attempted.endMinutes < window.startMinutes
-        ? attempted.endMinutes + (24 * 60)
-        : attempted.endMinutes;
+      const crossesIntoNextDay = attempted.startMinutes < window.startMinutes;
+      const attemptedStart = attempted.startMinutes + (crossesIntoNextDay ? 24 * 60 : 0);
+      const normalizedAttemptedEnd = attemptedEndMinutes + (crossesIntoNextDay ? 24 * 60 : 0);
       const operatingEnd = window.endMinutes + (24 * 60);
 
-      return attemptedStart >= window.startMinutes && attemptedEnd <= operatingEnd;
+      return attemptedStart >= window.startMinutes
+        && normalizedAttemptedEnd <= operatingEnd + closingGraceMinutes;
     });
 
     if (fitsAnyWindow) {
@@ -457,9 +470,18 @@ export class ItineraryManualFitOperatingHoursService {
         };
       }
 
-      const overflowMinutes = Math.max(0, attempted.endMinutes - operating.endMinutes);
+      const attemptedEndMinutes = this.getAttemptedEndMinutes(attempted.startMinutes, attempted.endMinutes);
+      const isOvernightWindow = operating.endMinutes < operating.startMinutes;
+      const crossesIntoNextDay = isOvernightWindow && attempted.startMinutes < operating.startMinutes;
+      const normalizedAttemptedEnd = attemptedEndMinutes + (crossesIntoNextDay ? 24 * 60 : 0);
+      const normalizedOperatingEnd = operating.endMinutes + (isOvernightWindow ? 24 * 60 : 0);
+      const overflowMinutes = Math.max(0, normalizedAttemptedEnd - normalizedOperatingEnd);
+      const closingGraceMinutes = this.getLongVisitClosingGraceMinutes(
+        attempted.startMinutes,
+        attempted.endMinutes,
+      );
 
-      if (overflowMinutes <= 0) {
+      if (overflowMinutes <= closingGraceMinutes) {
         return {
           hasClosingOverflow: false,
           hotspotId,
@@ -467,7 +489,7 @@ export class ItineraryManualFitOperatingHoursService {
           attemptedVisitTime: evaluation.attemptedVisitTime,
           operatingHours: evaluation.operatingHours,
           overflowMinutes: 0,
-          latestAllowedEndMinutes: operating.endMinutes,
+          latestAllowedEndMinutes: normalizedOperatingEnd + closingGraceMinutes,
           conflict: null,
         };
       }
@@ -494,7 +516,7 @@ export class ItineraryManualFitOperatingHoursService {
         attemptedVisitTime: evaluation.attemptedVisitTime,
         operatingHours: evaluation.operatingHours,
         overflowMinutes,
-        latestAllowedEndMinutes: operating.endMinutes,
+        latestAllowedEndMinutes: normalizedOperatingEnd,
         conflict,
       };
     }

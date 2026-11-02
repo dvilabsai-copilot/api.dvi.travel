@@ -46,6 +46,7 @@ import {
 } from "../../modules/hotels/hotel-rate-plans";
 import { normalizeCityName } from "./utils/city-normalization.util";
 import { haversineKm } from "./utils/distance-utils";
+import { calculateRouteEndOverflowMinutes as calculateChronologicalRouteEndOverflowMinutes } from "./utils/route-end-overflow.util";
 import {
   normalizeSupplierRateIdentity,
   supplierRateIdentityMatches,
@@ -1129,6 +1130,7 @@ this.planPersistenceService.setCallbacks({
       'getHotspotDurationMinutes',
       'getPreviewRowDurationMinutes',
       'parseSegmentEndMinutes',
+      'calculateRouteEndOverflowMinutes',
       'hmsToSeconds',
       'enrichManualFitPreviewTimelineWithOperatingHours',
       'getSelectedManualClosingOverflow',
@@ -1267,6 +1269,7 @@ this.planPersistenceService.setCallbacks({
       'parseTimeRangeParts',
       'extractClosingTimeFromOperatingHours',
       'normalizeHotspotPriority',
+      'getHotspotDurationMinutes',
       'buildSelectedClosingRemovalReason',
       'getPreviewRowDurationMinutes',
       'detectManualFitTimingRisk',
@@ -5194,21 +5197,18 @@ async processConfirmationWithTboBookings(
     route: any,
     overrideEndTime?: string,
   ): number {
+    const routeStartRaw = TimeConverter.toTimeString(route?.route_start_time || '08:00:00');
     const routeEndRaw = overrideEndTime
       ? TimeConverter.toTimeString(overrideEndTime)
       : TimeConverter.toTimeString(route?.route_end_time || '00:00:00');
-    const routeEndSec = this.hmsToSeconds(routeEndRaw);
-    let maxEndSec = 0;
-
-    for (const row of fullTimeline || []) {
-      const endMinutes = this.parseSegmentEndMinutes(row);
-      if (endMinutes === null) continue;
-      const endSec = endMinutes * 60;
-      if (endSec > maxEndSec) maxEndSec = endSec;
-    }
-
-    if (maxEndSec <= routeEndSec) return 0;
-    return Math.ceil((maxEndSec - routeEndSec) / 60);
+    return calculateChronologicalRouteEndOverflowMinutes({
+      timeline: fullTimeline,
+      routeStartTime: routeStartRaw,
+      routeEndTime: routeEndRaw,
+      parseTimeToMinutes: (value: any) => this.parsePreviewTimeToMinutes(value),
+      parseSegmentStartMinutes: (segment: any) => this.parseSegmentStartMinutes(segment),
+      parseSegmentEndMinutes: (segment: any) => this.parseSegmentEndMinutes(segment),
+    });
   }
 
   private async buildRouteTimelineSnapshotAfterManualConflictInsert(
