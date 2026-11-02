@@ -1440,12 +1440,49 @@ private async resolveTravelDistanceKm(params: {
   itemType: number;
   location: any;
   route: any;
+  preferFromCoordinates?: boolean;
+  preferredFromCoordinates?: { latitude: number; longitude: number } | null;
   semanticFromHotspotId?: number | null;
   semanticToHotspotId?: number | null;
   fromName?: string | null;
   toName?: string | null;
   hotspotMap: Map<number, any>;
 }): Promise<number | null> {
+  const preferredFromLat = this.parseFiniteNumber(params.preferredFromCoordinates?.latitude);
+  const preferredFromLng = this.parseFiniteNumber(params.preferredFromCoordinates?.longitude);
+  const preferredToHotspotId = Number(params.semanticToHotspotId || 0);
+  const preferredToMaster = preferredToHotspotId > 0
+    ? params.hotspotMap.get(preferredToHotspotId)
+    : null;
+  const preferredToLat = this.parseFiniteNumber(preferredToMaster?.hotspot_latitude);
+  const preferredToLng = this.parseFiniteNumber(preferredToMaster?.hotspot_longitude);
+
+  if (
+    preferredFromLat !== null
+    && preferredFromLng !== null
+    && preferredToLat !== null
+    && preferredToLng !== null
+  ) {
+    const osrmKm = await this.getOsrmRouteDistanceKm(
+      preferredFromLat,
+      preferredFromLng,
+      preferredToLat,
+      preferredToLng,
+    );
+    if (osrmKm !== null) return osrmKm;
+    const straightLineKm = haversineKm(
+      preferredFromLat,
+      preferredFromLng,
+      preferredToLat,
+      preferredToLng,
+    );
+    if (straightLineKm !== null && Number.isFinite(straightLineKm)) return straightLineKm;
+  }
+
+  // Do not show a city-origin distance when this leg starts at a selected hotel
+  // whose coordinates (or the destination's coordinates) are unavailable.
+  if (params.preferFromCoordinates) return null;
+
   const baseDistanceKm = this.parseStoredDistanceKm(params.row?.hotspot_travelling_distance);
   if (!this.isSuspiciousTravelDistance({
     distanceKm: baseDistanceKm,
@@ -2317,7 +2354,13 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
     const hotelMasters = hotelIds.length > 0
       ? await this.prisma.dvi_hotel.findMany({
           where: { hotel_id: { in: hotelIds } },
-          select: { hotel_id: true, hotel_name: true, hotel_address: true },
+          select: {
+            hotel_id: true,
+            hotel_name: true,
+            hotel_address: true,
+            hotel_latitude: true,
+            hotel_longitude: true,
+          },
         })
       : [];
 
@@ -2357,6 +2400,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             tbo_hotel_code: true,
             hotel_name: true,
             hotel_address: true,
+            hotel_latitude: true,
+            hotel_longitude: true,
           },
         })
       : [];
@@ -2395,6 +2440,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         hotel_name: liveFallback?.hotel_name ?? masterInfo?.hotel_name ?? tboInfo?.hotel_name ?? null,
         hotel_address: liveFallback?.hotel_address ?? masterInfo?.hotel_address ?? tboInfo?.hotel_address ?? null,
         hotel_code: hotelCode,
+        hotel_latitude: masterInfo?.hotel_latitude ?? tboInfo?.hotel_latitude ?? null,
+        hotel_longitude: masterInfo?.hotel_longitude ?? tboInfo?.hotel_longitude ?? null,
       });
     }
 
@@ -2411,6 +2458,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         hotel_name: liveFallback.hotel_name,
         hotel_address: liveFallback.hotel_address,
         hotel_code: liveFallback.hotel_code ?? '',
+        hotel_latitude: null,
+        hotel_longitude: null,
       });
     }
 
@@ -3367,10 +3416,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               });
             }
 
-            if (
-              normalizeName(fromName) === normalizeName(toName) &&
-              Number(rh.hotspot_ID ?? 0) > 0
-            ) {
+            if (normalizeName(fromName) === normalizeName(toName)) {
               const currentIndex = routeHotspots.indexOf(rh);
               nextSemanticDestinationChosen =
                 currentIndex >= 0
@@ -3442,11 +3488,28 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               });
             }
 
+            const previousNightHotelInfo = index > 0
+              ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)
+              : null;
+            const preferPreviousNightHotelOrigin =
+              !seenAttraction
+              && usedNextSemanticDestination
+              && Number(rh.hotspot_ID ?? 0) === 0
+              && Boolean(previousNightHotelInfo);
+            const preferredHotelOriginCoordinates = preferPreviousNightHotelOrigin
+              ? {
+                  latitude: previousNightHotelInfo.hotel_latitude,
+                  longitude: previousNightHotelInfo.hotel_longitude,
+                }
+              : null;
+
             const resolvedDistanceKm = await this.resolveTravelDistanceKm({
               row: rh,
               itemType,
               location,
               route,
+              preferFromCoordinates: preferPreviousNightHotelOrigin,
+              preferredFromCoordinates: preferredHotelOriginCoordinates,
               semanticFromHotspotId:
                 semanticMapping?.fromHotspotId
                 ?? inferHotspotIdFromLabel(fromName)
