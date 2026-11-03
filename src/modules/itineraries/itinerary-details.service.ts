@@ -1444,6 +1444,8 @@ private async resolveTravelDistanceKm(params: {
   route: any;
   preferFromCoordinates?: boolean;
   preferredFromCoordinates?: { latitude: number; longitude: number } | null;
+  preferToCoordinates?: boolean;
+  preferredToCoordinates?: { latitude: number; longitude: number } | null;
   semanticFromHotspotId?: number | null;
   semanticToHotspotId?: number | null;
   fromName?: string | null;
@@ -1452,18 +1454,23 @@ private async resolveTravelDistanceKm(params: {
 }): Promise<number | null> {
   const preferredFromLat = this.parseFiniteNumber(params.preferredFromCoordinates?.latitude);
   const preferredFromLng = this.parseFiniteNumber(params.preferredFromCoordinates?.longitude);
+  const explicitPreferredToLat = this.parseFiniteNumber(params.preferredToCoordinates?.latitude);
+  const explicitPreferredToLng = this.parseFiniteNumber(params.preferredToCoordinates?.longitude);
+  const hasValidCoordinates = (latitude: number | null, longitude: number | null): boolean =>
+    latitude !== null && longitude !== null &&
+    latitude >= -90 && latitude <= 90 &&
+    longitude >= -180 && longitude <= 180 &&
+    !(latitude === 0 && longitude === 0);
   const preferredToHotspotId = Number(params.semanticToHotspotId || 0);
   const preferredToMaster = preferredToHotspotId > 0
     ? params.hotspotMap.get(preferredToHotspotId)
     : null;
-  const preferredToLat = this.parseFiniteNumber(preferredToMaster?.hotspot_latitude);
-  const preferredToLng = this.parseFiniteNumber(preferredToMaster?.hotspot_longitude);
+  const preferredToLat = explicitPreferredToLat ?? this.parseFiniteNumber(preferredToMaster?.hotspot_latitude);
+  const preferredToLng = explicitPreferredToLng ?? this.parseFiniteNumber(preferredToMaster?.hotspot_longitude);
 
   if (
-    preferredFromLat !== null
-    && preferredFromLng !== null
-    && preferredToLat !== null
-    && preferredToLng !== null
+    hasValidCoordinates(preferredFromLat, preferredFromLng)
+    && hasValidCoordinates(preferredToLat, preferredToLng)
   ) {
     const osrmKm = await this.getOsrmRouteDistanceKm(
       preferredFromLat,
@@ -1472,6 +1479,10 @@ private async resolveTravelDistanceKm(params: {
       preferredToLng,
     );
     if (osrmKm !== null) return osrmKm;
+    // This is a driving travel leg in the itinerary timeline. A straight-line
+    // fallback would change the meaning of the displayed value, so omit this
+    // leg's distance if OSRM cannot route between the selected endpoints.
+    if (params.preferToCoordinates) return null;
     const straightLineKm = haversineKm(
       preferredFromLat,
       preferredFromLng,
@@ -1485,6 +1496,22 @@ private async resolveTravelDistanceKm(params: {
   // a stored city-origin distance if the hotel's coordinates are unavailable.
   if (params.preferFromCoordinates) return null;
 
+  // A return-to-hotel leg must use the selected hotel's actual coordinates.
+  // Its stored distance can describe the route's city endpoint instead, so
+  // return no distance when either endpoint cannot be resolved.
+  if (params.preferToCoordinates) {
+    const fromHotspotId = Number(params.semanticFromHotspotId || 0);
+    const fromMaster = fromHotspotId > 0 ? params.hotspotMap.get(fromHotspotId) : null;
+    const fromLat = this.parseFiniteNumber(fromMaster?.hotspot_latitude);
+    const fromLng = this.parseFiniteNumber(fromMaster?.hotspot_longitude);
+    const toLat = explicitPreferredToLat;
+    const toLng = explicitPreferredToLng;
+    if (!hasValidCoordinates(fromLat, fromLng) || !hasValidCoordinates(toLat, toLng)) return null;
+
+    const osrmKm = await this.getOsrmRouteDistanceKm(fromLat, fromLng, toLat, toLng);
+    if (osrmKm !== null) return osrmKm;
+    return null;
+  }
   const baseDistanceKm = this.parseStoredDistanceKm(params.row?.hotspot_travelling_distance);
   if (!this.isSuspiciousTravelDistance({
     distanceKm: baseDistanceKm,
@@ -3462,6 +3489,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
                 });
 
             const routeHotelName = getRouteHotelName();
+            const currentRouteHotelInfo = routeHotelMap.get(route.itinerary_route_ID);
             const destinationCityLabel =
               route.next_visiting_location ??
               location?.destination_location ??
@@ -3480,6 +3508,18 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             ) {
               toName = routeHotelName;
             }
+
+            const preferCurrentRouteHotelDestination =
+              hasUpcomingHotelSegment &&
+              Number(rh.hotspot_ID ?? 0) === 0 &&
+              Boolean(currentRouteHotelInfo?.hotel_name) &&
+              normalizeName(toName) === normalizeName(currentRouteHotelInfo.hotel_name);
+            const preferredCurrentHotelCoordinates = preferCurrentRouteHotelDestination
+              ? {
+                  latitude: currentRouteHotelInfo.hotel_latitude,
+                  longitude: currentRouteHotelInfo.hotel_longitude,
+                }
+              : null;
 
             if (proofQuoteEnabled) {
  console.log('[TravelSegment][PROOF]', {
@@ -3520,6 +3560,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               route,
               preferFromCoordinates: preferPreviousNightHotelOrigin,
               preferredFromCoordinates: preferredHotelOriginCoordinates,
+              preferToCoordinates: preferCurrentRouteHotelDestination,
+              preferredToCoordinates: preferredCurrentHotelCoordinates,
               semanticFromHotspotId:
                 semanticMapping?.fromHotspotId
                 ?? inferHotspotIdFromLabel(fromName)
