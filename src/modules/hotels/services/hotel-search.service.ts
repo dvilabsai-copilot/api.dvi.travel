@@ -35,7 +35,7 @@ export class HotelSearchService {
 
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
-  private static readonly DEFAULT_CHILD_AGE = 6;
+  private static readonly DEFAULT_CHILD_AGE = 5;
   private providers: Map<string, IHotelProvider>;
   private readonly logger = new Logger(HotelSearchService.name);
 
@@ -290,7 +290,10 @@ if (normalizedRoomCount > HotelSearchService.MAX_ROOMS) {
         const safeAdultCount = Number(adultCount ?? 0);
         const safeChildCount = Number(childCount ?? 0);
         const safeChildAges = Array.isArray(childAges)
-          ? childAges.map((age) => Number(age)).filter((age) => !Number.isNaN(age))
+          ? childAges
+              .filter((age) => age !== null && age !== undefined && String(age).trim() !== '')
+              .map((age) => Number(age))
+              .filter((age) => !Number.isNaN(age))
           : [];
         const normalizedChildAges = this.normalizeChildAges(safeChildCount, safeChildAges);
 

@@ -151,6 +151,7 @@ export class TboHotelBookingService {
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
+  private static readonly DEFAULT_CHILD_AGE = 5;
   private static readonly SEARCH_SESSION_VALIDITY_MS = 35 * 60 * 1000;
   private readonly logger = new Logger(TboHotelBookingService.name);
   private readonly client: AxiosInstance;
@@ -597,7 +598,7 @@ private readonly TBO_CLIENT_ID =
       Email: p.email || null,
       PaxType: p.paxType,
       LeadPassenger: index === 0 ? true : false,
-      Age: p.age,
+      Age: p.paxType === 2 ? this.resolvePassengerAge(p.age) : p.age,
       PassportNo: p.passportNo || null,
       PassportIssueDate: p.passportIssueDate || null,
       PassportExpDate: p.passportExpDate || null,
@@ -975,13 +976,13 @@ private readonly TBO_CLIENT_ID =
       return selection.occupancies.map((occ) => ({
         Adults: Math.max(occ.adults || 1, 1),
         Children: Math.max(occ.children || 0, 0),
-        ChildrenAges: (occ.childrenAges || []).map((age) => Number(age)).filter((age) => !Number.isNaN(age)),
+        ChildrenAges: this.resolveChildAges(occ.children, occ.childrenAges),
       }));
     }
 
     const childrenAges = this.getChildAgesFromSelection(selection);
     const adults = selection.passengers.filter((p) => p.paxType === 1).length;
-    const children = selection.passengers.filter((p) => p.paxType !== 1 && Number(p.age) <= 11).length;
+    const children = selection.passengers.filter((p) => p.paxType === 2).length;
     return [
       {
         Adults: Math.max(adults, 1),
@@ -992,8 +993,9 @@ private readonly TBO_CLIENT_ID =
   }
 
   private getChildAgesFromSelection(selection: TboHotelSelection): number[] {
-    const fromOccupancy =
-      selection.occupancies?.flatMap((occ) => (occ.childrenAges || []).map((age) => Number(age))) || [];
+    const fromOccupancy = selection.occupancies?.flatMap((occ) =>
+      this.resolveChildAges(occ.children, occ.childrenAges),
+    ) || [];
 
     if (fromOccupancy.length > 0) {
       return fromOccupancy.filter((age) => !Number.isNaN(age));
@@ -1001,8 +1003,25 @@ private readonly TBO_CLIENT_ID =
 
     return selection.passengers
       .filter((p) => p.paxType === 2)
-      .map((p) => Number(p.age))
-      .filter((age) => !Number.isNaN(age));
+      .map((p) => this.resolvePassengerAge(p.age));
+  }
+
+  private resolveChildAges(children: number, ages?: number[]): number[] {
+    const childCount = Math.max(Number(children || 0), 0);
+    return Array.from({ length: childCount }, (_, index) => {
+      const rawAge = ages?.[index];
+      if (rawAge === null || rawAge === undefined || String(rawAge).trim() === '') {
+        return TboHotelBookingService.DEFAULT_CHILD_AGE;
+      }
+      const age = Number(rawAge);
+      return Number.isFinite(age) ? age : TboHotelBookingService.DEFAULT_CHILD_AGE;
+    });
+  }
+
+  private resolvePassengerAge(age: number | null | undefined): number {
+    return age === null || age === undefined || String(age).trim() === ''
+      ? TboHotelBookingService.DEFAULT_CHILD_AGE
+      : Number(age);
   }
 
   private validateSelection(selection: TboHotelSelection, skipPassengerValidation = false): void {

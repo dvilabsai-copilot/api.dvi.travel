@@ -103,3 +103,22 @@ test('the hold Book request uses fresh code, disables vouchers, and keeps passen
     /Passenger details do not match TBO room occupancy for room 1/,
   );
 });
+
+test('TBO PreBook and Book payloads default a missing child age to 5', () => {
+  const service: any = Object.create(TboHotelBookingService.prototype);
+  const selection = {
+    numberOfRooms: 1,
+    passengers: [
+      { title: 'Mr', firstName: 'Lead', lastName: 'Guest', nationality: 'IN', paxType: 1, leadPassenger: true, age: 45 },
+      { title: 'Ms', firstName: 'Child', lastName: 'Guest', nationality: 'IN', paxType: 2, leadPassenger: false },
+    ],
+    occupancies: [{ adults: 1, children: 1, childrenAges: [] }],
+  };
+
+  assert.deepEqual(service.buildPaxRooms(selection), [
+    { Adults: 1, Children: 1, ChildrenAges: [5] },
+  ]);
+  assert.equal(service.mapPassengersToRooms(selection.passengers, 1, [
+    { adults: 1, children: 1, childrenAges: [5] },
+  ])[0].HotelPassenger[1].Age, 5);
+});

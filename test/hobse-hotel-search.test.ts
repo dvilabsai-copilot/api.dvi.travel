@@ -82,6 +82,15 @@ test('explicit HOBSE hotel-name search bypasses EP hiding when enabled', async (
   assert.equal(calls[0].criteria.hotelName, 'juSTa');
 });
 
+test('hotel search defaults only missing child ages to 5 and preserves supplied ages', async () => {
+  const { service, calls } = createService(1);
+  await service.searchHotels({ ...baseSearch, providers: ['tbo'] } as any);
+  await service.searchHotels({ ...baseSearch, providers: ['tbo'], childAges: [8] } as any);
+
+  assert.deepEqual(calls[0].criteria.occupancies[0].childrenAges, [5]);
+  assert.deepEqual(calls[1].criteria.occupancies[0].childrenAges, [8]);
+});
+
 test('normal HOBSE inventory still hides EP when the global setting is disabled', async () => {
   const { service } = createService(1);
   const results = await service.searchHotels({
