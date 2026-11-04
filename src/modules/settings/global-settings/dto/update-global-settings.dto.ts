@@ -121,6 +121,11 @@ export class UpdateGlobalSettingsDto {
 
   @Type(() => Number)
   @IsInt()
+  @Min(0)
+  tbo_hold_lcd_buffer_days?: number;
+
+  @Type(() => Number)
+  @IsInt()
   @IsIn([0, 1])
   same_city_hotspot_rank_enabled?: number;
 

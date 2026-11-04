@@ -7,6 +7,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../../prisma.service';
 import { HotelBlockEmailService } from './hotel-block-email.service';
 import { TboHotelBookingService } from './tbo-hotel-booking.service';
+import { isTboPrebookRateEligibleForHold } from '../utils/tbo-hold-eligibility.util';
 
 export const HOTEL_BLOCK_STATUS = {
   CONTACT_REQUIRED: 'CONTACT_REQUIRED',
@@ -114,6 +115,7 @@ export type HotelHoldPolicy = {
   shortDurationHours: number;
   mediumDurationHours: number;
   longDurationHours: number;
+  tboHoldLcdBufferDays: number;
 };
 
 export const DEFAULT_HOTEL_HOLD_POLICY: HotelHoldPolicy = {
@@ -124,6 +126,7 @@ export const DEFAULT_HOTEL_HOLD_POLICY: HotelHoldPolicy = {
   shortDurationHours: 4,
   mediumDurationHours: 12,
   longDurationHours: 48,
+  tboHoldLcdBufferDays: 1,
 };
 
 const finiteNumber = (value: unknown, fallback: number, minimum = 0) => {
@@ -274,6 +277,7 @@ export class HotelBlockingService {
           hotel_hold_short_duration_hours: true,
           hotel_hold_medium_duration_hours: true,
           hotel_hold_long_duration_hours: true,
+          tbo_hold_lcd_buffer_days: true,
         },
       });
     } catch {
@@ -292,6 +296,7 @@ export class HotelBlockingService {
       shortDurationHours: finiteNumber(settings?.hotel_hold_short_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.shortDurationHours),
       mediumDurationHours: finiteNumber(settings?.hotel_hold_medium_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.mediumDurationHours),
       longDurationHours: finiteNumber(settings?.hotel_hold_long_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.longDurationHours),
+      tboHoldLcdBufferDays: integerNumber(settings?.tbo_hold_lcd_buffer_days, DEFAULT_HOTEL_HOLD_POLICY.tboHoldLcdBufferDays),
     };
   }
 
@@ -516,7 +521,12 @@ export class HotelBlockingService {
           continue;
         }
         const selectionWithHoldMode = { ...selection, isVoucherBooking: false };
-        const preBookResponse = await this.tboHotelBooking.preBookHotel(selection);
+        const preBookResponse = await this.tboHotelBooking.preBookHotelForHold(selection);
+        if (!isTboPrebookRateEligibleForHold(preBookResponse as any, policy.tboHoldLcdBufferDays)) {
+          throw new BadRequestException(
+            `HOTEL_HOLD_NOT_ELIGIBLE: The latest VSR rate must be refundable and have a cancellation deadline at least ${policy.tboHoldLcdBufferDays} day(s) away to be held. Refresh the rate and try again.`,
+          );
+        }
         const prebookNetAmount = Number(
           preBookResponse?.NetAmount
             ?? preBookResponse?.TotalFare

@@ -37,6 +37,7 @@ test('blocks holds inside the minimum lead band and the 48-hour no-block window'
     shortDurationHours: 4,
     mediumDurationHours: 12,
     longDurationHours: 48,
+    tboHoldLcdBufferDays: 1,
   };
   assert.equal(hotelHoldDecision('2026-01-03T23:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).allowed, false);
   assert.equal(hotelHoldDecision('2026-01-03T09:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).allowed, false);
@@ -240,7 +241,14 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
     logFailure: (error: unknown) => String(error),
   };
   const tboBooking = {
-    preBookHotel: async () => { prebookCalls += 1; return { NetAmount: 3255.35 }; },
+    preBookHotelForHold: async () => {
+      prebookCalls += 1;
+      return {
+        Status: { Code: 300, Description: 'Insufficient Balance' },
+        NetAmount: 3255.35,
+        HotelResult: [{ Rooms: [{ IsRefundable: true, LastCancellationDeadline: '31-12-2099 23:59:59' }] }],
+      };
+    },
     holdHotel: async (_preBookResponse: any, selection: any) => {
       holdCalls += 1;
       holdSelection = selection;

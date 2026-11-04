@@ -31,6 +31,7 @@ const GLOBAL_SETTINGS_UPDATE_FIELDS = [
   "hotel_hold_short_duration_hours",
   "hotel_hold_medium_duration_hours",
   "hotel_hold_long_duration_hours",
+  "tbo_hold_lcd_buffer_days",
   "same_city_hotspot_rank_enabled",
   "same_city_hotspot_max_rank",
   "same_city_hotspot_base_increment",

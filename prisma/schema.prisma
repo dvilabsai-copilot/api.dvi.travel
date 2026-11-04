@@ -2987,6 +2987,7 @@ model dvi_global_settings {
   hotel_hold_short_duration_hours        Float     @default(4) @db.Float
   hotel_hold_medium_duration_hours       Float     @default(12) @db.Float
   hotel_hold_long_duration_hours         Float     @default(48) @db.Float
+  tbo_hold_lcd_buffer_days                Int       @default(1)
   same_city_hotspot_rank_enabled         Int       @default(0) @db.TinyInt
   same_city_hotspot_max_rank             Int       @default(30)
   same_city_hotspot_base_increment       Int       @default(10)

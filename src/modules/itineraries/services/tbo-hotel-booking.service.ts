@@ -13,6 +13,7 @@ import {
   normalizePassengerTitle,
   resolveProviderPassengerTitle,
 } from '../../../common/utils/passenger-title.util';
+import { isTboInsufficientBalanceResponse } from '../utils/tbo-hold-eligibility.util';
 
 interface TboHotelSelection {
   hotelCode: string;
@@ -202,6 +203,20 @@ private readonly TBO_CLIENT_ID =
   async preBookHotel(
     selection: TboHotelSelection,
   ): Promise<PreBookResponse> {
+    return this.preBookHotelInternal(selection, false);
+  }
+
+  /** Hold-only PreBook: status 300 is accepted for the unvouchered Book step. */
+  async preBookHotelForHold(
+    selection: TboHotelSelection,
+  ): Promise<PreBookResponse> {
+    return this.preBookHotelInternal(selection, true);
+  }
+
+  private async preBookHotelInternal(
+    selection: TboHotelSelection,
+    allowInsufficientBalanceForHold: boolean,
+  ): Promise<PreBookResponse> {
     try {
       this.validateSelection(selection, true);
  this.logger.log(
@@ -265,7 +280,9 @@ private readonly TBO_CLIENT_ID =
         : response.data.Message;
 
  // TBO PreBook uses Status.Code = 200 for success, other endpoints use Status.Code = 1
-      if (statusCode !== 1 && statusCode !== 200) {
+      const isHoldInsufficientBalance = allowInsufficientBalanceForHold
+        && isTboInsufficientBalanceResponse(response.data as any);
+      if (statusCode !== 1 && statusCode !== 200 && !isHoldInsufficientBalance) {
         const message = statusMessage || 'Unknown TBO error';
         const maybeSessionExpired = this.isSessionExpiredError(
           `${message} ${JSON.stringify(response.data || {})}`,
@@ -281,7 +298,11 @@ private readonly TBO_CLIENT_ID =
         );
       }
 
+      if (isHoldInsufficientBalance) {
+ this.logger.warn(' PreBook returned insufficient balance; continuing only for the explicit non-voucher hold flow.');
+      } else {
  this.logger.log(` PreBook successful: ${JSON.stringify(response.data)}`);
+      }
       return response.data;
     } catch (error: any) {
  // Extract meaningful error message
