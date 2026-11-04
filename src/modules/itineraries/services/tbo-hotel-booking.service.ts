@@ -507,7 +507,8 @@ private readonly TBO_CLIENT_ID =
     if (occupancies && occupancies.length > 0) {
       const adultsPool = workingPassengers.filter((p) => Number(p.paxType) === 1);
       const childrenPool = workingPassengers.filter((p) => Number(p.paxType) === 2);
-      const infantsPool = workingPassengers.filter((p) => Number(p.paxType) === 3);
+      const adultFallback = adultsPool[0];
+      const childFallback = childrenPool[0];
 
       const takeFromPool = (pool: TboHotelPassenger[], count: number): TboHotelPassenger[] => {
         const picked = pool.slice(0, Math.max(count, 0));
@@ -526,6 +527,9 @@ private readonly TBO_CLIENT_ID =
           .filter((age) => Number.isFinite(age));
 
         const roomAdults = takeFromPool(adultsPool, adultsNeeded);
+        while (roomAdults.length < adultsNeeded && adultFallback) {
+          roomAdults.push({ ...adultFallback });
+        }
         const roomChildren: TboHotelPassenger[] = [];
 
  // Match child passengers by expected room-wise ages from confirm occupancies
@@ -548,14 +552,15 @@ private readonly TBO_CLIENT_ID =
             roomChildren.push(picked);
           }
         }
+        while (roomChildren.length < childrenNeeded && childFallback) {
+          roomChildren.push({ ...childFallback });
+        }
 
         const roomPassengers: TboHotelPassenger[] = [...roomAdults, ...roomChildren];
-
- // Keep room passenger count aligned even if upstream sent less data than occupancy.
-        while (roomPassengers.length < adultsNeeded + childrenNeeded) {
-          const fallback = adultsPool[0] || childrenPool[0] || infantsPool[0] || workingPassengers[0];
-          if (!fallback) break;
-          roomPassengers.push({ ...fallback });
+        if (roomPassengers.length !== adultsNeeded + childrenNeeded) {
+          throw new BadRequestException(
+            `Passenger details do not match TBO room occupancy for room ${i + 1}.`,
+          );
         }
 
         const mappedPassengers = roomPassengers.map((p, idx) => this.mapPassenger(p, idx));
