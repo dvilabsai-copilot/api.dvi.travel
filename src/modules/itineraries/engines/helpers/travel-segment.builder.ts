@@ -34,6 +34,7 @@ export class TravelSegmentBuilder {
  fromHotspotId?: number; // For cache-first: origin hotspot ID
       sourceCoords?: { lat: number; lon: number };
       destCoords?: { lat: number; lon: number };
+      preferStoredRouteDistance?: boolean;
       isConflict?: boolean;
       conflictReason?: string;
     },
@@ -55,6 +56,7 @@ export class TravelSegmentBuilder {
       fromHotspotId,
       sourceCoords,
       destCoords,
+      preferStoredRouteDistance = false,
       isConflict = false,
       conflictReason = "",
     } = opts;
@@ -95,6 +97,7 @@ export class TravelSegmentBuilder {
     travelLocationType,
     sourceCoords,
     destCoords,
+    preferStoredRouteDistance,
   );
 } else if (locationId != null) {
   distanceResult = await this.distanceHelper.fromLocationId(

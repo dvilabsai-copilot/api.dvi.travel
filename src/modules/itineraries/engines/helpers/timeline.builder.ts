@@ -6849,6 +6849,23 @@ const hasValidDestinationCityCoords =
   (Number(destCityCoords.lat) !== 0 ||
     Number(destCityCoords.lon) !== 0);
 
+const hasAttractionOnCurrentRoute = hotspotRows.some(
+  (row: any) =>
+    Number(row.itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) &&
+    Number(row.item_type || 0) === 4 &&
+    Number(row.hotspot_ID || 0) > 0,
+);
+
+const preferStoredRouteDistance =
+  Number(plan.itinerary_preference || 0) === 2 &&
+  !hotelInfo &&
+  !transportOvernightDestination &&
+  !hasAttractionOnCurrentRoute &&
+  this.normalizePlaceLookupKey(currentLocationName) ===
+    this.normalizePlaceLookupKey(sourceCity) &&
+  this.normalizePlaceLookupKey(finalTravelDestinationName) ===
+    this.normalizePlaceLookupKey(destinationCity);
+
 const { row: toHotelRow, nextTime: tAfterHotel } =
   await this.hotelBuilder.buildToHotel(tx, {
     planId,
@@ -6885,6 +6902,7 @@ const { row: toHotelRow, nextTime: tAfterHotel } =
             lon: Number(destCityCoords!.lon),
           }
         : undefined,
+    preferStoredRouteDistance,
   });
 
  // RULE 3: Fix "06:58 AM" time bug using proper UTC date conversion
