@@ -216,8 +216,18 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     const roomRate = Number(night?.roomRate ?? snapshot?.roomRate ?? 0) > 0
       ? Number(night?.roomRate ?? snapshot?.roomRate)
       : Number((Number(night?.baseAmount ?? night?.totalRoomCost ?? 0) / roomCount).toFixed(2));
-    const totalRoomCost = Number(night?.totalRoomCost ?? (isLegacyContinuousOfflineSnapshot ? night?.baseAmount : snapshot?.totalRoomCost) ?? 0) > 0
-      ? Number(night?.totalRoomCost ?? (isLegacyContinuousOfflineSnapshot ? night?.baseAmount : snapshot?.totalRoomCost))
+    // For multi-night snapshots, parent totalRoomCost is the whole stay. Use
+    // the nightly amount when a rate-level room total is absent; otherwise
+    // every projected route would inherit the full-stay amount.
+    const totalRoomCost = Number(
+      night?.totalRoomCost ??
+      (nightlyRates.length > 1 ? night?.baseAmount : snapshot?.totalRoomCost) ??
+      0,
+    ) > 0
+      ? Number(
+          night?.totalRoomCost ??
+          (nightlyRates.length > 1 ? night?.baseAmount : snapshot?.totalRoomCost),
+        )
       : Number(night?.baseAmount ?? snapshot?.baseTotalPrice ?? 0);
     const extraBedCount = Number(snapshot?.extraBedCount ?? nestedSelection.extraBedCount ?? row?.extraBedCount ?? 0);
     const extraBedRate = Number(snapshot?.extraBedRate ?? nestedSelection.extraBedRate ?? row?.extraBedRate ?? 0);
@@ -634,7 +644,17 @@ export function buildHotelSelectionState({
     const groupRows = (rows || []).filter((row) =>
       Number(row?.groupType || row?.group_type || 0) === groupType,
     );
-    const fallbackRoutes = groupRows
+    // Previous-day billing markers contribute one extra billed night, but
+    // they are not separate hotel selections. Keep them out of route
+    // selection/projection so a copied multi-night snapshot cannot be counted
+    // once for the marker and again for the real stay.
+    const previousDayBillingRows = groupRows.filter(
+      (row) => row?.previousDayBillingSynthetic === true,
+    );
+    const selectableGroupRows = groupRows.filter(
+      (row) => row?.previousDayBillingSynthetic !== true,
+    );
+    const fallbackRoutes = selectableGroupRows
       .flatMap((row) => rowRouteIds(row).map((routeId) => ({ routeId, routeDate: toDateOnly(
         row?.date ?? row?.checkInDate ?? row?.itineraryRouteDate ?? row?.itinerary_route_date,
       ) })))
@@ -642,7 +662,7 @@ export function buildHotelSelectionState({
     const routesToBuild = normalizedRequiredRoutes.length > 0 ? normalizedRequiredRoutes : fallbackRoutes;
 
     const routes: HotelSelectionRouteView[] = routesToBuild.map((requiredRoute) => {
-      const candidates = groupRows
+      const candidates = selectableGroupRows
         .filter((row) => rowRouteIds(row).includes(requiredRoute.routeId))
         .sort((left, right) => {
           // A continuous-stay recommendation is materialized on its anchor
@@ -744,7 +764,22 @@ export function buildHotelSelectionState({
     });
     const selectedTotal = Array.from(selectedTotalByIdentity.values())
       .reduce((sum, amount) => sum + amount, 0);
-    const rawTotal = selectedTotal > 0 ? selectedTotal : tab.totalAmount ?? tab.partialTotal;
+    const uniquePreviousDayBillingAmounts = new Map<string, number>();
+    if (selectedTotal > 0) {
+      previousDayBillingRows.forEach((row) => {
+        const routeId = Number(row?.itineraryRouteId || row?.routeId || row?.itinerary_route_id || 0);
+        const date = toDateOnly(row?.date ?? row?.itineraryRouteDate ?? row?.itinerary_route_date);
+        const rowAmount = Number(
+          row?.totalHotelCost ?? row?.total_hotel_cost ?? row?.selectedTotalPrice ?? row?.selected_total_price ?? 0,
+        );
+        const taxAmount = Number(row?.totalHotelTaxAmount ?? row?.total_hotel_tax_amount ?? 0);
+        uniquePreviousDayBillingAmounts.set(`${routeId}|${date}`, money(rowAmount + taxAmount));
+      });
+    }
+    const previousDayBillingTotal = Array.from(uniquePreviousDayBillingAmounts.values())
+      .reduce((sum, amount) => sum + amount, 0);
+    const packageTotal = selectedTotal + previousDayBillingTotal;
+    const rawTotal = packageTotal > 0 ? packageTotal : tab.totalAmount ?? tab.partialTotal;
     const totalAmount = rawTotal == null || !Number.isFinite(Number(rawTotal)) ? null : money(rawTotal);
 
     return {

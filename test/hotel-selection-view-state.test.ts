@@ -57,6 +57,76 @@ test('builds a complete two-night authoritative group without recalculating its 
   assert.equal(state[0].routes[0].selected?.selectedPriceSnapshot?.hotelMarginAmount, 840);
 });
 
+test('adds a previous-day billing marker once beside a selected two-night TBO stay', () => {
+  const nightlyRates = [
+    { date: '2026-11-22', routeId: 10145, baseAmount: 6063.62, sellAmount: 6063.62 },
+    { date: '2026-11-23', routeId: 10146, baseAmount: 6063.62, sellAmount: 6063.62 },
+  ];
+  const selectedStay = selectedRow(10145, {
+    provider: 'tbo',
+    providerHotelCode: '1089812',
+    hotelCode: '1089812',
+    hotelName: 'Green Ridge',
+    date: '2026-11-22',
+    routeIds: [10145, 10146],
+    authoritativeRouteIds: [10145, 10146],
+    selectionKey: 'tbo:1089812:deluxe:cp',
+    numberOfNights: 2,
+    pricePerNight: 6366.8,
+    totalPrice: 12733.6,
+    selectedPricePerNight: 6366.8,
+    selectedTotalPrice: 12733.6,
+    totalHotelCost: 6366.8,
+    selectedPriceSnapshot: {
+      provider: 'tbo',
+      providerHotelCode: '1089812',
+      hotelCode: '1089812',
+      hotelName: 'Green Ridge',
+      rateOptionId: 'tbo:1089812:deluxe:cp',
+      selectionKey: 'tbo:1089812:deluxe:cp',
+      numberOfNights: 2,
+      basePricePerNight: 6063.62,
+      baseTotalPrice: 12127.24,
+      totalRoomCost: 12127.24,
+      hotelMarginPercentage: 5,
+      pricePerNight: 6366.8,
+      totalPrice: 12733.6,
+      totalStayPrice: 12733.6,
+      selectedPricePerNight: 6366.8,
+      selectedTotalPrice: 12733.6,
+      authoritativeRouteIds: [10145, 10146],
+      nightlyRates,
+    },
+  });
+  const previousDayBilling = {
+    ...selectedStay,
+    date: '2026-11-21',
+    previousDayBillingSynthetic: true,
+    totalHotelCost: 6366.8,
+    totalHotelTaxAmount: 0,
+  };
+  const requiredRoutes = [
+    { routeId: 10145, routeDate: '2026-11-22' },
+    { routeId: 10146, routeDate: '2026-11-23' },
+  ];
+
+  const withMarker = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 19100.4 }],
+    rows: [previousDayBilling, selectedStay],
+    requiredRoutes,
+  });
+  const withoutMarker = buildHotelSelectionState({
+    tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 12733.6 }],
+    rows: [selectedStay],
+    requiredRoutes,
+  });
+
+  assert.equal(withMarker[0].selectionStatus, 'SELECTED');
+  assert.equal(withMarker[0].totalAmount, 19100.4);
+  assert.deepEqual(withMarker[0].routes.map((route) => route.selected?.hotelName), ['Green Ridge', 'Green Ridge']);
+  assert.equal(withoutMarker[0].totalAmount, 12733.6);
+});
+
 test('DVI20260891 aligns hotelTabs with hotelSelectionState and deduplicates Day 1/2', () => {
   const dviRoutes = [
     { routeId: 1, routeDate: '2026-08-31' },
