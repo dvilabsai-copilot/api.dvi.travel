@@ -843,6 +843,10 @@ export class HotelAvailabilitySnapshotService {
         selection,
       );
     });
+    const previousDayBillingByRouteGroup = this.buildPreviousDayBillingByRouteGroup(
+      Number(plan.itinerary_plan_ID),
+      persisted.hotels || [],
+    );
     const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
     const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
     const normalizedRows = this.dedupeRows(freshRows || [])
@@ -992,7 +996,7 @@ export class HotelAvailabilitySnapshotService {
     // that were saved with that selection.
     const persistedRouteNightRows = (Array.isArray((persisted as any).hotels)
       ? (persisted as any).hotels
-      : []).flatMap((row: any) => {
+      : []).filter((row: any) => row?.previousDayBillingSynthetic !== true).flatMap((row: any) => {
         const snapshot = parseHotelSelectionSnapshot(row) as any;
         const routeIds = Array.from(new Set<number>([
           ...(Array.isArray(row?.authoritativeRouteIds) ? row.authoritativeRouteIds : []),
@@ -1167,10 +1171,10 @@ export class HotelAvailabilitySnapshotService {
         });
       });
 
-    const responseHotels = this.dedupeRows([
+    const responseHotels = this.mergePreviousDayBillingMetadata(this.dedupeRows([
       ...persistedRouteNightRows,
       ...authoritativeAnchorRows,
-    ]);
+    ]), previousDayBillingByRouteGroup, Number(plan.itinerary_plan_ID));
     return {
       ...persisted,
       hotels: responseHotels,
@@ -1195,6 +1199,65 @@ export class HotelAvailabilitySnapshotService {
             : 'No hotel rates are available for the current itinerary.',
       },
     } as ItineraryHotelDetailsResponseDto;
+  }
+
+  private mergePreviousDayBillingMetadata(
+    rows: any[],
+    previousDayBillingByRouteGroup: Map<string, Record<string, unknown>>,
+    planId: number,
+  ): any[] {
+    return (rows || [])
+      .filter((row: any) => row?.previousDayBillingSynthetic !== true)
+      .map((row: any) => {
+        const previousDayBilling = previousDayBillingByRouteGroup.get(
+          this.hotelRouteGroupKey(planId, row),
+        );
+        if (!previousDayBilling) return row;
+
+        return {
+          ...row,
+          earlyCheckIn: true,
+          previousDayBilling,
+          previousDayBillingSynthetic: false,
+          earlyCheckInExtraPaymentApplicable: Boolean(
+            previousDayBilling.earlyCheckInExtraPaymentApplicable,
+          ),
+          earlyCheckInPaymentStatus: previousDayBilling.earlyCheckInPaymentStatus || null,
+          hotelCheckInDate: previousDayBilling.hotelCheckInDate || previousDayBilling.date,
+          actualGuestArrivalAt: previousDayBilling.actualGuestArrivalAt || null,
+          hotelierEarlyCheckInNote: previousDayBilling.hotelierEarlyCheckInNote || null,
+        };
+      });
+  }
+
+  private buildPreviousDayBillingByRouteGroup(
+    planId: number,
+    persistedHotels: any[],
+  ): Map<string, Record<string, unknown>> {
+    const result = new Map<string, Record<string, unknown>>();
+    (persistedHotels || [])
+      .filter((selection: any) => selection?.previousDayBillingSynthetic === true)
+      .forEach((marker: any) => {
+        const date = marker.date || marker.itineraryRouteDate || marker.itinerary_route_date;
+        if (!date) return;
+        result.set(this.hotelRouteGroupKey(planId, marker), {
+          date,
+          hotelCheckInDate: marker.hotelCheckInDate || marker.hotel_check_in_date || date,
+          actualGuestArrivalAt: marker.actualGuestArrivalAt || marker.actual_guest_arrival_at || null,
+          earlyCheckInExtraPaymentApplicable: Boolean(marker.earlyCheckInExtraPaymentApplicable),
+          earlyCheckInPaymentStatus: marker.earlyCheckInPaymentStatus || null,
+          hotelierEarlyCheckInNote: marker.hotelierEarlyCheckInNote || null,
+        });
+      });
+    return result;
+  }
+
+  private hotelRouteGroupKey(planId: number, row: any): string {
+    return [
+      Number(planId || 0),
+      Number(row?.itinerary_route_id ?? row?.itineraryRouteId ?? row?.routeId ?? 0),
+      Number(row?.group_type ?? row?.groupType ?? 0),
+    ].join('|');
   }
 
   async searchAndPersist(
