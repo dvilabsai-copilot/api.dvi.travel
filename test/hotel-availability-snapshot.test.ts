@@ -873,6 +873,55 @@ test('persisted early-arrival selection exposes Day 0 metadata without changing 
   assert.equal(decorated.selection.earlyCheckIn, undefined);
 });
 
+test('fresh reset response keeps the Day 0 billing marker on the selected arrival row', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const planId = 12081;
+  const marker = {
+    itineraryRouteId: 25944,
+    groupType: 1,
+    date: '2026-11-21',
+    hotelCheckInDate: '2026-11-21',
+    actualGuestArrivalAt: '2026-11-21T21:30:00.000Z',
+    earlyCheckInExtraPaymentApplicable: true,
+    earlyCheckInPaymentStatus: 'EXTRA_PAYMENT_APPLICABLE',
+    hotelierEarlyCheckInNote: 'Room blocked from the previous night.',
+    previousDayBillingSynthetic: true,
+    totalHotelCost: 6366.8,
+  };
+  const selectedArrivalRow = {
+    itineraryRouteId: 25944,
+    groupType: 1,
+    date: '2026-11-22',
+    hotelName: 'Green Ridge',
+    totalHotelCost: 6366.8,
+    selectedTotalPrice: 6366.8,
+  };
+  const nextNight = {
+    itineraryRouteId: 25945,
+    groupType: 1,
+    date: '2026-11-23',
+    hotelName: 'Green Ridge',
+    totalHotelCost: 6366.8,
+  };
+  const metadataByRouteGroup = (service as any).buildPreviousDayBillingByRouteGroup(
+    planId,
+    [marker],
+  );
+  const rows = (service as any).mergePreviousDayBillingMetadata(
+    [marker, selectedArrivalRow, nextNight],
+    metadataByRouteGroup,
+    planId,
+  );
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].previousDayBilling.date, '2026-11-21');
+  assert.equal(rows[0].earlyCheckIn, true);
+  assert.equal(rows[0].earlyCheckInExtraPaymentApplicable, true);
+  assert.equal(rows[0].totalHotelCost, 6366.8);
+  assert.equal(rows[1].previousDayBilling, undefined);
+  assert.equal(rows[1].totalHotelCost, 6366.8);
+});
+
 test('fresh recommendation groups are preserved when reset has no persisted selections', async () => {
   const prisma: any = {
     dvi_itinerary_plan_hotel_details: {
