@@ -843,9 +843,32 @@ export class HotelAvailabilitySnapshotService {
         selection,
       );
     });
+    // Reset retires editable hotel rows and rebuilds selected rates, while the
+    // hotel_required=2 rows remain the authoritative previous-night markers.
+    // Read those markers directly: the legacy hotel-details projection can
+    // normalize them away before the fresh response is assembled.
+    const previousDayBillingMarkers = await (this.prisma as any)
+      .dvi_itinerary_plan_hotel_details.findMany({
+        where: {
+          itinerary_plan_id: Number(plan.itinerary_plan_ID),
+          hotel_required: 2,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          group_type: true,
+          itinerary_route_id: true,
+          itinerary_route_date: true,
+          hotel_check_in_date: true,
+          actual_guest_arrival_at: true,
+          early_checkin_extra_payment_applicable: true,
+          early_checkin_payment_status: true,
+          early_checkin_note: true,
+        },
+      });
     const previousDayBillingByRouteGroup = this.buildPreviousDayBillingByRouteGroup(
       Number(plan.itinerary_plan_ID),
-      persisted.hotels || [],
+      previousDayBillingMarkers,
     );
     const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
     const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
@@ -1236,7 +1259,10 @@ export class HotelAvailabilitySnapshotService {
   ): Map<string, Record<string, unknown>> {
     const result = new Map<string, Record<string, unknown>>();
     (persistedHotels || [])
-      .filter((selection: any) => selection?.previousDayBillingSynthetic === true)
+      .filter((selection: any) =>
+        selection?.previousDayBillingSynthetic === true ||
+        (Number(selection?.hotel_required ?? 0) === 2 && Number(selection?.hotel_id ?? 0) === 0),
+      )
       .forEach((marker: any) => {
         const date = marker.date || marker.itineraryRouteDate || marker.itinerary_route_date;
         if (!date) return;
@@ -1244,9 +1270,11 @@ export class HotelAvailabilitySnapshotService {
           date,
           hotelCheckInDate: marker.hotelCheckInDate || marker.hotel_check_in_date || date,
           actualGuestArrivalAt: marker.actualGuestArrivalAt || marker.actual_guest_arrival_at || null,
-          earlyCheckInExtraPaymentApplicable: Boolean(marker.earlyCheckInExtraPaymentApplicable),
-          earlyCheckInPaymentStatus: marker.earlyCheckInPaymentStatus || null,
-          hotelierEarlyCheckInNote: marker.hotelierEarlyCheckInNote || null,
+          earlyCheckInExtraPaymentApplicable: Boolean(
+            marker.earlyCheckInExtraPaymentApplicable ?? marker.early_checkin_extra_payment_applicable,
+          ),
+          earlyCheckInPaymentStatus: marker.earlyCheckInPaymentStatus || marker.early_checkin_payment_status || null,
+          hotelierEarlyCheckInNote: marker.hotelierEarlyCheckInNote || marker.early_checkin_note || null,
         });
       });
     return result;
