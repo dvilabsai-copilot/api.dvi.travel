@@ -877,16 +877,16 @@ test('fresh reset response keeps the Day 0 billing marker on the selected arriva
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const planId = 12081;
   const marker = {
-    itineraryRouteId: 25944,
-    groupType: 1,
-    date: '2026-11-21',
-    hotelCheckInDate: '2026-11-21',
-    actualGuestArrivalAt: '2026-11-21T21:30:00.000Z',
-    earlyCheckInExtraPaymentApplicable: true,
-    earlyCheckInPaymentStatus: 'EXTRA_PAYMENT_APPLICABLE',
-    hotelierEarlyCheckInNote: 'Room blocked from the previous night.',
-    previousDayBillingSynthetic: true,
-    totalHotelCost: 6366.8,
+    itinerary_route_id: 25944,
+    group_type: 1,
+    itinerary_route_date: '2026-11-21',
+    hotel_required: 2,
+    hotel_id: 0,
+    hotel_check_in_date: '2026-11-21',
+    actual_guest_arrival_at: '2026-11-21T21:30:00.000Z',
+    early_checkin_extra_payment_applicable: 1,
+    early_checkin_payment_status: 'EXTRA_PAYMENT_APPLICABLE',
+    early_checkin_note: 'Room blocked from the previous night.',
   };
   const selectedArrivalRow = {
     itineraryRouteId: 25944,
@@ -908,7 +908,7 @@ test('fresh reset response keeps the Day 0 billing marker on the selected arriva
     [marker],
   );
   const rows = (service as any).mergePreviousDayBillingMetadata(
-    [marker, selectedArrivalRow, nextNight],
+    [selectedArrivalRow, nextNight],
     metadataByRouteGroup,
     planId,
   );
