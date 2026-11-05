@@ -922,6 +922,34 @@ test('fresh reset response keeps the Day 0 billing marker on the selected arriva
   assert.equal(rows[1].totalHotelCost, 6366.8);
 });
 
+test('fresh reset response exposes Day 0 markers for routes without selected hotel rows', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const markers = (service as any).buildEarlyArrivalMarkers([
+    {
+      itinerary_route_id: 25944,
+      group_type: 1,
+      itinerary_route_date: new Date('2026-11-21T00:00:00.000Z'),
+    },
+    {
+      itinerary_route_id: 0,
+      group_type: 1,
+      itinerary_route_date: new Date('2026-11-21T00:00:00.000Z'),
+    },
+  ], [
+    {
+      itinerary_route_ID: 25944,
+      next_visiting_location: 'Munnar',
+    },
+  ]);
+
+  assert.deepEqual(markers, [{
+    routeId: 25944,
+    groupType: 1,
+    blockedFromDate: '2026-11-21',
+    location: 'Munnar',
+  }]);
+});
+
 test('fresh recommendation groups are preserved when reset has no persisted selections', async () => {
   const prisma: any = {
     dvi_itinerary_plan_hotel_details: {
