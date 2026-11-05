@@ -124,6 +124,7 @@ import { HotelBlockingController, HotelBlockingPublicController } from './hotel-
 import { HotelBlockingService } from './services/hotel-blocking.service';
 import { HotelBlockEmailService } from './services/hotel-block-email.service';
 import { HotelHoldCutoffReminderScheduler } from './services/hotel-hold-cutoff-reminder.scheduler';
+import { HotelHoldExpiryScheduler } from './services/hotel-hold-expiry.scheduler';
 
 @Module({
   imports: [
@@ -144,6 +145,7 @@ import { HotelHoldCutoffReminderScheduler } from './services/hotel-hold-cutoff-r
     HotelBlockingService,
     HotelBlockEmailService,
     HotelHoldCutoffReminderScheduler,
+    HotelHoldExpiryScheduler,
     TboHotelBookingService,
     ResAvenueHotelBookingService,
     HobseHotelBookingService,

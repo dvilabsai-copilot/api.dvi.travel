@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BadRequestException } from '@nestjs/common';
 import {
+  capTboHoldCutoffAtCancellationDeadline,
+  getTboPrebookHoldCancellationDeadline,
   isTboInsufficientBalanceResponse,
   isTboPrebookRateEligibleForHold,
 } from '../src/modules/itineraries/utils/tbo-hold-eligibility.util';
@@ -26,6 +28,25 @@ test('requires each fresh prebook room to be refundable with a deadline meeting 
   assert.equal(isTboPrebookRateEligibleForHold(response([refundable('06-11-2026 23:59:59'), { ...refundable('06-11-2026 23:59:59'), IsRefundable: false }]), 1, now), false);
   assert.equal(isTboPrebookRateEligibleForHold(response([{ IsRefundable: true }]), 1, now), false);
   assert.equal(isTboPrebookRateEligibleForHold(response([]), 1, now), false);
+});
+
+test('uses the earliest room LCD as an upper bound for a TBO hold cutoff', () => {
+  const response = {
+    HotelResult: [{ Rooms: [
+      { IsRefundable: true, LastCancellationDeadline: '07-11-2026 23:59:59' },
+      { IsRefundable: true, LastCancellationDeadline: '06-11-2026 20:00:00' },
+    ] }],
+  };
+  const deadline = getTboPrebookHoldCancellationDeadline(response);
+  assert.equal(deadline?.toISOString(), '2026-11-06T14:30:00.000Z');
+  assert.equal(
+    capTboHoldCutoffAtCancellationDeadline(new Date('2026-11-07T12:00:00.000Z'), response).toISOString(),
+    '2026-11-06T14:30:00.000Z',
+  );
+  assert.equal(
+    capTboHoldCutoffAtCancellationDeadline(new Date('2026-11-06T12:00:00.000Z'), response).toISOString(),
+    '2026-11-06T12:00:00.000Z',
+  );
 });
 
 test('only the hold-specific PreBook method accepts status 300', async () => {

@@ -489,6 +489,13 @@ private readonly TBO_CLIENT_ID =
     return this.tboProvider.getConfirmation(reference, bookingId);
   }
 
+  /** Releases an unpaid TBO Book hold using the existing supplier cancellation API and its BookingId contract. */
+  async cancelHeldBooking(bookingId: string | number, reason = 'Unpaid DVi hotel hold expired') {
+    const id = String(bookingId || '').trim();
+    if (!/^\d+$/.test(id)) throw new BadRequestException('A valid TBO booking ID is required to release this hold.');
+    return this.tboProvider.cancelBooking(id, reason);
+  }
+
  /**
    * Map passengers to TBO hotel rooms format
    * Each room contains the passengers assigned to it

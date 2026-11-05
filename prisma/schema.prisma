@@ -2980,13 +2980,19 @@ model dvi_global_settings {
   tbo_map_lunch_rate_4_star              Float     @default(1500) @db.Float
   tbo_map_lunch_rate_5_star              Float     @default(2500) @db.Float
   hotel_blocked_cutoff_time              Float     @default(1) @db.Float
-  hotel_hold_no_block_before_hours       Float     @default(48) @db.Float
+  hotel_hold_no_block_before_hours       Float     @default(0) @db.Float
   hotel_hold_min_lead_days               Int       @default(3)
   hotel_hold_short_lead_days             Int       @default(15)
   hotel_hold_medium_lead_days            Int       @default(30)
-  hotel_hold_short_duration_hours        Float     @default(4) @db.Float
+  hotel_hold_long_lead_days              Int       @default(60)
+  hotel_hold_short_duration_hours        Float     @default(48) @db.Float
   hotel_hold_medium_duration_hours       Float     @default(12) @db.Float
   hotel_hold_long_duration_hours         Float     @default(48) @db.Float
+  hotel_hold_extended_duration_hours     Float     @default(240) @db.Float
+  hotel_hold_reminders_enabled           Int       @default(1) @db.TinyInt
+  hotel_hold_reminder_email_enabled      Int       @default(1) @db.TinyInt
+  hotel_hold_reminder_milestones         String?   @db.LongText
+  hotel_hold_final_reminder_minutes      Int       @default(15)
   tbo_hold_lcd_buffer_days                Int       @default(1)
   same_city_hotspot_rank_enabled         Int       @default(0) @db.TinyInt
   same_city_hotspot_max_rank             Int       @default(30)
@@ -6901,8 +6907,18 @@ model dvi_hotel_block_request {
   requested_at           DateTime? @db.DateTime(0)
   responded_at           DateTime? @db.DateTime(0)
   confirmed_at           DateTime? @db.DateTime(0)
+  paid_confirmed_at      DateTime? @db.DateTime(0)
   cutoff_at              DateTime? @db.DateTime(0)
   cutoff_reminder_sent_at DateTime? @db.DateTime(0)
+  release_status         String    @default("NOT_REQUIRED") @db.VarChar(24)
+  release_requested_at   DateTime? @db.DateTime(0)
+  release_attempt_count  Int       @default(0)
+  release_acknowledged_at DateTime? @db.DateTime(0)
+  release_last_error     String?   @db.Text
+  release_email_status   String    @default("NOT_REQUIRED") @db.VarChar(24)
+  release_email_requested_at DateTime? @db.DateTime(0)
+  release_email_sent_at  DateTime? @db.DateTime(0)
+  release_email_last_error String?  @db.Text
   confirmation_reference String?   @db.VarChar(255)
   confirmation_channel   String?   @db.VarChar(32)
   respondent_name        String?   @db.VarChar(255)
@@ -6967,6 +6983,27 @@ model dvi_hotel_block_message {
   @@index([request_id], map: "idx_hotel_block_message_request")
   @@index([delivery_status], map: "idx_hotel_block_message_status")
   @@map("dvi_hotel_block_messages")
+}
+
+model dvi_hotel_hold_notification {
+  id                  Int       @id @default(autoincrement())
+  request_id          Int
+  request_version     Int       @default(1)
+  notification_type   String    @db.VarChar(24)
+  milestone_key       String    @db.VarChar(64)
+  due_at              DateTime  @db.DateTime(0)
+  recipient           String?   @db.VarChar(320)
+  delivery_status     String    @default("QUEUED") @db.VarChar(24)
+  attempt_count       Int       @default(0)
+  provider_message_id String?   @db.VarChar(255)
+  last_error          String?   @db.Text
+  sent_at             DateTime? @db.DateTime(0)
+  created_at          DateTime  @default(now()) @db.DateTime(0)
+  updated_at          DateTime  @updatedAt @db.DateTime(0)
+
+  @@unique([request_id, request_version, notification_type, milestone_key], map: "uq_hotel_hold_notification_milestone")
+  @@index([delivery_status, due_at], map: "idx_hotel_hold_notification_due")
+  @@map("dvi_hotel_hold_notifications")
 }
 
 model dvi_hotel_block_guest_detail {
