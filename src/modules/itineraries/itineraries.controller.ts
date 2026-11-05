@@ -82,6 +82,7 @@ import { ItineraryBookingConfirmationEmailNotifierService } from './services/iti
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
 import { ItineraryAccessService } from './services/itinerary-access.service';
+import { isAgentRole } from './utils/itinerary-cost-visibility.util';
 import { HotelBlockingService } from './services/hotel-blocking.service';
 
 @ApiTags('Itineraries')
@@ -3110,6 +3111,58 @@ const clientIp = String(
    * ✅ MUST BE LAST.
    * Otherwise it will swallow routes like /customer-info/:planId, /confirmed, /latest, etc.
  */
+@Get(':id/agent-profit')
+async getAgentProfit(
+  @Param('id', ParseIntPipe) id: number,
+  @Req() req: Request,
+) {
+  const user = (req as any).user;
+
+  const canViewAgentProfit =
+    Number(user?.role) === 1 ||
+    isAgentRole(user?.role);
+
+  if (!canViewAgentProfit) {
+    throw new ForbiddenException(
+      'Only Admin and Agent can view agent profit',
+    );
+  }
+
+  const access =
+    await this.itineraryAccessService.getPlanAccessDecision(
+      id,
+      user,
+    );
+
+  if (!access.exists || !access.allowed) {
+    return this.denyItineraryAccess(
+      access.redirectTo || '/latest-itinerary',
+    );
+  }
+
+  return this.detailsService.getAgentProfit(id);
+}
+
+  @Patch(':id/agent-profit')
+  async saveAgentProfit(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { profit?: number; finalSellingPrice?: number },
+    @Req() req: Request,
+  ) {
+    await this.itineraryAccessService.assertCanEditPlan(id, (req as any).user);
+    const role = (req as any)?.user?.role;
+    // Only the booking's agent may change agent-added profit.
+    // Existing plan-access validation above protects the plan itself.
+    if (!isAgentRole(role)) throw new ForbiddenException('Only an agent can update agent profit');
+    const profit = Number(body?.profit);
+    const finalSellingPrice = Number(body?.finalSellingPrice);
+    if (!Number.isFinite(profit) || profit < 0 || profit > 100000000 ||
+        !Number.isFinite(finalSellingPrice) || finalSellingPrice < 0 || finalSellingPrice > 100000000) {
+      throw new BadRequestException('Invalid agent profit or final selling price');
+    }
+    return this.detailsService.saveAgentProfit(id, profit, finalSellingPrice);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get itinerary by plan id' })
   @ApiParam({ name: 'id', example: 17940 })
