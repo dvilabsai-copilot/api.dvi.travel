@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HotelBlockingService } from '../src/modules/itineraries/services/hotel-blocking.service';
+import { DEFAULT_HOTEL_HOLD_POLICY, HotelBlockingService, hotelHoldDecision } from '../src/modules/itineraries/services/hotel-blocking.service';
 
 function serviceWithPlan(itineraryPreference: number, selectedRows: any[] = [], requests: any[] = []) {
   const calls = { selectedRows: 0, requests: 0 };
@@ -75,26 +75,57 @@ test('an active AxisRooms unpaid hold is ready for the wallet confirmation step'
   assert.deepEqual(await service.assertPlanReady(12032, 1), { ready: true, requestCount: 1 });
 });
 
-test('provider holds keep at least four hours and AxisRooms cannot outlive its one-day-before cutoff', () => {
+test('provider hold cutoffs use policy duration and AxisRooms one-day-before cutoff', () => {
   const { service } = serviceWithPlan(1);
   const minimumPolicy = {
     noBlockBeforeHours: 48,
     minimumLeadDays: 3,
-    shortLeadDays: 1,
-    mediumLeadDays: 2,
-    shortDurationHours: 2,
-    mediumDurationHours: 6,
-    longDurationHours: 2,
+    shortLeadDays: 15,
+    mediumLeadDays: 30,
+    longLeadDays: 60,
+    shortDurationHours: 48,
+    mediumDurationHours: 12,
+    longDurationHours: 48,
+    extendedDurationHours: 240,
     tboHoldLcdBufferDays: 1,
   };
-  const longPolicy = { ...minimumPolicy, longDurationHours: 120 };
   const requestedAt = new Date('2026-01-01T10:00:00.000Z');
 
   const offlineCutoff = (service as any).getProviderHoldCutoff('2026-01-16', requestedAt, minimumPolicy, 'OFFLINE_HOLD');
-  const axisCutoff = (service as any).getProviderHoldCutoff('2026-01-04', requestedAt, longPolicy, 'AXISROOMS_HOLD');
+  const axisCutoff = (service as any).getProviderHoldCutoff('2026-01-04', requestedAt, minimumPolicy, 'AXISROOMS_HOLD');
 
-  assert.equal(offlineCutoff.toISOString(), '2026-01-01T14:00:00.000Z');
+  assert.equal(offlineCutoff.toISOString(), '2026-01-03T10:00:00.000Z');
   assert.equal(axisCutoff.toISOString(), '2026-01-03T00:00:00.000Z');
+});
+
+test('hotel hold date boundaries use the four configured calendar-day bands', () => {
+  const requestedAt = new Date('2026-01-01T00:00:00.000Z');
+  const cases = [
+    [0, false, null], [1, false, null], [2, false, null],
+    [3, true, 48], [15, true, 48], [16, true, 12], [30, true, 12],
+    [31, true, 48], [60, true, 48], [61, true, 240], [75, true, 240], [90, true, 240],
+  ] as const;
+
+  for (const [days, allowed, durationHours] of cases) {
+    const checkIn = new Date(requestedAt.getTime() + days * 86_400_000).toISOString().slice(0, 10);
+    const result = hotelHoldDecision(checkIn, requestedAt, DEFAULT_HOTEL_HOLD_POLICY);
+    assert.equal(result.allowed, allowed, `lead day ${days}`);
+    assert.equal(result.durationHours, durationHours, `duration at lead day ${days}`);
+  }
+});
+
+test('invalid hotel check-in dates fail closed', () => {
+  const result = hotelHoldDecision('not-a-date', new Date('2026-01-01T00:00:00.000Z'));
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'invalid check-in or request date');
+});
+
+test('calendar-day bands take precedence over the legacy elapsed-hour buffer', () => {
+  const requestedAt = new Date('2026-01-01T00:00:00.000Z');
+  const result = hotelHoldDecision('2026-01-04', requestedAt, { ...DEFAULT_HOTEL_HOLD_POLICY, noBlockBeforeHours: 100 });
+  assert.equal(result.leadDays, 3);
+  assert.equal(result.allowed, true);
+  assert.equal(result.durationHours, 48);
 });
 
 test('an active offline local hold is ready for wallet confirmation without a supplier reference', async () => {
@@ -114,6 +145,87 @@ test('an active offline local hold is ready for wallet confirmation without a su
   );
 
   assert.deepEqual(await service.assertPlanReady(12032, 1), { ready: true, requestCount: 1 });
+});
+
+test('manual cancellation queues durable inventory release for an unpaid accepted hold', async () => {
+  const request = {
+    id: 21,
+    status: 'CONFIRMED',
+    confirmation_channel: 'OFFLINE_HOLD',
+    cutoff_at: new Date(Date.now() + 60 * 60 * 1000),
+    requested_at: new Date(),
+    check_in: new Date(Date.now() + 10 * 86_400_000),
+    check_out: new Date(Date.now() + 11 * 86_400_000),
+    paid_confirmed_at: null,
+    contact_email: 'hotel@example.test',
+  };
+  const updates: any[] = [];
+  const events: any[] = [];
+  const prisma: any = {
+    dvi_hotel_block_request: { findUnique: async () => request },
+    dvi_global_settings: { findFirst: async () => null },
+    $transaction: async (callback: (tx: any) => Promise<unknown>) => callback({
+      dvi_hotel_block_request: { update: async ({ data }: any) => { updates.push(data); return { ...request, ...data }; } },
+      dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
+    }),
+  };
+  const service = new HotelBlockingService(prisma, {} as any, {} as any);
+
+  await service.cancel(request.id, { id: 7, type: 'STAFF' });
+
+  assert.equal(updates[0].status, 'CANCELLED');
+  assert.equal(updates[0].release_status, 'PENDING');
+  assert.equal(updates[0].release_email_status, 'PENDING');
+  assert.equal(events[0].event_type, 'CANCELLED');
+});
+
+test('manual cancellation cannot cancel a paid hotel confirmation', async () => {
+  const request = {
+    id: 22,
+    status: 'CONFIRMED',
+    cutoff_at: new Date(Date.now() + 60 * 60 * 1000),
+    paid_confirmed_at: new Date(),
+  };
+  let transactionStarted = false;
+  const service = new HotelBlockingService({
+    dvi_hotel_block_request: { findUnique: async () => request },
+    dvi_global_settings: { findFirst: async () => null },
+    $transaction: async () => { transactionStarted = true; },
+  } as any, {} as any, {} as any);
+
+  await assert.rejects(service.cancel(request.id, { id: 7, type: 'STAFF' }), /paid.*confirmed/i);
+  assert.equal(transactionStarted, false);
+});
+
+test('offline cancelled holds can record manual supplier-release acknowledgement', async () => {
+  const request = {
+    id: 23,
+    status: 'CANCELLED',
+    confirmation_channel: 'OFFLINE_HOLD',
+    release_status: 'REQUESTED',
+    requested_at: new Date(),
+    check_in: new Date(Date.now() + 10 * 86_400_000),
+  };
+  let updateWhere: any;
+  const events: any[] = [];
+  const prisma: any = {
+    dvi_hotel_block_request: { findUnique: async () => request },
+    $transaction: async (callback: (tx: any) => Promise<unknown>) => callback({
+      dvi_hotel_block_request: {
+        updateMany: async ({ where }: any) => { updateWhere = where; return { count: 1 }; },
+        findUnique: async () => ({ ...request, release_status: 'ACKNOWLEDGED' }),
+      },
+      dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
+    }),
+  };
+  const service = new HotelBlockingService(prisma, {} as any, {} as any);
+
+  const result = await service.recordReleaseAcknowledgement(request.id, { id: 7, type: 'STAFF' });
+
+  assert.equal(updateWhere.status, 'CANCELLED');
+  assert.equal(result.request.status, 'CANCELLED');
+  assert.equal(result.request.releaseStatus, 'ACKNOWLEDGED');
+  assert.equal(events[0].previous_status, 'CANCELLED');
 });
 
 test('post-payment finalization records AxisRooms and offline confirmations without another supplier call', async () => {

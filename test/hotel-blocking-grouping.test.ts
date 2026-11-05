@@ -19,31 +19,104 @@ const groupRows = (rows: Row[]) => groupContinuousHotelRows(
   (row) => row.checkOut,
 );
 
-test('uses the lead-time hotel hold policy at the 15 and 30 day boundaries', () => {
+test('uses the four-band hold policy at the calendar-day boundaries', () => {
   const requestedAt = '2026-01-01T10:00:00.000Z';
-  assert.equal(hotelHoldDurationHours('2026-01-16', requestedAt), 4);
+  assert.equal(hotelHoldDurationHours('2026-01-16', requestedAt), 48);
   assert.equal(hotelHoldDurationHours('2026-01-17', requestedAt), 12);
   assert.equal(hotelHoldDurationHours('2026-01-31', requestedAt), 12);
   assert.equal(hotelHoldDurationHours('2026-02-01', requestedAt), 48);
-  assert.equal(hotelHoldCutoffAt('2026-01-16', requestedAt).toISOString(), '2026-01-01T14:00:00.000Z');
+  assert.equal(hotelHoldCutoffAt('2026-01-16', requestedAt).toISOString(), '2026-01-03T10:00:00.000Z');
 });
 
-test('blocks holds inside the minimum lead band and the 48-hour no-block window', () => {
+test('matches the configured hold decision at every requested lead-day boundary', () => {
+  const requestedAt = '2026-01-01T10:00:00.000Z';
+  const cases = [
+    { leadDays: 0, checkIn: '2026-01-01', allowed: false, durationHours: null, band: null },
+    { leadDays: 1, checkIn: '2026-01-02', allowed: false, durationHours: null, band: null },
+    { leadDays: 2, checkIn: '2026-01-03', allowed: false, durationHours: null, band: null },
+    { leadDays: 3, checkIn: '2026-01-04', allowed: true, durationHours: 48, band: '3-15' },
+    { leadDays: 15, checkIn: '2026-01-16', allowed: true, durationHours: 48, band: '3-15' },
+    { leadDays: 16, checkIn: '2026-01-17', allowed: true, durationHours: 12, band: '16-30' },
+    { leadDays: 30, checkIn: '2026-01-31', allowed: true, durationHours: 12, band: '16-30' },
+    { leadDays: 31, checkIn: '2026-02-01', allowed: true, durationHours: 48, band: '31-60' },
+    { leadDays: 60, checkIn: '2026-03-02', allowed: true, durationHours: 48, band: '31-60' },
+    { leadDays: 61, checkIn: '2026-03-03', allowed: true, durationHours: 240, band: '61+' },
+    { leadDays: 75, checkIn: '2026-03-17', allowed: true, durationHours: 240, band: '61+' },
+    { leadDays: 90, checkIn: '2026-04-01', allowed: true, durationHours: 240, band: '61+' },
+  ] as const;
+
+  for (const item of cases) {
+    const decision = hotelHoldDecision(item.checkIn, requestedAt);
+    assert.equal(decision.leadDays, item.leadDays, `lead day ${item.leadDays}`);
+    assert.equal(decision.allowed, item.allowed, `eligibility at lead day ${item.leadDays}`);
+    assert.equal(decision.durationHours, item.durationHours, `duration at lead day ${item.leadDays}`);
+    assert.equal(decision.band, item.band, `band at lead day ${item.leadDays}`);
+  }
+});
+
+test('fails closed when the check-in date is invalid', () => {
+  const decision = hotelHoldDecision('not-a-date', '2026-01-01T10:00:00.000Z');
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.durationHours, null);
+  assert.equal(decision.reason, 'invalid check-in or request date');
+});
+
+test('caps TBO hold extensions at the stored fresh-rate LCD', () => {
+  const service = new (HotelBlockingService as any)({}, {}, {});
+  const request = {
+    confirmation_channel: 'TBO_BOOK_HOLD',
+    requested_at: new Date('2026-11-05T12:00:00.000Z'),
+    check_in: '2026-11-20',
+    cutoff_at: new Date('2026-11-07T00:00:00.000Z'),
+    request_payload: JSON.stringify({ supplierHold: { lcdDeadlineAt: '2026-11-06T14:30:00.000Z' } }),
+  };
+  assert.equal(service.maxHotelHoldCutoff(request).toISOString(), '2026-11-06T14:30:00.000Z');
+
+  request.request_payload = JSON.stringify({ supplierHold: {} });
+  assert.equal(service.maxHotelHoldCutoff(request).toISOString(), '2026-11-07T12:00:00.000Z');
+});
+
+test('calendar-day policy overrides the legacy elapsed-hour blackout threshold', () => {
   const policy = {
     noBlockBeforeHours: 48,
     minimumLeadDays: 3,
     shortLeadDays: 15,
     mediumLeadDays: 30,
-    shortDurationHours: 4,
+    longLeadDays: 60,
+    shortDurationHours: 48,
     mediumDurationHours: 12,
     longDurationHours: 48,
+    extendedDurationHours: 240,
     tboHoldLcdBufferDays: 1,
   };
   assert.equal(hotelHoldDecision('2026-01-03T23:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).allowed, false);
   assert.equal(hotelHoldDecision('2026-01-03T09:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).allowed, false);
-  assert.equal(hotelHoldDecision('2026-01-16T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 4);
+  assert.equal(hotelHoldDecision('2026-01-16T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 48);
   assert.equal(hotelHoldDecision('2026-01-31T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 12);
   assert.equal(hotelHoldDecision('2026-02-01T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 48);
+});
+
+test('uses the hotel-local calendar day across a timezone offset and preserves the exact cutoff time', () => {
+  const requestedAt = '2026-01-01T18:00:00.000Z';
+  const checkIn = '2026-01-04T00:30:00+05:30';
+  const decision = hotelHoldDecision(checkIn, requestedAt);
+
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.leadDays, 3);
+  assert.equal(decision.durationHours, 48);
+  assert.equal(hotelHoldCutoffAt(checkIn, requestedAt).toISOString(), '2026-01-03T18:00:00.000Z');
+});
+
+test('keeps calendar-day lead times correct across month-end and year-end', () => {
+  const monthEnd = hotelHoldDecision('2026-02-02', '2026-01-30T12:00:00.000Z');
+  const yearEnd = hotelHoldDecision('2027-01-01', '2026-12-29T12:00:00.000Z');
+
+  assert.equal(monthEnd.leadDays, 3);
+  assert.equal(monthEnd.allowed, true);
+  assert.equal(monthEnd.durationHours, 48);
+  assert.equal(yearEnd.leadDays, 3);
+  assert.equal(yearEnd.allowed, true);
+  assert.equal(yearEnd.durationHours, 48);
 });
 
 test('uses the TBO master hotel email only when the primary hotel email is empty', () => {
@@ -280,7 +353,9 @@ test('offline hold is recorded locally without calling a supplier and has no hot
   const result = await service.holdGroup({
     itineraryPlanId: 12030,
     groupType: 1,
+    actor: { id: 9, name: 'Travel Expert', type: 'STAFF', roleId: 8 },
     guest: { name: 'Lead Guest', email: 'guest@example.test', phone: '9999999999' },
+    hotelierContact: { name: 'Hotel Desk', phone: '8888888888' },
   });
 
   assert.equal(result.requests[0].status, 'BLOCKED');
@@ -291,6 +366,99 @@ test('offline hold is recorded locally without calling a supplier and has no hot
   assert.equal(sent.length, 1);
   assert.equal(sent[0].request.emailKind, 'HOLD_NOTICE');
   assert.equal(sent[0].request.responseUrl, undefined);
+});
+
+test('a cancelled offline hold can be held again without reusing its unique reservation key', async () => {
+  const cancelledRequest: any = {
+    id: 701,
+    itinerary_plan_id: 12030,
+    group_type: 1,
+    reservation_key: '12030|1|OFFLINE|30|2027-01-10|2027-01-11|selection:301',
+    selection_ids: '[301]',
+    provider: 'OFFLINE',
+    hotel_id: 30,
+    hotel_code: '30',
+    hotel_name: 'Offline Hotel',
+    check_in: new Date('2027-01-10T00:00:00.000Z'),
+    check_out: new Date('2027-01-11T00:00:00.000Z'),
+    room_type: 'Standard',
+    meal_plan: 'CP',
+    room_count: 1,
+    status: 'CANCELLED',
+    contact_email: 'hotel@example.test',
+    contact_phone: null,
+    contact_source: 'HOTEL_MASTER',
+    confirmation_channel: 'OFFLINE_HOLD',
+    requested_at: new Date('2026-11-05T10:00:00.000Z'),
+    cutoff_at: null,
+    version: 1,
+  };
+  const requests: any[] = [cancelledRequest];
+  const sent: any[] = [];
+  const events: any[] = [];
+  const prisma: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [{
+        itinerary_plan_hotel_details_ID: 301,
+        itinerary_route_id: 9301,
+        itinerary_route_date: '2027-01-10',
+        hotel_check_in_date: '2027-01-10',
+        hotel_check_out_date: '2027-01-11',
+        hotel_id: 30,
+        hotel_code: '30',
+        hotel_provider: 'offline',
+        hotel_booking_mode: 'MANUAL_APPROVAL',
+        total_no_of_rooms: 1,
+        selected_price_snapshot: JSON.stringify({ hotelName: 'Offline Hotel', roomType: 'Standard', mealPlan: 'CP' }),
+      }],
+    },
+    dvi_hotel: { findMany: async () => [{ hotel_id: 30, hotel_name: 'Offline Hotel', hotel_email: 'hotel@example.test', hotel_mobile: null }] },
+    dvi_itinerary_plan_hotel_room_details: { findMany: async () => [] },
+    dvi_global_settings: { findFirst: async () => ({}) },
+    dvi_hotel_block_request: {
+      findMany: async ({ where }: any) => where?.confirmation_channel ? [] : requests,
+      findUnique: async () => null,
+    },
+    dvi_hotel_block_message: { updateMany: async () => ({ count: 1 }) },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: {
+        create: async ({ data }: any) => {
+          const request = { id: 702, ...data };
+          requests.push(request);
+          return request;
+        },
+      },
+      dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
+      dvi_hotel_block_message: { create: async () => undefined },
+    }),
+  };
+  const emailService: any = {
+    dispatch: async (input: any) => { sent.push(input); return { status: 'SENT' as const }; },
+    deliveryRecipient: (recipient: string) => recipient,
+    logFailure: (error: unknown) => String(error),
+  };
+  const service = new (HotelBlockingService as any)(prisma, emailService, {}, {});
+  const input = {
+    itineraryPlanId: 12030,
+    groupType: 1,
+    actor: { id: 9, name: 'Travel Expert', type: 'STAFF', roleId: 8 },
+    guest: { name: 'Lead Guest', email: 'guest@example.test', phone: '9999999999' },
+    hotelierContact: { name: 'Hotel Desk', phone: '8888888888' },
+    hotelDetailsIds: [301],
+  };
+
+  const first = await service.holdGroup(input);
+  const retry = await service.holdGroup(input);
+
+  assert.equal(first.requests[0].created, true);
+  assert.equal(first.requests[0].status, 'BLOCKED');
+  assert.equal(retry.requests[0].created, false);
+  assert.equal(retry.requests[0].status, 'BLOCKED');
+  assert.equal(cancelledRequest.status, 'CANCELLED');
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].reservation_key, `${cancelledRequest.reservation_key}|retry:${cancelledRequest.id}`);
+  assert.equal(events[0].event_type, 'REQUEST_CREATED');
+  assert.equal(sent.length, 1);
 });
 
 test('holdGroup dispatches one email for a continuous hotel and one for another hotel', async () => {
@@ -622,6 +790,82 @@ test('allows a hotelier to shorten the hold but keeps staff extensions one-way',
     }),
     /current hold cutoff/,
   );
+});
+
+test('staff hold extension advances the reminder version and only updates the active unpaid hold', async () => {
+  const now = new Date();
+  const requestedAt = new Date(now.getTime() - 60 * 60 * 1000);
+  const existingCutoff = new Date(now.getTime() + 60 * 60 * 1000);
+  const nextCutoff = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const request: any = {
+    id: 78,
+    status: 'BLOCKED',
+    version: 4,
+    requested_at: requestedAt,
+    cutoff_at: existingCutoff,
+    check_in: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+    check_out: new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000),
+    request_payload: JSON.stringify({ quotationPlanId: 12030, stayDetails: [] }),
+    contact_email: null,
+  };
+  const events: any[] = [];
+  const whereAndData: any[] = [];
+  const prisma: any = {
+    dvi_global_settings: { findFirst: async () => ({}) },
+    dvi_hotel_block_request: { findUnique: async () => request },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: {
+        updateMany: async ({ where, data }: any) => {
+          whereAndData.push({ where, data });
+          if (request.status !== 'BLOCKED' || request.paid_confirmed_at || request.cutoff_at !== where.cutoff_at) return { count: 0 };
+          request.cutoff_at = data.cutoff_at;
+          request.version += data.version.increment;
+          return { count: 1 };
+        },
+        findUnique: async () => request,
+      },
+      dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
+    }),
+  };
+  const service = new (HotelBlockingService as any)(prisma, {});
+
+  const result = await service.updateCutoff(78, nextCutoff.toISOString(), { id: 9, type: 'STAFF' });
+
+  assert.equal(result.request.version, 5);
+  assert.equal(new Date(result.request.cutoffAt).getTime(), nextCutoff.getTime());
+  assert.deepEqual(whereAndData[0].where.status, { in: ['BLOCKED', 'CONFIRMED'] });
+  assert.equal(whereAndData[0].where.paid_confirmed_at, null);
+  assert.equal(whereAndData[0].data.version.increment, 1);
+  assert.equal(events[0].event_type, 'HOLD_EXTENDED');
+});
+
+test('does not extend a hold if payment or expiry wins the concurrent update', async () => {
+  const now = new Date();
+  const request: any = {
+    id: 79,
+    status: 'BLOCKED',
+    version: 1,
+    requested_at: new Date(now.getTime() - 60 * 60 * 1000),
+    cutoff_at: new Date(now.getTime() + 60 * 60 * 1000),
+    check_in: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+    check_out: new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000),
+  };
+  const events: any[] = [];
+  const prisma: any = {
+    dvi_global_settings: { findFirst: async () => ({}) },
+    dvi_hotel_block_request: { findUnique: async () => request },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: { updateMany: async () => ({ count: 0 }) },
+      dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
+    }),
+  };
+  const service = new (HotelBlockingService as any)(prisma, {});
+
+  await assert.rejects(
+    () => service.updateCutoff(79, new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString(), { id: 9, type: 'STAFF' }),
+    /changed or expired/,
+  );
+  assert.equal(events.length, 0);
 });
 
 test('cancels the previous hold and emails the hotelier when a selected hotel changes', async () => {

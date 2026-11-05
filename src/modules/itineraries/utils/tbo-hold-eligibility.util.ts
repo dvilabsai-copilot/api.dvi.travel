@@ -67,6 +67,42 @@ const parseDeadline = (value: unknown): Date | null => {
   return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
 };
 
+const getPrebookRooms = (response: Record<string, any>): Record<string, any>[] => {
+  const hotelResults = asArray(response?.HotelResult);
+  return hotelResults.length > 0
+    ? hotelResults.flatMap((hotel) => asArray(hotel?.Rooms).map((room) => ({ ...hotel, ...room })))
+    : asArray(response?.HotelRoomsDetails || response?.Rooms);
+};
+
+/** Returns the earliest valid room cancellation deadline in the fresh TBO rate. */
+export const getTboPrebookHoldCancellationDeadline = (
+  response: Record<string, any>,
+): Date | null => {
+  const rooms = getPrebookRooms(response);
+  if (rooms.length === 0) return null;
+  const deadlines = rooms.map((room) => parseDeadline(
+    room.LastCancellationDeadline
+      ?? room.lastCancellationDeadline
+      ?? room.LastCancellationDate
+      ?? room.lastCancellationDate,
+  ));
+  if (deadlines.some((deadline) => !deadline)) return null;
+  return deadlines.reduce<Date | null>((earliest, deadline) => (
+    !earliest || (deadline as Date).getTime() < earliest.getTime() ? deadline : earliest
+  ), null);
+};
+
+/** A supplier LCD can shorten a policy hold, never extend it. */
+export const capTboHoldCutoffAtCancellationDeadline = (
+  policyCutoff: Date,
+  response: Record<string, any>,
+): Date => {
+  const supplierDeadline = getTboPrebookHoldCancellationDeadline(response);
+  return supplierDeadline && supplierDeadline.getTime() < policyCutoff.getTime()
+    ? supplierDeadline
+    : policyCutoff;
+};
+
 const startOfIndiaDayPlusDays = (now: Date, days: number): Date => {
   const dateParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: INDIA_TIME_ZONE,
@@ -105,10 +141,7 @@ export const isTboPrebookRateEligibleForHold = (
   bufferDays: number,
   now: Date = new Date(),
 ): boolean => {
-  const hotelResults = asArray(response?.HotelResult);
-  const rooms = hotelResults.length > 0
-    ? hotelResults.flatMap((hotel) => asArray(hotel?.Rooms).map((room) => ({ ...hotel, ...room })))
-    : asArray(response?.HotelRoomsDetails || response?.Rooms);
+  const rooms = getPrebookRooms(response);
   if (rooms.length === 0 || Number.isNaN(now.getTime())) return false;
 
   const safeBufferDays = Math.max(0, Math.trunc(Number(bufferDays) || 0));

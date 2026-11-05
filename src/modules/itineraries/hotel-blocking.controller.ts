@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Param, ParseIntPipe, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, ParseIntPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { Public } from '../../auth/public.decorator';
@@ -34,9 +34,27 @@ export class HotelBlockingController {
       tboHoldBookings: Array.isArray(body?.tboHoldBookings ?? body?.tbo_hold_bookings)
         ? (body?.tboHoldBookings ?? body?.tbo_hold_bookings)
         : undefined,
-      actor: { id: Number(user.userId || 0), name: String(user.name || user.email || ''), type: 'STAFF' },
+      actor: {
+        id: Number(user.userId || 0),
+        name: String(user.name || user.email || ''),
+        type: 'STAFF',
+        roleId: Number(user.roleID ?? user.role ?? 0),
+        permissionRoleId: Number(user.permissionRoleId ?? 0),
+        staffId: Number(user.staffId ?? user.staff_id ?? 0),
+      },
       guest: { name: body?.guest?.name, email: body?.guest?.email, phone: body?.guest?.phone },
+      hotelierContact: {
+        name: body?.hotelierContact?.name ?? body?.hotelier_contact?.name,
+        phone: body?.hotelierContact?.phone ?? body?.hotelier_contact?.phone,
+      },
     });
+  }
+
+  @Get('policy')
+  @ApiOperation({ summary: 'Evaluate the authoritative hotel hold policy for a stay check-in date' })
+  getPolicy(@Query('checkIn') checkIn: string, @Req() request: Request) {
+    this.assertStaffOrAgent(request);
+    return this.hotelBlocking.getHoldPolicyDecision(checkIn);
   }
 
   @Get('guest-details/:planId')
@@ -91,7 +109,7 @@ export class HotelBlockingController {
 
   @Post(':id/cancel')
   @ApiOperation({ summary: 'Cancel one manual hotel hold request' })
-  async cancel(@Param('id', ParseIntPipe) id: number, @Req() request: Request) {
+  async cancel(@Param('id', ParseIntPipe) id: number, @Body() body: any, @Req() request: Request) {
     this.assertStaff(request);
     const result = await this.hotelBlocking.getById(id);
     await this.itineraryAccessService.assertCanEditPlan(result.itineraryPlanId, (request as any).user);
@@ -100,6 +118,18 @@ export class HotelBlockingController {
       id: Number(user.userId || 0),
       name: String(user.name || user.email || ''),
       type: 'STAFF',
+    }, body);
+  }
+
+  @Post(':id/release-acknowledged')
+  @ApiOperation({ summary: 'Record that an authorized Travel Expert confirmed hotel inventory release' })
+  async releaseAcknowledged(@Param('id', ParseIntPipe) id: number, @Req() request: Request) {
+    this.assertStaffOrAgent(request);
+    const result = await this.hotelBlocking.getById(id);
+    await this.itineraryAccessService.assertCanEditPlan(result.itineraryPlanId, (request as any).user);
+    const user = (request as any).user || {};
+    return this.hotelBlocking.recordReleaseAcknowledgement(id, {
+      id: Number(user.userId || 0), name: String(user.name || user.email || ''), type: 'STAFF',
     });
   }
 

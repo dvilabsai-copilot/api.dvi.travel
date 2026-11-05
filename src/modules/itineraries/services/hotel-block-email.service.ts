@@ -12,10 +12,15 @@ type HoldRequest = {
   roomCount?: number | null;
   status?: string | null;
   responseUrl?: string | null;
-  emailKind?: 'REQUEST' | 'EXTENSION' | 'CANCELLATION' | 'REMINDER' | 'HOLD_NOTICE' | 'HOLD_CREATED' | 'HOLD_EXTENSION_NOTICE';
+  emailKind?: 'REQUEST' | 'EXTENSION' | 'CANCELLATION' | 'REMINDER' | 'HOLD_NOTICE' | 'HOLD_CREATED' | 'HOLD_EXTENSION_NOTICE' | 'RELEASE' | 'HOLD_EXPIRED_AGENT';
   previousCutoffAt?: Date | string | null;
   cutoffAt?: Date | string | null;
   stayDetails?: HotelBlockEmailTemplateInput['stayDetails'];
+  remainingTime?: string;
+  guestName?: string | null;
+  originalHoldReference?: string | null;
+  releaseReason?: 'EXPIRED' | 'CANCELLED';
+  releaseRequestedAt?: Date | string | null;
 };
 
 @Injectable()
@@ -25,6 +30,10 @@ export class HotelBlockEmailService {
 
   private enabled() {
     return ['1', 'true', 'yes'].includes(String(process.env.HOTEL_BLOCK_EMAIL_ENABLED || '').trim().toLowerCase());
+  }
+
+  isDispatchEnabled() {
+    return this.enabled();
   }
 
   private demoMode() {
@@ -78,8 +87,10 @@ export class HotelBlockEmailService {
     const isExtension = request.emailKind === 'EXTENSION' || request.emailKind === 'HOLD_EXTENSION_NOTICE';
     const isHoldExtensionNotice = request.emailKind === 'HOLD_EXTENSION_NOTICE';
     const isCancellation = request.emailKind === 'CANCELLATION';
+    const isRelease = request.emailKind === 'RELEASE';
+    const isCancelledRelease = isRelease && (request.releaseReason === 'CANCELLED' || request.status === 'CANCELLED');
     const isHoldNotice = request.emailKind === 'HOLD_NOTICE';
-    const subject = `DVi Travel | ${isCancellation ? 'Hotel Hold No Longer Required' : isExtension ? 'Hotel Hold Extended' : isHoldNotice ? 'Hotel Hold Created' : 'Hotel Blocking Request'} | ${quotationReference}`;
+    const subject = `DVi Travel | ${isRelease ? 'Hotel Hold Release Request' : isCancellation ? 'Hotel Hold No Longer Required' : isExtension ? 'Hotel Hold Extended' : isHoldNotice ? 'Hotel Hold Created' : 'Hotel Blocking Request'} | ${quotationReference}`;
     const text = [
       'Dear Hotel Team,',
       '',
@@ -95,6 +106,13 @@ export class HotelBlockEmailService {
         ? [
             `The hotel selection for quotation ${quotationReference} has changed.`,
             'The previous hotel hold is no longer required. Please release or ignore the rooms associated with this request.',
+          ]
+        : isRelease
+        ? [
+            isCancelledRelease
+              ? `The hotel hold for quotation ${quotationReference} was cancelled at ${this.formatDateTime(request.releaseRequestedAt || request.cutoffAt)}.`
+              : `The unpaid hotel hold for quotation ${quotationReference} expired at ${this.formatDateTime(request.cutoffAt)}.`,
+            'Please release the held rooms and reply to acknowledge the release.',
           ]
         : isExtension
         ? [
@@ -120,6 +138,8 @@ export class HotelBlockEmailService {
       `Check-in: ${this.formatDate(request.checkIn)}`,
       `Check-out: ${this.formatDate(request.checkOut)}`,
       `Rooms: ${request.roomCount || 0}`,
+      ...(request.guestName ? [`Lead guest: ${request.guestName}`] : []),
+      ...(request.originalHoldReference ? [`Original hold reference: ${request.originalHoldReference}`] : []),
       `Room category: ${request.roomType || '--'}`,
       `Meal plan: ${request.mealPlan || '--'}`,
       ...(stayDetails.length > 1
@@ -130,7 +150,7 @@ export class HotelBlockEmailService {
           ]
         : []),
       '',
-      ...(isCancellation || isHoldNotice || isHoldExtensionNotice ? [] : [
+      ...(isCancellation || isRelease || isHoldNotice || isHoldExtensionNotice ? [] : [
         'Please use this secure response link to confirm availability, cutoff and booking status:',
         responseUrl,
       ]),
@@ -153,6 +173,9 @@ export class HotelBlockEmailService {
       emailKind: request.emailKind,
       previousCutoffAt: this.formatDateTime(request.previousCutoffAt),
       cutoffAt: this.formatDateTime(request.cutoffAt),
+      guestName: String(request.guestName || ''),
+      originalHoldReference: String(request.originalHoldReference || ''),
+      releaseReason: request.releaseReason || (request.status === 'CANCELLED' ? 'CANCELLED' : 'EXPIRED'),
       stayDetails: stayDetails.map((detail) => ({
         checkIn: this.formatDate(detail.checkIn),
         checkOut: this.formatDate(detail.checkOut),
@@ -246,12 +269,13 @@ export class HotelBlockEmailService {
     quotationReference: string;
     itineraryUrl: string;
     request: HoldRequest;
+    remainingTime: string;
   }) {
     if (!this.enabled()) return { status: 'QUEUED' as const };
-    const { recipient, quotationReference, itineraryUrl, request } = input;
+    const { recipient, quotationReference, itineraryUrl, request, remainingTime } = input;
     const stayDetails = Array.isArray(request.stayDetails) ? request.stayDetails : [];
     const deliveryRecipient = this.deliveryRecipient(recipient);
-    const subject = `DVi Travel | Hotel Hold Expires in 24 Hours | ${quotationReference}`;
+    const subject = `DVi Travel | Hotel Hold Payment Reminder · ${remainingTime} remaining | ${quotationReference}`;
     const text = [
       'Dear DVi Travel Team,',
       '',
@@ -263,16 +287,17 @@ export class HotelBlockEmailService {
             '',
           ]
         : []),
-      `The blocked hotel hold for quotation ${quotationReference} will expire in 24 hours.`,
-      'Please review the itinerary and confirm the hotel before the cutoff.',
+      `The hotel hold for quotation ${quotationReference} expires in ${remainingTime}.`,
+      'Please review the itinerary and complete payment before the cutoff.',
       '',
       `Hotel: ${request.hotelName || '--'}`,
       `Check-in: ${this.formatDate(request.checkIn)}`,
       `Check-out: ${this.formatDate(request.checkOut)}`,
       `Rooms: ${request.roomCount || 0}`,
       `Hold expires: ${this.formatDateTime(request.cutoffAt)}`,
+      `Time remaining: ${remainingTime}`,
       '',
-      'Open the itinerary and confirm the hotel:',
+      'Open the itinerary to pay and confirm the hotel:',
       itineraryUrl,
       '',
       'Regards,',
@@ -293,6 +318,7 @@ export class HotelBlockEmailService {
       intendedRecipient: recipient,
       emailKind: 'REMINDER',
       cutoffAt: this.formatDateTime(request.cutoffAt),
+      remainingTime,
       stayDetails: stayDetails.map((detail) => ({
         checkIn: this.formatDate(detail.checkIn),
         checkOut: this.formatDate(detail.checkOut),
@@ -308,6 +334,39 @@ export class HotelBlockEmailService {
       text,
       html,
     });
+    return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient };
+  }
+
+  async dispatchAgentHoldExpired(input: { recipient: string; quotationReference: string; itineraryUrl: string; request: HoldRequest }) {
+    if (!this.enabled()) return { status: 'QUEUED' as const };
+    const { recipient, quotationReference, itineraryUrl, request } = input;
+    const deliveryRecipient = this.deliveryRecipient(recipient);
+    const text = [
+      'Dear Travel Expert,', '',
+      `The unpaid hotel hold for quotation ${quotationReference} has expired.`,
+      'Payment against this hold is no longer available. Check the release status and arrange a new selection if needed.',
+      '', `Hotel: ${request.hotelName || '--'}`,
+      `Hold expired: ${this.formatDateTime(request.cutoffAt)}`,
+      `Release status: ${request.status || 'EXPIRED'}`,
+      '', 'Review the itinerary:', itineraryUrl, '', 'Regards,', 'DVi Travel Operations',
+    ].join('\n');
+    const html = renderHotelBlockEmailHtml({
+      quotationReference,
+      hotelName: String(request.hotelName || '--'),
+      provider: String(request.provider || '--'),
+      checkIn: this.formatDate(request.checkIn),
+      checkOut: this.formatDate(request.checkOut),
+      roomType: String(request.roomType || '--'),
+      mealPlan: String(request.mealPlan || '--'),
+      roomCount: Number(request.roomCount || 0),
+      responseUrl: '',
+      itineraryUrl,
+      demoMode: this.demoMode(),
+      intendedRecipient: recipient,
+      emailKind: 'HOLD_EXPIRED_AGENT',
+      cutoffAt: this.formatDateTime(request.cutoffAt),
+    });
+    const info = await this.getTransporter().sendMail({ from: String(process.env.SMTP_FROM), to: deliveryRecipient, subject: `DVi Travel | Hotel Hold Expired | ${quotationReference}`, text, html });
     return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient };
   }
 

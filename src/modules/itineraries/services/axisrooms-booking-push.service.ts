@@ -288,6 +288,18 @@ export class AxisRoomsBookingPushService {
     }
   }
 
+  /** Uses the same cancellation notification payload as the persisted-booking cancellation flow. */
+  async cancelHeldBooking(input: { confirmationNo: string; bookingCode: string; hotelCode: string }) {
+    const confirmationNo = String(input.confirmationNo || '').trim();
+    if (!confirmationNo) return { success: false, error: 'AxisRooms hold confirmation reference is missing.' };
+    return this.pushBookingNotification({
+      confirmationNo,
+      bookingCode: String(input.bookingCode || '').trim(),
+      hotelCode: String(input.hotelCode || '').trim(),
+      bookingStatus: 'cancelled',
+    });
+  }
+
   async cancelItineraryHotelsByRoutes(itineraryPlanId: number, routeIds: number[]) {
     if (!routeIds?.length) return;
 
