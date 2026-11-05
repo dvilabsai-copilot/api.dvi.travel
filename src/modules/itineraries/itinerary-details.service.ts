@@ -437,6 +437,7 @@ export interface VehicleSelectionDto {
 export interface ItineraryDetailsResponseDto {
   quoteId: string;
   planId: number;
+  agentSellingProfit?: number;
 
   // Continue Planning chain
   continuedFromPlanId?: number | null;
@@ -558,6 +559,35 @@ export class ItineraryDetailsService {
     private readonly hotelAvailabilitySnapshotService: HotelAvailabilitySnapshotService,
     private readonly globalSettingsService: GlobalSettingsService,
   ) {}
+
+  // Shared persistence for Agent-added profit. Requires the bundled SQL migration.
+  async getAgentProfit(planId: number): Promise<{ profit: number; finalSellingPrice: number | null }> {
+    const rows = await this.prisma.$queryRawUnsafe<Array<{
+      agent_profit: unknown;
+      final_selling_price: unknown;
+    }>>(
+      'SELECT agent_profit, final_selling_price FROM dvi_itinerary_agent_pricing WHERE itinerary_plan_ID = ? LIMIT 1',
+      planId,
+    );
+    const row = rows[0];
+    return {
+      profit: Number(row?.agent_profit ?? 0),
+      finalSellingPrice: row?.final_selling_price == null ? null : Number(row.final_selling_price),
+    };
+  }
+
+  async saveAgentProfit(planId: number, profit: number, finalSellingPrice: number) {
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO dvi_itinerary_agent_pricing
+        (itinerary_plan_ID, agent_profit, final_selling_price)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         agent_profit = VALUES(agent_profit),
+         final_selling_price = VALUES(final_selling_price)`,
+      planId, profit, finalSellingPrice,
+    );
+    return { profit, finalSellingPrice };
+  }
 
   private normalizeHotelSelectionEntries(
     selections: Record<string, any> | any[],
@@ -7678,9 +7708,22 @@ const visibleCostBreakdown = canViewCostBreakdown
   ? costBreakdown
   : redactItineraryCostBreakdown(costBreakdown);
 
+// Agent Profit is visible only to Agent and Admin.
+const canViewAgentProfit =
+  Number(viewerRole) === SystemRole.ADMIN ||
+  isAgentRole(viewerRole);
+
+const savedAgentProfit = canViewAgentProfit
+  ? (await this.getAgentProfit(plan.itinerary_plan_ID)).profit
+  : undefined;
+
 const response: ItineraryDetailsResponseDto = {
   quoteId: plan.itinerary_quote_ID ?? '',
   planId: plan.itinerary_plan_ID,
+
+  ...(canViewAgentProfit
+    ? { agentSellingProfit: savedAgentProfit }
+    : {}),
 
   continuedFromPlanId:
     continuedFromPlanId > 0

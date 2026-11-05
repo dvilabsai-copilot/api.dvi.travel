@@ -1,4 +1,4 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { ItineraryDetailsService } from './itinerary-details.service';
 import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service';
@@ -783,10 +783,10 @@ export class ItineraryClipboardService {
           Number(day.dayNumber) === 1
             ? firstDayStartLabel
             : otherDayStartLabel;
-
-        const range = this.escapeHtml(
-          segment.timeRange || '',
-        );
+const range =
+  mode === 'para'
+    ? ''
+    : this.escapeHtml(segment.timeRange || '');
 
               lines.push(
           buildLine(
@@ -810,9 +810,10 @@ export class ItineraryClipboardService {
           segment.duration || '',
         );
 
-        const range = this.escapeHtml(
-          segment.timeRange || '',
-        );
+        const range =
+          mode === 'para'
+            ? ''
+            : this.escapeHtml(segment.timeRange || '');
 
         const metrics = [
           distance
