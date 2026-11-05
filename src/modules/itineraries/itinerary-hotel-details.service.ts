@@ -293,6 +293,12 @@ export interface HotelAvailabilityMetaDto {
     date: string;
     destination: string;
   }>;
+  earlyArrivalMarkers?: Array<{
+    routeId: number;
+    groupType: number;
+    blockedFromDate: string;
+    location: string;
+  }>;
   offlineFetch?: {
     requestedRouteIds: number[];
     fetchedHotelCount: number;

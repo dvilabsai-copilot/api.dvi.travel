@@ -870,6 +870,7 @@ export class HotelAvailabilitySnapshotService {
       Number(plan.itinerary_plan_ID),
       previousDayBillingMarkers,
     );
+    const earlyArrivalMarkers = this.buildEarlyArrivalMarkers(previousDayBillingMarkers, routes);
     const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
     const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
     const normalizedRows = this.dedupeRows(freshRows || [])
@@ -1215,6 +1216,7 @@ export class HotelAvailabilitySnapshotService {
         totalSearchRoutes: resolveHotelRequiredRoutes(routes || [], noOfNights).length,
         emptySearchRoutes: emptyStayBlocks.length,
         emptyStayBlocks,
+        earlyArrivalMarkers,
         message: providerErrors.length > 0
           ? 'Some hotel providers could not be verified. Saved selections were preserved and availability can be retried.'
           : sharedHotelInventory.length > 0
@@ -1278,6 +1280,43 @@ export class HotelAvailabilitySnapshotService {
         });
       });
     return result;
+  }
+
+  private buildEarlyArrivalMarkers(markers: any[], routes: any[]): Array<{
+    routeId: number;
+    groupType: number;
+    blockedFromDate: string;
+    location: string;
+  }> {
+    const routeById = new Map<number, any>(
+      (routes || []).map((route: any) => [Number(route?.itinerary_route_ID || 0), route]),
+    );
+    const uniqueMarkers = new Map<string, {
+      routeId: number;
+      groupType: number;
+      blockedFromDate: string;
+      location: string;
+    }>();
+
+    (markers || []).forEach((marker: any) => {
+      const routeId = Number(marker?.itinerary_route_id || 0);
+      const groupType = Number(marker?.group_type || 0);
+      const rawDate = marker?.itinerary_route_date;
+      const blockedFromDate = rawDate instanceof Date
+        ? rawDate.toISOString().slice(0, 10)
+        : String(rawDate || '').slice(0, 10);
+      if (!routeId || !groupType || !blockedFromDate) return;
+
+      const route = routeById.get(routeId);
+      uniqueMarkers.set(`${routeId}|${groupType}`, {
+        routeId,
+        groupType,
+        blockedFromDate,
+        location: String(route?.next_visiting_location || route?.location_name || '').trim(),
+      });
+    });
+
+    return Array.from(uniqueMarkers.values());
   }
 
   private hotelRouteGroupKey(planId: number, row: any): string {
