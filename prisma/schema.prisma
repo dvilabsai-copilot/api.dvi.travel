@@ -7139,3 +7139,10 @@ model dvi_toll_city_aliases {
   @@index([status, deleted], map: "idx_dvi_toll_city_aliases_active")
   @@index([canonical_city, status, deleted], map: "idx_dvi_toll_city_aliases_canonical")
 }
+
+model dvi_itinerary_agent_pricing {
+  itinerary_plan_ID   Int      @id
+  agent_profit        Decimal  @default(0.00) @db.Decimal(14, 2)
+  final_selling_price Decimal? @db.Decimal(14, 2)
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamp(0)
+}
