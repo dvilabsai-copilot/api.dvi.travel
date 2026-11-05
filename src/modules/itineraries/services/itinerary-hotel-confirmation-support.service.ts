@@ -933,6 +933,68 @@ export class ItineraryHotelConfirmationSupportService {
       });
     }
 
+    // An AxisRooms confirmation notification is sent at Hold time with payment
+    // pending. Reuse that accepted notification if a caller reaches the
+    // standard confirmation endpoint so it is not sent a second time. The
+    // existing VSR booking path is intentionally untouched here.
+    const providerHoldRows = await (this.prisma as any).dvi_hotel_block_request.findMany({
+      where: {
+        itinerary_plan_id: itineraryPlanId,
+        confirmation_channel: 'AXISROOMS_HOLD',
+        status: { in: ['BLOCKED', 'CONFIRMED'] },
+      },
+    });
+    const holdSelectionIds = Array.from(new Set(providerHoldRows.flatMap((row: any) => {
+      try {
+        const ids = typeof row.selection_ids === 'string' ? JSON.parse(row.selection_ids) : row.selection_ids;
+        return Array.isArray(ids) ? ids.map(Number).filter((id: number) => Number.isInteger(id) && id > 0) : [];
+      } catch {
+        return [];
+      }
+    })));
+    const holdRouteRows = holdSelectionIds.length
+      ? await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
+          where: {
+            itinerary_plan_id: itineraryPlanId,
+            itinerary_plan_hotel_details_ID: { in: holdSelectionIds },
+          },
+          select: { itinerary_plan_hotel_details_ID: true, itinerary_route_id: true },
+        })
+      : [];
+    const routeBySelectionId = new Map(holdRouteRows.map((row: any) => [
+      Number(row.itinerary_plan_hotel_details_ID), Number(row.itinerary_route_id || 0),
+    ]));
+    const now = Date.now();
+    for (const hold of providerHoldRows) {
+      if (String(hold.status || '').toUpperCase() !== 'CONFIRMED'
+        && (!hold.cutoff_at || new Date(hold.cutoff_at).getTime() <= now)) continue;
+      const provider = 'axisrooms';
+      const selectionIds = (() => {
+        try {
+          const ids = typeof hold.selection_ids === 'string' ? JSON.parse(hold.selection_ids) : hold.selection_ids;
+          return Array.isArray(ids) ? ids.map(Number) : [];
+        } catch {
+          return [];
+        }
+      })();
+      for (const selectionId of selectionIds) {
+        const routeId = Number(routeBySelectionId.get(selectionId) || 0);
+        if (!routeId) continue;
+        const key = this.bookingKey(provider, routeId);
+        if (successKeySet.has(key)) continue;
+        successKeySet.add(key);
+        alreadyConfirmedResults.push({
+          provider,
+          providerDisplayName: 'AxisRooms',
+          routeId,
+          hotelCode: hold.hotel_code,
+          status: 'already_confirmed',
+          success: true,
+          bookingRef: hold.confirmation_reference || null,
+        });
+      }
+    }
+
  // STAAH
     const staahRows = await (this.prisma as any).staah_hotel_booking_confirmation.findMany({
       where: {

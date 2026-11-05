@@ -142,6 +142,8 @@ export class AxisRoomsBookingPushService {
     confirmedItineraryPlanId: number;
     itineraryPlanId: number;
     hotel: any;
+    persistConfirmation?: boolean;
+    confirmationNo?: string;
     fallbackBookedBy?: string;
     fallbackEmail?: string;
     fallbackPhone?: string;
@@ -167,7 +169,8 @@ export class AxisRoomsBookingPushService {
 
     const payload: Record<string, any> = {
       bookingStatus: input.bookingStatus,
-      confirmationNo: `DVI-${input.confirmedItineraryPlanId}-${booking.routeId || 0}-${hotelCode || 'NA'}`,
+      confirmationNo: String(input.confirmationNo || '').trim()
+        || `DVI-${input.confirmedItineraryPlanId}-${booking.routeId || 0}-${hotelCode || 'NA'}`,
       hotelId: await this.resolveAxisroomsHotelId(hotelCode),
       supplierAmount: String(roomStayAmount),
       taxes: '0',
@@ -217,7 +220,7 @@ export class AxisRoomsBookingPushService {
     const result = await this.pushBookingNotification(payload);
  // Persist confirmation for successful confirms
     try {
-      if (input.bookingStatus === 'confirmed' && result.success) {
+      if (input.bookingStatus === 'confirmed' && result.success && input.persistConfirmation !== false) {
         const booking = input.hotel || {};
         const hotelCode = String(booking.hotelCode || '').trim();
         const passengers = Array.isArray(booking.passengers) ? booking.passengers : [];

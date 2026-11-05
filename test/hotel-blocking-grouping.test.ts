@@ -97,6 +97,202 @@ test('renders nightly details in the combined email', () => {
   assert.match(html, /27 Oct 2026/);
 });
 
+test('provider hold notice email has no hotelier response link', () => {
+  const html = renderHotelBlockEmailHtml({
+    quotationReference: '12029',
+    hotelName: 'AXIS HOTEL',
+    provider: 'AXISROOMS',
+    checkIn: '27 Nov 2026',
+    checkOut: '28 Nov 2026',
+    roomType: 'Deluxe',
+    mealPlan: 'CP',
+    roomCount: 1,
+    responseUrl: '',
+    demoMode: false,
+    intendedRecipient: 'hotel@example.test',
+    emailKind: 'HOLD_NOTICE',
+    cutoffAt: '27 Nov 2026, 4:00 PM',
+  });
+
+  assert.match(html, /Hotel Hold Created/);
+  assert.match(html, /Hold expires/);
+  assert.doesNotMatch(html, /Review &amp; Respond to Hotel Request/);
+  assert.doesNotMatch(html, /href="https?:\/\//);
+});
+
+test('AxisRooms/offline hold extension email remains informational without creating a response link', () => {
+  const html = renderHotelBlockEmailHtml({
+    quotationReference: '12029',
+    hotelName: 'OFFLINE HOTEL',
+    provider: 'OFFLINE',
+    checkIn: '27 Nov 2026',
+    checkOut: '28 Nov 2026',
+    roomType: 'Deluxe',
+    mealPlan: 'CP',
+    roomCount: 1,
+    responseUrl: 'https://example.test/should-not-be-used',
+    demoMode: false,
+    intendedRecipient: 'hotel@example.test',
+    emailKind: 'HOLD_EXTENSION_NOTICE',
+    previousCutoffAt: '27 Nov 2026, 4:00 PM',
+    cutoffAt: '27 Nov 2026, 8:00 PM',
+  });
+
+  assert.match(html, /Hotel Hold Extended/);
+  assert.match(html, /New hold until/);
+  assert.doesNotMatch(html, /href="https?:\/\//);
+});
+
+test('AxisRooms hold uses the provider confirmation once, emails without an action link, and does not debit wallet', async () => {
+  process.env.PUBLIC_ITINERARY_BASE_URL = 'https://example.test';
+  const selectedRow = {
+    itinerary_plan_hotel_details_ID: 101,
+    itinerary_route_id: 9001,
+    itinerary_route_date: '2027-01-10',
+    hotel_check_in_date: '2027-01-10',
+    hotel_check_out_date: '2027-01-11',
+    hotel_id: 10,
+    hotel_code: 'AX-10',
+    hotel_provider: 'axisrooms',
+    total_no_of_rooms: 1,
+    total_room_cost: 5000,
+    selected_rate_option_id: 'AX-RATE-1',
+    selected_price_snapshot: JSON.stringify({ hotelName: 'Axis Hotel', roomType: 'Deluxe', mealPlan: 'CP', rateId: 'AX-RATE-1', roomId: 'AX-ROOM-1' }),
+  };
+  let persisted: any = null;
+  let nextId = 500;
+  const sent: any[] = [];
+  const agentNotices: any[] = [];
+  const providerCalls: any[] = [];
+  const prisma: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ itinerary_quote_ID: 'AXQ-1', total_adult: 2, total_children: 1, nationality: 101, agent_id: 50, staff_id: 0, createdby: 1 }),
+    },
+    dvi_agent: { findFirst: async () => ({ agent_email_id: 'expert@example.test', travel_expert_id: 0 }) },
+    dvi_users: { findFirst: async () => null },
+    dvi_itinerary_plan_hotel_details: { findMany: async () => [selectedRow] },
+    dvi_hotel: { findMany: async () => [{ hotel_id: 10, hotel_name: 'Axis Hotel', hotel_email: 'hotel@example.test', hotel_mobile: null }] },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [{ itinerary_plan_hotel_details_id: 101, room_type_name: 'Deluxe', room_type_id: 4, room_qty: 1 }],
+    },
+    dvi_global_settings: { findFirst: async () => ({}) },
+    dvi_hotel_block_request: {
+      findMany: async ({ where }: any) => {
+        if (!persisted) return [];
+        if (where?.confirmation_channel) return [persisted];
+        return [persisted];
+      },
+      findUnique: async () => null,
+    },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: {
+        create: async ({ data }: any) => { persisted = { id: nextId++, ...data }; return persisted; },
+      },
+      dvi_hotel_block_event: { create: async () => undefined },
+      dvi_hotel_block_token: { create: async () => undefined },
+      dvi_hotel_block_message: { create: async () => undefined },
+    }),
+  };
+  const emailService: any = {
+    dispatch: async (input: any) => { sent.push(input); return { status: 'QUEUED' as const }; },
+    dispatchAgentHoldCreated: async (input: any) => { agentNotices.push(input); return { status: 'QUEUED' as const }; },
+    deliveryRecipient: (recipient: string) => recipient,
+    logFailure: (error: unknown) => String(error),
+  };
+  const axisRooms = {
+    pushForHotelSelection: async (input: any) => {
+      providerCalls.push(input);
+      return {
+        success: true,
+        payload: { confirmationNo: input.confirmationNo, bookingStatus: input.bookingStatus, paymentStatus: 0 },
+        response: { status: 'success' },
+      };
+    },
+  };
+  const service = new (HotelBlockingService as any)(prisma, emailService, {}, axisRooms);
+  const input = {
+    itineraryPlanId: 12029,
+    groupType: 1,
+    guest: { name: 'Lead Guest', email: 'guest@example.test', phone: '9999999999' },
+  };
+
+  const first = await service.holdGroup(input);
+  const second = await service.holdGroup(input);
+
+  assert.equal(providerCalls.length, 1);
+  assert.equal(providerCalls[0].bookingStatus, 'confirmed');
+  assert.equal(providerCalls[0].persistConfirmation, false);
+  assert.equal(providerCalls[0].hotel.occupancies[0].adults, 2);
+  assert.equal(providerCalls[0].hotel.occupancies[0].children, 1);
+  assert.equal(first.requests[0].status, 'BLOCKED');
+  assert.equal(first.requests[0].responseUrl, undefined);
+  assert.equal(first.walletDebited, 0);
+  assert.equal(first.supplierBookingCalls, 1);
+  assert.equal(second.requests[0].created, false);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].request.emailKind, 'HOLD_NOTICE');
+  assert.equal(sent[0].request.responseUrl, undefined);
+  assert.equal(agentNotices.length, 1);
+  assert.equal(agentNotices[0].recipient, 'expert@example.test');
+});
+
+test('offline hold is recorded locally without calling a supplier and has no hotelier action link', async () => {
+  process.env.PUBLIC_ITINERARY_BASE_URL = 'https://example.test';
+  const sent: any[] = [];
+  let persisted: any = null;
+  const prisma: any = {
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [{
+        itinerary_plan_hotel_details_ID: 301,
+        itinerary_route_id: 9301,
+        itinerary_route_date: '2027-01-10',
+        hotel_check_in_date: '2027-01-10',
+        hotel_check_out_date: '2027-01-11',
+        hotel_id: 30,
+        hotel_code: '30',
+        hotel_provider: 'offline',
+        hotel_booking_mode: 'MANUAL_APPROVAL',
+        total_no_of_rooms: 1,
+        selected_price_snapshot: JSON.stringify({ hotelName: 'Offline Hotel', roomType: 'Standard', mealPlan: 'CP' }),
+      }],
+    },
+    dvi_hotel: { findMany: async () => [{ hotel_id: 30, hotel_name: 'Offline Hotel', hotel_email: 'hotel@example.test', hotel_mobile: null }] },
+    dvi_itinerary_plan_hotel_room_details: { findMany: async () => [] },
+    dvi_global_settings: { findFirst: async () => ({}) },
+    dvi_hotel_block_request: { findMany: async () => [], findUnique: async () => null },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: {
+        create: async ({ data }: any) => { persisted = { id: 701, ...data }; return persisted; },
+      },
+      dvi_hotel_block_event: { create: async () => undefined },
+      dvi_hotel_block_token: { create: async () => { throw new Error('offline hold must not create a response token'); } },
+      dvi_hotel_block_message: { create: async () => undefined },
+    }),
+  };
+  const emailService: any = {
+    dispatch: async (input: any) => { sent.push(input); return { status: 'QUEUED' as const }; },
+    deliveryRecipient: (recipient: string) => recipient,
+    logFailure: (error: unknown) => String(error),
+  };
+  const axisRooms = { pushForHotelSelection: async () => { throw new Error('offline hold must not call AxisRooms'); } };
+  const service = new (HotelBlockingService as any)(prisma, emailService, {}, axisRooms);
+
+  const result = await service.holdGroup({
+    itineraryPlanId: 12030,
+    groupType: 1,
+    guest: { name: 'Lead Guest', email: 'guest@example.test', phone: '9999999999' },
+  });
+
+  assert.equal(result.requests[0].status, 'BLOCKED');
+  assert.equal(result.requests[0].responseUrl, undefined);
+  assert.equal(result.supplierBookingCalls, 0);
+  assert.equal(result.walletDebited, 0);
+  assert.equal(persisted.confirmation_channel, 'OFFLINE_HOLD');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].request.emailKind, 'HOLD_NOTICE');
+  assert.equal(sent[0].request.responseUrl, undefined);
+});
+
 test('holdGroup dispatches one email for a continuous hotel and one for another hotel', async () => {
   process.env.PUBLIC_ITINERARY_BASE_URL = 'https://example.test';
   const selectedRows = [
@@ -107,7 +303,7 @@ test('holdGroup dispatches one email for a continuous hotel and one for another 
       hotel_check_out_date: '2026-11-27',
       hotel_id: 10,
       hotel_code: 'AURUM-AXIS',
-      hotel_provider: 'AXISROOMS',
+      hotel_provider: 'RESAVENUE',
       total_no_of_rooms: 1,
       selected_price_snapshot: JSON.stringify({ hotelName: 'AURUM RESORT', roomType: 'Deluxe', mealPlan: 'MAP' }),
     },
@@ -118,7 +314,7 @@ test('holdGroup dispatches one email for a continuous hotel and one for another 
       hotel_check_out_date: '2026-11-28',
       hotel_id: 10,
       hotel_code: 'AURUM-AXIS',
-      hotel_provider: 'AXISROOMS',
+      hotel_provider: 'RESAVENUE',
       total_no_of_rooms: 1,
       selected_price_snapshot: JSON.stringify({ hotelName: 'AURUM RESORT', roomType: 'Garden Cottage', mealPlan: 'MAP' }),
     },
@@ -129,7 +325,7 @@ test('holdGroup dispatches one email for a continuous hotel and one for another 
       hotel_check_out_date: '2026-11-29',
       hotel_id: 20,
       hotel_code: 'PATIO-AXIS',
-      hotel_provider: 'AXISROOMS',
+      hotel_provider: 'RESAVENUE',
       total_no_of_rooms: 1,
       selected_price_snapshot: JSON.stringify({ hotelName: 'THE PATIO', roomType: 'Deluxe Room', mealPlan: 'MAP' }),
     },

@@ -2139,6 +2139,14 @@ const clientIp = String(
       0,
   );
 
+  if (finalResult?.success !== false && itineraryPlanId > 0) {
+    await this.hotelBlockingService.finalizePaidProviderHolds(
+      itineraryPlanId,
+      Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
+      Number(finalResult?.confirmed_itinerary_plan_ID || baseResult?.confirmed_itinerary_plan_ID || 0),
+    );
+  }
+
   /*
    * The email notifier catches its own
    * errors. Email failure will not cancel
@@ -2180,6 +2188,11 @@ const clientIp = String(
     const finalResult = { ...baseResult, confirmedHotelDetails, supplierBookingCalls: 0 };
     const itineraryPlanId = Number(finalResult?.itinerary_plan_ID || dto.itinerary_plan_ID || 0);
     if (itineraryPlanId > 0) {
+      await this.hotelBlockingService.finalizePaidProviderHolds(
+        itineraryPlanId,
+        Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
+        Number(finalResult?.confirmed_itinerary_plan_ID || 0),
+      );
       await this.bookingConfirmationEmailNotifier.sendBookingConfirmationNotifications(itineraryPlanId);
     }
     return finalResult;
