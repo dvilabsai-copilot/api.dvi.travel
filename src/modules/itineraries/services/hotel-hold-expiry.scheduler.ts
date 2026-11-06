@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
-import { resolveHotelHoldNotificationRecipient } from '../utils/hotel-hold-recipient.util';
+import { resolveHotelHoldNotificationRecipients } from '../utils/hotel-hold-recipient.util';
 import { HotelBlockEmailService } from './hotel-block-email.service';
 import { AxisRoomsBookingPushService } from './axisrooms-booking-push.service';
 import { TboHotelBookingService } from './tbo-hotel-booking.service';
@@ -162,15 +162,23 @@ export class HotelHoldExpiryScheduler implements OnModuleInit, OnModuleDestroy {
       select: { itinerary_quote_ID: true, agent_id: true, staff_id: true, createdby: true },
     });
     const releaseMilestone = row.status === 'CANCELLED' ? 'cancelled' : 'expired';
-    const items: Array<{ type: string; recipient: string; status: string }> = [
-      { type: 'HOTEL_RELEASE_EMAIL', recipient: String(row.contact_email || '').trim(), status: String(row.contact_email || '').trim() ? 'QUEUED' : 'MANUAL_REQUIRED' },
+    const agentRecipients = row.status === 'EXPIRED'
+      ? await resolveHotelHoldNotificationRecipients(this.prisma, plan)
+      : [];
+    const items: Array<{ type: string; recipient: string; hasRecipient: boolean; status: string }> = [
+      { type: 'HOTEL_RELEASE_EMAIL', recipient: String(row.contact_email || '').trim(), hasRecipient: Boolean(String(row.contact_email || '').trim()), status: String(row.contact_email || '').trim() ? 'QUEUED' : 'MANUAL_REQUIRED' },
     ];
-    if (row.status === 'EXPIRED') items.push({ type: 'AGENT_HOLD_EXPIRED_EMAIL', recipient: await resolveHotelHoldNotificationRecipient(this.prisma, plan) || '', status: 'QUEUED' });
+    if (row.status === 'EXPIRED') items.push({
+      type: 'AGENT_HOLD_EXPIRED_EMAIL',
+      recipient: '',
+      hasRecipient: agentRecipients.length > 0,
+      status: agentRecipients.length ? 'QUEUED' : 'MANUAL_REQUIRED',
+    });
     for (const item of items) {
       const unique = { request_id: row.id, request_version: Number(row.version || 1), notification_type: item.type, milestone_key: releaseMilestone };
       await (this.prisma as any).dvi_hotel_hold_notification.upsert({
         where: { request_id_request_version_notification_type_milestone_key: unique },
-        create: { ...unique, due_at: now, recipient: item.recipient || null, delivery_status: item.recipient ? item.status : 'MANUAL_REQUIRED', last_error: item.recipient ? null : 'Recipient email is missing; staff action is required.' },
+        create: { ...unique, due_at: now, recipient: item.recipient || null, delivery_status: item.hasRecipient ? item.status : 'MANUAL_REQUIRED', last_error: item.hasRecipient ? null : item.type === 'HOTEL_RELEASE_EMAIL' ? 'Hotel email is missing; staff action is required.' : 'Assigned Agent and Travel Expert email addresses are missing.' },
         update: {},
       });
     }
@@ -219,13 +227,23 @@ export class HotelHoldExpiryScheduler implements OnModuleInit, OnModuleDestroy {
         await (this.prisma as any).dvi_hotel_hold_notification.update({ where: { id: notice.id }, data: { delivery_status: 'SKIPPED', last_error: 'Hold is no longer expired.' } });
         continue;
       }
-      const plan = await (this.prisma as any).dvi_itinerary_plan_details.findUnique({ where: { itinerary_plan_ID: request.itinerary_plan_id }, select: { itinerary_quote_ID: true } });
+      const plan = await (this.prisma as any).dvi_itinerary_plan_details.findUnique({
+        where: { itinerary_plan_ID: request.itinerary_plan_id },
+        select: { itinerary_quote_ID: true, agent_id: true, staff_id: true, createdby: true },
+      });
       const quote = String(plan?.itinerary_quote_ID || request.itinerary_plan_id);
       const base = String(process.env.PUBLIC_ITINERARY_BASE_URL || 'http://localhost:8080').trim().replace(/\/+$/, '');
       const itineraryUrl = `${base}/itinerary-details/${encodeURIComponent(quote)}?openHotelConfirmation=1`;
       const payload = object(request.request_payload);
       const guest = object(payload.guest || payload.guestDetails);
       try {
+        const recipients = notice.notification_type === 'AGENT_HOLD_EXPIRED_EMAIL'
+          ? await resolveHotelHoldNotificationRecipients(this.prisma, plan)
+          : [];
+        if (notice.notification_type === 'AGENT_HOLD_EXPIRED_EMAIL' && !recipients.length) {
+          await (this.prisma as any).dvi_hotel_hold_notification.update({ where: { id: notice.id }, data: { delivery_status: 'MANUAL_REQUIRED', last_error: 'Assigned Agent and Travel Expert email addresses are missing.' } });
+          continue;
+        }
         const delivery = notice.notification_type === 'HOTEL_RELEASE_EMAIL'
           ? await this.email.dispatch({
               recipient: notice.recipient,
@@ -242,7 +260,7 @@ export class HotelHoldExpiryScheduler implements OnModuleInit, OnModuleDestroy {
               },
             })
           : await this.email.dispatchAgentHoldExpired({
-              recipient: notice.recipient, quotationReference: quote, itineraryUrl,
+              recipients, quotationReference: quote, itineraryUrl,
               request: { hotelName: request.hotel_name, provider: request.provider, checkIn: request.check_in, checkOut: request.check_out, roomType: request.room_type, roomCount: request.room_count, cutoffAt: request.cutoff_at, status: request.release_status },
             });
         const delivered = delivery.status === 'SENT';
@@ -251,10 +269,11 @@ export class HotelHoldExpiryScheduler implements OnModuleInit, OnModuleDestroy {
           data: { delivery_status: delivered ? 'SENT' : 'QUEUED', provider_message_id: delivery.providerMessageId || null, sent_at: delivered ? now : null, recipient: delivery.recipient || notice.recipient },
         });
         if (notice.notification_type === 'HOTEL_RELEASE_EMAIL') {
-          await (this.prisma as any).dvi_hotel_block_request.update({ where: { id: request.id }, data: { release_email_status: delivered ? 'SENT' : 'PENDING', release_email_requested_at: now, release_email_sent_at: delivered ? now : null, release_email_last_error: null } });
+          const releaseEmailSent = delivered && !delivery.testDelivery;
+          await (this.prisma as any).dvi_hotel_block_request.update({ where: { id: request.id }, data: { release_email_status: releaseEmailSent ? 'SENT' : 'PENDING', release_email_requested_at: now, release_email_sent_at: releaseEmailSent ? now : null, release_email_last_error: delivery.testDelivery ? 'Test email delivered to the configured sink; hotelier has not been contacted.' : null } });
           await (this.prisma as any).dvi_hotel_block_event.create({ data: {
-            request_id: request.id, previous_status: request.status, new_status: request.status, event_type: delivered ? 'HOTEL_RELEASE_EMAIL_SENT' : 'HOTEL_RELEASE_EMAIL_QUEUED',
-            actor_type: 'SYSTEM', communication_channel: 'EMAIL', notes: delivered ? 'Hotel release email sent; hotel acknowledgement remains separately tracked.' : 'Hotel release email is queued for delivery.',
+            request_id: request.id, previous_status: request.status, new_status: request.status, event_type: delivery.testDelivery ? 'HOTEL_RELEASE_EMAIL_TEST_SENT' : delivered ? 'HOTEL_RELEASE_EMAIL_SENT' : 'HOTEL_RELEASE_EMAIL_QUEUED',
+            actor_type: 'SYSTEM', communication_channel: 'EMAIL', notes: delivery.testDelivery ? 'Hotel release email delivered to the configured test inbox; hotelier has not been contacted.' : delivered ? 'Hotel release email sent; hotel acknowledgement remains separately tracked.' : 'Hotel release email is queued for delivery.',
           } });
         }
         if (delivered) sent += 1;

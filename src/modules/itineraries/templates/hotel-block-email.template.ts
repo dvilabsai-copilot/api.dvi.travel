@@ -9,7 +9,9 @@ export type HotelBlockEmailTemplateInput = {
   roomCount: number;
   responseUrl: string;
   demoMode: boolean;
+  testDelivery?: boolean;
   intendedRecipient: string;
+  intendedRecipients?: string[];
   emailKind?: 'REQUEST' | 'EXTENSION' | 'CANCELLATION' | 'REMINDER' | 'HOLD_NOTICE' | 'HOLD_CREATED' | 'HOLD_EXTENSION_NOTICE' | 'RELEASE' | 'HOLD_EXPIRED_AGENT';
   previousCutoffAt?: string;
   cutoffAt?: string;
@@ -57,15 +59,23 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
   const isHoldCreated = input.emailKind === 'HOLD_CREATED';
   const isRelease = input.emailKind === 'RELEASE';
   const isExpiredAgent = input.emailKind === 'HOLD_EXPIRED_AGENT';
+  const isInternalNotification = isReminder || isExpiredAgent || isHoldCreated;
   const stayDetails = input.stayDetails || [];
+  const intendedRecipients = (input.intendedRecipients || []).filter(Boolean);
+  const intendedRecipientNote = intendedRecipients.length
+    ? `Intended recipients: ${intendedRecipients.map(escapeHtml).join('; ')}`
+    : `Intended ${isInternalNotification ? 'recipient' : 'hotelier email'}: <a href="mailto:${escapeHtml(input.intendedRecipient)}" style="color:#5c24e5;">${escapeHtml(input.intendedRecipient)}</a>`;
   const demoNotice = input.demoMode
     ? `
       <div style="margin:0 0 20px;padding:14px 16px;border:1px solid #f4c46b;border-radius:10px;background:#fff8e8;color:#795400;font-size:13px;line-height:1.6;">
-        <strong>Demo delivery</strong><br>
-        This email is being delivered to the configured demo inbox instead of the ${isReminder ? 'intended recipient' : 'hotelier'}.<br>
-        Intended ${isReminder ? 'recipient' : 'hotelier email'}: <a href="mailto:${escapeHtml(input.intendedRecipient)}" style="color:#5c24e5;">${escapeHtml(input.intendedRecipient)}</a><br>
-        The intended ${isReminder ? 'recipient' : 'hotelier'} has not been contacted while demo mode is enabled.
+        <strong>${input.testDelivery ? 'Test delivery' : 'Demo delivery'}</strong><br>
+        This email is being delivered to the ${input.testDelivery ? 'hotel hold test inbox' : 'configured demo inbox'} instead of the ${isInternalNotification ? 'intended recipient' : 'hotelier'}.<br>
+        ${intendedRecipientNote}<br>
+        The intended ${isInternalNotification ? 'recipient' : 'hotelier'} has not been contacted while ${input.testDelivery ? 'test delivery' : 'demo mode'} is enabled.
       </div>`
+    : '';
+  const intendedRecipientsNote = isInternalNotification && intendedRecipients.length && !input.demoMode
+    ? `<p style="margin:0 0 18px;color:#4a4260;font-size:13px;line-height:1.5;"><strong>Intended recipients:</strong> ${intendedRecipients.map(escapeHtml).join('; ')}</p>`
     : '';
 
   const responseAction = input.responseUrl && !isCancellation && !isReminder && !isHoldExtensionNotice && !isRelease
@@ -140,6 +150,7 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
           ${intro}
         </p>
         ${demoNotice}
+        ${intendedRecipientsNote}
         <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:22px;">
           ${detailRow('Quotation Number', input.quotationReference)}
           ${detailRow('Hotel', input.hotelName)}
