@@ -241,7 +241,8 @@ test('AxisRooms hold uses the provider confirmation once, emails without an acti
     dvi_itinerary_plan_details: {
       findUnique: async () => ({ itinerary_quote_ID: 'AXQ-1', total_adult: 2, total_children: 1, nationality: 101, agent_id: 50, staff_id: 0, createdby: 1 }),
     },
-    dvi_agent: { findFirst: async () => ({ agent_email_id: 'expert@example.test', travel_expert_id: 0 }) },
+    dvi_agent: { findFirst: async () => ({ agent_name: 'Selected Agent', agent_lastname: 'One', agent_email_id: 'agent@example.test', travel_expert_id: 92 }) },
+    dvi_staff_details: { findFirst: async () => ({ staff_name: 'Assigned Expert', staff_email: 'expert@example.test' }) },
     dvi_users: { findFirst: async () => null },
     dvi_itinerary_plan_hotel_details: { findMany: async () => [selectedRow] },
     dvi_hotel: { findMany: async () => [{ hotel_id: 10, hotel_name: 'Axis Hotel', hotel_email: 'hotel@example.test', hotel_mobile: null }] },
@@ -306,7 +307,10 @@ test('AxisRooms hold uses the provider confirmation once, emails without an acti
   assert.equal(sent[0].request.emailKind, 'HOLD_NOTICE');
   assert.equal(sent[0].request.responseUrl, undefined);
   assert.equal(agentNotices.length, 1);
-  assert.equal(agentNotices[0].recipient, 'expert@example.test');
+  assert.deepEqual(agentNotices[0].recipients, [
+    { role: 'Agent', name: 'Selected Agent One', email: 'agent@example.test' },
+    { role: 'Travel Expert', name: 'Assigned Expert', email: 'expert@example.test' },
+  ]);
 });
 
 test('offline hold is recorded locally without calling a supplier and has no hotelier action link', async () => {

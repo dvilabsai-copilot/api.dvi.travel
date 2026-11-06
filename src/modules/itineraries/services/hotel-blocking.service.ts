@@ -14,7 +14,7 @@ import {
   isTboPrebookRateEligibleForHold,
 } from '../utils/tbo-hold-eligibility.util';
 import { AxisRoomsBookingPushService } from './axisrooms-booking-push.service';
-import { resolveHotelHoldNotificationRecipient } from '../utils/hotel-hold-recipient.util';
+import { resolveHotelHoldNotificationRecipients } from '../utils/hotel-hold-recipient.util';
 
 export const HOTEL_BLOCK_STATUS = {
   CONTACT_REQUIRED: 'CONTACT_REQUIRED',
@@ -885,13 +885,13 @@ export class HotelBlockingService {
     ));
     if (newlyCreatedHolds.length && itineraryPlan) {
       try {
-        const recipient = await resolveHotelHoldNotificationRecipient(this.prisma, itineraryPlan);
-        if (recipient) {
+        const recipients = await resolveHotelHoldNotificationRecipients(this.prisma, itineraryPlan);
+        if (recipients.length) {
           const baseUrl = String(process.env.PUBLIC_ITINERARY_BASE_URL || '').trim().replace(/\/+$/, '');
           const quoteReference = String(itineraryPlan.itinerary_quote_ID || planId);
           for (const request of newlyCreatedHolds) {
             await this.hotelBlockEmail.dispatchAgentHoldCreated({
-              recipient,
+              recipients,
               quotationReference: quoteReference,
               itineraryUrl: `${baseUrl}/itinerary-details/${encodeURIComponent(quoteReference)}`,
               request,
