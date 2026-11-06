@@ -75,6 +75,26 @@ test('an active AxisRooms unpaid hold is ready for the wallet confirmation step'
   assert.deepEqual(await service.assertPlanReady(12032, 1), { ready: true, requestCount: 1 });
 });
 
+test('an active TBO refundable Book hold is ready for Confirm & Pay before voucher generation', async () => {
+  const { service } = serviceWithPlan(
+    1,
+    [{ itinerary_plan_hotel_details_ID: 101 }],
+    [{
+      id: 10,
+      hotel_name: 'VSR Hotel',
+      provider: 'VSR',
+      status: 'BLOCKED',
+      confirmation_channel: 'TBO_BOOK_HOLD',
+      confirmation_reference: 'TBO-BOOK-10',
+      cutoff_at: new Date(Date.now() + 4 * 60 * 60 * 1000),
+      selection_ids: '[101]',
+      request_payload: JSON.stringify({ supplierHold: { bookingId: 10, bookingReference: 'TBO-BOOK-10', bookingCode: 'rate!TB!1' } }),
+    }],
+  );
+
+  assert.deepEqual(await service.assertPlanReady(12032, 1), { ready: true, requestCount: 1 });
+});
+
 test('provider hold cutoffs use policy duration and AxisRooms one-day-before cutoff', () => {
   const { service } = serviceWithPlan(1);
   const minimumPolicy = {
@@ -113,6 +133,7 @@ test('hotel hold date boundaries use the four configured calendar-day bands', ()
     assert.equal(result.durationHours, durationHours, `duration at lead day ${days}`);
   }
 });
+
 
 test('invalid hotel check-in dates fail closed', () => {
   const result = hotelHoldDecision('not-a-date', new Date('2026-01-01T00:00:00.000Z'));
@@ -284,9 +305,9 @@ test('post-payment finalization records AxisRooms and offline confirmations with
   };
   const service = new (HotelBlockingService as any)(prisma, {}, {});
 
-  const result = await service.finalizePaidProviderHolds(12032, 1, 888);
+  const result = await service.finalizePaidProviderHolds(12032, 1, 888, [{ requestId: 22, confirmed: true }]);
 
-  assert.deepEqual(result, { finalized: 2 });
+  assert.deepEqual(result, { finalized: 2, voucherResults: [] });
   assert.equal(createdAxisRows.length, 1);
   assert.equal(createdAxisRows[0].confirmed_itinerary_plan_ID, 888);
   assert.equal(createdAxisRows[0].itinerary_route_ID, 901);
@@ -295,4 +316,154 @@ test('post-payment finalization records AxisRooms and offline confirmations with
   assert.equal(updatedRequests.length, 2);
   assert.ok(updatedRequests.every((entry) => entry.data.status === 'CONFIRMED'));
   assert.equal(events.length, 2);
+  assert.equal(events[1].event_type, 'OFFLINE_HOTEL_PAYMENT_CONFIRMED');
+});
+
+test('a TBO voucher failure remains pending without undoing AxisRooms or offline payment finalization', async () => {
+  const updates: any[] = [];
+  const events: any[] = [];
+  const requests = [
+    {
+      id: 31,
+      status: 'BLOCKED',
+      confirmation_channel: 'AXISROOMS_HOLD',
+      confirmation_reference: 'AX-HOLD-31',
+      selection_ids: '[301]',
+      hotel_code: 'AX-31',
+      request_payload: JSON.stringify({ providerHold: { request: { confirmationNo: 'AX-HOLD-31', roomStays: [] } } }),
+    },
+    {
+      id: 32,
+      status: 'BLOCKED',
+      confirmation_channel: 'OFFLINE_HOLD',
+      selection_ids: '[302]',
+      request_payload: JSON.stringify({ providerHold: { hotelierContact: { name: 'Offline Desk', phone: '12345' } } }),
+    },
+    {
+      id: 33,
+      status: 'BLOCKED',
+      confirmation_channel: 'TBO_BOOK_HOLD',
+      confirmation_reference: 'TBO-BOOK-33',
+      selection_ids: '[303]',
+      voucher_status: 'UNVOUCHERED',
+      voucher_attempt_count: 0,
+      request_payload: JSON.stringify({ supplierHold: { bookingId: 3300, bookingReference: 'TBO-BOOK-33' } }),
+    },
+  ];
+  const prisma: any = {
+    dvi_hotel_block_request: {
+      updateMany: async () => ({ count: 1 }),
+      findUnique: async () => ({ ...requests[2], voucher_status: 'PROCESSING', voucher_attempt_count: 1 }),
+    },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: {
+        findMany: async () => requests,
+        update: async ({ where, data }: any) => { updates.push({ id: where.id, data }); return { id: where.id, ...data }; },
+      },
+      dvi_itinerary_plan_hotel_details: {
+        findMany: async () => [
+          { itinerary_plan_hotel_details_ID: 301, itinerary_route_id: 901 },
+          { itinerary_plan_hotel_details_ID: 302, itinerary_route_id: 902 },
+          { itinerary_plan_hotel_details_ID: 303, itinerary_route_id: 903 },
+        ],
+      },
+      axisrooms_hotel_booking_confirmation: {
+        findFirst: async () => null,
+        create: async ({ data }: any) => data,
+      },
+      dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
+    }),
+  };
+  const tbo = {
+    getHoldStatus: async () => ({ voucherStatus: false, status: 'Confirmed' }),
+    generateVoucher: async () => { throw new Error('Insufficient Balance'); },
+  };
+  const service = new (HotelBlockingService as any)(prisma, {}, tbo);
+
+  const result = await service.finalizePaidProviderHolds(12032, 1, 888, [
+    { requestId: 32, confirmed: true, hotelierName: 'Offline Desk', hotelierPhone: '12345' },
+  ]);
+
+  assert.equal(result.finalized, 3);
+  assert.equal(result.voucherResults[0].status, 'PENDING');
+  assert.ok(updates.some((entry) => entry.id === 31 && entry.data.status === 'CONFIRMED'));
+  assert.ok(updates.some((entry) => entry.id === 32 && entry.data.status === 'CONFIRMED'));
+  assert.ok(updates.some((entry) => entry.id === 33 && entry.data.voucher_status === 'PENDING'));
+  assert.ok(events.some((event) => event.event_type === 'OFFLINE_HOTEL_PAYMENT_CONFIRMED'));
+  assert.ok(events.some((event) => event.event_type === 'TBO_VOUCHER_PENDING'));
+});
+
+test('the voucher scheduler retries a paid TBO hold and marks it vouchered when a later attempt succeeds', async () => {
+  const updates: any[] = [];
+  const events: any[] = [];
+  const request = {
+    id: 35,
+    status: 'CONFIRMED',
+    confirmation_channel: 'TBO_BOOK_HOLD',
+    confirmation_reference: 'TBO-BOOK-35',
+    paid_confirmed_at: new Date(),
+    voucher_status: 'PENDING',
+    voucher_attempt_count: 1,
+    request_payload: JSON.stringify({
+      supplierHold: {
+        bookingId: 3500,
+        bookingReference: 'TBO-BOOK-35',
+        lcdDeadlineAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      },
+    }),
+  };
+  let updateManyCalls = 0;
+  const prisma: any = {
+    dvi_hotel_block_request: {
+      updateMany: async () => ({ count: ++updateManyCalls === 1 ? 0 : 1 }),
+      findMany: async () => [request],
+      findUnique: async () => request,
+    },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: {
+        update: async ({ where, data }: any) => { updates.push({ id: where.id, data }); return { id: where.id, ...data }; },
+      },
+      dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
+    }),
+  };
+  let voucherCalls = 0;
+  const tbo = {
+    getHoldStatus: async () => ({ voucherStatus: false, status: 'Confirmed' }),
+    generateVoucher: async () => {
+      voucherCalls += 1;
+      return { voucherStatus: true, bookingStatus: 'Confirmed', bookingId: 3500 };
+    },
+  };
+  const service = new (HotelBlockingService as any)(prisma, {}, tbo);
+
+  const result = await service.retryDueTboVouchers(new Date());
+
+  assert.deepEqual(result, { processed: 1, recoveredClaims: 0 });
+  assert.equal(voucherCalls, 1);
+  assert.ok(updates.some((entry) => entry.data.voucher_status === 'VOUCHERED'));
+  assert.ok(events.some((event) => event.event_type === 'TBO_VOUCHER_GENERATED'));
+});
+
+test('offline payment acknowledgement is restricted to Travel Experts and requires hotelier contact details', async () => {
+  const service = new HotelBlockingService({
+    dvi_hotel_block_request: { findMany: async () => [{ id: 44, hotel_name: 'Offline Hotel' }] },
+  } as any, {} as any, {} as any);
+
+  await assert.rejects(
+    service.assertOfflinePaymentAcknowledgements(12032, 1, [], { roleId: 4 }),
+    /Only a Travel Expert/i,
+  );
+  await assert.rejects(
+    service.assertOfflinePaymentAcknowledgements(12032, 1, [{ requestId: 44, confirmed: true }], { roleId: 8 }),
+    (error: any) => error?.response?.code === 'OFFLINE_HOTEL_PAYMENT_ACKNOWLEDGEMENT_REQUIRED',
+  );
+  assert.deepEqual(
+    await service.assertOfflinePaymentAcknowledgements(
+      12032,
+      1,
+      [{ requestId: 44, confirmed: true, hotelierName: 'Front Desk', hotelierPhone: '12345' }],
+      { roleId: 8 },
+    ),
+    { required: 1 },
+  );
 });

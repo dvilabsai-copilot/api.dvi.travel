@@ -1253,6 +1253,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
         roomCount: result.RoomCount || result.NoOfRooms || 1,
         totalPrice: parseFloat(result.TotalPrice || result.TotalAmount) || 0,
         status: result.BookingStatus || result.HotelBookingStatus || 'confirmed',
+        voucherStatus: result.VoucherStatus === true || Number(result.VoucherStatus) === 1,
         bookingDeadline:
           result.HoldUntil
           || result.HoldExpiryDate
