@@ -83,7 +83,8 @@ export class HotelBlockEmailService {
   async dispatch(input: { recipient: string; quotationReference: string; request: HoldRequest }) {
     if (!this.enabled()) return { status: 'QUEUED' as const };
     const { recipient, quotationReference, request } = input;
-    const lifecycleTestDelivery = request.emailKind === 'RELEASE';
+    const lifecycleTestDelivery = request.emailKind === 'RELEASE'
+      || (request.emailKind === 'HOLD_NOTICE' && this.demoMode());
     const deliveryRecipient = this.deliveryRecipient(recipient, lifecycleTestDelivery);
     const demoDelivery = this.demoMode() || lifecycleTestDelivery;
     const responseUrl = String(request.responseUrl || '').trim();
@@ -204,24 +205,36 @@ export class HotelBlockEmailService {
   }
 
   async dispatchAgentHoldCreated(input: {
-    recipient: string;
+    recipients: HoldNotificationRecipient[];
     quotationReference: string;
     itineraryUrl: string;
     request: HoldRequest;
   }) {
     if (!this.enabled()) return { status: 'QUEUED' as const };
-    const { recipient, quotationReference, itineraryUrl, request } = input;
-    const deliveryRecipient = this.deliveryRecipient(recipient);
+    const { recipients, quotationReference, itineraryUrl, request } = input;
+    const intendedEmails = [...new Set(recipients
+      .map((item) => String(item.email || '').trim())
+      .filter((email) => email.includes('@')))];
+    if (!intendedEmails.length) throw new Error('No Agent or Travel Expert email is available for this hold notice.');
+    const intendedRecipientLabels = [...new Set(recipients
+      .filter((item) => intendedEmails.includes(String(item.email || '').trim()))
+      .map((item) => `${item.role}: ${item.name} (${item.email})`))];
+    const recipient = intendedEmails.join(', ');
+    const lifecycleTestDelivery = this.demoMode();
+    const demoDelivery = lifecycleTestDelivery;
+    const deliveryRecipient = this.deliveryRecipient(recipient, lifecycleTestDelivery);
     const stayDetails = Array.isArray(request.stayDetails) ? request.stayDetails : [];
     const subject = `DVi Travel | Hotel Hold Pending Payment | ${quotationReference}`;
     const text = [
-      'Dear Travel Expert,',
+      'Dear DVi Travel Team,',
       '',
-      ...(this.demoMode()
+      ...(demoDelivery
         ? [
-            'DEMO NOTICE: This email is being delivered to the configured demo inbox instead of the intended recipient.',
-            `Intended recipient: ${recipient}`,
-            'The intended recipient has not been contacted while demo mode is enabled.',
+            lifecycleTestDelivery
+              ? 'TEST NOTICE: This email is being delivered to dhisoftai@gmail.com instead of the intended recipients.'
+              : 'DEMO NOTICE: This email is being delivered to the configured demo inbox instead of the intended recipients.',
+            `Intended recipients: ${intendedRecipientLabels.join('; ')}`,
+            'The intended recipients have not been contacted while test delivery is enabled.',
             '',
           ]
         : []),
@@ -251,8 +264,10 @@ export class HotelBlockEmailService {
       roomCount: Number(request.roomCount || 0),
       responseUrl: '',
       itineraryUrl,
-      demoMode: this.demoMode(),
+      demoMode: demoDelivery,
+      testDelivery: lifecycleTestDelivery,
       intendedRecipient: recipient,
+      intendedRecipients: intendedRecipientLabels,
       emailKind: 'HOLD_CREATED',
       cutoffAt: this.formatDateTime(request.cutoffAt),
       stayDetails: stayDetails.map((detail) => ({
@@ -270,7 +285,7 @@ export class HotelBlockEmailService {
       text,
       html,
     });
-    return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient };
+    return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient, testDelivery: lifecycleTestDelivery };
   }
 
   async dispatchReminder(input: {

@@ -5,9 +5,10 @@ import { HotelBlockEmailService } from '../src/modules/itineraries/services/hote
 test('lifecycle email dispatch always uses the requested test inbox and records intended recipients', async () => {
   const previousEnabled = process.env.HOTEL_BLOCK_EMAIL_ENABLED;
   const previousDemo = process.env.DEMO_HOTEL_EMAIL;
+  const previousDemoRecipient = process.env.DEMO_HOTEL_EMAIL_RECIPIENT;
   try {
     process.env.HOTEL_BLOCK_EMAIL_ENABLED = 'true';
-    delete process.env.DEMO_HOTEL_EMAIL;
+    process.env.DEMO_HOTEL_EMAIL = 'true';
     const service = new HotelBlockEmailService();
     const messages: any[] = [];
     (service as any).getTransporter = () => ({ sendMail: async (message: any) => { messages.push(message); return { messageId: `test-${messages.length}` }; } });
@@ -20,8 +21,10 @@ test('lifecycle email dispatch always uses the requested test inbox and records 
     const reminder = await service.dispatchReminder({ recipients, quotationReference: 'DVI-TEST', itineraryUrl: 'http://localhost/itinerary', request, remainingTime: '2 hours' });
     const expired = await service.dispatchAgentHoldExpired({ recipients, quotationReference: 'DVI-TEST', itineraryUrl: 'http://localhost/itinerary', request });
     const release = await service.dispatch({ recipient: 'hotel@real-domain.example', quotationReference: 'DVI-TEST', request: { ...request, emailKind: 'RELEASE' } });
+    const holdNotice = await service.dispatch({ recipient: 'hotel@real-domain.example', quotationReference: 'DVI-TEST', request: { ...request, emailKind: 'HOLD_NOTICE' } });
+    const holdCreated = await service.dispatchAgentHoldCreated({ recipients, quotationReference: 'DVI-TEST', itineraryUrl: 'https://staging.dvi.travel/itinerary-details/DVI-TEST', request });
 
-    assert.deepEqual(messages.map(({ to }) => to), ['dhisoftai@gmail.com', 'dhisoftai@gmail.com', 'dhisoftai@gmail.com']);
+    assert.deepEqual(messages.map(({ to }) => to), Array(5).fill('dhisoftai@gmail.com'));
     for (const message of messages.slice(0, 2)) {
       assert.match(message.text, /TEST NOTICE/);
       assert.match(message.text, /Agent: Selected Agent/);
@@ -31,13 +34,24 @@ test('lifecycle email dispatch always uses the requested test inbox and records 
     assert.match(messages[2].text, /TEST NOTICE/);
     assert.match(messages[2].text, /Intended hotelier email: hotel@real-domain\.example/);
     assert.match(messages[2].text, /not been contacted/i);
+    assert.match(messages[3].text, /TEST NOTICE/);
+    assert.match(messages[3].text, /Intended hotelier email: hotel@real-domain\.example/);
+    assert.match(messages[3].text, /not been contacted/i);
+    assert.match(messages[4].text, /TEST NOTICE/);
+    assert.match(messages[4].text, /Agent: Selected Agent \(agent@real-domain\.example\)/);
+    assert.match(messages[4].text, /Travel Expert: Assigned Expert \(expert@real-domain\.example\)/);
+    assert.match(messages[4].text, /not been contacted/i);
     assert.equal(reminder.testDelivery, true);
     assert.equal(expired.testDelivery, true);
     assert.equal(release.testDelivery, true);
+    assert.equal(holdNotice.testDelivery, true);
+    assert.equal(holdCreated.testDelivery, true);
   } finally {
     if (previousEnabled === undefined) delete process.env.HOTEL_BLOCK_EMAIL_ENABLED;
     else process.env.HOTEL_BLOCK_EMAIL_ENABLED = previousEnabled;
     if (previousDemo === undefined) delete process.env.DEMO_HOTEL_EMAIL;
     else process.env.DEMO_HOTEL_EMAIL = previousDemo;
+    if (previousDemoRecipient === undefined) delete process.env.DEMO_HOTEL_EMAIL_RECIPIENT;
+    else process.env.DEMO_HOTEL_EMAIL_RECIPIENT = previousDemoRecipient;
   }
 });
