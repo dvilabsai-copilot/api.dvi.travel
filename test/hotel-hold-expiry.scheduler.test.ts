@@ -34,8 +34,9 @@ const createScheduler = (rows: any[]) => {
   };
   const prisma: any = {
     dvi_hotel_block_request: requestModel,
-    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'DVI-TEST', agent_id: 7 }) },
-    dvi_agent: { findFirst: async () => ({ agent_email_id: 'expert@example.test', travel_expert_id: null }) },
+    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'DVI-TEST', agent_id: 7, staff_id: 8 }) },
+    dvi_agent: { findFirst: async () => ({ agent_name: 'Selected Agent', agent_email_id: 'agent@example.test', travel_expert_id: 8 }) },
+    dvi_staff_details: { findFirst: async () => ({ staff_name: 'Assigned Expert', staff_email: 'expert@example.test' }) },
     dvi_hotel_hold_notification: { upsert: async ({ create }: any) => { notices.push(create); } },
     dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
     $transaction: async (callback: (tx: any) => Promise<unknown>) => callback({
@@ -93,6 +94,54 @@ test('expiry does not transition a paid hold', async () => {
 
   assert.equal(result.expired, 0);
   assert.equal(requests.get(42)?.status, 'CONFIRMED');
+});
+
+test('test-routed hotel release email does not mark the hotelier as notified', async () => {
+  const now = new Date('2026-11-05T12:00:00.000Z');
+  const request: any = {
+    id: 49, itinerary_plan_id: 805, status: 'EXPIRED', paid_confirmed_at: null,
+    release_status: 'REQUESTED', release_email_status: 'PENDING',
+    cutoff_at: new Date('2026-11-05T11:59:00.000Z'), release_requested_at: now,
+    contact_email: 'hotel@real-domain.example', hotel_name: 'Test Hotel', provider: 'OFFLINE',
+    check_in: new Date('2026-11-25T00:00:00.000Z'), check_out: new Date('2026-11-26T00:00:00.000Z'),
+    room_type: 'Deluxe', meal_plan: 'CP', room_count: 1, request_payload: '{}', confirmation_reference: 'HOLD-49',
+  };
+  const notice: any = {
+    id: 90, request_id: 49, request_version: 1, notification_type: 'HOTEL_RELEASE_EMAIL',
+    delivery_status: 'QUEUED', attempt_count: 0, recipient: 'hotel@real-domain.example',
+  };
+  const events: any[] = [];
+  let dispatchedRecipient = '';
+  const prisma: any = {
+    dvi_hotel_hold_notification: {
+      findMany: async () => [notice],
+      updateMany: async ({ data }: any) => { Object.assign(notice, data, { attempt_count: notice.attempt_count + 1 }); return { count: 1 }; },
+      update: async ({ data }: any) => Object.assign(notice, data),
+    },
+    dvi_hotel_block_request: {
+      findUnique: async () => request,
+      update: async ({ data }: any) => Object.assign(request, data),
+    },
+    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'DVI-TEST-49', agent_id: 7, staff_id: 8 }) },
+    dvi_hotel_block_event: { create: async ({ data }: any) => { events.push(data); } },
+  };
+  const email: any = {
+    isDispatchEnabled: () => true,
+    dispatch: async ({ recipient }: any) => {
+      dispatchedRecipient = recipient;
+      return { status: 'SENT', recipient: 'dhisoftai@gmail.com', providerMessageId: 'test-release-49', testDelivery: true };
+    },
+  };
+  const scheduler = new HotelHoldExpiryScheduler(prisma, email, {} as any, {} as any);
+
+  assert.equal(await (scheduler as any).deliverNotifications(now), 1);
+  assert.equal(dispatchedRecipient, 'hotel@real-domain.example');
+  assert.equal(notice.delivery_status, 'SENT');
+  assert.equal(notice.recipient, 'dhisoftai@gmail.com');
+  assert.equal(request.release_email_status, 'PENDING');
+  assert.equal(request.release_email_sent_at, null);
+  assert.equal(events.some((event) => event.event_type === 'HOTEL_RELEASE_EMAIL_TEST_SENT'), true);
+  assert.equal(events.some((event) => event.event_type === 'HOTEL_RELEASE_EMAIL_SENT'), false);
 });
 
 test('concurrent offline release workers record one acknowledgement-pending event', async () => {

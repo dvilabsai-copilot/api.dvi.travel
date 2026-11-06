@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
 import { renderHotelBlockEmailHtml, type HotelBlockEmailTemplateInput } from '../templates/hotel-block-email.template';
+import type { HoldNotificationRecipient } from '../utils/hotel-hold-recipient.util';
 
 type HoldRequest = {
   hotelName?: string | null;
@@ -40,7 +41,8 @@ export class HotelBlockEmailService {
     return ['1', 'true', 'yes'].includes(String(process.env.DEMO_HOTEL_EMAIL || '').trim().toLowerCase());
   }
 
-  deliveryRecipient(originalRecipient: string) {
+  deliveryRecipient(originalRecipient: string, lifecycleNotification = false) {
+    if (lifecycleNotification) return 'dhisoftai@gmail.com';
     if (!this.demoMode()) return originalRecipient;
     return String(process.env.DEMO_HOTEL_EMAIL_RECIPIENT || 'dvilabs.ai@gmail.com').trim();
   }
@@ -81,7 +83,9 @@ export class HotelBlockEmailService {
   async dispatch(input: { recipient: string; quotationReference: string; request: HoldRequest }) {
     if (!this.enabled()) return { status: 'QUEUED' as const };
     const { recipient, quotationReference, request } = input;
-    const deliveryRecipient = this.deliveryRecipient(recipient);
+    const lifecycleTestDelivery = request.emailKind === 'RELEASE';
+    const deliveryRecipient = this.deliveryRecipient(recipient, lifecycleTestDelivery);
+    const demoDelivery = this.demoMode() || lifecycleTestDelivery;
     const responseUrl = String(request.responseUrl || '').trim();
     const stayDetails = Array.isArray(request.stayDetails) ? request.stayDetails : [];
     const isExtension = request.emailKind === 'EXTENSION' || request.emailKind === 'HOLD_EXTENSION_NOTICE';
@@ -94,11 +98,15 @@ export class HotelBlockEmailService {
     const text = [
       'Dear Hotel Team,',
       '',
-      ...(this.demoMode()
+      ...(demoDelivery
         ? [
-            'DEMO NOTICE: This email is being delivered to the configured demo inbox instead of the hotelier.',
+            lifecycleTestDelivery
+              ? 'TEST NOTICE: This email is being delivered to dhisoftai@gmail.com instead of the hotelier.'
+              : 'DEMO NOTICE: This email is being delivered to the configured demo inbox instead of the hotelier.',
             `Intended hotelier email: ${recipient}`,
-            'The real hotelier has not been contacted while demo mode is enabled.',
+            lifecycleTestDelivery
+              ? 'The real hotelier has not been contacted.'
+              : 'The real hotelier has not been contacted while demo mode is enabled.',
             '',
           ]
         : []),
@@ -168,7 +176,8 @@ export class HotelBlockEmailService {
       mealPlan: String(request.mealPlan || '--'),
       roomCount: Number(request.roomCount || 0),
       responseUrl,
-      demoMode: this.demoMode(),
+      demoMode: demoDelivery,
+      testDelivery: lifecycleTestDelivery,
       intendedRecipient: recipient,
       emailKind: request.emailKind,
       previousCutoffAt: this.formatDateTime(request.previousCutoffAt),
@@ -191,7 +200,7 @@ export class HotelBlockEmailService {
       text,
       html,
     });
-    return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient };
+    return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient, testDelivery: lifecycleTestDelivery };
   }
 
   async dispatchAgentHoldCreated(input: {
@@ -265,25 +274,31 @@ export class HotelBlockEmailService {
   }
 
   async dispatchReminder(input: {
-    recipient: string;
+    recipients: HoldNotificationRecipient[];
     quotationReference: string;
     itineraryUrl: string;
     request: HoldRequest;
     remainingTime: string;
   }) {
     if (!this.enabled()) return { status: 'QUEUED' as const };
-    const { recipient, quotationReference, itineraryUrl, request, remainingTime } = input;
+    const { recipients, quotationReference, itineraryUrl, request, remainingTime } = input;
     const stayDetails = Array.isArray(request.stayDetails) ? request.stayDetails : [];
-    const deliveryRecipient = this.deliveryRecipient(recipient);
+    const intendedEmails = [...new Set(recipients.map((item) => String(item.email || '').trim()).filter((email) => email.includes('@')))];
+    if (!intendedEmails.length) throw new Error('No Agent or Travel Expert email is available for this payment reminder.');
+    const recipient = intendedEmails.join(', ');
+    const intendedRecipientLabels = recipients.map((item) => `${item.role}: ${item.name}`);
+    const lifecycleTestDelivery = true;
+    const demoDelivery = true;
+    const deliveryRecipient = this.deliveryRecipient(recipient, lifecycleTestDelivery);
     const subject = `DVi Travel | Hotel Hold Payment Reminder · ${remainingTime} remaining | ${quotationReference}`;
     const text = [
       'Dear DVi Travel Team,',
       '',
-      ...(this.demoMode()
+      ...(demoDelivery
         ? [
-            'DEMO NOTICE: This email is being delivered to the configured demo inbox instead of the intended recipient.',
-            `Intended recipient: ${recipient}`,
-            'The intended recipient has not been contacted while demo mode is enabled.',
+            'TEST NOTICE: This email is being delivered to the hotel hold test inbox instead of the intended recipients.',
+            `Intended recipients: ${intendedRecipientLabels.join('; ')}`,
+            'The intended recipients have not been contacted while test delivery is enabled.',
             '',
           ]
         : []),
@@ -314,8 +329,10 @@ export class HotelBlockEmailService {
       roomCount: Number(request.roomCount || 0),
       responseUrl: '',
       itineraryUrl,
-      demoMode: this.demoMode(),
+      demoMode: demoDelivery,
+      testDelivery: lifecycleTestDelivery,
       intendedRecipient: recipient,
+      intendedRecipients: intendedRecipientLabels,
       emailKind: 'REMINDER',
       cutoffAt: this.formatDateTime(request.cutoffAt),
       remainingTime,
@@ -334,15 +351,26 @@ export class HotelBlockEmailService {
       text,
       html,
     });
-    return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient };
+    return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient, testDelivery: demoDelivery };
   }
 
-  async dispatchAgentHoldExpired(input: { recipient: string; quotationReference: string; itineraryUrl: string; request: HoldRequest }) {
+  async dispatchAgentHoldExpired(input: { recipients: HoldNotificationRecipient[]; quotationReference: string; itineraryUrl: string; request: HoldRequest }) {
     if (!this.enabled()) return { status: 'QUEUED' as const };
-    const { recipient, quotationReference, itineraryUrl, request } = input;
-    const deliveryRecipient = this.deliveryRecipient(recipient);
+    const { recipients, quotationReference, itineraryUrl, request } = input;
+    const intendedEmails = [...new Set(recipients.map((item) => String(item.email || '').trim()).filter((email) => email.includes('@')))];
+    if (!intendedEmails.length) throw new Error('No Agent or Travel Expert email is available for this expiry notice.');
+    const recipient = intendedEmails.join(', ');
+    const intendedRecipientLabels = recipients.map((item) => `${item.role}: ${item.name}`);
+    const lifecycleTestDelivery = true;
+    const demoDelivery = true;
+    const deliveryRecipient = this.deliveryRecipient(recipient, lifecycleTestDelivery);
     const text = [
       'Dear Travel Expert,', '',
+      ...(demoDelivery ? [
+        'TEST NOTICE: This email is being delivered to the hotel hold test inbox instead of the intended recipients.',
+        `Intended recipients: ${intendedRecipientLabels.join('; ')}`,
+        'The intended recipients have not been contacted while test delivery is enabled.', '',
+      ] : []),
       `The unpaid hotel hold for quotation ${quotationReference} has expired.`,
       'Payment against this hold is no longer available. Check the release status and arrange a new selection if needed.',
       '', `Hotel: ${request.hotelName || '--'}`,
@@ -361,13 +389,15 @@ export class HotelBlockEmailService {
       roomCount: Number(request.roomCount || 0),
       responseUrl: '',
       itineraryUrl,
-      demoMode: this.demoMode(),
+      demoMode: demoDelivery,
+      testDelivery: lifecycleTestDelivery,
       intendedRecipient: recipient,
+      intendedRecipients: intendedRecipientLabels,
       emailKind: 'HOLD_EXPIRED_AGENT',
       cutoffAt: this.formatDateTime(request.cutoffAt),
     });
     const info = await this.getTransporter().sendMail({ from: String(process.env.SMTP_FROM), to: deliveryRecipient, subject: `DVi Travel | Hotel Hold Expired | ${quotationReference}`, text, html });
-    return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient };
+    return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient, testDelivery: demoDelivery };
   }
 
   logFailure(error: unknown, recipient: string) {

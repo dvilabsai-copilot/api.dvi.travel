@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { PrismaService } from '../../../prisma.service';
 import { HotelBlockEmailService } from './hotel-block-email.service';
 import { HotelBlockingService } from './hotel-blocking.service';
-import { resolveHotelHoldNotificationRecipient } from '../utils/hotel-hold-recipient.util';
+import { resolveHotelHoldNotificationRecipients } from '../utils/hotel-hold-recipient.util';
 
 const POLL_INTERVAL_MS = 60 * 1000;
 const DEFAULT_MILESTONES: Record<string, number[]> = {
@@ -176,13 +176,21 @@ export class HotelHoldCutoffReminderScheduler implements OnModuleInit, OnModuleD
       await (this.prisma as any).dvi_hotel_hold_notification.update({ where: { id: notification.id }, data: { delivery_status: 'SKIPPED', last_error: 'Hold is no longer active and unpaid.' } });
       return false;
     }
+    if (Number(notification.request_version || 1) !== Number(request.version || 1)) {
+      await (this.prisma as any).dvi_hotel_hold_notification.update({ where: { id: notification.id }, data: { delivery_status: 'SKIPPED', last_error: 'Hold version changed after this reminder was queued.' } });
+      return false;
+    }
+    if (['REQUESTED', 'ACKNOWLEDGED'].includes(String(request.release_status || '').toUpperCase())) {
+      await (this.prisma as any).dvi_hotel_hold_notification.update({ where: { id: notification.id }, data: { delivery_status: 'SKIPPED', last_error: 'Hotel inventory release has started for this hold.' } });
+      return false;
+    }
     const plan = await (this.prisma as any).dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: request.itinerary_plan_id },
       select: { itinerary_quote_ID: true, agent_id: true, staff_id: true, createdby: true },
     });
-    const recipient = await resolveHotelHoldNotificationRecipient(this.prisma, plan);
-    if (!recipient) {
-      await (this.prisma as any).dvi_hotel_hold_notification.update({ where: { id: notification.id }, data: { delivery_status: 'FAILED', last_error: 'No responsible Travel Expert email was available.' } });
+    const recipients = await resolveHotelHoldNotificationRecipients(this.prisma, plan);
+    if (!recipients.length) {
+      await (this.prisma as any).dvi_hotel_hold_notification.update({ where: { id: notification.id }, data: { delivery_status: 'FAILED', last_error: 'No assigned Agent or Travel Expert email was available.' } });
       return false;
     }
     const quoteReference = String(plan?.itinerary_quote_ID || request.itinerary_plan_id);
@@ -191,7 +199,7 @@ export class HotelHoldCutoffReminderScheduler implements OnModuleInit, OnModuleD
     const remainingTime = formatRemaining(new Date(request.cutoff_at).getTime() - now.getTime());
     try {
       const delivery = await this.hotelBlockEmail.dispatchReminder({
-        recipient,
+        recipients,
         quotationReference: quoteReference,
         itineraryUrl,
         remainingTime,
@@ -212,7 +220,7 @@ export class HotelHoldCutoffReminderScheduler implements OnModuleInit, OnModuleD
         where: { id: notification.id },
         data: {
           delivery_status: delivered ? 'SENT' : 'QUEUED',
-          recipient: delivery.recipient || recipient,
+          recipient: delivery.recipient || recipients[0].email,
           provider_message_id: delivery.providerMessageId || null,
           sent_at: delivered ? now : null,
           last_error: delivered ? null : 'Email dispatch is disabled; reminder remains queued.',
@@ -227,8 +235,10 @@ export class HotelHoldCutoffReminderScheduler implements OnModuleInit, OnModuleD
           event_type: 'PAYMENT_REMINDER_SENT',
           actor_type: 'SYSTEM',
           communication_channel: 'EMAIL',
-          notes: `Payment reminder sent with ${remainingTime} remaining.`,
-          metadata: JSON.stringify({ milestoneKey: notification.milestone_key, deliveryStatus: delivery.status }),
+          notes: delivery.testDelivery
+            ? `Payment reminder delivered to the test inbox with ${remainingTime} remaining; intended recipients: ${recipients.map((item: any) => `${item.role}: ${item.name}`).join('; ')}.`
+            : `Payment reminder sent to the assigned Agent and Travel Expert with ${remainingTime} remaining.`,
+          metadata: JSON.stringify({ milestoneKey: notification.milestone_key, deliveryStatus: delivery.status, testDelivery: Boolean(delivery.testDelivery), intendedRecipients: recipients.map((item: any) => `${item.role}: ${item.name}`) }),
         },
       });
       return true;

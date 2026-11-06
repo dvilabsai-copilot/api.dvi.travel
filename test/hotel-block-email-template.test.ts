@@ -63,11 +63,29 @@ test('payment reminder displays its actual remaining time', () => {
     itineraryUrl: 'https://example.test/itinerary',
     demoMode: false,
     intendedRecipient: 'expert@example.test',
+    intendedRecipients: ['Agent: Agent Name', 'Travel Expert: Expert Name'],
     emailKind: 'REMINDER',
     cutoffAt: '2026-11-24 10:00',
     remainingTime: '3 hours 12 minutes',
   });
 
   assert.match(html, /3 hours 12 minutes/);
+  assert.match(html, /Agent: Agent Name/);
+  assert.match(html, /Travel Expert: Expert Name/);
   assert.doesNotMatch(html, /expires in 24 hours/i);
+});
+
+test('test-delivered reminders clearly state the intended Agent and Travel Expert without contacting them', () => {
+  const html = renderHotelBlockEmailHtml({
+    quotationReference: 'DVI-QUOTE-4', hotelName: 'Test Hotel', provider: 'OFFLINE',
+    checkIn: '2026-11-25', checkOut: '2026-11-26', roomType: 'Deluxe', roomCount: 1,
+    responseUrl: '', itineraryUrl: 'https://example.test/itinerary', demoMode: true,
+    intendedRecipient: 'agent@example.test, expert@example.test',
+    intendedRecipients: ['Agent: Agent Name', 'Travel Expert: Expert Name'],
+    emailKind: 'REMINDER', cutoffAt: '2026-11-24 10:00', remainingTime: '3 hours', testDelivery: true,
+  });
+
+  assert.match(html, /Test delivery/);
+  assert.match(html, /Intended recipients: Agent: Agent Name; Travel Expert: Expert Name/);
+  assert.match(html, /intended recipient has not been contacted/i);
 });
