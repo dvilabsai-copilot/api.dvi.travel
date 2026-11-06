@@ -247,6 +247,8 @@ export interface HotelConfirmationDetails {
   status: string;
   /** Supplier-provided deadline for an active hold, when available. */
   bookingDeadline?: string | null;
+  /** Whether the supplier has issued a voucher for this booking. */
+  voucherStatus?: boolean | null;
   cancellationPolicy: string;
 }
 

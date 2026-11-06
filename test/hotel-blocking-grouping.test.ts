@@ -552,6 +552,91 @@ test('holdGroup dispatches one email for a continuous hotel and one for another 
   assert.deepEqual(aurumEmail?.request.stayDetails.map((detail: any) => detail.roomType), ['Deluxe', 'Garden Cottage']);
 });
 
+test('a failed supplier hold does not prevent an independent offline stay from being held', async () => {
+  const selectedRows = [
+    {
+      itinerary_plan_hotel_details_ID: 801,
+      itinerary_route_id: 9801,
+      itinerary_route_date: '2027-02-10',
+      hotel_check_in_date: '2027-02-10',
+      hotel_check_out_date: '2027-02-11',
+      hotel_id: 81,
+      hotel_code: 'AXIS-REJECTED',
+      hotel_provider: 'AXISROOMS',
+      total_no_of_rooms: 1,
+      selected_price_snapshot: JSON.stringify({ hotelName: 'Axis Hotel', roomType: 'Deluxe', mealPlan: 'CP' }),
+    },
+    {
+      itinerary_plan_hotel_details_ID: 802,
+      itinerary_route_id: 9802,
+      itinerary_route_date: '2027-02-11',
+      hotel_check_in_date: '2027-02-11',
+      hotel_check_out_date: '2027-02-12',
+      hotel_id: 82,
+      hotel_code: 'OFFLINE-ACCEPTED',
+      hotel_provider: 'OFFLINE',
+      hotel_booking_mode: 'MANUAL_APPROVAL',
+      total_no_of_rooms: 1,
+      selected_price_snapshot: JSON.stringify({ hotelName: 'Offline Hotel', roomType: 'Standard', mealPlan: 'CP' }),
+    },
+  ];
+  const persisted: any[] = [];
+  const sent: any[] = [];
+  let nextRequestId = 900;
+  const hotels = [
+    { hotel_id: 81, hotel_name: 'Axis Hotel', hotel_email: 'axis@example.test', hotel_mobile: null },
+    { hotel_id: 82, hotel_name: 'Offline Hotel', hotel_email: 'offline@example.test', hotel_mobile: null },
+  ];
+  const prisma: any = {
+    dvi_itinerary_plan_hotel_details: { findMany: async () => selectedRows },
+    dvi_hotel: { findMany: async () => hotels },
+    dvi_itinerary_plan_hotel_room_details: { findMany: async () => [] },
+    dvi_global_settings: { findFirst: async () => ({}) },
+    dvi_hotel_block_request: { findMany: async () => [], findUnique: async () => null },
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      dvi_hotel_block_request: {
+        create: async ({ data }: any) => {
+          const request = { id: nextRequestId++, ...data };
+          persisted.push(request);
+          return request;
+        },
+      },
+      dvi_hotel_block_event: { create: async () => undefined },
+      dvi_hotel_block_token: { create: async () => undefined },
+      dvi_hotel_block_message: { create: async () => undefined },
+    }),
+  };
+  const emailService: any = {
+    dispatch: async (input: any) => { sent.push(input); return { status: 'QUEUED' as const }; },
+    deliveryRecipient: (recipient: string) => recipient,
+    logFailure: (error: unknown) => String(error),
+  };
+  const axisRooms = {
+    pushForHotelSelection: async () => ({ success: false, error: 'supplier rejected the request' }),
+  };
+  const service = new (HotelBlockingService as any)(prisma, emailService, {}, axisRooms);
+
+  const result = await service.holdGroup({
+    itineraryPlanId: 12043,
+    groupType: 1,
+    actor: { id: 9, name: 'Travel Expert', type: 'STAFF', roleId: 8 },
+    guest: { name: 'Lead Guest', email: 'guest@example.test', phone: '9999999999' },
+    hotelierContact: { name: 'Offline Desk', phone: '8888888888' },
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.partialSuccess, true);
+  assert.equal(result.allSucceeded, false);
+  assert.equal(result.outcomes.length, 2);
+  assert.equal(result.outcomes[0].status, 'FAILED');
+  assert.match(result.outcomes[0].message, /supplier rejected/i);
+  assert.equal(result.outcomes[1].status, 'HELD');
+  assert.equal(result.requests.length, 1);
+  assert.equal(result.requests[0].confirmationChannel, 'OFFLINE_HOLD');
+  assert.equal(persisted.length, 1);
+  assert.equal(sent.length, 1);
+});
+
 test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the same active rate', async () => {
   const selectedRow = {
     itinerary_plan_hotel_details_ID: 601,

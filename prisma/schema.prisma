@@ -6908,6 +6908,11 @@ model dvi_hotel_block_request {
   responded_at           DateTime? @db.DateTime(0)
   confirmed_at           DateTime? @db.DateTime(0)
   paid_confirmed_at      DateTime? @db.DateTime(0)
+  voucher_status         String    @default("NOT_APPLICABLE") @db.VarChar(24)
+  voucher_attempt_count  Int       @default(0)
+  voucher_generated_at   DateTime? @db.DateTime(0)
+  voucher_next_attempt_at DateTime? @db.DateTime(0)
+  voucher_last_error     String?   @db.Text
   cutoff_at              DateTime? @db.DateTime(0)
   cutoff_reminder_sent_at DateTime? @db.DateTime(0)
   release_status         String    @default("NOT_REQUIRED") @db.VarChar(24)
@@ -6932,6 +6937,7 @@ model dvi_hotel_block_request {
   @@index([status], map: "idx_hotel_block_request_status")
   @@index([cutoff_at], map: "idx_hotel_block_request_cutoff")
   @@index([cutoff_reminder_sent_at], map: "idx_hotel_block_request_cutoff_reminder")
+  @@index([voucher_status, voucher_next_attempt_at], map: "idx_hotel_block_voucher_retry")
   @@map("dvi_hotel_block_requests")
 }
 

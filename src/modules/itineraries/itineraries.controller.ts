@@ -2076,6 +2076,21 @@ async confirmQuotation(
 ) {
   this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
   await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_ID), (req as any).user);
+  const authenticatedUser = (req as any).user || {};
+  const actor = {
+    id: Number(authenticatedUser.userId || 0),
+    name: String(authenticatedUser.name || authenticatedUser.email || ''),
+    type: 'STAFF',
+    roleId: Number(authenticatedUser.roleID ?? authenticatedUser.role ?? 0),
+    permissionRoleId: Number(authenticatedUser.permissionRoleId ?? 0),
+    staffId: Number(authenticatedUser.staffId ?? authenticatedUser.staff_id ?? 0),
+  };
+  await this.hotelBlockingService.assertOfflinePaymentAcknowledgements(
+    Number(dto.itinerary_plan_ID),
+    Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
+    dto.offlineHotelPaymentConfirmations || [],
+    actor,
+  );
   const baseResult =
     await this.svc.confirmQuotation(dto);
 
@@ -2140,11 +2155,14 @@ const clientIp = String(
   );
 
   if (finalResult?.success !== false && itineraryPlanId > 0) {
-    await this.hotelBlockingService.finalizePaidProviderHolds(
+    const providerFinalization = await this.hotelBlockingService.finalizePaidProviderHolds(
       itineraryPlanId,
       Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
       Number(finalResult?.confirmed_itinerary_plan_ID || baseResult?.confirmed_itinerary_plan_ID || 0),
+      dto.offlineHotelPaymentConfirmations || [],
+      actor,
     );
+    finalResult.providerHoldFinalization = providerFinalization;
   }
 
   /*
@@ -2168,9 +2186,24 @@ const clientIp = String(
   async manualConfirmQuotation(@Body() dto: ConfirmQuotationDto, @Req() req: Request) {
     this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
     await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_ID), (req as any).user);
+    const authenticatedUser = (req as any).user || {};
+    const actor = {
+      id: Number(authenticatedUser.userId || 0),
+      name: String(authenticatedUser.name || authenticatedUser.email || ''),
+      type: 'STAFF',
+      roleId: Number(authenticatedUser.roleID ?? authenticatedUser.role ?? 0),
+      permissionRoleId: Number(authenticatedUser.permissionRoleId ?? 0),
+      staffId: Number(authenticatedUser.staffId ?? authenticatedUser.staff_id ?? 0),
+    };
     await this.hotelBlockingService.assertPlanReady(
       Number(dto.itinerary_plan_ID),
       Number((dto as any).selectedGroupType || 0),
+    );
+    await this.hotelBlockingService.assertOfflinePaymentAcknowledgements(
+      Number(dto.itinerary_plan_ID),
+      Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
+      dto.offlineHotelPaymentConfirmations || [],
+      actor,
     );
 
     // This path deliberately strips all supplier booking rows. The existing
@@ -2185,14 +2218,17 @@ const clientIp = String(
     const confirmedHotelDetails = confirmedPlanId > 0
       ? await this.svc.getConfirmedItineraryDetails(confirmedPlanId)
       : null;
-    const finalResult = { ...baseResult, confirmedHotelDetails, supplierBookingCalls: 0 };
+    const finalResult: any = { ...baseResult, confirmedHotelDetails, supplierBookingCalls: 0 };
     const itineraryPlanId = Number(finalResult?.itinerary_plan_ID || dto.itinerary_plan_ID || 0);
     if (itineraryPlanId > 0) {
-      await this.hotelBlockingService.finalizePaidProviderHolds(
+      const providerFinalization = await this.hotelBlockingService.finalizePaidProviderHolds(
         itineraryPlanId,
         Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
         Number(finalResult?.confirmed_itinerary_plan_ID || 0),
+        dto.offlineHotelPaymentConfirmations || [],
+        actor,
       );
+      finalResult.providerHoldFinalization = providerFinalization;
       await this.bookingConfirmationEmailNotifier.sendBookingConfirmationNotifications(itineraryPlanId);
     }
     return finalResult;

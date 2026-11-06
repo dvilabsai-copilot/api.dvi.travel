@@ -174,6 +174,7 @@ private readonly TBO_CLIENT_ID =
  private readonly AUTH_URL = process.env.TBO_AUTH_URL || 'https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate';
  private readonly PREBOOK_URL = process.env.TBO_PREBOOK_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook';
  private readonly BOOK_URL = process.env.TBO_BOOK_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book';
+ private readonly GENERATE_VOUCHER_URL = process.env.TBO_GENERATE_VOUCHER_URL || 'https://HotelBE.tektravels.com/hotelservice.svc/rest/GenerateVoucher';
   private readonly USE_MOCK_TBO = process.env.TBO_USE_MOCK === 'true' || false;
 
   constructor(
@@ -487,6 +488,49 @@ private readonly TBO_CLIENT_ID =
     const reference = String(confirmationReference || '').trim();
     if (!reference) throw new BadRequestException('A VSR booking reference is required.');
     return this.tboProvider.getConfirmation(reference, bookingId);
+  }
+
+  /** Generate a voucher for an already-paid TBO supplier hold. */
+  async generateVoucher(bookingId: string | number, endUserIp = process.env.TBO_END_USER_IP || '134.209.145.185') {
+    const id = Number(bookingId);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new BadRequestException('A valid TBO BookingId is required to generate the voucher.');
+    }
+    if (this.USE_MOCK_TBO) {
+      return { voucherStatus: true, bookingStatus: 'Confirmed', bookingId: id, raw: { mock: true } };
+    }
+
+    const tokenId = await this.authenticate(endUserIp);
+    const request = { EndUserIp: endUserIp, BookingId: id, TokenId: tokenId };
+    try {
+      const response = await this.client.post(this.GENERATE_VOUCHER_URL, request, { timeout: 30_000 });
+      const result = response.data?.GenerateVoucherResult || response.data;
+      const voucherStatus = result?.VoucherStatus === true || Number(result?.VoucherStatus) === 1;
+      const responseStatus = Number(result?.ResponseStatus ?? 0);
+      const bookingStatusCode = Number(result?.Status ?? 0);
+      const errorMessage = String(result?.Error?.ErrorMessage || result?.ErrorMessage || '').trim();
+      if (!voucherStatus || (responseStatus !== 0 && responseStatus !== 1) || [0, 6].includes(bookingStatusCode)) {
+        throw new Error(errorMessage || `TBO GenerateVoucher was not successful (response ${responseStatus}, booking status ${bookingStatusCode}).`);
+      }
+      return {
+        voucherStatus: true,
+        bookingStatus: String(result?.HotelBookingStatus || result?.BookingStatus || 'Pending'),
+        bookingId: id,
+        bookingReference: result?.BookingRefNo || null,
+        confirmationNumber: result?.ConfirmationNo || null,
+        raw: response.data,
+      };
+    } catch (error: any) {
+      const upstreamMessage = String(
+        error?.response?.data?.GenerateVoucherResult?.Error?.ErrorMessage
+        || error?.response?.data?.Error?.ErrorMessage
+        || error?.response?.data?.Message
+        || error?.message
+        || 'Unknown TBO voucher error',
+      );
+      this.logger.error(`TBO GenerateVoucher failed for BookingId ${id}: ${upstreamMessage}`);
+      throw new BadRequestException(`TBO voucher generation is pending: ${upstreamMessage}`);
+    }
   }
 
   /** Releases an unpaid TBO Book hold using the existing supplier cancellation API and its BookingId contract. */

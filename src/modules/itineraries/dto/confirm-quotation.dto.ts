@@ -392,6 +392,27 @@ export class HotelSelectionDto {
   totalAmountAfterTax?: number;
 }
 
+export class OfflineHotelPaymentConfirmationDto {
+  @ApiProperty({ example: 42 })
+  @IsInt()
+  @Min(1)
+  requestId!: number;
+
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  confirmed!: boolean;
+
+  @ApiProperty({ example: 'Hotel front desk', required: false })
+  @IsOptional()
+  @IsString()
+  hotelierName?: string;
+
+  @ApiProperty({ example: '+91 9876543210', required: false })
+  @IsOptional()
+  @IsString()
+  hotelierPhone?: string;
+}
+
 export class ConfirmQuotationDto {
   @ApiProperty({ example: 12 })
   @IsInt()
@@ -504,6 +525,17 @@ export class ConfirmQuotationDto {
   @ValidateNested({ each: true })
   @Type(() => HotelSelectionDto)
   hotel_bookings?: HotelSelectionDto[];
+
+  @ApiProperty({
+    type: [OfflineHotelPaymentConfirmationDto],
+    required: false,
+    description: 'Travel Expert acknowledgements that payment was made directly to each offline hotelier.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OfflineHotelPaymentConfirmationDto)
+  offlineHotelPaymentConfirmations?: OfflineHotelPaymentConfirmationDto[];
 
   @ApiProperty({
     type: [Number],

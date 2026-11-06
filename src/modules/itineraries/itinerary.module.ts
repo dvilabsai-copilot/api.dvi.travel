@@ -125,6 +125,7 @@ import { HotelBlockingService } from './services/hotel-blocking.service';
 import { HotelBlockEmailService } from './services/hotel-block-email.service';
 import { HotelHoldCutoffReminderScheduler } from './services/hotel-hold-cutoff-reminder.scheduler';
 import { HotelHoldExpiryScheduler } from './services/hotel-hold-expiry.scheduler';
+import { TboVoucherRetryScheduler } from './services/tbo-voucher-retry.scheduler';
 
 @Module({
   imports: [
@@ -146,6 +147,7 @@ import { HotelHoldExpiryScheduler } from './services/hotel-hold-expiry.scheduler
     HotelBlockEmailService,
     HotelHoldCutoffReminderScheduler,
     HotelHoldExpiryScheduler,
+    TboVoucherRetryScheduler,
     TboHotelBookingService,
     ResAvenueHotelBookingService,
     HobseHotelBookingService,
