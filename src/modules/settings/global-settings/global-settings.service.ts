@@ -222,7 +222,7 @@ export class GlobalSettingsService {
         throw new BadRequestException("hotel_hold_reminder_milestones must be valid JSON.");
       }
       for (const [band, values] of Object.entries(milestones)) {
-        if (!["12", "48", "240"].includes(band) || !Array.isArray(values)
+        if (!["4", "12", "48", "240"].includes(band) || !Array.isArray(values)
           || values.some((value) => !Number.isFinite(Number(value)) || Number(value) <= 0 || Number(value) >= Number(band))) {
           throw new BadRequestException("Reminder milestones must be positive hours remaining below their hold duration.");
         }

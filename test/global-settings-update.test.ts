@@ -156,6 +156,32 @@ test("persists the configurable hotel hold policy fields", async () => {
   assert.equal(updates[0].hotel_hold_extended_duration_hours, 240);
 });
 
+test("accepts payment reminder milestones for a four-hour hold", async () => {
+  const existing = {
+    ...existingSettings(),
+    hotel_hold_min_lead_days: 3,
+    hotel_hold_short_lead_days: 15,
+    hotel_hold_medium_lead_days: 30,
+    hotel_hold_long_lead_days: 60,
+    hotel_hold_short_duration_hours: 4,
+    hotel_hold_medium_duration_hours: 12,
+    hotel_hold_long_duration_hours: 48,
+    hotel_hold_extended_duration_hours: 240,
+  };
+  const { service, updates } = serviceWithExisting(existing);
+
+  await service.updateGlobalSettings({
+    hotel_hold_reminder_milestones: '{"4":[3,2,1,0.25]}',
+  });
+
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].hotel_hold_reminder_milestones, '{"4":[3,2,1,0.25]}');
+  await assert.rejects(
+    service.updateGlobalSettings({ hotel_hold_reminder_milestones: '{"4":[4]}' }),
+    /positive hours remaining below their hold duration/i,
+  );
+});
+
 test('validates complete lead-day band ordering while preserving partial updates', async () => {
   const existing = {
     ...existingSettings(),
