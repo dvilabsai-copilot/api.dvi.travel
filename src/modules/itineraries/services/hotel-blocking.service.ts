@@ -926,13 +926,21 @@ export class HotelBlockingService {
       orderBy: [{ check_in: 'asc' }, { id: 'asc' }],
     });
     const latestMessages = await this.latestMessagesByRequest(rows.map((row: BlockRow) => Number(row.id)));
+    const releaseConfirmedByHotelierIds = await this.offlineReleaseConfirmedByHotelierIds(rows as BlockRow[]);
     const refreshed = await Promise.all(rows.map((row: BlockRow) => this.refreshSupplierHold(row)));
-    return refreshed.map(({ row, statusOverride, cutoffAt }) => this.publicStaffView(
-      cutoffAt ? { ...row, cutoff_at: cutoffAt } : row,
-      policy,
-      latestMessages.get(Number(row.id)),
-      statusOverride,
-    ));
+    return refreshed.map(({ row, statusOverride, cutoffAt }) => {
+      const view = this.publicStaffView(
+        cutoffAt ? { ...row, cutoff_at: cutoffAt } : row,
+        policy,
+        latestMessages.get(Number(row.id)),
+        statusOverride,
+      );
+      return {
+        ...view,
+        releaseConfirmedByHotelier: releaseConfirmedByHotelierIds.has(Number(row.id))
+          || view.releaseStatus === 'ACKNOWLEDGED',
+      };
+    });
   }
 
   async getById(requestId: number) {
@@ -942,13 +950,42 @@ export class HotelBlockingService {
     });
     if (!row) throw new NotFoundException('Hotel hold request not found.');
     const latestMessages = await this.latestMessagesByRequest([Number(row.id)]);
+    const releaseConfirmedByHotelierIds = await this.offlineReleaseConfirmedByHotelierIds([row]);
     const refreshed = await this.refreshSupplierHold(row);
-    return this.publicStaffView(
+    const view = this.publicStaffView(
       refreshed.cutoffAt ? { ...row, cutoff_at: refreshed.cutoffAt } : row,
       policy,
       latestMessages.get(Number(row.id)),
       refreshed.statusOverride,
     );
+    return {
+      ...view,
+      releaseConfirmedByHotelier: releaseConfirmedByHotelierIds.has(Number(row.id))
+        || view.releaseStatus === 'ACKNOWLEDGED',
+    };
+  }
+
+  private async offlineReleaseConfirmedByHotelierIds(rows: BlockRow[]): Promise<Set<number>> {
+    const requestIds = rows
+      .filter((row) => row.status === HOTEL_BLOCK_STATUS.CANCELLED
+        && normalizeText(row.confirmation_channel).toUpperCase() === 'OFFLINE_HOLD'
+        && Number(row.id) > 0)
+      .map((row) => Number(row.id));
+    const eventModel = (this.prisma as any).dvi_hotel_block_event;
+    if (!requestIds.length || typeof eventModel?.findMany !== 'function') return new Set<number>();
+
+    const events = await eventModel.findMany({
+      where: { request_id: { in: requestIds }, event_type: 'CANCELLED' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+    });
+    return new Set<number>((events as BlockRow[])
+      .filter((event) => {
+        const metadata = parseJson(event.metadata, {}) as BlockRow;
+        const contact = metadata?.hotelierContact as BlockRow | undefined;
+        return Boolean(normalizeText(contact?.name) && normalizeText(contact?.phone));
+      })
+      .map((event) => Number(event.request_id))
+      .filter((id) => requestIds.includes(id)));
   }
 
   async getGuestDetails(planId: number) {
@@ -1024,15 +1061,19 @@ export class HotelBlockingService {
         phone: normalizeText(input.hotelierContact.phone),
       }
       : null;
+    const offlineReleaseConfirmedByPhone = normalizeText(request.confirmation_channel).toUpperCase() === 'OFFLINE_HOLD'
+      && Boolean(hotelierContact?.name && hotelierContact?.phone);
     return this.transition(requestId, HOTEL_BLOCK_STATUS.CANCELLED, {
       actor: { ...actor, type: actor.type || 'STAFF' },
       eventType: 'CANCELLED',
-      notes: skipVsrSupplierRelease
+      notes: offlineReleaseConfirmedByPhone
+        ? 'Hotelier confirmed the offline hold release by phone; no further release follow-up is required.'
+        : skipVsrSupplierRelease
         ? 'VSR hotel hold removed from the itinerary; no supplier cancellation API was requested.'
         : isAxisRoomsHold
           ? 'AxisRooms confirmed cancellation of the hotel hold through its API.'
         : 'Hotel hold request cancelled by staff.',
-      skipSupplierRelease: skipVsrSupplierRelease || isAxisRoomsHold,
+      skipSupplierRelease: skipVsrSupplierRelease || isAxisRoomsHold || offlineReleaseConfirmedByPhone,
       hotelierContact,
     });
   }
