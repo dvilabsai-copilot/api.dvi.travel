@@ -138,6 +138,46 @@ test('reminder milestones are scoped to the current hold version after an extens
   assert.equal(notificationRows.every((row) => row.request_version === 5), true);
 });
 
+test('four-hour holds queue their configured next reminder milestone', async () => {
+  const now = new Date('2026-11-06T05:31:00.000Z');
+  const notificationRows: any[] = [];
+  const request = {
+    id: 26,
+    itinerary_plan_id: 31,
+    version: 1,
+    requested_at: new Date('2026-11-06T04:31:00.000Z'),
+    status: 'BLOCKED',
+    paid_confirmed_at: null,
+    cutoff_at: new Date('2026-11-06T08:31:00.000Z'),
+    check_in: new Date('2026-11-10T00:00:00.000Z'),
+  };
+  const prisma: any = {
+    dvi_global_settings: {
+      findFirst: async () => ({
+        hotel_hold_reminders_enabled: 1,
+        hotel_hold_reminder_email_enabled: 1,
+        hotel_hold_reminder_milestones: JSON.stringify({ '4': [3, 2, 1, 0.25] }),
+        hotel_hold_final_reminder_minutes: 15,
+      }),
+    },
+    dvi_hotel_block_request: { findMany: async () => [request] },
+    dvi_hotel_hold_notification: {
+      create: async ({ data }: any) => { notificationRows.push(data); },
+      findMany: async () => [],
+    },
+  };
+  const hotelBlockEmail: any = { isDispatchEnabled: () => true };
+  const hotelBlocking: any = { getHoldPolicyDecision: async () => ({ allowed: true, durationHours: 4 }) };
+  const scheduler = new HotelHoldCutoffReminderScheduler(prisma, hotelBlockEmail, hotelBlocking);
+
+  await scheduler.runOnce(now);
+
+  const nextReminder = notificationRows.find((row) => row.milestone_key === 'h-3');
+  assert.ok(nextReminder);
+  assert.equal(nextReminder.delivery_status, 'QUEUED');
+  assert.equal(nextReminder.due_at.toISOString(), now.toISOString());
+});
+
 function nowPlusMinute() {
   return new Date('2026-11-05T12:01:00.000Z');
 }

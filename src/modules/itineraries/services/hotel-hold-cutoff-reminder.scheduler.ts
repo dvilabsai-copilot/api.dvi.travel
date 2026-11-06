@@ -6,6 +6,7 @@ import { resolveHotelHoldNotificationRecipients } from '../utils/hotel-hold-reci
 
 const POLL_INTERVAL_MS = 60 * 1000;
 const DEFAULT_MILESTONES: Record<string, number[]> = {
+  '4': [3, 2, 1, 0.25],
   '12': [6, 3, 0.25],
   '48': [36, 24, 12, 1, 0.25],
   '240': [216, 192, 168, 144, 120, 96, 72, 48, 24, 12, 1, 0.25],
@@ -24,7 +25,7 @@ const parseMilestones = (value: unknown): Record<string, number[]> => {
   try {
     const parsed = JSON.parse(String(value || '')) as Record<string, unknown>;
     const result: Record<string, number[]> = {};
-    for (const band of ['12', '48', '240']) {
+    for (const band of Object.keys(DEFAULT_MILESTONES)) {
       const values = parsed[band];
       result[band] = Array.isArray(values)
         ? Array.from(new Set(values.map(Number).filter((hours) => Number.isFinite(hours) && hours > 0 && hours < Number(band)))).sort((a, b) => b - a)
