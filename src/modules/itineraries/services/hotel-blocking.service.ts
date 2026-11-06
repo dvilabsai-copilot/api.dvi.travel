@@ -2531,7 +2531,12 @@ export class HotelBlockingService {
       const bookingId = supplierHold.bookingId || supplierHold.BookingId;
       const detail = await this.tboHotelBooking.getHoldStatus(String(row.confirmation_reference), bookingId);
       const supplierCutoff = dateOnly(detail.bookingDeadline);
-      const cutoffAt = supplierCutoff || localCutoff || undefined;
+      // The TBO deadline is the latest supplier-allowed date, not an extension
+      // to the application's configured hold window. A supplier LCD may
+      // shorten the persisted policy cutoff, but must never lengthen it.
+      const cutoffAt = supplierCutoff && localCutoff
+        ? new Date(Math.min(supplierCutoff.getTime(), localCutoff.getTime()))
+        : supplierCutoff || localCutoff || undefined;
       const expired = isSupplierExpiredStatus(detail.status)
         || Boolean(cutoffAt && cutoffAt.getTime() <= Date.now());
       return {

@@ -761,6 +761,44 @@ test('an expired supplier status is exposed as HOLD expired', async () => {
   assert.equal(refreshed.statusOverride, 'HOLD_EXPIRED');
 });
 
+test('VSR supplier status cannot extend the persisted policy hold cutoff', async () => {
+  const policyCutoff = new Date('2026-12-10T14:00:00.000Z');
+  const service = new (HotelBlockingService as any)({}, {}, {
+    getHoldStatus: async () => ({
+      status: 'Confirmed',
+      bookingDeadline: '2026-12-15T18:00:00.000Z',
+    }),
+  });
+  const refreshed = await service.refreshSupplierHold({
+    provider: 'VSR',
+    confirmation_channel: 'TBO_BOOK_HOLD',
+    confirmation_reference: 'TBO-HOLD-POLICY-CUTOFF',
+    cutoff_at: policyCutoff,
+  });
+
+  assert.equal(refreshed.statusOverride, 'HOLD');
+  assert.equal(refreshed.cutoffAt.getTime(), policyCutoff.getTime());
+});
+
+test('an earlier VSR supplier LCD shortens the persisted policy hold cutoff', async () => {
+  const supplierCutoff = new Date('2026-12-10T14:00:00.000Z');
+  const service = new (HotelBlockingService as any)({}, {}, {
+    getHoldStatus: async () => ({
+      status: 'Confirmed',
+      bookingDeadline: supplierCutoff.toISOString(),
+    }),
+  });
+  const refreshed = await service.refreshSupplierHold({
+    provider: 'VSR',
+    confirmation_channel: 'TBO_BOOK_HOLD',
+    confirmation_reference: 'TBO-HOLD-SUPPLIER-CUTOFF',
+    cutoff_at: new Date('2026-12-15T18:00:00.000Z'),
+  });
+
+  assert.equal(refreshed.statusOverride, 'HOLD');
+  assert.equal(refreshed.cutoffAt.getTime(), supplierCutoff.getTime());
+});
+
 test('changing a VSR hotel retires the local request without emailing the hotelier', async () => {
   const request: any = {
     id: 78,
