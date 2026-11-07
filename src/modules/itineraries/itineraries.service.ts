@@ -1683,6 +1683,12 @@ const result =
     req,
     shouldOptimizeRoute,
     requestType,
+    isNewPlan && continueFromPlanId > 0 && continuationRootQuoteId
+      ? {
+          parentPlanId: continueFromPlanId,
+          rootQuoteId: continuationRootQuoteId,
+        }
+      : undefined,
   );
 
 if (
@@ -1691,17 +1697,6 @@ if (
   Number(result?.planId || 0) > 0 &&
   continuationRootQuoteId
 ) {
-  await this.prisma.dvi_itinerary_plan_details.update({
-    where: {
-      itinerary_plan_ID: Number(result.planId),
-    },
-    data: {
-      continued_from_plan_ID: continueFromPlanId,
-      continuation_root_quote_ID:
-        continuationRootQuoteId,
-    },
-  });
-
   (result as any).continuedFromPlanId =
     continueFromPlanId;
 
