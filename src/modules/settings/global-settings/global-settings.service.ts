@@ -190,11 +190,11 @@ export class GlobalSettingsService {
     existing?: Record<string, any> | null,
   ): void {
     const merged = (field: string, fallback: number) => Number(data[field] ?? existing?.[field] ?? fallback);
-    const minimum = merged("hotel_hold_min_lead_days", 3);
+    const minimum = merged("hotel_hold_min_lead_days", 1);
     const shortEnd = merged("hotel_hold_short_lead_days", 15);
     const mediumEnd = merged("hotel_hold_medium_lead_days", 30);
     const longEnd = merged("hotel_hold_long_lead_days", 60);
-    const noBlockHours = merged("hotel_hold_no_block_before_hours", 0);
+    const noBlockHours = merged("hotel_hold_no_block_before_hours", 48);
     const durations = [
       merged("hotel_hold_short_duration_hours", 48),
       merged("hotel_hold_medium_duration_hours", 12),

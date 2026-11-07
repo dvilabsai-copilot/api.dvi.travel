@@ -155,8 +155,8 @@ export type HotelHoldPolicy = {
 };
 
 export const DEFAULT_HOTEL_HOLD_POLICY: HotelHoldPolicy = {
-  noBlockBeforeHours: 0,
-  minimumLeadDays: 3,
+  noBlockBeforeHours: 48,
+  minimumLeadDays: 1,
   shortLeadDays: 15,
   mediumLeadDays: 30,
   longLeadDays: 60,

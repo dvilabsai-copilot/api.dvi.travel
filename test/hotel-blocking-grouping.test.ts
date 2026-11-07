@@ -34,8 +34,8 @@ test('matches the configured hold decision at every requested lead-day boundary'
     { leadDays: 0, checkIn: '2026-01-01', allowed: false, durationHours: null, band: null },
     { leadDays: 1, checkIn: '2026-01-02', allowed: false, durationHours: null, band: null },
     { leadDays: 2, checkIn: '2026-01-03', allowed: false, durationHours: null, band: null },
-    { leadDays: 3, checkIn: '2026-01-04', allowed: true, durationHours: 48, band: '3-15' },
-    { leadDays: 15, checkIn: '2026-01-16', allowed: true, durationHours: 48, band: '3-15' },
+    { leadDays: 3, checkIn: '2026-01-04', allowed: true, durationHours: 48, band: '1-15' },
+    { leadDays: 15, checkIn: '2026-01-16', allowed: true, durationHours: 48, band: '1-15' },
     { leadDays: 16, checkIn: '2026-01-17', allowed: true, durationHours: 12, band: '16-30' },
     { leadDays: 30, checkIn: '2026-01-31', allowed: true, durationHours: 12, band: '16-30' },
     { leadDays: 31, checkIn: '2026-02-01', allowed: true, durationHours: 48, band: '31-60' },
@@ -76,10 +76,10 @@ test('caps TBO hold extensions at the stored fresh-rate LCD', () => {
   assert.equal(service.maxHotelHoldCutoff(request).toISOString(), '2026-11-07T12:00:00.000Z');
 });
 
-test('calendar-day policy overrides the legacy elapsed-hour blackout threshold', () => {
+test('the rolling 48-hour cutoff allows a two-calendar-day lead only when more than 48 hours remain', () => {
   const policy = {
     noBlockBeforeHours: 48,
-    minimumLeadDays: 3,
+    minimumLeadDays: 1,
     shortLeadDays: 15,
     mediumLeadDays: 30,
     longLeadDays: 60,
@@ -89,8 +89,11 @@ test('calendar-day policy overrides the legacy elapsed-hour blackout threshold',
     extendedDurationHours: 240,
     tboHoldLcdBufferDays: 1,
   };
-  assert.equal(hotelHoldDecision('2026-01-03T23:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).allowed, false);
-  assert.equal(hotelHoldDecision('2026-01-03T09:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).allowed, false);
+  const withinCutoff = hotelHoldDecision('2026-01-03T09:00:00.000Z', '2026-01-01T10:00:00.000Z', policy);
+  const beyondCutoff = hotelHoldDecision('2026-01-03T11:00:00.000Z', '2026-01-01T10:00:00.000Z', policy);
+  assert.equal(withinCutoff.allowed, false);
+  assert.equal(beyondCutoff.allowed, true);
+  assert.equal(beyondCutoff.durationHours, 48);
   assert.equal(hotelHoldDecision('2026-01-16T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 48);
   assert.equal(hotelHoldDecision('2026-01-31T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 12);
   assert.equal(hotelHoldDecision('2026-02-01T10:00:00.000Z', '2026-01-01T10:00:00.000Z', policy).durationHours, 48);
