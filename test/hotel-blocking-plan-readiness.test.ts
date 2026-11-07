@@ -134,6 +134,19 @@ test('hotel hold date boundaries use the four configured calendar-day bands', ()
   }
 });
 
+test('default hold eligibility rejects 48 hours or less and permits more than 48 hours', () => {
+  const requestedAt = new Date('2026-01-01T10:00:00.000Z');
+  const cases = [
+    ['2026-01-03T08:59:00.000Z', false],
+    ['2026-01-03T10:00:00.000Z', false],
+    ['2026-01-03T10:01:00.000Z', true],
+  ] as const;
+
+  for (const [checkIn, allowed] of cases) {
+    assert.equal(hotelHoldDecision(checkIn, requestedAt).allowed, allowed, checkIn);
+  }
+});
+
 
 test('invalid hotel check-in dates fail closed', () => {
   const result = hotelHoldDecision('not-a-date', new Date('2026-01-01T00:00:00.000Z'));
@@ -141,12 +154,12 @@ test('invalid hotel check-in dates fail closed', () => {
   assert.equal(result.reason, 'invalid check-in or request date');
 });
 
-test('calendar-day bands take precedence over the legacy elapsed-hour buffer', () => {
+test('configured no-block hours prevent holds even when a lead day is in an eligible band', () => {
   const requestedAt = new Date('2026-01-01T00:00:00.000Z');
   const result = hotelHoldDecision('2026-01-04', requestedAt, { ...DEFAULT_HOTEL_HOLD_POLICY, noBlockBeforeHours: 100 });
   assert.equal(result.leadDays, 3);
-  assert.equal(result.allowed, true);
-  assert.equal(result.durationHours, 48);
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'check-in is within the configured 100-hour no-block window');
 });
 
 test('an active offline local hold is ready for wallet confirmation without a supplier reference', async () => {

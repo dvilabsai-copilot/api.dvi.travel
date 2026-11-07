@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 const HOTEL_HOLD_POLICY = {
   hotel_hold_no_block_before_hours: 48,
-  hotel_hold_min_lead_days: 3,
+  hotel_hold_min_lead_days: 1,
   hotel_hold_short_lead_days: 15,
   hotel_hold_medium_lead_days: 30,
   hotel_hold_short_duration_hours: 4,
