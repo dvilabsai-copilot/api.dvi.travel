@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
+import { PrismaService } from '../../../prisma.service';
+import { withGlobalSettingsCc } from '../../../common/utils/default-email-cc.util';
 import { renderHotelBlockEmailHtml, type HotelBlockEmailTemplateInput } from '../templates/hotel-block-email.template';
 import type { HoldNotificationRecipient } from '../utils/hotel-hold-recipient.util';
 
@@ -28,6 +30,8 @@ type HoldRequest = {
 export class HotelBlockEmailService {
   private readonly logger = new Logger(HotelBlockEmailService.name);
   private transporter: Transporter | null = null;
+
+  constructor(private readonly prisma: PrismaService) {}
 
   private enabled() {
     return ['1', 'true', 'yes'].includes(String(process.env.HOTEL_BLOCK_EMAIL_ENABLED || '').trim().toLowerCase());
@@ -194,13 +198,13 @@ export class HotelBlockEmailService {
         roomCount: Number(detail.roomCount || 0),
       })),
     });
-    const info = await this.getTransporter().sendMail({
+    const info = await this.getTransporter().sendMail(await withGlobalSettingsCc(this.prisma, {
       from: String(process.env.SMTP_FROM),
       to: deliveryRecipient,
       subject,
       text,
       html,
-    });
+    }));
     return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient, testDelivery: lifecycleTestDelivery };
   }
 
@@ -278,13 +282,13 @@ export class HotelBlockEmailService {
         roomCount: Number(detail.roomCount || 0),
       })),
     });
-    const info = await this.getTransporter().sendMail({
+    const info = await this.getTransporter().sendMail(await withGlobalSettingsCc(this.prisma, {
       from: String(process.env.SMTP_FROM),
       to: deliveryRecipient,
       subject,
       text,
       html,
-    });
+    }));
     return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient, testDelivery: lifecycleTestDelivery };
   }
 
@@ -359,13 +363,13 @@ export class HotelBlockEmailService {
         roomCount: Number(detail.roomCount || 0),
       })),
     });
-    const info = await this.getTransporter().sendMail({
+    const info = await this.getTransporter().sendMail(await withGlobalSettingsCc(this.prisma, {
       from: String(process.env.SMTP_FROM),
       to: deliveryRecipient,
       subject,
       text,
       html,
-    });
+    }));
     return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient, testDelivery: demoDelivery };
   }
 
@@ -411,7 +415,7 @@ export class HotelBlockEmailService {
       emailKind: 'HOLD_EXPIRED_AGENT',
       cutoffAt: this.formatDateTime(request.cutoffAt),
     });
-    const info = await this.getTransporter().sendMail({ from: String(process.env.SMTP_FROM), to: deliveryRecipient, subject: `DVi Travel | Hotel Hold Expired | ${quotationReference}`, text, html });
+    const info = await this.getTransporter().sendMail(await withGlobalSettingsCc(this.prisma, { from: String(process.env.SMTP_FROM), to: deliveryRecipient, subject: `DVi Travel | Hotel Hold Expired | ${quotationReference}`, text, html }));
     return { status: 'SENT' as const, providerMessageId: String(info.messageId || '') || null, recipient: deliveryRecipient, testDelivery: demoDelivery };
   }
 
