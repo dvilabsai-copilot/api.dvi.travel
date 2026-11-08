@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma.service';
 import { HotelSearchService } from '../hotels/services/hotel-search.service';
 import { HobseHotelProvider } from '../hotels/providers/hobse-hotel.provider';
 import { HotelSearchResult } from '../hotels/interfaces/hotel-provider.interface';
+import { resolveSavedTboChildAges } from '../hotels/utils/tbo-occupancy.util';
 import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.service';
 import { HotelAvailabilityTimingLogger } from './services/hotel-availability-timing.logger';
 import {
@@ -2116,10 +2117,9 @@ this.logger.log(
       const childTravellers = await this.prisma.dvi_itinerary_traveller_details.findMany({
         where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
         orderBy: { traveller_details_ID: 'asc' },
+        select: { traveller_age: true },
       });
-      planChildAges = childTravellers
-        .map((t) => Math.trunc(Number((t as any).traveller_age)))
-        .filter((age) => Number.isFinite(age) && age >= 0 && age <= 11);
+      planChildAges = resolveSavedTboChildAges(childTravellers, planChildCount);
  this.logger.log(` Child ages from travellers: [${planChildAges.join(', ')}]`);
     }
 
@@ -7667,10 +7667,9 @@ this.logger.log(
       const childTravellers2 = await this.prisma.dvi_itinerary_traveller_details.findMany({
         where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
         orderBy: { traveller_details_ID: 'asc' },
+        select: { traveller_age: true },
       });
-      planChildAges2 = childTravellers2
-        .map((t) => Math.trunc(Number((t as any).traveller_age)))
-        .filter((age) => Number.isFinite(age) && age >= 0 && age <= 11);
+      planChildAges2 = resolveSavedTboChildAges(childTravellers2, planChildCount2);
     }
 
  // Step 3: Fetch FRESH hotels from TBO
