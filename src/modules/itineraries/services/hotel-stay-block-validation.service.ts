@@ -6,6 +6,7 @@ import {
   type StaahPricingPaxInput,
 } from '../helpers/staah-occupancy-pricing';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
+import { normalizeCityName } from '../utils/city-normalization.util';
 
 export type ProviderCode = 'staah' | 'axisrooms' | 'tbo' | 'offline';
 
@@ -1414,10 +1415,7 @@ export class HotelStayBlockValidationService {
   }
 
   private normalizeLocation(value: unknown): string {
-    return String(value || '')
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '');
+    return normalizeCityName(String(value || ''));
   }
 
   private normalizeStaahExternalId(value: unknown): string {
