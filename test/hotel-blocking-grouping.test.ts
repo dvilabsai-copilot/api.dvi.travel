@@ -649,7 +649,7 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
     hotel_id: 61,
     hotel_code: 'VSR-TEA-CASTLE',
     hotel_provider: 'VSR',
-    total_no_of_rooms: 1,
+    total_no_of_rooms: 2,
     selected_price_snapshot: JSON.stringify({
       hotelName: 'Tea Castle',
       roomType: 'Executive Room',
@@ -666,6 +666,12 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
   let statusBookingId: string | number | undefined;
   const sent: any[] = [];
   const prisma: any = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ total_adult: 4, total_children: 2, preferred_room_count: 2 }),
+    },
+    dvi_itinerary_traveller_details: {
+      findMany: async () => [{ traveller_age: '7' }, { traveller_age: null }],
+    },
     dvi_itinerary_plan_hotel_details: { findMany: async () => [selectedRow] },
     dvi_hotel: { findMany: async () => [{ hotel_id: 61, hotel_name: 'Tea Castle', hotel_email: 'hotel@example.test' }] },
     dvi_itinerary_plan_hotel_room_details: { findMany: async () => [] },
@@ -697,8 +703,12 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
     logFailure: (error: unknown) => String(error),
   };
   const tboBooking = {
-    preBookHotelForHold: async () => {
+    preBookHotelForHold: async (selection: any) => {
       prebookCalls += 1;
+      assert.deepEqual(selection.occupancies, [
+        { adults: 2, children: 1, childrenAges: [7] },
+        { adults: 2, children: 1, childrenAges: [5] },
+      ]);
       return {
         Status: { Code: 300, Description: 'Insufficient Balance' },
         NetAmount: 3255.35,
@@ -726,7 +736,19 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
       hotelDetailsIds: [601],
       selection: {
         hotelCode: 'VSR-TEA-CASTLE', hotelName: 'Tea Castle', bookingCode: 'RATE-1',
-        roomType: 'Executive Room', numberOfRooms: 1, netAmount: 3255.35,
+        roomType: 'Executive Room', numberOfRooms: 2, netAmount: 3255.35,
+        occupancies: [
+          { adults: 2, children: 1, childrenAges: [4] },
+          { adults: 2, children: 1, childrenAges: [5] },
+        ],
+        passengers: [
+          { title: 'Mr', firstName: 'A', lastName: 'Guest', paxType: 1, age: 35 },
+          { title: 'Mr', firstName: 'B', lastName: 'Guest', paxType: 1, age: 35 },
+          { title: 'Mr', firstName: 'C', lastName: 'Guest', paxType: 1, age: 35 },
+          { title: 'Mr', firstName: 'D', lastName: 'Guest', paxType: 1, age: 35 },
+          { title: 'Ms', firstName: 'Child', lastName: 'Guest', paxType: 2, age: 4 },
+          { title: 'Ms', firstName: 'Child', lastName: 'Guest', paxType: 2, age: 5 },
+        ],
       },
     }],
   };
@@ -740,6 +762,11 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
   assert.equal(prebookCalls, 1);
   assert.equal(holdCalls, 1);
   assert.equal(holdSelection?.isVoucherBooking, false);
+  assert.deepEqual(holdSelection?.occupancies, [
+    { adults: 2, children: 1, childrenAges: [7] },
+    { adults: 2, children: 1, childrenAges: [5] },
+  ]);
+  assert.deepEqual(holdSelection?.passengers.filter((passenger: any) => passenger.paxType === 2).map((passenger: any) => passenger.age), [7, 5]);
   assert.equal(sent.length, 0);
   assert.equal(refreshed[0].status, 'HOLD');
   assert.equal(statusCalls, 1);

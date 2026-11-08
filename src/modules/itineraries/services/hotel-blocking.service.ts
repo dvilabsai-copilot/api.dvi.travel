@@ -15,6 +15,11 @@ import {
 } from '../utils/tbo-hold-eligibility.util';
 import { AxisRoomsBookingPushService } from './axisrooms-booking-push.service';
 import { resolveHotelHoldNotificationRecipients } from '../utils/hotel-hold-recipient.util';
+import {
+  DEFAULT_TBO_CHILD_AGE,
+  distributeTboSearchOccupancies,
+  resolveSavedTboChildAges,
+} from '../../hotels/utils/tbo-occupancy.util';
 
 export const HOTEL_BLOCK_STATUS = {
   CONTACT_REQUIRED: 'CONTACT_REQUIRED',
@@ -470,6 +475,7 @@ export class HotelBlockingService {
             itinerary_quote_ID: true,
             total_adult: true,
             total_children: true,
+            preferred_room_count: true,
             nationality: true,
             agent_id: true,
             staff_id: true,
@@ -676,8 +682,45 @@ export class HotelBlockingService {
           outcomes.push({ ...outcomeBase, success: true, status: 'ALREADY_HELD', requestId: result.id, holdStatus: result.status, cutoffAt: result.cutoffAt });
           continue;
         }
-        const selectionWithHoldMode = { ...selection, isVoucherBooking: false };
-        const preBookResponse = await this.tboHotelBooking.preBookHotelForHold(selection);
+        const travellerModel = (this.prisma as any).dvi_itinerary_traveller_details;
+        const savedChildren = travellerModel?.findMany
+          ? await travellerModel.findMany({
+              where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
+              orderBy: { traveller_details_ID: 'asc' },
+              select: { traveller_age: true },
+            })
+          : [];
+        const childCount = Math.max(Number(itineraryPlan?.total_children || 0), 0);
+        const childAges = resolveSavedTboChildAges(savedChildren || [], childCount);
+        const roomCount = Math.max(
+          Number(itineraryPlan?.preferred_room_count || selection.numberOfRooms || 1),
+          1,
+        );
+        const adultCount = Math.max(Number(itineraryPlan?.total_adult || 0), 1);
+        const occupancies = distributeTboSearchOccupancies(roomCount, adultCount, childCount, childAges);
+        const childPassengerAges = occupancies.flatMap((occupancy) => occupancy.childrenAges || []);
+        const childPassengers = (Array.isArray(selection.passengers) ? selection.passengers : [])
+          .filter((passenger: BlockRow) => Number(passenger?.paxType) === 2);
+        if (childPassengers.length !== childCount) {
+          throw new BadRequestException(
+            'Saved child guest count changed. Refresh the itinerary confirmation details before holding this hotel.',
+          );
+        }
+        let childPassengerIndex = 0;
+        const passengers = (Array.isArray(selection.passengers) ? selection.passengers : []).map((passenger: BlockRow) => {
+          if (Number(passenger?.paxType) !== 2) return passenger;
+          const age = childPassengerAges[childPassengerIndex] ?? DEFAULT_TBO_CHILD_AGE;
+          childPassengerIndex += 1;
+          return { ...passenger, age };
+        });
+        const selectionWithHoldMode = {
+          ...selection,
+          numberOfRooms: roomCount,
+          occupancies,
+          passengers,
+          isVoucherBooking: false,
+        };
+        const preBookResponse = await this.tboHotelBooking.preBookHotelForHold(selectionWithHoldMode);
         if (!isTboPrebookRateEligibleForHold(preBookResponse as any, policy.tboHoldLcdBufferDays)) {
           throw new BadRequestException(
             `HOTEL_HOLD_NOT_ELIGIBLE: The latest VSR rate must be refundable and have a cancellation deadline at least ${policy.tboHoldLcdBufferDays} day(s) away to be held. Refresh the rate and try again.`,
