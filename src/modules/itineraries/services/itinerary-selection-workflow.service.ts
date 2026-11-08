@@ -217,7 +217,7 @@ export class ItinerarySelectionWorkflowService {
      requestedBy?: number;
     /** Internal transaction client used by atomic multi-route saves. */
     transactionClient?: any;
-  }) {
+  }, options: { selectionResolvedFromFreshSearch?: boolean } = {}) {
     // groupType is the target recommendation package being edited. It must be
     // explicit; never infer it from the selected inventory row or default it
     // to Group 1 because that can overwrite a different package's row.
@@ -281,7 +281,16 @@ export class ItinerarySelectionWorkflowService {
     ) {
       throw new BadRequestException('Hotel selection requires a canonical dvi_hotel.hotel_id');
     }
-    await this.validateLiveSelectionAgainstSnapshot(data, plan, quoteId, route);
+    // RATE_OPTION intent is resolved by the server against a fresh TBO/VSR
+    // supplier response immediately before this atomic save. TBO booking
+    // references contain short-lived search-session tokens, so a second
+    // supplier search here can invalidate the just-resolved booking code.
+    // Only the internal resolved-selection path may skip this duplicate
+    // snapshot lookup; direct API selections and all other providers retain
+    // the normal live validation.
+    if (this.shouldValidateLiveSelection(data, options)) {
+      await this.validateLiveSelectionAgainstSnapshot(data, plan, quoteId, route);
+    }
 
     const actualGuestArrivalAt = (plan as any)?.trip_start_date_and_time
       ? new Date((plan as any).trip_start_date_and_time)
@@ -1310,6 +1319,7 @@ export class ItinerarySelectionWorkflowService {
     requestedBy = 1,
     skipSupplierRefresh = false,
     lockAlreadyHeld = false,
+    selectionResolvedFromFreshSearch = false,
   ) {
 
     if (!Array.isArray(hotels) || hotels.length === 0) {
@@ -1437,7 +1447,7 @@ export class ItinerarySelectionWorkflowService {
             extraBedGstAmount: hotel.extraBedGstAmount,
             requestedBy,
             transactionClient: tx,
-          });
+          }, { selectionResolvedFromFreshSearch });
         }
       });
     } finally {
@@ -1645,6 +1655,16 @@ export class ItinerarySelectionWorkflowService {
       }));
       throw new BadRequestException('The selected hotel price changed. Refresh hotel availability and review the updated rate.');
     }
+  }
+
+  private shouldValidateLiveSelection(
+    data: { provider?: unknown },
+    options: { selectionResolvedFromFreshSearch?: boolean } = {},
+  ): boolean {
+    return !(
+      options.selectionResolvedFromFreshSearch === true &&
+      canonicalHotelProvider(data.provider) === 'tbo'
+    );
   }
 
   private toDateOnly(value: unknown): string {

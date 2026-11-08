@@ -3441,7 +3441,13 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       };
     });
     try {
-      await this.selectionWorkflowService.bulkSaveHotels(Number(data.planId), persistencePayloads, Number(data.requestedBy || 1), true, true);
+      // RATE_OPTION selections in persistencePayloads were resolved from the
+      // fresh provider search above. Avoid a second TBO/VSR availability
+      // search in selectHotel: that supplier rotates its booking-code session
+      // token on every search, making the just-resolved option appear stale.
+      await this.selectionWorkflowService.bulkSaveHotels(
+        Number(data.planId), persistencePayloads, Number(data.requestedBy || 1), true, true, true,
+      );
     } catch (error) {
       console.error('[HOTEL_INTENT] atomic persistence failed', error);
       if (error?.status === 409 || error?.statusCode === 409 || error?.response?.statusCode === 409) {
