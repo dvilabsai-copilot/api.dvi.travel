@@ -2567,6 +2567,13 @@ export class HotelBlockingService {
 
   private async refreshSupplierHold(row: BlockRow) {
     if (!isTboSupplierHoldRequest(row)) return { row, statusOverride: undefined as string | undefined, cutoffAt: undefined as Date | undefined };
+    // Supplier refresh is only authoritative for a locally active hold. A
+    // cancelled or superseded request must stay terminal even if the supplier
+    // still reports its booking as confirmed (or the lookup fails).
+    if ([HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED]
+      .includes(normalizeText(row.status).toUpperCase() as typeof HOTEL_BLOCK_STATUS.CANCELLED | typeof HOTEL_BLOCK_STATUS.SUPERSEDED)) {
+      return { row, statusOverride: undefined as string | undefined, cutoffAt: undefined as Date | undefined };
+    }
     const localCutoff = dateOnly(row.cutoff_at);
     try {
       const payload = parseJson(row.request_payload, {}) as BlockRow;

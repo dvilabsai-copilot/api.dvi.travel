@@ -791,6 +791,33 @@ test('an expired supplier status is exposed as HOLD expired', async () => {
   assert.equal(refreshed.statusOverride, 'HOLD_EXPIRED');
 });
 
+test('cancelled and superseded VSR holds are not refreshed back to HOLD', async () => {
+  let statusCalls = 0;
+  const service = new (HotelBlockingService as any)({}, {}, {
+    getHoldStatus: async () => {
+      statusCalls += 1;
+      return { status: 'Confirmed', bookingDeadline: '2026-12-15T18:00:00.000Z' };
+    },
+  });
+
+  for (const status of ['CANCELLED', 'SUPERSEDED']) {
+    const row = {
+      provider: 'VSR',
+      confirmation_channel: 'TBO_BOOK_HOLD',
+      confirmation_reference: `TBO-${status}`,
+      status,
+      cutoff_at: new Date('2026-12-15T18:00:00.000Z'),
+    };
+    const refreshed = await service.refreshSupplierHold(row);
+
+    assert.equal(refreshed.row, row);
+    assert.equal(refreshed.statusOverride, undefined);
+    assert.equal(refreshed.cutoffAt, undefined);
+  }
+
+  assert.equal(statusCalls, 0);
+});
+
 test('VSR supplier status cannot extend the persisted policy hold cutoff', async () => {
   const policyCutoff = new Date('2026-12-10T14:00:00.000Z');
   const service = new (HotelBlockingService as any)({}, {}, {
