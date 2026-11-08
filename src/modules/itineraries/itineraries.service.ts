@@ -4096,6 +4096,9 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
   async prebookHotels(payload: any) {
     return this.hotelPrebookService.prebookHotels(payload);
   }
+  async checkHotelHoldEligibility(payload: any) {
+    return this.hotelPrebookService.checkHotelHoldEligibility(payload);
+  }
 async processConfirmationWithTboBookings(
   baseResult: any,
   dto: ConfirmQuotationDto,

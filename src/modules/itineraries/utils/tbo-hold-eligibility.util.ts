@@ -141,23 +141,35 @@ export const isTboPrebookRateEligibleForHold = (
   bufferDays: number,
   now: Date = new Date(),
 ): boolean => {
+  return getTboPrebookRateHoldEligibility(response, bufferDays, now).eligible;
+};
+
+export const getTboPrebookRateHoldEligibility = (
+  response: Record<string, any>,
+  bufferDays: number,
+  now: Date = new Date(),
+): {
+  eligible: boolean;
+  refundable: boolean;
+  cancellationDeadline: Date | null;
+  reason: 'RATE_MISSING' | 'NOT_REFUNDABLE' | 'LCD_MISSING' | 'LCD_WITHIN_BUFFER' | null;
+} => {
   const rooms = getPrebookRooms(response);
-  if (rooms.length === 0 || Number.isNaN(now.getTime())) return false;
+  if (rooms.length === 0 || Number.isNaN(now.getTime())) {
+    return { eligible: false, refundable: false, cancellationDeadline: null, reason: 'RATE_MISSING' };
+  }
 
   const safeBufferDays = Math.max(0, Math.trunc(Number(bufferDays) || 0));
   const minimumDeadline = startOfIndiaDayPlusDays(now, safeBufferDays).getTime();
-
-  return rooms.every((room) => {
-    const refundable = room.IsRefundable ?? room.isRefundable;
-    const isRefundable = refundable === true || refundable === 1 || String(refundable).trim().toLowerCase() === 'true';
-    if (!isRefundable) return false;
-
-    const deadline = parseDeadline(
-      room.LastCancellationDeadline
-        ?? room.lastCancellationDeadline
-        ?? room.LastCancellationDate
-        ?? room.lastCancellationDate,
-    );
-    return Boolean(deadline && deadline.getTime() >= minimumDeadline);
+  const refundable = rooms.every((room) => {
+    const value = room.IsRefundable ?? room.isRefundable;
+    return value === true || value === 1 || String(value).trim().toLowerCase() === 'true';
   });
+  const cancellationDeadline = getTboPrebookHoldCancellationDeadline(response);
+  if (!refundable) return { eligible: false, refundable, cancellationDeadline, reason: 'NOT_REFUNDABLE' };
+  if (!cancellationDeadline) return { eligible: false, refundable, cancellationDeadline, reason: 'LCD_MISSING' };
+  if (cancellationDeadline.getTime() < minimumDeadline) {
+    return { eligible: false, refundable, cancellationDeadline, reason: 'LCD_WITHIN_BUFFER' };
+  }
+  return { eligible: true, refundable, cancellationDeadline, reason: null };
 };
