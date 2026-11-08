@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
 import { PrismaService } from '../../../prisma.service';
+import { withGlobalSettingsCc } from '../../../common/utils/default-email-cc.util';
 
 type VehicleVoucherEmailContext = {
   itineraryPlanId: number;
@@ -290,14 +291,14 @@ export class VehicleVoucherEmailNotifierService {
           `We appreciate the vehicle availability update by ${context.verifiedBy}. ` +
           `Please find the latest confirmation details below.`;
 
-        await transporter.sendMail({
+        await transporter.sendMail(await withGlobalSettingsCc(this.prisma, {
           from,
           to: vendorTo.length ? vendorTo : undefined,
           cc: vendorCc.length ? vendorCc : undefined,
           subject,
           text: this.renderText(subject, intro, context),
           html: this.renderHtml(subject, intro, context),
-        });
+        }));
       }
 
       const internalTo = this.uniqueEmails([
@@ -313,14 +314,14 @@ export class VehicleVoucherEmailNotifierService {
           `Vehicle booking status has been updated by ${context.verifiedBy}. ` +
           `Please review the supplier response before sharing it with the client.`;
 
-        await transporter.sendMail({
+        await transporter.sendMail(await withGlobalSettingsCc(this.prisma, {
           from,
           to: internalTo.length ? internalTo : undefined,
           cc: internalCc.length ? internalCc : undefined,
           subject,
           text: this.renderText(subject, intro, context),
           html: this.renderHtml(subject, intro, context),
-        });
+        }));
       }
     } catch (error: any) {
  this.logger.error(`Vehicle voucher confirmation email send failed: ${error?.message || error}`);

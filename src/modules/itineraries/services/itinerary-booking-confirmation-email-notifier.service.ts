@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import nodemailer, { Transporter } from 'nodemailer';
+import { withGlobalSettingsCc } from '../../../common/utils/default-email-cc.util';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../../../prisma.service';
 import { ItineraryPdfService } from '../itinerary-pdf.service';
@@ -1901,7 +1902,7 @@ try {
   );
 }
 
-const info = await transporter.sendMail({
+const info = await transporter.sendMail(await withGlobalSettingsCc(this.prisma, {
   from: {
     name: fromName,
     address: fromAddress,
@@ -1914,7 +1915,7 @@ const info = await transporter.sendMail({
   html,
 
   attachments: dailyMomentAttachments,
-});
+}));
 
 this.logger.log(
   `Daily Moment recipients: ${recipientEmails.join(', ')}`,
@@ -2604,7 +2605,7 @@ const itineraryPdfService = this.moduleRef.get(
         );
       }
 
-      await transporter.sendMail({
+      await transporter.sendMail(await withGlobalSettingsCc(this.prisma, {
   from: {
     name: fromName,
     address: fromAddress,
@@ -2635,7 +2636,7 @@ const itineraryPdfService = this.moduleRef.get(
     voucherAttachments.length > 0
       ? voucherAttachments
       : undefined,
-});
+      }));
 
 this.logger.log(
   `Booking confirmation email sent for itinerary ${itineraryPlanId}. ` +
