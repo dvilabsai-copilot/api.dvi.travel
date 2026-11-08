@@ -2820,16 +2820,22 @@ timingStepStartedAt =
             option?.mealPlan || option?.mealPlanCode || '',
           ).trim();
 
-          const roomMatches = requestedRoomTypeId > 0
-            ? optionRoomTypeId === requestedRoomTypeId
-            : requestedRoomId > 0
-              ? optionRoomId === requestedRoomId
-              : !requestedRoom ||
-                optionRoom.toLowerCase() === requestedRoom.toLowerCase();
+          // TBO room identifiers can be regenerated between selected-rate
+          // refresh and this authoritative recheck. Prefer the exact supplier
+          // room label for VSR/TBO when both sides provide it; use numeric IDs
+          // only when the supplier omitted a room label. Other providers keep
+          // their existing ID-first matching behavior.
+          const roomMatches = provider === 'tbo' && requestedRoom
+            ? normalize(optionRoom) === normalize(requestedRoom)
+            : requestedRoomTypeId > 0
+              ? optionRoomTypeId === requestedRoomTypeId
+              : requestedRoomId > 0
+                ? optionRoomId === requestedRoomId
+                : !requestedRoom || normalize(optionRoom) === normalize(requestedRoom);
 
-          const mealMatches =
-            !requestedMeal ||
-            optionMeal.toLowerCase() === requestedMeal.toLowerCase();
+          const mealMatches = !requestedMeal || (provider === 'tbo'
+            ? normalizeMealPlan(optionMeal) === normalizeMealPlan(requestedMeal)
+            : optionMeal.toLowerCase() === requestedMeal.toLowerCase());
 
           return roomMatches && mealMatches;
         })
