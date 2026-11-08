@@ -38,6 +38,7 @@ import {
   resolvePersistedHotelIdentity,
 } from '../utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from '../utils/hotel-category.util';
+import { normalizeCityName } from '../utils/city-normalization.util';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 import {
   buildHotelSelectionState,
@@ -887,14 +888,14 @@ export class HotelAvailabilitySnapshotService {
     // nested rateOptions from different dates.  Without this final pass, the
     // pane can show Choose and the select-intent request can be the first
     // place that discovers a missing night.
-    const sharedHotelInventoryBeforeVsrLimit = this.applyCompleteStayAvailability(
+    const sharedHotelInventoryBeforeVsrLimit = (await this.applyCompleteStayAvailability(
       this.buildSharedHotelInventory(
         normalizedRows,
         effectiveMarginPercentage,
       ),
       routes,
       noOfNights,
-    ).map((row: any) => ({
+    )).map((row: any) => ({
       ...row,
       rateOptions: this.canonicalizeRateOptions(row, row.rateOptions || []),
     }));
@@ -1570,7 +1571,7 @@ export class HotelAvailabilitySnapshotService {
           previousSnapshotRetained: true,
         });
       }
-      rows = this.applyCompleteStayAvailability(rows, routes, noOfNights);
+      rows = await this.applyCompleteStayAvailability(rows, routes, noOfNights);
       if (String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim() === 'true') {
         this.logger.log('[HOTEL_RECOMMENDATION_TRACE] authoritative-propagation-after-stay', {
           candidates: rows.filter((row: any) =>
@@ -2274,7 +2275,7 @@ export class HotelAvailabilitySnapshotService {
     });
     const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
     const requestedRoutes = routeId
-      ? this.getContinuousStayRoutes(routes, Number(routeId), noOfNights)
+      ? await this.getContinuousStayRoutes(routes, Number(routeId), noOfNights)
       : routes.filter((route: any, index: number) => !(index === routes.length - 1 && index >= noOfNights));
     const requestedRouteIds = new Set(requestedRoutes.map((route: any) => Number(route.itinerary_route_ID || 0)));
     if (requestedRouteIds.size === 0) throw new BadRequestException('Hotel stay route was not found');
@@ -2349,13 +2350,41 @@ export class HotelAvailabilitySnapshotService {
     return { response, changeSummary };
   }
 
-  private getContinuousStayRoutes(routes: any[], routeId: number, noOfNights: number): any[] {
+  private async resolveStayCityByRouteId(routes: any[], db: any = this.prisma): Promise<Map<number, string>> {
+    const routeLocationIds = Array.from(new Set(
+      (routes || [])
+        .map((route: any) => String(route?.location_id ?? '').trim())
+        .filter((value: string) => /^\d+$/.test(value)),
+    ));
+    const storedLocations = routeLocationIds.length > 0 && db?.dvi_stored_locations?.findMany
+      ? await db.dvi_stored_locations.findMany({
+          where: { location_ID: { in: routeLocationIds.map((value) => BigInt(value)) } },
+          select: { location_ID: true, destination_location_city: true },
+        })
+      : [];
+    const cityEntries = (storedLocations || []).map((location: any): [string, string] => [
+        String(location?.location_ID ?? ''),
+        String(location?.destination_location_city ?? '').trim(),
+      ]);
+    const cityByLocationId = new Map<string, string>(cityEntries);
+    const routeCities = (routes || []).map((route: any): [number, string] => {
+      const routeId = Number(route?.itinerary_route_ID || route?.itineraryRouteId || 0);
+      const mappedCity = cityByLocationId.get(String(route?.location_id ?? '')) || '';
+      const label = String(route?.next_visiting_location || route?.nextVisitingLocation || route?.location_name || '').trim();
+      const canonicalCity = normalizeCityName(mappedCity || label);
+      return [routeId, canonicalCity || label.toLowerCase()];
+    });
+    return new Map<number, string>(routeCities.filter(([routeId, city]) => routeId > 0 && Boolean(city)));
+  }
+
+  private async getContinuousStayRoutes(routes: any[], routeId: number, noOfNights: number): Promise<any[]> {
     const eligibleRoutes = (routes || []).filter((route: any, index: number) =>
       !(index === routes.length - 1 && index >= noOfNights),
     );
     const targetIndex = eligibleRoutes.findIndex((route: any) => Number(route.itinerary_route_ID || 0) === routeId);
     if (targetIndex < 0) return [];
-    const destinationOf = (route: any) => String(route.next_visiting_location || route.location_name || '').trim();
+    const stayCityByRouteId = await this.resolveStayCityByRouteId(eligibleRoutes);
+    const destinationOf = (route: any) => stayCityByRouteId.get(Number(route.itinerary_route_ID || 0)) || '';
     const dateOf = (route: any) => new Date(route.itinerary_route_date).getTime();
     let start = targetIndex;
     let end = targetIndex;
@@ -2849,10 +2878,11 @@ export class HotelAvailabilitySnapshotService {
     };
   }
 
-  private applyCompleteStayAvailability(rows: any[], routes: any[], noOfNights: number): any[] {
+  private async applyCompleteStayAvailability(rows: any[], routes: any[], noOfNights: number): Promise<any[]> {
     const searchableRoutes = resolveHotelRequiredRoutes(routes || [], noOfNights);
+    const stayCityByRouteId = await this.resolveStayCityByRouteId(searchableRoutes);
     const normalizedDestination = (route: any): string =>
-      String(route?.next_visiting_location || route?.location_name || '').trim().toLowerCase();
+      stayCityByRouteId.get(Number(route?.itinerary_route_ID || 0)) || '';
     const routeDate = (route: any): string => this.toDateOnly(route?.itinerary_route_date);
     const routeId = (route: any): number => Number(route?.itinerary_route_ID || 0);
     const stayBlocks: Array<{ routeIds: number[]; dates: string[] }> = [];
@@ -6331,13 +6361,12 @@ export class HotelAvailabilitySnapshotService {
     // night, while the group type continues to preserve recommendation
     // diversity.
     const stayRouteIdsByRoute = new Map<number, number[]>();
+    const stayCityByRouteId = await this.resolveStayCityByRouteId(routes, tx);
     const orderedStayRoutes = (routes || [])
       .map((route: any) => ({
         id: Number(route?.itinerary_route_ID || route?.itineraryRouteId || 0),
         date: this.toDateOnly(route?.itinerary_route_date || route?.date),
-        destination: String(route?.next_visiting_location || route?.nextVisitingLocation || route?.location_name || '')
-          .trim()
-          .toLowerCase(),
+        destination: stayCityByRouteId.get(Number(route?.itinerary_route_ID || route?.itineraryRouteId || 0)) || '',
       }))
       .filter((route: any) => route.id > 0 && route.date && route.destination);
     let currentStayRoutes: any[] = [];
