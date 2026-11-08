@@ -2034,6 +2034,17 @@ async exportToExcel(
     return this.svc.prebookHotels(body);
   }
 
+  @Post('hotels/hold-eligibility')
+  @ApiOperation({ summary: 'Check fresh VSR/TBO hold eligibility without creating a booking' })
+  async checkHotelHoldEligibility(
+    @Body() body: { itinerary_plan_ID: number; hotel_bookings: any[] },
+    @Req() req: Request,
+  ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.itinerary_plan_ID), (req as any).user);
+    return this.svc.checkHotelHoldEligibility(body);
+  }
+
   @Post(':planId/hotels/stay-extension-preview')
   @ApiOperation({ summary: 'Preview continuous multi-night hotel booking from current supplier availability' })
   async previewHotelStayExtension(

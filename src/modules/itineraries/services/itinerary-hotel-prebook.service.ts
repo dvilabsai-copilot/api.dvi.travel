@@ -5,6 +5,7 @@ import { PrismaService } from '../../../prisma.service';
 import { ConfirmQuotationDto } from '../dto/confirm-quotation.dto';
 import { TboHotelBookingService } from './tbo-hotel-booking.service';
 import { SupplementNormalizerService } from '../../../modules/hotels/services/supplement-normalizer.service';
+import { getTboPrebookRateHoldEligibility } from '../utils/tbo-hold-eligibility.util';
 
 type HotelPrebookCallbacks = Partial<Record<
   'normalizeToArray'
@@ -431,6 +432,85 @@ export class ItineraryHotelPrebookService {
       mandatorySupplements: mandatorySupplementsAll,
  // NEW: include normalized supplements for frontend display
       normalizedSupplements: normalizedSupplementsAll,
+    };
+  }
+
+  /**
+   * Checks VSR/TBO hold eligibility without creating a booking. This is used
+   * when the package dialog opens so the displayed Hold action reflects the
+   * fresh supplier LCD, while Code 300 remains valid for an otherwise
+   * eligible unvouchered hold.
+   */
+  async checkHotelHoldEligibility(payload: {
+    itinerary_plan_ID: number;
+    hotel_bookings: Array<Record<string, any>>;
+  }) {
+    const settings = await this.prisma.dvi_global_settings.findFirst({
+      select: { tbo_hold_lcd_buffer_days: true },
+    });
+    const bufferDays = Math.max(0, Math.trunc(Number(settings?.tbo_hold_lcd_buffer_days ?? 1) || 0));
+    const bookings = (payload?.hotel_bookings || []).filter((hotel) =>
+      ['tbo', 'vsr'].includes(String(hotel?.provider || '').trim().toLowerCase()),
+    );
+    const hotels: Array<Record<string, unknown>> = [];
+
+    for (const hotel of bookings) {
+      const base = {
+        routeId: Number(hotel.routeId || 0),
+        routeIds: Array.isArray(hotel.routeIds)
+          ? Array.from(new Set(hotel.routeIds.map(Number).filter((routeId: number) => Number.isInteger(routeId) && routeId > 0)))
+          : [Number(hotel.routeId || 0)].filter((routeId: number) => Number.isInteger(routeId) && routeId > 0),
+        hotelCode: String(hotel.hotelCode || ''),
+        hotelName: String(hotel.hotelName || ''),
+        bookingCode: String(hotel.bookingCode || ''),
+      };
+      try {
+        const bookingCode = await this.resolvePrebookBookingCode(payload.itinerary_plan_ID, {
+          routeId: base.routeId,
+          hotelCode: base.hotelCode,
+          bookingCode: base.bookingCode,
+          roomType: String(hotel.roomType || 'Room'),
+        });
+        const response = await this.tboHotelBooking.preBookHotelForHold({
+          hotelCode: String(hotel.hotelCode || ''),
+          bookingCode,
+          roomType: String(hotel.roomType || 'Room'),
+          checkInDate: String(hotel.checkInDate || ''),
+          checkOutDate: String(hotel.checkOutDate || ''),
+          numberOfRooms: Number(hotel.numberOfRooms || 1),
+          guestNationality: String(hotel.guestNationality || 'IN'),
+          netAmount: Number(hotel.netAmount || 0),
+          searchInitiatedAt: hotel.searchInitiatedAt,
+          occupancies: hotel.occupancies,
+          passengers: [],
+        } as any);
+        const eligibility = getTboPrebookRateHoldEligibility(response as any, bufferDays);
+        hotels.push({
+          ...base,
+          bookingCode,
+          holdable: eligibility.eligible,
+          reason: eligibility.reason,
+          isRefundable: eligibility.refundable,
+          lastCancellationDeadline: eligibility.cancellationDeadline?.toISOString() || null,
+          supplierStatus: response?.Status ?? null,
+        });
+      } catch (error) {
+        hotels.push({
+          ...base,
+          holdable: false,
+          reason: 'CHECK_FAILED',
+          isRefundable: null,
+          lastCancellationDeadline: null,
+          error: error instanceof Error ? error.message : 'Unable to verify the current VSR rate.',
+        });
+      }
+    }
+
+    return {
+      success: true,
+      itinerary_plan_ID: payload.itinerary_plan_ID,
+      tboHoldLcdBufferDays: bufferDays,
+      hotels,
     };
   }
 
