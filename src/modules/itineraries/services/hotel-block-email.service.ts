@@ -216,11 +216,14 @@ export class HotelBlockEmailService {
   }) {
     if (!this.enabled()) return { status: 'QUEUED' as const };
     const { recipients, quotationReference, itineraryUrl, request } = input;
-    const intendedEmails = [...new Set(recipients
+    // The pending-payment hold-created email is for the assigned Travel Expert only.
+    // Keep Agent delivery available to the separate reminder/expiry workflows.
+    const intendedRecipients = recipients.filter((item) => item.role === 'Travel Expert');
+    const intendedEmails = [...new Set(intendedRecipients
       .map((item) => String(item.email || '').trim())
       .filter((email) => email.includes('@')))];
-    if (!intendedEmails.length) throw new Error('No Agent or Travel Expert email is available for this hold notice.');
-    const intendedRecipientLabels = [...new Set(recipients
+    if (!intendedEmails.length) throw new Error('No assigned Travel Expert email is available for this hold notice.');
+    const intendedRecipientLabels = [...new Set(intendedRecipients
       .filter((item) => intendedEmails.includes(String(item.email || '').trim()))
       .map((item) => `${item.role}: ${item.name} (${item.email})`))];
     const recipient = intendedEmails.join(', ');
