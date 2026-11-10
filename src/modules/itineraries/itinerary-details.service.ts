@@ -7065,16 +7065,93 @@ const hasRequiredVehicleSelection =
             `${selected.provider || ''}|${selected.hotelCode || ''}|${selected.roomType || ''}|${selected.mealPlan || ''}`,
           ).trim();
           const selectedDate = new Date(String(selected.routeDate || selected.date || '')).getTime();
-          const previousDate = lastSelectedStayDate.get(selectedKey);
-          // Route-level selections persist one payable amount per night. Only
-          // suppress consecutive rows when the snapshot explicitly declares
-          // that the amount is a multi-night stay total; otherwise Day 2 of a
-          // continuous TBO stay is incorrectly discarded as a duplicate.
-          const isRepeatedNight = shouldSkipRepeatedHotelNight(selected, previousDate, selectedDate);
-          if (isRepeatedNight) {
-            lastSelectedStayDate.set(selectedKey, selectedDate);
-            return sum;
-          }
+const previousDate = lastSelectedStayDate.get(selectedKey);
+
+// Check whether the saved stay contains separately priced route nights.
+// A multi-night total must not cause individually priced nights to be skipped.
+const selectedStayTotal = Number(selected.selectedTotalPrice ?? 0);
+
+const sameStayRows = selectedStayTotal > 0
+  ? selectedRoutes.filter((row: any) => {
+      const rowKey = String(
+        row.selectionKey || row.rateOptionId ||
+        `${row.provider || ''}|${row.hotelCode || ''}|${row.roomType || ''}|${row.mealPlan || ''}`,
+      ).trim();
+
+      const rowStayTotal = Number(row.selectedTotalPrice ?? 0);
+
+      return (
+        rowKey === selectedKey &&
+        Number.isFinite(rowStayTotal) &&
+        Math.abs(rowStayTotal - selectedStayTotal) <= 0.02
+      );
+    })
+  : [];
+
+const stayDates = sameStayRows.map((row: any) =>
+  String(row.routeDate || row.date || '').slice(0, 10),
+);
+
+const stayRouteIds = sameStayRows.map((row: any) =>
+  Number(
+    row.routeId ??
+    row.itineraryRouteId ??
+    row.itinerary_route_id ??
+    0
+  ),
+);
+
+const nightlyAmounts = sameStayRows.map((row: any) =>
+  Number(row.totalPrice ?? 0),
+);
+
+const totalNightlyAmount = nightlyAmounts.reduce(
+  (total: number, amount: number) => total + amount,
+  0,
+);
+
+const sortedStayDates = [...stayDates].sort();
+
+const hasConsecutiveDates = sortedStayDates.every(
+  (date: string, index: number) =>
+    index === 0 ||
+    new Date(date).getTime() -
+      new Date(sortedStayDates[index - 1]).getTime() ===
+      24 * 60 * 60 * 1000,
+);
+
+const hasSeparateNightlyPricing =
+  sameStayRows.length > 1 &&
+  stayDates.every((date: string) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(date)
+  ) &&
+  new Set(stayDates).size === sameStayRows.length &&
+  hasConsecutiveDates &&
+  stayRouteIds.every(
+    (routeId: number) =>
+      Number.isFinite(routeId) && routeId > 0
+  ) &&
+  new Set(stayRouteIds).size === sameStayRows.length &&
+  nightlyAmounts.every(
+    (amount: number) =>
+      Number.isFinite(amount) && amount > 0
+  ) &&
+  Number.isFinite(selectedStayTotal) &&
+  Math.abs(totalNightlyAmount - selectedStayTotal) <= 0.02;
+
+const isRepeatedNight =
+  !hasSeparateNightlyPricing &&
+  shouldSkipRepeatedHotelNight(
+    selected,
+    previousDate,
+    selectedDate,
+  );
+
+if (isRepeatedNight) {
+  lastSelectedStayDate.set(selectedKey, selectedDate);
+  return sum;
+}
+
           if (Number.isFinite(selectedDate)) lastSelectedStayDate.set(selectedKey, selectedDate);
           const selectedRouteId = Number(
             selected.routeId ?? selected.itineraryRouteId ?? selected.itinerary_route_id ?? 0,
