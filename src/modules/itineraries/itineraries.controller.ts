@@ -82,6 +82,7 @@ import { ItineraryBookingConfirmationEmailNotifierService } from './services/iti
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
 import { ItineraryAccessService } from './services/itinerary-access.service';
+import { isAgentRole } from './utils/itinerary-cost-visibility.util';
 import { HotelBlockingService } from './services/hotel-blocking.service';
 
 @ApiTags('Itineraries')
@@ -969,6 +970,15 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
         check_out_date: _checkOutDateLegacy,
         ...summaryRow
       } = row || {};
+      const nestedRefundableValue = Array.isArray(row?.roomTypes)
+        ? row.roomTypes
+            .map((roomType: any) => roomType?.isRefundable ?? roomType?.IsRefundable)
+            .find((value: unknown) => value !== undefined && value !== null)
+        : undefined;
+      const refundableValue = row?.isRefundable ?? row?.IsRefundable ?? nestedRefundableValue;
+      const summaryRowWithRefundability = refundableValue === undefined
+        ? summaryRow
+        : { ...summaryRow, isRefundable: refundableValue };
       // Keep the concrete options needed by the hotel card. Availability and
       // supplement rates are calculated per option by the API; removing this
       // array makes the UI inspect the parent summary row, which can have no
@@ -988,6 +998,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
               'rateId', 'rate_id', 'roomTypeId', 'room_type_id',
               // Display and provider identity.
               'provider', 'providerDisplayName', 'providerHotelCode', 'isPriority', 'hotelCode',
+              'isRefundable', 'IsRefundable',
               'images', 'primaryImageUrl',
               'hotelName', 'category', 'currency', 'roomType', 'roomTypeName',
               'mealPlan', 'mealPlanCode', 'ratePlanName',
@@ -1037,7 +1048,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
           })
         : undefined;
       return {
-        ...summaryRow,
+        ...summaryRowWithRefundability,
         ...(compactRateOptions ? { rateOptions: compactRateOptions } : {}),
       };
     };
@@ -2023,6 +2034,17 @@ async exportToExcel(
     return this.svc.prebookHotels(body);
   }
 
+  @Post('hotels/hold-eligibility')
+  @ApiOperation({ summary: 'Check fresh VSR/TBO hold eligibility without creating a booking' })
+  async checkHotelHoldEligibility(
+    @Body() body: { itinerary_plan_ID: number; hotel_bookings: any[] },
+    @Req() req: Request,
+  ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
+    await this.itineraryAccessService.assertCanEditPlan(Number(body.itinerary_plan_ID), (req as any).user);
+    return this.svc.checkHotelHoldEligibility(body);
+  }
+
   @Post(':planId/hotels/stay-extension-preview')
   @ApiOperation({ summary: 'Preview continuous multi-night hotel booking from current supplier availability' })
   async previewHotelStayExtension(
@@ -2065,6 +2087,21 @@ async confirmQuotation(
 ) {
   this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
   await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_ID), (req as any).user);
+  const authenticatedUser = (req as any).user || {};
+  const actor = {
+    id: Number(authenticatedUser.userId || 0),
+    name: String(authenticatedUser.name || authenticatedUser.email || ''),
+    type: 'STAFF',
+    roleId: Number(authenticatedUser.roleID ?? authenticatedUser.role ?? 0),
+    permissionRoleId: Number(authenticatedUser.permissionRoleId ?? 0),
+    staffId: Number(authenticatedUser.staffId ?? authenticatedUser.staff_id ?? 0),
+  };
+  await this.hotelBlockingService.assertOfflinePaymentAcknowledgements(
+    Number(dto.itinerary_plan_ID),
+    Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
+    dto.offlineHotelPaymentConfirmations || [],
+    actor,
+  );
   const baseResult =
     await this.svc.confirmQuotation(dto);
 
@@ -2128,6 +2165,17 @@ const clientIp = String(
       0,
   );
 
+  if (finalResult?.success !== false && itineraryPlanId > 0) {
+    const providerFinalization = await this.hotelBlockingService.finalizePaidProviderHolds(
+      itineraryPlanId,
+      Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
+      Number(finalResult?.confirmed_itinerary_plan_ID || baseResult?.confirmed_itinerary_plan_ID || 0),
+      dto.offlineHotelPaymentConfirmations || [],
+      actor,
+    );
+    finalResult.providerHoldFinalization = providerFinalization;
+  }
+
   /*
    * The email notifier catches its own
    * errors. Email failure will not cancel
@@ -2149,9 +2197,24 @@ const clientIp = String(
   async manualConfirmQuotation(@Body() dto: ConfirmQuotationDto, @Req() req: Request) {
     this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
     await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_ID), (req as any).user);
+    const authenticatedUser = (req as any).user || {};
+    const actor = {
+      id: Number(authenticatedUser.userId || 0),
+      name: String(authenticatedUser.name || authenticatedUser.email || ''),
+      type: 'STAFF',
+      roleId: Number(authenticatedUser.roleID ?? authenticatedUser.role ?? 0),
+      permissionRoleId: Number(authenticatedUser.permissionRoleId ?? 0),
+      staffId: Number(authenticatedUser.staffId ?? authenticatedUser.staff_id ?? 0),
+    };
     await this.hotelBlockingService.assertPlanReady(
       Number(dto.itinerary_plan_ID),
       Number((dto as any).selectedGroupType || 0),
+    );
+    await this.hotelBlockingService.assertOfflinePaymentAcknowledgements(
+      Number(dto.itinerary_plan_ID),
+      Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
+      dto.offlineHotelPaymentConfirmations || [],
+      actor,
     );
 
     // This path deliberately strips all supplier booking rows. The existing
@@ -2166,9 +2229,17 @@ const clientIp = String(
     const confirmedHotelDetails = confirmedPlanId > 0
       ? await this.svc.getConfirmedItineraryDetails(confirmedPlanId)
       : null;
-    const finalResult = { ...baseResult, confirmedHotelDetails, supplierBookingCalls: 0 };
+    const finalResult: any = { ...baseResult, confirmedHotelDetails, supplierBookingCalls: 0 };
     const itineraryPlanId = Number(finalResult?.itinerary_plan_ID || dto.itinerary_plan_ID || 0);
     if (itineraryPlanId > 0) {
+      const providerFinalization = await this.hotelBlockingService.finalizePaidProviderHolds(
+        itineraryPlanId,
+        Number((dto as any).selectedGroupType || dto.hotel_group_type || 0),
+        Number(finalResult?.confirmed_itinerary_plan_ID || 0),
+        dto.offlineHotelPaymentConfirmations || [],
+        actor,
+      );
+      finalResult.providerHoldFinalization = providerFinalization;
       await this.bookingConfirmationEmailNotifier.sendBookingConfirmationNotifications(itineraryPlanId);
     }
     return finalResult;
@@ -3100,6 +3171,58 @@ const clientIp = String(
    * ✅ MUST BE LAST.
    * Otherwise it will swallow routes like /customer-info/:planId, /confirmed, /latest, etc.
  */
+@Get(':id/agent-profit')
+async getAgentProfit(
+  @Param('id', ParseIntPipe) id: number,
+  @Req() req: Request,
+) {
+  const user = (req as any).user;
+
+  const canViewAgentProfit =
+    Number(user?.role) === 1 ||
+    isAgentRole(user?.role);
+
+  if (!canViewAgentProfit) {
+    throw new ForbiddenException(
+      'Only Admin and Agent can view agent profit',
+    );
+  }
+
+  const access =
+    await this.itineraryAccessService.getPlanAccessDecision(
+      id,
+      user,
+    );
+
+  if (!access.exists || !access.allowed) {
+    return this.denyItineraryAccess(
+      access.redirectTo || '/latest-itinerary',
+    );
+  }
+
+  return this.detailsService.getAgentProfit(id);
+}
+
+  @Patch(':id/agent-profit')
+  async saveAgentProfit(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { profit?: number; finalSellingPrice?: number },
+    @Req() req: Request,
+  ) {
+    await this.itineraryAccessService.assertCanEditPlan(id, (req as any).user);
+    const role = (req as any)?.user?.role;
+    // Only the booking's agent may change agent-added profit.
+    // Existing plan-access validation above protects the plan itself.
+    if (!isAgentRole(role)) throw new ForbiddenException('Only an agent can update agent profit');
+    const profit = Number(body?.profit);
+    const finalSellingPrice = Number(body?.finalSellingPrice);
+    if (!Number.isFinite(profit) || profit < 0 || profit > 100000000 ||
+        !Number.isFinite(finalSellingPrice) || finalSellingPrice < 0 || finalSellingPrice > 100000000) {
+      throw new BadRequestException('Invalid agent profit or final selling price');
+    }
+    return this.detailsService.saveAgentProfit(id, profit, finalSellingPrice);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get itinerary by plan id' })
   @ApiParam({ name: 'id', example: 17940 })

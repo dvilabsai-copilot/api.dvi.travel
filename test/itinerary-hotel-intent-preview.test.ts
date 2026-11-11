@@ -490,7 +490,7 @@ test('STAAH ROOM_TYPE preview keeps nested Suite identity instead of inheriting 
   assert.ok(result.selections.every((selection: any) => !selection.selectedRateOptionId.includes('DELUXE')));
 });
 
-test('TBO RATE_OPTION preview keeps the commercial room while replacing an expired session token', async () => {
+test('TBO RATE_OPTION preview keeps the commercial room when its session token and room IDs rotate', async () => {
   const service = Object.create(ItinerariesService.prototype) as any;
   const staleBookingCode = '1313362!TB!1!TB!old-session!TB!N!TB!AFF!';
   const freshBookingCode = '1313362!TB!1!TB!fresh-session!TB!N!TB!AFF!';
@@ -517,6 +517,8 @@ test('TBO RATE_OPTION preview keeps the commercial room while replacing an expir
     optionKey: freshBookingCode,
     bookingCode: freshBookingCode,
     searchReference: freshBookingCode,
+    roomId: 22,
+    roomTypeId: 22,
     selectionKey,
     pricePerNight: 20951.95,
     totalPrice: 20951.95,
@@ -566,6 +568,10 @@ test('TBO RATE_OPTION preview keeps the commercial room while replacing an expir
     rateOptionId: staleBookingCode,
     optionKey: staleBookingCode,
     selectionKey,
+    roomId: 11,
+    roomTypeId: 11,
+    roomType: 'Garden Suite',
+    mealPlanCode: 'MAP',
     routeDate: '2026-08-12',
   });
 

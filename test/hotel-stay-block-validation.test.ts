@@ -56,6 +56,24 @@ test('continuous stay stops at a destination boundary', async () => {
   assert.deepEqual(candidate.routeIds, [101, 102]);
 });
 
+test('continuous stay treats Chennai Central as Chennai when a hotel is changed', async () => {
+  const service = serviceWithRoutes([
+    { itinerary_route_ID: 101, itinerary_route_date: new Date('2026-11-14T00:00:00.000Z'), location_name: 'Bengaluru', next_visiting_location: 'Chennai' },
+    { itinerary_route_ID: 102, itinerary_route_date: new Date('2026-11-15T00:00:00.000Z'), location_name: 'Chennai', next_visiting_location: 'Chennai Central' },
+    { itinerary_route_ID: 103, itinerary_route_date: new Date('2026-11-16T00:00:00.000Z'), location_name: 'Chennai Central', next_visiting_location: 'Mahabalipuram' },
+  ]);
+
+  const candidate = await service.buildContinuousStayCandidate({
+    ...baseParams,
+    routeId: 101,
+    checkInDate: '2026-11-14',
+  });
+
+  assert.deepEqual(candidate.routeIds, [101, 102]);
+  assert.deepEqual(candidate.stayDates, ['2026-11-14', '2026-11-15']);
+  assert.equal(candidate.nights, 2);
+});
+
 test('AxisRooms business dates use the database IST-midnight boundary', () => {
   const service = serviceWithRoutes([]);
   const databaseDate = (service as any).toDatabaseBusinessDate('2026-09-07') as Date;

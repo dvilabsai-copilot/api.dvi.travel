@@ -38,6 +38,7 @@ import {
   resolvePersistedHotelIdentity,
 } from '../utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from '../utils/hotel-category.util';
+import { normalizeCityName } from '../utils/city-normalization.util';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 import {
   buildHotelSelectionState,
@@ -843,6 +844,34 @@ export class HotelAvailabilitySnapshotService {
         selection,
       );
     });
+    // Reset retires editable hotel rows and rebuilds selected rates, while the
+    // hotel_required=2 rows remain the authoritative previous-night markers.
+    // Read those markers directly: the legacy hotel-details projection can
+    // normalize them away before the fresh response is assembled.
+    const previousDayBillingMarkers = await (this.prisma as any)
+      .dvi_itinerary_plan_hotel_details.findMany({
+        where: {
+          itinerary_plan_id: Number(plan.itinerary_plan_ID),
+          hotel_required: 2,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          group_type: true,
+          itinerary_route_id: true,
+          itinerary_route_date: true,
+          hotel_check_in_date: true,
+          actual_guest_arrival_at: true,
+          early_checkin_extra_payment_applicable: true,
+          early_checkin_payment_status: true,
+          early_checkin_note: true,
+        },
+      });
+    const previousDayBillingByRouteGroup = this.buildPreviousDayBillingByRouteGroup(
+      Number(plan.itinerary_plan_ID),
+      previousDayBillingMarkers,
+    );
+    const earlyArrivalMarkers = this.buildEarlyArrivalMarkers(previousDayBillingMarkers, routes);
     const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
     const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
     const normalizedRows = this.dedupeRows(freshRows || [])
@@ -859,14 +888,14 @@ export class HotelAvailabilitySnapshotService {
     // nested rateOptions from different dates.  Without this final pass, the
     // pane can show Choose and the select-intent request can be the first
     // place that discovers a missing night.
-    const sharedHotelInventoryBeforeVsrLimit = this.applyCompleteStayAvailability(
+    const sharedHotelInventoryBeforeVsrLimit = (await this.applyCompleteStayAvailability(
       this.buildSharedHotelInventory(
         normalizedRows,
         effectiveMarginPercentage,
       ),
       routes,
       noOfNights,
-    ).map((row: any) => ({
+    )).map((row: any) => ({
       ...row,
       rateOptions: this.canonicalizeRateOptions(row, row.rateOptions || []),
     }));
@@ -992,7 +1021,7 @@ export class HotelAvailabilitySnapshotService {
     // that were saved with that selection.
     const persistedRouteNightRows = (Array.isArray((persisted as any).hotels)
       ? (persisted as any).hotels
-      : []).flatMap((row: any) => {
+      : []).filter((row: any) => row?.previousDayBillingSynthetic !== true).flatMap((row: any) => {
         const snapshot = parseHotelSelectionSnapshot(row) as any;
         const routeIds = Array.from(new Set<number>([
           ...(Array.isArray(row?.authoritativeRouteIds) ? row.authoritativeRouteIds : []),
@@ -1167,10 +1196,10 @@ export class HotelAvailabilitySnapshotService {
         });
       });
 
-    const responseHotels = this.dedupeRows([
+    const responseHotels = this.mergePreviousDayBillingMetadata(this.dedupeRows([
       ...persistedRouteNightRows,
       ...authoritativeAnchorRows,
-    ]);
+    ]), previousDayBillingByRouteGroup, Number(plan.itinerary_plan_ID));
     return {
       ...persisted,
       hotels: responseHotels,
@@ -1188,6 +1217,7 @@ export class HotelAvailabilitySnapshotService {
         totalSearchRoutes: resolveHotelRequiredRoutes(routes || [], noOfNights).length,
         emptySearchRoutes: emptyStayBlocks.length,
         emptyStayBlocks,
+        earlyArrivalMarkers,
         message: providerErrors.length > 0
           ? 'Some hotel providers could not be verified. Saved selections were preserved and availability can be retried.'
           : sharedHotelInventory.length > 0
@@ -1195,6 +1225,107 @@ export class HotelAvailabilitySnapshotService {
             : 'No hotel rates are available for the current itinerary.',
       },
     } as ItineraryHotelDetailsResponseDto;
+  }
+
+  private mergePreviousDayBillingMetadata(
+    rows: any[],
+    previousDayBillingByRouteGroup: Map<string, Record<string, unknown>>,
+    planId: number,
+  ): any[] {
+    return (rows || [])
+      .filter((row: any) => row?.previousDayBillingSynthetic !== true)
+      .map((row: any) => {
+        const previousDayBilling = previousDayBillingByRouteGroup.get(
+          this.hotelRouteGroupKey(planId, row),
+        );
+        if (!previousDayBilling) return row;
+
+        return {
+          ...row,
+          earlyCheckIn: true,
+          previousDayBilling,
+          previousDayBillingSynthetic: false,
+          earlyCheckInExtraPaymentApplicable: Boolean(
+            previousDayBilling.earlyCheckInExtraPaymentApplicable,
+          ),
+          earlyCheckInPaymentStatus: previousDayBilling.earlyCheckInPaymentStatus || null,
+          hotelCheckInDate: previousDayBilling.hotelCheckInDate || previousDayBilling.date,
+          actualGuestArrivalAt: previousDayBilling.actualGuestArrivalAt || null,
+          hotelierEarlyCheckInNote: previousDayBilling.hotelierEarlyCheckInNote || null,
+        };
+      });
+  }
+
+  private buildPreviousDayBillingByRouteGroup(
+    planId: number,
+    persistedHotels: any[],
+  ): Map<string, Record<string, unknown>> {
+    const result = new Map<string, Record<string, unknown>>();
+    (persistedHotels || [])
+      .filter((selection: any) =>
+        selection?.previousDayBillingSynthetic === true ||
+        (Number(selection?.hotel_required ?? 0) === 2 && Number(selection?.hotel_id ?? 0) === 0),
+      )
+      .forEach((marker: any) => {
+        const date = marker.date || marker.itineraryRouteDate || marker.itinerary_route_date;
+        if (!date) return;
+        result.set(this.hotelRouteGroupKey(planId, marker), {
+          date,
+          hotelCheckInDate: marker.hotelCheckInDate || marker.hotel_check_in_date || date,
+          actualGuestArrivalAt: marker.actualGuestArrivalAt || marker.actual_guest_arrival_at || null,
+          earlyCheckInExtraPaymentApplicable: Boolean(
+            marker.earlyCheckInExtraPaymentApplicable ?? marker.early_checkin_extra_payment_applicable,
+          ),
+          earlyCheckInPaymentStatus: marker.earlyCheckInPaymentStatus || marker.early_checkin_payment_status || null,
+          hotelierEarlyCheckInNote: marker.hotelierEarlyCheckInNote || marker.early_checkin_note || null,
+        });
+      });
+    return result;
+  }
+
+  private buildEarlyArrivalMarkers(markers: any[], routes: any[]): Array<{
+    routeId: number;
+    groupType: number;
+    blockedFromDate: string;
+    location: string;
+  }> {
+    const routeById = new Map<number, any>(
+      (routes || []).map((route: any) => [Number(route?.itinerary_route_ID || 0), route]),
+    );
+    const uniqueMarkers = new Map<string, {
+      routeId: number;
+      groupType: number;
+      blockedFromDate: string;
+      location: string;
+    }>();
+
+    (markers || []).forEach((marker: any) => {
+      const routeId = Number(marker?.itinerary_route_id || 0);
+      const groupType = Number(marker?.group_type || 0);
+      const rawDate = marker?.itinerary_route_date;
+      const blockedFromDate = rawDate instanceof Date
+        ? rawDate.toISOString().slice(0, 10)
+        : String(rawDate || '').slice(0, 10);
+      if (!routeId || !groupType || !blockedFromDate) return;
+
+      const route = routeById.get(routeId);
+      uniqueMarkers.set(`${routeId}|${groupType}`, {
+        routeId,
+        groupType,
+        blockedFromDate,
+        location: String(route?.next_visiting_location || route?.location_name || '').trim(),
+      });
+    });
+
+    return Array.from(uniqueMarkers.values());
+  }
+
+  private hotelRouteGroupKey(planId: number, row: any): string {
+    return [
+      Number(planId || 0),
+      Number(row?.itinerary_route_id ?? row?.itineraryRouteId ?? row?.routeId ?? 0),
+      Number(row?.group_type ?? row?.groupType ?? 0),
+    ].join('|');
   }
 
   async searchAndPersist(
@@ -1440,7 +1571,7 @@ export class HotelAvailabilitySnapshotService {
           previousSnapshotRetained: true,
         });
       }
-      rows = this.applyCompleteStayAvailability(rows, routes, noOfNights);
+      rows = await this.applyCompleteStayAvailability(rows, routes, noOfNights);
       if (String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim() === 'true') {
         this.logger.log('[HOTEL_RECOMMENDATION_TRACE] authoritative-propagation-after-stay', {
           candidates: rows.filter((row: any) =>
@@ -2144,7 +2275,7 @@ export class HotelAvailabilitySnapshotService {
     });
     const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
     const requestedRoutes = routeId
-      ? this.getContinuousStayRoutes(routes, Number(routeId), noOfNights)
+      ? await this.getContinuousStayRoutes(routes, Number(routeId), noOfNights)
       : routes.filter((route: any, index: number) => !(index === routes.length - 1 && index >= noOfNights));
     const requestedRouteIds = new Set(requestedRoutes.map((route: any) => Number(route.itinerary_route_ID || 0)));
     if (requestedRouteIds.size === 0) throw new BadRequestException('Hotel stay route was not found');
@@ -2219,13 +2350,41 @@ export class HotelAvailabilitySnapshotService {
     return { response, changeSummary };
   }
 
-  private getContinuousStayRoutes(routes: any[], routeId: number, noOfNights: number): any[] {
+  private async resolveStayCityByRouteId(routes: any[], db: any = this.prisma): Promise<Map<number, string>> {
+    const routeLocationIds = Array.from(new Set(
+      (routes || [])
+        .map((route: any) => String(route?.location_id ?? '').trim())
+        .filter((value: string) => /^\d+$/.test(value)),
+    ));
+    const storedLocations = routeLocationIds.length > 0 && db?.dvi_stored_locations?.findMany
+      ? await db.dvi_stored_locations.findMany({
+          where: { location_ID: { in: routeLocationIds.map((value) => BigInt(value)) } },
+          select: { location_ID: true, destination_location_city: true },
+        })
+      : [];
+    const cityEntries = (storedLocations || []).map((location: any): [string, string] => [
+        String(location?.location_ID ?? ''),
+        String(location?.destination_location_city ?? '').trim(),
+      ]);
+    const cityByLocationId = new Map<string, string>(cityEntries);
+    const routeCities = (routes || []).map((route: any): [number, string] => {
+      const routeId = Number(route?.itinerary_route_ID || route?.itineraryRouteId || 0);
+      const mappedCity = cityByLocationId.get(String(route?.location_id ?? '')) || '';
+      const label = String(route?.next_visiting_location || route?.nextVisitingLocation || route?.location_name || '').trim();
+      const canonicalCity = normalizeCityName(mappedCity || label);
+      return [routeId, canonicalCity || label.toLowerCase()];
+    });
+    return new Map<number, string>(routeCities.filter(([routeId, city]) => routeId > 0 && Boolean(city)));
+  }
+
+  private async getContinuousStayRoutes(routes: any[], routeId: number, noOfNights: number): Promise<any[]> {
     const eligibleRoutes = (routes || []).filter((route: any, index: number) =>
       !(index === routes.length - 1 && index >= noOfNights),
     );
     const targetIndex = eligibleRoutes.findIndex((route: any) => Number(route.itinerary_route_ID || 0) === routeId);
     if (targetIndex < 0) return [];
-    const destinationOf = (route: any) => String(route.next_visiting_location || route.location_name || '').trim();
+    const stayCityByRouteId = await this.resolveStayCityByRouteId(eligibleRoutes);
+    const destinationOf = (route: any) => stayCityByRouteId.get(Number(route.itinerary_route_ID || 0)) || '';
     const dateOf = (route: any) => new Date(route.itinerary_route_date).getTime();
     let start = targetIndex;
     let end = targetIndex;
@@ -2719,10 +2878,11 @@ export class HotelAvailabilitySnapshotService {
     };
   }
 
-  private applyCompleteStayAvailability(rows: any[], routes: any[], noOfNights: number): any[] {
+  private async applyCompleteStayAvailability(rows: any[], routes: any[], noOfNights: number): Promise<any[]> {
     const searchableRoutes = resolveHotelRequiredRoutes(routes || [], noOfNights);
+    const stayCityByRouteId = await this.resolveStayCityByRouteId(searchableRoutes);
     const normalizedDestination = (route: any): string =>
-      String(route?.next_visiting_location || route?.location_name || '').trim().toLowerCase();
+      stayCityByRouteId.get(Number(route?.itinerary_route_ID || 0)) || '';
     const routeDate = (route: any): string => this.toDateOnly(route?.itinerary_route_date);
     const routeId = (route: any): number => Number(route?.itinerary_route_ID || 0);
     const stayBlocks: Array<{ routeIds: number[]; dates: string[] }> = [];
@@ -6201,13 +6361,12 @@ export class HotelAvailabilitySnapshotService {
     // night, while the group type continues to preserve recommendation
     // diversity.
     const stayRouteIdsByRoute = new Map<number, number[]>();
+    const stayCityByRouteId = await this.resolveStayCityByRouteId(routes, tx);
     const orderedStayRoutes = (routes || [])
       .map((route: any) => ({
         id: Number(route?.itinerary_route_ID || route?.itineraryRouteId || 0),
         date: this.toDateOnly(route?.itinerary_route_date || route?.date),
-        destination: String(route?.next_visiting_location || route?.nextVisitingLocation || route?.location_name || '')
-          .trim()
-          .toLowerCase(),
+        destination: stayCityByRouteId.get(Number(route?.itinerary_route_ID || route?.itineraryRouteId || 0)) || '',
       }))
       .filter((route: any) => route.id > 0 && route.date && route.destination);
     let currentStayRoutes: any[] = [];

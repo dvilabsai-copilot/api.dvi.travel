@@ -44,8 +44,8 @@ export class TBOHotelProvider implements IHotelProvider {
   private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
   /** Maximum time allowed for one TBO hotel availability Search request. */
   private readonly SEARCH_TIMEOUT_MS = (() => {
-    const configured = Number(process.env.TBO_SEARCH_TIMEOUT_MS || 5000);
-    return Number.isFinite(configured) && configured > 0 ? configured : 5000;
+    const configured = Number(process.env.TBO_SEARCH_TIMEOUT_MS || 20000);
+    return Number.isFinite(configured) && configured > 0 ? configured : 20000;
   })();
 
  // Real Production Credentials (From Postman - Verified Working)
@@ -389,6 +389,9 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           const formattedNetAmount = parseFloat(netAmount.toString());
           const formattedTotalFare = parseFloat(totalFare.toString());
           const roomName = room.Name?.[0] || 'Standard Room';
+          const isRefundable = room.IsRefundable === true ||
+            Number(room.IsRefundable) === 1 ||
+            String(room.IsRefundable || '').trim().toLowerCase() === 'true';
           const inclusionText = String(room.Inclusion || '').trim();
           const inclusions = inclusionText
             ? inclusionText
@@ -427,6 +430,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
             capacity: 2,
             price: formattedNetAmount,
             cancellationPolicy: room.CancelPolicies?.[0]?.ChargeType || 'Non-refundable',
+            isRefundable,
  // Add supplements to room type
             supplements: rawSupplements.length > 0 ? rawSupplements : undefined,
           };
@@ -467,6 +471,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
             amountIncludesRoomCount: noOfRooms > 0,
             currency: hotel.Currency || 'INR',
  roomType: roomName, // Room type name for display
+            isRefundable,
             // Inclusion describes the meals actually received. Fall back to
             // TBO's structured MealType when inclusion text is empty/noisy.
             mealPlan,
@@ -1198,6 +1203,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
   async getConfirmation(
     confirmationRef: string,
+    bookingId?: string | number,
   ): Promise<HotelConfirmationDetails> {
     try {
  this.logger.log(` Getting confirmation status for: ${confirmationRef}`);
@@ -1207,7 +1213,9 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
  // Step 2: Build GetBookingDetail request (from Postman collection)
       const request = {
+        ...(Number(bookingId) > 0 ? { BookingId: Number(bookingId) } : {}),
         BookingRefId: confirmationRef,
+        EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
         TokenId: tokenId,
       };
 
@@ -1226,10 +1234,12 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           }
         );
 
-      const status = response.data?.Status;
-      if (!status || status.Code !== 200) {
+      const result = response.data?.GetBookingDetailResult || response.data;
+      const envelopeStatusCode = Number(response.data?.Status?.Code || response.data?.Status || 0);
+      const resultStatus = Number(result?.Status || result?.ResponseStatus || 0);
+      if (![200, 1].includes(envelopeStatusCode) && resultStatus !== 1) {
         throw new Error(
-          `Failed to fetch booking: ${status?.Description || 'Unknown error'}`
+          `Failed to fetch booking: ${result?.Error?.ErrorMessage || response.data?.Status?.Description || 'Unknown error'}`
         );
       }
 
@@ -1237,13 +1247,23 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
       return {
         confirmationRef: confirmationRef,
-        hotelName: response.data.HotelName || '',
-        checkIn: response.data.CheckInDate,
-        checkOut: response.data.CheckOutDate,
-        roomCount: response.data.RoomCount || 1,
-        totalPrice: parseFloat(response.data.TotalPrice) || 0,
-        status: response.data.BookingStatus || 'confirmed',
-        cancellationPolicy: response.data.CancellationPolicy || 'As per VSR',
+        hotelName: result.HotelName || '',
+        checkIn: result.CheckInDate,
+        checkOut: result.CheckOutDate,
+        roomCount: result.RoomCount || result.NoOfRooms || 1,
+        totalPrice: parseFloat(result.TotalPrice || result.TotalAmount) || 0,
+        status: result.BookingStatus || result.HotelBookingStatus || 'confirmed',
+        voucherStatus: result.VoucherStatus === true || Number(result.VoucherStatus) === 1,
+        bookingDeadline:
+          result.HoldUntil
+          || result.HoldExpiryDate
+          || result.HoldExpiry
+          || result.BookingDeadline
+          || result.LastCancellationDate
+          || result.LastCancellationDeadline
+          || result.CutoffDate
+          || null,
+        cancellationPolicy: result.CancellationPolicy || 'As per VSR',
       };
     } catch (error) {
  this.logger.error(

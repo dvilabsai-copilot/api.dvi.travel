@@ -37,6 +37,26 @@ test('resolves preferred stored-location coordinates and preserves destination f
   assert.equal(await service.resolvePlaceCoords({ $queryRaw: async () => [] } as any, 'Hotel'), undefined);
 });
 
+test('uses the coordinates from the stored-location side that matches the requested city', async () => {
+  const tx = {
+    $queryRaw: async () => [{
+      source_location: 'Mysore',
+      source_location_city: 'Mysuru',
+      destination_location: 'PBEL City',
+      destination_location_city: 'Hyderabad',
+      source_location_lattitude: 12.2958,
+      source_location_longitude: 76.6394,
+      destination_location_lattitude: 17.3597,
+      destination_location_longitude: 78.3719,
+    }],
+  };
+
+  assert.deepEqual(await service.resolvePlaceCoords(tx as any, 'Mysore', 'destination'), {
+    lat: 12.2958,
+    lon: 76.6394,
+  });
+});
+
 test('calculates pure travel time and projected arrival using the shared distance helper', async () => {
   assert.equal(await service.calculateTravelTime(tx as any, 'Mysuru', 'Coorg'), '00:30:00');
   const projected = await service.calculateProjectedArrivalToRouteDestination(

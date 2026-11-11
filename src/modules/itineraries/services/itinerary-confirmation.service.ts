@@ -17,6 +17,69 @@ type ConfirmQuotationCallbacks = Partial<Record<
   (...args: any[]) => any
 >>;
 
+const parseSelectionIds = (value: unknown): number[] => {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
+  } catch {
+    return [];
+  }
+};
+
+export async function claimManualHotelHoldsForPayment(tx: any, planId: number, groupType: number, now: Date) {
+  const groupFilter = groupType > 0 ? { group_type: groupType } : {};
+  const selectedRows = await tx.dvi_itinerary_plan_hotel_details.findMany({
+    where: {
+      itinerary_plan_id: Number(planId),
+      ...groupFilter,
+      deleted: 0,
+      status: 1,
+      hotel_required: { not: 2 },
+      NOT: { selection_origin: 'USER_REMOVED' },
+    },
+    select: { itinerary_plan_hotel_details_ID: true },
+  });
+  const expectedIds = selectedRows.map((row: any) => Number(row.itinerary_plan_hotel_details_ID)).filter((id: number) => id > 0).sort((a: number, b: number) => a - b);
+  const holds = await tx.dvi_hotel_block_request.findMany({
+    where: {
+      itinerary_plan_id: Number(planId),
+      ...groupFilter,
+      status: { notIn: ['CANCELLED', 'SUPERSEDED', 'EXPIRED'] },
+    },
+    select: { id: true, status: true, cutoff_at: true, paid_confirmed_at: true, selection_ids: true },
+  });
+  const heldIds = holds.flatMap((hold: any) => parseSelectionIds(hold.selection_ids)).sort((a: number, b: number) => a - b);
+  const sameSelection = expectedIds.length === heldIds.length && expectedIds.every((id: number, index: number) => id === heldIds[index]);
+  const activeHolds = holds.filter((hold: any) => !hold.paid_confirmed_at);
+  const holdsAreCurrent = activeHolds.length > 0 && activeHolds.every((hold: any) =>
+    ['BLOCKED', 'CONFIRMED'].includes(String(hold.status))
+    && hold.cutoff_at instanceof Date
+    && hold.cutoff_at.getTime() > now.getTime(),
+  );
+  if (!sameSelection || !holdsAreCurrent) {
+    throw new BadRequestException({
+      code: 'HOTEL_HOLD_EXPIRED_OR_CHANGED',
+      message: 'A hotel hold expired or the selected hotels changed. Refresh availability and create a current hold before payment.',
+    });
+  }
+  const claimed = await tx.dvi_hotel_block_request.updateMany({
+    where: {
+      id: { in: activeHolds.map((hold: any) => Number(hold.id)) },
+      status: { in: ['BLOCKED', 'CONFIRMED'] },
+      paid_confirmed_at: null,
+      cutoff_at: { gt: now },
+    },
+    data: { paid_confirmed_at: now },
+  });
+  if (Number(claimed?.count || 0) !== activeHolds.length) {
+    throw new BadRequestException({
+      code: 'HOTEL_HOLD_EXPIRED_OR_CHANGED',
+      message: 'A hotel hold expired while payment was starting. Refresh the itinerary before retrying.',
+    });
+  }
+  return { claimedCount: Number(claimed.count) };
+}
+
 
 @Injectable()
 export class ItineraryConfirmationService {
@@ -274,6 +337,14 @@ export class ItineraryConfirmationService {
 
  // 3. Start Transaction
     return await this.prisma.$transaction(async (tx) => {
+ // In the manual-hold workflow, reserve the payment against the exact active
+ // holds inside the same transaction that debits the wallet. The expiry
+ // worker uses the inverse conditional update, so only one side can win.
+      if (manualHotelHoldWorkflow) {
+        const selectedGroupType = Number((dto as any).selectedGroupType || (dto as any).hotel_group_type || 0);
+        await claimManualHotelHoldsForPayment(tx, Number(dto.itinerary_plan_ID), selectedGroupType, new Date());
+      }
+
  // A. Deduct wallet only when there are no provider bookings to run.
  // For hotel-booking flow this is deferred until all providers succeed.
       if (!hasHotelBookings) {
@@ -286,6 +357,17 @@ export class ItineraryConfirmationService {
         const storedCashBalance = Number(currentAgentWallet?.total_cash_wallet ?? 0);
         const resolvedCashBalance = storedCashBalance > 0 ? storedCashBalance : Number(walletInfo.balance || 0);
         const nextCashBalance = resolvedCashBalance - Number(cost.netPayable || 0);
+
+        const walletClaim = await tx.dvi_agent.updateMany({
+          where: {
+            agent_ID: dto.agent,
+            total_cash_wallet: new Prisma.Decimal(storedCashBalance),
+          },
+          data: { total_cash_wallet: new Prisma.Decimal(nextCashBalance) },
+        });
+        if (Number(walletClaim?.count || 0) !== 1) {
+          throw new BadRequestException('Wallet balance changed while confirming. Refresh the balance and retry.');
+        }
 
         await tx.dvi_cash_wallet.create({
           data: {
@@ -302,12 +384,6 @@ export class ItineraryConfirmationService {
           },
         });
 
-        await tx.dvi_agent.update({
-          where: { agent_ID: dto.agent },
-          data: {
-            total_cash_wallet: new Prisma.Decimal(nextCashBalance),
-          },
-        });
       }
 
  // B. Insert into dvi_confirmed_itinerary_plan_details

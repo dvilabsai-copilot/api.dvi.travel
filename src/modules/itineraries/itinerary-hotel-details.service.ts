@@ -118,6 +118,8 @@ export interface ItineraryHotelRowDto {
   providerDisplayName?: string;
   providerHotelCode?: string;
   isPriority?: boolean;
+  /** Whether the selected supplier room/rate can be held. */
+  isRefundable?: boolean;
   rateOptionId?: string;
   rateOptions?: Array<Record<string, unknown>>;
   bookingMode?: 'LIVE_API' | 'MANUAL_APPROVAL';
@@ -290,6 +292,12 @@ export interface HotelAvailabilityMetaDto {
     dayNumber: number;
     date: string;
     destination: string;
+  }>;
+  earlyArrivalMarkers?: Array<{
+    routeId: number;
+    groupType: number;
+    blockedFromDate: string;
+    location: string;
   }>;
   offlineFetch?: {
     requestedRouteIds: number[];
@@ -735,7 +743,13 @@ async getHotelRoomDetailsByQuoteId(
             markerRow.itinerary_route_location || actualRow.itinerary_route_location,
           __actualHotelDate: actualRow.itinerary_route_date,
           __previousDayBillingSynthetic: true,
+          __hasPreviousDayBillingMarker: true,
         });
+        hotelRowsExpanded.push({
+          ...actualRow,
+          __hasPreviousDayBillingMarker: true,
+        });
+        return;
       }
 
       hotelRowsExpanded.push(actualRow);
@@ -946,6 +960,13 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
           // not prevent the itinerary details response from loading.
         }
       }
+      // A previous-day billing row represents exactly one extra night. It is
+      // synthesized from the selected stay for display, so its copied
+      // multi-night rate list must not make selection-state totals count the
+      // whole stay again for this marker.
+      if (isSyntheticPreviousDayBilling && Array.isArray(selectedPriceSnapshot.nightlyRates)) {
+        selectedPriceSnapshot = { ...selectedPriceSnapshot, nightlyRates: [] };
+      }
       const tboSnapshot = parseHotelSelectionSnapshot(h);
       const tboCode = String(
         (h as any).hotel_code || tboSnapshot.providerHotelCode || tboSnapshot.hotelCode || '',
@@ -1010,7 +1031,15 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
         showEarlyCheckInDetails &&
         (Number((h as any).early_checkin_extra_payment_applicable ?? 0) === 1 ||
           isSyntheticPreviousDayBilling);
-      const earlyCheckInBillingMultiplier = earlyCheckInExtraPaymentApplicable ? 2 : 1;
+      const hasPreviousDayBillingMarker = Boolean(
+        (h as any).__hasPreviousDayBillingMarker || isSyntheticPreviousDayBilling,
+      );
+      // When the extra night has its own marker row, charge that row once and
+      // keep the selected stay's regular nights at their normal rate. The
+      // multiplier remains for legacy early-check-in records without a
+      // previous-day marker.
+      const earlyCheckInBillingMultiplier =
+        earlyCheckInExtraPaymentApplicable && !hasPreviousDayBillingMarker ? 2 : 1;
       const earlyCheckInPaymentStatus = showEarlyCheckInDetails
         ? String(
             (h as any).early_checkin_payment_status ||

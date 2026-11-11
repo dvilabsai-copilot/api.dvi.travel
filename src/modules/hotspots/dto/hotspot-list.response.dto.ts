@@ -7,6 +7,7 @@ export interface HotspotListRow {
   hotspot_name: string;
   hotspot_priority: number | string;
  hotspot_locations: string; // HTML with <br>
+ hotspot_to_locations: string; // HTML with <br>; non-empty for via-route hotspots
  local_members: string; // HTML with <br>
  foreign_members: string; // HTML with <br>
 }

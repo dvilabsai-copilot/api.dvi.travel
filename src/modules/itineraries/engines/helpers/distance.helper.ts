@@ -239,6 +239,7 @@ export class DistanceHelper {
     travelLocationType: 1 | 2,
     sourceCoords?: { lat: number; lon: number },
     destCoords?: { lat: number; lon: number },
+    preferStoredRoute = false,
   ): Promise<DistanceResult> {
     const trimmedSource = String(sourceLocation ?? "").trim();
     const trimmedDest = String(destinationLocation ?? "").trim();
@@ -266,6 +267,43 @@ export class DistanceHelper {
       hasDestCoords &&
       Math.abs(Number(sourceCoords.lat) - Number(destCoords.lat)) < 0.000001 &&
       Math.abs(Number(sourceCoords.lon) - Number(destCoords.lon)) < 0.000001;
+
+    // Direct transport-only city legs may have valid city coordinates, but
+    // those coordinates are not road-routing data. When the caller explicitly
+    // identifies such a leg, prefer its exact stored driving route so distance
+    // and duration stay consistent. All other callers retain coordinate-first
+    // behavior (especially hotspot and selected-hotel legs).
+    if (preferStoredRoute && !sourceDestNamesSame) {
+      const source = trimmedSource.split('|')[0].trim();
+      const destination = trimmedDest.split('|')[0].trim();
+      const storedRoute = await (tx as any).dvi_stored_locations.findFirst({
+        where: {
+          deleted: 0,
+          source_location: source,
+          destination_location: destination,
+        },
+        orderBy: { location_ID: 'desc' },
+      });
+
+      const storedDistance = Number(storedRoute?.distance);
+      const storedMinutes = parseDurationToMinutes(storedRoute?.duration);
+      const storedRouteIsUsable =
+        Number.isFinite(storedDistance) &&
+        storedDistance > 0 &&
+        !(storedDistance <= 0.5 && Number(storedMinutes) > 30) &&
+        Number.isFinite(Number(storedMinutes)) &&
+        Number(storedMinutes) > 0;
+
+      if (storedRouteIsUsable) {
+        return {
+          distanceKm: storedDistance,
+          travelTime: minutesToDurationTime(
+            Math.max(Number(storedMinutes), MIN_TRAVEL_MINUTES),
+          ),
+          bufferTime: await this.getBufferTime(tx, travelLocationType),
+        };
+      }
+    }
 
  // Use coordinates only when they are trustworthy.
  // If names are different but coordinates are identical, it usually means caller

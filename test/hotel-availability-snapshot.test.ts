@@ -561,10 +561,16 @@ test('continuous logical stay persists one parent selection and one full-stay to
   assert.equal(snapshot.rateOptionId, 'suite-map');
 });
 
-test('route-derived continuous stay keeps the online property across nights', async () => {
+test('canonical Chennai city mapping keeps one online property across Chennai Central nights', async () => {
   const created: any[] = [];
   const tx: any = {
     dvi_global_settings: { findFirst: async () => ({ hotel_margin: 6 }) },
+    dvi_stored_locations: {
+      findMany: async () => [
+        { location_ID: 1n, destination_location_city: 'Chennai' },
+        { location_ID: 2n, destination_location_city: 'Chennai' },
+      ],
+    },
     dvi_itinerary_plan_hotel_details: {
       findMany: async () => [],
       create: async ({ data }: any) => { created.push(data); return data; },
@@ -577,8 +583,8 @@ test('route-derived continuous stay keeps the online property across nights', as
   };
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const routes = [
-    { itinerary_route_ID: 101, itinerary_route_date: '2026-08-02', next_visiting_location: 'Thekkady' },
-    { itinerary_route_ID: 102, itinerary_route_date: '2026-08-03', next_visiting_location: 'Thekkady' },
+    { itinerary_route_ID: 101, location_id: 1n, itinerary_route_date: '2026-08-02', next_visiting_location: 'Chennai' },
+    { itinerary_route_ID: 102, location_id: 2n, itinerary_route_date: '2026-08-03', next_visiting_location: 'Chennai Central' },
   ];
   const rows = [101, 102].flatMap((routeId) => ([
     {
@@ -871,6 +877,83 @@ test('persisted early-arrival selection exposes Day 0 metadata without changing 
   assert.equal(decorated.previousDayBillingSynthetic, false);
   assert.equal(decorated.totalPrice, 15213);
   assert.equal(decorated.selection.earlyCheckIn, undefined);
+});
+
+test('fresh reset response keeps the Day 0 billing marker on the selected arrival row', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const planId = 12081;
+  const marker = {
+    itinerary_route_id: 25944,
+    group_type: 1,
+    itinerary_route_date: '2026-11-21',
+    hotel_required: 2,
+    hotel_id: 0,
+    hotel_check_in_date: '2026-11-21',
+    actual_guest_arrival_at: '2026-11-21T21:30:00.000Z',
+    early_checkin_extra_payment_applicable: 1,
+    early_checkin_payment_status: 'EXTRA_PAYMENT_APPLICABLE',
+    early_checkin_note: 'Room blocked from the previous night.',
+  };
+  const selectedArrivalRow = {
+    itineraryRouteId: 25944,
+    groupType: 1,
+    date: '2026-11-22',
+    hotelName: 'Green Ridge',
+    totalHotelCost: 6366.8,
+    selectedTotalPrice: 6366.8,
+  };
+  const nextNight = {
+    itineraryRouteId: 25945,
+    groupType: 1,
+    date: '2026-11-23',
+    hotelName: 'Green Ridge',
+    totalHotelCost: 6366.8,
+  };
+  const metadataByRouteGroup = (service as any).buildPreviousDayBillingByRouteGroup(
+    planId,
+    [marker],
+  );
+  const rows = (service as any).mergePreviousDayBillingMetadata(
+    [selectedArrivalRow, nextNight],
+    metadataByRouteGroup,
+    planId,
+  );
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].previousDayBilling.date, '2026-11-21');
+  assert.equal(rows[0].earlyCheckIn, true);
+  assert.equal(rows[0].earlyCheckInExtraPaymentApplicable, true);
+  assert.equal(rows[0].totalHotelCost, 6366.8);
+  assert.equal(rows[1].previousDayBilling, undefined);
+  assert.equal(rows[1].totalHotelCost, 6366.8);
+});
+
+test('fresh reset response exposes Day 0 markers for routes without selected hotel rows', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const markers = (service as any).buildEarlyArrivalMarkers([
+    {
+      itinerary_route_id: 25944,
+      group_type: 1,
+      itinerary_route_date: new Date('2026-11-21T00:00:00.000Z'),
+    },
+    {
+      itinerary_route_id: 0,
+      group_type: 1,
+      itinerary_route_date: new Date('2026-11-21T00:00:00.000Z'),
+    },
+  ], [
+    {
+      itinerary_route_ID: 25944,
+      next_visiting_location: 'Munnar',
+    },
+  ]);
+
+  assert.deepEqual(markers, [{
+    routeId: 25944,
+    groupType: 1,
+    blockedFromDate: '2026-11-21',
+    location: 'Munnar',
+  }]);
 });
 
 test('fresh recommendation groups are preserved when reset has no persisted selections', async () => {
@@ -3651,7 +3734,7 @@ test('missing physical logical-stay route remains in empty diagnostics', () => {
   assert.deepEqual(blocks.map((block: any) => block.routeIds), [[102]]);
 });
 
-test('partial continuous hotel coverage is unavailable on every linked route pane', () => {
+test('partial continuous hotel coverage is unavailable on every linked route pane', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const routes = [
     { itinerary_route_ID: 101, itinerary_route_date: new Date('2026-09-05T00:00:00.000Z'), next_visiting_location: 'Thekkady', day_number: 3 },
@@ -3672,7 +3755,7 @@ test('partial continuous hotel coverage is unavailable on every linked route pan
     rateOptions: [{ roomType: 'Deluxe Room NON AC', mealPlan: 'CP', totalPrice: 5100 }],
   }];
 
-  const result = (service as any).applyCompleteStayAvailability(rows, routes, 2);
+  const result = await (service as any).applyCompleteStayAvailability(rows, routes, 2);
   assert.equal(result.length, 2);
   assert.deepEqual(result.map((row: any) => Number(row.itineraryRouteId)).sort(), [101, 102]);
   assert.ok(result.every((row: any) => row.availabilityStatus === 'NO_AVAILABILITY'));
@@ -3682,7 +3765,7 @@ test('partial continuous hotel coverage is unavailable on every linked route pan
   assert.ok(result.every((row: any) => row.hotelStayIsSelectable === false));
 });
 
-test('partial offline catalog coverage keeps both route rows and reports the exact missing night', () => {
+test('partial offline catalog coverage keeps both route rows and reports the exact missing night', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
   const routes = [
     { itinerary_route_ID: 201, itinerary_route_date: new Date('2026-09-05T00:00:00.000Z'), next_visiting_location: 'Thekkady' },
@@ -3719,7 +3802,7 @@ test('partial offline catalog coverage keeps both route rows and reports the exa
     },
   ];
 
-  const result = (service as any).applyCompleteStayAvailability(rows, routes, 2);
+  const result = await (service as any).applyCompleteStayAvailability(rows, routes, 2);
   assert.equal(result.length, 2);
   assert.ok(result.every((row: any) => row.hotelStayCompleteStayBookable === false));
   assert.ok(result.every((row: any) => row.hotelStayIsSelectable === false));

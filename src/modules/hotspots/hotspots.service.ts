@@ -525,12 +525,36 @@ export class HotspotsService {
 
     if (q.q && q.q.trim()) {
       const text = q.q.trim();
-      where.OR = [
-        { hotspot_name: { contains: text } as any },
-        { hotspot_address: { contains: text } as any },
-        { hotspot_landmark: { contains: text } as any },
-        { hotspot_location: { contains: text } as any },
-      ];
+      // A via-route hotspot (for example, Valara Water Falls) is searchable
+      // by its own name only. Its source/destination locations are route
+      // metadata, not the hotspot's city, and must not make it appear in the
+      // hotspot master list for searches such as "Cochin" or "Munnar".
+      // The database stores normal city hotspots with identical location and
+      // to-location values, so this comparison belongs in SQL rather than in
+      // a Prisma field filter (Prisma cannot compare two columns in a where).
+      const matchingRows = await this.prisma.$queryRaw<Array<{ hotspot_ID: number }>>(
+        Prisma.sql`
+          SELECT hotspot_ID
+          FROM dvi_hotspot_place
+          WHERE deleted = 0
+            AND status = 1
+            AND (
+              LOWER(COALESCE(hotspot_name, '')) LIKE CONCAT('%', LOWER(${text}), '%')
+              OR (
+                (
+                  NULLIF(TRIM(COALESCE(hotspot_to_location, '')), '') IS NULL
+                  OR TRIM(hotspot_to_location) = TRIM(COALESCE(hotspot_location, ''))
+                )
+                AND (
+                  LOWER(COALESCE(hotspot_address, '')) LIKE CONCAT('%', LOWER(${text}), '%')
+                  OR LOWER(COALESCE(hotspot_landmark, '')) LIKE CONCAT('%', LOWER(${text}), '%')
+                  OR LOWER(COALESCE(hotspot_location, '')) LIKE CONCAT('%', LOWER(${text}), '%')
+                )
+              )
+            )
+        `,
+      );
+      where.hotspot_ID = { in: matchingRows.map((row) => Number(row.hotspot_ID)) };
     }
 
     const rows = await this.prisma.dvi_hotspot_place.findMany({
@@ -543,6 +567,7 @@ export class HotspotsService {
         hotspot_name: true,
         hotspot_priority: true,
         hotspot_location: true,
+        hotspot_to_location: true,
         hotspot_adult_entry_cost: true,
         hotspot_child_entry_cost: true,
         hotspot_infant_entry_cost: true,
@@ -585,6 +610,7 @@ export class HotspotsService {
         hotspot_name: name,
         hotspot_priority: r.hotspot_priority ?? 0,
         hotspot_locations: locationsHtml(r.hotspot_location ?? ''),
+        hotspot_to_locations: locationsHtml(r.hotspot_to_location ?? ''),
         local_members: membersHtml(
           'Local',
           toNumber(r.hotspot_adult_entry_cost),

@@ -14,6 +14,7 @@ import {
 } from '../interfaces/hotel-provider.interface';
 import { HotelSearchDTO } from '../dto/hotel.dto';
 import { TBOHotelProvider } from '../providers/tbo-hotel.provider';
+import { DEFAULT_TBO_CHILD_AGE, distributeTboSearchOccupancies } from '../utils/tbo-occupancy.util';
 import { ResAvenueHotelProvider } from '../providers/resavenue-hotel.provider';
 import { HobseHotelProvider } from '../providers/hobse-hotel.provider';
 import { OfflineHotelCatalogService } from '../../itineraries/services/offline-hotel-catalog.service';
@@ -35,7 +36,7 @@ export class HotelSearchService {
 
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
-  private static readonly DEFAULT_CHILD_AGE = 6;
+  private static readonly DEFAULT_CHILD_AGE = DEFAULT_TBO_CHILD_AGE;
   private providers: Map<string, IHotelProvider>;
   private readonly logger = new Logger(HotelSearchService.name);
 
@@ -290,7 +291,10 @@ if (normalizedRoomCount > HotelSearchService.MAX_ROOMS) {
         const safeAdultCount = Number(adultCount ?? 0);
         const safeChildCount = Number(childCount ?? 0);
         const safeChildAges = Array.isArray(childAges)
-          ? childAges.map((age) => Number(age)).filter((age) => !Number.isNaN(age))
+          ? childAges
+              .filter((age) => age !== null && age !== undefined && String(age).trim() !== '')
+              .map((age) => Number(age))
+              .filter((age) => !Number.isNaN(age))
           : [];
         const normalizedChildAges = this.normalizeChildAges(safeChildCount, safeChildAges);
 
@@ -648,31 +652,7 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
       );
     }
 
- // Distribute guests evenly across rooms
-    const occupancies: Array<{ adults: number; children: number; childrenAges?: number[] }> = [];
-    let remainingAdults = adultCount;
-    let remainingChildren = childCount;
-    let childAgeIndex = 0;
-
-    for (let i = 0; i < roomCount; i++) {
-      const roomsLeft = roomCount - i;
-      const adultsInThisRoom = Math.ceil(remainingAdults / roomsLeft);
-      const childrenInThisRoom = Math.ceil(remainingChildren / roomsLeft);
-
-      const roomChildAges = (childAges || []).slice(childAgeIndex, childAgeIndex + childrenInThisRoom);
-
-      occupancies.push({
-        adults: adultsInThisRoom,
-        children: childrenInThisRoom,
-        childrenAges: roomChildAges.length > 0 ? roomChildAges : undefined,
-      });
-
-      remainingAdults -= adultsInThisRoom;
-      remainingChildren -= childrenInThisRoom;
-      childAgeIndex += childrenInThisRoom;
-    }
-
-    return occupancies;
+    return distributeTboSearchOccupancies(roomCount, adultCount, childCount, childAges || []);
   }
 
   private normalizeChildAges(childCount: number, childAges: number[]): number[] {

@@ -9,11 +9,17 @@ export type HotelBlockEmailTemplateInput = {
   roomCount: number;
   responseUrl: string;
   demoMode: boolean;
+  testDelivery?: boolean;
   intendedRecipient: string;
-  emailKind?: 'REQUEST' | 'EXTENSION' | 'CANCELLATION' | 'REMINDER';
+  intendedRecipients?: string[];
+  emailKind?: 'REQUEST' | 'EXTENSION' | 'CANCELLATION' | 'REMINDER' | 'HOLD_NOTICE' | 'HOLD_CREATED' | 'HOLD_EXTENSION_NOTICE' | 'RELEASE' | 'HOLD_EXPIRED_AGENT';
   previousCutoffAt?: string;
   cutoffAt?: string;
   itineraryUrl?: string;
+  remainingTime?: string;
+  guestName?: string;
+  originalHoldReference?: string;
+  releaseReason?: 'EXPIRED' | 'CANCELLED';
   stayDetails?: Array<{
     checkIn: string;
     checkOut: string;
@@ -45,21 +51,34 @@ const stayDetailRow = (detail: NonNullable<HotelBlockEmailTemplateInput['stayDet
   </tr>`;
 
 export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
-  const isExtension = input.emailKind === 'EXTENSION';
+  const isExtension = input.emailKind === 'EXTENSION' || input.emailKind === 'HOLD_EXTENSION_NOTICE';
+  const isHoldExtensionNotice = input.emailKind === 'HOLD_EXTENSION_NOTICE';
   const isCancellation = input.emailKind === 'CANCELLATION';
   const isReminder = input.emailKind === 'REMINDER';
+  const isHoldNotice = input.emailKind === 'HOLD_NOTICE';
+  const isHoldCreated = input.emailKind === 'HOLD_CREATED';
+  const isRelease = input.emailKind === 'RELEASE';
+  const isExpiredAgent = input.emailKind === 'HOLD_EXPIRED_AGENT';
+  const isInternalNotification = isReminder || isExpiredAgent || isHoldCreated;
   const stayDetails = input.stayDetails || [];
+  const intendedRecipients = (input.intendedRecipients || []).filter(Boolean);
+  const intendedRecipientNote = intendedRecipients.length
+    ? `Intended recipients: ${intendedRecipients.map(escapeHtml).join('; ')}`
+    : `Intended ${isInternalNotification ? 'recipient' : 'hotelier email'}: <a href="mailto:${escapeHtml(input.intendedRecipient)}" style="color:#5c24e5;">${escapeHtml(input.intendedRecipient)}</a>`;
   const demoNotice = input.demoMode
     ? `
       <div style="margin:0 0 20px;padding:14px 16px;border:1px solid #f4c46b;border-radius:10px;background:#fff8e8;color:#795400;font-size:13px;line-height:1.6;">
-        <strong>Demo delivery</strong><br>
-        This email is being delivered to the configured demo inbox instead of the ${isReminder ? 'intended recipient' : 'hotelier'}.<br>
-        Intended ${isReminder ? 'recipient' : 'hotelier email'}: <a href="mailto:${escapeHtml(input.intendedRecipient)}" style="color:#5c24e5;">${escapeHtml(input.intendedRecipient)}</a><br>
-        The intended ${isReminder ? 'recipient' : 'hotelier'} has not been contacted while demo mode is enabled.
+        <strong>${input.testDelivery ? 'Test delivery' : 'Demo delivery'}</strong><br>
+        This email is being delivered to the ${input.testDelivery ? 'hotel hold test inbox' : 'configured demo inbox'} instead of the ${isInternalNotification ? 'intended recipient' : 'hotelier'}.<br>
+        ${intendedRecipientNote}<br>
+        The intended ${isInternalNotification ? 'recipient' : 'hotelier'} has not been contacted while ${input.testDelivery ? 'test delivery' : 'demo mode'} is enabled.
       </div>`
     : '';
+  const intendedRecipientsNote = isInternalNotification && intendedRecipients.length && !input.demoMode
+    ? `<p style="margin:0 0 18px;color:#4a4260;font-size:13px;line-height:1.5;"><strong>Intended recipients:</strong> ${intendedRecipients.map(escapeHtml).join('; ')}</p>`
+    : '';
 
-  const responseAction = input.responseUrl && !isCancellation && !isReminder
+  const responseAction = input.responseUrl && !isCancellation && !isReminder && !isHoldExtensionNotice && !isRelease
     ? `
       <div style="margin:24px 0 4px;text-align:center;">
         <a href="${escapeHtml(input.responseUrl)}" style="display:inline-block;padding:12px 22px;border-radius:8px;background:#5c24e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;">
@@ -71,11 +90,11 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
       </p>`
     : '';
 
-  const itineraryAction = input.itineraryUrl && isReminder
+  const itineraryAction = input.itineraryUrl && (isReminder || isHoldCreated || isExpiredAgent)
     ? `
       <div style="margin:24px 0 4px;text-align:center;">
         <a href="${escapeHtml(input.itineraryUrl)}" style="display:inline-block;padding:12px 22px;border-radius:8px;background:#5c24e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;">
-          Open Itinerary &amp; Confirm Hotel
+          ${isHoldCreated ? 'Review Itinerary' : isExpiredAgent ? 'Review Expired Hold' : 'Open Itinerary &amp; Confirm Hotel'}
         </a>
       </div>
       <p style="margin:12px 0 0;text-align:center;font-size:12px;color:#888888;line-height:1.5;">
@@ -84,14 +103,34 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
     : '';
 
   const heading = isReminder
-    ? 'Hotel Hold Expires in 24 Hours'
+    ? `Hotel Hold Reminder${input.remainingTime ? ` · ${escapeHtml(input.remainingTime)} remaining` : ''}`
+    : isRelease
+      ? 'Request to Release Hotel Hold'
+    : isExpiredAgent
+      ? 'Hotel Hold Expired · Release Pending'
+    : isHoldCreated
+      ? 'Hotel Hold Pending Payment'
+    : isHoldNotice
+      ? 'Hotel Hold Created'
+    : isHoldExtensionNotice
+      ? 'Hotel Hold Extended'
     : isCancellation
       ? 'Hotel Hold No Longer Required'
       : isExtension
         ? 'Hotel Hold Extended'
         : 'Hotel Blocking Request';
   const intro = isReminder
-    ? 'This blocked hotel hold will expire in 24 hours. Please review the itinerary and confirm the hotel before the cutoff.'
+    ? `This hotel hold is still unpaid and will expire in ${escapeHtml(input.remainingTime || 'the remaining time shown below')}. Please open the itinerary and complete payment before the cutoff.`
+    : isRelease
+      ? 'This unpaid hotel hold has expired or was cancelled. Please release the rooms and acknowledge the release to DVi Travel.'
+    : isExpiredAgent
+      ? 'An unpaid hotel hold expired. Payment is blocked; check the hotel release status and arrange manual release if needed.'
+    : isHoldCreated
+      ? 'A hotel hold has been created for this quotation. Please complete the payment and confirmation workflow before the hold expires.'
+    : isHoldNotice
+      ? 'This stay has been placed on hold for the quotation. Please retain the requested rooms until the hold expires.'
+    : isHoldExtensionNotice
+      ? 'The hotel hold period has been extended. Please retain the requested rooms until the updated expiry time below.'
     : isCancellation
       ? 'The hotel selection for this quotation has changed. Please release or ignore any rooms associated with the previous hold; no further blocking action is required for this request.'
       : isExtension
@@ -111,6 +150,7 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
           ${intro}
         </p>
         ${demoNotice}
+        ${intendedRecipientsNote}
         <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:22px;">
           ${detailRow('Quotation Number', input.quotationReference)}
           ${detailRow('Hotel', input.hotelName)}
@@ -118,11 +158,15 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
           ${detailRow('Check-in', input.checkIn)}
           ${detailRow('Check-out', input.checkOut)}
           ${detailRow('Rooms', String(input.roomCount || 0))}
+          ${input.guestName ? detailRow('Lead guest', input.guestName) : ''}
+          ${input.originalHoldReference ? detailRow('Original hold reference', input.originalHoldReference) : ''}
           ${detailRow('Room category', input.roomType)}
           ${detailRow('Meal plan', input.mealPlan)}
           ${isExtension ? detailRow('Previous hold until', input.previousCutoffAt || '--') : ''}
           ${isExtension ? detailRow('New hold until', input.cutoffAt || '--') : ''}
-          ${isReminder ? detailRow('Hold expires', input.cutoffAt || '--') : ''}
+          ${isReminder || isHoldNotice || isHoldCreated ? detailRow('Hold expires', input.cutoffAt || '--') : ''}
+          ${isRelease ? detailRow(input.releaseReason === 'CANCELLED' ? 'Release requested at' : 'Expired at', input.cutoffAt || '--') : ''}
+          ${isReminder ? detailRow('Time remaining', input.remainingTime || '--') : ''}
         </table>
         ${stayDetails.length > 1 ? `
           <h2 style="margin:0 0 10px;color:#1e1b4b;font-size:15px;">Nightly stay details</h2>
@@ -140,7 +184,7 @@ export function renderHotelBlockEmailHtml(input: HotelBlockEmailTemplateInput) {
         <div style="margin-top:26px;padding-top:16px;border-top:1px solid #eee6fa;color:#777;font-size:12px;line-height:1.6;">
           Regards,<br>
           <strong style="color:#4a4260;">DVi Travel Operations</strong><br>
-          ${isReminder ? 'This is an automated hotel hold expiry reminder.' : isCancellation ? 'This is an automated hotel hold cancellation notice.' : 'This is an automated hotel blocking request.'}
+        ${isReminder ? 'This is an automated hotel hold expiry reminder.' : isHoldCreated ? 'This is an automated agent notification.' : isCancellation ? 'This is an automated hotel hold cancellation notice.' : isHoldNotice || isHoldExtensionNotice ? 'This is an automated hotel hold notice.' : 'This is an automated hotel blocking request.'}
         </div>
       </div>
     </div>

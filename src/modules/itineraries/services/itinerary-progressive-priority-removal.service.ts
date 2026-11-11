@@ -24,6 +24,8 @@ export class ItineraryProgressivePriorityRemovalService {
       selectedHotspotId: number;
       selectedManualPriority: number;
       currentTimeline: any[];
+      route?: any;
+      routeEndTime?: string;
       dayEndMinutes: number;
       overflowMinutes: number;
       validationMode?: 'DAY_END' | 'SELECTED_HOTSPOT_CLOSING';
@@ -32,6 +34,7 @@ export class ItineraryProgressivePriorityRemovalService {
       allowP3Removal?: boolean;
       allowP2Removal?: boolean;
       allowP1Removal?: boolean;
+      removeAllEligibleHotspots?: boolean;
       preselectedRemovalHotspotIds?: number[];
       exactAnchorMode?: boolean;
       anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
@@ -609,7 +612,13 @@ export class ItineraryProgressivePriorityRemovalService {
         return end === null ? max : Math.max(max, end);
       }, 0);
 
-      const dayEndOverflowMinutes = Math.max(0, maxEndMinutes - Number(params.dayEndMinutes || 0));
+      const dayEndOverflowMinutes = this.callbacks.calculateRouteEndOverflowMinutes
+        ? Number(this.callbacks.calculateRouteEndOverflowMinutes(
+            evaluatedTimeline,
+            params.route || {},
+            params.routeEndTime,
+          ) || 0)
+        : Math.max(0, maxEndMinutes - Number(params.dayEndMinutes || 0));
       const selectedTargetRow = evaluatedTimeline.find((row: any) => {
         if (!isAttractionLikeRow(row)) return false;
         return getRowHotspotId(row) === targetHotspotId;
@@ -1066,9 +1075,11 @@ export class ItineraryProgressivePriorityRemovalService {
       };
     });
 
-    const preselectedRemovalIds = Array.isArray(params.preselectedRemovalHotspotIds)
-      ? params.preselectedRemovalHotspotIds.map(Number).filter((id) => id > 0)
-      : [];
+    const preselectedRemovalIds = params.removeAllEligibleHotspots === true
+      ? candidateRows.map((row: any) => Number(row.id || 0)).filter((id: number) => id > 0)
+      : Array.isArray(params.preselectedRemovalHotspotIds)
+        ? params.preselectedRemovalHotspotIds.map(Number).filter((id) => id > 0)
+        : [];
 
     let selectedRemovedIds: number[] = [];
     let selectedRemovedRows: any[] = [];

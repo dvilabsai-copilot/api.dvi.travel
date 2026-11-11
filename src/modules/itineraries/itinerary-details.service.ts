@@ -8,6 +8,7 @@ import {
   redactVehicleCostBreakdowns,
 } from './utils/itinerary-cost-visibility.util';
 import { resolveItineraryPreference } from './utils/itinerary-preference.util';
+import { resolveIntercityDisplayDistanceKm } from './utils/itinerary-distance.util';
 import { ItineraryPricingService, money } from './itinerary-pricing.service';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
@@ -23,6 +24,7 @@ import {
   type EntryTicketBreakdownDto,
 } from './utils/entry-ticket-breakdown.util';
 import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-vehicle-km.service';
+import { getFinalTerminalDepartureText } from './utils/final-terminal-departure-text.util';
 import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { SystemRole } from '../auth/constants/system-role.constants';
@@ -48,6 +50,8 @@ import {
   resolveItineraryExtraMarginConfig,
 } from './utils/itinerary-extra-margin.util';
 import { shouldSkipRepeatedHotelNight } from './utils/hotel-route-total.util';
+import { resolveVehicleTermsCondition } from './utils/vehicle-terms.util';
+import { getHotspotClosingGraceMinutes } from './utils/hotspot-closing-grace.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -433,6 +437,7 @@ export interface VehicleSelectionDto {
 export interface ItineraryDetailsResponseDto {
   quoteId: string;
   planId: number;
+  agentSellingProfit?: number;
 
   // Continue Planning chain
   continuedFromPlanId?: number | null;
@@ -533,6 +538,7 @@ vehicleRateAvailability?: Array<{
     description: string;
     houseBoatNote: string;
     rateNote: string;
+    vehicleTermsCondition: string;
   };
   costBreakdown: CostBreakdownDto;
 }
@@ -553,6 +559,35 @@ export class ItineraryDetailsService {
     private readonly hotelAvailabilitySnapshotService: HotelAvailabilitySnapshotService,
     private readonly globalSettingsService: GlobalSettingsService,
   ) {}
+
+  // Shared persistence for Agent-added profit. Requires the bundled SQL migration.
+  async getAgentProfit(planId: number): Promise<{ profit: number; finalSellingPrice: number | null }> {
+    const rows = await this.prisma.$queryRawUnsafe<Array<{
+      agent_profit: unknown;
+      final_selling_price: unknown;
+    }>>(
+      'SELECT agent_profit, final_selling_price FROM dvi_itinerary_agent_pricing WHERE itinerary_plan_ID = ? LIMIT 1',
+      planId,
+    );
+    const row = rows[0];
+    return {
+      profit: Number(row?.agent_profit ?? 0),
+      finalSellingPrice: row?.final_selling_price == null ? null : Number(row.final_selling_price),
+    };
+  }
+
+  async saveAgentProfit(planId: number, profit: number, finalSellingPrice: number) {
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO dvi_itinerary_agent_pricing
+        (itinerary_plan_ID, agent_profit, final_selling_price)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         agent_profit = VALUES(agent_profit),
+         final_selling_price = VALUES(final_selling_price)`,
+      planId, profit, finalSellingPrice,
+    );
+    return { profit, finalSellingPrice };
+  }
 
   private normalizeHotelSelectionEntries(
     selections: Record<string, any> | any[],
@@ -1437,12 +1472,76 @@ private async resolveTravelDistanceKm(params: {
   itemType: number;
   location: any;
   route: any;
+  preferFromCoordinates?: boolean;
+  preferredFromCoordinates?: { latitude: number; longitude: number } | null;
+  preferToCoordinates?: boolean;
+  preferredToCoordinates?: { latitude: number; longitude: number } | null;
   semanticFromHotspotId?: number | null;
   semanticToHotspotId?: number | null;
   fromName?: string | null;
   toName?: string | null;
   hotspotMap: Map<number, any>;
 }): Promise<number | null> {
+  const preferredFromLat = this.parseFiniteNumber(params.preferredFromCoordinates?.latitude);
+  const preferredFromLng = this.parseFiniteNumber(params.preferredFromCoordinates?.longitude);
+  const explicitPreferredToLat = this.parseFiniteNumber(params.preferredToCoordinates?.latitude);
+  const explicitPreferredToLng = this.parseFiniteNumber(params.preferredToCoordinates?.longitude);
+  const hasValidCoordinates = (latitude: number | null, longitude: number | null): boolean =>
+    latitude !== null && longitude !== null &&
+    latitude >= -90 && latitude <= 90 &&
+    longitude >= -180 && longitude <= 180 &&
+    !(latitude === 0 && longitude === 0);
+  const preferredToHotspotId = Number(params.semanticToHotspotId || 0);
+  const preferredToMaster = preferredToHotspotId > 0
+    ? params.hotspotMap.get(preferredToHotspotId)
+    : null;
+  const preferredToLat = explicitPreferredToLat ?? this.parseFiniteNumber(preferredToMaster?.hotspot_latitude);
+  const preferredToLng = explicitPreferredToLng ?? this.parseFiniteNumber(preferredToMaster?.hotspot_longitude);
+
+  if (
+    hasValidCoordinates(preferredFromLat, preferredFromLng)
+    && hasValidCoordinates(preferredToLat, preferredToLng)
+  ) {
+    const osrmKm = await this.getOsrmRouteDistanceKm(
+      preferredFromLat,
+      preferredFromLng,
+      preferredToLat,
+      preferredToLng,
+    );
+    if (osrmKm !== null) return osrmKm;
+    // This is a driving travel leg in the itinerary timeline. A straight-line
+    // fallback would change the meaning of the displayed value, so omit this
+    // leg's distance if OSRM cannot route between the selected endpoints.
+    if (params.preferToCoordinates) return null;
+    const straightLineKm = haversineKm(
+      preferredFromLat,
+      preferredFromLng,
+      preferredToLat,
+      preferredToLng,
+    );
+    if (straightLineKm !== null && Number.isFinite(straightLineKm)) return straightLineKm;
+  }
+
+  // When this leg is known to start at the selected hotel, never fall back to
+  // a stored city-origin distance if the hotel's coordinates are unavailable.
+  if (params.preferFromCoordinates) return null;
+
+  // A return-to-hotel leg must use the selected hotel's actual coordinates.
+  // Its stored distance can describe the route's city endpoint instead, so
+  // return no distance when either endpoint cannot be resolved.
+  if (params.preferToCoordinates) {
+    const fromHotspotId = Number(params.semanticFromHotspotId || 0);
+    const fromMaster = fromHotspotId > 0 ? params.hotspotMap.get(fromHotspotId) : null;
+    const fromLat = this.parseFiniteNumber(fromMaster?.hotspot_latitude);
+    const fromLng = this.parseFiniteNumber(fromMaster?.hotspot_longitude);
+    const toLat = explicitPreferredToLat;
+    const toLng = explicitPreferredToLng;
+    if (!hasValidCoordinates(fromLat, fromLng) || !hasValidCoordinates(toLat, toLng)) return null;
+
+    const osrmKm = await this.getOsrmRouteDistanceKm(fromLat, fromLng, toLat, toLng);
+    if (osrmKm !== null) return osrmKm;
+    return null;
+  }
   const baseDistanceKm = this.parseStoredDistanceKm(params.row?.hotspot_travelling_distance);
   if (!this.isSuspiciousTravelDistance({
     distanceKm: baseDistanceKm,
@@ -2314,7 +2413,13 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
     const hotelMasters = hotelIds.length > 0
       ? await this.prisma.dvi_hotel.findMany({
           where: { hotel_id: { in: hotelIds } },
-          select: { hotel_id: true, hotel_name: true, hotel_address: true },
+          select: {
+            hotel_id: true,
+            hotel_name: true,
+            hotel_address: true,
+            hotel_latitude: true,
+            hotel_longitude: true,
+          },
         })
       : [];
 
@@ -2354,6 +2459,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             tbo_hotel_code: true,
             hotel_name: true,
             hotel_address: true,
+            hotel_latitude: true,
+            hotel_longitude: true,
           },
         })
       : [];
@@ -2392,6 +2499,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         hotel_name: liveFallback?.hotel_name ?? masterInfo?.hotel_name ?? tboInfo?.hotel_name ?? null,
         hotel_address: liveFallback?.hotel_address ?? masterInfo?.hotel_address ?? tboInfo?.hotel_address ?? null,
         hotel_code: hotelCode,
+        hotel_latitude: masterInfo?.hotel_latitude ?? tboInfo?.hotel_latitude ?? null,
+        hotel_longitude: masterInfo?.hotel_longitude ?? tboInfo?.hotel_longitude ?? null,
       });
     }
 
@@ -2408,6 +2517,8 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         hotel_name: liveFallback.hotel_name,
         hotel_address: liveFallback.hotel_address,
         hotel_code: liveFallback.hotel_code ?? '',
+        hotel_latitude: null,
+        hotel_longitude: null,
       });
     }
 
@@ -2437,6 +2548,14 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
 
     for (let index = 0; index < routes.length; index++) {
       const route = routes[index];
+      const finalTerminalDepartureText = getFinalTerminalDepartureText({
+        routeIndex: index,
+        routeCount: routes.length,
+        destination: String(
+          route.next_visiting_location ?? plan.departure_location ?? '',
+        ).trim(),
+        configuredText: itineraryTextSettings.returnLabel,
+      });
 
  // from/to locations (dvi_stored_locations)
       const location =
@@ -3364,10 +3483,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               });
             }
 
-            if (
-              normalizeName(fromName) === normalizeName(toName) &&
-              Number(rh.hotspot_ID ?? 0) > 0
-            ) {
+            if (normalizeName(fromName) === normalizeName(toName)) {
               const currentIndex = routeHotspots.indexOf(rh);
               nextSemanticDestinationChosen =
                 currentIndex >= 0
@@ -3403,6 +3519,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
                 });
 
             const routeHotelName = getRouteHotelName();
+            const currentRouteHotelInfo = routeHotelMap.get(route.itinerary_route_ID);
             const destinationCityLabel =
               route.next_visiting_location ??
               location?.destination_location ??
@@ -3422,6 +3539,18 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               toName = routeHotelName;
             }
 
+            const preferCurrentRouteHotelDestination =
+              hasUpcomingHotelSegment &&
+              Number(rh.hotspot_ID ?? 0) === 0 &&
+              Boolean(currentRouteHotelInfo?.hotel_name) &&
+              normalizeName(toName) === normalizeName(currentRouteHotelInfo.hotel_name);
+            const preferredCurrentHotelCoordinates = preferCurrentRouteHotelDestination
+              ? {
+                  latitude: currentRouteHotelInfo.hotel_latitude,
+                  longitude: currentRouteHotelInfo.hotel_longitude,
+                }
+              : null;
+
             if (proofQuoteEnabled) {
  console.log('[TravelSegment][PROOF]', {
                 quoteId,
@@ -3439,11 +3568,30 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               });
             }
 
+            const previousNightHotelInfo = index > 0
+              ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)
+              : null;
+            const preferPreviousNightHotelOrigin =
+              !seenAttraction
+              && usedNextSemanticDestination
+              && Number(rh.hotspot_ID ?? 0) === 0
+              && Boolean(previousNightHotelInfo);
+            const preferredHotelOriginCoordinates = preferPreviousNightHotelOrigin
+              ? {
+                  latitude: previousNightHotelInfo.hotel_latitude,
+                  longitude: previousNightHotelInfo.hotel_longitude,
+                }
+              : null;
+
             const resolvedDistanceKm = await this.resolveTravelDistanceKm({
               row: rh,
               itemType,
               location,
               route,
+              preferFromCoordinates: preferPreviousNightHotelOrigin,
+              preferredFromCoordinates: preferredHotelOriginCoordinates,
+              preferToCoordinates: preferCurrentRouteHotelDestination,
+              preferredToCoordinates: preferredCurrentHotelCoordinates,
               semanticFromHotspotId:
                 semanticMapping?.fromHotspotId
                 ?? inferHotspotIdFromLabel(fromName)
@@ -3698,7 +3846,16 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
                 const fitsInAnyWindow = todayTimings.some(t => {
                   const opStart = this.timeToMinutes(this.formatTime(t.hotspot_start_time as any));
                   const opEnd = this.timeToMinutes(this.formatTime(t.hotspot_end_time as any));
-                  return arrivalMins >= opStart && departureMins <= opEnd;
+                  const normalizedDepartureMins = departureMins < arrivalMins
+                    ? departureMins + (24 * 60)
+                    : departureMins;
+                  const normalizedOpEnd = opEnd < opStart ? opEnd + (24 * 60) : opEnd;
+                  const closingGraceMinutes = getHotspotClosingGraceMinutes(
+                    arrivalMins,
+                    normalizedDepartureMins,
+                  );
+                  return arrivalMins >= opStart
+                    && normalizedDepartureMins <= normalizedOpEnd + closingGraceMinutes;
                 });
 
                 if (!fitsInAnyWindow) {
@@ -3847,6 +4004,11 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             normalizeLabel(toName) === normalizeLabel(destinationCityName);
 
           const travelStartMins = startTimeText ? this.timeToMinutes(startTimeText) : null;
+          const previousNightHotelInfo = index > 0
+            ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)
+            : null;
+          let bestAttractionName: string | null = null;
+          let hasPriorAttraction = false;
 
  // Find the chronologically last attraction that actually happened before this row.
  // Fallback: use previous day's hotel name (if any), otherwise city name.
@@ -3862,7 +4024,6 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
  ""; // Safe fallback
 
           if (travelStartMins !== null) {
-            let bestAttractionName: string | null = null;
             let bestAttractionEnd = -1;
 
             for (const candidate of routeHotspots) {
@@ -3872,6 +4033,10 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
               const candidateEndText = this.formatTime((candidate as any).hotspot_end_time ?? null);
               if (!candidateEndText) continue;
               const candidateEndMins = this.timeToMinutes(candidateEndText);
+
+              if (candidateEndMins <= travelStartMins) {
+                hasPriorAttraction = true;
+              }
 
               if (candidateEndMins <= travelStartMins && candidateEndMins >= bestAttractionEnd) {
                 const candidateMaster = hotspotMap.get(candidate.hotspot_ID as number);
@@ -3885,6 +4050,51 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             if (bestAttractionName) {
               fromName = bestAttractionName;
             }
+          }
+
+          // This item_type=5 row can represent the first hotel-to-sightseeing leg
+          // on a later day. Its persisted distance may be based on the city center,
+          // while normalizeConfirmedTravelLabelsFromSequence labels it hotel-to-attraction.
+          // Recalculate that one leg from the previous night's selected hotel.
+          const nextAttraction = travelStartMins === null
+            ? null
+            : routeHotspots
+              .filter((candidate: any) => {
+                if (Number(candidate?.item_type ?? 0) !== 4 || Number(candidate?.hotspot_ID ?? 0) <= 0) {
+                  return false;
+                }
+                const candidateStart = this.formatTime(candidate?.hotspot_start_time ?? null);
+                return candidateStart !== null && this.timeToMinutes(candidateStart) >= travelStartMins;
+              })
+              .sort((left: any, right: any) => {
+                const leftStart = this.timeToMinutes(this.formatTime(left?.hotspot_start_time ?? null) ?? '00:00');
+                const rightStart = this.timeToMinutes(this.formatTime(right?.hotspot_start_time ?? null) ?? '00:00');
+                return leftStart - rightStart;
+              })[0] ?? null;
+          const isFirstSightseeingTransfer =
+            !hasPriorAttraction
+            && !bestAttractionName
+            && Boolean(previousNightHotelInfo)
+            && Boolean(nextAttraction);
+
+          if (isFirstSightseeingTransfer && nextAttraction) {
+            const resolvedDistanceKm = await this.resolveTravelDistanceKm({
+              row: rh,
+              itemType,
+              location,
+              route,
+              preferFromCoordinates: true,
+              preferredFromCoordinates: {
+                latitude: previousNightHotelInfo.hotel_latitude,
+                longitude: previousNightHotelInfo.hotel_longitude,
+              },
+              semanticToHotspotId: Number(nextAttraction.hotspot_ID),
+              fromName,
+              toName: hotspotMap.get(Number(nextAttraction.hotspot_ID))?.hotspot_name ?? null,
+              hotspotMap,
+            });
+            distanceNum = resolvedDistanceKm ?? 0;
+            travelDistance = this.formatTravelDistance(resolvedDistanceKm);
           }
 
  // Only suppress same-city hotel travel when the segment collapses into a redundant
@@ -4082,6 +4292,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
             distance: travelDistance,
             duration: this.formatDuration(travelDuration),
             note: 'This may vary due to traffic conditions',
+            departureText: finalTerminalDepartureText,
             isConflict: (rh as any).isConflict === true,
             conflictReason: (rh as any).conflictReason ?? null,
           });
@@ -4122,6 +4333,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
                   this.formatDuration('00:00:00')
                 : this.formatDuration('00:00:00'),
             note: 'Airport transfer',
+            departureText: finalTerminalDepartureText,
             isConflict: false,
             conflictReason: null,
           });
@@ -4244,16 +4456,19 @@ const travelSegmentDistanceNum = segments.reduce((sum, segment: any) => {
   return sum + distanceNum;
 }, 0);
 
-// FINAL intercity distance priority:
-// 1. VIA-chain distance
-// 2. stored route.no_of_km
-// 3. visible travel segment total
-const intercityDistanceNum =
-  viaRouteDistanceNum > 0
-    ? viaRouteDistanceNum
-    : storedIntercityDistanceNum > 0
-      ? storedIntercityDistanceNum
-      : travelSegmentDistanceNum;
+// Direct non-sightseeing days use the visible travel rows so the day header
+// and the detailed route agree even when a persisted route distance is stale.
+// Hotspot days retain the existing via/stored-route precedence because their
+// travel rows also include sightseeing movement.
+const intercityDistanceNum = resolveIntercityDisplayDistanceKm({
+  viaRouteDistanceKm: viaRouteDistanceNum,
+  storedIntercityDistanceKm: storedIntercityDistanceNum,
+  travelSegmentDistanceKm: travelSegmentDistanceNum,
+  sightseeingDistanceKm: sightseeingDistanceNum,
+  hasHotspotSegments: segments.some((segment: any) => (
+    segment?.type === 'attraction' || segment?.type === 'hotspot'
+  )),
+});
 
 // Total day distance = intercity + sightseeing
 const totalDistanceNum = intercityDistanceNum + sightseeingDistanceNum;
@@ -4262,14 +4477,6 @@ const intercityDistance = this.formatKm(intercityDistanceNum);
 const sightseeingDistance = this.formatKm(sightseeingDistanceNum);
 const dayDistance = this.formatKm(totalDistanceNum);
 
-
-// DEBUG (keep this for testing)
-console.log('[FINAL_DISTANCE_DEBUG]', {
-  routeChain: cleanedRouteChain,
-  viaRouteDistanceNum,
-  storedIntercityDistanceNum,
-  finalUsed: intercityDistanceNum,
-});
 
 // ================= END FIX =================
 
@@ -6858,16 +7065,93 @@ const hasRequiredVehicleSelection =
             `${selected.provider || ''}|${selected.hotelCode || ''}|${selected.roomType || ''}|${selected.mealPlan || ''}`,
           ).trim();
           const selectedDate = new Date(String(selected.routeDate || selected.date || '')).getTime();
-          const previousDate = lastSelectedStayDate.get(selectedKey);
-          // Route-level selections persist one payable amount per night. Only
-          // suppress consecutive rows when the snapshot explicitly declares
-          // that the amount is a multi-night stay total; otherwise Day 2 of a
-          // continuous TBO stay is incorrectly discarded as a duplicate.
-          const isRepeatedNight = shouldSkipRepeatedHotelNight(selected, previousDate, selectedDate);
-          if (isRepeatedNight) {
-            lastSelectedStayDate.set(selectedKey, selectedDate);
-            return sum;
-          }
+const previousDate = lastSelectedStayDate.get(selectedKey);
+
+// Check whether the saved stay contains separately priced route nights.
+// A multi-night total must not cause individually priced nights to be skipped.
+const selectedStayTotal = Number(selected.selectedTotalPrice ?? 0);
+
+const sameStayRows = selectedStayTotal > 0
+  ? selectedRoutes.filter((row: any) => {
+      const rowKey = String(
+        row.selectionKey || row.rateOptionId ||
+        `${row.provider || ''}|${row.hotelCode || ''}|${row.roomType || ''}|${row.mealPlan || ''}`,
+      ).trim();
+
+      const rowStayTotal = Number(row.selectedTotalPrice ?? 0);
+
+      return (
+        rowKey === selectedKey &&
+        Number.isFinite(rowStayTotal) &&
+        Math.abs(rowStayTotal - selectedStayTotal) <= 0.02
+      );
+    })
+  : [];
+
+const stayDates = sameStayRows.map((row: any) =>
+  String(row.routeDate || row.date || '').slice(0, 10),
+);
+
+const stayRouteIds = sameStayRows.map((row: any) =>
+  Number(
+    row.routeId ??
+    row.itineraryRouteId ??
+    row.itinerary_route_id ??
+    0
+  ),
+);
+
+const nightlyAmounts = sameStayRows.map((row: any) =>
+  Number(row.totalPrice ?? 0),
+);
+
+const totalNightlyAmount = nightlyAmounts.reduce(
+  (total: number, amount: number) => total + amount,
+  0,
+);
+
+const sortedStayDates = [...stayDates].sort();
+
+const hasConsecutiveDates = sortedStayDates.every(
+  (date: string, index: number) =>
+    index === 0 ||
+    new Date(date).getTime() -
+      new Date(sortedStayDates[index - 1]).getTime() ===
+      24 * 60 * 60 * 1000,
+);
+
+const hasSeparateNightlyPricing =
+  sameStayRows.length > 1 &&
+  stayDates.every((date: string) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(date)
+  ) &&
+  new Set(stayDates).size === sameStayRows.length &&
+  hasConsecutiveDates &&
+  stayRouteIds.every(
+    (routeId: number) =>
+      Number.isFinite(routeId) && routeId > 0
+  ) &&
+  new Set(stayRouteIds).size === sameStayRows.length &&
+  nightlyAmounts.every(
+    (amount: number) =>
+      Number.isFinite(amount) && amount > 0
+  ) &&
+  Number.isFinite(selectedStayTotal) &&
+  Math.abs(totalNightlyAmount - selectedStayTotal) <= 0.02;
+
+const isRepeatedNight =
+  !hasSeparateNightlyPricing &&
+  shouldSkipRepeatedHotelNight(
+    selected,
+    previousDate,
+    selectedDate,
+  );
+
+if (isRepeatedNight) {
+  lastSelectedStayDate.set(selectedKey, selectedDate);
+  return sum;
+}
+
           if (Number.isFinite(selectedDate)) lastSelectedStayDate.set(selectedKey, selectedDate);
           const selectedRouteId = Number(
             selected.routeId ?? selected.itineraryRouteId ?? selected.itinerary_route_id ?? 0,
@@ -7478,6 +7762,11 @@ const normalizedItineraryPreference = resolveItineraryPreference({
   hasHotelRows,
   hasVehicleRows,
 });
+const vehicleTermsCondition = resolveVehicleTermsCondition({
+  itineraryPreference: normalizedItineraryPreference,
+  plan,
+  globalSettings: itineraryTextSettings,
+});
 
 // Calls made internally by clipboard/document builders do not carry an HTTP
 // user. Preserve their existing full-detail behavior; authenticated controller
@@ -7496,9 +7785,22 @@ const visibleCostBreakdown = canViewCostBreakdown
   ? costBreakdown
   : redactItineraryCostBreakdown(costBreakdown);
 
+// Agent Profit is visible only to Agent and Admin.
+const canViewAgentProfit =
+  Number(viewerRole) === SystemRole.ADMIN ||
+  isAgentRole(viewerRole);
+
+const savedAgentProfit = canViewAgentProfit
+  ? (await this.getAgentProfit(plan.itinerary_plan_ID)).profit
+  : undefined;
+
 const response: ItineraryDetailsResponseDto = {
   quoteId: plan.itinerary_quote_ID ?? '',
   planId: plan.itinerary_plan_ID,
+
+  ...(canViewAgentProfit
+    ? { agentSellingProfit: savedAgentProfit }
+    : {}),
 
   continuedFromPlanId:
     continuedFromPlanId > 0
@@ -7572,6 +7874,7 @@ packageIncludes: {
         description: '',
         houseBoatNote: '',
         rateNote: '',
+        vehicleTermsCondition,
       },
       costBreakdown: visibleCostBreakdown,
     };

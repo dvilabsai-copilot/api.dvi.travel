@@ -13,6 +13,7 @@ import {
   normalizePassengerTitle,
   resolveProviderPassengerTitle,
 } from '../../../common/utils/passenger-title.util';
+import { isTboInsufficientBalanceResponse } from '../utils/tbo-hold-eligibility.util';
 
 interface TboHotelSelection {
   hotelCode: string;
@@ -28,6 +29,12 @@ interface TboHotelSelection {
   passengers: TboHotelPassenger[];
   occupancies?: TboRoomOccupancy[];
   prebookContext?: Record<string, any>;
+  /**
+   * TBO uses false for a supplier hold and true for immediate voucher booking.
+   * Existing confirmation callers omit this field and therefore retain the
+   * current voucher-booking behavior.
+   */
+  isVoucherBooking?: boolean;
 }
 
 interface TboRoomOccupancy {
@@ -144,6 +151,7 @@ export class TboHotelBookingService {
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
+  private static readonly DEFAULT_CHILD_AGE = 5;
   private static readonly SEARCH_SESSION_VALIDITY_MS = 35 * 60 * 1000;
   private readonly logger = new Logger(TboHotelBookingService.name);
   private readonly client: AxiosInstance;
@@ -166,6 +174,7 @@ private readonly TBO_CLIENT_ID =
  private readonly AUTH_URL = process.env.TBO_AUTH_URL || 'https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate';
  private readonly PREBOOK_URL = process.env.TBO_PREBOOK_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook';
  private readonly BOOK_URL = process.env.TBO_BOOK_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book';
+ private readonly GENERATE_VOUCHER_URL = process.env.TBO_GENERATE_VOUCHER_URL || 'https://HotelBE.tektravels.com/hotelservice.svc/rest/GenerateVoucher';
   private readonly USE_MOCK_TBO = process.env.TBO_USE_MOCK === 'true' || false;
 
   constructor(
@@ -195,6 +204,20 @@ private readonly TBO_CLIENT_ID =
  */
   async preBookHotel(
     selection: TboHotelSelection,
+  ): Promise<PreBookResponse> {
+    return this.preBookHotelInternal(selection, false);
+  }
+
+  /** Hold-only PreBook: status 300 is accepted for the unvouchered Book step. */
+  async preBookHotelForHold(
+    selection: TboHotelSelection,
+  ): Promise<PreBookResponse> {
+    return this.preBookHotelInternal(selection, true);
+  }
+
+  private async preBookHotelInternal(
+    selection: TboHotelSelection,
+    allowInsufficientBalanceForHold: boolean,
   ): Promise<PreBookResponse> {
     try {
       this.validateSelection(selection, true);
@@ -259,7 +282,9 @@ private readonly TBO_CLIENT_ID =
         : response.data.Message;
 
  // TBO PreBook uses Status.Code = 200 for success, other endpoints use Status.Code = 1
-      if (statusCode !== 1 && statusCode !== 200) {
+      const isHoldInsufficientBalance = allowInsufficientBalanceForHold
+        && isTboInsufficientBalanceResponse(response.data as any);
+      if (statusCode !== 1 && statusCode !== 200 && !isHoldInsufficientBalance) {
         const message = statusMessage || 'Unknown TBO error';
         const maybeSessionExpired = this.isSessionExpiredError(
           `${message} ${JSON.stringify(response.data || {})}`,
@@ -275,7 +300,11 @@ private readonly TBO_CLIENT_ID =
         );
       }
 
+      if (isHoldInsufficientBalance) {
+ this.logger.warn(' PreBook returned insufficient balance; continuing only for the explicit non-voucher hold flow.');
+      } else {
  this.logger.log(` PreBook successful: ${JSON.stringify(response.data)}`);
+      }
       return response.data;
     } catch (error: any) {
  // Extract meaningful error message
@@ -353,7 +382,7 @@ private readonly TBO_CLIENT_ID =
       const bookingPayload = {
         BookingCode: prebookBookingCode,
         TokenId: tokenId,
-        IsVoucherBooking: true,
+        IsVoucherBooking: selection.isVoucherBooking ?? true,
         GuestNationality: this.normalizeNationality(selection.guestNationality),
         EndUserIp: endUserIp,
         RequestedBookingMode: 1,
@@ -437,6 +466,80 @@ private readonly TBO_CLIENT_ID =
     }
   }
 
+  /**
+   * Place a refundable TBO/VSR rate on supplier hold without issuing a
+   * voucher. This is intentionally separate from final confirmation, which
+   * continues to use the default voucher-booking mode.
+   */
+  async holdHotel(
+    preBookResponse: PreBookResponse,
+    selection: TboHotelSelection,
+    endUserIp: string = process.env.TBO_END_USER_IP || '134.209.145.185',
+  ): Promise<BookResponse> {
+    return this.bookHotel(
+      preBookResponse,
+      { ...selection, isVoucherBooking: false },
+      endUserIp,
+    );
+  }
+
+  /** Read the current supplier state of a VSR hold without changing it. */
+  async getHoldStatus(confirmationReference: string, bookingId?: string | number) {
+    const reference = String(confirmationReference || '').trim();
+    if (!reference) throw new BadRequestException('A VSR booking reference is required.');
+    return this.tboProvider.getConfirmation(reference, bookingId);
+  }
+
+  /** Generate a voucher for an already-paid TBO supplier hold. */
+  async generateVoucher(bookingId: string | number, endUserIp = process.env.TBO_END_USER_IP || '134.209.145.185') {
+    const id = Number(bookingId);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new BadRequestException('A valid TBO BookingId is required to generate the voucher.');
+    }
+    if (this.USE_MOCK_TBO) {
+      return { voucherStatus: true, bookingStatus: 'Confirmed', bookingId: id, raw: { mock: true } };
+    }
+
+    const tokenId = await this.authenticate(endUserIp);
+    const request = { EndUserIp: endUserIp, BookingId: id, TokenId: tokenId };
+    try {
+      const response = await this.client.post(this.GENERATE_VOUCHER_URL, request, { timeout: 30_000 });
+      const result = response.data?.GenerateVoucherResult || response.data;
+      const voucherStatus = result?.VoucherStatus === true || Number(result?.VoucherStatus) === 1;
+      const responseStatus = Number(result?.ResponseStatus ?? 0);
+      const bookingStatusCode = Number(result?.Status ?? 0);
+      const errorMessage = String(result?.Error?.ErrorMessage || result?.ErrorMessage || '').trim();
+      if (!voucherStatus || (responseStatus !== 0 && responseStatus !== 1) || [0, 6].includes(bookingStatusCode)) {
+        throw new Error(errorMessage || `TBO GenerateVoucher was not successful (response ${responseStatus}, booking status ${bookingStatusCode}).`);
+      }
+      return {
+        voucherStatus: true,
+        bookingStatus: String(result?.HotelBookingStatus || result?.BookingStatus || 'Pending'),
+        bookingId: id,
+        bookingReference: result?.BookingRefNo || null,
+        confirmationNumber: result?.ConfirmationNo || null,
+        raw: response.data,
+      };
+    } catch (error: any) {
+      const upstreamMessage = String(
+        error?.response?.data?.GenerateVoucherResult?.Error?.ErrorMessage
+        || error?.response?.data?.Error?.ErrorMessage
+        || error?.response?.data?.Message
+        || error?.message
+        || 'Unknown TBO voucher error',
+      );
+      this.logger.error(`TBO GenerateVoucher failed for BookingId ${id}: ${upstreamMessage}`);
+      throw new BadRequestException(`TBO voucher generation is pending: ${upstreamMessage}`);
+    }
+  }
+
+  /** Releases an unpaid TBO Book hold using the existing supplier cancellation API and its BookingId contract. */
+  async cancelHeldBooking(bookingId: string | number, reason = 'Unpaid DVi hotel hold expired') {
+    const id = String(bookingId || '').trim();
+    if (!/^\d+$/.test(id)) throw new BadRequestException('A valid TBO booking ID is required to release this hold.');
+    return this.tboProvider.cancelBooking(id, reason);
+  }
+
  /**
    * Map passengers to TBO hotel rooms format
    * Each room contains the passengers assigned to it
@@ -456,7 +559,8 @@ private readonly TBO_CLIENT_ID =
     if (occupancies && occupancies.length > 0) {
       const adultsPool = workingPassengers.filter((p) => Number(p.paxType) === 1);
       const childrenPool = workingPassengers.filter((p) => Number(p.paxType) === 2);
-      const infantsPool = workingPassengers.filter((p) => Number(p.paxType) === 3);
+      const adultFallback = adultsPool[0];
+      const childFallback = childrenPool[0];
 
       const takeFromPool = (pool: TboHotelPassenger[], count: number): TboHotelPassenger[] => {
         const picked = pool.slice(0, Math.max(count, 0));
@@ -475,6 +579,9 @@ private readonly TBO_CLIENT_ID =
           .filter((age) => Number.isFinite(age));
 
         const roomAdults = takeFromPool(adultsPool, adultsNeeded);
+        while (roomAdults.length < adultsNeeded && adultFallback) {
+          roomAdults.push({ ...adultFallback });
+        }
         const roomChildren: TboHotelPassenger[] = [];
 
  // Match child passengers by expected room-wise ages from confirm occupancies
@@ -497,14 +604,15 @@ private readonly TBO_CLIENT_ID =
             roomChildren.push(picked);
           }
         }
+        while (roomChildren.length < childrenNeeded && childFallback) {
+          roomChildren.push({ ...childFallback });
+        }
 
         const roomPassengers: TboHotelPassenger[] = [...roomAdults, ...roomChildren];
-
- // Keep room passenger count aligned even if upstream sent less data than occupancy.
-        while (roomPassengers.length < adultsNeeded + childrenNeeded) {
-          const fallback = adultsPool[0] || childrenPool[0] || infantsPool[0] || workingPassengers[0];
-          if (!fallback) break;
-          roomPassengers.push({ ...fallback });
+        if (roomPassengers.length !== adultsNeeded + childrenNeeded) {
+          throw new BadRequestException(
+            `Passenger details do not match TBO room occupancy for room ${i + 1}.`,
+          );
         }
 
         const mappedPassengers = roomPassengers.map((p, idx) => this.mapPassenger(p, idx));
@@ -541,7 +649,7 @@ private readonly TBO_CLIENT_ID =
       Email: p.email || null,
       PaxType: p.paxType,
       LeadPassenger: index === 0 ? true : false,
-      Age: p.age,
+      Age: p.paxType === 2 ? this.resolvePassengerAge(p.age) : p.age,
       PassportNo: p.passportNo || null,
       PassportIssueDate: p.passportIssueDate || null,
       PassportExpDate: p.passportExpDate || null,
@@ -919,13 +1027,13 @@ private readonly TBO_CLIENT_ID =
       return selection.occupancies.map((occ) => ({
         Adults: Math.max(occ.adults || 1, 1),
         Children: Math.max(occ.children || 0, 0),
-        ChildrenAges: (occ.childrenAges || []).map((age) => Number(age)).filter((age) => !Number.isNaN(age)),
+        ChildrenAges: this.resolveChildAges(occ.children, occ.childrenAges),
       }));
     }
 
     const childrenAges = this.getChildAgesFromSelection(selection);
     const adults = selection.passengers.filter((p) => p.paxType === 1).length;
-    const children = selection.passengers.filter((p) => p.paxType !== 1 && Number(p.age) <= 11).length;
+    const children = selection.passengers.filter((p) => p.paxType === 2).length;
     return [
       {
         Adults: Math.max(adults, 1),
@@ -936,8 +1044,9 @@ private readonly TBO_CLIENT_ID =
   }
 
   private getChildAgesFromSelection(selection: TboHotelSelection): number[] {
-    const fromOccupancy =
-      selection.occupancies?.flatMap((occ) => (occ.childrenAges || []).map((age) => Number(age))) || [];
+    const fromOccupancy = selection.occupancies?.flatMap((occ) =>
+      this.resolveChildAges(occ.children, occ.childrenAges),
+    ) || [];
 
     if (fromOccupancy.length > 0) {
       return fromOccupancy.filter((age) => !Number.isNaN(age));
@@ -945,8 +1054,25 @@ private readonly TBO_CLIENT_ID =
 
     return selection.passengers
       .filter((p) => p.paxType === 2)
-      .map((p) => Number(p.age))
-      .filter((age) => !Number.isNaN(age));
+      .map((p) => this.resolvePassengerAge(p.age));
+  }
+
+  private resolveChildAges(children: number, ages?: number[]): number[] {
+    const childCount = Math.max(Number(children || 0), 0);
+    return Array.from({ length: childCount }, (_, index) => {
+      const rawAge = ages?.[index];
+      if (rawAge === null || rawAge === undefined || String(rawAge).trim() === '') {
+        return TboHotelBookingService.DEFAULT_CHILD_AGE;
+      }
+      const age = Number(rawAge);
+      return Number.isFinite(age) ? age : TboHotelBookingService.DEFAULT_CHILD_AGE;
+    });
+  }
+
+  private resolvePassengerAge(age: number | null | undefined): number {
+    return age === null || age === undefined || String(age).trim() === ''
+      ? TboHotelBookingService.DEFAULT_CHILD_AGE
+      : Number(age);
   }
 
   private validateSelection(selection: TboHotelSelection, skipPassengerValidation = false): void {

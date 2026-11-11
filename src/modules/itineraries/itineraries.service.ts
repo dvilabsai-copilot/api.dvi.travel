@@ -46,6 +46,7 @@ import {
 } from "../../modules/hotels/hotel-rate-plans";
 import { normalizeCityName } from "./utils/city-normalization.util";
 import { haversineKm } from "./utils/distance-utils";
+import { calculateRouteEndOverflowMinutes as calculateChronologicalRouteEndOverflowMinutes } from "./utils/route-end-overflow.util";
 import {
   normalizeSupplierRateIdentity,
   supplierRateIdentityMatches,
@@ -531,7 +532,36 @@ export class ItinerariesService {
     };
   }
 
-  private async applySameCityCrossDayOptimizerAfterSave(planId: number, quoteId?: string | null): Promise<void> {
+  private async applySameCityCrossDayOptimizerAfterSave(
+    planId: number,
+    quoteId?: string | null,
+    options?: { scopeToRouteId?: number },
+  ): Promise<void> {
+    if (options?.scopeToRouteId) {
+      const settings = await this.prisma.dvi_global_settings.findFirst({
+        where: { deleted: 0 },
+        select: { same_city_hotspot_rank_enabled: true },
+      });
+
+      if (Number(settings?.same_city_hotspot_rank_enabled || 0) === 1) {
+        console.log('[BOOKING_RULE]', {
+          rule: 'SAME_CITY_SCOPED_REBUILD',
+          planId,
+          quoteId: quoteId || null,
+          scopeToRouteId: options.scopeToRouteId,
+          skippedOptimizer: true,
+          reason: 'same_city_priority_policy_scoped_rebuild_guard',
+        });
+        console.log('[SAME_CITY_SCOPED_REBUILD][SameCityCrossDayOptimizerAfterSave]', {
+          planId,
+          quoteId: quoteId || null,
+          scopeToRouteId: options.scopeToRouteId,
+          skippedReason: 'same_city_priority_policy_scoped_rebuild_guard',
+        });
+        return;
+      }
+    }
+
     const result = await this.sameCityCrossDayOptimizerService.analyzePlanId(planId, {
       quoteId: quoteId || undefined,
       dryRun: false,
@@ -1100,6 +1130,7 @@ this.planPersistenceService.setCallbacks({
       'getHotspotDurationMinutes',
       'getPreviewRowDurationMinutes',
       'parseSegmentEndMinutes',
+      'calculateRouteEndOverflowMinutes',
       'hmsToSeconds',
       'enrichManualFitPreviewTimelineWithOperatingHours',
       'getSelectedManualClosingOverflow',
@@ -1238,6 +1269,7 @@ this.planPersistenceService.setCallbacks({
       'parseTimeRangeParts',
       'extractClosingTimeFromOperatingHours',
       'normalizeHotspotPriority',
+      'getHotspotDurationMinutes',
       'buildSelectedClosingRemovalReason',
       'getPreviewRowDurationMinutes',
       'detectManualFitTimingRisk',
@@ -1651,6 +1683,12 @@ const result =
     req,
     shouldOptimizeRoute,
     requestType,
+    isNewPlan && continueFromPlanId > 0 && continuationRootQuoteId
+      ? {
+          parentPlanId: continueFromPlanId,
+          rootQuoteId: continuationRootQuoteId,
+        }
+      : undefined,
   );
 
 if (
@@ -1659,17 +1697,6 @@ if (
   Number(result?.planId || 0) > 0 &&
   continuationRootQuoteId
 ) {
-  await this.prisma.dvi_itinerary_plan_details.update({
-    where: {
-      itinerary_plan_ID: Number(result.planId),
-    },
-    data: {
-      continued_from_plan_ID: continueFromPlanId,
-      continuation_root_quote_ID:
-        continuationRootQuoteId,
-    },
-  });
-
   (result as any).continuedFromPlanId =
     continueFromPlanId;
 
@@ -2793,16 +2820,22 @@ timingStepStartedAt =
             option?.mealPlan || option?.mealPlanCode || '',
           ).trim();
 
-          const roomMatches = requestedRoomTypeId > 0
-            ? optionRoomTypeId === requestedRoomTypeId
-            : requestedRoomId > 0
-              ? optionRoomId === requestedRoomId
-              : !requestedRoom ||
-                optionRoom.toLowerCase() === requestedRoom.toLowerCase();
+          // TBO room identifiers can be regenerated between selected-rate
+          // refresh and this authoritative recheck. Prefer the exact supplier
+          // room label for VSR/TBO when both sides provide it; use numeric IDs
+          // only when the supplier omitted a room label. Other providers keep
+          // their existing ID-first matching behavior.
+          const roomMatches = provider === 'tbo' && requestedRoom
+            ? normalize(optionRoom) === normalize(requestedRoom)
+            : requestedRoomTypeId > 0
+              ? optionRoomTypeId === requestedRoomTypeId
+              : requestedRoomId > 0
+                ? optionRoomId === requestedRoomId
+                : !requestedRoom || normalize(optionRoom) === normalize(requestedRoom);
 
-          const mealMatches =
-            !requestedMeal ||
-            optionMeal.toLowerCase() === requestedMeal.toLowerCase();
+          const mealMatches = !requestedMeal || (provider === 'tbo'
+            ? normalizeMealPlan(optionMeal) === normalizeMealPlan(requestedMeal)
+            : optionMeal.toLowerCase() === requestedMeal.toLowerCase());
 
           return roomMatches && mealMatches;
         })
@@ -3185,6 +3218,8 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
           optionKey: selection.optionKey || selection.rateOptionId,
           selectionKey: supplierSelectionKey(selection) || undefined,
           supplierBookingCode: selection.bookingCode || selection.searchReference || undefined,
+          isRefundable: selection.isRefundable ?? selection.IsRefundable ?? data.isRefundable ?? data.IsRefundable,
+          IsRefundable: selection.IsRefundable ?? selection.isRefundable ?? data.IsRefundable ?? data.isRefundable,
           pricePerNight: payablePricePerNight,
           totalPrice: payableTotal,
           basePricePerNight: isBaseRate ? rawPricePerNight : Number(selection.basePricePerNight ?? 0),
@@ -3326,6 +3361,7 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         hotelMarginAmount = Number((totalPrice - baseTotalPrice).toFixed(2));
         hotelMarginTotalAmount = hotelMarginAmount;
       }
+      const requestedRateIsRefundable = data.isRefundable ?? data.IsRefundable;
       return {
         ...data,
         selectionIntent: data.selectionIntent,
@@ -3340,6 +3376,13 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         optionKey: selected.optionKey || selected.rateOptionId, hotelName: selected.hotelName,
         roomType: selected.roomType || selected.roomTypeName, mealPlanCode: selected.mealPlanCode || selected.mealPlan,
         roomId: selected.roomId, rateId: selected.rateId, pricePerNight, totalPrice,
+        // Preserve the holdability flag from the rate selected by the user.
+        // A refreshed supplier candidate can still carry the previous
+        // persisted rate's false value after switching away and back. The
+        // client-provided value is taken from the live selected option and is
+        // already part of the selection intent payload.
+        isRefundable: requestedRateIsRefundable ?? selected.isRefundable ?? selected.IsRefundable,
+        IsRefundable: requestedRateIsRefundable ?? selected.IsRefundable ?? selected.isRefundable,
         basePricePerNight,
         baseTotalPrice,
         ...(selected.tboMapFallbackApplied === true ? {
@@ -3398,7 +3441,13 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       };
     });
     try {
-      await this.selectionWorkflowService.bulkSaveHotels(Number(data.planId), persistencePayloads, Number(data.requestedBy || 1), true, true);
+      // RATE_OPTION selections in persistencePayloads were resolved from the
+      // fresh provider search above. Avoid a second TBO/VSR availability
+      // search in selectHotel: that supplier rotates its booking-code session
+      // token on every search, making the just-resolved option appear stale.
+      await this.selectionWorkflowService.bulkSaveHotels(
+        Number(data.planId), persistencePayloads, Number(data.requestedBy || 1), true, true, true,
+      );
     } catch (error) {
       console.error('[HOTEL_INTENT] atomic persistence failed', error);
       if (error?.status === 409 || error?.statusCode === 409 || error?.response?.statusCode === 409) {
@@ -3503,6 +3552,8 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       }
       return {
         routeId: Number(row.itinerary_route_id), routeDate: persistedRouteDate,
+        itineraryPlanHotelDetailsId: Number(row.itinerary_plan_hotel_details_ID || 0) || undefined,
+        itinerary_plan_hotel_details_ID: Number(row.itinerary_plan_hotel_details_ID || 0) || undefined,
         hotelId: row.hotel_id, canonicalHotelId: row.hotel_id,
         hotelCode: row.hotel_code || snapshot.providerHotelCode || snapshot.hotelCode,
         providerHotelCode: snapshot.providerHotelCode || row.hotel_code || null,
@@ -3527,6 +3578,12 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         bookingCode: snapshot.bookingCode, searchReference: snapshot.searchReference,
         pricePerNight: Number(row.selected_price_per_night || 0), totalPrice: Number(row.selected_total_price || 0), currency: row.selected_currency || 'INR',
         selectedPriceSnapshot: snapshot,
+        ...(snapshot.isRefundable !== undefined || snapshot.IsRefundable !== undefined
+          ? {
+              isRefundable: snapshot.isRefundable ?? snapshot.IsRefundable,
+              IsRefundable: snapshot.IsRefundable ?? snapshot.isRefundable,
+            }
+          : {}),
          basePricePerNight: Number(
            snapshot.basePricePerNight ?? snapshot.base_price_per_night ??
            snapshot.roomRate ?? roomDetail.room_rate ?? row.room_rate ?? 0,
@@ -4050,6 +4107,9 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
   }
   async prebookHotels(payload: any) {
     return this.hotelPrebookService.prebookHotels(payload);
+  }
+  async checkHotelHoldEligibility(payload: any) {
+    return this.hotelPrebookService.checkHotelHoldEligibility(payload);
   }
 async processConfirmationWithTboBookings(
   baseResult: any,
@@ -5147,21 +5207,18 @@ async processConfirmationWithTboBookings(
     route: any,
     overrideEndTime?: string,
   ): number {
+    const routeStartRaw = TimeConverter.toTimeString(route?.route_start_time || '08:00:00');
     const routeEndRaw = overrideEndTime
       ? TimeConverter.toTimeString(overrideEndTime)
       : TimeConverter.toTimeString(route?.route_end_time || '00:00:00');
-    const routeEndSec = this.hmsToSeconds(routeEndRaw);
-    let maxEndSec = 0;
-
-    for (const row of fullTimeline || []) {
-      const endMinutes = this.parseSegmentEndMinutes(row);
-      if (endMinutes === null) continue;
-      const endSec = endMinutes * 60;
-      if (endSec > maxEndSec) maxEndSec = endSec;
-    }
-
-    if (maxEndSec <= routeEndSec) return 0;
-    return Math.ceil((maxEndSec - routeEndSec) / 60);
+    return calculateChronologicalRouteEndOverflowMinutes({
+      timeline: fullTimeline,
+      routeStartTime: routeStartRaw,
+      routeEndTime: routeEndRaw,
+      parseTimeToMinutes: (value: any) => this.parsePreviewTimeToMinutes(value),
+      parseSegmentStartMinutes: (segment: any) => this.parseSegmentStartMinutes(segment),
+      parseSegmentEndMinutes: (segment: any) => this.parseSegmentEndMinutes(segment),
+    });
   }
 
   private async buildRouteTimelineSnapshotAfterManualConflictInsert(

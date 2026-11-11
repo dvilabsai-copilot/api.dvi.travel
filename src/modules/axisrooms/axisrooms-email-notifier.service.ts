@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
+import { PrismaService } from '../../prisma.service';
+import { withGlobalSettingsCc } from '../../common/utils/default-email-cc.util';
 
 type AxisroomsEmailPayload = {
   eventType: 'inventoryUpdate' | 'rateUpdate' | 'restrictionUpdate';
@@ -17,6 +19,8 @@ export class AxisroomsEmailNotifierService {
   private readonly logger = new Logger(AxisroomsEmailNotifierService.name);
   private transporter: Transporter | null = null;
   private warnedDisabled = false;
+
+  constructor(private readonly prisma: PrismaService) {}
 
   private isEnabled(): boolean {
     const value = String(process.env.AXISROOMS_MAIL_ENABLED ?? 'true').toLowerCase();
@@ -98,7 +102,7 @@ export class AxisroomsEmailNotifierService {
         }
       }
 
-      await transporter.sendMail({
+      await transporter.sendMail(await withGlobalSettingsCc(this.prisma, {
         from,
         to: to.length ? to : undefined,
         cc: cc.length ? cc : undefined,
@@ -106,7 +110,7 @@ export class AxisroomsEmailNotifierService {
         subject,
         text: bodyLines.join('\n'),
         html: `<pre style="font-family:Arial,sans-serif">${bodyLines.join('\n')}</pre>`,
-      });
+      }));
     } catch (error: any) {
  this.logger.error(`AxisRooms email send failed: ${error?.message || error}`);
     }

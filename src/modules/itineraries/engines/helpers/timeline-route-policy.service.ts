@@ -177,8 +177,76 @@ export class TimelineRoutePolicyService {
     };
   }
 
-  estimateRouteHotspotCapacity(route: { route_start_time?: unknown; route_end_time?: unknown } | null | undefined): number {
+  estimateRouteHotspotCapacity(route: {
+    route_start_time?: unknown;
+    route_end_time?: unknown;
+    capacity_start_seconds?: unknown;
+    capacity_end_seconds?: unknown;
+    capacity_busy_intervals?: Array<{ start_seconds?: unknown; end_seconds?: unknown }>;
+    capacity_candidate_durations_seconds?: unknown[];
+    capacity_travel_buffer_seconds?: unknown;
+    capacity_suppressed?: boolean;
+  } | null | undefined): number {
     if (!route) return 0;
+    if (route.capacity_suppressed) return 0;
+
+    const configuredStart = Number(route.capacity_start_seconds);
+    const configuredEnd = Number(route.capacity_end_seconds);
+    if (Number.isFinite(configuredStart) && Number.isFinite(configuredEnd)) {
+      let startSecs = configuredStart;
+      let endSecs = configuredEnd;
+      if (endSecs < startSecs) endSecs += 86400;
+
+      const intervals = (route.capacity_busy_intervals || [])
+        .map((interval) => {
+          const start = Number(interval?.start_seconds);
+          const end = Number(interval?.end_seconds);
+          if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+          return {
+            start: Math.max(start, startSecs),
+            end: Math.min(end, endSecs),
+          };
+        })
+        .filter((interval): interval is { start: number; end: number } =>
+          interval !== null && interval.end > interval.start,
+        )
+        .sort((a, b) => a.start - b.start);
+
+      let occupiedSeconds = 0;
+      let occupiedStart = 0;
+      let occupiedEnd = 0;
+      for (const interval of intervals) {
+        if (!occupiedStart && !occupiedEnd) {
+          occupiedStart = interval.start;
+          occupiedEnd = interval.end;
+          continue;
+        }
+        if (interval.start <= occupiedEnd) {
+          occupiedEnd = Math.max(occupiedEnd, interval.end);
+          continue;
+        }
+        occupiedSeconds += occupiedEnd - occupiedStart;
+        occupiedStart = interval.start;
+        occupiedEnd = interval.end;
+      }
+      if (occupiedStart || occupiedEnd) occupiedSeconds += occupiedEnd - occupiedStart;
+
+      const availableSeconds = Math.max(0, endSecs - startSecs - occupiedSeconds);
+      const durations = (route.capacity_candidate_durations_seconds || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      const averageDuration = durations.length > 0
+        ? durations.reduce((sum, value) => sum + value, 0) / durations.length
+        : 60 * 60;
+      const travelBuffer = Number(route.capacity_travel_buffer_seconds);
+      const perHotspotSeconds = Math.max(
+        1,
+        averageDuration + (Number.isFinite(travelBuffer) && travelBuffer >= 0 ? travelBuffer : 40 * 60),
+      );
+
+      return Math.max(0, Math.floor(availableSeconds / perHotspotSeconds));
+    }
+
     const startRaw = typeof route.route_start_time === 'string' ? String(route.route_start_time) : '09:00:00';
     const endRaw = typeof route.route_end_time === 'string' ? String(route.route_end_time) : '18:00:00';
     let startSecs = timeToSeconds(startRaw);

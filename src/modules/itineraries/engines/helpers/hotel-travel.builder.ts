@@ -29,6 +29,7 @@ export class HotelTravelBuilder {
  fromHotspotId?: number; // For cache-first
       sourceCoords?: { lat: number; lon: number };
       destCoords?: { lat: number; lon: number };
+      preferStoredRouteDistance?: boolean;
     },
   ): Promise<{ row: HotspotDetailRow; nextTime: string }> {
     return this.travelBuilder.buildTravelSegment(tx, {
@@ -45,6 +46,7 @@ export class HotelTravelBuilder {
       fromHotspotId: opts.fromHotspotId,
       sourceCoords: opts.sourceCoords,
       destCoords: opts.destCoords,
+      preferStoredRouteDistance: opts.preferStoredRouteDistance,
     });
   }
 

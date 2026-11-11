@@ -60,6 +60,19 @@ import { TimelineDay1CandidateGateService } from './timeline-day1-candidate-gate
 import { TimelineDay1CutoffMasterService } from './timeline-day1-cutoff-master.service';
 import { TimelineDay1TravelProjectionService } from './timeline-day1-travel-projection.service';
 import { TransportEarlyArrivalTimelineService } from './transport-early-arrival-timeline.service';
+import {
+  buildIntercityPhaseCandidateQueue,
+  shouldAdvanceToPostSourceCandidate,
+} from './timeline-intercity-phase.service';
+import {
+  buildSameCityRoutePolicyContexts,
+  calculateSameCityPriorityLimit,
+  filterSameCityAutomaticCandidates,
+  findSameCityPolicyViolations,
+  shouldDeferSameCityAutomaticCandidate,
+  SameCityHotspotPolicyConfig,
+  SameCityRoutePolicyContext,
+} from './same-city-hotspot-priority-policy';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -223,6 +236,10 @@ export class TimelineBuilder {
   private readonly day1CutoffMasterService = new TimelineDay1CutoffMasterService();
   private readonly day1TravelProjectionService = new TimelineDay1TravelProjectionService();
   private readonly transportEarlyArrivalTimelineService = new TransportEarlyArrivalTimelineService();
+  private readonly sameCityHotspotPolicy = {
+    buildContexts: buildSameCityRoutePolicyContexts,
+    filterCandidates: filterSameCityAutomaticCandidates,
+  };
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -492,11 +509,38 @@ const reservedSameCityHotspotIdsByRoute =
         itinerary_outstation_speed_limit: true,
         itinerary_travel_by_road_buffer_time: true,
         itinerary_common_buffer_time: true,
+        same_city_hotspot_rank_enabled: true,
+        same_city_hotspot_max_rank: true,
+        same_city_hotspot_base_increment: true,
+        same_city_hotspot_distribution_mode: true,
       },
     });
     if (globalSettingsForBuilder) {
       this.distanceHelper.setGlobalSettings(globalSettingsForBuilder);
     }
+
+    const sameCityHotspotPolicyConfig: SameCityHotspotPolicyConfig = {
+      enabled: Number(globalSettingsForBuilder?.same_city_hotspot_rank_enabled || 0) === 1,
+      maxPriority: Number(globalSettingsForBuilder?.same_city_hotspot_max_rank || 30),
+      baseIncrement: Number(globalSettingsForBuilder?.same_city_hotspot_base_increment || 10),
+      distributionMode: String(globalSettingsForBuilder?.same_city_hotspot_distribution_mode || 'BALANCED').toUpperCase(),
+    };
+
+    this.logBookingRule({
+      rule: 'SAME_CITY_PRIORITY_CONFIG',
+      planId,
+      enabled: sameCityHotspotPolicyConfig.enabled,
+      maxPriority: sameCityHotspotPolicyConfig.maxPriority,
+      baseIncrement: sameCityHotspotPolicyConfig.baseIncrement,
+      distributionMode: sameCityHotspotPolicyConfig.distributionMode,
+      scopeToRouteId: options?.scopeToRouteId ?? null,
+    });
+
+    const sameCityRoutePolicyContexts = this.sameCityHotspotPolicy.buildContexts(
+      routes,
+      (value: string) => this.canonicalCityKey(value),
+    );
+    const sameCityRouteOnlyHotspotIds = new Set<number>();
 
  // Create hotspot lookup map for O(1) access (avoid repeated DB queries)
     const hotspotMap = new Map();
@@ -652,6 +696,215 @@ for (const route of scopedRoutes) {
       : routeIndex + 1;
 
   const routeProcessStart = Date.now();
+
+  const sameCityRoutePolicyContext: SameCityRoutePolicyContext | undefined =
+    sameCityRoutePolicyContexts.get(Number(route.itinerary_route_ID || 0));
+  let sameCityStrictPriorityLimit = 3;
+  let sameCityDailySoftTarget: number | null = null;
+
+  const isRouteOnlyHotspotBucket = (value: unknown): boolean =>
+    ['en_route', 'enroute', 'source_to_destination', 'via', 'boundary', 'corridor'].includes(
+      String(value || '').trim().toLowerCase(),
+    );
+
+  const isSameCityAutomaticCandidate = (candidate: any): boolean => {
+    if (!sameCityRoutePolicyContext?.eligible) return false;
+    if (Boolean(candidate?.isManualSelection) || Boolean(candidate?.isManual)) return false;
+    if (Number(candidate?.hotspot_plan_own_way || 0) === 1) return false;
+    if (isRouteOnlyHotspotBucket(candidate?.matched_bucket || candidate?.__bucket)) return false;
+
+    const hotspotId = Number(candidate?.hotspot_ID || 0);
+    const master = hotspotMap.get(hotspotId) as any;
+    const location = String(candidate?.hotspot_location || master?.hotspot_location || '');
+    const toLocation = String(
+      candidate?.hotspot_to_location || master?.hotspot_to_location || '',
+    ).trim();
+    return this.hotspotLocationMatchesCity(location, sameCityRoutePolicyContext.cityKey) &&
+      (!toLocation || this.hotspotLocationMatchesCity(toLocation, sameCityRoutePolicyContext.cityKey));
+  };
+
+  const countScheduledSameCityAutomaticHotspots = (): number => {
+    const ids = new Set<number>();
+    for (const row of hotspotRows as any[]) {
+      if (Number(row?.itinerary_route_ID || 0) !== Number(route.itinerary_route_ID || 0)) continue;
+      if (Number(row?.item_type || 0) !== 4 || Number(row?.hotspot_plan_own_way || 0) === 1) continue;
+      const hotspotId = Number(row?.hotspot_ID || 0);
+      if (hotspotId > 0 && isSameCityAutomaticCandidate(row)) ids.add(hotspotId);
+    }
+    return ids.size;
+  };
+
+  const applySameCityPriorityPolicy = <T extends any[]>(
+    candidates: T,
+    stage: string,
+  ): T => {
+    const toCapacitySeconds = (value: unknown): number | null => {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.getUTCHours() * 3600 + value.getUTCMinutes() * 60 + value.getUTCSeconds();
+      }
+      const seconds = timeToSeconds(String(value ?? ''));
+      return Number.isFinite(seconds) ? seconds : null;
+    };
+
+    const capacityStartSeconds = this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds);
+    const capacityEndSeconds = Math.min(
+      routeEndSeconds,
+      lastRouteArrivalDeadlineSeconds,
+      latestNonHotelEndSeconds,
+    );
+    const capacityRowsForRoute = hotspotRows
+      .filter((row: any) => Number(row?.itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0));
+    const capacityBusyIntervals = capacityRowsForRoute
+      .map((row: any) => {
+        const start = toCapacitySeconds(row?.hotspot_start_time);
+        const end = toCapacitySeconds(row?.hotspot_end_time);
+        if (start === null || end === null) return null;
+        let absoluteStart = start;
+        let absoluteEnd = end;
+        while (absoluteStart < routeStartSeconds) absoluteStart += 86400;
+        while (absoluteEnd < absoluteStart) absoluteEnd += 86400;
+        return { start_seconds: absoluteStart, end_seconds: absoluteEnd };
+      })
+      .filter((interval): interval is { start_seconds: number; end_seconds: number } => interval !== null);
+    const capacityCandidateDurations = (candidates || [])
+      .map((candidate: any) => {
+        const master = hotspotMap.get(Number(candidate?.hotspot_ID || 0)) as any;
+        return toCapacitySeconds(master?.hotspot_duration || candidate?.hotspot_duration);
+      })
+      .filter((duration): duration is number => duration !== null && duration > 0);
+    const travelDurations = capacityRowsForRoute
+      .filter((row: any) => Number(row?.item_type || 0) === 3)
+      .map((row: any) => {
+        const start = toCapacitySeconds(row?.hotspot_start_time);
+        const end = toCapacitySeconds(row?.hotspot_end_time);
+        if (start === null || end === null) return 0;
+        let absoluteStart = start;
+        let absoluteEnd = end;
+        while (absoluteStart < routeStartSeconds) absoluteStart += 86400;
+        while (absoluteEnd < absoluteStart) absoluteEnd += 86400;
+        return absoluteEnd - absoluteStart;
+      })
+      .filter((duration) => duration > 0);
+
+    const routeOnlyHotspotIds = new Set<number>(
+      (candidates || [])
+        .filter((candidate: any) =>
+          isRouteOnlyHotspotBucket(candidate?.matched_bucket || candidate?.__bucket),
+        )
+        .map((candidate: any) => Number(candidate?.hotspot_ID || 0))
+        .filter((hotspotId) => hotspotId > 0),
+    );
+    for (const hotspotId of routeOnlyHotspotIds) {
+      sameCityRouteOnlyHotspotIds.add(hotspotId);
+    }
+
+    const futureSameCityCapacity = sameCityRoutePolicyContext?.eligible
+      ? routes.reduce((total, futureRoute) => {
+          const futureContext = sameCityRoutePolicyContexts.get(
+            Number(futureRoute.itinerary_route_ID || 0),
+          );
+          if (
+            !futureContext?.eligible ||
+            futureContext.groupId !== sameCityRoutePolicyContext.groupId ||
+            futureContext.cityDay <= sameCityRoutePolicyContext.cityDay
+          ) {
+            return total;
+          }
+
+          return total + this.estimateRouteHotspotCapacity(futureRoute as any);
+        }, 0)
+      : 0;
+
+    const result = this.sameCityHotspotPolicy.filterCandidates({
+      candidates: (candidates || []) as any,
+      allHotspots: allHotspots as any,
+      context: sameCityRoutePolicyContext,
+      config: sameCityHotspotPolicyConfig,
+      estimatedCapacity: this.estimateRouteHotspotCapacity({
+        ...(route as any),
+        capacity_start_seconds: capacityStartSeconds,
+        capacity_end_seconds: capacityEndSeconds,
+        capacity_busy_intervals: capacityBusyIntervals,
+        capacity_candidate_durations_seconds: capacityCandidateDurations,
+        capacity_travel_buffer_seconds: travelDurations.length > 0
+          ? travelDurations.reduce((sum, value) => sum + value, 0) / travelDurations.length
+          : undefined,
+        capacity_suppressed: forceNoSightseeingOnThisRoute,
+      }),
+      futureCapacity: futureSameCityCapacity,
+      routeOnlyHotspotIds,
+      hotspotLocationMatchesCity: (location: string, cityKey: string) =>
+        this.hotspotLocationMatchesCity(location, cityKey),
+    });
+
+    sameCityStrictPriorityLimit =
+      sameCityHotspotPolicyConfig.enabled && sameCityRoutePolicyContext?.eligible
+        ? result.limit
+        : 3;
+    sameCityDailySoftTarget =
+      sameCityHotspotPolicyConfig.enabled && sameCityRoutePolicyContext?.eligible
+        ? result.capacity.softTarget
+        : null;
+
+    if (sameCityHotspotPolicyConfig.enabled && sameCityRoutePolicyContext?.eligible) {
+      this.logBookingRule({
+        rule: 'SAME_CITY_PRIORITY_POOL',
+        planId,
+        routeId: route.itinerary_route_ID,
+        cityKey: sameCityRoutePolicyContext.cityKey,
+        cityDay: sameCityRoutePolicyContext.cityDay,
+        groupId: sameCityRoutePolicyContext.groupId,
+        stage,
+        poolCount: result.diagnostics.poolCount,
+        effectiveCount: result.diagnostics.effectiveCount,
+        invalidPriorityIds: result.diagnostics.invalidPriorityIds,
+        missingPriorities: result.diagnostics.missingPriorities,
+        duplicatePriorities: result.diagnostics.duplicatePriorities,
+        selectedCount: result.candidates.length,
+        removedCount: result.removed.length,
+      });
+      this.logBookingRule({
+        rule: 'SAME_CITY_PRIORITY_DAY_LIMIT',
+        planId,
+        routeId: route.itinerary_route_ID,
+        cityKey: sameCityRoutePolicyContext.cityKey,
+        cityDay: sameCityRoutePolicyContext.cityDay,
+        limit: result.limit,
+        selectedHotspotIds: result.candidates.map((candidate: any) => Number(candidate?.hotspot_ID || 0)),
+        removedHotspotIds: result.removed.map((candidate: any) => Number(candidate?.hotspot_ID || 0)),
+      });
+      this.logBookingRule({
+        rule: stage === 'post-carry-forward'
+          ? 'SAME_CITY_CARRY_FORWARD'
+          : stage === 'pre-scheduler-validation'
+            ? 'SAME_CITY_POLICY_VALIDATION'
+            : 'SAME_CITY_BALANCED_ALLOCATION',
+        planId,
+        routeId: route.itinerary_route_ID,
+        cityKey: sameCityRoutePolicyContext.cityKey,
+        cityDay: sameCityRoutePolicyContext.cityDay,
+        capacityEstimate: this.estimateRouteHotspotCapacity(route as any),
+        futureCapacity: futureSameCityCapacity,
+        softTarget: result.capacity.softTarget,
+        reserveForFutureDays: result.capacity.reserveForFutureDays,
+        eligibleCandidateCount: result.candidates.length,
+        filteredCandidateCount: result.removed.length,
+      });
+      this.logBookingRule({
+        rule: 'SAME_CITY_CAPACITY',
+        planId,
+        routeId: route.itinerary_route_ID,
+        cityKey: sameCityRoutePolicyContext.cityKey,
+        cityDay: sameCityRoutePolicyContext.cityDay,
+        estimatedCapacity: result.capacity.estimatedCapacity,
+        futureCapacity: futureSameCityCapacity,
+        softTarget: result.capacity.softTarget,
+        reserveForFutureDays: result.capacity.reserveForFutureDays,
+      });
+    }
+
+    return result.candidates as T;
+  };
 
   this.logTimeline(
     '[TIMELINE] Processing route',
@@ -1294,6 +1547,10 @@ const getTransportDay1CandidateEndSeconds = (
         existingHotspots,
       });
       selectedHotspots = manualPlacementOrdering.selectedHotspots;
+      selectedHotspots = applySameCityPriorityPolicy(
+        selectedHotspots,
+        'post-manual-placement',
+      ) as SelectedHotspot[];
       const { routeDesiredMovableSet, desiredMovableOrderRank, routePreferredAdjacencyPairs } = manualPlacementOrdering;
 
       selectedHotspots = await this.destinationReservationService.apply({
@@ -1325,6 +1582,11 @@ const getTransportDay1CandidateEndSeconds = (
 
 
 
+      selectedHotspots = applySameCityPriorityPolicy(
+        selectedHotspots,
+        'post-destination-reservation',
+      ) as SelectedHotspot[];
+
       const carryForwardAttachment = this.carryForwardAttachmentService.apply({
         route,
         plan,
@@ -1341,6 +1603,10 @@ const getTransportDay1CandidateEndSeconds = (
         logBookingRule: (...args) => (this.logBookingRule as any)(...args),
       });
       selectedHotspots = carryForwardAttachment.selectedHotspots;
+      selectedHotspots = applySameCityPriorityPolicy(
+        selectedHotspots,
+        'post-carry-forward',
+      ) as SelectedHotspot[];
       const { hasOnlySourceFallbackCandidates } = carryForwardAttachment;
       this.logTimeline('[TIMELINE] Selected hotspots for route:', selectedHotspots.length);
  // Matrix-assisted auto-build merge (optional, behind feature flag)
@@ -1368,6 +1634,11 @@ const getTransportDay1CandidateEndSeconds = (
 
 
 
+      selectedHotspots = applySameCityPriorityPolicy(
+        selectedHotspots,
+        'post-matrix-autobuild',
+      ) as SelectedHotspot[];
+
  // Re-order candidates: preserve manual selections and priority>0 first (protected),
  // then sort remaining candidates by matrix_score desc, then distance asc.
 
@@ -1375,6 +1646,11 @@ const getTransportDay1CandidateEndSeconds = (
   selectedHotspots,
   (...args) => (this.logTimeline as any)(...args),
 );
+
+    selectedHotspots = applySameCityPriorityPolicy(
+      selectedHotspots,
+      'pre-scheduler-validation',
+    ) as SelectedHotspot[];
 
 /**
  * IMPORTANT:
@@ -1551,6 +1827,11 @@ if (
       'Route-scoped rebuild uses the remaining persisted sightseeing set as source of truth.',
   });
 }
+
+selectedHotspots = applySameCityPriorityPolicy(
+  selectedHotspots,
+  'post-scoped-preservation',
+) as SelectedHotspot[];
 
 const routeLoopStart = Date.now();
 let hotspotQueryCount = 0;
@@ -2718,7 +2999,7 @@ const strictHotspots = (
     return true;
   }
 
-  if (priority >= 1 && priority <= 3) {
+  if (priority >= 1 && priority <= sameCityStrictPriorityLimit) {
     return true;
   }
           if (
@@ -2843,6 +3124,7 @@ const strictHotspots = (
 
         let strictPassHotspots = [...strictHotspots];
         const sourcePhaseEndSeconds = timeToSeconds('12:00:00');
+        let priorityDestinationPreemption: SelectedHotspot | null = null;
         if (isIntercityNonDirectRoute) {
           const destinationStrict = strictPassHotspots.filter((hs) => {
             const bucket = String((hs as any).matched_bucket || '').toLowerCase();
@@ -2872,6 +3154,10 @@ const strictHotspots = (
               const bucket = String((hs as any).matched_bucket || '').toLowerCase();
               return bucket === 'destination' || bucket === 'dest';
             });
+
+            priorityDestinationPreemption = [...destinationOnlyStrict]
+              .filter((hs: any) => Number(hs?.hotspot_priority ?? 0) === 1)
+              .sort((a: any, b: any) => Number(a?.hotspot_ID ?? 0) - Number(b?.hotspot_ID ?? 0))[0] || null;
 
             const compareSchedulerRouteMovementCandidates = (a: any, b: any) => {
               const ao = Number(a.__route_movement_order ?? 999999);
@@ -3154,6 +3440,18 @@ const PASS_STRICT = 1;
               hotspotId > 0 &&
               !isHotspotAlreadyPlanned(hotspotId) &&
               isSourcePhaseEligibleCandidate(hs)
+            );
+          });
+        };
+        const getPendingPostSourcePhaseCandidates = (
+          candidates: Array<SelectedHotspot>,
+        ): Array<SelectedHotspot> => {
+          return (Array.isArray(candidates) ? candidates : []).filter((hs: any) => {
+            const hotspotId = Number(hs?.hotspot_ID || 0);
+            return (
+              hotspotId > 0 &&
+              !isHotspotAlreadyPlanned(hotspotId) &&
+              !isSourcePhaseEligibleCandidate(hs)
             );
           });
         };
@@ -3529,7 +3827,10 @@ const PASS_STRICT = 1;
               });
 
               if (remainingSourceCandidates.length > 0) {
-                hotspotsToTry = remainingSourceCandidates;
+                hotspotsToTry = [
+                  ...remainingSourceCandidates,
+                  ...getPendingPostSourcePhaseCandidates(strictPassHotspots),
+                ];
                 this.logBookingRule({
                   rule: 'SOURCE_PHASE_CLOCK_PRESERVED_FOR_NON_STRICT_SOURCE_CANDIDATES',
                   quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
@@ -3547,9 +3848,7 @@ const PASS_STRICT = 1;
                 });
               } else {
                 currentTime = secondsToTime(sourcePhaseEndSeconds);
-                hotspotsToTry = corridorHotspots.filter(
-                  (hs: any) => !isHotspotAlreadyPlanned(Number(hs?.hotspot_ID || 0)),
-                );
+                hotspotsToTry = getPendingPostSourcePhaseCandidates(strictPassHotspots);
                 this.logBookingRule({
                   rule: 'SOURCE_PHASE_ADVANCED_TO_CORRIDOR_PHASE',
                   quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
@@ -3614,7 +3913,15 @@ const PASS_STRICT = 1;
             const sourceOnlyCandidates = hotspotsToTry.filter((hs: any) => isSourcePhaseEligibleCandidate(hs));
 
             if (sourceOnlyCandidates.length > 0) {
-              hotspotsToTry = sourceOnlyCandidates;
+              hotspotsToTry = pass === PASS_STRICT
+                ? buildIntercityPhaseCandidateQueue(
+                    hotspotsToTry,
+                    isSourcePhaseEligibleCandidate,
+                    priorityDestinationPreemption && !isHotspotAlreadyPlanned(Number(priorityDestinationPreemption.hotspot_ID || 0))
+                      ? priorityDestinationPreemption
+                      : null,
+                  )
+                : sourceOnlyCandidates;
             } else if (timeToSeconds(currentTime) < sourcePhaseEndSeconds) {
               this.logBookingRule({
                 rule: 'SOURCE_PHASE_ADVANCE_TO_NOON',
@@ -3878,7 +4185,7 @@ const normalizedBucket = String(
 
         if (isIntercityNonDirectRoute) {
           const currentSecs = timeToSeconds(currentTime);
-          const sourcePhaseActive =
+          let sourcePhaseActive =
             !shouldBypassSourcePhaseForMovementTransfer &&
             currentSecs < sourcePhaseEndSeconds;
         if (
@@ -3915,50 +4222,93 @@ const normalizedBucket = String(
             continue;
           }
           if (sourcePhaseActive && !isSourcePhaseEligibleCandidate(sh)) {
-            if (hotspotId === 228 || hotspotId === 357) {
+            const isPriorityDestinationPreemption =
+              pass === PASS_STRICT &&
+              priorityDestinationPreemption !== null &&
+              Number(priorityDestinationPreemption.hotspot_ID || 0) === hotspotId &&
+              !isHotspotAlreadyPlanned(hotspotId) &&
+              hotspotRows.filter((row: any) =>
+                Number(row?.itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) &&
+                Number(row?.item_type || 0) === 4,
+              ).length === 0;
+
+            if (isPriorityDestinationPreemption) {
+              sourcePhaseActive = false;
               this.logBookingRule({
-                rule: 'CHEEYAPPARA_REJECTED_BEFORE_VALARA',
+                rule: 'PRIORITY_DESTINATION_PREEMPTED_SOURCE_PHASE',
+                quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                hotspotId,
+                priority: hotspotPriority,
+                reason: 'Unplanned priority-1 destination hotspot is tried before lower-priority source sightseeing so its operating window is preserved.',
+              });
+            } else if (pass === PASS_STRICT && shouldAdvanceToPostSourceCandidate(
+              hotspotsToTry,
+              hsIdx,
+              isSourcePhaseEligibleCandidate,
+              (candidate: any) => isHotspotAlreadyPlanned(Number(candidate?.hotspot_ID || 0)),
+            )) {
+              currentTime = secondsToTime(sourcePhaseEndSeconds);
+              sourcePhaseActive = false;
+              this.logBookingRule({
+                rule: 'SOURCE_PHASE_ADVANCED_TO_POST_SOURCE_CANDIDATE',
                 quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
                 planId,
                 routeId: route.itinerary_route_ID,
                 cycle: optimizationCycle,
                 pass,
-                passType:
-                  pass === PASS_STRICT
-                    ? 'strict'
-                    : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
-                      ? 'filler'
-                      : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
-                        ? 'deferred'
-                        : 'retry',
-                currentTime,
+                hotspotId,
+                bucket: normalizedBucket,
+                sourcePhaseEndTime: secondsToTime(sourcePhaseEndSeconds),
+                reason: 'Strict source candidates are exhausted; continue with ordered movement/destination candidates.',
+              });
+            } else {
+              if (hotspotId === 228 || hotspotId === 357) {
+                this.logBookingRule({
+                  rule: 'CHEEYAPPARA_REJECTED_BEFORE_VALARA',
+                  quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                  planId,
+                  routeId: route.itinerary_route_ID,
+                  cycle: optimizationCycle,
+                  pass,
+                  passType:
+                    pass === PASS_STRICT
+                      ? 'strict'
+                      : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                        ? 'filler'
+                        : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                          ? 'deferred'
+                          : 'retry',
+                  currentTime,
+                  bucket: normalizedBucket,
+                  priority: hotspotPriority,
+                  reason: 'source_phase_gate_non_source_bucket',
+                  rejectionSource: 'source_phase_gate',
+                  valaraAlreadyAdded: isHotspotAlreadyPlanned(357),
+                });
+              }
+              logHotspotBucketTrace({
+                hotspotId,
+                hotspotName: String((sh as any).hotspot_name || ''),
                 bucket: normalizedBucket,
                 priority: hotspotPriority,
-                reason: 'source_phase_gate_non_source_bucket',
-                rejectionSource: 'source_phase_gate',
-                valaraAlreadyAdded: isHotspotAlreadyPlanned(357),
-              });
-            }
-            logHotspotBucketTrace({
-              hotspotId,
-              hotspotName: String((sh as any).hotspot_name || ''),
-              bucket: normalizedBucket,
-              priority: hotspotPriority,
-              currentTime,
-              sourcePhaseActive,
-              accepted: false,
-              rejectionReason: 'source_phase_gate_non_source_bucket',
-            });
-            if (hotspotId === 241) {
-              traceHotspot241('rejected_source_phase_gate', {
-                pass,
                 currentTime,
-                sourcePhaseEnd: '12:00:00',
-                bucket: normalizedBucket || null,
-                priority: hotspotPriority,
+                sourcePhaseActive,
+                accepted: false,
+                rejectionReason: 'source_phase_gate_non_source_bucket',
               });
+              if (hotspotId === 241) {
+                traceHotspot241('rejected_source_phase_gate', {
+                  pass,
+                  currentTime,
+                  sourcePhaseEnd: '12:00:00',
+                  bucket: normalizedBucket || null,
+                  priority: hotspotPriority,
+                });
+              }
+              continue;
             }
-            continue;
           }
         }
 
@@ -4145,6 +4495,34 @@ if (
           });
           continue;
         }
+
+        const sameCityScheduledCount = countScheduledSameCityAutomaticHotspots();
+        if (
+          !isHotspotAlreadyPlanned(hotspotId) &&
+          shouldDeferSameCityAutomaticCandidate({
+            candidate: sh as any,
+            context: sameCityRoutePolicyContext,
+            config: sameCityHotspotPolicyConfig,
+            scheduledCount: sameCityScheduledCount,
+            softTarget: sameCityDailySoftTarget,
+            isLocalCandidate: isSameCityAutomaticCandidate(sh),
+          })
+        ) {
+          this.logBookingRule({
+            rule: 'SAME_CITY_CAPACITY_TARGET_REACHED',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cityKey: sameCityRoutePolicyContext?.cityKey ?? null,
+            cityDay: sameCityRoutePolicyContext?.cityDay ?? null,
+            hotspotId,
+            scheduledCount: sameCityScheduledCount,
+            softTarget: sameCityDailySoftTarget,
+            reason: 'Defer the feasible same-city automatic candidate so remaining capacity is not exhausted before the next city day.',
+          });
+          continue;
+        }
+
         logHotspotBucketTrace({
           hotspotId,
           hotspotName: String((hotspotData as any)?.hotspot_name || (sh as any).hotspot_name || ''),
@@ -6206,6 +6584,8 @@ if (!sharedCycle4Feasibility.feasible) {
                 totalInfants: plan.total_infants,
                 nationality: plan.nationality,
                 itineraryPreference: plan.itinerary_preference,
+                hotspotPlanOwnWay: 1,
+                isManual: true,
                 isConflict: false,
                 conflictReason: '',
               });
@@ -6438,65 +6818,16 @@ const overnightDestinationCoords =
     ? await this.resolvePlaceCoords(tx, transportOvernightDestination, 'destination')
     : undefined;
 
- // RULE 2: Always show final travel segment to destination (outstation type=2)
- // For early-arrival declined same-day flow, force hotel movement near end-of-day.
-        let hotelStartTime = currentTime;
+ // RULE 2: Always show final travel segment to destination (outstation type=2).
+ // Start from the end of the actual preceding timeline item. The travel
+ // duration must determine the hotel arrival; anchoring the start backwards
+ // from route_end_time creates an artificial wait and makes every arrival look
+ // like the route cutoff (for example, 02:28 PM + 5h32m = 08:00 PM).
+        const hotelStartTime = currentTime;
 
-        // Intercity Transport Only Day 1: leave for the overnight destination
-        // after the last scheduled visit instead of introducing an invisible
-        // wait until route_end_time. Keep local-stay deferred-check-in policy.
-        // Transport Only Day 1 must not create an invisible wait simply to
-        // force the guest's hotel arrival to match the route-end deadline.
-        // Applies to both verified local stays and intercity transfers.
-        // Other preferences retain their existing hotel-defer policy.
-        const shouldAnchorHotelTravelToRouteEnd =
-          suppressHotelInsertionUntilEndOfDay &&
-          !(Number(plan.itinerary_preference || 0) === 2 && isFirstRoute);
-
-    if (shouldAnchorHotelTravelToRouteEnd) {
-  const estimatedHotelTravel =
-    await this.distanceHelper.fromSourceAndDestination(
-      tx,
-      sourceCity,
-      finalTravelDestinationName,
-      2,
-      currentCoords,
-      hotelDestinationCoords ?? overnightDestinationCoords ?? destCityCoords,
-    );
-
-  const estimatedHotelSegmentSeconds =
-    timeToSeconds(estimatedHotelTravel.travelTime) +
-    timeToSeconds(estimatedHotelTravel.bufferTime);
-
-  const routeEndAnchoredStartSeconds = Math.max(
-    timeToSeconds(currentTime),
-    routeEndSeconds - estimatedHotelSegmentSeconds,
-  );
-
-  hotelStartTime = secondsToTime(
-    wrapToDay(routeEndAnchoredStartSeconds),
-  );
-}
-
-        if (
-          shouldAnchorHotelTravelToRouteEnd &&
-          hotelStartTime !== currentTime
-        ) {
-          this.logBookingRule({
-            rule: 'HOTEL_SEGMENT_ANCHORED_TO_END_OF_DAY',
-            quoteId:
-              (plan as any).quote_id ??
-              (plan as any).quoteId ??
-              (plan as any).quote_ID ??
-              null,
-            planId,
-            routeId: route.itinerary_route_ID,
-            previousCurrentTime: currentTime,
-            anchoredStartTime: hotelStartTime,
-            routeEndTime,
-          });
-        }
-
+        // Intercity Transport Only Day 1 and local-stay deferred-check-in
+        // flows both use the same rule here: travel starts after the actual
+        // preceding timeline item, with no invisible wait to route_end_time.
 const hasValidCurrentCoords =
   currentCoords &&
   Number.isFinite(Number(currentCoords.lat)) &&
@@ -6517,6 +6848,23 @@ const hasValidDestinationCityCoords =
   Number.isFinite(Number(destCityCoords.lon)) &&
   (Number(destCityCoords.lat) !== 0 ||
     Number(destCityCoords.lon) !== 0);
+
+const hasAttractionOnCurrentRoute = hotspotRows.some(
+  (row: any) =>
+    Number(row.itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) &&
+    Number(row.item_type || 0) === 4 &&
+    Number(row.hotspot_ID || 0) > 0,
+);
+
+const preferStoredRouteDistance =
+  Number(plan.itinerary_preference || 0) === 2 &&
+  !hotelInfo &&
+  !transportOvernightDestination &&
+  !hasAttractionOnCurrentRoute &&
+  this.normalizePlaceLookupKey(currentLocationName) ===
+    this.normalizePlaceLookupKey(sourceCity) &&
+  this.normalizePlaceLookupKey(finalTravelDestinationName) ===
+    this.normalizePlaceLookupKey(destinationCity);
 
 const { row: toHotelRow, nextTime: tAfterHotel } =
   await this.hotelBuilder.buildToHotel(tx, {
@@ -6554,6 +6902,7 @@ const { row: toHotelRow, nextTime: tAfterHotel } =
             lon: Number(destCityCoords!.lon),
           }
         : undefined,
+    preferStoredRouteDistance,
   });
 
  // RULE 3: Fix "06:58 AM" time bug using proper UTC date conversion
@@ -7577,6 +7926,33 @@ if (
     }
 
     const routeRejectionSummaryByRoute = this.rejectionPolicyService.getSummaryByRoute();
+
+    if (sameCityHotspotPolicyConfig.enabled) {
+      const sameCityPolicyViolations = findSameCityPolicyViolations({
+        rows: hotspotRows as any,
+        allHotspots: allHotspots as any,
+        contexts: sameCityRoutePolicyContexts,
+        config: sameCityHotspotPolicyConfig,
+        protectedHotspotIds: protectedScopedHotspotIds,
+        routeOnlyHotspotIds: sameCityRouteOnlyHotspotIds,
+        hotspotLocationMatchesCity: (location: string, cityKey: string) =>
+          this.hotspotLocationMatchesCity(location, cityKey),
+      });
+
+      this.logBookingRule({
+        rule: 'SAME_CITY_POLICY_FINAL_VALIDATION',
+        planId,
+        scopeToRouteId: options?.scopeToRouteId ?? null,
+        violationCount: sameCityPolicyViolations.length,
+        violations: sameCityPolicyViolations,
+      });
+
+      if (sameCityPolicyViolations.length > 0) {
+        throw new Error(
+          `Same-city hotspot policy validation failed for ${sameCityPolicyViolations.length} automatic hotspot row(s).`,
+        );
+      }
+    }
 
     return { hotspotRows, parkingRows, routeRejectionSummaryByRoute };
   }

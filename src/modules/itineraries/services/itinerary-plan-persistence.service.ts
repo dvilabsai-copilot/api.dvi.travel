@@ -515,6 +515,10 @@ export class ItineraryPlanPersistenceService {
     req: any,
     shouldOptimizeRoute: boolean = false,
     requestType?: string,
+    continuation?: {
+      parentPlanId: number;
+      rootQuoteId: string;
+    },
   ) {
     const apiStartedAt = Date.now();
     let stepStartedAt = apiStartedAt;
@@ -830,6 +834,28 @@ const planId = await this.planEngine.upsertPlanHeader(
   userId,
   Number(u.roleID ?? u.roleId ?? u.role ?? 0),
 );
+
+if (existingPlanId <= 0 && continuation) {
+  if (
+    !Number.isInteger(continuation.parentPlanId) ||
+    continuation.parentPlanId <= 0 ||
+    !continuation.rootQuoteId.trim()
+  ) {
+    throw new BadRequestException(
+      "Invalid continuation itinerary information.",
+    );
+  }
+
+  await tx.dvi_itinerary_plan_details.update({
+    where: {
+      itinerary_plan_ID: planId,
+    },
+    data: {
+      continued_from_plan_ID: continuation.parentPlanId,
+      continuation_root_quote_ID: continuation.rootQuoteId,
+    },
+  });
+}
 
 const persistedPlanAfterUpsert =
   await tx.dvi_itinerary_plan_details.findUnique({

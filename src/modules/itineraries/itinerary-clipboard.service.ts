@@ -1,4 +1,4 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { ItineraryDetailsService } from './itinerary-details.service';
 import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service';
@@ -783,10 +783,10 @@ export class ItineraryClipboardService {
           Number(day.dayNumber) === 1
             ? firstDayStartLabel
             : otherDayStartLabel;
-
-        const range = this.escapeHtml(
-          segment.timeRange || '',
-        );
+const range =
+  mode === 'para'
+    ? ''
+    : this.escapeHtml(segment.timeRange || '');
 
               lines.push(
           buildLine(
@@ -810,9 +810,10 @@ export class ItineraryClipboardService {
           segment.duration || '',
         );
 
-        const range = this.escapeHtml(
-          segment.timeRange || '',
-        );
+        const range =
+          mode === 'para'
+            ? ''
+            : this.escapeHtml(segment.timeRange || '');
 
         const metrics = [
           distance
@@ -1124,6 +1125,23 @@ const dayHeaderStyle =
     mode: ClipboardMode,
     requestedGroupTypes: number[],
   ): Promise<ClipboardPayload> {
+    const diagnose = async <T>(
+      stage: string,
+      operation: () => Promise<T>,
+    ): Promise<T> => {
+      try {
+        const result = await operation();
+        console.log(`[Clipboard ${quoteId}] OK: ${stage}`);
+        return result;
+      } catch (error) {
+        console.error(
+          `[Clipboard ${quoteId}] FAILED: ${stage}`,
+          error,
+        );
+        throw error;
+      }
+    };
+
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
     });
@@ -1132,12 +1150,29 @@ const dayHeaderStyle =
       throw new NotFoundException('Itinerary not found');
     }
 
-    const globalSettings = await this.prisma.dvi_global_settings.findFirst({
-      where: { status: 1, deleted: 0 },
-    });
+ const globalSettings =
+  await this.prisma.dvi_global_settings.findFirst({
+    where: {
+      status: 1,
+      deleted: 0,
+    },
+    select: {
+      hotel_terms_condition: true,
+      vehicle_terms_condition: true,
+      itinerary_break_time: true,
+      itinerary_hotel_start: true,
+    },
+  });
 
-    const itinerary = await this.detailsService.getItineraryDetails(quoteId);
-    const hotelDetails = await this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId);
+      const itinerary = await diagnose(
+      'Load itinerary details',
+      () => this.detailsService.getItineraryDetails(quoteId),
+    );
+
+    const hotelDetails = await diagnose(
+      'Load hotel details',
+      () => this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId),
+    );
 
     const nationalityLabel = await this.resolveNationalityLabel(
       (plan as any)?.nationality,

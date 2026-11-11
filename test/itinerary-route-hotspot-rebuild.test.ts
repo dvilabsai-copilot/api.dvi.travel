@@ -143,3 +143,116 @@ test('removes manual hotspots from a reset route before rebuilding auto hotspots
   assert.equal(activityUpdates.length, 1);
   assert.equal(hotspotUpdates.length, 1);
 });
+
+test('rejects a scoped rebuild when a sibling route hotspot changes', async () => {
+  const siblingBefore = {
+    itinerary_route_ID: 3,
+    hotspot_ID: 902,
+    hotspot_order: 1,
+    hotspot_plan_own_way: 0,
+  };
+
+  const service = new ItineraryRouteHotspotRebuildService(
+    {
+      $transaction: async (callback: any) => callback({
+        dvi_global_settings: {
+          findFirst: async () => ({ same_city_hotspot_rank_enabled: 1 }),
+        },
+        dvi_itinerary_route_details: {
+          findFirst: async () => ({ itinerary_route_ID: 2, excluded_hotspot_ids: [] }),
+          findMany: async () => [
+            { itinerary_route_ID: 2, itinerary_route_date: '2026-10-02' },
+            { itinerary_route_ID: 3, itinerary_route_date: '2026-10-03' },
+          ],
+          update: async () => undefined,
+        },
+        dvi_itinerary_route_hotspot_details: {
+          findMany: async ({ where }: any) => {
+            if (where.hotspot_plan_own_way?.not === 1) return [siblingBefore];
+            if (where.itinerary_route_ID?.not === 2) return [siblingBefore];
+            return [];
+          },
+          updateMany: async () => undefined,
+          count: async () => 1,
+        },
+        dvi_itinerary_route_activity_details: { updateMany: async () => undefined },
+        dvi_itinerary_plan_details: { findFirst: async () => ({ itinerary_quote_ID: 3 }) },
+      }),
+      dvi_itinerary_route_hotspot_details: {
+        findMany: async () => [{ ...siblingBefore, hotspot_ID: 903 }],
+      },
+    },
+    {
+      rebuildRouteHotspots: async () => ({
+        rebuildSummary: { totalRoutesProcessed: 1, totalHotspotsScheduled: 1, totalParkingRowsScheduled: 0 },
+        warnings: [],
+        routeRejectionSummaryByRoute: {},
+      }),
+      rebuildParkingCharges: async () => undefined,
+    },
+    routeVehicleRestrictions,
+  );
+
+  await assert.rejects(
+    () => service.rebuildRouteHotspotsForDay(1, 2, 4),
+    (error: any) => error?.message.includes('sibling route'),
+  );
+});
+
+test('rejects a scoped rebuild when sibling timing changes even if hotspot identity is unchanged', async () => {
+  const siblingBefore = {
+    itinerary_route_ID: 3,
+    item_type: 4,
+    hotspot_ID: 902,
+    hotspot_order: 1,
+    hotspot_plan_own_way: 0,
+    hotspot_start_time: '10:00:00',
+    hotspot_end_time: '11:00:00',
+  };
+
+  const service = new ItineraryRouteHotspotRebuildService(
+    {
+      $transaction: async (callback: any) => callback({
+        dvi_global_settings: {
+          findFirst: async () => ({ same_city_hotspot_rank_enabled: 1 }),
+        },
+        dvi_itinerary_route_details: {
+          findFirst: async () => ({ itinerary_route_ID: 2, excluded_hotspot_ids: [] }),
+          findMany: async () => [
+            { itinerary_route_ID: 2, itinerary_route_date: '2026-10-02' },
+            { itinerary_route_ID: 3, itinerary_route_date: '2026-10-03' },
+          ],
+          update: async () => undefined,
+        },
+        dvi_itinerary_route_hotspot_details: {
+          findMany: async ({ where }: any) => {
+            if (where.hotspot_plan_own_way?.not === 1) return [siblingBefore];
+            if (where.itinerary_route_ID?.not === 2) return [siblingBefore];
+            return [];
+          },
+          updateMany: async () => undefined,
+          count: async () => 1,
+        },
+        dvi_itinerary_route_activity_details: { updateMany: async () => undefined },
+        dvi_itinerary_plan_details: { findFirst: async () => ({ itinerary_quote_ID: 3 }) },
+      }),
+      dvi_itinerary_route_hotspot_details: {
+        findMany: async () => [{ ...siblingBefore, hotspot_start_time: '10:30:00' }],
+      },
+    },
+    {
+      rebuildRouteHotspots: async () => ({
+        rebuildSummary: { totalRoutesProcessed: 1, totalHotspotsScheduled: 1, totalParkingRowsScheduled: 0 },
+        warnings: [],
+        routeRejectionSummaryByRoute: {},
+      }),
+      rebuildParkingCharges: async () => undefined,
+    },
+    routeVehicleRestrictions,
+  );
+
+  await assert.rejects(
+    () => service.rebuildRouteHotspotsForDay(1, 2, 4),
+    (error: any) => error?.message.includes('sibling route'),
+  );
+});

@@ -28,9 +28,20 @@ const GLOBAL_SETTINGS_UPDATE_FIELDS = [
   "hotel_hold_min_lead_days",
   "hotel_hold_short_lead_days",
   "hotel_hold_medium_lead_days",
+  "hotel_hold_long_lead_days",
   "hotel_hold_short_duration_hours",
   "hotel_hold_medium_duration_hours",
   "hotel_hold_long_duration_hours",
+  "hotel_hold_extended_duration_hours",
+  "hotel_hold_reminders_enabled",
+  "hotel_hold_reminder_email_enabled",
+  "hotel_hold_reminder_milestones",
+  "hotel_hold_final_reminder_minutes",
+  "tbo_hold_lcd_buffer_days",
+  "same_city_hotspot_rank_enabled",
+  "same_city_hotspot_max_rank",
+  "same_city_hotspot_base_increment",
+  "same_city_hotspot_distribution_mode",
   "extrabed_rate_percentage",
   "childwithbed_rate_percentage",
   "childnobed_rate_percentage",
@@ -149,7 +160,79 @@ export class GlobalSettingsService {
       data.hotel_margin_gst_type = this.normalizeBoolean(dto.hotel_margin_gst_type);
     }
 
+    if ("same_city_hotspot_distribution_mode" in dto && dto.same_city_hotspot_distribution_mode) {
+      data.same_city_hotspot_distribution_mode = String(dto.same_city_hotspot_distribution_mode).trim().toUpperCase();
+    }
+
     return data;
+  }
+
+  private validateSameCityHotspotSettings(
+    data: Record<string, unknown>,
+    existing?: { same_city_hotspot_max_rank?: number | null; same_city_hotspot_base_increment?: number | null } | null,
+  ): void {
+    const maxRank = Number(data.same_city_hotspot_max_rank ?? existing?.same_city_hotspot_max_rank ?? 30);
+    const baseIncrement = Number(data.same_city_hotspot_base_increment ?? existing?.same_city_hotspot_base_increment ?? 10);
+
+    if (!Number.isInteger(maxRank) || maxRank < 1) {
+      throw new BadRequestException("same_city_hotspot_max_rank must be a positive integer");
+    }
+    if (!Number.isInteger(baseIncrement) || baseIncrement < 1) {
+      throw new BadRequestException("same_city_hotspot_base_increment must be a positive integer");
+    }
+    if (baseIncrement > maxRank) {
+      throw new BadRequestException("same_city_hotspot_base_increment cannot exceed same_city_hotspot_max_rank");
+    }
+  }
+
+  private validateHotelHoldSettings(
+    data: Record<string, unknown>,
+    existing?: Record<string, any> | null,
+  ): void {
+    const merged = (field: string, fallback: number) => Number(data[field] ?? existing?.[field] ?? fallback);
+    const minimum = merged("hotel_hold_min_lead_days", 1);
+    const shortEnd = merged("hotel_hold_short_lead_days", 15);
+    const mediumEnd = merged("hotel_hold_medium_lead_days", 30);
+    const longEnd = merged("hotel_hold_long_lead_days", 60);
+    const noBlockHours = merged("hotel_hold_no_block_before_hours", 48);
+    const durations = [
+      merged("hotel_hold_short_duration_hours", 48),
+      merged("hotel_hold_medium_duration_hours", 12),
+      merged("hotel_hold_long_duration_hours", 48),
+      merged("hotel_hold_extended_duration_hours", 240),
+    ];
+
+    if (![minimum, shortEnd, mediumEnd, longEnd].every(Number.isInteger)
+      || minimum < 1 || shortEnd < minimum || mediumEnd <= shortEnd || longEnd <= mediumEnd) {
+      throw new BadRequestException("Hotel hold lead-day bands must be valid, inclusive, and strictly increasing.");
+    }
+    if (!Number.isFinite(noBlockHours) || noBlockHours < 0) {
+      throw new BadRequestException("hotel_hold_no_block_before_hours must be a finite non-negative number.");
+    }
+    if (!durations.every((hours) => Number.isFinite(hours) && hours > 0)) {
+      throw new BadRequestException("Every hotel hold duration must be a finite number greater than zero.");
+    }
+
+    const milestonesValue = data.hotel_hold_reminder_milestones ?? existing?.hotel_hold_reminder_milestones;
+    if (milestonesValue !== undefined && milestonesValue !== null && String(milestonesValue).trim()) {
+      let milestones: Record<string, unknown>;
+      try {
+        milestones = JSON.parse(String(milestonesValue));
+      } catch {
+        throw new BadRequestException("hotel_hold_reminder_milestones must be valid JSON.");
+      }
+      for (const [band, values] of Object.entries(milestones)) {
+        if (!["4", "12", "48", "240"].includes(band) || !Array.isArray(values)
+          || values.some((value) => !Number.isFinite(Number(value)) || Number(value) <= 0 || Number(value) >= Number(band))) {
+          throw new BadRequestException("Reminder milestones must be positive hours remaining below their hold duration.");
+        }
+      }
+    }
+
+    const finalMinutes = merged("hotel_hold_final_reminder_minutes", 15);
+    if (!Number.isInteger(finalMinutes) || finalMinutes < 1) {
+      throw new BadRequestException("hotel_hold_final_reminder_minutes must be a positive integer.");
+    }
   }
 
   private valuesEqual(left: unknown, right: unknown): boolean {
@@ -185,6 +268,7 @@ export class GlobalSettingsService {
         itinerary_break_time: true,
         itinerary_hotel_start: true,
         itinerary_hotel_return: true,
+        vehicle_terms_condition: true,
       },
     });
 
@@ -192,6 +276,7 @@ export class GlobalSettingsService {
       firstDayStartLabel: row?.itinerary_break_time?.trim() || null,
       otherDayStartLabel: row?.itinerary_hotel_start?.trim() || null,
       returnLabel: row?.itinerary_hotel_return?.trim() || null,
+      vehicleTermsCondition: row?.vehicle_terms_condition?.trim() || null,
     };
   }
 
@@ -234,6 +319,9 @@ export class GlobalSettingsService {
     const existing = await this.prisma.dvi_global_settings.findFirst({
       where: { deleted: 0 },
     });
+
+    this.validateSameCityHotspotSettings(normalizedData, existing);
+    this.validateHotelHoldSettings(normalizedData, existing as Record<string, any> | null);
 
     if (!existing) {
       await this.prisma.dvi_global_settings.create({

@@ -107,6 +107,27 @@ test("a changed terms field is still persisted", async () => {
   assert.ok(updates[0].updatedon instanceof Date);
 });
 
+test('GET returns the configured hotel hold bands and reminder settings', async () => {
+  const expected = {
+    ...existingSettings(),
+    hotel_hold_min_lead_days: 3,
+    hotel_hold_short_lead_days: 15,
+    hotel_hold_medium_lead_days: 30,
+    hotel_hold_long_lead_days: 60,
+    hotel_hold_short_duration_hours: 48,
+    hotel_hold_medium_duration_hours: 12,
+    hotel_hold_long_duration_hours: 48,
+    hotel_hold_extended_duration_hours: 240,
+    hotel_hold_reminders_enabled: 1,
+    hotel_hold_reminder_email_enabled: 1,
+    hotel_hold_reminder_milestones: '{"12":[6,3,0.25],"48":[36,24,12,1,0.25],"240":[216,192,168,144,120,96,72,48,24,12,1,0.25]}',
+    hotel_hold_final_reminder_minutes: 15,
+  };
+  const { service } = serviceWithExisting(expected);
+
+  assert.deepEqual(await service.getGlobalSettings(), expected);
+});
+
 test("persists the configurable hotel hold policy fields", async () => {
   const existing = existingSettings();
   const { service, updates } = serviceWithExisting(existing);
@@ -116,14 +137,88 @@ test("persists the configurable hotel hold policy fields", async () => {
     hotel_hold_min_lead_days: 3,
     hotel_hold_short_lead_days: 15,
     hotel_hold_medium_lead_days: 30,
-    hotel_hold_short_duration_hours: 4,
+    hotel_hold_long_lead_days: 60,
+    hotel_hold_short_duration_hours: 48,
     hotel_hold_medium_duration_hours: 12,
     hotel_hold_long_duration_hours: 48,
+    hotel_hold_extended_duration_hours: 240,
+    hotel_hold_reminders_enabled: 1,
+    hotel_hold_reminder_email_enabled: 1,
+    hotel_hold_reminder_milestones: '{"12":[6,3,0.25],"48":[36,24,12,1,0.25],"240":[24,12,1,0.25]}',
+    hotel_hold_final_reminder_minutes: 15,
   });
 
   assert.equal(updates.length, 1);
   assert.equal(updates[0].hotel_hold_no_block_before_hours, 48);
   assert.equal(updates[0].hotel_hold_min_lead_days, 3);
-  assert.equal(updates[0].hotel_hold_short_duration_hours, 4);
+  assert.equal(updates[0].hotel_hold_short_duration_hours, 48);
   assert.equal(updates[0].hotel_hold_long_duration_hours, 48);
+  assert.equal(updates[0].hotel_hold_extended_duration_hours, 240);
+});
+
+test("accepts payment reminder milestones for a four-hour hold", async () => {
+  const existing = {
+    ...existingSettings(),
+    hotel_hold_min_lead_days: 3,
+    hotel_hold_short_lead_days: 15,
+    hotel_hold_medium_lead_days: 30,
+    hotel_hold_long_lead_days: 60,
+    hotel_hold_short_duration_hours: 4,
+    hotel_hold_medium_duration_hours: 12,
+    hotel_hold_long_duration_hours: 48,
+    hotel_hold_extended_duration_hours: 240,
+  };
+  const { service, updates } = serviceWithExisting(existing);
+
+  await service.updateGlobalSettings({
+    hotel_hold_reminder_milestones: '{"4":[3,2,1,0.25]}',
+  });
+
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].hotel_hold_reminder_milestones, '{"4":[3,2,1,0.25]}');
+  await assert.rejects(
+    service.updateGlobalSettings({ hotel_hold_reminder_milestones: '{"4":[4]}' }),
+    /positive hours remaining below their hold duration/i,
+  );
+});
+
+test('validates complete lead-day band ordering while preserving partial updates', async () => {
+  const existing = {
+    ...existingSettings(),
+    hotel_hold_min_lead_days: 3,
+    hotel_hold_short_lead_days: 15,
+    hotel_hold_medium_lead_days: 30,
+    hotel_hold_long_lead_days: 60,
+    hotel_hold_short_duration_hours: 48,
+    hotel_hold_medium_duration_hours: 12,
+    hotel_hold_long_duration_hours: 48,
+    hotel_hold_extended_duration_hours: 240,
+    hotel_hold_no_block_before_hours: 48,
+  };
+  const { service, updates } = serviceWithExisting(existing);
+  await service.updateGlobalSettings({ hotel_hold_medium_duration_hours: 18 });
+  assert.equal(updates[0].hotel_hold_medium_duration_hours, 18);
+  assert.equal('hotel_margin' in updates[0], false);
+
+  await assert.rejects(
+    service.updateGlobalSettings({ hotel_hold_long_lead_days: 30 }),
+    (error: any) => String(error?.message || '').includes('strictly increasing'),
+  );
+});
+
+test('rejects non-positive hold durations and malformed reminder configuration', async () => {
+  const existing = {
+    ...existingSettings(),
+    hotel_hold_min_lead_days: 3,
+    hotel_hold_short_lead_days: 15,
+    hotel_hold_medium_lead_days: 30,
+    hotel_hold_long_lead_days: 60,
+    hotel_hold_short_duration_hours: 48,
+    hotel_hold_medium_duration_hours: 12,
+    hotel_hold_long_duration_hours: 48,
+    hotel_hold_extended_duration_hours: 240,
+  };
+  const { service } = serviceWithExisting(existing);
+  await assert.rejects(service.updateGlobalSettings({ hotel_hold_extended_duration_hours: 0 }));
+  await assert.rejects(service.updateGlobalSettings({ hotel_hold_reminder_milestones: 'oops' }));
 });

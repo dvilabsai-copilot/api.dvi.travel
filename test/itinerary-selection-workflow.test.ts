@@ -4,6 +4,7 @@ import { ItinerarySelectionWorkflowService } from '../src/modules/itineraries/se
 import {
   normalizeSupplierRateIdentity,
   supplierRateIdentityMatches,
+  hotelDisplaySnapshot,
 } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
 
 function createService(prisma: any = {}) {
@@ -69,6 +70,33 @@ test('TBO identity preserves a real booking code while accepting a fresh session
   assert.equal(supplierRateIdentityMatches(normalized, {
     ...normalized, rateOptionId: differentCommercialRoom, bookingCode: differentCommercialRoom, searchReference: differentCommercialRoom,
   }), false);
+});
+
+test('only server-resolved TBO selections skip the duplicate live-rate lookup', () => {
+  const service = createService();
+
+  assert.equal((service as any).shouldValidateLiveSelection({ provider: 'tbo' }), true);
+  assert.equal((service as any).shouldValidateLiveSelection(
+    { provider: 'tbo' },
+    { selectionResolvedFromFreshSearch: true },
+  ), false);
+  assert.equal((service as any).shouldValidateLiveSelection(
+    { provider: 'axisrooms' },
+    { selectionResolvedFromFreshSearch: true },
+  ), true);
+});
+
+test('hotel snapshots retain refundable VSR status for the card label', () => {
+  assert.equal(hotelDisplaySnapshot({ provider: 'tbo', isRefundable: true }).isRefundable, true);
+  assert.equal(hotelDisplaySnapshot({
+    provider: 'tbo',
+    roomTypes: [{ roomName: 'Executive Room', IsRefundable: true }],
+  }).isRefundable, true);
+  assert.equal(hotelDisplaySnapshot({ provider: 'tbo', isRefundable: false }).isRefundable, false);
+  assert.equal(Object.prototype.hasOwnProperty.call(
+    hotelDisplaySnapshot({ provider: 'tbo' }),
+    'isRefundable',
+  ), false);
 });
 
 test('manual hotel persistence rejects a missing target group instead of defaulting to Group 1', async () => {
@@ -414,17 +442,22 @@ test('current TBO supplier booking identity passes while stale and different hot
 
 test('bulk hotel persistence forwards provider hotel code into atomic validation', async () => {
   let forwarded: any;
+  let forwardedOptions: any;
   const service = createService({
     dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'DVI2026082' }) },
     $transaction: async (callback: any) => callback({}),
   });
-  (service as any).selectHotel = async (data: any) => { forwarded = data; };
+  (service as any).selectHotel = async (data: any, options: any) => {
+    forwarded = data;
+    forwardedOptions = options;
+  };
   (service as any).hotelDetailsTboService = { clearCacheForQuote: () => undefined };
   await service.bulkSaveHotels(10040, [{
     routeId: 10145, groupType: 1, provider: 'tbo', hotelCode: '1114182',
     rateOptionId: '1114182!TB!1!TB!current-search!TB!N!TB!AFF!',
-  }], 1, true, true);
+  }], 1, true, true, true);
   assert.equal(forwarded.hotelCode, '1114182');
+  assert.deepEqual(forwardedOptions, { selectionResolvedFromFreshSearch: true });
 });
 
 test('bulk hotel persistence rolls back every route when one route fails', async () => {

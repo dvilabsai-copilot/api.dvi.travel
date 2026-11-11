@@ -1216,6 +1216,8 @@ export class ItineraryManualHotspotBatchService {
         selectedHotspotId: Number(focusHotspotId),
         selectedManualPriority,
         currentTimeline: exactAnchorRescueSourceTimeline,
+        route,
+        routeEndTime: manualTimingPolicy.endTime,
         dayEndMinutes,
         overflowMinutes: exactAnchorOverflowMinutes,
         validationMode: 'SELECTED_HOTSPOT_CLOSING',
@@ -1585,12 +1587,25 @@ export class ItineraryManualHotspotBatchService {
       Number(finalValidation?.routeEndOverflowMinutes || manualInsertionFit?.dayOverflowMinutes || 0),
     );
 
-    const chosenRouteFitType = String(manualInsertionFit?.chosenSlot?.routeFitType || '').toUpperCase();
+    const overflowResolverSlot =
+      timelineInsertionFit?.chosenSlot
+      || timelineInsertionFit?.bestSlot
+      || manualInsertionFit?.chosenSlot
+      || manualInsertionFit?.bestSlot
+      || null;
+    const chosenRouteFitType = String(overflowResolverSlot?.routeFitType || '').toUpperCase();
+    const exactAnchorMayResolveRouteEndOverflow =
+      options?.exactAnchorMode === true
+      && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
     const shouldRunLowPriorityOverflowResolver =
-      matrixFeasible === true
-      && manualInsertionFit?.requiresMatrixBuild !== true
-      && !!manualInsertionFit?.chosenSlot
-      && (chosenRouteFitType === 'ON_ROUTE' || chosenRouteFitType === 'MINOR_DETOUR')
+      (matrixFeasible === true || exactAnchorMayResolveRouteEndOverflow)
+      && (manualInsertionFit?.requiresMatrixBuild !== true || exactAnchorMayResolveRouteEndOverflow)
+      && !!overflowResolverSlot
+      && (
+        chosenRouteFitType === 'ON_ROUTE'
+        || chosenRouteFitType === 'MINOR_DETOUR'
+        || exactAnchorMayResolveRouteEndOverflow
+      )
       && previewOverflowMinutes > 0;
 
     if (shouldRunLowPriorityOverflowResolver) {
@@ -1601,6 +1616,12 @@ export class ItineraryManualHotspotBatchService {
         options,
         focusMaster,
       });
+      const selectedHotspotDurationMinutes = Number(
+        this.callbacks.getHotspotDurationMinutes(focusMaster, null) || 0,
+      );
+      const fullDayExactAnchorReplacement =
+        options?.exactAnchorMode === true
+        && selectedHotspotDurationMinutes >= 240;
       manualInsertionFit.selectedManualPriority = selectedManualPriority;
       manualInsertionFit.selectedPriorityLabel = `Manual / P${selectedManualPriority}`;
       const dayEndMinutes = Math.floor(
@@ -1613,9 +1634,12 @@ export class ItineraryManualHotspotBatchService {
         selectedHotspotId: Number(focusHotspotId),
         selectedManualPriority,
         currentTimeline: adjustedPreviewTimeline,
+        route,
+        routeEndTime: manualTimingPolicy.endTime,
         dayEndMinutes,
         overflowMinutes: previewOverflowMinutes,
         validationMode: 'DAY_END',
+        removeAllEligibleHotspots: fullDayExactAnchorReplacement,
         exactAnchorMode: options?.exactAnchorMode === true,
         anchorIntent: options?.anchorIntent,
         afterHotspotId: options?.afterHotspotId,
@@ -2325,6 +2349,8 @@ console.log('[FitHere][DIRECT_CLOSING_RESCUE_INPUT]', {
         selectedHotspotId: Number(focusHotspotId),
         selectedManualPriority,
         currentTimeline: adjustedPreviewTimeline,
+        route,
+        routeEndTime: manualTimingPolicy.endTime,
         dayEndMinutes,
         overflowMinutes: selectedClosingOverflowMinutesForResolver,
         validationMode: 'SELECTED_HOTSPOT_CLOSING',
@@ -2623,6 +2649,7 @@ adjustedPreviewTimeline = selectedOperatingValidation.timeline;
       manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview?.resolved === true
       && manualInsertionFit?.openingHoursRejected !== true
       && !manualInsertionFit?.selectedOpeningConflict
+      && Number(finalValidationBase?.routeEndOverflowMinutes || 0) <= 0
     );
 
     finalValidation = {
@@ -2636,7 +2663,6 @@ adjustedPreviewTimeline = selectedOperatingValidation.timeline;
         ? {
             passesScheduleRules: true,
             stillUnschedulable: false,
-            routeEndOverflowMinutes: 0,
             openingHourConflictCount: 0,
             selectedManualConflictCount: 0,
             selectedOpeningConflict: null,
@@ -2765,7 +2791,7 @@ adjustedPreviewTimeline = selectedOperatingValidation.timeline;
       && !selectedManualConflictInPreview
       && !manualInsertionFit?.selectedOpeningConflict
       && manualInsertionFit?.openingHoursRejected !== true
-      && (Number(finalValidation?.routeEndOverflowMinutes || 0) <= 0 || selectedManualPivotPreviewValid)
+      && Number(finalValidation?.routeEndOverflowMinutes || 0) <= 0
       && finalRequiresConfirmation !== true
     ) {
       manualInsertionFit.canApply = true;
@@ -2775,7 +2801,7 @@ adjustedPreviewTimeline = selectedOperatingValidation.timeline;
         readyToApply: true,
         requiresPriorityConfirmation: false,
         stillUnschedulable: false,
-        routeEndOverflowMinutes: selectedManualPivotPreviewValid ? 0 : Number(finalValidation?.routeEndOverflowMinutes || 0),
+        routeEndOverflowMinutes: Number(finalValidation?.routeEndOverflowMinutes || 0),
         scheduledSelectedManualCount: Math.max(Number(finalValidation?.scheduledSelectedManualCount || 0), selectedManualRowsInPreview.length),
         unscheduledManualCount: 0,
         reason: resolvedWithTimelineRecalc || selectedManualPivotPreviewValid

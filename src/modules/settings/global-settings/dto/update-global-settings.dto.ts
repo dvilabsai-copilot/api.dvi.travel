@@ -105,6 +105,11 @@ export class UpdateGlobalSettingsDto {
   hotel_hold_medium_lead_days?: number;
 
   @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  hotel_hold_long_lead_days?: number;
+
+  @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   hotel_hold_short_duration_hours?: number;
@@ -118,6 +123,52 @@ export class UpdateGlobalSettingsDto {
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   hotel_hold_long_duration_hours?: number;
+
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0.000001)
+  hotel_hold_extended_duration_hours?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([0, 1])
+  hotel_hold_reminders_enabled?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([0, 1])
+  hotel_hold_reminder_email_enabled?: number;
+
+  @Allow()
+  hotel_hold_reminder_milestones?: string | null;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  hotel_hold_final_reminder_minutes?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  tbo_hold_lcd_buffer_days?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([0, 1])
+  same_city_hotspot_rank_enabled?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  same_city_hotspot_max_rank?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  same_city_hotspot_base_increment?: number;
+
+  @IsIn(["BALANCED"])
+  same_city_hotspot_distribution_mode?: string;
 
   @Allow()
   extrabed_rate_percentage?: number;

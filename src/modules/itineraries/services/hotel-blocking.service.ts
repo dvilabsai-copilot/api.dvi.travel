@@ -1,11 +1,25 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../../prisma.service';
 import { HotelBlockEmailService } from './hotel-block-email.service';
+import { TboHotelBookingService } from './tbo-hotel-booking.service';
+import {
+  getTboPrebookHoldCancellationDeadline,
+  isTboPrebookRateEligibleForHold,
+} from '../utils/tbo-hold-eligibility.util';
+import { AxisRoomsBookingPushService } from './axisrooms-booking-push.service';
+import { resolveHotelHoldNotificationRecipients } from '../utils/hotel-hold-recipient.util';
+import {
+  DEFAULT_TBO_CHILD_AGE,
+  distributeTboSearchOccupancies,
+  resolveSavedTboChildAges,
+} from '../../hotels/utils/tbo-occupancy.util';
 
 export const HOTEL_BLOCK_STATUS = {
   CONTACT_REQUIRED: 'CONTACT_REQUIRED',
@@ -20,8 +34,26 @@ export const HOTEL_BLOCK_STATUS = {
   SUPERSEDED: 'SUPERSEDED',
 } as const;
 
-type Actor = { id?: number; name?: string; type?: string };
+type Actor = {
+  id?: number;
+  name?: string;
+  type?: string;
+  roleId?: number;
+  permissionRoleId?: number;
+  staffId?: number;
+};
 type BlockRow = Record<string, any>;
+type TboHoldBookingInput = {
+  hotelDetailsIds?: number[];
+  selection?: Record<string, any>;
+};
+type ProviderHoldInput = {
+  channel: 'AXISROOMS_HOLD' | 'OFFLINE_HOLD';
+  confirmationReference?: string | null;
+  request?: Record<string, any>;
+  response?: unknown;
+  hotelierContact?: { name: string; phone: string };
+};
 
 const ACTIVE_REQUEST_STATUSES = [
   HOTEL_BLOCK_STATUS.CONTACT_REQUIRED,
@@ -41,6 +73,24 @@ const RESPONSE_STATUSES = new Set<string>([
 ]);
 
 const normalizeText = (value: unknown) => String(value ?? '').trim();
+
+export const isTboSupplierHoldRequest = (row: BlockRow): boolean => (
+  normalizeText(row.confirmation_channel).toUpperCase() === 'TBO_BOOK_HOLD'
+  && normalizeText(row.provider).toUpperCase() === 'VSR'
+  && Boolean(normalizeText(row.confirmation_reference))
+);
+
+const isSupplierExpiredStatus = (value: unknown): boolean => {
+  const status = normalizeText(value).toLowerCase();
+  return Boolean(status) && [
+    'cancelled', 'canceled', 'expired', 'void', 'rejected', 'failed', 'unavailable',
+  ].some((term) => status.includes(term));
+};
+
+const isFutureDate = (value: unknown, now = new Date()): boolean => {
+  const date = dateOnly(value);
+  return Boolean(date && date.getTime() > now.getTime());
+};
 
 const parseJson = (value: unknown, fallback: unknown = null) => {
   if (typeof value !== 'string' || !value.trim()) return fallback;
@@ -77,10 +127,23 @@ const dateOnly = (value: unknown): Date | null => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const dateDayNumber = (value: unknown): number | null => {
+const dateDayNumber = (value: unknown, timezoneOffsetMinutes = 0): number | null => {
+  if (typeof value === 'string') {
+    const localDate = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (localDate) return Date.UTC(Number(localDate[1]), Number(localDate[2]) - 1, Number(localDate[3])) / 86_400_000;
+  }
   const date = dateOnly(value);
   if (!date) return null;
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86_400_000;
+  const hotelLocal = new Date(date.getTime() + timezoneOffsetMinutes * 60_000);
+  return Date.UTC(hotelLocal.getUTCFullYear(), hotelLocal.getUTCMonth(), hotelLocal.getUTCDate()) / 86_400_000;
+};
+
+const isoTimezoneOffsetMinutes = (value: unknown): number => {
+  if (typeof value !== 'string') return 0;
+  const match = value.trim().match(/([+-])(\d{2}):?(\d{2})$/);
+  if (!match) return 0;
+  const minutes = Number(match[2]) * 60 + Number(match[3]);
+  return match[1] === '+' ? minutes : -minutes;
 };
 
 export type HotelHoldPolicy = {
@@ -88,19 +151,25 @@ export type HotelHoldPolicy = {
   minimumLeadDays: number;
   shortLeadDays: number;
   mediumLeadDays: number;
+  longLeadDays: number;
   shortDurationHours: number;
   mediumDurationHours: number;
   longDurationHours: number;
+  extendedDurationHours: number;
+  tboHoldLcdBufferDays: number;
 };
 
 export const DEFAULT_HOTEL_HOLD_POLICY: HotelHoldPolicy = {
   noBlockBeforeHours: 48,
-  minimumLeadDays: 3,
+  minimumLeadDays: 1,
   shortLeadDays: 15,
   mediumLeadDays: 30,
-  shortDurationHours: 4,
+  longLeadDays: 60,
+  shortDurationHours: 48,
   mediumDurationHours: 12,
   longDurationHours: 48,
+  extendedDurationHours: 240,
+  tboHoldLcdBufferDays: 1,
 };
 
 const finiteNumber = (value: unknown, fallback: number, minimum = 0) => {
@@ -118,24 +187,68 @@ export const hotelHoldDecision = (
   const arrival = dateOnly(checkIn);
   const requested = dateOnly(requestedAt);
   if (!arrival || !requested) {
-    return { allowed: true, durationHours: policy.shortDurationHours, leadDays: null, leadHours: null };
+    return { allowed: false, durationHours: null, leadDays: null, leadHours: null, band: null, reason: 'invalid check-in or request date' };
   }
 
   const leadHours = (arrival.getTime() - requested.getTime()) / (60 * 60 * 1000);
-  const leadDays = (dateDayNumber(arrival) ?? 0) - (dateDayNumber(requested) ?? 0);
-  if (leadHours < policy.noBlockBeforeHours) {
-    return { allowed: false, durationHours: null, leadDays, leadHours, reason: 'within the no-block window' };
+  const hotelTimezoneOffset = isoTimezoneOffsetMinutes(checkIn);
+  // Keep the original check-in representation when counting its calendar day.
+  // Converting an offset timestamp to Date first changes the UTC day and can
+  // incorrectly move a hotel-local Day-3 check-in into the no-hold band.
+  const checkInDay = dateDayNumber(checkIn);
+  const requestedDay = dateDayNumber(requested, hotelTimezoneOffset);
+  const leadDays = checkInDay === null || requestedDay === null ? null : checkInDay - requestedDay;
+  const validPolicy = Number.isFinite(policy.noBlockBeforeHours)
+    && policy.noBlockBeforeHours >= 0
+    && Number.isInteger(policy.minimumLeadDays)
+    && policy.minimumLeadDays >= 1
+    && Number.isInteger(policy.shortLeadDays)
+    && policy.shortLeadDays >= policy.minimumLeadDays
+    && Number.isInteger(policy.mediumLeadDays)
+    && policy.mediumLeadDays > policy.shortLeadDays
+    && Number.isInteger(policy.longLeadDays)
+    && policy.longLeadDays > policy.mediumLeadDays
+    && [policy.shortDurationHours, policy.mediumDurationHours, policy.longDurationHours, policy.extendedDurationHours]
+      .every((hours) => Number.isFinite(hours) && hours > 0);
+  if (!validPolicy) {
+    return { allowed: false, durationHours: null, leadDays, leadHours, band: null, reason: 'hotel hold policy is invalid' };
+  }
+  if (leadDays === null) {
+    return { allowed: false, durationHours: null, leadDays: null, leadHours, band: null, reason: 'invalid check-in or request date' };
+  }
+  if (leadDays < 0) {
+    return { allowed: false, durationHours: null, leadDays, leadHours, band: null, reason: 'check-in has passed' };
   }
   if (leadDays < policy.minimumLeadDays) {
-    return { allowed: false, durationHours: null, leadDays, leadHours, reason: 'before the minimum lead-time band' };
+    return {
+      allowed: false,
+      durationHours: null,
+      leadDays,
+      leadHours,
+      band: null,
+      reason: `check-in is less than the configured minimum lead time of ${policy.minimumLeadDays} days`,
+    };
+  }
+  if (leadHours <= policy.noBlockBeforeHours) {
+    return {
+      allowed: false,
+      durationHours: null,
+      leadDays,
+      leadHours,
+      band: null,
+      reason: `check-in is within the configured ${policy.noBlockBeforeHours}-hour no-block window`,
+    };
   }
   if (leadDays <= policy.shortLeadDays) {
-    return { allowed: true, durationHours: policy.shortDurationHours, leadDays, leadHours };
+    return { allowed: true, durationHours: policy.shortDurationHours, leadDays, leadHours, band: `${policy.minimumLeadDays}-${policy.shortLeadDays}` };
   }
   if (leadDays <= policy.mediumLeadDays) {
-    return { allowed: true, durationHours: policy.mediumDurationHours, leadDays, leadHours };
+    return { allowed: true, durationHours: policy.mediumDurationHours, leadDays, leadHours, band: `${policy.shortLeadDays + 1}-${policy.mediumLeadDays}` };
   }
-  return { allowed: true, durationHours: policy.longDurationHours, leadDays, leadHours };
+  if (leadDays <= policy.longLeadDays) {
+    return { allowed: true, durationHours: policy.longDurationHours, leadDays, leadHours, band: `${policy.mediumLeadDays + 1}-${policy.longLeadDays}` };
+  }
+  return { allowed: true, durationHours: policy.extendedDurationHours, leadDays, leadHours, band: `${policy.longLeadDays + 1}+` };
 };
 
 /**
@@ -148,7 +261,7 @@ export const hotelHoldDurationHours = (
   requestedAt: unknown = new Date(),
   policy: HotelHoldPolicy = DEFAULT_HOTEL_HOLD_POLICY,
 ): number => {
-  return hotelHoldDecision(checkIn, requestedAt, policy).durationHours ?? policy.shortDurationHours;
+  return hotelHoldDecision(checkIn, requestedAt, policy).durationHours ?? 0;
 };
 
 export const hotelHoldCutoffAt = (
@@ -156,8 +269,12 @@ export const hotelHoldCutoffAt = (
   requestedAt: unknown = new Date(),
   policy: HotelHoldPolicy = DEFAULT_HOTEL_HOLD_POLICY,
 ): Date => {
-  const anchor = dateOnly(requestedAt) || new Date();
-  return new Date(anchor.getTime() + hotelHoldDurationHours(checkIn, anchor, policy) * 60 * 60 * 1000);
+  const anchor = dateOnly(requestedAt);
+  const decision = hotelHoldDecision(checkIn, anchor, policy);
+  if (!anchor || !decision.allowed || !decision.durationHours) {
+    throw new BadRequestException(`Hotel hold is not allowed: ${decision.reason || 'invalid hold dates'}.`);
+  }
+  return new Date(anchor.getTime() + decision.durationHours * 60 * 60 * 1000);
 };
 
 const rowSnapshot = (row: BlockRow) => row.__snapshot || parseJson(row.selected_price_snapshot) || {};
@@ -234,6 +351,8 @@ export class HotelBlockingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hotelBlockEmail: HotelBlockEmailService,
+    private readonly tboHotelBooking: TboHotelBookingService,
+    @Optional() private readonly axisRoomsBookingPushService?: AxisRoomsBookingPushService,
   ) {}
 
   private async getHotelHoldPolicy(): Promise<HotelHoldPolicy> {
@@ -247,9 +366,12 @@ export class HotelBlockingService {
           hotel_hold_min_lead_days: true,
           hotel_hold_short_lead_days: true,
           hotel_hold_medium_lead_days: true,
+          hotel_hold_long_lead_days: true,
           hotel_hold_short_duration_hours: true,
           hotel_hold_medium_duration_hours: true,
           hotel_hold_long_duration_hours: true,
+          hotel_hold_extended_duration_hours: true,
+          tbo_hold_lcd_buffer_days: true,
         },
       });
     } catch {
@@ -257,17 +379,38 @@ export class HotelBlockingService {
       // migration applies the same defaults, so this remains safe during rollout.
     }
 
-    const minimumLeadDays = integerNumber(settings?.hotel_hold_min_lead_days, DEFAULT_HOTEL_HOLD_POLICY.minimumLeadDays);
-    const shortLeadDays = Math.max(minimumLeadDays, integerNumber(settings?.hotel_hold_short_lead_days, DEFAULT_HOTEL_HOLD_POLICY.shortLeadDays));
-    const mediumLeadDays = Math.max(shortLeadDays, integerNumber(settings?.hotel_hold_medium_lead_days, DEFAULT_HOTEL_HOLD_POLICY.mediumLeadDays));
-    return {
+    const policy: HotelHoldPolicy = {
       noBlockBeforeHours: finiteNumber(settings?.hotel_hold_no_block_before_hours, DEFAULT_HOTEL_HOLD_POLICY.noBlockBeforeHours),
-      minimumLeadDays,
-      shortLeadDays,
-      mediumLeadDays,
+      minimumLeadDays: integerNumber(settings?.hotel_hold_min_lead_days, DEFAULT_HOTEL_HOLD_POLICY.minimumLeadDays),
+      shortLeadDays: integerNumber(settings?.hotel_hold_short_lead_days, DEFAULT_HOTEL_HOLD_POLICY.shortLeadDays),
+      mediumLeadDays: integerNumber(settings?.hotel_hold_medium_lead_days, DEFAULT_HOTEL_HOLD_POLICY.mediumLeadDays),
+      longLeadDays: integerNumber(settings?.hotel_hold_long_lead_days, DEFAULT_HOTEL_HOLD_POLICY.longLeadDays),
       shortDurationHours: finiteNumber(settings?.hotel_hold_short_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.shortDurationHours),
       mediumDurationHours: finiteNumber(settings?.hotel_hold_medium_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.mediumDurationHours),
       longDurationHours: finiteNumber(settings?.hotel_hold_long_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.longDurationHours),
+      extendedDurationHours: finiteNumber(settings?.hotel_hold_extended_duration_hours, DEFAULT_HOTEL_HOLD_POLICY.extendedDurationHours),
+      tboHoldLcdBufferDays: integerNumber(settings?.tbo_hold_lcd_buffer_days, DEFAULT_HOTEL_HOLD_POLICY.tboHoldLcdBufferDays),
+    };
+    const policyCheck = hotelHoldDecision(new Date(Date.now() + 100 * 86_400_000), new Date(), policy);
+    if (!policyCheck.allowed) throw new BadRequestException('Hotel hold policy configuration is invalid. Update Global Settings before creating holds.');
+    return policy;
+  }
+
+  async getHoldPolicyDecision(checkIn: unknown, requestedAt: unknown = new Date()) {
+    const policy = await this.getHotelHoldPolicy();
+    const decision = hotelHoldDecision(checkIn, requestedAt, policy);
+    const cutoffAt = decision.allowed && decision.durationHours
+      ? hotelHoldCutoffAt(checkIn, requestedAt, policy)
+      : null;
+    return {
+      ...decision,
+      cutoffAt: cutoffAt?.toISOString() || null,
+      // Keep the response shape stable while reporting the shared policy
+      // cutoff for AxisRooms rather than an additional provider-specific cap.
+      supplierCutoffs: {
+        axisRooms: cutoffAt?.toISOString() || null,
+        tboLcdBufferDays: policy.tboHoldLcdBufferDays,
+      },
     };
   }
 
@@ -276,11 +419,15 @@ export class HotelBlockingService {
   }
 
   private maxHotelHoldCutoff(request: BlockRow, now = new Date(), policy = DEFAULT_HOTEL_HOLD_POLICY) {
-    const policyCutoff = this.getDefaultHotelHoldCutoff(
-      request.check_in,
-      dateOnly(request.requested_at) || now,
-      policy,
-    );
+    const requestedAt = dateOnly(request.requested_at) || now;
+    const isTboHold = request.confirmation_channel === 'TBO_BOOK_HOLD';
+    const policyCutoff = this.getDefaultHotelHoldCutoff(request.check_in, requestedAt, policy);
+    if (isTboHold) {
+      const supplierDeadline = new Date(parseJson(request.request_payload, {})?.supplierHold?.lcdDeadlineAt || '');
+      if (!Number.isNaN(supplierDeadline.getTime()) && supplierDeadline.getTime() < policyCutoff.getTime()) {
+        return supplierDeadline;
+      }
+    }
     // Preserve an already stored legacy cutoff as a valid ceiling. New
     // requests are always created within the lead-time policy above.
     const existingCutoff = dateOnly(request.cutoff_at);
@@ -300,7 +447,9 @@ export class HotelBlockingService {
     groupType: number;
     actor?: Actor;
     guest?: { name?: string; email?: string; phone?: string };
+    hotelierContact?: { name?: string; phone?: string };
     hotelDetailsIds?: number[];
+    tboHoldBookings?: TboHoldBookingInput[];
   }) {
     const planId = Number(input.itineraryPlanId);
     const groupType = Number(input.groupType || 0);
@@ -315,8 +464,25 @@ export class HotelBlockingService {
     if (scopedHotelDetailsIds && scopedHotelDetailsIds.length === 0) {
       throw new BadRequestException('A valid selected hotel stay is required.');
     }
+    const tboHoldBookings = Array.isArray(input.tboHoldBookings) ? input.tboHoldBookings : [];
     const requestedAt = new Date();
     const policy = await this.getHotelHoldPolicy();
+    const planModel = (this.prisma as any).dvi_itinerary_plan_details;
+    const itineraryPlan = planModel?.findUnique
+      ? await planModel.findUnique({
+          where: { itinerary_plan_ID: planId },
+          select: {
+            itinerary_quote_ID: true,
+            total_adult: true,
+            total_children: true,
+            preferred_room_count: true,
+            nationality: true,
+            agent_id: true,
+            staff_id: true,
+            createdby: true,
+          },
+        })
+      : null;
 
     const rows = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
       where: {
@@ -387,6 +553,28 @@ export class HotelBlockingService {
       if (!roomsBySelection.has(selectionId)) roomsBySelection.set(selectionId, room);
     }
 
+    const tboHoldBookingBySelectionId = new Map<number, TboHoldBookingInput>();
+    for (const booking of tboHoldBookings) {
+      for (const selectionId of Array.isArray(booking?.hotelDetailsIds)
+        ? booking.hotelDetailsIds.map(Number).filter((id) => Number.isInteger(id) && id > 0)
+        : []) {
+        tboHoldBookingBySelectionId.set(selectionId, booking);
+      }
+    }
+
+    // Reopening the modal or retrying the same action must not issue another
+    // supplier hold for the same selected hotel/rate while the existing hold
+    // is still active.
+    const existingSupplierHolds = await (this.prisma as any).dvi_hotel_block_request.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        group_type: groupType,
+        status: { in: ACTIVE_REQUEST_STATUSES },
+        confirmation_channel: { in: ['TBO_BOOK_HOLD', 'AXISROOMS_HOLD'] },
+      },
+      orderBy: { id: 'asc' },
+    });
+
     const preparedRows: BlockRow[] = [];
     for (const row of rows) {
       const room = roomsBySelection.get(Number(row.itinerary_plan_hotel_details_ID));
@@ -415,6 +603,7 @@ export class HotelBlockingService {
     }
 
     const results: any[] = [];
+    const outcomes: any[] = [];
     const groups = groupContinuousHotelRows(
       preparedRows,
       (row) => String(row.__hotelGroupKey || ''),
@@ -422,17 +611,292 @@ export class HotelBlockingService {
       rowCheckOut,
     );
     for (const groupedRows of groups) {
-      const checkIn = rowCheckIn(groupedRows[0]);
-      const decision = hotelHoldDecision(checkIn, requestedAt, policy);
-      if (!decision.allowed) {
-        throw new BadRequestException(
-          `HOTEL_HOLD_NOT_ALLOWED: Hotel blocking is not allowed for this stay. Check-in must be at least ${policy.minimumLeadDays} days away and outside the ${policy.noBlockBeforeHours}-hour no-block window.`,
-        );
-      }
-    }
-    for (const groupedRows of groups) {
       const first = groupedRows[0];
-      results.push(await this.upsertRequest({
+      const provider = this.normalizeProvider(first.hotel_provider, first.hotel_booking_mode);
+      const selectionIds = groupedRows
+        .map((row: BlockRow) => Number(row.itinerary_plan_hotel_details_ID || 0))
+        .filter((id) => Number.isInteger(id) && id > 0);
+      const snapshot = rowSnapshot(first);
+      const hotelName = normalizeText(first.__hotel?.hotel_name)
+        || normalizeText(snapshot.hotelName)
+        || normalizeText(first.hotel_name)
+        || 'Hotel';
+      const decision = hotelHoldDecision(rowCheckIn(first), requestedAt, policy);
+      const outcomeBase = { provider, hotelName, selectionIds };
+      if (!decision.allowed) {
+        outcomes.push({
+          ...outcomeBase,
+          success: false,
+          status: 'NOT_ELIGIBLE',
+          errorCode: 'HOTEL_HOLD_NOT_ALLOWED',
+          message: `Hotel blocking is not allowed for this stay: ${decision.reason || 'immediate payment is required.'}`,
+        });
+        continue;
+      }
+      if (provider === 'OFFLINE') {
+        const actor = input.actor || {};
+        const isTravelExpert = Number(actor.roleId || 0) === 8
+          || (Number(actor.roleId || 0) === 3
+            && Number(actor.permissionRoleId || 0) === 3
+            && Number(actor.staffId || 0) > 0);
+        if (!isTravelExpert) {
+          outcomes.push({ ...outcomeBase, success: false, status: 'ACTION_REQUIRED', errorCode: 'OFFLINE_TRAVEL_EXPERT_REQUIRED', message: 'Only a Travel Expert can keep an offline hotel hold.' });
+          continue;
+        }
+        if (!normalizeText(input.hotelierContact?.name) || !normalizeText(input.hotelierContact?.phone)) {
+          outcomes.push({ ...outcomeBase, success: false, status: 'CONTACT_REQUIRED', errorCode: 'OFFLINE_CONTACT_REQUIRED', message: 'Hotelier contact name and phone are required to keep an offline hotel hold. Use the row Hold action.' });
+          continue;
+        }
+      }
+      try {
+      if (provider === 'VSR') {
+        const tboHoldBooking = selectionIds
+          .map((id) => tboHoldBookingBySelectionId.get(id))
+          .find((booking) => Boolean(booking?.selection));
+        const snapshot = rowSnapshot(first);
+        const refundable = snapshot.isRefundable ?? snapshot.IsRefundable ?? first.is_refundable ?? first.IsRefundable;
+        if (!(refundable === true || Number(refundable) === 1 || String(refundable).toLowerCase() === 'true')) {
+          throw new BadRequestException(
+            `HOTEL_HOLD_PAYMENT_REQUIRED: VSR hotel ${normalizeText(snapshot.hotelName) || normalizeText(first.hotel_name) || 'rate'} is not refundable and cannot be held.`,
+          );
+        }
+        if (!tboHoldBooking?.selection) {
+          throw new BadRequestException(
+            'A fresh VSR booking selection is required before holding this hotel. Refresh the rate and try again.',
+          );
+        }
+
+        const selection = tboHoldBooking.selection as any;
+        const reusable = (existingSupplierHolds as BlockRow[]).find((candidate) => (
+          this.isReusableSupplierHold(candidate, groupedRows, selection, requestedAt)
+        ));
+        if (reusable) {
+          const result = {
+            ...this.publicStaffView(reusable, policy, undefined, 'HOLD'),
+            created: false,
+            emailQueued: false,
+            supplierBookingReference: reusable.confirmation_reference,
+            responseUrl: undefined,
+          };
+          results.push(result);
+          outcomes.push({ ...outcomeBase, success: true, status: 'ALREADY_HELD', requestId: result.id, holdStatus: result.status, cutoffAt: result.cutoffAt });
+          continue;
+        }
+        const travellerModel = (this.prisma as any).dvi_itinerary_traveller_details;
+        const savedChildren = travellerModel?.findMany
+          ? await travellerModel.findMany({
+              where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
+              orderBy: { traveller_details_ID: 'asc' },
+              select: { traveller_age: true },
+            })
+          : [];
+        const childCount = Math.max(Number(itineraryPlan?.total_children || 0), 0);
+        const childAges = resolveSavedTboChildAges(savedChildren || [], childCount);
+        const roomCount = Math.max(
+          Number(itineraryPlan?.preferred_room_count || selection.numberOfRooms || 1),
+          1,
+        );
+        const adultCount = Math.max(Number(itineraryPlan?.total_adult || 0), 1);
+        const occupancies = distributeTboSearchOccupancies(roomCount, adultCount, childCount, childAges);
+        const childPassengerAges = occupancies.flatMap((occupancy) => occupancy.childrenAges || []);
+        const childPassengers = (Array.isArray(selection.passengers) ? selection.passengers : [])
+          .filter((passenger: BlockRow) => Number(passenger?.paxType) === 2);
+        if (childPassengers.length !== childCount) {
+          throw new BadRequestException(
+            'Saved child guest count changed. Refresh the itinerary confirmation details before holding this hotel.',
+          );
+        }
+        let childPassengerIndex = 0;
+        const passengers = (Array.isArray(selection.passengers) ? selection.passengers : []).map((passenger: BlockRow) => {
+          if (Number(passenger?.paxType) !== 2) return passenger;
+          const age = childPassengerAges[childPassengerIndex] ?? DEFAULT_TBO_CHILD_AGE;
+          childPassengerIndex += 1;
+          return { ...passenger, age };
+        });
+        const selectionWithHoldMode = {
+          ...selection,
+          numberOfRooms: roomCount,
+          occupancies,
+          passengers,
+          isVoucherBooking: false,
+        };
+        const preBookResponse = await this.tboHotelBooking.preBookHotelForHold(selectionWithHoldMode);
+        if (!isTboPrebookRateEligibleForHold(preBookResponse as any, policy.tboHoldLcdBufferDays)) {
+          throw new BadRequestException(
+            `HOTEL_HOLD_NOT_ELIGIBLE: The latest VSR rate must be refundable and have a cancellation deadline at least ${policy.tboHoldLcdBufferDays} day(s) away to be held. Refresh the rate and try again.`,
+          );
+        }
+        const lcdDeadline = getTboPrebookHoldCancellationDeadline(preBookResponse as any);
+        if (!lcdDeadline) {
+          throw new BadRequestException(
+            'HOTEL_HOLD_NOT_ELIGIBLE: The fresh VSR rate did not include a valid cancellation deadline. Refresh the rate and try again.',
+          );
+        }
+        const prebookNetAmount = Number(
+          preBookResponse?.NetAmount
+            ?? preBookResponse?.TotalFare
+            ?? preBookResponse?.HotelResult?.[0]?.Rooms?.[0]?.NetAmount
+            ?? selection.netAmount,
+        );
+        const bookResponse = await this.tboHotelBooking.holdHotel(
+          preBookResponse,
+          { ...selectionWithHoldMode, netAmount: prebookNetAmount },
+        );
+        const bookingReference = String(
+          bookResponse?.BookResult?.BookingRefNo
+            || bookResponse?.BookResult?.ConfirmationNo
+            || bookResponse?.BookResult?.BookingId
+            || '',
+        ).trim();
+        const bookingId = Number(bookResponse?.BookResult?.BookingId || 0) || undefined;
+        const result = await this.upsertRequest({
+          planId,
+          groupType,
+          rows: groupedRows,
+          hotel: first.__hotel,
+          actor: input.actor,
+          guest: input.guest,
+          policy,
+          requestedAt,
+          scopedSelection: Boolean(scopedHotelDetailsIds),
+          supplierHold: {
+            bookingReference,
+            bookingId,
+            bookResponse,
+            selection: selectionWithHoldMode,
+            lcdDeadlineAt: lcdDeadline.toISOString(),
+          },
+        });
+        results.push(result);
+        outcomes.push({ ...outcomeBase, success: true, status: 'HELD', requestId: result.id, holdStatus: result.status, cutoffAt: result.cutoffAt });
+        continue;
+      }
+
+      if (provider === 'AXISROOMS') {
+        selectionIds.sort((a, b) => a - b);
+        const reusable = (existingSupplierHolds as BlockRow[]).find((candidate) => {
+          if (candidate.confirmation_channel !== 'AXISROOMS_HOLD' || !isFutureDate(candidate.cutoff_at, requestedAt)) return false;
+          const candidateIds = (parseJson(candidate.selection_ids, []) as unknown[])
+            .map(Number)
+            .filter((id) => Number.isInteger(id) && id > 0)
+            .sort((a, b) => a - b);
+          return candidateIds.length === selectionIds.length
+            && candidateIds.every((id, index) => id === selectionIds[index]);
+        });
+        if (reusable) {
+          const result = {
+            ...this.publicStaffView(reusable, policy),
+            created: false,
+            emailQueued: false,
+            supplierBookingReference: reusable.confirmation_reference,
+            responseUrl: undefined,
+          };
+          results.push(result);
+          outcomes.push({ ...outcomeBase, success: true, status: 'ALREADY_HELD', requestId: result.id, holdStatus: result.status, cutoffAt: result.cutoffAt });
+          continue;
+        }
+        if (!this.axisRoomsBookingPushService) {
+          throw new BadRequestException('AxisRooms booking notification service is not configured.');
+        }
+        const snapshot = rowSnapshot(first);
+        const checkIn = rowCheckIn(first);
+        const routeIds = groupedRows
+          .map((row: BlockRow) => Number(row.itinerary_route_id || 0))
+          .filter((id) => Number.isInteger(id) && id > 0);
+        const routeId = routeIds[0] || 0;
+        const checkInDate = checkIn?.toISOString().slice(0, 10) || '';
+        const checkOutDate = rowCheckOut(groupedRows[groupedRows.length - 1])?.toISOString().slice(0, 10) || checkInDate;
+        const roomCount = Math.max(...groupedRows.map((row: BlockRow) => Number(row.total_no_of_rooms || row.__room?.room_qty || 0)), 1);
+        const totalAdults = Math.max(Number(itineraryPlan?.total_adult || 0), 0);
+        const totalChildren = Math.max(Number(itineraryPlan?.total_children || 0), 0);
+        const leadName = normalizeText(input.guest?.name);
+        const booking = {
+          routeId,
+          routeIds,
+          hotelCode: normalizeText(first.hotel_code) || String(first.hotel_id || ''),
+          hotelName: normalizeText(first.__hotel?.hotel_name) || normalizeText(snapshot.hotelName) || 'Hotel',
+          bookingCode: normalizeText(snapshot.bookingCode) || normalizeText(first.selected_rate_option_id),
+          roomId: normalizeText(snapshot.roomId) || normalizeText(first.__room?.room_type_id),
+          rateId: normalizeText(snapshot.rateId) || normalizeText(first.selected_rate_option_id),
+          roomType: normalizeText(snapshot.roomType) || normalizeText(first.__room?.room_type_name) || 'Room',
+          checkInDate,
+          checkOutDate,
+          numberOfRooms: roomCount,
+          guestNationality: normalizeText(snapshot.guestNationality) || String(itineraryPlan?.nationality || ''),
+          netAmount: groupedRows.reduce((sum: number, row: BlockRow) => sum + Number(row.total_room_cost || row.total_hotel_cost || 0), 0),
+          occupancies: [{ adults: totalAdults, children: totalChildren }],
+          passengers: [{
+            firstName: leadName,
+            email: normalizeText(input.guest?.email),
+            phoneNo: normalizeText(input.guest?.phone),
+            paxType: 1,
+            leadPassenger: true,
+          }],
+          multiNightBooking: groupedRows.length > 1,
+          nights: groupedRows.length,
+        };
+        const confirmationNo = `DVI-HOLD-${planId}-${routeId}-${booking.hotelCode || 'NA'}`;
+        const pushResult = await this.axisRoomsBookingPushService.pushForHotelSelection({
+          bookingStatus: 'confirmed',
+          confirmedItineraryPlanId: planId,
+          itineraryPlanId: planId,
+          hotel: booking,
+          confirmationNo,
+          persistConfirmation: false,
+          fallbackBookedBy: leadName,
+          fallbackEmail: normalizeText(input.guest?.email),
+          fallbackPhone: normalizeText(input.guest?.phone),
+        });
+        if (!pushResult.success) {
+          throw new BadRequestException(`AXISROOMS_HOLD_FAILED: ${pushResult.error || pushResult.message}`);
+        }
+        const result = await this.upsertRequest({
+          planId,
+          groupType,
+          rows: groupedRows,
+          hotel: first.__hotel,
+          actor: input.actor,
+          guest: input.guest,
+          policy,
+          requestedAt,
+          scopedSelection: Boolean(scopedHotelDetailsIds),
+          providerHold: {
+            channel: 'AXISROOMS_HOLD',
+            confirmationReference: confirmationNo,
+            request: pushResult.payload,
+            response: pushResult.response,
+          },
+        });
+        results.push(result);
+        outcomes.push({ ...outcomeBase, success: true, status: 'HELD', requestId: result.id, holdStatus: result.status, cutoffAt: result.cutoffAt });
+        continue;
+      }
+
+      if (provider === 'OFFLINE') {
+        const result = await this.upsertRequest({
+          planId,
+          groupType,
+          rows: groupedRows,
+          hotel: first.__hotel,
+          actor: input.actor,
+          guest: input.guest,
+          policy,
+          requestedAt,
+          scopedSelection: Boolean(scopedHotelDetailsIds),
+          providerHold: {
+            channel: 'OFFLINE_HOLD',
+            hotelierContact: {
+              name: normalizeText(input.hotelierContact?.name),
+              phone: normalizeText(input.hotelierContact?.phone),
+            },
+          },
+        });
+        results.push(result);
+        outcomes.push({ ...outcomeBase, success: true, status: 'HELD', requestId: result.id, holdStatus: result.status, cutoffAt: result.cutoffAt });
+        continue;
+      }
+
+      const result = await this.upsertRequest({
         planId,
         groupType,
         rows: groupedRows,
@@ -442,11 +906,31 @@ export class HotelBlockingService {
         policy,
         requestedAt,
         scopedSelection: Boolean(scopedHotelDetailsIds),
-      }));
+      });
+      results.push(result);
+      outcomes.push({ ...outcomeBase, success: true, status: 'HELD', requestId: result.id, holdStatus: result.status, cutoffAt: result.cutoffAt });
+      } catch (error) {
+        const response = (error as any)?.getResponse?.();
+        const responseMessage = typeof response === 'string'
+          ? response
+          : Array.isArray(response?.message)
+            ? response.message.join('; ')
+            : normalizeText(response?.message);
+        const message = responseMessage || (error instanceof Error ? error.message : String(error));
+        const code = message.match(/\b(HOTEL_HOLD_[A-Z_]+|AXISROOMS_HOLD_FAILED)\b/i)?.[1]?.toUpperCase() || 'HOTEL_HOLD_FAILED';
+        outcomes.push({
+          ...outcomeBase,
+          success: false,
+          status: 'FAILED',
+          errorCode: code,
+          message: message.replace(/^\w+:\s*/, '').trim() || 'The hotel hold could not be completed.',
+        });
+        // Do not let a provider rejection stop independent hotel stays from being processed.
+      }
     }
 
     for (const result of results) {
-      if (!result.emailQueued || !result.responseUrl || !result.contactEmail) continue;
+      if (!result.emailQueued || !result.contactEmail || (!result.responseUrl && result.emailKind !== 'HOLD_NOTICE')) continue;
       try {
         const delivery = await this.hotelBlockEmail.dispatch({
           recipient: result.contactEmail,
@@ -475,16 +959,46 @@ export class HotelBlockingService {
       }
     }
 
+    const newlyCreatedHolds = results.filter((result) => result.created && (
+      result.emailKind === 'HOLD_NOTICE' || Boolean(result.supplierBookingReference)
+    ));
+    if (newlyCreatedHolds.length && itineraryPlan) {
+      try {
+        const recipients = await resolveHotelHoldNotificationRecipients(this.prisma, itineraryPlan);
+        if (recipients.length) {
+          const baseUrl = String(process.env.PUBLIC_ITINERARY_BASE_URL || '').trim().replace(/\/+$/, '');
+          const quoteReference = String(itineraryPlan.itinerary_quote_ID || planId);
+          for (const request of newlyCreatedHolds) {
+            await this.hotelBlockEmail.dispatchAgentHoldCreated({
+              recipients,
+              quotationReference: quoteReference,
+              itineraryUrl: `${baseUrl}/itinerary-details/${encodeURIComponent(quoteReference)}`,
+              request,
+            });
+          }
+        }
+      } catch (error) {
+        this.hotelBlockEmail.logFailure(error, 'itinerary agent');
+      }
+    }
+
     return {
+      // The request itself completed; individual provider outcomes carry the
+      // per-stay result so clients can report partial success accurately.
       success: true,
+      allSucceeded: outcomes.every((outcome) => outcome.success),
+      partialSuccess: outcomes.some((outcome) => outcome.success) && outcomes.some((outcome) => !outcome.success),
       itineraryPlanId: planId,
       groupType,
       requests: results,
+      outcomes,
+      succeededCount: outcomes.filter((outcome) => outcome.success).length,
+      failedCount: outcomes.filter((outcome) => !outcome.success).length,
       requestsCreated: results.filter((result) => result.created).length,
       emailsQueued: results.filter((result) => result.emailQueued).length,
       contactRequired: results.filter((result) => result.status === HOTEL_BLOCK_STATUS.CONTACT_REQUIRED).length,
       walletDebited: 0,
-      supplierBookingCalls: 0,
+      supplierBookingCalls: results.filter((result) => result.supplierBookingReference).length,
     };
   }
 
@@ -498,7 +1012,21 @@ export class HotelBlockingService {
       orderBy: [{ check_in: 'asc' }, { id: 'asc' }],
     });
     const latestMessages = await this.latestMessagesByRequest(rows.map((row: BlockRow) => Number(row.id)));
-    return rows.map((row: BlockRow) => this.publicStaffView(row, policy, latestMessages.get(Number(row.id))));
+    const releaseConfirmedByHotelierIds = await this.offlineReleaseConfirmedByHotelierIds(rows as BlockRow[]);
+    const refreshed = await Promise.all(rows.map((row: BlockRow) => this.refreshSupplierHold(row)));
+    return refreshed.map(({ row, statusOverride, cutoffAt }) => {
+      const view = this.publicStaffView(
+        cutoffAt ? { ...row, cutoff_at: cutoffAt } : row,
+        policy,
+        latestMessages.get(Number(row.id)),
+        statusOverride,
+      );
+      return {
+        ...view,
+        releaseConfirmedByHotelier: releaseConfirmedByHotelierIds.has(Number(row.id))
+          || view.releaseStatus === 'ACKNOWLEDGED',
+      };
+    });
   }
 
   async getById(requestId: number) {
@@ -508,7 +1036,42 @@ export class HotelBlockingService {
     });
     if (!row) throw new NotFoundException('Hotel hold request not found.');
     const latestMessages = await this.latestMessagesByRequest([Number(row.id)]);
-    return this.publicStaffView(row, policy, latestMessages.get(Number(row.id)));
+    const releaseConfirmedByHotelierIds = await this.offlineReleaseConfirmedByHotelierIds([row]);
+    const refreshed = await this.refreshSupplierHold(row);
+    const view = this.publicStaffView(
+      refreshed.cutoffAt ? { ...row, cutoff_at: refreshed.cutoffAt } : row,
+      policy,
+      latestMessages.get(Number(row.id)),
+      refreshed.statusOverride,
+    );
+    return {
+      ...view,
+      releaseConfirmedByHotelier: releaseConfirmedByHotelierIds.has(Number(row.id))
+        || view.releaseStatus === 'ACKNOWLEDGED',
+    };
+  }
+
+  private async offlineReleaseConfirmedByHotelierIds(rows: BlockRow[]): Promise<Set<number>> {
+    const requestIds = rows
+      .filter((row) => row.status === HOTEL_BLOCK_STATUS.CANCELLED
+        && normalizeText(row.confirmation_channel).toUpperCase() === 'OFFLINE_HOLD'
+        && Number(row.id) > 0)
+      .map((row) => Number(row.id));
+    const eventModel = (this.prisma as any).dvi_hotel_block_event;
+    if (!requestIds.length || typeof eventModel?.findMany !== 'function') return new Set<number>();
+
+    const events = await eventModel.findMany({
+      where: { request_id: { in: requestIds }, event_type: 'CANCELLED' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+    });
+    return new Set<number>((events as BlockRow[])
+      .filter((event) => {
+        const metadata = parseJson(event.metadata, {}) as BlockRow;
+        const contact = metadata?.hotelierContact as BlockRow | undefined;
+        return Boolean(normalizeText(contact?.name) && normalizeText(contact?.phone));
+      })
+      .map((event) => Number(event.request_id))
+      .filter((id) => requestIds.includes(id)));
   }
 
   async getGuestDetails(planId: number) {
@@ -564,12 +1127,93 @@ export class HotelBlockingService {
     return this.recordResponse(Number(requestId), { ...input, actor: { ...actor, type: actor.type || 'STAFF' } });
   }
 
-  async cancel(requestId: number, actor: Actor) {
+  async cancel(requestId: number, actor: Actor, input: { hotelierContact?: { name?: unknown; phone?: unknown } } = {}) {
+    const request = await (this.prisma as any).dvi_hotel_block_request.findUnique({
+      where: { id: Number(requestId) },
+    });
+    if (!request) throw new NotFoundException('Hotel hold request not found.');
+    const skipVsrSupplierRelease = normalizeText(request.provider).toUpperCase() === 'VSR'
+      && normalizeText(request.confirmation_channel).toUpperCase() === 'TBO_BOOK_HOLD';
+    const isAxisRoomsHold = normalizeText(request.confirmation_channel).toUpperCase() === 'AXISROOMS_HOLD';
+    if (isAxisRoomsHold) {
+      const result = await this.cancelAxisRoomsHoldRequest(request);
+      if (!result.success) {
+        throw new BadRequestException(`AxisRooms could not confirm cancellation; the hold remains active. ${result.error || ''}`.trim());
+      }
+    }
+    const hotelierContact = input.hotelierContact
+      ? {
+        name: normalizeText(input.hotelierContact.name),
+        phone: normalizeText(input.hotelierContact.phone),
+      }
+      : null;
+    const offlineReleaseConfirmedByPhone = normalizeText(request.confirmation_channel).toUpperCase() === 'OFFLINE_HOLD'
+      && Boolean(hotelierContact?.name && hotelierContact?.phone);
     return this.transition(requestId, HOTEL_BLOCK_STATUS.CANCELLED, {
       actor: { ...actor, type: actor.type || 'STAFF' },
       eventType: 'CANCELLED',
-      notes: 'Hotel hold request cancelled by staff.',
+      notes: offlineReleaseConfirmedByPhone
+        ? 'Hotelier confirmed the offline hold release by phone; no further release follow-up is required.'
+        : skipVsrSupplierRelease
+        ? 'VSR hotel hold removed from the itinerary; no supplier cancellation API was requested.'
+        : isAxisRoomsHold
+          ? 'AxisRooms confirmed cancellation of the hotel hold through its API.'
+        : 'Hotel hold request cancelled by staff.',
+      skipSupplierRelease: skipVsrSupplierRelease || isAxisRoomsHold || offlineReleaseConfirmedByPhone,
+      hotelierContact,
     });
+  }
+
+  private async cancelAxisRoomsHoldRequest(request: BlockRow): Promise<{ success: boolean; error?: string }> {
+    const savedPayload = parseJson(request.request_payload, {}) as BlockRow;
+    const axisRequest = savedPayload.providerHold?.request || {};
+    const firstRoomStay = Array.isArray(axisRequest.roomStays) ? axisRequest.roomStays[0] || {} : {};
+    if (!this.axisRoomsBookingPushService) {
+      return { success: false, error: 'AxisRooms cancellation service is not configured.' };
+    }
+    return this.axisRoomsBookingPushService.cancelHeldBooking({
+      confirmationNo: normalizeText(request.confirmation_reference),
+      bookingCode: normalizeText(firstRoomStay.rateId || request.hotel_code),
+      hotelCode: normalizeText(axisRequest.hotelId || request.hotel_code),
+    });
+  }
+
+  async recordReleaseAcknowledgement(requestId: number, actor: Actor) {
+    const request = await (this.prisma as any).dvi_hotel_block_request.findUnique({ where: { id: Number(requestId) } });
+    if (!request) throw new NotFoundException('Hotel hold request not found.');
+    if (![HOTEL_BLOCK_STATUS.EXPIRED, HOTEL_BLOCK_STATUS.CANCELLED].includes(request.status)) {
+      throw new BadRequestException('Only an expired or cancelled hold can be marked as released.');
+    }
+    if (normalizeText(request.confirmation_channel).toUpperCase() !== 'OFFLINE_HOLD') {
+      throw new BadRequestException('Manual release acknowledgement is only available for offline hotel holds.');
+    }
+    if (request.release_status === 'ACKNOWLEDGED') return { success: true, request: this.publicStaffView(request), alreadyAcknowledged: true };
+    const now = new Date();
+    const updated = await (this.prisma as any).$transaction(async (tx: any) => {
+      const changed = await tx.dvi_hotel_block_request.updateMany({
+        where: { id: request.id, status: request.status, release_status: { not: 'ACKNOWLEDGED' } },
+        data: { release_status: 'ACKNOWLEDGED', release_acknowledged_at: now, release_last_error: null },
+      });
+      if (Number(changed?.count || 0) !== 1) {
+        return tx.dvi_hotel_block_request.findUnique({ where: { id: request.id } });
+      }
+      const row = await tx.dvi_hotel_block_request.findUnique({ where: { id: request.id } });
+      await tx.dvi_hotel_block_event.create({
+        data: {
+          request_id: request.id,
+          previous_status: request.status,
+          new_status: request.status,
+          event_type: 'HOTEL_RELEASE_ACKNOWLEDGED_MANUALLY',
+          actor_type: actor.type || 'STAFF',
+          actor_id: Number(actor.id || 0) || null,
+          actor_name: actor.name || null,
+          communication_channel: 'MANUAL',
+          notes: 'Authorized DVi user recorded that the hotel released the held rooms.',
+        },
+      });
+      return row;
+    });
+    return { success: true, request: this.publicStaffView(updated) };
   }
 
   /**
@@ -656,13 +1300,37 @@ export class HotelBlockingService {
   }
 
   private async cancelAfterHotelChange(request: BlockRow, actor: Actor) {
-    const recipient = firstEmail(request.contact_email);
+    const supplierHold = isTboSupplierHoldRequest(request);
+    const confirmationChannel = normalizeText(request.confirmation_channel).toUpperCase();
+    const axisRoomsHold = confirmationChannel === 'AXISROOMS_HOLD';
+    let axisRoomsCancellation: { success: boolean; error?: string } | null = null;
+
+    if (axisRoomsHold) {
+      axisRoomsCancellation = await this.cancelAxisRoomsHoldRequest(request);
+    }
+
+    // TBO/VSR releases the old supplier hold when the selected itinerary
+    // hotel changes. Retire our local row, but never send the manual hotelier
+    // cancellation email for this provider.
+    const recipient = supplierHold || axisRoomsHold ? null : firstEmail(request.contact_email);
     const updated = await (this.prisma as any).$transaction(async (tx: any) => {
       const result = await tx.dvi_hotel_block_request.update({
         where: { id: request.id },
         data: {
           status: HOTEL_BLOCK_STATUS.CANCELLED,
           cutoff_at: null,
+          ...(axisRoomsHold ? {
+            release_status: axisRoomsCancellation?.success ? 'ACKNOWLEDGED' : 'FAILED',
+            release_last_error: axisRoomsCancellation?.success ? null : axisRoomsCancellation?.error || 'AxisRooms cancellation failed.',
+            release_email_status: 'SKIPPED',
+            release_email_last_error: null,
+          } : supplierHold ? {
+            release_status: 'ACKNOWLEDGED',
+            release_acknowledged_at: new Date(),
+            release_last_error: null,
+            release_email_status: 'SKIPPED',
+            release_email_last_error: null,
+          } : {}),
         },
       });
       await tx.dvi_hotel_block_event.create({
@@ -674,7 +1342,18 @@ export class HotelBlockingService {
           actor_type: actor.type || 'STAFF',
           actor_id: Number(actor.id || 0) || null,
           actor_name: actor.name || null,
-          notes: 'Previous hotel hold cancelled because the itinerary hotel was changed.',
+          notes: supplierHold
+            ? 'Previous VSR supplier hold retired because the itinerary hotel changed; TBO auto-cancels it.'
+            : axisRoomsHold
+              ? axisRoomsCancellation?.success
+                ? 'Previous AxisRooms hold cancelled through the supplier API because the itinerary hotel changed.'
+                : `Previous AxisRooms hold cancellation API failed after the itinerary hotel changed: ${axisRoomsCancellation?.error || 'unknown error'}`
+            : 'Previous hotel hold cancelled because the itinerary hotel was changed.',
+          metadata: axisRoomsHold ? JSON.stringify({
+            cancellationRequested: true,
+            cancellationSucceeded: Boolean(axisRoomsCancellation?.success),
+            error: axisRoomsCancellation?.error || null,
+          }) : undefined,
         },
       });
       const message = recipient
@@ -691,7 +1370,13 @@ export class HotelBlockingService {
     });
 
     if (!recipient || !updated.message) {
-      return { id: request.id, status: HOTEL_BLOCK_STATUS.CANCELLED, emailQueued: false, emailDeliveryStatus: 'SKIPPED' };
+      return {
+        id: request.id,
+        status: HOTEL_BLOCK_STATUS.CANCELLED,
+        emailQueued: false,
+        emailDeliveryStatus: 'SKIPPED',
+        ...(axisRoomsHold ? { supplierCancellationSucceeded: Boolean(axisRoomsCancellation?.success), supplierCancellationError: axisRoomsCancellation?.error } : {}),
+      };
     }
 
     let deliveryStatus: 'QUEUED' | 'SENT' | 'FAILED' = 'QUEUED';
@@ -728,6 +1413,7 @@ export class HotelBlockingService {
       emailQueued: true,
       emailDeliveryStatus: deliveryStatus,
       providerMessageId,
+      ...(axisRoomsHold ? { supplierCancellationSucceeded: Boolean(axisRoomsCancellation?.success), supplierCancellationError: axisRoomsCancellation?.error } : {}),
     };
   }
 
@@ -809,6 +1495,9 @@ export class HotelBlockingService {
     if (![HOTEL_BLOCK_STATUS.BLOCKED, HOTEL_BLOCK_STATUS.CONFIRMED].includes(request.status)) {
       throw new BadRequestException('Only an existing held hotel can be extended.');
     }
+    if (request.paid_confirmed_at) {
+      throw new BadRequestException('A paid hotel hold cannot be extended.');
+    }
     const cutoff = new Date(String(cutoffAt || ''));
     if (Number.isNaN(cutoff.getTime())) throw new BadRequestException('A valid cutoff date and time is required.');
     const previousCutoff = dateOnly(request.cutoff_at);
@@ -822,7 +1511,19 @@ export class HotelBlockingService {
       throw new BadRequestException(`The hold cutoff cannot be later than ${maximumCutoff.toISOString()}.`);
     }
     const updated = await (this.prisma as any).$transaction(async (tx: any) => {
-      const result = await tx.dvi_hotel_block_request.update({ where: { id: request.id }, data: { cutoff_at: cutoff } });
+      const claim = await tx.dvi_hotel_block_request.updateMany({
+        where: {
+          id: request.id,
+          status: { in: [HOTEL_BLOCK_STATUS.BLOCKED, HOTEL_BLOCK_STATUS.CONFIRMED] },
+          paid_confirmed_at: null,
+          cutoff_at: request.cutoff_at,
+        },
+        data: { cutoff_at: cutoff, version: { increment: 1 } },
+      });
+      if (Number(claim?.count || 0) !== 1) {
+        throw new BadRequestException('This hotel hold changed or expired before it could be extended. Refresh and try again.');
+      }
+      const result = await tx.dvi_hotel_block_request.findUnique({ where: { id: request.id } });
       await tx.dvi_hotel_block_event.create({
         data: {
           request_id: request.id,
@@ -847,8 +1548,11 @@ export class HotelBlockingService {
       eventType: 'HOLD_EXTENSION_EMAIL_QUEUED',
       notes: 'Hotel hold extension email queued by staff.',
       policy,
-      emailKind: 'EXTENSION',
+      emailKind: ['AXISROOMS_HOLD', 'OFFLINE_HOLD'].includes(String(updated.confirmation_channel || ''))
+        ? 'HOLD_EXTENSION_NOTICE'
+        : 'EXTENSION',
       previousCutoffAt: previousCutoff,
+      requiresResponseLink: !['AXISROOMS_HOLD', 'OFFLINE_HOLD'].includes(String(updated.confirmation_channel || '')),
     });
   }
 
@@ -859,21 +1563,24 @@ export class HotelBlockingService {
     eventType: string;
     notes: string;
     policy?: HotelHoldPolicy;
-    emailKind?: 'REQUEST' | 'EXTENSION';
+    emailKind?: 'REQUEST' | 'EXTENSION' | 'HOLD_EXTENSION_NOTICE';
     previousCutoffAt?: Date | string | null;
+    requiresResponseLink?: boolean;
   }) {
-    const { request, recipient, actor, eventType, notes, policy = DEFAULT_HOTEL_HOLD_POLICY, emailKind = 'REQUEST', previousCutoffAt = null } = input;
+    const { request, recipient, actor, eventType, notes, policy = DEFAULT_HOTEL_HOLD_POLICY, emailKind = 'REQUEST', previousCutoffAt = null, requiresResponseLink = true } = input;
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const now = new Date();
     await (this.prisma as any).$transaction(async (tx: any) => {
-      await tx.dvi_hotel_block_token.create({
-        data: {
-          request_id: request.id,
-          token_hash: tokenHash,
-          expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
-        },
-      });
+      if (requiresResponseLink) {
+        await tx.dvi_hotel_block_token.create({
+          data: {
+            request_id: request.id,
+            token_hash: tokenHash,
+            expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
       await tx.dvi_hotel_block_message.create({
         data: { request_id: request.id, recipient: this.hotelBlockEmail.deliveryRecipient(recipient), delivery_status: 'QUEUED', attempt_count: 0 },
       });
@@ -892,7 +1599,9 @@ export class HotelBlockingService {
       });
     });
 
-    const responseUrl = `${publicItineraryBaseUrl()}/hotel/block-response/${rawToken}`;
+    const responseUrl = requiresResponseLink
+      ? `${publicItineraryBaseUrl()}/hotel/block-response/${rawToken}`
+      : '';
     let deliveryStatus: 'QUEUED' | 'SENT' | 'FAILED' = 'QUEUED';
     let providerMessageId: string | null = null;
     try {
@@ -957,9 +1666,43 @@ export class HotelBlockingService {
         ...(Number(groupType || 0) > 0 ? { group_type: Number(groupType) } : {}),
         status: { notIn: [HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED] },
       },
-      select: { id: true, hotel_name: true, status: true, selection_ids: true },
+      select: {
+        id: true,
+        hotel_name: true,
+        provider: true,
+        status: true,
+        selection_ids: true,
+        confirmation_channel: true,
+        confirmation_reference: true,
+        cutoff_at: true,
+        paid_confirmed_at: true,
+        request_payload: true,
+      },
     });
-    const pending = requests.filter((request: BlockRow) => request.status !== HOTEL_BLOCK_STATUS.CONFIRMED);
+    const now = new Date();
+    const readiness = await Promise.all(requests.map(async (request: BlockRow) => {
+      if (request.paid_confirmed_at) return true;
+      const hasFutureCutoff = isFutureDate(request.cutoff_at, now);
+      const provider = normalizeText(request.provider).toUpperCase();
+      if (provider === 'OFFLINE' && request.confirmation_channel === 'OFFLINE_HOLD') {
+        return ['BLOCKED', 'CONFIRMED'].includes(request.status) && hasFutureCutoff;
+      }
+      if (provider === 'AXISROOMS' && request.confirmation_channel === 'AXISROOMS_HOLD') {
+        return ['BLOCKED', 'CONFIRMED'].includes(request.status)
+          && hasFutureCutoff
+          && Boolean(normalizeText(request.confirmation_reference));
+      }
+      if (provider === 'VSR' && request.confirmation_channel === 'TBO_BOOK_HOLD') {
+        const supplierHold = parseJson(request.request_payload, {})?.supplierHold || {};
+        return ['BLOCKED', 'CONFIRMED'].includes(request.status)
+          && hasFutureCutoff
+          && Boolean(supplierHold.bookingId)
+          && Boolean(supplierHold.bookingReference || request.confirmation_reference)
+          && Boolean(supplierHold.bookingCode);
+      }
+      return request.status === HOTEL_BLOCK_STATUS.CONFIRMED && hasFutureCutoff;
+    }));
+    const pending = requests.filter((_request: BlockRow, index: number) => !readiness[index]);
     const heldSelectionIds = requests
       .flatMap((request: BlockRow) => (parseJson(request.selection_ids, []) as unknown[]).map(Number))
       .filter((id: number) => id > 0)
@@ -978,6 +1721,324 @@ export class HotelBlockingService {
     return { ready: true, requestCount: requests.length };
   }
 
+  /** Require a Travel Expert's explicit offline payment acknowledgement before wallet debit. */
+  async assertOfflinePaymentAcknowledgements(
+    planId: number,
+    groupType: number,
+    confirmations: Array<{ requestId: number; confirmed: boolean; hotelierName?: string; hotelierPhone?: string }> = [],
+    actor: Actor = {},
+  ) {
+    const offlineHolds = await (this.prisma as any).dvi_hotel_block_request.findMany({
+      where: {
+        itinerary_plan_id: Number(planId),
+        ...(Number(groupType || 0) > 0 ? { group_type: Number(groupType) } : {}),
+        confirmation_channel: 'OFFLINE_HOLD',
+        status: { in: [HOTEL_BLOCK_STATUS.BLOCKED, HOTEL_BLOCK_STATUS.CONFIRMED] },
+        paid_confirmed_at: null,
+        cutoff_at: { gt: new Date() },
+      },
+      select: { id: true, hotel_name: true },
+    });
+    if (!offlineHolds.length) return { required: 0 };
+
+    const isTravelExpert = Number(actor.roleId || 0) === 8
+      || (Number(actor.roleId || 0) === 3
+        && Number(actor.permissionRoleId || 0) === 3
+        && Number(actor.staffId || 0) > 0);
+    if (!isTravelExpert) throw new ForbiddenException('Only a Travel Expert can confirm offline hotel payment.');
+
+    const confirmationById = new Map(confirmations
+      .filter((item) => item?.confirmed === true)
+      .map((item) => [Number(item.requestId), item]));
+    const missing = offlineHolds.filter((hold: BlockRow) => {
+      const item = confirmationById.get(Number(hold.id));
+      return !item || !normalizeText(item.hotelierName) || !normalizeText(item.hotelierPhone);
+    });
+    if (missing.length) {
+      throw new BadRequestException({
+        code: 'OFFLINE_HOTEL_PAYMENT_ACKNOWLEDGEMENT_REQUIRED',
+        message: 'Confirm that the Travel Expert contacted the hotelier and paid each offline hotel before Confirm & Pay.',
+        hotels: missing.map((hold: BlockRow) => hold.hotel_name),
+      });
+    }
+    return { required: offlineHolds.length };
+  }
+
+  /** Finalize paid provider holds locally, then generate VSR vouchers independently. */
+  async finalizePaidProviderHolds(
+    planId: number,
+    groupType: number,
+    confirmedPlanId: number,
+    offlinePaymentConfirmations: Array<{ requestId: number; confirmed: boolean; hotelierName?: string; hotelierPhone?: string }> = [],
+    actor: Actor = {},
+  ) {
+    const now = new Date();
+    const finalized = await (this.prisma as any).$transaction(async (tx: any) => {
+      const requests = await tx.dvi_hotel_block_request.findMany({
+        where: {
+          itinerary_plan_id: Number(planId),
+          ...(Number(groupType || 0) > 0 ? { group_type: Number(groupType) } : {}),
+          confirmation_channel: { in: ['AXISROOMS_HOLD', 'OFFLINE_HOLD', 'TBO_BOOK_HOLD'] },
+          status: { in: [HOTEL_BLOCK_STATUS.BLOCKED, HOTEL_BLOCK_STATUS.CONFIRMED] },
+        },
+        orderBy: { id: 'asc' },
+      });
+      const selectionIds = Array.from(new Set(requests.flatMap((request: BlockRow) =>
+        (parseJson(request.selection_ids, []) as unknown[]).map(Number).filter((id) => Number.isInteger(id) && id > 0),
+      )));
+      const selectedRows = selectionIds.length
+        ? await tx.dvi_itinerary_plan_hotel_details.findMany({
+            where: { itinerary_plan_hotel_details_ID: { in: selectionIds }, itinerary_plan_id: Number(planId) },
+            select: { itinerary_plan_hotel_details_ID: true, itinerary_route_id: true },
+          })
+        : [];
+      const routeBySelectionId = new Map(selectedRows.map((row: BlockRow) => [
+        Number(row.itinerary_plan_hotel_details_ID), Number(row.itinerary_route_id || 0),
+      ]));
+      const paymentConfirmationIds = new Set(offlinePaymentConfirmations
+        .filter((item) => item?.confirmed === true)
+        .map((item) => Number(item.requestId)));
+      const paymentConfirmationById = new Map(offlinePaymentConfirmations
+        .filter((item) => item?.confirmed === true)
+        .map((item) => [Number(item.requestId), item]));
+
+      for (const request of requests as BlockRow[]) {
+        if (request.confirmation_channel === 'AXISROOMS_HOLD') {
+          const payload = parseJson(request.request_payload, {}) as BlockRow;
+          const hold = payload.providerHold || {};
+          const axisRequest = hold.request || {};
+          const response = hold.response || null;
+          const routes = (parseJson(request.selection_ids, []) as unknown[])
+            .map(Number)
+            .map((id) => Number(routeBySelectionId.get(id) || 0))
+            .filter((id) => Number.isInteger(id) && id > 0);
+          const roomStay = Array.isArray(axisRequest.roomStays) ? axisRequest.roomStays[0] || {} : {};
+          const guestDetails = roomStay.guestDetails || {};
+          for (const routeId of Array.from(new Set(routes))) {
+            const where = {
+              itinerary_plan_ID: Number(planId),
+              itinerary_route_ID: routeId,
+              axisrooms_booking_reference: String(axisRequest.confirmationNo || request.confirmation_reference || ''),
+              status: 1,
+              deleted: 0,
+            };
+            const existing = await tx.axisrooms_hotel_booking_confirmation.findFirst({ where });
+            if (existing) continue;
+            await tx.axisrooms_hotel_booking_confirmation.create({
+              data: {
+                confirmed_itinerary_plan_ID: Number(confirmedPlanId || 0),
+                itinerary_plan_ID: Number(planId),
+                itinerary_route_ID: routeId,
+                axisrooms_hotel_code: String(request.hotel_code || axisRequest.hotelId || ''),
+                axisrooms_booking_reference: String(axisRequest.confirmationNo || request.confirmation_reference || ''),
+                booking_code: String(roomStay.rateId || request.hotel_code || ''),
+                check_in_date: axisRequest.checkInDate ? new Date(axisRequest.checkInDate) : request.check_in,
+                check_out_date: axisRequest.checkOutDate ? new Date(axisRequest.checkOutDate) : request.check_out,
+                number_of_rooms: Number(roomStay.noOfUnits || request.room_count || 1),
+                net_amount: Number(axisRequest.totalAmount || request.total_amount || 0),
+                guest_nationality: String(axisRequest.guestNationality || ''),
+                total_guests: Number(guestDetails.adults || 0) + Number(guestDetails.children || 0),
+                api_response: {
+                  hold: { request: axisRequest, response, confirmationNo: axisRequest.confirmationNo || null },
+                  paymentConfirmedAt: now.toISOString(),
+                },
+                createdby: Number(request.created_by || 0),
+                createdon: now,
+                status: 1,
+                deleted: 0,
+              },
+            });
+          }
+        }
+
+        const isTboHold = request.confirmation_channel === 'TBO_BOOK_HOLD';
+        if (request.status !== HOTEL_BLOCK_STATUS.CONFIRMED || !request.paid_confirmed_at || (isTboHold && request.voucher_status !== 'VOUCHERED')) {
+          await tx.dvi_hotel_block_request.update({
+            where: { id: request.id },
+            data: {
+              status: HOTEL_BLOCK_STATUS.CONFIRMED,
+              ...(request.confirmed_at ? {} : { confirmed_at: now }),
+              paid_confirmed_at: request.paid_confirmed_at || now,
+              ...(request.responded_at ? {} : { responded_at: now }),
+              ...(isTboHold && request.voucher_status !== 'VOUCHERED' ? {
+                voucher_status: 'PENDING',
+                voucher_next_attempt_at: now,
+              } : {}),
+            },
+          });
+          if (request.status !== HOTEL_BLOCK_STATUS.CONFIRMED) {
+            const offlinePaymentConfirmed = request.confirmation_channel === 'OFFLINE_HOLD'
+              && paymentConfirmationIds.has(Number(request.id));
+            await tx.dvi_hotel_block_event.create({
+              data: {
+                request_id: request.id,
+                previous_status: request.status,
+                new_status: HOTEL_BLOCK_STATUS.CONFIRMED,
+                event_type: offlinePaymentConfirmed ? 'OFFLINE_HOTEL_PAYMENT_CONFIRMED' : 'PAYMENT_CONFIRMED',
+                actor_type: offlinePaymentConfirmed ? actor.type || 'STAFF' : 'SYSTEM',
+                actor_id: offlinePaymentConfirmed ? Number(actor.id || 0) || null : null,
+                actor_name: offlinePaymentConfirmed ? actor.name || null : null,
+                communication_channel: 'WALLET',
+                notes: offlinePaymentConfirmed
+                  ? 'Travel Expert confirmed direct payment to the offline hotelier; no supplier API was called.'
+                  : 'Hotel hold confirmed after itinerary wallet payment succeeded.',
+                metadata: JSON.stringify({
+                  confirmedPlanId: Number(confirmedPlanId || 0),
+                  channel: request.confirmation_channel,
+                  ...(offlinePaymentConfirmed ? {
+                    hotelierContact: parseJson(request.request_payload, {})?.providerHold?.hotelierContact || null,
+                    paymentContact: paymentConfirmationById.get(Number(request.id)) || null,
+                  } : {}),
+                }),
+              },
+            });
+          }
+        }
+      }
+      return {
+        finalized: requests.length,
+        tboRequestIds: requests
+          .filter((request: BlockRow) => request.confirmation_channel === 'TBO_BOOK_HOLD' && request.voucher_status !== 'VOUCHERED')
+          .map((request: BlockRow) => Number(request.id)),
+      };
+    });
+    const voucherResults: any[] = [];
+    for (const requestId of finalized.tboRequestIds) {
+      voucherResults.push(await this.generateVoucherForPaidTboHold(requestId, now));
+    }
+    return { finalized: finalized.finalized, voucherResults };
+  }
+
+  async retryDueTboVouchers(now = new Date()) {
+    const staleProcessingBefore = new Date(now.getTime() - 10 * 60_000);
+    const stale = await (this.prisma as any).dvi_hotel_block_request.updateMany({
+      where: {
+        confirmation_channel: 'TBO_BOOK_HOLD',
+        status: HOTEL_BLOCK_STATUS.CONFIRMED,
+        paid_confirmed_at: { not: null },
+        voucher_status: 'PROCESSING',
+        updated_at: { lte: staleProcessingBefore },
+      },
+      data: { voucher_status: 'PENDING', voucher_next_attempt_at: now },
+    });
+    const requests = await (this.prisma as any).dvi_hotel_block_request.findMany({
+      where: {
+        confirmation_channel: 'TBO_BOOK_HOLD',
+        status: HOTEL_BLOCK_STATUS.CONFIRMED,
+        paid_confirmed_at: { not: null },
+        voucher_status: 'PENDING',
+        OR: [{ voucher_next_attempt_at: null }, { voucher_next_attempt_at: { lte: now } }],
+      },
+      orderBy: [{ voucher_next_attempt_at: 'asc' }, { id: 'asc' }],
+      take: 100,
+    });
+    let processed = 0;
+    for (const request of requests) {
+      const supplierHold = parseJson(request.request_payload, {})?.supplierHold || {};
+      const lcd = new Date(supplierHold.lcdDeadlineAt || '');
+      if (Number.isFinite(lcd.getTime()) && lcd.getTime() <= now.getTime()) {
+        await (this.prisma as any).dvi_hotel_block_request.updateMany({
+          where: { id: request.id, voucher_status: 'PENDING' },
+          data: {
+            voucher_status: 'LCD_PASSED',
+            voucher_next_attempt_at: null,
+            voucher_last_error: 'TBO last cancellation deadline passed before voucher generation.',
+          },
+        });
+        continue;
+      }
+      await this.generateVoucherForPaidTboHold(Number(request.id), now);
+      processed += 1;
+    }
+    return { processed, recoveredClaims: Number(stale?.count || 0) };
+  }
+
+  private async generateVoucherForPaidTboHold(requestId: number, now = new Date()) {
+    const claim = await (this.prisma as any).dvi_hotel_block_request.updateMany({
+      where: {
+        id: Number(requestId),
+        confirmation_channel: 'TBO_BOOK_HOLD',
+        status: HOTEL_BLOCK_STATUS.CONFIRMED,
+        paid_confirmed_at: { not: null },
+        voucher_status: 'PENDING',
+        OR: [{ voucher_next_attempt_at: null }, { voucher_next_attempt_at: { lte: now } }],
+      },
+      data: {
+        voucher_status: 'PROCESSING',
+        voucher_attempt_count: { increment: 1 },
+        voucher_last_error: null,
+        updated_at: now,
+      },
+    });
+    if (Number(claim?.count || 0) !== 1) return { requestId, status: 'UNCHANGED' };
+
+    const request = await (this.prisma as any).dvi_hotel_block_request.findUnique({ where: { id: Number(requestId) } });
+    const supplierHold = parseJson(request?.request_payload, {})?.supplierHold || {};
+    const bookingId = Number(supplierHold.bookingId || 0);
+    try {
+      if (!bookingId) throw new Error('TBO BookingId is missing for the held VSR booking.');
+      const supplierState = await this.tboHotelBooking.getHoldStatus(
+        String(request.confirmation_reference || supplierHold.bookingReference || ''),
+        bookingId,
+      );
+      const alreadyVouchered = supplierState?.voucherStatus === true;
+      const result: any = alreadyVouchered
+        ? { voucherStatus: true, bookingStatus: supplierState.status, bookingId, alreadyVouchered: true }
+        : await this.tboHotelBooking.generateVoucher(bookingId);
+      await (this.prisma as any).$transaction(async (tx: any) => {
+        const payload = parseJson(request.request_payload, {}) as BlockRow;
+        payload.supplierHold = { ...(payload.supplierHold || {}), voucherGeneration: result };
+        await tx.dvi_hotel_block_request.update({
+          where: { id: request.id },
+          data: {
+            voucher_status: 'VOUCHERED',
+            voucher_generated_at: now,
+            voucher_next_attempt_at: null,
+            voucher_last_error: null,
+            request_payload: JSON.stringify(payload),
+          },
+        });
+        await tx.dvi_hotel_block_event.create({
+          data: {
+            request_id: request.id,
+            previous_status: HOTEL_BLOCK_STATUS.CONFIRMED,
+            new_status: HOTEL_BLOCK_STATUS.CONFIRMED,
+            event_type: result.alreadyVouchered ? 'TBO_VOUCHER_ALREADY_GENERATED' : 'TBO_VOUCHER_GENERATED',
+            actor_type: 'SYSTEM',
+            communication_channel: 'API',
+            notes: `VSR voucher generated; supplier booking status: ${result.bookingStatus || 'Pending'}.`,
+            metadata: JSON.stringify({ bookingId, bookingStatus: result.bookingStatus || null }),
+          },
+        });
+      });
+      return { requestId, status: 'VOUCHERED', bookingStatus: result.bookingStatus || null };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const attempt = Number(request.voucher_attempt_count || 0) + 1;
+      const retryMinutes = Math.min(60, 5 * (2 ** Math.min(attempt - 1, 4)));
+      const nextAttempt = new Date(now.getTime() + retryMinutes * 60_000);
+      await (this.prisma as any).$transaction(async (tx: any) => {
+        await tx.dvi_hotel_block_request.update({
+          where: { id: request.id },
+          data: { voucher_status: 'PENDING', voucher_next_attempt_at: nextAttempt, voucher_last_error: message },
+        });
+        await tx.dvi_hotel_block_event.create({
+          data: {
+            request_id: request.id,
+            previous_status: HOTEL_BLOCK_STATUS.CONFIRMED,
+            new_status: HOTEL_BLOCK_STATUS.CONFIRMED,
+            event_type: 'TBO_VOUCHER_PENDING',
+            actor_type: 'SYSTEM',
+            communication_channel: 'API',
+            notes: 'VSR voucher generation is pending and will retry before the supplier cancellation deadline.',
+            metadata: JSON.stringify({ bookingId, attempt, nextAttempt, error: message }),
+          },
+        });
+      });
+      return { requestId, status: 'PENDING', nextAttemptAt: nextAttempt.toISOString(), message };
+    }
+  }
+
   private async upsertRequest(input: {
     planId: number;
     groupType: number;
@@ -988,6 +2049,14 @@ export class HotelBlockingService {
     policy?: HotelHoldPolicy;
     requestedAt?: Date;
     scopedSelection?: boolean;
+    supplierHold?: {
+      bookingReference?: string;
+      bookingId?: string | number;
+      bookResponse?: unknown;
+      selection?: Record<string, any>;
+      lcdDeadlineAt?: string;
+    };
+    providerHold?: ProviderHoldInput;
   }) {
     const first = input.rows[0];
     const room = first.__room || {};
@@ -1019,7 +2088,7 @@ export class HotelBlockingService {
     const selectionIds = input.rows
       .map((row) => Number(row.itinerary_plan_hotel_details_ID))
       .sort((a, b) => a - b);
-    const reservationKey = [
+    const reservationKeyBase = [
       input.planId,
       input.groupType,
       provider,
@@ -1045,29 +2114,71 @@ export class HotelBlockingService {
       guest: input.guest || null,
       selectionIds,
       stayDetails,
+      supplierHold: input.supplierHold
+        ? {
+            bookingReference: input.supplierHold.bookingReference || null,
+            bookingId: input.supplierHold.bookingId || null,
+            bookingCode: input.supplierHold.selection?.bookingCode || null,
+            lcdDeadlineAt: input.supplierHold.lcdDeadlineAt || null,
+          }
+        : null,
+      providerHold: input.providerHold
+        ? {
+            channel: input.providerHold.channel,
+            confirmationReference: input.providerHold.confirmationReference || null,
+            request: input.providerHold.request || null,
+            response: input.providerHold.response || null,
+            hotelierContact: input.providerHold.hotelierContact || null,
+          }
+        : null,
     };
     // A submitted request is awaiting the hotelier's response. The hotelier
     // response link is the authoritative transition to Blocked, Waitlisted,
     // Confirmed, or Unavailable.
-    const status = email ? HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED : HOTEL_BLOCK_STATUS.CONTACT_REQUIRED;
+    const status = input.supplierHold || input.providerHold
+      ? HOTEL_BLOCK_STATUS.BLOCKED
+      : (email ? HOTEL_BLOCK_STATUS.CONFIRMATION_AWAITED : HOTEL_BLOCK_STATUS.CONTACT_REQUIRED);
     const requestedAt = input.requestedAt || new Date();
     const policy = input.policy || DEFAULT_HOTEL_HOLD_POLICY;
-    const defaultCutoff = email ? this.getDefaultHotelHoldCutoff(start, requestedAt, policy) : null;
+    const configuredCutoff = input.providerHold || email || input.supplierHold
+      ? this.getDefaultHotelHoldCutoff(start, requestedAt, policy)
+      : null;
+    const supplierDeadline = input.supplierHold?.lcdDeadlineAt
+      ? new Date(input.supplierHold.lcdDeadlineAt)
+      : null;
+    const defaultCutoff = configuredCutoff && supplierDeadline && !Number.isNaN(supplierDeadline.getTime())
+      && supplierDeadline.getTime() < configuredCutoff.getTime()
+      ? supplierDeadline
+      : configuredCutoff;
+    const confirmationReference = input.supplierHold?.bookingReference || input.providerHold?.confirmationReference || null;
     const candidates = await (this.prisma as any).dvi_hotel_block_request.findMany({
       where: {
         itinerary_plan_id: input.planId,
         group_type: input.groupType,
-        status: { notIn: [HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED] },
       },
-      orderBy: { id: 'asc' },
+      orderBy: { id: 'desc' },
     });
     const matchingSelectionRequest = candidates.find((candidate: BlockRow) => {
+      if ([HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED].includes(candidate.status)) return false;
       const candidateIds = (parseJson(candidate.selection_ids, []) as unknown[])
         .map(Number)
         .filter((id) => Number.isInteger(id))
         .sort((a, b) => a - b);
       return candidateIds.length === selectionIds.length && candidateIds.every((id, index) => id === selectionIds[index]);
     });
+    // reservation_key is unique and deliberately stable for one selected stay.
+    // Keep cancelled/superseded requests as history, but create the next
+    // lifecycle under a deterministic generation key instead of colliding
+    // with the terminal row when the same hotel is held again.
+    const reservationKeyHistory = candidates.filter((candidate: BlockRow) => (
+      candidate.reservation_key === reservationKeyBase
+      || String(candidate.reservation_key || '').startsWith(`${reservationKeyBase}|retry:`)
+    ));
+    const latestReservationKey = reservationKeyHistory[0];
+    const reservationKey = latestReservationKey
+      && [HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED].includes(latestReservationKey.status)
+      ? `${reservationKeyBase}|retry:${Number(latestReservationKey.id)}`
+      : reservationKeyBase;
     // An individual row hold is scoped by its exact selection ID. Do not fall
     // back to a reservation-key match here: an older request for the same
     // hotel/date can otherwise be treated as a resend even when this visible
@@ -1075,7 +2186,9 @@ export class HotelBlockingService {
     const existing = matchingSelectionRequest || (input.scopedSelection
       ? null
       : await (this.prisma as any).dvi_hotel_block_request.findUnique({ where: { reservation_key: reservationKey } }));
-    if (existing && ACTIVE_REQUEST_STATUSES.includes(existing.status)) {
+    const existingSupplierHoldExpired = isTboSupplierHoldRequest(existing || {})
+      && !isFutureDate(existing?.cutoff_at, requestedAt);
+    if (existing && ACTIVE_REQUEST_STATUSES.includes(existing.status) && !existingSupplierHoldExpired) {
       const sameSnapshot = existing.hotel_name === payload.hotelName
         && existing.provider === payload.provider
         && existing.hotel_code === payload.hotelCode
@@ -1083,8 +2196,32 @@ export class HotelBlockingService {
         && existing.meal_plan === payload.mealPlan
         && Number(existing.room_count || 0) === payload.roomCount
         && (existing.contact_email || null) === email
-        && (existing.contact_phone || null) === phone;
+        && (existing.contact_phone || null) === phone
+        && (!input.supplierHold || existing.confirmation_channel === 'TBO_BOOK_HOLD')
+        && (!input.providerHold || existing.confirmation_channel === input.providerHold.channel)
+        && (!input.supplierHold
+          || !input.supplierHold.selection?.bookingCode
+          || String(parseJson(existing.request_payload, {})?.supplierHold?.bookingCode || '') === String(input.supplierHold.selection.bookingCode));
       if (sameSnapshot) {
+        if (input.supplierHold) {
+          return {
+            ...this.publicStaffView(existing, policy),
+            created: false,
+            emailQueued: false,
+            supplierBookingReference: existing.confirmation_reference || confirmationReference,
+            responseUrl: undefined,
+          };
+        }
+        if (input.providerHold) {
+          return {
+            ...this.publicStaffView(existing, policy),
+            created: false,
+            emailQueued: false,
+            supplierBookingReference: existing.confirmation_reference || confirmationReference,
+            responseUrl: undefined,
+            emailKind: 'HOLD_NOTICE',
+          };
+        }
         if (email) {
           const delivery = await this.resendEmail(existing.id, input.actor || { type: 'STAFF' });
           return {
@@ -1117,9 +2254,32 @@ export class HotelBlockingService {
           contact_email: email,
           contact_phone: phone,
           contact_source: contactSource,
+          ...(input.supplierHold ? {
+            status,
+            cutoff_at: defaultCutoff,
+            confirmation_reference: confirmationReference,
+            confirmation_channel: 'TBO_BOOK_HOLD',
+            voucher_status: 'UNVOUCHERED',
+            voucher_attempt_count: 0,
+            voucher_generated_at: null,
+            voucher_next_attempt_at: null,
+            voucher_last_error: null,
+          } : {}),
+          ...(input.providerHold ? {
+            status,
+            cutoff_at: defaultCutoff,
+            confirmation_reference: confirmationReference,
+            confirmation_channel: input.providerHold.channel,
+          } : {}),
         },
       });
-      return { ...this.publicStaffView(refreshed, policy), created: false, emailQueued: false, responseUrl: undefined };
+      return {
+        ...this.publicStaffView(refreshed, policy),
+        created: false,
+        emailQueued: false,
+        supplierBookingReference: refreshed.confirmation_reference || undefined,
+        responseUrl: undefined,
+      };
     }
 
     const rawToken = randomBytes(32).toString('hex');
@@ -1144,6 +2304,19 @@ export class HotelBlockingService {
               version: Number(existing.version || 1) + 1,
               request_payload: JSON.stringify(payload),
               created_by: Number(input.actor?.id || 0) || null,
+              ...(input.supplierHold ? {
+                confirmation_reference: confirmationReference,
+                confirmation_channel: 'TBO_BOOK_HOLD',
+                voucher_status: 'UNVOUCHERED',
+                voucher_attempt_count: 0,
+                voucher_generated_at: null,
+                voucher_next_attempt_at: null,
+                voucher_last_error: null,
+              } : {}),
+              ...(input.providerHold ? {
+                confirmation_reference: confirmationReference,
+                confirmation_channel: input.providerHold.channel,
+              } : {}),
             },
           })
         : await tx.dvi_hotel_block_request.create({
@@ -1169,6 +2342,9 @@ export class HotelBlockingService {
               contact_source: contactSource,
               requested_at: requestedAt,
               cutoff_at: defaultCutoff,
+              confirmation_reference: confirmationReference,
+              confirmation_channel: input.supplierHold ? 'TBO_BOOK_HOLD' : input.providerHold?.channel || null,
+              ...(input.supplierHold ? { voucher_status: 'UNVOUCHERED' } : {}),
               created_by: Number(input.actor?.id || 0) || null,
             },
           });
@@ -1181,14 +2357,22 @@ export class HotelBlockingService {
           actor_type: input.actor?.type || 'STAFF',
           actor_id: Number(input.actor?.id || 0) || null,
           actor_name: input.actor?.name || null,
-          notes: email ? 'Manual hotel hold request queued for email delivery.' : 'Manual hotel hold request created; hotel contact is required.',
+          notes: input.supplierHold
+            ? 'VSR supplier hold created through TBO Book with IsVoucherBooking=false.'
+            : input.providerHold?.channel === 'AXISROOMS_HOLD'
+              ? 'AxisRooms booking notification was accepted with payment pending.'
+              : input.providerHold?.channel === 'OFFLINE_HOLD'
+                ? 'Offline hotel hold recorded locally; no supplier API was called.'
+                : (email ? 'Manual hotel hold request queued for email delivery.' : 'Manual hotel hold request created; hotel contact is required.'),
           metadata: JSON.stringify({ reservationKey, provider }),
         },
       });
-      await tx.dvi_hotel_block_token.create({
-        data: { request_id: request.id, token_hash: tokenHash, expires_at: new Date(requestedAt.getTime() + 7 * 24 * 60 * 60 * 1000) },
-      });
-      if (email) {
+      if (!input.supplierHold && !input.providerHold) {
+        await tx.dvi_hotel_block_token.create({
+          data: { request_id: request.id, token_hash: tokenHash, expires_at: new Date(requestedAt.getTime() + 7 * 24 * 60 * 60 * 1000) },
+        });
+      }
+      if (email && !input.supplierHold) {
         await tx.dvi_hotel_block_message.create({
           data: { request_id: request.id, recipient: this.hotelBlockEmail.deliveryRecipient(email), delivery_status: 'QUEUED', attempt_count: 0 },
         });
@@ -1198,8 +2382,12 @@ export class HotelBlockingService {
     return {
       ...this.publicStaffView(created, policy),
       created: !existing,
-      emailQueued: Boolean(email),
-      responseUrl: `${publicItineraryBaseUrl()}/hotel/block-response/${rawToken}`,
+      supplierBookingReference: confirmationReference || undefined,
+      emailQueued: Boolean(email && !input.supplierHold),
+      emailKind: input.providerHold ? 'HOLD_NOTICE' : undefined,
+      responseUrl: input.supplierHold || input.providerHold
+        ? undefined
+        : `${publicItineraryBaseUrl()}/hotel/block-response/${rawToken}`,
     };
   }
 
@@ -1240,7 +2428,11 @@ export class HotelBlockingService {
     const request = await (this.prisma as any).dvi_hotel_block_request.findUnique({ where: { id: Number(requestId) } });
     if (!request) throw new NotFoundException('Hotel hold request not found.');
     if ([HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED].includes(request.status)) throw new BadRequestException('This hotel hold request is no longer active.');
-    if (request.status === HOTEL_BLOCK_STATUS.CONFIRMED && status !== HOTEL_BLOCK_STATUS.CONFIRMED) throw new BadRequestException('A confirmed hotel hold cannot be downgraded.');
+    if (request.status === HOTEL_BLOCK_STATUS.CONFIRMED
+      && status !== HOTEL_BLOCK_STATUS.CONFIRMED
+      && (request.paid_confirmed_at || !request.cutoff_at)) {
+      throw new BadRequestException('A paid or non-expiring confirmed hotel hold cannot be downgraded.');
+    }
     const now = new Date();
     const checkIn = dateOnly(request.check_in);
     const checkOut = dateOnly(request.check_out);
@@ -1249,6 +2441,11 @@ export class HotelBlockingService {
     }
     const policy = await this.getHotelHoldPolicy();
     const keepsHoldCutoff = status === HOTEL_BLOCK_STATUS.BLOCKED || status === HOTEL_BLOCK_STATUS.CONFIRMED;
+    const confirmationChannel = normalizeText(request.confirmation_channel).toUpperCase();
+    const queuesRelease = status === HOTEL_BLOCK_STATUS.CANCELLED
+      && !input.skipSupplierRelease
+      && !request.paid_confirmed_at
+      && (Boolean(request.cutoff_at) || ['OFFLINE_HOLD', 'AXISROOMS_HOLD'].includes(confirmationChannel));
     // A hotelier response may shorten the default hold, but it cannot set a
     // cutoff in the past. Staff extensions retain the existing hold as their
     // lower bound and therefore can only move the cutoff later.
@@ -1279,6 +2476,18 @@ export class HotelBlockingService {
           // A wait-list or unavailable response ends the hold, so do not
           // leave the previous hold-until time visible in the booking modal.
           cutoff_at: keepsHoldCutoff ? cutoffAt : null,
+          ...(queuesRelease ? {
+            release_status: 'PENDING',
+            release_email_status: firstEmail(request.contact_email) ? 'PENDING' : 'MANUAL_REQUIRED',
+            release_email_last_error: firstEmail(request.contact_email) ? null : 'Hotel email is missing; staff must request room release.',
+          } : {}),
+          ...(input.skipSupplierRelease ? {
+            release_status: 'ACKNOWLEDGED',
+            release_acknowledged_at: now,
+            release_last_error: null,
+            release_email_status: 'SKIPPED',
+            release_email_last_error: null,
+          } : {}),
           confirmation_reference: input.confirmationReference || undefined,
           confirmation_channel: input.communicationChannel || undefined,
           respondent_name: input.respondentName || undefined,
@@ -1296,7 +2505,11 @@ export class HotelBlockingService {
           actor_name: input.actor?.name || null,
           communication_channel: input.communicationChannel || null,
           notes: input.notes || null,
-          metadata: JSON.stringify({ confirmationReference: input.confirmationReference || null }),
+          metadata: JSON.stringify({
+            confirmationReference: input.confirmationReference || null,
+            supplierReleaseSkipped: Boolean(input.skipSupplierRelease),
+            hotelierContact: input.hotelierContact || null,
+          }),
         },
       });
       if (input.tokenId) await tx.dvi_hotel_block_token.update({ where: { id: input.tokenId }, data: { used_at: now } });
@@ -1326,7 +2539,74 @@ export class HotelBlockingService {
     return messagesByRequest;
   }
 
-  private publicStaffView(row: BlockRow, policy = DEFAULT_HOTEL_HOLD_POLICY, latestMessage?: BlockRow) {
+  private isReusableSupplierHold(
+    request: BlockRow,
+    rows: BlockRow[],
+    selection: Record<string, any>,
+    now: Date,
+  ) {
+    if (!isTboSupplierHoldRequest(request) || !isFutureDate(request.cutoff_at, now)) return false;
+    const requestIds = (parseJson(request.selection_ids, []) as unknown[])
+      .map(Number)
+      .filter((id) => Number.isInteger(id) && id > 0)
+      .sort((a, b) => a - b);
+    const rowIds = rows
+      .map((row) => Number(row.itinerary_plan_hotel_details_ID || 0))
+      .filter((id) => Number.isInteger(id) && id > 0)
+      .sort((a, b) => a - b);
+    if (requestIds.length !== rowIds.length || requestIds.some((id, index) => id !== rowIds[index])) return false;
+
+    const payload = parseJson(request.request_payload, {}) as BlockRow;
+    const existingBookingCode = normalizeText(payload?.supplierHold?.bookingCode);
+    const bookingCode = normalizeText(selection.bookingCode || selection.BookingCode);
+    if (existingBookingCode && bookingCode && existingBookingCode !== bookingCode) return false;
+    if (normalizeText(request.hotel_code) !== normalizeText(selection.hotelCode)) return false;
+    if (normalizeText(request.room_type) !== normalizeText(selection.roomType)) return false;
+    return Number(request.room_count || 0) === Number(selection.numberOfRooms || 0);
+  }
+
+  private async refreshSupplierHold(row: BlockRow) {
+    if (!isTboSupplierHoldRequest(row)) return { row, statusOverride: undefined as string | undefined, cutoffAt: undefined as Date | undefined };
+    // Supplier refresh is only authoritative for a locally active hold. A
+    // cancelled or superseded request must stay terminal even if the supplier
+    // still reports its booking as confirmed (or the lookup fails).
+    if ([HOTEL_BLOCK_STATUS.CANCELLED, HOTEL_BLOCK_STATUS.SUPERSEDED]
+      .includes(normalizeText(row.status).toUpperCase() as typeof HOTEL_BLOCK_STATUS.CANCELLED | typeof HOTEL_BLOCK_STATUS.SUPERSEDED)) {
+      return { row, statusOverride: undefined as string | undefined, cutoffAt: undefined as Date | undefined };
+    }
+    const localCutoff = dateOnly(row.cutoff_at);
+    try {
+      const payload = parseJson(row.request_payload, {}) as BlockRow;
+      const supplierHold = (payload?.supplierHold || {}) as BlockRow;
+      const bookingId = supplierHold.bookingId || supplierHold.BookingId;
+      const detail = await this.tboHotelBooking.getHoldStatus(String(row.confirmation_reference), bookingId);
+      const supplierCutoff = dateOnly(detail.bookingDeadline);
+      // The TBO deadline is the latest supplier-allowed date, not an extension
+      // to the application's configured hold window. A supplier LCD may
+      // shorten the persisted policy cutoff, but must never lengthen it.
+      const cutoffAt = supplierCutoff && localCutoff
+        ? new Date(Math.min(supplierCutoff.getTime(), localCutoff.getTime()))
+        : supplierCutoff || localCutoff || undefined;
+      const expired = isSupplierExpiredStatus(detail.status)
+        || Boolean(cutoffAt && cutoffAt.getTime() <= Date.now());
+      return {
+        row,
+        cutoffAt,
+        statusOverride: expired ? 'HOLD_EXPIRED' : 'HOLD',
+      };
+    } catch {
+      // A supplier status outage must not turn a locally active hold into an
+      // expired hold. Keep the last known local cutoff and active HOLD label.
+      return { row, cutoffAt: localCutoff || undefined, statusOverride: 'HOLD' };
+    }
+  }
+
+  private publicStaffView(
+    row: BlockRow,
+    policy = DEFAULT_HOTEL_HOLD_POLICY,
+    latestMessage?: BlockRow,
+    statusOverride?: string,
+  ) {
     const payload = parseJson(row.request_payload, {}) as BlockRow;
     const lastEmailAt = dateOnly(latestMessage?.sent_at || latestMessage?.created_at || row.requested_at);
     const resendAvailableAt = lastEmailAt && !row.responded_at
@@ -1345,16 +2625,26 @@ export class HotelBlockingService {
       roomType: row.room_type,
       mealPlan: row.meal_plan,
       roomCount: row.room_count,
-      status: row.status,
+      status: statusOverride || (isTboSupplierHoldRequest(row) && row.status === HOTEL_BLOCK_STATUS.BLOCKED ? 'HOLD' : row.status),
       contactEmail: row.contact_email,
       contactPhone: row.contact_phone,
       requestedAt: row.requested_at,
       respondedAt: row.responded_at,
+      paidConfirmedAt: row.paid_confirmed_at || null,
+      voucherStatus: row.voucher_status || 'NOT_APPLICABLE',
+      voucherGeneratedAt: row.voucher_generated_at || null,
+      voucherNextAttemptAt: row.voucher_next_attempt_at || null,
+      voucherLastError: row.voucher_last_error || null,
       cutoffAt: row.cutoff_at,
       maxCutoffAt: this.maxHotelHoldCutoff(row, new Date(), policy),
       holdDurationHours: hotelHoldDurationHours(row.check_in, row.requested_at, policy),
       confirmationReference: row.confirmation_reference,
       confirmationChannel: row.confirmation_channel,
+      releaseStatus: row.release_status || 'NOT_REQUIRED',
+      releaseEmailStatus: row.release_email_status || 'NOT_REQUIRED',
+      releaseLastError: row.release_last_error || null,
+      releaseEmailLastError: row.release_email_last_error || null,
+      hotelierContact: payload.providerHold?.hotelierContact || null,
       version: row.version,
       selectionIds: (Array.isArray(parseJson(row.selection_ids, [])) ? parseJson(row.selection_ids, []) : [])
         .map(Number)

@@ -142,6 +142,8 @@ export class AxisRoomsBookingPushService {
     confirmedItineraryPlanId: number;
     itineraryPlanId: number;
     hotel: any;
+    persistConfirmation?: boolean;
+    confirmationNo?: string;
     fallbackBookedBy?: string;
     fallbackEmail?: string;
     fallbackPhone?: string;
@@ -167,7 +169,8 @@ export class AxisRoomsBookingPushService {
 
     const payload: Record<string, any> = {
       bookingStatus: input.bookingStatus,
-      confirmationNo: `DVI-${input.confirmedItineraryPlanId}-${booking.routeId || 0}-${hotelCode || 'NA'}`,
+      confirmationNo: String(input.confirmationNo || '').trim()
+        || `DVI-${input.confirmedItineraryPlanId}-${booking.routeId || 0}-${hotelCode || 'NA'}`,
       hotelId: await this.resolveAxisroomsHotelId(hotelCode),
       supplierAmount: String(roomStayAmount),
       taxes: '0',
@@ -217,7 +220,7 @@ export class AxisRoomsBookingPushService {
     const result = await this.pushBookingNotification(payload);
  // Persist confirmation for successful confirms
     try {
-      if (input.bookingStatus === 'confirmed' && result.success) {
+      if (input.bookingStatus === 'confirmed' && result.success && input.persistConfirmation !== false) {
         const booking = input.hotel || {};
         const hotelCode = String(booking.hotelCode || '').trim();
         const passengers = Array.isArray(booking.passengers) ? booking.passengers : [];
@@ -283,6 +286,18 @@ export class AxisRoomsBookingPushService {
  // eslint-disable-next-line no-await-in-loop
       await this.cancelAxisroomsBookingRow(row as any);
     }
+  }
+
+  /** Uses the same cancellation notification payload as the persisted-booking cancellation flow. */
+  async cancelHeldBooking(input: { confirmationNo: string; bookingCode: string; hotelCode: string }) {
+    const confirmationNo = String(input.confirmationNo || '').trim();
+    if (!confirmationNo) return { success: false, error: 'AxisRooms hold confirmation reference is missing.' };
+    return this.pushBookingNotification({
+      confirmationNo,
+      bookingCode: String(input.bookingCode || '').trim(),
+      hotelCode: String(input.hotelCode || '').trim(),
+      bookingStatus: 'cancelled',
+    });
   }
 
   async cancelItineraryHotelsByRoutes(itineraryPlanId: number, routeIds: number[]) {
