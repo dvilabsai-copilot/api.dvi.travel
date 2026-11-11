@@ -628,6 +628,9 @@ export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
     totalRooms: Number(row?.totalRooms ?? row?.total_no_of_rooms ?? row?.totalNoOfRooms ?? row?.roomCount ?? row?.noOfRooms ?? 0) || null,
     roomRate: Number(row?.roomRate ?? row?.room_rate ?? 0),
     totalRoomCost: Number(row?.totalRoomCost ?? row?.total_room_cost ?? 0),
+    ...(Array.isArray(row?.tboRoomNightBreakdown)
+      ? { tboRoomNightBreakdown: row.tboRoomNightBreakdown }
+      : {}),
     baseTotalPrice: Number(row?.baseTotalPrice ?? row?.base_total_price ?? row?.baseHotelCost ?? row?.base_hotel_cost ?? 0),
     extraBedCount: Number(row?.extraBedCount ?? row?.extra_bed_count ?? 0),
     extraBedRate: Number(row?.extraBedRate ?? row?.extra_bed_rate ?? 0),

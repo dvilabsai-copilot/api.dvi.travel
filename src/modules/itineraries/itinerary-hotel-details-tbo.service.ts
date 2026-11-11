@@ -7092,6 +7092,9 @@ this.logger.log(
           totalStayPrice: Number((hotel as any).totalStayPrice ?? (hotel as any).totalPrice ?? (hotel as any).exactFullStayTotal ?? billableHotelCost * numberOfNights),
           numberOfNights,
           nightlyRates: (hotel as any).nightlyRates,
+          tboRoomNightBreakdown: Array.isArray((hotel as any).tboRoomNightBreakdown)
+            ? (hotel as any).tboRoomNightBreakdown
+            : undefined,
           requiresHotelApproval: normalizedProvider === 'offline',
           isLiveRate: (hotel as any).isLiveRate ?? (normalizedProvider !== 'offline' && normalizedProvider !== 'axisrooms'),
           isLiveBookable: normalizedProvider !== 'offline' && hasSupplierHotel,

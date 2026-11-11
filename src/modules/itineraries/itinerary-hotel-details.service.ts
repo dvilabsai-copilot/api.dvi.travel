@@ -1412,6 +1412,9 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
         ...(persistedRoomTypeBreakdown.length > 0
           ? { roomTypeBreakdown: persistedRoomTypeBreakdown }
           : {}),
+        ...(Array.isArray(selectedPriceSnapshot.tboRoomNightBreakdown)
+          ? { tboRoomNightBreakdown: selectedPriceSnapshot.tboRoomNightBreakdown }
+          : {}),
                 mealPlan: String(
           selectedPriceSnapshot.mealPlan ||
           selectedPriceSnapshot.mealPlanCode ||
