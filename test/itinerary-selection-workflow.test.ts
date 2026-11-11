@@ -452,11 +452,16 @@ test('bulk hotel persistence forwards provider hotel code into atomic validation
     forwardedOptions = options;
   };
   (service as any).hotelDetailsTboService = { clearCacheForQuote: () => undefined };
+  const roomNightBreakdown = [
+    { date: '2026-08-12', roomNumber: 1, adults: 2, children: 0, allInAmount: 1250.5 },
+  ];
   await service.bulkSaveHotels(10040, [{
     routeId: 10145, groupType: 1, provider: 'tbo', hotelCode: '1114182',
     rateOptionId: '1114182!TB!1!TB!current-search!TB!N!TB!AFF!',
+    tboRoomNightBreakdown: roomNightBreakdown,
   }], 1, true, true, true);
   assert.equal(forwarded.hotelCode, '1114182');
+  assert.deepEqual(forwarded.tboRoomNightBreakdown, roomNightBreakdown);
   assert.deepEqual(forwardedOptions, { selectionResolvedFromFreshSearch: true });
 });
 

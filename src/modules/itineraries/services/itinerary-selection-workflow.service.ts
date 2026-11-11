@@ -1421,6 +1421,10 @@ export class ItinerarySelectionWorkflowService {
             // amount after this handoff.
             basePricePerNight: hotel.basePricePerNight,
             baseTotalPrice: hotel.baseTotalPrice,
+            // Keep the selected VSR rate's server-resolved room/night prices
+            // in the persistence handoff so selectHotel can include them in
+            // the saved price snapshot. Do not infer them from another rate.
+            tboRoomNightBreakdown: hotel.tboRoomNightBreakdown,
             hotelMarginPercentage: hotel.hotelMarginPercentage,
             hotelMarginAmount: hotel.hotelMarginAmount,
              hotelMarginTotalAmount: hotel.hotelMarginTotalAmount,
