@@ -2795,12 +2795,12 @@ export class HotelAvailabilitySnapshotService {
     } = row || {};
     if (Array.isArray(clientRow.rateOptions)) {
       clientRow.rateOptions = this.canonicalizeRateOptions(clientRow, clientRow.rateOptions)
-        .map((option: any) => this.toClientRateOption(option));
+        .map((option: any) => this.toClientRateOption(option, clientRow.provider));
     }
     return { ...clientRow, ...tboMapFallbackMetadata };
   }
 
-  private toClientRateOption(option: any): any {
+  private toClientRateOption(option: any, parentProvider?: unknown): any {
     const source = option && typeof option === 'object' ? option : {};
     const fields = [
       'rateOptionId', 'rate_option_id', 'optionKey', 'option_key', 'bookingCode', 'booking_code', 'isPriority',
@@ -2821,9 +2821,14 @@ export class HotelAvailabilitySnapshotService {
       'tboMapFallbackApplied', 'tboMapFallbackSourceMealPlan',
       'tboMapFallbackDinnerRate', 'tboMapFallbackDinnerPerPerson',
       'tboMapFallbackDinnerPerNight', 'tboMapFallbackDinnerTotal',
+      'tboRoomNightBreakdown',
     ];
     return fields.reduce((result: any, field: string) => {
-      if (source[field] !== undefined) result[field] = source[field];
+      if (source[field] === undefined) return result;
+      if (field === 'tboRoomNightBreakdown' && String(source.provider || parentProvider || '').trim().toLowerCase() !== 'tbo') {
+        return result;
+      }
+      result[field] = source[field];
       return result;
     }, {});
   }

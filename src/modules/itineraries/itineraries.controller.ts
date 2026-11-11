@@ -1018,6 +1018,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
               'hotelMarginTotalAmount', 'amountIncludesHotelMargin',
               'pricingIncludesHotelMargin',
               'hotelMealPlanCost', 'totalHotelMealPlanCost',
+              'tboRoomNightBreakdown',
               'tboMapFallbackApplied', 'tboMapFallbackSourceMealPlan',
               'tboMapFallbackTargetMealPlan', 'tboMapFallbackLunchRate',
               'tboMapFallbackLunchPerPerson', 'tboMapFallbackLunchPerNight',
@@ -1042,6 +1043,9 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
               'inclusions', 'facilities', 'amenities', 'mandatorySupplements',
             ];
             return fields.reduce((compact: Record<string, unknown>, field: string) => {
+              if (field === 'tboRoomNightBreakdown' && String(source.provider || row?.provider || '').trim().toLowerCase() !== 'tbo') {
+                return compact;
+              }
               if (source[field] !== undefined) compact[field] = source[field];
               return compact;
             }, {});
