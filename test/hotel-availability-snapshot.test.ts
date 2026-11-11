@@ -300,6 +300,8 @@ test('client hotel payload keeps every rate option but removes unused supplier f
       mealPlan: 'CP',
       totalPrice: 100,
       bookingCode: 'BOOK-1',
+      provider: 'tbo',
+      tboRoomNightBreakdown: [{ date: '2026-11-20', roomNumber: 1, adults: 2, children: 0, allInAmount: 100 }],
       supplierRawResponse: { thousands: 'of unused fields' },
       roomAvailabilityBreakdown: Array.from({ length: 20 }, () => ({ rooms: 2 })),
     }],
@@ -311,8 +313,25 @@ test('client hotel payload keeps every rate option but removes unused supplier f
   assert.equal(clientRow.rateOptions[0].mealPlan, 'CP');
   assert.equal(clientRow.rateOptions[0].totalPrice, 100);
   assert.equal(clientRow.rateOptions[0].bookingCode, 'BOOK-1');
+  assert.deepEqual(clientRow.rateOptions[0].tboRoomNightBreakdown, [
+    { date: '2026-11-20', roomNumber: 1, adults: 2, children: 0, allInAmount: 100 },
+  ]);
   assert.equal(Object.prototype.hasOwnProperty.call(clientRow.rateOptions[0], 'supplierRawResponse'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(clientRow.rateOptions[0], 'roomAvailabilityBreakdown'), false);
+});
+
+test('client hotel payload does not expose TBO room-night breakdown on other providers', () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const clientRow = (service as any).toClientHotelRow({
+    provider: 'axisrooms',
+    rateOptions: [{
+      provider: 'axisrooms',
+      rateOptionId: 'axis-rate-1',
+      tboRoomNightBreakdown: [{ date: '2026-11-20', roomNumber: 1, allInAmount: 100 }],
+    }],
+  });
+
+  assert.equal(Object.prototype.hasOwnProperty.call(clientRow.rateOptions[0], 'tboRoomNightBreakdown'), false);
 });
 
 test('canonicalizes raw and normalized HOBSE copies into one rate and one room identity', () => {
