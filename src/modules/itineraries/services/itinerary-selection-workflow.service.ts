@@ -211,6 +211,7 @@ export class ItinerarySelectionWorkflowService {
     totalHotelMealPlanCost?: number;
     numberOfNights?: number;
     nightlyRates?: Array<Record<string, unknown>>;
+    tboRoomNightBreakdown?: Array<Record<string, unknown>>;
     isRefundable?: boolean | number | string;
     IsRefundable?: boolean | number | string;
     routeDate?: string;
@@ -671,6 +672,9 @@ export class ItinerarySelectionWorkflowService {
       } : {}),
       ...(Number(data.numberOfNights || 0) > 0 ? { numberOfNights: Number(data.numberOfNights) } : {}),
       ...(Array.isArray(data.nightlyRates) ? { nightlyRates: data.nightlyRates } : {}),
+      ...(Array.isArray(data.tboRoomNightBreakdown)
+        ? { tboRoomNightBreakdown: data.tboRoomNightBreakdown }
+        : {}),
       ...(tboMapFallbackApplied ? {
         tboMapFallbackApplied: true,
         tboMapFallbackSourceMealPlan: data.tboMapFallbackSourceMealPlan || 'CP',

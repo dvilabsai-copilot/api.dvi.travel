@@ -3424,6 +3424,16 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         hotelMarginTotalAmount,
         numberOfNights: routeScopedOffline ? 1 : Number(selected.numberOfNights || 1),
         nightlyRates: routeScopedOffline ? [routeNight] : selected.nightlyRates,
+        // Persist the room-night rates resolved with this selected supplier
+        // rate. Scope them to this route so a later read cannot reuse the
+        // previous hotel's breakdown or another night in a continuous stay.
+        ...(selectedProvider === 'tbo' && Array.isArray(selected.tboRoomNightBreakdown)
+          ? {
+              tboRoomNightBreakdown: selected.tboRoomNightBreakdown.filter((item: any) =>
+                String(item?.date || '').slice(0, 10) === routeDate,
+              ),
+            }
+          : {}),
         amountIncludesHotelMargin: selected.amountIncludesHotelMargin === true,
         pricingIncludesHotelMargin: selected.pricingIncludesHotelMargin === true,
         bookingCode: selectedProvider === 'tbo'
@@ -3578,6 +3588,9 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         bookingCode: snapshot.bookingCode, searchReference: snapshot.searchReference,
         pricePerNight: Number(row.selected_price_per_night || 0), totalPrice: Number(row.selected_total_price || 0), currency: row.selected_currency || 'INR',
         selectedPriceSnapshot: snapshot,
+        ...(Array.isArray(snapshot.tboRoomNightBreakdown)
+          ? { tboRoomNightBreakdown: snapshot.tboRoomNightBreakdown }
+          : {}),
         ...(snapshot.isRefundable !== undefined || snapshot.IsRefundable !== undefined
           ? {
               isRefundable: snapshot.isRefundable ?? snapshot.IsRefundable,
