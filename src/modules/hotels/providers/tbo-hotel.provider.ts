@@ -23,6 +23,7 @@ import {
 import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
 import { TboMasterGalleryService } from '../services/tbo-master-gallery.service';
+import { buildTboRoomNightBreakdown } from '../utils/tbo-room-night-pricing';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
@@ -388,6 +389,12 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           const totalFare = room.TotalFare || room.NetAmount || room.DayRates?.[0]?.[0]?.BasePrice || 0;
           const formattedNetAmount = parseFloat(netAmount.toString());
           const formattedTotalFare = parseFloat(totalFare.toString());
+          const tboRoomNightBreakdown = buildTboRoomNightBreakdown({
+            dayRates: room.DayRates,
+            totalFare: formattedTotalFare,
+            checkInDate: criteria.checkInDate,
+            occupancies: criteria.occupancies,
+          });
           const roomName = room.Name?.[0] || 'Standard Room';
           const isRefundable = room.IsRefundable === true ||
             Number(room.IsRefundable) === 1 ||
@@ -469,6 +476,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
             roomCount: criteria.roomCount,
             totalNoOfRooms: noOfRooms > 0 ? noOfRooms : undefined,
             amountIncludesRoomCount: noOfRooms > 0,
+            ...(tboRoomNightBreakdown ? { tboRoomNightBreakdown } : {}),
             currency: hotel.Currency || 'INR',
  roomType: roomName, // Room type name for display
             isRefundable,

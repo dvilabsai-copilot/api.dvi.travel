@@ -81,6 +81,18 @@ export interface HotelSearchResult {
   totalNoOfRooms?: number;
   /** TBO Search returned an aggregate amount for the requested rooms. */
   amountIncludesRoomCount?: boolean;
+  /** Server-calculated TBO all-in room/night rates allocated from TotalFare. */
+  tboRoomNightBreakdown?: Array<{
+    roomNumber: number;
+    date: string;
+    adults: number;
+    children: number;
+    childrenAges: number[];
+    baseAmount: number;
+    fareAdjustment: number;
+    allInAmount: number;
+    nightTotal: number;
+  }>;
   numberOfNights?: number;
   extraBedCount?: number;
   extraBedRate?: number;
