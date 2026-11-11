@@ -5,7 +5,6 @@ import { PrismaService } from '../../prisma.service';
 import { HotelSearchService } from '../hotels/services/hotel-search.service';
 import { HobseHotelProvider } from '../hotels/providers/hobse-hotel.provider';
 import { HotelSearchResult } from '../hotels/interfaces/hotel-provider.interface';
-import { resolveSavedTboChildAges } from '../hotels/utils/tbo-occupancy.util';
 import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.service';
 import { HotelAvailabilityTimingLogger } from './services/hotel-availability-timing.logger';
 import {
@@ -277,6 +276,7 @@ export class ItineraryHotelDetailsTboService {
       adultCount: number = 2,
       childCount: number = 0,
       childAges: number[] = [],
+      occupancies?: Array<{ adults: number; children: number; childrenAges: number[] }>,
       searchLogContext?: { quoteId: string; planId: number; attempt?: number },
     ): Promise<Map<number, HotelSearchResult[] | null>> {
       let hotelsByRoute = await this.fetchHotelsForRoutes(
@@ -287,6 +287,7 @@ export class ItineraryHotelDetailsTboService {
         adultCount,
         childCount,
         childAges,
+        occupancies,
         searchLogContext,
       );
 
@@ -310,6 +311,7 @@ export class ItineraryHotelDetailsTboService {
           adultCount,
           childCount,
           childAges,
+          occupancies,
           searchLogContext
             ? { ...searchLogContext, attempt: (searchLogContext.attempt || 1) + 1 }
             : undefined,
@@ -1505,6 +1507,9 @@ const effectiveCityCode = cityCodeMap[destination] || destination;
 const roomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
 const adultCount = Math.max(Number((plan as any).total_adult || 1), 1);
 const childCount = Math.max(Number((plan as any).total_children || 0), 0);
+const selectedHotelRooming = normalizedProvider === 'tbo'
+  ? await this.loadPlanRoomOccupancies(Number(plan.itinerary_plan_ID), roomCount, adultCount, childCount)
+  : undefined;
 
     const childWithBedCount = Math.max(Number((plan as any).total_child_with_bed || 0), 0);
     const extraBedCount = Math.max(Number((plan as any).total_extra_bed || 0), 0);
@@ -1561,6 +1566,10 @@ const childCount = Math.max(Number((plan as any).total_children || 0), 0);
            cityCode: effectiveCityCode,
             checkInDate, checkOutDate, roomCount,
             guestCount: adultCount + childCount, adultCount, childCount,
+            ...(normalizedProvider === 'tbo' ? {
+              childAges: selectedHotelRooming?.childAges,
+              occupancies: selectedHotelRooming?.occupancies,
+            } : {}),
             guestNationality: String((plan as any).guest_nationality || 'IN').trim().toUpperCase(),
             providers: [normalizedProvider], hotelCodes: normalizedHotelCode,
           });
@@ -1861,6 +1870,73 @@ matchedHotels: selectedHotelRows.map((hotel: any) => ({
     294: 'Zambia', 295: 'Zimbabwe',
   };
 
+  private async loadPlanRoomOccupancies(
+    planId: number,
+    roomCount: number,
+    adultCount: number,
+    childCount: number,
+  ): Promise<{
+    occupancies?: Array<{ adults: number; children: number; childrenAges: number[] }>;
+    childAges: number[];
+  }> {
+    const travellers = await this.prisma.dvi_itinerary_traveller_details.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        traveller_type: { in: [1, 2] },
+        deleted: 0,
+      },
+      orderBy: [{ room_id: 'asc' }, { traveller_details_ID: 'asc' }],
+      select: {
+        room_id: true,
+        traveller_type: true,
+        traveller_age: true,
+      },
+    });
+
+    const resolveChildAge = (traveller: (typeof travellers)[number]): number => {
+      const ageText = String(traveller.traveller_age ?? '').trim();
+      const age = ageText === '' ? Number.NaN : Number(ageText);
+      return Number.isFinite(age) && age >= 0 && age <= 11 ? Math.trunc(age) : 5;
+    };
+    const childAges = travellers
+      .filter((traveller) => Number(traveller.traveller_type) === 2)
+      .map(resolveChildAge);
+
+    const rooms = Math.max(Math.trunc(Number(roomCount) || 1), 1);
+    const byRoom = new Map<number, { adults: number; childrenAges: number[] }>();
+    for (const traveller of travellers) {
+      const roomIdValue = Number(traveller.room_id);
+      const roomId = Number.isInteger(roomIdValue) && roomIdValue > 0 ? roomIdValue : 1;
+      if (!byRoom.has(roomId)) byRoom.set(roomId, { adults: 0, childrenAges: [] });
+      const occupancy = byRoom.get(roomId)!;
+      if (Number(traveller.traveller_type) === 1) {
+        occupancy.adults += 1;
+      } else if (Number(traveller.traveller_type) === 2) {
+        occupancy.childrenAges.push(resolveChildAge(traveller));
+      }
+    }
+
+    const occupancies = Array.from({ length: rooms }, (_, index) => {
+      const room = byRoom.get(index + 1) || { adults: 0, childrenAges: [] };
+      return {
+        adults: room.adults,
+        children: room.childrenAges.length,
+        childrenAges: [...room.childrenAges],
+      };
+    });
+    const validRooming =
+      travellers.length === Math.max(Number(adultCount) || 0, 0) + Math.max(Number(childCount) || 0, 0) &&
+      byRoom.size <= rooms &&
+      occupancies.every((room) => room.adults > 0) &&
+      occupancies.reduce((total, room) => total + room.adults, 0) === Number(adultCount) &&
+      occupancies.reduce((total, room) => total + room.children, 0) === Number(childCount);
+
+    return {
+      occupancies: validRooming ? occupancies : undefined,
+      childAges,
+    };
+  }
+
   private async resolveGuestNationality(plan: any): Promise<string> {
     const nationalityId = Number((plan as any)?.nationality ?? 0);
     const rawNationality = String((plan as any)?.nationality ?? '')
@@ -2112,16 +2188,20 @@ this.logger.log(
     );
 
  // Fetch child ages from saved travellers so the TBO search uses actual ages, not defaults.
-    let planChildAges: number[] = [];
-    if (planChildCount > 0) {
-      const childTravellers = await this.prisma.dvi_itinerary_traveller_details.findMany({
-        where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
-        orderBy: { traveller_details_ID: 'asc' },
-        select: { traveller_age: true },
-      });
-      planChildAges = resolveSavedTboChildAges(childTravellers, planChildCount);
+    const planRooming = await this.loadPlanRoomOccupancies(
+      planId,
+      planRoomCount,
+      planAdultCount,
+      planChildCount,
+    );
+    const planChildAges = planRooming.childAges;
+    const planOccupancies = planRooming.occupancies;
  this.logger.log(` Child ages from travellers: [${planChildAges.join(', ')}]`);
-    }
+ this.logger.log(`[HOTEL_SEARCH_ROOM_OCCUPANCIES] ${JSON.stringify({
+      planId,
+      source: planOccupancies ? 'saved-room-assignments' : 'legacy-even-distribution',
+      occupancies: planOccupancies || null,
+    })}`);
 
     const restrictedHotelsByRoute = new Map<number, HotelSearchResult[]>();
     // Internal request hand-off to the snapshot coordinator. This is
@@ -2203,6 +2283,7 @@ this.logger.log(
         planAdultCount,
         planChildCount,
         planChildAges,
+        planOccupancies,
         this.hotelSearchLogContext(quoteId, planId),
       ));
 
@@ -2661,6 +2742,7 @@ this.logger.log(
     adultCount: number = 2,
     childCount: number = 0,
     childAges: number[] = [],
+    occupancies?: Array<{ adults: number; children: number; childrenAges: number[] }>,
     searchLogContext?: { quoteId: string; planId: number; attempt?: number },
   ): Promise<Map<number, HotelSearchResult[] | null>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
@@ -2687,6 +2769,7 @@ this.logger.log(
           adultCount,
           childCount,
           childAges,
+          occupancies,
           searchLogContext,
         )
           .then((hotels) => {
@@ -3067,6 +3150,7 @@ this.logger.log(
     adultCount: number = 2,
     childCount: number = 0,
     childAges: number[] = [],
+    occupancies?: Array<{ adults: number; children: number; childrenAges: number[] }>,
     searchLogContext?: { quoteId: string; planId: number; attempt?: number },
   ): Promise<HotelSearchResult[]> {
     const destination = block.destination;
@@ -3119,6 +3203,7 @@ this.logger.log(
       adultCount: safeAdultCount,
       childCount: safeChildCount,
       childAges: childAges.length > 0 ? childAges : undefined,
+      occupancies,
       guestNationality,
       providers: searchProviders,
       // TBO returns an aggregate fare when NoOfRooms is supplied. Keep the
@@ -7662,15 +7747,13 @@ this.logger.log(
       : null;
     const preferredMealPlanCode2 = explicitMealPlanCode2 || fallbackMealPlanCode2;
 
-    let planChildAges2: number[] = [];
-    if (planChildCount2 > 0) {
-      const childTravellers2 = await this.prisma.dvi_itinerary_traveller_details.findMany({
-        where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
-        orderBy: { traveller_details_ID: 'asc' },
-        select: { traveller_age: true },
-      });
-      planChildAges2 = resolveSavedTboChildAges(childTravellers2, planChildCount2);
-    }
+    const planRooming2 = await this.loadPlanRoomOccupancies(
+      planId,
+      planRoomCount2,
+      planAdultCount2,
+      planChildCount2,
+    );
+    const planChildAges2 = planRooming2.childAges;
 
  // Step 3: Fetch FRESH hotels from TBO
  // OPTIMIZATION: If filterRouteId provided, only fetch hotels for that specific route
@@ -7750,6 +7833,7 @@ this.logger.log(
         planAdultCount2,
         planChildCount2,
         planChildAges2,
+        planRooming2.occupancies,
       );
 
  // Merge non-TBO providers (HOBSE, ResAvenue, AxisRooms) same logic as getHotelDetails
