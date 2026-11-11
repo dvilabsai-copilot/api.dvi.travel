@@ -55,6 +55,7 @@ import {
 } from './utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from './utils/hotel-category.util';
 import { resolveHotelOccupancyPricing } from './utils/hotel-selection-pricing.util';
+import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
 import {
   buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper,
   ManualHotspotMatrixBuildResult,
@@ -2787,6 +2788,7 @@ timingStepStartedAt =
     // selectionKey is deliberately session-agnostic and can otherwise match
     // a parent/zero-price row from another search session.
     let anchorOption: any = null;
+    let anchorOptionMatchedExactRate = false;
     if (anchorRateOptionId) {
       anchorOption = anchorCandidates.find((option: any) => supplierRateIdentityMatches({
         provider,
@@ -2794,9 +2796,11 @@ timingStepStartedAt =
         bookingCode: data.bookingCode,
         searchReference: data.searchReference,
       }, option)) || null;
+      anchorOptionMatchedExactRate = Boolean(anchorOption);
     }
     if (!anchorOption && !anchorRateOptionId && anchorSelectionKey) {
       anchorOption = anchorCandidates.find((option: any) => supplierSelectionKey(option) === anchorSelectionKey) || null;
+      anchorOptionMatchedExactRate = Boolean(anchorOption);
     }
     // A supplier rate reference can change between availability searches.
     // Resolve the current matching room and meal-plan option when the old
@@ -3433,7 +3437,16 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
                 String(item?.date || '').slice(0, 10) === routeDate,
               ),
             }
-          : {}),
+          : selectedProvider === 'tbo' && isAnchorRoute && anchorOptionMatchedExactRate
+            ? (() => {
+                const validatedBreakdown = getValidatedTboRoomNightBreakdownForDate(
+                  data.tboRoomNightBreakdown,
+                  selected.totalFare ?? selected.netAmount,
+                  routeDate,
+                );
+                return validatedBreakdown ? { tboRoomNightBreakdown: validatedBreakdown } : {};
+              })()
+            : {}),
         amountIncludesHotelMargin: selected.amountIncludesHotelMargin === true,
         pricingIncludesHotelMargin: selected.pricingIncludesHotelMargin === true,
         bookingCode: selectedProvider === 'tbo'
