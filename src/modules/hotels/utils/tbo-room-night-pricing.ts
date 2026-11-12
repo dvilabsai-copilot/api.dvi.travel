@@ -14,10 +14,94 @@ export type TboRoomNightBreakdown = {
   nightTotal: number;
 };
 
+export type TboRouteNightPricingInput = {
+  routeId: number;
+  routeDate: string;
+  breakdown: unknown;
+  marginPercentage: number;
+};
+
+export type TboRouteNightPricing = {
+  routeId: number;
+  routeDate: string;
+  baseTotalPrice: number;
+  hotelMarginAmount: number;
+  totalPrice: number;
+};
+
 const toCents = (value: unknown): number | null => {
   const amount = Number(value);
   return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) : null;
 };
+
+/**
+ * Convert the supplier's room-night lines into one payable amount per route.
+ * A continuous-stay rate can carry an averaged per-night amount at the parent
+ * level, so route rows must use the date-matched room lines instead. Margin
+ * rounding is allocated across the selected nights so their sum remains the
+ * correctly rounded margin for the complete stay.
+ */
+export function allocateTboRouteNightPricing(
+  selections: TboRouteNightPricingInput[],
+): Map<number, TboRouteNightPricing> | undefined {
+  if (!Array.isArray(selections) || selections.length === 0) return undefined;
+
+  const routeNights = selections.map((selection) => {
+    const routeDate = String(selection.routeDate || '').slice(0, 10);
+    const routeId = Number(selection.routeId);
+    const percentage = Number(selection.marginPercentage);
+    if (!routeDate || !Number.isInteger(routeId) || routeId <= 0 || !Number.isFinite(percentage) || percentage < 0) {
+      return null;
+    }
+    if (!Array.isArray(selection.breakdown)) return null;
+    const matchingRows = selection.breakdown.filter((item: any) =>
+      String(item?.date || '').slice(0, 10) === routeDate,
+    );
+    if (matchingRows.length === 0) return null;
+    const roomAmounts = matchingRows.map((item: any) => toCents(item?.allInAmount));
+    if (roomAmounts.some((amount) => amount === null)) return null;
+    const baseCents = (roomAmounts as number[]).reduce((sum, amount) => sum + amount, 0);
+    if (baseCents <= 0) return null;
+    const reportedNightTotals = matchingRows.map((item: any) => toCents(item?.nightTotal));
+    if (reportedNightTotals.some((amount) => amount === null) ||
+      reportedNightTotals.some((amount) => amount !== baseCents)) return null;
+    return {
+      routeId,
+      routeDate,
+      baseCents,
+      exactMarginCents: (baseCents * percentage) / 100,
+    };
+  });
+  if (routeNights.some((item) => item === null)) return undefined;
+
+  const validNights = routeNights as Array<NonNullable<(typeof routeNights)[number]>>;
+  const targetMarginCents = Math.round(validNights.reduce((sum, item) => sum + item.exactMarginCents, 0));
+  const allocated = validNights.map((item, index) => ({
+    index,
+    cents: Math.floor(item.exactMarginCents),
+    fraction: item.exactMarginCents - Math.floor(item.exactMarginCents),
+  }));
+  let remainingCents = targetMarginCents - allocated.reduce((sum, item) => sum + item.cents, 0);
+  const allocationOrder = [...allocated].sort((left, right) =>
+    right.fraction - left.fraction || left.index - right.index,
+  );
+  for (let index = 0; index < remainingCents; index += 1) {
+    allocationOrder[index % allocationOrder.length].cents += 1;
+  }
+
+  const marginByIndex = new Map(allocated.map((item) => [item.index, item.cents]));
+  return new Map(validNights.map((item, index) => {
+    const marginCents = marginByIndex.get(index) || 0;
+    const payableCents = item.baseCents + marginCents;
+    return [item.routeId, {
+      routeId: item.routeId,
+      routeDate: item.routeDate,
+      baseTotalPrice: item.baseCents / 100,
+      hotelMarginAmount: marginCents / 100,
+      totalPrice: payableCents / 100,
+    }];
+  }));
+}
 
 /**
  * Allocate TBO's aggregate fare difference over the returned room-night base

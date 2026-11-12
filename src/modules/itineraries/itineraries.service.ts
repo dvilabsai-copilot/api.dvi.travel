@@ -56,6 +56,7 @@ import {
 import { normalizeHotelStarRating } from './utils/hotel-category.util';
 import { resolveHotelOccupancyPricing } from './utils/hotel-selection-pricing.util';
 import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
+import { allocateTboRouteNightPricing } from '../hotels/utils/tbo-room-night-pricing';
 import {
   buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper,
   ManualHotspotMatrixBuildResult,
@@ -3166,6 +3167,17 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
             .filter(Boolean),
         ))
         : [];
+      const tboNightPricingByRoute = provider === 'tbo'
+        ? allocateTboRouteNightPricing(selectedByRoute.map((selection: any) => ({
+            routeId: Number(selection.routeId || selection.itineraryRouteId),
+            routeDate: String(selection.date || '').slice(0, 10),
+            breakdown: selection.tboRoomNightBreakdown,
+            marginPercentage: Math.max(
+              Number(selection.hotelMarginPercentage ?? selection.marginPercentage ?? previewMarginPercentage),
+              0,
+            ),
+          })))
+        : undefined;
       return {
         status: 'AVAILABLE',
         success: true,
@@ -3175,6 +3187,9 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         logicalStay: stay,
         affectedRouteIds: stay.routeIds,
         selections: selectedByRoute.map((selection: any) => {
+          const routeTboPricing = tboNightPricingByRoute?.get(
+            Number(selection.routeId || selection.itineraryRouteId),
+          );
           const rawPricePerNight = Number(
             selection.pricePerNight ?? selection.amountAfterTax ?? selection.price ?? 0,
           );
@@ -3186,9 +3201,9 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
           ) > 0
             ? Number(selection.hotelMarginPercentage ?? selection.marginPercentage)
             : previewMarginPercentage;
-          const payablePricePerNight = isBaseRate && rawPricePerNight > 0
+          const payablePricePerNight = routeTboPricing?.totalPrice ?? (isBaseRate && rawPricePerNight > 0
             ? Number((rawPricePerNight * (1 + selectionMarginPercentage / 100)).toFixed(2))
-            : rawPricePerNight;
+            : rawPricePerNight);
           // TBO/VSR normally returns a complete occupancy fare, but older
           // snapshots may omit the occupancy metadata and still contain a
           // single-room rate. Only suppress room-count scaling when the rate
@@ -3200,11 +3215,11 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
           const tboOccupancyFare = provider === 'tbo' &&
             Number.isFinite(declaredRoomCount) &&
             declaredRoomCount === previewRoomCount;
-          const payableTotal = isBaseRate && rawPricePerNight > 0
+          const payableTotal = routeTboPricing?.totalPrice ?? (isBaseRate && rawPricePerNight > 0
             ? Number((payablePricePerNight * (tboOccupancyFare ? 1 : previewRoomCount)).toFixed(2))
             : Number(
               selection.totalStayPrice ?? selection.totalPrice ?? selection.amountAfterTax ?? selection.price ?? 0,
-            );
+            ));
           return {
           ...selection,
           routeId: Number(selection.routeId || selection.itineraryRouteId),
@@ -3226,22 +3241,26 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
           IsRefundable: selection.IsRefundable ?? selection.isRefundable ?? data.IsRefundable ?? data.isRefundable,
           pricePerNight: payablePricePerNight,
           totalPrice: payableTotal,
-          basePricePerNight: isBaseRate ? rawPricePerNight : Number(selection.basePricePerNight ?? 0),
-          baseTotalPrice: isBaseRate
+          basePricePerNight: routeTboPricing?.baseTotalPrice ?? (isBaseRate ? rawPricePerNight : Number(selection.basePricePerNight ?? 0)),
+          baseTotalPrice: routeTboPricing?.baseTotalPrice ?? (isBaseRate
             ? Number((rawPricePerNight * previewRoomCount).toFixed(2))
-            : Number(selection.baseTotalPrice ?? 0),
-          hotelMarginPercentage: isBaseRate ? selectionMarginPercentage : Number(selection.hotelMarginPercentage ?? 0),
-          hotelMarginAmount: isBaseRate
+            : Number(selection.baseTotalPrice ?? 0)),
+          hotelMarginPercentage: routeTboPricing ? selectionMarginPercentage : isBaseRate ? selectionMarginPercentage : Number(selection.hotelMarginPercentage ?? 0),
+          hotelMarginAmount: routeTboPricing?.hotelMarginAmount ?? (isBaseRate
             ? Number(((payablePricePerNight - rawPricePerNight) * previewRoomCount).toFixed(2))
-            : Number(selection.hotelMarginAmount ?? 0),
-          hotelMarginTotalAmount: isBaseRate
+            : Number(selection.hotelMarginAmount ?? 0)),
+          hotelMarginTotalAmount: routeTboPricing?.hotelMarginAmount ?? (isBaseRate
             ? Number(((payablePricePerNight - rawPricePerNight) * previewRoomCount).toFixed(2))
-            : Number(selection.hotelMarginTotalAmount ?? selection.hotelMarginStayAmount ?? 0),
-          amountIncludesHotelMargin: isBaseRate
+            : Number(selection.hotelMarginTotalAmount ?? selection.hotelMarginStayAmount ?? 0)),
+          amountIncludesHotelMargin: routeTboPricing
+            ? true
+            : isBaseRate
             ? true
             : selection.amountIncludesHotelMargin === true,
           pricingIncludesHotelMargin: isBaseRate
             ? true
+            : routeTboPricing
+              ? true
             : selection.pricingIncludesHotelMargin === true,
           ...(isCompleteFareProvider ? {
             extraBedCount: 0,
@@ -3280,6 +3299,15 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       )
       : [];
 
+    const tboNightPricingByRoute = provider === 'tbo'
+      ? allocateTboRouteNightPricing(selectedByRoute.map((selection: any) => ({
+          routeId: Number(selection.routeId),
+          routeDate: String(selection.date || '').slice(0, 10),
+          breakdown: selection.tboRoomNightBreakdown,
+          marginPercentage: Math.max(Number(selection.hotelMarginPercentage ?? 0), 0),
+        })))
+      : undefined;
+
     const persistencePayloads = selectedByRoute.map((rawSelected: any) => {
       const selected = normalizeSupplierRateIdentity(rawSelected);
       const routeDate = String(selected.date || '').slice(0, 10);
@@ -3287,6 +3315,9 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       const requestedPricePerNight = Number(data.pricePerNight ?? 0);
       const requestedTotalPrice = Number(data.totalPrice ?? 0);
       const selectedProvider = String(selected.provider || provider).trim().toLowerCase();
+      const routeTboPricing = selectedProvider === 'tbo'
+        ? tboNightPricingByRoute?.get(Number(selected.routeId))
+        : undefined;
       const requestedBasePricePerNight = Number(data.basePricePerNight ?? data.base_price_per_night ?? 0);
       const requestedPayablePricePerNight = Number(data.pricePerNight ?? data.price_per_night ?? 0);
       const routeNight = Array.isArray(selected.nightlyRates)
@@ -3297,12 +3328,14 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       // instead of attaching the complete stay total to every route.
       const routeScopedOffline = selectedProvider === 'offline' && routeNight;
       let basePricePerNight = Number(
+        routeTboPricing?.baseTotalPrice ??
         routeScopedOffline?.baseAmount ??
         (selectedProvider === 'tbo' && requestedBasePricePerNight > 0
           ? requestedBasePricePerNight
           : selected.basePricePerNight ?? 0),
       );
       let baseTotalPrice = Number(
+        routeTboPricing?.baseTotalPrice ??
         routeScopedOffline?.baseAmount ??
         (selectedProvider === 'tbo' && requestedBasePricePerNight > 0
           ? requestedBasePricePerNight
@@ -3312,23 +3345,23 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         routeScopedOffline?.marginPercentage ?? selected.hotelMarginPercentage ?? 0,
       );
       let hotelMarginAmount = Number(
-        routeScopedOffline?.marginAmount ?? selected.hotelMarginAmount ?? 0,
+        routeTboPricing?.hotelMarginAmount ?? routeScopedOffline?.marginAmount ?? selected.hotelMarginAmount ?? 0,
       );
       let hotelMarginTotalAmount = Number(
-        routeScopedOffline?.marginAmount ??
+        routeTboPricing?.hotelMarginAmount ?? routeScopedOffline?.marginAmount ??
         selected.hotelMarginTotalAmount ??
         selected.hotelMarginStayAmount ??
         selected.hotelMarginAmount ??
         0,
       );
       const selectedPricePerNight = Number(
-        routeScopedOffline?.sellAmount ??
+        routeTboPricing?.totalPrice ?? routeScopedOffline?.sellAmount ??
         (selectedProvider === 'tbo' && requestedPayablePricePerNight > 0
           ? requestedPayablePricePerNight
           : selected.pricePerNight ?? selected.amountAfterTax ?? selected.price ?? 0),
       );
       const selectedTotalPrice = Number(
-        routeScopedOffline?.sellAmount ??
+        routeTboPricing?.totalPrice ?? routeScopedOffline?.sellAmount ??
         (selectedProvider === 'tbo' && requestedPayablePricePerNight > 0
           ? requestedPayablePricePerNight
           : selected.totalStayPrice ??
@@ -3426,7 +3459,7 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         hotelMarginAmount,
         hotelMarginStayAmount: hotelMarginTotalAmount,
         hotelMarginTotalAmount,
-        numberOfNights: routeScopedOffline ? 1 : Number(selected.numberOfNights || 1),
+        numberOfNights: routeScopedOffline || routeTboPricing ? 1 : Number(selected.numberOfNights || 1),
         nightlyRates: routeScopedOffline ? [routeNight] : selected.nightlyRates,
         // Persist the room-night rates resolved with this selected supplier
         // rate. Scope them to this route so a later read cannot reuse the
