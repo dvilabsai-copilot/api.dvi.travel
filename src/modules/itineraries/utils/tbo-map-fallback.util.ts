@@ -53,6 +53,21 @@ const isCp = (option: any): boolean =>
 const isEp = (option: any): boolean =>
   mealPlanCode(option?.mealPlanCode || option?.mealPlan || option?.ratePlanName) === 'EP';
 
+/** Keep supplier EP rates available as source data only for CP/MAP fallback. */
+export const isEpFallbackSourceForMealPlan = (requested: unknown, source: unknown): boolean =>
+  ['CP', 'MAP'].includes(mealPlanCode(requested)) && mealPlanCode(source) === 'EP';
+
+export const shouldKeepSupplierRateForMealPlan = (
+  requested: unknown,
+  actual: unknown,
+  preserveEpFallbackSource = false,
+): boolean => {
+  const requestedCode = mealPlanCode(requested);
+  const actualCode = mealPlanCode(actual);
+  return !requestedCode || requestedCode === actualCode ||
+    (preserveEpFallbackSource && isEpFallbackSourceForMealPlan(requestedCode, actualCode));
+};
+
 const optionIdentity = (option: any): string => String(
   option?.rateOptionId ||
   option?.rate_option_id ||
