@@ -184,6 +184,65 @@ test('does not change non-MAP requests', () => {
   );
 });
 
+test('keeps a real VSR CP rate when CP is requested', () => {
+  const rows = applyMapDinnerFallbackToRows([
+    { provider: 'tbo', hotelCode: 'TBO-REAL-CP', hotelName: 'Hotel', rating: 3, mealPlan: 'CP', price: 10000 },
+  ], { preferredMealPlanCode: 'CP', adultCount: 2, childCount: 0, roomCount: 1 }, {
+    ...config,
+    breakfastRate: 400,
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].price, 10000);
+  assert.equal(rows[0].tboMapFallbackApplied, undefined);
+});
+
+test('converts VSR EP to CP with breakfast once and allocates it by room occupancy', () => {
+  const input = [{
+    provider: 'tbo', hotelCode: 'TBO-EP-CP', hotelName: 'Hotel', rating: 3,
+    mealPlan: 'EP', price: 10000, totalFare: 10000, numberOfNights: 2,
+    tboRoomNightBreakdown: [
+      { roomNumber: 1, date: '2026-11-01', adults: 2, children: 1, allInAmount: 2500 },
+      { roomNumber: 2, date: '2026-11-01', adults: 2, children: 0, allInAmount: 2500 },
+      { roomNumber: 1, date: '2026-11-02', adults: 2, children: 1, allInAmount: 2500 },
+      { roomNumber: 2, date: '2026-11-02', adults: 2, children: 0, allInAmount: 2500 },
+    ],
+  }];
+  const context = { preferredMealPlanCode: 'CP', adultCount: 4, childCount: 1, roomCount: 2, numberOfNights: 2 };
+  const rows = applyMapDinnerFallbackToRows(input, context, { ...config, breakfastRate: 400 });
+
+  assert.equal(rows.length, 1);
+  const fallback = rows[0];
+  assert.equal(fallback.mealPlan, 'CP');
+  assert.equal(fallback.supplierMealPlan, 'EP');
+  assert.equal(fallback.tboMapFallbackBreakfastTotal, 4000);
+  assert.equal(fallback.totalPrice, 14000);
+  assert.equal(fallback.pricePerNight, 7000);
+  assert.deepEqual(fallback.tboRoomNightBreakdown.map((roomNight: any) => roomNight.payableAmount), [3700, 3300, 3700, 3300]);
+  assert.deepEqual(fallback.tboRoomNightBreakdown.map((roomNight: any) => roomNight.fallbackBreakfastAmount), [1200, 800, 1200, 800]);
+
+  const repeated = applyMapDinnerFallbackToRows(rows, context, { ...config, breakfastRate: 400 });
+  assert.equal(repeated[0].totalPrice, 14000);
+  assert.equal(repeated[0].tboMapFallbackBreakfastTotal, 4000);
+});
+
+test('converts VSR EP to MAP with breakfast and configured dinner supplements', () => {
+  const rows = applyMapDinnerFallbackToRows([
+    { provider: 'tbo', hotelCode: 'TBO-EP-MAP', hotelName: 'Hotel', rating: 3, mealPlan: 'EP', price: 10000 },
+  ], { preferredMealPlanCode: 'MAP', adultCount: 2, childCount: 1, roomCount: 1, numberOfNights: 2 }, {
+    ...config,
+    breakfastRate: 400,
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].mealPlan, 'MAP');
+  assert.equal(rows[0].supplierMealPlan, 'EP');
+  assert.equal(rows[0].tboMapFallbackBreakfastTotal, 2400);
+  assert.equal(rows[0].tboMapFallbackDinnerTotal, 7800);
+  assert.equal(rows[0].totalPrice, 17800);
+  assert.equal(rows[0].pricePerNight, 8900);
+});
+
 test('hides EP rows and nested EP options by default', () => {
   const rows = filterEpRows([
     { provider: 'offline', hotelCode: 'EP-ONLY', mealPlan: 'EP' },

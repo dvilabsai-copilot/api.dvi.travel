@@ -35,6 +35,11 @@ export class UpdateGlobalSettingsDto {
   tbo_map_fallback_enabled?: number;
 
   @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  tbo_map_breakfast_rate?: number;
+
+  @Type(() => Number)
   @IsInt()
   @IsIn([0, 1])
   hobse_search_enabled?: number;

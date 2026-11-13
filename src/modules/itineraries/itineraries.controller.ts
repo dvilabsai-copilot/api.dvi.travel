@@ -1020,6 +1020,8 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
               'hotelMealPlanCost', 'totalHotelMealPlanCost',
               'tboRoomNightBreakdown',
               'tboMapFallbackApplied', 'tboMapFallbackSourceMealPlan',
+              'tboMapFallbackBreakfastRate', 'tboMapFallbackBreakfastPerPerson',
+              'tboMapFallbackBreakfastPerNight', 'tboMapFallbackBreakfastTotal',
               'tboMapFallbackTargetMealPlan', 'tboMapFallbackLunchRate',
               'tboMapFallbackLunchPerPerson', 'tboMapFallbackLunchPerNight',
               'tboMapFallbackLunchTotal', 'tboMapFallbackMealPlanTotal',

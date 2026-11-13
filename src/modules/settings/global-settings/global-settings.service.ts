@@ -14,6 +14,7 @@ const GLOBAL_SETTINGS_UPDATE_FIELDS = [
   "eligibile_country_code",
   "vsr_hotel_card_limit",
   "tbo_map_fallback_enabled",
+  "tbo_map_breakfast_rate",
   "hobse_search_enabled",
   "show_ep_hotels",
   "show_hobse_ep_hotels",

@@ -197,6 +197,10 @@ export class ItinerarySelectionWorkflowService {
     tboMapFallbackApplied?: boolean;
     tboMapFallbackSourceMealPlan?: string;
     tboMapFallbackTargetMealPlan?: string;
+    tboMapFallbackBreakfastRate?: number;
+    tboMapFallbackBreakfastPerPerson?: number;
+    tboMapFallbackBreakfastPerNight?: number;
+    tboMapFallbackBreakfastTotal?: number;
     tboMapFallbackLunchRate?: number;
     tboMapFallbackLunchPerPerson?: number;
     tboMapFallbackLunchPerNight?: number;
@@ -526,6 +530,15 @@ export class ItinerarySelectionWorkflowService {
     const tboMapFallbackTargetMealPlan = tboMapFallbackApplied
       ? String(data.tboMapFallbackTargetMealPlan || data.mealPlanCode || data.mealPlan || 'MAP').trim().toUpperCase()
       : '';
+    const tboMapFallbackBreakfastRate = tboMapFallbackApplied
+      ? Math.max(Number(data.tboMapFallbackBreakfastRate || data.tboMapFallbackBreakfastPerPerson || 0), 0)
+      : 0;
+    const tboMapFallbackBreakfastPerNight = tboMapFallbackApplied
+      ? Math.max(Number(data.tboMapFallbackBreakfastPerNight || 0), 0)
+      : 0;
+    const tboMapFallbackBreakfastTotal = tboMapFallbackApplied
+      ? Math.max(Number(data.tboMapFallbackBreakfastTotal || 0), 0)
+      : 0;
     const tboMapFallbackLunchRate = tboMapFallbackApplied
       ? Math.max(Number(data.tboMapFallbackLunchRate || data.tboMapFallbackLunchPerPerson || 0), 0)
       : 0;
@@ -629,6 +642,10 @@ export class ItinerarySelectionWorkflowService {
         childWithoutBedAmount,
         tboMapFallbackApplied,
         tboMapFallbackTargetMealPlan,
+        tboMapFallbackBreakfastRate,
+        tboMapFallbackBreakfastPerPerson: tboMapFallbackBreakfastRate,
+        tboMapFallbackBreakfastPerNight,
+        tboMapFallbackBreakfastTotal,
         tboMapFallbackLunchRate,
         tboMapFallbackLunchPerNight,
         tboMapFallbackLunchTotal,
@@ -679,6 +696,10 @@ export class ItinerarySelectionWorkflowService {
         tboMapFallbackApplied: true,
         tboMapFallbackSourceMealPlan: data.tboMapFallbackSourceMealPlan || 'CP',
         tboMapFallbackTargetMealPlan,
+        tboMapFallbackBreakfastRate,
+        tboMapFallbackBreakfastPerPerson: Math.max(Number(data.tboMapFallbackBreakfastPerPerson || tboMapFallbackBreakfastRate), 0),
+        tboMapFallbackBreakfastPerNight,
+        tboMapFallbackBreakfastTotal,
         tboMapFallbackLunchRate,
         tboMapFallbackLunchPerPerson: Math.max(Number(data.tboMapFallbackLunchPerPerson || tboMapFallbackLunchRate), 0),
         tboMapFallbackLunchPerNight,
@@ -1437,6 +1458,10 @@ export class ItinerarySelectionWorkflowService {
              tboMapFallbackApplied: hotel.tboMapFallbackApplied,
              tboMapFallbackSourceMealPlan: hotel.tboMapFallbackSourceMealPlan,
              tboMapFallbackTargetMealPlan: hotel.tboMapFallbackTargetMealPlan,
+             tboMapFallbackBreakfastRate: hotel.tboMapFallbackBreakfastRate,
+             tboMapFallbackBreakfastPerPerson: hotel.tboMapFallbackBreakfastPerPerson,
+             tboMapFallbackBreakfastPerNight: hotel.tboMapFallbackBreakfastPerNight,
+             tboMapFallbackBreakfastTotal: hotel.tboMapFallbackBreakfastTotal,
              tboMapFallbackLunchRate: hotel.tboMapFallbackLunchRate,
              tboMapFallbackLunchPerPerson: hotel.tboMapFallbackLunchPerPerson,
              tboMapFallbackLunchPerNight: hotel.tboMapFallbackLunchPerNight,
