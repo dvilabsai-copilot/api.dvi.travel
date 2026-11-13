@@ -239,7 +239,13 @@ export function getNormalizedMealPlanLabelFromMealSources(
   inclusion?: string | null,
   mealType?: string | null,
 ): string {
-  const inclusionLabel = getNormalizedMealPlanLabelFromMealText(inclusion);
+  // A compulsory gala dinner paid at the hotel is a charge notice, not an
+  // included meal. Keep other inclusion clauses (and genuinely included
+  // dinners) authoritative over inconsistent supplier MealType values.
+  const includedMeals = String(inclusion || '').split(/[,;\r\n]+/).filter((clause) => !(
+    /\bgala\s+dinner\b/i.test(clause) && /\b(?:charges?|paid|payable)\b/i.test(clause)
+  )).join(',');
+  const inclusionLabel = getNormalizedMealPlanLabelFromMealText(includedMeals);
   if (inclusionLabel !== 'UNKNOWN') return inclusionLabel;
   return getNormalizedMealPlanLabelFromMealText(mealType);
 }

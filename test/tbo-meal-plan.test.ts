@@ -34,3 +34,11 @@ test('falls back to TBO MealType when inclusion has no meal information', () => 
     'MAP',
   );
 });
+
+test('does not count a separately payable gala dinner as an included meal', () => {
+  const notice = 'COMPULSORY GALA DINNER CHARGES APPLICABLE FOR CHRISTMAS AND NEW YEAR TO BE PAID AT THE HOTEL DIRECTLY BY THE GUEST';
+  assert.equal(getNormalizedMealPlanLabelFromMealSources(`BREAKFAST,${notice}`, 'BreakFast'), 'CP');
+  assert.equal(getNormalizedMealPlanLabelFromMealSources(`BREAKFAST AND DINNER;${notice}`, 'Room_Only'), 'MAP');
+  assert.equal(getNormalizedMealPlanLabelFromMealSources(notice, 'Room_Only'), 'EP');
+  assert.equal(getNormalizedMealPlanLabelFromMealSources('BREAKFAST,COMPLIMENTARY GALA DINNER', 'BreakFast'), 'MAP');
+});
