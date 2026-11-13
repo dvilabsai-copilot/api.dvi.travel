@@ -278,6 +278,7 @@ export class ItineraryHotelDetailsTboService {
       childAges: number[] = [],
       occupancies?: Array<{ adults: number; children: number; childrenAges: number[] }>,
       searchLogContext?: { quoteId: string; planId: number; attempt?: number },
+      preferredMealPlanCode?: string | null,
     ): Promise<Map<number, HotelSearchResult[] | null>> {
       let hotelsByRoute = await this.fetchHotelsForRoutes(
         routes,
@@ -289,6 +290,7 @@ export class ItineraryHotelDetailsTboService {
         childAges,
         occupancies,
         searchLogContext,
+        preferredMealPlanCode,
       );
 
       const hasProviderFailure = Array.from(hotelsByRoute.values()).some(
@@ -315,6 +317,7 @@ export class ItineraryHotelDetailsTboService {
           searchLogContext
             ? { ...searchLogContext, attempt: (searchLogContext.attempt || 1) + 1 }
             : undefined,
+          preferredMealPlanCode,
         );
 
         const retryStillFailed = Array.from(retryResult.values()).some(
@@ -1257,6 +1260,7 @@ if (hotelMasterId) {
       orderBy: { global_settings_ID: 'asc' },
       select: {
         show_ep_hotels: true,
+        tbo_map_breakfast_rate: true,
         tbo_map_fallback_enabled: true,
         tbo_map_dinner_rate_3_star: true,
         tbo_map_dinner_rate_4_star: true,
@@ -1269,6 +1273,7 @@ if (hotelMasterId) {
     return {
       showEpHotels: Number(row?.show_ep_hotels ?? 0) === 1,
       enabled: Number(row?.tbo_map_fallback_enabled ?? 1) === 1,
+      breakfastRate: Math.max(Number(row?.tbo_map_breakfast_rate ?? 400), 0),
       dinnerRate3Star: Math.max(Number(row?.tbo_map_dinner_rate_3_star ?? 900), 0),
       dinnerRate4Star: Math.max(Number(row?.tbo_map_dinner_rate_4_star ?? 1500), 0),
       dinnerRate5Star: Math.max(Number(row?.tbo_map_dinner_rate_5_star ?? 2500), 0),
@@ -2285,6 +2290,7 @@ this.logger.log(
         planChildAges,
         planOccupancies,
         this.hotelSearchLogContext(quoteId, planId),
+        preferredMealPlanCode,
       ));
 
       const tboMapFallbackConfig = await this.getTboMapFallbackConfig();
@@ -2744,6 +2750,7 @@ this.logger.log(
     childAges: number[] = [],
     occupancies?: Array<{ adults: number; children: number; childrenAges: number[] }>,
     searchLogContext?: { quoteId: string; planId: number; attempt?: number },
+      preferredMealPlanCode?: string | null,
   ): Promise<Map<number, HotelSearchResult[] | null>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
@@ -2771,6 +2778,7 @@ this.logger.log(
           childAges,
           occupancies,
           searchLogContext,
+          preferredMealPlanCode,
         )
           .then((hotels) => {
             // One provider search covers the complete logical stay block, but
@@ -3152,6 +3160,7 @@ this.logger.log(
     childAges: number[] = [],
     occupancies?: Array<{ adults: number; children: number; childrenAges: number[] }>,
     searchLogContext?: { quoteId: string; planId: number; attempt?: number },
+    preferredMealPlanCode?: string | null,
   ): Promise<HotelSearchResult[]> {
     const destination = block.destination;
 
@@ -3208,7 +3217,10 @@ this.logger.log(
       providers: searchProviders,
       // TBO returns an aggregate fare when NoOfRooms is supplied. Keep the
       // normal itinerary search aligned with the VSR master quote flow.
-      preferences: { tboNoOfRooms: safeRoomCount },
+      preferences: {
+        tboNoOfRooms: safeRoomCount,
+        mealPlanCode: preferredMealPlanCode || undefined,
+      },
     };
 
  this.logger.log(
@@ -6534,6 +6546,10 @@ this.logger.log(
       if (source?.tboMapFallbackApplied !== true) return {};
       return {
         tboMapFallbackApplied: true,
+        tboMapFallbackBreakfastRate: Number(source.tboMapFallbackBreakfastRate || 0),
+        tboMapFallbackBreakfastPerPerson: Number(source.tboMapFallbackBreakfastPerPerson || source.tboMapFallbackBreakfastRate || 0),
+        tboMapFallbackBreakfastPerNight: Number(source.tboMapFallbackBreakfastPerNight || 0),
+        tboMapFallbackBreakfastTotal: Number(source.tboMapFallbackBreakfastTotal || 0),
         tboMapFallbackSourceMealPlan: source.tboMapFallbackSourceMealPlan || 'CP',
         tboMapFallbackTargetMealPlan: source.tboMapFallbackTargetMealPlan || source.mealPlanCode || source.mealPlan || 'MAP',
         tboMapFallbackLunchRate: Number(source.tboMapFallbackLunchRate || 0),
@@ -7007,6 +7023,10 @@ this.logger.log(
           tboMapFallbackApplied: (hotel as any).tboMapFallbackApplied === true,
           tboMapFallbackSourceMealPlan: (hotel as any).tboMapFallbackSourceMealPlan || null,
           tboMapFallbackTargetMealPlan: (hotel as any).tboMapFallbackTargetMealPlan || null,
+          tboMapFallbackBreakfastRate: Number((hotel as any).tboMapFallbackBreakfastRate || 0),
+          tboMapFallbackBreakfastPerPerson: Number((hotel as any).tboMapFallbackBreakfastPerPerson || (hotel as any).tboMapFallbackBreakfastRate || 0),
+          tboMapFallbackBreakfastPerNight: Number((hotel as any).tboMapFallbackBreakfastPerNight || 0),
+          tboMapFallbackBreakfastTotal: Number((hotel as any).tboMapFallbackBreakfastTotal || 0),
           tboMapFallbackLunchRate: Number((hotel as any).tboMapFallbackLunchRate || 0),
           tboMapFallbackLunchPerPerson: Number((hotel as any).tboMapFallbackLunchPerPerson || 0),
           tboMapFallbackLunchPerNight: Number((hotel as any).tboMapFallbackLunchPerNight || 0),
@@ -7837,6 +7857,8 @@ this.logger.log(
         planChildCount2,
         planChildAges2,
         planRooming2.occupancies,
+        undefined,
+        preferredMealPlanCode2,
       );
 
  // Merge non-TBO providers (HOBSE, ResAvenue, AxisRooms) same logic as getHotelDetails

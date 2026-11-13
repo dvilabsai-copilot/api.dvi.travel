@@ -2973,6 +2973,7 @@ model dvi_global_settings {
   show_ep_hotels                         Int       @default(0) @db.TinyInt
   show_hobse_ep_hotels                   Int       @default(1) @db.TinyInt
   tbo_map_fallback_enabled               Int       @default(1) @db.TinyInt
+  tbo_map_breakfast_rate                 Float     @default(400) @db.Float
   tbo_map_dinner_rate_3_star             Float     @default(900) @db.Float
   tbo_map_dinner_rate_4_star             Float     @default(1500) @db.Float
   tbo_map_dinner_rate_5_star             Float     @default(2500) @db.Float

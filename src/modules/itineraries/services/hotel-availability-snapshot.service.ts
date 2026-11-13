@@ -1158,11 +1158,45 @@ export class HotelAvailabilitySnapshotService {
               totalHotelMealPlanCost: mealPlanAmount,
               ...(tboMapFallbackApplied ? {
                 tboMapFallbackApplied: true,
+                tboMapFallbackTargetMealPlan: String(
+                  nightlyRate?.tboMapFallbackTargetMealPlan ??
+                  snapshot?.tboMapFallbackTargetMealPlan ??
+                  row?.tboMapFallbackTargetMealPlan ??
+                  row?.mealPlanCode ??
+                  row?.mealPlan ??
+                  '',
+                ),
                 tboMapFallbackSourceMealPlan: String(
                   nightlyRate?.tboMapFallbackSourceMealPlan ??
                   snapshot?.tboMapFallbackSourceMealPlan ??
                   row?.tboMapFallbackSourceMealPlan ??
                   'CP',
+                ),
+                tboMapFallbackBreakfastRate: amount(
+                  nightlyRate?.tboMapFallbackBreakfastRate ??
+                  nightlyRate?.tboMapFallbackBreakfastPerPerson ??
+                  snapshot?.tboMapFallbackBreakfastRate ??
+                  snapshot?.tboMapFallbackBreakfastPerPerson ??
+                  row?.tboMapFallbackBreakfastRate ??
+                  row?.tboMapFallbackBreakfastPerPerson,
+                ),
+                tboMapFallbackBreakfastPerPerson: amount(
+                  nightlyRate?.tboMapFallbackBreakfastPerPerson ??
+                  nightlyRate?.tboMapFallbackBreakfastRate ??
+                  snapshot?.tboMapFallbackBreakfastPerPerson ??
+                  snapshot?.tboMapFallbackBreakfastRate ??
+                  row?.tboMapFallbackBreakfastPerPerson ??
+                  row?.tboMapFallbackBreakfastRate,
+                ),
+                tboMapFallbackBreakfastPerNight: amount(
+                  nightlyRate?.tboMapFallbackBreakfastPerNight ??
+                  snapshot?.tboMapFallbackBreakfastPerNight ??
+                  row?.tboMapFallbackBreakfastPerNight,
+                ),
+                tboMapFallbackBreakfastTotal: amount(
+                  nightlyRate?.tboMapFallbackBreakfastTotal ??
+                  snapshot?.tboMapFallbackBreakfastTotal ??
+                  row?.tboMapFallbackBreakfastTotal,
                 ),
                 tboMapFallbackDinnerRate: amount(
                   nightlyRate?.tboMapFallbackDinnerRate ??
@@ -2768,9 +2802,16 @@ export class HotelAvailabilitySnapshotService {
     const tboMapFallbackMetadata = fallbackSource?.tboMapFallbackApplied === true
       ? {
           tboMapFallbackApplied: true,
+          tboMapFallbackTargetMealPlan: fallbackSource.tboMapFallbackTargetMealPlan || fallbackSource.mealPlanCode || fallbackSource.mealPlan || null,
+          tboMapFallbackBreakfastRate: Number(fallbackSource.tboMapFallbackBreakfastRate || fallbackSource.tboMapFallbackBreakfastPerPerson || 0),
+          tboMapFallbackBreakfastPerPerson: Number(fallbackSource.tboMapFallbackBreakfastPerPerson || fallbackSource.tboMapFallbackBreakfastRate || 0),
+          tboMapFallbackBreakfastPerNight: Number(fallbackSource.tboMapFallbackBreakfastPerNight || 0),
+          tboMapFallbackBreakfastTotal: Number(fallbackSource.tboMapFallbackBreakfastTotal || 0),
           tboMapFallbackSourceMealPlan: fallbackSource.tboMapFallbackSourceMealPlan || 'CP',
           tboMapFallbackDinnerRate: Number(fallbackSource.tboMapFallbackDinnerRate || fallbackSource.tboMapFallbackDinnerPerPerson || 0),
           tboMapFallbackDinnerPerPerson: Number(fallbackSource.tboMapFallbackDinnerPerPerson || fallbackSource.tboMapFallbackDinnerRate || 0),
+          tboMapFallbackDinnerComponentPerNight: Number(fallbackSource.tboMapFallbackDinnerComponentPerNight || 0),
+          tboMapFallbackDinnerComponentTotal: Number(fallbackSource.tboMapFallbackDinnerComponentTotal || 0),
           tboMapFallbackDinnerPerNight: Number(fallbackSource.tboMapFallbackDinnerPerNight || fallbackSource.tboMapFallbackDinnerTotal || fallbackSource.hotelMealPlanCost || 0),
           tboMapFallbackDinnerTotal: Number(fallbackSource.tboMapFallbackDinnerTotal || fallbackSource.totalHotelMealPlanCost || fallbackSource.hotelMealPlanCost || 0),
           hotelMealPlanCost: Number(fallbackSource.hotelMealPlanCost || fallbackSource.tboMapFallbackDinnerPerNight || fallbackSource.tboMapFallbackDinnerTotal || 0),
@@ -2819,7 +2860,11 @@ export class HotelAvailabilitySnapshotService {
       'hotelMarginTotalAmount', 'amountIncludesHotelMargin', 'pricingIncludesHotelMargin',
       'hotelMealPlanCost', 'totalHotelMealPlanCost',
       'tboMapFallbackApplied', 'tboMapFallbackSourceMealPlan',
+      'tboMapFallbackTargetMealPlan',
+      'tboMapFallbackBreakfastRate', 'tboMapFallbackBreakfastPerPerson',
+      'tboMapFallbackBreakfastPerNight', 'tboMapFallbackBreakfastTotal',
       'tboMapFallbackDinnerRate', 'tboMapFallbackDinnerPerPerson',
+      'tboMapFallbackDinnerComponentPerNight', 'tboMapFallbackDinnerComponentTotal',
       'tboMapFallbackDinnerPerNight', 'tboMapFallbackDinnerTotal',
       'tboRoomNightBreakdown',
     ];
@@ -5694,6 +5739,7 @@ export class HotelAvailabilitySnapshotService {
       orderBy: { global_settings_ID: 'asc' },
       select: {
         show_ep_hotels: true,
+        tbo_map_breakfast_rate: true,
         tbo_map_fallback_enabled: true,
         tbo_map_dinner_rate_3_star: true,
         tbo_map_dinner_rate_4_star: true,
@@ -5706,6 +5752,7 @@ export class HotelAvailabilitySnapshotService {
     return {
       showEpHotels: Number(row?.show_ep_hotels ?? 0) === 1,
       enabled: Number(row?.tbo_map_fallback_enabled ?? 1) === 1,
+      breakfastRate: Math.max(Number(row?.tbo_map_breakfast_rate ?? 400), 0),
       dinnerRate3Star: Math.max(Number(row?.tbo_map_dinner_rate_3_star ?? 900), 0),
       dinnerRate4Star: Math.max(Number(row?.tbo_map_dinner_rate_4_star ?? 1500), 0),
       dinnerRate5Star: Math.max(Number(row?.tbo_map_dinner_rate_5_star ?? 2500), 0),
@@ -5718,7 +5765,7 @@ export class HotelAvailabilitySnapshotService {
   private async normalizePersistedMealPlanInventory(plan: any, rows: any[]): Promise<any[]> {
     const config = await this.getMapDinnerFallbackConfig();
     const preferredMealPlanCode = this.getPlanMealPlanCode(plan);
-    const normalized = ['MAP', 'AP'].includes(preferredMealPlanCode || '')
+    const normalized = ['CP', 'MAP'].includes(preferredMealPlanCode || '')
       ? applyMapDinnerFallbackToRows(rows, {
           preferredMealPlanCode,
           adultCount: Math.max(Number(plan?.total_adult || 0), 0),
