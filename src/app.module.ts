@@ -35,6 +35,7 @@ import { RolePermissionModule } from './modules/settings/role-permission/role-pe
 import { AgentSubscriptionPlanModule } from './modules/settings/agent-subscription-plan/agent-subscription-plan.module';
 import { HotelCategoryModule } from './modules/settings/hotel-category/hotel-category.module';
 import { GlobalSettingsModule } from './modules/settings/global-settings/global-settings.module';
+import { AgentDashboardAdsModule } from './modules/agent-dashboard-ads/agent-dashboard-ads.module';
 import { IncidentalExpensesModule } from './modules/incidental-expenses/incidental-expenses.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { AccountsExportModule } from './modules/accounts-export/accounts-export.module';
@@ -50,7 +51,7 @@ import { ImpersonationAuditInterceptor } from './common/interceptors/impersonati
   imports: [PrismaModule, AuthModule, UsersModule,VendorsModule,AgentsModule,ItineraryViaRoutesModule,HotelsModule,DailyMomentTrackerModule, ItineraryDropdownsModule,
 ItinerariesModule,
 PublicItineraryLinksModule,
-AccountsManagerModule, AccountsLedgerModule, DriversModule, VehicleAvailabilityModule, HotspotsModule, HotspotDistanceCacheModule, ActivitiesModule, LocationsModule, GuidesModule, StaffModule, AgentModule, DashboardModule, GstSettingsModule,InbuiltAmenitiesModule, VehicleTypesModule, CitiesModule, ExportPricebookModule, IncidentalExpensesModule, PaymentsModule, LanguageModule, RolePermissionModule, AgentSubscriptionPlanModule, HotelCategoryModule, GlobalSettingsModule, AccountsExportModule, AxisRoomsModule, StaahModule, GraphqlV2Module, HotelAdminModule, CalendarEventsModule],
+AccountsManagerModule, AccountsLedgerModule, DriversModule, VehicleAvailabilityModule, HotspotsModule, HotspotDistanceCacheModule, ActivitiesModule, LocationsModule, GuidesModule, StaffModule, AgentModule, DashboardModule, GstSettingsModule,InbuiltAmenitiesModule, VehicleTypesModule, CitiesModule, ExportPricebookModule, IncidentalExpensesModule, PaymentsModule, LanguageModule, RolePermissionModule, AgentSubscriptionPlanModule, HotelCategoryModule, GlobalSettingsModule, AgentDashboardAdsModule, AccountsExportModule, AxisRoomsModule, StaahModule, GraphqlV2Module, HotelAdminModule, CalendarEventsModule],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
