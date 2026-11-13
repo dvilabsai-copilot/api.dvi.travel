@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   applyMapDinnerFallbackToRows,
   filterEpRows,
+  isEpFallbackSourceForMealPlan,
+  shouldKeepSupplierRateForMealPlan,
 } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
 
 const config = {
@@ -241,6 +243,24 @@ test('converts VSR EP to MAP with breakfast and configured dinner supplements', 
   assert.equal(rows[0].tboMapFallbackDinnerTotal, 7800);
   assert.equal(rows[0].totalPrice, 17800);
   assert.equal(rows[0].pricePerNight, 8900);
+});
+
+test('retains EP only as a source for requested VSR CP/MAP fallbacks', () => {
+  assert.equal(isEpFallbackSourceForMealPlan('CP', 'EP'), true);
+  assert.equal(isEpFallbackSourceForMealPlan('MAP', 'Room Only'), true);
+  assert.equal(isEpFallbackSourceForMealPlan('EP', 'EP'), false);
+  assert.equal(isEpFallbackSourceForMealPlan('AP', 'EP'), false);
+  assert.equal(isEpFallbackSourceForMealPlan('CP', 'CP'), false);
+});
+
+test('supplier meal-plan filtering keeps EP only when CP/MAP fallback is enabled', () => {
+  assert.equal(shouldKeepSupplierRateForMealPlan('CP', 'Room Only', true), true);
+  assert.equal(shouldKeepSupplierRateForMealPlan('MAP', 'EP', true), true);
+  assert.equal(shouldKeepSupplierRateForMealPlan('CP', 'EP', false), false);
+  assert.equal(shouldKeepSupplierRateForMealPlan('MAP', 'EP', false), false);
+  assert.equal(shouldKeepSupplierRateForMealPlan('CP', 'CP', false), true);
+  assert.equal(shouldKeepSupplierRateForMealPlan('EP', 'CP', true), false);
+  assert.equal(shouldKeepSupplierRateForMealPlan('', 'EP', false), true);
 });
 
 test('hides EP rows and nested EP options by default', () => {

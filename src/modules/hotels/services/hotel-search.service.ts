@@ -23,6 +23,7 @@ import { HotelGalleryService } from './hotel-gallery.service';
 import {
   applyMapDinnerFallbackToRows,
   filterEpRows,
+  isEpFallbackSourceForMealPlan,
   type TboMapFallbackConfig,
 } from '../../itineraries/utils/tbo-map-fallback.util';
 
@@ -114,8 +115,9 @@ export class HotelSearchService {
     rows: HotelSearchResult[],
     criteria: Pick<HotelSearchDTO, 'adultCount' | 'childCount' | 'roomCount' | 'checkInDate' | 'checkOutDate'>,
     preferredMealPlanCode?: string | null,
+    fallbackConfig?: TboMapFallbackConfig,
   ): Promise<HotelSearchResult[]> {
-    const config = await this.getMapDinnerConfig();
+    const config = fallbackConfig ?? await this.getMapDinnerConfig();
     const nights = Math.max(
       Math.round((this.parseDateOnly(criteria.checkOutDate).getTime() - this.parseDateOnly(criteria.checkInDate).getTime()) / 86_400_000),
       1,
@@ -361,6 +363,17 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
 
  this.logger.log(` Searching across ${activeProviders.length} provider(s): ${activeProviders.map(p => p.getName()).join(', ')}`);
 
+      const requestedMealPlanCode = String(searchCriteria.preferences?.mealPlanCode || '').trim().toUpperCase();
+      const needsTboFallbackSourceRates = providerKeysToSearch.includes('tbo') &&
+        ['CP', 'MAP'].includes(requestedMealPlanCode);
+      const mealPlanFallbackConfig = needsTboFallbackSourceRates
+        ? await this.getMapDinnerConfig()
+        : undefined;
+      const preserveEpFallbackSourceRates = Boolean(
+        mealPlanFallbackConfig?.enabled &&
+        isEpFallbackSourceForMealPlan(requestedMealPlanCode, 'EP'),
+      );
+
  // Search in parallel across all providers
       const searchPromises = activeProviders.map((provider) =>
         this.executeProviderSearch(
@@ -376,7 +389,9 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
             occupancies: normalizedOccupancies,
             hotelCodes: searchCriteria.hotelCodes,
           },
-          searchCriteria.preferences,
+          provider === this.tboProvider && preserveEpFallbackSourceRates
+            ? { ...searchCriteria.preferences, preserveEpFallbackSourceRates: true }
+            : searchCriteria.preferences,
         ),
       );
 
@@ -405,6 +420,7 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
         [...providerResults.flat(), ...offlineHotels],
         searchCriteria,
         searchCriteria.preferences?.mealPlanCode,
+        mealPlanFallbackConfig,
       );
 
       const hotelNameQuery = String(searchCriteria.hotelName || '').trim().toLowerCase();

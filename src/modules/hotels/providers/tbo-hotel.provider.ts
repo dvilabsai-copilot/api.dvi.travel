@@ -24,6 +24,7 @@ import { resolveCityRecordByName } from '../../itineraries/utils/city-normalizat
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
 import { TboMasterGalleryService } from '../services/tbo-master-gallery.service';
 import { buildTboRoomNightBreakdown } from '../utils/tbo-room-night-pricing';
+import { shouldKeepSupplierRateForMealPlan } from '../../itineraries/utils/tbo-map-fallback.util';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
@@ -382,7 +383,11 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
     room.MealType,
   );
           const inferredMealPlanCode = mealPlan === 'UNKNOWN' ? null : mealPlan;
-          if (selectedMealPlanCode && inferredMealPlanCode !== selectedMealPlanCode) {
+          if (!shouldKeepSupplierRateForMealPlan(
+            selectedMealPlanCode,
+            inferredMealPlanCode,
+            preferences?.preserveEpFallbackSourceRates === true,
+          )) {
             continue;
           }
           const netAmount = room.NetAmount || room.TotalFare || room.DayRates?.[0]?.[0]?.BasePrice || 0;

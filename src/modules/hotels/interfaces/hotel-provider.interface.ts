@@ -192,6 +192,8 @@ export interface HotelPreferences {
   tboMealType?: string;
   /** Optional TBO Search room-count override for flows that require an exact room quote. */
   tboNoOfRooms?: number;
+  /** Internal flag: retain VSR EP rates as inputs to the requested CP/MAP fallback. */
+  preserveEpFallbackSourceRates?: boolean;
 }
 
 export interface HotelConfirmationDTO {
