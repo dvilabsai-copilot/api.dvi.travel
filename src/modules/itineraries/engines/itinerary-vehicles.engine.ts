@@ -2226,6 +2226,8 @@ const updRes =
           where: { vehicle_id: vehicleId },
           select: {
             vehicle_location_id: true,
+            vehicle_origin_latitude: true,
+            vehicle_origin_longitude: true,
             extra_km_charge: true,
             extra_hour_charge: true,
             early_morning_charges: true,
@@ -2288,11 +2290,30 @@ const updRes =
 
  // Get vehicle origin details from dvi_stored_locations
         const vehicleLocationId = vehicle.vehicle_location_id || 0;
-        const vehicleLocationDetails = await getVehicleLocationDetailsCached(
+        const resolvedVehicleLocationDetails = await getVehicleLocationDetailsCached(
           vehicleLocationId,
           String((e as any).vehicle_orign || '').trim(),
           String((e as any).vehicle_orign || '').trim(),
         );
+        const vehicleOriginLatitude = Number(vehicle.vehicle_origin_latitude);
+        const vehicleOriginLongitude = Number(vehicle.vehicle_origin_longitude);
+        const hasVehicleOriginCoordinates =
+          vehicle.vehicle_origin_latitude !== null &&
+          vehicle.vehicle_origin_latitude !== undefined &&
+          vehicle.vehicle_origin_longitude !== null &&
+          vehicle.vehicle_origin_longitude !== undefined &&
+          Number.isFinite(vehicleOriginLatitude) &&
+          Number.isFinite(vehicleOriginLongitude) &&
+          vehicleOriginLatitude >= -90 && vehicleOriginLatitude <= 90 &&
+          vehicleOriginLongitude >= -180 && vehicleOriginLongitude <= 180 &&
+          !(vehicleOriginLatitude === 0 && vehicleOriginLongitude === 0);
+        const vehicleLocationDetails = hasVehicleOriginCoordinates
+          ? {
+              ...resolvedVehicleLocationDetails,
+              latitude: vehicleOriginLatitude,
+              longitude: vehicleOriginLongitude,
+            }
+          : resolvedVehicleLocationDetails;
 
  // Build calculation context
         const eligibleCompositeKey = `${vendorId}:${vendorBranchId}:${vvtId}:${vehicleId}`;
