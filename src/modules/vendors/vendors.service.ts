@@ -620,6 +620,16 @@ export class VendorsService {
 }
 
   private mapVendorBasicPayload(data: any): Record<string, any> {
+    const hasLatitude = Object.prototype.hasOwnProperty.call(data ?? {}, 'vendor_origin_latitude');
+    const hasLongitude = Object.prototype.hasOwnProperty.call(data ?? {}, 'vendor_origin_longitude');
+    const latitude = this.parseOptionalOriginCoordinate(data.vendor_origin_latitude, 90, 'Vendor origin latitude');
+    const longitude = this.parseOptionalOriginCoordinate(data.vendor_origin_longitude, 180, 'Vendor origin longitude');
+    if (hasLatitude !== hasLongitude || (latitude === null) !== (longitude === null)) {
+      throw new BadRequestException('Enter both vendor origin coordinates, or leave both blank');
+    }
+    if (latitude === 0 && longitude === 0) {
+      throw new BadRequestException('Vendor origin coordinates cannot both be 0');
+    }
     return {
       vendor_name: data.vendor_name ?? data.vendorName ?? null,
       vendor_code: data.vendor_code ?? data.vendorCode ?? null,
@@ -646,6 +656,7 @@ export class VendorsService {
           data.vendor_margin_gst_percentage ?? data.vendor_margin_gst_percent ?? data.marginGstPercent,
         ) ?? 0,
       vendor_address: data.vendor_address ?? data.address ?? null,
+      ...(hasLatitude ? { vendor_origin_latitude: latitude, vendor_origin_longitude: longitude } : {}),
       vendor_company_name:
   data.vendor_company_name ??
   data.invoice_company_name ??
@@ -1097,6 +1108,8 @@ async createVendorBasicInfo(data: any): Promise<any> {
       hasOwn(...aliases) ? mapped[field] : (existing as any)[field];
 
     const updateData = {
+      vendor_origin_latitude: pick('vendor_origin_latitude', ['vendor_origin_latitude']),
+      vendor_origin_longitude: pick('vendor_origin_longitude', ['vendor_origin_longitude']),
       vendor_name: pick('vendor_name', ['vendor_name', 'vendorName']),
       vendor_code: pick('vendor_code', ['vendor_code', 'vendorCode']),
       vendor_email: pick('vendor_email', ['vendor_email', 'email']),
@@ -1853,12 +1866,12 @@ async createVendorBasicInfo(data: any): Promise<any> {
     vehicle_origin: String(
       data.vehicle_origin ?? data.vehicle_orign ?? data.origin ?? '',
     ).trim(),
-    vehicle_origin_latitude: this.parseOptionalVehicleOriginCoordinate(
+    vehicle_origin_latitude: this.parseOptionalOriginCoordinate(
       data.vehicle_origin_latitude,
       90,
       'Vehicle origin latitude',
     ),
-    vehicle_origin_longitude: this.parseOptionalVehicleOriginCoordinate(
+    vehicle_origin_longitude: this.parseOptionalOriginCoordinate(
       data.vehicle_origin_longitude,
       180,
       'Vehicle origin longitude',
@@ -1909,7 +1922,7 @@ async createVendorBasicInfo(data: any): Promise<any> {
   };
 }
 
-private parseOptionalVehicleOriginCoordinate(
+private parseOptionalOriginCoordinate(
   value: unknown,
   maxAbs: number,
   label: string,

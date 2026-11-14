@@ -5946,6 +5946,8 @@ model dvi_vendor_details {
   vendor_margin_gst_type           Int       @default(0)
   vendor_margin_gst_percentage     Float     @default(0) @db.Float
   vendor_address                   String?   @db.Text
+  vendor_origin_latitude           Float?    @db.Double
+  vendor_origin_longitude          Float?    @db.Double
   invoice_gstin_number             String?   @db.VarChar(50)
   invoice_pan_number               String?   @db.VarChar(20)
   invoice_mobile_number            String?   @db.VarChar(20)
