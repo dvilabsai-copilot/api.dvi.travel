@@ -16,6 +16,7 @@ import {
 import { timeStringToPrismaTime } from "../utils/itinerary.utils";
 import { filterActiveVendorCandidateRows } from "../utils/active-vendor-candidate.util";
 import { getVehicleRateAvailability } from "../utils/vehicle-rate-availability.util";
+import { resolveVehicleOriginCoordinates } from "../utils/vehicle-origin-coordinates.util";
 function toNum(v: any) {
   const n = typeof v === "number" ? v : Number(String(v ?? "").trim());
   return Number.isFinite(n) ? n : 0;
@@ -2198,6 +2199,12 @@ const updRes =
         normalizeCityToken(overallStartCityRaw) !== '' &&
         normalizeCityToken(overallStartCityRaw) === normalizeCityToken(overallEndCityRaw);
 
+      const originVendors = await tx.dvi_vendor_details.findMany({
+        where: { vendor_id: { in: [...new Set(eligibles.map((e) => Number(e.vendor_id ?? 0)))] }, deleted: 0 },
+        select: { vendor_id: true, vendor_origin_latitude: true, vendor_origin_longitude: true },
+      });
+      const originVendorById = new Map(originVendors.map((vendor) => [vendor.vendor_id, vendor]));
+
       for (const e of eligibles) {
         const eligibleId = Number(e.itinerary_plan_vendor_eligible_ID ?? 0);
         if (!eligibleId) continue;
@@ -2295,25 +2302,8 @@ const updRes =
           String((e as any).vehicle_orign || '').trim(),
           String((e as any).vehicle_orign || '').trim(),
         );
-        const vehicleOriginLatitude = Number(vehicle.vehicle_origin_latitude);
-        const vehicleOriginLongitude = Number(vehicle.vehicle_origin_longitude);
-        const hasVehicleOriginCoordinates =
-          vehicle.vehicle_origin_latitude !== null &&
-          vehicle.vehicle_origin_latitude !== undefined &&
-          vehicle.vehicle_origin_longitude !== null &&
-          vehicle.vehicle_origin_longitude !== undefined &&
-          Number.isFinite(vehicleOriginLatitude) &&
-          Number.isFinite(vehicleOriginLongitude) &&
-          vehicleOriginLatitude >= -90 && vehicleOriginLatitude <= 90 &&
-          vehicleOriginLongitude >= -180 && vehicleOriginLongitude <= 180 &&
-          !(vehicleOriginLatitude === 0 && vehicleOriginLongitude === 0);
-        const vehicleLocationDetails = hasVehicleOriginCoordinates
-          ? {
-              ...resolvedVehicleLocationDetails,
-              latitude: vehicleOriginLatitude,
-              longitude: vehicleOriginLongitude,
-            }
-          : resolvedVehicleLocationDetails;
+        const originCoordinates = resolveVehicleOriginCoordinates(vehicle, originVendorById.get(vendorId) ?? null, resolvedVehicleLocationDetails);
+        const vehicleLocationDetails = { ...resolvedVehicleLocationDetails, ...originCoordinates };
 
  // Build calculation context
         const eligibleCompositeKey = `${vendorId}:${vendorBranchId}:${vvtId}:${vehicleId}`;
@@ -2333,6 +2323,7 @@ const updRes =
           vehicle_location_id: vehicleLocationId,
           vehicle_origin: vehicleLocationDetails.origin,
           vehicle_origin_city: vehicleLocationDetails.city,
+          vehicle_origin_has_custom_coordinates: originCoordinates !== resolvedVehicleLocationDetails,
           vehicle_origin_latitude: vehicleLocationDetails.latitude,
           vehicle_origin_longitude: vehicleLocationDetails.longitude,
  extra_km_charge: toNum(vehicle.extra_km_charge), // From dvi_vehicle

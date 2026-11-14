@@ -292,6 +292,7 @@ export interface VehicleCalculationContext {
   vehicle_location_id: number;
   vehicle_origin: string;
   vehicle_origin_city: string;
+  vehicle_origin_has_custom_coordinates?: boolean;
   vehicle_origin_latitude: number;
   vehicle_origin_longitude: number;
   extra_km_charge: number;
@@ -630,7 +631,13 @@ export async function getLegDistanceAndDuration(
   localSpeed = 40,
   outstationSpeed = 60,
   debugContext?: { planId?: number; routeId?: number },
+  preferCoordinates = false,
 ): Promise<{ distance: string; duration: string }> {
+  if (preferCoordinates && hasUsableCoordinates(fromLat, fromLng) && hasUsableCoordinates(toLat, toLng)) {
+    const direct = calculateDistanceAndDuration(fromLat, fromLng, toLat, toLng,
+      travelLocationType === 1 ? localSpeed : outstationSpeed, 1.5);
+    return { distance: direct.distance, duration: parsePhpDurationToHms(direct.duration) };
+  }
   try {
     const fromCandidates = locationCandidates(fromName);
     const toCandidates = locationCandidates(toName);
@@ -2800,6 +2807,7 @@ suppressSyntheticLocalPickup = shouldSuppressSyntheticLocalPickup({
           localSpeed,
           outstationSpeed,
           { planId: itinerary_plan_ID, routeId: route.itinerary_route_ID },
+          Boolean(ctx.vehicle_origin_has_custom_coordinates && route_count === 1),
         );
         let pickupKm = toNum(pickupDistance.distance);
         if (travel_type === 1 && route_count > 1 && pickupKm <= 0) {
@@ -2930,6 +2938,7 @@ suppressSyntheticLocalPickup = shouldSuppressSyntheticLocalPickup({
         localSpeed,
         outstationSpeed,
         { planId: itinerary_plan_ID, routeId: route.itinerary_route_ID },
+        Boolean(ctx.vehicle_origin_has_custom_coordinates),
       );
       let dropKm = toNum(dropDistance.distance);
       if (travel_type === 1 && isFinalItineraryRoute && dropKm <= 0) {
