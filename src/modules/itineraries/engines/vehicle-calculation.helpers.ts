@@ -1910,7 +1910,15 @@ function calculateHaversineKm(fromLat: number, fromLng: number, toLat: number, t
 function hasUsableCoordinates(lat: number | null | undefined, lng: number | null | undefined): boolean {
   const latNum = Number(lat ?? 0);
   const lngNum = Number(lng ?? 0);
-  return Number.isFinite(latNum) && Number.isFinite(lngNum) && Math.abs(latNum) > 0.000001 && Math.abs(lngNum) > 0.000001;
+  return (
+    Number.isFinite(latNum) &&
+    Number.isFinite(lngNum) &&
+    latNum >= -90 &&
+    latNum <= 90 &&
+    lngNum >= -180 &&
+    lngNum <= 180 &&
+    (Math.abs(latNum) > 0.000001 || Math.abs(lngNum) > 0.000001)
+  );
 }
 
 function formatMinutesToDbDuration(minutes: number): string {
@@ -2344,8 +2352,10 @@ export function calculatePickupDistance(
   route_source_latitude: number,
   route_source_longitude: number
 ): number {
-  if (!vehicle_origin_latitude || !vehicle_origin_longitude ||
-      !route_source_latitude || !route_source_longitude) {
+  if (
+    !hasUsableCoordinates(vehicle_origin_latitude, vehicle_origin_longitude) ||
+    !hasUsableCoordinates(route_source_latitude, route_source_longitude)
+  ) {
     return 0;
   }
 
@@ -2367,8 +2377,10 @@ export function calculateDropDistance(
   vehicle_origin_latitude: number,
   vehicle_origin_longitude: number
 ): number {
-  if (!route_destination_latitude || !route_destination_longitude ||
-      !vehicle_origin_latitude || !vehicle_origin_longitude) {
+  if (
+    !hasUsableCoordinates(route_destination_latitude, route_destination_longitude) ||
+    !hasUsableCoordinates(vehicle_origin_latitude, vehicle_origin_longitude)
+  ) {
     return 0;
   }
 
@@ -2647,10 +2659,8 @@ suppressSyntheticLocalPickup = shouldSuppressSyntheticLocalPickup({
 });
 
     if (
-        localPoint.lat !== null &&
-        localPoint.lng !== null &&
-        Number(ctx.vehicle_origin_latitude || 0) &&
-        Number(ctx.vehicle_origin_longitude || 0)
+        hasUsableCoordinates(localPoint.lat, localPoint.lng) &&
+        hasUsableCoordinates(ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude)
       ) {
         const haversineKm = calculateHaversineKm(
           Number(ctx.vehicle_origin_latitude),
@@ -2835,10 +2845,8 @@ suppressSyntheticLocalPickup = shouldSuppressSyntheticLocalPickup({
     if (toNum(TOTAL_DROP_KM) <= 0 && travel_type === 1 && isFinalItineraryRoute) {
       const localPoint = await resolveLocalHotelOrCityPoint(prisma, itinerary_plan_ID, route, cache);
       if (
-        localPoint.lat !== null &&
-        localPoint.lng !== null &&
-        Number(ctx.vehicle_origin_latitude || 0) &&
-        Number(ctx.vehicle_origin_longitude || 0)
+        hasUsableCoordinates(localPoint.lat, localPoint.lng) &&
+        hasUsableCoordinates(ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude)
       ) {
         const haversineKm = calculateHaversineKm(
           localPoint.lat,

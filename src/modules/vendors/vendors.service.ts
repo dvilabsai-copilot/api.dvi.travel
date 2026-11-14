@@ -1853,6 +1853,16 @@ async createVendorBasicInfo(data: any): Promise<any> {
     vehicle_origin: String(
       data.vehicle_origin ?? data.vehicle_orign ?? data.origin ?? '',
     ).trim(),
+    vehicle_origin_latitude: this.parseOptionalVehicleOriginCoordinate(
+      data.vehicle_origin_latitude,
+      90,
+      'Vehicle origin latitude',
+    ),
+    vehicle_origin_longitude: this.parseOptionalVehicleOriginCoordinate(
+      data.vehicle_origin_longitude,
+      180,
+      'Vehicle origin longitude',
+    ),
     vehicle_type_id: this.toNumberOrNull(data.vehicle_type_id) ?? 0,
 
     registration_number: String(data.registration_number ?? ''),
@@ -1899,8 +1909,29 @@ async createVendorBasicInfo(data: any): Promise<any> {
   };
 }
 
+private parseOptionalVehicleOriginCoordinate(
+  value: unknown,
+  maxAbs: number,
+  label: string,
+): number | null {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return null;
+  }
+  const coordinate = Number(value);
+  if (!Number.isFinite(coordinate) || coordinate < -maxAbs || coordinate > maxAbs) {
+    throw new BadRequestException(`${label} must be between ${-maxAbs} and ${maxAbs}`);
+  }
+  return coordinate;
+}
+
 async createVendorVehicle(vendorId: number, data: any): Promise<any> {
  const mapped = this.mapVendorVehiclePayload(data);
+ if ((mapped.vehicle_origin_latitude === null) !== (mapped.vehicle_origin_longitude === null)) {
+   throw new BadRequestException('Enter both vehicle origin latitude and longitude, or leave both blank');
+ }
+ if (mapped.vehicle_origin_latitude === 0 && mapped.vehicle_origin_longitude === 0) {
+   throw new BadRequestException('Vehicle origin coordinates cannot both be 0');
+ }
 
 const canonicalVehicleTypeId = await this.resolveVendorVehicleTypeId(
   vendorId,
@@ -1973,6 +2004,21 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
   }
 
 const mapped = this.mapVendorVehiclePayload(data);
+ const hasLatitude = Object.prototype.hasOwnProperty.call(data ?? {}, 'vehicle_origin_latitude');
+ const hasLongitude = Object.prototype.hasOwnProperty.call(data ?? {}, 'vehicle_origin_longitude');
+ if (hasLatitude !== hasLongitude) {
+   throw new BadRequestException('Enter both vehicle origin latitude and longitude, or leave both blank');
+ }
+ if (hasLatitude && ((mapped.vehicle_origin_latitude === null) !== (mapped.vehicle_origin_longitude === null))) {
+   throw new BadRequestException('Enter both vehicle origin latitude and longitude, or leave both blank');
+ }
+ if (hasLatitude && mapped.vehicle_origin_latitude === 0 && mapped.vehicle_origin_longitude === 0) {
+   throw new BadRequestException('Vehicle origin coordinates cannot both be 0');
+ }
+ if (!hasLatitude) {
+   delete mapped.vehicle_origin_latitude;
+   delete mapped.vehicle_origin_longitude;
+ }
 
 const canonicalVehicleTypeId = await this.resolveVendorVehicleTypeId(
   Number(existingVehicle.vendor_id ?? 0),

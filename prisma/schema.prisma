@@ -5460,6 +5460,8 @@ model dvi_vehicle {
   vendor_branch_id        Int       @default(0)
   vehicle_location_id     Int       @default(0)
   vehicle_origin          String?   @db.VarChar(255)
+  vehicle_origin_latitude  Float?    @db.Double
+  vehicle_origin_longitude Float?    @db.Double
   vehicle_type_id         Int?
   registration_number     String?   @db.VarChar(50)
   registration_date       DateTime? @db.Date
