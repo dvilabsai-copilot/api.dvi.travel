@@ -5107,6 +5107,9 @@ this.logger.log(
     );
 
     if (provider === 'tbo' || provider === 'resavenue') {
+      const rooming = provider === 'tbo'
+        ? await this.loadPlanRoomOccupancies(Number(plan.itinerary_plan_ID), roomCount, adultCount, childCount)
+        : undefined;
       const hotels = await this.hotelSearchService.searchHotels({
         cityCode: city,
         checkInDate: params.checkInDate,
@@ -5115,6 +5118,7 @@ this.logger.log(
         guestCount: adultCount + childCount,
         adultCount,
         childCount,
+        ...(rooming ? { childAges: rooming.childAges, occupancies: rooming.occupancies } : {}),
         guestNationality,
         providers: [provider],
         hotelCodes: params.hotelCode,
