@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, type dvi_stored_locations } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import {
   normalizeCityName,
@@ -2576,6 +2576,64 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
     };
   }
 
+  private viaDistanceFromSource(
+    route: dvi_stored_locations,
+    latitude: number | null,
+    longitude: number | null,
+  ) {
+    const sourceLat = this.toCoordinate(route.source_location_lattitude);
+    const sourceLng = this.toCoordinate(route.source_location_longitude);
+    if (sourceLat === null || sourceLng === null || latitude === null || longitude === null) {
+      return { distance: '', duration: '' };
+    }
+
+    const distanceKm = this.calculateDistanceKm(sourceLat, sourceLng, latitude, longitude);
+    return { distance: String(distanceKm), duration: this.estimateDurationText(distanceKm) };
+  }
+
+  private async resolveReturnRoute(tx: Prisma.TransactionClient, route: dvi_stored_locations) {
+    const matches = await tx.dvi_stored_locations.findMany({
+      where: {
+        source_location: route.destination_location,
+        destination_location: route.source_location,
+        deleted: 0,
+      },
+      orderBy: [{ status: 'desc' }, { location_ID: 'asc' }],
+      take: 2,
+    });
+    const active = matches.filter((row) => row.status === 1);
+    if (active.length === 1) return { route: active[0], created: false };
+    if (matches.length) {
+      throw new ConflictException('The return route is inactive or ambiguous. Check the Routes master before adding this via stop.');
+    }
+
+    const reverse = await tx.dvi_stored_locations.create({
+      data: {
+        source_location: route.destination_location,
+        source_location_city: route.destination_location_city,
+        source_city_id: route.destination_city_id,
+        source_location_state: route.destination_location_state,
+        source_location_lattitude: route.destination_location_lattitude,
+        source_location_longitude: route.destination_location_longitude,
+        destination_location: route.source_location,
+        destination_location_city: route.source_location_city,
+        destination_city_id: route.source_city_id,
+        destination_location_state: route.source_location_state,
+        destination_location_lattitude: route.source_location_lattitude,
+        destination_location_longitude: route.source_location_longitude,
+        distance: route.distance,
+        duration: route.duration,
+        location_description: route.location_description,
+        created_from: route.created_from,
+        createdby: route.createdby,
+        createdon: new Date(),
+        status: 1,
+        deleted: 0,
+      },
+    });
+    return { route: reverse, created: true };
+  }
+
     async addViaRoute(
     locationId: number,
     payload: {
@@ -2588,90 +2646,101 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
       duration_from_source_location?: string;
     },
   ) {
-    const location = await this.prisma.dvi_stored_locations.findFirst({
-      where: { location_ID: BigInt(locationId), deleted: 0 },
-    });
-
-    if (!location) {
-      throw new NotFoundException('Location not found');
-    }
-
     const viaRouteLocation = String(payload?.via_route_location ?? '').trim();
     if (!viaRouteLocation) {
       throw new BadRequestException('via_route_location is required');
     }
 
-    const existing = await this.prisma.$queryRawUnsafe<any[]>(
-      `
-      SELECT via_route_location_ID
-      FROM dvi_stored_location_via_routes
-      WHERE location_id = ? AND via_route_location = ? AND deleted = 0
-      LIMIT 1
-      `,
-      locationId,
-      viaRouteLocation,
-    );
-
-    if (existing.length) {
-      return {
-        ok: true,
-        ...(await this.getViaRoutes(locationId)),
-      };
-    }
-
-    const viaCity = String(payload?.via_route_location_city ?? '').trim();
-    const viaState = String(payload?.via_route_location_state ?? '').trim();
-
     const { latitude: viaLat, longitude: viaLng } = this.resolveCoordinateInput(
       payload?.via_route_location_lattitude,
       payload?.via_route_location_longitude,
     );
+    const viaDetails = {
+      via_route_location: viaRouteLocation,
+      via_route_location_lattitude: viaLat?.toFixed(6) ?? '',
+      via_route_location_longitude: viaLng?.toFixed(6) ?? '',
+      via_route_location_city: String(payload?.via_route_location_city ?? '').trim(),
+      via_route_location_state: String(payload?.via_route_location_state ?? '').trim(),
+    };
+    const suppliedDistance = String(payload?.distance_from_source_location ?? '').trim();
+    const suppliedDuration = String(payload?.duration_from_source_location ?? '').trim();
+    const viaWhere = { via_route_location: viaRouteLocation, deleted: 0 };
 
-    const srcLat = this.toCoordinate(location.source_location_lattitude);
-    const srcLng = this.toCoordinate(location.source_location_longitude);
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const createdReturnRoute = await this.prisma.$transaction(async (tx) => {
+          const route = await tx.dvi_stored_locations.findFirst({
+            where: { location_ID: BigInt(locationId), deleted: 0 },
+          });
+          if (!route) throw new NotFoundException('Location not found');
 
-        let distanceText = String(payload?.distance_from_source_location ?? '').trim();
-    let durationText = String(payload?.duration_from_source_location ?? '').trim();
+          const existing = await tx.dvi_stored_location_via_routes.findFirst({
+            where: { ...viaWhere, location_id: route.location_ID },
+            orderBy: [{ status: 'desc' }, { via_route_location_ID: 'asc' }],
+          });
+          const forwardMetrics = suppliedDistance || suppliedDuration
+            ? { distance: suppliedDistance, duration: suppliedDuration }
+            : this.viaDistanceFromSource(route, viaLat, viaLng);
+          const forward = existing ?? await tx.dvi_stored_location_via_routes.create({
+            data: {
+              ...viaDetails,
+              location_id: route.location_ID,
+              distance_from_source_to_via_route: forwardMetrics.distance,
+              duration_from_source_to_via_route: forwardMetrics.duration,
+              status: 1,
+              deleted: 0,
+              createdon: new Date(),
+            },
+          });
 
-    if (
-      !distanceText &&
-      !durationText &&
-      viaLat !== null &&
-      viaLng !== null &&
-      srcLat !== null &&
-      srcLng !== null
-    ) {
-      const distanceKm = this.calculateDistanceKm(srcLat, srcLng, viaLat, viaLng);
-      distanceText = String(Number(distanceKm.toFixed(6)));
-      durationText = this.estimateDurationText(distanceKm);
+          if (route.status !== 1 || forward.status !== 1 ||
+              this.normalizeLocationName(route.source_location).toLowerCase() ===
+                this.normalizeLocationName(route.destination_location).toLowerCase()) {
+            return false;
+          }
+
+          const reverse = await this.resolveReturnRoute(tx, route);
+          const existingReverse = await tx.dvi_stored_location_via_routes.findFirst({
+            where: { ...viaWhere, location_id: reverse.route.location_ID },
+            select: { via_route_location_ID: true },
+          });
+          if (!existingReverse) {
+            const { distance, duration } = this.viaDistanceFromSource(
+              reverse.route,
+              this.toCoordinate(forward.via_route_location_lattitude),
+              this.toCoordinate(forward.via_route_location_longitude),
+            );
+            await tx.dvi_stored_location_via_routes.create({
+              data: {
+                location_id: reverse.route.location_ID,
+                via_route_location: forward.via_route_location,
+                via_route_location_lattitude: forward.via_route_location_lattitude,
+                via_route_location_longitude: forward.via_route_location_longitude,
+                via_route_location_city: forward.via_route_location_city,
+                via_route_location_state: forward.via_route_location_state,
+                distance_from_source_to_via_route: distance,
+                duration_from_source_to_via_route: duration,
+                status: 1,
+                deleted: 0,
+                createdon: new Date(),
+              },
+            });
+          }
+          return reverse.created;
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+        if (createdReturnRoute) {
+          this.clearStoredLocationCache(`locations.addViaRoute:${locationId}`);
+          clearDistanceCache();
+        }
+        break;
+      } catch (error) {
+        // Concurrent saves can race on a missing route or via row.
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2034' || attempt === 3) {
+          throw error;
+        }
+      }
     }
-
-    await this.prisma.$executeRawUnsafe(
-      `
-      INSERT INTO dvi_stored_location_via_routes (
-        location_id,
-        via_route_location,
-        via_route_location_lattitude,
-        via_route_location_longitude,
-        via_route_location_city,
-        via_route_location_state,
-        distance_from_source_to_via_route,
-        duration_from_source_to_via_route,
-        status,
-        deleted,
-        createdon
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, NOW())
-      `,
-      locationId,
-      viaRouteLocation,
-      viaLat !== null ? viaLat.toFixed(6) : '',
-      viaLng !== null ? viaLng.toFixed(6) : '',
-      viaCity,
-      viaState,
-      distanceText,
-      durationText,
-    );
 
     return {
       ok: true,
