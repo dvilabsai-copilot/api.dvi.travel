@@ -5,10 +5,9 @@ import { PrismaService } from '../../../prisma.service';
 import { HotspotEngineService } from '../engines/hotspot-engine.service';
 import { TimeConverter } from '../engines/helpers/time-converter';
 import {
-  DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF,
   TransportEarlyArrivalOption,
-  getTransportEarlyArrivalSetting,
-  wallClockMinutes,
+  isTransportIntercityTransfer,
+  transportEarlyArrivalCutoffMinutes,
 } from '../transport-early-arrival';
 import { RouteVehicleRestrictionService } from '../../route-vehicle-restrictions/route-vehicle-restriction.service';
 
@@ -97,10 +96,7 @@ transportEarlyArrivalLocationName?: string | null,
     })();
  const isEarlyArrivalWindow = startTimeSeconds >= 3600 && startTimeSeconds < 28800; // 01:00:0007:59:59
 
- const transportCutoffMinutes = wallClockMinutes(
-  getTransportEarlyArrivalSetting('TRANSPORT_EARLY_ARRIVAL_CUTOFF', DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF),
-) ?? 7 * 60;
-    const isTransportEarlyArrival = startTimeSeconds < transportCutoffMinutes * 60;
+    const isTransportEarlyArrival = startTimeSeconds < transportEarlyArrivalCutoffMinutes() * 60;
 
     const transactionResult = await this.prisma.$transaction(async (tx) => {
  // 1) Verify target route belongs to this plan
@@ -486,7 +482,11 @@ transportEarlyArrivalLocationName?: string | null,
         planUpdateData.pick_up_date_and_time = itineraryStartDateTime;
 
         const isTransportOnly = Number(plan.itinerary_preference) === 2;
-        if (isTransportOnly && isTransportEarlyArrival) {
+        const requiresTransportPreference = isTransportEarlyArrival && !isTransportIntercityTransfer(
+          firstRoute.location_name,
+          firstRoute.next_visiting_location,
+        );
+        if (isTransportOnly && requiresTransportPreference) {
           const nextOption = transportEarlyArrivalOption ?? plan.transport_early_arrival_option;
           if (!Object.values(TransportEarlyArrivalOption).includes(nextOption)) {
             throw new BadRequestException({
@@ -539,7 +539,7 @@ planUpdateData.transport_early_arrival_location_name =
                       : null) ??
                     60,
                   );
-      } else if (isTransportOnly && !isTransportEarlyArrival) {
+      } else if (isTransportOnly) {
   planUpdateData.transport_early_arrival_option = null;
   planUpdateData.transport_early_arrival_hotel_name = null;
   planUpdateData.transport_early_arrival_location_name = null;

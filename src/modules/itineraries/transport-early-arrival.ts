@@ -28,6 +28,36 @@ export function wallClockMinutes(value: unknown): number | null {
   return hours * 60 + minutes;
 }
 
+export function transportEarlyArrivalCutoffMinutes(): number {
+  return wallClockMinutes(getTransportEarlyArrivalSetting(
+    'TRANSPORT_EARLY_ARRIVAL_CUTOFF',
+    DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF,
+  )) ?? 7 * 60;
+}
+
+export function isTransportIntercityTransfer(source?: string | null, destination?: string | null): boolean {
+  const city = (value?: string | null) => String(value ?? '')
+    .toLowerCase()
+    .split(/[|,]/)[0]
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\b(international|domestic|airport|railway|station|junction|bus stand|terminal)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const from = city(source);
+  const to = city(destination);
+  return Boolean(from && to && from !== to);
+}
+
+export function isEarlyDirectTransportTransfer(
+  preference: unknown, pickupTime: string, source?: string | null, destination?: string | null,
+): boolean {
+  const pickupMinutes = wallClockMinutes(pickupTime);
+  // The requested 07:00 transfer is direct even at the default prompt cutoff.
+  const directTransferCutoff = Math.max(transportEarlyArrivalCutoffMinutes(), 7 * 60 + 1);
+  return Number(preference) === 2 && pickupMinutes !== null && pickupMinutes < directTransferCutoff &&
+    isTransportIntercityTransfer(source, destination);
+}
+
 export function getTransportEarlyArrivalMessage(option?: string | null): string | null {
   if (option === TransportEarlyArrivalOption.HOTEL_REST) {
     return 'Guest has opted to proceed to the hotel first for rest and refreshment before commencing sightseeing.';

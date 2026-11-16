@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BadRequestException } from '@nestjs/common';
 import { TransportEarlyArrivalValidationService } from '../src/modules/itineraries/validation/transport-early-arrival-validation.service';
-import { TransportEarlyArrivalOption } from '../src/modules/itineraries/transport-early-arrival';
+import { isEarlyDirectTransportTransfer, TransportEarlyArrivalOption } from '../src/modules/itineraries/transport-early-arrival';
 import { TransportEarlyArrivalTimelineService } from '../src/modules/itineraries/engines/helpers/transport-early-arrival-timeline.service';
 
 const basePlan = {
@@ -24,6 +24,28 @@ test('does not require a preference at the cutoff or for hotel-inclusive plans',
   const service = new TransportEarlyArrivalValidationService();
   service.validate({ ...basePlan, trip_start_date: '2026-07-18T08:00:00+05:30' } as any);
   service.validate({ ...basePlan, itinerary_preference: 3 } as any);
+});
+
+test('uses Day 1 endpoints to exempt a 07:00 Transport Only transfer', (t) => {
+  const previousCutoff = process.env.TRANSPORT_EARLY_ARRIVAL_CUTOFF;
+  t.after(() => {
+    if (previousCutoff === undefined) delete process.env.TRANSPORT_EARLY_ARRIVAL_CUTOFF;
+    else process.env.TRANSPORT_EARLY_ARRIVAL_CUTOFF = previousCutoff;
+  });
+  process.env.TRANSPORT_EARLY_ARRIVAL_CUTOFF = '08:00';
+  const service = new TransportEarlyArrivalValidationService();
+  const plan = { ...basePlan, trip_start_date: '2026-07-18T07:00:00+05:30' } as any;
+  const day1 = { no_of_days: 1, location_name: 'Madurai Airport', next_visiting_location: 'Rameswaram' } as any;
+  const day2 = { no_of_days: 2, location_name: 'Rameswaram', next_visiting_location: 'Madurai' } as any;
+  assert.doesNotThrow(() => service.validate(plan, [day2, day1]));
+  assert.throws(() => service.validate(plan, [day2, { ...day1, next_visiting_location: 'Madurai' }]),
+    BadRequestException);
+  assert.equal(isEarlyDirectTransportTransfer(2, '07:00', 'Madurai Airport', 'Rameswaram'), true);
+  assert.equal(isEarlyDirectTransportTransfer(2, '08:00', 'Madurai Airport', 'Rameswaram'), false);
+  assert.equal(isEarlyDirectTransportTransfer(3, '07:00', 'Madurai Airport', 'Rameswaram'), false);
+  assert.equal(isEarlyDirectTransportTransfer(2, '07:00', 'Madurai Airport', 'Madurai'), false);
+  process.env.TRANSPORT_EARLY_ARRIVAL_CUTOFF = '07:00';
+  assert.equal(isEarlyDirectTransportTransfer(2, '07:00', 'Madurai Airport', 'Rameswaram'), true);
 });
 
 test('allows hotel rest without a hotel name', () => {

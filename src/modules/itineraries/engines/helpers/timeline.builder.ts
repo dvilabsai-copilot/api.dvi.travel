@@ -60,6 +60,7 @@ import { TimelineDay1CandidateGateService } from './timeline-day1-candidate-gate
 import { TimelineDay1CutoffMasterService } from './timeline-day1-cutoff-master.service';
 import { TimelineDay1TravelProjectionService } from './timeline-day1-travel-projection.service';
 import { TransportEarlyArrivalTimelineService } from './transport-early-arrival-timeline.service';
+import { isEarlyDirectTransportTransfer } from '../../transport-early-arrival';
 import {
   buildIntercityPhaseCandidateQueue,
   shouldAdvanceToPostSourceCandidate,
@@ -1225,7 +1226,11 @@ for (const route of scopedRoutes) {
  // PHP adds 1-hour refreshment at route start EXCEPT for last route
  // Last route starts directly with hotspots (order 2) and skips refreshment ROW
  // BUT PHP still advances currentTime by buffer amount for last route (without creating row)
+      const isEarlyDirectTransport = isFirstRoute && isEarlyDirectTransportTransfer(
+        plan.itinerary_preference, routeStartTime, route.location_name, route.next_visiting_location,
+      );
       const skipInitialRefreshment =
+        isEarlyDirectTransport ||
         transportEarlyArrivalResult.skipGenericRefreshment ||
         skipInitialRefreshmentForImmediateHotelCheckin;
       if (!isLastRoute && !skipInitialRefreshment) {
@@ -1272,7 +1277,7 @@ for (const route of scopedRoutes) {
             currentTime = firstSightseeingMovementTime;
           }
         }
-      } else if (isLastRoute && !transportEarlyArrivalResult.handled) {
+      } else if (isLastRoute && !isEarlyDirectTransport && !transportEarlyArrivalResult.handled) {
  // PHP BEHAVIOR: Last route doesn't create refreshment ROW but still advances time
         if (!isTransferOnlyLastRouteByReportDeadline) {
           const globalSettings = await (tx as any).dvi_global_settings?.findFirst({

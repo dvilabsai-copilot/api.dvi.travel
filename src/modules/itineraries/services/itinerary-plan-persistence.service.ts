@@ -703,7 +703,7 @@ export class ItineraryPlanPersistenceService {
     const perfStart = Date.now();
     createPlanStage = 'pre_transaction_validation';
 
-    this.transportEarlyArrivalValidation.validate(dto.plan);
+    this.transportEarlyArrivalValidation.validate(dto.plan, dto.routes);
     await this.routeVehicleRestrictions.assertCreateRequest(dto);
 
  // Validate hotel availability BEFORE starting the transaction
