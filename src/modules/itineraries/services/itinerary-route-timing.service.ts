@@ -10,6 +10,7 @@ import {
   transportEarlyArrivalCutoffMinutes,
 } from '../transport-early-arrival';
 import { RouteVehicleRestrictionService } from '../../route-vehicle-restrictions/route-vehicle-restriction.service';
+import { isIntercityHotelArrival } from './arrival-hotel-policy.service';
 
 type RouteTimingCallbacks = Record<string, (...args: any[]) => any>;
 
@@ -132,6 +133,7 @@ transportEarlyArrivalLocationName?: string | null,
         where: { itinerary_plan_ID: normalizedPlanId, deleted: 0 },
         select: {
           itinerary_preference: true,
+          arrival_location: true,
           trip_end_date_and_time: true,
           departure_type: true,
           transport_early_arrival_option: true,
@@ -304,6 +306,12 @@ transportEarlyArrivalLocationName?: string | null,
       }
 
       const isDay1RouteUpdated = Number(firstRoute.itinerary_route_ID) === normalizedRouteId;
+      const shouldApplyPreviousDayBilling = isDay1RouteUpdated &&
+        normalizedDecisionProvided && normalizedDecisionConfirmed && isEarlyArrivalWindow &&
+        !isIntercityHotelArrival({
+          cityNameA: plan.arrival_location || firstRoute.location_name,
+          cityNameB: firstRoute.next_visiting_location,
+        });
 
  // Persist previous-day billing decision as marker rows for hotel-details rendering.
       if (isDay1RouteUpdated) {
@@ -322,11 +330,7 @@ transportEarlyArrivalLocationName?: string | null,
           },
         });
 
-        if (
-          normalizedDecisionProvided &&
-          normalizedDecisionConfirmed &&
-          isEarlyArrivalWindow
-        ) {
+        if (shouldApplyPreviousDayBilling) {
           const firstRouteDate = new Date(firstRoute.itinerary_route_date as any);
           if (!Number.isNaN(firstRouteDate.getTime())) {
             const previousDayDate = subtractOneUtcDay(
@@ -591,11 +595,7 @@ planUpdateData.transport_early_arrival_location_name =
         previousDayBillingDecision: {
           decisionProvided: normalizedDecisionProvided,
           confirmed: normalizedDecisionConfirmed,
-          markerCreated:
-            isDay1RouteUpdated &&
-            normalizedDecisionProvided &&
-            normalizedDecisionConfirmed &&
-            isEarlyArrivalWindow,
+          markerCreated: shouldApplyPreviousDayBilling,
         },
       };
     }, { timeout: 180000, maxWait: 20000 });

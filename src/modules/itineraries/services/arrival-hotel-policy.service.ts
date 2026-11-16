@@ -40,8 +40,15 @@ export interface ArrivalPolicyEvaluationInput {
   isArrivalDay: boolean;
   arrivalMinutes: number;
   routeDate: Date;
+  intercityArrival?: boolean;
   previousDayBillingDecisionProvided: boolean;
   previousDayBillingConfirmed: boolean;
+}
+
+export function isIntercityHotelArrival(input: Parameters<typeof areCitiesEquivalent>[0]): boolean {
+  const hasCityIds = Number(input.cityIdA) > 0 && Number(input.cityIdB) > 0;
+  const hasCityNames = Boolean(normalizeCityName(input.cityNameA) && normalizeCityName(input.cityNameB));
+  return (hasCityIds || hasCityNames) && !areCitiesEquivalent(input);
 }
 
 export interface ArrivalPolicyEvaluationOutput {
@@ -87,7 +94,7 @@ export function evaluateArrivalHotelPolicy(
   const m = input.arrivalMinutes;
 
   if (m >= 60 && m < 480) {
-    if (!input.previousDayBillingDecisionProvided) {
+    if (!input.intercityArrival && !input.previousDayBillingDecisionProvided) {
       return {
         resolutionStatus:
           PolicyResolutionStatus.AWAITING_PREVIOUS_DAY_BILLING_CONFIRMATION,
@@ -106,7 +113,7 @@ export function evaluateArrivalHotelPolicy(
       };
     }
 
-    if (input.previousDayBillingConfirmed) {
+    if (!input.intercityArrival && input.previousDayBillingConfirmed) {
       return {
         resolutionStatus: PolicyResolutionStatus.RESOLVED,
         arrivalWindow: ArrivalWindow.EARLY_01_TO_0759,
@@ -137,7 +144,9 @@ export function evaluateArrivalHotelPolicy(
       effectiveCheckInDate: sameDayCheckIn,
       effectiveCheckOutDate: sameDayCheckOut,
       message:
-        'Previous-day billing declined. Continue same-day flow with sightseeing first and hotel at end of day.',
+        input.intercityArrival
+          ? 'Continue sightseeing and use same-day hotel check-in at the next destination.'
+          : 'Previous-day billing declined. Continue same-day flow with sightseeing first and hotel at end of day.',
     };
   }
 
@@ -260,6 +269,7 @@ export class ArrivalHotelPolicyService {
     const decision = evaluateArrivalHotelPolicy({
       isArrivalDay: context.isArrivalDay,
       arrivalMinutes: context.arrivalMinutes,
+      intercityArrival: context.intercityArrival,
       routeDate: context.routeDate,
       previousDayBillingDecisionProvided: context.previousDayBillingDecisionProvided,
       previousDayBillingConfirmed: context.previousDayBillingConfirmed,
@@ -313,6 +323,7 @@ export class ArrivalHotelPolicyService {
     rawArrivalDateTime: string;
     arrivalMinutes: number;
     sameCityArrival: boolean;
+    intercityArrival: boolean;
     normalizedArrivalCity: string;
     normalizedNightStayCity: string;
     isArrivalDay: boolean;
@@ -383,12 +394,12 @@ export class ArrivalHotelPolicyService {
     const nightStayCityName =
       request.nightStayCityName || route?.next_visiting_location || '';
 
-    const sameCityArrival = areCitiesEquivalent({
+    const cities = {
       cityIdA: request.arrivalCityId,
       cityIdB: request.nightStayCityId,
       cityNameA: arrivalCityName,
       cityNameB: nightStayCityName,
-    });
+    };
 
     const isArrivalDay =
       Number(request.routeDayNumber || 0) > 1
@@ -403,7 +414,8 @@ export class ArrivalHotelPolicyService {
         plan?.trip_start_date_and_time,
         arrivalDateTime,
       ),
-      sameCityArrival,
+      sameCityArrival: areCitiesEquivalent(cities),
+      intercityArrival: isIntercityHotelArrival(cities),
       normalizedArrivalCity: normalizeCityName(arrivalCityName),
       normalizedNightStayCity: normalizeCityName(nightStayCityName),
       isArrivalDay,

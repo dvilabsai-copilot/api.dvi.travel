@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   ArrivalWindow,
   ArrivalHotelPolicyService,
+  HotelFlowAction,
   HotelSearchMode,
   evaluateArrivalHotelPolicy,
   toCalendarDateOnly,
@@ -143,6 +144,29 @@ async function runPolicyTests() {
   assert.equal(requestResult.arrivalWindow, ArrivalWindow.EARLY_01_TO_0759);
   assert.equal(requestResult.requiresPreviousDayBillingConfirmation, true);
   assert.equal(requestResult.debug?.isArrivalDay, true);
+
+  const transfer = {
+    routeDayNumber: 1,
+    routeDate: '2026-11-12',
+    arrivalDateTime: '2026-11-12T07:00:00+05:30',
+    arrivalCityName: 'Madurai, Mattuthavani',
+    nightStayCityName: 'Rameswaram',
+  };
+  for (const previousDayBillingConfirmed of [false, true]) {
+    const result = await service.resolvePolicy({
+      ...transfer,
+      previousDayBillingDecisionProvided: previousDayBillingConfirmed,
+      previousDayBillingConfirmed,
+    });
+    assert.equal(result.requiresPreviousDayBillingConfirmation, false);
+    assert.equal(result.hotelSearchMode, HotelSearchMode.SAME_DAY);
+    assert.equal(result.hotelFlowAction, HotelFlowAction.DIRECT_SIGHTSEEING);
+    assert.equal(result.deferHotelToEndOfDay, true);
+    assert.equal(result.effectiveCheckInDate, '2026-11-12');
+  }
+
+  const missingDestination = await service.resolvePolicy({ ...transfer, nightStayCityName: '' });
+  assert.equal(missingDestination.requiresPreviousDayBillingConfirmation, true);
 }
 
 runPolicyTests()

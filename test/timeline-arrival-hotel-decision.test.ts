@@ -104,3 +104,33 @@ test('preserves route clock and report-deadline behavior for a last route', asyn
   assert.equal(result.lastRouteArrivalDeadlineSeconds, 43200);
   assert.ok(logs.some((entry) => entry.name === '[TIMELINE] LAST_ROUTE_REPORT_CUTOFF_SKIP_SIGHTSEEING'));
 });
+
+test('an early intercity pickup defers the hotel without delaying sightseeing for a billing decision', async () => {
+  const service = createService([]);
+  const result = await service.evaluate({
+    tx: {} as any,
+    planId: 7,
+    route: { itinerary_route_ID: 11, itinerary_route_date: new Date('2026-11-12T00:00:00Z') },
+    plan: { itinerary_preference: 3, trip_start_date_and_time: new Date('2026-11-12T07:00:00Z') },
+    isFirstRoute: true,
+    isLastRoute: false,
+    sourceCity: 'Madurai',
+    destinationCity: 'Rameswaram',
+    arrivalPoint: 'Madurai, Mattuthavani',
+    currentCoords: null,
+    destCityCoords: null,
+    routeStartTime: '07:00:00',
+    routeEndTime: '20:00:00',
+    effectiveRouteStartTime: '07:00:00',
+    currentTime: '07:00:00',
+    routeStartSeconds: 7 * 3600,
+    routeEndSeconds: 20 * 3600,
+    lastRouteArrivalDeadlineSeconds: 20 * 3600,
+    computeRouteEndSeconds: (startSeconds) => startSeconds + 13 * 3600,
+  });
+
+  assert.equal(result.currentTime, '07:00:00');
+  assert.equal(result.suppressHotelInsertionUntilEndOfDay, true);
+  assert.equal(result.enforceStrictDay1EarlyArrivalDeferredFlow, false);
+  assert.equal(result.forceNoSightseeingOnThisRoute, false);
+});

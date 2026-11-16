@@ -10,6 +10,7 @@ import { ViaRoutesEngine } from '../engines/via-routes.engine';
 import { RouteValidationService } from '../validation/route-validation.service';
 import { ItineraryVehicleBuildService } from './itinerary-vehicle-build.service';
 import { TransportEarlyArrivalValidationService } from '../validation/transport-early-arrival-validation.service';
+import { isIntercityHotelArrival } from './arrival-hotel-policy.service';
 import { RouteVehicleRestrictionService } from '../../route-vehicle-restrictions/route-vehicle-restriction.service';
 import {
   assertVehicleAgentCreatePolicy,
@@ -1118,6 +1119,12 @@ const shouldRebuildTimeline =
       // edit so the existing post-save hotel reset rebuilds the snapshot with
       // the persisted previous-day marker.
       const firstHotelRouteForArrival = (routes || [])[0] as any;
+      const isIntercityArrival = isIntercityHotelArrival({
+        cityNameA: dto.plan.arrival_point || firstHotelRouteForArrival?.location_name,
+        cityNameB: firstHotelRouteForArrival?.next_visiting_location,
+      });
+      const confirmedPreviousNight = !isIntercityArrival &&
+        Boolean(dto.previousDayBillingDecisionProvided && dto.previousDayBillingConfirmed);
       const arrivalTimeForHotelReset = String(dto.plan.trip_start_date || '').match(
         /T(\d{2}):(\d{2})(?::(\d{2}))?/,
       );
@@ -1130,8 +1137,7 @@ const shouldRebuildTimeline =
         isPlanUpdate &&
         (Number(dto.plan.itinerary_preference) === 1 ||
           Number(dto.plan.itinerary_preference) === 3) &&
-        dto.previousDayBillingDecisionProvided &&
-        dto.previousDayBillingConfirmed &&
+        confirmedPreviousNight &&
         arrivalSecondsForHotelReset >= 3600 &&
         arrivalSecondsForHotelReset < 28800 &&
         Number(firstHotelRouteForArrival?.itinerary_route_ID || 0) > 0,
@@ -1346,8 +1352,7 @@ if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
         const shouldApplyPreviousDayBilling =
           (Number(dto.plan.itinerary_preference) === 1 ||
             Number(dto.plan.itinerary_preference) === 3) &&
-          Boolean(dto.previousDayBillingDecisionProvided) &&
-          Boolean(dto.previousDayBillingConfirmed) &&
+          confirmedPreviousNight &&
           arrivalSeconds >= 3600 &&
           arrivalSeconds < 28800 &&
           Number(firstHotelRoute?.itinerary_route_ID || 0) > 0;
@@ -1493,8 +1498,7 @@ if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
             });
 
           const shouldApplyPreviousDayBilling =
-            Boolean(dto.previousDayBillingDecisionProvided) &&
-            Boolean(dto.previousDayBillingConfirmed) &&
+            confirmedPreviousNight &&
             arrivalSeconds >= 3600 &&
             arrivalSeconds < 28800;
 

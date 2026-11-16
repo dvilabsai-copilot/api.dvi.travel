@@ -7,6 +7,7 @@ import {
   HotelSearchMode,
   PolicyResolutionStatus,
   evaluateArrivalHotelPolicy,
+  isIntercityHotelArrival,
 } from '../../services/arrival-hotel-policy.service';
 
 type Tx = Prisma.TransactionClient;
@@ -245,6 +246,10 @@ const isArrivalCityStayRoute =
           ? evaluateArrivalHotelPolicy({
               isArrivalDay: arrivalDayForPolicy,
               arrivalMinutes: arrivalMinutesForPolicy,
+              intercityArrival: !isTransportOnly && isIntercityHotelArrival({
+                cityNameA: arrivalPoint || sourceCity,
+                cityNameB: destinationCity,
+              }),
               routeDate: routeDateForPolicy,
               previousDayBillingDecisionProvided:
                 decisionState.previousDayBillingDecisionProvided,
