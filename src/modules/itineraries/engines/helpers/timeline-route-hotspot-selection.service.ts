@@ -452,6 +452,7 @@ const matchesDestination =
               hotspotFromLocation,
               hotspotToLocation,
               routeLegs,
+              Number(h.hotspot_allow_reverse_auto_route) === 1 && !hasExplicitViaRoutes,
             )
           : { matches: false, fromIndex: -1, toIndex: -1 };
 
@@ -895,6 +896,7 @@ const matchesDestination =
           masterLocation,
           masterToLocation,
           routeLegs,
+          Number(master.hotspot_allow_reverse_auto_route) === 1 && !hasExplicitViaRoutes,
         );
         const forceEnRoute = isIntercityRouteForFinalCorridorOverride && routeChainMatch.matches;
         const finalBucket = forceEnRoute ? 'en_route' : String(h.__bucket || 'unknown').toLowerCase();

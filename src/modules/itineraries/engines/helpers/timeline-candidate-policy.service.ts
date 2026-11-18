@@ -407,8 +407,9 @@ export class TimelineCandidatePolicyService {
     hotspotLocation: string | null | undefined,
     hotspotToLocation: string | null | undefined,
     routeLegs: string[],
+    allowReverse = false,
   ): { matches: boolean; fromIndex: number; toIndex: number } {
-    return this.routePolicyService.routeSpecificHotspotMatchesRouteChain(hotspotLocation, hotspotToLocation, routeLegs);
+    return this.routePolicyService.routeSpecificHotspotMatchesRouteChain(hotspotLocation, hotspotToLocation, routeLegs, allowReverse);
   }
 
   public routeMovementOrder(

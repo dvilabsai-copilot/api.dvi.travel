@@ -552,6 +552,7 @@ const reservedSameCityHotspotIdsByRoute =
         hotspot_name: h.hotspot_name,
         hotspot_location: h.hotspot_location,
         hotspot_to_location: h.hotspot_to_location,
+        hotspot_allow_reverse_auto_route: h.hotspot_allow_reverse_auto_route,
         hotspot_type: h.hotspot_type,
         hotspot_priority: h.hotspot_priority,
         hotspot_latitude: h.hotspot_latitude,
@@ -2896,6 +2897,7 @@ for (const sh of skippedHotspots) {
               masterLocation,
               masterToLocation,
               routeLegsForPhase,
+              Number(master.hotspot_allow_reverse_auto_route) === 1 && !hasExplicitViaRouteForPhase,
             );
 
             if (isIntercityRoute && routeChainMatch.matches) {
@@ -2992,6 +2994,7 @@ selectedHotspots = (
               masterLocation,
               masterToLocation,
               routeLegsForPhase,
+              Number(master.hotspot_allow_reverse_auto_route) === 1 && !hasExplicitViaRouteForPhase,
             );
             const isDirectRouteCorridorHotspot =
               isRouteSpecificMaster && routeChainMatchForDirect.matches;
@@ -3046,6 +3049,7 @@ selectedHotspots = (
             String(master?.hotspot_location || ''),
             String(master?.hotspot_to_location || master?.hotspot_location || ''),
             routeLegsForPhase,
+            Number(master?.hotspot_allow_reverse_auto_route) === 1 && !hasExplicitViaRouteForPhase,
           ).matches;
         };
       selectedHotspots = (

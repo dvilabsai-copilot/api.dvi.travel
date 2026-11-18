@@ -116,6 +116,7 @@ export class TimelineRoutePolicyService {
     hotspotLocation: string | null | undefined,
     hotspotToLocation: string | null | undefined,
     routeLegs: string[],
+    allowReverse = false,
   ): { matches: boolean; fromIndex: number; toIndex: number } {
     const legs = Array.isArray(routeLegs) ? routeLegs.filter(Boolean) : [];
     if (legs.length < 2) return { matches: false, fromIndex: -1, toIndex: -1 };
@@ -126,6 +127,13 @@ export class TimelineRoutePolicyService {
           return { matches: true, fromIndex, toIndex };
         }
       }
+    }
+    // Only opted-in simple corridors can be reused in reverse. A user-selected
+    // via chain keeps its existing directional ownership and placement rules.
+    if (allowReverse && legs.length === 2 &&
+      this.hotspotLocationMatchesCity(hotspotToLocation, legs[0]) &&
+      this.hotspotLocationMatchesCity(hotspotLocation, legs[1])) {
+      return { matches: true, fromIndex: 0, toIndex: 1 };
     }
     return { matches: false, fromIndex: -1, toIndex: -1 };
   }
