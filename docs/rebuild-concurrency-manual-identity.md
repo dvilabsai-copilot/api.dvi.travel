@@ -88,3 +88,18 @@ requested return day. The rollback replay additionally confirmed Wax Museum
 forced-manual preservation path retains this saved selection at the end; keep
 that existing closed-stop behavior and report its order change separately from
 lost manual selections. Do not reopen the master or relax automatic admission.
+
+## Same-plan repricing race
+
+Both concurrent day edits committed, but the 18:58:52 UTC InnoDB report exposed
+a later vendor-table cycle: one autocommit vehicle rebuild deleted by plan/type
+while another deleted the same eligible row by primary key. Timeline row locks
+cannot protect this separate post-commit stage. All three callers of
+ItineraryVehiclesEngine.rebuildEligibleVendorList (selection repricing, slab
+overrides, vehicle build service) need one shared per-plan lock across the entire
+autocommit engine build, including its permit callback. Use a dedicated mysql2
+session advisory lock, matching the repository's hotel selection pattern. Hash
+the database name into the lock key so staging and production remain independent.
+Release in finally, close on all paths, fail if acquisition times out, and do
+not retry provider callbacks. Different plans retain parallel execution. Verify
+same-plan edits and inspect the InnoDB deadlock timestamp after the final batch.

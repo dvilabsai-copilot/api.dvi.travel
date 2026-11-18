@@ -17,6 +17,16 @@ import { timeStringToPrismaTime } from "../utils/itinerary.utils";
 import { filterActiveVendorCandidateRows } from "../utils/active-vendor-candidate.util";
 import { getVehicleRateAvailability } from "../utils/vehicle-rate-availability.util";
 import { resolveVehicleOriginCoordinates } from "../utils/vehicle-origin-coordinates.util";
+import { withVehicleRebuildLock } from '../utils/vehicle-rebuild-lock.util';
+
+type VehicleRebuildArgs = {
+  planId: number;
+  createdBy: number;
+  selectedTimeLimitByEligible?: Record<string, number>;
+  beforeVehicleDetailsBuild?: (data: {
+    tx: any; planId: number; createdBy: number; routeCount: number; eligibleVehicleCount: number;
+  }) => Promise<void>;
+};
 function toNum(v: any) {
   const n = typeof v === "number" ? v : Number(String(v ?? "").trim());
   return Number.isFinite(n) ? n : 0;
@@ -668,18 +678,15 @@ const assignedIds = assignedRows
  * - Otherwise assign the cheapest valid vehicle rows
  * - Build vendor_vehicle_details for ALL eligibles
  */
-  async rebuildEligibleVendorList(args: {
-    planId: number;
-    createdBy: number;
-    selectedTimeLimitByEligible?: Record<string, number>;
-    beforeVehicleDetailsBuild?: (data: {
-      tx: any;
-      planId: number;
-      createdBy: number;
-      routeCount: number;
-      eligibleVehicleCount: number;
-    }) => Promise<void>;
-  }) {
+  async rebuildEligibleVendorList(args: VehicleRebuildArgs) {
+    const planId = Number(args.planId);
+    if (!Number.isFinite(planId) || planId <= 0) {
+      return { planId, inserted: 0, reason: 'Invalid planId' };
+    }
+    return withVehicleRebuildLock(planId, () => this.rebuildEligibleVendorListUnlocked(args));
+  }
+
+  private async rebuildEligibleVendorListUnlocked(args: VehicleRebuildArgs) {
     const planId = Number(args.planId);
     const debugVehicleTrace =
       process.env.DEBUG_DVI20260594_INSERT === 'true' ||
