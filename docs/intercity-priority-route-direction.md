@@ -11,13 +11,19 @@ May 27 commit 0cccead0 introduced route-specific ordering. June 2 commit 9ccea03
 added corridor/filler gates. November 1 commit bcaebd6d preserved destination
 operating windows by allowing a priority-1 destination to preempt source visits.
 That queue exception had no road-fit check; later passes could append the corridor.
+Live rebuilding confirmed that DVI20261115 actually uses the separate Day-1
+different-city priority walk. The candidate reordering before that branch can
+also place destination priorities 1-3 before corridor priorities 15-16. The fix
+therefore shares preparation and corridor admission across both scheduling paths;
+the November exception alone is not the cause of this Day-1 case.
 DVI20261115 has correctly tagged Cochin-to-Munnar waterfall records, so master
 data changes are not the responsible fix.
 
 ## Scope and invariants
 
 The policy applies to automatic non-direct intercity scheduling without explicit
-vias, manual selections, or a scoped route rebuild. Existing direct-route, explicit
+vias, manual selections, or a scoped preservation rebuild. Explicit automatic
+route resets participate. Existing direct-route, explicit
 via, manual order, deletion preservation, hotel billing, transport arrival and
 departure deadline rules retain their existing handling. It does not change API
 contracts, database schema, hotspot priorities, coordinates, or billing algorithms.

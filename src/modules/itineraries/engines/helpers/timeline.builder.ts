@@ -1839,6 +1839,85 @@ selectedHotspots = applySameCityPriorityPolicy(
   'post-scoped-preservation',
 ) as SelectedHotspot[];
 
+// Both the Day-1 priority walk and the multi-pass scheduler use these policies.
+const directionRoads = new TimelineRouteDirectionService();
+const directionRejectedIds = new Set<number>();
+const priorityApproachIds = new Set<number>();
+let priorityApproachPrepared = false;
+let returnDetourKm = 0;
+let returnDetourSeconds = 0;
+const directionBucket = (hs: any) => String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
+const directionIsCorridor = (hs: any) => ['en_route', 'source_to_destination'].includes(directionBucket(hs));
+const directionIsDestination = (hs: any) => ['destination', 'dest'].includes(directionBucket(hs));
+const useRouteDirectionPolicy = this.canonicalCityKey(sourceCity) !== this.canonicalCityKey(destinationCity) &&
+  !!sourceCity && !!destinationCity && Number((route as any).direct_to_next_visiting_place || 0) !== 1 &&
+  String(process.env.HOTSPOT_ROUTE_DIRECTION || 'true').toLowerCase() !== 'false' &&
+  !hasExplicitViaRouteOnCurrentRoute &&
+  !(options?.scopeToRouteId && options?.preserveExistingHotspots !== false) &&
+  !(selectedHotspots as any[]).some(h => h.isManualSelection || h.isManual);
+const directionCoords = (hs: any) => {
+  const master = hotspotMap.get(Number(hs.hotspot_ID)) as any;
+  return { lat: Number(master?.hotspot_latitude), lon: Number(master?.hotspot_longitude) };
+};
+const prepareAutomaticApproach = async (queue: SelectedHotspot[], candidates: SelectedHotspot[]) => {
+  if (!useRouteDirectionPolicy || priorityApproachPrepared || !this.hasUsableCoords(currentCoords)) return queue;
+  priorityApproachPrepared = true;
+  const prepared = await orderPriorityApproach({
+    queue, candidates: candidates.filter(hs => !isHotspotAlreadyPlanned(hs.hotspot_ID)),
+    id: (hs: any) => Number(hs.hotspot_ID), coords: directionCoords,
+    eligible: (hs: any) => Number(hs.hotspot_priority) > 0 && !isScopedProtectedHotspot(Number(hs.hotspot_ID)) &&
+      (directionIsCorridor(hs) || (directionIsDestination(hs) && Number(hs.hotspot_priority) <= 3)),
+    target: (hs: any) => directionIsDestination(hs) && Number(hs.hotspot_priority) >= 1 && Number(hs.hotspot_priority) <= 3,
+    from: currentCoords,
+    startSeconds: this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds), roads: directionRoads,
+    project: async (hs: any, from, startSeconds, roadSeconds) => {
+      const master = hotspotMap.get(Number(hs.hotspot_ID)) as any;
+      if (!master || !TimelineRouteDirectionService.usable(directionCoords(hs))) return null;
+      const estimated = timeToSeconds(await this.calculateTravelTimeWithCoords(
+        tx, currentLocationName, String(master.hotspot_location || ''), from, directionCoords(hs),
+      ));
+      const projected = await this.evaluateCandidateInsertion({
+        tx, route, isLastRoute, routeStartSeconds, routeEndSeconds: getTransportDay1CandidateEndSeconds(false),
+        currentTime: secondsToTime(startSeconds + Math.max(0, roadSeconds - estimated)),
+        currentLocationName, currentCoords: from, destinationCoords: destCityCoords,
+        dayOfWeek: (new Date(route.itinerary_route_date).getDay() + 6) % 7,
+        hotspotId: Number(hs.hotspot_ID), hotspotLocationName: String(master.hotspot_location || ''),
+        hotspotDuration: master.hotspot_duration || '01:00:00', hotspotCoords: directionCoords(hs),
+        hotspotPriority: Number(hs.hotspot_priority || 0), hotspotType: String(master.hotspot_type || ''),
+        timingMap, plan, destinationCity, lastRouteArrivalDeadlineSeconds,
+        allowWaitUntilOpen: true, rejectIfOutsideOperatingWindow: true,
+      });
+      return projected.feasible && projected.endSeconds != null ? projected.endSeconds : null;
+    },
+  });
+  prepared.approachIds.forEach(id => priorityApproachIds.add(id));
+  this.logBookingRule({ rule: 'PRIORITY_DESTINATION_ROAD_APPROACH', planId,
+    routeId: route.itinerary_route_ID, approachIds: [...priorityApproachIds],
+    candidateOrder: prepared.queue.map((hs: any) => Number(hs.hotspot_ID)) });
+  return prepared.queue;
+};
+const checkAutomaticCorridorReturn = async (hs: SelectedHotspot) => {
+  const hotspotId = Number(hs.hotspot_ID);
+  if (directionRejectedIds.has(hotspotId)) return { allowed: false, detour: null };
+  if (!useRouteDirectionPolicy || isScopedProtectedHotspot(hotspotId) ||
+      !(directionIsCorridor(hs) || ['source', 'source_fallback'].includes(directionBucket(hs))) ||
+      !hotspotRows.some((row: any) => Number(row.itinerary_route_ID) === Number(route.itinerary_route_ID) &&
+        Number(row.item_type) === 4 && selectedHotspots.some(candidate =>
+          Number(candidate.hotspot_ID) === Number(row.hotspot_ID) && directionIsDestination(candidate)))) {
+    return { allowed: true, detour: null };
+  }
+  const fit = this.hasUsableCoords(currentCoords) && this.hasUsableCoords(destCityCoords)
+    ? await directionRoads.insertion(currentCoords, directionCoords(hs), destCityCoords) : null;
+  if (TimelineRouteDirectionService.withinBudget(fit, returnDetourKm, returnDetourSeconds)) {
+    return { allowed: true, detour: fit };
+  }
+  directionRejectedIds.add(hotspotId);
+  this.logBookingRule({ rule: 'AUTO_ROUTE_BACKTRACK_REJECTED', planId, routeId: route.itinerary_route_ID, hotspotId,
+    reason: fit ? 'excessive_return_after_destination' : 'return_route_fit_unavailable',
+    extraKm: fit?.extraKm ?? null, extraMinutes: fit ? fit.extraSeconds / 60 : null });
+  return { allowed: false, detour: null };
+};
+
 const routeLoopStart = Date.now();
 let hotspotQueryCount = 0;
 let distanceCalcCount = 0;
@@ -1848,7 +1927,10 @@ if (isDay1DifferentCities) {
  // DAY-1 DIFFERENT CITIES: Strict priority walk with operating hour waiting
  // Process each hotspot in priority order, wait for next operating window if needed
 
+        selectedHotspots = await prepareAutomaticApproach(selectedHotspots, selectedHotspots);
         for (const sh of selectedHotspots) {
+          const returnDecision = await checkAutomaticCorridorReturn(sh);
+          if (!returnDecision.allowed) continue;
           const bucket = this.resolveTimelineBucket(sh);
           const hotspotPriority = Number((sh as any).hotspot_priority ?? 0);
           const preserveScopedHotspot =
@@ -2409,6 +2491,10 @@ if (isDay1DifferentCities) {
           });
 
           hotspotRows.push(hotspotRow);
+          if (returnDecision.detour) {
+            returnDetourKm += returnDecision.detour.extraKm;
+            returnDetourSeconds += returnDecision.detour.extraSeconds;
+          }
           markHotspotAsPlanned(sh.hotspot_ID);
           lastAddedHotspotId = sh.hotspot_ID;
           order++;
@@ -2450,7 +2536,8 @@ if (isDay1DifferentCities) {
         const enableDay1LegacyPrependGapFill = process.env.ENABLE_DAY1_LEGACY_PREPEND_GAP_FILL === '1';
 
  // GAP-FILLING: Try to insert skipped hotspots into time gaps before first hotspot
-        const skippedHotspots = selectedHotspots.filter(sh => !isHotspotAlreadyPlanned(sh.hotspot_ID));
+        const skippedHotspots = selectedHotspots.filter(sh => !isHotspotAlreadyPlanned(sh.hotspot_ID) &&
+          !directionRejectedIds.has(Number(sh.hotspot_ID)));
 
         if (!enableDay1LegacyPrependGapFill && skippedHotspots.length > 0) {
           this.logBookingRule({
@@ -3131,20 +3218,6 @@ const strictHotspots = (
         let strictPassHotspots = [...strictHotspots];
         const sourcePhaseEndSeconds = timeToSeconds('12:00:00');
         let priorityDestinationPreemption: SelectedHotspot | null = null;
-        const directionRoads = new TimelineRouteDirectionService();
-        const directionRejectedIds = new Set<number>();
-        const priorityApproachIds = new Set<number>();
-        let priorityApproachPrepared = false;
-        let returnDetourKm = 0;
-        let returnDetourSeconds = 0;
-        const useRouteDirectionPolicy = isIntercityNonDirectRoute &&
-          String(process.env.HOTSPOT_ROUTE_DIRECTION || 'true').toLowerCase() !== 'false' &&
-          !hasExplicitViaRouteForPhase && !options?.scopeToRouteId &&
-          !(selectedHotspots as any[]).some(h => h.isManualSelection || h.isManual);
-        const directionCoords = (hs: any) => {
-          const master = hotspotMap.get(Number(hs.hotspot_ID)) as any;
-          return { lat: Number(master?.hotspot_latitude), lon: Number(master?.hotspot_longitude) };
-        };
         if (isIntercityNonDirectRoute) {
           const destinationStrict = strictPassHotspots.filter((hs) => {
             const bucket = String((hs as any).matched_bucket || '').toLowerCase();
@@ -4073,49 +4146,7 @@ const PASS_STRICT = 1;
             });
           }
 
-          if (useRouteDirectionPolicy && pass === PASS_STRICT && !priorityApproachPrepared &&
-              this.hasUsableCoords(currentCoords)) {
-            priorityApproachPrepared = true;
-            const prepared = await orderPriorityApproach({
-              queue: hotspotsToTry,
-              candidates: strictPassHotspots.filter((hs: any) => !isHotspotAlreadyPlanned(hs.hotspot_ID)),
-              id: (hs: any) => Number(hs.hotspot_ID),
-              coords: directionCoords,
-              eligible: (hs: any) => !isScopedProtectedHotspot(Number(hs.hotspot_ID)) &&
-                (isCorridorBucket(hs) || ['destination', 'dest'].includes(getCandidateBucket(hs))),
-              target: (hs: any) => ['destination', 'dest'].includes(getCandidateBucket(hs)),
-              from: currentCoords,
-              startSeconds: this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds),
-              roads: directionRoads,
-              project: async (hs: any, from, startSeconds, roadSeconds) => {
-                const master = hotspotMap.get(Number(hs.hotspot_ID)) as any;
-                if (!master || !TimelineRouteDirectionService.usable(directionCoords(hs))) return null;
-                // Use the same operating windows/deadlines as admission. Include road
-                // travel when it exceeds the existing coordinate-based estimate.
-                const estimated = timeToSeconds(await this.calculateTravelTimeWithCoords(
-                  tx, currentLocationName, String(master.hotspot_location || ''), from, directionCoords(hs),
-                ));
-                const projected = await this.evaluateCandidateInsertion({
-                  tx, route, isLastRoute, routeStartSeconds,
-                  routeEndSeconds: getTransportDay1CandidateEndSeconds(false),
-                  currentTime: secondsToTime(startSeconds + Math.max(0, roadSeconds - estimated)),
-                  currentLocationName, currentCoords: from, destinationCoords: destCityCoords,
-                  dayOfWeek: (new Date(route.itinerary_route_date).getDay() + 6) % 7,
-                  hotspotId: Number(hs.hotspot_ID), hotspotLocationName: String(master.hotspot_location || ''),
-                  hotspotDuration: master.hotspot_duration || '01:00:00', hotspotCoords: directionCoords(hs),
-                  hotspotPriority: Number(hs.hotspot_priority || 0), hotspotType: String(master.hotspot_type || ''),
-                  timingMap, plan, destinationCity, lastRouteArrivalDeadlineSeconds,
-                  allowWaitUntilOpen: true, rejectIfOutsideOperatingWindow: true,
-                });
-                return projected.feasible && projected.endSeconds != null ? projected.endSeconds : null;
-              },
-            });
-            hotspotsToTry = prepared.queue;
-            prepared.approachIds.forEach(id => priorityApproachIds.add(id));
-            this.logBookingRule({ rule: 'PRIORITY_DESTINATION_ROAD_APPROACH', planId,
-              routeId: route.itinerary_route_ID, approachIds: [...priorityApproachIds],
-              candidateOrder: hotspotsToTry.map((hs: any) => Number(hs.hotspot_ID)) });
-          }
+          if (pass === PASS_STRICT) hotspotsToTry = await prepareAutomaticApproach(hotspotsToTry, strictPassHotspots);
 
  // Build travel + hotspot segments in order (NO LUNCH BREAKS OR CUTOFF CHECKS)
         for (let hsIdx = 0; hsIdx < hotspotsToTry.length; hsIdx++) {
@@ -4135,26 +4166,10 @@ const hotspotId = Number(
 const preserveScopedHotspot =
   isScopedProtectedHotspot(hotspotId);
 
-        if (directionRejectedIds.has(hotspotId)) continue;
-        let acceptedReturnDetour: { extraKm: number; extraSeconds: number } | null = null;
-        if (useRouteDirectionPolicy && !preserveScopedHotspot &&
-            (isCorridorBucket(sh) || isSourcePhaseEligibleCandidate(sh)) &&
-            hotspotRows.some((row: any) => Number(row.itinerary_route_ID) === Number(route.itinerary_route_ID) &&
-              Number(row.item_type) === 4 && strictPassHotspots.some((hs: any) =>
-                Number(hs.hotspot_ID) === Number(row.hotspot_ID) &&
-                ['destination', 'dest'].includes(getCandidateBucket(hs))))) {
-          const fit = this.hasUsableCoords(currentCoords) && this.hasUsableCoords(destCityCoords)
-            ? await directionRoads.insertion(currentCoords, directionCoords(sh), destCityCoords) : null;
-          if (!TimelineRouteDirectionService.withinBudget(fit, returnDetourKm, returnDetourSeconds)) {
-            directionRejectedIds.add(hotspotId);
-            resolvedPositiveCorridorIds.add(hotspotId);
-            this.logBookingRule({ rule: 'AUTO_ROUTE_BACKTRACK_REJECTED', planId,
-              routeId: route.itinerary_route_ID, hotspotId,
-              reason: fit ? 'excessive_return_after_destination' : 'return_route_fit_unavailable',
-              extraKm: fit?.extraKm ?? null, extraMinutes: fit ? fit.extraSeconds / 60 : null });
-            continue;
-          }
-          acceptedReturnDetour = fit;
+        const returnDecision = await checkAutomaticCorridorReturn(sh);
+        if (!returnDecision.allowed) {
+          resolvedPositiveCorridorIds.add(hotspotId);
+          continue;
         }
 
 const normalizedBucket = String(
@@ -5279,9 +5294,9 @@ if (!sharedFeasibility.feasible) {
           });
 
           hotspotRows.push(hotspotRow);
-          if (acceptedReturnDetour) {
-            returnDetourKm += acceptedReturnDetour.extraKm;
-            returnDetourSeconds += acceptedReturnDetour.extraSeconds;
+          if (returnDecision.detour) {
+            returnDetourKm += returnDecision.detour.extraKm;
+            returnDetourSeconds += returnDecision.detour.extraSeconds;
           }
           if (positiveCorridorHotspots.some((h: any) => Number(h?.hotspot_ID || 0) === hotspotId)) {
             resolvedPositiveCorridorIds.add(hotspotId);
