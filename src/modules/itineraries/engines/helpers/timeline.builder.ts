@@ -3158,13 +3158,13 @@ const strictHotspots = (
         const getPendingPositiveCorridorHotspots = (): Array<SelectedHotspot> => {
           return positiveCorridorHotspots.filter((hs: any) => {
             const id = Number(hs?.hotspot_ID || 0);
-            return id > 0 && !isHotspotAlreadyPlanned(id);
+            return id > 0 && !isHotspotAlreadyPlanned(id) && !directionRejectedIds.has(id);
           });
         };
         const getPendingOptionalCorridorHotspots = (): Array<SelectedHotspot> => {
           return optionalCorridorHotspots.filter((hs: any) => {
             const id = Number(hs?.hotspot_ID || 0);
-            return id > 0 && !isHotspotAlreadyPlanned(id);
+            return id > 0 && !isHotspotAlreadyPlanned(id) && !directionRejectedIds.has(id);
           });
         };
         this.logBookingRule({
@@ -6169,7 +6169,7 @@ if (!sharedCycle4Feasibility.feasible) {
           .filter((hs: any) => {
             const id = Number((hs as any).hotspot_ID || 0);
             const p = Number((hs as any).hotspot_priority ?? 0);
-            return id > 0 && p >= 1 && p < 9999 && !isHotspotAlreadyPlanned(id);
+            return id > 0 && p >= 1 && p < 9999 && !isHotspotAlreadyPlanned(id) && !directionRejectedIds.has(id);
           })
           .map((hs: any) => Number((hs as any).hotspot_ID || 0));
         if (isIntercityNonDirectRoute && pendingPositiveCorridorIds.length > 0) {
