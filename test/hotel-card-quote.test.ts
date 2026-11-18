@@ -97,3 +97,13 @@ test('paged persisted response quotes cached nested rates without live search or
   assert.equal((response.hotels[0] as any).rateOptions[0].pricePerNight, 819.68);
   assert.equal(writes, 0);
 });
+
+test('a different nested room cannot inherit the default room supplier breakdown', async () => {
+  const service = new HotelAvailabilitySnapshotService({
+    dvi_global_settings: { findFirst: async () => ({ hotel_margin: 5 }) },
+  } as any, {} as any, {} as any, {} as any);
+  const result = await (service as any).attachCardQuotes([{ ...lake, rateOptions: [{
+    provider: 'tbo', roomType: 'Suite', pricePerNight: 4000, basePricePerNight: 4000,
+  }] }], { preferred_room_count: 1 });
+  assert.equal(result[0].rateOptions[0].cardQuote.payableAmount, 4200);
+});

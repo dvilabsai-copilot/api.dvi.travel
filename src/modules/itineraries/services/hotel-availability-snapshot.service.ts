@@ -2815,7 +2815,13 @@ export class HotelAvailabilitySnapshotService {
     return rows.map(row => {
       const margin = Number(margins.get(this.persistedHotelId(row)) || row.hotelMarginPercentage || fallbackMargin || 0);
       const quote = (option: any) => buildHotelCardQuote({
-        ...row, ...option,
+        // A nested rate owns its money and room-night breakdown. Inheriting
+        // the parent's fare would price another room using the default room.
+        ...option,
+        provider: option.provider || row.provider,
+        currency: option.currency || row.currency,
+        numberOfNights: option.numberOfNights ?? row.numberOfNights,
+        nights: option.nights ?? row.nights,
         itineraryRouteId: row.itineraryRouteId || row.routeId,
         date: row.date || row.itineraryRouteDate || row.checkInDate,
       }, Number(margins.get(this.persistedHotelId(row)) || option.hotelMarginPercentage || margin), rooms);
@@ -2882,6 +2888,7 @@ export class HotelAvailabilitySnapshotService {
       'ratePlanName', 'provider', 'providerDisplayName', 'providerHotelCode', 'currency',
       'pricePerNight', 'totalStayPrice', 'totalPrice', 'totalAmount', 'price', 'basePricePerNight',
       'baseTotalPrice', 'startingFromAmount', 'startingFromBaseAmount', 'priceDifference', 'cardQuote',
+      'numberOfNights', 'nights', 'checkInDate', 'checkOutDate',
       'bookingMode', 'priceSource', 'isLiveRate', 'isLiveBookable', 'isSelectable',
       'requiresHotelApproval', 'approvalStatus', 'manualConfirmationStatus', 'isBookable',
       'availabilityStatus', 'availabilityState', 'availabilityMessage',
