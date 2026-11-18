@@ -45,6 +45,11 @@ For the Day-1 different-city path, projection consults the same candidate gate a
 actual admission. A suppressed terminal-source visit remains in the queue for
 normal rejection reporting, but cannot consume projected time or move the cursor.
 This matters on repeated builds whose candidate order already starts at a waterfall.
+An automatic corridor prefix saved by an earlier build is also reconsidered
+against the first priority destination window. It is inserted again only when
+feasible; a later arrival must not lose its priority visit merely because the
+earlier saved sequence started at a waterfall. Legitimate source prefixes remain
+subject to their original scheduling rules.
 
 After a destination attraction is actually scheduled, a source/corridor return
 needs positive road-fit evidence and a shared return budget. Rejected ids are

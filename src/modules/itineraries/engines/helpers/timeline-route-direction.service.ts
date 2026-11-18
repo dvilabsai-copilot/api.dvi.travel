@@ -107,7 +107,19 @@ export async function orderPriorityApproach<T>(input: {
   let seconds = input.startSeconds;
   let usedKm = 0;
   let usedSeconds = 0;
-  for (const target of input.queue) {
+  // A previous build may already begin with corridor visits. Re-evaluate that
+  // optional prefix against the first priority window rather than treating the
+  // saved visit order as an unconditional commitment on a later arrival.
+  const firstTargetIndex = input.queue.findIndex(candidate =>
+    input.target(candidate) && !input.shouldSkip?.(candidate));
+  const prefix = firstTargetIndex > 0 ? input.queue.slice(0, firstTargetIndex) : [];
+  const evaluationQueue = prefix.length > 0 &&
+    prefix.every(candidate => input.id(candidate) !== input.id(input.queue[firstTargetIndex])) &&
+    prefix.every(candidate =>
+    input.eligible(candidate) || input.shouldSkip?.(candidate))
+    ? [input.queue[firstTargetIndex], ...prefix, ...input.queue.slice(firstTargetIndex + 1)]
+    : input.queue;
+  for (const target of evaluationQueue) {
     processed.add(target);
     if (insertedIds.has(input.id(target))) continue;
     // Keep the actual scheduler's candidate and rejection reporting intact,

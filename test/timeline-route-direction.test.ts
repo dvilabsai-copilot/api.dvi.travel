@@ -131,7 +131,25 @@ test('rebuilding after a waterfall does not project a suppressed Cochin visit be
       return end <= (s.id === target.id ? target.close : Infinity) ? end : null;
     },
   });
-  assert.deepEqual(result.queue.map(s => s.id), [228, 244, 357, 218]);
+  assert.deepEqual(result.queue.map(s => s.id), [228, 357, 218, 244]);
   assert.ok(result.queue.includes(source), 'normal scheduling still owns rejection logging');
-  assert.deepEqual([...result.approachIds].sort(), [218, 357]);
+  assert.deepEqual([...result.approachIds].sort(), [218, 228, 357]);
+});
+
+test('a saved waterfall-first order is reconsidered for early and later arrivals', async () => {
+  const saved = [waterfall, park, valara];
+  assert.deepEqual((await prepare(saved)).queue.map(s => s.id), [228, 357, 218]);
+  assert.deepEqual((await prepare(saved, undefined, 3000)).queue.map(s => s.id), [218, 228, 357]);
+});
+
+test('priority lookahead preserves a legitimate source prefix', async () => {
+  const source: Stop = {id: 99, x: 1, duration: 60};
+  const queue = [source, park, waterfall];
+  const result = await orderPriorityApproach({queue, candidates: queue, id: s => s.id,
+    coords: s => ({lat: 10, lon: s.x}), eligible: s => s.id !== source.id,
+    target: s => s.id === park.id, from: {lat: 10, lon: 0}, startSeconds: 0,
+    roads: new TimelineRouteDirectionService(lineRoad),
+    project: async (s, _from, start, travel) => start + travel + (s.duration || 0),
+  });
+  assert.equal(result.queue[0], source);
 });
