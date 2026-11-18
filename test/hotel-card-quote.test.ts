@@ -107,3 +107,22 @@ test('a different nested room cannot inherit the default room supplier breakdown
   }] }], { preferred_room_count: 1 });
   assert.equal(result[0].rateOptions[0].cardQuote.payableAmount, 4200);
 });
+
+test('compact persisted selections retain the exact saved nightly quote in every group', async () => {
+  const service = new HotelAvailabilitySnapshotService({
+    dvi_itinerary_plan_details: { findFirst: async () => ({ itinerary_plan_ID: 12181, preferred_room_count: 1, no_of_nights: 1 }) },
+    dvi_itinerary_route_details: { findMany: async () => [{ itinerary_route_ID: 26404, itinerary_route_date: '2026-12-06', next_visiting_location: 'Munnar' }] },
+    dvi_itinerary_plan_hotel_details: { findMany: async () => [] },
+  } as any, {} as any, {} as any, {} as any);
+  const input = {
+    quoteId: 'DVI20261117', planId: 12181, hotelTabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 3278.72 }], totalRoomCount: 1,
+    hotels: [{ groupType: 1, itineraryRouteId: 26404, date: '2026-12-06',
+      provider: 'tbo', hotelName: 'Lake N Hills Resorts', hotelCode: '1512622',
+      roomType: 'Cinnamon Room', mealPlan: 'CP', rateOptionId: 'lake-rate',
+      isSelected: true, selectionId: 61859, selectionOrigin: 'USER_SELECTED',
+      pricePerNight: 3278.72, totalHotelCost: 3278.72, numberOfNights: 4 }],
+  };
+  const result = await service.readPersisted('DVI20261117', { pageSize: 0 }, async () => input as any);
+  assert.equal((result.hotels[0] as any).cardQuote.payableAmount, 3278.72);
+  assert.equal((result as any).hotelSelectionState[0].routes[0].selected.cardQuote.payableAmount, 3278.72);
+});

@@ -530,6 +530,32 @@ export class HotelAvailabilitySnapshotService {
       });
     }
     const sanitized = await this.sanitizeLegacyResponse(persistedResponse, plan);
+    // Saved selections also supply alternative cards in the other packages.
+    // Their normalized nightly payable is authoritative; never reprice it
+    // from legacy supplier totals or the trip-wide number of nights.
+    const savedQuotes = new Map<string, any>();
+    for (const group of (sanitized as any).hotelSelectionState || []) {
+      for (const route of group.routes || []) {
+        const selected = route.selectionStatus === 'SELECTED' ? route.selected : null;
+        if (!selected) continue;
+        const payable = Number(selected.pricePerNight);
+        const quote = Number.isFinite(payable) && payable > 0 ? {
+          basis: 'ROUTE_NIGHT', routeId: Number(route.routeId),
+          date: String(route.routeDate || '').slice(0, 10),
+          roomCount: Math.max(Number(plan.preferred_room_count || 1), 1),
+          currency: String(selected.currency || selected.selectedCurrency || 'INR').toUpperCase(),
+          payableAmount: Number(payable.toFixed(2)),
+          baseAmount: Number(selected.totalRoomCost || 0),
+        } : null;
+        route.selected = { ...selected, cardQuote: quote };
+        savedQuotes.set(`${Number(group.groupType)}|${Number(route.routeId)}`, quote);
+      }
+    }
+    sanitized.hotels = sanitized.hotels.map((row: any) => {
+      const key = `${Number(row.groupType)}|${Number(row.itineraryRouteId || row.routeId)}`;
+      return row.isSelected === true && savedQuotes.has(key)
+        ? { ...row, cardQuote: savedQuotes.get(key) } : row;
+    });
     const persistedInventory = (sanitized as any)?.hotelAvailability?.sharedHotelInventory;
     if (Array.isArray(persistedInventory)) {
       (sanitized as any).hotelAvailability = {
