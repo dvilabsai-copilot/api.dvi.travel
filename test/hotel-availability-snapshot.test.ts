@@ -30,6 +30,9 @@ function makePrisma() {
     findMany: async () => [persistedRow],
   };
   return {
+    dvi_global_settings: {
+      findFirst: async () => ({ show_ep_hotels: 0, tbo_map_fallback_enabled: 1 }),
+    },
     dvi_itinerary_plan_details: {
       findFirst: async () => ({ itinerary_plan_ID: 44, itinerary_quote_ID: 'DVI2026072701', hotel_rates_visibility: 1 }),
     },
@@ -1436,7 +1439,8 @@ test('explicit persisted fallback is authoritative and is not merged with old in
   const service = new HotelAvailabilitySnapshotService(prisma, {} as any);
   const response = await service.readPersisted(
     'DVI2026072701',
-    { page: 1, pageSize: 20 },
+    // A complete read returns saved selections; paged reads request inventory.
+    { page: 1, pageSize: 0 },
     async () => ({
       quoteId: 'DVI2026072701',
       planId: 44,

@@ -1594,10 +1594,10 @@ export class ItinerarySelectionWorkflowService {
     const candidateRows = groupScopedRows.flatMap((row: any) => {
       const rateOptions = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
       if (rateOptions.length === 0) return [row];
-      // A hotel row is a container for its room/rate options. Prefer the
-      // concrete option when validating a selection so a parent row cannot
-      // hide the selected option's price and room identity.
-      return [...rateOptions.map((option: any) => normalizeSupplierRateIdentity({
+      // A hotel row with room/rate options is only a container. Validate its
+      // concrete options so the parent price cannot override the selected
+      // room's amount or pass as an independently selectable rate.
+      return rateOptions.map((option: any) => normalizeSupplierRateIdentity({
         ...row,
         ...option,
         provider: option.provider || row.provider,
@@ -1613,7 +1613,7 @@ export class ItinerarySelectionWorkflowService {
         optionKey: option.optionKey || option.option_key || row.optionKey,
         roomId: option.roomId || option.room_id || row.roomId,
         rateId: option.rateId || option.rate_id || option.rateOptionId || row.rateId,
-      })), normalizeSupplierRateIdentity(row)];
+      }));
     });
     const propertyMatches = (candidate: any): boolean => {
         if (String(candidate.provider || '').trim().toLowerCase() !== provider) return false;

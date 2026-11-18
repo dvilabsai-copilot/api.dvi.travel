@@ -7,12 +7,14 @@ import {
   hotelDisplaySnapshot,
 } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
 
-function createService(prisma: any = {}) {
+function createService(prisma: any = {}, freshLookup = async (..._args: any[]): Promise<{ hotels: any[] }> => {
+  throw new Error('Unexpected fresh hotel lookup: supply the provider fixture explicitly');
+}) {
   return new ItinerarySelectionWorkflowService(
     prisma,
     null as any,
     null as any,
-    null as any,
+    { getSelectedHotelRates: freshLookup } as any,
   );
 }
 
@@ -80,7 +82,7 @@ test('AxisRooms supplier references normalize canonical meal plans before persis
   }).mealPlan, 'MAP');
 });
 
-test('TBO identity preserves a real booking code while accepting a fresh session for the same commercial room', () => {
+test('TBO identity preserves the exact booking code and rejects another session for the same commercial room', () => {
   const current = '1114182!TB!1!TB!current-search!TB!N!TB!AFF!';
   const normalized = normalizeSupplierRateIdentity({
     provider: 'tbo', hotelCode: '1114182',
@@ -95,11 +97,15 @@ test('TBO identity preserves a real booking code while accepting a fresh session
   const stale = '1114182!TB!1!TB!stale-search!TB!N!TB!AFF!';
   assert.equal(supplierRateIdentityMatches(normalized, {
     ...normalized, rateOptionId: stale, bookingCode: stale, searchReference: stale,
-  }), true);
+  }), false);
   const differentCommercialRoom = '1114182!TB!2!TB!stale-room!TB!N!TB!AFF!';
   assert.equal(supplierRateIdentityMatches(normalized, {
     ...normalized, rateOptionId: differentCommercialRoom, bookingCode: differentCommercialRoom, searchReference: differentCommercialRoom,
   }), false);
+  // Commercial identity is a fallback only when the request has no exact token.
+  assert.equal(supplierRateIdentityMatches(
+    { provider: 'tbo', selectionKey: 'tbo:1114182:1' }, normalized,
+  ), true);
 });
 
 test('only server-resolved TBO selections skip the duplicate live-rate lookup', () => {
@@ -262,7 +268,7 @@ test('AxisRooms accepts a current ARI database rate when the snapshot has no mat
   );
 });
 
-test('live selection tolerates a rebuilt route id when the latest snapshot has the same stay date', async () => {
+test('live selection uses a fresh lookup for a rebuilt route id on the same stay date', async () => {
   const currentSnapshotPayload = {
     itineraryRouteId: 10208,
     provider: 'axisrooms',
@@ -278,15 +284,11 @@ test('live selection tolerates a rebuilt route id when the latest snapshot has t
     date: '2026-08-12',
     groupType: 1,
   };
-  const prisma: any = {
-    dvi_itinerary_hotel_search_cache: {
-      findFirst: async () => ({ synced_at: new Date('2026-07-31T17:35:22.000Z') }),
-      findMany: async (args: any) => args.where.route_id
-        ? []
-        : [{ full_payload: JSON.stringify(currentSnapshotPayload) }],
-    },
-  };
-  const service = createService(prisma);
+  const calls: any[][] = [];
+  const service = createService({}, async (...args: any[]) => {
+    calls.push(args);
+    return { hotels: [currentSnapshotPayload] };
+  });
 
   await (service as any).validateLiveSelectionAgainstSnapshot(
     {
@@ -308,6 +310,7 @@ test('live selection tolerates a rebuilt route id when the latest snapshot has t
     'DVI202607282',
     { itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') },
   );
+  assert.deepEqual(calls, [['DVI202607282', 10214, 'axisrooms', '95', 1]]);
 });
 
 test('live selection validates the selected nested rate option before its parent hotel row', async () => {
@@ -331,13 +334,11 @@ test('live selection validates the selected nested rate option before its parent
     totalPrice: 9999,
     rateOptions: [selectedRate],
   };
-  const prisma: any = {
-    dvi_itinerary_hotel_search_cache: {
-      findFirst: async () => ({ synced_at: new Date('2026-08-04T08:00:00.000Z') }),
-      findMany: async () => [{ full_payload: JSON.stringify(parentHotelRow) }],
-    },
-  };
-  const service = createService(prisma);
+  const calls: any[][] = [];
+  const service = createService({}, async (...args: any[]) => {
+    calls.push(args);
+    return { hotels: [parentHotelRow] };
+  });
 
   await (service as any).validateLiveSelectionAgainstSnapshot(
     {
@@ -361,7 +362,7 @@ test('live selection validates the selected nested rate option before its parent
     { itinerary_route_date: new Date('2026-08-11T00:00:00.000Z') },
   );
 
-  await assert.rejects(
+  for (const invalidTotal of [30150, parentHotelRow.totalPrice]) await assert.rejects(
     () => (service as any).validateLiveSelectionAgainstSnapshot(
       {
         planId: 10060,
@@ -377,13 +378,34 @@ test('live selection validates the selected nested rate option before its parent
         optionKey: 'tbo|TBO-123|CP|2026-08-11',
         bookingCode: tboBookingCode,
         searchReference: tboBookingCode,
-        totalPrice: 30150,
+        totalPrice: invalidTotal,
       },
       { itinerary_plan_ID: 10060 },
       'DVI202607280',
       { itinerary_route_date: new Date('2026-08-11T00:00:00.000Z') },
     ),
     /selected hotel price changed/,
+  );
+  assert.deepEqual(calls, [
+    ['DVI202607280', 10203, 'tbo', 'TBO-123', 0],
+    ['DVI202607280', 10203, 'tbo', 'TBO-123', 0],
+    ['DVI202607280', 10203, 'tbo', 'TBO-123', 0],
+  ]);
+});
+
+test('a parent-only supplier identity cannot bypass the nested room options', async () => {
+  const parentToken = '123!TB!1!TB!parent!TB!N!TB!AFF!';
+  const childToken = '123!TB!2!TB!child!TB!N!TB!AFF!';
+  const service = createService({}, async () => ({ hotels: [{
+    provider: 'tbo', hotelCode: '123', bookingCode: parentToken, totalPrice: 100,
+    rateOptions: [{ bookingCode: childToken, totalPrice: 200 }],
+  }] }));
+  await assert.rejects(
+    () => (service as any).validateLiveSelectionAgainstSnapshot(
+      { planId: 1, routeId: 10, provider: 'tbo', hotelCode: '123', bookingCode: parentToken, totalPrice: 100 },
+      { itinerary_plan_ID: 1 }, 'TEST', {},
+    ),
+    /stale or unavailable/,
   );
 });
 
@@ -399,14 +421,10 @@ test('live selection ignores same-hotel rates belonging to another recommendatio
     groupType: 4, itineraryRouteId: 10719, bookingCode, searchReference: bookingCode,
     rateOptionId: bookingCode, totalPrice: 2056.89,
   };
-  const service = createService({
-    dvi_itinerary_hotel_search_cache: {
-      findFirst: async () => ({ synced_at: new Date('2026-08-18T00:00:00.000Z') }),
-      findMany: async () => [
-        { full_payload: JSON.stringify(groupThreeRow) },
-        { full_payload: JSON.stringify(groupFourRow) },
-      ],
-    },
+  const calls: any[][] = [];
+  const service = createService({}, async (...args: any[]) => {
+    calls.push(args);
+    return { hotels: [groupThreeRow, groupFourRow] };
   });
 
   await (service as any).validateLiveSelectionAgainstSnapshot(
@@ -420,10 +438,10 @@ test('live selection ignores same-hotel rates belonging to another recommendatio
     'DVI20260847',
     { itinerary_route_date: new Date('2026-08-22T00:00:00.000Z') },
   );
+  assert.deepEqual(calls, [['DVI20260847', 10719, 'tbo', '1130403', 4]]);
 });
 
 test('current TBO supplier booking identity passes while stale and different hotels fail', async () => {
-  const syncedAt = new Date('2026-08-11T14:02:55.000Z');
   const currentBookingCode = '1114182!TB!1!TB!current-search!TB!N!TB!AFF!';
   const snapshot = {
     provider: 'tbo', hotelCode: '1114182', hotelName: 'Mountain Club Resort',
@@ -436,11 +454,10 @@ test('current TBO supplier booking identity passes while stale and different hot
       searchReference: currentBookingCode, pricePerNight: 14541.83, totalPrice: 14541.83,
     }],
   };
-  const service = createService({
-    dvi_itinerary_hotel_search_cache: {
-      findFirst: async () => ({ synced_at: syncedAt }),
-      findMany: async () => [{ full_payload: JSON.stringify(snapshot) }],
-    },
+  const calls: any[][] = [];
+  const service = createService({}, async (...args: any[]) => {
+    calls.push(args);
+    return { hotels: [snapshot] };
   });
   const currentSelection = {
     planId: 10040, routeId: 10145, provider: 'tbo', hotelCode: '1114182',
@@ -468,6 +485,11 @@ test('current TBO supplier booking identity passes while stale and different hot
     ),
     /stale or unavailable/,
   );
+  assert.deepEqual(calls, [
+    ['DVI2026082', 10145, 'tbo', '1114182', 0],
+    ['DVI2026082', 10145, 'tbo', '1114182', 0],
+    ['DVI2026082', 10145, 'tbo', '9999999', 0],
+  ]);
 });
 
 test('bulk hotel persistence forwards provider hotel code into atomic validation', async () => {

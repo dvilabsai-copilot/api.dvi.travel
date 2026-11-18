@@ -98,13 +98,15 @@ test('AxisRooms resolves short meal codes to the matching rate plan', async () =
 });
 
 test('fresh TBO validation selects positive price fields from duplicate response rows', async () => {
+  const lookups: any[][] = [];
   const service = new HotelStayBlockValidationService({
     dvi_itinerary_plan_details: {
       findUnique: async () => ({ itinerary_quote_ID: 'Q-1' }),
     },
   } as any, {
-    getSelectedHotelRates: async () => ({
-      hotels: [
+    getSelectedHotelRates: async (...args: any[]) => {
+      lookups.push(args);
+      return { hotels: [
           {
             itineraryRouteId: 101,
             provider: 'tbo',
@@ -131,8 +133,8 @@ test('fresh TBO validation selects positive price fields from duplicate response
             provider: 'tbo', hotelCode: 'H-1', roomType: 'Deluxe Room', mealPlan: 'CP',
             pricePerNight: 110,
         },
-      ],
-    }),
+      ].filter(row => row.itineraryRouteId === args[1]) };
+    },
   } as any);
 
   const result = await (service as any).validateSnapshotStayBlock({
@@ -148,4 +150,8 @@ test('fresh TBO validation selects positive price fields from duplicate response
 
   assert.equal(result.canBookMultiNight, true);
   assert.deepEqual(result.nightlyRates.map((rate: any) => rate.amountAfterTax), [100, 110]);
+  assert.deepEqual(lookups, [
+    ['Q-1', 101, 'tbo', 'H-1', 0],
+    ['Q-1', 102, 'tbo', 'H-1', 0],
+  ]);
 });

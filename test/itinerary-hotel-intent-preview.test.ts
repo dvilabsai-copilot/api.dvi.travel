@@ -40,6 +40,7 @@ function createService(resolveOfflineIntentCandidates: () => Promise<any[]>) {
   const service = Object.create(ItinerariesService.prototype) as any;
   let persisted = false;
   let persistedPayloads: any[] = [];
+  const cancelledHolds: any[] = [];
   service.prisma = {
     dvi_itinerary_plan_details: {
       findUnique: async () => ({ itinerary_quote_ID: 'DVI2026082', preferred_room_count: 1 }),
@@ -93,7 +94,13 @@ function createService(resolveOfflineIntentCandidates: () => Promise<any[]>) {
       persisted = true;
     },
   };
-  return { service, wasPersisted: () => persisted, persistedPayloads: () => persistedPayloads };
+  service.hotelBlockingService = {
+    cancelHoldsAfterHotelChange: async (request: any) => {
+      assert.equal(persisted, true, 'holds must only be cancelled after a successful save');
+      cancelledHolds.push(request);
+    },
+  };
+  return { service, wasPersisted: () => persisted, persistedPayloads: () => persistedPayloads, cancelledHolds };
 }
 
 const payload = (overrides: Record<string, unknown> = {}) => ({
@@ -272,13 +279,26 @@ test('HOTEL intent does not pin a one-night card rate across a multi-night stay'
   const service = Object.create(ItinerariesService.prototype) as any;
   service.prisma = {
     dvi_itinerary_plan_details: {
-      findUnique: async () => ({ itinerary_quote_ID: 'DVI20260847', preferred_room_count: 1 }),
+      findUnique: async () => ({ itinerary_quote_ID: 'DVI20260847', preferred_room_count: 1, total_adult: 2 }),
     },
     dvi_itinerary_route_details: {
       findFirst: async () => ({ itinerary_route_date: new Date('2026-08-23T00:00:00.000Z') }),
     },
     dvi_global_settings: {
       findFirst: async () => ({ hotel_margin: 20 }),
+    },
+    dvi_hotel: { findUnique: async () => ({
+      hotel_id: 232, hotel_margin: 20, axisrooms_enabled: 1, axisrooms_property_id: 'AX_DVI_HOTEL_232',
+    }) },
+    dvi_hotel_occupancy_rate: {
+      findMany: async ({ where }: any) => {
+        assert.equal(where.hotel_id, 232);
+        const date = where.start_date.lte.toISOString().slice(0, 10);
+        const nightly = axisCandidates.find(candidate => candidate.date === date);
+        assert.ok(nightly);
+        assert.ok(nightly.rateOptionId.includes(`:${where.room_id}:`));
+        return [{ rateplan_id: 'CP_PLAN', occupancy_rates: { DOUBLE: nightly.pricePerNight } }];
+      },
     },
   };
   service.hotelStayBlockValidationService = {
@@ -353,6 +373,7 @@ test('STAAH HOTEL preview resolves the canonical hotel id to the supplier proper
     dvi_hotel: {
       findUnique: async () => ({
         hotel_id: 44596,
+        staah_enabled: 1,
         staah_property_id: 'STAAHTESTHOTELPROD',
         axisrooms_property_id: null,
       }),
@@ -369,14 +390,15 @@ test('STAAH HOTEL preview resolves the canonical hotel id to the supplier proper
     previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
   };
   service.hotelDetailsTboService = {
-    getSelectedHotelRates: async (_quoteId: string, _routeId: number, _provider: string, hotelCode: string) => {
+    getSelectedHotelRates: async (_quoteId: string, routeId: number, provider: string, hotelCode: string) => {
+      assert.equal(provider, 'staah');
       refreshedCodes.push(hotelCode);
-      return { hotels: [{}] };
+      return { hotels: staahCandidates.filter(candidate => candidate.routeId === routeId) };
     },
   };
   service.hotelAvailabilitySnapshotService = {
     mergeSelectedHotelRates: async () => undefined,
-    getActiveRows: async () => staahCandidates,
+    getActiveRows: async () => { throw new Error('STAAH preview must use the fresh provider result'); },
   };
 
   const result = await service.previewHotelIntent({
@@ -445,6 +467,7 @@ test('STAAH ROOM_TYPE preview keeps nested Suite identity instead of inheriting 
     dvi_hotel: {
       findUnique: async () => ({
         hotel_id: 44596,
+        staah_enabled: 1,
         staah_property_id: 'STAAHTESTHOTELPROD',
         axisrooms_property_id: null,
       }),
@@ -461,11 +484,15 @@ test('STAAH ROOM_TYPE preview keeps nested Suite identity instead of inheriting 
     previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
   };
   service.hotelDetailsTboService = {
-    getSelectedHotelRates: async () => ({ hotels: [{}] }),
+    getSelectedHotelRates: async (_quoteId: string, routeId: number, provider: string, hotelCode: string) => {
+      assert.equal(provider, 'staah');
+      assert.equal(hotelCode, 'STAAHTESTHOTELPROD');
+      return { hotels: staahRows.filter(candidate => candidate.routeId === routeId) };
+    },
   };
   service.hotelAvailabilitySnapshotService = {
     mergeSelectedHotelRates: async () => undefined,
-    getActiveRows: async () => staahRows,
+    getActiveRows: async () => { throw new Error('STAAH preview must use the fresh provider result'); },
   };
 
   const result = await service.previewHotelIntent({
@@ -657,7 +684,7 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
 });
 
 test('offline confirm returns DB-verified identity even when request name is contradictory', async () => {
-  const { service } = createService(async () => candidates);
+  const { service, cancelledHolds } = createService(async () => candidates);
 
   const result = await service.selectHotelIntent(payload({ hotelName: 'STAAH TEST HOTEL PROD' }));
 
@@ -673,6 +700,20 @@ test('offline confirm returns DB-verified identity even when request name is con
     { routeId: 10145, provider: 'offline', hotelId: 211, canonicalHotelId: 211, hotelCode: '211', hotelName: 'GREENRIDGE', category: 2 },
     { routeId: 10146, provider: 'offline', hotelId: 211, canonicalHotelId: 211, hotelCode: '211', hotelName: 'GREENRIDGE', category: 2 },
   ]);
+  assert.deepEqual(cancelledHolds, [{
+    itineraryPlanId: 10040, groupType: 1, routeIds: stay.routeIds,
+    actor: { id: undefined, type: 'STAFF' },
+  }]);
+});
+
+test('offline failed persistence never cancels existing holds', async () => {
+  const { service, cancelledHolds } = createService(async () => candidates);
+  service.selectionWorkflowService.bulkSaveHotels = async () => { throw new Error('transaction rolled back'); };
+  await assert.rejects(
+    () => service.selectHotelIntent(payload()),
+    (error: any) => error.response?.code === 'HOTEL_INTENT_PERSIST_FAILED',
+  );
+  assert.deepEqual(cancelledHolds, []);
 });
 
 test('offline confirm preserves route-night pricing in persistence payload and saved response', async () => {
@@ -706,7 +747,7 @@ test('offline confirm preserves route-night pricing in persistence payload and s
     numberOfNights: 2,
     nightlyRates,
   }));
-  const { service, persistedPayloads } = createService(async () => spriseCandidates);
+  const { service, persistedPayloads, cancelledHolds } = createService(async () => spriseCandidates);
   service.prisma.dvi_itinerary_plan_hotel_details.findMany = async () => stay.routeIds.map((routeId, index) => ({
     itinerary_route_id: routeId,
     itinerary_route_date: new Date(`${stay.stayDates[index]}T00:00:00.000Z`),
@@ -738,6 +779,7 @@ test('offline confirm preserves route-night pricing in persistence payload and s
   }));
 
   assert.equal(persistedPayloads().length, 2);
+  assert.equal(cancelledHolds.length, 1);
   persistedPayloads().forEach((saved, index) => {
     assert.equal(saved.basePricePerNight, 4750);
     assert.equal(saved.baseTotalPrice, 4750);
