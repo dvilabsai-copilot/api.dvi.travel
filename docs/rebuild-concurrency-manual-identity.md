@@ -59,3 +59,20 @@ Verify focused identity/policy/transaction tests and build, then browser rebuild
 of the blocked itinerary and concurrent future route copies. Audit headers,
 route settings, hotels, exclusions, manual identities, duplicates and overlaps;
 restore temporary timing edits. Production is outside this deployment scope.
+
+## Additional failure exposed after manual validation passed
+
+The first staging retest passed Ooty priority validation, then rolled back at
+the later terminal-pair validator. A rollback-only inspection captured route
+23110: saved manual visits finish at 15:47, but its old airport-to-hotel leg
+still spans 11:00–18:21. Manual injection rebuilt attraction legs without
+rebuilding the now-stale final hotel leg from the last attraction.
+
+Correct this in manual travel-chain reconciliation: when a manual route has
+exactly one terminal journey and one final arrival marker, the journey overlaps
+the last visit, and the marker is at/after that visit, rebuild that journey from
+the actual last hotspot to the existing selected hotel/destination using the
+shared travel builder. Update the marker to the new arrival. Leave the final
+validator active. Hotel-first arrivals before sightseeing, already valid final
+journeys, automatic-only routes and ambiguous multiple terminal rows must remain
+unchanged. Do not reuse the old source-to-hotel distance or shift it blindly.

@@ -16,6 +16,9 @@ import {
 } from "./helpers/types";
 import { buildRebuildReport } from "./helpers/rebuild-report.helper";
 import { findTerminalTravelAndOvernightRows } from "./helpers/terminal-route-pair.helper";
+import { repairStaleManualTerminalTravel } from './helpers/manual-terminal-travel-repair.helper';
+import { HotelTravelBuilder } from './helpers/hotel-travel.builder';
+import { TimelineTravelDataService } from './helpers/timeline-travel-data.service';
 import type { SameCityAllocationPlan } from "../services/same-city-cross-day-optimizer.service";
 import { deleteExistingRebuildRows, lockItineraryForRebuild, withRebuildTransactionRetry } from '../utils/rebuild-transaction.util';
 
@@ -1814,6 +1817,26 @@ for (const routeId of terminalRepairRouteIds) {
 
   const when = (value: any): number =>
     value ? new Date(value).getTime() : NaN;
+
+  if (manualRouteIds.has(routeId)) {
+    await repairStaleManualTerminalTravel(rows, async (lastVisit, previousTravel) => {
+      const hotspot = await tx.dvi_hotspot_place.findUnique({ where: { hotspot_ID: Number(lastVisit.hotspot_ID) } });
+      const route = await tx.dvi_itinerary_route_details.findUnique({ where: { itinerary_route_ID: routeId } });
+      const hotel = await new TimelineTravelDataService().getHotelDetailsForRoute(tx, planId, routeId);
+      const sourceCoords = { lat: Number(hotspot?.hotspot_latitude), lon: Number(hotspot?.hotspot_longitude) };
+      const { row } = await new HotelTravelBuilder().buildToHotel(tx, {
+        planId, routeId, order: Number(lastVisit.hotspot_order || 0) + 1,
+        startTime: TimeConverter.toTimeString(lastVisit.hotspot_end_time),
+        travelLocationType: 2, userId: Number(previousTravel.createdby || 1),
+        sourceLocationName: hotspot?.hotspot_name,
+        destinationLocationName: hotel?.hotelName || route?.next_visiting_location,
+        fromHotspotId: Number(lastVisit.hotspot_ID),
+        sourceCoords: sourceCoords.lat && sourceCoords.lon ? sourceCoords : undefined,
+        destCoords: hotel?.coords,
+      });
+      return row;
+    });
+  }
 
   const visits = rows.filter(
     (row: any) => Number(row?.item_type) === 4,
