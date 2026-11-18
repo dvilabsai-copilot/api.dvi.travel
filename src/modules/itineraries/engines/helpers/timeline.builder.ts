@@ -65,7 +65,7 @@ import {
   buildIntercityPhaseCandidateQueue,
   shouldAdvanceToPostSourceCandidate,
 } from './timeline-intercity-phase.service';
-import { TimelineRouteDirectionService, orderPriorityApproach } from './timeline-route-direction.service';
+import { TimelineRouteDirectionService, orderPriorityApproach, orderAdmittedCorridorStops } from './timeline-route-direction.service';
 import {
   buildSameCityRoutePolicyContexts,
   calculateSameCityPriorityLimit,
@@ -1850,17 +1850,28 @@ let returnDetourSeconds = 0;
 const directionBucket = (hs: any) => String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
 const directionIsCorridor = (hs: any) => ['en_route', 'source_to_destination'].includes(directionBucket(hs));
 const directionIsDestination = (hs: any) => ['destination', 'dest'].includes(directionBucket(hs));
-const useRouteDirectionPolicy = this.canonicalCityKey(sourceCity) !== this.canonicalCityKey(destinationCity) &&
-  !!sourceCity && !!destinationCity && Number((route as any).direct_to_next_visiting_place || 0) !== 1 &&
+const useAutomaticCorridorOrder = this.canonicalCityKey(sourceCity) !== this.canonicalCityKey(destinationCity) &&
+  !!sourceCity && !!destinationCity &&
   String(process.env.HOTSPOT_ROUTE_DIRECTION || 'true').toLowerCase() !== 'false' &&
   !hasExplicitViaRouteOnCurrentRoute &&
   !(options?.scopeToRouteId && options?.preserveExistingHotspots !== false) &&
   !(selectedHotspots as any[]).some(h => h.isManualSelection || h.isManual);
+const useRouteDirectionPolicy = useAutomaticCorridorOrder && Number((route as any).direct_to_next_visiting_place || 0) !== 1;
 const directionCoords = (hs: any) => {
   const master = hotspotMap.get(Number(hs.hotspot_ID)) as any;
   return { lat: Number(master?.hotspot_latitude), lon: Number(master?.hotspot_longitude) };
 };
 const prepareAutomaticApproach = async (queue: SelectedHotspot[], candidates: SelectedHotspot[]) => {
+  if (useAutomaticCorridorOrder && this.hasUsableCoords(currentCoords)) {
+    queue = await orderAdmittedCorridorStops({ queue, from: currentCoords, coords: directionCoords, roads: directionRoads,
+      group: (hs: any) => {
+        const master = hotspotMap.get(Number(hs.hotspot_ID)) as any;
+        return directionIsCorridor(hs) && Number(master?.hotspot_allow_reverse_auto_route) === 1
+          ? `${String(master.hotspot_location || '').trim().toLowerCase()}|${String(master.hotspot_to_location || '').trim().toLowerCase()}`
+          : null;
+      },
+    });
+  }
   if (!useRouteDirectionPolicy || priorityApproachPrepared || !this.hasUsableCoords(currentCoords)) return queue;
   priorityApproachPrepared = true;
   const prepared = await orderPriorityApproach({

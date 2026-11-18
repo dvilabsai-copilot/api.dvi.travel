@@ -30,6 +30,7 @@ import { normalizeHotelStarRating } from '../utils/hotel-category.util';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { HotelAvailabilitySnapshotService } from './hotel-availability-snapshot.service';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
+import { latestAxisRoomsOccupancyValues } from '../utils/axisrooms-occupancy-rate.util';
 
 const canonicalHotelProvider = (provider: unknown): string => {
   const normalized = String(provider ?? '').trim().toLowerCase();
@@ -395,7 +396,7 @@ export class ItinerarySelectionWorkflowService {
     let axisRoomsSupplementRates: { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } | null = null;
     if (String(data.provider || '').trim().toLowerCase() === 'axisrooms') {
       axisRoomsBasePrice = await this.resolveAxisRoomsSelectionBasePrice(data, route);
-      axisRoomsSupplementRates = await this.resolveAxisRoomsSelectionSupplementRates(data, route);
+      axisRoomsSupplementRates = await this.resolveAxisRoomsSelectionSupplementRates(data, route, plan);
     }
     // Selection requests intentionally contain identity, not occupancy
     // quantities. When a client omits them, use the itinerary plan as the
@@ -1834,7 +1835,7 @@ export class ItinerarySelectionWorkflowService {
         end_date: { gte: toDatabaseBusinessDate(routeDate) },
       },
       select: { occupancy_rates: true, start_date: true, end_date: true, received_at: true },
-      orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+      orderBy: [{ received_at: 'desc' }, { start_date: 'desc' }],
     });
     if (!Array.isArray(rows) || rows.length === 0) return 0;
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
@@ -1855,18 +1856,15 @@ export class ItinerarySelectionWorkflowService {
     // A later-starting legacy row may contain only EXTRABED/child
     // supplements. Do not let that row become the room price. Select the
     // most recent matching row that actually contains SINGLE/DOUBLE.
-    const rateRow = rows.find((row: any) =>
-      this.extractAxisroomsRate(row.occupancy_rates, rateContext) > 0,
-    );
-    const amount = rateRow
-      ? this.extractAxisroomsRate(rateRow.occupancy_rates, rateContext)
-      : 0;
+    const values = latestAxisRoomsOccupancyValues(rows, rateContext.adults <= roomCount ? 'SINGLE' : 'DOUBLE');
+    const amount = values ? this.extractAxisroomsRate(values, rateContext) : 0;
     return Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : 0;
   }
 
   private async resolveAxisRoomsSelectionSupplementRates(
     data: any,
     route?: any,
+    plan?: any,
   ): Promise<{ extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number }> {
     const identity = this.parseAxisRoomsRateReference(data);
     const routeDate = this.toDateOnly(route?.itinerary_route_date);
@@ -1883,17 +1881,10 @@ export class ItinerarySelectionWorkflowService {
         end_date: { gte: toDatabaseBusinessDate(routeDate) },
       },
       select: { occupancy_rates: true, start_date: true, received_at: true },
-      orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
+      orderBy: [{ received_at: 'desc' }, { start_date: 'desc' }],
     });
-    const matchingRow = (rows || []).find((row: any) => {
-      const values = row?.occupancy_rates && typeof row.occupancy_rates === 'object'
-        ? row.occupancy_rates as Record<string, unknown>
-        : {};
-      return ['SINGLE', 'DOUBLE'].some((key) => Number(values[key]) > 0);
-    });
-    const values = matchingRow?.occupancy_rates && typeof matchingRow.occupancy_rates === 'object'
-      ? matchingRow.occupancy_rates as Record<string, unknown>
-      : {};
+    const values = latestAxisRoomsOccupancyValues(rows,
+      Number(plan?.total_adult || 0) <= Math.max(Number(data.roomCount || 1), 1) ? 'SINGLE' : 'DOUBLE') || {};
     return {
       extraBedRate: Math.max(Number(values.EXTRABED ?? values.EXTRAADULT ?? values.EXTRACHILD ?? 0), 0),
       childWithBedRate: Math.max(Number(values.CHILD_WITH_BED ?? 0), 0),

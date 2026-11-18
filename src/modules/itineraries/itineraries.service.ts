@@ -55,6 +55,7 @@ import {
 } from './utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from './utils/hotel-category.util';
 import { resolveHotelOccupancyPricing } from './utils/hotel-selection-pricing.util';
+import { latestAxisRoomsOccupancyValues } from './utils/axisrooms-occupancy-rate.util';
 import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
 import { allocateTboRouteNightPricing } from '../hotels/utils/tbo-room-night-pricing';
 import {
@@ -3752,49 +3753,29 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
     const rateReferencePlan = rateReference.match(/^(?:\d+\|)?(.+)$/)?.[1] || '';
     const explicitRateplanId = String(option?.rateplanId || option?.ratePlanId || option?.rateplan_id || '').trim();
     const suppliedRateplanId = explicitRateplanId || String(match?.[3] || rateReferencePlan).trim();
-    const requestedMealPlan = inferCanonicalHotelRatePlanCode(String(plan?.meal_plan_code || '')) ||
-      inferCanonicalHotelRatePlanCodeFromMealFlags(
-        Number(plan?.meal_plan_breakfast || 0),
-        Number(plan?.meal_plan_lunch || 0),
-        Number(plan?.meal_plan_dinner || 0),
-      ) || '';
-    const requestedRateplanId = requestedMealPlan ? `${requestedMealPlan}_PLAN` : '';
     if (!hotelId || !roomId || !suppliedRateplanId || !/^\d{4}-\d{2}-\d{2}$/.test(routeDate)) return option;
-    const rateplanIds = [...new Set([requestedRateplanId, suppliedRateplanId].filter(Boolean))];
 
     const rows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
       where: {
         hotel_id: hotelId,
         room_id: roomId,
-        rateplan_id: { in: rateplanIds },
+        rateplan_id: suppliedRateplanId,
         start_date: { lte: new Date(`${routeDate}T00:00:00.000Z`) },
         end_date: { gte: new Date(`${routeDate}T00:00:00.000Z`) },
       },
       select: { rateplan_id: true, occupancy_rates: true, received_at: true, start_date: true },
       orderBy: [{ received_at: 'desc' }, { start_date: 'desc' }],
     });
-    let rates: Record<string, any> | null = null;
-    let rateplanId = suppliedRateplanId;
-    const orderedRows = [...(Array.isArray(rows) ? rows : [])].sort((left: any, right: any) => {
-      const leftRequested = String(left?.rateplan_id || '') === requestedRateplanId;
-      const rightRequested = String(right?.rateplan_id || '') === requestedRateplanId;
-      if (leftRequested !== rightRequested) return leftRequested ? -1 : 1;
-      return new Date(right?.received_at || 0).getTime() - new Date(left?.received_at || 0).getTime();
-    });
-    for (const row of orderedRows) {
-      try {
-        const parsed = typeof row.occupancy_rates === 'string' ? JSON.parse(row.occupancy_rates) : row.occupancy_rates;
-        if (parsed && typeof parsed === 'object') {
-          rates = parsed;
-          rateplanId = String(row.rateplan_id || suppliedRateplanId);
-          break;
-        }
-      } catch { /* ignore malformed historical rows */ }
-    }
-    if (!rates) return { ...option, axisRoomsPricingResolved: false };
-
     const roomCount = Math.max(Number(plan?.preferred_room_count || plan?.total_no_of_rooms || 1), 1);
     const adults = Math.max(Number(plan?.total_adult || 0), 0);
+    // The caller has resolved a concrete room/meal identity. Price that plan,
+    // including explicit MAP/AP edits, rather than the itinerary's old preference.
+    const rateplanId = suppliedRateplanId;
+    const rates = latestAxisRoomsOccupancyValues(
+      (rows || []).filter((row: any) => !row.rateplan_id || String(row.rateplan_id) === rateplanId),
+      adults <= roomCount ? 'SINGLE' : 'DOUBLE',
+    );
+    if (!rates) return { ...option, axisRoomsPricingResolved: false };
     const hotel = await this.prisma.dvi_hotel.findUnique({ where: { hotel_id: hotelId }, select: { hotel_margin: true } });
     let marginPercentage = Number(hotel?.hotel_margin || 0);
     if (!(marginPercentage > 0)) {

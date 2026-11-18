@@ -84,6 +84,36 @@ export class TimelineRouteDirectionService {
   }
 }
 
+/** Order only existing, contiguous stops owned by the same opted-in corridor.
+ * This does not select stops or move them across source/destination priorities. */
+export async function orderAdmittedCorridorStops<T>(input: {
+  queue: T[]; from: RoadPoint; coords: (stop: T) => RoadPoint;
+  group: (stop: T) => string | null; roads: TimelineRouteDirectionService;
+}): Promise<T[]> {
+  const queue = [...input.queue];
+  let from = input.from;
+  for (let start = 0; start < queue.length;) {
+    const group = input.group(queue[start]);
+    let end = start + 1;
+    if (group) while (end < queue.length && input.group(queue[end]) === group) end++;
+    if (group && end - start > 1 && TimelineRouteDirectionService.usable(from)) {
+      const distances = await Promise.all(queue.slice(start, end).map(async (stop, index) => ({
+        stop, index, road: await input.roads.journey([from, input.coords(stop)]),
+      })));
+      // No geographic guess when routing is unavailable: normal scheduling
+      // retains its existing order and feasibility handling.
+      if (distances.every(item => item.road)) {
+        distances.sort((a, b) => a.road!.distanceKm - b.road!.distanceKm || a.index - b.index);
+        queue.splice(start, end - start, ...distances.map(item => item.stop));
+      }
+    }
+    const last = input.coords(queue[end - 1]);
+    if (TimelineRouteDirectionService.usable(last)) from = last;
+    start = end;
+  }
+  return queue;
+}
+
 /** Keep priority targets, inserting only proven, feasible stops along their approach. */
 export async function orderPriorityApproach<T>(input: {
   queue: T[];

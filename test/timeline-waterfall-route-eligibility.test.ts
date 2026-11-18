@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { TimelineRoutePolicyService } from '../src/modules/itineraries/engines/helpers/timeline-route-policy.service';
 import { TimelineRouteHotspotSelectionService } from '../src/modules/itineraries/engines/helpers/timeline-route-hotspot-selection.service';
-import { orderPriorityApproach, TimelineRouteDirectionService, RoadRouter } from '../src/modules/itineraries/engines/helpers/timeline-route-direction.service';
+import { orderPriorityApproach, orderAdmittedCorridorStops, TimelineRouteDirectionService, RoadRouter } from '../src/modules/itineraries/engines/helpers/timeline-route-direction.service';
 
 const policy = new TimelineRoutePolicyService();
 const aliases = 'Cochin|Cochin International Airport|Ernakulam Railway Station Kerala';
@@ -88,4 +88,33 @@ test('reverse road approach orders Valara then Cheeyappara rather than master pr
     eligible: h => !h.destination, target: h => h.destination, from: { lat: 10, lon: 60 }, startSeconds: 0,
     roads: new TimelineRouteDirectionService(road), project: async (_h, _from, seconds, travel) => seconds + travel + 1200 });
   assert.deepEqual(result.queue.map(x => x.hotspot_ID), [357, 228, 244]);
+});
+
+test('already admitted direct-return corridor visits order by road approach without moving priorities', async () => {
+  const park = { id: 218, x: 70, corridor: '' };
+  const cheeyappara = { id: 228, x: 30, corridor: 'cochin-munnar' };
+  const valara = { id: 357, x: 31, corridor: 'cochin-munnar' };
+  const destination = { id: 244, x: 0, corridor: '' };
+  const queue = [park, cheeyappara, valara, destination];
+  const road: RoadRouter = async points => ({
+    distanceKm: Math.abs(points[1].lon - points[0].lon), durationSeconds: 60,
+    legs: [{ distanceKm: Math.abs(points[1].lon - points[0].lon), durationSeconds: 60 }],
+  });
+  const result = await orderAdmittedCorridorStops({ queue, from: { lat: 10, lon: 60 },
+    coords: h => ({ lat: 10, lon: h.x }), group: h => h.corridor || null,
+    roads: new TimelineRouteDirectionService(road) });
+  assert.deepEqual(result.map(h => h.id), [218, 357, 228, 244]);
+  assert.deepEqual(queue.map(h => h.id), [218, 228, 357, 244]);
+});
+
+test('corridor ordering preserves separate groups, singleton visits and unavailable road results', async () => {
+  const queue = [{ id: 1, x: 30, corridor: 'a' }, { id: 2, x: 31, corridor: 'a' },
+    { id: 3, x: 0, corridor: '' }, { id: 4, x: 10, corridor: 'b' }];
+  const result = await orderAdmittedCorridorStops({ queue, from: { lat: 10, lon: 60 },
+    coords: h => ({ lat: 10, lon: h.x }), group: h => h.corridor || null,
+    roads: new TimelineRouteDirectionService(async () => null) });
+  assert.deepEqual(result, queue);
+  assert.deepEqual(await orderAdmittedCorridorStops({ queue: [], from: { lat: 10, lon: 60 },
+    coords: () => ({ lat: 0, lon: 0 }), group: () => null,
+    roads: new TimelineRouteDirectionService(async () => { throw new Error('no road work for empty queue'); }) }), []);
 });
