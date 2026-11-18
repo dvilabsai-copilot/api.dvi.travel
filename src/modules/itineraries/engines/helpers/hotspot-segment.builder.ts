@@ -30,6 +30,7 @@ export class HotspotSegmentBuilder {
       isConflict?: boolean;
       conflictReason?: string;
       isManual?: boolean;
+      selection?: { isManualSelection?: boolean; isManual?: boolean; hotspot_plan_own_way?: number };
     },
   ): Promise<{ row: HotspotDetailRow; nextTime: string }> {
     const {
@@ -49,6 +50,8 @@ export class HotspotSegmentBuilder {
       conflictReason = "",
       isManual = false,
     } = opts;
+    const selectionIsManual = opts.selection?.isManualSelection === true ||
+      opts.selection?.isManual === true || Number(opts.selection?.hotspot_plan_own_way) === 1;
 
  // TODO: adjust model & field names to match your hotspot master + pricebook.
     const hotspot = await (tx as any).dvi_hotspot_place.findFirst({
@@ -125,7 +128,7 @@ export class HotspotSegmentBuilder {
       allow_break_hours: 0,
       allow_via_route: 0,
       via_location_name: null,
-      hotspot_plan_own_way: (hotspotPlanOwnWay === 1 ? 1 : 0) as 0 | 1,
+      hotspot_plan_own_way: (hotspotPlanOwnWay === 1 || selectionIsManual ? 1 : 0) as 0 | 1,
 
       createdby: userId,
       createdon: now,
@@ -134,7 +137,7 @@ export class HotspotSegmentBuilder {
       deleted: 0,
       isConflict,
       conflictReason,
-      isManual,
+      isManual: isManual || selectionIsManual,
     };
 
     return { row, nextTime: endTime };

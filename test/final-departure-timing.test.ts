@@ -14,6 +14,7 @@ function harness(departureType = 1, singleDay = false, failRebuild = false) {
   const writes: any[] = [];
   const events: string[] = [];
   const tx: any = {
+    $queryRaw: async () => { events.push('lock'); return [{ itinerary_plan_ID: 1 }]; },
     dvi_itinerary_route_details: {
       findFirst: async (args: any) => args.where?.itinerary_route_ID ? route
         : args.orderBy?.[0]?.no_of_days === 'asc' ? first : route,
@@ -43,7 +44,7 @@ function harness(departureType = 1, singleDay = false, failRebuild = false) {
   const update = (changeType: 'FINAL_DAY_DEPARTURE' | 'ROUTE_END', time = '21:00:00', routeId = 30) =>
     service.updateRouteTimes(1, routeId, '07:06:00', time, undefined, undefined,
       undefined, undefined, undefined, undefined, changeType);
-  return { update, writes, events, service };
+  return { update, writes, events, service, prisma };
 }
 
 test('actual departure and buffered cutoff save together before rebuild, parking and pricing', async () => {
@@ -54,7 +55,7 @@ test('actual departure and buffered cutoff save together before rebuild, parking
     assert.equal(result.routeTimes.endTime, cutoff);
     assert.equal(h.writes.find(x => x.kind === 'plan').data.trip_end_date_and_time.toISOString(), '2026-11-24T21:00:00.000Z');
     assert.equal(h.writes.find(x => x.kind === 'route').data.route_end_time.toISOString().slice(11, 19), cutoff);
-    assert.deepEqual(h.events, ['rebuild', 'parking', 'pricing']);
+    assert.deepEqual(h.events, ['lock', 'rebuild', 'parking', 'pricing']);
     assert.equal('transport_early_arrival_option' in h.writes.find(x => x.kind === 'plan').data, false);
   }
 });
@@ -88,5 +89,21 @@ test('rebuild failure rolls back departure writes and skips external pricing wor
   const h = harness(1, false, true);
   await assert.rejects(() => h.update('FINAL_DAY_DEPARTURE'), /rebuild failed/);
   assert.equal(h.writes.length, 0);
-  assert.deepEqual(h.events, ['rebuild']);
+  assert.deepEqual(h.events, ['lock', 'rebuild']);
+});
+
+test('conflict after rebuilding rolls back and replays DB work with parking and pricing once', async () => {
+  const h = harness();
+  const transaction = h.prisma.$transaction;
+  let attempts = 0;
+  h.prisma.$transaction = (run: any) => transaction(async (tx: any) => {
+    const result = await run(tx);
+    if (++attempts === 1) throw Object.assign(new Error('write conflict'), { code: 'P2034' });
+    return result;
+  });
+  const result = await h.update('FINAL_DAY_DEPARTURE');
+  assert.equal(attempts, 2);
+  assert.equal(result.routeTimes.endTime, '19:00:00');
+  assert.equal(h.writes.filter(x => x.kind === 'plan').length, 1);
+  assert.deepEqual(h.events, ['lock', 'rebuild', 'lock', 'rebuild', 'parking', 'pricing']);
 });

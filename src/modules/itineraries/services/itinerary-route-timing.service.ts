@@ -11,6 +11,7 @@ import {
 } from '../transport-early-arrival';
 import { RouteVehicleRestrictionService } from '../../route-vehicle-restrictions/route-vehicle-restriction.service';
 import { isIntercityHotelArrival } from './arrival-hotel-policy.service';
+import { lockItineraryForRebuild, withRebuildTransactionRetry } from '../utils/rebuild-transaction.util';
 
 type RouteTimingCallbacks = Record<string, (...args: any[]) => any>;
 
@@ -99,7 +100,8 @@ transportEarlyArrivalLocationName?: string | null,
 
     const isTransportEarlyArrival = startTimeSeconds < transportEarlyArrivalCutoffMinutes() * 60;
 
-    const transactionResult = await this.prisma.$transaction(async (tx) => {
+    const transactionResult = await withRebuildTransactionRetry(() => this.prisma.$transaction(async (tx) => {
+      await lockItineraryForRebuild(tx, normalizedPlanId);
  // 1) Verify target route belongs to this plan
       const targetRoute = await (tx as any).dvi_itinerary_route_details.findFirst({
         where: {
@@ -603,7 +605,7 @@ planUpdateData.transport_early_arrival_location_name =
           markerCreated: shouldApplyPreviousDayBilling,
         },
       };
-    }, { timeout: 180000, maxWait: 20000 });
+    }, { timeout: 180000, maxWait: 20000 }));
 
  // Route time changes can change active hotspot segments, sightseeing KM,
  // travel KM, running time, extra KM, and vehicle pricing.

@@ -17,6 +17,7 @@ import {
 import { buildRebuildReport } from "./helpers/rebuild-report.helper";
 import { findTerminalTravelAndOvernightRows } from "./helpers/terminal-route-pair.helper";
 import type { SameCityAllocationPlan } from "../services/same-city-cross-day-optimizer.service";
+import { deleteExistingRebuildRows, lockItineraryForRebuild, withRebuildTransactionRetry } from '../utils/rebuild-transaction.util';
 
 type Tx = Prisma.TransactionClient;
 
@@ -63,6 +64,7 @@ export class HotspotEngineService {
     warnings: RebuildWarning[];
     routeRejectionSummaryByRoute: Record<number, RouteRejectionSummary>;
   }> {
+    await lockItineraryForRebuild(tx, planId);
  // 1) Fetch current hotspots for the rebuild context. Full route reset callers
  // may intentionally provide active-only rows so cleared user exclusions can
  // be reconsidered by the automatic candidate selector.
@@ -170,7 +172,9 @@ const manualHotspots = existingHotspots.filter((h: any) => {
     if (options?.scopeToRouteId) {
       deleteWhere.itinerary_route_ID = options.scopeToRouteId;
     }
-    const deleteResult = await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({ where: deleteWhere });
+    const deleteResult = await deleteExistingRebuildRows(
+      tx.dvi_itinerary_route_hotspot_details, deleteWhere, 'route_hotspot_ID',
+    );
     logPersistence("delete_many_result", {
       deletedCount: Number(deleteResult?.count || 0),
       deleteWhere,
@@ -194,7 +198,9 @@ const manualHotspots = existingHotspots.filter((h: any) => {
       if (options?.scopeToRouteId) {
         parkingWhere.itinerary_route_ID = options.scopeToRouteId;
       }
-      await (tx as any).dvi_itinerary_route_hotspot_parking_charge.deleteMany({ where: parkingWhere });
+      await deleteExistingRebuildRows(
+        tx.dvi_itinerary_route_hotspot_parking_charge, parkingWhere, 'itinerary_hotspot_parking_charge_ID',
+      );
     }
 
  // 3) Build new timeline rows in memory (WITHOUT manual hotspots)
@@ -218,7 +224,7 @@ const manualHotspots = existingHotspots.filter((h: any) => {
     }
 
    const { hotspotRows, parkingRows, routeRejectionSummaryByRoute } =
-  await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots, {
+  await new TimelineBuilder().buildTimelineForPlan(tx, planId, existingHotspots, {
     manualPlacementByRoute,
     sameCityAllocationPlan: options?.sameCityAllocationPlan || null,
     scopeToRouteId: options?.scopeToRouteId,
@@ -907,9 +913,9 @@ if (manualHotspotIds.size > 0) {
     manualDeleteWhere.deleted = 0;
   }
 
-  await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
-    where: manualDeleteWhere,
-  });
+  await deleteExistingRebuildRows(
+    tx.dvi_itinerary_route_hotspot_details, manualDeleteWhere, 'route_hotspot_ID',
+  );
 
   console.log(
     '[ManualHotspot][rebuildRouteHotspots] deleted old manual placeholder rows',
@@ -2452,11 +2458,12 @@ if (missingTravelLegRows.length > 0) {
    * This is needed because parking charge builder requires vendor vehicle details.
  */
   async rebuildParkingCharges(planId: number, userId: number): Promise<void> {
-    await this.prisma.$transaction(async (tx: Tx) => {
+    await withRebuildTransactionRetry(() => this.prisma.$transaction(async (tx: Tx) => {
+      await lockItineraryForRebuild(tx, planId);
  // Delete existing parking charges
-      await (tx as any).dvi_itinerary_route_hotspot_parking_charge.deleteMany({
-        where: { itinerary_plan_ID: planId },
-      });
+      await deleteExistingRebuildRows(
+        tx.dvi_itinerary_route_hotspot_parking_charge, { itinerary_plan_ID: planId }, 'itinerary_hotspot_parking_charge_ID',
+      );
 
  // Get all route hotspot details for this plan
       const hotspotDetails = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
@@ -2488,7 +2495,7 @@ if (missingTravelLegRows.length > 0) {
           data: parkingRows,
         });
       }
-    }, { timeout: 60000 });
+    }, { timeout: 60000 }));
   }
 
  /**
