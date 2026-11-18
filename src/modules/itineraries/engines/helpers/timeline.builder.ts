@@ -65,6 +65,7 @@ import {
   buildIntercityPhaseCandidateQueue,
   shouldAdvanceToPostSourceCandidate,
 } from './timeline-intercity-phase.service';
+import { TimelineRouteDirectionService, orderPriorityApproach } from './timeline-route-direction.service';
 import {
   buildSameCityRoutePolicyContexts,
   calculateSameCityPriorityLimit,
@@ -3130,6 +3131,20 @@ const strictHotspots = (
         let strictPassHotspots = [...strictHotspots];
         const sourcePhaseEndSeconds = timeToSeconds('12:00:00');
         let priorityDestinationPreemption: SelectedHotspot | null = null;
+        const directionRoads = new TimelineRouteDirectionService();
+        const directionRejectedIds = new Set<number>();
+        const priorityApproachIds = new Set<number>();
+        let priorityApproachPrepared = false;
+        let returnDetourKm = 0;
+        let returnDetourSeconds = 0;
+        const useRouteDirectionPolicy = isIntercityNonDirectRoute &&
+          String(process.env.HOTSPOT_ROUTE_DIRECTION || 'true').toLowerCase() !== 'false' &&
+          !hasExplicitViaRouteForPhase && !options?.scopeToRouteId &&
+          !(selectedHotspots as any[]).some(h => h.isManualSelection || h.isManual);
+        const directionCoords = (hs: any) => {
+          const master = hotspotMap.get(Number(hs.hotspot_ID)) as any;
+          return { lat: Number(master?.hotspot_latitude), lon: Number(master?.hotspot_longitude) };
+        };
         if (isIntercityNonDirectRoute) {
           const destinationStrict = strictPassHotspots.filter((hs) => {
             const bucket = String((hs as any).matched_bucket || '').toLowerCase();
@@ -3852,7 +3867,9 @@ const PASS_STRICT = 1;
                   preservedCandidateIds: remainingSourceCandidates.map((hs: any) => Number(hs?.hotspot_ID || 0)),
                 });
               } else {
-                currentTime = secondsToTime(sourcePhaseEndSeconds);
+                if (!(useRouteDirectionPolicy && priorityDestinationPreemption)) {
+                  currentTime = secondsToTime(sourcePhaseEndSeconds);
+                }
                 hotspotsToTry = getPendingPostSourcePhaseCandidates(strictPassHotspots);
                 this.logBookingRule({
                   rule: 'SOURCE_PHASE_ADVANCED_TO_CORRIDOR_PHASE',
@@ -3927,7 +3944,8 @@ const PASS_STRICT = 1;
                       : null,
                   )
                 : sourceOnlyCandidates;
-            } else if (timeToSeconds(currentTime) < sourcePhaseEndSeconds) {
+            } else if (timeToSeconds(currentTime) < sourcePhaseEndSeconds &&
+              !(useRouteDirectionPolicy && priorityDestinationPreemption)) {
               this.logBookingRule({
                 rule: 'SOURCE_PHASE_ADVANCE_TO_NOON',
                 quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
@@ -4055,6 +4073,50 @@ const PASS_STRICT = 1;
             });
           }
 
+          if (useRouteDirectionPolicy && pass === PASS_STRICT && !priorityApproachPrepared &&
+              this.hasUsableCoords(currentCoords)) {
+            priorityApproachPrepared = true;
+            const prepared = await orderPriorityApproach({
+              queue: hotspotsToTry,
+              candidates: strictPassHotspots.filter((hs: any) => !isHotspotAlreadyPlanned(hs.hotspot_ID)),
+              id: (hs: any) => Number(hs.hotspot_ID),
+              coords: directionCoords,
+              eligible: (hs: any) => !isScopedProtectedHotspot(Number(hs.hotspot_ID)) &&
+                (isCorridorBucket(hs) || ['destination', 'dest'].includes(getCandidateBucket(hs))),
+              target: (hs: any) => ['destination', 'dest'].includes(getCandidateBucket(hs)),
+              from: currentCoords,
+              startSeconds: this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds),
+              roads: directionRoads,
+              project: async (hs: any, from, startSeconds, roadSeconds) => {
+                const master = hotspotMap.get(Number(hs.hotspot_ID)) as any;
+                if (!master || !TimelineRouteDirectionService.usable(directionCoords(hs))) return null;
+                // Use the same operating windows/deadlines as admission. Include road
+                // travel when it exceeds the existing coordinate-based estimate.
+                const estimated = timeToSeconds(await this.calculateTravelTimeWithCoords(
+                  tx, currentLocationName, String(master.hotspot_location || ''), from, directionCoords(hs),
+                ));
+                const projected = await this.evaluateCandidateInsertion({
+                  tx, route, isLastRoute, routeStartSeconds,
+                  routeEndSeconds: getTransportDay1CandidateEndSeconds(false),
+                  currentTime: secondsToTime(startSeconds + Math.max(0, roadSeconds - estimated)),
+                  currentLocationName, currentCoords: from, destinationCoords: destCityCoords,
+                  dayOfWeek: (new Date(route.itinerary_route_date).getDay() + 6) % 7,
+                  hotspotId: Number(hs.hotspot_ID), hotspotLocationName: String(master.hotspot_location || ''),
+                  hotspotDuration: master.hotspot_duration || '01:00:00', hotspotCoords: directionCoords(hs),
+                  hotspotPriority: Number(hs.hotspot_priority || 0), hotspotType: String(master.hotspot_type || ''),
+                  timingMap, plan, destinationCity, lastRouteArrivalDeadlineSeconds,
+                  allowWaitUntilOpen: true, rejectIfOutsideOperatingWindow: true,
+                });
+                return projected.feasible && projected.endSeconds != null ? projected.endSeconds : null;
+              },
+            });
+            hotspotsToTry = prepared.queue;
+            prepared.approachIds.forEach(id => priorityApproachIds.add(id));
+            this.logBookingRule({ rule: 'PRIORITY_DESTINATION_ROAD_APPROACH', planId,
+              routeId: route.itinerary_route_ID, approachIds: [...priorityApproachIds],
+              candidateOrder: hotspotsToTry.map((hs: any) => Number(hs.hotspot_ID)) });
+          }
+
  // Build travel + hotspot segments in order (NO LUNCH BREAKS OR CUTOFF CHECKS)
         for (let hsIdx = 0; hsIdx < hotspotsToTry.length; hsIdx++) {
         const sh = hotspotsToTry[hsIdx];
@@ -4072,6 +4134,28 @@ const hotspotId = Number(
 
 const preserveScopedHotspot =
   isScopedProtectedHotspot(hotspotId);
+
+        if (directionRejectedIds.has(hotspotId)) continue;
+        let acceptedReturnDetour: { extraKm: number; extraSeconds: number } | null = null;
+        if (useRouteDirectionPolicy && !preserveScopedHotspot &&
+            (isCorridorBucket(sh) || isSourcePhaseEligibleCandidate(sh)) &&
+            hotspotRows.some((row: any) => Number(row.itinerary_route_ID) === Number(route.itinerary_route_ID) &&
+              Number(row.item_type) === 4 && strictPassHotspots.some((hs: any) =>
+                Number(hs.hotspot_ID) === Number(row.hotspot_ID) &&
+                ['destination', 'dest'].includes(getCandidateBucket(hs))))) {
+          const fit = this.hasUsableCoords(currentCoords) && this.hasUsableCoords(destCityCoords)
+            ? await directionRoads.insertion(currentCoords, directionCoords(sh), destCityCoords) : null;
+          if (!TimelineRouteDirectionService.withinBudget(fit, returnDetourKm, returnDetourSeconds)) {
+            directionRejectedIds.add(hotspotId);
+            resolvedPositiveCorridorIds.add(hotspotId);
+            this.logBookingRule({ rule: 'AUTO_ROUTE_BACKTRACK_REJECTED', planId,
+              routeId: route.itinerary_route_ID, hotspotId,
+              reason: fit ? 'excessive_return_after_destination' : 'return_route_fit_unavailable',
+              extraKm: fit?.extraKm ?? null, extraMinutes: fit ? fit.extraSeconds / 60 : null });
+            continue;
+          }
+          acceptedReturnDetour = fit;
+        }
 
 const normalizedBucket = String(
   bucket || '',
@@ -4226,7 +4310,7 @@ const normalizedBucket = String(
             });
             continue;
           }
-          if (sourcePhaseActive && !isSourcePhaseEligibleCandidate(sh)) {
+          if (sourcePhaseActive && !isSourcePhaseEligibleCandidate(sh) && !priorityApproachIds.has(hotspotId)) {
             const isPriorityDestinationPreemption =
               pass === PASS_STRICT &&
               priorityDestinationPreemption !== null &&
@@ -5195,6 +5279,10 @@ if (!sharedFeasibility.feasible) {
           });
 
           hotspotRows.push(hotspotRow);
+          if (acceptedReturnDetour) {
+            returnDetourKm += acceptedReturnDetour.extraKm;
+            returnDetourSeconds += acceptedReturnDetour.extraSeconds;
+          }
           if (positiveCorridorHotspots.some((h: any) => Number(h?.hotspot_ID || 0) === hotspotId)) {
             resolvedPositiveCorridorIds.add(hotspotId);
           }
@@ -5506,7 +5594,8 @@ if (!sharedFeasibility.feasible) {
         }
       }
 
-      const unscheduledStrictIds = Array.from(strictHotspotIdSet.values()).filter((id) => !isHotspotAlreadyPlanned(id));
+      const unscheduledStrictIds = Array.from(strictHotspotIdSet.values()).filter((id) =>
+        !isHotspotAlreadyPlanned(id) && !directionRejectedIds.has(id));
       const remainingFillerHotspotIds = (fillerHotspots as Array<SelectedHotspot>)
         .map((h) => Number((h as any).hotspot_ID || 0))
         .filter((id) => id > 0 && !isHotspotAlreadyPlanned(id));
