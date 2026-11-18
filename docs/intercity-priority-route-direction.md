@@ -49,7 +49,7 @@ HOTSPOT_ROUTE_MAX_DETOUR_RATIO. Set HOTSPOT_ROUTE_DIRECTION=false to disable
 the policy for rollback without reverting the November commit.
 
 Road requests use OSRM_BASE_URL (the existing OSRM route endpoint convention), a
-2.5 second timeout, up to 24 requests per route, a bounded 512-entry process cache
+2.5 second request timeout, an 8 second per-route lookup deadline, up to 24 requests per route, a bounded 512-entry process cache
 and 10 minute cache lifetime. A provider failure stops further uncached calls on
 that route. Missing road data preserves priority ordering and does not authorize
 an unverified return to an earlier corridor. No straight-line estimate is treated

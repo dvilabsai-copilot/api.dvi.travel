@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import axios from 'axios';
 import { orderPriorityApproach, TimelineRouteDirectionService, RoadRouter } from '../src/modules/itineraries/engines/helpers/timeline-route-direction.service';
 
 type Stop = { id: number; x: number; destination?: boolean; close?: number; duration?: number };
@@ -75,4 +76,30 @@ test('repeat planning is deterministic and does not mutate inputs', async () => 
   const before = JSON.stringify(queue);
   assert.deepEqual((await prepare(queue)).queue, (await prepare(queue)).queue);
   assert.equal(JSON.stringify(queue), before);
+});
+test('road provider failure stops subsequent uncached requests on that route', async () => {
+  const original = axios.get;
+  let calls = 0;
+  axios.get = (async () => { calls++; throw new Error('provider unavailable'); }) as any;
+  try {
+    const roads = new TimelineRouteDirectionService();
+    assert.equal(await roads.journey([{ lat: 11, lon: 71 }, { lat: 12, lon: 72 }]), null);
+    assert.equal(await roads.journey([{ lat: 11, lon: 71 }, { lat: 13, lon: 73 }]), null);
+    assert.equal(calls, 1);
+  } finally { axios.get = original; }
+});
+test('directional provider results are cached and reversed journeys are fetched separately', async () => {
+  const original = axios.get;
+  let calls = 0;
+  axios.get = (async () => { calls++; return { data: { code: 'Ok', routes: [
+    { distance: 1000, duration: 120, legs: [{ distance: 1000, duration: 120 }] },
+  ] } }; }) as any;
+  try {
+    const a = { lat: 14, lon: 74 }, b = { lat: 15, lon: 75 };
+    const roads = new TimelineRouteDirectionService();
+    assert.equal((await roads.journey([a, b]))?.distanceKm, 1);
+    await roads.journey([a, b]);
+    await roads.journey([b, a]);
+    assert.equal(calls, 2);
+  } finally { axios.get = original; }
 });

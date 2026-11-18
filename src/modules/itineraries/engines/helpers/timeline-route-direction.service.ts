@@ -13,6 +13,7 @@ export class TimelineRouteDirectionService {
   private static cache = new Map<string, { expires: number; value: RoadJourney }>();
   private requests = 0;
   private unavailable = false;
+  private readonly deadline = Date.now() + 8000;
 
   constructor(private readonly router?: RoadRouter) {}
 
@@ -31,11 +32,11 @@ export class TimelineRouteDirectionService {
     const cached = TimelineRouteDirectionService.cache.get(key);
     if (cached && cached.expires > Date.now()) return cached.value;
     // Bound provider work per route. A failed provider is not retried for every candidate.
-    if (this.unavailable || this.requests >= 24) return null;
+    if (this.unavailable || this.requests >= 24 || Date.now() >= this.deadline) return null;
     this.requests++;
     try {
       const { data } = await axios.get(key, {
-        params: { overview: 'false', steps: 'false' }, timeout: 2500,
+        params: { overview: 'false', steps: 'false' }, timeout: Math.min(2500, Math.max(1, this.deadline - Date.now())),
       });
       const route = data?.code === 'Ok' ? data.routes?.[0] : null;
       if (!route || !Number.isFinite(route.distance) || !Number.isFinite(route.duration) ||
