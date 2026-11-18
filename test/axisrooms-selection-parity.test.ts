@@ -3,6 +3,8 @@ import test from 'node:test';
 import { ItinerariesService } from '../src/modules/itineraries/itineraries.service';
 import { ItinerarySelectionWorkflowService } from '../src/modules/itineraries/services/itinerary-selection-workflow.service';
 import { latestAxisRoomsOccupancyValues } from '../src/modules/itineraries/utils/axisrooms-occupancy-rate.util';
+import { ItineraryHotelRoomCategoryService } from '../src/modules/itineraries/services/itinerary-hotel-room-category.service';
+import { resolveHotelOccupancyPricing } from '../src/modules/itineraries/utils/hotel-selection-pricing.util';
 
 const date = '2026-12-06';
 function services(rows: any[], plan: any, margin: number) {
@@ -69,4 +71,26 @@ test('ARI row selection handles receipt ties, malformed data, single occupancy a
   assert.equal(latestAxisRoomsOccupancyValues(rows, 'DOUBLE')?.DOUBLE, 250);
   assert.equal(latestAxisRoomsOccupancyValues([], 'DOUBLE'), null);
   assert.equal(latestAxisRoomsOccupancyValues([{ occupancy_rates: { EXTRABED: 900 } }], 'DOUBLE'), null);
+});
+
+test('mixed AX room categories price CP bases and their own extra bed instead of supplement-only rows', async () => {
+  const rows = [
+    { room_id: 231, rateplan_id: 'CP_PLAN', received_at: '2026-09-01', occupancy_rates: { DOUBLE: 4500, EXTRABED: 700 } },
+    { room_id: 232, rateplan_id: 'CP_PLAN', received_at: '2026-09-01', occupancy_rates: { DOUBLE: 3500, EXTRABED: 1000 } },
+    { room_id: 231, rateplan_id: 'CP_PLAN', received_at: '2026-10-01', occupancy_rates: { EXTRABED: 5200 } },
+    { room_id: 231, rateplan_id: 'AP_PLAN', received_at: '2026-11-01', occupancy_rates: { DOUBLE: 6900, EXTRABED: 1900 } },
+  ];
+  const service: any = new ItineraryHotelRoomCategoryService({
+    dvi_hotel_occupancy_rate: { findMany: async ({ where }: any) => {
+      assert.equal(where.rateplan_id, 'CP_PLAN');
+      return rows.filter(row => row.room_id === where.room_id && row.rateplan_id === where.rateplan_id);
+    } },
+  } as any, {} as any);
+  const pricing = await Promise.all([231, 232].map(async (id, index) => resolveHotelOccupancyPricing({
+    rates: await service.resolveOccupancyRates(95, id, new Date(date), 'CP_PLAN', 'DOUBLE'),
+    roomCount: 1, adultCount: index === 0 ? 3 : 2, extraBedCount: index === 0 ? 1 : 0, marginPercentage: 7,
+  })));
+  assert.deepEqual(pricing.map(p => p.roomRate), [4500, 3500]);
+  assert.deepEqual(pricing.map(p => p.extraBedAmount), [700, 0]);
+  assert.equal(pricing.reduce((sum, p) => sum + p.totalPrice, 0), 9309);
 });

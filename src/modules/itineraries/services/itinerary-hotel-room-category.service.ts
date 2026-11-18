@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../../prisma.service';
 import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
 import { resolveHotelOccupancyPricing } from '../utils/hotel-selection-pricing.util';
+import { latestAxisRoomsOccupancyValues } from '../utils/axisrooms-occupancy-rate.util';
 
 @Injectable()
 export class ItineraryHotelRoomCategoryService {
@@ -433,6 +434,13 @@ export class ItineraryHotelRoomCategoryService {
       ? { ...hotelRoom, ...selectedSnapshotOption }
       : hotelRoom;
 
+    const selectedMealPlan = String(
+      (selectedLiveRoomRow as any)?.mealPlan || persistedSnapshot.mealPlan || planDetails.meal_plan_code || '',
+    ).trim().toUpperCase() || null;
+    const axisRoomsRateplanId = ['axisrooms', 'ax'].includes(
+      String(params.provider || hotelRoom.provider || '').trim().toLowerCase(),
+    ) && selectedMealPlan ? `${selectedMealPlan}_PLAN` : undefined;
+
     const canonicalProvider = ['offline', 'axisrooms', 'ax'].includes(
       String(params.provider || hotelRoom.provider || '').trim().toLowerCase(),
     );
@@ -441,6 +449,8 @@ export class ItineraryHotelRoomCategoryService {
         params.hotel_id,
         Number(selectedRoomType.roomId || 0),
         route.itinerary_route_date,
+        axisRoomsRateplanId,
+        Number(planDetails.total_adult || 0) <= Math.max(Number(planDetails.preferred_room_count || 1), 1) ? 'SINGLE' : 'DOUBLE',
       )
       : null;
     if (canonicalProvider && !occupancyRates) {
@@ -475,12 +485,6 @@ export class ItineraryHotelRoomCategoryService {
       selectedPricePerNight ??
       0,
     ) || null;
-    const selectedMealPlan = String(
-      (selectedLiveRoomRow as any)?.mealPlan ||
-      persistedSnapshot.mealPlan ||
-      planDetails.meal_plan_code ||
-      '',
-    ).trim().toUpperCase() || null;
 
     const selectedProvider = String(
       params.provider ||
@@ -670,7 +674,8 @@ export class ItineraryHotelRoomCategoryService {
         const roomType = availableRoomTypes.find((candidate: any) => Number(candidate.roomTypeId) === roomTypeId);
         const roomTitle = String(roomType?.roomTypeTitle || room.room_type_title || `Room ${roomNumber}`).trim();
         const occupancy = occupancyByRoom.get(roomNumber) || { adults: 0, withBed: 0, withoutBed: 0 };
-        const rates = await this.resolveOccupancyRates(params.hotel_id, roomId, route.itinerary_route_date);
+        const rates = await this.resolveOccupancyRates(params.hotel_id, roomId, route.itinerary_route_date,
+          axisRoomsRateplanId, occupancy.adults <= 1 ? 'SINGLE' : 'DOUBLE');
         const pricing = rates
           ? resolveHotelOccupancyPricing({
             rates,
@@ -1095,7 +1100,8 @@ export class ItineraryHotelRoomCategoryService {
    * Occupancy rates are the sole database source for canonical/offline room
    * pricing. Price-book rows are deliberately not consulted here.
    */
-  private async resolveOccupancyRates(hotelId: number, roomId: number, routeDate?: Date | null) {
+  private async resolveOccupancyRates(hotelId: number, roomId: number, routeDate?: Date | null,
+    rateplanId?: string, occupancy: 'SINGLE' | 'DOUBLE' = 'DOUBLE') {
     const occupancyModel = (this.prisma as any).dvi_hotel_occupancy_rate;
     if (!occupancyModel?.findMany || !hotelId || !roomId || !routeDate) return null;
     const date = new Date(routeDate);
@@ -1103,12 +1109,16 @@ export class ItineraryHotelRoomCategoryService {
       where: {
         hotel_id: hotelId,
         room_id: roomId,
+        ...(rateplanId ? { rateplan_id: rateplanId } : {}),
         start_date: { lte: date },
         end_date: { gte: date },
       },
       select: { occupancy_rates: true, start_date: true, received_at: true },
       orderBy: [{ start_date: 'desc' }, { received_at: 'desc' }],
     });
+    // AX category saves use the same exact meal and complete-row precedence
+    // as select-intent pricing. A supplement-only row cannot price a room.
+    if (rateplanId) return latestAxisRoomsOccupancyValues(rows || [], occupancy);
     const row = (rows || []).find((candidate: any) => {
       const rates = candidate?.occupancy_rates;
       return rates && typeof rates === 'object' &&
