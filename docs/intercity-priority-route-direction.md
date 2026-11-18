@@ -50,6 +50,11 @@ against the first priority destination window. It is inserted again only when
 feasible; a later arrival must not lose its priority visit merely because the
 earlier saved sequence started at a waterfall. Legitimate source prefixes remain
 subject to their original scheduling rules.
+Only source visits preceding the first automatic movement stop are treated as
+a legitimate source prefix. A source-city row interleaved after a saved corridor
+stop cannot give that stale order precedence over a priority-1 destination.
+The source return guard applies after an accepted corridor stop as well as after
+destination sightseeing; minor returns still require the existing road budget.
 
 After a destination attraction is actually scheduled, a source/corridor return
 needs positive road-fit evidence and a shared return budget. Rejected ids are

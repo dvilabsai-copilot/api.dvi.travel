@@ -1868,6 +1868,7 @@ const prepareAutomaticApproach = async (queue: SelectedHotspot[], candidates: Se
     eligible: (hs: any) => Number(hs.hotspot_priority) > 0 && !isScopedProtectedHotspot(Number(hs.hotspot_ID)) &&
       (directionIsCorridor(hs) || (directionIsDestination(hs) && Number(hs.hotspot_priority) <= 3)),
     target: (hs: any) => directionIsDestination(hs) && Number(hs.hotspot_priority) >= 1 && Number(hs.hotspot_priority) <= 3,
+    targetPriority: (hs: any) => Number(hs.hotspot_priority),
     shouldSkip: isDay1DifferentCities ? (hs: any) =>
       !isScopedProtectedHotspot(Number(hs.hotspot_ID)) && this.day1CandidateGateService.shouldSkip({
         route, hotspot: hs, currentTime, isRouteSourceTerminal, hasLaterOvernightInSourceCity,
@@ -1910,12 +1911,14 @@ const prepareAutomaticApproach = async (queue: SelectedHotspot[], candidates: Se
 };
 const checkAutomaticCorridorReturn = async (hs: SelectedHotspot) => {
   const hotspotId = Number(hs.hotspot_ID);
+  const isSourceReturn = ['source', 'source_fallback'].includes(directionBucket(hs));
   if (directionRejectedIds.has(hotspotId)) return { allowed: false, detour: null };
   if (!useRouteDirectionPolicy || isScopedProtectedHotspot(hotspotId) ||
-      !(directionIsCorridor(hs) || ['source', 'source_fallback'].includes(directionBucket(hs))) ||
+      !(directionIsCorridor(hs) || isSourceReturn) ||
       !hotspotRows.some((row: any) => Number(row.itinerary_route_ID) === Number(route.itinerary_route_ID) &&
         Number(row.item_type) === 4 && selectedHotspots.some(candidate =>
-          Number(candidate.hotspot_ID) === Number(row.hotspot_ID) && directionIsDestination(candidate)))) {
+          Number(candidate.hotspot_ID) === Number(row.hotspot_ID) &&
+          (directionIsDestination(candidate) || (isSourceReturn && directionIsCorridor(candidate)))))) {
     return { allowed: true, detour: null };
   }
   const fit = this.hasUsableCoords(currentCoords) && this.hasUsableCoords(destCityCoords)
@@ -1925,7 +1928,7 @@ const checkAutomaticCorridorReturn = async (hs: SelectedHotspot) => {
   }
   directionRejectedIds.add(hotspotId);
   this.logBookingRule({ rule: 'AUTO_ROUTE_BACKTRACK_REJECTED', planId, routeId: route.itinerary_route_ID, hotspotId,
-    reason: fit ? 'excessive_return_after_destination' : 'return_route_fit_unavailable',
+    reason: fit ? 'excessive_return_after_route_progress' : 'return_route_fit_unavailable',
     extraKm: fit?.extraKm ?? null, extraMinutes: fit ? fit.extraSeconds / 60 : null });
   return { allowed: false, detour: null };
 };

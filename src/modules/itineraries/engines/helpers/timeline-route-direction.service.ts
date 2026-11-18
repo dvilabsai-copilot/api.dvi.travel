@@ -92,6 +92,7 @@ export async function orderPriorityApproach<T>(input: {
   coords: (candidate: T) => RoadPoint;
   eligible: (candidate: T) => boolean;
   target: (candidate: T) => boolean;
+  targetPriority?: (candidate: T) => number;
   shouldSkip?: (candidate: T) => boolean;
   from: RoadPoint;
   startSeconds: number;
@@ -110,13 +111,16 @@ export async function orderPriorityApproach<T>(input: {
   // A previous build may already begin with corridor visits. Re-evaluate that
   // optional prefix against the first priority window rather than treating the
   // saved visit order as an unconditional commitment on a later arrival.
-  const firstTargetIndex = input.queue.findIndex(candidate =>
-    input.target(candidate) && !input.shouldSkip?.(candidate));
+  const priorityTarget = input.queue.filter(candidate =>
+    input.target(candidate) && !input.shouldSkip?.(candidate))
+    .sort((a, b) => (input.targetPriority?.(a) ?? 0) - (input.targetPriority?.(b) ?? 0))[0];
+  const firstTargetIndex = priorityTarget ? input.queue.indexOf(priorityTarget) : -1;
   const prefix = firstTargetIndex > 0 ? input.queue.slice(0, firstTargetIndex) : [];
+  const firstMovementIndex = prefix.findIndex(input.eligible);
   const evaluationQueue = prefix.length > 0 &&
     prefix.every(candidate => input.id(candidate) !== input.id(input.queue[firstTargetIndex])) &&
-    prefix.every(candidate =>
-    input.eligible(candidate) || input.shouldSkip?.(candidate))
+    firstMovementIndex >= 0 &&
+    prefix.slice(0, firstMovementIndex).every(candidate => input.shouldSkip?.(candidate))
     ? [input.queue[firstTargetIndex], ...prefix, ...input.queue.slice(firstTargetIndex + 1)]
     : input.queue;
   for (const target of evaluationQueue) {
@@ -176,7 +180,7 @@ export async function orderPriorityApproach<T>(input: {
     seconds = end;
   }
   // Unvisited candidates retain their original order and normal feasibility checks.
-  for (const candidate of input.queue) {
+  for (const candidate of evaluationQueue) {
     if (!processed.has(candidate) && !insertedIds.has(input.id(candidate))) queue.push(candidate);
   }
   return { queue, approachIds };

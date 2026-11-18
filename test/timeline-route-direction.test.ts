@@ -153,3 +153,23 @@ test('priority lookahead preserves a legitimate source prefix', async () => {
   });
   assert.equal(result.queue[0], source);
 });
+
+test('a source-city stop interleaved after a waterfall cannot take precedence over the priority window', async () => {
+  const source: Stop = {id: 245, x: -30, duration: 18000};
+  const dam: Stop = {id: 223, x: 70, destination: true, duration: 3600};
+  const queue = [waterfall, source, dam, park, valara];
+  const result = await orderPriorityApproach({queue, candidates: queue, id: s => s.id,
+    coords: s => ({lat: 10, lon: s.x}), eligible: s => s.id !== source.id,
+    target: s => !!s.destination, targetPriority: s => s.id === park.id ? 1 : 3,
+    from: {lat: 10, lon: 0}, startSeconds: 0, roads: new TimelineRouteDirectionService(lineRoad),
+    project: async (s, _from, start, travel) => {
+      if (s.id === source.id) {
+        assert.ok(start >= 16800, 'the source detour must not steal time before the priority park');
+        return null;
+      }
+      const end = start + travel + (s.duration || 0);
+      return end <= (s.id === park.id ? park.close : Infinity) ? end : null;
+    },
+  });
+  assert.deepEqual(result.queue.map(s => s.id), [228, 357, 218, 245, 223]);
+});
