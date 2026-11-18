@@ -715,7 +715,7 @@ export class ItinerarySelectionWorkflowService {
       } : {}),
     };
 
-    const tboMapMealPersistence = providerForPricing === 'tbo'
+    const selectedMealPersistence = providerForPricing === 'tbo'
       ? {
           // TBO meal supplements are represented in the selected price
           // snapshot. Clear the legacy meal columns when a later selection is
@@ -729,7 +729,17 @@ export class ItinerarySelectionWorkflowService {
           total_hotel_meal_plan_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
           total_hotel_meal_plan_cost_gst_amount: 0,
         }
-      : {};
+      : providerForPricing === 'axisrooms'
+        ? {
+            // The selected ARI plan includes its meals. A charge from the
+            // previous hotel must not survive and be added again on reload.
+            hotel_breakfast_cost: 0,
+            hotel_lunch_cost: 0,
+            hotel_dinner_cost: 0,
+            total_hotel_meal_plan_cost: 0,
+            total_hotel_meal_plan_cost_gst_amount: 0,
+          }
+        : {};
 
     const rawMealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
     const rawMealLunch = data.mealPlan?.lunch || data.mealPlan?.all ? 1 : 0;
@@ -768,7 +778,7 @@ export class ItinerarySelectionWorkflowService {
  group_type: data.groupType || 1, // Save groupType
           updatedon: new Date(),
           ...liveRateMetadata,
-          ...tboMapMealPersistence,
+          ...selectedMealPersistence,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
           selected_price_per_night: selectionPricing.totalPrice || null,
           selected_total_price: selectionPricing.totalPrice,
@@ -867,7 +877,7 @@ export class ItinerarySelectionWorkflowService {
           status: 1,
           deleted: 0,
           ...liveRateMetadata,
-          ...tboMapMealPersistence,
+          ...selectedMealPersistence,
           selected_rate_option_id: data.rateOptionId || data.optionKey || null,
           selected_price_per_night: selectionPricing.totalPrice || null,
           selected_total_price: selectionPricing.totalPrice,

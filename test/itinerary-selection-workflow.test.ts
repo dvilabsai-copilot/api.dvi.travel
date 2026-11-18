@@ -16,6 +16,36 @@ function createService(prisma: any = {}) {
   );
 }
 
+test('switching to an AX inclusive rate clears the previous hotel meal charge on reload', async () => {
+  let saved: any = { itinerary_plan_hotel_details_ID: 61872, hotel_id: 1,
+    itinerary_plan_id: 1, itinerary_route_id: 10, group_type: 1,
+    itinerary_route_date: new Date('2026-12-20T00:00:00Z'),
+    total_hotel_meal_plan_cost: 800, hotel_dinner_cost: 800 };
+  const db: any = {
+    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'TEST', preferred_room_count: 1 }) },
+    dvi_itinerary_route_details: { findFirst: async () => ({ itinerary_route_date: new Date('2026-12-20T00:00:00Z') }) },
+    dvi_itinerary_plan_hotel_details: {
+      findFirst: async () => null, findMany: async () => [saved],
+      update: async ({ data }: any) => (saved = { ...saved, ...data }),
+      updateMany: async () => ({ count: 0 }), findUnique: async () => saved,
+    },
+    dvi_itinerary_plan_hotel_room_details: { findFirst: async () => null, create: async () => ({}) },
+    dvi_hotel: { findUnique: async () => ({ hotel_margin: 7 }) },
+  };
+  const service = createService(db);
+  (service as any).shouldValidateLiveSelection = () => false;
+  (service as any).resolveAxisRoomsSelectionBasePrice = async () => 6200;
+  (service as any).resolveAxisRoomsSelectionSupplementRates = async () => ({ extraBedRate: 0, childWithBedRate: 0, childWithoutBedRate: 0 });
+  await service.selectHotel({ planId: 1, routeId: 10, groupType: 1,
+    hotelId: 95, roomTypeId: 1, provider: 'axisrooms', hotelCode: '95', roomType: 'Deluxe',
+    mealPlanCode: 'CP', pricePerNight: 6634, totalPrice: 6634, roomCount: 1,
+    transactionClient: db,
+  });
+  assert.equal(saved.selected_total_price, 6634);
+  assert.equal(saved.total_hotel_meal_plan_cost, 0);
+  assert.equal(saved.hotel_dinner_cost, 0);
+});
+
 test('hotel availability preserves the empty result when the route is absent', async () => {
   const service = createService({
     dvi_itinerary_route_details: { findFirst: async () => null },
