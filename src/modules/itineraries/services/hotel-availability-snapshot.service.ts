@@ -62,6 +62,7 @@ import {
 import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
+import { buildHotelCardQuote } from '../utils/hotel-card-quote.util';
 import {
   resolveHotelSupplementPricing,
   resolveOfflineHotelPayablePricing,
@@ -533,7 +534,9 @@ export class HotelAvailabilitySnapshotService {
     if (Array.isArray(persistedInventory)) {
       (sanitized as any).hotelAvailability = {
         ...((sanitized as any).hotelAvailability || {}),
-        sharedHotelInventory: await this.normalizePersistedMealPlanInventory(plan, persistedInventory),
+        sharedHotelInventory: await this.attachCardQuotes(
+          await this.normalizePersistedMealPlanInventory(plan, persistedInventory), plan,
+        ),
       };
     }
     const vsrHotelCardLimit = await this.getVsrHotelCardLimit();
@@ -761,9 +764,9 @@ export class HotelAvailabilitySnapshotService {
       vsrHotelCardLimit,
     );
     const start = (page - 1) * pageSize;
-    const pageRows = scopedInventory
+    const pageRows = await this.attachCardQuotes(scopedInventory
       .slice(start, start + pageSize)
-      .map((row: any) => this.toClientHotelRow(row));
+      .map((row: any) => this.toClientHotelRow(row)), plan);
     const total = scopedInventory.length;
     const responseAvailability = { ...availability, vsrHotelCardLimit };
     delete responseAvailability.sharedHotelInventory;
@@ -1240,7 +1243,7 @@ export class HotelAvailabilitySnapshotService {
       hotelAvailability: {
         ...((persisted as any).hotelAvailability || {}),
         ...extraAvailability,
-        sharedHotelInventory,
+        sharedHotelInventory: await this.attachCardQuotes(sharedHotelInventory, plan),
         vsrHotelCardLimit,
         hasSupplierHotels: supplierHotels.length > 0,
         supplierHotelCount: supplierHotels.length,
@@ -2796,6 +2799,35 @@ export class HotelAvailabilitySnapshotService {
     });
   }
 
+  /** Same payable basis on fresh and cached pages, without changing rate data. */
+  private async attachCardQuotes(rows: any[], plan: any): Promise<any[]> {
+    if (!rows.length) return rows;
+    const fallbackMargin = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
+    const hotelIds = Array.from(new Set<number>(rows
+      .filter(row => String(row.provider || '').toLowerCase() === 'axisrooms')
+      .map(row => this.persistedHotelId(row)).filter(id => id > 0)));
+    const masters = hotelIds.length && (this.prisma as any).dvi_hotel?.findMany
+      ? await (this.prisma as any).dvi_hotel.findMany({
+          where: { hotel_id: { in: hotelIds } }, select: { hotel_id: true, hotel_margin: true },
+        }) : [];
+    const margins = new Map<number, number>(masters.map((hotel: any) => [Number(hotel.hotel_id), Number(hotel.hotel_margin)]));
+    const rooms = Math.max(Number(plan?.preferred_room_count || 1), 1);
+    return rows.map(row => {
+      const margin = Number(margins.get(this.persistedHotelId(row)) || row.hotelMarginPercentage || fallbackMargin || 0);
+      const quote = (option: any) => buildHotelCardQuote({
+        ...row, ...option,
+        itineraryRouteId: row.itineraryRouteId || row.routeId,
+        date: row.date || row.itineraryRouteDate || row.checkInDate,
+      }, Number(margins.get(this.persistedHotelId(row)) || option.hotelMarginPercentage || margin), rooms);
+      return {
+        ...row, cardQuote: quote(row),
+        ...(Array.isArray(row.rateOptions) ? {
+          rateOptions: row.rateOptions.map((option: any) => ({ ...option, cardQuote: quote(option) })),
+        } : {}),
+      };
+    });
+  }
+
   private toClientHotelRow(row: any): any {
     const snapshot = parseHotelSelectionSnapshot(row) as any;
     const fallbackSource = row?.tboMapFallbackApplied === true ? row : snapshot;
@@ -2849,7 +2881,7 @@ export class HotelAvailabilitySnapshotService {
       'roomTypeId', 'room_type_id', 'roomType', 'roomTypeName', 'mealPlan', 'mealPlanCode',
       'ratePlanName', 'provider', 'providerDisplayName', 'providerHotelCode', 'currency',
       'pricePerNight', 'totalStayPrice', 'totalPrice', 'totalAmount', 'price', 'basePricePerNight',
-      'baseTotalPrice', 'startingFromAmount', 'startingFromBaseAmount', 'priceDifference',
+      'baseTotalPrice', 'startingFromAmount', 'startingFromBaseAmount', 'priceDifference', 'cardQuote',
       'bookingMode', 'priceSource', 'isLiveRate', 'isLiveBookable', 'isSelectable',
       'requiresHotelApproval', 'approvalStatus', 'manualConfirmationStatus', 'isBookable',
       'availabilityStatus', 'availabilityState', 'availabilityMessage',
