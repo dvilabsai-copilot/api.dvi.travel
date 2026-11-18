@@ -832,6 +832,8 @@ export class ItineraryHotelRoomCategoryService {
         childWithoutBedCount: occupancyPricing.childWithoutBedCount,
         childWithoutBedRate: occupancyPricing.childWithoutBedRate,
         childWithoutBedAmount: occupancyPricing.childWithoutBedAmount,
+        pricePerNight: occupancyPricing.totalPrice,
+        selectedPricePerNight: occupancyPricing.totalPrice,
         totalPrice: occupancyPricing.totalPrice,
       } : {}),
     });

@@ -94,3 +94,28 @@ test('mixed AX room categories price CP bases and their own extra bed instead of
   assert.deepEqual(pricing.map(p => p.extraBedAmount), [700, 0]);
   assert.equal(pricing.reduce((sum, p) => sum + p.totalPrice, 0), 9309);
 });
+
+test('category save replaces old snapshot nightly prices with the persisted payable', async () => {
+  let saved: any;
+  const parent = { itinerary_plan_hotel_details_ID: 10, hotel_id: 95, hotel_margin_percentage: 7,
+    selected_price_snapshot: JSON.stringify({ provider: 'axisrooms', mealPlan: 'CP', roomType: 'Deluxe',
+      roomId: 232, pricePerNight: 999, selectedPricePerNight: 999,
+      rateOptionId: `axisrooms:95:232:232|CP_PLAN:${date}` }) };
+  const service: any = new ItineraryHotelRoomCategoryService({
+    dvi_itinerary_route_details: { findUnique: async () => ({ itinerary_route_date: new Date(date) }) },
+    dvi_itinerary_plan_details: { findFirst: async () => ({ preferred_room_count: 1, total_adult: 2, meal_plan_code: 'CP' }) },
+    dvi_itinerary_plan_hotel_details: { findFirst: async () => parent, update: async ({ data }: any) => { saved = data; } },
+    dvi_itinerary_plan_hotel_room_details: { update: async () => ({}),
+      findMany: async () => [{ room_qty: 1, room_id: 232, room_type_id: 30 }] },
+    dvi_hotel_occupancy_rate: { findMany: async () => [{ occupancy_rates: { DOUBLE: 3500 }, received_at: '2026-10-01' }] },
+  } as any, {} as any);
+  service.resolveAvailableRoomTypes = async () => [{ roomTypeId: 30, roomId: 232, roomTypeTitle: 'Deluxe' }];
+  await service.updateRoomCategory({ itinerary_plan_hotel_details_ID: 10, itinerary_plan_hotel_room_details_ID: 20,
+    itinerary_plan_id: 1, itinerary_route_id: 2, hotel_id: 95, group_type: 1, provider: 'axisrooms',
+    room_type_id: 30, propagateContinuous: false });
+  const snapshot = JSON.parse(saved.selected_price_snapshot);
+  assert.equal(saved.selected_price_per_night, 3745);
+  assert.equal(snapshot.pricePerNight, saved.selected_price_per_night);
+  assert.equal(snapshot.selectedPricePerNight, saved.selected_price_per_night);
+  assert.equal(snapshot.totalPrice, saved.selected_total_price);
+});
