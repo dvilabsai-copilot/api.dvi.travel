@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import axios from 'axios';
+import { TimelineDay1CandidateGateService } from '../src/modules/itineraries/engines/helpers/timeline-day1-candidate-gate.service';
 import { orderPriorityApproach, TimelineRouteDirectionService, RoadRouter } from '../src/modules/itineraries/engines/helpers/timeline-route-direction.service';
 
 type Stop = { id: number; x: number; destination?: boolean; close?: number; duration?: number };
@@ -102,4 +103,35 @@ test('directional provider results are cached and reversed journeys are fetched 
     await roads.journey([b, a]);
     assert.equal(calls, 2);
   } finally { axios.get = original; }
+});
+
+test('rebuilding after a waterfall does not project a suppressed Cochin visit before the park', async () => {
+  const source = { id: 244, x: -30, duration: 18000, bucket: 'source', priority: 1 };
+  const first = { ...waterfall, bucket: 'en_route', priority: 15 };
+  const next = { ...valara, bucket: 'en_route', priority: 16 };
+  const target = { ...park, bucket: 'destination', priority: 1 };
+  const queue = [first, source, target, next];
+  const gate = new TimelineDay1CandidateGateService();
+  const result = await orderPriorityApproach({
+    queue, candidates: queue, id: s => s.id,
+    coords: s => ({lat: 10, lon: s.x}), eligible: s => s.bucket !== 'source',
+    target: s => s.bucket === 'destination', from: {lat: 10, lon: 0}, startSeconds: 0,
+    roads: new TimelineRouteDirectionService(lineRoad),
+    shouldSkip: s => gate.shouldSkip({
+      route: {itinerary_route_ID: 26395},
+      hotspot: {hotspot_ID: s.id, hotspot_priority: s.priority, matched_bucket: s.bucket},
+      currentTime: '08:00:00', isRouteSourceTerminal: true, hasLaterOvernightInSourceCity: true,
+      isHotspotAlreadyPlanned: () => false, resolveTimelineBucket: h => h.matched_bucket,
+      isSourceBucket: b => b === 'source', isRouteMovementBucket: b => b === 'en_route',
+      logHotspotCandidateEvaluation: () => undefined,
+    }),
+    project: async (s, _from, start, travel) => {
+      assert.notEqual(s.id, source.id, 'an excluded source visit must not consume projected time');
+      const end = start + travel + s.duration;
+      return end <= (s.id === target.id ? target.close : Infinity) ? end : null;
+    },
+  });
+  assert.deepEqual(result.queue.map(s => s.id), [228, 244, 357, 218]);
+  assert.ok(result.queue.includes(source), 'normal scheduling still owns rejection logging');
+  assert.deepEqual([...result.approachIds].sort(), [218, 357]);
 });

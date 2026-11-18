@@ -16,8 +16,10 @@ different-city priority walk. The candidate reordering before that branch can
 also place destination priorities 1-3 before corridor priorities 15-16. The fix
 therefore shares preparation and corridor admission across both scheduling paths;
 the November exception alone is not the cause of this Day-1 case.
-DVI20261115 has correctly tagged Cochin-to-Munnar waterfall records, so master
-data changes are not the responsible fix.
+DVI20261115 has correctly tagged Cochin-to-Munnar waterfall records. A later
+road-access audit also found inaccurate pins for both waterfalls. Staging was
+corrected to Cheeyappara 10.0538528,76.8294126 and Valara viewpoint
+10.0474918,76.8402585. These data corrections complement the scheduling fix.
 
 ## Scope and invariants
 
@@ -39,6 +41,10 @@ the target's full visit remain feasible through the existing admission service.
 Projection uses at least the road travel time when that exceeds the normal travel
 estimate. Opening windows, waiting, route end and departure deadline still apply.
 This projection does not replace the existing timeline distance/rendering provider.
+For the Day-1 different-city path, projection consults the same candidate gate as
+actual admission. A suppressed terminal-source visit remains in the queue for
+normal rejection reporting, but cannot consume projected time or move the cursor.
+This matters on repeated builds whose candidate order already starts at a waterfall.
 
 After a destination attraction is actually scheduled, a source/corridor return
 needs positive road-fit evidence and a shared return budget. Rejected ids are

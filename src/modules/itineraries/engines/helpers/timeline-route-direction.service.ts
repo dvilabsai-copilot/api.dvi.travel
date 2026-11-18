@@ -92,6 +92,7 @@ export async function orderPriorityApproach<T>(input: {
   coords: (candidate: T) => RoadPoint;
   eligible: (candidate: T) => boolean;
   target: (candidate: T) => boolean;
+  shouldSkip?: (candidate: T) => boolean;
   from: RoadPoint;
   startSeconds: number;
   roads: TimelineRouteDirectionService;
@@ -109,6 +110,13 @@ export async function orderPriorityApproach<T>(input: {
   for (const target of input.queue) {
     processed.add(target);
     if (insertedIds.has(input.id(target))) continue;
+    // Keep the actual scheduler's candidate and rejection reporting intact,
+    // but do not move the projected clock/location through an excluded stop.
+    if (input.shouldSkip?.(target)) {
+      queue.push(target);
+      emitted.add(input.id(target));
+      continue;
+    }
     if (!input.target(target)) {
       queue.push(target);
       emitted.add(input.id(target));

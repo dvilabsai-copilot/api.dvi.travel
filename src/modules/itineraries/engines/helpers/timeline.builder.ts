@@ -1868,6 +1868,18 @@ const prepareAutomaticApproach = async (queue: SelectedHotspot[], candidates: Se
     eligible: (hs: any) => Number(hs.hotspot_priority) > 0 && !isScopedProtectedHotspot(Number(hs.hotspot_ID)) &&
       (directionIsCorridor(hs) || (directionIsDestination(hs) && Number(hs.hotspot_priority) <= 3)),
     target: (hs: any) => directionIsDestination(hs) && Number(hs.hotspot_priority) >= 1 && Number(hs.hotspot_priority) <= 3,
+    shouldSkip: isDay1DifferentCities ? (hs: any) =>
+      !isScopedProtectedHotspot(Number(hs.hotspot_ID)) && this.day1CandidateGateService.shouldSkip({
+        route, hotspot: hs, currentTime, isRouteSourceTerminal, hasLaterOvernightInSourceCity,
+        isShoppingHotspot: this.isShoppingHotspotType(String(
+          (hotspotMap.get(Number(hs.hotspot_ID)) as any)?.hotspot_type || hs.hotspot_type || '',
+        )),
+        isHotspotAlreadyPlanned,
+        resolveTimelineBucket: (...args) => (this.resolveTimelineBucket as any)(...args),
+        isRouteMovementBucket: (...args) => (this.isRouteMovementBucket as any)(...args),
+        isSourceBucket: (...args) => (this.isSourceBucket as any)(...args),
+        logHotspotCandidateEvaluation: () => undefined,
+      }) : undefined,
     from: currentCoords,
     startSeconds: this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds), roads: directionRoads,
     project: async (hs: any, from, startSeconds, roadSeconds) => {
