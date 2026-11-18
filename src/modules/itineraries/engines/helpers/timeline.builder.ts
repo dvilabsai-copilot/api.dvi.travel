@@ -3250,7 +3250,9 @@ const strictHotspots = (
         let strictPassHotspots = [...strictHotspots];
         const sourcePhaseEndSeconds = timeToSeconds('12:00:00');
         let priorityDestinationPreemption: SelectedHotspot | null = null;
-        if (isIntercityNonDirectRoute) {
+        // Direct routes also admit matching corridor visits. Keep those visits
+        // together before destination sightseeing so approach ordering can run.
+        if (isIntercityNonDirectRoute || (useAutomaticCorridorOrder && isIntercityDirectRoute)) {
           const destinationStrict = strictPassHotspots.filter((hs) => {
             const bucket = String((hs as any).matched_bucket || '').toLowerCase();
             return bucket === 'destination' || bucket === 'dest';

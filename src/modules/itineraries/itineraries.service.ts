@@ -3752,7 +3752,12 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
     const roomId = Number(option?.roomId || option?.room_id || match?.[2] || 0);
     const rateReferencePlan = rateReference.match(/^(?:\d+\|)?(.+)$/)?.[1] || '';
     const explicitRateplanId = String(option?.rateplanId || option?.ratePlanId || option?.rateplan_id || '').trim();
-    const suppliedRateplanId = explicitRateplanId || String(match?.[3] || rateReferencePlan).trim();
+    const suppliedRateplanReference = explicitRateplanId || String(match?.[3] || rateReferencePlan).trim();
+    // Refreshed AX options expose room-scoped IDs (232|MAP_PLAN), while
+    // occupancy rows store the plan alone. Strip only this selected room.
+    const suppliedRateplanId = suppliedRateplanReference.startsWith(`${roomId}|`)
+      ? suppliedRateplanReference.slice(String(roomId).length + 1)
+      : suppliedRateplanReference;
     if (!hotelId || !roomId || !suppliedRateplanId || !/^\d{4}-\d{2}-\d{2}$/.test(routeDate)) return option;
 
     const rows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({

@@ -28,7 +28,8 @@ for (const [meal, base, payable] of [['MAP', 4700, 5029], ['AP', 5900, 6313]] as
       { rateplan_id: `${meal}_PLAN`, occupancy_rates: { DOUBLE: base } },
     ], plan, 7);
     const option = { provider: 'axisrooms', canonicalHotelId: 95, roomId: 232,
-      mealPlan: meal, rateOptionId: `axisrooms:95:232:232|${meal}_PLAN:${date}`, roomCount: 1, planId: 1 };
+      mealPlan: meal, rateplanId: `232|${meal}_PLAN`, ratePlanId: `232|${meal}_PLAN`, rateId: `232|${meal}_PLAN`,
+      rateOptionId: `axisrooms:95:232:232|${meal}_PLAN:${date}`, roomCount: 1, planId: 1 };
     const quote = await preview.resolveAxisRoomsSelectionPricing(option, plan, date);
     assert.equal(quote.totalPrice, payable);
     assert.equal(quote.rateplanId, `${meal}_PLAN`);
