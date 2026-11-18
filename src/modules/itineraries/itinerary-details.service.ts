@@ -25,6 +25,7 @@ import {
 } from './utils/entry-ticket-breakdown.util';
 import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-vehicle-km.service';
 import { getFinalTerminalDepartureText } from './utils/final-terminal-departure-text.util';
+import { shouldOmitSyntheticDepartureStart } from './utils/departure-timeline-display.util';
 import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { SystemRole } from '../auth/constants/system-role.constants';
@@ -3027,7 +3028,9 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
         return false;
       })();
 
-      if (!(isLateArrivalDay1 && !hasAttractions)) {
+      if (!(isLateArrivalDay1 && !hasAttractions) && !shouldOmitSyntheticDepartureStart({
+        routeIndex: index, routeCount: routes.length, rows: routeHotspots,
+      })) {
         let startTimeRange: string | null = null;
 
         if (startHotspot) {

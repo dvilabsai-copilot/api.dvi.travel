@@ -167,6 +167,10 @@ transportEarlyArrivalLocationName?: string | null,
       const isLastRouteUpdated =
         Number(lastActiveRoute?.itinerary_route_ID || 0) === normalizedRouteId;
 
+      if (changeType === 'FINAL_DAY_DEPARTURE' && !isLastRouteUpdated) {
+        throw new BadRequestException('Final departure can only be updated on the last route');
+      }
+
       const currentPlanDepartureTime = plan.trip_end_date_and_time
         ? toTimeString(plan.trip_end_date_and_time)
         : '';
@@ -305,7 +309,8 @@ transportEarlyArrivalLocationName?: string | null,
         itineraryEndDateTime.setUTCDate(itineraryEndDateTime.getUTCDate() + 1);
       }
 
-      const isDay1RouteUpdated = Number(firstRoute.itinerary_route_ID) === normalizedRouteId;
+      const isDay1RouteUpdated = Number(firstRoute.itinerary_route_ID) === normalizedRouteId &&
+        changeType !== 'FINAL_DAY_DEPARTURE';
       const shouldApplyPreviousDayBilling = isDay1RouteUpdated &&
         normalizedDecisionProvided && normalizedDecisionConfirmed && isEarlyArrivalWindow &&
         !isIntercityHotelArrival({
