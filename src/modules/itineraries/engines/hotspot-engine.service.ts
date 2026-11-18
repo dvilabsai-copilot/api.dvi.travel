@@ -219,8 +219,11 @@ const manualHotspots = existingHotspots.filter((h: any) => {
       const anchorOrder = Number((options?.anchorOrderByRoute as any)?.[routeId] || 0);
       const manualOrder = preferredOrder > 0
         ? preferredOrder
-        : (anchorOrder > 0 ? anchorOrder : Number((manualHotspot as any)?.hotspot_order || 0));
+        : anchorOrder;
 
+      // A route override is explicit. Otherwise each saved manual keeps its own
+      // order in TimelineManualPlacementOrderingService, rather than the last
+      // manual row overwriting every other manual's position on this route.
       if (manualOrder > 0) {
         manualPlacementByRoute[routeId] = { hotspotOrder: manualOrder };
       }

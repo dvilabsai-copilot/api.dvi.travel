@@ -76,3 +76,15 @@ shared travel builder. Update the marker to the new arrival. Leave the final
 validator active. Hotel-first arrivals before sightseeing, already valid final
 journeys, automatic-only routes and ambiguous multiple terminal rows must remain
 unchanged. Do not reuse the old source-to-hotel distance or shift it blindly.
+
+The post-rebuild audit also exposed a default-order bug: the engine copied each
+saved manual position into one route-wide override, so the last saved position
+overwrote all other manual positions on that route. Only explicit anchor or
+preferred-placement options should create that override; ordinary full rebuilds
+must let the placement service use each saved row's order. Verify the original
+manual selections and open-stop order on all seven MMTLX days, not just the
+requested return day. The rollback replay additionally confirmed Wax Museum
+(671) is marked closed on all seven days in the master. The existing deferred /
+forced-manual preservation path retains this saved selection at the end; keep
+that existing closed-stop behavior and report its order change separately from
+lost manual selections. Do not reopen the master or relax automatic admission.
