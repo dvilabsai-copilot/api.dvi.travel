@@ -127,7 +127,7 @@ test('adds a previous-day billing marker once beside a selected two-night TBO st
   assert.equal(withoutMarker[0].totalAmount, 12733.6);
 });
 
-test('DVI20260891 aligns hotelTabs with hotelSelectionState and deduplicates Day 1/2', () => {
+test('DVI20260891 counts each route night once and aligns hotelTabs with hotelSelectionState', () => {
   const dviRoutes = [
     { routeId: 1, routeDate: '2026-08-31' },
     { routeId: 2, routeDate: '2026-09-01' },
@@ -142,7 +142,21 @@ test('DVI20260891 aligns hotelTabs with hotelSelectionState and deduplicates Day
   ];
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 81537.5 }],
-    rows,
+    // Equal room/meal identities do not make different nights free. Duplicate
+    // projections of the same route, however, must not add another charge.
+    rows: [...rows, { ...rows[0] }].map((row, index) => ({
+      ...row,
+      provider: row.selectedPriceSnapshot.provider,
+      providerHotelCode: row.selectedPriceSnapshot.providerHotelCode || String(row.canonicalHotelId),
+      hotelCode: row.selectedPriceSnapshot.providerHotelCode || String(row.canonicalHotelId),
+      rateOptionId: row.selectedPriceSnapshot.rateOptionId,
+      date: dviRoutes[index === rows.length ? 0 : index].routeDate,
+      selectedPriceSnapshot: {
+        ...row.selectedPriceSnapshot,
+        providerHotelCode: row.selectedPriceSnapshot.providerHotelCode || String(row.canonicalHotelId),
+        pricingScope: 'ROUTE_NIGHT',
+      },
+    })),
     requiredRoutes: dviRoutes,
   });
   const tabs = synchronizeHotelTabTotals(
@@ -151,8 +165,9 @@ test('DVI20260891 aligns hotelTabs with hotelSelectionState and deduplicates Day
   );
 
   assert.equal(state[0].routes[2].selected?.hotelName, 'MGM Beach Resorts');
-  assert.equal(state[0].totalAmount, 953303.23);
-  assert.equal(tabs[0].totalAmount, 953303.23);
+  assert.deepEqual(state[0].routes.slice(0, 2).map((route) => route.selected?.pricePerNight), [60637.5, 60637.5]);
+  assert.equal(state[0].totalAmount, 60637.5 * 2 + 871765.73 + 20900);
+  assert.equal(tabs[0].totalAmount, 1013940.73);
 });
 
 test('route-night offline MAP is included for each physical night', () => {
@@ -248,7 +263,7 @@ test('TBO MAP fallback dinner is included in each projected route night', () => 
   assert.equal(state[0].totalAmount, 105031.95);
 });
 
-test('DVI20260891 projects a complete MGM stay through Day 3 without double counting it', () => {
+test('DVI20260891 projects an explicit three-night Mamalla stay without double counting its stay total', () => {
   const state = buildHotelSelectionState({
     tabs: [{ groupType: 1, label: 'Recommended #1', totalAmount: 41112.5 }],
     rows: [
@@ -256,7 +271,12 @@ test('DVI20260891 projects a complete MGM stay through Day 3 without double coun
         groupType: 1,
         provider: 'offline',
         canonicalHotelId: 277,
+        providerHotelCode: '277',
+        hotelCode: '277',
         hotelName: 'MAMALLA HERITAGE',
+        date: '2026-08-31',
+        numberOfNights: 3,
+        pricePerNight: 6737.5,
         completeStayBookable: true,
         completeStayRouteIds: [11045, 11046, 11047],
         selectionKey: 'offline:277:cp:2026-08-31:2026-09-03',
@@ -264,21 +284,30 @@ test('DVI20260891 projects a complete MGM stay through Day 3 without double coun
         selectedPriceSnapshot: {
           provider: 'offline',
           canonicalHotelId: 277,
+          providerHotelCode: '277',
           hotelName: 'MAMALLA HERITAGE',
           rateOptionId: 'offline:277:733:445:2026-08-31:2026-09-03',
+          pricingScope: 'FULL_STAY',
+          numberOfNights: 3,
+          baseTotalPrice: 20212.5,
           totalPrice: 20212.5,
-          pricePerNight: 20212.5,
+          pricePerNight: 6737.5,
         },
       }),
       selectedRow(11048, {
         groupType: 1,
         provider: 'offline',
         canonicalHotelId: 315,
+        providerHotelCode: '315',
+        hotelCode: '315',
         hotelName: 'GREEN PALACE',
+        date: '2026-09-03',
+        pricePerNight: 20900,
         selectionKey: 'offline:315:cp',
         totalPrice: 20900,
         selectedPriceSnapshot: {
           provider: 'offline', canonicalHotelId: 315, hotelName: 'GREEN PALACE',
+          providerHotelCode: '315',
           rateOptionId: 'offline:315:cp', totalPrice: 20900, pricePerNight: 20900,
         },
       }),
@@ -297,6 +326,8 @@ test('DVI20260891 projects a complete MGM stay through Day 3 without double coun
   assert.deepEqual(state[0].routes.slice(0, 3).map((route) => route.selected?.hotelName), [
     'MAMALLA HERITAGE', 'MAMALLA HERITAGE', 'MAMALLA HERITAGE',
   ]);
+  assert.deepEqual(state[0].routes.slice(0, 3).map((route) => route.selected?.pricePerNight), [6737.5, 6737.5, 6737.5]);
+  assert.deepEqual(state[0].routes.slice(0, 3).map((route) => route.selected?.selectedTotalPrice), [20212.5, 20212.5, 20212.5]);
   assert.equal(state[0].totalAmount, 41112.5);
 });
 
