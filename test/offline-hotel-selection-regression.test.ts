@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ItinerariesService } from '../src/modules/itineraries/itineraries.service';
 import { OfflineHotelCatalogService } from '../src/modules/itineraries/services/offline-hotel-catalog.service';
+import { OfflineHotelMealPricingService } from '../src/modules/itineraries/services/offline-hotel-meal-pricing.service';
 
 const pricing = {
   resolveEffectiveHotelMarginPercentage: async () => 0,
@@ -127,6 +128,55 @@ test('legacy offline pricebook retains a partial stay with the missing night', (
   assert.deepEqual(offers[0].availableDates, ['2026-11-26']);
   assert.deepEqual(offers[0].unavailableDates, ['2026-11-27']);
   assert.deepEqual(offers[0].nightlySell, [3700, 0]);
+});
+
+test('selected offline hotel rates expose full-stay CP, MAP and AP from one catalog read', async () => {
+  const service = new OfflineHotelCatalogService(
+    {} as any, pricing, undefined, undefined, new OfflineHotelMealPricingService({} as any),
+  );
+  const dates = ['2026-11-26', '2026-11-27'];
+  const meals = new Map(dates.map(date => [date, { breakfast: 0.1, lunch: 600, dinner: 650 }]));
+  const hotel = { hotel_id: 700, hotel_code: 'LOCAL-700', hotel_name: 'Offline Resort' };
+  let catalogReads = 0;
+  (service as any).loadHotelsByStayBlock = async ([block], roomCount, key) =>
+    new Map([[(service as any).blockCacheKey(block, roomCount, key), [hotel, { hotel_id: 800, hotel_code: 'OTHER' }]]]);
+  (service as any).loadCatalogRows = async (hotels, requestedDates) => {
+    catalogReads += 1;
+    assert.deepEqual(hotels, [hotel]);
+    assert.deepEqual(requestedDates, dates);
+    return {
+      roomsByHotel: new Map([[700, [{ room_ID: 701, room_type_id: 70, room_title: 'Deluxe Room', breakfast_included: 1 }]]]),
+      activeRoomTypeIds: new Set([70]),
+      legacyPricebookByRoom: new Map([['700|701|70', [
+        { year: '2026', month: 'November', price_type: 0, day_26: 2600, day_27: 2800 },
+        { year: '2026', month: 'November', price_type: 1, day_26: 750, day_27: 925 },
+      ]]]),
+      mealPricebookByHotelDate: new Map([[700, meals]]),
+      ratePlansByRoom: new Map(),
+      occupancyRatesByRoomPlan: new Map(),
+    };
+  };
+  const params = {
+    routes: dates.map((date, index) => ({
+      itinerary_route_ID: 10 + index, itinerary_route_date: new Date(date), next_visiting_location: 'Munnar',
+    })),
+    routeId: 11, noOfNights: 2, hotelCode: 'LOCAL-700', roomCount: 2, adultCount: 5, childCount: 0,
+    supplementCounts: { extraBedCount: 1 },
+  };
+  const options = (rows: any[]) => rows.flatMap(row => row.rateOptions);
+
+  const rates = options(await service.fetchSelectedHotelRates(params));
+  assert.equal(catalogReads, 1);
+  assert.deepEqual([...new Set(rates.map(rate => rate.mealPlan))], ['CP', 'MAP', 'AP']);
+  const ap = rates.find(rate => rate.mealPlan === 'AP');
+  assert.equal(ap.isSelectable, true);
+  assert.deepEqual(ap.nightlyRates.map(night => [night.baseAmount, night.extraBedAmount]), [[5950, 750], [6525, 925]]);
+  assert.deepEqual(ap.nightlyRates.map(night => night.mealPlanBreakdown.totalMealPlanCost), [6250, 6250]);
+
+  meals.set(dates[1], { breakfast: 0.1, lunch: 0, dinner: 650 });
+  const partial = options(await service.fetchSelectedHotelRates(params));
+  assert.equal(partial.find(rate => rate.mealPlan === 'MAP').isSelectable, true);
+  assert.equal(partial.find(rate => rate.mealPlan === 'AP').isSelectable, false);
 });
 
 const offlineCandidates = [{

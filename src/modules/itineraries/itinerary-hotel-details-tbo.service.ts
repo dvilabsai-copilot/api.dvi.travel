@@ -1533,40 +1533,20 @@ const selectedHotelRooming = normalizedProvider === 'tbo'
              }, axisRoomsPropertyId,
            )).get(Number(routeId)) || []
         : normalizedProvider === 'offline'
-          ? ((await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
-              [route],
-              1,
-              String((plan as any).guest_nationality || 'IN').trim().toUpperCase(),
+          ? await this.offlineHotelCatalogService.fetchSelectedHotelRates({
+              routes: itineraryRoutes,
+              routeId: Number(routeId),
+              noOfNights: Number(plan.no_of_nights || 0),
+              hotelCode: normalizedHotelCode,
               roomCount,
               adultCount,
               childCount,
-              [],
-              '',
-              [],
-              {
+              supplementCounts: {
                 extraBedCount,
                 childWithBedCount,
                 childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
               },
-          )).get(Number(routeId)) || []).filter((hotel: any) => {
-            // AxisRooms search rows expose our internal numeric hotel code in
-            // `hotelCode` and the provider property code in
-            // `providerHotelCode`. The selection request normally sends the
-            // provider code (AX_DVI_HOTEL_234), so checking only hotelCode
-            // incorrectly removed every valid DB-backed room option and left
-            // the stale supplier room as the apparent selection.
-            const targetPropertyId = normalizedHotelCode.match(/(?:^|[^0-9])(\d+)$/)?.[1] || '';
-            return [
-              hotel?.hotelCode,
-              hotel?.providerHotelCode,
-              hotel?.canonicalHotelId,
-              hotel?.hotelId,
-            ].some((value) => {
-              const candidate = String(value ?? '').trim();
-              return candidate === normalizedHotelCode ||
-                (targetPropertyId !== '' && candidate === targetPropertyId);
-            });
-          })
+            })
         : await this.hotelSearchService.searchHotels({
            cityCode: effectiveCityCode,
             checkInDate, checkOutDate, roomCount,

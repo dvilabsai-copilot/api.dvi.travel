@@ -128,6 +128,33 @@ test('offline HOTEL preview returns current authoritative selections without per
   assert.equal(wasPersisted(), false);
 });
 
+test('offline preview prices each night with one extra bed and only the selected meals', async () => {
+  for (const mealPlan of ['CP', 'MAP']) {
+    const mealCosts = mealPlan === 'CP' ? [0, 0] : [3250, 3000];
+    const nightlyRates = stay.stayDates.map((date, index) => ({
+      date,
+      baseAmount: [5950, 7125][index],
+      roomCost: [5200, 6200][index],
+      extraBedAmount: [750, 925][index],
+      marginPercentage: 5,
+      mealPlanBreakdown: { mealPlanCode: mealPlan, totalMealPlanCost: mealCosts[index] },
+    }));
+    const { service, wasPersisted } = createService(async () => candidates.map(candidate => ({
+      ...candidate, mealPlan, roomCount: 2, extraBedAmount: 1675, nightlyRates,
+    })));
+
+    const result = await service.previewHotelIntent(payload({ selectionIntent: 'MEAL_PLAN', mealPlanCode: mealPlan }));
+
+    assert.equal(result.status, 'AVAILABLE');
+    assert.deepEqual(result.selections.map(selection => selection.pricePerNight),
+      mealPlan === 'CP' ? [6247.5, 7481.25] : [9497.5, 10481.25]);
+    assert.deepEqual(result.selections.map(selection => selection.totalExtraBedCost), [750, 925]);
+    assert.deepEqual(result.selections.map(selection => selection.hotelMealPlanCost), mealCosts);
+    assert.deepEqual(result.selections.map(selection => selection.totalRoomCost), [5200, 6200]);
+    assert.equal(wasPersisted(), false);
+  }
+});
+
 test('offline preview returns NO_AVAILABILITY and does not open a persistence path', async () => {
   const { service, wasPersisted } = createService(async () => {
     throw new BadRequestException({ code: 'HOTEL_NO_AVAILABILITY', status: 'NO_AVAILABILITY' });

@@ -55,7 +55,7 @@ import {
   parseHotelSelectionSnapshot,
 } from './utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from './utils/hotel-category.util';
-import { resolveHotelOccupancyPricing } from './utils/hotel-selection-pricing.util';
+import { resolveHotelOccupancyPricing, resolveOfflineHotelPayablePricing } from './utils/hotel-selection-pricing.util';
 import { latestAxisRoomsOccupancyValues } from './utils/axisrooms-occupancy-rate.util';
 import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
 import { allocateTboRouteNightPricing } from '../hotels/utils/tbo-room-night-pricing';
@@ -2725,75 +2725,51 @@ timingStepStartedAt =
       const nightlyRate = Array.isArray(option?.nightlyRates)
         ? option.nightlyRates.find((night: any) => String(night?.date || '').slice(0, 10) === routeDate)
         : null;
-      const amount = (value: unknown): number => {
-        const parsed = Number(value ?? 0);
-        return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-      };
-      const baseTotalPrice = amount(
-        nightlyRate?.baseAmount ?? option.baseTotalPrice ?? option.baseHotelCost ?? option.roomRate,
-      );
-      if (baseTotalPrice <= 0) return option;
-      const extraBedAmount = amount(
-        nightlyRate?.extraBedAmount ?? option.extraBedAmount ??
-        amount(option.extraBedRate) * amount(option.extraBedCount),
-      );
-      const childWithBedAmount = amount(
-        nightlyRate?.childWithBedAmount ?? option.childWithBedAmount ??
-        amount(option.childWithBedRate) * amount(option.childWithBedCount),
-      );
-      const childWithoutBedAmount = amount(
-        nightlyRate?.childWithoutBedAmount ?? option.childWithoutBedAmount ??
-        amount(option.childWithoutBedRate) * amount(option.childWithoutBedCount),
-      );
-      const marginBaseAmount = Number((baseTotalPrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2));
-      const marginPercentage = amount(nightlyRate?.marginPercentage ?? option.hotelMarginPercentage);
-      const marginAmount = Number((marginBaseAmount * marginPercentage / 100).toFixed(2));
-      const totalPrice = Number((marginBaseAmount + marginAmount).toFixed(2));
+      const baseTotalPrice = Number(nightlyRate?.baseAmount || 0);
+      if (!(baseTotalPrice > 0)) return option;
+      const extraBedAmount = Number(nightlyRate.extraBedAmount || 0);
+      const childWithBedAmount = Number(nightlyRate.childWithBedAmount || 0);
+      const childWithoutBedAmount = Number(nightlyRate.childWithoutBedAmount || 0);
+      const mealPlanBreakdown = nightlyRate.mealPlanBreakdown;
+      // The catalog's nightly base already includes all occupancy charges.
+      // Use that base once and add only the meals for the clicked night.
+      const pricing = resolveOfflineHotelPayablePricing({
+        baseTotalPrice,
+        mealPlanCost: mealPlanBreakdown?.totalMealPlanCost,
+        marginPercentage: nightlyRate.marginPercentage ?? option.hotelMarginPercentage,
+      });
       const correctedNightlyRate = {
-        ...(nightlyRate || {}),
+        ...nightlyRate,
         date: routeDate,
         baseAmount: baseTotalPrice,
-        marginPercentage,
-        marginAmount,
-        sellAmount: totalPrice,
-        ...(amount(option.extraBedCount) > 0 || extraBedAmount > 0 ? {
-          extraBedCount: amount(option.extraBedCount),
-          extraBedRate: amount(option.extraBedRate),
-          extraBedAmount,
-        } : {}),
-        ...(amount(option.childWithBedCount) > 0 || childWithBedAmount > 0 ? {
-          childWithBedCount: amount(option.childWithBedCount),
-          childWithBedRate: amount(option.childWithBedRate),
-          childWithBedAmount,
-        } : {}),
-        ...(amount(option.childWithoutBedCount) > 0 || childWithoutBedAmount > 0 ? {
-          childWithoutBedCount: amount(option.childWithoutBedCount),
-          childWithoutBedRate: amount(option.childWithoutBedRate),
-          childWithoutBedAmount,
-        } : {}),
+        marginPercentage: pricing.marginPercentage,
+        marginAmount: pricing.marginAmount,
+        sellAmount: pricing.totalPrice,
       };
       return {
         ...option,
         basePricePerNight: Number((baseTotalPrice / Math.max(Number(option.roomCount || 1), 1)).toFixed(2)),
         baseTotalPrice,
         baseHotelCost: baseTotalPrice,
-        totalRoomCost: baseTotalPrice,
-        hotelMarginBaseAmount: marginBaseAmount,
-        hotelMarginPercentage: marginPercentage,
-        hotelMarginAmount: marginAmount,
-        hotelMarginTotalAmount: marginAmount,
+        totalRoomCost: nightlyRate.roomCost ?? baseTotalPrice,
+        hotelMarginBaseAmount: pricing.marginableBaseAmount,
+        hotelMarginPercentage: pricing.marginPercentage,
+        hotelMarginAmount: pricing.marginAmount,
+        hotelMarginTotalAmount: pricing.marginAmount,
+        extraBedAmount,
+        childWithBedAmount,
+        childWithoutBedAmount,
         totalExtraBedCost: extraBedAmount,
         totalChildWithBedCost: childWithBedAmount,
         totalChildWithoutBedCost: childWithoutBedAmount,
-        totalPrice,
-        totalStayPrice: totalPrice,
-        totalHotelCost: totalPrice,
-        pricePerNight: totalPrice,
-        nightlyRates: Array.isArray(option.nightlyRates)
-          ? option.nightlyRates.map((night: any) =>
-              String(night?.date || '').slice(0, 10) === routeDate ? correctedNightlyRate : night,
-            )
-          : [correctedNightlyRate],
+        mealPlanBreakdown,
+        hotelMealPlanCost: pricing.mealPlanCost,
+        totalHotelMealPlanCost: pricing.mealPlanCost,
+        totalPrice: pricing.totalPrice,
+        totalStayPrice: pricing.totalPrice,
+        totalHotelCost: pricing.totalPrice,
+        pricePerNight: pricing.totalPrice,
+        nightlyRates: [correctedNightlyRate],
         amountIncludesHotelMargin: true,
         pricingIncludesHotelMargin: true,
       };

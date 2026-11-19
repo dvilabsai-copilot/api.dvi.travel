@@ -401,6 +401,45 @@ export class OfflineHotelCatalogService {
     return hotelsByRoute;
   }
 
+  async fetchSelectedHotelRates(params: {
+    routes: any[];
+    routeId: number;
+    noOfNights: number;
+    hotelCode: string;
+    roomCount: number;
+    adultCount: number;
+    childCount: number;
+    supplementCounts: Partial<SupplementCounts>;
+  }): Promise<HotelSearchResult[]> {
+    const block = this.buildStayBlocks(params.routes, params.noOfNights)
+      .find(stay => stay.routeIds.includes(params.routeId));
+    if (!block) return [];
+
+    const occupancyKey = 'selected-hotel';
+    const hotelsByBlock = await this.loadHotelsByStayBlock([block], params.roomCount, occupancyKey);
+    const numericHotelCode = params.hotelCode.match(/(?:^|[^0-9])(\d+)$/)?.[1];
+    const hotels = (hotelsByBlock.get(this.blockCacheKey(block, params.roomCount, occupancyKey)) || [])
+      .filter(hotel => [hotel.hotel_code, hotel.hotel_id].some(value => {
+        const code = String(value ?? '').trim();
+        return code === params.hotelCode || code === numericHotelCode;
+      }));
+    if (hotels.length === 0) return [];
+
+    const dates = this.getNightDates(block.checkInDate, block.checkOutDate);
+    const catalog = await this.loadCatalogRows(hotels, dates);
+    // Keep the default result for existing selections. Use the existing
+    // explicit-plan validation to expose other fully priced stay options.
+    // A legacy room reference is shared across plans, so keep separate
+    // parent results for each plan while retaining the existing reference.
+    const results = await Promise.all(['', 'CP', 'MAP', 'AP'].map(code =>
+      this.fetchOfflineHotelsForStayBlock(
+        block, params.roomCount, occupancyKey, params.adultCount, params.childCount,
+        catalog, hotels, code, params.supplementCounts,
+      ),
+    ));
+    return results.flat();
+  }
+
   private buildStayBlocks(routes: any[], noOfNights: number): StayBlock[] {
     const blocks: StayBlock[] = [];
     const totalRoutes = routes.length;
@@ -497,8 +536,8 @@ export class OfflineHotelCatalogService {
       return [];
     }
 
-    const cityCandidates = await this.resolveCityCandidates(block.destination);
-    if (cityCandidates.length === 0) {
+    const cityCandidates = prefetchedHotels ? [] : await this.resolveCityCandidates(block.destination);
+    if (!prefetchedHotels && cityCandidates.length === 0) {
       return [];
     }
 
@@ -633,13 +672,7 @@ const bestOffer = (
         totalChildWithBedCost: bestOffer.nightlyChildWithBedCost[0] || 0,
         totalChildWithoutBedCost: bestOffer.nightlyChildWithoutBedCost[0] || 0,
         nightlyMealPlanBreakdown: bestOffer.nightlyMealPlanBreakdown,
-        nightlyRates: dateList.map((date, index) => ({
-          date,
-          baseAmount: bestOffer.nightlyBase[index] || 0,
-          marginPercentage: bestOffer.hotelMarginPercentage,
-          marginAmount: bestOffer.nightlyMargin[index] || 0,
-          sellAmount: bestOffer.nightlySell[index] || 0,
-        })),
+        nightlyRates: this.getOfferNightlyRates(bestOffer, dateList),
         priceLabel: 'Price subject to hotel approval',
         priceSource: 'DATABASE',
         bookingMode: 'MANUAL_APPROVAL',
@@ -713,13 +746,7 @@ const bestOffer = (
             : `Not available on ${offer.unavailableDates.join(', ')}. The continuous stay is unavailable because rates are missing for another linked night.`,
           approvalStatus: 'NOT_REQUESTED',
           manualConfirmationStatus: 'NOT_STARTED',
-          nightlyRates: dateList.map((date, index) => ({
-            date,
-            baseAmount: offer.nightlyBase[index] || 0,
-            marginPercentage: offer.hotelMarginPercentage,
-            marginAmount: offer.nightlyMargin[index] || 0,
-            sellAmount: offer.nightlySell[index] || 0,
-          })),
+          nightlyRates: this.getOfferNightlyRates(offer, dateList),
         })),
         } as HotelSearchResult & Record<string, unknown>);
 
@@ -832,6 +859,21 @@ const bestOffer = (
       Math.max(Number(roomCount || 1), 1),
       occupancyKey,
     ].join('|').toLowerCase();
+  }
+
+  private getOfferNightlyRates(offer: OfflineRoomOffer, dates: string[]) {
+    return dates.map((date, index) => ({
+      date,
+      baseAmount: offer.nightlyBase[index],
+      roomCost: offer.nightlyRoomCost[index],
+      extraBedAmount: offer.nightlyExtraBedCost[index],
+      childWithBedAmount: offer.nightlyChildWithBedCost[index],
+      childWithoutBedAmount: offer.nightlyChildWithoutBedCost[index],
+      marginPercentage: offer.hotelMarginPercentage,
+      marginAmount: offer.nightlyMargin[index],
+      sellAmount: offer.nightlySell[index],
+      mealPlanBreakdown: offer.nightlyMealPlanBreakdown[index],
+    }));
   }
 
   /** Load hotel masters with SQL city predicates, once per logical stay block. */
