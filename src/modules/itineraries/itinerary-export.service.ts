@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { PrismaService } from '../../prisma.service';
 import { ItineraryPricingService } from './itinerary-pricing.service';
+import { buildOption2StyleExport } from './itinerary-option2-export.layout';
 
 type ItineraryExportResult = { workbook: ExcelJS.Workbook; fileName: string };
 
@@ -13,7 +14,7 @@ const hotelHeaders = ['Day', 'Destination', 'Hotel & Category', 'Room Type', 'Me
 export class ItineraryExportService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async exportItineraryToExcel(planId: number): Promise<ItineraryExportResult> {
+  async exportItineraryToExcel(planId: number, layout: 'legacy' | 'option2' = 'legacy'): Promise<ItineraryExportResult> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({ where: { itinerary_plan_ID: planId, deleted: 0 } });
     if (!plan) throw new NotFoundException('Itinerary plan not found');
 
@@ -39,6 +40,18 @@ export class ItineraryExportService {
     if (preference === 1 || preference === 3) row = await this.writeHotels(sheet, row, planId, styles, hotelMarginPercentage);
     if (preference === 3) row += 1;
     if (preference === 2 || preference === 3) row = await this.writeVehicles(sheet, row, planId, this.num(plan.no_of_days), preference, styles);
+    // Opt-in format only; the default workbook remains unchanged.
+    if (layout === 'option2') {
+      const populated = buildOption2StyleExport(workbook, sheet, String(plan.itinerary_quote_ID || ''));
+      if (populated) {
+        // Preserve the original transport/vehicle rows and their calculations.
+        const originalWorksheet = this.buildVerticalSheet(workbook, sheet);
+        this.autoSize(originalWorksheet);
+        originalWorksheet.name = 'Transport';
+        workbook.removeWorksheet(sheet.id);
+        return { workbook, fileName: `ITINERARY-${this.safeFilePart(plan.itinerary_quote_ID || `DVI${planId}`)}.xlsx` };
+      }
+    }
     const verticalSheet = this.buildVerticalSheet(workbook, sheet);
     workbook.removeWorksheet(sheet.id);
     this.autoSize(verticalSheet);
