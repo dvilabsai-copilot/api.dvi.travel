@@ -2600,7 +2600,11 @@ timingStepStartedAt =
     });
     if (provider === 'offline') {
       try {
-        candidates = await this.resolveOfflineIntentCandidates(plan, stay, data, groupType);
+        candidates = await this.resolveOfflineIntentCandidates(plan, stay, {
+          ...data,
+          canonicalHotelId: requestedCanonicalHotelId,
+          hotelCode,
+        }, groupType);
       } catch (error) {
         const errorCode = String((error as any)?.response?.code || (error as any)?.code || '').trim();
         if (errorCode === 'HOTEL_NO_AVAILABILITY' || errorCode === 'HOTEL_RATE_STALE' || data.previewOnly) {

@@ -155,6 +155,20 @@ test('offline preview prices each night with one extra bed and only the selected
   }
 });
 
+test('offline card preview resolves a saved master ID using the master catalogue code', async () => {
+  const { service } = createService(async () => []);
+  service.prisma.dvi_hotel.findUnique = async () => ({ hotel_id: 211, hotel_code: '173' });
+  service.resolveOfflineIntentCandidates = async (_plan, _stay, request) => {
+    assert.equal(request.canonicalHotelId, 211);
+    assert.equal(request.hotelCode, '173');
+    return candidates.map(candidate => ({ ...candidate, hotelCode: '173', providerHotelCode: '173' }));
+  };
+
+  const result = await service.previewHotelIntent(payload({ hotelCode: '211', providerHotelCode: '211' }));
+  assert.equal(result.status, 'AVAILABLE');
+  assert.deepEqual(result.selections.map(selection => selection.hotelCode), ['173', '173']);
+});
+
 test('offline preview returns NO_AVAILABILITY and does not open a persistence path', async () => {
   const { service, wasPersisted } = createService(async () => {
     throw new BadRequestException({ code: 'HOTEL_NO_AVAILABILITY', status: 'NO_AVAILABILITY' });
