@@ -314,6 +314,28 @@ private tableName(
       .replace(/'/g, '&#039;');
   }
 
+  private getAuthSmtpConnection(host: string, port: number) {
+    const relayPort = process.env.AUTH_SMTP_RELAY_PORT?.trim();
+    if (!relayPort) {
+      return { host, port };
+    }
+
+    const deliveryPort = Number(relayPort);
+    if (!Number.isInteger(deliveryPort) || deliveryPort < 1 || deliveryPort > 65535) {
+      this.logger.error('Auth SMTP relay configuration has an invalid port.');
+      throw new ServiceUnavailableException(
+        'Email service is not configured correctly. Please contact support.',
+      );
+    }
+
+    return {
+      host: '127.0.0.1',
+      port: deliveryPort,
+      requireTLS: true,
+      tls: { servername: host },
+    };
+  }
+
   async sendPartnerActivationMail(
     email: string,
     activationUrl: string,
@@ -380,8 +402,7 @@ private tableName(
 
     const transporter =
       nodemailer.createTransport({
-        host,
-        port,
+        ...this.getAuthSmtpConnection(host, port),
         secure,
         auth:
           user && pass
@@ -877,9 +898,6 @@ await transporter.sendMail({
       process.env.SMTP_PORT || process.env.MAIL_PORT || 587,
     );
 
-    const relayPort = process.env.AUTH_OTP_SMTP_RELAY_PORT?.trim();
-    const deliveryPort = relayPort ? Number(relayPort) : port;
-
     const secureSetting = String(
       process.env.SMTP_SECURE || process.env.MAIL_SECURE || '',
     ).trim().toLowerCase();
@@ -939,7 +957,7 @@ const intro =
       );
     }
 
-    if (![port, deliveryPort].every((value) => Number.isInteger(value) && value >= 1 && value <= 65535)) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
       this.logger.error('OTP SMTP configuration has an invalid port.');
 
       throw new ServiceUnavailableException(
@@ -958,11 +976,9 @@ const intro =
     }
 
     const transporter = nodemailer.createTransport({
-      host: relayPort ? '127.0.0.1' : host,
-      port: deliveryPort,
+      ...this.getAuthSmtpConnection(host, port),
       secure,
       auth: user && pass ? { user, pass } : undefined,
-      ...(relayPort ? { requireTLS: true, tls: { servername: host } } : {}),
     });
 
     await transporter.sendMail({
