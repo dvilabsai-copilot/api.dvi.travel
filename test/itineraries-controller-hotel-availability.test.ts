@@ -232,6 +232,10 @@ const response = await controller.resetItineraryHotelAvailability(
 
 test('acknowledgement returns accepted selections and financial totals without another supplier search', async () => {
   const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  (controller as any).itineraryAccessService = {
+    assertVehicleAgentHotelMutation: () => undefined,
+    getQuoteAccessDecision: async () => ({ exists: true, allowed: true }),
+  };
   let acceptedIds: number[] = [];
   (controller as any).hotelAvailabilitySnapshotService = {
     applyAcceptedSelectionChanges: async (_quoteId: string, selectionIds: number[]) => {
@@ -261,6 +265,28 @@ test('acknowledgement returns accepted selections and financial totals without a
   assert.equal(response.appliedCount, 2);
   assert.equal(response.hotelDetails.hotels[0].hotelName, 'Accepted replacement');
   assert.equal(response.financialSummary.overallCost, 725);
+});
+
+test('ordinary availability check exposes its approval preview with the legacy reconciliation flag disabled', async () => {
+  const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  let requestedReconciliation: boolean | undefined;
+  (controller as any).hotelAvailabilitySnapshotService = {
+    searchAndPersist: async (...args: any[]) => {
+      requestedReconciliation = args[4];
+      return {
+        response: { hotels: [], hotelTabs: [], hotelSelectionState: [] },
+        changeSummary: { hasChanges: true, totalChanges: 1, changes: [] },
+        previewId: 'plain-check-preview',
+      };
+    },
+  };
+  (controller as any).logger = { log: () => undefined };
+  (controller as any).detailsService = { getItineraryDetails: async () => ({ overallCost: 100 }) };
+  const result = await controller.checkItineraryHotelAvailability('DVI-CHECK', {}, { user: { userId: 7 } });
+  assert.equal(requestedReconciliation, false);
+  assert.equal(result.reconciliationEnabled, true);
+  assert.equal(result.previewId, 'plain-check-preview');
+  assert.equal(result.changeSummary.hasChanges, true);
 });
 
 test('reconciliation check forwards the preview flag without applying changes', async () => {

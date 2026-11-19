@@ -807,7 +807,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     const response = {
       ...compactResponse,
       previewId: result.previewId,
-      reconciliationEnabled,
+      reconciliationEnabled: reconciliationEnabled || Boolean(result.previewId),
     };
     this.logger.log(`[HOTEL_CHECK_TIMING] response-ready ${JSON.stringify({
       quoteId,
@@ -824,6 +824,10 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     @Body() body: { selectionIds?: number[]; previewId?: string },
     @Req() req: any,
   ) {
+    this.itineraryAccessService.assertVehicleAgentHotelMutation(req.user);
+    const access = await this.itineraryAccessService.getQuoteAccessDecision(quoteId, req.user);
+    if (!access.exists) throw new NotFoundException('Itinerary not found');
+    if (!access.allowed) throw new ForbiddenException('You are not allowed to update this itinerary');
     const applied = await this.hotelAvailabilitySnapshotService.applyAcceptedSelectionChanges(
       quoteId,
       Array.isArray(body?.selectionIds) ? body.selectionIds : [],

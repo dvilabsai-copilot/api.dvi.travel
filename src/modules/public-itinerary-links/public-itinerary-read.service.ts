@@ -111,6 +111,26 @@ const plan =
       );
     }
 
+    const issued = link.issuedItinerary != null;
+    const itinerary = issued ? link.issuedItinerary : await this.buildPublicItinerary(plan, link);
+    await this.prisma.$transaction([
+      this.prisma.public_itinerary_links.update({
+        where: { id: link.id },
+        data: { accessCount: { increment: 1 }, lastAccessedAt: now },
+      }),
+      this.prisma.public_itinerary_links.updateMany({
+        where: { id: link.id, firstAccessedAt: null },
+        data: { firstAccessedAt: now },
+      }),
+    ]);
+    return { itinerary, expiresAt: link.expiresAt.toISOString(), issued };
+}
+
+async buildPublicItinerary(
+  plan: { itinerary_quote_ID: string; agent_id: number | null },
+  link: { groupType: number; createdByUserId: number | null; createdByAgentId: number | null },
+  issuing = false,
+) {
 const [
   itinerary,
   hotelDetails,
@@ -127,7 +147,10 @@ const [
     .getHotelDetailsByQuoteId(
       plan.itinerary_quote_ID,
     )
-    .catch(() => null),
+    .catch((error) => {
+      if (issuing) throw error;
+      return null;
+    }),
 
 Number(plan.agent_id || 0) > 0
   ? this.prisma.dvi_agent_configuration.findMany({
@@ -1316,33 +1339,6 @@ packageIncludes: {
   },
 };
 
-    await this.prisma.$transaction([
-      this.prisma.public_itinerary_links.update({
-        where: {
-          id: link.id,
-        },
-        data: {
-          accessCount: {
-            increment: 1,
-          },
-          lastAccessedAt: now,
-        },
-      }),
-
-      this.prisma.public_itinerary_links.updateMany({
-        where: {
-          id: link.id,
-          firstAccessedAt: null,
-        },
-        data: {
-          firstAccessedAt: now,
-        },
-      }),
-    ]);
-
-    return {
-      itinerary: publicItinerary,
-      expiresAt: link.expiresAt.toISOString(),
-    };
+    return publicItinerary;
   }
 }

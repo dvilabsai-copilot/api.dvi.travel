@@ -6,7 +6,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { createConnection } from 'mysql2/promise';
 import { PrismaService } from '../../../prisma.service';
 import {
@@ -118,6 +118,14 @@ export type HotelAvailabilityChangeSummary = {
   hasChanges: boolean;
   totalChanges: number;
   changes: HotelAvailabilityChange[];
+};
+
+type HotelAvailabilityProposal = {
+  selectionId: number;
+  revision: string;
+  origin: string;
+  searchRunId: string;
+  option: Record<string, unknown>;
 };
 
 export type EmptyHotelStayBlock = {
@@ -1672,6 +1680,9 @@ export class HotelAvailabilitySnapshotService {
       const persistenceStartedAt = Date.now();
       let changeSummary: HotelAvailabilityChangeSummary;
       let previewId: string | undefined;
+      const proposals = requestType === 'CHECK_AVAILABILITY' && !resetSelections
+        ? new Map<number, HotelAvailabilityProposal>()
+        : undefined;
       if (!shouldPersist) {
         // Reconciliation mode is read-only for itinerary data. The preview
         // record stores the exact supplier result for the later acknowledgement
@@ -1689,15 +1700,8 @@ export class HotelAvailabilitySnapshotService {
           failedProviders,
           routes,
           true,
+          proposals,
         );
-        if (reconciliation) {
-          previewId = await this.storeAvailabilityPreview(quoteId, plan.itinerary_plan_ID, {
-            rows,
-            searchRunId,
-            failedProviders: Array.from(failedProviders),
-            checkedAt: checkedAt.toISOString(),
-          });
-        }
       } else {
         // Persist only selected itinerary rows. Fresh inventory remains scoped
         // to this request and is returned directly to the mounted React page.
@@ -1731,9 +1735,14 @@ export class HotelAvailabilitySnapshotService {
             failedProviders,
             routes,
             false,
-            true,
+            proposals,
           );
         }, { maxWait: 15000, timeout: 120000 });
+      }
+      if (proposals && (reconciliation || proposals.size > 0)) {
+        previewId = await this.storeAvailabilityPreview(quoteId, plan.itinerary_plan_ID, {
+          proposals: [...proposals.values()],
+        });
       }
       logStage('selection-reconciliation', persistenceStartedAt);
 
@@ -1843,35 +1852,16 @@ export class HotelAvailabilitySnapshotService {
       }
 
       const appliedIds = await this.prisma.$transaction(async (tx) => {
-        if (previewId) {
-          const preview = await this.readAvailabilityPreview(quoteId, previewId);
-          const routes = await this.prisma.dvi_itinerary_route_details.findMany({
-            where: { itinerary_plan_ID: plan.itinerary_plan_ID, deleted: 0 },
-            orderBy: { itinerary_route_date: 'asc' },
-          });
-          await this.reconcileSelections(
-            tx,
-            plan.itinerary_plan_ID,
-            preview.rows,
-            preview.searchRunId,
-            createdBy,
-            false,
-            undefined,
-            this.getPlanMealPlanCode(plan),
-            this.getPlanMealPlanFlags(plan),
-            preview.failedProviders,
-            routes,
-          );
-        }
+        const proposals = previewId ? await this.readAvailabilityPreview(tx, quoteId, previewId) : undefined;
         const acceptedIds = await this.applyPendingSelectionChanges(
-          tx, plan.itinerary_plan_ID, requestedIds, createdBy,
+          tx, plan.itinerary_plan_ID, requestedIds, createdBy, proposals,
         );
         if (previewId) {
-          const previewModel = (tx as any).dvi_itinerary_hotel_availability_preview;
-          await previewModel?.updateMany?.({
-            where: { preview_id: String(previewId).trim(), quote_id: String(quoteId).trim(), status: 1 },
+          const claimed = await tx.dvi_itinerary_hotel_availability_preview.updateMany({
+            where: { preview_id: previewId, quote_id: quoteId.trim(), status: 1, expires_at: { gt: new Date() } },
             data: { status: 0, updatedon: new Date() },
           });
+          if (claimed.count !== 1) throw this.staleAvailabilityPreview();
         }
         return acceptedIds;
       },
@@ -1894,6 +1884,7 @@ export class HotelAvailabilitySnapshotService {
     planId: number,
     requestedIds: number[],
     createdBy: number,
+    proposals?: Map<number, HotelAvailabilityProposal>,
   ): Promise<number[]> {
     const selections = await tx.dvi_itinerary_plan_hotel_details.findMany({
       where: {
@@ -1904,10 +1895,16 @@ export class HotelAvailabilitySnapshotService {
         hotel_required: 1,
       },
     });
+    if (proposals && (selections.length !== requestedIds.length || selections.some((row: any) => {
+      const proposal = proposals.get(Number(row.itinerary_plan_hotel_details_ID));
+      return !proposal || isProtectedHotelSelection(row) || proposal.revision !== this.selectionRevision(row);
+    }))) throw this.staleAvailabilityPreview();
     const accepted: number[] = [];
     for (const selection of selections) {
       const snapshot = parseHotelSelectionSnapshot(selection) as any;
-      const pending = snapshot?.pendingAvailabilityChange;
+      const pending = proposals
+        ? { ...proposals.get(Number(selection.itinerary_plan_hotel_details_ID)), requiresAcceptance: true }
+        : snapshot?.pendingAvailabilityChange;
       const option = pending?.option;
       if (!option || pending?.requiresAcceptance !== true) continue;
 
@@ -1925,10 +1922,23 @@ export class HotelAvailabilitySnapshotService {
         hotel_category_id: hotelCategoryId,
         requires_price_reacceptance: false,
       };
-      await tx.dvi_itinerary_plan_hotel_details.update({
-        where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
-        data: updateData,
-      });
+      const where = { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID };
+      if (proposals) {
+        const changed = await tx.dvi_itinerary_plan_hotel_details.updateMany({
+          where: {
+            ...where,
+            updatedon: selection.updatedon,
+            selected_price_snapshot: selection.selected_price_snapshot,
+            selected_total_price: selection.selected_total_price,
+            status: 1,
+            deleted: 0,
+          },
+          data: updateData,
+        });
+        if (changed.count !== 1) throw this.staleAvailabilityPreview();
+      } else {
+        await tx.dvi_itinerary_plan_hotel_details.update({ where, data: updateData });
+      }
       await this.syncSelectedRoom(tx, selection, option, createdBy);
       accepted.push(Number(selection.itinerary_plan_hotel_details_ID));
     }
@@ -2050,10 +2060,11 @@ export class HotelAvailabilitySnapshotService {
   }
 
   private async readAvailabilityPreview(
+    tx: any,
     quoteId: string,
     previewId: string,
-  ): Promise<{ rows: any[]; searchRunId: string; failedProviders: Set<string> }> {
-    const model = (this.prisma as any).dvi_itinerary_hotel_availability_preview;
+  ): Promise<Map<number, HotelAvailabilityProposal>> {
+    const model = tx.dvi_itinerary_hotel_availability_preview;
     const preview = await model?.findFirst?.({
       where: {
         preview_id: String(previewId).trim(),
@@ -2062,22 +2073,27 @@ export class HotelAvailabilitySnapshotService {
         expires_at: { gt: new Date() },
       },
     });
-    if (!preview) throw new ConflictException({
-      message: 'This hotel availability preview has expired. Refresh availability and review it again.',
-      code: 'HOTEL_AVAILABILITY_PREVIEW_EXPIRED',
-    });
+    if (!preview) throw this.staleAvailabilityPreview();
     let payload: any;
     try { payload = JSON.parse(String(preview.payload_json || '{}')); } catch { payload = null; }
-    if (!payload || !Array.isArray(payload.rows) || !String(payload.searchRunId || '').trim()) {
-      throw new ServiceUnavailableException('Hotel availability preview is invalid.');
-    }
-    return {
-      rows: payload.rows,
-      searchRunId: String(payload.searchRunId),
-      failedProviders: new Set(
-        (Array.isArray(payload.failedProviders) ? payload.failedProviders : []).map(String),
-      ),
-    };
+    if (!Array.isArray(payload?.proposals)) throw this.staleAvailabilityPreview();
+    return new Map(payload.proposals.map((proposal: HotelAvailabilityProposal) => [proposal.selectionId, proposal]));
+  }
+
+  private staleAvailabilityPreview(): ConflictException {
+    return new ConflictException({
+      message: 'The saved hotel selection or availability preview has changed. Refresh availability and review it again.',
+      code: 'HOTEL_AVAILABILITY_PREVIEW_EXPIRED',
+    });
+  }
+
+  private selectionRevision(selection: any): string {
+    return createHash('sha256').update(JSON.stringify([
+      selection.itinerary_route_id, selection.itinerary_route_date, selection.group_type,
+      selection.hotel_id, selection.hotel_code, selection.hotel_provider,
+      selection.selected_rate_option_id, selection.selected_total_price, selection.updatedon,
+      selection.selected_price_snapshot,
+    ])).digest('hex');
   }
 
   private getSearchableRouteIds(routes: any[], noOfNights: number): Set<number> {
@@ -5055,7 +5071,7 @@ export class HotelAvailabilitySnapshotService {
     failedProviders: Set<string> = new Set(),
     routes: any[] = [],
     dryRun = false,
-    persistPriceChanges = false,
+    proposals?: Map<number, HotelAvailabilityProposal>,
   ): Promise<HotelAvailabilityChangeSummary> {
     const changes: HotelAvailabilityChange[] = [];
     if (!dryRun) await this.removeStaleSelectionVersions(tx, planId);
@@ -5279,9 +5295,11 @@ export class HotelAvailabilitySnapshotService {
       }
 
       if (replacementWasUnavailable) {
-        if (!dryRun) await this.stagePendingSelectionChange(
-          tx, selection, pricedReplacement, nextSelectionOrigin, searchRunId, 'AUTO_SELECTION_CHANGED',
-        );
+        if (proposals) {
+          this.recordAvailabilityProposal(proposals, selection, pricedReplacement, nextSelectionOrigin, searchRunId);
+        } else if (!dryRun) {
+          await this.stagePendingSelectionChange(tx, selection, pricedReplacement, nextSelectionOrigin, searchRunId, 'AUTO_SELECTION_CHANGED');
+        }
         changes.push(this.buildChange('AUTO_SELECTION_CHANGED', selection, pricedReplacement, {
           previous,
           current: next,
@@ -5290,12 +5308,8 @@ export class HotelAvailabilitySnapshotService {
           requiresAcceptance: true,
         }));
       } else if (matched && Math.abs(displayPriceDelta) > 0.009) {
-        if (!dryRun && persistPriceChanges) {
-          await tx.dvi_itinerary_plan_hotel_details.update({
-            where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
-            data: this.buildSelectionUpdate(selection, pricedReplacement, origin, searchRunId),
-          });
-          await this.syncSelectedRoom(tx, selection, pricedReplacement, createdBy);
+        if (proposals) {
+          this.recordAvailabilityProposal(proposals, selection, pricedReplacement, origin, searchRunId);
         } else if (!dryRun) {
           await this.stagePendingSelectionChange(
             tx, selection, pricedReplacement, origin, searchRunId, 'PRICE_CHANGED',
@@ -5310,13 +5324,7 @@ export class HotelAvailabilitySnapshotService {
         }));
       } else {
         const previousPersistedSnapshot = parseHotelSelectionSnapshot(selection) as any;
-        if (!dryRun && persistPriceChanges) {
-          await tx.dvi_itinerary_plan_hotel_details.update({
-            where: { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID },
-            data: this.buildSelectionUpdate(selection, pricedReplacement, origin, searchRunId),
-          });
-          await this.syncSelectedRoom(tx, selection, pricedReplacement, createdBy);
-        } else if (
+        if (
           String(previousPersistedSnapshot?.availabilityStatus || '').toUpperCase() === 'UNAVAILABLE' ||
           previousPersistedSnapshot?.pendingAvailabilityChange
         ) {
@@ -7683,6 +7691,23 @@ export class HotelAvailabilitySnapshotService {
       const rightStableId = `${normalize(right?.providerHotelCode || right?.hotelCode)}|${this.optionKey(right)}`;
       return leftStableId.localeCompare(rightStableId);
     })[0] || null;
+  }
+
+  private recordAvailabilityProposal(
+    proposals: Map<number, HotelAvailabilityProposal>,
+    selection: any,
+    option: any,
+    origin: string,
+    searchRunId: string,
+  ): void {
+    const selectionId = Number(selection.itinerary_plan_hotel_details_ID);
+    proposals.set(selectionId, {
+      selectionId,
+      revision: this.selectionRevision(selection),
+      origin,
+      searchRunId,
+      option: this.toPendingSelectionOption(option),
+    });
   }
 
   private async stagePendingSelectionChange(

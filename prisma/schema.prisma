@@ -7043,6 +7043,7 @@ model public_itinerary_links {
   firstAccessedAt  DateTime? @db.DateTime(0)
   lastAccessedAt   DateTime? @db.DateTime(0)
   accessCount      Int       @default(0)
+  issuedItinerary  Json?     @map("issued_itinerary")
 
   @@index([itineraryPlanId], map: "idx_public_itinerary_plan")
   @@index([expiresAt], map: "idx_public_itinerary_expires")

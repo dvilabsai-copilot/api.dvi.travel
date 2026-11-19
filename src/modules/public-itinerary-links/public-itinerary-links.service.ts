@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma.service';
 import {
@@ -17,6 +18,7 @@ import {
   SystemRole,
 } from '../auth/constants/system-role.constants';
 import { CreatePublicItineraryLinkDto } from './dto/create-public-itinerary-link.dto';
+import { PublicItineraryReadService } from './public-itinerary-read.service';
 
 type PublicLinkViewer = ItineraryViewer & {
   userID?: number;
@@ -31,6 +33,7 @@ export class PublicItineraryLinksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly itineraryAccessService: ItineraryAccessService,
+    private readonly publicItineraryReadService: PublicItineraryReadService,
   ) {}
 
   private getConfiguration() {
@@ -132,11 +135,13 @@ const access =
         },
       select: {
   itinerary_plan_ID: true,
+  itinerary_quote_ID: true,
+  quotation_status: true,
   agent_id: true,
 },
       });
 
-    if (!plan) {
+    if (!plan || Number(plan.quotation_status) === 2) {
   throw new NotFoundException(
     'Active itinerary plan not found',
   );
@@ -180,9 +185,12 @@ const createdByAgentId =
 
     const tokenHash = this.hashToken(rawToken);
 
-    const expiresAt = new Date(
-      Date.now() + ttlHours * 60 * 60 * 1000,
+    const issuedItinerary = await this.publicItineraryReadService.buildPublicItinerary(
+      plan,
+      { groupType, createdByUserId, createdByAgentId },
+      true,
     );
+    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
     await this.prisma.public_itinerary_links.create({
   data: {
@@ -192,6 +200,7 @@ const createdByAgentId =
     expiresAt,
     createdByUserId,
     createdByAgentId,
+    issuedItinerary: JSON.parse(JSON.stringify(issuedItinerary)) as Prisma.InputJsonValue,
   },
 });
 
