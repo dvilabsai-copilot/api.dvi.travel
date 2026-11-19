@@ -3,21 +3,21 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const itinerarySources = [
-  'src/modules/itineraries/services/hotel-availability-snapshot.service.ts',
+// Availability and selection-intent resolution use persisted search snapshots.
+// The controller and booking validation should go through the workflow API.
+const snapshotConsumers = [
   'src/modules/itineraries/services/hotel-stay-block-validation.service.ts',
   'src/modules/itineraries/services/itinerary-selection-workflow.service.ts',
-  'src/modules/itineraries/itineraries.service.ts',
   'src/modules/itineraries/itineraries.controller.ts',
 ];
 
-test('active itinerary hotel workflow has no search-cache table dependency', () => {
-  for (const file of itinerarySources) {
+test('hotel selection persistence and booking validation do not access the search snapshot table directly', () => {
+  for (const file of snapshotConsumers) {
     const source = readFileSync(resolve(file), 'utf8');
     assert.equal(
       source.includes('dvi_itinerary_hotel_search_cache'),
       false,
-      `${file} must not read or write the legacy hotel search cache`,
+      `${file} must access availability through the hotel workflow`,
     );
   }
 });

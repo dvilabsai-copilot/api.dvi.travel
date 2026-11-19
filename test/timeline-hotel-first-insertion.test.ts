@@ -53,7 +53,7 @@ test('inserts hotel travel, check-in and rest rows with preserved state updates'
   assert.equal(result.rows[0].hotspot_end_time instanceof Date, true);
   assert.equal(result.order, 3);
   assert.equal(result.currentTime, '12:15:00');
-  assert.equal(result.currentLocationName, 'Hotel');
+  assert.equal(result.currentLocationName, baseInput.hotelInfo.hotelName);
   assert.equal(result.didHotelFirstCheckin, true);
   assert.ok(logs.some((entry) => entry.rule === 'HOTEL_FIRST_SELECTED'));
   assert.ok(logs.some((entry) => entry.rule === 'REST_GAP_INSERTED'));

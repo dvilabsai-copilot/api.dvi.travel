@@ -98,31 +98,24 @@ function createTimingHarness(firstRouteDate: string, existingMarkers: any[]) {
   const markerCreates: any[] = [];
   const hotelUpdates: any[] = [];
   const deletes: any[] = [];
+  const route = {
+    itinerary_route_ID: 10,
+    itinerary_route_date: new Date(`${firstRouteDate}T00:00:00.000Z`),
+    no_of_days: 1,
+    next_visiting_location: 'Munnar',
+    location_name: 'Munnar',
+    route_start_time: '05:30:00',
+    route_end_time: '18:00:00',
+  };
   const tx: any = {
+    $queryRaw: async (query: { sql: string; values: unknown[] }) => {
+      assert.match(query.sql, /FROM dvi_itinerary_plan_details[\s\S]*FOR UPDATE/);
+      assert.deepEqual(query.values, [1]);
+      return [{ itinerary_plan_ID: 1 }];
+    },
     dvi_itinerary_route_details: {
-      findFirst: async (args: any) => {
-        if (args.select?.itinerary_route_ID) {
-          return {
-            itinerary_route_ID: 10,
-            itinerary_route_date: new Date(`${firstRouteDate}T00:00:00.000Z`),
-            no_of_days: 1,
-            next_visiting_location: 'Munnar',
-            location_name: 'Airport',
-            route_start_time: '05:30:00',
-            route_end_time: '18:00:00',
-          };
-        }
-        return {
-          itinerary_route_ID: 10,
-          itinerary_route_date: new Date(`${firstRouteDate}T00:00:00.000Z`),
-          no_of_days: 1,
-          next_visiting_location: 'Munnar',
-          location_name: 'Airport',
-          route_start_time: '05:30:00',
-          route_end_time: '18:00:00',
-        };
-      },
-      update: async () => ({}),
+      findFirst: async () => ({ ...route }),
+      update: async ({ data }: any) => Object.assign(route, data),
     },
     dvi_itinerary_plan_details: {
       findFirst: async () => ({ itinerary_preference: 1 }),
@@ -151,7 +144,13 @@ function createTimingHarness(firstRouteDate: string, existingMarkers: any[]) {
   const prisma: any = {
     $transaction: async (callback: (value: any) => Promise<any>) => callback(tx),
   };
-  const service = new ItineraryRouteTimingService(prisma, hotspotEngine);
+  const service = new ItineraryRouteTimingService(prisma, hotspotEngine, {
+    assertPersistedPlan: async (planId: number, context: string, transaction: unknown) => {
+      assert.equal(planId, 1);
+      assert.equal(context, 'route-time:1:10');
+      assert.equal(transaction, tx);
+    },
+  } as any);
   service.setCallbacks({ forceRebuildVehiclePricingAfterHotspotChange: async () => undefined });
 
   return { service, markerCreates, hotelUpdates, deletes };

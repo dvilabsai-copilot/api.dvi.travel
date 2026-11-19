@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { HotelSearchService } from '../src/modules/hotels/services/hotel-search.service';
 import { ItineraryHotelApprovalService } from '../src/modules/itineraries/services/itinerary-hotel-approval.service';
 import { OfflineHotelCatalogService } from '../src/modules/itineraries/services/offline-hotel-catalog.service';
 import { ItineraryConfirmationService } from '../src/modules/itineraries/services/itinerary-confirmation.service';
 
-test('axis-only search never invokes registered forbidden suppliers and rejects conflicting flags', async () => {
+test('axis-only search never invokes registered forbidden suppliers and rejects conflicting flags', async (t) => {
   const calls = { tbo: 0, resavenue: 0, hobse: 0 };
   const provider = (name: string) => ({
     getName: () => name,
@@ -14,19 +14,24 @@ test('axis-only search never invokes registered forbidden suppliers and rejects 
   });
   const prisma = {
     dvi_hotel: { findMany: async () => [] },
+    dvi_global_settings: { findFirst: async () => null },
   } as any;
   const offline = { searchOfflineHotels: async () => [] } as any;
   const service = new HotelSearchService(prisma, provider('tbo') as any, provider('resavenue') as any, provider('hobse') as any, offline);
   const previousAxis = process.env.HOTEL_FETCH_AXIS_ONLY;
   const previousTbo = process.env.HOTEL_FETCH_TBO_ONLY;
+  t.after(() => {
+    if (previousAxis === undefined) delete process.env.HOTEL_FETCH_AXIS_ONLY;
+    else process.env.HOTEL_FETCH_AXIS_ONLY = previousAxis;
+    if (previousTbo === undefined) delete process.env.HOTEL_FETCH_TBO_ONLY;
+    else process.env.HOTEL_FETCH_TBO_ONLY = previousTbo;
+  });
   process.env.HOTEL_FETCH_AXIS_ONLY = 'true';
   process.env.HOTEL_FETCH_TBO_ONLY = 'false';
   await service.searchHotels({ cityCode: 'Munnar', checkInDate: '2099-01-01', checkOutDate: '2099-01-02', roomCount: 1, guestCount: 2 } as any);
   assert.deepEqual(calls, { tbo: 0, resavenue: 0, hobse: 0 });
   process.env.HOTEL_FETCH_TBO_ONLY = 'true';
   await assert.rejects(() => service.searchHotels({ cityCode: 'Munnar', checkInDate: '2099-01-01', checkOutDate: '2099-01-02', roomCount: 1, guestCount: 2 } as any), /cannot both be enabled/);
-  process.env.HOTEL_FETCH_AXIS_ONLY = previousAxis;
-  process.env.HOTEL_FETCH_TBO_ONLY = previousTbo;
 });
 
 test('offline option is priced from every requested night and missing nights are rejected', async () => {
@@ -35,7 +40,7 @@ test('offline option is priced from every requested night and missing nights are
     // The route may be any night in the continuous stay represented by the
     // rate option, not only the first night.
     dvi_itinerary_route_details: { findFirst: async () => ({ itinerary_route_ID: 10, itinerary_route_date: new Date('2099-01-02') }) },
-    dvi_hotel: { findFirst: async () => ({ hotel_id: 153, hotel_name: 'GREENRIDGE', hotel_category: 2, hotel_margin: 0, hotel_margin_gst_type: 0, hotel_margin_gst_percentage: 0 }) },
+    dvi_hotel: { findFirst: async () => ({ hotel_id: 153, hotel_code: 'GREENRIDGE-153', hotel_name: 'GREENRIDGE', hotel_category: 2, hotel_margin: 0, hotel_margin_gst_type: 0, hotel_margin_gst_percentage: 0 }) },
     dvi_hotel_rooms: { findMany: async () => [{ room_ID: 22, room_type_id: 7, room_title: 'Deluxe', room_ref_code: 'D', breakfast_included: 1, lunch_included: 0, dinner_included: 0 }] },
     dvi_hotel_room_price_book: { findMany: async () => [{ room_type_id: 7, price_type: 0, year: '2099', month: 'January', day_1: '4500', day_2: '3000' }] },
   } as any;
@@ -63,8 +68,8 @@ test('offline option is priced from every requested night and missing nights are
     provider: 'offline',
     hotelId: 153,
     canonicalHotelId: 153,
-    hotelCode: '153',
-    providerHotelCode: '153',
+    hotelCode: 'GREENRIDGE-153',
+    providerHotelCode: 'GREENRIDGE-153',
     hotelName: 'GREENRIDGE',
     category: 2,
   });
@@ -79,7 +84,7 @@ test('offline pricing does not reject a room because of configured capacity', as
     money: (value: number) => Number(value.toFixed(2)),
   } as any;
   const service = new OfflineHotelCatalogService({} as any, pricing);
-  const offers = await (service as any).buildRoomOffersFromCatalogRows(
+  const offers = (service as any).buildRoomOffersFromLegacyPricebook(
     { hotel_id: 153 },
     ['2099-01-01'],
     2,
@@ -94,8 +99,9 @@ test('offline pricing does not reject a room because of configured capacity', as
         total_max_childrens: 0,
       }]]]),
       activeRoomTypeIds: new Set([7]),
-      pricesByHotelRoomType: new Map([['153|7', [{ year: '2099', month: 'January', day_1: '4500' }]]]),
+      legacyPricebookByRoom: new Map([['153|22|7', [{ price_type: 0, year: '2099', month: 'January', day_1: '4500' }]]]),
       ratePlansByRoom: new Map(),
+      mealPricebookByHotelDate: new Map(),
     },
     0,
   );
@@ -341,15 +347,14 @@ test('offline option uses the itinerary room count when the request omits or und
   assert.deepEqual(resolved.nightlyRates.map((night) => night.sellAmount), [9000, 9000]);
 });
 
-test('offline selection reconciles a stale route id using the selected route date', async () => {
+test('offline selection rejects a route outside the itinerary even with a valid stay date', async () => {
   const calls: any[] = [];
   const prisma = {
     dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_plan_ID: 1 }) },
     dvi_itinerary_route_details: {
       findFirst: async ({ where }: any) => {
         calls.push(where);
-        if (where.itinerary_route_ID === 999) return null;
-        return { itinerary_route_ID: 10, itinerary_route_date: new Date('2099-01-02') };
+        return null;
       },
     },
     dvi_hotel: { findFirst: async () => ({ hotel_id: 153, hotel_name: 'GREENRIDGE', hotel_category: 2, hotel_margin: 0, hotel_margin_gst_type: 0, hotel_margin_gst_percentage: 0 }) },
@@ -362,16 +367,15 @@ test('offline selection reconciles a stale route id using the selected route dat
     money: (value: number) => Number(value.toFixed(2)),
   } as any;
   const service = new OfflineHotelCatalogService(prisma, pricing);
-  const resolved = await service.resolveOfflineRateOption({
+  await assert.rejects(() => service.resolveOfflineRateOption({
     planId: 1,
     routeId: 999,
     routeDate: '2099-01-02',
     canonicalHotelId: 153,
     rateOptionId: 'offline:153:22:7:2099-01-01:2099-01-03',
     roomCount: 1,
-  });
-  assert.equal(resolved.routeId, 10);
-  assert.equal(calls.length, 2);
+  }), error => error instanceof ConflictException && (error.getResponse() as any).code === 'HOTEL_ROUTE_PLAN_MISMATCH');
+  assert.deepEqual(calls, [{ itinerary_route_ID: 999, itinerary_plan_ID: 1, deleted: 0 }]);
 });
 
 test('approval and manual confirmation transitions are transactional and idempotent', async () => {

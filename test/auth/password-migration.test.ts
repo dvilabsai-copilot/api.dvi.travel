@@ -55,12 +55,11 @@ test('logs in with a PHP hash and upgrades it to bcrypt', async () => {
   };
   const jwt = { signAsync: async () => 'test-token' };
   const emailOtp = {};
-  const auth = new AuthService(prisma as never, jwt as never, emailOtp as never);
+  const auth = new AuthService(prisma as never, jwt as never, emailOtp as never, {} as never);
 
   const user = await auth.validateUser('legacy@example.com', password);
   assert.equal(user.userID, 42n);
-  assert.equal(updateArgs?.where && 'password' in (updateArgs.where as object), true);
-  assert.equal(updateArgs?.where && 'userID' in (updateArgs.where as object), true);
+  assert.deepEqual(updateArgs?.where, { userID: 42n, password: storedHash, deleted: 0 });
   const upgradedHash = (updateArgs?.data as { password: string }).password;
   assert.match(upgradedHash, /^\$2[aby]\$10\$/);
   assert.equal(await bcrypt.compare(password, upgradedHash), true);

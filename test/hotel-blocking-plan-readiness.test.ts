@@ -95,27 +95,15 @@ test('an active TBO refundable Book hold is ready for Confirm & Pay before vouch
   assert.deepEqual(await service.assertPlanReady(12032, 1), { ready: true, requestCount: 1 });
 });
 
-test('provider hold cutoffs use policy duration and AxisRooms one-day-before cutoff', () => {
-  const { service } = serviceWithPlan(1);
-  const minimumPolicy = {
-    noBlockBeforeHours: 48,
-    minimumLeadDays: 3,
-    shortLeadDays: 15,
-    mediumLeadDays: 30,
-    longLeadDays: 60,
-    shortDurationHours: 48,
-    mediumDurationHours: 12,
-    longDurationHours: 48,
-    extendedDurationHours: 240,
-    tboHoldLcdBufferDays: 1,
-  };
+test('hold policy exposes the shared local and AxisRooms cutoff', async () => {
+  const service = new HotelBlockingService({
+    dvi_global_settings: { findFirst: async () => null },
+  } as any, {} as any, {} as any);
   const requestedAt = new Date('2026-01-01T10:00:00.000Z');
-
-  const offlineCutoff = (service as any).getProviderHoldCutoff('2026-01-16', requestedAt, minimumPolicy, 'OFFLINE_HOLD');
-  const axisCutoff = (service as any).getProviderHoldCutoff('2026-01-04', requestedAt, minimumPolicy, 'AXISROOMS_HOLD');
-
-  assert.equal(offlineCutoff.toISOString(), '2026-01-03T10:00:00.000Z');
-  assert.equal(axisCutoff.toISOString(), '2026-01-03T00:00:00.000Z');
+  const decision = await service.getHoldPolicyDecision('2026-01-04', requestedAt);
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.cutoffAt, '2026-01-03T10:00:00.000Z');
+  assert.equal(decision.supplierCutoffs.axisRooms, decision.cutoffAt);
 });
 
 test('hotel hold date boundaries use the four configured calendar-day bands', () => {

@@ -104,8 +104,9 @@ function createPermitTxFixture(args?: {
       findMany: async () => viaRouteRows,
     },
     dvi_vehicle: {
-      findUnique: async ({ where }: any) =>
-        vehicles.find((row) => row.vehicle_id === where.vehicle_id) ?? null,
+      findFirst: async ({ where }: any) => vehicles.find((row) =>
+        row.vehicle_id === where.vehicle_id && row.status === where.status && row.deleted === where.deleted
+      ) ?? null,
     },
     dvi_stored_locations: {
       findFirst: async ({ where }: any) => {
@@ -176,7 +177,7 @@ function baseFixture() {
       },
     ],
     viaRouteRows: [],
-    vehicles: [{ vehicle_id: 300, registration_number: 'KA01AA1111' }],
+    vehicles: [{ vehicle_id: 300, registration_number: 'KA01AA1111', status: 1, deleted: 0 }],
     storedLocations: [
       {
         source_location: 'Bengaluru',
@@ -330,7 +331,7 @@ test('same source and destination state does not create a permit row', async () 
       next_visiting_location: 'Ooty',
     },
   ];
-  fixture.vehicles = [{ vehicle_id: 300, registration_number: 'TN01AA1111' }];
+  fixture.vehicles = [{ ...fixture.vehicles[0], registration_number: 'TN01AA1111' }];
   const { tx, getPermitRows } = createPermitTxFixture(fixture);
 
   const service = new RouteEngineService();
@@ -394,8 +395,8 @@ test('branch-specific duplicate behavior keeps permits separate per branch', asy
     },
   ];
   fixture.vehicles = [
-    { vehicle_id: 300, registration_number: 'KA01AA1111' },
-    { vehicle_id: 301, registration_number: 'KA02AA2222' },
+    fixture.vehicles[0],
+    { vehicle_id: 301, registration_number: 'KA02AA2222', status: 1, deleted: 0 },
   ];
   const { tx, getPermitRows } = createPermitTxFixture(fixture);
 

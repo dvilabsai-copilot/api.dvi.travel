@@ -55,6 +55,13 @@ test('latest listing applies pagination in the database', async () => {
     },
     findMany: async (args: any) => {
       planFindManyCalls.push(args);
+      if (args.where?.continuation_root_quote_ID) {
+        return [{
+          itinerary_plan_ID: 12,
+          itinerary_quote_ID: 'DVI7-C1',
+          continuation_root_quote_ID: 'DVI7',
+        }];
+      }
       return [
         {
           itinerary_plan_ID: 7,
@@ -99,7 +106,13 @@ test('latest listing applies pagination in the database', async () => {
   assert.equal(response.recordsTotal, 3);
   assert.equal(response.recordsFiltered, 3);
   assert.equal(response.data.length, 1);
-  assert.equal(planFindManyCalls.length, 1);
+  assert.equal(response.data[0].latest_continuation_quote_ID, 'DVI7-C1');
+  assert.equal(planFindManyCalls.length, 2);
   assert.equal(planFindManyCalls[0].skip, 20);
   assert.equal(planFindManyCalls[0].take, 10);
+  assert.deepEqual(planFindManyCalls[1].where, {
+    deleted: 0,
+    continuation_root_quote_ID: { in: ['DVI7'] },
+    NOT: { itinerary_plan_ID: { in: [11] } },
+  });
 });

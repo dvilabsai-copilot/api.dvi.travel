@@ -142,7 +142,7 @@ export type OfflineRateResolution = {
   providerHotelCode: string;
   hotelName: string;
   category: number;
-  /** The route that was actually matched after stale UI route IDs are reconciled. */
+  /** The active route on the selected itinerary. */
   routeId: number;
   routeDate: string;
   rateOptionId: string;
@@ -1150,15 +1150,13 @@ const bestOffer = (
     for (const room of activeRooms) {
       const roomTypeId = Number(room.room_type_id || 0);
       const roomPlans = catalogRows.ratePlansByRoom.get(Number(room.room_ID || 0)) || [];
-      const matchingPlans = roomPlans.filter((plan: any) => {
-        const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
-        return !requested || inferCanonicalHotelRatePlanCode(`${plan.rateplan_id || ''} ${plan.rateplan_name || ''} ${plan.meal_plan_description || ''}`) === requested;
-      });
-const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
+      const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
 
 // Check every configured rate plan matching the requested meal plan.
 // Existing per-plan pricing and full-stay validation remain unchanged.
-const plansToOffer = requested ? matchingPlans : roomPlans;
+const plansToOffer = requested
+  ? roomPlans.filter(plan => this.resolveCatalogRatePlanCode(plan) === requested)
+  : roomPlans;
 const seenRatePlanIds = new Set<string>();
 
 for (const plan of plansToOffer) {
@@ -1172,9 +1170,7 @@ for (const plan of plansToOffer) {
   // An alternative cannot be selected safely without its own identity.
   if (!isDefaultRatePlan && !ratePlanId.trim()) continue;
 
-  const planMealCode = inferCanonicalHotelRatePlanCode(
-    `${plan.rateplan_id || ''} ${plan.rateplan_name || ''} ${plan.meal_plan_description || ''}`,
-  ) || this.resolveMealPlan(
+  const planMealCode = this.resolveCatalogRatePlanCode(plan) || this.resolveMealPlan(
     room,
     requestedMealPlanCode,
     catalogRows.ratePlansByRoom,
@@ -1613,18 +1609,6 @@ nightlyBase,
     }
 
     const dateList = this.getNightDates(checkInDate, checkOutDate);
-    const requestedRouteDate = String(input.routeDate || '').slice(0, 10);
-    const routeDateOnly = requestedRouteDate || (() => {
-      const parsed = requestedRoute
-        ? new Date(requestedRoute.itinerary_route_date)
-        : null;
-      return parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : '';
-    })();
-
-    // Availability rows can outlive an itinerary route edit. In that case the
-    // browser still has the old route ID, but it does have the current route
-    // date on the selected card. Reconcile that date to the current plan
-    // before persisting instead of rejecting a valid offline option.
     const route = requestedRoute;
 
     const routeDate = new Date(route.itinerary_route_date);
@@ -1768,10 +1752,7 @@ if (
   ): { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } {
     const plans = ratePlansByRoom.get(Number(room?.room_ID || 0)) || [];
     const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
-    const plan = plans.find((candidate: any) => {
-      const text = `${candidate.rateplan_id || ''} ${candidate.rateplan_name || ''} ${candidate.meal_plan_description || ''}`;
-      return requested ? inferCanonicalHotelRatePlanCode(text) === requested : true;
-    }) || plans[0];
+    const plan = plans.find(candidate => !requested || this.resolveCatalogRatePlanCode(candidate) === requested) || plans[0];
     const occupancy = this.parseJsonObject(plan?.occupancy);
     const extraBedRate = Number(occupancy.EXTRABED ?? occupancy.EXTRAADULT ?? occupancy.EXTRACHILD ?? 0);
     const childWithBedRate = Number(occupancy.CHILDWITHBED ?? occupancy.CHILD_WITH_BED ?? occupancy.CWB ?? 0);
@@ -1846,15 +1827,23 @@ return offer.isDefaultRatePlan === false && offer.ratePlanId
     }
   }
 
+  private resolveCatalogRatePlanCode(plan: {
+    rateplan_id?: string | null;
+    rateplan_name?: string | null;
+    meal_plan_description?: string | null;
+  }) {
+    const { rateplan_id, rateplan_name, meal_plan_description } = plan;
+    return inferCanonicalHotelRatePlanCode(rateplan_id) ||
+      inferCanonicalHotelRatePlanCode(rateplan_name) ||
+      inferCanonicalHotelRatePlanCode(meal_plan_description) ||
+      inferCanonicalHotelRatePlanCode(`${rateplan_id || ''} ${rateplan_name || ''} ${meal_plan_description || ''}`);
+  }
+
   private resolveMealPlan(room: any, requestedMealPlanCode = '', ratePlansByRoom?: Map<number, any[]>): string {
     const requested = inferCanonicalHotelRatePlanCode(requestedMealPlanCode);
     if (requested && ratePlansByRoom) {
       const roomPlans = ratePlansByRoom.get(Number(room?.room_ID || 0)) || [];
-      const hasRequestedPlan = roomPlans.some((plan: any) =>
-        inferCanonicalHotelRatePlanCode(
-          `${plan?.rateplan_id || ''} ${plan?.rateplan_name || ''} ${plan?.meal_plan_description || ''}`,
-        ) === requested,
-      );
+      const hasRequestedPlan = roomPlans.some(plan => this.resolveCatalogRatePlanCode(plan) === requested);
       if (hasRequestedPlan) return requested;
     }
 

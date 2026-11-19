@@ -12,6 +12,7 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma.service';
 import {
@@ -397,6 +398,7 @@ private async resolveCanonicalAgentUser(
 private async savePasswordForUser(
   user: any,
   passwordHash: string,
+  expectedPasswordHash?: string,
 ) {
   const agentId =
     Number(user.agent_id || 0);
@@ -424,17 +426,32 @@ private async savePasswordForUser(
      * attached to the same Agent/company.
      */
     await this.prisma.$executeRaw`
-      UPDATE dvi_users
+      UPDATE dvi_users AS target
+      ${expectedPasswordHash === undefined ? Prisma.empty : Prisma.sql`
+        JOIN dvi_users AS authenticated
+          ON authenticated.userID = ${user.userID}
+          AND authenticated.deleted = 0
+          AND authenticated.password = ${expectedPasswordHash}
+      `}
       SET
-        password = ${passwordHash},
-        updatedon = ${now}
-      WHERE agent_id = ${agentId}
-        AND roleID = ${SystemRole.AGENT}
-        AND deleted = 0
-        AND LOWER(TRIM(useremail)) =
+        target.password = ${passwordHash},
+        target.updatedon = ${now}
+      WHERE target.agent_id = ${agentId}
+        AND target.roleID = ${SystemRole.AGENT}
+        AND target.deleted = 0
+        AND LOWER(TRIM(target.useremail)) =
           ${normalizedEmail}
     `;
 
+    return;
+  }
+
+  // Automatic migration must leave a password changed during login intact.
+  if (expectedPasswordHash !== undefined) {
+    await this.prisma.dvi_users.updateMany({
+      where: { userID: user.userID, password: expectedPasswordHash, deleted: 0 },
+      data: { password: passwordHash, updatedon: new Date() },
+    });
     return;
   }
 
@@ -684,6 +701,7 @@ async validateUser(
   await this.savePasswordForUser(
     user,
     upgradedHash,
+    storedHash,
   );
 }
 

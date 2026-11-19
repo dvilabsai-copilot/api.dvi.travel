@@ -4,7 +4,13 @@ import { ItineraryManualHotspotMutationService } from '../src/modules/itinerarie
 
 test('manual hotspot mutation preserves add response projection', async () => {
   const service = new ItineraryManualHotspotMutationService(
-    { dvi_itinerary_route_hotspot_details: { findFirst: async () => null } } as any,
+    {
+      dvi_itinerary_route_details: {
+        findFirst: async () => ({ itinerary_route_date: new Date('2026-07-16T00:00:00.000Z') }),
+      },
+      dvi_hotspot_timing: { findMany: async () => [] },
+      dvi_itinerary_route_hotspot_details: { findFirst: async () => null },
+    } as any,
     null as any,
   );
   (service as any).applyManualHotspotsBatch = async () => ({

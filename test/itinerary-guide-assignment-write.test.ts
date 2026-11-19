@@ -30,6 +30,10 @@ test('persists a route guide and rebuilds its slot-cost rows', async () => {
   };
   const tx: any = {
     dvi_itinerary_route_guide_details: {
+      findMany: async ({ where }: any) => {
+        assert.deepEqual(where, { itinerary_plan_ID: 42, guide_type: 1 });
+        return [];
+      },
       create: async ({ data }: any) => {
         calls.push(`guide.create:${data.guide_slot}`);
         return { route_guide_ID: 55, guide_cost: data.guide_cost };
