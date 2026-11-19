@@ -9,6 +9,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../../prisma.service';
 import { HotelBlockEmailService } from './hotel-block-email.service';
 import { TboHotelBookingService } from './tbo-hotel-booking.service';
+import { isTboBookingCancelled } from '../../hotels/utils/tbo-booking-status.util';
 import {
   getTboPrebookHoldCancellationDeadline,
   isTboPrebookRateEligibleForHold,
@@ -1039,7 +1040,7 @@ export class HotelBlockingService {
     const releaseConfirmedByHotelierIds = await this.offlineReleaseConfirmedByHotelierIds([row]);
     const refreshed = await this.refreshSupplierHold(row);
     const view = this.publicStaffView(
-      refreshed.cutoffAt ? { ...row, cutoff_at: refreshed.cutoffAt } : row,
+      refreshed.cutoffAt ? { ...refreshed.row, cutoff_at: refreshed.cutoffAt } : refreshed.row,
       policy,
       latestMessages.get(Number(row.id)),
       refreshed.statusOverride,
@@ -2580,6 +2581,13 @@ export class HotelBlockingService {
       const supplierHold = (payload?.supplierHold || {}) as BlockRow;
       const bookingId = supplierHold.bookingId || supplierHold.BookingId;
       const detail = await this.tboHotelBooking.getHoldStatus(String(row.confirmation_reference), bookingId);
+      if (isTboBookingCancelled(detail.status)) {
+        return {
+          row: { ...row, cutoff_at: null },
+          statusOverride: HOTEL_BLOCK_STATUS.CANCELLED,
+          cutoffAt: undefined,
+        };
+      }
       const supplierCutoff = dateOnly(detail.bookingDeadline);
       // The TBO deadline is the latest supplier-allowed date, not an extension
       // to the application's configured hold window. A supplier LCD may

@@ -777,7 +777,7 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
 test('an expired supplier status is exposed as HOLD expired', async () => {
   const service = new (HotelBlockingService as any)({}, {}, {
     getHoldStatus: async () => ({
-      status: 'Cancelled',
+      status: 'Expired',
       bookingDeadline: '2026-12-15T18:00:00.000Z',
     }),
   });
@@ -789,6 +789,34 @@ test('an expired supplier status is exposed as HOLD expired', async () => {
   });
 
   assert.equal(refreshed.statusOverride, 'HOLD_EXPIRED');
+});
+
+test('supplier-confirmed VSR cancellation appears in the list and detail without a hold cutoff', async () => {
+  const row = {
+    id: 57,
+    itinerary_plan_id: 12202,
+    status: 'BLOCKED',
+    provider: 'VSR',
+    confirmation_channel: 'TBO_BOOK_HOLD',
+    confirmation_reference: 'TBO-CANCELLED',
+    check_in: new Date('2027-01-18T00:00:00.000Z'),
+    check_out: new Date('2027-01-19T00:00:00.000Z'),
+    requested_at: new Date('2026-11-19T17:00:00.000Z'),
+    cutoff_at: new Date('2026-12-15T18:00:00.000Z'),
+  };
+  const service = new (HotelBlockingService as any)({
+    dvi_hotel_block_request: { findMany: async () => [row], findUnique: async () => row },
+  }, {}, {
+    getHoldStatus: async () => ({ status: 'Cancelled', bookingDeadline: row.cutoff_at.toISOString() }),
+  });
+
+  const [listed] = await service.listForItinerary(row.itinerary_plan_id);
+  const detail = await service.getById(row.id);
+  for (const view of [listed, detail]) {
+    assert.equal(view.status, 'CANCELLED');
+    assert.equal(view.cutoffAt, null);
+  }
+  assert.equal(row.status, 'BLOCKED');
 });
 
 test('cancelled and superseded VSR holds are not refreshed back to HOLD', async () => {

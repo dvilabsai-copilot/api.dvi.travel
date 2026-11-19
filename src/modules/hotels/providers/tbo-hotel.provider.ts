@@ -24,6 +24,7 @@ import { resolveCityRecordByName } from '../../itineraries/utils/city-normalizat
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
 import { TboMasterGalleryService } from '../services/tbo-master-gallery.service';
 import { buildTboRoomNightBreakdown } from '../utils/tbo-room-night-pricing';
+import { isTboBookingCancelled } from '../utils/tbo-booking-status.util';
 import { shouldKeepSupplierRateForMealPlan } from '../../itineraries/utils/tbo-map-fallback.util';
 
 @Injectable()
@@ -39,6 +40,9 @@ export class TBOHotelProvider implements IHotelProvider {
     process.env.TBO_SHARED_API_URL ||
     process.env.TBO_AUTH_BASE_URL ||
  'https://api.travelboutiqueonline.com/SharedAPI';
+  private readonly AUTH_URL = process.env.TBO_AUTH_URL || `${this.SHARED_API_URL}/SharedData.svc/rest/Authenticate`;
+  private readonly BOOKING_DETAIL_URL = process.env.TBO_GET_BOOKING_DETAIL_URL || this.bookingEndpoint('Getbookingdetail/');
+  private readonly CANCELLATION_URL = process.env.TBO_SEND_CHANGE_REQUEST_URL || this.bookingEndpoint('SendChangeRequest/');
  private readonly TBO_STATIC_API_URL = process.env.TBO_STATIC_API_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
   private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
   private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
@@ -130,7 +134,7 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
  this.logger.log(` TBO Authentication Request:`);
- this.logger.log(` - Endpoint: POST ${this.SHARED_API_URL}/SharedData.svc/rest/Authenticate`);
+ this.logger.log(` - Endpoint: POST ${this.AUTH_URL}`);
  this.logger.log(` - Username: ${this.USERNAME}`);
 
       const authRequest = {
@@ -142,7 +146,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       const authStartTime = Date.now();
       const response = await this.http.post(
-        `${this.SHARED_API_URL}/SharedData.svc/rest/Authenticate`,
+        this.AUTH_URL,
         authRequest,
         {
           timeout: 30000,
@@ -1225,9 +1229,9 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
       const tokenId = await this.authenticate();
 
  // Step 2: Build GetBookingDetail request (from Postman collection)
+      const id = Number(bookingId);
       const request = {
-        ...(Number(bookingId) > 0 ? { BookingId: Number(bookingId) } : {}),
-        BookingRefId: confirmationRef,
+        ...(Number.isSafeInteger(id) && id > 0 ? { BookingId: id } : { BookingRefId: confirmationRef }),
         EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
         TokenId: tokenId,
       };
@@ -1237,7 +1241,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
  // Step 3: Call GetBookingDetail API
       const response = await this.http
         .post(
-          this.bookingEndpoint('Getbookingdetail'),
+          this.BOOKING_DETAIL_URL,
           request,
           {
             timeout: 30000,
@@ -1249,8 +1253,12 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
       const result = response.data?.GetBookingDetailResult || response.data;
       const envelopeStatusCode = Number(response.data?.Status?.Code || response.data?.Status || 0);
-      const resultStatus = Number(result?.Status || result?.ResponseStatus || 0);
-      if (![200, 1].includes(envelopeStatusCode) && resultStatus !== 1) {
+      const responseStatus = Number(result?.ResponseStatus || 0);
+      const bookingStatusCode = Number(result?.Status || 0);
+      const succeeded = responseStatus
+        ? responseStatus === 1
+        : [1, 200].includes(envelopeStatusCode) || bookingStatusCode === 1;
+      if (!succeeded) {
         throw new Error(
           `Failed to fetch booking: ${result?.Error?.ErrorMessage || response.data?.Status?.Description || 'Unknown error'}`
         );
@@ -1265,7 +1273,9 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
         checkOut: result.CheckOutDate,
         roomCount: result.RoomCount || result.NoOfRooms || 1,
         totalPrice: parseFloat(result.TotalPrice || result.TotalAmount) || 0,
-        status: result.BookingStatus || result.HotelBookingStatus || 'confirmed',
+        status: bookingStatusCode === 6
+          ? 'Cancelled'
+          : String(result.HotelBookingStatus || result.BookingStatus || 'confirmed'),
         voucherStatus: result.VoucherStatus === true || Number(result.VoucherStatus) === 1,
         bookingDeadline:
           result.HoldUntil
@@ -1291,6 +1301,8 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
     confirmationRef: string,
     reason: string,
   ): Promise<CancellationResult> {
+    const bookingId = parseInt(confirmationRef, 10);
+    let changeRequestResult: any;
     try {
  this.logger.log(
         `❌ Cancelling booking: ${confirmationRef}, Reason: ${reason}`
@@ -1304,7 +1316,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
         BookingMode: 5,
  RequestType: 4, // 4 = HotelCancel
         Remarks: reason,
- BookingId: parseInt(confirmationRef), // Must be Integer from Book Response
+        BookingId: bookingId,
         EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
         TokenId: tokenId,
       };
@@ -1314,7 +1326,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
  // Step 3: Call SendChangeRequest API
       const response = await this.http
         .post(
-          this.bookingEndpoint('SendChangeRequest'),
+          this.CANCELLATION_URL,
           request,
           {
             timeout: 30000,
@@ -1326,22 +1338,17 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
  this.logger.debug(` TBO Cancel Response: ${JSON.stringify(response.data)}`);
 
-      const result = response.data?.HotelChangeRequestResult;
-      if (!result || result.ResponseStatus !== 1) {
- this.logger.error(` TBO Cancel Error Details: ${JSON.stringify(result)}`);
-        const recovered = await this.tryRecoverCancellationStatus(confirmationRef, result);
-        if (recovered) {
-          return recovered;
-        }
+      changeRequestResult = response.data?.HotelChangeRequestResult;
+      if (changeRequestResult?.ResponseStatus !== 1) {
         throw new Error(
-          `Cancellation failed: ${result?.Error?.ErrorMessage || 'Unknown error'}`
+          `Cancellation failed: ${changeRequestResult?.Error?.ErrorMessage || 'Unknown error'}`
         );
       }
 
- this.logger.log(` Booking cancelled successfully - ChangeRequestId: ${result.ChangeRequestId}`);
+ this.logger.log(` Booking cancelled successfully - ChangeRequestId: ${changeRequestResult.ChangeRequestId}`);
 
       return {
-        cancellationRef: result.ChangeRequestId?.toString() || confirmationRef,
+        cancellationRef: changeRequestResult.ChangeRequestId?.toString() || confirmationRef,
  refundAmount: 0, // TBO doesn't return refund in this response
         charges: 0,
         refundDays: 0,
@@ -1353,7 +1360,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
  this.logger.error(` TBO API Error Response Body: ${JSON.stringify(error.response.data)}`);
       }
 
-      const recovered = await this.tryRecoverCancellationStatus(confirmationRef, error);
+      const recovered = await this.tryRecoverCancellationStatus(confirmationRef, bookingId, changeRequestResult || error);
       if (recovered) {
         return recovered;
       }
@@ -1368,6 +1375,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
   private async tryRecoverCancellationStatus(
     confirmationRef: string,
+    bookingId: number,
     context: any,
   ): Promise<CancellationResult | null> {
     try {
@@ -1375,14 +1383,8 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
         `⚠️ Cancel request did not return success for booking ${confirmationRef}. Verifying final status via GetBookingDetail...`,
       );
 
-      const detail = await this.getConfirmation(String(confirmationRef));
-      const status = String(detail?.status || '').toLowerCase();
-      const isCancelled =
-        status.includes('cancel') ||
-        status.includes('void') ||
-        status.includes('refunded');
-
-      if (!isCancelled) {
+      const detail = await this.getConfirmation(confirmationRef, bookingId);
+      if (!isTboBookingCancelled(detail.status)) {
  this.logger.warn(
           `⚠️ Recovery check completed but booking is not cancelled. status=${detail?.status || 'unknown'}`,
         );
@@ -1390,7 +1392,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
       }
 
       const fallbackRef =
-        String(context?.ChangeRequestId || context?.data?.HotelChangeRequestResult?.ChangeRequestId || confirmationRef);
+        String(context?.ChangeRequestId || context?.response?.data?.HotelChangeRequestResult?.ChangeRequestId || confirmationRef);
 
  this.logger.warn(
         `✅ Cancellation recovered via BookingDetail for booking ${confirmationRef}. status=${detail.status}`,
