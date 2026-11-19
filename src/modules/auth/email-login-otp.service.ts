@@ -877,9 +877,7 @@ await transporter.sendMail({
       process.env.SMTP_PORT || process.env.MAIL_PORT || 587,
     );
 
-    const relayPort = purpose === 'login'
-      ? process.env.LOGIN_OTP_SMTP_RELAY_PORT?.trim()
-      : undefined;
+    const relayPort = process.env.AUTH_OTP_SMTP_RELAY_PORT?.trim();
     const deliveryPort = relayPort ? Number(relayPort) : port;
 
     const secureSetting = String(
