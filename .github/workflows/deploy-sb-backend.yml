@@ -1,0 +1,41 @@
+name: Deploy Hostinger staging backend
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+concurrency:
+  group: dvi-sb-backend
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out the staging commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Publish backend to sb.dvi.travel
+        env:
+          DEPLOY_KEY: ${{ secrets.SB_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$DEPLOY_KEY"
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$ssh_dir/key"
+          printf '%s\n' '189.72.156.212 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHHd537bqKbawb+/Gm0tZdF8KFcorPOWVHujQVrUQOAZ' > "$ssh_dir/known_hosts"
+          git archive --format=tar.gz "$GITHUB_SHA" |
+            ssh -T -i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts" \
+              -o ConnectTimeout=20 -o ServerAliveInterval=20 -o ServerAliveCountMax=6 \
+              dvi-sb@189.72.156.212 "deploy $GITHUB_SHA"
