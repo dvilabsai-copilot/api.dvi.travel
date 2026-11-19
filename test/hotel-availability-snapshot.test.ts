@@ -4101,3 +4101,56 @@ test('supplier rows are normalized to the current route date before persistence'
   assert.equal(normalized.itinerary_route_date, '2026-08-08');
   assert.equal(normalized.totalPrice, 4531.68);
 });
+
+test('offline catalogue exposes both nights without reconciling hotel selections', async () => {
+  const routes = [
+    { itinerary_route_ID: 10, itinerary_route_date: '2026-12-06', next_visiting_location: 'Munnar' },
+    { itinerary_route_ID: 11, itinerary_route_date: '2026-12-07', next_visiting_location: 'Munnar' },
+    { itinerary_route_ID: 12, itinerary_route_date: '2026-12-08', next_visiting_location: 'Alleppey' },
+    { itinerary_route_ID: 13, itinerary_route_date: '2026-12-09', next_visiting_location: 'Cochin' },
+  ];
+  const prisma = makePrisma();
+  prisma.dvi_itinerary_plan_details.findFirst = async () => ({
+    itinerary_plan_ID: 44, no_of_nights: 3, preferred_room_count: 1, total_adult: 2, meal_plan_code: 'CP',
+  });
+  prisma.dvi_itinerary_route_details = { findMany: async () => routes };
+  prisma.$transaction = async () => assert.fail('A catalogue read must not reconcile selections');
+  const service = new HotelAvailabilitySnapshotService(
+    prisma,
+    {} as any,
+    {
+      fetchOfflineHotelsForRoutes: async (scope: typeof routes, nights: number) => {
+        assert.deepEqual(scope.map((route) => route.itinerary_route_ID), [10, 11]);
+        assert.equal(nights, 2);
+        return new Map(scope.map((route) => [route.itinerary_route_ID, [{
+          provider: 'offline',
+          hotelCode: '207',
+          hotelId: 207,
+          hotelName: 'Bellmount Resorts',
+          roomType: 'Deluxe',
+          mealPlan: 'CP',
+          pricePerNight: 2675,
+          totalPrice: 5350,
+          totalHotelCost: 2675,
+          isBookable: true,
+          availableDates: ['2026-12-06', '2026-12-07'],
+        }]]));
+      },
+    } as any,
+    {} as any,
+    undefined,
+    { resolveEffectiveHotelMarginPercentage: async () => 0 } as any,
+  );
+
+  const { hotels } = await service.readOfflineCatalogue('DVI20261117', 11);
+  assert.ok(hotels.length > 0);
+  assert.deepEqual([...new Set(hotels.map((row) => row.itineraryRouteId))].sort(), [10, 11]);
+  for (const row of hotels) {
+    assert.equal(row.hotelName, 'Bellmount Resorts');
+    assert.equal(row.provider, 'offline');
+    assert.equal(row.groupType, 0);
+    assert.equal(row.isSelected, false);
+  }
+
+  await assert.rejects(service.readOfflineCatalogue('DVI20261117', 13), /Hotel stay route was not found/);
+});

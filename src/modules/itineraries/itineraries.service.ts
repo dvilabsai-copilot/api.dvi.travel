@@ -2108,13 +2108,9 @@ timingStepStartedAt =
           // timeout, and other unknown errors are refresh failures and must
           // remain retryable; reporting them as NO_AVAILABILITY hides defects
           // and incorrectly tells the user that inventory is absent.
-          const knownRefreshFailure = code === 'HOTEL_REFRESH_FAILED' ||
-            code === 'HOTEL_AVAILABILITY_REFRESH_FAILED' ||
-            code === 'P2002' ||
-            response?.status === 'REFRESH_FAILED';
-          const status = knownRefreshFailure || (!noAvailability && !code)
-            ? 'REFRESH_FAILED'
-            : 'NO_AVAILABILITY';
+          const status = noAvailability && response?.status !== 'REFRESH_FAILED'
+            ? 'NO_AVAILABILITY'
+            : 'REFRESH_FAILED';
           return {
             status,
             retryable: status === 'REFRESH_FAILED',

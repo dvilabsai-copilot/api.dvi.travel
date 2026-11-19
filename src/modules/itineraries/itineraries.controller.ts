@@ -937,6 +937,20 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     return this.buildCompactHotelAvailabilityResponse(result, itinerary);
   }
 
+  @Get('hotel_details/:quoteId/offline-catalogue/:routeId')
+  @ApiOperation({ summary: 'Read current offline catalogue offers for an itinerary stay' })
+  async readOfflineItineraryHotelCatalogue(
+    @Param('quoteId') quoteId: string,
+    @Param('routeId', ParseIntPipe) routeId: number,
+    @Req() req: any,
+  ) {
+    const access = await this.itineraryAccessService.getQuoteAccessDecision(quoteId, req.user);
+    if (!access.exists) throw new NotFoundException('Itinerary not found');
+    if (!access.allowed) throw new ForbiddenException('You are not allowed to access this itinerary');
+    if (routeId <= 0) throw new BadRequestException('Hotel stay route was not found');
+    return this.hotelAvailabilitySnapshotService.readOfflineCatalogue(quoteId, routeId);
+  }
+
   private buildCompactHotelAvailabilityResponse(
     result: any,
     itinerary: any,

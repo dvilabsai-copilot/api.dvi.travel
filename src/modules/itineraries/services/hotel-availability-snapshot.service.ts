@@ -2347,6 +2347,36 @@ export class HotelAvailabilitySnapshotService {
     response: ItineraryHotelDetailsResponseDto;
     changeSummary: HotelAvailabilityChangeSummary;
   }> {
+    const { plan, requestedRoutes, requestedRouteIds, rows, offlineFetch } = await this.loadOfflineCatalogue(quoteId, routeId);
+    const searchRunId = `offline-${plan.itinerary_plan_ID}-${randomUUID()}`;
+    const checkedAt = new Date();
+
+    const changeSummary = await this.prisma.$transaction((tx) => this.reconcileSelections(
+      tx,
+      plan.itinerary_plan_ID,
+      rows,
+      searchRunId,
+      createdBy,
+      true,
+      requestedRouteIds,
+      this.getPlanMealPlanCode(plan),
+      this.getPlanMealPlanFlags(plan),
+    ));
+    const response = await this.buildFreshResponse(
+      quoteId, plan, rows, searchRunId, checkedAt, requestedRoutes, 'FRESH', { offlineFetch },
+    );
+    return { response, changeSummary };
+  }
+
+  async readOfflineCatalogue(quoteId: string, routeId: number) {
+    const { rows, routes, noOfNights } = await this.loadOfflineCatalogue(quoteId, routeId);
+    const margin = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
+    const normalised = rows.map((row) => this.normalizeRatePlanLabels(row));
+    const hotels = await this.applyCompleteStayAvailability(this.buildSharedHotelInventory(normalised, margin), routes, noOfNights);
+    return { hotels };
+  }
+
+  private async loadOfflineCatalogue(quoteId: string, routeId?: number) {
     const plan = await this.findPlan(quoteId);
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
       where: { itinerary_plan_ID: plan.itinerary_plan_ID, deleted: 0 },
@@ -2398,35 +2428,7 @@ export class HotelAvailabilitySnapshotService {
       fetchedHotelCount: offlineRows.length,
       noResultRouteIds: offlineNoResultRouteIds,
     };
-    const mergedRows = this.dedupeRows(offlineRows);
-    const searchRunId = `offline-${plan.itinerary_plan_ID}-${randomUUID()}`;
-    const checkedAt = new Date();
-
-    const changeSummary = await this.prisma.$transaction(async (tx) => {
-      return this.reconcileSelections(
-        tx,
-        plan.itinerary_plan_ID,
-        mergedRows,
-        searchRunId,
-        createdBy,
-        true,
-        requestedRouteIds,
-        this.getPlanMealPlanCode(plan),
-        this.getPlanMealPlanFlags(plan),
-      );
-    });
-
-    const response = await this.buildFreshResponse(
-      quoteId,
-      plan,
-      mergedRows,
-      searchRunId,
-      checkedAt,
-      requestedRoutes,
-      'FRESH',
-      { offlineFetch },
-    );
-    return { response, changeSummary };
+    return { plan, routes, noOfNights, requestedRoutes, requestedRouteIds, rows: this.dedupeRows(offlineRows), offlineFetch };
   }
 
   private async resolveStayCityByRouteId(routes: any[], db: any = this.prisma): Promise<Map<number, string>> {

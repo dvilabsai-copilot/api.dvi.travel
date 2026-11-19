@@ -322,3 +322,27 @@ test('reconciliation check forwards the preview flag without applying changes', 
   if (previousFlag === undefined) delete process.env.HOTEL_RECONCILE;
   else process.env.HOTEL_RECONCILE = previousFlag;
 });
+
+test('offline catalogue requires quote access before reading its stay rates', async () => {
+  const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  const req = { user: { userId: 17 } };
+  const lookups: Array<[string, number]> = [];
+  (controller as any).itineraryAccessService = {
+    getQuoteAccessDecision: async (quote: string, user: unknown) => {
+      assert.equal(user, req.user);
+      return { exists: quote !== 'missing', allowed: quote === 'allowed' };
+    },
+  };
+  (controller as any).hotelAvailabilitySnapshotService = {
+    readOfflineCatalogue: async (quote: string, routeId: number) => {
+      lookups.push([quote, routeId]);
+      return { hotels: [] };
+    },
+  };
+
+  await assert.rejects(controller.readOfflineItineraryHotelCatalogue('missing', 10, req), /Itinerary not found/);
+  await assert.rejects(controller.readOfflineItineraryHotelCatalogue('private', 10, req), /not allowed to access/);
+  await assert.rejects(controller.readOfflineItineraryHotelCatalogue('allowed', 0, req), /Hotel stay route was not found/);
+  assert.deepEqual(await controller.readOfflineItineraryHotelCatalogue('allowed', 10, req), { hotels: [] });
+  assert.deepEqual(lookups, [['allowed', 10]]);
+});
