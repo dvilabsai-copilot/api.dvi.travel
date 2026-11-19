@@ -22,6 +22,7 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
 import {
+  type HotelOccupancyPricing,
   resolveHotelSelectionPricing,
   resolveHotelSupplementPricing,
   resolveOfflineHotelPayablePricing,
@@ -35,6 +36,16 @@ import { latestAxisRoomsOccupancyValues } from '../utils/axisrooms-occupancy-rat
 const canonicalHotelProvider = (provider: unknown): string => {
   const normalized = String(provider ?? '').trim().toLowerCase();
   return normalized === 'vsr' ? 'tbo' : normalized;
+};
+
+export type AxisRoomsMealRoom = {
+  roomNumber: number;
+  roomId: number;
+  roomTypeId: number;
+  roomType: string;
+  rateId: string;
+  adultCount: number;
+  pricing: HotelOccupancyPricing;
 };
 
 @Injectable()
@@ -220,6 +231,7 @@ export class ItinerarySelectionWorkflowService {
     isRefundable?: boolean | number | string;
     IsRefundable?: boolean | number | string;
     routeDate?: string;
+    axisRoomsMealRooms?: AxisRoomsMealRoom[];
      requestedBy?: number;
     /** Internal transaction client used by atomic multi-route saves. */
     transactionClient?: any;
@@ -377,6 +389,10 @@ export class ItinerarySelectionWorkflowService {
     });
     // VSR is a UI representation of TBO, not a second supplier path.
     const providerForPricing = canonicalHotelProvider(data.provider);
+    const axisRoomsMealRooms = options.selectionResolvedFromFreshSearch && data.transactionClient &&
+      providerForPricing === 'axisrooms' && data.selectionIntent === 'MEAL_PLAN'
+      ? data.axisRoomsMealRooms
+      : undefined;
     let tboMaster: any = null;
     if (providerForPricing === 'tbo' && persistedHotelCode) {
       try {
@@ -394,7 +410,9 @@ export class ItinerarySelectionWorkflowService {
       normalizeHotelStarRating((data as any).category) ?? null;
     let axisRoomsBasePrice = 0;
     let axisRoomsSupplementRates: { extraBedRate: number; childWithBedRate: number; childWithoutBedRate: number } | null = null;
-    if (String(data.provider || '').trim().toLowerCase() === 'axisrooms') {
+    if (axisRoomsMealRooms) {
+      axisRoomsBasePrice = Number(data.baseTotalPrice);
+    } else if (providerForPricing === 'axisrooms') {
       axisRoomsBasePrice = await this.resolveAxisRoomsSelectionBasePrice(data, route);
       axisRoomsSupplementRates = await this.resolveAxisRoomsSelectionSupplementRates(data, route, plan);
     }
@@ -503,7 +521,9 @@ export class ItinerarySelectionWorkflowService {
       const axisRoomsMarginBase = Number((
         axisRoomsBasePrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount
       ).toFixed(2));
-      const axisRoomsMargin = Number((axisRoomsMarginBase * hotelMarginPercentage / 100).toFixed(2));
+      const axisRoomsMargin = axisRoomsMealRooms
+        ? Number(data.hotelMarginAmount)
+        : Number((axisRoomsMarginBase * hotelMarginPercentage / 100).toFixed(2));
       const authoritativePayable = Number((axisRoomsMarginBase + axisRoomsMargin).toFixed(2));
       // AxisRooms selections must be priced from the matching ARI row, never
       // from a stale client payload that can combine another option's total.
@@ -580,7 +600,9 @@ export class ItinerarySelectionWorkflowService {
     let hotelMarginBaseAmount = providerForPricing === 'axisrooms' && axisRoomsBasePrice > 0
       ? Number((axisRoomsBasePrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2))
       : Number((authoritativeBaseTotal + (tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0)).toFixed(2));
-    let hotelMarginRate = providerForPricing === 'axisrooms'
+    let hotelMarginRate = axisRoomsMealRooms
+      ? suppliedMarginAmount
+      : providerForPricing === 'axisrooms'
       ? hotelMarginBaseAmount > 0
          ? Number((hotelMarginBaseAmount * hotelMarginPercentage / 100).toFixed(2))
         : 0
@@ -680,6 +702,21 @@ export class ItinerarySelectionWorkflowService {
       ? authoritativeBaseTotal
       : selectionPricing.totalPrice;
     const authoritativePricingSnapshot = {
+      ...(axisRoomsMealRooms ? {
+        roomCount: axisRoomsMealRooms.length,
+        totalRoomCost: persistedRoomCost,
+        roomSelections: axisRoomsMealRooms.map(({ roomNumber, roomId, roomTypeId, roomType, rateId }) => ({
+          roomNumber, roomIndex: roomNumber - 1, roomId, roomTypeId, roomType, rateId, mealPlan: data.mealPlanCode,
+        })),
+        roomTypeBreakdown: axisRoomsMealRooms.map(({ roomNumber, roomTypeId, roomType, adultCount, pricing }) => ({
+          roomNumber, roomTypeId, roomType, adultCount, roomCount: 1, roomOccupancy: pricing.roomOccupancy,
+          roomRate: pricing.roomRate, roomCost: pricing.baseTotalPrice,
+          extraBedCount: pricing.extraBedCount, extraBedRate: pricing.extraBedRate, extraBedCost: pricing.extraBedAmount,
+          childWithBedCount: pricing.childWithBedCount, childWithBedRate: pricing.childWithBedRate, childWithBedCost: pricing.childWithBedAmount,
+          childWithoutBedCount: pricing.childWithoutBedCount, childWithoutBedRate: pricing.childWithoutBedRate, childWithoutBedCost: pricing.childWithoutBedAmount,
+          subtotal: pricing.hotelMarginBaseAmount, marginAmount: pricing.hotelMarginAmount,
+        })),
+      } : {}),
       ...(authoritativeBasePricePerNight > 0 ? { basePricePerNight: authoritativeBasePricePerNight } : {}),
       ...(authoritativeBaseTotal > 0 ? { baseTotalPrice: authoritativeBaseTotal } : {}),
       ...(hotelMarginBaseAmount > 0 ? { hotelMarginBaseAmount } : {}),
@@ -944,8 +981,11 @@ export class ItinerarySelectionWorkflowService {
       hotelDetailsId = created.itinerary_plan_hotel_details_ID;
     }
 
- // Check if room details already exist
-    const existingRoomDetails = await (db as any).dvi_itinerary_plan_hotel_room_details.findFirst({
+    const roomMetadata = providerForPricing === 'axisrooms' ? {
+      ...(route?.itinerary_route_date ? { itinerary_route_date: route.itinerary_route_date } : {}),
+      group_type: data.groupType,
+    } : {};
+    const existingRoomDetails = axisRoomsMealRooms ? null : await (db as any).dvi_itinerary_plan_hotel_room_details.findFirst({
       where: {
         itinerary_plan_hotel_details_id: hotelDetailsId,
         deleted: 0,
@@ -954,12 +994,49 @@ export class ItinerarySelectionWorkflowService {
       orderBy: { itinerary_plan_hotel_room_details_ID: 'desc' },
     });
 
-    if (existingRoomDetails) {
+    if (axisRoomsMealRooms) {
+      // The header meal edit prices a complete physical allocation. Replace
+      // the prior rows together inside the existing multi-night transaction.
+      const roomDetails = (db as any).dvi_itinerary_plan_hotel_room_details;
+      const now = new Date();
+      await roomDetails.updateMany({
+        where: { itinerary_plan_hotel_details_id: hotelDetailsId, deleted: 0, status: 1 },
+        data: { status: 0, deleted: 1, updatedon: now },
+      });
+      await roomDetails.createMany({
+        data: axisRoomsMealRooms.map(({ roomId, roomTypeId, pricing }) => ({
+          ...roomMetadata,
+          itinerary_plan_hotel_details_id: hotelDetailsId,
+          itinerary_plan_id: data.planId,
+          itinerary_route_id: data.routeId,
+          hotel_id: persistedHotelId,
+          room_id: roomId,
+          room_type_id: roomTypeId,
+          room_qty: 1,
+          room_rate: pricing.roomRate,
+          total_room_cost: pricing.baseTotalPrice,
+          extra_bed_count: pricing.extraBedCount,
+          extra_bed_rate: pricing.extraBedCount ? pricing.extraBedRate : 0,
+          child_with_bed_count: pricing.childWithBedCount,
+          child_with_bed_charges: pricing.childWithBedRate,
+          child_without_bed_count: pricing.childWithoutBedCount,
+          child_without_bed_charges: pricing.childWithoutBedRate,
+          breakfast_required: mealBreakfast,
+          lunch_required: mealLunch,
+          dinner_required: mealDinner,
+          createdby: userId,
+          createdon: now,
+          status: 1,
+          deleted: 0,
+        })),
+      });
+    } else if (existingRoomDetails) {
  // Update existing room details
       await (db as any).dvi_itinerary_plan_hotel_room_details.update({
         where: { itinerary_plan_hotel_room_details_ID: existingRoomDetails.itinerary_plan_hotel_room_details_ID },
         data: {
           hotel_id: persistedHotelId,
+          ...roomMetadata,
           room_type_id: data.roomTypeId,
           room_qty: selectionPricing.roomCount,
            room_rate: authoritativeBasePricePerNight > 0
@@ -999,6 +1076,7 @@ export class ItinerarySelectionWorkflowService {
           itinerary_plan_id: data.planId,
           itinerary_route_id: data.routeId,
           hotel_id: persistedHotelId,
+          ...roomMetadata,
           room_type_id: data.roomTypeId,
           room_qty: selectionPricing.roomCount,
            room_rate: authoritativeBasePricePerNight > 0
@@ -1489,6 +1567,13 @@ export class ItinerarySelectionWorkflowService {
             extraBedRate: hotel.extraBedRate,
             extraBedAmount: hotel.extraBedAmount,
             extraBedGstAmount: hotel.extraBedGstAmount,
+            ...(hotel.axisRoomsMealRooms && selectionResolvedFromFreshSearch ? {
+              axisRoomsMealRooms: hotel.axisRoomsMealRooms,
+              childWithBedCount: hotel.childWithBedCount,
+              childWithBedAmount: hotel.childWithBedAmount,
+              childWithoutBedCount: hotel.childWithoutBedCount,
+              childWithoutBedAmount: hotel.childWithoutBedAmount,
+            } : {}),
             requestedBy,
             transactionClient: tx,
           }, { selectionResolvedFromFreshSearch });

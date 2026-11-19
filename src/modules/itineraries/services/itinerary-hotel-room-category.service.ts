@@ -514,6 +514,13 @@ export class ItineraryHotelRoomCategoryService {
     // displayed room number before deciding to create, otherwise repeated
     // confirms can target the wrong child row and lose Room 2's selection.
     const roomDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_room_details;
+    if (axisRoomsRateplanId && roomDetailsModel?.updateMany) {
+      await this.reconcileUndatedAxisRoomsRoom({
+        hotelDetailsId, planId: params.itinerary_plan_id, routeId: params.itinerary_route_id,
+        routeDate: route.itinerary_route_date, groupType: params.group_type,
+        roomCount: Number(planDetails.preferred_room_count), now,
+      });
+    }
     let roomDetailsId = Number(params.itinerary_plan_hotel_room_details_ID || 0);
     // The client can hold a child ID from a previous hotel-details parent
     // after reset/rebuild. Never re-parent that stale row as a side effect of
@@ -982,6 +989,47 @@ export class ItineraryHotelRoomCategoryService {
       batch: true,
       updatedRoomCount: rooms.length,
     };
+  }
+
+  private async reconcileUndatedAxisRoomsRoom(params: {
+    hotelDetailsId: number;
+    planId: number;
+    routeId: number;
+    routeDate: Date | null;
+    groupType: number;
+    roomCount: number;
+    now: Date;
+  }) {
+    const { hotelDetailsId, planId, routeId, routeDate, groupType, roomCount, now } = params;
+    if (!routeDate || roomCount < 1) return;
+    const roomDetails = this.prisma.dvi_itinerary_plan_hotel_room_details;
+    const scope = {
+      itinerary_plan_hotel_details_id: hotelDetailsId,
+      itinerary_plan_id: planId,
+      itinerary_route_id: routeId,
+      status: 1,
+      deleted: 0,
+    };
+    // Older hotel intent writes omitted both the date and group for newly
+    // created child rows. These rows are invisible to date-scoped edits.
+    const legacyScope = { ...scope, itinerary_route_date: null, group_type: 0, room_id: 0 };
+    const legacy = await roomDetails.findMany({
+      where: legacyScope,
+      select: { itinerary_plan_hotel_room_details_ID: true, room_qty: true },
+    });
+    if (legacy.length === 0) return;
+    const dated = await roomDetails.findMany({
+      where: { ...scope, itinerary_route_date: routeDate },
+      select: { room_qty: true, room_id: true },
+    });
+    if (dated.length === roomCount && dated.every(room => room.room_qty === 1 && room.room_id > 0)) {
+      await roomDetails.updateMany({ where: legacyScope, data: { deleted: 1, status: 0, updatedon: now } });
+    } else if (dated.length === 0 && legacy.length === 1 && legacy[0].room_qty === roomCount) {
+      await roomDetails.updateMany({
+        where: { ...legacyScope, itinerary_plan_hotel_room_details_ID: legacy[0].itinerary_plan_hotel_room_details_ID },
+        data: { itinerary_route_date: routeDate, group_type: groupType, updatedon: now },
+      });
+    }
   }
 
   /**

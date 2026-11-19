@@ -52,6 +52,7 @@ import {
   supplierRateIdentityMatches,
   resolvePersistedHotelIdentity,
   supplierSelectionKey,
+  parseHotelSelectionSnapshot,
 } from './utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from './utils/hotel-category.util';
 import { resolveHotelOccupancyPricing } from './utils/hotel-selection-pricing.util';
@@ -132,7 +133,7 @@ import { ItineraryInvoiceReadService } from './services/itinerary-invoice-read.s
 import { ItinerarySmartActivityService } from './services/itinerary-smart-activity.service';
 import { ItineraryHotspotWorkflowService } from './services/itinerary-hotspot-workflow.service';
 import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-deletion.service';
-import { ItinerarySelectionWorkflowService } from './services/itinerary-selection-workflow.service';
+import { ItinerarySelectionWorkflowService, type AxisRoomsMealRoom } from './services/itinerary-selection-workflow.service';
 import { ItineraryQuoteContextService } from './services/itinerary-quote-context.service';
 import { ItineraryConfirmationService } from './services/itinerary-confirmation.service';
 import { ItineraryHotelConfirmationSupportService } from './services/itinerary-hotel-confirmation-support.service';
@@ -2707,6 +2708,18 @@ timingStepStartedAt =
       return routeMatches && dateMatches && groupMatches && propertyMatches(option) && option.isSelectable !== false && option.isBookable !== false;
     });
     const selectedByRoute: any[] = [];
+    const savedAxisRoomsNights = provider === 'axisrooms' && intent === 'MEAL_PLAN' &&
+      Number(plan.preferred_room_count) > 1 && requestedCanonicalHotelId > 0
+      ? await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+          where: {
+            itinerary_plan_id: Number(data.planId), itinerary_route_id: { in: stay.routeIds },
+            group_type: groupType, hotel_id: requestedCanonicalHotelId, hotel_provider: 'axisrooms',
+            hotel_required: 1, status: 1, deleted: 0,
+          },
+          orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
+          select: { itinerary_route_id: true, selected_price_snapshot: true },
+        })
+      : [];
     const repriceOfflineSelection = (option: any, routeDate: string): any => {
       if (normalize(option?.provider) !== 'offline') return option;
       const nightlyRate = Array.isArray(option?.nightlyRates)
@@ -2934,6 +2947,30 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
     for (let index = 0; index < stay.routeIds.length; index += 1) {
       const routeId = Number(stay.routeIds[index]);
       const routeDate = String(stay.stayDates[index] || '').slice(0, 10);
+      const savedNight = savedAxisRoomsNights.find(night => night.itinerary_route_id === routeId);
+      const savedAllocation = parseHotelSelectionSnapshot(savedNight) as {
+        roomSelections?: unknown; roomTypeBreakdown?: unknown;
+      };
+      const savedRooms = Array.isArray(savedAllocation?.roomSelections) ? savedAllocation.roomSelections : [];
+      if (new Set(savedRooms.map(room => Number(room.roomId))).size > 1) {
+        const selection = await this.repriceMixedAxisRoomsMeal(
+          savedRooms,
+          Array.isArray(savedAllocation?.roomTypeBreakdown) ? savedAllocation.roomTypeBreakdown : [],
+          routeOptions(routeId, routeDate).filter(option =>
+            normalizeMealPlan(option.mealPlan || option.mealPlanCode) === normalizeMealPlan(requestedMeal)),
+          plan, routeDate,
+        );
+        if (!selection) {
+          throw new BadRequestException({
+            code: 'HOTEL_INTENT_UNAVAILABLE',
+            message: `The requested meal plan is unavailable for one or more selected rooms on ${routeDate}. No nights were changed.`,
+            logicalStay: stay, affectedRouteIds: stay.routeIds, failedDates: [routeDate],
+            canBookSingleNight: false, canBookMultiNight: false,
+          });
+        }
+        selectedByRoute.push({ ...selection, itineraryRouteId: routeId, routeId, date: routeDate });
+        continue;
+      }
       const options = routeOptions(routeId, routeDate).filter((option: any) => {
         const room = String(option.roomType || option.roomTypeName || '').trim();
         const meal = String(option.mealPlan || option.mealPlanCode || '').trim();
@@ -3107,30 +3144,36 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
       // selected supplier option for continuity validation; otherwise the
       // validator receives empty room/rate identity and cannot resolve the
       // supplier mapping even though the refreshed option is valid.
-      const continuityAnchor = anchorOption || selectedByRoute[stay.routeIds.indexOf(Number(data.routeId))] || selectedByRoute[0];
+      const anchorSelection = selectedByRoute[stay.routeIds.indexOf(Number(data.routeId))] || selectedByRoute[0];
+      const mixedRoomOptions = anchorSelection?.axisRoomsMealRooms as AxisRoomsMealRoom[] | undefined;
+      const continuityOptions = mixedRoomOptions
+        ? [...new Map(mixedRoomOptions.map(room => [room.roomId, room])).values()]
+        : [anchorOption || anchorSelection];
       const selectedRouteIndex = stay.routeIds.indexOf(Number(data.routeId));
       const selectedRouteDate = stay.stayDates[selectedRouteIndex] || stay.checkInDate;
-      const continuity = await this.hotelStayBlockValidationService.previewStayExtension({
-        planId: Number(data.planId), routeId: Number(data.routeId), provider: provider as any, hotelCode,
-        hotelName: String(continuityAnchor?.hotelName || data.hotelName || '').trim() || undefined,
-         roomId: intent === 'HOTEL' ? undefined : String(continuityAnchor?.roomId || continuityAnchor?.providerRoomId || data.roomId || '').trim() || undefined,
-         rateId: intent === 'HOTEL' ? undefined : String(continuityAnchor?.rateId || continuityAnchor?.ratePlanId || data.rateId || '').trim() || undefined,
-       roomType: intent === 'HOTEL' ? undefined : String(continuityAnchor?.roomType || continuityAnchor?.roomTypeName || anchorRoom || '').trim() || undefined,
-mealPlan: String(continuityAnchor?.mealPlan || continuityAnchor?.mealPlanCode || anchorMeal || '').trim() || undefined,
-allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
-        // The validator is anchored to the clicked route. Passing the
-        // overall stay start here made a later route (for example 10702 on
-        // 2026-08-23) validate as 2026-08-22 and collapse to a false
-        // single-night result.
-        checkInDate: selectedRouteDate, groupType,
-      });
-      if (!continuity.canBookMultiNight || continuity.blocked) {
-        throw new BadRequestException({
-          code: 'HOTEL_CONTINUOUS_STAY_UNAVAILABLE',
-          message: continuity.restrictionConflicts?.map((conflict: any) => conflict.message).join(' | ') || 'The selected hotel cannot be booked for the complete continuous stay.',
-          selectionIntent: intent, logicalStay: stay, restriction: continuity,
-          canBookSingleNight: false, canBookMultiNight: false,
+      for (const continuityAnchor of continuityOptions) {
+        const continuity = await this.hotelStayBlockValidationService.previewStayExtension({
+          planId: Number(data.planId), routeId: Number(data.routeId), provider: provider as any, hotelCode,
+          hotelName: String(continuityAnchor?.hotelName || data.hotelName || '').trim() || undefined,
+           roomId: intent === 'HOTEL' ? undefined : String(continuityAnchor?.roomId || continuityAnchor?.providerRoomId || data.roomId || '').trim() || undefined,
+           rateId: intent === 'HOTEL' ? undefined : String(continuityAnchor?.rateId || continuityAnchor?.ratePlanId || data.rateId || '').trim() || undefined,
+         roomType: intent === 'HOTEL' ? undefined : String(continuityAnchor?.roomType || continuityAnchor?.roomTypeName || anchorRoom || '').trim() || undefined,
+  mealPlan: String(continuityAnchor?.mealPlan || continuityAnchor?.mealPlanCode || anchorMeal || '').trim() || undefined,
+  allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
+          // The validator is anchored to the clicked route. Passing the
+          // overall stay start here made a later route (for example 10702 on
+          // 2026-08-23) validate as 2026-08-22 and collapse to a false
+          // single-night result.
+          checkInDate: selectedRouteDate, groupType,
         });
+        if (!continuity.canBookMultiNight || continuity.blocked) {
+          throw new BadRequestException({
+            code: 'HOTEL_CONTINUOUS_STAY_UNAVAILABLE',
+            message: continuity.restrictionConflicts?.map((conflict: any) => conflict.message).join(' | ') || 'The selected hotel cannot be booked for the complete continuous stay.',
+            selectionIntent: intent, logicalStay: stay, restriction: continuity,
+            canBookSingleNight: false, canBookMultiNight: false,
+          });
+        }
       }
     }
 
@@ -3402,7 +3445,7 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       const requestedRateIsRefundable = data.isRefundable ?? data.IsRefundable;
       return {
         ...data,
-        selectionIntent: data.selectionIntent,
+        selectionIntent: intent,
         routeId: Number(selected.routeId), routeDate, groupType,
         hotelId: Number(selected.canonicalHotelId || selected.hotelId || data.hotelId || 0) || null,
         canonicalHotelId: Number(selected.canonicalHotelId || selected.hotelId || data.canonicalHotelId || 0) || null,
@@ -3500,6 +3543,7 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
         // It is safe to persist its price; unlike a browser-supplied price,
         // it is not trusted merely because it came from the request body.
         selectionPricingSource: 'SERVER_RESOLVED',
+        axisRoomsMealRooms: selected.axisRoomsMealRooms,
       };
     });
     try {
@@ -3742,7 +3786,7 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
    * browser snapshot or supplier parent total must never be used as the room
    * cost when the occupancy table has the authoritative components.
    */
-  private async resolveAxisRoomsSelectionPricing(option: any, plan: any, routeDate: string): Promise<any> {
+  private async resolveAxisRoomsSelectionPricing(option: any, plan: any, routeDate: string, physicalRoom = false): Promise<any> {
     const reference = String(
       option?.rateOptionId || option?.rate_option_id || option?.bookingCode || option?.booking_code || '',
     ).trim();
@@ -3781,6 +3825,13 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       adults <= roomCount ? 'SINGLE' : 'DOUBLE',
     );
     if (!rates) return { ...option, axisRoomsPricingResolved: false };
+    if (physicalRoom && [
+      [plan.total_extra_bed, rates.EXTRABED ?? rates.EXTRAADULT],
+      [plan.total_child_with_bed, rates.CHILD_WITH_BED],
+      [plan.total_child_without_bed, rates.CHILD_WITHOUT_BED],
+    ].some(([count, rate]) => Number(count) > 0 && (rate == null || !Number.isFinite(Number(rate)) || Number(rate) < 0))) {
+      return { ...option, axisRoomsPricingResolved: false };
+    }
     const hotel = await this.prisma.dvi_hotel.findUnique({ where: { hotel_id: hotelId }, select: { hotel_margin: true } });
     let marginPercentage = Number(hotel?.hotel_margin || 0);
     if (!(marginPercentage > 0)) {
@@ -3830,6 +3881,63 @@ allowRoomTypeChanges: intent === 'HOTEL' || intent === 'ROOM_TYPE',
       totalStayPrice: totalPrice,
       totalHotelCost: totalPrice,
       axisRoomsPricingResolved: true,
+      ...(physicalRoom ? { occupancyPricing: pricing } : {}),
+    };
+  }
+
+  private async repriceMixedAxisRoomsMeal(
+    savedRooms: any[], previousBreakdown: any[], candidates: any[], plan: any, date: string,
+  ) {
+    if (savedRooms.length !== Number(plan.preferred_room_count)) return null;
+    const rooms: AxisRoomsMealRoom[] = [];
+    let anchor: any;
+    for (let index = 0; index < savedRooms.length; index++) {
+      const { roomId, roomTypeId, roomType } = savedRooms[index];
+      const roomNumber = index + 1;
+      const occupancy = previousBreakdown.find(room => Number(room.roomNumber) === roomNumber);
+      if (!occupancy || Number(savedRooms[index].roomNumber) !== roomNumber || !roomTypeId || !roomId) return null;
+      const option = candidates.find(candidate => Number(candidate.roomId ?? candidate.room_id) === Number(roomId));
+      if (!option) return null;
+      const priced = await this.resolveAxisRoomsSelectionPricing(option, {
+        preferred_room_count: 1,
+        total_adult: occupancy.adultCount,
+        total_extra_bed: occupancy.extraBedCount,
+        total_child_with_bed: occupancy.childWithBedCount,
+        total_child_without_bed: occupancy.childWithoutBedCount,
+      }, date, true);
+      if (!priced.axisRoomsPricingResolved) return null;
+      anchor ??= priced;
+      rooms.push({
+        roomNumber, roomId: Number(roomId), roomTypeId: Number(roomTypeId), roomType,
+        rateId: priced.rateId, adultCount: Number(occupancy.adultCount), pricing: priced.occupancyPricing,
+      });
+    }
+    const sum = (field: keyof AxisRoomsMealRoom['pricing']) =>
+      Number(rooms.reduce((total, room) => total + Number(room.pricing[field]), 0).toFixed(2));
+    const baseTotalPrice = sum('baseTotalPrice');
+    const totalPrice = sum('totalPrice');
+    return {
+      ...anchor,
+      roomCount: rooms.length,
+      roomSelections: rooms.map(({ roomNumber, roomId, roomTypeId, roomType }) => ({ roomNumber, roomId, roomTypeId, roomType })),
+      axisRoomsMealRooms: rooms,
+      basePricePerNight: Number((baseTotalPrice / rooms.length).toFixed(2)),
+      baseTotalPrice,
+      baseHotelCost: baseTotalPrice,
+      totalRoomCost: baseTotalPrice,
+      extraBedCount: sum('extraBedCount'),
+      extraBedAmount: sum('extraBedAmount'),
+      childWithBedCount: sum('childWithBedCount'),
+      childWithBedAmount: sum('childWithBedAmount'),
+      childWithoutBedCount: sum('childWithoutBedCount'),
+      childWithoutBedAmount: sum('childWithoutBedAmount'),
+      hotelMarginBaseAmount: sum('hotelMarginBaseAmount'),
+      hotelMarginAmount: sum('hotelMarginAmount'),
+      hotelMarginTotalAmount: sum('hotelMarginAmount'),
+      pricePerNight: totalPrice,
+      totalStayPrice: totalPrice,
+      totalPrice,
+      totalHotelCost: totalPrice,
     };
   }
 
@@ -6996,7 +7104,9 @@ transportEarlyArrivalLocationName,
     lunch_meal_plan?: number;
     dinner_meal_plan?: number;
   }) {
-    return this.hotelRoomCategoryService.updateRoomCategory(params);
+    return this.selectionWorkflowService.withHotelSelectionLock(
+      params.itinerary_plan_id, params.group_type, () => this.hotelRoomCategoryService.updateRoomCategory(params),
+    );
   }
 
   async updateRoomCategories(params: {
@@ -7015,7 +7125,9 @@ transportEarlyArrivalLocationName,
       room_qty?: number;
     }>;
   }) {
-    return this.hotelRoomCategoryService.updateRoomCategories(params);
+    return this.selectionWorkflowService.withHotelSelectionLock(
+      params.itinerary_plan_id, params.group_type, () => this.hotelRoomCategoryService.updateRoomCategories(params),
+    );
   }
 
 

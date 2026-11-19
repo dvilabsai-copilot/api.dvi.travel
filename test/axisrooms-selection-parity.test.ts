@@ -156,3 +156,51 @@ test('editing automatic AX categories restores a missing extra bed and keeps it 
     assert.equal(saved.selected_price_per_night, 9095);
   }
 });
+
+test('a mixed AX meal quote prices each saved room and requires every saved category', async () => {
+  const plan = { preferred_room_count: 2, total_adult: 5, total_extra_bed: 1 };
+  const { preview } = services([], plan, 7);
+  preview.prisma.dvi_hotel_occupancy_rate.findMany = async ({ where }: any) => [{
+    rateplan_id: where.rateplan_id,
+    occupancy_rates: { DOUBLE: where.room_id === 231 ? 5200 : 4700, EXTRABED: 1600 },
+  }];
+  const rooms = [
+    { roomNumber: 1, roomId: 231, roomTypeId: 1330, roomType: 'Valley View Double' },
+    { roomNumber: 2, roomId: 232, roomTypeId: 30, roomType: 'Deluxe' },
+  ];
+  const occupancy = [
+    { roomNumber: 1, adultCount: 3, extraBedCount: 1 },
+    { roomNumber: 2, adultCount: 2, extraBedCount: 0 },
+  ];
+  const options = rooms.map(room => ({ ...room, canonicalHotelId: 95, rateplanId: 'MAP_PLAN', mealPlan: 'MAP' }));
+  const quote = await preview.repriceMixedAxisRoomsMeal(rooms, occupancy, options, plan, date);
+  assert.deepEqual(quote.roomSelections, rooms);
+  assert.equal(quote.totalPrice, 12305);
+  assert.equal(quote.baseTotalPrice, 9900);
+  assert.equal(quote.extraBedAmount, 1600);
+  assert.deepEqual(quote.axisRoomsMealRooms.map((room: any) => room.pricing.extraBedCount), [1, 0]);
+  assert.equal(await preview.repriceMixedAxisRoomsMeal(rooms, occupancy, options.slice(1), plan, date), null);
+});
+
+test('a legacy AX aggregate is attached or retired for the exact room-night scope', async () => {
+  const routeDate = new Date(date);
+  const legacy = { itinerary_plan_hotel_room_details_ID: 22, room_qty: 2, group_type: 0, itinerary_route_date: null };
+  const calls: any[] = [];
+  let datedRooms: any[] = [];
+  const service: any = new ItineraryHotelRoomCategoryService({
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async ({ where }: any) => where.itinerary_route_date ? datedRooms : [legacy],
+      updateMany: async (request: any) => { calls.push(request); },
+    },
+  } as any, {} as any);
+  const input = { hotelDetailsId: 10, planId: 1, routeId: 2, routeDate, groupType: 1, roomCount: 2, now: new Date() };
+  await service.reconcileUndatedAxisRoomsRoom(input);
+  assert.equal(calls[0].where.itinerary_plan_hotel_room_details_ID, 22);
+  assert.equal(calls[0].data.itinerary_route_date, routeDate);
+  datedRooms = [{ room_qty: 1, room_id: 231 }, { room_qty: 1, room_id: 232 }];
+  await service.reconcileUndatedAxisRoomsRoom(input);
+  assert.equal(calls[1].where.itinerary_plan_hotel_details_id, 10);
+  assert.equal(calls[1].where.itinerary_route_id, 2);
+  assert.equal(calls[1].where.itinerary_route_date, null);
+  assert.equal(calls[1].data.deleted, 1);
+});
