@@ -128,6 +128,54 @@ test('does not overwrite an existing meal plan when only room category changes',
   assert.equal('dinner_required' in updateQuery.data, false);
 });
 
+test('reads and writes the clicked group when the browser supplies a different group’s parent', async () => {
+  const routeDate = '2026-07-16';
+  const matchingGroup = { itinerary_plan_id: 1, itinerary_route_id: 2, hotel_id: 3, group_type: 4, status: 1, deleted: 0 };
+  const persisted = (id: number, room: string) => ({
+    ...matchingGroup,
+    itinerary_plan_hotel_details_ID: id,
+    selected_price_snapshot: JSON.stringify({
+      provider: 'tbo', roomType: room, availableRoomTypeOptions: [
+        { roomTypeId: 8, roomTypeTitle: 'Deluxe', roomId: 8, pricePerNight: 250 },
+        { roomTypeId: 9, roomTypeTitle: 'Suite', roomId: 9, pricePerNight: 350 },
+      ],
+    }),
+  });
+  const parents = [{ ...persisted(10, 'Deluxe'), group_type: 1 }, persisted(11, 'Suite')];
+  const roomRows = [
+    { itinerary_plan_hotel_room_details_ID: 20, itinerary_plan_hotel_details_id: 10, room_type_id: 8 },
+    { itinerary_plan_hotel_room_details_ID: 21, itinerary_plan_hotel_details_id: 11, room_type_id: 9 },
+  ];
+  const updates: number[] = [];
+  const service = new ItineraryHotelRoomCategoryService({
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ preferred_room_count: 1, itinerary_quote_ID: 'QUOTE' }),
+      findFirst: async () => ({ preferred_room_count: 1, itinerary_quote_ID: 'QUOTE' }),
+    },
+    dvi_itinerary_route_details: { findUnique: async () => ({ itinerary_route_date: routeDate }) },
+    dvi_itinerary_plan_hotel_details: {
+      findFirst: async ({ where }) => parents.find(parent => Object.entries(where).every(([key, value]) => parent[key] === value)),
+      create: async () => { throw new Error('An active parent already exists'); },
+      update: async ({ where }) => { assert.equal(where.itinerary_plan_hotel_details_ID, 11); },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async ({ where }) => roomRows.filter(room => room.itinerary_plan_hotel_details_id === where.itinerary_plan_hotel_details_id),
+      findFirst: async ({ where }) => roomRows.find(room =>
+        room.itinerary_plan_hotel_room_details_ID === where.itinerary_plan_hotel_room_details_ID &&
+        room.itinerary_plan_hotel_details_id === where.itinerary_plan_hotel_details_id),
+      update: async ({ where }) => { updates.push(where.itinerary_plan_hotel_room_details_ID); },
+    },
+  }, { getHotelRoomDetailsFromTbo: async () => ({ rooms: [] }) });
+
+  const editor = await service.getHotelRoomCategories({ ...params, provider: 'tbo' });
+  assert.equal(editor.itinerary_plan_hotel_details_ID, 11);
+  assert.equal(editor.rooms[0].room_type_title, 'Suite');
+  await service.updateRoomCategories({ ...params, provider: 'tbo', rooms: [
+    { itinerary_plan_hotel_room_details_ID: 20, room_number: 1, room_type_id: 8 },
+  ] });
+  assert.deepEqual(updates, [21]);
+});
+
 test('uses occupancy rates for canonical room categories and never reads the legacy price book', async () => {
   let priceBookRead = false;
   const service = new ItineraryHotelRoomCategoryService({

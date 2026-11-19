@@ -157,53 +157,9 @@ export class ItineraryHotelRoomCategoryService {
         console.warn('[HOTEL_ROOM_CATEGORIES] selected-rate inventory refresh failed', error);
       }
     }
-    const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
-    const activeHotelDetails = hotelDetailsModel?.findFirst
-      ? await hotelDetailsModel.findFirst({
-        where: Number(params.itinerary_plan_hotel_details_ID || 0) > 0
-          ? {
-            itinerary_plan_hotel_details_ID: Number(params.itinerary_plan_hotel_details_ID),
-            itinerary_plan_id: params.itinerary_plan_id,
-            itinerary_route_id: params.itinerary_route_id,
-            deleted: 0,
-            status: 1,
-          }
-          : {
-            itinerary_plan_id: params.itinerary_plan_id,
-            itinerary_route_id: params.itinerary_route_id,
-            hotel_id: params.hotel_id,
-            group_type: params.group_type,
-            deleted: 0,
-            status: 1,
-          },
-        orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
-        select: {
-          itinerary_plan_hotel_details_ID: true,
-          selected_price_snapshot: true,
-        },
-      })
-      : null;
-    const activeHotelDetailsByIdentity = !activeHotelDetails && hotelDetailsModel?.findMany
-      ? await this.findActiveParentByIdentity(hotelDetailsModel, {
-        ...params,
-        itinerary_plan_hotel_details_ID: 0,
-      })
-      : null;
-    const activeHotelDetailsId = Number(
-      activeHotelDetails?.itinerary_plan_hotel_details_ID ||
-      activeHotelDetailsByIdentity?.itinerary_plan_hotel_details_ID ||
-      0,
-    );
-    let selectedSnapshot: any = {};
-    try {
-      const rawSnapshot = activeHotelDetails?.selected_price_snapshot ||
-        activeHotelDetailsByIdentity?.selected_price_snapshot;
-      selectedSnapshot = rawSnapshot
-        ? (typeof rawSnapshot === 'string' ? JSON.parse(rawSnapshot) : rawSnapshot)
-        : {};
-    } catch {
-      selectedSnapshot = {};
-    }
+    const activeHotelDetails = await this.findPersistedHotelParent(params);
+    const activeHotelDetailsId = Number(activeHotelDetails?.itinerary_plan_hotel_details_ID || 0);
+    const selectedSnapshot = this.parseSelectedSnapshot(activeHotelDetails?.selected_price_snapshot);
     const selectedSnapshotRoomType = String(
       selectedSnapshot.roomType ||
       selectedSnapshot.roomTypeName ||
@@ -1249,40 +1205,12 @@ export class ItineraryHotelRoomCategoryService {
       throw new NotFoundException('Hotel details persistence is unavailable');
     }
 
-    const baseWhere = {
-      itinerary_plan_id: params.itinerary_plan_id,
-      itinerary_route_id: params.itinerary_route_id,
-      group_type: params.group_type,
-      deleted: 0,
-      status: 1,
-    };
-    const existing = requestedId > 0
-      ? await hotelDetailsModel.findFirst({
-        where: {
-          itinerary_plan_hotel_details_ID: requestedId,
-          itinerary_plan_id: params.itinerary_plan_id,
-          itinerary_route_id: params.itinerary_route_id,
-          deleted: 0,
-          status: 1,
-        },
-        select: { itinerary_plan_hotel_details_ID: true },
-      })
-      : await hotelDetailsModel.findFirst({
-        where: { ...baseWhere, hotel_id: params.hotel_id },
-        orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
-        select: { itinerary_plan_hotel_details_ID: true },
-      });
+    const liveRoom = params.selectedLiveRoomRow || params.hotelRoom || {};
+    const existing = await this.findPersistedHotelParent(params, liveRoom);
     if (existing?.itinerary_plan_hotel_details_ID) {
       return Number(existing.itinerary_plan_hotel_details_ID);
     }
 
-    const liveRoom = params.selectedLiveRoomRow || params.hotelRoom || {};
-    if (requestedId === 0 && hotelDetailsModel.findMany) {
-      const identityMatch = await this.findActiveParentByIdentity(hotelDetailsModel, params, liveRoom);
-      if (identityMatch?.itinerary_plan_hotel_details_ID) {
-        return Number(identityMatch.itinerary_plan_hotel_details_ID);
-      }
-    }
     const provider = String(liveRoom.provider || 'staah').trim().toLowerCase();
     const totalPrice = params.selectedTotalPrice || params.selectedPricePerNight || 0;
     const created = await hotelDetailsModel.create({
@@ -1635,45 +1563,39 @@ export class ItineraryHotelRoomCategoryService {
     hotel_code?: string;
     provider?: string;
     hotel_name?: string;
-  }) {
+  }, liveRoom?: any) {
     const hotelDetailsModel = (this.prisma as any).dvi_itinerary_plan_hotel_details;
-    if (!hotelDetailsModel?.findFirst) return null;
+    if (!hotelDetailsModel) return null;
     const requestedId = Number(params.itinerary_plan_hotel_details_ID || 0);
-    const direct = requestedId > 0
-      ? await hotelDetailsModel.findFirst({
-        where: {
-          itinerary_plan_hotel_details_ID: requestedId,
-          itinerary_plan_id: params.itinerary_plan_id,
-          itinerary_route_id: params.itinerary_route_id,
-          deleted: 0,
-          status: 1,
-        },
-        select: { selected_price_snapshot: true, hotel_id: true },
-      })
-      : null;
-    if (direct) return direct;
-
-    const byHotel = await hotelDetailsModel.findFirst({
-      where: {
+    if (hotelDetailsModel.findFirst) {
+      const where = {
         itinerary_plan_id: params.itinerary_plan_id,
         itinerary_route_id: params.itinerary_route_id,
         hotel_id: params.hotel_id,
         group_type: params.group_type,
         deleted: 0,
         status: 1,
-      },
-      orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
-      select: { selected_price_snapshot: true, hotel_id: true },
-    });
-    if (byHotel) return byHotel;
-
-    if (hotelDetailsModel.findMany) {
-      return this.findActiveParentByIdentity(hotelDetailsModel, {
-        ...params,
-        itinerary_plan_hotel_details_ID: 0,
-      });
+      };
+      const select = { itinerary_plan_hotel_details_ID: true, selected_price_snapshot: true, hotel_id: true };
+      // The browser may carry a parent from another recommendation group.
+      // Resolve the active hotel for the clicked group when that ID is stale.
+      const direct = requestedId > 0
+        ? await hotelDetailsModel.findFirst({
+          where: { ...where, itinerary_plan_hotel_details_ID: requestedId },
+          select,
+        })
+        : null;
+      if (direct) return direct;
+      const byHotel = params.hotel_id > 0
+        ? await hotelDetailsModel.findFirst({
+          where,
+          orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
+          select,
+        })
+        : null;
+      if (byHotel) return byHotel;
     }
-    return null;
+    return this.findActiveParentByIdentity(hotelDetailsModel, params, liveRoom);
   }
 
   private matchHotelRooms(
