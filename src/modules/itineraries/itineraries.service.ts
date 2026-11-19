@@ -3689,6 +3689,8 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         bookingCode: snapshot.bookingCode, searchReference: snapshot.searchReference,
         pricePerNight: Number(row.selected_price_per_night || 0), totalPrice: Number(row.selected_total_price || 0), currency: row.selected_currency || 'INR',
         selectedPriceSnapshot: snapshot,
+        ...(Array.isArray(snapshot.roomSelections) ? { roomSelections: snapshot.roomSelections } : {}),
+        ...(Array.isArray(snapshot.roomTypeBreakdown) ? { roomTypeBreakdown: snapshot.roomTypeBreakdown } : {}),
         ...(Array.isArray(snapshot.tboRoomNightBreakdown)
           ? { tboRoomNightBreakdown: snapshot.tboRoomNightBreakdown }
           : {}),
