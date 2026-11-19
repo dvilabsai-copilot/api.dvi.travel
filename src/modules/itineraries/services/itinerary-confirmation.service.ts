@@ -340,7 +340,7 @@ export class ItineraryConfirmationService {
  // In the manual-hold workflow, reserve the payment against the exact active
  // holds inside the same transaction that debits the wallet. The expiry
  // worker uses the inverse conditional update, so only one side can win.
-      if (manualHotelHoldWorkflow) {
+      if (manualHotelHoldWorkflow && Number(plan.itinerary_preference) !== 2) {
         const selectedGroupType = Number((dto as any).selectedGroupType || (dto as any).hotel_group_type || 0);
         await claimManualHotelHoldsForPayment(tx, Number(dto.itinerary_plan_ID), selectedGroupType, new Date());
       }

@@ -28,7 +28,8 @@ test('confirmation preserves booking-key normalization', () => {
   assert.equal(createService().bookingKey(' STAah ', 7), 'staah::7');
 });
 
-test('successful manual-hold payment atomically claims holds, debits wallet, and confirms the itinerary', async () => {
+async function assertManualPayment(itineraryPreference: 1 | 2 | 3) {
+  const isVehicleOnly = itineraryPreference === 2;
   const selectedHotelId = 101;
   const holdId = 201;
   const walletUpdates: any[] = [];
@@ -39,7 +40,10 @@ test('successful manual-hold payment atomically claims holds, debits wallet, and
   const paidHoldClaims: any[] = [];
   const transaction = {
     dvi_itinerary_plan_hotel_details: {
-      findMany: async () => [{ itinerary_plan_hotel_details_ID: selectedHotelId }],
+      findMany: async () => {
+        assert.equal(isVehicleOnly, false, 'vehicle-only confirmation must not look up hotel selections');
+        return [{ itinerary_plan_hotel_details_ID: selectedHotelId }];
+      },
     },
     dvi_hotel_block_request: {
       findMany: async () => [{
@@ -88,7 +92,7 @@ test('successful manual-hold payment atomically claims holds, debits wallet, and
     itinerary_quote_ID: 'MOCK_HOLD_PAYMENT_800',
     trip_start_date_and_time: new Date('2030-11-08T03:30:00.000Z'),
     trip_end_date_and_time: new Date('2030-11-09T12:30:00.000Z'),
-    itinerary_preference: 1,
+    itinerary_preference: itineraryPreference,
     quotation_status: 0,
   };
   const prisma = {
@@ -98,13 +102,13 @@ test('successful manual-hold payment atomically claims holds, debits wallet, and
   };
   const itineraryDetails = {
     getItineraryDetails: async () => ({
-      vehicles: [],
+      vehicles: itineraryPreference === 1 ? [] : [{ isAssigned: true }],
       vehicleRateAvailability: [],
       costBreakdown: {
         totalHotspotCost: 0,
         totalActivityCost: 0,
-        totalHotelAmount: 1000,
-        totalVehicleAmount: 0,
+        totalHotelAmount: isVehicleOnly ? 0 : 1000,
+        totalVehicleAmount: isVehicleOnly ? 1000 : 0,
         totalGuideCost: 0,
         totalAmount: 1000,
         agentMargin: 0,
@@ -124,7 +128,9 @@ test('successful manual-hold payment atomically claims holds, debits wallet, and
       skippedExternalStayCount: 0,
     }),
     getAgentWalletBalance: async () => ({ balance: 1000 }),
-    copyDraftToConfirmed: async () => undefined,
+    copyDraftToConfirmed: async (_tx: any, _planId: number, _confirmedPlanId: number, _userId: number, options: any) => {
+      assert.equal(options.copyHotels, !isVehicleOnly);
+    },
   });
 
   const result = await service.confirmQuotation({
@@ -146,13 +152,15 @@ test('successful manual-hold payment atomically claims holds, debits wallet, and
   assert.equal(result.success, true);
   assert.equal(result.confirmed_itinerary_plan_ID, 555);
   assert.equal(result.bookingResults, null);
-  assert.equal(paidHoldClaims.length, 1);
-  assert.deepEqual(paidHoldClaims[0].where, {
-    id: { in: [holdId] },
-    status: { in: ['BLOCKED', 'CONFIRMED'] },
-    paid_confirmed_at: null,
-    cutoff_at: { gt: paidHoldClaims[0].data.paid_confirmed_at },
-  });
+  assert.equal(paidHoldClaims.length, isVehicleOnly ? 0 : 1);
+  if (!isVehicleOnly) {
+    assert.deepEqual(paidHoldClaims[0].where, {
+      id: { in: [holdId] },
+      status: { in: ['BLOCKED', 'CONFIRMED'] },
+      paid_confirmed_at: null,
+      cutoff_at: { gt: paidHoldClaims[0].data.paid_confirmed_at },
+    });
+  }
   assert.equal(walletUpdates.length, 1);
   assert.equal(Number(walletUpdates[0].data.total_cash_wallet.toString()), 0);
   assert.equal(cashWalletEntries.length, 1);
@@ -163,4 +171,8 @@ test('successful manual-hold payment atomically claims holds, debits wallet, and
   assert.equal(accountEntries.length, 1);
   assert.equal(accountEntries[0].total_received_amount, 1000);
   assert.equal(quotationUpdates[0].data.quotation_status, 1);
-});
+}
+
+test('hotel-only manual payment atomically claims holds, debits the wallet, and confirms', () => assertManualPayment(1));
+test('vehicle-only manual payment debits the wallet and confirms without hotel holds', () => assertManualPayment(2));
+test('hotel and vehicle manual payment still claims holds before confirming', () => assertManualPayment(3));
