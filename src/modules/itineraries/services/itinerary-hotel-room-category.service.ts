@@ -978,6 +978,7 @@ export class ItineraryHotelRoomCategoryService {
     }
     await this.propagateContinuousRoomCategories({
       ...params,
+      itinerary_plan_hotel_details_ID: batchParentId,
       rooms: rooms.map((room) => ({
         room_number: Number(room.room_number),
         room_type_id: Number(room.room_type_id),
@@ -1075,8 +1076,14 @@ export class ItineraryHotelRoomCategoryService {
     });
 
     const currentDate = new Date(currentRoute.itinerary_route_date).getTime();
-    const provider = String(params.provider || '').trim().toLowerCase();
-    const code = this.normalizeText(params.hotel_code);
+    // Browser cards can carry the local hotel number in place of the
+    // supplier property code. Match siblings against the saved anchor.
+    const anchor = parents.find((parent: any) =>
+      Number(parent.itinerary_plan_hotel_details_ID) === params.itinerary_plan_hotel_details_ID &&
+      Number(parent.itinerary_route_id) === params.itinerary_route_id,
+    );
+    const provider = String(anchor?.hotel_provider || params.provider || '').trim().toLowerCase();
+    const code = this.normalizeText(anchor?.hotel_code || params.hotel_code);
     for (const parent of parents as any[]) {
       const routeId = Number(parent.itinerary_route_id || 0);
       if (!routeId || routeId === Number(params.itinerary_route_id)) continue;

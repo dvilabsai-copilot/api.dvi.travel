@@ -204,3 +204,34 @@ test('a legacy AX aggregate is attached or retired for the exact room-night scop
   assert.equal(calls[1].where.itinerary_route_date, null);
   assert.equal(calls[1].data.deleted, 1);
 });
+
+test('batch edits use the saved AxisRooms anchor to find the matching adjacent night', async () => {
+  const parents = [
+    { itinerary_plan_hotel_details_ID: 31, itinerary_route_id: 21, itinerary_route_date: '2027-01-18', hotel_provider: 'axisrooms', hotel_code: 'AX_DVI_HOTEL_238' },
+    { itinerary_plan_hotel_details_ID: 32, itinerary_route_id: 22, itinerary_route_date: '2027-01-19', hotel_provider: 'axisrooms', hotel_code: 'AX_DVI_HOTEL_238' },
+    { itinerary_plan_hotel_details_ID: 33, itinerary_route_id: 23, itinerary_route_date: '2027-01-19', hotel_provider: 'axisrooms', hotel_code: 'different-property' },
+    { itinerary_plan_hotel_details_ID: 34, itinerary_route_id: 24, itinerary_route_date: '2027-01-19', hotel_provider: 'offline', hotel_code: 'AX_DVI_HOTEL_238' },
+    { itinerary_plan_hotel_details_ID: 35, itinerary_route_id: 25, itinerary_route_date: '2027-01-20', hotel_provider: 'axisrooms', hotel_code: 'AX_DVI_HOTEL_238' },
+  ];
+  const service: any = new ItineraryHotelRoomCategoryService({
+    dvi_itinerary_route_details: { findUnique: async () => ({ itinerary_route_date: new Date('2027-01-18') }) },
+    dvi_itinerary_plan_hotel_details: { findMany: async ({ where }: any) => {
+      assert.equal(where.hotel_id, 238);
+      assert.equal(where.itinerary_plan_id, 10);
+      assert.equal(where.group_type, 4);
+      return parents;
+    } },
+  } as any, {} as any);
+  const calls: any[] = [];
+  service.updateRoomCategory = async (params: any) => {
+    calls.push(params);
+    return { itinerary_plan_hotel_details_ID: params.itinerary_route_id === 21 ? 31 : 32 };
+  };
+  await service.updateRoomCategories({
+    itinerary_plan_hotel_details_ID: 0, itinerary_plan_id: 10, itinerary_route_id: 21,
+    hotel_id: 238, group_type: 4, hotel_code: '238', provider: 'axisrooms',
+    rooms: [{ room_number: 1, room_type_id: 1 }, { room_number: 2, room_type_id: 19 }],
+  });
+  assert.deepEqual(calls.map(call => [call.itinerary_route_id, call.room_number]), [[21, 1], [21, 2], [22, 1], [22, 2]]);
+  assert.ok(calls.slice(2).every(call => call.itinerary_plan_hotel_details_ID === 32 && call.propagateContinuous === false));
+});
