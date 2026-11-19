@@ -1953,6 +1953,7 @@ async getAvailableActivities(
 @ApiParam({ name: 'id', example: 14, description: 'Itinerary Plan ID' })
 async exportToExcel(
   @Param('id', ParseIntPipe) id: number,
+  @Query('layout') layout: string,
   @Req() req: any,
   @Res() res: Response,
 ) {
@@ -1990,7 +1991,7 @@ async exportToExcel(
   }
 
   const { workbook, fileName } =
-    await this.exportService.exportItineraryToExcel(id);
+    await this.exportService.exportItineraryToExcel(id, layout === 'option2' ? 'option2' : 'legacy');
 
   res.setHeader(
     'Content-Type',
