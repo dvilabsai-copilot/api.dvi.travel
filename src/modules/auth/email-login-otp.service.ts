@@ -877,6 +877,11 @@ await transporter.sendMail({
       process.env.SMTP_PORT || process.env.MAIL_PORT || 587,
     );
 
+    const relayPort = purpose === 'login'
+      ? process.env.LOGIN_OTP_SMTP_RELAY_PORT?.trim()
+      : undefined;
+    const deliveryPort = relayPort ? Number(relayPort) : port;
+
     const secureSetting = String(
       process.env.SMTP_SECURE || process.env.MAIL_SECURE || '',
     ).trim().toLowerCase();
@@ -936,7 +941,7 @@ const intro =
       );
     }
 
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    if (![port, deliveryPort].every((value) => Number.isInteger(value) && value >= 1 && value <= 65535)) {
       this.logger.error('OTP SMTP configuration has an invalid port.');
 
       throw new ServiceUnavailableException(
@@ -955,10 +960,11 @@ const intro =
     }
 
     const transporter = nodemailer.createTransport({
-      host,
-      port,
+      host: relayPort ? '127.0.0.1' : host,
+      port: deliveryPort,
       secure,
       auth: user && pass ? { user, pass } : undefined,
+      ...(relayPort ? { requireTLS: true, tls: { servername: host } } : {}),
     });
 
     await transporter.sendMail({
