@@ -328,6 +328,7 @@ const pdfHeaderLogo = String(
 ).trim();
 
 const source = itinerary as any;
+const netPayable = Number(source.costBreakdown?.netPayable ?? source.overallCost ?? 0);
 const [
   agentCountry,
   agentState,
@@ -1289,7 +1290,7 @@ return {
     hotelTotal,
 
   totalPackageCost:
-    Number(
+    issuing && groupType === link.groupType ? netPayable : Number(
       (
         hotelTotal +
         vehicleCost
@@ -1330,12 +1331,7 @@ packageIncludes: {
       ),
 
     netPay:
-      Number(
-        source.costBreakdown
-          ?.netPayable ??
-          source.overallCost ??
-          0,
-      ),
+      netPayable,
   },
 };
 

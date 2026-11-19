@@ -37,6 +37,7 @@ test('new links retain the issued property, room, meal and total while legacy li
   assert.equal(issued.issued, true);
   assert.equal((issued.itinerary as any).hotelGroups[0].hotels[0].hotelName, 'Hotel A');
   assert.equal((issued.itinerary as any).costSummary.netPay, 14000);
+  assert.equal((issued.itinerary as any).hotelGroups[0].totalPackageCost, 14000);
   const second = await issue.createPublicLink({ itineraryPlanId: 1, groupType: 1 });
   const secondToken = new URL(second.url).pathname.split('/').at(-1)!;
   const revised = await read.resolvePublicItinerary(secondToken);

@@ -1884,7 +1884,7 @@ test('ordinary availability checks keep the saved payable until the exact propos
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any) as any;
   const { tx, selections } = makeReconciliationTx();
   const refreshed = {
-    groupType: 1, itineraryRouteId: 10, date: '2026-07-28', provider: 'tbo', hotelCode: 'H-1', hotelId: 101,
+    groupType: 0, itineraryRouteId: 10, date: '2026-07-28', provider: 'tbo', hotelCode: 'H-1', hotelId: 101,
     hotelName: 'Stable Hotel', roomType: 'Deluxe', mealPlan: 'CP', rateOptionId: 'rate-1', pricePerNight: 125, totalPrice: 125,
   };
   const proposals = new Map();

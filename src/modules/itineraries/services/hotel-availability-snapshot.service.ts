@@ -5175,7 +5175,8 @@ export class HotelAvailabilitySnapshotService {
       // Match the exact persisted supplier rate first. A parent hotel row can
       // contain several nested room/meal options and must never win with a
       // different identity or price.
-      const matchedCandidate = options.find((row: any) => optionMatchesSelection(selection, row));
+      const matchedCandidate = options.find((row: any) => optionMatchesSelection(selection, row)) ||
+        (origin === 'USER_SELECTED' ? this.findSharedSelectedRate(planId, rows, selection) : undefined);
       const liveOptionsForSelection = options.filter((row: any) =>
         String(row?.provider || row?.hotel_provider || '').trim().toLowerCase() !== 'offline',
       );
@@ -6018,6 +6019,24 @@ export class HotelAvailabilitySnapshotService {
    * options; otherwise matching and persistence operate on one nested option
    * at a time so room/meal/identity/price fields cannot be mixed.
    */
+  private findSharedSelectedRate(planId: number, rows: any[], selection: any): any {
+    const snapshot = parseHotelSelectionSnapshot(selection);
+    const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
+    const rate = normalize(selection.selected_rate_option_id || snapshot.rateOptionId);
+    if (!rate) return undefined;
+    const key = hotelSelectionKey(planId, selection.itinerary_route_id, 0, selection.itinerary_route_date);
+    const stayOptions = this.expandRateOptions(rows.filter((row) => hotelSelectionKeyFromRow(planId, row) === key));
+    return stayOptions.find((option) => {
+      const room = normalize(option.roomType || option.roomTypeName);
+      const meal = inferCanonicalHotelRatePlanCode(option.mealPlan || option.mealPlanCode);
+      return [option.rateOptionId, option.rate_option_id, option.searchReference, option.bookingCode].some((id) => normalize(id) === rate) &&
+        option.isSelectable !== false && option.completeStayBookable !== false && hotelCardPayableAmount(option) > 0 &&
+        room === normalize(snapshot.roomType || selection.room_type) &&
+        meal !== null && meal === inferCanonicalHotelRatePlanCode(String(snapshot.mealPlan || selection.meal_plan || '')) &&
+        hotelPropertyMatchesSelection(selection, option);
+    });
+  }
+
   private expandRateOptions(rows: any[]): any[] {
     return (Array.isArray(rows) ? rows : []).flatMap((row: any) => {
       const nested = Array.isArray(row?.rateOptions) ? row.rateOptions : [];
