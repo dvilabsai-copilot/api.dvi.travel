@@ -640,7 +640,7 @@ test('a failed supplier hold does not prevent an independent offline stay from b
   assert.equal(sent.length, 1);
 });
 
-test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the same active rate', async () => {
+async function verifyVsrHold({ changePrice = false } = {}) {
   const selectedRow = {
     itinerary_plan_hotel_details_ID: 601,
     itinerary_route_date: '2026-12-15',
@@ -711,7 +711,8 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
       ]);
       return {
         Status: { Code: 300, Description: 'Insufficient Balance' },
-        NetAmount: 3255.35,
+        NetAmount: changePrice ? (prebookCalls === 1 ? 3500.35 : 3600.35) : 3255.35,
+        IsPriceChanged: changePrice,
         HotelResult: [{ Rooms: [{ IsRefundable: true, LastCancellationDeadline: '31-12-2099 23:59:59' }] }],
       };
     },
@@ -753,13 +754,43 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
     }],
   };
 
-  const first = await service.holdGroup(input);
+  let first;
+  if (changePrice) {
+    const review = await service.holdGroup(input);
+    const outcome = review.outcomes[0];
+    assert.equal(outcome.status, 'PRICE_APPROVAL_REQUIRED');
+    assert.equal(outcome.priceApproval.previousAmount, 3255.35);
+    assert.equal(outcome.priceApproval.newAmount, 3500.35);
+    assert.equal(outcome.priceApproval.currency, 'INR');
+    assert.equal(holdCalls, 0);
+    assert.equal(persisted, null);
+
+    const requestWithApproval = (priceApprovalToken: string) => ({
+      ...input,
+      tboHoldBookings: [{ ...input.tboHoldBookings[0], priceApprovalToken }],
+    });
+    const changedAgain = await service.holdGroup(requestWithApproval(outcome.priceApproval.token));
+    assert.equal(changedAgain.outcomes[0].status, 'PRICE_APPROVAL_REQUIRED');
+    assert.equal(changedAgain.outcomes[0].priceApproval.newAmount, 3600.35);
+    assert.equal(holdCalls, 0);
+    const currentToken = changedAgain.outcomes[0].priceApproval.token;
+    const wrongUser = await service.holdGroup({ ...requestWithApproval(currentToken), actor: { id: 91 } });
+    assert.equal(wrongUser.outcomes[0].status, 'PRICE_APPROVAL_REQUIRED');
+    assert.equal(holdCalls, 0);
+    assert.equal(persisted, null);
+
+    first = await service.holdGroup(requestWithApproval(currentToken));
+    assert.equal(holdSelection?.netAmount, 3600.35);
+  } else {
+    first = await service.holdGroup(input);
+    assert.equal(holdSelection?.netAmount, 3255.35);
+  }
   const second = await service.holdGroup(input);
   const refreshed = await service.listForItinerary(12042, 1);
 
   assert.equal(first.requests[0].status, 'HOLD');
   assert.equal(second.requests[0].status, 'HOLD');
-  assert.equal(prebookCalls, 1);
+  assert.equal(prebookCalls, changePrice ? 4 : 1);
   assert.equal(holdCalls, 1);
   assert.equal(holdSelection?.isVoucherBooking, false);
   assert.deepEqual(holdSelection?.occupancies, [
@@ -772,7 +803,10 @@ test('VSR hold is exposed as HOLD, refreshes supplier status, and reuses the sam
   assert.equal(statusCalls, 1);
   assert.equal(statusReference, 'TBO-HOLD-700');
   assert.equal(statusBookingId, 700);
-});
+}
+
+test('VSR hold refreshes supplier status and reuses the same active rate', () => verifyVsrHold());
+test('VSR holds changed prices only after the same user approves the latest price', () => verifyVsrHold({ changePrice: true }));
 
 test('an expired supplier status is exposed as HOLD expired', async () => {
   const service = new (HotelBlockingService as any)({}, {}, {

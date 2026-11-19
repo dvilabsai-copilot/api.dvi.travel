@@ -16,6 +16,7 @@ import {
 } from '../utils/tbo-hold-eligibility.util';
 import { AxisRoomsBookingPushService } from './axisrooms-booking-push.service';
 import { resolveHotelHoldNotificationRecipients } from '../utils/hotel-hold-recipient.util';
+import { createTboHoldPriceApproval, normalizeTboHoldAmount, verifyTboHoldPriceApproval } from '../utils/tbo-hold-price-approval.util';
 import {
   DEFAULT_TBO_CHILD_AGE,
   distributeTboSearchOccupancies,
@@ -47,6 +48,7 @@ type BlockRow = Record<string, any>;
 type TboHoldBookingInput = {
   hotelDetailsIds?: number[];
   selection?: Record<string, any>;
+  priceApprovalToken?: string;
 };
 type ProviderHoldInput = {
   channel: 'AXISROOMS_HOLD' | 'OFFLINE_HOLD';
@@ -733,12 +735,53 @@ export class HotelBlockingService {
             'HOTEL_HOLD_NOT_ELIGIBLE: The fresh VSR rate did not include a valid cancellation deadline. Refresh the rate and try again.',
           );
         }
-        const prebookNetAmount = Number(
+        const originalAmount = normalizeTboHoldAmount(selection.netAmount);
+        const supplierAmount = normalizeTboHoldAmount(
           preBookResponse?.NetAmount
             ?? preBookResponse?.TotalFare
-            ?? preBookResponse?.HotelResult?.[0]?.Rooms?.[0]?.NetAmount
-            ?? selection.netAmount,
+            ?? preBookResponse?.HotelResult?.[0]?.Rooms?.[0]?.NetAmount,
         );
+        const prebookNetAmount = supplierAmount ?? (preBookResponse?.IsPriceChanged ? null : originalAmount);
+        if (originalAmount === null || prebookNetAmount === null) {
+          throw new BadRequestException('The selected or latest VSR price could not be verified. Refresh the rate and try again.');
+        }
+        const approvalToken = tboHoldBooking.priceApprovalToken;
+        if (prebookNetAmount !== originalAmount || approvalToken) {
+          const currency = normalizeText(groupedRows[0].selected_currency || snapshot.currency || 'INR').toUpperCase();
+          const scope = JSON.stringify({
+            planId,
+            groupType,
+            actorId: Number(input.actor?.id || 0),
+            rows: groupedRows.map((row) => [
+              row.itinerary_plan_hotel_details_ID, row.selected_rate_option_id, row.selected_price_snapshot,
+              rowCheckIn(row), rowCheckOut(row),
+            ]),
+            hotelCode: selection.hotelCode,
+            bookingCode: selection.bookingCode,
+            roomType: selection.roomType,
+            guestNationality: selection.guestNationality,
+            occupancies,
+            originalAmount,
+            prebookNetAmount,
+            currency,
+          });
+          const now = new Date();
+          if (!verifyTboHoldPriceApproval(approvalToken, scope, now)) {
+            outcomes.push({
+              ...outcomeBase,
+              success: false,
+              status: 'PRICE_APPROVAL_REQUIRED',
+              message: 'Review the latest VSR price before holding this stay.',
+              priceApproval: {
+                token: createTboHoldPriceApproval(scope, now),
+                previousAmount: originalAmount,
+                newAmount: prebookNetAmount,
+                currency,
+              },
+            });
+            continue;
+          }
+        }
         const bookResponse = await this.tboHotelBooking.holdHotel(
           preBookResponse,
           { ...selectionWithHoldMode, netAmount: prebookNetAmount },
