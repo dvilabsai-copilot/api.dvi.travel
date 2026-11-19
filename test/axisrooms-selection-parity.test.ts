@@ -119,3 +119,40 @@ test('category save replaces old snapshot nightly prices with the persisted paya
   assert.equal(snapshot.selectedPricePerNight, saved.selected_price_per_night);
   assert.equal(snapshot.totalPrice, saved.selected_total_price);
 });
+
+test('editing automatic AX categories restores a missing extra bed and keeps it on repeat', async () => {
+  const rooms = [
+    { itinerary_plan_hotel_room_details_ID: 20, room_qty: 1, room_id: 231, room_type_id: 1330, extra_bed_count: 0, extra_bed_rate: 0 },
+    { itinerary_plan_hotel_room_details_ID: 21, room_qty: 1, room_id: 232, room_type_id: 30, extra_bed_count: 0, extra_bed_rate: 0 },
+  ];
+  const parent = { itinerary_plan_hotel_details_ID: 10, hotel_id: 95, hotel_margin_percentage: 7,
+    selected_price_snapshot: JSON.stringify({ provider: 'axisrooms', mealPlan: 'CP', roomType: 'Deluxe',
+      totalRoomCost: 7000, totalPrice: 8560, extraBedCount: 1 }) };
+  let saved: any;
+  const service: any = new ItineraryHotelRoomCategoryService({
+    dvi_itinerary_route_details: { findUnique: async () => ({ itinerary_route_date: new Date(date) }) },
+    dvi_itinerary_plan_details: { findFirst: async () => ({ preferred_room_count: 2, total_adult: 5, total_extra_bed: 1, meal_plan_code: 'CP' }) },
+    dvi_itinerary_plan_hotel_details: { findFirst: async () => parent, update: async ({ data }: any) => { saved = data; } },
+    dvi_itinerary_plan_hotel_room_details: { findMany: async () => rooms,
+      update: async ({ where, data }: any) => Object.assign(rooms.find(r => r.itinerary_plan_hotel_room_details_ID === where.itinerary_plan_hotel_room_details_ID)!, data) },
+    dvi_itinerary_traveller_details: { findMany: async () => [1, 1, 1, 2, 2].map(room_id => ({ room_id, traveller_type: 1 })) },
+    dvi_hotel_occupancy_rate: { findMany: async ({ where }: any) => [{ occupancy_rates: { DOUBLE: where.room_id === 231 ? 4000 : 3500, EXTRABED: 1000 } }] },
+  } as any, {} as any);
+  service.resolveAvailableRoomTypes = async () => [
+    { roomTypeId: 1330, roomId: 231, roomTypeTitle: 'Valley View Double' },
+    { roomTypeId: 30, roomId: 232, roomTypeTitle: 'Deluxe' },
+  ];
+  for (const room of rooms) {
+    await service.updateRoomCategory({ itinerary_plan_hotel_details_ID: 10,
+      itinerary_plan_hotel_room_details_ID: room.itinerary_plan_hotel_room_details_ID,
+      itinerary_plan_id: 1, itinerary_route_id: 2, hotel_id: 95, group_type: 1, provider: 'axisrooms',
+      room_type_id: room.room_type_id, propagateContinuous: false });
+    const snapshot = JSON.parse(saved.selected_price_snapshot);
+    assert.deepEqual(rooms.map(r => r.extra_bed_count), [1, 0]);
+    assert.deepEqual(snapshot.roomTypeBreakdown.map((r: any) => r.extraBedCost), [1000, 0]);
+    assert.equal(snapshot.totalRoomCost, 7500);
+    assert.equal(snapshot.pricePerNight, 9095);
+    assert.equal(saved.total_extra_bed_cost, 1000);
+    assert.equal(saved.selected_price_per_night, 9095);
+  }
+});

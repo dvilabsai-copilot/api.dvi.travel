@@ -659,6 +659,24 @@ export class ItineraryHotelRoomCategoryService {
         occupancyByRoom.set(roomNumber, current);
       }
       const marginPercentage = selectionMarginPercentage;
+      const extraBeds: number[] = activeRoomRows.map((room: { extra_bed_count?: number }) => Number(room.extra_bed_count || 0));
+      // Automatic selections can have an itinerary-level extra bed but no
+      // child-room allocation. Recover only the missing beds once all rooms
+      // are materialized, preserving any assignment already on the child rows.
+      const completeAxisRoomsAllocation = Boolean(axisRoomsRateplanId) &&
+        activeRoomRows.length === Number(planDetails.preferred_room_count) &&
+        activeRoomRows.length === totalRooms;
+      if (completeAxisRoomsAllocation) {
+        let missing = Math.max(0, Number(planDetails.total_extra_bed || 0) - extraBeds.reduce((sum, count) => sum + count, 0));
+        const firstOccupiedRoom = extraBeds.findIndex((_, index) => (occupancyByRoom.get(index + 1)?.adults || 0) > 0);
+        for (let index = 0; index < extraBeds.length && missing > 0; index++) {
+          const adults = occupancyByRoom.get(index + 1)?.adults || 0;
+          const needed = Math.min(missing, Math.max(0, adults - 2 - extraBeds[index]));
+          extraBeds[index] += needed;
+          missing -= needed;
+        }
+        extraBeds[Math.max(0, firstOccupiedRoom)] += missing;
+      }
       const roomBreakdowns: Array<Record<string, unknown>> = [];
       const selectionRows: Array<Record<string, unknown>> = [];
       let aggregateBase = 0;
@@ -681,7 +699,7 @@ export class ItineraryHotelRoomCategoryService {
             rates,
             roomCount: 1,
             adultCount: occupancy.adults,
-            extraBedCount: Number(room.extra_bed_count || 0),
+            extraBedCount: extraBeds[index],
             childWithBedCount: occupancy.withBed,
             childWithoutBedCount: occupancy.withoutBed,
             marginPercentage,
@@ -692,7 +710,7 @@ export class ItineraryHotelRoomCategoryService {
         const childWithBedRate = pricing?.childWithBedRate ?? Number(room.child_with_bed_charges || 0);
         const childWithoutBedRate = pricing?.childWithoutBedRate ?? Number(room.child_without_bed_charges || 0);
         const roomCost = pricing?.baseTotalPrice ?? roomRate;
-        const extraCost = pricing?.extraBedAmount ?? extraBedRate * Number(room.extra_bed_count || 0);
+        const extraCost = pricing?.extraBedAmount ?? extraBedRate * extraBeds[index];
         const withBedCost = pricing?.childWithBedAmount ?? childWithBedRate * occupancy.withBed;
         const withoutBedCost = pricing?.childWithoutBedAmount ?? childWithoutBedRate * occupancy.withoutBed;
         const subtotal = Number((roomCost + extraCost + withBedCost + withoutBedCost).toFixed(2));
@@ -702,6 +720,13 @@ export class ItineraryHotelRoomCategoryService {
         aggregateWithBed += withBedCost;
         aggregateWithoutBed += withoutBedCost;
         aggregateMargin += margin;
+        if (completeAxisRoomsAllocation && extraBeds[index] > 0 &&
+            (extraBeds[index] !== Number(room.extra_bed_count || 0) || extraBedRate !== Number(room.extra_bed_rate || 0))) {
+          await roomDetailsModel.update({
+            where: { itinerary_plan_hotel_room_details_ID: room.itinerary_plan_hotel_room_details_ID },
+            data: { extra_bed_count: extraBeds[index], extra_bed_rate: extraBedRate, updatedon: now },
+          });
+        }
         selectionRows.push({
           roomIndex: index,
           roomNumber,
@@ -719,7 +744,7 @@ export class ItineraryHotelRoomCategoryService {
           roomOccupancy: occupancy.adults <= 1 ? 'SINGLE' : 'DOUBLE',
           roomRate,
           roomCost,
-          extraBedCount: Number(room.extra_bed_count || 0),
+          extraBedCount: extraBeds[index],
           extraBedRate,
           extraBedCost: Number(extraCost.toFixed(2)),
           childWithBedCount: occupancy.withBed,
@@ -739,7 +764,7 @@ export class ItineraryHotelRoomCategoryService {
         roomOccupancy: 'DOUBLE',
         roomRate: Number((aggregateBase / totalRooms).toFixed(2)),
         baseTotalPrice: Number(aggregateBase.toFixed(2)),
-        extraBedCount: activeRoomRows.reduce((sum: number, room: any) => sum + Number(room.extra_bed_count || 0), 0),
+        extraBedCount: extraBeds.reduce((sum, count) => sum + count, 0),
         extraBedRate: 0,
         extraBedAmount: Number(aggregateExtra.toFixed(2)),
         childWithBedCount: travellerRows.filter((row: any) => Number(row.traveller_type) === 2 && Number(row.child_bed_type) === 2).length,
@@ -819,6 +844,7 @@ export class ItineraryHotelRoomCategoryService {
       ...(occupancyPricing ? {
         roomRate: occupancyPricing.roomRate,
         baseTotalPrice: occupancyPricing.baseTotalPrice,
+        totalRoomCost: occupancyPricing.baseTotalPrice,
         hotelMarginBaseAmount: occupancyPricing.hotelMarginBaseAmount,
         hotelMarginPercentage: occupancyPricing.hotelMarginPercentage,
         hotelMarginAmount: occupancyPricing.hotelMarginAmount,
