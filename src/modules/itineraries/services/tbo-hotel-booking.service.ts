@@ -152,6 +152,7 @@ export class TboHotelBookingService {
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
   private static readonly DEFAULT_CHILD_AGE = 5;
+  private static readonly PREBOOK_TIMEOUT_MS = 75_000;
   private static readonly SEARCH_SESSION_VALIDITY_MS = 35 * 60 * 1000;
   private readonly logger = new Logger(TboHotelBookingService.name);
   private readonly client: AxiosInstance;
@@ -244,6 +245,7 @@ private readonly TBO_CLIENT_ID =
         this.PREBOOK_URL,
         payload,
         {
+          timeout: TboHotelBookingService.PREBOOK_TIMEOUT_MS,
           headers: {
             'Content-Type': 'application/json',
           },
