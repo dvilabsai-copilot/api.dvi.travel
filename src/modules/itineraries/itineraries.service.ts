@@ -88,6 +88,7 @@ import {
   validateManualFitAttemptDisplayTimelineImpl,
 } from "./helpers/manual-fit-here-preview.helper";
 import { createHash, randomUUID } from "crypto";
+import { publishItineraryRevision } from './services/itinerary-revision.service';
 import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assignment.service';
 import { ItineraryGuideAssignmentWriteService, SaveGuideAssignmentPayload } from './services/itinerary-guide-assignment-write.service';
 import { ItineraryConfirmedGuideAssignmentService } from './services/itinerary-confirmed-guide-assignment.service';
@@ -1693,6 +1694,17 @@ const result =
           rootQuoteId: continuationRootQuoteId,
         }
       : undefined,
+    async (quoteId) => {
+      const [itinerary, hotels] = await Promise.all([
+        this.itineraryDetails.getItineraryDetails(quoteId),
+        this.hotelAvailabilitySnapshotService.readPersisted(quoteId, { page: 1, pageSize: 0 }),
+      ]);
+      return {
+        overallCost: String(itinerary.overallCost),
+        costBreakdown: JSON.parse(JSON.stringify(itinerary.costBreakdown)),
+        hotels: JSON.parse(JSON.stringify(hotels)),
+      };
+    },
   );
 
 if (
@@ -1783,6 +1795,10 @@ timingStepStartedAt =
           String(result.quoteId),
           Number(req?.user?.userId || 0),
         );
+        if (result.revisionCreated) {
+          const details = await this.itineraryDetails.getItineraryDetails(String(result.quoteId));
+          await publishItineraryRevision(this.prisma, result.planId, hotelSearch.searchRunId, String(details.overallCost));
+        }
         return {
           ...result,
           // The update path already performed the authoritative hotel rebuild.
@@ -1803,6 +1819,15 @@ timingStepStartedAt =
           },
         };
       } catch (error) {
+        if (result.revisionCreated) {
+          await this.prisma.dvi_itinerary_quote_revision.updateMany({
+            where: { plan_id: result.planId, status: 'PENDING' }, data: { status: 'FAILED' },
+          });
+          throw new UnprocessableEntityException({
+            message: 'Hotel availability could not be saved for the new revision. The current quote is still active. Retry the same edit to resume the revision.',
+            code: 'ITINERARY_REVISION_HOTEL_SEARCH_FAILED',
+          });
+        }
         // The itinerary transaction is already committed. Return the same
         // recoverable partial-save contract used by initial itinerary create,
         // so the UI opens the saved itinerary and can explicitly retry hotel

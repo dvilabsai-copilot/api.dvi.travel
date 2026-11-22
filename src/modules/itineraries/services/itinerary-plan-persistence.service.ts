@@ -22,6 +22,8 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../../hotels/hotel-rate-plans';
 import { TimeConverter } from '../engines/helpers/time-converter';
+import { createHash } from 'node:crypto';
+import { createPendingItineraryRevision, getRevisionSaveState, type RevisionPriceSnapshot } from './itinerary-revision.service';
 
 type RouteFamilyQuote = {
   baseQuoteId: string;
@@ -374,21 +376,28 @@ export function hasItineraryVehicleSelectionChanged(
 
 export type HotelAvailabilityResetReason = 'ROUTE_CHANGED' | 'ROOM_COUNT_CHANGED' | 'OCCUPANCY_CHANGED' | 'MEAL_PLAN_CHANGED' | 'HOTEL_CATEGORY_CHANGED' | 'EARLY_ARRIVAL_CONFIRMED';
 
-export function getHotelAvailabilityResetReason(result: {
+export function getHotelAvailabilityResetReasons(result: {
   routeChanged?: boolean;
   roomCountChanged?: boolean;
   occupancyChanged?: boolean;
   mealPlanChanged?: boolean;
   hotelCategoryChanged?: boolean;
   earlyArrivalChanged?: boolean;
-} | null | undefined): HotelAvailabilityResetReason | null {
-  if (result?.routeChanged) return 'ROUTE_CHANGED';
-  if (result?.roomCountChanged) return 'ROOM_COUNT_CHANGED';
-  if (result?.occupancyChanged) return 'OCCUPANCY_CHANGED';
-  if (result?.mealPlanChanged) return 'MEAL_PLAN_CHANGED';
-  if (result?.hotelCategoryChanged) return 'HOTEL_CATEGORY_CHANGED';
-  if (result?.earlyArrivalChanged) return 'EARLY_ARRIVAL_CONFIRMED';
-  return null;
+} | null | undefined): HotelAvailabilityResetReason[] {
+  const reasons: HotelAvailabilityResetReason[] = [];
+  if (result?.routeChanged) reasons.push('ROUTE_CHANGED');
+  if (result?.roomCountChanged) reasons.push('ROOM_COUNT_CHANGED');
+  if (result?.occupancyChanged) reasons.push('OCCUPANCY_CHANGED');
+  if (result?.mealPlanChanged) reasons.push('MEAL_PLAN_CHANGED');
+  if (result?.hotelCategoryChanged) reasons.push('HOTEL_CATEGORY_CHANGED');
+  if (result?.earlyArrivalChanged) reasons.push('EARLY_ARRIVAL_CONFIRMED');
+  return reasons;
+}
+
+export function getHotelAvailabilityResetReason(
+  result: Parameters<typeof getHotelAvailabilityResetReasons>[0],
+): HotelAvailabilityResetReason | null {
+  return getHotelAvailabilityResetReasons(result)[0] ?? null;
 }
 
 export function shouldRebuildHotelData(result: {
@@ -520,6 +529,7 @@ export class ItineraryPlanPersistenceService {
       parentPlanId: number;
       rootQuoteId: string;
     },
+    captureRevisionPrices?: (quoteId: string) => Promise<RevisionPriceSnapshot>,
   ) {
     const apiStartedAt = Date.now();
     let stepStartedAt = apiStartedAt;
@@ -575,6 +585,7 @@ export class ItineraryPlanPersistenceService {
     }
 
     let createPlanStage = 'route_optimization';
+    let pendingRevisionPlanId: number | undefined;
     try {
 
      // ROUTE OPTIMIZATION: If requested, optimize route order before saving.
@@ -774,6 +785,9 @@ let previousVehicleSelections: any[] = [];
  // Increase interactive transaction timeout; hotspot rebuild + hotel lookups can exceed default 5s
     const result = await this.prisma.$transaction(async (tx) => {
       const opStart = Date.now();
+      const revisionState = existingPlanId > 0 && captureRevisionPrices
+        ? await getRevisionSaveState(tx, existingPlanId)
+        : null;
       if (existingPlanId > 0) {
         const currentPlan = await tx.dvi_itinerary_plan_details.findUnique({
           where: { itinerary_plan_ID: existingPlanId },
@@ -785,6 +799,7 @@ let previousVehicleSelections: any[] = [];
             no_of_nights: true,
             no_of_days: true,
             preferred_room_count: true,
+             preferred_hotel_category: true,
             total_extra_bed: true,
             arrival_location: true,
             departure_location: true,
@@ -828,8 +843,119 @@ const previousEndTime =
       )
     : '';
 
+      let oldRoutes = existingPlanId > 0 ? await tx.dvi_itinerary_route_details.findMany({
+        where: { itinerary_plan_ID: existingPlanId, deleted: 0 },
+        orderBy: { itinerary_route_ID: 'asc' },
+        select: {
+          itinerary_route_ID: true,
+          itinerary_route_date: true,
+          location_name: true,
+          next_visiting_location: true,
+          no_of_km: true,
+          direct_to_next_visiting_place: true,
+        },
+      }) : [];
+      const oldViaRoutes = existingPlanId > 0 ? await tx.dvi_itinerary_via_route_details.findMany({
+        where: {
+          itinerary_plan_ID: existingPlanId,
+          status: 1,
+          deleted: 0,
+        },
+        orderBy: [{ itinerary_route_ID: 'asc' }, { itinerary_via_route_ID: 'asc' }],
+        select: {
+          itinerary_route_ID: true,
+          itinerary_via_location_ID: true,
+          itinerary_via_location_name: true,
+        },
+      }) : [];
+      const oldViaRoutesByRouteId = new Map<number, any[]>();
+      for (const viaRoute of oldViaRoutes) {
+        const routeId = Number(viaRoute?.itinerary_route_ID || 0);
+        if (!routeId) continue;
+        const existing = oldViaRoutesByRouteId.get(routeId) || [];
+        existing.push(viaRoute);
+        oldViaRoutesByRouteId.set(routeId, existing);
+      }
+      const oldRoutesWithViaRoutes = oldRoutes.map((route: any) => ({
+        ...route,
+        via_routes: oldViaRoutesByRouteId.get(Number(route?.itinerary_route_ID || 0)) || [],
+      }));
+
+      // Decide whether this is a route edit before deleting/recreating route
+      // rows. Non-route edits must preserve route IDs, hotel detail rows, and
+      // the persisted supplier snapshot selected by the user.
+      routeChanged = isPlanUpdate && hasItineraryRouteChanged(
+        oldRoutesWithViaRoutes,
+        Array.isArray(dto.routes) ? dto.routes : [],
+        previousRoutePlan,
+        dto.plan,
+      );
+      mealPlanChanged = isPlanUpdate && hasItineraryMealPlanChanged(previousRoutePlan, dto.plan);
+      roomCountChanged = isPlanUpdate && hasItineraryRoomCountChanged(previousRoutePlan, dto.travellers);
+      occupancyChanged = isPlanUpdate && hasItineraryOccupancyChanged(
+        previousRoutePlan,
+        dto.plan,
+        previousTravellers,
+        Array.isArray(dto.travellers) ? dto.travellers : [],
+      );
+      hotelCategoryChanged = isPlanUpdate && hasItineraryHotelCategoryChanged(previousRoutePlan, dto.plan);
+      vehicleSelectionChanged = !isPlanUpdate || hasItineraryVehicleSelectionChanged(
+        previousVehicleSelections,
+        Array.isArray(dto.vehicles) ? dto.vehicles : [],
+      );
+      const hotelsRequired = [1, 3].includes(Number(dto.plan.itinerary_preference));
+      const prospectiveFirstRoute = routeChanged || !isPlanUpdate ? dto.routes?.[0] : oldRoutes[0];
+      const confirmedPreviousNight = Boolean(dto.previousDayBillingDecisionProvided && dto.previousDayBillingConfirmed) &&
+        !isIntercityHotelArrival({
+          cityNameA: dto.plan.arrival_point || prospectiveFirstRoute?.location_name,
+          cityNameB: prospectiveFirstRoute?.next_visiting_location,
+        });
+      const requestedStart = normalizeWallClockTime(dto.plan.trip_start_date);
+      const [arrivalHour, arrivalMinute, arrivalSecond] = requestedStart.split(':').map(Number);
+      const arrivalSeconds = arrivalHour * 3600 + arrivalMinute * 60 + arrivalSecond;
+      if (isPlanUpdate && hotelsRequired && confirmedPreviousNight && prospectiveFirstRoute &&
+          arrivalSeconds >= 3600 && arrivalSeconds < 28800) {
+        const marker = oldRoutes[0] && await tx.dvi_itinerary_plan_hotel_details.findFirst({
+          where: { itinerary_plan_id: existingPlanId, itinerary_route_id: oldRoutes[0].itinerary_route_ID, hotel_required: 2, deleted: 0 },
+          select: { itinerary_plan_hotel_details_ID: true },
+        });
+        earlyArrivalChanged = !marker || previousStartTime !== requestedStart;
+      }
+
+      const changeFlags = { routeChanged, vehicleSelectionChanged, roomCountChanged, occupancyChanged, mealPlanChanged, hotelCategoryChanged, earlyArrivalChanged };
+      const reasons = getHotelAvailabilityResetReasons(changeFlags);
+      const shouldCreateRevision = revisionState && captureRevisionPrices && hotelsRequired &&
+        Number(dto.plan.no_of_nights || 0) > 0 && reasons.length > 0;
+      if (revisionState?.pending && !shouldCreateRevision) {
+        throw new ConflictException('This quote already has a pending revision. Retry the same edit if the hotel search failed.');
+      }
+      const revision = shouldCreateRevision
+        ? await createPendingItineraryRevision(
+            tx, existingPlanId, revisionState, userId, reasons,
+            createHash('sha256').update(JSON.stringify(dto)).digest('hex'), captureRevisionPrices,
+          )
+        : null;
+      if (revision?.retry) {
+        const savedRoutes = await tx.dvi_itinerary_route_details.findMany({
+          where: { itinerary_plan_ID: revision.planId, deleted: 0 },
+          select: { itinerary_route_ID: true },
+          orderBy: { itinerary_route_ID: 'asc' },
+        });
+        return {
+          planId: revision.planId, quoteId: revision.quoteId, revisionCreated: true,
+          routeIds: savedRoutes.map((route) => route.itinerary_route_ID), ...changeFlags,
+          message: 'Retrying hotel availability for the saved revision.',
+        };
+      }
+      if (revision) {
+        oldRoutes = oldRoutes.map((route) => ({
+          ...route, itinerary_route_ID: revision.routeIds.get(route.itinerary_route_ID)!,
+        }));
+      }
+      const oldRouteDateMap = new Map(oldRoutes.map((route) => [route.itinerary_route_ID, route.itinerary_route_date]));
+
 const planId = await this.planEngine.upsertPlanHeader(
-  dto.plan,
+  revision ? { ...dto.plan, itinerary_plan_id: revision.planId } : dto.plan,
   dto.travellers,
   tx,
   userId,
@@ -896,69 +1022,6 @@ stepStartedAt = this.logItineraryApiTiming({
       });
       console.log('[PERF] upsertPlanHeader:', Date.now() - opStart, 'ms');
 
- // PRESERVE HOTSPOT CONTEXT: Fetch existing hotspots and their route dates BEFORE routes are deleted
- // This ensures that when we rebuild hotspots later, we know which day each "tombstone" (deleted hotspot) belonged to.
-      const oldRoutes = await (tx as any).dvi_itinerary_route_details.findMany({
-        where: { itinerary_plan_ID: planId, deleted: 0 },
-        orderBy: { itinerary_route_ID: 'asc' },
-        select: {
-          itinerary_route_ID: true,
-          itinerary_route_date: true,
-          location_name: true,
-          next_visiting_location: true,
-          no_of_km: true,
-          direct_to_next_visiting_place: true,
-        },
-      });
-      const oldViaRoutes = await (tx as any).dvi_itinerary_via_route_details.findMany({
-        where: {
-          itinerary_plan_ID: planId,
-          status: 1,
-          deleted: 0,
-        },
-        orderBy: [{ itinerary_route_ID: 'asc' }, { itinerary_via_route_ID: 'asc' }],
-        select: {
-          itinerary_route_ID: true,
-          itinerary_via_location_ID: true,
-          itinerary_via_location_name: true,
-        },
-      });
-      const oldViaRoutesByRouteId = new Map<number, any[]>();
-      for (const viaRoute of oldViaRoutes) {
-        const routeId = Number(viaRoute?.itinerary_route_ID || 0);
-        if (!routeId) continue;
-        const existing = oldViaRoutesByRouteId.get(routeId) || [];
-        existing.push(viaRoute);
-        oldViaRoutesByRouteId.set(routeId, existing);
-      }
-      const oldRoutesWithViaRoutes = oldRoutes.map((route: any) => ({
-        ...route,
-        via_routes: oldViaRoutesByRouteId.get(Number(route?.itinerary_route_ID || 0)) || [],
-      }));
-      const oldRouteDateMap = new Map(oldRoutes.map((r: any) => [r.itinerary_route_ID, r.itinerary_route_date]));
-
-      // Decide whether this is a route edit before deleting/recreating route
-      // rows. Non-route edits must preserve route IDs, hotel detail rows, and
-      // the persisted supplier snapshot selected by the user.
-      routeChanged = isPlanUpdate && hasItineraryRouteChanged(
-        oldRoutesWithViaRoutes,
-        Array.isArray(dto.routes) ? dto.routes : [],
-        previousRoutePlan,
-        dto.plan,
-      );
-      mealPlanChanged = isPlanUpdate && hasItineraryMealPlanChanged(previousRoutePlan, dto.plan);
-      roomCountChanged = isPlanUpdate && hasItineraryRoomCountChanged(previousRoutePlan, dto.travellers);
-      occupancyChanged = isPlanUpdate && hasItineraryOccupancyChanged(
-        previousRoutePlan,
-        dto.plan,
-        previousTravellers,
-        Array.isArray(dto.travellers) ? dto.travellers : [],
-      );
-      hotelCategoryChanged = isPlanUpdate && hasItineraryHotelCategoryChanged(previousRoutePlan, dto.plan);
-      vehicleSelectionChanged = !isPlanUpdate || hasItineraryVehicleSelectionChanged(
-        previousVehicleSelections,
-        Array.isArray(dto.vehicles) ? dto.vehicles : [],
-      );
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
 
 // A time-only edit must preserve the existing route structure/IDs,
@@ -1114,34 +1177,6 @@ const shouldRebuildTimeline =
           )
         : oldRoutes;
 
-      // Confirming early check-in changes the effective hotel stay window even
-      // when routes, rooms, meal plan, and category are unchanged. Mark this
-      // edit so the existing post-save hotel reset rebuilds the snapshot with
-      // the persisted previous-day marker.
-      const firstHotelRouteForArrival = (routes || [])[0] as any;
-      const isIntercityArrival = isIntercityHotelArrival({
-        cityNameA: dto.plan.arrival_point || firstHotelRouteForArrival?.location_name,
-        cityNameB: firstHotelRouteForArrival?.next_visiting_location,
-      });
-      const confirmedPreviousNight = !isIntercityArrival &&
-        Boolean(dto.previousDayBillingDecisionProvided && dto.previousDayBillingConfirmed);
-      const arrivalTimeForHotelReset = String(dto.plan.trip_start_date || '').match(
-        /T(\d{2}):(\d{2})(?::(\d{2}))?/,
-      );
-      const arrivalSecondsForHotelReset = arrivalTimeForHotelReset
-        ? (Number(arrivalTimeForHotelReset[1]) * 3600) +
-          (Number(arrivalTimeForHotelReset[2]) * 60) +
-          Number(arrivalTimeForHotelReset[3] || 0)
-        : -1;
-      earlyArrivalChanged = Boolean(
-        isPlanUpdate &&
-        (Number(dto.plan.itinerary_preference) === 1 ||
-          Number(dto.plan.itinerary_preference) === 3) &&
-        confirmedPreviousNight &&
-        arrivalSecondsForHotelReset >= 3600 &&
-        arrivalSecondsForHotelReset < 28800 &&
-        Number(firstHotelRouteForArrival?.itinerary_route_ID || 0) > 0,
-      );
 if (!shouldRebuildRouteData && itineraryStartTimeChanged) {
   const firstRoute = await tx.dvi_itinerary_route_details.findFirst({
     where: {
@@ -1456,7 +1491,7 @@ if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
       // A start-time-only edit must not rebuild the selected hotel rows.
       // Only sync previous-day early-check-in billing markers/details.
       if (
-        itineraryStartTimeChanged &&
+        (itineraryStartTimeChanged || earlyArrivalChanged) &&
         !shouldRebuildHotelRows &&
         (
           Number(dto.plan.itinerary_preference) === 1 ||
@@ -1731,6 +1766,7 @@ if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
  return {
   planId,
   quoteId: planRow?.itinerary_quote_ID,
+   revisionCreated: Boolean(revision),
   routeIds: routes.map((r: any) => r.itinerary_route_ID),
   routeChanged,
   vehicleSelectionChanged,
@@ -1743,6 +1779,8 @@ if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
     "Plan created/updated with routes, travellers, hotspots, and hotels.",
 };
  }, { timeout: 120000, maxWait: 20000 }); // Increased to 120s while we optimize further
+
+    if (result.revisionCreated) pendingRevisionPlanId = result.planId;
 
  // Rebuild parking charges AFTER routes and hotspots
     createPlanStage = 'post_transaction_parking_rebuild';
@@ -1839,6 +1877,12 @@ if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
       vehicleBuildStatus: shouldBuildVehicles ? 'READY' : undefined,
     };
     } catch (error: any) {
+      if (pendingRevisionPlanId) {
+        await this.prisma.dvi_itinerary_quote_revision.updateMany({
+          where: { plan_id: pendingRevisionPlanId, status: 'PENDING' }, data: { status: 'FAILED' },
+        });
+        throw new ConflictException('The revision could not finish saving. Retry the same edit to resume it.');
+      }
       const message = String(error?.message || error || 'Unknown createPlan failure');
       this.logger.error('createPlan failed', {
         stage: createPlanStage,

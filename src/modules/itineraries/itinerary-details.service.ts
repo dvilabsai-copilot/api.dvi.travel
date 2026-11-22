@@ -436,6 +436,10 @@ export interface VehicleSelectionDto {
 
 // NOTE: Hotel fields removed hotels come from a separate endpoint now.
 export interface ItineraryDetailsResponseDto {
+  quoteRevision?: {
+    historical: boolean;
+    entries: Array<{ quoteId: string; number: number; reasons: string[]; changedAt: string; changedBy: string | null; overallCost: string | null; current: boolean }>;
+  };
   quoteId: string;
   planId: number;
   agentSellingProfit?: number;
@@ -2263,6 +2267,7 @@ const foodTypeMap: Record<string, string> = {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
       orderBy: { itinerary_plan_ID: 'desc' },
+      include: { quote_revision: true },
     });
 
  if (!plan) {
@@ -2270,6 +2275,8 @@ const foodTypeMap: Record<string, string> = {
 }
 
 const planId = plan.itinerary_plan_ID;
+ const revision = plan.quote_revision;
+ const historical = Boolean(revision?.superseded_at);
 
 const itineraryTextSettings = await this.globalSettingsService.getItineraryTextSettings();
 
@@ -7784,9 +7791,29 @@ const visibleVehicles = canViewCostBreakdown
   : isAgentRole(viewerRole)
     ? vehiclesForAgent.map(redactVehicleForAgent)
     : redactVehicleCostBreakdowns(vehicles);
-const visibleCostBreakdown = canViewCostBreakdown
-  ? costBreakdown
-  : redactItineraryCostBreakdown(costBreakdown);
+ const savedCostBreakdown = historical && revision?.frozen_cost_breakdown
+   ? revision.frozen_cost_breakdown as unknown as CostBreakdownDto
+   : costBreakdown;
+ const visibleCostBreakdown = canViewCostBreakdown
+   ? savedCostBreakdown
+   : redactItineraryCostBreakdown(savedCostBreakdown);
+ const overallCost = historical && revision?.overall_cost
+   ? revision.overall_cost.toFixed(2)
+   : netPayable.toFixed(2);
+ const revisions = revision?.status === 'READY'
+   ? await this.prisma.dvi_itinerary_quote_revision.findMany({
+       where: { original_plan_id: revision.original_plan_id, status: 'READY', plan: { deleted: 0 } },
+       orderBy: { revision_number: 'desc' },
+       select: { quote_id: true, revision_number: true, reasons: true, changed_at: true, changed_by: true, overall_cost: true, superseded_at: true },
+     })
+   : [];
+ const revisionUsers = revisions.length > 1
+   ? await this.prisma.dvi_users.findMany({
+     where: { userID: { in: [...new Set(revisions.map((entry) => entry.changed_by))] } },
+     select: { userID: true, username: true },
+   })
+   : [];
+ const revisionAuthors = new Map(revisionUsers.map((user) => [Number(user.userID), user.username]));
 
 // Agent Profit is visible only to Agent and Admin.
 const canViewAgentProfit =
@@ -7800,6 +7827,18 @@ const savedAgentProfit = canViewAgentProfit
 const response: ItineraryDetailsResponseDto = {
   quoteId: plan.itinerary_quote_ID ?? '',
   planId: plan.itinerary_plan_ID,
+   ...(historical || revisions.length > 1 ? { quoteRevision: {
+     historical,
+     entries: revisions.map((entry) => ({
+       quoteId: entry.quote_id,
+       number: entry.revision_number,
+       reasons: Array.isArray(entry.reasons) ? entry.reasons.filter((reason): reason is string => typeof reason === 'string') : [],
+       changedAt: entry.changed_at.toISOString(),
+       changedBy: revisionAuthors.get(entry.changed_by) ?? null,
+       overallCost: entry.quote_id === quoteId ? overallCost : entry.overall_cost?.toFixed(2) ?? null,
+       current: !entry.superseded_at,
+     })),
+   } } : {}),
 
   ...(canViewAgentProfit
     ? { agentSellingProfit: savedAgentProfit }
@@ -7854,7 +7893,7 @@ transport_early_arrival_location_name: (plan as any).transport_early_arrival_loc
       adults: plan.total_adult ?? 0,
       children: plan.total_children ?? 0,
       infants: plan.total_infants ?? 0,
- overallCost: netPayable.toFixed(2), // Use calculated net payable
+ overallCost,
 meal_plan_code: (plan as any).meal_plan_code ?? null,
 mealPlanCode: (plan as any).meal_plan_code ?? null,
 
@@ -8151,6 +8190,7 @@ if (canViewAllLatestItineraries) {
       AND: [
         ...(roleOr ? [roleOr] : []),
         ...(s ? [{ OR: searchOr }] : []),
+        { OR: [{ quote_revision: { is: null } }, { quote_revision: { is: { status: 'READY', superseded_at: null } } }] },
       ],
     };
 

@@ -4011,6 +4011,7 @@ transport_early_arrival_location_name String? @db.VarChar(255)
   status                               Int       @default(0)
   deleted                              Int       @default(0) @db.TinyInt
   meal_plan_code                       String?   @db.VarChar(16)
+  quote_revision                       dvi_itinerary_quote_revision?
 
   @@index([agent_id], map: "idx_itinerary_plan_agent_id")
   @@index([arrival_location(length: 768)], map: "idx_itinerary_plan_arrival_location")
@@ -4055,6 +4056,28 @@ transport_early_arrival_location_name String? @db.VarChar(255)
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model dvi_itinerary_quote_revision {
+  plan_id              Int      @id
+  original_plan_id     Int
+  parent_plan_id       Int?
+  revision_number     Int
+  quote_id              String   @unique(map: "uq_itinerary_revision_quote") @db.VarChar(191)
+  status                String   @db.VarChar(12)
+  edit_key              String?  @db.Char(64)
+  reasons               Json
+  changed_by            Int
+  changed_at            DateTime @default(now()) @db.DateTime(3)
+  search_run_id         String?  @db.VarChar(191)
+  superseded_at         DateTime? @db.DateTime(3)
+  overall_cost          Decimal? @db.Decimal(16, 2)
+  frozen_cost_breakdown Json?
+  frozen_hotels         Json?
+  plan                  dvi_itinerary_plan_details @relation(fields: [plan_id], references: [itinerary_plan_ID], onDelete: Restrict)
+
+  @@unique([original_plan_id, revision_number], map: "uq_itinerary_revision_number")
+  @@index([parent_plan_id], map: "idx_itinerary_revision_parent")
+}
+
 model dvi_itinerary_plan_hotel_details {
   itinerary_plan_hotel_details_ID        Int       @id @default(autoincrement())
   group_type                             Int       @default(0)

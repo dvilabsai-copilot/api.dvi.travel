@@ -575,11 +575,21 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
 if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.redirectTo || '/latest-itinerary');
 
     const groupTypeNum = groupType !== undefined ? Number(groupType) : undefined;
-    return this.detailsService.getItineraryDetails(
+    const details = await this.detailsService.getItineraryDetails(
       quoteId,
       groupTypeNum,
       (req as any)?.user?.role,
     );
+    if (details.quoteRevision) {
+      const entries = await Promise.all(details.quoteRevision.entries.map(async (entry) => {
+        const visible = entry.quoteId === quoteId || (await this.itineraryAccessService.getQuoteAccessDecision(
+          entry.quoteId, (req as any)?.user, true,
+        )).allowed;
+        return visible ? entry : null;
+      }));
+      details.quoteRevision.entries = entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+    }
+    return details;
   }
 
    @Get(':id/guides/availability')
@@ -765,6 +775,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     @Body() body: { reconciliation?: boolean; reset?: boolean },
     @Req() req: any,
   ) {
+    await this.itineraryAccessService.assertQuoteRevisionEditable(quoteId);
     const startedAt = Date.now();
     const reconciliationEnabled = ['1', 'true', 'yes'].includes(
       String(process.env.HOTEL_RECONCILE || '').trim().toLowerCase(),
@@ -824,6 +835,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     @Body() body: { selectionIds?: number[]; previewId?: string },
     @Req() req: any,
   ) {
+    await this.itineraryAccessService.assertQuoteRevisionEditable(quoteId);
     this.itineraryAccessService.assertVehicleAgentHotelMutation(req.user);
     const access = await this.itineraryAccessService.getQuoteAccessDecision(quoteId, req.user);
     if (!access.exists) throw new NotFoundException('Itinerary not found');
@@ -863,6 +875,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     @Param('quoteId') quoteId: string,
     @Body() body: { routeId?: number; provider?: string; hotelCode?: string; groupType?: number },
   ) {
+    await this.itineraryAccessService.assertQuoteRevisionEditable(quoteId);
     const result = await this.hotelDetailsTboService.getSelectedHotelRates(
       quoteId,
       Number(body?.routeId || 0),
@@ -888,6 +901,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
   async resetItineraryHotelAvailability(
     @Param('quoteId') quoteId: string,
   ) {
+    await this.itineraryAccessService.assertQuoteRevisionEditable(quoteId);
     await this.hotelAvailabilitySnapshotService.resetSelectionsOnly(quoteId);
     // Reset only mutates the persisted selections. The separate
     // check-availability endpoint owns the fresh hotel data and financial
@@ -907,6 +921,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     @Body() body: { hotelDetailsId?: number },
     @Req() req: any,
   ) {
+    await this.itineraryAccessService.assertQuoteRevisionEditable(quoteId);
     return this.hotelAvailabilitySnapshotService.removeHotelSelection(
       quoteId,
       Number(body?.hotelDetailsId || 0),
@@ -924,6 +939,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     @Body() body: { routeId?: number },
     @Req() req: any,
   ) {
+    await this.itineraryAccessService.assertQuoteRevisionEditable(quoteId);
     const result = await this.hotelAvailabilitySnapshotService.fetchOfflineForStay(
       quoteId,
       body?.routeId ? Number(body.routeId) : undefined,
@@ -1282,6 +1298,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     @Query('pageSize') pageSize?: string,
     @Query('groupType') groupType?: string,
   ): Promise<ItineraryHotelDetailsResponseDto> {
+    await this.itineraryAccessService.assertQuoteRevisionEditable(quoteId);
     const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : 1;
     const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : 20;
     const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;

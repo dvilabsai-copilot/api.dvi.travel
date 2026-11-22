@@ -460,7 +460,7 @@ export class PlanEngineService {
         const numericPart = quoteId.startsWith(prefix)
           ? quoteId.slice(prefix.length)
           : '';
-        const sequenceMatch = numericPart.match(/^(\d+)(?:-R\d+)?$/i);
+        const sequenceMatch = numericPart.match(/^(\d+)(?:-R\d+)?(?:-V\d+)?$/i);
         if (!sequenceMatch) continue;
         const sequence = Number.parseInt(sequenceMatch[1], 10);
         if (Number.isFinite(sequence) && sequence > maxSequence) {
@@ -612,13 +612,21 @@ export class PlanEngineService {
     delete (syncData as any).itinerary_quote_ID;
     delete (syncData as any).itinerary_plan_id;
 
-    await (tx as any).dvi_itinerary_plan_details.updateMany({
+    const family = await tx.dvi_itinerary_plan_details.findMany({
       where: {
         itinerary_quote_ID: {
           startsWith: familyPrefix,
         },
         deleted: 0,
+        OR: [{ quote_revision: { is: null } }, { quote_revision: { is: { status: 'READY', superseded_at: null } } }],
       },
+      select: { itinerary_plan_ID: true, itinerary_quote_ID: true },
+    });
+    const planIds = family.filter((plan) => /^\d+$/.test(plan.itinerary_quote_ID?.slice(familyPrefix.length) || ''))
+      .map((plan) => plan.itinerary_plan_ID);
+    if (!planIds.length) return;
+    await tx.dvi_itinerary_plan_details.updateMany({
+      where: { itinerary_plan_ID: { in: planIds } },
       data: syncData,
     });
   }

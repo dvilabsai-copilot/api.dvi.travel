@@ -6,6 +6,7 @@ import {
   assertVehicleAgentHotelMutation,
   assertVehicleAgentPlanAccess,
 } from '../policies/vehicle-agent.policy';
+import { assertRevisionEditable } from './itinerary-revision.service';
 
 export type ItineraryViewer = {
   role?: unknown;
@@ -74,11 +75,14 @@ async getQuoteAccessDecision(
       staff_id: true,
       quotation_status: true,
       itinerary_preference: true,
+      quote_revision: { select: { status: true } },
     },
     orderBy: { itinerary_plan_ID: 'desc' },
   });
 
-  if (!plan) return { exists: false, allowed: false, redirectTo: null };
+  if (!plan || (plan.quote_revision && plan.quote_revision.status !== 'READY')) {
+    return { exists: false, allowed: false, redirectTo: null };
+  }
 
   const role = getRoleId(viewer);
   const staffId = Number(viewer?.staffId ?? viewer?.staff_id ?? 0) || 0;
@@ -328,9 +332,14 @@ if (
 
   async assertCanEditPlan(planId: number, viewer?: ItineraryViewer): Promise<void> {
     await this.assertCanViewPlan(planId, viewer);
+    await assertRevisionEditable(this.prisma, planId);
     const snapshot = await this.getPlanSnapshot(planId);
     if (!snapshot) throw new ForbiddenException('You are not allowed to edit this itinerary.');
     assertVehicleAgentPlanAccess(viewer, snapshot);
+  }
+
+  async assertQuoteRevisionEditable(quoteId: string) {
+    await assertRevisionEditable(this.prisma, quoteId.trim());
   }
 
   assertVehicleAgentHotelMutation(viewer?: ItineraryViewer): void {

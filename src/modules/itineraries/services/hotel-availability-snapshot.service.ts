@@ -37,6 +37,7 @@ import {
   hasCommercialHotelIdentity,
   resolvePersistedHotelIdentity,
 } from '../utils/hotel-selection-identity.util';
+import { getFrozenRevisionHotels } from './itinerary-revision.service';
 import { normalizeHotelStarRating } from '../utils/hotel-category.util';
 import { normalizeCityName } from '../utils/city-normalization.util';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
@@ -517,6 +518,12 @@ export class HotelAvailabilitySnapshotService {
     fallback?: PersistedReadFallback,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const plan = await this.findPlan(quoteId);
+    const revision = await this.prisma.dvi_itinerary_quote_revision?.findUnique({
+      where: { plan_id: plan.itinerary_plan_ID }, select: { superseded_at: true, frozen_hotels: true },
+    });
+    if (revision?.superseded_at && revision.frozen_hotels) {
+      return getFrozenRevisionHotels(revision.frozen_hotels, options);
+    }
     const persistedResponse = fallback
       ? await fallback()
       : await this.persistedHotelDetails.getHotelDetailsByQuoteId(quoteId);
