@@ -1,6 +1,39 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import nodemailer from 'nodemailer';
 import { HotelBlockEmailService } from '../src/modules/itineraries/services/hotel-block-email.service';
+
+test('offline voucher From header includes the configured sender name or the legacy default', async () => {
+  const originalAddress = process.env.SMTP_FROM;
+  const originalName = process.env.SMTP_FROM_NAME;
+  try {
+    process.env.SMTP_FROM = 'sales@example.com';
+    const service = new HotelBlockEmailService({
+      dvi_global_settings: { findFirst: async () => null },
+    } as any);
+    const transport = nodemailer.createTransport({ streamTransport: true, buffer: true });
+    let header = '';
+    (service as any).getTransporter = () => ({
+      sendMail: async (message: nodemailer.SendMailOptions) => {
+        const sent = await transport.sendMail(message);
+        header = sent.message.toString().split('\r\n').find((line) => line.startsWith('From:')) ?? '';
+        return sent;
+      },
+    });
+    const voucher = { subject: 'Hotel Voucher', text: 'Voucher', html: '<p>Voucher</p>' };
+    process.env.SMTP_FROM_NAME = 'Reservations Team';
+    await service.dispatchOfflineVoucher(['hotel@example.com'], voucher);
+    assert.equal(header, 'From: Reservations Team <sales@example.com>');
+    delete process.env.SMTP_FROM_NAME;
+    await service.dispatchOfflineVoucher(['hotel@example.com'], voucher);
+    assert.equal(header, 'From: Do View Holidays <sales@example.com>');
+  } finally {
+    if (originalAddress === undefined) delete process.env.SMTP_FROM;
+    else process.env.SMTP_FROM = originalAddress;
+    if (originalName === undefined) delete process.env.SMTP_FROM_NAME;
+    else process.env.SMTP_FROM_NAME = originalName;
+  }
+});
 
 test('lifecycle email dispatch always uses the requested test inbox and records intended recipients', async () => {
   const previousEnabled = process.env.HOTEL_BLOCK_EMAIL_ENABLED;
