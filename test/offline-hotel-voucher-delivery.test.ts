@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Prisma } from '@prisma/client';
 import { OfflineHotelBookingController } from '../src/modules/itineraries/offline-hotel-booking.controller';
 
 const stay = {
@@ -16,11 +15,10 @@ const bookingDetails = {
 };
 
 function setup({
-  status = 'pending', delivery = 'sent', changedDuringSend = false,
+  status = 'pending', delivery = 'sent',
 }: {
   status?: 'pending' | 'confirmed' | 'cancelled';
   delivery?: 'sent' | 'demo' | 'partial' | 'failed';
-  changedDuringSend?: boolean;
 } = {}) {
   const row = {
     route_id: stay.routeId, hotel_key: stay.hotelKey, check_in: new Date(stay.checkIn), check_out: new Date(stay.checkOut),
@@ -41,13 +39,12 @@ function setup({
       findUnique: async () => row,
       update: async ({ where, data }: {
         where: { version: number };
-        data: { details: typeof row.details; version: number | { increment: number } };
+        data: { details: typeof row.details; version: number };
       }) => {
         calls.push('save');
         assert.equal(where.version, row.version);
-        if (changedDuringSend) throw new Prisma.PrismaClientKnownRequestError('Stale version', { code: 'P2025', clientVersion: 'test' });
         row.details = data.details;
-        row.version = typeof data.version === 'number' ? data.version : row.version + data.version.increment;
+        row.version = data.version;
         return row;
       },
     },
@@ -60,7 +57,8 @@ function setup({
       calls.push('send');
       assert.deepEqual(recipients, bookingDetails.emails);
       assert.equal(message.subject, 'DVi Holidays - Hotel Voucher of Itinerary #QUOTE-001 (Sample Customer)');
-      assert.match(message.html, status === 'cancelled' ? /Hotel Voucher – Cancelled/ : /Hotel Voucher – Confirmed/);
+      const expectedStatus = { pending: 'Pending confirmation', confirmed: 'Confirmed', cancelled: 'Cancelled' }[row.details.status];
+      assert.ok(message.html.includes(`Hotel Voucher – ${expectedStatus}`));
       if (delivery === 'failed') throw new Error('SMTP rejected delivery');
       return { demo: delivery === 'demo', partial: delivery === 'partial' };
     },
@@ -73,17 +71,25 @@ function setup({
   return { controller, calls, row };
 }
 
-test('live voucher delivery confirms the stay and returns the next version', async () => {
+test('voucher delivery uses the saved status, while Save Booking changes it and advances the version', async () => {
   const { controller, calls, row } = setup();
   const preview = await controller.previewVoucher(42, 1, { template: body.template, stay, details: bookingDetails }, request);
   assert.equal(preview.subject, 'DVi Holidays - Hotel Voucher of Itinerary #QUOTE-001 (Sample Customer)');
+  assert.match(preview.html, /Hotel Voucher – Pending confirmation/);
   assert.deepEqual(calls, []);
   const { results: [result] } = await controller.sendVouchers(42, 1, body, request);
-  assert.deepEqual(calls, ['send', 'save']);
+  assert.deepEqual(calls, ['send']);
   assert.equal(result.status, 'sent');
-  assert.deepEqual(result.confirmedBooking?.details, { ...bookingDetails, status: 'confirmed' });
-  assert.equal(result.confirmedBooking?.version, 4);
+  assert.equal(row.details.status, 'pending');
+  assert.equal(row.version, 3);
+  const details = { ...bookingDetails, status: 'confirmed' as const, confirmedBy: 'Hotel Desk', phone: '9876543210' };
+  const saved = await controller.save(42, 1, { ...stay, details }, request);
+  assert.deepEqual(saved.details, details);
+  assert.equal(saved.version, 4);
+  await controller.sendVouchers(42, 1, { ...body, stays: [{ ...stay, version: saved.version }] }, request);
+  assert.deepEqual(calls, ['send', 'save', 'send']);
   assert.equal(row.details.status, 'confirmed');
+  assert.equal(row.version, 4);
 });
 
 test('demo, partial and failed delivery preserve pending status, and cancelled stays stay cancelled', async () => {
@@ -101,13 +107,12 @@ test('demo, partial and failed delivery preserve pending status, and cancelled s
   assert.equal(cancelled.row.details.status, 'cancelled');
 });
 
-test('a change during delivery is reported without overwriting the stay or retrying email', async () => {
-  const { controller, calls } = setup({ changedDuringSend: true });
-  const { results: [result] } = await controller.sendVouchers(42, 1, body, request);
-  assert.equal(result.status, 'sent');
-  assert.equal(result.confirmedBooking, undefined);
-  assert.match(result.message ?? '', /stay changed during delivery/i);
-  assert.deepEqual(calls, ['send', 'save']);
+test('a stale voucher version is skipped without sending or saving', async () => {
+  const { controller, calls } = setup();
+  const { results: [result] } = await controller.sendVouchers(42, 1, { ...body, stays: [{ ...stay, version: 2 }] }, request);
+  assert.equal(result.status, 'skipped');
+  assert.match(result.message ?? '', /booking details changed/i);
+  assert.deepEqual(calls, []);
 });
 
 test('a stay confirmed by voucher can be edited with its existing blank contact fields', async () => {

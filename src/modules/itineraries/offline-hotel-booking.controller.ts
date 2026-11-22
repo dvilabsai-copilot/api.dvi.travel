@@ -1,6 +1,6 @@
 import {
   BadRequestException, Body, ConflictException, Controller, ForbiddenException,
-  Get, Logger, Param, ParseIntPipe, Post, Put, Query, Req, ServiceUnavailableException,
+  Get, Param, ParseIntPipe, Post, Put, Query, Req, ServiceUnavailableException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Prisma, dvi_itinerary_offline_hotel_booking } from '@prisma/client';
@@ -46,7 +46,6 @@ function bookingResponse(row: dvi_itinerary_offline_hotel_booking) {
 type VoucherDeliveryResult = {
   key: string;
   status: 'sent' | 'demo' | 'partial' | 'failed' | 'skipped';
-  confirmedBooking?: ReturnType<typeof bookingResponse>;
   message?: string;
 };
 
@@ -54,8 +53,6 @@ type VoucherDeliveryResult = {
 @ApiBearerAuth()
 @Controller('itineraries/:planId/offline-hotel-bookings/:groupType')
 export class OfflineHotelBookingController {
-  private readonly logger = new Logger(OfflineHotelBookingController.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ItineraryAccessService,
@@ -168,42 +165,13 @@ export class OfflineHotelBookingController {
         results.push({ key, status: 'skipped', message: 'No hotel email is saved for this stay.' });
         continue;
       }
-      const result: VoucherDeliveryResult = { key, status: 'failed' };
       try {
         const outcome = await this.email.dispatchOfflineVoucher(recipients, renderOfflineHotelVoucher(voucher, stay, details), replyTo);
-        result.status = outcome.partial ? 'partial' : outcome.demo ? 'demo' : 'sent';
+        results.push({ key, status: outcome.partial ? 'partial' : outcome.demo ? 'demo' : 'sent' });
       } catch (error) {
         this.email.logFailure(error, 'offline voucher for ' + voucher.quote);
-        result.message = 'Email delivery failed.';
+        results.push({ key, status: 'failed', message: 'Email delivery failed.' });
       }
-      if (result.status === 'sent' && details.status === 'pending') {
-        try {
-          const row = await this.prisma.dvi_itinerary_offline_hotel_booking.update({
-            where: {
-              itinerary_plan_id_group_type_route_id_hotel_key_check_in_check_out: bookingScope(planId, groupType, stay),
-              version: booking.version,
-            },
-            data: {
-              details: {
-                ...details,
-                status: 'confirmed',
-                rooms: details.rooms.map((room) => ({ ...room })),
-                cancellationPolicies: details.cancellationPolicies.map((policy) => ({ ...policy })),
-              },
-              version: { increment: 1 },
-              updated_by: Number(request.user?.userId || 0),
-            },
-          });
-          result.confirmedBooking = bookingResponse(row);
-        } catch (error) {
-          const changed = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
-          if (!changed) this.logger.error(`Unable to confirm an offline booking after sending a voucher for ${voucher.quote}`, error);
-          result.message = changed
-            ? 'Voucher sent. The stay changed during delivery. Reopen Offline Booking to review its status.'
-            : 'Voucher sent. The status update failed. Reopen Offline Booking to review this stay.';
-        }
-      }
-      results.push(result);
     }
     return { results };
   }

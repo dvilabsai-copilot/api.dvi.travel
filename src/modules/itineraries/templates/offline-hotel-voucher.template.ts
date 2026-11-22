@@ -12,7 +12,7 @@ export function renderOfflineHotelVoucher(
   stay: OfflineVoucherStayDto,
   details: OfflineHotelBookingDetailsDto,
 ) {
-  const status = details.status === 'cancelled' ? 'Cancelled' : 'Confirmed';
+  const status = { pending: 'Pending confirmation', confirmed: 'Confirmed', cancelled: 'Cancelled' }[details.status];
   const title = `Hotel Voucher – ${status}`;
   const roomHeaders = ['Room category', 'Rooms', 'Rate per night', 'Extra beds', 'Extra bed rate', 'Children without bed', 'Child rate'];
   const rooms = details.rooms.map((room) => [
