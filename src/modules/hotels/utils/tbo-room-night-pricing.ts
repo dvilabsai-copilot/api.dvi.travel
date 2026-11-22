@@ -19,6 +19,7 @@ export type TboRouteNightPricingInput = {
   routeDate: string;
   breakdown: unknown;
   marginPercentage: number;
+  mealPlanAmount?: number;
 };
 
 export type TboRouteNightPricing = {
@@ -50,9 +51,11 @@ export function allocateTboRouteNightPricing(
     const routeDate = String(selection.routeDate || '').slice(0, 10);
     const routeId = Number(selection.routeId);
     const percentage = Number(selection.marginPercentage);
+    const mealPlanCents = toCents(selection.mealPlanAmount ?? 0);
     if (!routeDate || !Number.isInteger(routeId) || routeId <= 0 || !Number.isFinite(percentage) || percentage < 0) {
       return null;
     }
+    if (mealPlanCents === null) return null;
     if (!Array.isArray(selection.breakdown)) return null;
     const matchingRows = selection.breakdown.filter((item: any) =>
       String(item?.date || '').slice(0, 10) === routeDate,
@@ -69,7 +72,8 @@ export function allocateTboRouteNightPricing(
       routeId,
       routeDate,
       baseCents,
-      exactMarginCents: (baseCents * percentage) / 100,
+      subtotalCents: baseCents + mealPlanCents,
+      exactMarginCents: ((baseCents + mealPlanCents) * percentage) / 100,
     };
   });
   if (routeNights.some((item) => item === null)) return undefined;
@@ -92,7 +96,7 @@ export function allocateTboRouteNightPricing(
   const marginByIndex = new Map(allocated.map((item) => [item.index, item.cents]));
   return new Map(validNights.map((item, index) => {
     const marginCents = marginByIndex.get(index) || 0;
-    const payableCents = item.baseCents + marginCents;
+    const payableCents = item.subtotalCents + marginCents;
     return [item.routeId, {
       routeId: item.routeId,
       routeDate: item.routeDate,

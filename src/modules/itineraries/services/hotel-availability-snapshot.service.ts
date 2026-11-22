@@ -63,7 +63,7 @@ import {
   filterEpRows,
   type TboMapFallbackConfig,
 } from '../utils/tbo-map-fallback.util';
-import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
+import { hotelStayNights, hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { buildHotelCardQuote } from '../utils/hotel-card-quote.util';
@@ -1130,7 +1130,7 @@ export class HotelAvailabilitySnapshotService {
           const { count: childWithBedCount, rate: childWithBedRate, amount: childWithBedAmount } = childWithBed;
           const { count: childWithoutBedCount, rate: childWithoutBedRate, amount: childWithoutBedAmount } = childWithoutBed;
           const provider = String(row?.provider || row?.hotel_provider || snapshot?.provider || '').trim().toLowerCase();
-          const tboMapFallbackApplied = provider === 'tbo' && (
+          const tboMapFallbackApplied = (provider === 'tbo' || provider === 'vsr') && (
             row?.tboMapFallbackApplied === true ||
             snapshot?.tboMapFallbackApplied === true ||
             nightlyRate?.tboMapFallbackApplied === true
@@ -1166,7 +1166,7 @@ export class HotelAvailabilitySnapshotService {
           const marginPercentage = amount(
             nightlyRate?.marginPercentage ?? row?.hotelMarginPercentage,
           );
-          const hasVsrNightPrice = (provider === 'tbo' || provider === 'vsr') && !tboMapFallbackApplied &&
+          const hasVsrNightPrice = (provider === 'tbo' || provider === 'vsr') &&
             nightlyRate?.pricingIncludesHotelMargin === true && nightlyRate.marginAmount != null &&
             amount(nightlyRate.sellAmount) > 0;
           const marginAmount = hasVsrNightPrice
@@ -5270,7 +5270,7 @@ export class HotelAvailabilitySnapshotService {
       );
       if (Array.isArray(pricedReplacement.nightlyRates) && pricedReplacement.nightlyRates.length > 1 &&
         pricedReplacement.nightlyRates.every((night: any) => night.pricingIncludesHotelMargin === true && night.marginAmount != null) &&
-        (selectedProvider === 'tbo' || selectedProvider === 'vsr') && !previousSnapshot.tboMapFallbackApplied) {
+        (selectedProvider === 'tbo' || selectedProvider === 'vsr')) {
         // A continuous VSR selection can store its anchor-night price on the
         // parent row. The hotel list totals the saved nightly prices, so use
         // those same nights as the comparison baseline for a full-stay offer.
@@ -5281,6 +5281,20 @@ export class HotelAvailabilitySnapshotService {
           savedNightTotals.every((total: number) => Number.isFinite(total) && total > 0)) {
           previous.totalPrice = this.money(savedNightTotals.reduce((sum: number, total: number) => sum + total, 0));
         }
+      } else if ((selectedProvider === 'tbo' || selectedProvider === 'vsr') &&
+        previousSnapshot.tboMapFallbackApplied === true && Number(previous.baseTotalPrice) > 0 &&
+        hotelStayNights(selection) === 1 && (previousSnapshot.nightlyRates?.length ?? 0) <= 1) {
+        // A legacy single-night fallback can store its room-only fare as the
+        // selected total. Rebuild the same payable shown for the saved quote
+        // using its persisted meals and margin, without using today's margin.
+        const savedPricingInput: Record<string, unknown> = {
+          ...previous,
+          tboMapFallbackDinnerTotal: Number(previous.tboMapFallbackDinnerTotal) || Number(previous.tboMapFallbackDinnerPerNight),
+          amountIncludesHotelMargin: true,
+        };
+        const savedPayable = projectHotelPayablePricing(savedPricingInput, Number(previous.hotelMarginPercentage)).totalPrice;
+        previous.totalPrice = savedPayable;
+        previous.pricePerNight = savedPayable;
       }
       const next = hotelDisplaySnapshot(pricedReplacement);
       // Any non-exact match means the old persisted rate is unavailable,
@@ -7808,7 +7822,7 @@ export class HotelAvailabilitySnapshotService {
     if (mixedPricing) return mixedPricing;
     const provider = String(option?.provider || option?.hotel_provider || '').trim().toLowerCase();
     const roomCount = Math.max(Number(option?.roomCount || option?.totalNoOfRooms || selection?.total_no_of_rooms || 1), 1);
-    if ((provider === 'tbo' || provider === 'vsr') && option.tboMapFallbackApplied !== true) {
+    if (provider === 'tbo' || provider === 'vsr') {
       const vsrPricing = await this.priceVsrAvailabilityOption(selection, option, roomCount);
       if (vsrPricing) return vsrPricing;
     }
@@ -7900,6 +7914,12 @@ export class HotelAvailabilitySnapshotService {
     }
     if (!dates.includes(routeDate)) return undefined;
 
+    const hasMealFallback = option.tboMapFallbackApplied === true;
+    // The legacy per-night field includes all local fallback meals for the
+    // entire party. The supplier room-night fare excludes these meals.
+    const mealPlanAmount = hasMealFallback ? Number(option.tboMapFallbackDinnerPerNight) : 0;
+    if (!Number.isFinite(mealPlanAmount) || (hasMealFallback && mealPlanAmount <= 0)) return undefined;
+
     const suppliedMargin = Number(option.hotelMarginPercentage ?? option.hotel_margin_percentage ?? 0);
     const marginPercentage = suppliedMargin > 0
       ? suppliedMargin
@@ -7908,7 +7928,7 @@ export class HotelAvailabilitySnapshotService {
     // option's scalar total has already been projected. Always price from
     // those room-night lines and apportion the rounded margin across nights.
     const prices = allocateTboRouteNightPricing(dates.map((date, index) => ({
-      routeId: index + 1, routeDate: date, breakdown, marginPercentage,
+      routeId: index + 1, routeDate: date, breakdown, marginPercentage, mealPlanAmount,
     })));
     if (!prices) return undefined;
 
@@ -7924,6 +7944,13 @@ export class HotelAvailabilitySnapshotService {
       extraBedAmount: 0,
       childWithBedAmount: 0,
       childWithoutBedAmount: 0,
+      ...(hasMealFallback ? {
+        tboMapFallbackApplied: true,
+        tboMapFallbackDinnerPerNight: mealPlanAmount,
+        tboMapFallbackDinnerTotal: mealPlanAmount,
+        hotelMealPlanCost: mealPlanAmount,
+        totalHotelMealPlanCost: mealPlanAmount,
+      } : {}),
       marginPercentage,
       marginAmount: price.hotelMarginAmount,
       hotelMarginPercentage: marginPercentage,
@@ -7935,8 +7962,9 @@ export class HotelAvailabilitySnapshotService {
       totalStayPrice: price.totalPrice,
     }));
     const baseTotalPrice = this.money(nightlyRates.reduce((sum, night) => sum + night.baseAmount, 0));
+    const mealPlanTotal = this.money(mealPlanAmount * nightlyRates.length);
     const hotelMarginAmount = this.money(nightlyRates.reduce((sum, night) => sum + night.marginAmount, 0));
-    const totalPrice = this.money(baseTotalPrice + hotelMarginAmount);
+    const totalPrice = this.money(baseTotalPrice + mealPlanTotal + hotelMarginAmount);
     const firstNight = nightlyRates[0];
     const lastNight = nightlyRates[nightlyRates.length - 1];
     return {
@@ -7952,8 +7980,14 @@ export class HotelAvailabilitySnapshotService {
       extraBedAmount: 0,
       childWithBedAmount: 0,
       childWithoutBedAmount: 0,
+      ...(hasMealFallback ? {
+        tboMapFallbackDinnerTotal: mealPlanTotal,
+        tboMapFallbackMealPlanTotal: mealPlanTotal,
+        hotelMealPlanCost: mealPlanTotal,
+        totalHotelMealPlanCost: mealPlanTotal,
+      } : {}),
       hotelMarginPercentage: marginPercentage,
-      hotelMarginBaseAmount: baseTotalPrice,
+      hotelMarginBaseAmount: this.money(baseTotalPrice + mealPlanTotal),
       hotelMarginAmount,
       hotelMarginTotalAmount: hotelMarginAmount,
       pricePerNight: firstNight.sellAmount,
