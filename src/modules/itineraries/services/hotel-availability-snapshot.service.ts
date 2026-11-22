@@ -6,6 +6,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import { createConnection } from 'mysql2/promise';
 import { PrismaService } from '../../../prisma.service';
@@ -1859,6 +1860,19 @@ export class HotelAvailabilitySnapshotService {
       }
 
       const appliedIds = await this.prisma.$transaction(async (tx) => {
+        if (previewId) {
+          // Lock before the first consistent read so the preview is checked
+          // against the current rows. Comparing a Prisma number to a MySQL
+          // FLOAT in an update predicate can reject an unchanged decimal price.
+          await tx.$queryRaw`
+            SELECT itinerary_plan_hotel_details_ID
+            FROM dvi_itinerary_plan_hotel_details
+            WHERE itinerary_plan_id = ${plan.itinerary_plan_ID}
+              AND itinerary_plan_hotel_details_ID IN (${Prisma.join(requestedIds)})
+            ORDER BY itinerary_plan_hotel_details_ID
+            FOR UPDATE
+          `;
+        }
         const proposals = previewId ? await this.readAvailabilityPreview(tx, quoteId, previewId) : undefined;
         const acceptedIds = await this.applyPendingSelectionChanges(
           tx, plan.itinerary_plan_ID, requestedIds, createdBy, proposals,
@@ -1930,22 +1944,7 @@ export class HotelAvailabilitySnapshotService {
         requires_price_reacceptance: false,
       };
       const where = { itinerary_plan_hotel_details_ID: selection.itinerary_plan_hotel_details_ID };
-      if (proposals) {
-        const changed = await tx.dvi_itinerary_plan_hotel_details.updateMany({
-          where: {
-            ...where,
-            updatedon: selection.updatedon,
-            selected_price_snapshot: selection.selected_price_snapshot,
-            selected_total_price: selection.selected_total_price,
-            status: 1,
-            deleted: 0,
-          },
-          data: updateData,
-        });
-        if (changed.count !== 1) throw this.staleAvailabilityPreview();
-      } else {
-        await tx.dvi_itinerary_plan_hotel_details.update({ where, data: updateData });
-      }
+      await tx.dvi_itinerary_plan_hotel_details.update({ where, data: updateData });
       await this.syncSelectedRoom(tx, selection, option, createdBy);
       accepted.push(Number(selection.itinerary_plan_hotel_details_ID));
     }

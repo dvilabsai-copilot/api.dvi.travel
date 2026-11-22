@@ -1883,28 +1883,26 @@ test('reconciliation preview checks USER_SELECTED price changes without mutating
 test('ordinary availability checks keep the saved payable until the exact proposal is accepted', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any) as any;
   const { tx, selections } = makeReconciliationTx();
+  selections[0].selected_total_price = 100.72;
   const refreshed = {
     groupType: 0, itineraryRouteId: 10, date: '2026-07-28', provider: 'tbo', hotelCode: 'H-1', hotelId: 101,
-    hotelName: 'Stable Hotel', roomType: 'Deluxe', mealPlan: 'CP', rateOptionId: 'rate-1', pricePerNight: 125, totalPrice: 125,
+    hotelName: 'Stable Hotel', roomType: 'Deluxe', mealPlan: 'CP', rateOptionId: 'rate-1', pricePerNight: 125.34, totalPrice: 125.34,
   };
   const proposals = new Map();
   const summary = await service.reconcileSelections(
     tx, 44, [refreshed], 'run-plain-review', 1, false, undefined, undefined, undefined, new Set(), [], false, proposals,
   );
   assert.equal(summary.changes[0].requiresAcceptance, true);
-  assert.equal(selections[0].selected_total_price, 100);
+  assert.equal(selections[0].selected_total_price, 100.72);
   assert.equal(JSON.parse(selections[0].selected_price_snapshot).pendingAvailabilityChange, undefined);
   assert.deepEqual(await service.applyPendingSelectionChanges(tx, 44, [1], 1), []);
-  const applyUpdate = tx.dvi_itinerary_plan_hotel_details.update;
-  tx.dvi_itinerary_plan_hotel_details.updateMany = async ({ where, data }: any) => {
-    assert.equal(where.selected_total_price, 100);
-    await applyUpdate({ where, data });
-    return { count: 1 };
-  };
   await assert.rejects(() => service.applyPendingSelectionChanges(tx, 44, [1, 2], 1, proposals), /preview has changed/);
-  assert.equal(selections[0].selected_total_price, 100);
+  selections[0].selected_total_price = 101.72;
+  await assert.rejects(() => service.applyPendingSelectionChanges(tx, 44, [1], 1, proposals), /preview has changed/);
+  assert.equal(selections[0].selected_total_price, 101.72);
+  selections[0].selected_total_price = 100.72;
   assert.deepEqual(await service.applyPendingSelectionChanges(tx, 44, [1], 1, proposals), [1]);
-  assert.equal(selections[0].selected_total_price, 125);
+  assert.equal(selections[0].selected_total_price, 125.34);
   await assert.rejects(() => service.applyPendingSelectionChanges(tx, 44, [1], 1, proposals), /preview has changed/);
 });
 

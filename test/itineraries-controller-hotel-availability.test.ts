@@ -210,6 +210,7 @@ assert.equal(response.hotelTabs[0].totalAmount, 500);
 
 test('reset endpoint returns only a reset acknowledgement', async () => {
   const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  (controller as any).itineraryAccessService = { assertQuoteRevisionEditable: async () => undefined };
   let resetQuoteId = '';
   (controller as any).hotelAvailabilitySnapshotService = {
     resetSelectionsOnly: async (quoteId: string) => {
@@ -233,12 +234,16 @@ const response = await controller.resetItineraryHotelAvailability(
 test('acknowledgement returns accepted selections and financial totals without another supplier search', async () => {
   const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
   (controller as any).itineraryAccessService = {
+    assertQuoteRevisionEditable: async (quoteId: string) => assert.equal(quoteId, 'DVI-ACK'),
     assertVehicleAgentHotelMutation: () => undefined,
     getQuoteAccessDecision: async () => ({ exists: true, allowed: true }),
   };
   let acceptedIds: number[] = [];
   (controller as any).hotelAvailabilitySnapshotService = {
-    applyAcceptedSelectionChanges: async (_quoteId: string, selectionIds: number[]) => {
+    applyAcceptedSelectionChanges: async (quoteId: string, selectionIds: number[], userId: number, previewId: string) => {
+      assert.equal(quoteId, 'DVI-ACK');
+      assert.equal(userId, 7);
+      assert.equal(previewId, 'approved-preview');
       acceptedIds = selectionIds;
       return { appliedCount: selectionIds.length, selectionIds };
     },
@@ -257,7 +262,7 @@ test('acknowledgement returns accepted selections and financial totals without a
 
   const response = await controller.acknowledgeItineraryHotelAvailabilityChanges(
     'DVI-ACK',
-    { selectionIds: [10, 11] },
+    { selectionIds: [10, 11], previewId: 'approved-preview' },
     { user: { userId: 7, role: 1 } },
   );
 
@@ -269,6 +274,7 @@ test('acknowledgement returns accepted selections and financial totals without a
 
 test('ordinary availability check exposes its approval preview with the legacy reconciliation flag disabled', async () => {
   const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  (controller as any).itineraryAccessService = { assertQuoteRevisionEditable: async () => undefined };
   let requestedReconciliation: boolean | undefined;
   (controller as any).hotelAvailabilitySnapshotService = {
     searchAndPersist: async (...args: any[]) => {
@@ -291,6 +297,7 @@ test('ordinary availability check exposes its approval preview with the legacy r
 
 test('reconciliation check forwards the preview flag without applying changes', async () => {
   const controller = Object.create(ItinerariesController.prototype) as ItinerariesController;
+  (controller as any).itineraryAccessService = { assertQuoteRevisionEditable: async () => undefined };
   const previousFlag = process.env.HOTEL_RECONCILE;
   process.env.HOTEL_RECONCILE = 'true';
   let received: unknown[] = [];
