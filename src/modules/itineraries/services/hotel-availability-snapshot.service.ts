@@ -63,7 +63,7 @@ import {
   filterEpRows,
   type TboMapFallbackConfig,
 } from '../utils/tbo-map-fallback.util';
-import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
+import { hotelStayNights, hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { buildHotelCardQuote } from '../utils/hotel-card-quote.util';
@@ -5281,6 +5281,20 @@ export class HotelAvailabilitySnapshotService {
           savedNightTotals.every((total: number) => Number.isFinite(total) && total > 0)) {
           previous.totalPrice = this.money(savedNightTotals.reduce((sum: number, total: number) => sum + total, 0));
         }
+      } else if ((selectedProvider === 'tbo' || selectedProvider === 'vsr') &&
+        previousSnapshot.tboMapFallbackApplied === true && Number(previous.baseTotalPrice) > 0 &&
+        hotelStayNights(selection) === 1 && (previousSnapshot.nightlyRates?.length ?? 0) <= 1) {
+        // A legacy single-night fallback can store its room-only fare as the
+        // selected total. Rebuild the same payable shown for the saved quote
+        // using its persisted meals and margin, without using today's margin.
+        const savedPricingInput: Record<string, unknown> = {
+          ...previous,
+          tboMapFallbackDinnerTotal: Number(previous.tboMapFallbackDinnerTotal) || Number(previous.tboMapFallbackDinnerPerNight),
+          amountIncludesHotelMargin: true,
+        };
+        const savedPayable = projectHotelPayablePricing(savedPricingInput, Number(previous.hotelMarginPercentage)).totalPrice;
+        previous.totalPrice = savedPayable;
+        previous.pricePerNight = savedPayable;
       }
       const next = hotelDisplaySnapshot(pricedReplacement);
       // Any non-exact match means the old persisted rate is unavailable,

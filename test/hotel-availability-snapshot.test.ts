@@ -2082,6 +2082,41 @@ test('VSR meal fallback previews margin on the exact supplier fare plus meals wi
   assert.equal(selections[0].selected_total_price, 44563.84);
   assert.equal(selections[0].hotel_margin_rate, 2122.09);
   assert.equal(selections[0].total_hotel_meal_plan_cost, 5200);
+  const repeat = await service.reconcileSelections(
+    tx, 44, [freshOption], 'run-vsr-meal-margin-repeat', 1, false, undefined, undefined, undefined, new Set(), [], true, new Map(),
+  );
+  assert.equal(repeat.totalChanges, 0);
+});
+
+test('VSR meal fallback compares a legacy single night with its saved meals already included', async () => {
+  const { tx, selections, getLastUpdateData } = makeReconciliationTx();
+  tx.dvi_global_settings = { findFirst: async () => ({ hotel_margin: 5 }) };
+  const service = new HotelAvailabilitySnapshotService(tx, {} as any, {} as any, {} as any) as any;
+  const date = '2026-12-09';
+  const savedSnapshot = {
+    provider: 'tbo', hotelName: 'The Lake Resort by Maat Hotels', roomType: 'Deluxe Room', mealPlan: 'MAP',
+    selectionOrigin: 'AUTO_SELECTED', hotelMarginPercentage: 0, baseTotalPrice: 3091.17,
+    pricePerNight: 3091.17, totalPrice: 3091.17,
+    tboMapFallbackApplied: true, tboMapFallbackDinnerPerNight: 2600, tboMapFallbackDinnerTotal: 2600,
+  };
+  Object.assign(selections[0], {
+    itinerary_route_date: new Date(date), selection_origin: 'AUTO_SELECTED', total_no_of_rooms: 1,
+    hotel_margin_percentage: 0, selected_price_per_night: 3091.17, selected_total_price: 3091.17,
+    total_hotel_cost: 3091.17, selected_price_snapshot: JSON.stringify(savedSnapshot),
+  });
+  const freshOption = {
+    ...savedSnapshot, groupType: 1, itineraryRouteId: 10, date, hotelCode: 'H-1', hotelId: 101,
+    rateOptionId: 'rate-1', roomCount: 1,
+    tboRoomNightBreakdown: [{ date, roomNumber: 1, allInAmount: 3091.17, nightTotal: 3091.17 }],
+  };
+  const summary = await service.reconcileSelections(
+    tx, 44, [freshOption], 'run-vsr-single-meal-margin', 1, false, undefined, undefined, undefined, new Set(), [], true, new Map(),
+  );
+  assert.equal(summary.totalChanges, 1);
+  assert.equal(summary.changes[0].previous.totalPrice, 5691.17);
+  assert.equal(summary.changes[0].current.totalPrice, 5975.73);
+  assert.equal(summary.changes[0].priceDelta, 284.56);
+  assert.equal(getLastUpdateData(), null);
 });
 
 test('unavailable exact USER_SELECTED rate is preserved and reports the fresh same-hotel proposal', async () => {
