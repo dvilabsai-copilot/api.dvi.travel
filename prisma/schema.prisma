@@ -4079,6 +4079,21 @@ model dvi_itinerary_quote_revision {
   @@index([parent_plan_id], map: "idx_itinerary_revision_parent")
 }
 
+model dvi_itinerary_offline_hotel_booking {
+  itinerary_plan_id Int
+  group_type        Int
+  route_id          Int
+  hotel_key         String   @db.VarChar(300)
+  check_in          DateTime @db.Date
+  check_out         DateTime @db.Date
+  details           Json
+  version           Int      @default(1)
+  updated_by        Int
+  updated_at        DateTime @updatedAt
+
+  @@id([itinerary_plan_id, group_type, route_id, hotel_key, check_in, check_out])
+}
+
 model dvi_itinerary_plan_hotel_details {
   itinerary_plan_hotel_details_ID        Int       @id @default(autoincrement())
   group_type                             Int       @default(0)
