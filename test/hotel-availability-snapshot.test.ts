@@ -1727,6 +1727,52 @@ test('same hotel with unchanged rate does not rewrite the durable selection', as
   assert.equal(JSON.parse(selections[0].selected_price_snapshot).searchReference, undefined);
 });
 
+test('Check Availability ignores equivalent refreshed references and reviews material offer changes', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any) as any;
+  const baseOption = {
+    groupType: 1, itineraryRouteId: 10, date: '2026-07-28',
+    provider: 'tbo', hotelCode: 'H-1', hotelId: 101, hotelName: 'Stable Hotel',
+    roomType: 'Deluxe', mealPlan: 'Continental Plan',
+    roomId: 'new-room-reference', rateId: 'new-rate-reference', rateOptionId: 'new-search-reference',
+    pricePerNight: 100.72, totalPrice: 100.72,
+    isRefundable: true, cancellationPolicy: 'Free cancellation until July 25',
+    rateConditions: ['Pay at hotel', 'ID required'],
+  };
+  const cases = [
+    { option: {}, type: null },
+    { option: { isRefundable: undefined, cancellationPolicy: undefined }, type: null },
+    { option: { hotelId: 102, hotelCode: 'H-2', hotelName: 'Other Hotel' }, type: 'AUTO_SELECTION_CHANGED' },
+    { option: { roomType: 'Suite' }, type: 'ROOM_TYPE_CHANGED' },
+    { option: { mealPlan: 'MAP' }, type: 'MEAL_PLAN_CHANGED' },
+    { option: { pricePerNight: 100.73, totalPrice: 100.73 }, type: 'PRICE_CHANGED' },
+    { option: { isRefundable: false, rateOptionId: 'rate-1' }, type: 'BOOKING_TERMS_CHANGED', term: 'Refundability' },
+    { option: { cancellationPolicy: 'Free cancellation until July 24' }, type: 'BOOKING_TERMS_CHANGED', term: 'Cancellation policy' },
+  ];
+  for (const { option, type, term } of cases) {
+    const { tx, selections } = makeReconciliationTx();
+    const selection = selections[0];
+    const saved = {
+      ...JSON.parse(selection.selected_price_snapshot),
+      selectionOrigin: 'AUTO_SELECTED', roomId: 'saved-room', rateId: 'saved-rate', totalPrice: 100.72,
+      isRefundable: true, cancellationPolicy: ['Free cancellation until July 25'],
+      rateConditions: ['ID required', 'Pay at hotel'],
+    };
+    selection.selected_price_snapshot = JSON.stringify(saved);
+    selection.selected_total_price = 100.72;
+    const proposals = new Map();
+    const summary = await service.reconcileSelections(
+      tx, 44, [{ ...baseOption, ...option }], 'fresh-run', 1,
+      false, undefined, undefined, undefined, new Set(), [], true, proposals,
+    );
+    assert.equal(summary.changes[0]?.changeType ?? null, type);
+    assert.equal(proposals.size, type ? 1 : 0);
+    if (type) assert.equal(summary.changes[0].requiresAcceptance, true);
+    if (term) assert.deepEqual(summary.changes[0].bookingTermChanges.map((change: any) => change.label), [term]);
+    assert.equal(selection.selected_total_price, 100.72);
+    assert.equal(selection.selected_price_snapshot, JSON.stringify(saved));
+  }
+});
+
 test('persisted selection matches a nested supplier rate without marking the hotel unavailable', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const selection = {

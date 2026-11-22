@@ -53,6 +53,7 @@ import {
   resolvePersistedHotelIdentity,
   supplierSelectionKey,
   parseHotelSelectionSnapshot,
+  hotelBookingTerms,
 } from './utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from './utils/hotel-category.util';
 import { resolveHotelOccupancyPricing, resolveOfflineHotelPayablePricing } from './utils/hotel-selection-pricing.util';
@@ -3581,6 +3582,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         // it is not trusted merely because it came from the request body.
         selectionPricingSource: 'SERVER_RESOLVED',
         axisRoomsMealRooms: selected.axisRoomsMealRooms,
+        bookingTerms: hotelBookingTerms(selected),
       };
     });
     try {

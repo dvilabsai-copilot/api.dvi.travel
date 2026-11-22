@@ -604,6 +604,74 @@ export function optionMatchesSelection(selection: any, option: any): boolean {
   return hotelRateMatchesSelection(selection, option);
 }
 
+type BookingTerms = Partial<Record<
+  'Refundability' | 'Cancellation policy' | 'Rate conditions' | 'Inclusions' | 'Booking method',
+  string
+>>;
+
+export function hotelBookingTerms(row: any): BookingTerms {
+  const known: BookingTerms = { ...row?.bookingTerms };
+  const room = row?.roomTypes?.[0];
+  const refundable = clean(row?.isRefundable ?? row?.IsRefundable ?? room?.isRefundable ?? room?.IsRefundable);
+  if (['true', '1', 'yes'].includes(refundable)) known.Refundability = 'Refundable';
+  if (['false', '0', 'no'].includes(refundable)) known.Refundability = 'Non-refundable';
+  const mode = clean(row?.bookingMode ?? row?.hotel_booking_mode);
+  if (mode === 'live_api') known['Booking method'] = 'Live booking';
+  if (mode === 'manual_approval' || mode === 'offline_manual') known['Booking method'] = 'Manual approval';
+  const descriptions = {
+    'Cancellation policy': row?.cancellationPolicy ?? room?.cancellationPolicy,
+    'Rate conditions': row?.rateConditions,
+    Inclusions: row?.inclusions,
+  } as const;
+  for (const label of Object.keys(descriptions) as Array<keyof typeof descriptions>) {
+    const raw = descriptions[label];
+    const values = (Array.isArray(raw) ? raw : [raw])
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim().replace(/\s+/g, ' '))
+      .filter(Boolean);
+    if (values.length > 0) known[label] = [...new Map(values.map((value) => [clean(value), value])).values()]
+      .sort((a, b) => clean(a).localeCompare(clean(b))).join(' · ');
+  }
+  return known;
+}
+
+export function compareHotelAvailabilityOffers(
+  selection: any,
+  replacement: any,
+  previousPrice: number,
+  currentPrice: number,
+) {
+  const previous = { ...selection, ...parseHotelSelectionSnapshot(selection) };
+  const hotelName = clean(normalizeHotelDisplayName(previous.hotelName || previous.hotel_name));
+  const nextHotelName = clean(normalizeHotelDisplayName(replacement.hotelName || replacement.hotel_name));
+  const sameHotel = hotelPropertyMatchesSelection(selection, replacement) ||
+    Boolean(hotelName && hotelName === nextHotelName);
+  const room = (row: any) => clean(row.roomType || row.room_type || row.roomTypeName).replace(/\s+/g, ' ');
+  const meal = (row: any) => normalizeMealIdentity(row.mealPlan || row.mealPlanCode || row.meal_plan);
+  const oldRoom = room(previous);
+  const newRoom = room(replacement);
+  const oldMeal = meal(previous);
+  const newMeal = meal(replacement);
+  const oldTerms = hotelBookingTerms(previous);
+  const newTerms = hotelBookingTerms(replacement);
+  const termChanges = (Object.keys(oldTerms) as Array<keyof BookingTerms>).flatMap((label) => {
+    const before = oldTerms[label];
+    const after = newTerms[label];
+    // A supplier omitting a field, or an older quote without that field, does not establish a change.
+    return before && after && clean(before) !== clean(after) ? [{ label, previous: before, current: after }] : [];
+  });
+  const priceDelta = Number((Number(currentPrice.toFixed(2)) - Number(previousPrice.toFixed(2))).toFixed(2));
+  const previousCurrency = clean(previous.currency || previous.selected_currency || 'INR');
+  const currentCurrency = clean(replacement.currency || previousCurrency);
+  const changeType = !sameHotel ? 'AUTO_SELECTION_CHANGED'
+    : oldRoom && newRoom && oldRoom !== newRoom ? 'ROOM_TYPE_CHANGED'
+    : oldMeal && newMeal && oldMeal !== newMeal ? 'MEAL_PLAN_CHANGED'
+    : priceDelta || previousCurrency !== currentCurrency ? 'PRICE_CHANGED'
+    : termChanges.length ? 'BOOKING_TERMS_CHANGED'
+    : null;
+  return { changeType, priceDelta, termChanges } as const;
+}
+
 export function hotelDisplaySnapshot(row: any): Record<string, unknown> {
   const nestedRefundableValue = Array.isArray(row?.roomTypes)
     ? row.roomTypes

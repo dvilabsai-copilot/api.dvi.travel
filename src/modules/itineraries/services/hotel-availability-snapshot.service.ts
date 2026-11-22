@@ -21,6 +21,8 @@ import { OfflineHotelCatalogService, selectOfflineRouteNightlyRate } from './off
 import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
 import {
   hotelDisplaySnapshot,
+  hotelBookingTerms,
+  compareHotelAvailabilityOffers,
   hotelOptionKey,
   hotelSelectionKey,
   hotelSelectionKeyFromRow,
@@ -93,6 +95,7 @@ export type HotelAvailabilityChangeType =
   | 'ROOM_TYPE_CHANGED'
   | 'MEAL_PLAN_CHANGED'
   | 'RATE_CHANGED'
+  | 'BOOKING_TERMS_CHANGED'
   | 'SELECTION_UNAVAILABLE'
   | 'BECAME_AVAILABLE'
   | 'OFFLINE_APPROVAL_CHANGED'
@@ -103,6 +106,7 @@ export type HotelAvailabilityChange = {
   changeType: HotelAvailabilityChangeType;
   selectionId?: number;
   requiresAcceptance?: boolean;
+  bookingTermChanges?: Array<{ label: string; previous: string; current: string }>;
   routeId: number;
   day?: number | string | null;
   date?: string | null;
@@ -5272,8 +5276,22 @@ export class HotelAvailabilitySnapshotService {
       const displayPriceDelta = mixedRoomAllocation
         ? 0
         : Number(next.totalPrice || 0) - Number(previous.totalPrice || 0);
+      // Check Availability compares customer-facing offers. Exact supplier
+      // identity is still used for booking and choosing an available candidate.
+      const comparison = proposals ? compareHotelAvailabilityOffers(
+        selection,
+        pricedReplacement,
+        Number(previous.totalPrice || 0),
+        Number((mixedRoomAllocation ? previous : next).totalPrice || 0),
+      ) : undefined;
+      const changeType = comparison ? comparison.changeType
+        : replacementWasUnavailable ? 'AUTO_SELECTION_CHANGED'
+        : Math.abs(displayPriceDelta) > 0.009 ? 'PRICE_CHANGED'
+        : null;
+      const priceDelta = comparison?.priceDelta ?? displayPriceDelta;
+      const bookingTermChanges = comparison?.termChanges.length ? comparison.termChanges : undefined;
 
-      if (origin === 'USER_SELECTED' && replacementWasUnavailable) {
+      if (origin === 'USER_SELECTED' && replacementWasUnavailable && changeType) {
         const previousPersistedSnapshot = parseHotelSelectionSnapshot(selection) as any;
         const wasAlreadyUnavailable = String(previousPersistedSnapshot?.availabilityStatus || '').toUpperCase() === 'UNAVAILABLE';
         const { pendingAvailabilityChange: _pending, ...snapshotWithoutPending } = previousPersistedSnapshot;
@@ -5296,40 +5314,27 @@ export class HotelAvailabilitySnapshotService {
           changes.push(this.buildChange('SELECTION_UNAVAILABLE', selection, pricedReplacement, {
             previous,
             current: next,
-            priceDelta: displayPriceDelta,
+            priceDelta,
+            bookingTermChanges,
             selectionOrigin: origin,
           }));
         }
         continue;
       }
 
-      if (replacementWasUnavailable) {
+      if (changeType) {
         if (proposals) {
           this.recordAvailabilityProposal(proposals, selection, pricedReplacement, nextSelectionOrigin, searchRunId);
         } else if (!dryRun) {
-          await this.stagePendingSelectionChange(tx, selection, pricedReplacement, nextSelectionOrigin, searchRunId, 'AUTO_SELECTION_CHANGED');
+          await this.stagePendingSelectionChange(tx, selection, pricedReplacement, nextSelectionOrigin, searchRunId, changeType);
         }
-        changes.push(this.buildChange('AUTO_SELECTION_CHANGED', selection, pricedReplacement, {
+        changes.push(this.buildChange(changeType, selection, pricedReplacement, {
           previous,
           current: next,
-          priceDelta: displayPriceDelta,
+          priceDelta,
           selectionOrigin: origin,
           requiresAcceptance: true,
-        }));
-      } else if (matched && Math.abs(displayPriceDelta) > 0.009) {
-        if (proposals) {
-          this.recordAvailabilityProposal(proposals, selection, pricedReplacement, origin, searchRunId);
-        } else if (!dryRun) {
-          await this.stagePendingSelectionChange(
-            tx, selection, pricedReplacement, origin, searchRunId, 'PRICE_CHANGED',
-          );
-        }
-        changes.push(this.buildChange('PRICE_CHANGED', selection, pricedReplacement, {
-          previous,
-          current: next,
-          priceDelta: displayPriceDelta,
-          selectionOrigin: origin,
-          requiresAcceptance: true,
+          bookingTermChanges,
         }));
       } else {
         const previousPersistedSnapshot = parseHotelSelectionSnapshot(selection) as any;
@@ -7274,6 +7279,7 @@ export class HotelAvailabilitySnapshotService {
           selection_origin: 'AUTO_SELECTED',
           selected_price_snapshot: JSON.stringify({
             ...hotelDisplaySnapshot(option),
+            bookingTerms: hotelBookingTerms(option),
             ...offlineMealPlanPersistence.snapshot,
             optionKey,
             ...(option.authoritativeStayKey ? {
@@ -7565,6 +7571,7 @@ export class HotelAvailabilitySnapshotService {
       selected_price_snapshot: JSON.stringify({
         ...priorSnapshotWithoutFallback,
         ...hotelDisplaySnapshot(option),
+        bookingTerms: { ...hotelBookingTerms(priorSnapshot), ...hotelBookingTerms(option) },
         ...offlineMealPlanPersistence.snapshot,
         optionKey,
         ...(option.authoritativeStayKey ? {
@@ -7743,7 +7750,7 @@ export class HotelAvailabilitySnapshotService {
     option: any,
     origin: string,
     searchRunId: string,
-    changeType: 'AUTO_SELECTION_CHANGED' | 'PRICE_CHANGED',
+    changeType: HotelAvailabilityChangeType,
   ): Promise<void> {
     const priorSnapshot = parseHotelSelectionSnapshot(selection) as any;
     const pricedOption = await this.pricePendingSelectionOption(tx, selection, option);
