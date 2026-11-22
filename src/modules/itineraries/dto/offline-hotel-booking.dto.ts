@@ -55,7 +55,7 @@ class OfflineBookingCancellationDto {
 
 export class OfflineHotelBookingDetailsDto {
   @IsString()
-  @MaxLength(120)
+  @MaxLength(250)
   confirmedBy!: string;
 
   @IsArray()

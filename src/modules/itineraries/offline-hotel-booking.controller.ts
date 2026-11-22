@@ -1,6 +1,6 @@
 import {
   BadRequestException, Body, ConflictException, Controller, ForbiddenException,
-  Get, Param, ParseIntPipe, Post, Put, Req,
+  Get, Param, ParseIntPipe, Post, Put, Query, Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Prisma, dvi_itinerary_offline_hotel_booking } from '@prisma/client';
@@ -52,11 +52,20 @@ export class OfflineHotelBookingController {
     @Param('planId', ParseIntPipe) planId: number,
     @Param('groupType', ParseIntPipe) groupType: number,
     @Body() body: ReadOfflineHotelContactsDto,
+    @Query('includeConfirmedBy') includeConfirmedBy: string | undefined,
     @Req() request: BookingRequest,
   ) {
     this.assertScope(request, planId, groupType);
     await this.access.assertCanViewPlan(planId, request.user);
-    return loadOfflineHotelContacts(this.prisma, body.hotelKeys);
+    if (includeConfirmedBy !== 'true') {
+      return loadOfflineHotelContacts(this.prisma, body.hotelKeys);
+    }
+
+    const [contacts, confirmedBy] = await Promise.all([
+      loadOfflineHotelContacts(this.prisma, body.hotelKeys),
+      this.getAssignedTravelExpertName(planId),
+    ]);
+    return { contacts, confirmedBy };
   }
 
   @Put()
@@ -129,6 +138,26 @@ export class OfflineHotelBookingController {
       }
       throw error;
     }
+  }
+
+  private async getAssignedTravelExpertName(planId: number): Promise<string> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      select: { agent_id: true },
+    });
+    if (!plan?.agent_id) return '';
+
+    const agent = await this.prisma.dvi_agent.findUnique({
+      where: { agent_ID: plan.agent_id, deleted: 0 },
+      select: { travel_expert_id: true },
+    });
+    if (!agent?.travel_expert_id) return '';
+
+    const expert = await this.prisma.dvi_staff_details.findFirst({
+      where: { staff_id: agent.travel_expert_id, deleted: 0 },
+      select: { staff_name: true },
+    });
+    return expert?.staff_name?.trim() ?? '';
   }
 
   private assertScope(request: BookingRequest, planId: number, groupType: number) {
