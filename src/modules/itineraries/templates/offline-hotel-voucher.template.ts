@@ -8,11 +8,11 @@ const moneyFormat = new Intl.NumberFormat('en-IN', { style: 'currency', currency
 const date = (value: string) => dateFormat.format(new Date(value));
 
 export function renderOfflineHotelVoucher(
-  quote: string,
+  { quote, siteTitle, customerName }: { quote: string; siteTitle: string; customerName?: string },
   stay: OfflineVoucherStayDto,
   details: OfflineHotelBookingDetailsDto,
 ) {
-  const status = { pending: 'Pending confirmation', confirmed: 'Confirmed', cancelled: 'Cancelled' }[details.status];
+  const status = details.status === 'cancelled' ? 'Cancelled' : 'Confirmed';
   const title = `Hotel Voucher – ${status}`;
   const roomHeaders = ['Room category', 'Rooms', 'Rate per night', 'Extra beds', 'Extra bed rate', 'Children without bed', 'Child rate'];
   const rooms = details.rooms.map((room) => [
@@ -33,7 +33,8 @@ export function renderOfflineHotelVoucher(
       ).join('')}</tr>`).join('')}</tbody></table>`
     : '<p style="color:#5c5569">No details recorded.</p>';
   const policyHeaders = ['Before date', 'Cancellation charge'];
-  const subject = `DVi Travel - Hotel Voucher of Itinerary #${quote.replace(/[\r\n]+/g, ' ')}`;
+  const subject = `${siteTitle} - Hotel Voucher of Itinerary #${quote}${customerName ? ` (${customerName})` : ''}`
+    .replace(/[\r\n]+/g, ' ');
   return {
     subject,
     text: [

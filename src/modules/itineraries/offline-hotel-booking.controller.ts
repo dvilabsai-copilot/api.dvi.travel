@@ -1,6 +1,6 @@
 import {
   BadRequestException, Body, ConflictException, Controller, ForbiddenException,
-  Get, Param, ParseIntPipe, Post, Put, Query, Req, ServiceUnavailableException,
+  Get, Logger, Param, ParseIntPipe, Post, Put, Query, Req, ServiceUnavailableException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Prisma, dvi_itinerary_offline_hotel_booking } from '@prisma/client';
@@ -23,6 +23,15 @@ type BookingRequest = Request & { user?: ItineraryViewer & { userId?: number | s
 const stayKey = ({ routeId, hotelKey, checkIn, checkOut }: Pick<OfflineVoucherStayDto, 'routeId' | 'hotelKey' | 'checkIn' | 'checkOut'>) =>
   JSON.stringify([routeId, hotelKey, checkIn, checkOut]);
 
+const bookingScope = (planId: number, groupType: number, stay: Pick<OfflineVoucherStayDto, 'routeId' | 'hotelKey' | 'checkIn' | 'checkOut'>) => ({
+  itinerary_plan_id: planId,
+  group_type: groupType,
+  route_id: stay.routeId,
+  hotel_key: stay.hotelKey,
+  check_in: new Date(stay.checkIn),
+  check_out: new Date(stay.checkOut),
+});
+
 function bookingResponse(row: dvi_itinerary_offline_hotel_booking) {
   return {
     routeId: row.route_id,
@@ -34,10 +43,19 @@ function bookingResponse(row: dvi_itinerary_offline_hotel_booking) {
   };
 }
 
+type VoucherDeliveryResult = {
+  key: string;
+  status: 'sent' | 'demo' | 'partial' | 'failed' | 'skipped';
+  confirmedBooking?: ReturnType<typeof bookingResponse>;
+  message?: string;
+};
+
 @ApiTags('Offline hotel bookings')
 @ApiBearerAuth()
 @Controller('itineraries/:planId/offline-hotel-bookings/:groupType')
 export class OfflineHotelBookingController {
+  private readonly logger = new Logger(OfflineHotelBookingController.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ItineraryAccessService,
@@ -88,8 +106,8 @@ export class OfflineHotelBookingController {
   ) {
     this.assertScope(request, planId, groupType);
     await this.access.assertCanViewPlan(planId, request.user);
-    const quote = await this.getQuoteReference(planId);
-    const { subject, html } = renderOfflineHotelVoucher(quote, body.stay, body.details);
+    const voucher = await this.getVoucherContext(planId);
+    const { subject, html } = renderOfflineHotelVoucher(voucher, body.stay, body.details);
     return { subject, html };
   }
 
@@ -108,8 +126,8 @@ export class OfflineHotelBookingController {
 
     const stays = [...new Map(body.stays.map((stay) => [stayKey(stay), stay])).values()];
     const routeIds = [...new Set(stays.map((stay) => stay.routeId))];
-    const [quote, bookings, routes, expert] = await Promise.all([
-      this.getQuoteReference(planId),
+    const [voucher, bookings, routes, expert] = await Promise.all([
+      this.getVoucherContext(planId),
       this.prisma.dvi_itinerary_offline_hotel_booking.findMany({
         where: { itinerary_plan_id: planId, group_type: groupType, route_id: { in: routeIds } },
       }),
@@ -126,7 +144,7 @@ export class OfflineHotelBookingController {
       return [stayKey(booking), booking] as const;
     }));
     const dateByRoute = new Map(routes.map((route) => [route.itinerary_route_ID, route.itinerary_route_date?.toISOString().slice(0, 10)]));
-    const results: Array<{ key: string; status: 'sent' | 'demo' | 'partial' | 'failed' | 'skipped'; message?: string }> = [];
+    const results: VoucherDeliveryResult[] = [];
 
     for (const stay of stays) {
       const key = stayKey(stay);
@@ -150,13 +168,42 @@ export class OfflineHotelBookingController {
         results.push({ key, status: 'skipped', message: 'No hotel email is saved for this stay.' });
         continue;
       }
+      const result: VoucherDeliveryResult = { key, status: 'failed' };
       try {
-        const outcome = await this.email.dispatchOfflineVoucher(recipients, renderOfflineHotelVoucher(quote, stay, details), replyTo);
-        results.push({ key, status: outcome.partial ? 'partial' : outcome.demo ? 'demo' : 'sent' });
+        const outcome = await this.email.dispatchOfflineVoucher(recipients, renderOfflineHotelVoucher(voucher, stay, details), replyTo);
+        result.status = outcome.partial ? 'partial' : outcome.demo ? 'demo' : 'sent';
       } catch (error) {
-        this.email.logFailure(error, 'offline voucher for ' + quote);
-        results.push({ key, status: 'failed', message: 'Email delivery failed.' });
+        this.email.logFailure(error, 'offline voucher for ' + voucher.quote);
+        result.message = 'Email delivery failed.';
       }
+      if (result.status === 'sent' && details.status === 'pending') {
+        try {
+          const row = await this.prisma.dvi_itinerary_offline_hotel_booking.update({
+            where: {
+              itinerary_plan_id_group_type_route_id_hotel_key_check_in_check_out: bookingScope(planId, groupType, stay),
+              version: booking.version,
+            },
+            data: {
+              details: {
+                ...details,
+                status: 'confirmed',
+                rooms: details.rooms.map((room) => ({ ...room })),
+                cancellationPolicies: details.cancellationPolicies.map((policy) => ({ ...policy })),
+              },
+              version: { increment: 1 },
+              updated_by: Number(request.user?.userId || 0),
+            },
+          });
+          result.confirmedBooking = bookingResponse(row);
+        } catch (error) {
+          const changed = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
+          if (!changed) this.logger.error(`Unable to confirm an offline booking after sending a voucher for ${voucher.quote}`, error);
+          result.message = changed
+            ? 'Voucher sent. The stay changed during delivery. Reopen Offline Booking to review its status.'
+            : 'Voucher sent. The status update failed. Reopen Offline Booking to review this stay.';
+        }
+      }
+      results.push(result);
     }
     return { results };
   }
@@ -186,22 +233,29 @@ export class OfflineHotelBookingController {
 
     const confirmedBy = details.confirmedBy.trim();
     const phone = details.phone.trim();
+    const scope = bookingScope(planId, groupType, booking);
+    const bookings = this.prisma.dvi_itinerary_offline_hotel_booking;
     if (details.status === 'confirmed' && (!confirmedBy || !details.emails.length || !phone)) {
-      throw new BadRequestException('Enter the confirmer, email address and phone for a confirmed stay.');
+      const previous = version > 0 && details.emails.length
+        ? await bookings.findUnique({
+            where: { itinerary_plan_id_group_type_route_id_hotel_key_check_in_check_out: scope },
+            select: { details: true, version: true },
+          })
+        : null;
+      if (previous && previous.version !== version) {
+        throw new ConflictException('This stay was updated. Reopen Offline Booking to load the latest details.');
+      }
+      const savedDetails = plainToInstance(OfflineHotelBookingDetailsDto, previous?.details);
+      if (savedDetails?.status !== 'confirmed' || (!confirmedBy && savedDetails.confirmedBy?.trim())
+        || (!phone && savedDetails.phone?.trim())) {
+        throw new BadRequestException('Enter the confirmer, email address and phone for a confirmed stay.');
+      }
     }
     const rooms = details.rooms.map((room) => ({ ...room, category: room.category.trim() }));
     if (rooms.some((room) => !room.category)) {
       throw new BadRequestException('Enter a category for each room.');
     }
 
-    const scope = {
-      itinerary_plan_id: planId,
-      group_type: groupType,
-      route_id: routeId,
-      hotel_key: hotelKey,
-      check_in: new Date(checkIn),
-      check_out: new Date(checkOut),
-    };
     const data = {
       details: {
         ...details,
@@ -213,7 +267,6 @@ export class OfflineHotelBookingController {
       updated_by: Number(request.user?.userId || 0),
       version: version + 1,
     };
-    const bookings = this.prisma.dvi_itinerary_offline_hotel_booking;
     try {
       const row = version === 0
         ? await bookings.create({ data: { ...scope, ...data } })
@@ -233,13 +286,41 @@ export class OfflineHotelBookingController {
     }
   }
 
-  private async getQuoteReference(planId: number): Promise<string> {
-    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
-      where: { itinerary_plan_ID: planId, deleted: 0 },
-      select: { itinerary_quote_ID: true },
-    });
+  private async getVoucherContext(planId: number) {
+    const [plan, settings, confirmedPlan] = await Promise.all([
+      this.prisma.dvi_itinerary_plan_details.findUnique({
+        where: { itinerary_plan_ID: planId, deleted: 0 },
+        select: { itinerary_quote_ID: true },
+      }),
+      this.prisma.dvi_global_settings.findFirst({
+        where: { status: 1, deleted: 0 },
+        orderBy: { global_settings_ID: 'asc' },
+        select: { site_title: true },
+      }),
+      this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+        where: { itinerary_plan_ID: planId, deleted: 0 },
+        orderBy: { confirmed_itinerary_plan_ID: 'desc' },
+        select: { confirmed_itinerary_plan_ID: true, itinerary_quote_ID: true },
+      }),
+    ]);
     if (!plan) throw new BadRequestException('The itinerary is no longer available.');
-    return plan.itinerary_quote_ID?.trim() || String(planId);
+    const customer = await this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
+      where: {
+        primary_customer: 1,
+        deleted: 0,
+        OR: [
+          { itinerary_plan_ID: planId },
+          ...(confirmedPlan ? [{ confirmed_itinerary_plan_ID: confirmedPlan.confirmed_itinerary_plan_ID }] : []),
+        ],
+      },
+      orderBy: { confirmed_itinerary_customer_ID: 'asc' },
+      select: { customer_name: true },
+    });
+    return {
+      quote: confirmedPlan?.itinerary_quote_ID?.trim() || plan.itinerary_quote_ID?.trim() || String(planId),
+      siteTitle: settings?.site_title?.trim() || 'DVi Travel',
+      customerName: customer?.customer_name?.trim(),
+    };
   }
 
   private async getAssignedTravelExpert(planId: number) {
