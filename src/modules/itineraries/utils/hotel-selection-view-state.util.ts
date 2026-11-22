@@ -278,8 +278,11 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       marginPercentage,
     });
     const marginBase = offlinePricing.subtotal;
-    const marginAmount = offlinePricing.marginAmount;
-    const payableTotal = offlinePricing.totalPrice;
+    const provider = String(snapshot?.provider ?? row?.provider ?? '').trim().toLowerCase();
+    const hasVsrNightPrice = (provider === 'tbo' || provider === 'vsr') && !tboMapFallbackApplied &&
+      night?.pricingIncludesHotelMargin === true && night.marginAmount != null && Number(night.sellAmount) > 0;
+    const marginAmount = hasVsrNightPrice ? Number(night.marginAmount) : offlinePricing.marginAmount;
+    const payableTotal = hasVsrNightPrice ? Number(night.sellAmount) : offlinePricing.totalPrice;
     return {
       roomRate,
       roomCount,

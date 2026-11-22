@@ -67,6 +67,7 @@ import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { buildHotelCardQuote } from '../utils/hotel-card-quote.util';
+import { allocateTboRouteNightPricing } from '../../hotels/utils/tbo-room-night-pricing';
 import {
   resolveHotelSupplementPricing,
   resolveOfflineHotelPayablePricing,
@@ -1165,11 +1166,18 @@ export class HotelAvailabilitySnapshotService {
           const marginPercentage = amount(
             nightlyRate?.marginPercentage ?? row?.hotelMarginPercentage,
           );
-          const marginAmount = Number((marginBase * marginPercentage / 100).toFixed(2));
+          const hasVsrNightPrice = (provider === 'tbo' || provider === 'vsr') && !tboMapFallbackApplied &&
+            nightlyRate?.pricingIncludesHotelMargin === true && nightlyRate.marginAmount != null &&
+            amount(nightlyRate.sellAmount) > 0;
+          const marginAmount = hasVsrNightPrice
+            ? amount(nightlyRate.marginAmount)
+            : Number((marginBase * marginPercentage / 100).toFixed(2));
           const taxAmount = amount(
             nightlyRate?.totalHotelTaxAmount ?? nightlyRate?.hotelTaxAmount ?? 0,
           );
-          const routeNightSell = Number((marginBase + marginAmount + taxAmount).toFixed(2));
+          const routeNightSell = hasVsrNightPrice
+            ? amount(nightlyRate.sellAmount)
+            : Number((marginBase + marginAmount + taxAmount).toFixed(2));
 
           return {
             ...row,
@@ -7786,6 +7794,10 @@ export class HotelAvailabilitySnapshotService {
     if (mixedPricing) return mixedPricing;
     const provider = String(option?.provider || option?.hotel_provider || '').trim().toLowerCase();
     const roomCount = Math.max(Number(option?.roomCount || option?.totalNoOfRooms || selection?.total_no_of_rooms || 1), 1);
+    if ((provider === 'tbo' || provider === 'vsr') && option.tboMapFallbackApplied !== true) {
+      const vsrPricing = await this.priceVsrAvailabilityOption(selection, option, roomCount);
+      if (vsrPricing) return vsrPricing;
+    }
     const plan = tx?.dvi_itinerary_plan_details?.findUnique
       ? await tx.dvi_itinerary_plan_details.findUnique({
           where: { itinerary_plan_ID: Number(selection?.itinerary_plan_id || 0) },
@@ -7841,6 +7853,113 @@ export class HotelAvailabilitySnapshotService {
       totalStayPrice: totalPrice,
       totalHotelCost: totalPrice,
       totalHotelTaxAmount: tax,
+    };
+  }
+
+  private async priceVsrAvailabilityOption(selection: any, option: any, roomCount: number): Promise<any | undefined> {
+    const breakdown = option.tboRoomNightBreakdown;
+    if (!Array.isArray(breakdown) || breakdown.length === 0) return undefined;
+
+    const roomsByDate = new Map<string, Set<number>>();
+    for (const room of breakdown) {
+      const date = this.toDateOnly(room?.date);
+      const roomNumber = Number(room?.roomNumber);
+      if (!date || !Number.isInteger(roomNumber) || roomNumber <= 0) return undefined;
+      const rooms = roomsByDate.get(date) ?? new Set<number>();
+      if (rooms.has(roomNumber)) return undefined;
+      rooms.add(roomNumber);
+      roomsByDate.set(date, rooms);
+    }
+    if ([...roomsByDate.values()].some((rooms) => rooms.size !== roomCount)) return undefined;
+
+    const dates = [...roomsByDate.keys()].sort();
+    const prior = parseHotelSelectionSnapshot(selection) as any;
+    const stayRouteIds = Array.isArray(prior.authoritativeRouteIds) ? prior.authoritativeRouteIds : [];
+    const routeDate = this.toDateOnly(selection.itinerary_route_date || option.date || option.checkInDate);
+    const coversStay = stayRouteIds.length > 1;
+    const coveredDates = coversStay && Array.isArray(prior.nightlyRates)
+      ? prior.nightlyRates.map((night: any) => this.toDateOnly(night.date)).sort()
+      : [routeDate];
+    if (coversStay && (coveredDates.length !== stayRouteIds.length ||
+      coveredDates.length !== dates.length || coveredDates.some((date, index) => date !== dates[index]))) {
+      return undefined;
+    }
+    if (!dates.includes(routeDate)) return undefined;
+
+    const suppliedMargin = Number(option.hotelMarginPercentage ?? option.hotel_margin_percentage ?? 0);
+    const marginPercentage = suppliedMargin > 0
+      ? suppliedMargin
+      : await this.hotelPricingService.resolveEffectiveHotelMarginPercentage(option);
+    // VSR allInAmount is the supplier fare before DVI markup, even when the
+    // option's scalar total has already been projected. Always price from
+    // those room-night lines and apportion the rounded margin across nights.
+    const prices = allocateTboRouteNightPricing(dates.map((date, index) => ({
+      routeId: index + 1, routeDate: date, breakdown, marginPercentage,
+    })));
+    if (!prices) return undefined;
+
+    const nightlyRates = [...prices.values()].filter((price) => coveredDates.includes(price.routeDate)).map((price) => ({
+      ...(Array.isArray(option.nightlyRates)
+        ? option.nightlyRates.find((night: any) => this.toDateOnly(night.date) === price.routeDate)
+        : undefined),
+      date: price.routeDate,
+      baseAmount: price.baseTotalPrice,
+      baseTotalPrice: price.baseTotalPrice,
+      totalRoomCost: price.baseTotalPrice,
+      basePricePerNight: this.money(price.baseTotalPrice / roomCount),
+      extraBedAmount: 0,
+      childWithBedAmount: 0,
+      childWithoutBedAmount: 0,
+      marginPercentage,
+      marginAmount: price.hotelMarginAmount,
+      hotelMarginPercentage: marginPercentage,
+      hotelMarginAmount: price.hotelMarginAmount,
+      sellAmount: price.totalPrice,
+      pricingIncludesHotelMargin: true,
+      pricePerNight: price.totalPrice,
+      totalPrice: price.totalPrice,
+      totalStayPrice: price.totalPrice,
+    }));
+    const baseTotalPrice = this.money(nightlyRates.reduce((sum, night) => sum + night.baseAmount, 0));
+    const hotelMarginAmount = this.money(nightlyRates.reduce((sum, night) => sum + night.marginAmount, 0));
+    const totalPrice = this.money(baseTotalPrice + hotelMarginAmount);
+    const firstNight = nightlyRates[0];
+    const lastNight = nightlyRates[nightlyRates.length - 1];
+    return {
+      ...option,
+      roomCount,
+      numberOfNights: nightlyRates.length,
+      checkInDate: firstNight.date,
+      checkOutDate: this.toDateOnly(this.addDays(this.toDate(lastNight.date), 1)),
+      basePricePerNight: firstNight.basePricePerNight,
+      baseTotalPrice,
+      baseHotelCost: baseTotalPrice,
+      totalRoomCost: baseTotalPrice,
+      extraBedAmount: 0,
+      childWithBedAmount: 0,
+      childWithoutBedAmount: 0,
+      hotelMarginPercentage: marginPercentage,
+      hotelMarginBaseAmount: baseTotalPrice,
+      hotelMarginAmount,
+      hotelMarginTotalAmount: hotelMarginAmount,
+      pricePerNight: firstNight.sellAmount,
+      selectedPricePerNight: firstNight.sellAmount,
+      selectedTotalPrice: totalPrice,
+      selected_total_price: totalPrice,
+      totalPrice,
+      totalStayPrice: totalPrice,
+      totalHotelCost: totalPrice,
+      exactFullStayTotal: totalPrice,
+      amountIncludesHotelMargin: true,
+      pricingIncludesHotelMargin: true,
+      ...(coversStay ? {
+        authoritativeStayKey: option.authoritativeStayKey || prior.authoritativeStayKey,
+        authoritativeRouteIds: stayRouteIds,
+        authoritativeParentRouteId: prior.authoritativeParentRouteId,
+        authoritativeCheckInDate: prior.authoritativeCheckInDate,
+        authoritativeCheckOutDate: prior.authoritativeCheckOutDate,
+        nightlyRates,
+      } : { nightlyRates: undefined }),
     };
   }
 

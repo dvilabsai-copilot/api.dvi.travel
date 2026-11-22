@@ -1952,6 +1952,67 @@ test('ordinary availability checks keep the saved payable until the exact propos
   await assert.rejects(() => service.applyPendingSelectionChanges(tx, 44, [1], 1, proposals), /preview has changed/);
 });
 
+test('VSR availability proposes the configured margin once across the exact supplier nights', async () => {
+  const { tx, selections, getLastUpdateData } = makeReconciliationTx();
+  tx.dvi_global_settings = { findFirst: async () => ({ hotel_margin: 5 }) };
+  const service = new HotelAvailabilitySnapshotService(tx, {} as any, {} as any, {} as any) as any;
+  const dates = ['2027-01-10', '2027-01-11'];
+  const savedSnapshot = {
+    provider: 'tbo', hotelName: 'Tea Castle Munnar', roomType: 'Executive Room', mealPlan: 'MAP',
+    selectionOrigin: 'AUTO_SELECTED', hotelMarginPercentage: 0, hotelMarginAmount: 0,
+    pricePerNight: 8543.11, totalPrice: 17086.22, baseTotalPrice: 17086.22,
+    authoritativeStayKey: 'tea-castle-stay', authoritativeParentRouteId: 10,
+    authoritativeRouteIds: [10, 11], authoritativeCheckInDate: dates[0], authoritativeCheckOutDate: '2027-01-12',
+    nightlyRates: dates.map((date) => ({ date, baseAmount: 8543.11, sellAmount: 8543.11 })),
+  };
+  Object.assign(selections[0], {
+    itinerary_route_date: new Date(dates[0]), selection_origin: 'AUTO_SELECTED', total_no_of_rooms: 2,
+    hotel_margin_percentage: 0, selected_price_per_night: 8543.11, selected_total_price: 17086.22,
+    total_hotel_cost: 17086.22, selected_price_snapshot: JSON.stringify(savedSnapshot),
+  });
+  const savedSelection = { ...selections[0] };
+  const freshOption = {
+    ...savedSnapshot, groupType: 1, itineraryRouteId: 10, date: dates[0],
+    checkInDate: dates[0], checkOutDate: '2027-01-12', hotelCode: 'H-1', hotelId: 101,
+    rateOptionId: 'rate-1', roomCount: 2, amountIncludesHotelMargin: true,
+    tboRoomNightBreakdown: dates.flatMap((date) => [4271.56, 4271.55].map((allInAmount, index) => ({
+      date, roomNumber: index + 1, allInAmount, nightTotal: 8543.11,
+    }))),
+  };
+  const proposals = new Map();
+  const summary = await service.reconcileSelections(
+    tx, 44, [freshOption], 'run-vsr-margin', 1, false, undefined, undefined, undefined, new Set(), [], true, proposals,
+  );
+
+  assert.equal(summary.totalChanges, 1);
+  assert.equal(summary.changes[0].changeType, 'PRICE_CHANGED');
+  assert.equal(summary.changes[0].requiresAcceptance, true);
+  assert.equal(summary.changes[0].previous.totalPrice, 17086.22);
+  assert.equal(summary.changes[0].current.totalPrice, 17940.53);
+  const proposed = proposals.get(1).option;
+  assert.equal(proposed.hotelMarginPercentage, 5);
+  assert.equal(proposed.hotelMarginAmount, 854.31);
+  assert.deepEqual(proposed.nightlyRates.map((night: any) => night.sellAmount), [8970.27, 8970.26]);
+  assert.deepEqual(selections[0], savedSelection);
+  assert.equal(getLastUpdateData(), null);
+
+  const repriced = await service.pricePendingSelectionOption(tx, savedSelection, proposed);
+  assert.equal(repriced.totalPrice, proposed.totalPrice);
+  assert.equal(repriced.hotelMarginAmount, proposed.hotelMarginAmount);
+
+  const singleNightSelection = { ...savedSelection, itinerary_route_date: new Date(dates[1]), selected_price_snapshot: '{}' };
+  const singleNight = await service.pricePendingSelectionOption(tx, singleNightSelection, freshOption);
+  assert.equal(singleNight.totalPrice, 8970.26);
+  assert.equal(singleNight.checkInDate, dates[1]);
+
+  // Exercise approval only with the in-memory transaction, then check that the
+  // persisted fields use the exact amount already shown in the proposal.
+  assert.deepEqual(await service.applyPendingSelectionChanges(tx, 44, [1], 1, proposals), [1]);
+  assert.equal(selections[0].selected_total_price, 17940.53);
+  assert.equal(selections[0].hotel_margin_rate, 854.31);
+  assert.deepEqual(JSON.parse(selections[0].selected_price_snapshot).nightlyRates.map((night: any) => night.marginAmount), [427.16, 427.15]);
+});
+
 test('unavailable exact USER_SELECTED rate is preserved and reports the fresh same-hotel proposal', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const { tx, selections } = makeReconciliationTx();
