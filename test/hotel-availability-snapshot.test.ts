@@ -1960,7 +1960,7 @@ test('VSR availability proposes the configured margin once across the exact supp
   const savedSnapshot = {
     provider: 'tbo', hotelName: 'Tea Castle Munnar', roomType: 'Executive Room', mealPlan: 'MAP',
     selectionOrigin: 'AUTO_SELECTED', hotelMarginPercentage: 0, hotelMarginAmount: 0,
-    pricePerNight: 8543.11, totalPrice: 17086.22, baseTotalPrice: 17086.22,
+    pricePerNight: 8543.11, totalPrice: 8543.11, baseTotalPrice: 8543.11,
     authoritativeStayKey: 'tea-castle-stay', authoritativeParentRouteId: 10,
     authoritativeRouteIds: [10, 11], authoritativeCheckInDate: dates[0], authoritativeCheckOutDate: '2027-01-12',
     nightlyRates: dates.map((date) => ({ date, baseAmount: 8543.11, sellAmount: 8543.11 })),
@@ -1989,6 +1989,7 @@ test('VSR availability proposes the configured margin once across the exact supp
   assert.equal(summary.changes[0].requiresAcceptance, true);
   assert.equal(summary.changes[0].previous.totalPrice, 17086.22);
   assert.equal(summary.changes[0].current.totalPrice, 17940.53);
+  assert.equal(summary.changes[0].priceDelta, 854.31);
   const proposed = proposals.get(1).option;
   assert.equal(proposed.hotelMarginPercentage, 5);
   assert.equal(proposed.hotelMarginAmount, 854.31);

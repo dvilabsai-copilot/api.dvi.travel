@@ -5268,6 +5268,20 @@ export class HotelAvailabilitySnapshotService {
         selection,
         replacement,
       );
+      if (Array.isArray(pricedReplacement.nightlyRates) && pricedReplacement.nightlyRates.length > 1 &&
+        pricedReplacement.nightlyRates.every((night: any) => night.pricingIncludesHotelMargin === true && night.marginAmount != null) &&
+        (selectedProvider === 'tbo' || selectedProvider === 'vsr') && !previousSnapshot.tboMapFallbackApplied) {
+        // A continuous VSR selection can store its anchor-night price on the
+        // parent row. The hotel list totals the saved nightly prices, so use
+        // those same nights as the comparison baseline for a full-stay offer.
+        const savedNightTotals = Array.isArray(previousSnapshot.nightlyRates)
+          ? previousSnapshot.nightlyRates.map((night: any) => Number(night.sellAmount))
+          : [];
+        if (savedNightTotals.length === pricedReplacement.nightlyRates.length &&
+          savedNightTotals.every((total: number) => Number.isFinite(total) && total > 0)) {
+          previous.totalPrice = this.money(savedNightTotals.reduce((sum: number, total: number) => sum + total, 0));
+        }
+      }
       const next = hotelDisplaySnapshot(pricedReplacement);
       // Any non-exact match means the old persisted rate is unavailable,
       // even when the same property has another fresh room/meal rate. The
