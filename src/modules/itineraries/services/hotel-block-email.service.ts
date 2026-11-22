@@ -84,6 +84,21 @@ export class HotelBlockEmailService {
     return this.transporter;
   }
 
+  async dispatchOfflineVoucher(recipients: string[], message: { subject: string; text: string; html: string }, replyTo?: string) {
+    const demo = this.demoMode();
+    const { subject, text, html } = message;
+    const options = {
+      from: String(process.env.SMTP_FROM),
+      to: demo ? [this.deliveryRecipient(recipients[0])] : recipients,
+      subject: demo ? `[DEMO] ${subject}` : subject,
+      text: demo ? `Demo delivery. Intended recipients: ${recipients.join(', ')}\n\n${text}` : text,
+      html,
+      ...(replyTo && !demo ? { replyTo } : {}),
+    };
+    const info = await this.getTransporter().sendMail(demo ? options : await withGlobalSettingsCc(this.prisma, options));
+    return { demo, partial: Boolean(info.rejected?.length) };
+  }
+
   async dispatch(input: { recipient: string; quotationReference: string; request: HoldRequest }) {
     if (!this.enabled()) return { status: 'QUEUED' as const };
     const { recipient, quotationReference, request } = input;

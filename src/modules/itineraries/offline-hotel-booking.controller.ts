@@ -1,17 +1,27 @@
 import {
   BadRequestException, Body, ConflictException, Controller, ForbiddenException,
-  Get, Param, ParseIntPipe, Post, Put, Query, Req,
+  Get, Param, ParseIntPipe, Post, Put, Query, Req, ServiceUnavailableException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Prisma, dvi_itinerary_offline_hotel_booking } from '@prisma/client';
 import { Request } from 'express';
+import { plainToInstance } from 'class-transformer';
+import { isEmail, validateSync } from 'class-validator';
 import { PrismaService } from '../../prisma.service';
 import { getRoleId, isLegacyTravelExpertUser, SystemRole } from '../auth/constants/system-role.constants';
-import { ReadOfflineHotelContactsDto, SaveOfflineHotelBookingDto } from './dto/offline-hotel-booking.dto';
+import {
+  OfflineHotelBookingDetailsDto, OfflineVoucherStayDto, PreviewOfflineVoucherDto,
+  ReadOfflineHotelContactsDto, SaveOfflineHotelBookingDto, SendOfflineVouchersDto,
+} from './dto/offline-hotel-booking.dto';
 import { ItineraryAccessService, ItineraryViewer } from './services/itinerary-access.service';
 import { loadOfflineHotelContacts } from './services/offline-hotel-contacts';
+import { HotelBlockEmailService } from './services/hotel-block-email.service';
+import { renderOfflineHotelVoucher } from './templates/offline-hotel-voucher.template';
 
 type BookingRequest = Request & { user?: ItineraryViewer & { userId?: number | string } };
+
+const stayKey = ({ routeId, hotelKey, checkIn, checkOut }: Pick<OfflineVoucherStayDto, 'routeId' | 'hotelKey' | 'checkIn' | 'checkOut'>) =>
+  JSON.stringify([routeId, hotelKey, checkIn, checkOut]);
 
 function bookingResponse(row: dvi_itinerary_offline_hotel_booking) {
   return {
@@ -31,6 +41,7 @@ export class OfflineHotelBookingController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ItineraryAccessService,
+    private readonly email: HotelBlockEmailService,
   ) {}
 
   @Get()
@@ -61,11 +72,93 @@ export class OfflineHotelBookingController {
       return loadOfflineHotelContacts(this.prisma, body.hotelKeys);
     }
 
-    const [contacts, confirmedBy] = await Promise.all([
+    const [contacts, expert] = await Promise.all([
       loadOfflineHotelContacts(this.prisma, body.hotelKeys),
-      this.getAssignedTravelExpertName(planId),
+      this.getAssignedTravelExpert(planId),
     ]);
-    return { contacts, confirmedBy };
+    return { contacts, confirmedBy: expert?.staff_name?.trim() ?? '' };
+  }
+
+  @Post('voucher-preview')
+  async previewVoucher(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Param('groupType', ParseIntPipe) groupType: number,
+    @Body() body: PreviewOfflineVoucherDto,
+    @Req() request: BookingRequest,
+  ) {
+    this.assertScope(request, planId, groupType);
+    await this.access.assertCanViewPlan(planId, request.user);
+    const quote = await this.getQuoteReference(planId);
+    const { subject, html } = renderOfflineHotelVoucher(quote, body.stay, body.details);
+    return { subject, html };
+  }
+
+  @Post('voucher-emails')
+  async sendVouchers(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Param('groupType', ParseIntPipe) groupType: number,
+    @Body() body: SendOfflineVouchersDto,
+    @Req() request: BookingRequest,
+  ) {
+    this.assertScope(request, planId, groupType);
+    await this.access.assertCanEditPlan(planId, request.user);
+    if (!this.email.isDispatchEnabled()) {
+      throw new ServiceUnavailableException('Hotel email delivery is disabled.');
+    }
+
+    const stays = [...new Map(body.stays.map((stay) => [stayKey(stay), stay])).values()];
+    const routeIds = [...new Set(stays.map((stay) => stay.routeId))];
+    const [quote, bookings, routes, expert] = await Promise.all([
+      this.getQuoteReference(planId),
+      this.prisma.dvi_itinerary_offline_hotel_booking.findMany({
+        where: { itinerary_plan_id: planId, group_type: groupType, route_id: { in: routeIds } },
+      }),
+      this.prisma.dvi_itinerary_route_details.findMany({
+        where: { itinerary_plan_ID: planId, itinerary_route_ID: { in: routeIds }, deleted: 0 },
+        select: { itinerary_route_ID: true, itinerary_route_date: true },
+      }),
+      this.getAssignedTravelExpert(planId),
+    ]);
+    const expertEmail = expert?.staff_email?.trim();
+    const replyTo = expertEmail && isEmail(expertEmail) ? expertEmail : undefined;
+    const bookedByKey = new Map(bookings.map((row) => {
+      const booking = bookingResponse(row);
+      return [stayKey(booking), booking] as const;
+    }));
+    const dateByRoute = new Map(routes.map((route) => [route.itinerary_route_ID, route.itinerary_route_date?.toISOString().slice(0, 10)]));
+    const results: Array<{ key: string; status: 'sent' | 'demo' | 'partial' | 'failed' | 'skipped'; message?: string }> = [];
+
+    for (const stay of stays) {
+      const key = stayKey(stay);
+      const booking = bookedByKey.get(key);
+      const routeDate = dateByRoute.get(stay.routeId);
+      if (!booking || !routeDate || routeDate < stay.checkIn || routeDate >= stay.checkOut) {
+        results.push({ key, status: 'skipped', message: 'A current saved booking is required.' });
+        continue;
+      }
+      if (stay.version !== booking.version) {
+        results.push({ key, status: 'skipped', message: 'Booking details changed. Reopen Offline Booking before sending.' });
+        continue;
+      }
+      const details = plainToInstance(OfflineHotelBookingDetailsDto, booking.details);
+      if (!details || validateSync(details, { forbidUnknownValues: true }).length) {
+        results.push({ key, status: 'skipped', message: 'Review and save the booking details before sending.' });
+        continue;
+      }
+      const recipients = [...new Map(details.emails.map((email) => [email.toLowerCase(), email])).values()];
+      if (!recipients.length) {
+        results.push({ key, status: 'skipped', message: 'No hotel email is saved for this stay.' });
+        continue;
+      }
+      try {
+        const outcome = await this.email.dispatchOfflineVoucher(recipients, renderOfflineHotelVoucher(quote, stay, details), replyTo);
+        results.push({ key, status: outcome.partial ? 'partial' : outcome.demo ? 'demo' : 'sent' });
+      } catch (error) {
+        this.email.logFailure(error, 'offline voucher for ' + quote);
+        results.push({ key, status: 'failed', message: 'Email delivery failed.' });
+      }
+    }
+    return { results };
   }
 
   @Put()
@@ -140,24 +233,32 @@ export class OfflineHotelBookingController {
     }
   }
 
-  private async getAssignedTravelExpertName(planId: number): Promise<string> {
+  private async getQuoteReference(planId: number): Promise<string> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      select: { itinerary_quote_ID: true },
+    });
+    if (!plan) throw new BadRequestException('The itinerary is no longer available.');
+    return plan.itinerary_quote_ID?.trim() || String(planId);
+  }
+
+  private async getAssignedTravelExpert(planId: number) {
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: planId, deleted: 0 },
       select: { agent_id: true },
     });
-    if (!plan?.agent_id) return '';
+    if (!plan?.agent_id) return null;
 
     const agent = await this.prisma.dvi_agent.findUnique({
       where: { agent_ID: plan.agent_id, deleted: 0 },
       select: { travel_expert_id: true },
     });
-    if (!agent?.travel_expert_id) return '';
+    if (!agent?.travel_expert_id) return null;
 
-    const expert = await this.prisma.dvi_staff_details.findFirst({
+    return this.prisma.dvi_staff_details.findFirst({
       where: { staff_id: agent.travel_expert_id, deleted: 0 },
-      select: { staff_name: true },
+      select: { staff_name: true, staff_email: true },
     });
-    return expert?.staff_name?.trim() ?? '';
   }
 
   private assertScope(request: BookingRequest, planId: number, groupType: number) {

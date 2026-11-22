@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  ArrayMaxSize, IsArray, IsDateString, IsDefined, IsEmail, IsIn, IsInt,
+  ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsDefined, IsEmail, IsIn, IsInt,
   IsNotEmpty, IsNumber, IsObject, IsString, Matches, Max, MaxLength, Min, ValidateNested,
 } from 'class-validator';
 
@@ -84,7 +84,7 @@ export class OfflineHotelBookingDetailsDto {
   cancellationPolicies!: OfflineBookingCancellationDto[];
 }
 
-export class SaveOfflineHotelBookingDto {
+class OfflineHotelStayIdentityDto {
   @IsInt()
   @Min(1)
   @Max(maxInt)
@@ -102,7 +102,9 @@ export class SaveOfflineHotelBookingDto {
   @Matches(calendarDate)
   @IsDateString({ strict: true })
   checkOut!: string;
+}
 
+export class SaveOfflineHotelBookingDto extends OfflineHotelStayIdentityDto {
   @IsInt()
   @Min(0)
   @Max(maxInt - 1)
@@ -121,4 +123,51 @@ export class ReadOfflineHotelContactsDto {
   @IsString({ each: true })
   @MaxLength(300, { each: true })
   hotelKeys!: string[];
+}
+
+export class OfflineVoucherStayDto extends OfflineHotelStayIdentityDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
+  hotelName!: string;
+
+  @IsString()
+  @MaxLength(500)
+  destination!: string;
+}
+
+export class PreviewOfflineVoucherDto {
+  @IsIn(['hotel-voucher'])
+  template!: 'hotel-voucher';
+
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => OfflineVoucherStayDto)
+  stay!: OfflineVoucherStayDto;
+
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => OfflineHotelBookingDetailsDto)
+  details!: OfflineHotelBookingDetailsDto;
+}
+
+class OfflineVoucherTargetDto extends OfflineVoucherStayDto {
+  @IsInt()
+  @Min(1)
+  @Max(maxInt)
+  version!: number;
+}
+
+export class SendOfflineVouchersDto {
+  @IsIn(['hotel-voucher'])
+  template!: 'hotel-voucher';
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => OfflineVoucherTargetDto)
+  stays!: OfflineVoucherTargetDto[];
 }
