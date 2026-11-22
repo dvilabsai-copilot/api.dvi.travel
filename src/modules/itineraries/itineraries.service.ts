@@ -88,7 +88,7 @@ import {
   validateManualFitAttemptDisplayTimelineImpl,
 } from "./helpers/manual-fit-here-preview.helper";
 import { createHash, randomUUID } from "crypto";
-import { publishItineraryRevision } from './services/itinerary-revision.service';
+import { assertRevisionEditable, publishItineraryRevision } from './services/itinerary-revision.service';
 import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assignment.service';
 import { ItineraryGuideAssignmentWriteService, SaveGuideAssignmentPayload } from './services/itinerary-guide-assignment-write.service';
 import { ItineraryConfirmedGuideAssignmentService } from './services/itinerary-confirmed-guide-assignment.service';
@@ -2055,6 +2055,41 @@ timingStepStartedAt =
   async getAvailableHotels(routeId: number) {
     return this.selectionWorkflowService.getAvailableHotels(routeId);
   }
+  async saveHotelRecommendation(planId: number, groupType: number) {
+    if (!Number.isInteger(groupType) || groupType < 1 || groupType > 4) {
+      throw new BadRequestException('Choose a valid hotel recommendation.');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT itinerary_plan_ID FROM dvi_itinerary_plan_details WHERE itinerary_plan_ID = ${planId} FOR UPDATE`;
+      await assertRevisionEditable(tx, planId);
+      const plan = await tx.dvi_itinerary_plan_details.findUnique({
+        where: { itinerary_plan_ID: planId, deleted: 0 },
+        select: { itinerary_quote_ID: true, itinerary_preference: true, quotation_status: true },
+      });
+      if (!plan?.itinerary_quote_ID || plan.itinerary_preference === 2 || plan.quotation_status === 2) {
+        throw new BadRequestException('This itinerary has no editable hotel recommendations.');
+      }
+      const confirmed = await tx.dvi_confirmed_itinerary_plan_details.findFirst({
+        where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
+        select: { itinerary_plan_ID: true },
+      });
+      if (confirmed) throw new BadRequestException('This itinerary has already been confirmed.');
+      const recommendation = await tx.dvi_itinerary_plan_hotel_details.findFirst({
+        where: {
+          itinerary_plan_id: planId, group_type: groupType, deleted: 0, status: 1,
+          OR: [{ hotel_id: { gt: 0 } }, { hotel_code: { not: '' } }, { hotel_required: 2 }],
+        },
+        select: { itinerary_plan_hotel_details_ID: true },
+      });
+      if (!recommendation) throw new BadRequestException('This hotel recommendation is unavailable.');
+      await tx.dvi_itinerary_plan_details.update({
+        where: { itinerary_plan_ID: planId },
+        data: { selected_hotel_group_type: groupType },
+      });
+      return plan.itinerary_quote_ID;
+    });
+  }
+
   async selectHotel(data: {
     planId: number;
     routeId: number;

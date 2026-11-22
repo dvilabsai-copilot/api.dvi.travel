@@ -592,6 +592,20 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
     return details;
   }
 
+  @Patch(':id/hotel-recommendation')
+  @ApiOperation({ summary: 'Save the active hotel recommendation on a draft quote' })
+  async saveHotelRecommendation(
+    @Param('id', ParseIntPipe) planId: number,
+    @Body() body: { groupType: number },
+    @Req() req: Request,
+  ) {
+    const user = (req as any).user;
+    this.itineraryAccessService.assertVehicleAgentHotelMutation(user);
+    await this.itineraryAccessService.assertCanEditPlan(planId, user);
+    const quoteId = await this.svc.saveHotelRecommendation(planId, body?.groupType);
+    return this.getItineraryDetails(quoteId, req);
+  }
+
    @Get(':id/guides/availability')
   @ApiOperation({ summary: 'Check whether guide prices are available for itinerary days' })
   async getGuideAvailability(

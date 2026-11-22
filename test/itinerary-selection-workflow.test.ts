@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { ItinerariesService } from '../src/modules/itineraries/itineraries.service';
 import { ItinerarySelectionWorkflowService } from '../src/modules/itineraries/services/itinerary-selection-workflow.service';
 import {
   normalizeSupplierRateIdentity,
@@ -17,6 +18,53 @@ function createService(prisma: any = {}, freshLookup = async (..._args: any[]): 
     { getSelectedHotelRates: freshLookup } as any,
   );
 }
+
+test('a recommendation save writes only the active group of the editable draft', async () => {
+  const service = Object.create(ItinerariesService.prototype) as ItinerariesService;
+  const writes: unknown[] = [];
+  let revision: { plan_id: number; status: string; superseded_at: Date | null } | null = {
+    plan_id: 42, status: 'READY', superseded_at: null,
+  };
+  let pending = false;
+  let hasRecommendation = true;
+  const tx = {
+    $queryRaw: async () => [{ itinerary_plan_ID: 42 }],
+    dvi_itinerary_quote_revision: {
+      findUnique: async () => revision,
+      findFirst: async () => pending ? { plan_id: 43 } : null,
+    },
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({ itinerary_quote_ID: 'TEST-V3', itinerary_preference: 3, quotation_status: 0 }),
+      update: async (args: unknown) => writes.push(args),
+    },
+    dvi_confirmed_itinerary_plan_details: { findFirst: async () => null },
+    dvi_itinerary_plan_hotel_details: {
+      findFirst: async ({ where }: any) => {
+        assert.equal(where.itinerary_plan_id, 42);
+        assert.equal(where.group_type, 2);
+        return hasRecommendation ? { itinerary_plan_hotel_details_ID: 1 } : null;
+      },
+    },
+  };
+  Object.assign(service, { prisma: { $transaction: async (action: (value: typeof tx) => Promise<string>) => action(tx) } });
+  const expectedWrite = { where: { itinerary_plan_ID: 42 }, data: { selected_hotel_group_type: 2 } };
+
+  assert.equal(await service.saveHotelRecommendation(42, 2), 'TEST-V3');
+  assert.deepEqual(writes, [expectedWrite]);
+  await assert.rejects(service.saveHotelRecommendation(42, 2.5), /valid hotel recommendation/);
+  pending = true;
+  await assert.rejects(service.saveHotelRecommendation(42, 2), /revision is being saved/);
+  pending = false;
+  revision.superseded_at = new Date();
+  await assert.rejects(service.saveHotelRecommendation(42, 2), /read-only/);
+  revision = null;
+  hasRecommendation = false;
+  await assert.rejects(service.saveHotelRecommendation(42, 2), /unavailable/);
+  assert.deepEqual(writes, [expectedWrite]);
+  hasRecommendation = true;
+  assert.equal(await service.saveHotelRecommendation(42, 2), 'TEST-V3');
+  assert.deepEqual(writes, [expectedWrite, expectedWrite]);
+});
 
 test('switching to an AX inclusive rate clears the previous hotel meal charge on reload', async () => {
   let saved: any = { itinerary_plan_hotel_details_ID: 61872, hotel_id: 1,

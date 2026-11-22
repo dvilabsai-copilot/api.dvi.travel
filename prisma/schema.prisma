@@ -4003,6 +4003,7 @@ transport_early_arrival_location_name String? @db.VarChar(255)
   transport_early_arrival_rest_minutes Int?
   pick_up_date_and_time                DateTime? @db.DateTime(0)
   hotel_rates_visibility               Int       @default(0)
+  selected_hotel_group_type            Int?      @db.TinyInt
   quotation_status                     Int       @default(0)
   agent_margin                         Int       @default(0)
   createdby                            Int       @default(0)

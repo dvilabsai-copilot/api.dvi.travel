@@ -442,6 +442,7 @@ export interface ItineraryDetailsResponseDto {
   };
   quoteId: string;
   planId: number;
+  selectedHotelGroupType?: number | null;
   agentSellingProfit?: number;
 
   // Continue Planning chain
@@ -2364,6 +2365,18 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
       entryTicketRowsByRouteHotspotId.set(routeHotspotId, rows);
     }
 
+    const allHotelRows = hotelCostOverride?.rows ?? await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+      where: { itinerary_plan_id: planId, deleted: 0, status: 1 },
+    });
+    const persistedHotelGroups = [...new Set(allHotelRows.map((row) => Number(row.group_type || 0)))]
+      .filter((value) => value > 0)
+      .sort((a, b) => a - b);
+    const savedHotelGroupType = plan.selected_hotel_group_type;
+    const selectedHotelGroupType = savedHotelGroupType && persistedHotelGroups.includes(savedHotelGroupType)
+      ? savedHotelGroupType
+      : null;
+    const activeHotelGroupType = groupType ?? selectedHotelGroupType ?? persistedHotelGroups[0];
+
  // ------------------------- HOTELS FOR TIMELINE ----------------------
     let timelineHotelRows: any[] = [];
 
@@ -2385,11 +2398,7 @@ const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId)
     } else {
  // If draft, fetch from draft hotels table
       const timelineHotelWhere: any = { itinerary_plan_id: planId, deleted: 0 };
-      if (groupType !== undefined) {
-        timelineHotelWhere.group_type = groupType;
-      } else {
- timelineHotelWhere.group_type = 1; // Default to first recommendation
-      }
+      timelineHotelWhere.group_type = groupType ?? selectedHotelGroupType ?? 1;
 
       timelineHotelRows = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
         where: timelineHotelWhere,
@@ -6680,21 +6689,6 @@ const hasRequiredVehicleSelection =
 
  // 1. Calculate Hotel Costs with detailed breakdown
  // Filter by group_type if provided (for hotel recommendation tabs)
-    const hotelWhere: any = { itinerary_plan_id: planId, deleted: 0, status: 1 };
-    const allHotelRows = hotelCostOverride?.rows ?? await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
-      where: hotelWhere,
-    });
-    // The PHP page prices one recommendation at a time. The details page has
-    // no group query on its initial load, so use Recommended #1 and fall back
-    // to the first persisted group when that package is absent.
-    const persistedHotelGroups = Array.from(new Set(
-      (allHotelRows as any[])
-        .map((row) => Number(row?.group_type || 0))
-        .filter((value) => value > 0),
-    )).sort((a, b) => a - b);
-    const activeHotelGroupType = groupType ?? (persistedHotelGroups.includes(1)
-      ? 1
-      : persistedHotelGroups[0]);
     const hotelRows = hotelCostOverride?.rows ?? (
       activeHotelGroupType
         ? (allHotelRows as any[]).filter((row) => Number(row?.group_type || 0) === activeHotelGroupType)
@@ -7850,6 +7844,7 @@ const savedAgentProfit = canViewAgentProfit
 const response: ItineraryDetailsResponseDto = {
   quoteId: plan.itinerary_quote_ID ?? '',
   planId: plan.itinerary_plan_ID,
+  selectedHotelGroupType,
    ...(historical || revisions.length > 1 ? { quoteRevision: {
      historical,
      entries: revisions.map((entry) => ({
