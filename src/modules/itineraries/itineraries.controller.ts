@@ -1904,6 +1904,34 @@ async getAvailableActivities(
       (req as any)?.user?.role,
     );
   }
+
+  @Post('vehicles/confirm-upgrade')
+  @ApiOperation({
+    summary: 'Confirm a vehicle upgrade and recalculate itinerary pricing',
+  })
+  async confirmVehicleUpgrade(
+    @Body() body: {
+      planId: number;
+      currentVehicleTypeId: number;
+      newVehicleTypeId: number;
+      expectedCurrentPrice: number;
+      expectedNewPrice: number;
+      selectedVendorEligibleId?: number;
+    },
+    @Req() req: Request,
+  ) {
+    await this.itineraryAccessService.assertCanEditPlan(
+      Number(body.planId),
+      (req as any).user,
+    );
+
+    return this.svc.confirmVehicleUpgrade(
+      body,
+      Number((req as any).user?.userId || 0),
+      (req as any).user?.role,
+    );
+  }
+
   @Post('vehicles/select-slab')
   @ApiOperation({ summary: 'Select slab for a vendor vehicle and recalculate vehicle pricing' })
   @ApiBody({

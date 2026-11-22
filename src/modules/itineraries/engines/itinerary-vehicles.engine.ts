@@ -23,8 +23,19 @@ type VehicleRebuildArgs = {
   planId: number;
   createdBy: number;
   selectedTimeLimitByEligible?: Record<string, number>;
+
+  // Optional shared Prisma transaction client.
+  tx?: any;
+
+  // Rebuild only these vehicle types when supplied.
+  affectedVehicleTypeIds?: number[];
+
   beforeVehicleDetailsBuild?: (data: {
-    tx: any; planId: number; createdBy: number; routeCount: number; eligibleVehicleCount: number;
+    tx: any;
+    planId: number;
+    createdBy: number;
+    routeCount: number;
+    eligibleVehicleCount: number;
   }) => Promise<void>;
 };
 function toNum(v: any) {
@@ -777,6 +788,7 @@ const assignedIds = assignedRows
       longitude: number;
     }> => {
       const key = Number(vehicleLocationId || 0);
+const cacheKey = `${key}:${String(fallbackOrigin ?? '').trim().toLowerCase()}:${String(fallbackCity ?? '').trim().toLowerCase()}`;
       if (vehicleLocationDetailsCache.has(key)) {
         vehicleStateCacheHits += 1;
         return vehicleLocationDetailsCache.get(key)!;
@@ -832,9 +844,10 @@ const assignedIds = assignedRows
       return { planId, inserted: 0, reason: "Invalid planId" };
     }
 
- // use plain client (no $transaction) for now
-    const tx: any = this.prisma;
-    const tAny: any = this.prisma as any;
+// Reuse the caller's transaction during an atomic upgrade.
+// Other rebuilds retain their existing Prisma client.
+const tx: any = args.tx ?? this.prisma;
+const tAny: any = tx;
     const normalizeVehicleDedupText = (value: unknown): string =>
       String(value ?? '').trim().toLowerCase();
     const normalizeVehicleDedupAmount = (value: unknown): string => {
@@ -887,7 +900,14 @@ const assignedIds = assignedRows
     };
     const cleanupDuplicateEligibleRows = async (): Promise<number> => {
       const rows = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
-        where: { itinerary_plan_id: planId, status: 1, deleted: 0 },
+        where: {
+  itinerary_plan_id: planId,
+  ...(scopedRebuild
+    ? { vehicle_type_id: { in: affectedVehicleTypeIds } }
+    : {}),
+  status: 1,
+  deleted: 0,
+},
         select: { itinerary_plan_vendor_eligible_ID: true, vendor_id: true, vendor_branch_id: true, vehicle_type_id: true, vendor_vehicle_type_id: true, vehicle_id: true, vehicle_orign: true, vehicle_grand_total: true },
         orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
       });
@@ -914,7 +934,14 @@ const assignedIds = assignedRows
     const cleanupDuplicateVehicleDetailRows = async (): Promise<number> => {
       if (!tAny?.dvi_itinerary_plan_vendor_vehicle_details) return 0;
       const rows = await tAny.dvi_itinerary_plan_vendor_vehicle_details.findMany({
-        where: { itinerary_plan_id: planId, status: 1, deleted: 0 },
+        where: {
+  itinerary_plan_id: planId,
+  ...(scopedRebuild
+    ? { vehicle_type_id: { in: affectedVehicleTypeIds } }
+    : {}),
+  status: 1,
+  deleted: 0,
+},
         select: {
           itinerary_plan_vendor_vehicle_details_ID: true,
           itinerary_plan_vendor_eligible_ID: true,
@@ -1177,7 +1204,31 @@ const assignedIds = assignedRows
       if (vt > 0 && c > 0) requiredCountByType.set(vt, (requiredCountByType.get(vt) ?? 0) + c);
     }
 
-    const requiredVehicleTypeIds = Array.from(requiredCountByType.keys());
+    const scopedRebuild = args.affectedVehicleTypeIds !== undefined;
+
+const affectedVehicleTypeIds = scopedRebuild
+  ? [
+      ...new Set(args.affectedVehicleTypeIds),
+    ].filter(
+      (id) => Number.isSafeInteger(id) && id > 0,
+    )
+  : [];
+
+if (scopedRebuild && affectedVehicleTypeIds.length === 0) {
+  throw new Error("Invalid vehicle rebuild scope");
+}
+
+if (scopedRebuild) {
+  for (const vehicleTypeId of requiredCountByType.keys()) {
+    if (!affectedVehicleTypeIds.includes(vehicleTypeId)) {
+      requiredCountByType.delete(vehicleTypeId);
+    }
+  }
+}
+
+const requiredVehicleTypeIds = Array.from(
+  requiredCountByType.keys(),
+);
     if (!requiredVehicleTypeIds.length) {
       return { planId, inserted: 0, reason: "No positive vehicle counts" };
     }
@@ -1189,7 +1240,31 @@ const assignedIds = assignedRows
  // ---------------------------------------------------------------------
  // 3) Clear existing eligible rows for this plan
  // ---------------------------------------------------------------------
-    const delEligibleWhere = { itinerary_plan_id: planId };
+ // An eligible row may be replaced during a scoped rebuild.
+// Clear its old selection reference while retaining the
+// vendor/vehicle preference for reassignment afterward.
+if (scopedRebuild) {
+  await tx.dvi_itinerary_plan_vehicle_vendor_selection.updateMany({
+    where: {
+      itinerary_plan_id: planId,
+      vehicle_type_id: { in: affectedVehicleTypeIds },
+    },
+    data: {
+      selected_vendor_eligible_id: null,
+      updatedon: new Date(),
+    },
+  });
+}
+   const delEligibleWhere = scopedRebuild
+  ? {
+      itinerary_plan_id: planId,
+      vehicle_type_id: {
+        in: affectedVehicleTypeIds,
+      },
+    }
+  : {
+      itinerary_plan_id: planId,
+    };
     this.logSql(
       "ELIGIBLE_DELETE_MANY",
       this.buildDeleteSql("dvi_itinerary_plan_vendor_eligible_list", delEligibleWhere),
@@ -1631,18 +1706,19 @@ const vehicleWhere: any = {
               "";
           }
 
-          const comboKey = `${vendorId}:${vendorBranchId}:${vendorVehicleTypeId}`;
+          const comboKey = `${planVehicleTypeId}:${vendorId}:${vendorBranchId}:${vendorVehicleTypeId}`;
 
           let currentQty = existingQtyCache.get(comboKey);
           if (currentQty === undefined) {
-            const qtyWhere = {
-              itinerary_plan_id: planId,
-              vendor_id: vendorId,
-              vendor_vehicle_type_id: vendorVehicleTypeId,
-              vendor_branch_id: vendorBranchId,
-              status: 1,
-              deleted: 0,
-            };
+   const qtyWhere = {
+  itinerary_plan_id: planId,
+  vehicle_type_id: planVehicleTypeId,
+  vendor_id: vendorId,
+  vendor_vehicle_type_id: vendorVehicleTypeId,
+  vendor_branch_id: vendorBranchId,
+  status: 1,
+  deleted: 0,
+};
             this.logSql(
               "ELIGIBLE_QTY_CHECK_AGGREGATE",
               this.buildSelectSql(
@@ -1721,15 +1797,16 @@ const vehicleWhere: any = {
           let outstationDaysCount = 0;
 
  // Try to get outstation days from existing vehicle_details for this vendor
-          const existingDetailsWhere = {
-            itinerary_plan_id: planId,
-            vendor_id: vendorId,
-            vendor_vehicle_type_id: vendorVehicleTypeId,
-            vendor_branch_id: vendorBranchId,
- travel_type: 2, // outstation
-            status: 1,
-            deleted: 0,
-          };
+const existingDetailsWhere = {
+  itinerary_plan_id: planId,
+  vehicle_type_id: planVehicleTypeId,
+  vendor_id: vendorId,
+  vendor_vehicle_type_id: vendorVehicleTypeId,
+  vendor_branch_id: vendorBranchId,
+  travel_type: 2, // outstation
+  status: 1,
+  deleted: 0,
+};
 
           if (tAny?.dvi_itinerary_plan_vendor_vehicle_details) {
             outstationDaysCount = await tAny.dvi_itinerary_plan_vendor_vehicle_details.count({
@@ -1933,12 +2010,13 @@ if (currentQty < requiredCount) {
   currentQty = requiredCount;
   existingQtyCache.set(comboKey, currentQty);
 } else {
-  const updateWhere = {
-    itinerary_plan_id: planId,
-    vendor_vehicle_type_id: vendorVehicleTypeId,
-    vehicle_id: vehicleId,
-    vendor_branch_id: vendorBranchId,
-  };
+const updateWhere = {
+  itinerary_plan_id: planId,
+  vehicle_type_id: planVehicleTypeId,
+  vendor_vehicle_type_id: vendorVehicleTypeId,
+  vehicle_id: vehicleId,
+  vendor_branch_id: vendorBranchId,
+};
 
   const updateData = { ...baseData, createdon: undefined };
 
@@ -2012,10 +2090,13 @@ const updRes =
     const vendorIdList = Array.from(vendorIdsUsed);
 
     if (vendorIdList.length > 0) {
-      const delWhere = {
-        itinerary_plan_id: planId,
-        vendor_id: { notIn: vendorIdList },
-      };
+   const delWhere = {
+  itinerary_plan_id: planId,
+  vendor_id: { notIn: vendorIdList },
+  ...(scopedRebuild
+    ? { vehicle_type_id: { in: affectedVehicleTypeIds } }
+    : {}),
+};
       this.logSql(
         "ELIGIBLE_DELETE_UNUSED_VENDORS",
         this.buildDeleteSql("dvi_itinerary_plan_vendor_eligible_list", delWhere),
@@ -2026,7 +2107,12 @@ const updRes =
           where: delWhere,
         });
     } else {
-      const delAllWhere = { itinerary_plan_id: planId };
+      const delAllWhere = {
+  itinerary_plan_id: planId,
+  ...(scopedRebuild
+    ? { vehicle_type_id: { in: affectedVehicleTypeIds } }
+    : {}),
+};
       this.logSql(
         "ELIGIBLE_DELETE_ALL_NO_VENDOR_MATCH",
         this.buildDeleteSql("dvi_itinerary_plan_vendor_eligible_list", delAllWhere),
@@ -2038,7 +2124,12 @@ const updRes =
       );
     }
 
-    const resetWhere = { itinerary_plan_id: planId };
+    const resetWhere = {
+  itinerary_plan_id: planId,
+  ...(scopedRebuild
+    ? { vehicle_type_id: { in: affectedVehicleTypeIds } }
+    : {}),
+};
     const resetData = { itineary_plan_assigned_status: 0 };
     this.logSql(
       "ELIGIBLE_RESET_ASSIGNED",
@@ -2058,10 +2149,18 @@ const updRes =
     // Do not select the cheapest vendor here.
 // Final assignments are applied after all vehicle totals are recalculated,
 // so a persisted manual selection can be restored correctly.
-    const cleanWhere = {
-      itinerary_plan_id: planId,
-      vehicle_type_id: { notIn: requiredVehicleTypeIds },
-    };
+   const cleanWhere = {
+  itinerary_plan_id: planId,
+  vehicle_type_id: scopedRebuild
+    ? {
+        in: affectedVehicleTypeIds.filter(
+          (id) => !requiredVehicleTypeIds.includes(id),
+        ),
+      }
+    : {
+        notIn: requiredVehicleTypeIds,
+      },
+};
     this.logSql(
       "ELIGIBLE_DELETE_UNUSED_TYPES",
       this.buildDeleteSql("dvi_itinerary_plan_vendor_eligible_list", cleanWhere),
@@ -2104,7 +2203,12 @@ const updRes =
  // FOR ALL ELIGIBLES (PHP parity - creates for both assigned and non-assigned)
  // ---------------------------------------------------------------------
     if (tAny?.dvi_itinerary_plan_vendor_vehicle_details && totalNoOfPlanRouteDetails > 0) {
-      const delDetailsWhere2: any = { itinerary_plan_id: planId };
+     const delDetailsWhere2: any = {
+  itinerary_plan_id: planId,
+  ...(scopedRebuild
+    ? { vehicle_type_id: { in: affectedVehicleTypeIds } }
+    : {}),
+};
       if (debugVehicleTrace) {
         const existingCount = await tAny.dvi_itinerary_plan_vendor_vehicle_details.count({
           where: { itinerary_plan_id: planId },
@@ -2129,13 +2233,14 @@ const updRes =
       stageStartedAt = logStageTiming('vehicle_detail_delete_old_rows', stageStartedAt, {
         deletedRows: Number((delDetRes2 as any)?.count ?? 0),
       });
-      const eligiblesWhere = {
-        itinerary_plan_id: planId,
- // REMOVED: itineary_plan_assigned_status: 1,
- // PHP creates vehicle_details for ALL vendors (assigned and non-assigned)
-        status: 1,
-        deleted: 0,
-      };
+   const eligiblesWhere = {
+  itinerary_plan_id: planId,
+  ...(scopedRebuild
+    ? { vehicle_type_id: { in: affectedVehicleTypeIds } }
+    : {}),
+  status: 1,
+  deleted: 0,
+};
       this.logSql(
         "ELIGIBLE_FIND_ALL_FOR_DETAILS",
         this.buildSelectSql(
@@ -2149,7 +2254,7 @@ const updRes =
         await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
           where: eligiblesWhere },
       );
-      const { rows: eligibles } = await filterActiveVendorCandidateRows<any>(this.prisma, rawEligibles);
+      const { rows: eligibles } = await filterActiveVendorCandidateRows<any>(tx, rawEligibles);
       if (debugVehicleTrace) {
  console.log('[VEHICLE_ELIGIBLE_ROWS_FOR_BUILD]', {
           planId,
@@ -2304,11 +2409,44 @@ const updRes =
 
  // Get vehicle origin details from dvi_stored_locations
         const vehicleLocationId = vehicle.vehicle_location_id || 0;
-        const resolvedVehicleLocationDetails = await getVehicleLocationDetailsCached(
-          vehicleLocationId,
-          String((e as any).vehicle_orign || '').trim(),
-          String((e as any).vehicle_orign || '').trim(),
-        );
+
+        // Match the upgrade preview's branch-city fallback.
+        const originBranch = await tx.dvi_vendor_branches.findUnique({
+          where: { vendor_branch_id: vendorBranchId },
+          select: {
+            vendor_branch_city: true,
+            vendor_branch_location: true,
+          },
+        });
+
+        const originBranchCity = originBranch
+          ? await tx.dvi_cities.findFirst({
+              where: {
+                id: originBranch.vendor_branch_city,
+                deleted: 0,
+              },
+              select: { name: true },
+            })
+          : null;
+
+        const fallbackOrigin = String(
+          originBranchCity?.name || originBranch?.vendor_branch_location || ''
+        ).trim();
+
+        const { getVehicleLocationDetails } =
+          await import('./vehicle-calculation.helpers');
+
+        const resolvedVehicleLocationDetails =
+          await getVehicleLocationDetails(
+            tx,
+            vehicleLocationId,
+            fallbackOrigin,
+            fallbackOrigin,
+            {
+              ...buildCache,
+              vehicleLocationDetails: new Map(),
+            },
+          );
         const originCoordinates = resolveVehicleOriginCoordinates(vehicle, originVendorById.get(vendorId) ?? null, resolvedVehicleLocationDetails);
         const vehicleLocationDetails = { ...resolvedVehicleLocationDetails, ...originCoordinates };
 
@@ -2390,8 +2528,20 @@ const updRes =
             location_name: fromLoc,
             next_visiting_location: toLoc,
             no_of_km: r.no_of_km,
-            route_start_time: r.route_start_time,
-            route_end_time: r.route_end_time
+            route_start_time: r.route_start_time instanceof Date
+              ? [
+                  r.route_start_time.getUTCHours(),
+                  r.route_start_time.getUTCMinutes(),
+                  r.route_start_time.getUTCSeconds(),
+                ].map(value => String(value).padStart(2, '0')).join(':')
+              : r.route_start_time ?? undefined,
+            route_end_time: r.route_end_time instanceof Date
+              ? [
+                  r.route_end_time.getUTCHours(),
+                  r.route_end_time.getUTCMinutes(),
+                  r.route_end_time.getUTCSeconds(),
+                ].map(value => String(value).padStart(2, '0')).join(':')
+              : r.route_end_time ?? undefined
           };
           if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
             this.log('VEHICLE_ROUTE_LOOP_START', {
@@ -2500,7 +2650,31 @@ const updRes =
             }
           });
 
-          const hasRealTravelForDisplay = Number(result.TOTAL_KM || 0) > 0;
+          if (calcCtx.vendor_id === 60 && calcCtx.vehicle_type_id === 37 && vehicleId === 438) {
+  console.log('[UPGRADE_REBUILD_TIME_PROOF]', JSON.stringify({
+    routeId: routeData.itinerary_route_ID,
+    start: routeData.route_start_time,
+    end: routeData.route_end_time,
+    origin: calcCtx.vehicle_origin,
+    pickup: result.TOTAL_PICKUP_DURATION,
+    drop: result.TOTAL_DROP_DURATION,
+    morningHours: result.morning_extra_time,
+    eveningHours: result.evening_extra_time,
+    rates: {
+      morningDriver: calcCtx.driver_early_morning_charges,
+      morningVehicle: calcCtx.early_morning_charges,
+      eveningDriver: calcCtx.driver_evening_charges,
+      eveningVehicle: calcCtx.evening_charges
+    },
+    charges: {
+      morningDriver: result.DRIVER_MORINING_CHARGES,
+      morningVehicle: result.VENDOR_VEHICLE_MORNING_CHARGES,
+      eveningDriver: result.DRIVER_EVEINING_CHARGES,
+      eveningVehicle: result.VENDOR_VEHICLE_EVENING_CHARGES
+    }
+  }));
+}
+const hasRealTravelForDisplay = Number(result.TOTAL_KM || 0) > 0;
 
           const isEdgeLocalTransferRoute =
             Number(result.travel_type || 0) === 1 &&
@@ -2812,12 +2986,16 @@ const updRes =
  // NOW update eligible_list with toll/permit charges from vehicle_details
  // (this runs AFTER all vehicle_details records have been created above)
     this.writeLog(`[vehiclesEngine] Starting eligible_list update for plan ${planId}`);
-    const rawEligibleRecords = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
-      where: {
-        itinerary_plan_id: planId,
-        status: 1,
-        deleted: 0,
-      },
+  const rawEligibleRecords =
+  await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
+    where: {
+      itinerary_plan_id: planId,
+      ...(scopedRebuild
+        ? { vehicle_type_id: { in: affectedVehicleTypeIds } }
+        : {}),
+      status: 1,
+      deleted: 0,
+    },
       select: {
         itinerary_plan_vendor_eligible_ID: true,
         vendor_id: true,
@@ -2838,7 +3016,7 @@ const updRes =
         vendor_margin_gst_percentage: true,
       },
     });
-    const { rows: eligibleRecords } = await filterActiveVendorCandidateRows<any>(this.prisma, rawEligibleRecords);
+    const { rows: eligibleRecords } = await filterActiveVendorCandidateRows<any>(tx, rawEligibleRecords);
     this.writeLog(`[vehiclesEngine] Found ${eligibleRecords.length} eligible records to update`);
 
     const allVehicleDetailsRows = await tx.dvi_itinerary_plan_vendor_vehicle_details.findMany({
@@ -3065,16 +3243,16 @@ const updRes =
                                totalBefore6amDriver + totalBefore6amVehicle +
                                totalAfter8pmDriver + totalAfter8pmVehicle;
 
-      const vehicleGstType = Number(eligible.vehicle_gst_type || 2);
-      const vehicleGstPercentage = Number(eligible.vehicle_gst_percentage || 5);
+      const vehicleGstType = Number(eligible.vehicle_gst_type ?? 2);
+      const vehicleGstPercentage = Number(eligible.vehicle_gst_percentage ?? 5);
       const vehicleGstAmount = vehicleGstType === 2 ?
         roundMoney((vehicleBaseTotal * vehicleGstPercentage) / 100) : 0;
 
       const vehicleTotalAmount = vehicleBaseTotal;
 
-      const vendorMarginPercentage = Number(eligible.vendor_margin_percentage || 10);
-      const vendorMarginGstType = Number(eligible.vendor_margin_gst_type || 2);
-      const vendorMarginGstPercentage = Number(eligible.vendor_margin_gst_percentage || 5);
+      const vendorMarginPercentage = Number(eligible.vendor_margin_percentage ?? 10);
+      const vendorMarginGstType = Number(eligible.vendor_margin_gst_type ?? 2);
+      const vendorMarginGstPercentage = Number(eligible.vendor_margin_gst_percentage ?? 5);
       const vendorMarginBase = vehicleTotalAmount + vehicleGstAmount;
       const vendorMarginAmount = roundMoney((vendorMarginBase * vendorMarginPercentage) / 100);
       const vendorMarginGstAmount = vendorMarginGstType === 2 ?
@@ -3185,6 +3363,28 @@ await this.applyFinalVehicleAssignments(
   requiredCountByType,
   createdBy,
 );
+
+// Deactivate selections for vehicle types removed by this upgrade.
+// Never modify selections belonging to unrelated vehicle types.
+if (scopedRebuild) {
+  const removedVehicleTypeIds = affectedVehicleTypeIds.filter(
+    (vehicleTypeId) => !requiredCountByType.has(vehicleTypeId),
+  );
+
+  if (removedVehicleTypeIds.length > 0) {
+    await tx.dvi_itinerary_plan_vehicle_vendor_selection.updateMany({
+      where: {
+        itinerary_plan_id: planId,
+        vehicle_type_id: { in: removedVehicleTypeIds },
+      },
+      data: {
+        selected_vendor_eligible_id: null,
+        status: 0,
+        updatedon: new Date(),
+      },
+    });
+  }
+}
 
 stageStartedAt = logStageTiming(
   "final_assignment",

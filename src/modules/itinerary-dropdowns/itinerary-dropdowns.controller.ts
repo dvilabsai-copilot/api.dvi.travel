@@ -12,12 +12,17 @@ import {
   EligibleVehicleTypesDto,
   EligibleVehicleTypesResponseDto,
 } from './dto/eligible-vehicle-types.dto';
+import { VehicleUpgradePricingService } from './vehicle-upgrade-pricing.service';
+import { VehicleUpgradePricesDto } from './dto/vehicle-upgrade-prices.dto';
 
 @ApiTags('Itinerary Dropdowns')
 @ApiBearerAuth()
 @Controller('itinerary-dropdowns')
 export class ItineraryDropdownsController {
-  constructor(private readonly svc: ItineraryDropdownsService) {}
+ constructor(
+  private readonly svc: ItineraryDropdownsService,
+  private readonly vehicleUpgradePricing: VehicleUpgradePricingService,
+) {}
 
  /**
    * GET /itinerary-dropdowns/locations
@@ -139,6 +144,20 @@ export class ItineraryDropdownsController {
     @Body() dto: EligibleVehicleTypesDto,
   ): Promise<EligibleVehicleTypesResponseDto> {
     return this.svc.getEligibleVehicleTypes(dto);
+  }
+
+  @Post('vehicle-upgrade-prices')
+  @ApiOperation({
+    summary: 'Preview vehicle upgrade prices',
+  })
+  previewVehicleUpgradePrices(
+    @Body() dto: VehicleUpgradePricesDto,
+  ) {
+    return this.vehicleUpgradePricing.preview(
+      dto.itineraryPlanId,
+      dto.currentVehicleTypeId,
+      dto.selectedVendorEligibleId,
+    );
   }
 
   @Get('hotel-categories')

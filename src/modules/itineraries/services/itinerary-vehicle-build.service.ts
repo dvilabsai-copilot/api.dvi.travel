@@ -62,13 +62,158 @@ export class ItineraryVehicleBuildService {
     vehicles: Array<{ vehicle_type_id: number; vehicle_count: number }>,
     userId: number,
     quoteId?: string,
-    options?: { buildRunId?: string; skipPermitBuild?: boolean },
+options?: {
+  buildRunId?: string;
+  skipPermitBuild?: boolean;
+  affectedVehicleTypeIds?: number[];
+  tx?: any;
+},
   ): Promise<VehicleBuildExecutionResult> {
     const debugVehicleTrace =
       process.env.DEBUG_DVI20260594_INSERT === 'true' ||
       process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
-    const buildRunId = String(options?.buildRunId || this.createBuildRunId(planId));
-    const scheduleCount = this.statusService.incrementScheduleCount(planId);
+    const affectedVehicleTypeIds = options?.affectedVehicleTypeIds;
+
+if (affectedVehicleTypeIds !== undefined) {
+  if (
+    affectedVehicleTypeIds.length === 0 ||
+    affectedVehicleTypeIds.some(
+      (id) => !Number.isSafeInteger(id) || id <= 0,
+    )
+  ) {
+    throw new BadRequestException(
+      "Invalid vehicle upgrade scope",
+    );
+  }
+
+  if (!options?.skipPermitBuild) {
+    throw new BadRequestException(
+      "Scoped vehicle upgrade requires permit rebuild to be disabled",
+    );
+  }
+}
+
+const buildRunId = String(
+  options?.buildRunId || this.createBuildRunId(planId),
+);
+
+// Atomic upgrade path: use only the caller's transaction.
+if (options?.tx) {
+  if (!affectedVehicleTypeIds || !options.skipPermitBuild) {
+    throw new BadRequestException(
+      'Atomic vehicle upgrades require a scoped, permit-free rebuild.',
+    );
+  }
+
+  const tx = options.tx;
+  const started = Date.now();
+  const startedAt = new Date(started).toISOString();
+
+await this.vehiclesEngine.rebuildPlanVehicles(
+  planId,
+  vehicles,
+  tx,
+  userId,
+  affectedVehicleTypeIds,
+);
+
+// Calculate permit charges before vehicle prices are rebuilt.
+// Both operations use the same transaction.
+await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+  planId,
+  createdBy: userId,
+  affectedVehicleTypeIds,
+  tx,
+
+  // Eligible vendor rows must exist before permit generation.
+  // The engine invokes this callback before pricing route details.
+  beforeVehicleDetailsBuild: async ({ tx: permitTx }) => {
+    await this.routeEngine.rebuildPermitCharges(
+      permitTx,
+      planId,
+      userId,
+    );
+  },
+});
+
+  // Read newly rebuilt rows through the same transaction.
+  const eligibleCount =
+    await tx.dvi_itinerary_plan_vendor_eligible_list.count({
+      where: {
+        itinerary_plan_id: planId,
+        vehicle_type_id: { in: affectedVehicleTypeIds },
+        status: 1,
+        deleted: 0,
+      },
+    });
+
+  const vehicleDetailCount =
+    await tx.dvi_itinerary_plan_vendor_vehicle_details.count({
+      where: {
+        itinerary_plan_id: planId,
+        vehicle_type_id: { in: affectedVehicleTypeIds },
+        status: 1,
+        deleted: 0,
+      },
+    });
+
+  const requestedVehicleCount =
+    await tx.dvi_itinerary_plan_vehicle_details.count({
+      where: {
+        itinerary_plan_id: planId,
+        vehicle_type_id: { in: affectedVehicleTypeIds },
+        status: 1,
+        deleted: 0,
+      },
+    });
+
+  const usable =
+    await tx.dvi_itinerary_plan_vendor_vehicle_details.findFirst({
+      where: {
+        itinerary_plan_id: planId,
+        vehicle_type_id: { in: affectedVehicleTypeIds },
+        status: 1,
+        deleted: 0,
+        total_vehicle_amount: { gt: 0 },
+      },
+    });
+
+  if (!usable || eligibleCount === 0 || requestedVehicleCount === 0) {
+    throw new BadRequestException(
+      VEHICLE_PRICING_UNAVAILABLE_MESSAGE,
+    );
+  }
+
+  const finishedAt = new Date().toISOString();
+
+  const status: VehicleBuildStatus = {
+    planId,
+    status: 'READY',
+    buildRunId,
+    startedAt,
+    finishedAt,
+    updatedAt: finishedAt,
+    error: null,
+    eligibleCount,
+    vehicleDetailCount,
+    requestedVehicleCount,
+    hasUsableVehicleDetails: true,
+    isLatestBuildReady: true,
+    statusSource: 'derived',
+  };
+
+  return {
+    status,
+    buildRunId,
+    startedAt,
+    finishedAt,
+    durationMs: Date.now() - started,
+    timings: [],
+  };
+}
+
+// Preserve the existing behaviour for normal vehicle builds.
+const scheduleCount = this.statusService.incrementScheduleCount(planId);
     if (debugVehicleTrace) {
       const shortStack = (new Error().stack || '').split('\n').slice(1, 5).join(' | ');
  console.log('[SYNC_VEHICLE_BUILD_CALL]', { planId, timestamp: new Date().toISOString(), shortStack });
@@ -108,13 +253,23 @@ export class ItineraryVehicleBuildService {
       await runStage(
         'prepare_plan_vehicle_rows',
         130000,
-        () =>
-          this.prisma.$transaction(
-            async (tx) => {
-              await this.vehiclesEngine.rebuildPlanVehicles(planId, vehicles, tx, userId);
-            },
-            { timeout: 120000, maxWait: 20000 },
-          ),
+      () => {
+  const prepare = (tx: any) =>
+    this.vehiclesEngine.rebuildPlanVehicles(
+      planId,
+      vehicles,
+      tx,
+      userId,
+      affectedVehicleTypeIds,
+    );
+
+  return options?.tx
+    ? prepare(options.tx)
+    : this.prisma.$transaction(
+        async (tx) => prepare(tx),
+        { timeout: 120000, maxWait: 20000 },
+      );
+},
       );
 
       if (!options?.skipPermitBuild) {
@@ -135,15 +290,21 @@ export class ItineraryVehicleBuildService {
         'rebuild_eligible_vendor_list',
         180000,
         () =>
-          this.itineraryVehiclesEngine.rebuildEligibleVendorList({
-            planId,
-            createdBy: userId,
-            beforeVehicleDetailsBuild: options?.skipPermitBuild
-              ? undefined
-              : async ({ tx }) => {
-                  await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
-                },
-          }),
+this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+  planId,
+  createdBy: userId,
+  affectedVehicleTypeIds,
+  tx: options?.tx,
+  beforeVehicleDetailsBuild: options?.skipPermitBuild
+    ? undefined
+    : async ({ tx }) => {
+        await this.routeEngine.rebuildPermitCharges(
+          tx,
+          planId,
+          userId,
+        );
+      },
+}),
       );
 
       const finalStatus = await this.getStatus(planId);
@@ -189,16 +350,31 @@ export class ItineraryVehicleBuildService {
     }
   }
 
-  async buildVehiclesSynchronously(
-    planId: number,
-    vehicles: Array<{ vehicle_type_id: number; vehicle_count: number }>,
-    userId: number,
-    quoteId?: string,
-    options?: { buildRunId?: string; skipPermitBuild?: boolean },
-  ): Promise<VehicleBuildStatus> {
-    const result = await this.executeVehicleBuild(planId, vehicles, userId, quoteId, options);
-    return result.status;
-  }
+async buildVehiclesSynchronously(
+  planId: number,
+  vehicles: Array<{
+    vehicle_type_id: number;
+    vehicle_count: number;
+  }>,
+  userId: number,
+  quoteId?: string,
+options?: {
+  buildRunId?: string;
+  skipPermitBuild?: boolean;
+  affectedVehicleTypeIds?: number[];
+  tx?: any;
+},
+): Promise<VehicleBuildStatus> {
+  const result = await this.executeVehicleBuild(
+    planId,
+    vehicles,
+    userId,
+    quoteId,
+    options,
+  );
+
+  return result.status;
+}
 
   private isTransientVehicleBuildFailure(error: any): boolean {
     const message = String(error?.message || error || '');

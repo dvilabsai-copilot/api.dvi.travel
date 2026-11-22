@@ -6075,9 +6075,32 @@ sightseeingDistance, // local sightseeing separately
         vendorMarginGstType === 2
           ? roundCurrency((vendorMarginAmount * vendorMarginGstPercentage) / 100)
           : 0;
-      const grandTotal = roundCurrency(
-        subtotal + vehicleGstAmount + vendorMarginAmount + vendorMarginGstAmount,
-      );
+   const recalculatedGrandTotal = roundCurrency(
+  subtotal + vehicleGstAmount + vendorMarginAmount + vendorMarginGstAmount,
+);
+
+// The saved eligible-row price is authoritative after Confirm Upgrade.
+const savedGrandTotal = Number(totalAmount);
+
+const grandTotal =
+  Number.isFinite(savedGrandTotal) && savedGrandTotal > 0
+    ? roundCurrency(savedGrandTotal)
+    : recalculatedGrandTotal;
+
+// Keep reporting the calculation discrepancy for investigation.
+if (
+  savedGrandTotal > 0 &&
+  Math.abs(recalculatedGrandTotal - grandTotal) > 0.01
+) {
+  console.warn("[VEHICLE_DETAILS_PRICE_DIFFERENCE]", {
+    planId,
+    vehicleTypeId,
+    eligibleId: eligible.itinerary_plan_vendor_eligible_ID,
+    savedGrandTotal,
+    recalculatedGrandTotal,
+    difference: roundCurrency(recalculatedGrandTotal - grandTotal),
+  });
+}
 
       if (process.env.DEBUG_VEHICLE_KM_SUMMARY === 'true') {
  console.log('[VEHICLE_DISTANCE_SUMMARY_SOURCE]', {

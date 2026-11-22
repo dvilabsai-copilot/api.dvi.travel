@@ -121,6 +121,7 @@ import { ItineraryActivityTimingPolicyService } from './services/itinerary-activ
 import { HotelBlockingService } from './services/hotel-blocking.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
+import { VehicleUpgradePricingService } from '../itinerary-dropdowns/vehicle-upgrade-pricing.service';
 import {
   getHotelAvailabilityResetReason,
   ItineraryPlanPersistenceService,
@@ -162,7 +163,7 @@ import { ItineraryConfirmedItineraryDetailsService } from './services/itinerary-
 import { ItineraryRouteTimingService } from './services/itinerary-route-timing.service';
 import { ItineraryManualFitTravelReplicaService } from './services/itinerary-manual-fit-travel-replica.service';
 import { ItineraryManualFitGeometryService } from './services/itinerary-manual-fit-geometry.service';
-
+import { getVehicleRateAvailability } from './utils/vehicle-rate-availability.util';
 type ManualInsertionCandidateResult = {
   success: boolean;
   candidateIndex: number;
@@ -4116,6 +4117,622 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
       itinerary?.costBreakdown ?? null,
     vehicleSelections:
       itinerary?.vehicleSelections ?? [],
+  };
+}
+
+async confirmVehicleUpgrade(
+  data: {
+    planId: number;
+    currentVehicleTypeId: number;
+    newVehicleTypeId: number;
+    expectedCurrentPrice: number;
+    expectedNewPrice: number;
+    selectedVendorEligibleId?: number;
+  },
+  userId: number,
+  viewerRole?: unknown,
+) {
+  const planId = Number(data.planId);
+  const currentTypeId = Number(data.currentVehicleTypeId);
+  const newTypeId = Number(data.newVehicleTypeId);
+  const expectedCurrentPrice = Number(data.expectedCurrentPrice);
+  const expectedNewPrice = Number(data.expectedNewPrice);
+
+  const toCents = (value: number) => Math.round(value * 100);
+
+  if (
+    !Number.isSafeInteger(planId) || planId <= 0 ||
+    !Number.isSafeInteger(currentTypeId) || currentTypeId <= 0 ||
+    !Number.isSafeInteger(newTypeId) || newTypeId <= 0 ||
+    currentTypeId === newTypeId ||
+    !Number.isSafeInteger(userId) || userId <= 0 ||
+    !Number.isFinite(expectedCurrentPrice) ||
+    !Number.isFinite(expectedNewPrice) ||
+    expectedCurrentPrice <= 0 ||
+    expectedNewPrice <= expectedCurrentPrice
+  ) {
+    throw new BadRequestException("Invalid vehicle upgrade request.");
+  }
+
+  const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+    where: { itinerary_plan_ID: planId },
+    select: { itinerary_quote_ID: true },
+  });
+
+  const quoteId = String(plan?.itinerary_quote_ID || "").trim();
+
+  if (!quoteId) {
+    throw new NotFoundException("Itinerary quotation not found.");
+  }
+
+  const savedRequirements =
+    await this.prisma.dvi_itinerary_plan_vehicle_details.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        vehicle_type_id: true,
+        vehicle_count: true,
+      },
+    });
+
+  const originalVehicles = savedRequirements.map((row) => ({
+    vehicle_type_id: Number(row.vehicle_type_id),
+    vehicle_count: Number(row.vehicle_count),
+  }));
+
+  const currentQuantity = originalVehicles
+    .filter((row) => row.vehicle_type_id === currentTypeId)
+    .reduce((sum, row) => sum + row.vehicle_count, 0);
+
+  if (currentQuantity <= 0) {
+    throw new ConflictException(
+      "The selected current vehicle is no longer in this itinerary.",
+    );
+  }
+
+  // Obtain fresh prices from the same backend API used by the upgrade UI.
+  const pricing = new VehicleUpgradePricingService(this.prisma);
+  const selectedVendorId = Number(data.selectedVendorEligibleId || 0);
+
+  const preview = await pricing.preview(
+    planId,
+    currentTypeId,
+    selectedVendorId > 0 ? selectedVendorId : undefined,
+  );
+
+  const targetQuote = preview.prices.find(
+    (row) => Number(row.vehicleTypeId) === newTypeId,
+  );
+
+  if (
+    !targetQuote ||
+    targetQuote.price === null ||
+    !Number.isFinite(targetQuote.price) ||
+    targetQuote.price <= 0 ||
+    (targetQuote.source === "calculated_preview" &&
+      !preview.parityValidated)
+  ) {
+    throw new ConflictException(
+      "The selected vehicle does not have a verified upgrade quotation.",
+    );
+  }
+
+  if (
+    preview.quantity !== currentQuantity ||
+    Math.abs(
+      toCents(preview.currentVehiclePrice) -
+      toCents(expectedCurrentPrice)
+    ) > 1 ||
+    Math.abs(
+      toCents(targetQuote.price) -
+      toCents(expectedNewPrice)
+    ) > 1
+  ) {
+    throw new ConflictException(
+      "Vehicle prices changed. Refresh the quotation before confirming.",
+    );
+  }
+
+  const before = await this.itineraryDetails.getItineraryDetails(
+    quoteId,
+    undefined,
+    viewerRole,
+  );
+
+  const beforeOverall = Number(before?.overallCost);
+
+  if (!Number.isFinite(beforeOverall) || beforeOverall <= 0) {
+    throw new ConflictException(
+      "The current itinerary total cannot be verified.",
+    );
+  }
+
+  // Replace only the requested vehicle requirement.
+  // Preserve every other vehicle and its quantity.
+  const nextVehicles = originalVehicles
+    .filter((row) => row.vehicle_type_id !== currentTypeId)
+    .map((row) => ({ ...row }));
+
+  const existingTarget = nextVehicles.find(
+    (row) => row.vehicle_type_id === newTypeId,
+  );
+
+if (existingTarget) {
+  throw new ConflictException(
+    "The replacement vehicle type already exists. Refresh the quotation.",
+  );
+}
+
+nextVehicles.push({
+  vehicle_type_id: newTypeId,
+  vehicle_count: currentQuantity,
+});
+
+  const expectedExtraCents =
+    toCents(targetQuote.price) -
+    toCents(preview.currentVehiclePrice);
+
+
+  const beforeVehicleAmount = Number(
+    before?.costBreakdown?.totalVehicleAmount,
+  );
+
+  if (!Number.isFinite(beforeVehicleAmount) || beforeVehicleAmount <= 0) {
+    throw new ConflictException(
+      "The original vehicle amount cannot be verified.",
+    );
+  }
+
+  await this.prisma.$transaction(
+    async (tx) => {
+      // Lock this plan while confirming the upgrade.
+      const lockedPlan = await tx.$queryRaw<
+        Array<{ itinerary_plan_ID: number }>
+      >`
+        SELECT itinerary_plan_ID
+        FROM dvi_itinerary_plan_details
+        WHERE itinerary_plan_ID = ${planId}
+        FOR UPDATE
+      `;
+
+      if (lockedPlan.length === 0) {
+        throw new NotFoundException("Itinerary plan not found.");
+      }
+
+      const storedVehicles =
+        await tx.dvi_itinerary_plan_vehicle_details.findMany({
+          where: {
+            itinerary_plan_id: planId,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            vehicle_type_id: true,
+            vehicle_count: true,
+          },
+        });
+
+      const signature = (
+        rows: Array<{
+          vehicle_type_id: number;
+          vehicle_count: number;
+        }>,
+      ) =>
+        rows
+          .map(
+            (row) =>
+              `${Number(row.vehicle_type_id)}:${Number(row.vehicle_count)}`,
+          )
+          .sort()
+          .join("|");
+
+      if (signature(storedVehicles) !== signature(originalVehicles)) {
+        throw new ConflictException(
+          "Vehicle requirements changed. Refresh the quotation.",
+        );
+      }
+
+      const quantitiesBefore = new Map(
+        originalVehicles.map((row) => [
+          row.vehicle_type_id,
+          row.vehicle_count,
+        ]),
+      );
+
+      const quantitiesAfter = new Map(
+        nextVehicles.map((row) => [
+          row.vehicle_type_id,
+          row.vehicle_count,
+        ]),
+      );
+
+      const readAssignments = () =>
+        tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
+          where: {
+            itinerary_plan_id: planId,
+            status: 1,
+            deleted: 0,
+            itineary_plan_assigned_status: 1,
+          },
+          orderBy: {
+            itinerary_plan_vendor_eligible_ID: "asc",
+          },
+        });
+
+      const calculateCents = (
+        rows: Array<{
+          vehicle_type_id: number;
+          vehicle_grand_total: unknown;
+        }>,
+        quantities: Map<number, number>,
+      ) =>
+        rows.reduce(
+          (sum, row) =>
+            sum +
+            toCents(
+              Number(row.vehicle_grand_total) *
+                Number(quantities.get(Number(row.vehicle_type_id)) || 0),
+            ),
+          0,
+        );
+
+      const beforeAssigned = await readAssignments();
+
+      const validateAssignmentCounts = (
+        rows: Array<{ vehicle_type_id: number }>,
+        quantities: Map<number, number>,
+      ) => {
+        const counts = new Map<number, number>();
+
+        for (const row of rows) {
+          const id = Number(row.vehicle_type_id);
+          counts.set(id, (counts.get(id) || 0) + 1);
+        }
+
+        return (
+          counts.size === quantities.size &&
+          [...quantities.keys()].every((id) => counts.get(id) === 1)
+        );
+      };
+
+      if (!validateAssignmentCounts(beforeAssigned, quantitiesBefore)) {
+        throw new ConflictException(
+          "The original vehicle assignments are incomplete.",
+        );
+      }
+
+      const baselineCents = calculateCents(
+        beforeAssigned,
+        quantitiesBefore,
+      );
+
+      if (
+        Math.abs(
+          baselineCents - toCents(beforeVehicleAmount),
+        ) > 1
+      ) {
+        console.error(
+  "[VEHICLE_UPGRADE_BASELINE_MISMATCH]",
+  JSON.stringify({
+    planId,
+    beforeVehicleAmount,
+    baselineCents,
+    displayedCents: toCents(beforeVehicleAmount),
+    differenceCents:
+      baselineCents - toCents(beforeVehicleAmount),
+    assignedVehicles: beforeAssigned.map((row) => ({
+      vehicleTypeId: row.vehicle_type_id,
+      eligibleId: row.itinerary_plan_vendor_eligible_ID,
+      vehicleGrandTotal: row.vehicle_grand_total,
+      quantity: quantitiesBefore.get(Number(row.vehicle_type_id)),
+    })),
+  }),
+);
+        throw new ConflictException(
+          "Saved vehicle pricing differs from the displayed quotation.",
+        );
+      }
+
+      const unaffectedSignature = (rows: typeof beforeAssigned) =>
+        JSON.stringify(
+          rows
+            .filter(
+              (row) =>
+                Number(row.vehicle_type_id) !== currentTypeId &&
+                Number(row.vehicle_type_id) !== newTypeId,
+            )
+            .map((row) => ({
+              id: row.itinerary_plan_vendor_eligible_ID,
+              type: row.vehicle_type_id,
+              price: String(row.vehicle_grand_total),
+              vendor: row.vendor_id,
+              branch: row.vendor_branch_id,
+              vehicle: row.vehicle_id,
+            })),
+        );
+
+      const unaffectedBefore = unaffectedSignature(beforeAssigned);
+
+      // Rebuild using this same transaction.
+      const build =
+        await this.vehicleBuildService.buildVehiclesSynchronously(
+          planId,
+          nextVehicles,
+          userId,
+          quoteId,
+          {
+            skipPermitBuild: true,
+            affectedVehicleTypeIds: [currentTypeId, newTypeId],
+            tx,
+          },
+        );
+
+      if (
+        build.status !== "READY" ||
+        !build.hasUsableVehicleDetails
+      ) {
+        throw new ConflictException(
+          "Vehicle upgrade recalculation did not complete.",
+        );
+      }
+
+      const rebuiltCandidates =
+        await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
+          where: {
+            itinerary_plan_id: planId,
+            vehicle_type_id: newTypeId,
+            vehicle_grand_total: { gt: 0 },
+            status: 1,
+            deleted: 0,
+          },
+          orderBy: [
+            { vehicle_grand_total: "asc" },
+            { itinerary_plan_vendor_eligible_ID: "asc" },
+          ],
+        });
+
+      const candidateIds = rebuiltCandidates.map(
+        (row) => row.itinerary_plan_vendor_eligible_ID,
+      );
+
+      const rebuiltDetails = candidateIds.length
+        ? await tx.dvi_itinerary_plan_vendor_vehicle_details.findMany({
+            where: {
+              itinerary_plan_id: planId,
+              itinerary_plan_vendor_eligible_ID: {
+                in: candidateIds,
+              },
+              status: 1,
+              deleted: 0,
+            },
+            select: {
+              itinerary_plan_vendor_eligible_ID: true,
+              travel_type: true,
+              total_pickup_km: true,
+              total_running_km: true,
+              total_siteseeing_km: true,
+              total_drop_km: true,
+              vehicle_rental_charges: true,
+            },
+          })
+        : [];
+
+      const detailsByEligible = new Map<number, typeof rebuiltDetails>();
+
+      for (const detail of rebuiltDetails) {
+        const id = Number(detail.itinerary_plan_vendor_eligible_ID);
+        const existing = detailsByEligible.get(id) || [];
+        existing.push(detail);
+        detailsByEligible.set(id, existing);
+      }
+
+      const quotedIdentity = targetQuote.candidateIdentity;
+
+      if (
+        targetQuote.source === "calculated_preview" &&
+        !quotedIdentity
+      ) {
+        throw new ConflictException(
+          "The upgrade quotation has no verified vehicle identity.",
+        );
+      }
+
+      const matched = rebuiltCandidates.find((candidate) => {
+        const available = getVehicleRateAvailability(
+          detailsByEligible.get(
+            candidate.itinerary_plan_vendor_eligible_ID,
+          ) || [],
+        ).available;
+
+        const priceMatches =
+          Math.abs(
+            toCents(
+              Number(candidate.vehicle_grand_total) * currentQuantity,
+            ) - toCents(targetQuote.price!),
+          ) <= 1;
+
+        const identityMatches =
+          targetQuote.source !== "calculated_preview" ||
+          (
+            quotedIdentity !== undefined &&
+            Number(candidate.vendor_id) === quotedIdentity.vendorId &&
+            Number(candidate.vendor_branch_id) === quotedIdentity.branchId &&
+            Number(candidate.vendor_vehicle_type_id) ===
+              quotedIdentity.vendorVehicleTypeId &&
+            Number(candidate.vehicle_id) === quotedIdentity.vehicleId
+          );
+
+        return available && priceMatches && identityMatches;
+      });
+
+      console.log(
+  "[VEHICLE_UPGRADE_PERMIT_CHECK]",
+  JSON.stringify({
+    planId,
+    vehicleTypeId: newTypeId,
+    quotedPrice: targetQuote.price,
+    quotedBreakdown: targetQuote.breakdown,
+    rebuiltCandidates: rebuiltCandidates.map((row) => ({
+      candidateId: row.itinerary_plan_vendor_eligible_ID,
+      rebuiltPrice:
+        Number(row.vehicle_grand_total) * currentQuantity,
+      rebuiltPermitCharges: Number(row.total_permit_charges || 0),
+      quotedPermitCharges: Number(
+        targetQuote.breakdown?.permit || 0,
+      ),
+    })),
+  }),
+);
+
+    if (!matched) {
+  const diagnostics = rebuiltCandidates.map((candidate) => {
+    const details = detailsByEligible.get(
+      candidate.itinerary_plan_vendor_eligible_ID,
+    ) || [];
+
+    const calculatedPrice =
+      Number(candidate.vehicle_grand_total) * currentQuantity;
+
+    const available =
+      getVehicleRateAvailability(details).available;
+
+    const identityMatches =
+      targetQuote.source !== "calculated_preview" ||
+      (
+        quotedIdentity !== undefined &&
+        Number(candidate.vendor_id) === quotedIdentity.vendorId &&
+        Number(candidate.vendor_branch_id) === quotedIdentity.branchId &&
+        Number(candidate.vendor_vehicle_type_id) ===
+          quotedIdentity.vendorVehicleTypeId &&
+        Number(candidate.vehicle_id) === quotedIdentity.vehicleId
+      );
+
+    return {
+      candidateId: candidate.itinerary_plan_vendor_eligible_ID,
+      calculatedPrice,
+      quotedPrice: targetQuote.price,
+      difference: Number(
+        (calculatedPrice - Number(targetQuote.price)).toFixed(2),
+      ),
+      available,
+      identityMatches,
+    };
+  });
+
+  console.error(
+    "[VEHICLE_UPGRADE_QUOTE_MISMATCH]",
+    JSON.stringify({
+      planId,
+      currentTypeId,
+      newTypeId,
+      quoteSource: targetQuote.source,
+      diagnostics,
+    }),
+  );
+
+  throw new ConflictException(
+    "Vehicle quotation mismatch. Check backend diagnostic log.",
+  );
+}
+
+      // Assign only the verified replacement candidate.
+      await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
+        where: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: newTypeId,
+          status: 1,
+          deleted: 0,
+        },
+        data: {
+          itineary_plan_assigned_status: 0,
+        },
+      });
+
+      await tx.dvi_itinerary_plan_vendor_eligible_list.update({
+        where: {
+          itinerary_plan_vendor_eligible_ID:
+            matched.itinerary_plan_vendor_eligible_ID,
+        },
+        data: {
+          itineary_plan_assigned_status: 1,
+        },
+      });
+
+      // Keep the manual vendor selection in sync with its eligible row.
+      const selectionData = {
+        selected_vendor_eligible_id:
+          matched.itinerary_plan_vendor_eligible_ID,
+        vendor_id: Number(matched.vendor_id),
+        vendor_branch_id: Number(matched.vendor_branch_id),
+        vendor_vehicle_type_id: Number(matched.vendor_vehicle_type_id),
+        vehicle_id: Number(matched.vehicle_id),
+        selection_source: "manual",
+        status: 1,
+        deleted: 0,
+        updatedon: new Date(),
+      };
+
+      await tx.dvi_itinerary_plan_vehicle_vendor_selection.upsert({
+        where: {
+          itinerary_plan_id_vehicle_type_id: {
+            itinerary_plan_id: planId,
+            vehicle_type_id: newTypeId,
+          },
+        },
+        create: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: newTypeId,
+          ...selectionData,
+          createdby: userId,
+          createdon: new Date(),
+        },
+        update: selectionData,
+      });
+
+      const afterAssigned = await readAssignments();
+
+      if (!validateAssignmentCounts(afterAssigned, quantitiesAfter)) {
+        throw new ConflictException(
+          "The final vehicle assignments are incomplete.",
+        );
+      }
+
+      if (unaffectedSignature(afterAssigned) !== unaffectedBefore) {
+        throw new ConflictException(
+          "An unrelated vehicle assignment changed.",
+        );
+      }
+
+      const actualExtraCents =
+        calculateCents(afterAssigned, quantitiesAfter) -
+        baselineCents;
+
+      if (
+        Math.abs(actualExtraCents - expectedExtraCents) > 1
+      ) {
+        throw new ConflictException(
+          "The recalculated vehicle amount does not match the upgrade quotation.",
+        );
+      }
+    },
+    { timeout: 360000, maxWait: 20000 },
+  );
+
+  return {
+    success: true,
+    message: "Vehicle upgraded successfully.",
+    planId,
+    currentVehicleTypeId: currentTypeId,
+    newVehicleTypeId: newTypeId,
+    currentVehiclePrice: preview.currentVehiclePrice,
+    newVehiclePrice: targetQuote.price,
+    extraPayment: expectedExtraCents / 100,
+    overallTripCost: Number(
+      (beforeOverall + expectedExtraCents / 100).toFixed(2),
+    ),
   };
 }
   async selectVehicleSlab(data: {
