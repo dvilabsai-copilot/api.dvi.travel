@@ -2482,8 +2482,7 @@ timingStepStartedAt =
       });
     }
 
-    const resetTboCandidates = provider === 'tbo' && data.previewOnly && intent === 'HOTEL' &&
-      requestedSearchRunId && reuseMinutes > 0
+    const resetTboCandidates = provider === 'tbo' && data.previewOnly && intent === 'HOTEL' && reuseMinutes > 0
       ? await this.readCheckedTboStay(plan, quoteId, stay, Number(data.routeId), {
           searchRunId: requestedSearchRunId, hotelCode, requestedRoom, requestedMealPlan, reuseMinutes,
         })
@@ -4021,11 +4020,13 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         group_type: 0,
         provider: 'tbo',
         hotel_code: request.hotelCode,
-        recommendation_search_run_id: request.searchRunId,
+        ...(request.searchRunId ? { recommendation_search_run_id: request.searchRunId } : {}),
         status: 1,
         deleted: 0,
       },
-      select: { full_payload: true },
+      orderBy: [{ recommendation_generated_at: 'desc' }, { id: 'desc' }],
+      take: 1,
+      select: { full_payload: true, recommendation_search_run_id: true },
     }) || [];
     const now = Date.now();
     const roomCount = Math.max(Number(plan.preferred_room_count || 1), 1);
@@ -4033,7 +4034,11 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
     const children = Math.max(Number(plan.total_children || 0), 0);
     const dates = stay.stayDates.map((date) => String(date).slice(0, 10));
     const label = (value: unknown) => String(value ?? '').trim().toLowerCase();
-    const candidates = rows.flatMap(({ full_payload }) => {
+    // A compact quote reload may omit the run id. Reset atomically replaces
+    // all active cache rows for this quote; use the current persisted run.
+    const candidates = rows.flatMap(({ full_payload, recommendation_search_run_id }) => {
+      const searchRunId = recommendation_search_run_id || request.searchRunId;
+      if (!searchRunId) return [];
       let hotel: any;
       try {
         hotel = JSON.parse(String(full_payload ?? '{}'));
@@ -4083,7 +4088,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
           routeIds: [price.routeId],
           date: price.routeDate,
           checkInDate: price.routeDate,
-          searchRunId: request.searchRunId,
+          searchRunId,
           pricePerNight: price.totalPrice,
           totalPrice: price.totalPrice,
           totalStayPrice: price.totalPrice,
@@ -4098,7 +4103,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
       });
     });
     if (!candidates.length) return null;
-    console.log(`[HOTEL_RESET_RATE_REUSE] plan=${plan.itinerary_plan_ID} hotel=${request.hotelCode} searchRun=${request.searchRunId}`);
+    console.log(`[HOTEL_RESET_RATE_REUSE] plan=${plan.itinerary_plan_ID} hotel=${request.hotelCode} searchRun=${candidates[0].searchRunId}`);
     return candidates;
   }
 

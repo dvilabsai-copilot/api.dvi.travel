@@ -775,7 +775,10 @@ test('VSR Choose reuses the complete Reset MAP offer until the supplier search w
     dvi_itinerary_hotel_search_cache: {
       findMany: async ({ where }: any) => {
         cacheWhere.push(where);
-        return [{ full_payload: JSON.stringify({ hotelCode: '1089764', provider: 'tbo', rateOptions: [option] }) }];
+        return [{
+          recommendation_search_run_id: 'reset-run',
+          full_payload: JSON.stringify({ hotelCode: '1089764', provider: 'tbo', rateOptions: [option] }),
+        }];
       },
     },
   };
@@ -806,6 +809,13 @@ test('VSR Choose reuses the complete Reset MAP offer until the supplier search w
   assert.deepEqual(reused.selections.map((night: any) => night.totalPrice), [12545.99, 12545.99]);
   assert.equal(cacheWhere[0].quote_id, 'DVI20261132-V4');
   assert.equal(cacheWhere[0].recommendation_search_run_id, 'reset-run');
+  assert.equal(searches, 0);
+  assert.equal(continuitySearches, 0);
+
+  const reopened = await service.previewHotelIntent({ ...request, searchRunId: undefined });
+  assert.equal(reopened.status, 'AVAILABLE');
+  assert.equal(reopened.checkedRateSearchedAt, reused.checkedRateSearchedAt);
+  assert.equal(reopened.checkedRateExpiresAt, reused.checkedRateExpiresAt);
   assert.equal(searches, 0);
   assert.equal(continuitySearches, 0);
 
