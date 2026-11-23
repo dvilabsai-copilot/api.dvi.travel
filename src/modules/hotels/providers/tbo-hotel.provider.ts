@@ -190,6 +190,7 @@ export class TBOHotelProvider implements IHotelProvider {
   async search(
     criteria: HotelSearchCriteria,
     preferences?: HotelPreferences,
+    options: { refreshSelectedRate?: boolean } = {},
   ): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
     if (!this.prisma) {
@@ -201,7 +202,15 @@ export class TBOHotelProvider implements IHotelProvider {
 
  // Step 1: Resolve TBO city code from existing schema fields.
  // Supports: direct TBO city code, dvi_cities.id, and fallback via dvi_hotel.tbo_city_code.
-      const resolvedCity = await this.resolveTboCityCode(criteria.cityCode);
+      const savedHotel = options.refreshSelectedRate && criteria.hotelCodes
+        ? await this.prisma.tbo_hotel_master.findUnique({
+            where: { tbo_hotel_code: criteria.hotelCodes },
+            select: { tbo_city_code: true },
+          })
+        : null;
+      const resolvedCity = savedHotel?.tbo_city_code
+        ? { tboCityCode: savedHotel.tbo_city_code, source: 'selected hotel master record' }
+        : await this.resolveTboCityCode(criteria.cityCode);
       if (!resolvedCity?.tboCityCode) {
         throw new Error(
           `Unable to resolve TBO city code for input: ${criteria.cityCode}. ` +
@@ -216,7 +225,9 @@ export class TBOHotelProvider implements IHotelProvider {
       );
 
       // Ensure DB has city/hotel master data for this TBO city before searching.
-      await this.ensureCityAndHotelsInDb(criteria.cityCode, resolvedTboCityCode);
+      if (!options.refreshSelectedRate) {
+        await this.ensureCityAndHotelsInDb(criteria.cityCode, resolvedTboCityCode);
+      }
 
  // Step 2: Get hotel codes from TBO SharedData API or master database
  // Instead of hardcoding, fetch from TBO's master hotel list
@@ -525,7 +536,9 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
  this.logger.log(` Successfully transformed ${results.length} hotels`);
  this.logger.debug(` Hotel search output size: ${results.length}`);
-      this.tboMasterGallery.enqueueMissingFromSearchResults(results);
+      if (!options.refreshSelectedRate) {
+        this.tboMasterGallery.enqueueMissingFromSearchResults(results);
+      }
 
       return results;
     } catch (error: any) {

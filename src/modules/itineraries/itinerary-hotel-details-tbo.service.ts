@@ -5047,6 +5047,7 @@ this.logger.log(
     hotelCode: string;
     checkInDate: string;
     checkOutDate: string;
+    vsrConfirmationRefresh?: { guestNationality: string };
   }): Promise<HotelSearchResult[]> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: Number(params.planId) },
@@ -5090,6 +5091,18 @@ this.logger.log(
       const rooming = provider === 'tbo'
         ? await this.loadPlanRoomOccupancies(Number(plan.itinerary_plan_ID), roomCount, adultCount, childCount)
         : undefined;
+      if (rooming && params.vsrConfirmationRefresh) {
+        return this.hotelSearchService.searchVsrSupplierRates({
+          cityCode: city,
+          checkInDate: params.checkInDate,
+          checkOutDate: params.checkOutDate,
+          roomCount,
+          guestCount: adultCount + childCount,
+          occupancies: rooming.occupancies,
+          guestNationality: params.vsrConfirmationRefresh.guestNationality,
+          hotelCodes: params.hotelCode,
+        }, { adultCount, childCount, childAges: rooming.childAges });
+      }
       const hotels = await this.hotelSearchService.searchHotels({
         cityCode: city,
         checkInDate: params.checkInDate,

@@ -294,17 +294,22 @@ private readonly TBO_CLIENT_ID =
       }
 
  // TBO PreBook uses Status.Code = 200 for success, other endpoints use Status.Code = 1
-      const isHoldInsufficientBalance = allowInsufficientBalanceForHold
-        && isTboInsufficientBalanceResponse(response.data as any);
+      const insufficientBalance = isTboInsufficientBalanceResponse(response.data as any);
+      if (insufficientBalance && !allowInsufficientBalanceForHold) {
+        throw new BadRequestException({
+          code: 'VSR_PREBOOK_INSUFFICIENT_BALANCE',
+          message: 'PreBook failed: Insufficient Balance.',
+          hotelName: selection.hotelName,
+        });
+      }
+      const isHoldInsufficientBalance = insufficientBalance && allowInsufficientBalanceForHold;
       if (statusCode !== 1 && statusCode !== 200 && !isHoldInsufficientBalance) {
         const message = statusMessage || 'Unknown TBO error';
         const maybeSessionExpired = this.isSessionExpiredError(
           `${message} ${JSON.stringify(response.data || {})}`,
         );
-        if (maybeSessionExpired) {
-          throw new BadRequestException(
-            'This hotel session has expired or rates changed. Please refresh hotel selection and run prebook again.',
-          );
+        if (Number(statusCode) === 315 || maybeSessionExpired) {
+          throw this.prebookSessionExpired();
         }
  this.logger.error(` PreBook Status Code=${statusCode}: ${JSON.stringify(response.data)}`);
         throw new BadRequestException(
@@ -344,10 +349,9 @@ private readonly TBO_CLIENT_ID =
       }
 
       if (this.isPrebookUnavailable(errorMsg)) throw this.prebookUnavailable(selection);
-      if (this.isSessionExpiredError(errorMsg)) {
-        throw new BadRequestException(
-          'This hotel session has expired or rates changed. Please refresh hotel selection and run prebook again.',
-        );
+      const supplierStatus = error?.response?.data?.Status;
+      if (Number(supplierStatus?.Code ?? supplierStatus) === 315 || this.isSessionExpiredError(errorMsg)) {
+        throw this.prebookSessionExpired();
       }
 
       throw new BadRequestException(
@@ -365,6 +369,13 @@ private readonly TBO_CLIENT_ID =
       code: 'VSR_HOTEL_UNAVAILABLE',
       hotelName: selection.hotelName,
       message: 'Hotel is not available for the selected stay.',
+    });
+  }
+
+  private prebookSessionExpired(): BadRequestException {
+    return new BadRequestException({
+      code: 'VSR_PREBOOK_SESSION_EXPIRED',
+      message: 'This hotel session has expired or rates changed. Please refresh hotel selection and run prebook again.',
     });
   }
 
@@ -1212,9 +1223,10 @@ private readonly TBO_CLIENT_ID =
 
     const elapsedMs = Date.now() - parsed.getTime();
     if (elapsedMs > TBO_SEARCH_SESSION_VALIDITY_MS) {
-      throw new BadRequestException(
-        'VSR search session exceeded 35 minutes. Please run a fresh hotel search before prebook/booking.',
-      );
+      throw new BadRequestException({
+        code: 'VSR_PREBOOK_SESSION_EXPIRED',
+        message: 'VSR search session exceeded 35 minutes. Please run a fresh hotel search before prebook/booking.',
+      });
     }
   }
 

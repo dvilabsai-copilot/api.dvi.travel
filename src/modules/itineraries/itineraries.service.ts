@@ -4,6 +4,7 @@
 import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException, UnprocessableEntityException } from "@nestjs/common";
 import { savedVsrSupplierFare } from './utils/vsr-supplier-fare.util';
 import { normalizeTboHoldAmount } from './utils/tbo-hold-price-approval.util';
+import { TBO_SEARCH_SESSION_VALIDITY_MS } from '../hotels/utils/tbo-search-session';
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
 import { Optional } from "@nestjs/common";
@@ -11,7 +12,7 @@ import { AccountsComponentSyncService } from "../accounts-manager/accounts-compo
 import {
   CreateItineraryDto,
 } from "./dto/create-itinerary.dto";
-import { ConfirmQuotationDto } from "./dto/confirm-quotation.dto";
+import { ConfirmQuotationDto, HotelSelectionDto } from "./dto/confirm-quotation.dto";
 import { CancelItineraryDto } from "./dto/cancel-itinerary.dto";
 import { LatestItineraryQueryDto } from "./dto/latest-itinerary-query.dto";
 import { TransportVoucherDetails } from "./dto/transport-voucher-details.dto";
@@ -55,6 +56,7 @@ import {
   resolvePersistedHotelIdentity,
   supplierSelectionKey,
   parseHotelSelectionSnapshot,
+  normalizeHotelDisplayName,
   hotelBookingTerms,
 } from './utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from './utils/hotel-category.util';
@@ -5065,30 +5067,136 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
           message: `The saved supplier rate for ${booking.hotelName || 'the selected hotel'} could not be verified. Check Availability before confirming.`,
         });
       }
-      return { ...booking, netAmount: previousAmount };
+      const saved = stayRows.find((row) =>
+        this.formatDateOnly(row.hotel_check_in_date ?? row.itinerary_route_date) === booking.checkInDate,
+      ) ?? stayRows[0];
+      return { rate: { ...booking, netAmount: previousAmount } as HotelSelectionDto, saved };
     });
-    const latest = await this.hotelPrebookService.prebookHotels({ itinerary_plan_ID: dto.itinerary_plan_ID, hotel_bookings: rates });
+    const prechecks = await Promise.allSettled(rates.map(({ rate, saved }) =>
+      this.prebookVsrConfirmationRate(dto.itinerary_plan_ID, rate, saved),
+    ));
     const reviews = [];
-    for (const rate of rates) {
-      const offer = latest.hotels.find((hotel) => Number(hotel.routeId) === Number(rate.routeId) && String(hotel.hotelCode) === String(rate.hotelCode));
-      const context = offer?.prebookContext;
-      const newAmount = normalizeTboHoldAmount(context?.prebookNetAmount);
-      if (newAmount === null || !String(context?.bookingCode || '').includes('!TB!')) {
-        throw new ConflictException({
-          code: 'VSR_RATE_UNVERIFIED', message: `VSR did not verify a bookable rate for ${rate.hotelName || 'the selected hotel'}. Check Availability and try again.`,
-        });
+    const balances = [];
+    for (const [index, result] of prechecks.entries()) {
+      const { rate } = rates[index];
+      if (result.status === 'rejected') {
+        if (this.vsrPrebookErrorCode(result.reason) !== 'VSR_PREBOOK_INSUFFICIENT_BALANCE') throw result.reason;
+        balances.push({ hotelName: rate.hotelName || rate.hotelCode, error: result.reason });
+        continue;
       }
+      const { context, newAmount, searchInitiatedAt } = result.value;
       if (newAmount !== rate.netAmount) {
         reviews.push({ routeId: rate.routeId, hotelName: rate.hotelName, previousAmount: rate.netAmount, newAmount });
         continue;
       }
       const booking = normalized.find((item) => Number(item.routeId) === Number(rate.routeId) && String(item.hotelCode) === String(rate.hotelCode));
-      if (booking) booking.prebookContext = { ...context, savedSupplierAmount: rate.netAmount };
+      if (booking) {
+        // Keep the saved rate identity for pricing. Carry the new PreBook
+        // context and session time in this confirmation request only.
+        booking.prebookContext = { ...context, savedSupplierAmount: rate.netAmount };
+        booking.searchInitiatedAt = searchInitiatedAt;
+      }
     }
     if (reviews.length > 0) {
-      throw new ConflictException({ code: 'VSR_RATE_CHANGED', message: 'VSR rates changed. Review and approve the updated quote before confirming.', reviews });
+      const balanceMessage = balances.length
+        ? ` VSR reported insufficient balance for ${balances.map(({ hotelName }) => hotelName).join(', ')}.`
+        : '';
+      throw new ConflictException({
+        code: 'VSR_RATE_CHANGED',
+        message: `VSR rates changed. Review and approve the updated quote before confirming.${balanceMessage}`,
+        reviews,
+      });
     }
+    if (balances.length > 0) throw balances[0].error;
     dto.hotel_bookings = normalized;
+  }
+
+  private vsrPrebookErrorCode(error: unknown): string | undefined {
+    const response = error instanceof BadRequestException ? error.getResponse() : null;
+    return response && typeof response === 'object' && 'code' in response ? String(response.code) : undefined;
+  }
+
+  private async prebookVsrConfirmationRate(
+    planId: number,
+    rate: HotelSelectionDto,
+    saved: { selected_price_snapshot?: string | null; selected_currency?: string | null },
+  ) {
+    const prebook = (booking: HotelSelectionDto) => this.hotelPrebookService.prebookHotels({
+      itinerary_plan_ID: planId,
+      hotel_bookings: [booking],
+    });
+    const unverified = () => new ConflictException({
+      code: 'VSR_RATE_UNVERIFIED',
+      message: `VSR did not verify a bookable rate for ${rate.hotelName || 'the selected hotel'}. Check Availability and try again.`,
+    });
+    let selection = rate;
+    let result;
+    const expired = rate.searchInitiatedAt &&
+      Date.now() - Date.parse(rate.searchInitiatedAt) > TBO_SEARCH_SESSION_VALIDITY_MS;
+    if (!expired) {
+      try {
+        result = await prebook(selection);
+      } catch (error) {
+        if (this.vsrPrebookErrorCode(error) !== 'VSR_PREBOOK_SESSION_EXPIRED') throw error;
+      }
+    }
+    if (!result) {
+      const snapshot = parseHotelSelectionSnapshot(saved) as ReturnType<typeof parseHotelSelectionSnapshot> & {
+        isRefundable?: boolean;
+        supplierMealPlan?: string;
+        tboMapFallbackSourceMealPlan?: string;
+      };
+      const normalizeRoom = (room: unknown) => normalizeHotelDisplayName(room).toLowerCase();
+      const normalizeMeal = (meal: string) =>
+        inferCanonicalHotelRatePlanCode(meal) || inferCanonicalHotelRatePlanCodeFromMealText(meal);
+      const room = normalizeRoom(snapshot.roomType || rate.roomType);
+      const meal = normalizeMeal(snapshot.tboMapFallbackSourceMealPlan || snapshot.supplierMealPlan ||
+        snapshot.mealPlan || rate.mealPlan || '');
+      if (!room || !meal) throw unverified();
+      const offers = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
+        planId,
+        routeIds: Array.from(new Set([rate.routeId, ...(rate.routeIds ?? [])])),
+        provider: 'tbo',
+        hotelCode: rate.hotelCode,
+        checkInDate: rate.checkInDate,
+        checkOutDate: rate.checkOutDate,
+        vsrConfirmationRefresh: { guestNationality: rate.guestNationality },
+      }).catch(() => { throw unverified(); });
+      // A failed supplier search can return an empty list. Keep it retryable.
+      if (!offers.length) throw unverified();
+      const matches = new Map(offers
+        .filter((offer) => offer.isBookable !== false && String(offer.hotelCode) === rate.hotelCode &&
+          normalizeRoom(offer.roomType) === room &&
+          normalizeMeal(offer.mealPlanCode || offer.mealPlan || '') === meal &&
+          (snapshot.isRefundable == null || offer.isRefundable === snapshot.isRefundable) &&
+          (!saved.selected_currency || offer.currency === saved.selected_currency))
+        .map((offer) => [String(offer.bookingCode || offer.searchReference || ''), offer] as const)
+        .filter(([code]) => code.includes('!TB!')));
+      if (matches.size === 0) {
+        throw new BadRequestException({
+          code: 'VSR_HOTEL_UNAVAILABLE',
+          hotelName: rate.hotelName,
+          message: 'The selected room and meal plan are no longer available for the complete stay.',
+        });
+      }
+      const priorRateKey = supplierSelectionKey({ ...snapshot, provider: 'tbo', bookingCode: rate.bookingCode });
+      const candidates = Array.from(matches.entries());
+      const sameRate = candidates.filter(([bookingCode, offer]) => supplierSelectionKey({ ...offer, bookingCode }) === priorRateKey);
+      const match = candidates.length === 1 ? candidates[0] : sameRate.length === 1 ? sameRate[0] : null;
+      if (!match) throw unverified();
+      selection = { ...rate, bookingCode: match[0], searchInitiatedAt: match[1].supplierSearchCompletedAt || new Date().toISOString() };
+      try {
+        result = await prebook(selection);
+      } catch (error) {
+        if (this.vsrPrebookErrorCode(error) === 'VSR_PREBOOK_SESSION_EXPIRED') throw unverified();
+        throw error;
+      }
+    }
+    const context = result.hotels.find((hotel) => Number(hotel.routeId) === rate.routeId &&
+      String(hotel.hotelCode) === rate.hotelCode)?.prebookContext;
+    const newAmount = normalizeTboHoldAmount(context?.prebookNetAmount);
+    if (newAmount === null || !String(context?.bookingCode || '').includes('!TB!')) throw unverified();
+    return { context, newAmount, searchInitiatedAt: selection.searchInitiatedAt };
   }
   private isBookingResultSuccess(result: any): boolean {
     return this.confirmationService.isBookingResultSuccess(result);

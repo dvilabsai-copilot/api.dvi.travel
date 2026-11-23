@@ -6,10 +6,11 @@ import { ItinerariesService } from '../src/modules/itineraries/itineraries.servi
 const booking = {
   provider: 'vsr', routeId: 10, routeIds: [10, 11], hotelCode: '123', hotelName: 'Tea Castle',
   roomType: 'Executive Room', checkInDate: '2027-01-10', checkOutDate: '2027-01-12',
+  bookingCode: '123!TB!2!TB!original', mealPlan: 'MAP', guestNationality: 'IN',
   netAmount: 17940.53, prebookContext: { bookingCode: 'stale!TB!test' },
 };
 
-function setup(prebook: () => Promise<unknown>) {
+function setup(prebook: (selection: { bookingCode: string; routeId: number }) => Promise<unknown>) {
   const calls: string[] = [];
   const service = Object.create(ItinerariesService.prototype) as any;
   const dates = ['2027-01-10', '2027-01-11'];
@@ -20,6 +21,7 @@ function setup(prebook: () => Promise<unknown>) {
         selected_price_snapshot: JSON.stringify({
           tboRoomNightBreakdown: dates.flatMap((date) => [4271.55, 4271.56].map((allInAmount, index) => ({ date, allInAmount, roomNumber: index + 1 }))),
           selectedTotalPrice: 17940.53, hotelMarginAmount: 854.31,
+          roomType: 'Executive Room', mealPlan: 'MAP', tboMapFallbackSourceMealPlan: 'CP', isRefundable: true,
         }),
       }] },
     },
@@ -34,10 +36,10 @@ function setup(prebook: () => Promise<unknown>) {
       filterAlreadySuccessfulBookings: async (_planId: number, rows: unknown[]) => ({ pendingBookings: rows }),
     },
     hotelPrebookService: {
-      prebookHotels: async (payload: { hotel_bookings: { netAmount: number }[] }) => {
+      prebookHotels: async (payload: { hotel_bookings: { netAmount: number; bookingCode: string; routeId: number }[] }) => {
         calls.push('prebook');
         assert.equal(payload.hotel_bookings[0].netAmount, 17086.22);
-        return prebook();
+        return prebook(payload.hotel_bookings[0]);
       },
     },
   });
@@ -55,6 +57,88 @@ test('Confirm & Pay calls fresh VSR PreBook and uses its code when the saved sup
   assert.equal(dto.hotel_bookings[0].provider, 'tbo');
   assert.equal(dto.hotel_bookings[0].prebookContext.bookingCode, 'fresh!TB!test');
   assert.equal(dto.hotel_bookings[0].netAmount, 17940.53);
+});
+
+const refreshedRate = {
+  hotelCode: '123', roomType: 'Executive Room', mealPlan: 'CP', isRefundable: true,
+  bookingCode: '123!TB!2!TB!refreshed', supplierSearchCompletedAt: new Date().toISOString(),
+};
+const expired = new BadRequestException({ code: 'VSR_PREBOOK_SESSION_EXPIRED', message: 'Session expired' });
+
+test('Confirm & Pay refreshes the full stay after supplier session expiry and reports its changed price', async () => {
+  const check = setup(async (selection) => {
+    if (selection.bookingCode === booking.bookingCode) throw expired;
+    assert.equal(selection.bookingCode, refreshedRate.bookingCode);
+    return offer(17500);
+  });
+  check.service.hotelDetailsTboService = { searchSelectedHotelForContinuousStay: async (params: unknown) => {
+    check.calls.push('search');
+    assert.deepEqual(params, {
+      planId: 1, routeIds: [10, 11], provider: 'tbo', hotelCode: '123',
+      checkInDate: booking.checkInDate, checkOutDate: booking.checkOutDate,
+      vsrConfirmationRefresh: { guestNationality: 'IN' },
+    });
+    return [{ ...refreshedRate, mealPlan: 'MAP' }, refreshedRate];
+  } };
+  await assert.rejects(() => check.service.confirmQuotation(check.dto), (error: ConflictException) =>
+    (error.getResponse() as any).code === 'VSR_RATE_CHANGED' && (error.getResponse() as any).reviews[0].newAmount === 17500,
+  );
+  assert.deepEqual(check.calls, ['prebook', 'search', 'prebook']);
+  assert.deepEqual(check.dto.hotel_bookings, [booking]);
+});
+
+test('a known expired timestamp refreshes before PreBook and preserves the priced selection identity', async () => {
+  const check = setup(async (selection) => {
+    assert.equal(selection.bookingCode, refreshedRate.bookingCode);
+    return offer(17086.22);
+  });
+  check.service.hotelDetailsTboService = { searchSelectedHotelForContinuousStay: async () => {
+    check.calls.push('search');
+    return [refreshedRate];
+  } };
+  const stale = { ...booking, searchInitiatedAt: '2026-01-01T10:00:00Z' };
+  const dto = { ...check.dto, hotel_bookings: [stale] };
+  await check.service.confirmQuotation(dto);
+  assert.deepEqual(check.calls, ['search', 'prebook', 'confirm']);
+  assert.equal(dto.hotel_bookings[0].bookingCode, stale.bookingCode);
+  assert.equal(dto.hotel_bookings[0].searchInitiatedAt, refreshedRate.supplierSearchCompletedAt);
+  assert.equal(dto.hotel_bookings[0].prebookContext.bookingCode, 'fresh!TB!test');
+  assert.equal(dto.hotel_bookings[0].netAmount, booking.netAmount);
+});
+
+test('an expired VSR offer cannot switch to a different room or meal plan', async () => {
+  const check = setup(async () => { throw expired; });
+  check.service.hotelDetailsTboService = { searchSelectedHotelForContinuousStay: async () => [
+    { ...refreshedRate, roomType: 'Deluxe Room' }, { ...refreshedRate, mealPlan: 'EP' },
+  ] };
+  await assert.rejects(() => check.service.confirmQuotation(check.dto), (error: BadRequestException) =>
+    (error.getResponse() as any).code === 'VSR_HOTEL_UNAVAILABLE',
+  );
+  assert.deepEqual(check.calls, ['prebook']);
+});
+
+test('a VSR balance error blocks confirmation and leaves another stay rate visible', async () => {
+  const balance = new BadRequestException({
+    code: 'VSR_PREBOOK_INSUFFICIENT_BALANCE', message: 'PreBook failed: Insufficient Balance.',
+  });
+  const check = setup(async (selection) => {
+    if (selection.routeId === 12) throw balance;
+    return offer(17500);
+  });
+  const findMany = check.service.prisma.dvi_itinerary_plan_hotel_details.findMany;
+  check.service.prisma.dvi_itinerary_plan_hotel_details.findMany = async () => {
+    const [row] = await findMany();
+    return [row, { ...row, itinerary_route_id: 12, hotel_code: '456' }];
+  };
+  check.dto.hotel_bookings.unshift({ ...booking, routeId: 12, routeIds: [12, 13], hotelCode: '456', hotelName: 'Westwood' });
+  await assert.rejects(() => check.service.confirmQuotation(check.dto), (error: ConflictException) => {
+    const response = error.getResponse() as any;
+    assert.equal(response.code, 'VSR_RATE_CHANGED');
+    assert.match(response.message, /insufficient balance for Westwood/i);
+    assert.equal(response.reviews[0].hotelName, 'Tea Castle');
+    return true;
+  });
+  assert.deepEqual(check.calls, ['prebook', 'prebook']);
 });
 
 test('Confirm & Pay blocks a changed VSR rate before confirmation and rechecks every retry', async () => {

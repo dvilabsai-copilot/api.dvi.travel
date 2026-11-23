@@ -150,6 +150,23 @@ export class HotelSearchService {
       : filterEpRows(normalizedRows, Boolean(config.showEpHotels));
   }
 
+  /** Verification needs the original supplier meal plans, including EP/CP. */
+  async searchVsrSupplierRates(
+    criteria: HotelSearchCriteria,
+    rooming: { adultCount: number; childCount: number; childAges: number[] },
+  ): Promise<HotelSearchResult[]> {
+    const occupancies = criteria.occupancies ?? this.deriveOccupancies(
+      criteria.roomCount,
+      rooming.adultCount,
+      rooming.childCount,
+      this.normalizeChildAges(rooming.childCount, rooming.childAges),
+    );
+    this.validateOccupancies(criteria.roomCount, criteria.guestCount, occupancies);
+    return this.tboProvider.search({ ...criteria, occupancies }, { tboNoOfRooms: criteria.roomCount }, {
+      refreshSelectedRate: true,
+    });
+  }
+
   async searchHotels(searchCriteria: HotelSearchDTO): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
     try {
