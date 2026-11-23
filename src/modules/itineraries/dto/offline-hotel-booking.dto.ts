@@ -1,12 +1,44 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsDefined, IsEmail, IsIn, IsInt,
-  IsNotEmpty, IsNumber, IsObject, IsString, Matches, Max, MaxLength, Min, ValidateNested,
+  IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateNested,
 } from 'class-validator';
 
 const bookingStatuses = ['pending', 'confirmed', 'cancelled'] as const;
 const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
 const maxInt = 2_147_483_647;
+
+export class RespondToOfflineVoucherDto {
+  @IsIn(['confirmed', 'pending', 'cancelled'])
+  status!: (typeof bookingStatuses)[number];
+
+  @IsString()
+  @MaxLength(100)
+  reservationNumber!: string;
+
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(100)
+  verifiedBy!: string;
+
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(32)
+  phone!: string;
+
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
+
+  @IsString()
+  @MaxLength(2000)
+  remarks!: string;
+}
+
+class OfflineVoucherResponseDto extends RespondToOfflineVoucherDto {
+  @IsDateString()
+  submittedAt!: string;
+}
 
 class OfflineBookingRoomDto {
   @IsString()
@@ -82,6 +114,12 @@ export class OfflineHotelBookingDetailsDto {
   @ValidateNested({ each: true })
   @Type(() => OfflineBookingCancellationDto)
   cancellationPolicies!: OfflineBookingCancellationDto[];
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => OfflineVoucherResponseDto)
+  hotelResponse?: OfflineVoucherResponseDto;
 }
 
 class OfflineHotelStayIdentityDto {

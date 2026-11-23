@@ -11,6 +11,7 @@ export function renderOfflineHotelVoucher(
   { quote, siteTitle, customerName }: { quote: string; siteTitle: string; customerName?: string },
   stay: OfflineVoucherStayDto,
   details: OfflineHotelBookingDetailsDto,
+  confirmationUrl?: string,
 ) {
   const status = { pending: 'Pending confirmation', confirmed: 'Confirmed', cancelled: 'Cancelled' }[details.status];
   const title = `Hotel Voucher – ${status}`;
@@ -39,6 +40,8 @@ export function renderOfflineHotelVoucher(
     subject,
     text: [
       title, '', ...fields.map(([label, value]) => `${label}: ${value}`),
+      ...(confirmationUrl ? ['', 'Please review the stay details and confirm the hotel reservation.', confirmationUrl,
+        'For payment or billing questions, please reply to this email.'] : []),
       '', 'Room category details', ...rooms.map((row) => roomHeaders.map((label, i) => `${label}: ${row[i]}`).join(' · ')),
       '', 'Cancellation policy', ...policies.map((row) => row.join(' · ')), '', 'DVi Travel',
     ].join('\n'),
@@ -47,6 +50,8 @@ export function renderOfflineHotelVoucher(
       <p style="margin:0;color:#5f129e;font-weight:bold">DVi Travel</p>
       <h1 style="margin:8px 0 16px;font-size:24px">${title}</h1>
       ${table(['Booking details', ''], fields)}
+      ${confirmationUrl ? `<p>Please review the stay details and <a href="${escapeHtml(confirmationUrl)}">confirm the hotel reservation</a>.
+        For payment or billing questions, please reply to this email.</p>` : ''}
       <h2 style="color:#5f129e;font-size:16px">Room Category Details</h2>${table(roomHeaders, rooms)}
       <h2 style="color:#5f129e;font-size:16px">Cancellation Policy</h2>${table(policyHeaders, policies)}
       </main></body></html>`,

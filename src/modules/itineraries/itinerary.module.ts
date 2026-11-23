@@ -121,7 +121,7 @@ import { HotelRecommendationPackageService } from './services/hotel-recommendati
 import { HotelMealPlanPolicyService } from './services/hotel-meal-plan-policy.service';
 import { ItineraryPricingService } from './itinerary-pricing.service';
 import { HotelBlockingController, HotelBlockingPublicController } from './hotel-blocking.controller';
-import { OfflineHotelBookingController } from './offline-hotel-booking.controller';
+import { HotelVoucherConfirmationController, OfflineHotelBookingController } from './offline-hotel-booking.controller';
 import { HotelBlockingService } from './services/hotel-blocking.service';
 import { HotelBlockEmailService } from './services/hotel-block-email.service';
 import { HotelHoldCutoffReminderScheduler } from './services/hotel-hold-cutoff-reminder.scheduler';
@@ -135,7 +135,7 @@ import { TboVoucherRetryScheduler } from './services/tbo-voucher-retry.scheduler
     AccountsManagerModule,
     GlobalSettingsModule,
   ],
-  controllers: [ItinerariesController, ItineraryHotelApprovalController, HotelBlockingController, HotelBlockingPublicController, OfflineHotelBookingController, ResAvenueTestController, ItineraryScenarioSourceController],
+  controllers: [ItinerariesController, ItineraryHotelApprovalController, HotelBlockingController, HotelBlockingPublicController, OfflineHotelBookingController, HotelVoucherConfirmationController, ResAvenueTestController, ItineraryScenarioSourceController],
   providers: [
  // core services
     ItinerariesService,
