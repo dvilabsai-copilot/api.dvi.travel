@@ -2488,6 +2488,11 @@ timingStepStartedAt =
         })
       : null;
 
+    if (provider === 'tbo' && intent === 'HOTEL' && data.previewOnly &&
+      data.reuseCheckedRateOnly === true && !resetTboCandidates) {
+      return { status: 'SEARCH_REQUIRED' };
+    }
+
     // Refresh the whole stay when the preview cannot use a checked offer.
     const requestScopedCandidates: any[] = [];
     let continuousTboCandidates: any[] | null = resetTboCandidates;

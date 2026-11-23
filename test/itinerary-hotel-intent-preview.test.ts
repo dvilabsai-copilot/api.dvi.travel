@@ -800,6 +800,7 @@ test('VSR Choose reuses the complete Reset MAP offer until the supplier search w
   const request = {
     planId: 12235, routeId: routeIds[0], groupType: 3, selectionIntent: 'HOTEL', provider: 'tbo',
     hotelCode: '1089764', roomType: 'Executive Room', mealPlanCode: 'MAP', searchRunId: 'reset-run',
+    reuseCheckedRateOnly: true,
   };
 
   const reused = await service.previewHotelIntent(request);
@@ -820,12 +821,16 @@ test('VSR Choose reuses the complete Reset MAP offer until the supplier search w
   assert.equal(continuitySearches, 0);
 
   reuseMinutes = 4;
-  await service.previewHotelIntent(request);
+  assert.deepEqual(await service.previewHotelIntent(request), { status: 'SEARCH_REQUIRED' });
+  assert.equal(searches, 0);
+  await service.previewHotelIntent({ ...request, reuseCheckedRateOnly: false });
   assert.equal(searches, 1);
 
   reuseMinutes = 30;
   option.tboRoomNightBreakdown.pop();
-  await service.previewHotelIntent(request);
+  assert.deepEqual(await service.previewHotelIntent(request), { status: 'SEARCH_REQUIRED' });
+  assert.equal(searches, 1);
+  await service.previewHotelIntent({ ...request, reuseCheckedRateOnly: false });
   assert.equal(searches, 2);
 });
 
