@@ -1,4 +1,5 @@
 import type { OfflineHotelBookingDetailsDto, OfflineVoucherStayDto } from '../dto/offline-hotel-booking.dto';
+import { offlineHotelBookingStatusLabels } from '../utils/offline-hotel-booking-status';
 
 const escapeHtml = (value: string | number) => String(value).replace(/[&<>"']/g, (character) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character],
@@ -13,8 +14,8 @@ export function renderOfflineHotelVoucher(
   details: OfflineHotelBookingDetailsDto,
   confirmationUrl?: string,
 ) {
-  const status = { pending: 'Pending confirmation', confirmed: 'Confirmed', cancelled: 'Cancelled' }[details.status];
-  const title = `Hotel Voucher – ${status}`;
+  const status = offlineHotelBookingStatusLabels[details.status];
+  const title = `Hotel Voucher - ${status}`;
   const roomHeaders = ['Room category', 'Rooms', 'Rate per night', 'Extra beds', 'Extra bed rate', 'Children without bed', 'Child rate'];
   const rooms = details.rooms.map((room) => [
     room.category, room.quantity, moneyFormat.format(room.rate), room.extraBeds, moneyFormat.format(room.extraBedRate),

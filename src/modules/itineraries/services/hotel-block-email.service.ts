@@ -93,7 +93,7 @@ export class HotelBlockEmailService {
         name: process.env.SMTP_FROM_NAME?.trim() || 'Do View Holidays',
       },
       to: demo ? [this.deliveryRecipient(recipients[0])] : recipients,
-      subject: demo ? `[DEMO] ${subject}` : subject,
+      subject,
       text: demo ? `Demo delivery. Intended recipients: ${recipients.join(', ')}\n\n${text}` : text,
       html,
       ...(replyTo && !demo ? { replyTo } : {}),

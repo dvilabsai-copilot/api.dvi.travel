@@ -3,14 +3,14 @@ import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsDefined, IsEmail, IsIn, IsInt,
   IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateNested,
 } from 'class-validator';
+import { offlineHotelBookingStatuses, type OfflineHotelBookingStatus } from '../utils/offline-hotel-booking-status';
 
-const bookingStatuses = ['pending', 'confirmed', 'cancelled'] as const;
 const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
 const maxInt = 2_147_483_647;
 
 export class RespondToOfflineVoucherDto {
-  @IsIn(['confirmed', 'pending', 'cancelled'])
-  status!: (typeof bookingStatuses)[number];
+  @IsIn(offlineHotelBookingStatuses)
+  status!: OfflineHotelBookingStatus;
 
   @IsString()
   @MaxLength(100)
@@ -100,8 +100,8 @@ export class OfflineHotelBookingDetailsDto {
   @MaxLength(32)
   phone!: string;
 
-  @IsIn(bookingStatuses)
-  status!: (typeof bookingStatuses)[number];
+  @IsIn(offlineHotelBookingStatuses)
+  status!: OfflineHotelBookingStatus;
 
   @IsArray()
   @ArrayMaxSize(100)

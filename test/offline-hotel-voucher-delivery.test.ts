@@ -1,5 +1,9 @@
+import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
+import { OfflineHotelBookingDetailsDto, RespondToOfflineVoucherDto } from '../src/modules/itineraries/dto/offline-hotel-booking.dto';
 import { HotelVoucherConfirmationController, OfflineHotelBookingController } from '../src/modules/itineraries/offline-hotel-booking.controller';
 
 const stay = {
@@ -9,21 +13,34 @@ const stay = {
 
 const request = { user: { role: 1, userId: 12 } } as Parameters<OfflineHotelBookingController['sendVouchers']>[3];
 const body = { template: 'hotel-voucher' as const, stays: [stay] };
+const secondStay = { ...stay, routeId: 11, hotelKey: 'offline:456', hotelName: 'Lake Lodge' };
+const statusLabels = {
+  pending: 'Awaiting', waitinglist: 'Waitinglist', blocked: 'Blocked',
+  confirmed: 'Confirmed', sold_out: 'Sold Out', cancelled: 'Cancelled',
+};
 const bookingDetails = {
   status: 'pending' as const, emails: ['hotel@example.com'], confirmedBy: '', phone: '',
   rooms: [], cancellationPolicies: [],
 };
 
 function setup({
-  status = 'pending', delivery = 'sent',
+  status = 'pending', delivery = 'sent', withSecondStay = false,
 }: {
-  status?: 'pending' | 'confirmed' | 'cancelled';
+  status?: keyof typeof statusLabels;
   delivery?: 'sent' | 'demo' | 'partial' | 'failed';
+  withSecondStay?: boolean;
 } = {}) {
   const row = {
     route_id: stay.routeId, hotel_key: stay.hotelKey, check_in: new Date(stay.checkIn), check_out: new Date(stay.checkOut),
     details: { ...bookingDetails, status }, version: stay.version,
   };
+  const secondRow = {
+    ...row,
+    route_id: secondStay.routeId,
+    hotel_key: secondStay.hotelKey,
+    details: { ...row.details, status: 'blocked' as const, emails: ['lake@example.com'] },
+  };
+  const rows = withSecondStay ? [row, secondRow] : [row];
   const calls: string[] = [];
   const messages: string[] = [];
   const prisma = {
@@ -32,13 +49,13 @@ function setup({
     dvi_confirmed_itinerary_plan_details: { findFirst: async () => ({ confirmed_itinerary_plan_ID: 5 }) },
     dvi_confirmed_itinerary_customer_details: { findFirst: async () => ({ customer_name: 'Sample Customer' }) },
     dvi_itinerary_route_details: {
-      findMany: async () => [{ itinerary_route_ID: stay.routeId, itinerary_route_date: new Date(stay.checkIn) }],
+      findMany: async () => rows.map((entry) => ({ itinerary_route_ID: entry.route_id, itinerary_route_date: entry.check_in })),
       findFirst: async () => ({ itinerary_route_ID: stay.routeId }),
     },
     dvi_itinerary_offline_hotel_booking: {
       findMany: async ({ where, select }: { where: object; select?: object }) => {
         if (select) assert.deepEqual(where, { itinerary_plan_id: 42, group_type: 1, details: { path: '$.status', equals: 'confirmed' } });
-        return [row];
+        return rows;
       },
       findUnique: async () => row,
       updateMany: async ({ where, data }: { where: { version: number }; data: { details: typeof row.details } }) => {
@@ -67,10 +84,11 @@ function setup({
     dispatchOfflineVoucher: async (recipients: string[], message: { subject: string; html: string }) => {
       calls.push('send');
       messages.push(message.html);
-      assert.deepEqual(recipients, bookingDetails.emails);
+      const booked = rows.find((entry) => entry.details.emails[0] === recipients[0]);
+      assert.ok(booked);
+      assert.deepEqual(recipients, booked.details.emails);
       assert.equal(message.subject, 'DVi Holidays - Hotel Voucher of Itinerary #QUOTE-001 (Sample Customer)');
-      const expectedStatus = { pending: 'Pending confirmation', confirmed: 'Confirmed', cancelled: 'Cancelled' }[row.details.status];
-      assert.ok(message.html.includes(`Hotel Voucher – ${expectedStatus}`));
+      assert.ok(message.html.includes(`Hotel Voucher - ${statusLabels[booked.details.status]}`));
       if (delivery === 'failed') throw new Error('SMTP rejected delivery');
       return { demo: delivery === 'demo', partial: delivery === 'partial' };
     },
@@ -90,7 +108,7 @@ test('voucher delivery uses the saved status, while Save Booking changes it and 
   const { controller, calls, row } = setup();
   const preview = await controller.previewVoucher(42, 1, { template: body.template, stay, details: bookingDetails }, request);
   assert.equal(preview.subject, 'DVi Holidays - Hotel Voucher of Itinerary #QUOTE-001 (Sample Customer)');
-  assert.match(preview.html, /Hotel Voucher – Pending confirmation/);
+  assert.match(preview.html, /Hotel Voucher - Awaiting/);
   assert.deepEqual(calls, []);
   const { results: [result] } = await controller.sendVouchers(42, 1, body, request);
   assert.deepEqual(calls, ['send']);
@@ -105,6 +123,24 @@ test('voucher delivery uses the saved status, while Save Booking changes it and 
   assert.deepEqual(calls, ['send', 'save', 'send']);
   assert.equal(row.details.status, 'confirmed');
   assert.equal(row.version, 4);
+});
+
+test('the six legacy statuses are valid for booking edits and hotel responses', () => {
+  const response = { reservationNumber: '', verifiedBy: 'Hotel Desk', phone: '9876543210', email: 'desk@example.com', remarks: '' };
+  for (const status of Object.keys(statusLabels)) {
+    assert.deepEqual(validateSync(plainToInstance(OfflineHotelBookingDetailsDto, { ...bookingDetails, status })), []);
+    assert.deepEqual(validateSync(plainToInstance(RespondToOfflineVoucherDto, { ...response, status })), []);
+  }
+  assert.equal(validateSync(plainToInstance(OfflineHotelBookingDetailsDto, { ...bookingDetails, status: 'unknown' }))[0]?.property, 'status');
+});
+
+test('sending two vouchers renders each hotel status from its own saved booking', async () => {
+  const { controller, calls, messages } = setup({ status: 'confirmed', withSecondStay: true });
+  const { results } = await controller.sendVouchers(42, 1, { ...body, stays: [stay, secondStay] }, request);
+  assert.deepEqual(results.map(({ status }) => status), ['sent', 'sent']);
+  assert.deepEqual(calls, ['send', 'send']);
+  assert.match(messages[0], /Hotel Voucher - Confirmed/);
+  assert.match(messages[1], /Hotel Voucher - Blocked/);
 });
 
 test('the confirmation popup receives only confirmed stay identities for its quotation group', async () => {
