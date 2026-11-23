@@ -1,10 +1,25 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { before, after } from 'node:test';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { OfflineHotelBookingDetailsDto, RespondToOfflineVoucherDto } from '../src/modules/itineraries/dto/offline-hotel-booking.dto';
 import { HotelVoucherConfirmationController, OfflineHotelBookingController } from '../src/modules/itineraries/offline-hotel-booking.controller';
+import { offlineHotelVoucherConfirmationUrl } from '../src/modules/itineraries/utils/offline-hotel-voucher-link';
+import { readSupplierVoucherScope } from '../src/modules/itineraries/services/supplier-voucher-links';
+
+const previousOrigin = process.env.PUBLIC_ITINERARY_BASE_URL;
+const previousSupplierSecret = process.env.SUPPLIER_VOUCHER_SIGNING_SECRET;
+before(() => {
+  process.env.PUBLIC_ITINERARY_BASE_URL = 'https://staging.example.test';
+  process.env.SUPPLIER_VOUCHER_SIGNING_SECRET = 'fixture-supplier-voucher-test-secret';
+});
+after(() => {
+  if (previousOrigin === undefined) delete process.env.PUBLIC_ITINERARY_BASE_URL;
+  else process.env.PUBLIC_ITINERARY_BASE_URL = previousOrigin;
+  if (previousSupplierSecret === undefined) delete process.env.SUPPLIER_VOUCHER_SIGNING_SECRET;
+  else process.env.SUPPLIER_VOUCHER_SIGNING_SECRET = previousSupplierSecret;
+});
 
 const stay = {
   routeId: 10, hotelKey: 'offline:123', checkIn: '2027-01-10', checkOut: '2027-01-12',
@@ -81,7 +96,7 @@ function setup({
   const mail = {
     isDispatchEnabled: () => true,
     logFailure: () => {},
-    dispatchOfflineVoucher: async (recipients: string[], message: { subject: string; html: string }) => {
+    dispatchOfflineVoucher: async (recipients: string[], message: { subject: string; html: string }, _replyTo: unknown, scoped: boolean) => {
       calls.push('send');
       messages.push(message.html);
       const booked = rows.find((entry) => entry.details.emails[0] === recipients[0]);
@@ -89,6 +104,7 @@ function setup({
       assert.deepEqual(recipients, booked.details.emails);
       assert.equal(message.subject, 'DVi Holidays - Hotel Voucher of Itinerary #QUOTE-001 (Sample Customer)');
       assert.ok(message.html.includes(`Hotel Voucher - ${statusLabels[booked.details.status]}`));
+      assert.equal(scoped, booked.details.status !== 'cancelled');
       if (delivery === 'failed') throw new Error('SMTP rejected delivery');
       return { demo: delivery === 'demo', partial: delivery === 'partial' };
     },
@@ -141,6 +157,7 @@ test('sending two vouchers renders each hotel status from its own saved booking'
   assert.deepEqual(calls, ['send', 'send']);
   assert.match(messages[0], /Hotel Voucher - Confirmed/);
   assert.match(messages[1], /Hotel Voucher - Blocked/);
+  for (const message of messages) assert.match(message, />View Voucher</);
 });
 
 test('the confirmation popup receives only confirmed stay identities for its quotation group', async () => {
@@ -184,7 +201,7 @@ test('a stay confirmed by voucher can be edited with its existing blank contact 
   await assert.rejects(setup().controller.save(42, 1, { ...stay, details }, request), /Enter the confirmer/);
 });
 
-test('the emailed confirmation link reads the stay without changing it, and records one explicit response', async (t) => {
+test('a new email uses the scoped supplier link and earlier confirmation links still work', async (t) => {
   t.mock.method(Date, 'now', () => new Date('2026-11-23T10:00:00Z').getTime());
   const previousOrigin = process.env.PUBLIC_ITINERARY_BASE_URL;
   const previousSecret = process.env.JWT_SECRET;
@@ -198,10 +215,15 @@ test('the emailed confirmation link reads the stay without changing it, and reco
   });
   const { controller, confirmation, row, calls, messages } = setup();
   await controller.sendVouchers(42, 1, body, request);
-  assert.match(messages[0], /confirm the hotel reservation/);
-  const match = messages[0].match(/https:\/\/staging\.example\.test\/hotel\/voucher-confirmation\/([\w.-]+)/);
+  assert.match(messages[0], />Confirm Book</);
+  const match = messages[0].match(/https:\/\/staging\.example\.test\/supplier-voucher#token=([\w.-]+)/);
   assert.ok(match);
-  const token = match[1];
+  assert.deepEqual(readSupplierVoucherScope(match[1]), {
+    kind: 'offline-hotel', planId: 42, groupType: 1, routeId: stay.routeId, hotelKey: stay.hotelKey,
+    checkIn: stay.checkIn, checkOut: stay.checkOut, version: stay.version, hotelName: stay.hotelName,
+  });
+  const token = offlineHotelVoucherConfirmationUrl(42, 1, stay, stay.version)?.split('/').at(-1);
+  assert.ok(token);
   assert.deepEqual(await confirmation.get(token), {
     quote: 'QUOTE-001', hotelName: stay.hotelName, checkIn: stay.checkIn, checkOut: stay.checkOut, status: 'pending',
   });

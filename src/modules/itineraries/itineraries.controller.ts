@@ -81,6 +81,7 @@ import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryBookingConfirmationEmailNotifierService } from './services/itinerary-booking-confirmation-email-notifier.service';
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
+import { SupplierVoucherService } from './services/supplier-voucher.service';
 import { ItineraryAccessService } from './services/itinerary-access.service';
 import { isAgentRole } from './utils/itinerary-cost-visibility.util';
 import { HotelBlockingService } from './services/hotel-blocking.service';
@@ -130,6 +131,7 @@ private readonly bookingConfirmationEmailNotifier: ItineraryBookingConfirmationE
 private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
 private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
 private readonly itineraryAccessService: ItineraryAccessService,
+    private readonly supplierVoucherService: SupplierVoucherService,
 private readonly hotelBlockingService: HotelBlockingService,
   ) {}
 
@@ -2465,7 +2467,8 @@ const clientIp = String(
 
   @Get(':id/voucher-details')
   @ApiOperation({ summary: 'Get voucher details for a confirmed itinerary' })
-  async getVoucherDetails(@Param('id', ParseIntPipe) id: number) {
+  async getVoucherDetails(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    await this.itineraryAccessService.assertCanViewPlan(id, (req as any).user);
     return this.svc.getVoucherDetails(id);
   }
 
@@ -2474,7 +2477,9 @@ const clientIp = String(
   async downloadVoucherPdf(
     @Param('id', ParseIntPipe) id: number,
     @Res() res: Response,
+    @Req() req: Request,
   ) {
+    await this.itineraryAccessService.assertCanViewPlan(id, (req as any).user);
     await this.itineraryPdfService.downloadVoucherPdf(id, res);
   }
 
@@ -2483,7 +2488,9 @@ const clientIp = String(
   async downloadHotelVoucherPdf(
     @Param('id', ParseIntPipe) id: number,
     @Res() res: Response,
+    @Req() req: Request,
   ) {
+    await this.itineraryAccessService.assertCanViewPlan(id, (req as any).user);
     await this.itineraryPdfService.downloadHotelVoucherPdf(id, res);
   }
 
@@ -2492,7 +2499,9 @@ const clientIp = String(
   async downloadVehicleVoucherPdf(
     @Param('id', ParseIntPipe) id: number,
     @Res() res: Response,
+    @Req() req: Request,
   ) {
+    await this.itineraryAccessService.assertCanViewPlan(id, (req as any).user);
     await this.itineraryPdfService.downloadVehicleVoucherPdf(id, res);
   }
 
@@ -2507,7 +2516,9 @@ const clientIp = String(
     id: number,
     @Res()
     res: Response,
+    @Req() req: Request,
   ) {
+    await this.itineraryAccessService.assertCanViewPlan(id, (req as any).user);
     await this.itineraryPdfService.downloadDviVehicleVoucherPdf(
       id,
       res,
@@ -2720,6 +2731,16 @@ const clientIp = String(
   ) {
     await this.itineraryAccessService.assertCanViewPlan(itineraryPlanId, (req as any).user);
     return this.vehicleVoucherService.getVehicleVoucher(itineraryPlanId, vendorEligibleId);
+  }
+
+  @Post(':id/vehicle-vouchers/:voucherId/email')
+  async sendSupplierVehicleVoucher(
+    @Param('id', ParseIntPipe) planId: number,
+    @Param('voucherId', ParseIntPipe) voucherId: number,
+    @Req() req: Request,
+  ) {
+    await this.itineraryAccessService.assertCanEditPlan(planId, (req as any).user);
+    return this.supplierVoucherService.sendVehicleVoucher(planId, voucherId);
   }
 
   @Patch(':id/vehicle-vouchers/:vendorEligibleId/confirmation')

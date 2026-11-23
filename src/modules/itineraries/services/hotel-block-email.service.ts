@@ -84,7 +84,7 @@ export class HotelBlockEmailService {
     return this.transporter;
   }
 
-  async dispatchOfflineVoucher(recipients: string[], message: { subject: string; text: string; html: string }, replyTo?: string) {
+  async dispatchOfflineVoucher(recipients: string[], message: { subject: string; text: string; html: string }, replyTo?: string, recipientScoped = false) {
     const demo = this.demoMode();
     const { subject, text, html } = message;
     const options = {
@@ -98,7 +98,7 @@ export class HotelBlockEmailService {
       html,
       ...(replyTo && !demo ? { replyTo } : {}),
     };
-    const info = await this.getTransporter().sendMail(demo ? options : await withGlobalSettingsCc(this.prisma, options));
+    const info = await this.getTransporter().sendMail(demo || recipientScoped ? options : await withGlobalSettingsCc(this.prisma, options));
     return { demo, partial: Boolean(info.rejected?.length) };
   }
 

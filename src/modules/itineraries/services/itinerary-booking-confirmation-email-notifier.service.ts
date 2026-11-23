@@ -5,6 +5,9 @@ import { withGlobalSettingsCc } from '../../../common/utils/default-email-cc.uti
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../../../prisma.service';
 import { ItineraryPdfService } from '../itinerary-pdf.service';
+import {
+  isProviderHotelVoucher, linkedVoucherEmail, supplierVoucherLink, voucherEmailAddresses, voucherRecipientHash,
+} from './supplier-voucher-links';
 
 type VoucherInformation = {
   label: string;
@@ -125,102 +128,29 @@ constructor(
  * Hotel master:
  *   dvi_hotel.hotel_email
  */
-private async resolveSupplierHotelEmails(
-  itineraryPlanId: number,
-): Promise<string[]> {
-  const supplierProviders = new Set([
-    'tbo',
-    'vsr',
-    'resavenue',
-    'hobse',
-    'axisrooms',
-    'staah',
-  ]);
-
-  const confirmedHotels =
-    await this.prisma
-      .dvi_confirmed_itinerary_plan_hotel_details
-      .findMany({
-        where: {
-          itinerary_plan_id:
-            itineraryPlanId,
-          status: 1,
-          deleted: 0,
-        },
-        select: {
-          hotel_id: true,
-          hotel_provider: true,
-        },
-      });
-
-  const supplierHotelRows =
-    confirmedHotels.filter((hotel) =>
-      supplierProviders.has(
-        String(
-          hotel.hotel_provider || '',
-        )
-          .trim()
-          .toLowerCase(),
-      ),
-    );
-
-  if (supplierHotelRows.length === 0) {
-    return [];
+private async resolveSupplierHotelVouchers(itineraryPlanId: number) {
+  const rows = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
+    where: {
+      itinerary_plan_id: itineraryPlanId, status: 1, deleted: 0, hotel_cancellation_status: 0,
+    },
+    select: { hotel_id: true, confirmed_itinerary_plan_hotel_details_ID: true, hotel_provider: true },
+  });
+  const staysByHotel = new Map<number, number[]>();
+  for (const row of rows) {
+    if (!row.hotel_id || !isProviderHotelVoucher(row.hotel_provider)) continue;
+    const ids = staysByHotel.get(row.hotel_id) ?? [];
+    ids.push(row.confirmed_itinerary_plan_hotel_details_ID);
+    staysByHotel.set(row.hotel_id, ids);
   }
-
-  const supplierHotelIds =
-    Array.from(
-      new Set(
-        supplierHotelRows
-          .map((hotel) =>
-            Number(hotel.hotel_id || 0),
-          )
-          .filter(
-            (hotelId) =>
-              Number.isFinite(hotelId) &&
-              hotelId > 0,
-          ),
-      ),
-    );
-
-  if (supplierHotelIds.length === 0) {
-    this.logger.warn(
-      `Confirmed supplier hotel rows for itinerary ${itineraryPlanId} do not have a canonical hotel_id. Hotel confirmation email cannot be resolved.`,
-    );
-
-    return [];
-  }
-
-  const hotelMasters =
-    await this.prisma.dvi_hotel.findMany({
-      where: {
-        hotel_id: {
-          in: supplierHotelIds,
-        } as any,
-      },
-      select: {
-        hotel_id: true,
-        hotel_name: true,
-        hotel_email: true,
-      },
-    });
-
-  const supplierHotelEmails =
-    this.uniqueEmails(
-      hotelMasters.flatMap((hotel) =>
-        this.parseEmails(
-          hotel.hotel_email,
-        ),
-      ),
-    );
-
-  if (supplierHotelEmails.length === 0) {
-    this.logger.warn(
-      `No hotel_email was found for the confirmed supplier hotel(s) of itinerary ${itineraryPlanId}.`,
-    );
-  }
-
-  return supplierHotelEmails;
+  if (!staysByHotel.size) return [];
+  const hotels = await this.prisma.dvi_hotel.findMany({
+    where: { hotel_id: { in: [...staysByHotel.keys()] } },
+    select: { hotel_id: true, hotel_name: true, hotel_email: true },
+  });
+  return hotels.flatMap((hotel) => voucherEmailAddresses(hotel.hotel_email).map((email) => ({
+    email, hotelId: hotel.hotel_id, name: hotel.hotel_name || 'Hotel',
+    stayIds: staysByHotel.get(hotel.hotel_id)!.sort((a, b) => a - b),
+  })));
 }
 
 private getTransporter(): Transporter | null {
@@ -2079,11 +2009,9 @@ if (!voucher) {
  * Hotel Only = 1
  * Transportation + Hotel = 3
  */
-const supplierHotelEmails =
+const supplierVouchers =
   [1, 3].includes(itineraryPreference)
-    ? await this.resolveSupplierHotelEmails(
-        itineraryPlanId,
-      )
+    ? await this.resolveSupplierHotelVouchers(itineraryPlanId)
     : [];
 
 /*
@@ -2164,54 +2092,16 @@ const supplierHotelEmails =
           ...travelExpertEmails,
         ]);
 
-/*
- * Preserve the existing recipient behaviour:
- *
- * - Agent remains primary when available.
- * - Admin / OPS / mapped Travel Expert remain internal recipients.
- * - Confirmed supplier hotels receive the same confirmation through BCC,
- *   so different hotels cannot see one another's email addresses.
- *
- * If no existing internal recipient exists, use the first supplier
- * hotel as the primary recipient and BCC any remaining hotel emails.
- */
-const primaryEmails =
-  agentEmails.length > 0
-    ? agentEmails
-    : internalEmails;
+const toEmails = agentEmails.length > 0 ? agentEmails : internalEmails;
+const ccEmails = agentEmails.length > 0 ? internalEmails.filter((email) => !agentEmails.includes(email)) : [];
 
-const toEmails =
-  primaryEmails.length > 0
-    ? primaryEmails
-    : supplierHotelEmails.slice(0, 1);
-
-const ccEmails =
-  agentEmails.length > 0
-    ? internalEmails.filter(
-        (email) =>
-          !agentEmails.includes(email),
-      )
-    : [];
-
-const bccEmails =
-  supplierHotelEmails.filter(
-    (email) =>
-      !toEmails.includes(email) &&
-      !ccEmails.includes(email),
-  );
-
-if (
-  toEmails.length === 0 &&
-  bccEmails.length === 0
-) {
-  this.logger.warn(
-    `No Agent, Admin, OPS, Travel Expert, or supplier hotel email was found for itinerary ${itineraryPlanId}`,
-  );
-
+if (toEmails.length === 0 && supplierVouchers.length === 0) {
+  this.logger.warn('No booking confirmation recipients for itinerary ' + itineraryPlanId);
   return;
 }
       const frontendBaseUrl = String(
-        process.env.FRONTEND_URL ||
+        process.env.PUBLIC_ITINERARY_BASE_URL?.trim() ||
+          process.env.FRONTEND_URL ||
           process.env.DVI_FRONTEND_URL ||
           'https://dvi.travel',
       ).replace(/\/+$/, '');
@@ -2508,8 +2398,7 @@ if (
                 color:#888888;
               "
             >
-              Open the voucher link while logged
-              in to the DVI portal.
+              Sign in to the DVI portal to open the voucher.
             </p>
           </div>
         </div>
@@ -2548,105 +2437,48 @@ if (
           companyName,
       ).trim();
 
-      const voucherAttachments: Array<{
-  filename: string;
-  content: Buffer;
-  contentType: string;
-}> = [];
-
-const itineraryPdfService = this.moduleRef.get(
-  ItineraryPdfService,
-  { strict: false },
-);
-
-      /*
-       * Avoid attaching a combined internal voucher when
-       * supplier hotels are BCC recipients. Such a PDF may
-       * expose other suppliers' or internal booking details.
-       */
-      if (bccEmails.length === 0) {
+      for (const supplier of supplierVouchers) {
         try {
-          let voucherPdf: Buffer;
-
-          if (itineraryPreference === 1) {
-            voucherPdf =
-              await itineraryPdfService.createVoucherPdfBuffer(
-                itineraryPlanId,
-                'hotel',
-              );
-    } else if (itineraryPreference === 2) {
-  voucherPdf =
-    await itineraryPdfService.createVehicleVoucherPdfBuffer(
-      itineraryPlanId,
-    );
-} else {
-            voucherPdf =
-              await itineraryPdfService.createVoucherPdfBuffer(
-                itineraryPlanId,
-                'all',
-              );
-          }
-
-          voucherAttachments.push({
-            filename: `voucher-${quotationNumber}.pdf`,
-            content: voucherPdf,
-            contentType: 'application/pdf',
+          const url = supplierVoucherLink({
+            kind: 'provider-hotel', planId: itineraryPlanId, hotelId: supplier.hotelId,
+            stayIds: supplier.stayIds, recipientHash: voucherRecipientHash(supplier.email),
           });
-        } catch (error: any) {
-          this.logger.error(
-            `Booking voucher PDF attachment failed for itinerary ${itineraryPlanId}: ${
-              error?.message || error
-            }`,
-          );
+          await transporter.sendMail({
+            from: { address: fromAddress, name: fromName }, to: supplier.email,
+            ...linkedVoucherEmail('DVi Travel | Hotel Voucher | ' + quotationNumber,
+              supplier.name + ' · Booking ' + quotationNumber, url, 'View Voucher'),
+          });
+        } catch (error) {
+          this.logger.error('Supplier voucher delivery failed for itinerary ' + itineraryPlanId + ', hotel ' + supplier.hotelId);
         }
-      } else {
-        this.logger.warn(
-          `Skipping combined voucher attachment for itinerary ${itineraryPlanId} because supplier hotel BCC recipients are present.`,
+      }
+
+      if (toEmails.length === 0) return;
+      const voucherAttachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
+      try {
+        const itineraryPdfService = this.moduleRef.get(ItineraryPdfService, { strict: false });
+        const voucherPdf = itineraryPreference === 2
+          ? await itineraryPdfService.createVehicleVoucherPdfBuffer(itineraryPlanId)
+          : await itineraryPdfService.createVoucherPdfBuffer(itineraryPlanId, itineraryPreference === 1 ? 'hotel' : 'all');
+        voucherAttachments.push({
+          filename: 'voucher-' + quotationNumber + '.pdf',
+          content: voucherPdf,
+          contentType: 'application/pdf',
+        });
+      } catch (error: any) {
+        this.logger.error(
+          'Booking voucher PDF attachment failed for itinerary ' + itineraryPlanId + ': ' + (error?.message || error),
         );
       }
 
       await transporter.sendMail(await withGlobalSettingsCc(this.prisma, {
-  from: {
-    name: fromName,
-    address: fromAddress,
-  },
-
-  to: toEmails,
-
-  cc:
-    ccEmails.length > 0
-      ? ccEmails
-      : undefined,
-
-  /*
-   * Supplier hotel recipients are deliberately BCC'd.
-   * This prevents one hotel from seeing another hotel's
-   * email address on multi-hotel itineraries.
-   */
-  bcc:
-    bccEmails.length > 0
-      ? bccEmails
-      : undefined,
-
-  subject,
-  text,
-  html,
-
-  attachments:
-    voucherAttachments.length > 0
-      ? voucherAttachments
-      : undefined,
+        from: { name: fromName, address: fromAddress },
+        to: toEmails,
+        cc: ccEmails.length ? ccEmails : undefined,
+        subject, text, html,
+        attachments: voucherAttachments.length ? voucherAttachments : undefined,
       }));
-
-this.logger.log(
-  `Booking confirmation email sent for itinerary ${itineraryPlanId}. ` +
-    `To: ${toEmails.join(', ')}; ` +
-    `CC: ${ccEmails.join(', ') || 'none'}; ` +
-    `Supplier hotels: ${
-      supplierHotelEmails.join(', ') ||
-      'none'
-    }`,
-);
+      this.logger.log('Booking confirmation email sent for itinerary ' + itineraryPlanId);
     } catch (error: any) {
       /*
        * Email failure must never cancel or

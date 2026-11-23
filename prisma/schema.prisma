@@ -2025,6 +2025,7 @@ model dvi_confirmed_itinerary_plan_vehicle_voucher_details {
   vehicle_confirmed_mobile_no                   String?   @db.VarChar(100)
   invoice_to                                    Int       @default(0)
   vehicle_booking_status                        Int       @default(0)
+  supplier_confirmation_version                 Int       @default(1)
   vehicle_voucher_terms_condition               String?   @db.Text
   vehicle_confirmed_reservation                 String?   @db.VarChar(100)
   vehicle_confirmation_verified_by              String?   @db.VarChar(100)

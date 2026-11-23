@@ -323,7 +323,7 @@ export class VehicleVoucherService {
               cnf_itinerary_plan_vehicle_voucher_details_ID:
                 existing.cnf_itinerary_plan_vehicle_voucher_details_ID,
             },
-            data: payload,
+            data: { ...payload, supplier_confirmation_version: { increment: 1 } },
           })
         : await this.prisma.dvi_confirmed_itinerary_plan_vehicle_voucher_details.create({
             data: {
@@ -376,6 +376,7 @@ export class VehicleVoucherService {
         vehicle_confirmation_verified_email_id: dto.verifiedEmailId || '',
         vehicle_booking_status: Number(dto.bookingStatus || 0),
         vehicle_confirmation_status_remarks: dto.statusRemarks || '',
+        supplier_confirmation_version: { increment: 1 },
         updatedon: new Date(),
       },
     });

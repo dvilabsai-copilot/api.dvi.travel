@@ -18,7 +18,8 @@ import { ItineraryAccessService, ItineraryViewer } from './services/itinerary-ac
 import { loadOfflineHotelContacts } from './services/offline-hotel-contacts';
 import { HotelBlockEmailService } from './services/hotel-block-email.service';
 import { renderOfflineHotelVoucher } from './templates/offline-hotel-voucher.template';
-import { offlineHotelVoucherConfirmationUrl, readOfflineHotelVoucherScope } from './utils/offline-hotel-voucher-link';
+import { readOfflineHotelVoucherScope } from './utils/offline-hotel-voucher-link';
+import { supplierVoucherLink } from './services/supplier-voucher-links';
 
 type BookingRequest = Request & { user?: ItineraryViewer & { userId?: number | string } };
 
@@ -188,10 +189,12 @@ export class OfflineHotelBookingController {
         continue;
       }
       try {
-        const confirmationUrl = details.status === 'cancelled'
-          ? undefined : offlineHotelVoucherConfirmationUrl(planId, groupType, stay, booking.version);
+        const confirmationUrl = details.status === 'cancelled' ? undefined : supplierVoucherLink({
+          kind: 'offline-hotel', planId, groupType, routeId: stay.routeId, hotelKey: stay.hotelKey,
+          checkIn: stay.checkIn, checkOut: stay.checkOut, version: booking.version, hotelName: stay.hotelName,
+        });
         const outcome = await this.email.dispatchOfflineVoucher(
-          recipients, renderOfflineHotelVoucher(voucher, stay, details, confirmationUrl), replyTo,
+          recipients, renderOfflineHotelVoucher(voucher, stay, details, confirmationUrl), replyTo, Boolean(confirmationUrl),
         );
         results.push({ key, status: outcome.partial ? 'partial' : outcome.demo ? 'demo' : 'sent' });
       } catch (error) {

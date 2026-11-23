@@ -16,6 +16,7 @@ export function renderOfflineHotelVoucher(
 ) {
   const status = offlineHotelBookingStatusLabels[details.status];
   const title = `Hotel Voucher - ${status}`;
+  const linkLabel = details.status === 'pending' ? 'Confirm Book' : 'View Voucher';
   const roomHeaders = ['Room category', 'Rooms', 'Rate per night', 'Extra beds', 'Extra bed rate', 'Children without bed', 'Child rate'];
   const rooms = details.rooms.map((room) => [
     room.category, room.quantity, moneyFormat.format(room.rate), room.extraBeds, moneyFormat.format(room.extraBedRate),
@@ -41,7 +42,7 @@ export function renderOfflineHotelVoucher(
     subject,
     text: [
       title, '', ...fields.map(([label, value]) => `${label}: ${value}`),
-      ...(confirmationUrl ? ['', 'Please review the stay details and confirm the hotel reservation.', confirmationUrl,
+      ...(confirmationUrl ? ['', linkLabel + ': ' + confirmationUrl,
         'For payment or billing questions, please reply to this email.'] : []),
       '', 'Room category details', ...rooms.map((row) => roomHeaders.map((label, i) => `${label}: ${row[i]}`).join(' · ')),
       '', 'Cancellation policy', ...policies.map((row) => row.join(' · ')), '', 'DVi Travel',
@@ -51,7 +52,7 @@ export function renderOfflineHotelVoucher(
       <p style="margin:0;color:#5f129e;font-weight:bold">DVi Travel</p>
       <h1 style="margin:8px 0 16px;font-size:24px">${title}</h1>
       ${table(['Booking details', ''], fields)}
-      ${confirmationUrl ? `<p>Please review the stay details and <a href="${escapeHtml(confirmationUrl)}">confirm the hotel reservation</a>.
+      ${confirmationUrl ? `<p><a href="${escapeHtml(confirmationUrl)}">${linkLabel}</a>.
         For payment or billing questions, please reply to this email.</p>` : ''}
       <h2 style="color:#5f129e;font-size:16px">Room Category Details</h2>${table(roomHeaders, rooms)}
       <h2 style="color:#5f129e;font-size:16px">Cancellation Policy</h2>${table(policyHeaders, policies)}
