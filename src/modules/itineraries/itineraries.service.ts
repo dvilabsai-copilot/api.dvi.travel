@@ -3,7 +3,8 @@
 
 import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException, UnprocessableEntityException } from "@nestjs/common";
 import { savedVsrSupplierFare } from './utils/vsr-supplier-fare.util';
-import { normalizeTboHoldAmount } from './utils/tbo-hold-price-approval.util';
+import { createTboHoldPriceApproval, normalizeTboHoldAmount, verifyTboHoldPriceApproval } from './utils/tbo-hold-price-approval.util';
+import { describeSplitVsrFareUpdates, persistApprovedSplitVsrFares, type SplitVsrFareUpdate } from './utils/split-vsr-fare-approval.util';
 import { TBO_SEARCH_SESSION_VALIDITY_MS } from '../hotels/utils/tbo-search-session';
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
@@ -65,7 +66,7 @@ import { resolveHotelOccupancyPricing, resolveOfflineHotelPayablePricing } from 
 import { latestAxisRoomsOccupancyValues } from './utils/axisrooms-occupancy-rate.util';
 import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
 import { allocateTboRouteNightPricing } from '../hotels/utils/tbo-room-night-pricing';
-import { assertTboMultiBatchStay, makeTboMultiBatchStay, allocateFullStayCents, TboMultiBatchStaySnapshot } from '../hotels/utils/tbo-multi-batch-stay.util';
+import { assertTboMultiBatchStay, makeTboMultiBatchStay, priceTboMultiBatchStay, TboMultiBatchStaySnapshot } from '../hotels/utils/tbo-multi-batch-stay.util';
 import { isTboBatchBooking, validateTboCompleteBatchGroups } from '../hotels/utils/tbo-complete-batch-validation.util';
 import {
   buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper,
@@ -2360,9 +2361,8 @@ timingStepStartedAt =
     });
     const margin = Math.max(Number(settings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0), 0);
     if (!Number.isFinite(margin)) throw new BadRequestException('Hotel margin is invalid.');
-    const supplierNights = allocateFullStayCents(multiStay.supplierTotalFare, routeIds);
-    const fullPayable = Math.round(multiStay.supplierTotalFare * (100 + margin)) / 100;
-    const payableNights = allocateFullStayCents(fullPayable, routeIds);
+    const { baseByNight: supplierNights, payableByNight: payableNights, totalPrice: fullPayable } =
+      priceTboMultiBatchStay(multiStay, margin);
     const canonicalHotelId = Number(offer.canonicalHotelId || offer.hotelId || data.canonicalHotelId || data.hotelId || 0);
     const selections = routeIds.map((routeId: number, index: number) => {
       const baseTotalPrice = supplierNights[index];
@@ -5258,12 +5258,18 @@ private async syncAccountsAfterConfirmation(
   }
 }
 
-async confirmQuotation(dto: ConfirmQuotationDto) {
+  withSplitVsrConfirmationLock<T>(dto: ConfirmQuotationDto, work: () => Promise<T>): Promise<T> {
+    return this.selectionWorkflowService.withHotelSelectionLock(
+      dto.itinerary_plan_ID, this.getConfirmHotelGroupType(dto), work,
+    );
+  }
+
+async confirmQuotation(dto: ConfirmQuotationDto, actorId?: number) {
   const manualHotelHoldWorkflow = (dto as ConfirmQuotationDto & { manualHotelHoldWorkflow?: boolean }).manualHotelHoldWorkflow;
   if (manualHotelHoldWorkflow && dto.hotel_bookings?.some(isTboBatchBooking)) {
     throw new BadRequestException('Split VSR stays require direct confirmation.');
   }
-  if (!manualHotelHoldWorkflow) await this.prepareVsrConfirmation(dto);
+  if (!manualHotelHoldWorkflow) await this.prepareVsrConfirmation(dto, actorId);
   const result =
     await this.confirmationService
       .confirmQuotation(dto);
@@ -5279,7 +5285,7 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
   return result;
 }
 
-  private async prepareVsrConfirmation(dto: ConfirmQuotationDto): Promise<void> {
+  private async prepareVsrConfirmation(dto: ConfirmQuotationDto, actorId?: number): Promise<void> {
     const bookings = dto.hotel_bookings ?? [];
     const isVsr = (booking: { provider?: string }) => ['tbo', 'vsr'].includes(String(booking.provider || '').trim().toLowerCase());
     if (!bookings.some(isVsr)) return;
@@ -5403,6 +5409,7 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
     const reviews = [];
     const balances = [];
     const verifiedBatchCodes = new Set<string>();
+    const faresByStay = new Map<TboMultiBatchStaySnapshot, Map<number, { supplierNetAmount: number; supplierTotalFare: number }>>();
     for (const [index, result] of prechecks.entries()) {
       const { rate, stay } = rates[index];
       if (result.status === 'rejected') {
@@ -5411,7 +5418,7 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
         continue;
       }
       const { context, newAmount, searchInitiatedAt } = result.value;
-      if (newAmount !== rate.netAmount) {
+      if (!stay && newAmount !== rate.netAmount) {
         reviews.push({ routeId: rate.routeId, hotelName: rate.hotelName, previousAmount: rate.netAmount, newAmount });
         continue;
       }
@@ -5424,6 +5431,16 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
         }
         if (verifiedBatchCodes.has(context.bookingCode)) throw invalidBatch();
         verifiedBatchCodes.add(context.bookingCode);
+        const batch = stay.batches.find((item) => item.batchIndex === rate.batchIndex);
+        if (!batch) throw invalidBatch();
+        // Some VSR responses give only NetAmount. Preserve the saved difference
+        // between the total and net fare when no revised total was supplied.
+        const totalFare = normalizeTboHoldAmount(context.prebookTotalFare) ??
+          normalizeTboHoldAmount(batch.supplierTotalFare + newAmount - rate.netAmount);
+        if (totalFare === null) throw invalidBatch();
+        const fares = faresByStay.get(stay) ?? new Map();
+        fares.set(batch.batchIndex, { supplierNetAmount: newAmount, supplierTotalFare: totalFare });
+        faresByStay.set(stay, fares);
       }
       const booking = normalized.find((item) =>
         Number(item.routeId) === Number(rate.routeId) && String(item.hotelCode) === String(rate.hotelCode) &&
@@ -5432,8 +5449,8 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
       if (booking) {
         // Keep the saved rate identity for pricing. Carry the new PreBook
         // context and session time in this confirmation request only.
-        booking.prebookContext = { ...context, savedSupplierAmount: rate.netAmount };
-        if (stay) booking.netAmount = rate.netAmount;
+        booking.prebookContext = { ...context, savedSupplierAmount: stay ? newAmount : rate.netAmount };
+        if (stay) booking.netAmount = newAmount;
         booking.searchInitiatedAt = searchInitiatedAt;
       }
     }
@@ -5448,6 +5465,49 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
       });
     }
     if (balances.length > 0) throw balances[0].error;
+
+    const updates: SplitVsrFareUpdate[] = [];
+    for (const [stay, fares] of faresByStay) {
+      const changed = stay.batches.some((batch) => {
+        const verified = fares.get(batch.batchIndex);
+        return verified && (
+          verified.supplierNetAmount !== normalizeTboHoldAmount(batch.supplierNetAmount) ||
+          verified.supplierTotalFare !== normalizeTboHoldAmount(batch.supplierTotalFare)
+        );
+      });
+      if (!changed) continue;
+      const batches = stay.batches.map((batch) => ({ ...batch, ...fares.get(batch.batchIndex) }));
+      const stayRows = rows.filter((row) =>
+        stay.routeIds.includes(Number(row.itinerary_route_id)) && row.hotel_code === stay.hotelCode,
+      );
+      const anchor = stayRows.find((row) => row.itinerary_route_id === stay.anchorRouteId);
+      if (!anchor || stayRows.length !== stay.routeIds.length) throw invalidBatch();
+      const margin = Number(anchor.hotel_margin_percentage || 0);
+      const hotelName = batchBookings.find((booking) => booking.routeId === stay.anchorRouteId)?.hotelName || stay.hotelCode;
+      updates.push({
+        previous: stay, approved: makeTboMultiBatchStay({ ...stay, batches }, stay.searchVerifiedAt), rows: stayRows, margin, hotelName,
+      });
+    }
+
+    if (updates.length > 0) {
+      updates.sort((left, right) => left.previous.anchorRouteId - right.previous.anchorRouteId);
+      const scope = JSON.stringify([
+        'split-vsr-confirmation', dto.itinerary_plan_ID, this.getConfirmHotelGroupType(dto), dto.agent, actorId ?? null,
+        batchBookings.map((batch) => [batch.routeId, batch.batchIndex, batch.bookingCode, batch.guestNationality]).sort(),
+        updates.map(({ previous, approved, margin }) => [previous, approved, margin]),
+      ]);
+      const now = new Date();
+      if (!verifyTboHoldPriceApproval(dto.vsrBatchFareApprovalToken, scope, now)) {
+        throw new ConflictException({
+          code: 'VSR_RATE_CHANGED',
+          message: 'VSR fares changed. Review the revised hotel totals before confirming and paying.',
+          reviews: describeSplitVsrFareUpdates(updates),
+          approvalToken: createTboHoldPriceApproval(scope, now),
+        });
+      }
+      const quoteId = await persistApprovedSplitVsrFares(this.prisma, dto.itinerary_plan_ID, updates);
+      if (quoteId) this.hotelDetailsTboService.clearCacheForQuote(quoteId);
+    }
     dto.hotel_bookings = normalized;
   }
 

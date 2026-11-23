@@ -17,6 +17,7 @@ import {
   resolveProviderPassengerTitle,
 } from '../../../common/utils/passenger-title.util';
 import { isTboInsufficientBalanceResponse } from '../utils/tbo-hold-eligibility.util';
+import { normalizeTboHoldAmount } from '../utils/tbo-hold-price-approval.util';
 import { TBO_SEARCH_SESSION_VALIDITY_MS } from '../../hotels/utils/tbo-search-session';
 
 interface TboHotelSelection {
@@ -836,10 +837,10 @@ private readonly TBO_CLIENT_ID =
       if (selection.batchIndex == null) continue;
       this.validateSelection(selection);
       this.mapBatchPassengersToRooms(selection);
-      const amount = Number(selection.prebookContext?.prebookNetAmount);
+      const amount = normalizeTboHoldAmount(selection.prebookContext?.prebookNetAmount);
       if (!String(selection.prebookContext?.bookingCode || '').includes('!TB!') ||
-          !Number.isFinite(amount) || amount <= 0 || amount !== selection.netAmount ||
-          amount !== selection.prebookContext?.savedSupplierAmount) {
+          amount === null || amount !== normalizeTboHoldAmount(selection.netAmount) ||
+          amount !== normalizeTboHoldAmount(selection.prebookContext?.savedSupplierAmount)) {
         throw new BadRequestException('Each split VSR batch requires its own verified PreBook rate.');
       }
     }
@@ -899,10 +900,11 @@ private readonly TBO_CLIENT_ID =
           preBookMeta?.finalPrice !== undefined &&
           Number(preBookMeta.finalPrice) !== Number(selection.prebookContext?.savedSupplierAmount ?? selection.netAmount);
 
-        const shouldReconfirmPrice =
+        const shouldReconfirmPrice = batchIndex == null && (
           priceChangedAtPreBook ||
           Boolean(preBookMeta?.isPriceChanged) ||
-          Boolean(preBookMeta?.isCancellationPolicyChanged);
+          Boolean(preBookMeta?.isCancellationPolicyChanged)
+        );
 
         if (
           preBookMeta?.prebookNetAmount === null ||
@@ -1014,7 +1016,7 @@ private readonly TBO_CLIENT_ID =
           bookResponse,
           preBookResponse,
           preBookMeta,
-          bookingSelection,
+          batchIndex == null ? bookingSelection : { ...bookingSelection, netAmount: selection.netAmount },
           userId,
         );
 

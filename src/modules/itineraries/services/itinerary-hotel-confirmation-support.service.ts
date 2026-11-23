@@ -800,6 +800,21 @@ export class ItineraryHotelConfirmationSupportService {
         });
       }
 
+      if (dto.hotel_bookings?.some(isTboBatchBooking)) {
+        await tx.dvi_confirmed_itinerary_plan_details.update({
+          where: { confirmed_itinerary_plan_ID: baseResult.confirmed_itinerary_plan_ID },
+          data: {
+            total_hotel_charges: cost.totalHotelAmount || 0,
+            itinerary_sub_total: (cost.totalHotelAmount || 0) + (cost.totalVehicleAmount || 0),
+            itinerary_agent_margin_charges: cost.agentMargin || 0,
+            itinerary_gross_total_amount: cost.totalAmount || 0,
+            itinerary_total_margin_cost: cost.additionalMargin || 0,
+            itinerary_total_net_payable_amount: debitAmount,
+            itinerary_total_paid_amount: debitAmount,
+          },
+        });
+      }
+
       const existingAccount = await tx.dvi_accounts_itinerary_details.findFirst({
         where: {
           itinerary_plan_ID: baseResult.itinerary_plan_ID,

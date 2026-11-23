@@ -110,6 +110,16 @@ export function allocateFullStayCents(amount: number, routeIds: readonly number[
   return routeIds.map((_, index) => (baseCents + (index < remainder ? 1 : 0)) / 100);
 }
 
+export function priceTboMultiBatchStay(stay: TboMultiBatchStaySnapshot, margin: number) {
+  if (!Number.isFinite(margin) || margin < 0) throw new RangeError('Hotel margin is invalid.');
+  const totalPrice = Math.round(stay.supplierTotalFare * (100 + margin)) / 100;
+  return {
+    totalPrice,
+    baseByNight: allocateFullStayCents(stay.supplierTotalFare, stay.routeIds),
+    payableByNight: allocateFullStayCents(totalPrice, stay.routeIds),
+  };
+}
+
 /** Server-generated only, from matching supplier batches returned in one search request. */
 export function makeTboMultiBatchStay(input: Omit<TboMultiBatchStaySnapshot, 'schemaVersion' | 'provider' | 'supplierNetAmount' | 'supplierTotalFare' | 'searchVerifiedAt'>,
   searchVerifiedAt: string = new Date().toISOString(),

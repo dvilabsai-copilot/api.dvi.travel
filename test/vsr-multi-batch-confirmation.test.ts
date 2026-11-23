@@ -28,7 +28,8 @@ const draft = {
   selected_price_snapshot: JSON.stringify({ tboMultiBatchStay: stay, roomType: identity.roomType, mealPlan: 'CP' }),
 };
 const makeDto = () => ({
-  itinerary_plan_ID: 1, hotel_group_type: 3,
+  itinerary_plan_ID: 1, hotel_group_type: 3, agent: 4,
+  vsrBatchFareApprovalToken: undefined as string | undefined,
   hotel_bookings: batches.map((batch) => ({
     ...identity, provider: 'tbo', routeId, routeIds: [routeId], hotelName: 'Fixture Hotel', checkInDate, checkOutDate,
     batchIndex: batch.batchIndex, startRoomIndex: batch.startRoomIndex, numberOfRooms: batch.roomCount,
@@ -47,16 +48,33 @@ function makeFixture() {
   let rejectedBatch = 1;
   let timedOutBatch = -1;
   let bookedFareIncrease = 0;
+  let supplierPrecision = 0;
+  let currentDraft = {
+    ...draft, itinerary_plan_hotel_details_ID: 5, group_type: 3, hotel_margin_percentage: 10,
+    selected_total_price: 880,
+  };
+  const confirmedDrafts: any[] = [];
   const hotelModel = {
-    findMany: async ({ where }: any) => where.selection_origin || where.itinerary_route_id?.notIn ? [] : [draft],
-    updateMany: async ({ where }: any) => assert.ok(where.NOT, 'the selected draft row must remain untouched'),
+    findMany: async ({ where }: any) => where.selection_origin || where.itinerary_route_id?.notIn ? [] : [currentDraft],
+    updateMany: async ({ where, data }: any) => {
+      if (where.NOT) return { count: 0 };
+      if (where.selected_price_snapshot !== currentDraft.selected_price_snapshot) return { count: 0 };
+      currentDraft = { ...currentDraft, ...data };
+      return { count: 1 };
+    },
   };
   const prisma: any = {
     dvi_itinerary_plan_details: { findUnique: async () => ({ nationality: 'IN' }), update: async () => undefined },
     dvi_confirmed_itinerary_plan_details: { update: async () => undefined },
     dvi_itinerary_plan_hotel_details: hotelModel,
-    dvi_itinerary_plan_hotel_room_details: hotelModel,
-    dvi_itinerary_plan_hotel_room_amenities: hotelModel,
+    dvi_itinerary_plan_hotel_room_details: { updateMany: async () => undefined },
+    dvi_itinerary_plan_hotel_room_amenities: { updateMany: async () => undefined },
+    dvi_confirmed_itinerary_plan_hotel_details: {
+      updateMany: async ({ data }: any) => { confirmedDrafts.push(data); },
+    },
+    dvi_confirmed_itinerary_plan_hotel_room_details: { updateMany: async () => undefined },
+    $queryRaw: async () => [{ quotation_status: 0, itinerary_quote_ID: 'Fixture' }],
+    $transaction: (work: (transaction: unknown) => unknown) => work(prisma),
     tbo_hotel_booking_confirmation: {
       findMany: async () => stored,
       create: async ({ data }: any) => {
@@ -73,7 +91,9 @@ function makeFixture() {
         return row;
       },
       findFirst: async ({ where }: any) => attempts.find((row) =>
-        row.batch_index === where.batch_index && row.state === where.state && row.booking_code_hash === where.booking_code_hash,
+        typeof where.state === 'string'
+          ? row.batch_index === where.batch_index && row.state === where.state && row.booking_code_hash === where.booking_code_hash
+          : where.batch_index.in.includes(row.batch_index) && row.state !== where.state.not,
       ),
       update: async ({ where, data }: any) => Object.assign(attempts[where.id - 1], data),
       updateMany: async ({ where, data }: any) => {
@@ -100,11 +120,11 @@ function makeFixture() {
           assert.equal(payload.BookingCode, 'refreshed!TB!' + index);
           return { data: {
             Status: { Code: 200 }, BookingCode: 'verified!TB!' + index,
-            NetAmount: batches[index].supplierNetAmount + (index === 1 ? bookedFareIncrease : 0),
+            NetAmount: batches[index].supplierNetAmount + (index === 1 ? bookedFareIncrease : 0) + supplierPrecision,
           } };
         }
         assert.equal(payload.BookingCode, 'verified!TB!' + index);
-        assert.equal(payload.NetAmount, batches[index].supplierNetAmount);
+        assert.equal(payload.NetAmount, batches[index].supplierNetAmount + (index === 1 ? bookedFareIncrease : 0) + supplierPrecision);
         assert.equal(payload.IsVoucherBooking, true);
         assert.equal(payload.HotelRoomsDetails.length, batches[index].roomCount);
         if (index === timedOutBatch) throw new Error('timeout');
@@ -143,6 +163,7 @@ function makeFixture() {
     prisma, hotelPrebookService: prebook, hotelConfirmationSupportService: support,
     hotelBlockingService: { assertSplitVsrStayCanBook: async () => undefined },
     hotelDetailsTboService: {
+      clearCacheForQuote: () => undefined,
       searchSelectedHotelForContinuousStay: async () => {
         calls.push('search');
         return [{ isBookable: false, tboRoomBatches: batches.map((batch) => ({
@@ -153,17 +174,18 @@ function makeFixture() {
     confirmationService: { ...mergeCallbacks, confirmQuotation: async () => base },
     syncAccountsAfterConfirmation: async () => undefined,
   });
-  async function book(dto = makeDto()) {
-    await service.confirmQuotation(dto);
+  async function book(dto = makeDto(), actorId = 9) {
+    await service.confirmQuotation(dto, actorId);
     const synced = await support.syncSelectedHotelDraftRowsForConfirmation(dto as any, 1);
     assert.deepEqual(synced.selectedRouteIds, [routeId]);
     assert.equal(synced.providerHotelBookings.length, 2);
     return fulfillment.processConfirmationWithTboBookings(base, dto as any, '127.0.0.1');
   }
   return {
-    service, supplier, book, stored, attempts, calls,
+    service, supplier, book, stored, attempts, calls, confirmedDrafts, draft: () => currentDraft,
     clearRejection: () => { rejectedBatch = -1; },
-    increaseFare: () => { bookedFareIncrease = 50; },
+    increaseFare: (amount = 50) => { bookedFareIncrease = amount; },
+    useSupplierPrecision: () => { supplierPrecision = 0.000345; },
     simulateTimeout: (batch: number) => { timedOutBatch = batch; },
   };
 }
@@ -197,9 +219,42 @@ test('split VSR confirmation rejects incomplete rooms and changed fares before s
   await assert.rejects(fixture.book(incomplete), /needs 2 supplier batches/);
   assert.deepEqual(fixture.calls, []);
   fixture.increaseFare();
-  await assert.rejects(fixture.book(), /VSR rates changed/);
+  await assert.rejects(fixture.book(), /VSR fares changed/);
   assert.deepEqual(fixture.calls, ['search', 'prebook 0', 'prebook 1']);
   assert.deepEqual(fixture.attempts, []);
+});
+
+test('split VSR confirmation requires scoped approval, persists the revised stay, and books with full supplier precision', async () => {
+  const fixture = makeFixture();
+  fixture.clearRejection();
+  fixture.increaseFare();
+  fixture.useSupplierPrecision();
+
+  let approvalToken: string | undefined;
+  await assert.rejects(fixture.book(), (error: any) => {
+    const response = error.getResponse();
+    assert.equal(response.code, 'VSR_RATE_CHANGED');
+    assert.deepEqual(response.reviews, [{
+      routeId, hotelName: 'Fixture Hotel', roomCount: 8, previousAmount: 880, newAmount: 935,
+    }]);
+    approvalToken = response.approvalToken;
+    return typeof approvalToken === 'string';
+  });
+  assert.equal(fixture.draft().selected_total_price, 880);
+  assert.deepEqual(fixture.attempts, []);
+
+  await assert.rejects(fixture.book({ ...makeDto(), vsrBatchFareApprovalToken: approvalToken }, 10), /VSR fares changed/);
+  fixture.increaseFare(60);
+  await assert.rejects(fixture.book({ ...makeDto(), vsrBatchFareApprovalToken: approvalToken }), /VSR fares changed/);
+  assert.equal(fixture.draft().selected_total_price, 880);
+  assert.deepEqual(fixture.attempts, []);
+
+  fixture.increaseFare();
+  assert.equal((await fixture.book({ ...makeDto(), vsrBatchFareApprovalToken: approvalToken })).success, true);
+  assert.equal(fixture.draft().selected_total_price, 935);
+  assert.equal(JSON.parse(fixture.draft().selected_price_snapshot).tboMultiBatchStay.supplierNetAmount, 850);
+  assert.equal(fixture.confirmedDrafts[0].selected_total_price, 935);
+  assert.deepEqual(fixture.stored.map((row) => row.net_amount), [600, 250]);
 });
 
 test('an ambiguous split VSR Book timeout blocks a second attempt for that batch', async () => {

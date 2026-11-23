@@ -50,6 +50,7 @@ import {
   HotelRoomCategoriesListResponseDto,
 } from './dto/hotel-room-selection.dto';
 import { ItinerariesService } from './itineraries.service';
+import { isTboBatchBooking } from '../hotels/utils/tbo-complete-batch-validation.util';
 import { ItineraryDetailsService } from './itinerary-details.service';
 import {
   ItineraryHotelDetailsResponseDto,
@@ -2173,6 +2174,13 @@ async confirmQuotation(
 ) {
   this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
   await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_ID), (req as any).user);
+  const confirm = () => this.confirmQuotationForRequest(dto, req);
+  return dto.hotel_bookings?.some(isTboBatchBooking)
+    ? this.svc.withSplitVsrConfirmationLock(dto, confirm)
+    : confirm();
+}
+
+private async confirmQuotationForRequest(dto: ConfirmQuotationDto, req: Request) {
   const authenticatedUser = (req as any).user || {};
   const actor = {
     id: Number(authenticatedUser.userId || 0),
@@ -2189,7 +2197,7 @@ async confirmQuotation(
     actor,
   );
   const baseResult =
-    await this.svc.confirmQuotation(dto);
+    await this.svc.confirmQuotation(dto, actor.id);
 
   let finalResult: any;
 

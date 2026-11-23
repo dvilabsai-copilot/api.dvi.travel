@@ -151,8 +151,25 @@ export class ItineraryConfirmationService {
       bookingResults: null,
       reusedConfirmedPlan: true,
     });
+    const splitVsrBooking = dto.hotel_bookings?.some(isTboBatchBooking);
+    const checkWallet = async (required: number) => {
+      const walletInfo = await this.getAgentWalletBalance(dto.agent);
+      if (walletInfo.balance < required) {
+        const message = 'Insufficient wallet balance. Required: ' + required + ', Available: ' + walletInfo.balance;
+        throw new BadRequestException(splitVsrBooking ? {
+          code: 'VSR_WALLET_INSUFFICIENT', message, required, available: walletInfo.balance,
+        } : message);
+      }
+      return walletInfo;
+    };
     const existingConfirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst(confirmationLookup);
-    if (existingConfirmedPlan) return existingConfirmationResult(existingConfirmedPlan.confirmed_itinerary_plan_ID);
+    if (existingConfirmedPlan) {
+      if (splitVsrBooking && plan.itinerary_quote_ID) {
+        const details = await this.itineraryDetails.getItineraryDetails(plan.itinerary_quote_ID);
+        await checkWallet(details.costBreakdown.netPayable);
+      }
+      return existingConfirmationResult(existingConfirmedPlan.confirmed_itinerary_plan_ID);
+    }
 
     const quoteId = plan.itinerary_quote_ID;
     if (!quoteId) {
@@ -283,10 +300,7 @@ export class ItineraryConfirmationService {
     const cost = details.costBreakdown;
 
  // 2. Check wallet balance
-    const walletInfo = await this.getAgentWalletBalance(dto.agent);
-    if (walletInfo.balance < cost.netPayable) {
-      throw new BadRequestException(`Insufficient wallet balance. Required: ${cost.netPayable}, Available: ${walletInfo.balance}`);
-    }
+    const walletInfo = await checkWallet(cost.netPayable);
 
  // Parse arrival and departure dates
     const parseDateTime = (dateTimeStr: string) => {

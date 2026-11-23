@@ -537,6 +537,11 @@ export class ConfirmQuotationDto {
   @IsString()
   price_confirmation_type!: string;
 
+  @ApiProperty({ required: false, description: 'Approval for the revised split VSR hotel fares' })
+  @IsOptional()
+  @IsString()
+  vsrBatchFareApprovalToken?: string;
+
   @ApiProperty({ example: 'undefined', required: false })
   @IsOptional()
   @IsString()
