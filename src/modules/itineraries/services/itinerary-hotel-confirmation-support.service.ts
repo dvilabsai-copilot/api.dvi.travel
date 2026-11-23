@@ -831,26 +831,113 @@ export class ItineraryHotelConfirmationSupportService {
         deleted: 0,
       },
       select: {
+        tbo_hotel_booking_confirmation_ID: true,
         itinerary_route_ID: true,
         tbo_hotel_code: true,
+        booking_code: true,
+        number_of_rooms: true,
+        tbo_booking_id: true,
         tbo_booking_reference_number: true,
       },
     });
 
+    const tboAttempts = tboRows.length > 0
+      ? await this.prisma.tbo_hotel_booking_attempt.findMany({
+          where: {
+            itinerary_plan_ID: itineraryPlanId,
+            state: 'CONFIRMED',
+            confirmation_id: { not: null },
+          },
+          select: {
+            confirmation_id: true,
+            batch_index: true,
+          },
+        })
+      : [];
+
+    const batchIndexByConfirmationId = new Map(
+      tboAttempts
+        .filter((row) => row.confirmation_id !== null)
+        .map((row) => [
+          Number(row.confirmation_id),
+          Number(row.batch_index),
+        ]),
+    );
+
+    const requestedTboBookings = bookings.filter((hotel) => {
+      const provider = String(
+        hotel.__provider || hotel.provider || '',
+      ).trim().toLowerCase();
+
+      return provider === 'tbo' || provider === 'vsr';
+    });
+
+    const confirmedCodes = new Set<string>();
+    const requestedByRoute = new Map<number, any[]>();
+
+    for (const hotel of requestedTboBookings) {
+      const routeId = Number(hotel.routeId || 0);
+      const existing = requestedByRoute.get(routeId) || [];
+      existing.push(hotel);
+      requestedByRoute.set(routeId, existing);
+    }
+
     for (const row of tboRows) {
-      const key = this.bookingKey('tbo', Number(row.itinerary_route_ID || 0));
+      const routeId = Number(row.itinerary_route_ID || 0);
+      const bookingCode = String(row.booking_code || '').trim();
+      const hotelCode = String(row.tbo_hotel_code || '').trim();
+      const roomCount = Number(row.number_of_rooms);
+      const batchIndex = batchIndexByConfirmationId.get(
+        Number(row.tbo_hotel_booking_confirmation_ID),
+      );
+
+      const requested = requestedByRoute.get(routeId) || [];
+
+      const matching = requested.find((hotel) =>
+        String(hotel.bookingCode || '').trim() === bookingCode &&
+        String(hotel.hotelCode || '').trim() === hotelCode &&
+        Number(hotel.numberOfRooms) === roomCount &&
+        (
+          batchIndex === undefined ||
+          Number(hotel.batchIndex ?? 0) === batchIndex
+        ),
+      );
+
+      if (!matching) {
+        const safeSeparateBatch = batchIndex !== undefined &&
+          requested.every((hotel) =>
+            Number(hotel.batchIndex ?? 0) !== batchIndex &&
+            String(hotel.bookingCode || '').trim() !== bookingCode
+          );
+
+        if (!safeSeparateBatch) {
+          throw new BadRequestException(
+            'Existing TBO booking conflicts with the requested batch. ' +
+            'Reconcile the saved booking before retrying.',
+          );
+        }
+
+        continue;
+      }
+
+      const key = `tbo::${routeId}::${bookingCode}`;
+
+      if (confirmedCodes.has(key)) continue;
+      confirmedCodes.add(key);
       alreadySuccessKeys.add(key);
+
       alreadyConfirmedResults.push({
         provider: 'tbo',
         providerDisplayName: 'VSR',
-        routeId: Number(row.itinerary_route_ID || 0),
-        hotelCode: row.tbo_hotel_code,
+        routeId,
+        hotelCode,
+        bookingCode,
+        bookingId: row.tbo_booking_id || null,
         status: 'already_confirmed',
         success: true,
         bookingRef: row.tbo_booking_reference_number || null,
       });
     }
-
     const raRows = await this.prisma.resavenue_hotel_booking_confirmation.findMany({
       where: {
         itinerary_plan_ID: itineraryPlanId,
@@ -1024,13 +1111,33 @@ export class ItineraryHotelConfirmationSupportService {
     }
 
     const pendingBookings = bookings.filter((hotel) => {
-      const provider = String(hotel.__provider || '').trim().toLowerCase();
+      const rawProvider = String(hotel.__provider || hotel.provider || '').trim().toLowerCase();
+      const provider = rawProvider === 'vsr' ? 'tbo' : rawProvider;
       const routeId = Number(hotel.routeId || 0);
       const bookingCode = String(hotel.bookingCode || hotel.booking_code || '').trim();
+      if (provider === 'tbo') {
+        return !bookingCode ||
+          !successKeySet.has(`tbo::${routeId}::${bookingCode}`);
+      }
       const key = this.bookingKey(provider, routeId);
       const keyWithCode = bookingCode ? `${provider}::${routeId}::${bookingCode}` : null;
-      if (keyWithCode && successKeySet.has(keyWithCode)) return false;
-      return !successKeySet.has(key);
+      if (provider === 'tbo' || provider === 'vsr') {
+  if (!bookingCode) {
+    throw new BadRequestException(
+      'TBO booking code is required for batch-level confirmation.',
+    );
+  }
+
+  return !successKeySet.has(
+    `tbo::${routeId}::${bookingCode}`,
+  );
+}
+
+if (keyWithCode && successKeySet.has(keyWithCode)) {
+  return false;
+}
+
+return !successKeySet.has(key);
     });
 
     return { pendingBookings, alreadyConfirmedResults };

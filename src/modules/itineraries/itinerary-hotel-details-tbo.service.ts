@@ -1518,6 +1518,38 @@ const selectedHotelRooming = normalizedProvider === 'tbo'
 
     const childWithBedCount = Math.max(Number((plan as any).total_child_with_bed || 0), 0);
     const extraBedCount = Math.max(Number((plan as any).total_extra_bed || 0), 0);
+
+    // The standard TBO search is limited to six rooms. An 8-room selected
+    // property must be refreshed as two genuine supplier searches (6 + 2),
+    // never as one rate whose BookingCode covers only the first batch.
+    let multiBatchSelectedHotelRows: HotelSearchResult[] = [];
+    if (normalizedProvider === 'tbo' && roomCount > 6) {
+      if (roomCount > 25) {
+        throw new BadRequestException('TBO multi-batch hotel search supports at most 25 rooms.');
+      }
+      if (!Array.isArray(selectedHotelRooming?.occupancies) ||
+        selectedHotelRooming.occupancies.length !== roomCount) {
+        throw new BadRequestException(
+          'TBO multi-batch search requires complete room-wise travellers and actual child ages.',
+        );
+      }
+      const batchMatches = await this.hotelSearchService.searchBookableTboRoomBatches({
+        cityCode: effectiveCityCode,
+        checkInDate,
+        checkOutDate,
+        roomCount,
+        guestCount: adultCount + childCount,
+        adultCount,
+        childCount,
+        childAges: selectedHotelRooming.childAges,
+        occupancies: selectedHotelRooming.occupancies,
+        guestNationality: await this.resolveGuestNationality(plan),
+        hotelCodes: normalizedHotelCode,
+      });
+      multiBatchSelectedHotelRows = this.toTboMultiBatchPreviewRows(batchMatches, roomCount)
+        .filter((hotel) => String(hotel.hotelCode || '').trim() === normalizedHotelCode);
+    }
+
     const hotels = normalizedProvider === 'staah'
       ? (await this.fetchStaahHotelsForRoutes(
           [route], 1, undefined, null, false,
@@ -1532,6 +1564,8 @@ const selectedHotelRooming = normalizedProvider === 'tbo'
               extraBedCount,
              }, axisRoomsPropertyId,
            )).get(Number(routeId)) || []
+        : normalizedProvider === 'tbo' && roomCount > 6
+          ? multiBatchSelectedHotelRows
         : normalizedProvider === 'offline'
           ? await this.offlineHotelCatalogService.fetchSelectedHotelRates({
               routes: itineraryRoutes,
@@ -1887,6 +1921,15 @@ matchedHotels: selectedHotelRows.map((hotel: any) => ({
       .filter((traveller) => Number(traveller.traveller_type) === 2)
       .map(resolveChildAge);
 
+    // Multi-batch requests must use the child's recorded age, not the legacy
+    // default. A fabricated age changes the supplier occupancy/quote.
+    const hasExactChildAges = travellers.every((traveller) => {
+      if (Number(traveller.traveller_type) !== 2) return true;
+      const raw = String(traveller.traveller_age ?? '').trim();
+      const age = Number(raw);
+      return /^\d+$/.test(raw) && Number.isInteger(age) && age >= 0 && age <= 11;
+    });
+
     const rooms = Math.max(Math.trunc(Number(roomCount) || 1), 1);
     const byRoom = new Map<number, { adults: number; childrenAges: number[] }>();
     for (const traveller of travellers) {
@@ -1910,6 +1953,7 @@ matchedHotels: selectedHotelRows.map((hotel: any) => ({
       };
     });
     const validRooming =
+      (rooms <= 6 || hasExactChildAges) &&
       travellers.length === Math.max(Number(adultCount) || 0, 0) + Math.max(Number(childCount) || 0, 0) &&
       byRoom.size <= rooms &&
       occupancies.every((room) => room.adults > 0) &&
@@ -3125,6 +3169,130 @@ this.logger.log(
  /**
    * Search hotels for a single route (used in parallel execution)
  */
+  /**
+   * Expose complete multi-batch search matches for itinerary discovery only.
+   * A TBO BookingCode belongs to ONE supplier batch, not to the whole stay.
+   * Until batch-aware selection, persistence and booking are connected,
+   * these rows must remain non-selectable and non-bookable.
+   */
+  private toTboMultiBatchPreviewRows(
+    matchingHotels: Awaited<ReturnType<HotelSearchService['searchBookableTboRoomBatches']>>,
+    requestedRoomCount: number,
+  ): HotelSearchResult[] {
+    const expectedBatches = Math.ceil(requestedRoomCount / 6);
+    const previews: HotelSearchResult[] = [];
+
+    for (const match of matchingHotels) {
+      if (!Array.isArray(match.batches) || match.batches.length !== expectedBatches) continue;
+
+      const selectedBatches: Array<{
+        batchIndex: number;
+        startRoomIndex: number;
+        roomCount: number;
+        bookingCode: string;
+        supplierNetAmount: number;
+        supplierTotalFare: number;
+        occupancies: unknown;
+        hotelCode: string;
+        roomType: string;
+        mealPlan: string;
+        currency: string;
+        isRefundable: boolean;
+      }> = [];
+      const bookingCodes = new Set<string>();
+      let representative: HotelSearchResult | null = null;
+      let valid = true;
+
+      for (let index = 0; index < expectedBatches; index += 1) {
+        const entry = match.batches[index];
+        const expectedRoomCount = Math.min(6, requestedRoomCount - index * 6);
+        if (
+          !entry ||
+          entry.batch.batchIndex !== index ||
+          entry.batch.roomCount !== expectedRoomCount ||
+          !Array.isArray(entry.rates)
+        ) {
+          valid = false;
+          break;
+        }
+
+        const candidate = entry.rates
+          .filter((rate) =>
+            String(rate.hotelCode || '').trim() === match.hotelCode &&
+            rate.isLiveBookable === true &&
+            String(rate.searchReference || '').includes('!TB!') &&
+            Number.isFinite(Number(rate.netAmount ?? rate.price)) &&
+            Number(rate.netAmount ?? rate.price) > 0 &&
+            Number.isFinite(Number(rate.totalFare ?? rate.price)) &&
+            Number(rate.totalFare ?? rate.price) > 0,
+          )
+          .sort((a, b) => Number(a.totalFare ?? a.price) - Number(b.totalFare ?? b.price))[0];
+
+        const bookingCode = String(candidate?.searchReference || '').trim();
+        if (!candidate || !bookingCode || bookingCodes.has(bookingCode)) {
+          valid = false;
+          break;
+        }
+
+        bookingCodes.add(bookingCode);
+        representative ??= candidate;
+        selectedBatches.push({
+          batchIndex: index,
+          startRoomIndex: index * 6,
+          roomCount: entry.batch.roomCount,
+          bookingCode,
+          supplierNetAmount: Number(candidate.netAmount ?? candidate.price),
+          supplierTotalFare: Number(candidate.totalFare ?? candidate.price),
+          occupancies: entry.batch.occupancies,
+          hotelCode: match.hotelCode,
+          roomType: match.roomType,
+          mealPlan: match.mealPlan,
+          currency: match.currency,
+          isRefundable: candidate.isRefundable === true,
+        });
+      }
+
+      if (!valid || !representative || selectedBatches.length !== expectedBatches) continue;
+
+      const supplierNetAmount = selectedBatches.reduce((sum, batch) => sum + batch.supplierNetAmount, 0);
+      const supplierTotalFare = selectedBatches.reduce((sum, batch) => sum + batch.supplierTotalFare, 0);
+      if (!Number.isFinite(supplierNetAmount) || !Number.isFinite(supplierTotalFare)) continue;
+
+      previews.push({
+        ...representative,
+        roomCount: requestedRoomCount,
+        roomType: match.roomType,
+        mealPlan: match.mealPlan,
+        currency: match.currency,
+        price: supplierNetAmount,
+        netAmount: supplierNetAmount,
+        totalFare: supplierTotalFare,
+        totalStayPrice: supplierTotalFare,
+        amountIncludesRoomCount: true,
+        // Single-batch sub-rates cannot be selected for the full room group.
+        rateOptions: [],
+        roomTypes: [],
+        rateOptionId: undefined,
+        selectionKey: undefined,
+        // Preserve every real supplier rate separately. Never substitute
+        // one batch's BookingCode for the whole itinerary.
+        searchReference: undefined,
+        bookingCode: undefined,
+        tboRoomBatches: selectedBatches,
+        // A supplier sub-batch covers at most six rooms; do not leak its
+        // nightly breakdown into a complete 7–25-room itinerary quote.
+        tboRoomNightBreakdown: undefined,
+        isLiveBookable: false,
+        isBookable: false,
+        isSelectable: false,
+        availabilityStatus: 'NOT_BOOKABLE',
+        availabilityMessage: 'Rates found for every supplier batch; selection and booking are not connected yet.',
+      } as HotelSearchResult);
+    }
+
+    return previews;
+  }
+
   private async searchHotelsForStayBlock(
     block: {
       destination: string;
@@ -3206,7 +3374,56 @@ this.logger.log(
  this.logger.log(
       `   ðŸ¨ Searching hotels with cityCode: ${effectiveCityCode}, checkIn: ${block.checkInDate}, checkOut: ${block.checkOutDate}`,
     );
-    const hotels = await this.hotelSearchService.searchHotels(searchCriteria);
+    let batchPreviewHotels: HotelSearchResult[] = [];
+    if (safeRoomCount > 6 && safeRoomCount <= 25) {
+      if (!Array.isArray(occupancies) || occupancies.length !== safeRoomCount) {
+        this.logger.warn(
+          `[TBO_MULTI_BATCH] ${safeRoomCount} rooms require exact saved room-wise occupancies; ` +
+          'not synthesizing guest assignments.',
+        );
+      } else {
+        try {
+          const matches = await this.hotelSearchService.searchBookableTboRoomBatches({
+            cityCode: effectiveCityCode,
+            checkInDate: block.checkInDate,
+            checkOutDate: block.checkOutDate,
+            roomCount: safeRoomCount,
+            guestCount,
+            adultCount: safeAdultCount,
+            childCount: safeChildCount,
+            childAges,
+            occupancies,
+            guestNationality,
+          });
+          batchPreviewHotels = this.toTboMultiBatchPreviewRows(matches, safeRoomCount);
+          this.logger.log(`[TBO_MULTI_BATCH] ${JSON.stringify({
+            ...logContext,
+            requestedRooms: safeRoomCount,
+            expectedSupplierBatches: Math.ceil(safeRoomCount / 6),
+            matchingHotelGroups: matches.length,
+            previewHotelCount: batchPreviewHotels.length,
+            selectable: false,
+          })}`);
+        } catch (error) {
+          this.logger.warn(
+            `[TBO_MULTI_BATCH] Search failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    }
+
+    let standardHotels: HotelSearchResult[] = [];
+    try {
+      standardHotels = await this.hotelSearchService.searchHotels(searchCriteria);
+    } catch (error) {
+      if (batchPreviewHotels.length === 0) throw error;
+      // Do not discard a genuine completed TBO batch match just because an
+      // independent non-TBO provider failed to return inventory.
+      this.logger.warn(
+        `[HOTEL_STAY_BLOCK] Other-provider search failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const hotels = [...batchPreviewHotels, ...standardHotels];
     const byProvider = (hotels || []).reduce<Record<string, number>>((counts, hotel: any) => {
       const provider = String(hotel?.provider || 'unknown').trim().toLowerCase() || 'unknown';
       counts[provider] = (counts[provider] || 0) + 1;
@@ -5090,6 +5307,32 @@ this.logger.log(
       const rooming = provider === 'tbo'
         ? await this.loadPlanRoomOccupancies(Number(plan.itinerary_plan_ID), roomCount, adultCount, childCount)
         : undefined;
+      // TBO accepts a maximum of six rooms per supplier search. Do not
+      // silently call the single-rate search for a 7–25 room itinerary.
+      if (provider === 'tbo' && roomCount > 6) {
+        if (roomCount > 25 || !Array.isArray(rooming?.occupancies) ||
+            rooming.occupancies.length !== roomCount) {
+          throw new BadRequestException(
+            'Complete room-wise TBO occupancy is required for a 7–25-room stay.',
+          );
+        }
+        const mappedCities = await this.batchMapDestinationsToCityCodes([firstRoute]);
+        const matchingHotels = await this.hotelSearchService.searchBookableTboRoomBatches({
+          cityCode: mappedCities[city] || city,
+          checkInDate: params.checkInDate,
+          checkOutDate: params.checkOutDate,
+          roomCount,
+          guestCount: adultCount + childCount,
+          adultCount,
+          childCount,
+          childAges: rooming.childAges,
+          occupancies: rooming.occupancies,
+          guestNationality: await this.resolveGuestNationality(plan),
+          hotelCodes: params.hotelCode,
+        });
+        return this.toTboMultiBatchPreviewRows(matchingHotels, roomCount)
+          .filter((hotel) => String(hotel.hotelCode || '').trim() === String(params.hotelCode).trim());
+      }
       const hotels = await this.hotelSearchService.searchHotels({
         cityCode: city,
         checkInDate: params.checkInDate,
@@ -5577,6 +5820,7 @@ this.logger.log(
       select: {
         hotel_rates_visibility: true,
         trip_start_date_and_time: true,
+        preferred_room_count: true,
       },
     });
 
@@ -7060,7 +7304,8 @@ this.logger.log(
                 : undefined,
           providerHotelCode: (hotel as any).providerHotelCode || rawHotelCode,
           rateOptionId: (hotel as any).rateOptionId || rawSearchReference || rawBookingCode || undefined,
-          rateOptions: Array.isArray((hotel as any).rateOptions) && (hotel as any).rateOptions.length > 0
+          rateOptions: (hotel as any).isSelectable === false ? [] :
+            Array.isArray((hotel as any).rateOptions) && (hotel as any).rateOptions.length > 0
             ? (hotel as any).rateOptions
             : [{
                 rateOptionId: (hotel as any).rateOptionId || rawSearchReference || rawBookingCode || undefined,
@@ -7087,8 +7332,8 @@ this.logger.log(
                 totalPrice: Number((hotel as any).totalPrice ?? (hotel as any).totalStayPrice ?? billableHotelCost * numberOfNights),
                 currency: hotel.currency || 'INR',
                 isLiveRate: (hotel as any).isLiveRate ?? (normalizedProvider !== 'offline' && normalizedProvider !== 'axisrooms'),
-                isLiveBookable: normalizedProvider !== 'offline' && hasSupplierHotel,
-                isSelectable: true,
+                isLiveBookable: (hotel as any).isLiveBookable !== false && normalizedProvider !== 'offline' && hasSupplierHotel,
+                isSelectable: (hotel as any).isSelectable !== false,
                 requiresHotelApproval: normalizedProvider === 'offline',
                 approvalStatus: normalizedProvider === 'offline' ? 'NOT_REQUESTED' : 'NOT_REQUIRED',
               }],
@@ -7099,13 +7344,20 @@ this.logger.log(
           totalStayPrice: Number((hotel as any).totalStayPrice ?? (hotel as any).totalPrice ?? (hotel as any).exactFullStayTotal ?? billableHotelCost * numberOfNights),
           numberOfNights,
           nightlyRates: (hotel as any).nightlyRates,
-          tboRoomNightBreakdown: Array.isArray((hotel as any).tboRoomNightBreakdown)
-            ? (hotel as any).tboRoomNightBreakdown
+          // Preserve the real 6+remaining-room supplier search identities,
+          // without turning them into a single hotel booking.
+          tboRoomBatches: Array.isArray((hotel as any).tboRoomBatches)
+            ? (hotel as any).tboRoomBatches
             : undefined,
+          tboRoomNightBreakdown: normalizedProvider === 'tbo' && Number(plan?.preferred_room_count ?? 0) > 6
+            ? undefined
+            : Array.isArray((hotel as any).tboRoomNightBreakdown)
+              ? (hotel as any).tboRoomNightBreakdown
+              : undefined,
           requiresHotelApproval: normalizedProvider === 'offline',
           isLiveRate: (hotel as any).isLiveRate ?? (normalizedProvider !== 'offline' && normalizedProvider !== 'axisrooms'),
-          isLiveBookable: normalizedProvider !== 'offline' && hasSupplierHotel,
-          isSelectable: true,
+          isLiveBookable: (hotel as any).isLiveBookable !== false && normalizedProvider !== 'offline' && hasSupplierHotel,
+          isSelectable: (hotel as any).isSelectable !== false,
           approvalStatus: normalizedProvider === 'offline' ? 'NOT_REQUESTED' : 'NOT_REQUIRED',
           manualConfirmationStatus: normalizedProvider === 'offline' ? 'NOT_STARTED' : 'NOT_STARTED',
           isBookable: (hotel as any).isLiveBookable === false ? false : hasSupplierHotel,
@@ -7116,9 +7368,9 @@ this.logger.log(
           distanceStatus: (hotel as any).distanceStatus || 'UNKNOWN',
           distanceReference: (hotel as any).distanceReference || 'UNKNOWN',
           selectionReason: (hotel as any).availabilityReason || null,
-          availabilityMessage: hasSupplierHotel
+          availabilityMessage: (hotel as any).availabilityMessage || (hasSupplierHotel
             ? null
-            : 'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
+            : 'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.'),
           voucherCancelled: voucherCancelled,
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
           date: dateLabel,

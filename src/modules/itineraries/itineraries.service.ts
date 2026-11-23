@@ -6,6 +6,7 @@ import { savedVsrSupplierFare } from './utils/vsr-supplier-fare.util';
 import { normalizeTboHoldAmount } from './utils/tbo-hold-price-approval.util';
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
+import { findDuplicateHotelRecommendationPackage } from "./utils/tbo-recommendation-package-identity.util";
 import { Optional } from "@nestjs/common";
 import { AccountsComponentSyncService } from "../accounts-manager/accounts-component-sync.service";
 import {
@@ -62,6 +63,7 @@ import { resolveHotelOccupancyPricing, resolveOfflineHotelPayablePricing } from 
 import { latestAxisRoomsOccupancyValues } from './utils/axisrooms-occupancy-rate.util';
 import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
 import { allocateTboRouteNightPricing } from '../hotels/utils/tbo-room-night-pricing';
+import { makeTboMultiBatchStay, allocateFullStayCents } from '../hotels/utils/tbo-multi-batch-stay.util';
 import {
   buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper,
   ManualHotspotMatrixBuildResult,
@@ -2203,6 +2205,249 @@ timingStepStartedAt =
     );
   }
 
+  /**
+   * Rate selection for 7–25 TBO/VSR rooms. Search is always supplier-owned.
+   * It does not PreBook or Book; only genuine BookingCodes returned in this
+   * request can enter the persisted snapshot.
+   */
+  private async selectTboMultiBatchStayIntent(params: {
+    planId: number; quoteId: string; anchorRouteId: number; groupType: number;
+    intent: string; data: any; plan: any; stay: any; hotelCode: string;
+  }): Promise<any> {
+    const { planId, quoteId, anchorRouteId, groupType, intent, data, plan, stay, hotelCode } = params;
+    const roomCount = Number(plan.preferred_room_count || 0);
+    if (!Number.isInteger(roomCount) || roomCount < 7 || roomCount > 25 ||
+        data.singleNightOnly === true && Number(stay.nights) !== 1) {
+      throw new BadRequestException('TBO multi-batch requires a valid 7–25 room continuous stay.');
+    }
+    const routeIds = (stay.routeIds || []).map(Number);
+    if (!routeIds.length || !routeIds.includes(anchorRouteId) ||
+        new Set(routeIds).size !== routeIds.length || routeIds.length !== Number(stay.nights)) {
+      throw new BadRequestException('The continuous itinerary route allocation is incomplete.');
+    }
+    // A recommendation is a complete itinerary package, not one property
+    // across multiple cities. Mangalore and Udupi may have DIFFERENT hotels,
+    // and two packages may reuse one hotel as long as the full route-to-hotel
+    // combination is distinct. Never compare a single route in isolation.
+    // This read stays inside the existing plan selection lock. No supplier
+    // booking is performed here.
+    if (data.previewOnly !== true) {
+      const savedRows = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+        where: {
+          itinerary_plan_id: planId,
+          hotel_required: 1,
+          status: 1,
+          deleted: 0,
+          hotel_provider: 'tbo',
+        },
+        select: {
+          group_type: true,
+          itinerary_route_id: true,
+          hotel_code: true,
+          selected_price_snapshot: true,
+        },
+      });
+      const groups = new Map<number, Map<number, string>>();
+      for (const row of savedRows) {
+        const group = Number(row.group_type);
+        const route = Number(row.itinerary_route_id);
+        if (!Number.isInteger(group) || !Number.isInteger(route) || route <= 0) continue;
+        let identity = String(row.hotel_code || '').trim().toLowerCase();
+        try {
+          const snapshot = row.selected_price_snapshot
+            ? JSON.parse(String(row.selected_price_snapshot)) : null;
+          identity = String(snapshot?.tboMultiBatchStay?.hotelCode || identity).trim().toLowerCase();
+        } catch { /* Use the stored hotel_code only. */ }
+        if (!identity) continue;
+        if (!groups.has(group)) groups.set(group, new Map());
+        groups.get(group)!.set(route, identity);
+      }
+      const duplicateGroup = findDuplicateHotelRecommendationPackage(
+        groups, groupType, routeIds, hotelCode,
+      );
+      if (duplicateGroup !== null) {
+        throw new ConflictException({
+          code: 'TBO_DUPLICATE_RECOMMENDATION_PACKAGE',
+          message: `Recommended #${groupType} would duplicate every hotel stay in Recommended #${duplicateGroup}. Choose a different hotel for at least one destination.`,
+          existingGroupType: duplicateGroup,
+          targetGroupType: groupType,
+        });
+      }
+    }
+    const supplierRows = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
+      planId, routeIds, provider: 'tbo', hotelCode,
+      checkInDate: String(stay.checkInDate), checkOutDate: String(stay.checkOutDate),
+    });
+    const normalized = (value: unknown) => String(value ?? '').trim().toLowerCase();
+    const requestedRoom = String(data.roomType || '').trim();
+    const requestedMeal = String(data.mealPlanCode || data.mealPlan || '').trim();
+    const offers = supplierRows.filter((offer: any) =>
+      String(offer.hotelCode || '').trim() === hotelCode &&
+      Array.isArray(offer.tboRoomBatches) && offer.tboRoomBatches.length === Math.ceil(roomCount / 6) &&
+      // HOTEL intent does not permit silently switching the clicked room type.
+      (!requestedRoom || normalized(offer.roomType) === normalized(requestedRoom)) &&
+      (!requestedMeal || normalized(offer.mealPlan) === normalized(requestedMeal))
+    ).sort((a: any, b: any) => Number(a.totalFare || 0) - Number(b.totalFare || 0));
+    if (!offers.length) {
+      // Diagnostics intentionally exclude sensitive genuine supplier BookingCodes.
+      const visibleSupplierOffers = supplierRows
+        .filter((row: any) => String(row.hotelCode || '').trim() === hotelCode)
+        .map((row: any) => ({
+          roomType: String(row.roomType || ''),
+          mealPlan: String(row.mealPlan || ''),
+          batches: Array.isArray(row.tboRoomBatches) ? row.tboRoomBatches.length : 0,
+        }));
+      console.warn('[TBO_MULTI_BATCH_SELECTION_RATE_MISMATCH] ' + JSON.stringify({
+        quoteId, hotelCode, routeIds, roomCount, requestedRoom, requestedMeal,
+        supplierOffers: visibleSupplierOffers,
+      }));
+      const matchingRoomOffers = visibleSupplierOffers.filter((row) =>
+        !requestedRoom || normalized(row.roomType) === normalized(requestedRoom));
+      const supplierMeals = Array.from(new Set(matchingRoomOffers
+        .map((row) => row.mealPlan).filter(Boolean)));
+      const mealMismatch = requestedMeal && supplierMeals.length &&
+        !supplierMeals.some((meal) => normalized(meal) === normalized(requestedMeal));
+      throw new ConflictException({
+        code: 'TBO_MULTI_BATCH_SUPPLIER_MATCH_MISSING',
+        message: mealMismatch
+          ? `The selected ${requestedMeal} meal plan was not returned by the live supplier. ` +
+            `Supplier meal plans: ${supplierMeals.join(', ')}. Room-only (EP) does not include breakfast. ` +
+            'Refresh and choose a genuine supplier rate; no hotel was selected.'
+          : 'All requested rooms must have compatible live supplier search offers in one hotel for the complete stay. Refresh hotel availability.',
+        hotelCode, routeIds,
+      });
+    }
+    const offer: any = offers[0];
+    const batches = offer.tboRoomBatches.map((batch: any) => ({
+      batchIndex: Number(batch.batchIndex),
+      startRoomIndex: Number(batch.startRoomIndex),
+      roomCount: Number(batch.roomCount),
+      bookingCode: String(batch.bookingCode || '').trim(),
+      supplierNetAmount: Number(batch.supplierNetAmount),
+      supplierTotalFare: Number(batch.supplierTotalFare),
+      occupancies: batch.occupancies,
+      hotelCode: String(batch.hotelCode || ''),
+      roomType: String(batch.roomType || ''),
+      mealPlan: String(batch.mealPlan || ''),
+      currency: String(batch.currency || ''),
+      isRefundable: batch.isRefundable === true,
+    }));
+    let multiStay;
+    try {
+      multiStay = makeTboMultiBatchStay({
+        hotelCode, roomType: String(offer.roomType || ''),
+        mealPlan: String(offer.mealPlan || ''), currency: String(offer.currency || ''),
+        isRefundable: offer.isRefundable === true,
+        anchorRouteId: routeIds[0], routeIds,
+        checkInDate: String(stay.checkInDate).slice(0, 10),
+        checkOutDate: String(stay.checkOutDate).slice(0, 10),
+        roomCount, batches,
+      });
+    } catch (error) {
+      throw new ConflictException({
+        code: 'TBO_MULTI_BATCH_INCOMPLETE',
+        message: error instanceof Error ? error.message : 'The supplier room batches are incomplete.',
+      });
+    }
+    // Supplier fare is a whole-stay quote for ALL rooms. Do not multiply
+    // it by the number of rooms or itinerary nights on any route.
+    const settings = await (this.prisma as any).dvi_global_settings?.findFirst?.({
+      where: { deleted: 0, status: 1 },
+      orderBy: { global_settings_ID: 'asc' }, select: { hotel_margin: true },
+    });
+    const margin = Math.max(Number(settings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0), 0);
+    if (!Number.isFinite(margin)) throw new BadRequestException('Hotel margin is invalid.');
+    const supplierNights = allocateFullStayCents(multiStay.supplierTotalFare, routeIds);
+    const fullPayable = Math.round(multiStay.supplierTotalFare * (100 + margin)) / 100;
+    const payableNights = allocateFullStayCents(fullPayable, routeIds);
+    const canonicalHotelId = Number(offer.canonicalHotelId || offer.hotelId || data.canonicalHotelId || data.hotelId || 0);
+    const selections = routeIds.map((routeId: number, index: number) => {
+      const baseTotalPrice = supplierNights[index];
+      const totalPrice = payableNights[index];
+      const hotelMarginAmount = Math.round((totalPrice - baseTotalPrice) * 100) / 100;
+      const routeDate = String(stay.stayDates?.[index] || '').slice(0, 10);
+      return {
+        planId, routeId, routeDate, groupType, selectionIntent: 'HOTEL' as const,
+        hotelId: canonicalHotelId || null, canonicalHotelId: canonicalHotelId || null,
+        hotelCode, providerHotelCode: hotelCode, provider: 'tbo',
+        hotelName: String(offer.hotelName || data.hotelName || hotelCode),
+        roomType: multiStay.roomType, mealPlanCode: multiStay.mealPlan,
+        isRefundable: multiStay.isRefundable, roomTypeId: Number(offer.roomTypeId || 1),
+        currency: multiStay.currency, roomCount,
+        totalPrice, pricePerNight: totalPrice,
+        baseTotalPrice, basePricePerNight: Math.round(baseTotalPrice * 100 / roomCount) / 100,
+        hotelMarginPercentage: margin, hotelMarginAmount,
+        hotelMarginTotalAmount: hotelMarginAmount,
+        amountIncludesHotelMargin: true, pricingIncludesHotelMargin: true,
+        extraBedCount: 0, extraBedAmount: 0, childWithBedCount: 0,
+        childWithBedAmount: 0, childWithoutBedCount: 0, childWithoutBedAmount: 0,
+        selectionOrigin: 'USER_SELECTED', selectionPricingSource: 'SERVER_RESOLVED',
+        numberOfNights: 1, tboMultiBatchStay: multiStay,
+        // No synthetic parent BookingCode. Every supplier code is in batches.
+        bookingCode: undefined, searchReference: undefined,
+        isBookable: true, isSelectable: true, isLiveBookable: false,
+        availabilityStatus: 'SEARCH_MATCH_SELECTED',
+      };
+    });
+    const preview = {
+      status: 'AVAILABLE', success: true, planId, groupType, selectionIntent: intent,
+      logicalStay: stay, affectedRouteIds: routeIds,
+      selections, hotelDetails: selections,
+      totals: { totalPrice: fullPayable },
+      supplierState: 'SEARCH_MATCH_NOT_PREBOOKED',
+    };
+    if (data.previewOnly === true) return preview;
+    try {
+      await this.selectionWorkflowService.bulkSaveHotels(
+        planId, selections, Number(data.requestedBy || 1), true, true, true,
+      );
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      throw new BadRequestException({
+        code: 'TBO_MULTI_BATCH_SELECTION_PERSIST_FAILED',
+        message: error instanceof Error ? error.message : 'Could not save all supplier batches.',
+      });
+    }
+    await this.hotelBlockingService.cancelHoldsAfterHotelChange({
+      itineraryPlanId: planId, groupType, routeIds,
+      actor: { id: Number(data.requestedBy || 0) || undefined, type: 'STAFF' },
+    });
+    const persisted = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+      where: { itinerary_plan_id: planId, group_type: groupType,
+        itinerary_route_id: { in: routeIds }, hotel_required: 1, status: 1, deleted: 0 },
+    });
+    if (persisted.length !== routeIds.length || persisted.some((row: any) => {
+      try {
+        const snapshot = JSON.parse(String(row.selected_price_snapshot || '{}'));
+        const saved = snapshot.tboMultiBatchStay;
+        return !saved || saved.searchVerifiedAt !== multiStay.searchVerifiedAt ||
+          saved.hotelCode !== multiStay.hotelCode || saved.batches.length !== batches.length;
+      } catch { return true; }
+    })) {
+      throw new ConflictException('Saved TBO batch selection could not be reloaded completely. Confirmation is blocked.');
+    }
+    let itinerary: any = null;
+    try {
+      itinerary = await this.itineraryDetails.getItineraryDetailsForSelectedHotelRates(
+        planId, quoteId, groupType, selections,
+      );
+    } catch (error) {
+      console.error('[TBO_MULTI_BATCH] financial summary refresh failed', error);
+    }
+    return {
+      ...preview,
+      selections: selections.map((selection: any) => ({
+        ...selection,
+        itineraryPlanHotelDetailsId: Number(persisted.find((r: any) => Number(r.itinerary_route_id) === selection.routeId)?.itinerary_plan_hotel_details_ID || 0),
+        selectedPriceSnapshot: { tboMultiBatchStay: multiStay },
+      })),
+      financialSummary: {
+        overallCost: itinerary?.overallCost ?? null,
+        costBreakdown: itinerary?.costBreakdown ?? null,
+      },
+    };
+  }
+
   private async selectHotelIntentUnlocked(data: any) {
     const intent = String(data.selectionIntent || 'RATE_OPTION').trim().toUpperCase();
     if (!['HOTEL', 'ROOM_TYPE', 'MEAL_PLAN', 'RATE_OPTION'].includes(intent)) {
@@ -2434,6 +2679,15 @@ timingStepStartedAt =
     // preview request from silently switching to a second AxisRooms response
     // between Reset Hotels and Choose. The final occupancy/rate validation
     // below still runs against the current database state.
+    // A 7–25 room VSR/TBO stay is one logical hotel choice with independent
+    // supplier batches. Never feed a 6+N preview into the one-code selector.
+    if (provider === 'tbo' && Number((plan as any).preferred_room_count || 1) > 6) {
+      return this.selectTboMultiBatchStayIntent({
+        planId: Number(data.planId), quoteId, anchorRouteId: Number(data.routeId),
+        groupType, intent, data, plan, stay, hotelCode,
+      });
+    }
+
     const requestedSearchRunId = String(data.searchRunId || '').trim();
     let snapshotCandidates: any[] | null = null;
     if (requestedSearchRunId && (provider === 'axisrooms' || provider === 'staah')) {

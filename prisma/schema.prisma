@@ -6274,6 +6274,25 @@ model tbo_hotel_booking_confirmation {
   @@index([status], map: "idx_tbo_booking_status")
   @@index([deleted], map: "idx_tbo_booking_deleted")
 }
+model tbo_hotel_booking_attempt {
+  id                          Int       @id @default(autoincrement())
+  confirmed_itinerary_plan_ID Int
+  itinerary_plan_ID           Int
+  itinerary_route_ID          Int
+  batch_index                 Int
+  start_room_index            Int
+  number_of_rooms             Int
+  booking_code_hash           String    @db.Char(64)
+  state                       String    @default("PREPARED") @db.VarChar(32)
+  supplier_booking_id         String?   @db.VarChar(100)
+  supplier_booking_reference  String?   @db.VarChar(100)
+  confirmation_id             Int?
+  createdon                   DateTime  @default(now())
+  updatedon                   DateTime  @updatedAt
+    @@unique([confirmed_itinerary_plan_ID, itinerary_route_ID, batch_index], map: "uniq_tbo_booking_attempt_batch")
+  @@index([itinerary_plan_ID])
+  @@index([state])
+}
 
 /// ResAvenue Hotel Booking Confirmations
 /// Stores confirmation data from ResAvenue API when hotels are booked

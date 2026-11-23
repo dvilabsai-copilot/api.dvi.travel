@@ -63,11 +63,162 @@ export class ItineraryHotelBookingFulfillmentService {
     endUserIp: string = process.env.TBO_END_USER_IP || '134.209.145.185',
   ) {
  const userId = 1; // TODO: Get from authenticated user
-    const mergedHotelBookings = this.pruneHotelBookingsCoveredByMultiNight(
-      this.mergeConsecutiveSupplierHotelBookings(dto.hotel_bookings || []),
+
+    // Fail closed until TBO multi-batch confirmation tracking is ready.
+    // TBO accepts a maximum of 6 rooms per individual supplier booking.
+    // Do not allow an 8-room selection to enter the legacy single-booking flow.
+    for (const hotel of dto.hotel_bookings || []) {
+      const provider = String(hotel.provider || '').trim().toLowerCase();
+
+      if (provider !== 'tbo' && provider !== 'vsr') {
+        continue;
+      }
+
+      const roomCount = Number(hotel.numberOfRooms);
+
+      if (
+        !Number.isSafeInteger(roomCount) ||
+        roomCount < 1 ||
+        roomCount > 6
+      ) {
+        throw new BadRequestException(
+          'TBO multi-room booking requires separate supplier batches. ' +
+          'Booking above 6 rooms is not enabled yet.',
+        );
+      }
+    }
+
+    // The legacy confirmation flow tracks TBO success per route,
+    // not per supplier batch. Reject repeated hotel selections
+    // until batch-level tracking is implemented.
+const tboGroups = new Map<string, any[]>();
+
+for (const hotel of dto.hotel_bookings || []) {
+  const provider = String(hotel.provider || '')
+    .trim()
+    .toLowerCase();
+
+  if (provider !== 'tbo' && provider !== 'vsr') continue;
+
+  const key = [
+    hotel.routeId,
+    hotel.hotelCode,
+    hotel.checkInDate,
+    hotel.checkOutDate,
+  ].join('|');
+
+  const group = tboGroups.get(key) || [];
+  group.push(hotel);
+  tboGroups.set(key, group);
+}
+
+for (const group of tboGroups.values()) {
+  if (group.length <= 1) continue;
+
+  // Do not activate multi-batch supplier bookings
+  // before the complete supplier handoff is verified.
+  if (process.env.TBO_ENABLE_MULTI_BATCH_BOOKING !== 'true') {
+    throw new BadRequestException(
+      'TBO multi-batch booking is disabled pending supplier verification.',
     );
+  }
+
+  const sorted = [...group].sort(
+    (a, b) => Number(a.startRoomIndex) - Number(b.startRoomIndex),
+  );
+
+  let nextRoom = 0;
+  const codes = new Set<string>();
+
+  for (let i = 0; i < sorted.length; i++) {
+    const hotel = sorted[i];
+
+    const count = Number(hotel.numberOfRooms);
+    const batchIndex = Number(hotel.batchIndex);
+    const startRoomIndex = Number(hotel.startRoomIndex);
+    const code = String(hotel.bookingCode || '').trim();
+    const contextCode = String(
+      hotel.prebookContext?.bookingCode || '',
+    ).trim();
+
+    if (
+      !Number.isSafeInteger(count) ||
+      count < 1 ||
+      count > 6 ||
+      batchIndex !== i ||
+      startRoomIndex !== nextRoom ||
+      !code ||
+      code !== contextCode ||
+      codes.has(code)
+    ) {
+      throw new BadRequestException(
+        'Invalid TBO batch sequence or duplicate supplier BookingCode.',
+      );
+    }
+
+    codes.add(code);
+    nextRoom += count;
+  }
+}
+
+  const incomingBookings = dto.hotel_bookings || [];
+
+const tboBatchBookings = incomingBookings.filter((hotel) => {
+  const provider = String(hotel.provider || '')
+    .trim()
+    .toLowerCase();
+
+  return provider === 'tbo' || provider === 'vsr';
+});
+
+const otherProviderBookings = incomingBookings.filter((hotel) => {
+  const provider = String(hotel.provider || '')
+    .trim()
+    .toLowerCase();
+
+  return provider !== 'tbo' && provider !== 'vsr';
+});
+
+const mergedOtherBookings = this.pruneHotelBookingsCoveredByMultiNight(
+  this.mergeConsecutiveSupplierHotelBookings(otherProviderBookings),
+);
+
+const mergedHotelBookings = [
+  ...mergedOtherBookings,
+  ...tboBatchBookings,
+];
 
     const providerHotelBookings = this.getProviderBookableHotelBookings(mergedHotelBookings);
+    const batchIdentity = (hotel: any) => [
+  Number(hotel.routeId),
+  String(hotel.hotelCode || '').trim(),
+  String(hotel.checkInDate || ''),
+  String(hotel.checkOutDate || ''),
+  Number(hotel.batchIndex ?? 0),
+  String(hotel.bookingCode || '').trim(),
+].join('|');
+
+const expectedTboKeys = tboBatchBookings.map(batchIdentity);
+
+const actualTboKeys = providerHotelBookings
+  .filter((hotel: any) => {
+    const provider = String(hotel.provider || hotel.__provider || '')
+      .trim()
+      .toLowerCase();
+
+    return provider === 'tbo' || provider === 'vsr';
+  })
+  .map(batchIdentity);
+
+if (
+  expectedTboKeys.length !== actualTboKeys.length ||
+  expectedTboKeys.some((key) => !actualTboKeys.includes(key))
+) {
+  throw new BadRequestException(
+    'A TBO supplier batch was lost or changed during hotel processing. ' +
+    'Booking stopped before contacting the supplier.',
+  );
+}
     const skippedExternalStayCount = (dto.hotel_bookings || []).length - providerHotelBookings.length;
 
  // If no supplier-bookable hotels are selected, still return DB-backed confirmed hotel details.
@@ -130,7 +281,9 @@ export class ItineraryHotelBookingFulfillmentService {
     const { pendingBookings, alreadyConfirmedResults } =
       await this.filterAlreadySuccessfulBookings(baseResult.itinerary_plan_ID, normalizedHotelBookings);
 
-    const tboHotels = pendingBookings.filter((h) => h.__provider === 'tbo');
+        const tboHotels = pendingBookings.filter(
+      (h) => h.__provider === 'tbo' || h.__provider === 'vsr',
+    );
     const resavenueHotels = pendingBookings.filter((h) => h.__provider === 'resavenue');
     const hobseHotels = pendingBookings.filter((h) => h.__provider === 'hobse');
     const axisroomsHotels = pendingBookings.filter((h) => h.__provider === 'axisrooms');
@@ -160,11 +313,14 @@ export class ItineraryHotelBookingFulfillmentService {
           roomType: hotel.roomType,
           checkInDate: hotel.checkInDate,
           checkOutDate: hotel.checkOutDate,
-          numberOfRooms: hotel.numberOfRooms,
+                    numberOfRooms: hotel.numberOfRooms,
+          batchIndex: hotel.batchIndex,
+          startRoomIndex: hotel.startRoomIndex,
           guestNationality: hotel.guestNationality,
           netAmount: hotel.netAmount,
           searchInitiatedAt: (hotel as any).searchInitiatedAt,
           prebookContext: (hotel as any).prebookContext,
+          roomPassengerIndices: hotel.roomPassengerIndices,
           occupancies: hotel.occupancies?.map((occ) => ({
             adults: occ.adults,
             children: occ.children,
@@ -353,23 +509,46 @@ export class ItineraryHotelBookingFulfillmentService {
         allBookingResults.push(...staahBookingResults);
       }
 
-      const successKeySet = new Set(
-        allBookingResults
-          .filter((r) => this.isBookingResultSuccess(r))
-          .flatMap((r) => {
-            const provider = String(r?.provider || '').trim().toLowerCase();
-            const routeIds = Array.isArray(r?.routeIds) && r.routeIds.length > 0
-              ? r.routeIds
-              : [Number(r?.routeId || 0)];
-            return routeIds
-              .map((routeId: any) => Number(routeId || 0))
-              .filter((routeId: number) => Number.isFinite(routeId) && routeId > 0)
-              .map((routeId: number) => this.bookingKey(provider, routeId));
-          }),
-      );
+const successKeySet = new Set<string>(
+  allBookingResults
+    .filter((r) => this.isBookingResultSuccess(r))
+    .flatMap((r) => {
+      const provider = String(r?.provider || '')
+        .trim()
+        .toLowerCase();
+
+      const routeIds =
+        Array.isArray(r?.routeIds) && r.routeIds.length > 0
+          ? r.routeIds
+          : [r?.routeId];
+
+      return routeIds
+        .map(Number)
+        .filter((routeId: number) =>
+          Number.isSafeInteger(routeId) && routeId > 0,
+        )
+        .flatMap((routeId: number) => {
+          if (provider === 'tbo' || provider === 'vsr') {
+            const code = String(r?.bookingCode || '').trim();
+
+            return code ? [`tbo::${routeId}::${code}`] : [];
+          }
+
+          return [this.bookingKey(provider, routeId)];
+        });
+    }),
+);
 
       const pendingAfterAttempt = normalizedHotelBookings
-        .filter((b) => !successKeySet.has(this.bookingKey(b.__provider, Number(b.routeId || 0))))
+             .filter((b) => {
+          const provider = String(b.__provider || '').toLowerCase();
+          const routeId = Number(b.routeId || 0);
+          const key = provider === 'tbo' || provider === 'vsr'
+            ? `tbo::${routeId}::${String(b.bookingCode || '').trim()}`
+            : this.bookingKey(provider, routeId);
+
+          return !successKeySet.has(key);
+        })
         .map((b) => ({
           provider: b.__provider,
           routeId: Number(b.routeId || 0),
@@ -381,7 +560,10 @@ export class ItineraryHotelBookingFulfillmentService {
 
       if (pendingAfterAttempt.length > 0) {
         throw new BadRequestException({
-          message: 'Partial booking success. Quotation remains unconfirmed. Retry will target only unsuccessful bookings.',
+          message:
+  'Hotel booking is incomplete. Quotation remains unconfirmed. ' +
+  'Check each supplier batch and reconcile uncertain outcomes ' +
+  'before attempting another booking.',
           itinerary_plan_ID: baseResult.itinerary_plan_ID,
           confirmed_itinerary_plan_ID: baseResult.confirmed_itinerary_plan_ID,
           bookingResults: allBookingResults,
