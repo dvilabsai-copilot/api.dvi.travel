@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
@@ -1306,8 +1306,12 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
     confirmationRef: string,
     reason: string,
   ): Promise<CancellationResult> {
-    const bookingId = parseInt(confirmationRef, 10);
+    const bookingId = Number(confirmationRef);
+    if (!Number.isSafeInteger(bookingId) || bookingId <= 0) {
+      throw new BadRequestException('A valid VSR booking ID is required to cancel this hotel.');
+    }
     let changeRequestResult: any;
+    let requestError: any;
     try {
  this.logger.log(
         `❌ Cancelling booking: ${confirmationRef}, Reason: ${reason}`
@@ -1349,49 +1353,27 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           `Cancellation failed: ${changeRequestResult?.Error?.ErrorMessage || 'Unknown error'}`
         );
       }
-
- this.logger.log(` Booking cancelled successfully - ChangeRequestId: ${changeRequestResult.ChangeRequestId}`);
-
-      return {
-        cancellationRef: changeRequestResult.ChangeRequestId?.toString() || confirmationRef,
- refundAmount: 0, // TBO doesn't return refund in this response
-        charges: 0,
-        refundDays: 0,
-      };
     } catch (error) {
- // Log detailed error response from TBO
-      if (error.response) {
- this.logger.error(` TBO API Error Response Status: ${error.response.status}`);
- this.logger.error(` TBO API Error Response Body: ${JSON.stringify(error.response.data)}`);
-      }
-
-      const recovered = await this.tryRecoverCancellationStatus(confirmationRef, bookingId, changeRequestResult || error);
-      if (recovered) {
-        return recovered;
-      }
-
- this.logger.error(
-        `❌ Cancel Booking Error: ${error.message}`,
-        error.stack
-      );
-      throw new InternalServerErrorException('Failed to cancel booking');
+      requestError = error;
+      this.logger.warn(`VSR cancellation request for booking ${bookingId} did not succeed: ${error.message}`);
     }
+
+    // A successful change request acknowledges receipt. Verify the final booking state.
+    const cancellation = await this.verifyCancellationStatus(confirmationRef, bookingId, changeRequestResult ?? requestError);
+    if (cancellation) return cancellation;
+    throw new InternalServerErrorException('Failed to cancel booking: VSR did not confirm cancellation.');
   }
 
-  private async tryRecoverCancellationStatus(
+  private async verifyCancellationStatus(
     confirmationRef: string,
     bookingId: number,
     context: any,
   ): Promise<CancellationResult | null> {
     try {
- this.logger.warn(
-        `⚠️ Cancel request did not return success for booking ${confirmationRef}. Verifying final status via GetBookingDetail...`,
-      );
-
       const detail = await this.getConfirmation(confirmationRef, bookingId);
       if (!isTboBookingCancelled(detail.status)) {
  this.logger.warn(
-          `⚠️ Recovery check completed but booking is not cancelled. status=${detail?.status || 'unknown'}`,
+          `VSR booking ${confirmationRef} is still ${detail.status || 'unconfirmed'} after the cancellation request.`,
         );
         return null;
       }
@@ -1399,8 +1381,8 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
       const fallbackRef =
         String(context?.ChangeRequestId || context?.response?.data?.HotelChangeRequestResult?.ChangeRequestId || confirmationRef);
 
- this.logger.warn(
-        `✅ Cancellation recovered via BookingDetail for booking ${confirmationRef}. status=${detail.status}`,
+ this.logger.log(
+        `VSR cancellation verified for booking ${confirmationRef}. Status: ${detail.status}`,
       );
 
       return {

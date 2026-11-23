@@ -37,18 +37,6 @@ export class ItineraryCancellationService {
       throw new NotFoundException(`Confirmed itinerary not found for Plan ID: ${dto.itinerary_plan_ID}`);
     }
 
- // Check if already cancelled
-    const existingCancellation = await this.prisma.dvi_cancelled_itineraries.findFirst({
-      where: {
-        itinerary_plan_id: dto.itinerary_plan_ID,
-        deleted: 0,
-      },
-    });
-
-    if (existingCancellation) {
-      throw new ConflictException(`Itinerary already cancelled. Cancellation ID: ${existingCancellation.cancelled_itinerary_ID}`);
-    }
-
  // Determine cancellation options (backward compatibility)
     const cancellationOptions = dto.cancellation_options || {
       modify_hotspot: dto.cancel_hotspot ?? true,
@@ -70,6 +58,31 @@ export class ItineraryCancellationService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Serialize cancellation attempts for the same itinerary before calling suppliers.
+        await tx.$queryRaw`
+          SELECT itinerary_plan_ID FROM dvi_itinerary_plan_details
+          WHERE itinerary_plan_ID = ${dto.itinerary_plan_ID} FOR UPDATE
+        `;
+        const existingCancellation = await tx.dvi_cancelled_itineraries.findFirst({
+          where: { itinerary_plan_id: dto.itinerary_plan_ID, deleted: 0 },
+        });
+        if (existingCancellation) {
+          throw new ConflictException(`Itinerary already cancelled. Cancellation ID: ${existingCancellation.cancelled_itinerary_ID}`);
+        }
+
+        if (cancellationOptions.modify_hotel) {
+          const vsrResults = await this.tboHotelBooking.cancelItineraryHotels(
+            dto.itinerary_plan_ID,
+            'Itinerary cancelled by user',
+          );
+          if (vsrResults.some((result) => result.status !== 'cancelled')) {
+            throw new ConflictException({
+              code: 'VSR_CANCELLATION_NOT_CONFIRMED',
+              message: 'VSR did not confirm the hotel cancellation. Check the supplier booking status before retrying.',
+            });
+          }
+        }
+
  // 1. Create cancellation record with selective options
         const cancellation = await tx.dvi_cancelled_itineraries.create({
           data: {
@@ -471,19 +484,6 @@ export class ItineraryCancellationService {
           return provider !== 'offline' && bookingMode !== 'MANUAL_APPROVAL';
         });
         if (supplierHotels.length > 0) {
- // Cancel TBO bookings via API BEFORE updating database
-        try {
-          const tboCancellationResults = await this.tboHotelBooking.cancelItineraryHotels(
-            itineraryPlanId,
-            'Itinerary cancelled by user',
-          );
-
- console.log(`[TBO Cancellation] Results:`, tboCancellationResults);
-        } catch (error) {
- console.error(`[TBO Cancellation] Failed but continuing with DB updates:`, error.message);
- // Continue with database updates even if TBO cancellation fails
-        }
-
  // Cancel ResAvenue bookings via API
         try {
           const resavenueCancellationResults = await this.resavenueHotelBooking.cancelItineraryHotels(
@@ -518,6 +518,25 @@ export class ItineraryCancellationService {
             updatedon: new Date(),
           },
         });
+
+        const vsrHotelIds = supplierHotels
+          .filter((hotel: any) => ['vsr', 'tbo'].includes(String(hotel.hotel_provider || '').trim().toLowerCase()))
+          .map((hotel: any) => hotel.itinerary_plan_hotel_details_ID);
+        if (vsrHotelIds.length) {
+          const where = {
+            itinerary_plan_id: itineraryPlanId,
+            itinerary_plan_hotel_details_ID: { in: vsrHotelIds },
+            deleted: 0,
+          };
+          await tx.dvi_confirmed_itinerary_plan_hotel_details.updateMany({
+            where,
+            data: { hotel_cancellation_status: 1, updatedon: new Date() },
+          });
+          await tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.updateMany({
+            where,
+            data: { hotel_voucher_cancellation_status: 1, updatedon: new Date() },
+          });
+        }
 
  // Copy to cancelled hotel details table if exists
         for (const hotel of hotels) {

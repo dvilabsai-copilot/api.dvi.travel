@@ -51,3 +51,19 @@ test('TBO cancellation recovery uses BookingId and requires a final supplier sta
   status = { ...cancelledBooking, Status: 1, HotelBookingStatus: 'CancellationInProgress' };
   await assert.rejects(provider.cancelBooking('1234', 'test'), /Failed to cancel booking/);
 });
+
+test('a successful VSR change request does not confirm cancellation while the booking remains active', async () => {
+  let supplierStatus = 'CancellationInProgress';
+  const provider = getProvider(async (url, request) => {
+    assert.equal(request.BookingId, 1234);
+    if (url.endsWith('/SendChangeRequest/')) {
+      return { data: { HotelChangeRequestResult: { ResponseStatus: 1, ChangeRequestId: 5678 } } };
+    }
+    return { data: { GetBookingDetailResult: { ResponseStatus: 1, HotelBookingStatus: supplierStatus } } };
+  });
+
+  await assert.rejects(provider.cancelBooking('1234', 'test'), /VSR did not confirm cancellation/);
+  supplierStatus = 'Cancelled';
+  assert.equal((await provider.cancelBooking('1234', 'test')).cancellationRef, '5678');
+  await assert.rejects(provider.cancelBooking('1234wrong', 'test'), /valid VSR booking ID/);
+});
