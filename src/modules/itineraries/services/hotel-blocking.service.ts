@@ -1759,9 +1759,11 @@ export class HotelBlockingService {
     if (!requests.length || pending.length || selectionChanged) {
       throw new BadRequestException({
         code: 'HOTEL_CONFIRMATION_PENDING',
-        message: selectionChanged
-          ? 'The selected hotels changed after the hold request. Hold the current selection again before payment.'
-          : 'Confirm & Pay is available only after every selected hotel confirms the stay.',
+        message: !requests.length && expectedSelectionIds.length > 0
+          ? 'No active hotel holds were found for the selected recommendation. Hold the selected hotels before payment.'
+          : selectionChanged
+            ? 'The selected hotels changed after the hold request. Hold the current selection again before payment.'
+            : 'Confirm & Pay is available only after every selected hotel confirms the stay.',
         pendingHotels: pending.map((request: BlockRow) => ({ id: request.id, hotelName: request.hotel_name, status: request.status })),
       });
     }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { ItinerariesController } from '../src/modules/itineraries/itineraries.controller';
 import { DEFAULT_HOTEL_HOLD_POLICY, HotelBlockingService, hotelHoldDecision } from '../src/modules/itineraries/services/hotel-blocking.service';
 
 function serviceWithPlan(itineraryPreference: number, selectedRows: any[] = [], requests: any[] = []) {
@@ -54,6 +55,51 @@ test('hotel-inclusive plans still require every selected hotel to be confirmed',
   );
   assert.equal(calls.selectedRows, 1);
   assert.equal(calls.requests, 1);
+});
+
+test('a recommendation without existing holds asks for a hold before payment', async () => {
+  const { service } = serviceWithPlan(3, [{ itinerary_plan_hotel_details_ID: 101 }]);
+  await assert.rejects(service.assertPlanReady(12032, 3), (error: any) => {
+    assert.equal(error.getStatus(), 400);
+    assert.equal(error.getResponse().code, 'HOTEL_CONFIRMATION_PENDING');
+    assert.match(error.getResponse().message, /^No active hotel holds/);
+    assert.deepEqual(error.getResponse().pendingHotels, []);
+    return true;
+  });
+});
+
+test('ready holds for different hotel selection rows still require a new hold', async () => {
+  const { service } = serviceWithPlan(3, [{ itinerary_plan_hotel_details_ID: 102 }], [{
+    id: 7, hotel_name: 'Held Hotel', status: 'CONFIRMED',
+    cutoff_at: new Date(Date.now() + 60_000), selection_ids: '[101]',
+  }]);
+  await assert.rejects(service.assertPlanReady(12032, 3), /selected hotels changed after the hold request/);
+});
+
+test('manual confirmation uses hotel_group_type throughout and stops before confirmation when no hold exists', async () => {
+  const calls: string[] = [];
+  let holdExists = false;
+  const controller = Object.assign(Object.create(ItinerariesController.prototype), {
+    itineraryAccessService: { assertVehicleAgentHotelMutation() {}, async assertCanEditPlan() {} },
+    hotelBlockingService: {
+      async assertPlanReady(planId: number, group: number) {
+        assert.equal(planId, 12032);
+        calls.push(`ready:${group}`);
+        if (!holdExists) throw new Error('No active hotel holds');
+      },
+      async assertOfflinePaymentAcknowledgements(_planId: number, group: number) { calls.push(`ack:${group}`); },
+      async finalizePaidProviderHolds(_planId: number, group: number) { calls.push(`finalize:${group}`); },
+    },
+    svc: { async confirmQuotation() { calls.push('confirm'); return { itinerary_plan_ID: 12032 }; } },
+    bookingConfirmationEmailNotifier: { async sendBookingConfirmationNotifications() { calls.push('notify'); } },
+  }) as ItinerariesController;
+  const dto = { itinerary_plan_ID: 12032, hotel_group_type: '3' } as Parameters<ItinerariesController['manualConfirmQuotation']>[0];
+  const request = { user: { role: 1 } } as unknown as Parameters<ItinerariesController['manualConfirmQuotation']>[1];
+  await assert.rejects(controller.manualConfirmQuotation(dto, request), /No active hotel holds/);
+  assert.deepEqual(calls, ['ready:3']);
+  holdExists = true;
+  await controller.manualConfirmQuotation(dto, request);
+  assert.deepEqual(calls.slice(1), ['ready:3', 'ack:3', 'confirm', 'finalize:3', 'notify']);
 });
 
 test('an active AxisRooms unpaid hold is ready for the wallet confirmation step', async () => {
