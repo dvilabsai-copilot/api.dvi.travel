@@ -35,7 +35,10 @@ function setup({
       findFirst: async () => ({ itinerary_route_ID: stay.routeId }),
     },
     dvi_itinerary_offline_hotel_booking: {
-      findMany: async () => [row],
+      findMany: async ({ where, select }: { where: object; select?: object }) => {
+        if (select) assert.deepEqual(where, { itinerary_plan_id: 42, group_type: 1, details: { path: '$.status', equals: 'confirmed' } });
+        return [row];
+      },
       findUnique: async () => row,
       update: async ({ where, data }: {
         where: { version: number };
@@ -90,6 +93,16 @@ test('voucher delivery uses the saved status, while Save Booking changes it and 
   assert.deepEqual(calls, ['send', 'save', 'send']);
   assert.equal(row.details.status, 'confirmed');
   assert.equal(row.version, 4);
+});
+
+test('the confirmation popup receives only confirmed stay identities for its quotation group', async () => {
+  const { controller, calls } = setup({ status: 'confirmed' });
+  const agentRequest = { user: { role: 4, agentId: 8 } } as typeof request;
+  const confirmed = await controller.confirmedStays(42, 1, agentRequest);
+  assert.deepEqual(confirmed, [{
+    routeId: stay.routeId, hotelKey: stay.hotelKey, checkIn: stay.checkIn, checkOut: stay.checkOut,
+  }]);
+  assert.deepEqual(calls, []);
 });
 
 test('demo, partial and failed delivery preserve pending status, and cancelled stays stay cancelled', async () => {

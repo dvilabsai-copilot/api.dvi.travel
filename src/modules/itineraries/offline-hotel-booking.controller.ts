@@ -73,6 +73,26 @@ export class OfflineHotelBookingController {
     return rows.map(bookingResponse);
   }
 
+  @Get('confirmed-stays')
+  async confirmedStays(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Param('groupType', ParseIntPipe) groupType: number,
+    @Req() request: BookingRequest,
+  ) {
+    this.assertValidScope(planId, groupType);
+    await this.access.assertCanViewPlan(planId, request.user);
+    const rows = await this.prisma.dvi_itinerary_offline_hotel_booking.findMany({
+      where: { itinerary_plan_id: planId, group_type: groupType, details: { path: '$.status', equals: 'confirmed' } },
+      select: { route_id: true, hotel_key: true, check_in: true, check_out: true },
+    });
+    return rows.map((row) => ({
+      routeId: row.route_id,
+      hotelKey: row.hotel_key,
+      checkIn: row.check_in.toISOString().slice(0, 10),
+      checkOut: row.check_out.toISOString().slice(0, 10),
+    }));
+  }
+
   @Post('contacts')
   async contacts(
     @Param('planId', ParseIntPipe) planId: number,
@@ -315,6 +335,10 @@ export class OfflineHotelBookingController {
     if (role !== SystemRole.ADMIN && role !== SystemRole.TRAVEL_EXPERT && !isLegacyTravelExpertUser(request.user)) {
       throw new ForbiddenException('Offline booking is available to Travel Experts and Super Admins.');
     }
+    this.assertValidScope(planId, groupType);
+  }
+
+  private assertValidScope(planId: number, groupType: number) {
     if (![planId, groupType].every((id) => Number.isInteger(id) && id > 0 && id <= 2_147_483_647)) {
       throw new BadRequestException('Select a valid itinerary and hotel group.');
     }
