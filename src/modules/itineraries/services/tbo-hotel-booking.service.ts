@@ -9,13 +9,18 @@ import { HotelSearchService } from '../../hotels/services/hotel-search.service';
 import { TBOHotelProvider } from '../../hotels/providers/tbo-hotel.provider';
 import { SupplementNormalizerService } from '../../hotels/services/supplement-normalizer.service';
 import axios, { AxiosInstance } from 'axios';
+import { allocateTboBatchPassengers } from '../../hotels/utils/tbo-batch-passenger-allocation.util';
 import {
   normalizePassengerTitle,
   resolveProviderPassengerTitle,
 } from '../../../common/utils/passenger-title.util';
 import { isTboInsufficientBalanceResponse } from '../utils/tbo-hold-eligibility.util';
+import { createHash } from 'crypto';
+import { validateTboCompleteBatchGroups } from '../../hotels/utils/tbo-complete-batch-validation.util';
 
 interface TboHotelSelection {
+  batchIndex?: number;
+startRoomIndex?: number;
   hotelCode: string;
   hotelName?: string;
   bookingCode: string;
@@ -28,6 +33,7 @@ interface TboHotelSelection {
   searchInitiatedAt?: string;
   passengers: TboHotelPassenger[];
   occupancies?: TboRoomOccupancy[];
+  roomPassengerIndices?: number[][];
   prebookContext?: Record<string, any>;
   /**
    * TBO uses false for a supplier hold and true for immediate voucher booking.
@@ -270,7 +276,9 @@ private readonly TBO_CLIENT_ID =
         sampleCancelPolicy: prebookCancelPolicies[0] || null,
       };
  this.logger.log(` PreBook API snapshot: ${JSON.stringify(prebookSnapshot)}`);
- this.logger.log(` PreBook API raw response: ${JSON.stringify(response.data)}`);
+ this.logger.log(
+  `TBO PreBook response received: hotel=${selection.hotelCode}`,
+);
 
       (response.data as any).__requestPayload = payload;
 
@@ -305,7 +313,9 @@ private readonly TBO_CLIENT_ID =
       if (isHoldInsufficientBalance) {
  this.logger.warn(' PreBook returned insufficient balance; continuing only for the explicit non-voucher hold flow.');
       } else {
- this.logger.log(` PreBook successful: ${JSON.stringify(response.data)}`);
+ this.logger.log(
+  `TBO PreBook successful: hotel=${selection.hotelCode}`,
+);
       }
       return response.data;
     } catch (error: any) {
@@ -356,18 +366,42 @@ private readonly TBO_CLIENT_ID =
     try {
       this.validateSelection(selection);
 
- // Check if using mock mode for development
-      if (this.USE_MOCK_TBO) {
-        return this.generateMockBookResponse(preBookResponse, selection);
+ // Map passengers to TBO format
+const hotelRoomsDetails = selection.roomPassengerIndices !== undefined
+  ? (() => {
+      if (!selection.occupancies) {
+        throw new BadRequestException(
+          'Room occupancies are required for explicit TBO passenger assignments.',
+        );
       }
 
- // Map passengers to TBO format
-      const hotelRoomsDetails = this.mapPassengersToRooms(
+      const assignedRooms = allocateTboBatchPassengers(
         selection.passengers,
-        selection.numberOfRooms,
         selection.occupancies,
+        selection.roomPassengerIndices,
+        [{
+          batchIndex: 0,
+          startRoomIndex: 0,
+          roomCount: selection.numberOfRooms,
+        }],
       );
 
+      return assignedRooms[0].occupancies.map((_, roomIndex) => ({
+        HotelPassenger: selection.roomPassengerIndices![roomIndex].map(
+          (passengerIndex, indexInRoom) =>
+            this.mapPassenger(selection.passengers[passengerIndex], indexInRoom),
+        ),
+      }));
+    })()
+  : this.mapPassengersToRooms(
+      selection.passengers,
+      selection.numberOfRooms,
+      selection.occupancies,
+    );
+// Check if using mock mode for development
+if (this.USE_MOCK_TBO) {
+  return this.generateMockBookResponse(preBookResponse, selection);
+}
       const prebookBookingCode = String(
         preBookResponse?.BookingCode ||
           preBookResponse?.HotelResult?.[0]?.Rooms?.[0]?.BookingCode ||
@@ -393,9 +427,9 @@ private readonly TBO_CLIENT_ID =
         HotelRoomsDetails: hotelRoomsDetails,
       };
 
- this.logger.log(
-        `📝 Booking: Hotel ${selection.hotelCode}, Payload: ${JSON.stringify(bookingPayload)}`,
-      );
+this.logger.log(
+  `TBO Book request started: hotel=${selection.hotelCode}, rooms=${selection.numberOfRooms}`,
+);
 
       const response = await this.client.post<BookResponse>(
         this.BOOK_URL,
@@ -404,12 +438,13 @@ private readonly TBO_CLIENT_ID =
 
       (response.data as any).meta = {
         ...(response.data as any).meta,
-        tokenId: tokenId,
-        requestPayload: bookingPayload,
       };
 
  // Log full response for debugging
- this.logger.log(` Book API Response: ${JSON.stringify(response.data)}`);
+this.logger.log(
+  `TBO Book response: status=${response.data?.BookResult?.Status}, ` +
+  `responseStatus=${response.data?.BookResult?.ResponseStatus}`,
+);
 
  // Handle TBO status response - Book API returns BookResult.Status (1 for success)
       const bookResult = response.data.BookResult;
@@ -433,7 +468,9 @@ private readonly TBO_CLIENT_ID =
         );
       }
 
- this.logger.log(` Booking successful: ${JSON.stringify(response.data)}`);
+ this.logger.log(
+  `TBO Book successful: hotel=${selection.hotelCode}`,
+);
       return response.data;
     } catch (error: any) {
       const timeoutError = error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '');
@@ -547,7 +584,7 @@ private readonly TBO_CLIENT_ID =
    * Each room contains the passengers assigned to it
    *
    * IMPORTANT: TBO requires passenger count to match what was searched
-   * If user searched for 2 adults but only provides 1 passenger, duplicate it
+     * Reject missing or mismatched passengers instead of duplicating them.
  */
   private mapPassengersToRooms(
     passengers: TboHotelPassenger[],
@@ -561,8 +598,6 @@ private readonly TBO_CLIENT_ID =
     if (occupancies && occupancies.length > 0) {
       const adultsPool = workingPassengers.filter((p) => Number(p.paxType) === 1);
       const childrenPool = workingPassengers.filter((p) => Number(p.paxType) === 2);
-      const adultFallback = adultsPool[0];
-      const childFallback = childrenPool[0];
 
       const takeFromPool = (pool: TboHotelPassenger[], count: number): TboHotelPassenger[] => {
         const picked = pool.slice(0, Math.max(count, 0));
@@ -581,8 +616,11 @@ private readonly TBO_CLIENT_ID =
           .filter((age) => Number.isFinite(age));
 
         const roomAdults = takeFromPool(adultsPool, adultsNeeded);
-        while (roomAdults.length < adultsNeeded && adultFallback) {
-          roomAdults.push({ ...adultFallback });
+
+        if (roomAdults.length !== adultsNeeded) {
+          throw new BadRequestException(
+            `Insufficient adult passengers for TBO room ${i + 1}.`,
+          );
         }
         const roomChildren: TboHotelPassenger[] = [];
 
@@ -597,17 +635,19 @@ private readonly TBO_CLIENT_ID =
             );
           }
 
-          if (matchedIndex < 0) {
-            matchedIndex = 0;
+          if (matchedIndex < 0 || !childrenPool[matchedIndex]) {
+            throw new BadRequestException(
+              `Child passenger age does not match TBO room ${i + 1}.`,
+            );
           }
 
-          if (matchedIndex >= 0 && childrenPool[matchedIndex]) {
-            const [picked] = childrenPool.splice(matchedIndex, 1);
-            roomChildren.push(picked);
-          }
+          const [picked] = childrenPool.splice(matchedIndex, 1);
+          roomChildren.push(picked);
         }
-        while (roomChildren.length < childrenNeeded && childFallback) {
-          roomChildren.push({ ...childFallback });
+        if (roomChildren.length !== childrenNeeded) {
+          throw new BadRequestException(
+            `Insufficient child passengers for TBO room ${i + 1}.`,
+          );
         }
 
         const roomPassengers: TboHotelPassenger[] = [...roomAdults, ...roomChildren];
@@ -617,22 +657,41 @@ private readonly TBO_CLIENT_ID =
           );
         }
 
-        const mappedPassengers = roomPassengers.map((p, idx) => this.mapPassenger(p, idx));
+        const mappedPassengers = roomPassengers.map(
+          (p, idx) => this.mapPassenger(p, idx),
+        );
+
         rooms.push({ HotelPassenger: mappedPassengers });
+      }
+
+      if (adultsPool.length > 0 || childrenPool.length > 0) {
+        throw new BadRequestException(
+          'TBO passenger count exceeds the selected room occupancies.',
+        );
       }
 
       return rooms;
     }
 
-    const roomsPerSize = Math.ceil(workingPassengers.length / safeRoomCount);
+    const roomsPerSize = Math.ceil(
+      workingPassengers.length / safeRoomCount,
+    );
 
     for (let i = 0; i < safeRoomCount; i++) {
       const startIdx = i * roomsPerSize;
-      const endIdx = Math.min(startIdx + roomsPerSize, workingPassengers.length);
-      const roomPassengers = workingPassengers.slice(startIdx, endIdx);
+      const endIdx = Math.min(
+        startIdx + roomsPerSize,
+        workingPassengers.length,
+      );
 
- // Mark first passenger in room as lead
-      const mappedPassengers = roomPassengers.map((p, idx) => this.mapPassenger(p, idx));
+      const roomPassengers = workingPassengers.slice(
+        startIdx,
+        endIdx,
+      );
+
+      const mappedPassengers = roomPassengers.map(
+        (p, idx) => this.mapPassenger(p, idx),
+      );
 
       rooms.push({
         HotelPassenger: mappedPassengers,
@@ -681,11 +740,6 @@ private readonly TBO_CLIENT_ID =
     userId: number,
   ) {
     try {
-      const bookingMeta = (bookingResponse as any)?.meta || {};
-      const tokenId =
-        typeof bookingMeta.tokenId === 'string' && bookingMeta.tokenId.trim().length > 0
-          ? bookingMeta.tokenId.trim()
-          : null;
 
       const childAges = this.getChildAgesFromSelection(selection);
       const passengerSnapshot = selection.passengers.map((p) => ({
@@ -695,6 +749,40 @@ private readonly TBO_CLIENT_ID =
         firstName: p.firstName,
         lastName: p.lastName,
       }));
+
+
+      // Reuse an existing confirmation for the same supplier booking.
+      // This prevents a repeated save from creating another local record.
+      const supplierBookingId = String(
+        bookingResponse.BookResult.BookingId || '',
+      ).trim();
+
+      if (!supplierBookingId || supplierBookingId === '0') {
+        throw new BadRequestException(
+          'Cannot save TBO confirmation without a valid supplier BookingId.',
+        );
+      }
+
+      const existingConfirmation =
+        await this.prisma.tbo_hotel_booking_confirmation.findFirst({
+          where: {
+            itinerary_plan_ID: itineraryPlanId,
+            itinerary_route_ID: routeId,
+            tbo_booking_id: supplierBookingId,
+            deleted: 0,
+          },
+          select: {
+            tbo_hotel_booking_confirmation_ID: true,
+          },
+        });
+
+      if (existingConfirmation) {
+        this.logger.warn(
+          `TBO confirmation already saved for BookingId ${supplierBookingId}. Reusing existing record.`,
+        );
+
+        return existingConfirmation;
+      }
 
       const saved = await this.prisma.tbo_hotel_booking_confirmation.create({
         data: {
@@ -716,9 +804,9 @@ private readonly TBO_CLIENT_ID =
           api_response: {
             preBookResponse: preBookResponse as Record<string, any>,
             preBookMeta: preBookMeta as Record<string, any>,
-            bookResponse: bookingResponse as unknown as Record<string, any>,
-            tokenId,
-            tokenSource: tokenId ? 'authenticate' : 'unavailable',
+             bookResponse: {
+              BookResult: bookingResponse.BookResult,
+            },
             persistenceSnapshot: {
               childAges,
               passengerSnapshot,
@@ -732,8 +820,7 @@ private readonly TBO_CLIENT_ID =
  // NEW: normalized supplements for display/booking
               normalizedSupplements: preBookMeta?.normalizedSupplements || null,
               supplements: preBookMeta?.supplements || null,
-              panDetails: selection.passengers.map((p) => p.pan).filter(Boolean),
-              passportDetails: selection.passengers.map((p) => p.passportNo).filter(Boolean),
+                         passengerDocumentDetailsStored: false,
             },
           },
           createdby: userId,
@@ -761,7 +848,7 @@ private readonly TBO_CLIENT_ID =
  /**
    * Confirm multiple hotel bookings for an itinerary
  */
-  async confirmItineraryHotels(
+async confirmItineraryHotels(
     confirmedPlanId: number,
     itineraryPlanId: number,
     selections: Array<{
@@ -773,23 +860,136 @@ private readonly TBO_CLIENT_ID =
  groupType: number = 1, // Hotel group type (not used here - draft records already saved)
   ) {
     const results = [];
+    if (selections.length > 0) {
+      const sourcePlan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+        where: { itinerary_plan_ID: itineraryPlanId },
+        select: { preferred_room_count: true },
+      });
+      if (!sourcePlan) throw new BadRequestException('Itinerary plan not found for TBO confirmation.');
+      const roomCount = Number(sourcePlan.preferred_room_count || 1);
+      if (roomCount > 6) {
+        const groupError = validateTboCompleteBatchGroups(
+          selections.map(({ routeId, selection }) => ({ ...selection, routeId })),
+          roomCount,
+        );
+        if (groupError) throw new BadRequestException(groupError);
+      }
+    }
     const lockedGuestNationality = await this.resolveBookingNationalityFromPlan(itineraryPlanId);
  this.logger.log(
       `🔐 TBO booking nationality locked to itinerary plan ${itineraryPlanId}: ${lockedGuestNationality}`,
     );
-    const processedBookingMap = new Map<
-      string,
-      {
-        bookResponse: BookResponse;
-        preBookResponse: PreBookResponse;
-        preBookMeta: any;
-        bookingSelection: TboHotelSelection;
-      }
-    >();
+    // Validate every batch before the first supplier Book call.
+const groups = new Map<string, typeof selections>();
+
+for (const item of selections) {
+  const { routeId, selection } = item;
+
+  this.validateSelection(selection);
+
+  if (!Number.isSafeInteger(routeId) || routeId <= 0) {
+    throw new BadRequestException('Invalid TBO routeId.');
+  }
+
+  const code = String(selection.bookingCode || '').trim();
+  const contextCode = String(
+    selection.prebookContext?.bookingCode || '',
+  ).trim();
+
+  if (!contextCode || contextCode !== code) {
+    throw new BadRequestException(
+      'Every TBO batch requires its own matching PreBook BookingCode.',
+    );
+  }
+
+  const amount = Number(
+    selection.prebookContext?.prebookNetAmount,
+  );
+
+  if (
+    selection.prebookContext?.prebookNetAmount == null ||
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
+    throw new BadRequestException(
+      'Every TBO batch requires a valid supplier PreBook NetAmount.',
+    );
+  }
+
+  const key = [
+    routeId,
+    selection.hotelCode,
+    selection.checkInDate,
+    selection.checkOutDate,
+  ].join('|');
+
+  const existing = groups.get(key) || [];
+  existing.push(item);
+  groups.set(key, existing);
+}
+
+for (const group of groups.values()) {
+  if (group.length <= 1) continue;
+
+  const sorted = [...group].sort(
+    (a, b) =>
+      Number(a.selection.startRoomIndex) -
+      Number(b.selection.startRoomIndex),
+  );
+
+  const usedCodes = new Set<string>();
+  const usedIndices = new Set<number>();
+  let nextRoom = 0;
+
+  for (const { selection } of sorted) {
+    const batchIndex = selection.batchIndex;
+    const start = selection.startRoomIndex;
+
+    if (
+      !Number.isSafeInteger(batchIndex) ||
+      !Number.isSafeInteger(start) ||
+      start !== nextRoom
+    ) {
+      throw new BadRequestException(
+        'TBO batches must cover consecutive rooms starting at zero.',
+      );
+    }
+
+    if (usedIndices.has(batchIndex!)) {
+      throw new BadRequestException(
+        'Duplicate TBO batchIndex detected.',
+      );
+    }
+
+    const code = String(selection.bookingCode).trim();
+
+    if (usedCodes.has(code)) {
+      throw new BadRequestException(
+        'Two TBO batches cannot reuse the same supplier BookingCode.',
+      );
+    }
+
+    usedIndices.add(batchIndex!);
+    usedCodes.add(code);
+    nextRoom += selection.numberOfRooms;
+  }
+
+  if (
+    sorted.some(
+      ({ selection }, index) => selection.batchIndex !== index,
+    )
+  ) {
+    throw new BadRequestException(
+      'TBO batch indexes must be sequential, starting from zero.',
+    );
+  }
+}
 
     for (const { routeId, selection } of selections) {
-      try {
-        this.validateSelection(selection);
+  let supplierBookStarted = false;
+
+  try {
+    this.validateSelection(selection);
 
         let preBookResponse: PreBookResponse;
         let preBookMeta: any;
@@ -852,56 +1052,223 @@ private readonly TBO_CLIENT_ID =
           );
         }
 
-        const bookingSelection: TboHotelSelection = {
-          ...selection,
-          guestNationality: lockedGuestNationality,
-          netAmount: Number(preBookMeta.prebookNetAmount),
-        };
+   const selectedCode = String(selection.bookingCode || '').trim();
+const prebookCode = String(preBookResponse.BookingCode || '').trim();
 
-        const dedupeKey = [
-          String(preBookResponse?.BookingCode || '').trim(),
-          String(preBookResponse?.TraceId || '').trim(),
-          String(selection.hotelCode || '').trim(),
-        ].join('|');
+if (!selectedCode || selectedCode !== prebookCode) {
+  throw new BadRequestException(
+    'TBO PreBook BookingCode does not match the selected batch. ' +
+    'Run a fresh supplier search and PreBook.',
+  );
+}
 
-        const alreadyProcessed = processedBookingMap.get(dedupeKey);
-        let bookResponse: BookResponse;
+const verifiedNetAmount = Number(preBookMeta.prebookNetAmount);
 
-        if (alreadyProcessed) {
- this.logger.warn(
-            `↻ Reusing existing booking for duplicate BookingCode/TraceId on route ${routeId} (hotel ${selection.hotelCode})`,
-          );
-          bookResponse = alreadyProcessed.bookResponse;
-        } else {
- // Step 2: Book the hotel with guest details
-          bookResponse = await this.bookHotel(
-            preBookResponse,
-            bookingSelection,
-            endUserIp,
-          );
+if (!Number.isFinite(verifiedNetAmount) || verifiedNetAmount <= 0) {
+  throw new BadRequestException(
+    'Invalid supplier PreBook NetAmount. Booking is blocked.',
+  );
+}
 
-          processedBookingMap.set(dedupeKey, {
-            bookResponse,
-            preBookResponse,
-            preBookMeta,
-            bookingSelection,
+if (shouldReconfirmPrice) {
+  throw new BadRequestException(
+    'TBO price or cancellation policy changed. ' +
+    'The revised supplier terms must be accepted before booking.',
+  );
+}
+
+const bookingSelection: TboHotelSelection = {
+  ...selection,
+  guestNationality: lockedGuestNationality,
+  netAmount: verifiedNetAmount,
+};
+
+        // Check previously saved supplier bookings before calling Book again.
+        // Applies only to the same itinerary, route, hotel and BookingCode.
+        const existingSupplierBooking =
+          await this.prisma.tbo_hotel_booking_confirmation.findFirst({
+            where: {
+              confirmed_itinerary_plan_ID: confirmedPlanId,
+              itinerary_plan_ID: itineraryPlanId,
+              itinerary_route_ID: routeId,
+              tbo_hotel_code: selection.hotelCode,
+              booking_code: selection.bookingCode,
+              status: 1,
+              deleted: 0,
+            },
+            select: {
+              tbo_hotel_booking_confirmation_ID: true,
+              tbo_booking_id: true,
+              number_of_rooms: true,
+            },
           });
+
+        if (existingSupplierBooking) {
+          if (
+            Number(existingSupplierBooking.number_of_rooms) !==
+            selection.numberOfRooms
+          ) {
+            throw new BadRequestException(
+              'An existing TBO booking has a different room count. Manual review required.',
+            );
+          }
+
+          this.logger.warn(
+            `Skipping duplicate TBO Book call for route ${routeId}; existing supplier BookingId ${existingSupplierBooking.tbo_booking_id}`,
+          );
+
+  results.push({
+  routeId,
+  hotelCode: selection.hotelCode,
+  bookingCode: selection.bookingCode,
+  batchIndex: selection.batchIndex ?? 0,
+  startRoomIndex: selection.startRoomIndex ?? 0,
+  bookingId: String(existingSupplierBooking.tbo_booking_id),
+  status: 'confirmed',
+  alreadyBooked: true,
+  confirmation: {
+    tbo_hotel_booking_confirmation_ID:
+      existingSupplierBooking.tbo_hotel_booking_confirmation_ID,
+  },
+});
+
+          continue;
         }
 
+        const batchIndex = selection.batchIndex ?? 0;
+        const startRoomIndex = selection.startRoomIndex ?? 0;
+
+        if (
+          !Number.isSafeInteger(batchIndex) ||
+          batchIndex < 0 ||
+          !Number.isSafeInteger(startRoomIndex) ||
+          startRoomIndex < 0
+        ) {
+          throw new BadRequestException('Invalid TBO batch identity.');
+        }
+
+        const bookingCodeHash = createHash('sha256')
+          .update(String(preBookResponse.BookingCode), 'utf8')
+          .digest('hex');
+
+        let attempt: { id: number };
+
+        try {
+          attempt = await this.prisma.tbo_hotel_booking_attempt.create({
+            data: {
+              confirmed_itinerary_plan_ID: confirmedPlanId,
+              itinerary_plan_ID: itineraryPlanId,
+              itinerary_route_ID: routeId,
+              batch_index: batchIndex,
+              start_room_index: startRoomIndex,
+              number_of_rooms: selection.numberOfRooms,
+              booking_code_hash: bookingCodeHash,
+              state: 'CLAIMED',
+            },
+            select: { id: true },
+          });
+        } catch (error: any) {
+          if (error?.code === 'P2002') {
+            throw new BadRequestException(
+              'This TBO batch was already attempted. ' +
+              'Verify its saved supplier state before retrying.',
+            );
+          }
+          throw error;
+        }
+
+let bookResponse: BookResponse;
+
+try {
+  supplierBookStarted = true;
+
+  bookResponse = await this.bookHotel(
+    preBookResponse,
+    bookingSelection,
+    endUserIp,
+  );
+} catch (error) {
+  await this.prisma.tbo_hotel_booking_attempt.update({
+    where: { id: attempt.id },
+    data: { state: 'UNKNOWN' },
+  });
+
+  throw error;
+}
+
+const supplierBookingId = Number(
+  bookResponse.BookResult?.BookingId,
+);
+
+if (
+  !Number.isSafeInteger(supplierBookingId) ||
+  supplierBookingId <= 0
+) {
+  await this.prisma.tbo_hotel_booking_attempt.update({
+    where: { id: attempt.id },
+    data: { state: 'UNKNOWN' },
+  });
+
+  throw new BadRequestException(
+    'TBO BookingId is invalid. Supplier reconciliation is required.',
+  );
+}
+
+await this.prisma.tbo_hotel_booking_attempt.update({
+  where: { id: attempt.id },
+  data: {
+    state: 'BOOKED_UNPERSISTED',
+    supplier_booking_id: String(supplierBookingId),
+    supplier_booking_reference:
+      bookResponse.BookResult.BookingRefNo || null,
+  },
+});
+
  // Step 3: Save confirmation to database
-        const savedConfirmation = await this.saveTboBookingConfirmation(
-          confirmedPlanId,
-          itineraryPlanId,
-          routeId,
-          selection.hotelCode,
-          bookResponse,
-          preBookResponse,
-          preBookMeta,
-          bookingSelection,
-          userId,
-        );
+let savedConfirmation: {
+  tbo_hotel_booking_confirmation_ID: number;
+};
+
+try {
+  savedConfirmation = await this.saveTboBookingConfirmation(
+    confirmedPlanId,
+    itineraryPlanId,
+    routeId,
+    selection.hotelCode,
+    bookResponse,
+    preBookResponse,
+    preBookMeta,
+    bookingSelection,
+    userId,
+  );
+} catch (error) {
+  this.logger.error(
+    `TBO BookingId ${supplierBookingId} was returned, ` +
+    'but local confirmation persistence failed. ' +
+    'Manual reconciliation is required; do not rebook.',
+  );
+
+  throw new BadRequestException(
+    `Supplier booking ${supplierBookingId} requires reconciliation. ` +
+    'Do not retry the supplier Book request.',
+  );
+}
+await this.prisma.tbo_hotel_booking_attempt.update({
+  where: { id: attempt.id },
+  data: {
+    state: 'CONFIRMED',
+    confirmation_id:
+      savedConfirmation.tbo_hotel_booking_confirmation_ID,
+    supplier_booking_id: String(supplierBookingId),
+    supplier_booking_reference:
+      bookResponse.BookResult.BookingRefNo || null,
+  },
+});
 
         results.push({
+          bookingCode: selection.bookingCode,
+batchIndex,
+startRoomIndex,
           routeId,
           hotelCode: selection.hotelCode,
           bookingId: String(bookResponse.BookResult.BookingId),
@@ -927,12 +1294,21 @@ private readonly TBO_CLIENT_ID =
  this.logger.error(
           `❌ Failed to book hotel for route ${routeId}: ${error.message}`,
         );
-        results.push({
-          routeId,
-          hotelCode: selection.hotelCode,
-          status: 'failed',
-          error: error.message,
-        });
+results.push({
+  routeId,
+  hotelCode: selection.hotelCode,
+  bookingCode: selection.bookingCode,
+  batchIndex: selection.batchIndex ?? 0,
+  startRoomIndex: selection.startRoomIndex ?? 0,
+  status: supplierBookStarted
+    ? 'requires_reconciliation'
+    : 'failed',
+  success: false,
+  retryAllowed: false,
+  error: error instanceof Error
+    ? error.message
+    : 'Unknown TBO booking error',
+});
       }
     }
 
@@ -1422,29 +1798,14 @@ private async authenticate(endUserIp: string): Promise<string> {
         `⚠️ Booking timeout recovered via GetBookingDetail. BookingRef=${bookingRef}, status=${detail.status}`,
       );
 
-      return {
-        BookResult: {
-          TBOReferenceNo: null,
-          VoucherStatus: true,
-          ResponseStatus: 1,
-          Error: {
-            ErrorCode: 0,
-            ErrorMessage: '',
-          },
-          TraceId: '',
-          Status: 1,
-          HotelBookingStatus: detail.status || 'Confirmed',
-          ConfirmationNo: String(bookingRef),
-          BookingRefNo: String(bookingRef),
-          BookingId: Number(bookingRef) || 0,
-          IsPriceChanged: false,
-          IsCancellationPolicyChanged: false,
-        },
-        meta: {
-          recoveredFromTimeout: true,
-          recoveryMessage: 'Booking timeout recovered from booking detail API',
-        },
-      };
+      // A booking reference is not a supplier BookingId.
+      // Never fabricate a confirmed booking from a reference alone.
+      this.logger.warn(
+        'TBO booking outcome requires reconciliation: ' +
+        'supplier BookingId has not been verified.',
+      );
+
+      return null;
     } catch (recoveryError: any) {
  this.logger.error(
         `❌ Booking timeout recovery failed for reference ${bookingRef}: ${recoveryError.message}`,

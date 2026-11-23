@@ -104,7 +104,12 @@ export async function createPendingItineraryRevision(
   capturePrices: (quoteId: string) => Promise<RevisionPriceSnapshot>,
 ) {
   const { pending, source } = state;
-  if (pending) {
+  if (pending && pending.status === 'FAILED' && pending.edit_key !== editKey && !pending.search_run_id) {
+    await tx.dvi_itinerary_quote_revision.update({
+      where: { plan_id: pending.plan_id },
+      data: { status: 'ABANDONED' },
+    });
+  } else if (pending) {
     if (pending.edit_key !== editKey || pending.status !== 'FAILED') {
       throw new ConflictException('This quote already has a pending revision. Retry the same edit if the hotel search failed.');
     }
@@ -127,7 +132,15 @@ export async function createPendingItineraryRevision(
 
   const originalPlanId = source?.original_plan_id ?? sourcePlanId;
   const originalQuoteId = source ? previousQuoteId.replace(/-V\d+$/, '') : previousQuoteId;
-  const revisionNumber = (source?.revision_number ?? 0) + 1;
+  const latestFamilyRevision = await tx.dvi_itinerary_quote_revision.findFirst({
+    where: { original_plan_id: originalPlanId },
+    orderBy: { revision_number: 'desc' },
+    select: { revision_number: true },
+  });
+  const revisionNumber = Math.max(
+    Number(source?.revision_number ?? 0),
+    Number(latestFamilyRevision?.revision_number ?? 0),
+  ) + 1;
   const quoteId = `${originalQuoteId}-V${revisionNumber}`;
   const existing = await tx.dvi_itinerary_plan_details.findFirst({ where: { itinerary_quote_ID: quoteId } });
   if (existing) throw new ConflictException(`Quote ${quoteId} already exists.`);

@@ -228,6 +228,8 @@ export class ItinerarySelectionWorkflowService {
     numberOfNights?: number;
     nightlyRates?: Array<Record<string, unknown>>;
     tboRoomNightBreakdown?: Array<Record<string, unknown>>;
+    /** Server-validated complete TBO supplier batch stay, never from browser input. */
+    tboMultiBatchStay?: import('../../hotels/utils/tbo-multi-batch-stay.util').TboMultiBatchStaySnapshot;
     isRefundable?: boolean | number | string;
     IsRefundable?: boolean | number | string;
     routeDate?: string;
@@ -730,6 +732,7 @@ export class ItinerarySelectionWorkflowService {
       ...(Array.isArray(data.tboRoomNightBreakdown)
         ? { tboRoomNightBreakdown: data.tboRoomNightBreakdown }
         : {}),
+      ...(data.tboMultiBatchStay ? { tboMultiBatchStay: data.tboMultiBatchStay } : {}),
       ...(tboMapFallbackApplied ? {
         tboMapFallbackApplied: true,
         tboMapFallbackSourceMealPlan: data.tboMapFallbackSourceMealPlan || 'CP',
@@ -1535,6 +1538,7 @@ export class ItinerarySelectionWorkflowService {
             // in the persistence handoff so selectHotel can include them in
             // the saved price snapshot. Do not infer them from another rate.
             tboRoomNightBreakdown: hotel.tboRoomNightBreakdown,
+            tboMultiBatchStay: hotel.tboMultiBatchStay,
             hotelMarginPercentage: hotel.hotelMarginPercentage,
             hotelMarginAmount: hotel.hotelMarginAmount,
              hotelMarginTotalAmount: hotel.hotelMarginTotalAmount,

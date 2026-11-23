@@ -6,6 +6,7 @@ import { ConfirmQuotationDto } from '../dto/confirm-quotation.dto';
 import { TboHotelBookingService } from './tbo-hotel-booking.service';
 import { SupplementNormalizerService } from '../../../modules/hotels/services/supplement-normalizer.service';
 import { getTboPrebookRateHoldEligibility } from '../utils/tbo-hold-eligibility.util';
+import { validateTboCompleteBatchGroups } from '../../hotels/utils/tbo-complete-batch-validation.util';
 
 type HotelPrebookCallbacks = Partial<Record<
   'normalizeToArray'
@@ -54,7 +55,9 @@ export class ItineraryHotelPrebookService {
       roomType: string;
       checkInDate: string;
       checkOutDate: string;
-      numberOfRooms: number;
+         numberOfRooms: number;
+      batchIndex?: number;
+      startRoomIndex?: number;
       guestNationality: string;
       netAmount: number;
       searchInitiatedAt?: string;
@@ -85,6 +88,26 @@ export class ItineraryHotelPrebookService {
     endUserIp?: string;
   }) {
     const incomingHotelBookings = payload?.hotel_bookings || [];
+    // A preview may look available but must never silently prebook only 6 of 8 rooms.
+    const suppliedTboBookings = incomingHotelBookings.filter((hotel: any) =>
+      ['tbo', 'vsr'].includes(String(hotel?.provider || '').trim().toLowerCase()),
+    );
+    if (suppliedTboBookings.length > 0) {
+      const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+        where: { itinerary_plan_ID: Number(payload.itinerary_plan_ID) },
+        select: { preferred_room_count: true },
+      });
+      if (!plan) throw new BadRequestException('Itinerary plan not found for TBO PreBook.');
+      const planRooms = Number(plan.preferred_room_count || 1);
+      if (planRooms > 6) {
+        if (suppliedTboBookings.some((hotel: any) => hotel.isBookable === false ||
+            hotel.isSelectable === false || String(hotel.availabilityStatus || '').toUpperCase() === 'NOT_BOOKABLE')) {
+          throw new BadRequestException('TBO matching hotel previews are not selectable. Complete multi-batch selection is required before PreBook.');
+        }
+        const error = validateTboCompleteBatchGroups(suppliedTboBookings, planRooms);
+        if (error) throw new BadRequestException(error);
+      }
+    }
     // A TBO/VSR row is a prebook candidate even when its booking code is
     // missing or expired. In that case prebook must fail clearly and ask the
     // user to reopen the itinerary for automatic validation. It must not call
@@ -153,7 +176,21 @@ export class ItineraryHotelPrebookService {
       };
     }
 
-    const prebookResults: any[] = [];
+     const prebookResults: any[] = [];
+    const seenBookingCodes = new Set<string>();
+
+    for (const hotel of tboHotels) {
+      const code = String(hotel.bookingCode || '').trim();
+
+      if (seenBookingCodes.has(code)) {
+        throw new BadRequestException(
+          'Duplicate TBO BookingCode detected. ' +
+          'Each supplier batch requires its own BookingCode.',
+        );
+      }
+
+      seenBookingCodes.add(code);
+    }
 
     for (const hotel of tboHotels) {
       const resolvedBookingCode = await this.resolvePrebookBookingCode(
@@ -214,10 +251,12 @@ export class ItineraryHotelPrebookService {
           sampleCancelPolicy: prebookCancelPoliciesDebug[0] || null,
         }),
       );
- console.log(
-        '[ItinerariesService] 📥 Full PreBook API response:',
-        JSON.stringify(prebookResponse),
-      );
+console.log('[ItinerariesService] PreBook completed:', {
+  routeId: hotel.routeId,
+  hotelCode: hotel.hotelCode,
+  roomCount: hotel.numberOfRooms,
+  status: prebookResponse?.Status,
+});
 
  // Extract raw mandatory supplements
       const mandatorySupplements = rawRoomDetails
@@ -331,20 +370,55 @@ export class ItineraryHotelPrebookService {
       );
       const finalPrice = finalPriceCandidate !== undefined ? Number(finalPriceCandidate) : 0;
 
-      const prebookNetAmountCandidates = [
+       const prebookNetAmountCandidates = [
         prebookResponse?.NetAmount,
         ...rawRoomDetails.map((room: any) => room?.NetAmount),
       ];
-      const prebookNetAmountCandidate = prebookNetAmountCandidates.find(
-        (price) => typeof price === 'number' || (typeof price === 'string' && price !== ''),
-      );
+
+      const prebookNetAmountCandidate =
+        prebookNetAmountCandidates.find(
+          (price) =>
+            typeof price === 'number' ||
+            (typeof price === 'string' && price.trim() !== ''),
+        );
+
       const prebookNetAmount =
-        prebookNetAmountCandidate !== undefined ? Number(prebookNetAmountCandidate) : null;
+        prebookNetAmountCandidate !== undefined
+          ? Number(prebookNetAmountCandidate)
+          : null;
+
+      const returnedCode = String(
+        prebookResponse?.BookingCode || '',
+      ).trim();
+
+      if (
+        returnedCode &&
+        returnedCode !== resolvedBookingCode
+      ) {
+        throw new BadRequestException(
+          'Supplier PreBook returned a different BookingCode. ' +
+          'Refresh the selected batch before confirming.',
+        );
+      }
+
+      if (
+        prebookNetAmount === null ||
+        !Number.isFinite(prebookNetAmount) ||
+        prebookNetAmount <= 0
+      ) {
+        throw new BadRequestException(
+          'Supplier PreBook did not return a valid NetAmount. ' +
+          'Booking is blocked.',
+        );
+      }
 
       prebookResults.push({
-        routeId: hotel.routeId,
+             routeId: hotel.routeId,
         hotelCode: hotel.hotelCode,
         hotelName: hotel.hotelName || null,
+        batchIndex: hotel.batchIndex ?? 0,
+        startRoomIndex: hotel.startRoomIndex ?? 0,
+        numberOfRooms: hotel.numberOfRooms,
         bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
         updatedTotalPrice: finalPrice,
         finalPrice,
@@ -366,9 +440,12 @@ export class ItineraryHotelPrebookService {
         isPriceChanged: Boolean(prebookResponse?.IsPriceChanged),
         isCancellationPolicyChanged: Boolean(prebookResponse?.IsCancellationPolicyChanged),
         rawStatus: prebookResponse?.Status,
-        prebookContext: {
+            prebookContext: {
           hotelName: hotel.hotelName || null,
-          bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
+          bookingCode: prebookResponse?.BookingCode || resolvedBookingCode,
+          batchIndex: hotel.batchIndex ?? 0,
+          startRoomIndex: hotel.startRoomIndex ?? 0,
+          numberOfRooms: hotel.numberOfRooms,
           traceId: prebookResponse?.TraceId || '',
           finalPrice,
           prebookNetAmount,
