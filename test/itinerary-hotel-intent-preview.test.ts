@@ -653,6 +653,7 @@ test('TBO RATE_OPTION preview keeps the commercial room when its session token a
 
 test('TBO preview does not multiply an occupancy fare by room count twice', async () => {
   const service = Object.create(ItinerariesService.prototype) as any;
+  const checkedAt = Date.now();
   const tboStay = {
     routeIds: [10145],
     stayDates: ['2026-08-12'],
@@ -673,6 +674,8 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
     mealPlan: 'MAP',
     rateOptionId: 'sagara-map',
     optionKey: 'sagara-map',
+    expiresAt: new Date(checkedAt + 15 * 60_000),
+    supplierSessionExpiresAt: new Date(checkedAt + 35 * 60_000).toISOString(),
     roomCount: 4,
     pricePerNight: 26129,
     totalPrice: 26129,
@@ -689,7 +692,7 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
       findFirst: async () => ({ itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') }),
     },
     dvi_global_settings: {
-      findFirst: async () => ({ hotel_margin: 5 }),
+      findFirst: async () => ({ hotel_margin: 5, hotel_choose_rate_reuse_minutes: 30 }),
     },
   };
   service.selectionWorkflowService = {
@@ -708,7 +711,7 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
     getActiveRows: async () => [occupancyFare],
   };
 
-  const result = await service.previewHotelIntent({
+  const request = {
     planId: 10040,
     routeId: 10145,
     groupType: 1,
@@ -719,11 +722,18 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
     hotelName: 'SAGARA BEACH RESORT',
     routeDate: '2026-08-12',
     previewOnly: true,
-  });
+  };
+  const result = await service.previewHotelIntent(request);
 
   assert.equal(result.status, 'AVAILABLE');
   assert.equal(result.selections[0].pricePerNight, 27435.45);
   assert.equal(result.selections[0].totalPrice, 27435.45);
+  const remaining = Date.parse(result.checkedRateExpiresAt) - Date.now();
+  assert.ok(remaining > 29.9 * 60_000 && remaining <= 30 * 60_000);
+
+  occupancyFare.supplierSessionExpiresAt = new Date(checkedAt + 8 * 60_000).toISOString();
+  const shorter = await service.previewHotelIntent(request);
+  assert.equal(shorter.checkedRateExpiresAt, occupancyFare.supplierSessionExpiresAt);
 });
 
 test('offline confirm returns DB-verified identity even when request name is contradictory', async () => {

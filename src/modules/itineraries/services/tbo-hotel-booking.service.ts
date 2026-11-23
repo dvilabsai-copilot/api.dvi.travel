@@ -14,6 +14,7 @@ import {
   resolveProviderPassengerTitle,
 } from '../../../common/utils/passenger-title.util';
 import { isTboInsufficientBalanceResponse } from '../utils/tbo-hold-eligibility.util';
+import { TBO_SEARCH_SESSION_VALIDITY_MS } from '../../hotels/utils/tbo-search-session';
 
 interface TboHotelSelection {
   hotelCode: string;
@@ -153,7 +154,6 @@ export class TboHotelBookingService {
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
   private static readonly DEFAULT_CHILD_AGE = 5;
   private static readonly PREBOOK_TIMEOUT_MS = 75_000;
-  private static readonly SEARCH_SESSION_VALIDITY_MS = 35 * 60 * 1000;
   private readonly logger = new Logger(TboHotelBookingService.name);
   private readonly client: AxiosInstance;
   private tokenId: string | null = null;
@@ -1205,7 +1205,7 @@ private readonly TBO_CLIENT_ID =
     }
 
     const elapsedMs = Date.now() - parsed.getTime();
-    if (elapsedMs > TboHotelBookingService.SEARCH_SESSION_VALIDITY_MS) {
+    if (elapsedMs > TBO_SEARCH_SESSION_VALIDITY_MS) {
       throw new BadRequestException(
         'VSR search session exceeded 35 minutes. Please run a fresh hotel search before prebook/booking.',
       );

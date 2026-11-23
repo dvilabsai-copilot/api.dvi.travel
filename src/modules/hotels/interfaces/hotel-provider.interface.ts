@@ -74,6 +74,7 @@ export interface HotelSearchResult {
  searchReference: string; // Used for confirmation
   bookingCode?: string;
  expiresAt: Date; // When search result expires
+  supplierSessionExpiresAt?: string;
   pricePerNight?: number;
   totalStayPrice?: number;
   /** Requested room count used to obtain the supplier amount. */

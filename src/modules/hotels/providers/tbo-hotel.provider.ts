@@ -25,6 +25,7 @@ import { ReferenceDataCacheService } from '../../../common/cache/reference-data-
 import { TboMasterGalleryService } from '../services/tbo-master-gallery.service';
 import { buildTboRoomNightBreakdown } from '../utils/tbo-room-night-pricing';
 import { isTboBookingCancelled } from '../utils/tbo-booking-status.util';
+import { TBO_SEARCH_SESSION_VALIDITY_MS } from '../utils/tbo-search-session';
 import { shouldKeepSupplierRateForMealPlan } from '../../itineraries/utils/tbo-map-fallback.util';
 
 @Injectable()
@@ -352,7 +353,8 @@ export class TBOHotelProvider implements IHotelProvider {
 
  // Step 7: Transform to standard format
  // TBO returns rooms within hotels, we need to flatten and deduplicate
- const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min validity
+      const expiresAt = new Date(Date.now() + 15 * 60_000);
+      const supplierSessionExpiresAt = new Date(startTime + TBO_SEARCH_SESSION_VALIDITY_MS).toISOString();
       const galleryByCode = await this.tboMasterGallery.getHotelImagesForCodes(
         hotels.map((hotel: any) => String(hotel?.HotelCode || '').trim()),
       );
@@ -505,6 +507,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
             isSelectable: Boolean(realBookingCode && formattedTotalFare > 0),
             availabilityStatus: realBookingCode && formattedTotalFare > 0 ? 'LIVE_AVAILABLE' : 'NO_AVAILABILITY',
             expiresAt: expiresAt,
+            supplierSessionExpiresAt,
  // Add hotel-level supplement summary
             supplementSummary: {
               hasSupplements: supplementSummary.rawSupplements.length > 0,
