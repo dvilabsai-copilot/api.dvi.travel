@@ -59,6 +59,9 @@ function setup({
   const calls: string[] = [];
   const messages: string[] = [];
   const prisma = {
+    tbo_hotel_booking_confirmation: {
+      findFirst: async () => ({ tbo_hotel_booking_confirmation_ID: 12 }),
+    },
     dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'QUOTE-001', agent_id: 0 }) },
     dvi_global_settings: { findFirst: async () => ({ site_title: 'DVi Holidays' }) },
     dvi_confirmed_itinerary_plan_details: { findFirst: async () => ({ confirmed_itinerary_plan_ID: 5 }) },
@@ -119,6 +122,17 @@ function setup({
   );
   return { controller, confirmation, calls, row, messages };
 }
+
+test('Hotel Stays rejects a manual Cancelled status for an active VSR booking', async () => {
+  const { controller, calls, row } = setup({ status: 'confirmed' });
+  await assert.rejects(controller.save(42, 1, {
+    ...stay, hotelKey: 'tbo:1001234',
+    details: { ...bookingDetails, status: 'cancelled' },
+  }, request), /This VSR booking is still active/);
+  assert.deepEqual(calls, []);
+  assert.equal(row.details.status, 'confirmed');
+  assert.equal(row.version, 3);
+});
 
 test('voucher delivery uses the saved status, while Save Booking changes it and advances the version', async () => {
   const { controller, calls, row } = setup();

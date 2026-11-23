@@ -35,6 +35,31 @@ const bookingScope = (planId: number, groupType: number, stay: Pick<OfflineVouch
   check_out: new Date(stay.checkOut),
 });
 
+async function assertManualCancellationAllowed(prisma: PrismaService, scope: ReturnType<typeof bookingScope>) {
+  const match = /^(?:tbo|vsr):(.+)$/i.exec(scope.hotel_key.trim());
+  if (!match) return;
+  const code = match[1].trim();
+  const active = await prisma.tbo_hotel_booking_confirmation.findFirst({
+    where: {
+      itinerary_plan_ID: scope.itinerary_plan_id,
+      status: 1,
+      deleted: 0,
+      ...(/^\d+$/.test(code) ? { tbo_hotel_code: code } : {}),
+      OR: [
+        { check_in_date: { lt: scope.check_out }, check_out_date: { gt: scope.check_in } },
+        {
+          itinerary_route_ID: scope.route_id,
+          OR: [{ check_in_date: null }, { check_out_date: null }],
+        },
+      ],
+    },
+    select: { tbo_hotel_booking_confirmation_ID: true },
+  });
+  if (active) {
+    throw new ConflictException('This VSR booking is still active. Use Cancel Hotel Voucher to request cancellation from VSR.');
+  }
+}
+
 function bookingResponse(row: dvi_itinerary_offline_hotel_booking) {
   return {
     routeId: row.route_id,
@@ -231,6 +256,7 @@ export class OfflineHotelBookingController {
     const confirmedBy = details.confirmedBy.trim();
     const phone = details.phone.trim();
     const scope = bookingScope(planId, groupType, booking);
+    if (details.status === 'cancelled') await assertManualCancellationAllowed(this.prisma, scope);
     const bookings = this.prisma.dvi_itinerary_offline_hotel_booking;
     if (details.status === 'confirmed' && (!confirmedBy || !details.emails.length || !phone)) {
       const previous = version > 0 && details.emails.length
@@ -381,6 +407,7 @@ export class HotelVoucherConfirmationController {
   @Header('Cache-Control', 'private, no-store')
   async respond(@Param('token') token: string, @Body() body: RespondToOfflineVoucherDto) {
     const { key, scope, booking } = await this.load(token);
+    if (body.status === 'cancelled') await assertManualCancellationAllowed(this.prisma, key);
     const reservationNumber = body.reservationNumber.trim();
     if (body.status === 'confirmed' && !reservationNumber) {
       throw new BadRequestException('Enter the reservation number when confirming the stay.');

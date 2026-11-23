@@ -1144,9 +1144,10 @@ export class HotelBlockingService {
     const serialized = JSON.stringify({ ...payload, emailId: email, name, contactNo: phone, age: String(age) });
     await (this.prisma as any).$executeRawUnsafe(
       `INSERT INTO dvi_hotel_block_guest_details
-        (itinerary_plan_id, guest_payload, created_by)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE guest_payload = VALUES(guest_payload), created_by = VALUES(created_by)`,
+        (itinerary_plan_id, guest_payload, created_by, updated_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+       ON DUPLICATE KEY UPDATE
+         guest_payload = VALUES(guest_payload), created_by = VALUES(created_by), updated_at = CURRENT_TIMESTAMP`,
       normalizedPlanId,
       serialized,
       Number(actor?.id || 0) || null,
