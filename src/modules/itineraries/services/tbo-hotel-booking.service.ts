@@ -283,6 +283,10 @@ private readonly TBO_CLIENT_ID =
         ? (response.data.Status as any).Description || response.data.Message
         : response.data.Message;
 
+      if (response.data.IsAvailable === false || this.isPrebookUnavailable(statusMessage)) {
+        throw this.prebookUnavailable(selection);
+      }
+
  // TBO PreBook uses Status.Code = 200 for success, other endpoints use Status.Code = 1
       const isHoldInsufficientBalance = allowInsufficientBalanceForHold
         && isTboInsufficientBalanceResponse(response.data as any);
@@ -333,6 +337,7 @@ private readonly TBO_CLIENT_ID =
  this.logger.error(` HTTP Status: ${statusCode}`);
       }
 
+      if (this.isPrebookUnavailable(errorMsg)) throw this.prebookUnavailable(selection);
       if (this.isSessionExpiredError(errorMsg)) {
         throw new BadRequestException(
           'This hotel session has expired or rates changed. Please refresh hotel selection and run prebook again.',
@@ -343,6 +348,18 @@ private readonly TBO_CLIENT_ID =
         `PreBook failed for hotel ${selection.hotelCode}: ${errorMsg}`,
       );
     }
+  }
+
+  private isPrebookUnavailable(message: unknown): boolean {
+    return /\b(?:sold out|no (?:rooms?|availability)|(?:hotel|room|rate) (?:is )?(?:not available|unavailable)|not available for (?:the )?(?:selected|requested) dates)\b/i.test(String(message || ''));
+  }
+
+  private prebookUnavailable(selection: TboHotelSelection): BadRequestException {
+    return new BadRequestException({
+      code: 'VSR_HOTEL_UNAVAILABLE',
+      hotelName: selection.hotelName,
+      message: 'Hotel is not available for the selected stay.',
+    });
   }
 
  /**
@@ -835,7 +852,7 @@ private readonly TBO_CLIENT_ID =
         const priceChangedAtPreBook =
           preBookMeta?.finalPrice !== null &&
           preBookMeta?.finalPrice !== undefined &&
-          Number(preBookMeta.finalPrice) !== Number(selection.netAmount);
+          Number(preBookMeta.finalPrice) !== Number(selection.prebookContext?.savedSupplierAmount ?? selection.netAmount);
 
         const shouldReconfirmPrice =
           priceChangedAtPreBook ||

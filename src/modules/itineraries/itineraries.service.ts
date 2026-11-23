@@ -2,6 +2,8 @@
 // FILE: src/itineraries/itineraries.service.ts
 
 import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException, UnprocessableEntityException } from "@nestjs/common";
+import { savedVsrSupplierFare } from './utils/vsr-supplier-fare.util';
+import { normalizeTboHoldAmount } from './utils/tbo-hold-price-approval.util';
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
 import { Optional } from "@nestjs/common";
@@ -4873,6 +4875,9 @@ private async syncAccountsAfterConfirmation(
 }
 
 async confirmQuotation(dto: ConfirmQuotationDto) {
+  if (!(dto as ConfirmQuotationDto & { manualHotelHoldWorkflow?: boolean }).manualHotelHoldWorkflow) {
+    await this.prepareVsrConfirmation(dto);
+  }
   const result =
     await this.confirmationService
       .confirmQuotation(dto);
@@ -4887,6 +4892,77 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
 
   return result;
 }
+
+  private async prepareVsrConfirmation(dto: ConfirmQuotationDto): Promise<void> {
+    const bookings = dto.hotel_bookings ?? [];
+    const isVsr = (booking: { provider?: string }) => ['tbo', 'vsr'].includes(String(booking.provider || '').trim().toLowerCase());
+    if (!bookings.some(isVsr)) return;
+
+    const normalized = this.pruneHotelBookingsCoveredByMultiNight(this.mergeConsecutiveSupplierHotelBookings(
+      bookings.map((booking) => isVsr(booking) ? { ...booking, provider: 'tbo' } : booking),
+    ));
+    const vsrBookings = this.getProviderBookableHotelBookings(normalized).filter(isVsr);
+    if (vsrBookings.length === 0) return;
+    const { pendingBookings } = await this.filterAlreadySuccessfulBookings(dto.itinerary_plan_ID,
+      vsrBookings.map((booking) => ({ ...booking, __provider: 'tbo' })),
+    );
+    if (pendingBookings.length === 0) {
+      dto.hotel_bookings = normalized;
+      return;
+    }
+
+    const rows = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+      where: {
+        itinerary_plan_id: dto.itinerary_plan_ID,
+        group_type: this.getConfirmHotelGroupType(dto),
+        status: 1,
+        deleted: 0,
+        hotel_required: 1,
+        hotel_provider: { in: ['tbo', 'vsr'] },
+      },
+    });
+    const rates = pendingBookings.map((booking) => {
+      const routeIds = new Set([booking.routeId, ...(booking.routeIds ?? [])].map(Number));
+      const stayRows = rows.filter((row) => {
+        const snapshot = parseHotelSelectionSnapshot(row);
+        const coversRoute = routeIds.has(Number(row.itinerary_route_id)) ||
+          (Array.isArray(snapshot.authoritativeRouteIds) &&
+            snapshot.authoritativeRouteIds.some((routeId) => routeIds.has(Number(routeId))));
+        return coversRoute &&
+          [row.hotel_code, snapshot.hotelCode, snapshot.providerHotelCode].some((code) => String(code || '').trim() === String(booking.hotelCode || '').trim());
+      });
+      const previousAmount = savedVsrSupplierFare(stayRows, booking.checkInDate, booking.checkOutDate);
+      if (previousAmount === null) {
+        throw new ConflictException({
+          code: 'VSR_RATE_UNVERIFIED',
+          message: `The saved supplier rate for ${booking.hotelName || 'the selected hotel'} could not be verified. Check Availability before confirming.`,
+        });
+      }
+      return { ...booking, netAmount: previousAmount };
+    });
+    const latest = await this.hotelPrebookService.prebookHotels({ itinerary_plan_ID: dto.itinerary_plan_ID, hotel_bookings: rates });
+    const reviews = [];
+    for (const rate of rates) {
+      const offer = latest.hotels.find((hotel) => Number(hotel.routeId) === Number(rate.routeId) && String(hotel.hotelCode) === String(rate.hotelCode));
+      const context = offer?.prebookContext;
+      const newAmount = normalizeTboHoldAmount(context?.prebookNetAmount);
+      if (newAmount === null || !String(context?.bookingCode || '').includes('!TB!')) {
+        throw new ConflictException({
+          code: 'VSR_RATE_UNVERIFIED', message: `VSR did not verify a bookable rate for ${rate.hotelName || 'the selected hotel'}. Check Availability and try again.`,
+        });
+      }
+      if (newAmount !== rate.netAmount) {
+        reviews.push({ routeId: rate.routeId, hotelName: rate.hotelName, previousAmount: rate.netAmount, newAmount });
+        continue;
+      }
+      const booking = normalized.find((item) => Number(item.routeId) === Number(rate.routeId) && String(item.hotelCode) === String(rate.hotelCode));
+      if (booking) booking.prebookContext = { ...context, savedSupplierAmount: rate.netAmount };
+    }
+    if (reviews.length > 0) {
+      throw new ConflictException({ code: 'VSR_RATE_CHANGED', message: 'VSR rates changed. Review and approve the updated quote before confirming.', reviews });
+    }
+    dto.hotel_bookings = normalized;
+  }
   private isBookingResultSuccess(result: any): boolean {
     return this.confirmationService.isBookingResultSuccess(result);
   }

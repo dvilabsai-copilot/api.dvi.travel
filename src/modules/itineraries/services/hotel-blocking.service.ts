@@ -17,6 +17,7 @@ import {
 import { AxisRoomsBookingPushService } from './axisrooms-booking-push.service';
 import { resolveHotelHoldNotificationRecipients } from '../utils/hotel-hold-recipient.util';
 import { createTboHoldPriceApproval, normalizeTboHoldAmount, verifyTboHoldPriceApproval } from '../utils/tbo-hold-price-approval.util';
+import { savedVsrSupplierFare } from '../utils/vsr-supplier-fare.util';
 import {
   DEFAULT_TBO_CHILD_AGE,
   distributeTboSearchOccupancies,
@@ -735,13 +736,14 @@ export class HotelBlockingService {
             'HOTEL_HOLD_NOT_ELIGIBLE: The fresh VSR rate did not include a valid cancellation deadline. Refresh the rate and try again.',
           );
         }
-        const originalAmount = normalizeTboHoldAmount(selection.netAmount);
+        const originalAmount = savedVsrSupplierFare(groupedRows, selection.checkInDate, selection.checkOutDate)
+          ?? normalizeTboHoldAmount(selection.netAmount);
         const supplierAmount = normalizeTboHoldAmount(
           preBookResponse?.NetAmount
             ?? preBookResponse?.TotalFare
             ?? preBookResponse?.HotelResult?.[0]?.Rooms?.[0]?.NetAmount,
         );
-        const prebookNetAmount = supplierAmount ?? (preBookResponse?.IsPriceChanged ? null : originalAmount);
+        const prebookNetAmount = supplierAmount;
         if (originalAmount === null || prebookNetAmount === null) {
           throw new BadRequestException('The selected or latest VSR price could not be verified. Refresh the rate and try again.');
         }
