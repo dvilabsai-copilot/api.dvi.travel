@@ -676,6 +676,7 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
     optionKey: 'sagara-map',
     expiresAt: new Date(checkedAt + 15 * 60_000),
     supplierSessionExpiresAt: new Date(checkedAt + 35 * 60_000).toISOString(),
+    supplierSearchCompletedAt: new Date(checkedAt).toISOString(),
     roomCount: 4,
     pricePerNight: 26129,
     totalPrice: 26129,
@@ -728,8 +729,8 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
   assert.equal(result.status, 'AVAILABLE');
   assert.equal(result.selections[0].pricePerNight, 27435.45);
   assert.equal(result.selections[0].totalPrice, 27435.45);
-  const remaining = Date.parse(result.checkedRateExpiresAt) - Date.now();
-  assert.ok(remaining > 29.9 * 60_000 && remaining <= 30 * 60_000);
+  assert.equal(result.checkedRateSearchedAt, occupancyFare.supplierSearchCompletedAt);
+  assert.equal(Date.parse(result.checkedRateExpiresAt), checkedAt + 30 * 60_000);
 
   occupancyFare.supplierSessionExpiresAt = new Date(checkedAt + 8 * 60_000).toISOString();
   const shorter = await service.previewHotelIntent(request);

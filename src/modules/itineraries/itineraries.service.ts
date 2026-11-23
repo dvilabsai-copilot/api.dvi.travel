@@ -3238,12 +3238,17 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
       }
       const checkedAt = Date.now();
       const reuseMinutes = Number(settings?.hotel_choose_rate_reuse_minutes ?? 0);
+      // All requested nights must stay valid. Reopening a quote must not
+      // restart the window for an offer that was already checked.
+      const searchedAt = Math.min(checkedAt, ...selectedByRoute
+        .map((selection: any) => Date.parse(String(selection.supplierSearchCompletedAt ?? '')))
+        .filter(Number.isFinite));
       // The search inventory expiry is separate from a VSR booking session.
       const supplierExpirations = selectedByRoute.map((selection: any) => {
         const sessionExpiry = Date.parse(String(selection.supplierSessionExpiresAt ?? ''));
         return Number.isFinite(sessionExpiry) ? sessionExpiry : Date.parse(String(selection.expiresAt ?? ''));
       }).filter(Number.isFinite);
-      const checkedRateExpiry = Math.min(checkedAt + reuseMinutes * 60_000, ...supplierExpirations);
+      const checkedRateExpiry = Math.min(searchedAt + reuseMinutes * 60_000, ...supplierExpirations);
       const availableRoomTypeCategories = provider === 'tbo'
         ? Array.from(new Set(
           candidates
@@ -3267,6 +3272,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
       return {
         status: 'AVAILABLE',
         success: true,
+        checkedRateSearchedAt: new Date(searchedAt).toISOString(),
         checkedRateExpiresAt: checkedRateExpiry > checkedAt ? new Date(checkedRateExpiry).toISOString() : null,
         planId: Number(data.planId),
         groupType,

@@ -353,7 +353,8 @@ export class TBOHotelProvider implements IHotelProvider {
 
  // Step 7: Transform to standard format
  // TBO returns rooms within hotels, we need to flatten and deduplicate
-      const expiresAt = new Date(Date.now() + 15 * 60_000);
+      const searchCompletedAt = Date.now();
+      const expiresAt = new Date(searchCompletedAt + 15 * 60_000);
       const supplierSessionExpiresAt = new Date(startTime + TBO_SEARCH_SESSION_VALIDITY_MS).toISOString();
       const galleryByCode = await this.tboMasterGallery.getHotelImagesForCodes(
         hotels.map((hotel: any) => String(hotel?.HotelCode || '').trim()),
@@ -508,6 +509,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
             availabilityStatus: realBookingCode && formattedTotalFare > 0 ? 'LIVE_AVAILABLE' : 'NO_AVAILABILITY',
             expiresAt: expiresAt,
             supplierSessionExpiresAt,
+            supplierSearchCompletedAt: new Date(searchCompletedAt).toISOString(),
  // Add hotel-level supplement summary
             supplementSummary: {
               hasSupplements: supplementSummary.rawSupplements.length > 0,
