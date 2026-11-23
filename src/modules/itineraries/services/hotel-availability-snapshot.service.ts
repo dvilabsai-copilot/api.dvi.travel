@@ -7109,7 +7109,24 @@ export class HotelAvailabilitySnapshotService {
         pricePerNight = authoritativeNightlyPayables[0];
       }
 
-      if (provider !== 'staah' && provider !== 'axisrooms' && provider !== 'offline' && baseTotalPrice > 0) {
+      // A VSR fallback can span several nights while its legacy scalar base
+      // describes just the anchor. Save the same nightly pricing used by
+      // Choose and availability previews.
+      const vsrFallbackPricing = (provider === 'tbo' || provider === 'vsr') && tboMapFallbackApplied
+        ? await this.priceVsrAvailabilityOption(
+            { itinerary_route_date: option.date || option.checkInDate, selected_price_snapshot: option },
+            option,
+            roomCount,
+            marginPercentage,
+          )
+        : undefined;
+      if (vsrFallbackPricing) {
+        option = vsrFallbackPricing;
+        marginBaseTotal = option.hotelMarginBaseAmount;
+        calculatedMargin = option.hotelMarginAmount;
+        totalPrice = option.totalPrice;
+        pricePerNight = option.pricePerNight;
+      } else if (provider !== 'staah' && provider !== 'axisrooms' && provider !== 'offline' && baseTotalPrice > 0) {
         totalPrice = Number((marginBaseTotal + roomTaxAmount + calculatedMargin).toFixed(2));
         pricePerNight = totalPrice;
         option = {
@@ -7373,9 +7390,9 @@ export class HotelAvailabilitySnapshotService {
           total_hotel_cost: totalPrice,
           ...offlineMealPlanPersistence.columns,
           hotel_dinner_cost: offlineMealPlanPersistence.columns.hotel_dinner_cost ??
-            (tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0),
+            (tboMapFallbackApplied ? Number(option.tboMapFallbackDinnerTotal || 0) : 0),
           total_hotel_meal_plan_cost: offlineMealPlanPersistence.columns.total_hotel_meal_plan_cost ??
-            (tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0),
+            (tboMapFallbackApplied ? Number(option.tboMapFallbackDinnerTotal || 0) : 0),
           total_hotel_tax_amount: roomTaxAmount,
           hotel_check_in_date: this.toDate(option.checkInDate || option.date),
           hotel_check_out_date: this.toDate(option.checkOutDate || this.addDays(this.toDate(option.checkInDate || option.date), 1)),
@@ -7884,7 +7901,12 @@ export class HotelAvailabilitySnapshotService {
     };
   }
 
-  private async priceVsrAvailabilityOption(selection: any, option: any, roomCount: number): Promise<any | undefined> {
+  private async priceVsrAvailabilityOption(
+    selection: any,
+    option: any,
+    roomCount: number,
+    configuredMargin?: number,
+  ): Promise<any | undefined> {
     const breakdown = option.tboRoomNightBreakdown;
     if (!Array.isArray(breakdown) || breakdown.length === 0) return undefined;
 
@@ -7921,9 +7943,9 @@ export class HotelAvailabilitySnapshotService {
     if (!Number.isFinite(mealPlanAmount) || (hasMealFallback && mealPlanAmount <= 0)) return undefined;
 
     const suppliedMargin = Number(option.hotelMarginPercentage ?? option.hotel_margin_percentage ?? 0);
-    const marginPercentage = suppliedMargin > 0
+    const marginPercentage = configuredMargin ?? (suppliedMargin > 0
       ? suppliedMargin
-      : await this.hotelPricingService.resolveEffectiveHotelMarginPercentage(option);
+      : await this.hotelPricingService.resolveEffectiveHotelMarginPercentage(option));
     // VSR allInAmount is the supplier fare before DVI markup, even when the
     // option's scalar total has already been projected. Always price from
     // those room-night lines and apportion the rounded margin across nights.

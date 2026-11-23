@@ -2884,6 +2884,53 @@ test('MAP fallback auto-selects live CP without relabelling it as MAP', async ()
   assert.equal(snapshot.selectionOrigin, 'AUTO_SELECTED');
 });
 
+test('Reset saves each VSR MAP night with one dinner supplement and one margin', async () => {
+  const created: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: { findUnique: async () => ({ preferred_room_count: 2, total_adult: 5 }) },
+    dvi_global_settings: { findFirst: async () => ({ hotel_margin: 5 }) },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        created.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 502 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const dates = ['2027-01-10', '2027-01-11'];
+  await (service as any).ensureAutoSelections(tx, 12235, [{
+    itineraryRouteId: 26685, groupType: 4, date: dates[0],
+    provider: 'tbo', hotelCode: '1089764', hotelName: 'Tea Castle Munnar',
+    roomType: 'Executive Room', rateOptionId: 'test-map', mealPlan: 'MAP',
+    isBookable: true, isSelectable: true,
+    authoritativeStayKey: 'test-stay', authoritativeParentRouteId: 26685,
+    authoritativeRouteIds: [26685, 26686],
+    authoritativeCheckInDate: dates[0], authoritativeCheckOutDate: '2027-01-12',
+    baseTotalPrice: 7448.42, pricePerNight: 11948.42,
+    tboMapFallbackApplied: true, tboMapFallbackSourceMealPlan: 'CP',
+    tboMapFallbackDinnerPerNight: 4500, tboMapFallbackDinnerTotal: 9000,
+    nightlyRates: dates.map(date => ({ date, baseAmount: 7448.42, sellAmount: 11948.42 })),
+    tboRoomNightBreakdown: dates.flatMap(date => [1, 2].map(roomNumber => ({
+      date, roomNumber, allInAmount: 3724.21, nightTotal: 7448.42,
+    }))),
+  }], 'reset-run', 7, false, undefined, 'MAP');
+
+  assert.equal(created.length, 1);
+  assert.equal(created[0].selected_price_per_night, 12545.84);
+  assert.equal(created[0].selected_total_price, 25091.68);
+  assert.equal(created[0].hotel_dinner_cost, 9000);
+  assert.equal(created[0].hotel_margin_rate, 1194.84);
+  const snapshot = JSON.parse(created[0].selected_price_snapshot);
+  assert.deepEqual(snapshot.nightlyRates.map((night: any) => [
+    night.sellAmount, night.tboMapFallbackDinnerPerNight, night.marginAmount,
+  ]), [[12545.84, 4500, 597.42], [12545.84, 4500, 597.42]]);
+});
+
 test('MAP fallback auto-selects EP when CP is unavailable without relabelling it as MAP', async () => {
   const createdSelections: any[] = [];
   const tx: any = {
