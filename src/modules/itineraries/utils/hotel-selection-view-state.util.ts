@@ -549,12 +549,19 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
       identity.canonicalHotelId ?? identity.hotelId ?? 0,
   );
   const payable = hotelCardPayableAmount({ ...row, ...identity });
+  // A saved VSR meal fallback has its exact payable on the priced night.
+  // The legacy route row may still expose the supplier base plus margin.
+  const vsrFallbackNightPayable = routeNightProjection?.tboMapFallbackApplied === true &&
+    ['tbo', 'vsr'].includes(String(identity.provider ?? row?.provider ?? '').trim().toLowerCase()) &&
+    routeNight?.pricingIncludesHotelMargin === true
+    ? routeNightProjection.pricePerNight
+    : undefined;
   const pricePerNight = Number(
-    roomTypeBreakdown.length > 0
+    vsrFallbackNightPayable ?? (roomTypeBreakdown.length > 0
       ? snapshot?.selectedPricePerNight ?? snapshot?.pricePerNight ?? payable
       : row?.selectedPricePerNight ?? row?.selected_price_per_night ??
         row?.totalHotelCost ?? row?.total_hotel_cost ??
-        identity.selectedPricePerNight ?? identity.pricePerNight ?? row?.pricePerNight ?? payable,
+        identity.selectedPricePerNight ?? identity.pricePerNight ?? row?.pricePerNight ?? payable),
   );
   const totalPrice = Number(
     identity.totalPrice ?? identity.selectedTotalPrice ?? row?.totalPrice ??
