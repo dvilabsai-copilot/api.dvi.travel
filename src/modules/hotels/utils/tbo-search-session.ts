@@ -1,0 +1,1 @@
+export const TBO_SEARCH_SESSION_VALIDITY_MS = 35 * 60_000;

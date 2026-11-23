@@ -159,6 +159,12 @@ export class UpdateGlobalSettingsDto {
 
   @Type(() => Number)
   @IsInt()
+  @Min(0)
+  @Max(1440)
+  hotel_choose_rate_reuse_minutes?: number;
+
+  @Type(() => Number)
+  @IsInt()
   @IsIn([0, 1])
   same_city_hotspot_rank_enabled?: number;
 

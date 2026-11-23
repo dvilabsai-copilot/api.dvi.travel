@@ -256,6 +256,9 @@ test('retains EP only as a source for requested VSR CP/MAP fallbacks', () => {
 test('supplier meal-plan filtering keeps EP only when CP/MAP fallback is enabled', () => {
   assert.equal(shouldKeepSupplierRateForMealPlan('CP', 'Room Only', true), true);
   assert.equal(shouldKeepSupplierRateForMealPlan('MAP', 'EP', true), true);
+  assert.equal(shouldKeepSupplierRateForMealPlan('MAP', 'Breakfast Only', true), true);
+  assert.equal(shouldKeepSupplierRateForMealPlan('MAP', 'CP', false), false);
+  assert.equal(shouldKeepSupplierRateForMealPlan('CP', 'MAP', true), false);
   assert.equal(shouldKeepSupplierRateForMealPlan('CP', 'EP', false), false);
   assert.equal(shouldKeepSupplierRateForMealPlan('MAP', 'EP', false), false);
   assert.equal(shouldKeepSupplierRateForMealPlan('CP', 'CP', false), true);

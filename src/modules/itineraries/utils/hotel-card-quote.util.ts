@@ -38,12 +38,12 @@ export function buildHotelCardQuote(row: any, margin: number, rooms: number): Ho
     if (dates.some(day => new Set(breakdown.filter((night: any) => String(night.date).slice(0, 10) === day).map((night: any) => Number(night.roomNumber))).size !== roomCount)) return null;
     const prices = allocateTboRouteNightPricing(dates.map((day, index) => ({
       routeId: index + 1, routeDate: day, breakdown, marginPercentage: percentage,
+      mealPlanAmount: row.tboMapFallbackApplied === true ? positive(row.tboMapFallbackDinnerPerNight) : 0,
     })));
     const price = prices?.get(dates.indexOf(date) + 1);
     if (!price) return null;
     baseAmount = price.baseTotalPrice;
-    payableAmount = price.totalPrice + (row.tboMapFallbackApplied === true
-      ? positive(row.tboMapFallbackDinnerPerNight) : 0);
+    payableAmount = price.totalPrice;
   } else {
     const nightly = Array.isArray(row?.nightlyRates)
       ? row.nightlyRates.find((night: any) => String(night.date || '').slice(0, 10) === date)

@@ -17,6 +17,7 @@ import {
 import { isTboInsufficientBalanceResponse } from '../utils/tbo-hold-eligibility.util';
 import { createHash } from 'crypto';
 import { validateTboCompleteBatchGroups } from '../../hotels/utils/tbo-complete-batch-validation.util';
+import { TBO_SEARCH_SESSION_VALIDITY_MS } from '../../hotels/utils/tbo-search-session';
 
 interface TboHotelSelection {
   batchIndex?: number;
@@ -159,7 +160,6 @@ export class TboHotelBookingService {
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
   private static readonly DEFAULT_CHILD_AGE = 5;
   private static readonly PREBOOK_TIMEOUT_MS = 75_000;
-  private static readonly SEARCH_SESSION_VALIDITY_MS = 35 * 60 * 1000;
   private readonly logger = new Logger(TboHotelBookingService.name);
   private readonly client: AxiosInstance;
   private tokenId: string | null = null;
@@ -291,6 +291,10 @@ private readonly TBO_CLIENT_ID =
         ? (response.data.Status as any).Description || response.data.Message
         : response.data.Message;
 
+      if (response.data.IsAvailable === false || this.isPrebookUnavailable(statusMessage)) {
+        throw this.prebookUnavailable(selection);
+      }
+
  // TBO PreBook uses Status.Code = 200 for success, other endpoints use Status.Code = 1
       const isHoldInsufficientBalance = allowInsufficientBalanceForHold
         && isTboInsufficientBalanceResponse(response.data as any);
@@ -343,6 +347,7 @@ private readonly TBO_CLIENT_ID =
  this.logger.error(` HTTP Status: ${statusCode}`);
       }
 
+      if (this.isPrebookUnavailable(errorMsg)) throw this.prebookUnavailable(selection);
       if (this.isSessionExpiredError(errorMsg)) {
         throw new BadRequestException(
           'This hotel session has expired or rates changed. Please refresh hotel selection and run prebook again.',
@@ -353,6 +358,18 @@ private readonly TBO_CLIENT_ID =
         `PreBook failed for hotel ${selection.hotelCode}: ${errorMsg}`,
       );
     }
+  }
+
+  private isPrebookUnavailable(message: unknown): boolean {
+    return /\b(?:sold out|no (?:rooms?|availability)|(?:hotel|room|rate) (?:is )?(?:not available|unavailable)|not available for (?:the )?(?:selected|requested) dates)\b/i.test(String(message || ''));
+  }
+
+  private prebookUnavailable(selection: TboHotelSelection): BadRequestException {
+    return new BadRequestException({
+      code: 'VSR_HOTEL_UNAVAILABLE',
+      hotelName: selection.hotelName,
+      message: 'Hotel is not available for the selected stay.',
+    });
   }
 
  /**
@@ -1035,7 +1052,7 @@ for (const group of groups.values()) {
         const priceChangedAtPreBook =
           preBookMeta?.finalPrice !== null &&
           preBookMeta?.finalPrice !== undefined &&
-          Number(preBookMeta.finalPrice) !== Number(selection.netAmount);
+          Number(preBookMeta.finalPrice) !== Number(selection.prebookContext?.savedSupplierAmount ?? selection.netAmount);
 
         const shouldReconfirmPrice =
           priceChangedAtPreBook ||
@@ -1564,7 +1581,7 @@ results.push({
     }
 
     const elapsedMs = Date.now() - parsed.getTime();
-    if (elapsedMs > TboHotelBookingService.SEARCH_SESSION_VALIDITY_MS) {
+    if (elapsedMs > TBO_SEARCH_SESSION_VALIDITY_MS) {
       throw new BadRequestException(
         'VSR search session exceeded 35 minutes. Please run a fresh hotel search before prebook/booking.',
       );

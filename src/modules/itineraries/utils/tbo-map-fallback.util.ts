@@ -60,12 +60,15 @@ export const isEpFallbackSourceForMealPlan = (requested: unknown, source: unknow
 export const shouldKeepSupplierRateForMealPlan = (
   requested: unknown,
   actual: unknown,
-  preserveEpFallbackSource = false,
+  preserveMealPlanFallbackSource = false,
 ): boolean => {
   const requestedCode = mealPlanCode(requested);
   const actualCode = mealPlanCode(actual);
   return !requestedCode || requestedCode === actualCode ||
-    (preserveEpFallbackSource && isEpFallbackSourceForMealPlan(requestedCode, actualCode));
+    (preserveMealPlanFallbackSource && (
+      isEpFallbackSourceForMealPlan(requestedCode, actualCode) ||
+      (requestedCode === 'MAP' && actualCode === 'CP')
+    ));
 };
 
 const optionIdentity = (option: any): string => String(
@@ -338,6 +341,10 @@ export function applyMapDinnerFallbackToRows<T extends Record<string, any>>(
       }));
 
     if (preserveSupplierOptions) {
+      if (options.length === 0 && sourcePredicate(row)) {
+        const fallback = createFallbackOption(row, context, config);
+        return fallback ? [row, fallback] : [row];
+      }
       if (fallbackOptions.length === 0) return [row];
       return [{ ...row, rateOptions: [...options, ...fallbackOptions] }];
     }

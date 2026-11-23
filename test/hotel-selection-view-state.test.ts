@@ -205,6 +205,30 @@ test('route-night offline MAP is included for each physical night', () => {
   assert.equal(state[0].totalAmount, 40524.3);
 });
 
+test('a saved VSR MAP night price takes precedence over the legacy route price', () => {
+  const dates = ['2027-01-10', '2027-01-11'];
+  const state = buildHotelSelectionState({
+    tabs: [{ groupType: 4, label: 'Recommended #4' }],
+    rows: [{
+      groupType: 4, itineraryRouteId: 26685, provider: 'tbo', hotelCode: '1089764',
+      hotelName: 'Tea Castle', roomType: 'Executive Room', mealPlan: 'MAP',
+      isSelected: true, selectedPricePerNight: 7820.84,
+      selectedPriceSnapshot: {
+        provider: 'tbo', hotelCode: '1089764', pricePerNight: 12545.84,
+        tboMapFallbackApplied: true, tboMapFallbackDinnerPerNight: 4500,
+        authoritativeRouteIds: [26685, 26686],
+        nightlyRates: dates.map(date => ({
+          date, baseAmount: 7448.42, marginAmount: 597.42, sellAmount: 12545.84,
+          pricingIncludesHotelMargin: true,
+        })),
+      },
+    }],
+    requiredRoutes: dates.map((routeDate, index) => ({ routeDate, routeId: 26685 + index })),
+  });
+  assert.deepEqual(state[0].routes.map(route => route.selected?.pricePerNight), [12545.84, 12545.84]);
+  assert.equal(state[0].totalAmount, 25091.68);
+});
+
 test('TBO MAP fallback dinner is included in each projected route night', () => {
   const tboSnapshot = {
     provider: 'tbo',

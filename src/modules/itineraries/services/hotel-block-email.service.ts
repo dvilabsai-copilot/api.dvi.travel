@@ -3,6 +3,7 @@ import nodemailer, { Transporter } from 'nodemailer';
 import { PrismaService } from '../../../prisma.service';
 import { withGlobalSettingsCc } from '../../../common/utils/default-email-cc.util';
 import { renderHotelBlockEmailHtml, type HotelBlockEmailTemplateInput } from '../templates/hotel-block-email.template';
+import { prepareVoucherEmail } from './voucher-email-delivery';
 import type { HoldNotificationRecipient } from '../utils/hotel-hold-recipient.util';
 
 type HoldRequest = {
@@ -82,6 +83,21 @@ export class HotelBlockEmailService {
         : undefined,
     });
     return this.transporter;
+  }
+
+  async dispatchOfflineVoucher(recipients: string[], message: { subject: string; text: string; html: string }, replyTo?: string, recipientScoped = false) {
+    const options = {
+      from: {
+        address: String(process.env.SMTP_FROM || '').trim(),
+        name: process.env.SMTP_FROM_NAME?.trim() || 'Do View Holidays',
+      },
+      to: recipients,
+      ...message,
+      ...(replyTo ? { replyTo } : {}),
+    };
+    const delivery = prepareVoucherEmail(recipientScoped ? options : await withGlobalSettingsCc(this.prisma, options));
+    const info = await this.getTransporter().sendMail(delivery.options);
+    return { demo: delivery.demo, partial: Boolean(info.rejected?.length) };
   }
 
   async dispatch(input: { recipient: string; quotationReference: string; request: HoldRequest }) {

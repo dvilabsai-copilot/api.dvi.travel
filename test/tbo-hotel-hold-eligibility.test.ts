@@ -125,6 +125,24 @@ test('the hold Book request uses fresh code, disables vouchers, and keeps passen
   );
 });
 
+test('VSR distinguishes a sold-out stay from a supplier failure in both PreBook flows', async () => {
+  const service: any = Object.create(TboHotelBookingService.prototype);
+  service.USE_MOCK_TBO = false;
+  service.logger = { log() {}, warn() {}, error() {} };
+  service.validateSelection = () => undefined;
+  const selection = { hotelCode: 'test', hotelName: 'Tea Castle', bookingCode: 'hotel!TB!room' };
+  service.client = { post: async () => ({ data: { Status: { Code: 400, Description: 'Room is sold out' } } }) };
+  const unavailable = (error: unknown) => {
+    assert.ok(error instanceof BadRequestException);
+    assert.deepEqual(error.getResponse(), { code: 'VSR_HOTEL_UNAVAILABLE', hotelName: 'Tea Castle', message: 'Hotel is not available for the selected stay.' });
+    return true;
+  };
+  await assert.rejects(() => service.preBookHotel(selection), unavailable);
+  await assert.rejects(() => service.preBookHotelForHold(selection), unavailable);
+  service.client.post = async () => { throw new Error('Supplier request timed out'); };
+  await assert.rejects(() => service.preBookHotel(selection), /Supplier request timed out/);
+});
+
 test('TBO PreBook and Book payloads default a missing child age to 5', () => {
   const service: any = Object.create(TboHotelBookingService.prototype);
   const selection = {

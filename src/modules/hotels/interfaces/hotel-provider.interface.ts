@@ -74,6 +74,8 @@ export interface HotelSearchResult {
  searchReference: string; // Used for confirmation
   bookingCode?: string;
  expiresAt: Date; // When search result expires
+  supplierSessionExpiresAt?: string;
+  supplierSearchCompletedAt?: string;
   pricePerNight?: number;
   totalStayPrice?: number;
   /** Requested room count used to obtain the supplier amount. */
@@ -193,7 +195,7 @@ export interface HotelPreferences {
   /** Optional TBO Search room-count override for flows that require an exact room quote. */
   tboNoOfRooms?: number;
   /** Internal flag: retain VSR EP rates as inputs to the requested CP/MAP fallback. */
-  preserveEpFallbackSourceRates?: boolean;
+  preserveMealPlanFallbackSourceRates?: boolean;
 }
 
 export interface HotelConfirmationDTO {

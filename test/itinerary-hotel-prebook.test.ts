@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { BadRequestException } from '@nestjs/common';
 import { ItineraryHotelPrebookService } from '../src/modules/itineraries/services/itinerary-hotel-prebook.service';
 
 function createService(bookable: any[] = []) {
@@ -26,6 +27,36 @@ function createTboService() {
   });
   return { service, preBookHotel };
 }
+
+test('hold eligibility reports sold-out stays separately from supplier check failures', async () => {
+  const service = new ItineraryHotelPrebookService(
+    { dvi_global_settings: { findFirst: async () => null } } as any,
+    { preBookHotelForHold: async ({ hotelName }) => {
+      if (hotelName === 'Sold Out Resort') {
+        throw new BadRequestException({
+          code: 'VSR_HOTEL_UNAVAILABLE',
+          message: 'Hotel is not available for the selected stay.',
+        });
+      }
+      throw new Error('Supplier timed out');
+    } } as any,
+    null as any,
+  );
+
+  const result = await service.checkHotelHoldEligibility({
+    itinerary_plan_ID: 99,
+    hotel_bookings: ['Sold Out Resort', 'Other Hotel'].map((hotelName) => ({
+      provider: 'tbo',
+      hotelName,
+      bookingCode: '1114182!TB!2!TB!test!TB!N!TB!AFF!',
+    })),
+  });
+
+  assert.deepEqual(result.hotels.map(({ hotelName, holdable, reason }) => ({ hotelName, holdable, reason })), [
+    { hotelName: 'Sold Out Resort', holdable: false, reason: 'HOTEL_UNAVAILABLE' },
+    { hotelName: 'Other Hotel', holdable: false, reason: 'CHECK_FAILED' },
+  ]);
+});
 
 test('hotel prebook preserves the empty-selection response', async () => {
   const result = await createService().prebookHotels({ itinerary_plan_ID: 99, hotel_bookings: [] } as any);

@@ -12,6 +12,7 @@ import { getVehicleRateAvailability } from '../utils/vehicle-rate-availability.u
 import {
   hotelSelectionKey,
   hotelSelectionKeyFromRow,
+  hotelBookingTerms,
   normalizeSupplierRateIdentity,
   supplierRateIdentityMatches,
 } from '../utils/hotel-selection-identity.util';
@@ -232,6 +233,7 @@ export class ItinerarySelectionWorkflowService {
     tboMultiBatchStay?: import('../../hotels/utils/tbo-multi-batch-stay.util').TboMultiBatchStaySnapshot;
     isRefundable?: boolean | number | string;
     IsRefundable?: boolean | number | string;
+    bookingTerms?: ReturnType<typeof hotelBookingTerms>;
     routeDate?: string;
     axisRoomsMealRooms?: AxisRoomsMealRoom[];
      requestedBy?: number;
@@ -856,6 +858,7 @@ export class ItinerarySelectionWorkflowService {
             searchReference: data.searchReference || null,
             roomId: data.roomId || null,
             rateId: data.rateId || null,
+            bookingTerms: data.bookingTerms,
             ...(selectedRateIsRefundable !== undefined
               ? { isRefundable: selectedRateIsRefundable, IsRefundable: selectedRateIsRefundable }
               : {}),
@@ -955,6 +958,7 @@ export class ItinerarySelectionWorkflowService {
             searchReference: data.searchReference || null,
             roomId: data.roomId || null,
             rateId: data.rateId || null,
+            bookingTerms: data.bookingTerms,
             ...(selectedRateIsRefundable !== undefined
               ? { isRefundable: selectedRateIsRefundable, IsRefundable: selectedRateIsRefundable }
               : {}),
@@ -1527,6 +1531,7 @@ export class ItinerarySelectionWorkflowService {
             roomId: hotel.roomId,
             rateId: hotel.rateId,
             isRefundable: hotel.isRefundable ?? hotel.IsRefundable,
+            bookingTerms: selectionResolvedFromFreshSearch ? hotel.bookingTerms : undefined,
             roomCount: hotel.roomCount,
             // selectHotel owns the database write. Preserve the canonical
             // server-resolved pricing calculated by selectHotelIntent instead

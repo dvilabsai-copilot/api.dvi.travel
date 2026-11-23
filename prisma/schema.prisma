@@ -2025,6 +2025,7 @@ model dvi_confirmed_itinerary_plan_vehicle_voucher_details {
   vehicle_confirmed_mobile_no                   String?   @db.VarChar(100)
   invoice_to                                    Int       @default(0)
   vehicle_booking_status                        Int       @default(0)
+  supplier_confirmation_version                 Int       @default(1)
   vehicle_voucher_terms_condition               String?   @db.Text
   vehicle_confirmed_reservation                 String?   @db.VarChar(100)
   vehicle_confirmation_verified_by              String?   @db.VarChar(100)
@@ -2995,6 +2996,7 @@ model dvi_global_settings {
   hotel_hold_reminder_milestones         String?   @db.LongText
   hotel_hold_final_reminder_minutes      Int       @default(15)
   tbo_hold_lcd_buffer_days                Int       @default(1)
+  hotel_choose_rate_reuse_minutes         Int       @default(30)
   same_city_hotspot_rank_enabled         Int       @default(0) @db.TinyInt
   same_city_hotspot_max_rank             Int       @default(30)
   same_city_hotspot_base_increment       Int       @default(10)
@@ -4077,6 +4079,21 @@ model dvi_itinerary_quote_revision {
 
   @@unique([original_plan_id, revision_number], map: "uq_itinerary_revision_number")
   @@index([parent_plan_id], map: "idx_itinerary_revision_parent")
+}
+
+model dvi_itinerary_offline_hotel_booking {
+  itinerary_plan_id Int
+  group_type        Int
+  route_id          Int
+  hotel_key         String   @db.VarChar(300)
+  check_in          DateTime @db.Date
+  check_out         DateTime @db.Date
+  details           Json
+  version           Int      @default(1)
+  updated_by        Int
+  updated_at        DateTime @updatedAt
+
+  @@id([itinerary_plan_id, group_type, route_id, hotel_key, check_in, check_out])
 }
 
 model dvi_itinerary_plan_hotel_details {

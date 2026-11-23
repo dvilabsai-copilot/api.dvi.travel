@@ -60,12 +60,19 @@ jobs:
             git merge --ff-only origin/staging
 
             if [ -n "${STAGING_BACKEND_ENV_FILE:-}" ]; then
+              VOUCHER_DEMO_SETTING=''
+              VOUCHER_DEMO_PATTERN='^[[:space:]]*(export[[:space:]]+)?VOUCHER_EMAIL_DEMO_RECIPIENT[[:space:]]*[=:]'
               if [ -f .env ]; then
                 install -d -m 700 "$ENV_BACKUP_DIR"
                 cp -p .env "$ENV_BACKUP_DIR/.env.backup-$(date +%Y%m%d-%H%M%S)"
+                VOUCHER_DEMO_SETTING="$(grep -E "$VOUCHER_DEMO_PATTERN" .env | tail -n 1 || true)"
               fi
               ENV_TMP="$(mktemp)"
-              printf '%s\n' "$STAGING_BACKEND_ENV_FILE" > "$ENV_TMP"
+              # The staging .env controls voucher routing across deploys.
+              printf '%s\n' "$STAGING_BACKEND_ENV_FILE" | awk -v pattern="$VOUCHER_DEMO_PATTERN" '$0 !~ pattern' > "$ENV_TMP"
+              if [ -n "$VOUCHER_DEMO_SETTING" ]; then
+                printf '%s\n' "$VOUCHER_DEMO_SETTING" >> "$ENV_TMP"
+              fi
               chmod 600 "$ENV_TMP"
               mv -- "$ENV_TMP" .env
               ENV_TMP=""

@@ -1,9 +1,8 @@
-
 import {
   buildTboRoomBatches,
   type TboRoomBatch,
 } from '../utils/tbo-occupancy.util';
-import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
@@ -30,6 +29,7 @@ import { ReferenceDataCacheService } from '../../../common/cache/reference-data-
 import { TboMasterGalleryService } from '../services/tbo-master-gallery.service';
 import { buildTboRoomNightBreakdown } from '../utils/tbo-room-night-pricing';
 import { isTboBookingCancelled } from '../utils/tbo-booking-status.util';
+import { TBO_SEARCH_SESSION_VALIDITY_MS } from '../utils/tbo-search-session';
 import { shouldKeepSupplierRateForMealPlan } from '../../itineraries/utils/tbo-map-fallback.util';
 
 @Injectable()
@@ -402,7 +402,9 @@ export class TBOHotelProvider implements IHotelProvider {
 
  // Step 7: Transform to standard format
  // TBO returns rooms within hotels, we need to flatten and deduplicate
- const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min validity
+      const searchCompletedAt = Date.now();
+      const expiresAt = new Date(searchCompletedAt + 15 * 60_000);
+      const supplierSessionExpiresAt = new Date(startTime + TBO_SEARCH_SESSION_VALIDITY_MS).toISOString();
       const galleryByCode = await this.tboMasterGallery.getHotelImagesForCodes(
         hotels.map((hotel: any) => String(hotel?.HotelCode || '').trim()),
       );
@@ -440,7 +442,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           if (!shouldKeepSupplierRateForMealPlan(
             selectedMealPlanCode,
             inferredMealPlanCode,
-            preferences?.preserveEpFallbackSourceRates === true,
+            preferences?.preserveMealPlanFallbackSourceRates === true,
           )) {
             continue;
           }
@@ -566,6 +568,8 @@ if (!realBookingCode) {
             isSelectable: Boolean(realBookingCode && formattedTotalFare > 0),
             availabilityStatus: realBookingCode && formattedTotalFare > 0 ? 'LIVE_AVAILABLE' : 'NO_AVAILABILITY',
             expiresAt: expiresAt,
+            supplierSessionExpiresAt,
+            supplierSearchCompletedAt: new Date(searchCompletedAt).toISOString(),
  // Add hotel-level supplement summary
             supplementSummary: {
               hasSupplements: supplementSummary.rawSupplements.length > 0,
@@ -1362,8 +1366,12 @@ if (!realBookingCode) {
     confirmationRef: string,
     reason: string,
   ): Promise<CancellationResult> {
-    const bookingId = parseInt(confirmationRef, 10);
+    const bookingId = Number(confirmationRef);
+    if (!Number.isSafeInteger(bookingId) || bookingId <= 0) {
+      throw new BadRequestException('A valid VSR booking ID is required to cancel this hotel.');
+    }
     let changeRequestResult: any;
+    let requestError: any;
     try {
  this.logger.log(
         `❌ Cancelling booking: ${confirmationRef}, Reason: ${reason}`
@@ -1405,49 +1413,27 @@ if (!realBookingCode) {
           `Cancellation failed: ${changeRequestResult?.Error?.ErrorMessage || 'Unknown error'}`
         );
       }
-
- this.logger.log(` Booking cancelled successfully - ChangeRequestId: ${changeRequestResult.ChangeRequestId}`);
-
-      return {
-        cancellationRef: changeRequestResult.ChangeRequestId?.toString() || confirmationRef,
- refundAmount: 0, // TBO doesn't return refund in this response
-        charges: 0,
-        refundDays: 0,
-      };
     } catch (error) {
- // Log detailed error response from TBO
-      if (error.response) {
- this.logger.error(` TBO API Error Response Status: ${error.response.status}`);
- this.logger.error(` TBO API Error Response Body: ${JSON.stringify(error.response.data)}`);
-      }
-
-      const recovered = await this.tryRecoverCancellationStatus(confirmationRef, bookingId, changeRequestResult || error);
-      if (recovered) {
-        return recovered;
-      }
-
- this.logger.error(
-        `❌ Cancel Booking Error: ${error.message}`,
-        error.stack
-      );
-      throw new InternalServerErrorException('Failed to cancel booking');
+      requestError = error;
+      this.logger.warn(`VSR cancellation request for booking ${bookingId} did not succeed: ${error.message}`);
     }
+
+    // A successful change request acknowledges receipt. Verify the final booking state.
+    const cancellation = await this.verifyCancellationStatus(confirmationRef, bookingId, changeRequestResult ?? requestError);
+    if (cancellation) return cancellation;
+    throw new InternalServerErrorException('Failed to cancel booking: VSR did not confirm cancellation.');
   }
 
-  private async tryRecoverCancellationStatus(
+  private async verifyCancellationStatus(
     confirmationRef: string,
     bookingId: number,
     context: any,
   ): Promise<CancellationResult | null> {
     try {
- this.logger.warn(
-        `⚠️ Cancel request did not return success for booking ${confirmationRef}. Verifying final status via GetBookingDetail...`,
-      );
-
       const detail = await this.getConfirmation(confirmationRef, bookingId);
       if (!isTboBookingCancelled(detail.status)) {
  this.logger.warn(
-          `⚠️ Recovery check completed but booking is not cancelled. status=${detail?.status || 'unknown'}`,
+          `VSR booking ${confirmationRef} is still ${detail.status || 'unconfirmed'} after the cancellation request.`,
         );
         return null;
       }
@@ -1455,8 +1441,8 @@ if (!realBookingCode) {
       const fallbackRef =
         String(context?.ChangeRequestId || context?.response?.data?.HotelChangeRequestResult?.ChangeRequestId || confirmationRef);
 
- this.logger.warn(
-        `✅ Cancellation recovered via BookingDetail for booking ${confirmationRef}. status=${detail.status}`,
+ this.logger.log(
+        `VSR cancellation verified for booking ${confirmationRef}. Status: ${detail.status}`,
       );
 
       return {

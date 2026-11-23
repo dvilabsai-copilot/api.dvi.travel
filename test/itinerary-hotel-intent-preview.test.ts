@@ -3,6 +3,7 @@ import test from 'node:test';
 import { BadRequestException } from '@nestjs/common';
 import { ItinerariesService } from '../src/modules/itineraries/itineraries.service';
 import { resolvePersistedHotelIdentity } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
+import { applyMapDinnerFallbackToRows } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
 
 const stay = {
   routeIds: [10145, 10146],
@@ -326,7 +327,7 @@ test('HOTEL intent does not pin a one-night card rate across a multi-night stay'
       findFirst: async () => ({ itinerary_route_date: new Date('2026-08-23T00:00:00.000Z') }),
     },
     dvi_global_settings: {
-      findFirst: async () => ({ hotel_margin: 20 }),
+      findFirst: async () => ({ hotel_margin: 20, hotel_choose_rate_reuse_minutes: 7 }),
     },
     dvi_hotel: { findUnique: async () => ({
       hotel_id: 232, hotel_margin: 20, axisrooms_enabled: 1, axisrooms_property_id: 'AX_DVI_HOTEL_232',
@@ -376,6 +377,8 @@ test('HOTEL intent does not pin a one-night card rate across a multi-night stay'
 
   assert.equal(result.status, 'AVAILABLE');
   assert.deepEqual(result.selections.map((selection: any) => selection.routeDate), ['2026-08-22', '2026-08-23']);
+  const remaining = Date.parse(result.checkedRateExpiresAt) - Date.now();
+  assert.ok(remaining > 6.9 * 60_000 && remaining <= 7 * 60_000);
   assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Room 607', 'Room 606']);
   assert.deepEqual(result.selections.map((selection: any) => selection.pricePerNight), [6000, 5400]);
   assert.deepEqual(result.selections.map((selection: any) => selection.hotelMarginPercentage), [20, 20]);
@@ -651,6 +654,7 @@ test('TBO RATE_OPTION preview keeps the commercial room when its session token a
 
 test('TBO preview does not multiply an occupancy fare by room count twice', async () => {
   const service = Object.create(ItinerariesService.prototype) as any;
+  const checkedAt = Date.now();
   const tboStay = {
     routeIds: [10145],
     stayDates: ['2026-08-12'],
@@ -671,6 +675,9 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
     mealPlan: 'MAP',
     rateOptionId: 'sagara-map',
     optionKey: 'sagara-map',
+    expiresAt: new Date(checkedAt + 15 * 60_000),
+    supplierSessionExpiresAt: new Date(checkedAt + 35 * 60_000).toISOString(),
+    supplierSearchCompletedAt: new Date(checkedAt).toISOString(),
     roomCount: 4,
     pricePerNight: 26129,
     totalPrice: 26129,
@@ -687,7 +694,7 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
       findFirst: async () => ({ itinerary_route_date: new Date('2026-08-12T00:00:00.000Z') }),
     },
     dvi_global_settings: {
-      findFirst: async () => ({ hotel_margin: 5 }),
+      findFirst: async () => ({ hotel_margin: 5, hotel_choose_rate_reuse_minutes: 30 }),
     },
   };
   service.selectionWorkflowService = {
@@ -706,7 +713,7 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
     getActiveRows: async () => [occupancyFare],
   };
 
-  const result = await service.previewHotelIntent({
+  const request = {
     planId: 10040,
     routeId: 10145,
     groupType: 1,
@@ -717,11 +724,114 @@ test('TBO preview does not multiply an occupancy fare by room count twice', asyn
     hotelName: 'SAGARA BEACH RESORT',
     routeDate: '2026-08-12',
     previewOnly: true,
-  });
+  };
+  const result = await service.previewHotelIntent(request);
 
   assert.equal(result.status, 'AVAILABLE');
   assert.equal(result.selections[0].pricePerNight, 27435.45);
   assert.equal(result.selections[0].totalPrice, 27435.45);
+  assert.equal(result.checkedRateSearchedAt, occupancyFare.supplierSearchCompletedAt);
+  assert.equal(Date.parse(result.checkedRateExpiresAt), checkedAt + 30 * 60_000);
+
+  occupancyFare.supplierSessionExpiresAt = new Date(checkedAt + 8 * 60_000).toISOString();
+  const shorter = await service.previewHotelIntent(request);
+  assert.equal(shorter.checkedRateExpiresAt, occupancyFare.supplierSessionExpiresAt);
+});
+
+test('VSR Choose reuses the complete Reset MAP offer until the supplier search window expires', async () => {
+  const service = Object.create(ItinerariesService.prototype) as any;
+  const searchedAt = Date.now() - 5 * 60_000;
+  const stayDates = ['2027-01-10', '2027-01-11'];
+  const routeIds = [26685, 26686];
+  const option = {
+    supplierSearchCompletedAt: new Date(searchedAt).toISOString(),
+    supplierSessionExpiresAt: new Date(searchedAt + 35 * 60_000).toISOString(),
+    provider: 'tbo', providerHotelCode: '1089764', roomType: 'Executive Room',
+    bookingCode: 'test-booking-reference', rateOptionId: 'test-map', mealPlan: 'MAP',
+    tboMapFallbackApplied: true, tboMapFallbackSourceMealPlan: 'CP',
+    tboMapFallbackDinnerPerNight: 4500,
+    tboRoomNightBreakdown: stayDates.flatMap((date) => [
+      { date, roomNumber: 1, adults: 3, children: 0, allInAmount: 4500, nightTotal: 7448.56 },
+      { date, roomNumber: 2, adults: 2, children: 0, allInAmount: 2948.56, nightTotal: 7448.56 },
+    ]),
+  };
+  let searches = 0;
+  let continuitySearches = 0;
+  let reuseMinutes = 30;
+  const cacheWhere: any[] = [];
+  service.prisma = {
+    dvi_itinerary_plan_details: {
+      findUnique: async () => ({
+        itinerary_plan_ID: 12235, itinerary_quote_ID: 'DVI20261132-V4',
+        preferred_room_count: 2, total_adult: 5, total_children: 0,
+      }),
+    },
+    dvi_itinerary_route_details: {
+      findFirst: async () => ({ itinerary_route_date: new Date(stayDates[0]) }),
+    },
+    dvi_global_settings: {
+      findFirst: async () => ({ hotel_margin: 5, hotel_choose_rate_reuse_minutes: reuseMinutes }),
+    },
+    dvi_itinerary_hotel_search_cache: {
+      findMany: async ({ where }: any) => {
+        cacheWhere.push(where);
+        return [{
+          recommendation_search_run_id: 'reset-run',
+          full_payload: JSON.stringify({ hotelCode: '1089764', provider: 'tbo', rateOptions: [option] }),
+        }];
+      },
+    },
+  };
+  service.selectionWorkflowService = {
+    withHotelSelectionLock: async (_planId: number, _groupType: number, callback: () => Promise<any>) => callback(),
+  };
+  service.hotelStayBlockValidationService = {
+    buildContinuousStayCandidate: async () => ({
+      routeIds, stayDates, nights: 2, checkInDate: stayDates[0], checkOutDate: '2027-01-12',
+    }),
+    previewStayExtension: async () => {
+      continuitySearches++;
+      return { canBookMultiNight: true, blocked: false };
+    },
+  };
+  service.hotelDetailsTboService = {
+    searchSelectedHotelForContinuousStay: async () => { searches++; return []; },
+  };
+  const request = {
+    planId: 12235, routeId: routeIds[0], groupType: 3, selectionIntent: 'HOTEL', provider: 'tbo',
+    hotelCode: '1089764', roomType: 'Executive Room', mealPlanCode: 'MAP', searchRunId: 'reset-run',
+    reuseCheckedRateOnly: true,
+  };
+
+  const reused = await service.previewHotelIntent(request);
+  assert.equal(reused.status, 'AVAILABLE');
+  assert.equal(reused.checkedRateSearchedAt, option.supplierSearchCompletedAt);
+  assert.equal(Date.parse(reused.checkedRateExpiresAt), searchedAt + 30 * 60_000);
+  assert.deepEqual(reused.selections.map((night: any) => night.totalPrice), [12545.99, 12545.99]);
+  assert.equal(cacheWhere[0].quote_id, 'DVI20261132-V4');
+  assert.equal(cacheWhere[0].recommendation_search_run_id, 'reset-run');
+  assert.equal(searches, 0);
+  assert.equal(continuitySearches, 0);
+
+  const reopened = await service.previewHotelIntent({ ...request, searchRunId: undefined });
+  assert.equal(reopened.status, 'AVAILABLE');
+  assert.equal(reopened.checkedRateSearchedAt, reused.checkedRateSearchedAt);
+  assert.equal(reopened.checkedRateExpiresAt, reused.checkedRateExpiresAt);
+  assert.equal(searches, 0);
+  assert.equal(continuitySearches, 0);
+
+  reuseMinutes = 4;
+  assert.deepEqual(await service.previewHotelIntent(request), { status: 'SEARCH_REQUIRED' });
+  assert.equal(searches, 0);
+  await service.previewHotelIntent({ ...request, reuseCheckedRateOnly: false });
+  assert.equal(searches, 1);
+
+  reuseMinutes = 30;
+  option.tboRoomNightBreakdown.pop();
+  assert.deepEqual(await service.previewHotelIntent(request), { status: 'SEARCH_REQUIRED' });
+  assert.equal(searches, 1);
+  await service.previewHotelIntent({ ...request, reuseCheckedRateOnly: false });
+  assert.equal(searches, 2);
 });
 
 test('offline confirm returns DB-verified identity even when request name is contradictory', async () => {
@@ -876,8 +986,9 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
     buildContinuousStayCandidate: async () => tboStay,
     previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
   };
+  let fullStayRates = [tboCandidates[0]];
   service.hotelDetailsTboService = {
-    searchSelectedHotelForContinuousStay: async () => [tboCandidates[0]],
+    searchSelectedHotelForContinuousStay: async () => fullStayRates,
     getSelectedHotelRates: async (_quoteId: string, routeId: number) => ({
       hotels: tboCandidates.filter((candidate) => candidate.routeId === routeId),
     }),
@@ -887,7 +998,7 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
   };
   service.hotelAvailabilitySnapshotService = { getActiveRows: async () => tboCandidates };
 
-  const result = await service.previewHotelIntent({
+  const request = {
     planId: 10321,
     routeId: 20101,
     groupType: 1,
@@ -900,7 +1011,8 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
     mealPlanCode: 'CP',
     routeDate: '2026-09-03',
     hotelMarginPercentage: 10,
-  });
+  };
+  const result = await service.previewHotelIntent(request);
 
   assert.equal(result.status, 'AVAILABLE');
   assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Deluxe Room', 'Deluxe Room']);
@@ -908,6 +1020,27 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
   assert.deepEqual(result.selections.map((selection: any) => selection.hotelMarginAmount), [1444.79, 1488.72]);
   assert.deepEqual(result.selections.map((selection: any) => selection.pricePerNight), [30340.52, 31263.10]);
   assert.equal(Math.round(result.selections.reduce((sum: number, selection: any) => sum + selection.totalPrice, 0) * 100) / 100, 61603.62);
+
+  const breakfastRate = {
+    ...tboCandidates[0], hotelName: 'ELA Resort', rating: 3, numberOfNights: 2,
+    bookingCode: '1130403!TB!test', pricePerNight: 29335.055, totalPrice: 58670.11,
+  };
+  fullStayRates = applyMapDinnerFallbackToRows(
+    [breakfastRate],
+    { preferredMealPlanCode: 'MAP', adultCount: 5, childCount: 0, roomCount: 2, numberOfNights: 2 },
+    { enabled: true, breakfastRate: 400, dinnerRate3Star: 900, dinnerRate4Star: 0, dinnerRate5Star: 0, lunchRate3Star: 900, lunchRate4Star: 0, lunchRate5Star: 0 },
+    true,
+  );
+  assert.deepEqual(fullStayRates.map((row) => row.mealPlan), ['CP', 'MAP']);
+
+  const upgraded = await service.previewHotelIntent({ ...request, mealPlanCode: 'MAP' });
+  assert.equal(upgraded.status, 'AVAILABLE');
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.mealPlan), ['MAP', 'MAP']);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.supplierMealPlan), ['CP', 'CP']);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.tboMapFallbackDinnerPerNight), [4500, 4500]);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.tboMapFallbackBreakfastRate), [0, 0]);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.tboMapFallbackLunchRate), [0, 0]);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.totalPrice), [35065.52, 35988.10]);
 });
 
 test('wrong snapshot name cannot override the persisted offline master identity', () => {

@@ -2,6 +2,8 @@
 // FILE: src/itineraries/itineraries.service.ts
 
 import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException, UnprocessableEntityException } from "@nestjs/common";
+import { savedVsrSupplierFare } from './utils/vsr-supplier-fare.util';
+import { normalizeTboHoldAmount } from './utils/tbo-hold-price-approval.util';
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
 import { findDuplicateHotelRecommendationPackage } from "./utils/tbo-recommendation-package-identity.util";
@@ -54,6 +56,7 @@ import {
   resolvePersistedHotelIdentity,
   supplierSelectionKey,
   parseHotelSelectionSnapshot,
+  hotelBookingTerms,
 } from './utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from './utils/hotel-category.util';
 import { resolveHotelOccupancyPricing, resolveOfflineHotelPayablePricing } from './utils/hotel-selection-pricing.util';
@@ -2663,6 +2666,13 @@ timingStepStartedAt =
       };
     }
 
+    const previewSettings = data.previewOnly ? await this.prisma.dvi_global_settings?.findFirst?.({
+      where: { deleted: 0, status: 1 },
+      orderBy: { global_settings_ID: 'asc' },
+      select: { hotel_margin: true, hotel_choose_rate_reuse_minutes: true },
+    }) : undefined;
+    const reuseMinutes = Number(previewSettings?.hotel_choose_rate_reuse_minutes ?? 0);
+
     // The logical stay is known before any supplier work. When the browser
     // supplies the search run that produced the visible card, reuse that
     // exact persisted snapshot for candidate resolution. This prevents the
@@ -2726,14 +2736,21 @@ timingStepStartedAt =
       });
     }
 
-    // The logical stay is known before any supplier work. Refresh every
-    // affected route so no night is silently filled from an anchor-only rate.
-    // Search results are never retained between requests. Resolve the selected
-    // property again and keep those rates only in this request while building
-    // the atomic stay selection.
+    const resetTboCandidates = provider === 'tbo' && data.previewOnly && intent === 'HOTEL' && reuseMinutes > 0
+      ? await this.readCheckedTboStay(plan, quoteId, stay, Number(data.routeId), {
+          searchRunId: requestedSearchRunId, hotelCode, requestedRoom, requestedMealPlan, reuseMinutes,
+        })
+      : null;
+
+    if (provider === 'tbo' && intent === 'HOTEL' && data.previewOnly &&
+      data.reuseCheckedRateOnly === true && !resetTboCandidates) {
+      return { status: 'SEARCH_REQUIRED' };
+    }
+
+    // Refresh the whole stay when the preview cannot use a checked offer.
     const requestScopedCandidates: any[] = [];
-    let continuousTboCandidates: any[] | null = null;
-    if (provider !== 'offline' && !snapshotCandidates) {
+    let continuousTboCandidates: any[] | null = resetTboCandidates;
+    if (provider !== 'offline' && !snapshotCandidates && !continuousTboCandidates) {
       if (['tbo', 'resavenue', 'hobse', 'axisrooms', 'staah'].includes(provider) &&
         typeof (this.hotelDetailsTboService as any).searchSelectedHotelForContinuousStay === 'function') {
         const continuousHotels = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
@@ -2979,20 +2996,18 @@ timingStepStartedAt =
   const requestedHotelName = normalize(data.hotelName);
   const candidateHotelName = normalize(option.hotelName);
 
-  // For TBO, when both names are known, they must identify the same
-  // property. Do not silently treat another property's room as a match.
+  // An exact supplier code identifies the property even if the card uses
+  // a display alias. Require name agreement when matching by local id alone.
   const hotelNameMatches =
     provider !== 'tbo' ||
     !requestedHotelName ||
     !candidateHotelName ||
     requestedHotelName === candidateHotelName;
 
-  return providerMatches &&
-    hotelNameMatches &&
-    (
-      providerCodeMatches ||
-      (requestedCanonical > 0 && optionCanonical === requestedCanonical)
-    );
+  return providerMatches && (
+    providerCodeMatches ||
+    (hotelNameMatches && requestedCanonical > 0 && optionCanonical === requestedCanonical)
+  );
 };
     const payableAmount = (option: any) => Number(
       option.totalStayPrice ?? option.totalPrice ?? option.totalAmountAfterTax ?? option.pricePerNight ?? option.price ?? Number.MAX_SAFE_INTEGER,
@@ -3184,13 +3199,16 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
     const roomIdentity = (option: any): string => normalize(
       option?.roomType ?? option?.roomTypeName ?? option?.roomTypeId ?? option?.roomId,
     );
+    const getContinuousRoomOptions = (routeId: number, date: string) => routeOptions(routeId, date)
+      .filter(hasRequiredSupplementRates)
+      .filter((option: any) => ignoreTboMealTypeForSelection || !requestedMeal ||
+        normalizeMealPlan(option.mealPlan || option.mealPlanCode) === normalizeMealPlan(requestedMeal));
     let continuousRoomIdentity = '';
     if (tboContinuousHotel && !continuousRoomIdentity) {
       const commonRoomIdentities = stay.routeIds.reduce((common: Set<string> | null, routeId: number, index: number) => {
         const routeDate = String(stay.stayDates[index] || '').slice(0, 10);
         const identities = new Set(
-          routeOptions(routeId, routeDate)
-            .filter(hasRequiredSupplementRates)
+          getContinuousRoomOptions(routeId, routeDate)
             .map(roomIdentity)
             .filter(Boolean),
         );
@@ -3208,8 +3226,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         .map((identity) => {
           const total = stay.routeIds.reduce((sum: number, candidateRouteId: number, candidateIndex: number) => {
             const candidateDate = String(stay.stayDates[candidateIndex] || '').slice(0, 10);
-            const cheapestForNight = routeOptions(candidateRouteId, candidateDate)
-              .filter(hasRequiredSupplementRates)
+            const cheapestForNight = getContinuousRoomOptions(candidateRouteId, candidateDate)
               .filter((option: any) => roomIdentity(option) === identity)
               .sort((left: any, right: any) => payableAmount(left) - payableAmount(right))[0];
             const amount = cheapestForNight ? payableAmount(cheapestForNight) : Number.MAX_SAFE_INTEGER;
@@ -3430,7 +3447,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
       selectedByRoute.push({ ...pricedSelected, itineraryRouteId: routeId, routeId, date: routeDate });
     }
 
-    if (stay.nights > 1 && provider !== 'offline') {
+    if (stay.nights > 1 && provider !== 'offline' && !resetTboCandidates) {
       // HOTEL intent has no explicit rate-option anchor. Use the freshly
       // selected supplier option for continuity validation; otherwise the
       // validator receives empty room/rate identity and cannot resolve the
@@ -3479,20 +3496,21 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         1,
       );
       let previewMarginPercentage = Number(data.hotelMarginPercentage || 0);
-      if (previewMarginPercentage <= 0) {
-        const settingsModel = (this.prisma as any).dvi_global_settings;
-        if (settingsModel?.findFirst) {
-          const settings = await settingsModel.findFirst({
-            where: { deleted: 0, status: 1 },
-            orderBy: { global_settings_ID: 'asc' },
-            select: { hotel_margin: true },
-          });
-          previewMarginPercentage = Math.max(
-            Number(settings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0),
-            0,
-          );
-        }
+      if (previewMarginPercentage <= 0 && this.prisma.dvi_global_settings?.findFirst) {
+        previewMarginPercentage = Math.max(Number(previewSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0), 0);
       }
+      const checkedAt = Date.now();
+      // All requested nights must stay valid. Reopening a quote must not
+      // restart the window for an offer that was already checked.
+      const searchedAt = Math.min(checkedAt, ...selectedByRoute
+        .map((selection: any) => Date.parse(String(selection.supplierSearchCompletedAt ?? '')))
+        .filter(Number.isFinite));
+      // The search inventory expiry is separate from a VSR booking session.
+      const supplierExpirations = selectedByRoute.map((selection: any) => {
+        const sessionExpiry = Date.parse(String(selection.supplierSessionExpiresAt ?? ''));
+        return Number.isFinite(sessionExpiry) ? sessionExpiry : Date.parse(String(selection.expiresAt ?? ''));
+      }).filter(Number.isFinite);
+      const checkedRateExpiry = Math.min(searchedAt + reuseMinutes * 60_000, ...supplierExpirations);
       const availableRoomTypeCategories = provider === 'tbo'
         ? Array.from(new Set(
           candidates
@@ -3507,6 +3525,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
             routeId: Number(selection.routeId || selection.itineraryRouteId),
             routeDate: String(selection.date || '').slice(0, 10),
             breakdown: selection.tboRoomNightBreakdown,
+            mealPlanAmount: selection.tboMapFallbackApplied ? Number(selection.tboMapFallbackDinnerPerNight || 0) : 0,
             marginPercentage: Math.max(
               Number(selection.hotelMarginPercentage ?? selection.marginPercentage ?? previewMarginPercentage),
               0,
@@ -3516,6 +3535,8 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
       return {
         status: 'AVAILABLE',
         success: true,
+        checkedRateSearchedAt: new Date(searchedAt).toISOString(),
+        checkedRateExpiresAt: checkedRateExpiry > checkedAt ? new Date(checkedRateExpiry).toISOString() : null,
         planId: Number(data.planId),
         groupType,
         selectionIntent: intent,
@@ -3639,6 +3660,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
           routeId: Number(selection.routeId),
           routeDate: String(selection.date || '').slice(0, 10),
           breakdown: selection.tboRoomNightBreakdown,
+          mealPlanAmount: selection.tboMapFallbackApplied ? Number(selection.tboMapFallbackDinnerPerNight || 0) : 0,
           marginPercentage: Math.max(Number(selection.hotelMarginPercentage ?? 0), 0),
         })))
       : undefined;
@@ -3835,6 +3857,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         // it is not trusted merely because it came from the request body.
         selectionPricingSource: 'SERVER_RESOLVED',
         axisRoomsMealRooms: selected.axisRoomsMealRooms,
+        bookingTerms: hotelBookingTerms(selected),
       };
     });
     try {
@@ -4235,6 +4258,114 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
   }
 
   /** Resolve offline offers from the current catalog, never from the search snapshot. */
+  private async readCheckedTboStay(
+    plan: { itinerary_plan_ID: number; preferred_room_count?: number | null; total_adult?: number | null; total_children?: number | null },
+    quoteId: string,
+    stay: { routeIds: number[]; stayDates: string[] },
+    anchorRouteId: number,
+    request: {
+      searchRunId: string;
+      hotelCode: string;
+      requestedRoom: string;
+      requestedMealPlan: string | null | undefined;
+      reuseMinutes: number;
+    },
+  ): Promise<any[] | null> {
+    const rows = await this.prisma.dvi_itinerary_hotel_search_cache?.findMany({
+      where: {
+        quote_id: quoteId,
+        plan_id: plan.itinerary_plan_ID,
+        route_id: anchorRouteId,
+        group_type: 0,
+        provider: 'tbo',
+        hotel_code: request.hotelCode,
+        ...(request.searchRunId ? { recommendation_search_run_id: request.searchRunId } : {}),
+        status: 1,
+        deleted: 0,
+      },
+      orderBy: [{ recommendation_generated_at: 'desc' }, { id: 'desc' }],
+      take: 1,
+      select: { full_payload: true, recommendation_search_run_id: true },
+    }) || [];
+    const now = Date.now();
+    const roomCount = Math.max(Number(plan.preferred_room_count || 1), 1);
+    const adults = Math.max(Number(plan.total_adult || 1), 1);
+    const children = Math.max(Number(plan.total_children || 0), 0);
+    const dates = stay.stayDates.map((date) => String(date).slice(0, 10));
+    const label = (value: unknown) => String(value ?? '').trim().toLowerCase();
+    // A compact quote reload may omit the run id. Reset atomically replaces
+    // all active cache rows for this quote; use the current persisted run.
+    const candidates = rows.flatMap(({ full_payload, recommendation_search_run_id }) => {
+      const searchRunId = recommendation_search_run_id || request.searchRunId;
+      if (!searchRunId) return [];
+      let hotel: any;
+      try {
+        hotel = JSON.parse(String(full_payload ?? '{}'));
+      } catch {
+        return [];
+      }
+      if (hotel?.isBookable === false || hotel?.isSelectable === false || hotel?.completeStayBookable === false) return [];
+      const options = hotel?.rateOptions?.length ? hotel.rateOptions : [hotel];
+      return options.flatMap((option: any) => {
+        const rate = { ...hotel, ...option };
+        const searchedAt = Date.parse(String(option?.supplierSearchCompletedAt ?? ''));
+        const sessionExpiry = Date.parse(String(option?.supplierSessionExpiresAt ?? ''));
+        if (!Number.isFinite(searchedAt) || searchedAt > now || !Number.isFinite(sessionExpiry) ||
+          Math.min(searchedAt + request.reuseMinutes * 60_000, sessionExpiry) <= now ||
+          label(rate.provider) !== 'tbo' ||
+          String(rate.providerHotelCode || rate.hotelCode) !== request.hotelCode ||
+          !String(option?.bookingCode || option?.searchReference || '').trim() ||
+          rate.isBookable === false || rate.isSelectable === false || rate.completeStayBookable === false ||
+          (request.requestedRoom && label(rate.roomType || rate.roomTypeName) !== label(request.requestedRoom)) ||
+          (request.requestedMealPlan && label(rate.mealPlan || rate.mealPlanCode) !== label(request.requestedMealPlan))) {
+          return [];
+        }
+
+        // The Reset offer must cover the whole stay for the requested occupancy.
+        const breakdown = option.tboRoomNightBreakdown;
+        if (!Array.isArray(breakdown) || breakdown.length !== dates.length * roomCount ||
+          !dates.every((date) => {
+            const rooms = breakdown.filter((item: any) => String(item?.date).slice(0, 10) === date);
+            const roomNumbers = new Set(rooms.map((room: any) => Number(room?.roomNumber)));
+            return rooms.length === roomCount && roomNumbers.size === roomCount &&
+              [...roomNumbers].every((room) => Number.isInteger(room) && room > 0) &&
+              rooms.reduce((sum, room) => sum + Number(room?.adults), 0) === adults &&
+              rooms.reduce((sum, room) => sum + Number(room?.children), 0) === children;
+          })) return [];
+
+        const mealPlanAmount = rate.tboMapFallbackApplied === true ? Number(rate.tboMapFallbackDinnerPerNight) : 0;
+        const prices = allocateTboRouteNightPricing(stay.routeIds.map((routeId, index) => ({
+          routeId, routeDate: dates[index], breakdown, mealPlanAmount, marginPercentage: 0,
+        })));
+        if (!prices) return [];
+
+        return [...prices.values()].map((price) => ({
+          ...rate,
+          groupType: 0,
+          routeId: price.routeId,
+          itineraryRouteId: price.routeId,
+          routeIds: [price.routeId],
+          date: price.routeDate,
+          checkInDate: price.routeDate,
+          searchRunId,
+          pricePerNight: price.totalPrice,
+          totalPrice: price.totalPrice,
+          totalStayPrice: price.totalPrice,
+          baseTotalPrice: price.baseTotalPrice,
+          basePricePerNight: price.baseTotalPrice,
+          amountIncludesRoomCount: true,
+          amountIncludesHotelMargin: false,
+          pricingIncludesHotelMargin: false,
+          roomCount,
+          numberOfNights: 1,
+        }));
+      });
+    });
+    if (!candidates.length) return null;
+    console.log(`[HOTEL_RESET_RATE_REUSE] plan=${plan.itinerary_plan_ID} hotel=${request.hotelCode} searchRun=${candidates[0].searchRunId}`);
+    return candidates;
+  }
+
   private async resolveOfflineIntentCandidates(plan: any, stay: any, data: any, groupType: number) {
     const routeRows = await this.prisma.dvi_itinerary_route_details.findMany({
       where: {
@@ -5125,6 +5256,9 @@ private async syncAccountsAfterConfirmation(
 }
 
 async confirmQuotation(dto: ConfirmQuotationDto) {
+  if (!(dto as ConfirmQuotationDto & { manualHotelHoldWorkflow?: boolean }).manualHotelHoldWorkflow) {
+    await this.prepareVsrConfirmation(dto);
+  }
   const result =
     await this.confirmationService
       .confirmQuotation(dto);
@@ -5139,6 +5273,77 @@ async confirmQuotation(dto: ConfirmQuotationDto) {
 
   return result;
 }
+
+  private async prepareVsrConfirmation(dto: ConfirmQuotationDto): Promise<void> {
+    const bookings = dto.hotel_bookings ?? [];
+    const isVsr = (booking: { provider?: string }) => ['tbo', 'vsr'].includes(String(booking.provider || '').trim().toLowerCase());
+    if (!bookings.some(isVsr)) return;
+
+    const normalized = this.pruneHotelBookingsCoveredByMultiNight(this.mergeConsecutiveSupplierHotelBookings(
+      bookings.map((booking) => isVsr(booking) ? { ...booking, provider: 'tbo' } : booking),
+    ));
+    const vsrBookings = this.getProviderBookableHotelBookings(normalized).filter(isVsr);
+    if (vsrBookings.length === 0) return;
+    const { pendingBookings } = await this.filterAlreadySuccessfulBookings(dto.itinerary_plan_ID,
+      vsrBookings.map((booking) => ({ ...booking, __provider: 'tbo' })),
+    );
+    if (pendingBookings.length === 0) {
+      dto.hotel_bookings = normalized;
+      return;
+    }
+
+    const rows = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+      where: {
+        itinerary_plan_id: dto.itinerary_plan_ID,
+        group_type: this.getConfirmHotelGroupType(dto),
+        status: 1,
+        deleted: 0,
+        hotel_required: 1,
+        hotel_provider: { in: ['tbo', 'vsr'] },
+      },
+    });
+    const rates = pendingBookings.map((booking) => {
+      const routeIds = new Set([booking.routeId, ...(booking.routeIds ?? [])].map(Number));
+      const stayRows = rows.filter((row) => {
+        const snapshot = parseHotelSelectionSnapshot(row);
+        const coversRoute = routeIds.has(Number(row.itinerary_route_id)) ||
+          (Array.isArray(snapshot.authoritativeRouteIds) &&
+            snapshot.authoritativeRouteIds.some((routeId) => routeIds.has(Number(routeId))));
+        return coversRoute &&
+          [row.hotel_code, snapshot.hotelCode, snapshot.providerHotelCode].some((code) => String(code || '').trim() === String(booking.hotelCode || '').trim());
+      });
+      const previousAmount = savedVsrSupplierFare(stayRows, booking.checkInDate, booking.checkOutDate);
+      if (previousAmount === null) {
+        throw new ConflictException({
+          code: 'VSR_RATE_UNVERIFIED',
+          message: `The saved supplier rate for ${booking.hotelName || 'the selected hotel'} could not be verified. Check Availability before confirming.`,
+        });
+      }
+      return { ...booking, netAmount: previousAmount };
+    });
+    const latest = await this.hotelPrebookService.prebookHotels({ itinerary_plan_ID: dto.itinerary_plan_ID, hotel_bookings: rates });
+    const reviews = [];
+    for (const rate of rates) {
+      const offer = latest.hotels.find((hotel) => Number(hotel.routeId) === Number(rate.routeId) && String(hotel.hotelCode) === String(rate.hotelCode));
+      const context = offer?.prebookContext;
+      const newAmount = normalizeTboHoldAmount(context?.prebookNetAmount);
+      if (newAmount === null || !String(context?.bookingCode || '').includes('!TB!')) {
+        throw new ConflictException({
+          code: 'VSR_RATE_UNVERIFIED', message: `VSR did not verify a bookable rate for ${rate.hotelName || 'the selected hotel'}. Check Availability and try again.`,
+        });
+      }
+      if (newAmount !== rate.netAmount) {
+        reviews.push({ routeId: rate.routeId, hotelName: rate.hotelName, previousAmount: rate.netAmount, newAmount });
+        continue;
+      }
+      const booking = normalized.find((item) => Number(item.routeId) === Number(rate.routeId) && String(item.hotelCode) === String(rate.hotelCode));
+      if (booking) booking.prebookContext = { ...context, savedSupplierAmount: rate.netAmount };
+    }
+    if (reviews.length > 0) {
+      throw new ConflictException({ code: 'VSR_RATE_CHANGED', message: 'VSR rates changed. Review and approve the updated quote before confirming.', reviews });
+    }
+    dto.hotel_bookings = normalized;
+  }
   private isBookingResultSuccess(result: any): boolean {
     return this.confirmationService.isBookingResultSuccess(result);
   }

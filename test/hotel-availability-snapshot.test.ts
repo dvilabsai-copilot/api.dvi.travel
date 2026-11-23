@@ -1727,6 +1727,52 @@ test('same hotel with unchanged rate does not rewrite the durable selection', as
   assert.equal(JSON.parse(selections[0].selected_price_snapshot).searchReference, undefined);
 });
 
+test('Check Availability ignores equivalent refreshed references and reviews material offer changes', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any) as any;
+  const baseOption = {
+    groupType: 1, itineraryRouteId: 10, date: '2026-07-28',
+    provider: 'tbo', hotelCode: 'H-1', hotelId: 101, hotelName: 'Stable Hotel',
+    roomType: 'Deluxe', mealPlan: 'Continental Plan',
+    roomId: 'new-room-reference', rateId: 'new-rate-reference', rateOptionId: 'new-search-reference',
+    pricePerNight: 100.72, totalPrice: 100.72,
+    isRefundable: true, cancellationPolicy: 'Free cancellation until July 25',
+    rateConditions: ['Pay at hotel', 'ID required'],
+  };
+  const cases = [
+    { option: {}, type: null },
+    { option: { isRefundable: undefined, cancellationPolicy: undefined }, type: null },
+    { option: { hotelId: 102, hotelCode: 'H-2', hotelName: 'Other Hotel' }, type: 'AUTO_SELECTION_CHANGED' },
+    { option: { roomType: 'Suite' }, type: 'ROOM_TYPE_CHANGED' },
+    { option: { mealPlan: 'MAP' }, type: 'MEAL_PLAN_CHANGED' },
+    { option: { pricePerNight: 100.73, totalPrice: 100.73 }, type: 'PRICE_CHANGED' },
+    { option: { isRefundable: false, rateOptionId: 'rate-1' }, type: 'BOOKING_TERMS_CHANGED', term: 'Refundability' },
+    { option: { cancellationPolicy: 'Free cancellation until July 24' }, type: 'BOOKING_TERMS_CHANGED', term: 'Cancellation policy' },
+  ];
+  for (const { option, type, term } of cases) {
+    const { tx, selections } = makeReconciliationTx();
+    const selection = selections[0];
+    const saved = {
+      ...JSON.parse(selection.selected_price_snapshot),
+      selectionOrigin: 'AUTO_SELECTED', roomId: 'saved-room', rateId: 'saved-rate', totalPrice: 100.72,
+      isRefundable: true, cancellationPolicy: ['Free cancellation until July 25'],
+      rateConditions: ['ID required', 'Pay at hotel'],
+    };
+    selection.selected_price_snapshot = JSON.stringify(saved);
+    selection.selected_total_price = 100.72;
+    const proposals = new Map();
+    const summary = await service.reconcileSelections(
+      tx, 44, [{ ...baseOption, ...option }], 'fresh-run', 1,
+      false, undefined, undefined, undefined, new Set(), [], true, proposals,
+    );
+    assert.equal(summary.changes[0]?.changeType ?? null, type);
+    assert.equal(proposals.size, type ? 1 : 0);
+    if (type) assert.equal(summary.changes[0].requiresAcceptance, true);
+    if (term) assert.deepEqual(summary.changes[0].bookingTermChanges.map((change: any) => change.label), [term]);
+    assert.equal(selection.selected_total_price, 100.72);
+    assert.equal(selection.selected_price_snapshot, JSON.stringify(saved));
+  }
+});
+
 test('persisted selection matches a nested supplier rate without marking the hotel unavailable', async () => {
   const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
   const selection = {
@@ -1904,6 +1950,173 @@ test('ordinary availability checks keep the saved payable until the exact propos
   assert.deepEqual(await service.applyPendingSelectionChanges(tx, 44, [1], 1, proposals), [1]);
   assert.equal(selections[0].selected_total_price, 125.34);
   await assert.rejects(() => service.applyPendingSelectionChanges(tx, 44, [1], 1, proposals), /preview has changed/);
+});
+
+test('VSR availability proposes the configured margin once across the exact supplier nights', async () => {
+  const { tx, selections, getLastUpdateData } = makeReconciliationTx();
+  tx.dvi_global_settings = { findFirst: async () => ({ hotel_margin: 5 }) };
+  const service = new HotelAvailabilitySnapshotService(tx, {} as any, {} as any, {} as any) as any;
+  const dates = ['2027-01-10', '2027-01-11'];
+  const savedSnapshot = {
+    provider: 'tbo', hotelName: 'Tea Castle Munnar', roomType: 'Executive Room', mealPlan: 'MAP',
+    selectionOrigin: 'AUTO_SELECTED', hotelMarginPercentage: 0, hotelMarginAmount: 0,
+    pricePerNight: 8543.11, totalPrice: 8543.11, baseTotalPrice: 8543.11,
+    authoritativeStayKey: 'tea-castle-stay', authoritativeParentRouteId: 10,
+    authoritativeRouteIds: [10, 11], authoritativeCheckInDate: dates[0], authoritativeCheckOutDate: '2027-01-12',
+    nightlyRates: dates.map((date) => ({ date, baseAmount: 8543.11, sellAmount: 8543.11 })),
+  };
+  Object.assign(selections[0], {
+    itinerary_route_date: new Date(dates[0]), selection_origin: 'AUTO_SELECTED', total_no_of_rooms: 2,
+    hotel_margin_percentage: 0, selected_price_per_night: 8543.11, selected_total_price: 17086.22,
+    total_hotel_cost: 17086.22, selected_price_snapshot: JSON.stringify(savedSnapshot),
+  });
+  const savedSelection = { ...selections[0] };
+  const freshOption = {
+    ...savedSnapshot, groupType: 1, itineraryRouteId: 10, date: dates[0],
+    checkInDate: dates[0], checkOutDate: '2027-01-12', hotelCode: 'H-1', hotelId: 101,
+    rateOptionId: 'rate-1', roomCount: 2, amountIncludesHotelMargin: true,
+    tboRoomNightBreakdown: dates.flatMap((date) => [4271.56, 4271.55].map((allInAmount, index) => ({
+      date, roomNumber: index + 1, allInAmount, nightTotal: 8543.11,
+    }))),
+  };
+  const proposals = new Map();
+  const summary = await service.reconcileSelections(
+    tx, 44, [freshOption], 'run-vsr-margin', 1, false, undefined, undefined, undefined, new Set(), [], true, proposals,
+  );
+
+  assert.equal(summary.totalChanges, 1);
+  assert.equal(summary.changes[0].changeType, 'PRICE_CHANGED');
+  assert.equal(summary.changes[0].requiresAcceptance, true);
+  assert.equal(summary.changes[0].previous.totalPrice, 17086.22);
+  assert.equal(summary.changes[0].current.totalPrice, 17940.53);
+  assert.equal(summary.changes[0].priceDelta, 854.31);
+  const proposed = proposals.get(1).option;
+  assert.equal(proposed.hotelMarginPercentage, 5);
+  assert.equal(proposed.hotelMarginAmount, 854.31);
+  assert.deepEqual(proposed.nightlyRates.map((night: any) => night.sellAmount), [8970.27, 8970.26]);
+  assert.deepEqual(selections[0], savedSelection);
+  assert.equal(getLastUpdateData(), null);
+
+  const repriced = await service.pricePendingSelectionOption(tx, savedSelection, proposed);
+  assert.equal(repriced.totalPrice, proposed.totalPrice);
+  assert.equal(repriced.hotelMarginAmount, proposed.hotelMarginAmount);
+
+  const singleNightSelection = { ...savedSelection, itinerary_route_date: new Date(dates[1]), selected_price_snapshot: '{}' };
+  const singleNight = await service.pricePendingSelectionOption(tx, singleNightSelection, freshOption);
+  assert.equal(singleNight.totalPrice, 8970.26);
+  assert.equal(singleNight.checkInDate, dates[1]);
+
+  // Exercise approval only with the in-memory transaction, then check that the
+  // persisted fields use the exact amount already shown in the proposal.
+  assert.deepEqual(await service.applyPendingSelectionChanges(tx, 44, [1], 1, proposals), [1]);
+  assert.equal(selections[0].selected_total_price, 17940.53);
+  assert.equal(selections[0].hotel_margin_rate, 854.31);
+  assert.deepEqual(JSON.parse(selections[0].selected_price_snapshot).nightlyRates.map((night: any) => night.marginAmount), [427.16, 427.15]);
+});
+
+test('VSR meal fallback previews margin on the exact supplier fare plus meals without changing saved pricing', async () => {
+  const { tx, selections, getLastUpdateData } = makeReconciliationTx();
+  tx.dvi_global_settings = { findFirst: async () => ({ hotel_margin: 5 }) };
+  const service = new HotelAvailabilitySnapshotService(tx, {} as any, {} as any, {} as any) as any;
+  const dates = ['2026-12-06', '2026-12-07'];
+  const checkOutDate = '2026-12-08';
+  const roomFares = [18620.88, 18620.87];
+  const savedNights = [21220.88, 21220.87];
+  const mealAmount = 2600;
+  const savedSnapshot = {
+    provider: 'tbo', hotelName: 'Ayur County', roomType: 'Valley Room', mealPlan: 'MAP',
+    selectionOrigin: 'AUTO_SELECTED', hotelMarginPercentage: 0, hotelMarginAmount: 0,
+    pricePerNight: savedNights[0], totalPrice: savedNights[0], baseTotalPrice: roomFares[0],
+    tboMapFallbackApplied: true, tboMapFallbackSourceMealPlan: 'EP', tboMapFallbackTargetMealPlan: 'MAP',
+    tboMapFallbackDinnerPerNight: mealAmount, tboMapFallbackDinnerTotal: mealAmount * dates.length,
+    authoritativeStayKey: 'ayur-county-stay', authoritativeParentRouteId: 10,
+    authoritativeRouteIds: [10, 11], authoritativeCheckInDate: dates[0], authoritativeCheckOutDate: checkOutDate,
+    nightlyRates: dates.map((date, index) => ({ date, baseAmount: roomFares[index], sellAmount: savedNights[index] })),
+  };
+  Object.assign(selections[0], {
+    itinerary_route_date: new Date(dates[0]), selection_origin: 'AUTO_SELECTED', total_no_of_rooms: 1,
+    hotel_margin_percentage: 0, selected_price_per_night: savedNights[0], selected_total_price: 42441.75,
+    total_hotel_cost: 42441.75, selected_price_snapshot: JSON.stringify(savedSnapshot),
+  });
+  const savedSelection = { ...selections[0] };
+  const freshOption = {
+    ...savedSnapshot, groupType: 1, itineraryRouteId: 10, date: dates[0],
+    checkInDate: dates[0], checkOutDate, hotelCode: 'H-1', hotelId: 101,
+    rateOptionId: 'rate-1', roomCount: 1,
+    tboRoomNightBreakdown: dates.map((date, index) => ({
+      date, roomNumber: 1, allInAmount: roomFares[index], nightTotal: roomFares[index],
+      fallbackMealPlanAmount: mealAmount, payableAmount: savedNights[index],
+    })),
+  };
+  const proposals = new Map();
+  const summary = await service.reconcileSelections(
+    tx, 44, [freshOption], 'run-vsr-meal-margin', 1, false, undefined, undefined, undefined, new Set(), [], true, proposals,
+  );
+
+  assert.equal(summary.totalChanges, 1);
+  assert.equal(summary.changes[0].changeType, 'PRICE_CHANGED');
+  assert.equal(summary.changes[0].requiresAcceptance, true);
+  assert.equal(summary.changes[0].previous.totalPrice, 42441.75);
+  assert.equal(summary.changes[0].current.totalPrice, 44563.84);
+  assert.equal(summary.changes[0].priceDelta, 2122.09);
+  const proposed = proposals.get(1).option;
+  assert.equal(proposed.baseTotalPrice, 37241.75);
+  assert.equal(proposed.totalHotelMealPlanCost, 5200);
+  assert.equal(proposed.hotelMarginBaseAmount, 42441.75);
+  assert.equal(proposed.hotelMarginPercentage, 5);
+  assert.equal(proposed.hotelMarginAmount, 2122.09);
+  assert.deepEqual(proposed.nightlyRates.map((night: any) => night.sellAmount), [22281.93, 22281.91]);
+  assert.deepEqual(selections[0], savedSelection);
+  assert.equal(getLastUpdateData(), null);
+
+  const repriced = await service.pricePendingSelectionOption(tx, savedSelection, proposed);
+  assert.deepEqual(repriced.nightlyRates, proposed.nightlyRates);
+  assert.equal(repriced.totalPrice, proposed.totalPrice);
+
+  const singleNightSelection = { ...savedSelection, itinerary_route_date: new Date(dates[1]), selected_price_snapshot: '{}' };
+  const singleNight = await service.pricePendingSelectionOption(tx, singleNightSelection, freshOption);
+  assert.equal(singleNight.totalPrice, 22281.91);
+  assert.equal(singleNight.tboMapFallbackDinnerTotal, mealAmount);
+
+  assert.deepEqual(await service.applyPendingSelectionChanges(tx, 44, [1], 1, proposals), [1]);
+  assert.equal(selections[0].selected_total_price, 44563.84);
+  assert.equal(selections[0].hotel_margin_rate, 2122.09);
+  assert.equal(selections[0].total_hotel_meal_plan_cost, 5200);
+  const repeat = await service.reconcileSelections(
+    tx, 44, [freshOption], 'run-vsr-meal-margin-repeat', 1, false, undefined, undefined, undefined, new Set(), [], true, new Map(),
+  );
+  assert.equal(repeat.totalChanges, 0);
+});
+
+test('VSR meal fallback compares a legacy single night with its saved meals already included', async () => {
+  const { tx, selections, getLastUpdateData } = makeReconciliationTx();
+  tx.dvi_global_settings = { findFirst: async () => ({ hotel_margin: 5 }) };
+  const service = new HotelAvailabilitySnapshotService(tx, {} as any, {} as any, {} as any) as any;
+  const date = '2026-12-09';
+  const savedSnapshot = {
+    provider: 'tbo', hotelName: 'The Lake Resort by Maat Hotels', roomType: 'Deluxe Room', mealPlan: 'MAP',
+    selectionOrigin: 'AUTO_SELECTED', hotelMarginPercentage: 0, baseTotalPrice: 3091.17,
+    pricePerNight: 3091.17, totalPrice: 3091.17,
+    tboMapFallbackApplied: true, tboMapFallbackDinnerPerNight: 2600, tboMapFallbackDinnerTotal: 2600,
+  };
+  Object.assign(selections[0], {
+    itinerary_route_date: new Date(date), selection_origin: 'AUTO_SELECTED', total_no_of_rooms: 1,
+    hotel_margin_percentage: 0, selected_price_per_night: 3091.17, selected_total_price: 3091.17,
+    total_hotel_cost: 3091.17, selected_price_snapshot: JSON.stringify(savedSnapshot),
+  });
+  const freshOption = {
+    ...savedSnapshot, groupType: 1, itineraryRouteId: 10, date, hotelCode: 'H-1', hotelId: 101,
+    rateOptionId: 'rate-1', roomCount: 1,
+    tboRoomNightBreakdown: [{ date, roomNumber: 1, allInAmount: 3091.17, nightTotal: 3091.17 }],
+  };
+  const summary = await service.reconcileSelections(
+    tx, 44, [freshOption], 'run-vsr-single-meal-margin', 1, false, undefined, undefined, undefined, new Set(), [], true, new Map(),
+  );
+  assert.equal(summary.totalChanges, 1);
+  assert.equal(summary.changes[0].previous.totalPrice, 5691.17);
+  assert.equal(summary.changes[0].current.totalPrice, 5975.73);
+  assert.equal(summary.changes[0].priceDelta, 284.56);
+  assert.equal(getLastUpdateData(), null);
 });
 
 test('unavailable exact USER_SELECTED rate is preserved and reports the fresh same-hotel proposal', async () => {
@@ -2669,6 +2882,53 @@ test('MAP fallback auto-selects live CP without relabelling it as MAP', async ()
   const snapshot = JSON.parse(createdSelections[0].selected_price_snapshot);
   assert.equal(snapshot.mealPlan, 'CP');
   assert.equal(snapshot.selectionOrigin, 'AUTO_SELECTED');
+});
+
+test('Reset saves each VSR MAP night with one dinner supplement and one margin', async () => {
+  const created: any[] = [];
+  const tx: any = {
+    dvi_itinerary_plan_details: { findUnique: async () => ({ preferred_room_count: 2, total_adult: 5 }) },
+    dvi_global_settings: { findFirst: async () => ({ hotel_margin: 5 }) },
+    dvi_itinerary_plan_hotel_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => {
+        created.push(data);
+        return { ...data, itinerary_plan_hotel_details_ID: 502 };
+      },
+    },
+    dvi_itinerary_plan_hotel_room_details: {
+      findMany: async () => [],
+      create: async ({ data }: any) => data,
+    },
+  };
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any);
+  const dates = ['2027-01-10', '2027-01-11'];
+  await (service as any).ensureAutoSelections(tx, 12235, [{
+    itineraryRouteId: 26685, groupType: 4, date: dates[0],
+    provider: 'tbo', hotelCode: '1089764', hotelName: 'Tea Castle Munnar',
+    roomType: 'Executive Room', rateOptionId: 'test-map', mealPlan: 'MAP',
+    isBookable: true, isSelectable: true,
+    authoritativeStayKey: 'test-stay', authoritativeParentRouteId: 26685,
+    authoritativeRouteIds: [26685, 26686],
+    authoritativeCheckInDate: dates[0], authoritativeCheckOutDate: '2027-01-12',
+    baseTotalPrice: 7448.42, pricePerNight: 11948.42,
+    tboMapFallbackApplied: true, tboMapFallbackSourceMealPlan: 'CP',
+    tboMapFallbackDinnerPerNight: 4500, tboMapFallbackDinnerTotal: 9000,
+    nightlyRates: dates.map(date => ({ date, baseAmount: 7448.42, sellAmount: 11948.42 })),
+    tboRoomNightBreakdown: dates.flatMap(date => [1, 2].map(roomNumber => ({
+      date, roomNumber, allInAmount: 3724.21, nightTotal: 7448.42,
+    }))),
+  }], 'reset-run', 7, false, undefined, 'MAP');
+
+  assert.equal(created.length, 1);
+  assert.equal(created[0].selected_price_per_night, 12545.84);
+  assert.equal(created[0].selected_total_price, 25091.68);
+  assert.equal(created[0].hotel_dinner_cost, 9000);
+  assert.equal(created[0].hotel_margin_rate, 1194.84);
+  const snapshot = JSON.parse(created[0].selected_price_snapshot);
+  assert.deepEqual(snapshot.nightlyRates.map((night: any) => [
+    night.sellAmount, night.tboMapFallbackDinnerPerNight, night.marginAmount,
+  ]), [[12545.84, 4500, 597.42], [12545.84, 4500, 597.42]]);
 });
 
 test('MAP fallback auto-selects EP when CP is unavailable without relabelling it as MAP', async () => {

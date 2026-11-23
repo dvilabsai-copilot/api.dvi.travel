@@ -200,6 +200,7 @@ export class ItineraryHotelPrebookService {
 
       const selection = {
         hotelCode: hotel.hotelCode,
+        hotelName: hotel.hotelName,
         bookingCode: resolvedBookingCode,
         roomType: hotel.roomType,
         checkInDate: hotel.checkInDate,
@@ -550,6 +551,7 @@ console.log('[ItinerariesService] PreBook completed:', {
         });
         const response = await this.tboHotelBooking.preBookHotelForHold({
           hotelCode: String(hotel.hotelCode || ''),
+          hotelName: base.hotelName,
           bookingCode,
           roomType: String(hotel.roomType || 'Room'),
           checkInDate: String(hotel.checkInDate || ''),
@@ -572,10 +574,13 @@ console.log('[ItinerariesService] PreBook completed:', {
           supplierStatus: response?.Status ?? null,
         });
       } catch (error) {
+        const response = error instanceof BadRequestException ? error.getResponse() : null;
+        const unavailable = response && typeof response === 'object' &&
+          'code' in response && response.code === 'VSR_HOTEL_UNAVAILABLE';
         hotels.push({
           ...base,
           holdable: false,
-          reason: 'CHECK_FAILED',
+          reason: unavailable ? 'HOTEL_UNAVAILABLE' : 'CHECK_FAILED',
           isRefundable: null,
           lastCancellationDeadline: null,
           error: error instanceof Error ? error.message : 'Unable to verify the current VSR rate.',

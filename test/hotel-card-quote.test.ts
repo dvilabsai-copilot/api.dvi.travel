@@ -33,6 +33,11 @@ test('two-room supplier quote adds room lines once and allocates margin across u
   assert.equal(a.roomCount, 2);
 });
 
+test('VSR MAP card applies the margin to the CP fare and one dinner supplement', () => {
+  const map = { ...lake, tboMapFallbackApplied: true, tboMapFallbackDinnerPerNight: 900 };
+  assert.equal(buildHotelCardQuote(map, 5, 1)?.payableAmount, 4223.72);
+});
+
 test('invalid/missing dates, incomplete occupancy, inconsistent supplier lines never produce estimates', () => {
   assert.equal(buildHotelCardQuote({ ...lake, date: '2026-12-08' }, 5, 1), null);
   assert.equal(buildHotelCardQuote(lake, 5, 2), null);
