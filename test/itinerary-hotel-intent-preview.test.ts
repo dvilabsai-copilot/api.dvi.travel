@@ -3,6 +3,7 @@ import test from 'node:test';
 import { BadRequestException } from '@nestjs/common';
 import { ItinerariesService } from '../src/modules/itineraries/itineraries.service';
 import { resolvePersistedHotelIdentity } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
+import { applyMapDinnerFallbackToRows } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
 
 const stay = {
   routeIds: [10145, 10146],
@@ -889,8 +890,9 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
     buildContinuousStayCandidate: async () => tboStay,
     previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
   };
+  let fullStayRates = [tboCandidates[0]];
   service.hotelDetailsTboService = {
-    searchSelectedHotelForContinuousStay: async () => [tboCandidates[0]],
+    searchSelectedHotelForContinuousStay: async () => fullStayRates,
     getSelectedHotelRates: async (_quoteId: string, routeId: number) => ({
       hotels: tboCandidates.filter((candidate) => candidate.routeId === routeId),
     }),
@@ -900,7 +902,7 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
   };
   service.hotelAvailabilitySnapshotService = { getActiveRows: async () => tboCandidates };
 
-  const result = await service.previewHotelIntent({
+  const request = {
     planId: 10321,
     routeId: 20101,
     groupType: 1,
@@ -913,7 +915,8 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
     mealPlanCode: 'CP',
     routeDate: '2026-09-03',
     hotelMarginPercentage: 10,
-  });
+  };
+  const result = await service.previewHotelIntent(request);
 
   assert.equal(result.status, 'AVAILABLE');
   assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Deluxe Room', 'Deluxe Room']);
@@ -921,6 +924,27 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
   assert.deepEqual(result.selections.map((selection: any) => selection.hotelMarginAmount), [1444.79, 1488.72]);
   assert.deepEqual(result.selections.map((selection: any) => selection.pricePerNight), [30340.52, 31263.10]);
   assert.equal(Math.round(result.selections.reduce((sum: number, selection: any) => sum + selection.totalPrice, 0) * 100) / 100, 61603.62);
+
+  const breakfastRate = {
+    ...tboCandidates[0], hotelName: 'ELA Resort', rating: 3, numberOfNights: 2,
+    bookingCode: '1130403!TB!test', pricePerNight: 29335.055, totalPrice: 58670.11,
+  };
+  fullStayRates = applyMapDinnerFallbackToRows(
+    [breakfastRate],
+    { preferredMealPlanCode: 'MAP', adultCount: 5, childCount: 0, roomCount: 2, numberOfNights: 2 },
+    { enabled: true, breakfastRate: 400, dinnerRate3Star: 900, dinnerRate4Star: 0, dinnerRate5Star: 0, lunchRate3Star: 900, lunchRate4Star: 0, lunchRate5Star: 0 },
+    true,
+  );
+  assert.deepEqual(fullStayRates.map((row) => row.mealPlan), ['CP', 'MAP']);
+
+  const upgraded = await service.previewHotelIntent({ ...request, mealPlanCode: 'MAP' });
+  assert.equal(upgraded.status, 'AVAILABLE');
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.mealPlan), ['MAP', 'MAP']);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.supplierMealPlan), ['CP', 'CP']);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.tboMapFallbackDinnerPerNight), [4500, 4500]);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.tboMapFallbackBreakfastRate), [0, 0]);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.tboMapFallbackLunchRate), [0, 0]);
+  assert.deepEqual(upgraded.selections.map((selection: any) => selection.totalPrice), [35065.52, 35988.10]);
 });
 
 test('wrong snapshot name cannot override the persisted offline master identity', () => {

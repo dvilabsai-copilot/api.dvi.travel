@@ -338,6 +338,10 @@ export function applyMapDinnerFallbackToRows<T extends Record<string, any>>(
       }));
 
     if (preserveSupplierOptions) {
+      if (options.length === 0 && sourcePredicate(row)) {
+        const fallback = createFallbackOption(row, context, config);
+        return fallback ? [row, fallback] : [row];
+      }
       if (fallbackOptions.length === 0) return [row];
       return [{ ...row, rateOptions: [...options, ...fallbackOptions] }];
     }

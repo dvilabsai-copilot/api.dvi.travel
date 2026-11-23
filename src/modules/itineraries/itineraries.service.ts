@@ -2728,20 +2728,18 @@ timingStepStartedAt =
   const requestedHotelName = normalize(data.hotelName);
   const candidateHotelName = normalize(option.hotelName);
 
-  // For TBO, when both names are known, they must identify the same
-  // property. Do not silently treat another property's room as a match.
+  // An exact supplier code identifies the property even if the card uses
+  // a display alias. Require name agreement when matching by local id alone.
   const hotelNameMatches =
     provider !== 'tbo' ||
     !requestedHotelName ||
     !candidateHotelName ||
     requestedHotelName === candidateHotelName;
 
-  return providerMatches &&
-    hotelNameMatches &&
-    (
-      providerCodeMatches ||
-      (requestedCanonical > 0 && optionCanonical === requestedCanonical)
-    );
+  return providerMatches && (
+    providerCodeMatches ||
+    (hotelNameMatches && requestedCanonical > 0 && optionCanonical === requestedCanonical)
+  );
 };
     const payableAmount = (option: any) => Number(
       option.totalStayPrice ?? option.totalPrice ?? option.totalAmountAfterTax ?? option.pricePerNight ?? option.price ?? Number.MAX_SAFE_INTEGER,
@@ -2933,13 +2931,16 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
     const roomIdentity = (option: any): string => normalize(
       option?.roomType ?? option?.roomTypeName ?? option?.roomTypeId ?? option?.roomId,
     );
+    const getContinuousRoomOptions = (routeId: number, date: string) => routeOptions(routeId, date)
+      .filter(hasRequiredSupplementRates)
+      .filter((option: any) => ignoreTboMealTypeForSelection || !requestedMeal ||
+        normalizeMealPlan(option.mealPlan || option.mealPlanCode) === normalizeMealPlan(requestedMeal));
     let continuousRoomIdentity = '';
     if (tboContinuousHotel && !continuousRoomIdentity) {
       const commonRoomIdentities = stay.routeIds.reduce((common: Set<string> | null, routeId: number, index: number) => {
         const routeDate = String(stay.stayDates[index] || '').slice(0, 10);
         const identities = new Set(
-          routeOptions(routeId, routeDate)
-            .filter(hasRequiredSupplementRates)
+          getContinuousRoomOptions(routeId, routeDate)
             .map(roomIdentity)
             .filter(Boolean),
         );
@@ -2957,8 +2958,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         .map((identity) => {
           const total = stay.routeIds.reduce((sum: number, candidateRouteId: number, candidateIndex: number) => {
             const candidateDate = String(stay.stayDates[candidateIndex] || '').slice(0, 10);
-            const cheapestForNight = routeOptions(candidateRouteId, candidateDate)
-              .filter(hasRequiredSupplementRates)
+            const cheapestForNight = getContinuousRoomOptions(candidateRouteId, candidateDate)
               .filter((option: any) => roomIdentity(option) === identity)
               .sort((left: any, right: any) => payableAmount(left) - payableAmount(right))[0];
             const amount = cheapestForNight ? payableAmount(cheapestForNight) : Number.MAX_SAFE_INTEGER;
@@ -3263,6 +3263,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
             routeId: Number(selection.routeId || selection.itineraryRouteId),
             routeDate: String(selection.date || '').slice(0, 10),
             breakdown: selection.tboRoomNightBreakdown,
+            mealPlanAmount: selection.tboMapFallbackApplied ? Number(selection.tboMapFallbackDinnerPerNight || 0) : 0,
             marginPercentage: Math.max(
               Number(selection.hotelMarginPercentage ?? selection.marginPercentage ?? previewMarginPercentage),
               0,
@@ -3397,6 +3398,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
           routeId: Number(selection.routeId),
           routeDate: String(selection.date || '').slice(0, 10),
           breakdown: selection.tboRoomNightBreakdown,
+          mealPlanAmount: selection.tboMapFallbackApplied ? Number(selection.tboMapFallbackDinnerPerNight || 0) : 0,
           marginPercentage: Math.max(Number(selection.hotelMarginPercentage ?? 0), 0),
         })))
       : undefined;

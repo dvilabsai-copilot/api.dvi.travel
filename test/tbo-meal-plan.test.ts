@@ -40,5 +40,9 @@ test('does not count a separately payable gala dinner as an included meal', () =
   assert.equal(getNormalizedMealPlanLabelFromMealSources(`BREAKFAST,${notice}`, 'BreakFast'), 'CP');
   assert.equal(getNormalizedMealPlanLabelFromMealSources(`BREAKFAST AND DINNER;${notice}`, 'Room_Only'), 'MAP');
   assert.equal(getNormalizedMealPlanLabelFromMealSources(notice, 'Room_Only'), 'EP');
+  assert.equal(
+    getNormalizedMealPlanLabelFromMealSources('BREAKFAST,COMPULSORY GALA DINNER WILL APPLY @ 1000/- PER PERSON ON 24TH DEC AND 31ST DEC', 'BreakFast'),
+    'CP',
+  );
   assert.equal(getNormalizedMealPlanLabelFromMealSources('BREAKFAST,COMPLIMENTARY GALA DINNER', 'BreakFast'), 'MAP');
 });
