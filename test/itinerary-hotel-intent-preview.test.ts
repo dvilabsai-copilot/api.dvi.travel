@@ -326,7 +326,7 @@ test('HOTEL intent does not pin a one-night card rate across a multi-night stay'
       findFirst: async () => ({ itinerary_route_date: new Date('2026-08-23T00:00:00.000Z') }),
     },
     dvi_global_settings: {
-      findFirst: async () => ({ hotel_margin: 20 }),
+      findFirst: async () => ({ hotel_margin: 20, hotel_choose_rate_reuse_minutes: 7 }),
     },
     dvi_hotel: { findUnique: async () => ({
       hotel_id: 232, hotel_margin: 20, axisrooms_enabled: 1, axisrooms_property_id: 'AX_DVI_HOTEL_232',
@@ -376,6 +376,8 @@ test('HOTEL intent does not pin a one-night card rate across a multi-night stay'
 
   assert.equal(result.status, 'AVAILABLE');
   assert.deepEqual(result.selections.map((selection: any) => selection.routeDate), ['2026-08-22', '2026-08-23']);
+  const remaining = Date.parse(result.checkedRateExpiresAt) - Date.now();
+  assert.ok(remaining > 6.9 * 60_000 && remaining <= 7 * 60_000);
   assert.deepEqual(result.selections.map((selection: any) => selection.roomType), ['Room 607', 'Room 606']);
   assert.deepEqual(result.selections.map((selection: any) => selection.pricePerNight), [6000, 5400]);
   assert.deepEqual(result.selections.map((selection: any) => selection.hotelMarginPercentage), [20, 20]);

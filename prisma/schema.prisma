@@ -2995,6 +2995,7 @@ model dvi_global_settings {
   hotel_hold_reminder_milestones         String?   @db.LongText
   hotel_hold_final_reminder_minutes      Int       @default(15)
   tbo_hold_lcd_buffer_days                Int       @default(1)
+  hotel_choose_rate_reuse_minutes         Int       @default(30)
   same_city_hotspot_rank_enabled         Int       @default(0) @db.TinyInt
   same_city_hotspot_max_rank             Int       @default(30)
   same_city_hotspot_base_increment       Int       @default(10)

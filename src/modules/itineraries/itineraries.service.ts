@@ -3228,20 +3228,19 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         1,
       );
       let previewMarginPercentage = Number(data.hotelMarginPercentage || 0);
-      if (previewMarginPercentage <= 0) {
-        const settingsModel = (this.prisma as any).dvi_global_settings;
-        if (settingsModel?.findFirst) {
-          const settings = await settingsModel.findFirst({
-            where: { deleted: 0, status: 1 },
-            orderBy: { global_settings_ID: 'asc' },
-            select: { hotel_margin: true },
-          });
-          previewMarginPercentage = Math.max(
-            Number(settings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0),
-            0,
-          );
-        }
+      const settings = await this.prisma.dvi_global_settings?.findFirst?.({
+        where: { deleted: 0, status: 1 },
+        orderBy: { global_settings_ID: 'asc' },
+        select: { hotel_margin: true, hotel_choose_rate_reuse_minutes: true },
+      });
+      if (previewMarginPercentage <= 0 && this.prisma.dvi_global_settings?.findFirst) {
+        previewMarginPercentage = Math.max(Number(settings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0), 0);
       }
+      const checkedAt = Date.now();
+      const reuseMinutes = Number(settings?.hotel_choose_rate_reuse_minutes ?? 0);
+      const supplierExpirations = selectedByRoute.map((selection: any) => Date.parse(String(selection.expiresAt ?? '')))
+        .filter(Number.isFinite);
+      const checkedRateExpiry = Math.min(checkedAt + reuseMinutes * 60_000, ...supplierExpirations);
       const availableRoomTypeCategories = provider === 'tbo'
         ? Array.from(new Set(
           candidates
@@ -3265,6 +3264,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
       return {
         status: 'AVAILABLE',
         success: true,
+        checkedRateExpiresAt: checkedRateExpiry > checkedAt ? new Date(checkedRateExpiry).toISOString() : null,
         planId: Number(data.planId),
         groupType,
         selectionIntent: intent,
