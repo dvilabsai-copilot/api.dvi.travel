@@ -255,6 +255,7 @@ export interface HotelConfirmationResult {
 
 export interface HotelConfirmationDetails {
   confirmationRef: string;
+  bookingId?: number;
   hotelName: string;
   checkIn: string;
   checkOut: string;

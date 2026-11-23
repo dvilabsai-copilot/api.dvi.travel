@@ -10,6 +10,8 @@ import { HotelSearchService } from '../../hotels/services/hotel-search.service';
 import { TBOHotelProvider } from '../../hotels/providers/tbo-hotel.provider';
 import { SupplementNormalizerService } from '../../hotels/services/supplement-normalizer.service';
 import axios, { AxiosInstance } from 'axios';
+import { createHash } from 'crypto';
+import { allocateTboBatchPassengers } from '../../hotels/utils/tbo-batch-passenger-allocation.util';
 import {
   normalizePassengerTitle,
   resolveProviderPassengerTitle,
@@ -18,6 +20,10 @@ import { isTboInsufficientBalanceResponse } from '../utils/tbo-hold-eligibility.
 import { TBO_SEARCH_SESSION_VALIDITY_MS } from '../../hotels/utils/tbo-search-session';
 
 interface TboHotelSelection {
+  batchIndex?: number;
+  startRoomIndex?: number;
+  routeIds?: number[];
+  roomPassengerIndices?: number[][];
   hotelCode: string;
   hotelName?: string;
   bookingCode: string;
@@ -276,7 +282,7 @@ private readonly TBO_CLIENT_ID =
         sampleCancelPolicy: prebookCancelPolicies[0] || null,
       };
  this.logger.log(` PreBook API snapshot: ${JSON.stringify(prebookSnapshot)}`);
- this.logger.log(` PreBook API raw response: ${JSON.stringify(response.data)}`);
+
 
       (response.data as any).__requestPayload = payload;
 
@@ -320,7 +326,7 @@ private readonly TBO_CLIENT_ID =
       if (isHoldInsufficientBalance) {
  this.logger.warn(' PreBook returned insufficient balance; continuing only for the explicit non-voucher hold flow.');
       } else {
- this.logger.log(` PreBook successful: ${JSON.stringify(response.data)}`);
+        this.logger.log('VSR PreBook successful');
       }
       return response.data;
     } catch (error: any) {
@@ -386,21 +392,21 @@ private readonly TBO_CLIENT_ID =
     preBookResponse: PreBookResponse,
     selection: TboHotelSelection,
     endUserIp: string = process.env.TBO_END_USER_IP || '134.209.145.185',
+    supplierAttempt?: { claim: () => Promise<void>; reject: () => Promise<void> },
   ): Promise<BookResponse> {
     try {
       this.validateSelection(selection);
 
  // Check if using mock mode for development
       if (this.USE_MOCK_TBO) {
+        await supplierAttempt?.claim();
         return this.generateMockBookResponse(preBookResponse, selection);
       }
 
  // Map passengers to TBO format
-      const hotelRoomsDetails = this.mapPassengersToRooms(
-        selection.passengers,
-        selection.numberOfRooms,
-        selection.occupancies,
-      );
+      const hotelRoomsDetails = selection.batchIndex != null
+        ? this.mapBatchPassengersToRooms(selection)
+        : this.mapPassengersToRooms(selection.passengers, selection.numberOfRooms, selection.occupancies);
 
       const prebookBookingCode = String(
         preBookResponse?.BookingCode ||
@@ -427,23 +433,14 @@ private readonly TBO_CLIENT_ID =
         HotelRoomsDetails: hotelRoomsDetails,
       };
 
- this.logger.log(
-        `📝 Booking: Hotel ${selection.hotelCode}, Payload: ${JSON.stringify(bookingPayload)}`,
-      );
+      this.logger.log('VSR Book request prepared for hotel ' + selection.hotelCode);
 
+      await supplierAttempt?.claim();
       const response = await this.client.post<BookResponse>(
         this.BOOK_URL,
         bookingPayload,
       );
 
-      (response.data as any).meta = {
-        ...(response.data as any).meta,
-        tokenId: tokenId,
-        requestPayload: bookingPayload,
-      };
-
- // Log full response for debugging
- this.logger.log(` Book API Response: ${JSON.stringify(response.data)}`);
 
  // Handle TBO status response - Book API returns BookResult.Status (1 for success)
       const bookResult = response.data.BookResult;
@@ -453,6 +450,10 @@ private readonly TBO_CLIENT_ID =
  // Check ResponseStatus (1 = success, 2 = error) or Status field
       if ((responseStatus && responseStatus !== 1) || (statusCode !== 1 && statusCode !== 200)) {
         const errorMessage = bookResult.Error?.ErrorMessage || 'Unknown error';
+        if (responseStatus === 2 && Number(bookResult.Error?.ErrorCode) > 0 &&
+            !bookResult.BookingId && !bookResult.BookingRefNo && !bookResult.ConfirmationNo) {
+          await supplierAttempt?.reject();
+        }
         const maybeSessionExpired = this.isSessionExpiredError(
           `${errorMessage} ${JSON.stringify(response.data || {})}`,
         );
@@ -467,12 +468,12 @@ private readonly TBO_CLIENT_ID =
         );
       }
 
- this.logger.log(` Booking successful: ${JSON.stringify(response.data)}`);
+      this.logger.log('VSR Book successful');
       return response.data;
     } catch (error: any) {
       const timeoutError = error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '');
       if (timeoutError) {
-        const recovered = await this.tryRecoverBookingAfterTimeout(error);
+        const recovered = await this.tryRecoverBookingAfterTimeout(error, selection.isVoucherBooking ?? true);
         if (recovered) {
           return recovered;
         }
@@ -583,6 +584,19 @@ private readonly TBO_CLIENT_ID =
    * IMPORTANT: TBO requires passenger count to match what was searched
    * If user searched for 2 adults but only provides 1 passenger, duplicate it
  */
+  private mapBatchPassengersToRooms(selection: TboHotelSelection) {
+    const { occupancies, roomPassengerIndices, passengers, numberOfRooms } = selection;
+    if (!occupancies || !roomPassengerIndices) {
+      throw new BadRequestException('Split VSR bookings require the saved occupancy and named passengers for each room.');
+    }
+    allocateTboBatchPassengers(passengers, occupancies, roomPassengerIndices, [
+      { batchIndex: 0, startRoomIndex: 0, roomCount: numberOfRooms },
+    ]);
+    return roomPassengerIndices.map((indices) => ({
+      HotelPassenger: indices.map((index, indexInRoom) => this.mapPassenger(passengers[index], indexInRoom)),
+    }));
+  }
+
   private mapPassengersToRooms(
     passengers: TboHotelPassenger[],
     numberOfRooms: number,
@@ -715,12 +729,6 @@ private readonly TBO_CLIENT_ID =
     userId: number,
   ) {
     try {
-      const bookingMeta = (bookingResponse as any)?.meta || {};
-      const tokenId =
-        typeof bookingMeta.tokenId === 'string' && bookingMeta.tokenId.trim().length > 0
-          ? bookingMeta.tokenId.trim()
-          : null;
-
       const childAges = this.getChildAgesFromSelection(selection);
       const passengerSnapshot = selection.passengers.map((p) => ({
         title: this.resolveTboPassengerTitle(p.title),
@@ -750,10 +758,13 @@ private readonly TBO_CLIENT_ID =
           api_response: {
             preBookResponse: preBookResponse as Record<string, any>,
             preBookMeta: preBookMeta as Record<string, any>,
-            bookResponse: bookingResponse as unknown as Record<string, any>,
-            tokenId,
-            tokenSource: tokenId ? 'authenticate' : 'unavailable',
+            bookResponse: { BookResult: bookingResponse.BookResult },
             persistenceSnapshot: {
+              ...(selection.batchIndex != null ? {
+                batchIndex: selection.batchIndex,
+                startRoomIndex: selection.startRoomIndex,
+                routeIds: selection.routeIds,
+              } : {}),
               childAges,
               passengerSnapshot,
               prebookAmount: preBookMeta?.prebookNetAmount ?? null,
@@ -821,7 +832,24 @@ private readonly TBO_CLIENT_ID =
       }
     >();
 
+    for (const { selection } of selections) {
+      if (selection.batchIndex == null) continue;
+      this.validateSelection(selection);
+      this.mapBatchPassengersToRooms(selection);
+      const amount = Number(selection.prebookContext?.prebookNetAmount);
+      if (!String(selection.prebookContext?.bookingCode || '').includes('!TB!') ||
+          !Number.isFinite(amount) || amount <= 0 || amount !== selection.netAmount ||
+          amount !== selection.prebookContext?.savedSupplierAmount) {
+        throw new BadRequestException('Each split VSR batch requires its own verified PreBook rate.');
+      }
+    }
+
     for (const { routeId, selection } of selections) {
+      const batchIndex = selection.batchIndex;
+      let attemptId: number | undefined;
+      let rejectionVerified = false;
+      let supplierId: string | undefined;
+      let claimedByAnotherRequest = false;
       try {
         this.validateSelection(selection);
 
@@ -901,7 +929,62 @@ private readonly TBO_CLIENT_ID =
         const alreadyProcessed = processedBookingMap.get(dedupeKey);
         let bookResponse: BookResponse;
 
-        if (alreadyProcessed) {
+        if (batchIndex != null) {
+          const key = { confirmed_itinerary_plan_ID: confirmedPlanId, itinerary_route_ID: routeId, batch_index: batchIndex };
+          const bookingCodeHash = createHash('sha256').update(selection.bookingCode).digest('hex');
+          bookResponse = await this.bookHotel(preBookResponse, bookingSelection, endUserIp, {
+            claim: async () => {
+              const attempts = this.prisma.tbo_hotel_booking_attempt;
+              try {
+                const attempt = await attempts.create({
+                  data: {
+                    ...key,
+                    itinerary_plan_ID: itineraryPlanId,
+                    start_room_index: selection.startRoomIndex ?? 0,
+                    number_of_rooms: selection.numberOfRooms,
+                    booking_code_hash: bookingCodeHash,
+                    state: 'CLAIMED',
+                  },
+                  select: { id: true },
+                });
+                attemptId = attempt.id;
+              } catch (error: any) {
+                if (error?.code !== 'P2002') throw error;
+                const where = { ...key, booking_code_hash: bookingCodeHash, state: 'REJECTED' };
+                const attempt = await attempts.findFirst({ where, select: { id: true } });
+                if (!attempt || (await attempts.updateMany({
+                  where: { ...where, id: attempt.id }, data: { state: 'CLAIMED' },
+                })).count !== 1) {
+                  claimedByAnotherRequest = true;
+                  throw new BadRequestException('This VSR batch already has an active or unresolved supplier attempt.');
+                }
+                attemptId = attempt.id;
+              }
+            },
+            reject: async () => {
+              if (attemptId === undefined) return;
+              await this.prisma.tbo_hotel_booking_attempt.update({
+                where: { id: attemptId }, data: { state: 'REJECTED' },
+              });
+              rejectionVerified = true;
+            },
+          });
+          const id = Number(bookResponse.BookResult?.BookingId);
+          if (!Number.isSafeInteger(id) || id <= 0) {
+            throw new BadRequestException('VSR returned an invalid BookingId. Reconcile the supplier outcome before retrying.');
+          }
+          supplierId = String(id);
+          if (attemptId !== undefined) {
+            await this.prisma.tbo_hotel_booking_attempt.update({
+              where: { id: attemptId },
+              data: {
+                state: 'BOOKED_UNPERSISTED',
+                supplier_booking_id: supplierId,
+                supplier_booking_reference: bookResponse.BookResult.BookingRefNo || null,
+              },
+            });
+          }
+        } else if (alreadyProcessed) {
  this.logger.warn(
             `↻ Reusing existing booking for duplicate BookingCode/TraceId on route ${routeId} (hotel ${selection.hotelCode})`,
           );
@@ -935,13 +1018,19 @@ private readonly TBO_CLIENT_ID =
           userId,
         );
 
+        if (attemptId !== undefined) {
+          await this.prisma.tbo_hotel_booking_attempt.update({
+            where: { id: attemptId },
+            data: { state: 'CONFIRMED', confirmation_id: savedConfirmation.tbo_hotel_booking_confirmation_ID },
+          });
+        }
         results.push({
           routeId,
           hotelCode: selection.hotelCode,
+          ...(batchIndex != null ? { batchIndex, bookingCode: selection.bookingCode } : {}),
           bookingId: String(bookResponse.BookResult.BookingId),
           status: 'confirmed',
           preBook: preBookMeta,
-          bookingRequest: (bookResponse as any)?.meta?.requestPayload || null,
           priceChanged: shouldReconfirmPrice || Boolean(bookResponse.BookResult.IsPriceChanged),
           priceChangedMessage:
             shouldReconfirmPrice || bookResponse.BookResult.IsPriceChanged
@@ -958,13 +1047,18 @@ private readonly TBO_CLIENT_ID =
           `✅ Hotel booking completed for route ${routeId}: ${bookResponse.BookResult.BookingId}`,
         );
       } catch (error) {
- this.logger.error(
-          `❌ Failed to book hotel for route ${routeId}: ${error.message}`,
-        );
+        if (attemptId !== undefined && !rejectionVerified && !supplierId) {
+          await this.prisma.tbo_hotel_booking_attempt.update({
+            where: { id: attemptId }, data: { state: 'UNKNOWN' },
+          }).catch((updateError: unknown) => this.logger.error('Unable to record the VSR supplier outcome', updateError));
+        }
+        const needsReconciliation = claimedByAnotherRequest || (attemptId !== undefined && !rejectionVerified);
+        this.logger.error('Failed to book hotel for itinerary route ' + routeId + ': ' + error.message);
         results.push({
           routeId,
           hotelCode: selection.hotelCode,
-          status: 'failed',
+          ...(batchIndex != null ? { batchIndex, bookingCode: selection.bookingCode, retryAllowed: !needsReconciliation } : {}),
+          status: needsReconciliation ? 'requires_reconciliation' : 'failed',
           error: error.message,
         });
       }
@@ -1429,7 +1523,7 @@ private async authenticate(endUserIp: string): Promise<string> {
     }
   }
 
-  private async tryRecoverBookingAfterTimeout(error: any): Promise<BookResponse | null> {
+  private async tryRecoverBookingAfterTimeout(error: any, isVoucherBooking: boolean): Promise<BookResponse | null> {
     const bookingRef =
       error?.response?.data?.BookResult?.BookingRefNo ||
       error?.response?.data?.BookingRefNo ||
@@ -1442,14 +1536,15 @@ private async authenticate(endUserIp: string): Promise<string> {
     }
 
     try {
-      const detail = await this.tboProvider.getConfirmation(String(bookingRef));
-      const normalizedStatus = (detail?.status || '').toLowerCase();
-      const confirmed =
-        normalizedStatus.includes('confirm') ||
-        normalizedStatus.includes('booked') ||
-        normalizedStatus.includes('voucher');
-
-      if (!confirmed) {
+      const responseId = Number(error?.response?.data?.BookResult?.BookingId);
+      const responseBookingId = Number.isSafeInteger(responseId) && responseId > 0 ? responseId : undefined;
+      const detail = await this.tboProvider.getConfirmation(String(bookingRef), responseBookingId);
+      const bookingId = Number(detail?.bookingId || responseBookingId);
+      const status = String(detail?.status || '').toLowerCase();
+      const verified = /^(confirmed|booked|voucher(ed| generated)?)$/.test(status) ||
+        (!isVoucherBooking && /^(hold|held|on[ -]hold|blocked)$/.test(status));
+      if (!verified || !Number.isSafeInteger(bookingId) || bookingId <= 0 ||
+          (responseBookingId && responseBookingId !== bookingId)) {
         return null;
       }
 
@@ -1460,7 +1555,7 @@ private async authenticate(endUserIp: string): Promise<string> {
       return {
         BookResult: {
           TBOReferenceNo: null,
-          VoucherStatus: true,
+          VoucherStatus: detail.voucherStatus === true,
           ResponseStatus: 1,
           Error: {
             ErrorCode: 0,
@@ -1471,7 +1566,7 @@ private async authenticate(endUserIp: string): Promise<string> {
           HotelBookingStatus: detail.status || 'Confirmed',
           ConfirmationNo: String(bookingRef),
           BookingRefNo: String(bookingRef),
-          BookingId: Number(bookingRef) || 0,
+          BookingId: bookingId,
           IsPriceChanged: false,
           IsCancellationPolicyChanged: false,
         },

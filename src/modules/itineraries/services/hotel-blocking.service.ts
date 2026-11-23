@@ -1048,6 +1048,20 @@ export class HotelBlockingService {
     };
   }
 
+  async assertSplitVsrStayCanBook(planId: number, groupType: number): Promise<void> {
+    const request = await this.prisma.dvi_hotel_block_request.findFirst({
+      where: {
+        itinerary_plan_id: planId,
+        group_type: groupType,
+        status: { in: [...ACTIVE_REQUEST_STATUSES, HOTEL_BLOCK_STATUS.CONFIRMED] },
+      },
+      select: { id: true },
+    });
+    if (request) {
+      throw new BadRequestException('Resolve the open hotel Hold request before confirming a split VSR stay.');
+    }
+  }
+
   async listForItinerary(planId: number, groupType?: number) {
     const policy = await this.getHotelHoldPolicy();
     const rows = await (this.prisma as any).dvi_hotel_block_request.findMany({

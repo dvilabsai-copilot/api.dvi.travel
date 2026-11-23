@@ -320,27 +320,63 @@ export class ItineraryConfirmedItineraryDetailsService {
       }
     };
 
-    tboRows.forEach((row: any) => setProviderBooking(Number(row.itinerary_route_ID || 0), {
-      provider: 'tbo',
-      providerDisplayName: 'VSR',
-      hotelCode: String(row.tbo_hotel_code || '').trim(),
-      bookingCode: String(row.booking_code || '').trim(),
-      hotelName:
-        String(
-          row?.api_response?.HotelName ||
-          row?.api_response?.hotel_name ||
-          row?.api_response?.HotelDetails?.HotelName ||
+    const splitBookingsByRoute = new Map<number, Map<number, {
+      batchIndex: number;
+      bookingId: string;
+      bookingRef: string;
+      numberOfRooms: number;
+      netAmount: number;
+    }>>();
+    tboRows.forEach((row) => {
+      const routeId = Number(row.itinerary_route_ID || 0);
+      const saved = (row.api_response as any)?.persistenceSnapshot;
+      if (Number.isInteger(saved?.batchIndex) && row.tbo_booking_id) {
+        const batches = splitBookingsByRoute.get(routeId) || new Map();
+        if (!batches.has(saved.batchIndex)) {
+          batches.set(saved.batchIndex, {
+            batchIndex: saved.batchIndex,
+            bookingId: row.tbo_booking_id,
+            bookingRef: row.tbo_booking_reference_number || '',
+            numberOfRooms: Number(row.number_of_rooms || 0),
+            netAmount: Number(row.net_amount || 0),
+          });
+        }
+        splitBookingsByRoute.set(routeId, batches);
+      }
+    });
+    tboRows.forEach((row: any) => {
+      const routeId = Number(row.itinerary_route_ID || 0);
+      const supplierBatches = Array.from(splitBookingsByRoute.get(routeId)?.values() || [])
+        .sort((left, right) => left.batchIndex - right.batchIndex);
+      const netAmount = supplierBatches.length
+        ? supplierBatches.reduce((cents, batch) => cents + Math.round(batch.netAmount * 100), 0) / 100
+        : Number(row.net_amount || row.booked_amount || 0);
+      setProviderBooking(routeId, {
+        provider: 'tbo',
+        providerDisplayName: 'VSR',
+        hotelCode: String(row.tbo_hotel_code || '').trim(),
+        bookingCode: String(row.booking_code || '').trim(),
+        hotelName:
+          String(
+            row?.api_response?.HotelName ||
+            row?.api_response?.hotel_name ||
+            row?.api_response?.HotelDetails?.HotelName ||
+            '',
+          ).trim() || null,
+        checkInDate: row.check_in_date,
+        checkOutDate: row.check_out_date,
+        netAmount,
+        ...(supplierBatches.length ? {
+          supplierBatches,
+          numberOfRooms: supplierBatches.reduce((total, batch) => total + batch.numberOfRooms, 0),
+        } : {}),
+        roomType: String(
+          row?.api_response?.HotelRoomsDetails?.[0]?.RoomTypeName ||
+          row?.api_response?.HotelRoomsDetails?.[0]?.RoomName ||
           '',
         ).trim() || null,
-      checkInDate: row.check_in_date,
-      checkOutDate: row.check_out_date,
-      netAmount: Number(row.net_amount || row.booked_amount || 0),
-      roomType: String(
-        row?.api_response?.HotelRoomsDetails?.[0]?.RoomTypeName ||
-        row?.api_response?.HotelRoomsDetails?.[0]?.RoomName ||
-        '',
-      ).trim() || null,
-    }));
+      });
+    });
     resavenueRows.forEach((row: any) => setProviderBooking(Number(row.itinerary_route_ID || 0), {
       provider: 'resavenue',
       hotelCode: String(row.resavenue_hotel_code || '').trim(),
@@ -554,6 +590,7 @@ export class ItineraryConfirmedItineraryDetailsService {
         noOfRooms: Number(providerBooking?.numberOfRooms || (matchedConfirmedHotel as any)?.total_no_of_rooms || 1),
         provider,
         bookingCode: String(providerBooking?.bookingCode || '').trim() || undefined,
+        ...(providerBooking?.supplierBatches ? { supplierBatches: providerBooking.supplierBatches } : {}),
         checkInDate: formatDateLabel(providerBooking?.checkInDate || route.itinerary_route_date),
         checkOutDate: formatDateLabel(providerBooking?.checkOutDate),
         searchReference:

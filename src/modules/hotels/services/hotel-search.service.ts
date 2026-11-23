@@ -6,6 +6,13 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
+
+import {
+  DEFAULT_TBO_CHILD_AGE,
+  distributeTboSearchOccupancies,
+} from '../utils/tbo-occupancy.util';
+import { matchTboBatchHotels } from '../utils/tbo-batch-hotel-matching.util';
+
 import {
   IHotelProvider,
   HotelSearchResult,
@@ -14,7 +21,6 @@ import {
 } from '../interfaces/hotel-provider.interface';
 import { HotelSearchDTO } from '../dto/hotel.dto';
 import { TBOHotelProvider } from '../providers/tbo-hotel.provider';
-import { DEFAULT_TBO_CHILD_AGE, distributeTboSearchOccupancies } from '../utils/tbo-occupancy.util';
 import { ResAvenueHotelProvider } from '../providers/resavenue-hotel.provider';
 import { HobseHotelProvider } from '../providers/hobse-hotel.provider';
 import { OfflineHotelCatalogService } from '../../itineraries/services/offline-hotel-catalog.service';
@@ -53,6 +59,63 @@ export class HotelSearchService {
       ['resavenue', this.resavenueProvider],
       ['hobse', this.hobseProvider],
     ]);
+  }
+
+  async searchBookableTboRoomBatches(criteria: HotelSearchDTO) {
+    const roomCount = Number(criteria.roomCount);
+    const occupancies = criteria.occupancies;
+
+    if (
+      !Number.isSafeInteger(roomCount) ||
+      roomCount <= HotelSearchService.TBO_MAX_ROOMS ||
+      roomCount > HotelSearchService.MAX_ROOMS ||
+      !Array.isArray(occupancies) ||
+      occupancies.length !== roomCount
+    ) {
+      throw new BadRequestException(
+        'TBO multi-batch search requires 7–25 rooms ' +
+        'and one occupancy record per room.',
+      );
+    }
+
+    const guestCount = occupancies.reduce(
+      (total, room) =>
+        total + Number(room.adults) + Number(room.children),
+      0,
+    );
+
+    this.validateOccupancies(
+      roomCount,
+      guestCount,
+      occupancies,
+    );
+
+    if (
+      !/^[A-Z]{2}$/i.test(
+        String(criteria.guestNationality || '').trim(),
+      )
+    ) {
+      throw new BadRequestException(
+        'Valid ISO-2 guestNationality is required.',
+      );
+    }
+
+    const supplierBatches = await this.tboProvider.searchRoomBatches(
+      {
+        cityCode: criteria.cityCode,
+        checkInDate: criteria.checkInDate,
+        checkOutDate: criteria.checkOutDate,
+        hotelName: criteria.hotelName,
+        roomCount,
+        guestCount,
+        guestNationality: criteria.guestNationality,
+        occupancies,
+        hotelCodes: criteria.hotelCodes,
+      },
+      criteria.preferences,
+    );
+
+    return matchTboBatchHotels(supplierBatches);
   }
 
   private isAxisOnlyFetchEnabled(): boolean {
@@ -352,6 +415,48 @@ if (normalizedRoomCount > HotelSearchService.MAX_ROOMS) {
       }
 
       this.validateOccupancies(roomCount, guestCount, normalizedOccupancies);
+
+      // Preview TBO multi-batch search without exposing unbookable results.
+      // Disabled by default; existing provider search behavior is unchanged.
+      if (
+        normalizedRoomCount > HotelSearchService.TBO_MAX_ROOMS &&
+        requestedProviderKeys.includes('tbo') &&
+        process.env.TBO_BATCH_SEARCH_PREVIEW === 'true'
+      ) {
+        try {
+          const batchResults = await this.tboProvider.searchRoomBatches(
+            {
+              cityCode,
+              checkInDate,
+              checkOutDate,
+              hotelName: searchCriteria.hotelName,
+              roomCount: normalizedRoomCount,
+              guestCount,
+              guestNationality,
+              occupancies: normalizedOccupancies,
+              hotelCodes: searchCriteria.hotelCodes,
+            },
+            searchCriteria.preferences,
+          );
+
+          const matchingHotels = matchTboBatchHotels(batchResults);
+
+          this.logger.log(
+            `[TBO BATCH PREVIEW] ${normalizedRoomCount} rooms; ` +
+            `${batchResults.length} supplier batches; ` +
+            `${matchingHotels.length} matching hotel/rate groups. ` +
+            `Results are not exposed for booking.`,
+                   );
+
+        } catch (error) {
+          this.logger.warn(
+            `[TBO BATCH PREVIEW] Search failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+
 // Get only providers eligible for the requested room count.
 const activeProviders = providerKeysToSearch
   .map((providerKey) => this.providers.get(providerKey))
@@ -597,7 +702,7 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : 'No stack';
  this.logger.error(
-        `   ❌ [${provider.getName()}] Search failed: ${errorMsg}`,
+        `   âŒ [${provider.getName()}] Search failed: ${errorMsg}`,
       );
  this.logger.error(` Stack: ${errorStack}`);
  // Return empty array instead of failing entire search

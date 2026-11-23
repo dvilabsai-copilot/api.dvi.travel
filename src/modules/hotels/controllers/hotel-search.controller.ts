@@ -20,12 +20,29 @@ const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 export class HotelSearchController {
   private readonly logger = new Logger(HotelSearchController.name);
 
-  constructor(private hotelSearchService: HotelSearchService) {}
+constructor(private hotelSearchService: HotelSearchService) {}
 
-  @Post('search')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  async searchHotels(@Body() dto: HotelSearchDTO) {
+@Post('search/tbo-batches')
+@HttpCode(HttpStatus.OK)
+async searchTboRoomBatches(@Body() dto: HotelSearchDTO) {
+  const hotels =
+    await this.hotelSearchService.searchBookableTboRoomBatches(dto);
+
+  return {
+    success: true,
+    message: `Found ${hotels.length} matching TBO hotel options`,
+    data: {
+      totalResults: hotels.length,
+      requestedRoomCount: Number(dto.roomCount),
+      hotels,
+    },
+  };
+}
+
+@Post('search')
+@Public()
+@HttpCode(HttpStatus.OK)
+async searchHotels(@Body() dto: HotelSearchDTO) {
     const startTime = Date.now();
  this.logger.log('\n');
  this.logger.log(' INCOMING HOTEL SEARCH REQUEST');

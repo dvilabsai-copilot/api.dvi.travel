@@ -215,10 +215,11 @@ export class ItineraryHotelPrebookService {
           sampleCancelPolicy: prebookCancelPoliciesDebug[0] || null,
         }),
       );
- console.log(
-        '[ItinerariesService] 📥 Full PreBook API response:',
-        JSON.stringify(prebookResponse),
-      );
+ console.log('[ItinerariesService] Supplier PreBook completed', {
+        routeId: hotel.routeId,
+        hotelCode: hotel.hotelCode,
+        status: prebookResponse?.Status,
+      });
 
  // Extract raw mandatory supplements
       const mandatorySupplements = rawRoomDetails
@@ -369,7 +370,7 @@ export class ItineraryHotelPrebookService {
         rawStatus: prebookResponse?.Status,
         prebookContext: {
           hotelName: hotel.hotelName || null,
-          bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
+          bookingCode: prebookResponse?.BookingCode || resolvedBookingCode,
           traceId: prebookResponse?.TraceId || '',
           finalPrice,
           prebookNetAmount,
