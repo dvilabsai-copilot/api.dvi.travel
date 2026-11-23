@@ -23,7 +23,6 @@ import { HotelGalleryService } from './hotel-gallery.service';
 import {
   applyMapDinnerFallbackToRows,
   filterEpRows,
-  isEpFallbackSourceForMealPlan,
   type TboMapFallbackConfig,
 } from '../../itineraries/utils/tbo-map-fallback.util';
 
@@ -369,10 +368,7 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
       const mealPlanFallbackConfig = needsTboFallbackSourceRates
         ? await this.getMapDinnerConfig()
         : undefined;
-      const preserveEpFallbackSourceRates = Boolean(
-        mealPlanFallbackConfig?.enabled &&
-        isEpFallbackSourceForMealPlan(requestedMealPlanCode, 'EP'),
-      );
+      const preserveMealPlanFallbackSourceRates = mealPlanFallbackConfig?.enabled === true;
 
  // Search in parallel across all providers
       const searchPromises = activeProviders.map((provider) =>
@@ -389,8 +385,8 @@ if (activeProviders.length === 0 && !offlineOnlyRequested) {
             occupancies: normalizedOccupancies,
             hotelCodes: searchCriteria.hotelCodes,
           },
-          provider === this.tboProvider && preserveEpFallbackSourceRates
-            ? { ...searchCriteria.preferences, preserveEpFallbackSourceRates: true }
+          provider === this.tboProvider && preserveMealPlanFallbackSourceRates
+            ? { ...searchCriteria.preferences, preserveMealPlanFallbackSourceRates: true }
             : searchCriteria.preferences,
         ),
       );

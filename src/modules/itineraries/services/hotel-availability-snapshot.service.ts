@@ -2967,7 +2967,7 @@ export class HotelAvailabilitySnapshotService {
       'tboMapFallbackDinnerRate', 'tboMapFallbackDinnerPerPerson',
       'tboMapFallbackDinnerComponentPerNight', 'tboMapFallbackDinnerComponentTotal',
       'tboMapFallbackDinnerPerNight', 'tboMapFallbackDinnerTotal',
-      'tboRoomNightBreakdown',
+      'tboRoomNightBreakdown', 'supplierSearchCompletedAt', 'supplierSessionExpiresAt',
     ];
     return fields.reduce((result: any, field: string) => {
       if (source[field] === undefined) return result;

@@ -60,12 +60,15 @@ export const isEpFallbackSourceForMealPlan = (requested: unknown, source: unknow
 export const shouldKeepSupplierRateForMealPlan = (
   requested: unknown,
   actual: unknown,
-  preserveEpFallbackSource = false,
+  preserveMealPlanFallbackSource = false,
 ): boolean => {
   const requestedCode = mealPlanCode(requested);
   const actualCode = mealPlanCode(actual);
   return !requestedCode || requestedCode === actualCode ||
-    (preserveEpFallbackSource && isEpFallbackSourceForMealPlan(requestedCode, actualCode));
+    (preserveMealPlanFallbackSource && (
+      isEpFallbackSourceForMealPlan(requestedCode, actualCode) ||
+      (requestedCode === 'MAP' && actualCode === 'CP')
+    ));
 };
 
 const optionIdentity = (option: any): string => String(

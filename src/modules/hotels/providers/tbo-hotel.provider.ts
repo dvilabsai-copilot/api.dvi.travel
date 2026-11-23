@@ -393,7 +393,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           if (!shouldKeepSupplierRateForMealPlan(
             selectedMealPlanCode,
             inferredMealPlanCode,
-            preferences?.preserveEpFallbackSourceRates === true,
+            preferences?.preserveMealPlanFallbackSourceRates === true,
           )) {
             continue;
           }

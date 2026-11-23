@@ -2421,6 +2421,13 @@ timingStepStartedAt =
       };
     }
 
+    const previewSettings = data.previewOnly ? await this.prisma.dvi_global_settings?.findFirst?.({
+      where: { deleted: 0, status: 1 },
+      orderBy: { global_settings_ID: 'asc' },
+      select: { hotel_margin: true, hotel_choose_rate_reuse_minutes: true },
+    }) : undefined;
+    const reuseMinutes = Number(previewSettings?.hotel_choose_rate_reuse_minutes ?? 0);
+
     // The logical stay is known before any supplier work. When the browser
     // supplies the search run that produced the visible card, reuse that
     // exact persisted snapshot for candidate resolution. This prevents the
@@ -2475,14 +2482,17 @@ timingStepStartedAt =
       });
     }
 
-    // The logical stay is known before any supplier work. Refresh every
-    // affected route so no night is silently filled from an anchor-only rate.
-    // Search results are never retained between requests. Resolve the selected
-    // property again and keep those rates only in this request while building
-    // the atomic stay selection.
+    const resetTboCandidates = provider === 'tbo' && data.previewOnly && intent === 'HOTEL' &&
+      requestedSearchRunId && reuseMinutes > 0
+      ? await this.readCheckedTboStay(plan, quoteId, stay, Number(data.routeId), {
+          searchRunId: requestedSearchRunId, hotelCode, requestedRoom, requestedMealPlan, reuseMinutes,
+        })
+      : null;
+
+    // Refresh the whole stay when the preview cannot use a checked offer.
     const requestScopedCandidates: any[] = [];
-    let continuousTboCandidates: any[] | null = null;
-    if (provider !== 'offline' && !snapshotCandidates) {
+    let continuousTboCandidates: any[] | null = resetTboCandidates;
+    if (provider !== 'offline' && !snapshotCandidates && !continuousTboCandidates) {
       if (['tbo', 'resavenue', 'hobse', 'axisrooms', 'staah'].includes(provider) &&
         typeof (this.hotelDetailsTboService as any).searchSelectedHotelForContinuousStay === 'function') {
         const continuousHotels = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
@@ -3179,7 +3189,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
       selectedByRoute.push({ ...pricedSelected, itineraryRouteId: routeId, routeId, date: routeDate });
     }
 
-    if (stay.nights > 1 && provider !== 'offline') {
+    if (stay.nights > 1 && provider !== 'offline' && !resetTboCandidates) {
       // HOTEL intent has no explicit rate-option anchor. Use the freshly
       // selected supplier option for continuity validation; otherwise the
       // validator receives empty room/rate identity and cannot resolve the
@@ -3228,16 +3238,10 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         1,
       );
       let previewMarginPercentage = Number(data.hotelMarginPercentage || 0);
-      const settings = await this.prisma.dvi_global_settings?.findFirst?.({
-        where: { deleted: 0, status: 1 },
-        orderBy: { global_settings_ID: 'asc' },
-        select: { hotel_margin: true, hotel_choose_rate_reuse_minutes: true },
-      });
       if (previewMarginPercentage <= 0 && this.prisma.dvi_global_settings?.findFirst) {
-        previewMarginPercentage = Math.max(Number(settings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0), 0);
+        previewMarginPercentage = Math.max(Number(previewSettings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0), 0);
       }
       const checkedAt = Date.now();
-      const reuseMinutes = Number(settings?.hotel_choose_rate_reuse_minutes ?? 0);
       // All requested nights must stay valid. Reopening a quote must not
       // restart the window for an offer that was already checked.
       const searchedAt = Math.min(checkedAt, ...selectedByRoute
@@ -3996,6 +4000,108 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
   }
 
   /** Resolve offline offers from the current catalog, never from the search snapshot. */
+  private async readCheckedTboStay(
+    plan: { itinerary_plan_ID: number; preferred_room_count?: number | null; total_adult?: number | null; total_children?: number | null },
+    quoteId: string,
+    stay: { routeIds: number[]; stayDates: string[] },
+    anchorRouteId: number,
+    request: {
+      searchRunId: string;
+      hotelCode: string;
+      requestedRoom: string;
+      requestedMealPlan: string | null | undefined;
+      reuseMinutes: number;
+    },
+  ): Promise<any[] | null> {
+    const rows = await this.prisma.dvi_itinerary_hotel_search_cache?.findMany({
+      where: {
+        quote_id: quoteId,
+        plan_id: plan.itinerary_plan_ID,
+        route_id: anchorRouteId,
+        group_type: 0,
+        provider: 'tbo',
+        hotel_code: request.hotelCode,
+        recommendation_search_run_id: request.searchRunId,
+        status: 1,
+        deleted: 0,
+      },
+      select: { full_payload: true },
+    }) || [];
+    const now = Date.now();
+    const roomCount = Math.max(Number(plan.preferred_room_count || 1), 1);
+    const adults = Math.max(Number(plan.total_adult || 1), 1);
+    const children = Math.max(Number(plan.total_children || 0), 0);
+    const dates = stay.stayDates.map((date) => String(date).slice(0, 10));
+    const label = (value: unknown) => String(value ?? '').trim().toLowerCase();
+    const candidates = rows.flatMap(({ full_payload }) => {
+      let hotel: any;
+      try {
+        hotel = JSON.parse(String(full_payload ?? '{}'));
+      } catch {
+        return [];
+      }
+      if (hotel?.isBookable === false || hotel?.isSelectable === false || hotel?.completeStayBookable === false) return [];
+      const options = hotel?.rateOptions?.length ? hotel.rateOptions : [hotel];
+      return options.flatMap((option: any) => {
+        const rate = { ...hotel, ...option };
+        const searchedAt = Date.parse(String(option?.supplierSearchCompletedAt ?? ''));
+        const sessionExpiry = Date.parse(String(option?.supplierSessionExpiresAt ?? ''));
+        if (!Number.isFinite(searchedAt) || searchedAt > now || !Number.isFinite(sessionExpiry) ||
+          Math.min(searchedAt + request.reuseMinutes * 60_000, sessionExpiry) <= now ||
+          label(rate.provider) !== 'tbo' ||
+          String(rate.providerHotelCode || rate.hotelCode) !== request.hotelCode ||
+          !String(option?.bookingCode || option?.searchReference || '').trim() ||
+          rate.isBookable === false || rate.isSelectable === false || rate.completeStayBookable === false ||
+          (request.requestedRoom && label(rate.roomType || rate.roomTypeName) !== label(request.requestedRoom)) ||
+          (request.requestedMealPlan && label(rate.mealPlan || rate.mealPlanCode) !== label(request.requestedMealPlan))) {
+          return [];
+        }
+
+        // The Reset offer must cover the whole stay for the requested occupancy.
+        const breakdown = option.tboRoomNightBreakdown;
+        if (!Array.isArray(breakdown) || breakdown.length !== dates.length * roomCount ||
+          !dates.every((date) => {
+            const rooms = breakdown.filter((item: any) => String(item?.date).slice(0, 10) === date);
+            const roomNumbers = new Set(rooms.map((room: any) => Number(room?.roomNumber)));
+            return rooms.length === roomCount && roomNumbers.size === roomCount &&
+              [...roomNumbers].every((room) => Number.isInteger(room) && room > 0) &&
+              rooms.reduce((sum, room) => sum + Number(room?.adults), 0) === adults &&
+              rooms.reduce((sum, room) => sum + Number(room?.children), 0) === children;
+          })) return [];
+
+        const mealPlanAmount = rate.tboMapFallbackApplied === true ? Number(rate.tboMapFallbackDinnerPerNight) : 0;
+        const prices = allocateTboRouteNightPricing(stay.routeIds.map((routeId, index) => ({
+          routeId, routeDate: dates[index], breakdown, mealPlanAmount, marginPercentage: 0,
+        })));
+        if (!prices) return [];
+
+        return [...prices.values()].map((price) => ({
+          ...rate,
+          groupType: 0,
+          routeId: price.routeId,
+          itineraryRouteId: price.routeId,
+          routeIds: [price.routeId],
+          date: price.routeDate,
+          checkInDate: price.routeDate,
+          searchRunId: request.searchRunId,
+          pricePerNight: price.totalPrice,
+          totalPrice: price.totalPrice,
+          totalStayPrice: price.totalPrice,
+          baseTotalPrice: price.baseTotalPrice,
+          basePricePerNight: price.baseTotalPrice,
+          amountIncludesRoomCount: true,
+          amountIncludesHotelMargin: false,
+          pricingIncludesHotelMargin: false,
+          roomCount,
+          numberOfNights: 1,
+        }));
+      });
+    });
+    if (!candidates.length) return null;
+    console.log(`[HOTEL_RESET_RATE_REUSE] plan=${plan.itinerary_plan_ID} hotel=${request.hotelCode} searchRun=${request.searchRunId}`);
+    return candidates;
+  }
+
   private async resolveOfflineIntentCandidates(plan: any, stay: any, data: any, groupType: number) {
     const routeRows = await this.prisma.dvi_itinerary_route_details.findMany({
       where: {
