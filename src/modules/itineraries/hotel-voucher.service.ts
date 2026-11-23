@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
-import { TboHotelBookingService } from './services/tbo-hotel-booking.service';
+import { TboHotelBookingService, VsrCancellationStay } from './services/tbo-hotel-booking.service';
 import { ResAvenueHotelBookingService } from './services/resavenue-hotel-booking.service';
 import { HobseHotelBookingService } from './services/hobse-hotel-booking.service';
 import { AxisRoomsBookingPushService } from './services/axisrooms-booking-push.service';
@@ -45,6 +46,11 @@ export interface ProviderCancellationResult {
   responseBody?: any;
   error?: string | null;
   reason?: string | null;
+}
+
+function isLiveVsrHotel(hotel: { hotel_provider: string | null; hotel_booking_mode: string | null }) {
+  return ['vsr', 'tbo'].includes(String(hotel.hotel_provider ?? '').trim().toLowerCase()) &&
+    String(hotel.hotel_booking_mode ?? '').trim().toUpperCase() !== 'MANUAL_APPROVAL';
 }
 
 @Injectable()
@@ -237,6 +243,8 @@ export class HotelVoucherService {
   async createHotelVouchers(dto: CreateVoucherDto, userId: number = 1) {
     this.logger.log(`Creating ${dto.vouchers.length} hotel vouchers for plan ${dto.itineraryPlanId}`);
 
+  const vsrStaysToCancel: VsrCancellationStay[] = [];
+  const vsrVoucherHotelIds = new Map<CreateVoucherDto['vouchers'][number], number[]>();
   for (const voucher of dto.vouchers) {
     const routeId = Number(voucher.routeId || 0);
     const hotelId = Number(voucher.hotelId || 0);
@@ -248,6 +256,7 @@ export class HotelVoucherService {
       routeId <= 0 ||
       !Number.isInteger(hotelId) ||
       hotelId < 0 ||
+      (voucher.status === 'cancelled' && typeof voucher.routeId !== 'number') ||
       (rawIds !== undefined && rawIds !== null && !Array.isArray(rawIds)) ||
       requestedIds.some((id) => !Number.isInteger(id) || id <= 0)
     ) {
@@ -300,6 +309,13 @@ export class HotelVoucherService {
         'Voucher action is unavailable for an inactive, cancelled, or mismatched hotel.',
       );
     }
+    if (voucher.status === 'cancelled') {
+      const vsrHotels = confirmedHotels.filter(isLiveVsrHotel);
+      if (vsrHotels.length) {
+        vsrStaysToCancel.push(...vsrHotels);
+        vsrVoucherHotelIds.set(voucher, vsrHotels.map((hotel) => hotel.itinerary_plan_hotel_details_ID));
+      }
+    }
   }
 
   const selectionIds = dto.vouchers.flatMap((voucher) => voucher.hotelDetailsIds || []).map(Number).filter((id) => id > 0);
@@ -320,6 +336,9 @@ export class HotelVoucherService {
       selectionIds.push(...resolvedRows.map((row: any) => Number(row.itinerary_plan_hotel_details_ID)).filter((id: number) => id > 0));
     }
     await this.hotelApprovalService.assertSelectionsCanCreateVoucher(selectionIds);
+    if (vsrStaysToCancel.length) {
+      await this.tboHotelBooking.cancelSelectedStays(dto.itineraryPlanId, vsrStaysToCancel, 'Hotel cancelled via voucher');
+    }
  this.logger.debug(`Voucher data: ${JSON.stringify(dto.vouchers, null, 2)}`);
  this.logger.log(
       `[HOTEL_VOUCHER_CREATE_REQUEST] ${JSON.stringify({
@@ -357,18 +376,12 @@ export class HotelVoucherService {
       status: string;
     }> = [];
     const routeIdsToCancel = new Set<number>();
+    const otherSupplierRoutesToCancel = new Set<number>();
     const hotelDetailsIdsToCancel = new Set<number>();
     const staahTargetsToCancel = new Map<string, { routeId: number; hotelId: number | null }>();
     const providerCancellation: ProviderCancellationResult[] = [];
 
     for (const voucher of dto.vouchers) {
- // Validation: if status is 'cancelled' but routeId is missing/invalid, throw error
-      if (voucher.status === 'cancelled' && (!voucher.routeId || typeof voucher.routeId !== 'number')) {
-        throw new BadRequestException(
-          `Voucher with status 'cancelled' must have a valid routeId. Received: ${voucher.routeId}`,
-        );
-      }
-
  // Create voucher for each route date and hotel details ID
       for (let i = 0; i < voucher.routeDates.length; i++) {
         const routeDate = voucher.routeDates[i];
@@ -426,13 +439,15 @@ export class HotelVoucherService {
  // Collect route IDs that need cancellation
       if (voucher.status === 'cancelled') {
         routeIdsToCancel.add(voucher.routeId);
-        (voucher.hotelDetailsIds || [])
+        const vsrHotelIds = vsrVoucherHotelIds.get(voucher);
+        (vsrHotelIds ?? voucher.hotelDetailsIds ?? [])
           .map((id) => Number(id))
           .filter((id) => Number.isFinite(id) && id > 0)
           .forEach((id) => hotelDetailsIdsToCancel.add(id));
         const routeId = Number(voucher.routeId || 0);
         const hotelId = Number(voucher.hotelId || 0);
-        if (routeId > 0) {
+        if (routeId > 0 && !vsrHotelIds) {
+          otherSupplierRoutesToCancel.add(routeId);
           staahTargetsToCancel.set(`${routeId}:${hotelId > 0 ? hotelId : 0}`, {
             routeId,
             hotelId: hotelId > 0 ? hotelId : null,
@@ -449,24 +464,14 @@ export class HotelVoucherService {
       );
 
       const reason = 'Hotel cancelled via voucher';
+      const otherSupplierRoutes = Array.from(otherSupplierRoutesToCancel);
 
- // Cancel TBO bookings for selected routes
-      try {
-        const tboCancellationResults = await this.tboHotelBooking.cancelItineraryHotelsByRoutes(
-          dto.itineraryPlanId,
-          routeIdsArray,
-          reason,
-        );
- this.logger.log(` TBO route cancellation completed: ${JSON.stringify(tboCancellationResults)}`);
-      } catch (error) {
- this.logger.error(` TBO route cancellation failed: ${error.message}`);
-      }
-
+      if (otherSupplierRoutes.length) {
  // Cancel ResAvenue bookings for selected routes
       try {
         const resavenueCancellationResults = await this.resavenueHotelBooking.cancelItineraryHotelsByRoutes(
           dto.itineraryPlanId,
-          routeIdsArray,
+          otherSupplierRoutes,
           reason,
         );
  this.logger.log(` ResAvenue route cancellation completed: ${JSON.stringify(resavenueCancellationResults)}`);
@@ -481,7 +486,7 @@ export class HotelVoucherService {
 
         const hobseCancellationResults = await this.hobseHotelBooking.cancelItineraryHotelsByRoutes(
           dto.itineraryPlanId,
-          routeIdsArray,
+          otherSupplierRoutes,
         );
 
  this.logger.log(` HOBSE Cancellation Response: ${JSON.stringify(hobseCancellationResults)}`);
@@ -495,11 +500,12 @@ export class HotelVoucherService {
       try {
         const axisCancellation = await this.axisroomsBookingPushService.cancelItineraryHotelsByRoutes(
           dto.itineraryPlanId,
-          routeIdsArray,
+          otherSupplierRoutes,
         );
  this.logger.log(` AxisRooms route cancellation completed: ${JSON.stringify(axisCancellation)}`);
       } catch (error) {
  this.logger.error(` AxisRooms route cancellation failed: ${error.message}`);
+      }
       }
 
  // Cancel STAAH bookings only for selected (routeId, hotelId) voucher targets
@@ -555,7 +561,7 @@ export class HotelVoucherService {
       }
 
  // Update voucher cancellation status in database only for cancelled routes
-      const cancelledVoucherRecords = createdVouchers.filter((v) => routeIdsArray.includes(Number(v.routeId)));
+      const cancelledVoucherRecords = createdVouchers.filter((v) => v.status === 'cancelled');
       for (const voucherRecord of cancelledVoucherRecords) {
         await this.prisma.dvi_confirmed_itinerary_plan_hotel_voucher_details.update({
           where: {
@@ -662,31 +668,34 @@ export class HotelVoucherService {
       })}`,
     );
 
-    const where: any = {
+    const where: Prisma.dvi_itinerary_plan_hotel_detailsWhereInput = {
       itinerary_plan_id: itineraryPlanId,
       deleted: 0,
     };
 
     if (!dto.cancel_all) {
-      const OR: any[] = [];
-      if (routeIds.length > 0) OR.push({ itinerary_route_id: { in: routeIds } as any });
-      if (hotelDetailsIds.length > 0) OR.push({ itinerary_plan_hotel_details_ID: { in: hotelDetailsIds } as any });
-      where.OR = OR;
+      if (hotelDetailsIds.length > 0) where.itinerary_plan_hotel_details_ID = { in: hotelDetailsIds };
+      else where.itinerary_route_id = { in: routeIds };
     }
 
     const targetHotels = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
-      where: where as any,
+      where,
       select: {
         itinerary_plan_hotel_details_ID: true,
         itinerary_route_id: true,
         hotel_id: true,
+        hotel_code: true,
         hotel_provider: true,
         hotel_booking_mode: true,
-      } as any,
+      },
     });
 
     if (!targetHotels.length) {
       throw new NotFoundException('No matching hotels found for cancellation');
+    }
+
+    if (!dto.cancel_all && hotelDetailsIds.some((id) => !targetHotels.some((hotel) => hotel.itinerary_plan_hotel_details_ID === id))) {
+      throw new NotFoundException('One or more selected hotels could not be found for cancellation');
     }
 
     const targetHotelDetailIds = Array.from(
@@ -701,7 +710,7 @@ export class HotelVoucherService {
           .filter((hotel: any) => {
             const provider = String(hotel.hotel_provider || '').trim().toLowerCase();
             const bookingMode = String(hotel.hotel_booking_mode || '').trim().toUpperCase();
-            return provider !== 'offline' && bookingMode !== 'MANUAL_APPROVAL';
+            return provider !== 'offline' && bookingMode !== 'MANUAL_APPROVAL' && !isLiveVsrHotel(hotel);
           })
           .map((hotel: any) => Number(hotel.itinerary_route_id))
           .filter((id) => id > 0),
@@ -726,19 +735,12 @@ export class HotelVoucherService {
       staah: null,
     };
 
- // Provider cancellations should not block DB status updates for operational consistency.
-    if (supplierTargetRouteIds.length > 0) {
-    try {
-      providerResults.tbo = await this.tboHotelBooking.cancelItineraryHotelsByRoutes(
-        itineraryPlanId,
-        supplierTargetRouteIds,
-        reason,
-      );
-    } catch (error: any) {
- this.logger.error(`TBO scoped cancellation failed: ${error?.message || error}`);
-      providerResults.tbo = { error: error?.message || 'Cancellation failed' };
+    const vsrTargets = targetHotels.filter(isLiveVsrHotel);
+    if (vsrTargets.length) {
+      providerResults.tbo = await this.tboHotelBooking.cancelSelectedStays(itineraryPlanId, vsrTargets, reason);
     }
 
+    if (supplierTargetRouteIds.length > 0) {
     try {
       providerResults.resavenue = await this.resavenueHotelBooking.cancelItineraryHotelsByRoutes(
         itineraryPlanId,
@@ -780,48 +782,29 @@ export class HotelVoucherService {
       providerResults.staah = { error: error?.message || 'Cancellation failed' };
       }
     } else {
-      providerResults.tbo = { skipped: true, reason: 'No supplier-bookable hotel targets' };
       providerResults.resavenue = { skipped: true, reason: 'No supplier-bookable hotel targets' };
       providerResults.hobse = { skipped: true, reason: 'No supplier-bookable hotel targets' };
       providerResults.axisrooms = { skipped: true, reason: 'No supplier-bookable hotel targets' };
       providerResults.staah = { skipped: true, reason: 'No supplier-bookable hotel targets' };
     }
 
-    await this.prisma.dvi_itinerary_plan_hotel_details.updateMany({
-      where: {
-        itinerary_plan_id: itineraryPlanId,
-        itinerary_plan_hotel_details_ID: { in: targetHotelDetailIds } as any,
-        deleted: 0,
-      } as any,
-      data: {
-        hotel_cancellation_status: 1,
-        updatedon: new Date(),
-      } as any,
-    });
-
-    await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.updateMany({
-      where: {
-        itinerary_plan_id: itineraryPlanId,
-        itinerary_plan_hotel_details_ID: { in: targetHotelDetailIds } as any,
-        deleted: 0,
-      } as any,
-      data: {
-        hotel_cancellation_status: 1,
-        updatedon: new Date(),
-      } as any,
-    });
-
-    await this.prisma.dvi_confirmed_itinerary_plan_hotel_voucher_details.updateMany({
-      where: {
-        itinerary_plan_id: itineraryPlanId,
-        itinerary_plan_hotel_details_ID: { in: targetHotelDetailIds } as any,
-        deleted: 0,
-      } as any,
-      data: {
-        hotel_voucher_cancellation_status: 1,
-        updatedon: new Date(),
-      } as any,
-    });
+    const cancelledWhere = {
+      itinerary_plan_id: itineraryPlanId,
+      itinerary_plan_hotel_details_ID: { in: targetHotelDetailIds },
+      deleted: 0,
+    };
+    const updatedon = new Date();
+    await this.prisma.$transaction([
+      this.prisma.dvi_itinerary_plan_hotel_details.updateMany({
+        where: cancelledWhere, data: { hotel_cancellation_status: 1, updatedon },
+      }),
+      this.prisma.dvi_confirmed_itinerary_plan_hotel_details.updateMany({
+        where: cancelledWhere, data: { hotel_cancellation_status: 1, updatedon },
+      }),
+      this.prisma.dvi_confirmed_itinerary_plan_hotel_voucher_details.updateMany({
+        where: cancelledWhere, data: { hotel_voucher_cancellation_status: 1, updatedon },
+      }),
+    ]);
 
     return {
       success: true,

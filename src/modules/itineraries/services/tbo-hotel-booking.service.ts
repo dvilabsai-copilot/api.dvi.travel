@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ConflictException,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
@@ -120,6 +121,11 @@ interface TboCancellationBookingRow {
   tbo_booking_reference_number: string | null;
   api_response: Record<string, any> | null;
 }
+
+export type VsrCancellationStay = {
+  itinerary_route_id: number;
+  hotel_code: string | null;
+};
 
 const normalizeMealTypeLabel = (value: any, inclusionFallbacks: any[] = []): string | null => {
   const raw = String(value ?? '').trim();
@@ -1589,136 +1595,107 @@ private async authenticate(endUserIp: string): Promise<string> {
   }
 
  /**
-   * Cancel TBO hotel bookings for specific routes only
+   * Cancel VSR bookings for selected hotels without affecting other stays on those routes.
  */
-  async cancelItineraryHotelsByRoutes(
+  async cancelSelectedStays(
     itineraryPlanId: number,
-    routeIds: number[],
-    reason: string = 'Itinerary cancelled by user',
+    stays: VsrCancellationStay[],
+    reason: string,
   ) {
-    try {
-      if (!routeIds || routeIds.length === 0) {
- this.logger.log(`No route IDs provided for cancellation`);
-        return [];
-      }
-
-      const bookings = await this.fetchActiveCancellationBookings(itineraryPlanId, routeIds);
-
-      if (bookings.length === 0) {
- this.logger.log(
-          `No active TBO bookings found for itinerary ${itineraryPlanId} and routes [${routeIds.join(',')}]`,
-        );
-        return [];
-      }
-
- this.logger.log(
-        `Found ${bookings.length} TBO booking(s) to cancel for routes [${routeIds.join(',')}]`,
-      );
-
-      const results = [];
-
-      for (const booking of bookings) {
-        try {
- // Call TBO provider to cancel the booking
- // IMPORTANT: Pass tbo_booking_id (the numeric ID from TBO) not the reference
-          const cancellationResult = await this.tboProvider.cancelBooking(
-            booking.tbo_booking_id,
-            reason,
-          );
-
- // Update booking status in database
-          await this.prisma.tbo_hotel_booking_confirmation.update({
-            where: {
-              tbo_hotel_booking_confirmation_ID: booking.tbo_hotel_booking_confirmation_ID,
-            },
-            data: {
- status: 0, // Mark as cancelled
-              updatedon: new Date(),
-              api_response: {
-                ...(booking.api_response as Record<string, any>),
-                cancellation: cancellationResult as Record<string, any>,
-                cancelledAt: new Date().toISOString(),
-                cancelReason: reason,
-              },
-            },
-            select: {
-              tbo_hotel_booking_confirmation_ID: true,
-            },
-          });
-
-          results.push({
-            bookingId: booking.tbo_hotel_booking_confirmation_ID,
-            routeId: booking.itinerary_route_ID,
-            tboBookingRef: booking.tbo_booking_reference_number,
-            status: 'cancelled',
-            cancellationRef: cancellationResult.cancellationRef,
-            refundAmount: cancellationResult.refundAmount,
-            charges: cancellationResult.charges,
-          });
-
- this.logger.log(
-            `✅ Cancelled TBO booking ${booking.tbo_booking_reference_number} (Route ${booking.itinerary_route_ID}): ` +
-            `Refund: ${cancellationResult.refundAmount}, Charges: ${cancellationResult.charges}`,
-          );
-        } catch (error) {
- this.logger.error(
-            `❌ Failed to cancel TBO booking ${booking.tbo_booking_reference_number} (Route ${booking.itinerary_route_ID}): ${error.message}`,
-          );
-
-          results.push({
-            bookingId: booking.tbo_hotel_booking_confirmation_ID,
-            routeId: booking.itinerary_route_ID,
-            tboBookingRef: booking.tbo_booking_reference_number,
-            status: 'failed',
-            error: error.message,
-          });
-        }
-      }
-
-      return results;
-    } catch (error) {
- this.logger.error(` Error cancelling TBO hotel routes: ${error.message}`);
-      throw new BadRequestException(
-        `Failed to cancel VSR hotel routes: ${error.message}`,
-      );
+    if (!stays.length) return [];
+    const scopes = stays.map((stay) => ({
+      itinerary_route_ID: stay.itinerary_route_id,
+      tbo_hotel_code: stay.hotel_code?.trim(),
+    }));
+    if (scopes.some((scope) => !scope.itinerary_route_ID || !scope.tbo_hotel_code)) {
+      throw new ConflictException('The selected VSR stay is missing its supplier hotel or route code.');
     }
+    const bookings = await this.prisma.tbo_hotel_booking_confirmation.findMany({
+      where: { itinerary_plan_ID: itineraryPlanId, deleted: 0, OR: scopes },
+      select: {
+        itinerary_route_ID: true, tbo_hotel_code: true, tbo_booking_id: true,
+        tbo_hotel_booking_confirmation_ID: true, tbo_booking_reference_number: true, api_response: true, status: true,
+      },
+    });
+    const matches = (scope: typeof scopes[number], booking: typeof bookings[number]) =>
+      booking.itinerary_route_ID === scope.itinerary_route_ID &&
+      booking.tbo_hotel_code.toLowerCase() === scope.tbo_hotel_code?.toLowerCase();
+    if (scopes.some((scope) => !bookings.some((booking) =>
+      matches(scope, booking) && (booking.status === 1 ||
+        (booking.status === 0 && (booking.api_response as Record<string, unknown> | null)?.cancellation)),
+    ))) {
+      throw new ConflictException('No supplier confirmation was found for the selected VSR stay.');
+    }
+    const active = bookings.filter((booking) => booking.status === 1);
+    if (!active.length) return [];
+    if (active.some((booking) => !booking.tbo_booking_id)) {
+      throw new ConflictException('The selected VSR stay is missing its supplier booking ID.');
+    }
+    const allActiveBookingRows = await this.prisma.tbo_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: itineraryPlanId, deleted: 0, status: 1,
+        tbo_booking_id: { in: active.map((booking) => booking.tbo_booking_id!) },
+      },
+      select: { tbo_hotel_booking_confirmation_ID: true },
+    });
+    const selectedBookingRows = new Set(active.map((booking) => booking.tbo_hotel_booking_confirmation_ID));
+    if (allActiveBookingRows.some((booking) => !selectedBookingRows.has(booking.tbo_hotel_booking_confirmation_ID))) {
+      throw new ConflictException('Select the entire VSR stay before cancelling its supplier booking.');
+    }
+
+    // A supplier booking can cover several nightly rows. Confirm it once per booking ID.
+    const results: Array<{
+      bookingId: number;
+      routeId: number;
+      tboBookingRef: string | null;
+      status: 'cancelled';
+      cancellationRef: string;
+      refundAmount: number;
+      charges: number;
+    }> = [];
+    for (const bookingId of new Set(active.map((booking) => booking.tbo_booking_id!))) {
+      let cancellation: Awaited<ReturnType<TBOHotelProvider['cancelBooking']>>;
+      try {
+        cancellation = await this.tboProvider.cancelBooking(bookingId, reason);
+      } catch {
+        throw new ConflictException({
+          code: 'VSR_CANCELLATION_NOT_CONFIRMED',
+          message: 'VSR did not confirm the hotel cancellation. Check the supplier booking status before retrying.',
+        });
+      }
+      const now = new Date();
+      const bookingRows = active.filter((booking) => booking.tbo_booking_id === bookingId);
+      await this.prisma.$transaction(bookingRows.map((booking) =>
+        this.prisma.tbo_hotel_booking_confirmation.update({
+          where: { tbo_hotel_booking_confirmation_ID: booking.tbo_hotel_booking_confirmation_ID },
+          data: {
+            status: 0, updatedon: now,
+            api_response: {
+              ...(booking.api_response as Record<string, any>),
+              cancellation: { ...cancellation }, cancelledAt: now.toISOString(), cancelReason: reason,
+            },
+          },
+        }),
+      ));
+      for (const row of bookingRows) {
+        results.push({
+          bookingId: row.tbo_hotel_booking_confirmation_ID, routeId: row.itinerary_route_ID,
+          tboBookingRef: row.tbo_booking_reference_number, status: 'cancelled',
+          cancellationRef: cancellation.cancellationRef, refundAmount: cancellation.refundAmount, charges: cancellation.charges,
+        });
+      }
+    }
+    return results;
   }
 
-  private async fetchActiveCancellationBookings(
-    itineraryPlanId: number,
-    routeIds?: number[],
-  ): Promise<TboCancellationBookingRow[]> {
+  private async fetchActiveCancellationBookings(itineraryPlanId: number): Promise<TboCancellationBookingRow[]> {
     const safePlanId = Number(itineraryPlanId);
-    if (!Number.isFinite(safePlanId) || safePlanId <= 0) {
-      return [];
-    }
-
-    if (!routeIds || routeIds.length === 0) {
-      const rows = await this.prisma.$queryRawUnsafe(
-        `SELECT tbo_hotel_booking_confirmation_ID, itinerary_route_ID, tbo_booking_id, tbo_booking_reference_number, api_response
-         FROM tbo_hotel_booking_confirmation
-         WHERE itinerary_plan_ID = ? AND status = 1 AND deleted = 0`,
-        safePlanId,
-      );
-      return rows as TboCancellationBookingRow[];
-    }
-
-    const safeRouteIds = routeIds
-      .map((id) => Number(id))
-      .filter((id) => Number.isFinite(id) && id > 0);
-
-    if (safeRouteIds.length === 0) {
-      return [];
-    }
-
-    const placeholders = safeRouteIds.map(() => '?').join(',');
-    const rows = await this.prisma.$queryRawUnsafe(
+    if (!Number.isFinite(safePlanId) || safePlanId <= 0) return [];
+    return this.prisma.$queryRawUnsafe<TboCancellationBookingRow[]>(
       `SELECT tbo_hotel_booking_confirmation_ID, itinerary_route_ID, tbo_booking_id, tbo_booking_reference_number, api_response
        FROM tbo_hotel_booking_confirmation
-       WHERE itinerary_plan_ID = ? AND itinerary_route_ID IN (${placeholders}) AND status = 1 AND deleted = 0`,
+       WHERE itinerary_plan_ID = ? AND status = 1 AND deleted = 0`,
       safePlanId,
-      ...safeRouteIds,
     );
-    return rows as TboCancellationBookingRow[];
   }
 }
