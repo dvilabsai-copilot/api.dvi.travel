@@ -221,13 +221,17 @@ test('confirmed hotels receive separate signed links and only the agent and inte
   t.mock.method(console, 'log', () => {});
   const previousAdmin = process.env.BOOKING_CONFIRMATION_ADMIN_EMAILS;
   const previousOps = process.env.BOOKING_CONFIRMATION_OPS_EMAILS;
+  const previousTestInbox = process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT;
   process.env.BOOKING_CONFIRMATION_ADMIN_EMAILS = 'admin@example.com';
   process.env.BOOKING_CONFIRMATION_OPS_EMAILS = 'operations@example.com';
+  delete process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT;
   t.after(() => {
     if (previousAdmin === undefined) delete process.env.BOOKING_CONFIRMATION_ADMIN_EMAILS;
     else process.env.BOOKING_CONFIRMATION_ADMIN_EMAILS = previousAdmin;
     if (previousOps === undefined) delete process.env.BOOKING_CONFIRMATION_OPS_EMAILS;
     else process.env.BOOKING_CONFIRMATION_OPS_EMAILS = previousOps;
+    if (previousTestInbox === undefined) delete process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT;
+    else process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT = previousTestInbox;
   });
   const messages: Array<{ to: string | string[]; cc?: string[]; bcc?: string; text: string; html: string; attachments?: Array<{ content: Buffer }> }> = [];
   const pdf = Buffer.from('%PDF-1.4 fixture');
@@ -280,4 +284,22 @@ test('confirmed hotels receive separate signed links and only the agent and inte
   assert.equal(combined.bcc, undefined);
   assert.deepEqual(combined.attachments?.[0]?.content, pdf);
   assert.match(combined.text, /https:\/\/vouchers\.example\/pdf-preview\/voucher\/42/);
+
+  messages.length = 0;
+  process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT = 'qa@example.com';
+  await notifier.sendBookingConfirmationNotifications(42);
+  assert.equal(messages.length, 3);
+  for (const message of messages) {
+    assert.equal(message.to, 'qa@example.com');
+    assert.equal(message.cc, undefined);
+    assert.equal(message.bcc, undefined);
+  }
+  assert.match(messages[0].html, />View Voucher</);
+  assert.match(messages[1].html, />View Voucher</);
+  assert.deepEqual(messages[2].attachments?.[0]?.content, pdf);
+
+  messages.length = 0;
+  process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT = 'qa@example.com,other@example.com';
+  await notifier.sendBookingConfirmationNotifications(42);
+  assert.equal(messages.length, 0);
 });

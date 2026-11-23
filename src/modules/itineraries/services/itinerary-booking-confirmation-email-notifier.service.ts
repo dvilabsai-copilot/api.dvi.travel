@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import nodemailer, { Transporter } from 'nodemailer';
+import { isEmail } from 'class-validator';
+import nodemailer, { SendMailOptions, Transporter } from 'nodemailer';
 import { withGlobalSettingsCc } from '../../../common/utils/default-email-cc.util';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../../../prisma.service';
@@ -52,6 +53,26 @@ constructor(
       value === '1' ||
       value === 'yes'
     );
+  }
+
+  private async sendMail(
+    transporter: Transporter,
+    options: SendMailOptions,
+    includeGlobalCc = true,
+  ) {
+    const testInbox = process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT?.trim();
+    if (testInbox) {
+      if (!isEmail(testInbox)) throw new Error('Booking confirmation test inbox must be a single email address.');
+      return transporter.sendMail({
+        ...options,
+        to: testInbox,
+        cc: undefined,
+        bcc: undefined,
+        envelope: undefined,
+        replyTo: undefined,
+      });
+    }
+    return transporter.sendMail(includeGlobalCc ? await withGlobalSettingsCc(this.prisma, options) : options);
   }
 
   private parseEmails(
@@ -1832,7 +1853,7 @@ try {
   );
 }
 
-const info = await transporter.sendMail(await withGlobalSettingsCc(this.prisma, {
+const info = await this.sendMail(transporter, {
   from: {
     name: fromName,
     address: fromAddress,
@@ -1845,7 +1866,7 @@ const info = await transporter.sendMail(await withGlobalSettingsCc(this.prisma, 
   html,
 
   attachments: dailyMomentAttachments,
-}));
+});
 
 this.logger.log(
   `Daily Moment recipients: ${recipientEmails.join(', ')}`,
@@ -2443,11 +2464,11 @@ if (toEmails.length === 0 && supplierVouchers.length === 0) {
             kind: 'provider-hotel', planId: itineraryPlanId, hotelId: supplier.hotelId,
             stayIds: supplier.stayIds, recipientHash: voucherRecipientHash(supplier.email),
           });
-          await transporter.sendMail({
+          await this.sendMail(transporter, {
             from: { address: fromAddress, name: fromName }, to: supplier.email,
             ...linkedVoucherEmail('DVi Travel | Hotel Voucher | ' + quotationNumber,
               supplier.name + ' · Booking ' + quotationNumber, url, 'View Voucher'),
-          });
+          }, false);
         } catch (error) {
           this.logger.error('Supplier voucher delivery failed for itinerary ' + itineraryPlanId + ', hotel ' + supplier.hotelId);
         }
@@ -2471,13 +2492,13 @@ if (toEmails.length === 0 && supplierVouchers.length === 0) {
         );
       }
 
-      await transporter.sendMail(await withGlobalSettingsCc(this.prisma, {
+      await this.sendMail(transporter, {
         from: { name: fromName, address: fromAddress },
         to: toEmails,
         cc: ccEmails.length ? ccEmails : undefined,
         subject, text, html,
         attachments: voucherAttachments.length ? voucherAttachments : undefined,
-      }));
+      });
       this.logger.log('Booking confirmation email sent for itinerary ' + itineraryPlanId);
     } catch (error: any) {
       /*
