@@ -9,6 +9,7 @@ import { ItineraryPdfService } from '../itinerary-pdf.service';
 import {
   isProviderHotelVoucher, linkedVoucherEmail, supplierVoucherLink, voucherEmailAddresses, voucherRecipientHash,
 } from './supplier-voucher-links';
+import { prepareVoucherEmail } from './voucher-email-delivery';
 
 type VoucherInformation = {
   label: string;
@@ -55,11 +56,7 @@ constructor(
     );
   }
 
-  private async sendMail(
-    transporter: Transporter,
-    options: SendMailOptions,
-    includeGlobalCc = true,
-  ) {
+  private async sendDailyMomentMail(transporter: Transporter, options: SendMailOptions) {
     const testInbox = process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT?.trim();
     if (testInbox) {
       if (!isEmail(testInbox)) throw new Error('Booking confirmation test inbox must be a single email address.');
@@ -72,7 +69,7 @@ constructor(
         replyTo: undefined,
       });
     }
-    return transporter.sendMail(includeGlobalCc ? await withGlobalSettingsCc(this.prisma, options) : options);
+    return transporter.sendMail(await withGlobalSettingsCc(this.prisma, options));
   }
 
   private parseEmails(
@@ -1853,7 +1850,7 @@ try {
   );
 }
 
-const info = await this.sendMail(transporter, {
+const info = await this.sendDailyMomentMail(transporter, {
   from: {
     name: fromName,
     address: fromAddress,
@@ -2464,11 +2461,12 @@ if (toEmails.length === 0 && supplierVouchers.length === 0) {
             kind: 'provider-hotel', planId: itineraryPlanId, hotelId: supplier.hotelId,
             stayIds: supplier.stayIds, recipientHash: voucherRecipientHash(supplier.email),
           });
-          await this.sendMail(transporter, {
+          const delivery = prepareVoucherEmail({
             from: { address: fromAddress, name: fromName }, to: supplier.email,
             ...linkedVoucherEmail('DVi Travel | Hotel Voucher | ' + quotationNumber,
               supplier.name + ' · Booking ' + quotationNumber, url, 'View Voucher'),
-          }, false);
+          });
+          await transporter.sendMail(delivery.options);
         } catch (error) {
           this.logger.error('Supplier voucher delivery failed for itinerary ' + itineraryPlanId + ', hotel ' + supplier.hotelId);
         }
@@ -2492,13 +2490,14 @@ if (toEmails.length === 0 && supplierVouchers.length === 0) {
         );
       }
 
-      await this.sendMail(transporter, {
+      const delivery = prepareVoucherEmail(await withGlobalSettingsCc(this.prisma, {
         from: { name: fromName, address: fromAddress },
         to: toEmails,
         cc: ccEmails.length ? ccEmails : undefined,
         subject, text, html,
         attachments: voucherAttachments.length ? voucherAttachments : undefined,
-      });
+      }));
+      await transporter.sendMail(delivery.options);
       this.logger.log('Booking confirmation email sent for itinerary ' + itineraryPlanId);
     } catch (error: any) {
       /*

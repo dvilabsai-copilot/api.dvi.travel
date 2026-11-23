@@ -35,15 +35,15 @@ test('offline voucher From header includes the configured sender name or the leg
   }
 });
 
-test('offline voucher demo mode routes only to the test inbox with the original subject', async (t) => {
-  const previous = { demo: process.env.DEMO_HOTEL_EMAIL, inbox: process.env.DEMO_HOTEL_EMAIL_RECIPIENT };
+test('the shared voucher setting controls manual voucher routing and shows the live recipients', async (t) => {
+  const previousInbox = process.env.VOUCHER_EMAIL_DEMO_RECIPIENT;
+  const previousHotelDemo = process.env.DEMO_HOTEL_EMAIL;
   process.env.DEMO_HOTEL_EMAIL = 'true';
-  process.env.DEMO_HOTEL_EMAIL_RECIPIENT = 'test@example.com';
   t.after(() => {
-    if (previous.demo === undefined) delete process.env.DEMO_HOTEL_EMAIL;
-    else process.env.DEMO_HOTEL_EMAIL = previous.demo;
-    if (previous.inbox === undefined) delete process.env.DEMO_HOTEL_EMAIL_RECIPIENT;
-    else process.env.DEMO_HOTEL_EMAIL_RECIPIENT = previous.inbox;
+    if (previousInbox === undefined) delete process.env.VOUCHER_EMAIL_DEMO_RECIPIENT;
+    else process.env.VOUCHER_EMAIL_DEMO_RECIPIENT = previousInbox;
+    if (previousHotelDemo === undefined) delete process.env.DEMO_HOTEL_EMAIL;
+    else process.env.DEMO_HOTEL_EMAIL = previousHotelDemo;
   });
   const service = new HotelBlockEmailService({
     dvi_global_settings: { findFirst: async () => ({ cc_email_id: 'sales@example.com' }) },
@@ -54,14 +54,41 @@ test('offline voucher demo mode routes only to the test inbox with the original 
     return { rejected: [] };
   } });
   const subject = 'DVi Holidays - Hotel Voucher of Itinerary #QUOTE-001';
+  const html = '<!doctype html><html><body><p>Voucher</p></body></html>';
+  const message = { subject, text: 'Voucher', html };
+  const recipients = ['hotel@example.com', 'reservations@example.com'];
+  process.env.VOUCHER_EMAIL_DEMO_RECIPIENT = 'demo@example.com';
   assert.deepEqual(await service.dispatchOfflineVoucher(
-    ['hotel@example.com'], { subject, text: 'Voucher', html: '<p>Voucher</p>' }, 'expert@example.com',
+    recipients, message, 'expert@example.com',
   ), { demo: true, partial: false });
-  assert.deepEqual(sent?.to, ['test@example.com']);
+  assert.equal(sent?.to, 'demo@example.com');
   assert.equal(sent?.subject, subject);
   assert.equal(sent?.cc, undefined);
   assert.equal(sent?.bcc, undefined);
   assert.equal(sent?.replyTo, undefined);
+  assert.match(String(sent?.html), /^<!doctype html><html><body><div/);
+  assert.match(String(sent?.html), /<strong>To:<\/strong> hotel@example.com, reservations@example.com/);
+  assert.match(String(sent?.html), /<strong>CC:<\/strong> sales@example.com/);
+  assert.match(String(sent?.html), /<strong>BCC:<\/strong> None/);
+  assert.match(String(sent?.text), /CC: sales@example.com\nBCC: None/);
+
+  await service.dispatchOfflineVoucher(recipients, message, 'expert@example.com', true);
+  assert.match(String(sent?.html), /<strong>CC:<\/strong> None/);
+
+  process.env.VOUCHER_EMAIL_DEMO_RECIPIENT = '';
+  assert.deepEqual(await service.dispatchOfflineVoucher(
+    recipients, message, 'expert@example.com',
+  ), { demo: false, partial: false });
+  assert.deepEqual(sent?.to, recipients);
+  assert.deepEqual(sent?.cc, ['sales@example.com']);
+  assert.equal(sent?.replyTo, 'expert@example.com');
+  assert.equal(sent?.html, html);
+  assert.equal(sent?.text, 'Voucher');
+
+  await service.dispatchOfflineVoucher(recipients, message, undefined, true);
+  assert.deepEqual(sent?.to, recipients);
+  assert.equal(sent?.cc, undefined);
+  assert.equal(sent?.html, html);
 });
 
 test('lifecycle email dispatch always uses the requested test inbox and records intended recipients', async () => {

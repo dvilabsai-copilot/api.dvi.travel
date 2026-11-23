@@ -221,10 +221,12 @@ test('confirmed hotels receive separate signed links and only the agent and inte
   t.mock.method(console, 'log', () => {});
   const previousAdmin = process.env.BOOKING_CONFIRMATION_ADMIN_EMAILS;
   const previousOps = process.env.BOOKING_CONFIRMATION_OPS_EMAILS;
+  const previousDemoInbox = process.env.VOUCHER_EMAIL_DEMO_RECIPIENT;
   const previousTestInbox = process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT;
   process.env.BOOKING_CONFIRMATION_ADMIN_EMAILS = 'admin@example.com';
   process.env.BOOKING_CONFIRMATION_OPS_EMAILS = 'operations@example.com';
-  delete process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT;
+  delete process.env.VOUCHER_EMAIL_DEMO_RECIPIENT;
+  process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT = 'daily@example.com';
   t.after(() => {
     if (previousAdmin === undefined) delete process.env.BOOKING_CONFIRMATION_ADMIN_EMAILS;
     else process.env.BOOKING_CONFIRMATION_ADMIN_EMAILS = previousAdmin;
@@ -232,6 +234,8 @@ test('confirmed hotels receive separate signed links and only the agent and inte
     else process.env.BOOKING_CONFIRMATION_OPS_EMAILS = previousOps;
     if (previousTestInbox === undefined) delete process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT;
     else process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT = previousTestInbox;
+    if (previousDemoInbox === undefined) delete process.env.VOUCHER_EMAIL_DEMO_RECIPIENT;
+    else process.env.VOUCHER_EMAIL_DEMO_RECIPIENT = previousDemoInbox;
   });
   const messages: Array<{ to: string | string[]; cc?: string[]; bcc?: string; text: string; html: string; attachments?: Array<{ content: Buffer }> }> = [];
   const pdf = Buffer.from('%PDF-1.4 fixture');
@@ -271,6 +275,7 @@ test('confirmed hotels receive separate signed links and only the agent and inte
     assert.equal(message.cc, undefined);
     assert.equal(message.bcc, undefined);
     assert.equal(message.attachments, undefined);
+    assert.doesNotMatch(message.html, /Intended recipients/);
     assert.match(message.html, />View Voucher</);
     const url = message.text.match(/https:\/\/vouchers\.example\/supplier-voucher#token=[\w.-]+/)?.[0];
     assert.ok(url);
@@ -282,24 +287,33 @@ test('confirmed hotels receive separate signed links and only the agent and inte
   assert.deepEqual(combined.to, ['agent@example.com']);
   assert.deepEqual(new Set(combined.cc), new Set(['admin@example.com', 'accounts@example.com', 'expert@example.com', 'operations@example.com']));
   assert.equal(combined.bcc, undefined);
+  assert.doesNotMatch(combined.html, /Intended recipients/);
   assert.deepEqual(combined.attachments?.[0]?.content, pdf);
   assert.match(combined.text, /https:\/\/vouchers\.example\/pdf-preview\/voucher\/42/);
 
   messages.length = 0;
-  process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT = 'qa@example.com';
+  process.env.VOUCHER_EMAIL_DEMO_RECIPIENT = 'qa@example.com';
   await notifier.sendBookingConfirmationNotifications(42);
   assert.equal(messages.length, 3);
   for (const message of messages) {
     assert.equal(message.to, 'qa@example.com');
     assert.equal(message.cc, undefined);
     assert.equal(message.bcc, undefined);
+    assert.match(message.html, /<strong>Intended recipients<\/strong>/);
+    assert.match(message.text, /BCC: None/);
   }
+  assert.match(messages[0].html, /<strong>To:<\/strong> a@example.com/);
+  assert.match(messages[0].html, /<strong>CC:<\/strong> None/);
+  assert.doesNotMatch(messages[0].html, /b@example.com/);
+  assert.match(messages[1].html, /<strong>To:<\/strong> b@example.com/);
+  assert.match(messages[2].html, /<strong>To:<\/strong> agent@example.com/);
+  assert.match(messages[2].html, /<strong>CC:<\/strong> admin@example.com, accounts@example.com, operations@example.com, expert@example.com/);
   assert.match(messages[0].html, />View Voucher</);
   assert.match(messages[1].html, />View Voucher</);
   assert.deepEqual(messages[2].attachments?.[0]?.content, pdf);
 
   messages.length = 0;
-  process.env.BOOKING_CONFIRMATION_MAIL_TEST_RECIPIENT = 'qa@example.com,other@example.com';
+  process.env.VOUCHER_EMAIL_DEMO_RECIPIENT = 'qa@example.com,other@example.com';
   await notifier.sendBookingConfirmationNotifications(42);
   assert.equal(messages.length, 0);
 });
