@@ -60,3 +60,61 @@ test('payment claim rejects a selection changed since holds were created', async
   });
   assert.equal(updated.length, 0);
 });
+
+function splitFixture() {
+  const { now, tx, updated } = fixture({ claimCount: 4 });
+  const hotel = (hotelCode: string, ids: number[], firstRequestId: number) => {
+    const batches = ['Deluxe Twin', 'Deluxe Double'].map((roomType, batchIndex) => ({
+      hotelCode, roomType, batchIndex, roomCount: batchIndex === 0 ? 6 : 2, mealPlan: 'CP',
+      bookingCode: `${hotelCode}!TB!${batchIndex}`,
+    }));
+    return {
+      selected: ids.map(id => ({ itinerary_plan_hotel_details_ID: id,
+        selected_price_snapshot: JSON.stringify({ tboMultiBatchStay: { batches } }) })),
+      holds: batches.map(batch => ({
+        id: firstRequestId + batch.batchIndex,
+        status: 'BLOCKED', cutoff_at: new Date('2026-11-05T13:00:00.000Z'), paid_confirmed_at: null,
+        selection_ids: JSON.stringify(ids), hotel_code: hotelCode, room_type: batch.roomType,
+        room_count: batch.roomCount, meal_plan: batch.mealPlan,
+        request_payload: JSON.stringify({ supplierHold: {
+          batch: { key: hotelCode, index: batch.batchIndex, count: 2 }, bookingCode: batch.bookingCode,
+          bookingId: firstRequestId + batch.batchIndex + 100,
+        } }),
+      })),
+    };
+  };
+  const fortune = hotel('fortune', [101, 102], 1);
+  const treebo = hotel('treebo', [103], 3);
+  const holds = [...fortune.holds, ...treebo.holds];
+  tx.dvi_itinerary_plan_hotel_details.findMany = async () => [...fortune.selected, ...treebo.selected];
+  tx.dvi_hotel_block_request.findMany = async () => holds;
+  return { now, tx, updated, holds };
+}
+
+test('payment counts each complete split stay once and claims all four supplier reservations', async () => {
+  const { now, tx, updated } = splitFixture();
+  assert.deepEqual(await claimManualHotelHoldsForPayment(tx, 800, 2, now), { claimedCount: 4 });
+  assert.deepEqual(updated[0].where.id.in, [1, 2, 3, 4]);
+});
+
+test('payment rejects a missing split batch, even when every selected date is covered', async () => {
+  const { now, tx, updated, holds } = splitFixture();
+  holds.pop();
+  await assert.rejects(claimManualHotelHoldsForPayment(tx, 800, 2, now), /hold expired or the selected hotels changed/i);
+  assert.equal(updated.length, 0);
+});
+
+test('payment rejects duplicate supplier reservations and changed split bedroom assignments', async () => {
+  for (const change of ['duplicate', 'roomType']) {
+    const { now, tx, updated, holds } = splitFixture();
+    if (change === 'duplicate') {
+      const payload = JSON.parse(holds[1].request_payload);
+      payload.supplierHold.bookingId = JSON.parse(holds[0].request_payload).supplierHold.bookingId;
+      holds[1].request_payload = JSON.stringify(payload);
+    } else {
+      holds[1].room_type = 'Different Room';
+    }
+    await assert.rejects(claimManualHotelHoldsForPayment(tx, 800, 2, now), /hold expired or the selected hotels changed/i);
+    assert.equal(updated.length, 0);
+  }
+});

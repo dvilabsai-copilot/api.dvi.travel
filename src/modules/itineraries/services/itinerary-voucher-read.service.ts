@@ -342,12 +342,15 @@ const hotelRoomsForRow =
   ) || [];
 
 const splitStay = priceSnapshot.tboMultiBatchStay as TboMultiBatchStaySnapshot | undefined;
-let vsrRoomTypes: string[] = [];
+const vsrRoomCounts = new Map<string, number>();
 if ((provider === 'tbo' || provider === 'vsr') && splitStay?.hotelCode === hotelCode) {
   try {
     assertTboMultiBatchStay(splitStay);
     if (splitStay.routeIds.includes(Number(hotel.itinerary_route_id))) {
-      vsrRoomTypes = splitStay.batches.map(batch => batch.roomType.trim());
+      for (const batch of splitStay.batches) {
+        const roomType = batch.roomType.trim();
+        vsrRoomCounts.set(roomType, (vsrRoomCounts.get(roomType) || 0) + batch.roomCount);
+      }
     }
   } catch {
     // Older or incomplete snapshots still use the saved local room labels.
@@ -355,8 +358,8 @@ if ((provider === 'tbo' || provider === 'vsr') && splitStay?.hotelCode === hotel
 }
 
 const roomTypesForRow =
-  vsrRoomTypes.length > 0
-    ? vsrRoomTypes
+  vsrRoomCounts.size > 0
+    ? [...vsrRoomCounts.keys()]
     : provider === 'staah' && staahBooking?.roomTypes?.length
       ? staahBooking.roomTypes
     : Array.from(
@@ -390,6 +393,7 @@ hotelName: String(
           confirmedHotelDetailsIds: [] as number[],
           destinations: [] as string[],
           roomTypes: [] as string[],
+          roomTypeQuantities: [] as Array<{ roomType: string; roomCount: number }>,
           hotelRequired: Number(hotel.hotel_required || 0) === 1,
           hotelCancellationStatus: Number(hotel.hotel_cancellation_status || 0),
         });
@@ -420,6 +424,12 @@ hotelName: String(
           group.roomTypes.push(roomType);
         }
       });
+      for (const [roomType, roomCount] of vsrRoomCounts) {
+        if (!group.roomTypeQuantities.some((item: { roomType: string; roomCount: number }) =>
+          item.roomType === roomType && item.roomCount === roomCount)) {
+          group.roomTypeQuantities.push({ roomType, roomCount });
+        }
+      }
       group.hotelCancellationStatus = Math.max(group.hotelCancellationStatus, Number(hotel.hotel_cancellation_status || 0));
     }
 

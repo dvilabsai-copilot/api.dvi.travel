@@ -23,8 +23,8 @@ test('transport voucher read preserves missing confirmed-plan validation', async
   );
 });
 
-test('hotel voucher lists both saved VSR room types once across a continuous stay', async () => {
-  const roomTitles = ['Superior King Room,1 King Bed', 'Deluxe Twin Room,2 Twin Beds'];
+test('hotel voucher lists both VSR room quantities once across a continuous stay', async () => {
+  const roomTitles = ['Deluxe Twin Room,2 Twin Beds', 'Deluxe Double Room,1 Queen Bed'];
   const hotelCode = '6437125';
   const stay = makeTboMultiBatchStay({
     hotelCode,
@@ -83,5 +83,7 @@ test('hotel voucher lists both saved VSR room types once across a continuous sta
   const { hotelVoucherGroups } = await service.getVoucherDetails(1);
   assert.deepEqual(hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel')?.roomTypes,
     [...roomTitles].sort());
+  assert.deepEqual(hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel')?.roomTypeQuantities,
+    [{ roomType: roomTitles[0], roomCount: 6 }, { roomType: roomTitles[1], roomCount: 2 }]);
   assert.deepEqual(hotelVoucherGroups.find(group => group.hotelName === 'Offline Hotel')?.roomTypes, ['Premium Room']);
 });
