@@ -2301,7 +2301,8 @@ timingStepStartedAt =
       // HOTEL intent does not permit silently switching the clicked room type.
       (!requestedRoom || normalized(offer.roomType) === normalized(requestedRoom))
     ).sort((a: any, b: any) => Number(a.totalFare || 0) - Number(b.totalFare || 0));
-    let offer: any = offers.find((candidate: any) => !requestedMeal || mealCode(String(candidate.mealPlan || '')) === requestedMeal);
+    let offer: any = offers.find((candidate: any) => (!requestedMeal || mealCode(String(candidate.mealPlan || '')) === requestedMeal) &&
+      candidate.tboRoomBatches.every((batch: any) => batch.mealPlan === candidate.mealPlan));
     let dviMealSupplement;
     if (!offer && offers.length && ['CP', 'MAP'].includes(requestedMeal)) {
       const config = await this.hotelDetailsTboService.getTboMapFallbackConfig();
@@ -5637,7 +5638,7 @@ async confirmQuotation(dto: ConfirmQuotationDto, actorId?: number) {
         checkOutDate: rate.checkOutDate,
         vsrConfirmationRefresh: {
           guestNationality: rate.guestNationality,
-          ...(stay ? { roomTypesByBatch: stay.batches.map(batch => batch.roomType) } : {}),
+          ...(stay ? { batches: stay.batches.map(({ roomType, mealPlan }) => ({ roomType, mealPlan })) } : {}),
         },
       }).catch(() => { throw unverified(); });
       const key = stay && JSON.stringify([stay.anchorRouteId, stay.checkInDate, stay.checkOutDate]);
@@ -5652,7 +5653,7 @@ async confirmQuotation(dto: ConfirmQuotationDto, actorId?: number) {
             batch.batchIndex === previous.batchIndex && batch.startRoomIndex === previous.startRoomIndex &&
             batch.roomCount === previous.roomCount && batch.hotelCode === stay.hotelCode &&
             normalizeRoom(batch.roomType) === normalizeRoom(previous.roomType) &&
-            normalizeMeal(batch.mealPlan) === normalizeMeal(stay.mealPlan) && batch.currency === stay.currency &&
+            normalizeMeal(batch.mealPlan) === normalizeMeal(previous.mealPlan) && batch.currency === stay.currency &&
             batch.isRefundable === stay.isRefundable && batch.bookingCode.includes('!TB!') &&
             batch.occupancies.every((occ, index) => {
               const savedRoom = previous.occupancies[index];

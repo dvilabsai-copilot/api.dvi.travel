@@ -1,6 +1,6 @@
 import { validateTboCompleteBatchGroups } from './tbo-complete-batch-validation.util';
 import { TBO_SEARCH_SESSION_VALIDITY_MS } from './tbo-search-session';
-import { tboBatchRoomTypeLabel } from './tbo-batch-hotel-matching.util';
+import { tboBatchMealPlan, tboBatchRoomTypeLabel } from './tbo-batch-hotel-matching.util';
 
 /**
  * One physical property and one continuous check-in/check-out window.
@@ -73,7 +73,6 @@ export function assertTboMultiBatchStay(
   if (stay.batches.some((batch) =>
     batch.hotelCode !== stay.hotelCode ||
     !String(batch.roomType || '').trim() ||
-    batch.mealPlan !== stay.mealPlan ||
     batch.currency !== stay.currency ||
     batch.isRefundable !== stay.isRefundable ||
     !Number.isFinite(batch.supplierNetAmount) || batch.supplierNetAmount <= 0 ||
@@ -82,6 +81,9 @@ export function assertTboMultiBatchStay(
   }
   if (stay.roomType !== tboBatchRoomTypeLabel(stay.batches)) {
     throw new Error('The TBO stay room summary must match the supplier batches.');
+  }
+  if (!stay.mealPlan || stay.mealPlan !== tboBatchMealPlan(stay.batches)) {
+    throw new Error('The TBO stay meal plan must match the supplier batches.');
   }
   const coverageError = validateTboCompleteBatchGroups(
     stay.batches.map((batch) => ({
@@ -112,6 +114,11 @@ export function assertTboMultiBatchStay(
     throw new Error('The supplier search verification timestamp is missing.');
   }
   const meals = stay.dviMealSupplement;
+  if (stay.batches.some(batch => batch.mealPlan !== stay.mealPlan) &&
+      (!meals || meals.breakfastRate <= 0 ||
+        Math.round(meals.breakfastPerNight * 100) !== Math.round(meals.breakfastRate * getTboBreakfastGuestCount(stay.batches) * 100))) {
+    throw new Error('Mixed supplier meal plans require breakfast for the room-only batches.');
+  }
   if (meals && (stay.currency !== 'INR' ||
       !((stay.mealPlan === 'EP' && ['CP', 'MAP'].includes(meals.mealPlan)) ||
         (stay.mealPlan === 'CP' && meals.mealPlan === 'MAP')) ||
@@ -119,6 +126,11 @@ export function assertTboMultiBatchStay(
         .some(amount => !Number.isFinite(amount) || amount < 0))) {
     throw new Error('Invalid DVI meal supplement for the supplier stay.');
   }
+}
+
+export function getTboBreakfastGuestCount(batches: readonly TboStayBatch[]): number {
+  return batches.filter(batch => batch.mealPlan === 'EP')
+    .reduce((count, batch) => count + batch.occupancies.reduce((guests, room) => guests + room.adults + room.children, 0), 0);
 }
 
 /** Stable route-night allocation; never multiply a whole-stay supplier total by nights. */
@@ -157,19 +169,25 @@ export function describeTboBatchRoomPrices(stay: TboMultiBatchStaySnapshot, marg
     batch.occupancies.reduce((guests, room) => guests + room.adults + room.children, 0), 0);
   const pricedNights = nightIndex === undefined ? stay.routeIds.length : 1;
   const pricing = priceTboMultiBatchStay(stay, margin);
-  const mealCents = Math.round(pricing.mealCostPerNight * 100);
+  const dinnerCents = Math.round((stay.dviMealSupplement?.dinnerPerNight ?? 0) * 100);
+  const breakfastCents = Math.round((stay.dviMealSupplement?.breakfastPerNight ?? 0) * 100);
+  const breakfastGuests = getTboBreakfastGuestCount(stay.batches);
   const totalPayable = nightIndex === undefined ? pricing.totalPrice : pricing.payableByNight[nightIndex];
   let cumulativeFare = 0;
   let cumulativeGuests = 0;
+  let cumulativeBreakfastGuests = 0;
   let previousPayableCents = 0;
   return stay.batches.map((batch, index) => {
     cumulativeFare += Math.round(batch.supplierTotalFare * 100);
     cumulativeGuests += batch.occupancies.reduce((guests, room) => guests + room.adults + room.children, 0);
+    cumulativeBreakfastGuests += getTboBreakfastGuestCount([batch]);
     const roomPayable = Math.round(cumulativeFare * (100 + margin) / 100);
     const roomPayableCents = nightIndex === undefined ? roomPayable :
       Math.round(allocateFullStayCents(roomPayable / 100, stay.routeIds)[nightIndex] * 100);
+    const mealsPerNight = Math.round(dinnerCents * cumulativeGuests / totalGuests) +
+      (breakfastGuests ? Math.round(breakfastCents * cumulativeBreakfastGuests / breakfastGuests) : 0);
     const payableCents = index === stay.batches.length - 1 ? Math.round(totalPayable * 100) :
-      roomPayableCents + Math.round(mealCents * cumulativeGuests / totalGuests) * pricedNights;
+      roomPayableCents + mealsPerNight * pricedNights;
     const amount = (payableCents - previousPayableCents) / 100;
     previousPayableCents = payableCents;
     return { batchIndex: batch.batchIndex, roomCount: batch.roomCount, roomType: batch.roomType, amount, currency: stay.currency };

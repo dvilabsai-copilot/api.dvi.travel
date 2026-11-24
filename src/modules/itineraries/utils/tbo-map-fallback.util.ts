@@ -3,7 +3,8 @@ import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealText,
 } from '../../hotels/hotel-rate-plans';
-import { getTboBatchSearchTotal, isFreshTboMultiBatchStay, makeTboMultiBatchStay, priceTboMultiBatchStay, type TboMultiBatchStaySnapshot, type TboStayBatch, type TboStayMealSupplement } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { getTboBatchSearchTotal, getTboBreakfastGuestCount, isFreshTboMultiBatchStay, makeTboMultiBatchStay, priceTboMultiBatchStay, type TboMultiBatchStaySnapshot, type TboStayBatch, type TboStayMealSupplement } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { tboBatchMealPlan } from '../../hotels/utils/tbo-batch-hotel-matching.util';
 
 export type TboMapFallbackConfig = {
   enabled: boolean;
@@ -369,13 +370,14 @@ export function getTboStayMealSupplement(
 ): TboStayMealSupplement | undefined {
   const batches = offer.tboRoomBatches;
   const first = batches[0];
+  const supplierMeal = tboBatchMealPlan(batches);
   if (!config.enabled || !first || first.currency.toUpperCase() !== 'INR' ||
-      (target !== 'CP' && target !== 'MAP')) return;
+      !supplierMeal || (target !== 'CP' && target !== 'MAP')) return;
   const occupancies = batches.flatMap(batch => batch.occupancies || []);
   const roomCount = batches.reduce((count, batch) => count + batch.roomCount, 0);
   if (occupancies.length !== roomCount || !roomCount) return;
   const result = createFallbackOption({
-    provider: 'tbo', mealPlan: first.mealPlan, rating: offer.rating, category: offer.category,
+    provider: 'tbo', mealPlan: supplierMeal, rating: offer.rating, category: offer.category,
     totalFare: batches.reduce((sum, batch) => sum + batch.supplierTotalFare, 0),
   }, {
     preferredMealPlanCode: target,
@@ -383,12 +385,12 @@ export function getTboStayMealSupplement(
     childCount: occupancies.reduce((sum, room) => sum + room.children, 0),
     roomCount, numberOfNights: 1,
   }, config);
-  if (!result || (first.mealPlan === 'EP' && !(result.tboMapFallbackBreakfastRate > 0)) ||
+  if (!result || (supplierMeal === 'EP' && !(result.tboMapFallbackBreakfastRate > 0)) ||
       (target === 'MAP' && !(result.tboMapFallbackDinnerRate > 0))) return;
   return {
     mealPlan: target,
     breakfastRate: result.tboMapFallbackBreakfastRate,
-    breakfastPerNight: result.tboMapFallbackBreakfastPerNight,
+    breakfastPerNight: money(result.tboMapFallbackBreakfastRate * getTboBreakfastGuestCount(batches)),
     dinnerRate: result.tboMapFallbackDinnerRate,
     dinnerPerNight: result.tboMapFallbackDinnerComponentPerNight,
   };
@@ -421,10 +423,12 @@ export function tboStayMealNightFields(supplierMealPlan: string, supplement?: Tb
 export function getTboBatchMealPlanQuotes(offer: any, nights: number, margin: number, config: TboMapFallbackConfig) {
   const supplierTotalFare = getTboBatchSearchTotal(offer);
   if (supplierTotalFare === null) return undefined;
-  const supplierMealPlan = mealPlanCode(offer.tboRoomBatches[0].mealPlan);
+  const supplierMealPlan = tboBatchMealPlan(offer.tboRoomBatches);
+  if (!supplierMealPlan) return undefined;
+  const uniformMeal = offer.tboRoomBatches.every((batch: TboStayBatch) => batch.mealPlan === supplierMealPlan);
   const currency = String(offer.currency || offer.tboRoomBatches[0].currency).toUpperCase();
   const routeIds = Array.from({ length: nights }, (_, index) => index);
-  return Array.from(new Set([supplierMealPlan, 'CP', 'MAP'])).flatMap(mealPlan => {
+  return Array.from(new Set([...(uniformMeal ? [supplierMealPlan] : []), 'CP', 'MAP'])).flatMap(mealPlan => {
     const supplement = mealPlan === supplierMealPlan ? undefined : getTboStayMealSupplement(offer, mealPlan, config);
     if (mealPlan !== supplierMealPlan && !supplement) return [];
     const totals = priceTboMultiBatchStay({ supplierTotalFare, routeIds, dviMealSupplement: supplement }, margin);
@@ -445,14 +449,14 @@ export function prepareTboBatchRecommendation(
   const batches: TboStayBatch[] = offer.tboRoomBatches;
   const first = batches[0];
   const requestedMeal = mealPlanCode(offer.mealPlanCode || offer.mealPlan);
-  const supplierMeal = mealPlanCode(first.mealPlan);
+  const supplierMeal = tboBatchMealPlan(batches);
   const supplement = requestedMeal === supplierMeal ? undefined : getTboStayMealSupplement(offer, requestedMeal, config);
   if (!supplierMeal || (requestedMeal !== supplierMeal && !supplement)) return;
 
   let snapshot: TboMultiBatchStaySnapshot;
   try {
     snapshot = makeTboMultiBatchStay({
-      hotelCode: String(offer.hotelCode), roomType: String(offer.roomType), mealPlan: first.mealPlan,
+      hotelCode: String(offer.hotelCode), roomType: String(offer.roomType), mealPlan: supplierMeal,
       currency: first.currency, isRefundable: first.isRefundable, anchorRouteId: stay.parentRouteId,
       routeIds: stay.routeIds, checkInDate: stay.checkInDate, checkOutDate: stay.checkOutDate,
       roomCount, batches, ...(supplement ? { dviMealSupplement: supplement } : {}),
@@ -462,9 +466,9 @@ export function prepareTboBatchRecommendation(
   }
   if (!isFreshTboMultiBatchStay(snapshot)) return;
   const pricing = priceTboMultiBatchStay(snapshot, margin);
-  const roomIdentity = snapshot.batches.every(batch => batch.roomType === snapshot.roomType)
+  const roomIdentity = snapshot.batches.every(batch => batch.roomType === snapshot.roomType && batch.mealPlan === snapshot.mealPlan)
     ? snapshot.roomType
-    : createHash('sha256').update(JSON.stringify(snapshot.batches.map(batch => batch.roomType))).digest('hex');
+    : createHash('sha256').update(JSON.stringify(snapshot.batches.map(batch => [batch.roomType, batch.mealPlan]))).digest('hex');
   const rateOptionId = ['tbo-split', snapshot.hotelCode, roomIdentity, requestedMeal, snapshot.mealPlan,
     snapshot.currency, snapshot.isRefundable, snapshot.checkInDate, snapshot.checkOutDate].join(':');
   const nightlyRates = snapshot.routeIds.map((routeId, index) => {

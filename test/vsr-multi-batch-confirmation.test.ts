@@ -42,8 +42,16 @@ const passthrough = <T,>(rows: T[]) => rows;
 const emptyModel = { findMany: async () => [] };
 
 function makeFixture(roomTypes?: string[]) {
-  const selectedBatches = batches.map((batch, index) => ({ ...batch, roomType: roomTypes?.[index] || batch.roomType }));
-  const selectedStay = { ...stay, batches: selectedBatches, roomType: [...new Set(selectedBatches.map(batch => batch.roomType))].join(' + ') };
+  const selectedBatches = batches.map((batch, index) => ({
+    ...batch, roomType: roomTypes?.[index] || batch.roomType, mealPlan: roomTypes && index === 1 ? 'EP' : batch.mealPlan,
+  }));
+  const selectedStay = {
+    ...stay, batches: selectedBatches, roomType: [...new Set(selectedBatches.map(batch => batch.roomType))].join(' + '),
+    ...(roomTypes ? {
+      mealPlan: 'EP',
+      dviMealSupplement: { mealPlan: 'CP', breakfastRate: 400, breakfastPerNight: 800, dinnerRate: 0, dinnerPerNight: 0 },
+    } : {}),
+  };
   const calls: string[] = [];
   const stored: any[] = [];
   const attempts: any[] = [];
@@ -169,7 +177,7 @@ function makeFixture(roomTypes?: string[]) {
       clearCacheForQuote: () => undefined,
       searchSelectedHotelForContinuousStay: async (params: any) => {
         calls.push('search');
-        assert.deepEqual(params.vsrConfirmationRefresh.roomTypesByBatch, selectedBatches.map(batch => batch.roomType));
+        assert.deepEqual(params.vsrConfirmationRefresh.batches, selectedBatches.map(({ roomType, mealPlan }) => ({ roomType, mealPlan })));
         return [{ isBookable: false, tboRoomBatches: selectedBatches.map((batch) => ({
           ...batch, bookingCode: 'refreshed!TB!' + batch.batchIndex,
         })) }];
@@ -221,6 +229,7 @@ test('mixed VSR room types refresh and book with each batch’s own code', async
   const fixture = makeFixture(roomTypes);
   const input = makeDto();
   input.hotel_bookings.forEach((booking, index) => { booking.roomType = roomTypes[index]; });
+  input.hotel_bookings[1].mealPlan = 'EP';
   const wrong = structuredClone(input);
   wrong.hotel_bookings[1].roomType = roomTypes[0];
   await assert.rejects(() => fixture.book(wrong), /submitted VSR batches do not match/);
