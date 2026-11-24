@@ -17,7 +17,33 @@ const numberOf = (value: unknown): number => {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
-const normalize = (value: unknown): string => String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+const normalize = (value: unknown): string =>
+  String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+function normalizeCityToken(value: string): string {
+  const base = String(value || '').toLowerCase().trim();
+
+  if (!base) return '';
+
+  const firstPart = base.split(',')[0] || base;
+
+  const normalized = firstPart
+    .replace(
+      /\b(international|domestic|airport|railway|station|bus|stand|hotel|lodge|temple|mall|palace|park|garden|museum|planetarium|aquarium)\b/g,
+      ' ',
+    )
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cityAliases: Record<string, string> = {
+    bengaluru: 'bangalore',
+    bangaluru: 'bangalore',
+    bengalore: 'bangalore',
+  };
+
+  return cityAliases[normalized] || normalized;
+}
 const timeValue = (value: Date | null): string | undefined =>
   value ? `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}:${String(value.getUTCSeconds()).padStart(2, '0')}` : undefined;
 
@@ -242,9 +268,46 @@ export class VehicleUpgradePricingService {
       evening_charges: numberOf(vehicle.evening_charges),
       buildCache: cache,
     };
-    const starts = await getStoredLocationCity(this.prisma, String(routes[0]?.location_name || ''), cache);
-    const ends = await getStoredLocationCity(this.prisma, String(routes[routes.length - 1]?.next_visiting_location || ''), cache);
-    ctx.force_local_trip = Boolean(starts && ends && normalize(starts) === normalize(ends));
+  const firstRoute = routes[0];
+const lastRoute = routes[routes.length - 1];
+
+const startLocation = String(
+  firstRoute?.location_name || '',
+);
+
+const endLocation = String(
+  lastRoute?.next_visiting_location || '',
+);
+
+const overallStartCityRaw = firstRoute
+  ? (
+      await getStoredLocationCity(
+        this.prisma,
+        startLocation,
+        cache,
+      )
+    ) || startLocation
+  : '';
+
+const overallEndCityRaw = lastRoute
+  ? (
+      await getStoredLocationCity(
+        this.prisma,
+        endLocation,
+        cache,
+      )
+    ) || endLocation
+  : '';
+
+const overallStartCityToken =
+  normalizeCityToken(overallStartCityRaw);
+
+const overallEndCityToken =
+  normalizeCityToken(overallEndCityRaw);
+
+ctx.force_local_trip =
+  overallStartCityToken !== '' &&
+  overallStartCityToken === overallEndCityToken;
 
     const days: RouteCalculationResult[] = [];
     let previousCity = '';
@@ -307,17 +370,30 @@ if (
   result.vehicle_cost_for_the_day <= 0 &&
   (from !== to || travelledKm > 0)
 ) {
-  if (process.env.DEBUG_VEHICLE_UPGRADE_PRICES === '1') {
-    console.warn('[UPGRADE_MISSING_RENTAL_RATE]', {
-      vehicleTypeId: typeId,
-      vendorId: mapping.vendor_id,
-      vendorVehicleTypeId: mapping.vendor_vehicle_type_ID,
-      vendorBranchId: vehicle.vendor_branch_id,
-      routeId: row.itinerary_route_ID,
-      from,
-      to,
-    });
-  }
+if (process.env.DEBUG_VEHICLE_UPGRADE_PRICES === '1') {
+  console.warn('[UPGRADE_MISSING_RENTAL_RATE]', {
+    planId,
+    vehicleTypeId: typeId,
+    vendorId: mapping.vendor_id,
+    vendorVehicleTypeId: mapping.vendor_vehicle_type_ID,
+    vendorBranchId: vehicle.vendor_branch_id,
+    vehicleId: vehicle.vehicle_id,
+    routeId: row.itinerary_route_ID,
+    routeDate: date,
+    travelType: result.travel_type,
+    rateType:
+      result.travel_type === 1
+        ? 'Local'
+        : result.travel_type === 2
+          ? 'Outstation'
+          : 'Unknown',
+    kmsLimitId: result.kms_limit_id,
+    rentalCharge: result.vehicle_cost_for_the_day,
+    travelledKm,
+    from,
+    to,
+  });
+}
 
   return null;
 }
@@ -342,7 +418,26 @@ if (
     const limit = kmsLimitId ? await this.prisma.dvi_kms_limit.findUnique({
       where: { kms_limit_id: kmsLimitId }, select: { kms_limit: true },
     }) : null;
-    if (outstation.length && (!limit || limit.kms_limit <= 0)) return null;
+    if (
+  outstation.length > 0 &&
+  (!limit || limit.kms_limit <= 0)
+) {
+  if (process.env.DEBUG_VEHICLE_UPGRADE_PRICES === '1') {
+    console.warn('[UPGRADE_MISSING_KM_LIMIT]', {
+      planId,
+      vehicleTypeId: typeId,
+      vendorId: mapping.vendor_id,
+      vendorVehicleTypeId: mapping.vendor_vehicle_type_ID,
+      vendorBranchId: vehicle.vendor_branch_id,
+      vehicleId: vehicle.vehicle_id,
+      kmsLimitId,
+      kmsLimit: limit?.kms_limit ?? null,
+      outstationDays: outstation.length,
+    });
+  }
+
+  return null;
+}
     const outstationExtraKm = outstation.length ? Math.max(0, Math.ceil(outstationKm - numberOf(limit?.kms_limit) * outstation.length)) : 0;
     const extraKm = localExtra + money(outstationExtraKm * numberOf(vehicle.extra_km_charge));
     const permit = await this.previewPermits(
@@ -425,15 +520,25 @@ if (!current) {
       select: { vehicle_type_id: true, vehicle_grand_total: true, itineary_plan_assigned_status: true },
       orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
     });
-    const routes = await this.prisma.dvi_itinerary_route_details.findMany({
-      where: { itinerary_plan_ID: planId, status: 1, deleted: 0 },
-      select: {
-        itinerary_route_ID: true, itinerary_route_date: true, location_name: true,
-        next_visiting_location: true, no_of_km: true,
-        route_start_time: true, route_end_time: true,
-      },
-      orderBy: [{ itinerary_route_date: 'asc' }, { itinerary_route_ID: 'asc' }],
-    });
+const routes = await this.prisma.dvi_itinerary_route_details.findMany({
+  where: {
+    itinerary_plan_ID: planId,
+    status: 1,
+    deleted: 0,
+  },
+  select: {
+    itinerary_route_ID: true,
+    itinerary_route_date: true,
+    location_name: true,
+    next_visiting_location: true,
+    no_of_km: true,
+    route_start_time: true,
+    route_end_time: true,
+  },
+  orderBy: {
+    itinerary_route_ID: 'asc',
+  },
+});
     if (!routes.length) throw new NotFoundException('Itinerary routes not found');
 
     // Request-scoped caches: never persist route data between itineraries.
@@ -466,8 +571,6 @@ if (!current) {
       sharedCache.viaRouteNames.set(routeId, names);
     }
 
-    const currentType = types.find((item) => item.vehicle_type_id === currentVehicleTypeId);
-    const minimumSeats = numberOf(currentType?.occupancy);
     // Confirm this read-only calculation reproduces the existing selected quotation.
     // If it does not, suppress unconfirmed upgrade numbers instead of underquoting.
     const selectedMapping = await this.prisma.dvi_vendor_vehicle_types.findFirst({
@@ -542,26 +645,242 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
-    // Resolve itinerary city names once, in parallel, instead of once per type.
-    const cities = new Set<string>();
-    const routeLocations = [...new Set(routes.flatMap((route) =>
-      [route.location_name, route.next_visiting_location]
-        .map((name) => String(name || '').trim())
-        .filter(Boolean),
-    ))];
-    await Promise.all(routeLocations.map(async (location) => {
-      cities.add(normalize(location));
-      const city = await getStoredLocationCity(this.prisma, location, sharedCache);
-      if (city) cities.add(normalize(city));
-    }));
+// Match the vehicle rebuild engine's eligible-city policy.
+const uniqueStrings = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const trimmed = String(value ?? '').trim();
+
+    if (!trimmed) continue;
+
+    const key = trimmed.toLowerCase();
+
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    result.push(trimmed);
+  }
+
+  return result;
+};
+
+const buildLocationCandidateNames = (
+  values: string[],
+): string[] =>
+  uniqueStrings(
+    values.flatMap((value) => {
+      const trimmed = String(value ?? '').trim();
+      const firstPart = trimmed.split(',')[0]?.trim() || '';
+
+      return [trimmed, firstPart].filter(Boolean);
+    }),
+  );
+
+const locationTokens = uniqueStrings(
+  routes
+    .flatMap((route) => [
+      String(route.location_name ?? '').trim(),
+      String(route.next_visiting_location ?? '').trim(),
+    ])
+    .filter((value) => value.length > 0),
+);
+
+const firstRoute = routes[0];
+const lastRoute = routes[routes.length - 1];
+
+const startLocation = String(
+  firstRoute?.location_name || '',
+);
+
+const endLocation = String(
+  lastRoute?.next_visiting_location || '',
+);
+
+const overallStartCityRaw = firstRoute
+  ? (
+      await getStoredLocationCity(
+        this.prisma,
+        startLocation,
+        sharedCache,
+      )
+    ) || startLocation
+  : '';
+
+const overallEndCityRaw = lastRoute
+  ? (
+      await getStoredLocationCity(
+        this.prisma,
+        endLocation,
+        sharedCache,
+      )
+    ) || endLocation
+  : '';
+
+const overallStartCityToken =
+  normalizeCityToken(overallStartCityRaw);
+
+const overallEndCityToken =
+  normalizeCityToken(overallEndCityRaw);
+
+let eligibleCities: string[] = [];
+
+if (locationTokens.length > 0) {
+  const storedSrcRows =
+    await this.prisma.dvi_stored_locations.findMany({
+      where: {
+        deleted: 0,
+        status: 1,
+        source_location: {
+          in: locationTokens,
+        },
+      },
+      select: {
+        source_location_city: true,
+      },
+    });
+
+  const storedDestRows =
+    await this.prisma.dvi_stored_locations.findMany({
+      where: {
+        deleted: 0,
+        status: 1,
+        destination_location: {
+          in: locationTokens,
+        },
+      },
+      select: {
+        destination_location_city: true,
+      },
+    });
+
+  const citySet = new Set<string>();
+
+  for (const row of storedSrcRows) {
+    const city = String(
+      row.source_location_city ?? '',
+    ).trim();
+
+    if (city) citySet.add(city);
+  }
+
+  for (const row of storedDestRows) {
+    const city = String(
+      row.destination_location_city ?? '',
+    ).trim();
+
+    if (city) citySet.add(city);
+  }
+
+  eligibleCities = Array.from(citySet);
+}
+
+const firstTokenFallbackCities =
+  buildLocationCandidateNames(locationTokens);
+
+const candidateNames = buildLocationCandidateNames([
+  ...eligibleCities,
+  ...locationTokens,
+  ...firstTokenFallbackCities,
+  overallStartCityRaw,
+  overallEndCityRaw,
+]);
+
+const lowerCandidates = new Set(
+  candidateNames.map((value) => value.toLowerCase()),
+);
+
+const normalizedCandidates = new Set(
+  candidateNames
+    .map(normalizeCityToken)
+    .filter(Boolean),
+);
+
+const eligibleCityRows = candidateNames.length
+  ? await this.prisma.dvi_cities.findMany({
+      where: {
+        deleted: 0,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: [
+        { name: 'asc' },
+        { id: 'asc' },
+      ],
+    })
+  : [];
+
+const resolvedCityIds = new Set(
+  eligibleCityRows
+    .map((row) => ({
+      id: Number(row.id ?? 0),
+      name: String(row.name ?? '').trim(),
+    }))
+    .filter(
+      (row) =>
+        row.id > 0 &&
+        row.name.length > 0 &&
+        (
+          lowerCandidates.has(
+            row.name.toLowerCase(),
+          ) ||
+          normalizedCandidates.has(
+            normalizeCityToken(row.name),
+          )
+        ),
+    )
+    .map((row) => row.id),
+);
+
+const eligibleCityTokens = new Set(
+  eligibleCities
+    .map(normalizeCityToken)
+    .filter(Boolean),
+);
+
+const strictOperationalCityTokens = new Set<string>();
+
+if (
+  overallStartCityToken.length > 0 &&
+  overallStartCityToken === overallEndCityToken
+) {
+  strictOperationalCityTokens.add(
+    overallStartCityToken,
+  );
+}
+
+const cityTokensForBranchFiltering =
+  strictOperationalCityTokens.size > 0
+    ? strictOperationalCityTokens
+    : eligibleCityTokens;
+
+if (process.env.DEBUG_VEHICLE_UPGRADE_PRICES === '1') {
+  console.log(
+    '[UPGRADE_ELIGIBLE_CITY_PARITY]',
+    JSON.stringify({
+      planId,
+      overallStartCityRaw,
+      overallEndCityRaw,
+      overallStartCityToken,
+      overallEndCityToken,
+      eligibleCities,
+      resolvedCityIds: Array.from(resolvedCityIds),
+      cityTokensForBranchFiltering: Array.from(
+        cityTokensForBranchFiltering,
+      ),
+    }),
+  );
+}
 
     const prices: UpgradePriceRow[] = [];
     const pricingStart = Date.now();
-    const eligibleTypes = types.filter((type) =>
-      type.vehicle_type_id !== currentVehicleTypeId &&
-      !(minimumSeats > 0 && type.occupancy < minimumSeats) &&
-      Boolean(String(type.vehicle_type_title || '').trim()),
-    );
+const eligibleTypes = types.filter((type) =>
+  type.vehicle_type_id !== currentVehicleTypeId &&
+  Boolean(String(type.vehicle_type_title || '').trim()),
+);
 
     // Saved quotations keep exactly the original priority: assigned first.
     const savedByType = new Map<number, (typeof existing)[number]>();
@@ -607,19 +926,24 @@ if (process.env.NODE_ENV !== "production") {
       : [];
     const vendorById = new Map(allVendors.map((vendor) => [vendor.vendor_id, vendor]));
     const activeVendorIds = allVendors.map((vendor) => vendor.vendor_id);
-    const allBranches = activeVendorIds.length
-      ? await this.prisma.dvi_vendor_branches.findMany({
-          where: { vendor_id: { in: activeVendorIds }, status: 1, deleted: 0 },
-          select: {
-            vendor_id: true,
-            vendor_branch_id: true,
-            vendor_branch_gst_type: true,
-            vendor_branch_gst: true,
-            vendor_branch_location: true,
-            vendor_branch_city: true,
-          },
-        })
-      : [];
+const allBranches = activeVendorIds.length
+  ? await this.prisma.dvi_vendor_branches.findMany({
+      where: {
+        vendor_id: { in: activeVendorIds },
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        vendor_id: true,
+        vendor_branch_id: true,
+        vendor_branch_name: true,
+        vendor_branch_gst_type: true,
+        vendor_branch_gst: true,
+        vendor_branch_location: true,
+        vendor_branch_city: true,
+      },
+    })
+  : [];
     const branchesByVendor = new Map<number, typeof allBranches>();
     for (const branch of allBranches) {
       const list = branchesByVendor.get(branch.vendor_id) ?? [];
@@ -633,10 +957,62 @@ if (process.env.NODE_ENV !== "production") {
           select: { id: true, name: true },
         })
       : [];
-    const cityNameById = new Map(branchCities.map((city) => [city.id, normalize(city.name)]));
-    const branchMatches = (branch: (typeof allBranches)[number]): boolean =>
-      cities.has(normalize(branch.vendor_branch_location)) ||
-      cities.has(cityNameById.get(branch.vendor_branch_city) || '');
+const cityNameById = new Map(
+  branchCities.map((city) => [
+    Number(city.id),
+    String(city.name ?? '').trim(),
+  ]),
+);
+
+const branchMatches = (
+  branch: (typeof allBranches)[number],
+): boolean => {
+  const branchId = Number(
+    branch.vendor_branch_id ?? 0,
+  );
+
+  if (branchId <= 0) return false;
+
+  // Preserve the rebuild engine's no-city-filter behavior.
+  if (cityTokensForBranchFiltering.size === 0) {
+    return true;
+  }
+
+  const locationToken = normalizeCityToken(
+    String(branch.vendor_branch_location ?? ''),
+  );
+
+  const nameToken = normalizeCityToken(
+    String(branch.vendor_branch_name ?? ''),
+  );
+
+  const branchCityId = Number(
+    branch.vendor_branch_city ?? 0,
+  );
+
+  const cityNameToken = normalizeCityToken(
+    cityNameById.get(branchCityId) ?? '',
+  );
+
+  return (
+    (
+      locationToken.length > 0 &&
+      cityTokensForBranchFiltering.has(locationToken)
+    ) ||
+    (
+      nameToken.length > 0 &&
+      cityTokensForBranchFiltering.has(nameToken)
+    ) ||
+    (
+      cityNameToken.length > 0 &&
+      cityTokensForBranchFiltering.has(cityNameToken)
+    ) ||
+    (
+      branchCityId > 0 &&
+      resolvedCityIds.has(branchCityId)
+    )
+  );
+};
 
     const branchIds = allBranches.map((branch) => branch.vendor_branch_id);
     const vehicleTypeIds = [...new Set([
@@ -703,9 +1079,38 @@ if (process.env.NODE_ENV !== "production") {
       const mappings = exactMappings.length
         ? exactMappings
         : allMappings.filter((map) => map.vendor_vehicle_type_ID === type.vehicle_type_id);
-      const activeTypeBranches = [...new Set(mappings.map((map) => map.vendor_id))]
-        .flatMap((vendorId) => branchesByVendor.get(vendorId) ?? []);
-      const hasStrictBranch = activeTypeBranches.some(branchMatches);
+// Prefer operational branches only when they contain
+// an active vehicle matching the requested vehicle type.
+const hasStrictBranch = mappings.some((mapping) => {
+  const vendorId = Number(mapping.vendor_id);
+
+  if (!vendorById.has(vendorId)) {
+    return false;
+  }
+
+  const vendorBranches =
+    branchesByVendor.get(vendorId) ?? [];
+
+  return vendorBranches.some((branch) => {
+    if (!branchMatches(branch)) {
+      return false;
+    }
+
+    const branchId = Number(branch.vendor_branch_id);
+
+    const vehicles =
+      vehiclesByBranch.get(`${vendorId}:${branchId}`) ?? [];
+
+    return vehicles.some((vehicle) =>
+      Number(vehicle.vehicle_id) > 0 &&
+      (
+        vehicle.vehicle_type_id === type.vehicle_type_id ||
+        vehicle.vehicle_type_id === mapping.vendor_vehicle_type_ID ||
+        vehicle.vehicle_type_id === mapping.vehicle_type_id
+      ),
+    );
+  });
+});
       const diagnostic = {
         mappings: mappings.length,
         activeVendors: 0,
@@ -728,9 +1133,12 @@ if (process.env.NODE_ENV !== "production") {
           : vendorBranches;
         diagnostic.eligibleBranches += eligibleBranches.length;
 
-  // Match the actual rebuild engine's candidate limit and vehicle order.
+// Match the actual rebuild engine's candidate limit,
+// vehicle ordering and per-branch allocation.
 const eligibleBranchIds = new Set(
-  eligibleBranches.map((branch) => branch.vendor_branch_id),
+  eligibleBranches
+    .map((branch) => Number(branch.vendor_branch_id))
+    .filter((id) => id > 0),
 );
 
 const engineVehicleCandidates = allVehicles
@@ -746,11 +1154,35 @@ const engineVehicleCandidates = allVehicles
   .sort((a, b) => a.vehicle_id - b.vehicle_id)
   .slice(0, Math.max(vehicleCount, 10));
 
-diagnostic.matchingVehicles += engineVehicleCandidates.length;
+// The rebuild's quantity cache allocates the requested
+// quantity to the first vehicle in each mapping/branch.
+const representedBranches = new Set<number>();
 
-for (const vehicle of engineVehicleCandidates) {
+const rebuildableVehicles = engineVehicleCandidates.filter(
+  (vehicle) => {
+    const vehicleId = Number(vehicle.vehicle_id ?? 0);
+    const branchId = Number(vehicle.vendor_branch_id ?? 0);
+
+    if (vehicleId <= 0 || branchId <= 0) {
+      return false;
+    }
+
+    if (representedBranches.has(branchId)) {
+      return false;
+    }
+
+    representedBranches.add(branchId);
+
+    return true;
+  },
+);
+
+diagnostic.matchingVehicles += rebuildableVehicles.length;
+
+for (const vehicle of rebuildableVehicles) {
   const branch = eligibleBranches.find(
-    (item) => item.vendor_branch_id === vehicle.vendor_branch_id,
+    (item) =>
+      item.vendor_branch_id === vehicle.vendor_branch_id,
   );
 
   if (branch) {
@@ -836,7 +1268,7 @@ for (const vehicle of engineVehicleCandidates) {
       const saved = savedByType.get(type.vehicle_type_id);
       if (saved) {
         const total = money(saved.vehicle_grand_total * vehicleCount);
-        if (total > currentTotal) {
+        if (Number.isFinite(total) && total > 0) {
           prices.push({
             vehicleTypeId: type.vehicle_type_id,
             vehicleName: name,
@@ -866,7 +1298,12 @@ const selectedCandidate = bestSelection
           bestCalculatedPrice: best?.price ?? null,
         });
       }
-      if (best && best.price !== null && best.price > currentTotal) {
+      if (
+  best &&
+  best.price !== null &&
+  Number.isFinite(best.price) &&
+  best.price > 0
+) {
         prices.push({
           vehicleTypeId: type.vehicle_type_id,
           vehicleName: name,

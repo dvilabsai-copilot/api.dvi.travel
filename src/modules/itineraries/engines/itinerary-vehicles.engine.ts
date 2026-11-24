@@ -1315,7 +1315,11 @@ if (scopedRebuild) {
     for (const [planVehicleTypeId, requiredCount] of requiredCountByType.entries()) {
       if (!planVehicleTypeId || requiredCount <= 0) continue;
 
-      let mappingsWhere: any = { vehicle_type_id: planVehicleTypeId, status: 1 };
+      let mappingsWhere: any = {
+  vehicle_type_id: planVehicleTypeId,
+  status: 1,
+  ...(scopedRebuild ? { deleted: 0 } : {}),
+};
       this.logSql(
         "VENDOR_VEHICLE_TYPES_FIND_MANY_1",
         this.buildSelectSql("dvi_vendor_vehicle_types", mappingsWhere),
@@ -1332,7 +1336,11 @@ if (scopedRebuild) {
       });
 
       if (!mappings.length) {
-        mappingsWhere = { vendor_vehicle_type_ID: planVehicleTypeId, status: 1 };
+        mappingsWhere = {
+  vendor_vehicle_type_ID: planVehicleTypeId,
+  status: 1,
+  ...(scopedRebuild ? { deleted: 0 } : {}),
+};
         this.logSql(
           "VENDOR_VEHICLE_TYPES_FIND_MANY_2",
           this.buildSelectSql("dvi_vendor_vehicle_types", mappingsWhere),
@@ -1501,9 +1509,61 @@ if (scopedRebuild) {
             .filter((id) => id > 0);
         }
 
-        if (strictBranchIds.length > 0) {
-          hasAnyStrictBranchForType = true;
-        }
+     if (
+  strictBranchIds.length > 0 &&
+  !hasAnyStrictBranchForType
+) {
+  if (!scopedRebuild) {
+    // Preserve the existing full-rebuild policy.
+    hasAnyStrictBranchForType = true;
+  } else {
+    // During a scoped rebuild, a preferred branch
+    // must contain a matching active vehicle.
+    const vendorMappings = mappings.filter(
+      (mapping: any) =>
+        Number(mapping.vendor_id) === vendorId,
+    );
+
+    const acceptedVehicleTypeIds = Array.from(
+      new Set<number>([
+        planVehicleTypeId,
+        ...vendorMappings.flatMap((mapping: any) => [
+          Number(mapping.vendor_vehicle_type_ID ?? 0),
+          Number(mapping.vehicle_type_id ?? 0),
+        ]),
+      ]),
+    ).filter((id) => id > 0);
+
+    if (
+      vendorMappings.length > 0 &&
+      acceptedVehicleTypeIds.length > 0
+    ) {
+      const matchingVehicle = await tx.dvi_vehicle.findFirst({
+        where: {
+          vendor_id: vendorId,
+          vendor_branch_id: {
+            in: strictBranchIds,
+          },
+          vehicle_type_id: {
+            in: acceptedVehicleTypeIds,
+          },
+          vehicle_id: {
+            gt: 0,
+          },
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          vehicle_id: true,
+        },
+      });
+
+      if (matchingVehicle) {
+        hasAnyStrictBranchForType = true;
+      }
+    }
+  }
+}
 
         vendorBranchCache.set(Number(vendorId), {
           branches: branchesWithCityName,
