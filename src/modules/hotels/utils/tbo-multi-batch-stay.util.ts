@@ -20,6 +20,14 @@ export type TboStayBatch = {
   isRefundable: boolean;
 };
 
+export type TboStayMealSupplement = {
+  mealPlan: 'CP' | 'MAP';
+  breakfastRate: number;
+  breakfastPerNight: number;
+  dinnerRate: number;
+  dinnerPerNight: number;
+};
+
 export type TboMultiBatchStaySnapshot = {
   schemaVersion: 1;
   provider: 'tbo';
@@ -37,6 +45,7 @@ export type TboMultiBatchStaySnapshot = {
   supplierTotalFare: number;
   searchVerifiedAt: string;
   batches: TboStayBatch[];
+  dviMealSupplement?: TboStayMealSupplement;
 };
 
 export function assertTboMultiBatchStay(
@@ -97,6 +106,14 @@ export function assertTboMultiBatchStay(
   if (!Number.isFinite(Date.parse(stay.searchVerifiedAt))) {
     throw new Error('The supplier search verification timestamp is missing.');
   }
+  const meals = stay.dviMealSupplement;
+  if (meals && (stay.currency !== 'INR' ||
+      !((stay.mealPlan === 'EP' && ['CP', 'MAP'].includes(meals.mealPlan)) ||
+        (stay.mealPlan === 'CP' && meals.mealPlan === 'MAP')) ||
+      [meals.breakfastRate, meals.breakfastPerNight, meals.dinnerRate, meals.dinnerPerNight]
+        .some(amount => !Number.isFinite(amount) || amount < 0))) {
+    throw new Error('Invalid DVI meal supplement for the supplier stay.');
+  }
 }
 
 /** Stable route-night allocation; never multiply a whole-stay supplier total by nights. */
@@ -110,13 +127,22 @@ export function allocateFullStayCents(amount: number, routeIds: readonly number[
   return routeIds.map((_, index) => (baseCents + (index < remainder ? 1 : 0)) / 100);
 }
 
-export function priceTboMultiBatchStay(stay: TboMultiBatchStaySnapshot, margin: number) {
+export function priceTboMultiBatchStay(
+  stay: Pick<TboMultiBatchStaySnapshot, 'supplierTotalFare' | 'routeIds' | 'dviMealSupplement'>,
+  margin: number,
+) {
   if (!Number.isFinite(margin) || margin < 0) throw new RangeError('Hotel margin is invalid.');
-  const totalPrice = Math.round(stay.supplierTotalFare * (100 + margin)) / 100;
+  const mealCostPerNight = Math.round(((stay.dviMealSupplement?.breakfastPerNight ?? 0) +
+    (stay.dviMealSupplement?.dinnerPerNight ?? 0)) * 100) / 100;
+  const roomPayable = Math.round(stay.supplierTotalFare * (100 + margin)) / 100;
+  const baseByNight = allocateFullStayCents(stay.supplierTotalFare, stay.routeIds);
+  const roomPayableByNight = allocateFullStayCents(roomPayable, stay.routeIds);
   return {
-    totalPrice,
-    baseByNight: allocateFullStayCents(stay.supplierTotalFare, stay.routeIds),
-    payableByNight: allocateFullStayCents(totalPrice, stay.routeIds),
+    totalPrice: Math.round((roomPayable + mealCostPerNight * stay.routeIds.length) * 100) / 100,
+    baseByNight,
+    marginByNight: roomPayableByNight.map((amount, index) => Math.round((amount - baseByNight[index]) * 100) / 100),
+    payableByNight: roomPayableByNight.map(amount => Math.round((amount + mealCostPerNight) * 100) / 100),
+    mealCostPerNight,
   };
 }
 

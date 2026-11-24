@@ -987,8 +987,12 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
     previewStayExtension: async () => ({ canBookMultiNight: true, blocked: false }),
   };
   let fullStayRates = [tboCandidates[0]];
+  const requestedPlans: string[] = [];
   service.hotelDetailsTboService = {
-    searchSelectedHotelForContinuousStay: async () => fullStayRates,
+    searchSelectedHotelForContinuousStay: async (payload: { requestedMealPlanCode: string }) => {
+      requestedPlans.push(payload.requestedMealPlanCode);
+      return fullStayRates;
+    },
     getSelectedHotelRates: async (_quoteId: string, routeId: number) => ({
       hotels: tboCandidates.filter((candidate) => candidate.routeId === routeId),
     }),
@@ -1041,6 +1045,20 @@ test('TBO HOTEL intent prices each continuous-stay route from its room-night bre
   assert.deepEqual(upgraded.selections.map((selection: any) => selection.tboMapFallbackBreakfastRate), [0, 0]);
   assert.deepEqual(upgraded.selections.map((selection: any) => selection.tboMapFallbackLunchRate), [0, 0]);
   assert.deepEqual(upgraded.selections.map((selection: any) => selection.totalPrice), [35065.52, 35988.10]);
+
+  const supplierEp = { ...breakfastRate, mealPlan: 'EP', mealPlanCode: 'EP' };
+  fullStayRates = applyMapDinnerFallbackToRows(
+    [supplierEp],
+    { preferredMealPlanCode: 'CP', adultCount: 5, childCount: 0, roomCount: 2, numberOfNights: 2 },
+    { enabled: true, breakfastRate: 400, dinnerRate3Star: 900, dinnerRate4Star: 0, dinnerRate5Star: 0, lunchRate3Star: 900, lunchRate4Star: 0, lunchRate5Star: 0 },
+    true,
+  );
+  const explicitBreakfast = await service.previewHotelIntent({ ...request, selectionIntent: 'MEAL_PLAN', mealPlanCode: 'CP' });
+  assert.equal(explicitBreakfast.status, 'AVAILABLE');
+  assert.deepEqual(explicitBreakfast.selections.map(selection => selection.mealPlan), ['CP', 'CP']);
+  assert.deepEqual(explicitBreakfast.selections.map(selection => selection.supplierMealPlan), ['EP', 'EP']);
+  assert.deepEqual(explicitBreakfast.selections.map(selection => selection.totalPrice), [32440.52, 33363.10]);
+  assert.deepEqual(requestedPlans, ['CP', 'MAP', 'CP']);
 });
 
 test('wrong snapshot name cannot override the persisted offline master identity', () => {

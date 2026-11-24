@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import type { PrismaClient, dvi_itinerary_plan_hotel_details as HotelRow } from '@prisma/client';
 import { priceTboMultiBatchStay, type TboMultiBatchStaySnapshot } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { parseHotelSelectionSnapshot } from './hotel-selection-identity.util';
+import { tboStayMealNightFields } from './tbo-map-fallback.util';
 
 export type SplitVsrFareUpdate = {
   previous: TboMultiBatchStaySnapshot;
@@ -53,7 +54,7 @@ export async function persistApprovedSplitVsrFares(
         code: 'VSR_RATE_UNVERIFIED',
         message: 'Reconcile the existing VSR supplier attempt before approving new fares for that batch.',
       });
-      const { baseByNight, payableByNight } = priceTboMultiBatchStay(approved, margin);
+      const { baseByNight, payableByNight, marginByNight, mealCostPerNight } = priceTboMultiBatchStay(approved, margin);
       for (const [index, routeId] of approved.routeIds.entries()) {
         const row = rows.find((item) => item.itinerary_route_id === routeId);
         if (!row?.selected_price_snapshot) throw stale();
@@ -63,7 +64,7 @@ export async function persistApprovedSplitVsrFares(
         }
         const baseTotalPrice = baseByNight[index];
         const totalPrice = payableByNight[index];
-        const hotelMarginAmount = Math.round((totalPrice - baseTotalPrice) * 100) / 100;
+        const hotelMarginAmount = marginByNight[index];
         const basePricePerNight = Math.round(baseTotalPrice * 100 / approved.roomCount) / 100;
         const updatedon = new Date();
         const data = {
@@ -77,11 +78,12 @@ export async function persistApprovedSplitVsrFares(
             tboMultiBatchStay: approved,
             baseTotalPrice,
             basePricePerNight,
-            hotelMarginBaseAmount: baseTotalPrice,
+            hotelMarginBaseAmount: Math.round((baseTotalPrice + mealCostPerNight) * 100) / 100,
             hotelMarginAmount,
             hotelMarginTotalAmount: hotelMarginAmount,
             pricePerNight: totalPrice,
             totalPrice,
+            ...tboStayMealNightFields(approved.mealPlan, approved.dviMealSupplement),
           }),
           updatedon,
         };

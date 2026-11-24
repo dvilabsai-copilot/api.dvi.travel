@@ -1254,7 +1254,7 @@ if (hotelMasterId) {
     private readonly hotelPricingService: HotelPricingService = new HotelPricingService(prisma),
   ) {}
 
-  private async getTboMapFallbackConfig(): Promise<TboMapFallbackConfig> {
+  async getTboMapFallbackConfig(): Promise<TboMapFallbackConfig> {
     const row = await (this.prisma as any).dvi_global_settings.findFirst({
       where: { deleted: 0, status: 1 },
       orderBy: { global_settings_ID: 'asc' },
@@ -1454,6 +1454,7 @@ if (hotelMasterId) {
     provider: string,
     hotelCode: string,
     groupType = 0,
+    requestedMealPlanCode?: string,
   ): Promise<{ quoteId: string; routeId: number; provider: string; hotelCode: string; hotels: HotelSearchResult[] }> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
@@ -1661,21 +1662,30 @@ matchedHotels: selectedHotelRows.map((hotel: any) => ({
     );
     const selectedHotelMapConfig = await this.getTboMapFallbackConfig();
 
- const currentHotels = filterEpRows(
-  applyMapDinnerFallbackToRows(
+ const fallbackContext = {
+   preferredMealPlanCode: requestedMealPlanCode || preferredMealPlanCode,
+   adultCount, childCount, roomCount, numberOfNights,
+ };
+ const currentRates = applyMapDinnerFallbackToRows(
     selectedHotelRows as any[],
-    {
-      preferredMealPlanCode,
-      adultCount,
-      childCount,
-      roomCount,
-      numberOfNights,
-    },
+    fallbackContext,
     selectedHotelMapConfig,
     true, // Preserve supplier rates for the hotel editor only.
-  ),
-  Boolean(selectedHotelMapConfig.showEpHotels),
-);
+ );
+ // The editor offers each supported conversion even when it differs from the
+ // itinerary default. Each pass uses the original supplier meal identities.
+ const alternateRates = normalizedProvider === 'tbo' && roomCount <= 6 && !requestedMealPlanCode
+   ? ['CP', 'MAP'].filter(code => code !== preferredMealPlanCode).flatMap(code =>
+     applyMapDinnerFallbackToRows(
+       selectedHotelRows as any[], { ...fallbackContext, preferredMealPlanCode: code }, selectedHotelMapConfig, true,
+     ).flatMap(row => {
+       if (row.tboMapFallbackTargetMealPlan === code) return [row];
+       const options = (row.rateOptions || []).filter(option => option.tboMapFallbackTargetMealPlan === code);
+       return options.length ? [{ ...row, rateOptions: options }] : [];
+     }))
+   : [];
+ const editorRates = [...currentRates, ...alternateRates];
+ const currentHotels = filterEpRows(editorRates, Boolean(selectedHotelMapConfig.showEpHotels));
     const effectiveMarginPercentage = await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({});
     return {
       quoteId, routeId: Number(routeId), provider: normalizedProvider, hotelCode: normalizedHotelCode,
@@ -5265,6 +5275,7 @@ this.logger.log(
     checkInDate: string;
     checkOutDate: string;
     vsrConfirmationRefresh?: { guestNationality: string };
+    requestedMealPlanCode?: string;
   }): Promise<HotelSearchResult[]> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: Number(params.planId) },
@@ -5363,7 +5374,7 @@ this.logger.log(
   ? applyMapDinnerFallbackToRows(
       hotels as any[],
       {
-        preferredMealPlanCode,
+        preferredMealPlanCode: params.requestedMealPlanCode || preferredMealPlanCode,
         adultCount,
         childCount,
         roomCount,
