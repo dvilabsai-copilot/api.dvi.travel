@@ -7,6 +7,34 @@ import { projectHotelPayablePricing } from '../src/modules/itineraries/utils/hot
 import { matchTboBatchHotels } from '../src/modules/hotels/utils/tbo-batch-hotel-matching.util';
 import { ItineraryHotelDetailsTboService } from '../src/modules/itineraries/itinerary-hotel-details-tbo.service';
 import { applyTboMapFallbackToRows, prepareTboBatchRecommendation } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
+import { TBOHotelProvider } from '../src/modules/hotels/providers/tbo-hotel.provider';
+
+test('split VSR searches consider hotels beyond the configured display card limit', async () => {
+  const store = new Map<string, string>();
+  const provider = Object.assign(Object.create(TBOHotelProvider.prototype), {
+    logger: { log() {}, warn() {}, error() {} },
+    referenceCache: {
+      get: async (key: string) => store.get(key),
+      set: async (key: string, value: string) => store.set(key, value),
+    },
+    prisma: {
+      dvi_global_settings: { findFirst: async () => ({ vsr_hotel_card_limit: 50 }) },
+      tbo_hotel_master: { findMany: async ({ take }: { take: number }) =>
+        Array.from({ length: 51 }, (_, index) => ({ tbo_hotel_code: String(index + 1) })).slice(0, take) },
+    },
+  });
+  assert.equal((await provider.getHotelCodesForCityFromDb('148363')).split(',').length, 50);
+  provider.search = async (_criteria: unknown, preferences: any, options: any) => {
+    assert.equal(options.splitStaySearch, true);
+    assert.ok([6, 2].includes(preferences.tboNoOfRooms));
+    return (await provider.getHotelCodesForCityFromDb('148363', options.splitStaySearch)).split(',');
+  };
+  const batches = await provider.searchRoomBatches({
+    occupancies: Array.from({ length: 8 }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+  });
+  assert.deepEqual(batches.map(batch => batch.hotels.includes('51')), [true, true]);
+  assert.equal((await provider.getHotelCodesForCityFromDb('148363')).split(',').length, 50);
+});
 
 test('same-hotel supplier batches can use different room types with compatible terms', () => {
   const group = (batchIndex: number, roomCount: number, roomType: string, isRefundable = true, mealPlan = 'CP') => ({

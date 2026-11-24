@@ -36,6 +36,7 @@ import { shouldKeepSupplierRateForMealPlan } from '../../itineraries/utils/tbo-m
 export class TBOHotelProvider implements IHotelProvider {
  // TBO API Constraints - Certification Required
   private static readonly MAX_ROOMS = 6;
+  private static readonly SPLIT_STAY_CANDIDATE_LIMIT = 1000;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
  // Production API Endpoints from Postman Collection
@@ -160,6 +161,7 @@ export class TBOHotelProvider implements IHotelProvider {
           ...preferences,
           tboNoOfRooms: batch.roomCount,
         },
+        { splitStaySearch: true },
       );
 
       results.push({
@@ -239,7 +241,7 @@ export class TBOHotelProvider implements IHotelProvider {
   async search(
     criteria: HotelSearchCriteria,
     preferences?: HotelPreferences,
-    options: { refreshSelectedRate?: boolean } = {},
+    options: { refreshSelectedRate?: boolean; splitStaySearch?: boolean } = {},
   ): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
     if (!this.prisma) {
@@ -290,7 +292,9 @@ export class TBOHotelProvider implements IHotelProvider {
       } else {
  // Query database for hotel codes from tbo_hotel_master table
  // This table is synced daily from TBO's GetHotels API via cron/scheduler
-        hotelCodes = await this.getHotelCodesForCityFromDb(resolvedTboCityCode);
+        // Let a hotel outside the displayed card limit supply the 6+N rooms.
+        // The itinerary still applies the card cap after matching the batches.
+        hotelCodes = await this.getHotelCodesForCityFromDb(resolvedTboCityCode, options.splitStaySearch);
         if (!hotelCodes) {
  this.logger.warn(` No hotel codes in database for city ${resolvedTboCityCode} - trying static TBOHotelCodeList fallback`);
           hotelCodes = await this.fetchHotelCodesFromStaticApi(resolvedTboCityCode);
@@ -1740,10 +1744,12 @@ return criteria.occupancies.map((occ) => ({
    * 2. If DB empty, return empty string (error handling)
    * 3. No hardcoding - database must be synced via POST /hotels/sync/all
  */
-  private async getHotelCodesForCityFromDb(tboCityCode: string): Promise<string> {
+  private async getHotelCodesForCityFromDb(tboCityCode: string, splitStaySearch = false): Promise<string> {
     try {
       this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
-      const candidateLimit = await this.getVsrHotelCardLimit();
+      const candidateLimit = splitStaySearch
+        ? TBOHotelProvider.SPLIT_STAY_CANDIDATE_LIMIT
+        : await this.getVsrHotelCardLimit();
       const cacheKey = `tbo-master:${tboCityCode}:${candidateLimit}`;
       const cachedCodes = await this.referenceCache?.get<string>(cacheKey);
       if (cachedCodes !== null && cachedCodes !== undefined) return cachedCodes;
