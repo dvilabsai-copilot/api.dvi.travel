@@ -4589,8 +4589,8 @@ async confirmVehicleUpgrade(
     !Number.isSafeInteger(userId) || userId <= 0 ||
     !Number.isFinite(expectedCurrentPrice) ||
     !Number.isFinite(expectedNewPrice) ||
-    expectedCurrentPrice <= 0 ||
-    expectedNewPrice <= expectedCurrentPrice
+  expectedCurrentPrice <= 0 ||
+expectedNewPrice <= 0
   ) {
     throw new BadRequestException("Invalid vehicle upgrade request.");
   }
@@ -5051,16 +5051,38 @@ nextVehicles.push({
         Number(candidate.vehicle_id) === quotedIdentity.vehicleId
       );
 
-    return {
-      candidateId: candidate.itinerary_plan_vendor_eligible_ID,
-      calculatedPrice,
-      quotedPrice: targetQuote.price,
-      difference: Number(
-        (calculatedPrice - Number(targetQuote.price)).toFixed(2),
-      ),
-      available,
-      identityMatches,
-    };
+return {
+  candidateId: candidate.itinerary_plan_vendor_eligible_ID,
+
+  quotedIdentity: quotedIdentity ?? null,
+
+  rebuiltIdentity: {
+    vendorId: Number(candidate.vendor_id),
+    branchId: Number(candidate.vendor_branch_id),
+    vendorVehicleTypeId: Number(
+      candidate.vendor_vehicle_type_id,
+    ),
+    vehicleId: Number(candidate.vehicle_id),
+  },
+
+  calculatedPrice,
+  quotedPrice: targetQuote.price,
+
+  difference: Number(
+    (calculatedPrice - Number(targetQuote.price)).toFixed(2),
+  ),
+
+  quotedPermitCharges: Number(
+    targetQuote.breakdown?.permit ?? 0,
+  ),
+
+  rebuiltPermitCharges: Number(
+    candidate.total_permit_charges ?? 0,
+  ),
+
+  available,
+  identityMatches,
+};
   });
 
   console.error(
