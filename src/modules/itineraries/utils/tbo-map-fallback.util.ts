@@ -2,7 +2,7 @@ import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealText,
 } from '../../hotels/hotel-rate-plans';
-import { getTboBatchSearchTotal, priceTboMultiBatchStay, type TboStayBatch, type TboStayMealSupplement } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { getTboBatchSearchTotal, isFreshTboMultiBatchStay, makeTboMultiBatchStay, priceTboMultiBatchStay, type TboMultiBatchStaySnapshot, type TboStayBatch, type TboStayMealSupplement } from '../../hotels/utils/tbo-multi-batch-stay.util';
 
 export type TboMapFallbackConfig = {
   enabled: boolean;
@@ -429,4 +429,88 @@ export function getTboBatchMealPlanQuotes(offer: any, nights: number, margin: nu
     const totals = priceTboMultiBatchStay({ supplierTotalFare, routeIds, dviMealSupplement: supplement }, margin);
     return [{ mealPlan, amount: totals.totalPrice, currency, dviMealSupplement: money(totals.mealCostPerNight * nights) }];
   });
+}
+
+/** Materialize a full-stay recommendation only from the supplier's original search window. */
+export function prepareTboBatchRecommendation(
+  offer: any,
+  stay: { parentRouteId: number; routeIds: number[]; checkInDate: string; checkOutDate: string },
+  { roomCount, margin, config }: { roomCount: number; margin: number; config: TboMapFallbackConfig },
+) {
+  if (String(offer.checkInDate || '').slice(0, 10) !== stay.checkInDate ||
+      String(offer.checkOutDate || '').slice(0, 10) !== stay.checkOutDate ||
+      getTboBatchSearchTotal({ ...offer, itineraryRouteId: stay.parentRouteId }, roomCount) === null) return;
+
+  const batches: TboStayBatch[] = offer.tboRoomBatches;
+  const first = batches[0];
+  const requestedMeal = mealPlanCode(offer.mealPlanCode || offer.mealPlan);
+  const supplierMeal = mealPlanCode(first.mealPlan);
+  const supplement = requestedMeal === supplierMeal ? undefined : getTboStayMealSupplement(offer, requestedMeal, config);
+  if (!supplierMeal || (requestedMeal !== supplierMeal && !supplement)) return;
+
+  let snapshot: TboMultiBatchStaySnapshot;
+  try {
+    snapshot = makeTboMultiBatchStay({
+      hotelCode: String(offer.hotelCode), roomType: String(offer.roomType), mealPlan: first.mealPlan,
+      currency: first.currency, isRefundable: first.isRefundable, anchorRouteId: stay.parentRouteId,
+      routeIds: stay.routeIds, checkInDate: stay.checkInDate, checkOutDate: stay.checkOutDate,
+      roomCount, batches, ...(supplement ? { dviMealSupplement: supplement } : {}),
+    }, String(offer.supplierSearchCompletedAt || ''));
+  } catch {
+    return;
+  }
+  if (!isFreshTboMultiBatchStay(snapshot)) return;
+  const pricing = priceTboMultiBatchStay(snapshot, margin);
+  const rateOptionId = ['tbo-split', snapshot.hotelCode, snapshot.roomType, requestedMeal, snapshot.mealPlan,
+    snapshot.currency, snapshot.isRefundable, snapshot.checkInDate, snapshot.checkOutDate].join(':');
+  const nightlyRates = snapshot.routeIds.map((routeId, index) => {
+    const date = new Date(Date.parse(snapshot.checkInDate) + index * 86400000).toISOString().slice(0, 10);
+    return {
+      routeId, date, baseAmount: pricing.baseByNight[index], sellAmount: pricing.payableByNight[index],
+      marginAmount: pricing.marginByNight[index], rateOptionId, pricingIncludesHotelMargin: true,
+    };
+  });
+  return {
+    ...offer, rateOptionId, optionKey: rateOptionId, selectionKey: rateOptionId,
+    itineraryRouteId: stay.parentRouteId, routeId: stay.parentRouteId, routeIds: stay.routeIds,
+    checkInDate: stay.checkInDate, checkOutDate: stay.checkOutDate, numberOfNights: stay.routeIds.length,
+    price: pricing.payableByNight[0], pricePerNight: pricing.payableByNight[0],
+    totalPrice: pricing.totalPrice, totalStayPrice: pricing.totalPrice,
+    baseTotalPrice: snapshot.supplierTotalFare, hotelMarginPercentage: margin,
+    amountIncludesHotelMargin: true, pricingIncludesHotelMargin: true, nightlyRates,
+    mealPlan: requestedMeal, mealPlanCode: requestedMeal, supplierMealPlan: supplierMeal,
+    bookingMode: 'LIVE_API', priceSource: 'LIVE_API', availabilityMessage: undefined,
+    tboMultiBatchStay: snapshot,
+    isSelectable: true, isBookable: true, isLiveBookable: false,
+    availabilityStatus: 'SEARCH_MATCH_SELECTED',
+  };
+}
+
+export function projectTboBatchRecommendationNight(option: any, routeId: number) {
+  const stay: TboMultiBatchStaySnapshot = option.tboMultiBatchStay;
+  const index = stay.routeIds.indexOf(routeId);
+  if (index < 0) return;
+  const pricing = priceTboMultiBatchStay(stay, Number(option.hotelMarginPercentage || 0));
+  const date = new Date(Date.parse(stay.checkInDate) + index * 86400000).toISOString().slice(0, 10);
+  const checkOutDate = new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
+  const totalPrice = pricing.payableByNight[index];
+  const baseTotalPrice = pricing.baseByNight[index];
+  const hotelMarginAmount = pricing.marginByNight[index];
+  return {
+    ...option, ...tboStayMealNightFields(stay.mealPlan, stay.dviMealSupplement),
+    routeId, itineraryRouteId: routeId, date, itineraryRouteDate: date, routeIds: [routeId],
+    checkInDate: date, checkOutDate, numberOfNights: 1, nights: 1,
+    selectedTotalPrice: totalPrice, selectedPricePerNight: totalPrice,
+    totalPrice, totalStayPrice: totalPrice, totalHotelCost: totalPrice, totalAmountAfterTax: totalPrice,
+    exactFullStayTotal: totalPrice, price: totalPrice, pricePerNight: totalPrice,
+    totalRoomCost: baseTotalPrice, baseTotalPrice, baseHotelCost: baseTotalPrice,
+    basePricePerNight: money(baseTotalPrice / stay.roomCount),
+    hotelMarginBaseAmount: money(baseTotalPrice + pricing.mealCostPerNight), hotelMarginAmount,
+    hotelMarginTotalAmount: hotelMarginAmount, roomCount: stay.roomCount, totalRooms: stay.roomCount,
+    tboMapFallbackMealPlanTotal: pricing.mealCostPerNight,
+    extraBedAmount: 0, childWithBedAmount: 0, childWithoutBedAmount: 0, totalHotelTaxAmount: 0,
+    amountIncludesHotelMargin: true, pricingIncludesHotelMargin: true,
+    isSelectable: true, isBookable: true, isLiveBookable: false,
+    availabilityStatus: 'SEARCH_MATCH_SELECTED',
+  };
 }

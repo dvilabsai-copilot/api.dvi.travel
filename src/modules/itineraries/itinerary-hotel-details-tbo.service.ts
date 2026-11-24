@@ -2654,6 +2654,13 @@ this.logger.log(
       noOfNights,
       preferredMealPlanCode,
       preferredCategories,
+      ...(planRoomCount > 6 && planRoomCount <= 25 && {
+        splitVsr: {
+          roomCount: planRoomCount,
+          margin: await this.hotelPricingService.resolveEffectiveHotelMarginPercentage({}),
+          config: mergedMapRulesConfig,
+        },
+      }),
       occupancy: {
         extraBedCount: Number((plan as any).total_extra_bed || 0),
         childWithBedCount: Number((plan as any).total_child_with_bed || 0),
@@ -3217,6 +3224,7 @@ this.logger.log(
         isRefundable: boolean;
       }> = [];
       const bookingCodes = new Set<string>();
+      const searchedAt: number[] = [];
       let representative: HotelSearchResult | null = null;
       let valid = true;
 
@@ -3252,6 +3260,7 @@ this.logger.log(
         }
 
         bookingCodes.add(bookingCode);
+        searchedAt.push(Date.parse(String(candidate.supplierSearchCompletedAt || '')));
         representative ??= candidate;
         selectedBatches.push({
           batchIndex: index,
@@ -3296,6 +3305,8 @@ this.logger.log(
         searchReference: undefined,
         bookingCode: undefined,
         tboRoomBatches: selectedBatches,
+        supplierSearchCompletedAt: searchedAt.every(Number.isFinite)
+          ? new Date(Math.min(...searchedAt)).toISOString() : undefined,
         // A supplier sub-batch covers at most six rooms; do not leak its
         // nightly breakdown into a complete 7–25-room itinerary quote.
         tboRoomNightBreakdown: undefined,
@@ -3412,7 +3423,9 @@ this.logger.log(
             occupancies,
             guestNationality,
           });
-          batchPreviewHotels = this.toTboMultiBatchPreviewRows(matches, safeRoomCount);
+          batchPreviewHotels = this.toTboMultiBatchPreviewRows(matches, safeRoomCount).map(hotel => ({
+            ...hotel, checkInDate: block.checkInDate, checkOutDate: block.checkOutDate,
+          }));
           this.logger.log(`[TBO_MULTI_BATCH] ${JSON.stringify({
             ...logContext,
             requestedRooms: safeRoomCount,
@@ -5560,6 +5573,7 @@ this.logger.log(
         const candidateMatchesInventory = (candidateStay: any): boolean => {
           const candidateHotel = candidateStay?.hotel;
           if (!candidateHotel || inventory.length === 0) return inventory.length === 0;
+          if (candidateHotel.tboMultiBatchStay) return true;
           const candidateIdentity = buildAutoSelectionIdentity(candidateHotel);
           const candidateProvider = String(candidateIdentity.provider || '').trim().toLowerCase();
           const candidateCode = String(candidateIdentity.providerHotelCode || '').trim().toLowerCase();
@@ -5989,6 +6003,7 @@ this.logger.log(
     };
 
     const priceHotelStay = (hotel: any, fallbackNights: number): any => {
+      if (hotel?.tboMultiBatchStay) return hotel;
       // A persisted row can be a parent hotel row whose nested rateOptions
       // contain the actual selected room/meal option. Once a rate option ID
       // exists, replace the parent identity and price fields with that one

@@ -1,4 +1,5 @@
 import { validateTboCompleteBatchGroups } from './tbo-complete-batch-validation.util';
+import { TBO_SEARCH_SESSION_VALIDITY_MS } from './tbo-search-session';
 
 /**
  * One physical property and one continuous check-in/check-out window.
@@ -168,6 +169,12 @@ export function getTboBatchSearchTotal(row: any, roomCount = Number(row?.roomCou
     numberOfRooms: batch.roomCount,
   })), roomCount);
   return error ? null : batches.reduce((cents, batch) => cents + Math.round(batch.supplierTotalFare * 100), 0) / 100;
+}
+
+export function isFreshTboMultiBatchStay(stay?: TboMultiBatchStaySnapshot, now = Date.now()): boolean {
+  if (!stay) return false;
+  const searchedAt = Date.parse(stay.searchVerifiedAt);
+  return searchedAt <= now && now - searchedAt < TBO_SEARCH_SESSION_VALIDITY_MS;
 }
 
 /** Server-generated only, from matching supplier batches returned in one search request. */

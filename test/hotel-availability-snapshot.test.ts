@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HotelAvailabilitySnapshotService } from '../src/modules/itineraries/services/hotel-availability-snapshot.service';
-import { autoSelectionIdentityMatches, hotelOptionKey, hotelSelectionKeyFromRow, selectionOriginFromRow } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
+import { autoSelectionIdentityMatches, buildAutoSelectionIdentity, hotelOptionKey, hotelSelectionKeyFromRow, selectionOriginFromRow } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
 import { projectHotelPayablePricing } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
+import { prepareTboBatchRecommendation, projectTboBatchRecommendationNight } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
 
 function makePrisma() {
   const persistedRow = {
@@ -3600,6 +3601,99 @@ test('refresh replaces a persisted AUTO_SELECTED offline row when live exists fo
   await (service as any).applyPendingSelectionChanges(tx, 44, [1], 7);
   assert.equal(selections[0].hotel_provider, 'staah');
   assert.equal(selections[0].hotel_id, 988);
+});
+
+function splitRecommendations() {
+  const hotelCode = '1141249';
+  const roomType = 'Executive Room';
+  const stay = { parentRouteId: 10, routeIds: [10, 11], checkInDate: '2026-07-28', checkOutDate: '2026-07-30' };
+  const option = prepareTboBatchRecommendation({
+    provider: 'tbo', hotelCode, hotelId: 988, hotelName: 'Metro Plaza', roomType,
+    mealPlan: 'CP', currency: 'INR', roomCount: 8,
+    checkInDate: stay.checkInDate, checkOutDate: stay.checkOutDate,
+    supplierSearchCompletedAt: new Date().toISOString(), isSelectable: false,
+    tboRoomBatches: [6, 2].map((roomCount, batchIndex) => ({
+      hotelCode, roomType, mealPlan: 'EP', currency: 'INR', isRefundable: false,
+      batchIndex, startRoomIndex: batchIndex * 6, roomCount, bookingCode: hotelCode + '!TB!test' + batchIndex,
+      supplierNetAmount: roomCount * 900, supplierTotalFare: roomCount * 1000,
+      occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+    })),
+  }, stay, { roomCount: 8, margin: 5, config: { enabled: true, breakfastRate: 400 } });
+  assert.ok(option);
+  const recommendation = {
+    ...option, groupType: 1, authoritativeRecommendation: true, autoSelectionCandidate: true,
+    authoritativeParentRouteId: stay.parentRouteId, authoritativeRouteIds: stay.routeIds,
+    authoritativeStayKey: '10|2026-07-28|2026-07-30',
+    autoSelectionIdentity: buildAutoSelectionIdentity(option),
+  };
+  return stay.routeIds.map(id => projectTboBatchRecommendationNight(recommendation, id));
+}
+
+test('auto-selection saves all split nights with the original batch codes and breakfast', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const { tx, selections, rooms } = makeReconciliationTx();
+  selections.length = 0;
+  rooms.length = 0;
+  tx.dvi_itinerary_plan_hotel_details.create = async ({ data }: any) => {
+    const row = { ...data, itinerary_plan_hotel_details_ID: selections.length + 1 };
+    selections.push(row);
+    return row;
+  };
+  const rows = splitRecommendations();
+  await (service as any).ensureAutoSelections(tx, 44, rows.slice(0, 1), 'partial', 7);
+  assert.equal(selections.length, 0);
+  await (service as any).ensureAutoSelections(tx, 44, rows, 'complete', 7);
+  assert.deepEqual(selections.map(row => row.itinerary_route_id), [10, 11]);
+  for (const row of selections) {
+    const snapshot = JSON.parse(row.selected_price_snapshot);
+    assert.equal(row.selected_total_price, 10600);
+    assert.equal(row.hotel_breakfast_cost, 6400);
+    assert.equal(row.hotel_dinner_cost, 0);
+    assert.equal(snapshot.mealPlan, 'CP');
+    assert.equal(snapshot.supplierMealPlan, 'EP');
+    assert.deepEqual(snapshot.tboMultiBatchStay.batches.map((batch: any) => batch.bookingCode),
+      ['1141249!TB!test0', '1141249!TB!test1']);
+  }
+  assert.deepEqual(rooms.map(row => [row.room_qty, row.breakfast_required, row.lunch_required]), [[8, 1, 0], [8, 1, 0]]);
+  await (service as any).ensureAutoSelections(tx, 44, rows, 'repeat', 7);
+  assert.equal(selections.length, 2);
+});
+
+test('availability review proposes an online upgrade and saves both nights only after approval', async () => {
+  const service = new HotelAvailabilitySnapshotService({} as any, {} as any, {} as any);
+  const { tx, selections } = makeReconciliationTx();
+  const offline = { ...selections[0], hotel_provider: 'offline', hotel_approval_status: 'PENDING',
+    selected_price_snapshot: JSON.stringify({ selectionOrigin: 'AUTO_SELECTED', hotelName: 'Offline hotel',
+      mealPlan: 'CP', totalPrice: 30000, authoritativeRouteIds: [10, 11] }) };
+  selections[0] = offline;
+  tx.dvi_itinerary_plan_hotel_details.create = async ({ data }: any) => {
+    const row = { ...data, itinerary_plan_hotel_details_ID: 2 };
+    selections.push(row);
+    return row;
+  };
+  const rows = splitRecommendations();
+  const proposals = new Map();
+  const reconcile = () => (service as any).reconcileSelections(tx, 44, rows, 'preview-6-plus-2', 7,
+    false, undefined, 'CP', undefined, new Set(), [], true, proposals);
+  const acknowledge = () => (service as any).applyPendingSelectionChanges(tx, 44, [1], 7, proposals);
+  const originalSnapshot = offline.selected_price_snapshot;
+  const review = await reconcile();
+  assert.equal(review.changes[0].current.totalPrice, 21200);
+  assert.equal(selections[0].selected_price_snapshot, originalSnapshot);
+  assert.equal(selections[0].hotel_provider, 'offline');
+
+  tx.dvi_hotel_block_request = { findMany: async () => [{ selection_ids: '[1]' }] };
+  await assert.rejects(acknowledge);
+  proposals.clear();
+  assert.equal((await reconcile()).hasChanges, false);
+  assert.equal(selections.length, 1);
+  tx.dvi_hotel_block_request = { findMany: async () => [] };
+
+  await reconcile();
+  assert.deepEqual(await acknowledge(), [1]);
+  assert.deepEqual(selections.map(row => row.hotel_provider), ['tbo', 'tbo']);
+  assert.deepEqual(selections.map(row => row.selected_total_price), [10600, 10600]);
+  assert.deepEqual(selections.map(row => row.hotel_breakfast_cost), [6400, 6400]);
 });
 
 test('live reconciliation falls back to offline inventory only when live is absent', async () => {
