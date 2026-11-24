@@ -67,6 +67,7 @@ import { hotelStayNights, hotelStayTotal } from '../utils/hotel-stay-pricing.uti
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { buildHotelCardQuote } from '../utils/hotel-card-quote.util';
+import { getTboBatchSearchTotal } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { allocateTboRouteNightPricing } from '../../hotels/utils/tbo-room-night-pricing';
 import {
   resolveHotelSupplementPricing,
@@ -2937,6 +2938,22 @@ export class HotelAvailabilitySnapshotService {
     if (Array.isArray(clientRow.rateOptions)) {
       clientRow.rateOptions = this.canonicalizeRateOptions(clientRow, clientRow.rateOptions)
         .map((option: any) => this.toClientRateOption(option, clientRow.provider));
+    }
+    if (getTboBatchSearchTotal(clientRow) !== null) {
+      // Older cached previews have already gone through single-rate stay
+      // coverage, which treated their missing parent BookingCode as no rate.
+      // Expose the search match while keeping the ordinary card unselectable.
+      const availabilityMessage = 'Rates found for all supplier batches. Verify the complete stay before choosing.';
+      return {
+        ...clientRow,
+        ...tboMapFallbackMetadata,
+        availabilityStatus: 'BATCH_SEARCH_MATCH',
+        hotelStayAvailabilityStatus: 'BATCH_SEARCH_MATCH',
+        availabilityMessage,
+        hotelStayAvailabilityMessage: availabilityMessage,
+        unavailableDates: [],
+        hotelStayUnavailableDates: [],
+      };
     }
     return { ...clientRow, ...tboMapFallbackMetadata };
   }

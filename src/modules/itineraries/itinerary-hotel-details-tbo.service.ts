@@ -3285,8 +3285,8 @@ this.logger.log(
         isLiveBookable: false,
         isBookable: false,
         isSelectable: false,
-        availabilityStatus: 'NOT_BOOKABLE',
-        availabilityMessage: 'Rates found for every supplier batch; selection and booking are not connected yet.',
+        availabilityStatus: 'BATCH_SEARCH_MATCH',
+        availabilityMessage: 'Rates found for all supplier batches. Verify the complete stay before choosing.',
       } as HotelSearchResult);
     }
 

@@ -131,3 +131,57 @@ test('compact persisted selections retain the exact saved nightly quote in every
   assert.equal((result.hotels[0] as any).cardQuote.payableAmount, 3278.72);
   assert.equal((result as any).hotelSelectionState[0].routes[0].selected.cardQuote.payableAmount, 3278.72);
 });
+
+const mangaloreRates = [
+  { code: '1141249', roomType: 'Executive Room', mealPlan: 'CP', base: 19007.04, supplement: 0, payable: 19957.39 },
+  { code: '1738421', roomType: 'Deluxe Double Room', mealPlan: 'EP', base: 13254.72, supplement: 6400, payable: 20317.46 },
+  { code: '1141218', roomType: 'Deluxe Non AC Double', mealPlan: 'EP', base: 13822.56, supplement: 6400, payable: 20913.69 },
+];
+
+function batchPreview({ code, roomType, mealPlan, base, supplement }: typeof mangaloreRates[number]) {
+  return {
+    provider: 'tbo', hotelCode: code, roomType, mealPlan: 'CP', currency: 'INR',
+    itineraryRouteId: 26765, date: '2026-11-25', checkInDate: '2026-11-25',
+    checkOutDate: '2026-11-26', roomCount: 8, numberOfNights: 1,
+    isSelectable: false, isBookable: false, isLiveBookable: false,
+    availabilityStatus: 'NO_AVAILABILITY', hotelStayUnavailableDates: ['2026-11-25'],
+    pricePerNight: base / 8, tboMapFallbackApplied: supplement > 0,
+    tboMapFallbackDinnerPerNight: supplement, tboMapFallbackBreakfastPerNight: supplement,
+    tboRoomBatches: [6, 2].map((roomCount, batchIndex) => ({
+      hotelCode: code, roomType, mealPlan, currency: 'INR', isRefundable: false,
+      bookingCode: code + '!TB!' + batchIndex, batchIndex, startRoomIndex: batchIndex * 6,
+      roomCount, supplierTotalFare: Number((base * roomCount / 8).toFixed(2)),
+      occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+    })),
+  };
+}
+
+test('6+2 route quotes start from the full supplier fare and apply the breakfast estimate once', () => {
+  for (const example of mangaloreRates) {
+    const row = batchPreview(example);
+    const before = JSON.stringify(row);
+    const quote = buildHotelCardQuote(row, 5, 8);
+    assert.equal(quote?.roomCount, 8);
+    assert.equal(quote?.baseAmount, example.base);
+    assert.equal(quote?.payableAmount, example.payable);
+    assert.equal(JSON.stringify(row), before);
+  }
+});
+
+test('cached 6+2 inventory distinguishes a complete search match from missing or duplicate batches', () => {
+  const row = batchPreview(mangaloreRates[0]);
+  const service = Object.create(HotelAvailabilitySnapshotService.prototype);
+  const available = service.toClientHotelRow(row);
+  assert.equal(available.availabilityStatus, 'BATCH_SEARCH_MATCH');
+  assert.deepEqual(available.hotelStayUnavailableDates, []);
+  assert.equal(available.isSelectable, false);
+  assert.equal(available.isBookable, false);
+  assert.equal(available.bookingCode, undefined);
+  for (const tboRoomBatches of [row.tboRoomBatches.slice(0, 1), [
+    row.tboRoomBatches[0], { ...row.tboRoomBatches[1], bookingCode: row.tboRoomBatches[0].bookingCode },
+  ]]) {
+    const incomplete = service.toClientHotelRow({ ...row, tboRoomBatches });
+    assert.equal(incomplete.availabilityStatus, 'NO_AVAILABILITY');
+    assert.deepEqual(incomplete.hotelStayUnavailableDates, ['2026-11-25']);
+  }
+});

@@ -1,4 +1,5 @@
 import { allocateTboRouteNightPricing } from '../../hotels/utils/tbo-room-night-pricing';
+import { getTboBatchSearchTotal } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { projectHotelPayablePricing } from './hotel-payable-pricing.util';
 
 export interface HotelCardQuote {
@@ -29,7 +30,23 @@ export function buildHotelCardQuote(row: any, margin: number, rooms: number): Ho
   const percentage = positive(margin);
   let payableAmount = 0;
   let baseAmount = 0;
-  if (['tbo', 'vsr'].includes(provider) && Array.isArray(row?.tboRoomNightBreakdown) && row.tboRoomNightBreakdown.length) {
+  const batchFare = getTboBatchSearchTotal(row, roomCount);
+  if (batchFare !== null) {
+    const toDay = (value: unknown) => Date.parse(String(value || '').slice(0, 10) + 'T00:00:00Z') / 86400000;
+    const firstDay = toDay(row.checkInDate);
+    const nights = toDay(row.checkOutDate) - firstDay;
+    const dayIndex = toDay(date) - firstDay;
+    if (!Number.isInteger(nights) || nights < 1 || !Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= nights) return null;
+    const nightCents = (totalCents: number) => Math.floor(totalCents / nights) + Number(dayIndex < totalCents % nights);
+    baseAmount = nightCents(Math.round(batchFare * 100)) / 100;
+    const supplierPayable = nightCents(Math.round(batchFare * (100 + percentage))) / 100;
+    // The fallback is shared across all requested guests and is added once.
+    const fallbackMealAmount = row.tboMapFallbackApplied === true
+      ? positive(row.tboMapFallbackDinnerPerNight, Number(row.tboMapFallbackDinnerTotal || 0) / nights,
+        row.tboMapFallbackBreakfastPerNight, Number(row.tboMapFallbackBreakfastTotal || 0) / nights)
+      : 0;
+    payableAmount = supplierPayable + fallbackMealAmount;
+  } else if (['tbo', 'vsr'].includes(provider) && Array.isArray(row?.tboRoomNightBreakdown) && row.tboRoomNightBreakdown.length) {
     // Cached nested totals can be projected twice. The server's supplier
     // room-night lines retain the exact amounts for unequal nightly fares.
     const breakdown = row.tboRoomNightBreakdown;

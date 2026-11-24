@@ -120,6 +120,30 @@ export function priceTboMultiBatchStay(stay: TboMultiBatchStaySnapshot, margin: 
   };
 }
 
+/**
+ * Read the whole-stay fare of a cached search preview with genuine, complete
+ * supplier batches. A search match must still be rechecked before selection.
+ */
+export function getTboBatchSearchTotal(row: any, roomCount = Number(row?.roomCount)): number | null {
+  const provider = String(row?.provider || '').trim().toLowerCase();
+  const hotelCode = String(row?.hotelCode || '').trim();
+  const batches = row?.tboRoomBatches as TboStayBatch[] | undefined;
+  if (!['tbo', 'vsr'].includes(provider) || row?.isSelectable !== false ||
+      !Number.isInteger(roomCount) || roomCount < 7 || roomCount > 25 ||
+      Number(row.roomCount) !== roomCount || !hotelCode || !Array.isArray(batches)) return null;
+  if (batches.some((batch) => !batch || batch.hotelCode !== hotelCode ||
+      !String(batch.bookingCode || '').startsWith(hotelCode + '!TB!') ||
+      !Number.isFinite(batch.supplierTotalFare) || batch.supplierTotalFare <= 0)) return null;
+  const error = validateTboCompleteBatchGroups(batches.map((batch) => ({
+    ...batch,
+    routeId: Number(row.itineraryRouteId || row.routeId || 0),
+    checkInDate: row.checkInDate,
+    checkOutDate: row.checkOutDate,
+    numberOfRooms: batch.roomCount,
+  })), roomCount);
+  return error ? null : batches.reduce((cents, batch) => cents + Math.round(batch.supplierTotalFare * 100), 0) / 100;
+}
+
 /** Server-generated only, from matching supplier batches returned in one search request. */
 export function makeTboMultiBatchStay(input: Omit<TboMultiBatchStaySnapshot, 'schemaVersion' | 'provider' | 'supplierNetAmount' | 'supplierTotalFare' | 'searchVerifiedAt'>,
   searchVerifiedAt: string = new Date().toISOString(),
