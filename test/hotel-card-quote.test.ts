@@ -193,4 +193,11 @@ test('actual supplier quote stays separate from the breakfast-inclusive card est
   const result = await (service as any).attachCardQuotes(mangaloreRates.map(batchPreview), { preferred_room_count: 8 });
   assert.deepEqual(result.map((row: any) => row.batchSupplierQuote?.amount), [19957.39, 13917.46, 14513.69]);
   assert.deepEqual(result.map((row: any) => row.cardQuote?.payableAmount), [19957.39, 20317.46, 20913.69]);
+  assert.deepEqual(result[1].batchMealPlanQuotes, [
+    { mealPlan: 'EP', amount: 13917.46, currency: 'INR', dviMealSupplement: 0 },
+    { mealPlan: 'CP', amount: 20317.46, currency: 'INR', dviMealSupplement: 6400 },
+  ]);
+  assert.deepEqual(result[0].batchMealPlanQuotes, [
+    { mealPlan: 'CP', amount: 19957.39, currency: 'INR', dviMealSupplement: 0 },
+  ]);
 });

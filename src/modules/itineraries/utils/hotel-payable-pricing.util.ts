@@ -229,6 +229,8 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
   );
   const provider = String(option?.provider || option?.hotel_provider || '').trim().toLowerCase();
   const isCompleteFareProvider = provider === 'tbo' || provider === 'vsr';
+  const isProjectedSplitNight = isCompleteFareProvider && alreadyProjected &&
+    option?.tboMultiBatchStay?.schemaVersion === 1 && payableBeforeProjection > 0;
   const componentRoomTotal = positive(option?.totalRoomCost, option?.total_room_cost);
   const explicitBaseTotal = positive(
     // Component-priced providers expose totalRoomCost as the room-only DB
@@ -327,6 +329,8 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
   const marginBasePerNight = money(basePerNight + marginableSupplementPerNight);
   const marginTotal = offlinePricing
     ? offlinePricing.marginAmount
+    : isProjectedSplitNight
+    ? money(Number(option?.hotelMarginTotalAmount ?? option?.hotelMarginAmount ?? 0))
     : alreadyProjected
     ? marginPercentage > 0
       ? money((marginableBaseTotal * marginPercentage) / 100)
@@ -334,6 +338,8 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
     : money((marginableBaseTotal * marginPercentage) / 100);
   const marginPerNight = offlinePricing
     ? money(offlinePricing.marginAmount / numberOfNights)
+    : isProjectedSplitNight
+    ? marginTotal
     : alreadyProjected
     ? marginPercentage > 0
       ? money((marginBasePerNight * marginPercentage) / 100)
@@ -345,10 +351,10 @@ export function projectHotelPayablePricing<T extends Record<string, any>>(
   const reconstructedPayablePerNight = offlinePricing
     ? money(offlinePricing.totalPrice / numberOfNights)
     : money(marginBasePerNight + marginPerNight);
-  const payableTotal = alreadyProjected
+  const payableTotal = isProjectedSplitNight ? payableBeforeProjection : alreadyProjected
     ? Math.max(payableBeforeProjection, reconstructedPayableTotal)
     : reconstructedPayableTotal;
-  const payablePerNight = alreadyProjected
+  const payablePerNight = isProjectedSplitNight ? payableBeforeProjection : alreadyProjected
     ? Math.max(
         positive(option?.pricePerNight, option?.price, payableTotal),
         reconstructedPayablePerNight,

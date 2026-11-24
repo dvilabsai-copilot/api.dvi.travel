@@ -2,6 +2,7 @@ import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealText,
 } from '../../hotels/hotel-rate-plans';
+import type { TboStayBatch, TboStayMealSupplement } from '../../hotels/utils/tbo-multi-batch-stay.util';
 
 export type TboMapFallbackConfig = {
   enabled: boolean;
@@ -359,3 +360,59 @@ export function applyMapDinnerFallbackToRows<T extends Record<string, any>>(
 
 /** Backwards-compatible export for existing TBO call sites. */
 export const applyTboMapFallbackToRows = applyMapDinnerFallbackToRows;
+
+export function getTboStayMealSupplement(
+  offer: { tboRoomBatches: TboStayBatch[]; rating?: unknown; category?: unknown },
+  target: string,
+  config: TboMapFallbackConfig,
+): TboStayMealSupplement | undefined {
+  const batches = offer.tboRoomBatches;
+  const first = batches[0];
+  if (!config.enabled || !first || first.currency.toUpperCase() !== 'INR' ||
+      (target !== 'CP' && target !== 'MAP')) return;
+  const occupancies = batches.flatMap(batch => batch.occupancies || []);
+  const roomCount = batches.reduce((count, batch) => count + batch.roomCount, 0);
+  if (occupancies.length !== roomCount || !roomCount) return;
+  const result = createFallbackOption({
+    provider: 'tbo', mealPlan: first.mealPlan, rating: offer.rating, category: offer.category,
+    totalFare: batches.reduce((sum, batch) => sum + batch.supplierTotalFare, 0),
+  }, {
+    preferredMealPlanCode: target,
+    adultCount: occupancies.reduce((sum, room) => sum + room.adults, 0),
+    childCount: occupancies.reduce((sum, room) => sum + room.children, 0),
+    roomCount, numberOfNights: 1,
+  }, config);
+  if (!result || (first.mealPlan === 'EP' && !(result.tboMapFallbackBreakfastRate > 0)) ||
+      (target === 'MAP' && !(result.tboMapFallbackDinnerRate > 0))) return;
+  return {
+    mealPlan: target,
+    breakfastRate: result.tboMapFallbackBreakfastRate,
+    breakfastPerNight: result.tboMapFallbackBreakfastPerNight,
+    dinnerRate: result.tboMapFallbackDinnerRate,
+    dinnerPerNight: result.tboMapFallbackDinnerComponentPerNight,
+  };
+}
+
+/** Use the existing snapshot fields so itinerary prices and meal labels reload together. */
+export function tboStayMealNightFields(supplierMealPlan: string, supplement?: TboStayMealSupplement) {
+  if (!supplement) return {};
+  const { mealPlan, breakfastRate, breakfastPerNight, dinnerRate, dinnerPerNight } = supplement;
+  const total = money(breakfastPerNight + dinnerPerNight);
+  return {
+    tboMapFallbackApplied: true as const,
+    tboMapFallbackSourceMealPlan: supplierMealPlan,
+    tboMapFallbackTargetMealPlan: mealPlan,
+    tboMapFallbackBreakfastRate: breakfastRate,
+    tboMapFallbackBreakfastPerPerson: breakfastRate,
+    tboMapFallbackBreakfastPerNight: breakfastPerNight,
+    tboMapFallbackBreakfastTotal: breakfastPerNight,
+    tboMapFallbackDinnerRate: dinnerRate,
+    tboMapFallbackDinnerPerPerson: dinnerRate,
+    tboMapFallbackDinnerComponentPerNight: dinnerPerNight,
+    tboMapFallbackDinnerComponentTotal: dinnerPerNight,
+    tboMapFallbackDinnerPerNight: total,
+    tboMapFallbackDinnerTotal: total,
+    hotelMealPlanCost: total,
+    totalHotelMealPlanCost: total,
+  };
+}

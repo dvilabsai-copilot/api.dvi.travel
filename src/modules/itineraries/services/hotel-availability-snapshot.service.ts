@@ -61,13 +61,14 @@ import {
 import {
   applyMapDinnerFallbackToRows,
   filterEpRows,
+  getTboStayMealSupplement,
   type TboMapFallbackConfig,
 } from '../utils/tbo-map-fallback.util';
 import { hotelStayNights, hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { buildHotelCardQuote } from '../utils/hotel-card-quote.util';
-import { getTboBatchSearchTotal } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { getTboBatchSearchTotal, priceTboMultiBatchStay } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { allocateTboRouteNightPricing } from '../../hotels/utils/tbo-room-night-pricing';
 import {
   resolveHotelSupplementPricing,
@@ -2875,6 +2876,8 @@ export class HotelAvailabilitySnapshotService {
         }) : [];
     const margins = new Map<number, number>(masters.map((hotel: any) => [Number(hotel.hotel_id), Number(hotel.hotel_margin)]));
     const rooms = Math.max(Number(plan?.preferred_room_count || 1), 1);
+    const batchMealConfig = rows.some(row => getTboBatchSearchTotal(row, rooms) !== null)
+      ? await this.getMapDinnerFallbackConfig() : null;
     return rows.map(row => {
       const margin = Number(margins.get(this.persistedHotelId(row)) || row.hotelMarginPercentage || fallbackMargin || 0);
       const quote = (option: any) => buildHotelCardQuote({
@@ -2889,14 +2892,30 @@ export class HotelAvailabilitySnapshotService {
         date: row.date || row.itineraryRouteDate || row.checkInDate,
       }, Number(margins.get(this.persistedHotelId(row)) || option.hotelMarginPercentage || margin), rooms);
       const supplierFare = getTboBatchSearchTotal(row, rooms);
+      const currency = String(row.currency || row.tboRoomBatches?.[0]?.currency || 'INR').toUpperCase();
+      const batchMargin = Math.max(Number(fallbackMargin || 0), 0);
+      const dates = Number((Date.parse(row.checkOutDate) - Date.parse(row.checkInDate)) / 86400000);
+      const stayNights = Number.isInteger(dates) && dates > 0 ? dates : 1;
+      const batchMealPlanQuotes = supplierFare !== null && batchMealConfig
+        ? Array.from(new Set([String(row.tboRoomBatches[0].mealPlan).toUpperCase(), 'CP', 'MAP'])).flatMap(mealPlan => {
+          const supplierMealPlan = String(row.tboRoomBatches[0].mealPlan).toUpperCase();
+          const supplement = mealPlan === supplierMealPlan ? undefined : getTboStayMealSupplement(row, mealPlan, batchMealConfig);
+          if (mealPlan !== supplierMealPlan && !supplement) return [];
+          const totals = priceTboMultiBatchStay({
+            supplierTotalFare: supplierFare, routeIds: Array.from({ length: stayNights }, (_, index) => index),
+            dviMealSupplement: supplement,
+          }, batchMargin);
+          return [{ mealPlan, amount: totals.totalPrice, currency, dviMealSupplement: totals.mealCostPerNight * stayNights }];
+        })
+        : undefined;
       return {
         ...row, cardQuote: quote(row),
         ...(supplierFare === null ? {} : {
-          // A supplier EP choice is room-only even when DVI quotes breakfast separately.
           batchSupplierQuote: {
-            amount: Math.round(supplierFare * (100 + Math.max(0, margin))) / 100,
-            currency: String(row.currency || row.tboRoomBatches[0].currency || 'INR').toUpperCase(),
+            amount: Math.round(supplierFare * (100 + batchMargin)) / 100,
+            currency,
           },
+          batchMealPlanQuotes,
         }),
         ...(Array.isArray(row.rateOptions) ? {
           rateOptions: row.rateOptions.map((option: any) => ({ ...option, cardQuote: quote(option) })),
@@ -5882,7 +5901,7 @@ export class HotelAvailabilitySnapshotService {
   }
 
   private async getMapDinnerFallbackConfig(): Promise<TboMapFallbackConfig> {
-    const row = await (this.prisma as any).dvi_global_settings.findFirst({
+    const row = await (this.prisma as any).dvi_global_settings?.findFirst?.({
       where: { deleted: 0, status: 1 },
       orderBy: { global_settings_ID: 'asc' },
       select: {

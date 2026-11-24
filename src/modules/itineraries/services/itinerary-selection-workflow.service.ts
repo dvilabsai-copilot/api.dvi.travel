@@ -601,10 +601,11 @@ export class ItinerarySelectionWorkflowService {
     const suppliedMarginAmount = Math.max(Number(
       data.hotelMarginStayAmount ?? data.hotelMarginTotalAmount ?? data.hotelMarginAmount ?? 0,
     ), 0);
+    const isSplitStay = providerForPricing === 'tbo' && data.tboMultiBatchStay?.schemaVersion === 1;
     let hotelMarginBaseAmount = providerForPricing === 'axisrooms' && axisRoomsBasePrice > 0
       ? Number((axisRoomsBasePrice + extraBedAmount + childWithBedAmount + childWithoutBedAmount).toFixed(2))
       : Number((authoritativeBaseTotal + (tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0)).toFixed(2));
-    let hotelMarginRate = axisRoomsMealRooms
+    let hotelMarginRate = axisRoomsMealRooms || isSplitStay
       ? suppliedMarginAmount
       : providerForPricing === 'axisrooms'
       ? hotelMarginBaseAmount > 0
@@ -764,10 +765,10 @@ export class ItinerarySelectionWorkflowService {
           // snapshot. Clear the legacy meal columns when a later selection is
           // a genuine supplier MAP/CP rate, otherwise an old fallback dinner
           // amount survives the hotel change and appears in Overall Cost.
-          hotel_breakfast_cost: 0,
+          hotel_breakfast_cost: isSplitStay ? tboMapFallbackBreakfastTotal : 0,
           hotel_lunch_cost: tboMapFallbackTargetMealPlan === 'AP' ? tboMapFallbackLunchTotal : 0,
           hotel_dinner_cost: tboMapFallbackApplied
-            ? (tboMapFallbackDinnerComponentTotal || tboMapFallbackDinnerTotal)
+            ? (isSplitStay ? tboMapFallbackDinnerComponentTotal : tboMapFallbackDinnerComponentTotal || tboMapFallbackDinnerTotal)
             : 0,
           total_hotel_meal_plan_cost: tboMapFallbackApplied ? tboMapFallbackDinnerTotal : 0,
           total_hotel_meal_plan_cost_gst_amount: 0,

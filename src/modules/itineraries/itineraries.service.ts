@@ -67,6 +67,7 @@ import { latestAxisRoomsOccupancyValues } from './utils/axisrooms-occupancy-rate
 import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
 import { allocateTboRouteNightPricing } from '../hotels/utils/tbo-room-night-pricing';
 import { assertTboMultiBatchStay, makeTboMultiBatchStay, priceTboMultiBatchStay, TboMultiBatchStaySnapshot } from '../hotels/utils/tbo-multi-batch-stay.util';
+import { getTboStayMealSupplement, tboStayMealNightFields } from './utils/tbo-map-fallback.util';
 import { isTboBatchBooking, validateTboCompleteBatchGroups } from '../hotels/utils/tbo-complete-batch-validation.util';
 import {
   buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper,
@@ -2283,16 +2284,37 @@ timingStepStartedAt =
       checkInDate: String(stay.checkInDate), checkOutDate: String(stay.checkOutDate),
     });
     const normalized = (value: unknown) => String(value ?? '').trim().toLowerCase();
+    const mealCode = (value: string) => inferCanonicalHotelRatePlanCode(value) ||
+      inferCanonicalHotelRatePlanCodeFromMealText(value) || value.toUpperCase();
     const requestedRoom = String(data.roomType || '').trim();
-    const requestedMeal = String(data.mealPlanCode || data.mealPlan || '').trim();
+    const preferredMeal = plan.meal_plan_code || (
+      Number(plan.meal_plan_breakfast || 0) || Number(plan.meal_plan_lunch || 0) || Number(plan.meal_plan_dinner || 0)
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+          Number(plan.meal_plan_breakfast || 0), Number(plan.meal_plan_lunch || 0), Number(plan.meal_plan_dinner || 0),
+        )
+        : ''
+    );
+    const requestedMeal = mealCode(String(data.mealPlanCode || data.mealPlan || preferredMeal || '').trim());
     const offers = supplierRows.filter((offer: any) =>
       String(offer.hotelCode || '').trim() === hotelCode &&
       Array.isArray(offer.tboRoomBatches) && offer.tboRoomBatches.length === Math.ceil(roomCount / 6) &&
       // HOTEL intent does not permit silently switching the clicked room type.
-      (!requestedRoom || normalized(offer.roomType) === normalized(requestedRoom)) &&
-      (!requestedMeal || normalized(offer.mealPlan) === normalized(requestedMeal))
+      (!requestedRoom || normalized(offer.roomType) === normalized(requestedRoom))
     ).sort((a: any, b: any) => Number(a.totalFare || 0) - Number(b.totalFare || 0));
-    if (!offers.length) {
+    let offer: any = offers.find((candidate: any) => !requestedMeal || mealCode(String(candidate.mealPlan || '')) === requestedMeal);
+    let dviMealSupplement;
+    if (!offer && offers.length && ['CP', 'MAP'].includes(requestedMeal)) {
+      const config = await this.hotelDetailsTboService.getTboMapFallbackConfig();
+      for (const candidate of offers) {
+        const supplement = getTboStayMealSupplement(candidate as any, requestedMeal, config);
+        if (supplement && (!dviMealSupplement ||
+            (candidate.mealPlan === 'CP' && offer.mealPlan === 'EP'))) {
+          offer = candidate;
+          dviMealSupplement = supplement;
+        }
+      }
+    }
+    if (!offer) {
       // Diagnostics intentionally exclude sensitive genuine supplier BookingCodes.
       const visibleSupplierOffers = supplierRows
         .filter((row: any) => String(row.hotelCode || '').trim() === hotelCode)
@@ -2314,14 +2336,11 @@ timingStepStartedAt =
       throw new ConflictException({
         code: 'TBO_MULTI_BATCH_SUPPLIER_MATCH_MISSING',
         message: mealMismatch
-          ? `The selected ${requestedMeal} meal plan was not returned by the live supplier. ` +
-            `Supplier meal plans: ${supplierMeals.join(', ')}. Room-only (EP) does not include breakfast. ` +
-            'Refresh and choose a genuine supplier rate; no hotel was selected.'
+          ? `The selected ${requestedMeal} meal plan is unavailable for all rooms. Supplier meal plans: ${supplierMeals.join(', ')}.`
           : 'All requested rooms must have compatible live supplier search offers in one hotel for the complete stay. Refresh hotel availability.',
         hotelCode, routeIds,
       });
     }
-    const offer: any = offers[0];
     const batches = offer.tboRoomBatches.map((batch: any) => ({
       batchIndex: Number(batch.batchIndex),
       startRoomIndex: Number(batch.startRoomIndex),
@@ -2345,7 +2364,7 @@ timingStepStartedAt =
         anchorRouteId: routeIds[0], routeIds,
         checkInDate: String(stay.checkInDate).slice(0, 10),
         checkOutDate: String(stay.checkOutDate).slice(0, 10),
-        roomCount, batches,
+        roomCount, batches, ...(dviMealSupplement ? { dviMealSupplement } : {}),
       });
     } catch (error) {
       throw new ConflictException({
@@ -2361,8 +2380,9 @@ timingStepStartedAt =
     });
     const margin = Math.max(Number(settings?.hotel_margin ?? process.env.HOTEL_MARGIN ?? 0), 0);
     if (!Number.isFinite(margin)) throw new BadRequestException('Hotel margin is invalid.');
-    const { baseByNight: supplierNights, payableByNight: payableNights, totalPrice: fullPayable } =
+    const { baseByNight: supplierNights, payableByNight: payableNights, marginByNight, totalPrice: fullPayable } =
       priceTboMultiBatchStay(multiStay, margin);
+    const mealNightFields = tboStayMealNightFields(multiStay.mealPlan, dviMealSupplement);
     const expectedFare = data.expectedBatchFare;
     if (expectedFare != null && data.previewOnly !== true) {
       const previousAmount = expectedFare.amount;
@@ -2378,6 +2398,8 @@ timingStepStartedAt =
           previousAmount,
           amount: fullPayable,
           currency: multiStay.currency,
+          mealPlan: dviMealSupplement?.mealPlan || multiStay.mealPlan,
+          mealSupplement: (mealNightFields.hotelMealPlanCost || 0) * routeIds.length,
         });
       }
     }
@@ -2385,14 +2407,18 @@ timingStepStartedAt =
     const selections = routeIds.map((routeId: number, index: number) => {
       const baseTotalPrice = supplierNights[index];
       const totalPrice = payableNights[index];
-      const hotelMarginAmount = Math.round((totalPrice - baseTotalPrice) * 100) / 100;
+      const hotelMarginAmount = marginByNight[index];
       const routeDate = String(stay.stayDates?.[index] || '').slice(0, 10);
       return {
         planId, routeId, routeDate, groupType, selectionIntent: 'HOTEL' as const,
         hotelId: canonicalHotelId || null, canonicalHotelId: canonicalHotelId || null,
         hotelCode, providerHotelCode: hotelCode, provider: 'tbo',
         hotelName: String(offer.hotelName || data.hotelName || hotelCode),
-        roomType: multiStay.roomType, mealPlanCode: multiStay.mealPlan,
+        roomType: multiStay.roomType,
+        mealPlan: dviMealSupplement?.mealPlan || multiStay.mealPlan,
+        mealPlanCode: dviMealSupplement?.mealPlan || multiStay.mealPlan,
+        supplierMealPlan: multiStay.mealPlan,
+        ...mealNightFields,
         isRefundable: multiStay.isRefundable, roomTypeId: Number(offer.roomTypeId || 1),
         currency: multiStay.currency, roomCount,
         totalPrice, pricePerNight: totalPrice,
@@ -2596,11 +2622,10 @@ timingStepStartedAt =
     // strict meal-plan behavior.
     const ignoreTboMealType = provider === 'tbo' &&
       String(process.env.IGNORE_TBO_MEALTYPE || '').trim().toLowerCase() === 'true';
-    // MAP is a commercial itinerary requirement, not a supplier-label hint.
-    // Even when the legacy TBO compatibility switch is enabled, a requested
-    // MAP must resolve to the real MAP row or the synthetic CP+ dinner row.
-    // Otherwise the cheapest CP row can leak into manual hotel selection.
-    const ignoreTboMealTypeForSelection = ignoreTboMealType && requestedMealPlan !== 'MAP';
+    // A requested CP/MAP or explicit meal change must match the commercial
+    // plan. The legacy compatibility flag must not let a cheaper EP win.
+    const ignoreTboMealTypeForSelection = ignoreTboMealType && !['CP', 'MAP'].includes(requestedMealPlan || '') &&
+      !(intent === 'MEAL_PLAN' && requestedMealPlan);
     const referencedMealPlan = mealPlanFromReference(
       data.rateOptionId,
       data.optionKey,
@@ -2781,6 +2806,7 @@ timingStepStartedAt =
           hotelCode,
           checkInDate: stay.checkInDate,
           checkOutDate: stay.checkOutDate,
+          ...(provider === 'tbo' && requestedMealPlan ? { requestedMealPlanCode: requestedMealPlan } : {}),
         });
         const continuousMatch = provider === 'axisrooms' || provider === 'staah'
           ? continuousHotels.length > 0
@@ -2881,7 +2907,9 @@ timingStepStartedAt =
         let refreshed: any;
         try {
           refreshed = await Promise.race([
-            this.hotelDetailsTboService.getSelectedHotelRates(quoteId, routeId, provider, hotelCode, groupType),
+            this.hotelDetailsTboService.getSelectedHotelRates(
+              quoteId, routeId, provider, hotelCode, groupType, provider === 'tbo' ? requestedMealPlan || undefined : undefined,
+            ),
             new Promise<never>((_, reject) => setTimeout(() => reject(new Error('supplier refresh timeout')), refreshTimeoutMs)),
           ]);
         } catch (error) {
