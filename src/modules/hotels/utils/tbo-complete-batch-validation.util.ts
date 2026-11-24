@@ -1,3 +1,5 @@
+import { tboBatchMealPlan } from './tbo-batch-hotel-matching.util';
+
 /**
  * Validate complete room coverage across TBO supplier requests before PreBook
  * or Book. This is a structural check, not a supplier availability guarantee.
@@ -71,10 +73,14 @@ export function validateTboCompleteBatchGroups(
       return `TBO ${planRoomCount}-room stay needs ${expectedBatchCount} supplier batches; received ${group.length}.`;
     }
     const byIndex = [...group].sort((a, b) => Number(a.batchIndex) - Number(b.batchIndex));
-    // A mixed room/rate/refund policy is not an ordinary one-off booking.
-    // Optional metadata is checked when it exists but its absence is NOT
-    // evidence that the supplier has validated rate compatibility.
-    for (const field of ['roomType', 'mealPlan', 'currency', 'isRefundable'] as const) {
+    // Each code identifies its own room. EP/CP combinations remain
+    // convertible to one meal plan and currency and refund terms must agree.
+    const mealPlans = group.map(item => (item as TboCompleteBatchSelection & { mealPlan?: string }).mealPlan);
+    if (mealPlans.some(meal => meal != null) &&
+        !tboBatchMealPlan(mealPlans.map(meal => ({ mealPlan: meal ?? '' })))) {
+      return 'TBO supplier batches have incompatible mealPlan values.';
+    }
+    for (const field of ['currency', 'isRefundable'] as const) {
       const values = group.map((item) => (item as TboCompleteBatchSelection & Record<string, unknown>)[field]);
       if (values.some((value) => value !== undefined && value !== null)) {
         const first = values[0];

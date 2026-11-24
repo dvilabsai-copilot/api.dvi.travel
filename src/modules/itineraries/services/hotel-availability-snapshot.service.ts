@@ -69,7 +69,7 @@ import { hotelStayNights, hotelStayTotal } from '../utils/hotel-stay-pricing.uti
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { buildHotelCardQuote } from '../utils/hotel-card-quote.util';
-import { assertTboMultiBatchStay, getTboBatchSearchTotal, isFreshTboMultiBatchStay, priceTboMultiBatchStay } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { assertTboMultiBatchStay, describeTboBatchRoomPrices, getTboBatchSearchTotal, isFreshTboMultiBatchStay, priceTboMultiBatchStay } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { allocateTboRouteNightPricing } from '../../hotels/utils/tbo-room-night-pricing';
 import {
   resolveHotelSupplementPricing,
@@ -5402,6 +5402,11 @@ export class HotelAvailabilitySnapshotService {
       const next = hotelDisplaySnapshot(pricedReplacement);
       if (replacesOneFullStayRow) {
         next.totalPrice = priceTboMultiBatchStay(splitStay, Number(pricedReplacement.hotelMarginPercentage || 0)).totalPrice;
+      }
+      if (splitStay && new Set(splitStay.batches.map(batch => batch.roomType)).size > 1) {
+        const nightIndex = replacesOneFullStayRow ? undefined : splitStay.routeIds.indexOf(Number(selection.itinerary_route_id));
+        next.roomBatchPrices = describeTboBatchRoomPrices(splitStay, Number(pricedReplacement.hotelMarginPercentage || 0), nightIndex);
+        next.roomBatchPriceNights = replacesOneFullStayRow ? splitStay.routeIds.length : 1;
       }
       // Any non-exact match means the old persisted rate is unavailable,
       // even when the same property has another fresh room/meal rate. The

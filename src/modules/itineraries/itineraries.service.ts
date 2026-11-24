@@ -66,7 +66,7 @@ import { resolveHotelOccupancyPricing, resolveOfflineHotelPayablePricing } from 
 import { latestAxisRoomsOccupancyValues } from './utils/axisrooms-occupancy-rate.util';
 import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
 import { allocateTboRouteNightPricing } from '../hotels/utils/tbo-room-night-pricing';
-import { assertTboMultiBatchStay, makeTboMultiBatchStay, priceTboMultiBatchStay, TboMultiBatchStaySnapshot } from '../hotels/utils/tbo-multi-batch-stay.util';
+import { assertTboMultiBatchStay, describeTboBatchRoomPrices, makeTboMultiBatchStay, priceTboMultiBatchStay, TboMultiBatchStaySnapshot } from '../hotels/utils/tbo-multi-batch-stay.util';
 import { getTboStayMealSupplement, tboStayMealNightFields } from './utils/tbo-map-fallback.util';
 import { isTboBatchBooking, validateTboCompleteBatchGroups } from '../hotels/utils/tbo-complete-batch-validation.util';
 import {
@@ -2301,7 +2301,8 @@ timingStepStartedAt =
       // HOTEL intent does not permit silently switching the clicked room type.
       (!requestedRoom || normalized(offer.roomType) === normalized(requestedRoom))
     ).sort((a: any, b: any) => Number(a.totalFare || 0) - Number(b.totalFare || 0));
-    let offer: any = offers.find((candidate: any) => !requestedMeal || mealCode(String(candidate.mealPlan || '')) === requestedMeal);
+    let offer: any = offers.find((candidate: any) => (!requestedMeal || mealCode(String(candidate.mealPlan || '')) === requestedMeal) &&
+      candidate.tboRoomBatches.every((batch: any) => batch.mealPlan === candidate.mealPlan));
     let dviMealSupplement;
     if (!offer && offers.length && ['CP', 'MAP'].includes(requestedMeal)) {
       const config = await this.hotelDetailsTboService.getTboMapFallbackConfig();
@@ -2383,6 +2384,9 @@ timingStepStartedAt =
     const { baseByNight: supplierNights, payableByNight: payableNights, marginByNight, totalPrice: fullPayable } =
       priceTboMultiBatchStay(multiStay, margin);
     const mealNightFields = tboStayMealNightFields(multiStay.mealPlan, dviMealSupplement);
+    const roomBatchPrices = batches.some(batch => batch.roomType !== multiStay.roomType)
+      ? describeTboBatchRoomPrices(multiStay, margin)
+      : undefined;
     const expectedFare = data.expectedBatchFare;
     if (expectedFare != null && data.previewOnly !== true) {
       const previousAmount = expectedFare.amount;
@@ -2400,6 +2404,7 @@ timingStepStartedAt =
           currency: multiStay.currency,
           mealPlan: dviMealSupplement?.mealPlan || multiStay.mealPlan,
           mealSupplement: (mealNightFields.hotelMealPlanCost || 0) * routeIds.length,
+          roomBatchPrices,
         });
       }
     }
@@ -2441,6 +2446,7 @@ timingStepStartedAt =
       logicalStay: stay, affectedRouteIds: routeIds,
       selections, hotelDetails: selections,
       totals: { totalPrice: fullPayable },
+      roomBatchPrices,
       supplierState: 'SEARCH_MATCH_NOT_PREBOOKED',
     };
     if (data.previewOnly === true) return preview;
@@ -5412,7 +5418,7 @@ async confirmQuotation(dto: ConfirmQuotationDto, actorId?: number) {
         const batch = stay.batches.find((item) => item.batchIndex === booking.batchIndex);
         if (!batch || stay.anchorRouteId !== booking.routeId || stay.hotelCode !== booking.hotelCode ||
             stay.checkInDate !== booking.checkInDate || stay.checkOutDate !== booking.checkOutDate ||
-            stay.roomType !== booking.roomType || stay.mealPlan !== booking.mealPlan || booking.multiNightBooking === true ||
+            batch.roomType !== booking.roomType || batch.mealPlan !== booking.mealPlan || booking.multiNightBooking === true ||
             !Array.isArray(booking.routeIds) || stay.routeIds.join(',') !== booking.routeIds.join(',') ||
             batch.startRoomIndex !== booking.startRoomIndex || batch.roomCount !== booking.numberOfRooms ||
             batch.bookingCode !== booking.bookingCode || occupancyKey(batch.occupancies) !== occupancyKey(booking.occupancies)) {
@@ -5630,7 +5636,10 @@ async confirmQuotation(dto: ConfirmQuotationDto, actorId?: number) {
         hotelCode: rate.hotelCode,
         checkInDate: rate.checkInDate,
         checkOutDate: rate.checkOutDate,
-        vsrConfirmationRefresh: { guestNationality: rate.guestNationality },
+        vsrConfirmationRefresh: {
+          guestNationality: rate.guestNationality,
+          ...(stay ? { batches: stay.batches.map(({ roomType, mealPlan }) => ({ roomType, mealPlan })) } : {}),
+        },
       }).catch(() => { throw unverified(); });
       const key = stay && JSON.stringify([stay.anchorRouteId, stay.checkInDate, stay.checkOutDate]);
       const search = (key && refreshByStay.get(key)) || refresh();
@@ -5643,8 +5652,8 @@ async confirmQuotation(dto: ConfirmQuotationDto, actorId?: number) {
           .filter((batch) => previous &&
             batch.batchIndex === previous.batchIndex && batch.startRoomIndex === previous.startRoomIndex &&
             batch.roomCount === previous.roomCount && batch.hotelCode === stay.hotelCode &&
-            normalizeRoom(batch.roomType) === normalizeRoom(stay.roomType) &&
-            normalizeMeal(batch.mealPlan) === normalizeMeal(stay.mealPlan) && batch.currency === stay.currency &&
+            normalizeRoom(batch.roomType) === normalizeRoom(previous.roomType) &&
+            normalizeMeal(batch.mealPlan) === normalizeMeal(previous.mealPlan) && batch.currency === stay.currency &&
             batch.isRefundable === stay.isRefundable && batch.bookingCode.includes('!TB!') &&
             batch.occupancies.every((occ, index) => {
               const savedRoom = previous.occupancies[index];

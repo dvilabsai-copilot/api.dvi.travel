@@ -3603,17 +3603,18 @@ test('refresh replaces a persisted AUTO_SELECTED offline row when live exists fo
   assert.equal(selections[0].hotel_id, 988);
 });
 
-function splitRecommendations() {
+function splitRecommendations(mixed = false) {
   const hotelCode = '1141249';
   const roomType = 'Executive Room';
   const stay = { parentRouteId: 10, routeIds: [10, 11], checkInDate: '2026-07-28', checkOutDate: '2026-07-30' };
   const option = prepareTboBatchRecommendation({
-    provider: 'tbo', hotelCode, hotelId: 988, hotelName: 'Metro Plaza', roomType,
+    provider: 'tbo', hotelCode, hotelId: 988, hotelName: 'Metro Plaza',
+    roomType: mixed ? roomType + ' + Deluxe Twin' : roomType,
     mealPlan: 'CP', currency: 'INR', roomCount: 8,
     checkInDate: stay.checkInDate, checkOutDate: stay.checkOutDate,
     supplierSearchCompletedAt: new Date().toISOString(), isSelectable: false,
     tboRoomBatches: [6, 2].map((roomCount, batchIndex) => ({
-      hotelCode, roomType, mealPlan: 'EP', currency: 'INR', isRefundable: false,
+      hotelCode, roomType: mixed && batchIndex === 1 ? 'Deluxe Twin' : roomType, mealPlan: 'EP', currency: 'INR', isRefundable: false,
       batchIndex, startRoomIndex: batchIndex * 6, roomCount, bookingCode: hotelCode + '!TB!test' + batchIndex,
       supplierNetAmount: roomCount * 900, supplierTotalFare: roomCount * 1000,
       occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0, childrenAges: [] })),
@@ -3639,7 +3640,7 @@ test('auto-selection saves all split nights with the original batch codes and br
     selections.push(row);
     return row;
   };
-  const rows = splitRecommendations();
+  const rows = splitRecommendations(true);
   await (service as any).ensureAutoSelections(tx, 44, rows.slice(0, 1), 'partial', 7);
   assert.equal(selections.length, 0);
   await (service as any).ensureAutoSelections(tx, 44, rows, 'complete', 7);
@@ -3651,6 +3652,7 @@ test('auto-selection saves all split nights with the original batch codes and br
     assert.equal(row.hotel_dinner_cost, 0);
     assert.equal(snapshot.mealPlan, 'CP');
     assert.equal(snapshot.supplierMealPlan, 'EP');
+    assert.equal(snapshot.roomType, 'Executive Room + Deluxe Twin');
     assert.deepEqual(snapshot.tboMultiBatchStay.batches.map((batch: any) => batch.bookingCode),
       ['1141249!TB!test0', '1141249!TB!test1']);
   }
@@ -3671,7 +3673,7 @@ test('availability review proposes an online upgrade and saves both nights only 
     selections.push(row);
     return row;
   };
-  const rows = splitRecommendations();
+  const rows = splitRecommendations(true);
   const proposals = new Map();
   const reconcile = () => (service as any).reconcileSelections(tx, 44, rows, 'preview-6-plus-2', 7,
     false, undefined, 'CP', undefined, new Set(), [], true, proposals);
@@ -3679,6 +3681,11 @@ test('availability review proposes an online upgrade and saves both nights only 
   const originalSnapshot = offline.selected_price_snapshot;
   const review = await reconcile();
   assert.equal(review.changes[0].current.totalPrice, 21200);
+  assert.equal(review.changes[0].current.roomBatchPriceNights, 2);
+  assert.deepEqual(review.changes[0].current.roomBatchPrices, [
+    { batchIndex: 0, roomCount: 6, roomType: 'Executive Room', amount: 15900, currency: 'INR' },
+    { batchIndex: 1, roomCount: 2, roomType: 'Deluxe Twin', amount: 5300, currency: 'INR' },
+  ]);
   assert.equal(selections[0].selected_price_snapshot, originalSnapshot);
   assert.equal(selections[0].hotel_provider, 'offline');
 

@@ -2,8 +2,55 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ConflictException } from '@nestjs/common';
 import { ItinerariesService } from '../src/modules/itineraries/itineraries.service';
-import { makeTboMultiBatchStay, priceTboMultiBatchStay } from '../src/modules/hotels/utils/tbo-multi-batch-stay.util';
+import { describeTboBatchRoomPrices, makeTboMultiBatchStay, priceTboMultiBatchStay } from '../src/modules/hotels/utils/tbo-multi-batch-stay.util';
 import { projectHotelPayablePricing } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
+import { matchTboBatchHotels } from '../src/modules/hotels/utils/tbo-batch-hotel-matching.util';
+import { ItineraryHotelDetailsTboService } from '../src/modules/itineraries/itinerary-hotel-details-tbo.service';
+import { applyTboMapFallbackToRows, prepareTboBatchRecommendation } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
+
+test('same-hotel supplier batches can use different room types with compatible terms', () => {
+  const group = (batchIndex: number, roomCount: number, roomType: string, isRefundable = true, mealPlan = 'CP') => ({
+    batch: {
+      batchIndex, startRoomIndex: batchIndex * 6, roomCount, guestCount: roomCount * 2,
+      occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+    },
+    hotels: [{
+      hotelCode: '6437125', roomType, price: roomCount * 1000, searchReference: '6437125!TB!rate' + batchIndex,
+      mealPlan, currency: 'INR', isRefundable, isLiveBookable: true,
+      supplierSearchCompletedAt: new Date().toISOString(),
+    } as any],
+  });
+  const six = group(0, 6, 'Superior Twin');
+  const two = group(1, 2, 'Deluxe Twin');
+  const matches = matchTboBatchHotels([six, two]);
+  const details = Object.create(ItineraryHotelDetailsTboService.prototype);
+  const [preview] = details.toTboMultiBatchPreviewRows(matches, 8);
+  assert.equal(preview.roomType, 'Superior Twin + Deluxe Twin');
+  assert.deepEqual(preview.tboRoomBatches.map(batch => [batch.roomType, batch.bookingCode]), [
+    ['Superior Twin', '6437125!TB!rate0'], ['Deluxe Twin', '6437125!TB!rate1'],
+  ]);
+  assert.equal(matchTboBatchHotels([six, group(1, 2, 'Deluxe Twin', false)]).length, 0);
+  assert.equal(matchTboBatchHotels([six, { ...two, hotels: [] }]).length, 0);
+  assert.deepEqual(matchTboBatchHotels([six, group(1, 2, 'Superior Twin')]).map(match => match.roomType), ['Superior Twin']);
+  const mixedMeals = matchTboBatchHotels([six, group(1, 2, 'Deluxe Twin', true, 'EP')]);
+  const [mixedOffer] = details.toTboMultiBatchPreviewRows(mixedMeals, 8);
+  const dates = { checkInDate: '2026-11-26', checkOutDate: '2026-11-28' };
+  const config = { enabled: true, breakfastRate: 400 } as any;
+  const [cpOffer] = applyTboMapFallbackToRows([{ ...mixedOffer, ...dates, provider: 'tbo' }], {
+    preferredMealPlanCode: 'CP', adultCount: 16, childCount: 0, roomCount: 8, numberOfNights: 2,
+  }, config);
+  const recommendation = prepareTboBatchRecommendation(cpOffer,
+    { ...dates, parentRouteId: 10, routeIds: [10, 11] }, {
+      config, roomCount: 8, margin: 5,
+    });
+  const snapshot = recommendation?.tboMultiBatchStay;
+  assert.ok(snapshot);
+  assert.deepEqual(snapshot.batches.map(batch => batch.mealPlan), ['CP', 'EP']);
+  assert.equal(snapshot.dviMealSupplement?.breakfastPerNight, 1600);
+  assert.deepEqual(describeTboBatchRoomPrices(snapshot, 5).map(batch => batch.amount), [6300, 5300]);
+  assert.equal(recommendation.totalPrice, 11600);
+  assert.equal(matchTboBatchHotels([six, group(1, 2, 'Deluxe Twin', true, 'MAP')]).length, 0);
+});
 
 test('a changed 6+2 card fare needs approval before either the existing hotel or holds change', async () => {
   const writes: any[] = [];

@@ -61,7 +61,7 @@ export class HotelSearchService {
     ]);
   }
 
-  async searchBookableTboRoomBatches(criteria: HotelSearchDTO) {
+  async searchBookableTboRoomBatches(criteria: HotelSearchDTO, savedBatches?: readonly { roomType: string; mealPlan: string }[]) {
     const roomCount = Number(criteria.roomCount);
     const occupancies = criteria.occupancies;
 
@@ -115,7 +115,16 @@ export class HotelSearchService {
       criteria.preferences,
     );
 
-    return matchTboBatchHotels(supplierBatches);
+    return matchTboBatchHotels(savedBatches
+      ? supplierBatches.map(entry => {
+          const saved = savedBatches[entry.batch.batchIndex];
+          return {
+            ...entry,
+            hotels: entry.hotels.filter(hotel => String(hotel.roomType || '').trim() === saved?.roomType &&
+              String(hotel.mealPlan || '').trim() === saved?.mealPlan),
+          };
+        })
+      : supplierBatches);
   }
 
   private isAxisOnlyFetchEnabled(): boolean {

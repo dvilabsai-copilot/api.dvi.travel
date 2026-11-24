@@ -41,7 +41,17 @@ const makeDto = () => ({
 const passthrough = <T,>(rows: T[]) => rows;
 const emptyModel = { findMany: async () => [] };
 
-function makeFixture() {
+function makeFixture(roomTypes?: string[]) {
+  const selectedBatches = batches.map((batch, index) => ({
+    ...batch, roomType: roomTypes?.[index] || batch.roomType, mealPlan: roomTypes && index === 1 ? 'EP' : batch.mealPlan,
+  }));
+  const selectedStay = {
+    ...stay, batches: selectedBatches, roomType: [...new Set(selectedBatches.map(batch => batch.roomType))].join(' + '),
+    ...(roomTypes ? {
+      mealPlan: 'EP',
+      dviMealSupplement: { mealPlan: 'CP', breakfastRate: 400, breakfastPerNight: 800, dinnerRate: 0, dinnerPerNight: 0 },
+    } : {}),
+  };
   const calls: string[] = [];
   const stored: any[] = [];
   const attempts: any[] = [];
@@ -52,6 +62,7 @@ function makeFixture() {
   let currentDraft = {
     ...draft, itinerary_plan_hotel_details_ID: 5, group_type: 3, hotel_margin_percentage: 10,
     selected_total_price: 880,
+    selected_price_snapshot: JSON.stringify({ tboMultiBatchStay: selectedStay, roomType: selectedStay.roomType, mealPlan: 'CP' }),
   };
   const confirmedDrafts: any[] = [];
   const hotelModel = {
@@ -164,9 +175,10 @@ function makeFixture() {
     hotelBlockingService: { assertSplitVsrStayCanBook: async () => undefined },
     hotelDetailsTboService: {
       clearCacheForQuote: () => undefined,
-      searchSelectedHotelForContinuousStay: async () => {
+      searchSelectedHotelForContinuousStay: async (params: any) => {
         calls.push('search');
-        return [{ isBookable: false, tboRoomBatches: batches.map((batch) => ({
+        assert.deepEqual(params.vsrConfirmationRefresh.batches, selectedBatches.map(({ roomType, mealPlan }) => ({ roomType, mealPlan })));
+        return [{ isBookable: false, tboRoomBatches: selectedBatches.map((batch) => ({
           ...batch, bookingCode: 'refreshed!TB!' + batch.batchIndex,
         })) }];
       },
@@ -210,6 +222,22 @@ test('split VSR confirmation validates the whole saved stay and retries only the
   assert.deepEqual(fixture.stored.map((row) => [row.booking_code, row.number_of_rooms, row.net_amount]), [
     ['saved!TB!0', 6, 600], ['saved!TB!1', 2, 200],
   ]);
+});
+
+test('mixed VSR room types refresh and book with each batch’s own code', async () => {
+  const roomTypes = ['Superior Twin', 'Deluxe Twin'];
+  const fixture = makeFixture(roomTypes);
+  const input = makeDto();
+  input.hotel_bookings.forEach((booking, index) => { booking.roomType = roomTypes[index]; });
+  input.hotel_bookings[1].mealPlan = 'EP';
+  const wrong = structuredClone(input);
+  wrong.hotel_bookings[1].roomType = roomTypes[0];
+  await assert.rejects(() => fixture.book(wrong), /submitted VSR batches do not match/);
+  assert.deepEqual(fixture.calls, []);
+  fixture.clearRejection();
+  assert.equal((await fixture.book(input)).success, true);
+  assert.deepEqual(fixture.calls, ['search', 'prebook 0', 'prebook 1', 'book 0', 'book 1', 'financials']);
+  assert.deepEqual(fixture.stored.map(row => row.booking_code), ['saved!TB!0', 'saved!TB!1']);
 });
 
 test('split VSR confirmation rejects incomplete rooms and changed fares before supplier Book', async () => {
