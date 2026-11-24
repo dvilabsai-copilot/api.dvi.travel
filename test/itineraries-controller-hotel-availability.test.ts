@@ -305,7 +305,13 @@ test('reconciliation check forwards the preview flag without applying changes', 
     searchAndPersist: async (...args: unknown[]) => {
       received = args;
       return {
-        response: { hotels: [], hotelTabs: [], hotelSelectionState: [] },
+        response: {
+          hotels: [], hotelTabs: [{ groupType: 2 }], hotelSelectionState: [],
+          hotelAvailability: {
+            inventorySearchRunId: 'test-run',
+            sharedHotelInventory: [{ routeId: 10, groupType: 0, hotelName: 'Fortune Plaza Hotel', provider: 'tbo' }],
+          },
+        },
         changeSummary: { hasChanges: true, totalChanges: 1, changes: [] },
         previewId: 'hotel-preview-test',
       };
@@ -326,6 +332,9 @@ test('reconciliation check forwards the preview flag without applying changes', 
   assert.equal(response.previewId, 'hotel-preview-test');
   assert.equal(response.changeSummary.hasChanges, true);
   assert.equal(response.hotelDetails.hotelAvailability.sharedHotelInventory, undefined);
+  assert.equal(response.hotelDetails.hotelAvailability.inventorySearchRunId, 'test-run');
+  assert.equal(response.hotelDetails.hotelIndex[0].hotelName, 'Fortune Plaza Hotel');
+  assert.equal(response.hotelDetails.routePagination['2-10'].total, 1);
   if (previousFlag === undefined) delete process.env.HOTEL_RECONCILE;
   else process.env.HOTEL_RECONCILE = previousFlag;
 });

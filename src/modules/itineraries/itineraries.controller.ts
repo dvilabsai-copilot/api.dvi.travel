@@ -1110,7 +1110,7 @@ if (!access.exists || !access.allowed) return this.denyItineraryAccess(access.re
       };
     };
 
-    const inventoryRows = includeInventory && Array.isArray(sharedHotelInventory)
+    const inventoryRows = (includeInventory || compactAvailability.inventorySearchRunId) && Array.isArray(sharedHotelInventory)
       ? sharedHotelInventory
       : [];
     const normalizedHotelIdentity = (row: any): string => {
