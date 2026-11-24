@@ -80,7 +80,7 @@ export class TboMasterHotelService {
     private readonly gallery: TboMasterGalleryService,
   ) {}
 
-  async exportBulk(query: { search?: string; cityCode?: string; priority?: string; region?: string } = {}) {
+  async exportBulk(query: { search?: string; cityCode?: string; priority?: string; region?: string; categoryId?: string } = {}) {
     const where = await this.buildListWhere(query);
     const [items, categories] = await Promise.all([
       this.prisma.tbo_hotel_master.findMany({ where, orderBy: { id: 'asc' } }),
@@ -275,13 +275,32 @@ export class TboMasterHotelService {
     return { success: true, updated: rows.length };
   }
 
-  private async buildListWhere(query: { search?: string; cityCode?: string; priority?: string; region?: string }) {
+  private async buildListWhere(query: { search?: string; cityCode?: string; priority?: string; region?: string; categoryId?: string }) {
     const search = String(query.search || '').trim();
     const cityCode = String(query.cityCode || '').trim();
     const priority = query.priority === undefined || query.priority === '' ? undefined : Number(query.priority) ? 1 : 0;
-    const region = String(query.region || '').trim().toLowerCase();
-    const filters: Record<string, unknown>[] = [];
-    const selectedStateNames = SOUTH_INDIAN_REGION_STATE_NAMES[region];
+  const region = String(query.region || '').trim().toLowerCase();
+const filters: Record<string, unknown>[] = [];
+
+if (query.categoryId !== undefined && query.categoryId !== '') {
+  const rawCategoryId = String(query.categoryId);
+  const selectedCategoryId = Number(rawCategoryId);
+
+  if (
+    !/^\d+$/.test(rawCategoryId) ||
+    !Number.isSafeInteger(selectedCategoryId) ||
+    selectedCategoryId < 0 ||
+    selectedCategoryId > 2147483647
+  ) {
+    throw new BadRequestException('Invalid hotel category');
+  }
+
+  filters.push({
+    hotel_category_id: selectedCategoryId,
+  });
+}
+
+const selectedStateNames = SOUTH_INDIAN_REGION_STATE_NAMES[region];
     if (selectedStateNames) {
       const states = await this.prisma.dvi_states.findMany({
         where: { deleted: 0, name: { in: selectedStateNames } },
@@ -322,7 +341,7 @@ export class TboMasterHotelService {
     return where;
   }
 
-  async list(query: { search?: string; cityCode?: string; page?: number; limit?: number; priority?: string; region?: string }) {
+  async list(query: { search?: string; cityCode?: string; page?: number; limit?: number; priority?: string; region?: string; categoryId?: string }) {
     const page = Math.max(1, Number(query.page || 1));
     const limit = Math.min(100, Math.max(1, Number(query.limit || 20)));
     const where = await this.buildListWhere(query);

@@ -16,13 +16,13 @@ export class TboMasterHotelController {
     private readonly gallery: TboMasterGalleryService,
   ) {}
 
-  @Get()
-  list(@Query() query: { search?: string; cityCode?: string; page?: string; limit?: string; priority?: string; region?: string }) {
-    return this.service.list({ ...query, page: Number(query.page || 1), limit: Number(query.limit || 20) });
-  }
+@Get()
+list(@Query() query: { search?: string; cityCode?: string; page?: string; limit?: string; priority?: string; region?: string; categoryId?: string }) {
+  return this.service.list({ ...query, page: Number(query.page || 1), limit: Number(query.limit || 20) });
+}
 
-  @Get('bulk/export')
-  async exportBulk(@Query() query: { search?: string; cityCode?: string; priority?: string }, @Res() res: Response) {
+@Get('bulk/export')
+async exportBulk(@Query() query: { search?: string; cityCode?: string; priority?: string; region?: string; categoryId?: string }, @Res() res: Response) {
     const result = await this.service.exportBulk(query);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
