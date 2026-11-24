@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HotelRecommendationPackageService, mapHotelCategoryLabelToStar, resolveHotelRecommendationAlgorithm } from '../src/modules/itineraries/services/hotel-recommendation-package.service';
 import { HotelMealPlanPolicyService } from '../src/modules/itineraries/services/hotel-meal-plan-policy.service';
+import { applyTboMapFallbackToRows } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
 import {
   getCanonicalMealPlanFlags,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
@@ -837,7 +838,7 @@ test('live inventory remains the first automatic selection over exact-category o
   assert.equal(packages[0].hotels[0].categoryFallbackApplied, true);
 });
 
-test('unused offline properties fill later groups after live properties are exhausted', () => {
+test('later groups reuse eligible online hotels before choosing offline hotels', () => {
   const packages = service().generate({
     routes: oneRoute('Kovalam'),
     hotelsByRoute: new Map([[1, [
@@ -876,14 +877,62 @@ test('unused offline properties fill later groups after live properties are exha
 
   assert.deepEqual(
     packages.map((pkg) => pkg.hotels[0]?.hotelName),
-    ['Live Hotel A', 'Live Hotel B', 'Offline Hotel C', 'Offline Hotel D'],
+    ['Live Hotel A', 'Live Hotel B', 'Live Hotel A', 'Live Hotel A'],
   );
   assert.deepEqual(
     packages.map((pkg) => pkg.hotels[0]?.provider),
-    ['tbo', 'axisrooms', 'offline', 'offline'],
+    ['tbo', 'axisrooms', 'tbo', 'tbo'],
   );
-  assert.equal(packages[2].hotels[0]?.requiresHotelApproval, true);
-  assert.equal(packages[3].hotels[0]?.requiresHotelApproval, true);
+});
+
+test('only a fresh, compatible VSR quote for every room and night outranks offline', () => {
+  const hotelCode = '1141249';
+  const batches = [6, 2].map((roomCount, batchIndex) => ({
+    hotelCode, roomType: 'Executive Room', mealPlan: 'EP', currency: 'INR', isRefundable: false,
+    batchIndex, startRoomIndex: batchIndex * 6, roomCount, bookingCode: hotelCode + '!TB!rate' + batchIndex,
+    supplierNetAmount: roomCount * 1100, supplierTotalFare: roomCount * 1250,
+    occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+  }));
+  const raw = option('Metro Plaza', 10000, 'EP', {
+    hotelCode, providerHotelCode: hotelCode, roomType: 'Executive Room', roomCount: 8,
+    isSelectable: false, isBookable: false, isLiveBookable: false, availabilityStatus: 'BATCH_SEARCH_MATCH',
+    checkInDate: '2026-08-02', checkOutDate: '2026-08-04', supplierSearchCompletedAt: new Date().toISOString(),
+    tboRoomBatches: batches,
+  });
+  const config = { enabled: true, breakfastRate: 400 };
+  const offlineRate = option('Offline hotel', 9000, 'CP', {
+    provider: 'offline', hotelId: 534, bookingMode: 'MANUAL_APPROVAL', requiresHotelApproval: true,
+    checkInDate: '2026-08-02', checkOutDate: '2026-08-04', numberOfNights: 2, routeIds: [101, 102],
+  });
+  const generate = (offer: typeof raw) => service().generate({
+    routes: routes.slice(0, 2),
+    hotelsByRoute: new Map([[101, [
+      offlineRate,
+      ...applyTboMapFallbackToRows([offer], {
+        preferredMealPlanCode: 'CP', adultCount: 16, childCount: 0, roomCount: 8, numberOfNights: 2,
+      }, config),
+    ] as any], [102, [offlineRate] as any]]),
+    preferredMealPlanCode: 'CP', preferredCategories: [3],
+    splitVsr: { roomCount: 8, margin: 5, config },
+  });
+
+  const complete = generate(raw)[0];
+  assert.equal(complete.hotels[0]?.hotelName, 'Metro Plaza');
+  assert.equal(complete.hotels[0]?.mealPlan, 'CP');
+  assert.equal(complete.totalPrice, 23300);
+  const snapshot = complete.hotels[0]?.tboMultiBatchStay;
+  assert.deepEqual(snapshot?.routeIds, [101, 102]);
+  assert.equal(snapshot?.dviMealSupplement?.breakfastPerNight, 6400);
+  assert.deepEqual(snapshot?.batches.map(row => row.bookingCode), [hotelCode + '!TB!rate0', hotelCode + '!TB!rate1']);
+
+  for (const invalid of [
+    { ...raw, tboRoomBatches: batches.slice(0, 1) },
+    { ...raw, tboRoomBatches: [batches[0], { ...batches[1], bookingCode: batches[0].bookingCode }] },
+    { ...raw, checkOutDate: '2026-08-03' },
+    { ...raw, supplierSearchCompletedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+  ]) {
+    assert.equal(generate(invalid)[0].hotels[0]?.provider, 'offline');
+  }
 });
 
 test('VSR complete fare remains live when occupancy supplements are requested', () => {

@@ -62,13 +62,14 @@ import {
   applyMapDinnerFallbackToRows,
   filterEpRows,
   getTboBatchMealPlanQuotes,
+  projectTboBatchRecommendationNight,
   type TboMapFallbackConfig,
 } from '../utils/tbo-map-fallback.util';
 import { hotelStayNights, hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { buildHotelCardQuote } from '../utils/hotel-card-quote.util';
-import { getTboBatchSearchTotal } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { assertTboMultiBatchStay, getTboBatchSearchTotal, isFreshTboMultiBatchStay, priceTboMultiBatchStay } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { allocateTboRouteNightPricing } from '../../hotels/utils/tbo-room-night-pricing';
 import {
   resolveHotelSupplementPricing,
@@ -1586,8 +1587,8 @@ export class HotelAvailabilitySnapshotService {
         });
       }
       // CREATE, RESET, and CHECK AVAILABILITY all need the same complete
-      // inventory snapshot. The recommendation package prefers unused live
-      // properties, then uses unused offline properties to fill later groups;
+      // inventory snapshot. The recommendation package prefers distinct
+      // live properties while an eligible live rate exists for the stay;
       // this merge must retain both pools for that decision.
       const noOfNights = Math.max(Number((plan as any).no_of_nights || 0), 0);
       const offlineRowsFromLive = new Map<number, any[]>();
@@ -1633,7 +1634,11 @@ export class HotelAvailabilitySnapshotService {
       // offline catalog.  This keeps a mixed supplier response from becoming
       // a mixed-date current-request row after an itinerary edit.
       let rows = this.normalizeRowsToCurrentRouteDates(
-        [...sourceRows, ...offlineRows, ...authoritativeRecommendationRows],
+        [...sourceRows, ...offlineRows, ...authoritativeRecommendationRows.flatMap((row: any) =>
+          row.tboMultiBatchStay
+            ? row.tboMultiBatchStay.routeIds.map((routeId: number) => projectTboBatchRecommendationNight(row, routeId))
+            : [row],
+        )],
         routes,
       );
       if (String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim() === 'true') {
@@ -1930,10 +1935,13 @@ export class HotelAvailabilitySnapshotService {
         hotel_required: 1,
       },
     });
+    const heldSelectionIds = await this.getHeldSelectionIds(tx, planId);
     if (proposals && (selections.length !== requestedIds.length || selections.some((row: any) => {
       const proposal = proposals.get(Number(row.itinerary_plan_hotel_details_ID));
-      return !proposal || isProtectedHotelSelection(row) || proposal.revision !== this.selectionRevision(row);
+      return !proposal || isProtectedHotelSelection(row) ||
+        heldSelectionIds.has(Number(row.itinerary_plan_hotel_details_ID)) || proposal.revision !== this.selectionRevision(row);
     }))) throw this.staleAvailabilityPreview();
+    const completedSplitStays = new Set<string>();
     const accepted: number[] = [];
     for (const selection of selections) {
       const snapshot = parseHotelSelectionSnapshot(selection) as any;
@@ -1945,6 +1953,46 @@ export class HotelAvailabilitySnapshotService {
 
       const origin = String(pending.origin || selectionOriginFromRow(selection) || 'AUTO_SELECTED');
       const searchRunId = String(pending.searchRunId || snapshot.searchRunId || 'accepted-change');
+      const stay = option.tboMultiBatchStay;
+      if (stay && origin === 'AUTO_SELECTED') {
+        const groupType = Number(selection.group_type);
+        const splitKey = `${groupType}|${stay.anchorRouteId}`;
+        if (completedSplitStays.has(splitKey)) continue;
+        assertTboMultiBatchStay(stay);
+        if (!isFreshTboMultiBatchStay(stay)) throw this.staleAvailabilityPreview();
+        const current = await tx.dvi_itinerary_plan_hotel_details.findMany({
+          where: { itinerary_plan_id: planId, group_type: groupType, deleted: 0, status: 1,
+            hotel_required: 1, itinerary_route_id: { in: stay.routeIds } },
+        });
+        const latestByRoute = new Map<number, any>();
+        for (const row of current) {
+          const routeId = Number(row.itinerary_route_id);
+          const id = Number(row.itinerary_plan_hotel_details_ID);
+          const rowPending = proposals?.get(id) || (parseHotelSelectionSnapshot(row) as any).pendingAvailabilityChange;
+          if (latestByRoute.has(routeId) || isProtectedHotelSelection(row) || heldSelectionIds.has(id) ||
+              selectionOriginFromRow(row) !== 'AUTO_SELECTED' || !requestedIds.includes(id) ||
+              JSON.stringify(rowPending?.option?.tboMultiBatchStay) !== JSON.stringify(stay)) {
+            throw this.staleAvailabilityPreview();
+          }
+          latestByRoute.set(routeId, row);
+        }
+        for (const routeId of stay.routeIds) {
+          const row = latestByRoute.get(routeId);
+          const night = projectTboBatchRecommendationNight(option, routeId);
+          if (!row) {
+            await this.createSplitRecommendationNight(tx, planId, night, searchRunId, createdBy);
+            continue;
+          }
+          const data = { ...this.buildSelectionUpdate(row, night, 'AUTO_SELECTED', searchRunId), requires_price_reacceptance: false };
+          const changed = await tx.dvi_itinerary_plan_hotel_details.update({
+            where: { itinerary_plan_hotel_details_ID: row.itinerary_plan_hotel_details_ID }, data,
+          });
+          await this.syncSelectedRoom(tx, changed, night, createdBy);
+          accepted.push(Number(row.itinerary_plan_hotel_details_ID));
+        }
+        completedSplitStays.add(splitKey);
+        continue;
+      }
       const rawCategory = option.category ?? selection.hotel_category_id ?? 0;
       const numericCategory = Number(rawCategory);
       const hotelCategoryId = Number.isFinite(numericCategory)
@@ -3154,6 +3202,7 @@ export class HotelAvailabilitySnapshotService {
       return row?.isPlaceholder !== true;
     };
     const isCoverageEligible = (row: any): boolean => {
+      if (row.tboMultiBatchStay) return isFreshTboMultiBatchStay(row.tboMultiBatchStay);
       if (typeof row?.stayCoverageAvailable === 'boolean') {
         return row.stayCoverageAvailable && row?.isPlaceholder !== true;
       }
@@ -5134,6 +5183,16 @@ export class HotelAvailabilitySnapshotService {
       where: { itinerary_plan_id: planId, deleted: 0, status: 1, hotel_required: 1 },
       orderBy: [{ itinerary_plan_hotel_details_ID: 'desc' }],
     });
+    const heldSelectionIds = await this.getHeldSelectionIds(tx, planId);
+    const isProtected = (selection: any) => isProtectedHotelSelection(selection) ||
+      heldSelectionIds.has(Number(selection.itinerary_plan_hotel_details_ID));
+    const blockedRoutes = new Set(selections.filter((selection: any) =>
+      isProtected(selection) || ['USER_SELECTED', USER_REMOVED_SELECTION_ORIGIN].includes(selectionOriginFromRow(selection)),
+    ).map((selection: any) => `${Number(selection.group_type)}|${Number(selection.itinerary_route_id)}`));
+    rows = rows.filter((row: any) => !row.tboMultiBatchStay || (
+      isFreshTboMultiBatchStay(row.tboMultiBatchStay) &&
+      row.tboMultiBatchStay.routeIds.every((routeId: number) => !blockedRoutes.has(`${Number(row.groupType)}|${routeId}`))
+    ));
     const grouped = new Map<string, any[]>();
     for (const row of selections) {
       const key = hotelSelectionKeyFromRow(planId, row);
@@ -5143,8 +5202,9 @@ export class HotelAvailabilitySnapshotService {
     }
 
     for (const [selectionKey, bucket] of grouped.entries()) {
-      const selection = bucket[0];
-      const duplicateRows = bucket.slice(1);
+      const selection = bucket.find(isProtected) || bucket[0];
+      const duplicateRows = bucket.filter(row => row !== selection && !isProtected(row) &&
+        selectionOriginFromRow(row) !== 'USER_SELECTED');
       for (const duplicate of duplicateRows) {
         if (!dryRun) await tx.dvi_itinerary_plan_hotel_details.update({
           where: { itinerary_plan_hotel_details_ID: duplicate.itinerary_plan_hotel_details_ID },
@@ -5159,7 +5219,7 @@ export class HotelAvailabilitySnapshotService {
         // Previous/Current card in the availability-refresh dialog.
       }
 
-      if (isProtectedHotelSelection(selection)) continue;
+      if (isProtected(selection)) continue;
       // Explicit offline fetches may add/refresh options, but they must not
       // replace an offline hotel the user already selected for this stay.
       if (allowOfflineAutoSelection && String(selection.hotel_provider || '').trim().toLowerCase() === 'offline') continue;
@@ -5253,7 +5313,10 @@ export class HotelAvailabilitySnapshotService {
             options.filter((row: any) => hotelPropertyMatchesSelection(selection, row)),
           )
         : null;
-      const replacement = matched || sameHotel || (
+      const splitUpgrade = origin === 'AUTO_SELECTED' && selectedProvider === 'offline'
+        ? authoritativeAutoOptions.find(row => row.tboMultiBatchStay && row.completeStayBookable !== false)
+        : undefined;
+      const replacement = splitUpgrade || matched || sameHotel || (
         origin === 'USER_SELECTED'
           ? this.findNearestReplacement(selection, options)
           : this.findComparableReplacement(selection, options)
@@ -5303,7 +5366,7 @@ export class HotelAvailabilitySnapshotService {
         selection,
         replacement,
       );
-      if (Array.isArray(pricedReplacement.nightlyRates) && pricedReplacement.nightlyRates.length > 1 &&
+      if (!pricedReplacement.tboMultiBatchStay && Array.isArray(pricedReplacement.nightlyRates) && pricedReplacement.nightlyRates.length > 1 &&
         pricedReplacement.nightlyRates.every((night: any) => night.pricingIncludesHotelMargin === true && night.marginAmount != null) &&
         (selectedProvider === 'tbo' || selectedProvider === 'vsr')) {
         // A continuous VSR selection can store its anchor-night price on the
@@ -5316,7 +5379,7 @@ export class HotelAvailabilitySnapshotService {
           savedNightTotals.every((total: number) => Number.isFinite(total) && total > 0)) {
           previous.totalPrice = this.money(savedNightTotals.reduce((sum: number, total: number) => sum + total, 0));
         }
-      } else if ((selectedProvider === 'tbo' || selectedProvider === 'vsr') &&
+      } else if (!previousSnapshot.tboMultiBatchStay && (selectedProvider === 'tbo' || selectedProvider === 'vsr') &&
         previousSnapshot.tboMapFallbackApplied === true && Number(previous.baseTotalPrice) > 0 &&
         hotelStayNights(selection) === 1 && (previousSnapshot.nightlyRates?.length ?? 0) <= 1) {
         // A legacy single-night fallback can store its room-only fare as the
@@ -5331,11 +5394,19 @@ export class HotelAvailabilitySnapshotService {
         previous.totalPrice = savedPayable;
         previous.pricePerNight = savedPayable;
       }
+      const splitStay = pricedReplacement.tboMultiBatchStay;
+      const replacesOneFullStayRow = splitStay && splitStay.routeIds.length > 1 &&
+        previousSnapshot.authoritativeRouteIds?.length === splitStay.routeIds.length &&
+        !selections.some(row => row !== selection && Number(row.group_type) === Number(selection.group_type) &&
+          splitStay.routeIds.includes(Number(row.itinerary_route_id)));
       const next = hotelDisplaySnapshot(pricedReplacement);
+      if (replacesOneFullStayRow) {
+        next.totalPrice = priceTboMultiBatchStay(splitStay, Number(pricedReplacement.hotelMarginPercentage || 0)).totalPrice;
+      }
       // Any non-exact match means the old persisted rate is unavailable,
       // even when the same property has another fresh room/meal rate. The
       // replacement is therefore a complete fresh auto-selection.
-      const replacementWasUnavailable = !matched;
+      const replacementWasUnavailable = !matched || Boolean(splitUpgrade);
       const nextSelectionOrigin = replacementWasUnavailable ? 'AUTO_SELECTED' : origin;
       // A mixed-room selection cannot be compared with the supplier's single
       // primary room option. The selected parent may contain Garden + Deluxe
@@ -5449,6 +5520,24 @@ export class HotelAvailabilitySnapshotService {
     }
 
     return { hasChanges: changes.length > 0, totalChanges: changes.length, changes };
+  }
+
+  private async getHeldSelectionIds(tx: any, planId: number): Promise<Set<number>> {
+    const holds = await tx.dvi_hotel_block_request?.findMany?.({
+      where: {
+        itinerary_plan_id: planId,
+        status: { in: ['REQUESTED', 'CONFIRMATION_AWAITED', 'BLOCKED', 'CONFIRMED'] },
+      },
+      select: { selection_ids: true },
+    }) || [];
+    return new Set(holds.flatMap(({ selection_ids }: { selection_ids: string }) => {
+      try {
+        const ids = JSON.parse(selection_ids);
+        return Array.isArray(ids) ? ids.map(Number).filter(id => Number.isSafeInteger(id) && id > 0) : [];
+      } catch {
+        return [];
+      }
+    }));
   }
 
   /**
@@ -6310,9 +6399,13 @@ export class HotelAvailabilitySnapshotService {
         hotel_code: true,
         hotel_provider: true,
         hotel_booking_mode: true,
+        hotel_approval_status: true,
+        manual_confirmation_status: true,
         price_source: true,
         selection_origin: true,
         selected_rate_option_id: true,
+        selected_total_price: true,
+        total_hotel_cost: true,
         selected_price_snapshot: true,
       },
     });
@@ -6341,6 +6434,19 @@ export class HotelAvailabilitySnapshotService {
         removedRouteGroups.add(`${groupType}|${routeId}`);
       });
     });
+    const heldSelectionIds = await this.getHeldSelectionIds(tx, planId);
+    const isProtected = (row: any) => isProtectedHotelSelection(row) ||
+      heldSelectionIds.has(Number(row.itinerary_plan_hotel_details_ID)) ||
+      selectionOriginFromRow(row) === 'USER_SELECTED';
+    const splitWaitingForExistingSelection = new Set<string>();
+    for (const row of rows) {
+      const stay = row.tboMultiBatchStay;
+      if (!stay || !isFreshTboMultiBatchStay(stay)) continue;
+      if (existing.some((selection: any) => Number(selection.group_type) === Number(row.groupType) &&
+        stay.routeIds.includes(Number(selection.itinerary_route_id)))) {
+        stay.routeIds.forEach((id: number) => splitWaitingForExistingSelection.add(`${Number(row.groupType)}|${id}`));
+      }
+    }
     const optionsByKey = new Map<string, any[]>();
     const traceEnabled = String(process.env.HOTEL_RECOMMENDATION_TRACE || '').trim() === 'true';
     const traceCandidateRejections: any[] = [];
@@ -6357,7 +6463,7 @@ export class HotelAvailabilitySnapshotService {
       // stay. Persist it once at its parent route with all covered routes
       // retained in the snapshot; treating each projected route-night as an
       // independent recommendation loses the continuous-stay selection.
-      const row = authoritativeParentRouteId > 0 && authoritativeRouteIds.length > 0
+      const row = !rawRow.tboMultiBatchStay && authoritativeParentRouteId > 0 && authoritativeRouteIds.length > 0
         ? {
             ...rawRow,
             itineraryRouteId: authoritativeParentRouteId,
@@ -6391,6 +6497,12 @@ export class HotelAvailabilitySnapshotService {
       const canonicalHotelId = this.persistedHotelId(routePricedRow);
       const routeId = Number(routePricedRow.itineraryRouteId || routePricedRow.routeId || 0);
       const groupType = Number(routePricedRow.groupType || 0);
+      if (routePricedRow.tboMultiBatchStay && (
+        !isFreshTboMultiBatchStay(routePricedRow.tboMultiBatchStay) ||
+        routePricedRow.tboMultiBatchStay.routeIds.some((id: number) =>
+          removedRouteGroups.has(`${groupType}|${id}`) || removedRouteGroups.has(`0|${id}`) ||
+          (eligibleRouteIds && !eligibleRouteIds.has(id)))
+      )) continue;
       if (eligibleRouteIds && !eligibleRouteIds.has(routeId)) continue;
       if (removedRouteGroups.has(`${groupType}|${routeId}`) || removedRouteGroups.has(`0|${routeId}`)) continue;
       const approvalRequired = routePricedRow.requiresHotelApproval === true ||
@@ -6703,9 +6815,7 @@ export class HotelAvailabilitySnapshotService {
           .includes(availability);
     };
 
-    const protectedExisting = existing.filter((row: any) =>
-      isProtectedHotelSelection(row) || selectionOriginFromRow(row) === 'USER_SELECTED',
-    );
+    const protectedExisting = existing.filter(isProtected);
     protectedExisting.forEach(reserveExisting);
 
     const autoExisting = existing
@@ -6729,7 +6839,8 @@ export class HotelAvailabilitySnapshotService {
       }
       const fallbackFromGroup = Number((parseHotelSelectionSnapshot(row) as any)?.autoSelectionFallbackFromGroup || 0);
       const allowsFallbackDuplicate = Number(row?.group_type || 0) === 4 && fallbackFromGroup === 3;
-      if (identity !== 'property::' && bucket.has(identity) && !allowsFallbackDuplicate) {
+      const isOnline = Boolean(row.hotel_provider) && String(row.hotel_provider).toLowerCase() !== 'offline';
+      if (!isOnline && identity !== 'property::' && bucket.has(identity) && !allowsFallbackDuplicate) {
         await retireExisting(row);
         continue;
       }
@@ -6762,6 +6873,7 @@ export class HotelAvailabilitySnapshotService {
       }
       const optionRouteId = Number(options[0]?.itineraryRouteId || options[0]?.routeId || 0);
       const optionGroupType = Number(options[0]?.groupType || options[0]?.group_type || 0);
+      if (splitWaitingForExistingSelection.has(`${optionGroupType}|${optionRouteId}`)) continue;
       if (removedRouteGroups.has(`${optionGroupType}|${optionRouteId}`) || removedRouteGroups.has(`0|${optionRouteId}`)) {
         if (isTargetPersistenceKey) targetPersistenceTrace.push({ key, options: options.length, skipped: 'user-removed' });
         continue;
@@ -6858,6 +6970,7 @@ export class HotelAvailabilitySnapshotService {
         option?.isSelectable !== false &&
         option?.isBookable !== false &&
         option?.isPlaceholder !== true &&
+        option?.completeStayBookable !== false &&
         missingRequiredSupplementReasons(option).length === 0;
       const selectableOnlineOptions = selectionPool.filter((option: any) =>
         String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline' &&
@@ -6882,6 +6995,7 @@ export class HotelAvailabilitySnapshotService {
       const routeScopedOnlineOptions = (optionsByRoute.get(optionRouteId) || [])
         .filter((option: any) =>
           String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline' &&
+          !option.tboMultiBatchStay &&
           isSelectableForAutoSelection(option),
         )
         .map((option: any) => ({ ...option, groupType: options[0]?.groupType }));
@@ -6895,12 +7009,12 @@ export class HotelAvailabilitySnapshotService {
         ? selectionPool
         : providerPreferredOnlineOptions.length > 0
           ? providerPreferredOnlineOptions
-          : selectableOfflineOptions.length > 0
-            ? selectableOfflineOptions
-            : liveOptions.length > 0
-              ? liveOptions
-              : hasMultiRouteStay && routeScopedOnlineOptions.length > 0
-                ? routeScopedOnlineOptions
+          : hasMultiRouteStay && routeScopedOnlineOptions.length > 0
+            ? routeScopedOnlineOptions
+            : selectableOfflineOptions.length > 0
+              ? selectableOfflineOptions
+              : liveOptions.length > 0
+                ? liveOptions
                 : scopedLiveOptions.length > 0
                   ? scopedLiveOptions
                   : selectionPool;
@@ -6978,6 +7092,17 @@ export class HotelAvailabilitySnapshotService {
       const selectedStayRouteIds = selectedStayGroupKey.split('|')[1] || '';
       if (selectedStayRouteIds.includes(',')) {
         selectedPropertyByStayGroup.set(selectedStayGroupKey, hotelIdentity(option));
+      }
+      if (option.tboMultiBatchStay) {
+        const nights = option.tboMultiBatchStay.routeIds.map((id: number) => projectTboBatchRecommendationNight(option, id));
+        const nightKeys = nights.map((night: any) => hotelSelectionKeyFromRow(planId, night));
+        if (nightKeys.some((nightKey: string) => existingKeys.has(nightKey) ||
+          !optionsByKey.get(nightKey)?.some(row => row.tboMultiBatchStay === option.tboMultiBatchStay))) continue;
+        for (const [index, night] of nights.entries()) {
+          await this.createSplitRecommendationNight(tx, planId, night, searchRunId, createdBy);
+          existingKeys.add(nightKeys[index]);
+        }
+        continue;
       }
 
       const provider = String(option.provider || 'external').trim().toLowerCase();
@@ -7517,6 +7642,17 @@ export class HotelAvailabilitySnapshotService {
     return strictAutoSelectionIdentityMatches(option, identity);
   }
 
+  private async createSplitRecommendationNight(tx: any, planId: number, option: any, searchRunId: string, createdBy: number) {
+    const data = this.buildSelectionUpdate({}, option, 'AUTO_SELECTED', searchRunId);
+    const saved = await tx.dvi_itinerary_plan_hotel_details.create({
+      data: {
+        ...data, itinerary_plan_id: planId, group_type: Number(option.groupType), hotel_required: 1,
+        requires_price_reacceptance: false, createdby: createdBy || 0, createdon: new Date(), status: 1, deleted: 0,
+      },
+    });
+    await this.syncSelectedRoom(tx, saved, option, createdBy);
+  }
+
   private findLowestReplacement(options: any[], allowOfflineFallback = true): any | null {
     const selectable = (options || []).filter((row: any) =>
       row?.isBookable !== false && row?.isSelectable !== false,
@@ -7557,6 +7693,7 @@ export class HotelAvailabilitySnapshotService {
     const {
       autoSelectionFallbackFromGroup: _oldFallback,
       pendingAvailabilityChange: _pendingAvailabilityChange,
+      tboMultiBatchStay: _previousSplitStay,
       ...priorSnapshotWithoutFallback
     } = priorSnapshot as any;
     const optionKey = String(option.optionKey || hotelOptionKey(option));
@@ -7623,7 +7760,7 @@ export class HotelAvailabilitySnapshotService {
         : 0;
 
     return {
-      hotel_id: this.persistedHotelId(option, selection.hotel_id),
+      hotel_id: this.persistedHotelId(option, option.tboMultiBatchStay ? undefined : selection.hotel_id),
       hotel_code: String(option.hotelCode || option.providerHotelCode || option.hotel_code || option.hotelId || selection.hotel_code || '').trim() || null,
       hotel_category_id: hotelCategoryId,
       hotel_provider: option.provider || selection.hotel_provider || null,
@@ -7644,7 +7781,7 @@ export class HotelAvailabilitySnapshotService {
       selected_total_price: totalPrice,
       selected_currency: option.currency || selection.selected_currency || null,
       selection_origin: origin,
-      total_no_of_rooms: Math.max(Number(option.noOfRooms || option.total_no_of_rooms || selection.total_no_of_rooms || 1), 1),
+      total_no_of_rooms: Math.max(Number(option.tboMultiBatchStay?.roomCount || option.noOfRooms || option.total_no_of_rooms || selection.total_no_of_rooms || 1), 1),
       total_room_cost: Number(option.baseTotalPrice || option.baseHotelCost || option.totalHotelCost || totalPrice),
       total_extra_bed_cost: Number(option.extraBedAmount || 0),
       total_childwith_bed_cost: Number(option.childWithBedAmount || 0),
@@ -7652,17 +7789,29 @@ export class HotelAvailabilitySnapshotService {
       hotel_margin_percentage: Number(option.hotelMarginPercentage ?? selection.hotel_margin_percentage ?? 0),
       hotel_margin_rate: Number(option.hotelMarginAmount ?? option.hotelMarginTotalAmount ?? selection.hotel_margin_rate ?? 0),
       ...offlineMealPlanPersistence.columns,
-      hotel_dinner_cost: offlineMealPlanPersistence.columns.hotel_dinner_cost ?? tboMapFallbackDinnerTotal,
+      hotel_dinner_cost: offlineMealPlanPersistence.columns.hotel_dinner_cost ??
+        (option.tboMultiBatchStay ? Number(option.tboMapFallbackDinnerComponentTotal || 0) : tboMapFallbackDinnerTotal),
+      ...(option.tboMultiBatchStay ? {
+        hotel_booking_mode: 'LIVE_API', price_source: 'LIVE_API', hotel_approval_status: 'NOT_REQUIRED',
+        manual_confirmation_status: 'NOT_STARTED',
+        total_room_gst_amount: 0, hotel_breakfast_cost: Number(option.tboMapFallbackBreakfastTotal || 0), hotel_lunch_cost: 0,
+      } : {}),
       total_hotel_meal_plan_cost: offlineMealPlanPersistence.columns.total_hotel_meal_plan_cost ?? tboMapFallbackDinnerTotal,
       total_hotel_cost: totalPrice,
-      total_hotel_tax_amount: Number(option.totalHotelTaxAmount || selection.total_hotel_tax_amount || 0),
+      total_hotel_tax_amount: option.tboMultiBatchStay ? 0 :
+        Number(option.totalHotelTaxAmount || selection.total_hotel_tax_amount || 0),
       selected_price_snapshot: JSON.stringify({
-        ...priorSnapshotWithoutFallback,
+        ...(option.tboMultiBatchStay ? {} : priorSnapshotWithoutFallback),
         ...hotelDisplaySnapshot(option),
-        bookingTerms: { ...hotelBookingTerms(priorSnapshot), ...hotelBookingTerms(option) },
+        ...(option.tboMultiBatchStay ? {
+          tboMultiBatchStay: option.tboMultiBatchStay, supplierMealPlan: option.tboMultiBatchStay.mealPlan,
+          amountIncludesHotelMargin: true, pricingIncludesHotelMargin: true,
+        } : {}),
+        bookingTerms: option.tboMultiBatchStay ? hotelBookingTerms(option) :
+          { ...hotelBookingTerms(priorSnapshot), ...hotelBookingTerms(option) },
         ...offlineMealPlanPersistence.snapshot,
         optionKey,
-        ...(option.authoritativeStayKey ? {
+        ...(option.authoritativeStayKey && !option.tboMultiBatchStay ? {
           authoritativeStayKey: option.authoritativeStayKey,
           authoritativeParentRouteId: Number(option.authoritativeParentRouteId || option.itineraryRouteId || option.routeId || 0) || null,
           authoritativeRouteIds: Array.isArray(option.authoritativeRouteIds) ? option.authoritativeRouteIds.map(Number) : undefined,
@@ -7681,7 +7830,7 @@ export class HotelAvailabilitySnapshotService {
         ...(Number(option.autoSelectionFallbackFromGroup || 0) > 0
           ? { autoSelectionFallbackFromGroup: Number(option.autoSelectionFallbackFromGroup) }
           : {}),
-        availabilityStatus: 'AVAILABLE',
+        availabilityStatus: option.tboMultiBatchStay ? 'SEARCH_MATCH_SELECTED' : 'AVAILABLE',
         searchRunId,
       }),
       requires_price_reacceptance: origin === 'USER_SELECTED' &&
@@ -7870,6 +8019,9 @@ export class HotelAvailabilitySnapshotService {
    * a payable total on one night and a pre-margin subtotal on the next.
    */
   private async pricePendingSelectionOption(tx: any, selection: any, option: any): Promise<any> {
+    if (option?.tboMultiBatchStay) {
+      return projectTboBatchRecommendationNight(option, Number(selection.itinerary_route_id));
+    }
     const mixedPricing = this.getMixedRoomPricing(selection, option);
     if (mixedPricing) return mixedPricing;
     const provider = String(option?.provider || option?.hotel_provider || '').trim().toLowerCase();
@@ -8253,8 +8405,8 @@ export class HotelAvailabilitySnapshotService {
       (incomingRoomTitle && normalizeRoomText(candidate.room_title) === incomingRoomTitle) ||
       (incomingRoomTypeId > 0 && Number(candidate.room_type_id || 0) === incomingRoomTypeId),
     );
-    const existingRoomTypeId = Number(room?.room_type_id || selection.room_type_id || 0);
-    const existingRoomId = Number(room?.room_id || selection.room_id || 0);
+    const existingRoomTypeId = option.tboMultiBatchStay ? 0 : Number(room?.room_type_id || selection.room_type_id || 0);
+    const existingRoomId = option.tboMultiBatchStay ? 0 : Number(room?.room_id || selection.room_id || 0);
     // Room-category edits are user choices. Never replace a valid local room
     // category with a supplier's opaque/zero roomTypeId during availability
     // reconciliation. Supplier data is only used when no local category has
@@ -8275,10 +8427,11 @@ export class HotelAvailabilitySnapshotService {
       room_type_id: roomTypeId,
       room_id: roomId,
       room_qty: Math.max(Number(selection.total_no_of_rooms || 1), 1),
-      room_rate: pricePerNight,
-      total_room_cost: hotelStayTotal(option, 1),
+      room_rate: option.tboMultiBatchStay ? Number(option.basePricePerNight) : pricePerNight,
+      total_room_cost: option.tboMultiBatchStay ? Number(option.baseTotalPrice) : hotelStayTotal(option, 1),
       breakfast_required: hasExplicitMealFlags ? requestedBreakfast : (/CP|MAP|AP|BREAKFAST|ALL/.test(meal) ? 1 : 0),
-      lunch_required: hasExplicitMealFlags ? requestedLunch : (/MAP|AP|LUNCH|ALL/.test(meal) ? 1 : 0),
+      lunch_required: hasExplicitMealFlags ? requestedLunch :
+        ((option.tboMultiBatchStay ? /AP|LUNCH|ALL/ : /MAP|AP|LUNCH|ALL/).test(meal) ? 1 : 0),
       dinner_required: hasExplicitMealFlags ? requestedDinner : (/MAP|AP|DINNER|ALL/.test(meal) ? 1 : 0),
       status: 1,
       deleted: 0,

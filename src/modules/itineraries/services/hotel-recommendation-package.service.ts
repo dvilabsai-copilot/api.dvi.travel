@@ -8,6 +8,7 @@ import {
 import { HotelMealPlanPolicyService } from './hotel-meal-plan-policy.service';
 import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { isHouseboatHotel, normalizeHotelCategoryLabel, normalizeHotelCategory } from '../utils/hotel-category.util';
+import { prepareTboBatchRecommendation, type TboMapFallbackConfig } from '../utils/tbo-map-fallback.util';
 
 export type RecommendationAvailabilityState =
   | 'AVAILABLE'
@@ -117,6 +118,7 @@ export type RecommendationPackageInput = {
   noOfNights?: number;
   preferredMealPlanCode?: string | null;
   preferredCategories?: number[];
+  splitVsr?: { roomCount: number; margin: number; config: TboMapFallbackConfig };
   /** Occupancy counts used to reject rates that cannot price the request. */
   occupancy?: {
     extraBedCount?: number;
@@ -522,31 +524,10 @@ export class HotelRecommendationPackageService {
 
   private selectCategoryOption(options: StayOption[], slot: CategorySlot, used: Set<string>): StayOption | undefined {
     const orderedCategories = this.categoryFallbackOrder(slot.category);
-    // Live inventory remains the preferred source for automatic selection, but
-    // it must not be reused merely because offline inventory was classified as
-    // a fallback. Once live physical properties are exhausted, unused offline
-    // properties fill the remaining recommendation slots.
     const liveOptions = options.filter((option) => !option.fallback);
-    const offlineOptions = options.filter((option) => option.fallback);
-
-    // Pass 1: use every unused live physical property before considering
-    // offline inventory. Category preference remains stronger than meal-plan
-    // preference: for each category, first look only at unused properties,
-    // then rank their rates.
-    const unusedLive = this.selectFromCategoryPool(liveOptions, orderedCategories, slot, used, false);
-    if (unusedLive) return unusedLive;
-
-    const unusedOffline = this.selectFromCategoryPool(offlineOptions, orderedCategories, slot, used, false);
-    if (unusedOffline) return unusedOffline;
-
-    // Pass 2: no unused live or offline property exists anywhere for this
-    // stay. Reuse is now allowed, retaining the live-before-offline rule.
-    const reusedLive = this.selectFromCategoryPool(liveOptions, orderedCategories, slot, used, true);
-    if (reusedLive) return reusedLive;
-
-    const reusedOffline = this.selectFromCategoryPool(offlineOptions, orderedCategories, slot, used, true);
-    if (reusedOffline) return reusedOffline;
-    return undefined;
+    const eligible = liveOptions.length ? liveOptions : options;
+    return this.selectFromCategoryPool(eligible, orderedCategories, slot, used, false) ||
+      this.selectFromCategoryPool(eligible, orderedCategories, slot, used, true);
   }
 
   private selectFromCategoryPool(
@@ -936,10 +917,7 @@ export class HotelRecommendationPackageService {
         (fallback ? offline : live).push(option);
     }
 
-    // Provider availability is not a category preference. Keep live and
-    // offline/local offers in one comparable pool so category fallback is
-    // evaluated across all providers. A live 4* must not displace a usable
-    // offline 2* when the requested category is 3*.
+    // Retain both pools for category selection and the houseboat meal policy.
     const selected = [...live, ...offline].sort((a, b) =>
       mealRank(a) - mealRank(b) ||
       a.priceCents - b.priceCents ||
@@ -978,6 +956,13 @@ export class HotelRecommendationPackageService {
       // Keep genuine supplier full-stay candidates. Their normal validation
       // still decides whether they really cover this complete stay.
       for (const source of routeHotels) {
+        if (Array.isArray((source as any).tboRoomBatches)) {
+          if (routeId === stay.parentRouteId && input.splitVsr) {
+            const prepared = prepareTboBatchRecommendation(source, stay, input.splitVsr);
+            if (prepared) directCandidates.push(prepared);
+          }
+          continue;
+        }
         // A one-night row can incorrectly carry the complete logical stay in
         // copied metadata. Only accept an explicit full-stay row from the
         // anchor route; rows from later routes are aggregated below from
@@ -1012,7 +997,7 @@ export class HotelRecommendationPackageService {
         nights: 1,
       };
 
-      const nightly = routeHotels.flatMap((source) => {
+      const nightly = routeHotels.filter(source => !Array.isArray((source as any).tboRoomBatches)).flatMap((source) => {
         // A row can contain copied logical-stay dates/routeIds. Override the
         // date boundary for this physical route-night before expansion so
         // copied metadata cannot fabricate coverage.
@@ -1702,7 +1687,9 @@ export class HotelRecommendationPackageService {
     if (!hasExplicitAvailability && !hasExplicitBookability) {
       return { ok: false, reason: 'Live rate has no explicit availability or bookability signal.' };
     }
-    if (candidate.isLiveBookable === false || candidate.isBookable === false) return { ok: false, reason: 'Live rate is not bookable.' };
+    if (!candidate.tboMultiBatchStay && (candidate.isLiveBookable === false || candidate.isBookable === false)) {
+      return { ok: false, reason: 'Live rate is not bookable.' };
+    }
     return { ok: true };
   }
 
@@ -1734,9 +1721,9 @@ export class HotelRecommendationPackageService {
       categoryFallbackApplied: (candidate as any).categoryFallbackApplied,
       categoryFallbackReason: (candidate as any).categoryFallbackReason,
       requiresHotelApproval: fallback || candidate.requiresHotelApproval,
-      isLiveBookable: fallback ? false : candidate.isLiveBookable !== false,
+      isLiveBookable: !fallback && candidate.isLiveBookable !== false,
       isSelectable: candidate.isSelectable !== false,
-      availabilityStatus: fallback ? 'OFFLINE_APPROVAL_REQUIRED' : 'AVAILABLE',
+      availabilityStatus: fallback ? 'OFFLINE_APPROVAL_REQUIRED' : candidate.tboMultiBatchStay ? 'BATCH_SEARCH_MATCH' : 'AVAILABLE',
     };
   }
 

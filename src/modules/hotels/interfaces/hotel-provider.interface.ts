@@ -1,3 +1,5 @@
+import type { TboMultiBatchStaySnapshot } from '../utils/tbo-multi-batch-stay.util';
+
 export interface IHotelProvider {
   getName(): string;
 
@@ -22,6 +24,7 @@ export interface IHotelProvider {
 
 export interface HotelSearchResult {
   provider: string;
+  tboMultiBatchStay?: TboMultiBatchStaySnapshot;
  /** User-facing provider label; keep provider unchanged for internal routing. */
   providerDisplayName?: string;
   isPriority?: boolean;
