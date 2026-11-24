@@ -4,6 +4,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { TransportVoucherDetails } from '../dto/transport-voucher-details.dto';
 import { getTransportEarlyArrivalMessage } from '../transport-early-arrival';
+import { assertTboMultiBatchStay, type TboMultiBatchStaySnapshot } from '../../hotels/utils/tbo-multi-batch-stay.util';
 
 type VoucherReadCallbacks = Partial<Record<
   'toDateOnly'
@@ -340,9 +341,24 @@ const hotelRoomsForRow =
     Number(hotel.confirmed_itinerary_plan_hotel_details_ID || 0),
   ) || [];
 
+const splitStay = priceSnapshot.tboMultiBatchStay as TboMultiBatchStaySnapshot | undefined;
+let vsrRoomTypes: string[] = [];
+if ((provider === 'tbo' || provider === 'vsr') && splitStay?.hotelCode === hotelCode) {
+  try {
+    assertTboMultiBatchStay(splitStay);
+    if (splitStay.routeIds.includes(Number(hotel.itinerary_route_id))) {
+      vsrRoomTypes = splitStay.batches.map(batch => batch.roomType.trim());
+    }
+  } catch {
+    // Older or incomplete snapshots still use the saved local room labels.
+  }
+}
+
 const roomTypesForRow =
-  provider === 'staah' && staahBooking?.roomTypes?.length
-    ? staahBooking.roomTypes
+  vsrRoomTypes.length > 0
+    ? vsrRoomTypes
+    : provider === 'staah' && staahBooking?.roomTypes?.length
+      ? staahBooking.roomTypes
     : Array.from(
         new Set(
           hotelRoomsForRow
