@@ -5397,9 +5397,6 @@ async confirmQuotation(dto: ConfirmQuotationDto, actorId?: number) {
       message: 'The submitted VSR batches do not match the saved hotel stay. Check Availability before confirming.',
     });
     if (batchBookings.length > 0) {
-      if (process.env.TBO_ENABLE_MULTI_BATCH_BOOKING !== 'true') {
-        throw new BadRequestException('Split VSR booking is disabled pending supplier verification.');
-      }
       if (batchBookings.length !== normalized.length || batchBookings.some((booking) =>
         booking.requiresHotelApproval || booking.externalStay || booking.isVoucherBooking === false)) {
         throw new BadRequestException('Split VSR stays require direct confirmation with VSR hotels.');
