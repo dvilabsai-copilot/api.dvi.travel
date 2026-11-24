@@ -5,6 +5,9 @@ import { PrismaService } from '../../../prisma.service';
 import { TransportVoucherDetails } from '../dto/transport-voucher-details.dto';
 import { getTransportEarlyArrivalMessage } from '../transport-early-arrival';
 import { assertTboMultiBatchStay, type TboMultiBatchStaySnapshot } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { getHotelHoldSelectionCoverage, getHotelHoldSelectionIds } from '../utils/hotel-hold-selection-coverage.util';
+
+const CONFIRMED_HOTEL_VOUCHER_STATUS = 4;
 
 type VoucherReadCallbacks = Partial<Record<
   'toDateOnly'
@@ -433,7 +436,29 @@ hotelName: String(
       group.hotelCancellationStatus = Math.max(group.hotelCancellationStatus, Number(hotel.hotel_cancellation_status || 0));
     }
 
-    const hotelVoucherGroups = Array.from(hotelGroupMap.values())
+    const hotelGroups = Array.from(hotelGroupMap.values());
+    const paidSupplierHolds = hotelGroups.some(group => group.roomTypeQuantities.length > 0)
+      ? await this.prisma.dvi_hotel_block_request.findMany({
+          where: {
+            itinerary_plan_id: itineraryPlanId,
+            provider: 'VSR',
+            confirmation_channel: 'TBO_BOOK_HOLD',
+            status: 'CONFIRMED',
+            paid_confirmed_at: { not: null },
+          },
+          select: {
+            hotel_code: true,
+            group_type: true,
+            selection_ids: true,
+            request_payload: true,
+            room_count: true,
+            room_type: true,
+            meal_plan: true,
+            voucher_status: true,
+          },
+        })
+      : [];
+    const hotelVoucherGroups = hotelGroups
       .map((group) => {
         const matchedVouchers = hotelVouchers.filter((voucher: any) => {
           const hotelDetailsId = Number(voucher.itinerary_plan_hotel_details_ID || 0);
@@ -458,6 +483,18 @@ hotelName: String(
         const voucherCancelled =
           matchedVouchers.some((voucher: any) => Number(voucher.hotel_voucher_cancellation_status || 0) === 1) ||
           Number(group.hotelCancellationStatus || 0) === 1;
+        let bookingStatusCode = Number(latestVoucher?.hotel_booking_status || 0);
+        if (!bookingStatusCode && !voucherCancelled && group.roomTypeQuantities.length > 0) {
+          const selectedRows = hotels.filter(hotel => group.confirmedHotelDetailsIds.includes(hotel.confirmed_itinerary_plan_hotel_details_ID));
+          const groupTypes = new Set(selectedRows.map(hotel => hotel.group_type));
+          const selectionIds = new Set(group.hotelDetailsIds);
+          const holds = paidSupplierHolds.filter(hold => hold.hotel_code === group.hotelCode &&
+            groupTypes.has(hold.group_type) && getHotelHoldSelectionIds(hold.selection_ids).some(id => selectionIds.has(id)));
+          if (holds.length && holds.every(hold => hold.voucher_status === 'VOUCHERED')) {
+            const coverage = getHotelHoldSelectionCoverage(selectedRows, holds);
+            if (coverage.matches && !coverage.invalidRequests.length) bookingStatusCode = CONFIRMED_HOTEL_VOUCHER_STATUS;
+          }
+        }
 
         return {
           ...group,
@@ -486,10 +523,10 @@ canCreateVoucher:
       Number(hotel.hotel_cancellation_status || 0) !== 1 &&
       Number(hotel.hotel_required || 0) === 1,
     ),
-bookingStatusCode: Number(latestVoucher?.hotel_booking_status || 0),
+          bookingStatusCode,
 
           bookingStatusLabel: this.getVoucherStatusLabel(
-            Number(latestVoucher?.hotel_booking_status || 0),
+            bookingStatusCode,
             voucherCancelled,
           ),
           confirmedBy: String(latestVoucher?.hotel_confirmed_by || ''),
