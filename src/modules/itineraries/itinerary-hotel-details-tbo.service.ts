@@ -1386,7 +1386,7 @@ if (hotelMasterId) {
     const tboRows = tboCodes.length > 0
       ? await (this.prisma as any).tbo_hotel_master.findMany({
           where: { tbo_hotel_code: { in: tboCodes } },
-          select: { tbo_hotel_code: true, hotel_category_id: true },
+          select: { tbo_hotel_code: true, hotel_category_id: true, city_name: true, hotel_latitude: true, hotel_longitude: true },
         })
       : [];
     const categoryIds = Array.from(new Set([
@@ -1440,12 +1440,56 @@ if (hotelMasterId) {
               hotelCategoryId: categoryId,
               hotelCategoryName: category?.name || null,
               hotelCategoryCode: category?.code || null,
+              ...(Array.isArray(row.tboRoomBatches) && tbo ? {
+                supplierHotelCity: tbo.city_name,
+                latitude: tbo.hotel_latitude || row.latitude,
+                longitude: tbo.hotel_longitude || row.longitude,
+              } : {}),
               isHouseboat,
               category: isHouseboat ? 'Houseboat' : row.category,
             };
           })
         : routeRows,
     ]));
+  }
+
+  private async withSplitVsrRecommendationDistances(
+    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
+    routes: Array<{ itinerary_route_ID: number; location_id: bigint; next_visiting_location: string | null }>,
+  ): Promise<Map<number, HotelSearchResult[] | null>> {
+    const splitRoutes = routes.filter(route => hotelsByRoute.get(route.itinerary_route_ID)
+      ?.some(row => Array.isArray((row as any).tboRoomBatches)));
+    if (!splitRoutes.length) return hotelsByRoute;
+    const locations = await this.prisma.dvi_stored_locations.findMany({
+      where: { location_ID: { in: [...new Set(splitRoutes.map(route => route.location_id))] }, deleted: 0 },
+      select: { location_ID: true, destination_location_city: true, destination_location_lattitude: true, destination_location_longitude: true },
+    });
+    const locationsById = new Map(locations.map(location => [location.location_ID, location]));
+    const cityToken = (city: string) => this.normalizeCityToken(city).replace(/^mangaluru$/, 'mangalore').replace(/^udipi$/, 'udupi');
+    const validCoordinates = (lat: number, lon: number) =>
+      Number.isFinite(lat) && lat !== 0 && Math.abs(lat) <= 90 &&
+      Number.isFinite(lon) && lon !== 0 && Math.abs(lon) <= 180;
+    const recommendations = new Map(hotelsByRoute);
+    for (const route of splitRoutes) {
+      const location = locationsById.get(route.location_id);
+      const routeLat = Number(location?.destination_location_lattitude);
+      const routeLon = Number(location?.destination_location_longitude);
+      const destination = cityToken(location?.destination_location_city || route.next_visiting_location || '');
+      const offers = hotelsByRoute.get(route.itinerary_route_ID) || [];
+      recommendations.set(route.itinerary_route_ID, offers.map((row: any) => {
+        if (!Array.isArray(row.tboRoomBatches)) return row;
+        const lat = Number(row.latitude);
+        const lon = Number(row.longitude);
+        if (validCoordinates(routeLat, routeLon) && validCoordinates(lat, lon)) {
+          return { ...row, distanceKm: haversineKm(routeLat, routeLon, lat, lon), distanceReference: 'ROUTE_DESTINATION' };
+        }
+        const supplierCity = cityToken(row.supplierHotelCity || '');
+        return destination && supplierCity && supplierCity !== destination
+          ? { ...row, distanceStatus: 'OUTSIDE_RADIUS', distanceReference: 'ROUTE_DESTINATION' }
+          : row;
+      }));
+    }
+    return recommendations;
   }
 
   /** Fetch the latest room/rate/meal options for one selected supplier hotel. */
@@ -2642,7 +2686,9 @@ this.logger.log(
     // preference-filtered projection is only a UI compatibility artifact;
     // using it for selection can hide a valid lower-category live hotel when
     // an offline/category-matching row survives the projection.
-    const recommendationHotelsByRoute = completeHotelsByRoute;
+    const recommendationHotelsByRoute = planRoomCount > 6
+      ? await this.withSplitVsrRecommendationDistances(completeHotelsByRoute, routes)
+      : completeHotelsByRoute;
     const packages = this.hotelRecommendationPackageService.generate({
       routes: routes as any,
       // Recommendation eligibility must use the same current, complete,

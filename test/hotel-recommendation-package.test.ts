@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HotelRecommendationPackageService, mapHotelCategoryLabelToStar, resolveHotelRecommendationAlgorithm } from '../src/modules/itineraries/services/hotel-recommendation-package.service';
 import { HotelMealPlanPolicyService } from '../src/modules/itineraries/services/hotel-meal-plan-policy.service';
+import { ItineraryHotelDetailsTboService } from '../src/modules/itineraries/itinerary-hotel-details-tbo.service';
 import { applyTboMapFallbackToRows } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
 import {
   getCanonicalMealPlanFlags,
@@ -930,9 +931,32 @@ test('only a fresh, compatible VSR quote for every room and night outranks offli
     { ...raw, tboRoomBatches: [batches[0], { ...batches[1], bookingCode: batches[0].bookingCode }] },
     { ...raw, checkOutDate: '2026-08-03' },
     { ...raw, supplierSearchCompletedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+    { ...raw, distanceKm: 400, distanceReference: 'ROUTE_DESTINATION' },
   ]) {
     assert.equal(generate(invalid)[0].hotels[0]?.provider, 'offline');
   }
+});
+
+test('split recommendations check the actual hotel location against the requested stay', async () => {
+  const details = Object.assign(Object.create(ItineraryHotelDetailsTboService.prototype), {
+    prisma: { dvi_stored_locations: { findMany: async () => [{
+      location_ID: 44n, destination_location_city: 'Udupi',
+      destination_location_lattitude: '13.34', destination_location_longitude: '74.75',
+    }] } },
+  });
+  const local = { provider: 'tbo', tboRoomBatches: [], supplierHotelCity: 'Udipi', latitude: '13.35', longitude: '74.76' };
+  const otherCity = { ...local, supplierHotelCity: 'Gulbarga', latitude: '17.32', longitude: '76.82' };
+  const otherCityWithoutCoordinates = { ...otherCity, latitude: '', longitude: '' };
+  const offline = { provider: 'offline' };
+  const hotels = new Map([[10, [local, otherCity, otherCityWithoutCoordinates, offline]]]);
+  const result = await details.withSplitVsrRecommendationDistances(hotels, [
+    { itinerary_route_ID: 10, location_id: 44n, next_visiting_location: 'Udupi, Karnataka, India' },
+  ]);
+  const [nearby, farAway, differentCity, offlineRate] = result.get(10);
+  assert.ok(nearby.distanceKm < 15);
+  assert.ok(farAway.distanceKm > 15);
+  assert.equal(differentCity.distanceStatus, 'OUTSIDE_RADIUS');
+  assert.equal(offlineRate, offline);
 });
 
 test('VSR complete fare remains live when occupancy supplements are requested', () => {
