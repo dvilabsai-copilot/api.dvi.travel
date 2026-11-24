@@ -1444,20 +1444,24 @@ export class HotelAvailabilitySnapshotService {
     // and the explicit Reset flow may mutate saved auto-selections.
     // With reconciliation disabled, an explicit availability check is the
     // normal refresh flow and must persist refreshed automatic selections.
-    // Reconciliation mode remains a read-only preview until acknowledgement.
+    // Reconciliation only proposes selection changes until acknowledgement.
     const shouldPersist = requestType !== 'CHECK_AVAILABILITY' || resetSelections || !reconciliation;
+    const roomCount = Number(plan.preferred_room_count);
+    const mayRefreshSplitInventory = !shouldPersist &&
+      Number.isInteger(roomCount) && roomCount >= 7 && roomCount <= 25;
+    const needsLock = shouldPersist || mayRefreshSplitInventory;
     const lockName = `itinerary_hotel_availability:${plan.itinerary_plan_ID}`;
     const databaseUrl = String(process.env.DATABASE_URL || '').trim();
-    if (shouldPersist && !databaseUrl) throw new Error('DATABASE_URL is required for hotel availability coordination');
+    if (needsLock && !databaseUrl) throw new Error('DATABASE_URL is required for hotel availability coordination');
 
-    const connection = shouldPersist ? await createConnection(databaseUrl) : null;
+    const connection = needsLock ? await createConnection(databaseUrl) : null;
     let acquired = false;
     const startedAt = Date.now();
     const checkedAt = new Date();
     const searchRunId = `hotel-${plan.itinerary_plan_ID}-${randomUUID()}`;
 
     try {
-      if (shouldPersist) {
+      if (connection) {
         const [lockRows] = await connection!.query<any[]>('SELECT GET_LOCK(?, 0) AS acquired', [lockName]);
         acquired = Number(lockRows?.[0]?.acquired || 0) === 1;
         if (!acquired) {
@@ -1738,10 +1742,7 @@ export class HotelAvailabilitySnapshotService {
           if (resetSelections) {
             await this.clearEditableHotelSelections(tx, plan.itinerary_plan_ID);
           }
-          await tx?.dvi_itinerary_hotel_search_cache?.deleteMany?.({
-            where: { quote_id: String(quoteId).trim(), plan_id: plan.itinerary_plan_ID },
-          });
-          await this.persistHotelSearchCache(
+          await this.replaceHotelSearchCache(
             tx,
             quoteId,
             plan,
@@ -1790,6 +1791,17 @@ export class HotelAvailabilitySnapshotService {
         // actually produced before persistence.
         { providerErrors, authoritativeRecommendationRows },
       );
+      // The card pane pages through the cache even when the user keeps the
+      // saved hotels. Publish the complete inventory separately from the
+      // selection proposals so both paths see the same supplier search.
+      if (mayRefreshSplitInventory && hasUsableLiveInventory && rows.length > 0 &&
+          !hasPartialAvailability && response.hotelAvailability?.emptySearchRoutes === 0) {
+        await this.prisma.$transaction(
+          (tx) => this.replaceHotelSearchCache(tx, quoteId, plan, rows, searchRunId, checkedAt),
+          { maxWait: 15000, timeout: 120000 },
+        );
+        response.hotelAvailability.inventorySearchRunId = searchRunId;
+      }
       logStage('build-fresh-response', readStartedAt);
       if (shouldPersist) {
         this.tboMasterGallery?.enqueueMissingFromSearchResults(rows);
@@ -2041,6 +2053,20 @@ export class HotelAvailabilitySnapshotService {
     });
     if (!plan) throw new BadRequestException('Itinerary not found');
     return plan;
+  }
+
+  private async replaceHotelSearchCache(
+    tx: Prisma.TransactionClient,
+    quoteId: string,
+    plan: any,
+    rows: any[],
+    searchRunId: string,
+    checkedAt: Date,
+  ): Promise<void> {
+    await tx.dvi_itinerary_hotel_search_cache?.deleteMany?.({
+      where: { quote_id: quoteId.trim(), plan_id: plan.itinerary_plan_ID },
+    });
+    await this.persistHotelSearchCache(tx, quoteId, plan, rows, searchRunId, checkedAt);
   }
 
   private async persistHotelSearchCache(

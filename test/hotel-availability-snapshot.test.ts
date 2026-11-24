@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import mysql from 'mysql2/promise';
 import { HotelAvailabilitySnapshotService } from '../src/modules/itineraries/services/hotel-availability-snapshot.service';
 import { autoSelectionIdentityMatches, buildAutoSelectionIdentity, hotelOptionKey, hotelSelectionKeyFromRow, selectionOriginFromRow } from '../src/modules/itineraries/utils/hotel-selection-identity.util';
 import { projectHotelPayablePricing } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
@@ -218,6 +219,98 @@ test('persisted TBO cache stores a numeric category when the supplier sends a st
   assert.equal(createdRows.length, 1);
   assert.equal(createdRows[0].rating, 4);
   assert.equal(JSON.parse(createdRows[0].full_payload).searchRunId, 'test-search-run');
+});
+
+test('complete split reconciliation publishes the hotel card page without applying selection changes', async (t) => {
+  const quoteId = 'DVI20261156';
+  const date = '2026-11-26';
+  const roomType = 'Superior King + Deluxe Twin';
+  const hotelCode = '6437125';
+  const roomBatches = [6, 2].map((roomCount, index) => ({
+    batchIndex: index, startRoomIndex: index * 6, roomCount,
+    hotelCode, roomType: index === 0 ? 'Superior King' : 'Deluxe Twin',
+    bookingCode: hotelCode + '!TB!fixture' + index, mealPlan: 'CP',
+    currency: 'INR', isRefundable: true, supplierTotalFare: roomCount * 1000,
+    occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0 })),
+  }));
+  const candidate = {
+    itineraryRouteId: 10, groupType: 0, date, checkInDate: date, checkOutDate: '2026-11-27',
+    provider: 'tbo', hotelCode, hotelName: 'Fortune Plaza Hotel', roomType, mealPlan: 'CP',
+    roomCount: 8, totalPrice: 8000, isSelectable: false, tboRoomBatches: roomBatches,
+  };
+  const previousUrl = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = 'mysql://fixture@localhost/fixture';
+  t.after(() => {
+    if (previousUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousUrl;
+  });
+  const lockCommands: string[] = [];
+  const connect = t.mock.method(mysql, 'createConnection', async () => ({
+    query: async (sql: string) => {
+      lockCommands.push(sql);
+      return [[{ acquired: 1 }]];
+    },
+    end: async () => undefined,
+  }));
+  const prisma = makePrisma();
+  const plan = { itinerary_plan_ID: 44, preferred_room_count: 8, no_of_nights: 1 };
+  prisma.dvi_itinerary_plan_details.findFirst = async () => plan;
+  prisma.dvi_itinerary_route_details = { findMany: async () => [
+    { itinerary_route_ID: 10, itinerary_route_date: date },
+  ] };
+  let cache = await prisma.dvi_itinerary_hotel_search_cache.findMany();
+  prisma.dvi_itinerary_hotel_search_cache = {
+    findMany: async () => cache,
+    deleteMany: async () => { cache = []; },
+    createMany: async ({ data }: any) => { cache = data; },
+  };
+  let writeCount = 0;
+  prisma.$transaction = async (callback: (tx: unknown) => Promise<void>) => {
+    writeCount++;
+    await callback({ dvi_itinerary_hotel_search_cache: prisma.dvi_itinerary_hotel_search_cache });
+  };
+  let providerErrors: Array<{ provider: string }> = [];
+  let inventory = [candidate];
+  const service = new HotelAvailabilitySnapshotService(prisma, {
+    getHotelDetailsByQuoteIdFromTbo: async () => ({
+      __offlineHotelsByRoute: new Map(),
+      hotelAvailability: { sharedHotelInventory: inventory, providerErrors },
+    }),
+  } as any, {} as any);
+  const snapshot = service as any;
+  snapshot.applyCompleteStayAvailability = async (rows: any[]) => rows;
+  snapshot.reconcileSelections = async (...args: unknown[]) => {
+    assert.equal(args[11], true);
+    return { hasChanges: true, changes: [] };
+  };
+  snapshot.storeAvailabilityPreview = async () => 'saved-preview';
+  snapshot.buildFreshResponse = async () => ({
+    hotelAvailability: { emptySearchRoutes: inventory.length ? 0 : 1 },
+  });
+  const search = () => service.searchAndPersist(quoteId, 'CHECK_AVAILABILITY', 1, false, true);
+  const result = await search();
+  assert.equal(result.previewId, 'saved-preview');
+  assert.equal(result.response.hotelAvailability?.inventorySearchRunId, result.searchRunId);
+  assert.deepEqual(lockCommands, [
+    'SELECT GET_LOCK(?, 0) AS acquired', 'SELECT RELEASE_LOCK(?) AS released',
+  ]);
+  const page = await service.readPersisted(quoteId, { page: 1, pageSize: 20, groupType: 2, itineraryRouteId: 10 },
+    async () => ({ hotels: [], hotelTabs: [] } as any));
+  assert.deepEqual(page.hotels.map(row => row.hotelName), ['Fortune Plaza Hotel']);
+  assert.deepEqual((page.hotels[0] as any).tboRoomBatches, roomBatches);
+
+  await search();
+  assert.equal(cache.length, 1, 'repeated checks replace the inventory');
+  providerErrors = [{ provider: 'tbo' }];
+  assert.equal((await search()).response.hotelAvailability?.inventorySearchRunId, undefined);
+  providerErrors = [];
+  inventory = [];
+  assert.equal((await search()).response.hotelAvailability?.inventorySearchRunId, undefined);
+  plan.preferred_room_count = 6;
+  inventory = [candidate];
+  assert.equal((await search()).response.hotelAvailability?.inventorySearchRunId, undefined);
+  assert.equal(writeCount, 2, 'partial, empty, and ordinary previews leave the cache intact');
+  assert.equal(connect.mock.callCount(), 4, 'ordinary previews keep their existing lock-free path');
 });
 
 test('client hotel payload strips recommendation internals and shared inventory deduplicates groups', () => {

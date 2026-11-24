@@ -276,6 +276,7 @@ export interface HotelAvailabilityMetaDto {
   availabilityState?: 'NOT_CHECKED' | 'CHECKING' | 'FRESH' | 'STALE' | 'PARTIAL' | 'FAILED';
   recommendationAlgorithm?: 'v1' | 'v2';
   searchRunId?: string;
+  inventorySearchRunId?: string;
   recommendationGeneration?: RecommendationGenerationDto;
   checkedAt?: string;
   expiresAt?: string | null;
