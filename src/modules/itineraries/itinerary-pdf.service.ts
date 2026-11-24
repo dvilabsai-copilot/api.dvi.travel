@@ -1837,10 +1837,14 @@ if (hotelGroups.length === 0) {
         doc.y += 24;
 
         for (const group of hotelGroups) {
-          this.addPageIfNeeded(doc, 72);
+          const roomLabels = group?.roomTypeQuantities?.length
+            ? group.roomTypeQuantities.map(({ roomCount, roomType }: { roomCount: number; roomType: string }) => `${roomCount} × ${roomType}`).join('\n')
+            : group?.roomTypes?.join(', ') || 'N/A';
+          const rowHeight = Math.max(58, doc.font('Helvetica').fontSize(9).heightOfString(roomLabels, { width: 85 }) + 20);
+          this.addPageIfNeeded(doc, rowHeight + 14);
           const top = doc.y;
           const rowBg = Number(group?.voucherCount || 0) > 0 ? '#FFFFFF' : '#FFFCF5';
-          doc.rect(40, top, doc.page.width - 80, 58).fillAndStroke(rowBg, '#EFE6F8');
+          doc.rect(40, top, doc.page.width - 80, rowHeight).fillAndStroke(rowBg, '#EFE6F8');
           doc.font('Helvetica-Bold').fontSize(10).fillColor('#3F3654').text(String(group?.hotelName || '--'), 48, top + 6, { width: 150 });
           doc.font('Helvetica').fontSize(9).fillColor('#5A5268').text(
             String(group?.hotelStateCity || (Array.isArray(group?.destinations) ? group.destinations.join(', ') : '--')),
@@ -1859,7 +1863,7 @@ if (hotelGroups.length === 0) {
             { width: 105 },
           );
           doc.text(
-            Array.isArray(group?.roomTypes) && group.roomTypes.length > 0 ? group.roomTypes.join(', ') : 'N/A',
+            roomLabels,
             320,
             top + 10,
             { width: 85 },
@@ -1881,7 +1885,7 @@ if (hotelGroups.length === 0) {
             );
           }
 
-          doc.y += 58;
+          doc.y = Math.max(doc.y + 58, top + rowHeight + 14);
         }
         doc.y += 8;
       }

@@ -23,6 +23,7 @@ import { allocateTboBatchPassengers } from '../../hotels/utils/tbo-batch-passeng
 import { ItinerarySelectionWorkflowService } from './itinerary-selection-workflow.service';
 import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
 import { matchRefreshedTboBatchCode } from '../utils/match-refreshed-tbo-batch.util';
+import { booksSameBatch, getHotelHoldSelectionCoverage, splitHoldBatch } from '../utils/hotel-hold-selection-coverage.util';
 import {
   DEFAULT_TBO_CHILD_AGE,
   distributeTboSearchOccupancies,
@@ -56,7 +57,6 @@ type TboHoldBookingInput = {
   selection?: Record<string, any>;
   priceApprovalToken?: string;
 };
-type SplitHoldBatch = { key: string; index: number; count: number };
 type ProviderHoldInput = {
   channel: 'AXISROOMS_HOLD' | 'OFFLINE_HOLD';
   confirmationReference?: string | null;
@@ -83,15 +83,6 @@ const RESPONSE_STATUSES = new Set<string>([
 ]);
 
 const normalizeText = (value: unknown) => String(value ?? '').trim();
-const splitHoldBatch = (request: BlockRow): SplitHoldBatch | undefined =>
-  parseJson(request.request_payload, {})?.supplierHold?.batch;
-const booksSameBatch = (request: BlockRow, stay: TboMultiBatchStaySnapshot): boolean => {
-  const hold = parseJson(request.request_payload, {})?.supplierHold;
-  const batch = stay.batches.find(item => item.batchIndex === hold?.batch?.index);
-  return Boolean(batch && hold.batch.count === stay.batches.length && Number(hold.bookingId) > 0 &&
-    hold.bookingCode === batch.bookingCode && Number(request.room_count) === batch.roomCount &&
-    request.hotel_code === batch.hotelCode && request.room_type === batch.roomType && request.meal_plan === batch.mealPlan);
-};
 
 export const isTboSupplierHoldRequest = (row: BlockRow): boolean => (
   normalizeText(row.confirmation_channel).toUpperCase() === 'TBO_BOOK_HOLD'
@@ -2003,10 +1994,6 @@ export class HotelBlockingService {
       },
       select: { itinerary_plan_hotel_details_ID: true, selected_price_snapshot: true },
     });
-    const expectedSelectionIds = selectedRows
-      .map((row: BlockRow) => Number(row.itinerary_plan_hotel_details_ID))
-      .filter((id: number) => id > 0)
-      .sort((a: number, b: number) => a - b);
     const requests = await (this.prisma as any).dvi_hotel_block_request.findMany({
       where: {
         itinerary_plan_id: Number(planId),
@@ -2053,48 +2040,13 @@ export class HotelBlockingService {
       }
       return request.status === HOTEL_BLOCK_STATUS.CONFIRMED && hasFutureCutoff;
     }));
-    const pending = requests.filter((_request: BlockRow, index: number) => !readiness[index]);
-    const splitSelectionIds = new Set(selectedRows.filter((row: BlockRow) => rowSnapshot(row).tboMultiBatchStay)
-      .map((row: BlockRow) => Number(row.itinerary_plan_hotel_details_ID)));
-    const splitRequests = new Map<string, BlockRow[]>();
-    const singleRequests = requests.filter((request: BlockRow) => {
-      const batch = splitHoldBatch(request);
-      if (!batch) {
-        if ((parseJson(request.selection_ids, []) as unknown[]).some(id => splitSelectionIds.has(Number(id)))) {
-          pending.push(request);
-        }
-        return true;
-      }
-      const items = splitRequests.get(batch.key) || [];
-      items.push(request);
-      splitRequests.set(batch.key, items);
-      return false;
-    });
-    const completeSplitRequests: BlockRow[] = [];
-    for (const siblings of splitRequests.values()) {
-      const first = siblings[0];
-      const ids = (parseJson(first.selection_ids, []) as unknown[]).map(Number);
-      const snapshots = ids.map(id => rowSnapshot(selectedRows.find((row: BlockRow) =>
-        Number(row.itinerary_plan_hotel_details_ID) === id) || {}).tboMultiBatchStay);
-      const stay = snapshots[0] as TboMultiBatchStaySnapshot | undefined;
-      if (!stay?.batches?.length || !snapshots.every(value => JSON.stringify(value) === JSON.stringify(stay)) ||
-          siblings.length !== stay.batches.length || new Set(siblings.map(row => splitHoldBatch(row)?.index)).size !== siblings.length ||
-          !siblings.every(row => row.selection_ids === first.selection_ids && booksSameBatch(row, stay))) {
-        pending.push(...siblings);
-        continue;
-      }
-      completeSplitRequests.push(first);
-    }
-    const heldSelectionIds = singleRequests.concat(completeSplitRequests)
-      .flatMap((request: BlockRow) => (parseJson(request.selection_ids, []) as unknown[]).map(Number))
-      .filter((id: number) => id > 0)
-      .sort((a: number, b: number) => a - b);
-    const selectionChanged = expectedSelectionIds.length !== heldSelectionIds.length
-      || expectedSelectionIds.some((id: number, index: number) => id !== heldSelectionIds[index]);
+    const coverage = getHotelHoldSelectionCoverage<BlockRow>(selectedRows, requests);
+    const pending = requests.filter((request: BlockRow, index: number) => !readiness[index] || coverage.invalidRequests.includes(request));
+    const selectionChanged = !coverage.matches;
     if (!requests.length || pending.length || selectionChanged) {
       throw new BadRequestException({
         code: 'HOTEL_CONFIRMATION_PENDING',
-        message: !requests.length && expectedSelectionIds.length > 0
+        message: !requests.length && coverage.expectedIds.length > 0
           ? 'No active hotel holds were found for the selected recommendation. Hold the selected hotels before payment.'
           : selectionChanged
             ? 'The selected hotels changed after the hold request. Hold the current selection again before payment.'

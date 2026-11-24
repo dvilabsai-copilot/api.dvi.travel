@@ -9,6 +9,7 @@ import { ItineraryDetailsService } from '../itinerary-details.service';
 import { HotelStayBlockValidationService } from './hotel-stay-block-validation.service';
 import { normalizePassengerTitle } from '../../../common/utils/passenger-title.util';
 import { ItineraryHotelApprovalService } from './itinerary-hotel-approval.service';
+import { getHotelHoldSelectionCoverage } from '../utils/hotel-hold-selection-coverage.util';
 
 type ConfirmQuotationCallbacks = Partial<Record<
   'syncSelectedHotelDraftRowsForConfirmation'
@@ -17,15 +18,6 @@ type ConfirmQuotationCallbacks = Partial<Record<
   | 'copyDraftToConfirmed',
   (...args: any[]) => any
 >>;
-
-const parseSelectionIds = (value: unknown): number[] => {
-  try {
-    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-    return Array.isArray(parsed) ? parsed.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
-  } catch {
-    return [];
-  }
-};
 
 export async function claimManualHotelHoldsForPayment(tx: any, planId: number, groupType: number, now: Date) {
   const groupFilter = groupType > 0 ? { group_type: groupType } : {};
@@ -38,26 +30,25 @@ export async function claimManualHotelHoldsForPayment(tx: any, planId: number, g
       hotel_required: { not: 2 },
       NOT: { selection_origin: 'USER_REMOVED' },
     },
-    select: { itinerary_plan_hotel_details_ID: true },
+    select: { itinerary_plan_hotel_details_ID: true, selected_price_snapshot: true },
   });
-  const expectedIds = selectedRows.map((row: any) => Number(row.itinerary_plan_hotel_details_ID)).filter((id: number) => id > 0).sort((a: number, b: number) => a - b);
   const holds = await tx.dvi_hotel_block_request.findMany({
     where: {
       itinerary_plan_id: Number(planId),
       ...groupFilter,
       status: { notIn: ['CANCELLED', 'SUPERSEDED', 'EXPIRED'] },
     },
-    select: { id: true, status: true, cutoff_at: true, paid_confirmed_at: true, selection_ids: true },
+    select: { id: true, status: true, cutoff_at: true, paid_confirmed_at: true, selection_ids: true,
+      hotel_code: true, room_count: true, room_type: true, meal_plan: true, request_payload: true },
   });
-  const heldIds = holds.flatMap((hold: any) => parseSelectionIds(hold.selection_ids)).sort((a: number, b: number) => a - b);
-  const sameSelection = expectedIds.length === heldIds.length && expectedIds.every((id: number, index: number) => id === heldIds[index]);
+  const coverage = getHotelHoldSelectionCoverage(selectedRows, holds);
   const activeHolds = holds.filter((hold: any) => !hold.paid_confirmed_at);
   const holdsAreCurrent = activeHolds.length > 0 && activeHolds.every((hold: any) =>
     ['BLOCKED', 'CONFIRMED'].includes(String(hold.status))
     && hold.cutoff_at instanceof Date
     && hold.cutoff_at.getTime() > now.getTime(),
   );
-  if (!sameSelection || !holdsAreCurrent) {
+  if (!coverage.matches || coverage.invalidRequests.length || !holdsAreCurrent) {
     throw new BadRequestException({
       code: 'HOTEL_HOLD_EXPIRED_OR_CHANGED',
       message: 'A hotel hold expired or the selected hotels changed. Refresh availability and create a current hold before payment.',
