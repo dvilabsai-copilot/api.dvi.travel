@@ -927,7 +927,15 @@ const previousEndTime =
       const shouldCreateRevision = revisionState && captureRevisionPrices && hotelsRequired &&
         Number(dto.plan.no_of_nights || 0) > 0 && reasons.length > 0;
       if (revisionState?.pending && !shouldCreateRevision) {
-        throw new ConflictException('This quote already has a pending revision. Retry the same edit if the hotel search failed.');
+        const previousRevision = revisionState.pending;
+        if (previousRevision.status === 'FAILED' && !previousRevision.search_run_id) {
+          await tx.dvi_itinerary_quote_revision.update({
+            where: { plan_id: previousRevision.plan_id },
+            data: { status: 'ABANDONED' },
+          });
+        } else {
+          throw new ConflictException('This quote already has a pending revision. Retry the same edit if the hotel search failed.');
+        }
       }
       const revision = shouldCreateRevision
         ? await createPendingItineraryRevision(

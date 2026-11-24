@@ -1,3 +1,7 @@
+import {
+  buildTboRoomBatches,
+  type TboRoomBatch,
+} from '../utils/tbo-occupancy.util';
 import { BadRequestException, Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { promises as fs } from 'node:fs';
@@ -120,6 +124,51 @@ export class TBOHotelProvider implements IHotelProvider {
 
   getName(): string {
     return 'TBO';
+  }
+
+  /**
+   * Search each supplier-sized room batch independently.
+   * Keeps the original supplier BookingCodes and prices per batch.
+   * Does not combine or claim availability across batches.
+   */
+  async searchRoomBatches(
+    criteria: HotelSearchCriteria,
+    preferences?: HotelPreferences,
+  ): Promise<Array<{
+    batch: TboRoomBatch;
+    hotels: HotelSearchResult[];
+  }>> {
+    const batches = buildTboRoomBatches(
+      criteria.occupancies ?? [],
+      TBOHotelProvider.MAX_ROOMS,
+    );
+
+    const results: Array<{
+      batch: TboRoomBatch;
+      hotels: HotelSearchResult[];
+    }> = [];
+
+    for (const batch of batches) {
+      const hotels = await this.search(
+        {
+          ...criteria,
+          roomCount: batch.roomCount,
+          guestCount: batch.guestCount,
+          occupancies: batch.occupancies,
+        },
+        {
+          ...preferences,
+          tboNoOfRooms: batch.roomCount,
+        },
+      );
+
+      results.push({
+        batch,
+        hotels,
+      });
+    }
+
+    return results;
   }
 
  /**
@@ -439,7 +488,18 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
             : [];
 
  // Use REAL BookingCode from TBO Search API response (not generated)
-          const realBookingCode = room.BookingCode || `${hotel.HotelCode}_${room.TBORoomID}`;
+ const realBookingCode =
+  typeof room.BookingCode === 'string'
+    ? room.BookingCode.trim()
+    : '';
+
+if (!realBookingCode) {
+  this.logger.warn(
+    `Skipping TBO rate without supplier BookingCode: hotel=${String(hotel.HotelCode ?? '')}`,
+  );
+  continue;
+}
+
           const tboBookingParts = String(realBookingCode).split('!TB!');
           const selectionKey = tboBookingParts.length >= 2
             ? `tbo:${String(hotel.HotelCode || '')}:${tboBookingParts[1]}`
@@ -1286,6 +1346,7 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
 
       return {
         confirmationRef: confirmationRef,
+        bookingId: Number(result.BookingId) || undefined,
         hotelName: result.HotelName || '',
         checkIn: result.CheckInDate,
         checkOut: result.CheckOutDate,
@@ -1495,30 +1556,52 @@ for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
     }
 
  // Validate each occupancy before building PaxRooms payload
-    for (let i = 0; i < criteria.occupancies.length; i++) {
-      const occ = criteria.occupancies[i];
+ for (let i = 0; i < criteria.occupancies.length; i++) {
+const occ = criteria.occupancies[i];
+  if (
+    !Number.isSafeInteger(occ.adults) ||
+    occ.adults < 1 ||
+    occ.adults > TBOHotelProvider.MAX_ADULTS_PER_ROOM
+  ) {
+    throw new InternalServerErrorException(
+      `Occupancy[${i}].adults must be between 1 and ${TBOHotelProvider.MAX_ADULTS_PER_ROOM}.`,
+    );
+  }
 
-      if (occ.adults > TBOHotelProvider.MAX_ADULTS_PER_ROOM || occ.adults < 0) {
-        throw new InternalServerErrorException(
-          `Occupancy[${i}].adults (${occ.adults}) violates TBO limit. ` +
-          `Must be 0-${TBOHotelProvider.MAX_ADULTS_PER_ROOM}.`,
-        );
-      }
+  if (
+    !Number.isSafeInteger(occ.children) ||
+    occ.children < 0 ||
+    occ.children > TBOHotelProvider.MAX_CHILDREN_PER_ROOM
+  ) {
+    throw new InternalServerErrorException(
+      `Occupancy[${i}].children must be between 0 and ${TBOHotelProvider.MAX_CHILDREN_PER_ROOM}.`,
+    );
+  }
 
-      if (occ.children > TBOHotelProvider.MAX_CHILDREN_PER_ROOM || occ.children < 0) {
-        throw new InternalServerErrorException(
-          `Occupancy[${i}].children (${occ.children}) violates TBO limit. ` +
-          `Must be 0-${TBOHotelProvider.MAX_CHILDREN_PER_ROOM}.`,
-        );
-      }
-    }
+  const ages = occ.childrenAges ?? [];
 
- // Build PaxRooms with validated occupancies
-    return criteria.occupancies.map((occ) => ({
-      Adults: Math.max(occ.adults || 1, 1),
-      Children: Math.max(occ.children || 0, 0),
-      ChildrenAges: (occ.childrenAges || []).map((age) => Number(age)).filter((age) => !Number.isNaN(age)),
-    }));
+  if (
+    !Array.isArray(ages) ||
+    ages.length !== occ.children ||
+    ages.some(
+      (age) =>
+        !Number.isSafeInteger(age) ||
+        age < 0 ||
+        age > 11,
+    )
+  ) {
+    throw new InternalServerErrorException(
+      `Occupancy[${i}].childrenAges must contain one valid age per child.`,
+    );
+  }
+}
+
+return criteria.occupancies.map((occ) => ({
+  Adults: occ.adults,
+  Children: occ.children,
+  ChildrenAges: [...(occ.childrenAges ?? [])],
+}));
+
   }
 
  /**

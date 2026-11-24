@@ -28,6 +28,31 @@ test('confirmation preserves booking-key normalization', () => {
   assert.equal(createService().bookingKey(' STAah ', 7), 'staah::7');
 });
 
+test('a split VSR retry checks the wallet against the approved total before reusing the provisional confirmation', async () => {
+  const prisma = {
+    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'SPLIT_FIXTURE', quotation_status: 0 }) },
+    dvi_confirmed_itinerary_plan_details: { findFirst: async () => ({ confirmed_itinerary_plan_ID: 123 }) },
+  };
+  const details = { getItineraryDetails: async () => ({ costBreakdown: { netPayable: 935 } }) };
+  const service = new ItineraryConfirmationService(prisma as any, details as any, null as any);
+  service.setCallbacks({ formatDateOnly: () => '', getAgentWalletBalance: async () => ({ balance: 900 }) });
+
+  await assert.rejects(
+    () => service.confirmQuotation({
+      itinerary_plan_ID: 87, agent: 99, hotel_bookings: [{ provider: 'tbo', batchIndex: 0 }],
+    } as any),
+    (error: any) => {
+      assert.deepEqual(error.getResponse(), {
+        code: 'VSR_WALLET_INSUFFICIENT',
+        message: 'Insufficient wallet balance. Required: 935, Available: 900',
+        required: 935,
+        available: 900,
+      });
+      return true;
+    },
+  );
+});
+
 async function assertManualPayment(itineraryPreference: 1 | 2 | 3) {
   const isVehicleOnly = itineraryPreference === 2;
   const selectedHotelId = 101;

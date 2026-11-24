@@ -1,6 +1,7 @@
 // FILE: src/modules/itineraries/services/itinerary-hotel-booking-fulfillment.service.ts
 
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { isTboBatchBooking } from '../../hotels/utils/tbo-complete-batch-validation.util';
 import { PrismaService } from '../../../prisma.service';
 import { ConfirmQuotationDto } from '../dto/confirm-quotation.dto';
 import { TboHotelBookingService } from './tbo-hotel-booking.service';
@@ -124,7 +125,7 @@ export class ItineraryHotelBookingFulfillmentService {
  // Group hotels by provider and skip bookings that are already successful in DB.
     const normalizedHotelBookings = providerHotelBookings.map((hotel) => ({
       ...hotel,
-      __provider: String(hotel?.provider || '').trim().toLowerCase(),
+      __provider: String(hotel?.provider || '').trim().toLowerCase().replace(/^vsr$/, 'tbo'),
     }));
 
     const { pendingBookings, alreadyConfirmedResults } =
@@ -161,6 +162,10 @@ export class ItineraryHotelBookingFulfillmentService {
           checkInDate: hotel.checkInDate,
           checkOutDate: hotel.checkOutDate,
           numberOfRooms: hotel.numberOfRooms,
+          batchIndex: hotel.batchIndex,
+          startRoomIndex: hotel.startRoomIndex,
+          roomPassengerIndices: hotel.roomPassengerIndices,
+          routeIds: hotel.routeIds,
           guestNationality: hotel.guestNationality,
           netAmount: hotel.netAmount,
           searchInitiatedAt: (hotel as any).searchInitiatedAt,
@@ -353,35 +358,44 @@ export class ItineraryHotelBookingFulfillmentService {
         allBookingResults.push(...staahBookingResults);
       }
 
+      const resultKey = (booking: any, routeId: number) => {
+        const provider = String(booking.__provider || booking.provider || '').trim().toLowerCase();
+        const routeKey = this.bookingKey(provider, routeId);
+        return isTboBatchBooking(booking) ? JSON.stringify([routeKey, booking.batchIndex, booking.bookingCode]) : routeKey;
+      };
       const successKeySet = new Set(
         allBookingResults
           .filter((r) => this.isBookingResultSuccess(r))
           .flatMap((r) => {
-            const provider = String(r?.provider || '').trim().toLowerCase();
             const routeIds = Array.isArray(r?.routeIds) && r.routeIds.length > 0
               ? r.routeIds
               : [Number(r?.routeId || 0)];
             return routeIds
               .map((routeId: any) => Number(routeId || 0))
               .filter((routeId: number) => Number.isFinite(routeId) && routeId > 0)
-              .map((routeId: number) => this.bookingKey(provider, routeId));
+              .map((routeId: number) => resultKey(r, routeId));
           }),
       );
 
       const pendingAfterAttempt = normalizedHotelBookings
-        .filter((b) => !successKeySet.has(this.bookingKey(b.__provider, Number(b.routeId || 0))))
+        .filter((b) => !successKeySet.has(resultKey(b, Number(b.routeId || 0))))
         .map((b) => ({
           provider: b.__provider,
           routeId: Number(b.routeId || 0),
           hotelCode: String(b.hotelCode || ''),
           hotelName: String(b.hotelName || ''),
+          ...(isTboBatchBooking(b) ? { batchIndex: b.batchIndex } : {}),
         }));
 
  console.log('[CONFIRM_QUOTATION_DEBUG] Final bookingResults before response:', JSON.stringify(allBookingResults, null, 2));
 
       if (pendingAfterAttempt.length > 0) {
+        const needsReconciliation = allBookingResults.some((result) => result.status === 'requires_reconciliation');
+        const message = needsReconciliation
+          ? 'Partial booking success. Quotation remains unconfirmed. Reconcile the unresolved VSR booking before retrying.'
+          : 'Partial booking success. Quotation remains unconfirmed. Retry will target only unsuccessful bookings.';
         throw new BadRequestException({
-          message: 'Partial booking success. Quotation remains unconfirmed. Retry will target only unsuccessful bookings.',
+          message,
           itinerary_plan_ID: baseResult.itinerary_plan_ID,
           confirmed_itinerary_plan_ID: baseResult.confirmed_itinerary_plan_ID,
           bookingResults: allBookingResults,

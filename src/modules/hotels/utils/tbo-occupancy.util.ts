@@ -56,3 +56,64 @@ export const distributeTboSearchOccupancies = (
     };
   });
 };
+
+/** Split validated occupancies using a caller-provided supplier request limit. */
+export const splitTboRoomOccupancies = (
+  occupancies: readonly TboRoomOccupancy[],
+  maxRoomsPerRequest: number,
+): TboRoomOccupancy[][] => {
+  if (!Number.isSafeInteger(maxRoomsPerRequest) || maxRoomsPerRequest < 1) {
+    throw new RangeError('Invalid supplier room limit');
+  }
+
+  if (!Array.isArray(occupancies) || occupancies.length === 0) {
+    throw new RangeError('Room occupancies are required');
+  }
+
+  const batches: TboRoomOccupancy[][] = [];
+  for (let index = 0; index < occupancies.length; index += maxRoomsPerRequest) {
+    batches.push(
+      occupancies.slice(index, index + maxRoomsPerRequest).map((room) => ({
+        ...room,
+        childrenAges: room.childrenAges ? [...room.childrenAges] : undefined,
+      })),
+    );
+  }
+  return batches;
+};
+
+export type TboRoomBatch = {
+  batchIndex: number;
+  startRoomIndex: number;
+  roomCount: number;
+  guestCount: number;
+  occupancies: TboRoomOccupancy[];
+};
+
+export const buildTboRoomBatches = (
+  occupancies: readonly TboRoomOccupancy[],
+  maxRoomsPerRequest: number,
+): TboRoomBatch[] => {
+  const groups = splitTboRoomOccupancies(
+    occupancies,
+    maxRoomsPerRequest,
+  );
+
+  let startRoomIndex = 0;
+
+  return groups.map((group, batchIndex) => {
+    const batch: TboRoomBatch = {
+      batchIndex,
+      startRoomIndex,
+      roomCount: group.length,
+      guestCount: group.reduce(
+        (sum, room) => sum + room.adults + room.children,
+        0,
+      ),
+      occupancies: group,
+    };
+
+    startRoomIndex += group.length;
+    return batch;
+  });
+};

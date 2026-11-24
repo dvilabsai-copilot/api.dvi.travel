@@ -2,6 +2,7 @@
 
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { isTboBatchBooking } from '../../hotels/utils/tbo-complete-batch-validation.util';
 import { PrismaService } from '../../../prisma.service';
 import { ConfirmQuotationDto } from '../dto/confirm-quotation.dto';
 import { ItineraryDetailsService } from '../itinerary-details.service';
@@ -127,6 +128,13 @@ export class ItineraryHotelConfirmationSupportService {
       const routeId = Number(booking?.routeId || 0);
       const normalizedRouteId = removedRouteIds.has(routeId) ? 0 : routeId;
 
+      if (isTboBatchBooking(booking)) {
+        if (!isEligibleRoute(normalizedRouteId) || !routeIds.includes(normalizedRouteId) ||
+            routeIds.length !== booking.routeIds?.length) {
+          throw new BadRequestException('The selected VSR batches no longer match the active itinerary routes.');
+        }
+        return [booking];
+      }
       if (routeIds.length > 0) {
         return [{
           ...booking,
@@ -158,10 +166,11 @@ export class ItineraryHotelConfirmationSupportService {
  // Confirmation must use the same backend-selected rate snapshot as the
  // draft preview. Monetary values sent by the browser are deliberately not
  // trusted for persistence or wallet calculations.
-    const authoritativePreview = providerHotelBookings.length > 0
+    const draftSelections = providerHotelBookings.filter((booking: any) => !isTboBatchBooking(booking));
+    const authoritativePreview = draftSelections.length > 0
       ? await this.itineraryDetails.previewHotelSelectionCost({
           planId: dto.itinerary_plan_ID,
-          selections: providerHotelBookings,
+          selections: draftSelections,
           groupType: this.getConfirmHotelGroupType(dto),
         })
       : null;
@@ -415,7 +424,7 @@ export class ItineraryHotelConfirmationSupportService {
     };
 
     const selectedHotelBookingsForDraft = [
-      ...providerHotelBookings,
+      ...draftSelections,
       ...manualApprovalHotelBookings.filter((booking: any) => !providerHotelBookings.includes(booking)),
     ];
 
@@ -745,6 +754,10 @@ export class ItineraryHotelConfirmationSupportService {
     const walletInfo = await this.getAgentWalletBalance(dto.agent);
 
     await this.prisma.$transaction(async (tx) => {
+      if (dto.hotel_bookings?.some(isTboBatchBooking)) {
+        await tx.$queryRaw`SELECT itinerary_plan_ID FROM dvi_itinerary_plan_details
+          WHERE itinerary_plan_ID = ${baseResult.itinerary_plan_ID} FOR UPDATE`;
+      }
       const existingDebit = await tx.dvi_cash_wallet.findFirst({
         where: {
           transaction_id: plan.itinerary_quote_ID,
@@ -787,6 +800,21 @@ export class ItineraryHotelConfirmationSupportService {
         });
       }
 
+      if (dto.hotel_bookings?.some(isTboBatchBooking)) {
+        await tx.dvi_confirmed_itinerary_plan_details.update({
+          where: { confirmed_itinerary_plan_ID: baseResult.confirmed_itinerary_plan_ID },
+          data: {
+            total_hotel_charges: cost.totalHotelAmount || 0,
+            itinerary_sub_total: (cost.totalHotelAmount || 0) + (cost.totalVehicleAmount || 0),
+            itinerary_agent_margin_charges: cost.agentMargin || 0,
+            itinerary_gross_total_amount: cost.totalAmount || 0,
+            itinerary_total_margin_cost: cost.additionalMargin || 0,
+            itinerary_total_net_payable_amount: debitAmount,
+            itinerary_total_paid_amount: debitAmount,
+          },
+        });
+      }
+
       const existingAccount = await tx.dvi_accounts_itinerary_details.findFirst({
         where: {
           itinerary_plan_ID: baseResult.itinerary_plan_ID,
@@ -824,6 +852,14 @@ export class ItineraryHotelConfirmationSupportService {
     const alreadySuccessKeys = new Set<string>();
     const alreadyConfirmedResults: any[] = [];
 
+    const requestedBatches = bookings.filter(isTboBatchBooking);
+    const batchesByRoute = new Map<number, any[]>();
+    for (const batch of requestedBatches) {
+      const routeId = Number(batch.routeId);
+      const existing = batchesByRoute.get(routeId) || [];
+      existing.push(batch);
+      batchesByRoute.set(routeId, existing);
+    }
     const tboRows = await this.prisma.tbo_hotel_booking_confirmation.findMany({
       where: {
         itinerary_plan_ID: itineraryPlanId,
@@ -833,18 +869,37 @@ export class ItineraryHotelConfirmationSupportService {
       select: {
         itinerary_route_ID: true,
         tbo_hotel_code: true,
+        booking_code: true,
+        number_of_rooms: true,
+        tbo_booking_id: true,
         tbo_booking_reference_number: true,
       },
     });
 
+    const confirmedBatchCodes = new Set<string>();
+    const batchKey = (routeId: number, bookingCode: string) => JSON.stringify([routeId, bookingCode]);
     for (const row of tboRows) {
-      const key = this.bookingKey('tbo', Number(row.itinerary_route_ID || 0));
-      alreadySuccessKeys.add(key);
+      const routeId = Number(row.itinerary_route_ID || 0);
+      const batch = batchesByRoute.get(routeId)?.find((item) =>
+        item.bookingCode === row.booking_code && item.hotelCode === row.tbo_hotel_code &&
+        item.numberOfRooms === Number(row.number_of_rooms),
+      );
+      if (batchesByRoute.has(routeId)) {
+        if (!batch) {
+          throw new BadRequestException('An existing VSR booking conflicts with the selected batches. Reconcile it before retrying.');
+        }
+        const key = batchKey(routeId, batch.bookingCode);
+        if (confirmedBatchCodes.has(key)) continue;
+        confirmedBatchCodes.add(key);
+      } else {
+        alreadySuccessKeys.add(this.bookingKey('tbo', routeId));
+      }
       alreadyConfirmedResults.push({
         provider: 'tbo',
         providerDisplayName: 'VSR',
-        routeId: Number(row.itinerary_route_ID || 0),
+        routeId,
         hotelCode: row.tbo_hotel_code,
+        ...(batch ? { bookingCode: batch.bookingCode, batchIndex: batch.batchIndex, bookingId: row.tbo_booking_id } : {}),
         status: 'already_confirmed',
         success: true,
         bookingRef: row.tbo_booking_reference_number || null,
@@ -1027,6 +1082,7 @@ export class ItineraryHotelConfirmationSupportService {
       const provider = String(hotel.__provider || '').trim().toLowerCase();
       const routeId = Number(hotel.routeId || 0);
       const bookingCode = String(hotel.bookingCode || hotel.booking_code || '').trim();
+      if (isTboBatchBooking(hotel)) return !confirmedBatchCodes.has(batchKey(routeId, bookingCode));
       const key = this.bookingKey(provider, routeId);
       const keyWithCode = bookingCode ? `${provider}::${routeId}::${bookingCode}` : null;
       if (keyWithCode && successKeySet.has(keyWithCode)) return false;

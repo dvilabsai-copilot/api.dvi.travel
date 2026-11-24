@@ -55,6 +55,7 @@ export class ItineraryHotelPrebookService {
       checkInDate: string;
       checkOutDate: string;
       numberOfRooms: number;
+      batchIndex?: number;
       guestNationality: string;
       netAmount: number;
       searchInitiatedAt?: string;
@@ -215,10 +216,11 @@ export class ItineraryHotelPrebookService {
           sampleCancelPolicy: prebookCancelPoliciesDebug[0] || null,
         }),
       );
- console.log(
-        '[ItinerariesService] 📥 Full PreBook API response:',
-        JSON.stringify(prebookResponse),
-      );
+ console.log('[ItinerariesService] Supplier PreBook completed', {
+        routeId: hotel.routeId,
+        hotelCode: hotel.hotelCode,
+        status: prebookResponse?.Status,
+      });
 
  // Extract raw mandatory supplements
       const mandatorySupplements = rawRoomDetails
@@ -341,6 +343,9 @@ export class ItineraryHotelPrebookService {
       );
       const prebookNetAmount =
         prebookNetAmountCandidate !== undefined ? Number(prebookNetAmountCandidate) : null;
+      const prebookTotalFare = [prebookResponse?.TotalFare, ...rawRoomDetails.map((room: any) => room?.TotalFare)]
+        .map(Number)
+        .find((fare) => Number.isFinite(fare) && fare > 0);
 
       prebookResults.push({
         routeId: hotel.routeId,
@@ -369,10 +374,11 @@ export class ItineraryHotelPrebookService {
         rawStatus: prebookResponse?.Status,
         prebookContext: {
           hotelName: hotel.hotelName || null,
-          bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
+          bookingCode: prebookResponse?.BookingCode || resolvedBookingCode,
           traceId: prebookResponse?.TraceId || '',
           finalPrice,
           prebookNetAmount,
+          ...(hotel.batchIndex != null && prebookTotalFare != null ? { prebookTotalFare } : {}),
           isPriceChanged: Boolean(prebookResponse?.IsPriceChanged),
           isCancellationPolicyChanged: Boolean(prebookResponse?.IsCancellationPolicyChanged),
           cancellationPolicy: cancellationPolicies,

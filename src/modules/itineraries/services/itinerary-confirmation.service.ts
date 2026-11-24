@@ -2,6 +2,7 @@
 
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { isTboBatchBooking } from '../../hotels/utils/tbo-complete-batch-validation.util';
 import { PrismaService } from '../../../prisma.service';
 import { ConfirmQuotationDto } from '../dto/confirm-quotation.dto';
 import { ItineraryDetailsService } from '../itinerary-details.service';
@@ -137,28 +138,37 @@ export class ItineraryConfirmationService {
       throw new BadRequestException('Quotation is already confirmed');
     }
 
-    const existingConfirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
-      where: {
-        itinerary_plan_ID: dto.itinerary_plan_ID,
-        deleted: 0,
-      },
-      orderBy: {
-        confirmed_itinerary_plan_ID: 'desc',
-      },
-      select: {
-        confirmed_itinerary_plan_ID: true,
-      },
+    const confirmationLookup = {
+      where: { itinerary_plan_ID: dto.itinerary_plan_ID, deleted: 0 },
+      orderBy: { confirmed_itinerary_plan_ID: 'desc' as const },
+      select: { confirmed_itinerary_plan_ID: true },
+    };
+    const existingConfirmationResult = (confirmedPlanId: number) => ({
+      success: true,
+      message: 'Reusing existing confirmation context for pending hotel retries',
+      itinerary_plan_ID: dto.itinerary_plan_ID,
+      confirmed_itinerary_plan_ID: confirmedPlanId,
+      bookingResults: null,
+      reusedConfirmedPlan: true,
     });
-
+    const splitVsrBooking = dto.hotel_bookings?.some(isTboBatchBooking);
+    const checkWallet = async (required: number) => {
+      const walletInfo = await this.getAgentWalletBalance(dto.agent);
+      if (walletInfo.balance < required) {
+        const message = 'Insufficient wallet balance. Required: ' + required + ', Available: ' + walletInfo.balance;
+        throw new BadRequestException(splitVsrBooking ? {
+          code: 'VSR_WALLET_INSUFFICIENT', message, required, available: walletInfo.balance,
+        } : message);
+      }
+      return walletInfo;
+    };
+    const existingConfirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst(confirmationLookup);
     if (existingConfirmedPlan) {
-      return {
-        success: true,
-        message: 'Reusing existing confirmation context for pending hotel retries',
-        itinerary_plan_ID: dto.itinerary_plan_ID,
-        confirmed_itinerary_plan_ID: existingConfirmedPlan.confirmed_itinerary_plan_ID,
-        bookingResults: null,
-        reusedConfirmedPlan: true,
-      };
+      if (splitVsrBooking && plan.itinerary_quote_ID) {
+        const details = await this.itineraryDetails.getItineraryDetails(plan.itinerary_quote_ID);
+        await checkWallet(details.costBreakdown.netPayable);
+      }
+      return existingConfirmationResult(existingConfirmedPlan.confirmed_itinerary_plan_ID);
     }
 
     const quoteId = plan.itinerary_quote_ID;
@@ -290,10 +300,7 @@ export class ItineraryConfirmationService {
     const cost = details.costBreakdown;
 
  // 2. Check wallet balance
-    const walletInfo = await this.getAgentWalletBalance(dto.agent);
-    if (walletInfo.balance < cost.netPayable) {
-      throw new BadRequestException(`Insufficient wallet balance. Required: ${cost.netPayable}, Available: ${walletInfo.balance}`);
-    }
+    const walletInfo = await checkWallet(cost.netPayable);
 
  // Parse arrival and departure dates
     const parseDateTime = (dateTimeStr: string) => {
@@ -337,6 +344,13 @@ export class ItineraryConfirmationService {
 
  // 3. Start Transaction
     return await this.prisma.$transaction(async (tx) => {
+      if (effectiveProviderHotelBookings.some(isTboBatchBooking)) {
+        // Concurrent confirmations must share the same provisional plan and supplier attempts.
+        await tx.$queryRaw`SELECT itinerary_plan_ID FROM dvi_itinerary_plan_details
+          WHERE itinerary_plan_ID = ${dto.itinerary_plan_ID} FOR UPDATE`;
+        const concurrentPlan = await tx.dvi_confirmed_itinerary_plan_details.findFirst(confirmationLookup);
+        if (concurrentPlan) return existingConfirmationResult(concurrentPlan.confirmed_itinerary_plan_ID);
+      }
  // In the manual-hold workflow, reserve the payment against the exact active
  // holds inside the same transaction that debits the wallet. The expiry
  // worker uses the inverse conditional update, so only one side can win.
@@ -708,6 +722,7 @@ transport_early_arrival_rest_minutes: (plan as any).transport_early_arrival_rest
   }
 
   private canMergeSupplierStayBooking(booking: any): boolean {
+    if (isTboBatchBooking(booking)) return false;
     const provider = String(booking?.provider || booking?.__provider || '').trim().toLowerCase();
 
     if (provider !== 'staah' && provider !== 'axisrooms' && provider !== 'tbo') {

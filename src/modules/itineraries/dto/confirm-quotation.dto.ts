@@ -220,6 +220,18 @@ export class HotelSelectionDto {
   @Max(6)
   numberOfRooms!: number;
 
+  @ApiProperty({ required: false, example: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  batchIndex?: number;
+
+  @ApiProperty({ required: false, example: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  startRoomIndex?: number;
+
   @ApiProperty({ example: 'IN' })
   @IsString()
   @Matches(/^[A-Z]{2}$/i, { message: 'guestNationality must be ISO-2 country code' })
@@ -243,6 +255,21 @@ export class HotelSelectionDto {
   @ValidateNested({ each: true })
   @Type(() => HotelPassengerDto)
   passengers!: HotelPassengerDto[];
+
+  @ApiProperty({
+    required: false,
+    type: 'array',
+    description:
+      'Passenger indexes assigned to each room in original room order. Required for TBO multi-batch bookings.',
+    items: {
+      type: 'array',
+      items: { type: 'integer', minimum: 0 },
+    },
+  })
+  @IsOptional()
+  @IsArray()
+  @IsArray({ each: true })
+  roomPassengerIndices?: number[][];
 
   @ApiProperty({ type: [HotelRoomOccupancyDto], required: false })
   @IsOptional()
@@ -509,6 +536,11 @@ export class ConfirmQuotationDto {
   @ApiProperty({ example: 'old', description: 'old or new' })
   @IsString()
   price_confirmation_type!: string;
+
+  @ApiProperty({ required: false, description: 'Approval for the revised split VSR hotel fares' })
+  @IsOptional()
+  @IsString()
+  vsrBatchFareApprovalToken?: string;
 
   @ApiProperty({ example: 'undefined', required: false })
   @IsOptional()
