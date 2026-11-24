@@ -67,6 +67,7 @@ import { latestAxisRoomsOccupancyValues } from './utils/axisrooms-occupancy-rate
 import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
 import { allocateTboRouteNightPricing } from '../hotels/utils/tbo-room-night-pricing';
 import { assertTboMultiBatchStay, describeTboBatchRoomPrices, makeTboMultiBatchStay, priceTboMultiBatchStay, TboMultiBatchStaySnapshot } from '../hotels/utils/tbo-multi-batch-stay.util';
+import { matchRefreshedTboBatchCode } from './utils/match-refreshed-tbo-batch.util';
 import { getTboStayMealSupplement, tboStayMealNightFields } from './utils/tbo-map-fallback.util';
 import { isTboBatchBooking, validateTboCompleteBatchGroups } from '../hotels/utils/tbo-complete-batch-validation.util';
 import {
@@ -5646,22 +5647,9 @@ async confirmQuotation(dto: ConfirmQuotationDto, actorId?: number) {
       const offers = await search;
       if (stay) {
         const previous = stay.batches.find((batch) => batch.batchIndex === rate.batchIndex);
-        const match = offers.filter((offer) => Array.isArray((offer as any).tboRoomBatches))
-          .flatMap((offer) => (offer as unknown as { tboRoomBatches: TboMultiBatchStaySnapshot['batches'] }).tboRoomBatches)
-          .filter((batch) => previous &&
-            batch.batchIndex === previous.batchIndex && batch.startRoomIndex === previous.startRoomIndex &&
-            batch.roomCount === previous.roomCount && batch.hotelCode === stay.hotelCode &&
-            normalizeRoom(batch.roomType) === normalizeRoom(previous.roomType) &&
-            normalizeMeal(batch.mealPlan) === normalizeMeal(previous.mealPlan) && batch.currency === stay.currency &&
-            batch.isRefundable === stay.isRefundable && batch.bookingCode.includes('!TB!') &&
-            batch.occupancies.every((occ, index) => {
-              const savedRoom = previous.occupancies[index];
-              return savedRoom && occ.adults === savedRoom.adults && occ.children === savedRoom.children &&
-                (occ.childrenAges ?? []).join(',') === (savedRoom.childrenAges ?? []).join(',');
-            }) && batch.occupancies.length === previous.occupancies.length);
-        const codes = new Set(match.map((batch) => batch.bookingCode));
-        if (codes.size !== 1) throw unverified();
-        selection = { ...rate, bookingCode: match[0].bookingCode, searchInitiatedAt: new Date().toISOString() };
+        const code = previous && matchRefreshedTboBatchCode(offers, stay, previous);
+        if (!code) throw unverified();
+        selection = { ...rate, bookingCode: code, searchInitiatedAt: new Date().toISOString() };
       } else {
         // A failed supplier search can return an empty list. Keep it retryable.
         if (!offers.length) throw unverified();

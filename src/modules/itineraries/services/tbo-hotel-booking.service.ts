@@ -513,11 +513,13 @@ private readonly TBO_CLIENT_ID =
     preBookResponse: PreBookResponse,
     selection: TboHotelSelection,
     endUserIp: string = process.env.TBO_END_USER_IP || '134.209.145.185',
+    supplierAttempt?: { claim: () => Promise<void>; reject: () => Promise<void> },
   ): Promise<BookResponse> {
     return this.bookHotel(
       preBookResponse,
       { ...selection, isVoucherBooking: false },
       endUserIp,
+      supplierAttempt,
     );
   }
 

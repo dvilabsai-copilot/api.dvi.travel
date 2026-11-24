@@ -18,6 +18,11 @@ import { AxisRoomsBookingPushService } from './axisrooms-booking-push.service';
 import { resolveHotelHoldNotificationRecipients } from '../utils/hotel-hold-recipient.util';
 import { createTboHoldPriceApproval, normalizeTboHoldAmount, verifyTboHoldPriceApproval } from '../utils/tbo-hold-price-approval.util';
 import { savedVsrSupplierFare } from '../utils/vsr-supplier-fare.util';
+import { assertTboMultiBatchStay, isFreshTboMultiBatchStay, type TboMultiBatchStaySnapshot } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { allocateTboBatchPassengers } from '../../hotels/utils/tbo-batch-passenger-allocation.util';
+import { ItinerarySelectionWorkflowService } from './itinerary-selection-workflow.service';
+import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
+import { matchRefreshedTboBatchCode } from '../utils/match-refreshed-tbo-batch.util';
 import {
   DEFAULT_TBO_CHILD_AGE,
   distributeTboSearchOccupancies,
@@ -51,6 +56,7 @@ type TboHoldBookingInput = {
   selection?: Record<string, any>;
   priceApprovalToken?: string;
 };
+type SplitHoldBatch = { key: string; index: number; count: number };
 type ProviderHoldInput = {
   channel: 'AXISROOMS_HOLD' | 'OFFLINE_HOLD';
   confirmationReference?: string | null;
@@ -77,6 +83,15 @@ const RESPONSE_STATUSES = new Set<string>([
 ]);
 
 const normalizeText = (value: unknown) => String(value ?? '').trim();
+const splitHoldBatch = (request: BlockRow): SplitHoldBatch | undefined =>
+  parseJson(request.request_payload, {})?.supplierHold?.batch;
+const booksSameBatch = (request: BlockRow, stay: TboMultiBatchStaySnapshot): boolean => {
+  const hold = parseJson(request.request_payload, {})?.supplierHold;
+  const batch = stay.batches.find(item => item.batchIndex === hold?.batch?.index);
+  return Boolean(batch && hold.batch.count === stay.batches.length && Number(hold.bookingId) > 0 &&
+    hold.bookingCode === batch.bookingCode && Number(request.room_count) === batch.roomCount &&
+    request.hotel_code === batch.hotelCode && request.room_type === batch.roomType && request.meal_plan === batch.mealPlan);
+};
 
 export const isTboSupplierHoldRequest = (row: BlockRow): boolean => (
   normalizeText(row.confirmation_channel).toUpperCase() === 'TBO_BOOK_HOLD'
@@ -357,6 +372,8 @@ export class HotelBlockingService {
     private readonly hotelBlockEmail: HotelBlockEmailService,
     private readonly tboHotelBooking: TboHotelBookingService,
     @Optional() private readonly axisRoomsBookingPushService?: AxisRoomsBookingPushService,
+    @Optional() private readonly selectionWorkflow?: ItinerarySelectionWorkflowService,
+    @Optional() private readonly hotelDetailsTbo?: ItineraryHotelDetailsTboService,
   ) {}
 
   private async getHotelHoldPolicy(): Promise<HotelHoldPolicy> {
@@ -602,7 +619,8 @@ export class HotelBlockingService {
         __room: room,
         __hotel: hotelRecord,
         __snapshot: snapshot,
-        __hotelGroupKey: `${provider}|${hotelIdentity.toLowerCase()}`,
+        __hotelGroupKey: `${provider}|${hotelIdentity.toLowerCase()}${snapshot.tboMultiBatchStay
+          ? `|${snapshot.tboMultiBatchStay.anchorRouteId}` : ''}`,
       });
     }
 
@@ -654,10 +672,25 @@ export class HotelBlockingService {
       }
       try {
       if (provider === 'VSR') {
+        const splitStay = snapshot.tboMultiBatchStay;
+        if (splitStay) {
+          if (!this.selectionWorkflow) throw new BadRequestException('Split VSR Hold is unavailable.');
+          const split = await this.selectionWorkflow.withHotelSelectionLock(planId, groupType, () =>
+            this.holdSplitVsrStay({
+              planId, groupType, rows: groupedRows, stay: splitStay, bookings: tboHoldBookings,
+              hotelName, actor: input.actor, policy, requestedAt,
+            }),
+          );
+          results.push(...split.requests);
+          outcomes.push({ ...outcomeBase, ...split.outcome });
+          continue;
+        }
+        if (Number(itineraryPlan?.preferred_room_count || 0) > 6) {
+          throw new BadRequestException('A verified allocation for every VSR batch is required.');
+        }
         const tboHoldBooking = selectionIds
           .map((id) => tboHoldBookingBySelectionId.get(id))
           .find((booking) => Boolean(booking?.selection));
-        const snapshot = rowSnapshot(first);
         const refundable = snapshot.isRefundable ?? snapshot.IsRefundable ?? first.is_refundable ?? first.IsRefundable;
         if (!(refundable === true || Number(refundable) === 1 || String(refundable).toLowerCase() === 'true')) {
           throw new BadRequestException(
@@ -1044,8 +1077,211 @@ export class HotelBlockingService {
       emailsQueued: results.filter((result) => result.emailQueued).length,
       contactRequired: results.filter((result) => result.status === HOTEL_BLOCK_STATUS.CONTACT_REQUIRED).length,
       walletDebited: 0,
-      supplierBookingCalls: results.filter((result) => result.supplierBookingReference).length,
+      supplierBookingCalls: results.filter((result) => result.supplierBookingReference ||
+        (result.splitHoldBatch && result.created && result.confirmationReference)).length,
     };
+  }
+
+  private async holdSplitVsrStay(input: {
+    planId: number;
+    groupType: number;
+    rows: BlockRow[];
+    stay: TboMultiBatchStaySnapshot;
+    bookings: TboHoldBookingInput[];
+    hotelName: string;
+    actor?: Actor;
+    policy: HotelHoldPolicy;
+    requestedAt: Date;
+  }) {
+    const { planId, groupType, rows, stay, bookings, hotelName, actor, policy, requestedAt } = input;
+    assertTboMultiBatchStay(stay);
+    if (!stay.isRefundable || !stay.batches.every(batch => batch.isRefundable === true)) {
+      throw new BadRequestException('HOTEL_HOLD_NOT_ELIGIBLE: Every VSR batch must be refundable.');
+    }
+    const routeIds = [...new Set(rows.map(row => Number(row.itinerary_route_id)))].sort((a, b) => a - b);
+    const ids = rows.map(row => Number(row.itinerary_plan_hotel_details_ID)).sort((a, b) => a - b);
+    const selectionIds = JSON.stringify(ids);
+    if (routeIds.join(',') !== [...stay.routeIds].sort((a, b) => a - b).join(',') ||
+        rows.some(row => JSON.stringify(rowSnapshot(row).tboMultiBatchStay) !== JSON.stringify(stay))) {
+      throw new BadRequestException('The complete saved VSR stay is required for Hold.');
+    }
+    // The selection was initially read before taking the normal booking/selection lock.
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: planId }, select: { quotation_status: true, preferred_room_count: true },
+    });
+    if (!plan || Number(plan.quotation_status) !== 0 || Number(plan.preferred_room_count) !== stay.roomCount) {
+      throw new BadRequestException('The quote or room count changed. Reload the quote before holding.');
+    }
+    const current = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+      where: { itinerary_plan_id: planId, group_type: groupType, status: 1, deleted: 0, hotel_required: 1,
+        itinerary_plan_hotel_details_ID: { in: ids } },
+      select: { itinerary_plan_hotel_details_ID: true, selected_price_snapshot: true },
+    });
+    if (current.length !== ids.length || current.some(row =>
+      JSON.stringify(rowSnapshot(row).tboMultiBatchStay) !== JSON.stringify(stay))) {
+      throw new BadRequestException('The saved VSR selection changed. Reload the quote before holding.');
+    }
+    const submissions = bookings.filter(booking => booking.hotelDetailsIds?.some(id => ids.includes(Number(id))));
+    const nationality = String(submissions[0]?.selection?.guestNationality || '').trim().toUpperCase();
+    const scopeKey = createHash('sha256').update(JSON.stringify([
+      planId, groupType, stay.hotelCode, stay.checkInDate, stay.checkOutDate,
+    ])).digest('hex');
+    const prefix = `vsr-hold:${scopeKey}:`;
+    const historical = await this.prisma.dvi_hotel_block_request.findMany({
+      where: { itinerary_plan_id: planId, group_type: groupType, reservation_key: { startsWith: prefix } },
+      orderBy: { id: 'desc' },
+    });
+    if (historical.some(row => row.status === HOTEL_BLOCK_STATUS.REQUESTED ||
+        ['PENDING', 'REQUESTED', 'FAILED'].includes(row.release_status))) {
+      throw new BadRequestException('A VSR batch is awaiting supplier confirmation or release. Resolve that request before retrying.');
+    }
+    const held = historical.filter(row => ['BLOCKED', 'CONFIRMED'].includes(row.status));
+    if (new Set(held.map(row => splitHoldBatch(row)?.index)).size !== held.length ||
+        held.some(row => row.selection_ids !== selectionIds || !isFutureDate(row.cutoff_at, requestedAt) ||
+      !booksSameBatch(row, stay))) {
+      throw new BadRequestException('An earlier VSR batch hold must be released before holding the current selection.');
+    }
+    const pending = stay.batches.filter(batch => !held.some(row => splitHoldBatch(row)?.index === batch.batchIndex));
+    const requests = held.map(row => ({
+      ...this.publicStaffView(row, policy), created: false, emailQueued: false,
+    }));
+    const getOutcome = () => ({
+      requests, outcome: { success: true, status: pending.length ? 'HELD' : 'ALREADY_HELD',
+        requestId: requests[0]?.id, holdStatus: requests[0]?.status, cutoffAt: requests[0]?.cutoffAt },
+    });
+    if (!pending.length) return getOutcome();
+
+    const configuredCutoff = this.getDefaultHotelHoldCutoff(stay.checkInDate, requestedAt, policy);
+    if (!configuredCutoff || !isFutureDate(configuredCutoff, requestedAt)) {
+      throw new BadRequestException('HOTEL_HOLD_NOT_ELIGIBLE: The hold cutoff has already passed.');
+    }
+    let refreshedRates: ReturnType<ItineraryHotelDetailsTboService['searchSelectedHotelForContinuousStay']> | undefined;
+    const prepared = await Promise.all(pending.map(async batch => {
+      const candidates = submissions.filter(entry => entry.selection?.batchIndex === batch.batchIndex);
+      const entry = candidates[0];
+      const sent = entry?.selection;
+      if (candidates.length !== 1 || !sent || sent.bookingCode !== batch.bookingCode ||
+          sent.hotelCode !== stay.hotelCode || sent.roomType !== batch.roomType ||
+          sent.mealPlan !== batch.mealPlan || sent.numberOfRooms !== batch.roomCount ||
+          !nationality || String(sent.guestNationality || '').trim().toUpperCase() !== nationality ||
+          sent.checkInDate !== stay.checkInDate || sent.checkOutDate !== stay.checkOutDate) {
+        throw new BadRequestException('Each VSR Hold batch must match the saved rate and room allocation.');
+      }
+      let selection = {
+        hotelCode: stay.hotelCode, hotelName, bookingCode: batch.bookingCode, roomType: batch.roomType,
+        checkInDate: stay.checkInDate, checkOutDate: stay.checkOutDate, numberOfRooms: batch.roomCount,
+        batchIndex: batch.batchIndex, startRoomIndex: batch.startRoomIndex, occupancies: batch.occupancies,
+        guestNationality: nationality, searchInitiatedAt: stay.searchVerifiedAt,
+        netAmount: batch.supplierNetAmount, passengers: sent.passengers,
+        roomPassengerIndices: sent.roomPassengerIndices, isVoucherBooking: false,
+      };
+      if (!Array.isArray(selection.passengers) || selection.passengers.some(passenger =>
+        !normalizeText(passenger?.firstName) || !normalizeText(passenger?.lastName))) {
+        throw new BadRequestException('Named passengers are required for every VSR room.');
+      }
+      allocateTboBatchPassengers(selection.passengers, selection.occupancies, selection.roomPassengerIndices,
+        [{ batchIndex: batch.batchIndex, startRoomIndex: 0, roomCount: batch.roomCount }]);
+      let response;
+      if (isFreshTboMultiBatchStay(stay)) {
+        try {
+          response = await this.tboHotelBooking.preBookHotelForHold(selection);
+        } catch (error) {
+          const details = error instanceof BadRequestException ? error.getResponse() : undefined;
+          if (typeof details !== 'object' || (details as { code?: string }).code !== 'VSR_PREBOOK_SESSION_EXPIRED') throw error;
+        }
+      }
+      if (!response) {
+        if (!this.hotelDetailsTbo) throw new BadRequestException('Refresh the saved VSR rates before placing a hold.');
+        refreshedRates ??= this.hotelDetailsTbo.searchSelectedHotelForContinuousStay({
+          planId, routeIds: stay.routeIds, provider: 'tbo', hotelCode: stay.hotelCode,
+          checkInDate: stay.checkInDate, checkOutDate: stay.checkOutDate,
+          vsrConfirmationRefresh: { guestNationality: nationality, batches: stay.batches.map(({ roomType, mealPlan }) => ({ roomType, mealPlan })) },
+        });
+        const code = matchRefreshedTboBatchCode(await refreshedRates, stay, batch);
+        if (!code) throw new BadRequestException('VSR could not refresh the same refundable room allocation. Check Availability before holding.');
+        selection = { ...selection, bookingCode: code, searchInitiatedAt: new Date().toISOString() };
+        response = await this.tboHotelBooking.preBookHotelForHold(selection);
+      }
+      const deadline = getTboPrebookHoldCancellationDeadline(response);
+      if (!deadline || !isTboPrebookRateEligibleForHold(response, policy.tboHoldLcdBufferDays)) {
+        throw new BadRequestException('HOTEL_HOLD_NOT_ELIGIBLE: Each VSR batch must have a refundable rate and a valid supplier cancellation deadline.');
+      }
+      const code = normalizeText(response.BookingCode || response.HotelResult?.[0]?.Rooms?.[0]?.BookingCode);
+      const amount = Number(response.NetAmount ?? response.HotelResult?.[0]?.Rooms?.[0]?.NetAmount ?? response.TotalFare);
+      if (!code.includes('!TB!') || !Number.isFinite(amount) || amount <= 0) {
+        throw new BadRequestException('A verified PreBook code and fare are required for every VSR batch.');
+      }
+      const cutoff = new Date(Math.min(configuredCutoff.getTime(), deadline.getTime()));
+      if (!isFutureDate(cutoff, new Date())) throw new BadRequestException('HOTEL_HOLD_NOT_ELIGIBLE: The supplier cutoff has passed.');
+      return { batch, selection, response, code, amount, cutoff, deadline, token: entry.priceApprovalToken };
+    }));
+    const usedCodes = prepared.map(item => item.code).concat(held.map(row => parseJson(row.request_payload, {})?.supplierHold?.prebookCode));
+    if (new Set(usedCodes).size !== usedCodes.length) {
+      throw new BadRequestException('Each VSR batch must have a distinct PreBook code.');
+    }
+    if (prepared.some(item => normalizeTboHoldAmount(item.amount) !== normalizeTboHoldAmount(item.batch.supplierNetAmount))) {
+      const scope = JSON.stringify([planId, groupType, actor?.id, ids, stay,
+        prepared.map(item => [item.batch.batchIndex, item.amount, item.selection.guestNationality, item.selection.roomPassengerIndices])]);
+      const now = new Date();
+      if (prepared.some(item => !verifyTboHoldPriceApproval(item.token, scope, now))) {
+        return { requests: [], outcome: {
+          success: false, status: 'PRICE_APPROVAL_REQUIRED', message: 'Review the latest prices for the VSR batches before holding.',
+          priceApproval: {
+            token: createTboHoldPriceApproval(scope, now), currency: stay.currency,
+            previousAmount: normalizeTboHoldAmount(prepared.reduce((sum, item) => sum + item.batch.supplierNetAmount, 0)),
+            newAmount: normalizeTboHoldAmount(prepared.reduce((sum, item) => sum + item.amount, 0)),
+          },
+        } };
+      }
+    }
+
+    const bookingIds = new Set(held.map(row => Number(parseJson(row.request_payload, {})?.supplierHold?.bookingId)));
+    for (const item of prepared) {
+      const { batch, selection, amount, response, cutoff, deadline } = item;
+      const version = historical.filter(row => splitHoldBatch(row)?.index === batch.batchIndex).length + 1;
+      const metadata = { key: scopeKey, index: batch.batchIndex, count: stay.batches.length };
+      const payload = { supplierHold: { batch: metadata, bookingCode: batch.bookingCode,
+        searchCode: selection.bookingCode, prebookCode: item.code } };
+      let attemptId: number | undefined;
+      const confirmed = await this.tboHotelBooking.holdHotel(response, { ...selection, netAmount: amount }, undefined, {
+        claim: async () => {
+          const claim = await this.prisma.dvi_hotel_block_request.create({ data: {
+            itinerary_plan_id: planId, group_type: groupType,
+            reservation_key: `${prefix}${batch.batchIndex}:${version}`,
+            selection_ids: selectionIds, provider: 'VSR', hotel_code: stay.hotelCode, hotel_name: hotelName,
+            check_in: new Date(stay.checkInDate), check_out: new Date(stay.checkOutDate),
+            room_type: batch.roomType, meal_plan: batch.mealPlan, room_count: batch.roomCount,
+            request_payload: JSON.stringify(payload), status: HOTEL_BLOCK_STATUS.REQUESTED, requested_at: requestedAt,
+            cutoff_at: cutoff, confirmation_channel: 'TBO_BOOK_HOLD', created_by: Number(actor?.id || 0) || null,
+          } });
+          attemptId = claim.id;
+        },
+        reject: async () => {
+          if (attemptId) await this.prisma.dvi_hotel_block_request.update({
+            where: { id: attemptId }, data: { status: HOTEL_BLOCK_STATUS.SUPERSEDED },
+          });
+        },
+      });
+      const bookingId = Number(confirmed.BookResult?.BookingId);
+      const bookingReference = normalizeText(confirmed.BookResult?.BookingRefNo || confirmed.BookResult?.ConfirmationNo || bookingId);
+      if (!attemptId || !Number.isSafeInteger(bookingId) || bookingId <= 0 ||
+          bookingIds.has(bookingId) ||
+          requests.some(request => request.confirmationReference === bookingReference)) {
+        throw new BadRequestException('The supplier Hold response could not be verified. Review the pending batch before retrying.');
+      }
+      bookingIds.add(bookingId);
+      const record = await this.prisma.dvi_hotel_block_request.update({
+        where: { id: attemptId },
+        data: {
+          status: HOTEL_BLOCK_STATUS.BLOCKED, voucher_status: 'UNVOUCHERED', confirmation_reference: bookingReference,
+          request_payload: JSON.stringify({ supplierHold: {
+            ...payload.supplierHold, bookingId, bookingReference, lcdDeadlineAt: deadline.toISOString(),
+          } }),
+        },
+      });
+      requests.push({ ...this.publicStaffView(record, policy), created: true, emailQueued: false });
+    }
+    return getOutcome();
   }
 
   async assertSplitVsrStayCanBook(planId: number, groupType: number): Promise<void> {
@@ -1053,13 +1289,27 @@ export class HotelBlockingService {
       where: {
         itinerary_plan_id: planId,
         group_type: groupType,
-        status: { in: [...ACTIVE_REQUEST_STATUSES, HOTEL_BLOCK_STATUS.CONFIRMED] },
+        OR: [
+          { status: { in: [...ACTIVE_REQUEST_STATUSES, HOTEL_BLOCK_STATUS.CONFIRMED] } },
+          { reservation_key: { startsWith: 'vsr-hold:' }, release_status: { in: ['PENDING', 'REQUESTED', 'FAILED'] } },
+        ],
       },
       select: { id: true },
     });
     if (request) {
       throw new BadRequestException('Resolve the open hotel Hold request before confirming a split VSR stay.');
     }
+  }
+
+  async withSplitVsrHoldConfirmationLock<T>(planId: number, groupType: number, work: () => Promise<T>): Promise<T> {
+    const splitHold = await this.prisma.dvi_hotel_block_request.findFirst({
+      where: { itinerary_plan_id: planId, group_type: groupType,
+        reservation_key: { startsWith: 'vsr-hold:' }, status: { in: ['REQUESTED', 'BLOCKED', 'CONFIRMED'] } },
+      select: { id: true },
+    });
+    if (!splitHold) return work();
+    if (!this.selectionWorkflow) throw new BadRequestException('Split VSR Hold confirmation is unavailable.');
+    return this.selectionWorkflow.withHotelSelectionLock(planId, groupType, work);
   }
 
   async listForItinerary(planId: number, groupType?: number) {
@@ -1074,12 +1324,26 @@ export class HotelBlockingService {
     const latestMessages = await this.latestMessagesByRequest(rows.map((row: BlockRow) => Number(row.id)));
     const releaseConfirmedByHotelierIds = await this.offlineReleaseConfirmedByHotelierIds(rows as BlockRow[]);
     const refreshed = await Promise.all(rows.map((row: BlockRow) => this.refreshSupplierHold(row)));
+    const activeBatchIndices = new Map<string, Set<number>>();
+    for (const { row, statusOverride, cutoffAt } of refreshed) {
+      const batch = splitHoldBatch(row);
+      if (batch && (row.paid_confirmed_at || (['BLOCKED', 'CONFIRMED'].includes(row.status) &&
+        (!statusOverride || statusOverride === 'HOLD') && isFutureDate(cutoffAt || row.cutoff_at, new Date())))) {
+        const key = `${batch.key}:${row.selection_ids}`;
+        const indices = activeBatchIndices.get(key) || new Set<number>();
+        indices.add(batch.index);
+        activeBatchIndices.set(key, indices);
+      }
+    }
     return refreshed.map(({ row, statusOverride, cutoffAt }) => {
+      const batch = splitHoldBatch(row);
+      const indices = batch && activeBatchIndices.get(`${batch.key}:${row.selection_ids}`);
+      const partial = batch && indices?.has(batch.index) && indices.size !== batch.count && !row.paid_confirmed_at;
       const view = this.publicStaffView(
         cutoffAt ? { ...row, cutoff_at: cutoffAt } : row,
         policy,
         latestMessages.get(Number(row.id)),
-        statusOverride,
+        partial ? 'HOLD_PARTIAL' : statusOverride,
       );
       return {
         ...view,
@@ -1193,6 +1457,26 @@ export class HotelBlockingService {
       where: { id: Number(requestId) },
     });
     if (!request) throw new NotFoundException('Hotel hold request not found.');
+    const batch = splitHoldBatch(request);
+    if (batch) {
+      const changed = await this.selectionWorkflow?.withHotelSelectionLock(request.itinerary_plan_id, request.group_type, async () => {
+        const siblings = await this.prisma.dvi_hotel_block_request.findMany({
+          where: { itinerary_plan_id: request.itinerary_plan_id, group_type: request.group_type,
+            reservation_key: { startsWith: `vsr-hold:${batch.key}:` },
+            status: { in: ['REQUESTED', 'BLOCKED', 'CONFIRMED'] } },
+        });
+        if (!siblings.length || siblings.some(row => row.paid_confirmed_at || row.status === 'REQUESTED')) {
+          throw new BadRequestException('A paid or unverified VSR hold must be resolved before releasing the split stay.');
+        }
+        await this.prisma.dvi_hotel_block_request.updateMany({
+          where: { id: { in: siblings.map(row => row.id) }, paid_confirmed_at: null },
+          data: { status: HOTEL_BLOCK_STATUS.CANCELLED, cutoff_at: null, release_status: 'PENDING', release_email_status: 'SKIPPED' },
+        });
+        return true;
+      });
+      if (!changed) throw new BadRequestException('Split VSR Hold release is unavailable.');
+      return this.getById(requestId);
+    }
     const skipVsrSupplierRelease = normalizeText(request.provider).toUpperCase() === 'VSR'
       && normalizeText(request.confirmation_channel).toUpperCase() === 'TBO_BOOK_HOLD';
     const isAxisRoomsHold = normalizeText(request.confirmation_channel).toUpperCase() === 'AXISROOMS_HOLD';
@@ -1386,8 +1670,8 @@ export class HotelBlockingService {
             release_email_status: 'SKIPPED',
             release_email_last_error: null,
           } : supplierHold ? {
-            release_status: 'ACKNOWLEDGED',
-            release_acknowledged_at: new Date(),
+            release_status: splitHoldBatch(request) ? 'PENDING' : 'ACKNOWLEDGED',
+            release_acknowledged_at: splitHoldBatch(request) ? null : new Date(),
             release_last_error: null,
             release_email_status: 'SKIPPED',
             release_email_last_error: null,
@@ -1404,7 +1688,9 @@ export class HotelBlockingService {
           actor_id: Number(actor.id || 0) || null,
           actor_name: actor.name || null,
           notes: supplierHold
-            ? 'Previous VSR supplier hold retired because the itinerary hotel changed; TBO auto-cancels it.'
+            ? (splitHoldBatch(request)
+              ? 'VSR batch Hold queued for supplier release after the hotel changed.'
+              : 'Previous VSR supplier hold retired because the itinerary hotel changed; TBO auto-cancels it.')
             : axisRoomsHold
               ? axisRoomsCancellation?.success
                 ? 'Previous AxisRooms hold cancelled through the supplier API because the itinerary hotel changed.'
@@ -1715,7 +2001,7 @@ export class HotelBlockingService {
         hotel_required: { not: 2 },
         NOT: { selection_origin: 'USER_REMOVED' },
       },
-      select: { itinerary_plan_hotel_details_ID: true },
+      select: { itinerary_plan_hotel_details_ID: true, selected_price_snapshot: true },
     });
     const expectedSelectionIds = selectedRows
       .map((row: BlockRow) => Number(row.itinerary_plan_hotel_details_ID))
@@ -1730,6 +2016,10 @@ export class HotelBlockingService {
       select: {
         id: true,
         hotel_name: true,
+        hotel_code: true,
+        room_count: true,
+        room_type: true,
+        meal_plan: true,
         provider: true,
         status: true,
         selection_ids: true,
@@ -1764,7 +2054,38 @@ export class HotelBlockingService {
       return request.status === HOTEL_BLOCK_STATUS.CONFIRMED && hasFutureCutoff;
     }));
     const pending = requests.filter((_request: BlockRow, index: number) => !readiness[index]);
-    const heldSelectionIds = requests
+    const splitSelectionIds = new Set(selectedRows.filter((row: BlockRow) => rowSnapshot(row).tboMultiBatchStay)
+      .map((row: BlockRow) => Number(row.itinerary_plan_hotel_details_ID)));
+    const splitRequests = new Map<string, BlockRow[]>();
+    const singleRequests = requests.filter((request: BlockRow) => {
+      const batch = splitHoldBatch(request);
+      if (!batch) {
+        if ((parseJson(request.selection_ids, []) as unknown[]).some(id => splitSelectionIds.has(Number(id)))) {
+          pending.push(request);
+        }
+        return true;
+      }
+      const items = splitRequests.get(batch.key) || [];
+      items.push(request);
+      splitRequests.set(batch.key, items);
+      return false;
+    });
+    const completeSplitRequests: BlockRow[] = [];
+    for (const siblings of splitRequests.values()) {
+      const first = siblings[0];
+      const ids = (parseJson(first.selection_ids, []) as unknown[]).map(Number);
+      const snapshots = ids.map(id => rowSnapshot(selectedRows.find((row: BlockRow) =>
+        Number(row.itinerary_plan_hotel_details_ID) === id) || {}).tboMultiBatchStay);
+      const stay = snapshots[0] as TboMultiBatchStaySnapshot | undefined;
+      if (!stay?.batches?.length || !snapshots.every(value => JSON.stringify(value) === JSON.stringify(stay)) ||
+          siblings.length !== stay.batches.length || new Set(siblings.map(row => splitHoldBatch(row)?.index)).size !== siblings.length ||
+          !siblings.every(row => row.selection_ids === first.selection_ids && booksSameBatch(row, stay))) {
+        pending.push(...siblings);
+        continue;
+      }
+      completeSplitRequests.push(first);
+    }
+    const heldSelectionIds = singleRequests.concat(completeSplitRequests)
       .flatMap((request: BlockRow) => (parseJson(request.selection_ids, []) as unknown[]).map(Number))
       .filter((id: number) => id > 0)
       .sort((a: number, b: number) => a - b);
@@ -2710,6 +3031,7 @@ export class HotelBlockingService {
       holdDurationHours: hotelHoldDurationHours(row.check_in, row.requested_at, policy),
       confirmationReference: row.confirmation_reference,
       confirmationChannel: row.confirmation_channel,
+      ...(splitHoldBatch(row) ? { splitHoldBatch: splitHoldBatch(row) } : {}),
       releaseStatus: row.release_status || 'NOT_REQUIRED',
       releaseEmailStatus: row.release_email_status || 'NOT_REQUIRED',
       releaseLastError: row.release_last_error || null,
