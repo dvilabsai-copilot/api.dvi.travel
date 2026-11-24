@@ -61,14 +61,14 @@ import {
 import {
   applyMapDinnerFallbackToRows,
   filterEpRows,
-  getTboStayMealSupplement,
+  getTboBatchMealPlanQuotes,
   type TboMapFallbackConfig,
 } from '../utils/tbo-map-fallback.util';
 import { hotelStayNights, hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { HotelPricingService } from '../hotels/hotel-pricing.service';
 import { projectHotelPayablePricing } from '../utils/hotel-payable-pricing.util';
 import { buildHotelCardQuote } from '../utils/hotel-card-quote.util';
-import { getTboBatchSearchTotal, priceTboMultiBatchStay } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { getTboBatchSearchTotal } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { allocateTboRouteNightPricing } from '../../hotels/utils/tbo-room-night-pricing';
 import {
   resolveHotelSupplementPricing,
@@ -2897,16 +2897,7 @@ export class HotelAvailabilitySnapshotService {
       const dates = Number((Date.parse(row.checkOutDate) - Date.parse(row.checkInDate)) / 86400000);
       const stayNights = Number.isInteger(dates) && dates > 0 ? dates : 1;
       const batchMealPlanQuotes = supplierFare !== null && batchMealConfig
-        ? Array.from(new Set([String(row.tboRoomBatches[0].mealPlan).toUpperCase(), 'CP', 'MAP'])).flatMap(mealPlan => {
-          const supplierMealPlan = String(row.tboRoomBatches[0].mealPlan).toUpperCase();
-          const supplement = mealPlan === supplierMealPlan ? undefined : getTboStayMealSupplement(row, mealPlan, batchMealConfig);
-          if (mealPlan !== supplierMealPlan && !supplement) return [];
-          const totals = priceTboMultiBatchStay({
-            supplierTotalFare: supplierFare, routeIds: Array.from({ length: stayNights }, (_, index) => index),
-            dviMealSupplement: supplement,
-          }, batchMargin);
-          return [{ mealPlan, amount: totals.totalPrice, currency, dviMealSupplement: totals.mealCostPerNight * stayNights }];
-        })
+        ? getTboBatchMealPlanQuotes(row, stayNights, batchMargin, batchMealConfig)
         : undefined;
       return {
         ...row, cardQuote: quote(row),

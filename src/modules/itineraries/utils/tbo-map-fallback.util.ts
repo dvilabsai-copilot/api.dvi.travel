@@ -2,7 +2,7 @@ import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealText,
 } from '../../hotels/hotel-rate-plans';
-import type { TboStayBatch, TboStayMealSupplement } from '../../hotels/utils/tbo-multi-batch-stay.util';
+import { getTboBatchSearchTotal, priceTboMultiBatchStay, type TboStayBatch, type TboStayMealSupplement } from '../../hotels/utils/tbo-multi-batch-stay.util';
 
 export type TboMapFallbackConfig = {
   enabled: boolean;
@@ -415,4 +415,18 @@ export function tboStayMealNightFields(supplierMealPlan: string, supplement?: Tb
     hotelMealPlanCost: total,
     totalHotelMealPlanCost: total,
   };
+}
+
+export function getTboBatchMealPlanQuotes(offer: any, nights: number, margin: number, config: TboMapFallbackConfig) {
+  const supplierTotalFare = getTboBatchSearchTotal(offer);
+  if (supplierTotalFare === null) return undefined;
+  const supplierMealPlan = mealPlanCode(offer.tboRoomBatches[0].mealPlan);
+  const currency = String(offer.currency || offer.tboRoomBatches[0].currency).toUpperCase();
+  const routeIds = Array.from({ length: nights }, (_, index) => index);
+  return Array.from(new Set([supplierMealPlan, 'CP', 'MAP'])).flatMap(mealPlan => {
+    const supplement = mealPlan === supplierMealPlan ? undefined : getTboStayMealSupplement(offer, mealPlan, config);
+    if (mealPlan !== supplierMealPlan && !supplement) return [];
+    const totals = priceTboMultiBatchStay({ supplierTotalFare, routeIds, dviMealSupplement: supplement }, margin);
+    return [{ mealPlan, amount: totals.totalPrice, currency, dviMealSupplement: money(totals.mealCostPerNight * nights) }];
+  });
 }
