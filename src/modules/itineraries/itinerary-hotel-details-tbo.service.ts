@@ -54,6 +54,7 @@ import { toDatabaseBusinessDate } from './utils/itinerary.utils';
 import { HotelGalleryService } from '../hotels/services/hotel-gallery.service';
 import {
   applyMapDinnerFallbackToRows,
+  getTboBatchMealPlanQuotes,
   filterEpRows,
   type TboMapFallbackConfig,
 } from './utils/tbo-map-fallback.util';
@@ -1691,11 +1692,17 @@ matchedHotels: selectedHotelRows.map((hotel: any) => ({
       quoteId, routeId: Number(routeId), provider: normalizedProvider, hotelCode: normalizedHotelCode,
       hotels: (currentHotels || []).map((rawHotel: any) => {
         const hotel = projectHotelPayablePricing(rawHotel, effectiveMarginPercentage);
+        const batchMealPlanQuotes = normalizedProvider === 'tbo' && roomCount > 6
+          ? getTboBatchMealPlanQuotes({
+            ...rawHotel, checkInDate, checkOutDate, itineraryRouteId: Number(routeId),
+          }, numberOfNights, effectiveMarginPercentage, selectedHotelMapConfig)
+          : undefined;
         const totalAmount = Number(
           hotel.totalHotelCost ?? hotel.totalAmountAfterTax ?? hotel.totalPrice ?? hotel.price ?? 0,
         );
         return {
           ...hotel,
+          ...(batchMealPlanQuotes ? { batchMealPlanQuotes } : {}),
           itineraryPlanId: plan.itinerary_plan_ID,
           itineraryRouteId: Number(routeId),
           routeId: Number(routeId),
