@@ -202,13 +202,6 @@ function makeFixture(roomTypes?: string[]) {
   };
 }
 
-const previousBatchFlag = process.env.TBO_ENABLE_MULTI_BATCH_BOOKING;
-test.before(() => { process.env.TBO_ENABLE_MULTI_BATCH_BOOKING = 'true'; });
-test.after(() => {
-  if (previousBatchFlag === undefined) delete process.env.TBO_ENABLE_MULTI_BATCH_BOOKING;
-  else process.env.TBO_ENABLE_MULTI_BATCH_BOOKING = previousBatchFlag;
-});
-
 test('split VSR confirmation validates the whole saved stay and retries only the definitively rejected batch', async () => {
   const fixture = makeFixture();
   await assert.rejects(fixture.book(), /Partial booking success/);
