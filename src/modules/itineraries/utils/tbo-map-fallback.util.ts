@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealText,
@@ -461,7 +462,10 @@ export function prepareTboBatchRecommendation(
   }
   if (!isFreshTboMultiBatchStay(snapshot)) return;
   const pricing = priceTboMultiBatchStay(snapshot, margin);
-  const rateOptionId = ['tbo-split', snapshot.hotelCode, snapshot.roomType, requestedMeal, snapshot.mealPlan,
+  const roomIdentity = snapshot.batches.every(batch => batch.roomType === snapshot.roomType)
+    ? snapshot.roomType
+    : createHash('sha256').update(JSON.stringify(snapshot.batches.map(batch => batch.roomType))).digest('hex');
+  const rateOptionId = ['tbo-split', snapshot.hotelCode, roomIdentity, requestedMeal, snapshot.mealPlan,
     snapshot.currency, snapshot.isRefundable, snapshot.checkInDate, snapshot.checkOutDate].join(':');
   const nightlyRates = snapshot.routeIds.map((routeId, index) => {
     const date = new Date(Date.parse(snapshot.checkInDate) + index * 86400000).toISOString().slice(0, 10);

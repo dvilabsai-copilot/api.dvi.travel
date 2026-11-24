@@ -4,6 +4,33 @@ import { ConflictException } from '@nestjs/common';
 import { ItinerariesService } from '../src/modules/itineraries/itineraries.service';
 import { makeTboMultiBatchStay, priceTboMultiBatchStay } from '../src/modules/hotels/utils/tbo-multi-batch-stay.util';
 import { projectHotelPayablePricing } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
+import { matchTboBatchHotels } from '../src/modules/hotels/utils/tbo-batch-hotel-matching.util';
+import { ItineraryHotelDetailsTboService } from '../src/modules/itineraries/itinerary-hotel-details-tbo.service';
+
+test('same-hotel supplier batches can use different room types with compatible terms', () => {
+  const group = (batchIndex: number, roomCount: number, roomType: string, isRefundable = true) => ({
+    batch: {
+      batchIndex, startRoomIndex: batchIndex * 6, roomCount, guestCount: roomCount * 2,
+      occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+    },
+    hotels: [{
+      hotelCode: '6437125', roomType, price: roomCount * 1000, searchReference: '6437125!TB!rate' + batchIndex,
+      mealPlan: 'CP', currency: 'INR', isRefundable, isLiveBookable: true,
+    } as any],
+  });
+  const six = group(0, 6, 'Superior Twin');
+  const two = group(1, 2, 'Deluxe Twin');
+  const matches = matchTboBatchHotels([six, two]);
+  const details = Object.create(ItineraryHotelDetailsTboService.prototype);
+  const [preview] = details.toTboMultiBatchPreviewRows(matches, 8);
+  assert.equal(preview.roomType, 'Superior Twin + Deluxe Twin');
+  assert.deepEqual(preview.tboRoomBatches.map(batch => [batch.roomType, batch.bookingCode]), [
+    ['Superior Twin', '6437125!TB!rate0'], ['Deluxe Twin', '6437125!TB!rate1'],
+  ]);
+  assert.equal(matchTboBatchHotels([six, group(1, 2, 'Deluxe Twin', false)]).length, 0);
+  assert.equal(matchTboBatchHotels([six, { ...two, hotels: [] }]).length, 0);
+  assert.deepEqual(matchTboBatchHotels([six, group(1, 2, 'Superior Twin')]).map(match => match.roomType), ['Superior Twin']);
+});
 
 test('a changed 6+2 card fare needs approval before either the existing hotel or holds change', async () => {
   const writes: any[] = [];

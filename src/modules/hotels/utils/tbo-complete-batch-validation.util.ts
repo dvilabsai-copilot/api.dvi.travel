@@ -71,10 +71,9 @@ export function validateTboCompleteBatchGroups(
       return `TBO ${planRoomCount}-room stay needs ${expectedBatchCount} supplier batches; received ${group.length}.`;
     }
     const byIndex = [...group].sort((a, b) => Number(a.batchIndex) - Number(b.batchIndex));
-    // A mixed room/rate/refund policy is not an ordinary one-off booking.
-    // Optional metadata is checked when it exists but its absence is NOT
-    // evidence that the supplier has validated rate compatibility.
-    for (const field of ['roomType', 'mealPlan', 'currency', 'isRefundable'] as const) {
+    // Each supplier code identifies its own room category. Meal and refund
+    // terms and currency must still agree for the combined quotation.
+    for (const field of ['mealPlan', 'currency', 'isRefundable'] as const) {
       const values = group.map((item) => (item as TboCompleteBatchSelection & Record<string, unknown>)[field]);
       if (values.some((value) => value !== undefined && value !== null)) {
         const first = values[0];

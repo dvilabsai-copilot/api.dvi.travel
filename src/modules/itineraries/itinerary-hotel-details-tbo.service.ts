@@ -3292,6 +3292,7 @@ this.logger.log(
             String(rate.hotelCode || '').trim() === match.hotelCode &&
             rate.isLiveBookable === true &&
             String(rate.searchReference || '').includes('!TB!') &&
+            !bookingCodes.has(String(rate.searchReference || '').trim()) &&
             Number.isFinite(Number(rate.netAmount ?? rate.price)) &&
             Number(rate.netAmount ?? rate.price) > 0 &&
             Number.isFinite(Number(rate.totalFare ?? rate.price)) &&
@@ -3317,7 +3318,7 @@ this.logger.log(
           supplierTotalFare: Number(candidate.totalFare ?? candidate.price),
           occupancies: entry.batch.occupancies,
           hotelCode: match.hotelCode,
-          roomType: match.roomType,
+          roomType: String(candidate.roomType || '').trim(),
           mealPlan: match.mealPlan,
           currency: match.currency,
           isRefundable: candidate.isRefundable === true,
@@ -5340,7 +5341,7 @@ this.logger.log(
     hotelCode: string;
     checkInDate: string;
     checkOutDate: string;
-    vsrConfirmationRefresh?: { guestNationality: string };
+    vsrConfirmationRefresh?: { guestNationality: string; roomTypesByBatch?: string[] };
     requestedMealPlanCode?: string;
   }): Promise<HotelSearchResult[]> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
@@ -5405,9 +5406,9 @@ this.logger.log(
           childCount,
           childAges: rooming.childAges,
           occupancies: rooming.occupancies,
-          guestNationality: await this.resolveGuestNationality(plan),
+          guestNationality: params.vsrConfirmationRefresh?.guestNationality || await this.resolveGuestNationality(plan),
           hotelCodes: params.hotelCode,
-        });
+        }, params.vsrConfirmationRefresh?.roomTypesByBatch);
         return this.toTboMultiBatchPreviewRows(matchingHotels, roomCount)
           .filter((hotel) => String(hotel.hotelCode || '').trim() === String(params.hotelCode).trim());
       }

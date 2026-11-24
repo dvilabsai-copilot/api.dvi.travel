@@ -18,6 +18,10 @@ export type TboMatchingHotel = {
   }>;
 };
 
+export function tboBatchRoomTypeLabel(batches: readonly { roomType: string }[]): string {
+  return [...new Set(batches.map(batch => batch.roomType))].join(' + ');
+}
+
 /**
  * Find hotel/room/meal combinations returned in every TBO batch.
  *
@@ -30,6 +34,7 @@ export function matchTboBatchHotels(
   if (results.length === 0) return [];
 
   const groups = new Map<string, TboMatchingHotel>();
+  const propertyGroups = new Map<string, TboMatchingHotel>();
 
   results.forEach(({ batch, hotels }, resultIndex) => {
     const seen = new Set<string>();
@@ -53,14 +58,25 @@ export function matchTboBatchHotels(
         continue;
       }
 
-      const key = JSON.stringify([
+      const propertyKey = JSON.stringify([
         hotelCode,
-        roomType,
         mealPlan,
         currency,
         hotel.isRefundable === true,
       ]);
+      const propertyGroup = propertyGroups.get(propertyKey);
+      const propertyBatch = propertyGroup?.batches.find(item => item.batch.batchIndex === batch.batchIndex);
+      if (propertyBatch) {
+        propertyBatch.rates.push(hotel);
+      } else if (propertyGroup) {
+        propertyGroup.batches.push({ batch, rates: [hotel] });
+      } else if (resultIndex === 0) {
+        propertyGroups.set(propertyKey, {
+          hotelCode, roomType, mealPlan, currency, batches: [{ batch, rates: [hotel] }],
+        });
+      }
 
+      const key = JSON.stringify([propertyKey, roomType]);
       if (seen.has(key)) {
         const existing = groups.get(key);
         const entry = existing?.batches.find(
@@ -94,12 +110,33 @@ export function matchTboBatchHotels(
     }
   });
 
-  return [...groups.values()].filter(
-    (group) =>
-      group.batches.length === results.length &&
+  const complete = (group: TboMatchingHotel) =>
+    group.batches.length === results.length &&
       group.batches.every((item, index) =>
         item.batch.batchIndex === results[index].batch.batchIndex &&
         item.rates.length > 0,
-      ),
-  );
+      );
+  const completeUniform = [...groups.entries()].filter(([, group]) => complete(group));
+  const uniformPropertyKeys = new Set(completeUniform.map(([key]) => (JSON.parse(key) as [string])[0]));
+  const mixed = [...propertyGroups.entries()].flatMap(([key, group]) => {
+    if (!complete(group) || uniformPropertyKeys.has(key)) return [];
+    // Pick one complete mixed allocation for this set of supplier terms.
+    // Prefer the lowest positive fare for each batch, keeping each code unique.
+    const codes = new Set<string>();
+    const batches: TboMatchingHotel['batches'] = [];
+    for (const entry of group.batches) {
+      const rate = [...entry.rates]
+        .filter(candidate => !codes.has(String(candidate.searchReference).trim()))
+        .sort((left, right) => Number(left.totalFare ?? left.price) - Number(right.totalFare ?? right.price) ||
+          String(left.roomType).localeCompare(String(right.roomType)))[0];
+      if (!rate) return [];
+      codes.add(String(rate.searchReference).trim());
+      batches.push({ batch: entry.batch, rates: [rate] });
+    }
+    return [{
+      ...group, batches,
+      roomType: tboBatchRoomTypeLabel(batches.map(entry => ({ roomType: String(entry.rates[0].roomType).trim() }))),
+    }];
+  });
+  return [...completeUniform.map(([, group]) => group), ...mixed];
 }

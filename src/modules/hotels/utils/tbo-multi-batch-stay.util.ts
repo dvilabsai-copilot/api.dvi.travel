@@ -1,5 +1,6 @@
 import { validateTboCompleteBatchGroups } from './tbo-complete-batch-validation.util';
 import { TBO_SEARCH_SESSION_VALIDITY_MS } from './tbo-search-session';
+import { tboBatchRoomTypeLabel } from './tbo-batch-hotel-matching.util';
 
 /**
  * One physical property and one continuous check-in/check-out window.
@@ -71,13 +72,16 @@ export function assertTboMultiBatchStay(
   }
   if (stay.batches.some((batch) =>
     batch.hotelCode !== stay.hotelCode ||
-    batch.roomType !== stay.roomType ||
+    !String(batch.roomType || '').trim() ||
     batch.mealPlan !== stay.mealPlan ||
     batch.currency !== stay.currency ||
     batch.isRefundable !== stay.isRefundable ||
     !Number.isFinite(batch.supplierNetAmount) || batch.supplierNetAmount <= 0 ||
     !Number.isFinite(batch.supplierTotalFare) || batch.supplierTotalFare <= 0)) {
     throw new Error('TBO batches must have one hotel, compatible rates and genuine positive supplier amounts.');
+  }
+  if (stay.roomType !== tboBatchRoomTypeLabel(stay.batches)) {
+    throw new Error('The TBO stay room summary must match the supplier batches.');
   }
   const coverageError = validateTboCompleteBatchGroups(
     stay.batches.map((batch) => ({
@@ -145,6 +149,31 @@ export function priceTboMultiBatchStay(
     payableByNight: roomPayableByNight.map(amount => Math.round((amount + mealCostPerNight) * 100) / 100),
     mealCostPerNight,
   };
+}
+
+/** Sell amounts for the approval UI with no supplier credentials. */
+export function describeTboBatchRoomPrices(stay: TboMultiBatchStaySnapshot, margin: number, nightIndex?: number) {
+  const totalGuests = stay.batches.reduce((count, batch) => count +
+    batch.occupancies.reduce((guests, room) => guests + room.adults + room.children, 0), 0);
+  const pricedNights = nightIndex === undefined ? stay.routeIds.length : 1;
+  const pricing = priceTboMultiBatchStay(stay, margin);
+  const mealCents = Math.round(pricing.mealCostPerNight * 100);
+  const totalPayable = nightIndex === undefined ? pricing.totalPrice : pricing.payableByNight[nightIndex];
+  let cumulativeFare = 0;
+  let cumulativeGuests = 0;
+  let previousPayableCents = 0;
+  return stay.batches.map((batch, index) => {
+    cumulativeFare += Math.round(batch.supplierTotalFare * 100);
+    cumulativeGuests += batch.occupancies.reduce((guests, room) => guests + room.adults + room.children, 0);
+    const roomPayable = Math.round(cumulativeFare * (100 + margin) / 100);
+    const roomPayableCents = nightIndex === undefined ? roomPayable :
+      Math.round(allocateFullStayCents(roomPayable / 100, stay.routeIds)[nightIndex] * 100);
+    const payableCents = index === stay.batches.length - 1 ? Math.round(totalPayable * 100) :
+      roomPayableCents + Math.round(mealCents * cumulativeGuests / totalGuests) * pricedNights;
+    const amount = (payableCents - previousPayableCents) / 100;
+    previousPayableCents = payableCents;
+    return { batchIndex: batch.batchIndex, roomCount: batch.roomCount, roomType: batch.roomType, amount, currency: stay.currency };
+  });
 }
 
 /**
