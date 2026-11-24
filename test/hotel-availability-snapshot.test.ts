@@ -229,13 +229,14 @@ test('complete split reconciliation publishes the hotel card page without applyi
   const roomBatches = [6, 2].map((roomCount, index) => ({
     batchIndex: index, startRoomIndex: index * 6, roomCount,
     hotelCode, roomType: index === 0 ? 'Superior King' : 'Deluxe Twin',
-    bookingCode: hotelCode + '!TB!fixture' + index, mealPlan: 'CP',
+    bookingCode: hotelCode + '!TB!fixture' + index, mealPlan: index === 0 ? 'CP' : 'EP',
     currency: 'INR', isRefundable: true, supplierTotalFare: roomCount * 1000,
-    occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0 })),
+    occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0, childrenAges: [] })),
   }));
   const candidate = {
-    itineraryRouteId: 10, groupType: 0, date, checkInDate: date, checkOutDate: '2026-11-27',
-    provider: 'tbo', hotelCode, hotelName: 'Fortune Plaza Hotel', roomType, mealPlan: 'CP',
+    itineraryRouteId: 10, groupType: 0, date, checkInDate: date, checkOutDate: '2026-11-28',
+    completeStayRouteIds: [10, 11],
+    provider: 'tbo', hotelCode, hotelName: 'Fortune Plaza Hotel', roomType, mealPlan: 'EP',
     roomCount: 8, totalPrice: 8000, isSelectable: false, tboRoomBatches: roomBatches,
   };
   const previousUrl = process.env.DATABASE_URL;
@@ -253,14 +254,18 @@ test('complete split reconciliation publishes the hotel card page without applyi
     end: async () => undefined,
   }));
   const prisma = makePrisma();
-  const plan = { itinerary_plan_ID: 44, preferred_room_count: 8, no_of_nights: 1 };
+  const plan = {
+    itinerary_plan_ID: 44, preferred_room_count: 8, no_of_nights: 2,
+    meal_plan_code: 'CP', total_adult: 16,
+  };
   prisma.dvi_itinerary_plan_details.findFirst = async () => plan;
   prisma.dvi_itinerary_route_details = { findMany: async () => [
     { itinerary_route_ID: 10, itinerary_route_date: date },
+    { itinerary_route_ID: 11, itinerary_route_date: '2026-11-27' },
   ] };
   let cache = await prisma.dvi_itinerary_hotel_search_cache.findMany();
   prisma.dvi_itinerary_hotel_search_cache = {
-    findMany: async () => cache,
+    findMany: async ({ where }: any = {}) => cache.filter((row: any) => !where?.route_id || row.route_id === where.route_id),
     deleteMany: async () => { cache = []; },
     createMany: async ({ data }: any) => { cache = data; },
   };
@@ -270,7 +275,8 @@ test('complete split reconciliation publishes the hotel card page without applyi
     await callback({ dvi_itinerary_hotel_search_cache: prisma.dvi_itinerary_hotel_search_cache });
   };
   let providerErrors: Array<{ provider: string }> = [];
-  let inventory = [candidate];
+  const nextNight = { ...candidate, itineraryRouteId: 11, date: '2026-11-27' };
+  let inventory = [candidate, nextNight];
   const service = new HotelAvailabilitySnapshotService(prisma, {
     getHotelDetailsByQuoteIdFromTbo: async () => ({
       __offlineHotelsByRoute: new Map(),
@@ -298,9 +304,20 @@ test('complete split reconciliation publishes the hotel card page without applyi
     async () => ({ hotels: [], hotelTabs: [] } as any));
   assert.deepEqual(page.hotels.map(row => row.hotelName), ['Fortune Plaza Hotel']);
   assert.deepEqual((page.hotels[0] as any).tboRoomBatches, roomBatches);
+  assert.equal(page.hotels[0].checkOutDate, '2026-11-28');
+  const breakfast = (page.hotels[0] as any).batchMealPlanQuotes.find((quote: any) => quote.mealPlan === 'CP');
+  assert.equal(breakfast.dviMealSupplement, 3200);
+  const secondPage = await service.readPersisted(quoteId, { page: 1, pageSize: 20, groupType: 2, itineraryRouteId: 11 },
+    async () => ({ hotels: [], hotelTabs: [] } as any));
+  assert.equal(secondPage.hotels[0].date, '2026-11-27');
+  assert.equal(secondPage.hotels[0].checkInDate, date);
+  assert.deepEqual(snapshot.normalizeRowsToCurrentRouteDates(
+    [{ ...candidate, checkOutDate: '2026-11-29' }],
+    await prisma.dvi_itinerary_route_details.findMany(),
+  ), []);
 
   await search();
-  assert.equal(cache.length, 1, 'repeated checks replace the inventory');
+  assert.equal(cache.length, 2, 'repeated checks replace the inventory');
   providerErrors = [{ provider: 'tbo' }];
   assert.equal((await search()).response.hotelAvailability?.inventorySearchRunId, undefined);
   providerErrors = [];
@@ -311,6 +328,37 @@ test('complete split reconciliation publishes the hotel card page without applyi
   assert.equal((await search()).response.hotelAvailability?.inventorySearchRunId, undefined);
   assert.equal(writeCount, 2, 'partial, empty, and ordinary previews leave the cache intact');
   assert.equal(connect.mock.callCount(), 4, 'ordinary previews keep their existing lock-free path');
+});
+
+test('a proposed split stay leaves the saved offline room categories on both route rows', async () => {
+  const prisma = makePrisma();
+  const service = new HotelAvailabilitySnapshotService(prisma, {} as any, {} as any);
+  const snapshot = service as any;
+  const date = '2026-11-26';
+  const routes = [
+    { itinerary_route_ID: 10, itinerary_route_date: date },
+    { itinerary_route_ID: 11, itinerary_route_date: '2026-11-27' },
+  ];
+  const saved = {
+    itineraryRouteId: 10, groupType: 2, date, authoritativeRouteIds: [10, 11],
+    provider: 'offline', hotelCode: 'DVIHTL751423', hotelName: 'The Ocean Pearl Times Square',
+    roomType: 'Premium Deluxe Room', mealPlan: 'CP', isSelected: true, totalPrice: 45360,
+  };
+  const proposed = {
+    ...saved, provider: 'tbo', hotelCode: '6437125', hotelName: 'Fortune Plaza Hotel',
+    routeIds: [10, 11], roomType: 'Superior King + Deluxe Twin',
+    tboMultiBatchStay: { schemaVersion: 1, provider: 'tbo', hotelCode: '6437125', batches: [] },
+  };
+  snapshot.readPersisted = async () => ({ hotels: [saved] });
+  snapshot.applyCompleteStayAvailability = async (rows: any[]) => rows;
+  const response = await snapshot.buildFreshResponse(
+    'DVI20261156', { itinerary_plan_ID: 44, preferred_room_count: 8, no_of_nights: 2 },
+    [], 'preview-search', new Date(), routes, 'FRESH', { authoritativeRecommendationRows: [proposed] },
+  );
+  assert.deepEqual(response.hotels.map((row: any) => [row.itineraryRouteId, row.hotelName, row.roomType]), [
+    [10, saved.hotelName, saved.roomType], [11, saved.hotelName, saved.roomType],
+  ]);
+  assert.ok(response.hotels.every((row: any) => row.tboMultiBatchStay === undefined));
 });
 
 test('client hotel payload strips recommendation internals and shared inventory deduplicates groups', () => {

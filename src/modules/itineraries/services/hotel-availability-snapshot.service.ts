@@ -1033,9 +1033,14 @@ export class HotelAvailabilitySnapshotService {
                 const snapshot = parseHotelSelectionSnapshot(selection) as any;
                 return Array.isArray(snapshot?.authoritativeRouteIds) ? snapshot.authoritativeRouteIds : [];
               })();
-          return selectionGroup === rowGroup && linkedRoutes.map(Number).includes(routeId);
+          return selectionGroup === rowGroup && (
+            linkedRoutes.map(Number).includes(routeId) ||
+            (row.tboMultiBatchStay && Number(selection.itineraryRouteId || selection.routeId) === routeId)
+          );
         });
-        const anchorSource = persistedAnchor
+        const anchorSource = persistedAnchor && row.tboMultiBatchStay
+          ? persistedAnchor
+          : persistedAnchor
           ? {
               ...row,
               ...persistedAnchor,
@@ -1796,8 +1801,12 @@ export class HotelAvailabilitySnapshotService {
       // selection proposals so both paths see the same supplier search.
       if (mayRefreshSplitInventory && hasUsableLiveInventory && rows.length > 0 &&
           !hasPartialAvailability && response.hotelAvailability?.emptySearchRoutes === 0) {
+        // Group-specific split projections are for reconciliation, where they
+        // carry a per-night selection price. Cards use the original search
+        // offer, including its full-stay dates, rates, and meal-plan options.
+        const cardRows = rows.filter(row => !row.tboMultiBatchStay);
         await this.prisma.$transaction(
-          (tx) => this.replaceHotelSearchCache(tx, quoteId, plan, rows, searchRunId, checkedAt),
+          (tx) => this.replaceHotelSearchCache(tx, quoteId, plan, cardRows, searchRunId, checkedAt),
           { maxWait: 15000, timeout: 120000 },
         );
         response.hotelAvailability.inventorySearchRunId = searchRunId;
@@ -5602,7 +5611,7 @@ export class HotelAvailabilitySnapshotService {
       return [...new Set(routeIds)];
     };
 
-    return (rows || []).map((row: any) => {
+    return (rows || []).flatMap((row: any) => {
       const routeIds = routeIdsForRow(row);
       const parentRouteId = Number(row?.itineraryRouteId || row?.routeId || row?.route_id || routeIds[0] || 0);
       const parentRoute = routeById.get(parentRouteId);
@@ -5615,13 +5624,34 @@ export class HotelAvailabilitySnapshotService {
         .map((routeId) => routeById.get(routeId))
         .filter(Boolean);
       const lastStayRoute = stayRoutes[stayRoutes.length - 1] || parentRoute;
-      const currentCheckOut = this.addDays(
+      let checkInDate = currentCheckIn;
+      let currentCheckOut = this.addDays(
         this.toDate(lastStayRoute.itinerary_route_date),
         1,
       ).toISOString().slice(0, 10);
+      const splitOffer = !row.tboMultiBatchStay && getTboBatchSearchTotal(row) !== null;
+      if (splitOffer) {
+        // A raw batch rate is valid for the supplier's full date range.
+        // Keep the nightly route bucket but validate the original stay dates
+        // against all linked itinerary nights before exposing the rate.
+        const coveredRouteIds = Array.isArray(row.completeStayRouteIds) ? row.completeStayRouteIds.map(Number) : routeIds;
+        const coveredDates = [...new Set<string>(coveredRouteIds
+          .map((id: number) => dateOnly(routeById.get(id)?.itinerary_route_date))
+          .filter(Boolean))].sort();
+        const supplierCheckIn = dateOnly(row.checkInDate);
+        const supplierCheckOut = dateOnly(row.checkOutDate);
+        const expectedNightCount = (Date.parse(supplierCheckOut) - Date.parse(supplierCheckIn)) / 86400000;
+        if (!coveredRouteIds.includes(parentRouteId) || coveredDates.length !== coveredRouteIds.length ||
+            coveredDates.length !== expectedNightCount || coveredDates[0] !== supplierCheckIn ||
+            this.addDays(this.toDate(coveredDates[coveredDates.length - 1]), 1).toISOString().slice(0, 10) !== supplierCheckOut) {
+          return [];
+        }
+        checkInDate = supplierCheckIn;
+        currentCheckOut = supplierCheckOut;
+      }
       const priorDate = dateOnly(row?.date || row?.checkInDate || row?.check_in_date);
 
-      if (priorDate && priorDate !== currentCheckIn) {
+      if (!splitOffer && priorDate && priorDate !== currentCheckIn) {
         this.logger.warn('[HOTEL_AVAILABILITY_ROUTE_DATE_NORMALIZED]', {
           routeId: parentRouteId,
           provider: row?.provider || row?.hotel_provider || 'unknown',
@@ -5640,10 +5670,10 @@ export class HotelAvailabilitySnapshotService {
         itineraryRouteDate: currentCheckIn,
         itinerary_route_date: currentCheckIn,
         date: currentCheckIn,
-        checkInDate: currentCheckIn,
-        check_in_date: currentCheckIn,
-        hotelCheckInDate: currentCheckIn,
-        hotel_check_in_date: currentCheckIn,
+        checkInDate,
+        check_in_date: checkInDate,
+        hotelCheckInDate: checkInDate,
+        hotel_check_in_date: checkInDate,
         checkOutDate: currentCheckOut,
         check_out_date: currentCheckOut,
         hotelCheckOutDate: currentCheckOut,
