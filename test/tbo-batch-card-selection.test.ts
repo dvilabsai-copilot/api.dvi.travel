@@ -140,6 +140,48 @@ test('a changed 6+2 card fare needs approval before either the existing hotel or
   assert.equal(writes[0].bookingCode, undefined);
 });
 
+test('Fortune Plaza reviews the mixed 6+2 rate and charges breakfast for only the four EP guests', async () => {
+  const hotelCode = '6437125';
+  const roomTypes = ['Superior King Room,1 King Bed', 'Deluxe Twin Room,2 Twin Beds'];
+  const roomType = roomTypes.join(' + ');
+  const routeIds = [26510, 26511];
+  const offer = (firstBatchMeal: 'EP' | 'CP', firstBatchFare: number) => ({
+    hotelCode, hotelName: 'Fortune Plaza Hotel', roomType, mealPlan: 'EP', currency: 'INR',
+    totalFare: firstBatchFare + 14243.97,
+    tboRoomBatches: [6, 2].map((roomCount, batchIndex) => {
+      const mealPlan = batchIndex === 0 ? firstBatchMeal : 'EP';
+      const supplierTotalFare = batchIndex === 0 ? firstBatchFare : 14243.97;
+      return {
+        hotelCode, roomType: roomTypes[batchIndex], mealPlan, currency: 'INR', isRefundable: false,
+        batchIndex, startRoomIndex: batchIndex * 6, roomCount, bookingCode: hotelCode + '!TB!' + mealPlan + batchIndex,
+        supplierNetAmount: supplierTotalFare, supplierTotalFare,
+        occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+      };
+    }),
+  });
+  const service = Object.assign(Object.create(ItinerariesService.prototype), {
+    prisma: { dvi_global_settings: { findFirst: async () => ({ hotel_margin: 5 }) } },
+    hotelDetailsTboService: {
+      searchSelectedHotelForContinuousStay: async () => [offer('EP', 48068.63), offer('CP', 53409.71)],
+      getTboMapFallbackConfig: async () => ({ enabled: true, breakfastRate: 400 }),
+    },
+  });
+  const result = await service.selectTboMultiBatchStayIntent({
+    planId: 12214, quoteId: 'QA-SB-DVI20261156', anchorRouteId: routeIds[0], groupType: 2,
+    hotelCode, intent: 'ROOM_TYPE', plan: { preferred_room_count: 8 },
+    data: { roomType, mealPlanCode: 'CP', previewOnly: true },
+    stay: { routeIds, nights: 2, checkInDate: '2026-11-26', checkOutDate: '2026-11-28',
+      stayDates: ['2026-11-26', '2026-11-27'] },
+  });
+  assert.equal(result.status, 'AVAILABLE');
+  assert.equal(result.groupType, 2);
+  assert.equal(result.totals.totalPrice, 74236.36);
+  assert.deepEqual(result.selections.map(selection => selection.hotelMealPlanCost), [1600, 1600]);
+  assert.deepEqual(result.selections[0].tboMultiBatchStay.batches.map(batch => [batch.mealPlan, batch.bookingCode]), [
+    ['CP', hotelCode + '!TB!CP0'], ['EP', hotelCode + '!TB!EP1'],
+  ]);
+});
+
 test('EP batches save the selected DVI meal plan and preserve supplier amounts and codes through repricing', async () => {
   const writes: any[] = [];
   const hotelCode = '1738421';

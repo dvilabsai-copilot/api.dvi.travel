@@ -2308,8 +2308,10 @@ timingStepStartedAt =
       const config = await this.hotelDetailsTboService.getTboMapFallbackConfig();
       for (const candidate of offers) {
         const supplement = getTboStayMealSupplement(candidate as any, requestedMeal, config);
+        // A mixed CP/EP allocation also has an aggregate EP label. Compare the
+        // actual breakfast needed, keeping supplier fare order when it ties.
         if (supplement && (!dviMealSupplement ||
-            (candidate.mealPlan === 'CP' && offer.mealPlan === 'EP'))) {
+            supplement.breakfastPerNight < dviMealSupplement.breakfastPerNight)) {
           offer = candidate;
           dviMealSupplement = supplement;
         }
