@@ -2291,6 +2291,12 @@ const clientIp = String(
   async manualConfirmQuotation(@Body() dto: ConfirmQuotationDto, @Req() req: Request) {
     this.itineraryAccessService.assertVehicleAgentHotelMutation((req as any).user);
     await this.itineraryAccessService.assertCanEditPlan(Number(dto.itinerary_plan_ID), (req as any).user);
+    const groupType = Number((dto as any).selectedGroupType || dto.hotel_group_type || 0);
+    return this.hotelBlockingService.withSplitVsrHoldConfirmationLock(Number(dto.itinerary_plan_ID), groupType,
+      () => this.confirmHeldQuotation(dto, req, groupType));
+  }
+
+  private async confirmHeldQuotation(dto: ConfirmQuotationDto, req: Request, groupType: number) {
     const authenticatedUser = (req as any).user || {};
     const actor = {
       id: Number(authenticatedUser.userId || 0),
@@ -2300,7 +2306,6 @@ const clientIp = String(
       permissionRoleId: Number(authenticatedUser.permissionRoleId ?? 0),
       staffId: Number(authenticatedUser.staffId ?? authenticatedUser.staff_id ?? 0),
     };
-    const groupType = Number((dto as any).selectedGroupType || dto.hotel_group_type || 0);
     await this.hotelBlockingService.assertPlanReady(Number(dto.itinerary_plan_ID), groupType);
     await this.hotelBlockingService.assertOfflinePaymentAcknowledgements(
       Number(dto.itinerary_plan_ID),

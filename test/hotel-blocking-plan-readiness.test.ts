@@ -82,6 +82,7 @@ test('manual confirmation uses hotel_group_type throughout and stops before conf
   const controller = Object.assign(Object.create(ItinerariesController.prototype), {
     itineraryAccessService: { assertVehicleAgentHotelMutation() {}, async assertCanEditPlan() {} },
     hotelBlockingService: {
+      async withSplitVsrHoldConfirmationLock(_planId: number, _group: number, work: () => Promise<unknown>) { return work(); },
       async assertPlanReady(planId: number, group: number) {
         assert.equal(planId, 12032);
         calls.push(`ready:${group}`);
