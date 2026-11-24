@@ -2888,8 +2888,16 @@ export class HotelAvailabilitySnapshotService {
         itineraryRouteId: row.itineraryRouteId || row.routeId,
         date: row.date || row.itineraryRouteDate || row.checkInDate,
       }, Number(margins.get(this.persistedHotelId(row)) || option.hotelMarginPercentage || margin), rooms);
+      const supplierFare = getTboBatchSearchTotal(row, rooms);
       return {
         ...row, cardQuote: quote(row),
+        ...(supplierFare === null ? {} : {
+          // A supplier EP choice is room-only even when DVI quotes breakfast separately.
+          batchSupplierQuote: {
+            amount: Math.round(supplierFare * (100 + Math.max(0, margin))) / 100,
+            currency: String(row.currency || row.tboRoomBatches[0].currency || 'INR').toUpperCase(),
+          },
+        }),
         ...(Array.isArray(row.rateOptions) ? {
           rateOptions: row.rateOptions.map((option: any) => ({ ...option, cardQuote: quote(option) })),
         } : {}),

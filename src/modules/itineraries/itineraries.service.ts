@@ -2363,6 +2363,24 @@ timingStepStartedAt =
     if (!Number.isFinite(margin)) throw new BadRequestException('Hotel margin is invalid.');
     const { baseByNight: supplierNights, payableByNight: payableNights, totalPrice: fullPayable } =
       priceTboMultiBatchStay(multiStay, margin);
+    const expectedFare = data.expectedBatchFare;
+    if (expectedFare != null && data.previewOnly !== true) {
+      const previousAmount = expectedFare.amount;
+      if (previousAmount !== null &&
+          (typeof previousAmount !== 'number' || !Number.isFinite(previousAmount) || previousAmount <= 0)) {
+        throw new BadRequestException('Invalid VSR hotel card fare.');
+      }
+      if (previousAmount === null || Math.round(previousAmount * 100) !== Math.round(fullPayable * 100) ||
+          String(expectedFare.currency || '').toUpperCase() !== multiStay.currency.toUpperCase()) {
+        throw new ConflictException({
+          code: 'TBO_BATCH_CARD_FARE_CHANGED',
+          message: 'The live VSR fare requires approval before selecting this hotel.',
+          previousAmount,
+          amount: fullPayable,
+          currency: multiStay.currency,
+        });
+      }
+    }
     const canonicalHotelId = Number(offer.canonicalHotelId || offer.hotelId || data.canonicalHotelId || data.hotelId || 0);
     const selections = routeIds.map((routeId: number, index: number) => {
       const baseTotalPrice = supplierNights[index];

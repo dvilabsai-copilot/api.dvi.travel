@@ -185,3 +185,12 @@ test('cached 6+2 inventory distinguishes a complete search match from missing or
     assert.deepEqual(incomplete.hotelStayUnavailableDates, ['2026-11-25']);
   }
 });
+
+test('actual supplier quote stays separate from the breakfast-inclusive card estimate', async () => {
+  const service = new HotelAvailabilitySnapshotService({
+    dvi_global_settings: { findFirst: async () => ({ hotel_margin: 5 }) },
+  } as any, {} as any, {} as any, {} as any);
+  const result = await (service as any).attachCardQuotes(mangaloreRates.map(batchPreview), { preferred_room_count: 8 });
+  assert.deepEqual(result.map((row: any) => row.batchSupplierQuote?.amount), [19957.39, 13917.46, 14513.69]);
+  assert.deepEqual(result.map((row: any) => row.cardQuote?.payableAmount), [19957.39, 20317.46, 20913.69]);
+});
