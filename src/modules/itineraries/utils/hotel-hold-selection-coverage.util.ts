@@ -16,7 +16,7 @@ function parse(value: unknown): any {
   try { return JSON.parse(value); } catch { return null; }
 }
 
-function selectionIds(value: unknown): number[] {
+export function getHotelHoldSelectionIds(value: unknown): number[] {
   const ids = parse(value);
   return Array.isArray(ids) ? ids.map(Number).filter(id => Number.isInteger(id) && id > 0) : [];
 }
@@ -49,13 +49,13 @@ export function getHotelHoldSelectionCoverage<T extends Hold>(selectedRows: Sele
       splitRequests.set(batch.key, siblings);
       continue;
     }
-    const ids = selectionIds(request.selection_ids);
+    const ids = getHotelHoldSelectionIds(request.selection_ids);
     if (ids.some(id => savedStays.has(id))) invalidRequests.push(request);
     coveredIds.push(...ids);
   }
   for (const siblings of splitRequests.values()) {
     const first = siblings[0];
-    const ids = selectionIds(first.selection_ids);
+    const ids = getHotelHoldSelectionIds(first.selection_ids);
     const stay = savedStays.get(ids[0]);
     const bookingIds = new Set(siblings.map(row => Number(parse(row.request_payload)?.supplierHold?.bookingId)));
     if (!stay?.batches?.length || ids.some(id => JSON.stringify(savedStays.get(id)) !== JSON.stringify(stay)) ||
