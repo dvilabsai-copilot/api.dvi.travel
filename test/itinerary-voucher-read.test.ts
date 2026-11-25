@@ -24,7 +24,7 @@ test('transport voucher read preserves missing confirmed-plan validation', async
   );
 });
 
-test('hotel voucher shows the saved VSR room quantities and confirms only complete vouchered batches', async () => {
+test('hotel voucher counts issued VSR batches and confirms only complete vouchered stays', async () => {
   const roomTitles = ['Deluxe Twin Room,2 Twin Beds', 'Deluxe Double Room,1 Queen Bed'];
   const hotelCode = '6437125';
   const stay = makeTboMultiBatchStay({
@@ -71,6 +71,8 @@ test('hotel voucher shows the saved VSR room quantities and confirms only comple
     } }),
   }));
   let supplierRows = holds;
+  const offlineVoucher = { hotel_id: 4, hotel_booking_status: 4 };
+  let manualVouchers = [offlineVoucher];
   const service = new ItineraryVoucherReadService({
     dvi_confirmed_itinerary_plan_details: { findFirst: async () => ({
       confirmed_itinerary_plan_ID: 1, itinerary_preference: 1, preferred_room_count: 8,
@@ -82,7 +84,7 @@ test('hotel voucher shows the saved VSR room quantities and confirms only comple
       { confirmed_itinerary_plan_hotel_details_id: 2, room_type_id: 0 },
       { confirmed_itinerary_plan_hotel_details_id: 3, room_type_id: 7 },
     ] },
-    dvi_confirmed_itinerary_plan_hotel_voucher_details: { findMany: async () => [] },
+    dvi_confirmed_itinerary_plan_hotel_voucher_details: { findMany: async () => manualVouchers },
     dvi_hotel_block_request: { findMany: async ({ where }: any) => {
       assert.deepEqual(where, { itinerary_plan_id: 1, provider: 'VSR', confirmation_channel: 'TBO_BOOK_HOLD',
         status: 'CONFIRMED', paid_confirmed_at: { not: null } });
@@ -98,21 +100,39 @@ test('hotel voucher shows the saved VSR room quantities and confirms only comple
     getVoucherStatusLabel: ItinerariesService.prototype['getVoucherStatusLabel'],
   });
 
-  const { hotelVoucherGroups } = await service.getVoucherDetails(1);
+  const { hotelVoucherGroups, summary } = await service.getVoucherDetails(1);
   assert.deepEqual(hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel')?.roomTypes,
     [...roomTitles].sort());
   assert.deepEqual(hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel')?.roomTypeQuantities,
     [{ roomType: roomTitles[0], roomCount: 6 }, { roomType: roomTitles[1], roomCount: 2 }]);
   const fortune = hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel');
   assert.equal(fortune?.bookingStatusLabel, 'Confirmed');
-  assert.equal(fortune?.voucherCount, 0);
+  assert.equal(fortune?.voucherCount, 2);
+  assert.equal(fortune?.hasVoucher, false);
   const offline = hotelVoucherGroups.find(group => group.hotelName === 'Offline Hotel');
   assert.deepEqual(offline?.roomTypes, ['Premium Room']);
-  assert.equal(offline?.bookingStatusLabel, 'Not Created');
+  assert.equal(offline?.bookingStatusLabel, 'Confirmed');
+  assert.equal(offline?.voucherCount, 1);
+  assert.equal(offline?.hasVoucher, true);
+  assert.equal(summary.existingHotelVoucherCount, 3);
+
+  const fortuneManualVoucher = { hotel_id: 0, itinerary_plan_hotel_details_ID: 101, hotel_booking_status: 4 };
+  manualVouchers = [offlineVoucher, fortuneManualVoucher];
+  const withManualVoucher = await service.getVoucherDetails(1);
+  assert.equal(withManualVoucher.hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel')?.voucherCount, 3);
+  assert.equal(withManualVoucher.summary.existingHotelVoucherCount, 4);
+  manualVouchers = [offlineVoucher];
+
+  supplierRows = [holds[0], { ...holds[1], voucher_status: 'PENDING' }];
+  const partiallyVouchered = await service.getVoucherDetails(1);
+  const partialFortune = partiallyVouchered.hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel');
+  assert.equal(partialFortune?.bookingStatusLabel, 'Not Created');
+  assert.equal(partialFortune?.voucherCount, 1);
+  assert.equal(partiallyVouchered.summary.existingHotelVoucherCount, 2);
 
   for (const invalidRows of [
+    [],
     [holds[0]],
-    [holds[0], { ...holds[1], voucher_status: 'PENDING' }],
     [holds[0], { ...holds[1], paid_confirmed_at: null }],
     [holds[0], { ...holds[1], group_type: 3 }],
     [holds[0], { ...holds[1], selection_ids: '[201,202]' }],
@@ -120,11 +140,17 @@ test('hotel voucher shows the saved VSR room quantities and confirms only comple
   ]) {
     supplierRows = invalidRows;
     const result = await service.getVoucherDetails(1);
-    assert.equal(result.hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel')?.bookingStatusLabel, 'Not Created');
+    const invalidFortune = result.hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel');
+    assert.equal(invalidFortune?.bookingStatusLabel, 'Not Created');
+    assert.equal(invalidFortune?.voucherCount, 0);
+    assert.equal(result.summary.existingHotelVoucherCount, 1);
   }
 
   supplierRows = holds;
   hotelRows[0].hotel_cancellation_status = 1;
   const cancelled = await service.getVoucherDetails(1);
-  assert.equal(cancelled.hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel')?.bookingStatusLabel, 'Cancelled');
+  const cancelledFortune = cancelled.hotelVoucherGroups.find(group => group.hotelName === 'Fortune Plaza Hotel');
+  assert.equal(cancelledFortune?.bookingStatusLabel, 'Cancelled');
+  assert.equal(cancelledFortune?.voucherCount, 0);
+  assert.equal(cancelled.summary.existingHotelVoucherCount, 1);
 });
