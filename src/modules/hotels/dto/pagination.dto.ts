@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
-import { IsInt, IsIn, IsOptional, IsString } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsInt, IsIn, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class PaginationQueryDto {
   @Type(() => Number)
@@ -24,6 +24,14 @@ export class PaginationQueryDto {
   @IsOptional()
   @IsString()
   hotel_city?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @Transform(({ obj, key, value }) => obj[key] === '' ? undefined : value)
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
+  categoryId?: number;
 
  // status is TinyInt (number) in schema
   @IsOptional()
