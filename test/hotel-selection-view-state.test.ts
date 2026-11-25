@@ -5,6 +5,8 @@ import {
   resolveHotelRequiredRoutes,
   synchronizeHotelTabTotals,
 } from '../src/modules/itineraries/utils/hotel-selection-view-state.util';
+import { makeTboMultiBatchStay } from '../src/modules/hotels/utils/tbo-multi-batch-stay.util';
+import { shouldSkipRepeatedHotelNight } from '../src/modules/itineraries/utils/hotel-route-total.util';
 
 const routes = [
   { routeId: 10145, routeDate: '2026-08-12' },
@@ -40,6 +42,48 @@ const selectedRow = (routeId: number, overrides: Record<string, unknown> = {}) =
     totalPrice: 5040,
   },
   ...overrides,
+});
+
+test('reads each saved split VSR night at its exact price even when the two legacy totals round identically', () => {
+  const routeIds = routes.map(({ routeId }) => routeId);
+  const batches = [6, 6, 6, 6, 1].map((roomCount, batchIndex) => ({
+    batchIndex, startRoomIndex: batchIndex * 6, roomCount,
+    bookingCode: '6437125!TB!fixture-' + batchIndex,
+    hotelCode: '6437125', roomType: batchIndex < 4 ? 'Deluxe Twin Room' : 'Deluxe Double Room',
+    mealPlan: batchIndex < 4 ? 'CP' : 'EP', currency: 'INR', isRefundable: true,
+    supplierNetAmount: batchIndex < 4 ? 48000 : 8002.14,
+    supplierTotalFare: batchIndex < 4 ? 48000 : 8002.14,
+    occupancies: Array.from({ length: roomCount }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+  }));
+  const stay = makeTboMultiBatchStay({
+    hotelCode: '6437125', roomType: 'Deluxe Twin Room + Deluxe Double Room', mealPlan: 'EP',
+    currency: 'INR', isRefundable: true, anchorRouteId: routeIds[0], routeIds,
+    checkInDate: '2026-08-12', checkOutDate: '2026-08-14', roomCount: 25, batches,
+    dviMealSupplement: { mealPlan: 'CP', breakfastRate: 400, breakfastPerNight: 800, dinnerRate: 0, dinnerPerNight: 0 },
+  }, '2026-08-01T12:00:00Z');
+  const rows = routes.map(({ routeId }, index) => selectedRow(routeId, {
+    groupType: 2, provider: 'tbo', hotelCode: stay.hotelCode, providerHotelCode: stay.hotelCode,
+    hotelName: 'Fortune Plaza Hotel', roomType: stay.roomType,
+    rateOptionId: 'shared-split-rate', pricePerNight: 105801.1, totalHotelCost: 105801.1,
+    selectedPriceSnapshot: JSON.stringify({
+      provider: 'tbo', hotelCode: stay.hotelCode, roomCount: 25,
+      hotelMarginPercentage: 5, rateOptionId: 'shared-split-rate',
+      baseTotalPrice: 100001.07, totalPrice: index === 0 ? 105801.13 : 105801.12,
+      tboMultiBatchStay: stay,
+    }),
+  }));
+  const tabs = [{ groupType: 2, totalAmount: 105801.12 }];
+  const [group] = buildHotelSelectionState({ tabs, rows, requiredRoutes: routes });
+  const selected = group.routes.map(route => route.selected!);
+  assert.equal(group.totalAmount, 211602.25);
+  assert.equal(synchronizeHotelTabTotals(tabs, [group])[0].totalAmount, 211602.25);
+  assert.deepEqual(selected.map(hotel => hotel.totalPrice), [105801.13, 105801.12]);
+  assert.deepEqual(selected.map(hotel => hotel.pricePerNight), [105801.13, 105801.12]);
+  assert.deepEqual(selected.map(hotel => hotel.selectedPriceSnapshot?.tboMapFallbackBreakfastPerNight), [800, 800]);
+  assert.equal(shouldSkipRepeatedHotelNight(
+    selected[1], Date.parse(routes[0].routeDate), Date.parse(routes[1].routeDate),
+  ), false);
+  assert.deepEqual(buildHotelSelectionState({ tabs, rows, requiredRoutes: routes }), [group]);
 });
 
 test('builds a complete two-night authoritative group without recalculating its tab total', () => {

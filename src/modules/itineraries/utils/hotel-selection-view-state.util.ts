@@ -6,6 +6,8 @@ import {
 } from './hotel-payable-pricing.util';
 import { resolveOfflineHotelPayablePricing } from './hotel-selection-pricing.util';
 import { isFullStayHotelSelection } from './hotel-route-total.util';
+import { projectTboBatchRecommendationNight } from './tbo-map-fallback.util';
+import { assertTboMultiBatchStay, type TboMultiBatchStaySnapshot } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import {
   isTboSupplierBookingCode,
   normalizeHotelDisplayName,
@@ -186,13 +188,31 @@ const selectionPriority = (row: any): number => {
   return 0;
 };
 
-const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
+const selectedView = (row: any, routeId: number, routeDate: string): HotelSelectionSelectedView => {
   let snapshot = parseSnapshot(
     row?.selectedPriceSnapshot ??
     row?.selected_price_snapshot ??
     row?.selection?.selectedPriceSnapshot ??
     row?.selection?.selected_price_snapshot,
   );
+  let splitNight: ReturnType<typeof projectTboBatchRecommendationNight>;
+  const splitStay = snapshot?.tboMultiBatchStay as TboMultiBatchStaySnapshot | undefined;
+  if (snapshot && splitStay?.schemaVersion === 1) {
+    try {
+      assertTboMultiBatchStay(splitStay);
+      const night = projectTboBatchRecommendationNight({
+        ...snapshot,
+        hotelMarginPercentage: snapshot.hotelMarginPercentage ?? row?.hotelMarginPercentage,
+      }, routeId);
+      if (night && (!routeDate || night.date === routeDate)) {
+        // Each saved batch stay allocates an exact payable to each route.
+        // Preserve those cents and make the nightly scope explicit for totals.
+        splitNight = { ...night, pricingScope: 'ROUTE_NIGHT', roomRate: night.basePricePerNight };
+      }
+    } catch {
+      // Legacy or incomplete batch snapshots still use the saved row pricing.
+    }
+  }
   const roomTypeBreakdown = Array.isArray(snapshot?.roomTypeBreakdown)
     ? snapshot.roomTypeBreakdown.filter((item: any) => item && typeof item === 'object')
     : [];
@@ -470,7 +490,7 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
   // before exposing it through hotelSelectionState; otherwise the tabs use
   // payable totals while the table hydrates its authoritative selected row
   // from a stale raw snapshot.
-  const identity: Record<string, any> = snapshot
+  const identity: Record<string, any> = splitNight ?? (snapshot
     ? (() => {
         const projected: Record<string, any> = projectHotelPayablePricing(
           {
@@ -529,7 +549,7 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
               : projected.selectedTotalPrice,
         };
       })()
-    : {};
+    : {});
   const selectedPriceSnapshot = snapshot
     ? { ...identity, hotelName: normalizeHotelDisplayName(identity.hotelName) || null }
     : null;
@@ -557,7 +577,7 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     ? routeNightProjection.pricePerNight
     : undefined;
   const pricePerNight = Number(
-    vsrFallbackNightPayable ?? (roomTypeBreakdown.length > 0
+    splitNight?.pricePerNight ?? vsrFallbackNightPayable ?? (roomTypeBreakdown.length > 0
       ? snapshot?.selectedPricePerNight ?? snapshot?.pricePerNight ?? payable
       : row?.selectedPricePerNight ?? row?.selected_price_per_night ??
         row?.totalHotelCost ?? row?.total_hotel_cost ??
@@ -601,11 +621,11 @@ const selectedView = (row: any, routeDate = ''): HotelSelectionSelectedView => {
     pricePerNight: money(Number.isFinite(pricePerNight) ? pricePerNight : 0),
     totalPrice: money(Number.isFinite(totalPrice) ? totalPrice : payable),
     selectedPricePerNight: money(Number(pricePerNight || 0)),
-    selectedTotalPrice: roomTypeBreakdown.length > 0
+    selectedTotalPrice: splitNight?.selectedTotalPrice ?? (roomTypeBreakdown.length > 0
       ? money(Number(identity.selectedTotalPrice ?? totalPrice ?? 0))
       : logicalStayPayableTotal > 0
         ? money(logicalStayPayableTotal)
-        : money(Number(identity.selectedTotalPrice ?? totalPrice ?? 0)),
+        : money(Number(identity.selectedTotalPrice ?? totalPrice ?? 0))),
     roomRate: money(Number(identity.roomRate ?? 0)),
     totalRoomCost: money(Number(identity.totalRoomCost ?? 0)),
     hotelMarginBaseAmount: money(Number(identity.hotelMarginBaseAmount ?? 0)),
@@ -714,7 +734,7 @@ export function buildHotelSelectionState({
         return {
           ...requiredRoute,
           selectionStatus: 'SELECTED' as const,
-          selected: selectedView(selectedRow, requiredRoute.routeDate),
+          selected: selectedView(selectedRow, requiredRoute.routeId, requiredRoute.routeDate),
         };
       }
       // Keep a persisted manual choice visible even when the latest supplier
@@ -729,7 +749,7 @@ export function buildHotelSelectionState({
         return {
           ...requiredRoute,
           selectionStatus: 'UNAVAILABLE' as const,
-          selected: selectedView(unavailableUserRow, requiredRoute.routeDate),
+          selected: selectedView(unavailableUserRow, requiredRoute.routeId, requiredRoute.routeDate),
         };
       }
       if (unavailableRow) {
