@@ -4774,9 +4774,14 @@ nextVehicles.push({
     toCents(preview.currentVehiclePrice);
 
 
-  const beforeVehicleAmount = Number(
-    before?.costBreakdown?.totalVehicleAmount,
-  );
+// Use internal server-side pricing for financial validation.
+// Keep the authenticated user's response role-filtered.
+const internalBefore =
+  await this.itineraryDetails.getItineraryDetails(quoteId);
+
+const beforeVehicleAmount = Number(
+  internalBefore?.costBreakdown?.totalVehicleAmount,
+);
 
   if (!Number.isFinite(beforeVehicleAmount) || beforeVehicleAmount <= 0) {
     throw new ConflictException(
