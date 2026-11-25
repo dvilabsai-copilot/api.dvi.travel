@@ -4677,6 +4677,7 @@ model dvi_itinerary_route_details {
   no_of_days                    Int       @default(0)
   no_of_km                      String?   @db.VarChar(100)
   direct_to_next_visiting_place Int       @default(0)
+  prefer_houseboats             Boolean   @default(false)
   next_visiting_location        String?   @db.VarChar(500)
   route_start_time              DateTime? @db.Time(0)
   route_end_time                DateTime? @db.Time(0)

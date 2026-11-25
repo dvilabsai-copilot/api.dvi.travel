@@ -24,6 +24,7 @@ import {
 import { TimeConverter } from '../engines/helpers/time-converter';
 import { createHash } from 'node:crypto';
 import { createPendingItineraryRevision, getRevisionSaveState, type RevisionPriceSnapshot } from './itinerary-revision.service';
+import { isHouseboatOnlyCity, loadHouseboatCities } from '../utils/houseboat-city-policy.util';
 
 type RouteFamilyQuote = {
   baseQuoteId: string;
@@ -768,6 +769,16 @@ export class ItineraryPlanPersistenceService {
       normalizedRequestType === 'itineary_basic_info'
       || normalizedRequestType === 'itineary_basic_info_with_optimized_route';
     const isPlanUpdate = Number((dto?.plan as any)?.itinerary_plan_id || 0) > 0;
+    if (dto.routes?.some(route => route.prefer_houseboats === true)) {
+      const houseboatCities = await loadHouseboatCities(this.prisma);
+      const hotelNights = Number(dto.plan.no_of_nights || 0);
+      dto.routes.forEach((route, index) => {
+        if (route.prefer_houseboats === true &&
+          (index >= hotelNights || !isHouseboatOnlyCity(route.next_visiting_location, houseboatCities))) {
+          route.prefer_houseboats = false;
+        }
+      });
+    }
     const shouldResetManualHotspotsForFullRebuild = isFullBasicInfoRebuildType && isPlanUpdate;
     let routeChanged = false;
 let itineraryStartTimeChanged = false;
@@ -853,6 +864,7 @@ const previousEndTime =
           next_visiting_location: true,
           no_of_km: true,
           direct_to_next_visiting_place: true,
+          prefer_houseboats: true,
         },
       }) : [];
       const oldViaRoutes = existingPlanId > 0 ? await tx.dvi_itinerary_via_route_details.findMany({
@@ -1031,6 +1043,19 @@ stepStartedAt = this.logItineraryApiTiming({
       console.log('[PERF] upsertPlanHeader:', Date.now() - opStart, 'ms');
 
       const shouldRebuildRouteData = !isPlanUpdate || routeChanged;
+      const houseboatPreferenceRouteIds: number[] = [];
+      if (!shouldRebuildRouteData) {
+        for (const [index, saved] of oldRoutes.entries()) {
+          const choice = dto.routes?.[index]?.prefer_houseboats;
+          if (typeof choice !== 'boolean' || choice === Boolean(saved.prefer_houseboats)) continue;
+          await tx.dvi_itinerary_route_details.update({
+            where: { itinerary_route_ID: saved.itinerary_route_ID },
+            data: { prefer_houseboats: choice, updatedon: new Date() },
+          });
+          saved.prefer_houseboats = choice;
+          houseboatPreferenceRouteIds.push(saved.itinerary_route_ID);
+        }
+      }
 
 // A time-only edit must preserve the existing route structure/IDs,
 // but its persisted travel/hotspot timeline must be regenerated.
@@ -1777,6 +1802,7 @@ if (!shouldRebuildRouteData && itineraryEndTimeChanged) {
    revisionCreated: Boolean(revision),
   routeIds: routes.map((r: any) => r.itinerary_route_ID),
   routeChanged,
+  houseboatPreferenceRouteIds,
   vehicleSelectionChanged,
   roomCountChanged,
   occupancyChanged,

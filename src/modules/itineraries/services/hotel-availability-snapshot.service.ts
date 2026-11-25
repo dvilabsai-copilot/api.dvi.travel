@@ -19,7 +19,7 @@ import {
 import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
 import { OfflineHotelCatalogService, selectOfflineRouteNightlyRate } from './offline-hotel-catalog.service';
 import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
-import { getHouseboatOnlyRouteIds, loadHouseboatCities } from '../utils/houseboat-city-policy.util';
+import { getHouseboatCityRouteIds, loadHouseboatCities, matchesHouseboatPreference, sameHouseboatPreference } from '../utils/houseboat-city-policy.util';
 import {
   hotelDisplaySnapshot,
   hotelBookingTerms,
@@ -556,16 +556,21 @@ export class HotelAvailabilitySnapshotService {
     }
     const sanitized = await this.sanitizeLegacyResponse(persistedResponse, plan);
     const houseboatCities = await loadHouseboatCities(this.prisma);
-    const houseboatRouteIds = houseboatCities.length > 0
-      ? await getHouseboatOnlyRouteIds(this.prisma, await this.prisma.dvi_itinerary_route_details.findMany({
+    const houseboatRoutes = houseboatCities.length > 0
+      ? await this.prisma.dvi_itinerary_route_details.findMany({
           where: { itinerary_plan_ID: plan.itinerary_plan_ID, deleted: 0 },
-          select: { itinerary_route_ID: true, next_visiting_location: true, location_name: true },
-        }), houseboatCities)
+          select: { itinerary_route_ID: true, next_visiting_location: true, location_name: true, prefer_houseboats: true },
+        })
+      : [];
+    const houseboatRouteIds = houseboatRoutes.length > 0
+      ? await getHouseboatCityRouteIds(this.prisma, houseboatRoutes, houseboatCities)
       : new Set<number>();
     if (houseboatRouteIds.size > 0) {
       (sanitized as any).hotelAvailability = {
         ...(sanitized as any).hotelAvailability,
-        houseboatOnlyRouteIds: [...houseboatRouteIds],
+        houseboatPreferences: Object.fromEntries(houseboatRoutes
+          .filter(route => houseboatRouteIds.has(route.itinerary_route_ID))
+          .map(route => [route.itinerary_route_ID, route.prefer_houseboats === true])),
       };
     }
     // Saved selections also supply alternative cards in the other packages.
@@ -675,7 +680,7 @@ export class HotelAvailabilitySnapshotService {
       const compactInventoryRows = cachedRows.flatMap((row: any) => {
         const routeId = Number(row?.route_id || 0);
         const rowGroupType = Number(row?.group_type || 0);
-        if (!routeId || houseboatRouteIds.has(routeId)) return [];
+        if (!routeId) return [];
         cachedRouteIds.add(routeId);
         const provider = String(row?.provider || '').trim().toLowerCase();
         const hotelCode = String(row?.hotel_code || '').trim();
@@ -1447,6 +1452,7 @@ export class HotelAvailabilitySnapshotService {
     createdBy = 0,
     resetSelections = false,
     reconciliation = false,
+    preferenceRefreshRouteIds?: Set<number>,
   ): Promise<{
     searchRunId: string;
     response: ItineraryHotelDetailsResponseDto;
@@ -1783,6 +1789,7 @@ export class HotelAvailabilitySnapshotService {
             routes,
             false,
             proposals,
+            preferenceRefreshRouteIds,
           );
         }, { maxWait: 15000, timeout: 120000 });
       }
@@ -2587,8 +2594,10 @@ export class HotelAvailabilitySnapshotService {
     let start = targetIndex;
     let end = targetIndex;
     while (start > 0 && destinationOf(eligibleRoutes[start - 1]) === destinationOf(eligibleRoutes[targetIndex]) &&
+      sameHouseboatPreference(eligibleRoutes[start - 1], eligibleRoutes[targetIndex]) &&
       dateOf(eligibleRoutes[start]) - dateOf(eligibleRoutes[start - 1]) === 24 * 60 * 60 * 1000) start -= 1;
     while (end < eligibleRoutes.length - 1 && destinationOf(eligibleRoutes[end + 1]) === destinationOf(eligibleRoutes[targetIndex]) &&
+      sameHouseboatPreference(eligibleRoutes[end + 1], eligibleRoutes[targetIndex]) &&
       dateOf(eligibleRoutes[end + 1]) - dateOf(eligibleRoutes[end]) === 24 * 60 * 60 * 1000) end += 1;
     return eligibleRoutes.slice(start, end + 1);
   }
@@ -3199,6 +3208,7 @@ export class HotelAvailabilitySnapshotService {
       );
       const continuous = Boolean(
         previousBlock && previousRoute &&
+        sameHouseboatPreference(previousRoute, route) &&
         (explicitlyLinked || normalizedDestination(previousRoute) === normalizedDestination(route)) &&
         Number.isFinite(previousTime) && currentTime - previousTime === 24 * 60 * 60 * 1000,
       );
@@ -5030,6 +5040,7 @@ export class HotelAvailabilitySnapshotService {
       const previous = block[block.length - 1];
       const continuous = Boolean(
         previous &&
+        sameHouseboatPreference(previous, route) &&
         destinationOf(previous) === destinationOf(route) &&
         dateOf(route) - dateOf(previous) === 24 * 60 * 60 * 1000,
       );
@@ -5167,6 +5178,7 @@ export class HotelAvailabilitySnapshotService {
       );
       const isContinuous = Boolean(
         previousBlock &&
+        sameHouseboatPreference(previousRoute, route) &&
         (explicitlyLinked || String(previousRoute.next_visiting_location || previousRoute.location_name || '').trim() === destination) &&
         previousDate &&
         routeDate.getTime() - previousDate.getTime() === 24 * 60 * 60 * 1000,
@@ -5225,9 +5237,15 @@ export class HotelAvailabilitySnapshotService {
     routes: any[] = [],
     dryRun = false,
     proposals?: Map<number, HotelAvailabilityProposal>,
+    preferenceRefreshRouteIds?: Set<number>,
   ): Promise<HotelAvailabilityChangeSummary> {
     const changes: HotelAvailabilityChange[] = [];
     if (!dryRun) await this.removeStaleSelectionVersions(tx, planId);
+    const houseboatCityRouteIds = await getHouseboatCityRouteIds(this.prisma, routes);
+    const houseboatPreferences = new Map<number, boolean>(routes
+      .filter(route => houseboatCityRouteIds.has(Number(route.itinerary_route_ID)))
+      .map(route => [Number(route.itinerary_route_ID), route.prefer_houseboats === true]));
+    const explicitlyReselectedIds: number[] = [];
     const selections = await tx.dvi_itinerary_plan_hotel_details.findMany({
       where: { itinerary_plan_id: planId, deleted: 0, status: 1, hotel_required: 1 },
       orderBy: [{ itinerary_plan_hotel_details_ID: 'desc' }],
@@ -5252,6 +5270,8 @@ export class HotelAvailabilitySnapshotService {
 
     for (const [selectionKey, bucket] of grouped.entries()) {
       const selection = bucket.find(isProtected) || bucket[0];
+      const routeId = Number(selection.itinerary_route_id);
+      if (preferenceRefreshRouteIds && !preferenceRefreshRouteIds.has(routeId)) continue;
       const duplicateRows = bucket.filter(row => row !== selection && !isProtected(row) &&
         selectionOriginFromRow(row) !== 'USER_SELECTED');
       for (const duplicate of duplicateRows) {
@@ -5274,6 +5294,7 @@ export class HotelAvailabilitySnapshotService {
       if (allowOfflineAutoSelection && String(selection.hotel_provider || '').trim().toLowerCase() === 'offline') continue;
 
       const origin = selectionOriginFromRow(selection);
+      if (preferenceRefreshRouteIds && origin !== 'AUTO_SELECTED') continue;
       // USER_REMOVED is an explicit Own Stay decision, not an availability
       // candidate. Keep its marker and zero-cost state untouched while the
       // remaining routes are auto-selected from the fresh snapshot.
@@ -5302,9 +5323,10 @@ export class HotelAvailabilitySnapshotService {
         });
         continue;
       }
+      const houseboatPreference = origin === 'AUTO_SELECTED' ? houseboatPreferences.get(routeId) : undefined;
       const allOptions = this.expandRateOptions(rows.filter((row: any) =>
         hotelSelectionKeyFromRow(planId, row) === selectionKey,
-      ));
+      )).filter(row => matchesHouseboatPreference(row, houseboatPreference));
       // A global meal plan controls automatic/default selections. A user
       // override is intentionally preserved across refreshes even when it
       // uses another meal plan.
@@ -5322,7 +5344,7 @@ export class HotelAvailabilitySnapshotService {
             authoritativeAutoOptions,
             authoritativeGroup,
           );
-      if (origin !== 'USER_SELECTED') {
+      if (origin !== 'USER_SELECTED' && houseboatPreference === undefined) {
         const liveOptions = allOptions.filter((option: any) =>
           String(option?.provider || option?.hotel_provider || '').trim().toLowerCase() !== 'offline',
         );
@@ -5374,6 +5396,7 @@ export class HotelAvailabilitySnapshotService {
       const previous = hotelDisplaySnapshot(previousSnapshot);
 
       if (!replacement) {
+        if (houseboatPreference !== undefined) continue;
         const previousPersistedSnapshot = parseHotelSelectionSnapshot(selection) as any;
         const wasAlreadyUnavailable = String(previousPersistedSnapshot?.availabilityStatus || '').toUpperCase() === 'UNAVAILABLE';
         const { pendingAvailabilityChange: _pending, ...snapshotWithoutPending } = previousPersistedSnapshot;
@@ -5523,6 +5546,10 @@ export class HotelAvailabilitySnapshotService {
           this.recordAvailabilityProposal(proposals, selection, pricedReplacement, nextSelectionOrigin, searchRunId);
         } else if (!dryRun) {
           await this.stagePendingSelectionChange(tx, selection, pricedReplacement, nextSelectionOrigin, searchRunId, changeType);
+          if (preferenceRefreshRouteIds && replacementWasUnavailable &&
+            (!splitStay || splitStay.routeIds.length === 1)) {
+            explicitlyReselectedIds.push(Number(selection.itinerary_plan_hotel_details_ID));
+          }
         }
         changes.push(this.buildChange(changeType, selection, pricedReplacement, {
           previous,
@@ -5559,6 +5586,9 @@ export class HotelAvailabilitySnapshotService {
     // Existing rows are reconciled first. This invalidates stale automatic
     // selections after a category change before any new candidate is created.
     if (!dryRun) {
+      if (explicitlyReselectedIds.length) {
+        await this.applyPendingSelectionChanges(tx, planId, explicitlyReselectedIds, createdBy);
+      }
       await this.ensureAutoSelections(
         tx,
         planId,
@@ -5566,10 +5596,11 @@ export class HotelAvailabilitySnapshotService {
         searchRunId,
         createdBy,
         allowOfflineAutoSelection,
-        eligibleRouteIds,
+        preferenceRefreshRouteIds ?? eligibleRouteIds,
         preferredMealPlanCode,
         preferredMealPlanFlags,
         routes,
+        houseboatPreferences,
       );
     }
 
@@ -6088,7 +6119,7 @@ export class HotelAvailabilitySnapshotService {
     const config = await this.getMapDinnerFallbackConfig();
     const preferredMealPlanCode = this.getPlanMealPlanCode(plan);
     const isHouseboatStay = (row: any) => houseboatRouteIds.has(Number(row.itineraryRouteId || row.routeId));
-    const standardRows = rows.filter(row => !isHouseboatStay(row) && row.houseboatOnly !== true);
+    const standardRows = rows.filter(row => row.houseboatOnly !== true);
     const houseboatRows = rows.filter(row => isHouseboatStay(row) && row.houseboatOnly === true);
     const normalized = ['CP', 'MAP'].includes(preferredMealPlanCode || '')
       ? applyMapDinnerFallbackToRows(standardRows, {
@@ -6345,6 +6376,7 @@ export class HotelAvailabilitySnapshotService {
     preferredMealPlanCode?: string | null,
     preferredMealPlanFlags?: { breakfast: number; lunch: number; dinner: number },
     routes: any[] = [],
+    houseboatPreferences: ReadonlyMap<number, boolean> = new Map(),
   ): Promise<void> {
     if (!tx?.dvi_itinerary_plan_hotel_details?.findMany || !tx?.dvi_itinerary_plan_hotel_details?.create) return;
 
@@ -6575,6 +6607,7 @@ export class HotelAvailabilitySnapshotService {
       const canonicalHotelId = this.persistedHotelId(routePricedRow);
       const routeId = Number(routePricedRow.itineraryRouteId || routePricedRow.routeId || 0);
       const groupType = Number(routePricedRow.groupType || 0);
+      if (!matchesHouseboatPreference(routePricedRow, houseboatPreferences.get(routeId))) continue;
       if (routePricedRow.tboMultiBatchStay && (
         !isFreshTboMultiBatchStay(routePricedRow.tboMultiBatchStay) ||
         routePricedRow.tboMultiBatchStay.routeIds.some((id: number) =>
@@ -6785,6 +6818,7 @@ export class HotelAvailabilitySnapshotService {
         id: Number(route?.itinerary_route_ID || route?.itineraryRouteId || 0),
         date: this.toDateOnly(route?.itinerary_route_date || route?.date),
         destination: stayCityByRouteId.get(Number(route?.itinerary_route_ID || route?.itineraryRouteId || 0)) || '',
+        prefer_houseboats: route?.prefer_houseboats === true,
       }))
       .filter((route: any) => route.id > 0 && route.date && route.destination);
     let currentStayRoutes: any[] = [];
@@ -6794,6 +6828,7 @@ export class HotelAvailabilitySnapshotService {
       const routeTime = Date.parse(`${route.date}T00:00:00Z`);
       const isConsecutiveSameDestination = Boolean(
         previousRoute &&
+        sameHouseboatPreference(previousRoute, route) &&
         previousRoute.destination === route.destination &&
         Number.isFinite(previousTime) &&
         Number.isFinite(routeTime) &&

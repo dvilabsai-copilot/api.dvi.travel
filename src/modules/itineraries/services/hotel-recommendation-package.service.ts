@@ -8,6 +8,7 @@ import {
 import { HotelMealPlanPolicyService } from './hotel-meal-plan-policy.service';
 import { hotelStayTotal } from '../utils/hotel-stay-pricing.util';
 import { isHouseboatHotel, normalizeHotelCategoryLabel, normalizeHotelCategory } from '../utils/hotel-category.util';
+import { matchesHouseboatPreference, sameHouseboatPreference } from '../utils/houseboat-city-policy.util';
 import { prepareTboBatchRecommendation, type TboMapFallbackConfig } from '../utils/tbo-map-fallback.util';
 
 export type RecommendationAvailabilityState =
@@ -20,6 +21,7 @@ export type RecommendationAvailabilityState =
 
 export type RecommendationRoute = {
   itinerary_route_ID: number;
+  prefer_houseboats?: boolean;
   itinerary_route_date: string | Date;
   location_name?: string | null;
   next_visiting_location?: string | null;
@@ -118,6 +120,7 @@ export type RecommendationPackageInput = {
   noOfNights?: number;
   preferredMealPlanCode?: string | null;
   preferredCategories?: number[];
+  houseboatPreferenceByRoute?: ReadonlyMap<number, boolean>;
   splitVsr?: { roomCount: number; margin: number; config: TboMapFallbackConfig };
   /** Occupancy counts used to reject rates that cannot price the request. */
   occupancy?: {
@@ -784,7 +787,7 @@ export class HotelRecommendationPackageService {
     const stays: LogicalHotelStay[] = [];
     let current: (LogicalHotelStay & { lastDate: string; stableGroup: string; destinationKey: string }) | null = null;
 
-    for (const route of ordered) {
+    for (const [index, route] of ordered.entries()) {
       const routeId = Number(route.itinerary_route_ID || 0);
       const date = this.dateOnly(route.itinerary_route_date);
       if (!routeId || !date) continue;
@@ -820,6 +823,7 @@ export class HotelRecommendationPackageService {
       );
       const canMerge = Boolean(
         current &&
+        sameHouseboatPreference(route, ordered[index - 1]) &&
         (stableGroup
           ? current.stableGroup === stableGroup
           : linkedToCurrentStay || current.destinationKey === destinationKey) &&
@@ -882,8 +886,16 @@ export class HotelRecommendationPackageService {
       return index >= 0 ? index : permittedPlans.length;
     };
 
+    const preferHouseboats = input.houseboatPreferenceByRoute?.get(stay.parentRouteId);
     for (const candidate of this.buildStayCandidates(stay, input)) {
         const optionKey = this.optionKey(candidate);
+        if (!matchesHouseboatPreference(candidate, preferHouseboats)) {
+          rejectedCandidates.push({
+            optionKey,
+            reason: preferHouseboats ? 'This stay prefers a houseboat.' : 'This stay prefers a regular hotel.',
+          });
+          continue;
+        }
 
         if (Number((candidate as any).totalStayPrice || 0) <= 0) {
           rejectedCandidates.push({ optionKey, reason: 'Rate does not cover the full logical stay.' });

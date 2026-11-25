@@ -23,7 +23,7 @@ import {
 } from './itinerary-hotel-details.service';
 import { haversineKm } from './utils/distance-utils';
 import { isHouseboatCategory, normalizeHotelCategory } from './utils/hotel-category.util';
-import { getHouseboatOnlyRouteIds, loadHouseboatCities } from './utils/houseboat-city-policy.util';
+import { getHouseboatCityRouteIds, loadHouseboatCities, sameHouseboatPreference } from './utils/houseboat-city-policy.util';
 import {
   HOTEL_RATE_PLAN_BY_CODE,
   inferCanonicalHotelRatePlanCode,
@@ -1323,6 +1323,7 @@ if (hotelMasterId) {
     childCount: number,
     roomCount: number,
     config: TboMapFallbackConfig,
+    preferredMealPlanCode: string | null = null,
   ) {
     for (const routeId of routeIds) {
       const hotels = hotelsByRoute.get(routeId);
@@ -1336,10 +1337,15 @@ if (hotelMasterId) {
         // Each stay's own dates are the authority for its meal supplement.
         numberOfNights: 1,
       }, config);
-      hotelsByRoute.set(routeId, offers.filter(hotel =>
+      const regularHotels = this.applyTboMapFallback(
+        new Map([[routeId, hotels.filter(hotel => hotel.isHouseboat !== true)]]),
+        preferredMealPlanCode, adultCount, childCount, roomCount, config,
+      ).get(routeId) || [];
+      const houseboatHotels = offers.filter(hotel =>
         inferCanonicalHotelRatePlanCode(String(hotel.mealPlanCode || hotel.mealPlan || '')) === 'AP' ||
         (hotel as any).rateOptions?.some((rate: any) => inferCanonicalHotelRatePlanCode(String(rate.mealPlanCode || rate.mealPlan || '')) === 'AP'),
-      ).map(hotel => ({ ...hotel, houseboatOnly: true })));
+      ).map(hotel => ({ ...hotel, houseboatOnly: true }));
+      hotelsByRoute.set(routeId, [...regularHotels, ...houseboatHotels]);
     }
     return hotelsByRoute;
   }
@@ -1541,7 +1547,7 @@ if (hotelMasterId) {
       where: { itinerary_route_ID: Number(routeId), itinerary_plan_ID: plan?.itinerary_plan_ID, deleted: 0 },
     });
     if (!plan || !route) throw new NotFoundException('Itinerary route not found');
-    const houseboatRouteIds = await getHouseboatOnlyRouteIds(this.prisma, [route]);
+    const houseboatRouteIds = await getHouseboatCityRouteIds(this.prisma, [route]);
     const houseboatOnly = houseboatRouteIds.has(Number(routeId));
 
     const requestedProvider = String(provider || '').trim().toLowerCase();
@@ -1765,9 +1771,12 @@ matchedHotels: selectedHotelRows.map((hotel: any) => ({
      }))
    : [];
  const editorRates = [...currentRates, ...alternateRates];
- const currentHotels = houseboatOnly
+ const categoryRows = houseboatOnly
+   ? (await this.enrichHotelCategoryMetadata(new Map([[Number(routeId), selectedHotelRows]]))).get(Number(routeId)) || []
+   : [];
+ const currentHotels = categoryRows.some(hotel => hotel.isHouseboat === true)
    ? this.applyHouseboatAvailability(
-       await this.enrichHotelCategoryMetadata(new Map([[Number(routeId), selectedHotelRows]])),
+       new Map([[Number(routeId), categoryRows]]),
        houseboatRouteIds, adultCount, childCount, roomCount, selectedHotelMapConfig,
      ).get(Number(routeId)) || []
    : filterEpRows(editorRates, Boolean(selectedHotelMapConfig.showEpHotels));
@@ -2336,7 +2345,10 @@ this.logger.log(
     })}`);
 
     const restrictedHotelsByRoute = new Map<number, HotelSearchResult[]>();
-    const houseboatRouteIds = await getHouseboatOnlyRouteIds(this.prisma, routes, houseboatCities);
+    const houseboatRouteIds = await getHouseboatCityRouteIds(this.prisma, routes, houseboatCities);
+    const houseboatPreferenceByRoute = new Map(routes
+      .filter(route => houseboatRouteIds.has(route.itinerary_route_ID))
+      .map(route => [route.itinerary_route_ID, route.prefer_houseboats === true]));
     // Internal request hand-off to the snapshot coordinator. This is
     // deliberately non-serializable so the public response contract does not
     // grow with a second copy of the offline catalog.
@@ -2686,8 +2698,8 @@ this.logger.log(
     planChildCount,
     planRoomCount,
     mergedMapRulesConfig,
+    preferredMealPlanCode,
   );
-  for (const routeId of houseboatRouteIds) restrictedHotelsByRoute.delete(routeId);
   const filteredHotelsByRoute =
   await this.applyPlanPreferenceFilters(
     completeHotelsByRoute,
@@ -2755,6 +2767,7 @@ this.logger.log(
       noOfNights,
       preferredMealPlanCode,
       preferredCategories,
+      houseboatPreferenceByRoute,
       ...(planRoomCount > 6 && planRoomCount <= 25 && {
         splitVsr: {
           roomCount: planRoomCount,
@@ -2918,7 +2931,7 @@ this.logger.log(
     const searchTasks: Promise<void>[] = [];
 
     for (const block of stayBlocks) {
-      searchTasks.push(
+      const searchBlock = (houseboatOnly: boolean) =>
         this.searchHotelsForStayBlock(
           block,
           cityCodeMap,
@@ -2930,8 +2943,16 @@ this.logger.log(
           occupancies,
           searchLogContext,
           preferredMealPlanCode,
-          block.routeIds.some(routeId => houseboatRouteIds.has(routeId)),
-        )
+          houseboatOnly,
+        );
+      const houseboatCity = block.routeIds.some(routeId => houseboatRouteIds.has(routeId));
+      searchTasks.push(
+        (houseboatCity
+          ? Promise.allSettled([searchBlock(false), searchBlock(true)]).then(results => {
+              if (results[0].status === 'rejected' && results[1].status === 'rejected') throw results[0].reason;
+              return results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
+            })
+          : searchBlock(false))
           .then((hotels) => {
             // One provider search covers the complete logical stay block, but
             // the recommendation pipeline consumes inventory per physical
@@ -3024,7 +3045,7 @@ this.logger.log(
       const isConsecutiveDay =
         routeDate.getTime() - currentBlock.lastDate.getTime() === ItineraryHotelDetailsTboService.ONE_DAY_MS;
 
-      if (isSameDestination && isConsecutiveDay) {
+      if (isSameDestination && isConsecutiveDay && sameHouseboatPreference(route, routes[routeIndex - 1])) {
         currentBlock.checkOutDate = checkOutDate;
         currentBlock.routeIds.push(routeId);
         currentBlock.lastDate = routeDate;
@@ -3484,7 +3505,7 @@ this.logger.log(
     const safeRoomCount = Math.max(Number(roomCount || 1), 1);
 
     const tboOnlyFetch = this.isTboOnlyFetchEnabled();
-    const searchProviders = tboOnlyFetch ? ['tbo'] : ['tbo', 'resavenue'];
+    const searchProviders = tboOnlyFetch || houseboatOnly ? ['tbo'] : ['tbo', 'resavenue'];
 
     const searchCriteria = {
       cityCode: effectiveCityCode,
@@ -8175,7 +8196,7 @@ this.logger.log(
 
  // Step 3: Fetch FRESH hotels from TBO
  // OPTIMIZATION: If filterRouteId provided, only fetch hotels for that specific route
-    const houseboatRouteIds = await getHouseboatOnlyRouteIds(this.prisma, routes);
+    const houseboatRouteIds = await getHouseboatCityRouteIds(this.prisma, routes);
     let routesToProcess = routes;
     if (filterRouteId) {
       routesToProcess = routes.filter(r => (r as any).itinerary_route_ID === filterRouteId);
@@ -8385,7 +8406,7 @@ this.logger.log(
     if (houseboatRouteIds.size > 0) {
       hotelsByRoute = this.applyHouseboatAvailability(
         await this.enrichHotelCategoryMetadata(hotelsByRoute),
-        houseboatRouteIds, planAdultCount2, planChildCount2, planRoomCount2, refreshedMapRulesConfig,
+        houseboatRouteIds, planAdultCount2, planChildCount2, planRoomCount2, refreshedMapRulesConfig, preferredMealPlanCode2,
       );
     }
 
