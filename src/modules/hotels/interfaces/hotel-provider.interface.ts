@@ -55,6 +55,7 @@ export interface HotelSearchResult {
   hotelCategoryName?: string | null;
   hotelCategoryCode?: string | null;
   isHouseboat?: boolean;
+  houseboatOnly?: boolean;
   facilities: string[];
   amenities?: string[];
   inclusions?: string[];
@@ -199,6 +200,8 @@ export interface HotelPreferences {
   tboNoOfRooms?: number;
   /** Internal flag: retain VSR EP rates as inputs to the requested CP/MAP fallback. */
   preserveMealPlanFallbackSourceRates?: boolean;
+  /** Internal itinerary city policy. Restrict TBO Search to classified houseboats. */
+  houseboatOnly?: boolean;
 }
 
 export interface HotelConfirmationDTO {

@@ -20,6 +20,10 @@ import {
   HotelPreferences,
 } from '../interfaces/hotel-provider.interface';
 import { HotelSearchDTO } from '../dto/hotel.dto';
+
+type InternalHotelSearch = Omit<HotelSearchDTO, 'preferences'> & {
+  preferences?: HotelSearchDTO['preferences'] & Pick<HotelPreferences, 'houseboatOnly'>;
+};
 import { TBOHotelProvider } from '../providers/tbo-hotel.provider';
 import { ResAvenueHotelProvider } from '../providers/resavenue-hotel.provider';
 import { HobseHotelProvider } from '../providers/hobse-hotel.provider';
@@ -61,7 +65,7 @@ export class HotelSearchService {
     ]);
   }
 
-  async searchBookableTboRoomBatches(criteria: HotelSearchDTO, savedBatches?: readonly { roomType: string; mealPlan: string }[]) {
+  async searchBookableTboRoomBatches(criteria: InternalHotelSearch, savedBatches?: readonly { roomType: string; mealPlan: string }[]) {
     const roomCount = Number(criteria.roomCount);
     const occupancies = criteria.occupancies;
 
@@ -239,7 +243,7 @@ export class HotelSearchService {
     });
   }
 
-  async searchHotels(searchCriteria: HotelSearchDTO): Promise<HotelSearchResult[]> {
+  async searchHotels(searchCriteria: InternalHotelSearch): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
     try {
       if (this.isAxisOnlyFetchEnabled() && this.isTboOnlyFetchEnabled()) {

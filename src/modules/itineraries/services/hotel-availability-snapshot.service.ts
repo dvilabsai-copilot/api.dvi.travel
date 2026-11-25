@@ -19,6 +19,7 @@ import {
 import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
 import { OfflineHotelCatalogService, selectOfflineRouteNightlyRate } from './offline-hotel-catalog.service';
 import { HotelAvailabilityTimingLogger } from './hotel-availability-timing.logger';
+import { getHouseboatOnlyRouteIds, loadHouseboatCities } from '../utils/houseboat-city-policy.util';
 import {
   hotelDisplaySnapshot,
   hotelBookingTerms,
@@ -554,6 +555,19 @@ export class HotelAvailabilitySnapshotService {
       });
     }
     const sanitized = await this.sanitizeLegacyResponse(persistedResponse, plan);
+    const houseboatCities = await loadHouseboatCities(this.prisma);
+    const houseboatRouteIds = houseboatCities.length > 0
+      ? await getHouseboatOnlyRouteIds(this.prisma, await this.prisma.dvi_itinerary_route_details.findMany({
+          where: { itinerary_plan_ID: plan.itinerary_plan_ID, deleted: 0 },
+          select: { itinerary_route_ID: true, next_visiting_location: true, location_name: true },
+        }), houseboatCities)
+      : new Set<number>();
+    if (houseboatRouteIds.size > 0) {
+      (sanitized as any).hotelAvailability = {
+        ...(sanitized as any).hotelAvailability,
+        houseboatOnlyRouteIds: [...houseboatRouteIds],
+      };
+    }
     // Saved selections also supply alternative cards in the other packages.
     // Their normalized nightly payable is authoritative; never reprice it
     // from legacy supplier totals or the trip-wide number of nights.
@@ -585,7 +599,7 @@ export class HotelAvailabilitySnapshotService {
       (sanitized as any).hotelAvailability = {
         ...((sanitized as any).hotelAvailability || {}),
         sharedHotelInventory: await this.attachCardQuotes(
-          await this.normalizePersistedMealPlanInventory(plan, persistedInventory), plan,
+          await this.normalizePersistedMealPlanInventory(plan, persistedInventory, houseboatRouteIds), plan,
         ),
       };
     }
@@ -661,7 +675,7 @@ export class HotelAvailabilitySnapshotService {
       const compactInventoryRows = cachedRows.flatMap((row: any) => {
         const routeId = Number(row?.route_id || 0);
         const rowGroupType = Number(row?.group_type || 0);
-        if (!routeId) return [];
+        if (!routeId || houseboatRouteIds.has(routeId)) return [];
         cachedRouteIds.add(routeId);
         const provider = String(row?.provider || '').trim().toLowerCase();
         const hotelCode = String(row?.hotel_code || '').trim();
@@ -790,7 +804,7 @@ export class HotelAvailabilitySnapshotService {
     }
     inventory = await this.attachDviGalleryImages(
       await this.attachTboMasterGalleryImages(
-        await this.normalizePersistedMealPlanInventory(plan, inventory),
+        await this.normalizePersistedMealPlanInventory(plan, inventory, houseboatRouteIds),
       ),
     );
     const page = Math.max(1, Number(options.page || 1));
@@ -6070,19 +6084,22 @@ export class HotelAvailabilitySnapshotService {
     };
   }
 
-  private async normalizePersistedMealPlanInventory(plan: any, rows: any[]): Promise<any[]> {
+  private async normalizePersistedMealPlanInventory(plan: any, rows: any[], houseboatRouteIds: ReadonlySet<number> = new Set()): Promise<any[]> {
     const config = await this.getMapDinnerFallbackConfig();
     const preferredMealPlanCode = this.getPlanMealPlanCode(plan);
+    const isHouseboatStay = (row: any) => houseboatRouteIds.has(Number(row.itineraryRouteId || row.routeId));
+    const standardRows = rows.filter(row => !isHouseboatStay(row) && row.houseboatOnly !== true);
+    const houseboatRows = rows.filter(row => isHouseboatStay(row) && row.houseboatOnly === true);
     const normalized = ['CP', 'MAP'].includes(preferredMealPlanCode || '')
-      ? applyMapDinnerFallbackToRows(rows, {
+      ? applyMapDinnerFallbackToRows(standardRows, {
           preferredMealPlanCode,
           adultCount: Math.max(Number(plan?.total_adult || 0), 0),
           childCount: Math.max(Number(plan?.total_children || 0), 0),
           roomCount: Math.max(Number(plan?.preferred_room_count || 1), 1),
           numberOfNights: Math.max(Number(plan?.no_of_nights || 1), 1),
         }, config)
-      : rows;
-    return filterEpRows(normalized, Boolean(config.showEpHotels));
+      : standardRows;
+    return [...filterEpRows(normalized, Boolean(config.showEpHotels)), ...houseboatRows];
   }
 
   private getPlanMealPlanFlags(plan: any): { breakfast: number; lunch: number; dinner: number } {

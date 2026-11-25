@@ -397,12 +397,19 @@ hotelName: String(
           destinations: [] as string[],
           roomTypes: [] as string[],
           roomTypeQuantities: [] as Array<{ roomType: string; roomCount: number }>,
+          dviFullBoardDates: [] as string[],
           hotelRequired: Number(hotel.hotel_required || 0) === 1,
           hotelCancellationStatus: Number(hotel.hotel_cancellation_status || 0),
         });
       }
 
       const group = hotelGroupMap.get(groupKey)!;
+      if (dateKey && (provider === 'tbo' || provider === 'vsr') &&
+          (splitStay?.dviMealSupplement?.mealPlan === 'AP' ||
+            (priceSnapshot.tboMapFallbackApplied === true && priceSnapshot.tboMapFallbackTargetMealPlan === 'AP')) &&
+          !group.dviFullBoardDates.includes(dateKey)) {
+        group.dviFullBoardDates.push(dateKey);
+      }
       if (dateKey && !group.routeDates.includes(dateKey)) {
         group.routeDates.push(dateKey);
       }

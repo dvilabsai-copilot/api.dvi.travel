@@ -1,3 +1,4 @@
+import { inferTboHouseboat } from '../utils/tbo-houseboat.util';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { PrismaService } from '../../../prisma.service';
@@ -163,6 +164,7 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
               tbo_hotel_code: hotelCode,
               tbo_city_code: tboCityCode,
               hotel_name: hotel.HotelName || hotel.hotelName || `Hotel ${hotelCode}`,
+              is_houseboat: inferTboHouseboat(hotel.HotelName || hotel.hotelName),
               hotel_address: hotel.Address || '',
               city_name: hotel.CityName || '',
               star_rating: this.parseStarRating(

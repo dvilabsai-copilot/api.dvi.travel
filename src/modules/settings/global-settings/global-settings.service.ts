@@ -9,6 +9,7 @@ import {
   UpdateGlobalSettingsDto,
 } from "./dto/update-global-settings.dto";
 import { StateConfigResultDto, StateConfigUpdateDto } from "./dto/state-config.dto";
+import { getHouseboatCityIds, readHouseboatCities } from "../../itineraries/utils/houseboat-city-policy.util";
 
 const GLOBAL_SETTINGS_UPDATE_FIELDS = [
   "eligibile_country_code",
@@ -24,6 +25,7 @@ const GLOBAL_SETTINGS_UPDATE_FIELDS = [
   "tbo_map_lunch_rate_3_star",
   "tbo_map_lunch_rate_4_star",
   "tbo_map_lunch_rate_5_star",
+  "houseboat_only_city_ids",
   "hotel_blocked_cutoff_time",
   "hotel_hold_no_block_before_hours",
   "hotel_hold_min_lead_days",
@@ -238,6 +240,9 @@ export class GlobalSettingsService {
   }
 
   private valuesEqual(left: unknown, right: unknown): boolean {
+    if (Array.isArray(left) && Array.isArray(right)) {
+      return left.length === right.length && left.every((item, index) => item === right[index]);
+    }
     if (left instanceof Date || right instanceof Date) {
       return left instanceof Date && right instanceof Date && left.getTime() === right.getTime();
     }
@@ -259,7 +264,10 @@ export class GlobalSettingsService {
       throw new NotFoundException("Global settings not initialized in database");
     }
 
-    return row;
+    return {
+      ...row,
+      houseboat_only_cities: await readHouseboatCities(this.prisma, getHouseboatCityIds(row.houseboat_only_city_ids)),
+    };
   }
 
   async getItineraryTextSettings() {
@@ -316,6 +324,14 @@ export class GlobalSettingsService {
  */
   async updateGlobalSettings(dto: UpdateGlobalSettingsDto, userId?: number) {
     const normalizedData = this.normalizeGlobalSettingsData(dto);
+    if (dto.houseboat_only_city_ids !== undefined) {
+      const ids = getHouseboatCityIds(dto.houseboat_only_city_ids);
+      if (!Array.isArray(dto.houseboat_only_city_ids) || ids.length !== dto.houseboat_only_city_ids.length ||
+          (await readHouseboatCities(this.prisma, ids)).length !== ids.length) {
+        throw new BadRequestException('Choose existing cities for the houseboat-only list.');
+      }
+      normalizedData.houseboat_only_city_ids = ids.sort((a, b) => a - b);
+    }
 
  // If there is no row yet, create one first.
     const existing = await this.prisma.dvi_global_settings.findFirst({

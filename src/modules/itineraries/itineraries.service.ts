@@ -2305,7 +2305,7 @@ timingStepStartedAt =
     let offer: any = offers.find((candidate: any) => (!requestedMeal || mealCode(String(candidate.mealPlan || '')) === requestedMeal) &&
       candidate.tboRoomBatches.every((batch: any) => batch.mealPlan === candidate.mealPlan));
     let dviMealSupplement;
-    if (!offer && offers.length && ['CP', 'MAP'].includes(requestedMeal)) {
+    if (!offer && offers.length && ['CP', 'MAP', 'AP'].includes(requestedMeal)) {
       const config = await this.hotelDetailsTboService.getTboMapFallbackConfig();
       for (const candidate of offers) {
         const supplement = getTboStayMealSupplement(candidate as any, requestedMeal, config);
@@ -3845,6 +3845,12 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
           tboMapFallbackBreakfastPerPerson: Number(selected.tboMapFallbackBreakfastPerPerson || selected.tboMapFallbackBreakfastRate || 0),
           tboMapFallbackBreakfastPerNight: Number(selected.tboMapFallbackBreakfastPerNight || 0),
           tboMapFallbackBreakfastTotal: Number(selected.tboMapFallbackBreakfastTotal || 0),
+          tboMapFallbackLunchRate: Number(selected.tboMapFallbackLunchRate || 0),
+          tboMapFallbackLunchPerPerson: Number(selected.tboMapFallbackLunchPerPerson || 0),
+          tboMapFallbackLunchPerNight: Number(selected.tboMapFallbackLunchPerNight || 0),
+          tboMapFallbackLunchTotal: Number(selected.tboMapFallbackLunchTotal || 0),
+          tboMapFallbackDinnerComponentPerNight: Number(selected.tboMapFallbackDinnerComponentPerNight || 0),
+          tboMapFallbackDinnerComponentTotal: Number(selected.tboMapFallbackDinnerComponentTotal || 0),
           tboMapFallbackDinnerRate: Number(selected.tboMapFallbackDinnerRate || 0),
           tboMapFallbackDinnerPerPerson: Number(selected.tboMapFallbackDinnerPerPerson || 0),
           tboMapFallbackDinnerPerNight: Number(selected.tboMapFallbackDinnerPerNight || selected.tboMapFallbackDinnerTotal || 0),
@@ -4052,6 +4058,12 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         tboMapFallbackBreakfastPerPerson: Number(snapshot.tboMapFallbackBreakfastPerPerson || snapshot.tboMapFallbackBreakfastRate || 0),
         tboMapFallbackBreakfastPerNight: Number(snapshot.tboMapFallbackBreakfastPerNight || 0),
         tboMapFallbackBreakfastTotal: Number(snapshot.tboMapFallbackBreakfastTotal || 0),
+        tboMapFallbackLunchRate: Number(snapshot.tboMapFallbackLunchRate || 0),
+        tboMapFallbackLunchPerPerson: Number(snapshot.tboMapFallbackLunchPerPerson || 0),
+        tboMapFallbackLunchPerNight: Number(snapshot.tboMapFallbackLunchPerNight || 0),
+        tboMapFallbackLunchTotal: Number(snapshot.tboMapFallbackLunchTotal || 0),
+        tboMapFallbackDinnerComponentPerNight: Number(snapshot.tboMapFallbackDinnerComponentPerNight || 0),
+        tboMapFallbackDinnerComponentTotal: Number(snapshot.tboMapFallbackDinnerComponentTotal || 0),
         tboMapFallbackDinnerRate: Number(snapshot.tboMapFallbackDinnerRate || 0),
         tboMapFallbackDinnerPerPerson: Number(snapshot.tboMapFallbackDinnerPerPerson || 0),
         tboMapFallbackDinnerPerNight: Number(snapshot.tboMapFallbackDinnerPerNight || 0),

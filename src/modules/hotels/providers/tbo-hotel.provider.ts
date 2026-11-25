@@ -25,6 +25,7 @@ import {
   getNormalizedMealPlanLabelFromMealSources,
 } from '../hotel-rate-plans';
 import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
+import { inferTboHouseboat } from '../utils/tbo-houseboat.util';
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
 import { TboMasterGalleryService } from '../services/tbo-master-gallery.service';
 import { buildTboRoomNightBreakdown } from '../utils/tbo-room-night-pricing';
@@ -294,7 +295,8 @@ export class TBOHotelProvider implements IHotelProvider {
  // This table is synced daily from TBO's GetHotels API via cron/scheduler
         // Let a hotel outside the displayed card limit supply the 6+N rooms.
         // The itinerary still applies the card cap after matching the batches.
-        hotelCodes = await this.getHotelCodesForCityFromDb(resolvedTboCityCode, options.splitStaySearch);
+        hotelCodes = await this.getHotelCodesForCityFromDb(resolvedTboCityCode, options.splitStaySearch, preferences?.houseboatOnly);
+        if (!hotelCodes && preferences?.houseboatOnly) return [];
         if (!hotelCodes) {
  this.logger.warn(` No hotel codes in database for city ${resolvedTboCityCode} - trying static TBOHotelCodeList fallback`);
           hotelCodes = await this.fetchHotelCodesFromStaticApi(resolvedTboCityCode);
@@ -1097,6 +1099,7 @@ if (!realBookingCode) {
           tbo_hotel_code: hotelCode,
           tbo_city_code: tboCityCode,
           hotel_name: hotelName,
+          is_houseboat: inferTboHouseboat(hotelName),
           hotel_address: hotelAddress,
           city_name: cityName,
           star_rating: rating,
@@ -1744,14 +1747,14 @@ return criteria.occupancies.map((occ) => ({
    * 2. If DB empty, return empty string (error handling)
    * 3. No hardcoding - database must be synced via POST /hotels/sync/all
  */
-  private async getHotelCodesForCityFromDb(tboCityCode: string, splitStaySearch = false): Promise<string> {
+  private async getHotelCodesForCityFromDb(tboCityCode: string, splitStaySearch = false, houseboatOnly = false): Promise<string> {
     try {
       this.logger.log(` PRIMARY: Querying tbo_hotel_master for city ${tboCityCode}`);
       const candidateLimit = splitStaySearch
         ? TBOHotelProvider.SPLIT_STAY_CANDIDATE_LIMIT
         : await this.getVsrHotelCardLimit();
       const cacheKey = `tbo-master:${tboCityCode}:${candidateLimit}`;
-      const cachedCodes = await this.referenceCache?.get<string>(cacheKey);
+      const cachedCodes = houseboatOnly ? undefined : await this.referenceCache?.get<string>(cacheKey);
       if (cachedCodes !== null && cachedCodes !== undefined) return cachedCodes;
 
       if (!this.prisma) {
@@ -1764,6 +1767,7 @@ return criteria.occupancies.map((occ) => ({
         where: {
           tbo_city_code: tboCityCode,
           status: 1,
+          ...(houseboatOnly ? { is_houseboat: true } : {}),
           tbo_hotel_code: {
             not: '',
           },
@@ -1781,6 +1785,7 @@ return criteria.occupancies.map((occ) => ({
       });
 
       if (!hotels || hotels.length === 0) {
+        if (houseboatOnly) return '';
  this.logger.warn(
           `⚠️ PRIMARY: No hotels in tbo_hotel_master for city ${tboCityCode}. ` +
           `Will try dvi_hotel fallback. If this city should be in master, sync city: POST /api/v1/hotels/sync/city/${tboCityCode}`
@@ -1833,7 +1838,7 @@ return criteria.occupancies.map((occ) => ({
         ` PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master (candidate limit ${candidateLimit}; no percentage mix)`,
       );
 
-      await this.referenceCache?.set(cacheKey, hotelCodes);
+      if (!houseboatOnly) await this.referenceCache?.set(cacheKey, hotelCodes);
       return hotelCodes;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);

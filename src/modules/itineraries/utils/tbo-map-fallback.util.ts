@@ -152,7 +152,7 @@ const createFallbackOption = (
     source?.netAmount,
     source?.price,
   );
-  if (!baseTotal) return null;
+  if (!baseTotal || (targetMealPlan === 'AP' && configuredLunchRate <= 0)) return null;
 
   const basePerNight = positive(
     source?.basePricePerNight,
@@ -372,7 +372,7 @@ export function getTboStayMealSupplement(
   const first = batches[0];
   const supplierMeal = tboBatchMealPlan(batches);
   if (!config.enabled || !first || first.currency.toUpperCase() !== 'INR' ||
-      !supplierMeal || (target !== 'CP' && target !== 'MAP')) return;
+      !supplierMeal || (target !== 'CP' && target !== 'MAP' && target !== 'AP')) return;
   const occupancies = batches.flatMap(batch => batch.occupancies || []);
   const roomCount = batches.reduce((count, batch) => count + batch.roomCount, 0);
   if (occupancies.length !== roomCount || !roomCount) return;
@@ -393,14 +393,18 @@ export function getTboStayMealSupplement(
     breakfastPerNight: money(result.tboMapFallbackBreakfastRate * getTboBreakfastGuestCount(batches)),
     dinnerRate: result.tboMapFallbackDinnerRate,
     dinnerPerNight: result.tboMapFallbackDinnerComponentPerNight,
+    ...(target === 'AP' ? {
+      lunchRate: result.tboMapFallbackLunchRate,
+      lunchPerNight: result.tboMapFallbackLunchPerNight,
+    } : {}),
   };
 }
 
 /** Use the existing snapshot fields so itinerary prices and meal labels reload together. */
 export function tboStayMealNightFields(supplierMealPlan: string, supplement?: TboStayMealSupplement) {
-  if (!supplement) return {};
-  const { mealPlan, breakfastRate, breakfastPerNight, dinnerRate, dinnerPerNight } = supplement;
-  const total = money(breakfastPerNight + dinnerPerNight);
+  if (!supplement) return { hotelMealPlanCost: undefined };
+  const { mealPlan, breakfastRate, breakfastPerNight, dinnerRate, dinnerPerNight, lunchRate = 0, lunchPerNight = 0 } = supplement;
+  const total = money(breakfastPerNight + lunchPerNight + dinnerPerNight);
   return {
     tboMapFallbackApplied: true as const,
     tboMapFallbackSourceMealPlan: supplierMealPlan,
@@ -409,6 +413,13 @@ export function tboStayMealNightFields(supplierMealPlan: string, supplement?: Tb
     tboMapFallbackBreakfastPerPerson: breakfastRate,
     tboMapFallbackBreakfastPerNight: breakfastPerNight,
     tboMapFallbackBreakfastTotal: breakfastPerNight,
+    ...(mealPlan === 'AP' ? {
+      tboMapFallbackLunchRate: lunchRate,
+      tboMapFallbackLunchPerPerson: lunchRate,
+      tboMapFallbackLunchPerNight: lunchPerNight,
+      tboMapFallbackLunchTotal: lunchPerNight,
+      tboMapFallbackMealPlanTotal: total,
+    } : {}),
     tboMapFallbackDinnerRate: dinnerRate,
     tboMapFallbackDinnerPerPerson: dinnerRate,
     tboMapFallbackDinnerComponentPerNight: dinnerPerNight,
@@ -428,7 +439,10 @@ export function getTboBatchMealPlanQuotes(offer: any, nights: number, margin: nu
   const uniformMeal = offer.tboRoomBatches.every((batch: TboStayBatch) => batch.mealPlan === supplierMealPlan);
   const currency = String(offer.currency || offer.tboRoomBatches[0].currency).toUpperCase();
   const routeIds = Array.from({ length: nights }, (_, index) => index);
-  return Array.from(new Set([...(uniformMeal ? [supplierMealPlan] : []), 'CP', 'MAP'])).flatMap(mealPlan => {
+  const plans = offer.houseboatOnly === true
+    ? ['AP']
+    : Array.from(new Set([...(uniformMeal ? [supplierMealPlan] : []), 'CP', 'MAP']));
+  return plans.flatMap(mealPlan => {
     const supplement = mealPlan === supplierMealPlan ? undefined : getTboStayMealSupplement(offer, mealPlan, config);
     if (mealPlan !== supplierMealPlan && !supplement) return [];
     const totals = priceTboMultiBatchStay({ supplierTotalFare, routeIds, dviMealSupplement: supplement }, margin);

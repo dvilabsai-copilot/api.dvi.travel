@@ -1,3 +1,4 @@
+import { inferTboHouseboat } from '../utils/tbo-houseboat.util';
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { PrismaService } from '../../../prisma.service';
@@ -82,6 +83,7 @@ export class TboHotelSyncService {
               tbo_hotel_code: hotelCode,
               tbo_city_code: tboCityCode,
               hotel_name: hotel.HotelName || `Hotel ${hotel.HotelCode}`,
+              is_houseboat: inferTboHouseboat(hotel.HotelName),
               hotel_address: hotel.Address || cityName,
               star_rating: this.parseStarRating(hotel.StarRating),
               status: 1,
