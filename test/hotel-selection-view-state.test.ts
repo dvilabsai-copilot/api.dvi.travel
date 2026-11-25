@@ -69,7 +69,8 @@ test('reads each saved split VSR night at its exact price even when the two lega
       provider: 'tbo', hotelCode: stay.hotelCode, roomCount: 25,
       hotelMarginPercentage: 5, rateOptionId: 'shared-split-rate',
       baseTotalPrice: 100001.07, totalPrice: index === 0 ? 105801.13 : 105801.12,
-      tboMultiBatchStay: stay,
+      tboMultiBatchStay: stay, tboMapFallbackBreakfastPerNight: 800,
+      checkInDate: stay.checkInDate, checkOutDate: stay.checkOutDate, isLiveBookable: true,
     }),
   }));
   const tabs = [{ groupType: 2, totalAmount: 105801.12 }];
@@ -80,6 +81,12 @@ test('reads each saved split VSR night at its exact price even when the two lega
   assert.deepEqual(selected.map(hotel => hotel.totalPrice), [105801.13, 105801.12]);
   assert.deepEqual(selected.map(hotel => hotel.pricePerNight), [105801.13, 105801.12]);
   assert.deepEqual(selected.map(hotel => hotel.selectedPriceSnapshot?.tboMapFallbackBreakfastPerNight), [800, 800]);
+  for (const hotel of selected) {
+    assert.deepEqual(hotel.selectedPriceSnapshot?.tboMultiBatchStay, stay);
+    assert.equal(hotel.selectedPriceSnapshot?.checkInDate, stay.checkInDate);
+    assert.equal(hotel.selectedPriceSnapshot?.checkOutDate, stay.checkOutDate);
+    assert.equal(hotel.selectedPriceSnapshot?.isLiveBookable, true);
+  }
   assert.equal(shouldSkipRepeatedHotelNight(
     selected[1], Date.parse(routes[0].routeDate), Date.parse(routes[1].routeDate),
   ), false);

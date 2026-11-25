@@ -207,7 +207,27 @@ const selectedView = (row: any, routeId: number, routeDate: string): HotelSelect
       if (night && (!routeDate || night.date === routeDate)) {
         // Each saved batch stay allocates an exact payable to each route.
         // Preserve those cents and make the nightly scope explicit for totals.
-        splitNight = { ...night, pricingScope: 'ROUTE_NIGHT', roomRate: night.basePricePerNight };
+        splitNight = {
+          ...snapshot,
+          pricingScope: 'ROUTE_NIGHT',
+          basePricePerNight: night.basePricePerNight,
+          baseTotalPrice: night.baseTotalPrice,
+          roomRate: night.basePricePerNight,
+          totalRoomCost: night.totalRoomCost,
+          hotelMarginBaseAmount: night.hotelMarginBaseAmount,
+          hotelMarginPercentage: night.hotelMarginPercentage,
+          hotelMarginAmount: night.hotelMarginAmount,
+          hotelMarginTotalAmount: night.hotelMarginTotalAmount,
+          price: night.price,
+          pricePerNight: night.pricePerNight,
+          totalPrice: night.totalPrice,
+          totalStayPrice: night.totalStayPrice,
+          totalHotelCost: night.totalHotelCost,
+          totalAmount: night.totalAmount,
+          totalAmountAfterTax: night.totalAmountAfterTax,
+          selectedPricePerNight: night.selectedPricePerNight,
+          selectedTotalPrice: night.selectedTotalPrice,
+        };
       }
     } catch {
       // Legacy or incomplete batch snapshots still use the saved row pricing.
