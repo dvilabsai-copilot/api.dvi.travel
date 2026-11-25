@@ -458,6 +458,7 @@ hotelName: String(
           },
         })
       : [];
+    let existingHotelVoucherCount = hotelVouchers.length;
     const hotelVoucherGroups = hotelGroups
       .map((group) => {
         const matchedVouchers = hotelVouchers.filter((voucher: any) => {
@@ -484,17 +485,22 @@ hotelName: String(
           matchedVouchers.some((voucher: any) => Number(voucher.hotel_voucher_cancellation_status || 0) === 1) ||
           Number(group.hotelCancellationStatus || 0) === 1;
         let bookingStatusCode = Number(latestVoucher?.hotel_booking_status || 0);
-        if (!bookingStatusCode && !voucherCancelled && group.roomTypeQuantities.length > 0) {
+        let supplierVoucherCount = 0;
+        if (!voucherCancelled && group.roomTypeQuantities.length > 0) {
           const selectedRows = hotels.filter(hotel => group.confirmedHotelDetailsIds.includes(hotel.confirmed_itinerary_plan_hotel_details_ID));
           const groupTypes = new Set(selectedRows.map(hotel => hotel.group_type));
           const selectionIds = new Set(group.hotelDetailsIds);
           const holds = paidSupplierHolds.filter(hold => hold.hotel_code === group.hotelCode &&
             groupTypes.has(hold.group_type) && getHotelHoldSelectionIds(hold.selection_ids).some(id => selectionIds.has(id)));
-          if (holds.length && holds.every(hold => hold.voucher_status === 'VOUCHERED')) {
-            const coverage = getHotelHoldSelectionCoverage(selectedRows, holds);
-            if (coverage.matches && !coverage.invalidRequests.length) bookingStatusCode = CONFIRMED_HOTEL_VOUCHER_STATUS;
+          const coverage = getHotelHoldSelectionCoverage(selectedRows, holds);
+          if (coverage.matches && !coverage.invalidRequests.length) {
+            supplierVoucherCount = holds.filter(hold => hold.voucher_status === 'VOUCHERED').length;
+            if (!bookingStatusCode && supplierVoucherCount > 0 && supplierVoucherCount === holds.length) {
+              bookingStatusCode = CONFIRMED_HOTEL_VOUCHER_STATUS;
+            }
           }
         }
+        existingHotelVoucherCount += supplierVoucherCount;
 
         return {
           ...group,
@@ -502,7 +508,7 @@ hotelName: String(
           dayNumbers: [...group.dayNumbers].sort((a: number, b: number) => a - b),
           roomTypes: [...group.roomTypes].sort(),
 hasVoucher: matchedVouchers.length > 0,
-voucherCount: matchedVouchers.length,
+voucherCount: matchedVouchers.length + supplierVoucherCount,
 cancellationPolicyCount: policyCount,
 voucherCancelled,
 canCreateVoucher:
@@ -617,7 +623,7 @@ canCreateVoucher:
         extraBed: Number(plan.total_extra_bed || 0),
         childWithBed: Number(plan.total_child_with_bed || 0),
         childWithoutBed: Number(plan.total_child_without_bed || 0),
-        existingHotelVoucherCount: hotelVouchers.length,
+        existingHotelVoucherCount,
         existingVehicleVoucherCount: vehicleVouchers.length,
       },
       customer: {
