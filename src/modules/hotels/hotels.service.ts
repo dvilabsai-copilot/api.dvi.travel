@@ -434,6 +434,7 @@ export class HotelsService {
     }
 
     if (q.hotel_state) AND.push({ hotel_state: q.hotel_state } as any);
+    if (q.categoryId !== undefined) AND.push({ hotel_category: q.categoryId });
     if (q.hotel_city) {
       const resolvedCity = await this.resolveStoredCityValue(q.hotel_city);
       AND.push(
