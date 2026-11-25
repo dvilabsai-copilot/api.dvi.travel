@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
 
@@ -332,11 +332,57 @@ export class AccountsComponentSyncService {
     );
   }
 
+  // DVI_HOTEL_RECONCILE_V1: explicit Accounts-only repair of ONE selected hotel.
+  // Never infer an Accounts header or historical payments from the selling quote.
+  async reconcileHotel(confirmedId: number, planId: number, hotelId: number) {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const plan = await tx.dvi_confirmed_itinerary_plan_details.findFirst({
+        where: { confirmed_itinerary_plan_ID: confirmedId, itinerary_plan_ID: planId, deleted: 0, status: 1 },
+      });
+      if (!plan) throw new BadRequestException('No active confirmed itinerary matches both IDs. Review the confirmed booking.');
+      const headers = await tx.dvi_accounts_itinerary_details.findMany({
+        where: { OR: [{ confirmed_itinerary_plan_ID: confirmedId }, { itinerary_plan_ID: planId }] },
+      });
+      if (headers.length !== 1 || Number(headers[0].deleted) !== 0 || Number(headers[0].confirmed_itinerary_plan_ID) !== confirmedId || Number(headers[0].itinerary_plan_ID) !== planId) {
+        throw new BadRequestException('Accounts header is missing, deleted or ambiguous. Finance must reconcile the original header and payment history before posting this hotel.');
+      }
+      const headerId = Number(headers[0].accounts_itinerary_details_ID);
+      const confirmedRows = await tx.dvi_confirmed_itinerary_plan_hotel_details.findMany({
+        where: { itinerary_plan_id: planId, hotel_id: hotelId, deleted: 0, status: 1 },
+      });
+      if (!confirmedRows.length) throw new BadRequestException('No active confirmed hotel rows match this hotel ID. Check the persisted hotel assignment and status.');
+      const master = await tx.dvi_hotel.findFirst({where: {hotel_id: hotelId}});
+      if (!master || !String(master.hotel_name || '').trim()) throw new BadRequestException('Hotel supplier identity could not be verified.');
+      const ids = confirmedRows.map(r => Number(r.confirmed_itinerary_plan_hotel_details_ID));
+      const routeIds = confirmedRows.map(r => Number(r.itinerary_route_id));
+      if (ids.some(x => !Number.isSafeInteger(x) || x <= 0) || routeIds.some(x => !Number.isSafeInteger(x) || x <= 0) || new Set(routeIds).size !== routeIds.length || new Set(ids).size !== ids.length) throw new BadRequestException('Ambiguous confirmed hotel rows. Review the stay and room records before posting.');
+      const originalIds = confirmedRows.map(r => Number(r.itinerary_plan_hotel_details_ID));
+      if (originalIds.some(x => !Number.isSafeInteger(x) || x <= 0)) throw new BadRequestException('Original hotel detail identity is missing.');
+      const vouchers = await tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.findMany({where: {itinerary_plan_id: planId, deleted: 0}});
+      if (confirmedRows.some(r => Number((r as any).hotel_cancellation_status || 0) === 1) || vouchers.some(v => originalIds.includes(Number(v.itinerary_plan_hotel_details_ID)) && (Number(v.hotel_voucher_cancellation_status || 0) === 1 || Number(v.hotel_booking_status || 0) === 2))) throw new BadRequestException('A hotel stay has a cancellation record. Review it before posting.');
+      // Include deleted and historical detail IDs. Do not create a replacement for prior finance records.
+      const prior = await tx.dvi_accounts_itinerary_hotel_details.findMany({where: {OR: [{itinerary_plan_ID: planId, hotel_id: hotelId}, {cnf_itinerary_plan_hotel_details_ID: {in: ids}}, {itinerary_plan_hotel_details_ID: {in: originalIds}}, {accounts_itinerary_details_ID: headerId, hotel_id: hotelId}]}});
+      if (prior.some(r => Number(r.deleted) !== 0 || Number(r.status) !== 1 || Number(r.accounts_itinerary_details_ID) !== headerId || Number(r.hotel_id) !== hotelId || !ids.includes(Number(r.cnf_itinerary_plan_hotel_details_ID)))) throw new BadRequestException('Historical or conflicting hotel finance records exist. Reconcile their payment history manually.');
+      const existing = new Set(prior.map(r=>Number(r.cnf_itinerary_plan_hotel_details_ID)));
+      if (existing.size !== prior.length) throw new BadRequestException('Duplicate finance records require review.');
+      for (const row of confirmedRows.filter(r=>!existing.has(Number(r.confirmed_itinerary_plan_hotel_details_ID)))) {
+        const amounts = [row.total_hotel_cost,row.total_hotel_tax_amount,row.hotel_margin_rate,row.hotel_margin_rate_tax_amt];
+        if (amounts.some(v=>v===null || v===undefined || !Number.isFinite(Number(v)) || Number(v)<0) || Number(row.total_hotel_cost)<Number(row.hotel_margin_rate) || Number(row.total_hotel_tax_amount)<Number(row.hotel_margin_rate_tax_amt) || Number(row.total_hotel_cost)-Number(row.hotel_margin_rate)+Number(row.total_hotel_tax_amount)-Number(row.hotel_margin_rate_tax_amt)<=0) throw new BadRequestException('Confirmed supplier purchase price or margin is unavailable or invalid. No payable created.');
+      }
+      // Reuse the existing DVI purchase/margin formula. Scope it to the verified hotel rows only.
+      await this.syncHotels(tx, headerId, planId, Number(plan.createdby || 0), ids);
+      const posted = await tx.dvi_accounts_itinerary_hotel_details.findMany({where:{accounts_itinerary_details_ID:headerId,hotel_id:hotelId,deleted:0}});
+      if (posted.length !== ids.length || !ids.every(i=>posted.some(r=>Number(r.cnf_itinerary_plan_hotel_details_ID)===i))) throw new BadRequestException('Not every verified hotel stay was posted. Repair rolled back; review source records.');
+      return {hotelId, confirmedId, posted: posted.length, created: posted.length-prior.length};
+    }, {isolationLevel: Prisma.TransactionIsolationLevel.Serializable});
+  }
+
   private async syncHotels(
     tx: Prisma.TransactionClient,
     headerId: number,
     planId: number,
     createdBy: number,
+    onlyConfirmedIds?: number[],
   ) {
     const [
       confirmedRows,
@@ -350,6 +396,7 @@ export class AccountsComponentSyncService {
               planId,
             deleted: 0,
             status: 1,
+            ...(onlyConfirmedIds ? { confirmed_itinerary_plan_hotel_details_ID: { in: onlyConfirmedIds } } : {}),
           },
         }),
 

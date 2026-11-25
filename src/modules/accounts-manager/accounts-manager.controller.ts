@@ -2,6 +2,7 @@
 
 import {
   BadRequestException,
+  ForbiddenException,
   Body,
   Controller,
   Get,
@@ -79,6 +80,20 @@ constructor(
   private readonly bulkPaymentService:
     AccountsBulkPaymentService,
 ) {}
+
+  // DVI_HOTEL_RECONCILE_V1
+  @UseGuards(JwtAuthGuard)
+  @Post("hotel-reconcile")
+  async reconcileHotel(@Req() req: any, @Body() body: Record<string, unknown>) {
+    const role = Number(req.user?.roleID ?? req.user?.roleId ?? req.user?.role ?? 0);
+    if (role !== 6) throw new ForbiddenException("Only Accounts users may reconcile hotel finance records.");
+    if (body?.historyVerified !== true) throw new BadRequestException("Confirm legacy payment history has been checked before creating missing hotel finance records.");
+    const confirmedId = Number(body?.confirmedId);
+    const planId = Number(body?.planId);
+    const hotelId = Number(body?.hotelId);
+    if (![confirmedId, planId, hotelId].every(v => Number.isSafeInteger(v) && v > 0)) throw new BadRequestException("Valid confirmed itinerary, plan and hotel IDs are required.");
+    return this.service.reconcileHotel(confirmedId, planId, hotelId);
+  }
 
  /**
    * Main list endpoint.
@@ -330,6 +345,7 @@ if (
  * Pay Now – updates total_paid and total_balance for a component row.
  * POST /accounts-manager/pay
  */
+@UseGuards(JwtAuthGuard)
 @Post("pay")
   @ApiOperation({
     summary: "Record a payment against a component row",

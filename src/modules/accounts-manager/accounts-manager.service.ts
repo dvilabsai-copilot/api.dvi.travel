@@ -11,6 +11,7 @@ import PDFDocument from "pdfkit";
 
 import { PrismaService } from "../../prisma.service";
 import { AccountsComponentSyncService } from "./accounts-component-sync.service";
+import { AccountsBulkPaymentService } from "./accounts-bulk-payment.service";
 import {
   AccountsManagerQueryDto,
   AccountsManagerStatus,
@@ -34,8 +35,14 @@ export class AccountsManagerService {
   private readonly prisma: PrismaService,
   private readonly accountsComponentSync:
     AccountsComponentSyncService,
+    private readonly hotelAtomicPayment: AccountsBulkPaymentService,
 ) {}
 
+
+  // DVI_HOTEL_RECONCILE_V1
+  async reconcileHotel(confirmedId: number, planId: number, hotelId: number) {
+    return this.accountsComponentSync.reconcileHotel(confirmedId, planId, hotelId);
+  }
 
 /**
  * Resolve the Accounts Overview search against the
@@ -3748,6 +3755,16 @@ async searchQuotes(
    * AND inserts a row into the corresponding *_transaction_history table.
  */
   async recordPayment(body: AccountsManagerPayDto): Promise<void> {
+    // DVI_HOTEL_SINGLE_ATOMIC_V2: legacy hotel writes use the same transactional balance guard.
+    if (body.componentType === "hotel") {
+      return this.hotelAtomicPayment.recordBulkPayment({
+        payments: [{componentType: "hotel", accountsItineraryDetailsId: body.accountsItineraryDetailsId, componentDetailId: body.componentDetailId, amount: body.amount, routeDate: body.routeDate}],
+        modeOfPaymentId: body.modeOfPaymentId,
+        utrNumber: body.utrNumber,
+        processedBy: body.processedBy,
+        paymentScreenshotPath: body.paymentScreenshotPath,
+      });
+    }
     const {
       componentType,
       componentDetailId,
@@ -3763,22 +3780,6 @@ async searchQuotes(
     let updateFn: (data: any) => Promise<any>;
 
     switch (componentType) {
-      case "hotel": {
-        const model = this.prisma.dvi_accounts_itinerary_hotel_details;
-        detail = await model.findUnique({
-          where: {
-            accounts_itinerary_hotel_details_ID: componentDetailId,
-          },
-        });
-        updateFn = (data) =>
-          model.update({
-            where: {
-              accounts_itinerary_hotel_details_ID: componentDetailId,
-            },
-            data,
-          });
-        break;
-      }
       case "vehicle": {
         const model = this.prisma.dvi_accounts_itinerary_vehicle_details;
         detail = await model.findUnique({
