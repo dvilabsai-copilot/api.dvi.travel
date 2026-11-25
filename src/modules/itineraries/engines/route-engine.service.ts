@@ -865,6 +865,7 @@ const finalKm = pairChanged
     no_of_days: dayNumber,
  no_of_km: finalKm, // prefer request payload value; fallback to master distance
     direct_to_next_visiting_place: Number(r.direct_to_next_visiting_place || 0),
+    prefer_houseboats: r.prefer_houseboats === true,
     next_visiting_location: destName,
     route_start_time: timeStringToPrismaTime(startHms),
     route_end_time: timeStringToPrismaTime(endHms),

@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
   IsBoolean,
@@ -257,6 +257,11 @@ export class CreateRouteDto {
   @ApiProperty({ example: 1 })
   @IsInt()
   direct_to_next_visiting_place!: number;
+
+  @ApiPropertyOptional({ description: 'Prefer houseboats for automatic hotel selection on this overnight route.' })
+  @IsOptional()
+  @IsBoolean()
+  prefer_houseboats?: boolean;
 
   @ApiProperty({
     example: '',

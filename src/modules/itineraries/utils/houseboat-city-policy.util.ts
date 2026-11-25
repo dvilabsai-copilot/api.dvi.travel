@@ -1,5 +1,6 @@
 import type { PrismaService } from '../../../prisma.service';
 import { normalizeCityName } from './city-normalization.util';
+import { isHouseboatHotel } from './hotel-category.util';
 
 export type HouseboatCity = { id: number; name: string; stateName: string | null };
 
@@ -47,7 +48,7 @@ export function isHouseboatOnlyCity(destination: string, cities: readonly Houseb
       normalizeCityName(region) === normalizeCityName(city.stateName)));
 }
 
-export async function getHouseboatOnlyRouteIds(prisma: PrismaService, routes: Array<{
+export async function getHouseboatCityRouteIds(prisma: PrismaService, routes: Array<{
   itinerary_route_ID: number;
   next_visiting_location?: string | null;
   location_name?: string | null;
@@ -56,4 +57,16 @@ export async function getHouseboatOnlyRouteIds(prisma: PrismaService, routes: Ar
   return new Set(routes
     .filter(route => isHouseboatOnlyCity(route.next_visiting_location || route.location_name || '', cities))
     .map(route => Number(route.itinerary_route_ID)));
+}
+
+export function matchesHouseboatPreference(hotel: unknown, preferHouseboats: boolean | undefined): boolean {
+  const classified = (hotel as { isHouseboat?: boolean } | null)?.isHouseboat;
+  return preferHouseboats === undefined || (classified ?? isHouseboatHotel(hotel)) === preferHouseboats;
+}
+
+export function sameHouseboatPreference(
+  first?: { prefer_houseboats?: boolean } | null,
+  second?: { prefer_houseboats?: boolean } | null,
+): boolean {
+  return (first?.prefer_houseboats === true) === (second?.prefer_houseboats === true);
 }

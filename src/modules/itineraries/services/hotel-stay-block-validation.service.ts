@@ -7,6 +7,7 @@ import {
 } from '../helpers/staah-occupancy-pricing';
 import { toDatabaseBusinessDate } from '../utils/itinerary.utils';
 import { normalizeCityName } from '../utils/city-normalization.util';
+import { sameHouseboatPreference } from '../utils/houseboat-city-policy.util';
 
 export type ProviderCode = 'staah' | 'axisrooms' | 'tbo' | 'offline';
 
@@ -248,6 +249,7 @@ export class HotelStayBlockValidationService {
         itinerary_route_date: true,
         location_name: true,
         next_visiting_location: true,
+        prefer_houseboats: true,
       },
     });
 
@@ -299,7 +301,7 @@ export class HotelStayBlockValidationService {
       const previousDestination = this.normalizeLocation(
         previousRoute.next_visiting_location || previousRoute.location_name || '',
       );
-      if (!stayCity || previousDestination !== stayCity) break;
+      if (!stayCity || previousDestination !== stayCity || !sameHouseboatPreference(previousRoute, currentRoute)) break;
 
       routeIds.unshift(Number(previousRoute.itinerary_route_ID));
       stayDates.unshift(previousRouteDate);
@@ -320,7 +322,7 @@ export class HotelStayBlockValidationService {
       const nextDestination = this.normalizeLocation(
         nextRoute.next_visiting_location || nextRoute.location_name || '',
       );
-      if (!stayCity || nextDestination !== stayCity) break;
+      if (!stayCity || nextDestination !== stayCity || !sameHouseboatPreference(nextRoute, currentRoute)) break;
 
       routeIds.push(Number(nextRoute.itinerary_route_ID));
       stayDates.push(nextRouteDate);

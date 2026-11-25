@@ -8,7 +8,7 @@ import { normalizeHotelDisplayName } from '../utils/hotel-selection-identity.uti
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
 import { HotelGalleryService } from '../../hotels/services/hotel-gallery.service';
 import { OfflineHotelMealPricingService } from './offline-hotel-meal-pricing.service';
-import { isHouseboatOnlyCity, loadHouseboatCities } from '../utils/houseboat-city-policy.util';
+import { isHouseboatOnlyCity, loadHouseboatCities, sameHouseboatPreference } from '../utils/houseboat-city-policy.util';
 import {
   mealFlagsFromRoom,
   OfflineMealBreakdown,
@@ -334,12 +334,6 @@ export class OfflineHotelCatalogService {
     const occupancyKey = `adults:${adultCount}|children:${childCount}|ages:${childAges.join(',')}|meal:${inferCanonicalHotelRatePlanCode(requestedMealPlanCode) || 'ANY'}`;
     const hotelLoadStartedAt = Date.now();
     const hotelsByBlock = await this.loadHotelsByStayBlock(stayBlocks, roomCount, occupancyKey);
-    for (const block of houseboatBlocks) {
-      const key = this.blockCacheKey(block, roomCount, occupancyKey);
-      hotelsByBlock.set(key, (hotelsByBlock.get(key) || []).filter(hotel =>
-        houseboatCategory && hotel.hotel_category === houseboatCategory.hotel_category_id,
-      ));
-    }
     HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
       stage: 'hotel-master-load',
       durationMs: Date.now() - hotelLoadStartedAt,
@@ -368,30 +362,38 @@ export class OfflineHotelCatalogService {
 
     const offerBuildStartedAt = Date.now();
     for (const block of stayBlocks) {
-      const houseboatOnly = houseboatBlocks.has(block);
-      const fetchedHotels = await this.fetchOfflineHotelsForStayBlock(
+      const properties = hotelsByBlock.get(this.blockCacheKey(block, roomCount, occupancyKey)) || [];
+      const houseboats = houseboatBlocks.has(block) && houseboatCategory
+        ? properties.filter(hotel => hotel.hotel_category === houseboatCategory.hotel_category_id)
+        : [];
+      const fetchOffers = (hotels: typeof properties, mealPlan: string, requireMealPlan = false) => this.fetchOfflineHotelsForStayBlock(
         block,
         roomCount,
         occupancyKey,
         adultCount,
         childCount,
         catalogRows,
-        hotelsByBlock.get(this.blockCacheKey(block, roomCount, occupancyKey)),
-        houseboatOnly ? 'AP' : requestedMealPlanCode,
+        hotels,
+        mealPlan,
         supplementCounts,
+        requireMealPlan,
       );
+      const fetchedHotels = await fetchOffers(
+        houseboats.length ? properties.filter(hotel => hotel.hotel_category !== houseboatCategory?.hotel_category_id) : properties,
+        requestedMealPlanCode,
+      );
+      const houseboatOffers = houseboats.length ? await fetchOffers(houseboats, 'AP', true) : [];
       const preferredCategorySet = new Set(
         (preferredCategories || [])
           .map(Number)
           .filter((category) => Number.isFinite(category) && category > 0),
       );
-      const hotels = houseboatOnly
-        ? fetchedHotels.filter(hotel => hotel.mealPlanCode === 'AP').map(hotel => ({
-            ...hotel, hotelCategoryCode: 'HOUSEBOAT', isHouseboat: true, houseboatOnly: true,
-          }))
-        : preferredCategorySet.size > 0
+      const hotels = preferredCategorySet.size > 0
         ? fetchedHotels.filter((hotel: any) => preferredCategorySet.has(Number(hotel.rating || hotel.category || 0)))
         : fetchedHotels;
+      hotels.push(...houseboatOffers.filter(hotel => hotel.mealPlanCode === 'AP').map(hotel => ({
+        ...hotel, hotelCategoryCode: 'HOUSEBOAT', isHouseboat: true, houseboatOnly: true,
+      })));
 
       for (const routeId of block.routeIds) {
         hotelsByRoute.set(routeId, hotels);
@@ -506,7 +508,7 @@ export class OfflineHotelCatalogService {
       const isConsecutiveDay =
         routeDate.getTime() - currentBlock.lastDate.getTime() === 24 * 60 * 60 * 1000;
 
-      if (isSameDestination && isConsecutiveDay) {
+      if (isSameDestination && isConsecutiveDay && sameHouseboatPreference(route, routes[routeIndex - 1])) {
         currentBlock.checkOutDate = checkOutDate;
         currentBlock.routeIds.push(routeId);
         currentBlock.lastDate = routeDate;
@@ -550,6 +552,7 @@ export class OfflineHotelCatalogService {
     prefetchedHotels?: any[],
     requestedMealPlanCode = '',
     supplementCounts: Partial<SupplementCounts> = {},
+    requireMealPlan = false,
   ): Promise<HotelSearchResult[]> {
     const dateList = this.getNightDates(block.checkInDate, block.checkOutDate);
     if (dateList.length === 0) {
@@ -599,7 +602,10 @@ export class OfflineHotelCatalogService {
     const results: HotelSearchResult[] = [];
     for (const hotel of hotels as any[]) {
       const gallery = galleryByHotel?.get(Number(hotel.hotel_id)) || [];
-      const offers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount, catalogRows, requestedMealPlanCode, supplementCounts);
+      const allOffers = await this.buildRoomOffers(hotel, dateList, roomCount, adultCount, childCount, catalogRows, requestedMealPlanCode, supplementCounts);
+      const offers = requireMealPlan
+        ? allOffers.filter(offer => (offer.mealPlanBreakdown.mealPlanCode || offer.mealPlan) === requestedMealPlanCode)
+        : allOffers;
       if (offers.length === 0) {
         continue;
       }

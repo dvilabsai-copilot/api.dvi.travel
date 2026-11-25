@@ -1753,7 +1753,9 @@ timingStepStartedAt =
     // invalidate the auto-selected hotel/rate choices. Reuse the same reset
     // path as the internal hotel reset operation after the plan transaction commits.
     // Meal-plan-only edits do not rebuild routes, hotspots, or transport data.
-    const hotelResetReason = getHotelAvailabilityResetReason(result);
+    const houseboatPreferenceRouteIds = result.houseboatPreferenceRouteIds || [];
+    const hotelResetReason = getHotelAvailabilityResetReason(result) ??
+      (houseboatPreferenceRouteIds.length ? 'HOUSEBOAT_PREFERENCE_CHANGED' : null);
         if (
       !isNewPlan &&
       hotelsRequired &&
@@ -1803,10 +1805,14 @@ timingStepStartedAt =
     }
     if (!isNewPlan && hotelsRequired && hasHotelNights && hotelResetReason && result?.quoteId) {
       try {
-        const hotelSearch = await this.hotelAvailabilitySnapshotService.resetAndPersist(
-          String(result.quoteId),
-          Number(req?.user?.userId || 0),
-        );
+        const hotelSearch = hotelResetReason === 'HOUSEBOAT_PREFERENCE_CHANGED'
+          ? await this.hotelAvailabilitySnapshotService.searchAndPersist(
+              String(result.quoteId), 'CREATE', Number(req?.user?.userId || 0),
+              false, false, new Set(houseboatPreferenceRouteIds),
+            )
+          : await this.hotelAvailabilitySnapshotService.resetAndPersist(
+              String(result.quoteId), Number(req?.user?.userId || 0),
+            );
         if (result.revisionCreated) {
           const details = await this.itineraryDetails.getItineraryDetails(String(result.quoteId));
           await publishItineraryRevision(this.prisma, result.planId, hotelSearch.searchRunId, String(details.overallCost));
@@ -1869,7 +1875,9 @@ timingStepStartedAt =
                 ? 'HOTEL_AVAILABILITY_MEAL_PLAN_RESET_FAILED'
               : hotelResetReason === 'EARLY_ARRIVAL_CONFIRMED'
                 ? 'HOTEL_AVAILABILITY_EARLY_ARRIVAL_RESET_FAILED'
-                : 'HOTEL_AVAILABILITY_CATEGORY_RESET_FAILED',
+                : hotelResetReason === 'HOUSEBOAT_PREFERENCE_CHANGED'
+                  ? 'HOTEL_AVAILABILITY_HOUSEBOAT_REFRESH_FAILED'
+                  : 'HOTEL_AVAILABILITY_CATEGORY_RESET_FAILED',
           routeChanged: Boolean(result?.routeChanged),
           roomCountChanged: Boolean(result?.roomCountChanged),
           occupancyChanged: Boolean(result?.occupancyChanged),

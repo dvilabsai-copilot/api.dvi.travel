@@ -492,6 +492,39 @@ test('houseboat policy requires AP', () => {
   assert.equal(packages[0].hotels[0].hotelName, 'Houseboat AP');
 });
 
+test('each configured night auto-selects its preferred property type from mixed inventory', () => {
+  const firstNight = { ...oneRoute('Alleppey')[0], prefer_houseboats: true };
+  const secondNight = { ...firstNight, itinerary_route_ID: 2, itinerary_route_date: '2026-08-03', prefer_houseboats: false };
+  const boats = [
+    option('Southern Panorama Cruises', 90, 'AP', { isHouseboat: true, hotelCategoryCode: 'HOUSEBOAT' }),
+    option('Alleppey Resort', 50, 'CP', { isHouseboat: false }),
+  ];
+  const hotelsByRoute = new Map([[1, boats], [2, boats]]);
+  const [recommendation] = service().generate({
+    routes: [firstNight, secondNight],
+    hotelsByRoute,
+    preferredMealPlanCode: 'CP',
+    houseboatPreferenceByRoute: new Map([[1, true], [2, false]]),
+  });
+  assert.deepEqual(recommendation.stayResults.map(stay => [
+    stay.routeIds, stay.hotel?.hotelName, stay.hotel?.mealPlan,
+  ]), [
+    [[1], 'Southern Panorama Cruises', 'AP'],
+    [[2], 'Alleppey Resort', 'CP'],
+  ]);
+  assert.equal(hotelsByRoute.get(1)?.length, 2);
+});
+
+test('a configured stay leaves the recommendation empty when the preferred type has no rate', () => {
+  const [recommendation] = service().generate({
+    routes: oneRoute('Alleppey'),
+    hotelsByRoute: new Map([[1, [option('Alleppey Resort', 50, 'CP')]]]),
+    preferredMealPlanCode: 'CP',
+    houseboatPreferenceByRoute: new Map([[1, true]]),
+  });
+  assert.equal(recommendation.hotels.length, 0);
+});
+
 test('explicit Houseboat category is provider-agnostic and does not require a star category', () => {
   const packages = service().generate({
     routes: [{ itinerary_route_ID: 202, itinerary_route_date: '2026-08-02', next_visiting_location: 'Kumarakom' }],
