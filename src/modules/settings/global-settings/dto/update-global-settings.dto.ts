@@ -17,6 +17,13 @@ import {
 
 
 export class UpdateGlobalSettingsDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  houseboat_only_city_ids?: number[];
+
   // The application uses a global whitelist ValidationPipe. Keep every
   // legacy PHP setting explicitly allowed so the update payload is not
   // silently reduced to an empty object.

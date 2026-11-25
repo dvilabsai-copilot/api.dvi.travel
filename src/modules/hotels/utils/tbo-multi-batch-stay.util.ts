@@ -23,11 +23,13 @@ export type TboStayBatch = {
 };
 
 export type TboStayMealSupplement = {
-  mealPlan: 'CP' | 'MAP';
+  mealPlan: 'CP' | 'MAP' | 'AP';
   breakfastRate: number;
   breakfastPerNight: number;
   dinnerRate: number;
   dinnerPerNight: number;
+  lunchRate?: number;
+  lunchPerNight?: number;
 };
 
 export type TboMultiBatchStaySnapshot = {
@@ -121,10 +123,21 @@ export function assertTboMultiBatchStay(
   }
   if (meals && (stay.currency !== 'INR' ||
       !((stay.mealPlan === 'EP' && ['CP', 'MAP'].includes(meals.mealPlan)) ||
-        (stay.mealPlan === 'CP' && meals.mealPlan === 'MAP')) ||
-      [meals.breakfastRate, meals.breakfastPerNight, meals.dinnerRate, meals.dinnerPerNight]
+        (stay.mealPlan === 'CP' && ['MAP', 'AP'].includes(meals.mealPlan))) ||
+      [meals.breakfastRate, meals.breakfastPerNight, meals.dinnerRate, meals.dinnerPerNight,
+        meals.lunchRate ?? 0, meals.lunchPerNight ?? 0]
         .some(amount => !Number.isFinite(amount) || amount < 0))) {
     throw new Error('Invalid DVI meal supplement for the supplier stay.');
+  }
+  if (meals?.mealPlan === 'AP') {
+    const guests = stay.batches.flatMap(batch => batch.occupancies)
+      .reduce((count, room) => count + room.adults + room.children, 0);
+    const lunchRate = meals.lunchRate ?? 0;
+    if (lunchRate <= 0 || meals.dinnerRate <= 0 || meals.breakfastRate !== 0 || meals.breakfastPerNight !== 0 ||
+        Math.round((meals.lunchPerNight ?? 0) * 100) !== Math.round(lunchRate * guests * 100) ||
+        Math.round(meals.dinnerPerNight * 100) !== Math.round(meals.dinnerRate * guests * 100)) {
+      throw new Error('AP requires priced lunch and dinner for all guests on the CP supplier stay.');
+    }
   }
 }
 
@@ -150,6 +163,7 @@ export function priceTboMultiBatchStay(
 ) {
   if (!Number.isFinite(margin) || margin < 0) throw new RangeError('Hotel margin is invalid.');
   const mealCostPerNight = Math.round(((stay.dviMealSupplement?.breakfastPerNight ?? 0) +
+    (stay.dviMealSupplement?.lunchPerNight ?? 0) +
     (stay.dviMealSupplement?.dinnerPerNight ?? 0)) * 100) / 100;
   const roomPayable = Math.round(stay.supplierTotalFare * (100 + margin)) / 100;
   const baseByNight = allocateFullStayCents(stay.supplierTotalFare, stay.routeIds);
@@ -170,6 +184,7 @@ export function describeTboBatchRoomPrices(stay: TboMultiBatchStaySnapshot, marg
   const pricedNights = nightIndex === undefined ? stay.routeIds.length : 1;
   const pricing = priceTboMultiBatchStay(stay, margin);
   const dinnerCents = Math.round((stay.dviMealSupplement?.dinnerPerNight ?? 0) * 100);
+  const lunchCents = Math.round((stay.dviMealSupplement?.lunchPerNight ?? 0) * 100);
   const breakfastCents = Math.round((stay.dviMealSupplement?.breakfastPerNight ?? 0) * 100);
   const breakfastGuests = getTboBreakfastGuestCount(stay.batches);
   const totalPayable = nightIndex === undefined ? pricing.totalPrice : pricing.payableByNight[nightIndex];
@@ -185,6 +200,7 @@ export function describeTboBatchRoomPrices(stay: TboMultiBatchStaySnapshot, marg
     const roomPayableCents = nightIndex === undefined ? roomPayable :
       Math.round(allocateFullStayCents(roomPayable / 100, stay.routeIds)[nightIndex] * 100);
     const mealsPerNight = Math.round(dinnerCents * cumulativeGuests / totalGuests) +
+      Math.round(lunchCents * cumulativeGuests / totalGuests) +
       (breakfastGuests ? Math.round(breakfastCents * cumulativeBreakfastGuests / breakfastGuests) : 0);
     const payableCents = index === stay.batches.length - 1 ? Math.round(totalPayable * 100) :
       roomPayableCents + mealsPerNight * pricedNights;

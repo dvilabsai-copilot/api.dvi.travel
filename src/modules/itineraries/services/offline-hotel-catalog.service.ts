@@ -8,6 +8,7 @@ import { normalizeHotelDisplayName } from '../utils/hotel-selection-identity.uti
 import { ReferenceDataCacheService } from '../../../common/cache/reference-data-cache.service';
 import { HotelGalleryService } from '../../hotels/services/hotel-gallery.service';
 import { OfflineHotelMealPricingService } from './offline-hotel-meal-pricing.service';
+import { isHouseboatOnlyCity, loadHouseboatCities } from '../utils/houseboat-city-policy.util';
 import {
   mealFlagsFromRoom,
   OfflineMealBreakdown,
@@ -310,6 +311,14 @@ export class OfflineHotelCatalogService {
     const startedAt = Date.now();
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const stayBlocks = this.buildStayBlocks(routes, noOfNights);
+    const houseboatCities = await loadHouseboatCities(this.prisma);
+    const houseboatBlocks = new Set(stayBlocks.filter(block => isHouseboatOnlyCity(block.destination, houseboatCities)));
+    const houseboatCategory = houseboatBlocks.size > 0
+      ? await this.prisma.dvi_hotel_category.findFirst({
+          where: { hotel_category_code: 'HOUSEBOAT', status: 1, deleted: 0 },
+          select: { hotel_category_id: true },
+        })
+      : null;
     HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
       stage: 'build-stay-blocks',
       durationMs: Date.now() - startedAt,
@@ -325,6 +334,12 @@ export class OfflineHotelCatalogService {
     const occupancyKey = `adults:${adultCount}|children:${childCount}|ages:${childAges.join(',')}|meal:${inferCanonicalHotelRatePlanCode(requestedMealPlanCode) || 'ANY'}`;
     const hotelLoadStartedAt = Date.now();
     const hotelsByBlock = await this.loadHotelsByStayBlock(stayBlocks, roomCount, occupancyKey);
+    for (const block of houseboatBlocks) {
+      const key = this.blockCacheKey(block, roomCount, occupancyKey);
+      hotelsByBlock.set(key, (hotelsByBlock.get(key) || []).filter(hotel =>
+        houseboatCategory && hotel.hotel_category === houseboatCategory.hotel_category_id,
+      ));
+    }
     HotelAvailabilityTimingLogger.log('OFFLINE_CATALOG_STAGE', {
       stage: 'hotel-master-load',
       durationMs: Date.now() - hotelLoadStartedAt,
@@ -353,6 +368,7 @@ export class OfflineHotelCatalogService {
 
     const offerBuildStartedAt = Date.now();
     for (const block of stayBlocks) {
+      const houseboatOnly = houseboatBlocks.has(block);
       const fetchedHotels = await this.fetchOfflineHotelsForStayBlock(
         block,
         roomCount,
@@ -361,7 +377,7 @@ export class OfflineHotelCatalogService {
         childCount,
         catalogRows,
         hotelsByBlock.get(this.blockCacheKey(block, roomCount, occupancyKey)),
-        requestedMealPlanCode,
+        houseboatOnly ? 'AP' : requestedMealPlanCode,
         supplementCounts,
       );
       const preferredCategorySet = new Set(
@@ -369,7 +385,11 @@ export class OfflineHotelCatalogService {
           .map(Number)
           .filter((category) => Number.isFinite(category) && category > 0),
       );
-      const hotels = preferredCategorySet.size > 0
+      const hotels = houseboatOnly
+        ? fetchedHotels.filter(hotel => hotel.mealPlanCode === 'AP').map(hotel => ({
+            ...hotel, hotelCategoryCode: 'HOUSEBOAT', isHouseboat: true, houseboatOnly: true,
+          }))
+        : preferredCategorySet.size > 0
         ? fetchedHotels.filter((hotel: any) => preferredCategorySet.has(Number(hotel.rating || hotel.category || 0)))
         : fetchedHotels;
 

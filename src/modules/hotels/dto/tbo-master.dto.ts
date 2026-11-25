@@ -22,6 +22,7 @@ export class UpdateTboMasterHotelDto {
   @IsOptional() @IsString() longitude?: string | null;
   @IsOptional() @IsInt() @Min(0) @Max(1) status?: number;
   @IsOptional() @IsBoolean() isPriority?: boolean;
+  @IsOptional() @IsBoolean() isHouseboat?: boolean;
 }
 
 export class TboMasterPricePreviewDto {

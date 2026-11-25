@@ -7,7 +7,7 @@ const HOUSEBOAT_HOTEL_CODES = ['1674220', '5110229'];
 // Provider names are the only reliable discriminator for records that do not
 // already carry a category. Keep this intentionally narrower than a generic
 // cruise/riverscape match so ordinary hotels are not reclassified.
-const HOUSEBOAT_NAME_REGEXP = 'house[[:space:]-]*boats?';
+const HOUSEBOAT_NAME_REGEXP = '(^|[^[:alnum:]])house[[:space:]-]*boats?([^[:alnum:]]|$)';
 const HOUSEBOAT_OPERATIONAL_NAME_PATTERNS = [
   'southern panorama cruise%',
   'xandari riverscapes%',
@@ -59,9 +59,12 @@ async function main(): Promise<void> {
 
     const tboRowsUpdated = await tx.$executeRaw`
       UPDATE tbo_hotel_master
-      SET hotel_category_id = ${categoryId}
-      WHERE tbo_hotel_code IN (${HOUSEBOAT_HOTEL_CODES[0]}, ${HOUSEBOAT_HOTEL_CODES[1]})
-         OR LOWER(TRIM(hotel_name)) REGEXP ${HOUSEBOAT_NAME_REGEXP}
+      SET hotel_category_id = ${categoryId}, is_houseboat = TRUE
+      WHERE is_houseboat IS NULL AND (
+        hotel_category_id = ${categoryId}
+        OR tbo_hotel_code IN (${HOUSEBOAT_HOTEL_CODES[0]}, ${HOUSEBOAT_HOTEL_CODES[1]})
+        OR LOWER(TRIM(hotel_name)) REGEXP ${HOUSEBOAT_NAME_REGEXP}
+      )
     `;
 
     const operationalRowsUpdated = await tx.$executeRaw`

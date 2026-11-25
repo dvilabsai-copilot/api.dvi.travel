@@ -8,6 +8,41 @@ import { matchTboBatchHotels } from '../src/modules/hotels/utils/tbo-batch-hotel
 import { ItineraryHotelDetailsTboService } from '../src/modules/itineraries/itinerary-hotel-details-tbo.service';
 import { applyTboMapFallbackToRows, prepareTboBatchRecommendation } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
 import { TBOHotelProvider } from '../src/modules/hotels/providers/tbo-hotel.provider';
+import { isHouseboatOnlyCity } from '../src/modules/itineraries/utils/houseboat-city-policy.util';
+
+test('houseboat city matches aliases and respects state qualifications', () => {
+  const cities = [
+    { id: 70761, name: 'Alleppey', stateName: 'Kerala' },
+    { id: 1341, name: 'Srinagar', stateName: 'Jammu and Kashmir' },
+  ];
+  assert.equal(isHouseboatOnlyCity('Alappuzha, Kerala, India', cities), true);
+  assert.equal(isHouseboatOnlyCity('70761', cities), true);
+  assert.equal(isHouseboatOnlyCity('Srinagar, Uttarakhand, India', cities), false);
+  assert.equal(isHouseboatOnlyCity('Munnar', cities), false);
+  assert.equal(isHouseboatOnlyCity('Alleppey', []), false);
+});
+
+test('both batches of a houseboat search use the restricted master pool without changing regular cache entries', async () => {
+  const cache = new Map<string, string>();
+  const provider = Object.assign(Object.create(TBOHotelProvider.prototype), {
+    logger: { log() {}, warn() {}, error() {} },
+    referenceCache: { get: async (key: string) => cache.get(key), set: async (key: string, value: string) => cache.set(key, value) },
+    prisma: {
+      dvi_global_settings: { findFirst: async () => ({ vsr_hotel_card_limit: 50 }) },
+      tbo_hotel_master: { findMany: async ({ where }: any) => (where.is_houseboat ? ['boat'] : ['hotel', 'boat'])
+        .map(code => ({ tbo_hotel_code: code })) },
+    },
+  });
+  assert.equal(await provider.getHotelCodesForCityFromDb('148363'), 'hotel,boat');
+  provider.search = async (_criteria: unknown, preferences: any, options: any) => {
+    return (await provider.getHotelCodesForCityFromDb('148363', options.splitStaySearch, preferences.houseboatOnly)).split(',');
+  };
+  const result = await provider.searchRoomBatches({
+    occupancies: Array.from({ length: 8 }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+  }, { houseboatOnly: true });
+  assert.deepEqual(result.map(batch => [batch.batch.roomCount, batch.hotels]), [[6, ['boat']], [2, ['boat']]]);
+  assert.equal(await provider.getHotelCodesForCityFromDb('148363'), 'hotel,boat');
+});
 
 test('split VSR searches consider hotels beyond the configured display card limit', async () => {
   const store = new Map<string, string>();
@@ -77,6 +112,22 @@ test('same-hotel supplier batches can use different room types with compatible t
   assert.equal(snapshot.dviMealSupplement?.breakfastPerNight, 1600);
   assert.deepEqual(describeTboBatchRoomPrices(snapshot, 5).map(batch => batch.amount), [6300, 5300]);
   assert.equal(recommendation.totalPrice, 11600);
+  const apConfig = { ...config, lunchRate3Star: 600, dinnerRate3Star: 800 };
+  const [apOffer] = applyTboMapFallbackToRows([{ ...preview, ...dates, provider: 'tbo', rating: 3, houseboatOnly: true }], {
+    preferredMealPlanCode: 'AP', adultCount: 16, childCount: 0, roomCount: 8, numberOfNights: 2,
+  }, apConfig);
+  assert.ok(apOffer);
+  const ap = prepareTboBatchRecommendation(apOffer,
+    { ...dates, parentRouteId: 10, routeIds: [10, 11] }, { config: apConfig, roomCount: 8, margin: 5 });
+  assert.ok(ap);
+  assert.equal(ap.mealPlan, 'AP');
+  assert.deepEqual(ap.tboMultiBatchStay.batches.map(batch => [batch.mealPlan, batch.bookingCode]), [
+    ['CP', '6437125!TB!rate0'], ['CP', '6437125!TB!rate1'],
+  ]);
+  assert.equal(ap.tboMultiBatchStay.dviMealSupplement?.lunchPerNight, 9600);
+  assert.equal(ap.tboMultiBatchStay.dviMealSupplement?.dinnerPerNight, 12800);
+  assert.equal(ap.totalPrice, 53200);
+  assert.deepEqual(describeTboBatchRoomPrices(ap.tboMultiBatchStay, 5).map(batch => batch.amount), [39900, 13300]);
   assert.equal(matchTboBatchHotels([six, group(1, 2, 'Deluxe Twin', true, 'MAP')]).length, 0);
 });
 
