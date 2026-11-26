@@ -1,6 +1,25 @@
 // FILE: src/modules/accounts-manager/accounts-manager.controller.ts
 
-import { BadRequestException, ForbiddenException, Body, Controller, Get, Post, Query, UseGuards, Req, UploadedFile, UseInterceptors } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+  Req,
+  UploadedFile,
+  UseInterceptors,
+  Param,
+  ParseIntPipe,
+  Res,
+} from "@nestjs/common";
+
+import {
+  Response,
+} from "express";
 import { AccountsManagerService } from "./accounts-manager.service";
 import { AccountsManagerQueryDto } from "./dto/accounts-manager-query.dto";
 import { AccountsManagerRowDto } from "./dto/accounts-manager-row.dto";
@@ -10,7 +29,14 @@ import {
   AccountsManagerAgentDto,
   AccountsManagerPaymentModeDto,
   AccountsManagerPayDto,
+  AccountsManagerBulkPayDto,
 } from "./dto/accounts-manager-extra.dto";
+
+import {
+  AccountsBulkPaymentService,
+} from "./accounts-bulk-payment.service";
+
+
 import {
   ApiBearerAuth,
   ApiBody,
@@ -47,33 +73,27 @@ const paymentScreenshotStorage = diskStorage({
 @ApiBearerAuth() // uses default bearer auth from main.ts
 @Controller("accounts-manager")
 export class AccountsManagerController {
+constructor(
+  private readonly service:
+    AccountsManagerService,
 
-  // DVI_HOTEL_COMMON_REVIEW_V4 — separate Hotel Payments endpoints.
+  private readonly bulkPaymentService:
+    AccountsBulkPaymentService,
+) {}
 
-  // DVI_HOTEL_AUTO_FINANCE_V5
+  // DVI_HOTEL_RECONCILE_V1
   @UseGuards(JwtAuthGuard)
-  @Post('hotel-finance-auto-sync')
-  async hotelFinanceAutoSync(@Req() req:any){return this.service.automaticHotelFinance(this.requireHotelFinanceRole(req));}
-
-  private requireHotelFinanceRole(req:any):number {
-    const u=req.user;
-    if(!u||![1,6].includes(Number(u.role))) throw new ForbiddenException('Accounts or Admin access required.');
-    return Number(u.userId||u.user_id||u.id||u.sub||0);
+  @Post("hotel-reconcile")
+  async reconcileHotel(@Req() req: any, @Body() body: Record<string, unknown>) {
+    const role = Number(req.user?.roleID ?? req.user?.roleId ?? req.user?.role ?? 0);
+    if (role !== 6) throw new ForbiddenException("Only Accounts users may reconcile hotel finance records.");
+    if (body?.historyVerified !== true) throw new BadRequestException("Confirm legacy payment history has been checked before creating missing hotel finance records.");
+    const confirmedId = Number(body?.confirmedId);
+    const planId = Number(body?.planId);
+    const hotelId = Number(body?.hotelId);
+    if (![confirmedId, planId, hotelId].every(v => Number.isSafeInteger(v) && v > 0)) throw new BadRequestException("Valid confirmed itinerary, plan and hotel IDs are required.");
+    return this.service.reconcileHotel(confirmedId, planId, hotelId);
   }
-  @UseGuards(JwtAuthGuard)
-  @Post('hotel-finance-identities')
-  async hotelFinanceIdentities(@Req() req:any,@Body() body:any){this.requireHotelFinanceRole(req);return this.service.hotelFinanceIdentities(body);}
-  @UseGuards(JwtAuthGuard)
-  @Post('hotel-finance-review')
-  async hotelFinanceReview(@Req() req:any,@Body() body:any){return this.service.postReviewedHotelFinance(body,this.requireHotelFinanceRole(req));}
-  @UseGuards(JwtAuthGuard)
-  @Post('hotel-finance-pay')
-  @UseInterceptors(FileInterceptor('paymentScreenshot',{storage:paymentScreenshotStorage,limits:{fileSize:5*1024*1024},fileFilter:(_req,file,cb)=>{if(/^image\/(png|jpeg|webp|gif)$/.test(file.mimetype)&&/\.(png|jpe?g|webp|gif)$/i.test(file.originalname))cb(null,true);else cb(new BadRequestException('Unsupported receipt image.'),false);}}))
-  async hotelFinancePay(@Req() req:any,@Body() body:any,@UploadedFile() file?:Express.Multer.File){return this.service.recordHotelFinanceBatch(body,this.requireHotelFinanceRole(req),file?'/uploads/accounts_payment_screenshots/'+file.filename:'');}
-
-  constructor(
-    private readonly service: AccountsManagerService,
-  ) {}
 
  /**
    * Main list endpoint.
@@ -87,23 +107,50 @@ export class AccountsManagerController {
       "Returns the flattened component rows (hotel/vehicle/guide/hotspot/activity) filtered by status, quote, date range, component type, agent, and search.",
   })
   @ApiOkResponse({ type: AccountsManagerRowDto, isArray: true })
-  async list(
-    @Req() req: any,
-    @Query() query: AccountsManagerQueryDto,
-  ): Promise<AccountsManagerRowDto[]> {
-    const user = req.user;
- // Role 4 is Agent
-    if (user.role === 4) {
-      query.agentId = Number(user.agentId);
-    } else if (user.role === 6) {
- // Accounts role - see everything
-    } else if (user.role === 3 || user.role === 8 || (user.staffId && user.staffId > 0)) {
- // Travel Expert logic
-      (query as any).travelExpertId = Number(user.staffId);
-    }
-    // DVI_LOCAL_VERIFIED_HOTEL_REPAIR_V2
-    return this.service.list(query, [1, 6].includes(Number(user.role)));
+ async list(
+  @Req() req: any,
+  @Query() query: AccountsManagerQueryDto,
+): Promise<AccountsManagerRowDto[]> {
+  const user = req.user;
+
+  /*
+   * Agent:
+   * restrict Accounts rows to that Agent.
+   */
+  if (user.role === 4) {
+    query.agentId =
+      Number(
+        user.agentId,
+      );
   }
+
+  /*
+   * Staff / Travel Expert:
+   * restrict rows to Agents assigned to that Staff / TE.
+   *
+   * IMPORTANT:
+   * Do not use the existence of staffId alone here.
+   * Admin users can also carry a staffId in the JWT.
+   */
+  else if (
+    user.role === 3 ||
+    user.role === 8
+  ) {
+    (query as any).travelExpertId =
+      Number(
+        user.staffId,
+      );
+  }
+
+  /*
+   * Admin (1) and Accounts (6):
+   * no Agent / Travel Expert restriction.
+   */
+
+  return this.service.list(
+    query,
+  );
+}
 
  /**
    * Summary cards (payable / paid / balance) based on same filters
@@ -118,22 +165,46 @@ export class AccountsManagerController {
       "Returns aggregated totals (totalPayable, totalPaid, totalBalance, rowCount) using the same filters as the list endpoint.",
   })
   @ApiOkResponse({ type: AccountsManagerSummaryDto })
-  async summary(
-    @Req() req: any,
-    @Query() query: AccountsManagerQueryDto,
-  ): Promise<AccountsManagerSummaryDto> {
-    const user = req.user;
- // Role 4 is Agent
-    if (user.role === 4) {
-      query.agentId = Number(user.agentId);
-    } else if (user.role === 6) {
- // Accounts role - see everything
-    } else if (user.role === 3 || user.role === 8 || (user.staffId && user.staffId > 0)) {
-      (query as any).travelExpertId = Number(user.staffId);
-    }
-    return this.service.getSummary(query);
+async summary(
+  @Req() req: any,
+  @Query() query: AccountsManagerQueryDto,
+): Promise<AccountsManagerSummaryDto> {
+  const user = req.user;
+
+  /*
+   * Agent:
+   * only that Agent's Accounts totals.
+   */
+  if (user.role === 4) {
+    query.agentId =
+      Number(
+        user.agentId,
+      );
   }
 
+  /*
+   * Staff / Travel Expert:
+   * only their assigned Agents.
+   */
+  else if (
+    user.role === 3 ||
+    user.role === 8
+  ) {
+    (query as any).travelExpertId =
+      Number(
+        user.staffId,
+      );
+  }
+
+  /*
+   * Admin (1) and Accounts (6):
+   * unrestricted Accounts summary.
+   */
+
+  return this.service.getSummary(
+    query,
+  );
+}
  /**
    * Quote ID autocomplete – distinct itinerary_quote_ID values.
    * GET /accounts-manager/quotes?q=ABC
@@ -176,14 +247,106 @@ export class AccountsManagerController {
   })
   @ApiOkResponse({ type: AccountsManagerPaymentModeDto, isArray: true })
   async paymentModes(): Promise<AccountsManagerPaymentModeDto[]> {
-    return this.service.listPaymentModes();
-  }
+  return this.service.listPaymentModes();
+}
 
- /**
-   * Pay Now – updates total_paid and total_balance for a component row.
-   * POST /accounts-manager/pay
+
+/**
+ * Download the complete Purchase Cost / Package PDF
+ * for one Accounts booking.
+ *
+ * headerId = accounts_itinerary_details_ID
  */
-  @Post("pay")
+@UseGuards(
+  JwtAuthGuard,
+)
+@Get(
+  "purchase-cost-pdf/:headerId",
+)
+@ApiOperation({
+  summary:
+    "Download confirmed itinerary purchase cost PDF",
+})
+async purchaseCostPdf(
+  @Req()
+  req: any,
+
+  @Param(
+    "headerId",
+    ParseIntPipe,
+  )
+  headerId: number,
+
+  @Res()
+  res: Response,
+): Promise<void> {
+  const scope:
+    AccountsManagerQueryDto =
+    {
+      status:
+        "all",
+
+      componentType:
+        "all",
+    };
+
+
+  const user =
+  req.user;
+
+
+/*
+ * Keep the same role scope as the Accounts
+ * list and summary endpoints.
+ */
+if (
+  user.role === 4
+) {
+  /*
+   * Agent:
+   * only their own Accounts booking.
+   */
+  scope.agentId =
+    Number(
+      user.agentId,
+    );
+} else if (
+  user.role === 3 ||
+  user.role === 8
+) {
+  /*
+   * Staff / Travel Expert:
+   * only bookings belonging to their Agents.
+   */
+  (
+    scope as any
+  ).travelExpertId =
+    Number(
+      user.staffId,
+    );
+}
+
+/*
+ * Admin (1) and Accounts (6):
+ * no Agent / Travel Expert restriction.
+ */
+
+
+  await this.service
+    .downloadPurchaseCostPdf(
+      headerId,
+      res,
+      scope,
+    );
+}
+
+
+/**
+ * Pay Now – updates total_paid and total_balance for a component row.
+ * POST /accounts-manager/pay
+ */
+@UseGuards(JwtAuthGuard)
+@Post("pay")
   @ApiOperation({
     summary: "Record a payment against a component row",
     description:
@@ -216,4 +379,236 @@ export class AccountsManagerController {
     };
     return this.service.recordPayment(normalizedBody);
   }
+
+
+/*
+ * ============================================================
+ * BULK PAYMENT
+ * ============================================================
+ *
+ * One shared Payment Mode / UTR / Processed By / Screenshot,
+ * but every selected task keeps its own balance and history row.
+ */
+@UseGuards(
+  JwtAuthGuard,
+)
+@Post(
+  "pay-bulk",
+)
+@ApiBearerAuth()
+@ApiOperation({
+  summary:
+    "Record one payment across multiple payment tasks",
+  description:
+    "Records one shared payment reference across multiple due component rows belonging to the same supplier/vendor.",
+})
+@ApiBody({
+  type:
+    AccountsManagerBulkPayDto,
+})
+@ApiOkResponse({
+  description:
+    "Bulk payment recorded",
+})
+@UseInterceptors(
+  FileInterceptor(
+    "paymentScreenshot",
+    {
+      storage:
+        paymentScreenshotStorage,
+    },
+  ),
+)
+async payBulk(
+  @Body()
+  body:
+    AccountsManagerBulkPayDto,
+
+  @UploadedFile()
+  paymentScreenshot?:
+    Express.Multer.File,
+): Promise<void> {
+  let rawPayments:
+    any =
+    (
+      body as any
+    ).payments;
+
+
+  /*
+   * multipart/form-data sends payments as JSON text.
+   */
+  if (
+    typeof rawPayments ===
+    "string"
+  ) {
+    try {
+      rawPayments =
+        JSON.parse(
+          rawPayments,
+        );
+    } catch {
+      throw new BadRequestException(
+        "Invalid bulk payments payload.",
+      );
+    }
+  }
+
+
+  if (
+    !Array.isArray(
+      rawPayments,
+    )
+  ) {
+    throw new BadRequestException(
+      "Payments must be an array.",
+    );
+  }
+
+
+  if (
+    rawPayments.length ===
+    0
+  ) {
+    throw new BadRequestException(
+      "Select at least one payment task.",
+    );
+  }
+
+
+  const normalizedBody:
+    AccountsManagerBulkPayDto =
+    {
+      ...body,
+
+
+      payments:
+        rawPayments.map(
+          (
+            payment:
+              any,
+          ) => ({
+            ...payment,
+
+
+            accountsItineraryDetailsId:
+              Number(
+                payment
+                  .accountsItineraryDetailsId ||
+                  0,
+              ),
+
+
+            componentDetailId:
+              Number(
+                payment
+                  .componentDetailId ||
+                  0,
+              ),
+
+
+            amount:
+              Number(
+                payment
+                  .amount ||
+                  0,
+              ),
+
+
+            routeDate:
+              String(
+                payment
+                  .routeDate ||
+                  "",
+              ).trim() ||
+              undefined,
+          }),
+        ),
+
+
+      modeOfPaymentId:
+        (
+          body as any
+        ).modeOfPaymentId !==
+          undefined &&
+        (
+          body as any
+        ).modeOfPaymentId !==
+          ""
+          ? Number(
+              (
+                body as any
+              ).modeOfPaymentId,
+            )
+          : undefined,
+
+
+      utrNumber:
+        String(
+          (
+            body as any
+          ).utrNumber ||
+            "",
+        ).trim() ||
+        undefined,
+
+
+      processedBy:
+        String(
+          (
+            body as any
+          ).processedBy ||
+            "",
+        ).trim() ||
+        undefined,
+
+
+      paymentScreenshotPath:
+        paymentScreenshot
+          ? `/uploads/accounts_payment_screenshots/${paymentScreenshot.filename}`
+          : String(
+              (
+                body as any
+              )
+                .paymentScreenshotPath ||
+                "",
+            ).trim() ||
+            undefined,
+    };
+
+
+  return this
+    .bulkPaymentService
+    .recordBulkPayment(
+      normalizedBody,
+    );
+}
+
+
+
+  // DVI_HOTEL_PR_REPAIR_20261126: preserve all staging methods; append Hotel Payments only.
+
+private requireHotelFinanceRole(req:any):number {
+    const u=req.user;
+    if(!u||![1,6].includes(Number(u.role))) throw new ForbiddenException('Accounts or Admin access required.');
+    return Number(u.userId||u.user_id||u.id||u.sub||0);
+  }
+
+@UseGuards(JwtAuthGuard)
+  @Post('hotel-finance-auto-sync')
+  async hotelFinanceAutoSync(@Req() req:any){return this.service.automaticHotelFinance(this.requireHotelFinanceRole(req));}
+
+@UseGuards(JwtAuthGuard)
+  @Post('hotel-finance-identities')
+  async hotelFinanceIdentities(@Req() req:any,@Body() body:any){this.requireHotelFinanceRole(req);return this.service.hotelFinanceIdentities(body);}
+
+@UseGuards(JwtAuthGuard)
+  @Post('hotel-finance-review')
+  async hotelFinanceReview(@Req() req:any,@Body() body:any){return this.service.postReviewedHotelFinance(body,this.requireHotelFinanceRole(req));}
+
+@UseGuards(JwtAuthGuard)
+  @Post('hotel-finance-pay')
+  @UseInterceptors(FileInterceptor('paymentScreenshot',{storage:paymentScreenshotStorage,limits:{fileSize:5*1024*1024},fileFilter:(_req,file,cb)=>{if(/^image\/(png|jpeg|webp|gif)$/.test(file.mimetype)&&/\.(png|jpe?g|webp|gif)$/i.test(file.originalname))cb(null,true);else cb(new BadRequestException('Unsupported receipt image.'),false);}}))
+  async hotelFinancePay(@Req() req:any,@Body() body:any,@UploadedFile() file?:Express.Multer.File){return this.service.recordHotelFinanceBatch(body,this.requireHotelFinanceRole(req),file?'/uploads/accounts_payment_screenshots/'+file.filename:'');}
+
 }
