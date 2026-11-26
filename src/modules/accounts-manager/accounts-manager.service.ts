@@ -40,6 +40,10 @@ export class AccountsManagerService {
 
 
   // DVI_HOTEL_RECONCILE_V1
+  async reconcileVehicle(confirmedId: number, planId: number) {
+    return this.accountsComponentSync.reconcileVehicle(confirmedId, planId);
+  }
+
   async reconcileHotel(confirmedId: number, planId: number, hotelId: number) {
     return this.accountsComponentSync.reconcileHotel(confirmedId, planId, hotelId);
   }
@@ -3756,9 +3760,9 @@ async searchQuotes(
  */
   async recordPayment(body: AccountsManagerPayDto): Promise<void> {
     // DVI_HOTEL_SINGLE_ATOMIC_V2: legacy hotel writes use the same transactional balance guard.
-    if (body.componentType === "hotel") {
+    if (body.componentType === "hotel" || body.componentType === "vehicle") {
       return this.hotelAtomicPayment.recordBulkPayment({
-        payments: [{componentType: "hotel", accountsItineraryDetailsId: body.accountsItineraryDetailsId, componentDetailId: body.componentDetailId, amount: body.amount, routeDate: body.routeDate}],
+        payments: [{componentType: body.componentType, accountsItineraryDetailsId: body.accountsItineraryDetailsId, componentDetailId: body.componentDetailId, amount: body.amount, routeDate: body.routeDate}],
         modeOfPaymentId: body.modeOfPaymentId,
         utrNumber: body.utrNumber,
         processedBy: body.processedBy,
@@ -3780,22 +3784,6 @@ async searchQuotes(
     let updateFn: (data: any) => Promise<any>;
 
     switch (componentType) {
-      case "vehicle": {
-        const model = this.prisma.dvi_accounts_itinerary_vehicle_details;
-        detail = await model.findUnique({
-          where: {
-            accounts_itinerary_vehicle_details_ID: componentDetailId,
-          },
-        });
-        updateFn = (data) =>
-          model.update({
-            where: {
-              accounts_itinerary_vehicle_details_ID: componentDetailId,
-            },
-            data,
-          });
-        break;
-      }
       case "guide": {
         const model = this.prisma.dvi_accounts_itinerary_guide_details;
         detail = await model.findUnique({

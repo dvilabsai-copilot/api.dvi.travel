@@ -125,9 +125,11 @@ export class AccountsBulkPaymentService {
     body:
       AccountsManagerBulkPayDto,
   ): Promise<void> {
-    const payments =
-      body.payments ||
-      [];
+    const payments = [...(body.payments || [])];
+    // Consistent lock ordering for vehicle batches reduces deadlocks.
+    if (payments.every(p => p.componentType === "vehicle")) {
+      payments.sort((a,b) => Number(a.componentDetailId)-Number(b.componentDetailId));
+    }
 
 
     if (
@@ -231,7 +233,13 @@ export class AccountsBulkPaymentService {
               ];
 
 
-            const detail =
+            // Vehicle payments use a locking read, not the transaction's older snapshot.
+            const vehicleId = Number(payment.componentDetailId);
+            if (payment.componentType === "vehicle" && (!Number.isSafeInteger(vehicleId) || vehicleId <= 0)) throw new BadRequestException("Invalid vehicle finance identity.");
+            const lockedVehicle = payment.componentType === "vehicle"
+              ? (await tx.$queryRaw`SELECT v.* FROM dvi_accounts_itinerary_vehicle_details v INNER JOIN dvi_accounts_itinerary_details h ON h.accounts_itinerary_details_ID=v.accounts_itinerary_details_ID WHERE v.accounts_itinerary_vehicle_details_ID=${vehicleId} AND v.deleted=0 AND v.status=1 AND h.deleted=0 FOR UPDATE`)[0]
+              : null;
+            const detail = payment.componentType === "vehicle" ? lockedVehicle :
               await detailModel
                 .findUnique({
                   where: {
@@ -328,8 +336,7 @@ export class AccountsBulkPaymentService {
 
 
             if (
-              amount >
-              currentBalance
+              (payment.componentType === "vehicle" ? Math.round(amount*100) > Math.round(currentBalance*100) : amount > currentBalance)
             ) {
               throw new BadRequestException(
                 "Payment amount cannot be greater than the current balance.",
@@ -414,6 +421,17 @@ export class AccountsBulkPaymentService {
                 total_balance: (asCents(currentBalance) - asCents(amount)) / 100,
               }});
               if (changed.count !== 1) throw new BadRequestException("Hotel balance changed during payment. Reload before retrying.");
+            } else if (payment.componentType === "vehicle") {
+              // The row is exclusively locked until transaction commit/rollback.
+              const cents = (v: number) => Math.round(v*100);
+              const paid = cents(currentPaid), balance = cents(currentBalance), requested = cents(amount), purchase = cents(Number(detail.total_payable));
+              if (![paid,balance,requested,purchase].every(Number.isSafeInteger) || paid < 0 || balance < 0 || requested <= 0 || requested > balance || paid+balance !== purchase || Math.abs(amount*100-requested)>0.000001) throw new BadRequestException("Invalid vehicle finance amount or balance. Review the record.");
+              const reference = String(body.utrNumber || "").trim();
+              if (!reference || !String(body.processedBy || "").trim()) throw new BadRequestException("Vehicle payment reference and processor are required.");
+              // Locking read also sees a reference committed while this request waited for the row.
+              const prior = await tx.$queryRaw`SELECT accounts_itinerary_vehicle_transaction_ID FROM dvi_accounts_itinerary_vehicle_transaction_history WHERE accounts_itinerary_vehicle_details_ID=${vehicleId} AND deleted=0 AND LOWER(TRIM(transaction_utr_no))=LOWER(${reference}) FOR UPDATE`;
+              if (prior.length) throw new BadRequestException("This vehicle transfer reference is already recorded. Review history.");
+              await detailModel.update({where:{accounts_itinerary_vehicle_details_ID:vehicleId},data:{total_paid:(paid+requested)/100,total_balance:(balance-requested)/100}});
             } else {
             await detailModel
               .update({
@@ -479,7 +497,7 @@ export class AccountsBulkPaymentService {
       ];
 
 
-    const transactionDate =
+    const transactionDate = payment.componentType === "vehicle" ? new Date() :
       payment.routeDate
         ? parseDDMMYYYY(
             payment.routeDate,
@@ -498,6 +516,7 @@ export class AccountsBulkPaymentService {
 
       transaction_date:
         transactionDate,
+      ...(payment.componentType === "vehicle" ? { createdon: transactionDate } : {}),
 
       transaction_done_by:
         body.processedBy ??

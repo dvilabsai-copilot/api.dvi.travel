@@ -624,6 +624,30 @@ export class AccountsComponentSyncService {
     }
   }
 
+  // Vehicle-only reconciliation, reuse the persisted purchase formula, not quoted selling totals.
+  async reconcileVehicle(confirmedId: number, planId: number) {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const plan = await tx.dvi_confirmed_itinerary_plan_details.findFirst({where:{confirmed_itinerary_plan_ID:confirmedId,itinerary_plan_ID:planId,deleted:0,status:1}});
+      if (!plan || !String(plan.itinerary_quote_ID||'').trim()) throw new BadRequestException('Active confirmed booking not found.');
+      const headers=await tx.dvi_accounts_itinerary_details.findMany({where:{OR:[{confirmed_itinerary_plan_ID:confirmedId},{itinerary_plan_ID:planId}]}});
+      if(headers.length!==1 || Number(headers[0].deleted)!==0 || Number(headers[0].confirmed_itinerary_plan_ID)!==confirmedId || Number(headers[0].itinerary_plan_ID)!==planId) throw new BadRequestException('Accounts header missing or ambiguous. Finance must review it manually.');
+      const headerId=Number(headers[0].accounts_itinerary_details_ID);
+      const rows=await tx.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({where:{itinerary_plan_id:planId,deleted:0,status:1,itineary_plan_assigned_status:1}});
+      const ids=rows.map(r=>Number(r.confirmed_itinerary_plan_vendor_eligible_ID)),draftIds=rows.map(r=>Number(r.itinerary_plan_vendor_eligible_ID));
+      const positive=(n:number)=>Number.isSafeInteger(n)&&n>0;
+      if(!rows.length||ids.some(n=>!positive(n))||draftIds.some(n=>!positive(n))||new Set(ids).size!==ids.length||new Set(draftIds).size!==draftIds.length) throw new BadRequestException('Active assigned vehicle identity missing or ambiguous.');
+      if(rows.some(r=>!positive(Number(r.vendor_id))||!positive(Number(r.vehicle_type_id))||!Number.isFinite(Number(r.vehicle_total_amount))||!Number.isFinite(Number(r.vehicle_gst_amount))||Number(r.vehicle_total_amount)<0||Number(r.vehicle_gst_amount)<0||Number(r.vehicle_total_amount)+Number(r.vehicle_gst_amount)<=0)) throw new BadRequestException('Vehicle supplier or purchase cost missing or invalid.');
+      const vendors=await tx.dvi_vendor_details.findMany({where:{vendor_id:{in:[...new Set(rows.map(r=>Number(r.vendor_id)))]},deleted:0},select:{vendor_id:true}});
+      if(rows.some(r=>!vendors.some(v=>v.vendor_id===Number(r.vendor_id)))) throw new BadRequestException('Assigned vendor cannot be verified.');
+      const prior=await tx.dvi_accounts_itinerary_vehicle_details.findMany({where:{OR:[{itinerary_plan_ID:planId},{accounts_itinerary_details_ID:headerId},{confirmed_itinerary_plan_vendor_eligible_ID:{in:ids}},{itinerary_plan_vendor_eligible_ID:{in:draftIds}}]}});
+      if(prior.some(p=>{const source=rows.find(r=>Number(r.confirmed_itinerary_plan_vendor_eligible_ID)===Number(p.confirmed_itinerary_plan_vendor_eligible_ID));return !source||Number(p.deleted)!==0||Number(p.status)!==1||Number(p.accounts_itinerary_details_ID)!==headerId||Number(p.itinerary_plan_ID)!==planId||Number(p.vendor_id)!==Number(source.vendor_id)||Number(p.vendor_branch_id)!==Number(source.vendor_branch_id)||Number(p.itinerary_plan_vendor_eligible_ID)!==Number(source.itinerary_plan_vendor_eligible_ID);})||new Set(prior.map(p=>Number(p.confirmed_itinerary_plan_vendor_eligible_ID))).size!==prior.length) throw new BadRequestException('Prior or conflicting vehicle finance records require manual review. No records created.');
+      await this.syncVehicles(tx,headerId,planId,Number(plan.createdby||0));
+      const posted=await tx.dvi_accounts_itinerary_vehicle_details.findMany({where:{accounts_itinerary_details_ID:headerId,deleted:0}});
+      if(posted.length!==ids.length||!ids.every(i=>posted.some(p=>Number(p.confirmed_itinerary_plan_vendor_eligible_ID)===i))) throw new BadRequestException('Vehicle reconciliation incomplete. Changes rolled back.');
+      return {quoteId:String(plan.itinerary_quote_ID),created:posted.length-prior.length,posted:posted.length};
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  }
+
   private async syncVehicles(
     tx: Prisma.TransactionClient,
     headerId: number,

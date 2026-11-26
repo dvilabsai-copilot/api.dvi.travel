@@ -81,6 +81,17 @@ constructor(
     AccountsBulkPaymentService,
 ) {}
 
+  // Explicit vehicle-only reconciliation; no automatic writes while typing a filter.
+  @UseGuards(JwtAuthGuard)
+  @Post("vehicle-reconcile")
+  async reconcileVehicle(@Req() req: any, @Body() body: Record<string, unknown>) {
+    const role = Number(req.user?.roleID ?? req.user?.roleId ?? req.user?.role ?? 0);
+    if (role !== 6) throw new ForbiddenException("Only Accounts users may reconcile vehicle finance.");
+    const confirmedId=Number(body?.confirmedId),planId=Number(body?.planId);
+    if (body?.historyVerified !== true || ![confirmedId,planId].every(v=>Number.isSafeInteger(v)&&v>0)) throw new BadRequestException("Verify payment history and provide both confirmed plan IDs.");
+    return this.service.reconcileVehicle(confirmedId,planId);
+  }
+
   // DVI_HOTEL_RECONCILE_V1
   @UseGuards(JwtAuthGuard)
   @Post("hotel-reconcile")
