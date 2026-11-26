@@ -15,17 +15,23 @@ import { isHouseboatOnlyCity } from '../src/modules/itineraries/utils/houseboat-
 test('split CP and MAP searches request WithMeal and retain room-only fallback and saved rates', async () => {
   const requests: Array<[number, string]> = [];
   const hotelCode = '6181508';
+  let supplierRating = 4;
   const rate = (rooms: number, meal: string) => ({
     BookingCode: `${hotelCode}!TB!${rooms}-${meal}`,
     MealType: meal, Name: ['Standard Room'], TotalFare: rooms * 1000, IsRefundable: false,
   });
   const provider = Object.assign(Object.create(TBOHotelProvider.prototype), {
     logger: { log() {}, warn() {}, debug() {}, error() {} },
-    prisma: {},
+    prisma: {
+      dvi_hotel: { findFirst: async () => ({ hotel_name: 'Legacy hotel', hotel_category: 3 }) },
+      tbo_hotel_master: { findMany: async ({ where }: any) => {
+        assert.deepEqual(where, { tbo_hotel_code: { in: [hotelCode] }, status: 1 });
+        return [{ tbo_hotel_code: hotelCode, star_rating: supplierRating }];
+      } },
+    },
     resolveTboCityCode: async () => ({ tboCityCode: '123456' }),
     ensureCityAndHotelsInDb: async () => {},
     getPriorityHotelCodesForCity: async () => new Set(),
-    getHotelMasterDataFromDb: async () => ({ hotel_name: 'Lumino Dwellings', star_rating: 3 }),
     tboMasterGallery: { getHotelImagesForCodes: async () => new Map(), enqueueMissingFromSearchResults() {} },
     supplementNormalizer: new SupplementNormalizerService(),
     executeTBOSearch: async ({ Filters, PaxRooms }: any) => {
@@ -42,9 +48,14 @@ test('split CP and MAP searches request WithMeal and retain room-only fallback a
   const criteria = {
     hotelCodes: hotelCode, cityCode: '123456', checkInDate: '2026-12-17', checkOutDate: '2026-12-19',
     roomCount: 9, guestNationality: 'IN',
-    occupancies: Array.from({ length: 9 }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+    occupancies: Array.from({ length: 9 }, (_, index) => ({
+      adults: 2, children: index < 2 ? 1 : 0, childrenAges: index < 2 ? [7] : [],
+    })),
   };
-  const config = { enabled: true, breakfastRate: 400, dinnerRate3Star: 900 } as any;
+  const config = {
+    enabled: true, breakfastRate: 400, dinnerRate3Star: 900, dinnerRate4Star: 1500, dinnerRate5Star: 2500,
+    lunchRate3Star: 900, lunchRate4Star: 1500, lunchRate5Star: 2500,
+  };
   for (const target of ['CP', 'MAP']) {
     requests.length = 0;
     const matches = await search.searchBookableTboRoomBatches({ ...criteria, preferences: { mealPlanCode: target } });
@@ -53,9 +64,11 @@ test('split CP and MAP searches request WithMeal and retain room-only fallback a
     assert.deepEqual(offers.map(offer => offer.mealPlan).sort(), ['CP', 'EP']);
     const cp = offers.find(offer => offer.mealPlan === 'CP');
     assert.ok(cp);
+    assert.equal(cp.rating, 4);
+    assert.equal(cp.category, '4-Star');
     assert.deepEqual(cp.tboRoomBatches.map(batch => [batch.roomCount, batch.mealPlan]), [[6, 'CP'], [3, 'CP']]);
     assert.deepEqual(getTboStayMealSupplement(cp, 'MAP', config), {
-      mealPlan: 'MAP', breakfastRate: 0, breakfastPerNight: 0, dinnerRate: 900, dinnerPerNight: 16200,
+      mealPlan: 'MAP', breakfastRate: 0, breakfastPerNight: 0, dinnerRate: 1500, dinnerPerNight: 30000,
     });
   }
   requests.length = 0;
@@ -65,13 +78,55 @@ test('split CP and MAP searches request WithMeal and retain room-only fallback a
   );
   assert.deepEqual(requests, [[6, 'WithMeal'], [6, 'RoomOnly'], [3, 'WithMeal'], [3, 'RoomOnly']]);
   assert.deepEqual(details.toTboMultiBatchPreviewRows(saved, 9)[0].tboRoomBatches.map(batch => batch.mealPlan), ['CP', 'EP']);
+  const mixedMap = await search.searchBookableTboRoomBatches(
+    { ...criteria, preferences: { mealPlanCode: 'MAP' } },
+    [{ roomType: 'Standard Room', mealPlan: 'EP' }, { roomType: 'Standard Room', mealPlan: 'CP' }],
+  );
+  const [mixedOffer] = details.toTboMultiBatchPreviewRows(mixedMap, 9);
+  assert.deepEqual(getTboStayMealSupplement(mixedOffer, 'MAP', config), {
+    mealPlan: 'MAP', breakfastRate: 400, breakfastPerNight: 5600, dinnerRate: 1500, dinnerPerNight: 30000,
+  });
   requests.length = 0;
+  supplierRating = 0;
   const savedRoomOnly = await search.searchBookableTboRoomBatches(
     { ...criteria, preferences: { mealPlanCode: 'CP' } },
     Array.from({ length: 2 }, () => ({ roomType: 'Standard Room', mealPlan: 'EP' })),
   );
   assert.deepEqual(requests, [[6, ''], [3, '']]);
-  assert.equal(details.toTboMultiBatchPreviewRows(savedRoomOnly, 9)[0].mealPlan, 'EP');
+  const [legacyOffer] = details.toTboMultiBatchPreviewRows(savedRoomOnly, 9);
+  assert.equal(legacyOffer.mealPlan, 'EP');
+  assert.equal(legacyOffer.rating, 3);
+  assert.equal(getTboStayMealSupplement(legacyOffer, 'MAP', config)?.dinnerRate, 900);
+});
+
+test('VSR cards keep the active supplier rating and explicitly assigned categories', async () => {
+  const details = Object.assign(Object.create(ItineraryHotelDetailsTboService.prototype), {
+    prisma: {
+      dvi_hotel: { findMany: async () => [
+        { tbo_hotel_code: 'rated', hotel_category: 3 },
+        { tbo_hotel_code: 'unrated', hotel_category: 3 },
+        { tbo_hotel_code: 'boat', hotel_category: 6 },
+      ] },
+      tbo_hotel_master: { findMany: async () => [
+        { tbo_hotel_code: 'rated', star_rating: 4, status: 1 },
+        { tbo_hotel_code: 'unrated', star_rating: 0, status: 1 },
+        { tbo_hotel_code: 'assigned', hotel_category_id: 5, star_rating: 4, status: 1 },
+        { tbo_hotel_code: 'boat', star_rating: 4, status: 1 },
+      ] },
+      dvi_hotel_category: { findMany: async () => [
+        { hotel_category_id: 3, hotel_category_title: '3 Star' },
+        { hotel_category_id: 5, hotel_category_title: '5 Star' },
+        { hotel_category_id: 6, hotel_category_title: 'Houseboat' },
+      ] },
+    },
+  });
+  const candidates = ['rated', 'unrated', 'assigned', 'boat'].map(hotelCode => ({
+    hotelCode, provider: 'tbo', category: hotelCode === 'unrated' ? '-' : '4-Star',
+  }));
+  const categories = await details.enrichHotelCategoryMetadata(new Map([[1, candidates]]));
+  assert.deepEqual(categories.get(1).map(hotel => [hotel.hotelCategoryName, hotel.category]), [
+    [null, '4-Star'], ['3 Star', '-'], ['5 Star', '4-Star'], ['Houseboat', 'Houseboat'],
+  ]);
 });
 
 test('houseboat city matches aliases and respects state qualifications', () => {

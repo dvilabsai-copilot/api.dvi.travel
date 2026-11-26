@@ -22,7 +22,7 @@ import {
   ItineraryHotelRoomDto,
 } from './itinerary-hotel-details.service';
 import { haversineKm } from './utils/distance-utils';
-import { isHouseboatCategory, normalizeHotelCategory } from './utils/hotel-category.util';
+import { isHouseboatCategory, normalizeHotelCategory, normalizeHotelStarRating } from './utils/hotel-category.util';
 import { getHouseboatCityRouteIds, loadHouseboatCities, sameHouseboatPreference } from './utils/houseboat-city-policy.util';
 import {
   HOTEL_RATE_PLAN_BY_CODE,
@@ -1426,7 +1426,10 @@ if (hotelMasterId) {
     const tboRows = tboCodes.length > 0
       ? await (this.prisma as any).tbo_hotel_master.findMany({
           where: { tbo_hotel_code: { in: tboCodes } },
-          select: { tbo_hotel_code: true, hotel_category_id: true, is_houseboat: true, city_name: true, hotel_latitude: true, hotel_longitude: true },
+          select: {
+            tbo_hotel_code: true, hotel_category_id: true, star_rating: true, status: true,
+            is_houseboat: true, city_name: true, hotel_latitude: true, hotel_longitude: true,
+          },
         })
       : [];
     const categoryIds = Array.from(new Set([
@@ -1470,8 +1473,15 @@ if (hotelMasterId) {
             const code = String(row?.hotelCode || row?.providerHotelCode || row?.hotelId || '').trim();
             const dvi = dviByKey.get(code);
             const tbo = provider === 'tbo' ? tboByCode.get(code) : null;
-            const categoryId = Number(tbo?.hotel_category_id || dvi?.hotel_category || 0) || null;
-            const category = categoryId ? categoriesById.get(categoryId) : undefined;
+            const assignedCategoryId = Number(tbo?.hotel_category_id || 0);
+            const legacyCategoryId = Number(dvi?.hotel_category || 0);
+            const legacyCategory = categoriesById.get(legacyCategoryId);
+            const supplierHasRating = tbo?.status === 1 && normalizeHotelStarRating(tbo.star_rating) !== null;
+            // A legacy star category must not hide the supplier rating on a VSR card.
+            const useLegacyCategory = !supplierHasRating ||
+              isHouseboatCategory(legacyCategory?.name) || isHouseboatCategory(legacyCategory?.code);
+            const categoryId = assignedCategoryId || (useLegacyCategory ? legacyCategoryId : 0) || null;
+            const category = categoriesById.get(categoryId ?? 0);
             const isHouseboat = tbo?.is_houseboat ?? (
               Boolean(row?.isHouseboat) || isHouseboatCategory(category?.name) || isHouseboatCategory(category?.code)
             );

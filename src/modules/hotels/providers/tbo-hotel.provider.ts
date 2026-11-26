@@ -33,6 +33,7 @@ import { buildTboRoomNightBreakdown } from '../utils/tbo-room-night-pricing';
 import { isTboBookingCancelled } from '../utils/tbo-booking-status.util';
 import { TBO_SEARCH_SESSION_VALIDITY_MS } from '../utils/tbo-search-session';
 import { shouldKeepSupplierRateForMealPlan } from '../../itineraries/utils/tbo-map-fallback.util';
+import { normalizeHotelStarRating } from '../../itineraries/utils/hotel-category.util';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
@@ -438,17 +439,34 @@ export class TBOHotelProvider implements IHotelProvider {
       const searchCompletedAt = Date.now();
       const expiresAt = new Date(searchCompletedAt + 15 * 60_000);
       const supplierSessionExpiresAt = new Date(startTime + TBO_SEARCH_SESSION_VALIDITY_MS).toISOString();
-      const galleryByCode = await this.tboMasterGallery.getHotelImagesForCodes(
-        hotels.map((hotel: any) => String(hotel?.HotelCode || '').trim()),
-      );
+      const returnedHotelCodes = [...new Set<string>(
+        hotels.map((hotel: any) => String(hotel?.HotelCode || '').trim()).filter(Boolean),
+      )];
+      const [galleryByCode, supplierMasters] = await Promise.all([
+        this.tboMasterGallery.getHotelImagesForCodes(returnedHotelCodes),
+        this.prisma.tbo_hotel_master.findMany({
+          where: { tbo_hotel_code: { in: returnedHotelCodes }, status: 1 },
+          select: {
+            tbo_hotel_code: true, hotel_name: true, hotel_address: true, star_rating: true,
+            hotel_latitude: true, hotel_longitude: true, hotel_image_url: true,
+          },
+        }).catch((error: Error) => {
+          this.logger.warn(`Unable to load TBO master hotels: ${error.message}`);
+          return [];
+        }),
+      ]);
+      const supplierMasterByCode = new Map(supplierMasters.map(master => [master.tbo_hotel_code, master] as const));
 
       const results: HotelSearchResult[] = [];
       const seenBookingCodes = new Set<string>();
 
       for (const hotel of hotels) {
- // Fetch actual hotel name from database (synced from TBO GetHotels API)
-        const hotelMasterData = await this.getHotelMasterDataFromDb(hotel.HotelCode, resolvedTboCityCode);
-        const hotelRating = Number(hotelMasterData?.star_rating || 0);
+        const supplierMaster = supplierMasterByCode.get(String(hotel.HotelCode || '').trim());
+        const legacyHotel = await this.getLegacyHotelMasterData(hotel.HotelCode, resolvedTboCityCode);
+        const hotelMasterData = legacyHotel ?? supplierMaster;
+        // Use the same supplier star rating that identifies a saved VSR hotel.
+        const hotelRating = normalizeHotelStarRating(supplierMaster?.star_rating) ??
+          normalizeHotelStarRating(legacyHotel?.star_rating) ?? 0;
         if (selectedStarRatings.length > 0 && !selectedStarRatings.includes(hotelRating)) {
           continue;
         }
@@ -573,7 +591,7 @@ if (!realBookingCode) {
               hotelMasterData?.hotel_longitude ??
               (hotel?.Longitude != null ? String(hotel.Longitude).trim() : null),
             rating: hotelRating,
-            category: hotelMasterData?.star_rating ? `${hotelMasterData.star_rating}-Star` : '-',
+            category: hotelRating ? `${hotelRating}-Star` : '-',
             facilities: Array.from(new Set([...inclusions, ...amenities])),
             amenities,
             inclusions,
@@ -1912,12 +1930,9 @@ return criteria.occupancies.map((occ) => ({
   }
 
  /**
-   * Get hotel master data from database
-   * Queries dvi_hotel table for specific hotel
-   * Matches PHP structure from cron_tbo_hotel_details_core_data.php
-   * Returns: hotel_name, hotel_address, hotel_category (star rating)
+   * Look up the legacy hotel linked to this supplier code, preferring its city mapping.
  */
-  private async getHotelMasterDataFromDb(hotelCode: string, cityCode?: string) {
+  private async getLegacyHotelMasterData(hotelCode: string, cityCode?: string) {
     try {
  // Database stores tbo_hotel_code as base code (e.g., "1035259")
  // Search by tbo_hotel_code and optionally by tbo_city_code for city-aware lookup
@@ -1944,6 +1959,7 @@ return criteria.occupancies.map((occ) => ({
             hotel_latitude: hotel.hotel_latitude ?? null,
             hotel_longitude: hotel.hotel_longitude ?? null,
             star_rating: hotel.hotel_category || 0,
+            hotel_image_url: null,
           };
         }
 
@@ -1970,37 +1986,10 @@ return criteria.occupancies.map((occ) => ({
           hotel_latitude: hotel.hotel_latitude ?? null,
           hotel_longitude: hotel.hotel_longitude ?? null,
           star_rating: hotel.hotel_category || 0,
+          hotel_image_url: null,
         };
       }
 
- // Strategy 3: Fallback to tbo_hotel_master table (synced from TBO GetHotels API)
-      if (this.verboseHotelLookupLogs) {
- this.logger.log(` Hotel ${hotelCode} not found in dvi_hotel, checking tbo_hotel_master...`);
-      }
-
-      const tboHotel: any = await this.prisma.tbo_hotel_master.findFirst({
-        where: {
-          tbo_hotel_code: hotelCode,
-          ...(cityCode ? { tbo_city_code: cityCode } : {}),
-          status: 1,
-        },
-      });
-
-      if (tboHotel) {
-        if (this.verboseHotelLookupLogs) {
- this.logger.log(` Found hotel in tbo_hotel_master: ${hotelCode} -> ${tboHotel.hotel_name}`);
-        }
-        return {
-          hotel_name: tboHotel.hotel_name || `Hotel ${hotelCode}`,
-          hotel_address: tboHotel.hotel_address || '',
-          hotel_latitude: tboHotel.hotel_latitude ?? null,
-          hotel_longitude: tboHotel.hotel_longitude ?? null,
-          star_rating: tboHotel.star_rating || 0,
-          hotel_image_url: tboHotel.hotel_image_url || null,
-        };
-      }
-
- this.logger.warn(` Hotel ${hotelCode} not found in any database table`);
       return null;
     } catch (error) {
       const err = error as Error;
