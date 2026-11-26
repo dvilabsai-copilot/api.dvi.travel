@@ -12,6 +12,7 @@ import {
   distributeTboSearchOccupancies,
 } from '../utils/tbo-occupancy.util';
 import { matchTboBatchHotels } from '../utils/tbo-batch-hotel-matching.util';
+import { getTboMealTypeForCanonicalHotelRatePlan } from '../hotel-rate-plans';
 
 import {
   IHotelProvider,
@@ -22,7 +23,7 @@ import {
 import { HotelSearchDTO } from '../dto/hotel.dto';
 
 type InternalHotelSearch = Omit<HotelSearchDTO, 'preferences'> & {
-  preferences?: HotelSearchDTO['preferences'] & Pick<HotelPreferences, 'houseboatOnly'>;
+  preferences?: HotelSearchDTO['preferences'] & Pick<HotelPreferences, 'houseboatOnly' | 'preserveMealPlanFallbackSourceRates'>;
 };
 import { TBOHotelProvider } from '../providers/tbo-hotel.provider';
 import { ResAvenueHotelProvider } from '../providers/resavenue-hotel.provider';
@@ -104,6 +105,8 @@ export class HotelSearchService {
       );
     }
 
+    const mealPlans = savedBatches?.map(batch => batch.mealPlan) ?? [criteria.preferences?.mealPlanCode];
+    const needsMealRates = mealPlans.some(plan => getTboMealTypeForCanonicalHotelRatePlan(plan) === 'WithMeal');
     const supplierBatches = await this.tboProvider.searchRoomBatches(
       {
         cityCode: criteria.cityCode,
@@ -116,7 +119,13 @@ export class HotelSearchService {
         occupancies,
         hotelCodes: criteria.hotelCodes,
       },
-      criteria.preferences,
+      needsMealRates || savedBatches ? {
+        ...criteria.preferences,
+        // The matcher needs the original supplier plans for the quote and fallback.
+        mealPlanCode: undefined,
+        tboMealType: needsMealRates ? 'WithMeal' : undefined,
+        preserveMealPlanFallbackSourceRates: needsMealRates && (!savedBatches || mealPlans.includes('EP')),
+      } : criteria.preferences,
     );
 
     return matchTboBatchHotels(savedBatches
@@ -230,6 +239,7 @@ export class HotelSearchService {
   async searchVsrSupplierRates(
     criteria: HotelSearchCriteria,
     rooming: { adultCount: number; childCount: number; childAges: number[] },
+    supplierMealPlanCode?: string,
   ): Promise<HotelSearchResult[]> {
     const occupancies = criteria.occupancies ?? this.deriveOccupancies(
       criteria.roomCount,
@@ -238,7 +248,11 @@ export class HotelSearchService {
       this.normalizeChildAges(rooming.childCount, rooming.childAges),
     );
     this.validateOccupancies(criteria.roomCount, criteria.guestCount, occupancies);
-    return this.tboProvider.search({ ...criteria, occupancies }, { tboNoOfRooms: criteria.roomCount }, {
+    const tboMealType = getTboMealTypeForCanonicalHotelRatePlan(supplierMealPlanCode);
+    return this.tboProvider.search({ ...criteria, occupancies }, {
+      tboNoOfRooms: criteria.roomCount,
+      ...(tboMealType === 'WithMeal' ? { tboMealType } : {}),
+    }, {
       refreshSelectedRate: true,
     });
   }

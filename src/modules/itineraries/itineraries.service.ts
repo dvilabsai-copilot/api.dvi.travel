@@ -2288,10 +2288,6 @@ timingStepStartedAt =
         });
       }
     }
-    const supplierRows = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
-      planId, routeIds, provider: 'tbo', hotelCode,
-      checkInDate: String(stay.checkInDate), checkOutDate: String(stay.checkOutDate),
-    });
     const normalized = (value: unknown) => String(value ?? '').trim().toLowerCase();
     const mealCode = (value: string) => inferCanonicalHotelRatePlanCode(value) ||
       inferCanonicalHotelRatePlanCodeFromMealText(value) || value.toUpperCase();
@@ -2304,6 +2300,11 @@ timingStepStartedAt =
         : ''
     );
     const requestedMeal = mealCode(String(data.mealPlanCode || data.mealPlan || preferredMeal || '').trim());
+    const supplierRows = await this.hotelDetailsTboService.searchSelectedHotelForContinuousStay({
+      planId, routeIds, provider: 'tbo', hotelCode,
+      checkInDate: String(stay.checkInDate), checkOutDate: String(stay.checkOutDate),
+      requestedMealPlanCode: requestedMeal,
+    });
     const offers = supplierRows.filter((offer: any) =>
       String(offer.hotelCode || '').trim() === hotelCode &&
       Array.isArray(offer.tboRoomBatches) && offer.tboRoomBatches.length === Math.ceil(roomCount / 6) &&
@@ -5663,7 +5664,9 @@ async confirmQuotation(dto: ConfirmQuotationDto, actorId?: number) {
         checkOutDate: rate.checkOutDate,
         vsrConfirmationRefresh: {
           guestNationality: rate.guestNationality,
-          ...(stay ? { batches: stay.batches.map(({ roomType, mealPlan }) => ({ roomType, mealPlan })) } : {}),
+          ...(stay
+            ? { batches: stay.batches.map(({ roomType, mealPlan }) => ({ roomType, mealPlan })) }
+            : { supplierMealPlanCode: meal }),
         },
       }).catch(() => { throw unverified(); });
       const key = stay && JSON.stringify([stay.anchorRouteId, stay.checkInDate, stay.checkOutDate]);

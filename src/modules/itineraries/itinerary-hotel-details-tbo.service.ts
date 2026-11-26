@@ -26,6 +26,7 @@ import { isHouseboatCategory, normalizeHotelCategory } from './utils/hotel-categ
 import { getHouseboatCityRouteIds, loadHouseboatCities, sameHouseboatPreference } from './utils/houseboat-city-policy.util';
 import {
   HOTEL_RATE_PLAN_BY_CODE,
+  getTboMealTypeForCanonicalHotelRatePlan,
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
   inferCanonicalHotelRatePlanCodeFromMealText,
@@ -1605,6 +1606,17 @@ const selectedHotelRooming = normalizedProvider === 'tbo'
 
     const childWithBedCount = Math.max(Number((plan as any).total_child_with_bed || 0), 0);
     const extraBedCount = Math.max(Number((plan as any).total_extra_bed || 0), 0);
+    const explicitMealPlanCode = inferCanonicalHotelRatePlanCode(String((plan as any).meal_plan_code || ''));
+    const mealPlanBreakfast = Number((plan as any).meal_plan_breakfast || 0) ? 1 : 0;
+    const mealPlanLunch = Number((plan as any).meal_plan_lunch || 0) ? 1 : 0;
+    const mealPlanDinner = Number((plan as any).meal_plan_dinner || 0) ? 1 : 0;
+    const preferredMealPlanCode = explicitMealPlanCode || (
+      mealPlanBreakfast || mealPlanLunch || mealPlanDinner
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(mealPlanBreakfast, mealPlanLunch, mealPlanDinner)
+        : null
+    );
+    const searchMealPlan = requestedMealPlanCode || preferredMealPlanCode;
+    const tboMealType = getTboMealTypeForCanonicalHotelRatePlan(searchMealPlan);
 
     // The standard TBO search is limited to six rooms. An 8-room selected
     // property must be refreshed as two genuine supplier searches (6 + 2),
@@ -1632,6 +1644,7 @@ const selectedHotelRooming = normalizedProvider === 'tbo'
         occupancies: selectedHotelRooming.occupancies,
         guestNationality: await this.resolveGuestNationality(plan),
         hotelCodes: normalizedHotelCode,
+        ...(tboMealType === 'WithMeal' ? { preferences: { mealPlanCode: searchMealPlan || undefined } } : {}),
       });
       multiBatchSelectedHotelRows = this.toTboMultiBatchPreviewRows(batchMatches, roomCount)
         .filter((hotel) => String(hotel.hotelCode || '').trim() === normalizedHotelCode);
@@ -1678,6 +1691,8 @@ const selectedHotelRooming = normalizedProvider === 'tbo'
             } : {}),
             guestNationality: String((plan as any).guest_nationality || 'IN').trim().toUpperCase(),
             providers: [normalizedProvider], hotelCodes: normalizedHotelCode,
+            ...(normalizedProvider === 'tbo' && tboMealType === 'WithMeal'
+              ? { preferences: { tboMealType, preserveMealPlanFallbackSourceRates: true } } : {}),
           });
 
     // Scope the TBO selected-hotel refresh to the requested property.
@@ -1736,16 +1751,6 @@ matchedHotels: selectedHotelRows.map((hotel: any) => ({
   })}`,
 );
 
-    const explicitMealPlanCode = inferCanonicalHotelRatePlanCode(String((plan as any).meal_plan_code || ''));
-
-    const mealPlanBreakfast = Number((plan as any).meal_plan_breakfast || 0) ? 1 : 0;
-    const mealPlanLunch = Number((plan as any).meal_plan_lunch || 0) ? 1 : 0;
-    const mealPlanDinner = Number((plan as any).meal_plan_dinner || 0) ? 1 : 0;
-    const preferredMealPlanCode = explicitMealPlanCode || (
-      mealPlanBreakfast || mealPlanLunch || mealPlanDinner
-        ? inferCanonicalHotelRatePlanCodeFromMealFlags(mealPlanBreakfast, mealPlanLunch, mealPlanDinner)
-        : null
-    );
     const selectedHotelMapConfig = await this.getTboMapFallbackConfig();
 
  const fallbackContext = {
@@ -3550,7 +3555,8 @@ this.logger.log(
             childAges,
             occupancies,
             guestNationality,
-            ...(houseboatOnly ? { preferences: { houseboatOnly: true } } : {}),
+            ...(houseboatOnly || getTboMealTypeForCanonicalHotelRatePlan(preferredMealPlanCode) === 'WithMeal'
+              ? { preferences: searchCriteria.preferences } : {}),
           });
           batchPreviewHotels = this.toTboMultiBatchPreviewRows(matches, safeRoomCount).map(hotel => ({
             ...hotel, checkInDate: block.checkInDate, checkOutDate: block.checkOutDate,
@@ -5423,7 +5429,11 @@ this.logger.log(
     hotelCode: string;
     checkInDate: string;
     checkOutDate: string;
-    vsrConfirmationRefresh?: { guestNationality: string; batches?: Array<{ roomType: string; mealPlan: string }> };
+    vsrConfirmationRefresh?: {
+      guestNationality: string;
+      supplierMealPlanCode?: string;
+      batches?: Array<{ roomType: string; mealPlan: string }>;
+    };
     requestedMealPlanCode?: string;
   }): Promise<HotelSearchResult[]> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
@@ -5458,6 +5468,8 @@ this.logger.log(
           )
         : null
     );
+    const searchMealPlan = params.requestedMealPlanCode || preferredMealPlanCode;
+    const tboMealType = getTboMealTypeForCanonicalHotelRatePlan(searchMealPlan);
 
     this.logger.log(
       `[CONTINUOUS_SELECTION_SEARCH] provider=${provider} hotel=${params.hotelCode} ` +
@@ -5490,6 +5502,7 @@ this.logger.log(
           occupancies: rooming.occupancies,
           guestNationality: params.vsrConfirmationRefresh?.guestNationality || await this.resolveGuestNationality(plan),
           hotelCodes: params.hotelCode,
+          ...(tboMealType === 'WithMeal' ? { preferences: { mealPlanCode: searchMealPlan || undefined } } : {}),
         }, params.vsrConfirmationRefresh?.batches);
         return this.toTboMultiBatchPreviewRows(matchingHotels, roomCount)
           .filter((hotel) => String(hotel.hotelCode || '').trim() === String(params.hotelCode).trim());
@@ -5504,7 +5517,7 @@ this.logger.log(
           occupancies: rooming.occupancies,
           guestNationality: params.vsrConfirmationRefresh.guestNationality,
           hotelCodes: params.hotelCode,
-        }, { adultCount, childCount, childAges: rooming.childAges });
+        }, { adultCount, childCount, childAges: rooming.childAges }, params.vsrConfirmationRefresh.supplierMealPlanCode);
       }
       const hotels = await this.hotelSearchService.searchHotels({
         cityCode: city,
@@ -5518,6 +5531,8 @@ this.logger.log(
         guestNationality,
         providers: [provider],
         hotelCodes: params.hotelCode,
+        ...(provider === 'tbo' && tboMealType === 'WithMeal'
+          ? { preferences: { tboMealType, preserveMealPlanFallbackSourceRates: true } } : {}),
       });
     return provider === 'tbo'
   ? applyMapDinnerFallbackToRows(

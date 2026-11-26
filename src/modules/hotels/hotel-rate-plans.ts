@@ -6,7 +6,7 @@ export type HotelMealComposition =
   | 'BREAKFAST_PLUS_ONE_MAJOR'
   | 'ALL_MEALS';
 
-export type TboMealType = 'Breakfast' | 'RoomOnly' | 'HalfBoard' | 'FullBoard';
+export type TboMealType = 'WithMeal' | 'RoomOnly' | 'FullBoard';
 
 export type HotelRatePlanDefinition = {
   code: CanonicalHotelRatePlanCode;
@@ -30,7 +30,7 @@ export const CANONICAL_HOTEL_RATE_PLANS: HotelRatePlanDefinition[] = [
     name: 'Continental Plan',
     description: 'Breakfast only',
     mealComposition: 'BREAKFAST_ONLY',
-    tboMealType: 'Breakfast',
+    tboMealType: 'WithMeal',
     includesBreakfast: 1,
     includesLunch: 0,
     includesDinner: 0,
@@ -56,7 +56,7 @@ export const CANONICAL_HOTEL_RATE_PLANS: HotelRatePlanDefinition[] = [
     name: 'Modified American Plan',
     description: 'Breakfast + one major meal (Lunch or Dinner)',
     mealComposition: 'BREAKFAST_PLUS_ONE_MAJOR',
-    tboMealType: 'HalfBoard',
+    tboMealType: 'WithMeal',
     includesBreakfast: 1,
     includesLunch: 0,
     includesDinner: 1,

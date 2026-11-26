@@ -23,6 +23,7 @@ import { resolveProviderPassengerTitle } from '../../../common/utils/passenger-t
 import { SupplementNormalizerService } from '../services/supplement-normalizer.service';
 import {
   getNormalizedMealPlanLabelFromMealSources,
+  getTboMealTypeForCanonicalHotelRatePlan,
 } from '../hotel-rate-plans';
 import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
 import { inferTboHouseboat } from '../utils/tbo-houseboat.util';
@@ -341,7 +342,13 @@ export class TBOHotelProvider implements IHotelProvider {
       const paxRooms = this.buildSearchPaxRooms(criteria);
       const guestNationality = this.normalizeNationality(criteria.guestNationality);
       const selectedMealPlanCode = String(preferences?.mealPlanCode || '').trim().toUpperCase();
-      const selectedTboMealType = String(preferences?.tboMealType || '').trim();
+      const requestedTboMealType = String(preferences?.tboMealType || '').trim();
+      const selectedTboMealType = getTboMealTypeForCanonicalHotelRatePlan(selectedMealPlanCode) === 'WithMeal' ||
+        ['breakfast', 'halfboard'].includes(requestedTboMealType.toLowerCase())
+        ? 'WithMeal'
+        : requestedTboMealType;
+      const includeRoomOnly = selectedTboMealType === 'WithMeal' &&
+        preferences?.preserveMealPlanFallbackSourceRates === true;
       const selectedStarRatings = Array.from(
         new Set(
           (preferences?.starRatings || [])
@@ -365,7 +372,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
  // Step 4: Make parallel searches for each chunk
       const basicAuth = Buffer.from(`${this.SEARCH_USERNAME}:${this.SEARCH_PASSWORD}`).toString('base64');
-      const chunkPromises = requestChunks.map((chunk) =>
+      const searchByMealType = (mealType: string) => Promise.all(requestChunks.map((chunk) =>
         this.executeTBOSearch(
           {
             CheckIn: this.formatDateToISO(criteria.checkInDate),
@@ -379,7 +386,7 @@ export class TBOHotelProvider implements IHotelProvider {
             Filters: {
               Refundable: false,
               NoOfRooms: noOfRooms,
-              MealType: selectedTboMealType,
+              MealType: mealType,
               OrderBy: 0,
               StarRating: tboStarRatingFilter,
               HotelName: null,
@@ -388,10 +395,19 @@ export class TBOHotelProvider implements IHotelProvider {
           basicAuth,
           chunk ? `(chunk: ${chunk.split(',').length} hotels)` : '(city-wide search)'
         )
-      );
+      ));
 
-      const chunkResponses = await Promise.all(chunkPromises);
-      const allHotels = chunkResponses.flat();
+      const allHotels = (await searchByMealType(selectedTboMealType)).flat();
+      if (includeRoomOnly) {
+        const roomOnlyHotels = (await searchByMealType('RoomOnly')).flat();
+        for (const hotel of roomOnlyHotels) {
+          // Some supplier responses contain other meal plans despite the filter.
+          const rooms = (hotel.Rooms || []).filter((room: any) =>
+            getNormalizedMealPlanLabelFromMealSources(room.Inclusion, room.MealType) === 'EP',
+          );
+          if (rooms.length) allHotels.push({ ...hotel, Rooms: rooms });
+        }
+      }
 
       this.logger.log(`[TBO_SEARCH_RESULT] ${JSON.stringify({
         requestedCityCode: String(criteria.cityCode),
@@ -399,7 +415,7 @@ export class TBOHotelProvider implements IHotelProvider {
         checkInDate: criteria.checkInDate,
         checkOutDate: criteria.checkOutDate,
         hotelCodeCount: hotelCodes ? hotelCodes.split(',').filter((code) => code.trim()).length : 0,
-        requestCount: requestChunks.length,
+        requestCount: requestChunks.length * (includeRoomOnly ? 2 : 1),
         tboHotelResultCount: allHotels.length,
         result: allHotels.length > 0 ? 'AVAILABLE' : 'NO_AVAILABILITY',
       })}`);
@@ -427,6 +443,7 @@ export class TBOHotelProvider implements IHotelProvider {
       );
 
       const results: HotelSearchResult[] = [];
+      const seenBookingCodes = new Set<string>();
 
       for (const hotel of hotels) {
  // Fetch actual hotel name from database (synced from TBO GetHotels API)
@@ -505,6 +522,10 @@ if (!realBookingCode) {
   );
   continue;
 }
+          if (includeRoomOnly && formattedTotalFare > 0) {
+            if (seenBookingCodes.has(realBookingCode)) continue;
+            seenBookingCodes.add(realBookingCode);
+          }
 
           const tboBookingParts = String(realBookingCode).split('!TB!');
           const selectionKey = tboBookingParts.length >= 2

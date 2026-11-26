@@ -6,9 +6,73 @@ import { describeTboBatchRoomPrices, makeTboMultiBatchStay, priceTboMultiBatchSt
 import { projectHotelPayablePricing } from '../src/modules/itineraries/utils/hotel-payable-pricing.util';
 import { matchTboBatchHotels } from '../src/modules/hotels/utils/tbo-batch-hotel-matching.util';
 import { ItineraryHotelDetailsTboService } from '../src/modules/itineraries/itinerary-hotel-details-tbo.service';
-import { applyTboMapFallbackToRows, prepareTboBatchRecommendation } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
+import { applyTboMapFallbackToRows, getTboStayMealSupplement, prepareTboBatchRecommendation } from '../src/modules/itineraries/utils/tbo-map-fallback.util';
 import { TBOHotelProvider } from '../src/modules/hotels/providers/tbo-hotel.provider';
+import { HotelSearchService } from '../src/modules/hotels/services/hotel-search.service';
+import { SupplementNormalizerService } from '../src/modules/hotels/services/supplement-normalizer.service';
 import { isHouseboatOnlyCity } from '../src/modules/itineraries/utils/houseboat-city-policy.util';
+
+test('split CP and MAP searches request WithMeal and retain room-only fallback and saved rates', async () => {
+  const requests: Array<[number, string]> = [];
+  const hotelCode = '6181508';
+  const rate = (rooms: number, meal: string) => ({
+    BookingCode: `${hotelCode}!TB!${rooms}-${meal}`,
+    MealType: meal, Name: ['Standard Room'], TotalFare: rooms * 1000, IsRefundable: false,
+  });
+  const provider = Object.assign(Object.create(TBOHotelProvider.prototype), {
+    logger: { log() {}, warn() {}, debug() {}, error() {} },
+    prisma: {},
+    resolveTboCityCode: async () => ({ tboCityCode: '123456' }),
+    ensureCityAndHotelsInDb: async () => {},
+    getPriorityHotelCodesForCity: async () => new Set(),
+    getHotelMasterDataFromDb: async () => ({ hotel_name: 'Lumino Dwellings', star_rating: 3 }),
+    tboMasterGallery: { getHotelImagesForCodes: async () => new Map(), enqueueMissingFromSearchResults() {} },
+    supplementNormalizer: new SupplementNormalizerService(),
+    executeTBOSearch: async ({ Filters, PaxRooms }: any) => {
+      const rooms = PaxRooms.length;
+      const filter = Filters.MealType;
+      requests.push([rooms, filter]);
+      const rates = filter === 'WithMeal' ? [rate(rooms, 'BreakFast')]
+        : [rate(rooms, 'Room_Only'), rate(rooms, 'BreakFast')];
+      return [{ HotelCode: hotelCode, Currency: 'INR', Rooms: rates }];
+    },
+  });
+  const search = Object.assign(Object.create(HotelSearchService.prototype), { tboProvider: provider });
+  const details = Object.create(ItineraryHotelDetailsTboService.prototype);
+  const criteria = {
+    hotelCodes: hotelCode, cityCode: '123456', checkInDate: '2026-12-17', checkOutDate: '2026-12-19',
+    roomCount: 9, guestNationality: 'IN',
+    occupancies: Array.from({ length: 9 }, () => ({ adults: 2, children: 0, childrenAges: [] })),
+  };
+  const config = { enabled: true, breakfastRate: 400, dinnerRate3Star: 900 } as any;
+  for (const target of ['CP', 'MAP']) {
+    requests.length = 0;
+    const matches = await search.searchBookableTboRoomBatches({ ...criteria, preferences: { mealPlanCode: target } });
+    assert.deepEqual(requests, [[6, 'WithMeal'], [6, 'RoomOnly'], [3, 'WithMeal'], [3, 'RoomOnly']]);
+    const offers = details.toTboMultiBatchPreviewRows(matches, 9);
+    assert.deepEqual(offers.map(offer => offer.mealPlan).sort(), ['CP', 'EP']);
+    const cp = offers.find(offer => offer.mealPlan === 'CP');
+    assert.ok(cp);
+    assert.deepEqual(cp.tboRoomBatches.map(batch => [batch.roomCount, batch.mealPlan]), [[6, 'CP'], [3, 'CP']]);
+    assert.deepEqual(getTboStayMealSupplement(cp, 'MAP', config), {
+      mealPlan: 'MAP', breakfastRate: 0, breakfastPerNight: 0, dinnerRate: 900, dinnerPerNight: 16200,
+    });
+  }
+  requests.length = 0;
+  const saved = await search.searchBookableTboRoomBatches(
+    { ...criteria, preferences: { mealPlanCode: 'CP' } },
+    [{ roomType: 'Standard Room', mealPlan: 'CP' }, { roomType: 'Standard Room', mealPlan: 'EP' }],
+  );
+  assert.deepEqual(requests, [[6, 'WithMeal'], [6, 'RoomOnly'], [3, 'WithMeal'], [3, 'RoomOnly']]);
+  assert.deepEqual(details.toTboMultiBatchPreviewRows(saved, 9)[0].tboRoomBatches.map(batch => batch.mealPlan), ['CP', 'EP']);
+  requests.length = 0;
+  const savedRoomOnly = await search.searchBookableTboRoomBatches(
+    { ...criteria, preferences: { mealPlanCode: 'CP' } },
+    Array.from({ length: 2 }, () => ({ roomType: 'Standard Room', mealPlan: 'EP' })),
+  );
+  assert.deepEqual(requests, [[6, ''], [3, '']]);
+  assert.equal(details.toTboMultiBatchPreviewRows(savedRoomOnly, 9)[0].mealPlan, 'EP');
+});
 
 test('houseboat city matches aliases and respects state qualifications', () => {
   const cities = [
