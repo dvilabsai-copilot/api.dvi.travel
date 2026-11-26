@@ -391,6 +391,30 @@ export class AccountsBulkPaymentService {
              * Update that component's individual
              * paid/balance figures.
              */
+            // DVI_HOTEL_BULK_ATOMIC_V1: compare persisted balances before changing a hotel row.
+            if (payment.componentType === "hotel") {
+              const asCents = (n: number) => Math.round(n * 100);
+              const precise = (n: number) => Number.isFinite(n) && n >= 0 && Number.isSafeInteger(asCents(n)) && Math.abs(n * 100 - asCents(n)) < 0.000001;
+              if (Number(detail.status) !== 1 || !precise(currentPaid) || !precise(currentBalance) || !precise(amount) || asCents(amount) <= 0 || asCents(amount) > asCents(currentBalance)) {
+                throw new BadRequestException("Hotel payment or persisted balance is invalid. Review the Accounts record.");
+              }
+              const reference = String(body.utrNumber || "").trim();
+              if (!reference) throw new BadRequestException("Hotel payment reference is required.");
+              const duplicate = await tx.dvi_accounts_itinerary_hotel_transaction_history.findFirst({where: {
+                accounts_itinerary_hotel_details_ID: Number(payment.componentDetailId),
+                transaction_utr_no: reference, deleted: 0,
+              }});
+              if (duplicate) throw new BadRequestException("This transfer reference is already recorded for the hotel task. Review payment history.");
+              const changed = await detailModel.updateMany({where: {
+                [config.detailIdField]: Number(payment.componentDetailId),
+                accounts_itinerary_details_ID: headerId, hotel_id: payeeId, deleted: 0, status: 1,
+                total_paid: detail.total_paid, total_balance: detail.total_balance,
+              }, data: {
+                total_paid: (asCents(currentPaid) + asCents(amount)) / 100,
+                total_balance: (asCents(currentBalance) - asCents(amount)) / 100,
+              }});
+              if (changed.count !== 1) throw new BadRequestException("Hotel balance changed during payment. Reload before retrying.");
+            } else {
             await detailModel
               .update({
                 where: {
@@ -411,6 +435,7 @@ export class AccountsBulkPaymentService {
                     amount,
                 },
               });
+            }
 
 
             /*
