@@ -3979,6 +3979,414 @@ async searchQuotes(
         );
     }
   }
+
+
+  // DVI_HOTEL_PR_REPAIR_20261126: preserve all staging methods; append Hotel Payments only.
+
+private autoStoredHotelPurchase(row:any) {
+    const baseFields=['total_room_cost','total_hotel_meal_plan_cost','total_extra_bed_cost','total_childwith_bed_cost','total_childwithout_bed_cost','total_amenities_cost'];
+    const taxFields=['total_room_gst_amount','total_hotel_meal_plan_cost_gst_amount','total_extra_bed_cost_gst_amount','total_childwith_bed_cost_gst_amount','total_childwithout_bed_cost_gst_amount','total_amenities_gst_amount'];
+    const bases=baseFields.map(k=>this.autoHotelCents(row[k])), taxes=taxFields.map(k=>this.autoHotelCents(row[k]));
+    const sell=this.autoHotelCents(row.total_hotel_cost),tax=this.autoHotelCents(row.total_hotel_tax_amount),margin=this.autoHotelCents(row.hotel_margin_rate),marginTax=this.autoHotelCents(row.hotel_margin_rate_tax_amt);
+    if([...bases,...taxes,sell,tax,margin,marginTax].some(x=>x===null))return null;
+    const base=(bases as number[]).reduce((a,b)=>a+b,0),purchaseTax=(taxes as number[]).reduce((a,b)=>a+b,0);
+    if(!Number.isSafeInteger(base+purchaseTax)||base+purchaseTax<=0)return null;
+    // Older imports may store net totals with the margin separately. Only accept exact reconciliation, never clamp a negative tax.
+    const grossMatches=sell===base+margin!&&tax===purchaseTax+marginTax!;
+    const netMatches=sell===base&&tax===purchaseTax;
+    if(!grossMatches&&!netMatches)return null;
+    return {sell:sell!,tax:tax!,base,purchaseTax,payable:base+purchaseTax,margin,marginTax,bases,taxes,layout:grossMatches?'selling':'legacy-net'};
+  }
+
+private async autoStoredOfflineGroups(tx:any,p:any,headerId:number,rows:any[],drafts:any[],prior:any[],vouchers:any[],providers:any[]) {
+    const result:any={groups:[],reasons:[]};
+    const planId=Number(p.itinerary_plan_ID),confirmedId=Number(p.confirmed_itinerary_plan_ID);
+    const fail=(m:string)=>result.reasons.push(m);
+    for(const r of rows){
+      const provider=this.autoHotelProvider(r.hotel_provider),code=String(r.hotel_code||'').trim();
+      if(provider!==''&&provider!=='offline')continue;
+      const id=Number(r.confirmed_itinerary_plan_hotel_details_ID),originalId=Number(r.itinerary_plan_hotel_details_ID),route=Number(r.itinerary_route_id),date=this.autoHotelDay(r.itinerary_route_date);
+      if(prior.some(f=>f.cnf_itinerary_plan_hotel_details_ID===id||f.itinerary_plan_hotel_details_ID===originalId||f.itinerary_route_id===route))continue;
+      const o=drafts.find(x=>x.itinerary_plan_hotel_details_ID===originalId);
+      if(!id||!originalId||!route||!date||![0,1].includes(r.status)||r.deleted!==0||r.hotel_required!==1||r.hotel_cancellation_status!==0||!o||o.deleted!==0||o.status!==1||o.hotel_required!==1||o.hotel_cancellation_status!==0||o.itinerary_route_id!==route||this.autoHotelDay(o.itinerary_route_date)!==date||rows.filter(x=>x.itinerary_route_id===route).length!==1||providers.some(x=>x.route===route)||this.autoHotelProvider(o.hotel_provider)!==provider||String(o.hotel_code||'').trim()!==code||r.requires_price_reacceptance||o.requires_price_reacceptance){fail('offline stay identity, status or route not verified');continue;}
+      const hotelId=await this.hotelReviewIdentity(tx,r);
+      if(!hotelId||hotelId!==Number(r.hotel_id)||hotelId!==Number(o.hotel_id)||await this.hotelReviewIdentity(tx,o)!==hotelId||!Number.isSafeInteger(Number(r.total_no_of_rooms))||Number(r.total_no_of_rooms)<=0||Number(o.total_no_of_rooms)!==Number(r.total_no_of_rooms)){fail('offline hotel identity or rooms not verified');continue;}
+      const related=vouchers.filter(v=>v.itinerary_plan_hotel_details_ID===originalId||v.confirmed_itinerary_plan_hotel_details_ID===id);
+      if(related.some(v=>v.hotel_voucher_cancellation_status===1||v.hotel_booking_status===2||v.status===1&&v.deleted===0&&(v.hotel_booking_status!==1||v.hotel_id!==hotelId||v.itinerary_plan_id!==planId||v.itinerary_plan_hotel_details_ID!==originalId||v.confirmed_itinerary_plan_hotel_details_ID!==id||this.autoHotelDay(v.itinerary_route_date)!==date))){fail('offline voucher cancelled, pending or conflicting');continue;}
+      const activeVouchers=related.filter(v=>v.status===1&&v.deleted===0&&v.hotel_booking_status===1);
+      if(activeVouchers.length>1){fail('multiple active offline vouchers');continue;}
+      const approved=(x:any)=>String(x.hotel_approval_status||'').toUpperCase()==='APPROVED'&&String(x.manual_confirmation_status||'').toUpperCase()==='CONFIRMED'&&Number(x.manually_confirmed_by)>0&&!!this.autoHotelDay(x.manually_confirmed_at);
+      const hasVoucher=activeVouchers.length===1&&!!String(activeVouchers[0].hotel_confirmed_reservation||'').trim()&&!!String(activeVouchers[0].hotel_confirmation_verified_by||'').trim();
+      const currencyR=String(r.selected_currency||'').trim().toUpperCase(),currencyO=String(o.selected_currency||'').trim().toUpperCase();
+      if((currencyR&&currencyR!=='INR')||(currencyO&&currencyO!=='INR')){fail('offline non-INR pricing');continue;}
+      const cost=this.autoStoredHotelPurchase(r),originalCost=this.autoStoredHotelPurchase(o);
+      if(!cost||!originalCost||JSON.stringify(cost)!==JSON.stringify(originalCost)){fail('offline stored purchase components do not reconcile');continue;}
+      const confirmedEvidence=approved(r)&&approved(o)||hasVoucher;
+      if(!confirmedEvidence&&(provider==='offline'||code||String(r.hotel_booking_mode||'').toUpperCase()==='MANUAL_APPROVAL'||String(o.hotel_booking_mode||'').toUpperCase()==='MANUAL_APPROVAL')){fail('offline booking still needs its normal supplier confirmation');continue;}
+      // Without a verified booking record, this is a historical review candidate only, NOT evidence of a real liability.
+      // Legacy candidates are always gated by an explicit batch hash, even if their date is after the new-booking cutoff.
+      const kind=confirmedEvidence&&currencyR==='INR'&&currencyO==='INR'?'offline':'legacy-offline';
+      if(kind==='legacy-offline'&&(String(r.hotel_approval_status||'').toUpperCase()==='REJECTED'||String(o.hotel_approval_status||'').toUpperCase()==='REJECTED')){fail('offline approval rejected');continue;}
+      const next=new Date(Date.parse(date)+86400000).toISOString().slice(0,10);
+      result.groups.push({planId,confirmedId,headerId,quote:String(p.itinerary_quote_ID||''),hotelId,provider:kind,reference:'internal-row:'+id,checkIn:date,checkOut:next,supplierTotal:cost.payable,confirmedAt:p.createdon?new Date(p.createdon).toISOString():'',allocations:[{id,originalId,route,date,sell:cost.sell,tax:cost.tax,base:cost.base,purchaseTax:cost.purchaseTax,payable:cost.payable}],evidence:confirmedEvidence?'recorded-offline-confirmation':'requires-Finance-batch-verification',priceLayout:cost.layout});
+    }
+    return result;
+  }
+
+private async correctHotelSamplePricesV9():Promise<string> {
+    if(!this.hotelSavedPriceTestMode()||process.env.DVI_HOTEL_TEST_CORRECT_SAMPLE!=='yes')return 'sample correction disabled';
+    return this.prisma.$transaction(async(tx:any)=>{
+      const quote='DVI20260963-R2',planId=10324,confirmedId=209,headerId=203,hotelId=150;
+      const ids=[1212,1213,1214],originalIds=[18900,18904,18908],routes=[11863,11864,11866],dates=['2026-09-20','2026-09-21','2026-09-23'];
+      const plans=await tx.dvi_confirmed_itinerary_plan_details.findMany({where:{OR:[{itinerary_plan_ID:planId},{itinerary_quote_ID:quote}],status:1,deleted:0}});
+      const originalPlans=await tx.dvi_itinerary_plan_details.findMany({where:{itinerary_plan_ID:planId,quotation_status:1,deleted:0}});
+      const headers=await tx.dvi_accounts_itinerary_details.findMany({where:{OR:[{itinerary_plan_ID:planId},{confirmed_itinerary_plan_ID:confirmedId}]}});
+      if(plans.length!==1||plans[0].confirmed_itinerary_plan_ID!==confirmedId||plans[0].itinerary_plan_ID!==planId||plans[0].itinerary_quote_ID!==quote||originalPlans.length!==1||originalPlans[0].itinerary_quote_ID!==quote||headers.length!==1||headers[0].accounts_itinerary_details_ID!==headerId||headers[0].itinerary_plan_ID!==planId||headers[0].confirmed_itinerary_plan_ID!==confirmedId||headers[0].deleted!==0||headers[0].status!==1)return 'sample booking identity mismatch';
+      const [stays,drafts,finance,history,vouchers]=await Promise.all([
+        tx.dvi_confirmed_itinerary_plan_hotel_details.findMany({where:{itinerary_plan_id:planId,deleted:0}}),
+        tx.dvi_itinerary_plan_hotel_details.findMany({where:{itinerary_plan_id:planId,itinerary_plan_hotel_details_ID:{in:originalIds}}}),
+        tx.dvi_accounts_itinerary_hotel_details.findMany({where:{OR:[{accounts_itinerary_details_ID:headerId},{itinerary_plan_ID:planId},{cnf_itinerary_plan_hotel_details_ID:{in:ids}}]}}),
+        tx.dvi_accounts_itinerary_hotel_transaction_history.findMany({where:{accounts_itinerary_details_ID:headerId}}),
+        tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.findMany({where:{itinerary_plan_id:planId}})
+      ]);
+      if(history.length||vouchers.length||stays.length!==3||drafts.length!==3||finance.length!==3)return 'sample history or row count differs; no correction';
+      const rowIds=finance.map((f:any)=>f.accounts_itinerary_hotel_details_ID);
+      if((await tx.dvi_accounts_itinerary_hotel_transaction_history.findMany({where:{accounts_itinerary_hotel_details_ID:{in:rowIds}}})).length)return 'sample has payment history; no correction';
+      const resolved:any[]=[];
+      for(let i=0;i<ids.length;i++){
+        const matches=finance.filter((f:any)=>f.cnf_itinerary_plan_hotel_details_ID===ids[i]);
+        const f=matches[0],r=stays.find((x:any)=>x.confirmed_itinerary_plan_hotel_details_ID===ids[i]),o=drafts.find((x:any)=>x.itinerary_plan_hotel_details_ID===originalIds[i]);
+        if(matches.length!==1||!r||!o||f.accounts_itinerary_details_ID!==headerId||f.itinerary_plan_ID!==planId||f.hotel_id!==hotelId||f.itinerary_plan_hotel_details_ID!==originalIds[i]||f.itinerary_route_id!==routes[i]||this.autoHotelDay(f.itinerary_route_date)!==dates[i]||f.status!==1||f.deleted!==0||this.autoHotelCents(f.total_paid)!==0||this.autoHotelCents(f.total_payable)===null||this.autoHotelCents(f.total_balance)!==this.autoHotelCents(f.total_payable))return 'sample finance identity or paid amount changed';
+        if(r.itinerary_plan_hotel_details_ID!==originalIds[i]||![0,1].includes(r.status)||o.status!==1||[r,o].some(x=>x.deleted!==0||x.hotel_required!==1||x.hotel_cancellation_status!==0||x.hotel_id!==hotelId||x.itinerary_route_id!==routes[i]||this.autoHotelDay(x.itinerary_route_date)!==dates[i]||this.autoHotelCents(x.total_hotel_cost)!==100000||this.autoHotelCents(x.total_hotel_tax_amount)!==0||x.requires_price_reacceptance))return 'sample saved prices or hotel assignment changed';
+        if(await this.hotelReviewIdentity(tx,r)!==hotelId||await this.hotelReviewIdentity(tx,o)!==hotelId)return 'sample hotel master mismatch';
+        resolved.push(f);
+      }
+      const values=resolved.map(f=>this.autoHotelCents(f.total_payable));
+      if(values.every(v=>v===100000))return 'sample already corrected';
+      if(Number(values[0])+Number(values[1])!==6688800||values[2]!==13400)return 'sample amounts do not match known incorrect test values';
+      for(const f of resolved){const changed=await tx.dvi_accounts_itinerary_hotel_details.updateMany({where:{accounts_itinerary_hotel_details_ID:f.accounts_itinerary_hotel_details_ID,total_paid:0,total_payable:f.total_payable,total_balance:f.total_balance,status:1,deleted:0},data:{total_hotel_cost:1000,total_hotel_tax_amount:0,total_purchase_cost:1000,total_payable:1000,total_balance:1000}});if(changed.count!==1)throw new Error('Sample finance changed during correction');}
+      return 'corrected 3 unpaid sample night rows to saved prices (INR 3000 total)';
+    },{isolationLevel:'Serializable'});
+  }
+
+private hotelSavedPriceTestMode():boolean {
+    if(process.env.DVI_HOTEL_LOCAL_CONFIRMED_PRICE_TEST!=='yes'||process.env.NODE_ENV==='production')return false;
+    try {const u=new URL(String(process.env.DATABASE_URL||''));return u.protocol==='mysql:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname)&&!!u.pathname.slice(1)&&process.env.DVI_HOTEL_ISOLATED_TEST_DB==='yes';}catch{return false;}
+  }
+
+private async autoSavedPriceTestGroups(tx:any,p:any,headerId:number,rows:any[],drafts:any[],prior:any[],vouchers:any[],providers:any[]){
+    const result:any={groups:[],reasons:[]};
+    const fail=(reason:string)=>result.reasons.push(String(p.itinerary_quote_ID||'unknown')+': '+reason);
+    const planId=Number(p.itinerary_plan_ID),confirmedId=Number(p.confirmed_itinerary_plan_ID);
+    if(!this.hotelSavedPriceTestMode())return result;
+    for(const r of rows){
+      const id=Number(r.confirmed_itinerary_plan_hotel_details_ID);
+      const originalId=Number(r.itinerary_plan_hotel_details_ID);
+      const route=Number(r.itinerary_route_id);
+      const date=this.autoHotelDay(r.itinerary_route_date);
+      if(prior.some(f=>Number(f.cnf_itinerary_plan_hotel_details_ID)===id || Number(f.itinerary_plan_hotel_details_ID)===originalId))continue;
+      const originals=drafts.filter(o=>Number(o.itinerary_plan_hotel_details_ID)===originalId),o=originals[0];
+      const provider=this.autoHotelProvider(r.hotel_provider),code=String(r.hotel_code||'').trim();
+      if(![id,originalId,route].every(n=>Number.isSafeInteger(n)&&n>0)||!date||![0,1].includes(Number(r.status))||Number(r.deleted)!==0||Number(r.hotel_required)!==1||Number(r.hotel_cancellation_status)!==0||originals.length!==1||!o||Number(o.deleted)!==0||Number(o.status)!==1||Number(o.hotel_required)!==1||Number(o.hotel_cancellation_status)!==0||Number(o.itinerary_route_id)!==route||this.autoHotelDay(o.itinerary_route_date)!==date||Number(r.itinerary_plan_hotel_details_ID)!==originalId||r.requires_price_reacceptance||o.requires_price_reacceptance||[r,o].some(x=>String(x.hotel_approval_status||'').toUpperCase()==='REJECTED')){fail('confirmed or original hotel is incomplete, changed or cancelled');continue;}
+      if(this.autoHotelProvider(o.hotel_provider)!==provider||String(o.hotel_code||'').trim()!==code){fail('hotel provider or code changed');continue;}
+      const hotelId=Number(r.hotel_id||0);
+      if(!Number.isSafeInteger(hotelId)||hotelId<0||hotelId!==Number(o.hotel_id||0)){fail('hotel ID changed');continue;}
+      // External hotel codes are genuine identities even if the old database has no dvi_hotel master row.
+      if(hotelId===0&&(!provider||!code)){fail('external hotel requires a provider and code');continue;}
+      if(hotelId>0){const mapped=await this.hotelReviewIdentity(tx,r);if(mapped!==hotelId){fail('internal hotel ID does not match master');continue;}}
+      if(!Number.isSafeInteger(Number(r.total_no_of_rooms))||Number(r.total_no_of_rooms)<=0||Number(r.total_no_of_rooms)!==Number(o.total_no_of_rooms)){fail('room counts changed');continue;}
+      if([r,o].some(x=>!!String(x.selected_currency||'').trim()&&String(x.selected_currency).trim().toUpperCase()!=='INR')){fail('non-INR hotel');continue;}
+      const related=vouchers.filter(v=>Number(v.itinerary_plan_hotel_details_ID)===originalId||Number(v.confirmed_itinerary_plan_hotel_details_ID)===id);
+      if(related.some(v=>Number(v.hotel_voucher_cancellation_status)===1||Number(v.hotel_booking_status)===2)){fail('cancelled hotel voucher');continue;}
+      const matchedProviders=providers.filter(x=>Number(x.route)===route && x.provider===provider && x.code===code);
+      if(matchedProviders.some(x=>!x.active)){fail('supplier cancellation or inactive booking');continue;}
+      if(providers.some(x=>Number(x.route)===route && (x.provider!==provider||x.code!==code))){fail('conflicting supplier booking');continue;}
+      const sell=this.autoHotelCents(r.total_hotel_cost),tax=this.autoHotelCents(r.total_hotel_tax_amount);
+      if(sell===null||tax===null||sell+tax<=0){fail('invalid saved confirmed hotel price');continue;}
+      // Reject competing finance assignments; never attach two payables to the same confirmed hotel row.
+      if(prior.some(f=>Number(f.itinerary_route_id)===route && Number(f.hotel_id)===hotelId && Number(f.cnf_itinerary_plan_hotel_details_ID)!==id)){fail('other finance record already occupies hotel route');continue;}
+      result.groups.push({planId,confirmedId,headerId,quote:String(p.itinerary_quote_ID||''),hotelId,provider:'local-saved-price-test',reference:'confirmed-row:'+id,checkIn:date,checkOut:new Date(Date.parse(date)+86400000).toISOString().slice(0,10),supplierTotal:sell+tax,confirmedAt:p.createdon?new Date(p.createdon).toISOString():'',allocations:[{id,originalId,route,date,sell,tax,base:sell,purchaseTax:tax,payable:sell+tax}],evidence:'ISOLATED-TEST-SAVED-PRICE-NOT-SUPPLIER-INVOICE'});
+    }
+    return result;
+  }
+
+private autoHotelCents(v:any):number|null {
+    if(v===null||v===undefined||v===''||typeof v==='boolean')return null;
+    const n=Number(v);if(!Number.isFinite(n)||n<0||n>9999999)return null;
+    return Math.round(n*100);
+  }
+
+private autoHotelDay(v:any):string {const d=new Date(v);return v&&Number.isFinite(d.getTime())?d.toISOString().slice(0,10):'';}
+
+private autoHotelHash(v:any):string {return require('node:crypto').createHash('sha256').update(JSON.stringify(v)).digest('hex');}
+
+private autoHotelProvider(v:any):string {const p=String(v||'').trim().toLowerCase();return p==='vsr'?'tbo':p;}
+
+private async autoHotelCandidates(tx:any,planId:number,confirmedId:number) {
+    const result:any={groups:[],reasons:[]};
+    const skip=(reason:string)=>{result.reasons.push(reason);};
+    const plans=await tx.dvi_confirmed_itinerary_plan_details.findMany({where:{itinerary_plan_ID:planId,status:1,deleted:0}});
+    if(plans.length!==1||plans[0].confirmed_itinerary_plan_ID!==confirmedId){skip('ambiguous confirmed plan');return result;}
+    const p=plans[0];
+    const quote=String(p.itinerary_quote_ID||'').trim();
+    if(!quote||(await tx.dvi_confirmed_itinerary_plan_details.findMany({where:{itinerary_quote_ID:quote,status:1,deleted:0}})).length!==1){skip('ambiguous booking code');return result;}
+    const originals=await tx.dvi_itinerary_plan_details.findMany({where:{itinerary_plan_ID:planId,deleted:0}});
+    if(originals.length!==1||String(originals[0].itinerary_quote_ID||'').trim()!==quote||(!this.hotelSavedPriceTestMode()&&Number(originals[0].quotation_status)!==1)){skip('original itinerary not confirmed or booking code mismatch');return result;}
+    const headers=await tx.dvi_accounts_itinerary_details.findMany({where:{OR:[{itinerary_plan_ID:planId},{confirmed_itinerary_plan_ID:confirmedId}]}});
+    if(headers.length!==1||headers[0].status!==1||headers[0].deleted!==0||headers[0].itinerary_plan_ID!==planId||headers[0].confirmed_itinerary_plan_ID!==confirmedId){skip('missing or ambiguous Accounts header');return result;}
+    const headerId=headers[0].accounts_itinerary_details_ID;
+    const [rows,drafts,prior,history,vouchers]=await Promise.all([
+      tx.dvi_confirmed_itinerary_plan_hotel_details.findMany({where:{itinerary_plan_id:planId,deleted:0}}),
+      tx.dvi_itinerary_plan_hotel_details.findMany({where:{itinerary_plan_id:planId}}),
+      tx.dvi_accounts_itinerary_hotel_details.findMany({where:{OR:[{itinerary_plan_ID:planId},{accounts_itinerary_details_ID:headerId}]}}),
+      tx.dvi_accounts_itinerary_hotel_transaction_history.findMany({where:{accounts_itinerary_details_ID:headerId}}),
+      tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.findMany({where:{itinerary_plan_id:planId}})
+    ]);
+    if(!rows.length)return result;
+    if(!rows.some((r:any)=>!prior.some((f:any)=>f.cnf_itinerary_plan_hotel_details_ID===r.confirmed_itinerary_plan_hotel_details_ID||f.itinerary_plan_hotel_details_ID===r.itinerary_plan_hotel_details_ID||f.itinerary_route_id===r.itinerary_route_id))){skip('no unposted hotel rows');return result;}
+    if(history.some((h:any)=>!prior.some((f:any)=>f.accounts_itinerary_hotel_details_ID===h.accounts_itinerary_hotel_details_ID&&f.deleted===0))){skip('orphan payment history');return result;}
+    const specs=[['tbo','tbo_hotel_booking_confirmation','tbo_hotel_code','tbo_booking_reference_number','net_amount'],['resavenue','resavenue_hotel_booking_confirmation','resavenue_hotel_code','resavenue_booking_reference','net_amount'],['axisrooms','axisrooms_hotel_booking_confirmation','axisrooms_hotel_code','axisrooms_booking_reference','net_amount'],['staah','staah_hotel_booking_confirmation','staah_hotel_code','staah_booking_reference','net_amount'],['hobse','hobse_hotel_booking_confirmation','hotel_code','booking_id','total_amount']];
+    const providers:any[]=[];
+    for(const [provider,model,code,ref,amount] of specs){
+      if(!tx[model]){skip('supplier model unavailable: '+provider);return result;}
+      const rr=await tx[model].findMany({where:provider==='hobse'?{plan_id:planId}:{itinerary_plan_ID:planId}});
+      for(const r of rr)providers.push({provider,model,refField:ref,ref:String(r[ref]||'').trim(),code:String(r[code]||'').trim(),route:Number(provider==='hobse'?r.route_id:r.itinerary_route_ID),confirmed:provider==='hobse'?confirmedId:Number(r.confirmed_itinerary_plan_ID),amount:this.autoHotelCents(r[amount]),in:this.autoHotelDay(r.check_in_date),out:this.autoHotelDay(r.check_out_date),rooms:Number(provider==='hobse'?r.room_count:r.number_of_rooms),active:provider==='hobse'?r.booking_status==='confirmed'&&!r.cancellation_response:r.status===1&&r.deleted===0,raw:r});
+    }
+    if(this.hotelSavedPriceTestMode())return this.autoSavedPriceTestGroups(tx,p,headerId,rows,drafts,prior,vouchers,providers);
+    const offline=await this.autoStoredOfflineGroups(tx,p,headerId,rows,drafts,prior,vouchers,providers);
+    result.groups.push(...offline.groups);result.reasons.push(...offline.reasons);
+    const groups=new Map<string,any[]>();
+    for(const r of rows){
+      const id=Number(r.confirmed_itinerary_plan_hotel_details_ID),route=Number(r.itinerary_route_id),provider=this.autoHotelProvider(r.hotel_provider),code=String(r.hotel_code||'').trim();
+      if(prior.some((f:any)=>f.cnf_itinerary_plan_hotel_details_ID===id||f.itinerary_plan_hotel_details_ID===r.itinerary_plan_hotel_details_ID||f.itinerary_route_id===route)){skip('already posted or historical finance');continue;}
+      const matches=providers.filter(x=>x.route===route);
+      if(!provider||provider==='offline')continue;
+      if(!code||matches.length!==1||matches[0].provider!==provider||matches[0].code!==code||!matches[0].active||matches[0].confirmed!==confirmedId||!matches[0].ref){skip('no unique active supplier confirmation');continue;}
+      const b=matches[0];const key=JSON.stringify([provider,b.ref]);
+      const list=groups.get(key)||[];list.push({r,b});groups.set(key,list);
+    }
+    const money=(r:any)=>[r.total_hotel_cost,r.total_hotel_tax_amount,r.hotel_margin_rate,r.hotel_margin_rate_tax_amt].map(x=>this.autoHotelCents(x));
+    for(const list of groups.values()){
+      const first=list[0].b, same=providers.filter(x=>x.provider===first.provider&&x.ref===first.ref);
+      // Each reference represents one supplier stay, not one charge per route.
+      if(same.length!==list.length||new Set(same.map(x=>x.route)).size!==same.length||same.some(x=>!x.active||x.confirmed!==confirmedId||x.code!==first.code||x.in!==first.in||x.out!==first.out||x.amount!==first.amount||x.rooms!==first.rooms)){skip('incomplete or conflicting multi-night supplier reference');continue;}
+      const duplicateRef=await tx[first.model].findMany({where:{[first.refField]:first.ref}});
+      if(duplicateRef.length!==same.length||duplicateRef.some((x:any)=>Number(first.provider==='hobse'?x.plan_id:x.itinerary_plan_ID)!==planId)){skip('supplier reference reused outside this stay');continue;}
+      if(!first.in||!first.out||first.amount===null||first.amount<=0||!Number.isSafeInteger(first.rooms)||first.rooms<=0){skip('invalid supplier dates, rooms or total');continue;}
+      // Hotel Collect means the guest may pay the hotel directly. Do not infer a DVI liability.
+      if(first.provider==='staah'){skip('STAAH Hotel Collect workflow requires verified DVI liability; manual review');continue;}
+      const dates=list.map(x=>this.autoHotelDay(x.r.itinerary_route_date)).sort();
+      const nightCount=(Date.parse(first.out)-Date.parse(first.in))/86400000;
+      if(!Number.isSafeInteger(nightCount)||nightCount<=0||nightCount!==dates.length||dates.some((d,i)=>d!==new Date(Date.parse(first.in)+i*86400000).toISOString().slice(0,10))){skip('night allocation not exactly verified');continue;}
+      const allocations:any[]=[];let hotelId=0,valid=true;
+      for(const {r,b} of list){
+        const id=Number(r.confirmed_itinerary_plan_hotel_details_ID),originalId=Number(r.itinerary_plan_hotel_details_ID),route=Number(r.itinerary_route_id),date=this.autoHotelDay(r.itinerary_route_date);
+        const o=drafts.find((x:any)=>x.itinerary_plan_hotel_details_ID===originalId);
+        const field:Record<string,string>={tbo:'tbo_hotel_code',resavenue:'resavenue_hotel_code',axisrooms:'axisrooms_property_id',staah:'staah_property_id',hobse:'hotel_code'};
+        const masters=await tx.dvi_hotel.findMany({where:{[field[b.provider]]:b.code,OR:[{deleted:false},{deleted:null}]}});
+        const mapped=masters.length===1?Number(masters[0].hotel_id):0;
+        const nums=money(r), origNums=o?money(o):[];
+        if(!id||!originalId||!route||![0,1].includes(r.status)||r.hotel_required!==1||r.hotel_cancellation_status!==0||rows.filter((x:any)=>x.itinerary_route_id===route).length!==1||!o||o.deleted!==0||o.status!==1||o.hotel_required!==1||o.hotel_cancellation_status!==0||o.itinerary_route_id!==route||this.autoHotelDay(o.itinerary_route_date)!==date||this.autoHotelProvider(o.hotel_provider)!==b.provider||String(o.hotel_code||'').trim()!==b.code||String(r.selected_currency||'').toUpperCase()!=='INR'||String(o.selected_currency||'').toUpperCase()!=='INR'||(b.provider==='hobse'&&String(b.raw.currency||'').toUpperCase()!=='INR')||Number(r.total_no_of_rooms)!==first.rooms||!mapped||!String(masters[0].hotel_name||'').trim()||await this.hotelReviewIdentity(tx,r)!==mapped||await this.hotelReviewIdentity(tx,o)!==mapped||(hotelId&&hotelId!==mapped)||nums.some(x=>x===null)||JSON.stringify(nums)!==JSON.stringify(origNums)||vouchers.some((v:any)=>(v.itinerary_plan_hotel_details_ID===originalId||v.confirmed_itinerary_plan_hotel_details_ID===id)&&(v.hotel_voucher_cancellation_status===1||v.hotel_booking_status===2||(v.status===1&&v.deleted===0&&v.hotel_booking_status!==1)))){valid=false;break;}
+        const [sell,tax,margin,marginTax]=nums as number[];const base=sell-margin,purchaseTax=tax-marginTax;
+        if(base<0||purchaseTax<0||base+purchaseTax<=0){valid=false;break;}
+        hotelId=mapped;allocations.push({id,originalId,route,date,sell,tax,base,purchaseTax,payable:base+purchaseTax});
+      }
+      if(!valid||allocations.reduce((s,x)=>s+x.payable,0)!==first.amount){skip('hotel identity, currency, purchase price or supplier total does not reconcile');continue;}
+      allocations.sort((a,b)=>a.id-b.id);
+      const group={planId,confirmedId,headerId,quote:String(p.itinerary_quote_ID||''),hotelId,provider:first.provider,reference:first.ref,checkIn:first.in,checkOut:first.out,supplierTotal:first.amount,confirmedAt:p.createdon?new Date(p.createdon).toISOString():'',allocations};
+      result.groups.push(group);
+    }
+    return result;
+  }
+
+async automaticHotelFinance(userId:number) {
+    if(!Number.isSafeInteger(userId)||userId<=0)throw new BadRequestException('Authenticated Finance user required.');
+    // Preview by default. Never create liabilities on a read-only GET or on production with this local patch.
+    const allowed=new Set(String(process.env.DVI_HOTEL_AUTO_APPROVED_PROVIDERS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean));
+    const savedPriceTest=this.hotelSavedPriceTestMode();
+    let sampleCorrection='not requested';
+    if(savedPriceTest){try{sampleCorrection=await this.correctHotelSamplePricesV9();}catch(e){sampleCorrection='sample correction failed; transaction rolled back';console.warn('[DVI_HOTEL_SAMPLE_CORRECTION_FAILED]',(e as any)?.code||'error');}console.log('[DVI_HOTEL_SAMPLE_CORRECTION]',sampleCorrection);}
+    if(savedPriceTest)allowed.add('local-saved-price-test');
+    const posting=savedPriceTest||(process.env.NODE_ENV!=='production'&&process.env.DVI_HOTEL_AUTO_MODE==='post'&&allowed.size>0);
+    const plans=await this.prisma.dvi_confirmed_itinerary_plan_details.findMany({where:{status:1,deleted:0},select:{itinerary_plan_ID:true,confirmed_itinerary_plan_ID:true}});
+    const counts=new Map<number,number>();for(const p of plans)counts.set(p.itinerary_plan_ID,(counts.get(p.itinerary_plan_ID)||0)+1);
+    const groups:any[]=[],reasons:Record<string,number>={};
+    const count=(r:string)=>{reasons[r]=(reasons[r]||0)+1;};
+    for(const p of plans){if(counts.get(p.itinerary_plan_ID)!==1){count('ambiguous confirmed plan');continue;}
+      try{const data=await this.autoHotelCandidates(this.prisma,p.itinerary_plan_ID,p.confirmed_itinerary_plan_ID);groups.push(...data.groups);data.reasons.forEach(count);}catch(e){count('candidate read failed');console.warn('[DVI_HOTEL_AUTO_READ_FAILED]',p.itinerary_plan_ID,(e as any)?.code||'error');}}
+    groups.sort((a,b)=>a.planId-b.planId||a.provider.localeCompare(b.provider)||a.reference.localeCompare(b.reference));
+    const approvedGroups=groups.filter(g=>allowed.has(g.provider));
+    const cutoff=Date.parse(String(process.env.DVI_HOTEL_AUTO_NEW_FROM||''));
+    const isNew=(g:any)=>g.provider!=='legacy-offline'&&Number.isFinite(cutoff)&&Number.isFinite(Date.parse(g.confirmedAt))&&Date.parse(g.confirmedAt)>=cutoff;
+    const historical=approvedGroups.filter(g=>!isNew(g));
+    const batchHash=this.autoHotelHash(historical);
+    const approvedBatch=savedPriceTest||String(process.env.DVI_HOTEL_AUTO_APPROVED_BATCH||'')===batchHash;
+    let created=0;const failures:any[]=[];
+    if(posting){
+      for(const g of approvedGroups){
+        if(g.provider==='legacy-offline'&&process.env.DVI_HOTEL_AUTO_LEGACY_VERIFIED!=='yes'){count('legacy liability and payment history approval required');continue;}
+        if(!isNew(g)&&!approvedBatch){count('historical batch approval required');continue;}
+        try{
+          const n=await this.prisma.$transaction(async tx=>{
+            const fresh=await this.autoHotelCandidates(tx,g.planId,g.confirmedId);
+            const current=fresh.groups.find((x:any)=>this.autoHotelHash(x)===this.autoHotelHash(g));
+            if(!current)return 0;
+            for(const a of current.allocations){await tx.dvi_accounts_itinerary_hotel_details.create({data:{accounts_itinerary_details_ID:current.headerId,itinerary_plan_hotel_details_ID:a.originalId,cnf_itinerary_plan_hotel_details_ID:a.id,itinerary_plan_ID:current.planId,itinerary_route_id:a.route,itinerary_route_date:new Date(a.date+'T00:00:00.000Z'),hotel_id:current.hotelId,total_hotel_cost:a.sell/100,total_hotel_tax_amount:a.tax/100,total_purchase_cost:a.base/100,total_payable:a.payable/100,total_paid:0,total_balance:a.payable/100,createdby:userId,createdon:new Date(),status:1,deleted:0}});}
+            return current.allocations.length;
+          },{isolationLevel:'Serializable'});
+          created+=n;if(n)console.log('[DVI_HOTEL_AUTO_POSTED]',JSON.stringify({userId,quote:g.quote,provider:g.provider,reference:g.reference,totalINR:g.supplierTotal/100,rows:n}));
+          else count('candidate changed or already posted');
+        }catch(e){failures.push({planId:g.planId,provider:g.provider,code:(e as any)?.code||'error'});}
+      }
+    }
+    const report={savedPriceTest,sampleCorrection,mode:posting?'post':'preview',eligibleGroups:groups.length,eligibleRows:groups.reduce((s,g)=>s+g.allocations.length,0),eligibleINR:groups.reduce((s,g)=>s+g.supplierTotal,0)/100,created,approvedProviders:[...allowed],historicalBatchHash:batchHash,historicalApproved:approvedBatch,reasons,failures};
+    // Local server log is the review report. Do not share supplier references outside Finance.
+    console.log('[DVI_HOTEL_AUTO_REPORT]',JSON.stringify(report));
+    console.table(groups.map(g=>({booking:g.quote,provider:g.provider,reference:g.reference,verification:g.evidence||'supplier-confirmed',checkIn:g.checkIn,checkOut:g.checkOut,hotelId:g.hotelId,rows:g.allocations.length,payable:g.supplierTotal/100,approvedProvider:allowed.has(g.provider),new:isNew(g)})));
+    return report;
+  }
+
+private hotelReviewMoney(value: unknown): number {
+    const str = String(value ?? '');
+    if (!/^\d{1,7}(?:\.\d{1,2})?$/.test(str)) throw new BadRequestException('Enter a valid INR amount, max two decimals.');
+    return Math.round(Number(str)*100);
+  }
+
+private async hotelReviewIdentity(tx: any, row: any): Promise<number> {
+    const provider=String(row.hotel_provider||'').trim().toLowerCase();
+    const code=String(row.hotel_code||'').trim();
+    const stored=Number(row.hotel_id||0);
+    const fields: Record<string,string>={tbo:'tbo_hotel_code',vsr:'tbo_hotel_code',resavenue:'resavenue_hotel_code',staah:'staah_property_id',axisrooms:'axisrooms_property_id',hobse:'hotel_code'};
+    let where: any;
+    if (provider && code && fields[provider]) {
+      where={ [fields[provider]]:code };
+      if(provider==='staah') where={staah_enabled:1,AND:[{OR:[{staah_property_id:code},{hotel_code:code}]}]};
+      if(provider==='axisrooms') where={axisrooms_enabled:1,AND:[{OR:[{axisrooms_property_id:code},{hotel_code:code}]}]};
+    } else if(stored>0 && !code) where={hotel_id:stored};
+    else if(stored>0 && !fields[provider]) where={hotel_id:stored};
+    else return 0;
+    if(this.hotelSavedPriceTestMode()&&code&&['staah','axisrooms'].includes(provider)){
+      const exact=await tx.dvi_hotel.findMany({where:{[fields[provider]]:code,OR:[{deleted:false},{deleted:null}]},select:{hotel_id:true,hotel_name:true}});
+      if(exact.length>1)return 0;
+      if(exact.length===1){const id=Number(exact[0].hotel_id);return id>0&&String(exact[0].hotel_name||'').trim()&&(!stored||stored===id)?id:0;}
+    }
+    const masters=await tx.dvi_hotel.findMany({where:{...where,OR:[{deleted:false},{deleted:null}]},select:{hotel_id:true,hotel_name:true}});
+    if(masters.length!==1||!String(masters[0].hotel_name||'').trim()){
+      if(this.hotelSavedPriceTestMode()&&stored>0&&masters.length===0){const byId=await tx.dvi_hotel.findMany({where:{hotel_id:stored,OR:[{deleted:false},{deleted:null}]},select:{hotel_id:true,hotel_name:true}});if(byId.length===1&&String(byId[0].hotel_name||'').trim())return stored;}
+      return 0;
+    }
+    const id=Number(masters[0].hotel_id);
+    return stored>0&&stored!==id?0:id;
+  }
+
+private async hotelReviewPlan(tx: any, body: any, unique: boolean) {
+    const planId=Number(body?.planId), confirmedId=Number(body?.confirmedId);
+    if(!Number.isSafeInteger(planId)||planId<=0||!Number.isSafeInteger(confirmedId)||confirmedId<=0) throw new BadRequestException('Invalid itinerary identity.');
+    const plans=await tx.dvi_confirmed_itinerary_plan_details.findMany({where:{itinerary_plan_ID:planId,status:1,deleted:0}});
+    const plan=plans.find((p:any)=>Number(p.confirmed_itinerary_plan_ID)===confirmedId);
+    if(!plan||(unique&&plans.length!==1)) throw new BadRequestException('Confirmed plan missing or multiple active confirmations share this plan. Finance review required.');
+    return {planId,confirmedId,plan};
+  }
+
+async hotelFinanceIdentities(body: any) {
+    const {planId}=await this.hotelReviewPlan(this.prisma,body,false);
+    const rows=await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({where:{itinerary_plan_id:planId,deleted:0}});
+    const result=[] as Array<{confirmedHotelId:number;hotelId:number}>;
+    for(const row of rows){
+      const hotelId=await this.hotelReviewIdentity(this.prisma,row);
+      result.push({confirmedHotelId:Number(row.confirmed_itinerary_plan_hotel_details_ID),hotelId});
+    }
+    return result;
+  }
+
+async postReviewedHotelFinance(body:any, userId:number) {
+    const reject=(m:string):never=>{throw new BadRequestException(m);};
+    const entries=body?.rows;
+    if(body?.supplierEvidenceVerified!==true||body?.noPriorPaymentsVerified!==true||!Array.isArray(entries)||!entries.length||entries.length>100) reject('Supplier confirmation, invoice and prior payment review are required.');
+    const ids=entries.map((x:any)=>Number(x?.confirmedHotelId));
+    if(ids.some((id:number)=>!Number.isSafeInteger(id)||id<=0)||new Set(ids).size!==ids.length) reject('Invalid or repeated hotel row IDs.');
+    if(!Number.isSafeInteger(userId)||userId<=0) reject('Authenticated Finance user ID is required.');
+    const result=await this.prisma.$transaction(async tx=>{
+      const {planId,confirmedId}=await this.hotelReviewPlan(tx,body,true);
+      const headers=await tx.dvi_accounts_itinerary_details.findMany({where:{OR:[{itinerary_plan_ID:planId},{confirmed_itinerary_plan_ID:confirmedId}]}});
+      if(headers.length!==1||headers[0].status!==1||headers[0].deleted!==0||headers[0].itinerary_plan_ID!==planId||headers[0].confirmed_itinerary_plan_ID!==confirmedId) reject('Accounts header missing or ambiguous.');
+      const headerId=headers[0].accounts_itinerary_details_ID;
+      const all=await tx.dvi_confirmed_itinerary_plan_hotel_details.findMany({where:{itinerary_plan_id:planId,deleted:0}});
+      const rows=all.filter(r=>ids.includes(r.confirmed_itinerary_plan_hotel_details_ID));
+      if(rows.length!==ids.length) reject('Hotel IDs do not belong to the confirmed booking.');
+      const history=await tx.dvi_accounts_itinerary_hotel_transaction_history.findMany({where:{accounts_itinerary_details_ID:headerId}});
+      const headerFinance=await tx.dvi_accounts_itinerary_hotel_details.findMany({where:{accounts_itinerary_details_ID:headerId}});
+      if(history.some(h=>!headerFinance.some(f=>f.accounts_itinerary_hotel_details_ID===h.accounts_itinerary_hotel_details_ID&&f.deleted===0))) reject('Orphan or historical payment records require reconciliation before posting.');
+      const hotelIds=new Set<number>();let created=0;
+      for(const row of rows){
+        const id=row.confirmed_itinerary_plan_hotel_details_ID, originalId=row.itinerary_plan_hotel_details_ID, route=row.itinerary_route_id;
+        const entry=entries.find((e:any)=>Number(e.confirmedHotelId)===id);
+        const hotelId=await this.hotelReviewIdentity(tx,row);hotelIds.add(hotelId);
+        if(!hotelId||!originalId||!route||!row.itinerary_route_date||![0,1].includes(row.status)||row.hotel_required!==1||row.hotel_cancellation_status!==0||all.filter(r=>r.itinerary_route_id===route).length!==1) reject('Hotel identity, status or route is ambiguous: '+id);
+        if(hotelIds.size!==1||Number(body.hotelId)!==hotelId) reject('Review exactly one verified hotel at a time.');
+        const original=await tx.dvi_itinerary_plan_hotel_details.findFirst({where:{itinerary_plan_hotel_details_ID:originalId,itinerary_plan_id:planId,itinerary_route_id:route,deleted:0,status:1,hotel_required:1,hotel_cancellation_status:0}});
+        if(!original||await this.hotelReviewIdentity(tx,original)!==hotelId||String(original.itinerary_route_date)!==String(row.itinerary_route_date)) reject('Original hotel assignment does not match: '+id);
+        const voucher=await tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.findMany({where:{OR:[{itinerary_plan_hotel_details_ID:originalId},{confirmed_itinerary_plan_hotel_details_ID:id}]}});
+        if(voucher.some(v=>v.hotel_voucher_cancellation_status===1||v.hotel_booking_status===2)) reject('Hotel cancellation history exists: '+id);
+        if(voucher.some(v=>v.deleted===0&&v.status===1&&(v.hotel_booking_status!==1||v.itinerary_plan_id!==planId||v.hotel_id!==hotelId))) reject('Conflicting or pending hotel voucher: '+id);
+        const bookingRef=String(entry?.bookingRef||'').trim(), invoiceRef=String(entry?.invoiceRef||'').trim();
+        if(!bookingRef||!invoiceRef||bookingRef.length>120||invoiceRef.length>120) reject('Enter genuine booking and supplier invoice references for each stay.');
+        const base=this.hotelReviewMoney(entry?.purchaseBase),tax=this.hotelReviewMoney(entry?.purchaseTax),payable=base+tax;
+        if(payable<=0) reject('Supplier invoice amount must be positive.');
+        const prior=await tx.dvi_accounts_itinerary_hotel_details.findMany({where:{OR:[{cnf_itinerary_plan_hotel_details_ID:id},{itinerary_plan_hotel_details_ID:originalId},{itinerary_plan_ID:planId,itinerary_route_id:route}]}});
+        if(prior.length){
+          const p=prior[0];if(prior.length!==1||p.deleted!==0||p.status!==1||p.accounts_itinerary_details_ID!==headerId||p.itinerary_plan_ID!==planId||p.cnf_itinerary_plan_hotel_details_ID!==id||p.itinerary_plan_hotel_details_ID!==originalId||p.hotel_id!==hotelId||p.itinerary_route_id!==route||String(p.itinerary_route_date)!==String(row.itinerary_route_date)||Math.round(Number(p.total_payable)*100)!==payable) reject('Existing or conflicting finance record: '+id);
+          continue;
+        }
+        const sell=Number(row.total_hotel_cost),sellTax=Number(row.total_hotel_tax_amount);
+        if(!Number.isFinite(sell)||sell<0||!Number.isFinite(sellTax)||sellTax<0) reject('Invalid original selling price: '+id);
+        await tx.dvi_accounts_itinerary_hotel_details.create({data:{accounts_itinerary_details_ID:headerId,itinerary_plan_hotel_details_ID:originalId,cnf_itinerary_plan_hotel_details_ID:id,itinerary_plan_ID:planId,itinerary_route_id:route,itinerary_route_date:row.itinerary_route_date,hotel_id:hotelId,total_hotel_cost:sell,total_hotel_tax_amount:sellTax,total_purchase_cost:base/100,total_payable:payable/100,total_paid:0,total_balance:payable/100,createdby:userId,createdon:new Date(),status:1,deleted:0}});
+        created++;
+      }
+      return {created,confirmedId,hotelId:[...hotelIds][0]};
+    },{isolationLevel:'Serializable'});
+    // Preserve review evidence in the application's audit log; no new schema fields.
+    console.log('[DVI_HOTEL_FINANCE_REVIEW_COMMITTED]',JSON.stringify({userId,at:new Date().toISOString(),planId:Number(body.planId),confirmedId:Number(body.confirmedId),hotelId:Number(body.hotelId),created:result.created,rows:entries.map((e:any)=>({confirmedHotelId:Number(e.confirmedHotelId),bookingRef:String(e.bookingRef),invoiceRef:String(e.invoiceRef),purchaseBase:String(e.purchaseBase),purchaseTax:String(e.purchaseTax)}))}));
+    return result;
+  }
+
+async recordHotelFinanceBatch(body:any,userId:number,receiptPath:string) {
+    const reject=(m:string):never=>{throw new BadRequestException(m);};
+    let payments=body?.payments;
+    if(typeof payments==='string'){try{payments=JSON.parse(payments);}catch{reject('Invalid payments JSON.');}}
+    const reference=String(body?.utrNumber||'').trim(), processor=String(body?.processedBy||'').trim(), mode=Number(body?.modeOfPaymentId);
+    if(!Array.isArray(payments)||!payments.length||payments.length>100||!reference||reference.length>120||!processor||processor.length>120||![1,2,3].includes(mode)||!Number.isSafeInteger(userId)||userId<=0) reject('Invalid hotel payment request.');
+    const ids=payments.map((p:any)=>Number(p.componentDetailId));
+    if(ids.some((i:number)=>!Number.isSafeInteger(i)||i<=0)||new Set(ids).size!==ids.length||payments.some((p:any)=>p.componentType!=='hotel')) reject('Hotel payments only; duplicate rows not permitted.');
+    return this.prisma.$transaction(async tx=>{
+      const rows=await tx.dvi_accounts_itinerary_hotel_details.findMany({where:{accounts_itinerary_hotel_details_ID:{in:ids}}});
+      if(rows.length!==ids.length||new Set(rows.map(r=>r.hotel_id)).size!==1) reject('Select posted rows for one hotel only.');
+      const hotelId=rows[0].hotel_id;
+      let externalPayee='';
+      const old=await tx.dvi_accounts_itinerary_hotel_transaction_history.findFirst({where:{transaction_utr_no:reference}});
+      if(old) reject('Transaction reference already recorded. Reload and review payment history.');
+      for(const row of rows){
+        const p=payments.find((x:any)=>Number(x.componentDetailId)===row.accounts_itinerary_hotel_details_ID);
+        const amount=this.hotelReviewMoney(p.amount), payable=this.hotelReviewMoney(Number(row.total_payable).toFixed(2)), paid=this.hotelReviewMoney(Number(row.total_paid).toFixed(2)), balance=this.hotelReviewMoney(Number(row.total_balance).toFixed(2));
+        if((!hotelId&&!this.hotelSavedPriceTestMode())||row.status!==1||row.deleted!==0||row.accounts_itinerary_details_ID!==Number(p.accountsItineraryDetailsId)||payable!==paid+balance||amount<=0||amount>balance) reject('Finance row or balance changed. Reload and review.');
+        const header=await tx.dvi_accounts_itinerary_details.findFirst({where:{accounts_itinerary_details_ID:row.accounts_itinerary_details_ID,itinerary_plan_ID:row.itinerary_plan_ID,status:1,deleted:0}});
+        if(!header) reject('Accounts header unavailable.');
+        await this.hotelReviewPlan(tx,{planId:row.itinerary_plan_ID,confirmedId:header!.confirmed_itinerary_plan_ID},true);
+        const confirmed=await tx.dvi_confirmed_itinerary_plan_hotel_details.findFirst({where:{confirmed_itinerary_plan_hotel_details_ID:row.cnf_itinerary_plan_hotel_details_ID,itinerary_plan_id:row.itinerary_plan_ID,deleted:0,hotel_cancellation_status:0,hotel_required:1}});
+        if(!confirmed||![0,1].includes(confirmed.status)||(hotelId>0&&await this.hotelReviewIdentity(tx,confirmed)!==hotelId)||(hotelId===0&&(!this.hotelSavedPriceTestMode()||Number(confirmed.hotel_id)!==0||!String(confirmed.hotel_code||'').trim()||!this.autoHotelProvider(confirmed.hotel_provider)))||confirmed.itinerary_plan_hotel_details_ID!==row.itinerary_plan_hotel_details_ID||confirmed.itinerary_route_id!==row.itinerary_route_id||String(confirmed.itinerary_route_date)!==String(row.itinerary_route_date)) reject('Hotel stay no longer matches the posted finance row.');
+        const original=await tx.dvi_itinerary_plan_hotel_details.findFirst({where:{itinerary_plan_hotel_details_ID:row.itinerary_plan_hotel_details_ID,itinerary_plan_id:row.itinerary_plan_ID,itinerary_route_id:row.itinerary_route_id,deleted:0,hotel_cancellation_status:0,hotel_required:1,status:1}});
+        if(!original||(hotelId>0&&await this.hotelReviewIdentity(tx,original)!==hotelId)||(hotelId===0&&(Number(original.hotel_id)!==0||this.autoHotelProvider(original.hotel_provider)!==this.autoHotelProvider(confirmed.hotel_provider)||String(original.hotel_code||'').trim()!==String(confirmed.hotel_code||'').trim()))) reject('Original hotel assignment is no longer active.');
+        if(hotelId===0){const payee=this.autoHotelProvider(confirmed.hotel_provider)+':'+String(confirmed.hotel_code||'').trim();if(externalPayee&&externalPayee!==payee)reject('Cannot pay two supplier hotels in one batch.');externalPayee=payee;}
+        const cancelled=await tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.findFirst({where:{AND:[{OR:[{itinerary_plan_hotel_details_ID:row.itinerary_plan_hotel_details_ID},{confirmed_itinerary_plan_hotel_details_ID:row.cnf_itinerary_plan_hotel_details_ID}]},{OR:[{hotel_voucher_cancellation_status:1},{hotel_booking_status:2}]}]}});
+        if(cancelled) reject('Cancelled hotel cannot be paid.');
+        const result=await tx.dvi_accounts_itinerary_hotel_details.updateMany({where:{accounts_itinerary_hotel_details_ID:row.accounts_itinerary_hotel_details_ID,total_paid:row.total_paid,total_balance:row.total_balance,status:1,deleted:0},data:{total_paid:(paid+amount)/100,total_balance:(balance-amount)/100}});
+        if(result.count!==1) reject('Concurrent payment detected; reload.');
+        await tx.dvi_accounts_itinerary_hotel_transaction_history.create({data:{accounts_itinerary_hotel_details_ID:row.accounts_itinerary_hotel_details_ID,accounts_itinerary_details_ID:row.accounts_itinerary_details_ID,transaction_amount:amount/100,transaction_date:new Date(),transaction_done_by:processor,mode_of_pay:mode,transaction_utr_no:reference,transaction_attachment:receiptPath||'',createdby:userId,createdon:new Date(),status:1,deleted:0}});
+      }
+      return {recorded:rows.length};
+    },{isolationLevel:'Serializable'});
+  }
+
 }
 
 // Helpers (pure functions)

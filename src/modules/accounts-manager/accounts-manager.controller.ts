@@ -584,4 +584,31 @@ async payBulk(
     );
 }
 
+
+
+  // DVI_HOTEL_PR_REPAIR_20261126: preserve all staging methods; append Hotel Payments only.
+
+private requireHotelFinanceRole(req:any):number {
+    const u=req.user;
+    if(!u||![1,6].includes(Number(u.role))) throw new ForbiddenException('Accounts or Admin access required.');
+    return Number(u.userId||u.user_id||u.id||u.sub||0);
+  }
+
+@UseGuards(JwtAuthGuard)
+  @Post('hotel-finance-auto-sync')
+  async hotelFinanceAutoSync(@Req() req:any){return this.service.automaticHotelFinance(this.requireHotelFinanceRole(req));}
+
+@UseGuards(JwtAuthGuard)
+  @Post('hotel-finance-identities')
+  async hotelFinanceIdentities(@Req() req:any,@Body() body:any){this.requireHotelFinanceRole(req);return this.service.hotelFinanceIdentities(body);}
+
+@UseGuards(JwtAuthGuard)
+  @Post('hotel-finance-review')
+  async hotelFinanceReview(@Req() req:any,@Body() body:any){return this.service.postReviewedHotelFinance(body,this.requireHotelFinanceRole(req));}
+
+@UseGuards(JwtAuthGuard)
+  @Post('hotel-finance-pay')
+  @UseInterceptors(FileInterceptor('paymentScreenshot',{storage:paymentScreenshotStorage,limits:{fileSize:5*1024*1024},fileFilter:(_req,file,cb)=>{if(/^image\/(png|jpeg|webp|gif)$/.test(file.mimetype)&&/\.(png|jpe?g|webp|gif)$/i.test(file.originalname))cb(null,true);else cb(new BadRequestException('Unsupported receipt image.'),false);}}))
+  async hotelFinancePay(@Req() req:any,@Body() body:any,@UploadedFile() file?:Express.Multer.File){return this.service.recordHotelFinanceBatch(body,this.requireHotelFinanceRole(req),file?'/uploads/accounts_payment_screenshots/'+file.filename:'');}
+
 }
