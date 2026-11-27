@@ -15,14 +15,17 @@ test('confirmed itinerary details preserves missing-plan validation', async () =
   );
 });
 
-test('confirmed hotel names resolve legacy offline IDs without treating supplier codes as local IDs', async () => {
+test('confirmed details resolve legacy names and use the rating of the matching offline selection', async () => {
+  const grandBaySnapshot = { provider: 'offline', canonicalHotelId: 280, category: 4 };
   const nights = [
     { hotel_id: 0, hotel_code: '280', hotel_provider: 'offline', hotel_category_id: 3 },
     { hotel_id: 0, hotel_code: '280', hotel_provider: 'offline' },
-    { hotel_id: 281, hotel_code: '280', hotel_provider: 'offline' },
+    { hotel_id: 281, hotel_code: '280', hotel_provider: 'offline', hotel_category_id: 3, snapshot: grandBaySnapshot },
     { hotel_id: 0, hotel_code: '280', hotel_provider: 'tbo' },
     { hotel_id: 0, hotel_code: '999', hotel_provider: 'offline' },
     { hotel_id: 0, hotel_code: '280.0', hotel_provider: 'offline' },
+    { hotel_id: 280, hotel_code: '280', hotel_provider: 'offline', hotel_category_id: 3, snapshot: grandBaySnapshot },
+    { hotel_id: 280, hotel_code: '280', hotel_provider: 'offline', hotel_category_id: 0, snapshot: grandBaySnapshot },
   ];
   const localHotels = [
     { hotel_id: 280, hotel_code: '49', hotel_name: 'GRAND BAY RESORT AND SPA', hotel_category: 4 },
@@ -43,7 +46,7 @@ test('confirmed hotel names resolve legacy offline IDs without treating supplier
       itinerary_route_id: index + 1,
       group_type: 1,
       total_hotel_cost: 12285,
-      selected_price_snapshot: JSON.stringify({ roomType: 'Grande Studio', mealPlan: 'CP' }),
+      selected_price_snapshot: JSON.stringify({ roomType: 'Grande Studio', mealPlan: 'CP', ...night.snapshot }),
     })) },
     dvi_confirmed_itinerary_plan_hotel_room_details: empty,
     dvi_confirmed_itinerary_plan_hotel_voucher_details: empty,
@@ -72,9 +75,11 @@ test('confirmed hotel names resolve legacy offline IDs without treating supplier
     [0, 'VSR property with the same code', 'tbo'],
     [0, 'Booked hotel name missing', 'offline'],
     [0, 'Booked hotel name missing', 'offline'],
+    [280, 'GRAND BAY RESORT AND SPA', 'offline'],
+    [280, 'GRAND BAY RESORT AND SPA', 'offline'],
   ]);
   assert.deepEqual(result.hotels.slice(0, 2).map(({ roomType, mealPlan, totalHotelCost }) =>
     [roomType, mealPlan, totalHotelCost]), Array(2).fill(['Grande Studio', 'CP', 12285]));
-  assert.deepEqual(result.hotels.slice(0, 2).map(({ category }) => category), [3, 0]);
+  assert.deepEqual(result.hotels.map(({ category }) => category), [3, 0, 3, 0, 0, 0, 4, 4]);
   assert.deepEqual(await service.getConfirmedItineraryDetails(214), result);
 });

@@ -563,9 +563,16 @@ export class ItineraryConfirmedItineraryDetailsService {
       const confirmedCategory = Number((matchedConfirmedHotel as any)?.hotel_category_id || 0);
       const hotelMasterCategory = Number((hotelMaster as any)?.hotel_category || 0);
       const tboStarRating = Number((tboMaster as any)?.star_rating || 0);
-      const category = confirmedCategory > 0
-        ? confirmedCategory
-        : (tboStarRating > 0 ? tboStarRating : hotelMasterCategory);
+      const catalogHotelId = storedHotelId || offlineHotelId;
+      // The route category can be inherited from the recommendation. The
+      // matching offline selection records the actual property's category.
+      const snapshotCategory = provider === 'offline' && selectedSnapshot.provider === 'offline' &&
+        catalogHotelId > 0 && Number(selectedSnapshot.canonicalHotelId ?? selectedSnapshot.hotelId) === catalogHotelId
+        ? Number(selectedSnapshot.category || 0)
+        : 0;
+      const category = Number.isInteger(snapshotCategory) && snapshotCategory > 0
+        ? snapshotCategory
+        : (confirmedCategory > 0 ? confirmedCategory : (tboStarRating > 0 ? tboStarRating : hotelMasterCategory));
 
       const originalHotelDetailsId = Number(
         (matchedConfirmedHotel as any)?.itinerary_plan_hotel_details_ID || 0,

@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ItineraryInvoiceReadService } from '../src/modules/itineraries/services/itinerary-invoice-read.service';
 
-test('invoice names both offline nights without interpreting a supplier code as a local hotel ID', async () => {
+test('invoice reads missing hotel destinations from itinerary routes and preserves saved text and supplier identity', async () => {
   const hotels = ['offline', 'offline', 'tbo'].map((provider, index) => ({
     hotel_id: 0, hotel_provider: provider, hotel_code: '280',
     itinerary_route_date: new Date(2026, 10, 26 + index, 12),
-    itinerary_route_location: 'Mahabalipuram',
+    itinerary_route_id: index + 10,
+    itinerary_route_location: [null, '3915', 'Pondicherry'][index],
     total_hotel_cost: index < 2 ? 12285 : 1000,
   }));
   const missing = { findFirst: async () => null };
@@ -21,6 +22,13 @@ test('invoice names both offline nights without interpreting a supplier code as 
     dvi_global_settings: missing,
     dvi_accounts_itinerary_details: missing,
     dvi_confirmed_itinerary_plan_hotel_details: { findMany: async () => hotels },
+    dvi_itinerary_route_details: { findMany: async ({ where }: any) => {
+      assert.deepEqual(where, { itinerary_plan_ID: 12268, itinerary_route_ID: { in: [10, 11] }, deleted: 0 });
+      return [
+        { itinerary_route_ID: 10, next_visiting_location: 'Mahabalipuram', location_name: 'Chennai' },
+        { itinerary_route_ID: 11, next_visiting_location: null, location_name: 'Mahabalipuram' },
+      ];
+    } },
     dvi_confirmed_itinerary_plan_vendor_eligible_list: empty,
     dvi_accounts_itinerary_activity_details: empty,
     dvi_accounts_itinerary_guide_details: empty,
@@ -36,7 +44,7 @@ test('invoice names both offline nights without interpreting a supplier code as 
   assert.deepEqual(hotelCharges?.notes, [
     { label: '26 Nov 2026 - Mahabalipuram - GRAND BAY RESORT AND SPA' },
     { label: '27 Nov 2026 - Mahabalipuram - GRAND BAY RESORT AND SPA' },
-    { label: '28 Nov 2026 - Mahabalipuram - Hotel' },
+    { label: '28 Nov 2026 - Pondicherry - Hotel' },
   ]);
   assert.equal(hotelCharges?.amount, 25570);
   assert.equal(invoice.totals.totalAmount, 25570);

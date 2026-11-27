@@ -7,6 +7,7 @@ import { getTransportEarlyArrivalMessage } from '../transport-early-arrival';
 import { assertTboMultiBatchStay, type TboMultiBatchStaySnapshot } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { getHotelHoldSelectionCoverage, getHotelHoldSelectionIds } from '../utils/hotel-hold-selection-coverage.util';
 import { getConfirmedHotelCatalogId } from '../utils/confirmed-hotel-catalog-id.util';
+import { getConfirmedHotelDestination, getHotelLocationLabel, loadConfirmedHotelRouteDestinations } from '../utils/confirmed-hotel-destination.util';
 
 const CONFIRMED_HOTEL_VOUCHER_STATUS = 4;
 
@@ -142,7 +143,7 @@ export class ItineraryVoucherReadService {
     const vendorBranchIds = Array.from(new Set(vehicles.map((v: any) => Number(v.vendor_branch_id || 0)).filter((id) => id > 0)));
     const vehicleTypeIds = Array.from(new Set(vehicles.map((v: any) => Number(v.vehicle_type_id || 0)).filter((id) => id > 0)));
 
-    const [hotelMasters, roomTypes, vendorMasters, vendorBranches, vehicleTypes] = await Promise.all([
+    const [hotelMasters, roomTypes, vendorMasters, vendorBranches, vehicleTypes, hotelRouteDestinations] = await Promise.all([
       hotelIds.length > 0
         ? this.prisma.dvi_hotel.findMany({
             where: { hotel_id: { in: hotelIds } as any },
@@ -179,6 +180,7 @@ export class ItineraryVoucherReadService {
             select: { vehicle_type_id: true, vehicle_type_title: true },
           })
         : Promise.resolve([] as any[]),
+      loadConfirmedHotelRouteDestinations(this.prisma, itineraryPlanId, hotels),
     ]);
 
     const hotelById = new Map<number, any>();
@@ -391,7 +393,8 @@ hotelName: String(
   `${provider.toUpperCase()} Hotel ${hotelCode}`
 ),
           hotelEmail: String(hotelMaster?.hotel_email || ''),
-          hotelStateCity: [hotelMaster?.hotel_state, hotelMaster?.hotel_city].filter(Boolean).join(', '),
+          hotelStateCity: [getHotelLocationLabel(hotelMaster?.hotel_state), getHotelLocationLabel(hotelMaster?.hotel_city)]
+            .filter(Boolean).join(', '),
           routeDates: [] as string[],
           dayNumbers: [] as number[],
           hotelDetailsIds: [] as number[],
@@ -427,7 +430,7 @@ hotelName: String(
       if (confirmedHotelDetailsId > 0 && !group.confirmedHotelDetailsIds.includes(confirmedHotelDetailsId)) {
         group.confirmedHotelDetailsIds.push(confirmedHotelDetailsId);
       }
-      const destination = String(hotel.itinerary_route_location || '').trim();
+      const destination = getConfirmedHotelDestination(hotel, hotelRouteDestinations);
       if (destination && !group.destinations.includes(destination)) {
         group.destinations.push(destination);
       }
@@ -513,6 +516,7 @@ hotelName: String(
 
         return {
           ...group,
+          hotelStateCity: group.destinations.join(', ') || group.hotelStateCity,
           routeDates: [...group.routeDates].sort(),
           dayNumbers: [...group.dayNumbers].sort((a: number, b: number) => a - b),
           roomTypes: [...group.roomTypes].sort(),

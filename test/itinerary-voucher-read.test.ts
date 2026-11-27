@@ -24,11 +24,11 @@ test('transport voucher read preserves missing confirmed-plan validation', async
   );
 });
 
-test('legacy offline voucher shows the catalogue name while retaining both booked nights and the saved voucher identity', async () => {
+test('offline vouchers show the itinerary destination and keep the stored voucher identity', async () => {
   const dates = ['2026-11-26', '2026-11-27'];
   const hotels = dates.map((date, index) => ({
     hotel_id: 0, hotel_provider: 'offline', hotel_code: '280',
-    itinerary_route_id: index + 1, itinerary_route_date: date, itinerary_route_location: 'Mahabalipuram',
+    itinerary_route_id: index + 1, itinerary_route_date: date, itinerary_route_location: null,
     confirmed_itinerary_plan_hotel_details_ID: 1248 + index,
     itinerary_plan_hotel_details_ID: 63528 + index,
     hotel_required: 1, status: 1,
@@ -43,9 +43,13 @@ test('legacy offline voucher shows the catalogue name while retaining both booke
     dvi_confirmed_itinerary_plan_hotel_room_details: empty,
     dvi_confirmed_itinerary_plan_hotel_voucher_details: empty,
     dvi_confirmed_itinerary_plan_hotel_cancellation_policy: empty,
+    dvi_itinerary_route_details: { findMany: async ({ where }: any) => {
+      assert.deepEqual(where, { itinerary_plan_ID: 12268, itinerary_route_ID: { in: [1, 2] }, deleted: 0 });
+      return [1, 2].map(itinerary_route_ID => ({ itinerary_route_ID, next_visiting_location: 'Mahabalipuram' }));
+    } },
     dvi_hotel: { findMany: async ({ where }: any) => {
       assert.deepEqual(where.hotel_id.in, [280]);
-      return [{ hotel_id: 280, hotel_name: 'GRAND BAY RESORT AND SPA' }];
+      return [{ hotel_id: 280, hotel_name: 'GRAND BAY RESORT AND SPA', hotel_state: '35', hotel_city: '3915' }];
     } },
   } as any);
   service.setCallbacks({
@@ -54,16 +58,21 @@ test('legacy offline voucher shows the catalogue name while retaining both booke
     getVoucherStatusLabel: ItinerariesService.prototype['getVoucherStatusLabel'],
   });
 
-  const { hotelVoucherGroups } = await service.getVoucherDetails(12268);
-  assert.equal(hotelVoucherGroups.length, 1);
-  const [hotel] = hotelVoucherGroups;
-  assert.equal(hotel.hotelName, 'GRAND BAY RESORT AND SPA');
-  assert.equal(hotel.hotelId, 0);
-  assert.equal(hotel.hotelCode, '280');
-  assert.deepEqual(hotel.confirmedHotelDetailsIds, [1248, 1249]);
-  assert.deepEqual(hotel.routeDates, dates);
-  assert.equal(hotel.voucherCount, 0);
-  assert.equal(hotel.bookingStatusLabel, 'Not Created');
+  for (const hotelId of [0, 280]) {
+    hotels.forEach(row => { row.hotel_id = hotelId; });
+    const { hotelVoucherGroups } = await service.getVoucherDetails(12268);
+    assert.equal(hotelVoucherGroups.length, 1);
+    const [hotel] = hotelVoucherGroups;
+    assert.equal(hotel.hotelName, 'GRAND BAY RESORT AND SPA');
+    assert.equal(hotel.hotelId, hotelId);
+    assert.equal(hotel.hotelCode, '280');
+    assert.equal(hotel.hotelStateCity, 'Mahabalipuram');
+    assert.deepEqual(hotel.destinations, ['Mahabalipuram']);
+    assert.deepEqual(hotel.confirmedHotelDetailsIds, [1248, 1249]);
+    assert.deepEqual(hotel.routeDates, dates);
+    assert.equal(hotel.voucherCount, 0);
+    assert.equal(hotel.bookingStatusLabel, 'Not Created');
+  }
 });
 
 test('hotel voucher counts issued VSR batches and confirms only complete vouchered stays', async () => {
@@ -93,13 +102,13 @@ test('hotel voucher counts issued VSR batches and confirms only complete voucher
   const hotelRows = stay.routeIds.map((routeId, index) => ({
     confirmed_itinerary_plan_hotel_details_ID: index + 1, itinerary_route_id: routeId,
     itinerary_plan_hotel_details_ID: 101 + index, group_type: 2, hotel_cancellation_status: 0,
-    itinerary_route_date: `2026-11-${26 + index}`, hotel_provider: 'tbo', hotel_code: hotelCode,
+    itinerary_route_date: `2026-11-${26 + index}`, itinerary_route_location: 'Udupi', hotel_provider: 'tbo', hotel_code: hotelCode,
     selected_price_snapshot: index === 0 ? JSON.stringify(priceSnapshot) : priceSnapshot,
     hotel_required: 1, status: 1,
   }));
   const localHotel = {
     confirmed_itinerary_plan_hotel_details_ID: 3, itinerary_route_id: 9,
-    itinerary_route_date: '2026-11-25', hotel_id: 4, hotel_provider: 'offline', hotel_code: 'LOCAL',
+    itinerary_route_date: '2026-11-25', itinerary_route_location: 'Mangalore', hotel_id: 4, hotel_provider: 'offline', hotel_code: 'LOCAL',
     selected_price_snapshot: { ...priceSnapshot, hotelName: 'Offline Hotel' }, hotel_required: 1, status: 1,
   };
   const paidAt = new Date('2026-11-25T01:00:00Z');
