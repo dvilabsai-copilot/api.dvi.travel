@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { getConfirmedHotelCatalogId } from '../utils/confirmed-hotel-catalog-id.util';
+import { getConfirmedHotelDestination, loadConfirmedHotelRouteDestinations } from '../utils/confirmed-hotel-destination.util';
 
 /** Owns confirmed itinerary pluck-card and invoice presentation reads. */
 @Injectable()
@@ -181,7 +182,7 @@ export class ItineraryInvoiceReadService {
         new Set(vehicles.map((row: any) => Number(row.vehicle_type_id || 0)).filter((id) => id > 0)),
       );
 
-      const [hotelMasters, vendorMasters, vehicleTypeMasters] = await Promise.all([
+      const [hotelMasters, vendorMasters, vehicleTypeMasters, hotelRouteDestinations] = await Promise.all([
         hotelIds.length
           ? this.prisma.dvi_hotel.findMany({
               where: { hotel_id: { in: hotelIds } as any },
@@ -200,6 +201,7 @@ export class ItineraryInvoiceReadService {
               select: { vehicle_type_id: true, vehicle_type_title: true },
             })
           : Promise.resolve([] as any[]),
+        loadConfirmedHotelRouteDestinations(this.prisma, itineraryPlanId, hotels),
       ]);
 
       const hotelNameById = new Map<number, string>();
@@ -340,9 +342,9 @@ logoUrl:
               const date = row.itinerary_route_date
                 ? new Date(row.itinerary_route_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                 : '';
-              const location = String(row.itinerary_route_location || '').trim();
+              const location = getConfirmedHotelDestination(row, hotelRouteDestinations);
               const hotelName = hotelNameById.get(getConfirmedHotelCatalogId(row)) || 'Hotel';
-              return { label: `${date} - ${location} - ${hotelName}`.replace(/^\s*-\s*/, '') };
+              return { label: [date, location, hotelName].filter(Boolean).join(' - ') };
             }),
           },
           {
