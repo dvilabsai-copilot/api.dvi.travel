@@ -3,6 +3,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { getTransportEarlyArrivalMessage } from '../transport-early-arrival';
+import { getConfirmedHotelCatalogId } from '../utils/confirmed-hotel-catalog-id.util';
 
 type ConfirmedItineraryDetailsCallbacks = Record<string, (...args: any[]) => any>;
 
@@ -127,17 +128,10 @@ export class ItineraryConfirmedItineraryDetailsService {
 
     const getPersistedProvider = (hotel?: (typeof confirmedHotels)[number]) =>
       String(hotel?.hotel_provider || '').trim().toLowerCase();
-    const getOfflineHotelIdFromCode = (hotel?: (typeof confirmedHotels)[number]): number => {
-      if (getPersistedProvider(hotel) !== 'offline') return 0;
-      // Offline selections use the canonical dvi_hotel ID as their code.
-      const code = String(hotel?.hotel_code || '').trim();
-      const id = Number(code);
-      return /^\d+$/.test(code) && id > 0 && id <= 2_147_483_647 ? id : 0;
-    };
     const hotelIds = Array.from(
       new Set(
         confirmedHotels
-          .map((row) => Number(row.hotel_id || 0) || getOfflineHotelIdFromCode(row))
+          .map(getConfirmedHotelCatalogId)
           .filter((id) => id > 0),
       ),
     );
@@ -494,7 +488,7 @@ export class ItineraryConfirmedItineraryDetailsService {
       const provider = providerBooking?.provider || getPersistedProvider(matchedConfirmedHotel) || 'tbo';
       const storedHotelId = Number(matchedConfirmedHotel?.hotel_id || 0);
       const offlineHotelId = provider === 'offline' && !storedHotelId
-        ? getOfflineHotelIdFromCode(matchedConfirmedHotel)
+        ? getConfirmedHotelCatalogId(matchedConfirmedHotel)
         : 0;
       const persistedHotelCode = String((matchedConfirmedHotel as any)?.hotel_code || '').trim();
       const fallbackHotelCode = String((matchedConfirmedHotel as any)?.hotel_id || '').trim();

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
+import { getConfirmedHotelCatalogId } from '../utils/confirmed-hotel-catalog-id.util';
 
 /** Owns confirmed itinerary pluck-card and invoice presentation reads. */
 @Injectable()
@@ -174,7 +175,7 @@ export class ItineraryInvoiceReadService {
           : Promise.resolve(null),
       ]);
 
-      const hotelIds = Array.from(new Set(hotels.map((row: any) => Number(row.hotel_id || 0)).filter((id) => id > 0)));
+      const hotelIds = Array.from(new Set(hotels.map(getConfirmedHotelCatalogId).filter((id) => id > 0)));
       const vendorIds = Array.from(new Set(vehicles.map((row: any) => Number(row.vendor_id || 0)).filter((id) => id > 0)));
       const vehicleTypeIds = Array.from(
         new Set(vehicles.map((row: any) => Number(row.vehicle_type_id || 0)).filter((id) => id > 0)),
@@ -335,9 +336,14 @@ logoUrl:
             title: 'HOTEL BOOKING CHARGES ONLY A/C (GST PAID)',
             hsnSac: String(settings?.hotel_hsn || ''),
             amount: hotelBaseAmount,
-            notes: hotels.map((row: any) => ({
- label: `${row.itinerary_route_date ? new Date(row.itinerary_route_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''} - ${String(row.itinerary_route_location || '').trim()} - ${hotelNameById.get(Number(row.hotel_id || 0)) || 'Hotel'}`.replace(/^\s*-\s*/, ''),
-            })),
+            notes: hotels.map((row) => {
+              const date = row.itinerary_route_date
+                ? new Date(row.itinerary_route_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                : '';
+              const location = String(row.itinerary_route_location || '').trim();
+              const hotelName = hotelNameById.get(getConfirmedHotelCatalogId(row)) || 'Hotel';
+              return { label: `${date} - ${location} - ${hotelName}`.replace(/^\s*-\s*/, '') };
+            }),
           },
           {
             key: 'hotel_margin',

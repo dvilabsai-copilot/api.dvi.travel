@@ -24,6 +24,48 @@ test('transport voucher read preserves missing confirmed-plan validation', async
   );
 });
 
+test('legacy offline voucher shows the catalogue name while retaining both booked nights and the saved voucher identity', async () => {
+  const dates = ['2026-11-26', '2026-11-27'];
+  const hotels = dates.map((date, index) => ({
+    hotel_id: 0, hotel_provider: 'offline', hotel_code: '280',
+    itinerary_route_id: index + 1, itinerary_route_date: date, itinerary_route_location: 'Mahabalipuram',
+    confirmed_itinerary_plan_hotel_details_ID: 1248 + index,
+    itinerary_plan_hotel_details_ID: 63528 + index,
+    hotel_required: 1, status: 1,
+  }));
+  const empty = { findMany: async () => [] };
+  const service = new ItineraryVoucherReadService({
+    dvi_confirmed_itinerary_plan_details: { findFirst: async () => ({
+      confirmed_itinerary_plan_ID: 214, itinerary_preference: 1, itinerary_quote_ID: 'DVD2026117',
+    }) },
+    dvi_confirmed_itinerary_customer_details: { findFirst: async () => null },
+    dvi_confirmed_itinerary_plan_hotel_details: { findMany: async () => hotels },
+    dvi_confirmed_itinerary_plan_hotel_room_details: empty,
+    dvi_confirmed_itinerary_plan_hotel_voucher_details: empty,
+    dvi_confirmed_itinerary_plan_hotel_cancellation_policy: empty,
+    dvi_hotel: { findMany: async ({ where }: any) => {
+      assert.deepEqual(where.hotel_id.in, [280]);
+      return [{ hotel_id: 280, hotel_name: 'GRAND BAY RESORT AND SPA' }];
+    } },
+  } as any);
+  service.setCallbacks({
+    toDateOnly: (value) => String(value).slice(0, 10),
+    getInvoiceToLabel: () => '',
+    getVoucherStatusLabel: ItinerariesService.prototype['getVoucherStatusLabel'],
+  });
+
+  const { hotelVoucherGroups } = await service.getVoucherDetails(12268);
+  assert.equal(hotelVoucherGroups.length, 1);
+  const [hotel] = hotelVoucherGroups;
+  assert.equal(hotel.hotelName, 'GRAND BAY RESORT AND SPA');
+  assert.equal(hotel.hotelId, 0);
+  assert.equal(hotel.hotelCode, '280');
+  assert.deepEqual(hotel.confirmedHotelDetailsIds, [1248, 1249]);
+  assert.deepEqual(hotel.routeDates, dates);
+  assert.equal(hotel.voucherCount, 0);
+  assert.equal(hotel.bookingStatusLabel, 'Not Created');
+});
+
 test('hotel voucher counts issued VSR batches and confirms only complete vouchered stays', async () => {
   const roomTitles = ['Deluxe Twin Room,2 Twin Beds', 'Deluxe Double Room,1 Queen Bed'];
   const hotelCode = '6437125';

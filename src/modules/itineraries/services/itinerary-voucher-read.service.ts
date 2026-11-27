@@ -6,6 +6,7 @@ import { TransportVoucherDetails } from '../dto/transport-voucher-details.dto';
 import { getTransportEarlyArrivalMessage } from '../transport-early-arrival';
 import { assertTboMultiBatchStay, type TboMultiBatchStaySnapshot } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { getHotelHoldSelectionCoverage, getHotelHoldSelectionIds } from '../utils/hotel-hold-selection-coverage.util';
+import { getConfirmedHotelCatalogId } from '../utils/confirmed-hotel-catalog-id.util';
 
 const CONFIRMED_HOTEL_VOUCHER_STATUS = 4;
 
@@ -135,7 +136,7 @@ export class ItineraryVoucherReadService {
         : Promise.resolve([] as any[]),
     ]);
 
-    const hotelIds = Array.from(new Set(hotels.map((h: any) => Number(h.hotel_id || 0)).filter((id) => id > 0)));
+    const hotelIds = Array.from(new Set(hotels.map(getConfirmedHotelCatalogId).filter((id) => id > 0)));
     const hotelRoomTypeIds = Array.from(new Set(hotelRooms.map((r: any) => Number(r.room_type_id || 0)).filter((id) => id > 0)));
     const vendorIds = Array.from(new Set(vehicles.map((v: any) => Number(v.vendor_id || 0)).filter((id) => id > 0)));
     const vendorBranchIds = Array.from(new Set(vehicles.map((v: any) => Number(v.vendor_branch_id || 0)).filter((id) => id > 0)));
@@ -331,6 +332,7 @@ for (const hotel of hotels as any[]) {
 
  const dateKey = this.toDateOnly(hotel.itinerary_route_date);
 const hotelMaster = hotelById.get(hotelId);
+const catalogHotelName = hotelById.get(getConfirmedHotelCatalogId(hotel))?.hotel_name;
 
 const staahBooking =
   provider === 'staah'
@@ -383,7 +385,7 @@ if (!hotelGroupMap.has(groupKey)) {
     provider,
 hotelName: String(
   staahBooking?.hotelName ||
-  hotelMaster?.hotel_name ||
+  catalogHotelName ||
   priceSnapshot.hotelName ||
   priceSnapshot.hotel_name ||
   `${provider.toUpperCase()} Hotel ${hotelCode}`
