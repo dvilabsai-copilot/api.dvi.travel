@@ -1,3 +1,5 @@
+import { getPdfHotelRatingText } from './hotel-rating-pdf-text';
+
 export interface InvoicePdfKitAssets {
   logoDataUri?: string | null;
 }
@@ -152,13 +154,13 @@ function drawDetailBlock(
 function measureItemRowHeight(doc: any, item: any, particularsWidth: number): number {
   const title = safeText(item?.title);
   const notes = Array.isArray(item?.notes) ? item.notes : [];
-  const titleHeight = doc.heightOfString(title, {
+  const titleHeight = doc.font('Helvetica-Bold').fontSize(10.2).heightOfString(title, {
     width: particularsWidth - 12,
     lineGap: 1,
   });
   const notesHeight = notes.reduce((sum: number, note: any) => {
-    const label = safeText(note?.label);
-    return sum + doc.heightOfString(label, {
+    const { text, font } = getPdfHotelRatingText(safeText(note?.label), note?.hotelCategory);
+    return sum + doc.font(font).fontSize(9).heightOfString(text, {
       width: particularsWidth - 16,
       lineGap: 0,
     }) + 2;
@@ -341,8 +343,8 @@ export function renderInvoicePdfKit(
       const notes = Array.isArray(item?.notes) ? item.notes : [];
       let noteY = y + 5 + doc.heightOfString(title, { width: colParticulars - 12 });
       for (const note of notes) {
-        const noteText = safeText(note?.label);
-        doc.font('Helvetica').fontSize(9).fillColor('#4f4a5a').text(noteText, tableX + colSlNo + 8, noteY + 2, {
+        const { text: noteText, font } = getPdfHotelRatingText(safeText(note?.label), note?.hotelCategory);
+        doc.font(font).fontSize(9).fillColor('#4f4a5a').text(noteText, tableX + colSlNo + 8, noteY + 2, {
           width: colParticulars - 16,
         });
         noteY += doc.heightOfString(noteText, { width: colParticulars - 16 }) + 2;

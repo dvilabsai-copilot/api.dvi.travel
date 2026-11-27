@@ -9,6 +9,7 @@ import { ItinerariesService } from './itineraries.service';
 import { PrismaService } from '../../prisma.service';
 import { TransportVoucherDetails } from './dto/transport-voucher-details.dto';
 import { renderInvoicePdfKit } from './templates/invoice-pdfkit.template';
+import { getPdfHotelRatingText } from './templates/hotel-rating-pdf-text';
 import { renderTransportVoucherHtml } from './templates/transport-voucher.template';
 
 @Injectable()
@@ -1843,7 +1844,9 @@ if (hotelGroups.length === 0) {
         const metaColumn = { width: 58 };
         const confirmationColumn = { width: 270 };
         for (const group of hotelGroups) {
-          const hotelName = String(group?.hotelName || '--');
+          const { text: hotelName, font: hotelNameFont } = getPdfHotelRatingText(
+            String(group?.hotelName || '--'), group?.hotelCategory, true,
+          );
           const location = String(group?.hotelStateCity || (Array.isArray(group?.destinations) ? group.destinations.join(', ') : '--'));
           const days = `Days ${Array.isArray(group?.dayNumbers) ? group.dayNumbers.join(', ') : '--'}`;
           const dates = Array.isArray(group?.routeDates)
@@ -1859,7 +1862,7 @@ if (hotelGroups.length === 0) {
             : '';
 
           const hotelNameTop = 6;
-          const locationTop = hotelNameTop + doc.font('Helvetica-Bold').fontSize(10).heightOfString(hotelName, hotelColumn) + 4;
+          const locationTop = hotelNameTop + doc.font(hotelNameFont).fontSize(10).heightOfString(hotelName, hotelColumn) + 4;
           doc.font('Helvetica').fontSize(9);
           const daysTop = locationTop + doc.heightOfString(location, hotelColumn) + 4;
           const hotelBottom = daysTop + doc.heightOfString(days, hotelColumn);
@@ -1878,7 +1881,7 @@ if (hotelGroups.length === 0) {
           const top = doc.y;
           const rowBg = Number(group?.voucherCount || 0) > 0 ? '#FFFFFF' : '#FFFCF5';
           doc.rect(40, top, doc.page.width - 80, rowHeight).fillAndStroke(rowBg, '#EFE6F8');
-          doc.font('Helvetica-Bold').fontSize(10).fillColor('#3F3654').text(hotelName, 48, top + hotelNameTop, hotelColumn);
+          doc.font(hotelNameFont).fontSize(10).fillColor('#3F3654').text(hotelName, 48, top + hotelNameTop, hotelColumn);
           doc.font('Helvetica').fontSize(9).fillColor('#5A5268');
           doc.text(location, 48, top + locationTop, hotelColumn);
           doc.text(days, 48, top + daysTop, hotelColumn);

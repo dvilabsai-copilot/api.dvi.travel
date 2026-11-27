@@ -35,15 +35,15 @@ test('invoice reads missing hotel destinations from itinerary routes and preserv
     dvi_accounts_itinerary_hotspot_details: empty,
     dvi_hotel: { findMany: async ({ where }: any) => {
       assert.deepEqual(where.hotel_id.in, [280]);
-      return [{ hotel_id: 280, hotel_name: 'GRAND BAY RESORT AND SPA' }];
+      return [{ hotel_id: 280, hotel_name: 'GRAND BAY RESORT AND SPA', hotel_category: 4 }];
     } },
   } as any);
 
   const invoice = await service.getInvoiceData(12268);
   const hotelCharges = invoice.lineItems.find((item) => item.key === 'hotel_base');
   assert.deepEqual(hotelCharges?.notes, [
-    { label: '26 Nov 2026 - Mahabalipuram - GRAND BAY RESORT AND SPA' },
-    { label: '27 Nov 2026 - Mahabalipuram - GRAND BAY RESORT AND SPA' },
+    { label: '26 Nov 2026 - Mahabalipuram - GRAND BAY RESORT AND SPA', hotelCategory: 4 },
+    { label: '27 Nov 2026 - Mahabalipuram - GRAND BAY RESORT AND SPA', hotelCategory: 4 },
     { label: '28 Nov 2026 - Pondicherry - Hotel' },
   ]);
   assert.equal(hotelCharges?.amount, 25570);

@@ -3,7 +3,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { getTransportEarlyArrivalMessage } from '../transport-early-arrival';
-import { getConfirmedHotelCatalogId } from '../utils/confirmed-hotel-catalog-id.util';
+import { getConfirmedHotelCatalogId, getConfirmedOfflinePropertyCategory } from '../utils/confirmed-hotel-catalog-id.util';
 
 type ConfirmedItineraryDetailsCallbacks = Record<string, (...args: any[]) => any>;
 
@@ -562,17 +562,13 @@ export class ItineraryConfirmedItineraryDetailsService {
       const confirmedCategory = Number((matchedConfirmedHotel as any)?.hotel_category_id || 0);
       const hotelMasterCategory = Number((hotelMaster as any)?.hotel_category || 0);
       const tboStarRating = Number((tboMaster as any)?.star_rating || 0);
-      const catalogHotelId = storedHotelId || offlineHotelId;
-      // The route category can be inherited from the recommendation. The
-      // matching offline selection records the actual property's category.
-      const snapshotCategory = provider === 'offline' && selectedSnapshot.provider === 'offline' &&
-        catalogHotelId > 0 && Number(selectedSnapshot.canonicalHotelId ?? selectedSnapshot.hotelId) === catalogHotelId
-        ? Number(selectedSnapshot.category || 0)
-        : 0;
-      // Legacy offline rows can retain the requested category or have no
-      // category at all. Their exact catalogue match supplies the property rating.
-      const offlinePropertyCategory = [snapshotCategory, Number(legacyOfflineHotel?.hotel_category || 0)]
-        .find(rating => Number.isInteger(rating) && rating > 0);
+      const offlinePropertyCategory = provider === 'offline'
+        ? getConfirmedOfflinePropertyCategory(
+          { hotel_id: storedHotelId || offlineHotelId, hotel_provider: provider },
+          legacyOfflineHotel?.hotel_category,
+          selectedSnapshot,
+        )
+        : undefined;
       const category = offlinePropertyCategory ??
         (confirmedCategory > 0 ? confirmedCategory : (tboStarRating > 0 ? tboStarRating : hotelMasterCategory));
 

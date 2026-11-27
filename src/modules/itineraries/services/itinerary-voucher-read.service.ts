@@ -6,7 +6,7 @@ import { TransportVoucherDetails } from '../dto/transport-voucher-details.dto';
 import { getTransportEarlyArrivalMessage } from '../transport-early-arrival';
 import { assertTboMultiBatchStay, type TboMultiBatchStaySnapshot } from '../../hotels/utils/tbo-multi-batch-stay.util';
 import { getHotelHoldSelectionCoverage, getHotelHoldSelectionIds } from '../utils/hotel-hold-selection-coverage.util';
-import { getConfirmedHotelCatalogId } from '../utils/confirmed-hotel-catalog-id.util';
+import { getConfirmedHotelCatalogId, getConfirmedOfflinePropertyCategory } from '../utils/confirmed-hotel-catalog-id.util';
 import { getConfirmedHotelDestination, getHotelLocationLabel, loadConfirmedHotelRouteDestinations } from '../utils/confirmed-hotel-destination.util';
 
 const CONFIRMED_HOTEL_VOUCHER_STATUS = 4;
@@ -150,6 +150,7 @@ export class ItineraryVoucherReadService {
             select: {
               hotel_id: true,
               hotel_name: true,
+              hotel_category: true,
               hotel_email: true,
               hotel_city: true,
               hotel_state: true,
@@ -334,7 +335,7 @@ for (const hotel of hotels as any[]) {
 
  const dateKey = this.toDateOnly(hotel.itinerary_route_date);
 const hotelMaster = hotelById.get(hotelId);
-const catalogHotelName = hotelById.get(getConfirmedHotelCatalogId(hotel))?.hotel_name;
+const catalogHotel = hotelById.get(getConfirmedHotelCatalogId(hotel));
 
 const staahBooking =
   provider === 'staah'
@@ -387,11 +388,12 @@ if (!hotelGroupMap.has(groupKey)) {
     provider,
 hotelName: String(
   staahBooking?.hotelName ||
-  catalogHotelName ||
+  catalogHotel?.hotel_name ||
   priceSnapshot.hotelName ||
   priceSnapshot.hotel_name ||
   `${provider.toUpperCase()} Hotel ${hotelCode}`
 ),
+          hotelCategory: getConfirmedOfflinePropertyCategory(hotel, catalogHotel?.hotel_category, priceSnapshot),
           hotelEmail: String(hotelMaster?.hotel_email || ''),
           hotelStateCity: [getHotelLocationLabel(hotelMaster?.hotel_state), getHotelLocationLabel(hotelMaster?.hotel_city)]
             .filter(Boolean).join(', '),

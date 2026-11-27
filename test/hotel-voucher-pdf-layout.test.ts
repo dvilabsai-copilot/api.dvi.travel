@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import PDFDocument from 'pdfkit';
 import { ItineraryPdfService } from '../src/modules/itineraries/itinerary-pdf.service';
+import { renderInvoicePdfKit } from '../src/modules/itineraries/templates/invoice-pdfkit.template';
 
 test('hotel voucher separates wrapped labels and fits each row in both voucher scopes', async (t) => {
   const hotelName = 'Grand Bay Resort and Spa';
@@ -10,7 +11,7 @@ test('hotel voucher separates wrapped labels and fits each row in both voucher s
   const longRooms = ['Deluxe Twin', 'Grande Studio', 'Premium Double', 'Family Suite'];
   const groups = [
     {
-      hotelName: hotelName.toUpperCase(), destinations: [location], dayNumbers: [1, 2],
+      hotelName: hotelName.toUpperCase(), hotelCategory: 4, destinations: [location], dayNumbers: [1, 2],
       routeDates: ['2026-11-26', '2026-11-27'], roomTypes: ['Grande Studio'],
     },
     {
@@ -57,7 +58,8 @@ test('hotel voucher separates wrapped labels and fits each row in both voucher s
       return field;
     };
 
-    const name = find(hotelName.toUpperCase());
+    const name = fields.find(field => /^GRAND BAY RESORT AND SPA \(4(?:★|-star)\)$/.test(field.text));
+    assert.ok(name, 'the hotel name must carry the confirmed four-star rating');
     const city = find(location);
     assert.ok(name.bottom < city.top, 'the full wrapped hotel name must finish above the location');
     assert.ok(city.bottom < find('Days 1, 2').top);
@@ -70,4 +72,33 @@ test('hotel voucher separates wrapped labels and fits each row in both voucher s
     assert.ok(rows.some(row => row.top <= name.top && city.bottom < row.bottom));
     assert.ok(rows.some(row => row.top <= rooms.top && contact.bottom < row.bottom));
   }
+});
+
+test('proforma prints the four-star rating next to the hotel on each dated line', async (t) => {
+  const hotelLines = [26, 27].map(day => `${day} Nov 2026 - Mahabalipuram - GRAND BAY RESORT AND SPA`);
+  const doc = new PDFDocument({ size: 'A4' });
+  const renderedLines: string[] = [];
+  const originalText = doc.text;
+  t.mock.method(doc, 'text', function (
+    this: PDFKit.PDFDocument, value: string, x?: number, y?: number, options?: PDFKit.Mixins.TextOptions,
+  ) {
+    renderedLines.push(value);
+    return originalText.call(this, value, x, y, options);
+  });
+
+  renderInvoicePdfKit(doc, {
+    lineItems: [{
+      title: 'Hotel Accommodation',
+      amount: 24570,
+      notes: hotelLines.map(label => ({ label, hotelCategory: 4 })),
+    }],
+  }, 'proforma');
+  const ended = new Promise<void>(resolve => doc.once('end', resolve));
+  doc.resume();
+  doc.end();
+  await ended;
+
+  const hotelNotes = renderedLines.filter(text => text.includes('GRAND BAY RESORT AND SPA'));
+  assert.deepEqual(hotelNotes.map(text => text.replace(/ \(4(?:★|-star)\)$/, '')), hotelLines);
+  assert.ok(hotelNotes.every(text => / \(4(?:★|-star)\)$/.test(text)));
 });
