@@ -17,7 +17,7 @@ test('confirmed itinerary details preserves missing-plan validation', async () =
 
 test('confirmed hotel names resolve legacy offline IDs without treating supplier codes as local IDs', async () => {
   const nights = [
-    { hotel_id: 0, hotel_code: '280', hotel_provider: 'offline' },
+    { hotel_id: 0, hotel_code: '280', hotel_provider: 'offline', hotel_category_id: 3 },
     { hotel_id: 0, hotel_code: '280', hotel_provider: 'offline' },
     { hotel_id: 281, hotel_code: '280', hotel_provider: 'offline' },
     { hotel_id: 0, hotel_code: '280', hotel_provider: 'tbo' },
@@ -25,7 +25,7 @@ test('confirmed hotel names resolve legacy offline IDs without treating supplier
     { hotel_id: 0, hotel_code: '280.0', hotel_provider: 'offline' },
   ];
   const localHotels = [
-    { hotel_id: 280, hotel_code: '49', hotel_name: 'GRAND BAY RESORT AND SPA' },
+    { hotel_id: 280, hotel_code: '49', hotel_name: 'GRAND BAY RESORT AND SPA', hotel_category: 4 },
     { hotel_id: 281, hotel_code: '50', hotel_name: 'Hotel saved by canonical ID' },
   ];
   const date = new Date('2026-11-26T00:00:00Z');
@@ -75,5 +75,6 @@ test('confirmed hotel names resolve legacy offline IDs without treating supplier
   ]);
   assert.deepEqual(result.hotels.slice(0, 2).map(({ roomType, mealPlan, totalHotelCost }) =>
     [roomType, mealPlan, totalHotelCost]), Array(2).fill(['Grande Studio', 'CP', 12285]));
+  assert.deepEqual(result.hotels.slice(0, 2).map(({ category }) => category), [3, 0]);
   assert.deepEqual(await service.getConfirmedItineraryDetails(214), result);
 });
