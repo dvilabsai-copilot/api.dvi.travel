@@ -4351,12 +4351,30 @@ async postReviewedHotelFinance(body:any, userId:number) {
   }
 
 // DVI_HOTEL_POSTED_TRANSPORTER_PARITY_LOCAL_V20
+  
+  // DVI_HOTEL_STAGING_PERMISSION_V22: explicit rollout gate; no local-DB-only restriction.
+  // Finance must approve using the saved confirmed itinerary amount as the payable.
+  private hotelV22RequirePaymentsEnabled():void {
+    if(String(process.env.DVI_HOTEL_PAYMENTS_ENABLED||'').trim().toLowerCase()!=='yes') {
+      throw new BadRequestException('Hotel payment recording is disabled. Enable DVI_HOTEL_PAYMENTS_ENABLED=yes only after Finance approval and integration testing.');
+    }
+  }
+
+  // The confirmed total may contain selling-side margin. Block questionable amounts
+  // unless Finance explicitly approves those exact confirmed prices as hotel payables.
+  private hotelV22RequireConfirmedPayableApproval(stay:any,confirmedHotelId:number):void {
+    const m=Number(stay?.hotel_margin_rate??0),gst=Number(stay?.hotel_margin_rate_tax_amt??0);
+    if(!Number.isFinite(m)||!Number.isFinite(gst)||m<0||gst<0) {
+      throw new BadRequestException('Hotel margin is invalid. Finance review required: '+confirmedHotelId);
+    }
+    if((m>0||gst>0)&&String(process.env.DVI_HOTEL_CONFIRMED_PRICE_PAYABLE_APPROVED||'').trim().toLowerCase()!=='yes') {
+      throw new BadRequestException('Confirmed hotel price includes selling margin. Finance must approve supplier payable before recording: '+confirmedHotelId);
+    }
+  }
+
   async recordHotelFinanceBatch(body:any,userId:number,receiptPath:string){
     const reject=(reason:string):never=>{throw new BadRequestException(reason);};
-    if(process.env.DVI_HOTEL_LOCAL_REAL_PAYMENT!=='yes'||process.env.NODE_ENV==='production')reject('Local posted-hotel payment recording is disabled.');
-    let localMysql=false;
-    try{const u=new URL(String(process.env.DATABASE_URL||''));localMysql=u.protocol==='mysql:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname)&&!!u.pathname.slice(1);}catch{}
-    if(!localMysql)reject('Refusing posted-hotel write: not local MySQL.');
+    this.hotelV22RequirePaymentsEnabled();
     let payments:any=body?.payments;
     if(typeof payments==='string'){try{payments=JSON.parse(payments);}catch{reject('Invalid hotel payments JSON.');}}
     const utr=String(body?.utrNumber||'').trim(),by=String(body?.processedBy||'').trim();
@@ -4403,7 +4421,12 @@ async postReviewedHotelFinance(body:any, userId:number) {
         if(cancelled)reject('Cancelled hotel voucher cannot be paid.');
         const base=this.autoHotelCents(stay.total_hotel_cost),tax=this.autoHotelCents(stay.total_hotel_tax_amount);
         const posted=this.autoHotelCents(row.total_payable),paid=this.autoHotelCents(row.total_paid),balance=this.autoHotelCents(row.total_balance);
-        if(base===null||tax===null||posted===null||paid===null||balance===null||base+tax<=0||posted!==base+tax||paid+balance!==posted)reject('Posted Accounts amount or payment history conflicts with confirmed hotel. Finance review required.');
+        if(base===null||tax===null||posted===null||paid===null||balance===null||base+tax<=0||paid+balance!==posted)reject('Posted Accounts amount or payment history conflicts with confirmed hotel. Finance review required.');
+        const margin=this.autoHotelCents(stay.hotel_margin_rate??0),marginTax=this.autoHotelCents(stay.hotel_margin_rate_tax_amt??0);
+        if(margin===null||marginTax===null||base+tax-margin-marginTax<0)reject('Saved supplier purchase breakdown is invalid; Finance review required.');
+        const supplierPayable=base+tax-margin-marginTax;
+        if(posted!==supplierPayable&&posted!==base+tax)reject('Posted Accounts payable does not match either verified supplier purchase or confirmed total. Finance review required.');
+        if(posted===base+tax)this.hotelV22RequireConfirmedPayableApproval(stay,confirmedHotelId);
         const amount=this.hotelReviewMoney(String(task.amount??''));
         if(amount<=0||amount>balance)reject('Payment exceeds current hotel balance.');
         const changed=await tx.dvi_accounts_itinerary_hotel_details.updateMany({where:{accounts_itinerary_hotel_details_ID:Number(row.accounts_itinerary_hotel_details_ID),accounts_itinerary_details_ID:headerId,status:1,deleted:0,total_paid:row.total_paid,total_balance:row.total_balance},data:{total_paid:(paid+amount)/100,total_balance:(balance-amount)/100}});
@@ -4421,10 +4444,7 @@ async postReviewedHotelFinance(body:any, userId:number) {
   async recordConfirmedHotelPayment(body:any,userId:number,receiptPath:string){
     const invalid=(reason:string):never=>{throw new BadRequestException(reason);};
     // Only an explicit local, nonproduction test can create Accounts records.
-    if(process.env.DVI_HOTEL_LOCAL_REAL_PAYMENT!=='yes'||process.env.NODE_ENV==='production')invalid('Local Accounts recording is disabled. Enable DVI_HOTEL_LOCAL_REAL_PAYMENT=yes only for your LOCAL test MySQL database.');
-    let localMysql=false;
-    try{const u=new URL(String(process.env.DATABASE_URL||''));localMysql=u.protocol==='mysql:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname)&&!!u.pathname.slice(1);}catch{}
-    if(!localMysql)invalid('Refusing payment write: the database is not verified local MySQL.');
+    this.hotelV22RequirePaymentsEnabled();
     const pos=(v:any)=>Number.isSafeInteger(Number(v))&&Number(v)>0?Number(v):0;
     const day=(v:any):string=>{if(!v)return '';const d=new Date(v);return Number.isFinite(d.getTime())?d.toISOString().slice(0,10):'';};
     const nextDay=(d:string):string=>d?new Date(Date.parse(d+'T00:00:00Z')+86400000).toISOString().slice(0,10):'';
@@ -4472,6 +4492,7 @@ async postReviewedHotelFinance(body:any, userId:number) {
         payee=identity;
         const base=this.autoHotelCents(stay.total_hotel_cost),tax=this.autoHotelCents(stay.total_hotel_tax_amount);
         if(base===null||tax===null||base+tax<=0||!Number.isSafeInteger(base+tax))invalid('Confirmed hotel purchase is unavailable: '+id);
+        this.hotelV22RequireConfirmedPayableApproval(stay,id);
         const voucherLinks:any[]=[{confirmed_itinerary_plan_hotel_details_ID:id}];
         if(originalId>0)voucherLinks.push({itinerary_plan_hotel_details_ID:originalId});
         const cancelled=await tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.findFirst({where:{itinerary_plan_id:planId,OR:voucherLinks,AND:[{OR:[{hotel_voucher_cancellation_status:1},{hotel_booking_status:2}]}]}});
