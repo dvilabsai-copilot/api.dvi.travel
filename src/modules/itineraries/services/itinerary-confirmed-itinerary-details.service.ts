@@ -502,12 +502,15 @@ export class ItineraryConfirmedItineraryDetailsService {
       const tboMaster = provider === 'offline' ? undefined : tboMasterByCode.get(hotelCode);
       const hotelMaster =
         hotelMasterByProviderCode.get(`${provider}|${hotelCode}`) ||
-        hotelMasterById.get(storedHotelId || offlineHotelId);
+        hotelMasterById.get(storedHotelId);
+      // The legacy alias identifies the property but does not recover the booked category.
+      const legacyOfflineHotel = hotelMasterById.get(offlineHotelId);
       const resolvedHotelName = String(
         providerBooking?.hotelName ||
         (matchedConfirmedHotel as any)?.hotel_name ||
         (matchedConfirmedHotel as any)?.hotelName ||
         (hotelMaster as any)?.hotel_name ||
+        legacyOfflineHotel?.hotel_name ||
         (tboMaster as any)?.hotel_name ||
         '',
       ).trim();
@@ -592,7 +595,7 @@ export class ItineraryConfirmedItineraryDetailsService {
         day: `Day ${dayNumber} | ${formatDateLabel(route.itinerary_route_date)}`,
         destination,
 
-        hotelId: storedHotelId || (offlineHotelId && hotelMaster?.hotel_id === offlineHotelId ? offlineHotelId : 0),
+        hotelId: storedHotelId || legacyOfflineHotel?.hotel_id || 0,
         hotelCode,
         hotelName: resolvedHotelName || 'Booked hotel name missing',
         category,
