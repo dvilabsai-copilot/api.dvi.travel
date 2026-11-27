@@ -497,7 +497,6 @@ export class ItineraryConfirmedItineraryDetailsService {
       const hotelMaster =
         hotelMasterByProviderCode.get(`${provider}|${hotelCode}`) ||
         hotelMasterById.get(storedHotelId);
-      // The legacy alias identifies the property but does not recover the booked category.
       const legacyOfflineHotel = hotelMasterById.get(offlineHotelId);
       const resolvedHotelName = String(
         providerBooking?.hotelName ||
@@ -570,9 +569,12 @@ export class ItineraryConfirmedItineraryDetailsService {
         catalogHotelId > 0 && Number(selectedSnapshot.canonicalHotelId ?? selectedSnapshot.hotelId) === catalogHotelId
         ? Number(selectedSnapshot.category || 0)
         : 0;
-      const category = Number.isInteger(snapshotCategory) && snapshotCategory > 0
-        ? snapshotCategory
-        : (confirmedCategory > 0 ? confirmedCategory : (tboStarRating > 0 ? tboStarRating : hotelMasterCategory));
+      // Legacy offline rows can retain the requested category or have no
+      // category at all. Their exact catalogue match supplies the property rating.
+      const offlinePropertyCategory = [snapshotCategory, Number(legacyOfflineHotel?.hotel_category || 0)]
+        .find(rating => Number.isInteger(rating) && rating > 0);
+      const category = offlinePropertyCategory ??
+        (confirmedCategory > 0 ? confirmedCategory : (tboStarRating > 0 ? tboStarRating : hotelMasterCategory));
 
       const originalHotelDetailsId = Number(
         (matchedConfirmedHotel as any)?.itinerary_plan_hotel_details_ID || 0,
