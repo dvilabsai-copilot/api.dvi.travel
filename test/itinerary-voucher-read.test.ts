@@ -49,7 +49,9 @@ test('offline vouchers show the itinerary destination and keep the stored vouche
     } },
     dvi_hotel: { findMany: async ({ where }: any) => {
       assert.deepEqual(where.hotel_id.in, [280]);
-      return [{ hotel_id: 280, hotel_name: 'GRAND BAY RESORT AND SPA', hotel_state: '35', hotel_city: '3915' }];
+      return [{
+        hotel_id: 280, hotel_name: 'GRAND BAY RESORT AND SPA', hotel_category: 4, hotel_state: '35', hotel_city: '3915',
+      }];
     } },
   } as any);
   service.setCallbacks({
@@ -64,6 +66,7 @@ test('offline vouchers show the itinerary destination and keep the stored vouche
     assert.equal(hotelVoucherGroups.length, 1);
     const [hotel] = hotelVoucherGroups;
     assert.equal(hotel.hotelName, 'GRAND BAY RESORT AND SPA');
+    assert.equal(hotel.hotelCategory, 4);
     assert.equal(hotel.hotelId, hotelId);
     assert.equal(hotel.hotelCode, '280');
     assert.equal(hotel.hotelStateCity, 'Mahabalipuram');

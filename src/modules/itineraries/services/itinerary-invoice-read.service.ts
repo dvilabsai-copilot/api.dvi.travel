@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
-import { getConfirmedHotelCatalogId } from '../utils/confirmed-hotel-catalog-id.util';
+import { getConfirmedHotelCatalogId, getConfirmedOfflinePropertyCategory } from '../utils/confirmed-hotel-catalog-id.util';
 import { getConfirmedHotelDestination, loadConfirmedHotelRouteDestinations } from '../utils/confirmed-hotel-destination.util';
 
 /** Owns confirmed itinerary pluck-card and invoice presentation reads. */
@@ -186,7 +186,7 @@ export class ItineraryInvoiceReadService {
         hotelIds.length
           ? this.prisma.dvi_hotel.findMany({
               where: { hotel_id: { in: hotelIds } as any },
-              select: { hotel_id: true, hotel_name: true },
+              select: { hotel_id: true, hotel_name: true, hotel_category: true },
             })
           : Promise.resolve([] as any[]),
         vendorIds.length
@@ -204,8 +204,7 @@ export class ItineraryInvoiceReadService {
         loadConfirmedHotelRouteDestinations(this.prisma, itineraryPlanId, hotels),
       ]);
 
-      const hotelNameById = new Map<number, string>();
-      hotelMasters.forEach((row: any) => hotelNameById.set(Number(row.hotel_id), String(row.hotel_name || 'Hotel')));
+      const hotelMasterById = new Map(hotelMasters.map(row => [Number(row.hotel_id), row]));
       const vendorNameById = new Map<number, string>();
       vendorMasters.forEach((row: any) => vendorNameById.set(Number(row.vendor_id), String(row.vendor_name || 'Vendor')));
       const vehicleTypeById = new Map<number, string>();
@@ -343,8 +342,11 @@ logoUrl:
                 ? new Date(row.itinerary_route_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                 : '';
               const location = getConfirmedHotelDestination(row, hotelRouteDestinations);
-              const hotelName = hotelNameById.get(getConfirmedHotelCatalogId(row)) || 'Hotel';
-              return { label: [date, location, hotelName].filter(Boolean).join(' - ') };
+              const hotelMaster = hotelMasterById.get(getConfirmedHotelCatalogId(row));
+              const hotelName = hotelMaster?.hotel_name || 'Hotel';
+              const hotelCategory = getConfirmedOfflinePropertyCategory(row, hotelMaster?.hotel_category);
+              const label = [date, location, hotelName].filter(Boolean).join(' - ');
+              return hotelCategory === undefined ? { label } : { label, hotelCategory };
             }),
           },
           {
