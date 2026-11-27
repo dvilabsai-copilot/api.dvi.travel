@@ -15,7 +15,7 @@ test('confirmed itinerary details preserves missing-plan validation', async () =
   );
 });
 
-test('confirmed details resolve legacy names and use the rating of the matching offline selection', async () => {
+test('confirmed details recover the legacy offline property rating and prefer a matching saved rating', async () => {
   const grandBaySnapshot = { provider: 'offline', canonicalHotelId: 280, category: 4 };
   const nights = [
     { hotel_id: 0, hotel_code: '280', hotel_provider: 'offline', hotel_category_id: 3 },
@@ -26,6 +26,8 @@ test('confirmed details resolve legacy names and use the rating of the matching 
     { hotel_id: 0, hotel_code: '280.0', hotel_provider: 'offline' },
     { hotel_id: 280, hotel_code: '280', hotel_provider: 'offline', hotel_category_id: 3, snapshot: grandBaySnapshot },
     { hotel_id: 280, hotel_code: '280', hotel_provider: 'offline', hotel_category_id: 0, snapshot: grandBaySnapshot },
+    { hotel_id: 0, hotel_code: '280', hotel_provider: 'offline', snapshot: { ...grandBaySnapshot, category: 5 } },
+    { hotel_id: 0, hotel_code: '281', hotel_provider: 'offline', hotel_category_id: 2 },
   ];
   const localHotels = [
     { hotel_id: 280, hotel_code: '49', hotel_name: 'GRAND BAY RESORT AND SPA', hotel_category: 4 },
@@ -77,9 +79,11 @@ test('confirmed details resolve legacy names and use the rating of the matching 
     [0, 'Booked hotel name missing', 'offline'],
     [280, 'GRAND BAY RESORT AND SPA', 'offline'],
     [280, 'GRAND BAY RESORT AND SPA', 'offline'],
+    [280, 'GRAND BAY RESORT AND SPA', 'offline'],
+    [281, 'Hotel saved by canonical ID', 'offline'],
   ]);
   assert.deepEqual(result.hotels.slice(0, 2).map(({ roomType, mealPlan, totalHotelCost }) =>
     [roomType, mealPlan, totalHotelCost]), Array(2).fill(['Grande Studio', 'CP', 12285]));
-  assert.deepEqual(result.hotels.map(({ category }) => category), [3, 0, 3, 0, 0, 0, 4, 4]);
+  assert.deepEqual(result.hotels.map(({ category }) => category), [4, 4, 3, 0, 0, 0, 4, 4, 5, 2]);
   assert.deepEqual(await service.getConfirmedItineraryDetails(214), result);
 });
