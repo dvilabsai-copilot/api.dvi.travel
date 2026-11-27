@@ -611,4 +611,12 @@ private requireHotelFinanceRole(req:any):number {
   @UseInterceptors(FileInterceptor('paymentScreenshot',{storage:paymentScreenshotStorage,limits:{fileSize:5*1024*1024},fileFilter:(_req,file,cb)=>{if(/^image\/(png|jpeg|webp|gif)$/.test(file.mimetype)&&/\.(png|jpe?g|webp|gif)$/i.test(file.originalname))cb(null,true);else cb(new BadRequestException('Unsupported receipt image.'),false);}}))
   async hotelFinancePay(@Req() req:any,@Body() body:any,@UploadedFile() file?:Express.Multer.File){return this.service.recordHotelFinanceBatch(body,this.requireHotelFinanceRole(req),file?'/uploads/accounts_payment_screenshots/'+file.filename:'');}
 
+
+
+  @UseGuards(JwtAuthGuard)
+  @Post('hotel-confirmed-manual-pay')
+  @UseInterceptors(FileInterceptor('paymentScreenshot',{storage:paymentScreenshotStorage,limits:{fileSize:5*1024*1024},fileFilter:(_req,file,cb)=>{if(/^image\/(png|jpeg|webp|gif)$/.test(file.mimetype)&&/\.(png|jpe?g|webp|gif)$/i.test(file.originalname))cb(null,true);else cb(new BadRequestException('Unsupported receipt image.'),false);}}))
+  async confirmedHotelManualPay(@Req() req:any,@Body() body:any,@UploadedFile() file?:Express.Multer.File){
+    return this.service.recordConfirmedHotelPayment(body,this.requireHotelFinanceRole(req),file?'/uploads/accounts_payment_screenshots/'+file.filename:'');
+  }
 }
