@@ -1836,53 +1836,59 @@ if (hotelGroups.length === 0) {
         doc.text('META', 480, hotelHeaderY + 7, { width: 60 });
         doc.y += 24;
 
+        const hotelColumn = { width: 150 };
+        const datesColumn = { width: 105 };
+        const roomsColumn = { width: 85 };
+        const statusColumn = { width: 55 };
+        const metaColumn = { width: 58 };
+        const confirmationColumn = { width: 270 };
         for (const group of hotelGroups) {
+          const hotelName = String(group?.hotelName || '--');
+          const location = String(group?.hotelStateCity || (Array.isArray(group?.destinations) ? group.destinations.join(', ') : '--'));
+          const days = `Days ${Array.isArray(group?.dayNumbers) ? group.dayNumbers.join(', ') : '--'}`;
+          const dates = Array.isArray(group?.routeDates)
+            ? group.routeDates.map((value: string) => this.formatDate(value)).join(', ')
+            : '--';
           const roomLabels = group?.roomTypeQuantities?.length
             ? group.roomTypeQuantities.map(({ roomCount, roomType }: { roomCount: number; roomType: string }) => `${roomCount} × ${roomType}`).join('\n')
             : group?.roomTypes?.join(', ') || 'N/A';
-          const rowHeight = Math.max(58, doc.font('Helvetica').fontSize(9).heightOfString(roomLabels, { width: 85 }) + 20);
+          const status = String(group?.bookingStatusLabel || 'Not Created');
+          const meta = `Vouchers: ${Number(group?.voucherCount || 0)}\nPolicies: ${Number(group?.cancellationPolicyCount || 0)}\nInvoice: ${String(group?.invoiceToLabel || 'Not Set')}`;
+          const confirmation = group?.confirmedBy || group?.confirmedMobile || group?.confirmedEmail
+            ? `Confirmed: ${String(group?.confirmedBy || '--')} | ${String(group?.confirmedMobile || '--')} | ${String(group?.confirmedEmail || '--')}`
+            : '';
+
+          const hotelNameTop = 6;
+          const locationTop = hotelNameTop + doc.font('Helvetica-Bold').fontSize(10).heightOfString(hotelName, hotelColumn) + 4;
+          doc.font('Helvetica').fontSize(9);
+          const daysTop = locationTop + doc.heightOfString(location, hotelColumn) + 4;
+          const hotelBottom = daysTop + doc.heightOfString(days, hotelColumn);
+          const dateAndRoomBottom = 10 + Math.max(
+            doc.heightOfString(dates, datesColumn),
+            doc.heightOfString(roomLabels, roomsColumn),
+          );
+          const metaBottom = 6 + doc.heightOfString(meta, metaColumn);
+          const statusBottom = 10 + doc.font('Helvetica-Bold').heightOfString(status, statusColumn);
+          const confirmationTop = Math.max(40, Math.max(dateAndRoomBottom, statusBottom) + 4);
+          const confirmationBottom = confirmation
+            ? confirmationTop + doc.font('Helvetica').fontSize(8).heightOfString(confirmation, confirmationColumn)
+            : 0;
+          const rowHeight = Math.max(58, Math.max(hotelBottom, dateAndRoomBottom, metaBottom, statusBottom, confirmationBottom) + 8);
           this.addPageIfNeeded(doc, rowHeight + 14);
           const top = doc.y;
           const rowBg = Number(group?.voucherCount || 0) > 0 ? '#FFFFFF' : '#FFFCF5';
           doc.rect(40, top, doc.page.width - 80, rowHeight).fillAndStroke(rowBg, '#EFE6F8');
-          doc.font('Helvetica-Bold').fontSize(10).fillColor('#3F3654').text(String(group?.hotelName || '--'), 48, top + 6, { width: 150 });
-          doc.font('Helvetica').fontSize(9).fillColor('#5A5268').text(
-            String(group?.hotelStateCity || (Array.isArray(group?.destinations) ? group.destinations.join(', ') : '--')),
-            48,
-            top + 22,
-            { width: 150 },
-          );
-          doc.text(`Days ${Array.isArray(group?.dayNumbers) ? group.dayNumbers.join(', ') : '--'}`, 48, top + 38, {
-            width: 150,
-          });
+          doc.font('Helvetica-Bold').fontSize(10).fillColor('#3F3654').text(hotelName, 48, top + hotelNameTop, hotelColumn);
+          doc.font('Helvetica').fontSize(9).fillColor('#5A5268');
+          doc.text(location, 48, top + locationTop, hotelColumn);
+          doc.text(days, 48, top + daysTop, hotelColumn);
+          doc.text(dates, 205, top + 10, datesColumn);
+          doc.text(roomLabels, 320, top + 10, roomsColumn);
+          doc.font('Helvetica-Bold').fillColor('#6E46A3').text(status, 415, top + 10, statusColumn);
+          doc.font('Helvetica').fillColor('#5A5268').text(meta, 480, top + 6, metaColumn);
 
-          doc.text(
-            Array.isArray(group?.routeDates) ? group.routeDates.map((value: string) => this.formatDate(value)).join(', ') : '--',
-            205,
-            top + 10,
-            { width: 105 },
-          );
-          doc.text(
-            roomLabels,
-            320,
-            top + 10,
-            { width: 85 },
-          );
-          doc.font('Helvetica-Bold').fillColor('#6E46A3').text(String(group?.bookingStatusLabel || 'Not Created'), 415, top + 10, { width: 55 });
-          doc.font('Helvetica').fillColor('#5A5268').text(
-            `Vouchers: ${Number(group?.voucherCount || 0)}\nPolicies: ${Number(group?.cancellationPolicyCount || 0)}\nInvoice: ${String(group?.invoiceToLabel || 'Not Set')}`,
-            480,
-            top + 6,
-            { width: 58 },
-          );
-
-          if (group?.confirmedBy || group?.confirmedMobile || group?.confirmedEmail) {
-            doc.fontSize(8).fillColor('#7A6A8D').text(
-              `Confirmed: ${String(group?.confirmedBy || '--')} | ${String(group?.confirmedMobile || '--')} | ${String(group?.confirmedEmail || '--')}`,
-              205,
-              top + 40,
-              { width: 270 },
-            );
+          if (confirmation) {
+            doc.fontSize(8).fillColor('#7A6A8D').text(confirmation, 205, top + confirmationTop, confirmationColumn);
           }
 
           doc.y = Math.max(doc.y + 58, top + rowHeight + 14);
