@@ -125,10 +125,19 @@ export class ItineraryConfirmedItineraryDetailsService {
       roomTypeMap.set(Number(row.room_type_id || 0), String(row.room_type_title || '').trim());
     });
 
+    const getPersistedProvider = (hotel?: (typeof confirmedHotels)[number]) =>
+      String(hotel?.hotel_provider || '').trim().toLowerCase();
+    const getOfflineHotelIdFromCode = (hotel?: (typeof confirmedHotels)[number]): number => {
+      if (getPersistedProvider(hotel) !== 'offline') return 0;
+      // Offline selections use the canonical dvi_hotel ID as their code.
+      const code = String(hotel?.hotel_code || '').trim();
+      const id = Number(code);
+      return /^\d+$/.test(code) && id > 0 && id <= 2_147_483_647 ? id : 0;
+    };
     const hotelIds = Array.from(
       new Set(
         confirmedHotels
-          .map((row) => Number(row.hotel_id || 0))
+          .map((row) => Number(row.hotel_id || 0) || getOfflineHotelIdFromCode(row))
           .filter((id) => id > 0),
       ),
     );
@@ -482,14 +491,18 @@ export class ItineraryConfirmedItineraryDetailsService {
       const matchedRoom = confirmedHotelRooms.find(
         (room) => Number(room.itinerary_route_id || 0) === routeId,
       );
-      const provider = String(providerBooking?.provider || 'tbo').trim().toLowerCase();
+      const provider = providerBooking?.provider || getPersistedProvider(matchedConfirmedHotel) || 'tbo';
+      const storedHotelId = Number(matchedConfirmedHotel?.hotel_id || 0);
+      const offlineHotelId = provider === 'offline' && !storedHotelId
+        ? getOfflineHotelIdFromCode(matchedConfirmedHotel)
+        : 0;
       const persistedHotelCode = String((matchedConfirmedHotel as any)?.hotel_code || '').trim();
       const fallbackHotelCode = String((matchedConfirmedHotel as any)?.hotel_id || '').trim();
       const hotelCode = String(providerBooking?.hotelCode || persistedHotelCode || fallbackHotelCode || '').trim();
-      const tboMaster = tboMasterByCode.get(hotelCode);
+      const tboMaster = provider === 'offline' ? undefined : tboMasterByCode.get(hotelCode);
       const hotelMaster =
         hotelMasterByProviderCode.get(`${provider}|${hotelCode}`) ||
-        hotelMasterById.get(Number((matchedConfirmedHotel as any)?.hotel_id || 0));
+        hotelMasterById.get(storedHotelId || offlineHotelId);
       const resolvedHotelName = String(
         providerBooking?.hotelName ||
         (matchedConfirmedHotel as any)?.hotel_name ||
@@ -579,7 +592,7 @@ export class ItineraryConfirmedItineraryDetailsService {
         day: `Day ${dayNumber} | ${formatDateLabel(route.itinerary_route_date)}`,
         destination,
 
-        hotelId: Number((matchedConfirmedHotel as any)?.hotel_id || 0),
+        hotelId: storedHotelId || (offlineHotelId && hotelMaster?.hotel_id === offlineHotelId ? offlineHotelId : 0),
         hotelCode,
         hotelName: resolvedHotelName || 'Booked hotel name missing',
         category,
