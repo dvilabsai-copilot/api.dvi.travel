@@ -3,6 +3,70 @@ import test from 'node:test';
 import nodemailer from 'nodemailer';
 import { HotelBlockEmailService } from '../src/modules/itineraries/services/hotel-block-email.service';
 
+test('demo vouchers use the configured TLS relay while live vouchers use direct SMTP', async (t) => {
+  const settings = {
+    SMTP_HOST: 'smtp.example.com',
+    SMTP_PORT: '587',
+    SMTP_SECURE: 'false',
+    SMTP_FROM: 'sales@example.com',
+    SMTP_USER: 'smtp-user',
+    SMTP_PASS: 'test-only',
+    HOTEL_VOUCHER_SMTP_RELAY_PORT: '1587',
+    VOUCHER_EMAIL_DEMO_RECIPIENT: 'demo@example.com',
+  };
+  for (const [key, value] of Object.entries(settings)) {
+    const previous = process.env[key];
+    t.after(() => {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    });
+    process.env[key] = value;
+  }
+  const transports: unknown[] = [];
+  const messages: nodemailer.SendMailOptions[] = [];
+  t.mock.method(nodemailer, 'createTransport', (options: unknown) => {
+    transports.push(options);
+    return {
+      sendMail: async (message: nodemailer.SendMailOptions) => {
+        messages.push(message);
+        return { rejected: [] };
+      },
+    };
+  });
+  const service = new HotelBlockEmailService({} as any);
+  const voucher = { subject: 'Hotel Voucher', text: 'Voucher', html: '<p>Voucher</p>' };
+  for (const hotel of ['first@example.com', 'second@example.com']) {
+    await service.dispatchOfflineVoucher([hotel], voucher, undefined, true, 'expert@example.com');
+  }
+  assert.equal(transports.length, 1);
+  assert.deepEqual(transports[0], {
+    host: '127.0.0.1', port: 1587, requireTLS: true, tls: { servername: 'smtp.example.com' },
+    secure: false, auth: { user: 'smtp-user', pass: 'test-only' },
+  });
+  assert.deepEqual(messages.map((message) => message.to), ['demo@example.com', 'demo@example.com']);
+  for (const message of messages) {
+    assert.match(String(message.html), /<strong>CC:<\/strong> expert@example\.com/);
+    assert.equal(message.cc, undefined);
+  }
+
+  delete process.env.VOUCHER_EMAIL_DEMO_RECIPIENT;
+  await service.dispatchOfflineVoucher(['hotel@example.com'], voucher, undefined, true);
+  assert.equal(transports.length, 2);
+  assert.equal((transports[1] as { host: string }).host, 'smtp.example.com');
+  assert.deepEqual(messages[2].to, ['hotel@example.com']);
+
+  process.env.VOUCHER_EMAIL_DEMO_RECIPIENT = 'demo@example.com';
+  delete process.env.HOTEL_VOUCHER_SMTP_RELAY_PORT;
+  await service.dispatchOfflineVoucher(['hotel@example.com'], voucher, undefined, true);
+  assert.equal(transports.length, 2);
+  assert.equal(messages[3].to, 'demo@example.com');
+
+  process.env.HOTEL_VOUCHER_SMTP_RELAY_PORT = '65536';
+  const invalid = new HotelBlockEmailService({} as any);
+  await assert.rejects(invalid.dispatchOfflineVoucher(['hotel@example.com'], voucher, undefined, true), /relay port is invalid/);
+  assert.equal(messages.length, 4);
+});
+
 test('offline voucher From header includes the configured sender name or the legacy default', async () => {
   const originalAddress = process.env.SMTP_FROM;
   const originalName = process.env.SMTP_FROM_NAME;
