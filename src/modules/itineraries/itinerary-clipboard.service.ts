@@ -695,8 +695,25 @@ export class ItineraryClipboardService {
           this.formatDate(day.date),
       )}`;
 
-    const routeTitle =
-      `${this.escapeHtml(day.departure || '')} to ` +
+   const viaRouteNames = Array.isArray(day.viaRoutes)
+  ? day.viaRoutes
+      .map((via: any) =>
+        String(via?.name ?? '').trim(),
+      )
+      .filter(Boolean)
+  : [];
+
+const routeTitle =
+  viaRouteNames.length > 0
+    ? [
+        this.escapeHtml(day.departure || ''),
+        ...viaRouteNames.map(
+          (name: string) =>
+            `Via ${this.escapeHtml(name)}`,
+        ),
+        this.escapeHtml(day.arrival || ''),
+      ].join(' → ')
+    : `${this.escapeHtml(day.departure || '')} to ` +
       `${this.escapeHtml(day.arrival || '')}`;
 
     const dayTimeRange =
