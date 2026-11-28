@@ -4352,14 +4352,6 @@ async postReviewedHotelFinance(body:any, userId:number) {
 
 // DVI_HOTEL_POSTED_TRANSPORTER_PARITY_LOCAL_V20
   
-  // DVI_HOTEL_STAGING_PERMISSION_V22: explicit rollout gate; no local-DB-only restriction.
-  // Finance must approve using the saved confirmed itinerary amount as the payable.
-  private hotelV22RequirePaymentsEnabled():void {
-    if(String(process.env.DVI_HOTEL_PAYMENTS_ENABLED||'').trim().toLowerCase()!=='yes') {
-      throw new BadRequestException('Hotel payment recording is disabled. Enable DVI_HOTEL_PAYMENTS_ENABLED=yes only after Finance approval and integration testing.');
-    }
-  }
-
   // The confirmed total may contain selling-side margin. Block questionable amounts
   // unless Finance explicitly approves those exact confirmed prices as hotel payables.
   private hotelV22RequireConfirmedPayableApproval(stay:any,confirmedHotelId:number):void {
@@ -4374,7 +4366,6 @@ async postReviewedHotelFinance(body:any, userId:number) {
 
   async recordHotelFinanceBatch(body:any,userId:number,receiptPath:string){
     const reject=(reason:string):never=>{throw new BadRequestException(reason);};
-    this.hotelV22RequirePaymentsEnabled();
     let payments:any=body?.payments;
     if(typeof payments==='string'){try{payments=JSON.parse(payments);}catch{reject('Invalid hotel payments JSON.');}}
     const utr=String(body?.utrNumber||'').trim(),by=String(body?.processedBy||'').trim();
@@ -4384,7 +4375,6 @@ async postReviewedHotelFinance(body:any, userId:number) {
     if(ids.some((id:number)=>!Number.isSafeInteger(id)||id<=0)||new Set(ids).size!==ids.length||payments.some((p:any)=>p.componentType!=='hotel'))reject('Select unique posted hotel Accounts rows.');
     const date=(v:any):string=>{if(!v)return '';const d=new Date(v);return Number.isFinite(d.getTime())?d.toISOString().slice(0,10):'';};
     const nextDay=(d:string):string=>d?new Date(Date.parse(d+'T00:00:00Z')+86400000).toISOString().slice(0,10):'';
-    const today=new Date(Date.now()+330*60000).toISOString().slice(0,10);
     // Exactly the same persisted balance + history principle as Transporter Payments.
     return this.prisma.$transaction(async(tx:any)=>{
       const used=await tx.dvi_accounts_itinerary_hotel_transaction_history.findFirst({where:{transaction_utr_no:utr}});
@@ -4414,7 +4404,8 @@ async postReviewedHotelFinance(body:any, userId:number) {
         if(payee&&payee!==identity)reject('Bulk payment must belong to one verified hotel.');
         payee=identity;
         const stayDay=resolvedRoute.day,explicitOut=date(stay.hotel_check_out_date),checkOut=explicitOut&&explicitOut>stayDay?explicitOut:nextDay(stayDay);
-        if(!stayDay||!checkOut||checkOut<today)reject('Expired or undated hotel is view-only: '+confirmedHotelId);
+        // Existing posted hotel liabilities remain payable after checkout; keep identity and balance checks.
+        if(!stayDay||!checkOut||checkOut<=stayDay)reject('Confirmed hotel stay dates are invalid: '+confirmedHotelId);
         const originals:any[]=[{confirmed_itinerary_plan_hotel_details_ID:confirmedHotelId}];
         if(Number(stay.itinerary_plan_hotel_details_ID||0)>0)originals.push({itinerary_plan_hotel_details_ID:Number(stay.itinerary_plan_hotel_details_ID)});
         const cancelled=await tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.findFirst({where:{itinerary_plan_id:planId,OR:originals,AND:[{OR:[{hotel_voucher_cancellation_status:1},{hotel_booking_status:2}]}]}});
@@ -4443,8 +4434,7 @@ async postReviewedHotelFinance(body:any, userId:number) {
   // DVI_HOTEL_TRANSPORTER_CONFIRMED_AUTHORITY_LOCAL_V20
   async recordConfirmedHotelPayment(body:any,userId:number,receiptPath:string){
     const invalid=(reason:string):never=>{throw new BadRequestException(reason);};
-    // Only an explicit local, nonproduction test can create Accounts records.
-    this.hotelV22RequirePaymentsEnabled();
+    // Record only a verified confirmed hotel Accounts entry; no payment gateway or bank transfer is initiated.
     const pos=(v:any)=>Number.isSafeInteger(Number(v))&&Number(v)>0?Number(v):0;
     const day=(v:any):string=>{if(!v)return '';const d=new Date(v);return Number.isFinite(d.getTime())?d.toISOString().slice(0,10):'';};
     const nextDay=(d:string):string=>d?new Date(Date.parse(d+'T00:00:00Z')+86400000).toISOString().slice(0,10):'';
