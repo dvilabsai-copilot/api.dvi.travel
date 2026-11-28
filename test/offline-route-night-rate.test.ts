@@ -124,3 +124,39 @@ test('continuous offline selection projects the matching night for 2-Sep', () =>
   assert.equal(route?.selected?.selectedPriceSnapshot?.baseTotalPrice, 18375);
   assert.equal(route?.selected?.totalPrice, 25525.5);
 });
+
+test('saved Kishkinda nights use the selected room count to calculate each per-room rate', () => {
+  const dates = ['2026-12-31', '2027-01-01', '2027-01-02'];
+  const nightlyTotals = [27000, 24500, 24500];
+  const requiredRoutes = dates.map((routeDate, index) => ({ routeId: 25704 + index, routeDate }));
+  const selectedPriceSnapshot = {
+    provider: 'offline',
+    hotelName: 'Kishkinda Heritage Resort',
+    totalRooms: null,
+    roomRate: 5400,
+    nightlyRates: dates.map((date, index) => ({ date, baseAmount: nightlyTotals[index] })),
+  };
+  const row = {
+    groupType: 2,
+    itineraryRouteId: requiredRoutes[0].routeId,
+    provider: 'offline',
+    hotelId: 405,
+    hotelName: selectedPriceSnapshot.hotelName,
+    selectionOrigin: 'USER_SELECTED',
+    completeStayBookable: true,
+    completeStayRouteIds: requiredRoutes.map(({ routeId }) => routeId),
+    selectedPriceSnapshot,
+  };
+
+  for (const count of [{ total_no_of_rooms: 5 }, { noOfRooms: 5 }]) {
+    const [group] = buildHotelSelectionState({
+      tabs: [{ groupType: 2, label: 'Recommended #2' }],
+      rows: [{ ...row, ...count }],
+      requiredRoutes,
+    });
+
+    assert.deepEqual(group.routes.map(route => route.selected?.roomRate), [5400, 4900, 4900]);
+    assert.deepEqual(group.routes.map(route => route.selected?.totalRoomCost), nightlyTotals);
+    assert.deepEqual(group.routes.map(route => route.selected?.selectedPriceSnapshot?.roomCount), [5, 5, 5]);
+  }
+});

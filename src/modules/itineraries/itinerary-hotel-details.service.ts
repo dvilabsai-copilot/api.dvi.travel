@@ -1441,6 +1441,7 @@ const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
           ? Number(selectedPriceSnapshot.totalStayPrice ?? selectedPriceSnapshot.total_price ?? routeNightPayableHotelCost)
           : routeNightPayableHotelCost,
         numberOfNights: 1,
+        noOfRooms: Number((h as any).total_no_of_rooms || 0) || undefined,
         // Keep the rate shown beside the room-count multiplier explicit. The
         // aggregate room amount above is authoritative, but omitting this
         // field makes the tooltip render `0 × ...` even when totalRoomCost is

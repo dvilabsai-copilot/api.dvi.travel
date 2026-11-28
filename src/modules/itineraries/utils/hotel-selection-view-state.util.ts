@@ -246,16 +246,25 @@ const selectedView = (row: any, routeId: number, routeDate: string): HotelSelect
     (night: any) => String(night?.date || '').slice(0, 10) === String(routeDate || '').slice(0, 10),
   );
   const pricingScope = String(snapshot?.pricingScope || '').trim().toUpperCase();
-  const isLegacyContinuousOfflineSnapshot =
-    String(snapshot?.provider ?? row?.provider ?? '').trim().toLowerCase() === 'offline' &&
-    pricingScope !== 'ROUTE_NIGHT' &&
-    nightlyRates.length > 1;
+  const isOffline = String(snapshot?.provider ?? row?.provider ?? row?.hotel_provider ?? '')
+    .trim().toLowerCase() === 'offline';
+  const isLegacyContinuousOfflineSnapshot = isOffline && pricingScope !== 'ROUTE_NIGHT' && nightlyRates.length > 1;
   const projectRouteNight = (night: any) => {
     const nightIndex = nightlyRates.indexOf(night);
-    const roomCount = Math.max(Number(snapshot?.roomCount ?? snapshot?.totalRooms ?? row?.roomCount ?? row?.noOfRooms ?? 1), 1);
-    const roomRate = Number(night?.roomRate ?? snapshot?.roomRate ?? 0) > 0
-      ? Number(night?.roomRate ?? snapshot?.roomRate)
-      : Number((Number(night?.baseAmount ?? night?.totalRoomCost ?? 0) / roomCount).toFixed(2));
+    const legacyRoomCount = snapshot?.roomCount ?? snapshot?.totalRooms ?? row?.roomCount ?? row?.noOfRooms;
+    const roomCount = isOffline
+      ? [row?.total_no_of_rooms, row?.noOfRooms, night?.roomCount, snapshot?.roomCount,
+          snapshot?.totalRooms, row?.roomCount].map(Number).find(count => Number.isInteger(count) && count > 0) ?? 1
+      : Math.max(Number(legacyRoomCount ?? 1), 1);
+    // Offline stay snapshots can carry the anchor night's rate. Use each
+    // night's room-only amount when the catalog provides it.
+    const storedRoomRate = Number(night?.roomRate ?? (isOffline ? 0 : snapshot?.roomRate) ?? 0);
+    const nightlyRoomAmount = isOffline
+      ? Number(night?.roomCost ?? night?.totalRoomCost ?? night?.baseAmount ?? 0)
+      : Number(night?.baseAmount ?? night?.totalRoomCost ?? 0);
+    const roomRate = storedRoomRate > 0
+      ? storedRoomRate
+      : Number((nightlyRoomAmount / roomCount).toFixed(2));
     // For multi-night snapshots, parent totalRoomCost is the whole stay. Use
     // the nightly amount when a rate-level room total is absent; otherwise
     // every projected route would inherit the full-stay amount.
