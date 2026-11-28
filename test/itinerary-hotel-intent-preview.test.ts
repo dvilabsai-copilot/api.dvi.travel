@@ -905,6 +905,7 @@ test('offline confirm preserves route-night pricing in persistence payload and s
     hotel_id: 435,
     hotel_code: '435',
     hotel_provider: 'offline',
+    total_no_of_rooms: 5,
     selected_rate_option_id: rateOptionId,
     selected_price_per_night: 5700,
     selected_total_price: 5700,
@@ -943,7 +944,9 @@ test('offline confirm preserves route-night pricing in persistence payload and s
     assert.deepEqual(saved.nightlyRates, [nightlyRates[index]]);
   });
   result.selections.forEach((selection: any, index: number) => {
-    assert.equal(selection.basePricePerNight, 4750);
+    assert.equal(selection.noOfRooms, 5);
+    assert.equal(selection.roomRate, 950);
+    assert.equal(selection.basePricePerNight, 950);
     assert.equal(selection.baseTotalPrice, 4750);
     assert.equal(selection.hotelMarginPercentage, 20);
     assert.equal(selection.hotelMarginAmount, 950);
@@ -951,6 +954,7 @@ test('offline confirm preserves route-night pricing in persistence payload and s
     assert.equal(selection.pricePerNight, 5700);
     assert.equal(selection.totalPrice, 5700);
     assert.deepEqual(selection.nightlyRates, [nightlyRates[index]]);
+    assert.equal(selection.selectedPriceSnapshot.roomRate, 950);
     assert.equal(selection.selectedPriceSnapshot.rateOptionId, rateOptionId);
   });
   assert.equal(result.totals.totalPrice, 11400);

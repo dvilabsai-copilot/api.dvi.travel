@@ -62,7 +62,7 @@ import {
   hotelBookingTerms,
 } from './utils/hotel-selection-identity.util';
 import { normalizeHotelStarRating } from './utils/hotel-category.util';
-import { resolveHotelOccupancyPricing, resolveOfflineHotelPayablePricing } from './utils/hotel-selection-pricing.util';
+import { resolveHotelOccupancyPricing, resolveHotelSelectionPricing, resolveOfflineHotelPayablePricing } from './utils/hotel-selection-pricing.util';
 import { latestAxisRoomsOccupancyValues } from './utils/axisrooms-occupancy-rate.util';
 import { getValidatedTboRoomNightBreakdownForDate } from './utils/validated-tbo-room-night-breakdown.util';
 import { allocateTboRouteNightPricing } from '../hotels/utils/tbo-room-night-pricing';
@@ -4043,6 +4043,22 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
           mismatches: identity.mismatches,
         });
       }
+      const offlineNight = identity.provider === 'offline' && !snapshot.roomTypeBreakdown?.length &&
+        Array.isArray(snapshot.nightlyRates)
+        ? snapshot.nightlyRates.find((night: any) => String(night.date || '').slice(0, 10) === persistedRouteDate)
+        : undefined;
+      const offlineRoomCount = [row.total_no_of_rooms, snapshot.roomCount, snapshot.totalRooms, plan.preferred_room_count]
+        .map(Number).find((count) => Number.isInteger(count) && count > 0);
+      const offlineRoomRate = offlineNight
+        ? resolveHotelSelectionPricing({
+            totalPrice: offlineNight.roomCost ?? offlineNight.totalRoomCost ?? offlineNight.baseAmount,
+            roomCount: offlineRoomCount,
+            pricePerNight: offlineNight.roomRate,
+          }).roomRate
+        : undefined;
+      if (offlineRoomRate != null && offlineRoomRate > 0) {
+        snapshot = { ...snapshot, roomRate: offlineRoomRate, basePricePerNight: offlineRoomRate };
+      }
       return {
         routeId: Number(row.itinerary_route_id), routeDate: persistedRouteDate,
         itineraryPlanHotelDetailsId: Number(row.itinerary_plan_hotel_details_ID || 0) || undefined,
@@ -4081,6 +4097,7 @@ const anchorRoom = String(anchorOption?.roomType || anchorOption?.roomTypeName |
         totalHotelMealPlanCost: Number(snapshot.totalHotelMealPlanCost || row.total_hotel_meal_plan_cost || 0),
         bookingCode: snapshot.bookingCode, searchReference: snapshot.searchReference,
         pricePerNight: Number(row.selected_price_per_night || 0), totalPrice: Number(row.selected_total_price || 0), currency: row.selected_currency || 'INR',
+        ...(identity.provider === 'offline' && offlineRoomCount ? { noOfRooms: offlineRoomCount } : {}),
         selectedPriceSnapshot: snapshot,
         ...(Array.isArray(snapshot.roomSelections) ? { roomSelections: snapshot.roomSelections } : {}),
         ...(Array.isArray(snapshot.roomTypeBreakdown) ? { roomTypeBreakdown: snapshot.roomTypeBreakdown } : {}),
