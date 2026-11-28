@@ -2733,6 +2733,7 @@ export class HotelAvailabilitySnapshotService {
           selected_total_price: true,
           selected_currency: true,
           selected_price_snapshot: true,
+          total_no_of_rooms: true,
           selection_origin: true,
         },
       }) || [];
