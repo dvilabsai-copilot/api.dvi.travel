@@ -35,6 +35,16 @@ const bookingScope = (planId: number, groupType: number, stay: Pick<OfflineVouch
   check_out: new Date(stay.checkOut),
 });
 
+function assertRoomNightsWithinStay(
+  stay: Pick<OfflineVoucherStayDto, 'checkIn' | 'checkOut'>,
+  details: OfflineHotelBookingDetailsDto,
+) {
+  if (details.rooms.some(room => room.nightDate &&
+    (room.nightDate < stay.checkIn || room.nightDate >= stay.checkOut))) {
+    throw new BadRequestException('Each room night must be within the hotel stay dates.');
+  }
+}
+
 async function assertManualCancellationAllowed(prisma: PrismaService, scope: ReturnType<typeof bookingScope>) {
   const match = /^(?:tbo|vsr):(.+)$/i.exec(scope.hotel_key.trim());
   if (!match) return;
@@ -151,6 +161,7 @@ export class OfflineHotelBookingController {
   ) {
     this.assertScope(request, planId, groupType);
     await this.access.assertCanViewPlan(planId, request.user);
+    assertRoomNightsWithinStay(body.stay, body.details);
     const voucher = await this.getVoucherContext(planId);
     const { subject, html } = renderOfflineHotelVoucher(voucher, body.stay, body.details);
     return { subject, html };
@@ -240,6 +251,7 @@ export class OfflineHotelBookingController {
     this.assertScope(request, planId, groupType);
     await this.access.assertCanEditPlan(planId, request.user);
     const { routeId, hotelKey, checkIn, checkOut, version, details } = booking;
+    assertRoomNightsWithinStay(booking, details);
     const route = await this.prisma.dvi_itinerary_route_details.findFirst({
       where: {
         itinerary_plan_ID: planId,

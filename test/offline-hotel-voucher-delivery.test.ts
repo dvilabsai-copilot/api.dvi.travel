@@ -38,6 +38,26 @@ const bookingDetails = {
   rooms: [], cancellationPolicies: [],
 };
 
+test('voucher preview preserves exact dated room rates and rejects dates outside the stay', async () => {
+  const { controller } = setup();
+  const fullStay = { ...stay, checkIn: '2026-12-14', checkOut: '2026-12-18' };
+  const rooms = [14, 15, 16, 17].map(day => ({
+    nightDate: `2026-12-${day}`, category: 'Compact A/C Room,1 Double Bed', quantity: 1,
+    rate: day === 14 ? 2063.11 : 2063.10, extraBeds: 0, extraBedRate: 0, childrenWithoutBed: 0, childWithoutBedRate: 0,
+  }));
+  const details = plainToInstance(OfflineHotelBookingDetailsDto, { ...bookingDetails, rooms });
+  assert.deepEqual(validateSync(details, { whitelist: true, forbidNonWhitelisted: true }), []);
+  const { html } = await controller.previewVoucher(42, 1, { ...body, stay: fullStay, details }, request);
+  assert.match(html, /Check-in<\/td><td[^>]*>14 Dec 2026/);
+  assert.match(html, /Check-out<\/td><td[^>]*>18 Dec 2026/);
+  assert.match(html, /14 Dec 2026<\/td>.*?2,063\.11/);
+  for (const day of [15, 16, 17]) {
+    assert.match(html, new RegExp(day + ' Dec 2026</td>.*?2,063\\.10'));
+  }
+  details.rooms[0].nightDate = fullStay.checkOut;
+  await assert.rejects(controller.previewVoucher(42, 1, { ...body, stay: fullStay, details }, request), /within the hotel stay dates/);
+});
+
 function setup({
   status = 'pending', delivery = 'sent', withSecondStay = false,
 }: {

@@ -18,7 +18,10 @@ export function renderOfflineHotelVoucher(
   const title = `Hotel Voucher - ${status}`;
   const linkLabel = details.status === 'pending' ? 'Confirm Book' : 'View Voucher';
   const roomHeaders = ['Room category', 'Rooms', 'Rate per night', 'Extra beds', 'Extra bed rate', 'Children without bed', 'Child rate'];
+  const hasNightDates = details.rooms.some(room => room.nightDate);
+  if (hasNightDates) roomHeaders.unshift('Night of');
   const rooms = details.rooms.map((room) => [
+    ...(hasNightDates ? [room.nightDate ? date(room.nightDate) : 'All nights'] : []),
     room.category, room.quantity, moneyFormat.format(room.rate), room.extraBeds, moneyFormat.format(room.extraBedRate),
     room.childrenWithoutBed, moneyFormat.format(room.childWithoutBedRate),
   ]);
