@@ -41,6 +41,11 @@ class OfflineVoucherResponseDto extends RespondToOfflineVoucherDto {
 }
 
 class OfflineBookingRoomDto {
+  @IsOptional()
+  @Matches(calendarDate)
+  @IsDateString({ strict: true })
+  nightDate?: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(250)
