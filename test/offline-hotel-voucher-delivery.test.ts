@@ -59,11 +59,12 @@ test('voucher preview preserves exact dated room rates and rejects dates outside
 });
 
 function setup({
-  status = 'pending', delivery = 'sent', withSecondStay = false,
+  status = 'pending', delivery = 'sent', withSecondStay = false, expertEmail,
 }: {
   status?: keyof typeof statusLabels;
   delivery?: 'sent' | 'demo' | 'partial' | 'failed';
   withSecondStay?: boolean;
+  expertEmail?: string;
 } = {}) {
   const row = {
     route_id: stay.routeId, hotel_key: stay.hotelKey, check_in: new Date(stay.checkIn), check_out: new Date(stay.checkOut),
@@ -78,11 +79,20 @@ function setup({
   const rows = withSecondStay ? [row, secondRow] : [row];
   const calls: string[] = [];
   const messages: string[] = [];
+  const copies: Array<string | undefined> = [];
   const prisma = {
     tbo_hotel_booking_confirmation: {
       findFirst: async () => ({ tbo_hotel_booking_confirmation_ID: 12 }),
     },
-    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'QUOTE-001', agent_id: 0 }) },
+    dvi_itinerary_plan_details: { findUnique: async () => ({ itinerary_quote_ID: 'QUOTE-001', agent_id: expertEmail ? 27 : 0 }) },
+    dvi_agent: { findUnique: async ({ where }: { where: object }) => {
+      assert.deepEqual(where, { agent_ID: 27, deleted: 0 });
+      return { travel_expert_id: 63 };
+    } },
+    dvi_staff_details: { findFirst: async ({ where }: { where: object }) => {
+      assert.deepEqual(where, { staff_id: 63, deleted: 0 });
+      return { staff_email: expertEmail };
+    } },
     dvi_global_settings: { findFirst: async () => ({ site_title: 'DVi Holidays' }) },
     dvi_confirmed_itinerary_plan_details: { findFirst: async () => ({ confirmed_itinerary_plan_ID: 5 }) },
     dvi_confirmed_itinerary_customer_details: { findFirst: async () => ({ customer_name: 'Sample Customer' }) },
@@ -119,9 +129,11 @@ function setup({
   const mail = {
     isDispatchEnabled: () => true,
     logFailure: () => {},
-    dispatchOfflineVoucher: async (recipients: string[], message: { subject: string; html: string }, _replyTo: unknown, scoped: boolean) => {
+    dispatchOfflineVoucher: async (recipients: string[], message: { subject: string; html: string }, replyTo: unknown, scoped: boolean, cc?: string) => {
       calls.push('send');
       messages.push(message.html);
+      copies.push(cc);
+      assert.equal(replyTo, cc);
       const booked = rows.find((entry) => entry.details.emails[0] === recipients[0]);
       assert.ok(booked);
       assert.deepEqual(recipients, booked.details.emails);
@@ -140,7 +152,7 @@ function setup({
   const confirmation = new HotelVoucherConfirmationController(
     prisma as unknown as ConstructorParameters<typeof HotelVoucherConfirmationController>[0],
   );
-  return { controller, confirmation, calls, row, messages };
+  return { controller, confirmation, calls, row, messages, copies };
 }
 
 test('Hotel Stays rejects a manual Cancelled status for an active VSR booking', async () => {
@@ -184,14 +196,24 @@ test('the six legacy statuses are valid for booking edits and hotel responses', 
   assert.equal(validateSync(plainToInstance(OfflineHotelBookingDetailsDto, { ...bookingDetails, status: 'unknown' }))[0]?.property, 'status');
 });
 
-test('sending two vouchers renders each hotel status from its own saved booking', async () => {
-  const { controller, calls, messages } = setup({ status: 'confirmed', withSecondStay: true });
+test('sending two vouchers uses each saved hotel status and copies the agent’s assigned expert on both', async () => {
+  const { controller, calls, messages, copies } = setup({
+    status: 'confirmed', withSecondStay: true, expertEmail: '  expert@example.com  ',
+  });
   const { results } = await controller.sendVouchers(42, 1, { ...body, stays: [stay, secondStay] }, request);
   assert.deepEqual(results.map(({ status }) => status), ['sent', 'sent']);
   assert.deepEqual(calls, ['send', 'send']);
+  assert.deepEqual(copies, ['expert@example.com', 'expert@example.com']);
   assert.match(messages[0], /Hotel Voucher - Confirmed/);
   assert.match(messages[1], /Hotel Voucher - Blocked/);
   for (const message of messages) assert.match(message, />View Voucher</);
+});
+
+test('an invalid Travel Expert email does not block delivery or become a recipient', async () => {
+  const { controller, copies } = setup({ expertEmail: 'invalid' });
+  const { results } = await controller.sendVouchers(42, 1, body, request);
+  assert.equal(results[0].status, 'sent');
+  assert.deepEqual(copies, [undefined]);
 });
 
 test('the confirmation popup receives only confirmed stay identities for its quotation group', async () => {

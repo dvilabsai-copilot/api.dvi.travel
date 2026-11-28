@@ -85,13 +85,24 @@ export class HotelBlockEmailService {
     return this.transporter;
   }
 
-  async dispatchOfflineVoucher(recipients: string[], message: { subject: string; text: string; html: string }, replyTo?: string, recipientScoped = false) {
+  async dispatchOfflineVoucher(
+    recipients: string[],
+    message: { subject: string; text: string; html: string },
+    replyTo?: string,
+    recipientScoped = false,
+    ccAddress?: string,
+  ) {
+    const cc = ccAddress && !recipients.some((recipient) =>
+      recipient.trim().toLowerCase() === ccAddress.toLowerCase())
+      ? [ccAddress]
+      : undefined;
     const options = {
       from: {
         address: String(process.env.SMTP_FROM || '').trim(),
         name: process.env.SMTP_FROM_NAME?.trim() || 'Do View Holidays',
       },
       to: recipients,
+      cc,
       ...message,
       ...(replyTo ? { replyTo } : {}),
     };
