@@ -3570,7 +3570,8 @@ if (debugInsert) {
     const pickupDurationSec = parseDurationSeconds(TOTAL_PICKUP_DURATION);
     const dropDurationSec = parseDurationSeconds(TOTAL_DROP_DURATION);
     const effectiveStartSec = normalizeSecondsOfDay(startSec - pickupDurationSec);
-    const effectiveEndSec = normalizeSecondsOfDay(endSec + dropDurationSec);
+    // Keep the garage return relative to the service day when it crosses midnight.
+    const effectiveEndSec = endSec + dropDurationSec;
 
     if (effectiveStartSec < SIX_AM_SEC) {
       morning_extra_time_hours = (SIX_AM_SEC - effectiveStartSec) / 3600;
