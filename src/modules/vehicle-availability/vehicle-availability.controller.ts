@@ -3,15 +3,92 @@
 
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UseGuards,
+} from '@nestjs/common';
+
+import {
+  getRoleId,
+  SystemRole,
+} from '../auth/constants/system-role.constants';
 import { VehicleAvailabilityService } from './vehicle-availability.service';
 import { VehicleAvailabilityQueryDto } from './dto/vehicle-availability-query.dto';
 import { VehicleAvailabilityResponseDto } from './dto/vehicle-availability-response.dto';
+
+import {
+  CreateTransportAvailabilityPeriodDto,
+  TransportAvailabilityRangeDto,
+  CancelTransportAvailabilityPeriodDto,
+} from './dto/transport-availability-period.dto';
+
+@Injectable()
+class TransportAvailabilityAdminGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context
+      .switchToHttp()
+      .getRequest<{ user?: unknown }>();
+
+    return getRoleId(request.user) === SystemRole.ADMIN;
+  }
+}
 
 @ApiTags('vehicle-availability')
 @ApiBearerAuth()
 @Controller('vehicle-availability')
 export class VehicleAvailabilityController {
-  constructor(private readonly service: VehicleAvailabilityService) {}
+ constructor(private readonly service: VehicleAvailabilityService) {}
+
+// ---------------------------------------------------------------------------
+// TRANSPORT AVAILABILITY MANAGEMENT
+// ---------------------------------------------------------------------------
+
+@Get('availability-resources')
+@UseGuards(TransportAvailabilityAdminGuard)
+@ApiOperation({
+  summary: 'List verified vehicles and active drivers',
+})
+async availabilityResources() {
+  return this.service.listAvailabilityResources();
+}
+
+@Get('availability-periods')
+@UseGuards(TransportAvailabilityAdminGuard)
+@ApiOperation({
+  summary: 'List transport restrictions by date range',
+})
+async availabilityPeriods(
+  @Query() query: TransportAvailabilityRangeDto,
+) {
+  return this.service.listAvailabilityPeriods(
+    query.dateFrom,
+    query.dateTo,
+  );
+}
+
+@Post('availability-periods')
+@UseGuards(TransportAvailabilityAdminGuard)
+@ApiOperation({
+  summary: 'Create maintenance, reservation or leave period',
+})
+async createAvailabilityPeriod(
+  @Body() dto: CreateTransportAvailabilityPeriodDto,
+) {
+  return this.service.createAvailabilityPeriod(dto);
+}
+
+@Post('availability-periods/cancel')
+@UseGuards(TransportAvailabilityAdminGuard)
+@ApiOperation({
+  summary: 'Cancel an active availability restriction',
+})
+async cancelAvailabilityPeriod(
+  @Body() dto: CancelTransportAvailabilityPeriodDto,
+) {
+  return this.service.cancelAvailabilityPeriod(dto.id);
+}
 
  // ---------------------------------------------------------------------------
  // CHART
@@ -208,6 +285,23 @@ export class VehicleAvailabilityController {
   }
 
  // Reassign Driver on an itinerary/vendor (update latest active assignment)
+ @Post('unassign-driver')
+@ApiOperation({
+  summary: 'Unassign a driver while retaining the allocated vehicle',
+})
+async unassignDriver(
+  @Body()
+  dto: {
+    itineraryPlanId: number;
+    vendor_id: number;
+    vehicle_type_id: number;
+    vehicle_id: number;
+    driver_id: number;
+    driverAssignmentId: number;
+  },
+) {
+  return this.service.unassignDriver(dto);
+}
   @Post('reassign-driver')
   @ApiOperation({ summary: 'Reassign driver (PHP: ?type=reassign_driver). Expects itineraryPlanId, vendor_id, driver_id, vehicle_id?' })
   async reassignDriver(@Body() dto: { itineraryPlanId: number; vendor_id: number; driver_id: number; vehicle_id?: number; createdby?: number }) {
