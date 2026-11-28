@@ -7260,3 +7260,27 @@ model dvi_itinerary_agent_pricing {
   final_selling_price Decimal? @db.Decimal(14, 2)
   updated_at          DateTime @default(now()) @updatedAt @db.Timestamp(0)
 }
+
+
+enum TransportAvailabilityKind {
+  maintenance
+  reserved
+  driver_leave
+  blocked
+}
+
+model dvi_transport_availability_period {
+  id              Int                       @id @default(autoincrement())
+  kind            TransportAvailabilityKind
+  resourceId      Int
+  vehicleKey      String?                   @db.VarChar(50)
+  startsAt        DateTime                  @db.DateTime(3)
+  endsAt          DateTime                  @db.DateTime(3)
+  reason          String                    @db.VarChar(255)
+  active          Boolean                   @default(true)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+@@index([kind, resourceId, active, startsAt, endsAt], map: "idx_transport_period_resource")
+@@index([vehicleKey, active, startsAt, endsAt], map: "idx_transport_period_vehicle")
+}

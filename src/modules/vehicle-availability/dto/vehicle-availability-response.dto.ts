@@ -14,11 +14,18 @@ export class VehicleAvailabilityCellDto {
   @ApiProperty()
  date!: string; // YYYY-MM-DD
 
-  @ApiProperty({ required: false, nullable: true })
-  itineraryPlanId!: number | null;
+@ApiProperty({ required: false, nullable: true })
+itineraryPlanId!: number | null;
 
-  @ApiProperty({ required: false, nullable: true })
-  itineraryQuoteId!: string | null;
+@ApiProperty({
+  required: false,
+  nullable: true,
+  type: Number,
+})
+confirmedPlanId?: number | null;
+
+@ApiProperty({ required: false, nullable: true })
+itineraryQuoteId!: string | null;
 
   @ApiProperty()
   isWithinTrip!: boolean;
@@ -47,11 +54,25 @@ export class VehicleAvailabilityCellDto {
   @ApiProperty({ required: false, nullable: true })
   driverId!: number | null;
 
-  @ApiProperty({ required: false, nullable: true })
-  driverAssignmentId!: number | null;
+@ApiProperty({ required: false, nullable: true })
+driverAssignmentId!: number | null;
 
-  @ApiProperty({ type: [VehicleAvailabilityRouteSegmentDto] })
-  routeSegments!: VehicleAvailabilityRouteSegmentDto[];
+@ApiProperty({
+  required: false,
+  nullable: true,
+  type: String,
+})
+driverName?: string | null;
+
+@ApiProperty({
+  required: false,
+  nullable: true,
+  type: String,
+})
+driverMobile?: string | null;
+
+@ApiProperty({ type: [VehicleAvailabilityRouteSegmentDto] })
+routeSegments!: VehicleAvailabilityRouteSegmentDto[];
 
   @ApiProperty({ required: false, nullable: true })
   customerName!: string | null;
@@ -94,11 +115,14 @@ export class VehicleAvailabilityRowDto {
   @ApiProperty()
   vehicleId!: number;
 
-  @ApiProperty()
-  registrationNumber!: string;
+@ApiProperty()
+registrationNumber!: string;
 
-  @ApiProperty({ type: [VehicleAvailabilityCellDto] })
-  cells!: VehicleAvailabilityCellDto[];
+@ApiProperty({ type: Boolean })
+registrationConflict!: boolean;
+
+@ApiProperty({ type: [VehicleAvailabilityCellDto] })
+cells!: VehicleAvailabilityCellDto[];
 }
 
 export class VehicleAvailabilityResponseDto {

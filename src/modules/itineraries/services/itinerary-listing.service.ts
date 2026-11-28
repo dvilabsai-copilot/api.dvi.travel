@@ -711,11 +711,62 @@ if (vendorUser) {
 
  // Fetch agents manually since no relations in Prisma schema
     const agentIds = [...new Set(data.map((p) => p.agent_id))];
-    const agents = await this.prisma.dvi_agent.findMany({
-      where: { agent_ID: { in: agentIds } },
-      select: { agent_ID: true, agent_name: true },
+
+const agents = await this.prisma.dvi_agent.findMany({
+  where: { agent_ID: { in: agentIds } },
+  select: {
+    agent_ID: true,
+    agent_name: true,
+    agent_primary_mobile_number: true,
+    status: true,
+    deleted: true,
+  },
+});
+
+const agentMap = new Map(
+  agents.map((a) => [a.agent_ID, a.agent_name]),
+);
+
+const agentMobileMap = new Map(
+  agents
+    .filter(a => a.status === 1 && a.deleted === 0)
+    .map(a => [
+      a.agent_ID,
+      a.agent_primary_mobile_number || '',
+    ]),
+);
+
+// ==========================================
+// OPERATIONS CONTACT - GLOBAL SETTINGS
+// ==========================================
+
+let operationsName = '';
+let operationsMobile = '';
+
+if (logged_user_level === 1) {
+  const settings =
+    await this.prisma.dvi_global_settings.findMany({
+      where: {
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        company_name: true,
+        company_contact_no: true,
+      },
+      take: 2,
     });
-    const agentMap = new Map(agents.map((a) => [a.agent_ID, a.agent_name]));
+
+  if (settings.length === 1) {
+    operationsName = String(
+      settings[0].company_name || 'DVI Holidays',
+    ).trim();
+
+    operationsMobile = String(
+      settings[0].company_contact_no || '',
+    ).trim();
+  }
+}
 
     return {
       draw: query.draw || 1,
@@ -738,6 +789,19 @@ if (vendorUser) {
           confirmed_itinerary_plan_ID: confirmedPlanId,
           booking_quote_id: p.itinerary_quote_ID,
           agent_name: agentMap.get(p.agent_id) || 'N/A',
+
+...(logged_user_level === 1
+  ? {
+      agent_mobile:
+        agentMobileMap.get(p.agent_id) || '',
+
+      operations_name:
+        operationsName,
+
+      operations_mobile:
+        operationsMobile,
+    }
+  : {}),
           primary_customer_name: formatCustomerName(customer),
           primary_contact_no: customer?.primary_contact_no || 'N/A',
           arrival_location: p.arrival_location,
