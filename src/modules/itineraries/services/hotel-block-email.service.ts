@@ -31,6 +31,7 @@ type HoldRequest = {
 export class HotelBlockEmailService {
   private readonly logger = new Logger(HotelBlockEmailService.name);
   private transporter: Transporter | null = null;
+  private voucherRelayTransporter: Transporter | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -66,14 +67,21 @@ export class HotelBlockEmailService {
       : '--';
   }
 
-  private getTransporter() {
-    if (this.transporter) return this.transporter;
+  private getTransporter(relayPort?: string) {
+    const existing = relayPort ? this.voucherRelayTransporter : this.transporter;
+    if (existing) return existing;
     const host = String(process.env.SMTP_HOST || '').trim();
     const from = String(process.env.SMTP_FROM || '').trim();
     if (!host || !from) throw new Error('Hotel block SMTP is not configured.');
-    this.transporter = nodemailer.createTransport({
-      host,
-      port: Number(process.env.SMTP_PORT || 587),
+    const port = Number(relayPort || process.env.SMTP_PORT || 587);
+    if (relayPort && (!/^\d+$/.test(relayPort) || port < 1 || port > 65535)) {
+      throw new Error('Hotel voucher SMTP relay port is invalid.');
+    }
+    const connection = relayPort
+      ? { host: '127.0.0.1', port, requireTLS: true, tls: { servername: host } }
+      : { host, port };
+    const transporter = nodemailer.createTransport({
+      ...connection,
       secure: ['1', 'true', 'yes'].includes(String(process.env.SMTP_SECURE || '').toLowerCase()),
       auth: process.env.SMTP_USER
         ? {
@@ -82,7 +90,9 @@ export class HotelBlockEmailService {
           }
         : undefined,
     });
-    return this.transporter;
+    if (relayPort) this.voucherRelayTransporter = transporter;
+    else this.transporter = transporter;
+    return transporter;
   }
 
   async dispatchOfflineVoucher(
@@ -107,7 +117,8 @@ export class HotelBlockEmailService {
       ...(replyTo ? { replyTo } : {}),
     };
     const delivery = prepareVoucherEmail(recipientScoped ? options : await withGlobalSettingsCc(this.prisma, options));
-    const info = await this.getTransporter().sendMail(delivery.options);
+    const relayPort = delivery.demo ? process.env.HOTEL_VOUCHER_SMTP_RELAY_PORT?.trim() : undefined;
+    const info = await this.getTransporter(relayPort).sendMail(delivery.options);
     return { demo: delivery.demo, partial: Boolean(info.rejected?.length) };
   }
 
