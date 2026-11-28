@@ -75,6 +75,11 @@ test('the shared voucher setting controls manual voucher routing and shows the l
   await service.dispatchOfflineVoucher(recipients, message, 'expert@example.com', true);
   assert.match(String(sent?.html), /<strong>CC:<\/strong> None/);
 
+  await service.dispatchOfflineVoucher(recipients, message, 'expert@example.com', true, 'expert@example.com');
+  assert.equal(sent?.to, 'demo@example.com');
+  assert.equal(sent?.cc, undefined);
+  assert.match(String(sent?.html), /<strong>CC:<\/strong> expert@example.com/);
+
   process.env.VOUCHER_EMAIL_DEMO_RECIPIENT = '';
   assert.deepEqual(await service.dispatchOfflineVoucher(
     recipients, message, 'expert@example.com',
@@ -89,6 +94,14 @@ test('the shared voucher setting controls manual voucher routing and shows the l
   assert.deepEqual(sent?.to, recipients);
   assert.equal(sent?.cc, undefined);
   assert.equal(sent?.html, html);
+
+  await service.dispatchOfflineVoucher(recipients, message, 'expert@example.com', true, 'expert@example.com');
+  assert.deepEqual(sent?.to, recipients);
+  assert.deepEqual(sent?.cc, ['expert@example.com']);
+  assert.equal(sent?.replyTo, 'expert@example.com');
+
+  await service.dispatchOfflineVoucher(recipients, message, 'Hotel@Example.com', true, 'Hotel@Example.com');
+  assert.equal(sent?.cc, undefined);
 });
 
 test('lifecycle email dispatch always uses the requested test inbox and records intended recipients', async () => {

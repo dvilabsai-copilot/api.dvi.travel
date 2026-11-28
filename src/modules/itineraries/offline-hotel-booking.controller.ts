@@ -194,7 +194,7 @@ export class OfflineHotelBookingController {
       this.getAssignedTravelExpert(planId),
     ]);
     const expertEmail = expert?.staff_email?.trim();
-    const replyTo = expertEmail && isEmail(expertEmail) ? expertEmail : undefined;
+    const assignedExpertEmail = expertEmail && isEmail(expertEmail) ? expertEmail : undefined;
     const bookedByKey = new Map(bookings.map((row) => {
       const booking = bookingResponse(row);
       return [stayKey(booking), booking] as const;
@@ -230,7 +230,11 @@ export class OfflineHotelBookingController {
           checkIn: stay.checkIn, checkOut: stay.checkOut, version: booking.version, hotelName: stay.hotelName,
         });
         const outcome = await this.email.dispatchOfflineVoucher(
-          recipients, renderOfflineHotelVoucher(voucher, stay, details, confirmationUrl), replyTo, Boolean(confirmationUrl),
+          recipients,
+          renderOfflineHotelVoucher(voucher, stay, details, confirmationUrl),
+          assignedExpertEmail,
+          Boolean(confirmationUrl),
+          assignedExpertEmail,
         );
         results.push({ key, status: outcome.partial ? 'partial' : outcome.demo ? 'demo' : 'sent' });
       } catch (error) {
