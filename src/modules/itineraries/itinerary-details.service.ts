@@ -477,7 +477,13 @@ export interface ItineraryDetailsResponseDto {
   preferredHotelCategory?: string | number[] | null;
   hotel_facilities?: string[] | string | null;
   hotelFacilities?: string[] | string | null;
-  isConfirmed?: boolean;
+    isConfirmed?: boolean;
+
+  confirmedVehiclePreviewRows?: Array<{
+    vehicleTypeId: number;
+    quantity: number;
+    amount: number;
+  }> | null;
  confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
   special_instructions?: string | null;
   specialInstructions?: string | null;
@@ -7800,6 +7806,174 @@ const vehicleTermsCondition = resolveVehicleTermsCondition({
 // calls always pass req.user.role and are filtered by the role policy.
 const canViewCostBreakdown =
   viewerRole === undefined ? true : canViewItineraryCostBreakdown(viewerRole);
+
+let confirmedVehiclePreviewRows:
+  ItineraryDetailsResponseDto['confirmedVehiclePreviewRows'] =
+    confirmedPlan || Number(plan.quotation_status) === 1
+      ? null
+      : undefined;
+
+if (
+  confirmedPlan &&
+  shouldIncludeVehicles &&
+  !historical &&
+  confirmedPlan.status === 1 &&
+  confirmedPlan.itinerary_cancellation_status === 0 &&
+  confirmedPlan.trip_end_date_and_time &&
+  confirmedPlan.trip_end_date_and_time.getTime() > Date.now() &&
+  (canViewCostBreakdown || isAgentRole(viewerRole))
+) {
+  const [requirements, assignments] = await Promise.all([
+    this.prisma.dvi_confirmed_itinerary_plan_vehicle_details.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        status: 1,
+        deleted: 0,
+        cancellation_status: 0,
+      },
+      select: {
+        vehicle_type_id: true,
+        vehicle_count: true,
+      },
+    }),
+
+    this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        status: 1,
+        deleted: 0,
+        cancellation_status: 0,
+        itineary_plan_assigned_status: 1,
+      },
+      select: {
+        vehicle_type_id: true,
+        total_vehicle_qty: true,
+        vehicle_count: true,
+        vehicle_grand_total: true,
+      },
+    }),
+  ]);
+
+  const required = new Map<number, number>();
+
+  const priced = new Map<number, {
+    vehicleTypeId: number;
+    quantity: number;
+    amount: number;
+  }>();
+
+  let valid = assignments.length > 0;
+
+  for (const row of requirements) {
+    const id = Number(row.vehicle_type_id);
+    const qty = Number(row.vehicle_count);
+
+    if (
+      !Number.isSafeInteger(id) ||
+      id <= 0 ||
+      !Number.isSafeInteger(qty) ||
+      qty <= 0
+    ) {
+      valid = false;
+      break;
+    }
+
+    required.set(id, (required.get(id) ?? 0) + qty);
+  }
+
+  const assignmentCountByType = new Map<number, number>();
+
+  for (const row of assignments) {
+    const id = Number(row.vehicle_type_id);
+
+    assignmentCountByType.set(
+      id,
+      (assignmentCountByType.get(id) ?? 0) + 1,
+    );
+  }
+
+  for (const row of assignments) {
+    const id = Number(row.vehicle_type_id);
+
+    const storedQty = Number(
+      row.total_vehicle_qty || row.vehicle_count,
+    );
+
+    const requiredQty = required.get(id);
+
+    const qty =
+      assignmentCountByType.get(id) === 1 &&
+      requiredQty !== undefined
+        ? requiredQty
+        : storedQty;
+
+    const unit = Number(row.vehicle_grand_total);
+
+    if (
+      !Number.isSafeInteger(id) ||
+      id <= 0 ||
+      (requirements.length > 0 && !required.has(id)) ||
+      !Number.isSafeInteger(qty) ||
+      qty <= 0 ||
+      !Number.isFinite(unit) ||
+      unit <= 0
+    ) {
+      valid = false;
+      break;
+    }
+
+    const previous = priced.get(id) ?? {
+      vehicleTypeId: id,
+      quantity: 0,
+      amount: 0,
+    };
+
+    priced.set(id, {
+      vehicleTypeId: id,
+      quantity: previous.quantity + qty,
+      amount: money(
+        previous.amount + money(unit * qty),
+      ),
+    });
+  }
+
+  const confirmedTotal = Number(
+    confirmedPlan.total_vehicle_charges,
+  );
+
+  const previewTotal = money(
+    [...priced.values()].reduce(
+      (sum, row) => sum + row.amount,
+      0,
+    ),
+  );
+
+  const quantitiesMatch =
+    requirements.length === 0 ||
+    (
+      required.size === priced.size &&
+      [...required].every(
+        ([id, qty]) => priced.get(id)?.quantity === qty,
+      )
+    );
+
+  const savedTotalMatches =
+    Number.isFinite(confirmedTotal) &&
+    confirmedTotal > 0 &&
+    Math.abs(
+      Math.round(confirmedTotal * 100) -
+      Math.round(previewTotal * 100),
+    ) <= 1;
+
+  if (
+    valid &&
+    quantitiesMatch &&
+    savedTotalMatches
+  ) {
+    confirmedVehiclePreviewRows = [...priced.values()];
+  }
+}
+
 const vehiclesForAgent = isAgentRole(viewerRole)
   ? vehicles.filter((vehicle: any) => vehicle?.isAssigned === true)
   : vehicles;
@@ -7887,8 +8061,9 @@ const response: ItineraryDetailsResponseDto = {
       preferredHotelCategory: (plan as any).preferred_hotel_category ?? null,
       hotel_facilities: (plan as any).hotel_facilities ?? null,
       hotelFacilities: (plan as any).hotel_facilities ?? null,
-      isConfirmed: !!confirmedPlan,
-      confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
+     isConfirmed: !!confirmedPlan,
+confirmedVehiclePreviewRows,
+confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
       special_instructions: specialInstructions,
       specialInstructions,
       special_instruction: specialInstructions,
